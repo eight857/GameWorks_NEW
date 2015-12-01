@@ -106,6 +106,9 @@ FAssetTools::FAssetTools()
 	RegisterAssetTypeActions( MakeShareable(new FAssetTypeActions_VectorFieldAnimated) );
 	RegisterAssetTypeActions( MakeShareable(new FAssetTypeActions_VectorFieldStatic) );
 	RegisterAssetTypeActions( MakeShareable(new FAssetTypeActions_VertexAnimation) );
+	// @third party code - BEGIN HairWorks
+	RegisterAssetTypeActions( MakeShareable(new FAssetTypeActions_HairWorks));
+	// @third party code - END HairWorks
 
 	// Note: Please don't add any more actions here!  They belong in an editor-only module that is more tightly
 	// coupled to your new system, and you should not create a dependency on your new system from AssetTools.

@@ -7,6 +7,9 @@
 #include "Common.usf"
 #include "DeferredShadingCommon.usf"
 #include "DeferredLightingCommon.usf"
+// @third party code - BEGIN HairWorks
+#include "HairWorksLighting.usf"
+// @third party code - END HairWorks
 
 float4 GetPerPixelLightAttenuation(float2 UV)
 {
@@ -42,9 +45,22 @@ FDeferredLightData SetupLightDataForStandardDeferred()
 void DirectionalPixelMain(
 	float2 InUV : TEXCOORD0,
 	float3 ScreenVector : TEXCOORD1,
-	out float4 OutColor : SV_Target0
+	out float4 OutColor : SV_Target0,
+	// @third party code - BEGIN HairWorks
+	out float3 OutHairColor : SV_Target1
+	// @third party code - END HairWorks
 	)
 {
+	// @third party code - BEGIN HairWorks
+	// Lighten hair
+	if(bHairDeferredRendering)
+	{
+		const float HairOpaque = GetHairWorksDynamicLighting(OutHairColor, ScreenVector, InUV, SetupLightDataForStandardDeferred());
+		if(HairOpaque >= 1)
+			return;
+	}
+	// @third party code - END HairWorks
+
 	OutColor = 0;
 	float3 CameraVector = normalize(ScreenVector);
 
@@ -67,12 +83,29 @@ void DirectionalPixelMain(
 void RadialPixelMain(
 	float4 InScreenPosition : TEXCOORD0,
 	float4 SVPos : SV_POSITION,
-	out float4 OutColor : SV_Target0
+	out float4 OutColor : SV_Target0,
+	// @third party code - BEGIN HairWorks
+	out float3 OutHairColor : SV_Target1
+	// @third party code - END HairWorks
 	)
 {
 	OutColor = 0;
 	float2 ScreenUV = InScreenPosition.xy / InScreenPosition.w * View.ScreenPositionScaleBias.xy + View.ScreenPositionScaleBias.wz;
 	
+	// @third party code - BEGIN HairWorks
+	// Lighten only hair
+	if(bHairDeferredRendering)
+	{
+		float3 HairColor;
+		float3 ScreenVector = mul(float4(InScreenPosition.xy / InScreenPosition.w, 1, 0), View.ScreenToTranslatedWorld).xyz;
+		const float HairOpaque = GetHairWorksDynamicLighting(HairColor, ScreenVector, ScreenUV, SetupLightDataForStandardDeferred());
+		if(HairOpaque > 0)
+			OutHairColor = HairColor;
+
+		return;
+	}
+	// @third party code - END HairWorks
+
 	FScreenSpaceData ScreenSpaceData = GetScreenSpaceData(ScreenUV);
 
 	// Only light pixels marked as using deferred shading

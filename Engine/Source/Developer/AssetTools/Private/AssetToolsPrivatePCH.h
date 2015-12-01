@@ -91,6 +91,9 @@ DECLARE_LOG_CATEGORY_EXTERN(LogAssetTools, Log, All);
 #include "AssetTypeActions/AssetTypeActions_VectorFieldStatic.h"
 #include "AssetTypeActions/AssetTypeActions_VertexAnimation.h"
 #include "AssetTypeActions/AssetTypeActions_World.h"
+// @third party code - BEGIN HairWorks
+#include "AssetTypeActions/AssetTypeActions_HairWorks.h"
+// @third party code - END HairWorks
 
 #include "SDiscoveringAssetsDialog.h"
 #include "AssetRenameManager.h"

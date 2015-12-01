@@ -11,6 +11,9 @@
 #include "../../Engine/Private/SkeletalRenderGPUSkin.h"		// GPrevPerBoneMotionBlur
 #include "SceneUtils.h"
 #include "PostProcessing.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 /*------------------------------------------------------------------------------
 	Globals
@@ -2181,6 +2184,11 @@ void FDeferredShadingSceneRenderer::InitViews(FRHICommandListImmediate& RHICmdLi
 		// Setup dynamic shadows.
 		InitDynamicShadows(RHICmdList);
 	}
+
+	// @third party code - BEGIN HairWorks
+	// Setup views for hair
+	HairWorksRenderer::SetupViews(Views);
+	// @third party code - END HairWorks
 
 	// initialize per-view uniform buffer.
 	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)

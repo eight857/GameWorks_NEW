@@ -25,6 +25,9 @@
 #include "../../Engine/Private/SkeletalRenderGPUSkin.h"		// GPrevPerBoneMotionBlur
 #include "EngineModule.h"
 #include "IHeadMountedDisplay.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 TAutoConsoleVariable<int32> CVarEarlyZPass(
 	TEXT("r.EarlyZPass"),
@@ -1003,6 +1006,25 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		ServiceLocalQueue();
 	}
 
+	// @third party code - BEGIN HairWorks
+	// Prepare hair rendering
+	{
+		// Do hair simulation
+		{
+			SCOPED_DRAW_EVENT(RHICmdList, HairSimulation);
+			HairWorksRenderer::StepSimulation();
+		}
+
+		// Allocate hair render targets
+		static auto* AlwaysCreateRenderTargets = IConsoleManager::Get().FindConsoleVariable(TEXT("r.HairWorks.AlwaysCreateRenderTargets"));
+		if(
+			(!AlwaysCreateRenderTargets->GetInt() && HairWorksRenderer::ViewsHasHair(Views)) ||
+			AlwaysCreateRenderTargets->GetInt()
+			)
+			HairWorksRenderer::AllocRenderTargets(FSceneRenderTargets::Get(RHICmdList).GetBufferSizeXY());
+	}
+	// @third party code - END HairWorks
+
 	// Clear the G Buffer render targets
 	bool bIsGBufferCurrent = false;
 	if (bRequiresRHIClear)
@@ -1253,6 +1275,12 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 
 	// No longer needed, release
 	LightShaftOutput.LightShaftOcclusion = NULL;
+
+	// @third party code - BEGIN HairWorks
+	// Blend hair lighting
+	if(HairWorksRenderer::ViewsHasHair(Views))
+		HairWorksRenderer::BlendLightingColor(RHICmdList);
+	// @third party code - END HairWorks
 
 	GRenderTargetPool.AddPhaseEvent(TEXT("Translucency"));
 
@@ -1688,6 +1716,11 @@ bool FDeferredShadingSceneRenderer::RenderBasePass(FRHICommandListImmediate& RHI
 		{
 			FSceneRenderTargets::Get(RHICmdList).SetVelocityPass(false);
 		}
+
+		// @third party code - BEGIN HairWorks
+		if(HairWorksRenderer::ViewsHasHair(Views))
+			HairWorksRenderer::RenderBasePass(RHICmdList, Views);
+		// @third party code - BEGIN HairWorks
 	}
 
 	return bDirty;

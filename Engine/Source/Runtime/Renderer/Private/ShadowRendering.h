@@ -658,7 +658,11 @@ public:
 	/**
 	 * Projects the shadow onto the scene for a particular view.
 	 */
-	void RenderProjection(FRHICommandListImmediate& RHICmdList, int32 ViewIndex, const class FViewInfo* View, bool bForwardShading) const;
+	void RenderProjection(FRHICommandListImmediate& RHICmdList, int32 ViewIndex, const class FViewInfo* View, bool bForwardShading
+		// @third party code - BEGIN HairWorks
+		, bool bHairPass = false
+		// @third party code - END HairWorks
+		) const;
 
 	/** Renders ray traced distance field shadows. */
 	void RenderRayTracedDistanceFieldProjection(FRHICommandListImmediate& RHICmdList, const class FViewInfo& View) const;
@@ -739,6 +743,10 @@ public:
 	 * 0 if Setup...() wasn't called yet
 	 */	
 	const FPrimitiveSceneInfo* GetParentSceneInfo() const { return ParentSceneInfo; }
+
+	// @third party code - BEGIN HairWorks
+	bool ShouldRenderForHair(const FViewInfo& View)const;
+	// @third party code - END HairWorks
 
 private:
 	// 0 if Setup...() wasn't called yet

@@ -212,6 +212,12 @@ void FD3D11DynamicRHI::Shutdown()
 	UE_LOG(LogD3D11RHI, Log, TEXT("Shutdown"));
 	check(IsInGameThread() && IsInRenderingThread());  // require that the render thread has been shut down
 
+	// @third party code - BEGIN HairWorks
+	// Shut down HairWorks
+	ENGINE_API void HairWorksShutDown();
+	HairWorksShutDown();
+	// @third party code - END HairWorks
+
 	// Cleanup the D3D device.
 	CleanupD3DDevice();
 

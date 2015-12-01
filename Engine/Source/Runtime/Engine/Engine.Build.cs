@@ -326,5 +326,13 @@ public class Engine : ModuleRules
 			// module, so it's definitions won't propagate to modules that import Engine.
 			Definitions.Add("WITH_RECAST=0");
 		}
+
+		// @third party code - BEGIN HairWorks
+		// To copy HairWorks DLL during packaging.
+		if (Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			AddThirdPartyPrivateStaticDependencies(Target, "HairWorks");
+		}
+		// @third party code - END HairWorks
 	}
 }

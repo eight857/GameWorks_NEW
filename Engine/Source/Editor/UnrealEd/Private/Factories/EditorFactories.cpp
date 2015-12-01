@@ -108,6 +108,14 @@
 
 #include "Kismet2/BlueprintEditorUtils.h"
 
+// @third party code - BEGIN HairWorks
+#include "SkelImport.h"
+#include "HairWorksSDK.h"
+#include "Engine/HairWorksMaterial.h"
+#include "Engine/HairWorksAsset.h"
+#include "Components/HairWorksComponent.h"
+// @third party code - END HairWorks
+
 DEFINE_LOG_CATEGORY_STATIC(LogEditorFactories, Log, All);
 
 #define LOCTEXT_NAMESPACE "EditorFactories"
@@ -6677,6 +6685,19 @@ FText UDestructibleMeshFactory::GetDisplayName() const
 }
 
 #if WITH_APEX
+// @third party code - BEGIN HairWorks
+bool UDestructibleMeshFactory::FactoryCanImport(const FString& Filename)
+{
+	auto* Asset = CreateApexDestructibleAssetFromFile(Filename);
+	if (Asset != nullptr)
+	{
+		Asset->release();
+		return true;
+	}
+	else
+		return false;
+}
+// @third party code - END HairWorks
 
 UObject* UDestructibleMeshFactory::FactoryCreateBinary
 (
@@ -6855,6 +6876,278 @@ int32 UReimportDestructibleMeshFactory::GetPriority() const
 }
 
 #endif // #if WITH_APEX
+
+// @third party code - BEGIN HairWorks
+/*------------------------------------------------------------------------------
+	UHairWorksFactory implementation.
+------------------------------------------------------------------------------*/
+UHairWorksFactory::UHairWorksFactory(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SupportedClass = UHairWorksAsset::StaticClass();
+	bEditorImport = true;
+	bCreateNew = false;
+	Formats.Add(TEXT("apx;HairWorks XML Asset"));
+	Formats.Add(TEXT("apb;HairWorks Binary Asset"));
+}
+
+bool UHairWorksFactory::FactoryCanImport(const FString& Filename)
+{
+	if(GHairWorksSDK == nullptr)
+		return false;
+
+	TArray<uint8> Buffer;
+	FFileHelper::LoadFileToArray(Buffer, *Filename);
+
+	auto HairAssetId = GFSDK_HairAssetID_NULL;
+	GHairWorksSDK->LoadHairAssetFromMemory(Buffer.GetData(), Buffer.Num(), &HairAssetId);
+
+	if(HairAssetId != GFSDK_HairAssetID_NULL)
+	{
+		GHairWorksSDK->FreeHairAsset(HairAssetId);
+		return true;
+	}
+	else
+		return false;
+}
+
+FText UHairWorksFactory::GetDisplayName() const
+{
+	return FText::FromString("HairWorks");
+}
+
+void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, GFSDK_HairAssetID HairAssetId, const GFSDK_HairInstanceDescriptor* NewInstanceDesc)
+{
+	// Get bones. Used for bone remapping, etc.
+	check(GHairWorksSDK != nullptr);
+	{
+		gfsdk_U32 BoneNum = 0;
+		GHairWorksSDK->GetNumBones(HairAssetId, &BoneNum);
+
+		Hair.BoneNames.Empty(BoneNum);
+
+		for(gfsdk_U32 Idx = 0; Idx < BoneNum; ++Idx)
+		{
+			gfsdk_char BoneName[GFSDK_HAIR_MAX_STRING];
+			GHairWorksSDK->GetBoneName(HairAssetId, Idx, BoneName);
+
+			Hair.BoneNames.Add(*FSkeletalMeshImportData::FixupBoneName(BoneName));
+		}
+	}
+
+	// Get material
+	if(Hair.bMaterials)
+	{
+		GFSDK_HairInstanceDescriptor HairInstanceDesc;
+		if(NewInstanceDesc)
+			HairInstanceDesc = *NewInstanceDesc;
+		else
+			GHairWorksSDK->CopyInstanceDescriptorFromAsset(HairAssetId, HairInstanceDesc);
+
+		// sRGB conversion
+		auto ConvertColorToSRGB = [](gfsdk_float4& Color)
+		{
+			reinterpret_cast<FLinearColor&>(Color) = FLinearColor(FColor(Color.x * 255, Color.y * 255, Color.z * 255));
+		};
+
+		ConvertColorToSRGB(HairInstanceDesc.m_rootColor);
+		ConvertColorToSRGB(HairInstanceDesc.m_tipColor);
+		ConvertColorToSRGB(HairInstanceDesc.m_specularColor);
+
+		// Because of SRGB conversion, we need to use a different diffuse blend value to keep consistent with HairWorks Viewer.
+		HairInstanceDesc.m_diffuseBlend = 1 - FMath::Pow(1 - HairInstanceDesc.m_diffuseBlend, 2.2f);
+
+		// UE4 shadow attenuation is different from HairWorks viewer, so we use a different value to keep consistent
+		HairInstanceDesc.m_shadowSigma /= 2;
+		HairInstanceDesc.m_shadowSigma = FMath::Min(HairInstanceDesc.m_shadowSigma, 254.f / 255.f);
+
+		// Fill hair material
+		if(Hair.HairMaterial == nullptr)
+			Hair.HairMaterial = NewObject<UHairWorksMaterial>(&Hair);
+
+		if(HairInstanceDesc.m_hairNormalBoneIndex < (unsigned)Hair.BoneNames.Num())
+			Hair.HairMaterial->HairNormalCenter = Hair.BoneNames[HairInstanceDesc.m_hairNormalBoneIndex];
+
+		TArray<UTexture2D*> HairTextures;
+		GFSDK_HairInstanceDescriptor TmpHairInstanceDesc;
+		Hair.HairMaterial->SyncHairDescriptor(TmpHairInstanceDesc, HairTextures, false);	// To keep textures.
+
+		Hair.HairMaterial->SyncHairDescriptor(HairInstanceDesc, HairTextures, true);
+	}
+}
+
+UObject* UHairWorksFactory::FactoryCreateBinary(
+	UClass*				Class,
+	UObject*			InParent,
+	FName				Name,
+	EObjectFlags		Flags,
+	UObject*			Context,
+	const TCHAR*		FileType,
+	const uint8*&		Buffer,
+	const uint8*			BufferEnd,
+	FFeedbackContext*	Warn
+	)
+{
+	FEditorDelegates::OnAssetPreImport.Broadcast(this, Class, InParent, Name, FileType);
+
+	// Create real hair asset to get basic asset information
+	auto HairAssetId = GFSDK_HairAssetID_NULL;
+	
+	GHairWorksSDK->LoadHairAssetFromMemory(Buffer, BufferEnd - Buffer, &HairAssetId, nullptr, &GHairWorksConversionSettings);
+	if(HairAssetId == GFSDK_HairAssetID_NULL)
+	{
+		FEditorDelegates::OnAssetPostImport.Broadcast(this, nullptr);
+		return nullptr;
+	}
+
+	// Create UHairWorksAsset
+	auto* Hair = NewNamedObject<UHairWorksAsset>(InParent, Name, Flags);
+
+	// Initialize hair
+	InitHairAssetInfo(*Hair, HairAssetId);
+
+	// Clear temporary hair asset
+	GHairWorksSDK->FreeHairAsset(HairAssetId);
+
+	// Setup import data
+	Hair->AssetImportData = NewObject<UAssetImportData>(Hair);
+	Hair->AssetImportData->Update(UFactory::CurrentFilename);
+
+	// Set data
+	Hair->AssetData.Append(Buffer, BufferEnd - Buffer);
+
+	FEditorDelegates::OnAssetPostImport.Broadcast(this, Hair);
+
+	return Hair;
+}
+
+bool UHairWorksFactory::CanReimport(UObject* Obj, TArray<FString>& OutFilenames)
+{
+	if(GHairWorksSDK == nullptr)
+		return false;
+
+	auto* Hair = Cast<UHairWorksAsset>(Obj);
+	if (Hair == nullptr)
+		return false;
+
+	Hair->AssetImportData->ExtractFilenames(OutFilenames);
+
+	return true;
+}
+
+void UHairWorksFactory::SetReimportPaths(UObject* Obj, const TArray<FString>& NewReimportPaths)
+{
+	auto* Hair = Cast<UHairWorksAsset>(Obj);
+	if(Hair != nullptr && ensure(NewReimportPaths.Num() == 1))
+	{
+		Hair->AssetImportData->UpdateFilenameOnly(NewReimportPaths[0]);
+	}
+}
+
+EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
+{
+	// Finish render thread work.
+	FlushRenderingCommands();
+
+	// Validate asset
+	auto* Hair = Cast<UHairWorksAsset>(Obj);
+	if (Hair == nullptr)
+		return EReimportResult::Failed;
+
+	// Create new hair asset
+	check(GHairWorksSDK != nullptr);
+
+	auto NewHairAssetId = GFSDK_HairAssetID_NULL;
+	{	
+		// Load file
+		TArray<uint8> FileData;
+		if(!FFileHelper::LoadFileToArray(FileData, *Hair->AssetImportData->GetFirstFilename()))
+		{
+			UE_LOG(LogEditorFactories, Error, TEXT("Can't load file [%s]"), *Hair->AssetImportData->GetFirstFilename());
+			return EReimportResult::Failed;
+		}
+
+		// Create HairWorks asset
+		GHairWorksSDK->LoadHairAssetFromMemory(FileData.GetData(), FileData.Num(), &NewHairAssetId, nullptr, &GHairWorksConversionSettings);
+		if(NewHairAssetId == GFSDK_HairAssetID_NULL)
+		{
+			UE_LOG(LogEditorFactories, Error, TEXT("Can't create Hair asset"));
+			return EReimportResult::Failed;
+		}
+	}
+
+	// Create target hair that we will copy things to
+	auto TgtHairAssetId = Hair->AssetId;
+	Hair->AssetId = GFSDK_HairAssetID_NULL;	// HairWorks asset must be recreated.
+	if(TgtHairAssetId == GFSDK_HairAssetID_NULL)
+	{
+		GHairWorksSDK->LoadHairAssetFromMemory(Hair->AssetData.GetData(), Hair->AssetData.Num(), &TgtHairAssetId, nullptr, &GHairWorksConversionSettings);
+	}
+
+	check(TgtHairAssetId != GFSDK_HairAssetID_NULL);
+
+	// Copy asset content
+	GFSDK_HairInstanceDescriptor NewInstanceDesc;
+	{
+		GHairWorksSDK->CopyInstanceDescriptorFromAsset(NewHairAssetId, NewInstanceDesc);
+
+		GFSDK_HairAssetCopySettings CopySettings;
+		CopySettings.m_copyAll = false;
+		CopySettings.m_copyCollision = Hair->bCollisions;
+		CopySettings.m_copyConstraints = Hair->bConstraints;
+		CopySettings.m_copyGroom = Hair->bGroom;
+		CopySettings.m_copyTextures = Hair->bTextures;
+		GHairWorksSDK->CopyAsset(NewHairAssetId, TgtHairAssetId, CopySettings);
+
+		// Finished copy. Clear.
+		GHairWorksSDK->FreeHairAsset(NewHairAssetId);
+		NewHairAssetId = GFSDK_HairAssetID_NULL;
+	}
+
+	// Initialize hair
+	InitHairAssetInfo(*Hair, TgtHairAssetId, &NewInstanceDesc);
+
+	// Stream the updated HairWorks asset to asset data.
+	{
+		void* HairAssetData = nullptr;
+		uint32 HairAssetDataSize = 0;
+
+		gfsdk_new_delete_t CustomAllocator;
+		CustomAllocator.new_ = [](size_t Size)->void*
+		{return FMemory::Malloc(Size); };
+		CustomAllocator.delete_ = [](void* Memory)
+		{FMemory::Free(Memory); };
+
+		GHairWorksSDK->SaveHairAssetToMemory(HairAssetData, HairAssetDataSize, &CustomAllocator, true, TgtHairAssetId);
+
+		// Set data to hair
+		Hair->AssetData.Empty(HairAssetDataSize);
+		Hair->AssetData.Append(static_cast<uint8*>(HairAssetData), HairAssetDataSize);
+
+		// Clear memory
+		FMemory::Free(HairAssetData);
+		HairAssetData = nullptr;
+
+		// Finished streaming. Clear.
+		GHairWorksSDK->FreeHairAsset(TgtHairAssetId);
+		TgtHairAssetId = GFSDK_HairAssetID_NULL;
+	}
+
+	// Notify components the change.
+	for (TObjectIterator<UHairWorksComponent> It; It; ++It)
+	{
+		if(It->HairInstance.Hair != Hair)
+			continue;
+
+		It->RecreateRenderState_Concurrent();
+	}
+
+	// Mark package dirty.
+	(Obj->GetOuter() ? Obj->GetOuter() : Obj)->MarkPackageDirty();
+
+	return EReimportResult::Succeeded;
+}
+// @third party code - END HairWorks
 
 /*------------------------------------------------------------------------------
 	UBlendSpaceFactoryNew.

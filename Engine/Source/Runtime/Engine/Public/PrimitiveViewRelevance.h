@@ -42,6 +42,10 @@ struct FPrimitiveViewRelevance
 	// The primitive has one or more elements that have World Position Offset.
 	uint32 bHasWorldPositionOffset : 1;
 	uint32 bUsesGlobalDistanceField : 1;
+	// @third party code - BEGIN HairWorks
+	/** The primitive is a HairWorks instance. */
+	uint32 bHairWorks : 1;
+	// @third party code - END HairWorks
 
 	/** 
 	 * Whether this primitive view relevance has been initialized this frame.  
@@ -74,7 +78,10 @@ struct FPrimitiveViewRelevance
 		bNormalTranslucencyRelevance(false),		
 		bHasWorldPositionOffset(false),
 		bUsesGlobalDistanceField(false),
-		bInitializedThisFrame(false)
+		bInitializedThisFrame(false),
+		// @third party code - BEGIN HairWorks
+		bHairWorks(false)
+		// @third party code - END HairWorks
 	{}
 
 	/** Bitwise OR operator.  Sets any relevance bits which are present in either FPrimitiveViewRelevance. */

@@ -9,6 +9,9 @@
 #include "TextureLayout.h"
 #include "LightPropagationVolume.h"
 #include "SceneUtils.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 static TAutoConsoleVariable<float> CVarCSMShadowDepthBias(
 	TEXT("r.Shadow.CSMDepthBias"),
@@ -1376,6 +1379,13 @@ void FProjectedShadowInfo::RenderDepthDynamic(FRHICommandList& RHICmdList, FScen
 		const FMeshBatch& MeshBatch = *MeshBatchAndRelevance.Mesh;
 		FShadowDepthDrawingPolicyFactory::DrawDynamicMesh(RHICmdList, *FoundView, Context, MeshBatch, false, true, MeshBatchAndRelevance.PrimitiveSceneProxy, MeshBatch.BatchHitProxyId);
 	}
+
+	// @third party code - BEGIN HairWorks
+	// Draw hairs.
+	checkSlow(RHICmdList.IsImmediate());
+	if(RHICmdList.IsImmediate())
+		HairWorksRenderer::RenderShadow(static_cast<FRHICommandListImmediate&>(RHICmdList), *this, SubjectPrimitives, *FoundView);
+	// @third party code - END HairWorks
 }
 
 class FDrawShadowMeshElementsThreadTask
@@ -1966,7 +1976,11 @@ static void SetShadowProjectionShaderTemplNew(FRHICommandList& RHICmdList, int32
 	}
 }
 
-void FProjectedShadowInfo::RenderProjection(FRHICommandListImmediate& RHICmdList, int32 ViewIndex, const FViewInfo* View, bool bForwardShading) const
+void FProjectedShadowInfo::RenderProjection(FRHICommandListImmediate& RHICmdList, int32 ViewIndex, const FViewInfo* View, bool bForwardShading
+	// @third party code - BEGIN HairWorks
+	, bool bHairPass
+	// @third party code - END HairWorks
+	) const
 {
 #if WANTS_DRAW_MESH_EVENTS
 	FString EventName;
@@ -1990,6 +2004,9 @@ void FProjectedShadowInfo::RenderProjection(FRHICommandListImmediate& RHICmdList
 
 	if (CascadeSettings.bRayTracedDistanceField)
 	{
+		// @third party code - BEGIN HairWorks
+		check(!bHairPass);
+		// @third party code - END HairWorks
 		RenderRayTracedDistanceFieldProjection(RHICmdList, *View);
 		return;
 	}
@@ -2071,8 +2088,10 @@ void FProjectedShadowInfo::RenderProjection(FRHICommandListImmediate& RHICmdList
 	
 	bool bDepthBoundsTestEnabled = false;
 
-	// If this is a preshadow, mask the projection by the receiver primitives.
-	if (bPreShadow || bSelfShadowOnly)
+	// If this is a pre-shadow, mask the projection by the receiver primitives.
+	// @third party code - BEGIN HairWorks
+	if((bPreShadow || bSelfShadowOnly)&& !bHairPass)	// For hairs, we use the same method of dynamic shadow to handle pre-shadow.
+	// @third party code - END HairWorks
 	{
 		SCOPED_DRAW_EVENTF(RHICmdList, EventMaskSubjects, TEXT("Stencil Mask Subjects"));
 
@@ -2882,6 +2901,19 @@ bool FDeferredShadingSceneRenderer::RenderOnePassPointLightShadows(FRHICommandLi
 			}
 
 			{
+				// @third party code - BEGIN HairWorks
+				bool bHairPass = false;
+
+			RenderForHair:
+				SCOPED_CONDITIONAL_DRAW_EVENT(RHICmdList, ShadowProjectionForHair, bHairPass);
+
+				if(bHairPass)
+				{
+					FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+					FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+				}
+				// @third party code - END HairWorks
+
 				SceneContext.BeginRenderingLightAttenuation(RHICmdList);
 
 				SCOPED_DRAW_EVENT(RHICmdList, ShadowProjectionOnOpaque);
@@ -2892,11 +2924,19 @@ bool FDeferredShadingSceneRenderer::RenderOnePassPointLightShadows(FRHICommandLi
 
 					const FViewInfo& View = Views[ViewIndex];
 
+					// @third party code - BEGIN HairWorks
+					if(bHairPass && !ProjectedShadowInfo->ShouldRenderForHair(View))
+						continue;
+					// @third party code - END HairWorks
+
 					// Set the device viewport for the view.
 					RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
 					
 					if (ProjectedShadowInfo->CascadeSettings.bRayTracedDistanceField)
 					{
+						// @third party code - BEGIN HairWorks
+						check(!bHairPass);
+						// @third party code - END HairWorks
 						ProjectedShadowInfo->RenderRayTracedDistanceFieldProjection(RHICmdList, View);
 					}
 					else
@@ -2904,6 +2944,20 @@ bool FDeferredShadingSceneRenderer::RenderOnePassPointLightShadows(FRHICommandLi
 						ProjectedShadowInfo->RenderOnePassPointLightProjection(RHICmdList, ViewIndex, View);
 					}
 				}
+
+				// @third party code - BEGIN HairWorks
+				if(bHairPass)
+				{
+					FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+					FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+				}
+
+				if(!bHairPass && !ProjectedShadowInfo->CascadeSettings.bRayTracedDistanceField && HairWorksRenderer::ViewsHasHair(Views))
+				{
+					bHairPass = true;
+					goto RenderForHair;
+				}
+				// @third party code - END HairWorks
 			}
 
 			// Don't inject shadowed lighting with whole scene shadows used for previewing a light with static shadows,
@@ -2932,7 +2986,20 @@ void FSceneRenderer::RenderProjections(
 	)
 {
 	FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
-	
+
+	// @third party code - BEGIN HairWorks
+	bool bHairPass = false;
+
+RenderForHair:
+	SCOPED_CONDITIONAL_DRAW_EVENT(RHICmdList, RenderForHair, bHairPass);
+
+	if(bHairPass)
+	{
+		FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+		FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+	}
+	// @third party code - END HairWorks
+
 	if (bForwardShading)
 	{
 		SceneContext.BeginRenderingSceneColor(RHICmdList, ESimpleRenderTargetMode::EExistingColorAndDepth, FExclusiveDepthStencil::DepthRead_StencilWrite);
@@ -2964,7 +3031,19 @@ void FSceneRenderer::RenderProjections(
 				// Only project the shadow if it's large enough in this particular view (split screen, etc... may have shadows that are large in one view but irrelevantly small in others)
 				if (ProjectedShadowInfo->FadeAlphas[ViewIndex] > 1.0f / 256.0f)
 				{
-					ProjectedShadowInfo->RenderProjection(RHICmdList, ViewIndex, &View, bForwardShading);
+					// @third party code - BEGIN HairWorks
+					if(bHairPass)
+					{
+						if(ProjectedShadowInfo->CascadeSettings.bRayTracedDistanceField || !ProjectedShadowInfo->ShouldRenderForHair(View))
+							continue;
+					}
+					// @third party code - END HairWorks
+
+					ProjectedShadowInfo->RenderProjection(RHICmdList, ViewIndex, &View, bForwardShading
+						// @third party code - BEGIN HairWorks
+						, bHairPass
+						// @third party code - END HairWorks
+						);
 					if (!bForwardShading)
 					{
 						GRenderTargetPool.VisualizeTexture.SetCheckPoint(RHICmdList, SceneContext.GetLightAttenuation());
@@ -2976,7 +3055,104 @@ void FSceneRenderer::RenderProjections(
 		// Reset the scissor rectangle.
 		RHICmdList.SetScissorRect(false, 0, 0, 0, 0);
 	}
+
+	// @third party code - BEGIN HairWorks
+	if(bHairPass)
+	{
+		FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+		FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+	}
+
+	if(!bHairPass && HairWorksRenderer::ViewsHasHair(Views))
+	{
+		bHairPass = true;
+		goto RenderForHair;
+	}
+	// @third party code - END HairWorks
 }
+
+// @third party code - BEGIN HairWorks
+bool FProjectedShadowInfo::ShouldRenderForHair(const FViewInfo& View)const
+{
+	// If no hair is visible, skip. Also skip self shadow.
+	if(!View.VisibleHairs.Num() || bSelfShadowOnly)
+		return false;
+
+	static TAutoConsoleVariable<int> CVarHairCullDynamicShadow(TEXT("r.HairWorks.CullDynamicShadow"), 1, TEXT(""), ECVF_RenderThreadSafe);
+
+	// Check for point light
+	if(CascadeSettings.bOnePassPointLightShadow)
+	{
+		if(CascadeSettings.bRayTracedDistanceField)
+		{
+			if(CVarHairCullDynamicShadow.GetValueOnRenderThread() == 0)
+				return true;
+
+			for(auto* PrimitiveInfo : View.VisibleHairs)	// This may not be efficient if there are too many hairs.
+			{
+				auto& HairBounds = PrimitiveInfo->Proxy->GetBounds();
+
+				if(ShadowBounds.Intersects(HairBounds.GetSphere()))
+					return true;
+			}
+
+			return false;
+		}
+		else
+		{
+			for(auto* PrimitiveSceneInfo : SubjectPrimitives)
+			{
+				auto& ViewRelevance = View.PrimitiveViewRelevanceMap[PrimitiveSceneInfo->GetIndex()];
+				if(ViewRelevance.bHairWorks)
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	// Check pre-shadow. Whether any hair is receiver.
+	if(bPreShadow)
+	{
+		for(auto* PrimitiveSceneInfo : ReceiverPrimitives)
+		{
+			auto& ViewRelevance = View.PrimitiveViewRelevanceMap[PrimitiveSceneInfo->GetIndex()];
+			if(ViewRelevance.bHairWorks)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+	// Check dynamic shadow. Whether receiver frustum touches any visible hairs.This may not be efficient if there are too many hairs.
+	else
+	{
+		if(CVarHairCullDynamicShadow.GetValueOnRenderThread() == 0)
+			return true;
+
+		for(auto* PrimitiveInfo : View.VisibleHairs)
+		{
+			auto& HairBounds = PrimitiveInfo->Proxy->GetBounds();
+
+			if(bWholeSceneShadow && bDirectionalLight && !CascadeSettings.bRayTracedDistanceField)
+			{
+				if(CascadeSettings.ShadowBoundsAccurate.IntersectBox(HairBounds.Origin, HairBounds.BoxExtent))
+					return true;
+			}
+			else
+			{
+				if(ReceiverFrustum.IntersectBox(HairBounds.Origin + PreShadowTranslation, HairBounds.BoxExtent))
+					return true;
+			}
+		}
+
+		return false;
+	}
+}
+// @third party code - END HairWorks
 
 // Sort by descending resolution
 struct FCompareFProjectedShadowInfoByResolution

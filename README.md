@@ -1,3 +1,10 @@
+HairWorks
+=============
+
+Welcome to the HairWorks UE4 integration!
+
+Please see HairWorks.html in the root directory for more information.
+
 Unreal Engine
 =============
 

@@ -365,6 +365,19 @@ FDynamicRHI* FD3D11DynamicRHIModule::CreateRHI()
 void FD3D11DynamicRHI::Init()
 {
 	InitD3DDevice();
+
+	// @third party code - BEGIN HairWorks
+	// Initialize HairWorks
+	static auto HairGetSrvFromTexture = [](FRHITexture2D* Texture)->ID3D11ShaderResourceView*
+	{
+		auto* D3D11Texture = static_cast<TD3D11Texture2D<FD3D11BaseTexture2D>*>(Texture);
+		return D3D11Texture ? D3D11Texture->GetShaderResourceView() : nullptr;
+	};
+
+	ENGINE_API void HairWorksInitialize(ID3D11Device*, ID3D11DeviceContext*, ID3D11ShaderResourceView* (*)(FRHITexture2D*));
+
+	HairWorksInitialize(GetDevice(), GetDeviceContext(), HairGetSrvFromTexture);
+	// @third party code - END HairWorks
 }
 
 void FD3D11DynamicRHI::InitD3DDevice()

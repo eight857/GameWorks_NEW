@@ -106,6 +106,9 @@
 #include "CaptureResolutionCustomization.h"
 #include "TextCustomization.h"
 #include "ImportantToggleSettingCustomization.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksDetails.h"
+// @third party code - END HairWorks
 
 IMPLEMENT_MODULE( FDetailCustomizationsModule, DetailCustomizations );
 
@@ -306,6 +309,10 @@ void FDetailCustomizationsModule::RegisterObjectCustomizations()
 
 	RegisterCustomClassLayout("AnalyticsPrivacySettings", FOnGetDetailCustomizationInstance::CreateStatic(&FImportantToggleSettingCustomization::MakeInstance));
 	RegisterCustomClassLayout("EndUserSettings", FOnGetDetailCustomizationInstance::CreateStatic(&FImportantToggleSettingCustomization::MakeInstance));
+
+	// @third party code - BEGIN HairWorks
+	RegisterCustomClassLayout("HairWorksMaterial", FOnGetDetailCustomizationInstance::CreateStatic(&FHairWorksMaterialDetails::MakeInstance));
+	// @third party code - END HairWorks
 }
 
 

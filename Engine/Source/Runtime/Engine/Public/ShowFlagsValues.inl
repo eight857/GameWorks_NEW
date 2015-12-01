@@ -290,6 +290,10 @@ SHOWFLAG_ALWAYS_ACCESSIBLE(VisualizeSenses, SFG_Advanced, LOCTEXT("VisualizeSens
 SHOWFLAG_FIXED_IN_SHIPPING(VisualizeBloom, 0, SFG_Visualize, LOCTEXT("VisualizeBloom", "Bloom"))
 /** Visualize LOD Coloration */
 SHOWFLAG_FIXED_IN_SHIPPING(LODColoration, 0, SFG_Hidden, LOCTEXT("VisualizeLODColoration", "Visualize LOD Coloration"))
+// @third party code - BEGIN HairWorks
+/** Render hair */
+SHOWFLAG_ALWAYS_ACCESSIBLE(HairWorks, SFG_Advanced, LOCTEXT("HairWorks", "HairWorks"))
+// @third party code - END HairWorks
 
 #undef SHOWFLAG_ALWAYS_ACCESSIBLE
 #undef SHOWFLAG_FIXED_IN_SHIPPING

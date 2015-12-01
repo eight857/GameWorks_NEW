@@ -150,3 +150,6 @@ Saved/
 
 # Explcitly ignore Mac DS_Store files, regardless of where they are
 .DS_Store
+
+# Add HairWorks binaries.
+!/Engine/Binaries/ThirdParty/HairWorks/*
