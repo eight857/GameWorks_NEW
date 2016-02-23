@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #if UE_ENABLE_ICU
@@ -34,6 +34,7 @@ private:
 	TArray< void* > DLLHandles;
 
 	TMap<FString, FCultureRef> CachedCultures;
+	FCriticalSection CachedCulturesCS;
 
 	static UBool OpenDataFile(const void* context, void** fileContext, void** contents, const char* path);
 	static void CloseDataFile(const void* context, void* const fileContext, void* const contents);

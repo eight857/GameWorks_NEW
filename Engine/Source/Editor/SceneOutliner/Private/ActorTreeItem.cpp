@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "SceneOutlinerPrivatePCH.h"
 #include "SSceneOutliner.h"
@@ -46,7 +46,7 @@ FDragValidationInfo FActorDropTarget::ValidateDrop(FDragDropPayload& DraggedObje
 		{
 			if (bCanAttach)
 			{
-				if (DragActor->ParentComponentActor.Get())
+				if (DragActor->IsChildActor())
 				{
 					AttachErrorMsg = FText::Format(LOCTEXT("Error_AttachChildActor", "Cannot move {0} as it is a child actor."), FText::FromString(DragActor->GetActorLabel()));
 					bCanAttach = bDraggedOntoAttachmentParent = false;

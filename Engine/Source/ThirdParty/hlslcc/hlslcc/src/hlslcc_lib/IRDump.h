@@ -1,7 +1,9 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #ifndef IRDUMP_H
 #define IRDUMP_H
+
+#include "CustomStdAllocator.h"
 
 extern void IRDump( struct exec_list* ir, struct _mesa_glsl_parse_state* State = 0, const char* Header = "");
 extern void IRDump(ir_instruction* ir);
@@ -50,12 +52,12 @@ public:
 private:
    void PrintID( ir_instruction* ir );
    void PrintType( const glsl_type* Type );
-   std::string GetVarName( ir_variable* var );
+   FCustomStdString GetVarName( ir_variable* var );
    void PrintBlockWithScope( exec_list& ir );
-   typedef std::map<ir_variable*, std::string> TNameMap;
+   typedef std::map<ir_variable*, FCustomStdString> TNameMap;
    TNameMap NameMap;
 
-   typedef std::set<std::string> TNameSet;
+   typedef std::set<FCustomStdString> TNameSet;
    TNameSet UniqueNames;
 
    typedef std::set<ir_variable*> TVarSet;

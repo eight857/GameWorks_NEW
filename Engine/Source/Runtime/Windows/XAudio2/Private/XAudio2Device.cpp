@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	XeAudioDevice.cpp: Unreal XAudio2 Audio interface object.
@@ -57,8 +57,6 @@ XAUDIO2_DEVICE_DETAILS FXAudioDeviceProperties::DeviceDetails;
 
 #define DEBUG_XAUDIO2 0
 
-FSpatializationHelper FXAudio2Device::SpatializationHelper;
-
 bool FXAudio2Device::InitializeHardware()
 {
 	if (IsRunningDedicatedServer())
@@ -75,7 +73,7 @@ bool FXAudio2Device::InitializeHardware()
 	// Load ogg and vorbis dlls if they haven't been loaded yet
 	LoadVorbisLibraries();
 
-	SampleRate = 0;
+	SampleRate = UE4_XAUDIO2_SAMPLERATE;
 
 #if PLATFORM_WINDOWS
 	bComInitialized = FWindowsPlatformMisc::CoInitialize();
@@ -119,17 +117,18 @@ bool FXAudio2Device::InitializeHardware()
 	if( DeviceCount < 1 )
 	{
 		UE_LOG(LogInit, Log, TEXT( "No audio devices found!" ) );
+		DeviceProperties->XAudio2->Release();
 		DeviceProperties->XAudio2 = nullptr;
 		return( false );		
 	}
 
-	// Get the details of the default device 0
-	if( !ValidateAPICall(TEXT("GetDeviceDetails"),
+	// Get the details of the desired device index (0 is default)
+	if (!ValidateAPICall(TEXT("GetDeviceDetails"),
 		DeviceProperties->XAudio2->GetDeviceDetails(0, &FXAudioDeviceProperties::DeviceDetails)))
 	{
-		UE_LOG(LogInit, Log, TEXT( "Failed to get DeviceDetails for XAudio2" ) );
+		UE_LOG(LogInit, Log, TEXT("Failed to get DeviceDetails for XAudio2"));
 		DeviceProperties->XAudio2 = nullptr;
-		return( false );
+		return(false);
 	}
 
 #if DEBUG_XAUDIO2
@@ -165,7 +164,7 @@ bool FXAudio2Device::InitializeHardware()
 
 	// Create the final output voice with either 2 or 6 channels
 	if (!ValidateAPICall(TEXT("CreateMasteringVoice"), 
-		DeviceProperties->XAudio2->CreateMasteringVoice(&DeviceProperties->MasteringVoice, FXAudioDeviceProperties::NumSpeakers, SampleRate, 0, 0, NULL)))
+		DeviceProperties->XAudio2->CreateMasteringVoice(&DeviceProperties->MasteringVoice, FXAudioDeviceProperties::NumSpeakers, SampleRate, 0, 0, nullptr)))
 	{
 		UE_LOG(LogInit, Warning, TEXT( "Failed to create the mastering voice for XAudio2" ) );
 		DeviceProperties->XAudio2 = nullptr;
@@ -182,7 +181,7 @@ bool FXAudio2Device::InitializeHardware()
 	}
 #endif	//XAUDIO_SUPPORTS_DEVICE_DETAILS
 
-	SpatializationHelper.Init();
+	DeviceProperties->SpatializationHelper.Init();
 
 	// Initialize permanent memory stack for initial & always loaded sound allocations.
 	if( CommonAudioPoolSize )
@@ -218,14 +217,6 @@ void FXAudio2Device::TeardownHardware()
 
 void FXAudio2Device::UpdateHardware()
 {
-	if (Listeners.Num() > 0)
-	{
-		// Caches the matrix used to transform a sounds position into local space so we can just look
-		// at the Y component after normalization to determine spatialization.
-		const FVector Up = Listeners[0].GetUp();
-		const FVector Right = Listeners[0].GetFront();
-		InverseTransform = FMatrix(Up, Right, Up ^ Right, Listeners[0].Transform.GetTranslation()).InverseFast();
-	}
 }
 
 FAudioEffectsManager* FXAudio2Device::CreateEffectsManager()

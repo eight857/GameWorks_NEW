@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 
 #ifndef __MainFrameActions_h__
@@ -180,6 +180,9 @@ public:
 	/** Refresh the project in the current IDE */
 	static void RefreshCodeProject();
 
+	/** Determines whether the project is a code project */
+	static bool IsCodeProject();
+
 	/** Opens an IDE to edit c++ code */
 	static void OpenIDE();
 
@@ -281,6 +284,8 @@ private:
 
 	// Handles clicking the packager notification item's Cancel button.
 	static void HandleUatCancelButtonClicked( TSharedPtr<FMonitoredProcess> PackagerProcess );
+
+	static void HandleUatCancelButtonClicked(TWeakPtr<FMonitoredProcess> PackagerProcess);
 
 	// Handles clicking the hyper link on a packager notification item.
 	static void HandleUatHyperlinkNavigate( );

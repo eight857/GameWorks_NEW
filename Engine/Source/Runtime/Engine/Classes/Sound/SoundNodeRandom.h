@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
  
 #pragma once
@@ -55,12 +55,13 @@ class USoundNodeRandom : public USoundNode
 #endif //WITH_EDITORONLY_DATA
 
 public:
-	// Begin UObject Interface
+	//~ Begin UObject Interface
 	virtual void PostLoad() override;
-	// End UObject Interface
+	//~ End UObject Interface
 
-	// Begin USoundNode interface.
+	//~ Begin USoundNode Interface.
 	virtual void ParseNodes( FAudioDevice* AudioDevice, const UPTRINT NodeWaveInstanceHash, FActiveSound& ActiveSound, const FSoundParseParameters& ParseParams, TArray<FWaveInstance*>& WaveInstances ) override;
+	virtual int32 GetNumSounds(const UPTRINT NodeWaveInstanceHash, FActiveSound& ActiveSound) const;
 	virtual int32 GetMaxChildNodes() const override 
 	{ 
 		return MAX_ALLOWED_CHILD_NODES; 
@@ -73,7 +74,7 @@ public:
 	virtual void OnBeginPIE(const bool bIsSimulating) override;
 #endif //WITH_EDITOR
 	virtual void CreateStartingConnectors( void ) override;
-	// End USoundNode interface.
+	//~ End USoundNode Interface.
 
 	// @todo document
 	void FixWeightsArray( void );
@@ -84,6 +85,9 @@ public:
 #if WITH_EDITOR
 	void UpdatePIEHiddenNodes();
 #endif //WITH_EDITOR
+
+	int32 ChooseNodeIndex(FActiveSound& ActiveSound);
+
 };
 
 

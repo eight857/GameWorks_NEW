@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "EnginePrivate.h"
 #include "PhysicsPublic.h"
@@ -274,7 +274,7 @@ FConstraintInstance::FConstraintInstance()
 	AngularBreakThreshold = 500.0f;
 
 	ProjectionLinearTolerance = 5.f; // Linear projection when error > 5 cm
-	ProjectionAngularTolerance = 180.f;// Angular projection when error > 10 degrees
+	ProjectionAngularTolerance = 180.f; // Angular projection when error > 180 degrees
 }
 
 void FConstraintInstance::SetDisableCollision(bool InDisableCollision)
@@ -359,7 +359,14 @@ bool GetPActors_AssumesLocked(const FBodyInstance* Body1, const FBodyInstance* B
 	// Do not create joint unless one of the actors is dynamic
 	if ((!PActor1 || !PActor1->isRigidBody()) && (!PActor2 || !PActor2->isRigidBody()))
 	{
-		UE_LOG(LogPhysics, Log, TEXT("Attempting to create a joint between actors that are static.  No joint created."));
+		UE_LOG(LogPhysics, Warning, TEXT("Attempting to create a joint between actors that are static.  No joint created."));
+		return false;
+	}
+
+	if(PActor1 == PActor2)
+	{
+		const UPrimitiveComponent* PrimComp = Body1->OwnerComponent.Get();
+		UE_LOG(LogPhysics, Warning, TEXT("Attempting to create a joint between the same actor (%s)"), *PrimComp->GetReadableName());
 		return false;
 	}
 

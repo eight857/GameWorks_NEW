@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "HMDPrivatePCH.h"
 #include "GearVR.h"
@@ -8,6 +8,7 @@
 #include "Android/AndroidApplication.h"
 #include "RHIStaticStates.h"
 #include "SceneViewport.h"
+//#include "Android/AndroidEGL.h"
 
 #if GEARVR_SUPPORTED_PLATFORMS
 #include "VrApi_Helpers.h"
@@ -203,8 +204,11 @@ bool FGearVR::OnStartGameFrame( FWorldContext& WorldContext )
 
 	if (OCFlags.bResumed && CurrentSettings->IsStereoEnabled() && pGearVRBridge && pGearVRBridge->IsTextureSetCreated())
 	{
-		// re-enter VR mode if necessary
-		EnterVRMode();
+		if (!HasValidOvrMobile())
+		{
+			// re-enter VR mode if necessary
+			EnterVRMode();
+		}
 	}
 	CurrentFrame->GameThreadId = gettid();
 
@@ -438,7 +442,7 @@ bool FGearVR::Exec( UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar )
 FString FGearVR::GetVersionString() const
 {
 	FString VerStr = ANSI_TO_TCHAR(vrapi_GetVersionString());
-	FString s = FString::Printf(TEXT("%s, VrLib: %s, built %s, %s"), *GEngineVersion.ToString(), *VerStr,
+	FString s = FString::Printf(TEXT("%s, VrLib: %s, built %s, %s"), *FEngineVersion::Current().ToString(), *VerStr,
 		UTF8_TO_TCHAR(__DATE__), UTF8_TO_TCHAR(__TIME__));
 	return s;
 }
@@ -715,7 +719,7 @@ void FGearVR::SetupViewFamily(FSceneViewFamily& InViewFamily)
 {
 	InViewFamily.EngineShowFlags.MotionBlur = 0;
 	InViewFamily.EngineShowFlags.HMDDistortion = false;
-	InViewFamily.EngineShowFlags.ScreenPercentage =false;
+	InViewFamily.EngineShowFlags.ScreenPercentage = false;
 	InViewFamily.EngineShowFlags.StereoRendering = IsStereoEnabled();
 }
 
@@ -1078,6 +1082,11 @@ void FGearVR::SetCPUAndGPULevels(int32 CPULevel, int32 GPULevel)
 	CurrentSettings->GpuLevel = GPULevel;
 }
 
+bool FGearVR::HasValidOvrMobile() const
+{
+	return pGearVRBridge->OvrMobile != nullptr;
+}
+
 //////////////////////////////////////////////////////////////////////////
 FViewExtension::FViewExtension(FHeadMountedDisplay* InDelegate)
 	: FHMDViewExtension(InDelegate)
@@ -1087,6 +1096,10 @@ FViewExtension::FViewExtension(FHeadMountedDisplay* InDelegate)
 	auto GearVRHMD = static_cast<FGearVR*>(InDelegate);
 	pPresentBridge = GearVRHMD->pGearVRBridge;
 }
+
+//////////////////////////////////////////////////////////////////////////
+
+#endif //GEARVR_SUPPORTED_PLATFORMS
 
 void FGearVRPlugin::StartOVRGlobalMenu() const 
 {
@@ -1207,6 +1220,7 @@ bool FGearVRPlugin::AreHeadPhonesPluggedIn() const
 
 void FGearVRPlugin::SetLoadingIconTexture(FTextureRHIRef InTexture)
 {
+#if GEARVR_SUPPORTED_PLATFORMS
 	check(IsInGameThread());
 	IHeadMountedDisplay* HMD = GEngine->HMDDevice.Get();
 	if (HMD && HMD->GetHMDDeviceType() == EHMDDeviceType::DT_GearVR)
@@ -1215,10 +1229,12 @@ void FGearVRPlugin::SetLoadingIconTexture(FTextureRHIRef InTexture)
 
 		OculusHMD->SetLoadingIconTexture(InTexture);
 	}
+#endif //GEARVR_SUPPORTED_PLATFORMS
 }
 
 void FGearVRPlugin::SetLoadingIconMode(bool bActiveLoadingIcon)
 {
+#if GEARVR_SUPPORTED_PLATFORMS
 	check(IsInGameThread());
 	IHeadMountedDisplay* HMD = GEngine->HMDDevice.Get();
 	if (HMD && HMD->GetHMDDeviceType() == EHMDDeviceType::DT_GearVR)
@@ -1227,10 +1243,12 @@ void FGearVRPlugin::SetLoadingIconMode(bool bActiveLoadingIcon)
 
 		OculusHMD->SetLoadingIconMode(bActiveLoadingIcon);
 	}
+#endif //GEARVR_SUPPORTED_PLATFORMS
 }
 
 void FGearVRPlugin::RenderLoadingIcon_RenderThread()
 {
+#if GEARVR_SUPPORTED_PLATFORMS
 	check(IsInRenderingThread());
 	IHeadMountedDisplay* HMD = GEngine->HMDDevice.Get();
 	if (HMD && HMD->GetHMDDeviceType() == EHMDDeviceType::DT_GearVR)
@@ -1239,10 +1257,12 @@ void FGearVRPlugin::RenderLoadingIcon_RenderThread()
 
 		OculusHMD->RenderLoadingIcon_RenderThread();
 	}
+#endif //GEARVR_SUPPORTED_PLATFORMS
 }
 
 bool FGearVRPlugin::IsInLoadingIconMode() const
 {
+#if GEARVR_SUPPORTED_PLATFORMS
 	check(IsInGameThread());
 	IHeadMountedDisplay* HMD = GEngine->HMDDevice.Get();
 	if (HMD && HMD->GetHMDDeviceType() == EHMDDeviceType::DT_GearVR)
@@ -1251,8 +1271,11 @@ bool FGearVRPlugin::IsInLoadingIconMode() const
 
 		return OculusHMD->IsInLoadingIconMode();
 	}
+#endif //GEARVR_SUPPORTED_PLATFORMS
 	return false;
 }
+
+#if GEARVR_SUPPORTED_PLATFORMS
 
 #include <HeadMountedDisplayCommon.cpp>
 

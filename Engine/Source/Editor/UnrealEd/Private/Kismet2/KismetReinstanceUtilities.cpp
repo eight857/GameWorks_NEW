@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "UnrealEd.h"
 #include "Kismet2/CompilerResultsLog.h"
@@ -158,7 +158,9 @@ FBlueprintCompileReinstancer::FBlueprintCompileReinstancer(UClass* InClassToRein
 		GIsDuplicatingClassForReinstancing = true;
 		ClassToReinstance->ClassFlags |= CLASS_NewerVersionExists;
 		const FName RenistanceName = MakeUniqueObjectName(GetTransientPackage(), ClassToReinstance->GetClass(), *FString::Printf(TEXT("REINST_%s"), *ClassToReinstance->GetName()));
-		DuplicatedClass = (UClass*)StaticDuplicateObject(ClassToReinstance, GetTransientPackage(), *RenistanceName.ToString(), ~RF_Transactional); 
+		DuplicatedClass = (UClass*)StaticDuplicateObject(ClassToReinstance, GetTransientPackage(), RenistanceName, ~RF_Transactional); 
+		// If you compile a blueprint that is part of the rootset, there's no reason for the REINST version to be part of the rootset:
+		DuplicatedClass->RemoveFromRoot();
 
 		ClassToReinstance->ClassFlags &= ~CLASS_NewerVersionExists;
 		GIsDuplicatingClassForReinstancing = false;
@@ -258,6 +260,7 @@ FBlueprintCompileReinstancer::FBlueprintCompileReinstancer(UClass* InClassToRein
 		if(GeneratingBP)
 		{
 			ClassToReinstanceDefaultValuesCRC = GeneratingBP->CrcLastCompiledCDO;
+			Dependencies.Empty();
 			FBlueprintEditorUtils::GetDependentBlueprints(GeneratingBP, Dependencies);
 
 			bool const bIsLevelPackage = (UWorld::FindWorldInPackage(GeneratingBP->GetOutermost()) != nullptr);
@@ -311,8 +314,10 @@ void FBlueprintCompileReinstancer::GenerateFieldMappings(TMap<UObject*, UObject*
 
 void FBlueprintCompileReinstancer::AddReferencedObjects(FReferenceCollector& Collector)
 {
+	Collector.AllowEliminatingReferences(false);
 	Collector.AddReferencedObject(OriginalCDO);
 	Collector.AddReferencedObject(DuplicatedClass);
+	Collector.AllowEliminatingReferences(true);
 }
 
 void FBlueprintCompileReinstancer::OptionallyRefreshNodes(UBlueprint* CurrentBP)
@@ -566,7 +571,17 @@ void FBlueprintCompileReinstancer::ReinstanceObjects(bool bForceAlwaysReinstance
 	// Make sure we only reinstance classes once!
 	static TArray<TSharedRef<FBlueprintCompileReinstancer>> QueueToReinstance;
 	TSharedRef<FBlueprintCompileReinstancer> SharedThis = AsShared();
-	const bool bAlreadyQueued = QueueToReinstance.Contains(SharedThis);
+	bool bAlreadyQueued = QueueToReinstance.Contains(SharedThis);
+
+	// We may already be reinstancing this class, this happens when a dependent blueprint has a compile error and we try to reinstance the stub:
+	for (const auto& Entry : QueueToReinstance)
+	{
+		if (Entry->ClassToReinstance == SharedThis->ClassToReinstance)
+		{
+			bAlreadyQueued = true;
+		}
+	}
+
 	if (!bAlreadyQueued && !bHasReinstanced)
 	{
 		QueueToReinstance.Push(SharedThis);
@@ -590,7 +605,10 @@ void FBlueprintCompileReinstancer::ReinstanceObjects(bool bForceAlwaysReinstance
 				Iter.RemoveCurrent();
 				if (auto BP = BPPtr.Get())
 				{
-					FKismetEditorUtilities::CompileBlueprint(BP, false, bSkipGarbageCollection, false, nullptr, false, true);
+					// it's unsafe to GC in the middle of reinstancing because there may be other reinstancers still alive with references to 
+					// otherwise unreferenced classes:
+					const bool bSkipGC = true;
+					FKismetEditorUtilities::CompileBlueprint(BP, false, bSkipGC, false, nullptr, false, true);
 					CompiledBlueprints.Add(BP);
 				}
 			}
@@ -687,6 +705,8 @@ void FBlueprintCompileReinstancer::UpdateBytecodeReferences()
 				continue;
 			}
 
+			BPClass->ClearFunctionMapsCaches();
+
 			// Ensure that Animation Blueprint child class dependencies are always re-linked, as the child may reference properties generated during
 			// compilation of the parent class, which will have shifted to a TRASHCLASS Outer at this point (see UAnimBlueprintGeneratedClass::Link()).
 			if(bIsAnimBlueprintClass && BPClass->IsChildOf(ClassToReinstance))
@@ -753,7 +773,7 @@ struct FActorReplacementHelper
 	 * Runs construction scripts on the new actor and then finishes it off by
 	 * attaching it to the same attachments that its predecessor was set with. 
 	 */
-	void Finalize(const TMap<UObject*, UObject*>& OldToNewInstanceMap);
+	void Finalize(const TMap<UObject*, UObject*>& OldToNewInstanceMap, TSet<UObject*>* ObjectsThatShouldUseOldStuff, const TArray<UObject*>& ObjectsToReplace, const TMap<FStringAssetReference, UObject*>& ReinstancedObjectsWeakReferenceMap);
 
 
 private:
@@ -814,7 +834,7 @@ private:
 	TMap<FName, UActorComponent*> OldActorComponentNameMap;
 };
 
-void FActorReplacementHelper::Finalize(const TMap<UObject*, UObject*>& OldToNewInstanceMap)
+void FActorReplacementHelper::Finalize(const TMap<UObject*, UObject*>& OldToNewInstanceMap, TSet<UObject*>* ObjectsThatShouldUseOldStuff, const TArray<UObject*>& ObjectsToReplace, const TMap<FStringAssetReference, UObject*>& ReinstancedObjectsWeakReferenceMap)
 {
 	
 	// because this is an editor context it's important to use this execution guard
@@ -823,6 +843,7 @@ void FActorReplacementHelper::Finalize(const TMap<UObject*, UObject*>& OldToNewI
 	// run the construction script, which will use the properties we just copied over
 	if (NewActor->CurrentTransactionAnnotation.IsValid())
 	{
+		NewActor->CurrentTransactionAnnotation->ComponentInstanceData.FindAndReplaceInstances(OldToNewInstanceMap);
 		NewActor->RerunConstructionScripts();
 	}
 	else if (CachedActorData.IsValid())
@@ -885,6 +906,14 @@ void FActorReplacementHelper::Finalize(const TMap<UObject*, UObject*>& OldToNewI
 		}
 	}
 	GEditor->NotifyToolsOfObjectReplacement(ConstructedComponentReplacementMap);
+
+	// Make array of component subobjects that have been reinstanced as part of the new Actor.
+	TArray<UObject*> SourceObjects;
+	ConstructedComponentReplacementMap.GenerateKeyArray(SourceObjects);
+
+	// Find and replace any outstanding references to the old Actor's component subobject instances that exist outside of the old Actor instance.
+	// Note: This will typically be references held by the Editor's transaction buffer - we need to find and replace those as well since we also do this for the old->new Actor instance.
+	FReplaceReferenceHelper::FindAndReplaceReferences(SourceObjects, ObjectsThatShouldUseOldStuff, ObjectsToReplace, ConstructedComponentReplacementMap, ReinstancedObjectsWeakReferenceMap);
 	
 	// Destroy actor and clear references.
 	NewActor->Modify();
@@ -1110,7 +1139,7 @@ namespace InstancedPropertyUtils
 						{
 							// @TODO: What if the instanced object is of the same type 
 							//        that we're currently reinstancing
-							Obj = StaticDuplicateObject(OldInstancedObj, Target, nullptr);// NewObject<UObject>(Target, OldInstancedObj->GetClass()->GetAuthoritativeClass(), OldInstancedObj->GetFName());
+							Obj = StaticDuplicateObject(OldInstancedObj, Target);// NewObject<UObject>(Target, OldInstancedObj->GetClass()->GetAuthoritativeClass(), OldInstancedObj->GetFName());
 						}
 					}
 				}
@@ -1359,6 +1388,7 @@ void FBlueprintCompileReinstancer::ReplaceInstancesOfClass_Inner(TMap<UClass*, U
 							}
 						}
 
+						UWorld* RegisteredWorld = nullptr;
 						bool bWasRegistered = false;
 						if (bIsComponent)
 						{
@@ -1366,6 +1396,7 @@ void FBlueprintCompileReinstancer::ReplaceInstancesOfClass_Inner(TMap<UClass*, U
 							if (OldComponent->IsRegistered())
 							{
 								bWasRegistered = true;
+								RegisteredWorld = OldComponent->GetWorld();
 								OldComponent->UnregisterComponent();
 							}
 						}
@@ -1402,7 +1433,28 @@ void FBlueprintCompileReinstancer::ReplaceInstancesOfClass_Inner(TMap<UClass*, U
 
 							if (bWasRegistered)
 							{
-								Component->RegisterComponent();
+								if (RegisteredWorld && OwningActor == nullptr)
+								{
+									// Thumbnail components are added to a World without an actor, so we must special case their
+									// REINST to register them with the world again.
+									// The old thumbnail component is GC'd and will ensure if all it's attachments are not released
+									// @TODO: This special case can breakdown if the nature of thumbnail components changes and could
+									// use a cleanup later.
+									if (OldObject->GetOutermost() == GetTransientPackage())
+									{
+										if (USceneComponent* SceneComponent = Cast<USceneComponent>(OldObject))
+										{
+											SceneComponent->AttachChildren.Empty();
+											SceneComponent->AttachParent = nullptr;
+										}
+									}
+
+									Component->RegisterComponentWithWorld(RegisteredWorld);
+								}
+								else
+								{
+									Component->RegisterComponent();
+								}
 							}
 						}
 					}
@@ -1469,7 +1521,7 @@ void FBlueprintCompileReinstancer::ReplaceInstancesOfClass_Inner(TMap<UClass*, U
 		// FArchiveReplaceObjectRef to run construction-scripts).
 		for (FActorReplacementHelper& ReplacementActor : ReplacementActors)
 		{
-			ReplacementActor.Finalize(ObjectRemappingHelper.ReplacedObjects);
+			ReplacementActor.Finalize(ObjectRemappingHelper.ReplacedObjects, ObjectsThatShouldUseOldStuff, ObjectsToReplace, ReinstancedObjectsWeakReferenceMap);
 		}
 	}
 
@@ -1603,7 +1655,7 @@ UObject* FBlueprintCompileReinstancer::GetClassCDODuplicate(UObject* CDO, FName 
 	if (!CDODupProvider.IsBound() || (DupCDO = CDODupProvider.Execute(CDO, Name)) == nullptr)
 	{
 		GIsDuplicatingClassForReinstancing = true;
-		DupCDO = (UObject*)StaticDuplicateObject(CDO, GetTransientPackage(), *Name.ToString());
+		DupCDO = (UObject*)StaticDuplicateObject(CDO, GetTransientPackage(), Name);
 		GIsDuplicatingClassForReinstancing = false;
 	}
 
@@ -1617,18 +1669,18 @@ FBlueprintCompileReinstancer::FCDODuplicatesProvider& FBlueprintCompileReinstanc
 }
 
 FRecreateUberGraphFrameScope::FRecreateUberGraphFrameScope(UClass* InClass, bool bRecreate)
-	: Class(InClass)
+	: RecompiledClass(InClass)
 {
-	if (bRecreate && ensure(Class))
+	if (bRecreate && ensure(RecompiledClass))
 	{
 		BP_SCOPED_COMPILER_EVENT_STAT(EKismetCompilerStats_RecreateUberGraphPersistentFrame);
 
 		const bool bIncludeDerivedClasses = true;
-		GetObjectsOfClass(Class, Objects, bIncludeDerivedClasses);
+		GetObjectsOfClass(RecompiledClass, Objects, bIncludeDerivedClasses);
 
 		for (auto Obj : Objects)
 		{
-			Class->DestroyPersistentUberGraphFrame(Obj, true);
+			RecompiledClass->DestroyPersistentUberGraphFrame(Obj, true);
 		}
 	}
 }
@@ -1640,7 +1692,7 @@ FRecreateUberGraphFrameScope::~FRecreateUberGraphFrameScope()
 	{
 		if (IsValid(Obj))
 		{
-			Class->CreatePersistentUberGraphFrame(Obj, false, true);
+			RecompiledClass->CreatePersistentUberGraphFrame(Obj, false, true);
 		}
 	}
 }

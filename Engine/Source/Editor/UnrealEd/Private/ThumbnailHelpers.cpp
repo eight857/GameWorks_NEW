@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "UnrealEd.h"
 #include "ThumbnailHelpers.h"
@@ -595,6 +595,11 @@ void FStaticMeshThumbnailScene::GetViewMatrixParameters(const float InFOVDegrees
 FAnimationThumbnailScene
 ***************************************************************
 */
+AAnimationThumbnailSkeletalMeshActor::AAnimationThumbnailSkeletalMeshActor(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UDebugSkelMeshComponent>(TEXT("SkeletalMeshComponent0")))
+{
+
+}
 
 FAnimationSequenceThumbnailScene::FAnimationSequenceThumbnailScene()
 	: FThumbnailPreviewScene()
@@ -606,7 +611,7 @@ FAnimationSequenceThumbnailScene::FAnimationSequenceThumbnailScene()
 	SpawnInfo.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnInfo.bNoFail = true;
 	SpawnInfo.ObjectFlags = RF_Transient;
-	PreviewActor = GetWorld()->SpawnActor<ASkeletalMeshActor>(SpawnInfo);
+	PreviewActor = GetWorld()->SpawnActor<AAnimationThumbnailSkeletalMeshActor>(SpawnInfo);
 
 	PreviewActor->SetActorEnableCollision(false);
 }
@@ -634,9 +639,12 @@ bool FAnimationSequenceThumbnailScene::SetAnimation(UAnimSequenceBase* InAnimati
 				// Handle posing the mesh at the middle of the animation
 				const float AnimPosition = InAnimation->SequenceLength / 2.f;
 
-				PreviewActor->GetSkeletalMeshComponent()->PlayAnimation(InAnimation,false);
-				PreviewActor->GetSkeletalMeshComponent()->Stop();
-				PreviewActor->GetSkeletalMeshComponent()->SetPosition(AnimPosition, false);
+				UDebugSkelMeshComponent* MeshComponent = CastChecked<UDebugSkelMeshComponent>(PreviewActor->GetSkeletalMeshComponent());
+
+				MeshComponent->EnablePreview(true, InAnimation, nullptr);
+				MeshComponent->Play(false);
+				MeshComponent->Stop();
+				MeshComponent->SetPosition(AnimPosition, false);
 
 				UAnimSingleNodeInstance* SingleNodeInstance = PreviewActor->GetSkeletalMeshComponent()->GetSingleNodeInstance();
 				if (SingleNodeInstance)
@@ -1061,7 +1069,7 @@ UActorComponent* FClassActorThumbnailScene::CreateComponentInstanceFromTemplate(
 	EObjectFlags FlagMask = RF_AllFlags & ~RF_ArchetypeObject;
 	if ( GetTransientPackage()->IsA(ComponentTemplate->GetClass()->ClassWithin) )
 	{
-		NewComponent = Cast<UActorComponent>( StaticDuplicateObject(ComponentTemplate, GetTransientPackage(), TEXT(""), FlagMask ) );
+		NewComponent = Cast<UActorComponent>( StaticDuplicateObject(ComponentTemplate, GetTransientPackage(), NAME_None, FlagMask ) );
 
 		USceneComponent* NewSceneComp = Cast<USceneComponent>(NewComponent);
 		if ( NewSceneComp != NULL )
@@ -1198,9 +1206,8 @@ void FBlueprintThumbnailScene::InstanceComponents(USCS_Node* CurrentNode, UScene
 		USceneComponent* ParentSceneComponentOfChildren = (NewSceneComp != NULL) ? NewSceneComp : ParentComponent;
 
 		// If we made a component, go ahead and process our children
-		for (int32 NodeIdx = 0; NodeIdx < CurrentNode->ChildNodes.Num(); NodeIdx++)
+		for (USCS_Node* Node : CurrentNode->GetChildNodes())
 		{
-			USCS_Node* Node = CurrentNode->ChildNodes[NodeIdx];
 			check(Node != NULL);
 			InstanceComponents(Node, ParentSceneComponentOfChildren, NativeInstanceMap, OutComponents, ActualBPGC);
 		}

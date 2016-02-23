@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -180,6 +180,16 @@ namespace EAppReturnType
 	};
 }
 
+/*
+ * Holds a computed SHA256 hash.
+ */
+struct CORE_API FSHA256Signature
+{
+	uint8 Signature[32];
+
+	/** Generates a hex string of the signature */
+	FString ToString() const;
+};
 
 /**
 * Generic implementation for most platforms
@@ -308,6 +318,11 @@ struct CORE_API FGenericPlatformMisc
 	 * @return primary GPU brand string
 	 */
 	static FString GetPrimaryGPUBrand();
+
+	// @param InternalDriverVersion e.g. "15.200.1062.1004"(AMD) "9.18.13.4788" (NVIDIA) for comparison
+	// @param UserDriverVersion e.g. "15.7.1"(Catalyst AMD) "9.18.13.4788" (NVIDIA) for user feedback
+	// @param DriverDate e.g. 3-13-2015
+	static void GetGPUDriverInfo(const FString DeviceDescription, FString& InternalDriverVersion, FString& UserDriverVersion, FString& DriverDate);
 
 	/**
 	 * Gets the OS Version and OS Subversion.
@@ -617,6 +632,18 @@ public:
 	static const TCHAR* GameDir();
 
 	/**
+	*	Return the CloudDir.  CloudDir can be per-user.
+	*/
+	static FString CloudDir();
+
+	/**
+	*	Return the GamePersistentDownloadDir.  
+	*	On some platforms, returns the writable directory for downloaded data that persists across play sessions.
+	*	This dir is always per-game.
+	*/
+	static const TCHAR* GamePersistentDownloadDir();
+
+	/**
 	 * Load the preinit modules required by this platform, typically they are the renderer modules
 	 */
 	static void LoadPreInitModules()
@@ -684,6 +711,18 @@ public:
 	{
 		return false;
 	}
+
+	/**
+	* Generates the SHA256 signature of the given data.
+	* 
+	*
+	* @param Data Pointer to the beginning of the data to hash
+	* @param Bytesize Size of the data to has, in bytes.
+	* @param OutSignature Output Structure to hold the computed signature. 
+	*
+	* @return whether the hash was computed successfully
+	*/
+	static bool GetSHA256Signature(const void* Data, uint32 ByteSize, FSHA256Signature& OutSignature);	
 
 	static FString GetDefaultLocale();
 

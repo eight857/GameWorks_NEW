@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "EnginePrivate.h"
 #include "BlueprintUtilities.h"
@@ -6,6 +6,7 @@
 #include "ComponentInstanceDataCache.h"
 #include "Engine/LevelScriptActor.h"
 #include "Engine/CullDistanceVolume.h"
+#include "Components/ChildActorComponent.h"
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -47,24 +48,6 @@ void AActor::SeedAllRandomStreams()
 }
 #endif //WITH_EDITOR
 
-/**  Helper function to check if the specified property is a component property */
-static bool IsComponentProperty(UProperty* Prop)
-{
-	bool bResult = false;
-	if (UObjectProperty* ObjProp = Cast<UObjectProperty>(Prop))
-	{
-		if (ObjProp->PropertyClass && ObjProp->PropertyClass->IsChildOf(UActorComponent::StaticClass()))
-		{
-			bResult = true;
-		}
-	}
-	else if (UArrayProperty* ArrayProp = Cast<UArrayProperty>(Prop))
-	{
-		bResult = IsComponentProperty(ArrayProp->Inner);
-	}
-	return bResult;
-}
-
 void AActor::ResetPropertiesForConstruction()
 {
 	// Get class CDO
@@ -99,7 +82,7 @@ void AActor::ResetPropertiesForConstruction()
 				&& bCanBeSetInBlueprints
 				&& !Prop->IsA(UDelegateProperty::StaticClass()) 
 				&& !Prop->IsA(UMulticastDelegateProperty::StaticClass())
-				&& !(Prop->ContainsInstancedObjectProperty() && IsComponentProperty(Prop))) // ContainsInstancedObjectProperty will short circuit fast if it's not a component
+				&& !Prop->ContainsInstancedObjectProperty())
 		{
 			Prop->CopyCompleteValue_InContainer(this, Default);
 		}
@@ -212,8 +195,8 @@ void AActor::RerunConstructionScripts()
 		
 		FTransform OldTransform = FTransform::Identity;
 		FName  SocketName;
-		AActor* Parent = NULL;
-		USceneComponent* ParentComponent = NULL;
+		AActor* Parent = nullptr;
+		USceneComponent* AttachParentComponent = nullptr;
 
 		bool bUseRootComponentProperties = true;
 
@@ -241,7 +224,7 @@ void AActor::RerunConstructionScripts()
 				if (Parent)
 				{
 					USceneComponent* AttachParent = ActorTransactionAnnotation->RootComponentData.AttachedParentInfo.AttachParent.Get();
-					ParentComponent = (AttachParent ? AttachParent : FindObjectFast<USceneComponent>(Parent, ActorTransactionAnnotation->RootComponentData.AttachedParentInfo.AttachParentName));
+					AttachParentComponent = (AttachParent ? AttachParent : FindObjectFast<USceneComponent>(Parent, ActorTransactionAnnotation->RootComponentData.AttachedParentInfo.AttachParentName));
 					SocketName = ActorTransactionAnnotation->RootComponentData.AttachedParentInfo.SocketName;
 					DetachRootComponentFromParent();
 				}
@@ -276,20 +259,28 @@ void AActor::RerunConstructionScripts()
 
 			for (AActor* AttachedActor : AttachedActors)
 			{
-				USceneComponent* EachRoot = AttachedActor->GetRootComponent();
-				// If the component we are attached to is about to go away...
-				if (EachRoot && EachRoot->AttachParent && EachRoot->AttachParent->IsCreatedByConstructionScript())
+				// We don't need to detach child actors, that will be handled by component tear down
+				if (!AttachedActor->ParentComponent.IsValid())
 				{
-					// Save info about actor to reattach
-					FAttachedActorInfo Info;
-					Info.AttachedActor = AttachedActor;
-					Info.AttachedToSocket = EachRoot->AttachSocketName;
-					Info.bSetRelativeTransform = false;
-					AttachedActorInfos.Add(Info);
+					USceneComponent* EachRoot = AttachedActor->GetRootComponent();
+					// If the component we are attached to is about to go away...
+					if (EachRoot && EachRoot->AttachParent && EachRoot->AttachParent->IsCreatedByConstructionScript())
+					{
+						// Save info about actor to reattach
+						FAttachedActorInfo Info;
+						Info.AttachedActor = AttachedActor;
+						Info.AttachedToSocket = EachRoot->AttachSocketName;
+						Info.bSetRelativeTransform = false;
+						AttachedActorInfos.Add(Info);
 
-					// Now detach it
-					AttachedActor->Modify();
-					EachRoot->DetachFromParent(true);
+						// Now detach it
+						AttachedActor->Modify();
+						EachRoot->DetachFromParent(true);
+					}
+				}
+				else
+				{
+					check(AttachedActor->ParentComponent->GetOwner() == this);
 				}
 			}
 		}
@@ -306,7 +297,7 @@ void AActor::RerunConstructionScripts()
 					UE_LOG(LogActor, Warning, TEXT("RerunConstructionScripts: RootComponent (%s) attached to another component in this Actor (%s)."), *RootComponent->GetPathName(), *Parent->GetPathName());
 					Parent = NULL;
 				}
-				ParentComponent = RootComponent->AttachParent;
+				AttachParentComponent = RootComponent->AttachParent;
 				SocketName = RootComponent->AttachSocketName;
 				//detach it to remove any scaling 
 				RootComponent->DetachFromParent(true);
@@ -366,13 +357,13 @@ void AActor::RerunConstructionScripts()
 		if(Parent)
 		{
 			USceneComponent* ChildRoot = GetRootComponent();
-			if (ParentComponent == NULL)
+			if (AttachParentComponent == nullptr)
 			{
-				ParentComponent = Parent->GetRootComponent();
+				AttachParentComponent = Parent->GetRootComponent();
 			}
-			if (ChildRoot != NULL && ParentComponent != NULL)
+			if (ChildRoot != nullptr && AttachParentComponent != nullptr)
 			{
-				ChildRoot->AttachTo(ParentComponent, SocketName, EAttachLocation::KeepWorldPosition);
+				ChildRoot->AttachTo(AttachParentComponent, SocketName, EAttachLocation::KeepWorldPosition);
 			}
 		}
 
@@ -380,7 +371,7 @@ void AActor::RerunConstructionScripts()
 		for(FAttachedActorInfo& Info : AttachedActorInfos)
 		{
 			// If this actor is no longer attached to anything, reattach
-			if (!Info.AttachedActor->IsPendingKill() && Info.AttachedActor->GetAttachParentActor() == NULL)
+			if (!Info.AttachedActor->IsPendingKill() && Info.AttachedActor->GetAttachParentActor() == nullptr)
 			{
 				USceneComponent* ChildRoot = Info.AttachedActor->GetRootComponent();
 				if (ChildRoot && ChildRoot->AttachParent != RootComponent)
@@ -463,7 +454,7 @@ void AActor::ExecuteConstruction(const FTransform& Transform, const FComponentIn
 					CurrentBPGClass->SimpleConstructionScript->ExecuteScriptOnActor(this, Transform, bIsDefaultTransform);
 				}
 				// Now that the construction scripts have been run, we can create timelines and hook them up
-				CurrentBPGClass->CreateComponentsForActor(this);
+				UBlueprintGeneratedClass::CreateComponentsForActor(CurrentBPGClass, this);
 			}
 
 			// If we passed in cached data, we apply it now, so that the UserConstructionScript can use the updated values
@@ -496,7 +487,7 @@ void AActor::ExecuteConstruction(const FTransform& Transform, const FComponentIn
 			}
 
 			// Bind any delegates on components			
-			((UBlueprintGeneratedClass*)GetClass())->BindDynamicDelegates(this); // We have a BP stack, we must have a UBlueprintGeneratedClass...
+			UBlueprintGeneratedClass::BindDynamicDelegates(GetClass(), this); // We have a BP stack, we must have a UBlueprintGeneratedClass...
 
 			// Apply any cached data procedural components
 			// @TODO Don't re-apply to components we already applied to above
@@ -523,6 +514,20 @@ void AActor::ExecuteConstruction(const FTransform& Transform, const FComponentIn
 				FinishAndRegisterComponent(BillboardComponent);
 			}
 		}
+	}
+	else
+	{
+		UBlueprintGeneratedClass::CreateComponentsForActor(GetClass(), this);
+#if WITH_EDITOR
+		bool bDoUserConstructionScript;
+		GConfig->GetBool(TEXT("Kismet"), TEXT("bTurnOffEditorConstructionScript"), bDoUserConstructionScript, GEngineIni);
+		if (!GIsEditor || !bDoUserConstructionScript)
+#endif
+		{
+			// Then run the user script, which is responsible for calling its own super, if desired
+			ProcessUserConstructionScript();
+		}
+		UBlueprintGeneratedClass::BindDynamicDelegates(GetClass(), this);
 	}
 
 	GetWorld()->UpdateCullDistanceVolumes(this);
@@ -568,13 +573,18 @@ void AActor::FinishAndRegisterComponent(UActorComponent* Component)
 
 UActorComponent* AActor::CreateComponentFromTemplate(UActorComponent* Template, const FString& InName)
 {
+	return CreateComponentFromTemplate(Template, FName(*InName));
+}
+
+UActorComponent* AActor::CreateComponentFromTemplate(UActorComponent* Template, const FName InName)
+{
 	UActorComponent* NewActorComp = NULL;
 	if(Template != NULL)
 	{
 		// If there is a Component with this name already (almost certainly because it is an Instance component), we need to rename it out of the way
-		if (!InName.IsEmpty())
+		if (!InName.IsNone())
 		{
-			UObject* ConflictingObject = FindObjectFast<UObject>(this, *InName);
+			UObject* ConflictingObject = FindObjectFast<UObject>(this, InName);
 			if (ConflictingObject && ConflictingObject->IsA<UActorComponent>() && CastChecked<UActorComponent>(ConflictingObject)->CreationMethod == EComponentCreationMethod::Instance)
 			{		
 				// Try and pick a good name
@@ -602,7 +612,7 @@ UActorComponent* AActor::CreateComponentFromTemplate(UActorComponent* Template, 
 		}
 
 		// Note we aren't copying the the RF_ArchetypeObject flag. Also note the result is non-transactional by default.
-		NewActorComp = (UActorComponent*)StaticDuplicateObject(Template, this, *InName, RF_AllFlags & ~(RF_ArchetypeObject|RF_Transactional|RF_WasLoaded|RF_Public|RF_InheritableComponentTemplate) );
+		NewActorComp = (UActorComponent*)StaticDuplicateObject(Template, this, InName, RF_AllFlags & ~(RF_ArchetypeObject|RF_Transactional|RF_WasLoaded|RF_Public|RF_InheritableComponentTemplate) );
 
 		NewActorComp->CreationMethod = EComponentCreationMethod::UserConstructionScript;
 
@@ -615,15 +625,22 @@ UActorComponent* AActor::CreateComponentFromTemplate(UActorComponent* Template, 
 UActorComponent* AActor::AddComponent(FName TemplateName, bool bManualAttachment, const FTransform& RelativeTransform, const UObject* ComponentTemplateContext)
 {
 	UActorComponent* Template = nullptr;
-	UBlueprintGeneratedClass* BlueprintGeneratedClass = Cast<UBlueprintGeneratedClass>((ComponentTemplateContext != nullptr) ? ComponentTemplateContext->GetClass() : GetClass());
-	while(BlueprintGeneratedClass != nullptr)
+	for (UClass* TemplateOwnerClass = (ComponentTemplateContext != nullptr) ? ComponentTemplateContext->GetClass() : GetClass()
+		; TemplateOwnerClass && !Template
+		; TemplateOwnerClass = TemplateOwnerClass->GetSuperClass())
 	{
-		Template = BlueprintGeneratedClass->FindComponentTemplateByName(TemplateName);
-		if(nullptr != Template)
+		if (auto BPGC = Cast<UBlueprintGeneratedClass>(TemplateOwnerClass))
 		{
-			break;
+			Template = BPGC->FindComponentTemplateByName(TemplateName);
 		}
-		BlueprintGeneratedClass = Cast<UBlueprintGeneratedClass>(BlueprintGeneratedClass->GetSuperClass());
+		else if (auto DynamicClass = Cast<UDynamicClass>(TemplateOwnerClass))
+		{
+			UObject** FoundTemplatePtr = DynamicClass->ComponentTemplates.FindByPredicate([=](UObject* Obj) -> bool
+			{
+				return Obj && Obj->IsA<UActorComponent>() && (Obj->GetFName() == TemplateName);
+			});
+			Template = (nullptr != FoundTemplatePtr) ? Cast<UActorComponent>(*FoundTemplatePtr) : nullptr;
+		}
 	}
 
 	bool bIsSceneComponent = false;

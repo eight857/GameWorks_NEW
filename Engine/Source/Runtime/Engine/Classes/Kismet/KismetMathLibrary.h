@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -253,12 +253,52 @@ class ENGINE_API UKismetMathLibrary : public UBlueprintFunctionLibrary
 	static float Multiply_IntFloat(int32 A, float B);
 
 	/* Division (A / B) */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "float / float", CompactNodeTitle = "/", Keywords = "/ divide division"), Category="Math|Float")
+	UFUNCTION(BlueprintPure, CustomThunk, meta=(DisplayName = "float / float", CompactNodeTitle = "/", Keywords = "/ divide division"), Category="Math|Float")
 	static float Divide_FloatFloat(float A, float B = 1.f);
+	
+	static float GenericDivide_FloatFloat(float A, float B);
+
+	/* Custom thunk to allow script stack trace in case of divide by zero */
+	DECLARE_FUNCTION(execDivide_FloatFloat)
+	{
+		P_GET_PROPERTY(UFloatProperty, A);
+		P_GET_PROPERTY(UFloatProperty, B);
+
+		P_FINISH;
+
+		if (B == 0.f)
+		{
+			FFrame::KismetExecutionMessage(*FString::Printf(TEXT("Divide by zero\n%s"), *Stack.GetStackTrace()), ELogVerbosity::Warning);
+			*(float*)RESULT_PARAM = 0;
+			return;
+		}
+
+		*(float*)RESULT_PARAM = GenericDivide_FloatFloat(A, B);
+	}
 
 	/* Modulo (A % B) */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "% (float)", CompactNodeTitle = "%", Keywords = "% modulus"), Category="Math|Float")
+	UFUNCTION(BlueprintPure, CustomThunk, meta = (DisplayName = "% (float)", CompactNodeTitle = "%", Keywords = "% modulus"), Category = "Math|Float")
 	static float Percent_FloatFloat(float A, float B = 1.f);
+
+	static float GenericPercent_FloatFloat(float A, float B);
+
+	/* Custom thunk to allow script stack trace in case of modulo by zero */
+	DECLARE_FUNCTION(execPercent_FloatFloat)
+	{
+		P_GET_PROPERTY(UFloatProperty, A);
+		P_GET_PROPERTY(UFloatProperty, B);
+
+		P_FINISH;
+
+		if (B == 0.f)
+		{
+			FFrame::KismetExecutionMessage(*FString::Printf(TEXT("Modulo by zero\n%s"), *Stack.GetStackTrace()), ELogVerbosity::Warning);
+			*(float*)RESULT_PARAM = 0;
+			return;
+		}
+
+		*(float*)RESULT_PARAM = GenericPercent_FloatFloat(A, B);
+	}
 
 	/** Returns the fractional part of a float. */
 	UFUNCTION(BlueprintPure, Category="Math|Float")
@@ -1558,6 +1598,14 @@ class ENGINE_API UKismetMathLibrary : public UBlueprintFunctionLibrary
 	UFUNCTION(BlueprintPure, meta=(DisplayName = "vector2d - float", CompactNodeTitle = "-", Keywords = "- subtract minus"), Category="Math|Vector2D")
 	static FVector2D Subtract_Vector2DFloat(FVector2D A, float B);
 
+	/* Returns true if vector2D A is equal to vector2D B (A == B) within a specified error tolerance */
+    UFUNCTION(BlueprintPure, meta=(DisplayName = "Equal (vector2D)", CompactNodeTitle = "==", Keywords = "== equal"), Category="Math|Vector2D")
+    static bool EqualEqual_Vector2DVector2D(FVector2D A, FVector2D B, float ErrorTolerance = 1.e-4f);
+
+    /* Returns true if vector2D A is not equal to vector2D B (A != B) within a specified error tolerance */
+    UFUNCTION(BlueprintPure, meta=(DisplayName = "Not Equal (vector2D)", CompactNodeTitle = "!=", Keywords = "!= not equal"), Category="Math|Vector2D")
+    static bool NotEqual_Vector2DVector2D(FVector2D A, FVector2D B, float ErrorTolerance = 1.e-4f);
+	
 	/**
 	 * Tries to reach Target based on distance from Current position, giving a nice smooth feeling when tracking a position.
 	 *

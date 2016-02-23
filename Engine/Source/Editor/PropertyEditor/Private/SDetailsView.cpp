@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 
 #include "PropertyEditorPrivatePCH.h"
@@ -584,7 +584,7 @@ void SDetailsView::PreSetObject()
 
 	ExternalRootPropertyNodes.Empty();
 
-	RootNodePendingKill = RootPropertyNode;
+	RootNodesPendingKill.Add(RootPropertyNode);
 
 	RootPropertyNode = MakeShareable(new FObjectPropertyNode);
 

@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "CorePrivatePCH.h"
 #include "WindowsApplication.h"
@@ -354,18 +354,7 @@ void FWindowsApplication::SetHighPrecisionMouseMode( const bool Enable, const TS
 
 bool FWindowsApplication::TryCalculatePopupWindowPosition( const FPlatformRect& InAnchor, const FVector2D& InSize, const EPopUpOrientation::Type Orientation, /*OUT*/ FVector2D* const CalculatedPopUpPosition ) const
 {
-#if(_WIN32_WINNT >= 0x0601) 
-	POINT AnchorPoint = { FMath::TruncToInt(InAnchor.Left), FMath::TruncToInt(InAnchor.Top) };
-	SIZE WindowSize = { FMath::TruncToInt(InSize.X), FMath::TruncToInt(InSize.Y) };
-
-	RECT WindowPos;
-	::CalculatePopupWindowPosition( &AnchorPoint, &WindowSize, TPM_CENTERALIGN | TPM_VCENTERALIGN, NULL, &WindowPos );
-
-	CalculatedPopUpPosition->Set( WindowPos.left, WindowPos.right );
-	return true;
-#else
 	return false;
-#endif
 }
 
 FPlatformRect FWindowsApplication::GetWorkArea( const FPlatformRect& CurrentWindow ) const
@@ -758,13 +747,27 @@ int32 FWindowsApplication::ProcessMessage( HWND hwnd, uint32 msg, WPARAM wParam,
 		case WM_NCMOUSEMOVE:
 		case WM_MOUSEMOVE:
 		case WM_MOUSEWHEEL:
-		case WM_SETCURSOR:
 			{
 				DeferMessage( CurrentNativeEventWindowPtr, hwnd, msg, wParam, lParam );
 				// Handled
 				return 0;
 			}
 			break;
+
+		case WM_SETCURSOR:
+		{
+			DeferMessage(CurrentNativeEventWindowPtr, hwnd, msg, wParam, lParam);
+
+			// If we're rendering our own window border, we'll "handle" this event so that Windows doesn't try to manage the cursor
+			// appearance for us in the non-client area.  However, for OS window borders we need to fall through to DefWindowProc to
+			// allow Windows to draw the resize cursor
+			if (!CurrentNativeEventWindow->GetDefinition().HasOSWindowBorder)
+			{
+				// Handled
+				return 0;
+			}
+		}
+		break;
 
 		// Mouse Movement
 		case WM_INPUT:
@@ -1101,7 +1104,7 @@ int32 FWindowsApplication::ProcessMessage( HWND hwnd, uint32 msg, WPARAM wParam,
 
 		default:
 			{
-			    int32 HandlerResult = 0;
+				int32 HandlerResult = 0;
 
 				// give others a chance to handle unprocessed messages
 				for (auto Handler : MessageHandlers)
@@ -1468,7 +1471,7 @@ int32 FWindowsApplication::ProcessDeferredMessage( const FDeferredWindowsMessage
 			// Mouse Cursor
 		case WM_SETCURSOR:
 			{
-				return MessageHandler->OnCursorSet() ? 1 : 0;
+				return MessageHandler->OnCursorSet() ? 0 : 1;
 			}
 			break;
 
@@ -1806,7 +1809,7 @@ void FWindowsApplication::SetForceFeedbackChannelValues(int32 ControllerId, cons
 {
 	const FForceFeedbackValues* InternalValues = &Values;
  
- 	XInput->SetChannelValues( ControllerId, *InternalValues );
+	XInput->SetChannelValues( ControllerId, *InternalValues );
  
 	// send vibration to externally-implemented devices
 	for( auto DeviceIt = ExternalInputDevices.CreateIterator(); DeviceIt; ++DeviceIt )

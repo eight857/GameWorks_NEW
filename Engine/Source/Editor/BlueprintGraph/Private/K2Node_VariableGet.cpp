@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 
 #include "BlueprintGraphPrivatePCH.h"
@@ -230,7 +230,7 @@ FText UK2Node_VariableGet::GetBlueprintVarTooltip(FBPVariableDescription const& 
 		Args.Add(TEXT("VarName"), FText::FromName(VarDesc.VarName));
 		Args.Add(TEXT("UserTooltip"), FText::FromString(UserTooltipData));
 
-		return FText::Format(LOCTEXT("GetVariableProperty_Tooltip", "Read the value of variable {VarName}\n{UserTooltip}"), Args);
+		return FText::Format(LOCTEXT("GetBlueprintVariable_Tooltip", "Read the value of variable {VarName}\n{UserTooltip}"), Args);
 	}
 	return K2Node_VariableGetImpl::GetBaseTooltip(VarDesc.VarName);
 }
@@ -416,7 +416,10 @@ void UK2Node_VariableGet::ExpandNode(class FKismetCompilerContext& CompilerConte
 
 		// Move pin links from Get node we are expanding, to the new pure one we've created
 		CompilerContext.MovePinLinksToIntermediate(*ValuePin, *VariableGetNode->GetValuePin());
-		CompilerContext.MovePinLinksToIntermediate(*FindPin(Schema->PN_Self), *VariableGetNode->FindPin(Schema->PN_Self));
+		if (!VariableReference.IsLocalScope())
+		{
+			CompilerContext.MovePinLinksToIntermediate(*FindPin(Schema->PN_Self), *VariableGetNode->FindPin(Schema->PN_Self));
+		}
 
 		// Create the IsValid node
 		UK2Node_CallFunction* IsValidFunction = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -462,19 +465,22 @@ void UK2Node_VariableGet::ExpandNode(class FKismetCompilerContext& CompilerConte
 void UK2Node_VariableGet::Serialize(FArchive& Ar)
 {
 	// The following code is to attempt to log info related to UE-19729
-	if (Ar.IsSaving() && !Ar.IsTransacting())
+	if (Ar.IsSaving() && Ar.IsPersistent())
 	{
-		if (UEdGraph* Graph = Cast<UEdGraph>(GetOuter()))
+		uint32 PortFlagsToSkip = PPF_Duplicate | PPF_DuplicateForPIE;
+		if (!(Ar.GetPortFlags() & PortFlagsToSkip))
 		{
-			if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph))
+			if (UEdGraph* Graph = Cast<UEdGraph>(GetOuter()))
 			{
-				if (!Blueprint->bBeingCompiled)
+				if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph))
 				{
-					// The following line may spur the crash noted in UE-19729 and will confirm that the crash happens before the FiB gather.
-					GetNodeTitle(ENodeTitleType::ListView);
+					if (!Blueprint->bBeingCompiled)
+					{
+						// The following line may spur the crash noted in UE-19729 and will confirm that the crash happens before the FiB gather.
+						GetNodeTitle(ENodeTitleType::ListView);
+					}
 				}
 			}
-			
 		}
 	}
 	Super::Serialize(Ar);

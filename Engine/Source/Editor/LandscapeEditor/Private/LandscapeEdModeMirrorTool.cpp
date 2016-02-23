@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "LandscapeEditorPrivatePCH.h"
 #include "LandscapeEdMode.h"
@@ -173,7 +173,15 @@ public:
 
 	virtual bool UsesTransformWidget() const override
 	{
-		return true;
+		// The editor can try to render the transform widget before the landscape editor ticks and realises that the landscape has been hidden/deleted
+		const ULandscapeInfo* const LandscapeInfo = EdMode->CurrentToolTarget.LandscapeInfo.Get();
+		const ALandscapeProxy* const LandscapeProxy = LandscapeInfo->GetLandscapeProxy();
+		if (LandscapeProxy)
+		{
+			return true;
+		}
+
+		return false;
 	}
 
 	virtual EAxisList::Type GetWidgetAxisToDraw(FWidget::EWidgetMode CheckMode) const override
@@ -205,44 +213,53 @@ public:
 	{
 		const ULandscapeInfo* const LandscapeInfo = EdMode->CurrentToolTarget.LandscapeInfo.Get();
 		const ALandscapeProxy* const LandscapeProxy = LandscapeInfo->GetLandscapeProxy();
-		const FTransform LandscapeToWorld = LandscapeProxy->LandscapeActorToWorld();
+		if (LandscapeProxy)
+		{
+			const FTransform LandscapeToWorld = LandscapeProxy->LandscapeActorToWorld();
 
-		int32 MinX, MinY, MaxX, MaxY;
-		if (!LandscapeInfo->GetLandscapeExtent(MinX, MinY, MaxX, MaxY))
-		{
-			MinX = MinY = 0;
-			MaxX = MaxY = 0;
+			int32 MinX, MinY, MaxX, MaxY;
+			if (!LandscapeInfo->GetLandscapeExtent(MinX, MinY, MaxX, MaxY))
+			{
+				MinX = MinY = 0;
+				MaxX = MaxY = 0;
+			}
+
+			FVector MirrorPoint3D = FVector((MaxX + MinX) / 2.0f, (MaxY + MinY) / 2.0f, 0);
+			if (EdMode->UISettings->MirrorOp == ELandscapeMirrorOperation::MinusXToPlusX ||
+				EdMode->UISettings->MirrorOp == ELandscapeMirrorOperation::PlusXToMinusX)
+			{
+				MirrorPoint3D.X = EdMode->UISettings->MirrorPoint.X;
+			}
+			else
+			{
+				MirrorPoint3D.Y = EdMode->UISettings->MirrorPoint.Y;
+			}
+			MirrorPoint3D.Z = GetLocalZAtPoint(LandscapeInfo, FMath::RoundToInt(MirrorPoint3D.X), FMath::RoundToInt(MirrorPoint3D.Y));
+			MirrorPoint3D = LandscapeToWorld.TransformPosition(MirrorPoint3D);
+			MirrorPoint3D.Z += 1000.f; // place the widget a little off the ground for better visibility
+			return MirrorPoint3D;
 		}
 
-		FVector MirrorPoint3D = FVector((MaxX + MinX) / 2.0f, (MaxY + MinY) / 2.0f, 0);
-		if (EdMode->UISettings->MirrorOp == ELandscapeMirrorOperation::MinusXToPlusX ||
-			EdMode->UISettings->MirrorOp == ELandscapeMirrorOperation::PlusXToMinusX)
-		{
-			MirrorPoint3D.X = EdMode->UISettings->MirrorPoint.X;
-		}
-		else
-		{
-			MirrorPoint3D.Y = EdMode->UISettings->MirrorPoint.Y;
-		}
-		MirrorPoint3D.Z = GetLocalZAtPoint(LandscapeInfo, FMath::RoundToInt(MirrorPoint3D.X), FMath::RoundToInt(MirrorPoint3D.Y));
-		MirrorPoint3D = LandscapeToWorld.TransformPosition(MirrorPoint3D);
-		MirrorPoint3D.Z += 1000.f; // place the widget a little off the ground for better visibility
-		return MirrorPoint3D;
+		return FVector::ZeroVector;
 	}
 
 	virtual FMatrix GetWidgetRotation() const override
 	{
 		const ALandscapeProxy* const LandscapeProxy = EdMode->CurrentToolTarget.LandscapeInfo->GetLandscapeProxy();
-		const FTransform LandscapeToWorld = LandscapeProxy->LandscapeActorToWorld();
-
-		FMatrix Result = FQuatRotationTranslationMatrix(LandscapeToWorld.GetRotation(), FVector::ZeroVector);
-		if (EdMode->UISettings->MirrorOp == ELandscapeMirrorOperation::PlusXToMinusX ||
-			EdMode->UISettings->MirrorOp == ELandscapeMirrorOperation::PlusYToMinusY)
+		if (LandscapeProxy)
 		{
-			Result = FRotationMatrix(FRotator(0, 180, 0)) * Result;
+			const FTransform LandscapeToWorld = LandscapeProxy->LandscapeActorToWorld();
+
+			FMatrix Result = FQuatRotationTranslationMatrix(LandscapeToWorld.GetRotation(), FVector::ZeroVector);
+			if (EdMode->UISettings->MirrorOp == ELandscapeMirrorOperation::PlusXToMinusX ||
+				EdMode->UISettings->MirrorOp == ELandscapeMirrorOperation::PlusYToMinusY)
+			{
+				Result = FRotationMatrix(FRotator(0, 180, 0)) * Result;
+			}
+			return Result;
 		}
 
-		return Result;
+		return FMatrix::Identity;
 	}
 
 protected:
@@ -459,8 +476,10 @@ public:
 		LandscapeEdit.Flush();
 
 		TSet<ULandscapeComponent*> Components;
-		if (LandscapeEdit.GetComponentsInRegion(DestMinX, DestMinY, DestMaxX, DestMaxY, &Components))
+		if (LandscapeEdit.GetComponentsInRegion(DestMinX, DestMinY, DestMaxX, DestMaxY, &Components) && Components.Num() > 0)
 		{
+			UNavigationSystem* NavSys = UNavigationSystem::GetCurrent(*begin(Components));
+
 			for (ULandscapeComponent* Component : Components)
 			{
 				// Recreate collision for modified components and update the navmesh
@@ -468,10 +487,9 @@ public:
 				if (CollisionComponent)
 				{
 					CollisionComponent->RecreateCollision();
-					UNavigationSystem* NavSys = UNavigationSystem::GetCurrent(Component);
 					if (NavSys)
 					{
-						NavSys->UpdateNavOctree(CollisionComponent);
+						NavSys->UpdateComponentInNavOctree(*CollisionComponent);
 					}
 				}
 			}

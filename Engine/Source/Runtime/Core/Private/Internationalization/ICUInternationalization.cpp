@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 #include "CorePrivatePCH.h"
 #include "ICUInternationalization.h"
 
@@ -210,9 +210,8 @@ void FICUInternationalization::LoadDLLs()
 		FString LibraryName = "lib" "icu" + Stem + ".53.1" + LibraryNamePostfix + "." "dylib";
 #endif //PLATFORM_*
 
-		const FString DLLFilename = TargetSpecificPath / LibraryName;
-		void* DLLHandle = FPlatformProcess::GetDllHandle(*DLLFilename);
-		checkf(DLLHandle != nullptr, TEXT("Failed to load DLL: %s"), *DLLFilename);
+		void* DLLHandle = FPlatformProcess::GetDllHandle(*(TargetSpecificPath / LibraryName));
+		check(DLLHandle != nullptr);
 		DLLHandles.Add(DLLHandle);
 	}
 }
@@ -248,6 +247,15 @@ bool FICUInternationalization::SetCurrentCulture(const FString& Name)
 			UErrorCode ICUStatus = U_ZERO_ERROR;
 			uloc_setDefault(StringCast<char>(*Name).Get(), &ICUStatus);
 
+			// Update the cached display names in any existing cultures
+			{
+				FScopeLock Lock(&CachedCulturesCS);
+				for (const auto& CachedCulturePair : CachedCultures)
+				{
+					CachedCulturePair.Value->HandleCultureChanged();
+				}
+			}
+
 			FInternationalization::Get().BroadcastCultureChanged();
 		}
 	}
@@ -279,7 +287,11 @@ FCulturePtr FICUInternationalization::FindOrMakeCulture(const FString& Name, con
 	const FString CanonicalName = FCulture::GetCanonicalName(Name);
 
 	// Find the cached culture.
-	FCultureRef* FoundCulture = CachedCultures.Find(CanonicalName);
+	FCultureRef* FoundCulture = nullptr;
+	{
+		FScopeLock Lock(&CachedCulturesCS);
+		FoundCulture = CachedCultures.Find(CanonicalName);
+	}
 
 	// If no cached culture is found, try to make one.
 	if (!FoundCulture)
@@ -295,6 +307,7 @@ FCulturePtr FICUInternationalization::FindOrMakeCulture(const FString& Name, con
 				FCulturePtr NewCulture = FCulture::Create(CanonicalName);
 				if (NewCulture.IsValid())
 				{
+					FScopeLock Lock(&CachedCulturesCS);
 					FoundCulture = &(CachedCultures.Add(CanonicalName, NewCulture.ToSharedRef()));
 				}
 			}

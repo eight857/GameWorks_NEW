@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "EnginePrivate.h"
 #include "ComponentInstanceDataCache.h"
@@ -86,11 +86,12 @@ void UChildActorComponent::OnComponentCreated()
 	CreateChildActor();
 }
 
-void UChildActorComponent::OnComponentDestroyed()
+void UChildActorComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 {
-	Super::OnComponentDestroyed();
+	Super::OnComponentDestroyed(bDestroyingHierarchy);
 
-	DestroyChildActor(GetWorld() && !GetWorld()->IsGameWorld());
+	const UWorld* const MyWorld = GetWorld();
+	DestroyChildActor(MyWorld && !MyWorld->IsGameWorld());
 }
 
 class FChildActorComponentInstanceData : public FSceneComponentInstanceData
@@ -99,9 +100,18 @@ public:
 	FChildActorComponentInstanceData(const UChildActorComponent* Component)
 		: FSceneComponentInstanceData(Component)
 		, ChildActorName(Component->ChildActorName)
+		, ComponentInstanceData(nullptr)
 	{
 		if (Component->ChildActor)
 		{
+			ComponentInstanceData = new FComponentInstanceDataCache(Component->ChildActor);
+			// If it is empty dump it
+			if (!ComponentInstanceData->HasInstanceData())
+			{
+				delete ComponentInstanceData;
+				ComponentInstanceData = nullptr;
+			}
+
 			USceneComponent* ChildRootComponent = Component->ChildActor->GetRootComponent();
 			if (ChildRootComponent)
 			{
@@ -124,13 +134,22 @@ public:
 		}
 	}
 
+	virtual ~FChildActorComponentInstanceData()
+	{
+		delete ComponentInstanceData;
+	}
+
 	virtual void ApplyToComponent(UActorComponent* Component, const ECacheApplyPhase CacheApplyPhase) override
 	{
 		FSceneComponentInstanceData::ApplyToComponent(Component, CacheApplyPhase);
-		CastChecked<UChildActorComponent>(Component)->ApplyComponentInstanceData(this);
+		CastChecked<UChildActorComponent>(Component)->ApplyComponentInstanceData(this, CacheApplyPhase);
 	}
 
+	// The name of the spawned child actor so it (attempts to) remain constant across construction script reruns
 	FName ChildActorName;
+
+	// The component instance data cache for the ChildActor spawned by this component
+	FComponentInstanceDataCache* ComponentInstanceData;
 
 	struct FAttachedActorInfo
 	{
@@ -141,6 +160,17 @@ public:
 
 	TArray<FAttachedActorInfo> AttachedActors;
 };
+
+void UChildActorComponent::BeginDestroy()
+{
+	Super::BeginDestroy();
+
+	if (CachedInstanceData)
+	{
+		delete CachedInstanceData;
+		CachedInstanceData = nullptr;
+	}
+}
 
 FActorComponentInstanceData* UChildActorComponent::GetComponentInstanceData() const
 {
@@ -159,7 +189,7 @@ FActorComponentInstanceData* UChildActorComponent::GetComponentInstanceData() co
 	return InstanceData;
 }
 
-void UChildActorComponent::ApplyComponentInstanceData(FChildActorComponentInstanceData* ChildActorInstanceData)
+void UChildActorComponent::ApplyComponentInstanceData(FChildActorComponentInstanceData* ChildActorInstanceData, const ECacheApplyPhase CacheApplyPhase)
 {
 	check(ChildActorInstanceData);
 
@@ -174,6 +204,11 @@ void UChildActorComponent::ApplyComponentInstanceData(FChildActorComponentInstan
 			{
 				ChildActor->Rename(*ChildActorNameString, nullptr, REN_DoNotDirty | (IsLoading() ? REN_ForceNoResetLoaders : REN_None));
 			}
+		}
+
+		if (ChildActorInstanceData->ComponentInstanceData)
+		{
+			ChildActorInstanceData->ComponentInstanceData->ApplyToActor(ChildActor, CacheApplyPhase);
 		}
 
 		USceneComponent* ChildActorRoot = ChildActor->GetRootComponent();
@@ -208,17 +243,21 @@ void UChildActorComponent::SetChildActorClass(TSubclassOf<AActor> Class)
 	}
 }
 
+struct FActorParentComponentSetter
+{
+private:
+	static void Set(AActor* ChildActor, UChildActorComponent* ParentComponent)
+	{
+		ChildActor->ParentComponent = ParentComponent;
+	}
+
+	friend UChildActorComponent;
+};
+
 void UChildActorComponent::CreateChildActor()
 {
 	// Kill spawned actor if we have one
 	DestroyChildActor();
-
-	// This is no longer needed
-	if (CachedInstanceData)
-	{
-		delete CachedInstanceData;
-		CachedInstanceData = nullptr;
-	}
 
 	// If we have a class to spawn.
 	if(ChildActorClass != nullptr)
@@ -237,14 +276,21 @@ void UChildActorComponent::CreateChildActor()
 					bSpawn = false;
 					UE_LOG(LogChildActorComponent, Error, TEXT("Found cycle in child actor component '%s'.  Not spawning Actor of class '%s' to break."), *GetPathName(), *ChildActorClass->GetName());
 				}
-				Actor = Actor->ParentComponentActor.Get();
+				if (UChildActorComponent* ParentComponent = Actor->GetParentComponent())
+				{
+					Actor = ParentComponent->GetOwner();
+				}
+				else
+				{
+					Actor = nullptr;
+				}
 			}
 
 			if (bSpawn)
 			{
 				FActorSpawnParameters Params;
 				Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-				Params.bDeferConstruction = true; // We defer construction so that we set ParentComponentActor prior to component registration so they appear selected
+				Params.bDeferConstruction = true; // We defer construction so that we set ParentComponent prior to component registration so they appear selected
 				Params.bAllowDuringConstructionScript = true;
 				Params.OverrideLevel = (MyOwner ? MyOwner->GetLevel() : nullptr);
 				Params.Name = ChildActorName;
@@ -263,16 +309,24 @@ void UChildActorComponent::CreateChildActor()
 				{
 					ChildActorName = ChildActor->GetFName();
 
-					// Remember which actor spawned it (for selection in editor etc)
-					ChildActor->ParentComponentActor = MyOwner;
+					// Remember which component spawned it (for selection in editor etc)
+					FActorParentComponentSetter::Set(ChildActor, this);
 
 					// Parts that we deferred from SpawnActor
-					ChildActor->FinishSpawning(ComponentToWorld);
+					const FComponentInstanceDataCache* ComponentInstanceData = (CachedInstanceData ? CachedInstanceData->ComponentInstanceData : nullptr);
+					ChildActor->FinishSpawning(ComponentToWorld, false, ComponentInstanceData);
 
 					ChildActor->AttachRootComponentTo(this, NAME_None, EAttachLocation::SnapToTargetIncludingScale);
 				}
 			}
 		}
+	}
+
+	// This is no longer needed
+	if (CachedInstanceData)
+	{
+		delete CachedInstanceData;
+		CachedInstanceData = nullptr;
 	}
 }
 

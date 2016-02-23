@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 // This code is largely based on that in ir_print_glsl_visitor.cpp from
 // glsl-optimizer.
@@ -587,15 +587,22 @@ void DebugPrintVisitor::visit(ir_loop_jump* ir)
 
 void DebugPrintVisitor::visit(ir_atomic* ir)
 {
-	ir->lhs->accept(this);
-	irdump_printf(" = %s(&", ir->operator_string());
+	if (ir->lhs)
+	{
+		ir->lhs->accept(this);
+		irdump_printf(" = ");
+	}
+	irdump_printf("%s(&", ir->operator_string());
 	ir->memory_ref->accept(this);
-	irdump_printf(", ");
-	ir->operands[0]->accept(this);
-	if (ir->operands[1])
+	if (ir->operands[0])
 	{
 		irdump_printf(", ");
-		ir->operands[1]->accept(this);
+		ir->operands[0]->accept(this);
+		if (ir->operands[1])
+		{
+			irdump_printf(", ");
+			ir->operands[1]->accept(this);
+		}
 	}
 	irdump_printf(")\n;");
 }
@@ -624,9 +631,9 @@ void DebugPrintVisitor::PrintType(const glsl_type* Type)
 	}
 }
 
-std::string DebugPrintVisitor::GetVarName(ir_variable* var)
+FCustomStdString DebugPrintVisitor::GetVarName(ir_variable* var)
 {
-	std::string s("");
+	FCustomStdString s("");
 	if (var->name)
 	{
 		if (var->mode == ir_var_uniform || var->mode == ir_var_in || var->mode == ir_var_out || var->mode == ir_var_inout || var->mode == ir_var_shared)
@@ -645,7 +652,7 @@ std::string DebugPrintVisitor::GetVarName(ir_variable* var)
 				TNameSet::iterator FoundName = UniqueNames.find(var->name);
 				if (FoundName != UniqueNames.end())
 				{
-					std::stringstream ss("");
+					std::basic_stringstream<char, std::char_traits<char>, FCustomStdAllocator<char>> ss("");
 					ss << *FoundName;
 					ss << ID++;
 					s = ss.str();
@@ -671,7 +678,7 @@ std::string DebugPrintVisitor::GetVarName(ir_variable* var)
 			}
 			else
 			{
-				std::stringstream ss("");
+				std::basic_stringstream<char, std::char_traits<char>, FCustomStdAllocator<char>> ss("");
 				ss << var->name;
 				ss << ID++;
 				s = ss.str();
@@ -689,7 +696,7 @@ std::string DebugPrintVisitor::GetVarName(ir_variable* var)
 		}
 		else
 		{
-			std::stringstream ss("");
+			std::basic_stringstream<char, std::char_traits<char>, FCustomStdAllocator<char>> ss("");
 			ss << "Param";
 			ss << ID++;
 			s = ss.str();

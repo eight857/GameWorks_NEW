@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 // See bottom of the file for a brief explanation of Packing UB methods/options
 
@@ -9,10 +9,10 @@
 #include <map>
 #include <string>
 #include <set>
+#include "CustomStdAllocator.h"
 
-
-typedef std::map<std::string, ir_variable*> TStringIRVarMap;
-typedef std::map<std::string, TStringIRVarMap> TStringStringIRVarMap;
+typedef std::map<FCustomStdString, ir_variable*> TStringIRVarMap;
+typedef std::map<FCustomStdString, TStringIRVarMap> TStringStringIRVarMap;
 typedef std::list<ir_variable*> TIRVarList;
 
 

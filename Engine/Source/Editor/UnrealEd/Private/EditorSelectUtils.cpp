@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 
 #include "UnrealEd.h"
@@ -469,13 +469,13 @@ bool UUnrealEdEngine::CanSelectActor(AActor* Actor, bool bInSelected, bool bSele
 		}
 
 		// Ensure that neither the level nor the actor is being destroyed or is unreachable
-		EObjectFlags InvalidSelectableFlags = RF_PendingKill|RF_BeginDestroyed|RF_Unreachable;
-		if( Actor->GetLevel()->HasAnyFlags(InvalidSelectableFlags) )
+		const EObjectFlags InvalidSelectableFlags = RF_BeginDestroyed;
+		if (Actor->GetLevel()->HasAnyFlags(InvalidSelectableFlags) || Actor->GetLevel()->IsPendingKillOrUnreachable())
 		{
 			UE_LOG(LogEditorSelectUtils, Warning, TEXT("SelectActor: %s (%s)"), TEXT("The requested operation could not be completed because the level has invalid flags."),*Actor->GetActorLabel());
 			return false;
 		}
-		if( Actor->HasAnyFlags(InvalidSelectableFlags) )
+		if (Actor->HasAnyFlags(InvalidSelectableFlags) || Actor->IsPendingKillOrUnreachable())
 		{
 			UE_LOG(LogEditorSelectUtils, Warning, TEXT("SelectActor: %s (%s)"), TEXT("The requested operation could not be completed because the actor has invalid flags."),*Actor->GetActorLabel());
 			return false;
@@ -533,9 +533,9 @@ void UUnrealEdEngine::SelectActor(AActor* Actor, bool bInSelected, bool bNotify,
 		if(bInSelected)
 		{
 			// If trying to select an Actor spawned by a ChildACtorComponent, instead select Actor that spawned us
-			if(Actor->ParentComponentActor.IsValid())
+			if (UChildActorComponent* ParentComponent = Actor->GetParentComponent())
 			{
-				Actor = Actor->ParentComponentActor.Get();
+				Actor = ParentComponent->GetOwner();
 			}
 		}
 

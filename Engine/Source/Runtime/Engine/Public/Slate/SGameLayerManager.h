@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -89,6 +89,7 @@ public:
 
 	// Begin SWidget overrides
 	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 	virtual bool OnVisualizeTooltip(const TSharedPtr<SWidget>& TooltipContent) override;
 	// End SWidget overrides
 
@@ -116,6 +117,7 @@ private:
 	void RemoveMissingPlayerLayers(const TArray<ULocalPlayer*>& GamePlayers);
 	void RemovePlayerWidgets(ULocalPlayer* LocalPlayer);
 	void AddOrUpdatePlayerLayers(const FGeometry& AllottedGeometry, UGameViewportClient* ViewportClient, const TArray<ULocalPlayer*>& GamePlayers);
+	FVector2D GetAspectRatioInset(ULocalPlayer* LocalPlayer) const;
 
 private:
 	FGeometry CachedGeometry;

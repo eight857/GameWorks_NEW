@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -98,8 +98,9 @@ public:
 	}
 	FORCEINLINE FBitReference& operator=(const FBitReference& Copy)
 	{
-		this->Data = Copy.Data;
-		this->Mask = Copy.Mask;
+		// As this is emulating a reference, assignment should not rebind,
+		// it should write to the referenced bit.
+		*this = (bool)Copy;
 		return *this;
 	}
 
@@ -133,21 +134,14 @@ private:
 /** Used to reference a bit in an unspecified bit array. */
 class FRelativeBitReference
 {
-	template<typename>
-	friend class TBitArray;
-	template<typename>
-	friend class TConstSetBitIterator;
-	template<typename,typename>
-	friend class TConstDualSetBitIterator;
 public:
+	FORCEINLINE explicit FRelativeBitReference(int32 BitIndex)
+		: DWORDIndex(BitIndex >> NumBitsPerDWORDLogTwo)
+		, Mask(1 << (BitIndex & (NumBitsPerDWORD - 1)))
+	{
+	}
 
-	FORCEINLINE FRelativeBitReference(int32 BitIndex)
-	:	DWORDIndex(BitIndex >> NumBitsPerDWORDLogTwo)
-	,	Mask(1 << (BitIndex & (NumBitsPerDWORD - 1)))
-	{}
-
-protected:
-	int32 DWORDIndex;
+	int32  DWORDIndex;
 	uint32 Mask;
 };
 
@@ -346,6 +340,68 @@ public:
 		{
 			NumBits = InNumBits;
 			FMemory::Memset(GetData(),Value ? 0xff : 0, FMath::DivideAndRoundUp(NumBits, NumBitsPerDWORD) * sizeof(uint32));
+		}
+	}
+
+	/**
+	 * Sets or unsets a range of bits within the array.
+	 * @param  Index  The index of the first bit to set.
+	 * @param  Num    The number of bits to set.
+	 * @param  Value  The value to set the bits to.
+	 */
+	FORCENOINLINE void SetRange(int32 Index, int32 Num, bool Value)
+	{
+		check(Index >= 0 && Num >= 0 && Index + Num <= NumBits);
+
+		if (Num == 0)
+		{
+			return;
+		}
+
+		// Work out which uint32 index to set from, and how many
+		uint32 StartIndex = Index / 32;
+		uint32 Count      = (Index + Num + 31) / 32 - StartIndex;
+
+		// Work out masks for the start/end of the sequence
+		uint32 StartMask  = 0xFFFFFFFFu << (Index % 32);
+		uint32 EndMask    = 0xFFFFFFFFu >> (32 - (Index + Num) % 32) % 32;
+
+		uint32* Data = GetData() + StartIndex;
+		if (Value)
+		{
+			if (Count == 1)
+			{
+				*Data |= StartMask & EndMask;
+			}
+			else
+			{
+				*Data++ |= StartMask;
+				Count -= 2;
+				while (Count != 0)
+				{
+					*Data++ = ~0;
+					--Count;
+				}
+				*Data |= EndMask;
+			}
+		}
+		else
+		{
+			if (Count == 1)
+			{
+				*Data &= ~(StartMask & EndMask);
+			}
+			else
+			{
+				*Data++ &= ~StartMask;
+				Count -= 2;
+				while (Count != 0)
+				{
+					*Data++ = 0;
+					--Count;
+				}
+				*Data &= ~EndMask;
+			}
 		}
 	}
 
@@ -689,7 +745,7 @@ public:
 		}
 	}
 
-	/** Advancement operator. */
+	/** Forwards iteration operator. */
 	FORCEINLINE TConstSetBitIterator& operator++()
 	{
 		// Mark the current bit as visited.
@@ -741,7 +797,8 @@ private:
 	void FindFirstSetBit()
 	{
 		const uint32* ArrayData      = Array.GetData();
-		const int32   LastDWORDIndex = (Array.Num() - 1) / NumBitsPerDWORD;
+		const int32   ArrayNum       = Array.Num();
+		const int32   LastDWORDIndex = (ArrayNum - 1) / NumBitsPerDWORD;
 
 		// Advance to the next non-zero uint32.
 		uint32 RemainingBitMask = ArrayData[this->DWORDIndex] & UnvisitedBitMask;
@@ -752,7 +809,7 @@ private:
 			if (this->DWORDIndex > LastDWORDIndex)
 			{
 				// We've advanced past the end of the array.
-				CurrentBitIndex = Array.Num();
+				CurrentBitIndex = ArrayNum;
 				return;
 			}
 
@@ -769,6 +826,13 @@ private:
 
 		// If the Nth bit was the lowest set bit of BitMask, then this gives us N
 		CurrentBitIndex = BaseBitIndex + NumBitsPerDWORD - 1 - FMath::CountLeadingZeros(this->Mask);
+
+		// If we've accidentally iterated off the end of an array but still within the same DWORD
+		// then set the index to the last index of the array
+		if (CurrentBitIndex > ArrayNum)
+		{
+			CurrentBitIndex = ArrayNum;
+		}
 	}
 };
 

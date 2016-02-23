@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -18,24 +18,33 @@ namespace UnrealBuildTool.Rules
 					"RHI"
 				});
 
-			DynamicallyLoadedModuleNames.AddRange(
-				new string[]
+			if (Target.Type == TargetRules.TargetType.Editor)
+			{
+				DynamicallyLoadedModuleNames.AddRange(
+					new string[]
 				{
 					"Settings"
 				});
 
-			PublicIncludePathModuleNames.AddRange(
-				new string[]
+				PublicIncludePathModuleNames.AddRange(
+					new string[]
 				{
 					"Settings"
 				});
+			}
 
- 			bool bHaveTwitchSDK =
- 				( System.IO.Directory.Exists( System.IO.Path.Combine( UEBuildConfiguration.UEThirdPartySourceDirectory, "Twitch" ) ) &&
- 				  System.IO.Directory.Exists( System.IO.Path.Combine( UEBuildConfiguration.UEThirdPartySourceDirectory, "Twitch", "Twitch-6.17" ) ) ) ||
- 				( System.IO.Directory.Exists( System.IO.Path.Combine( UEBuildConfiguration.UEThirdPartySourceDirectory, "NotForLicensees" ) ) &&
- 				  System.IO.Directory.Exists( System.IO.Path.Combine( UEBuildConfiguration.UEThirdPartySourceDirectory, "NotForLicensees", "Twitch" ) ) &&
-				  System.IO.Directory.Exists( System.IO.Path.Combine( UEBuildConfiguration.UEThirdPartySourceDirectory, "NotForLicensees", "Twitch", "Twitch-6.17" ) ) );
+			string TwitchNotForLicenseesLibDir = System.IO.Path.Combine( UEBuildConfiguration.UEThirdPartySourceDirectory, "..", "..", "Plugins", "Runtime", "TwitchLiveStreaming", "Source", "ThirdParty", "NotForLicensees", "Twitch", "lib" );   // Check the NotForLicensees folder first
+			string TwitchLibDir = System.IO.Path.Combine( UEBuildConfiguration.UEThirdPartySourceDirectory, "..", "..", "Plugins", "Runtime", "TwitchLiveStreaming", "Source", "ThirdParty", "Twitch", "lib" );
+			bool bHaveTwitchSDK = false;
+
+			try
+			{
+				bHaveTwitchSDK = System.IO.Directory.Exists( TwitchNotForLicenseesLibDir ) || System.IO.Directory.Exists( TwitchLibDir );
+			}
+			catch( System.Exception )
+			{
+			}
+
  			if( bHaveTwitchSDK )
 			{
 				AddThirdPartyPrivateStaticDependencies( Target, "Twitch" );

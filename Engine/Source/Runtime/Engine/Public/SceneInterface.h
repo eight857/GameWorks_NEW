@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,6 +9,7 @@ class ULightComponent;
 class USkyLightComponent;
 class FAtmosphericFogSceneInfo;
 class FPrimitiveComponentId;
+class FPrimitiveSceneInfo;
 
 /**
  * An interface to the private scene manager implementation of a scene.  Use GetRendererModule().AllocateScene to create.
@@ -42,6 +43,8 @@ public:
 	virtual void UpdatePrimitiveTransform(UPrimitiveComponent* Primitive) = 0;
 	/** Updates primitive attachment state. */
 	virtual void UpdatePrimitiveAttachment(UPrimitiveComponent* Primitive) = 0;
+	/** Finds the  primitive with the associated component id. */
+	virtual FPrimitiveSceneInfo* GetPrimitiveSceneInfo(int32 PrimitiveIndex) = 0;
 	/** 
 	 * Adds a new light component to the scene
 	 * 
@@ -105,6 +108,9 @@ public:
 	 * This must be called on the game thread.
 	 */
 	virtual void UpdateSkyCaptureContents(const USkyLightComponent* CaptureComponent, bool bCaptureEmissiveOnly, UTextureCube* SourceCubemap, FTexture* OutProcessedTexture, FSHVectorRGB3& OutIrradianceEnvironmentMap) {}
+
+	/** Runs a slow preculling operation on static meshes, removing triangles that are invisible or inside a precull volume. */
+	virtual void PreCullStaticMeshes(const TArray<UStaticMeshComponent*>& ComponentsToPreCull, const TArray<TArray<FPlane> >& CullVolumes) {}
 
 	/** 
 	* Updates the contents of the given scene capture by rendering the scene. 
@@ -317,9 +323,14 @@ public:
 	virtual ERHIFeatureLevel::Type GetFeatureLevel() const { return GMaxRHIFeatureLevel; }
 	EShaderPlatform GetShaderPlatform() const { return GShaderPlatformForFeatureLevel[GetFeatureLevel()]; }
 
+	static bool ShouldUseDeferredRenderer(ERHIFeatureLevel::Type InFeatureLevel)
+	{
+		return InFeatureLevel >= ERHIFeatureLevel::SM4;
+	}
+
 	bool ShouldUseDeferredRenderer() const
 	{
-		return GetFeatureLevel() >= ERHIFeatureLevel::SM4;
+		return ShouldUseDeferredRenderer(GetFeatureLevel());
 	}
 
 	/**

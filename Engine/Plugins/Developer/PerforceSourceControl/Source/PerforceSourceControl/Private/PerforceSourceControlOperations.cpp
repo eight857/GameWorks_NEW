@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "PerforceSourceControlPrivatePCH.h"
 #include "PerforceSourceControlOperations.h"
@@ -332,6 +332,20 @@ bool FPerforceCheckInWorker::Execute(FPerforceSourceControlCommand& InCommand)
 
 				if (InCommand.bCommandSuccessful)
 				{
+					// Remove any deleted files from status cache
+					FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>("PerforceSourceControl");
+					FPerforceSourceControlProvider& Provider = PerforceSourceControl.GetProvider();
+
+					TArray<TSharedRef<ISourceControlState, ESPMode::ThreadSafe>> States;
+					Provider.GetState(InCommand.Files, States, EStateCacheUsage::Use);
+					for (const auto& State : States)
+					{
+						if (State->IsDeleted())
+						{
+							Provider.RemoveFileFromCache(State->GetFilename());
+						}
+					}
+
 					StaticCastSharedRef<FCheckIn>(InCommand.Operation)->SetSuccessMessage(ParseSubmitResults(Records));
 
 					for(auto Iter(InCommand.Files.CreateIterator()); Iter; Iter++)
@@ -373,7 +387,7 @@ bool FPerforceMarkForAddWorker::Execute(FPerforceSourceControlCommand& InCommand
 		if(!IFileManager::Get().FileExists(*FileToAdd))
 		{
 			bHasMissingFiles = true;
-			InCommand.ErrorMessages.Add(FText::Format(LOCTEXT("Error_FailedToMarkFileForAdd_FileMissing", "Failed mark the file '%s' for add. The file doesn't exist on disk."), FText::FromString(FileToAdd)));
+			InCommand.ErrorMessages.Add(FText::Format(LOCTEXT("Error_FailedToMarkFileForAdd_FileMissing", "Failed mark the file '{0}' for add. The file doesn't exist on disk."), FText::FromString(FileToAdd)));
 		}
 	}
 	if(bHasMissingFiles)

@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
  
 /** 
@@ -23,9 +23,10 @@ class USoundNodeConcatenator : public USoundNode
 	TArray<float> InputVolume;
 
 public:	
-	// Begin USoundNode interface. 
+	//~ Begin USoundNode Interface. 
 	virtual bool NotifyWaveInstanceFinished( struct FWaveInstance* WaveInstance ) override;
 	virtual float GetDuration( void ) override;
+	virtual int32 GetNumSounds(const UPTRINT NodeWaveInstanceHash, FActiveSound& ActiveSound) const;
 	virtual void ParseNodes( FAudioDevice* AudioDevice, const UPTRINT NodeWaveInstanceHash, FActiveSound& ActiveSound, const FSoundParseParameters& ParseParams, TArray<FWaveInstance*>& WaveInstances ) override;
 	virtual int32 GetMaxChildNodes() const override 
 	{ 
@@ -38,6 +39,6 @@ public:
 	/** Ensure amount of inputs matches new amount of children */
 	virtual void SetChildNodes(TArray<USoundNode*>& InChildNodes) override;
 #endif
-	// End USoundNode interface. 
+	//~ End USoundNode Interface. 
 };
 

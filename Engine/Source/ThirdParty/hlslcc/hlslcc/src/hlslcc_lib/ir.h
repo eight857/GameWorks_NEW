@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 // This code is modified from that in the Mesa3D Graphics library available at
 // http://mesa3d.org/
@@ -1633,7 +1633,7 @@ public:
 	ir_texture_channel channel;
 
 	// HLSL-only
-	std::string SamplerStateName;
+	FCustomStdString SamplerStateName;
 	ir_rvalue* SamplerState;
 };
 
@@ -2049,6 +2049,8 @@ enum ir_atomic_op
 	ir_atomic_xor,
 	ir_atomic_swap,
 	ir_atomic_cmp_swap,
+	ir_atomic_load,
+	ir_atomic_store,
 	ir_atomic_count
 };
 

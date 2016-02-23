@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "LandscapeEditorPrivatePCH.h"
 #include "LandscapeEdMode.h"
@@ -863,8 +863,7 @@ FReply FLandscapeEditorDetailCustomization_NewLandscape::OnCreateButtonClicked()
 			LandscapeEdMode->UISettings->ClearImportLandscapeData();
 		}
 
-		const float ComponentSize = QuadsPerComponent;
-		const FVector Offset = FTransform(LandscapeEdMode->UISettings->NewLandscape_Rotation, FVector::ZeroVector, LandscapeEdMode->UISettings->NewLandscape_Scale).TransformVector(FVector(-ComponentCountX * ComponentSize / 2, -ComponentCountY * ComponentSize / 2, 0));
+		const FVector Offset = FTransform(LandscapeEdMode->UISettings->NewLandscape_Rotation, FVector::ZeroVector, LandscapeEdMode->UISettings->NewLandscape_Scale).TransformVector(FVector(-ComponentCountX * QuadsPerComponent / 2, -ComponentCountY * QuadsPerComponent / 2, 0));
 		ALandscape* Landscape = LandscapeEdMode->GetWorld()->SpawnActor<ALandscape>(LandscapeEdMode->UISettings->NewLandscape_Location + Offset, LandscapeEdMode->UISettings->NewLandscape_Rotation);
 
 		//if (LandscapeEdMode->NewLandscapePreviewMode == ENewLandscapePreviewMode::ImportLandscape)
@@ -873,7 +872,7 @@ FReply FLandscapeEditorDetailCustomization_NewLandscape::OnCreateButtonClicked()
 		}
 
 		Landscape->SetActorRelativeScale3D(LandscapeEdMode->UISettings->NewLandscape_Scale);
-		Landscape->Import(FGuid::NewGuid(), SizeX, SizeY, QuadsPerComponent, LandscapeEdMode->UISettings->NewLandscape_SectionsPerComponent, LandscapeEdMode->UISettings->NewLandscape_QuadsPerSection, Data.GetData(), NULL, LayerInfos);
+		Landscape->Import(FGuid::NewGuid(), 0, 0, SizeX-1, SizeY-1, LandscapeEdMode->UISettings->NewLandscape_SectionsPerComponent, LandscapeEdMode->UISettings->NewLandscape_QuadsPerSection, Data.GetData(), NULL, LayerInfos, LandscapeEdMode->UISettings->ImportLandscape_AlphamapType);
 
 		// automatically calculate a lighting LOD that won't crash lightmass (hopefully)
 		// < 2048x2048 -> LOD0
@@ -1267,7 +1266,7 @@ void FLandscapeEditorDetailCustomization_NewLandscape::ChooseBestComponentSizeFo
 	bool bFoundMatch = false;
 	if (Width > 0 && Height > 0)
 	{
-		// Try to find a section size and number of sections that matches the dimensions of the heightfield
+		// Try to find a section size and number of sections that exactly matches the dimensions of the heightfield
 		for (int32 SectionSizesIdx = ARRAY_COUNT(SectionSizes) - 1; SectionSizesIdx >= 0; SectionSizesIdx--)
 		{
 			for (int32 NumSectionsIdx = ARRAY_COUNT(NumSections) - 1; NumSectionsIdx >= 0; NumSectionsIdx--)
@@ -1318,21 +1317,22 @@ void FLandscapeEditorDetailCustomization_NewLandscape::ChooseBestComponentSizeFo
 					break;
 				}
 			}
+		}
 
-			if (!bFoundMatch)
-			{
-				// if the heightmap is very large, fall back to using the largest values we support
-				const int32 MaxSectionSize = SectionSizes[ARRAY_COUNT(SectionSizes) - 1];
-				const int32 ComponentsX = FMath::DivideAndRoundUp((Width - 1), MaxSectionSize * CurrentNumSections);
-				const int32 ComponentsY = FMath::DivideAndRoundUp((Height - 1), MaxSectionSize * CurrentNumSections);
+		if (!bFoundMatch)
+		{
+			// if the heightmap is very large, fall back to using the largest values we support
+			const int32 MaxSectionSize = SectionSizes[ARRAY_COUNT(SectionSizes) - 1];
+			const int32 MaxNumSubSections = NumSections[ARRAY_COUNT(NumSections) - 1];
+			const int32 ComponentsX = FMath::DivideAndRoundUp((Width - 1), MaxSectionSize * MaxNumSubSections);
+			const int32 ComponentsY = FMath::DivideAndRoundUp((Height - 1), MaxSectionSize * MaxNumSubSections);
 
-				bFoundMatch = true;
-				LandscapeEdMode->UISettings->NewLandscape_QuadsPerSection = SectionSizes[MaxSectionSize];
-				//LandscapeEdMode->UISettings->NewLandscape_SectionsPerComponent = ;
-				LandscapeEdMode->UISettings->NewLandscape_ComponentCount.X = ComponentsX;
-				LandscapeEdMode->UISettings->NewLandscape_ComponentCount.Y = ComponentsY;
-				LandscapeEdMode->UISettings->NewLandscape_ClampSize();
-			}
+			bFoundMatch = true;
+			LandscapeEdMode->UISettings->NewLandscape_QuadsPerSection = MaxSectionSize;
+			LandscapeEdMode->UISettings->NewLandscape_SectionsPerComponent = MaxNumSubSections;
+			LandscapeEdMode->UISettings->NewLandscape_ComponentCount.X = ComponentsX;
+			LandscapeEdMode->UISettings->NewLandscape_ComponentCount.Y = ComponentsY;
+			LandscapeEdMode->UISettings->NewLandscape_ClampSize();
 		}
 
 		check(bFoundMatch);

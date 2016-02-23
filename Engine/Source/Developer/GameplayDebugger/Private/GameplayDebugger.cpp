@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayDebuggerPrivate.h"
 #include "Misc/CoreMisc.h"
@@ -15,12 +15,10 @@
 #include "LevelEditor.h"
 #endif // WITH_EDITOR
 
-DEFINE_LOG_CATEGORY(LogGameplayDebugger);
-
 #define LOCTEXT_NAMESPACE "FGameplayDebugger"
 FGameplayDebuggerSettings GameplayDebuggerSettings(class AGameplayDebuggingReplicator* Replicator)
 {
-	uint32 Settings = UGameplayDebuggerSettings::StaticClass()->GetDefaultObject<UGameplayDebuggerSettings>()->GetSettings();
+	uint32& Settings = UGameplayDebuggerSettings::StaticClass()->GetDefaultObject<UGameplayDebuggerSettings>()->GetSettings();
 	return FGameplayDebuggerSettings(Replicator == NULL ? Settings : Replicator->DebuggerShowFlags);
 }
 
@@ -53,10 +51,11 @@ public:
 
 private:
 	virtual bool CreateGameplayDebuggerForPlayerController(APlayerController* PlayerController) override;
+	virtual bool IsGameplayDebuggerActiveForPlayerController(APlayerController* PlayerController) override;
 
 	bool DoesGameplayDebuggingReplicatorExistForPlayerController(APlayerController* PlayerController);
 
-	TMap<TWeakObjectPtr<UWorld>, TArray<TWeakObjectPtr<AGameplayDebuggingReplicator> > > AllReplilcatorsPerWorlds;
+	TMap<TWeakObjectPtr<UWorld>, TArray<TWeakObjectPtr<AGameplayDebuggingReplicator> > > AllReplicatorsPerWorlds;
 
 #if WITH_EDITOR
 	FLevelEditorModule::FLevelEditorMenuExtender ViewMenuExtender;
@@ -68,6 +67,9 @@ IMPLEMENT_MODULE(FGameplayDebugger, GameplayDebugger)
 // This code will execute after your module is loaded into memory (but after global variables are initialized, of course.)
 void FGameplayDebugger::StartupModule()
 { 
+	//EMIT_CUSTOM_WARNING("/Engine/Source/Developer/GameplayDebugger module is deprecated and it's going to be removed with next UE4 version. Please use GameplayDebuggerPlugin instead.");
+	//UE_LOG(LogGameplayDebugger, Warning, TEXT("/Engine/Source/Developer/GameplayDebugger module is deprecated and it's going to be removed with next UE4 version. Please use GameplayDebuggerPlugin instead."));
+
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 	if (GEngine)
 	{
@@ -210,8 +212,8 @@ void FGameplayDebugger::CreateSnappingOptionsMenu(FMenuBuilder& Builder)
 	{
 		Builder.AddMenuSeparator();
 		Builder.AddSubMenu(
-			LOCTEXT("Test_GameplayDebugger_Menu", "Gameplay Debugger"),
-			LOCTEXT("Test_GameplayDebugger_Menu_Tooltip", "Quick setting for Gameplay Debugger tool in selected view"),
+			LOCTEXT("Test_GameplayDebugger_SnappingOptions_Menu", "Gameplay Debugger"),
+			LOCTEXT("Test_GameplayDebugger_SnappingOptions_Menu_Tooltip", "Quick setting for Gameplay Debugger tool in selected view"),
 			FNewMenuDelegate::CreateRaw(this, &FGameplayDebugger::CreateSettingSubMenu)
 			);
 	}
@@ -253,13 +255,10 @@ bool FGameplayDebugger::DoesGameplayDebuggingReplicatorExistForPlayerController(
 
 	for (auto It = GetAllReplicators(World).CreateConstIterator(); It; ++It)
 	{
-		TWeakObjectPtr<AGameplayDebuggingReplicator> Replicator = *It;
-		if (Replicator.IsValid())
+		AGameplayDebuggingReplicator* Replicator = It->Get();
+		if (Replicator && Replicator->GetLocalPlayerOwner() == PlayerController)
 		{
-			if (Replicator->GetLocalPlayerOwner() == PlayerController)
-			{
-				return true;
-			}
+			return true;
 		}
 	}
 #endif
@@ -319,9 +318,36 @@ bool FGameplayDebugger::CreateGameplayDebuggerForPlayerController(APlayerControl
 	return false;
 }
 
+bool FGameplayDebugger::IsGameplayDebuggerActiveForPlayerController(APlayerController* PlayerController)
+{
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+	if (PlayerController == NULL)
+	{
+		return false;
+	}
+
+	UWorld* World = PlayerController->GetWorld();
+	if (World == NULL)
+	{
+		return false;
+	}
+
+	for (auto It = GetAllReplicators(World).CreateConstIterator(); It; ++It)
+	{
+		AGameplayDebuggingReplicator* Replicator = It->Get();
+		if (Replicator && Replicator->GetLocalPlayerOwner() == PlayerController)
+		{
+			return Replicator->IsDrawEnabled();
+		}
+	}
+#endif
+
+	return false;
+}
+
 TArray<TWeakObjectPtr<AGameplayDebuggingReplicator> >& FGameplayDebugger::GetAllReplicators(UWorld* InWorld)
 {
-	return AllReplilcatorsPerWorlds.FindOrAdd(InWorld);
+	return AllReplicatorsPerWorlds.FindOrAdd(InWorld);
 }
 
 void FGameplayDebugger::AddReplicator(UWorld* InWorld, AGameplayDebuggingReplicator* InReplicator)
@@ -350,8 +376,8 @@ void FGameplayDebugger::WorldAdded(UWorld* InWorld)
 
 	for (auto It = GetAllReplicators(InWorld).CreateConstIterator(); It; ++It)
 	{
-		TWeakObjectPtr<AGameplayDebuggingReplicator> Replicator = *It;
-		if (Replicator.IsValid() && Replicator->IsGlobalInWorld())
+		AGameplayDebuggingReplicator* Replicator = It->Get();
+		if (Replicator && Replicator->IsGlobalInWorld())
 		{
 			// Ok, we have global replicator on level
 			return;
@@ -385,7 +411,7 @@ void FGameplayDebugger::WorldDestroyed(UWorld* InWorld)
 	}
 
 	// remove global replicator from level
-	AllReplilcatorsPerWorlds.Remove(InWorld);
+	AllReplicatorsPerWorlds.Remove(InWorld);
 #endif //!(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 }
 
@@ -411,28 +437,37 @@ void FGameplayDebugger::OnLevelActorAdded(AActor* InActor)
 void FGameplayDebugger::OnLevelActorDeleted(AActor* InActor)
 {
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	APlayerController* PC = Cast<APlayerController>(InActor);
-	if (!PC)
+	if (!InActor)
 	{
 		return;
 	}
 
-	UWorld* World = PC->GetWorld();
+	UWorld* World = InActor->GetWorld();
 	if (!World)
 	{
 		return;
 	}
 
-	for (auto It = GetAllReplicators(World).CreateConstIterator(); It; ++It)
+	AGameplayDebuggingReplicator* Replicator = Cast<AGameplayDebuggingReplicator>(InActor);
+	if (Replicator)
 	{
-		TWeakObjectPtr<AGameplayDebuggingReplicator> Replicator = *It;
-		if (Replicator != NULL)
+		RemoveReplicator(World, Replicator);
+	}
+	else
+	{
+		APlayerController* PC = Cast<APlayerController>(InActor);
+		if (PC)
 		{
-			if (Replicator->GetLocalPlayerOwner() == PC)
+			// Take a copy because the destroy could lead to removes on the replicator array
+			TArray<TWeakObjectPtr<AGameplayDebuggingReplicator>> ReplicatorsForWorld = GetAllReplicators(World);
+			for (TWeakObjectPtr<AGameplayDebuggingReplicator> ReplicatorPtr : ReplicatorsForWorld)
 			{
-				RemoveReplicator(World, Replicator.Get());
-				Replicator->MarkPendingKill();
-				//World->DestroyActor(Replicator.Get());
+				AGameplayDebuggingReplicator* ReplicatorInWorld = ReplicatorPtr.Get();
+				if (ReplicatorInWorld && ReplicatorInWorld->GetLocalPlayerOwner() == PC)
+				{
+					ReplicatorInWorld->Destroy();
+					break;
+				}
 			}
 		}
 	}
@@ -447,7 +482,7 @@ bool FGameplayDebugger::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& A
 
 	if (FParse::Command(&Cmd, TEXT("RunEQS")) && InWorld)
 	{
-		APlayerController* MyPC = InWorld->GetFirstPlayerController();
+		APlayerController* MyPC = InWorld->GetGameInstance() ? InWorld->GetGameInstance()->GetFirstLocalPlayerController() : nullptr;
 		UAISystem* AISys = UAISystem::GetCurrent(*InWorld);
 
 		UEnvQueryManager* EQS = AISys ? AISys->GetEnvironmentQueryManager() : NULL;
@@ -548,7 +583,7 @@ bool FGameplayDebugger::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& A
 
 		if (!LocalPC && MyWorld->GetNetMode() != NM_DedicatedServer)
 		{
-			LocalPC = MyWorld->GetFirstPlayerController();
+			LocalPC = MyWorld->GetGameInstance() ? MyWorld->GetGameInstance()->GetFirstLocalPlayerController() : nullptr;
 		}
 	}
 
@@ -577,14 +612,20 @@ bool FGameplayDebugger::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& A
 		if (!Replicator)
 		{
 			LocalPC->ClientMessage(TEXT("Enabling GameplayDebugger on server, please wait for replicated data..."));
-			const FString ServerCheatString = FString::Printf(TEXT("cheat EnableGDT %s"), *LocalPC->PlayerState->UniqueId.ToString());
-			UE_LOG(LogGameplayDebugger, Warning, TEXT("Sending to Server: %s"), *ServerCheatString);
-			LocalPC->ConsoleCommand(*ServerCheatString);
-			bHandled = true;
+			if (LocalPC->PlayerState)
+			{
+				const FString ServerCheatString = FString::Printf(TEXT("cheat EnableGDT %s"), *LocalPC->PlayerState->UniqueId.ToString());
+				UE_LOG(LogGameplayDebugger, Warning, TEXT("Sending to Server: %s"), *ServerCheatString);
+				LocalPC->ConsoleCommand(*ServerCheatString);
+				bHandled = true;
+			}
 		}
-		else if (!Replicator->IsToolCreated())
+		else
 		{
-			Replicator->CreateTool();
+			if (Replicator->IsToolCreated() == false)
+			{
+				Replicator->CreateTool();
+			}
 			Replicator->EnableTool();
 			bHandled = true;
 		}

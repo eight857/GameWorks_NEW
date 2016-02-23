@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D11Device.cpp: D3D device RHI implementation.
@@ -10,6 +10,7 @@
 #include "HideWindowsPlatformTypes.h"
 
 #include "HardwareInfo.h"
+#include "Runtime/HeadMountedDisplay/Public/IHeadMountedDisplayModule.h"
 
 
 extern bool D3D11RHI_ShouldCreateWithD3DDebug();
@@ -22,6 +23,16 @@ static TAutoConsoleVariable<int32> CVarGraphicsAdapter(
 	TEXT("At the moment this only works on Direct3D 11.\n")
 	TEXT(" -2: Take the first one that fulfills the criteria\n")
 	TEXT(" -1: Favour non integrated because there are usually faster\n")
+	TEXT("  0: Adpater #0\n")
+	TEXT("  1: Adpater #1, ..."),
+	ECVF_RenderThreadSafe);
+
+static TAutoConsoleVariable<int32> CVarHmdGraphicsAdapter(
+	TEXT("r.HmdGraphicsAdapter"),
+	-1,
+	TEXT("Specifies the index of the graphics adapter where the HMD is connected.  Overrides r.GraphicsAdapter when the Hmd is enabled.\n")
+	TEXT("At the moment this only works on Direct3D 11.\n")
+	TEXT(" -1: Unknown\n")
 	TEXT("  0: Adpater #0\n")
 	TEXT("  1: Adpater #1, ..."),
 	ECVF_RenderThreadSafe);
@@ -240,7 +251,11 @@ void FD3D11DynamicRHIModule::FindAdapter()
 	bAllowPerfHUD = false;
 #endif
 
-	int32 CVarValue = CVarGraphicsAdapter.GetValueOnGameThread();
+	// Allow HMD to override which graphics adapter is chosen, so we pick the adapter where the HMD is connected
+	bool bUseHmdGraphicsAdapter = CVarHmdGraphicsAdapter.GetValueOnGameThread() >= 0 && 
+		IModularFeatures::Get().IsModularFeatureAvailable(IHeadMountedDisplayModule::GetModularFeatureName());
+
+	int32 CVarValue = bUseHmdGraphicsAdapter ? CVarHmdGraphicsAdapter.GetValueOnGameThread() : CVarGraphicsAdapter.GetValueOnGameThread();
 
 	const bool bFavorNonIntegrated = CVarValue == -1;
 
@@ -253,6 +268,8 @@ void FD3D11DynamicRHIModule::FindAdapter()
 	bool bIsAnyAMD = false;
 	bool bIsAnyIntel = false;
 	bool bIsAnyNVIDIA = false;
+
+	UE_LOG(LogD3D11RHI, Log, TEXT("D3D11 adapters:"));
 
 	// Enumerate the DXGIFactory's adapters.
 	for(uint32 AdapterIndex = 0; DXGIFactory1->EnumAdapters(AdapterIndex,TempAdapter.GetInitReference()) != DXGI_ERROR_NOT_FOUND; ++AdapterIndex)
@@ -269,13 +286,13 @@ void FD3D11DynamicRHIModule::FindAdapter()
 				uint32 OutputCount = CountAdapterOutputs(TempAdapter);
 
 				UE_LOG(LogD3D11RHI, Log,
-					TEXT("Found D3D11 adapter %u: %s (Feature Level %s)"),
+					TEXT("  %2u. '%s' (Feature Level %s)"),
 					AdapterIndex,
 					AdapterDesc.Description,
 					GetFeatureLevelString(ActualFeatureLevel)
 					);
 				UE_LOG(LogD3D11RHI, Log,
-					TEXT("Adapter has %uMB of dedicated video memory, %uMB of dedicated system memory, and %uMB of shared system memory, %d output[s]"),
+					TEXT("      %uMB of dedicated video memory, %uMB of dedicated system memory, and %uMB of shared system memory, %d output[s]"),
 					(uint32)(AdapterDesc.DedicatedVideoMemory / (1024*1024)),
 					(uint32)(AdapterDesc.DedicatedSystemMemory / (1024*1024)),
 					(uint32)(AdapterDesc.SharedSystemMemory / (1024*1024)),
@@ -346,7 +363,7 @@ void FD3D11DynamicRHIModule::FindAdapter()
 
 	if(ChosenAdapter.IsValid())
 	{
-		UE_LOG(LogD3D11RHI, Log, TEXT("Chosen D3D11 Adapter Id = %u"), ChosenAdapter.AdapterIndex);
+		UE_LOG(LogD3D11RHI, Log, TEXT("Chosen D3D11 Adapter: %u"), ChosenAdapter.AdapterIndex);
 	}
 	else
 	{
@@ -390,7 +407,7 @@ void FD3D11DynamicRHI::InitD3DDevice()
 	// If the device we were using has been removed, release it and the resources we created for it.
 	if(bDeviceRemoved)
 	{
-		UE_LOG(LogD3D11RHI, Log, TEXT("bDeviceRemoved"));
+		UE_LOG(LogD3D11RHI, Log, TEXT("Init due to bDeviceRemoved"));
 		check(Direct3DDevice);
 
 		HRESULT hRes = Direct3DDevice->GetDeviceRemovedReason();
@@ -418,7 +435,7 @@ void FD3D11DynamicRHI::InitD3DDevice()
 	// If we don't have a device yet, either because this is the first viewport, or the old device was removed, create a device.
 	if(!Direct3DDevice)
 	{
-		UE_LOG(LogD3D11RHI, Log, TEXT("!Direct3DDevice"));
+		UE_LOG(LogD3D11RHI, Log, TEXT("Creating new Direct3DDevice"));
 		check(!GIsRHIInitialized);
 
 		// Clear shadowed shader resources.
@@ -459,6 +476,15 @@ void FD3D11DynamicRHI::InitD3DDevice()
 
 					GRHIAdapterName = AdapterDesc.Description;
 					GRHIVendorId = AdapterDesc.VendorId;
+					
+					// get driver version (todo: share with other RHIs)
+					{
+						FPlatformMisc::GetGPUDriverInfo(GRHIAdapterName, GRHIAdapterInternalDriverVersion, GRHIAdapterUserDriverVersion, GRHIAdapterDriverDate);
+
+						UE_LOG(LogD3D11RHI, Log, TEXT("    Adapter Name: %s"), *GRHIAdapterName);
+						UE_LOG(LogD3D11RHI, Log, TEXT("  Driver Version: %s (internal %s)"), *GRHIAdapterUserDriverVersion, *GRHIAdapterInternalDriverVersion);
+						UE_LOG(LogD3D11RHI, Log, TEXT("     Driver Date: %s"), *GRHIAdapterDriverDate);
+					}
 
 					// Issue: 32bit windows doesn't report 64bit value, we take what we get.
 					FD3D11GlobalStats::GDedicatedVideoMemory = int64(AdapterDesc.DedicatedVideoMemory);
@@ -601,11 +627,12 @@ void FD3D11DynamicRHI::InitD3DDevice()
 		// Notify all initialized FRenderResources that there's a valid RHI device to create their RHI resources for now.
 		for(TLinkedList<FRenderResource*>::TIterator ResourceIt(FRenderResource::GetResourceList());ResourceIt;ResourceIt.Next())
 		{
-			ResourceIt->InitDynamicRHI();
+			ResourceIt->InitRHI();
 		}
+		// Dynamic resources can have dependencies on static resources (with uniform buffers) and must initialized last!
 		for(TLinkedList<FRenderResource*>::TIterator ResourceIt(FRenderResource::GetResourceList());ResourceIt;ResourceIt.Next())
 		{
-			ResourceIt->InitRHI();
+			ResourceIt->InitDynamicRHI();
 		}
 
 #if !(UE_BUILD_SHIPPING && WITH_EDITOR)
@@ -750,8 +777,8 @@ bool FD3D11DynamicRHI::RHIGetAvailableResolutions(FScreenResolutionArray& Resolu
 		}
 		else if(HResult == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
 		{
-			UE_LOG(LogD3D11RHI, Fatal,
-				TEXT("This application cannot be run over a remote desktop configuration")
+			UE_LOG(LogD3D11RHI, Warning,
+				TEXT("RHIGetAvailableResolutions does not return results when running under remote desktop.")
 				);
 			return false;
 		}

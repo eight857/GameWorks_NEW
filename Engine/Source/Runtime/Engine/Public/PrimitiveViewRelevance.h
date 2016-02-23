@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -42,6 +42,7 @@ struct FPrimitiveViewRelevance
 	// The primitive has one or more elements that have World Position Offset.
 	uint32 bHasWorldPositionOffset : 1;
 	uint32 bUsesGlobalDistanceField : 1;
+	uint32 bUsesLightingChannels : 1;
 	// @third party code - BEGIN HairWorks
 	/** The primitive is a HairWorks instance. */
 	uint32 bHairWorks : 1;
@@ -78,6 +79,8 @@ struct FPrimitiveViewRelevance
 		bNormalTranslucencyRelevance(false),		
 		bHasWorldPositionOffset(false),
 		bUsesGlobalDistanceField(false),
+		bUsesLightingChannels(false),
+		bInitializedThisFrame(false)
 		bInitializedThisFrame(false),
 		// @third party code - BEGIN HairWorks
 		bHairWorks(false)
@@ -105,6 +108,7 @@ struct FPrimitiveViewRelevance
 		bInitializedThisFrame |= B.bInitializedThisFrame;		
 		bHasWorldPositionOffset |= B.bHasWorldPositionOffset != 0;
 		bUsesGlobalDistanceField |= B.bUsesGlobalDistanceField;
+		bUsesLightingChannels |= B.bUsesLightingChannels;
 		return *this;
 	}
 

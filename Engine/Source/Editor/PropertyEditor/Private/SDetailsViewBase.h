@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -461,8 +461,8 @@ protected:
 	/** Actions that should be executed next tick */
 	TArray<FSimpleDelegate> DeferredActions;
 
-	/** Root tree node that needs to be destroyed when safe */
-	TSharedPtr<FComplexPropertyNode> RootNodePendingKill;
+	/** Root tree nodes that needs to be destroyed when safe */
+	TArray<TSharedPtr<FComplexPropertyNode>> RootNodesPendingKill;
 
 	/** The handler for the keyframe UI, determines if the key framing UI should be displayed. */
 	TSharedPtr<IDetailKeyframeHandler> KeyframeHandler;

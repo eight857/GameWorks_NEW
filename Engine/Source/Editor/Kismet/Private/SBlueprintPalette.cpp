@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "BlueprintEditorPrivatePCH.h"
 #include "SBlueprintPalette.h"
@@ -281,7 +281,7 @@ static void GetSubGraphIcon(FEdGraphSchemaAction_K2Graph const* const ActionIn, 
 static void GetPaletteItemIcon(TSharedPtr<FEdGraphSchemaAction> ActionIn, UBlueprint const* BlueprintIn, FSlateBrush const*& BrushOut, FSlateColor& ColorOut, FString& ToolTipOut, FString& DocLinkOut, FString& DocExcerptOut)
 {
 	// Default to tooltip based on action supplied
-	ToolTipOut = (ActionIn->TooltipDescription.Len() > 0) ? ActionIn->TooltipDescription : ActionIn->MenuDescription.ToString();
+	ToolTipOut = (ActionIn->GetTooltipDescription().Len() > 0) ? ActionIn->GetTooltipDescription() : ActionIn->GetMenuDescription().ToString();
 
 	if (ActionIn->GetTypeId() == FBlueprintActionMenuItem::StaticGetTypeId())
 	{
@@ -816,16 +816,18 @@ private:
 	 */
 	ECheckBoxState GetVisibilityToggleState() const
 	{
-		TSharedPtr<FEdGraphSchemaAction_K2Var> VarAction = StaticCastSharedPtr<FEdGraphSchemaAction_K2Var>(ActionPtr.Pin());
-		UProperty* VariableProperty = VarAction->GetProperty();
-		if (VariableProperty != NULL)
+		TSharedPtr<FEdGraphSchemaAction> PaletteAction = ActionPtr.Pin();
+		if ( PaletteAction->GetTypeId() == FEdGraphSchemaAction_K2Var::StaticGetTypeId() )
 		{
-			return VariableProperty->HasAnyPropertyFlags(CPF_DisableEditOnInstance) ? ECheckBoxState::Unchecked : ECheckBoxState::Checked;
+			TSharedPtr<FEdGraphSchemaAction_K2Var> VarAction = StaticCastSharedPtr<FEdGraphSchemaAction_K2Var>(PaletteAction);
+			UProperty* VariableProperty = VarAction->GetProperty();
+			if ( VariableProperty != NULL )
+			{
+				return VariableProperty->HasAnyPropertyFlags(CPF_DisableEditOnInstance) ? ECheckBoxState::Unchecked : ECheckBoxState::Checked;
+			}
 		}
-		else
-		{
-			return ECheckBoxState::Unchecked;
-		}
+
+		return ECheckBoxState::Unchecked;
 	}
 
 	/**
@@ -842,12 +844,16 @@ private:
 			return;
 		}
 
-		TSharedPtr<FEdGraphSchemaAction_K2Var> VarAction = StaticCastSharedPtr<FEdGraphSchemaAction_K2Var>(ActionPtr.Pin());
+		TSharedPtr<FEdGraphSchemaAction> PaletteAction = ActionPtr.Pin();
+		if ( PaletteAction->GetTypeId() == FEdGraphSchemaAction_K2Var::StaticGetTypeId() )
+		{
+			TSharedPtr<FEdGraphSchemaAction_K2Var> VarAction = StaticCastSharedPtr<FEdGraphSchemaAction_K2Var>(PaletteAction);
 
-		// Toggle the flag on the blueprint's version of the variable description, based on state
-		const bool bVariableIsExposed = (InNewState == ECheckBoxState::Checked);
+			// Toggle the flag on the blueprint's version of the variable description, based on state
+			const bool bVariableIsExposed = ( InNewState == ECheckBoxState::Checked );
 
-		FBlueprintEditorUtils::SetBlueprintOnlyEditableFlag(BlueprintObj, VarAction->GetVariableName(), !bVariableIsExposed);
+			FBlueprintEditorUtils::SetBlueprintOnlyEditableFlag(BlueprintObj, VarAction->GetVariableName(), !bVariableIsExposed);
+		}
 	}
 
 	/**
@@ -872,24 +878,24 @@ private:
 	 */
 	FLinearColor GetVisibilityToggleColor() const 
 	{
-		if(GetVisibilityToggleState() != ECheckBoxState::Checked)
+		if ( GetVisibilityToggleState() != ECheckBoxState::Checked )
 		{
-			return FColor(64,64,64).ReinterpretAsLinear();
+			return FColor(64, 64, 64).ReinterpretAsLinear();
 		}
 		else
 		{
 			TSharedPtr<FEdGraphSchemaAction_K2Var> VarAction = StaticCastSharedPtr<FEdGraphSchemaAction_K2Var>(ActionPtr.Pin());
 
 			FString Result;
-			FBlueprintEditorUtils::GetBlueprintVariableMetaData( BlueprintObj, VarAction->GetVariableName(), NULL, TEXT("tooltip"), Result);
+			FBlueprintEditorUtils::GetBlueprintVariableMetaData(BlueprintObj, VarAction->GetVariableName(), NULL, TEXT("tooltip"), Result);
 
-			if(!Result.IsEmpty())
+			if ( !Result.IsEmpty() )
 			{
-				return FColor(130,219,119).ReinterpretAsLinear(); //pastel green when tooltip exists
+				return FColor(130, 219, 119).ReinterpretAsLinear(); //pastel green when tooltip exists
 			}
 			else
 			{
-				return FColor(215,219,119).ReinterpretAsLinear(); //pastel yellow if no tooltip to alert designer 
+				return FColor(215, 219, 119).ReinterpretAsLinear(); //pastel yellow if no tooltip to alert designer 
 			}
 		}
 	}
@@ -904,7 +910,7 @@ private:
 	FText GetVisibilityToggleToolTip() const
 	{
 		FText ToolTip = FText::GetEmpty();
-		if(GetVisibilityToggleState() != ECheckBoxState::Checked)
+		if ( GetVisibilityToggleState() != ECheckBoxState::Checked )
 		{
 			ToolTip = LOCTEXT("VariablePrivacy_not_public_Tooltip", "Variable is not public and will not be editable on an instance of this Blueprint.");
 		}
@@ -913,8 +919,8 @@ private:
 			TSharedPtr<FEdGraphSchemaAction_K2Var> VarAction = StaticCastSharedPtr<FEdGraphSchemaAction_K2Var>(ActionPtr.Pin());
 
 			FString Result;
-			FBlueprintEditorUtils::GetBlueprintVariableMetaData( BlueprintObj, VarAction->GetVariableName(), NULL, TEXT("tooltip"), Result);
-			if(!Result.IsEmpty())
+			FBlueprintEditorUtils::GetBlueprintVariableMetaData(BlueprintObj, VarAction->GetVariableName(), NULL, TEXT("tooltip"), Result);
+			if ( !Result.IsEmpty() )
 			{
 				ToolTip = LOCTEXT("VariablePrivacy_is_public_Tooltip", "Variable is public and is editable on each instance of this Blueprint.");
 			}
@@ -971,7 +977,7 @@ void SBlueprintPaletteItem::Construct(const FArguments& InArgs, FCreateWidgetFor
 	// construct the icon widget
 	FSlateBrush const* IconBrush   = FEditorStyle::GetBrush(TEXT("NoBrush"));
 	FSlateColor        IconColor   = FSlateColor::UseForeground();
-	FString            IconToolTip = GraphAction->TooltipDescription;
+	FString            IconToolTip = GraphAction->GetTooltipDescription();
 	FString			   IconDocLink, IconDocExcerpt;
 	GetPaletteItemIcon(GraphAction, Blueprint, IconBrush, IconColor, IconToolTip, IconDocLink, IconDocExcerpt);
 	TSharedRef<SWidget> IconWidget = CreateIconWidget(FText::FromString(IconToolTip), IconBrush, IconColor, IconDocLink, IconDocExcerpt);
@@ -981,8 +987,8 @@ void SBlueprintPaletteItem::Construct(const FArguments& InArgs, FCreateWidgetFor
 	FTutorialMetaData TagMeta("PaletteItem"); 
 	if( ActionPtr.IsValid() )
 	{
-		TagMeta.Tag = *FString::Printf(TEXT("PaletteItem,%s,%d"), *GraphAction->MenuDescription.ToString(), GraphAction->SectionID);
-		TagMeta.FriendlyName = GraphAction->MenuDescription.ToString();
+		TagMeta.Tag = *FString::Printf(TEXT("PaletteItem,%s,%d"), *GraphAction->GetMenuDescription().ToString(), GraphAction->GetSectionID());
+		TagMeta.FriendlyName = GraphAction->GetMenuDescription().ToString();
 	}
 	// construct the text widget
 	FSlateFontInfo NameFont = FSlateFontInfo(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 10);
@@ -1004,11 +1010,14 @@ void SBlueprintPaletteItem::Construct(const FArguments& InArgs, FCreateWidgetFor
 		}
 
 		// If the variable is not a local variable or created by the current Blueprint, do not use the PinTypeSelector
-		if (FBlueprintEditorUtils::IsVariableCreatedByBlueprint(Blueprint, VariableProp) || Cast<UFunction>(VariableProp->GetOuter()))
+		if (VariableProp)
 		{
-			const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
-			IconWidget = SNew(SPinTypeSelectorHelper, VariableProp, Blueprint, BlueprintEditorPtr)
-				.IsEnabled(!bIsFullyReadOnly);
+			if (FBlueprintEditorUtils::IsVariableCreatedByBlueprint(Blueprint, VariableProp) || Cast<UFunction>(VariableProp->GetOuter()))
+			{
+				const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+				IconWidget = SNew(SPinTypeSelectorHelper, VariableProp, Blueprint, BlueprintEditorPtr)
+					.IsEnabled(!bIsFullyReadOnly);
+			}
 		}
 	}
 
@@ -1162,7 +1171,7 @@ FText SBlueprintPaletteItem::GetDisplayText() const
 		}
 		else
 		{
-			MenuDescriptionCache.SetCachedText(ActionPtr.Pin()->MenuDescription, K2Schema);
+			MenuDescriptionCache.SetCachedText(ActionPtr.Pin()->GetMenuDescription(), K2Schema);
 		}
 	}
 
@@ -1217,11 +1226,9 @@ bool SBlueprintPaletteItem::OnNameTextVerifyChanged(const FText& InNewText, FTex
 
 	if(BlueprintObj->SimpleConstructionScript != NULL)
 	{
-		TArray<USCS_Node*> Nodes = BlueprintObj->SimpleConstructionScript->GetAllNodes();
-		for (TArray<USCS_Node*>::TConstIterator NodeIt(Nodes); NodeIt; ++NodeIt)
+		for (USCS_Node* Node : BlueprintObj->SimpleConstructionScript->GetAllNodes())
 		{
-			USCS_Node* Node = *NodeIt;
-			if (Node->VariableName == OriginalName && !FComponentEditorUtils::IsValidVariableNameString(Node->ComponentTemplate, InNewText.ToString()))
+			if (Node && Node->VariableName == OriginalName && !FComponentEditorUtils::IsValidVariableNameString(Node->ComponentTemplate, InNewText.ToString()))
 			{
 				OutErrorMessage = LOCTEXT("RenameFailed_NotValid", "This name is reserved for engine use.");
 				return false;
@@ -1403,7 +1410,7 @@ FText SBlueprintPaletteItem::GetToolTipText() const
 	if (PaletteAction.IsValid())
 	{
 		// Default tooltip is taken from the action
-		ToolTipText = (PaletteAction->TooltipDescription.Len() > 0) ? FText::FromString(PaletteAction->TooltipDescription) : PaletteAction->MenuDescription;
+		ToolTipText = (PaletteAction->GetTooltipDescription().Len() > 0) ? FText::FromString(PaletteAction->GetTooltipDescription()) : PaletteAction->GetMenuDescription();
 
 		if(PaletteAction->GetTypeId() == FEdGraphSchemaAction_K2AddComponent::StaticGetTypeId())
 		{

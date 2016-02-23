@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 IOSPlatformProcess.cpp: iOS implementations of Process functions
@@ -40,8 +40,9 @@ FRunnableThread* FIOSPlatformProcess::CreateRunnableThread()
 void FIOSPlatformProcess::LaunchURL( const TCHAR* URL, const TCHAR* Parms, FString* Error )
 {
 	UE_LOG(LogIOS, Log,  TEXT("LaunchURL %s %s"), URL, Parms?Parms:TEXT("") );
-	CFStringRef CFUrl = FPlatformString::TCHARToCFString( URL );
-	CFUrl = CFURLCreateStringByAddingPercentEscapes(NULL, CFUrl, CFSTR("#?+"), NULL, kCFStringEncodingUTF8);
+	NSString* CFUrl = (NSString*)FPlatformString::TCHARToCFString( URL );
+//	CFUrl = CFURLCreateStringByAddingPercentEscapes(NULL, CFUrl, CFSTR("#?+"), NULL, kCFStringEncodingUTF8);
+    CFUrl = [CFUrl stringByAddingPercentEncodingWithAllowedCharacters: [NSCharacterSet characterSetWithCharactersInString:@"#?+"]];
 	[[UIApplication sharedApplication] openURL: [NSURL URLWithString:( NSString *)CFUrl]];
 	CFRelease( CFUrl );
 
@@ -51,6 +52,16 @@ void FIOSPlatformProcess::LaunchURL( const TCHAR* URL, const TCHAR* Parms, FStri
 	}
 }
 
+bool FIOSPlatformProcess::CanLaunchURL(const TCHAR* URL)
+{
+	NSString* CFUrl = (NSString*)FPlatformString::TCHARToCFString(URL);
+//	CFUrl = CFURLCreateStringByAddingPercentEscapes(NULL, CFUrl, CFSTR("#?+"), NULL, kCFStringEncodingUTF8);
+    CFUrl = [CFUrl stringByAddingPercentEncodingWithAllowedCharacters: [NSCharacterSet characterSetWithCharactersInString: @"#?+"]];
+	bool Result = [[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString : (NSString *)CFUrl]];
+	CFRelease(CFUrl);
+
+	return Result;
+}
 void FIOSPlatformProcess::SetRealTimeMode()
 {
 	if ([IOSAppDelegate GetDelegate].OSVersion < 7 && FPlatformMisc::NumberOfCores() > 1)

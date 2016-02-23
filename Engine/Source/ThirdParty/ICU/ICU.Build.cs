@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 using UnrealBuildTool;
 using System;
 using System.IO;
@@ -25,14 +25,15 @@ public class ICU : ModuleRules
 		string PlatformFolderName = Target.Platform.ToString();
 
         string TargetSpecificPath = ICURootPath + PlatformFolderName + "/";
-        if (Target.Platform == UnrealTargetPlatform.HTML5 && Target.Architecture == "-win32")
+        if (Target.Platform == UnrealTargetPlatform.HTML5 && Target.Architecture == "-win32") // simulator
         {
             TargetSpecificPath = ICURootPath + "Win32/";
         }
 
 		if ((Target.Platform == UnrealTargetPlatform.Win64) ||
-			(Target.Platform == UnrealTargetPlatform.Win32) || 
-            (Target.Platform == UnrealTargetPlatform.HTML5 && Target.Architecture == "-win32"))
+			(Target.Platform == UnrealTargetPlatform.Win32) ||
+            (Target.Platform == UnrealTargetPlatform.HTML5 && Target.Architecture == "-win32") // simulator
+        )
 		{
 			string VSVersionFolderName = "VS" + WindowsPlatform.GetVisualStudioCompilerVersionName();
 			TargetSpecificPath += VSVersionFolderName + "/";
@@ -158,7 +159,7 @@ public class ICU : ModuleRules
                     break;
             }
         }
-		else if (Target.Platform == UnrealTargetPlatform.Mac || Target.Platform == UnrealTargetPlatform.IOS)
+		else if (Target.Platform == UnrealTargetPlatform.Mac || Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.TVOS)
 		{
             string StaticLibraryExtension = "a";
             string DynamicLibraryExtension = "dylib";
@@ -184,10 +185,7 @@ public class ICU : ModuleRules
                     {
                         string LibraryName = "libicu" + Stem + LibraryNamePostfix + "." + StaticLibraryExtension;
                         PublicAdditionalLibraries.Add(TargetSpecificPath + "lib/" + LibraryName);
-						if (Target.Platform == UnrealTargetPlatform.IOS)
-						{
-							PublicAdditionalShadowFiles.Add(TargetSpecificPath + "lib/" + LibraryName);
-						}
+						PublicAdditionalShadowFiles.Add(TargetSpecificPath + "lib/" + LibraryName);
                     }
                     break;
                 case EICULinkType.Dynamic:
@@ -228,9 +226,26 @@ public class ICU : ModuleRules
 				"io"	// Input/Output
 			};
 
+            string OpimizationSuffix = "";
+            if (UEBuildConfiguration.bCompileForSize)
+            {
+                OpimizationSuffix = "_Oz";
+            }
+            else
+            {
+                if (Target.Configuration == UnrealTargetConfiguration.Development)
+                {
+                    OpimizationSuffix = "_O2";
+                }
+                else if (Target.Configuration == UnrealTargetConfiguration.Shipping)
+                {
+                    OpimizationSuffix = "_O3";
+                }
+            }
+
             foreach (string Stem in LibraryNameStems)
             {
-                string LibraryName = "libicu" + Stem + "." + StaticLibraryExtension;
+                string LibraryName = "libicu" + Stem + OpimizationSuffix + "." + StaticLibraryExtension;
                 PublicAdditionalLibraries.Add(TargetSpecificPath + LibraryName);
             }
         }
@@ -290,6 +305,7 @@ public class ICU : ModuleRules
             (Target.Platform == UnrealTargetPlatform.Android) ||
             (Target.Platform == UnrealTargetPlatform.Mac) ||
 			(Target.Platform == UnrealTargetPlatform.IOS) ||
+			(Target.Platform == UnrealTargetPlatform.TVOS) ||
 			(Target.Platform == UnrealTargetPlatform.PS4) ||
             (Target.Platform == UnrealTargetPlatform.XboxOne) ||
             (Target.Platform == UnrealTargetPlatform.HTML5))

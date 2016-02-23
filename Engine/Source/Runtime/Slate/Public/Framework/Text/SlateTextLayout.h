@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #if WITH_FANCY_TEXT
@@ -15,18 +15,12 @@ public:
 
 	int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const;
 
-	//void AddLine( const TSharedRef< FString >& Text, const FTextBlockStyle& TextStyle )
-	//{
-	//	FLineModel LineModel( Text );
-	//	LineModel.Runs.Add( FLineModel::FRun( FSlateTextRun::Create( LineModel.Text, TextStyle ) ) );
-	//	LineModels.Add( LineModel );
-	//}
-
 	virtual void EndLayout() override;
+
+	virtual void UpdateIfNeeded() override;
 
 	void SetDefaultTextStyle(FTextBlockStyle InDefaultTextStyle);
 	const FTextBlockStyle& GetDefaultTextStyle() const;
-
 
 protected:
 
@@ -44,6 +38,9 @@ private:
 
 	/** Default style used by the TextLayout */
 	FTextBlockStyle DefaultTextStyle;
+
+	/** The localized fallback font revision the last time the text layout was updated. Used to force a flush if the font changes. */
+	int32 LocalizedFallbackFontRevision;
 
 	friend class FSlateTextLayoutFactory;
 };

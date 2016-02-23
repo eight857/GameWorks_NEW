@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 
 #include "EnginePrivate.h"
@@ -17,19 +17,30 @@ USoundNode::USoundNode(const FObjectInitializer& ObjectInitializer)
 {
 }
 
-#if WITH_EDITOR
+
 void USoundNode::Serialize(FArchive& Ar)
 {
 	Super::Serialize(Ar);
 
-	if (!Ar.IsFilterEditorOnly())
+	if (Ar.UE4Ver() >= VER_UE4_COOKED_ASSETS_IN_EDITOR_SUPPORT)
 	{
+		FStripDataFlags StripFlags(Ar);
 #if WITH_EDITORONLY_DATA
-		Ar << GraphNode;
+		if (!StripFlags.IsEditorDataStripped())
+		{
+			Ar << GraphNode;
+		}
 #endif
 	}
+#if WITH_EDITOR
+	else
+	{
+		Ar << GraphNode;
+	}
+#endif
 }
 
+#if WITH_EDITOR
 void USoundNode::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
 {
 	USoundNode* This = CastChecked<USoundNode>(InThis);
@@ -139,6 +150,22 @@ float USoundNode::GetDuration()
 		}
 	}
 	return MaxDuration;
+}
+
+int32 USoundNode::GetNumSounds(const UPTRINT NodeWaveInstanceHash, FActiveSound& ActiveSound) const
+{
+	// Default implementation loops through all child nodes and sums the number of sounds.
+	// For most nodes this will result in 1, for node mixers, this will result in multiple sounds.
+	int32 NumSounds = 0;
+	for (USoundNode* ChildNode : ChildNodes)
+	{
+		if (ChildNode)
+		{
+			NumSounds += ChildNode->GetNumSounds(NodeWaveInstanceHash, ActiveSound);
+		}
+	}
+
+	return NumSounds;
 }
 
 #if WITH_EDITOR

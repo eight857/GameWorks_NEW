@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "PropertyEditorPrivatePCH.h"
 #include "SPropertyEditorAsset.h"
@@ -178,10 +178,39 @@ void SPropertyEditorAsset::Construct( const FArguments& InArgs, const TSharedPtr
 		]
 	];
 
-	TAttribute<bool> IsEnabledAttribute( this, &SPropertyEditorAsset::CanEdit );
+	TAttribute<bool> IsEnabledAttribute(this, &SPropertyEditorAsset::CanEdit);
+	TAttribute<FText> TooltipAttribute(this, &SPropertyEditorAsset::OnGetToolTip);
+
+	if (Property && Property->HasAllPropertyFlags(CPF_DisableEditOnTemplate))
+	{
+		// There are some cases where editing an Actor Property is not allowed, such as when it is contained within a struct or a CDO
+		TArray<UObject*> ObjectList;
+		PropertyEditor->GetPropertyHandle()->GetOuterObjects(ObjectList);
+
+		// If there is no objects, that means we must have a struct asset managing this property
+		if (ObjectList.Num() == 0)
+		{
+			IsEnabledAttribute.Set(false);
+			TooltipAttribute.Set(LOCTEXT("VariableHasDisableEditOnTemplate", "Editing this value in structure's defaults is not allowed"));
+		}
+		else
+		{
+			// Go through all the found objects and see if any are a CDO, we can't set an actor in a CDO default.
+			for (UObject* Obj : ObjectList)
+			{
+				if (Obj->HasAllFlags(RF_ClassDefaultObject))
+				{
+					IsEnabledAttribute.Set(false);
+					TooltipAttribute.Set(LOCTEXT("VariableHasDisableEditOnTemplate", "Editing this value in a Class Default Object is not allowed"));
+					break;
+				}
+
+			}
+		}
+	}
 
 	AssetComboButton = SNew(SComboButton)
-		.ToolTipText( this, &SPropertyEditorAsset::OnGetToolTip )
+		.ToolTipText(TooltipAttribute)
 		.ButtonStyle( FEditorStyle::Get(), "PropertyEditor.AssetComboStyle" )
 		.ForegroundColor(FEditorStyle::GetColor("PropertyEditor.AssetName.ColorAndOpacity"))
 		.OnGetMenuContent( this, &SPropertyEditorAsset::OnGetMenuContent )
@@ -219,7 +248,7 @@ void SPropertyEditorAsset::Construct( const FArguments& InArgs, const TSharedPtr
 			.OnMouseDoubleClick( this, &SPropertyEditorAsset::OnAssetThumbnailDoubleClick )
 			[
 				SNew( SBox )
-				.ToolTipText( this, &SPropertyEditorAsset::OnGetToolTip )
+				.ToolTipText(TooltipAttribute)
 				.WidthOverride( InArgs._ThumbnailSize.X ) 
 				.HeightOverride( InArgs._ThumbnailSize.Y )
 				[
@@ -676,11 +705,11 @@ void SPropertyEditorAsset::OnBrowse()
 		// This code only works on loaded objects
 		FPropertyEditor::SyncToObjectsInNode(PropertyEditor->GetPropertyNode());		
 	}
-	else if (auto* Asset = Value.AssetData.GetAsset())
+	else
 	{
-		TArray< UObject* > Objects;
-		Objects.Add( Asset );
-		GEditor->SyncBrowserToObjects( Objects );
+		TArray<FAssetData> AssetDataList;
+		AssetDataList.Add( Value.AssetData );
+		GEditor->SyncBrowserToObjects( AssetDataList );
 	}
 }
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "TP_Flying.h"
 #include "TP_FlyingPawn.h"
@@ -66,8 +66,9 @@ void ATP_FlyingPawn::NotifyHit(class UPrimitiveComponent* MyComp, class AActor* 
 {
 	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
 
-	// Set velocity to zero upon collision
-	CurrentForwardSpeed = 0.f;
+	// Deflect along the surface when we collide.
+	FRotator CurrentRotation = GetActorRotation(RootComponent);
+	SetActorRotation(FQuat::Slerp(CurrentRotation.Quaternion(), HitNormal.ToOrientationQuat(), 0.025f));
 }
 
 

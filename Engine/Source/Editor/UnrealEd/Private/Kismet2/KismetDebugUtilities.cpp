@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "UnrealEd.h"
 #include "Engine/Breakpoint.h"
@@ -16,29 +16,49 @@
 
 #define LOCTEXT_NAMESPACE "BlueprintDebugging"
 
+/** Per-thread data for use by FKismetDebugUtilities functions */
+class FKismetDebugUtilitiesData : public TThreadSingleton<FKismetDebugUtilitiesData>
+{
+public:
+	FKismetDebugUtilitiesData()
+		: CurrentInstructionPointer(nullptr)
+		, MostRecentBreakpointInstructionPointer(nullptr)
+		, StackFrameAtIntraframeDebugging(nullptr)
+		, TraceStackSamples(FKismetDebugUtilities::MAX_TRACE_STACK_SAMPLES)
+		, bIsSingleStepping(false)
+	{
+	}
+
+	TWeakObjectPtr< class UEdGraphNode > CurrentInstructionPointer;
+
+	// The current instruction encountered if we are stopped at a breakpoint; NULL otherwise
+	TWeakObjectPtr< class UEdGraphNode > MostRecentBreakpointInstructionPointer;
+
+	// The last message that an exception delivered
+	FString LastExceptionMessage;
+
+	// Only valid inside intraframe debugging
+	const FFrame* StackFrameAtIntraframeDebugging;
+
+	TSimpleRingBuffer<FKismetTraceSample> TraceStackSamples;
+
+	bool bIsSingleStepping;
+};
+
 //////////////////////////////////////////////////////////////////////////
 // FKismetDebugUtilities
 
-TWeakObjectPtr< UEdGraphNode > FKismetDebugUtilities::CurrentInstructionPointer;
-TWeakObjectPtr< UEdGraphNode > FKismetDebugUtilities::MostRecentBreakpointInstructionPointer;
-FString FKismetDebugUtilities::LastExceptionMessage;
-const FFrame* FKismetDebugUtilities::StackFrameAtIntraframeDebugging = NULL;
-
-TSimpleRingBuffer<FKismetTraceSample> FKismetDebugUtilities::TraceStackSamples(FKismetDebugUtilities::MAX_TRACE_STACK_SAMPLES);
-
-bool FKismetDebugUtilities::bIsSingleStepping = false;
-
-//////////////////////////////////////////////////////////////////////////
-
 void FKismetDebugUtilities::RequestSingleStepping()
 {
-	bIsSingleStepping = true;
+	FKismetDebugUtilitiesData::Get().bIsSingleStepping = true;
 }
 
 
 
 void FKismetDebugUtilities::OnScriptException(const UObject* ActiveObject, const FFrame& StackFrame, const FBlueprintExceptionInfo& Info)
 {
+	FKismetDebugUtilitiesData& Data = FKismetDebugUtilitiesData::Get();
+
 	struct Local
 	{
 		static void OnMessageLogLinkActivated(const class TSharedRef<IMessageToken>& Token)
@@ -83,7 +103,7 @@ void FKismetDebugUtilities::OnScriptException(const UObject* ActiveObject, const
 			bShouldBreakExecution = true;
 			break;
 		case EBlueprintExceptionType::Tracepoint:
-			bShouldBreakExecution = bIsSingleStepping;
+			bShouldBreakExecution = Data.bIsSingleStepping;
 			break;
 		case EBlueprintExceptionType::WireTracepoint:
 			break;
@@ -187,7 +207,7 @@ void FKismetDebugUtilities::OnScriptException(const UObject* ActiveObject, const
 		if (BlueprintObj->GetObjectBeingDebugged() == ActiveObject)
 		{
 			// Record into the trace log
-			FKismetTraceSample& Tracer = TraceStackSamples.WriteNewElementUninitialized();
+			FKismetTraceSample& Tracer = Data.TraceStackSamples.WriteNewElementUninitialized();
 			Tracer.Context = ActiveObject;
 			Tracer.Function = StackFrame.Node;
 			Tracer.Offset = BreakpointOffset; //@TODO: Might want to make this a parameter of Info
@@ -268,84 +288,101 @@ void FKismetDebugUtilities::OnScriptException(const UObject* ActiveObject, const
 			BlueprintObj->SetObjectBeingDebugged(SavedObjectBeingDebugged);
 		}
 
+		const auto DisplayErrorLambda = [&](const FText ErrorTypeName, const TCHAR* Description)
+		{
+			if (GUnrealEd->PlayWorld != NULL)
+			{
+				GEditor->RequestEndPlayMap();
+				FSlateApplication::Get().LeaveDebuggingMode();
+			}
+
+			// Launch a message box notifying the user why they have been booted
+			{
+				// Callback to display a pop-up showing the Callstack, the user can highlight and copy this if needed
+				auto DisplayCallStackLambda = [](const FText CallStack)
+				{
+					TSharedPtr<SMultiLineEditableText> TextBlock;
+					TSharedRef<SWidget> DisplayWidget =
+						SNew(SBox)
+						.MaxDesiredHeight(512)
+						.MaxDesiredWidth(512)
+						.Content()
+						[
+							SNew(SBorder)
+							.BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder"))
+							[
+								SNew(SScrollBox)
+								+ SScrollBox::Slot()
+								[
+									SAssignNew(TextBlock, SMultiLineEditableText)
+									.AutoWrapText(true)
+									.IsReadOnly(true)
+									.Text(CallStack)
+								]
+							]
+						];
+
+					FSlateApplication::Get().PushMenu(
+						FSlateApplication::Get().GetActiveTopLevelWindow().ToSharedRef(),
+						FWidgetPath(),
+						DisplayWidget,
+						FSlateApplication::Get().GetCursorPos(),
+						FPopupTransitionEffect(FPopupTransitionEffect::TypeInPopup)
+						);
+
+					FSlateApplication::Get().SetKeyboardFocus(TextBlock);
+				};
+
+				TSharedRef<FTokenizedMessage> Message = FTokenizedMessage::Create(EMessageSeverity::Error);
+
+				// Display a UObject link to the Blueprint that is the source of the failure
+				Message->AddToken(FTextToken::Create(ErrorTypeName));
+				Message->AddToken(FTextToken::Create(LOCTEXT("DisplayErrorLambda_Blueprint", "detected in ")));
+				FString BlueprintName;
+				BlueprintObj->GetName(BlueprintName);
+				Message->AddToken(FUObjectToken::Create(BlueprintObj, FText::FromString(BlueprintName)));
+
+				// Display a UObject link to the UFunction that is crashing. Will open the Blueprint if able and focus on the function's graph
+				Message->AddToken(FTextToken::Create(LOCTEXT("DisplayErrorLambda_Function", ", asserted during ")));
+				const int32 BreakpointOpCodeOffset = StackFrame.Code - StackFrame.Node->Script.GetData() - 1; //@TODO: Might want to make this a parameter of Info
+				UEdGraphNode* SourceNode = FindSourceNodeForCodeLocation(ActiveObject, StackFrame.Node, BreakpointOpCodeOffset, /*bAllowImpreciseHit=*/ true);
+
+				// If a source node is found, that's the token we want to link, otherwise settle with the UFunction
+				if (SourceNode)
+				{
+					Message->AddToken(FUObjectToken::Create(SourceNode, SourceNode->GetNodeTitle(ENodeTitleType::ListView)));
+				}
+				else
+				{
+					Message->AddToken(FUObjectToken::Create(StackFrame.Node, StackFrame.Node->GetDisplayNameText()));
+				}
+
+				if (!Description)
+				{
+					Message->AddToken(FTextToken::Create(LOCTEXT("DisplayErrorLambda_CallStackNoDescription", " with the following ")));
+				}
+				else
+				{
+					Message->AddToken(FTextToken::Create(LOCTEXT("DisplayErrorLambda_CallStackWithDescription", " with the following message")));
+					Message->AddToken(FTextToken::Create(FText::FromString(FString::Printf(TEXT("\"%s\""), Description))));
+					Message->AddToken(FTextToken::Create(LOCTEXT("DisplayErrorLambda_CallStackWithDescriptionAnd", "and ")));
+				}
+
+				// Add an action token to display a pop-up that will display the complete script callstack
+				const FText CallStackAsText = FText::FromString(StackFrame.GetStackTrace());
+				Message->AddToken(FActionToken::Create(LOCTEXT("DisplayErrorLambda_CallStackLink", "Call Stack"), LOCTEXT("DisplayErrorLambda_CallStackDesc", "Displays the underlying callstack, tracing what function calls led to the assert occuring."), FOnActionTokenExecuted::CreateStatic(DisplayCallStackLambda, CallStackAsText)));
+				FMessageLog("PIE").AddMessage(Message);
+			}
+		};
+
 		// Extra cleanup after potential interactive handling
 		switch (Info.GetType())
 		{
 		case EBlueprintExceptionType::FatalError:
+			DisplayErrorLambda(LOCTEXT("FatalErrorType", "Fatal Error"), *Info.GetDescription());
+			break;
 		case EBlueprintExceptionType::InfiniteLoop:
-			{
-				if (GUnrealEd->PlayWorld != NULL)
-				{
-					GEditor->RequestEndPlayMap();
-					FSlateApplication::Get().LeaveDebuggingMode();
-					// Launch a message box notifying the user why they have been booted
-					{
-						// Callback to display a pop-up showing the Callstack, the user can highlight and copy this if needed
-						auto DisplayCallStackLambda = [](const FText CallStack)
-						{
-							TSharedPtr<SMultiLineEditableText> TextBlock;
-							TSharedRef<SWidget> DisplayWidget = 
-								SNew(SBox)
-									.MaxDesiredHeight(512)
-									.MaxDesiredWidth(512)
-									.Content()
-									[
-										SNew(SBorder)
-											.BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder"))
-											[
-												SNew(SScrollBox)
-												+SScrollBox::Slot()
-												[
-													SAssignNew(TextBlock, SMultiLineEditableText)
-														.AutoWrapText(true)
-														.IsReadOnly(true)
-														.Text(CallStack)
-												]
-											]
-									];
-
-							FSlateApplication::Get().PushMenu(
-								FSlateApplication::Get().GetActiveTopLevelWindow().ToSharedRef(),
-								FWidgetPath(),
-								DisplayWidget,
-								FSlateApplication::Get().GetCursorPos(),
-								FPopupTransitionEffect(FPopupTransitionEffect::TypeInPopup)
-								);	
-
-							FSlateApplication::Get().SetKeyboardFocus(TextBlock);
-						};
-
-						TSharedRef<FTokenizedMessage> Message = FTokenizedMessage::Create(EMessageSeverity::Error);
-
-						// Display a UObject link to the Blueprint that is the source of the failure
-						Message->AddToken(FTextToken::Create(LOCTEXT( "InfiniteLoopWarning_Blueprint", "Infinite Loop detected in ")));
-						FString BlueprintName;
-						BlueprintObj->GetName(BlueprintName);
-						Message->AddToken(FUObjectToken::Create(BlueprintObj, FText::FromString(BlueprintName)));
-
-						// Display a UObject link to the UFunction that is crashing. Will open the Blueprint if able and focus on the function's graph
-						Message->AddToken(FTextToken::Create(LOCTEXT( "InfiniteLoopWarning_Function", ", asserted during ")));
-						const int32 BreakpointOpCodeOffset = StackFrame.Code - StackFrame.Node->Script.GetData() - 1; //@TODO: Might want to make this a parameter of Info
-						UEdGraphNode* SourceNode = FindSourceNodeForCodeLocation(ActiveObject, StackFrame.Node, BreakpointOpCodeOffset, /*bAllowImpreciseHit=*/ true);
-
-						// If a source node is found, that's the token we want to link, otherwise settle with the UFunction
-						if(SourceNode)
-						{
-							Message->AddToken(FUObjectToken::Create(SourceNode, SourceNode->GetNodeTitle(ENodeTitleType::ListView)));
-						}
-						else
-						{
-							Message->AddToken(FUObjectToken::Create(StackFrame.Node, StackFrame.Node->GetDisplayNameText()));
-						}
-
-						// Add an action token to display a pop-up that will display the complete script callstack
-						Message->AddToken(FTextToken::Create(LOCTEXT( "InfiniteLoopWarning_CallStack", " with the following ")));
-						const FText CallStackAsText = FText::FromString(StackFrame.GetStackTrace());
-						Message->AddToken(FActionToken::Create(LOCTEXT( "InfiniteLoopWarning_CallStackLink", "Call Stack" ), LOCTEXT( "InfiniteLoopWarning_CallStackDesc", "Displays the underlying callstack, tracing what function calls led to the assert occuring." ), FOnActionTokenExecuted::CreateStatic(DisplayCallStackLambda, CallStackAsText)));
-						FMessageLog("PIE").AddMessage(Message);
-					}
-				}
-			}
+			DisplayErrorLambda(LOCTEXT("InfiniteLoopErrorType", "Infinite Loop"), nullptr);
 			break;
 		default:
 			// Left empty intentionally
@@ -374,6 +411,11 @@ UClass* FKismetDebugUtilities::FindClassForNode(const UObject* Object, UFunction
 	}
 	return NULL;
 }	
+
+const TSimpleRingBuffer<FKismetTraceSample>& FKismetDebugUtilities::GetTraceStack()
+{
+	return FKismetDebugUtilitiesData::Get().TraceStackSamples; 
+}
 
 UEdGraphNode* FKismetDebugUtilities::FindSourceNodeForCodeLocation(const UObject* Object, UFunction* Function, int32 DebugOpcodeOffset, bool bAllowImpreciseHit)
 {
@@ -407,11 +449,13 @@ void FKismetDebugUtilities::AttemptToBreakExecution(UBlueprint* BlueprintObj, co
 {
 	checkSlow(BlueprintObj->GetObjectBeingDebugged() == ActiveObject);
 
+	FKismetDebugUtilitiesData& Data = FKismetDebugUtilitiesData::Get();
+
 	// Cannot have re-entrancy while processing a breakpoint; return from this call stack before resuming execution!
 	check( !GIntraFrameDebuggingGameThread );
 	
 	TGuardValue<bool> SignalGameThreadBeingDebugged(GIntraFrameDebuggingGameThread, true);
-	TGuardValue<const FFrame*> ResetStackFramePointer(StackFrameAtIntraframeDebugging, &StackFrame);
+	TGuardValue<const FFrame*> ResetStackFramePointer(Data.StackFrameAtIntraframeDebugging, &StackFrame);
 
 	// Should we pump Slate messages from this callstack, allowing intra-frame debugging?
 	bool bShouldInStackDebug = false;
@@ -420,9 +464,9 @@ void FKismetDebugUtilities::AttemptToBreakExecution(UBlueprint* BlueprintObj, co
 	{
 		bShouldInStackDebug = true;
 
-		CurrentInstructionPointer = NodeStoppedAt;
+		Data.CurrentInstructionPointer = NodeStoppedAt;
 
-		MostRecentBreakpointInstructionPointer = NULL;
+		Data.MostRecentBreakpointInstructionPointer = NULL;
 
 		// Find the breakpoint object for the node, assuming we hit one
 		if (Info.GetType() == EBlueprintExceptionType::Breakpoint)
@@ -431,7 +475,7 @@ void FKismetDebugUtilities::AttemptToBreakExecution(UBlueprint* BlueprintObj, co
 
 			if (Breakpoint != NULL)
 			{
-				MostRecentBreakpointInstructionPointer = NodeStoppedAt;
+				Data.MostRecentBreakpointInstructionPointer = NodeStoppedAt;
 				FKismetDebugUtilities::UpdateBreakpointStateWhenHit(Breakpoint, BlueprintObj);
 					
 				//@TODO: K2: DEBUGGING: Debug print text can go eventually
@@ -445,9 +489,9 @@ void FKismetDebugUtilities::AttemptToBreakExecution(UBlueprint* BlueprintObj, co
 		}
 
 		// Turn off single stepping; we've hit a node
-		if (bIsSingleStepping)
+		if (Data.bIsSingleStepping)
 		{
-			bIsSingleStepping = false;
+			Data.bIsSingleStepping = false;
 		}
 	}
 	else
@@ -455,7 +499,10 @@ void FKismetDebugUtilities::AttemptToBreakExecution(UBlueprint* BlueprintObj, co
 		UE_LOG(LogBlueprintDebug, Warning, TEXT("Tried to break execution in an unknown spot at object %s:%04X"), *StackFrame.Node->GetFullName(), StackFrame.Code - StackFrame.Node->Script.GetData());
 	}
 
-	if ((GUnrealEd->PlayWorld != NULL) && !GIsAutomationTesting)
+	// A check to !GIsAutomationTesting was removed from here as it seemed redundant.
+	// Breakpoints have to be explicitly enabled by the user which shouldn't happen 
+	// under automation and this was preventing debugging on automation test bp's.
+	if ((GUnrealEd->PlayWorld != NULL))
 	{
 		// Pause the simulation
 		GUnrealEd->PlayWorld->bDebugPauseExecution = true;
@@ -471,7 +518,7 @@ void FKismetDebugUtilities::AttemptToBreakExecution(UBlueprint* BlueprintObj, co
 	// Now enter within-the-frame debugging mode
 	if (bShouldInStackDebug)
 	{
-		LastExceptionMessage = Info.GetDescription();
+		Data.LastExceptionMessage = Info.GetDescription();
 		FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(NodeStoppedAt);
 
 		FSlateApplication::Get().EnterDebuggingMode();
@@ -484,7 +531,7 @@ UEdGraphNode* FKismetDebugUtilities::GetCurrentInstruction()
 	// It only has meaning during intraframe debugging.
 	if (GIntraFrameDebuggingGameThread)
 	{
-		return CurrentInstructionPointer.Get();
+		return FKismetDebugUtilitiesData::Get().CurrentInstructionPointer.Get();
 	}
 	else
 	{
@@ -498,7 +545,7 @@ UEdGraphNode* FKismetDebugUtilities::GetMostRecentBreakpointHit()
 	// It only has meaning during intraframe debugging.
 	if (GIntraFrameDebuggingGameThread)
 	{
-		return MostRecentBreakpointInstructionPointer.Get();
+		return FKismetDebugUtilitiesData::Get().MostRecentBreakpointInstructionPointer.Get();
 	}
 	else
 	{
@@ -514,10 +561,13 @@ void FKismetDebugUtilities::NotifyDebuggerOfStartOfGameFrame(UWorld* CurrentWorl
 // Notify the debugger of the end of the game frame
 void FKismetDebugUtilities::NotifyDebuggerOfEndOfGameFrame(UWorld* CurrentWorld)
 {
-	bIsSingleStepping = false;
+	FKismetDebugUtilitiesData::Get().bIsSingleStepping = false;
 }
 
-
+bool FKismetDebugUtilities::IsSingleStepping()
+{ 
+	return FKismetDebugUtilitiesData::Get().bIsSingleStepping; 
+}
 
 //////////////////////////////////////////////////////////////////////////
 // Breakpoint
@@ -664,7 +714,11 @@ void FKismetDebugUtilities::GetValidBreakpointLocations(const UK2Node_MacroInsta
 	bool bIsMacroPure = false;
 	UK2Node_Tunnel* MacroEntryNode = NULL;
 	UK2Node_Tunnel* MacroResultNode = NULL;
-	FKismetEditorUtilities::GetInformationOnMacro(MacroInstanceNode->GetMacroGraph(), MacroEntryNode, MacroResultNode, bIsMacroPure);
+	UEdGraph* InstanceNodeMacroGraph = MacroInstanceNode->GetMacroGraph();
+	if (ensure(InstanceNodeMacroGraph != nullptr))
+	{
+		FKismetEditorUtilities::GetInformationOnMacro(InstanceNodeMacroGraph, MacroEntryNode, MacroResultNode, bIsMacroPure);
+	}
 	if (!bIsMacroPure && MacroEntryNode)
 	{
 		// Get the execute pin outputs on the entry node
@@ -712,7 +766,7 @@ UBreakpoint* FKismetDebugUtilities::FindBreakpointForNode(UBlueprint* Blueprint,
 		{
 			Blueprint->Breakpoints.RemoveAtSwap(Index);
 			Blueprint->MarkPackageDirty();
-			UE_LOG(LogBlueprintDebug, Warning, TEXT("Encountered an invalid blueprint breakpoint (this should not happen... if you know how your blueprint got in this state, then please notify the Engine-Blueprints team)"));
+			UE_LOG(LogBlueprintDebug, Warning, TEXT("Encountered an invalid blueprint breakpoint in %s (this should not happen... if you know how your blueprint got in this state, then please notify the Engine-Blueprints team)"), *Blueprint->GetPathName());
 			continue;
 		}
 
@@ -721,7 +775,7 @@ UBreakpoint* FKismetDebugUtilities::FindBreakpointForNode(UBlueprint* Blueprint,
 		{
 			Blueprint->Breakpoints.RemoveAtSwap(Index);
 			Blueprint->MarkPackageDirty();
-			UE_LOG(LogBlueprintDebug, Warning, TEXT("Encountered a blueprint breakpoint without an associated node (this should not happen... if you know how your blueprint got in this state, then please notify the Engine-Blueprints team)"));
+			UE_LOG(LogBlueprintDebug, Warning, TEXT("Encountered a blueprint breakpoint in %s without an associated node (this should not happen... if you know how your blueprint got in this state, then please notify the Engine-Blueprints team)"), *Blueprint->GetPathName());
 			continue;
 		}
 
@@ -858,6 +912,8 @@ void FKismetDebugUtilities::ClearPinWatches(UBlueprint* Blueprint)
 // Gets the watched tooltip for a specified site
 FKismetDebugUtilities::EWatchTextResult FKismetDebugUtilities::GetWatchText(FString& OutWatchText, UBlueprint* Blueprint, UObject* ActiveObject, const UEdGraphPin* WatchPin)
 {
+	FKismetDebugUtilitiesData& Data = FKismetDebugUtilitiesData::Get();
+
 	if (UProperty* Property = FKismetDebugUtilities::FindClassPropertyForPin(Blueprint, WatchPin))
 	{
 		if (!Property->IsValidLowLevel())
@@ -889,7 +945,7 @@ FKismetDebugUtilities::EWatchTextResult FKismetDebugUtilities::GetWatchText(FStr
 			void* PropertyBase = NULL;
 
 			// Walk up the stack frame to see if we can find a function scope that contains the property as a local
-			for (const FFrame* TestFrame = StackFrameAtIntraframeDebugging; TestFrame != NULL; TestFrame = TestFrame->PreviousFrame)
+			for (const FFrame* TestFrame = Data.StackFrameAtIntraframeDebugging; TestFrame != NULL; TestFrame = TestFrame->PreviousFrame)
 			{
 				if (Property->IsIn(TestFrame->Node))
 				{
@@ -924,7 +980,8 @@ FKismetDebugUtilities::EWatchTextResult FKismetDebugUtilities::GetWatchText(FStr
 			UFunction* OuterFunction = Cast<UFunction>(Property->GetOuter());
 			if(!PropertyBase && OuterFunction)
 			{
-				if(UBlueprintGeneratedClass* BPGC = Cast<UBlueprintGeneratedClass>(Blueprint->GeneratedClass))
+				UBlueprintGeneratedClass* BPGC = Cast<UBlueprintGeneratedClass>(Blueprint->GeneratedClass);
+				if (BPGC && ActiveObject->IsA(BPGC))
 				{
 					PropertyBase = BPGC->GetPersistentUberGraphFrame(ActiveObject, OuterFunction);
 				}
@@ -955,8 +1012,9 @@ FKismetDebugUtilities::EWatchTextResult FKismetDebugUtilities::GetWatchText(FStr
 
 FText FKismetDebugUtilities::GetAndClearLastExceptionMessage()
 {
-	const FString Result = LastExceptionMessage;
-	LastExceptionMessage.Empty();
+	FKismetDebugUtilitiesData& Data = FKismetDebugUtilitiesData::Get();
+	const FString Result = Data.LastExceptionMessage;
+	Data.LastExceptionMessage.Empty();
 	return FText::FromString(Result);
 }
 

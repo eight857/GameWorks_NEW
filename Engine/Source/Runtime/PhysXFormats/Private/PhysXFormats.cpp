@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "Core.h"
 #include "ModuleInterface.h"
@@ -84,7 +84,7 @@ public:
 		OutFormats.Add(NAME_PhysXPS4);
 	}
 
-	virtual bool CookConvex(FName Format, const TArray<FVector>& SrcBuffer, TArray<uint8>& OutBuffer) const override
+	virtual bool CookConvex(FName Format, const TArray<FVector>& SrcBuffer, TArray<uint8>& OutBuffer, bool bDeformableMesh = false) const override
 	{
 #if WITH_PHYSX
 		PxPlatform::Enum PhysXFormat = PxPlatform::ePC;
@@ -95,19 +95,45 @@ public:
 		PConvexMeshDesc.points.data = SrcBuffer.GetData();
 		PConvexMeshDesc.points.count = SrcBuffer.Num();
 		PConvexMeshDesc.points.stride = sizeof(FVector);
-		PConvexMeshDesc.flags = PxConvexFlag::eCOMPUTE_CONVEX;
+		if (bDeformableMesh)
+		{
+			PConvexMeshDesc.flags = PxConvexFlag::eCOMPUTE_CONVEX | PxConvexFlag::eINFLATE_CONVEX;
+		}
+		else
+		{
+			PConvexMeshDesc.flags = PxConvexFlag::eCOMPUTE_CONVEX;
+		}
 
 		// Set up cooking
-		const PxCookingParams& Params = PhysXCooking->getParams();
+		const PxCookingParams Params = PhysXCooking->getParams();
 		PxCookingParams NewParams = Params;
 		NewParams.targetPlatform = PhysXFormat;
-		PhysXCooking->setParams(NewParams);
+		if (bDeformableMesh)
+		{
+			// Meshes which can be deformed need different cooking parameters to inhibit vertex welding and add an extra skin around the collision mesh for safety.
+			// We need to set the meshWeldTolerance to zero, even when disabling 'clean mesh' as PhysX will attempt to perform mesh cleaning anyway according to this meshWeldTolerance
+			// if the convex hull is not well formed.
+			// Set the skin thickness as a proportion of the overall size of the mesh as PhysX's internal tolerances also use the overall size to calculate the epsilon used.
+			const FBox Bounds(SrcBuffer);
+			const float MaxExtent = (Bounds.Max - Bounds.Min).Size();
+			NewParams.skinWidth = MaxExtent / 512.0f;
+			NewParams.meshPreprocessParams = PxMeshPreprocessingFlags(PxMeshPreprocessingFlag::eDISABLE_CLEAN_MESH);
+			NewParams.areaTestEpsilon = 0.0f;
+			NewParams.meshWeldTolerance = 0.0f;
+			PhysXCooking->setParams(NewParams);
+		}
 
 		// Cook the convex mesh to a temp buffer
 		TArray<uint8> CookedMeshBuffer;
 		FPhysXOutputStream Buffer(&CookedMeshBuffer);
 		bool Result = PhysXCooking->cookConvexMesh(PConvexMeshDesc, Buffer);
 		
+		// Return default cooking params to normal
+		if (bDeformableMesh)
+		{
+			PhysXCooking->setParams(Params);
+		}
+
 		if( Result && CookedMeshBuffer.Num() > 0 )
 		{
 			// Append the cooked data into cooked buffer
@@ -118,7 +144,7 @@ public:
 		return false;
 	}
 
-	virtual bool CookTriMesh(FName Format, const TArray<FVector>& SrcVertices, const TArray<FTriIndices>& SrcIndices, const TArray<uint16>& SrcMaterialIndices, const bool FlipNormals, TArray<uint8>& OutBuffer, bool bPerPolySkeletalMesh = false) const override
+	virtual bool CookTriMesh(FName Format, const TArray<FVector>& SrcVertices, const TArray<FTriIndices>& SrcIndices, const TArray<uint16>& SrcMaterialIndices, const bool FlipNormals, TArray<uint8>& OutBuffer, bool bDeformableMesh = false) const override
 	{
 #if WITH_PHYSX
 		PxPlatform::Enum PhysXFormat = PxPlatform::ePC;
@@ -142,9 +168,9 @@ public:
 		NewParams.targetPlatform = PhysXFormat;
 		PxMeshPreprocessingFlags OldCookingFlags = NewParams.meshPreprocessParams;
 
-		if (bPerPolySkeletalMesh)
+		if (bDeformableMesh)
 		{
-			//per poly skeletal mesh requires deforming mesh. This is a very special case so we have to change the cook params
+			// In the case of a deformable mesh, we have to change the cook params
 			NewParams.meshPreprocessParams = PxMeshPreprocessingFlag::eDISABLE_CLEAN_MESH;
 		}
 
@@ -155,7 +181,7 @@ public:
 		FPhysXOutputStream Buffer(&OutBuffer);
 		bool Result = PhysXCooking->cookTriangleMesh(PTriMeshDesc, Buffer);
 		
-		if (bPerPolySkeletalMesh)	//restore old params
+		if (bDeformableMesh)	//restore old params
 		{
 			NewParams.meshPreprocessParams = OldCookingFlags;
 			PhysXCooking->setParams(NewParams);

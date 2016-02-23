@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "SlateCorePrivatePCH.h"
 #include "LegacySlateFontInfoCache.h"
@@ -10,8 +10,17 @@ FLegacySlateFontInfoCache& FLegacySlateFontInfoCache::Get()
 	if (!Singleton.IsValid())
 	{
 		Singleton = MakeShareable(new FLegacySlateFontInfoCache());
+
+		FInternationalization::Get().OnCultureChanged().AddSP(Singleton.Get(), &FLegacySlateFontInfoCache::HandleCultureChanged);
 	}
 	return *Singleton;
+}
+
+FLegacySlateFontInfoCache::FLegacySlateFontInfoCache()
+	: LocalizedFallbackFontRevision(INDEX_NONE)
+	, LocalizedFallbackFontDataHistoryVersion(INDEX_NONE)
+	, LocalizedFallbackFontFrameCounter(0)
+{
 }
 
 TSharedPtr<const FCompositeFont> FLegacySlateFontInfoCache::GetCompositeFont(const FName& InLegacyFontName, const EFontHinting InLegacyFontHinting)
@@ -49,6 +58,9 @@ TSharedPtr<const FCompositeFont> FLegacySlateFontInfoCache::GetCompositeFont(con
 		}
 	}
 
+	// Don't allow GC while we perform this allocation
+	FGCScopeGuard GCGuard;
+
 	UFontBulkData* FontBulkData = NewObject<UFontBulkData>();
 	FontBulkData->Initialize(LegacyFontPath);
 	TSharedRef<const FCompositeFont> NewCompositeFont = MakeShareable(new FStandaloneCompositeFont(NAME_None, LegacyFontPath, FontBulkData, InLegacyFontHinting));
@@ -60,54 +72,78 @@ TSharedPtr<const FCompositeFont> FLegacySlateFontInfoCache::GetSystemFont()
 {
 	if (!SystemFont.IsValid())
 	{
+		// Don't allow GC while we perform this allocation
+		FGCScopeGuard GCGuard;
+
 		TArray<uint8> FontBytes = FPlatformMisc::GetSystemFontBytes();
 		UFontBulkData* FontBulkData = NewObject<UFontBulkData>();
 		FontBulkData->Initialize(FontBytes.GetData(), FontBytes.Num());
 		SystemFont = MakeShareable(new FStandaloneCompositeFont(NAME_None, TEXT("DefaultSystemFont"), FontBulkData, EFontHinting::Default));
 	}
+
 	return SystemFont;
 }
 
-TSharedPtr<const FCompositeFont> FLegacySlateFontInfoCache::GetFallbackFont()
+const FFontData& FLegacySlateFontInfoCache::GetLocalizedFallbackFontData()
 {
-	// GetFallbackFont may be called from multiple threads at once
-	FScopeLock Lock(&FallbackFontCS);
+	// GetLocalizedFallbackFontData is called directly from the font cache, so may be called from multiple threads at once
+	FScopeLock Lock(&LocalizedFallbackFontDataCS);
 
 	// The fallback font can change if the active culture is changed
 	const int32 CurrentHistoryVersion = FTextLocalizationManager::Get().GetTextRevision();
+	const uint64 CurrentFrameCounter = GFrameCounter;
 
-	if (!FallbackFont.IsValid() || FallbackFontHistoryVersion != CurrentHistoryVersion)
+	// Only allow the fallback font to be updated once per-frame, as a culture change mid-frame could cause it to change unexpectedly and invalidate some assumptions that the font cache makes
+	// By only allowing it to update once per-frame, we ensure that the font cache has been flushed (which happens at the end of the frame) before we return a new font
+	if (!LocalizedFallbackFontData.IsValid() || (LocalizedFallbackFontDataHistoryVersion != CurrentHistoryVersion && LocalizedFallbackFontFrameCounter != CurrentFrameCounter))
 	{
-		FallbackFontHistoryVersion = CurrentHistoryVersion;
+		// Don't allow GC while we perform this allocation
+		FGCScopeGuard GCGuard;
+
+		LocalizedFallbackFontDataHistoryVersion = CurrentHistoryVersion;
+		LocalizedFallbackFontFrameCounter = CurrentFrameCounter;
+
+		TSharedPtr<const FFontData> PreviousLocalizedFallbackFontData = LocalizedFallbackFontData;
 
 		const FString FallbackFontPath = FPaths::EngineContentDir() / TEXT("Slate/Fonts/") / (NSLOCTEXT("Slate", "FallbackFont", "DroidSansFallback").ToString() + TEXT(".ttf"));
-		UFontBulkData* FontBulkData = NewObject<UFontBulkData>();
-		FontBulkData->Initialize(FallbackFontPath);
-		FallbackFont = MakeShareable(new FStandaloneCompositeFont(NAME_None, FallbackFontPath, FontBulkData, EFontHinting::Default));
+		LocalizedFallbackFontData = AllLocalizedFallbackFontData.FindRef(FallbackFontPath);
+
+		if (!LocalizedFallbackFontData.IsValid())
+		{
+			UFontBulkData* FontBulkData = NewObject<UFontBulkData>();
+			FontBulkData->Initialize(FallbackFontPath);
+			LocalizedFallbackFontData = MakeShareable(new FFontData(FallbackFontPath, FontBulkData, EFontHinting::Default));
+
+			AllLocalizedFallbackFontData.Add(FallbackFontPath, LocalizedFallbackFontData);
+		}
+
+		if (LocalizedFallbackFontData != PreviousLocalizedFallbackFontData)
+		{
+			// Only bump the revision if the font has actually changed
+			++LocalizedFallbackFontRevision;
+		}
 	}
 
-	return FallbackFont;
+	return *LocalizedFallbackFontData;
 }
 
-const FFontData& FLegacySlateFontInfoCache::GetFallbackFontData()
+int32 FLegacySlateFontInfoCache::GetLocalizedFallbackFontRevision() const
 {
-	// GetFallbackFontData is called directly from the font cache, so may be called from multiple threads at once
-	FScopeLock Lock(&FallbackFontDataCS);
+	return LocalizedFallbackFontRevision;
+}
 
-	// The fallback font can change if the active culture is changed
-	const int32 CurrentHistoryVersion = FTextLocalizationManager::Get().GetTextRevision();
+TSharedPtr<const FCompositeFont> FLegacySlateFontInfoCache::GetLastResortFont()
+{
+	// GetLastResortFont may be called from multiple threads at once
+	FScopeLock Lock(&LastResortFontCS);
 
-	if (!FallbackFontData.IsValid() || FallbackFontDataHistoryVersion != CurrentHistoryVersion)
+	if (!LastResortFont.IsValid())
 	{
-		FallbackFontDataHistoryVersion = CurrentHistoryVersion;
-
-		const FString FallbackFontPath = FPaths::EngineContentDir() / TEXT("Slate/Fonts/") / (NSLOCTEXT("Slate", "FallbackFont", "DroidSansFallback").ToString() + TEXT(".ttf"));
-		UFontBulkData* FontBulkData = NewObject<UFontBulkData>();
-		FontBulkData->Initialize(FallbackFontPath);
-		FallbackFontData = MakeShareable(new FFontData(FallbackFontPath, FontBulkData, EFontHinting::Default));
+		const FFontData& FontData = GetLastResortFontData();
+		LastResortFont = MakeShareable(new FStandaloneCompositeFont(NAME_None, FontData.FontFilename, FontData.BulkDataPtr, EFontHinting::Default));
 	}
 
-	return *FallbackFontData;
+	return LastResortFont;
 }
 
 const FFontData& FLegacySlateFontInfoCache::GetLastResortFontData()
@@ -117,6 +153,9 @@ const FFontData& FLegacySlateFontInfoCache::GetLastResortFontData()
 
 	if (!LastResortFontData.IsValid())
 	{
+		// Don't allow GC while we perform this allocation
+		FGCScopeGuard GCGuard;
+
 		const FString LastResortFontPath = FPaths::EngineContentDir() / TEXT("Slate/Fonts/LastResort.ttf");
 		UFontBulkData* FontBulkData = NewObject<UFontBulkData>();
 		FontBulkData->Initialize(LastResortFontPath);
@@ -128,15 +167,21 @@ const FFontData& FLegacySlateFontInfoCache::GetLastResortFontData()
 
 void FLegacySlateFontInfoCache::AddReferencedObjects(FReferenceCollector& Collector)
 {
-	if(FallbackFontData.IsValid())
+	for (const auto& Pair : AllLocalizedFallbackFontData)
 	{
-		const UFontBulkData* TmpPtr = FallbackFontData->BulkDataPtr;
+		const UFontBulkData* TmpPtr = Pair.Value->BulkDataPtr;
 		Collector.AddReferencedObject(TmpPtr);
 	}
 
-	if(LastResortFontData.IsValid())
+	if (LastResortFontData.IsValid())
 	{
 		const UFontBulkData* TmpPtr = LastResortFontData->BulkDataPtr;
 		Collector.AddReferencedObject(TmpPtr);
 	}
+}
+
+void FLegacySlateFontInfoCache::HandleCultureChanged()
+{
+	// We set this to the current frame count, as this will prevent the fallback font being updated for the remainder of this frame (as the culture change may have affected the fallback font used)
+	LocalizedFallbackFontFrameCounter = GFrameCounter;
 }

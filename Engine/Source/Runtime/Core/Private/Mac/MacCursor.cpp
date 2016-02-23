@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "CorePrivatePCH.h"
 #include "MacCursor.h"
@@ -10,35 +10,15 @@
 
 int32 GMacDisableMouseCoalescing = 1;
 static FAutoConsoleVariableRef CVarMacDisableMouseCoalescing(
-	TEXT("r.Mac.HighPrecisionDisablesMouseCoalescing"),
+	TEXT("io.Mac.HighPrecisionDisablesMouseCoalescing"),
 	GMacDisableMouseCoalescing,
 	TEXT("If set to true then OS X mouse event coalescing will be disabled while using high-precision mouse mode, to send all mouse events to UE4's event handling routines to reduce apparent mouse lag. (Default: True)"));
 
 int32 GMacDisableMouseAcceleration = 0;
 static FAutoConsoleVariableRef CVarMacDisableMouseAcceleration(
-	TEXT("r.Mac.HighPrecisionDisablesMouseAcceleration"),
+	TEXT("io.Mac.HighPrecisionDisablesMouseAcceleration"),
 	GMacDisableMouseAcceleration,
 	TEXT("If set to true then OS X's mouse acceleration curve will be disabled while using high-precision mouse mode (typically used when games capture the mouse) resulting in a linear relationship between mouse movement & on-screen cursor movement. For some pointing devices this will make the cursor very slow. (Default: False)"));
-
-static FVector2D CalculateScreenOrigin(NSScreen* Screen)
-{
-	NSArray* AllScreens = [NSScreen screens];
-	if (AllScreens.count < 2)
-	{
-		return FVector2D::ZeroVector;
-	}
-
-	NSRect WholeWorkspace = {{0, 0}, {0, 0}};
-	for (NSScreen* CurScreen in AllScreens)
-	{
-		if (CurScreen)
-		{
-			WholeWorkspace = NSUnionRect(WholeWorkspace, CurScreen.frame);
-		}
-	}
-
-	return FVector2D(Screen.frame.origin.x, WholeWorkspace.size.height - Screen.frame.size.height - Screen.frame.origin.y);
-}
 
 FMacCursor::FMacCursor()
 :	bIsVisible(true)
@@ -243,7 +223,7 @@ FVector2D FMacCursor::GetPosition() const
 	{
 		SCOPED_AUTORELEASE_POOL;
 		NSPoint CursorPos = [NSEvent mouseLocation];
-		CurrentPos = FVector2D(CursorPos.x, FPlatformMisc::ConvertSlateYPositionToCocoa(CursorPos.y));
+		CurrentPos = FVector2D(CursorPos.x, FMacApplication::ConvertSlateYPositionToCocoa(CursorPos.y));
 	}
 
 	static bool bWasFullscreen = false;
@@ -251,7 +231,7 @@ FVector2D FMacCursor::GetPosition() const
 	const FVector2D& MouseScaling = GetMouseScaling();
 	if (FullScreenWindow && MouseScaling != FVector2D::UnitVector)
 	{
-		const FVector2D ScreenOrigin = CalculateScreenOrigin(FullScreenWindow.screen);
+		const FVector2D ScreenOrigin = FMacApplication::CalculateScreenOrigin(FullScreenWindow.screen);
 		const FVector2D PositionOnScreen = ((CurrentPos - ScreenOrigin) * MouseScaling) + ScreenOrigin;
 		bWasFullscreen = true;
 		return PositionOnScreen;
@@ -269,7 +249,7 @@ FVector2D FMacCursor::GetPositionNoScaling() const
 	{
 		SCOPED_AUTORELEASE_POOL;
 		NSPoint CursorPos = [NSEvent mouseLocation];
-		CurrentPos = FVector2D(CursorPos.x, FPlatformMisc::ConvertSlateYPositionToCocoa(CursorPos.y));
+		CurrentPos = FVector2D(CursorPos.x, FMacApplication::ConvertSlateYPositionToCocoa(CursorPos.y));
 	}
 	return CurrentPos;
 }
@@ -279,7 +259,7 @@ void FMacCursor::SetPosition(const int32 X, const int32 Y)
 	const FVector2D& MouseScaling = GetMouseScaling();
 	if (FullScreenWindow && MouseScaling != FVector2D::UnitVector)
 	{
-		const FVector2D ScreenOrigin = CalculateScreenOrigin(FullScreenWindow.screen);
+		const FVector2D ScreenOrigin = FMacApplication::CalculateScreenOrigin(FullScreenWindow.screen);
 		const FVector2D PositionOnScreen = ((FVector2D(X, Y) - ScreenOrigin) / MouseScaling) + ScreenOrigin;
 		SetPositionNoScaling(PositionOnScreen.X, PositionOnScreen.Y);
 	}
@@ -354,8 +334,6 @@ void FMacCursor::Lock(const RECT* const Bounds)
 		CursorClipRect.Max.Y = FMath::TruncToInt(Bounds->bottom) - 1;
 	}
 
-	CGAssociateMouseAndMouseCursorPosition(!bUseHighPrecisionMode && !IsLocked());
-
 	MacApplication->OnCursorLock();
 
 	FVector2D Position = GetPositionNoScaling();
@@ -363,8 +341,6 @@ void FMacCursor::Lock(const RECT* const Bounds)
 	{
 		SetPositionNoScaling(Position.X, Position.Y);
 	}
-
-	MouseWarpDelta = FVector2D::ZeroVector;
 }
 
 bool FMacCursor::UpdateCursorClipping(FVector2D& CursorPosition)
@@ -380,7 +356,7 @@ bool FMacCursor::UpdateCursorClipping(FVector2D& CursorPosition)
 		const FVector2D& MouseScaling = GetMouseScaling();
 		if (FullScreenWindow && MouseScaling != FVector2D::UnitVector)
 		{
-			ScreenOrigin = CalculateScreenOrigin(FullScreenWindow.screen);
+			ScreenOrigin = FMacApplication::CalculateScreenOrigin(FullScreenWindow.screen);
 			PositionOnScreen -= ScreenOrigin;
 			int32 ClipRectWidth = (ClipRect.Max.X - ClipRect.Min.X + 1) / MouseScaling.X;
 			int32 ClipRectHeight = (ClipRect.Max.Y - ClipRect.Min.Y + 1) / MouseScaling.Y;
@@ -473,7 +449,7 @@ void FMacCursor::WarpCursor(const int32 X, const int32 Y)
 	// Previously there was CGSetLocalEventsSuppressionInterval to explicitly control this behaviour but that is deprecated.
 	// The replacement CGEventSourceSetLocalEventsSuppressionInterval isn't useful because it is unclear how to obtain the correct event source.
 	// Instead, when we want the warp to be visible we need to disassociate mouse & cursor...
-	if (!bUseHighPrecisionMode && !IsLocked())
+	if (!bUseHighPrecisionMode)
 	{
 		CGAssociateMouseAndMouseCursorPosition(false);
 	}
@@ -482,7 +458,7 @@ void FMacCursor::WarpCursor(const int32 X, const int32 Y)
 	CGWarpMouseCursorPosition(CGPointMake(X, Y));
 
 	// And then reassociate the mouse cursor, which forces the mouse events to come through.
-	if (!bUseHighPrecisionMode && !IsLocked())
+	if (!bUseHighPrecisionMode)
 	{
 		CGAssociateMouseAndMouseCursorPosition(true);
 	}
@@ -505,7 +481,7 @@ void FMacCursor::SetHighPrecisionMouseMode(const bool bEnable)
 	{
 		bUseHighPrecisionMode = bEnable;
 
-		CGAssociateMouseAndMouseCursorPosition(!bUseHighPrecisionMode && !IsLocked());
+		CGAssociateMouseAndMouseCursorPosition(!bUseHighPrecisionMode);
 
 		if (GMacDisableMouseCoalescing)
 		{

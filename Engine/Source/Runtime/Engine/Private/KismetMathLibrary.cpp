@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "EnginePrivate.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -276,27 +276,27 @@ float UKismetMathLibrary::Multiply_IntFloat(int32 A, float B)
 	return A * B;
 }	
 
+/* This function is custom thunked, the real function is GenericDivide_FloatFloat */
 float UKismetMathLibrary::Divide_FloatFloat(float A, float B)
 {
-	if (B == 0.f)
-	{
-		//@TODO: EXCEPTION: Throw script exception 
-		FFrame::KismetExecutionMessage(TEXT("Divide by zero: Divide_FloatFloat"), ELogVerbosity::Warning);
-		return 0.f;
-	}
+	check(0);
+	return 0;
+}
 
+float UKismetMathLibrary::GenericDivide_FloatFloat(float A, float B)
+{
 	return A / B;
 }	
 
+/* This function is custom thunked, the real function is GenericPercent_FloatFloat */
 float UKismetMathLibrary::Percent_FloatFloat(float A, float B)
 {
-	if (B == 0.f)
-	{
-		//@TODO: EXCEPTION: Throw script exception 
-		FFrame::KismetExecutionMessage(TEXT("Modulo by zero"), ELogVerbosity::Warning);
-		return 0.f;
-	}
+	check(0);
+	return 0;
+}
 
+float UKismetMathLibrary::GenericPercent_FloatFloat(float A, float B)
+{
 	return (B != 0.f) ? FMath::Fmod(A, B) : 0.f;
 }	
 
@@ -1219,6 +1219,15 @@ FVector2D UKismetMathLibrary::Subtract_Vector2DFloat(FVector2D A, float B)
 	return A-B;
 }
 
+bool UKismetMathLibrary::EqualEqual_Vector2DVector2D(FVector2D A, FVector2D B, float ErrorTolerance)
+{ 
+    return A.Equals(B,ErrorTolerance);
+}
+
+bool UKismetMathLibrary::NotEqual_Vector2DVector2D(FVector2D A, FVector2D B, float ErrorTolerance)
+{
+    return !A.Equals(B,ErrorTolerance);
+}
 
 bool UKismetMathLibrary::EqualEqual_NameName(FName A, FName B)
 {

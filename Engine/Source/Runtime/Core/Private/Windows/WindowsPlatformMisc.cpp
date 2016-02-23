@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "CorePrivatePCH.h"
 #include "ExceptionHandling.h"
@@ -29,7 +29,7 @@
 #include "VarargsHelper.h"
 
 #if !FORCE_ANSI_ALLOCATOR
-	#include "MallocBinned.h"
+	#include "MallocBinned2.h"
 	#include "AllowWindowsPlatformTypes.h"
 		#include <psapi.h>
 	#include "HideWindowsPlatformTypes.h"
@@ -703,7 +703,7 @@ void FWindowsPlatformMisc::SubmitErrorReport( const TCHAR* InErrorHist, EErrorRe
 			TCHAR SystemTime[MAX_STRING_LEN];
 			FCString::Strncpy(SystemTime, *FDateTime::Now().ToString(), MAX_STRING_LEN);
 			TCHAR EngineVersionStr[MAX_STRING_LEN];
-			FCString::Strncpy(EngineVersionStr, *GEngineVersion.ToString(), 256 );
+			FCString::Strncpy(EngineVersionStr, *FEngineVersion::Current().ToString(), 256 );
 
 			TCHAR ChangelistVersionStr[MAX_STRING_LEN];
 			int32 ChangelistFromCommandLine = 0;
@@ -715,7 +715,7 @@ void FWindowsPlatformMisc::SubmitErrorReport( const TCHAR* InErrorHist, EErrorRe
 			// we are not passing in the changelist to use so use the one that was stored in the ObjectVersion
 			else
 			{
-				FCString::Strncpy(ChangelistVersionStr, *FString::FromInt(GEngineVersion.GetChangelist()), MAX_STRING_LEN);
+				FCString::Strncpy(ChangelistVersionStr, *FString::FromInt(FEngineVersion::Current().GetChangelist()), MAX_STRING_LEN);
 			}
 
 			TCHAR CmdLine[2048];
@@ -1748,23 +1748,23 @@ bool FWindowsPlatformMisc::CommandLineCommands()
  */
 bool FWindowsPlatformMisc::Is64bitOperatingSystem()
 {
-#if defined(PLATFORM_64BITS)
+#if PLATFORM_64BITS
 	return true;
 #else
 	#pragma warning( push )
 	#pragma warning( disable: 4191 )	// unsafe conversion from 'type of expression' to 'type required'
-	typedef bool (WINAPI *LPFN_ISWOW64PROCESS)(HANDLE, PBOOL);
+	typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS)(HANDLE, PBOOL);
 	LPFN_ISWOW64PROCESS fnIsWow64Process = (LPFN_ISWOW64PROCESS) GetProcAddress( GetModuleHandle(TEXT("kernel32")), "IsWow64Process" );
-	bool bIsWoW64Process = false;
+	BOOL bIsWoW64Process = 0;
 	if ( fnIsWow64Process != NULL )
 	{
-		if ( fnIsWow64Process(GetCurrentProcess(), (PBOOL)&bIsWoW64Process) == 0 )
+		if ( fnIsWow64Process(GetCurrentProcess(), &bIsWoW64Process) == 0 )
 		{
-			bIsWoW64Process = false;
+			bIsWoW64Process = 0;
 		}
 	}
 	#pragma warning( pop )
-	return bIsWoW64Process;
+	return bIsWoW64Process == 1;
 #endif
 }
 
@@ -2107,6 +2107,9 @@ void FWindowsPlatformMisc::PromptForRemoteDebugging(bool bIsEnsure)
 			return;
 		}
 
+		// Upload locally compiled files for remote debugging
+		FPlatformStackWalk::UploadLocalSymbols();
+
 		FCString::Sprintf(GErrorRemoteDebugPromptMessage, 
 			TEXT("Have a programmer remote debug this crash?\n")
 			TEXT("Hit NO to exit and submit error report as normal.\n")
@@ -2115,7 +2118,7 @@ void FWindowsPlatformMisc::PromptForRemoteDebugging(bool bIsEnsure)
 			TEXT("Once he confirms he is connected to the machine,\n")
 			TEXT("hit YES to allow him to debug the crash.\n")
 			TEXT("[Changelist = %d]"),
-			GEngineVersion.GetChangelist());
+			FEngineVersion::Current().GetChangelist());
 		if (MessageBox(0, GErrorRemoteDebugPromptMessage, TEXT("CRASHED"), MB_YESNO|MB_SYSTEMMODAL) == IDYES)
 		{
 			::DebugBreak();
@@ -2385,9 +2388,84 @@ FString FWindowsPlatformMisc::GetPrimaryGPUBrand()
 			DisplayDevice.cb = sizeof( DisplayDevice );
 			DeviceIndex++;
 		}
-
 	}
+
 	return PrimaryGPUBrand;
+}
+
+void FWindowsPlatformMisc::GetGPUDriverInfo(const FString DeviceDescription, FString& InternalDriverVersion, FString& UserDriverVersion, FString& DriverDate)
+{
+	// to distinguish failed GetGPUDriverInfo() from call to GetGPUDriverInfo()
+	InternalDriverVersion = TEXT("Unknown");
+	UserDriverVersion = TEXT("Unknown");
+	DriverDate = TEXT("Unknown");
+
+	for(uint32 i = 0;; ++i)
+	{
+		// Iterate all installed display adapters
+		FString Key = FString::Printf(TEXT("SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E968-E325-11CE-BFC1-08002BE10318}\\%04d"), i);
+
+		FString LocalDeviceDescription; // e.g. "NVIDIA GeForce GTX 680" or "AMD Radeon R9 200 / HD 7900 Series"
+		bool bDevice = FWindowsPlatformMisc::QueryRegKey(HKEY_LOCAL_MACHINE, *Key, TEXT("Device Description"), LocalDeviceDescription);	// AMD and NVIDIA
+
+		if(!bDevice)
+		{
+			break;
+		}
+
+		// e.g. "NVIDIA" or "Advanced Micro Devices, Inc."
+		FString LocalProviderName;
+		FWindowsPlatformMisc::QueryRegKey(HKEY_LOCAL_MACHINE, *Key, TEXT("ProviderName"), LocalProviderName);
+
+		// AMD (not the Catalyst one) and NVIDIA
+		// e.g. "15.200.1062.1004"(AMD) "9.18.13.4788"(NVIDIA)
+		FString LocalInternalDriverVersion;
+		FWindowsPlatformMisc::QueryRegKey(HKEY_LOCAL_MACHINE, *Key, TEXT("DriverVersion"), LocalInternalDriverVersion);
+
+		// e.g. "Catalyst 15.7.1"(AMD) or "347.88"(NVIDIA)
+		FString LocalUserDriverVersion = LocalInternalDriverVersion;
+
+		if(LocalProviderName == TEXT("NVIDIA"))
+		{
+			// "9.18.13.4788" -> "347.88"
+			// the following code works with the current numbering scheme, if needd we have to update that
+			if(LocalUserDriverVersion.Left(6) == TEXT("9.18.1"))
+			{
+				// e.g. 3.4788
+				FString RightPart = LocalUserDriverVersion.RightChop(6);
+
+				if(RightPart.Len() == 6 && RightPart[1] == (TCHAR)'.')
+				{
+					// e.g. 347.88
+					LocalUserDriverVersion = RightPart.Left(1) + RightPart[2] + RightPart[3] + TEXT(".") + RightPart[4] + RightPart[5];
+				}
+			}
+		}
+		else 
+		{
+			// we assume LocalProviderName == TEXT("Advanced Micro Devices, Inc.")
+
+			// e.g. 15.7.1
+			if(FWindowsPlatformMisc::QueryRegKey(HKEY_LOCAL_MACHINE, *Key, TEXT("Catalyst_Version"), LocalUserDriverVersion))
+			{
+				LocalUserDriverVersion = FString(TEXT("Catalyst ")) + LocalUserDriverVersion;
+			}
+		}
+
+		// AMD and NVIDIA
+		// e.g. 3-13-2015
+		FString LocalDriverDate;
+		FWindowsPlatformMisc::QueryRegKey(HKEY_LOCAL_MACHINE, *Key, TEXT("DriverDate"), LocalDriverDate);
+
+		if(LocalDeviceDescription == DeviceDescription)
+		{
+			// found the one we are searching for (if there are multiple we only get the first one)
+			InternalDriverVersion = LocalInternalDriverVersion;
+			UserDriverVersion = LocalUserDriverVersion;
+			DriverDate = LocalDriverDate;
+			break;
+		}
+	}
 }
 #include "HideWindowsPlatformTypes.h"
 

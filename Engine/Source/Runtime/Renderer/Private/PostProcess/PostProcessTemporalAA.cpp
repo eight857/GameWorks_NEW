@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessTemporalAA.cpp: Post process MotionBlur implementation.
@@ -9,6 +9,7 @@
 #include "SceneFilterRendering.h"
 #include "PostProcessTemporalAA.h"
 #include "PostProcessAmbientOcclusion.h"
+#include "PostProcessEyeAdaptation.h"
 #include "PostProcessTonemap.h"
 #include "PostProcessing.h"
 #include "SceneUtils.h"
@@ -81,6 +82,7 @@ public:
 	FShaderParameter LowpassWeights;
 	FShaderParameter PlusWeights;
 	FShaderParameter RandomOffset;
+	FShaderParameter DitherScale;
 
 	/** Initialization constructor. */
 	FPostProcessTemporalAAPS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
@@ -92,17 +94,18 @@ public:
 		LowpassWeights.Bind(Initializer.ParameterMap, TEXT("LowpassWeights"));
 		PlusWeights.Bind(Initializer.ParameterMap, TEXT("PlusWeights"));
 		RandomOffset.Bind(Initializer.ParameterMap, TEXT("RandomOffset"));
+		DitherScale.Bind(Initializer.ParameterMap, TEXT("DitherScale"));
 	}
 
 	// FShader interface.
 	virtual bool Serialize(FArchive& Ar) override
 	{
 		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
-		Ar << PostprocessParameter << DeferredParameters << SampleWeights << LowpassWeights << PlusWeights << RandomOffset;
+		Ar << PostprocessParameter << DeferredParameters << SampleWeights << LowpassWeights << PlusWeights << RandomOffset << DitherScale;
 		return bShaderHasOutdatedParameters;
 	}
 
-	void SetParameters(const FRenderingCompositePassContext& Context)
+	void SetParameters(const FRenderingCompositePassContext& Context, bool bUseDither)
 	{
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 
@@ -114,7 +117,7 @@ public:
 		FilterTable[2] = FilterTable[0];
 		FilterTable[3] = FilterTable[0];
 
-		PostprocessParameter.SetPS(ShaderRHI, Context, 0, false, FilterTable);
+		PostprocessParameter.SetPS(ShaderRHI, Context, 0, eFC_0000, FilterTable);
 
 		DeferredParameters.Set(Context.RHICmdList, ShaderRHI, Context.View);
 
@@ -201,6 +204,8 @@ public:
 
 		}
 
+		SetShaderValue(Context.RHICmdList, ShaderRHI, DitherScale, bUseDither ? 1.0f : 0.0f);
+
 		SetUniformBufferParameter(Context.RHICmdList, ShaderRHI, GetUniformBufferParameter<FCameraMotionParameters>(), CreateCameraMotionParametersUniformBuffer(Context.View));
 	}
 };
@@ -266,7 +271,7 @@ void FRCPassPostProcessSSRTemporalAA::Process(FRenderingCompositePassContext& Co
 	SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 
 	VertexShader->SetVS(Context);
-	PixelShader->SetParameters(Context);
+	PixelShader->SetParameters(Context, false);
 
 	DrawPostProcessPass(
 		Context.RHICmdList,
@@ -289,7 +294,7 @@ FPooledRenderTargetDesc FRCPassPostProcessSSRTemporalAA::ComputeOutputDesc(EPass
 	FPooledRenderTargetDesc Ret = GetInput(ePId_Input0)->GetOutput()->RenderTargetDesc;
 
 	Ret.DebugName = TEXT("SSRTemporalAA");
-
+	Ret.AutoWritable = false;
 	return Ret;
 }
 
@@ -344,7 +349,7 @@ void FRCPassPostProcessDOFTemporalAA::Process(FRenderingCompositePassContext& Co
 	SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 
 	VertexShader->SetVS(Context);
-	PixelShader->SetParameters(Context);
+	PixelShader->SetParameters(Context, false);
 
 	DrawPostProcessPass(
 		Context.RHICmdList,
@@ -368,7 +373,7 @@ void FRCPassPostProcessDOFTemporalAA::Process(FRenderingCompositePassContext& Co
 FPooledRenderTargetDesc FRCPassPostProcessDOFTemporalAA::ComputeOutputDesc(EPassOutputId InPassOutputId) const
 {
 	FPooledRenderTargetDesc Ret = GetInput(ePId_Input0)->GetOutput()->RenderTargetDesc;
-
+	Ret.AutoWritable = false;
 	Ret.DebugName = TEXT("BokehDOFTemporalAA");
 
 	return Ret;
@@ -426,7 +431,7 @@ void FRCPassPostProcessDOFTemporalAANear::Process(FRenderingCompositePassContext
 	SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 
 	VertexShader->SetVS(Context);
-	PixelShader->SetParameters(Context);
+	PixelShader->SetParameters(Context, false);
 
 	DrawPostProcessPass(
 		Context.RHICmdList,
@@ -507,7 +512,7 @@ void FRCPassPostProcessLightShaftTemporalAA::Process(FRenderingCompositePassCont
 	SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 
 	VertexShader->SetVS(Context);
-	PixelShader->SetParameters(Context);
+	PixelShader->SetParameters(Context, false);
 
 	DrawPostProcessPass(
 		Context.RHICmdList,
@@ -537,8 +542,6 @@ FPooledRenderTargetDesc FRCPassPostProcessLightShaftTemporalAA::ComputeOutputDes
 
 void FRCPassPostProcessTemporalAA::Process(FRenderingCompositePassContext& Context)
 {
-	SCOPED_DRAW_EVENT(Context.RHICmdList, TemporalAA);
-
 	const FPooledRenderTargetDesc* InputDesc = GetInputDesc(ePId_Input0);
 
 	if(!InputDesc)
@@ -564,6 +567,8 @@ void FRCPassPostProcessTemporalAA::Process(FRenderingCompositePassContext& Conte
 	FIntRect SrcRect = View.ViewRect / ScaleFactor;
 	FIntRect DestRect = SrcRect;
 
+	SCOPED_DRAW_EVENTF(Context.RHICmdList, TemporalAA, TEXT("TemporalAA %dx%d"), SrcRect.Width(), SrcRect.Height());
+
 	const FSceneRenderTargetItem& DestRenderTarget = PassOutputs[0].RequestSurface(Context);
 
 	//Context.SetRenderTarget(RHICmdList, DestRenderTarget.TargetableTexture, FTextureRHIRef());
@@ -578,6 +583,9 @@ void FRCPassPostProcessTemporalAA::Process(FRenderingCompositePassContext& Conte
 	static const auto CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.PostProcessAAQuality")); 
 	uint32 Quality = FMath::Clamp(CVar->GetValueOnRenderThread(), 1, 6);
 	bool bUseFast = Quality == 3;
+
+	// Only use dithering if we are outputting to a low precision format
+	const bool bUseDither = PassOutputs[0].RenderTargetDesc.Format != PF_FloatRGBA;
 
 	Context.RHICmdList.SetBlendState(TStaticBlendState<>::GetRHI());
 	Context.RHICmdList.SetRasterizerState(TStaticRasterizerState<>::GetRHI());
@@ -600,7 +608,7 @@ void FRCPassPostProcessTemporalAA::Process(FRenderingCompositePassContext& Conte
 			SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 
 			VertexShader->SetVS(Context);
-			PixelShader->SetParameters(Context);
+			PixelShader->SetParameters(Context, bUseDither);
 		}
 		else
 		{
@@ -612,7 +620,7 @@ void FRCPassPostProcessTemporalAA::Process(FRenderingCompositePassContext& Conte
 			SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 
 			VertexShader->SetVS(Context);
-			PixelShader->SetParameters(Context);
+			PixelShader->SetParameters(Context, bUseDither);
 		}
 	
 		DrawPostProcessPass(
@@ -646,7 +654,7 @@ void FRCPassPostProcessTemporalAA::Process(FRenderingCompositePassContext& Conte
 				SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 	
 				VertexShader->SetVS(Context);
-				PixelShader->SetParameters(Context);
+				PixelShader->SetParameters(Context, bUseDither);
 			}
 			else
 			{
@@ -658,7 +666,7 @@ void FRCPassPostProcessTemporalAA::Process(FRenderingCompositePassContext& Conte
 				SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 	
 				VertexShader->SetVS(Context);
-				PixelShader->SetParameters(Context);
+				PixelShader->SetParameters(Context, bUseDither);
 			}
 		
 			DrawPostProcessPass(
@@ -690,7 +698,7 @@ void FRCPassPostProcessTemporalAA::Process(FRenderingCompositePassContext& Conte
 				SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 	
 				VertexShader->SetVS(Context);
-				PixelShader->SetParameters(Context);
+				PixelShader->SetParameters(Context, bUseDither);
 			}
 			else
 			{
@@ -702,7 +710,7 @@ void FRCPassPostProcessTemporalAA::Process(FRenderingCompositePassContext& Conte
 				SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
 	
 				VertexShader->SetVS(Context);
-				PixelShader->SetParameters(Context);
+				PixelShader->SetParameters(Context, bUseDither);
 			}
 	
 			DrawPostProcessPass(
@@ -756,6 +764,7 @@ FPooledRenderTargetDesc FRCPassPostProcessTemporalAA::ComputeOutputDesc(EPassOut
 	Ret.Reset();
 	//Ret.Format = PF_FloatRGBA;
 	Ret.DebugName = TEXT("TemporalAA");
+	Ret.AutoWritable = false;
 
 	return Ret;
 }

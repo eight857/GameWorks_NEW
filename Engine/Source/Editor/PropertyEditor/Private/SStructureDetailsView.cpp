@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 #include "PropertyEditorPrivatePCH.h"
 #include "PropertyEditorHelpers.h"
@@ -177,7 +177,7 @@ void SStructureDetailsView::SetStructureData(TSharedPtr<FStructOnScope> InStruct
 	//PRE SET
 	SaveExpandedItems( RootNode.ToSharedRef() );
 	RootNode->SetStructure(NULL);
-	RootNodePendingKill = RootNode;
+	RootNodesPendingKill.Add(RootNode);
 	RootNode = MakeShareable(new FStructurePropertyNode);
 
 	//SET

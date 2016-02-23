@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MacPlatformProcess.mm: Mac implementations of Process functions
@@ -205,6 +205,91 @@ void FMacPlatformProcess::LaunchURL( const TCHAR* URL, const TCHAR* Parms, FStri
 	}
 }
 
+@interface NSAutoReadPipe : NSObject
+
+/** The pipe itself */
+@property (readonly) NSPipe*			Pipe;
+/** A file associated with the pipe from which we shall read data */
+@property (readonly) NSFileHandle*		File;
+/** Buffer that stores the output from the pipe */
+@property (readonly) NSMutableData*		PipeOutput;
+
+/** Initialization function */
+-(id)init;
+
+/** Deallocation function */
+-(void)dealloc;
+
+/** Callback function that is invoked when data is pushed onto the pipe */
+-(void)readData: (NSNotification *)Notification;
+
+/** Shutdown the background reader, and copy all the data from the pipe as a UTF8 encoded string */
+-(void)copyPipeData: (FString&)OutString;
+
+@end
+
+@implementation NSAutoReadPipe
+
+-(id)init
+{
+	[super init];
+	
+	_PipeOutput = [NSMutableData new];
+	_Pipe = [NSPipe new];
+	_File = [_Pipe fileHandleForReading];
+	
+	[[NSNotificationCenter defaultCenter] addObserver: self
+											selector: @selector(readData:)
+											name: NSFileHandleDataAvailableNotification
+											object: _File];
+	
+	[_File waitForDataInBackgroundAndNotify];
+	return self;
+}
+
+-(void)dealloc
+{
+	[[NSNotificationCenter defaultCenter] removeObserver:self];
+	
+	[_Pipe release];
+	[_PipeOutput release];
+	
+	[super dealloc];
+}
+
+-(void)readData: (NSNotification *)Notification
+{
+	NSFileHandle* FileHandle = (NSFileHandle*)Notification.object;
+	
+	// Ensure we're reading from the right file
+	if (ensure(FileHandle == _File))
+	{
+		[_PipeOutput appendData: [FileHandle availableData]];
+		[FileHandle waitForDataInBackgroundAndNotify];
+	}
+}
+
+-(void)copyPipeData: (FString&)OutString
+{
+	[[NSNotificationCenter defaultCenter] removeObserver:self];
+	
+	// Read any remaining data in from the pipe
+	NSData* Data = [_File readDataToEndOfFile];
+	if (Data && [Data length])
+	{
+		[_PipeOutput appendData: Data];
+	}
+	
+	// Encode the data as a string
+	NSString* String = [[NSString alloc] initWithData:_PipeOutput encoding:NSUTF8StringEncoding];
+	
+	OutString = FString(String);
+	
+	[String release];
+}
+
+@end // NSAutoReadPipe
+
 bool FMacPlatformProcess::ExecProcess( const TCHAR* URL, const TCHAR* Params, int32* OutReturnCode, FString* OutStdOut, FString* OutStdErr )
 {
 	SCOPED_AUTORELEASE_POOL;
@@ -306,13 +391,11 @@ bool FMacPlatformProcess::ExecProcess( const TCHAR* URL, const TCHAR* Params, in
 		
 		[ProcessHandle setArguments: Arguments];
 		
-		NSPipe* StdOutPipe = [[NSPipe new] autorelease];
+		NSAutoReadPipe* StdOutPipe = [[NSAutoReadPipe new] autorelease];
+		[ProcessHandle setStandardOutput: (id)[StdOutPipe Pipe]];
 		
-		[ProcessHandle setStandardOutput: (id)StdOutPipe];
-		
-		NSPipe* StdErrPipe = [[NSPipe new] autorelease];
-		
-		[ProcessHandle setStandardError: (id)StdErrPipe];
+		NSAutoReadPipe* StdErrPipe = [[NSAutoReadPipe new] autorelease];
+		[ProcessHandle setStandardError: (id)[StdErrPipe Pipe]];
 		
 		@try
 		{
@@ -327,24 +410,12 @@ bool FMacPlatformProcess::ExecProcess( const TCHAR* URL, const TCHAR* Params, in
 			
 			if(OutStdOut)
 			{
-				NSFileHandle* StdOutFile = [StdOutPipe fileHandleForReading];
-				if(StdOutFile)
-				{
-					NSData* StdOutData = [StdOutFile readDataToEndOfFile];
-					NSString* StdOutString = (NSString*)[[[NSString alloc] initWithData:StdOutData encoding:NSUTF8StringEncoding] autorelease];
-					*OutStdOut = FString(StdOutString);
-				}
+				[StdOutPipe copyPipeData: *OutStdOut];
 			}
 			
 			if(OutStdErr)
 			{
-				NSFileHandle* StdErrFile = [StdErrPipe fileHandleForReading];
-				if(StdErrFile)
-				{
-					NSData* StdErrData = [StdErrFile readDataToEndOfFile];
-					NSString* StdErrString = (NSString*)[[[NSString alloc] initWithData:StdErrData encoding:NSUTF8StringEncoding] autorelease];
-					*OutStdErr = FString(StdErrString);
-				}
+				[StdErrPipe copyPipeData: *OutStdErr];
 			}
 			return true;
 		}
@@ -364,7 +435,7 @@ bool FMacPlatformProcess::ExecProcess( const TCHAR* URL, const TCHAR* Params, in
 	return false;
 }
 
-FProcHandle FMacPlatformProcess::CreateProc( const TCHAR* URL, const TCHAR* Parms, bool bLaunchDetached, bool bLaunchHidden, bool bLaunchReallyHidden, uint32* OutProcessID, int32 PriorityModifier, const TCHAR* OptionalWorkingDirectory, void* PipeWrite )
+FProcHandle FMacPlatformProcess::CreateProc( const TCHAR* URL, const TCHAR* Parms, bool bLaunchDetached, bool bLaunchHidden, bool bLaunchReallyHidden, uint32* OutProcessID, int32 PriorityModifier, const TCHAR* OptionalWorkingDirectory, void* PipeWriteChild, void * PipeReadChild)
 {
 	// bLaunchDetached, bLaunchHidden, bLaunchReallyHidden are ignored
 
@@ -483,10 +554,15 @@ FProcHandle FMacPlatformProcess::CreateProc( const TCHAR* URL, const TCHAR* Parm
 			CFRelease((CFStringRef)WorkingDirectory);
 		}
 
-		if (PipeWrite)
+		if (PipeWriteChild)
 		{
-			[ProcessHandle setStandardOutput: (id)PipeWrite];
-			[ProcessHandle setStandardError: (id)PipeWrite];
+			[ProcessHandle setStandardOutput: (id)PipeWriteChild];
+			[ProcessHandle setStandardError: (id)PipeWriteChild];
+		}
+
+		if (PipeReadChild)
+		{
+			[ProcessHandle setStandardInput : (id)PipeReadChild];
 		}
 
 		@try
@@ -696,6 +772,16 @@ const TCHAR* FMacPlatformProcess::UserDir()
 		FCString::Strcat(Result, TEXT("/"));
 	}
 	return Result;
+}
+
+const TCHAR* FMacPlatformProcess::UserTempDir()
+{
+	static FString MacUserTempDir;
+	if (!MacUserTempDir.Len())
+	{
+		MacUserTempDir = NSTemporaryDirectory();
+	}
+	return *MacUserTempDir;
 }
 
 const TCHAR* FMacPlatformProcess::UserSettingsDir()
@@ -937,12 +1023,15 @@ FString FMacPlatformProcess::ReadPipe( void* ReadPipe )
 
 	if(ReadPipe)
 	{
+		do
+		{
 		BytesRead = read([(NSFileHandle*)ReadPipe fileDescriptor], Buffer, READ_SIZE);
 		if (BytesRead > 0)
 		{
 			Buffer[BytesRead] = '\0';
 			Output += StringCast<TCHAR>(Buffer).Get();
 		}
+		} while (BytesRead > 0);
 	}
 
 	return Output;
@@ -985,21 +1074,23 @@ bool FMacPlatformProcess::WritePipe(void* WritePipe, const FString& Message, FSt
 		return false;
 	}
 
-	// convert input to UTF8CHAR
+	// Convert input to UTF8CHAR
 	uint32 BytesAvailable = Message.Len();
-	UTF8CHAR* Buffer = new UTF8CHAR[BytesAvailable + 1];
-
-	if (!FString::ToBlob(Message, Buffer, BytesAvailable))
+	UTF8CHAR * Buffer = new UTF8CHAR[BytesAvailable + 1];
+	for (uint32 i = 0; i < BytesAvailable; i++)
 	{
-		return false;
+		Buffer[i] = Message[i];
 	}
+	Buffer[BytesAvailable] = '\n';
 
 	// Write to pipe
-	uint32 BytesWritten = write(*(int*)WritePipe, Buffer, BytesAvailable);
+	uint32 BytesWritten = write([(NSFileHandle*)WritePipe fileDescriptor], Buffer, BytesAvailable);
 
-	if (OutWritten != nullptr)
+	// Get written message
+	if (OutWritten)
 	{
-		OutWritten->FromBlob(Buffer, BytesWritten);
+		Buffer[BytesWritten] = '\0';
+		*OutWritten = FUTF8ToTCHAR((const ANSICHAR*)Buffer).Get();
 	}
 
 	return (BytesWritten == BytesAvailable);
@@ -1109,8 +1200,11 @@ FMacSystemWideCriticalSection::FMacSystemWideCriticalSection(const FString& InNa
 {
 	check(InName.Len() > 0)
 	check(InTimeout >= FTimespan::Zero())
-	check(InTimeout.GetTotalSeconds() < (double)FLT_MAX)
+	check(InTimeout.GetTotalSeconds() < (double)FLT_MAX)	// we'll need this to fit in a single-precision float later so check it here
 
+	FDateTime ExpireTime = FDateTime::UtcNow() + InTimeout;
+
+	// This lock implementation is using files so correct any backslashes in the name
 	const FString LockPath = FString(FMacPlatformProcess::ApplicationSettingsDir()) / InName;
 	FString NormalizedFilepath(LockPath);
 	NormalizedFilepath.ReplaceInline(TEXT("\\"), TEXT("/"));
@@ -1120,16 +1214,17 @@ FMacSystemWideCriticalSection::FMacSystemWideCriticalSection(const FString& InNa
 
 	if (FileHandle == -1 && InTimeout != FTimespan::Zero())
 	{
-		FDateTime ExpireTime = FDateTime::UtcNow() + InTimeout;
-		const float RetrySeconds = FMath::Min((float)InTimeout.GetTotalSeconds(), 0.25f);
+		// Failed to get a valid file handle so the file is probably open and locked by another owner - retry until we timeout
 
-		do
+		for (FTimespan TimeoutRemaining = ExpireTime - FDateTime::UtcNow();
+			 FileHandle == -1 && TimeoutRemaining > FTimespan::Zero();
+			 TimeoutRemaining = ExpireTime - FDateTime::UtcNow())
 		{
 			// retry until timeout
+			float RetrySeconds = FMath::Min((float)TimeoutRemaining.GetTotalSeconds(), 0.25f);
 			FMacPlatformProcess::Sleep(RetrySeconds);
 			FileHandle = open(TCHAR_TO_UTF8(*NormalizedFilepath), O_CREAT | O_WRONLY | O_EXLOCK | O_NONBLOCK, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 		}
-		while (FileHandle == -1 && FDateTime::UtcNow() < ExpireTime);
 	}
 }
 
