@@ -328,11 +328,7 @@ public class Engine : ModuleRules
 		}
 
 		// @third party code - BEGIN HairWorks
-		// To copy HairWorks DLL during packaging.
-		if (Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Win64)
-		{
-			AddThirdPartyPrivateStaticDependencies(Target, "HairWorks");
-		}
+		AddThirdPartyPrivateStaticDependencies(Target, "HairWorks");
 		// @third party code - END HairWorks
 	}
 }

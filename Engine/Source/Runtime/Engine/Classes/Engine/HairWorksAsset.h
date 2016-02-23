@@ -3,7 +3,9 @@
 
 #include "HairWorksAsset.generated.h"
 
-enum GFSDK_HairAssetID;
+namespace Nv{namespace HairWorks{
+	enum HairAssetId;
+}}
 class UHairWorksMaterial;
 
 UCLASS(BlueprintType)
@@ -39,6 +41,7 @@ class ENGINE_API UHairWorksAsset : public UObject
 
 	// Begin UObject interface.
 	virtual void Serialize(FArchive& Ar) override;
+	virtual void PostInitProperties() override;
 	// End UObject interface.
 
 	UPROPERTY()
@@ -47,6 +50,6 @@ class ENGINE_API UHairWorksAsset : public UObject
 	UPROPERTY()
 	TArray<FName> BoneNames;
 
-	GFSDK_HairAssetID AssetId;
+	Nv::HairWorks::HairAssetId AssetId;
 };
 // @third party code - END HairWorks

@@ -666,6 +666,11 @@ namespace UnrealBuildTool
 			{
 				bAllowSNDBS = false;
 			}
+
+			if(Configuration == CPPTargetConfiguration.Debug)
+			{
+				bUseUnityBuild = false;
+			}
 		}
 
 		/// <summary>

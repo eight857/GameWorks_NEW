@@ -1,7 +1,6 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
-enum GFSDK_HairInstanceID;
 class UHairWorksAsset;
 
 /**
@@ -19,7 +18,7 @@ public:
 
 	struct FDynamicRenderData
 	{
-		GFSDK_HairInstanceDescriptor HairInstanceDesc;
+		NvHw::HairInstanceDescriptor HairInstanceDesc;
 		TArray<FMatrix> BoneMatrices;
 		FName NormalCenterBoneName;
 		TArray<UTexture2D*> Textures;
@@ -38,7 +37,7 @@ public:
 
 	void Draw(EDrawType DrawType = EDrawType::Normal)const;
 
-	GFSDK_HairInstanceID GetHairInstanceId()const { return HairInstanceId; }
+	NvHw::HairInstanceId GetHairInstanceId()const { return HairInstanceId; }
 	const TArray<FTexture2DRHIRef>& GetTextures()const { return HairTextures; }
 
 protected:
@@ -49,7 +48,7 @@ protected:
 	TMap<FName, int> BoneNameToIdx;
 
 	//** The hair */
-	GFSDK_HairInstanceID HairInstanceId;
+	NvHw::HairInstanceId HairInstanceId;
 
 	//** Control textures */
 	TArray<FTexture2DRHIRef> HairTextures;

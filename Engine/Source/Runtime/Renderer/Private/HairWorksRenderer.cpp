@@ -2,17 +2,22 @@
 #include "RendererPrivate.h"
 
 #include "HairWorksSDK.h"
+
+#ifndef _CPP
+#define _CPP
+#endif
+#include <Nv/HairWorks/Shader/NvHwShaderCommonTypes.h>
+
+#include "AllowWindowsPlatformTypes.h"
+#include <Nv/Platform/Dx11/Foundation/NvDx11Handle.h>
+#include "HideWindowsPlatformTypes.h"
+
 #include "SceneUtils.h"
 #include "ScreenRendering.h"
 #include "SceneFilterRendering.h"
 #include "AmbientCubemapParameters.h"
 #include "HairWorksSceneProxy.h"
 #include "HairWorksRenderer.h"
-
-#ifndef _CPP
-#define _CPP
-#endif
-#include "../../../../Shaders/GFSDK_HairWorks_ShaderCommon.usf"
 
 namespace HairWorksRenderer
 {
@@ -39,6 +44,15 @@ namespace HairWorksRenderer
 	static TGlobalResource<FHairGlobalResource> HairGlobalResource;
 
 	// Pixel shaders
+	class FHairWorksBaseShader
+	{
+	public:
+		static bool ShouldCache(EShaderPlatform Platform)
+		{
+			return Platform == EShaderPlatform::SP_PCD3D_SM5;
+		}
+	};
+
 	class FHairWorksBasePs : public FGlobalShader
 	{
 	protected:
@@ -57,14 +71,14 @@ namespace HairWorksRenderer
 			SpecularColorTexture.Bind(Initializer.ParameterMap, TEXT("SpecularColorTexture"));
 			StrandTexture.Bind(Initializer.ParameterMap, TEXT("StrandTexture"));
 
-			GFSDK_HAIR_RESOURCE_FACE_HAIR_INDICES.Bind(Initializer.ParameterMap, TEXT("GFSDK_HAIR_RESOURCE_FACE_HAIR_INDICES"));
-			GFSDK_HAIR_RESOURCE_TANGENTS.Bind(Initializer.ParameterMap, TEXT("GFSDK_HAIR_RESOURCE_TANGENTS"));
-			GFSDK_HAIR_RESOURCE_NORMALS.Bind(Initializer.ParameterMap, TEXT("GFSDK_HAIR_RESOURCE_NORMALS"));
-			GFSDK_HAIR_RESOURCE_MASTER_POSITIONS.Bind(Initializer.ParameterMap, TEXT("GFSDK_HAIR_RESOURCE_MASTER_POSITIONS"));
-			GFSDK_HAIR_RESOURCE_MASTER_PREV_POSITIONS.Bind(Initializer.ParameterMap, TEXT("GFSDK_HAIR_RESOURCE_MASTER_PREV_POSITIONS"));
+			NvHw_resourceFaceHairIndices.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceFaceHairIndices"));
+			NvHw_resourceTangents.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceTangents"));
+			NvHw_resourceNormals.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceNormals"));
+			NvHw_resourceMasterPositions.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceMasterPositions"));
+			NvHw_resourceMasterPrevPositions.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceMasterPrevPositions"));
 		}
 
-		void SetParameters(FRHICommandListImmediate& RHICmdList, const FSceneView& View, const GFSDK_Hair_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[GFSDK_HAIR_NUM_SHADER_RESOUCES])
+		void SetParameters(FRHICommandListImmediate& RHICmdList, const FSceneView& View, const NvHw_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[NvHw::ShaderResourceType::COUNT_OF])
 		{
 			FGlobalShader::SetParameters(RHICmdList, GetPixelShader(), View);
 
@@ -72,12 +86,12 @@ namespace HairWorksRenderer
 
 			SetSamplerParameter(RHICmdList, GetPixelShader(), TextureSampler, TStaticSamplerState<>::GetRHI());
 
-			SetTextureParameter(RHICmdList, GetPixelShader(), RootColorTexture, HairTextures[GFSDK_HAIR_TEXTURE_ROOT_COLOR]);
-			SetTextureParameter(RHICmdList, GetPixelShader(), TipColorTexture, HairTextures[GFSDK_HAIR_TEXTURE_TIP_COLOR]);
-			SetTextureParameter(RHICmdList, GetPixelShader(), SpecularColorTexture, HairTextures[GFSDK_HAIR_TEXTURE_SPECULAR]);
-			SetTextureParameter(RHICmdList, GetPixelShader(), StrandTexture, HairTextures[GFSDK_HAIR_TEXTURE_STRAND]);
+			SetTextureParameter(RHICmdList, GetPixelShader(), RootColorTexture, HairTextures[NvHw::HairTextureType::ROOT_COLOR]);
+			SetTextureParameter(RHICmdList, GetPixelShader(), TipColorTexture, HairTextures[NvHw::HairTextureType::TIP_COLOR]);
+			SetTextureParameter(RHICmdList, GetPixelShader(), SpecularColorTexture, HairTextures[NvHw::HairTextureType::SPECULAR]);
+			SetTextureParameter(RHICmdList, GetPixelShader(), StrandTexture, HairTextures[NvHw::HairTextureType::STRAND]);
 
-			auto BindSrv = [&](FShaderResourceParameter& Parameter, GFSDK_HAIR_SHADER_RESOURCE_TYPE HairSrvType)
+			auto BindSrv = [&](FShaderResourceParameter& Parameter, NvHw::ShaderResourceType::Enum HairSrvType)
 			{
 				if (!Parameter.IsBound())
 					return;
@@ -86,18 +100,18 @@ namespace HairWorksRenderer
 				GHairWorksDeviceContext->PSSetShaderResources(Parameter.GetBaseIndex(), 1, &HairSrvs[HairSrvType]);
 			};
 
-			BindSrv(GFSDK_HAIR_RESOURCE_FACE_HAIR_INDICES, GFSDK_HAIR_SHADER_RESOUCE_HAIR_INDICES);
-			BindSrv(GFSDK_HAIR_RESOURCE_TANGENTS, GFSDK_HAIR_SHADER_RESOUCE_TANGENTS);
-			BindSrv(GFSDK_HAIR_RESOURCE_NORMALS, GFSDK_HAIR_SHADER_RESOUCE_NORMALS);
-			BindSrv(GFSDK_HAIR_RESOURCE_MASTER_POSITIONS, GFSDK_HAIR_SHADER_RESOUCE_MASTER_POSITIONS);
-			BindSrv(GFSDK_HAIR_RESOURCE_MASTER_PREV_POSITIONS, GFSDK_HAIR_SHADER_RESOUCE_PREV_MASTER_POSITIONS);
+			BindSrv(NvHw_resourceFaceHairIndices, NvHw::ShaderResourceType::HAIR_INDICES);
+			BindSrv(NvHw_resourceTangents, NvHw::ShaderResourceType::TANGENTS);
+			BindSrv(NvHw_resourceNormals, NvHw::ShaderResourceType::NORMALS);
+			BindSrv(NvHw_resourceMasterPositions, NvHw::ShaderResourceType::MASTER_POSITIONS);
+			BindSrv(NvHw_resourceMasterPrevPositions, NvHw::ShaderResourceType::PREV_MASTER_POSITIONS);
 		}
 
 		virtual bool Serialize(FArchive& Ar)
 		{
 			bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
 
-			Ar << HairConstantBuffer << TextureSampler << RootColorTexture << TipColorTexture << SpecularColorTexture << StrandTexture << GFSDK_HAIR_RESOURCE_FACE_HAIR_INDICES << GFSDK_HAIR_RESOURCE_TANGENTS << GFSDK_HAIR_RESOURCE_NORMALS << GFSDK_HAIR_RESOURCE_MASTER_POSITIONS << GFSDK_HAIR_RESOURCE_MASTER_PREV_POSITIONS;
+			Ar << HairConstantBuffer << TextureSampler << RootColorTexture << TipColorTexture << SpecularColorTexture << StrandTexture << NvHw_resourceFaceHairIndices << NvHw_resourceTangents << NvHw_resourceNormals << NvHw_resourceMasterPositions << NvHw_resourceMasterPrevPositions;
 
 			return bShaderHasOutdatedParameters;
 		}
@@ -111,15 +125,15 @@ namespace HairWorksRenderer
 		FShaderResourceParameter SpecularColorTexture;
 		FShaderResourceParameter StrandTexture;
 
-		FShaderResourceParameter	GFSDK_HAIR_RESOURCE_FACE_HAIR_INDICES;
-		FShaderResourceParameter	GFSDK_HAIR_RESOURCE_TANGENTS;
-		FShaderResourceParameter	GFSDK_HAIR_RESOURCE_NORMALS;
-		FShaderResourceParameter	GFSDK_HAIR_RESOURCE_MASTER_POSITIONS;
-		FShaderResourceParameter	GFSDK_HAIR_RESOURCE_MASTER_PREV_POSITIONS;
+		FShaderResourceParameter	NvHw_resourceFaceHairIndices;
+		FShaderResourceParameter	NvHw_resourceTangents;
+		FShaderResourceParameter	NvHw_resourceNormals;
+		FShaderResourceParameter	NvHw_resourceMasterPositions;
+		FShaderResourceParameter	NvHw_resourceMasterPrevPositions;
 
 	};
 
-	class FHairWorksBasePassPs : public FHairWorksBasePs
+	class FHairWorksBasePassPs : public FHairWorksBasePs, public FHairWorksBaseShader
 	{
 		DECLARE_SHADER_TYPE(FHairWorksBasePassPs, Global);
 
@@ -144,7 +158,7 @@ namespace HairWorksRenderer
 			return bShaderHasOutdatedParameters;
 		}
 
-		void SetParameters(FRHICommandListImmediate& RHICmdList, const FSceneView& View, const GFSDK_Hair_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[GFSDK_HAIR_NUM_SHADER_RESOUCES], const FVector4 IndirectLight[3], const FVector4& InPointSkyBentNormal)
+		void SetParameters(FRHICommandListImmediate& RHICmdList, const FSceneView& View, const NvHw_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[NvHw::ShaderResourceType::COUNT_OF], const FVector4 IndirectLight[3], const FVector4& InPointSkyBentNormal)
 		{
 			FHairWorksBasePs::SetParameters(RHICmdList, View, HairConstBuffer, HairTextures, HairSrvs);
 
@@ -157,11 +171,6 @@ namespace HairWorksRenderer
 			{
 				CubemapShaderParameters.SetParameters(RHICmdList, GetPixelShader(), View.FinalPostProcessSettings.ContributingCubemaps[0]);
 			}
-		}
-
-		static bool ShouldCache(EShaderPlatform Platform)
-		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
 		}
 
 		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
@@ -177,7 +186,7 @@ namespace HairWorksRenderer
 
 	IMPLEMENT_SHADER_TYPE(, FHairWorksBasePassPs, TEXT("HairWorks"), TEXT("BasePassPs"), SF_Pixel);
 
-	class FHairWorksColorizePs: public FHairWorksBasePs
+	class FHairWorksColorizePs: public FHairWorksBasePs, public FHairWorksBaseShader
 	{
 		DECLARE_SHADER_TYPE(FHairWorksColorizePs, Global);
 
@@ -190,11 +199,6 @@ namespace HairWorksRenderer
 
 		using FHairWorksBasePs::SetParameters;
 
-		static bool ShouldCache(EShaderPlatform Platform)
-		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
-		}
-
 		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
 		{
 			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
@@ -203,7 +207,7 @@ namespace HairWorksRenderer
 
 	IMPLEMENT_SHADER_TYPE(, FHairWorksColorizePs, TEXT("HairWorks"), TEXT("ColorizePs"), SF_Pixel);
 
-	class FHairWorksShadowDepthPs : public FGlobalShader
+	class FHairWorksShadowDepthPs : public FGlobalShader, public FHairWorksBaseShader
 	{
 		DECLARE_SHADER_TYPE(FHairWorksShadowDepthPs, Global);
 
@@ -223,11 +227,6 @@ namespace HairWorksRenderer
 			return bSerialized;
 		}
 
-		static bool ShouldCache(EShaderPlatform Platform)
-		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
-		}
-
 		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
 		{
 			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
@@ -238,7 +237,7 @@ namespace HairWorksRenderer
 
 	IMPLEMENT_SHADER_TYPE(, FHairWorksShadowDepthPs, TEXT("HairWorks"), TEXT("ShadowDepthMain"), SF_Pixel);
 
-	class FCopyDepthPs: public FGlobalShader
+	class FCopyDepthPs: public FGlobalShader, public FHairWorksBaseShader
 	{
 		DECLARE_SHADER_TYPE(FCopyDepthPs, Global);
 
@@ -257,10 +256,6 @@ namespace HairWorksRenderer
 			Ar << SceneDepthTexture;
 			return bShaderHasOutdatedParameters;
 		}
-		static bool ShouldCache(EShaderPlatform Platform)
-		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
-		}
 
 		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
 		{
@@ -272,7 +267,7 @@ namespace HairWorksRenderer
 
 	IMPLEMENT_SHADER_TYPE(, FCopyDepthPs, TEXT("HairWorks"), TEXT("CopyDepthPs"), SF_Pixel);
 
-	class FResolveDepthShader: public FGlobalShader	// Original class name is FResolveDepthPs. But it causes streaming error with FResolveDepthPS, which allocates numerous memory.
+	class FResolveDepthShader: public FGlobalShader, public FHairWorksBaseShader	// Original class name is FResolveDepthPs. But it causes streaming error with FResolveDepthPS, which allocates numerous memory.
 	{
 		DECLARE_SHADER_TYPE(FResolveDepthShader, Global);
 
@@ -292,10 +287,6 @@ namespace HairWorksRenderer
 			Ar << DepthTexture << StencilTexture;
 			return bShaderHasOutdatedParameters;
 		}
-		static bool ShouldCache(EShaderPlatform Platform)
-		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
-		}
 
 		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
 		{
@@ -308,7 +299,7 @@ namespace HairWorksRenderer
 
 	IMPLEMENT_SHADER_TYPE(, FResolveDepthShader, TEXT("HairWorks"), TEXT("ResolveDepthPs"), SF_Pixel);
 
-	class FResolveOpaqueDepthPs: public FGlobalShader
+	class FResolveOpaqueDepthPs: public FGlobalShader, public FHairWorksBaseShader
 	{
 		DECLARE_SHADER_TYPE(FResolveOpaqueDepthPs, Global);
 
@@ -328,10 +319,6 @@ namespace HairWorksRenderer
 			Ar << DepthTexture << HairColorTexture;
 			return bShaderHasOutdatedParameters;
 		}
-		static bool ShouldCache(EShaderPlatform Platform)
-		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
-		}
 
 		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
 		{
@@ -344,7 +331,7 @@ namespace HairWorksRenderer
 
 	IMPLEMENT_SHADER_TYPE(, FResolveOpaqueDepthPs, TEXT("HairWorks"), TEXT("ResolveOpaqueDepthPs"), SF_Pixel);
 
-	class FCopyVelocityPs: public FGlobalShader
+	class FCopyVelocityPs: public FGlobalShader, public FHairWorksBaseShader
 	{
 		DECLARE_SHADER_TYPE(FCopyVelocityPs, Global);
 
@@ -364,10 +351,6 @@ namespace HairWorksRenderer
 			Ar << VelocityTexture << DepthTexture;
 			return bShaderHasOutdatedParameters;
 		}
-		static bool ShouldCache(EShaderPlatform Platform)
-		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
-		}
 
 		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
 		{
@@ -380,7 +363,7 @@ namespace HairWorksRenderer
 
 	IMPLEMENT_SHADER_TYPE(, FCopyVelocityPs, TEXT("HairWorks"), TEXT("CopyVelocityPs"), SF_Pixel);
 
-	class FBlendLightingColorPs: public FGlobalShader
+	class FBlendLightingColorPs: public FGlobalShader, public FHairWorksBaseShader
 	{
 		DECLARE_SHADER_TYPE(FBlendLightingColorPs, Global);
 
@@ -399,10 +382,6 @@ namespace HairWorksRenderer
 			bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
 			Ar << AccumulatedColorTexture << PrecomputedLightTexture;
 			return bShaderHasOutdatedParameters;
-		}
-		static bool ShouldCache(EShaderPlatform Platform)
-		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
 		}
 
 		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
@@ -656,11 +635,21 @@ namespace HairWorksRenderer
 				// Skip colorize
 				auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
 
-				GFSDK_HairInstanceDescriptor HairDescriptor;
-				GHairWorksSDK->CopyCurrentInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
+				NvHw::HairInstanceDescriptor HairDescriptor;
+				GHairWorksSDK->getInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
 
-				if(HairDescriptor.m_colorizeMode != GFSDK_HAIR_COLORIZE_MODE_NONE)
-					continue;
+				if(HairDescriptor.m_colorizeMode != NvHw::ColorizeMode::NONE)
+				{
+					if(View.Family->EngineShowFlags.CompositeEditorPrimitives)
+					{
+						continue;
+					}
+					else
+					{
+						HairDescriptor.m_colorizeMode = NvHw::ColorizeMode::NONE;
+						GHairWorksSDK->updateInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
+					}
+				}
 
 				// Find stencil value for this hair
 				auto* UsedStencil = HairStencilValues.FindByPredicate(
@@ -692,27 +681,27 @@ namespace HairWorksRenderer
 				RHICmdList.SetDepthStencilState(DepthStencilState, StencilValue);
 
 				// Setup hair instance data uniform
-				HairShaderUniformStruct.Data[StencilValue] = FVector4(
+				HairShaderUniformStruct.Spec0_SpecPower0_Spec1_SpecPower1[StencilValue] = FVector4(
 					HairDescriptor.m_specularPrimary,
 					HairDescriptor.m_specularPowerPrimary,
 					HairDescriptor.m_specularSecondary,
 					HairDescriptor.m_specularPowerSecondary
 					);
-				HairShaderUniformStruct.Data1[StencilValue] = FVector4(
+				HairShaderUniformStruct.Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma[StencilValue] = FVector4(
 					HairDescriptor.m_specularSecondaryOffset,
 					HairDescriptor.m_diffuseBlend,
 					HairDescriptor.m_receiveShadows,
 					HairDescriptor.m_shadowSigma * (254.f / 255.f)
 					);
-				HairShaderUniformStruct.Data2[StencilValue] = FVector4(
+				HairShaderUniformStruct.GlintStrength[StencilValue] = FVector4(
 					HairDescriptor.m_glintStrength
 					);
 
 				// Pass camera information
 				auto ViewMatrices = View.ViewMatrices;
 
-				GHairWorksSDK->SetViewProjection((gfsdk_float4x4*)ViewMatrices.ViewMatrix.M, (gfsdk_float4x4*)ViewMatrices.ProjMatrix.M, GFSDK_HAIR_LEFT_HANDED);
-				GHairWorksSDK->SetPrevViewProjection((gfsdk_float4x4*)View.PrevViewMatrices.ViewMatrix.M, (gfsdk_float4x4*)View.PrevViewMatrices.ProjMatrix.M, GFSDK_HAIR_LEFT_HANDED);
+				GHairWorksSDK->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHw::HandednessHint::LEFT);
+				GHairWorksSDK->setPrevViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ProjMatrix.M), NvHw::HandednessHint::LEFT);
 
 				// Setup shader
 				TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
@@ -746,13 +735,13 @@ namespace HairWorksRenderer
 					SkyBentNormal = LightingAllocation.CurrentSkyBentNormal;
 				}
 
-				GFSDK_HairShaderConstantBuffer ConstantBuffer;
-				GHairWorksSDK->PrepareShaderConstantBuffer(HairSceneProxy.GetHairInstanceId(), &ConstantBuffer);
+				NvHw::ShaderConstantBuffer ConstantBuffer;
+				GHairWorksSDK->prepareShaderConstantBuffer(HairSceneProxy.GetHairInstanceId(), ConstantBuffer);
 
-				ID3D11ShaderResourceView* HairSrvs[GFSDK_HAIR_NUM_SHADER_RESOUCES];
-				GHairWorksSDK->GetShaderResources(HairSceneProxy.GetHairInstanceId(), HairSrvs);
+				ID3D11ShaderResourceView* HairSrvs[NvHw::ShaderResourceType::COUNT_OF];
+				GHairWorksSDK->getShaderResources(HairSceneProxy.GetHairInstanceId(), NV_NULL, NvHw::ShaderResourceType::COUNT_OF, Nv::Dx11Type::getPtr(HairSrvs));
 
-				PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<GFSDK_Hair_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs, IndirectLight, SkyBentNormal);
+				PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHw_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs, IndirectLight, SkyBentNormal);
 
 				// Flush render states
 				RHICmdList.DrawPrimitive(0, 0, 0, 0);
@@ -865,23 +854,23 @@ namespace HairWorksRenderer
 			// Skin none colorize
 			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
 
-			GFSDK_HairInstanceDescriptor HairDescriptor;
-			GHairWorksSDK->CopyCurrentInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
+			NvHw::HairInstanceDescriptor HairDescriptor;
+			GHairWorksSDK->getInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
 
-			if(HairDescriptor.m_colorizeMode == GFSDK_HAIR_COLORIZE_MODE_NONE)
+			if (HairDescriptor.m_colorizeMode == NvHw::ColorizeMode::NONE)
 				continue;
 
 			// Setup camera
-			GHairWorksSDK->SetViewProjection(&reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ViewMatrix), &reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ProjMatrix), GFSDK_HAIR_LEFT_HANDED);
+			GHairWorksSDK->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ViewMatrix), reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ProjMatrix), NvHw::HandednessHint::LEFT);
 
 			// Setup shader constants
-			GFSDK_HairShaderConstantBuffer ConstantBuffer;
-			GHairWorksSDK->PrepareShaderConstantBuffer(HairSceneProxy.GetHairInstanceId(), &ConstantBuffer);
+			NvHw::ShaderConstantBuffer ConstantBuffer;
+			GHairWorksSDK->prepareShaderConstantBuffer(HairSceneProxy.GetHairInstanceId(), ConstantBuffer);
 
-			ID3D11ShaderResourceView* HairSrvs[GFSDK_HAIR_NUM_SHADER_RESOUCES];
-			GHairWorksSDK->GetShaderResources(HairSceneProxy.GetHairInstanceId(), HairSrvs);
+			ID3D11ShaderResourceView* HairSrvs[NvHw::ShaderResourceType::COUNT_OF];
+			GHairWorksSDK->getShaderResources(HairSceneProxy.GetHairInstanceId(), NV_NULL, NvHw::ShaderResourceType::COUNT_OF, Nv::Dx11Type::getPtr(HairSrvs));
 
-			PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<GFSDK_Hair_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs);
+			PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHw_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs);
 
 			// Flush render states
 			RHICmdList.DrawPrimitive(0, 0, 0, 0);
@@ -896,7 +885,7 @@ namespace HairWorksRenderer
 			// Draw hair
 			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
 
-			GHairWorksSDK->SetViewProjection(&reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ViewMatrix), &reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ProjMatrix), GFSDK_HAIR_LEFT_HANDED);
+			GHairWorksSDK->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ViewMatrix), reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ProjMatrix), NvHw::HandednessHint::LEFT);
 
 			HairSceneProxy.Draw(FHairWorksSceneProxy::EDrawType::Visualization);
 		}
@@ -912,7 +901,7 @@ namespace HairWorksRenderer
 		{
 			LastFrameNumber = GFrameNumberRenderThread;
 
-			GHairWorksSDK->StepSimulation();
+			GHairWorksSDK->stepSimulation();
 		}
 	}
 
@@ -929,11 +918,11 @@ namespace HairWorksRenderer
 				continue;
 
 			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
-			if (HairSceneProxy.GetHairInstanceId() == GFSDK_HairInstanceID_NULL)
+			if (HairSceneProxy.GetHairInstanceId() == NvHw::HairInstanceId::HAIR_INSTANCE_ID_NULL)
 				continue;
 
-			GFSDK_HairInstanceDescriptor HairDesc;
-			GHairWorksSDK->CopyCurrentInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDesc);
+			NvHw::HairInstanceDescriptor HairDesc;
+			GHairWorksSDK->getInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDesc);
 			if(!HairDesc.m_castShadows)
 				continue;
 
@@ -961,7 +950,7 @@ namespace HairWorksRenderer
 					HairProjMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewMatrices[FaceIdx].ProjMatrix.M;
 				}
 
-				GHairWorksSDK->SetViewProjectionForCubeMap(HairViewMatrices, HairProjMatrices, Visible, GFSDK_HAIR_LEFT_HANDED);
+				GHairWorksSDK->setCubeMapViewProjection(HairViewMatrices, HairProjMatrices, Visible, NvHw::HandednessHint::LEFT);
 
 				// Setup shader
 				static FGlobalBoundShaderState BoundShaderState;
@@ -973,7 +962,7 @@ namespace HairWorksRenderer
 				// Setup camera
 				FViewMatrices ViewMatrices;
 				ViewMatrices.ViewMatrix = FTranslationMatrix(Shadow.PreShadowTranslation) * Shadow.SubjectAndReceiverMatrix;
-				GHairWorksSDK->SetViewProjection((gfsdk_float4x4*)ViewMatrices.ViewMatrix.M, (gfsdk_float4x4*)ViewMatrices.ProjMatrix.M, GFSDK_HAIR_LEFT_HANDED);
+				GHairWorksSDK->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHw::HandednessHint::LEFT);
 
 				// Setup shader
 				TShaderMapRef<FHairWorksShadowDepthPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));

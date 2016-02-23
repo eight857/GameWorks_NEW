@@ -32,7 +32,7 @@ UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectI
 
 FPrimitiveSceneProxy* UHairWorksComponent::CreateSceneProxy()
 {
-	if (HairInstance.Hair == nullptr)
+	if(GHairWorksSDK == nullptr || HairInstance.Hair == nullptr)
 		return nullptr;
 
 	return new FHairWorksSceneProxy(this, *HairInstance.Hair);
@@ -53,11 +53,11 @@ void UHairWorksComponent::OnAttachmentChanged()
 FBoxSphereBounds UHairWorksComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
 	auto* HairSceneProxy = static_cast<FHairWorksSceneProxy*>(SceneProxy);
-	if (HairSceneProxy == nullptr || HairSceneProxy->GetHairInstanceId() == GFSDK_HairAssetID_NULL)
+	if (HairSceneProxy == nullptr || HairSceneProxy->GetHairInstanceId() == NvHw::HAIR_ASSET_ID_NULL)
 		return FBoxSphereBounds(EForceInit::ForceInit);
 
 	gfsdk_float3 HairBoundMin, HairBoundMax;
-	GHairWorksSDK->GetBounds(HairSceneProxy->GetHairInstanceId(), &HairBoundMin, &HairBoundMax);
+	GHairWorksSDK->getBounds(HairSceneProxy->GetHairInstanceId(), HairBoundMin, HairBoundMax);
 
 	FBoxSphereBounds Bounds(FBox(reinterpret_cast<FVector&>(HairBoundMin), reinterpret_cast<FVector&>(HairBoundMax)));
 
@@ -129,7 +129,7 @@ void UHairWorksComponent::SendHairDynamicData()const
 	}
 
 	// Setup material
-	DynamicData->Textures.SetNumZeroed(GFSDK_HAIR_NUM_TEXTURES);
+	DynamicData->Textures.SetNumZeroed(NvHw::EHairTextureType::COUNT_OF);
 
 	if(HairInstance.Hair->HairMaterial != nullptr)	// Always load from asset to propagate visualization flags.
 	{

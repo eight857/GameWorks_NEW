@@ -11,9 +11,9 @@ struct FVertexFactoryInterpolantsVSToPS
 {};
 #include "ShadowDepthCommon.usf"
 
-#define GFSDK_HAIR_DECLARE_VELOCITY_ATTR
+#define NV_HW_DECLARE_VELOCITY_ATTR
 
-#include "GFSDK_HairWorks_ShaderCommon.usf"
+#include "NvHwShaderCommon.usf"
 #include "HairWorksCommon.usf"
 
 float4 IndirectLightingSHCoefficients[3];
@@ -22,7 +22,7 @@ float4 PointSkyBentNormal;
 
 bool bCubemapAmbient;
 
-GFSDK_Hair_ConstantBuffer HairConstantBuffer;
+NvHw_ConstantBuffer HairConstantBuffer;
 
 SamplerState TextureSampler;
 
@@ -31,12 +31,12 @@ Texture2D TipColorTexture;
 Texture2D SpecularColorTexture;
 Texture2D StrandTexture;
 
-GFSDK_HAIR_INDICES_BUFFER_TYPE GFSDK_HAIR_RESOURCE_FACE_HAIR_INDICES;
-GFSDK_HAIR_TANGENT_BUFFER_TYPE GFSDK_HAIR_RESOURCE_TANGENTS;
-GFSDK_HAIR_NORMAL_BUFFER_TYPE GFSDK_HAIR_RESOURCE_NORMALS;
-GFSDK_HAIR_POSITION_BUFFER_TYPE GFSDK_HAIR_RESOURCE_MASTER_POSITIONS;
-GFSDK_HAIR_POSITION_BUFFER_TYPE GFSDK_HAIR_RESOURCE_MASTER_PREV_POSITIONS;
-DECLARE_DEFAULT_SHADER_ATTRIBUTE_FUNC;
+NV_HW_INDICES_BUFFER_TYPE NvHw_resourceFaceHairIndices;
+NV_HW_TANGENT_BUFFER_TYPE NvHw_resourceTangents;
+NV_HW_NORMAL_BUFFER_TYPE NvHw_resourceNormals;
+NV_HW_POSITION_BUFFER_TYPE NvHw_resourceMasterPositions;
+NV_HW_POSITION_BUFFER_TYPE NvHw_resourceMasterPrevPositions;
+NV_HW_DECLARE_DEFAULT_SHADER_ATTRIBUTE_FUNC;
 
 float ShadowDepthMain(in float4 Position : SV_Position) : SV_Depth
 {
@@ -154,12 +154,12 @@ FBasePassOut ComposeGBuffer(FHairScreenSpaceData HairScreenSpaceData, float3 Rec
 	return Output;
 }
 
-FBasePassOut BasePassPs(GFSDK_Hair_PixelShaderInput Input)
+FBasePassOut BasePassPs(NvHw_PixelShaderInput Input)
 {
 	// Shader attributes
-	GFSDK_Hair_ShaderAttributes ShaderAttributes = GFSDK_Hair_GetShaderAttributes(Input, HairConstantBuffer);
+	NvHw_ShaderAttributes ShaderAttributes = NvHw_GetShaderAttributes(Input, HairConstantBuffer);
 
-	float3 HairColor = GFSDK_Hair_SampleHairColorStrandTex(
+	float3 HairColor = NvHw_SampleHairColorStrandTex(
 		HairConstantBuffer,
 		HairConstantBuffer.defaultMaterial,
 		TextureSampler,
@@ -174,7 +174,7 @@ FBasePassOut BasePassPs(GFSDK_Hair_PixelShaderInput Input)
 		HairConstantBuffer.defaultMaterial.specularColor.rgb = SpecularColorTexture.SampleLevel(TextureSampler, ShaderAttributes.texcoords.xy, 0).rgb;
 
 	// Hair opaque
-	float HairOpaque = GFSDK_Hair_ComputeAlpha(
+	float HairOpaque = NvHw_ComputeAlpha(
 		HairConstantBuffer,
 		HairConstantBuffer.defaultMaterial,
 		ShaderAttributes
@@ -184,7 +184,7 @@ FBasePassOut BasePassPs(GFSDK_Hair_PixelShaderInput Input)
 	float Glint = 0;
 	if(HairConstantBuffer.defaultMaterial.glintStrength > 0)
 	{
-		Glint = GFSDK_Hair_ComputeHairGlint(
+		Glint = NvHw_ComputeHairGlint(
 			HairConstantBuffer,
 			HairConstantBuffer.defaultMaterial,
 			ShaderAttributes
@@ -250,7 +250,7 @@ FBasePassOut BasePassPs(GFSDK_Hair_PixelShaderInput Input)
 
 	// Visualization
 	float3 VisualizeColor;
-	bool bVisualize = GFSDK_Hair_VisualizeColor(
+	bool bVisualize = NvHw_VisualizeColor(
 		HairConstantBuffer,
 		HairConstantBuffer.defaultMaterial,
 		ShaderAttributes,
@@ -287,13 +287,13 @@ FBasePassOut BasePassPs(GFSDK_Hair_PixelShaderInput Input)
 	return ComposeGBuffer(HairScreenSpaceData, RecomputedLight, Velocity);
 }
 
-float4 ColorizePs(GFSDK_Hair_PixelShaderInput Input): SV_Target0
+float4 ColorizePs(NvHw_PixelShaderInput Input): SV_Target0
 {
 	// Shader attributes
-	GFSDK_Hair_ShaderAttributes ShaderAttributes = GFSDK_Hair_GetShaderAttributes(Input, HairConstantBuffer);
+	NvHw_ShaderAttributes ShaderAttributes = NvHw_GetShaderAttributes(Input, HairConstantBuffer);
 
 	float3 VisualizeColor;
-	GFSDK_Hair_VisualizeColor(
+	NvHw_VisualizeColor(
 		HairConstantBuffer,
 		HairConstantBuffer.defaultMaterial,
 		ShaderAttributes,

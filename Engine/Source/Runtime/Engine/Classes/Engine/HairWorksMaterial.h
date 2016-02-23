@@ -3,7 +3,9 @@
 
 #include "HairWorksMaterial.generated.h"
 
-struct GFSDK_HairInstanceDescriptor;
+namespace Nv{namespace HairWorks{
+	struct HairInstanceDescriptor;
+}}
 
 UENUM()
 enum class EHairWorksStrandBlendMode : uint8
@@ -496,7 +498,7 @@ class ENGINE_API UHairWorksMaterial: public UObject
 #pragma endregion
 
 	/** Read or write attributes from or to GFSDK_HairInstanceDescriptor. */
-	void SyncHairDescriptor(GFSDK_HairInstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor);
+	void SyncHairDescriptor(Nv::HairWorks::HairInstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor);
 
 protected:
 	template<typename TParameter, typename TProperty>

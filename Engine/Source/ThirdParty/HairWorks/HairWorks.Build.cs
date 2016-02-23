@@ -21,7 +21,7 @@ public class HairWorks : ModuleRules
 
 		if (PlatformString != null)
 		{
-			string DllPath = "$(EngineDir)/Binaries/ThirdParty/HairWorks/GFSDK_HairWorks." + PlatformString + ".dll";
+			string DllPath = "$(EngineDir)/Binaries/ThirdParty/HairWorks/NvHairWorksDx11." + PlatformString + ".dll";
 			RuntimeDependencies.Add(new RuntimeDependency(DllPath));
 		}
 	}

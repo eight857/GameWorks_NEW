@@ -110,6 +110,7 @@
 
 // @third party code - BEGIN HairWorks
 #include "SkelImport.h"
+#include <Nv/Foundation/NvMemoryReadStream.h>
 #include "HairWorksSDK.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
@@ -6899,12 +6900,13 @@ bool UHairWorksFactory::FactoryCanImport(const FString& Filename)
 	TArray<uint8> Buffer;
 	FFileHelper::LoadFileToArray(Buffer, *Filename);
 
-	auto HairAssetId = GFSDK_HairAssetID_NULL;
-	GHairWorksSDK->LoadHairAssetFromMemory(Buffer.GetData(), Buffer.Num(), &HairAssetId);
+	auto HairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
+	Nv::MemoryReadStream ReadStream(Buffer.GetData(), Buffer.Num());
+	GHairWorksSDK->loadHairAsset(&ReadStream, HairAssetId);
 
-	if(HairAssetId != GFSDK_HairAssetID_NULL)
+	if(HairAssetId != NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
 	{
-		GHairWorksSDK->FreeHairAsset(HairAssetId);
+		GHairWorksSDK->freeHairAsset(HairAssetId);
 		return true;
 	}
 	else
@@ -6916,20 +6918,19 @@ FText UHairWorksFactory::GetDisplayName() const
 	return FText::FromString("HairWorks");
 }
 
-void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, GFSDK_HairAssetID HairAssetId, const GFSDK_HairInstanceDescriptor* NewInstanceDesc)
+void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, NvHw::HairAssetId HairAssetId, const NvHw::HairInstanceDescriptor* NewInstanceDesc)
 {
 	// Get bones. Used for bone remapping, etc.
 	check(GHairWorksSDK != nullptr);
 	{
-		gfsdk_U32 BoneNum = 0;
-		GHairWorksSDK->GetNumBones(HairAssetId, &BoneNum);
+		Nv::Int BoneNum = GHairWorksSDK->getNumBones(HairAssetId);
 
 		Hair.BoneNames.Empty(BoneNum);
 
-		for(gfsdk_U32 Idx = 0; Idx < BoneNum; ++Idx)
+		for (Nv::Int Idx = 0; Idx < BoneNum; ++Idx)
 		{
-			gfsdk_char BoneName[GFSDK_HAIR_MAX_STRING];
-			GHairWorksSDK->GetBoneName(HairAssetId, Idx, BoneName);
+			Nv::Char BoneName[NV_HW_MAX_STRING];
+			GHairWorksSDK->getBoneName(HairAssetId, Idx, BoneName);
 
 			Hair.BoneNames.Add(*FSkeletalMeshImportData::FixupBoneName(BoneName));
 		}
@@ -6938,11 +6939,11 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, GFSDK_HairAsset
 	// Get material
 	if(Hair.bMaterials)
 	{
-		GFSDK_HairInstanceDescriptor HairInstanceDesc;
+		NvHw::HairInstanceDescriptor HairInstanceDesc;
 		if(NewInstanceDesc)
 			HairInstanceDesc = *NewInstanceDesc;
 		else
-			GHairWorksSDK->CopyInstanceDescriptorFromAsset(HairAssetId, HairInstanceDesc);
+			GHairWorksSDK->getInstanceDescriptorFromAsset(HairAssetId, HairInstanceDesc);
 
 		// sRGB conversion
 		auto ConvertColorToSRGB = [](gfsdk_float4& Color)
@@ -6969,7 +6970,7 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, GFSDK_HairAsset
 			Hair.HairMaterial->HairNormalCenter = Hair.BoneNames[HairInstanceDesc.m_hairNormalBoneIndex];
 
 		TArray<UTexture2D*> HairTextures;
-		GFSDK_HairInstanceDescriptor TmpHairInstanceDesc;
+		NvHw::HairInstanceDescriptor TmpHairInstanceDesc;
 		Hair.HairMaterial->SyncHairDescriptor(TmpHairInstanceDesc, HairTextures, false);	// To keep textures.
 
 		Hair.HairMaterial->SyncHairDescriptor(HairInstanceDesc, HairTextures, true);
@@ -6991,26 +6992,26 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 	FEditorDelegates::OnAssetPreImport.Broadcast(this, Class, InParent, Name, FileType);
 
 	// Create real hair asset to get basic asset information
-	auto HairAssetId = GFSDK_HairAssetID_NULL;
+	auto HairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
 	
-	GHairWorksSDK->LoadHairAssetFromMemory(Buffer, BufferEnd - Buffer, &HairAssetId, nullptr, &GHairWorksConversionSettings);
-	if(HairAssetId == GFSDK_HairAssetID_NULL)
+	Nv::MemoryReadStream ReadStream(Buffer, BufferEnd - Buffer);
+	GHairWorksSDK->loadHairAsset(&ReadStream, HairAssetId, nullptr, &GHairWorksConversionSettings);
+	if(HairAssetId == NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
 	{
 		FEditorDelegates::OnAssetPostImport.Broadcast(this, nullptr);
 		return nullptr;
 	}
 
 	// Create UHairWorksAsset
-	auto* Hair = NewNamedObject<UHairWorksAsset>(InParent, Name, Flags);
+	auto* Hair = NewObject<UHairWorksAsset>(InParent, Name, Flags);
 
 	// Initialize hair
 	InitHairAssetInfo(*Hair, HairAssetId);
 
 	// Clear temporary hair asset
-	GHairWorksSDK->FreeHairAsset(HairAssetId);
+	GHairWorksSDK->freeHairAsset(HairAssetId);
 
 	// Setup import data
-	Hair->AssetImportData = NewObject<UAssetImportData>(Hair);
 	Hair->AssetImportData->Update(UFactory::CurrentFilename);
 
 	// Set data
@@ -7057,7 +7058,7 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 	// Create new hair asset
 	check(GHairWorksSDK != nullptr);
 
-	auto NewHairAssetId = GFSDK_HairAssetID_NULL;
+	auto NewHairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
 	{	
 		// Load file
 		TArray<uint8> FileData;
@@ -7068,8 +7069,9 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 		}
 
 		// Create HairWorks asset
-		GHairWorksSDK->LoadHairAssetFromMemory(FileData.GetData(), FileData.Num(), &NewHairAssetId, nullptr, &GHairWorksConversionSettings);
-		if(NewHairAssetId == GFSDK_HairAssetID_NULL)
+		Nv::MemoryReadStream ReadStream(FileData.GetData(), FileData.Num());
+		GHairWorksSDK->loadHairAsset(&ReadStream, NewHairAssetId, nullptr, &GHairWorksConversionSettings);
+		if(NewHairAssetId == NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
 		{
 			UE_LOG(LogEditorFactories, Error, TEXT("Can't create Hair asset"));
 			return EReimportResult::Failed;
@@ -7078,30 +7080,31 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 
 	// Create target hair that we will copy things to
 	auto TgtHairAssetId = Hair->AssetId;
-	Hair->AssetId = GFSDK_HairAssetID_NULL;	// HairWorks asset must be recreated.
-	if(TgtHairAssetId == GFSDK_HairAssetID_NULL)
+	Hair->AssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;	// HairWorks asset must be recreated.
+	if(TgtHairAssetId == NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
 	{
-		GHairWorksSDK->LoadHairAssetFromMemory(Hair->AssetData.GetData(), Hair->AssetData.Num(), &TgtHairAssetId, nullptr, &GHairWorksConversionSettings);
+		Nv::MemoryReadStream ReadStream(Hair->AssetData.GetData(), Hair->AssetData.Num());
+		GHairWorksSDK->loadHairAsset(&ReadStream, TgtHairAssetId, nullptr, &GHairWorksConversionSettings);
 	}
 
-	check(TgtHairAssetId != GFSDK_HairAssetID_NULL);
+	check(TgtHairAssetId != NvHw::HairAssetId::HAIR_ASSET_ID_NULL);
 
 	// Copy asset content
-	GFSDK_HairInstanceDescriptor NewInstanceDesc;
+	NvHw::HairInstanceDescriptor NewInstanceDesc;
 	{
-		GHairWorksSDK->CopyInstanceDescriptorFromAsset(NewHairAssetId, NewInstanceDesc);
+		GHairWorksSDK->getInstanceDescriptorFromAsset(NewHairAssetId, NewInstanceDesc);
 
-		GFSDK_HairAssetCopySettings CopySettings;
+		NvHw::AssetCopySettings CopySettings;
 		CopySettings.m_copyAll = false;
 		CopySettings.m_copyCollision = Hair->bCollisions;
 		CopySettings.m_copyConstraints = Hair->bConstraints;
 		CopySettings.m_copyGroom = Hair->bGroom;
 		CopySettings.m_copyTextures = Hair->bTextures;
-		GHairWorksSDK->CopyAsset(NewHairAssetId, TgtHairAssetId, CopySettings);
+		GHairWorksSDK->copyAsset(NewHairAssetId, TgtHairAssetId, CopySettings);
 
 		// Finished copy. Clear.
-		GHairWorksSDK->FreeHairAsset(NewHairAssetId);
-		NewHairAssetId = GFSDK_HairAssetID_NULL;
+		GHairWorksSDK->freeHairAsset(NewHairAssetId);
+		NewHairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
 	}
 
 	// Initialize hair
@@ -7109,28 +7112,30 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 
 	// Stream the updated HairWorks asset to asset data.
 	{
-		void* HairAssetData = nullptr;
-		uint32 HairAssetDataSize = 0;
+		class FNvWriteStream: public Nv::WriteStream
+		{
+		public:
+			FNvWriteStream(TArray<uint8>& WriteBuffer): Buffer(WriteBuffer) {}
 
-		gfsdk_new_delete_t CustomAllocator;
-		CustomAllocator.new_ = [](size_t Size)->void*
-		{return FMemory::Malloc(Size); };
-		CustomAllocator.delete_ = [](void* Memory)
-		{FMemory::Free(Memory); };
+			virtual Nv::Int64 write(const Nv::Void* data, Nv::Int64 numBytes)override
+			{
+				Buffer.Append(static_cast<const uint8*>(data), numBytes);
+				return numBytes;
+			}
+			virtual Nv::Void flush()override{}
+			virtual Nv::Void close()override{}
+			virtual Nv::Bool isClosed()override{ return false; }
 
-		GHairWorksSDK->SaveHairAssetToMemory(HairAssetData, HairAssetDataSize, &CustomAllocator, true, TgtHairAssetId);
+			TArray<uint8>& Buffer;
+		};
 
-		// Set data to hair
-		Hair->AssetData.Empty(HairAssetDataSize);
-		Hair->AssetData.Append(static_cast<uint8*>(HairAssetData), HairAssetDataSize);
-
-		// Clear memory
-		FMemory::Free(HairAssetData);
-		HairAssetData = nullptr;
+		Hair->AssetData.Empty();
+		FNvWriteStream WriteStream(Hair->AssetData);
+		GHairWorksSDK->saveHairAsset(&WriteStream, NvHw::SerializeFormat::XML, TgtHairAssetId);
 
 		// Finished streaming. Clear.
-		GHairWorksSDK->FreeHairAsset(TgtHairAssetId);
-		TgtHairAssetId = GFSDK_HairAssetID_NULL;
+		GHairWorksSDK->freeHairAsset(TgtHairAssetId);
+		TgtHairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
 	}
 
 	// Notify components the change.

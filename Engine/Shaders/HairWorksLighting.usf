@@ -1,8 +1,10 @@
 // @third party code - BEGIN HairWorks
+#if SM5_PROFILE
+
 #pragma once
 
 #include "Common.usf"
-#include "GFSDK_HairWorks_ShaderCommon.usf"
+#include "NvHwShaderCommon.usf"
 #include "HairWorksCommon.usf"
 
 bool bHairDeferredRendering;
@@ -109,8 +111,8 @@ float3 GetHairWorksDynamicLighting(float3 ScreenVector, float2 InUV, FHairScreen
 	float SurfaceAttenuation = (DistanceAttenuation * LightRadiusMask * SpotFalloff) * SurfaceShadow;
 
 	// Diffuse
-	GFSDK_Hair_ConstantBuffer HairConstantBuffer;
-	float HairDiffuse = GFSDK_Hair_ComputeHairDiffuseShading(
+	NvHw_ConstantBuffer HairConstantBuffer;
+	float HairDiffuse = NvHw_ComputeHairDiffuseShading(
 		L,
 		HairScreenSpaceData.Tangent,
 		HairScreenSpaceData.Normal,
@@ -193,9 +195,10 @@ float GetHairWorksDynamicLighting(out float3 OutColor, float3 ScreenVector, floa
 		float4 GBufferB = HairGBufferBTextureMS.Load(SamplePos, i);
 		float4 GBufferC = HairGBufferCTextureMS.Load(SamplePos, i);
 		uint Stencil = HairStencilTextureMS.Load(SamplePos, i);
-		float4 InstanceData = HairInstanceData.Data[Stencil];
-		float4 InstanceData1 = HairInstanceData.Data1[Stencil];
-		float4 InstanceData2 = HairInstanceData.Data2[Stencil];
+
+		float4 HairInstance_Spec0_SpecPower0_Spec1_SpecPower1 = HairInstanceData.Spec0_SpecPower0_Spec1_SpecPower1[Stencil];
+		float4 HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma = HairInstanceData.Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma[Stencil];
+		float4 HairInstance_GlintStrength = HairInstanceData.GlintStrength[Stencil];
 
 		HairScreenSpaceData.Depth = ConvertFromDeviceZ(HairDepthTextureMS.Load(SamplePos, i));
 		HairScreenSpaceData.Normal = OctahedronToUnitVector(mad(GBufferA.xy, 2, -1));
@@ -204,15 +207,15 @@ float GetHairWorksDynamicLighting(out float3 OutColor, float3 ScreenVector, floa
 		HairScreenSpaceData.Specular = GBufferC.rgb;
 		HairScreenSpaceData.Glint = GBufferB.w;
 		HairScreenSpaceData.SpecularPrimaryOffset = mad(GBufferC.w, 2, -1);
-		HairScreenSpaceData.SpecularPrimaryScale = InstanceData.x;
-		HairScreenSpaceData.SpecularPrimaryPower = InstanceData.y;
-		HairScreenSpaceData.SpecularSecondaryScale = InstanceData.z;
-		HairScreenSpaceData.SpecularSecondaryPower = InstanceData.w;
-		HairScreenSpaceData.SpecularSecondaryOffset = InstanceData1.x;
-		HairScreenSpaceData.DiffuseBlend = InstanceData1.y;
-		LightData.bShadowed = LightData.bShadowed && InstanceData1.z != 0;
-		HairScreenSpaceData.ShadowAttenuation = InstanceData1.w;
-		HairScreenSpaceData.GlintStrength = InstanceData2.x;
+		HairScreenSpaceData.SpecularPrimaryScale = HairInstance_Spec0_SpecPower0_Spec1_SpecPower1.x;
+		HairScreenSpaceData.SpecularPrimaryPower = HairInstance_Spec0_SpecPower0_Spec1_SpecPower1.y;
+		HairScreenSpaceData.SpecularSecondaryScale = HairInstance_Spec0_SpecPower0_Spec1_SpecPower1.z;
+		HairScreenSpaceData.SpecularSecondaryPower = HairInstance_Spec0_SpecPower0_Spec1_SpecPower1.w;
+		HairScreenSpaceData.SpecularSecondaryOffset = HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma.x;
+		HairScreenSpaceData.DiffuseBlend = HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma.y;
+		LightData.bShadowed = LightData.bShadowed && HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma.z != 0;
+		HairScreenSpaceData.ShadowAttenuation = HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma.w;
+		HairScreenSpaceData.GlintStrength = HairInstance_GlintStrength.x;
 
 		// Add opaque
 		HairColor.a += HairScreenSpaceData.Opaque;
@@ -227,4 +230,6 @@ float GetHairWorksDynamicLighting(out float3 OutColor, float3 ScreenVector, floa
 
 	return HairColor.a;
 }
+
+#endif	// SM5_PROFILE
 // @third party code - END HairWorks

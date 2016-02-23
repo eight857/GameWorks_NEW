@@ -36,5 +36,9 @@ public class Renderer : ModuleRules
 
         PrivateIncludePathModuleNames.AddRange(new string[] { "HeadMountedDisplay", "LightPropagationVolumeRuntime" });
         DynamicallyLoadedModuleNames.AddRange(new string[] { "HeadMountedDisplay" });
+
+		// @third party code - BEGIN HairWorks
+		AddThirdPartyPrivateStaticDependencies(Target, "HairWorks");
+		// @third party code - END HairWorks
 	}
 }

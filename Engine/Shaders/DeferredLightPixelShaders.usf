@@ -45,13 +45,16 @@ FDeferredLightData SetupLightDataForStandardDeferred()
 void DirectionalPixelMain(
 	float2 InUV : TEXCOORD0,
 	float3 ScreenVector : TEXCOORD1,
-	out float4 OutColor : SV_Target0,
+	out float4 OutColor : SV_Target0
 	// @third party code - BEGIN HairWorks
-	out float3 OutHairColor : SV_Target1
+#if SM5_PROFILE
+	, out float3 OutHairColor : SV_Target1
+#endif
 	// @third party code - END HairWorks
 	)
 {
 	// @third party code - BEGIN HairWorks
+#if SM5_PROFILE
 	// Lighten hair
 	if(bHairDeferredRendering)
 	{
@@ -59,6 +62,7 @@ void DirectionalPixelMain(
 		if(HairOpaque >= 1)
 			return;
 	}
+#endif
 	// @third party code - END HairWorks
 
 	OutColor = 0;
@@ -83,9 +87,11 @@ void DirectionalPixelMain(
 void RadialPixelMain(
 	float4 InScreenPosition : TEXCOORD0,
 	float4 SVPos : SV_POSITION,
-	out float4 OutColor : SV_Target0,
+	out float4 OutColor : SV_Target0
 	// @third party code - BEGIN HairWorks
-	out float3 OutHairColor : SV_Target1
+#if SM5_PROFILE
+	, out float3 OutHairColor : SV_Target1
+#endif
 	// @third party code - END HairWorks
 	)
 {
@@ -93,6 +99,7 @@ void RadialPixelMain(
 	float2 ScreenUV = InScreenPosition.xy / InScreenPosition.w * View.ScreenPositionScaleBias.xy + View.ScreenPositionScaleBias.wz;
 	
 	// @third party code - BEGIN HairWorks
+#if SM5_PROFILE
 	// Lighten only hair
 	if(bHairDeferredRendering)
 	{
@@ -104,6 +111,7 @@ void RadialPixelMain(
 
 		return;
 	}
+#endif
 	// @third party code - END HairWorks
 
 	FScreenSpaceData ScreenSpaceData = GetScreenSpaceData(ScreenUV);

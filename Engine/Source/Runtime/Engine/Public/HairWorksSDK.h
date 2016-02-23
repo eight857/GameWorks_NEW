@@ -1,13 +1,8 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
-#include "AllowWindowsPlatformTypes.h"
-#pragma warning(push)
-#pragma warning(disable: 4191)	// For DLL function pointer conversion
-#include "../../../ThirdParty/HairWorks/GFSDK_HairWorks.h"
-#pragma warning(pop)
-#include "HideWindowsPlatformTypes.h"
+#include <Nv/HairWorks/NvHwHairSdk.h>
 
-extern ENGINE_API GFSDK_HairSDK* GHairWorksSDK;
-extern ENGINE_API GFSDK_HairConversionSettings GHairWorksConversionSettings;
+extern ENGINE_API NvHw::HairSdk* GHairWorksSDK;
+extern ENGINE_API NvHw::ConversionSettings GHairWorksConversionSettings;
 // @third party code - END HairWorks

@@ -3,8 +3,10 @@
 
 #include "HairWorksFactory.generated.h"
 
-enum GFSDK_HairAssetID;
-struct GFSDK_HairInstanceDescriptor;
+namespace Nv{namespace HairWorks{
+	enum HairAssetId;
+	struct HairInstanceDescriptor;
+}}
 class UHairWorksAsset;
 
 UCLASS()
@@ -25,6 +27,6 @@ class UHairWorksFactory : public UFactory, public FReimportHandler
 	//End FReimportHandler Interface
 
 protected:
-	static void InitHairAssetInfo(UHairWorksAsset& Hair, GFSDK_HairAssetID HairAssetId, const GFSDK_HairInstanceDescriptor* NewInstanceDesc = nullptr);
+	static void InitHairAssetInfo(UHairWorksAsset& Hair, Nv::HairWorks::HairAssetId HairAssetId, const Nv::HairWorks::HairInstanceDescriptor* NewInstanceDesc = nullptr);
 };
 // @third party code - END HairWorks
