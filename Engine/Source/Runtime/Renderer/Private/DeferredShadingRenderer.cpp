@@ -1045,7 +1045,7 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 			(!AlwaysCreateRenderTargets->GetInt() && HairWorksRenderer::ViewsHasHair(Views)) ||
 			AlwaysCreateRenderTargets->GetInt()
 			)
-			HairWorksRenderer::AllocRenderTargets(FSceneRenderTargets::Get(RHICmdList).GetBufferSizeXY());
+			HairWorksRenderer::AllocRenderTargets(RHICmdList, FSceneRenderTargets::Get(RHICmdList).GetBufferSizeXY());
 	}
 	// @third party code - END HairWorks
 

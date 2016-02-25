@@ -458,7 +458,7 @@ namespace HairWorksRenderer
 		}
 	}
 
-	void FindFreeElementInPool(const FPooledRenderTargetDesc& Desc, TRefCountPtr<IPooledRenderTarget> &Out, const TCHAR* InDebugName)
+	void FindFreeElementInPool(FRHICommandList& RHICmdList, const FPooledRenderTargetDesc& Desc, TRefCountPtr<IPooledRenderTarget> &Out, const TCHAR* InDebugName)
 	{
 		// There is bug. When a render target is created from a existing pointer, AllocationLevelInKB is not decreased. This cause assertion failure in FRenderTargetPool::GetStats(). So we have to release it first.
 		if(Out != nullptr)
@@ -470,7 +470,7 @@ namespace HairWorksRenderer
 			}
 		}
 
-		GRenderTargetPool.FindFreeElement(Desc, Out, InDebugName);
+		GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Out, InDebugName);
 
 		// Release useless resolved render resource. Because of the reason mentioned above, we do in only in the macro.
 #if UE_BUILD_SHIPPING || UE_BUILD_TEST
@@ -480,7 +480,7 @@ namespace HairWorksRenderer
 	}
 
 	// Create velocity buffer if necessary
-	void AllocVelocityBuffer(const TArray<FViewInfo>& Views)
+	void AllocVelocityBuffer(FRHICommandList& RHICmdList, const TArray<FViewInfo>& Views)
 	{
 		HairRenderTargets->VelocityBuffer = nullptr;
 
@@ -505,11 +505,11 @@ namespace HairWorksRenderer
 
 			auto Desc = HairRenderTargets->GBufferA->GetDesc();
 			Desc.Format = PF_G16R16;
-			FindFreeElementInPool(Desc, HairRenderTargets->VelocityBuffer, TEXT("HairGBufferC"));
+			FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->VelocityBuffer, TEXT("HairGBufferC"));
 		}
 	}
 
-	void AllocRenderTargets(const FIntPoint& Size)
+	void AllocRenderTargets(FRHICommandList& RHICmdList, const FIntPoint& Size)
 	{
 		// Get MSAA level
 		int SampleCount = CVarHairMsaaLevel.GetValueOnRenderThread();
@@ -525,28 +525,28 @@ namespace HairWorksRenderer
 		// GBuffers
 		FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(Size, PF_B8G8R8A8, FClearValueBinding::Transparent, TexCreate_None, TexCreate_RenderTargetable, false));
 		Desc.NumSamples = SampleCount;
-		FindFreeElementInPool(Desc, HairRenderTargets->GBufferA, TEXT("HairGBufferA"));
+		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->GBufferA, TEXT("HairGBufferA"));
 		Desc.Flags |= ETextureCreateFlags::TexCreate_SRGB;	// SRGB for diffuse
-		FindFreeElementInPool(Desc, HairRenderTargets->GBufferB, TEXT("HairGBufferB"));
+		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->GBufferB, TEXT("HairGBufferB"));
 		Desc.Flags &= ~ETextureCreateFlags::TexCreate_SRGB;
-		FindFreeElementInPool(Desc, HairRenderTargets->GBufferC, TEXT("HairGBufferC"));
+		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->GBufferC, TEXT("HairGBufferC"));
 		Desc.Format = PF_FloatRGBA;
-		FindFreeElementInPool(Desc, HairRenderTargets->PrecomputedLight, TEXT("HairPrecomputedLight"));
+		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->PrecomputedLight, TEXT("HairPrecomputedLight"));
 
 		// Color buffer
 		Desc.NumSamples = 1;
 		Desc.Format = PF_FloatRGBA;
-		FindFreeElementInPool(Desc, HairRenderTargets->AccumulatedColor, TEXT("HairAccumulatedColor"));
+		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->AccumulatedColor, TEXT("HairAccumulatedColor"));
 
 		// Depth buffer
 		Desc = FPooledRenderTargetDesc::Create2DDesc(Size, PF_DepthStencil, FClearValueBinding::DepthFar, TexCreate_None, TexCreate_DepthStencilTargetable, false);
 		Desc.NumSamples = SampleCount;
-		FindFreeElementInPool(Desc, HairRenderTargets->HairDepthZ, TEXT("HairDepthZ"));
+		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->HairDepthZ, TEXT("HairDepthZ"));
 
 		HairRenderTargets->StencilSRV = RHICreateShaderResourceView((FTexture2DRHIRef&)HairRenderTargets->HairDepthZ->GetRenderTargetItem().TargetableTexture, 0, 1, PF_X24_G8);
 
 		Desc.NumSamples = 1;
-		FindFreeElementInPool(Desc, HairRenderTargets->HairDepthZForShadow, TEXT("HairDepthZForShadow"));
+		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->HairDepthZForShadow, TEXT("HairDepthZForShadow"));
 
 		// Reset light attenuation
 		HairRenderTargets->LightAttenuation = nullptr;
@@ -581,7 +581,7 @@ namespace HairWorksRenderer
 		SetRenderTarget(RHICmdList, HairRenderTargets->AccumulatedColor->GetRenderTargetItem().TargetableTexture, nullptr, ESimpleRenderTargetMode::EClearColorExistingDepth);
 
 		// Prepare velocity buffer
-		AllocVelocityBuffer(Views);
+		AllocVelocityBuffer(RHICmdList, Views);
 
 		// Setup render targets
 		FRHIRenderTargetView RenderTargetViews[5] = {
@@ -632,9 +632,11 @@ namespace HairWorksRenderer
 
 			for(auto& PrimitiveInfo : View.VisibleHairs)
 			{
-				// Skip colorize
 				auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
+				if(HairSceneProxy.GetHairInstanceId() == NvHw::HAIR_INSTANCE_ID_NULL)
+					continue;
 
+				// Skip colorize
 				NvHw::HairInstanceDescriptor HairDescriptor;
 				GHairWorksSDK->getInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
 

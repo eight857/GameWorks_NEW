@@ -202,6 +202,9 @@
 #include "Classes/Factories/FbxSceneImportOptionsMaterial.h"
 #include "Classes/Factories/FbxSceneImportOptionsSkeletalMesh.h"
 #include "Classes/Factories/FbxSceneImportOptionsStaticMesh.h"
+// @third party code - BEGIN HairWorks
+#include "Classes/Factories/HairWorksFactory.h"
+// @third party code - END HairWorks
 #include "Classes/Commandlets/FileServerCommandlet.h"
 #include "Classes/Commandlets/FixupRedirectsCommandlet.h"
 #include "Classes/Commandlets/GatherTextCommandletBase.h"

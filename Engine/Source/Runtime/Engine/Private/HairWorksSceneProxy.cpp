@@ -113,7 +113,7 @@ void FHairWorksSceneProxy::CreateRenderThreadResources()
 	GHairWorksSDK->createHairInstance(Hair.AssetId, HairInstanceId);
 }
 
-FPrimitiveViewRelevance FHairWorksSceneProxy::GetViewRelevance(const FSceneView* View)
+FPrimitiveViewRelevance FHairWorksSceneProxy::GetViewRelevance(const FSceneView* View)const
 {
 	FPrimitiveViewRelevance ViewRel;
 	ViewRel.bDrawRelevance = IsShown(View);

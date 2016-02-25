@@ -19,7 +19,7 @@ Texture2DMS<uint> HairStencilTextureMS;
 float3 GetHairWorksDynamicLighting(float3 ScreenVector, float2 InUV, FHairScreenSpaceData HairScreenSpaceData, FDeferredLightData LightData)
 {
 	// Setup light
-	float3 WorldPosition = ScreenVector * HairScreenSpaceData.Depth + View.ViewOrigin.xyz;
+	float3 WorldPosition = ScreenVector * HairScreenSpaceData.Depth + View.WorldCameraOrigin.xyz;
 
 	//float3 V = -CameraVector;
 	float3 N = HairScreenSpaceData.Normal;

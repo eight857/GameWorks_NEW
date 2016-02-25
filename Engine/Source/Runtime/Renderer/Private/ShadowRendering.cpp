@@ -1581,7 +1581,7 @@ void FProjectedShadowInfo::RenderDepthDynamic(FRHICommandList& RHICmdList, FScen
 	// Draw hairs.
 	checkSlow(RHICmdList.IsImmediate());
 	if(RHICmdList.IsImmediate())
-		HairWorksRenderer::RenderShadow(static_cast<FRHICommandListImmediate&>(RHICmdList), *this, SubjectPrimitives, *FoundView);
+		HairWorksRenderer::RenderShadow(static_cast<FRHICommandListImmediate&>(RHICmdList), *this, DynamicSubjectPrimitives, *FoundView);
 	// @third party code - END HairWorks
 }
 
@@ -3327,7 +3327,7 @@ bool FProjectedShadowInfo::ShouldRenderForHair(const FViewInfo& View)const
 		}
 		else
 		{
-			for(auto* PrimitiveSceneInfo : SubjectPrimitives)
+			for(auto* PrimitiveSceneInfo : DynamicSubjectPrimitives)
 			{
 				auto& ViewRelevance = View.PrimitiveViewRelevanceMap[PrimitiveSceneInfo->GetIndex()];
 				if(ViewRelevance.bHairWorks)

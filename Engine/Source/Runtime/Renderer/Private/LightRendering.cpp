@@ -700,18 +700,18 @@ void FDeferredShadingSceneRenderer::RenderLights(FRHICommandListImmediate& RHICm
 						View.HeightfieldLightingViewInfo.ClearShadowing(View, RHICmdList, LightSceneInfo);
 					}
 
-				// @third party code - BEGIN HairWorks
-				// Clear for hair.
-				if(HairWorksRenderer::ViewsHasHair(Views))
-				{
-					FSceneRenderTargets::Get(RHICmdList).AllocLightAttenuation();	// To avoid an assertion in GetLightAttenuation()
+					// @third party code - BEGIN HairWorks
+					// Clear for hair.
+					if(HairWorksRenderer::ViewsHasHair(Views))
+					{
+						SceneContext.AllocLightAttenuation(RHICmdList);	// To avoid an assertion in GetLightAttenuation()
 
-					FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
-					FSceneRenderTargets::Get(RHICmdList).BeginRenderingLightAttenuation(RHICmdList, false);
-					RHICmdList.Clear(true, FLinearColor::White, false, 0, false, 0, FIntRect());
-					FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
-				}
-				// @third party code - END HairWorks
+						SceneContext.GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+						SceneContext.BeginRenderingLightAttenuation(RHICmdList, false);
+						RHICmdList.Clear(true, FLinearColor::White, false, 0, false, 0, FIntRect());
+						SceneContext.GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+					}
+					// @third party code - END HairWorks
 
 					// All shadows render with min blending
 					bool bClearToWhite = true;

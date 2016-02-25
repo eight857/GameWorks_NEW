@@ -200,7 +200,7 @@ FBasePassOut BasePassPs(NvHw_PixelShaderInput Input)
 		float GeometryTerm = 1;
 		float3 SkyLightingNormal = ShaderAttributes.N;
 
-		if(View.SkyLightParameters.x > 0)
+		if(Frame.SkyLightParameters.x > 0)
 		{
 			float3 NormalizedBentNormal = PointSkyBentNormal.xyz;
 			SkyVisibility = PointSkyBentNormal.w;
@@ -212,7 +212,7 @@ FBasePassOut BasePassPs(NvHw_PixelShaderInput Input)
 			GeometryTerm = DotProductFactor;
 		}
 
-		RecomputedLight += GetSkySHDiffuse(SkyLightingNormal) * View.SkyLightColor.rgb * (SkyVisibility * GeometryTerm);
+		RecomputedLight += GetSkySHDiffuse(SkyLightingNormal) * Frame.SkyLightColor.rgb * (SkyVisibility * GeometryTerm);
 	}
 
 	// Indirect light
@@ -225,7 +225,7 @@ FBasePassOut BasePassPs(NvHw_PixelShaderInput Input)
 		FTwoBandSHVector DiffuseTransferSH = CalcDiffuseTransferSH(ShaderAttributes.N.xyz, 1);
 		float3 IndirectLight = max(half3(0, 0, 0), DotSH(PointIndirectLighting, DiffuseTransferSH));
 
-		IndirectLight *= View.IndirectLightingColorScale;
+		IndirectLight *= Frame.IndirectLightingColorScale;
 
 		RecomputedLight += IndirectLight;
 	}
@@ -240,7 +240,7 @@ FBasePassOut BasePassPs(NvHw_PixelShaderInput Input)
 	// Velocity
 	float2 Velocity = ShaderAttributes.wVel.xy;
 	Velocity.y = -Velocity.y;
-	Velocity = Velocity / (View.ViewSizeAndInvSize.xy / 2.0) - (View.ViewToClip[2].xy - View.PrevProjection[2].xy);
+	Velocity = Velocity / (Frame.ViewSizeAndInvSize.xy / 2.0) - (View.ViewToClip[2].xy - View.PrevProjection[2].xy);
 	
 	// Specular breakup
 	uint	hash = asuint(ShaderAttributes.hairID * 17938401.0f);

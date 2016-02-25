@@ -30,7 +30,7 @@ public:
 	//Begin FPrimitiveSceneProxy interface.
 	virtual uint32 GetMemoryFootprint(void) const override;
 	virtual void CreateRenderThreadResources() override;
-	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) override;
+	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View)const override;
 	//End FPrimitiveSceneProxy interface.
 
 	void UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData);

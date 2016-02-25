@@ -80,7 +80,6 @@ struct FPrimitiveViewRelevance
 		bHasWorldPositionOffset(false),
 		bUsesGlobalDistanceField(false),
 		bUsesLightingChannels(false),
-		bInitializedThisFrame(false)
 		bInitializedThisFrame(false),
 		// @third party code - BEGIN HairWorks
 		bHairWorks(false)
