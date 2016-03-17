@@ -9,6 +9,9 @@
 	#include <delayimp.h>
 #include "HideWindowsPlatformTypes.h"
 
+// @third party code - BEGIN HairWorks
+#include "HairWorksSDK.h"
+// @third party code - END HairWorks
 
 bool D3D11RHI_ShouldCreateWithD3DDebug()
 {
@@ -216,8 +219,7 @@ void FD3D11DynamicRHI::Shutdown()
 
 	// @third party code - BEGIN HairWorks
 	// Shut down HairWorks
-	ENGINE_API void HairWorksShutDown();
-	HairWorksShutDown();
+	HairWorks::ShutDown();
 	// @third party code - END HairWorks
 
 	// Cleanup the D3D device.

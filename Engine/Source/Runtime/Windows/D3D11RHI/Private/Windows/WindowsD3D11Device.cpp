@@ -12,6 +12,9 @@
 #include "HardwareInfo.h"
 #include "Runtime/HeadMountedDisplay/Public/IHeadMountedDisplayModule.h"
 
+// @third party code - BEGIN HairWorks
+#include "HairWorksSDK.h"
+// @third party code - END HairWorks
 
 extern bool D3D11RHI_ShouldCreateWithD3DDebug();
 extern bool D3D11RHI_ShouldAllowAsyncResourceCreation();
@@ -385,15 +388,31 @@ void FD3D11DynamicRHI::Init()
 
 	// @third party code - BEGIN HairWorks
 	// Initialize HairWorks
-	static auto HairGetSrvFromTexture = [](FRHITexture2D* Texture)->ID3D11ShaderResourceView*
+	class FHairWorksD3DHelper: public HairWorks::ID3DHelper
 	{
-		auto* D3D11Texture = static_cast<TD3D11Texture2D<FD3D11BaseTexture2D>*>(Texture);
-		return D3D11Texture ? D3D11Texture->GetShaderResourceView() : nullptr;
+		virtual ID3D11DeviceContext* GetDeviceContext(const IRHICommandContext& CmdContext) override
+		{
+			auto& RHI = static_cast<const FD3D11DynamicRHI&>(CmdContext);
+			return RHI.GetDeviceContext();
+		}
+
+		virtual ID3D11ShaderResourceView* GetShaderResourceView(FRHITexture2D* Texture) override
+		{
+			auto* D3D11Texture = static_cast<TD3D11Texture2D<FD3D11BaseTexture2D>*>(Texture);
+			return D3D11Texture ? D3D11Texture->GetShaderResourceView() : nullptr;
+		}
+
+		virtual void CommitShaderResources(IRHICommandContext& CmdContext) override
+		{
+			auto& RHI = static_cast<FD3D11DynamicRHI&>(CmdContext);
+			RHI.CommitNonComputeShaderConstants();
+			RHI.CommitGraphicsResourceTables();
+		}
 	};
 
-	ENGINE_API void HairWorksInitialize(ID3D11Device*, ID3D11DeviceContext*, ID3D11ShaderResourceView* (*)(FRHITexture2D*));
+	static FHairWorksD3DHelper HairWorksD3DHelper;
 
-	HairWorksInitialize(GetDevice(), GetDeviceContext(), HairGetSrvFromTexture);
+	HairWorks::Initialize(*GetDevice(), HairWorksD3DHelper);
 	// @third party code - END HairWorks
 }
 

@@ -3,16 +3,16 @@
 
 namespace HairWorksRenderer
 {
-	void StepSimulation();
+	void StepSimulation(FRHICommandList& RHICmdList);
 	void SetupViews(TArray<FViewInfo>& Views);
 	bool ViewsHasHair(const TArray<FViewInfo>& Views);
 	void AllocRenderTargets(FRHICommandList& RHICmdList, const FIntPoint& Size);
-	void RenderBasePass(FRHICommandListImmediate& RHICmdList, TArray<FViewInfo>& Views);
-	void RenderShadow(FRHICommandListImmediate& RHICmdList, const FProjectedShadowInfo& Shadow,const FProjectedShadowInfo::PrimitiveArrayType& SubjectPrimitives, const FViewInfo& View);
-	void RenderVelocities(FRHICommandListImmediate& RHICmdList, TRefCountPtr<IPooledRenderTarget>& VelocityRT);
-	void RenderVisualization(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
-	void BeginRenderingSceneColor(FRHICommandListImmediate& RHICmdList);	// Add a render target for hair
-	void BlendLightingColor(FRHICommandListImmediate& RHICmdList);
+	void RenderBasePass(FRHICommandList& RHICmdList, TArray<FViewInfo>& Views);
+	void RenderShadow(FRHICommandList& RHICmdList, const FProjectedShadowInfo& Shadow,const FProjectedShadowInfo::PrimitiveArrayType& SubjectPrimitives, const FViewInfo& View);
+	void RenderVelocities(FRHICommandList& RHICmdList, TRefCountPtr<IPooledRenderTarget>& VelocityRT);
+	void RenderVisualization(FRHICommandList& RHICmdList, const FViewInfo& View);
+	void BeginRenderingSceneColor(FRHICommandList& RHICmdList);	// Add a render target for hair
+	void BlendLightingColor(FRHICommandList& RHICmdList);
 
 	static const int HairInstanceMaterialArraySize = 128;
 

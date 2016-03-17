@@ -3,7 +3,6 @@
 
 #include "HairWorksInstance.generated.h"
 
-enum GFSDK_HairAssetID;
 class UHairWorksMaterial;
 class UHairWorksAsset;
 

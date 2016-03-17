@@ -13,7 +13,7 @@ UHairWorksAsset::UHairWorksAsset(const class FObjectInitializer& ObjectInitializ
 UHairWorksAsset::~UHairWorksAsset()
 {
 	if(AssetId != NvHw::HAIR_ASSET_ID_NULL)
-		GHairWorksSDK->freeHairAsset(AssetId);
+		HairWorks::GetSDK()->freeHairAsset(AssetId);
 }
 
 void UHairWorksAsset::Serialize(FArchive & Ar)

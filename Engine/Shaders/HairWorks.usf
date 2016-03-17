@@ -43,16 +43,16 @@ float ShadowDepthMain(in float4 Position : SV_Position) : SV_Depth
 	return Position.z * Position.w * ShadowParams.y + ShadowParams.x;
 }
 
-float CopyDepthPs(float4 Position : SV_Position) : SV_Depth
+float CopyDepthPs(FScreenVertexOutput Input) : SV_Depth
 {
-	return SceneDepthTexture[Position.xy].r;
+	return SceneDepthTexture[Input.Position.xy].r;
 }
 
 Texture2DMS<float4> VelocityTexture;
 Texture2DMS<float> DepthTexture;
 Texture2DMS<uint> StencilTexture;
 
-float4 CopyVelocityPs(float4 Position : SV_Position): SV_Target0
+float4 CopyVelocityPs(FScreenVertexOutput Input): SV_Target0
 {
 	uint2 Size;
 	uint SampleNum;
@@ -62,7 +62,7 @@ float4 CopyVelocityPs(float4 Position : SV_Position): SV_Target0
 	uint NearestSample;
 	for(uint i = 0; i < SampleNum; ++i)
 	{
-		float Depth = DepthTexture.Load(Position.xy, i);
+		float Depth = DepthTexture.Load(Input.Position.xy, i);
 		if(Depth > NearestDepth)
 		{
 			NearestDepth = Depth;
@@ -70,14 +70,14 @@ float4 CopyVelocityPs(float4 Position : SV_Position): SV_Target0
 		}
 	}
 
-	float4 Velocity = VelocityTexture.Load(Position.xy, NearestSample);
+	float4 Velocity = VelocityTexture.Load(Input.Position.xy, NearestSample);
 	if(!any(Velocity.xy))
 		discard;
 
 	return Velocity;
 }
 
-float ResolveDepthPs(float4 Position : SV_Position) : SV_Depth
+float ResolveDepthPs(FScreenVertexOutput Input) : SV_Depth
 {
 	uint2 Size;
 	uint SampleNum;
@@ -86,11 +86,11 @@ float ResolveDepthPs(float4 Position : SV_Position) : SV_Depth
 	float NearestDepth = 0;
 	for(uint i = 0; i < SampleNum; ++i)
 	{
-		uint Stencil = StencilTexture.Load(Position.xy, i);
+		uint Stencil = StencilTexture.Load(Input.Position.xy, i);
 		if(Stencil == 0)
 			continue;
 
-		float Depth = DepthTexture.Load(Position.xy, i);
+		float Depth = DepthTexture.Load(Input.Position.xy, i);
 		if(Depth > NearestDepth)
 		{
 			NearestDepth = Depth;
@@ -102,7 +102,7 @@ float ResolveDepthPs(float4 Position : SV_Position) : SV_Depth
 
 Texture2DMS<float4> HairColorTexture;
 
-float ResolveOpaqueDepthPs(float4 Position : SV_Position): SV_Depth
+float ResolveOpaqueDepthPs(FScreenVertexOutput Input): SV_Depth
 {
 	uint2 Size;
 	uint SampleNum;
@@ -111,11 +111,11 @@ float ResolveOpaqueDepthPs(float4 Position : SV_Position): SV_Depth
 	float NearestDepth = 0;
 	for(uint i = 0; i < SampleNum; ++i)
 	{
-		float Opaque = HairColorTexture.Load(Position.xy, i).a;
+		float Opaque = HairColorTexture.Load(Input.Position.xy, i).a;
 		if(Opaque < 1)
 			discard;
 
-		float Depth = DepthTexture.Load(Position.xy, i);
+		float Depth = DepthTexture.Load(Input.Position.xy, i);
 		if(Depth > NearestDepth)
 		{
 			NearestDepth = Depth;
@@ -306,7 +306,7 @@ float4 ColorizePs(NvHw_PixelShaderInput Input): SV_Target0
 Texture2D<float4> AccumulatedColorTexture;
 Texture2DMS<float4> PrecomputedLightTexture;
 
-float4 BlendLightingColorPs(float4 Position : SV_Position): SV_Target0
+float4 BlendLightingColorPs(FScreenVertexOutput Input): SV_Target0
 {
 	uint2 Size;
 	uint SampleNum;
@@ -315,7 +315,7 @@ float4 BlendLightingColorPs(float4 Position : SV_Position): SV_Target0
 	float4 Color = 0;
 	for(uint SampleIdx = 0; SampleIdx < SampleNum; ++SampleIdx)
 	{
-		Color += PrecomputedLightTexture.Load(Position.xy, SampleIdx);
+		Color += PrecomputedLightTexture.Load(Input.Position.xy, SampleIdx);
 	}
 
 	if(Color.a <= 0)
@@ -323,7 +323,7 @@ float4 BlendLightingColorPs(float4 Position : SV_Position): SV_Target0
 	
 	Color /= SampleNum;
 
-	float3 AccumulatedColor = AccumulatedColorTexture.Load(int3(Position.xy, 0)).rgb;
+	float3 AccumulatedColor = AccumulatedColorTexture.Load(int3(Input.Position.xy, 0)).rgb;
 
 	Color.rgb += AccumulatedColor;
 

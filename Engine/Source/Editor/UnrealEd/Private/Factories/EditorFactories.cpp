@@ -6892,7 +6892,7 @@ UHairWorksFactory::UHairWorksFactory(const FObjectInitializer& ObjectInitializer
 
 bool UHairWorksFactory::FactoryCanImport(const FString& Filename)
 {
-	if(GHairWorksSDK == nullptr)
+	if(HairWorks::GetSDK() == nullptr)
 		return false;
 
 	TArray<uint8> Buffer;
@@ -6900,11 +6900,11 @@ bool UHairWorksFactory::FactoryCanImport(const FString& Filename)
 
 	auto HairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
 	Nv::MemoryReadStream ReadStream(Buffer.GetData(), Buffer.Num());
-	GHairWorksSDK->loadHairAsset(&ReadStream, HairAssetId);
+	HairWorks::GetSDK()->loadHairAsset(&ReadStream, HairAssetId);
 
 	if(HairAssetId != NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
 	{
-		GHairWorksSDK->freeHairAsset(HairAssetId);
+		HairWorks::GetSDK()->freeHairAsset(HairAssetId);
 		return true;
 	}
 	else
@@ -6919,16 +6919,16 @@ FText UHairWorksFactory::GetDisplayName() const
 void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, NvHw::HairAssetId HairAssetId, const NvHw::HairInstanceDescriptor* NewInstanceDesc)
 {
 	// Get bones. Used for bone remapping, etc.
-	check(GHairWorksSDK != nullptr);
+	check(HairWorks::GetSDK != nullptr);
 	{
-		Nv::Int BoneNum = GHairWorksSDK->getNumBones(HairAssetId);
+		Nv::Int BoneNum = HairWorks::GetSDK()->getNumBones(HairAssetId);
 
 		Hair.BoneNames.Empty(BoneNum);
 
 		for (Nv::Int Idx = 0; Idx < BoneNum; ++Idx)
 		{
 			Nv::Char BoneName[NV_HW_MAX_STRING];
-			GHairWorksSDK->getBoneName(HairAssetId, Idx, BoneName);
+			HairWorks::GetSDK()->getBoneName(HairAssetId, Idx, BoneName);
 
 			Hair.BoneNames.Add(*FSkeletalMeshImportData::FixupBoneName(BoneName));
 		}
@@ -6941,7 +6941,7 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, NvHw::HairAsset
 		if(NewInstanceDesc)
 			HairInstanceDesc = *NewInstanceDesc;
 		else
-			GHairWorksSDK->getInstanceDescriptorFromAsset(HairAssetId, HairInstanceDesc);
+			HairWorks::GetSDK()->getInstanceDescriptorFromAsset(HairAssetId, HairInstanceDesc);
 
 		// sRGB conversion
 		auto ConvertColorToSRGB = [](gfsdk_float4& Color)
@@ -6993,7 +6993,7 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 	auto HairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
 	
 	Nv::MemoryReadStream ReadStream(Buffer, BufferEnd - Buffer);
-	GHairWorksSDK->loadHairAsset(&ReadStream, HairAssetId, nullptr, &GHairWorksConversionSettings);
+	HairWorks::GetSDK()->loadHairAsset(&ReadStream, HairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
 	if(HairAssetId == NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
 	{
 		FEditorDelegates::OnAssetPostImport.Broadcast(this, nullptr);
@@ -7007,7 +7007,7 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 	InitHairAssetInfo(*Hair, HairAssetId);
 
 	// Clear temporary hair asset
-	GHairWorksSDK->freeHairAsset(HairAssetId);
+	HairWorks::GetSDK()->freeHairAsset(HairAssetId);
 
 	// Setup import data
 	Hair->AssetImportData->Update(UFactory::CurrentFilename);
@@ -7022,7 +7022,7 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 
 bool UHairWorksFactory::CanReimport(UObject* Obj, TArray<FString>& OutFilenames)
 {
-	if(GHairWorksSDK == nullptr)
+	if(HairWorks::GetSDK() == nullptr)
 		return false;
 
 	auto* Hair = Cast<UHairWorksAsset>(Obj);
@@ -7054,7 +7054,7 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 		return EReimportResult::Failed;
 
 	// Create new hair asset
-	check(GHairWorksSDK != nullptr);
+	check(HairWorks::GetSDK() != nullptr);
 
 	auto NewHairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
 	{	
@@ -7068,7 +7068,7 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 
 		// Create HairWorks asset
 		Nv::MemoryReadStream ReadStream(FileData.GetData(), FileData.Num());
-		GHairWorksSDK->loadHairAsset(&ReadStream, NewHairAssetId, nullptr, &GHairWorksConversionSettings);
+		HairWorks::GetSDK()->loadHairAsset(&ReadStream, NewHairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
 		if(NewHairAssetId == NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
 		{
 			UE_LOG(LogEditorFactories, Error, TEXT("Can't create Hair asset"));
@@ -7082,7 +7082,7 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 	if(TgtHairAssetId == NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
 	{
 		Nv::MemoryReadStream ReadStream(Hair->AssetData.GetData(), Hair->AssetData.Num());
-		GHairWorksSDK->loadHairAsset(&ReadStream, TgtHairAssetId, nullptr, &GHairWorksConversionSettings);
+		HairWorks::GetSDK()->loadHairAsset(&ReadStream, TgtHairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
 	}
 
 	check(TgtHairAssetId != NvHw::HairAssetId::HAIR_ASSET_ID_NULL);
@@ -7090,7 +7090,7 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 	// Copy asset content
 	NvHw::HairInstanceDescriptor NewInstanceDesc;
 	{
-		GHairWorksSDK->getInstanceDescriptorFromAsset(NewHairAssetId, NewInstanceDesc);
+		HairWorks::GetSDK()->getInstanceDescriptorFromAsset(NewHairAssetId, NewInstanceDesc);
 
 		NvHw::AssetCopySettings CopySettings;
 		CopySettings.m_copyAll = false;
@@ -7098,10 +7098,10 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 		CopySettings.m_copyConstraints = Hair->bConstraints;
 		CopySettings.m_copyGroom = Hair->bGroom;
 		CopySettings.m_copyTextures = Hair->bTextures;
-		GHairWorksSDK->copyAsset(NewHairAssetId, TgtHairAssetId, CopySettings);
+		HairWorks::GetSDK()->copyAsset(NewHairAssetId, TgtHairAssetId, CopySettings);
 
 		// Finished copy. Clear.
-		GHairWorksSDK->freeHairAsset(NewHairAssetId);
+		HairWorks::GetSDK()->freeHairAsset(NewHairAssetId);
 		NewHairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
 	}
 
@@ -7129,10 +7129,10 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 
 		Hair->AssetData.Empty();
 		FNvWriteStream WriteStream(Hair->AssetData);
-		GHairWorksSDK->saveHairAsset(&WriteStream, NvHw::SerializeFormat::XML, TgtHairAssetId);
+		HairWorks::GetSDK()->saveHairAsset(&WriteStream, NvHw::SerializeFormat::XML, TgtHairAssetId);
 
 		// Finished streaming. Clear.
-		GHairWorksSDK->freeHairAsset(TgtHairAssetId);
+		HairWorks::GetSDK()->freeHairAsset(TgtHairAssetId);
 		TgtHairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
 	}
 

@@ -19,19 +19,16 @@ public:
 	struct FDynamicRenderData
 	{
 		NvHw::HairInstanceDescriptor HairInstanceDesc;
-		TArray<FMatrix> BoneMatrices;
-		FName NormalCenterBoneName;
 		TArray<UTexture2D*> Textures;
 	};
 
-	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, UHairWorksAsset& Hair);
+	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, UHairWorksAsset& Hair, NvHw::HairInstanceId HairInstanceId);
 	~FHairWorksSceneProxy();
 	
-	//Begin FPrimitiveSceneProxy interface.
+	//~ Begin FPrimitiveSceneProxy interface.
 	virtual uint32 GetMemoryFootprint(void) const override;
-	virtual void CreateRenderThreadResources() override;
 	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View)const override;
-	//End FPrimitiveSceneProxy interface.
+	//~ End FPrimitiveSceneProxy interface.
 
 	void UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData);
 
@@ -41,12 +38,6 @@ public:
 	const TArray<FTexture2DRHIRef>& GetTextures()const { return HairTextures; }
 
 protected:
-	//** The APEX asset data */
-	UHairWorksAsset& Hair;
-
-	//** Bone look up table */
-	TMap<FName, int> BoneNameToIdx;
-
 	//** The hair */
 	NvHw::HairInstanceId HairInstanceId;
 

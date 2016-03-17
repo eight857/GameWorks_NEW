@@ -26,5 +26,9 @@ public class D3D11RHI : ModuleRules
 		{
 			PrivateIncludePathModuleNames.AddRange(new string[] { "TaskGraph" });
 		}
+
+		// @third party code - BEGIN HairWorks
+		AddThirdPartyPrivateStaticDependencies(Target, "HairWorks");
+		// @third party code - END HairWorks
 	}
 }

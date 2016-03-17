@@ -824,7 +824,6 @@ struct NvHw_PixelShaderInput
 
 	NOINTERPOLATION		uint	primitiveId		: C;
 	NOINTERPOLATION		float	coords			: COORDS;
-	uint cubeMapIdx								: SV_RenderTargetArrayIndex;
 };
 
 //////////////////////////////////////////////////////////////////////////////
