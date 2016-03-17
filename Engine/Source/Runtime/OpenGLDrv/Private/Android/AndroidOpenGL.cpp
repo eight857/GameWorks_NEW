@@ -58,6 +58,14 @@ PFNGLDRAWELEMENTSINSTANCEDPROC			glDrawElementsInstanced = NULL;
 PFNGLDRAWARRAYSINSTANCEDPROC			glDrawArraysInstanced = NULL;
 PFNGLVERTEXATTRIBDIVISORPROC			glVertexAttribDivisor = NULL;
 
+static TAutoConsoleVariable<int32> CVarAndroidDisableTextureFormatBGRA8888(
+	TEXT("android.DisableTextureFormatBGRA8888"),
+	0,
+	TEXT("Whether to disable usage of GL_EXT_texture_format_BGRA8888 extension.\n")
+	TEXT(" 0: Enable when extension is available (default)\n")
+	TEXT(" 1: Always disabled"),
+	ECVF_ReadOnly);
+
 struct FPlatformOpenGLDevice
 {
 
@@ -88,7 +96,7 @@ void FPlatformOpenGLDevice::Init()
 {
 	extern void InitDebugContext();
 
-	AndroidEGL::GetInstance()->InitSurface(false);
+	AndroidEGL::GetInstance()->InitSurface(false, true);
 	PlatformRenderingContextSetup(this);
 
 	LoadEXT();
@@ -379,6 +387,10 @@ void FAndroidOpenGL::ProcessExtensions(const FString& ExtensionsString)
 	const bool bIsAdrenoBased = RendererString.Contains(TEXT("Adreno"));
 	if (bIsAdrenoBased)
 	{
+		// This is to avoid a bug in Adreno drivers that define GL_EXT_shader_framebuffer_fetch even when device does not support this extension
+		// OpenGL ES 3.1 V@127.0 (GIT@I1af360237c)
+		bRequiresShaderFramebufferFetchUndef = !bSupportsShaderFramebufferFetch;
+
 		// Adreno 2xx doesn't work with packed depth stencil enabled
 		if (RendererString.Contains(TEXT("Adreno (TM) 2")))
 		{
@@ -436,6 +448,12 @@ void FAndroidOpenGL::ProcessExtensions(const FString& ExtensionsString)
 	{
 		UE_LOG(LogRHI, Warning, TEXT("Disabling support for hardware instancing on Adreno 330 OpenGL ES 3.0 V@66.0 AU@  (CL@)"));
 		bSupportsInstancing = false;
+	}
+
+	if (bSupportsBGRA8888 && CVarAndroidDisableTextureFormatBGRA8888.GetValueOnAnyThread() == 1)
+	{
+		UE_LOG(LogRHI, Warning, TEXT("Disabling support for GL_EXT_texture_format_BGRA8888"));
+		bSupportsBGRA8888 = false;
 	}
 }
 

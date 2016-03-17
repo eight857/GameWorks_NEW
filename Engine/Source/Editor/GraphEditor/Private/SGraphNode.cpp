@@ -140,17 +140,6 @@ bool SGraphNode::CanAllowInteractionUsingDragDropOp( const UEdGraphNode* GraphNo
 void SGraphNode::SetIsEditable(TAttribute<bool> InIsEditable)
 {
 	IsEditable = InIsEditable;
-
-	int32 i;
-	for(i = 0; i < InputPins.Num(); ++i)
-	{
-		InputPins[i]->SetIsEditable(IsEditable);
-	}
-
-	for(i = 0; i < OutputPins.Num(); ++i)
-	{
-		OutputPins[i]->SetIsEditable(IsEditable);
-	}
 }
 
 bool SGraphNode::IsNodeEditable() const
@@ -980,7 +969,7 @@ void SGraphNode::CreateAdvancedViewArrow(TSharedPtr<SVerticalBox> MainBox)
 	}
 }
 
-void SGraphNode::CreateStandardPinWidget(UEdGraphPin* CurPin)
+bool SGraphNode::ShouldPinBeHidden(const UEdGraphPin* InPin) const
 {
 	const UEdGraphSchema_K2* K2Schema = Cast<const UEdGraphSchema_K2>(GraphNode->GetSchema());
 
@@ -988,7 +977,7 @@ void SGraphNode::CreateStandardPinWidget(UEdGraphPin* CurPin)
 	bool bHideNoConnectionNoDefaultPins = false;
 
 	// Not allowed to hide exec pins 
-	const bool bCanHidePin = (K2Schema && (CurPin->PinType.PinCategory != K2Schema->PC_Exec));
+	const bool bCanHidePin = (K2Schema && (InPin->PinType.PinCategory != K2Schema->PC_Exec));
 
 	if (OwnerGraphPanelPtr.IsValid() && bCanHidePin)
 	{
@@ -996,22 +985,28 @@ void SGraphNode::CreateStandardPinWidget(UEdGraphPin* CurPin)
 		bHideNoConnectionNoDefaultPins = OwnerGraphPanelPtr.Pin()->GetPinVisibility() == SGraphEditor::Pin_HideNoConnectionNoDefault;
 	}
 
-	const bool bIsOutputPin= CurPin->Direction == EGPD_Output;
-	const bool bPinHasDefaultValue = !CurPin->DefaultValue.IsEmpty() || (CurPin->DefaultObject != NULL);
-	const bool bIsSelfTarget = K2Schema && (CurPin->PinType.PinCategory == K2Schema->PC_Object) && (CurPin->PinName == K2Schema->PN_Self);
+	const bool bIsOutputPin = InPin->Direction == EGPD_Output;
+	const bool bPinHasDefaultValue = !InPin->DefaultValue.IsEmpty() || (InPin->DefaultObject != NULL);
+	const bool bIsSelfTarget = K2Schema && (InPin->PinType.PinCategory == K2Schema->PC_Object) && (InPin->PinName == K2Schema->PN_Self);
 	const bool bPinHasValidDefault = !bIsOutputPin && (bPinHasDefaultValue || bIsSelfTarget);
-	const bool bPinHasConections = CurPin->LinkedTo.Num() > 0;
+	const bool bPinHasConections = InPin->LinkedTo.Num() > 0;
 
-	const bool bPinDesiresToBeHidden = CurPin->bHidden || (bHideNoConnectionPins && !bPinHasConections) || (bHideNoConnectionNoDefaultPins && !bPinHasConections && !bPinHasValidDefault); 
+	const bool bPinDesiresToBeHidden = InPin->bHidden || (bHideNoConnectionPins && !bPinHasConections) || (bHideNoConnectionNoDefaultPins && !bPinHasConections && !bPinHasValidDefault);
 
 	// No matter how strong the desire, a pin with connections can never be hidden!
 	const bool bShowPin = !bPinDesiresToBeHidden || bPinHasConections;
+
+	return bShowPin;
+}
+
+void SGraphNode::CreateStandardPinWidget(UEdGraphPin* CurPin)
+{
+	const bool bShowPin = ShouldPinBeHidden(CurPin);
 
 	if (bShowPin)
 	{
 		TSharedPtr<SGraphPin> NewPin = CreatePinWidget(CurPin);
 		check(NewPin.IsValid());
-		NewPin->SetIsEditable(IsEditable);
 
 		this->AddPin(NewPin.ToSharedRef());
 	}
@@ -1172,7 +1167,8 @@ FLinearColor SGraphNode::GetPinLabelColorAndOpacity() const
 
 
 SGraphNode::SGraphNode()
-	: bProvidedComplexTooltip(false)
+	: IsEditable(true)
+	, bProvidedComplexTooltip(false)
 	, bRenameIsPending( false )
 	, ErrorColor( FLinearColor::White )
 	, CachedUnscaledPosition( FVector2D::ZeroVector )

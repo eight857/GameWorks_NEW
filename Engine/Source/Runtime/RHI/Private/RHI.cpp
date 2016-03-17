@@ -83,15 +83,13 @@ const FClearValueBinding FClearValueBinding::DepthFar((float)ERHIZBuffer::FarPla
 
 TLockFreePointerListUnordered<FRHIResource> FRHIResource::PendingDeletes;
 FRHIResource* FRHIResource::CurrentlyDeleting = nullptr;
-TQueue<FRHIResource::ResourceToDelete> FRHIResource::DeferredDeletionQueue;
+TArray<FRHIResource::ResourcesToDelete> FRHIResource::DeferredDeletionQueue;
 uint32 FRHIResource::CurrentFrame = 0;
 
-#if !DISABLE_RHI_DEFFERED_DELETE
 bool FRHIResource::Bypass()
 {
 	return GRHICommandList.Bypass();
 }
-#endif
 
 DECLARE_CYCLE_STAT(TEXT("Delete Resources"), STAT_DeleteResources, STATGROUP_RHICMDLIST);
 
@@ -102,14 +100,9 @@ void FRHIResource::FlushPendingDeletes()
 	check(IsInRenderingThread());
 	FRHICommandListExecutor::CheckNoOutstandingCmdLists();
 	FRHICommandListExecutor::GetImmediateCommandList().ImmediateFlush(EImmediateFlushType::FlushRHIThread);
-	while (1)
+
+	auto Delete = [](TArray<FRHIResource*>& ToDelete)
 	{
-		TArray<FRHIResource*> ToDelete;
-		PendingDeletes.PopAll(ToDelete);
-		if (!ToDelete.Num())
-		{
-			break;
-		}
 		for (int32 Index = 0; Index < ToDelete.Num(); Index++)
 		{
 			FRHIResource* Ref = ToDelete[Index];
@@ -117,15 +110,7 @@ void FRHIResource::FlushPendingDeletes()
 			if (Ref->GetRefCount() == 0) // caches can bring dead objects back to life
 			{
 				CurrentlyDeleting = Ref;
-				if (PlatformNeedsExtraDeletionLatency())
-				{
-					DeferredDeletionQueue.Enqueue(ResourceToDelete(Ref, CurrentFrame));
-				}
-				else
-				{
-					delete Ref;
-				}
-
+				delete Ref;
 				CurrentlyDeleting = nullptr;
 			}
 			else
@@ -134,32 +119,53 @@ void FRHIResource::FlushPendingDeletes()
 				FPlatformMisc::MemoryBarrier();
 			}
 		}
+	};
+
+	while (1)
+	{
+		if (PendingDeletes.IsEmpty())
+		{
+			break;
+		}
+		if (PlatformNeedsExtraDeletionLatency())
+		{
+			const int32 Index = DeferredDeletionQueue.AddDefaulted();
+			ResourcesToDelete& ResourceBatch = DeferredDeletionQueue[Index];
+			ResourceBatch.FrameDeleted = CurrentFrame;
+			PendingDeletes.PopAll(ResourceBatch.Resources);
+			check(ResourceBatch.Resources.Num());
+		}
+		else
+		{
+			TArray<FRHIResource*> ToDelete;
+			PendingDeletes.PopAll(ToDelete);
+			check(ToDelete.Num());
+			Delete(ToDelete);
+		}
 	}
 
 	const uint32 NumFramesToExpire = 3;
 
-	if (PlatformNeedsExtraDeletionLatency())
+	if (DeferredDeletionQueue.Num())
 	{
-		ResourceToDelete TempResource;
-
-		while (!DeferredDeletionQueue.IsEmpty())
+		int32 DeletedBatchCount = 0;
+		while (DeletedBatchCount < DeferredDeletionQueue.Num())
 		{
-			DeferredDeletionQueue.Peek(TempResource);
-
-			if ((TempResource.FrameDeleted + NumFramesToExpire) < CurrentFrame)
+			ResourcesToDelete& ResourceBatch = DeferredDeletionQueue[DeletedBatchCount];
+			if (((ResourceBatch.FrameDeleted + NumFramesToExpire) < CurrentFrame) || !GIsRHIInitialized)
 			{
-				// It's possible the resource has been resurrected elsewhere
-				if (TempResource.Resource->GetRefCount() == 0)
-				{
-					delete TempResource.Resource;
-				}
-
-				DeferredDeletionQueue.Dequeue(TempResource);
+				Delete(ResourceBatch.Resources);
+				++DeletedBatchCount;
 			}
 			else
 			{
 				break;
 			}
+		}
+
+		if (DeletedBatchCount)
+		{
+			DeferredDeletionQueue.RemoveAt(0, DeletedBatchCount);
 		}
 
 		++CurrentFrame;
@@ -242,6 +248,7 @@ bool GSupportsSeparateRenderTargetBlendState = false;
 bool GSupportsDepthRenderTargetWithoutColorRenderTarget = true;
 float GMinClipZ = 0.0f;
 float GProjectionSignY = 1.0f;
+bool GRHINeedsExtraDeletionLatency = false;
 int32 GMaxShadowDepthBufferSizeX = 2048;
 int32 GMaxShadowDepthBufferSizeY = 2048;
 int32 GMaxTextureDimensions = 2048;
@@ -357,6 +364,7 @@ static FName NAME_GLSL_310_ES_EXT(TEXT("GLSL_310_ES_EXT"));
 static FName NAME_SF_METAL_SM5(TEXT("SF_METAL_SM5"));
 static FName NAME_PC_VULKAN_ES2(TEXT("PC_VULKAN_ES2"));
 static FName NAME_SF_METAL_SM4(TEXT("SF_METAL_SM4"));
+static FName NAME_SF_METAL_MACES3_1(TEXT("SF_METAL_MACES3_1"));
 
 FName LegacyShaderPlatformToShaderFormat(EShaderPlatform Platform)
 {
@@ -401,6 +409,8 @@ FName LegacyShaderPlatformToShaderFormat(EShaderPlatform Platform)
 		return NAME_SF_METAL_SM4;
 	case SP_METAL_SM5:
 		return NAME_SF_METAL_SM5;
+	case SP_METAL_MACES3_1:
+		return NAME_SF_METAL_MACES3_1;
 	case SP_OPENGL_ES31_EXT:
 		return NAME_GLSL_310_ES_EXT;
 	case SP_VULKAN_ES2:
@@ -435,6 +445,7 @@ EShaderPlatform ShaderFormatToLegacyShaderPlatform(FName ShaderFormat)
 	if (ShaderFormat == NAME_SF_METAL_SM5)		return SP_METAL_SM5;
 	if (ShaderFormat == NAME_PC_VULKAN_ES2)		return SP_VULKAN_ES2;
 	if (ShaderFormat == NAME_SF_METAL_SM4)		return SP_METAL_SM4;
+	if (ShaderFormat == NAME_SF_METAL_MACES3_1)	return SP_METAL_MACES3_1;
 	return SP_NumPlatforms;
 }
 

@@ -319,6 +319,7 @@ void GammaDistanceFieldMain(
 		float4 ShadowTexture = Texture2DSample(InTexture, InTextureSampler,TextureCoordinate + ShadowDirection);
 		ReplicateChannelSimpleElementShader(ShadowTexture);
 		float ShadowDist = ShadowTexture.a;
+
 		// smooth range between ShadowSmoothWidth texels around edge
 		float4 ShadowResult = ShadowColor * smoothstep(0.5-ShadowSmoothWidth, 0.5+ShadowSmoothWidth, ShadowDist);
 		BaseColor = lerp(ShadowResult,BaseColor,BaseColor.a);

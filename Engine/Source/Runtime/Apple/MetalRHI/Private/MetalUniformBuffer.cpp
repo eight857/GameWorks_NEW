@@ -27,11 +27,6 @@ static const uint32 RequestedUniformBufferSizeBuckets[NUM_POOL_BUCKETS] =
 // Maps desired size buckets to alignment actually 
 static TArray<uint32> UniformBufferSizeBuckets;
 
-static uint32 GetUBPoolSize()
-{
-	return 512 * 1024;
-}
-
 // Convert bucket sizes to be compatible with present device
 static void RemapBuckets()
 {
@@ -123,15 +118,6 @@ void InitFrame_UniformBufferPoolCleanup()
 	}
 }
 
-struct TUBPoolBuffer
-{
-	id<MTLBuffer> Buffer;
-	uint32 ConsumedSpace;
-	uint32 AllocatedSpace;
-};
-
-TArray<TUBPoolBuffer> UBPool;
-
 void AddNewlyFreedBufferToUniformBufferPool(id<MTLBuffer> Buffer, uint32 Offset, uint32 Size)
 {
 	check(Buffer);
@@ -144,7 +130,7 @@ void AddNewlyFreedBufferToUniformBufferPool(id<MTLBuffer> Buffer, uint32 Offset,
 	FPooledUniformBuffer NewEntry;
 	NewEntry.Buffer = Buffer;
 	NewEntry.FrameFreed = GFrameNumberRenderThread;
-	NewEntry.CreatedSize = Size;
+	NewEntry.CreatedSize = Buffer.length;
 	NewEntry.Offset = Offset;
 
 	// Add to this frame's array of free uniform buffers
@@ -164,44 +150,22 @@ void AddNewlyFreedBufferToUniformBufferPool(id<MTLBuffer> Buffer, uint32 Offset,
 
 id<MTLBuffer> SuballocateUB(uint32 Size, uint32& OutOffset)
 {
-	check(Size <= GetUBPoolSize());
-
-	// Find space in previously allocated pool buffers
-	for ( int32 Buffer = 0; Buffer < UBPool.Num(); Buffer++)
-	{
-		TUBPoolBuffer &Pool = UBPool[Buffer];
-		if ( Size < (Pool.AllocatedSpace - Pool.ConsumedSpace))
-		{
-			OutOffset = Pool.ConsumedSpace;
-			Pool.ConsumedSpace += Size;
-			return Pool.Buffer;
-		}
-	}
-
 	// No space was found to use, create a new Pool buffer
-	uint32 TotalSize = GetUBPoolSize();
-	//NSLog(@"New Metal Buffer Size %d", TotalSize);
-	id<MTLBuffer> Buffer = [GetMetalDeviceContext().GetDevice() newBufferWithLength:TotalSize options:BUFFER_CACHE_MODE];
+	id<MTLBuffer> Buffer = [GetMetalDeviceContext().GetDevice() newBufferWithLength:Size options:BUFFER_CACHE_MODE];
 	TRACK_OBJECT(Buffer);
 
 	OutOffset = 0;
-
-	TUBPoolBuffer Pool;
-	Pool.Buffer = Buffer;
-	Pool.ConsumedSpace = Size;
-	Pool.AllocatedSpace = GetUBPoolSize();
-	UBPool.Push(Pool);
 
 	return Buffer;
 }
 
 
-FMetalUniformBuffer::FMetalUniformBuffer(const void* Contents, const FRHIUniformBufferLayout& Layout, EUniformBufferUsage Usage)
+FMetalUniformBuffer::FMetalUniformBuffer(const void* Contents, const FRHIUniformBufferLayout& Layout, EUniformBufferUsage InUsage)
 	: FRHIUniformBuffer(Layout)
 	, Buffer(nil)
 	, Offset(0)
 	, Size(Layout.ConstantBufferSize)
-	, LastCachedFrame(INDEX_NONE)
+	, Usage(InUsage)
 {
 	if (Layout.ConstantBufferSize > 0)
 	{
@@ -269,78 +233,18 @@ FMetalUniformBuffer::FMetalUniformBuffer(const void* Contents, const FRHIUniform
 			check(InResources[i]);
 			ResourceTable[i] = InResources[i];
 		}
-		RawResourceTable.Empty(NumResources);
-		RawResourceTable.AddZeroed(NumResources);
 	}
 }
 
 FMetalUniformBuffer::~FMetalUniformBuffer()
 {
 	// don't need to free the ring buffer!
-	if (GIsRHIInitialized && Buffer != nil && Buffer != GetMetalDeviceContext().GetRingBuffer())
+	if (GIsRHIInitialized && Buffer != nil && !(Usage == UniformBuffer_SingleDraw && !GUseRHIThread))
 	{
 		check(Size <= 65536);
 		AddNewlyFreedBufferToUniformBufferPool(Buffer, Offset, Size);
 	}
 }
-
-void FMetalUniformBuffer::CacheResourcesInternal()
-{
-	const FRHIUniformBufferLayout& Layout = GetLayout();
-	int32 NumResources = Layout.Resources.Num();
-	const uint8* RESTRICT ResourceTypes = Layout.Resources.GetData();
-	const TRefCountPtr<FRHIResource>* RESTRICT Resources = ResourceTable.GetData();
-	void** RESTRICT RawResources = RawResourceTable.GetData();
-	float CurrentTime = FApp::GetCurrentTime();
-
-	// todo: Immutable resources, i.e. not textures, can be safely cached across frames.
-	// Texture streaming makes textures complicated :)
-	for (int32 i = 0; i < NumResources; ++i)
-	{
-		switch (ResourceTypes[i])
-		{
-			case UBMT_SRV:
-				{
-					NOT_SUPPORTED("FMetalUniformBuffer::CacheResourcesInternal UBMT_SRV");
-					
-					FMetalShaderResourceView* SRV = (FMetalShaderResourceView*)Resources[i].GetReference();
-					if (IsValidRef(SRV->SourceTexture))
-					{
-						FMetalSurface* Surface = SRV->TextureView;
-						RawResources[i] = Surface;
-					}
-					else
-					{
-						RawResources[i] = &SRV->SourceVertexBuffer->Buffer;
-					}
-				}
-				break;
-
-			case UBMT_TEXTURE:
-				{
-					FRHITexture* TextureRHI = (FRHITexture*)Resources[i].GetReference();
-					TextureRHI->SetLastRenderTime(CurrentTime);
-					RawResources[i] = TextureRHI;
-				}
-				break;
-
-			case UBMT_UAV:
-				NOT_SUPPORTED("FMetalUniformBuffer::CacheResourcesInternal UBMT_UAV");
-				RawResources[i] = 0;
-				break;
-
-			case UBMT_SAMPLER:
-				RawResources[i] = (FMetalSamplerState*)Resources[i].GetReference();
-				break;
-
-			default:
-				check(0);
-				break;
-		}
-	}
-}
-
-
 
 FUniformBufferRHIRef FMetalDynamicRHI::RHICreateUniformBuffer(const void* Contents, const FRHIUniformBufferLayout& Layout, EUniformBufferUsage Usage)
 {

@@ -1964,6 +1964,9 @@ public:
 	 */
 	COREUOBJECT_API ELinkerStatus SerializeThumbnails( bool bForceEnableForCommandlet=false );
 
+	/** Inform the archive that blueprint finalization is pending. */
+	virtual void ForceBlueprintFinalization() override;
+
 	/**
 	* Query method to help handle recursive behavior. When this returns true,
 	* this linker is in the middle of, or is about to call FinalizeBlueprint()
@@ -1997,10 +2000,10 @@ private:
 	/**
 	* Determines if the Object Import error should be suppressed
 	*
-	* @param  InImport    Import to check for suppression.
+	* @param  ImportIndex    Internal index into this linker's ImportMap, references the import to check for suppression.
 	* @return True if the import error should be suppressed
 	*/
-	bool IsSuppressableBlueprintImportError(FObjectImport& InImport);
+	bool IsSuppressableBlueprintImportError(int32 ImportIndex) const;
 #endif // WITH_EDITOR
 
 	/**
@@ -2129,6 +2132,12 @@ private:
 	 * class if complete. If we attempt to serialize the CDO while that is 
 	 * happening, we instead defer it and record the export's index here (so we 
 	 * can return to it later).
+	 */
+	bool bForceBlueprintFinalization;
+
+	/** 
+	 * Index of the CDO that should be used for blueprint finalization, may be INDEX_NONE
+	 * in the case of some legacy content.
 	 */
 	int32 DeferredCDOIndex;
 

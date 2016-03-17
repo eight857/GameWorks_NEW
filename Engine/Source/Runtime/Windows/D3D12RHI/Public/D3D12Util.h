@@ -293,6 +293,11 @@ public:
 	FD3D12LockedKey(class FD3D12ResourceLocation* source, uint32 subres = 0) : SourceObject((void*)source)
 		, Subresource(subres)
 	{}
+
+	template<class ClassType>
+	FD3D12LockedKey(ClassType* source, uint32 subres = 0) : SourceObject((void*)source)
+		, Subresource(subres)
+	{}
 	bool operator==(const FD3D12LockedKey& Other) const
 	{
 		return SourceObject == Other.SourceObject && Subresource == Other.Subresource;
@@ -814,8 +819,21 @@ inline bool IsCPUWritable(D3D12_HEAP_TYPE HeapType, const D3D12_HEAP_PROPERTIES 
 {
 	check(HeapType == D3D12_HEAP_TYPE_CUSTOM ? pCustomHeapProperties != nullptr : true);
 	return HeapType == D3D12_HEAP_TYPE_UPLOAD ||
-		(HeapType == D3D12_HEAP_TYPE_CUSTOM && 
+		(HeapType == D3D12_HEAP_TYPE_CUSTOM &&
 			(pCustomHeapProperties->CPUPageProperty == D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE || pCustomHeapProperties->CPUPageProperty == D3D12_CPU_PAGE_PROPERTY_WRITE_BACK));
+}
+
+inline D3D12_RESOURCE_STATES DetermineInitialResourceState(D3D12_HEAP_TYPE HeapType, const D3D12_HEAP_PROPERTIES *pCustomHeapProperties = nullptr)
+{
+	if (HeapType == D3D12_HEAP_TYPE_DEFAULT || IsCPUWritable(HeapType, pCustomHeapProperties))
+	{
+		return D3D12_RESOURCE_STATE_GENERIC_READ;
+	}
+	else
+	{
+		check(HeapType == D3D12_HEAP_TYPE_READBACK);
+		return D3D12_RESOURCE_STATE_COPY_DEST;
+	}
 }
 
 class FD3D12Fence;
@@ -1105,3 +1123,13 @@ static bool TextureCanBe4KAligned(D3D12_RESOURCE_DESC& Desc, uint8 UEFormat)
 
 	return TilesNeeded <= NUM_4K_BLOCKS_PER_64K_PAGE;
 }
+
+template <class TView>
+class FD3D12View;
+class CViewSubresourceSubset;
+
+template <class TView>
+bool AssertResourceState(ID3D12CommandList* pCommandList, FD3D12View<TView>* pView, const D3D12_RESOURCE_STATES& State);
+
+bool AssertResourceState(ID3D12CommandList* pCommandList, FD3D12Resource* pResource, const D3D12_RESOURCE_STATES& State, uint32 Subresource);
+bool AssertResourceState(ID3D12CommandList* pCommandList, FD3D12Resource* pResource, const D3D12_RESOURCE_STATES& State, const CViewSubresourceSubset& SubresourceSubset);

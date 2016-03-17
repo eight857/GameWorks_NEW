@@ -1453,13 +1453,6 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	// Tell the module manager is may now process newly-loaded UObjects when new C++ modules are loaded
 	FModuleManager::Get().StartProcessingNewlyLoadedObjects();
 
-	// load up the seek-free startup packages
-	if ( !FStartupPackages::LoadAll() )
-	{
-		// At least one startup package failed to load, return 1 to indicate an error
-		return 1;
-	}
-
 	// Setup GC optimizations
 	if (bIsSeekFreeDedicatedServer || bHasEditorToken)
 	{
@@ -1554,7 +1547,13 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		return 1;
 	}
 
-	MarkObjectsToDisregardForGC(); 
+	// load up the seek-free startup packages
+	if ( !FStartupPackages::LoadAll() )
+	{
+		// At least one startup package failed to load, return 1 to indicate an error
+		return 1;
+	}
+
 	GUObjectArray.CloseDisregardForGC();
 
 	SetIsServerForOnlineSubsystemsDelegate(FQueryIsRunningServer::CreateStatic(&IsServerDelegateForOSS));
@@ -2289,10 +2288,12 @@ void FEngineLoop::Exit()
 	// close all windows
 	FSlateApplication::Shutdown();
 
+#if !PLATFORM_ANDROID 	// AppPreExit doesn't work on Android
 	AppPreExit();
 
 	TermGamePhys();
 	ParticleVertexFactoryPool_FreePool();
+#endif // !ANDROID
 
 	// Stop the rendering thread.
 	StopRenderingThread();
@@ -2300,6 +2301,7 @@ void FEngineLoop::Exit()
 	// Tear down the RHI.
 	RHIExitAndStopRHIThread();
 
+#if !PLATFORM_ANDROID // UnloadModules doesn't work on Android
 #if WITH_ENGINE
 	// Save the hot reload state
 	IHotReloadInterface* HotReload = IHotReloadInterface::GetPtr();
@@ -2315,6 +2317,7 @@ void FEngineLoop::Exit()
 	// process exit by the OS), but it does call ShutdownModule() on all loaded modules in the reverse
 	// order they were loaded in, so that systems can unregister and perform general clean up.
 	FModuleManager::Get().UnloadModulesAtShutdown();
+#endif // !ANDROID
 
 	// Move earlier?
 #if STATS
@@ -3096,7 +3099,7 @@ bool FEngineLoop::AppInit( )
 
 	UE_LOG(LogInit, Log, TEXT("Build Configuration: %s"), EBuildConfigurations::ToString(FApp::GetBuildConfiguration()));
 	UE_LOG(LogInit, Log, TEXT("Branch Name: %s"), *FApp::GetBranchName() );
-	UE_LOG(LogInit, Log, TEXT("Command line: %s"), FCommandLine::Get() );
+	UE_LOG(LogInit, Log, TEXT("Command line: %s"), FCommandLine::GetForLogging());
 	UE_LOG(LogInit, Log, TEXT("Base directory: %s"), FPlatformProcess::BaseDir() );
 	//UE_LOG(LogInit, Log, TEXT("Character set: %s"), sizeof(TCHAR)==1 ? TEXT("ANSI") : TEXT("Unicode") );
 	UE_LOG(LogInit, Log, TEXT("Installed Engine Build: %d"), FApp::IsEngineInstalled() ? 1 : 0);

@@ -1221,6 +1221,8 @@ void FSlateRHIRenderer::InvalidateAllViewports()
 
 void FSlateRHIRenderer::ReleaseAccessedResources(bool bImmediatelyFlush)
 {
+	FScopeLock ScopeLock(GetResourceCriticalSection());
+
 	// Clear accessed UTexture and Material objects from the previous frame
 	ResourceManager->BeginReleasingAccessedResources(bImmediatelyFlush);
 
@@ -1307,7 +1309,7 @@ void FSlateRHIRenderer::ReleaseCachingResourcesFor(const ILayoutCache* Cacher)
 		ReleaseCachingResourcesFor,
 		FReleaseCachingResourcesForContext, Context, MarshalContext,
 		{
-			Context.RenderPolicy->ReleaseCachingResourcesFor(Context.Cacher);
+			Context.RenderPolicy->ReleaseCachingResourcesFor(RHICmdList, Context.Cacher);
 		});
 }
 

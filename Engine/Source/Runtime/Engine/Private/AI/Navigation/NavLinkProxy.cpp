@@ -83,6 +83,12 @@ void ANavLinkProxy::PostEditChangeProperty(FPropertyChangedEvent& PropertyChange
 }
 #endif // WITH_EDITOR
 
+void ANavLinkProxy::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+	SmartLinkComp->SetNavigationRelevancy(bSmartLinkIsRelevant);
+}
+
 #if ENABLE_VISUAL_LOG
 void ANavLinkProxy::BeginPlay()
 {
@@ -91,6 +97,8 @@ void ANavLinkProxy::BeginPlay()
 	{
 		REDIRECT_OBJECT_TO_VLOG(this, NavSys);
 	}
+
+	Super::BeginPlay();
 }
 #endif // ENABLE_VISUAL_LOG
 

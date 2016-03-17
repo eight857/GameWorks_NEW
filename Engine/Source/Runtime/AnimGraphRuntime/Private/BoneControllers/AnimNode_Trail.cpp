@@ -212,7 +212,13 @@ bool FAnimNode_Trail::IsValidToEvaluate(const USkeleton* Skeleton, const FBoneCo
 	{
 		for (auto& ChainIndex : ChainBoneIndices)
 		{
-			if (RequiredBones.Contains(ChainIndex) == false)
+			if (ChainIndex == INDEX_NONE)
+			{
+				// unfortunately there is no easy way to communicate this back to user other than spamming here because this gets called every frame
+				// originally tried in AnimGraphNode, but that doesn't know hierarchy so I can't verify it there. Maybe should try with USkeleton asset there. @todo
+				return false;
+			}
+			else if (RequiredBones.Contains(ChainIndex) == false)
 			{
 				return false;
 			}

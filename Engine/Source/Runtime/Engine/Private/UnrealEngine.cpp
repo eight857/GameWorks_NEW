@@ -1568,29 +1568,56 @@ void UEngine::InitializeObjectReferences()
 #if PLATFORM_COMPILER_HAS_VARIADIC_TEMPLATES
 void UEngine::InitializePortalServices()
 {
-	// Initialize Portal services
-	PortalRpcClient = FModuleManager::LoadModuleChecked<IMessagingRpcModule>("MessagingRpc").CreateRpcClient();
-	{
-		// @todo gmp: catch timeouts?
-	}
+	TSharedPtr<IMessagingRpcModule> MessagingRpcModule = StaticCastSharedPtr<IMessagingRpcModule>(FModuleManager::Get().LoadModule("MessagingRpc"));
+	TSharedPtr<IPortalRpcModule> PortalRpcModule = StaticCastSharedPtr<IPortalRpcModule>(FModuleManager::Get().LoadModule("PortalRpc"));
+	TSharedPtr<IPortalServicesModule> PortalServicesModule = StaticCastSharedPtr<IPortalServicesModule>(FModuleManager::Get().LoadModule("PortalServices"));
 
-	PortalRpcLocator = FModuleManager::LoadModuleChecked<IPortalRpcModule>("PortalRpc").CreateLocator();
+	if (MessagingRpcModule.IsValid() &&
+		PortalRpcModule.IsValid() &&
+		PortalServicesModule.IsValid())
 	{
-		PortalRpcLocator->OnServerLocated().BindLambda([=]() { PortalRpcClient->Connect(PortalRpcLocator->GetServerAddress()); });
-		PortalRpcLocator->OnServerLost().BindLambda([=]() { PortalRpcClient->Disconnect(); });
-	}
+		// Initialize Portal services
+		PortalRpcClient = MessagingRpcModule->CreateRpcClient();
+		{
+			// @todo gmp: catch timeouts?
+		}
 
-	ServiceDependencies = MakeShareable(new FTypeContainer);
-	{
-		ServiceDependencies->RegisterInstance<IMessageRpcClient>(PortalRpcClient.ToSharedRef());
-	}
+		PortalRpcLocator = PortalRpcModule->CreateLocator();
+		{
+			PortalRpcLocator->OnServerLocated().BindLambda([=]() { PortalRpcClient->Connect(PortalRpcLocator->GetServerAddress()); });
+			PortalRpcLocator->OnServerLost().BindLambda([=]() { PortalRpcClient->Disconnect(); });
+		}
 
-	ServiceLocator = FModuleManager::LoadModuleChecked<IPortalServicesModule>("PortalServices").CreateLocator(ServiceDependencies.ToSharedRef());
+		ServiceDependencies = MakeShareable(new FTypeContainer);
+		{
+			ServiceDependencies->RegisterInstance<IMessageRpcClient>(PortalRpcClient.ToSharedRef());
+		}
+
+		ServiceLocator = PortalServicesModule->CreateLocator(ServiceDependencies.ToSharedRef());
+		{
+			// @todo add any Engine specific Portal services here
+			ServiceLocator->Configure(TEXT("IPortalApplicationWindow"), TEXT("*"), "PortalProxies");
+			ServiceLocator->Configure(TEXT("IPortalUser"), TEXT("*"), "PortalProxies");
+			ServiceLocator->Configure(TEXT("IPortalUserLogin"), TEXT("*"), "PortalProxies");
+		}
+	}
+	else
 	{
-		// @todo add any Engine specific Portal services here
-		ServiceLocator->Configure(TEXT("IPortalApplicationWindow"), TEXT("*"), "PortalProxies");
-		ServiceLocator->Configure(TEXT("IPortalUser"), TEXT("*"), "PortalProxies");
-		ServiceLocator->Configure(TEXT("IPortalUserLogin"), TEXT("*"), "PortalProxies");
+		class FNullPortalServiceLocator
+			: public IPortalServiceLocator
+		{
+			virtual void Configure(const FString& ServiceName, const FWildcardString& ProductId, const FName& ServiceModule) override
+			{
+
+			}
+
+			virtual TSharedPtr<IPortalService> GetService(const FString& ServiceName, const FString& ProductId) override
+			{
+				return nullptr;
+			}
+		};
+
+		ServiceLocator = MakeShareable(new FNullPortalServiceLocator());
 	}
 }
 #endif
@@ -5177,12 +5204,13 @@ bool UEngine::HandleObjCommand( const TCHAR* Cmd, FOutputDevice& Ar )
 			&&	(InsidePackage	||	!FCString::Strfind(Cmd,TEXT("PACKAGE="))) 
 			&&	(InsideObject	||	!FCString::Strfind(Cmd,TEXT("INSIDE=")))))
 		{
-			const bool bTrackDetailedObjectInfo		= bAll || (CheckType != NULL && CheckType != UObject::StaticClass()) || CheckOuter != NULL || InsideObject != NULL || InsidePackage != NULL || !ObjectName.IsEmpty();
-			const bool bOnlyListGCObjects				= FParse::Param( Cmd, TEXT("GCONLY") );
-			const bool bOnlyListRootObjects				= FParse::Param( Cmd, TEXT("ROOTONLY") );
-			const bool bShouldIncludeDefaultObjects	= FParse::Param( Cmd, TEXT("INCLUDEDEFAULTS") );
-			const bool bOnlyListDefaultObjects			= FParse::Param( Cmd, TEXT("DEFAULTSONLY") );
-			const bool bShowDetailedObjectInfo			= FParse::Param( Cmd, TEXT("NODETAILEDINFO") ) == false && bTrackDetailedObjectInfo;
+			const bool bTrackDetailedObjectInfo = bAll || (CheckType != NULL && CheckType != UObject::StaticClass()) || CheckOuter != NULL || InsideObject != NULL || InsidePackage != NULL || !ObjectName.IsEmpty();
+			const bool bOnlyListGCObjects = FParse::Param(Cmd, TEXT("GCONLY"));
+			const bool bOnlyListGCObjectsNoClusters = FParse::Param(Cmd, TEXT("GCNOCLUSTERS"));
+			const bool bOnlyListRootObjects = FParse::Param(Cmd, TEXT("ROOTONLY"));
+			const bool bShouldIncludeDefaultObjects = FParse::Param(Cmd, TEXT("INCLUDEDEFAULTS"));
+			const bool bOnlyListDefaultObjects = FParse::Param(Cmd, TEXT("DEFAULTSONLY"));
+			const bool bShowDetailedObjectInfo = FParse::Param(Cmd, TEXT("NODETAILEDINFO")) == false && bTrackDetailedObjectInfo;
 
 			for( FObjectIterator It; It; ++It )
 			{
@@ -5201,6 +5229,19 @@ bool UEngine::HandleObjCommand( const TCHAR* Cmd, FOutputDevice& Ar )
 				if ( bOnlyListGCObjects && GUObjectArray.IsDisregardForGC(*It) )
 				{
 					continue;
+				}
+
+				if (bOnlyListGCObjectsNoClusters)
+				{
+					if (GUObjectArray.IsDisregardForGC(*It))
+					{
+						continue;
+					}
+					FUObjectItem* ObjectItem = GUObjectArray.ObjectToObjectItem(*It);
+					if (ObjectItem->GetOwnerIndex())
+					{
+						continue;
+					}
 				}
 
 				if ( bOnlyListRootObjects && !It->IsRooted() )
@@ -9502,6 +9543,25 @@ bool UEngine::LoadMap( FWorldContext& WorldContext, FURL URL, class UPendingNetG
 	UPackage* WorldPackage = NULL;
 	UWorld*	NewWorld = NULL;
 	
+	// If this world is a PIE instance, we need to check if we are travelling to another PIE instance's world.
+	// If we are, we need to set the PIERemapPrefix so that we load a copy of that world, instead of loading the
+	// PIE world directly.
+	if (!WorldContext.PIEPrefix.IsEmpty())
+	{
+		for (const FWorldContext& WorldContextFromList : WorldList)
+		{
+			// We want to ignore our own PIE instance so that we don't unnecessarily set the PIERemapPrefix if we are not travelling to
+			// a server.
+			if (WorldContextFromList.World() != WorldContext.World())
+			{
+				if (!WorldContextFromList.PIEPrefix.IsEmpty() && URL.Map.Contains(WorldContextFromList.PIEPrefix))
+				{
+					WorldContext.PIERemapPrefix = WorldContextFromList.PIEPrefix;
+				}
+			}
+		}
+	}
+
 	// Is this a PIE networking thing?
 	if (!WorldContext.PIERemapPrefix.IsEmpty())
 	{
@@ -10920,29 +10980,19 @@ void UEngine::CopyPropertiesForUnrelatedObjects(UObject* OldObject, UObject* New
 	TArray<UObject*> ComponentsOnNewObject;
 	{
 		TArray<UObject*> EditInlineSubobjectsOfComponents;
-
-		// Find all instanced objects of the old CDO, and save off their modified properties to be later applied to the newly instanced objects of the new CDO
 		NewObject->CollectDefaultSubobjects(ComponentsOnNewObject,true);
 
-		// Serialize in the modified properties from the old CDO to the new CDO
-		if (SavedProperties.Num() > 0)
-		{
-			FObjectReader Reader(NewObject, SavedProperties, true, true);
-		}
-
+		// populate the ReferenceReplacementMap 
 		for (int32 Index = 0; Index < ComponentsOnNewObject.Num(); Index++)
 		{
 			UObject* NewInstance = ComponentsOnNewObject[Index];
 			if (int32* pOldInstanceIndex = OldInstanceMap.Find(NewInstance->GetFName()))
 			{
-				// Restore modified properties into the new instance
 				FInstancedObjectRecord& Record = SavedInstances[*pOldInstanceIndex];
 				ReferenceReplacementMap.Add(Record.OldInstance, NewInstance);
 				if (Params.bAggressiveDefaultSubobjectReplacement)
 				{
 					UClass* Class = OldObject->GetClass()->GetSuperClass();
-					//UClass* Class = OldObject->GetClass();
-					//while (Class)
 					if (Class)
 					{
 						UObject *CDOInst = Class->GetDefaultSubobjectByName(NewInstance->GetFName());
@@ -10961,15 +11011,8 @@ void UEngine::CopyPropertiesForUnrelatedObjects(UObject* OldObject, UObject* New
 							}
 #endif // WITH_EDITOR
 						}
-						else
-						{
-							//break;
-						}
-						//Class = Class->GetSuperClass();
 					}
 				}
-				FObjectReader Reader(NewInstance, Record.SavedProperties, true, true);
-				FFindInstancedReferenceSubobjectHelper::Duplicate(Record.OldInstance, NewInstance, ReferenceReplacementMap, EditInlineSubobjectsOfComponents);
 			}
 			else
 			{
@@ -10986,8 +11029,26 @@ void UEngine::CopyPropertiesForUnrelatedObjects(UObject* OldObject, UObject* New
 				if (!bContainedInsideNewInstance)
 				{
 					// A bad thing has happened and cannot be reasonably fixed at this point
-					UE_LOG(LogEngine, Log, TEXT("Warning: The CDO '%s' references a component that does not have the CDO in its outer chain!"), *NewObject->GetFullName(), *NewInstance->GetFullName()); 	
+					UE_LOG(LogEngine, Log, TEXT("Warning: The CDO '%s' references a component that does not have the CDO in its outer chain!"), *NewObject->GetFullName(), *NewInstance->GetFullName());
 				}
+			}
+		}
+
+		// Serialize in the modified properties from the old CDO to the new CDO
+		if (SavedProperties.Num() > 0)
+		{
+			FObjectReader Reader(NewObject, SavedProperties, true, true);
+		}
+
+		for (int32 Index = 0; Index < ComponentsOnNewObject.Num(); Index++)
+		{
+			UObject* NewInstance = ComponentsOnNewObject[Index];
+			if (int32* pOldInstanceIndex = OldInstanceMap.Find(NewInstance->GetFName()))
+			{
+				// Restore modified properties into the new instance
+				FInstancedObjectRecord& Record = SavedInstances[*pOldInstanceIndex];
+				FObjectReader Reader(NewInstance, Record.SavedProperties, true, true);
+				FFindInstancedReferenceSubobjectHelper::Duplicate(Record.OldInstance, NewInstance, ReferenceReplacementMap, EditInlineSubobjectsOfComponents);
 			}
 		}
 		ComponentsOnNewObject.Append(EditInlineSubobjectsOfComponents);

@@ -18,8 +18,8 @@ class UAnimInstance;
 struct FEngineShowFlags;
 struct FConvexVolume;
 
-
-
+DECLARE_MULTICAST_DELEGATE(FOnSkelMeshPhysicsCreatedMultiCast);
+typedef FOnSkelMeshPhysicsCreatedMultiCast::FDelegate FOnSkelMeshPhysicsCreated;
 
 namespace physx
 { 
@@ -90,6 +90,10 @@ private:
 	FVector WindDirection;
 	float WindAdaption;
 
+	/** Whether we have deferred cloth update transform. If true we will update any cloth collision when appropriate */
+	bool bPendingClothUpdateTransform;
+	ETeleportType PendingTeleportType;
+
 	friend class USkeletalMeshComponent;
 };
 
@@ -104,7 +108,6 @@ struct FAnimationEvaluationContext
 	// Double buffer evaluation data
 	TArray<FTransform> SpaceBases;
 	TArray<FTransform> LocalAtoms;
-	TArray<FActiveVertexAnim> VertexAnims;
 	FVector RootBoneTranslation;
 
 	// Double buffer curve data
@@ -138,8 +141,6 @@ struct FAnimationEvaluationContext
 		SpaceBases.Append(Other.SpaceBases);
 		LocalAtoms.Reset();
 		LocalAtoms.Append(Other.LocalAtoms);
-		VertexAnims.Reset();
-		VertexAnims.Append(Other.VertexAnims);
 		RootBoneTranslation = Other.RootBoneTranslation;
 		Curve.InitFrom(Other.Curve);
 		bDoInterpolation = Other.bDoInterpolation;
@@ -982,7 +983,7 @@ public:
 	* @param	OutVertexAnims			Active vertex animations
 	* @param	OutRootBoneTranslation	Calculated root bone translation
 	*/
-	void PerformAnimationEvaluation(const USkeletalMesh* InSkeletalMesh, UAnimInstance* InAnimInstance, TArray<FTransform>& OutSpaceBases, TArray<FTransform>& OutLocalAtoms, TArray<FActiveVertexAnim>& OutVertexAnims, FVector& OutRootBoneTranslation, FBlendedCurve& OutCurve) const;
+	void PerformAnimationEvaluation(const USkeletalMesh* InSkeletalMesh, UAnimInstance* InAnimInstance, TArray<FTransform>& OutSpaceBases, TArray<FTransform>& OutLocalAtoms, FVector& OutRootBoneTranslation, FBlendedCurve& OutCurve) const;
 	void PostAnimEvaluation( FAnimationEvaluationContext& EvaluationContext );
 
 	/**
@@ -1028,9 +1029,6 @@ public:
 	/** Set bSimulatePhysics to true for all bone bodies. Does not change the component bSimulatePhysics flag. */
 	UFUNCTION(BlueprintCallable, Category="Components|SkeletalMesh")
 	void SetAllBodiesSimulatePhysics(bool bNewSimulate);
-
-	/** Update Material Parameters based on AnimInstance */
-	void UpdateMaterialParameters();
 
 	/** This is global set up for setting physics blend weight
 	 * This does multiple things automatically
@@ -1190,7 +1188,7 @@ public:
 	/** should call this method if occurred any changes in clothing assets */
 	void RecreateClothingActors();
 	/** add bounding box for cloth */
-	void AddClothingBounds(FBoxSphereBounds& InOutBounds) const;
+	void AddClothingBounds(FBoxSphereBounds& InOutBounds, const FTransform& LocalToWorld) const;
 	/** changes clothing LODs, if clothing LOD is disabled or LODIndex is greater than apex clothing LODs, simulation will be disabled */
 	void SetClothingLOD(int32 LODIndex);
 	/** check whether clothing teleport is needed or not to avoid a weird simulation result */
@@ -1210,10 +1208,10 @@ public:
 	 */
 	void UpdateClothStateAndSimulate(float DeltaTime, FTickFunction& ThisTickFunction);
 	/** 
-	 * Updates clothing actor's global pose.
-	 * So should be called when ComponentToWorld is changed.
+	 * Updates cloth collision outside the cloth asset (environment collision, child collision, etc...)
+	 * Should be called when scene changes or world position changes
 	 */
-	void UpdateClothTransform();
+	void UpdateClothTransform(ETeleportType TeleportType);
 
 	/** only check whether there are valid clothing actors or not */
 	bool HasValidClothingActors() const;
@@ -1278,7 +1276,7 @@ private:
 	void PostPhysicsTickComponent(FSkeletalMeshComponentPostPhysicsTickFunction& ThisTickFunction);
 
 	/** Evaluate Anim System **/
-	void EvaluateAnimation(const USkeletalMesh* InSkeletalMesh, UAnimInstance* InAnimInstance, TArray<FTransform>& OutLocalAtoms, TArray<struct FActiveVertexAnim>& OutVertexAnims, FVector& OutRootBoneTranslation, FBlendedCurve& OutCurve) const;
+	void EvaluateAnimation(const USkeletalMesh* InSkeletalMesh, UAnimInstance* InAnimInstance, TArray<FTransform>& OutLocalAtoms, FVector& OutRootBoneTranslation, FBlendedCurve& OutCurve) const;
 
 	/**
 	* Take the SourceAtoms array (translation vector, rotation quaternion and scale vector) and update the array of component-space bone transformation matrices (DestSpaceBases).
@@ -1329,6 +1327,9 @@ public:
 	/** Returns array containing cachec animation curve mapping UIDs (which are copied over from USkeleton) */
 	TArray<FSmartNameMapping::UID> const * GetCachedAnimCurveMappingNameUids();
 
+	/** Apply animation curves to this component */
+	void ApplyAnimationCurvesToComponent(const TMap<FName, float>* InMaterialParameterCurves, const TMap<FName, float>* InAnimationMorphCurves);
+	
 private:
 	// Returns whether we need to run the Pre Cloth Tick or not
 	bool ShouldRunPostPhysicsTick() const;
@@ -1359,6 +1360,11 @@ private:
 	friend class FParallelBlendPhysicsCompletionTask;
 	void CompleteParallelBlendPhysics();
 	void PostBlendPhysics();
+
+#if WITH_APEX_CLOTHING
+	/** See UpdateClothTransform for documentation. */
+	void UpdateClothTransformImp();
+#endif
 
 	friend class FTickClothingTask;
 
@@ -1405,7 +1411,13 @@ public:
 	FTransform ConvertLocalRootMotionToWorld(const FTransform& InTransform);
 
 	FRootMotionMovementParams ConsumeRootMotion();
+
+	/** Register/Unregister for physics state creation callback */
+	FDelegateHandle RegisterOnPhysicsCreatedDelegate(const FOnSkelMeshPhysicsCreated& Delegate);
+	void UnregisterOnPhysicsCreatedDelegate(const FDelegateHandle& DelegateHandle);
+
+private:
+
+	/** Multicaster fired when this component creates physics state (in case external objects rely on physics state)*/
+	FOnSkelMeshPhysicsCreatedMultiCast OnSkelMeshPhysicsCreated;
 };
-
-
-

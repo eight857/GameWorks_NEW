@@ -101,7 +101,6 @@ TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > FSteamVRPlugin::Cre
 
 #if STEAMVR_SUPPORTED_PLATFORMS
 
-
 bool FSteamVRHMD::IsHMDEnabled() const
 {
 	return bHmdEnabled;
@@ -600,6 +599,52 @@ void FSteamVRHMD::OnEndPlay()
 	EnableStereo(false);
 }
 
+bool FSteamVRHMD::OnStartGameFrame(FWorldContext& WorldContext)
+{
+	if (VRSystem == nullptr)
+	{
+		return false;
+	}
+
+	float TimeDeltaSeconds = FApp::GetDeltaTime();
+
+	// Poll SteamVR events
+	vr::VREvent_t VREvent;
+	while (VRSystem->PollNextEvent(&VREvent))
+	{
+		switch (VREvent.eventType)
+		{
+		case vr::VREvent_Quit:
+			FCoreDelegates::ApplicationWillTerminateDelegate.Broadcast();
+			bIsQuitting = true;
+			break;
+		case vr::VREvent_InputFocusCaptured:
+			FCoreDelegates::ApplicationWillEnterBackgroundDelegate.Broadcast();
+			break;
+		case vr::VREvent_InputFocusReleased:
+			FCoreDelegates::ApplicationHasEnteredForegroundDelegate.Broadcast();
+			break;
+		}
+	}
+
+	// SteamVR gives 5 seconds from VREvent_Quit till it's process is killed
+	if (bIsQuitting)
+	{
+		QuitTimeElapsed += TimeDeltaSeconds;
+		if (QuitTimeElapsed > 4.0f)
+		{
+			FPlatformMisc::RequestExit(true);
+			bIsQuitting = false;
+		}
+		else if (QuitTimeElapsed > 3.0f)
+		{
+			FPlatformMisc::RequestExit(false);
+		}
+	}
+
+	return true;
+}
+
 void FSteamVRHMD::EnableLowPersistenceMode(bool Enable)
 {
 }
@@ -672,9 +717,22 @@ bool FSteamVRHMD::EnableStereo(bool bStereo)
 	if (VRSystem && SceneVP)
 	{
 		int32 PosX, PosY;
-		uint32 Width, Height;
-		GetWindowBounds(&PosX, &PosY, &Width, &Height);
-		SceneVP->SetViewportSize(Width, Height);
+		if( bStereo )
+		{
+			uint32 Width, Height;
+			GetWindowBounds( &PosX, &PosY, &Width, &Height );
+			SceneVP->SetViewportSize( Width, Height );
+		}
+		else
+		{
+			TSharedPtr<SWindow> Window = SceneVP->FindWindow();
+			if( Window.IsValid() )
+			{
+				FVector2D size = SceneVP->FindWindow()->GetSizeInScreen();
+				SceneVP->SetViewportSize( size.X, size.Y );
+				Window->SetViewportSizeDrivenByWindow( true );
+			}
+		}
 	}
 
 	// Uncap fps to enable FPS higher than 62
@@ -796,13 +854,13 @@ void FSteamVRHMD::SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView)
 
 void FSteamVRHMD::PreRenderView_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneView& View)
 {
-	//check(IsInRenderingThread());
+	check(IsInRenderingThread());
 
-	//// The last view location used to set the view will be in BaseHmdOrientation.  We need to calculate the delta from that, so that
-	//// cameras that rely on game objects (e.g. other components) for their positions don't need to be updated on the render thread.
-	//const FQuat DeltaOrient = View.BaseHmdOrientation.Inverse() * TrackingFrame.DeviceOrientation[vr::k_unTrackedDeviceIndex_Hmd];
-	//View.ViewRotation = FRotator(View.ViewRotation.Quaternion() * DeltaOrient);
- //	View.UpdateViewMatrix();
+	// The last view location used to set the view will be in BaseHmdOrientation.  We need to calculate the delta from that, so that
+	// cameras that rely on game objects (e.g. other components) for their positions don't need to be updated on the render thread.
+	const FQuat DeltaOrient = View.BaseHmdOrientation.Inverse() * TrackingFrame.DeviceOrientation[vr::k_unTrackedDeviceIndex_Hmd];
+	View.ViewRotation = FRotator(View.ViewRotation.Quaternion() * DeltaOrient);
+ 	View.UpdateViewMatrix();
 }
 
 void FSteamVRHMD::PreRenderViewFamily_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneViewFamily& ViewFamily)
@@ -905,6 +963,8 @@ FSteamVRHMD::FSteamVRHMD(ISteamVRPlugin* SteamVRPlugin) :
 	LastHmdOrientation(FQuat::Identity),
 	BaseOrientation(FQuat::Identity),
 	BaseOffset(FVector::ZeroVector),
+	bIsQuitting(false),
+	QuitTimeElapsed(0.0f),
 	DeltaControlRotation(FRotator::ZeroRotator),
 	DeltaControlOrientation(FQuat::Identity),
 	CurHmdPosition(FVector::ZeroVector),
