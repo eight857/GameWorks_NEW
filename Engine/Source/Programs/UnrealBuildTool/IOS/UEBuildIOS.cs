@@ -142,19 +142,23 @@ namespace UnrealBuildTool
 				// update the configuration based on the project file
 				// look in ini settings for what platforms to compile for
 				ConfigCacheIni Ini = ConfigCacheIni.CreateConfigCacheIni(Platform, "Engine", DirectoryReference.FromFile(ProjectFile));
-				string MinVersion = "IOS_6";
+				string MinVersion = "IOS_7";
 				if (Ini.GetString("/Script/IOSRuntimeSettings.IOSRuntimeSettings", "MinimumiOSVersion", out MinVersion))
 				{
 					switch (MinVersion)
 					{
 						case "IOS_61":
-							RunTimeIOSVersion = "6.1";
+							Log.TraceWarning("IOS 6 is no longer supported in UE4 as 4.11");
+							RunTimeIOSVersion = "7.0";
 							break;
 						case "IOS_7":
 							RunTimeIOSVersion = "7.0";
 							break;
 						case "IOS_8":
 							RunTimeIOSVersion = "8.0";
+							break;
+						case "IOS_9":
+							RunTimeIOSVersion = "9.0";
 							break;
 					}
 				}

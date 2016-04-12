@@ -4358,12 +4358,22 @@ bool FBodyInstance::OverlapPhysX_AssumesLocked(const PxGeometry& PGeom, const Px
 		{
 			PxVec3 POutDirection;
 			float OutDistance;
-			if (PxGeometryQuery::computePenetration(POutDirection, OutDistance, PGeom, ShapePose, PShape->getGeometry().any(), PxShapeExt::getGlobalPose(*PShape, *RigidBody)))
+			
+			if (PxGeometryQuery::computePenetration(POutDirection, OutDistance, PGeom, ShapePose, PShape->getGeometry().any(), PxShapeExt::getGlobalPose(*PShape, *RigidBody)) )
 			{
+				//TODO: there are some edge cases that give us nan results. In these cases we skip
+				if(!POutDirection.isFinite())
+				{
+					UE_LOG(LogPhysics, Warning, TEXT("Warning: OverlapPhysX_AssumesLocked: MTD returned NaN :( normal: (X:%f, Y:%f, Z:%f)"), POutDirection.x, POutDirection.y, POutDirection.z);
+					POutDirection.x = 0.f;
+					POutDirection.y = 0.f;
+					POutDirection.z = 0.f;
+				}
+
 				if(OutMTD)
 				{
 					OutMTD->Direction = P2UVector(POutDirection);
-					OutMTD->Distance = OutDistance;
+					OutMTD->Distance = FMath::Abs(OutDistance);
 				}
 					
 				return true;
@@ -4564,17 +4574,22 @@ void FBodyInstance::ApplyMaterialToShape_AssumesLocked(PxShape* PShape, PxMateri
 
 void FBodyInstance::ApplyMaterialToInstanceShapes_AssumesLocked(PxMaterial* PSimpleMat, TArray<UPhysicalMaterial*>& ComplexPhysMats)
 {
+	FBodyInstance* TheirBI = this;
+	FBodyInstance* BIWithActor = TheirBI->WeldParent ? TheirBI->WeldParent : TheirBI;
+
 	TArray<PxShape*> AllShapes;
-	GetAllShapes_AssumesLocked(AllShapes);
+	BIWithActor->GetAllShapes_AssumesLocked(AllShapes);
 
 	for(int32 ShapeIdx = 0; ShapeIdx < AllShapes.Num(); ShapeIdx++)
 	{
 		PxShape* PShape = AllShapes[ShapeIdx];
-
-		ExecuteOnPxShapeWrite(this, PShape, [&](PxShape* PNewShape)
+		if (TheirBI->IsShapeBoundToBody(PShape))
 		{
-			ApplyMaterialToShape_AssumesLocked(PNewShape, PSimpleMat, ComplexPhysMats, HasSharedShapes());
-		});		
+			ExecuteOnPxShapeWrite(BIWithActor, PShape, [&](PxShape* PNewShape)
+			{
+				ApplyMaterialToShape_AssumesLocked(PNewShape, PSimpleMat, ComplexPhysMats, TheirBI->HasSharedShapes());
+			});
+		}
 	}
 }
 

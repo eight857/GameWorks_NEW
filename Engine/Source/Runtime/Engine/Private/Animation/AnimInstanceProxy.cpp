@@ -111,6 +111,7 @@ void FAnimInstanceProxy::InitializeRootNode()
 					// consequence of our class being recompiled and functions will be invalid in that
 					// case.
 					AnimNode->EvaluateGraphExposedInputs.bInitialized = false;
+					AnimNode->EvaluateGraphExposedInputs.Initialize(AnimNode, AnimInstanceObject);
 
 					if (AnimNode->HasPreUpdate())
 					{
@@ -487,17 +488,21 @@ void FAnimInstanceProxy::ReinitializeSlotNodes()
 
 void FAnimInstanceProxy::RegisterSlotNodeWithAnimInstance(FName SlotNodeName)
 {
-	// message log access means we need to run this in the game thread
-	check(IsInGameThread());
-
 	// verify if same slot node name exists
 	// then warn users, this is invalid
 	if (SlotWeightTracker.Contains(SlotNodeName))
 	{
 		UClass* ActualAnimClass = IAnimClassInterface::GetActualAnimClass(GetAnimClassInterface());
 		FString ClassNameString = ActualAnimClass ? ActualAnimClass->GetName() : FString("Unavailable");
-
-		FMessageLog("AnimBlueprint").Warning(FText::Format(LOCTEXT("AnimInstance_SlotNode", "SLOTNODE: '{0}' in animation instance class {1} already exists. Remove duplicates from the animation graph for this class."), FText::FromString(SlotNodeName.ToString()), FText::FromString(ClassNameString)));
+		if (IsInGameThread())
+		{
+			// message log access means we need to run this in the game thread
+			FMessageLog("AnimBlueprint").Warning(FText::Format(LOCTEXT("AnimInstance_SlotNode", "SLOTNODE: '{0}' in animation instance class {1} already exists. Remove duplicates from the animation graph for this class."), FText::FromString(SlotNodeName.ToString()), FText::FromString(ClassNameString)));
+		}
+		else
+		{
+			UE_LOG(LogAnimation, Warning, TEXT("SLOTNODE: '%s' in animation instance class %s already exists. Remove duplicates from the animation graph for this class."), *SlotNodeName.ToString(), *ClassNameString);
+		}
 		return;
 	}
 
@@ -1430,4 +1435,16 @@ int32 FAnimInstanceProxy::GetInstanceAssetPlayerIndex(FName MachineName, FName S
 	return INDEX_NONE;
 }
 
+void FAnimInstanceProxy::AddReferencedObjects(FReferenceCollector& Collector) 
+{
+	if (Skeleton)
+	{
+		Collector.AddReferencedObject(Skeleton);
+	}
+
+	if (SkeletalMeshComponent)
+	{
+		Collector.AddReferencedObject(SkeletalMeshComponent);
+	}
+}
 #undef LOCTEXT_NAMESPACE
