@@ -1,10 +1,11 @@
 // @third party code - BEGIN HairWorks
 #include "EnginePrivate.h"
-#include <Nv/Foundation/NvMemoryReadStream.h>
+#include <Nv/Common/NvCoMemoryReadStream.h>
 #include "HairWorksSDK.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
 #include "HairWorksSceneProxy.h"
+#include "Components/HairWorksPinTransformComponent.h"
 #include "Components/HairWorksComponent.h"
 
 /** 
@@ -24,7 +25,7 @@ protected:
 
 UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, HairInstanceId(NvHw::HAIR_INSTANCE_ID_NULL)
+	, HairInstanceId(NvHair::INSTANCE_ID_NULL)
 {
 	// No need to select
 	bSelectable = false;
@@ -49,19 +50,19 @@ UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectI
 
 UHairWorksComponent::~UHairWorksComponent()
 {
-	if(HairInstanceId != NvHw::HAIR_INSTANCE_ID_NULL)
+	if(HairInstanceId != NvHair::INSTANCE_ID_NULL)
 	{
-		HairWorks::GetSDK()->freeHairInstance(HairInstanceId);
-		HairInstanceId = NvHw::HAIR_INSTANCE_ID_NULL;
+		HairWorks::GetSDK()->freeInstance(HairInstanceId);
+		HairInstanceId = NvHair::INSTANCE_ID_NULL;
 	}
 }
 
 FPrimitiveSceneProxy* UHairWorksComponent::CreateSceneProxy()
 {
-	if(HairInstanceId == NvHw::HAIR_INSTANCE_ID_NULL)
+	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
 		return nullptr;
 
-	return new FHairWorksSceneProxy(this, *HairInstance.Hair, HairInstanceId);
+	return new FHairWorksSceneProxy(this, HairInstanceId);
 }
 
 void UHairWorksComponent::OnAttachmentChanged()
@@ -77,7 +78,7 @@ void UHairWorksComponent::OnAttachmentChanged()
 
 FBoxSphereBounds UHairWorksComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
-	if (HairInstanceId == NvHw::HAIR_INSTANCE_ID_NULL)
+	if (HairInstanceId == NvHair::INSTANCE_ID_NULL)
 		return FBoxSphereBounds(EForceInit::ForceInit);
 
 	gfsdk_float3 HairBoundMin, HairBoundMax;
@@ -96,20 +97,20 @@ void UHairWorksComponent::OnRegister()
 		return;
 
 	// Initialize hair asset
-	if(HairInstance.Hair->AssetId == NvHw::HAIR_ASSET_ID_NULL)
+	if(HairInstance.Hair->AssetId == NvHair::INSTANCE_ID_NULL)
 	{
 		// Create hair asset
-		Nv::MemoryReadStream ReadStream(HairInstance.Hair->AssetData.GetData(), HairInstance.Hair->AssetData.Num());
-		HairWorks::GetSDK()->loadHairAsset(&ReadStream, HairInstance.Hair->AssetId, nullptr, &HairWorks::GetAssetConversionSettings());
+		NvCo::MemoryReadStream ReadStream(HairInstance.Hair->AssetData.GetData(), HairInstance.Hair->AssetData.Num());
+		HairWorks::GetSDK()->loadAsset(&ReadStream, HairInstance.Hair->AssetId, nullptr, &HairWorks::GetAssetConversionSettings());
 	}
 
 	// Initialize hair instance
-	if(HairInstanceId == NvHw::HAIR_INSTANCE_ID_NULL)
+	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
 	{
-		HairWorks::GetSDK()->createHairInstance(HairInstance.Hair->AssetId, HairInstanceId);
+		HairWorks::GetSDK()->createInstance(HairInstance.Hair->AssetId, HairInstanceId);
 
 		// Disable this instance at first.
-		NvHw::HairInstanceDescriptor HairInstanceDesc;
+		NvHair::InstanceDescriptor HairInstanceDesc;
 		HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, HairInstanceDesc);
 		if(HairInstanceDesc.m_enable)
 		{
@@ -136,27 +137,19 @@ void UHairWorksComponent::OnUnregister()
 {
 	Super::OnUnregister();
 
-	// Disable this instance to save GPU time.
-	if(HairInstanceId == NvHw::HAIR_INSTANCE_ID_NULL)
+	// Delete this instance for next frame.
+	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
 		return;
 
-	NvHw::HairInstanceDescriptor HairInstanceDesc;
-	HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, HairInstanceDesc);
-
-	if(!HairInstanceDesc.m_enable)
-		return;
-
-	HairInstanceDesc.m_enable = false;
-
-	// Disable for next frame.
-	ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
+	ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
 		HairDisableInstance,
-		Nv::HairWorks::HairInstanceId, HairInstanceId, HairInstanceId,
-		NvHw::HairInstanceDescriptor, HairInstanceDesc, HairInstanceDesc,
+		nvidia::HairWorks::InstanceId, HairInstanceId, HairInstanceId,
 		{
-			HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairInstanceDesc);
+			HairWorks::GetSDK()->freeInstance(HairInstanceId);
 		}
 	);
+
+	HairInstanceId = NvHair::INSTANCE_ID_NULL;
 }
 
 void UHairWorksComponent::SendRenderDynamicData_Concurrent()
@@ -199,7 +192,20 @@ void UHairWorksComponent::SendHairDynamicData()const
 
 	TSharedRef<FHairWorksSceneProxy::FDynamicRenderData> DynamicData(new FHairWorksSceneProxy::FDynamicRenderData);
 
-	DynamicData->Textures.SetNumZeroed(NvHw::EHairTextureType::COUNT_OF);
+	DynamicData->Textures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
+
+	HairWorks::GetSDK()->getInstanceDescriptorFromAsset(HairInstance.Hair->AssetId, DynamicData->HairInstanceDesc);
+	DynamicData->HairInstanceDesc.m_visualizeBones = false;
+	DynamicData->HairInstanceDesc.m_visualizeBoundingBox = false;
+	DynamicData->HairInstanceDesc.m_visualizeCapsules = false;
+	DynamicData->HairInstanceDesc.m_visualizeControlVertices = false;
+	DynamicData->HairInstanceDesc.m_visualizeGrowthMesh = false;
+	DynamicData->HairInstanceDesc.m_visualizeGuideHairs = false;
+	DynamicData->HairInstanceDesc.m_visualizeHairInteractions = false;
+	DynamicData->HairInstanceDesc.m_visualizePinConstraints = false;
+	DynamicData->HairInstanceDesc.m_visualizeShadingNormals = false;
+	DynamicData->HairInstanceDesc.m_visualizeShadingNormalBone = false;
+	DynamicData->HairInstanceDesc.m_visualizeSkinnedGuideHairs = false;
 
 	FName HairNormalCenter;
 
@@ -220,6 +226,78 @@ void UHairWorksComponent::SendHairDynamicData()const
 		DynamicData->HairInstanceDesc.m_hairNormalBoneIndex = *BoneIdx;
 	else
 		DynamicData->HairInstanceDesc.m_hairNormalWeight = 0;
+
+	// Setup pins
+	if(HairInstance.Hair->PinsUpdateFrameNumber != GFrameNumber)
+	{
+		HairInstance.Hair->PinsUpdateFrameNumber = GFrameNumber;
+
+		ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
+			HairUpdatePins,
+			NvHair::AssetId, AssetId, HairInstance.Hair->AssetId,
+			const TArray<FHairWorksPin>, EnginePins, HairInstance.Hair->HairMaterial->Pins,
+			{
+				TArray<NvHair::Pin> Pins;
+				Pins.AddDefaulted(EnginePins.Num());
+				HairWorks::GetSDK()->getPins(AssetId, 0, Pins.Num(), Pins.GetData());
+
+				for(auto PinIndex = 0; PinIndex < Pins.Num(); ++PinIndex)
+				{
+					auto& Pin = Pins[PinIndex];
+
+					const auto& SrcPin = EnginePins[PinIndex];
+
+					Pin.m_useDynamicPin = SrcPin.bDynamicPin;
+					Pin.m_doLra = SrcPin.bTetherPin;
+					Pin.m_pinStiffness = SrcPin.Stiffness;
+					Pin.m_influenceFallOff = SrcPin.InfluenceFallOff;
+					Pin.m_influenceFallOffCurve = reinterpret_cast<const gfsdk_float4&>(SrcPin.InfluenceFallOffCurve);
+				}
+
+				HairWorks::GetSDK()->setPins(AssetId, 0, Pins.Num(), Pins.GetData());
+			}
+		);
+	}
+
+	// Add pin meshes
+	DynamicData->PinMeshes.AddDefaulted(HairInstance.Hair->HairMaterial->Pins.Num());
+
+	for(auto* ChildComponent : AttachChildren)
+	{
+		// Find pin transform component
+		auto* PinComponent = Cast<UHairWorksPinTransformComponent>(ChildComponent);
+		if(PinComponent == nullptr)
+			continue;
+
+		if(PinComponent->PinIndex < 0 || PinComponent->PinIndex >= DynamicData->PinMeshes.Num())
+			continue;
+
+		// Collect pin meshes
+		auto& PinMeshes = DynamicData->PinMeshes[PinComponent->PinIndex];
+
+		TFunction<bool(const USceneComponent*)> AddPinMesh;
+		AddPinMesh = [&](const USceneComponent* Component)
+		{
+			// Add mesh
+			auto* PrimitiveComponent = Cast<UPrimitiveComponent>(Component);
+
+			if(PrimitiveComponent != nullptr && PrimitiveComponent->SceneProxy != nullptr)
+			{
+				FHairWorksSceneProxy::FPinMesh PinMesh;
+				PinMesh.Mesh = PrimitiveComponent->SceneProxy;
+				PinMesh.LocalTransform = (PrimitiveComponent->ComponentToWorld * ComponentToWorld.Inverse()).ToMatrixWithScale();
+
+				PinMeshes.Add(PinMesh);
+			}
+
+			// Find in children
+			Component->AttachChildren.FindByPredicate(AddPinMesh);
+
+			return false;
+		};
+
+		AddPinMesh(PinComponent);
+	}
 
 	// Send to proxy
 	ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
@@ -251,7 +329,7 @@ void UHairWorksComponent::SetupBoneMapping()
 void UHairWorksComponent::UpdateBones() const
 {
 	// Apply bone mapping
-	if(HairInstanceId == NvHw::HAIR_INSTANCE_ID_NULL || ParentSkeleton == nullptr || ParentSkeleton->SkeletalMesh == nullptr)
+	if(HairInstanceId == NvHair::INSTANCE_ID_NULL || ParentSkeleton == nullptr || ParentSkeleton->SkeletalMesh == nullptr)
 		return;
 
 	BoneMatrices.Init(FMatrix::Identity, BoneIndices.Num());
@@ -268,7 +346,7 @@ void UHairWorksComponent::UpdateBones() const
 	}
 
 	// Update bones to HairWorks
-	HairWorks::GetSDK()->updateSkinningMatrices(HairInstanceId, BoneMatrices.Num(), (gfsdk_float4x4*)BoneMatrices.GetData());
+	HairWorks::GetSDK()->updateSkinningMatrices(HairInstanceId, BoneMatrices.Num(), reinterpret_cast<gfsdk_float4x4*>(BoneMatrices.GetData()));
 }
 
 #if WITH_EDITOR

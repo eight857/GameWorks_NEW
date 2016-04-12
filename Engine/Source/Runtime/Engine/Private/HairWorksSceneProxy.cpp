@@ -1,8 +1,8 @@
 // @third party code - BEGIN HairWorks
 #include "EnginePrivate.h"
-#include <Nv/Foundation/NvMemoryReadStream.h>
+#include <Nv/Common/NvCoMemoryReadStream.h>
 #include "AllowWindowsPlatformTypes.h"
-#include <Nv/Platform/Dx11/Foundation/NvDx11Handle.h>
+#include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>
 #include "HideWindowsPlatformTypes.h"
 #include "HairWorksSDK.h"
 #include "Engine/HairWorksAsset.h"
@@ -27,11 +27,11 @@ HairVisualizationCVarDefine(ShadingNormalCenter);
 
 #undef HairVisualizationCVarDefine
 
-FHairWorksSceneProxy::FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, UHairWorksAsset& InHair, NvHw::HairInstanceId InHairInstanceId) :
+FHairWorksSceneProxy::FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::InstanceId InHairInstanceId) :
 	FPrimitiveSceneProxy(InComponent),
 	HairInstanceId(InHairInstanceId)
 {
-	HairTextures.SetNumZeroed(NvHw::EHairTextureType::COUNT_OF);
+	HairTextures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
 }
 
 FHairWorksSceneProxy::~FHairWorksSceneProxy()
@@ -45,7 +45,7 @@ uint32 FHairWorksSceneProxy::GetMemoryFootprint(void) const
 
 void FHairWorksSceneProxy::Draw(EDrawType DrawType)const
 {
-	if(HairInstanceId == NvHw::HAIR_INSTANCE_ID_NULL)
+	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
 		return;
 
 	if (DrawType == EDrawType::Visualization)
@@ -55,7 +55,7 @@ void FHairWorksSceneProxy::Draw(EDrawType DrawType)const
 	else
 	{
 		// Special for shadow
-		NvHw::HairInstanceDescriptor HairDesc;
+		NvHair::InstanceDescriptor HairDesc;
 		HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, HairDesc);
 
 		if (DrawType == EDrawType::Shadow)
@@ -66,10 +66,10 @@ void FHairWorksSceneProxy::Draw(EDrawType DrawType)const
 		}
 
 		// Handle shader cache.
-		NvHw::ShaderCacheSettings ShaderCacheSetting;
+		NvHair::ShaderCacheSettings ShaderCacheSetting;
 		ShaderCacheSetting.setFromInstanceDescriptor(HairDesc);
-		check(HairTextures.Num() == NvHw::EHairTextureType::COUNT_OF);
-		for(int i = 0; i < NvHw::EHairTextureType::COUNT_OF; i++)
+		check(HairTextures.Num() == NvHair::ETextureType::COUNT_OF);
+		for(int i = 0; i < NvHair::ETextureType::COUNT_OF; i++)
 		{
 			ShaderCacheSetting.setTextureUsed(i, HairTextures[i] != nullptr);
 		}
@@ -77,7 +77,7 @@ void FHairWorksSceneProxy::Draw(EDrawType DrawType)const
 		HairWorks::GetSDK()->addToShaderCache(ShaderCacheSetting);
 
 		// Draw
-		NvHw::ShaderSettings HairShaderSettings;
+		NvHair::ShaderSettings HairShaderSettings;
 		HairShaderSettings.m_useCustomConstantBuffer = true;
 		HairShaderSettings.m_shadowPass = (DrawType == EDrawType::Shadow);
 
@@ -98,9 +98,9 @@ FPrimitiveViewRelevance FHairWorksSceneProxy::GetViewRelevance(const FSceneView*
 	return ViewRel;
 }
 
-void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderData & DynamicData)
+void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData)
 {
-	if (HairInstanceId == NvHw::HAIR_INSTANCE_ID_NULL)
+	if (HairInstanceId == NvHair::INSTANCE_ID_NULL)
 		return;
 
 	// Update normal center bone
@@ -133,8 +133,8 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 	HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairDesc);	// Mainly for simulation.
 
 	// Update textures
-	check(DynamicData.Textures.Num() == NvHw::EHairTextureType::COUNT_OF);
-	HairTextures.SetNumZeroed(NvHw::EHairTextureType::COUNT_OF);
+	check(DynamicData.Textures.Num() == NvHair::ETextureType::COUNT_OF);
+	HairTextures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
 	for(auto Idx = 0; Idx < HairTextures.Num(); ++Idx)
 	{
 		auto* Texture = DynamicData.Textures[Idx];
@@ -147,10 +147,13 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 		HairTextures[Idx] = static_cast<FTexture2DResource*>(Texture->Resource)->GetTexture2DRHI();
 	}
 
-	for (auto Idx = 0; Idx < NvHw::EHairTextureType::COUNT_OF; ++Idx)
+	for (auto Idx = 0; Idx < NvHair::ETextureType::COUNT_OF; ++Idx)
 	{
 		auto TextureRef = HairTextures[Idx];
-		HairWorks::GetSDK()->setTexture(HairInstanceId, (NvHw::HairTextureType::Enum)Idx, Nv::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetShaderResourceView(TextureRef.GetReference())));
+		HairWorks::GetSDK()->setTexture(HairInstanceId, (NvHair::ETextureType)Idx, NvCo::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetShaderResourceView(TextureRef.GetReference())));
 	}
+
+	// Add pin meshes
+	HairPinMeshes = DynamicData.PinMeshes;
 }
 // @third party code - END HairWorks

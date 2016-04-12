@@ -7,6 +7,9 @@
 #include "RendererPrivate.h"
 #include "ScenePrivate.h"
 #include "RenderResource.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 /**
  * A vertex shader for rendering the depth of a mesh.
@@ -457,6 +460,11 @@ void RenderHitProxies(FRHICommandListImmediate& RHICmdList, const FSceneRenderer
 
 		View.TopBatchedViewElements.Draw(RHICmdList, FeatureLevel, bNeedToSwitchVerticalAxis, View.ViewProjectionMatrix, View.ViewRect.Width(), View.ViewRect.Height(), true);
 	}
+
+	// @third party code - BEGIN HairWorks
+	if(HairWorksRenderer::ViewsHasHair(Views))
+		HairWorksRenderer::RenderHitProxies(RHICmdList, Views);
+	// @third party code - END HairWorks
 
 	// Finish drawing to the hit proxy render target.
 	RHICmdList.CopyToResolveTarget(HitProxyRT->GetRenderTargetItem().TargetableTexture, HitProxyRT->GetRenderTargetItem().ShaderResourceTexture, false, FResolveParams());

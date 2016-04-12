@@ -6,10 +6,10 @@
 #ifndef _CPP
 #define _CPP
 #endif
-#include <Nv/HairWorks/Shader/NvHwShaderCommonTypes.h>
+#include <Nv/HairWorks/Shader/NvHairShaderCommonTypes.h>
 
 #include "AllowWindowsPlatformTypes.h"
-#include <Nv/Platform/Dx11/Foundation/NvDx11Handle.h>
+#include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>
 #include "HideWindowsPlatformTypes.h"
 
 #include "SceneUtils.h"
@@ -48,14 +48,14 @@ protected:
 		SpecularColorTexture.Bind(Initializer.ParameterMap, TEXT("SpecularColorTexture"));
 		StrandTexture.Bind(Initializer.ParameterMap, TEXT("StrandTexture"));
 
-		NvHw_resourceFaceHairIndices.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceFaceHairIndices"));
-		NvHw_resourceTangents.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceTangents"));
-		NvHw_resourceNormals.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceNormals"));
-		NvHw_resourceMasterPositions.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceMasterPositions"));
-		NvHw_resourceMasterPrevPositions.Bind(Initializer.ParameterMap, TEXT("NvHw_resourceMasterPrevPositions"));
+		NvHair_resourceFaceHairIndices.Bind(Initializer.ParameterMap, TEXT("NvHair_resourceFaceHairIndices"));
+		NvHair_resourceTangents.Bind(Initializer.ParameterMap, TEXT("NvHair_resourceTangents"));
+		NvHair_resourceNormals.Bind(Initializer.ParameterMap, TEXT("NvHair_resourceNormals"));
+		NvHair_resourceMasterPositions.Bind(Initializer.ParameterMap, TEXT("NvHair_resourceMasterPositions"));
+		NvHair_resourceMasterPrevPositions.Bind(Initializer.ParameterMap, TEXT("NvHair_resourceMasterPrevPositions"));
 	}
 
-	void SetParameters(FRHICommandList& RHICmdList, const FSceneView& View, const NvHw_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[NvHw::ShaderResourceType::COUNT_OF])
+	void SetParameters(FRHICommandList& RHICmdList, const FSceneView& View, const NvHair_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[NvHair::ShaderResourceType::COUNT_OF])
 	{
 		FGlobalShader::SetParameters(RHICmdList, GetPixelShader(), View);
 
@@ -63,12 +63,12 @@ protected:
 
 		SetSamplerParameter(RHICmdList, GetPixelShader(), TextureSampler, TStaticSamplerState<>::GetRHI());
 
-		SetTextureParameter(RHICmdList, GetPixelShader(), RootColorTexture, HairTextures[NvHw::HairTextureType::ROOT_COLOR]);
-		SetTextureParameter(RHICmdList, GetPixelShader(), TipColorTexture, HairTextures[NvHw::HairTextureType::TIP_COLOR]);
-		SetTextureParameter(RHICmdList, GetPixelShader(), SpecularColorTexture, HairTextures[NvHw::HairTextureType::SPECULAR]);
-		SetTextureParameter(RHICmdList, GetPixelShader(), StrandTexture, HairTextures[NvHw::HairTextureType::STRAND]);
+		SetTextureParameter(RHICmdList, GetPixelShader(), RootColorTexture, HairTextures[NvHair::ETextureType::ROOT_COLOR]);
+		SetTextureParameter(RHICmdList, GetPixelShader(), TipColorTexture, HairTextures[NvHair::ETextureType::TIP_COLOR]);
+		SetTextureParameter(RHICmdList, GetPixelShader(), SpecularColorTexture, HairTextures[NvHair::ETextureType::SPECULAR]);
+		SetTextureParameter(RHICmdList, GetPixelShader(), StrandTexture, HairTextures[NvHair::ETextureType::STRAND]);
 
-		auto BindSrv = [&](FShaderResourceParameter& Parameter, NvHw::ShaderResourceType::Enum HairSrvType)
+		auto BindSrv = [&](FShaderResourceParameter& Parameter, NvHair::ShaderResourceType::Enum HairSrvType)
 		{
 			if(!Parameter.IsBound())
 				return;
@@ -76,18 +76,18 @@ protected:
 			HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())->PSSetShaderResources(Parameter.GetBaseIndex(), 1, &HairSrvs[HairSrvType]);
 		};
 
-		BindSrv(NvHw_resourceFaceHairIndices, NvHw::ShaderResourceType::HAIR_INDICES);
-		BindSrv(NvHw_resourceTangents, NvHw::ShaderResourceType::TANGENTS);
-		BindSrv(NvHw_resourceNormals, NvHw::ShaderResourceType::NORMALS);
-		BindSrv(NvHw_resourceMasterPositions, NvHw::ShaderResourceType::MASTER_POSITIONS);
-		BindSrv(NvHw_resourceMasterPrevPositions, NvHw::ShaderResourceType::PREV_MASTER_POSITIONS);
+		BindSrv(NvHair_resourceFaceHairIndices, NvHair::ShaderResourceType::HAIR_INDICES);
+		BindSrv(NvHair_resourceTangents, NvHair::ShaderResourceType::TANGENTS);
+		BindSrv(NvHair_resourceNormals, NvHair::ShaderResourceType::NORMALS);
+		BindSrv(NvHair_resourceMasterPositions, NvHair::ShaderResourceType::MASTER_POSITIONS);
+		BindSrv(NvHair_resourceMasterPrevPositions, NvHair::ShaderResourceType::PREV_MASTER_POSITIONS);
 	}
 
 	virtual bool Serialize(FArchive& Ar)
 	{
 		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
 
-		Ar << HairConstantBuffer << TextureSampler << RootColorTexture << TipColorTexture << SpecularColorTexture << StrandTexture << NvHw_resourceFaceHairIndices << NvHw_resourceTangents << NvHw_resourceNormals << NvHw_resourceMasterPositions << NvHw_resourceMasterPrevPositions;
+		Ar << HairConstantBuffer << TextureSampler << RootColorTexture << TipColorTexture << SpecularColorTexture << StrandTexture << NvHair_resourceFaceHairIndices << NvHair_resourceTangents << NvHair_resourceNormals << NvHair_resourceMasterPositions << NvHair_resourceMasterPrevPositions;
 
 		return bShaderHasOutdatedParameters;
 	}
@@ -101,11 +101,11 @@ protected:
 	FShaderResourceParameter SpecularColorTexture;
 	FShaderResourceParameter StrandTexture;
 
-	FShaderResourceParameter	NvHw_resourceFaceHairIndices;
-	FShaderResourceParameter	NvHw_resourceTangents;
-	FShaderResourceParameter	NvHw_resourceNormals;
-	FShaderResourceParameter	NvHw_resourceMasterPositions;
-	FShaderResourceParameter	NvHw_resourceMasterPrevPositions;
+	FShaderResourceParameter	NvHair_resourceFaceHairIndices;
+	FShaderResourceParameter	NvHair_resourceTangents;
+	FShaderResourceParameter	NvHair_resourceNormals;
+	FShaderResourceParameter	NvHair_resourceMasterPositions;
+	FShaderResourceParameter	NvHair_resourceMasterPrevPositions;
 
 };
 
@@ -134,7 +134,7 @@ class FHairWorksBasePassPs: public FHairWorksBasePs, public FHairWorksBaseShader
 		return bShaderHasOutdatedParameters;
 	}
 
-	void SetParameters(FRHICommandList& RHICmdList, const FSceneView& View, const NvHw_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[NvHw::ShaderResourceType::COUNT_OF], const FVector4 IndirectLight[3], const FVector4& InPointSkyBentNormal)
+	void SetParameters(FRHICommandList& RHICmdList, const FSceneView& View, const NvHair_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[NvHair::ShaderResourceType::COUNT_OF], const FVector4 IndirectLight[3], const FVector4& InPointSkyBentNormal)
 	{
 		FHairWorksBasePs::SetParameters(RHICmdList, View, HairConstBuffer, HairTextures, HairSrvs);
 
@@ -367,6 +367,43 @@ class FHairWorksBlendLightingColorPs: public FGlobalShader, public FHairWorksBas
 };
 
 IMPLEMENT_SHADER_TYPE(, FHairWorksBlendLightingColorPs, TEXT("HairWorks"), TEXT("BlendLightingColorPs"), SF_Pixel);
+
+class FHairWorksHitProxyPs: public FGlobalShader, public FHairWorksBaseShader
+{
+	DECLARE_SHADER_TYPE(FHairWorksHitProxyPs, Global);
+
+	FHairWorksHitProxyPs()
+	{}
+
+	FHairWorksHitProxyPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+		: FGlobalShader(Initializer)
+	{
+		HitProxyId.Bind(Initializer.ParameterMap, TEXT("HitProxyId"));
+	}
+
+	virtual bool Serialize(FArchive& Ar)
+	{
+		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
+		Ar << HitProxyId;
+		return bShaderHasOutdatedParameters;
+	}
+
+	void SetParameters(FRHICommandList& RHICmdList, const FHitProxyId HitProxyIdValue, const FSceneView& View)
+	{
+		FGlobalShader::SetParameters(RHICmdList, GetPixelShader(), View);
+		SetShaderValue(RHICmdList, GetPixelShader(), HitProxyId, HitProxyIdValue.GetColor().ReinterpretAsLinear());
+	}
+
+	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+	}
+
+protected:
+	FShaderParameter HitProxyId;
+};
+
+IMPLEMENT_SHADER_TYPE(, FHairWorksHitProxyPs, TEXT("HairWorks"), TEXT("HitProxyPs"), SF_Pixel);
 
 namespace HairWorksRenderer
 {
@@ -614,7 +651,7 @@ namespace HairWorksRenderer
 		auto DepthStencilState = TStaticDepthStencilState<true, CF_GreaterEqual, true, CF_Always, SO_Keep, SO_Keep, SO_Replace, true, CF_Always, SO_Keep, SO_Keep, SO_Replace>::GetRHI();
 
 		// Draw hairs
-		HairWorks::GetSDK()->setCurrentContext(Nv::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
+		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
 
 		FHairInstanceDataShaderUniform HairShaderUniformStruct;
 		TArray<TPair<FHairWorksSceneProxy*, int>, SceneRenderingAllocator> HairStencilValues;	// We use the same stencil value for a hair existing in multiple views
@@ -632,14 +669,14 @@ namespace HairWorksRenderer
 			for(auto& PrimitiveInfo : View.VisibleHairs)
 			{
 				auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
-				if(HairSceneProxy.GetHairInstanceId() == NvHw::HAIR_INSTANCE_ID_NULL)
+				if(HairSceneProxy.GetHairInstanceId() == NvHair::INSTANCE_ID_NULL)
 					continue;
 
 				// Skip colorize
-				NvHw::HairInstanceDescriptor HairDescriptor;
+				NvHair::InstanceDescriptor HairDescriptor;
 				HairWorks::GetSDK()->getInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
 
-				if(HairDescriptor.m_colorizeMode != NvHw::ColorizeMode::NONE)
+				if(HairDescriptor.m_colorizeMode != NvHair::ColorizeMode::NONE)
 				{
 					if(View.Family->EngineShowFlags.CompositeEditorPrimitives)
 					{
@@ -647,7 +684,7 @@ namespace HairWorksRenderer
 					}
 					else
 					{
-						HairDescriptor.m_colorizeMode = NvHw::ColorizeMode::NONE;
+						HairDescriptor.m_colorizeMode = NvHair::ColorizeMode::NONE;
 						HairWorks::GetSDK()->updateInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
 					}
 				}
@@ -701,8 +738,8 @@ namespace HairWorksRenderer
 				// Pass camera information
 				auto ViewMatrices = View.ViewMatrices;
 
-				HairWorks::GetSDK()->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHw::HandednessHint::LEFT);
-				HairWorks::GetSDK()->setPrevViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ProjMatrix.M), NvHw::HandednessHint::LEFT);
+				HairWorks::GetSDK()->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+				HairWorks::GetSDK()->setPrevViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
 
 				// Setup shader
 				TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
@@ -736,13 +773,13 @@ namespace HairWorksRenderer
 					SkyBentNormal = LightingAllocation.CurrentSkyBentNormal;
 				}
 
-				NvHw::ShaderConstantBuffer ConstantBuffer;
+				NvHair::ShaderConstantBuffer ConstantBuffer;
 				HairWorks::GetSDK()->prepareShaderConstantBuffer(HairSceneProxy.GetHairInstanceId(), ConstantBuffer);
 
-				ID3D11ShaderResourceView* HairSrvs[NvHw::ShaderResourceType::COUNT_OF];
-				HairWorks::GetSDK()->getShaderResources(HairSceneProxy.GetHairInstanceId(), NV_NULL, NvHw::ShaderResourceType::COUNT_OF, Nv::Dx11Type::getPtr(HairSrvs));
+				ID3D11ShaderResourceView* HairSrvs[NvHair::ShaderResourceType::COUNT_OF];
+				HairWorks::GetSDK()->getShaderResources(HairSceneProxy.GetHairInstanceId(), NV_NULL, NvHair::ShaderResourceType::COUNT_OF, NvCo::Dx11Type::getPtr(HairSrvs));
 
-				PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHw_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs, IndirectLight, SkyBentNormal);
+				PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHair_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs, IndirectLight, SkyBentNormal);
 
 				// Flush render states
 				HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
@@ -850,30 +887,30 @@ namespace HairWorksRenderer
 			);
 
 		// Render colorize
-		HairWorks::GetSDK()->setCurrentContext(Nv::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
+		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
 
 		for(auto& PrimitiveInfo : View.VisibleHairs)
 		{
 			// Skin none colorize
 			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
 
-			NvHw::HairInstanceDescriptor HairDescriptor;
+			NvHair::InstanceDescriptor HairDescriptor;
 			HairWorks::GetSDK()->getInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
 
-			if (HairDescriptor.m_colorizeMode == NvHw::ColorizeMode::NONE)
+			if (HairDescriptor.m_colorizeMode == NvHair::ColorizeMode::NONE)
 				continue;
 
 			// Setup camera
-			HairWorks::GetSDK()->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ViewMatrix), reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ProjMatrix), NvHw::HandednessHint::LEFT);
+			HairWorks::GetSDK()->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ViewMatrix), reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ProjMatrix), NvHair::HandednessHint::LEFT);
 
 			// Setup shader constants
-			NvHw::ShaderConstantBuffer ConstantBuffer;
+			NvHair::ShaderConstantBuffer ConstantBuffer;
 			HairWorks::GetSDK()->prepareShaderConstantBuffer(HairSceneProxy.GetHairInstanceId(), ConstantBuffer);
 
-			ID3D11ShaderResourceView* HairSrvs[NvHw::ShaderResourceType::COUNT_OF];
-			HairWorks::GetSDK()->getShaderResources(HairSceneProxy.GetHairInstanceId(), NV_NULL, NvHw::ShaderResourceType::COUNT_OF, Nv::Dx11Type::getPtr(HairSrvs));
+			ID3D11ShaderResourceView* HairSrvs[NvHair::ShaderResourceType::COUNT_OF];
+			HairWorks::GetSDK()->getShaderResources(HairSceneProxy.GetHairInstanceId(), NV_NULL, NvHair::ShaderResourceType::COUNT_OF, NvCo::Dx11Type::getPtr(HairSrvs));
 
-			PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHw_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs);
+			PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHair_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs);
 
 			// Flush render states
 			HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
@@ -888,25 +925,115 @@ namespace HairWorksRenderer
 			// Draw hair
 			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
 
-			HairWorks::GetSDK()->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ViewMatrix), reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ProjMatrix), NvHw::HandednessHint::LEFT);
+			HairWorks::GetSDK()->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ViewMatrix), reinterpret_cast<const gfsdk_float4x4&>(View.ViewMatrices.ProjMatrix), NvHair::HandednessHint::LEFT);
 
 			HairSceneProxy.Draw(FHairWorksSceneProxy::EDrawType::Visualization);
 		}
 	}
 
-	void StepSimulation(FRHICommandList& RHICmdList)
+	void RenderHitProxies(FRHICommandList & RHICmdList, const TArray<FViewInfo>& Views)
 	{
-		if (HairWorks::GetSDK() == nullptr)
+		SCOPED_DRAW_EVENT(RHICmdList, RenderHairHitProxies);
+
+		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
+
+		for(auto& View : Views)
+		{
+			// Pass camera information
+			auto ViewMatrices = View.ViewMatrices;
+
+			HairWorks::GetSDK()->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+			HairWorks::GetSDK()->setPrevViewProjection(reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+
+			for(auto& PrimitiveInfo : View.VisibleHairs)
+			{
+				auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
+				if(HairSceneProxy.GetHairInstanceId() == NvHair::INSTANCE_ID_NULL)
+					continue;
+
+				// Setup shader
+				TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
+				TShaderMapRef<FHairWorksHitProxyPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
+
+				static FGlobalBoundShaderState BoundShaderState;
+
+				SetGlobalBoundShaderState(
+					RHICmdList,
+					ERHIFeatureLevel::SM5,
+					BoundShaderState,
+					GSimpleElementVertexDeclaration.VertexDeclarationRHI,
+					*VertexShader,
+					*PixelShader
+					);
+
+				// Setup shader constants
+				PixelShader->SetParameters(RHICmdList, PrimitiveInfo->DefaultDynamicHitProxyId, View);
+
+				// Flush render states
+				HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
+
+				// Draw
+				HairSceneProxy.Draw();
+			}
+		}
+	}
+
+	void StepSimulation(FRHICommandList& RHICmdList, const TArray<FViewInfo>& Views)
+	{
+		// Trigger simulation
+		SCOPED_DRAW_EVENT(RHICmdList, SimulateHair);
+
+		if(HairWorks::GetSDK() == nullptr)
 			return;
 
-		HairWorks::GetSDK()->setCurrentContext(Nv::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
-
 		static uint32 LastFrameNumber = -1;
-		if (LastFrameNumber != GFrameNumberRenderThread)
+		if(LastFrameNumber != GFrameNumberRenderThread)
 		{
 			LastFrameNumber = GFrameNumberRenderThread;
 
+			HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
 			HairWorks::GetSDK()->stepSimulation();
+		}
+
+		// Update pin mesh transform
+		for(auto& View : Views)
+		{
+			for(auto& PrimitiveInfo : View.VisibleHairs)
+			{
+				auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
+				if(HairSceneProxy.GetHairInstanceId() == NvHair::INSTANCE_ID_NULL)
+					continue;
+
+				auto& Pins = HairSceneProxy.GetPinMeshes();
+
+				for(auto PinIndex = 0; PinIndex < Pins.Num(); ++PinIndex)
+				{
+					const auto& PinMeshes = Pins[PinIndex];
+
+					if(PinMeshes.Num() == 0)
+						continue;
+
+					FMatrix PinMatrix;
+					HairWorks::GetSDK()->getPinMatrix(HairSceneProxy.GetHairInstanceId(), PinIndex, reinterpret_cast<gfsdk_float4x4&>(PinMatrix));
+
+					// UE4 uses left hand system.
+					{
+						FTransform PinTransform(PinMatrix);
+						FVector Scale = PinTransform.GetScale3D();
+						Scale.X = -Scale.X;
+						PinTransform.SetScale3D(Scale);
+						PinMatrix = PinTransform.ToMatrixWithScale();
+					}
+
+					// Update mesh transform
+					for(const auto& PinMesh : PinMeshes)
+					{
+						const FMatrix NewLocalToWorld = PinMesh.LocalTransform * PinMatrix;
+
+						PinMesh.Mesh->ApplyLateUpdateTransform(PinMesh.Mesh->GetLocalToWorld().Inverse() * NewLocalToWorld);
+					}
+				}
+			}
 		}
 	}
 
@@ -923,10 +1050,10 @@ namespace HairWorksRenderer
 				continue;
 
 			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
-			if (HairSceneProxy.GetHairInstanceId() == NvHw::HairInstanceId::HAIR_INSTANCE_ID_NULL)
+			if (HairSceneProxy.GetHairInstanceId() == NvHair::INSTANCE_ID_NULL)
 				continue;
 
-			NvHw::HairInstanceDescriptor HairDesc;
+			NvHair::InstanceDescriptor HairDesc;
 			HairWorks::GetSDK()->getInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDesc);
 			if(!HairDesc.m_castShadows)
 				continue;
@@ -955,7 +1082,7 @@ namespace HairWorksRenderer
 					HairProjMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewMatrices[FaceIdx].ProjMatrix.M;
 				}
 
-				HairWorks::GetSDK()->setCubeMapViewProjection(HairViewMatrices, HairProjMatrices, Visible, NvHw::HandednessHint::LEFT);
+				HairWorks::GetSDK()->setCubeMapViewProjection(HairViewMatrices, HairProjMatrices, Visible, NvHair::HandednessHint::LEFT);
 
 				// Setup shader
 				static FGlobalBoundShaderState BoundShaderState;
@@ -967,7 +1094,7 @@ namespace HairWorksRenderer
 				// Setup camera
 				FViewMatrices ViewMatrices;
 				ViewMatrices.ViewMatrix = FTranslationMatrix(Shadow.PreShadowTranslation) * Shadow.SubjectAndReceiverMatrix;
-				HairWorks::GetSDK()->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHw::HandednessHint::LEFT);
+				HairWorks::GetSDK()->setViewProjection(reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
 
 				// Setup shader
 				TShaderMapRef<FHairWorksShadowDepthPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));

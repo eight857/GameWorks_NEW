@@ -3,8 +3,8 @@
 
 #include "HairWorksAsset.generated.h"
 
-namespace Nv{namespace HairWorks{
-	enum HairAssetId;
+namespace nvidia{namespace HairWorks{
+	enum AssetId;
 }}
 class UHairWorksMaterial;
 
@@ -42,6 +42,7 @@ class ENGINE_API UHairWorksAsset : public UObject
 	// Begin UObject interface.
 	virtual void Serialize(FArchive& Ar) override;
 	virtual void PostInitProperties() override;
+	virtual void PostLoad() override;
 	// End UObject interface.
 
 	UPROPERTY()
@@ -50,6 +51,8 @@ class ENGINE_API UHairWorksAsset : public UObject
 	UPROPERTY()
 	TArray<FName> BoneNames;
 
-	Nv::HairWorks::HairAssetId AssetId;
+	nvidia::HairWorks::AssetId AssetId;
+
+	uint32 PinsUpdateFrameNumber = -1;	// Update pin data once per frame
 };
 // @third party code - END HairWorks

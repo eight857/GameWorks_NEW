@@ -16,13 +16,20 @@ public:
 		Visualization,
 	};
 
-	struct FDynamicRenderData
+	struct FPinMesh
 	{
-		NvHw::HairInstanceDescriptor HairInstanceDesc;
-		TArray<UTexture2D*> Textures;
+		FMatrix LocalTransform = FMatrix::Identity;	// Relative transform to parent HairWorks component
+		FPrimitiveSceneProxy* Mesh = nullptr;
 	};
 
-	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, UHairWorksAsset& Hair, NvHw::HairInstanceId HairInstanceId);
+	struct FDynamicRenderData
+	{
+		NvHair::InstanceDescriptor HairInstanceDesc;
+		TArray<UTexture2D*> Textures;
+		TArray<TArray<FPinMesh>> PinMeshes;
+	};
+
+	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::InstanceId HairInstanceId);
 	~FHairWorksSceneProxy();
 	
 	//~ Begin FPrimitiveSceneProxy interface.
@@ -34,14 +41,18 @@ public:
 
 	void Draw(EDrawType DrawType = EDrawType::Normal)const;
 
-	NvHw::HairInstanceId GetHairInstanceId()const { return HairInstanceId; }
+	NvHair::InstanceId GetHairInstanceId()const { return HairInstanceId; }
 	const TArray<FTexture2DRHIRef>& GetTextures()const { return HairTextures; }
+	const TArray<TArray<FPinMesh>>& GetPinMeshes()const { return HairPinMeshes; }
 
 protected:
 	//** The hair */
-	NvHw::HairInstanceId HairInstanceId;
+	NvHair::InstanceId HairInstanceId;
 
 	//** Control textures */
 	TArray<FTexture2DRHIRef> HairTextures;
+
+	//** Pin meshes*/
+	TArray<TArray<FPinMesh>> HairPinMeshes;
 };
 // @third party code - END HairWorks

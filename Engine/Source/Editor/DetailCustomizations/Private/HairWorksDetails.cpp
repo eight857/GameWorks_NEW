@@ -55,16 +55,16 @@ void FHairWorksMaterialDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 		Category->Properties.Add(*Property.GetNameCPP());
 	}
 
-	// Collect selected hair properties
+	// Collect selected hair materials
 	TArray<TWeakObjectPtr<UObject>> CurrentObjects;
 	DetailBuilder.GetObjectsBeingCustomized(CurrentObjects);
 
-	TSharedRef<TArray<TWeakObjectPtr<UHairWorksMaterial>>> HairProperties(new TArray<TWeakObjectPtr<UHairWorksMaterial>>);
+	TSharedRef<TArray<TWeakObjectPtr<UHairWorksMaterial>>> HairMaterials(new TArray<TWeakObjectPtr<UHairWorksMaterial>>);
 	for(auto& ObjectPtr : CurrentObjects)
 	{
 		auto* HairMaterial = Cast<UHairWorksMaterial>(ObjectPtr.Get());
 		if(HairMaterial != nullptr)
-			HairProperties->Add(HairMaterial);
+			HairMaterials->Add(HairMaterial);
 	}
 
 	// Reset handler
@@ -117,7 +117,6 @@ void FHairWorksMaterialDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 		}
 	};
 
-
 	// Conditional edit handler
 	auto IsEditable = [](TSharedRef<TArray<TWeakObjectPtr<UHairWorksMaterial>>> SelectedObjects)
 	{
@@ -140,12 +139,12 @@ void FHairWorksMaterialDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 	auto AddPropertyHandler = [&](IDetailPropertyRow& DetailProperty)
 	{
 		DetailProperty.OverrideResetToDefault(FResetToDefaultOverride::Create(
-			FIsResetToDefaultVisible::CreateStatic(IsResetVisible, HairProperties),
-			FResetToDefaultHandler::CreateStatic(ResetProperty, HairProperties)
+			FIsResetToDefaultVisible::CreateStatic(IsResetVisible, HairMaterials),
+			FResetToDefaultHandler::CreateStatic(ResetProperty, HairMaterials)
 			));
 
 		DetailProperty.EditCondition(
-			TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateStatic(IsEditable, HairProperties)),
+			TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateStatic(IsEditable, HairMaterials)),
 			nullptr
 			);
 	};
@@ -171,8 +170,38 @@ void FHairWorksMaterialDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 			// Add properties
 			for(auto& PropertyName : Group->Properties)
 			{
-				auto& DetailProperty = DetailGroup.AddPropertyRow(DetailBuilder.GetProperty(PropertyName));
+				const auto& PropertyHandle = DetailBuilder.GetProperty(PropertyName);
+
+				auto& DetailProperty = DetailGroup.AddPropertyRow(PropertyHandle);
 				AddPropertyHandler(DetailProperty);
+
+				// Spacial case for pins.
+				if(PropertyHandle->GetProperty()->GetNameCPP() == "Pins")
+				{
+					// Pin array should not be reseted
+					DetailProperty.OverrideResetToDefault(FResetToDefaultOverride::Hide());
+
+					// Pins should be edited only in assets.
+					auto* HairMaterialNotInAsset = HairMaterials->FindByPredicate([](const auto& HairMaterial)
+					{
+						return !HairMaterial->GetOuter()->IsA<UHairWorksAsset>();
+					});
+
+					if(HairMaterialNotInAsset != nullptr)
+					{
+						DetailProperty.IsEnabled(false);
+						break;
+					}
+
+					// In asset, pin should not be reseted. Because pin bone name should not be reseted
+					uint32 ChildNum = 0;
+					PropertyHandle->GetNumChildren(ChildNum);
+					for(uint32 Index = 0; Index < ChildNum; ++Index)
+					{
+						const auto& PinHandle = PropertyHandle->GetChildHandle(Index);
+						DetailGroup.AddPropertyRow(PinHandle.ToSharedRef()).OverrideResetToDefault(FResetToDefaultOverride::Hide());
+					}
+				}
 			}
 		}
 	}

@@ -1036,7 +1036,7 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		// Do hair simulation
 		{
 			SCOPED_DRAW_EVENT(RHICmdList, HairSimulation);
-			HairWorksRenderer::StepSimulation(RHICmdList);
+			HairWorksRenderer::StepSimulation(RHICmdList, Views);
 		}
 
 		// Allocate hair render targets

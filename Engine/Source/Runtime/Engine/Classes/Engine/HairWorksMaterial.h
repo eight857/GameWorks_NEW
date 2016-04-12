@@ -2,9 +2,9 @@
 #pragma once
 
 #include "HairWorksMaterial.generated.h"
-
-namespace Nv{namespace HairWorks{
-	struct HairInstanceDescriptor;
+namespace nvidia{namespace HairWorks{
+	struct InstanceDescriptor;
+	struct Pin;
 }}
 
 UENUM()
@@ -27,6 +27,30 @@ enum class EHairWorksColorizeMode: uint8
 	Lod,
 	Tangents,
 	Normal,
+};
+
+USTRUCT(BlueprintType)
+struct ENGINE_API FHairWorksPin
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Physical|Pin")
+	FName Bone;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|Pin")
+	bool bDynamicPin = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|Pin")
+	bool bTetherPin = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|Pin", meta = (ClampMin = "0", ClampMax = "1"))
+	float Stiffness = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|Pin", meta = (ClampMin = "0", ClampMax = "1"))
+	float InfluenceFallOff = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|Pin")
+	FVector4 InfluenceFallOffCurve = FVector4(1, 1, 1, 1);
 };
 
 /**
@@ -55,9 +79,6 @@ class ENGINE_API UHairWorksMaterial: public UObject
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Visualization)
 	bool bBones;
-
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Visualization)
-	//bool bBoneNames;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Visualization)
 	bool bBoundingBox;
@@ -200,9 +221,12 @@ class ENGINE_API UHairWorksMaterial: public UObject
 #pragma endregion
 
 #pragma region Pin
-	/** Stiffness for pin constraints. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|Pin", meta = (DisplayName = "Stiffness", ClampMin = "0", ClampMax = "1"))
-	float PinStiffness = 1;
+	UPROPERTY(EditAnywhere, EditFixedSize, BlueprintReadWrite, Category = "Physical|Pin")
+	TArray<FHairWorksPin> Pins;
+
+	///** Stiffness for pin constraints. */
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|Pin", meta = (DisplayName = "Stiffness", ClampMin = "0", ClampMax = "1"))
+	//float PinStiffness = 1;
 #pragma endregion
 
 #pragma region Volume
@@ -498,7 +522,7 @@ class ENGINE_API UHairWorksMaterial: public UObject
 #pragma endregion
 
 	/** Read or write attributes from or to GFSDK_HairInstanceDescriptor. */
-	void SyncHairDescriptor(Nv::HairWorks::HairInstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor);
+	void SyncHairDescriptor(nvidia::HairWorks::InstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor);
 
 protected:
 	template<typename TParameter, typename TProperty>

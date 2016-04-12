@@ -8,9 +8,9 @@ UHairWorksMaterial::UHairWorksMaterial(const class FObjectInitializer& ObjectIni
 {
 }
 
-void UHairWorksMaterial::SyncHairDescriptor(NvHw::HairInstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor)
+void UHairWorksMaterial::SyncHairDescriptor(NvHair::InstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor)
 {
-	HairTextures.SetNum(NvHw::EHairTextureType::COUNT_OF, false);
+	HairTextures.SetNum(NvHair::ETextureType::COUNT_OF, false);
 
 #pragma region Visualization
 	auto SyncHairVisualizationFlag = [&](bool& HairFlag, bool& Property)
@@ -38,7 +38,7 @@ void UHairWorksMaterial::SyncHairDescriptor(NvHw::HairInstanceDescriptor& HairDe
 	SyncHairVisualizationFlag(HairDescriptor.m_visualizeSkinnedGuideHairs, bSkinnedGuideCurves);
 	if(bFromDescriptor)
 		ColorizeOptions = static_cast<EHairWorksColorizeMode>(HairDescriptor.m_colorizeMode);
-	else if(HairDescriptor.m_colorizeMode == NvHw::EColorizeMode::NONE)
+	else if(HairDescriptor.m_colorizeMode == NvHair::EColorizeMode::NONE)
 		HairDescriptor.m_colorizeMode = static_cast<unsigned>(ColorizeOptions);
 #pragma endregion
 
@@ -70,14 +70,14 @@ void UHairWorksMaterial::SyncHairDescriptor(NvHw::HairInstanceDescriptor& HairDe
 
 #pragma region Stiffness
 	SyncHairParameter(HairDescriptor.m_stiffness, StiffnessGlobal, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::STIFFNESS], StiffnessGlobalMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::STIFFNESS], StiffnessGlobalMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_stiffnessCurve, (gfsdk_float4&)StiffnessGlobalCurve, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_stiffnessStrength, StiffnessStrength, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_stiffnessStrengthCurve, (gfsdk_float4&)StiffnessStrengthCurve, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_stiffnessDamping, StiffnessDamping, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_stiffnessDampingCurve, (gfsdk_float4&)StiffnessDampingCurve, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_rootStiffness, StiffnessRoot, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::ROOT_STIFFNESS], StiffnessRootMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::ROOT_STIFFNESS], StiffnessRootMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_tipStiffness, StiffnessTip, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_bendStiffness, StiffnessBend, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_bendStiffnessCurve, (gfsdk_float4&)StiffnessBendCurve, bFromDescriptor);
@@ -91,22 +91,22 @@ void UHairWorksMaterial::SyncHairDescriptor(NvHw::HairInstanceDescriptor& HairDe
 	SyncHairParameter(HairDescriptor.m_interactionStiffnessCurve, (gfsdk_float4&)StiffnessInteractionCurve, bFromDescriptor);
 #pragma endregion
 
-#pragma region Pin
-	SyncHairParameter(HairDescriptor.m_pinStiffness, PinStiffness, bFromDescriptor);
-#pragma endregion
+//#pragma region Pin
+//	SyncHairParameter(HairDescriptor.m_pinStiffness, PinStiffness, bFromDescriptor);
+//#pragma endregion
 
 #pragma region Volume
 	SyncHairParameter(HairDescriptor.m_density, Density, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::DENSITY], DensityMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::DENSITY], DensityMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_usePixelDensity, bUsePixelDensity, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_lengthScale, LengthScale, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::LENGTH], LengthScaleMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::LENGTH], LengthScaleMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_lengthNoise, LengthNoise, bFromDescriptor);
 #pragma endregion
 
 #pragma region Strand Width
 	SyncHairParameter(HairDescriptor.m_width, WidthScale, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::WIDTH], WidthScaleMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::WIDTH], WidthScaleMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_widthRootScale, WidthRootScale, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_widthTipScale, WidthTipScale, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_widthNoise, WidthNoise, bFromDescriptor);
@@ -114,50 +114,50 @@ void UHairWorksMaterial::SyncHairDescriptor(NvHw::HairInstanceDescriptor& HairDe
 
 #pragma region Clumping
 	SyncHairParameter(HairDescriptor.m_clumpScale, ClumpingScale, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::CLUMP_SCALE], ClumpingScaleMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::CLUMP_SCALE], ClumpingScaleMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_clumpRoundness, ClumpingRoundness, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::CLUMP_ROUNDNESS], ClumpingRoundnessMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::CLUMP_ROUNDNESS], ClumpingRoundnessMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_clumpNoise, ClumpingNoise, bFromDescriptor);
 #pragma endregion
 
 #pragma region Waveness
 	SyncHairParameter(HairDescriptor.m_waveScale, WavinessScale, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::WAVE_SCALE], WavinessScaleMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::WAVE_SCALE], WavinessScaleMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_waveScaleNoise, WavinessScaleNoise, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_waveScaleStrand, WavinessScaleStrand, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_waveScaleClump, WavinessScaleClump, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_waveFreq, WavinessFreq, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::WAVE_FREQ], WavinessFreqMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::WAVE_FREQ], WavinessFreqMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_waveFreqNoise, WavinessFreqNoise, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_waveRootStraighten, WavinessRootStraigthen, bFromDescriptor);
 #pragma endregion
 
 #pragma region Color
 	SyncHairParameter(HairDescriptor.m_rootColor, (gfsdk_float4&)RootColor, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::ROOT_COLOR], RootColorMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::ROOT_COLOR], RootColorMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_tipColor, (gfsdk_float4&)TipColor, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::TIP_COLOR], TipColorMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::TIP_COLOR], TipColorMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_rootTipColorWeight, RootTipColorWeight, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_rootTipColorFalloff, RootTipColorFalloff, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_rootAlphaFalloff, RootAlphaFalloff, bFromDescriptor);
 #pragma endregion
 
 #pragma region Strand
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::STRAND], PerStrandTexture, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::STRAND], PerStrandTexture, bFromDescriptor);
 
 	switch(StrandBlendMode)
 	{
 	case EHairWorksStrandBlendMode::Overwrite:
-		HairDescriptor.m_strandBlendMode = NvHw::EStrandBlendMode::OVERWRITE;
+		HairDescriptor.m_strandBlendMode = NvHair::EStrandBlendMode::OVERWRITE;
 		break;
 	case EHairWorksStrandBlendMode::Multiply:
-		HairDescriptor.m_strandBlendMode = NvHw::EStrandBlendMode::MULTIPLY;
+		HairDescriptor.m_strandBlendMode = NvHair::EStrandBlendMode::MULTIPLY;
 		break;
 	case EHairWorksStrandBlendMode::Add:
-		HairDescriptor.m_strandBlendMode = NvHw::EStrandBlendMode::ADD;
+		HairDescriptor.m_strandBlendMode = NvHair::EStrandBlendMode::ADD;
 		break;
 	case EHairWorksStrandBlendMode::Modulate:
-		HairDescriptor.m_strandBlendMode = NvHw::EStrandBlendMode::MODULATE;
+		HairDescriptor.m_strandBlendMode = NvHair::EStrandBlendMode::MODULATE;
 		break;
 	}
 
@@ -171,7 +171,7 @@ void UHairWorksMaterial::SyncHairDescriptor(NvHw::HairInstanceDescriptor& HairDe
 
 #pragma region Specular
 	SyncHairParameter(HairDescriptor.m_specularColor, (gfsdk_float4&)SpecularColor, bFromDescriptor);
-	SyncHairParameter(HairTextures[NvHw::EHairTextureType::SPECULAR], SpecularColorMap, bFromDescriptor);
+	SyncHairParameter(HairTextures[NvHair::ETextureType::SPECULAR], SpecularColorMap, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_specularPrimary, PrimaryScale, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_specularPowerPrimary, PrimaryShininess, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_specularPrimaryBreakup, PrimaryBreakup, bFromDescriptor);

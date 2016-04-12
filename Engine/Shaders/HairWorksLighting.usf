@@ -4,7 +4,7 @@
 #pragma once
 
 #include "Common.usf"
-#include "NvHwShaderCommon.usf"
+#include "NvHairShaderCommon.usf"
 #include "HairWorksCommon.usf"
 
 bool bHairDeferredRendering;
@@ -111,8 +111,8 @@ float3 GetHairWorksDynamicLighting(float3 ScreenVector, float2 InUV, FHairScreen
 	float SurfaceAttenuation = (DistanceAttenuation * LightRadiusMask * SpotFalloff) * SurfaceShadow;
 
 	// Diffuse
-	NvHw_ConstantBuffer HairConstantBuffer;
-	float HairDiffuse = NvHw_ComputeHairDiffuseShading(
+	NvHair_ConstantBuffer HairConstantBuffer;
+	float HairDiffuse = NvHair_ComputeHairDiffuseShading(
 		L,
 		HairScreenSpaceData.Tangent,
 		HairScreenSpaceData.Normal,

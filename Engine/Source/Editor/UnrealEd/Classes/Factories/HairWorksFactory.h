@@ -3,9 +3,9 @@
 
 #include "HairWorksFactory.generated.h"
 
-namespace Nv{namespace HairWorks{
-	enum HairAssetId;
-	struct HairInstanceDescriptor;
+namespace nvidia{namespace HairWorks{
+	enum AssetId;
+	struct InstanceDescriptor;
 }}
 class UHairWorksAsset;
 
@@ -27,6 +27,6 @@ class UHairWorksFactory : public UFactory, public FReimportHandler
 	//~ End FReimportHandler Interface
 
 protected:
-	static void InitHairAssetInfo(UHairWorksAsset& Hair, Nv::HairWorks::HairAssetId HairAssetId, const Nv::HairWorks::HairInstanceDescriptor* NewInstanceDesc = nullptr);
+	static void InitHairAssetInfo(UHairWorksAsset& Hair, const nvidia::HairWorks::InstanceDescriptor* NewInstanceDesc = nullptr);
 };
 // @third party code - END HairWorks

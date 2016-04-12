@@ -111,7 +111,7 @@
 
 // @third party code - BEGIN HairWorks
 #include "SkelImport.h"
-#include <Nv/Foundation/NvMemoryReadStream.h>
+#include <Nv/Common/NvCoMemoryReadStream.h>
 #include "HairWorksSDK.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
@@ -6898,13 +6898,13 @@ bool UHairWorksFactory::FactoryCanImport(const FString& Filename)
 	TArray<uint8> Buffer;
 	FFileHelper::LoadFileToArray(Buffer, *Filename);
 
-	auto HairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
-	Nv::MemoryReadStream ReadStream(Buffer.GetData(), Buffer.Num());
-	HairWorks::GetSDK()->loadHairAsset(&ReadStream, HairAssetId);
+	auto HairAssetId = NvHair::ASSET_ID_NULL;
+	NvCo::MemoryReadStream ReadStream(Buffer.GetData(), Buffer.Num());
+	HairWorks::GetSDK()->loadAsset(&ReadStream, HairAssetId);
 
-	if(HairAssetId != NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
+	if(HairAssetId != NvHair::ASSET_ID_NULL)
 	{
-		HairWorks::GetSDK()->freeHairAsset(HairAssetId);
+		HairWorks::GetSDK()->freeAsset(HairAssetId);
 		return true;
 	}
 	else
@@ -6916,19 +6916,21 @@ FText UHairWorksFactory::GetDisplayName() const
 	return FText::FromString("HairWorks");
 }
 
-void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, NvHw::HairAssetId HairAssetId, const NvHw::HairInstanceDescriptor* NewInstanceDesc)
+void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, const NvHair::InstanceDescriptor* NewInstanceDesc)
 {
 	// Get bones. Used for bone remapping, etc.
-	check(HairWorks::GetSDK != nullptr);
+	check(HairWorks::GetSDK() != nullptr);
+	auto& HairSdk = *HairWorks::GetSDK();
+
 	{
-		Nv::Int BoneNum = HairWorks::GetSDK()->getNumBones(HairAssetId);
+		Nv::Int BoneNum = HairSdk.getNumBones(Hair.AssetId);
 
 		Hair.BoneNames.Empty(BoneNum);
 
 		for (Nv::Int Idx = 0; Idx < BoneNum; ++Idx)
 		{
-			Nv::Char BoneName[NV_HW_MAX_STRING];
-			HairWorks::GetSDK()->getBoneName(HairAssetId, Idx, BoneName);
+			Nv::Char BoneName[NV_HAIR_MAX_STRING];
+			HairSdk.getBoneName(Hair.AssetId, Idx, BoneName);
 
 			Hair.BoneNames.Add(*FSkeletalMeshImportData::FixupBoneName(BoneName));
 		}
@@ -6937,11 +6939,11 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, NvHw::HairAsset
 	// Get material
 	if(Hair.bMaterials)
 	{
-		NvHw::HairInstanceDescriptor HairInstanceDesc;
+		NvHair::InstanceDescriptor HairInstanceDesc;
 		if(NewInstanceDesc)
 			HairInstanceDesc = *NewInstanceDesc;
 		else
-			HairWorks::GetSDK()->getInstanceDescriptorFromAsset(HairAssetId, HairInstanceDesc);
+			HairSdk.getInstanceDescriptorFromAsset(Hair.AssetId, HairInstanceDesc);
 
 		// sRGB conversion
 		auto ConvertColorToSRGB = [](gfsdk_float4& Color)
@@ -6968,10 +6970,34 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, NvHw::HairAsset
 			Hair.HairMaterial->HairNormalCenter = Hair.BoneNames[HairInstanceDesc.m_hairNormalBoneIndex];
 
 		TArray<UTexture2D*> HairTextures;
-		NvHw::HairInstanceDescriptor TmpHairInstanceDesc;
+		NvHair::InstanceDescriptor TmpHairInstanceDesc;
 		Hair.HairMaterial->SyncHairDescriptor(TmpHairInstanceDesc, HairTextures, false);	// To keep textures.
 
 		Hair.HairMaterial->SyncHairDescriptor(HairInstanceDesc, HairTextures, true);
+	}
+
+	// Get pins
+	if(Hair.bConstraints)
+	{
+		TArray<NvHair::Pin> Pins;
+		Pins.AddDefaulted(HairSdk.getNumPins(Hair.AssetId));
+		HairSdk.getPins(Hair.AssetId, 0, Pins.Num(), Pins.GetData());
+
+		auto& EnginePins = Hair.HairMaterial->Pins;
+		EnginePins.Empty();
+
+		for(const auto& Pin : Pins)
+		{
+			FHairWorksPin EnginePin;
+			EnginePin.Bone = Hair.BoneNames[Pin.m_boneIndex];
+			EnginePin.bDynamicPin = Pin.m_useDynamicPin;
+			EnginePin.bTetherPin = Pin.m_doLra;
+			EnginePin.Stiffness = Pin.m_pinStiffness;
+			EnginePin.InfluenceFallOff = Pin.m_influenceFallOff;
+			EnginePin.InfluenceFallOffCurve = reinterpret_cast<const FVector4&>(Pin.m_influenceFallOffCurve);
+
+			EnginePins.Add(EnginePin);
+		}
 	}
 }
 
@@ -6990,11 +7016,11 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 	FEditorDelegates::OnAssetPreImport.Broadcast(this, Class, InParent, Name, FileType);
 
 	// Create real hair asset to get basic asset information
-	auto HairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
+	auto HairAssetId = NvHair::ASSET_ID_NULL;
 	
-	Nv::MemoryReadStream ReadStream(Buffer, BufferEnd - Buffer);
-	HairWorks::GetSDK()->loadHairAsset(&ReadStream, HairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
-	if(HairAssetId == NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
+	NvCo::MemoryReadStream ReadStream(Buffer, BufferEnd - Buffer);
+	HairWorks::GetSDK()->loadAsset(&ReadStream, HairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
+	if(HairAssetId == NvHair::ASSET_ID_NULL)
 	{
 		FEditorDelegates::OnAssetPostImport.Broadcast(this, nullptr);
 		return nullptr;
@@ -7003,11 +7029,10 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 	// Create UHairWorksAsset
 	auto* Hair = NewObject<UHairWorksAsset>(InParent, Name, Flags);
 
-	// Initialize hair
-	InitHairAssetInfo(*Hair, HairAssetId);
+	Hair->AssetId = HairAssetId;
 
-	// Clear temporary hair asset
-	HairWorks::GetSDK()->freeHairAsset(HairAssetId);
+	// Initialize hair
+	InitHairAssetInfo(*Hair);
 
 	// Setup import data
 	Hair->AssetImportData->Update(UFactory::CurrentFilename);
@@ -7053,10 +7078,11 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 	if (Hair == nullptr)
 		return EReimportResult::Failed;
 
-	// Create new hair asset
+	// Load new hair asset
 	check(HairWorks::GetSDK() != nullptr);
+	auto& HairSdk = *HairWorks::GetSDK();
 
-	auto NewHairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
+	auto NewHairAssetId = NvHair::ASSET_ID_NULL;
 	{	
 		// Load file
 		TArray<uint8> FileData;
@@ -7067,50 +7093,39 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 		}
 
 		// Create HairWorks asset
-		Nv::MemoryReadStream ReadStream(FileData.GetData(), FileData.Num());
-		HairWorks::GetSDK()->loadHairAsset(&ReadStream, NewHairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
-		if(NewHairAssetId == NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
+		NvCo::MemoryReadStream ReadStream(FileData.GetData(), FileData.Num());
+		HairSdk.loadAsset(&ReadStream, NewHairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
+		if(NewHairAssetId == NvHair::ASSET_ID_NULL)
 		{
 			UE_LOG(LogEditorFactories, Error, TEXT("Can't create Hair asset"));
 			return EReimportResult::Failed;
 		}
 	}
 
-	// Create target hair that we will copy things to
-	auto TgtHairAssetId = Hair->AssetId;
-	Hair->AssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;	// HairWorks asset must be recreated.
-	if(TgtHairAssetId == NvHw::HairAssetId::HAIR_ASSET_ID_NULL)
-	{
-		Nv::MemoryReadStream ReadStream(Hair->AssetData.GetData(), Hair->AssetData.Num());
-		HairWorks::GetSDK()->loadHairAsset(&ReadStream, TgtHairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
-	}
-
-	check(TgtHairAssetId != NvHw::HairAssetId::HAIR_ASSET_ID_NULL);
-
 	// Copy asset content
-	NvHw::HairInstanceDescriptor NewInstanceDesc;
+	NvHair::InstanceDescriptor NewInstanceDesc;
 	{
-		HairWorks::GetSDK()->getInstanceDescriptorFromAsset(NewHairAssetId, NewInstanceDesc);
+		HairSdk.getInstanceDescriptorFromAsset(NewHairAssetId, NewInstanceDesc);
 
-		NvHw::AssetCopySettings CopySettings;
+		NvHair::AssetCopySettings CopySettings;
 		CopySettings.m_copyAll = false;
 		CopySettings.m_copyCollision = Hair->bCollisions;
 		CopySettings.m_copyConstraints = Hair->bConstraints;
 		CopySettings.m_copyGroom = Hair->bGroom;
 		CopySettings.m_copyTextures = Hair->bTextures;
-		HairWorks::GetSDK()->copyAsset(NewHairAssetId, TgtHairAssetId, CopySettings);
+		HairSdk.copyAsset(NewHairAssetId, Hair->AssetId, CopySettings);
 
 		// Finished copy. Clear.
-		HairWorks::GetSDK()->freeHairAsset(NewHairAssetId);
-		NewHairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
+		HairSdk.freeAsset(NewHairAssetId);
+		NewHairAssetId = NvHair::ASSET_ID_NULL;
 	}
 
 	// Initialize hair
-	InitHairAssetInfo(*Hair, TgtHairAssetId, &NewInstanceDesc);
+	InitHairAssetInfo(*Hair, &NewInstanceDesc);
 
 	// Stream the updated HairWorks asset to asset data.
 	{
-		class FNvWriteStream: public Nv::WriteStream
+		class FNvWriteStream: public NvCo::WriteStream
 		{
 		public:
 			FNvWriteStream(TArray<uint8>& WriteBuffer): Buffer(WriteBuffer) {}
@@ -7129,11 +7144,7 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 
 		Hair->AssetData.Empty();
 		FNvWriteStream WriteStream(Hair->AssetData);
-		HairWorks::GetSDK()->saveHairAsset(&WriteStream, NvHw::SerializeFormat::XML, TgtHairAssetId);
-
-		// Finished streaming. Clear.
-		HairWorks::GetSDK()->freeHairAsset(TgtHairAssetId);
-		TgtHairAssetId = NvHw::HairAssetId::HAIR_ASSET_ID_NULL;
+		HairSdk.saveAsset(&WriteStream, NvHair::SerializeFormat::XML, Hair->AssetId);
 	}
 
 	// Notify components the change.

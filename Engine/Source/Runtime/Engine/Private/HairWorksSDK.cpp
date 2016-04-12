@@ -4,10 +4,10 @@
 #include "HairWorksSDK.h"
 
 #include "AllowWindowsPlatformTypes.h"
-#include <Nv/Platform/Dx11/Foundation/NvDx11Handle.h>
+#include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>
 #pragma warning(push)
 #pragma warning(disable: 4191)	// For DLL function pointer conversion
-#include <Nv/Platform/Win/HairWorks/NvHwWinLoadSdk.h>
+#include <Nv/HairWorks/Platform/Win/NvHairWinLoadSdk.h>
 #pragma warning(pop)
 #include "HideWindowsPlatformTypes.h"
 
@@ -15,27 +15,27 @@ DEFINE_LOG_CATEGORY(LogHairWorks);
 
 namespace HairWorks{
 	// Logger
-	class Logger: public Nv::Logger
+	class Logger: public NvCo::Logger
 	{
-		virtual void log(Nv::ELogSeverity severity, const Nv::Char* text, const Nv::Char* function, const Nv::Char* filename, Nv::Int lineNumber) override
+		virtual void log(NvCo::ELogSeverity severity, const Nv::Char* text, const Nv::Char* function, const Nv::Char* filename, Nv::Int lineNumber) override
 		{
 			ELogVerbosity::Type UELogVerb;
 
 			switch(severity)
 			{
-			case Nv::ELogSeverity::DEBUG_INFO:
+			case NvCo::ELogSeverity::DEBUG_INFO:
 				UELogVerb = ELogVerbosity::Log;
 				break;
-			case Nv::ELogSeverity::INFO:
+			case NvCo::ELogSeverity::INFO:
 				UELogVerb = ELogVerbosity::Display;
 				break;
-			case Nv::ELogSeverity::WARNING:
+			case NvCo::ELogSeverity::WARNING:
 				UELogVerb = ELogVerbosity::Warning;
 				break;
-			case Nv::ELogSeverity::NON_FATAL_ERROR:
+			case NvCo::ELogSeverity::NON_FATAL_ERROR:
 				UELogVerb = ELogVerbosity::Error;
 				break;
-			case Nv::ELogSeverity::FATAL_ERROR:
+			case NvCo::ELogSeverity::FATAL_ERROR:
 				UELogVerb = ELogVerbosity::Fatal;
 				break;
 			default:
@@ -52,16 +52,16 @@ namespace HairWorks{
 
 	ID3DHelper* D3DHelper = nullptr;
 
-	ENGINE_API NvHw::HairSdk* SDK = nullptr;
+	ENGINE_API NvHair::Sdk* SDK = nullptr;
 
-	ENGINE_API NvHw::ConversionSettings AssetConversionSettings;
+	ENGINE_API NvHair::ConversionSettings AssetConversionSettings;
 
-	ENGINE_API NvHw::HairSdk* GetSDK()
+	ENGINE_API NvHair::Sdk* GetSDK()
 	{
 		return SDK;
 	}
 
-	ENGINE_API const NvHw::ConversionSettings& GetAssetConversionSettings()
+	ENGINE_API const NvHair::ConversionSettings& GetAssetConversionSettings()
 	{
 		return AssetConversionSettings;
 	}
@@ -101,19 +101,19 @@ namespace HairWorks{
 
 		LibPath += TEXT(".dll");
 
-		SDK = NvHw::loadHairSdk(TCHAR_TO_ANSI(*LibPath), NV_HW_VERSION, nullptr, &logger);
+		SDK = NvHair::loadSdk(TCHAR_TO_ANSI(*LibPath), NV_HAIR_VERSION, nullptr, &logger);
 		if(SDK == nullptr)
 		{
 			UE_LOG(LogHairWorks, Error, TEXT("Failed to initialize HairWorks."));
 			return;
 		}
 
-		SDK->initRenderResources(Nv::Dx11Type::getHandle(&D3DDevice));
+		SDK->initRenderResources(NvCo::Dx11Type::getHandle(&D3DDevice));
 
 		D3DHelper = &InD3DHelper;
 
-		AssetConversionSettings.m_targetHandednessHint = NvHw::HandednessHint::LEFT;
-		AssetConversionSettings.m_targetUpAxisHint = NvHw::AxisHint::Z_UP;
+		AssetConversionSettings.m_targetHandednessHint = NvHair::HandednessHint::LEFT;
+		AssetConversionSettings.m_targetUpAxisHint = NvHair::AxisHint::Z_UP;
 	}
 
 	ENGINE_API void ShutDown()

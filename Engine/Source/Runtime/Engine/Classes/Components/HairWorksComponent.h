@@ -4,8 +4,8 @@
 #include "Engine/HairWorksInstance.h"
 #include "HairWorksComponent.generated.h"
 
-namespace Nv{namespace HairWorks{
-	enum HairInstanceId;
+namespace nvidia{namespace HairWorks{
+	enum InstanceId;
 }}
 
 /**
@@ -68,7 +68,7 @@ protected:
 	mutable TArray<FMatrix> BoneMatrices;
 
 	/** The hair */
-	Nv::HairWorks::HairInstanceId HairInstanceId;
+	nvidia::HairWorks::InstanceId HairInstanceId;
 };
 
 // @third party code - END HairWorks
