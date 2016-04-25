@@ -986,14 +986,8 @@ namespace HairWorksRenderer
 		if(HairWorks::GetSDK() == nullptr)
 			return;
 
-		static uint32 LastFrameNumber = -1;
-		if(LastFrameNumber != GFrameNumberRenderThread)
-		{
-			LastFrameNumber = GFrameNumberRenderThread;
-
-			HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
-			HairWorks::GetSDK()->stepSimulation();
-		}
+		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
+		HairWorks::GetSDK()->stepSimulation();
 
 		// Update pin mesh transform
 		for(auto& View : Views)

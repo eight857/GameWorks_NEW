@@ -8,21 +8,6 @@
 #include "Components/HairWorksPinTransformComponent.h"
 #include "Components/HairWorksComponent.h"
 
-/** 
- *  Component instance cached data class for HairWorks components. 
- *  Copies HairWorksInstance and HairWorksMaterial.
- */
-class FHairWorksComponentInstanceData: public FPrimitiveComponentInstanceData
-{
-public:
-	FHairWorksComponentInstanceData(const UHairWorksComponent* SourceComponent);
-
-	virtual void ApplyToComponent(UActorComponent* Component, const ECacheApplyPhase CacheApplyPhase) override;
-
-protected:
-	FHairWorksInstance HairInstance;
-};
-
 UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, HairInstanceId(NvHair::INSTANCE_ID_NULL)
@@ -50,18 +35,11 @@ UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectI
 
 UHairWorksComponent::~UHairWorksComponent()
 {
-	if(HairInstanceId != NvHair::INSTANCE_ID_NULL)
-	{
-		HairWorks::GetSDK()->freeInstance(HairInstanceId);
-		HairInstanceId = NvHair::INSTANCE_ID_NULL;
-	}
+	check(HairInstanceId == NvHair::INSTANCE_ID_NULL);
 }
 
 FPrimitiveSceneProxy* UHairWorksComponent::CreateSceneProxy()
 {
-	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
-		return nullptr;
-
 	return new FHairWorksSceneProxy(this, HairInstanceId);
 }
 
@@ -73,6 +51,7 @@ void UHairWorksComponent::OnAttachmentChanged()
 	// Setup bone mapping
 	SetupBoneMapping();
 
+	// Refresh render data
 	MarkRenderDynamicDataDirty();
 }
 
@@ -89,53 +68,74 @@ FBoxSphereBounds UHairWorksComponent::CalcBounds(const FTransform& LocalToWorld)
 	return Bounds.TransformBy(LocalToWorld);
 }
 
-void UHairWorksComponent::OnRegister()
+void UHairWorksComponent::SendRenderDynamicData_Concurrent()
 {
-	Super::OnRegister();
+	Super::SendRenderDynamicData_Concurrent();
 
-	if(HairWorks::GetSDK() == nullptr || HairInstance.Hair == nullptr)
-		return;
+	// Send data for rendering
+	SendHairDynamicData();
+}
 
+void UHairWorksComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// Mark to send dynamic data
+	MarkRenderDynamicDataDirty();
+}
+
+bool UHairWorksComponent::ShouldCreateRenderState() const
+{
+	return HairWorks::GetSDK() != nullptr && HairInstance.Hair != nullptr;
+}
+
+void UHairWorksComponent::CreateRenderState_Concurrent()
+{
 	// Initialize hair asset
-	if(HairInstance.Hair->AssetId == NvHair::INSTANCE_ID_NULL)
+	check(HairWorks::GetSDK() != nullptr && HairInstance.Hair != nullptr);
+
+	auto& HairSdk = *HairWorks::GetSDK();
+	if(HairInstance.Hair->AssetId == NvHair::ASSET_ID_NULL)
 	{
 		// Create hair asset
 		NvCo::MemoryReadStream ReadStream(HairInstance.Hair->AssetData.GetData(), HairInstance.Hair->AssetData.Num());
-		HairWorks::GetSDK()->loadAsset(&ReadStream, HairInstance.Hair->AssetId, nullptr, &HairWorks::GetAssetConversionSettings());
+		HairSdk.loadAsset(&ReadStream, HairInstance.Hair->AssetId, nullptr, &HairWorks::GetAssetConversionSettings());
 	}
 
 	// Initialize hair instance
+	HairSdk.createInstance(HairInstance.Hair->AssetId, HairInstanceId);
 	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
+		return;
+
+	// Disable this instance at first.
+	NvHair::InstanceDescriptor HairInstanceDesc;
+	HairSdk.getInstanceDescriptor(HairInstanceId, HairInstanceDesc);
+	if(HairInstanceDesc.m_enable)
 	{
-		HairWorks::GetSDK()->createInstance(HairInstance.Hair->AssetId, HairInstanceId);
-
-		// Disable this instance at first.
-		NvHair::InstanceDescriptor HairInstanceDesc;
-		HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, HairInstanceDesc);
-		if(HairInstanceDesc.m_enable)
-		{
-			HairInstanceDesc.m_enable = false;
-			HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairInstanceDesc);
-		}
-
-		// Setup bone look up table
-		BoneNameToIdx.Empty(HairInstance.Hair->BoneNames.Num());
-		for(auto Idx = 0; Idx < HairInstance.Hair->BoneNames.Num(); ++Idx)
-		{
-			BoneNameToIdx.Add(HairInstance.Hair->BoneNames[Idx], Idx);
-		}
+		HairInstanceDesc.m_enable = false;
+		HairSdk.updateInstanceDescriptor(HairInstanceId, HairInstanceDesc);
 	}
+
+	// Setup bone look up table
+	BoneNameToIdx.Empty(HairInstance.Hair->BoneNames.Num());
+	for(auto Idx = 0; Idx < HairInstance.Hair->BoneNames.Num(); ++Idx)
+	{
+		BoneNameToIdx.Add(HairInstance.Hair->BoneNames[Idx], Idx);
+	}
+
+	// Call super
+	Super::CreateRenderState_Concurrent();
 
 	// Setup bone mapping
 	SetupBoneMapping();
 
-	// Update bones
-	UpdateBones();
+	// Update proxy
+	SendHairDynamicData(true);	// Ensure correct visual effect at first frame.
 }
 
-void UHairWorksComponent::OnUnregister()
+void UHairWorksComponent::DestroyRenderState_Concurrent()
 {
-	Super::OnUnregister();
+	Super::DestroyRenderState_Concurrent();
 
 	// Delete this instance for next frame.
 	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
@@ -152,39 +152,7 @@ void UHairWorksComponent::OnUnregister()
 	HairInstanceId = NvHair::INSTANCE_ID_NULL;
 }
 
-void UHairWorksComponent::SendRenderDynamicData_Concurrent()
-{
-	Super::SendRenderDynamicData_Concurrent();
-
-	// Send data for rendering
-	SendHairDynamicData();
-}
-
-void UHairWorksComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	// Update bones, so that we can get hair bounds in game thread.
-	UpdateBones();
-
-	// Mark to send dynamic data
-	MarkRenderDynamicDataDirty();
-}
-
-FActorComponentInstanceData * UHairWorksComponent::GetComponentInstanceData() const
-{
-	return new FHairWorksComponentInstanceData(this);
-}
-
-void UHairWorksComponent::CreateRenderState_Concurrent()
-{
-	Super::CreateRenderState_Concurrent();
-
-	// Update proxy
-	SendHairDynamicData();	// Ensure correct visual effect at first frame.
-}
-
-void UHairWorksComponent::SendHairDynamicData()const
+void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 {
 	// Setup material
 	if(SceneProxy == nullptr)
@@ -227,8 +195,27 @@ void UHairWorksComponent::SendHairDynamicData()const
 	else
 		DynamicData->HairInstanceDesc.m_hairNormalWeight = 0;
 
+	// Setup skinning
+	if(ParentSkeleton != nullptr)
+	{
+		DynamicData->BoneMatrices.Init(FMatrix::Identity, BoneIndices.Num());
+
+		for(auto Idx = 0; Idx < BoneIndices.Num(); ++Idx)
+		{
+			const uint16& IdxInParent = BoneIndices[Idx];
+			if(IdxInParent >= ParentSkeleton->GetSpaceBases().Num())
+				continue;
+
+			const auto Matrix = ParentSkeleton->GetSpaceBases()[IdxInParent].ToMatrixWithScale();
+
+			DynamicData->BoneMatrices[Idx] = ParentSkeleton->SkeletalMesh->RefBasesInvMatrix[IdxInParent] * Matrix;
+		}
+
+		DynamicData->bForceSkinning = bForceSkinning;
+	}
+
 	// Setup pins
-	if(HairInstance.Hair->PinsUpdateFrameNumber != GFrameNumber)
+	if(HairInstance.Hair->PinsUpdateFrameNumber != GFrameNumber && HairInstance.Hair->HairMaterial->Pins.Num() > 0)
 	{
 		HairInstance.Hair->PinsUpdateFrameNumber = GFrameNumber;
 
@@ -326,29 +313,6 @@ void UHairWorksComponent::SetupBoneMapping()
 	}
 }
 
-void UHairWorksComponent::UpdateBones() const
-{
-	// Apply bone mapping
-	if(HairInstanceId == NvHair::INSTANCE_ID_NULL || ParentSkeleton == nullptr || ParentSkeleton->SkeletalMesh == nullptr)
-		return;
-
-	BoneMatrices.Init(FMatrix::Identity, BoneIndices.Num());
-
-	for(auto Idx = 0; Idx < BoneIndices.Num(); ++Idx)
-	{
-		const auto& IdxInParent = BoneIndices[Idx];
-		if(IdxInParent >= ParentSkeleton->GetSpaceBases().Num())
-			continue;
-
-		const auto Matrix = ParentSkeleton->GetSpaceBases()[IdxInParent].ToMatrixWithScale();
-
-		BoneMatrices[Idx] = ParentSkeleton->SkeletalMesh->RefBasesInvMatrix[IdxInParent] * Matrix;
-	}
-
-	// Update bones to HairWorks
-	HairWorks::GetSDK()->updateSkinningMatrices(HairInstanceId, BoneMatrices.Num(), reinterpret_cast<gfsdk_float4x4*>(BoneMatrices.GetData()));
-}
-
 #if WITH_EDITOR
 void UHairWorksComponent::PostEditChangeChainProperty(struct FPropertyChangedChainEvent& PropertyChangedEvent)
 {
@@ -375,26 +339,4 @@ void UHairWorksComponent::PostEditChangeChainProperty(struct FPropertyChangedCha
 	}
 }
 #endif
-
-FHairWorksComponentInstanceData::FHairWorksComponentInstanceData(const UHairWorksComponent * SourceComponent)
-	:FPrimitiveComponentInstanceData(SourceComponent)
-{
-	HairInstance = SourceComponent->HairInstance;
-}
-
-void FHairWorksComponentInstanceData::ApplyToComponent(UActorComponent * Component, const ECacheApplyPhase CacheApplyPhase)
-{
-	FPrimitiveComponentInstanceData::ApplyToComponent(Component, CacheApplyPhase);
-
-	// Copy HairInstance
-	auto& TgtHairInstance = CastChecked<UHairWorksComponent>(Component)->HairInstance;
-
-	TgtHairInstance.bOverride = HairInstance.bOverride;
-
-	for(TFieldIterator<UProperty> PropIt(UHairWorksMaterial::StaticClass()); PropIt; ++PropIt)
-	{
-		auto* Property = *PropIt;
-		Property->CopyCompleteValue_InContainer(TgtHairInstance.HairMaterial, HairInstance.HairMaterial);
-	}
-}
 // @third party code - END HairWorks

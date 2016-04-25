@@ -27,12 +27,11 @@ class ENGINE_API UHairWorksComponent : public UPrimitiveComponent
 	//~ End UPrimitiveComponent interface
 
 	//~ Begin UActorComponent interface
-	virtual void OnRegister() override;
-	virtual void OnUnregister() override;
 	virtual void SendRenderDynamicData_Concurrent() override;
+	virtual bool ShouldCreateRenderState() const override;
 	virtual void CreateRenderState_Concurrent() override;
+	virtual void DestroyRenderState_Concurrent() override;
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
-	virtual FActorComponentInstanceData* GetComponentInstanceData() const override;
 	//~ End UActorComponent interface
 
 	//~ Begin USceneComponent interface.
@@ -47,13 +46,13 @@ class ENGINE_API UHairWorksComponent : public UPrimitiveComponent
 
 protected:
 	/** Send data for rendering */
-	void SendHairDynamicData()const;
+	void SendHairDynamicData(bool bForceSkinning = false)const;
 
 	/** Bone mapping */
 	void SetupBoneMapping();
 
-	/** Set bones to HairWorks */
-	void UpdateBones()const;
+	/** Create HairWorks instance if not created yet*/
+	void PrepareHairInstance();
 
 	/** Parent skeleton */
 	UPROPERTY()
@@ -64,8 +63,6 @@ protected:
 	
 	/** Bone look up table */
 	TMap<FName, int> BoneNameToIdx;
-
-	mutable TArray<FMatrix> BoneMatrices;
 
 	/** The hair */
 	nvidia::HairWorks::InstanceId HairInstanceId;

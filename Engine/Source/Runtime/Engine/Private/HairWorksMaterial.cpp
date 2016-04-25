@@ -8,6 +8,36 @@ UHairWorksMaterial::UHairWorksMaterial(const class FObjectInitializer& ObjectIni
 {
 }
 
+void UHairWorksMaterial::PostLoad()
+{
+	Super::PostLoad();
+
+	// Compile shader
+	if(HairWorks::GetSDK() == nullptr)
+		return;
+
+	NvHair::InstanceDescriptor HairDesc;
+	TArray<UTexture2D*> HairTextures;
+	SyncHairDescriptor(HairDesc, HairTextures, false);
+
+	NvHair::ShaderCacheSettings ShaderCacheSettings;
+	ShaderCacheSettings.setFromInstanceDescriptor(HairDesc);
+
+	for(int Index = 0; Index < HairTextures.Num(); ++Index)
+	{
+		const auto* Texture = HairTextures[Index];
+		ShaderCacheSettings.setTextureUsed(Index, Texture != nullptr);
+	}
+
+	ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
+		HairUpdateDynamicData,
+		const NvHair::ShaderCacheSettings, ShaderCacheSettings, ShaderCacheSettings,
+		{
+			HairWorks::GetSDK()->addToShaderCache(ShaderCacheSettings);
+		}
+	);
+}
+
 void UHairWorksMaterial::SyncHairDescriptor(NvHair::InstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor)
 {
 	HairTextures.SetNum(NvHair::ETextureType::COUNT_OF, false);

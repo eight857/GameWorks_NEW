@@ -44,6 +44,9 @@ class ENGINE_API UHairWorksAsset : public UObject
 	virtual void PostInitProperties() override;
 	virtual void PostLoad() override;
 	// End UObject interface.
+		
+	/** Initialize pins. */
+	void InitPins()const;
 
 	UPROPERTY()
 	TArray<uint8> AssetData;

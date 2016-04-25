@@ -6976,29 +6976,9 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, const NvHair::I
 		Hair.HairMaterial->SyncHairDescriptor(HairInstanceDesc, HairTextures, true);
 	}
 
-	// Get pins
+	// Initialize pins
 	if(Hair.bConstraints)
-	{
-		TArray<NvHair::Pin> Pins;
-		Pins.AddDefaulted(HairSdk.getNumPins(Hair.AssetId));
-		HairSdk.getPins(Hair.AssetId, 0, Pins.Num(), Pins.GetData());
-
-		auto& EnginePins = Hair.HairMaterial->Pins;
-		EnginePins.Empty();
-
-		for(const auto& Pin : Pins)
-		{
-			FHairWorksPin EnginePin;
-			EnginePin.Bone = Hair.BoneNames[Pin.m_boneIndex];
-			EnginePin.bDynamicPin = Pin.m_useDynamicPin;
-			EnginePin.bTetherPin = Pin.m_doLra;
-			EnginePin.Stiffness = Pin.m_pinStiffness;
-			EnginePin.InfluenceFallOff = Pin.m_influenceFallOff;
-			EnginePin.InfluenceFallOffCurve = reinterpret_cast<const FVector4&>(Pin.m_influenceFallOffCurve);
-
-			EnginePins.Add(EnginePin);
-		}
-	}
+		Hair.InitPins();
 }
 
 UObject* UHairWorksFactory::FactoryCreateBinary(

@@ -521,6 +521,10 @@ class ENGINE_API UHairWorksMaterial: public UObject
 	float DetailLodBaseDensityScale = 1;
 #pragma endregion
 
+	//~ Begin UObject interface.
+	virtual void PostLoad()override;
+	//~ End UObject interface.
+
 	/** Read or write attributes from or to GFSDK_HairInstanceDescriptor. */
 	void SyncHairDescriptor(nvidia::HairWorks::InstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor);
 

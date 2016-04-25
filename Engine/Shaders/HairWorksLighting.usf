@@ -169,7 +169,13 @@ float3 GetHairWorksDynamicLighting(float3 ScreenVector, float2 InUV, FHairScreen
 	}
 
 	// Sum lighting
-	return (HairDiffuse * HairScreenSpaceData.Color + HairSpecular * HairScreenSpaceData.Specular) * SurfaceAttenuation * LightData.LightColorAndFalloffExponent.rgb + GlintAmbient * SurfaceAttenuation * HairScreenSpaceData.Color;
+	float3 OutColor = (HairDiffuse * HairScreenSpaceData.Color + HairSpecular * HairScreenSpaceData.Specular) * SurfaceAttenuation * LightData.LightColorAndFalloffExponent.rgb + GlintAmbient * SurfaceAttenuation * HairScreenSpaceData.Color;
+
+	// IES lighting
+	if(LightData.bRadialLight)
+		OutColor *= ComputeLightProfileMultiplier(WorldPosition, DeferredLightUniforms.LightPosition, DeferredLightUniforms.NormalizedLightDirection);
+
+	return OutColor;
 }
 
 float GetHairWorksDynamicLighting(out float3 OutColor, float3 ScreenVector, float2 InUV, FDeferredLightData LightData)

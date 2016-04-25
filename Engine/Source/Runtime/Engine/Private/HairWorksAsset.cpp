@@ -1,8 +1,9 @@
 // @third party code - BEGIN HairWorks
 #include "EnginePrivate.h"
 #include <Nv/Common/NvCoMemoryReadStream.h>
-#include "HairWorksSDK.h"
 #include "EditorFramework/AssetImportData.h"
+#include "HairWorksSDK.h"
+#include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
 
 UHairWorksAsset::UHairWorksAsset(const class FObjectInitializer& ObjectInitializer):
@@ -39,16 +40,45 @@ void UHairWorksAsset::PostLoad()
 	Super::PostLoad();
 
 	// Preload asset
-	static TAutoConsoleVariable<int> CVarPreloadAsset(TEXT("r.HairWorks.PreloadAsset."), 1, TEXT(""), ECVF_Default);
-	if(CVarPreloadAsset.GetValueOnGameThread() == 0)
-		return;
-
 	if(HairWorks::GetSDK() == nullptr)
 		return;
 
-	// Create hair asset
+	auto& HairSdk = *HairWorks::GetSDK();
+
 	check(AssetId == NvHair::ASSET_ID_NULL);
 	NvCo::MemoryReadStream ReadStream(AssetData.GetData(), AssetData.Num());
-	HairWorks::GetSDK()->loadAsset(&ReadStream, AssetId, nullptr, &HairWorks::GetAssetConversionSettings());
+	HairSdk.loadAsset(&ReadStream, AssetId, nullptr, &HairWorks::GetAssetConversionSettings());
+
+	// Initialize pins
+	if(AssetId != NvHair::ASSET_ID_NULL && HairMaterial->Pins.Num() == 0)
+		InitPins();
+}
+
+void UHairWorksAsset::InitPins() const
+{
+	// Get pins
+	check(AssetId != NvHair::ASSET_ID_NULL);
+	check(HairWorks::GetSDK() != nullptr);
+
+	auto& HairSdk = *HairWorks::GetSDK();
+	TArray<NvHair::Pin> Pins;
+	Pins.AddDefaulted(HairSdk.getNumPins(AssetId));
+	HairSdk.getPins(AssetId, 0, Pins.Num(), Pins.GetData());
+
+	auto& EnginePins = HairMaterial->Pins;
+	EnginePins.Empty();
+
+	for(const auto& Pin : Pins)
+	{
+		FHairWorksPin EnginePin;
+		EnginePin.Bone = BoneNames[Pin.m_boneIndex];
+		EnginePin.bDynamicPin = Pin.m_useDynamicPin;
+		EnginePin.bTetherPin = Pin.m_doLra;
+		EnginePin.Stiffness = Pin.m_pinStiffness;
+		EnginePin.InfluenceFallOff = Pin.m_influenceFallOff;
+		EnginePin.InfluenceFallOffCurve = reinterpret_cast<const FVector4&>(Pin.m_influenceFallOffCurve);
+
+		EnginePins.Add(EnginePin);
+	}
 }
 // @third party code - END HairWorks

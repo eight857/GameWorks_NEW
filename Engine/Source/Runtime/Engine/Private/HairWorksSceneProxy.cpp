@@ -32,6 +32,8 @@ FHairWorksSceneProxy::FHairWorksSceneProxy(const UPrimitiveComponent* InComponen
 	HairInstanceId(InHairInstanceId)
 {
 	HairTextures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
+
+	check(HairInstanceId != NvHair::INSTANCE_ID_NULL);
 }
 
 FHairWorksSceneProxy::~FHairWorksSceneProxy()
@@ -45,9 +47,6 @@ uint32 FHairWorksSceneProxy::GetMemoryFootprint(void) const
 
 void FHairWorksSceneProxy::Draw(EDrawType DrawType)const
 {
-	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
-		return;
-
 	if (DrawType == EDrawType::Visualization)
 	{
 		HairWorks::GetSDK()->renderVisualization(HairInstanceId);
@@ -100,8 +99,12 @@ FPrimitiveViewRelevance FHairWorksSceneProxy::GetViewRelevance(const FSceneView*
 
 void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData)
 {
-	if (HairInstanceId == NvHair::INSTANCE_ID_NULL)
-		return;
+	// Set skinning data
+	HairWorks::GetSDK()->updateSkinningMatrices(
+		HairInstanceId, DynamicData.BoneMatrices.Num(),
+		reinterpret_cast<const gfsdk_float4x4*>(DynamicData.BoneMatrices.GetData()),
+		DynamicData.bForceSkinning ? NvHair::ETeleportMode::WITH_SKINNED_POSITION : NvHair::ETeleportMode::NONE
+	);
 
 	// Update normal center bone
 	auto HairDesc = DynamicData.HairInstanceDesc;
@@ -125,7 +128,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 
 #undef HairVisualizerCVarUpdate
 
-	// Other
+	// Other parameters
 	HairDesc.m_modelToWorld = (gfsdk_float4x4&)GetLocalToWorld().M;
 	HairDesc.m_useViewfrustrumCulling = false;
 

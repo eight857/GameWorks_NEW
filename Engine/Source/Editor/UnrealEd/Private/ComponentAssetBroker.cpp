@@ -15,6 +15,7 @@
 #include "Components/AudioComponent.h"
 #include "Components/ChildActorComponent.h"
 // @third party code - BEGIN HairWorks
+#include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
 #include "Components/HairWorksComponent.h"
 // @third party code - END HairWorks
@@ -261,12 +262,20 @@ public:
 
 	virtual bool AssignAssetToComponent(UActorComponent* InComponent, UObject* InAsset) override
 	{
+		// Set asset
 		auto* HairWorksComponent = Cast<UHairWorksComponent>(InComponent);
 		auto* HairWorksAsset = Cast<UHairWorksAsset>(InAsset);
 		if(HairWorksComponent == nullptr || HairWorksAsset == nullptr)
 			return false;
 
 		HairWorksComponent->HairInstance.Hair = HairWorksAsset;
+
+		// Set properties of hair material to the same as the asset.
+		for(TFieldIterator<UProperty> PropIt(UHairWorksMaterial::StaticClass()); PropIt; ++PropIt)
+		{
+			auto* Property = *PropIt;
+			Property->CopyCompleteValue_InContainer(HairWorksComponent->HairInstance.HairMaterial, HairWorksAsset->HairMaterial);
+		}
 
 		return true;
 	}

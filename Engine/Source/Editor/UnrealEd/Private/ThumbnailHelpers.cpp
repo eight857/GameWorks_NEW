@@ -8,6 +8,9 @@
 #include "Particles/ParticleSystemComponent.h"
 #include "ContentStreaming.h"
 #include "Components/DirectionalLightComponent.h"
+// @third party code - BEGIN HairWorks
+#include "Components/HairWorksComponent.h"
+// @third party code - END HairWorks
 #include "Engine/StaticMeshActor.h"
 #include "Animation/AnimSingleNodeInstance.h"
 #include "Animation/BlendSpaceBase.h"
@@ -1018,6 +1021,14 @@ bool FClassActorThumbnailScene::IsValidComponentForVisualization(UActorComponent
 		{
 			return true;
 		}
+
+		// @third party code - BEGIN HairWorks
+		UHairWorksComponent* HairWorksComp = Cast<UHairWorksComponent>(Component);
+		if(HairWorksComp && HairWorksComp->HairInstance.Hair)
+		{
+			return true;
+		}
+		// @third party code - END HairWorks
 
 		/*
 		UParticleSystemComponent* ParicleSystemComp = Cast<UParticleSystemComponent>(PrimComp);

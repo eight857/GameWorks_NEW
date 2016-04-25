@@ -765,10 +765,10 @@ void FDeferredShadingSceneRenderer::RenderLights(FRHICommandListImmediate& RHICm
 				SceneContext.SetLightAttenuationMode(bUsedLightAttenuation);
 				SceneContext.BeginRenderingSceneColor(RHICmdList, ESimpleRenderTargetMode::EExistingColorAndDepth, FExclusiveDepthStencil::DepthRead_StencilWrite);
 
-			// @third party code - BEGIN HairWorks
-			if(HairWorksRenderer::ViewsHasHair(Views))
-				HairWorksRenderer::BeginRenderingSceneColor(RHICmdList);
-			// @third party code - END HairWorks
+				// @third party code - BEGIN HairWorks
+				if(HairWorksRenderer::ViewsHasHair(Views))
+					HairWorksRenderer::BeginRenderingSceneColor(RHICmdList);
+				// @third party code - END HairWorks
 
 				// Render the light to the scene color buffer, conditionally using the attenuation buffer or a 1x1 white texture as input 
 				if(bDirectLighting)
