@@ -102,8 +102,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 	// Set skinning data
 	HairWorks::GetSDK()->updateSkinningMatrices(
 		HairInstanceId, DynamicData.BoneMatrices.Num(),
-		reinterpret_cast<const gfsdk_float4x4*>(DynamicData.BoneMatrices.GetData()),
-		DynamicData.bForceSkinning ? NvHair::ETeleportMode::WITH_SKINNED_POSITION : NvHair::ETeleportMode::NONE
+		reinterpret_cast<const gfsdk_float4x4*>(DynamicData.BoneMatrices.GetData())
 	);
 
 	// Update normal center bone

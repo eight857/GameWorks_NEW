@@ -27,10 +27,6 @@ UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectI
 	bTickInEditor = true;
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
-
-	// Create hair material
-	HairInstance.HairMaterial = ObjectInitializer.CreateDefaultSubobject<UHairWorksMaterial>(this, FName(*UHairWorksMaterial::StaticClass()->GetName()));
-	HairInstance.HairMaterial->SetFlags(EObjectFlags::RF_Public);	// To avoid "Graph is linked to private object(s) in an external package." error in UPackage::SavePackage().
 }
 
 UHairWorksComponent::~UHairWorksComponent()
@@ -84,25 +80,102 @@ void UHairWorksComponent::TickComponent(float DeltaTime, enum ELevelTick TickTyp
 	MarkRenderDynamicDataDirty();
 }
 
+FActorComponentInstanceData * UHairWorksComponent::GetComponentInstanceData() const
+{
+	/**
+	 *  Component instance cached data class for HairWorks components.
+	 *  Copies HairInstance and HairMaterial. Because HairInstance contains instanced reference, HairMaterial, so it's not automatically copied. And HairMaterial is a instance reference, so it's not automatically copied either.
+	 */
+	class FHairWorksComponentInstanceData: public FPrimitiveComponentInstanceData
+	{
+	public:
+		FHairWorksComponentInstanceData(const UHairWorksComponent& SourceComponent)
+			:FPrimitiveComponentInstanceData(&SourceComponent)
+		{
+			if(!SourceComponent.IsEditableWhenInherited())
+				return;
+
+			class FHairInstancePropertyWriter: public FObjectWriter
+			{
+			public:
+				FHairInstancePropertyWriter(const UHairWorksComponent& HairComp, TArray<uint8>& InBytes)
+					: FObjectWriter(InBytes)
+				{
+					auto* Archetype = CastChecked<UHairWorksComponent>(HairComp.GetArchetype());
+
+					FHairWorksInstance::StaticStruct()->SerializeTaggedProperties(
+						*this,
+						(uint8*)&HairComp.HairInstance,
+						FHairWorksInstance::StaticStruct(),
+						(uint8*)&Archetype->HairInstance
+					);
+
+					UHairWorksMaterial::StaticClass()->SerializeTaggedProperties(
+						*this,
+						(uint8*)HairComp.HairInstance.HairMaterial,
+						UHairWorksMaterial::StaticClass(),
+						(uint8*)Archetype->HairInstance.HairMaterial
+					);
+				}
+
+				virtual bool ShouldSkipProperty(const UProperty* InProperty) const override
+				{
+					return (InProperty->HasAnyPropertyFlags(CPF_Transient | CPF_ContainsInstancedReference | CPF_InstancedReference)
+						|| !InProperty->HasAnyPropertyFlags(CPF_Edit | CPF_Interp));
+				}
+
+			private:
+			} HairInstancePropertyWriter(SourceComponent, SavedProperties);
+		}
+
+		virtual void ApplyToComponent(UActorComponent* Component, const ECacheApplyPhase CacheApplyPhase) override
+		{
+			FPrimitiveComponentInstanceData::ApplyToComponent(Component, CacheApplyPhase);
+
+			if(CacheApplyPhase != ECacheApplyPhase::PostUserConstructionScript || SavedProperties.Num() == 0)
+				return;
+
+			class FHairInstancePropertyReader: public FObjectReader
+			{
+			public:
+				FHairInstancePropertyReader(UHairWorksComponent& InComponent, TArray<uint8>& InBytes)
+					: FObjectReader(InBytes)
+				{
+					FHairWorksInstance::StaticStruct()->SerializeTaggedProperties(
+						*this,
+						(uint8*)&InComponent.HairInstance,
+						FHairWorksInstance::StaticStruct(),
+						nullptr
+					);
+
+					UHairWorksMaterial::StaticClass()->SerializeTaggedProperties(
+						*this,
+						(uint8*)InComponent.HairInstance.HairMaterial,
+						UHairWorksMaterial::StaticClass(),
+						nullptr
+					);
+				}
+			} HairInstancePropertyReader(*CastChecked<UHairWorksComponent>(Component), SavedProperties);
+		}
+
+	protected:
+		TArray<uint8> SavedProperties;
+	};
+
+	return new FHairWorksComponentInstanceData(*this);
+}
+
 bool UHairWorksComponent::ShouldCreateRenderState() const
 {
-	return HairWorks::GetSDK() != nullptr && HairInstance.Hair != nullptr;
+	return HairWorks::GetSDK() != nullptr && HairInstance.Hair != nullptr && HairInstance.Hair->AssetId != NvHair::ASSET_ID_NULL;
 }
 
 void UHairWorksComponent::CreateRenderState_Concurrent()
 {
-	// Initialize hair asset
-	check(HairWorks::GetSDK() != nullptr && HairInstance.Hair != nullptr);
+	// Initialize hair instance
+	check(HairWorks::GetSDK() != nullptr && HairInstance.Hair != nullptr && HairInstance.Hair->AssetId != NvHair::ASSET_ID_NULL);
 
 	auto& HairSdk = *HairWorks::GetSDK();
-	if(HairInstance.Hair->AssetId == NvHair::ASSET_ID_NULL)
-	{
-		// Create hair asset
-		NvCo::MemoryReadStream ReadStream(HairInstance.Hair->AssetData.GetData(), HairInstance.Hair->AssetData.Num());
-		HairSdk.loadAsset(&ReadStream, HairInstance.Hair->AssetId, nullptr, &HairWorks::GetAssetConversionSettings());
-	}
-
-	// Initialize hair instance
 	HairSdk.createInstance(HairInstance.Hair->AssetId, HairInstanceId);
 	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
 		return;
@@ -161,33 +234,49 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 	TSharedRef<FHairWorksSceneProxy::FDynamicRenderData> DynamicData(new FHairWorksSceneProxy::FDynamicRenderData);
 
 	DynamicData->Textures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
-
 	HairWorks::GetSDK()->getInstanceDescriptorFromAsset(HairInstance.Hair->AssetId, DynamicData->HairInstanceDesc);
-	DynamicData->HairInstanceDesc.m_visualizeBones = false;
-	DynamicData->HairInstanceDesc.m_visualizeBoundingBox = false;
-	DynamicData->HairInstanceDesc.m_visualizeCapsules = false;
-	DynamicData->HairInstanceDesc.m_visualizeControlVertices = false;
-	DynamicData->HairInstanceDesc.m_visualizeGrowthMesh = false;
-	DynamicData->HairInstanceDesc.m_visualizeGuideHairs = false;
-	DynamicData->HairInstanceDesc.m_visualizeHairInteractions = false;
-	DynamicData->HairInstanceDesc.m_visualizePinConstraints = false;
-	DynamicData->HairInstanceDesc.m_visualizeShadingNormals = false;
-	DynamicData->HairInstanceDesc.m_visualizeShadingNormalBone = false;
-	DynamicData->HairInstanceDesc.m_visualizeSkinnedGuideHairs = false;
 
 	FName HairNormalCenter;
 
-	if(HairInstance.Hair->HairMaterial != nullptr)	// Always load from asset to propagate visualization flags.
+	// Always load from asset to propagate visualization flags
+	if(HairInstance.Hair->HairMaterial != nullptr)
 	{
-		HairInstance.Hair->HairMaterial->SyncHairDescriptor(DynamicData->HairInstanceDesc, DynamicData->Textures, false);
+		HairInstance.Hair->HairMaterial->GetHairInstanceParameters(DynamicData->HairInstanceDesc, DynamicData->Textures);
 		HairNormalCenter = HairInstance.Hair->HairMaterial->HairNormalCenter;
 	}
 
+	// Load from component hair material
 	if(HairInstance.HairMaterial != nullptr && HairInstance.bOverride)
 	{
-		HairInstance.HairMaterial->SyncHairDescriptor(DynamicData->HairInstanceDesc, DynamicData->Textures, false);
+		NvHair::InstanceDescriptor OverideHairDesc;
+		HairInstance.HairMaterial->GetHairInstanceParameters(OverideHairDesc, DynamicData->Textures);
 		HairNormalCenter = HairInstance.HairMaterial->HairNormalCenter;
+
+		// Propagate visualization flags
+#define HairWorksMergeVisFlag(FlagName) OverideHairDesc.m_visualize##FlagName |= DynamicData->HairInstanceDesc.m_visualize##FlagName
+
+		HairWorksMergeVisFlag(Bones);
+		HairWorksMergeVisFlag(BoundingBox);
+		HairWorksMergeVisFlag(Capsules);
+		HairWorksMergeVisFlag(ControlVertices);
+		HairWorksMergeVisFlag(GrowthMesh);
+		HairWorksMergeVisFlag(GuideHairs);
+		HairWorksMergeVisFlag(HairInteractions);
+		HairWorksMergeVisFlag(PinConstraints);
+		HairWorksMergeVisFlag(ShadingNormals);
+		HairWorksMergeVisFlag(ShadingNormalBone);
+		HairWorksMergeVisFlag(SkinnedGuideHairs);
+#undef HairWorksMergeVisFlag
+
+		if(OverideHairDesc.m_colorizeMode == NvHair::ColorizeMode::NONE)
+			OverideHairDesc.m_colorizeMode = DynamicData->HairInstanceDesc.m_colorizeMode;
+
+		DynamicData->HairInstanceDesc = OverideHairDesc;
 	}
+
+	// Disable simulation
+	if(bForceSkinning)
+		DynamicData->HairInstanceDesc.m_simulate = false;
 
 	auto* BoneIdx = BoneNameToIdx.Find(HairNormalCenter);
 	if(BoneIdx != nullptr)
@@ -210,8 +299,6 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 
 			DynamicData->BoneMatrices[Idx] = ParentSkeleton->SkeletalMesh->RefBasesInvMatrix[IdxInParent] * Matrix;
 		}
-
-		DynamicData->bForceSkinning = bForceSkinning;
 	}
 
 	// Setup pins
@@ -313,30 +400,28 @@ void UHairWorksComponent::SetupBoneMapping()
 	}
 }
 
-#if WITH_EDITOR
-void UHairWorksComponent::PostEditChangeChainProperty(struct FPropertyChangedChainEvent& PropertyChangedEvent)
+void UHairWorksComponent::Serialize(FArchive & Ar)
 {
-	Super::PostEditChangeChainProperty(PropertyChangedEvent);
+	Super::Serialize(Ar);
 
-	// Initialize hair material when a hair asset is assigned
-	if(HairInstance.Hair == nullptr || HairInstance.Hair->HairMaterial == nullptr)
-		return;
-
-	auto* PropertyNode = PropertyChangedEvent.PropertyChain.GetActiveMemberNode();
-
-	if(
-		PropertyNode->GetValue()->GetName() != "HairInstance"
-		|| PropertyNode->GetNextNode() == nullptr
-		|| PropertyNode->GetNextNode()->GetValue()->GetName() != "Hair"
-		|| PropertyNode->GetNextNode()->GetNextNode() != nullptr
-		)
-		return;
-
-	for(TFieldIterator<UProperty> PropIt(UHairWorksMaterial::StaticClass()); PropIt; ++PropIt)
+	// When it's duplicated in Blueprints editor, instanced reference is shared, not duplicated. This should be a bug. So we have to duplicate hair material, which is a instanced reference, by ourselves.
+	if(Ar.IsLoading() && HairInstance.HairMaterial->GetOuter() != this)
 	{
-		auto* Property = *PropIt;
-		Property->CopyCompleteValue_InContainer(HairInstance.HairMaterial, HairInstance.Hair->HairMaterial);
+		HairInstance.HairMaterial = CastChecked<UHairWorksMaterial>(StaticDuplicateObject(HairInstance.HairMaterial, this));
 	}
+
+	check(HairInstance.HairMaterial->GetOuter() == this);
+
+	// Fix object flag for old assets
+	HairInstance.HairMaterial->SetFlags(GetMaskedFlags(RF_PropagateToSubObjects));
 }
-#endif
+
+void UHairWorksComponent::PostInitProperties()
+{
+	// Inherits parent flags. One purpose is to avoid "Graph is linked to private object(s) in an external package." error in UPackage::SavePackage(). Another purpose is to inherit archetype flag.
+	HairInstance.HairMaterial = NewObject<UHairWorksMaterial>(this, NAME_None, GetMaskedFlags(RF_PropagateToSubObjects));
+
+	Super::PostInitProperties();
+}
+
 // @third party code - END HairWorks

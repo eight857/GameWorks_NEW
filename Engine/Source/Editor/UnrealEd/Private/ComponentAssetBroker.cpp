@@ -15,6 +15,7 @@
 #include "Components/AudioComponent.h"
 #include "Components/ChildActorComponent.h"
 // @third party code - BEGIN HairWorks
+#include <Nv/HairWorks/NvHairSdk.h>
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
 #include "Components/HairWorksComponent.h"
@@ -271,11 +272,12 @@ public:
 		HairWorksComponent->HairInstance.Hair = HairWorksAsset;
 
 		// Set properties of hair material to the same as the asset.
-		for(TFieldIterator<UProperty> PropIt(UHairWorksMaterial::StaticClass()); PropIt; ++PropIt)
-		{
-			auto* Property = *PropIt;
-			Property->CopyCompleteValue_InContainer(HairWorksComponent->HairInstance.HairMaterial, HairWorksAsset->HairMaterial);
-		}
+		NvHair::InstanceDescriptor HairInstDesc;
+		TArray<UTexture2D*> HairTextures;
+		HairWorksAsset->HairMaterial->GetHairInstanceParameters(HairInstDesc, HairTextures);
+		HairWorksComponent->HairInstance.HairMaterial->SetHairInstanceParameters(HairInstDesc, HairTextures);
+
+		HairWorksComponent->HairInstance.HairMaterial->Pins = HairWorksAsset->HairMaterial->Pins;
 
 		return true;
 	}

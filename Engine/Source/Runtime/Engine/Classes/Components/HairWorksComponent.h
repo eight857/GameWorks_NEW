@@ -32,6 +32,7 @@ class ENGINE_API UHairWorksComponent : public UPrimitiveComponent
 	virtual void CreateRenderState_Concurrent() override;
 	virtual void DestroyRenderState_Concurrent() override;
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
+	virtual FActorComponentInstanceData* GetComponentInstanceData() const override;
 	//~ End UActorComponent interface
 
 	//~ Begin USceneComponent interface.
@@ -39,9 +40,8 @@ class ENGINE_API UHairWorksComponent : public UPrimitiveComponent
 	//~ End USceneComponent interface.
 
 	//~ Begin UObject interface.
-#if WITH_EDITOR
-	virtual void PostEditChangeChainProperty(struct FPropertyChangedChainEvent& PropertyChangedEvent)override;
-#endif
+	virtual void Serialize(FArchive& Ar) override;
+	virtual void PostInitProperties() override;
 	//~ End UObject interface.
 
 protected:

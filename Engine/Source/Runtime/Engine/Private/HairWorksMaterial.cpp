@@ -38,37 +38,36 @@ void UHairWorksMaterial::PostLoad()
 	);
 }
 
+void UHairWorksMaterial::GetHairInstanceParameters(nvidia::HairWorks::InstanceDescriptor & HairDescriptor, TArray<UTexture2D*>& HairTexture) const
+{
+	const_cast<UHairWorksMaterial*>(this)->SyncHairDescriptor(HairDescriptor, HairTexture, false);
+}
+
+void UHairWorksMaterial::SetHairInstanceParameters(const nvidia::HairWorks::InstanceDescriptor & HairDescriptor, const TArray<UTexture2D*>& HairTexture)
+{
+	SyncHairDescriptor(const_cast<nvidia::HairWorks::InstanceDescriptor&>(HairDescriptor), const_cast<TArray<UTexture2D*>&>(HairTexture), true);
+}
+
 void UHairWorksMaterial::SyncHairDescriptor(NvHair::InstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor)
 {
 	HairTextures.SetNum(NvHair::ETextureType::COUNT_OF, false);
 
 #pragma region Visualization
-	auto SyncHairVisualizationFlag = [&](bool& HairFlag, bool& Property)
-	{
-		if(bFromDescriptor)
-			Property = HairFlag;
-		else
-			HairFlag |= Property;
-	};
+	SyncHairParameter(HairDescriptor.m_visualizeBones, bBones, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizeBoundingBox, bBoundingBox, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizeCapsules, bCollisionCapsules, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizeControlVertices, bControlPoints, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizeGrowthMesh, bGrowthMesh, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizeGuideHairs, bGuideCurves, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizeHairInteractions, bHairInteraction, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizePinConstraints, bPinConstraints, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizeShadingNormals, bShadingNormal, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizeShadingNormalBone, bShadingNormalCenter, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_visualizeSkinnedGuideHairs, bSkinnedGuideCurves, bFromDescriptor);
 
 	if(bFromDescriptor)
-		bHair = HairDescriptor.m_drawRenderHairs;
-	else
-		HairDescriptor.m_drawRenderHairs &= bHair;
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeBones, bBones);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeBoundingBox, bBoundingBox);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeCapsules, bCollisionCapsules);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeControlVertices, bControlPoints);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeGrowthMesh, bGrowthMesh);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeGuideHairs, bGuideCurves);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeHairInteractions, bHairInteraction);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizePinConstraints, bPinConstraints);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeShadingNormals, bShadingNormal);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeShadingNormalBone, bShadingNormalCenter);
-	SyncHairVisualizationFlag(HairDescriptor.m_visualizeSkinnedGuideHairs, bSkinnedGuideCurves);
-	if(bFromDescriptor)
 		ColorizeOptions = static_cast<EHairWorksColorizeMode>(HairDescriptor.m_colorizeMode);
-	else if(HairDescriptor.m_colorizeMode == NvHair::EColorizeMode::NONE)
+	else
 		HairDescriptor.m_colorizeMode = static_cast<unsigned>(ColorizeOptions);
 #pragma endregion
 

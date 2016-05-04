@@ -1607,3 +1607,55 @@ USceneThumbnailInfo* FClassThumbnailScene::GetSceneThumbnailInfo(const float Tar
 	USceneThumbnailInfo* ThumbnailInfo = USceneThumbnailInfo::StaticClass()->GetDefaultObject<USceneThumbnailInfo>();
 	return ThumbnailInfo;
 }
+
+/*
+***************************************************************
+  FHairWorksAssetThumbnailScene
+***************************************************************
+*/
+
+FHairWorksAssetThumbnailScene::FHairWorksAssetThumbnailScene()
+{
+	bForceAllUsedMipsResident = false;
+
+	// Create preview actor
+	FActorSpawnParameters SpawnInfo;
+	SpawnInfo.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnInfo.bNoFail = true;
+	SpawnInfo.ObjectFlags = RF_Transient;
+	auto* PreviewActor = GetWorld()->SpawnActor<AActor>(SpawnInfo);
+	PreviewActor->SetActorEnableCollision(false);
+
+	// Create preview component
+	PreviewComp = NewObject<UHairWorksComponent>(PreviewActor);
+	PreviewActor->AddOwnedComponent(PreviewComp);
+	PreviewActor->RegisterAllComponents();
+}
+
+void FHairWorksAssetThumbnailScene::SetHairAsset(UHairWorksAsset* HairAsset)
+{
+	PreviewComp->HairInstance.Hair = HairAsset;
+	if(HairAsset != nullptr && PreviewComp->ShouldCreateRenderState())
+	{
+		PreviewComp->RecreateRenderState_Concurrent();
+		PreviewComp->AddLocalOffset(FVector(0, 0, PreviewComp->Bounds.SphereRadius - PreviewComp->Bounds.Origin.Z));
+		PreviewComp->UpdateBounds();
+		PreviewComp->MarkRenderDynamicDataDirty();
+	}
+}
+
+void FHairWorksAssetThumbnailScene::GetViewMatrixParameters(const float InFOVDegrees, FVector & OutOrigin, float & OutOrbitPitch, float & OutOrbitYaw, float & OutOrbitZoom) const
+{
+	const float HalfFOVRadians = FMath::DegreesToRadians<float>(InFOVDegrees) * 0.5f;
+	const auto& Bounds = PreviewComp->Bounds;
+	const float HalfMeshSize = Bounds.SphereRadius * 1.15;
+	const float TargetDistance = HalfMeshSize / FMath::Tan(HalfFOVRadians);
+
+	USceneThumbnailInfo* ThumbnailInfo = USceneThumbnailInfo::StaticClass()->GetDefaultObject<USceneThumbnailInfo>();
+	check(ThumbnailInfo);
+
+	OutOrigin = -Bounds.Origin;
+	OutOrbitPitch = ThumbnailInfo->OrbitPitch;
+	OutOrbitYaw = ThumbnailInfo->OrbitYaw;
+	OutOrbitZoom = TargetDistance + ThumbnailInfo->OrbitZoom;
+}

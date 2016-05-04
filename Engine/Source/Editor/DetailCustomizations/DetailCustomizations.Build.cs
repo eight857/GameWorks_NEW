@@ -67,5 +67,9 @@ public class DetailCustomizations : ModuleRules
 				"GameProjectGeneration",
 			}
 		);
+
+		// @third party code - BEGIN HairWorks
+		AddThirdPartyPrivateStaticDependencies(Target, "HairWorks");
+		// @third party code - END HairWorks
 	}
 }

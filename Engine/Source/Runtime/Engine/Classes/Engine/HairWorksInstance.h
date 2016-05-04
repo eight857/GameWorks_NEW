@@ -12,7 +12,7 @@ struct ENGINE_API FHairWorksInstance
 	GENERATED_USTRUCT_BODY()
 
 	/** Assign HairWorks asset here. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Asset)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = Asset)
 	UHairWorksAsset* Hair;
 
 	/** Whether override Hair Material of the HairWorks asset. */

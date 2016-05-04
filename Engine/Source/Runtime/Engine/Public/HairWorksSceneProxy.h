@@ -28,7 +28,6 @@ public:
 		TArray<UTexture2D*> Textures;
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
-		bool bForceSkinning = false;
 	};
 
 	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::InstanceId HairInstanceId);

@@ -307,3 +307,22 @@ private:
 	/** The class that is currently being rendered. NULL when not rendering. */
 	UClass* CurrentClass;
 };
+
+class UHairWorksComponent;
+
+class UNREALED_API FHairWorksAssetThumbnailScene : public FThumbnailPreviewScene
+{
+public:
+	/** Constructor */
+	FHairWorksAssetThumbnailScene();
+
+	void SetHairAsset(UHairWorksAsset* HairAsset);
+
+protected:
+	// FThumbnailPreviewScene implementation
+	virtual void GetViewMatrixParameters(const float InFOVDegrees, FVector& OutOrigin, float& OutOrbitPitch, float& OutOrbitYaw, float& OutOrbitZoom) const override;
+
+private:
+	/** The HairWorks component used to display HairWorks asset thumbnails */
+	UHairWorksComponent* PreviewComp = nullptr;
+};

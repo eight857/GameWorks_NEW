@@ -525,10 +525,14 @@ class ENGINE_API UHairWorksMaterial: public UObject
 	virtual void PostLoad()override;
 	//~ End UObject interface.
 
+	/** Get and Set hair instance parameters*/
+	void GetHairInstanceParameters(nvidia::HairWorks::InstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTexture)const;
+	void SetHairInstanceParameters(const nvidia::HairWorks::InstanceDescriptor& HairDescriptor, const TArray<UTexture2D*>& HairTexture);
+
+protected:
 	/** Read or write attributes from or to GFSDK_HairInstanceDescriptor. */
 	void SyncHairDescriptor(nvidia::HairWorks::InstanceDescriptor& HairDescriptor, TArray<UTexture2D*>& HairTextures, bool bFromDescriptor);
 
-protected:
 	template<typename TParameter, typename TProperty>
 	void SyncHairParameter(TParameter& Parameter, TProperty& Property, bool bFromDescriptor)
 	{

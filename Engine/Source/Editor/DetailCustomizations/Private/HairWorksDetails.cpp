@@ -15,9 +15,8 @@ void FHairWorksMaterialDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 	// Build category tree.
 	struct FCategory
 	{
-		FName Name;
-		TArray<FName> Properties;
-		TArray<TSharedRef<FCategory>> Categories;
+		TSet<FName> Properties;
+		TMap<FName, TUniqueObj<FCategory>> Categories;
 	};
 
 	FCategory TopCategory;
@@ -35,42 +34,16 @@ void FHairWorksMaterialDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 		auto* Category = &TopCategory;
 		for(auto& CategoryName : ParsedNames)
 		{
-			auto* SubCategory = Category->Categories.FindByPredicate([&](const TSharedRef<FCategory>& Category){return Category->Name == *CategoryName; });
-			if(SubCategory != nullptr)
-			{
-				Category = &SubCategory->Get();
-			}
-			else
-			{
-				TSharedRef<FCategory> NewCategory(new FCategory);
-				NewCategory->Name = *CategoryName;
-
-				Category->Categories.Add(NewCategory);
-
-				Category = &NewCategory.Get();
-			}
+			Category = &*Category->Categories.FindOrAdd(FName(*CategoryName));
 		}
 
 		// Add property.
 		Category->Properties.Add(*Property.GetNameCPP());
 	}
 
-	// Collect selected hair materials
-	TArray<TWeakObjectPtr<UObject>> CurrentObjects;
-	DetailBuilder.GetObjectsBeingCustomized(CurrentObjects);
-
-	TSharedRef<TArray<TWeakObjectPtr<UHairWorksMaterial>>> HairMaterials(new TArray<TWeakObjectPtr<UHairWorksMaterial>>);
-	for(auto& ObjectPtr : CurrentObjects)
-	{
-		auto* HairMaterial = Cast<UHairWorksMaterial>(ObjectPtr.Get());
-		if(HairMaterial != nullptr)
-			HairMaterials->Add(HairMaterial);
-	}
-
-	// Reset handler
+	// Use asset's hair material as default object if possible.
 	static auto GetDefaultHairMaterial = [](const UHairWorksMaterial& HairMaterial)->UHairWorksMaterial&
 	{
-		// Use asset's hair material as default object if possible.
 		if(auto* HairWorksComponent = Cast<UHairWorksComponent>(HairMaterial.GetOuter()))
 		{
 			if(HairWorksComponent->HairInstance.Hair != nullptr)
@@ -80,100 +53,117 @@ void FHairWorksMaterialDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 		return *UHairWorksMaterial::StaticClass()->GetDefaultObject<UHairWorksMaterial>();
 	};
 
-	auto IsResetVisible = [](TSharedRef<IPropertyHandle> PropertyHandle, TSharedRef<TArray<TWeakObjectPtr<UHairWorksMaterial>>> SelectedObjects)
+	// Show reset label 
+	auto IsResetVisible = [](TSharedRef<IPropertyHandle> PropertyHandle)
 	{
 		if(!PropertyHandle->IsValidHandle())
 			return false;
 
-		for(auto& HairMaterial : *SelectedObjects)
+		TArray<UObject*> OuterObjects;
+		PropertyHandle->GetOuterObjects(OuterObjects);
+
+		for(auto OuterObj : OuterObjects)
 		{
-			if(!HairMaterial.IsValid())
+			auto* HairMaterial = Cast<UHairWorksMaterial>(OuterObj);
+			if(HairMaterial == nullptr)
 				continue;
 
 			auto& DefaultHairMaterial = GetDefaultHairMaterial(*HairMaterial);
 
 			auto& Property = *PropertyHandle->GetProperty();
-			if(!Property.Identical_InContainer(HairMaterial.Get(), &DefaultHairMaterial))
+			if(!Property.Identical_InContainer(HairMaterial, &DefaultHairMaterial))
 				return true;
 		}
 
 		return false;
 	};
 
-	auto ResetProperty = [](TSharedRef<IPropertyHandle> PropertyHandle, TSharedRef<TArray<TWeakObjectPtr<UHairWorksMaterial>>> SelectedObjects)
+	// Reset hair material property
+	auto ResetProperty = [](TSharedRef<IPropertyHandle> PropertyHandle)
 	{
 		if(!PropertyHandle->IsValidHandle())
 			return;
 
-		for(auto& HairMaterial : *SelectedObjects)
+		TArray<FString> Values;
+		PropertyHandle->GetPerObjectValues(Values);
+
+		TArray<UObject*> OuterObjects;
+		PropertyHandle->GetOuterObjects(OuterObjects);
+
+		for(auto Index = 0; Index < Values.Num(); ++Index)
 		{
-			if(!HairMaterial.IsValid())
+			auto* HairMaterial = Cast<UHairWorksMaterial>(OuterObjects[Index]);
+			if(HairMaterial == nullptr)
 				continue;
+
+			Values[Index].Reset();
 
 			auto& DefaultHairMaterial = GetDefaultHairMaterial(*HairMaterial);
-
-			auto& Property = *PropertyHandle->GetProperty();
-			Property.CopyCompleteValue_InContainer(HairMaterial.Get(), &DefaultHairMaterial);
+			PropertyHandle->GetProperty()->ExportText_InContainer(0, Values[Index], &DefaultHairMaterial, &DefaultHairMaterial, &DefaultHairMaterial, 0);
 		}
+
+		PropertyHandle->SetPerObjectValues(Values);
 	};
 
-	// Conditional edit handler
-	auto IsEditable = [](TSharedRef<TArray<TWeakObjectPtr<UHairWorksMaterial>>> SelectedObjects)
+	// Hair material can be edited only if override flag is checked
+	auto IsEnabled = [](TSharedRef<IPropertyHandle> PropHandle)
 	{
-		for(auto& HairMaterial : *SelectedObjects)
+		if(!PropHandle->IsValidHandle())
+			return true;
+
+		TArray<UObject*> OuterObjects;
+		PropHandle->GetOuterObjects(OuterObjects);
+
+		for(auto OuterObj : OuterObjects)
 		{
-			if(!HairMaterial.IsValid())
+			auto* HairComp = Cast<UHairWorksComponent>(OuterObj->GetOuter());
+			if(HairComp == nullptr)
 				continue;
 
-			if(auto* HairWorksComponent = Cast<UHairWorksComponent>(HairMaterial->GetOuter()))
-			{
-				if(!HairWorksComponent->HairInstance.bOverride)
-					return false;
-			}
+			if(!HairComp->HairInstance.bOverride)
+				return false;
 		}
 
 		return true;
 	};
 
 	// To Bind handles
-	auto AddPropertyHandler = [&](IDetailPropertyRow& DetailProperty)
+	auto AddPropertyHandler = [&](IDetailPropertyRow& DetailProperty, TSharedRef<IPropertyHandle> PropertyHandle)
 	{
 		DetailProperty.OverrideResetToDefault(FResetToDefaultOverride::Create(
-			FIsResetToDefaultVisible::CreateStatic(IsResetVisible, HairMaterials),
-			FResetToDefaultHandler::CreateStatic(ResetProperty, HairMaterials)
+			FIsResetToDefaultVisible::CreateStatic(IsResetVisible),
+			FResetToDefaultHandler::CreateStatic(ResetProperty)
 			));
 
-		DetailProperty.EditCondition(
-			TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateStatic(IsEditable, HairMaterials)),
-			nullptr
-			);
+		DetailProperty.IsEnabled(TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateStatic(IsEnabled, PropertyHandle)));
 	};
 
 	// Build property widgets
 	for(auto& Category : TopCategory.Categories)
 	{
 		// Add category
-		auto& CategoryBuilder = DetailBuilder.EditCategory(Category->Name, FText::GetEmpty(), ECategoryPriority::Uncommon);
+		auto& CategoryBuilder = DetailBuilder.EditCategory(Category.Key, FText::GetEmpty(), ECategoryPriority::Uncommon);
 
 		// Add properties
-		for(auto& PropertyName : Category->Properties)
+		for(auto& PropertyName : Category.Value->Properties)
 		{
-			auto& DetailProperty = CategoryBuilder.AddProperty(DetailBuilder.GetProperty(PropertyName));
-			AddPropertyHandler(DetailProperty);
+			const auto& PropHandle = DetailBuilder.GetProperty(PropertyName);
+			auto& DetailProperty = CategoryBuilder.AddProperty(PropHandle);
+			AddPropertyHandler(DetailProperty, PropHandle);
 		}
 
 		// Add groups
-		for(auto& Group : Category->Categories)
+		for(auto& Group : Category.Value->Categories)
 		{
-			auto& DetailGroup = CategoryBuilder.AddGroup(Group->Name, FText::FromName(Group->Name));
+			auto& DetailGroup = CategoryBuilder.AddGroup(Group.Key, FText::FromName(Group.Key));
 
 			// Add properties
-			for(auto& PropertyName : Group->Properties)
+			for(auto& PropertyName : Group.Value->Properties)
 			{
 				const auto& PropertyHandle = DetailBuilder.GetProperty(PropertyName);
 
 				auto& DetailProperty = DetailGroup.AddPropertyRow(PropertyHandle);
-				AddPropertyHandler(DetailProperty);
+				AddPropertyHandler(DetailProperty, PropertyHandle);
 
 				// Spacial case for pins.
 				if(PropertyHandle->GetProperty()->GetNameCPP() == "Pins")
@@ -182,12 +172,20 @@ void FHairWorksMaterialDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 					DetailProperty.OverrideResetToDefault(FResetToDefaultOverride::Hide());
 
 					// Pins should be edited only in assets.
-					auto* HairMaterialNotInAsset = HairMaterials->FindByPredicate([](const auto& HairMaterial)
-					{
-						return !HairMaterial->GetOuter()->IsA<UHairWorksAsset>();
-					});
+					TArray<UObject*> OuterObjects;
+					PropertyHandle->GetOuterObjects(OuterObjects);
 
-					if(HairMaterialNotInAsset != nullptr)
+					auto IsNotInAsset = [](const auto* OuterObj)
+					{
+						if(auto* HairMaterial = Cast<UHairWorksMaterial>(OuterObj))
+						{
+							return !HairMaterial->GetOuter()->IsA<UHairWorksAsset>();
+						}
+
+						return false;
+					};
+
+					if(OuterObjects.FindByPredicate(IsNotInAsset) != nullptr)
 					{
 						DetailProperty.IsEnabled(false);
 						break;
@@ -205,5 +203,60 @@ void FHairWorksMaterialDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 			}
 		}
 	}
+}
+
+TSharedRef<IDetailCustomization> FHairWorksComponentDetails::MakeInstance()
+{
+	return MakeShareable(new FHairWorksComponentDetails);
+}
+
+void FHairWorksComponentDetails::CustomizeDetails(IDetailLayoutBuilder & DetailBuilder)
+{
+	// When a hair asset is assigned, copy hair material from assets to components
+	auto OnHairAssetChanged = [](TSharedRef<IPropertyHandle> HairMaterialPropHandle)
+	{
+		// Set each property of hair material
+		if(!HairMaterialPropHandle->IsValidHandle())
+			return;
+
+		for(TFieldIterator<UProperty> PropIt(UHairWorksMaterial::StaticClass()); PropIt; ++PropIt)
+		{
+			auto* Property = *PropIt;
+
+			const auto& PropHandle = HairMaterialPropHandle->GetChildHandle(FName(*Property->GetName()));
+			check(PropHandle->IsValidHandle());
+
+			// Get value from hair material in hair asset
+			TArray<UObject*> OuterObjects;
+			PropHandle->GetOuterObjects(OuterObjects);
+			TArray<FString> Values;
+			PropHandle->GetPerObjectValues(Values);
+
+			for(auto Index = 0; Index < Values.Num(); ++Index)
+			{
+				auto* HairMaterial = Cast<UHairWorksMaterial>(OuterObjects[Index]);
+				if(HairMaterial == nullptr)
+					continue;
+
+				auto* HairComp = Cast<UHairWorksComponent>(HairMaterial->GetOuter());
+				if(HairComp == nullptr)
+					continue;
+
+				if(HairComp->HairInstance.Hair == nullptr)
+					continue;
+
+				auto* HairAssetMaterial = HairComp->HairInstance.Hair->HairMaterial;
+				Values[Index].Reset();
+				Property->ExportText_InContainer(0, Values[Index], HairAssetMaterial, HairAssetMaterial, HairAssetMaterial, 0);
+			}
+
+			// Set to property
+			PropHandle->SetPerObjectValues(Values);
+		}
+	};
+
+	const auto& HairAssetPropHandle = DetailBuilder.GetProperty("HairInstance.Hair");
+	const auto& HairMaterialPropHandle = DetailBuilder.GetProperty("HairInstance.HairMaterial");
+	HairAssetPropHandle->SetOnPropertyValueChanged(FSimpleDelegate::CreateStatic<>(OnHairAssetChanged, HairMaterialPropHandle));
 }
 // @third party code - END HairWorks

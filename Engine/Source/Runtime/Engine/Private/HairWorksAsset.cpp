@@ -32,6 +32,8 @@ void UHairWorksAsset::PostInitProperties()
 	}
 #endif
 
+	HairMaterial = NewObject<UHairWorksMaterial>(this, NAME_None, GetMaskedFlags(RF_PropagateToSubObjects));
+
 	Super::PostInitProperties();
 }
 

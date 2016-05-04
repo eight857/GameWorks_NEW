@@ -316,6 +316,7 @@ void FDetailCustomizationsModule::RegisterObjectCustomizations()
 
 	// @third party code - BEGIN HairWorks
 	RegisterCustomClassLayout("HairWorksMaterial", FOnGetDetailCustomizationInstance::CreateStatic(&FHairWorksMaterialDetails::MakeInstance));
+	RegisterCustomClassLayout("HairWorksComponent", FOnGetDetailCustomizationInstance::CreateStatic(&FHairWorksComponentDetails::MakeInstance));
 	// @third party code - END HairWorks
 }
 
