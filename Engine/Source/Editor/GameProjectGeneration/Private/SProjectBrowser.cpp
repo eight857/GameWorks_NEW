@@ -259,7 +259,7 @@ void SProjectBrowser::Construct( const FArguments& InArgs )
 
 				// Auto-load project
 				+ SHorizontalBox::Slot()
-				.FillWidth(1.0f)
+				.AutoWidth()
 				.VAlign(VAlign_Center)
 				[
 					SNew(SCheckBox)			
@@ -271,6 +271,11 @@ void SProjectBrowser::Construct( const FArguments& InArgs )
 					]
 				]
 
+				+SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SNullWidget::NullWidget
+				]
 				// Browse Button
 				+SHorizontalBox::Slot()
 				.AutoWidth()
@@ -623,7 +628,7 @@ TSharedPtr<SWidget> SProjectBrowser::OnGetContextMenuContent() const
 
 	FFormatNamedArguments Args;
 	Args.Add(TEXT("FileManagerName"), FPlatformMisc::GetFileManagerName());
-	const FText ExploreToText = FText::Format(NSLOCTEXT("GenericPlatform", "ShowInFileManager", "Show In {FileManagerName}"), Args);
+	const FText ExploreToText = FText::Format(NSLOCTEXT("GenericPlatform", "ShowInFileManager", "Show in {FileManagerName}"), Args);
 
 	MenuBuilder.AddMenuEntry(
 		ExploreToText,

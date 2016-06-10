@@ -37,7 +37,7 @@ TAutoConsoleVariable<int32> CVarD3D11ZeroBufferSizeInMB(
 	ECVF_ReadOnly
 	);
 
-FD3D11DynamicRHI::FD3D11DynamicRHI(IDXGIFactory1* InDXGIFactory1,D3D_FEATURE_LEVEL InFeatureLevel, int32 InChosenAdapter) :
+FD3D11DynamicRHI::FD3D11DynamicRHI(IDXGIFactory1* InDXGIFactory1,D3D_FEATURE_LEVEL InFeatureLevel, int32 InChosenAdapter, const DXGI_ADAPTER_DESC& InChosenDescription) :
 	DXGIFactory1(InDXGIFactory1),
 	bDeviceRemoved(false),
 	FeatureLevel(InFeatureLevel),
@@ -58,7 +58,8 @@ FD3D11DynamicRHI::FD3D11DynamicRHI(IDXGIFactory1* InDXGIFactory1,D3D_FEATURE_LEV
 	PendingNumIndices(0),
 	PendingIndexDataStride(0),
 	GPUProfilingData(this),
-	ChosenAdapter(InChosenAdapter)
+	ChosenAdapter(InChosenAdapter),
+	ChosenDescription(InChosenDescription)
 {
 	// This should be called once at the start 
 	check(ChosenAdapter >= 0);
@@ -188,6 +189,7 @@ FD3D11DynamicRHI::FD3D11DynamicRHI(IDXGIFactory1* InDXGIFactory1,D3D_FEATURE_LEV
 	GMaxTextureMipCount = FMath::Min<int32>( MAX_TEXTURE_MIP_COUNT, GMaxTextureMipCount );
 	GMaxShadowDepthBufferSizeX = 4096;
 	GMaxShadowDepthBufferSizeY = 4096;
+	GSupportsTimestampRenderQueries = true;
 
 	// Initialize the constant buffers.
 	InitConstantBuffers();
@@ -234,9 +236,9 @@ void FD3D11DynamicRHI::Shutdown()
 	ZeroBufferSize = 0;
 }
 
-void FD3D11DynamicRHI::RHIPushEvent(const TCHAR* Name)
+void FD3D11DynamicRHI::RHIPushEvent(const TCHAR* Name, FColor Color)
 { 
-	GPUProfilingData.PushEvent(Name);
+	GPUProfilingData.PushEvent(Name, Color);
 }
 
 void FD3D11DynamicRHI::RHIPopEvent()
@@ -415,6 +417,19 @@ void FD3D11DynamicRHI::UpdateMSAASettings()
 	AvailableMSAAQualities[8] = 0;
 }
 
+#if !PLATFORM_SEH_EXCEPTIONS_DISABLED
+static int32 ReportDiedDuringDeviceShutdown(LPEXCEPTION_POINTERS ExceptionInfo)
+{
+	UE_LOG(LogD3D11RHI, Error, TEXT("Crashed freeing up the D3D11 device."));
+	if (GDynamicRHI)
+	{
+		GDynamicRHI->FlushPendingLogs();
+	}
+
+	return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+
 void FD3D11DynamicRHI::CleanupD3DDevice()
 {
 	UE_LOG(LogD3D11RHI, Log, TEXT("CleanupD3DDevice"));
@@ -474,9 +489,26 @@ void FD3D11DynamicRHI::CleanupD3DDevice()
 			Direct3DDeviceIMContext->Flush();
 		}
 
-		Direct3DDeviceIMContext = NULL;
+		Direct3DDeviceIMContext = nullptr;
 
-		Direct3DDevice = NULL;
+#if !PLATFORM_SEH_EXCEPTIONS_DISABLED
+		if (IsRHIDeviceNVIDIA())
+		{
+			//UE-18906: Workaround to trap crash in NV driver
+			__try
+			{
+				Direct3DDevice = nullptr;
+			}
+			__except (ReportDiedDuringDeviceShutdown(GetExceptionInformation()))
+			{
+				FPlatformMisc::MemoryBarrier();
+			}
+		}
+		else
+#endif
+		{
+			Direct3DDevice = nullptr;
+		}
 	}
 }
 

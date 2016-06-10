@@ -30,7 +30,6 @@ We publish source for the engine in three rolling branches:
 
 The **[release branch](https://github.com/EpicGames/UnrealEngine/tree/release)** is extensively tested by our QA team and makes a great starting point for learning the engine or
 making your own games. We work hard to make releases stable and reliable, and aim to publish new releases every few months.
->**Important**: The Release branch has unintentionally been overwritten with code from the 4.11 Previews, and is *not* currently the latest and stable release. Please use Tags to grab the latest 4.10 release for our most stable version. This message will be removed when this matter has been resolved. 
 
 The **[promoted branch](https://github.com/EpicGames/UnrealEngine/tree/promoted)** is updated with builds for our artists and designers to use. We try to update it daily 
 (though we often catch things that prevent us from doing so) and it's a good balance between getting the latest cool stuff and knowing most things work.
@@ -90,8 +89,8 @@ The steps below will take you through cloning your own private fork, then compil
 
 1. In the same folder, double-click **GenerateProjectFiles.command**.  It should take less than a minute to complete.  
 
-1. Load the project into Xcode by double-clicking on the **UE4.xcworkspace** file. Select the **UE4** for **My Mac** target in the title bar,
-   then select the 'Product > Build' menu item. Compiling may take anywhere between 15 and 40 minutes, depending on your system specs.
+1. Load the project into Xcode by double-clicking on the **UE4.xcworkspace** file. Select the **ShaderCompileWorker** for **My Mac** target in the title bar,
+   then select the 'Product > Build' menu item. When Xcode finishes building, do the same for the **UE4** for **My Mac** target. Compiling may take anywhere between 15 and 40 minutes, depending on your system specs.
    
 1. After compiling finishes, select the 'Product > Run' menu item to load the editor.
 
@@ -141,3 +140,4 @@ The engine is optimizing content for your platform to the _derived data cache_, 
 
 Your private forks of the Unreal Engine code are associated with your GitHub account permissions.
 If you unsubscribe or switch GitHub user names, you'll need to re-fork and upload your changes from a local copy. 
+

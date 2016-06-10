@@ -39,7 +39,6 @@ public class DetailCustomizations : ModuleRules
                 "InternationalizationSettings",
 				"SourceCodeAccess",
 				"RHI",
-                "MediaAssets",
                 "HardwareTargeting",
 				"SharedSettingsWidgets",
                 "LightPropagationVolumeRuntime",
@@ -47,6 +46,7 @@ public class DetailCustomizations : ModuleRules
                 "MeshUtilities",
 				"ConfigEditor",
                 "Persona",
+                "CinematicCamera",
 			}
 		);
 

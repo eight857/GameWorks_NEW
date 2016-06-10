@@ -124,22 +124,24 @@ void SLevelViewportToolBar::Construct( const FArguments& InArgs )
 		.ColorAndOpacity( this, &SViewportToolBar::OnGetColorAndOpacity )
 		.ForegroundColor( FEditorStyle::GetSlateColor(DefaultForegroundName) )
 		[
-			SNew( SVerticalBox )
-			+ SVerticalBox::Slot()
-			.AutoHeight()
+			SNew( SHorizontalBox )
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding( ToolbarSlotPadding )
+			[
+				SNew( SEditorViewportToolbarMenu )
+				.ParentToolBar( SharedThis( this ) )
+				.Cursor( EMouseCursor::Default )
+				.Image( "EditorViewportToolBar.MenuDropdown" )
+				.AddMetaData<FTagMetaData>(FTagMetaData(TEXT("EditorViewportToolBar.MenuDropdown")))
+				.OnGetMenuContent( this, &SLevelViewportToolBar::GenerateOptionsMenu )
+			]
+
+			+ SHorizontalBox::Slot()
 			[
 				SNew( SHorizontalBox )
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.Padding( ToolbarSlotPadding )
-				[
-					SNew( SEditorViewportToolbarMenu )
-					.ParentToolBar( SharedThis( this ) )
-					.Cursor( EMouseCursor::Default )
-					.Image( "EditorViewportToolBar.MenuDropdown" )
-					.AddMetaData<FTagMetaData>(FTagMetaData(TEXT("EditorViewportToolBar.MenuDropdown")))
-					.OnGetMenuContent( this, &SLevelViewportToolBar::GenerateOptionsMenu )
-				]
+				.Visibility(Viewport.Pin().Get(), &SLevelViewport::GetFullToolbarVisibility)
+
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.Padding( ToolbarSlotPadding )
@@ -192,7 +194,7 @@ void SLevelViewportToolBar::Construct( const FArguments& InArgs )
 					SNew(STransformViewportToolBar)
 					.Viewport(ViewportRef)
 					.CommandList(LevelEditorModule.GetGlobalLevelEditorActions())
-					.Extenders(LevelEditorModule.GetToolBarExtensibilityManager()->GetAllExtenders())					
+					.Extenders(LevelEditorModule.GetToolBarExtensibilityManager()->GetAllExtenders())
 					.Visibility(ViewportRef, &SLevelViewport::GetTransformToolbarVisibility)
 				]
 				+ SHorizontalBox::Slot()
@@ -503,6 +505,7 @@ TSharedRef<SWidget> SLevelViewportToolBar::GenerateOptionsMenu() const
 			OptionsMenuBuilder.AddMenuEntry( FEditorViewportCommands::Get().ToggleRealTime );
 			OptionsMenuBuilder.AddMenuEntry( FEditorViewportCommands::Get().ToggleStats );
 			OptionsMenuBuilder.AddMenuEntry( FEditorViewportCommands::Get().ToggleFPS );
+			OptionsMenuBuilder.AddMenuEntry( LevelViewportActions.ToggleViewportToolbar );
 
 			FText HideAllLabel = LOCTEXT("HideAllLabel", "Hide All");
 			TArray< FLevelViewportCommands::FShowMenuCommand > HideStatsMenu;
@@ -692,6 +695,17 @@ void SLevelViewportToolBar::GeneratePlacedCameraMenuEntries( FMenuBuilder& Build
 	}
 }
 
+void SLevelViewportToolBar::GenerateViewportTypeMenu( FMenuBuilder& Builder ) const
+{
+	FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>(TEXT("LevelEditor"));
+	LevelEditorModule.IterateViewportTypes([&](FName, const FViewportTypeDefinition& InDefinition) {
+		if (InDefinition.ActivationCommand.IsValid())
+		{
+			Builder.AddMenuEntry(InDefinition.ActivationCommand);
+		}
+	});
+}
+
 TSharedRef<SWidget> SLevelViewportToolBar::GenerateCameraMenu() const
 {
 	Viewport.Pin()->OnFloatingButtonClicked();
@@ -710,7 +724,6 @@ TSharedRef<SWidget> SLevelViewportToolBar::GenerateCameraMenu() const
 		CameraMenuBuilder.AddMenuEntry(FEditorViewportCommands::Get().Front);
 		CameraMenuBuilder.AddMenuEntry(FEditorViewportCommands::Get().Back);
 	CameraMenuBuilder.EndSection();
-
 
 	TArray<ACameraActor*> Cameras;
 
@@ -733,6 +746,30 @@ TSharedRef<SWidget> SLevelViewportToolBar::GenerateCameraMenu() const
 	{
 		CameraMenuBuilder.BeginSection("CameraActors", CameraActorsHeading );
 			GeneratePlacedCameraMenuEntries( CameraMenuBuilder, Cameras );
+		CameraMenuBuilder.EndSection();
+	}
+
+	{
+		FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>(TEXT("LevelEditor"));
+
+		int32 NumCustomViewportTypes = 0;
+		LevelEditorModule.IterateViewportTypes([&](FName, const FViewportTypeDefinition&){ ++NumCustomViewportTypes; });
+
+		FText ViewportTypesHeading = LOCTEXT("ViewportTypes", "Viewport Type");
+		const uint32 MaxViewportTypesInTopLevelMenu = 4;
+		if( NumCustomViewportTypes > MaxViewportTypesInTopLevelMenu )
+		{
+			CameraMenuBuilder.BeginSection("ViewportTypes");
+			CameraMenuBuilder.AddSubMenu( ViewportTypesHeading, FText(), FNewMenuDelegate::CreateSP(this, &SLevelViewportToolBar::GenerateViewportTypeMenu) );
+			CameraMenuBuilder.EndSection();
+		}
+		else
+		{
+			CameraMenuBuilder.BeginSection("ViewportTypes", ViewportTypesHeading);
+			GenerateViewportTypeMenu(CameraMenuBuilder);
+			CameraMenuBuilder.EndSection();
+
+		}
 		CameraMenuBuilder.EndSection();
 	}
 
@@ -881,7 +918,7 @@ TSharedRef<SWidget> SLevelViewportToolBar::GenerateShowMenu() const
 		if( ShowMenu[SFG_Normal].Num() > 0 )
 		{
 			// Generate entries for the standard show flags
-			ShowMenuBuilder.BeginSection("LevelViewportShowFlagsCommon", LOCTEXT("CommonShowFlagHeader", "Common Show flags") );
+			ShowMenuBuilder.BeginSection("LevelViewportShowFlagsCommon", LOCTEXT("CommonShowFlagHeader", "Common Show Flags") );
 			{
 				for( int32 EntryIndex = 0; EntryIndex < ShowMenu[SFG_Normal].Num(); ++EntryIndex )
 				{
@@ -892,7 +929,7 @@ TSharedRef<SWidget> SLevelViewportToolBar::GenerateShowMenu() const
 		}
 
 		// Generate entries for the different show flags groups
-		ShowMenuBuilder.BeginSection("LevelViewportShowFlags", LOCTEXT("AllShowFlagHeader", "All Show flags"));
+		ShowMenuBuilder.BeginSection("LevelViewportShowFlags", LOCTEXT("AllShowFlagHeader", "All Show Flags"));
 		{
 			ShowMenuBuilder.AddSubMenu( LOCTEXT("PostProcessShowFlagsMenu", "Post Processing"), LOCTEXT("PostProcessShowFlagsMenu_ToolTip", "Post process show flags"),
 				FNewMenuDelegate::CreateStatic( &FillShowMenu, ShowMenu[SFG_PostProcess], 0 ) );
@@ -1225,10 +1262,27 @@ static void BuildBufferVisualizationMenu( FMenuBuilder& Menu )
 
 void SLevelViewportToolBar::CreateViewMenuExtensions(FMenuBuilder& MenuBuilder)
 {
+	{
+		struct Local
+		{
+			static void BuildLODMenu(FMenuBuilder& Menu, SLevelViewportToolBar* Toolbar)
+			{
+				Menu.BeginSection("LevelViewportLODColoration", LOCTEXT("LODModesHeader", "Level of Detail Coloration"));
+				{
+					Menu.AddMenuEntry(FEditorViewportCommands::Get().LODColorationMode, NAME_None, LOCTEXT("LODColorationModeDisplayName", "Mesh LODs"));
+					Menu.AddMenuEntry(FEditorViewportCommands::Get().HLODColorationMode, NAME_None, LOCTEXT("HLODColorationModeDisplayName", "Hierarchical LODs"));
+				}
+				Menu.EndSection();
+			}
+		};
+
+		MenuBuilder.AddSubMenu(LOCTEXT("VisualizeGroupedLODDisplayName", "Level of Detail Coloration"), LOCTEXT("GroupedLODMenu_ToolTip", "Select a mode for LOD Coloration"), FNewMenuDelegate::CreateStatic(&Local::BuildLODMenu, this), /*Default*/false, FSlateIcon(FEditorStyle::GetStyleSetName(), "EditorViewport.GroupLODColorationMode"));
+	}
+
 	MenuBuilder.BeginSection("LevelViewportDeferredRendering", LOCTEXT("DeferredRenderingHeader", "Deferred Rendering") );
 	MenuBuilder.EndSection();
-
-	MenuBuilder.AddSubMenu( LOCTEXT("VisualizeBufferViewModeDisplayName", "Buffer Visualization"), LOCTEXT("BufferVisualizationMenu_ToolTip", "Select a mode for buffer visualization"), FNewMenuDelegate::CreateStatic( &BuildBufferVisualizationMenu ), /*Default*/false, FSlateIcon(FEditorStyle::GetStyleSetName(), "EditorViewport.VisualizeBufferMode" ));
+	
+	MenuBuilder.AddSubMenu(LOCTEXT("VisualizeBufferViewModeDisplayName", "Buffer Visualization"), LOCTEXT("BufferVisualizationMenu_ToolTip", "Select a mode for buffer visualization"), FNewMenuDelegate::CreateStatic(&BuildBufferVisualizationMenu), /*Default*/false, FSlateIcon(FEditorStyle::GetStyleSetName(), "EditorViewport.VisualizeBufferMode"));
 
 	MenuBuilder.BeginSection("LevelViewportCollision", LOCTEXT("CollisionViewModeHeader", "Collision") );
 	{

@@ -10,7 +10,7 @@
 #include "BlueprintFunctionNodeSpawner.h" 
 #include "BlueprintEventNodeSpawner.h" 
 
-#define LOCTEXT_NAMESPACE ""
+#define LOCTEXT_NAMESPACE "BlueprintEditorCommands"
 
 /** UI_COMMAND takes long for the compile to optimize */
 PRAGMA_DISABLE_OPTIMIZATION
@@ -250,6 +250,7 @@ public:
 		UK2Node_MacroInstance* MacroInstanceNode = Cast<UK2Node_MacroInstance>(UBlueprintNodeSpawner::Create(UK2Node_MacroInstance::StaticClass())->Invoke(InDestGraph, Bindings, InOutDestPosition));
 		MacroInstanceNode->SetMacroGraph(MacroGraph);
 		MacroInstanceNode->ReconstructNode();
+		OutNodes.Add(MacroInstanceNode);
 	}
 	// End of FNodeSpawnInfo interface
 

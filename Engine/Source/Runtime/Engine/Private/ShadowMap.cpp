@@ -94,9 +94,14 @@ struct FShadowMapAllocation
 		{
 			UInstancedStaticMeshComponent* Component = CastChecked<UInstancedStaticMeshComponent>(Primitive);
 
-			// TODO: We currently only support one LOD of static lighting in foliage
-			// Need to create per-LOD instance data to fix that
-			Component->PerInstanceSMData[InstanceIndex].ShadowmapUVBias = ShadowMap->GetCoordinateBias();
+			// Instances may have been removed since LM allocation.
+			// Instances may have also been shuffled from removes. We do not handle this case.
+			if( InstanceIndex < Component->PerInstanceSMData.Num() )
+			{
+				// TODO: We currently only support one LOD of static lighting in foliage
+				// Need to create per-LOD instance data to fix that
+				Component->PerInstanceSMData[InstanceIndex].ShadowmapUVBias = ShadowMap->GetCoordinateBias();
+			}
 
 			Component->ReleasePerInstanceRenderData();
 			Component->MarkRenderStateDirty();
@@ -270,15 +275,15 @@ bool FShadowMapPendingTexture::AddElement(FShadowMapAllocationGroup& AllocationG
 	{
 		auto& Allocation = AllocationGroup.Allocations[iAllocation];
 		uint32 BaseX, BaseY;
-		const uint32 SizeX = Allocation->MappedRect.Width();
-		const uint32 SizeY = Allocation->MappedRect.Height();
-		if (FTextureLayout::AddElement(BaseX, BaseY, SizeX, SizeY))
+		const uint32 AllocationSizeX = Allocation->MappedRect.Width();
+		const uint32 AllocationSizeY = Allocation->MappedRect.Height();
+		if (FTextureLayout::AddElement(BaseX, BaseY, AllocationSizeX, AllocationSizeY))
 		{
 			Allocation->OffsetX = BaseX;
 			Allocation->OffsetY = BaseY;
 
 			// Assumes bAlignByFour
-			NewUnallocatedTexels -= ((SizeX + 3) & ~3) * ((SizeY + 3) & ~3);
+			NewUnallocatedTexels -= ((AllocationSizeX + 3) & ~3) * ((AllocationSizeY + 3) & ~3);
 		}
 		else
 		{
@@ -293,9 +298,9 @@ bool FShadowMapPendingTexture::AddElement(FShadowMapAllocationGroup& AllocationG
 		for (--iAllocation; iAllocation >= 0; --iAllocation)
 		{
 			auto& Allocation = AllocationGroup.Allocations[iAllocation];
-			const uint32 SizeX = Allocation->MappedRect.Width();
-			const uint32 SizeY = Allocation->MappedRect.Height();
-			verify(FTextureLayout::RemoveElement(Allocation->OffsetX, Allocation->OffsetY, SizeX, SizeY));
+			const uint32 AllocationSizeX = Allocation->MappedRect.Width();
+			const uint32 AllocationSizeY = Allocation->MappedRect.Height();
+			verify(FTextureLayout::RemoveElement(Allocation->OffsetX, Allocation->OffsetY, AllocationSizeX, AllocationSizeY));
 		}
 		return false;
 	}

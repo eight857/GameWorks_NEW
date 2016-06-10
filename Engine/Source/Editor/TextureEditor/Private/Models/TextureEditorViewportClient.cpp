@@ -154,7 +154,7 @@ bool FTextureEditorViewportClient::InputKey(FViewport* Viewport, int32 Controlle
 }
 
 
-bool FTextureEditorViewportClient::InputGesture(FViewport* Viewport, EGestureEvent::Type GestureType, const FVector2D& GestureDelta)
+bool FTextureEditorViewportClient::InputGesture(FViewport* Viewport, EGestureEvent::Type GestureType, const FVector2D& GestureDelta, bool bIsDirectionInvertedFromDevice)
 {
 	const bool LeftMouseButtonDown = Viewport->KeyState(EKeys::LeftMouseButton);
 	const bool RightMouseButtonDown = Viewport->KeyState(EKeys::RightMouseButton);
@@ -190,7 +190,7 @@ FText FTextureEditorViewportClient::GetDisplayedResolution() const
 	uint32 Height = 1;
 	uint32 Width = 1;
 	TextureEditorPtr.Pin()->CalculateTextureDimensions(Width, Height);
-	return FText::Format( NSLOCTEXT("TextureEditor", "QuickInfo_Displayed", "Displayed: {0}x{1}"), FText::AsNumber( FMath::Max((uint32)1, Width) ), FText::AsNumber( FMath::Max((uint32)1, Height)) );
+	return FText::Format( NSLOCTEXT("TextureEditor", "DisplayedResolution", "Displayed: {0}x{1}"), FText::AsNumber( FMath::Max((uint32)1, Width) ), FText::AsNumber( FMath::Max((uint32)1, Height)) );
 }
 
 
