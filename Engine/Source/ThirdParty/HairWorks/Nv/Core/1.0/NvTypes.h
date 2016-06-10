@@ -16,16 +16,20 @@
 @{
 */
 
-/// These types exist such that in the Nv namespace we can follow the convention 
-/// that type names are upper camel, even with built in types. 
-/// This also gives flexibility - to change representations as necessary
+// These types exist such that in the Nv namespace we can follow the convention 
+// that type names are upper camel, even with built in types. 
+// This also gives flexibility - to change representations as necessary
+
+//!@{ 
+//! C style basic type typedefs. 
 
 #ifdef __cplusplus
-// bool underlying type is available in C++
-typedef bool NvBool;
+/// bool underlying type is only available in C++
+/// NOTE! Uses longer named NvBoolean over the preferable NvBool so it doesn't clash with NvApi - which defines NvBool and NvU8.
+typedef bool NvBoolean;
 #endif
 
-typedef uint8_t NvBool8;		/// C doesn't have bool. Use uint8 to back, and document the type is to be interpreted as a bool.
+typedef uint8_t NvBool8;		//< C doesn't have bool. Use uint8 to back, and document the type is to be interpreted as a bool.
 
 typedef char NvChar;			///< Char is 8 bit, and text is utf8 encoded. Normally signed. 
 
@@ -42,24 +46,22 @@ typedef int64_t NvInt64;
 typedef	float NvFloat32;
 typedef double NvFloat64;
 
-// Non sized types - default for the compiler/platform
-// Must at a minimum be 32 bits. Never larger than sizeof memory types
-typedef int NvInt;
-typedef unsigned int NvUInt;
-typedef float NvFloat;
+typedef int NvInt;				///< Non sized integer. Must be 32 bits or larger, never larger than memory sized types.
+typedef unsigned int NvUInt;	///< Non sized unsigned integer. Must be 32 bits or larger, never larger than memory sized types.
+typedef NvFloat32 NvFloat;		///< 'Non sized' float, typically backed by NvFloat32. Must be 32bits or larger.
 
-// Misc
-typedef void NvVoid;
+typedef void NvVoid;			///< Void type for consistency with other types
 
-// Memory/pointer types
-typedef size_t NvSizeT;
-typedef ptrdiff_t NvPtrDiffT;
+typedef size_t NvSizeT;			///< Unsigned memory size
+typedef ptrdiff_t NvPtrDiffT;	///< Signed memory offset. sizeof(SizeT) == sizeof(NvPtrDiffT)
 
-// Type used for indexing. 
-// This uses a signed type to avoid problems with numerical under/overflow
-// It is not necessarily the same size as a pointer. This means it might NOT 
-// be able to address the full address space of bytes. 
+/*! Type used for indexing. 
+This uses a signed type to avoid problems with numerical under/overflow
+It is not necessarily the same size as a pointer. This means it might NOT 
+be able to address the full address space of bytes. */
 typedef NvPtrDiffT NvIndexT;
+
+//!@}
 
 #define NV_CHECK_SIGNED(type, size) NV_COMPILE_TIME_ASSERT(sizeof(type) == size && ((type)~(type)0) < (type)0)
 #define NV_CHECK_UNSIGNED(type, size) NV_COMPILE_TIME_ASSERT(sizeof(type) == size && ((type)~(type)0) > (type)0)
@@ -79,24 +81,23 @@ NV_COMPILE_TIME_ASSERT(sizeof(NvFloat32) == 4);
 NV_COMPILE_TIME_ASSERT(sizeof(NvFloat64) == 8);
 
 // Type ranges
-#define	NV_MAX_I8			127					//maximum possible sbyte value, 0x7f
-#define	NV_MIN_I8			(-128)				//minimum possible sbyte value, 0x80
-#define	NV_MAX_U8			255U				//maximum possible ubyte value, 0xff
-#define	NV_MIN_U8			0					//minimum possible ubyte value, 0x00
-#define	NV_MAX_I16			32767				//maximum possible sword value, 0x7fff
-#define	NV_MIN_I16			(-32768)			//minimum possible sword value, 0x8000
-#define	NV_MAX_U16			65535U				//maximum possible uword value, 0xffff
-#define	NV_MIN_U16			0					//minimum possible uword value, 0x0000
-#define	NV_MAX_I32			2147483647			//maximum possible sdword value, 0x7fffffff
-#define	NV_MIN_I32			(-2147483647 - 1)	//minimum possible sdword value, 0x80000000
-#define	NV_MAX_U32			4294967295U			//maximum possible udword value, 0xffffffff
-#define	NV_MIN_U32			0					//minimum possible udword value, 0x00000000
-#define	NV_MAX_F32			3.4028234663852885981170418348452e+38F	
-//maximum possible float value
-#define	NV_MAX_F64			DBL_MAX				//maximum possible double value
+#define	NV_MAX_I8			127					//< maximum possible sbyte value, 0x7f
+#define	NV_MIN_I8			(-128)				///< minimum possible sbyte value, 0x80
+#define	NV_MAX_U8			255U				///< maximum possible ubyte value, 0xff
+#define	NV_MIN_U8			0					///< minimum possible ubyte value, 0x00
+#define	NV_MAX_I16			32767				///< maximum possible sword value, 0x7fff
+#define	NV_MIN_I16			(-32768)			///< minimum possible sword value, 0x8000
+#define	NV_MAX_U16			65535U				///< maximum possible uword value, 0xffff
+#define	NV_MIN_U16			0					///< minimum possible uword value, 0x0000
+#define	NV_MAX_I32			2147483647			///< maximum possible sdword value, 0x7fffffff
+#define	NV_MIN_I32			(-2147483647 - 1)	///< minimum possible sdword value, 0x80000000
+#define	NV_MAX_U32			4294967295U			///< maximum possible udword value, 0xffffffff
+#define	NV_MIN_U32			0					///< minimum possible udword value, 0x00000000
+#define	NV_MAX_F32			3.4028234663852885981170418348452e+38F	//< maximum possible float value
+#define	NV_MAX_F64			DBL_MAX				//< maximum possible double value
 
-#define NV_EPS_F32			FLT_EPSILON			//maximum relative error of float rounding
-#define NV_EPS_F64			DBL_EPSILON			//maximum relative error of double rounding
+#define NV_EPS_F32			FLT_EPSILON			//< maximum relative error of float rounding
+#define NV_EPS_F64			DBL_EPSILON			//< maximum relative error of double rounding
 
 #ifdef __cplusplus
 
@@ -107,7 +108,8 @@ namespace nvidia {
 /// that type names are upper camel, even with built in types. 
 /// This also gives flexibility to change representations as necessary
 
-typedef ::NvBool Bool;
+typedef ::NvBoolean Boolean;		
+typedef ::NvBoolean Bool;
 
 // Just alias to underlying C types
 typedef ::NvBool8 Bool8;

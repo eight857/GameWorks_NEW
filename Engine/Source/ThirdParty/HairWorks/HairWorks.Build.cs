@@ -21,7 +21,12 @@ public class HairWorks : ModuleRules
 
 		if (PlatformString != null)
 		{
+			// Add HairWorks DLL
 			string DllPath = "$(EngineDir)/Binaries/ThirdParty/HairWorks/NvHairWorksDx11." + PlatformString + ".dll";
+			RuntimeDependencies.Add(new RuntimeDependency(DllPath));
+
+			// Add shader compiler DLL
+			DllPath = "$(EngineDir)/Binaries/" + PlatformString + "/d3dcompiler_47.dll";
 			RuntimeDependencies.Add(new RuntimeDependency(DllPath));
 		}
 	}

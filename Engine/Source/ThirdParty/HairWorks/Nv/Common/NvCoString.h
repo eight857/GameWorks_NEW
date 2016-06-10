@@ -22,7 +22,9 @@
 namespace nvidia {
 namespace Common {
 
-/*! Normally stored non zero terminated. Use getZeroTerminated to get a zero terminated string, for use in typical C style string functions.
+/*! \brief String is a simple utf8 based string class. 
+
+\details Normally characters are stored non zero terminated. Use getZeroTerminated to get a zero terminated string, for use in typical C style string functions.
 The type derives from SubString, such that can be easily used as a SubString that is mutable and manages the characters storage. */
 class String: public SubString
 {

@@ -3,7 +3,7 @@
 
 namespace HairWorksRenderer
 {
-	void StepSimulation(FRHICommandList& RHICmdList, const TArray<FViewInfo>& Views);
+	void StepSimulation(FRHICommandList& RHICmdList, const float CurrentWorldTime, const float DeltaWorldTime);
 	void SetupViews(TArray<FViewInfo>& Views);
 	bool ViewsHasHair(const TArray<FViewInfo>& Views);
 	void AllocRenderTargets(FRHICommandList& RHICmdList, const FIntPoint& Size);
@@ -14,6 +14,7 @@ namespace HairWorksRenderer
 	void RenderHitProxies(FRHICommandList& RHICmdList, const TArray<FViewInfo>& Views);
 	void BeginRenderingSceneColor(FRHICommandList& RHICmdList);	// Add a render target for hair
 	void BlendLightingColor(FRHICommandList& RHICmdList);
+	bool IsLightAffectHair(const FLightSceneInfo& LightSceneInfo, const FViewInfo& View);
 
 	static const int HairInstanceMaterialArraySize = 128;
 

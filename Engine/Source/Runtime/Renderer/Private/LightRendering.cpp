@@ -1186,51 +1186,11 @@ RenderForHair:
 
 			// @third party code - BEGIN HairWorks
 			// Render light to hair buffer
-			do
+			if(!bHairPass && HairWorksRenderer::IsLightAffectHair(*LightSceneInfo, View))
 			{
-				if(bHairPass)
-					break;
-
-				// Check whether this light affects hairs
-				if(!View.VisibleHairs.Num())
-					break;
-
-				bool bLightAffectHair = false;
-
-				for(
-					auto* Primitive = LightSceneInfo->DynamicPrimitiveList;
-					Primitive != nullptr;
-					Primitive = Primitive->GetNextPrimitive()
-					)
-				{
-					auto& PrimitiveSceneInfo = *Primitive->GetPrimitiveSceneInfo();
-					auto& PrimitiveViewRelevance = View.PrimitiveViewRelevanceMap[PrimitiveSceneInfo.GetIndex()];
-					if(PrimitiveViewRelevance.bHairWorks)
-					{
-						bLightAffectHair = true;
-						break;
-					}
-				}
-
-				// If a light is not shadowed, its primitive list is null. So we check bounds.
-				if(LightSceneInfo->DynamicPrimitiveList == nullptr)
-				{
-					for(auto& PrimitiveInfo : View.VisibleHairs)
-					{
-						if(LightSceneInfo->Proxy->AffectsBounds(PrimitiveInfo->Proxy->GetBounds()))
-						{
-							bLightAffectHair = true;
-							break;
-						}
-					}
-				}
-
-				if(!bLightAffectHair)
-					break;
-
 				bHairPass = true;
 				goto RenderForHair;
-			} while(false);
+			}
 			// @third party code - END HairWorks
 		}
 	}

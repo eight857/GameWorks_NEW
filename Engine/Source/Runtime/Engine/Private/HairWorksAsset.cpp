@@ -54,22 +54,29 @@ void UHairWorksAsset::PostLoad()
 	// Initialize pins
 	if(AssetId != NvHair::ASSET_ID_NULL && HairMaterial->Pins.Num() == 0)
 		InitPins();
+
+	// Setup bone lookup table
+	InitBoneLookupTable();
 }
 
 void UHairWorksAsset::InitPins() const
 {
-	// Get pins
+	// Empty engine pins
 	check(AssetId != NvHair::ASSET_ID_NULL);
 	check(HairWorks::GetSDK() != nullptr);
 
+	HairMaterial->Pins.Empty();
+
+	// Get pins
 	auto& HairSdk = *HairWorks::GetSDK();
 	TArray<NvHair::Pin> Pins;
 	Pins.AddDefaulted(HairSdk.getNumPins(AssetId));
+	if(Pins.Num() == 0)
+		return;
+
 	HairSdk.getPins(AssetId, 0, Pins.Num(), Pins.GetData());
 
-	auto& EnginePins = HairMaterial->Pins;
-	EnginePins.Empty();
-
+	// Add pin to engine pins
 	for(const auto& Pin : Pins)
 	{
 		FHairWorksPin EnginePin;
@@ -80,7 +87,15 @@ void UHairWorksAsset::InitPins() const
 		EnginePin.InfluenceFallOff = Pin.m_influenceFallOff;
 		EnginePin.InfluenceFallOffCurve = reinterpret_cast<const FVector4&>(Pin.m_influenceFallOffCurve);
 
-		EnginePins.Add(EnginePin);
+		HairMaterial->Pins.Add(EnginePin);
+	}
+}
+void UHairWorksAsset::InitBoneLookupTable()
+{
+	BoneNameToIdx.Empty(BoneNames.Num());
+	for(auto Idx = 0; Idx < BoneNames.Num(); ++Idx)
+	{
+		BoneNameToIdx.Add(BoneNames[Idx], Idx);
 	}
 }
 // @third party code - END HairWorks

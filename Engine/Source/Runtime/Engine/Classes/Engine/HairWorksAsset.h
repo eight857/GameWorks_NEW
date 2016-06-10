@@ -45,8 +45,8 @@ class ENGINE_API UHairWorksAsset : public UObject
 	virtual void PostLoad() override;
 	// End UObject interface.
 		
-	/** Initialize pins. */
 	void InitPins()const;
+	void InitBoneLookupTable();
 
 	UPROPERTY()
 	TArray<uint8> AssetData;
@@ -55,6 +55,9 @@ class ENGINE_API UHairWorksAsset : public UObject
 	TArray<FName> BoneNames;
 
 	nvidia::HairWorks::AssetId AssetId;
+		
+	/** Bone look up table */
+	TMap<FName, int> BoneNameToIdx;
 
 	uint32 PinsUpdateFrameNumber = -1;	// Update pin data once per frame
 };

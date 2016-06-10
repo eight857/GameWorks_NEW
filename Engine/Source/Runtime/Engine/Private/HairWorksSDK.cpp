@@ -7,6 +7,7 @@
 #include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>
 #pragma warning(push)
 #pragma warning(disable: 4191)	// For DLL function pointer conversion
+#undef DWORD	// To fix a compiling error
 #include <Nv/HairWorks/Platform/Win/NvHairWinLoadSdk.h>
 #pragma warning(pop)
 #include "HideWindowsPlatformTypes.h"
@@ -15,6 +16,7 @@ DEFINE_LOG_CATEGORY(LogHairWorks);
 
 namespace HairWorks{
 	// Logger
+#if !NO_LOGGING
 	class Logger: public NvCo::Logger
 	{
 		virtual void log(NvCo::ELogSeverity severity, const Nv::Char* text, const Nv::Char* function, const Nv::Char* filename, Nv::Int lineNumber) override
@@ -49,6 +51,7 @@ namespace HairWorks{
 			}
 		}
 	};
+#endif
 
 	ID3DHelper* D3DHelper = nullptr;
 
@@ -72,7 +75,7 @@ namespace HairWorks{
 		return *D3DHelper;
 	}
 
-	ENGINE_API void Initialize(ID3D11Device& D3DDevice, ID3DHelper& InD3DHelper)
+	ENGINE_API void Initialize(ID3D11Device& D3DDevice, ID3D11DeviceContext& D3DContext, ID3DHelper& InD3DHelper)
 	{
 		// Check feature level.
 		if(D3DDevice.GetFeatureLevel() < D3D_FEATURE_LEVEL_11_0)
@@ -88,7 +91,9 @@ namespace HairWorks{
 			return;
 		}
 
+#if !NO_LOGGING
 		static Logger logger;
+#endif
 
 		// Initialize SDK
 		FString LibPath = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/HairWorks/NvHairWorksDx11.win");
@@ -101,14 +106,18 @@ namespace HairWorks{
 
 		LibPath += TEXT(".dll");
 
-		SDK = NvHair::loadSdk(TCHAR_TO_ANSI(*LibPath), NV_HAIR_VERSION, nullptr, &logger);
+		SDK = NvHair::loadSdk(TCHAR_TO_ANSI(*LibPath), NV_HAIR_VERSION, nullptr
+#if !NO_LOGGING
+			, &logger
+#endif
+		);
 		if(SDK == nullptr)
 		{
 			UE_LOG(LogHairWorks, Error, TEXT("Failed to initialize HairWorks."));
 			return;
 		}
 
-		SDK->initRenderResources(NvCo::Dx11Type::getHandle(&D3DDevice));
+		SDK->initRenderResources(NvCo::Dx11Type::wrap(&D3DDevice), NvCo::Dx11Type::wrap(&D3DContext));
 
 		D3DHelper = &InD3DHelper;
 
@@ -124,5 +133,50 @@ namespace HairWorks{
 		SDK->release();
 		SDK = nullptr;
 	}
+
+#if STATS
+	static struct
+	{
+		int32 FaceNum = 0;
+		int32 HairNum = 0;
+		int32 CvNum = 0;
+	}GAccumulatedStats;
+
+	static TAutoConsoleVariable<int> CVarHairStats(TEXT("r.HairWorks.Stats"), 0, TEXT(""), ECVF_RenderThreadSafe);
+
+	void RenderStats(int32 X, int32& Y, FCanvas * Canvas)
+	{
+		if(GetSDK() == nullptr)
+			return;
+
+		if(CVarHairStats.GetValueOnAnyThread() == 0)
+			return;
+
+		UFont* Font = UEngine::GetMediumFont();
+
+		const auto TotalHeight = Canvas->DrawShadowedString(
+			X,
+			Y,
+			*FString::Printf(TEXT("HairWorks:\nFaceNum: %d\nHairNum: %d\nCvNum: %d\n"), GAccumulatedStats.FaceNum, GAccumulatedStats.HairNum, GAccumulatedStats.CvNum),
+			Font,
+			FColor::White
+		);
+
+		Y += TotalHeight;
+
+		// Reset stats
+		GAccumulatedStats.FaceNum = 0;
+		GAccumulatedStats.HairNum = 0;
+		GAccumulatedStats.CvNum = 0;
+	}
+
+	void AccumulateStats(const NvHair::Stats & HairStats)
+	{
+		// Accumulate stats
+		GAccumulatedStats.FaceNum += HairStats.m_numFaces;
+		GAccumulatedStats.HairNum += HairStats.m_numHairs;
+		GAccumulatedStats.CvNum += HairStats.m_averageNumCvsPerHair * HairStats.m_numHairs;
+	}
+#endif
 }
 // @third party code - END HairWorks

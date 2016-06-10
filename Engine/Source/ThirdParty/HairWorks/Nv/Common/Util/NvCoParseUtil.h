@@ -33,7 +33,7 @@ class ParseUtil
 		/// Parse an integral -?[0-9]+
 		/// Returns NV_NULL on error, or the end of the successful parse
 	static const Char* parseIntegral(const SubString& in);
-		/// Parse white space ' '/'\t'
+		/// Parse white space (spacees and tabs and carrage returns etc)
 	static const Char* parseWhiteSpace(const SubString& in);
 };
 

@@ -20,6 +20,13 @@
 @{
 */
 
+/*! define NV_BREAK_ON_ASSERT to make an assert failure call NV_BREAKPOINT. This can on some systems be 
+more effective at breaking into a debugger than the system assert mechanism */
+#if defined(NV_BREAK_ON_ASSERT) && !defined(NV_CORE_ASSERT)
+#	define NV_CORE_ASSERT(x) { if (!(x)) NV_BREAKPOINT(0); }
+#	define NV_CORE_ALWAYS_ASSERT(x) NV_CORE_ASSERT(0)
+#endif
+
 /* Assert macros */
 #ifndef NV_CORE_ASSERT
 #	if NV_ENABLE_ASSERTS

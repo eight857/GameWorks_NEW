@@ -409,7 +409,7 @@ void FD3D11DynamicRHI::Init()
 
 	static FHairWorksD3DHelper HairWorksD3DHelper;
 
-	HairWorks::Initialize(*GetDevice(), HairWorksD3DHelper);
+	HairWorks::Initialize(*GetDevice(), *Direct3DDeviceIMContext, HairWorksD3DHelper);
 	// @third party code - END HairWorks
 }
 

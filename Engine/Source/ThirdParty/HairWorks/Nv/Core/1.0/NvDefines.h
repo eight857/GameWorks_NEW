@@ -19,8 +19,8 @@
 
 // In C++ compilation unit, also includes <new> for placement new
 
-/** \addtogroup core
-  @{
+/** \defgroup core Core Base Library
+ @{
 */
 
 /*
@@ -31,7 +31,7 @@ All definitions have a value of 1 or 0, use '#if' instead of '#ifdef'.
 #ifndef NV_COMPILER
 #	define NV_COMPILER
 
-/**
+/*
 Compiler defines, see http://sourceforge.net/p/predef/wiki/Compilers/
 NOTE that NV_VC holds the compiler version - not just 1 or 0
 */
@@ -408,8 +408,9 @@ Define NV_ENABLE_DEPRECIATION_WARNINGS to enable warnings */
 #	define NV_DEPRECATED
 #endif
 
-// For getting sizes of constant arrays
+/// Use for getting the amount of members of a standard C array. 
 #define NV_COUNT_OF(x) (sizeof(x)/sizeof(x[0]))
+/// NV_INLINE exists to have a way to inline consistant with NV_ALWAYS_INLINE  
 #define NV_INLINE inline
 
 // Other defines
@@ -473,6 +474,7 @@ General defines
 #	pragma warning(disable : 4514 )	// 'function' : unreferenced inline function has been removed
 #	pragma warning(disable : 4710 )	// 'function' : function not inlined
 #	pragma warning(disable : 4711 )	// function 'function' selected for inline expansion
+#	pragma warning(disable : 4127 )	// C4127: conditional expression is constant
 
 #	define NV_NO_ALIAS __declspec(noalias)
 #	define NV_NO_INLINE __declspec(noinline)
@@ -559,8 +561,8 @@ General defines
 #	define NV_CALL_CONV
 #endif
 
-// 
-#define NV_OFFSETOF_BASE 0x100 // casting the null ptr takes a special-case code path, which we don't want
+//! casting the null ptr takes a special-case code path, which we don't want
+#define NV_OFFSETOF_BASE 0x100 
 #define NV_OFFSET_OF_RT(Class, Member)                                                                                 \
 	(reinterpret_cast<size_t>(&reinterpret_cast<Class*>(NV_OFFSETOF_BASE)->Member) - size_t(NV_OFFSETOF_BASE))
 
@@ -621,8 +623,22 @@ protected:                        \
 	cls(const cls&);               \
 	cls& operator=(const cls&);
 
-// Define nvidia namespace and Nv alias
+/*! \namespace nvidia
+\brief Main namespace for nVidia code. 
+\details The nvidia namespace holds the basic types that are used across modules developed by nVidia. Generally 
+speaking a module will create a child namespace to separately cleanly types, classes and functions between 
+modules. The C++ compliant types for the core library are in the nvidia namespace. 
+
+The types, and functions of the nvidia namespace can be accessed via the fully qualified namespace
+of nvidia, but it often easier and more readable to use the shortened namespace alias Nv.
+
+Also note that in general the generic types defined in nvidia namespace, are designed to be compatible with C - and
+they are just aliases to an underlying C type, which is generally the type prefixed with Nv. 
+
+For example nvidia::Int is the same as Nv::Int and NvInt. 
+*/
 namespace nvidia {}
+/*! Short version of the nvidia namespace */
 namespace Nv = nvidia;
 
 // C++ specific macros

@@ -17,6 +17,39 @@
 namespace nvidia {
 namespace Common {
 
+/*! \brief ComPtr is a simple smart pointer that manages types which implement COM based interfaces. 
+\details A class that implements a COM, must derive from the IUnknown interface or a type that matches
+it's layout exactly (such as IForwardUnknown). Trying to use this template with a class that doesn't follow
+these rules, will lead to undefined behavior. 
+This is a 'strong' pointer type, and will AddRef when a non null pointer is set and Release when the pointer 
+leaves scope. 
+Using 'detach' allows a pointer to be removed from the management of the ComPtr.
+To set the smart pointer to null, there is the method setNull, or alternatively just assign NV_NULL.
+
+One edge case using the template is that sometimes you want access as a pointer to a pointer. Sometimes this
+is to write into the smart pointer, other times to pass as an array. To handle these different behaviors 
+there are the methods readRef and writeRef, which are used instead of the & (ref) operator. For example
+
+\code
+
+Void doSomething(ID3D12Resource** resources, IndexT numResources);
+
+// ...
+ComPtr<ID3D12Resource> resources[3];
+
+doSomething(resources[0].readRef(), NV_COUNT_OF(resource));
+\endcode
+
+A more common scenario writing to the pointer 
+
+\code
+IUnknown* unk = ...;
+
+ComPtr<ID3D12Resource> resource;
+Result res = unk->QueryInterface(resource.writeRef());
+\endcode
+
+*/
 template <class T>
 class ComPtr
 {

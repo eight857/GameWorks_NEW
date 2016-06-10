@@ -27,7 +27,7 @@ class SeekOrigin { SeekOrigin(); public: enum Enum
 }; };
 typedef SeekOrigin::Enum ESeekOrigin;
 
-/// Read stream interface
+/*! Read stream interface */
 class ReadStream
 {
 	NV_CO_DECLARE_INTERFACE_BASE(ReadStream)
@@ -54,7 +54,7 @@ class ReadStream
 	virtual ~ReadStream() {}
 };
 
-/// Write stream interface
+/*! Write stream interface */
 class WriteStream
 {
 	NV_CO_DECLARE_INTERFACE_BASE(WriteStream)

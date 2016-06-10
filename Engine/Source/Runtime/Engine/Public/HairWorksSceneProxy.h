@@ -1,12 +1,10 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
-class UHairWorksAsset;
-
 /**
 * HairWorks component scene proxy.
 */
-class ENGINE_API FHairWorksSceneProxy : public FPrimitiveSceneProxy
+class ENGINE_API FHairWorksSceneProxy : public FPrimitiveSceneProxy, public TIntrusiveLinkedList<FHairWorksSceneProxy>
 {
 public:
 	enum class EDrawType
@@ -28,32 +26,61 @@ public:
 		TArray<UTexture2D*> Textures;
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
+		float AnimateTime = 0;
 	};
 
-	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::InstanceId HairInstanceId);
+	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::AssetId HairAssetId);
 	~FHairWorksSceneProxy();
 	
 	//~ Begin FPrimitiveSceneProxy interface.
 	virtual uint32 GetMemoryFootprint(void) const override;
 	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View)const override;
+	virtual void CreateRenderThreadResources() override;
 	//~ End FPrimitiveSceneProxy interface.
 
 	void UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData);
 
-	void Draw(EDrawType DrawType = EDrawType::Normal)const;
+	void Draw(EDrawType DrawType)const;
 
 	NvHair::InstanceId GetHairInstanceId()const { return HairInstanceId; }
 	const TArray<FTexture2DRHIRef>& GetTextures()const { return HairTextures; }
 	const TArray<TArray<FPinMesh>>& GetPinMeshes()const { return HairPinMeshes; }
+	void SetPinMatrices(const TArray<FMatrix>& PinMatrices);
+	const TArray<FMatrix>& GetPinMatrices();
+	const TArray<FMatrix>& GetSkinningMatrices()const { return CurrentSkinningMatrices; }
+	const TArray<FMatrix>& GetPrevSkinningMatrices()const { return PrevSkinningMatrices; }
+	bool AdvanceAnimation();
+
+	static FHairWorksSceneProxy* GetHairInstances();
 
 protected:
 	//** The hair */
 	NvHair::InstanceId HairInstanceId;
+
+	//** The hair asset */
+	NvHair::AssetId HairAssetId;
 
 	//** Control textures */
 	TArray<FTexture2DRHIRef> HairTextures;
 
 	//** Pin meshes*/
 	TArray<TArray<FPinMesh>> HairPinMeshes;
+
+	//** Pin matrices*/
+	TArray<FMatrix> HairPinMatrices;
+
+	//** Used to transfer data from rendering thread to game thread*/
+	FCriticalSection ThreadLock;
+
+	//** Skinning matrices, mainly for interpolated rendering*/
+	TArray<FMatrix> CurrentSkinningMatrices;
+	TArray<FMatrix> PrevSkinningMatrices;
+
+	//** Skip simulation if component is not animating*/
+	float AnimateTime = 0;
+	float SimulateTime = -1;
+
+	//** All created hair instances*/
+	static FHairWorksSceneProxy* HairInstances;
 };
 // @third party code - END HairWorks

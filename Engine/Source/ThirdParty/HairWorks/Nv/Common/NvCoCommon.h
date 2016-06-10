@@ -31,11 +31,20 @@
 #include <Nv/Core/1.0/NvAssert.h>
 #include <Nv/Core/1.0/NvResult.h>
 
-/** \addtogroup common
+/** \defgroup common Common Support Library
 @{
 */
 
 namespace nvidia { 
+/*! \namespace Common
+\brief The Common Support Libraries namespace
+\details The Common Support Library provides containers, smart pointers, a simple object model, and other 
+algorithms generally useful in development. It also contains functionality specifically for different 
+platforms in the Nv/Common/Platform folder. 
+
+The types, and functions of the Common Support Library can be accessed via the fully qualified namespace 
+of nvidia::Common, but it often easier and more readable to use the shortened namespace alias NvCo.
+*/
 namespace Common { 
 
 // Op namespace is for simple/small global operations. Namespace is used to make distinct from common method names.

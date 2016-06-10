@@ -1456,7 +1456,7 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 	{
 		// Render view parents, then view children.
 		bool bEditorFrameNonRealtimeViewportDrawn = false;
-		if (GCurrentLevelEditingViewportClient && GCurrentLevelEditingViewportClient->IsVisible())
+		if (GCurrentLevelEditingViewportClient /*&& GCurrentLevelEditingViewportClient->IsVisible()*/)
 		{
 			bool bAllowNonRealtimeViewports = true;
 			bool bWasNonRealtimeViewportDraw = UpdateSingleViewportClient(GCurrentLevelEditingViewportClient, bAllowNonRealtimeViewports, bUpdateLinkedOrthoViewports);

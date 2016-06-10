@@ -70,7 +70,7 @@ inline Sdk* loadSdk(const Char* dllPath, UInt32 version = NV_HAIR_VERSION, NvCo:
 	}
 	else
 	{
-		DWORD lastErr = ::GetLastError();
+		::DWORD lastErr = ::GetLastError();
 		char* msgBuf;
 		::FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
 			NV_NULL, lastErr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language

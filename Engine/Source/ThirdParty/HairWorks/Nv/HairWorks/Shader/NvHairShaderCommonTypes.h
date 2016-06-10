@@ -27,7 +27,7 @@ struct NvHair_ShaderAttributes
 	float	hairID;		// unique hair identifier
 
 #if defined(NV_HAIR_DECLARE_VELOCITY_ATTR)
-	float3	wVel;	// world space velocity
+	float3	wVel;		// 'pixel velocity'. In view space, difference current pixel position, and previous pixel position. W is W after view projection. Look at NvHair_WorldToScreen for details.
 #endif
 };
 

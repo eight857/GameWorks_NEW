@@ -17,8 +17,11 @@ namespace Common {
 
 class MemoryAllocator;
 
-/*! A util used for often used array operations, used with the Array template. 
-NOTE! The layout MUST be kept in sync with the layout of the Array template, or things will not work */
+/*! 
+\brief A util used for often used array operations. 
+It provides much of the implementation for the Array container template where is supplies implementation relying on the 
+templates member layout. 
+\note Therefore Layout MUST be kept in sync with the layout of the Array template, or things will not work. */
 struct ArrayUtil
 {
 		/// Structure defined to match the layout of the Array template exactly such that manipulations
@@ -63,7 +66,7 @@ struct ArrayUtil
 	NV_INLINE static void ctor(T* first, T* last, const T& a);
 		/// Copy construct first up to last using src.
 	template <typename T>
-	NV_INLINE static void copyCtor(T* first, T* last, const T* src);
+	NV_INLINE static void ctorArray(T* first, T* last, const T* src);
 		/// Assign
 	template <typename T>
 	NV_INLINE static void assign(T* first, T* last, const T* src);
@@ -91,7 +94,7 @@ template <typename T>
 }
 // ---------------------------------------------------------------------------
 template <typename T>
-/* static */void ArrayUtil::copyCtor(T* first, T* last, const T* src)
+/* static */void ArrayUtil::ctorArray(T* first, T* last, const T* src)
 {
 	for (; first < last; ++first, ++src)
 		new (first) T(*src);
@@ -114,12 +117,15 @@ template <typename T>
 template <typename T>
 /* static */Bool ArrayUtil::equal(const T* a, const T* b, IndexT size)
 {
-	for (IndexT i = 0; i < size; i++)
+	if (a != b)
 	{
-		// Use equality test, as it is more commonly defined
-		if (a[i] == b[i]) 
-			continue;
-		return false;
+		for (IndexT i = 0; i < size; i++)
+		{
+			// Use equality test, as it is more commonly defined
+			if (a[i] == b[i]) 
+				continue;
+			return false;
+		}
 	}
 	return true;
 }

@@ -18,19 +18,27 @@
 namespace nvidia {
 namespace Common { 
 
-/*! An array is a sequential container, similar in many ways to STLs vector type. 
+/*! 
+\brief An array is a sequential container, similar in many ways to STLs vector type. 
 One important difference is that this container assumes that any types it contains 
 are ok if their underlying memory is moved. Most types this is not a problem (like int, float etc), 
-but a type that contains a pointer to some part of memory contained in itself will not work. So pointers
-and most smart pointers are okay. But the following MyClass example does not work - as m_current can point to 
+but a type that contains a pointer to some part of memory contained in itself will not work. 
+
+Pointers and most smart pointers are okay. But the following MyClass example does not work - as m_current can point to 
 memory contained in MyClass (m_buffer), if the array moves memory around m_current can become invalid. 
 
+\code{.cpp} 
 struct MyClass
 {
 	MyClass():m_current(m_buffer) {}
 	char* m_current;
 	char m_buffer[8];
 };
+\endcode
+
+The Array uses a MemoryAllocator to supply memory to store elements. By default it will use the default MemoryAllocator, 
+thats set for MemoryAllocator::getInstance(). The Array can also opporate on a chunk of memory not maintained by the 
+MemoryAllocator by passing in the memory to use in a constructor.
 */
 template<typename T>
 class Array 
@@ -193,14 +201,16 @@ template<typename T>
 Array<T>::Array(const ThisType& rhs, MemoryAllocator* allocator)
 {
 	ArrayUtil::ctorSetCapacity(*(Layout*)this, rhs.m_size, sizeof(T), allocator);
-	ArrayUtil::ctor(m_data, m_data + rhs.m_size, rhs.m_data);
+	ArrayUtil::ctorArray(m_data, m_data + rhs.m_size, rhs.m_data);
+	m_size = rhs.m_size;
 }
 // ---------------------------------------------------------------------------
 template<typename T>
 Array<T>::Array(const T* data, IndexT size, MemoryAllocator* allocator)
 {
 	ArrayUtil::ctorSetCapacity(*(Layout*)this, m_size, sizeof(T), allocator);
-	ArrayUtil::ctor(m_data, m_data + rhs.m_size, rhs.m_data);
+	ArrayUtil::ctorArray(m_data, m_data + rhs.m_size, rhs.m_data);
+	m_size = size;
 }
 // ---------------------------------------------------------------------------
 template<typename T>
@@ -245,7 +255,7 @@ void Array<T>::set(const T* rhsData, IndexT rhsSize)
 	if (m_size < rhsSize)
 	{
 		ArrayUtil::assign(m_data, m_data + m_size, rhsData);
-		ArrayUtil::copyCtor(m_data + m_size, m_data + rhsSize, rhsData + m_size);
+		ArrayUtil::ctorArray(m_data + m_size, m_data + rhsSize, rhsData + m_size);
 	}
 	else
 	{
@@ -350,7 +360,7 @@ void Array<T>::pushBack(const T* start, IndexT num)
 	{
 		ArrayUtil::expandCapacity(*(Layout*)this, m_size + num, sizeof(T));
 	}
-	ArrayUtil::copyCtor(m_data + m_size, m_data + m_size + num, start);
+	ArrayUtil::ctorArray(m_data + m_size, m_data + m_size + num, start);
 	m_size += num;
 }
 // ---------------------------------------------------------------------------
@@ -401,11 +411,11 @@ void Array<T>::setSize(IndexT size)
 			{
 				ArrayUtil::setCapacity(*(Layout*)this, size, sizeof(T));
 			}
-			ArrayUtil::ctorDefault(m_data + m_size, m_data + size - m_size);
+			ArrayUtil::ctorDefault(m_data + m_size, m_data + size);
 		}
 		else
 		{
-			ArrayUtil::dtor(m_data + size, m_data + m_size - size);
+			ArrayUtil::dtor(m_data + size, m_data + m_size);
 		}
 		m_size = size;
 	}

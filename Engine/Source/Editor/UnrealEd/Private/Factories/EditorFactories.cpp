@@ -6935,6 +6935,9 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, const NvHair::I
 			Hair.BoneNames.Add(*FSkeletalMeshImportData::FixupBoneName(BoneName));
 		}
 	}
+	 
+	// Bone lookup table
+	Hair.InitBoneLookupTable();
 
 	// Get material
 	if(Hair.bMaterials)
@@ -6963,7 +6966,7 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, const NvHair::I
 		HairInstanceDesc.m_shadowSigma = FMath::Min(HairInstanceDesc.m_shadowSigma, 254.f / 255.f);
 
 		// Fill hair material
-		if(HairInstanceDesc.m_hairNormalBoneIndex < (unsigned)Hair.BoneNames.Num())
+		if(HairInstanceDesc.m_hairNormalBoneIndex < Hair.BoneNames.Num())
 			Hair.HairMaterial->HairNormalCenter = Hair.BoneNames[HairInstanceDesc.m_hairNormalBoneIndex];
 
 		TArray<UTexture2D*> HairTextures;

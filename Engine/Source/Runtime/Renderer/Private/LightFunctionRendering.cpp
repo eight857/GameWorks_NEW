@@ -8,6 +8,9 @@
 #include "ScenePrivate.h"
 #include "LightRendering.h"
 #include "SceneUtils.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 /**
  * A vertex shader for projecting a light function onto the scene.
@@ -255,6 +258,17 @@ bool FDeferredShadingSceneRenderer::RenderLightFunctionForMaterial(FRHICommandLi
 
 	if (MaterialProxy && MaterialProxy->GetMaterial(Scene->GetFeatureLevel())->IsLightFunction())
 	{
+		// @third party code - BEGIN HairWorks
+		bool bHairPass = false;
+
+RenderForHair:
+		if(bHairPass)
+		{
+			FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+			FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+		}
+		// @third party code - END HairWorks
+
 		FSceneRenderTargets::Get(RHICmdList).BeginRenderingLightAttenuation(RHICmdList);
 
 		bRenderedLightFunction = true;
@@ -296,6 +310,11 @@ bool FDeferredShadingSceneRenderer::RenderLightFunctionForMaterial(FRHICommandLi
 				}
 				else
 				{
+					// @third party code - BEGIN HairWorks
+					if(!HairWorksRenderer::IsLightAffectHair(*LightSceneInfo, View))
+						continue;
+					// @third party code - END HairWorks
+
 					// Set the device viewport for the view.
 					RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
 
@@ -357,6 +376,20 @@ bool FDeferredShadingSceneRenderer::RenderLightFunctionForMaterial(FRHICommandLi
 			// Restore stencil buffer to all 0's which is the assumed default state
 			RHICmdList.Clear(false,FColor(0,0,0),false,(float)ERHIZBuffer::FarPlane,true,0, FIntRect());
 		}
+
+		// @third party code - BEGIN HairWorks
+		if(bHairPass)
+		{
+			FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+			FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+		}
+
+		if(!bHairPass && HairWorksRenderer::ViewsHasHair(Views))
+		{
+			bHairPass = true;
+			goto RenderForHair;
+		}
+		// @third party code - END HairWorks
 	}
 	return bRenderedLightFunction;
 }

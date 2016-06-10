@@ -21,7 +21,8 @@
 namespace nvidia {
 namespace Common {
 
-/*! SubTypes for Dx11 */
+/*!
+\brief Specifies the kinds of types that can be wrapped in ApiHandle/ApiPtr/ConstPtr types */
 class Dx11SubType { Dx11SubType(); public: enum Enum
 {
 	UNKNOWN,	///< Unknown
@@ -47,6 +48,30 @@ typedef Dx11SubType::Enum EDx11SubType;
 #define NV_DX11_VALUE_TYPES(x) \
 	x(Float32, FLOAT32, UNKNOWN) 
 
+
+/*!
+\brief A helper class to wrap Dx11 related types to ApiHandle, ApiPtr types, or extract via a cast the Dx11 types back out again.
+
+Some examples of how to wrap and cast handles and pointers
+
+\code{.cpp}
+ID3D11Device* device = ...;
+
+\\ To wrap as a handle
+ApiHandle handle = Dx11Type::wrap(device);
+
+\\ To wrap an array or pointer you can use
+
+Float32 values[10];
+ApiPtr ptr = Dx12Type::wrapPtr(values);
+
+\\ If you want to convert a wrapped handle back you can use
+ID3D11Device* device = Dx11Type::cast<ID3D11Device>(handle);
+
+\\ Similarly to get a pointer
+Float32* target = Dx11Type::castPtr<Float32>(ptr);
+\endcode
+*/
 struct Dx11Type
 {
 	// Used by the macros. NOTE! Should be wrapping type (ie not the actual type - typically with E prefix)
@@ -59,11 +84,11 @@ struct Dx11Type
 	NV_FORCE_INLINE static Int getType() { return getType((T*)NV_NULL); }
 
 		/// Implement getType	
-	NV_DX11_HANDLE_TYPES(NV_CO_GET_TYPE)
+	NV_DX11_HANDLE_TYPES(NV_CO_API_GET_TYPE)
 		/// Implement getHandle, which will return a TypedApiHandle 
-	NV_DX11_HANDLE_TYPES(NV_CO_GET_HANDLE)
+	NV_DX11_HANDLE_TYPES(NV_CO_API_WRAP)
 		/// Implement getType for 'value types' (ie structs and others that shouldn't be in a handle)
-	NV_DX11_VALUE_TYPES(NV_CO_GET_VALUE_TYPE)
+	NV_DX11_VALUE_TYPES(NV_CO_API_GET_VALUE_TYPE)
 
 		/// A template to work around warnings from dereferencing NV_NULL
 	template <typename T>
@@ -71,20 +96,20 @@ struct Dx11Type
 
 		/// Get a pointer
 	template <typename T>
-	NV_FORCE_INLINE static ConstApiPtr getPtr(const T* in) { return ConstApiPtr(getPtrType<T>(), in); }
+	NV_FORCE_INLINE static ConstApiPtr wrapPtr(const T* in) { return ConstApiPtr(getPtrType<T>(), in); }
 	template <typename T>
-	NV_FORCE_INLINE static ApiPtr getPtr(T* in) { return ApiPtr(getPtrType<T>(), in); }
+	NV_FORCE_INLINE static ApiPtr wrapPtr(T* in) { return ApiPtr(getPtrType<T>(), in); }
 
 		/// Get from a handle
 	template <typename T>
-	NV_FORCE_INLINE static T* get(const ApiHandle& in) { const Int type = getType((T*)NV_NULL); return reinterpret_cast<T*>((type == in.m_type) ? in.m_handle : handleCast(in.m_type, type)); }
+	NV_FORCE_INLINE static T* cast(const ApiHandle& in) { const Int type = getType((T*)NV_NULL); return reinterpret_cast<T*>((type == in.m_type) ? in.m_handle : handleCast(in.m_type, type)); }
 
 		/// Get from 
 	template <typename T>
-	NV_FORCE_INLINE static const T* get(const ConstApiPtr& ptr) { const Int type = getPtrType<T>(); return reinterpret_cast<const T*>((ptr.m_type == type) ? ptr.getData() : handlePtrCast(ptr.m_type, type)); }
+	NV_FORCE_INLINE static const T* cast(const ConstApiPtr& ptr) { const Int type = getPtrType<T>(); return reinterpret_cast<const T*>((ptr.m_type == type) ? ptr.getData() : handlePtrCast(ptr.m_type, type)); }
 		// Get from 
 	template <typename T>
-	NV_FORCE_INLINE static T* get(const ApiPtr& ptr) { const Int type = getPtrType<T>(); return reinterpret_cast<T*>((ptr.m_type == type) ? ptr.getData() : handlePtrCast(ptr.m_type, type)); }
+	NV_FORCE_INLINE static T* cast(const ApiPtr& ptr) { const Int type = getPtrType<T>(); return reinterpret_cast<T*>((ptr.m_type == type) ? ptr.getData() : handlePtrCast(ptr.m_type, type)); }
 
 		/// Get the sub type as text
 	static const Char* getSubTypeText(EDx11SubType subType);

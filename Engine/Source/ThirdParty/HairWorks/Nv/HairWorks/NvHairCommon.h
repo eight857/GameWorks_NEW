@@ -63,7 +63,6 @@ struct gfsdk_dualquaternion
 	gfsdk_dualquaternion(const gfsdk_float4 iq0, const gfsdk_float4 iq1) : q0(iq0), q1(iq1) {}
 };
 
-
 #pragma pack(pop)
 
 /** @} */

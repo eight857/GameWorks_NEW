@@ -22,6 +22,12 @@
 namespace nvidia {
 namespace Common { 
 
+/*! 
+\brief A fairly simple implementation of the ID3DInclude interface. This interface is often used when compiling shaders, as it 
+is used for finding files that are specified as includes in shader code. 
+This implementation allows for setting multiple search paths that will be searched for when looking for the requested file. It also
+takes into account if an include is a system wide or local include as specified by the D3D_INCLUDE_TYPE includeType parameter.
+*/
 class DxIncludeHandler : public ID3DInclude
 {
 public:
@@ -43,7 +49,8 @@ public:
 		/// Ctor
 	DxIncludeHandler();
 
-		/// 
+		/// Attempts to find a file and if found reads it, returning it through dataOut and sizeOut
+		/// The data is allocated through the MemoryAllocator::getInstance and should be freed with simpleDeallocate
 	Result findAndReadFile(const SubString& path, String& pathOut, void** dataOut, UINT* sizeOut);
 
 		/// Read the contents of a file. Data stored in data (allocated by MemoryAllocator), deallocate with simpleDeallocate()

@@ -64,6 +64,7 @@ void UHairWorksMaterial::SyncHairDescriptor(NvHair::InstanceDescriptor& HairDesc
 	SyncHairParameter(HairDescriptor.m_visualizeShadingNormals, bShadingNormal, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_visualizeShadingNormalBone, bShadingNormalCenter, bFromDescriptor);
 	SyncHairParameter(HairDescriptor.m_visualizeSkinnedGuideHairs, bSkinnedGuideCurves, bFromDescriptor);
+	SyncHairParameter(HairDescriptor.m_drawRenderHairs, bHair, bFromDescriptor);
 
 	if(bFromDescriptor)
 		ColorizeOptions = static_cast<EHairWorksColorizeMode>(HairDescriptor.m_colorizeMode);

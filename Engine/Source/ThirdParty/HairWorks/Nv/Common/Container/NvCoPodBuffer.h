@@ -20,7 +20,8 @@
 namespace nvidia {
 namespace Common {
 
-/*! A buffer for holding POD (Plain Ordinary Data) types. The buffer is really just a memory repository, 
+/*! 
+\brief A buffer for holding POD (Plain Ordinary Data) types. The buffer is really just a memory repository, 
 generally for a fixed amount of items. This is a slightly more flexible version of C++ built in fixed array type.
 Although the size of the buffer can be adjusted once the buffer is created, the contents of the buffer is 
 generally lost. Typical usage is to create the buffer of the appropriate size once and then fill in the

@@ -10,7 +10,6 @@
 
 UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, HairInstanceId(NvHair::INSTANCE_ID_NULL)
 {
 	// No need to select
 	bSelectable = false;
@@ -29,14 +28,9 @@ UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectI
 	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
 }
 
-UHairWorksComponent::~UHairWorksComponent()
-{
-	check(HairInstanceId == NvHair::INSTANCE_ID_NULL);
-}
-
 FPrimitiveSceneProxy* UHairWorksComponent::CreateSceneProxy()
 {
-	return new FHairWorksSceneProxy(this, HairInstanceId);
+	return new FHairWorksSceneProxy(this, HairInstance.Hair->AssetId);
 }
 
 void UHairWorksComponent::OnAttachmentChanged()
@@ -47,17 +41,29 @@ void UHairWorksComponent::OnAttachmentChanged()
 	// Setup bone mapping
 	SetupBoneMapping();
 
+	// Update bone matrices
+	UpdateBoneMatrices();
+
 	// Refresh render data
 	MarkRenderDynamicDataDirty();
 }
 
 FBoxSphereBounds UHairWorksComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
-	if (HairInstanceId == NvHair::INSTANCE_ID_NULL)
+	QUICK_SCOPE_CYCLE_COUNTER(STAT_CalcHairWorksBounds);
+
+	if (HairInstance.Hair == nullptr || HairInstance.Hair->AssetId == NvHair::ASSET_ID_NULL)
 		return FBoxSphereBounds(EForceInit::ForceInit);
 
+	checkSlow(BoneMatrices.Num() == 0 || BoneMatrices.Num() == HairWorks::GetSDK()->getNumBones(HairInstance.Hair->AssetId));
+
 	gfsdk_float3 HairBoundMin, HairBoundMax;
-	HairWorks::GetSDK()->getBounds(HairInstanceId, HairBoundMin, HairBoundMax);
+	HairWorks::GetSDK()->getBounds(
+		HairInstance.Hair->AssetId,
+		BoneMatrices.Num() > 0 ? reinterpret_cast<const gfsdk_float4x4*>(BoneMatrices.GetData()) : nullptr,
+		HairBoundMin,
+		HairBoundMax
+	);
 
 	FBoxSphereBounds Bounds(FBox(reinterpret_cast<FVector&>(HairBoundMin), reinterpret_cast<FVector&>(HairBoundMax)));
 
@@ -74,7 +80,37 @@ void UHairWorksComponent::SendRenderDynamicData_Concurrent()
 
 void UHairWorksComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
 {
+	// Call super
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// Advance simulation
+	if(GetWorld()->AreActorsInitialized() && TickType != LEVELTICK_TimeOnly)
+		AnimateTime = GetWorld()->GetTimeSeconds();
+
+	// Update pin transforms. Mainly for editor
+	if(SceneProxy != nullptr && HairInstance.Hair->HairMaterial->Pins.Num() > 0)
+	{
+		// Get pin matrices
+		auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*SceneProxy);
+		TArray<FMatrix> PinMatrices = HairSceneProxy.GetPinMatrices();
+
+		// Set pin component transform
+		for(auto* ChildComponent : AttachChildren)
+		{
+			auto* PinComponent = Cast<UHairWorksPinTransformComponent>(ChildComponent);
+			if(PinComponent == nullptr)
+				continue;
+
+			if(PinComponent->PinIndex < 0 || PinComponent->PinIndex >= PinMatrices.Num())
+				continue;
+
+			FTransform PinTransform(PinMatrices[PinComponent->PinIndex]);
+			PinComponent->SetWorldLocationAndRotation(PinTransform.GetLocation(), PinTransform.GetRotation());
+		}
+	}
+
+	// Update bone matrices.
+	UpdateBoneMatrices();
 
 	// Mark to send dynamic data
 	MarkRenderDynamicDataDirty();
@@ -172,57 +208,17 @@ bool UHairWorksComponent::ShouldCreateRenderState() const
 
 void UHairWorksComponent::CreateRenderState_Concurrent()
 {
-	// Initialize hair instance
-	check(HairWorks::GetSDK() != nullptr && HairInstance.Hair != nullptr && HairInstance.Hair->AssetId != NvHair::ASSET_ID_NULL);
-
-	auto& HairSdk = *HairWorks::GetSDK();
-	HairSdk.createInstance(HairInstance.Hair->AssetId, HairInstanceId);
-	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
-		return;
-
-	// Disable this instance at first.
-	NvHair::InstanceDescriptor HairInstanceDesc;
-	HairSdk.getInstanceDescriptor(HairInstanceId, HairInstanceDesc);
-	if(HairInstanceDesc.m_enable)
-	{
-		HairInstanceDesc.m_enable = false;
-		HairSdk.updateInstanceDescriptor(HairInstanceId, HairInstanceDesc);
-	}
-
-	// Setup bone look up table
-	BoneNameToIdx.Empty(HairInstance.Hair->BoneNames.Num());
-	for(auto Idx = 0; Idx < HairInstance.Hair->BoneNames.Num(); ++Idx)
-	{
-		BoneNameToIdx.Add(HairInstance.Hair->BoneNames[Idx], Idx);
-	}
-
 	// Call super
 	Super::CreateRenderState_Concurrent();
 
 	// Setup bone mapping
 	SetupBoneMapping();
 
+	// Update bone matrices
+	UpdateBoneMatrices();
+
 	// Update proxy
 	SendHairDynamicData(true);	// Ensure correct visual effect at first frame.
-}
-
-void UHairWorksComponent::DestroyRenderState_Concurrent()
-{
-	Super::DestroyRenderState_Concurrent();
-
-	// Delete this instance for next frame.
-	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
-		return;
-
-	ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
-		HairDisableInstance,
-		nvidia::HairWorks::InstanceId, HairInstanceId, HairInstanceId,
-		{
-			HairWorks::GetSDK()->freeInstance(HairInstanceId);
-		}
-	);
-
-	HairInstanceId = NvHair::INSTANCE_ID_NULL;
 }
 
 void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
@@ -268,6 +264,8 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 		HairWorksMergeVisFlag(SkinnedGuideHairs);
 #undef HairWorksMergeVisFlag
 
+		OverideHairDesc.m_drawRenderHairs &= DynamicData->HairInstanceDesc.m_drawRenderHairs;
+
 		if(OverideHairDesc.m_colorizeMode == NvHair::ColorizeMode::NONE)
 			OverideHairDesc.m_colorizeMode = DynamicData->HairInstanceDesc.m_colorizeMode;
 
@@ -278,28 +276,17 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 	if(bForceSkinning)
 		DynamicData->HairInstanceDesc.m_simulate = false;
 
-	auto* BoneIdx = BoneNameToIdx.Find(HairNormalCenter);
+	auto* BoneIdx = HairInstance.Hair->BoneNameToIdx.Find(HairNormalCenter);
 	if(BoneIdx != nullptr)
 		DynamicData->HairInstanceDesc.m_hairNormalBoneIndex = *BoneIdx;
 	else
 		DynamicData->HairInstanceDesc.m_hairNormalWeight = 0;
 
-	// Setup skinning
-	if(ParentSkeleton != nullptr)
-	{
-		DynamicData->BoneMatrices.Init(FMatrix::Identity, BoneIndices.Num());
+	// Animation flag
+	DynamicData->AnimateTime = AnimateTime;
 
-		for(auto Idx = 0; Idx < BoneIndices.Num(); ++Idx)
-		{
-			const uint16& IdxInParent = BoneIndices[Idx];
-			if(IdxInParent >= ParentSkeleton->GetSpaceBases().Num())
-				continue;
-
-			const auto Matrix = ParentSkeleton->GetSpaceBases()[IdxInParent].ToMatrixWithScale();
-
-			DynamicData->BoneMatrices[Idx] = ParentSkeleton->SkeletalMesh->RefBasesInvMatrix[IdxInParent] * Matrix;
-		}
-	}
+	// Set skinning data
+	DynamicData->BoneMatrices = BoneMatrices;
 
 	// Setup pins
 	if(HairInstance.Hair->PinsUpdateFrameNumber != GFrameNumber && HairInstance.Hair->HairMaterial->Pins.Num() > 0)
@@ -353,13 +340,16 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 		AddPinMesh = [&](const USceneComponent* Component)
 		{
 			// Add mesh
+			if(Component->IsPendingKill())
+				return false;
+
 			auto* PrimitiveComponent = Cast<UPrimitiveComponent>(Component);
 
-			if(PrimitiveComponent != nullptr && PrimitiveComponent->SceneProxy != nullptr)
+			if(PrimitiveComponent != nullptr && PrimitiveComponent->SceneProxy != nullptr && !PrimitiveComponent->IsRenderStateDirty())
 			{
 				FHairWorksSceneProxy::FPinMesh PinMesh;
 				PinMesh.Mesh = PrimitiveComponent->SceneProxy;
-				PinMesh.LocalTransform = (PrimitiveComponent->ComponentToWorld * ComponentToWorld.Inverse()).ToMatrixWithScale();
+				PinMesh.LocalTransform = PrimitiveComponent->GetRelativeTransform().ToMatrixWithScale();
 
 				PinMeshes.Add(PinMesh);
 			}
@@ -382,6 +372,20 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 			ThisProxy.UpdateDynamicData_RenderThread(*DynamicData);
 		}
 	);
+
+	// Force to simulate for new created instance
+	static const auto& CVarHairFrameRateIndepedentRendering = *IConsoleManager::Get().FindConsoleVariable(TEXT("r.HairWorks.FrameRateIndependentRendering"));
+	if(CVarHairFrameRateIndepedentRendering.GetInt() != 0 && bForceSkinning)
+	{
+		ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
+			HairForceSimulation,
+			FHairWorksSceneProxy&, ThisProxy, static_cast<FHairWorksSceneProxy&>(*SceneProxy),
+			{
+				if(ThisProxy.GetHairInstanceId() != NvHair::INSTANCE_ID_NULL)
+					HairWorks::GetSDK()->stepInstanceSimulation(ThisProxy.GetHairInstanceId(), 0);
+			}
+		);
+	}
 }
 
 void UHairWorksComponent::SetupBoneMapping()
@@ -397,6 +401,28 @@ void UHairWorksComponent::SetupBoneMapping()
 		BoneIndices[Idx] = Bones.IndexOfByPredicate(
 			[&](const FMeshBoneInfo& BoneInfo){return BoneInfo.Name == HairInstance.Hair->BoneNames[Idx]; }
 		);
+	}
+}
+
+void UHairWorksComponent::UpdateBoneMatrices()
+{
+	if(ParentSkeleton == nullptr)
+	{
+		BoneMatrices.Empty();
+		return;
+	}
+
+	BoneMatrices.Init(FMatrix::Identity, BoneIndices.Num());
+
+	for(auto Idx = 0; Idx < BoneIndices.Num(); ++Idx)
+	{
+		const uint16& IdxInParent = BoneIndices[Idx];
+		if(IdxInParent >= ParentSkeleton->GetSpaceBases().Num())
+			continue;
+
+		const auto Matrix = ParentSkeleton->GetSpaceBases()[IdxInParent].ToMatrixWithScale();
+
+		BoneMatrices[Idx] = ParentSkeleton->SkeletalMesh->RefBasesInvMatrix[IdxInParent] * Matrix;
 	}
 }
 

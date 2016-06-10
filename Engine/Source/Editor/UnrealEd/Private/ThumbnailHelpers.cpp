@@ -1635,20 +1635,16 @@ FHairWorksAssetThumbnailScene::FHairWorksAssetThumbnailScene()
 void FHairWorksAssetThumbnailScene::SetHairAsset(UHairWorksAsset* HairAsset)
 {
 	PreviewComp->HairInstance.Hair = HairAsset;
-	if(HairAsset != nullptr && PreviewComp->ShouldCreateRenderState())
-	{
-		PreviewComp->RecreateRenderState_Concurrent();
-		PreviewComp->AddLocalOffset(FVector(0, 0, PreviewComp->Bounds.SphereRadius - PreviewComp->Bounds.Origin.Z));
-		PreviewComp->UpdateBounds();
-		PreviewComp->MarkRenderDynamicDataDirty();
-	}
+
+	PreviewComp->UnregisterComponent();
+	PreviewComp->RegisterComponent();
 }
 
 void FHairWorksAssetThumbnailScene::GetViewMatrixParameters(const float InFOVDegrees, FVector & OutOrigin, float & OutOrbitPitch, float & OutOrbitYaw, float & OutOrbitZoom) const
 {
 	const float HalfFOVRadians = FMath::DegreesToRadians<float>(InFOVDegrees) * 0.5f;
 	const auto& Bounds = PreviewComp->Bounds;
-	const float HalfMeshSize = Bounds.SphereRadius * 1.15;
+	const float HalfMeshSize = Bounds.SphereRadius * 0.75f;
 	const float TargetDistance = HalfMeshSize / FMath::Tan(HalfFOVRadians);
 
 	USceneThumbnailInfo* ThumbnailInfo = USceneThumbnailInfo::StaticClass()->GetDefaultObject<USceneThumbnailInfo>();

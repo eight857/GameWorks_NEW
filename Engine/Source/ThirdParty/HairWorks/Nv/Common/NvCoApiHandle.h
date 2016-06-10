@@ -18,7 +18,7 @@
 namespace nvidia {
 namespace Common {
 
-/*! API types that can be used with ApiHandle abstraction */
+/*! \brief API types that can be used with ApiHandle abstraction */
 class ApiType { ApiType(); public: enum Enum
 {
 	UNKNOWN,			///< Unknown 
@@ -27,13 +27,16 @@ class ApiType { ApiType(); public: enum Enum
 	DX12,				///< Dx12
 	VULCAN,				///< Vulcan
 	METAL,				///< Metal
-	OPEN_GL,				///< Generic OpenGl
+	OPEN_GL,			///< Generic OpenGl
+
+	HAIR_WORKS_DX12 = 8,	///< HairWorks Dx12 specific  
 
 	COUNT_OF,
 }; };
 typedef ApiType::Enum EApiType;
 
-/*! API agnostic types, can be use to identify more cleanly the actual type with a TypedApiHandle<...> */
+/*!
+\brief API agnostic types, can be use to identify more cleanly the actual type with a TypedApiHandle<...> */
 class ApiSubType { ApiSubType(); public: enum Enum
 {
 	UNKNOWN,
@@ -47,7 +50,8 @@ class ApiSubType { ApiSubType(); public: enum Enum
 }; };
 typedef ApiSubType::Enum EApiSubType;
 
-/*! A very simple structure to provide type safety passing around types for different APIs - specifically rendering APIs currently.
+/*! 
+\brief A very simple structure to provide type safety passing around types for different APIs - specifically rendering APIs currently.
 The idea is to make handles homogeneous, or in 'global' categories, and to be able to check the explicit native type is correct on the receiving side.
 The system also allows using TypedApiHandle to do have runtime type checking for 'generic' API sub types (ie are int ApiSubType enum). 
 Some type safety is lost at compile time, depending on how you use this - but you have 100% safety at execution time. So you can 
@@ -98,7 +102,8 @@ class ApiHandle
 	Void* m_handle;		///< NOTE! Depending on the type this could be the 'thing' or pointer to the thing (if can't fit in pointer). Should be NV_NULL if null. 
 };
 
-/*! Used for making an API handle more type safe, as it can be restricted by the generic ApiSubTypes. If
+/*! 
+\brief Used for making an API handle more type safe, as it can be restricted by the generic ApiSubTypes. If
 that doesn't describe the type suitably, it it can accept a ApiHandle, which will take anything. */
 template <EApiSubType SUB_TYPE>
 class TypedApiHandle : public ApiHandle
@@ -118,7 +123,8 @@ typedef TypedApiHandle<ApiSubType::DEVICE> ApiDevice;
 typedef TypedApiHandle<ApiSubType::CONTEXT> ApiContext;
 typedef TypedApiHandle<ApiSubType::BUFFER> ApiBuffer;
 
-/*! Similar to the ApiHandle - allows a pointer to one or several things. */
+/*! 
+\brief Similar to the ApiHandle - allows a pointer to one or several things. */
 class ConstApiPtr
 {
 	NV_CO_DECLARE_CLASS_BASE(ConstApiPtr);
@@ -151,7 +157,8 @@ protected:
 	Void* m_data;	///< An array of elements of the type. NOTE! This is treated as const, but is this way such DeviceHandleArray can derive from this
 };
 
-/*! For access to an array that is read/write (ie non const) */
+/*! 
+\brief For access to an array that is read/write (ie non const) */
 struct ApiPtr: public ConstApiPtr
 {
 	NV_CO_DECLARE_CLASS(ApiPtr, ConstApiPtr);
@@ -165,10 +172,10 @@ struct ApiPtr: public ConstApiPtr
 	NV_FORCE_INLINE ApiPtr(Int type, Void* data) : Parent(type, data)  {}
 
 		/// Get null
-	NV_FORCE_INLINE static const ApiPtr& getNull() { return static_cast<const ApiPtr&>(ApiPtr::getNull()); }
+	NV_FORCE_INLINE static const ApiPtr& getNull() { return static_cast<const ApiPtr&>(ConstApiPtr::getNull()); }
 };
 
-/*! Templates for generating 'wrapped' types so you can use Dx11Handle(blah) etc instead of using Dx11Type::getHandle(blah). */
+/*! \brief Templates for generating 'wrapped' types so you can use Dx11Handle(blah) etc instead of using Dx11Type::getHandle(blah). */
 template <typename REFLECT_TYPE>
 class WrapApiHandle : public ApiHandle
 {
@@ -181,13 +188,13 @@ class WrapApiHandle : public ApiHandle
 /* Macros to help generate the a specific implementation. Needs SubType to be defined in the implementing type, and the 
 static method 'getType' that generates the type from the SubType */
 
-#define NV_CO_GET_TYPE(nativeType, nativeSubType, apiSubType) \
+#define NV_CO_API_GET_TYPE(nativeType, nativeSubType, apiSubType) \
 	NV_FORCE_INLINE static Int getType(const nativeType*) { return getType(ScopeSubType::nativeSubType); }
 
-#define NV_CO_GET_HANDLE(nativeType, nativeSubType, apiSubType) \
-	NV_FORCE_INLINE static TypedApiHandle<ApiSubType::apiSubType> getHandle(const nativeType* device) { return TypedApiHandle<ApiSubType::apiSubType>(getType(ScopeSubType::nativeSubType), const_cast<nativeType*>(device)); }
+#define NV_CO_API_WRAP(nativeType, nativeSubType, apiSubType) \
+	NV_FORCE_INLINE static TypedApiHandle<ApiSubType::apiSubType> wrap(const nativeType* device) { return TypedApiHandle<ApiSubType::apiSubType>(getType(ScopeSubType::nativeSubType), const_cast<nativeType*>(device)); }
 
-#define NV_CO_GET_VALUE_TYPE(nativeType, nativeSubType, apiSubType) \
+#define NV_CO_API_GET_VALUE_TYPE(nativeType, nativeSubType, apiSubType) \
 	NV_FORCE_INLINE static Int getType(const nativeType&) { return getType(ScopeSubType::nativeSubType); }
 
 } // namespace Common 

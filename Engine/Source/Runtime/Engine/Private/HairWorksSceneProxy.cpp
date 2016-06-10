@@ -27,17 +27,27 @@ HairVisualizationCVarDefine(ShadingNormalCenter);
 
 #undef HairVisualizationCVarDefine
 
-FHairWorksSceneProxy::FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::InstanceId InHairInstanceId) :
-	FPrimitiveSceneProxy(InComponent),
-	HairInstanceId(InHairInstanceId)
-{
-	HairTextures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
+FHairWorksSceneProxy* FHairWorksSceneProxy::HairInstances = nullptr;
 
-	check(HairInstanceId != NvHair::INSTANCE_ID_NULL);
+FHairWorksSceneProxy::FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::AssetId InHairAssetId):
+	FPrimitiveSceneProxy(InComponent),
+	HairAssetId(InHairAssetId),
+	HairInstanceId(NvHair::INSTANCE_ID_NULL)
+{
+	check(InHairAssetId != NvHair::ASSET_ID_NULL);
+
+	HairTextures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
 }
 
 FHairWorksSceneProxy::~FHairWorksSceneProxy()
 {
+	if(HairInstanceId != NvHair::INSTANCE_ID_NULL)
+	{
+		HairWorks::GetSDK()->freeInstance(HairInstanceId);
+		HairInstanceId = NvHair::INSTANCE_ID_NULL;
+
+		Unlink();
+	}
 }
 
 uint32 FHairWorksSceneProxy::GetMemoryFootprint(void) const
@@ -84,6 +94,36 @@ void FHairWorksSceneProxy::Draw(EDrawType DrawType)const
 	}
 }
 
+void FHairWorksSceneProxy::SetPinMatrices(const TArray<FMatrix>& PinMatrices)
+{
+	FScopeLock ObjObjectsLock(&ThreadLock);
+
+	HairPinMatrices = PinMatrices;
+}
+
+const TArray<FMatrix>& FHairWorksSceneProxy::GetPinMatrices()
+{	
+	FScopeLock ObjObjectsLock(&ThreadLock);
+
+	return HairPinMatrices;
+}
+
+bool FHairWorksSceneProxy::AdvanceAnimation()
+{
+	if(SimulateTime != AnimateTime)
+	{
+		SimulateTime = AnimateTime;
+		return true;
+	}
+	else
+		return false;
+}
+
+FHairWorksSceneProxy * FHairWorksSceneProxy::GetHairInstances()
+{
+	return HairInstances;
+}
+
 FPrimitiveViewRelevance FHairWorksSceneProxy::GetViewRelevance(const FSceneView* View)const
 {
 	FPrimitiveViewRelevance ViewRel;
@@ -92,18 +132,51 @@ FPrimitiveViewRelevance FHairWorksSceneProxy::GetViewRelevance(const FSceneView*
 	ViewRel.bDynamicRelevance = true;
 	ViewRel.bRenderInMainPass = false;	// Hair is rendered in a special path.
 
-	ViewRel.bHairWorks = View->Family->EngineShowFlags.HairWorks;
+	ViewRel.bHairWorks = View->Family->EngineShowFlags.HairWorks && HairInstanceId != NvHair::INSTANCE_ID_NULL;
 
 	return ViewRel;
+}
+
+void FHairWorksSceneProxy::CreateRenderThreadResources()
+{
+	// Initialize hair instance
+	check(HairWorks::GetSDK() != nullptr &&  HairAssetId != NvHair::ASSET_ID_NULL && HairInstanceId == NvHair::INSTANCE_ID_NULL);
+
+	auto& HairSdk = *HairWorks::GetSDK();
+	HairSdk.createInstance(HairAssetId, HairInstanceId);
+	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
+		return;
+
+	// Disable this instance at first.
+	NvHair::InstanceDescriptor HairInstanceDesc;
+	HairSdk.getInstanceDescriptor(HairInstanceId, HairInstanceDesc);
+	if(HairInstanceDesc.m_enable)
+	{
+		HairInstanceDesc.m_enable = false;
+		HairSdk.updateInstanceDescriptor(HairInstanceId, HairInstanceDesc);
+	}
+
+	// Add to list
+	LinkHead(HairInstances);
 }
 
 void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData)
 {
 	// Set skinning data
-	HairWorks::GetSDK()->updateSkinningMatrices(
-		HairInstanceId, DynamicData.BoneMatrices.Num(),
-		reinterpret_cast<const gfsdk_float4x4*>(DynamicData.BoneMatrices.GetData())
-	);
+	if(DynamicData.BoneMatrices.Num() > 0)
+	{
+		HairWorks::GetSDK()->updateSkinningMatrices(
+			HairInstanceId, DynamicData.BoneMatrices.Num(),
+			reinterpret_cast<const gfsdk_float4x4*>(DynamicData.BoneMatrices.GetData())
+		);
+
+		if(CurrentSkinningMatrices.Num() > 0)
+			PrevSkinningMatrices = CurrentSkinningMatrices;
+		else
+			PrevSkinningMatrices = DynamicData.BoneMatrices;
+
+		CurrentSkinningMatrices = DynamicData.BoneMatrices;
+	}
 
 	// Update normal center bone
 	auto HairDesc = DynamicData.HairInstanceDesc;
@@ -112,7 +185,6 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 #define HairVisualizationCVarUpdate(CVarName, MemberVarName)	\
 	HairDesc.m_visualize##MemberVarName |= CVarHairVisualization##CVarName.GetValueOnRenderThread() != 0
 
-	HairDesc.m_drawRenderHairs &= CVarHairVisualizationHair.GetValueOnRenderThread() != 0;
 	HairVisualizationCVarUpdate(GuideCurves, GuideHairs);
 	HairVisualizationCVarUpdate(SkinnedGuideCurves, SkinnedGuideHairs);
 	HairVisualizationCVarUpdate(ControlPoints, ControlVertices);
@@ -127,9 +199,12 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 
 #undef HairVisualizerCVarUpdate
 
+	HairDesc.m_drawRenderHairs &= CVarHairVisualizationHair.GetValueOnRenderThread() != 0;
+
 	// Other parameters
 	HairDesc.m_modelToWorld = (gfsdk_float4x4&)GetLocalToWorld().M;
 	HairDesc.m_useViewfrustrumCulling = false;
+	AnimateTime = DynamicData.AnimateTime;
 
 	// Set parameters to HairWorks
 	HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairDesc);	// Mainly for simulation.
@@ -152,7 +227,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 	for (auto Idx = 0; Idx < NvHair::ETextureType::COUNT_OF; ++Idx)
 	{
 		auto TextureRef = HairTextures[Idx];
-		HairWorks::GetSDK()->setTexture(HairInstanceId, (NvHair::ETextureType)Idx, NvCo::Dx11Type::getHandle(HairWorks::GetD3DHelper().GetShaderResourceView(TextureRef.GetReference())));
+		HairWorks::GetSDK()->setTexture(HairInstanceId, (NvHair::ETextureType)Idx, NvCo::Dx11Type::wrap(HairWorks::GetD3DHelper().GetShaderResourceView(TextureRef.GetReference())));
 	}
 
 	// Add pin meshes
