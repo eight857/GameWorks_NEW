@@ -119,31 +119,29 @@ class FHairWorksBasePassPs: public FHairWorksBasePs, public FHairWorksBaseShader
 	FHairWorksBasePassPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
 		: FHairWorksBasePs(Initializer)
 	{
-		IndirectLightingSHCoefficients.Bind(Initializer.ParameterMap, TEXT("IndirectLightingSHCoefficients"));
-		PointSkyBentNormal.Bind(Initializer.ParameterMap, TEXT("PointSkyBentNormal"));
 		CubemapShaderParameters.Bind(Initializer.ParameterMap);
 		CubemapAmbient.Bind(Initializer.ParameterMap, TEXT("bCubemapAmbient"));
+		PrecomputedLightingBuffer.Bind(Initializer.ParameterMap, TEXT("PrecomputedLightingBuffer"));
 	}
 
 	virtual bool Serialize(FArchive& Ar)
 	{
 		bool bShaderHasOutdatedParameters = FHairWorksBasePs::Serialize(Ar);
 
-		Ar << IndirectLightingSHCoefficients << PointSkyBentNormal << CubemapShaderParameters << CubemapAmbient;
+		Ar << CubemapShaderParameters << CubemapAmbient << PrecomputedLightingBuffer;
 
 		return bShaderHasOutdatedParameters;
 	}
 
-	void SetParameters(FRHICommandList& RHICmdList, const FSceneView& View, const NvHair_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[NvHair::ShaderResourceType::COUNT_OF], const FVector4 IndirectLight[3], const FVector4& InPointSkyBentNormal)
+	void SetParameters(FRHICommandList& RHICmdList, const FSceneView& View, const NvHair_ConstantBuffer& HairConstBuffer, const TArray<FTexture2DRHIRef>& HairTextures, ID3D11ShaderResourceView* HairSrvs[NvHair::ShaderResourceType::COUNT_OF], FUniformBufferRHIRef InPrecomputedLightingBuffer)
 	{
 		FHairWorksBasePs::SetParameters(RHICmdList, View, HairConstBuffer, HairTextures, HairSrvs);
-
-		SetShaderValueArray(RHICmdList, GetPixelShader(), IndirectLightingSHCoefficients, IndirectLight, 3);
-		SetShaderValue(RHICmdList, GetPixelShader(), PointSkyBentNormal, InPointSkyBentNormal);
 
 		const bool bCubemapAmbient = View.FinalPostProcessSettings.ContributingCubemaps.Num() > 0;
 		SetShaderValue(RHICmdList, GetPixelShader(), CubemapAmbient, bCubemapAmbient);
 		CubemapShaderParameters.SetParameters(RHICmdList, GetPixelShader(), bCubemapAmbient ? View.FinalPostProcessSettings.ContributingCubemaps[0] : FFinalPostProcessSettings::FCubemapEntry());
+
+		SetUniformBufferParameter(RHICmdList, GetPixelShader(), PrecomputedLightingBuffer, InPrecomputedLightingBuffer);
 	}
 
 	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
@@ -151,10 +149,9 @@ class FHairWorksBasePassPs: public FHairWorksBasePs, public FHairWorksBaseShader
 		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
 	}
 
-	FShaderParameter IndirectLightingSHCoefficients;
-	FShaderParameter PointSkyBentNormal;
 	FCubemapShaderParameters CubemapShaderParameters;
 	FShaderParameter CubemapAmbient;
+	FShaderUniformBufferParameter PrecomputedLightingBuffer;
 };
 
 IMPLEMENT_SHADER_TYPE(, FHairWorksBasePassPs, TEXT("HairWorks"), TEXT("BasePassPs"), SF_Pixel);
@@ -782,20 +779,11 @@ namespace HairWorksRenderer
 					);
 
 				// Setup shader constants
-				FVector4 IndirectLight[sizeof(FSHVectorRGB2) / sizeof(FVector4)] = {FVector4(0, 0, 0, 0), FVector4(0, 0, 0, 0), FVector4(0, 0, 0, 0)};
-				FVector4 SkyBentNormal(0, 0, 0, 1);
-				if(PrimitiveInfo->IndirectLightingCacheAllocation != nullptr
-					&& PrimitiveInfo->IndirectLightingCacheAllocation->IsValid()
-					)
+				FUniformBufferRHIParamRef PrecomputedLightingBuffer = GEmptyPrecomputedLightingUniformBuffer.GetUniformBufferRHI();
+
+				if(View.Family->EngineShowFlags.GlobalIllumination)
 				{
-					const FIndirectLightingCacheAllocation& LightingAllocation = *PrimitiveInfo->IndirectLightingCacheAllocation;
-					if(View.Family->EngineShowFlags.GlobalIllumination)
-					{
-						IndirectLight[0] = LightingAllocation.SingleSamplePacked[0];
-						IndirectLight[1] = LightingAllocation.SingleSamplePacked[1];
-						IndirectLight[2] = LightingAllocation.SingleSamplePacked[2];
-					}
-					SkyBentNormal = LightingAllocation.CurrentSkyBentNormal;
+					PrecomputedLightingBuffer = PrimitiveInfo->IndirectLightingCacheUniformBuffer;
 				}
 
 				NvHair::ShaderConstantBuffer ConstantBuffer;
@@ -804,7 +792,8 @@ namespace HairWorksRenderer
 				ID3D11ShaderResourceView* HairSrvs[NvHair::ShaderResourceType::COUNT_OF] = {};
 				HairWorks::GetSDK()->getShaderResources(HairSceneProxy.GetHairInstanceId(), NV_NULL, NvHair::ShaderResourceType::COUNT_OF, NvCo::Dx11Type::wrapPtr(HairSrvs));
 
-				PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHair_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs, IndirectLight, SkyBentNormal);
+
+				PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHair_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs, PrecomputedLightingBuffer);
 
 				// Flush render states
 				HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
@@ -1076,6 +1065,8 @@ namespace HairWorksRenderer
 		// Handle frame rate independent rendering
 		const float SimulateStepTime = 1.f / CVarHairSimulateFps.GetValueOnRenderThread();
 
+		float RenderInterp = 1;
+
 		if(CVarHairFrameRateIndependentRendering.GetValueOnRenderThread() != 0)
 		{
 			// Fix simulation time
@@ -1159,17 +1150,14 @@ namespace HairWorksRenderer
 			}
 
 			// Calculate render interpolation value
-			const float RenderInterp = (CurrentWorldTime - SimulateTime) / SimulateStepTime;
+			RenderInterp = (CurrentWorldTime - SimulateTime) / SimulateStepTime;
 			checkSlow(RenderInterp >= 0 && RenderInterp <= 1);
-
-			// Prepare for rendering
-			HairWorks::GetSDK()->preRender(RenderInterp);
 		}
 		else	// Without frame rate independent rendering
 		{
 			AdvanceHairAnimation();
 
-			HairWorks::GetSDK()->stepSimulation(SimulateStepTime);
+			HairWorks::GetSDK()->stepSimulation(SimulateStepTime, nullptr, true);
 		}
 
 		// Re-enable none-animating hairs
@@ -1183,6 +1171,9 @@ namespace HairWorksRenderer
 		}
 
 		ReEnableHairInstances.Empty(ReEnableHairInstances.Num());
+
+		// Prepare for rendering
+		HairWorks::GetSDK()->preRender(RenderInterp);
 
 		// Update pin mesh transform
 		for(FHairWorksSceneProxy::TIterator Itr(FHairWorksSceneProxy::GetHairInstances()); Itr; Itr.Next())
