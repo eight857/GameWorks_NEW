@@ -697,8 +697,6 @@ namespace HairWorksRenderer
 			for(auto& PrimitiveInfo : View.VisibleHairs)
 			{
 				auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
-				if(HairSceneProxy.GetHairInstanceId() == NvHair::INSTANCE_ID_NULL)
-					continue;
 
 				// Skip colorize
 				NvHair::InstanceDescriptor HairDescriptor;
@@ -716,6 +714,9 @@ namespace HairWorksRenderer
 						HairWorks::GetSDK()->updateInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDescriptor);
 					}
 				}
+
+				// Prepare
+				HairWorks::GetSDK()->preRenderInstance(HairSceneProxy.GetHairInstanceId(), 1);
 
 				// Find stencil value for this hair
 				auto* UsedStencil = HairStencilValues.FindByPredicate(
@@ -792,14 +793,10 @@ namespace HairWorksRenderer
 				ID3D11ShaderResourceView* HairSrvs[NvHair::ShaderResourceType::COUNT_OF] = {};
 				HairWorks::GetSDK()->getShaderResources(HairSceneProxy.GetHairInstanceId(), NV_NULL, NvHair::ShaderResourceType::COUNT_OF, NvCo::Dx11Type::wrapPtr(HairSrvs));
 
-
 				PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHair_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs, PrecomputedLightingBuffer);
 
-				// Flush render states
-				HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
-
 				// Draw
-				HairSceneProxy.Draw(FHairWorksSceneProxy::EDrawType::Normal);
+				HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Normal);
 				AccumulateStats(HairSceneProxy);
 			}
 		}
@@ -939,9 +936,6 @@ namespace HairWorksRenderer
 
 		SetProjViewInfo(*HairWorks::GetSDK(), View);
 
-		// Flush render states
-		HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
-
 		// Render colorize
 		for(auto& PrimitiveInfo : View.VisibleHairs)
 		{
@@ -953,6 +947,9 @@ namespace HairWorksRenderer
 
 			if (HairDescriptor.m_colorizeMode == NvHair::ColorizeMode::NONE)
 				continue;
+			
+			// Prepare
+			HairWorks::GetSDK()->preRenderInstance(HairSceneProxy.GetHairInstanceId(), 1);
 
 			// Setup shader constants
 			NvHair::ShaderConstantBuffer ConstantBuffer;
@@ -963,11 +960,8 @@ namespace HairWorksRenderer
 
 			PixelShader->SetParameters(RHICmdList, View, reinterpret_cast<NvHair_ConstantBuffer&>(ConstantBuffer), HairSceneProxy.GetTextures(), HairSrvs);
 
-			// Flush render states
-			HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
-
 			// Draw
-			HairSceneProxy.Draw(FHairWorksSceneProxy::EDrawType::Normal);
+			HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Normal);
 		}
 
 		// Render visualization
@@ -976,7 +970,10 @@ namespace HairWorksRenderer
 			// Draw hair
 			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
 
-			HairSceneProxy.Draw(FHairWorksSceneProxy::EDrawType::Visualization);
+			// Prepare
+			HairWorks::GetSDK()->preRenderInstance(HairSceneProxy.GetHairInstanceId(), 1);
+
+			HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Visualization);
 		}
 	}
 
@@ -994,8 +991,9 @@ namespace HairWorksRenderer
 			for(auto& PrimitiveInfo : View.VisibleHairs)
 			{
 				auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
-				if(HairSceneProxy.GetHairInstanceId() == NvHair::INSTANCE_ID_NULL)
-					continue;
+
+				// Prepare
+				HairWorks::GetSDK()->preRenderInstance(HairSceneProxy.GetHairInstanceId(), 1);
 
 				// Setup shader
 				TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
@@ -1015,11 +1013,8 @@ namespace HairWorksRenderer
 				// Setup shader constants
 				PixelShader->SetParameters(RHICmdList, PrimitiveInfo->DefaultDynamicHitProxyId, View);
 
-				// Flush render states
-				HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
-
 				// Draw
-				HairSceneProxy.Draw(FHairWorksSceneProxy::EDrawType::Normal);
+				HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Normal);
 			}
 		}
 	}
@@ -1172,9 +1167,6 @@ namespace HairWorksRenderer
 
 		ReEnableHairInstances.Empty(ReEnableHairInstances.Num());
 
-		// Prepare for rendering
-		HairWorks::GetSDK()->preRender(RenderInterp);
-
 		// Update pin mesh transform
 		for(FHairWorksSceneProxy::TIterator Itr(FHairWorksSceneProxy::GetHairInstances()); Itr; Itr.Next())
 		{
@@ -1232,13 +1224,14 @@ namespace HairWorksRenderer
 				continue;
 
 			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
-			if (HairSceneProxy.GetHairInstanceId() == NvHair::INSTANCE_ID_NULL)
-				continue;
 
 			NvHair::InstanceDescriptor HairDesc;
 			HairWorks::GetSDK()->getInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), HairDesc);
 			if(!HairDesc.m_castShadows)
 				continue;
+
+			// Prepare
+			HairWorks::GetSDK()->preRenderInstance(HairSceneProxy.GetHairInstanceId(), 1);
 
 			// Setup render states and shaders
 			TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
@@ -1299,11 +1292,8 @@ namespace HairWorksRenderer
 				SetShaderValue(RHICmdList, PixelShader->GetPixelShader(), PixelShader->ShadowParams, FVector2D(Shadow.GetShaderDepthBias() * CVarHairShadowBiasScale.GetValueOnRenderThread(), Shadow.InvMaxSubjectDepth));
 			}
 
-			// Flush render states
-			HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
-
 			// Draw hair
-			HairSceneProxy.Draw(FHairWorksSceneProxy::EDrawType::Shadow);
+			HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Shadow);
 			AccumulateStats(HairSceneProxy);
 		}
 	}

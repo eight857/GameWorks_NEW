@@ -36,11 +36,12 @@ public:
 	virtual uint32 GetMemoryFootprint(void) const override;
 	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View)const override;
 	virtual void CreateRenderThreadResources() override;
+	virtual void OnTransformChanged()override;
 	//~ End FPrimitiveSceneProxy interface.
 
 	void UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData);
 
-	void Draw(EDrawType DrawType)const;
+	void Draw(FRHICommandList& RHICmdList, EDrawType DrawType)const;
 
 	NvHair::InstanceId GetHairInstanceId()const { return HairInstanceId; }
 	const TArray<FTexture2DRHIRef>& GetTextures()const { return HairTextures; }

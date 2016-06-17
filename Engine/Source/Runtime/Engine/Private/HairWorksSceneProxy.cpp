@@ -55,8 +55,15 @@ uint32 FHairWorksSceneProxy::GetMemoryFootprint(void) const
 	return 0;
 }
 
-void FHairWorksSceneProxy::Draw(EDrawType DrawType)const
+void FHairWorksSceneProxy::Draw(FRHICommandList& RHICmdList, EDrawType DrawType)const
 {
+	// Can't call it here. It changes render states, so we must call it earlier before we set render states. 
+	//HairWorks::GetSDK()->preRender(RenderInterp);
+
+	// Flush render states
+	HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
+
+	// Draw
 	if (DrawType == EDrawType::Visualization)
 	{
 		HairWorks::GetSDK()->renderVisualization(HairInstanceId);
@@ -70,6 +77,7 @@ void FHairWorksSceneProxy::Draw(EDrawType DrawType)const
 		if (DrawType == EDrawType::Shadow)
 		{
 			HairDesc.m_useBackfaceCulling = false;
+			HairDesc.m_useViewfrustrumCulling = false;
 
 			HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairDesc);
 		}
@@ -160,6 +168,22 @@ void FHairWorksSceneProxy::CreateRenderThreadResources()
 	LinkHead(HairInstances);
 }
 
+void FHairWorksSceneProxy::OnTransformChanged()
+{
+	// Update new matrix to hair
+	FPrimitiveSceneProxy::OnTransformChanged();
+
+	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
+		return;
+
+	NvHair::InstanceDescriptor InstDesc;
+	HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, InstDesc);
+
+	InstDesc.m_modelToWorld = (gfsdk_float4x4&)GetLocalToWorld().M;
+
+	HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, InstDesc);
+}
+
 void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData)
 {
 	// Set skinning data
@@ -203,7 +227,6 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 
 	// Other parameters
 	HairDesc.m_modelToWorld = (gfsdk_float4x4&)GetLocalToWorld().M;
-	HairDesc.m_useViewfrustrumCulling = false;
 	AnimateTime = DynamicData.AnimateTime;
 
 	// Set parameters to HairWorks

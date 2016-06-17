@@ -1167,6 +1167,9 @@ void FHairWorksAssetThumbnailScene::SetHairAsset(UHairWorksAsset* HairAsset)
 
 	PreviewComp->UnregisterComponent();
 	PreviewComp->RegisterComponent();
+
+	const float Radius = PreviewComp->Bounds.GetSphere().W;
+	PreviewComp->SetWorldLocation(FVector(0, 0, Radius));
 }
 
 void FHairWorksAssetThumbnailScene::GetViewMatrixParameters(const float InFOVDegrees, FVector & OutOrigin, float & OutOrbitPitch, float & OutOrbitYaw, float & OutOrbitZoom) const

@@ -1508,6 +1508,7 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true.
 		\see stepSimulation.  
 		\see Frame rate Independent Rendering (FIR) in documentation.
+		\see As with stepSimulation m_enable must be true for preRender to function. If m_enable is false the call will do nothing, and return NV_OK
 		\note If preRender has already been performed, and nothing has changed (bones/modelToWorldMatrix/simulationInterp) this call will be very fast and do nothing. */
 	virtual Result preRenderInstance(InstanceId instanceId, Float simulationInterp) = 0;
 
@@ -1516,6 +1517,7 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true.
 		\see stepSimulation.
 		\see Frame rate Independent Rendering (FIR) in documentation.
+		\see As with stepSimulation m_enable must be true for preRender to take place on an instance.
 		\note If preRender has already been performed, and nothing has changed (bones/modelToWorldMatrix/simulationInterp) this call will be very fast and do nothing. */
 	virtual Result preRender(Float simulationInterp = 1.0f) = 0;
 
