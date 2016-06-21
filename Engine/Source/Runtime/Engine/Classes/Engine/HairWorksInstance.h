@@ -16,7 +16,7 @@ struct ENGINE_API FHairWorksInstance
 	UHairWorksAsset* Hair;
 
 	/** Whether override Hair Material of the HairWorks asset. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Asset)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Asset)
 	bool bOverride = false;
 
 	/** A Hair Material to override the Hair Material of the HairWorks asset. */
