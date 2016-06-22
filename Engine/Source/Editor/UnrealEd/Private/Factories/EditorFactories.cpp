@@ -7092,8 +7092,10 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, const NvHair::I
 		HairInstanceDesc.m_shadowSigma = FMath::Min(HairInstanceDesc.m_shadowSigma, 254.f / 255.f);
 
 		// Fill hair material
-		if(HairInstanceDesc.m_hairNormalBoneIndex < Hair.BoneNames.Num())
+		if(HairInstanceDesc.m_hairNormalBoneIndex >= 0 && HairInstanceDesc.m_hairNormalBoneIndex < Hair.BoneNames.Num())
 			Hair.HairMaterial->HairNormalCenter = Hair.BoneNames[HairInstanceDesc.m_hairNormalBoneIndex];
+		else
+			Hair.HairMaterial->HairNormalCenter = "";
 
 		TArray<UTexture2D*> HairTextures;
 		NvHair::InstanceDescriptor HairInstDesc;
