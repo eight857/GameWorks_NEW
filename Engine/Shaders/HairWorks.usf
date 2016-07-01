@@ -46,7 +46,7 @@ float CopyDepthPs(FScreenVertexOutput Input) : SV_Depth
 
 Texture2DMS<float4> VelocityTexture;
 Texture2DMS<float> DepthTexture;
-Texture2DMS<uint> StencilTexture;
+Texture2DMS<uint2> StencilTexture;
 
 float4 CopyVelocityPs(FScreenVertexOutput Input): SV_Target0
 {
@@ -82,7 +82,8 @@ float ResolveDepthPs(FScreenVertexOutput Input) : SV_Depth
 	float NearestDepth = 0;
 	for(uint i = 0; i < SampleNum; ++i)
 	{
-		uint Stencil = StencilTexture.Load(Input.Position.xy, i);
+		// Skip non-hair depth using stencil
+		uint Stencil = StencilTexture.Load(Input.Position.xy, i).g;
 		if(Stencil == 0)
 			continue;
 

@@ -14,7 +14,7 @@ Texture2DMS<float4> HairGBufferBTextureMS;
 Texture2DMS<float4> HairGBufferCTextureMS;
 Texture2DMS<float4> HairPrecomputeLightTextureMS;
 Texture2DMS<float> HairDepthTextureMS;
-Texture2DMS<uint> HairStencilTextureMS;
+Texture2DMS<uint2> HairStencilTextureMS;
 
 float3 GetHairWorksDynamicLighting(float3 ScreenVector, float2 InUV, FHairScreenSpaceData HairScreenSpaceData, FDeferredLightData LightData)
 {
@@ -200,7 +200,7 @@ float GetHairWorksDynamicLighting(out float3 OutColor, float3 ScreenVector, floa
 		float4 GBufferA = HairGBufferATextureMS.Load(SamplePos, i);
 		float4 GBufferB = HairGBufferBTextureMS.Load(SamplePos, i);
 		float4 GBufferC = HairGBufferCTextureMS.Load(SamplePos, i);
-		uint Stencil = HairStencilTextureMS.Load(SamplePos, i);
+		uint Stencil = HairStencilTextureMS.Load(SamplePos, i).g;
 
 		float4 HairInstance_Spec0_SpecPower0_Spec1_SpecPower1 = HairInstanceData.Spec0_SpecPower0_Spec1_SpecPower1[Stencil];
 		float4 HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma = HairInstanceData.Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma[Stencil];

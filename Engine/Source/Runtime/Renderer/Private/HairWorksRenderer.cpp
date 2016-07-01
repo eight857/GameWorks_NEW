@@ -516,7 +516,7 @@ namespace HairWorksRenderer
 		}
 	}
 
-	void FindFreeElementInPool(FRHICommandList& RHICmdList, const FPooledRenderTargetDesc& Desc, TRefCountPtr<IPooledRenderTarget> &Out, const TCHAR* InDebugName)
+	bool FindFreeElementInPool(FRHICommandList& RHICmdList, const FPooledRenderTargetDesc& Desc, TRefCountPtr<IPooledRenderTarget> &Out, const TCHAR* InDebugName)
 	{
 		// There is bug. When a render target is created from a existing pointer, AllocationLevelInKB is not decreased. This cause assertion failure in FRenderTargetPool::GetStats(). So we have to release it first.
 		if(Out != nullptr)
@@ -528,13 +528,15 @@ namespace HairWorksRenderer
 			}
 		}
 
-		GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Out, InDebugName);
+		const bool bReuse = GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Out, InDebugName);
 
 		// Release useless resolved render resource. Because of the reason mentioned above, we do in only in the macro.
 #if UE_BUILD_SHIPPING || UE_BUILD_TEST
 		if(Out->GetDesc().NumSamples > 1)
 			Out->GetRenderTargetItem().ShaderResourceTexture = nullptr;
 #endif
+
+		return bReuse;
 	}
 
 	// Create velocity buffer if necessary
@@ -599,9 +601,11 @@ namespace HairWorksRenderer
 		// Depth buffer
 		Desc = FPooledRenderTargetDesc::Create2DDesc(Size, PF_DepthStencil, FClearValueBinding::DepthFar, TexCreate_None, TexCreate_DepthStencilTargetable, false);
 		Desc.NumSamples = SampleCount;
-		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->HairDepthZ, TEXT("HairDepthZ"));
+		const bool bReuse = FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->HairDepthZ, TEXT("HairDepthZ"));
 
-		HairRenderTargets->StencilSRV = RHICreateShaderResourceView((FTexture2DRHIRef&)HairRenderTargets->HairDepthZ->GetRenderTargetItem().TargetableTexture, 0, 1, PF_X24_G8);
+		// If a new depth buffer is created, we need to create a new view for it.
+		if(!bReuse)
+			HairRenderTargets->StencilSRV = RHICreateShaderResourceView((FTexture2DRHIRef&)HairRenderTargets->HairDepthZ->GetRenderTargetItem().TargetableTexture, 0, 1, PF_X24_G8);
 
 		Desc.NumSamples = 1;
 		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->HairDepthZForShadow, TEXT("HairDepthZForShadow"));
@@ -658,7 +662,6 @@ namespace HairWorksRenderer
 		}
 
 		FRHISetRenderTargetsInfo RenderTargetsInfo(5, RenderTargetViews, FRHIDepthRenderTargetView(HairRenderTargets->HairDepthZ->GetRenderTargetItem().TargetableTexture));
-		RenderTargetsInfo.SetClearDepthStencil(true, 0);
 
 		RHICmdList.SetRenderTargetsAndClear(RenderTargetsInfo);
 
