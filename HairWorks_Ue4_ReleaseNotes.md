@@ -1,8 +1,5 @@
-HairWorks Preview Release 3
-
-
+ï»¿HairWorks Preview Release 3
 =============
-
 New:
 
 * Upgraded to HairWorks 1.2.
@@ -56,7 +53,6 @@ Fixed hair shadow bug on Pascal GPU.
 
 
 Artist Workflow
-
 =============
 HairWorks assets are imported directly into the content browser. All the attributes of a HairWorks asset are now directly editable on the asset's Details panel. The details panel is set up to be consistent with the HairWorks Viewer's UI as close as possible.
 
@@ -75,9 +71,9 @@ Right click in the Content Browser, use Import to option to select one or more h
 
 * Assign an imported hair asset to the Asset/Hair property. There two ways to tune HairWorks assets.
 
-	* By default the attributes of the HairWorks asset will be inherited by the BluePrint Component.  Therefore, the HairWorks attributes will be dimmed and disabled.
+	* By default the attributes of the HairWorks asset will be inherited by the BluePrint Component. Â Therefore, the HairWorks attributes will be dimmed and disabled.
 
-	* To edit the HairWorks attributes directly on the BluePrint component, enable the Override check box for the selected HairWorks Component.  This disabled the inheritance from the HairWorks asset and now allows the user to edit the component directly.
+	* To edit the HairWorks attributes directly on the BluePrint component, enable the Override check box for the selected HairWorks Component. Â This disabled the inheritance from the HairWorks asset and now allows the user to edit the component directly.
 
 * Now add Blueprint character to a level.
 
