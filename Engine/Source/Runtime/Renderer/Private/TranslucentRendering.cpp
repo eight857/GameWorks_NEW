@@ -11,6 +11,10 @@
 #include "LightPropagationVolume.h"
 #include "SceneUtils.h"
 
+// NvFlow begin
+#include "GameWorks/RendererHooksNvFlow.h"
+// NvFlow end
+
 DECLARE_CYCLE_STAT(TEXT("TranslucencyTimestampQueryFence Wait"), STAT_TranslucencyTimestampQueryFence_Wait, STATGROUP_SceneRendering);
 DECLARE_CYCLE_STAT(TEXT("TranslucencyTimestampQuery Wait"), STAT_TranslucencyTimestampQuery_Wait, STATGROUP_SceneRendering);
 
@@ -1342,6 +1346,13 @@ void FDeferredShadingSceneRenderer::RenderTranslucency(FRHICommandListImmediate&
 						LightPropagationVolume->Visualise(RHICmdList, View);
 					}
 				}
+
+				// NvFlow begin
+				if (GRendererNvFlowHooks)
+				{
+					GRendererNvFlowHooks->NvFlowDoRender(RHICmdList, View);
+				}
+				// NvFlow end
 
 				FinishTranslucentRenderTarget(RHICmdList, View, TPT_NonSeparateTransluceny);
 			}

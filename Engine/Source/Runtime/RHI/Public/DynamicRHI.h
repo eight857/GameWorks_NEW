@@ -8,6 +8,10 @@
 
 #include "ModuleInterface.h"
 
+// NvFlow begin
+#include "GameWorks/RHINvFlow.h"
+// NvFlow end
+
 //
 // Statically bound RHI resource reference type definitions for the dynamically bound RHI.
 //
@@ -453,6 +457,13 @@ public:
 	virtual void RHIPopEvent() = 0;
 
 	virtual void RHIUpdateTextureReference(FTextureReferenceRHIParamRef TextureRef, FTextureRHIParamRef NewTexture) = 0;
+
+	// NvFlow begin
+	virtual void NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc) {}
+	virtual void NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc) {}
+	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) {}
+	FRHINvFlowCleanup NvFlowCleanup;
+	// NvFlow end
 };
 
 /** The interface which is implemented by the dynamically bound RHI. */

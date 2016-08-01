@@ -9,6 +9,10 @@
 #include "PrimitiveUniformShaderParameters.h"
 #include "PrimitiveViewRelevance.h"
 
+// NvFlow begin
+#include "GameWorks/PrimitiveSceneProxyNvFlow.h"
+// NvFlow end
+
 // Forward declarations.
 class FSimpleLightEntry;
 class HHitProxy;
@@ -527,6 +531,10 @@ public:
 	 * @return					The section data built in the texture streaming build.
 	 */
 	virtual const FStreamingSectionBuildInfo* GetStreamingSectionData(float& OutDistanceMultiplier, int32 LODIndex, int32 ElementIndex) const { return nullptr; }
+
+	// NvFlow begin
+	FPrimitiveSceneProxyNvFlow FlowData;
+	// NvFlow end
 
 protected:
 
