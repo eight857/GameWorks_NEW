@@ -16,8 +16,10 @@ NFlowRendering.cpp: Translucent rendering implementation.
 
 #include "Stats.h"
 
+#if NVFLOW_ADAPTIVE
 // For HMD support
 #include "IHeadMountedDisplay.h"
+#endif
 
 #include "NvFlow.h"
 #include "NvFlowContext.h"
@@ -889,6 +891,11 @@ void NvFlow::Scene::render(FRHICommandListImmediate& RHICmdList, const FViewInfo
 
 void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives)
 {
+	if (GUsingNullRHI)
+	{
+		return;
+	}
+
 	bool shouldFlush = false;
 
 	SCOPE_CYCLE_COUNTER(STAT_Flow_SimulateGrids);
@@ -932,6 +939,11 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 
 void NvFlowDoRender(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
 {
+	if (GUsingNullRHI)
+	{
+		return;
+	}
+
 	if (NvFlow::gContext)
 	{
 		SCOPE_CYCLE_COUNTER(STAT_Flow_RenderGrids);
