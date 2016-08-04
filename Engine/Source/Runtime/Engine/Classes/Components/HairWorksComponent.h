@@ -60,9 +60,6 @@ protected:
 
 	/** Skinning data*/
 	TArray<FMatrix> BoneMatrices;
-
-	//** Used to advance hair simulation*/
-	float AnimateTime = 0;
 };
 
 // @third party code - END HairWorks

@@ -4,6 +4,7 @@
 #include "EditorFramework/AssetImportData.h"
 #include "HairWorksSDK.h"
 #include "Engine/HairWorksMaterial.h"
+#include "Components/HairWorksComponent.h"
 #include "Engine/HairWorksAsset.h"
 
 UHairWorksAsset::UHairWorksAsset(const class FObjectInitializer& ObjectInitializer):
@@ -58,6 +59,21 @@ void UHairWorksAsset::PostLoad()
 	// Setup bone lookup table
 	InitBoneLookupTable();
 }
+
+#if WITH_EDITOR
+void UHairWorksAsset::PostEditChangeProperty(FPropertyChangedEvent & PropertyChangedEvent)
+{
+	// Let HairWorks components to update their rendering data
+	for(TObjectIterator<UHairWorksComponent> It; It; ++It)
+	{
+		if(It->HairInstance.Hair == this)
+			It->MarkRenderDynamicDataDirty();
+	}
+
+	// Call parent
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+}
+#endif
 
 void UHairWorksAsset::InitPins() const
 {

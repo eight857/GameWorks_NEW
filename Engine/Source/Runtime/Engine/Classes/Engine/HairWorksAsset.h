@@ -43,6 +43,9 @@ class ENGINE_API UHairWorksAsset : public UObject
 	virtual void Serialize(FArchive& Ar) override;
 	virtual void PostInitProperties() override;
 	virtual void PostLoad() override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 	// End UObject interface.
 		
 	void InitPins()const;

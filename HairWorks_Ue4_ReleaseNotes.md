@@ -19,7 +19,6 @@ Fix:
 * Removed the stutter when a HairWorks component is created. We now create HairWorks assets and compile shaders at loading time instead of rendering time.
 * HairWorks component now has right bounding box.
 * Fixed some problems when a HairWorks component is edited.
-* Fixed a problem that hairs are still simulated when shouldn’t.
 * Fixed a bug that hair transform is sometimes wrong.
 * Fixed a bug that view frustum culling doesn’t work.
 * Fixed a crash when the hair normal bone index is -1.

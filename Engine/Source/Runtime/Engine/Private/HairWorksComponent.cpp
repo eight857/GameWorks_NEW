@@ -83,10 +83,6 @@ void UHairWorksComponent::TickComponent(float DeltaTime, enum ELevelTick TickTyp
 	// Call super
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// Advance simulation
-	if(GetWorld()->AreActorsInitialized() && TickType != LEVELTICK_TimeOnly)
-		AnimateTime = GetWorld()->GetTimeSeconds();
-
 	// Update pin transforms. Mainly for editor
 	if(SceneProxy != nullptr && HairInstance.Hair->HairMaterial->Pins.Num() > 0)
 	{
@@ -242,6 +238,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 	}
 
 	// Load from component hair material
+	checkSlow(HairInstance.HairMaterial->GetOuter() == this);
 	if(HairInstance.HairMaterial != nullptr && HairInstance.bOverride)
 	{
 		NvHair::InstanceDescriptor OverideHairDesc;
@@ -281,9 +278,6 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 		DynamicData->HairInstanceDesc.m_hairNormalBoneIndex = *BoneIdx;
 	else
 		DynamicData->HairInstanceDesc.m_hairNormalWeight = 0;
-
-	// Animation flag
-	DynamicData->AnimateTime = AnimateTime;
 
 	// Set skinning data
 	DynamicData->BoneMatrices = BoneMatrices;
@@ -435,8 +429,6 @@ void UHairWorksComponent::Serialize(FArchive & Ar)
 	{
 		HairInstance.HairMaterial = CastChecked<UHairWorksMaterial>(StaticDuplicateObject(HairInstance.HairMaterial, this));
 	}
-
-	check(HairInstance.HairMaterial->GetOuter() == this);
 
 	// Fix object flag for old assets
 	HairInstance.HairMaterial->SetFlags(GetMaskedFlags(RF_PropagateToSubObjects));

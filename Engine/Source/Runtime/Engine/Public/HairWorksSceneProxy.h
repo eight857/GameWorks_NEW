@@ -26,7 +26,6 @@ public:
 		TArray<UTexture2D*> Textures;
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
-		float AnimateTime = 0;
 	};
 
 	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::AssetId HairAssetId);
@@ -50,11 +49,12 @@ public:
 	const TArray<FMatrix>& GetPinMatrices();
 	const TArray<FMatrix>& GetSkinningMatrices()const { return CurrentSkinningMatrices; }
 	const TArray<FMatrix>& GetPrevSkinningMatrices()const { return PrevSkinningMatrices; }
-	bool AdvanceAnimation();
 
 	static FHairWorksSceneProxy* GetHairInstances();
 
 protected:
+	void DoRender(FRHICommandListBase& RHICmdList, EDrawType DrawType)const;
+
 	//** The hair */
 	NvHair::InstanceId HairInstanceId;
 
@@ -76,10 +76,6 @@ protected:
 	//** Skinning matrices, mainly for interpolated rendering*/
 	TArray<FMatrix> CurrentSkinningMatrices;
 	TArray<FMatrix> PrevSkinningMatrices;
-
-	//** Skip simulation if component is not animating*/
-	float AnimateTime = 0;
-	float SimulateTime = -1;
 
 	//** All created hair instances*/
 	static FHairWorksSceneProxy* HairInstances;

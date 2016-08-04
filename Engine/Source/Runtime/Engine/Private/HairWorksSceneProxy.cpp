@@ -57,6 +57,49 @@ uint32 FHairWorksSceneProxy::GetMemoryFootprint(void) const
 
 void FHairWorksSceneProxy::Draw(FRHICommandList& RHICmdList, EDrawType DrawType)const
 {
+	if(RHICmdList.Bypass())
+		DoRender(RHICmdList, DrawType);
+	else
+	{
+		struct FRHICmdDraw: public FRHICommand<FRHICmdDraw>
+		{
+			const FHairWorksSceneProxy& HairProxy;
+			EDrawType DrawType;
+
+			FRHICmdDraw(const FHairWorksSceneProxy& InHairProxy, EDrawType InDrawType)
+				:HairProxy(InHairProxy), DrawType(InDrawType){}
+
+			void Execute(FRHICommandListBase& CmdList)
+			{
+				HairProxy.DoRender(CmdList, DrawType);
+			}
+		};
+
+		new (RHICmdList.AllocCommand<FRHICmdDraw>()) FRHICmdDraw(*this, DrawType);
+	}
+}
+
+void FHairWorksSceneProxy::SetPinMatrices(const TArray<FMatrix>& PinMatrices)
+{
+	FScopeLock ObjObjectsLock(&ThreadLock);
+
+	HairPinMatrices = PinMatrices;
+}
+
+const TArray<FMatrix>& FHairWorksSceneProxy::GetPinMatrices()
+{	
+	FScopeLock ObjObjectsLock(&ThreadLock);
+
+	return HairPinMatrices;
+}
+
+FHairWorksSceneProxy * FHairWorksSceneProxy::GetHairInstances()
+{
+	return HairInstances;
+}
+
+void FHairWorksSceneProxy::DoRender(FRHICommandListBase & RHICmdList, EDrawType DrawType) const
+{
 	// Can't call it here. It changes render states, so we must call it earlier before we set render states. 
 	//HairWorks::GetSDK()->preRender(RenderInterp);
 
@@ -100,36 +143,6 @@ void FHairWorksSceneProxy::Draw(FRHICommandList& RHICmdList, EDrawType DrawType)
 
 		HairWorks::GetSDK()->renderHairs(HairInstanceId, &HairShaderSettings);
 	}
-}
-
-void FHairWorksSceneProxy::SetPinMatrices(const TArray<FMatrix>& PinMatrices)
-{
-	FScopeLock ObjObjectsLock(&ThreadLock);
-
-	HairPinMatrices = PinMatrices;
-}
-
-const TArray<FMatrix>& FHairWorksSceneProxy::GetPinMatrices()
-{	
-	FScopeLock ObjObjectsLock(&ThreadLock);
-
-	return HairPinMatrices;
-}
-
-bool FHairWorksSceneProxy::AdvanceAnimation()
-{
-	if(SimulateTime != AnimateTime)
-	{
-		SimulateTime = AnimateTime;
-		return true;
-	}
-	else
-		return false;
-}
-
-FHairWorksSceneProxy * FHairWorksSceneProxy::GetHairInstances()
-{
-	return HairInstances;
 }
 
 FPrimitiveViewRelevance FHairWorksSceneProxy::GetViewRelevance(const FSceneView* View)const
@@ -227,7 +240,6 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 
 	// Other parameters
 	HairDesc.m_modelToWorld = (gfsdk_float4x4&)GetLocalToWorld().M;
-	AnimateTime = DynamicData.AnimateTime;
 
 	// Set parameters to HairWorks
 	HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairDesc);	// Mainly for simulation.

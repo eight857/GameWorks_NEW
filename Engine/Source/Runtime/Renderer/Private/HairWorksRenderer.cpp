@@ -73,7 +73,24 @@ protected:
 			if(!Parameter.IsBound())
 				return;
 
-			HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())->PSSetShaderResources(Parameter.GetBaseIndex(), 1, &HairSrvs[HairSrvType]);
+			struct FRHICmdSetSrv: public FRHICommand<FRHICmdSetSrv>
+			{
+				uint32 SrvIndex;
+				ID3D11ShaderResourceView* Srv;
+
+				FRHICmdSetSrv(uint32 InSrvIndex, ID3D11ShaderResourceView* InSrv)
+					:SrvIndex(InSrvIndex), Srv(InSrv){}
+
+				void Execute(FRHICommandListBase& CmdList)
+				{
+					HairWorks::GetD3DHelper().GetDeviceContext(CmdList.GetContext())->PSSetShaderResources(SrvIndex, 1, &Srv);
+				}
+			};
+
+			if(RHICmdList.Bypass())
+				FRHICmdSetSrv(Parameter.GetBaseIndex(), HairSrvs[HairSrvType]).Execute(RHICmdList);
+			else
+				new (RHICmdList.AllocCommand<FRHICmdSetSrv>()) FRHICmdSetSrv(Parameter.GetBaseIndex(), HairSrvs[HairSrvType]);
 		};
 
 		BindSrv(NvHair_resourceFaceHairIndices, NvHair::ShaderResourceType::HAIR_INDICES);
@@ -474,29 +491,61 @@ namespace HairWorksRenderer
 			);
 	}
 
-	void AccumulateStats(const FHairWorksSceneProxy& HairSceneProxy)
+	void AccumulateStats(FRHICommandList& RHICmdList, const FHairWorksSceneProxy& HairSceneProxy)
 	{
 #if STATS
 		static const auto& CVarHairStats = *IConsoleManager::Get().FindConsoleVariable(TEXT("r.HairWorks.Stats"));
 		if(CVarHairStats.GetInt() == 0)
 			return;
 
-		NvHair::Stats HairStats;
-		HairWorks::GetSDK()->computeStats(nullptr, false, HairSceneProxy.GetHairInstanceId(), HairStats);
-		HairWorks::AccumulateStats(HairStats);
+		struct FRHICmdAccmulateStats: public FRHICommand<FRHICmdAccmulateStats>
+		{
+			NvHair::InstanceId InstanceId;
+
+			FRHICmdAccmulateStats(NvHair::InstanceId InInstanceId)
+				:InstanceId(InInstanceId){}
+
+			void Execute(FRHICommandListBase& CmdList)
+			{
+				NvHair::Stats HairStats;
+				HairWorks::GetSDK()->computeStats(nullptr, false, InstanceId, HairStats);
+				HairWorks::AccumulateStats(HairStats);
+			}
+		};
+
+		if(RHICmdList.Bypass())
+			FRHICmdAccmulateStats(HairSceneProxy.GetHairInstanceId()).Execute(RHICmdList);
+		else
+			new (RHICmdList.AllocCommand<FRHICmdAccmulateStats>()) FRHICmdAccmulateStats(HairSceneProxy.GetHairInstanceId());
 #endif
 	}
 
-	void SetProjViewInfo(NvHair::Sdk& sdk, const FViewInfo& View)
+	void SetProjViewInfo(FRHICommandList& RHICmdList, const FViewInfo& View)
 	{
-		const auto& ViewRect = View.ViewRect;
-		NvHair::Viewport HairViewPort;
-		HairViewPort.init(ViewRect.Min.X, ViewRect.Min.Y, ViewRect.Width(), ViewRect.Height());
+		struct FRHICmdSetProjViewInfo: public FRHICommand<FRHICmdSetProjViewInfo>
+		{
+			const FIntRect ViewRect;
+			const FViewMatrices ViewMatrices;
+			const FViewMatrices PrevViewMatrices;
 
-		const auto& ViewMatrices = View.ViewMatrices;
+			FRHICmdSetProjViewInfo(const FViewInfo& View)
+				:ViewRect(View.ViewRect), ViewMatrices(View.ViewMatrices), PrevViewMatrices(View.PrevViewMatrices){}
 
-		sdk.setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
-		sdk.setPrevViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(View.PrevViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+			void Execute(FRHICommandListBase& CmdList)
+			{
+				NvHair::Viewport HairViewPort;
+				HairViewPort.init(ViewRect.Min.X, ViewRect.Min.Y, ViewRect.Width(), ViewRect.Height());
+
+				auto& sdk = *HairWorks::GetSDK();
+				sdk.setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+				sdk.setPrevViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(PrevViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(PrevViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+			}
+		};
+
+		if(RHICmdList.Bypass())
+			FRHICmdSetProjViewInfo(View).Execute(RHICmdList);
+		else
+			(new (RHICmdList.AllocCommand<FRHICmdSetProjViewInfo>()) FRHICmdSetProjViewInfo(View))->Execute(RHICmdList);  // Still need to execute immediately to let later codes prepare constant buffer using correct camera information. 
 	}
 
 	void SetupViews(TArray<FViewInfo>& Views)
@@ -691,7 +740,7 @@ namespace HairWorksRenderer
 			RHICmdList.SetViewport(ViewRect.Min.X, ViewRect.Min.Y, 0, ViewRect.Max.X, ViewRect.Max.Y, 1);
 
 			// Pass camera information
-			SetProjViewInfo(*HairWorks::GetSDK(), View);
+			SetProjViewInfo(RHICmdList, View);
 
 			// Draw hair instances
 			int NewStencilValue = 1;
@@ -800,7 +849,7 @@ namespace HairWorksRenderer
 
 				// Draw
 				HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Normal);
-				AccumulateStats(HairSceneProxy);
+				AccumulateStats(RHICmdList, HairSceneProxy);
 			}
 		}
 
@@ -937,7 +986,7 @@ namespace HairWorksRenderer
 		// Setup camera
 		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::wrap(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
 
-		SetProjViewInfo(*HairWorks::GetSDK(), View);
+		SetProjViewInfo(RHICmdList, View);
 
 		// Render colorize
 		for(auto& PrimitiveInfo : View.VisibleHairs)
@@ -989,7 +1038,7 @@ namespace HairWorksRenderer
 		for(auto& View : Views)
 		{
 			// Pass camera information
-			SetProjViewInfo(*HairWorks::GetSDK(), View);
+			SetProjViewInfo(RHICmdList, View);
 
 			for(auto& PrimitiveInfo : View.VisibleHairs)
 			{
@@ -1030,33 +1079,6 @@ namespace HairWorksRenderer
 		if(HairWorks::GetSDK() == nullptr)
 			return;
 
-		static TArray<NvHair::InstanceId> ReEnableHairInstances;
-		checkSlow(ReEnableHairInstances.Num() == 0);
-
-		auto AdvanceHairAnimation = [&]()
-		{
-			for(FHairWorksSceneProxy::TIterator Itr(FHairWorksSceneProxy::GetHairInstances()); Itr; Itr.Next())
-			{
-				auto& HairSceneProxy = *Itr;
-
-				NvHair::InstanceDescriptor InstDesc;
-				HairWorks::GetSDK()->getInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), InstDesc);
-				if(!InstDesc.m_enable)
-					continue;
-
-				if(HairSceneProxy.AdvanceAnimation())
-					continue;
-
-				InstDesc.m_enable = false;
-				HairWorks::GetSDK()->updateInstanceDescriptor(HairSceneProxy.GetHairInstanceId(), InstDesc);
-
-				if(!InstDesc.m_drawRenderHairs)
-					continue;
-
-				ReEnableHairInstances.Add(HairSceneProxy.GetHairInstanceId());
-			}
-		};
-
 		// Trigger simulation
 		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::wrap(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
 
@@ -1077,18 +1099,8 @@ namespace HairWorksRenderer
 				SimulateTime = CurrentWorldTime - DeltaWorldTime;
 
 			// Do sub step simulation
-			bool bAdvancedAnimation = false;
-
 			while(SimulateTime + SimulateStepTime <= CurrentWorldTime)
 			{
-				// Advance animation
-				if(!bAdvancedAnimation)
-				{
-					AdvanceHairAnimation();
-
-					bAdvancedAnimation = true;
-				}
-
 				// Consume time
 				SimulateTime += SimulateStepTime;
 
@@ -1153,22 +1165,8 @@ namespace HairWorksRenderer
 		}
 		else	// Without frame rate independent rendering
 		{
-			AdvanceHairAnimation();
-
 			HairWorks::GetSDK()->stepSimulation(SimulateStepTime, nullptr, true);
 		}
-
-		// Re-enable none-animating hairs
-		for(auto HairInstId : ReEnableHairInstances)
-		{
-			NvHair::InstanceDescriptor InstDesc;
-			HairWorks::GetSDK()->getInstanceDescriptor(HairInstId, InstDesc);
-
-			InstDesc.m_enable = true;
-			HairWorks::GetSDK()->updateInstanceDescriptor(HairInstId, InstDesc);
-		}
-
-		ReEnableHairInstances.Empty(ReEnableHairInstances.Num());
 
 		// Update pin mesh transform
 		for(FHairWorksSceneProxy::TIterator Itr(FHairWorksSceneProxy::GetHairInstances()); Itr; Itr.Next())
@@ -1206,6 +1204,8 @@ namespace HairWorksRenderer
 					const FMatrix NewLocalToWorld = PinMesh.LocalTransform * PinMatrices[PinIndex];
 
 					PinMesh.Mesh->ApplyLateUpdateTransform(PinMesh.Mesh->GetLocalToWorld().Inverse() * NewLocalToWorld);
+					if(PinMesh.Mesh->NeedsUniformBufferUpdate())
+						PinMesh.Mesh->UpdateUniformBuffer();
 				}
 			}
 
@@ -1245,6 +1245,7 @@ namespace HairWorksRenderer
 				const FBoxSphereBounds& PrimitiveBounds = HairSceneProxy.GetBounds();
 
 				FViewMatrices ViewMatrices[6];
+
 				bool Visible[6];
 				for (int32 FaceIndex = 0; FaceIndex < 6; FaceIndex++)
 				{
@@ -1252,22 +1253,44 @@ namespace HairWorksRenderer
 					Visible[FaceIndex] = Shadow.OnePassShadowFrustums[FaceIndex].IntersectBox(PrimitiveBounds.Origin, PrimitiveBounds.BoxExtent);
 				}
 
-				gfsdk_float4x4 HairViewMatrices[6];
-				gfsdk_float4x4 HairProjMatrices[6];
-				for (int FaceIdx = 0; FaceIdx < 6; ++FaceIdx)
+				struct FRHICmdSetCubeMapViewProj: public FRHICommand<FRHICmdSetCubeMapViewProj>
 				{
-					HairViewMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewMatrices[FaceIdx].ViewMatrix.M;
-					HairProjMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewMatrices[FaceIdx].ProjMatrix.M;
-				}
+					FIntPoint ShadowSize;
+					FViewMatrices ViewMatrices[6];
+					bool Visible[6];
 
-				NvHair::Viewport viewPorts[6];
+					FRHICmdSetCubeMapViewProj(const FIntPoint& InShadowSize, const FViewMatrices InViewMatrices[6], const bool InVisible[6])
+						:ShadowSize(InShadowSize)
+					{
+						CopyAssignItems(ViewMatrices, InViewMatrices, 6);
+						CopyAssignItems(Visible, InVisible, 6);
+					}
 
-				for(auto& viewPort : viewPorts)
-				{
-					viewPort.init(0, 0, Shadow.ResolutionX, Shadow.ResolutionX);
-				}
+					void Execute(FRHICommandListBase& CmdList)
+					{
+						NvHair::Viewport viewPorts[6];
 
-				HairWorks::GetSDK()->setCubeMapViewProjection(viewPorts, HairViewMatrices, HairProjMatrices, Visible, NvHair::HandednessHint::LEFT);
+						for(auto& viewPort : viewPorts)
+						{
+							viewPort.init(0, 0, ShadowSize.X, ShadowSize.X);
+						}
+
+						gfsdk_float4x4 HairViewMatrices[6];
+						gfsdk_float4x4 HairProjMatrices[6];
+						for(int FaceIdx = 0; FaceIdx < 6; ++FaceIdx)
+						{
+							HairViewMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewMatrices[FaceIdx].ViewMatrix.M;
+							HairProjMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewMatrices[FaceIdx].ProjMatrix.M;
+						}
+
+						HairWorks::GetSDK()->setCubeMapViewProjection(viewPorts, HairViewMatrices, HairProjMatrices, Visible, NvHair::HandednessHint::LEFT);
+					}
+				};
+
+				if(RHICmdList.Bypass())
+					FRHICmdSetCubeMapViewProj(FIntPoint(Shadow.ResolutionX, Shadow.ResolutionX), ViewMatrices, Visible).Execute(RHICmdList);
+				else
+					new (RHICmdList.AllocCommand<FRHICmdSetCubeMapViewProj>()) FRHICmdSetCubeMapViewProj(FIntPoint(Shadow.ResolutionX, Shadow.ResolutionX), ViewMatrices, Visible);
 
 				// Setup shader
 				static FGlobalBoundShaderState BoundShaderState;
@@ -1277,13 +1300,30 @@ namespace HairWorksRenderer
 			else
 			{
 				// Setup camera
-				const auto& ViewRect = View.ViewRect;
-				NvHair::Viewport HairViewPort;
-				HairViewPort.init(ViewRect.Min.X, ViewRect.Min.Y, ViewRect.Width(), ViewRect.Height());
-
 				FViewMatrices ViewMatrices;
 				ViewMatrices.ViewMatrix = FTranslationMatrix(Shadow.PreShadowTranslation) * Shadow.SubjectAndReceiverMatrix;
-				HairWorks::GetSDK()->setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+
+				struct FRHICmdSetProjViewInfo: public FRHICommand<FRHICmdSetProjViewInfo>
+				{
+					const FIntRect ViewRect;
+					const FViewMatrices ViewMatrices;
+
+					FRHICmdSetProjViewInfo(const FIntRect& InViewRect, const FViewMatrices& InViewMatrices)
+						:ViewRect(InViewRect), ViewMatrices(InViewMatrices){}
+
+					void Execute(FRHICommandListBase& CmdList)
+					{
+						NvHair::Viewport HairViewPort;
+						HairViewPort.init(ViewRect.Min.X, ViewRect.Min.Y, ViewRect.Width(), ViewRect.Height());
+
+						HairWorks::GetSDK()->setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+					}
+				};
+
+				if(RHICmdList.Bypass())
+					FRHICmdSetProjViewInfo(View.ViewRect, ViewMatrices).Execute(RHICmdList);
+				else
+					new (RHICmdList.AllocCommand<FRHICmdSetProjViewInfo>()) FRHICmdSetProjViewInfo(View.ViewRect, ViewMatrices);
 
 				// Setup shader
 				TShaderMapRef<FHairWorksShadowDepthPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
@@ -1297,7 +1337,7 @@ namespace HairWorksRenderer
 
 			// Draw hair
 			HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Shadow);
-			AccumulateStats(HairSceneProxy);
+			AccumulateStats(RHICmdList, HairSceneProxy);
 		}
 	}
 }
