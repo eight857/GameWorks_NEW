@@ -130,6 +130,7 @@ void UFlowGridComponent::UpdateShapes()
 	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.Colliders.Num());
 	FlowGridProperties.Emitters.SetNum(0);
 	FlowGridProperties.Colliders.SetNum(0);
+	FlowGridProperties.Planes.SetNum(0);
 
 	// only update if enabled
 	if (!bFlowGridCollisionEnabled)
@@ -254,11 +255,13 @@ void UFlowGridComponent::UpdateShapes()
 				case PxGeometryType::eSPHERE:
 				case PxGeometryType::eBOX:
 				case PxGeometryType::eCAPSULE:
+				case PxGeometryType::eCONVEXMESH:
 				{
 					PxTransform WorldTransform = ActorTransform*ShapeTransform;
-					
+
 					EFlowGeometryType FlowShapeGeometryType = EFGT_eSphere;
 					FFlowShape::FGeometry FlowShapeGeometry = {};
+					FFlowConvexParams FlowConvexParams = {};
 
 					if (PhysXShape->getGeometryType() == PxGeometryType::eSPHERE)
 					{
@@ -282,6 +285,36 @@ void UFlowGridComponent::UpdateShapes()
 						FlowShapeGeometry.Capsule.HalfHeight = CapsuleGeometry.halfHeight;
 						FlowShapeGeometryType = EFGT_eCapsule;
 					}
+					else if (PhysXShape->getGeometryType() == PxGeometryType::eCONVEXMESH)
+					{
+						PxHullPolygon polygon;
+						PxConvexMeshGeometry ConvexGeometry;
+						PhysXShape->getConvexMeshGeometry(ConvexGeometry);
+						auto nbPolygons = ConvexGeometry.convexMesh->getNbPolygons();
+						auto localBounds = ConvexGeometry.convexMesh->getLocalBounds();
+						auto meshScale = ConvexGeometry.scale;
+
+						FlowShapeGeometryType = EFGT_eConvex;
+						FlowConvexParams.LocalMin = P2UVector(localBounds.minimum);
+						FlowConvexParams.LocalMax = P2UVector(localBounds.maximum);
+						FlowConvexParams.Scale = P2UVector(meshScale.scale);
+						FlowConvexParams.Rotation = P2UQuat(meshScale.rotation);
+						FlowShapeGeometry.Convex.PlaneArrayOffset = FlowGridProperties.Planes.Num();
+						FlowShapeGeometry.Convex.NumPlanes = nbPolygons;
+						FlowShapeGeometry.Convex.Radius = (FlowConvexParams.Scale * 0.5f * (FlowConvexParams.LocalMax - FlowConvexParams.LocalMin)).GetAbsMax();
+
+						int32 Index = FlowGridProperties.Planes.AddUninitialized(nbPolygons);
+						FFlowPlane* FlowPlanes = &FlowGridProperties.Planes[Index];
+
+						for (uint32 i = 0u; i < nbPolygons; i++)
+						{
+							ConvexGeometry.convexMesh->getPolygonData(i, polygon);
+							FlowPlanes[i].Plane[0] = +polygon.mPlane[0];
+							FlowPlanes[i].Plane[1] = +polygon.mPlane[1];
+							FlowPlanes[i].Plane[2] = +polygon.mPlane[2];
+							FlowPlanes[i].Plane[3] = -polygon.mPlane[3];
+						}
+					}
 
 					if (FlowEmitterComponent)
 					{
@@ -291,6 +324,7 @@ void UFlowGridComponent::UpdateShapes()
 
 						FlowEmitter.Shape.GeometryType = FlowShapeGeometryType;
 						FlowEmitter.Shape.Geometry = FlowShapeGeometry;
+						FlowEmitter.Shape.ConvexParams = FlowConvexParams;
 
 						FlowEmitter.Shape.Transform = P2UTransform(WorldTransform);
 

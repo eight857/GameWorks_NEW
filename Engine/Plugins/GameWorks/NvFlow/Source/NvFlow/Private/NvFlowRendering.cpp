@@ -83,8 +83,8 @@ namespace NvFlow
 		void init(Context* context, FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* InFlowGridSceneProxy);
 		void release();
 		void updateParameters(FRHICommandListImmediate& RHICmdList);
-		void emit(const FFlowEmitter& Emitter, float dt, uint32 substep, uint32 numSubsteps);
-		void collide(const FFlowShape& Collider, float dt, uint32 substep, uint32 numSubsteps);
+		void emit(const FFlowGridProperties& Properties, const FFlowEmitter& Emitter, float dt, uint32 substep, uint32 numSubsteps);
+		void collide(const FFlowGridProperties& Properties, const FFlowShape& Collider, float dt, uint32 substep, uint32 numSubsteps);
 
 		void updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush);
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
@@ -308,6 +308,11 @@ FVector NvFlow::Context::getShapeUnitToActualScale(EFlowGeometryType geometryTyp
 			UnitToActualScale = FVector(Geometry.Capsule.Radius * (1.f / sdfRadius) * scaleInv);
 			break;
 		}
+		case EFGT_eConvex:
+		{
+			UnitToActualScale = FVector(Geometry.Convex.Radius * (1.f / sdfRadius) * scaleInv);
+			break;
+		}
 	};
 	return UnitToActualScale;
 }
@@ -339,7 +344,11 @@ void NvFlow::Context::getShape(NvFlowShapeDesc& shapeDesc, NvFlowGridEmitParams&
 			shapeDesc.capsule.length = sdfRadius * (2.f * Geometry.Capsule.HalfHeight / Geometry.Capsule.Radius);
 			break;
 		}
-
+		case EFGT_eConvex:
+		{
+			emitParams.shapeType = eNvFlowShapeTypePlane;
+			break;
+		}
 	};
 
 	// for boxes, do distortion correction
@@ -578,7 +587,7 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 	}
 }
 
-void NvFlow::Scene::emit(const FFlowEmitter& Emitter, float dt, uint32 substep, uint32 numSubsteps)
+void NvFlow::Scene::emit(const FFlowGridProperties& Properties, const FFlowEmitter& Emitter, float dt, uint32 substep, uint32 numSubsteps)
 {	
 	FVector UnitToActualScale = m_context->getShapeUnitToActualScale(Emitter.Shape.GeometryType, Emitter.Shape.Geometry);
 	NvFlowGridEmitParams emitParams;
@@ -668,7 +677,53 @@ void NvFlow::Scene::emit(const FFlowEmitter& Emitter, float dt, uint32 substep, 
 
 		emitParams.deltaTime = isStationary ? dt : emitterSubstepDt;
 
-		NvFlowGridEmit(m_grid, &shapeDesc, 1u, &emitParams, 1u);
+		if (emitParams.shapeType != eNvFlowShapeTypePlane)
+		{
+			NvFlowGridEmit(m_grid, &shapeDesc, 1u, &emitParams, 1u);
+		}
+		else
+		{
+			auto& FlowConvexParams = Emitter.Shape.ConvexParams;
+
+			// scale bounds
+			{
+				FVector scale = (FlowConvexParams.Scale * 0.5f * (FlowConvexParams.LocalMax - FlowConvexParams.LocalMin));
+				float norm = scale.GetAbsMax();
+				scale /= norm;
+				emitParams.bounds.x.x *= scale.X;
+				emitParams.bounds.x.y *= scale.X;
+				emitParams.bounds.x.z *= scale.X;
+				emitParams.bounds.y.x *= scale.Y;
+				emitParams.bounds.y.y *= scale.Y;
+				emitParams.bounds.y.z *= scale.Y;
+				emitParams.bounds.z.x *= scale.Z;
+				emitParams.bounds.z.y *= scale.Z;
+				emitParams.bounds.z.z *= scale.Z;
+			}
+
+			// scale local to world
+			{
+				auto matNoScale = BlendedTransform.ToMatrixNoScale();
+				emitParams.localToWorld = *(NvFlowFloat4x4*)(&matNoScale.M[0][0]);
+				emitParams.localToWorld.x.x *= FlowConvexParams.Scale.X * scaleInv;
+				emitParams.localToWorld.x.y *= FlowConvexParams.Scale.X * scaleInv;
+				emitParams.localToWorld.x.z *= FlowConvexParams.Scale.X * scaleInv;
+				emitParams.localToWorld.y.x *= FlowConvexParams.Scale.Y * scaleInv;
+				emitParams.localToWorld.y.y *= FlowConvexParams.Scale.Y * scaleInv;
+				emitParams.localToWorld.y.z *= FlowConvexParams.Scale.Y * scaleInv;
+				emitParams.localToWorld.z.x *= FlowConvexParams.Scale.Z * scaleInv;
+				emitParams.localToWorld.z.y *= FlowConvexParams.Scale.Z * scaleInv;
+				emitParams.localToWorld.z.z *= FlowConvexParams.Scale.Z * scaleInv;
+			}
+
+			NvFlowShapeDesc* planes = (NvFlowShapeDesc*)&Properties.Planes[Emitter.Shape.Geometry.Convex.PlaneArrayOffset];
+			NvFlowUint numPlanes = Emitter.Shape.Geometry.Convex.NumPlanes;
+
+			emitParams.shapeRangeSize = numPlanes;
+			emitParams.shapeDistScale = scaleInv;
+
+			NvFlowGridEmit(m_grid, planes, numPlanes, &emitParams, 1u);
+		}
 
 		if (CollisionFactor > 0.f)
 		{
@@ -702,7 +757,7 @@ void NvFlow::Scene::emit(const FFlowEmitter& Emitter, float dt, uint32 substep, 
 	}
 }
 
-void NvFlow::Scene::collide(const FFlowShape& Collider, float dt, uint32 substep, uint32 numSubsteps)
+void NvFlow::Scene::collide(const FFlowGridProperties& Properties, const FFlowShape& Collider, float dt, uint32 substep, uint32 numSubsteps)
 {
 	FTransform ScaledTransform = Collider.Transform;
 	ScaledTransform.SetLocation(Collider.Transform.GetLocation() * scaleInv);
@@ -759,13 +814,13 @@ void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt
 		for (int32 i = 0; i < Properties.Emitters.Num(); i++)
 		{
 			FFlowEmitter& Emitter = Properties.Emitters[i];
-			emit(Emitter, dt, substep, numSubsteps);
+			emit(Properties, Emitter, dt, substep, numSubsteps);
 		}
 
 		for (int32 i = 0; i < Properties.Colliders.Num(); i++)
 		{
 			FFlowShape& Collider = Properties.Colliders[i];
-			collide(Collider, dt, substep, numSubsteps);
+			collide(Properties, Collider, dt, substep, numSubsteps);
 		}
 	}
 

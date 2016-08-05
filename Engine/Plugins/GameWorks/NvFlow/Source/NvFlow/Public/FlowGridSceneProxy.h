@@ -16,7 +16,8 @@ enum EFlowGeometryType
 {
 	EFGT_eSphere = 0,
 	EFGT_eBox = 1,
-	EFGT_eCapsule = 2
+	EFGT_eCapsule = 2,
+	EFGT_eConvex = 3
 };
 
 struct FFlowSphere
@@ -35,6 +36,26 @@ struct FFlowCapsule
 	float Radius;
 };
 
+struct FFlowPlane
+{
+	float Plane[4];
+};
+
+struct FFlowConvex
+{
+	uint32 PlaneArrayOffset;
+	uint32 NumPlanes;
+	float Radius;
+};
+
+struct FFlowConvexParams
+{
+	FVector LocalMin;
+	FVector LocalMax;
+	FVector Scale;
+	FQuat Rotation;
+};
+
 struct FFlowShape
 {
 	EFlowGeometryType GeometryType;
@@ -44,7 +65,10 @@ struct FFlowShape
 		FFlowSphere Sphere;
 		FFlowBox Box;
 		FFlowCapsule Capsule;
+		FFlowConvex Convex;
 	};
+
+	FFlowConvexParams ConvexParams;
 
 	FGeometry Geometry;
 
@@ -133,6 +157,9 @@ struct FFlowGridProperties
 
 	//Collider Shapes
 	TArray<FFlowShape> Colliders;
+
+	//Planes
+	TArray<FFlowPlane> Planes;
 };
 
 class UFlowGridComponent;
