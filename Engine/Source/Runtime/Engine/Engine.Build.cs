@@ -405,7 +405,7 @@ public class Engine : ModuleRules
 		}
 
 		// @third party code - BEGIN HairWorks
-		AddThirdPartyPrivateStaticDependencies(Target, "HairWorks");
+		AddEngineThirdPartyPrivateStaticDependencies(Target, "HairWorks");
 		// @third party code - END HairWorks
 	}
 }

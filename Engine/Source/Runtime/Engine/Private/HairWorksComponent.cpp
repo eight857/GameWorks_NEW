@@ -36,7 +36,7 @@ FPrimitiveSceneProxy* UHairWorksComponent::CreateSceneProxy()
 void UHairWorksComponent::OnAttachmentChanged()
 {
 	// Parent as skeleton
-	ParentSkeleton = Cast<USkinnedMeshComponent>(AttachParent);
+	ParentSkeleton = Cast<USkinnedMeshComponent>(GetAttachParent());
 
 	// Setup bone mapping
 	SetupBoneMapping();
@@ -91,7 +91,7 @@ void UHairWorksComponent::TickComponent(float DeltaTime, enum ELevelTick TickTyp
 		TArray<FMatrix> PinMatrices = HairSceneProxy.GetPinMatrices();
 
 		// Set pin component transform
-		for(auto* ChildComponent : AttachChildren)
+		for(auto* ChildComponent : GetAttachChildren())
 		{
 			auto* PinComponent = Cast<UHairWorksPinTransformComponent>(ChildComponent);
 			if(PinComponent == nullptr)
@@ -317,7 +317,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 	// Add pin meshes
 	DynamicData->PinMeshes.AddDefaulted(HairInstance.Hair->HairMaterial->Pins.Num());
 
-	for(auto* ChildComponent : AttachChildren)
+	for(auto* ChildComponent : GetAttachChildren())
 	{
 		// Find pin transform component
 		auto* PinComponent = Cast<UHairWorksPinTransformComponent>(ChildComponent);
@@ -349,7 +349,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 			}
 
 			// Find in children
-			Component->AttachChildren.FindByPredicate(AddPinMesh);
+			Component->GetAttachChildren().FindByPredicate(AddPinMesh);
 
 			return false;
 		};
@@ -437,7 +437,8 @@ void UHairWorksComponent::Serialize(FArchive & Ar)
 void UHairWorksComponent::PostInitProperties()
 {
 	// Inherits parent flags. One purpose is to avoid "Graph is linked to private object(s) in an external package." error in UPackage::SavePackage(). Another purpose is to inherit archetype flag.
-	HairInstance.HairMaterial = NewObject<UHairWorksMaterial>(this, NAME_None, GetMaskedFlags(RF_PropagateToSubObjects));
+	if(!HasAnyFlags(RF_NeedLoad))
+		HairInstance.HairMaterial = NewObject<UHairWorksMaterial>(this, NAME_None, GetMaskedFlags(RF_PropagateToSubObjects));
 
 	Super::PostInitProperties();
 }
