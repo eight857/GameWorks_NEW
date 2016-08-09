@@ -48,6 +48,8 @@ int32 FTimeStepper::GetNumSteps(float TimeStep)
 
 UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, FlowGridAssetCurrent(&FlowGridAsset)
+	, FlowGridAssetOverride(nullptr)
 {
 	BodyInstance.SetUseAsyncScene(true);
 
@@ -68,14 +70,29 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 	FlowGridProperties.SubstepSize = 0.0f;
 }
 
+UFlowGridAsset* UFlowGridComponent::CreateOverrideAsset()
+{
+	// duplicate asset
+	auto asset = DuplicateObject<UFlowGridAsset>(FlowGridAsset, this);
+	return asset;
+}
+
+void UFlowGridComponent::SetOverrideAsset(class UFlowGridAsset* asset)
+{
+	FlowGridAssetOverride = asset;
+	if(asset) FlowGridAssetCurrent = &FlowGridAssetOverride;
+	else FlowGridAssetCurrent = &FlowGridAsset;
+}
+
 FBoxSphereBounds UFlowGridComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
 	FBoxSphereBounds NewBounds(ForceInit);
 
-	if (FlowGridAsset)
+	auto& FlowGridAssetRef = (*FlowGridAssetCurrent);
+	if (FlowGridAssetRef)
 	{
 		NewBounds.Origin = FVector(0.0f);
-		NewBounds.BoxExtent = FVector(FlowGridAsset->GetVirtualGridExtent());
+		NewBounds.BoxExtent = FVector(FlowGridAssetRef->GetVirtualGridExtent());
 		NewBounds.SphereRadius = 0.0f;
 	}
 
@@ -159,9 +176,11 @@ void UFlowGridComponent::UpdateShapes()
 	FCollisionShape Shape;
 	Shape.SetBox(HalfEdge);
 
+	auto& FlowGridAssetRef = (*FlowGridAssetCurrent);
+
 	// do PhysX quer
 	Overlaps.Reset();
-	GetWorld()->OverlapMultiByChannel(Overlaps, Center, FQuat::Identity, FlowGridAsset->ObjectType, Shape, FCollisionQueryParams(NAME_None, false), FCollisionResponseParams(FlowGridAsset->ResponseToChannels));
+	GetWorld()->OverlapMultiByChannel(Overlaps, Center, FQuat::Identity, FlowGridAssetRef->ObjectType, Shape, FCollisionQueryParams(NAME_None, false), FCollisionResponseParams(FlowGridAssetRef->ResponseToChannels));
 
 	for (int32 i = 0; i < Overlaps.Num(); ++i)
 	{
@@ -171,7 +190,7 @@ void UFlowGridComponent::UpdateShapes()
 		if (!PrimComp)
 			continue;
 
-		ECollisionResponse Response = PrimComp->GetCollisionResponseToChannel(FlowGridAsset->ObjectType);
+		ECollisionResponse Response = PrimComp->GetCollisionResponseToChannel(FlowGridAssetRef->ObjectType);
 
 		// try to grab any attached component
 		auto owner = PrimComp->GetOwner();
@@ -182,7 +201,7 @@ void UFlowGridComponent::UpdateShapes()
 			for (int32 j = 0; j < children.Num(); j++)
 			{
 				//OverlapMultiple returns ECollisionResponse::ECR_Overlap types, which we want to ignore
-				ECollisionResponse ResponseChild = children[j]->GetCollisionResponseToChannel(FlowGridAsset->ObjectType);
+				ECollisionResponse ResponseChild = children[j]->GetCollisionResponseToChannel(FlowGridAssetRef->ObjectType);
 				if (ResponseChild != ECollisionResponse::ECR_Ignore)
 				{
 					Response = ResponseChild;
@@ -413,16 +432,18 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	SCOPE_CYCLE_COUNTER(STAT_Flow_Tick);
 
-	if (FlowGridAsset && SceneProxy)
+	auto& FlowGridAssetRef = (*FlowGridAssetCurrent);
+
+	if (FlowGridAssetRef && SceneProxy)
 	{
 		//Properties that require rebuild of grid
 
 		//NvFlowGridDesc
-		FVector NewHalfSize = FVector(FlowGridAsset->GetVirtualGridDimension() * 0.5f * FlowGridAsset->GridCellSize);
-		FIntVector NewVirtualDim = FIntVector(FlowGridAsset->GetVirtualGridDimension());
-		float NewMemoryLimitScale = FlowGridAsset->MemoryLimitScale;
+		FVector NewHalfSize = FVector(FlowGridAssetRef->GetVirtualGridDimension() * 0.5f * FlowGridAssetRef->GridCellSize);
+		FIntVector NewVirtualDim = FIntVector(FlowGridAssetRef->GetVirtualGridDimension());
+		float NewMemoryLimitScale = FlowGridAssetRef->MemoryLimitScale;
 		bool OldMultiAdapterEnabled = FlowGridProperties.bMultiAdapterEnabled;
-		bool NewMultiAdapterEnabled = FlowGridAsset->bMultiAdapterEnabled;
+		bool NewMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
 
 		if (FlowGridProperties.bActive && 
 			(NewHalfSize != FlowGridProperties.HalfSize ||
@@ -442,37 +463,37 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		FlowGridProperties.bMultiAdapterEnabled = NewMultiAdapterEnabled;
 
 		//Properties that can be changed without rebuilding grid
-		FlowGridProperties.VirtualGridExtents = FVector(FlowGridAsset->GetVirtualGridExtent());
+		FlowGridProperties.VirtualGridExtents = FVector(FlowGridAssetRef->GetVirtualGridExtent());
 		FlowGridProperties.SubstepSize = TimeStepper.FixedDt;
 
 		//NvFlowGridParams
-		FlowGridProperties.VelocityWeight = FlowGridAsset->VelocityWeight;
-		FlowGridProperties.DensityWeight = FlowGridAsset->DensityWeight;
-		FlowGridProperties.TempWeight = FlowGridAsset->TempWeight;
-		FlowGridProperties.FuelWeight = FlowGridAsset->FuelWeight;
-		FlowGridProperties.VelocityThreshold = FlowGridAsset->VelocityThreshold;
-		FlowGridProperties.DensityThreshold = FlowGridAsset->DensityThreshold;
-		FlowGridProperties.TempThreshold = FlowGridAsset->TempThreshold;
-		FlowGridProperties.FuelThreshold = FlowGridAsset->FuelThreshold;
-		FlowGridProperties.ImportanceThreshold = FlowGridAsset->ImportanceThreshold;
+		FlowGridProperties.VelocityWeight = FlowGridAssetRef->VelocityWeight;
+		FlowGridProperties.DensityWeight = FlowGridAssetRef->DensityWeight;
+		FlowGridProperties.TempWeight = FlowGridAssetRef->TempWeight;
+		FlowGridProperties.FuelWeight = FlowGridAssetRef->FuelWeight;
+		FlowGridProperties.VelocityThreshold = FlowGridAssetRef->VelocityThreshold;
+		FlowGridProperties.DensityThreshold = FlowGridAssetRef->DensityThreshold;
+		FlowGridProperties.TempThreshold = FlowGridAssetRef->TempThreshold;
+		FlowGridProperties.FuelThreshold = FlowGridAssetRef->FuelThreshold;
+		FlowGridProperties.ImportanceThreshold = FlowGridAssetRef->ImportanceThreshold;
 
-		FlowGridProperties.Gravity = FlowGridAsset->Gravity;
-		FlowGridProperties.VelocityDamping = FlowGridAsset->VelocityDamping;
-		FlowGridProperties.DensityDamping = FlowGridAsset->DensityDamping;
-		FlowGridProperties.VelocityFade = FlowGridAsset->VelocityFade;
-		FlowGridProperties.DensityFade = FlowGridAsset->DensityFade;
-		FlowGridProperties.VelocityMacCormackBlendFactor = FlowGridAsset->VelocityMacCormackBlendFactor;
-		FlowGridProperties.DensityMacCormackBlendFactor = FlowGridAsset->DensityMacCormackBlendFactor;
-		FlowGridProperties.VorticityStrength = FlowGridAsset->VorticityStrength;
-		FlowGridProperties.CombustionIgnitionTemperature = FlowGridAsset->IgnitionTemperature;
-		FlowGridProperties.CombustionCoolingRate = FlowGridAsset->CoolingRate;
+		FlowGridProperties.Gravity = FlowGridAssetRef->Gravity;
+		FlowGridProperties.VelocityDamping = FlowGridAssetRef->VelocityDamping;
+		FlowGridProperties.DensityDamping = FlowGridAssetRef->DensityDamping;
+		FlowGridProperties.VelocityFade = FlowGridAssetRef->VelocityFade;
+		FlowGridProperties.DensityFade = FlowGridAssetRef->DensityFade;
+		FlowGridProperties.VelocityMacCormackBlendFactor = FlowGridAssetRef->VelocityMacCormackBlendFactor;
+		FlowGridProperties.DensityMacCormackBlendFactor = FlowGridAssetRef->DensityMacCormackBlendFactor;
+		FlowGridProperties.VorticityStrength = FlowGridAssetRef->VorticityStrength;
+		FlowGridProperties.CombustionIgnitionTemperature = FlowGridAssetRef->IgnitionTemperature;
+		FlowGridProperties.CombustionCoolingRate = FlowGridAssetRef->CoolingRate;
 		
 		//NvFlowVolumeRenderParams
-		FlowGridProperties.RenderingAlphaScale = FlowGridAsset->RenderingAlphaScale;
-		FlowGridProperties.bAdaptiveScreenPercentage = FlowGridAsset->bAdaptiveScreenPercentage;
-		FlowGridProperties.AdaptiveTargetFrameTime = FlowGridAsset->AdaptiveTargetFrameTime;
-		FlowGridProperties.MaxScreenPercentage = FlowGridAsset->MaxScreenPercentage;
-		FlowGridProperties.MinScreenPercentage = FlowGridAsset->MinScreenPercentage;
+		FlowGridProperties.RenderingAlphaScale = FlowGridAssetRef->RenderingAlphaScale;
+		FlowGridProperties.bAdaptiveScreenPercentage = FlowGridAssetRef->bAdaptiveScreenPercentage;
+		FlowGridProperties.AdaptiveTargetFrameTime = FlowGridAssetRef->AdaptiveTargetFrameTime;
+		FlowGridProperties.MaxScreenPercentage = FlowGridAssetRef->MaxScreenPercentage;
+		FlowGridProperties.MinScreenPercentage = FlowGridAssetRef->MinScreenPercentage;
 		
 		if (UFlowGridAsset::sGlobalDebugDraw)
 		{
@@ -481,12 +502,12 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		}
 		else
 		{
-			FlowGridProperties.bDebugWireframe = FlowGridAsset->bDebugWireframe;
-			FlowGridProperties.RenderingMode = FlowGridAsset->RenderingMode;
+			FlowGridProperties.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
+			FlowGridProperties.RenderingMode = FlowGridAssetRef->RenderingMode;
 		}
 
 		//ColorMap
-		FillColorMap(FlowGridProperties, *FlowGridAsset);
+		FillColorMap(FlowGridProperties, *FlowGridAssetRef);
 
 		//EmitShapes & CollisionShapes
 		UpdateShapes();
@@ -497,7 +518,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		//push all flow properties to proxy
 		MarkRenderDynamicDataDirty();
 
-		TimeStepper.FixedDt = 1.f / FlowGridAsset->SimulationRate;
+		TimeStepper.FixedDt = 1.f / FlowGridAssetRef->SimulationRate;
 
 		//trigger simulation substeps in render thread
 		int32 NumSubSteps = TimeStepper.GetNumSteps(DeltaTime);
