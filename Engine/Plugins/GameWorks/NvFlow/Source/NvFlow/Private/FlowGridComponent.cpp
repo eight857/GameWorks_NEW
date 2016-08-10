@@ -233,6 +233,28 @@ void UFlowGridComponent::UpdateShapes()
 		int32 NumSyncShapes;
 		NumSyncShapes = Body->GetAllShapes_AssumesLocked(Shapes);
 
+		// get emitter parameters, if available
+		AActor* Actor = Body->OwnerComponent->GetOwner();
+		UFlowEmitterComponent* FlowEmitterComponent = Actor->FindComponentByClass<UFlowEmitterComponent>();
+
+		// search in attached component actors, as needed
+		if (rootComponent && FlowEmitterComponent == nullptr)
+		{
+			auto& children = rootComponent->GetAttachChildren();
+			for (int32 j = 0; j < children.Num(); j++)
+			{
+				auto owner = children[j]->GetOwner();
+				if (owner)
+				{
+					FlowEmitterComponent = owner->FindComponentByClass<UFlowEmitterComponent>();
+					if (FlowEmitterComponent)
+					{
+						break;
+					}
+				}
+			}
+		}
+
 		for (int ShapeIndex = 0; ShapeIndex < NumSyncShapes; ++ShapeIndex)
 		{
 			PxShape* PhysXShape = Shapes[ShapeIndex];
@@ -254,28 +276,6 @@ void UFlowGridComponent::UpdateShapes()
 			// only process simple collision shapes for now
 			if ((Filter.word3 & EPDF_SimpleCollision) == 0)
 				continue;
-
-			// get emitter parameters, if available
-			AActor* Actor = Body->OwnerComponent->GetOwner();
-			UFlowEmitterComponent* FlowEmitterComponent = Actor->FindComponentByClass<UFlowEmitterComponent>();
-
-			// search in attached component actors, as needed
-			if (rootComponent && FlowEmitterComponent == nullptr)
-			{
-				auto& children = rootComponent->GetAttachChildren();
-				for (int32 j = 0; j < children.Num(); j++)
-				{
-					auto owner = children[j]->GetOwner();
-					if (owner)
-					{
-						FlowEmitterComponent = owner->FindComponentByClass<UFlowEmitterComponent>();
-						if (FlowEmitterComponent)
-						{
-							break;
-						}
-					}
-				}
-			}
 
 			auto PxGeometryType = PhysXShape->getGeometryType();
 			bool IsSupported =
