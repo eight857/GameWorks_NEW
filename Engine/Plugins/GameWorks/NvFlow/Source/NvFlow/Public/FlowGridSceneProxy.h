@@ -12,133 +12,17 @@ FFlowGridSceneProxy
 
 #pragma once
 
-enum EFlowGeometryType
+namespace NvFlow
 {
-	EFGT_eSphere = 0,
-	EFGT_eBox = 1,
-	EFGT_eCapsule = 2,
-	EFGT_eConvex = 3
-};
+	const float scale = 100.f;
+	const float scaleInv = 1.0f / scale;
+	const float sdfRadius = 0.8f;
+	const float angularScale = PI / 180.f;
+}
 
-struct FFlowSphere
+struct FFlowGridRenderParams
 {
-	float Radius;
-};
-
-struct FFlowBox
-{
-	float Extends[3];
-};
-
-struct FFlowCapsule
-{
-	float HalfHeight;
-	float Radius;
-};
-
-struct FFlowPlane
-{
-	float Plane[4];
-};
-
-struct FFlowConvex
-{
-	uint32 PlaneArrayOffset;
-	uint32 NumPlanes;
-	float Radius;
-};
-
-struct FFlowConvexParams
-{
-	FVector LocalMin;
-	FVector LocalMax;
-	FVector Scale;
-	FQuat Rotation;
-};
-
-struct FFlowShape
-{
-	EFlowGeometryType GeometryType;
-
-	union FGeometry
-	{
-		FFlowSphere Sphere;
-		FFlowBox Box;
-		FFlowCapsule Capsule;
-		FFlowConvex Convex;
-	};
-
-	FFlowConvexParams ConvexParams;
-
-	FGeometry Geometry;
-
-	FTransform Transform;
-	FTransform PreviousTransform;
-	FVector CenterOfRotationOffset;
-	FVector AngularVelocity;
-	FVector LinearVelocity;
-
-	FVector CollisionCenterOfRotationOffset;
-	FVector CollisionAngularVelocity;
-	FVector CollisionLinearVelocity;
-};
-
-struct FFlowEmitter
-{
-	FFlowShape Shape;
-	FVector	LinearVelocity;
-	FVector	AngularVelocity;
-	float Density;
-	float Temperature;
-	float Fuel;
-	float FuelReleaseTemp;
-	float FuelRelease;
-	float AllocationPredict;
-	float AllocationScale;
-	float CollisionFactor;
-	float EmitterInflate;
-	float CoupleRate;
-	float VelocityMask;
-	float DensityMask;
-	float TemperatureMask;
-	float FuelMask;
-	uint32 NumSubsteps;
-};
-
-struct FFlowGridProperties
-{
-	int32 bActive : 1;
-	FVector VirtualGridExtents;
-	float SubstepSize;
-
-	//NvFlowGridDesc
-	FVector HalfSize;
-	FIntVector VirtualDim;
-	float MemoryLimitScale;
-	uint32 bMultiAdapterEnabled : 1;
-
-	//NvFlowGridParams
-	float VelocityWeight;
-	float DensityWeight;
-	float TempWeight;
-	float FuelWeight;
-	float VelocityThreshold;
-	float DensityThreshold;
-	float TempThreshold;
-	float FuelThreshold;
-	float ImportanceThreshold;
-	FVector Gravity;
-	float VelocityDamping;
-	float DensityDamping;
-	float VelocityFade;
-	float DensityFade;
-	float VelocityMacCormackBlendFactor;
-	float DensityMacCormackBlendFactor;
-	float VorticityStrength;
-	float CombustionIgnitionTemperature;
-	float CombustionCoolingRate;
-
-	//NvFlowVolumeRenderParams
+	// NvFlowVolumeRenderParams
 	float RenderingAlphaScale;
 	uint32 RenderingMode;
 	uint32 bAdaptiveScreenPercentage : 1;
@@ -147,19 +31,36 @@ struct FFlowGridProperties
 	float MinScreenPercentage;
 	uint32 bDebugWireframe : 1;
 
-	//Color map
+	// Color map
 	TArray<FLinearColor> ColorMap;
 	float ColorMapMinX;
 	float ColorMapMaxX;
+};
 
-	//Emitters
-	TArray<FFlowEmitter> Emitters;
+struct FFlowGridProperties
+{
+	// indicates if grid should be allocated
+	int32 bActive : 1;
 
-	//Collider Shapes
-	TArray<FFlowShape> Colliders;
+	// multi-GPU enable, requires reset if changed
+	uint32 bMultiAdapterEnabled : 1;
 
-	//Planes
-	TArray<FFlowPlane> Planes;
+	// target simulation time step
+	float SubstepSize;
+
+	// virtual extents
+	FVector VirtualGridExtents;
+
+	// simulation parameters
+	NvFlowGridDesc GridDesc;
+	NvFlowGridParams GridParams;
+	TArray<NvFlowGridEmitParams> GridEmitParams;
+	TArray<NvFlowGridEmitParams> GridCollideParams;
+	TArray<NvFlowShapeDesc> GridEmitShapeDescs;
+	TArray<NvFlowShapeDesc> GridCollideShapeDescs;
+
+	// rendering parameters
+	FFlowGridRenderParams RenderParams;
 };
 
 class UFlowGridComponent;

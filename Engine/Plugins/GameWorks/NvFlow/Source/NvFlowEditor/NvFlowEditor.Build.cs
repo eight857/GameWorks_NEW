@@ -7,6 +7,7 @@ namespace UnrealBuildTool.Rules
 			PrivateIncludePaths.AddRange(
 				new string[] {
 					"NvFlowEditor/Private",
+                    "../Include/include",
 					// ... add other private include paths required here ...
 				}
 				);

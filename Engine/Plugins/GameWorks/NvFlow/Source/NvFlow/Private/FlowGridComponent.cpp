@@ -6,9 +6,10 @@
 
 // NvFlow begin
 
+#include "NvFlow.h"
+
 #include "EnginePrivate.h"
 #include "PhysicsEngine/PhysXSupport.h"
-#include "FlowGridSceneProxy.h"
 #include "Curves/CurveLinearColor.h"
 #include "RHIStaticStates.h"
 #include "PhysicsPublic.h"
@@ -65,9 +66,15 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 
+	// set critical property defaults
 	FlowGridProperties.bActive = false;
-	FlowGridProperties.VirtualGridExtents = FVector(0);
+	FlowGridProperties.bMultiAdapterEnabled = false;
 	FlowGridProperties.SubstepSize = 0.0f;
+	FlowGridProperties.VirtualGridExtents = FVector(0.f);
+
+	// initialize desc/param defaults
+	NvFlowGridDescDefaults(&FlowGridProperties.GridDesc);
+	NvFlowGridParamsDefaults(&FlowGridProperties.GridParams);
 }
 
 UFlowGridAsset* UFlowGridComponent::CreateOverrideAsset()
@@ -106,30 +113,30 @@ FPrimitiveSceneProxy* UFlowGridComponent::CreateSceneProxy()
 
 namespace
 {
-	void FillColorMap(FFlowGridProperties& FlowGridProperties, UFlowGridAsset& FlowGridAsset)
+	void FillColorMap(FFlowGridRenderParams& RenderParams, UFlowGridAsset& FlowGridAsset)
 	{
 		SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateColorMap);
 
 		//Alloc color map size to default specified by the flow library. NvFlowRendering.cpp assumes that for now.
-		if (FlowGridProperties.ColorMap.Num() == 0)
+		if (RenderParams.ColorMap.Num() == 0)
 		{
 			NvFlowColorMapDesc FlowColorMapDesc;
 			NvFlowColorMapDescDefaults(&FlowColorMapDesc);
-			FlowGridProperties.ColorMap.SetNum(FlowColorMapDesc.resolution);
+			RenderParams.ColorMap.SetNum(FlowColorMapDesc.resolution);
 		}
 
 		float xmin = FlowGridAsset.ColorMapMinX;
 		float xmax = FlowGridAsset.ColorMapMaxX;
-		FlowGridProperties.ColorMapMinX = xmin;
-		FlowGridProperties.ColorMapMaxX = xmax;
+		RenderParams.ColorMapMinX = xmin;
+		RenderParams.ColorMapMaxX = xmax;
 
-		for (int32 i = 0; i < FlowGridProperties.ColorMap.Num(); i++)
+		for (int32 i = 0; i < RenderParams.ColorMap.Num(); i++)
 		{
-			float t = float(i) / (FlowGridProperties.ColorMap.Num() - 1);
+			float t = float(i) / (RenderParams.ColorMap.Num() - 1);
 
 			float s = (xmax - xmin) * t + xmin;
 
-			FlowGridProperties.ColorMap[i] = FlowGridAsset.ColorMap ? FlowGridAsset.ColorMap->GetLinearColorValue(s) : FLinearColor(0.f, 0.f, 0.f, 1.f);
+			RenderParams.ColorMap[i] = FlowGridAsset.ColorMap ? FlowGridAsset.ColorMap->GetLinearColorValue(s) : FLinearColor(0.f, 0.f, 0.f, 1.f);
 		}
 	}
 
@@ -143,11 +150,12 @@ void UFlowGridComponent::UpdateShapes()
 {
 	SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateShapes);
 
-	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties.Emitters.Num());
-	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.Colliders.Num());
-	FlowGridProperties.Emitters.SetNum(0);
-	FlowGridProperties.Colliders.SetNum(0);
-	FlowGridProperties.Planes.SetNum(0);
+	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties.GridEmitParams.Num());
+	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.GridCollideParams.Num());
+	FlowGridProperties.GridEmitParams.SetNum(0);
+	FlowGridProperties.GridCollideParams.SetNum(0);
+	FlowGridProperties.GridEmitShapeDescs.SetNum(0);
+	FlowGridProperties.GridCollideShapeDescs.SetNum(0);
 
 	// only update if enabled
 	if (!bFlowGridCollisionEnabled)
@@ -269,159 +277,372 @@ void UFlowGridComponent::UpdateShapes()
 				}
 			}
 
-			switch (PhysXShape->getGeometryType())
+			auto PxGeometryType = PhysXShape->getGeometryType();
+			bool IsSupported =
+				(PxGeometryType == PxGeometryType::eSPHERE) ||
+				(PxGeometryType == PxGeometryType::eBOX) ||
+				(PxGeometryType == PxGeometryType::eCAPSULE) ||
+				(PxGeometryType == PxGeometryType::eCONVEXMESH);
+			bool IsEmitter = FlowEmitterComponent != nullptr;
+			bool IsCollider = Response == ECollisionResponse::ECR_Block;
+
+			// optimization: kick out early if couple rate is zero
+			if (IsEmitter)
 			{
-				case PxGeometryType::eSPHERE:
-				case PxGeometryType::eBOX:
-				case PxGeometryType::eCAPSULE:
-				case PxGeometryType::eCONVEXMESH:
+				if (FlowEmitterComponent->CoupleRate <= 0.f)
 				{
-					PxTransform WorldTransform = ActorTransform*ShapeTransform;
+					IsEmitter = false;
+				}
+			}
 
-					EFlowGeometryType FlowShapeGeometryType = EFGT_eSphere;
-					FFlowShape::FGeometry FlowShapeGeometry = {};
-					FFlowConvexParams FlowConvexParams = {};
+			if (IsSupported && (IsEmitter || IsCollider))
+			{
+				PxTransform WorldTransform = ActorTransform*ShapeTransform;
+				FVector UnitToActualScale(1.f, 1.f, 1.f);
+				FVector LocalToWorldScale(1.f, 1.f, 1.f);
+				FVector BoundsScale(1.f, 1.f, 1.f);
+				NvFlowShapeType FlowShapeType = eNvFlowShapeTypeSphere;
+				float FlowShapeDistScale = 1.f;
+				uint32 NumShapeDescs = 1u;
 
-					if (PhysXShape->getGeometryType() == PxGeometryType::eSPHERE)
+				int32 EmitShapeStartIndex = FlowGridProperties.GridEmitShapeDescs.Num();
+				int32 CollideShapeStartIndex = FlowGridProperties.GridCollideShapeDescs.Num();
+
+				bool IsEnabledArray[2] = { IsEmitter, IsCollider };
+				TArray<NvFlowShapeDesc>* ShapeDescsArray[2] = { 
+					&FlowGridProperties.GridEmitShapeDescs, 
+					&FlowGridProperties.GridCollideShapeDescs 
+				};
+				for (uint32 passID = 0u; passID < 2u; passID++)
+				{
+					if (!IsEnabledArray[passID])
 					{
+						continue;
+					}
+
+					TArray<NvFlowShapeDesc>& ShapeDescs = *ShapeDescsArray[passID];
+
+					// compute number of NvFlowShapeDesc
+					if (PxGeometryType == PxGeometryType::eCONVEXMESH)
+					{
+						PxConvexMeshGeometry ConvexGeometry;
+						PhysXShape->getConvexMeshGeometry(ConvexGeometry);
+						NumShapeDescs = ConvexGeometry.convexMesh->getNbPolygons();
+					}
+
+					// allocate shape descs
+					int32 Index = ShapeDescs.AddUninitialized(NumShapeDescs);
+					NvFlowShapeDesc* ShapeDescsPtr = &ShapeDescs[Index];
+
+					if (PxGeometryType == PxGeometryType::eSPHERE)
+					{
+						FlowShapeType = eNvFlowShapeTypeSphere;
 						PxSphereGeometry SphereGeometry;
 						PhysXShape->getSphereGeometry(SphereGeometry);
-						FlowShapeGeometry.Sphere.Radius = SphereGeometry.radius;
-						FlowShapeGeometryType = EFGT_eSphere;
+						ShapeDescsPtr[0].sphere.radius = NvFlow::sdfRadius;
+						UnitToActualScale = FVector(SphereGeometry.radius * (1.f / NvFlow::sdfRadius) * NvFlow::scaleInv);
 					}
-					else if (PhysXShape->getGeometryType() == PxGeometryType::eBOX)
+					else if (PxGeometryType == PxGeometryType::eBOX)
 					{
+						FlowShapeType = eNvFlowShapeTypeBox;
 						PxBoxGeometry BoxGeometry;
 						PhysXShape->getBoxGeometry(BoxGeometry);
-						*(FVector*)&FlowShapeGeometry.Box.Extends[0] = P2UVector(BoxGeometry.halfExtents);
-						FlowShapeGeometryType = EFGT_eBox;
+						ShapeDescsPtr[0].box.halfSize.x = NvFlow::sdfRadius;
+						ShapeDescsPtr[0].box.halfSize.y = NvFlow::sdfRadius;
+						ShapeDescsPtr[0].box.halfSize.z = NvFlow::sdfRadius;
+						UnitToActualScale = P2UVector(BoxGeometry.halfExtents) * (1.f / NvFlow::sdfRadius) * NvFlow::scaleInv;
+						// distortion correction, makes LocalToWorld uniform scale
+						FVector aspectRatio = UnitToActualScale;
+						float aspectRatioMin = FMath::Min(aspectRatio.X, FMath::Min(aspectRatio.Y, aspectRatio.Z));
+						aspectRatio.X /= aspectRatioMin;
+						aspectRatio.Y /= aspectRatioMin;
+						aspectRatio.Z /= aspectRatioMin;
+						LocalToWorldScale = FVector(1.f) / aspectRatio;
+						ShapeDescsPtr[0].box.halfSize.x *= aspectRatio.X;
+						ShapeDescsPtr[0].box.halfSize.y *= aspectRatio.Y;
+						ShapeDescsPtr[0].box.halfSize.z *= aspectRatio.Z;
 					}
-					else if (PhysXShape->getGeometryType() == PxGeometryType::eCAPSULE)
+					else if (PxGeometryType == PxGeometryType::eCAPSULE)
 					{
+						FlowShapeType = eNvFlowShapeTypeCapsule;
 						PxCapsuleGeometry CapsuleGeometry;
 						PhysXShape->getCapsuleGeometry(CapsuleGeometry);
-						FlowShapeGeometry.Capsule.Radius = CapsuleGeometry.radius;
-						FlowShapeGeometry.Capsule.HalfHeight = CapsuleGeometry.halfHeight;
-						FlowShapeGeometryType = EFGT_eCapsule;
+						ShapeDescsPtr[0].capsule.radius = NvFlow::sdfRadius;
+						ShapeDescsPtr[0].capsule.length = NvFlow::sdfRadius * (2.f * CapsuleGeometry.halfHeight / CapsuleGeometry.radius);
+						UnitToActualScale = FVector(CapsuleGeometry.radius * (1.f / NvFlow::sdfRadius) * NvFlow::scaleInv);
+
+						// extends bounds on x axis
+						BoundsScale.X = (0.5f * ShapeDescsPtr[0].capsule.length + 1.f);
 					}
-					else if (PhysXShape->getGeometryType() == PxGeometryType::eCONVEXMESH)
+					else if (PxGeometryType == PxGeometryType::eCONVEXMESH)
 					{
+						FlowShapeType = eNvFlowShapeTypePlane;
 						PxHullPolygon polygon;
 						PxConvexMeshGeometry ConvexGeometry;
 						PhysXShape->getConvexMeshGeometry(ConvexGeometry);
-						auto nbPolygons = ConvexGeometry.convexMesh->getNbPolygons();
 						auto localBounds = ConvexGeometry.convexMesh->getLocalBounds();
 						auto meshScale = ConvexGeometry.scale;
 
-						FlowShapeGeometryType = EFGT_eConvex;
-						FlowConvexParams.LocalMin = P2UVector(localBounds.minimum);
-						FlowConvexParams.LocalMax = P2UVector(localBounds.maximum);
-						FlowConvexParams.Scale = P2UVector(meshScale.scale);
-						FlowConvexParams.Rotation = P2UQuat(meshScale.rotation);
-						FlowShapeGeometry.Convex.PlaneArrayOffset = FlowGridProperties.Planes.Num();
-						FlowShapeGeometry.Convex.NumPlanes = nbPolygons;
-						FlowShapeGeometry.Convex.Radius = (FlowConvexParams.Scale * 0.5f * (FlowConvexParams.LocalMax - FlowConvexParams.LocalMin)).GetAbsMax();
-
-						int32 Index = FlowGridProperties.Planes.AddUninitialized(nbPolygons);
-						FFlowPlane* FlowPlanes = &FlowGridProperties.Planes[Index];
-
-						for (uint32 i = 0u; i < nbPolygons; i++)
+						for (uint32 i = 0u; i < NumShapeDescs; i++)
 						{
 							ConvexGeometry.convexMesh->getPolygonData(i, polygon);
-							FlowPlanes[i].Plane[0] = +polygon.mPlane[0];
-							FlowPlanes[i].Plane[1] = +polygon.mPlane[1];
-							FlowPlanes[i].Plane[2] = +polygon.mPlane[2];
-							FlowPlanes[i].Plane[3] = -polygon.mPlane[3];
-						}
-					}
-
-					if (FlowEmitterComponent)
-					{
-						INC_DWORD_STAT(STAT_Flow_EmitterCount);
-						int32 Index = FlowGridProperties.Emitters.AddUninitialized(1);
-						FFlowEmitter& FlowEmitter = FlowGridProperties.Emitters[Index];
-
-						FlowEmitter.Shape.GeometryType = FlowShapeGeometryType;
-						FlowEmitter.Shape.Geometry = FlowShapeGeometry;
-						FlowEmitter.Shape.ConvexParams = FlowConvexParams;
-
-						FlowEmitter.Shape.Transform = P2UTransform(WorldTransform);
-
-						if (!FlowEmitterComponent->bHasPreviousTransform)
-						{
-							FlowEmitterComponent->PreviousTransform = FlowEmitter.Shape.Transform;
-							FlowEmitterComponent->bHasPreviousTransform = true;
+							ShapeDescsPtr[i].plane.normal.x = +polygon.mPlane[0];
+							ShapeDescsPtr[i].plane.normal.y = +polygon.mPlane[1];
+							ShapeDescsPtr[i].plane.normal.z = +polygon.mPlane[2];
+							ShapeDescsPtr[i].plane.distance = -polygon.mPlane[3];
 						}
 
-						FlowEmitter.Shape.PreviousTransform = FlowEmitterComponent->PreviousTransform;
-						FlowEmitterComponent->PreviousTransform = FlowEmitter.Shape.Transform;
+						auto LocalMin = P2UVector(localBounds.minimum);
+						auto LocalMax = P2UVector(localBounds.maximum);
+						auto MeshScale = P2UVector(meshScale.scale);
+						auto MeshRotation = P2UQuat(meshScale.rotation);
+						const float Radius = (MeshScale * 0.5f * (LocalMax - LocalMin)).GetAbsMax();
+						UnitToActualScale = FVector(Radius * (1.f / NvFlow::sdfRadius) * NvFlow::scaleInv);
 
-						FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
-						FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
-						FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
+						FlowShapeDistScale = NvFlow::scaleInv;
 
-						physicsLinearVelocity = FlowEmitter.Shape.Transform.InverseTransformVector(physicsLinearVelocity);
-						physicsAngularVelocity = FlowEmitter.Shape.Transform.InverseTransformVector(physicsAngularVelocity);
-						physicsCenterOfMass = physicsCenterOfMass;
+						// scale bounds
+						BoundsScale = (MeshScale * 0.5f * (LocalMax - LocalMin));
+						float norm = BoundsScale.GetAbsMax();
+						BoundsScale /= norm;
 
-						FlowEmitter.Shape.LinearVelocity = FlowEmitterComponent->LinearVelocity + physicsLinearVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
-						FlowEmitter.Shape.AngularVelocity = FlowEmitterComponent->AngularVelocity + physicsAngularVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
-						FlowEmitter.Shape.CenterOfRotationOffset = physicsCenterOfMass * FlowEmitterComponent->BlendInPhysicalVelocity;
-
-						FlowEmitter.Shape.CollisionLinearVelocity = physicsLinearVelocity;
-						FlowEmitter.Shape.CollisionAngularVelocity = physicsAngularVelocity;
-						FlowEmitter.Shape.CollisionCenterOfRotationOffset = physicsCenterOfMass;
-
-						FlowEmitter.Density = FlowEmitterComponent->Density;
-						FlowEmitter.Temperature = FlowEmitterComponent->Temperature;
-						FlowEmitter.Fuel = FlowEmitterComponent->Fuel;
-						FlowEmitter.FuelReleaseTemp = FlowEmitterComponent->FuelReleaseTemp;
-						FlowEmitter.FuelRelease = FlowEmitterComponent->FuelRelease;
-						FlowEmitter.AllocationPredict = FlowEmitterComponent->AllocationPredict;
-						FlowEmitter.AllocationScale = FlowEmitterComponent->AllocationScale;
-						FlowEmitter.CollisionFactor = FlowEmitterComponent->CollisionFactor;
-						FlowEmitter.EmitterInflate = FlowEmitterComponent->EmitterInflate;
-						FlowEmitter.CoupleRate = FlowEmitterComponent->CoupleRate;
-						FlowEmitter.VelocityMask = FlowEmitterComponent->VelocityMask;
-						FlowEmitter.DensityMask = FlowEmitterComponent->DensityMask;
-						FlowEmitter.TemperatureMask = FlowEmitterComponent->TemperatureMask;
-						FlowEmitter.FuelMask = FlowEmitterComponent->FuelMask;
-
-						FlowEmitter.NumSubsteps = FlowEmitterComponent->NumSubsteps;
+						// scale local to world, scaleInv cancels out because planes are in UE4 space
+						LocalToWorldScale = MeshScale * NvFlow::scaleInv / UnitToActualScale;
 					}
-
-					if (Response == ECollisionResponse::ECR_Block)
-					{
-						INC_DWORD_STAT(STAT_Flow_ColliderCount);
-						int32 Index = FlowGridProperties.Colliders.AddUninitialized(1);
-						FFlowShape& ColliderShape = FlowGridProperties.Colliders[Index];
-
-						ColliderShape.GeometryType = FlowShapeGeometryType;
-						ColliderShape.Geometry = FlowShapeGeometry;
-
-						ColliderShape.Transform = P2UTransform(WorldTransform);
-
-						FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
-						FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
-						FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
-
-						physicsLinearVelocity = ColliderShape.Transform.InverseTransformVector(physicsLinearVelocity);
-						physicsAngularVelocity = ColliderShape.Transform.InverseTransformVector(physicsAngularVelocity);
-						physicsCenterOfMass = physicsCenterOfMass;
-
-						ColliderShape.LinearVelocity = physicsLinearVelocity;
-						ColliderShape.AngularVelocity = physicsAngularVelocity;
-						ColliderShape.CenterOfRotationOffset = physicsCenterOfMass;
-
-						ColliderShape.CollisionLinearVelocity = physicsLinearVelocity;
-						ColliderShape.CollisionAngularVelocity = physicsAngularVelocity;
-						ColliderShape.CollisionCenterOfRotationOffset = physicsCenterOfMass;
-					}
-					break;
 				}
-			};
+
+				if (IsEmitter)
+				{
+					// update transforms
+					FTransform Transform = P2UTransform(WorldTransform);
+					if (!FlowEmitterComponent->bHasPreviousTransform)
+					{
+						FlowEmitterComponent->PreviousTransform = Transform;
+						FlowEmitterComponent->bHasPreviousTransform = true;
+					}
+					FTransform PreviousTransform = FlowEmitterComponent->PreviousTransform;
+					FlowEmitterComponent->PreviousTransform = Transform;
+
+					// physics
+					FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
+					FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
+					FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
+
+					FVector CollisionLinearVelocity = Transform.InverseTransformVector(physicsLinearVelocity);
+					FVector CollisionAngularVelocity = Transform.InverseTransformVector(physicsAngularVelocity);
+					FVector CollisionCenterOfRotationOffset = physicsCenterOfMass;
+
+					FVector LinearVelocity = FlowEmitterComponent->LinearVelocity + CollisionLinearVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
+					FVector AngularVelocity = FlowEmitterComponent->AngularVelocity + CollisionAngularVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
+					FVector CenterOfRotationOffset = CollisionCenterOfRotationOffset * FlowEmitterComponent->BlendInPhysicalVelocity;
+
+					FVector CollisionScaledVelocityLinear = CollisionLinearVelocity * NvFlow::scaleInv;
+					FVector CollisionScaledVelocityAngular = CollisionAngularVelocity * NvFlow::angularScale;
+					FVector CollisionScaledCenterOfMass = CollisionCenterOfRotationOffset * NvFlow::scaleInv;
+
+					FVector ScaledVelocityLinear = LinearVelocity * NvFlow::scaleInv;
+					FVector ScaledVelocityAngular = AngularVelocity * NvFlow::angularScale;
+					FVector ScaledCenterOfMass = CenterOfRotationOffset * NvFlow::scaleInv;
+
+					// substep invariant params
+					NvFlowGridEmitParams emitParams;
+					NvFlowGridEmitParamsDefaults(&emitParams);
+
+					// emit values
+					emitParams.velocityLinear  = *(NvFlowFloat3*)(&ScaledVelocityLinear.X);
+					emitParams.velocityAngular = *(NvFlowFloat3*)(&ScaledVelocityAngular.X);
+					emitParams.fuel = FlowEmitterComponent->Fuel;
+					emitParams.fuelReleaseTemp = FlowEmitterComponent->FuelReleaseTemp;
+					emitParams.fuelRelease = FlowEmitterComponent->FuelRelease;
+					emitParams.density = FlowEmitterComponent->Density;
+					emitParams.temperature = FlowEmitterComponent->Temperature;
+					emitParams.allocationPredict = FlowEmitterComponent->AllocationPredict;
+					emitParams.allocationScale = {
+						FlowEmitterComponent->AllocationScale,
+						FlowEmitterComponent->AllocationScale,
+						FlowEmitterComponent->AllocationScale
+					};
+
+					// couple rates
+					float coupleRate = FlowEmitterComponent->CoupleRate;
+					emitParams.fuelCoupleRate        = coupleRate * FlowEmitterComponent->FuelMask;
+					emitParams.temperatureCoupleRate = coupleRate * FlowEmitterComponent->TemperatureMask;
+					emitParams.densityCoupleRate     = coupleRate * FlowEmitterComponent->DensityMask;
+					float velocityCoupleRate         = coupleRate * FlowEmitterComponent->VelocityMask;
+					emitParams.velocityCoupleRate = { velocityCoupleRate, velocityCoupleRate, velocityCoupleRate };
+
+					// max/min active dist
+					float CollisionFactor = FlowEmitterComponent->CollisionFactor;
+					float EmitterInflate = FlowEmitterComponent->EmitterInflate;
+					emitParams.maxActiveDist = EmitterInflate;
+					emitParams.minActiveDist = -1.f + CollisionFactor;
+
+					// set shape type, shape base and range, distance scale
+					emitParams.shapeType = FlowShapeType;
+					emitParams.shapeRangeOffset = EmitShapeStartIndex;
+					emitParams.shapeRangeSize = NumShapeDescs;
+					emitParams.shapeDistScale = FlowShapeDistScale;
+
+					// substep
+					float NumSubsteps = FlowEmitterComponent->NumSubsteps;
+					float emitterSubstepDt = FlowGridProperties.SubstepSize / NumSubsteps;
+
+					// transforms
+					FTransform BeginTransform = PreviousTransform;
+					BeginTransform.SetLocation(PreviousTransform.GetLocation() * NvFlow::scaleInv);
+					BeginTransform.SetScale3D(BeginTransform.GetScale3D() * UnitToActualScale);
+
+					FTransform EndTransform = Transform;
+					EndTransform.SetLocation(Transform.GetLocation() * NvFlow::scaleInv);
+					EndTransform.SetScale3D(EndTransform.GetScale3D() * UnitToActualScale);
+
+					// optimization: use NvFlow emitter substep for stationary enough objects
+					bool isStationary = BeginTransform.Equals(EndTransform);
+					uint32 iterations = isStationary ? 1u : NumSubsteps;
+					emitParams.numSubSteps = isStationary ? NumSubsteps : 1u;
+
+					// substepping
+					for (uint32 i = 0u; i < iterations; i++)
+					{
+						// Note: substep and numSubsteps are for future simulation substep support
+						const float substep = 0.f;
+						const float numSubsteps = 1.f;
+
+						// Generate interpolated transform
+						FTransform BlendedTransform;
+						float alpha = float(substep*NumSubsteps + i + 1) / (NumSubsteps*numSubsteps);
+						BlendedTransform.Blend(BeginTransform, EndTransform, alpha);
+
+						// compute centerOfMass in emitter local space
+						FVector centerOfMass = BlendedTransform.InverseTransformPosition(ScaledCenterOfMass);
+						emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
+
+						// establish bounds and localToWorld
+						FTransform Bounds = BlendedTransform;
+						FTransform LocalToWorld = BlendedTransform;
+						Bounds.SetScale3D(Bounds.GetScale3D() * BoundsScale);
+						LocalToWorld.SetScale3D(LocalToWorld.GetScale3D() * LocalToWorldScale);
+
+						// scale bounds as a function of emitter inflate
+						{
+							const float k = (EmitterInflate + 1.f);
+							Bounds.SetScale3D(Bounds.GetScale3D() * k);
+						}
+
+						emitParams.bounds = *(NvFlowFloat4x4*)(&Bounds.ToMatrixWithScale().M[0][0]);
+						emitParams.localToWorld = *(NvFlowFloat4x4*)(&LocalToWorld.ToMatrixWithScale().M[0][0]);
+
+						// set timestep based on subtepping mode
+						emitParams.deltaTime = isStationary ? FlowGridProperties.SubstepSize : emitterSubstepDt;
+
+						// push parameters
+						FlowGridProperties.GridEmitParams.Push(emitParams);
+
+						// collision factor support
+						if (CollisionFactor > 0.f)
+						{
+							NvFlowGridEmitParams collideParams = emitParams;
+							collideParams.allocationScale = { 0.f, 0.f, 0.f };
+
+							collideParams.slipFactor = 0.9f;
+							collideParams.slipThickness = 0.1f;
+
+							collideParams.velocityLinear = *(NvFlowFloat3*)(&CollisionScaledVelocityLinear.X);
+							collideParams.velocityAngular = *(NvFlowFloat3*)(&CollisionScaledVelocityAngular.X);
+							float collideVelCR = 100.f * FlowEmitterComponent->VelocityMask;
+							collideParams.velocityCoupleRate = { collideVelCR, collideVelCR, collideVelCR };
+
+							collideParams.fuel = 0.f;
+							collideParams.fuelCoupleRate = 100.f * FlowEmitterComponent->FuelMask;
+
+							collideParams.density = 0.f;
+							collideParams.densityCoupleRate = 100.f * FlowEmitterComponent->DensityMask;
+
+							collideParams.temperature = 0.f;
+							collideParams.temperatureCoupleRate = 100.0f * FlowEmitterComponent->TemperatureMask;
+
+							collideParams.maxActiveDist = -1.f + CollisionFactor - collideParams.slipThickness;
+							collideParams.minActiveDist = -1.f;
+
+							FlowGridProperties.GridEmitParams.Push(emitParams);
+						}
+					}
+				}
+
+				if (IsCollider)
+				{
+					// update transforms
+					FTransform Transform = P2UTransform(WorldTransform);
+
+					// physics
+					FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
+					FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
+					FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
+
+					FVector CollisionLinearVelocity = Transform.InverseTransformVector(physicsLinearVelocity);
+					FVector CollisionAngularVelocity = Transform.InverseTransformVector(physicsAngularVelocity);
+					FVector CollisionCenterOfRotationOffset = physicsCenterOfMass;
+
+					FVector CollisionScaledVelocityLinear = CollisionLinearVelocity * NvFlow::scaleInv;
+					FVector CollisionScaledVelocityAngular = CollisionAngularVelocity * NvFlow::angularScale;
+					FVector CollisionScaledCenterOfMass = CollisionCenterOfRotationOffset * NvFlow::scaleInv;
+
+					// parameters
+					NvFlowGridEmitParams emitParams;
+					NvFlowGridEmitParamsDefaults(&emitParams);
+
+					// emit values
+					emitParams.velocityLinear = *(NvFlowFloat3*)(&CollisionScaledVelocityLinear.X);
+					emitParams.velocityAngular = *(NvFlowFloat3*)(&CollisionScaledVelocityAngular.X);
+					emitParams.fuel = 0.f;
+					emitParams.density = 0.f;
+					emitParams.temperature = 0.f;
+					emitParams.allocationScale = { 0.f, 0.f, 0.f };
+
+					// couple rates
+					float coupleRate = 100.f;
+					emitParams.fuelCoupleRate = coupleRate;
+					emitParams.temperatureCoupleRate = coupleRate;
+					emitParams.densityCoupleRate = coupleRate;
+					float velocityCoupleRate = coupleRate;
+					emitParams.velocityCoupleRate = { velocityCoupleRate, velocityCoupleRate, velocityCoupleRate };
+
+					// set shape type, shape base and range, distance scale
+					emitParams.shapeType = FlowShapeType;
+					emitParams.shapeRangeOffset = CollideShapeStartIndex;
+					emitParams.shapeRangeSize = NumShapeDescs;
+					emitParams.shapeDistScale = FlowShapeDistScale;
+
+					// scaled transform
+					FTransform ScaledTransform = Transform;
+					ScaledTransform.SetLocation(Transform.GetLocation() * NvFlow::scaleInv);
+					ScaledTransform.SetScale3D(ScaledTransform.GetScale3D() * UnitToActualScale);
+
+					// compute centerOfMass in emitter local space
+					FVector centerOfMass = ScaledTransform.InverseTransformPosition(CollisionScaledCenterOfMass);
+					emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
+
+					// establish bounds and localToWorld
+					FTransform Bounds = ScaledTransform;
+					FTransform LocalToWorld = ScaledTransform;
+					Bounds.SetScale3D(Bounds.GetScale3D() * BoundsScale);
+					LocalToWorld.SetScale3D(LocalToWorld.GetScale3D() * LocalToWorldScale);
+
+					emitParams.bounds = *(NvFlowFloat4x4*)(&Bounds.ToMatrixWithScale().M[0][0]);
+					emitParams.localToWorld = *(NvFlowFloat4x4*)(&LocalToWorld.ToMatrixWithScale().M[0][0]);
+
+					// step size
+					emitParams.deltaTime = FlowGridProperties.SubstepSize;
+
+					// push parameters
+					FlowGridProperties.GridCollideParams.Push(emitParams);
+				}
+			}
 		}
 	}
+
+	INC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties.GridEmitParams.Num());
+	INC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.GridCollideParams.Num());
 
 	SCENE_UNLOCK_READ(SyncScene);
 }
@@ -436,19 +657,30 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 	if (FlowGridAssetRef && SceneProxy)
 	{
-		//Properties that require rebuild of grid
-
-		//NvFlowGridDesc
-		FVector NewHalfSize = FVector(FlowGridAssetRef->GetVirtualGridDimension() * 0.5f * FlowGridAssetRef->GridCellSize);
+		// derive parameters from asset
+		FVector NewHalfSize = NvFlow::scaleInv * FVector(FlowGridAssetRef->GetVirtualGridDimension() * 0.5f * FlowGridAssetRef->GridCellSize);
 		FIntVector NewVirtualDim = FIntVector(FlowGridAssetRef->GetVirtualGridDimension());
-		float NewMemoryLimitScale = FlowGridAssetRef->MemoryLimitScale;
 		bool OldMultiAdapterEnabled = FlowGridProperties.bMultiAdapterEnabled;
 		bool NewMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
 
+		// grab default desc
+		NvFlowGridDesc defaultGridDesc = {};
+		NvFlowGridDescDefaults(&defaultGridDesc);
+
+		//NvFlowGridDesc
+		NvFlowGridDesc newGridDesc = FlowGridProperties.GridDesc;
+		newGridDesc.halfSize = { NewHalfSize.X, NewHalfSize.Y, NewHalfSize.Z };
+		newGridDesc.virtualDim = { uint32(NewVirtualDim.X), uint32(NewVirtualDim.Y), uint32(NewVirtualDim.Z) };
+		newGridDesc.residentScale = defaultGridDesc.residentScale * FlowGridAssetRef->MemoryLimitScale;
+
 		if (FlowGridProperties.bActive && 
-			(NewHalfSize != FlowGridProperties.HalfSize ||
-			 NewVirtualDim != FlowGridProperties.VirtualDim ||
-			 NewMemoryLimitScale != FlowGridProperties.MemoryLimitScale || 
+			(newGridDesc.halfSize.x != FlowGridProperties.GridDesc.halfSize.x ||
+			 newGridDesc.halfSize.y != FlowGridProperties.GridDesc.halfSize.y ||
+			 newGridDesc.halfSize.z != FlowGridProperties.GridDesc.halfSize.z ||
+			 newGridDesc.virtualDim.x != FlowGridProperties.GridDesc.virtualDim.x ||
+			 newGridDesc.virtualDim.y != FlowGridProperties.GridDesc.virtualDim.y ||
+			 newGridDesc.virtualDim.z != FlowGridProperties.GridDesc.virtualDim.z ||
+			 newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
 			 NewMultiAdapterEnabled != OldMultiAdapterEnabled))
 		{
 			// rebuild required
@@ -457,9 +689,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			return;
 		}
 
-		FlowGridProperties.HalfSize = NewHalfSize;
-		FlowGridProperties.VirtualDim = NewVirtualDim;
-		FlowGridProperties.MemoryLimitScale = NewMemoryLimitScale;
+		// Commit any changes
+		FlowGridProperties.GridDesc = newGridDesc;
 		FlowGridProperties.bMultiAdapterEnabled = NewMultiAdapterEnabled;
 
 		//Properties that can be changed without rebuilding grid
@@ -467,47 +698,50 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		FlowGridProperties.SubstepSize = TimeStepper.FixedDt;
 
 		//NvFlowGridParams
-		FlowGridProperties.VelocityWeight = FlowGridAssetRef->VelocityWeight;
-		FlowGridProperties.DensityWeight = FlowGridAssetRef->DensityWeight;
-		FlowGridProperties.TempWeight = FlowGridAssetRef->TempWeight;
-		FlowGridProperties.FuelWeight = FlowGridAssetRef->FuelWeight;
-		FlowGridProperties.VelocityThreshold = FlowGridAssetRef->VelocityThreshold;
-		FlowGridProperties.DensityThreshold = FlowGridAssetRef->DensityThreshold;
-		FlowGridProperties.TempThreshold = FlowGridAssetRef->TempThreshold;
-		FlowGridProperties.FuelThreshold = FlowGridAssetRef->FuelThreshold;
-		FlowGridProperties.ImportanceThreshold = FlowGridAssetRef->ImportanceThreshold;
+		auto& GridParams = FlowGridProperties.GridParams;
+		NvFlowGridParamsDefaults(&GridParams);
+		GridParams.velocityWeight = FlowGridAssetRef->VelocityWeight;
+		GridParams.densityWeight = FlowGridAssetRef->DensityWeight;
+		GridParams.tempWeight = FlowGridAssetRef->TempWeight;
+		GridParams.fuelWeight = FlowGridAssetRef->FuelWeight;
+		GridParams.velocityThreshold = FlowGridAssetRef->VelocityThreshold;
+		GridParams.densityThreshold = FlowGridAssetRef->DensityThreshold;
+		GridParams.tempThreshold = FlowGridAssetRef->TempThreshold;
+		GridParams.fuelThreshold = FlowGridAssetRef->FuelThreshold;
+		GridParams.importanceThreshold = FlowGridAssetRef->ImportanceThreshold;
 
-		FlowGridProperties.Gravity = FlowGridAssetRef->Gravity;
-		FlowGridProperties.VelocityDamping = FlowGridAssetRef->VelocityDamping;
-		FlowGridProperties.DensityDamping = FlowGridAssetRef->DensityDamping;
-		FlowGridProperties.VelocityFade = FlowGridAssetRef->VelocityFade;
-		FlowGridProperties.DensityFade = FlowGridAssetRef->DensityFade;
-		FlowGridProperties.VelocityMacCormackBlendFactor = FlowGridAssetRef->VelocityMacCormackBlendFactor;
-		FlowGridProperties.DensityMacCormackBlendFactor = FlowGridAssetRef->DensityMacCormackBlendFactor;
-		FlowGridProperties.VorticityStrength = FlowGridAssetRef->VorticityStrength;
-		FlowGridProperties.CombustionIgnitionTemperature = FlowGridAssetRef->IgnitionTemperature;
-		FlowGridProperties.CombustionCoolingRate = FlowGridAssetRef->CoolingRate;
+		FVector ScaledGravity(FlowGridAssetRef->Gravity * NvFlow::scaleInv);
+		GridParams.gravity = *(NvFlowFloat3*)(&ScaledGravity);
+		GridParams.velocityDamping = FlowGridAssetRef->VelocityDamping;
+		GridParams.densityDamping = FlowGridAssetRef->DensityDamping;
+		GridParams.velocityFade = FlowGridAssetRef->VelocityFade;
+		GridParams.densityFade = FlowGridAssetRef->DensityFade;
+		GridParams.velocityMacCormackBlendFactor = FlowGridAssetRef->VelocityMacCormackBlendFactor;
+		GridParams.densityMacCormackBlendFactor = FlowGridAssetRef->DensityMacCormackBlendFactor;
+		GridParams.vorticityStrength = FlowGridAssetRef->VorticityStrength;
+		GridParams.combustion.ignitionTemp = FlowGridAssetRef->IgnitionTemperature;
+		GridParams.combustion.coolingRate = FlowGridAssetRef->CoolingRate;
 		
 		//NvFlowVolumeRenderParams
-		FlowGridProperties.RenderingAlphaScale = FlowGridAssetRef->RenderingAlphaScale;
-		FlowGridProperties.bAdaptiveScreenPercentage = FlowGridAssetRef->bAdaptiveScreenPercentage;
-		FlowGridProperties.AdaptiveTargetFrameTime = FlowGridAssetRef->AdaptiveTargetFrameTime;
-		FlowGridProperties.MaxScreenPercentage = FlowGridAssetRef->MaxScreenPercentage;
-		FlowGridProperties.MinScreenPercentage = FlowGridAssetRef->MinScreenPercentage;
+		FlowGridProperties.RenderParams.RenderingAlphaScale = FlowGridAssetRef->RenderingAlphaScale;
+		FlowGridProperties.RenderParams.bAdaptiveScreenPercentage = FlowGridAssetRef->bAdaptiveScreenPercentage;
+		FlowGridProperties.RenderParams.AdaptiveTargetFrameTime = FlowGridAssetRef->AdaptiveTargetFrameTime;
+		FlowGridProperties.RenderParams.MaxScreenPercentage = FlowGridAssetRef->MaxScreenPercentage;
+		FlowGridProperties.RenderParams.MinScreenPercentage = FlowGridAssetRef->MinScreenPercentage;
 		
 		if (UFlowGridAsset::sGlobalDebugDraw)
 		{
-			FlowGridProperties.bDebugWireframe = true;
-			FlowGridProperties.RenderingMode = UFlowGridAsset::sGlobalRenderingMode;
+			FlowGridProperties.RenderParams.bDebugWireframe = true;
+			FlowGridProperties.RenderParams.RenderingMode = UFlowGridAsset::sGlobalRenderingMode;
 		}
 		else
 		{
-			FlowGridProperties.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
-			FlowGridProperties.RenderingMode = FlowGridAssetRef->RenderingMode;
+			FlowGridProperties.RenderParams.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
+			FlowGridProperties.RenderParams.RenderingMode = FlowGridAssetRef->RenderingMode;
 		}
 
 		//ColorMap
-		FillColorMap(FlowGridProperties, *FlowGridAssetRef);
+		FillColorMap(FlowGridProperties.RenderParams, *FlowGridAssetRef);
 
 		//EmitShapes & CollisionShapes
 		UpdateShapes();
@@ -567,8 +801,8 @@ void UFlowGridComponent::BeginPlay()
 
 void UFlowGridComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {	
-	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties.Emitters.Num());
-	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.Colliders.Num());
+	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties.GridEmitParams.Num());
+	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.GridCollideParams.Num());
 	DEC_DWORD_STAT(STAT_Flow_GridCount);
 	Super::EndPlay(EndPlayReason);
 }
@@ -640,7 +874,7 @@ void FFlowGridSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>
 
 			FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
 
-			if (FlowGridProperties.bDebugWireframe)
+			if (FlowGridProperties.RenderParams.bDebugWireframe)
 			{
 				const FLinearColor DrawColor = FLinearColor(1.0f, 1.0f, 1.0f);
 				FBox Box(LocalToWorld.GetOrigin() - FlowGridProperties.VirtualGridExtents, LocalToWorld.GetOrigin() + FlowGridProperties.VirtualGridExtents);

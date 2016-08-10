@@ -4,6 +4,9 @@
 
 DECLARE_LOG_CATEGORY_EXTERN(LogNvFlowEditor, Verbose, All);
 
+#include "NvFlow.h"
+#include "NvFlowContext.h"
+
 #include "NvFlowEditorModule.h"
 
 #include "FlowGridAsset.h"
