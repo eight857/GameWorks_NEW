@@ -564,7 +564,7 @@ void UFlowGridComponent::UpdateShapes()
 							collideParams.maxActiveDist = -1.f + CollisionFactor - collideParams.slipThickness;
 							collideParams.minActiveDist = -1.f;
 
-							FlowGridProperties.GridEmitParams.Push(emitParams);
+							FlowGridProperties.GridEmitParams.Push(collideParams);
 						}
 					}
 				}
