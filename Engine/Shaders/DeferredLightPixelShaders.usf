@@ -8,7 +8,9 @@
 #include "DeferredShadingCommon.usf"
 #include "DeferredLightingCommon.usf"
 // @third party code - BEGIN HairWorks
+#if SM5_PROFILE
 #include "HairWorksLighting.usf"
+#endif
 // @third party code - END HairWorks
 
 float4 GetPerPixelLightAttenuation(float2 UV)
@@ -65,11 +67,10 @@ void DirectionalPixelMain(
 	// @third party code - BEGIN HairWorks
 #if SM5_PROFILE
 	// Lighten hair
+	OutHairColor = 0;
 	if(bHairDeferredRendering)
 	{
-		const float HairOpaque = GetHairWorksDynamicLighting(OutHairColor, ScreenVector, InUV, SetupLightDataForStandardDeferred());
-		if(HairOpaque >= 1)
-			return;
+		OutHairColor = GetHairWorksDynamicLighting(ScreenVector, InUV * Frame.BufferSizeAndInvSize.xy, SetupLightDataForStandardDeferred());
 	}
 #endif
 	// @third party code - END HairWorks
@@ -119,13 +120,12 @@ void RadialPixelMain(
 	// @third party code - BEGIN HairWorks
 #if SM5_PROFILE
 	// Lighten only hair
+	OutHairColor = 0;
 	if(bHairDeferredRendering)
 	{
-		float3 HairColor;
 		float3 ScreenVector = mul(float4(InScreenPosition.xy / InScreenPosition.w, 1, 0), View.ScreenToTranslatedWorld).xyz;
-		const float HairOpaque = GetHairWorksDynamicLighting(HairColor, ScreenVector, ScreenUV, SetupLightDataForStandardDeferred());
-		if(HairOpaque > 0)
-			OutHairColor = HairColor;
+
+		OutHairColor = GetHairWorksDynamicLighting(ScreenVector, ScreenUV * Frame.BufferSizeAndInvSize.xy, SetupLightDataForStandardDeferred());
 
 		return;
 	}

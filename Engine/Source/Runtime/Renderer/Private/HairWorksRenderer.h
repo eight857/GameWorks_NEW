@@ -42,5 +42,76 @@ namespace HairWorksRenderer
 	};
 
 	extern TSharedRef<FRenderTargets> HairRenderTargets;
+
+	class FDeferredShadingParameters
+	{
+	public:
+		void Bind(const FShaderParameterMap& ParameterMap);
+
+		template<typename TRHICmdList, typename ShaderRHIParamRef>
+		void SetParameters(TRHICmdList& RHICmdList, ShaderRHIParamRef& ShaderRHI, const FShader& Shader, bool bHairDeferredRendering)const;
+
+		friend FArchive& operator<<(FArchive& Ar, FDeferredShadingParameters& P);
+
+	private:
+		FShaderParameter HairDeferredRendering;
+		FShaderResourceParameter HairNearestDepthTexture;
+		FShaderResourceParameter HairLightAttenuationTexture;
+		FShaderResourceParameter HairGBufferATextureMS;
+		FShaderResourceParameter HairGBufferBTextureMS;
+		FShaderResourceParameter HairGBufferCTextureMS;
+		FShaderResourceParameter HairPrecomputeLightTextureMS;
+		FShaderResourceParameter HairDepthTextureMS;
+		FShaderResourceParameter HairStencilTextureMS;
+	};
+
+	template<typename TRHICmdList, typename ShaderRHIParamRef>
+	void FDeferredShadingParameters::SetParameters(TRHICmdList& RHICmdList, ShaderRHIParamRef& ShaderRHI, const FShader& Shader, bool bHairDeferredRendering) const
+	{
+		SetShaderValue(RHICmdList, ShaderRHI, HairDeferredRendering, bHairDeferredRendering);
+		if(!bHairDeferredRendering)
+			return;
+
+		auto BindTexture = [&](const FShaderResourceParameter& Parameter, TRefCountPtr<IPooledRenderTarget>& Texture)
+		{
+			if(!Texture)
+				return;
+
+			SetTextureParameter(
+				RHICmdList,
+				ShaderRHI,
+				Parameter,
+				Texture->GetRenderTargetItem().TargetableTexture
+			);
+		};
+
+		BindTexture(HairNearestDepthTexture, HairRenderTargets->HairDepthZForShadow);
+
+		auto HairLightAttenuationTextureRHIRef = FSceneRenderTargets::Get(RHICmdList).GetEffectiveLightAttenuationTexture(true);
+		if(HairLightAttenuationTextureRHIRef != GWhiteTexture->TextureRHI && HairRenderTargets->LightAttenuation != nullptr)
+		{
+			HairLightAttenuationTextureRHIRef = HairRenderTargets->LightAttenuation->GetRenderTargetItem().TargetableTexture;
+		}
+
+		SetTextureParameter(
+			RHICmdList,
+			ShaderRHI,
+			HairLightAttenuationTexture,
+			HairLightAttenuationTextureRHIRef
+		);
+		BindTexture(HairGBufferATextureMS, HairRenderTargets->GBufferA);
+		BindTexture(HairGBufferBTextureMS, HairRenderTargets->GBufferB);
+		BindTexture(HairGBufferCTextureMS, HairRenderTargets->GBufferC);
+		BindTexture(HairPrecomputeLightTextureMS, HairRenderTargets->PrecomputedLight);
+		BindTexture(HairDepthTextureMS, HairRenderTargets->HairDepthZ);
+		SetSRVParameter(
+			RHICmdList,
+			ShaderRHI,
+			HairStencilTextureMS,
+			HairRenderTargets->StencilSRV
+		);
+
+		SetUniformBufferParameter(RHICmdList, ShaderRHI, Shader.GetUniformBufferParameter<FHairInstanceDataShaderUniform>(), HairRenderTargets->HairInstanceDataShaderUniform);
+	}
 }
 // @third party code - END HairWorks

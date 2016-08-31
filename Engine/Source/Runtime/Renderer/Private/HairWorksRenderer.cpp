@@ -254,14 +254,14 @@ class FHairWorksCopyDepthPs: public FGlobalShader, public FHairWorksBaseShader
 
 IMPLEMENT_SHADER_TYPE(, FHairWorksCopyDepthPs, TEXT("HairWorks"), TEXT("CopyDepthPs"), SF_Pixel);
 
-class FHairWorksResolveDepthShader: public FGlobalShader, public FHairWorksBaseShader	// Original class name is FResolveDepthPs. But it causes streaming error with FResolveDepthPS, which allocates numerous memory.
+class FHairWorksCopyNearestDepthShader: public FGlobalShader, public FHairWorksBaseShader	// Original class name is FResolveDepthPs. But it causes streaming error with FResolveDepthPS, which allocates numerous memory.
 {
-	DECLARE_SHADER_TYPE(FHairWorksResolveDepthShader, Global);
+	DECLARE_SHADER_TYPE(FHairWorksCopyNearestDepthShader, Global);
 
-	FHairWorksResolveDepthShader()
+	FHairWorksCopyNearestDepthShader()
 	{}
 
-	FHairWorksResolveDepthShader(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+	FHairWorksCopyNearestDepthShader(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
 		: FGlobalShader(Initializer)
 	{
 		DepthTexture.Bind(Initializer.ParameterMap, TEXT("DepthTexture"));
@@ -284,16 +284,16 @@ class FHairWorksResolveDepthShader: public FGlobalShader, public FHairWorksBaseS
 	FShaderResourceParameter StencilTexture;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksResolveDepthShader, TEXT("HairWorks"), TEXT("ResolveDepthPs"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(, FHairWorksCopyNearestDepthShader, TEXT("HairWorks"), TEXT("CopyNearestDepthPs"), SF_Pixel);
 
-class FHairWorksResolveOpaqueDepthPs: public FGlobalShader, public FHairWorksBaseShader
+class FHairWorksCopyOpaqueDepthPs: public FGlobalShader, public FHairWorksBaseShader
 {
-	DECLARE_SHADER_TYPE(FHairWorksResolveOpaqueDepthPs, Global);
+	DECLARE_SHADER_TYPE(FHairWorksCopyOpaqueDepthPs, Global);
 
-	FHairWorksResolveOpaqueDepthPs()
+	FHairWorksCopyOpaqueDepthPs()
 	{}
 
-	FHairWorksResolveOpaqueDepthPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+	FHairWorksCopyOpaqueDepthPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
 		: FGlobalShader(Initializer)
 	{
 		DepthTexture.Bind(Initializer.ParameterMap, TEXT("DepthTexture"));
@@ -316,7 +316,7 @@ class FHairWorksResolveOpaqueDepthPs: public FGlobalShader, public FHairWorksBas
 	FShaderResourceParameter HairColorTexture;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksResolveOpaqueDepthPs, TEXT("HairWorks"), TEXT("ResolveOpaqueDepthPs"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(, FHairWorksCopyOpaqueDepthPs, TEXT("HairWorks"), TEXT("CopyOpaqueDepthPs"), SF_Pixel);
 
 class FHairWorksCopyVelocityPs: public FGlobalShader, public FHairWorksBaseShader
 {
@@ -447,6 +447,34 @@ namespace HairWorksRenderer
 
 	// Constant buffer for per instance data
 	IMPLEMENT_UNIFORM_BUFFER_STRUCT(FHairInstanceDataShaderUniform, TEXT("HairInstanceData"))
+
+	FArchive& operator<<(FArchive& Ar, FDeferredShadingParameters& Parameters)
+	{
+		Ar << Parameters.HairDeferredRendering;
+		Ar << Parameters.HairNearestDepthTexture;
+		Ar << Parameters.HairLightAttenuationTexture;
+		Ar << Parameters.HairGBufferATextureMS;
+		Ar << Parameters.HairGBufferBTextureMS;
+		Ar << Parameters.HairGBufferCTextureMS;
+		Ar << Parameters.HairPrecomputeLightTextureMS;
+		Ar << Parameters.HairDepthTextureMS;
+		Ar << Parameters.HairStencilTextureMS;
+
+		return Ar;
+	}
+
+	void FDeferredShadingParameters::Bind(const FShaderParameterMap & ParameterMap)
+	{
+		HairDeferredRendering.Bind(ParameterMap, TEXT("bHairDeferredRendering"));
+		HairNearestDepthTexture.Bind(ParameterMap, TEXT("HairNearestDepthTexture"));
+		HairLightAttenuationTexture.Bind(ParameterMap, TEXT("HairLightAttenuationTexture"));
+		HairGBufferATextureMS.Bind(ParameterMap, TEXT("HairGBufferATextureMS"));
+		HairGBufferBTextureMS.Bind(ParameterMap, TEXT("HairGBufferBTextureMS"));
+		HairGBufferCTextureMS.Bind(ParameterMap, TEXT("HairGBufferCTextureMS"));
+		HairPrecomputeLightTextureMS.Bind(ParameterMap, TEXT("HairPrecomputeLightTextureMS"));
+		HairDepthTextureMS.Bind(ParameterMap, TEXT("HairDepthTextureMS"));
+		HairStencilTextureMS.Bind(ParameterMap, TEXT("HairStencilTextureMS"));
+	}
 
 	// 
 	template<typename FPixelShader, typename Funtion>
@@ -645,7 +673,9 @@ namespace HairWorksRenderer
 		// Color buffer
 		Desc.NumSamples = 1;
 		Desc.Format = PF_FloatRGBA;
+		Desc.TargetableFlags |= TexCreate_UAV;
 		FindFreeElementInPool(RHICmdList, Desc, HairRenderTargets->AccumulatedColor, TEXT("HairAccumulatedColor"));
+		Desc.TargetableFlags &= ~TexCreate_UAV;
 
 		// Depth buffer
 		Desc = FPooledRenderTargetDesc::Create2DDesc(Size, PF_DepthStencil, FClearValueBinding::DepthFar, TexCreate_None, TexCreate_DepthStencilTargetable, false);
@@ -859,9 +889,9 @@ namespace HairWorksRenderer
 		// Copy hair depth to receive shadow
 		SetRenderTarget(RHICmdList, nullptr, HairRenderTargets->HairDepthZForShadow->GetRenderTargetItem().TargetableTexture);
 
-		DrawFullScreen<FHairWorksResolveDepthShader>(
+		DrawFullScreen<FHairWorksCopyNearestDepthShader>(
 			RHICmdList,
-			[&](FHairWorksResolveDepthShader& Shader)
+			[&](FHairWorksCopyNearestDepthShader& Shader)
 		{
 			SetTextureParameter(RHICmdList, Shader.GetPixelShader(), Shader.DepthTexture, HairRenderTargets->HairDepthZ->GetRenderTargetItem().TargetableTexture); 
 			SetSRVParameter(RHICmdList, Shader.GetPixelShader(), Shader.StencilTexture, HairRenderTargets->StencilSRV);
@@ -870,12 +900,12 @@ namespace HairWorksRenderer
 			true
 			);
 
-		// Copy depth for translucency occlusion
-		SetRenderTarget(RHICmdList, nullptr, FSceneRenderTargets::Get(RHICmdList).GetSceneDepthSurface());
+		// Copy depth for translucency occlusion. Mark pixels that are occluded by hairs as unlit.
+		SetRenderTarget(RHICmdList, FSceneRenderTargets::Get(RHICmdList).GBufferB->GetRenderTargetItem().TargetableTexture, FSceneRenderTargets::Get(RHICmdList).GetSceneDepthSurface());
 
-		DrawFullScreen<FHairWorksResolveOpaqueDepthPs>(
+		DrawFullScreen<FHairWorksCopyOpaqueDepthPs>(
 			RHICmdList,
-			[&](FHairWorksResolveOpaqueDepthPs& Shader)
+			[&](FHairWorksCopyOpaqueDepthPs& Shader)
 		{
 			SetTextureParameter(RHICmdList, Shader.GetPixelShader(), Shader.DepthTexture, HairRenderTargets->HairDepthZ->GetRenderTargetItem().TargetableTexture);
 			SetTextureParameter(RHICmdList, Shader.GetPixelShader(), Shader.HairColorTexture, HairRenderTargets->PrecomputedLight->GetRenderTargetItem().TargetableTexture);

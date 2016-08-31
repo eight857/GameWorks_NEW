@@ -63,14 +63,7 @@ public:
 		LightAttenuationTexture.Bind(Initializer.ParameterMap, TEXT("LightAttenuationTexture"));
 		LightAttenuationTextureSampler.Bind(Initializer.ParameterMap, TEXT("LightAttenuationTextureSampler"));
 		// @third party code - BEGIN HairWorks
-		HairDeferredRendering.Bind(Initializer.ParameterMap, TEXT("bHairDeferredRendering"));
-		HairLightAttenuationTexture.Bind(Initializer.ParameterMap, TEXT("HairLightAttenuationTexture"));
-		HairGBufferATextureMS.Bind(Initializer.ParameterMap, TEXT("HairGBufferATextureMS"));
-		HairGBufferBTextureMS.Bind(Initializer.ParameterMap, TEXT("HairGBufferBTextureMS"));
-		HairGBufferCTextureMS.Bind(Initializer.ParameterMap, TEXT("HairGBufferCTextureMS"));
-		HairPrecomputeLightTextureMS.Bind(Initializer.ParameterMap, TEXT("HairPrecomputeLightTextureMS"));
-		HairDepthTextureMS.Bind(Initializer.ParameterMap, TEXT("HairDepthTextureMS"));
-		HairStencilTextureMS.Bind(Initializer.ParameterMap, TEXT("HairStencilTextureMS"));
+		HairDeferredParameters.Bind(Initializer.ParameterMap);
 		// @third party code - END HairWorks
 		PreIntegratedBRDF.Bind(Initializer.ParameterMap, TEXT("PreIntegratedBRDF"));
 		PreIntegratedBRDFSampler.Bind(Initializer.ParameterMap, TEXT("PreIntegratedBRDFSampler"));
@@ -96,48 +89,7 @@ public:
 
 		// @third party code - BEGIN HairWorks
 		// Hair parameters
-		SetShaderValue(RHICmdList, GetPixelShader(), HairDeferredRendering, bLightenHair);
-		if(bLightenHair)
-		{
-			auto BindTexture = [&](FShaderResourceParameter& Parameter, TRefCountPtr<IPooledRenderTarget>& Texture)
-			{
-				if(!Texture)
-					return;
-
-				SetTextureParameter(
-					RHICmdList,
-					ShaderRHI,
-					Parameter,
-					Texture->GetRenderTargetItem().TargetableTexture
-					);
-			};
-
-			auto HairLightAttenuationTextureRHIRef = FSceneRenderTargets::Get(RHICmdList).GetEffectiveLightAttenuationTexture(true);
-			if(HairLightAttenuationTextureRHIRef != GWhiteTexture->TextureRHI && HairWorksRenderer::HairRenderTargets->LightAttenuation != nullptr)
-			{
-				HairLightAttenuationTextureRHIRef = HairWorksRenderer::HairRenderTargets->LightAttenuation->GetRenderTargetItem().TargetableTexture;
-			}
-
-			SetTextureParameter(
-				RHICmdList,
-				ShaderRHI,
-				HairLightAttenuationTexture,
-				HairLightAttenuationTextureRHIRef
-				);
-			BindTexture(HairGBufferATextureMS, HairWorksRenderer::HairRenderTargets->GBufferA);
-			BindTexture(HairGBufferBTextureMS, HairWorksRenderer::HairRenderTargets->GBufferB);
-			BindTexture(HairGBufferCTextureMS, HairWorksRenderer::HairRenderTargets->GBufferC);
-			BindTexture(HairPrecomputeLightTextureMS, HairWorksRenderer::HairRenderTargets->PrecomputedLight);
-			BindTexture(HairDepthTextureMS, HairWorksRenderer::HairRenderTargets->HairDepthZ);
-			SetSRVParameter(
-				RHICmdList,
-				ShaderRHI,
-				HairStencilTextureMS,
-				HairWorksRenderer::HairRenderTargets->StencilSRV
-				);
-
-			SetUniformBufferParameter(RHICmdList, ShaderRHI, GetUniformBufferParameter<HairWorksRenderer::FHairInstanceDataShaderUniform>(), HairWorksRenderer::HairRenderTargets->HairInstanceDataShaderUniform);
-		}
+		HairDeferredParameters.SetParameters(RHICmdList, ShaderRHI, *this, bLightenHair);
 		// @third party code - END HairWorks
 	}
 
@@ -155,14 +107,7 @@ public:
 		Ar << LightAttenuationTexture;
 		Ar << LightAttenuationTextureSampler;
 		// @third party code - BEGIN HairWorks
-		Ar << HairDeferredRendering;
-		Ar << HairLightAttenuationTexture;
-		Ar << HairGBufferATextureMS;
-		Ar << HairGBufferBTextureMS;
-		Ar << HairGBufferCTextureMS;
-		Ar << HairPrecomputeLightTextureMS;
-		Ar << HairDepthTextureMS;
-		Ar << HairStencilTextureMS;
+		Ar << HairDeferredParameters;
 		// @third party code - END HairWorks
 		Ar << PreIntegratedBRDF;
 		Ar << PreIntegratedBRDFSampler;
@@ -242,14 +187,7 @@ private:
 	FShaderResourceParameter LightAttenuationTexture;
 	FShaderResourceParameter LightAttenuationTextureSampler;
 	// @third party code - BEGIN HairWorks
-	FShaderParameter HairDeferredRendering;
-	FShaderResourceParameter HairLightAttenuationTexture;
-	FShaderResourceParameter HairGBufferATextureMS;
-	FShaderResourceParameter HairGBufferBTextureMS;
-	FShaderResourceParameter HairGBufferCTextureMS;
-	FShaderResourceParameter HairPrecomputeLightTextureMS;
-	FShaderResourceParameter HairDepthTextureMS;
-	FShaderResourceParameter HairStencilTextureMS;
+	HairWorksRenderer::FDeferredShadingParameters HairDeferredParameters;
 	// @third party code - END HairWorks
 	FShaderResourceParameter PreIntegratedBRDF;
 	FShaderResourceParameter PreIntegratedBRDFSampler;

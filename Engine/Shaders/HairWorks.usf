@@ -73,7 +73,7 @@ float4 CopyVelocityPs(FScreenVertexOutput Input): SV_Target0
 	return Velocity;
 }
 
-float ResolveDepthPs(FScreenVertexOutput Input) : SV_Depth
+float CopyNearestDepthPs(FScreenVertexOutput Input) : SV_Depth
 {
 	uint2 Size;
 	uint SampleNum;
@@ -99,7 +99,7 @@ float ResolveDepthPs(FScreenVertexOutput Input) : SV_Depth
 
 Texture2DMS<float4> HairColorTexture;
 
-float ResolveOpaqueDepthPs(FScreenVertexOutput Input): SV_Depth
+void CopyOpaqueDepthPs(FScreenVertexOutput Input, out float Depth: SV_Depth, out float4 GBufferB: SV_Target0)
 {
 	uint2 Size;
 	uint SampleNum;
@@ -119,7 +119,8 @@ float ResolveOpaqueDepthPs(FScreenVertexOutput Input): SV_Depth
 		}
 	}
 
-	return NearestDepth;
+	Depth = NearestDepth;
+	GBufferB = 0;
 }
 
 struct FBasePassOut
