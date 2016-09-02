@@ -42,7 +42,7 @@ namespace NvFlow
 		void interopBegin(FRHICommandListImmediate& RHICmdList, bool computeOnly);
 		void interopEnd(FRHICommandListImmediate& RHICmdList, bool computeOnly, bool shouldFlush);
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
-		void render(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
+		void renderScene(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy);
 		void release();
 
 		void updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush);
@@ -72,7 +72,7 @@ namespace NvFlow
 
 		void updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush);
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
-		void render(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
+		void render(FRHICommandList& RHICmdList, const FViewInfo& View);
 
 		bool m_multiAdapter = false;
 		float m_timeSuccess = 0.f;
@@ -208,12 +208,11 @@ void NvFlow::Context::updateGridView(FRHICommandListImmediate& RHICmdList)
 	}
 }
 
-void NvFlow::Context::render(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
+void NvFlow::Context::renderScene(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy)
 {
-	// iterate scenes and render
-	for (int32 i = 0; i < m_sceneList.Num(); i++)
+	if (FlowGridSceneProxy->scenePtr != nullptr)
 	{
-		Scene* scene = m_sceneList[i];
+		auto scene = (Scene*)FlowGridSceneProxy->scenePtr;
 		scene->render(RHICmdList, View);
 	}
 }
@@ -511,7 +510,7 @@ void NvFlow::Scene::updateGridView(FRHICommandListImmediate& RHICmdList)
 	m_gridView = NvFlowGridProxyGetGridView(m_gridProxy, m_context->m_context);
 }
 
-void NvFlow::Scene::render(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
+void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 {
 	auto& appctx = RHICmdList.GetContext();
 
@@ -638,7 +637,7 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 	}
 }
 
-void NvFlowDoRender(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
+void NvFlowDoRenderBegin(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
 {
 	if (GUsingNullRHI)
 	{
@@ -647,19 +646,37 @@ void NvFlowDoRender(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
 
 	if (NvFlow::gContext)
 	{
-		SCOPE_CYCLE_COUNTER(STAT_Flow_RenderGrids);
+		NvFlow::gContext->interopBegin(RHICmdList, false);
+	}
+}
+
+void NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo)
+{
+	if (GUsingNullRHI)
+	{
+		return;
+	}
+
+	if (NvFlow::gContext)
+	{
+		if (PrimitiveSceneInfo->Proxy->FlowData.bFlowGrid)
 		{
-			SCOPED_DRAW_EVENT(RHICmdList, FlowRenderGrids);
-			{
-				SCOPED_DRAW_EVENT(RHICmdList, FlowContextRender);
-
-				NvFlow::gContext->interopBegin(RHICmdList, false);
-
-				NvFlow::gContext->render(RHICmdList, View);
-
-				NvFlow::gContext->interopEnd(RHICmdList, false, false);
-			}
+			FFlowGridSceneProxy* FlowGridSceneProxy = (FFlowGridSceneProxy*)PrimitiveSceneInfo->Proxy;
+			NvFlow::gContext->renderScene(RHICmdList, View, FlowGridSceneProxy);
 		}
+	}
+}
+
+void NvFlowDoRenderEnd(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
+{
+	if (GUsingNullRHI)
+	{
+		return;
+	}
+
+	if (NvFlow::gContext)
+	{
+		NvFlow::gContext->interopEnd(RHICmdList, false, false);
 	}
 }
 

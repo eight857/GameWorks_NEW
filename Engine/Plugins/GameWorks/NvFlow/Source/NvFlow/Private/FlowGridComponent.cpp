@@ -896,6 +896,7 @@ FPrimitiveViewRelevance FFlowGridSceneProxy::GetViewRelevance(const FSceneView* 
 	Relevance.bDrawRelevance = IsShown(View);
 	Relevance.bShadowRelevance = false;
 	Relevance.bEditorPrimitiveRelevance = false;
+	Relevance.bNormalTranslucencyRelevance = true;
 	return Relevance;
 }
 

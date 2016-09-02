@@ -894,6 +894,17 @@ void FTranslucentPrimSet::RenderPrimitive(
 
 	if (ViewRelevance.bDrawRelevance)
 	{
+//Begin NvFlow
+		if (PrimitiveSceneInfo->Proxy->FlowData.bFlowGrid)
+		{
+			if (GRendererNvFlowHooks)
+			{
+				GRendererNvFlowHooks->NvFlowDoRenderPrimitive(RHICmdList, View, PrimitiveSceneInfo);
+			}
+			return;
+		}
+//End NvFlow
+
 		FTranslucencyDrawingPolicyFactory::ContextType Context(TranslucentSelfShadow, TranslucenyPassType);
 
 		// need to chec further down if we can skip rendering ST primitives, because we need to make sure they render in the normal translucency pass otherwise
@@ -1333,6 +1344,13 @@ void FDeferredShadingSceneRenderer::RenderTranslucency(FRHICommandListImmediate&
 				bool bFirstTimeThisFrame = (ViewIndex == 0);
 				SetTranslucentRenderTargetAndState(RHICmdList, View, TPT_NonSeparateTransluceny, bFirstTimeThisFrame);
 
+				// NvFlow begin
+				if (GRendererNvFlowHooks)
+				{
+					GRendererNvFlowHooks->NvFlowDoRenderBegin(RHICmdList, View);
+				}
+				// NvFlow end
+
 				DrawAllTranslucencyPasses(RHICmdList, View, TPT_NonSeparateTransluceny);
 
 				const FSceneViewState* ViewState = (const FSceneViewState*)View.State;
@@ -1350,7 +1368,7 @@ void FDeferredShadingSceneRenderer::RenderTranslucency(FRHICommandListImmediate&
 				// NvFlow begin
 				if (GRendererNvFlowHooks)
 				{
-					GRendererNvFlowHooks->NvFlowDoRender(RHICmdList, View);
+					GRendererNvFlowHooks->NvFlowDoRenderEnd(RHICmdList, View);
 				}
 				// NvFlow end
 
