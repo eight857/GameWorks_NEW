@@ -39,8 +39,8 @@ namespace NvFlow
 		~Context() { release(); }
 
 		void init(FRHICommandListImmediate& RHICmdList);
-		void interopBegin(FRHICommandListImmediate& RHICmdList, bool computeOnly);
-		void interopEnd(FRHICommandListImmediate& RHICmdList, bool computeOnly, bool shouldFlush);
+		void interopBegin(FRHICommandList& RHICmdList, bool computeOnly);
+		void interopEnd(FRHICommandList& RHICmdList, bool computeOnly, bool shouldFlush);
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
 		void renderScene(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy);
 		void release();
@@ -162,7 +162,7 @@ void NvFlow::Context::init(FRHICommandListImmediate& RHICmdList)
 	}
 }
 
-void NvFlow::Context::interopBegin(FRHICommandListImmediate& RHICmdList, bool computeOnly)
+void NvFlow::Context::interopBegin(FRHICommandList& RHICmdList, bool computeOnly)
 {
 	auto& appctx = RHICmdList.GetContext();
 
@@ -186,7 +186,7 @@ void NvFlow::Context::interopBegin(FRHICommandListImmediate& RHICmdList, bool co
 	NvFlowInteropPush(appctx, m_context);
 }
 
-void NvFlow::Context::interopEnd(FRHICommandListImmediate& RHICmdList, bool computeOnly, bool shouldFlush)
+void NvFlow::Context::interopEnd(FRHICommandList& RHICmdList, bool computeOnly, bool shouldFlush)
 {
 	auto& appctx = RHICmdList.GetContext();
 
@@ -643,11 +643,7 @@ void NvFlowDoRenderBegin(FRHICommandListImmediate& RHICmdList, const FViewInfo& 
 	{
 		return;
 	}
-
-	if (NvFlow::gContext)
-	{
-		NvFlow::gContext->interopBegin(RHICmdList, false);
-	}
+	//NOPE
 }
 
 void NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo)
@@ -661,8 +657,12 @@ void NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 	{
 		if (PrimitiveSceneInfo->Proxy->FlowData.bFlowGrid)
 		{
+			NvFlow::gContext->interopBegin(RHICmdList, false);
+
 			FFlowGridSceneProxy* FlowGridSceneProxy = (FFlowGridSceneProxy*)PrimitiveSceneInfo->Proxy;
 			NvFlow::gContext->renderScene(RHICmdList, View, FlowGridSceneProxy);
+
+			NvFlow::gContext->interopEnd(RHICmdList, false, false);
 		}
 	}
 }
@@ -673,11 +673,7 @@ void NvFlowDoRenderEnd(FRHICommandListImmediate& RHICmdList, const FViewInfo& Vi
 	{
 		return;
 	}
-
-	if (NvFlow::gContext)
-	{
-		NvFlow::gContext->interopEnd(RHICmdList, false, false);
-	}
+	//NOPE
 }
 
 #endif
