@@ -14,6 +14,7 @@ New:
 * Added HairWorks logger.
 * Added experimental implementation of frame rate independent rendering. You can turn it on by r.HairWorks.FrameRateIndependentRendering.
 * Improved performance.
+
 Fix:
 * Fixed a problem that D3D compiler DLL is not found.
 * Removed the stutter when a HairWorks component is created. We now create HairWorks assets and compile shaders at loading time instead of rendering time.
