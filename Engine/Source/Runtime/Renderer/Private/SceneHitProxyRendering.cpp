@@ -541,7 +541,7 @@ void RenderHitProxies(FRHICommandListImmediate& RHICmdList, const FSceneRenderer
 }
 #endif
 
-void FForwardShadingSceneRenderer::RenderHitProxies(FRHICommandListImmediate& RHICmdList)
+void FMobileSceneRenderer::RenderHitProxies(FRHICommandListImmediate& RHICmdList)
 {
 #if WITH_EDITOR
 	TRefCountPtr<IPooledRenderTarget> HitProxyRT = ::InitHitProxyRender(RHICmdList, this);

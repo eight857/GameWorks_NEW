@@ -32,11 +32,11 @@ float3 GetHairWorksSimpleLighting(float3 ScreenVector, uint2 SamplePos, FHairScr
 float3 GetHairWorksDynamicLighting(float3 ScreenVector, uint2 SamplePos, FHairScreenSpaceData HairScreenSpaceData, FDeferredLightData LightData)
 {
 	// Use 1 for diffuse blend for un-shadowed light, to darken hairs at back faces. 
-	if(!LightData.bShadowed)
+	if(!LightData.ShadowedBits)
 		HairScreenSpaceData.DiffuseBlend = 1;
 
 	// Disable shadow if hair doesn't receive shadow
-	LightData.bShadowed = LightData.bShadowed && HairScreenSpaceData.bReceiveShadow;
+	LightData.ShadowedBits = LightData.ShadowedBits && HairScreenSpaceData.bReceiveShadow;
 
 	// Setup light
 	float3 WorldPosition = ScreenVector * HairScreenSpaceData.Depth + View.WorldCameraOrigin.xyz;
@@ -109,13 +109,13 @@ float3 GetHairWorksDynamicLighting(float3 ScreenVector, uint2 SamplePos, FHairSc
 	float SurfaceShadow = 1;
 	float SubsurfaceShadow = 1;
 
-	FScreenSpaceData ScreenSpaceData = (FScreenSpaceData)0;
+	FGBufferData GBuffer = (FGBufferData)0;
 
-	if(LightData.bShadowed)
+	if(LightData.ShadowedBits)
 	{
-		ScreenSpaceData.GBuffer.PrecomputedShadowFactors = 1;
-		ScreenSpaceData.GBuffer.Depth = HairScreenSpaceData.Depth;
-		GetShadowTerms(ScreenSpaceData, LightData, WorldPosition, LightAttenuation, SurfaceShadow, SubsurfaceShadow);
+		GBuffer.PrecomputedShadowFactors = 1;
+		GBuffer.Depth = HairScreenSpaceData.Depth;
+		GetShadowTerms(GBuffer, LightData, WorldPosition, LightAttenuation, SurfaceShadow, SubsurfaceShadow);
 
 		// greatly reduces shadow mapping artifacts
 		SurfaceShadow *= saturate(dot(N, L) * 6 - 0.2);

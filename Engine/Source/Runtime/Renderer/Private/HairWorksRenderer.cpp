@@ -962,7 +962,7 @@ namespace HairWorksRenderer
 			return false;
 
 		// Check shadow caster list
-		for(auto* Primitive = LightSceneInfo.DynamicPrimitiveList;
+		for(auto* Primitive = LightSceneInfo.DynamicInteractionOftenMovingPrimitiveList;
 			Primitive != nullptr;
 			Primitive = Primitive->GetNextPrimitive()
 			)
@@ -976,7 +976,7 @@ namespace HairWorksRenderer
 		}
 
 		// If a light is not shadowed, its primitive list is null. So we check bounds.
-		if(LightSceneInfo.DynamicPrimitiveList == nullptr)
+		if(LightSceneInfo.DynamicInteractionOftenMovingPrimitiveList == nullptr)
 		{
 			for(auto& PrimitiveInfo : View.VisibleHairs)
 			{
@@ -1269,7 +1269,7 @@ namespace HairWorksRenderer
 			// Setup render states and shaders
 			TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 
-			if(Shadow.CascadeSettings.bOnePassPointLightShadow)
+			if(Shadow.bOnePassPointLightShadow)
 			{
 				// Setup camera
 				const FBoxSphereBounds& PrimitiveBounds = HairSceneProxy.GetBounds();
