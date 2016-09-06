@@ -11,7 +11,6 @@
 #include "SceneUtils.h"
 #include "SceneFilterRendering.h"
 #include "ScreenRendering.h"
-#include "ShadowRendering.h"
 
 DECLARE_FLOAT_COUNTER_STAT(TEXT("Shadow Depths"), Stat_GPU_ShadowDepths, STATGROUP_GPU);
 
