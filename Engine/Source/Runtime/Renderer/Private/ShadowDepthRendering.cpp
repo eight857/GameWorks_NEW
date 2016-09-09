@@ -11,6 +11,9 @@
 #include "SceneUtils.h"
 #include "SceneFilterRendering.h"
 #include "ScreenRendering.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 DECLARE_FLOAT_COUNTER_STAT(TEXT("Shadow Depths"), Stat_GPU_ShadowDepths, STATGROUP_GPU);
 
