@@ -144,8 +144,13 @@ the the shortened namespace alias NvHair.
 */
 namespace HairWorks {
 
+// Versions for BINARY compatibility (ie file format and dll) 
 #define NV_HAIR_VERSION 120				// internal version number to match runtime DLLs. 
 #define NV_HAIR_VERSION_STRING "1.2"	// version string for .apx file format
+
+// The release numbers, must be equal or greater than NV_HAIR_VERSION
+#define NV_HAIR_RELEASE_VERSION 121
+#define NV_HAIR_RELEASE_VERSION_STRING "1.2.1"
 
 /*! \brief Identifier for hair asset data.
 	\details The asset id is assigned by HairWorks SDK, and corresponds to a unique asset type.

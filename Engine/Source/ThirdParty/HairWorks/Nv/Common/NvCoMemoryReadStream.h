@@ -43,7 +43,7 @@ class MemoryReadStream: public ReadStream
 Int64 MemoryReadStream::read(Void* buffer, Int64 numBytesIn)
 {
 	NV_CORE_ASSERT(numBytesIn >= 0);
-	NV_CORE_ASSERT(m_position + numBytesIn < Int64(~SizeT(0)));
+	NV_CORE_ASSERT(m_position + numBytesIn < ~SizeT(0));
 	SizeT newPos = m_position + SizeT(numBytesIn);
 	newPos = (newPos > m_size) ? m_size : newPos;
 	SizeT size = newPos - m_position;

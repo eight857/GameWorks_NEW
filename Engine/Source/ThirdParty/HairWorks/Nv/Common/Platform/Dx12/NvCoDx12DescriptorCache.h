@@ -38,6 +38,16 @@ struct Dx12DescriptorSet
 	typedef Dx12DescriptorSet ThisType;
 	typedef SizeT Hash;
 
+	enum Type
+	{
+		TYPE_UNKNOWN,
+		TYPE_UAV,
+		TYPE_CBV,
+		TYPE_SRV,
+		TYPE_OTHER,
+		TYPE_COUNT_OF,
+	};
+
 		/// Calculate a hash 
 	Hash calcHash() const; 
 
@@ -65,6 +75,8 @@ struct Dx12DescriptorSet
 
 		/// Get the total amount of descriptors
 	NV_FORCE_INLINE IndexT getSize() const { return m_size; }
+		/// Get the type
+	NV_FORCE_INLINE Type getType() const { return m_type; }
 
 		/// True if contains a null
 	Bool hasNull() const;
@@ -74,13 +86,13 @@ struct Dx12DescriptorSet
 
 		/// Ctor with 
 	template <SizeT SIZE>
-	NV_FORCE_INLINE Dx12DescriptorSet(const D3D12_CPU_DESCRIPTOR_HANDLE(&in)[SIZE]): m_descriptors(in), m_size(IndexT(SIZE)) { m_base.ptr = 0; }
+	NV_FORCE_INLINE Dx12DescriptorSet(Type type, const D3D12_CPU_DESCRIPTOR_HANDLE(&in)[SIZE]): m_type(type), m_descriptors(in), m_size(IndexT(SIZE)) { m_base.ptr = 0; }
 		/// Default ctor
-	Dx12DescriptorSet():m_size(0), m_descriptors(NV_NULL) { m_base.ptr = 0; }
+	Dx12DescriptorSet() :m_type(TYPE_UNKNOWN), m_size(0), m_descriptors(NV_NULL) { m_base.ptr = 0; }
 		/// Ctor with array 
-	NV_FORCE_INLINE Dx12DescriptorSet(const D3D12_CPU_DESCRIPTOR_HANDLE* descs, IndexT size): m_descriptors(descs), m_size(size) { m_base.ptr = 0; }
+	NV_FORCE_INLINE Dx12DescriptorSet(Type type, const D3D12_CPU_DESCRIPTOR_HANDLE* descs, IndexT size): m_type(type), m_descriptors(descs), m_size(size) { m_base.ptr = 0; }
 		/// Ctor with array and contiguous
-	NV_FORCE_INLINE Dx12DescriptorSet(D3D12_CPU_DESCRIPTOR_HANDLE base, Int size) : m_descriptors(NV_NULL), m_size(size), m_base(base) {}
+	NV_FORCE_INLINE Dx12DescriptorSet(D3D12_CPU_DESCRIPTOR_HANDLE base, Int size) : m_type(TYPE_UNKNOWN), m_descriptors(NV_NULL), m_size(size), m_base(base) {}
 
 	protected:
 	Bool _hasIntersectionListList(const ThisType& rhs) const;
@@ -88,6 +100,7 @@ struct Dx12DescriptorSet
 	Bool _hasIntersectionRunRun(const ThisType& rhs, Int descriptorSize) const;
 	public:
 
+	Type m_type;
 	const D3D12_CPU_DESCRIPTOR_HANDLE* m_descriptors;	///< Uniquely specified. If m_numDescriptors > 0 and NV_NULL the base is used
 	IndexT m_size;											///< The number of descriptors
 	D3D12_CPU_DESCRIPTOR_HANDLE m_base;
@@ -135,7 +148,7 @@ class Dx12DescriptorCache
 	Result init(ID3D12Device* device, Int subHeapSize, Int maxLinearDescriptors, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, Dx12CounterFence* fence);
 	
 		/// Get specified handles contiguously on the active heap
-	Cursor put(const D3D12_CPU_DESCRIPTOR_HANDLE* handles, Int numHandles, Bool hasChanged = false);
+	Cursor put(Dx12DescriptorSet::Type type, const D3D12_CPU_DESCRIPTOR_HANDLE* handles, Int numHandles, Bool hasChanged = false);
 	
 		/// Look where the GPU has got to and release anything not currently used
 	Void updateCompleted();

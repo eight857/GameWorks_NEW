@@ -474,6 +474,10 @@ Void Dx12DescriptorCache::_copyHandles(const Dx12DescriptorSet& set, D3D12_CPU_D
 			{
 				D3D12_CPU_DESCRIPTOR_HANDLE handle = src[i];
 				// Only copy if it's non null. If it's null we'll just ignore it, because it means it's not used.
+
+				// Use null handle if one is set
+				//handle = handle.ptr ? handle : m_nullHandles[set.m_type];
+
 				if (handle.ptr)
 				{
 					m_device->CopyDescriptorsSimple(1, dst, handle, m_heapType);
@@ -481,27 +485,55 @@ Void Dx12DescriptorCache::_copyHandles(const Dx12DescriptorSet& set, D3D12_CPU_D
 				else
 				{
 					// https://msdn.microsoft.com/en-us/library/windows/desktop/dn899109(v=vs.85).aspx#Null_descriptors
-
-					// Really though it is the applications responsibility to 
-
 					// Just initialize to something
 					switch (m_heapType)
 					{
 						case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
 						{
+							switch (set.m_type)
+							{
+								case Dx12DescriptorSet::TYPE_CBV:
+								{
+									m_device->CreateConstantBufferView(NV_NULL, dst);
+									break;
+								}
+								case Dx12DescriptorSet::TYPE_SRV:
+								{
+									D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
+									desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+									desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+									desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+
+									m_device->CreateShaderResourceView(NV_NULL, &desc, dst);
+									break;
+								}
+								case Dx12DescriptorSet::TYPE_UAV:
+								{
+									m_device->CreateUnorderedAccessView(NV_NULL, NV_NULL, NV_NULL, dst);
+									break;
+								}
+								default:
+								{
+									NV_CORE_ASSERT("Invalid descriptor type");
+									break;
+								}
+							}
 							// This could be incorrect for a given usage. But by passing NV_NULL the app is saying this will not be touched
 							// so all it is doing is making it's state defined.
-							m_device->CreateConstantBufferView(NV_NULL, dst);
+							//m_device->CreateConstantBufferView(NV_NULL, dst);
 							break;
 						}
 						case D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER:
 						{
+							NV_CORE_ASSERT(set.m_type == Dx12DescriptorSet::TYPE_OTHER);
 							m_device->CreateSampler(NV_NULL, dst);
 							break;
 						}
 						default: break;
 					}
 				}
+
+				// Next
 				dst.ptr += m_descriptorSize;
 			}
 		}
@@ -512,9 +544,9 @@ Void Dx12DescriptorCache::_copyHandles(const Dx12DescriptorSet& set, D3D12_CPU_D
 	}
 }
 
-Dx12DescriptorCache::Cursor Dx12DescriptorCache::put(const D3D12_CPU_DESCRIPTOR_HANDLE* handles, Int numHandles, Bool hasChanged)
+Dx12DescriptorCache::Cursor Dx12DescriptorCache::put(Dx12DescriptorSet::Type type, const D3D12_CPU_DESCRIPTOR_HANDLE* handles, Int numHandles, Bool hasChanged)
 {
-	const Dx12DescriptorSet set(handles, numHandles);
+	const Dx12DescriptorSet set(type, handles, numHandles);
 	Entry* entry = _put(set, hasChanged);
 	NV_CORE_ASSERT(entry->m_subHeap == m_activeSubHeap);
 	// Mark that it's ref'd
