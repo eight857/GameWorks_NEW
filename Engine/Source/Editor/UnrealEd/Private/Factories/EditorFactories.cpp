@@ -7109,11 +7109,105 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 	InitHairAssetInfo(*Hair);
 
 	// Setup import data
-	Hair->AssetImportData->Update(UFactory::CurrentFilename);
+	Hair->AssetImportData->Update(CurrentFilename);
 
 	// Set data
 	Hair->AssetData.Append(Buffer, BufferEnd - Buffer);
 
+	// Get texture factory to import textures
+	UReimportTextureFactory* TextureFactory = nullptr;
+
+	for(TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
+	{
+		TextureFactory = Cast<UReimportTextureFactory>(ClassIt->GetDefaultObject());
+		if(TextureFactory != nullptr)
+			break;
+	}
+
+	// Import textures
+	if(TextureFactory != nullptr)
+	{
+		const FString DestinationPath = FPaths::GetPath(InParent->GetName());
+		const FString SourcePath = FPaths::GetPath(CurrentFilename);
+		const FString OrginalFilename = CurrentFilename;
+
+		TArray<UTexture2D*> Textures;
+		Textures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
+
+		for(int32 TextureIdx = 0; TextureIdx < NvHair::ETextureType::COUNT_OF; ++TextureIdx)
+		{
+			// Check existing asset. Codes are copied from FAssetTools::ImportAssets()
+			char TextureFileNameRaw[NV_HAIR_MAX_STRING] = "";
+			HairWorks::GetSDK()->getTextureName(Hair->AssetId, (NvHair::ETextureType)TextureIdx, TextureFileNameRaw);
+
+			const FString TextureFileName = FString(ANSI_TO_TCHAR(TextureFileNameRaw)).Trim().TrimTrailing();
+			if(TextureFileName.IsEmpty())
+				continue;
+
+			const FString TextureName = ObjectTools::SanitizeObjectName(FPaths::GetBaseFilename(TextureFileName));
+
+			const FString PackageName = DestinationPath + TEXT("/") + TextureName;
+
+			if(FEditorFileUtils::IsMapPackageAsset(PackageName))
+				continue;
+
+			UPackage* Pkg = CreatePackage(nullptr, *PackageName);
+			if(Pkg == nullptr)
+				continue;
+
+			Pkg->FullyLoad();
+
+			UObject* ExistingObject = StaticFindObject(UObject::StaticClass(), Pkg, *TextureName);
+			if(ExistingObject != nullptr)
+			{
+				Textures[TextureIdx] = Cast<UTexture2D>(ExistingObject);
+				continue;
+			}
+
+			// Import the new texture
+			bool Canceled = false;
+			UTexture2D* Texture = Cast<UTexture2D>(TextureFactory->ImportObject(TextureFactory->SupportedClass, Pkg, FName(*TextureName), Flags, FPaths::Combine(*SourcePath, *TextureFileName), nullptr, Canceled));
+
+			Textures[TextureIdx] = Texture;
+
+			// Set sRGB flag
+			if(Texture != nullptr)
+			{
+				switch(TextureIdx)
+				{
+				case NvHair::ETextureType::DENSITY:
+				case NvHair::ETextureType::WIDTH:
+				case NvHair::ETextureType::STIFFNESS:
+				case NvHair::ETextureType::ROOT_STIFFNESS:
+				case NvHair::ETextureType::CLUMP_SCALE:
+				case NvHair::ETextureType::CLUMP_ROUNDNESS:
+				case NvHair::ETextureType::WAVE_SCALE:
+				case NvHair::ETextureType::WAVE_FREQ:
+				case NvHair::ETextureType::LENGTH:
+				case NvHair::ETextureType::WEIGHTS:
+					Texture->SRGB = 0;
+					break;
+				case NvHair::ETextureType::ROOT_COLOR:
+				case NvHair::ETextureType::TIP_COLOR:
+				case NvHair::ETextureType::STRAND:
+				case NvHair::ETextureType::SPECULAR:
+					Texture->SRGB = 1;
+					break;
+				}
+			}
+		}
+
+		// Revert file name
+		CurrentFilename = OrginalFilename;
+
+		// Assign textures to hair asset
+		NvHair::InstanceDescriptor HairInstDesc;
+		TArray<UTexture2D*> TmpTextures;
+		Hair->HairMaterial->GetHairInstanceParameters(HairInstDesc, TmpTextures);
+		Hair->HairMaterial->SetHairInstanceParameters(HairInstDesc, Textures);
+	}
+
+	// Trigger event
 	FEditorDelegates::OnAssetPostImport.Broadcast(this, Hair);
 
 	return Hair;
