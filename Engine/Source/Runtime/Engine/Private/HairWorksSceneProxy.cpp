@@ -109,7 +109,9 @@ void FHairWorksSceneProxy::DoRender(FRHICommandListBase & RHICmdList, EDrawType 
 	// Draw
 	if (DrawType == EDrawType::Visualization)
 	{
-		HairWorks::GetSDK()->renderVisualization(HairInstanceId);
+		NvHair::VisualizationSettings VisSettings;
+		VisSettings.m_depthOp = NvHair::DepthOp::WRITE_GREATER;
+		HairWorks::GetSDK()->renderVisualization(HairInstanceId, &VisSettings);
 	}
 	else
 	{

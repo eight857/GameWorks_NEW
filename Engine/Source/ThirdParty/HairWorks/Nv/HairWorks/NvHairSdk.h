@@ -144,13 +144,54 @@ the the shortened namespace alias NvHair.
 */
 namespace HairWorks {
 
-// Versions for BINARY compatibility (ie file format and dll) 
-#define NV_HAIR_VERSION 120				// internal version number to match runtime DLLs. 
-#define NV_HAIR_VERSION_STRING "1.2"	// version string for .apx file format
+/*! Version numbers are encoded as strings as
+major.minor.point 
+When encoded into a number the last digit plus one is the minor version, and the last digit the point index.
+From this the minor and point indices can only be single digit. 
 
-// The release numbers, must be equal or greater than NV_HAIR_VERSION
-#define NV_HAIR_RELEASE_VERSION 121
+Ie
+10.7.4	= 1074 
+11.0.0	= 1100
+
+When converting to text, will drop trailing 0 version numbers.
+1100 -> "11"
+1110 -> "11.1"
+1111 -> "11.1.1"
+1101 -> "11.0.1"
+*/
+
+#define NV_HAIR_VERSION 121				// Versions for Dll BINARY compatibility 
+#define NV_HAIR_RELEASE_VERSION 121		// The release version, must be equal or greater than NV_HAIR_VERSION
+
+/*! The version number of serial files. Can be less than or equal to the NV_HAIR_RELEASE_VERSION. 
+If a serialization change is made, it should be set to the NV_HAIR_RELEASE_VERSION the change corresponds to. 
+NOTE An implementation may be able to load prior versions */
+#define NV_HAIR_SERIAL_VERSION 120
+
+/*! release version as a string. NOTE! May contain text after version number */
 #define NV_HAIR_RELEASE_VERSION_STRING "1.2.1"
+
+// Macro to generate a version number 
+#define NV_HAIR_MAKE_VERSION(major, minor, point) ((major * 100) + (minor * 10) + point)
+
+struct BuildInfo
+{
+		/// A buffer large enough to hold string
+	enum { VERSION_BUFFER_SIZE = 16 };
+
+		/// A function that can convert strings to version numbers.
+	typedef Int(*StringToVersionFunc)(const Char* in);
+		/// Function that turns a version number to a major.minor.point format. Returns the number of characters in a string NOT including terminating \0.
+	typedef Int(*VersionToStringFunc)(Int version, Char* out);
+
+	Int m_version;				///< The dll version - dll must match this number for binary compatibility
+	Int m_serialVersion;		///< The serialize version number
+	Int m_releaseVersion;		///< The release version number - must be greater than or equal to m_version
+	const Char* m_buildString;	///< String providing information about the build
+
+	StringToVersionFunc m_stringToVersionFunc;	///< A function for converting string to version numbers
+	VersionToStringFunc m_versionToStringFunc;
+};
 
 /*! \brief Identifier for hair asset data.
 	\details The asset id is assigned by HairWorks SDK, and corresponds to a unique asset type.
@@ -254,7 +295,7 @@ struct AssetHeaderInfo
 
 	enum { MAX_STRING_LENGTH = 1024 };
 
-	Char m_fileVersion[MAX_STRING_LENGTH];	//!< file format version
+	Int m_serialVersion;					//!< The serial version number. If set to -1 on save will save in current version number.
 	Char m_toolVersion[MAX_STRING_LENGTH];	//!< tool version
 	Char m_sourcePath[MAX_STRING_LENGTH];	//!< source asset path
 	Char m_authorName[MAX_STRING_LENGTH];	//!< author name
@@ -262,7 +303,7 @@ struct AssetHeaderInfo
 
 	AssetHeaderInfo()
 	{
-		m_fileVersion[0] = '\0';
+		m_serialVersion = -1;				
 		m_toolVersion[0] = '\0';
 		m_sourcePath[0] = '\0';
 		m_authorName[0] = '\0';
@@ -881,6 +922,32 @@ struct ShaderSettings
 		m_shaderIndex(shaderIndex)
 	{
 	}
+};
+
+/*! \brief DepthOp
+\details Enumeration of depth test/actions supported. */
+class DepthOp 
+{
+	DepthOp(); public: enum Enum
+	{
+		UNKNOWN,			///< Undefined -> typically invalid
+		ALWAYS,				///< Always write
+		WRITE_LESS,			///< Writes when test is less
+		WRITE_GREATER,			///< Writes when test if greater
+		TEST_LESS,				///< Displays pixel if less, no write
+		TEST_GREATER,			///< Displays pixel if greater, no write
+		COUNT_OF,
+	};
+};
+typedef DepthOp::Enum EDepthOp;
+
+/** \brief Structure used to customize how hair visualization is rendered. 
+\details Specifies rendering features for how a hair visualization is rendered.
+\see Sdk.renderVisualization() */
+struct VisualizationSettings
+{
+	NV_FORCE_INLINE VisualizationSettings():m_depthOp(DepthOp::WRITE_LESS) {}
+	EDepthOp m_depthOp;			//< The depth op to use (may or may not be honored depending on underlying rendering API 
 };
 
 /*! \brief shader cache settings to create optimized shader per each hair asset.
@@ -1515,7 +1582,7 @@ public:
 		\see Frame rate Independent Rendering (FIR) in documentation.
 		\see As with stepSimulation m_enable must be true for preRender to function. If m_enable is false the call will do nothing, and return NV_OK
 		\note If preRender has already been performed, and nothing has changed (bones/modelToWorldMatrix/simulationInterp) this call will be very fast and do nothing. */
-	virtual Result preRenderInstance(InstanceId instanceId, Float simulationInterp) = 0;
+	virtual Result preRenderInstance(InstanceId instanceId, Float simulationInterp = 1.0f) = 0;
 
 	/** \brief Performs work required before renderHairs or renderVisualization can be called (if stepSimulation is called with simulateOnly as true).
 		\param [in] simulationInterp The interpolation between previous and current simulation steps. 0 is previous simulation frame, 1 is current.
@@ -1538,11 +1605,16 @@ public:
 
 	/*! \brief render visualization functions
 		\param [in] instanceId hair instance to render
+		\param [in] if NV_NULL will use use default VisualizationSettings (default ctor), else will try to render with specified options.
 		\details This function renders all the auxiliary visualization options given in the InstanceDescriptor.
 			These can be useful for debugging and verification purposes.
+			Note that not all rendering API visualization implementations can honor all of the VisualizationSettings configurations.
 		\return Successful if NV_SUCCEEDED(Result) is true. 
-		\note Call preRender before call if stepSimulation is called with simulateOnly = true (see FIR in documentation) */
-	virtual Result renderVisualization( InstanceId instanceId) = 0;
+		\note Call preRender before call if stepSimulation is called with simulateOnly = true (see FIR in documentation) 
+		\note The depthOp is honored currently only for m_visualizeCullSphere, m_visualizeBoundingBox, m_visualizeCapsules options
+		\note On Dx11 depthOp is also honored on m_visualizeGuideHairs,  m_visualizeSkinnedGuideHairs, m_visualizeFrames, m_visualizeShadingNormals, m_visualizeLocalPos,
+		m_visualizeHairInteractions, m_visualizeControlVertices, m_visualizeGrowthMesh, m_visualizePinConstraints */
+	virtual Result renderVisualization( InstanceId instanceId, const VisualizationSettings* visualizationSettings = NV_NULL) = 0;
 
 	/*=============================================================================================
 		CUSTOM MSAA FUNCTIONS
@@ -1580,8 +1652,10 @@ public:
 		Use the following functions to query further info/states of the HairWorks runtime.
 		These functions are not need to just run the HairWorks, but could be useful for debugging/profiling purposes.
 	=============================================================================================*/
-	/*! \brief Use this function to get the build string which includes build location and date/time */
-	virtual const Char* getBuildString() = 0;
+	
+	/*! \brief return information about the hairworks build. The BuildInfo structure contains functions to convert to and from strings for version numbers.
+		\return The BuildInfo structure */
+	virtual const BuildInfo& getBuildInfo() = 0;
 
 	/*! \brief return number of guide hairs in the asset
 		\param [in] assetId hair asset ID to use */
