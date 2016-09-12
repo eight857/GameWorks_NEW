@@ -1097,6 +1097,12 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		ServiceLocalQueue();
 	}
 
+	// @third party code - BEGIN HairWorks
+	// Blend hair lighting
+	if(HairWorksRenderer::ViewsHasHair(Views))
+		HairWorksRenderer::BlendLightingColor(RHICmdList);
+	// @third party code - END HairWorks
+
 	FLightShaftsOutput LightShaftOutput;
 
 	// Draw Lightshafts
@@ -1159,12 +1165,6 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 
 	// No longer needed, release
 	LightShaftOutput.LightShaftOcclusion = NULL;
-
-	// @third party code - BEGIN HairWorks
-	// Blend hair lighting
-	if(HairWorksRenderer::ViewsHasHair(Views))
-		HairWorksRenderer::BlendLightingColor(RHICmdList);
-	// @third party code - END HairWorks
 
 	GRenderTargetPool.AddPhaseEvent(TEXT("Translucency"));
 
