@@ -2,7 +2,10 @@
 =============
 New:
 * Upgraded to HairWorks 1.2.
-* Upgraded to UE4.12.
+* Upgraded to UE4.13
+* Textures are now automatically imported when a HairWorks asset is imported. 
+* Added support for tiled deferred shading. 
+* Made hairs darker on back faces with un-shadowed lights. 
 * Added support for dynamic pin.
 * Added support for actor instance editing. Now you can modify a HairWorks component in a level.
 * Added support for IES lighting.
@@ -16,6 +19,7 @@ New:
 * Improved performance.
 
 Fix:
+* Fixed a bug that fog doesn't affect hairs. 
 * Fixed a problem that D3D compiler DLL is not found.
 * Removed the stutter when a HairWorks component is created. We now create HairWorks assets and compile shaders at loading time instead of rendering time.
 * HairWorks component now has right bounding box.
