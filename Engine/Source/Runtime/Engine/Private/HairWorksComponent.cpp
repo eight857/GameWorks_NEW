@@ -65,9 +65,9 @@ FBoxSphereBounds UHairWorksComponent::CalcBounds(const FTransform& LocalToWorld)
 		HairBoundMax
 	);
 
-	FBoxSphereBounds Bounds(FBox(reinterpret_cast<FVector&>(HairBoundMin), reinterpret_cast<FVector&>(HairBoundMax)));
+	FBoxSphereBounds HairBounds(FBox(reinterpret_cast<FVector&>(HairBoundMin), reinterpret_cast<FVector&>(HairBoundMax)));
 
-	return Bounds.TransformBy(LocalToWorld);
+	return HairBounds.TransformBy(LocalToWorld);
 }
 
 void UHairWorksComponent::SendRenderDynamicData_Concurrent()
@@ -411,10 +411,10 @@ void UHairWorksComponent::UpdateBoneMatrices()
 	for(auto Idx = 0; Idx < BoneIndices.Num(); ++Idx)
 	{
 		const uint16& IdxInParent = BoneIndices[Idx];
-		if(IdxInParent >= ParentSkeleton->GetSpaceBases().Num())
+		if(IdxInParent >= ParentSkeleton->GetComponentSpaceTransforms().Num())
 			continue;
 
-		const auto Matrix = ParentSkeleton->GetSpaceBases()[IdxInParent].ToMatrixWithScale();
+		const auto Matrix = ParentSkeleton->GetComponentSpaceTransforms()[IdxInParent].ToMatrixWithScale();
 
 		BoneMatrices[Idx] = ParentSkeleton->SkeletalMesh->RefBasesInvMatrix[IdxInParent] * Matrix;
 	}
