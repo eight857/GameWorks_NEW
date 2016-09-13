@@ -298,9 +298,10 @@ void UFlowGridComponent::UpdateShapes()
 			if (IsSupported && (IsEmitter || IsCollider))
 			{
 				PxTransform WorldTransform = ActorTransform*ShapeTransform;
+				FTransform WorldTransformU = P2UTransform(WorldTransform);
 				FVector UnitToActualScale(1.f, 1.f, 1.f);
 				FVector LocalToWorldScale(1.f, 1.f, 1.f);
-				FVector BoundsScale(1.f, 1.f, 1.f);
+				FTransform BoundsTransform(FTransform::Identity);
 				NvFlowShapeType FlowShapeType = eNvFlowShapeTypeSphere;
 				float FlowShapeDistScale = 1.f;
 				uint32 NumShapeDescs = 1u;
@@ -372,7 +373,9 @@ void UFlowGridComponent::UpdateShapes()
 						UnitToActualScale = FVector(CapsuleGeometry.radius * (1.f / NvFlow::sdfRadius) * NvFlow::scaleInv);
 
 						// extends bounds on x axis
+						FVector BoundsScale = BoundsTransform.GetScale3D();
 						BoundsScale.X = (0.5f * ShapeDescsPtr[0].capsule.length + 1.f);
+						BoundsTransform.SetScale3D(BoundsScale);
 					}
 					else if (PxGeometryType == PxGeometryType::eCONVEXMESH)
 					{
@@ -402,9 +405,13 @@ void UFlowGridComponent::UpdateShapes()
 						FlowShapeDistScale = NvFlow::scaleInv;
 
 						// scale bounds
-						BoundsScale = (MeshScale * 0.5f * (LocalMax - LocalMin));
-						float norm = BoundsScale.GetAbsMax();
-						BoundsScale /= norm;
+						FVector BoundsHalfSize = (MeshScale * 0.5f * (LocalMax - LocalMin));
+						FVector BoundsOffset = MeshScale * 0.5f * (LocalMin + LocalMax);
+						float norm = BoundsHalfSize.GetAbsMax();
+						BoundsHalfSize /= norm;
+						BoundsOffset /= norm;
+						BoundsTransform.SetScale3D(BoundsHalfSize);
+						BoundsTransform.SetLocation(BoundsOffset);
 
 						// scale local to world, scaleInv cancels out because planes are in UE4 space
 						LocalToWorldScale = MeshScale * NvFlow::scaleInv / UnitToActualScale;
@@ -414,7 +421,7 @@ void UFlowGridComponent::UpdateShapes()
 				if (IsEmitter)
 				{
 					// update transforms
-					FTransform Transform = P2UTransform(WorldTransform);
+					FTransform Transform = WorldTransformU;
 					if (!FlowEmitterComponent->bHasPreviousTransform)
 					{
 						FlowEmitterComponent->PreviousTransform = Transform;
@@ -520,7 +527,7 @@ void UFlowGridComponent::UpdateShapes()
 						// establish bounds and localToWorld
 						FTransform Bounds = BlendedTransform;
 						FTransform LocalToWorld = BlendedTransform;
-						Bounds.SetScale3D(Bounds.GetScale3D() * BoundsScale);
+						Bounds = BoundsTransform * Bounds;
 						LocalToWorld.SetScale3D(LocalToWorld.GetScale3D() * LocalToWorldScale);
 
 						// scale bounds as a function of emitter inflate
@@ -572,7 +579,7 @@ void UFlowGridComponent::UpdateShapes()
 				if (IsCollider)
 				{
 					// update transforms
-					FTransform Transform = P2UTransform(WorldTransform);
+					FTransform Transform = WorldTransformU;
 
 					// physics
 					FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
@@ -625,7 +632,7 @@ void UFlowGridComponent::UpdateShapes()
 					// establish bounds and localToWorld
 					FTransform Bounds = ScaledTransform;
 					FTransform LocalToWorld = ScaledTransform;
-					Bounds.SetScale3D(Bounds.GetScale3D() * BoundsScale);
+					Bounds = BoundsTransform * Bounds;
 					LocalToWorld.SetScale3D(LocalToWorld.GetScale3D() * LocalToWorldScale);
 
 					emitParams.bounds = *(NvFlowFloat4x4*)(&Bounds.ToMatrixWithScale().M[0][0]);
