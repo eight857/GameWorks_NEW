@@ -407,9 +407,8 @@ void UFlowGridComponent::UpdateShapes()
 						// scale bounds
 						FVector BoundsHalfSize = (MeshScale * 0.5f * (LocalMax - LocalMin));
 						FVector BoundsOffset = MeshScale * 0.5f * (LocalMin + LocalMax);
-						float norm = BoundsHalfSize.GetAbsMax();
-						BoundsHalfSize /= norm;
-						BoundsOffset /= norm;
+						BoundsHalfSize *= (NvFlow::sdfRadius / Radius);
+						BoundsOffset *= (NvFlow::sdfRadius / Radius);
 						BoundsTransform.SetScale3D(BoundsHalfSize);
 						BoundsTransform.SetLocation(BoundsOffset);
 
