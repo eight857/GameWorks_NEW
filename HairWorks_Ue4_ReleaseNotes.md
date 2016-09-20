@@ -45,3 +45,4 @@ Known Issues
 * HairWorks shadow maps are generally crisper when compared to other objects in scene.
 * Duplicated property categories in HairWorks assets and components. 
 * Needs to read data back from GPU buffer to CPU for dynamic pin, so there would be potential performance issue. 
+* Assets of old version HairWorks, such as 1.0, would not be loaded, due to HairWorks SDK change. 
