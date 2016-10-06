@@ -96,22 +96,22 @@ NV_FLOW_API void NvFlowUpdateDepthStencilView(NvFlowContext* context, NvFlowDept
 NV_FLOW_API void NvFlowUpdateRenderTargetView(NvFlowContext* context, NvFlowRenderTargetView* view, const NvFlowRenderTargetViewDesc* desc);
 
 /**
- * Updates an application visible description with internal Flow buffer information.
+ * Updates an application visible description with internal Flow resource information.
  *
- * @param[in] context The Flow context that created the buffer.
- * @param[in] buffer The Flow buffer to describe.
- * @param[out] desc The graphics API dependent Flow buffer description.
+ * @param[in] context The Flow context that created the resource.
+ * @param[in] resource The Flow resource to describe.
+ * @param[out] desc The graphics API dependent Flow resource description.
  */
-NV_FLOW_API void NvFlowUpdateBufferViewDesc(NvFlowContext* context, NvFlowBuffer* buffer, NvFlowBufferViewDesc* desc);
+NV_FLOW_API void NvFlowUpdateResourceViewDesc(NvFlowContext* context, NvFlowResource* resource, NvFlowResourceViewDesc* desc);
 
 /**
- * Updates an application visible description with internal Flow texture3D information.
+ * Updates an application visible description with internal Flow resourceRW information.
  *
- * @param[in] context The Flow context that created the buffer.
- * @param[in] buffer The Flow texture3D to describe.
- * @param[out] desc The graphics API dependent Flow texture3D description.
+ * @param[in] context The Flow context that created the resourceRW.
+ * @param[in] buffer The Flow resourceRW to describe.
+ * @param[out] desc The graphics API dependent Flow resourceRW description.
  */
-NV_FLOW_API void NvFlowUpdateTexture3DViewDesc(NvFlowContext* context, NvFlowTexture3D* buffer, NvFlowTexture3DViewDesc* desc);
+NV_FLOW_API void NvFlowUpdateResourceRWViewDesc(NvFlowContext* context, NvFlowResourceRW* resourceRW, NvFlowResourceRWViewDesc* desc);
 
 /**
  * Pushes graphics/compute pipeline state for later restoration by NvFlowContextPop.
@@ -151,6 +151,13 @@ struct NvFlowGrid;
 
 //! Grid data for rendering
 struct NvFlowGridView;
+
+//! Grid simulation channel
+enum NvFlowGridChannel
+{
+	eNvFlowGridChannelVelocity = 0,
+	eNvFlowGridChannelDensity = 1
+};
 
 //! Enumeration used to describe density resolution relative to velocity resolution
 enum NvFlowMultiRes
@@ -572,10 +579,19 @@ enum NvFlowVolumeRenderDownsample
 	eNvFlowVolumeRenderDownsample2x2 = 1
 };
 
+//! Multiple resolution options for offscreen ray march
+enum NvFlowMultiResRayMarch
+{
+	eNvFlowMultiResRayMarchDisabled = 0,
+	eNvFlowMultiResRayMarch2x2 = 1,
+	eNvFlowMultiResRayMarch4x4 = 2,
+	eNvFlowMultiResRayMarch8x8 = 3,
+	eNvFlowMultiResRayMarch16x16 = 4,
+};
+
 //! Description needed to a create a Flow volume render object
 struct NvFlowVolumeRenderDesc
 {
-	NvFlowVolumeRenderDownsample downsampleFactor;		//!< Controls size of ray marching render target relative to app render target.
 	NvFlowGridView* view;								//!< Grid view for allocation purposes.
 };
 
@@ -624,11 +640,13 @@ struct NvFlowVolumeRenderLMSParams
 enum NvFlowVolumeRenderMode
 {
 	eNvFlowVolumeRenderMode_densityColormap = 0,
-	eNvFlowVolumeRenderMode_densityRainbow = 1,
-	eNvFlowVolumeRenderMode_densityDebug = 2,
-	eNvFlowVolumeRenderMode_velocityColormap = 3,
-	eNvFlowVolumeRenderMode_velocityRainbow = 4,
+	eNvFlowVolumeRenderMode_velocityColormap = 1,
+	eNvFlowVolumeRenderMode_densityRainbow = 2,
+	eNvFlowVolumeRenderMode_velocityRainbow = 3,
+	eNvFlowVolumeRenderMode_densityDebug = 4,
 	eNvFlowVolumeRenderMode_velocityDebug = 5,
+	eNvFlowVolumeRenderMode_densityRaw = 6,
+	eNvFlowVolumeRenderMode_velocityRaw = 7
 };
 
 //! Parameters for Flow grid rendering
@@ -646,9 +664,16 @@ struct NvFlowVolumeRenderParams
 	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
 	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
 
+	NvFlowColorMap* colorMap;					//!< ColorMap to convert temperature to color
+
 	bool debugMode;								//!< If true, wireframe visualization is rendered
 
-	float screenPercentage;						//!< If 1.0, render at full ray march resolution, can be dynamically reduced toward 0.0 to ray march at a lower resolution
+	NvFlowVolumeRenderDownsample downsampleFactor;	//!< Controls size of ray marching render target relative to app render target.
+	float screenPercentage;							//!< If 1.0, render at full ray march resolution, can be dynamically reduced toward 0.0 to ray march at a lower resolution
+	NvFlowMultiResRayMarch multiResRayMarch;		//!< Coarsest downsample for multiple resolution ray march
+	float multiResSamplingScale;					//!< 1.0 by default, increase for finer screen XY minimum sampling rate
+
+	bool smoothColorUpsample;						//!< If true, color upsample will do extra work to remove jaggies around depth discontinuities
 
 	NvFlowVolumeRenderMultiResParams multiRes;			//!< Multires parameters
 
@@ -661,6 +686,16 @@ struct NvFlowVolumeRenderParams
  * @param[out] params The parameters for Flow to fill out.
  */
 NV_FLOW_API void NvFlowVolumeRenderParamsDefaults(NvFlowVolumeRenderParams* params);
+
+//! Parameters for Flow grid lighting
+struct NvFlowVolumeLightingParams
+{
+	NvFlowUint renderMode;						//!< Render mode, see NvFlowVolumeRenderMode
+	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
+	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
+
+	NvFlowColorMap* colorMap;					//!< ColorMap to convert temperature to color
+};
 
 //! A Flow grid volume renderer
 struct NvFlowVolumeRender;
@@ -683,15 +718,27 @@ NV_FLOW_API NvFlowVolumeRender* NvFlowCreateVolumeRender(NvFlowContext* context,
 NV_FLOW_API void NvFlowReleaseVolumeRender(NvFlowVolumeRender* volumeRender);
 
 /**
+* Lights a Flow grid view to produce another grid view that can be ray marched raw.
+*
+* @param[in] volumeRender The Flow volume render object to perform the lighting.
+* @param[in] context The Flow context that created the Flow volume render object.
+* @param[in] colorMap The colorMap to use with colorMap render modes.
+* @param[in] gridView The grid view to ray march.
+* @param[in] params Parameters for lighting.
+*
+* @return The lit grid view.
+*/
+NV_FLOW_API NvFlowGridView* NvFlowVolumeRenderLightGridView(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridView* gridView, const NvFlowVolumeLightingParams* params);
+
+/**
  * Renders a Flow grid view.
  *
  * @param[in] volumeRender The Flow volume render object to perform the rendering.
  * @param[in] context The Flow context that created the Flow volume render object.
- * @param[in] colorMap The colorMap to use with colorMap render modes.
  * @param[in] gridView The grid view to ray march.
  * @param[in] params Parameters for rendering.
  */
-NV_FLOW_API void NvFlowVolumeRenderGridView(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowColorMap* colorMap, NvFlowGridView* gridView, const NvFlowVolumeRenderParams* params);
+NV_FLOW_API void NvFlowVolumeRenderGridView(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridView* gridView, const NvFlowVolumeRenderParams* params);
 
 /**
  * Renders a Flow 3D texture.
@@ -923,5 +970,101 @@ NV_FLOW_API void NvFlowGridProxyFlush(NvFlowGridProxy* proxy, NvFlowContext* gri
  * @return The latest grid view available from the proxy.
  */
 NV_FLOW_API NvFlowGridView* NvFlowGridProxyGetGridView(NvFlowGridProxy* proxy, NvFlowContext* renderContext);
+
+///@}
+// -------------------------- NvFlowGridExport -------------------------------
+///@defgroup NvFlowGridExport
+///@{
+
+//! Object to expose read access Flow grid simulation data
+struct NvFlowGridExport;
+
+struct NvFlowGridExportDesc
+{
+	NvFlowGridView* gridView;
+};
+
+struct NvFlowGridExportViewShaderParams
+{
+	NvFlowUint4 blockDim;
+	NvFlowUint4 blockDimBits;
+	NvFlowFloat4 blockDimInv;
+	NvFlowUint4 linearBlockDim;
+	NvFlowUint4 linearBlockOffset;
+	NvFlowFloat4 dimInv;
+	NvFlowFloat4 vdim;
+	NvFlowFloat4 vdimInv;
+	NvFlowUint4 poolGridDim;
+	NvFlowUint4 gridDim;
+	NvFlowUint4 isVTR;
+};
+
+struct NvFlowGridExportView
+{
+	NvFlowResource* data;
+	NvFlowResource* blockTable;
+	NvFlowResource* blockList;
+
+	NvFlowGridExportViewShaderParams shaderParams;
+
+	NvFlowUint numBlocks;
+	NvFlowUint maxBlocks;
+
+	NvFlowFloat4x4 modelMatrix;
+};
+
+NV_FLOW_API NvFlowGridExport* NvFlowCreateGridExport(NvFlowContext* context, const NvFlowGridExportDesc* desc);
+
+NV_FLOW_API void NvFlowReleaseGridExport(NvFlowGridExport* gridExport);
+
+NV_FLOW_API void NvFlowGridExportUpdate(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridView* gridView, NvFlowGridChannel channel);
+
+NV_FLOW_API void NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridExportView* view, NvFlowGridChannel channel);
+
+///@}
+// -------------------------- NvFlowGridImport -------------------------------
+///@defgroup NvFlowGridImport
+///@{
+
+//! Object to expose write access to Flow grid simulation data
+struct NvFlowGridImport;
+
+struct NvFlowGridImportDesc
+{
+	NvFlowGridView* gridView;
+};
+
+struct NvFlowGridImportViewShaderParams
+{
+	NvFlowUint4 blockDim;
+	NvFlowUint4 blockDimBits;
+	NvFlowUint4 poolGridDim;
+	NvFlowUint4 gridDim;
+	NvFlowUint4 isVTR;
+};
+
+struct NvFlowGridImportView
+{
+	NvFlowResourceRW* dataRW;
+	NvFlowResource* blockTable;
+	NvFlowResource* blockList;
+
+	NvFlowGridImportViewShaderParams shaderParams;
+
+	NvFlowUint numBlocks;
+	NvFlowUint maxBlocks;
+
+	NvFlowFloat4x4 modelMatrix;
+};
+
+NV_FLOW_API NvFlowGridImport* NvFlowCreateGridImport(NvFlowContext* context, const NvFlowGridImportDesc* desc);
+
+NV_FLOW_API void NvFlowReleaseGridImport(NvFlowGridImport* gridImport);
+
+NV_FLOW_API void NvFlowGridImportGetView(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridImportView* view, NvFlowGridView* gridView, NvFlowGridChannel channel);
+
+NV_FLOW_API void NvFlowGridImportUpdate(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridChannel channel);
+
+NV_FLOW_API NvFlowGridView* NvFlowGridImportGetGridView(NvFlowGridImport* gridImport, NvFlowContext* context);
 
 ///@}

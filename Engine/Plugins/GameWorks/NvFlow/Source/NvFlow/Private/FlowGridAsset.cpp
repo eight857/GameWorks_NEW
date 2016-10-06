@@ -9,7 +9,7 @@
 #include "NvFlow.h"
 
 bool UFlowGridAsset::sGlobalDebugDraw = false;
-uint32 UFlowGridAsset::sGlobalRenderingMode = 1;
+uint32 UFlowGridAsset::sGlobalRenderingMode = eNvFlowVolumeRenderMode_densityRainbow;
 
 namespace
 {

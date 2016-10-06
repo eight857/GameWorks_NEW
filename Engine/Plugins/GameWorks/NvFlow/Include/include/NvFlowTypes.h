@@ -83,5 +83,12 @@ enum NvFlowFormat
 	eNvFlowFormat_r8g8_snorm = 19,
 	eNvFlowFormat_r8g8b8a8_snorm = 20,
 
+	eNvFlowFormat_r32_typeless = 21,
+	eNvFlowFormat_r24_unorm_x8_typeless = 22,
+	eNvFlowFormat_r24g8_typeless = 23,
+
+	eNvFlowFormat_r16_typeless = 24,
+	eNvFlowFormat_d16_unorm = 25,
+
 	eNvFlowFormat_max
 };

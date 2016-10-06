@@ -335,7 +335,6 @@ void NvFlow::Scene::init(Context* context, FRHICommandListImmediate& RHICmdList,
 	auto gridView = NvFlowGridProxyGetGridView(m_gridProxy, context->m_context);
 
 	NvFlowVolumeRenderDesc volumeRenderDesc;
-	volumeRenderDesc.downsampleFactor = eNvFlowVolumeRenderDownsample2x2;
 	volumeRenderDesc.view = gridView;
 
 	m_volumeRender = NvFlowCreateVolumeRender(m_context->m_context, &volumeRenderDesc);
@@ -536,6 +535,7 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 
 	m_renderParams.depthStencilView = m_context->m_dsv;
 	m_renderParams.renderTargetView = m_context->m_rtv;
+	m_renderParams.colorMap = m_colorMap;
 
 #if NVFLOW_SMP
 	auto& multiResConfig = View.MultiResConf;
@@ -583,7 +583,7 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 
 #endif
 
-	NvFlowVolumeRenderGridView(m_volumeRender, m_context->m_context, m_colorMap, m_gridView, &m_renderParams);
+	NvFlowVolumeRenderGridView(m_volumeRender, m_context->m_context, m_gridView, &m_renderParams);
 
 #if NVFLOW_SMP
 	if (m_renderParams.lensMatchedShading.enabled)
