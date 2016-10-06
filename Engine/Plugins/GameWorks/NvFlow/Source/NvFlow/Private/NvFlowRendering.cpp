@@ -35,12 +35,14 @@ namespace NvFlow
 
 	struct Context
 	{
-		Context() {}
+		Context() { m_interopStarted = false; }
 		~Context() { release(); }
 
 		void init(FRHICommandListImmediate& RHICmdList);
 		void interopBegin(FRHICommandList& RHICmdList, bool computeOnly);
 		void interopEnd(FRHICommandList& RHICmdList, bool computeOnly, bool shouldFlush);
+		bool isInteropStarted() const { return m_interopStarted; }
+
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
 		void renderScene(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy);
 		void release();
@@ -59,6 +61,8 @@ namespace NvFlow
 		NvFlowContext* m_computeContext = nullptr;
 
 		TArray<Scene*> m_sceneList;
+
+		bool m_interopStarted;
 	};
 
 	struct Scene
@@ -184,6 +188,7 @@ void NvFlow::Context::interopBegin(FRHICommandList& RHICmdList, bool computeOnly
 	}
 
 	NvFlowInteropPush(appctx, m_context);
+	m_interopStarted = true;
 }
 
 void NvFlow::Context::interopEnd(FRHICommandList& RHICmdList, bool computeOnly, bool shouldFlush)
@@ -196,6 +201,7 @@ void NvFlow::Context::interopEnd(FRHICommandList& RHICmdList, bool computeOnly, 
 	}
 
 	NvFlowInteropPop(appctx, m_context);
+	m_interopStarted = false;
 }
 
 void NvFlow::Context::updateGridView(FRHICommandListImmediate& RHICmdList)
@@ -637,43 +643,42 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 	}
 }
 
-void NvFlowDoRenderBegin(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
+bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo)
 {
-	if (GUsingNullRHI)
-	{
-		return;
-	}
-	//NOPE
-}
-
-void NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo)
-{
-	if (GUsingNullRHI)
-	{
-		return;
-	}
-
-	if (NvFlow::gContext)
+	if (!GUsingNullRHI && NvFlow::gContext)
 	{
 		if (PrimitiveSceneInfo->Proxy->FlowData.bFlowGrid)
 		{
-			NvFlow::gContext->interopBegin(RHICmdList, false);
+			SCOPE_CYCLE_COUNTER(STAT_Flow_RenderGrids);
+			SCOPED_DRAW_EVENT(RHICmdList, FlowRenderGrids);
+
+			if (!NvFlow::gContext->isInteropStarted())
+			{
+				NvFlow::gContext->interopBegin(RHICmdList, false);
+			}
 
 			FFlowGridSceneProxy* FlowGridSceneProxy = (FFlowGridSceneProxy*)PrimitiveSceneInfo->Proxy;
 			NvFlow::gContext->renderScene(RHICmdList, View, FlowGridSceneProxy);
+			return true;
+		}
 
+		if (NvFlow::gContext->isInteropStarted())
+		{
 			NvFlow::gContext->interopEnd(RHICmdList, false, false);
 		}
 	}
+	return false;
 }
 
-void NvFlowDoRenderEnd(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
+void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
 {
-	if (GUsingNullRHI)
+	if (!GUsingNullRHI && NvFlow::gContext)
 	{
-		return;
+		if (NvFlow::gContext->isInteropStarted())
+		{
+			NvFlow::gContext->interopEnd(RHICmdList, false, false);
+		}
 	}
-	//NOPE
 }
 
 #endif

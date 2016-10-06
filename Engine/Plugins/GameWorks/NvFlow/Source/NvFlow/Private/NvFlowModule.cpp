@@ -8,9 +8,8 @@ DEFINE_LOG_CATEGORY(LogNvFlow);
 // NvFlow begin
 #if WITH_NVFLOW
 void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives);
-void NvFlowDoRenderBegin(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
-void NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo);
-void NvFlowDoRenderEnd(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
+bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo);
+void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
 #endif
 // NvFlow end
 
@@ -21,19 +20,14 @@ struct RendererHooksNvFlowImpl : public RendererHooksNvFlow
 		::NvFlowUpdateScene(RHICmdList, Primitives);
 	}
 
-	virtual void NvFlowDoRenderBegin(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
+	virtual bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo)
 	{
-		::NvFlowDoRenderBegin(RHICmdList, View);
+		return ::NvFlowDoRenderPrimitive(RHICmdList, View, PrimitiveSceneInfo);
 	}
 
-	virtual void NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo)
+	virtual void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
 	{
-		::NvFlowDoRenderPrimitive(RHICmdList, View, PrimitiveSceneInfo);
-	}
-
-	virtual void NvFlowDoRenderEnd(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
-	{
-		::NvFlowDoRenderEnd(RHICmdList, View);
+		::NvFlowDoRenderFinish(RHICmdList, View);
 	}
 };
 RendererHooksNvFlowImpl GRendererHooksNvFlowImpl;
