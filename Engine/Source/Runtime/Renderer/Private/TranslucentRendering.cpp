@@ -11,6 +11,10 @@
 #include "LightPropagationVolume.h"
 #include "SceneUtils.h"
 
+// NvFlow begin
+#include "GameWorks/RendererHooksNvFlow.h"
+// NvFlow end
+
 DECLARE_CYCLE_STAT(TEXT("TranslucencyTimestampQueryFence Wait"), STAT_TranslucencyTimestampQueryFence_Wait, STATGROUP_SceneRendering);
 DECLARE_CYCLE_STAT(TEXT("TranslucencyTimestampQuery Wait"), STAT_TranslucencyTimestampQuery_Wait, STATGROUP_SceneRendering);
 
@@ -751,11 +755,28 @@ void FTranslucentPrimSet::DrawPrimitives(
 		const FPrimitiveViewRelevance& ViewRelevance = View.PrimitiveViewRelevanceMap[PrimitiveId];
 
 		checkSlow(ViewRelevance.HasTranslucency());
-			
+
+		//Begin NvFlow
+		if (GRendererNvFlowHooks)
+		{
+			if (GRendererNvFlowHooks->NvFlowDoRenderPrimitive(RHICmdList, View, PrimitiveSceneInfo))
+			{
+				continue;
+			}
+		}
+		//End NvFlow
+
 		const FProjectedShadowInfo* TranslucentSelfShadow = Renderer.PrepareTranslucentShadowMap(RHICmdList, View, PrimitiveSceneInfo, TranslucenyPassType);
 
 		RenderPrimitive(RHICmdList, View, PrimitiveSceneInfo, ViewRelevance, TranslucentSelfShadow, TranslucenyPassType);
 	}
+
+	//Begin NvFlow
+	if (GRendererNvFlowHooks)
+	{
+		GRendererNvFlowHooks->NvFlowDoRenderFinish(RHICmdList, View);
+	}
+	//End NvFlow
 
 	View.SimpleElementCollector.DrawBatchedElements(RHICmdList, View, FTexture2DRHIRef(), EBlendModeFilter::Translucent);
 }
