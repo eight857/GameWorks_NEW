@@ -29,14 +29,13 @@ struct NvFlowContextDesc
 	ID3D11DeviceContext* deviceContext;
 };
 
-struct NvFlowBufferViewDesc
+struct NvFlowResourceViewDesc
 {
 	ID3D11ShaderResourceView* srv;
-	ID3D11UnorderedAccessView* uav;
 };
 
-struct NvFlowTexture3DViewDesc
+struct NvFlowResourceRWViewDesc
 {
-	ID3D11ShaderResourceView* srv;
+	NvFlowResourceViewDesc resourceView;
 	ID3D11UnorderedAccessView* uav;
 };

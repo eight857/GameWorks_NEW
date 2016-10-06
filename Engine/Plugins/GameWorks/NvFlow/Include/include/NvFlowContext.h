@@ -25,9 +25,11 @@ struct NvFlowDepthStencilViewDesc;
 struct NvFlowRenderTargetViewDesc;
 
 //! export interop buffers
+struct NvFlowResource;
+struct NvFlowResourceRW;
 struct NvFlowBuffer;
 struct NvFlowTexture3D;
 
 //! graphics API dependent descriptions
-struct NvFlowBufferViewDesc;
-struct NvFlowTexture3DViewDesc;
+struct NvFlowResourceViewDesc;
+struct NvFlowResourceRWViewDesc;
