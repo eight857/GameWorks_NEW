@@ -842,8 +842,9 @@ namespace HairWorksRenderer
 					HairDescriptor.m_receiveShadows,
 					HairDescriptor.m_shadowSigma * (254.f / 255.f)
 					);
-				HairShaderUniformStruct.GlintStrength[StencilValue] = FVector4(
-					HairDescriptor.m_glintStrength
+				const uint32 LightingChannelsMask = HairSceneProxy.GetLightingChannelMask();
+				HairShaderUniformStruct.GlintStrength_LightingChannelMask[StencilValue] = FVector4(
+					HairDescriptor.m_glintStrength, *(float*)&LightingChannelsMask
 					);
 
 				// Setup shader

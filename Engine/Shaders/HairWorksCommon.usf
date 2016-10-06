@@ -22,5 +22,6 @@ struct FHairScreenSpaceData
 	float Opaque;
 	float ShadowAttenuation;
 	bool bReceiveShadow;
+	uint LightingChannelMask;
 };
 // @third party code - END HairWorks

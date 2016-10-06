@@ -31,6 +31,12 @@ float3 GetHairWorksSimpleLighting(float3 ScreenVector, uint2 SamplePos, FHairScr
 
 float3 GetHairWorksDynamicLighting(float3 ScreenVector, uint2 SamplePos, FHairScreenSpaceData HairScreenSpaceData, FDeferredLightData LightData)
 {
+	// Check lighting channels
+#if USE_LIGHTING_CHANNELS
+	if((HairScreenSpaceData.LightingChannelMask & DeferredLightUniforms.LightingChannelMask) == 0)
+		return 0;
+#endif
+
 	// Use 1 for diffuse blend for un-shadowed light, to darken hairs at back faces. 
 	if(!LightData.ShadowedBits)
 		HairScreenSpaceData.DiffuseBlend = 1;
@@ -210,7 +216,7 @@ FHairScreenSpaceData GetHairWorksScreenSpaceData(uint2 SamplePos, uint SubSample
 
 	float4 HairInstance_Spec0_SpecPower0_Spec1_SpecPower1 = HairInstanceData.Spec0_SpecPower0_Spec1_SpecPower1[Stencil];
 	float4 HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma = HairInstanceData.Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma[Stencil];
-	float4 HairInstance_GlintStrength = HairInstanceData.GlintStrength[Stencil];
+	float4 HairInstance_GlintStrength_LightingChannelMask = HairInstanceData.GlintStrength_LightingChannelMask[Stencil];
 
 	HairScreenSpaceData.Depth = ConvertFromDeviceZ(HairDepthTextureMS.Load(SamplePos, SubSample));
 	HairScreenSpaceData.Normal = OctahedronToUnitVector(mad(GBufferA.xy, 2, -1));
@@ -227,7 +233,8 @@ FHairScreenSpaceData GetHairWorksScreenSpaceData(uint2 SamplePos, uint SubSample
 	HairScreenSpaceData.DiffuseBlend = HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma.y;
 	HairScreenSpaceData.bReceiveShadow = HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma.z != 0;
 	HairScreenSpaceData.ShadowAttenuation = HairInstance_Spec1Offset_DiffuseBlend_ReceiveShadows_ShadowSigma.w;
-	HairScreenSpaceData.GlintStrength = HairInstance_GlintStrength.x;
+	HairScreenSpaceData.GlintStrength = HairInstance_GlintStrength_LightingChannelMask.x;
+	HairScreenSpaceData.LightingChannelMask = asuint(HairInstance_GlintStrength_LightingChannelMask.y);
 
 	return HairScreenSpaceData;
 }
