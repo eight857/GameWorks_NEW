@@ -777,14 +777,14 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 	}
 }
 
-void UFlowGridComponent::CreatePhysicsState()
+void UFlowGridComponent::OnCreatePhysicsState()
 {
-	UActorComponent::CreatePhysicsState();
+	UActorComponent::OnCreatePhysicsState();
 }
 
-void UFlowGridComponent::DestroyPhysicsState()
+void UFlowGridComponent::OnDestroyPhysicsState()
 {
-	UActorComponent::DestroyPhysicsState();
+	UActorComponent::OnDestroyPhysicsState();
 }
 
 #if WITH_EDITOR	

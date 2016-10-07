@@ -65,8 +65,8 @@ class UFlowGridComponent : public UPrimitiveComponent
 	uint32 bFlowGridCollisionEnabled : 1;
 
 	// UObject interface
-	virtual void CreatePhysicsState() override;
-	virtual void DestroyPhysicsState() override;
+	virtual void OnCreatePhysicsState() override;
+	virtual void OnDestroyPhysicsState() override;
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
 
 #if WITH_EDITOR	
