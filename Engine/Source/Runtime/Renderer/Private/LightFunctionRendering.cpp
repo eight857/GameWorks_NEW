@@ -311,7 +311,7 @@ RenderForHair:
 				else
 				{
 					// @third party code - BEGIN HairWorks
-					if(!HairWorksRenderer::IsLightAffectHair(*LightSceneInfo, View))
+					if(bHairPass && !HairWorksRenderer::IsLightAffectHair(*LightSceneInfo, View))
 						continue;
 					// @third party code - END HairWorks
 
