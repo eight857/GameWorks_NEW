@@ -646,7 +646,9 @@ enum NvFlowVolumeRenderMode
 	eNvFlowVolumeRenderMode_densityDebug = 4,
 	eNvFlowVolumeRenderMode_velocityDebug = 5,
 	eNvFlowVolumeRenderMode_densityRaw = 6,
-	eNvFlowVolumeRenderMode_velocityRaw = 7
+	eNvFlowVolumeRenderMode_velocityRaw = 7,
+	eNvFlowVolumeRenderMode_densityColormapShadow = 8,
+	eNvFlowVolumeRenderMode_velocityColormapShadow = 9
 };
 
 //! Parameters for Flow grid rendering
@@ -1066,5 +1068,47 @@ NV_FLOW_API void NvFlowGridImportGetView(NvFlowGridImport* gridImport, NvFlowCon
 NV_FLOW_API void NvFlowGridImportUpdate(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridChannel channel);
 
 NV_FLOW_API NvFlowGridView* NvFlowGridImportGetGridView(NvFlowGridImport* gridImport, NvFlowContext* context);
+
+///@}
+// -------------------------- NvFlowVolumeShadow -------------------------------
+///@defgroup NvFlowVolumeShadow
+///@{
+
+//! Object to generate shadows from gridView
+struct NvFlowVolumeShadow;
+
+struct NvFlowVolumeShadowDesc
+{
+	NvFlowGridView* gridView;
+
+	NvFlowUint mapWidth;
+	NvFlowUint mapHeight;
+	NvFlowUint mapDepth;
+};
+
+struct NvFlowVolumeShadowParams
+{
+	NvFlowFloat4x4 projectionMatrix;			//!< Projection matrix, row major
+	NvFlowFloat4x4 viewMatrix;					//!< View matrix, row major
+
+	float alphaScale;							//!< Global alpha scale for adjust net opacity without color map changes
+	NvFlowUint renderMode;						//!< Render mode, see NvFlowVolumeRenderMode
+	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
+	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
+
+	float minIntensity;							//!< Minimum shadow intensity
+
+	NvFlowColorMap* colorMap;					//!< ColorMap to convert temperature to color
+};
+
+NV_FLOW_API NvFlowVolumeShadow* NvFlowCreateVolumeShadow(NvFlowContext* context, const NvFlowVolumeShadowDesc* desc);
+
+NV_FLOW_API void NvFlowReleaseVolumeShadow(NvFlowVolumeShadow* volumeShadow);
+
+NV_FLOW_API void NvFlowVolumeShadowUpdate(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, NvFlowGridView* gridView, const NvFlowVolumeShadowParams* params);
+
+NV_FLOW_API NvFlowGridView* NvFlowVolumeShadowGetGridView(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context);
+
+NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, NvFlowRenderTargetView* renderTargetView);
 
 ///@}
