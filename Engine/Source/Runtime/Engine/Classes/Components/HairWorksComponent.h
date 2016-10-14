@@ -49,7 +49,7 @@ protected:
 	void SetupBoneMapping();
 
 	/** Update bones */
-	void UpdateBoneMatrices();
+	void UpdateBoneMatrices()const;
 
 	/** Parent skeleton */
 	UPROPERTY()
@@ -59,7 +59,7 @@ protected:
 	TArray<uint16> BoneIndices;
 
 	/** Skinning data*/
-	TArray<FMatrix> BoneMatrices;
+	mutable TArray<FMatrix> BoneMatrices;
 };
 
 // @third party code - END HairWorks

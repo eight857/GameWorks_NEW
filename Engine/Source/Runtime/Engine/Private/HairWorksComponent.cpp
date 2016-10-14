@@ -41,9 +41,6 @@ void UHairWorksComponent::OnAttachmentChanged()
 	// Setup bone mapping
 	SetupBoneMapping();
 
-	// Update bone matrices
-	UpdateBoneMatrices();
-
 	// Refresh render data
 	MarkRenderDynamicDataDirty();
 }
@@ -54,6 +51,8 @@ FBoxSphereBounds UHairWorksComponent::CalcBounds(const FTransform& LocalToWorld)
 
 	if (HairInstance.Hair == nullptr || HairInstance.Hair->AssetId == NvHair::ASSET_ID_NULL)
 		return FBoxSphereBounds(EForceInit::ForceInit);
+
+	UpdateBoneMatrices();
 
 	checkSlow(BoneMatrices.Num() == 0 || BoneMatrices.Num() == HairWorks::GetSDK()->getNumBones(HairInstance.Hair->AssetId));
 
@@ -104,9 +103,6 @@ void UHairWorksComponent::TickComponent(float DeltaTime, enum ELevelTick TickTyp
 			PinComponent->SetWorldLocationAndRotation(PinTransform.GetLocation(), PinTransform.GetRotation());
 		}
 	}
-
-	// Update bone matrices.
-	UpdateBoneMatrices();
 
 	// Mark to send dynamic data
 	MarkRenderDynamicDataDirty();
@@ -398,7 +394,7 @@ void UHairWorksComponent::SetupBoneMapping()
 	}
 }
 
-void UHairWorksComponent::UpdateBoneMatrices()
+void UHairWorksComponent::UpdateBoneMatrices()const
 {
 	if(ParentSkeleton == nullptr)
 	{

@@ -15,6 +15,9 @@
 #include "ComponentReregisterContext.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "PhysicsEngine/PhysicsAsset.h"
+// @third party code - BEGIN HairWorks
+#include "Components/HairWorksComponent.h"
+// @third party code - END HairWorks
 
 DEFINE_LOG_CATEGORY_STATIC(LogSkinnedMeshComp, Log, All);
 
@@ -1167,6 +1170,15 @@ void USkinnedMeshComponent::RefreshSlaveComponents()
 			}
 		}
 	}
+
+	// @third party code - BEGIN HairWorks
+	// Update child HairWorksComponent
+	for(auto* ChildComponent : GetAttachChildren())
+	{
+		if(ChildComponent->IsA<UHairWorksComponent>())
+			ChildComponent->MarkRenderDynamicDataDirty();
+	}
+	// @third party code - END HairWorks
 }
 
 void USkinnedMeshComponent::SetForceWireframe(bool InForceWireframe)
