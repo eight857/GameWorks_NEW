@@ -1,6 +1,7 @@
 #include "NvFlowPCH.h"
 
 #include "GameWorks/RendererHooksNvFlow.h"
+#include "GameWorks/GridAccessHooksNvFlow.h"
 
 IMPLEMENT_MODULE( FNvFlowModule, NvFlow );
 DEFINE_LOG_CATEGORY(LogNvFlow);
@@ -10,6 +11,7 @@ DEFINE_LOG_CATEGORY(LogNvFlow);
 void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives);
 bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo);
 void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
+uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const FBox& Bounds, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList);
 #endif
 // NvFlow end
 
@@ -31,6 +33,15 @@ struct RendererHooksNvFlowImpl : public RendererHooksNvFlow
 	}
 };
 RendererHooksNvFlowImpl GRendererHooksNvFlowImpl;
+
+struct GridAccessHooksNvFlowImpl : public GridAccessHooksNvFlow
+{
+	virtual uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const FBox& Bounds, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList)
+	{
+		return ::NvFlowQueryGridExportParams(RHICmdList, Bounds, MaxCount, ResultParamsList);
+	}
+};
+GridAccessHooksNvFlowImpl GGridAccessHooksNvFlowImpl;
 
 struct FNvFlowCommands
 {
@@ -88,6 +99,7 @@ void FNvFlowModule::StartupModule()
 	FPlatformProcess::PopDllDirectory(*LibPath);
 
 	GRendererNvFlowHooks = &GRendererHooksNvFlowImpl;
+	GGridAccessNvFlowHooks = &GGridAccessHooksNvFlowImpl;
 }
 
 void FNvFlowModule::ShutdownModule()

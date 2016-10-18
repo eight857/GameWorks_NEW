@@ -1,0 +1,66 @@
+// NvFlow begin
+
+#if 0
+#define NvFlowExportData NvFlowParams.DataSRV
+#define NvFlowExportBlockTable NvFlowParams.BlockTableSRV
+#define NvFlowExportDataSampler NvFlowParams.DataSampler
+#else
+Texture3D<float4> NvFlowExportData;
+Texture3D<uint> NvFlowExportBlockTable;
+SamplerState NvFlowExportDataSampler;
+#endif
+
+int3 NvFlowTableValToCoord(uint val)
+{
+	uint valInv = ~val;
+	return int3(
+		(valInv >> 0) & 0x3FF,
+		(valInv >> 10) & 0x3FF,
+		(valInv >> 20) & 0x3FF);
+}
+
+float3 NvFlowVirtualToRealExport(float3 vidx)
+{
+	if (NvFlowParams.IsVTR)
+	{
+		return vidx;
+	}
+	else
+	{
+		float3 vBlockIdxf = NvFlowParams.BlockDimInv.xyz * vidx;
+		int3 vBlockIdx = int3(floor(vBlockIdxf));
+		int3 rBlockIdx = NvFlowTableValToCoord(NvFlowExportBlockTable[vBlockIdx]);
+		//float3 rBlockIdxf = float3(rBlockIdx);
+		float3 ridx = float3(NvFlowParams.LinearBlockDim.xyz * rBlockIdx) + float3(NvFlowParams.BlockDim.xyz) * (vBlockIdxf - float3(vBlockIdx)) + float3(NvFlowParams.LinearBlockOffset.xyz);
+		return ridx;
+	}
+}
+
+float4 NvFlowSampleVelocity(float3 worldPos)
+{
+	if (NvFlowParams.Count == 0)
+		return float4(0, 0, 0, 0);
+
+	float3 volumePos = mul(float4(worldPos, 1), NvFlowParams.WorldToVolume).xyz;
+	float3 vidxf = NvFlowParams.VDim.xyz * volumePos;
+#if 0
+//debug begin
+	float3 vBlockIdxf = NvFlowParams.BlockDimInv.xyz * vidxf;
+	int3 vBlockIdx = int3(floor(vBlockIdxf));
+	int3 rBlockIdx = NvFlowTableValToCoord(NvFlowExportBlockTable[vBlockIdx]);
+	float3 ridx = float3(NvFlowParams.LinearBlockDim.xyz * rBlockIdx) + float3(NvFlowParams.BlockDim.xyz) * (vBlockIdxf - float3(vBlockIdx)) + float3(NvFlowParams.LinearBlockOffset.xyz);
+	float3 texCoord = NvFlowParams.DimInv.xyz * ridx;
+	float4 value = NvFlowExportData.SampleLevel(NvFlowExportDataSampler, texCoord, 0);
+	
+	return float4(value.xyz * NvFlowParams.VelocityScale, 1);
+//debug end
+#else
+	float3 ridxExport = NvFlowVirtualToRealExport(vidxf);
+	float4 value = NvFlowExportData.SampleLevel(NvFlowExportDataSampler, NvFlowParams.DimInv.xyz * ridxExport, 0);
+	value.xyz *= NvFlowParams.VelocityScale;
+	return float4(value.xyz, 1);
+	//return float4(0, 0, 0, 1);
+#endif
+}
+
+// NvFlow end

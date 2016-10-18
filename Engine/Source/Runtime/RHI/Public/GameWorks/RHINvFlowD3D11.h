@@ -19,4 +19,9 @@ struct FRHINvFlowRenderTargetViewDesc
 	ID3D11RenderTargetView* rtv;
 	D3D11_VIEWPORT viewport;
 };
+
+struct FRHINvFlowResourceViewDesc
+{
+	ID3D11ShaderResourceView* srv;
+};
 // NvFlow end

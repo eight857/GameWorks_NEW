@@ -500,6 +500,7 @@ public:
 	virtual void NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc) override;
 	virtual void NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc) override;
 	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) override;
+	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) override;
 	// NvFlow end
 
 	// Accessors.

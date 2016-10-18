@@ -78,6 +78,8 @@ namespace NvFlow
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
 		void render(FRHICommandList& RHICmdList, const FViewInfo& View);
 
+		bool getExportParams(FRHICommandListImmediate& RHICmdList, GridExportParamsNvFlow& OutParams);
+
 		bool m_multiAdapter = false;
 		float m_timeSuccess = 0.f;
 		float m_timeTotal = 0.f;
@@ -101,6 +103,8 @@ namespace NvFlow
 		NvFlowVolumeRenderParams m_renderParams;
 
 		FFlowGridSceneProxy* FlowGridSceneProxy = nullptr;
+
+		NvFlowGridExport* m_gridExport = nullptr;
 	};
 
 	void cleanupContext(void* ptr);
@@ -286,11 +290,13 @@ NvFlow::Scene::~Scene()
 
 void NvFlow::Scene::release()
 {
+	if (m_gridExport) NvFlowReleaseGridExport(m_gridExport);
 	if (m_grid) NvFlowReleaseGrid(m_grid);
 	if (m_gridProxy) NvFlowReleaseGridProxy(m_gridProxy);
 	if (m_volumeRender) NvFlowReleaseVolumeRender(m_volumeRender);
 	if (m_colorMap) NvFlowReleaseColorMap(m_colorMap);
 
+	m_gridExport = nullptr;
 	m_grid = nullptr;
 	m_gridProxy = nullptr;
 	m_volumeRender = nullptr;
@@ -593,6 +599,84 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 #endif
 }
 
+namespace
+{
+	FShaderResourceViewRHIRef NvFlowConvertSRV(IRHICommandContext& RHICmdCtx, NvFlowContext* Context, NvFlowResource* Resource)
+	{
+		if (Resource)
+		{
+			NvFlowResourceViewDesc ViewDesc;
+			NvFlowUpdateResourceViewDesc(Context, Resource, &ViewDesc);
+
+			FRHINvFlowResourceViewDesc RHIViewDesc;
+			RHIViewDesc.srv = ViewDesc.srv;
+			return RHICmdCtx.NvFlowCreateSRV(&RHIViewDesc);
+		}
+		return FShaderResourceViewRHIRef();
+	}
+
+	inline FIntVector NvFlowConvert(const NvFlowUint4& in)
+	{
+		return FIntVector(in.x, in.y, in.z);
+	}
+
+	inline FVector NvFlowConvert(const NvFlowFloat4& in)
+	{
+		return FVector(in.x, in.y, in.z);
+	}
+}
+
+bool NvFlow::Scene::getExportParams(FRHICommandListImmediate& RHICmdList, GridExportParamsNvFlow& OutParams)
+{
+	if (m_gridExport == nullptr)
+	{
+		if (m_gridView == nullptr)
+		{
+			return false;
+		}
+
+		NvFlowGridExportDesc Desc;
+		Desc.gridView = m_gridView;
+
+		m_gridExport = NvFlowCreateGridExport(m_context->m_context, &Desc);
+	}
+
+
+	NvFlowGridExportUpdate(m_gridExport, m_context->m_context, m_gridView, eNvFlowGridChannelVelocity);
+
+	NvFlowGridExportView GridExportView;
+	NvFlowGridExportGetView(m_gridExport, m_context->m_context, &GridExportView, eNvFlowGridChannelVelocity);
+
+	OutParams.DataSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, GridExportView.data);
+	OutParams.BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, GridExportView.blockTable);
+
+	OutParams.BlockDim = NvFlowConvert(GridExportView.shaderParams.blockDim);
+	OutParams.BlockDimBits = NvFlowConvert(GridExportView.shaderParams.blockDimBits);
+	OutParams.BlockDimInv = NvFlowConvert(GridExportView.shaderParams.blockDimInv);
+	OutParams.LinearBlockDim = NvFlowConvert(GridExportView.shaderParams.linearBlockDim);
+	OutParams.LinearBlockOffset = NvFlowConvert(GridExportView.shaderParams.linearBlockOffset);
+	OutParams.DimInv = NvFlowConvert(GridExportView.shaderParams.dimInv);
+	OutParams.VDim = NvFlowConvert(GridExportView.shaderParams.vdim);
+	OutParams.VDimInv = NvFlowConvert(GridExportView.shaderParams.vdimInv);
+	OutParams.PoolGridDim = NvFlowConvert(GridExportView.shaderParams.poolGridDim);
+	OutParams.GridDim = NvFlowConvert(GridExportView.shaderParams.gridDim);
+	OutParams.IsVTR = (GridExportView.shaderParams.isVTR.x != 0);
+
+	const FBoxSphereBounds& LocalBounds = FlowGridSceneProxy->GetLocalBounds();
+	const FMatrix& LocalToWorld = FlowGridSceneProxy->GetLocalToWorld();
+
+	FMatrix VolumeToLocal = FMatrix(
+		FPlane(LocalBounds.BoxExtent.X * 2, 0.0f, 0.0f, 0.0f),
+		FPlane(0.0f, LocalBounds.BoxExtent.Y * 2, 0.0f, 0.0f),
+		FPlane(0.0f, 0.0f, LocalBounds.BoxExtent.Z * 2, 0.0f),
+		FPlane(LocalBounds.Origin - LocalBounds.BoxExtent, 1.0f));
+
+	FMatrix VolumeToWorld = VolumeToLocal * LocalToWorld;
+	OutParams.WorldToVolume = VolumeToWorld.Inverse();
+	OutParams.VelocityScale = scale;
+	return true;
+}
+
 // ---------------- global interface functions ---------------------
 
 void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives)
@@ -679,6 +763,28 @@ void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo&
 			NvFlow::gContext->interopEnd(RHICmdList, false, false);
 		}
 	}
+}
+
+uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const FBox& Bounds, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList)
+{
+	if (NvFlow::gContext)
+	{
+		uint32 Count = 0;
+		for (int32 i = 0; i < NvFlow::gContext->m_sceneList.Num() && Count < MaxCount; i++)
+		{
+			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
+			FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
+			if (FlowGridSceneProxy && Bounds.Intersect(FlowGridSceneProxy->GetBounds().GetBox()))
+			{
+				if (Scene->getExportParams(RHICmdList, ResultParamsList[Count]))
+				{
+					++Count;
+				}
+			}
+		}
+		return Count;
+	}
+	return 0;
 }
 
 #endif

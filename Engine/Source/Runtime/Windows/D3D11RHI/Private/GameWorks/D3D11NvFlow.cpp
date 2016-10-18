@@ -35,4 +35,34 @@ void FD3D11DynamicRHI::NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewD
 	desc->viewport = NvFlowGetViewport(Direct3DDeviceIMContext);
 }
 
+FShaderResourceViewRHIRef FD3D11DynamicRHI::NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc)
+{
+	class FEmptyResource : public FRHIResource, public FD3D11BaseShaderResource
+	{
+	public:
+		FEmptyResource()
+		{
+		}
+
+		// IRefCountedObject interface.
+		virtual uint32 AddRef() const
+		{
+			return FRHIResource::AddRef();
+		}
+		virtual uint32 Release() const
+		{
+			return FRHIResource::Release();
+		}
+		virtual uint32 GetRefCount() const
+		{
+			return FRHIResource::GetRefCount();
+		}
+	};
+
+	TRefCountPtr<FD3D11BaseShaderResource> Resource = new FEmptyResource();
+	TRefCountPtr<ID3D11ShaderResourceView> View = desc->srv;
+
+	return new FD3D11ShaderResourceView(View, Resource);
+}
+
 // NvFlow end

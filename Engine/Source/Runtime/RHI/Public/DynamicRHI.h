@@ -464,6 +464,7 @@ public:
 	virtual void NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc) {}
 	virtual void NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc) {}
 	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) {}
+	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) { return FShaderResourceViewRHIRef(); }
 	FRHINvFlowCleanup NvFlowCleanup;
 	// NvFlow end
 };

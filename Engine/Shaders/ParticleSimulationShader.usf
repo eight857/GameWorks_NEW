@@ -5,6 +5,9 @@
 ==============================================================================*/
 
 #include "Common.usf"
+// NvFlow begin
+#include "NvFlowCommon.usf"
+// NvFlow end
 
 #if DISTANCE_FIELD_COLLISION
 	#include "GlobalDistanceFieldShared.usf"
@@ -506,6 +509,10 @@ void PixelMain(
 		float3 FieldForce = 0;
 		float4 FieldVelocity = 0;
 		EvaluateVectorFields(FieldForce, FieldVelocity, Position.xyz, PerParticleVectorFieldScale);
+
+		// NvFlow begin
+		FieldVelocity = NvFlowSampleVelocity(Position);
+		// NvFlow end
 
 		// Add in force from vector fields.
 		Force += FieldForce;
