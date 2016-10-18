@@ -2,6 +2,8 @@
 
 // NvFlow begin
 
+enum { MAX_NVFLOW_GRIDS = 4 };
+
 struct GridExportParamsNvFlow
 {
 	FIntVector BlockDim;

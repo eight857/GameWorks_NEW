@@ -888,19 +888,19 @@ typedef TUniformBufferRef<FVectorFieldUniformParameters> FVectorFieldUniformBuff
 
 BEGIN_UNIFORM_BUFFER_STRUCT(FNvFlowGridUniformParameters, )
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(int32, Count)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, BlockDim)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, BlockDimBits)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FVector, BlockDimInv)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, LinearBlockDim)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, LinearBlockOffset)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FVector, DimInv)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FVector, VDim)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FVector, VDimInv)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, PoolGridDim)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, GridDim)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(int32, IsVTR)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FMatrix, WorldToVolume)
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, VelocityScale)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, BlockDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, BlockDimBits, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FVector, BlockDimInv, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, LinearBlockDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, LinearBlockOffset, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FVector, DimInv, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FVector, VDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FVector, VDimInv, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, PoolGridDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, GridDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(int32, IsVTR, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FMatrix, WorldToVolume, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(float, VelocityScale, [MAX_NVFLOW_GRIDS])
 END_UNIFORM_BUFFER_STRUCT(FNvFlowGridUniformParameters)
 
 IMPLEMENT_UNIFORM_BUFFER_STRUCT(FNvFlowGridUniformParameters, TEXT("NvFlowParams"));
@@ -1035,8 +1035,11 @@ public:
 		GlobalDistanceFieldParameters.Bind(Initializer.ParameterMap);
 
 		// NvFlow begin
-		NvFlowExportData.Bind(Initializer.ParameterMap, TEXT("NvFlowExportData"));
-		NvFlowExportBlockTable.Bind(Initializer.ParameterMap, TEXT("NvFlowExportBlockTable"));
+		for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+		{
+			NvFlowExportData[i].Bind(Initializer.ParameterMap, *FString::Printf(TEXT("NvFlowExportData%d"), i));
+			NvFlowExportBlockTable[i].Bind(Initializer.ParameterMap, *FString::Printf(TEXT("NvFlowExportBlockTable%d"), i));
+		}
 		NvFlowExportDataSampler.Bind(Initializer.ParameterMap, TEXT("NvFlowExportDataSampler"));
 		// NvFlow end
 	}
@@ -1068,8 +1071,11 @@ public:
 		Ar << PerFrameParameters;
 		Ar << GlobalDistanceFieldParameters;
 		// NvFlow begin
-		Ar << NvFlowExportData;
-		Ar << NvFlowExportBlockTable;
+		for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+		{
+			Ar << NvFlowExportData[i];
+			Ar << NvFlowExportBlockTable[i];
+		}
 		Ar << NvFlowExportDataSampler;
 		// NvFlow end
 		return bShaderHasOutdatedParameters;
@@ -1184,16 +1190,26 @@ public:
 				RHICmdList.SetShaderResourceViewParameter(PixelShaderRHI, VectorFieldTextures[i].GetBaseIndex(), NullSRV);
 			}
 		}
+		// NvFlow begin
+		for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+		{
+			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportData[i], NullSRV);
+			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportBlockTable[i], NullSRV);
+		}
+		// NvFlow end
 	}
 	
 	// NvFlow begin
-	void SetNvFlowGridParameters(FRHICommandList& RHICmdList, FNvFlowGridUniformBufferRef UniformBuffer, FShaderResourceViewRHIRef DataSRV, FShaderResourceViewRHIRef BlockTableSRV)
+	void SetNvFlowGridParameters(FRHICommandList& RHICmdList, FNvFlowGridUniformBufferRef UniformBuffer, const FShaderResourceViewRHIRef DataSRV[], const FShaderResourceViewRHIRef BlockTableSRV[])
 	{
 		FPixelShaderRHIParamRef PixelShaderRHI = GetPixelShader();
 		SetUniformBufferParameter(RHICmdList, PixelShaderRHI, GetUniformBufferParameter<FNvFlowGridUniformParameters>(), UniformBuffer);
 
-		SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportData, DataSRV);
-		SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportBlockTable, BlockTableSRV);
+		for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+		{
+			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportData[i], DataSRV[i]);
+			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportBlockTable[i], BlockTableSRV[i]);
+		}
 
 		FSamplerStateRHIParamRef BorderSampler = TStaticSamplerState<SF_Bilinear, AM_Border, AM_Border, AM_Border>::GetRHI();
 		SetSamplerParameter(RHICmdList, PixelShaderRHI, NvFlowExportDataSampler, BorderSampler);
@@ -1233,8 +1249,8 @@ private:
 	FGlobalDistanceFieldParameters GlobalDistanceFieldParameters;
 
 	// NvFlow begin
-	FShaderResourceParameter NvFlowExportData;
-	FShaderResourceParameter NvFlowExportBlockTable;
+	FShaderResourceParameter NvFlowExportData[MAX_NVFLOW_GRIDS];
+	FShaderResourceParameter NvFlowExportBlockTable[MAX_NVFLOW_GRIDS];
 	FShaderResourceParameter NvFlowExportDataSampler;
 	// NvFlow end
 };
@@ -1409,8 +1425,8 @@ struct FSimulationCommandGPU
 
 	// NvFlow begin
 	FNvFlowGridUniformBufferRef NvFlowGridUniformBuffer;
-	FShaderResourceViewRHIRef NvFlowGridDataSRV;
-	FShaderResourceViewRHIRef NvFlowGridBlockTableSRV;
+	FShaderResourceViewRHIRef NvFlowGridDataSRV[MAX_NVFLOW_GRIDS];
+	FShaderResourceViewRHIRef NvFlowGridBlockTableSRV[MAX_NVFLOW_GRIDS];
 	// NvFlow end
 
 	/** Initialization constructor. */
@@ -4688,33 +4704,36 @@ void FFXSystem::SimulateGPUParticles(
 			}
 			// NvFlow begin
 			{
-				SimulationCommand->NvFlowGridDataSRV = FShaderResourceViewRHIRef();
-				SimulationCommand->NvFlowGridBlockTableSRV = FShaderResourceViewRHIRef();
+				for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+				{
+					SimulationCommand->NvFlowGridDataSRV[i] = FShaderResourceViewRHIRef();
+					SimulationCommand->NvFlowGridBlockTableSRV[i] = FShaderResourceViewRHIRef();
+				}
 
 				FNvFlowGridUniformParameters NvFlowGridParameters;
 				NvFlowGridParameters.Count = 0;
 				if (GGridAccessNvFlowHooks)
 				{
-					GridExportParamsNvFlow NvFlowGridParams[1];
-					NvFlowGridParameters.Count = GGridAccessNvFlowHooks->NvFlowQueryGridExportParams(RHICmdList, Simulation->Bounds, 1, NvFlowGridParams);
-					if (NvFlowGridParameters.Count)
+					GridExportParamsNvFlow NvFlowGridParams[MAX_NVFLOW_GRIDS];
+					NvFlowGridParameters.Count = GGridAccessNvFlowHooks->NvFlowQueryGridExportParams(RHICmdList, Simulation->Bounds, MAX_NVFLOW_GRIDS, NvFlowGridParams);
+					for (int32 i = 0; i < NvFlowGridParameters.Count; ++i)
 					{
-						NvFlowGridParameters.BlockDim = NvFlowGridParams[0].BlockDim;
-						NvFlowGridParameters.BlockDimBits = NvFlowGridParams[0].BlockDimBits;
-						NvFlowGridParameters.BlockDimInv = NvFlowGridParams[0].BlockDimInv;
-						NvFlowGridParameters.LinearBlockDim = NvFlowGridParams[0].LinearBlockDim;
-						NvFlowGridParameters.LinearBlockOffset = NvFlowGridParams[0].LinearBlockOffset;
-						NvFlowGridParameters.DimInv = NvFlowGridParams[0].DimInv;
-						NvFlowGridParameters.VDim = NvFlowGridParams[0].VDim;
-						NvFlowGridParameters.VDimInv = NvFlowGridParams[0].VDimInv;
-						NvFlowGridParameters.PoolGridDim = NvFlowGridParams[0].PoolGridDim;
-						NvFlowGridParameters.GridDim = NvFlowGridParams[0].GridDim;
-						NvFlowGridParameters.IsVTR = NvFlowGridParams[0].IsVTR ? 1 : 0;
-						NvFlowGridParameters.WorldToVolume = NvFlowGridParams[0].WorldToVolume;
-						NvFlowGridParameters.VelocityScale = NvFlowGridParams[0].VelocityScale;
+						NvFlowGridParameters.BlockDim[i] = NvFlowGridParams[i].BlockDim;
+						NvFlowGridParameters.BlockDimBits[i] = NvFlowGridParams[i].BlockDimBits;
+						NvFlowGridParameters.BlockDimInv[i] = NvFlowGridParams[i].BlockDimInv;
+						NvFlowGridParameters.LinearBlockDim[i] = NvFlowGridParams[i].LinearBlockDim;
+						NvFlowGridParameters.LinearBlockOffset[i] = NvFlowGridParams[i].LinearBlockOffset;
+						NvFlowGridParameters.DimInv[i] = NvFlowGridParams[i].DimInv;
+						NvFlowGridParameters.VDim[i] = NvFlowGridParams[i].VDim;
+						NvFlowGridParameters.VDimInv[i] = NvFlowGridParams[i].VDimInv;
+						NvFlowGridParameters.PoolGridDim[i] = NvFlowGridParams[i].PoolGridDim;
+						NvFlowGridParameters.GridDim[i] = NvFlowGridParams[i].GridDim;
+						NvFlowGridParameters.IsVTR[i] = NvFlowGridParams[i].IsVTR ? 1 : 0;
+						NvFlowGridParameters.WorldToVolume[i] = NvFlowGridParams[i].WorldToVolume;
+						NvFlowGridParameters.VelocityScale[i] = NvFlowGridParams[i].VelocityScale;
 
-						SimulationCommand->NvFlowGridDataSRV = NvFlowGridParams[0].DataSRV;
-						SimulationCommand->NvFlowGridBlockTableSRV = NvFlowGridParams[0].BlockTableSRV;
+						SimulationCommand->NvFlowGridDataSRV[i] = NvFlowGridParams[i].DataSRV;
+						SimulationCommand->NvFlowGridBlockTableSRV[i] = NvFlowGridParams[i].BlockTableSRV;
 					}
 				}
 				SimulationCommand->NvFlowGridUniformBuffer = FNvFlowGridUniformBufferRef::CreateUniformBufferImmediate(NvFlowGridParameters, UniformBuffer_SingleFrame);

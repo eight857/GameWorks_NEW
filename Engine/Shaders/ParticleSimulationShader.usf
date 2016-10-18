@@ -511,7 +511,7 @@ void PixelMain(
 		EvaluateVectorFields(FieldForce, FieldVelocity, Position.xyz, PerParticleVectorFieldScale);
 
 		// NvFlow begin
-		FieldVelocity = NvFlowSampleVelocity(Position);
+		FieldVelocity = NvFlowGetFinalVelocity(Position);
 		// NvFlow end
 
 		// Add in force from vector fields.
