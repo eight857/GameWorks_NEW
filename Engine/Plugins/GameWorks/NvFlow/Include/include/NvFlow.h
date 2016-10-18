@@ -156,7 +156,10 @@ struct NvFlowGridView;
 enum NvFlowGridChannel
 {
 	eNvFlowGridChannelVelocity = 0,
-	eNvFlowGridChannelDensity = 1
+	eNvFlowGridChannelDensity = 1,
+	eNvFlowGridChannelDensityCoarse = 2,
+
+	eNvFlowGridChannelCount
 };
 
 //! Enumeration used to describe density resolution relative to velocity resolution
@@ -413,6 +416,81 @@ NV_FLOW_API NvFlowShapeSDFData NvFlowShapeSDFMap(NvFlowShapeSDF* shape, NvFlowCo
  */
 NV_FLOW_API void NvFlowShapeSDFUnmap(NvFlowShapeSDF* shape, NvFlowContext* context);
 
+//! Necessary parameters/resources for custom grid block allocation
+struct NvFlowGridEmitCustomAllocParams
+{
+	NvFlowResourceRW* maskResourceRW;	//!< Integer mask, write 1u where allocation is desired
+
+	NvFlowDim maskDim;					//!< Mask dimensions
+
+	NvFlowFloat3 gridLocation;			//!< Location of grid's axis aligned bounding box
+	NvFlowFloat3 gridHalfSize;			//!< Half size of grid's axis aligned bounding box
+};
+
+typedef void(*NvFlowGridEmitCustomAllocFunc)(void* userdata, const NvFlowGridEmitCustomAllocParams* params);
+
+//! Necessary shader parameters for custom emit operations
+struct NvFlowGridEmitCustomEmitShaderParams
+{
+	NvFlowUint4 blockDim;
+	NvFlowUint4 blockDimBits;
+	NvFlowUint4 poolGridDim;
+	NvFlowUint4 gridDim;
+	NvFlowUint4 isVTR;
+};
+
+//! Necessary parameters/resources for custom emit operations
+struct NvFlowGridEmitCustomEmitParams
+{
+	NvFlowResourceRW* dataRW[2u];						//!< Read/Write 3D textures for channel data
+	NvFlowResource* blockTable;							//!< Table to map virtual blocks to real blocks
+	NvFlowResource* blockList;							//!< List of active blocks
+
+	NvFlowGridEmitCustomEmitShaderParams shaderParams;	//!< Parameters used in GPU side operations
+
+	NvFlowFloat3 gridLocation;							//!< Location of grid's axis aligned bounding box
+	NvFlowFloat3 gridHalfSize;							//!< Half size of grid's axis aligned bounding box
+};
+
+typedef void(*NvFlowGridEmitCustomEmitFunc)(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params);
+
+// Shader utilities for computing real/write indices
+/*
+int3 tableVal_to_coord(uint val)
+{
+	uint valInv = ~val;
+	return int3(
+		(valInv >> 0) & 0x3FF,
+		(valInv >> 10) & 0x3FF,
+		(valInv >> 20) & 0x3FF);
+}
+
+#define DISPATCH_ID_TO_VIRTUAL(blockListSRV, params) \
+	int3 DispatchIDToVirtual(uint3 tidx) \
+	{ \
+		uint blockID = tidx.x >> params.blockDimBits.x; \
+		int3 vBlockIdx = tableVal_to_coord(blockListSRV[blockID]); \
+		int3 vidx = (vBlockIdx << params.blockDimBits.xyz) | (tidx & (params.blockDim.xyz - int3(1,1,1))); \
+		return vidx; \
+	}
+
+#define VIRTUAL_TO_REAL_EMIT(name, blockTableSRV, params) \
+	int3 name(int3 vidx) \
+	{ \
+		if(params.isVTR.x != 0) \
+		{ \
+			return vidx; \
+		} \
+		else \
+		{ \
+			int3 vBlockIdx = vidx >> params.blockDimBits.xyz; \
+			int3 rBlockIdx = tableVal_to_coord(blockTableSRV[vBlockIdx]); \
+			int3 ridx = (rBlockIdx << params.blockDimBits.xyz) | (vidx & (params.blockDim.xyz - int3(1, 1, 1))); \
+			return ridx; \
+		} \
+	}
+*/
+
 //! Description of feature support on the queried Flow context GPU.
 struct NvFlowSupport
 {
@@ -508,6 +586,25 @@ NV_FLOW_API void NvFlowGridSetParams(NvFlowGrid* grid, const NvFlowGridParams* p
  * @param[in] numParams Number of emit events in the array.
  */
 NV_FLOW_API void NvFlowGridEmit(NvFlowGrid* grid, const NvFlowShapeDesc* shapes, NvFlowUint numShapes, const NvFlowGridEmitParams* params, NvFlowUint numParams);
+
+/**
+ * Sets custom allocation callback.
+ *
+ * @param[in] grid The Flow grid to use the callback.
+ * @param[in] func The callback function.
+ * @param[in] userdata Pointer to provide to the callback function during execution.
+ */
+NV_FLOW_API void NvFlowGridEmitCustomRegisterAllocFunc(NvFlowGrid* grid, NvFlowGridEmitCustomAllocFunc func, void* userdata);
+
+/**
+ * Sets custom emit callback for given simulation channel.
+ *
+ * @param[in] grid The Flow grid to use the callback.
+ * @param[in] channel The simulation channel for this callback.
+ * @param[in] func The callback function.
+ * @param[in] userdata Pointer to provide to the callback function during execution.
+ */
+NV_FLOW_API void NvFlowGridEmitCustomRegisterEmitFunc(NvFlowGrid* grid, NvFlowGridChannel channel, NvFlowGridEmitCustomEmitFunc func, void* userdata);
 
 ///@}
 // -------------------------- NvFlowVolumeRender -------------------------------
@@ -639,14 +736,14 @@ struct NvFlowVolumeRenderLMSParams
 //! Render modes
 enum NvFlowVolumeRenderMode
 {
-	eNvFlowVolumeRenderMode_densityColormap = 0,
-	eNvFlowVolumeRenderMode_velocityColormap = 1,
-	eNvFlowVolumeRenderMode_densityRainbow = 2,
-	eNvFlowVolumeRenderMode_velocityRainbow = 3,
-	eNvFlowVolumeRenderMode_densityDebug = 4,
-	eNvFlowVolumeRenderMode_velocityDebug = 5,
-	eNvFlowVolumeRenderMode_densityRaw = 6,
-	eNvFlowVolumeRenderMode_velocityRaw = 7
+	eNvFlowVolumeRenderMode_colormap = 0,
+	eNvFlowVolumeRenderMode_colormapShadow = 1,
+	eNvFlowVolumeRenderMode_raw = 2,
+
+	eNvFlowVolumeRenderMode_rainbow = 3,
+	eNvFlowVolumeRenderMode_debug = 4,
+
+	eNvFlowVolumeRenderModeCount
 };
 
 //! Parameters for Flow grid rendering
@@ -660,7 +757,8 @@ struct NvFlowVolumeRenderParams
 	NvFlowRenderTargetView* renderTargetView;	//!< Render target view to composite ray marched result against
 
 	float alphaScale;							//!< Global alpha scale for adjust net opacity without color map changes
-	NvFlowUint renderMode;						//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowGridChannel renderChannel;			//!< GridView channel to render
 	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
 	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
 
@@ -690,7 +788,8 @@ NV_FLOW_API void NvFlowVolumeRenderParamsDefaults(NvFlowVolumeRenderParams* para
 //! Parameters for Flow grid lighting
 struct NvFlowVolumeLightingParams
 {
-	NvFlowUint renderMode;						//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowGridChannel renderChannel;			//!< GridView channel to render
 	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
 	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
 
@@ -976,6 +1075,45 @@ NV_FLOW_API NvFlowGridView* NvFlowGridProxyGetGridView(NvFlowGridProxy* proxy, N
 ///@defgroup NvFlowGridExport
 ///@{
 
+// Shader utilities for computing real/write indices
+/*
+int3 tableVal_to_coord(uint val)
+{
+	uint valInv = ~val;
+	return int3(
+		(valInv >> 0) & 0x3FF,
+		(valInv >> 10) & 0x3FF,
+		(valInv >> 20) & 0x3FF);
+}
+
+#define DISPATCH_ID_TO_VIRTUAL(blockListSRV, params) \
+	int3 DispatchIDToVirtual(uint3 tidx) \
+	{ \
+		uint blockID = tidx.x >> params.blockDimBits.x; \
+		int3 vBlockIdx = tableVal_to_coord(blockListSRV[blockID]); \
+		int3 vidx = (vBlockIdx << params.blockDimBits.xyz) | (tidx & (params.blockDim.xyz - int3(1,1,1))); \
+		return vidx; \
+	}
+
+#define VIRTUAL_TO_REAL_EXPORT(name, blockTableSRV, params) \
+	float3 name(float3 vidx) \
+	{ \
+		if(params.isVTR.x != 0) \
+		{ \
+			return vidx; \
+		} \
+		else \
+		{ \
+			float3 vBlockIdxf = params.blockDimInv.xyz * vidx; \
+			int3 vBlockIdx = int3(floor(vBlockIdxf)); \
+			int3 rBlockIdx = tableVal_to_coord(blockTableSRV[vBlockIdx]); \
+			float3 rBlockIdxf = float3(rBlockIdx); \
+			float3 ridx = float3(params.linearBlockDim.xyz * rBlockIdx) + float3(params.blockDim.xyz) * (vBlockIdxf - float3(vBlockIdx)) + float3(params.linearBlockOffset.xyz); \
+			return ridx; \
+		} \
+	}
+*/
+
 //! Object to expose read access Flow grid simulation data
 struct NvFlowGridExport;
 
@@ -1026,6 +1164,43 @@ NV_FLOW_API void NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowCon
 ///@defgroup NvFlowGridImport
 ///@{
 
+// Shader utilities for computing real/write indices
+/*
+int3 tableVal_to_coord(uint val)
+{
+	uint valInv = ~val;
+	return int3(
+		(valInv >> 0) & 0x3FF,
+		(valInv >> 10) & 0x3FF,
+		(valInv >> 20) & 0x3FF);
+}
+
+#define DISPATCH_ID_TO_VIRTUAL(blockListSRV, params) \
+	int3 DispatchIDToVirtual(uint3 tidx) \
+	{ \
+		uint blockID = tidx.x >> params.blockDimBits.x; \
+		int3 vBlockIdx = tableVal_to_coord(blockListSRV[blockID]); \
+		int3 vidx = (vBlockIdx << params.blockDimBits.xyz) | (tidx & (params.blockDim.xyz - int3(1,1,1))); \
+		return vidx; \
+	}
+
+#define VIRTUAL_TO_REAL_IMPORT(name, blockTableSRV, params) \
+	int3 name(int3 vidx) \
+	{ \
+		if(params.isVTR.x != 0) \
+		{ \
+			return vidx; \
+		} \
+		else \
+		{ \
+			int3 vBlockIdx = vidx >> params.blockDimBits.xyz; \
+			int3 rBlockIdx = tableVal_to_coord(blockTableSRV[vBlockIdx]); \
+			int3 ridx = (rBlockIdx << params.blockDimBits.xyz) | (vidx & (params.blockDim.xyz - int3(1, 1, 1))); \
+			return ridx; \
+		} \
+	}
+*/
+
 //! Object to expose write access to Flow grid simulation data
 struct NvFlowGridImport;
 
@@ -1066,5 +1241,48 @@ NV_FLOW_API void NvFlowGridImportGetView(NvFlowGridImport* gridImport, NvFlowCon
 NV_FLOW_API void NvFlowGridImportUpdate(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridChannel channel);
 
 NV_FLOW_API NvFlowGridView* NvFlowGridImportGetGridView(NvFlowGridImport* gridImport, NvFlowContext* context);
+
+///@}
+// -------------------------- NvFlowVolumeShadow -------------------------------
+///@defgroup NvFlowVolumeShadow
+///@{
+
+//! Object to generate shadows from gridView
+struct NvFlowVolumeShadow;
+
+struct NvFlowVolumeShadowDesc
+{
+	NvFlowGridView* gridView;
+
+	NvFlowUint mapWidth;
+	NvFlowUint mapHeight;
+	NvFlowUint mapDepth;
+};
+
+struct NvFlowVolumeShadowParams
+{
+	NvFlowFloat4x4 projectionMatrix;			//!< Projection matrix, row major
+	NvFlowFloat4x4 viewMatrix;					//!< View matrix, row major
+
+	float alphaScale;							//!< Global alpha scale for adjust net opacity without color map changes
+	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowGridChannel renderChannel;			//!< GridView channel to render
+	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
+	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
+
+	float minIntensity;							//!< Minimum shadow intensity
+
+	NvFlowColorMap* colorMap;					//!< ColorMap to convert temperature to color
+};
+
+NV_FLOW_API NvFlowVolumeShadow* NvFlowCreateVolumeShadow(NvFlowContext* context, const NvFlowVolumeShadowDesc* desc);
+
+NV_FLOW_API void NvFlowReleaseVolumeShadow(NvFlowVolumeShadow* volumeShadow);
+
+NV_FLOW_API void NvFlowVolumeShadowUpdate(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, NvFlowGridView* gridView, const NvFlowVolumeShadowParams* params);
+
+NV_FLOW_API NvFlowGridView* NvFlowVolumeShadowGetGridView(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context);
+
+NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, NvFlowRenderTargetView* renderTargetView);
 
 ///@}
