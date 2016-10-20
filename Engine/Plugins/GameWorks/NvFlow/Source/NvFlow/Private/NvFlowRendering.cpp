@@ -774,7 +774,9 @@ uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const F
 		{
 			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
 			FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
-			if (FlowGridSceneProxy && Bounds.Intersect(FlowGridSceneProxy->GetBounds().GetBox()))
+			if (FlowGridSceneProxy &&
+				FlowGridSceneProxy->FlowGridProperties.bEnableParticlesInteraction &&
+				Bounds.Intersect(FlowGridSceneProxy->GetBounds().GetBox()))
 			{
 				if (Scene->getExportParams(RHICmdList, ResultParamsList[Count]))
 				{

@@ -69,6 +69,7 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 	// set critical property defaults
 	FlowGridProperties.bActive = false;
 	FlowGridProperties.bMultiAdapterEnabled = false;
+	FlowGridProperties.bEnableParticlesInteraction = false;
 	FlowGridProperties.SubstepSize = 0.0f;
 	FlowGridProperties.VirtualGridExtents = FVector(0.f);
 
@@ -669,6 +670,9 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		bool OldMultiAdapterEnabled = FlowGridProperties.bMultiAdapterEnabled;
 		bool NewMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
 
+		bool OldEnableParticlesInteraction = FlowGridProperties.bEnableParticlesInteraction;
+		bool NewEnableParticlesInteraction = FlowGridAssetRef->bEnableParticlesInteraction;
+
 		// grab default desc
 		NvFlowGridDesc defaultGridDesc = {};
 		NvFlowGridDescDefaults(&defaultGridDesc);
@@ -687,7 +691,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			 newGridDesc.virtualDim.y != FlowGridProperties.GridDesc.virtualDim.y ||
 			 newGridDesc.virtualDim.z != FlowGridProperties.GridDesc.virtualDim.z ||
 			 newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
-			 NewMultiAdapterEnabled != OldMultiAdapterEnabled))
+			 NewMultiAdapterEnabled != OldMultiAdapterEnabled ||
+			 NewEnableParticlesInteraction != OldEnableParticlesInteraction))
 		{
 			// rebuild required
 			FlowGridProperties.bActive = false;
@@ -698,6 +703,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		// Commit any changes
 		FlowGridProperties.GridDesc = newGridDesc;
 		FlowGridProperties.bMultiAdapterEnabled = NewMultiAdapterEnabled;
+		FlowGridProperties.bEnableParticlesInteraction = NewEnableParticlesInteraction;
 
 		//Properties that can be changed without rebuilding grid
 		FlowGridProperties.VirtualGridExtents = FVector(FlowGridAssetRef->GetVirtualGridExtent());

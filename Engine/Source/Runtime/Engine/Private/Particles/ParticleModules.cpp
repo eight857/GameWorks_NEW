@@ -4726,8 +4726,11 @@ void UParticleModuleTypeDataGpu::Build( FParticleEmitterBuildInfo& EmitterBuildI
 	// Collision flag.
 	EmitterInfo.bEnableCollision = EmitterBuildInfo.bEnableCollision;
 	EmitterInfo.CollisionMode = (EParticleCollisionMode::Type)EmitterBuildInfo.CollisionMode;
-#endif
 
+	// NvFlow begin
+	EmitterInfo.bEnableNvFlowGridInteraction = this->bEnableNvFlowGridInteraction;
+	// NvFlow end
+#endif
 
 	// Create or update GPU resources.
 	if ( EmitterInfo.Resources )

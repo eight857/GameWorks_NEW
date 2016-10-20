@@ -218,6 +218,10 @@ void EvaluateVectorFields(out float3 OutForce, out float4 OutVelocity, float3 Po
 		FinalWeight = max(FinalWeight, DistanceWeight * Tightness);
 	}
 
+	// NvFlow begin
+	NvFlowEvaluateGrids(Position, TotalForce, WeightedVelocity, TotalWeight, FinalWeight);
+	// NvFlow end
+
 	// Forces are additive.
 	OutForce = TotalForce;
 	// Velocities use a weighted average.
@@ -509,10 +513,6 @@ void PixelMain(
 		float3 FieldForce = 0;
 		float4 FieldVelocity = 0;
 		EvaluateVectorFields(FieldForce, FieldVelocity, Position.xyz, PerParticleVectorFieldScale);
-
-		// NvFlow begin
-		FieldVelocity = NvFlowGetFinalVelocity(Position);
-		// NvFlow end
 
 		// Add in force from vector fields.
 		Force += FieldForce;

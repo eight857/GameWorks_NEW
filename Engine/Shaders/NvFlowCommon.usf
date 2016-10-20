@@ -54,25 +54,16 @@ float4 NvFlowSampleGridVelocity(int Index, float3 WorldPos)
 	return NvFlowFetchExportData(Index, NvFlowParams.DimInv[Index].xyz * SampleCoord);
 }
 
-float4 NvFlowGetFinalVelocity(float3 WorldPos)
+void NvFlowEvaluateGrids(float3 Position, in out float3 TotalForce, in out float3 WeightedVelocity, in out float TotalWeight, in out float FinalWeight)
 {
-	float3 WeightedVelocity = 0;
-	float TotalWeight = 0;
-	float FinalWeight = 0;
-
 	[unroll]
 	for (int Index = 0; Index < NvFlowParams.Count; ++Index)
 	{
-		float4 Velocity = NvFlowSampleGridVelocity(Index, WorldPos);
+		float4 Velocity = NvFlowSampleGridVelocity(Index, Position);
 		WeightedVelocity += Velocity.xyz * NvFlowParams.VelocityScale[Index];
 		TotalWeight += Velocity.w;
 		FinalWeight = max(FinalWeight, Velocity.w);
 	}
-
-	float4 OutVelocity;
-	OutVelocity.xyz = WeightedVelocity / (TotalWeight + 0.001f);
-	OutVelocity.w = FinalWeight;
-	return OutVelocity;
 }
 
 // NvFlow end

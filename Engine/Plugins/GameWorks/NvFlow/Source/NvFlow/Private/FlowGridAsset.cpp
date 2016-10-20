@@ -91,6 +91,8 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	FCollisionResponseTemplate Template;
 	UCollisionProfile::Get()->GetProfileTemplate(TEXT("WorldDynamic"/*"Flow"*/), Template);
 	ResponseToChannels = Template.ResponseToChannels;
+
+	bEnableParticlesInteraction = false;
 }
 
 // NvFlow end

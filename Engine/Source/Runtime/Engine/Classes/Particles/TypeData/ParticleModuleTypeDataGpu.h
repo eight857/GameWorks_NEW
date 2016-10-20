@@ -192,6 +192,12 @@ struct FGPUSpriteEmitterInfo
 	UPROPERTY()
 	FRawDistributionFloat DynamicAlphaScale;
 
+	// NvFlow begin
+	/** When true, particles are affected by NvFlow grid. */
+	UPROPERTY()
+	uint32 bEnableNvFlowGridInteraction : 1;
+	// NvFlow end
+
 	FGPUSpriteEmitterInfo()
 		: RequiredModule(NULL)
 		, SpawnModule(NULL)
@@ -209,6 +215,9 @@ struct FGPUSpriteEmitterInfo
 		, LockAxisFlag(0)
 		, bEnableCollision(false)
 		, CollisionMode(EParticleCollisionMode::SceneDepth)
+		// NvFlow begin
+		, bEnableNvFlowGridInteraction(false)
+		// NvFlow end
 	{
 	}
 
@@ -417,6 +426,12 @@ class UParticleModuleTypeDataGpu : public UParticleModuleTypeDataBase
 	/** When true, all existing partilces are cleared when the emitter is initialized. */
 	UPROPERTY(EditAnywhere, Category = ParticleModuleTypeDataGpu)
 	uint32 bClearExistingParticlesOnInit:1;
+
+	// NvFlow begin
+	/** When true, particles are affected by NvFlow grid. */
+	UPROPERTY(EditAnywhere, Category = ParticleModuleTypeDataGpu)
+	uint32 bEnableNvFlowGridInteraction : 1;
+	// NvFlow end
 
 	//~ Begin UObject Interface
 	virtual void PostLoad() override;

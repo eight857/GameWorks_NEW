@@ -38,6 +38,10 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	uint32		bMultiAdapterEnabled : 1;
 
+	/** If true, grid affects GPU particles*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	uint32		bEnableParticlesInteraction : 1;
+
 	//* Relative importance of velocity for allocation, 0.0 means not important*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
 	float	VelocityWeight;

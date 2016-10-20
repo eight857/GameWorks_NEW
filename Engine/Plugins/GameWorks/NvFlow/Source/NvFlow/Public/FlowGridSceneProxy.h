@@ -45,6 +45,8 @@ struct FFlowGridProperties
 	// multi-GPU enable, requires reset if changed
 	uint32 bMultiAdapterEnabled : 1;
 
+	uint32 bEnableParticlesInteraction : 1;
+
 	// target simulation time step
 	float SubstepSize;
 

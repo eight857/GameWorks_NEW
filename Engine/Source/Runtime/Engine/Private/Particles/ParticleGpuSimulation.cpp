@@ -2590,6 +2590,10 @@ public:
 	/** Allows disabling of simulation. */
 	bool bEnabled;
 
+	// NvFlow begin
+	bool bEnableNvFlowGridInteraction;
+	// NvFlow end
+
 	/** Default constructor. */
 	FParticleSimulationGPU()
 		: EmitterSimulationResources(NULL)
@@ -2602,6 +2606,9 @@ public:
 		, bReleased_GameThread(true)
 		, bDestroyed_GameThread(false)
 		, bEnabled(true)
+		// NvFlow begin
+		, bEnableNvFlowGridInteraction(false)
+		// NvFlow end
 	{
 	}
 
@@ -3173,6 +3180,10 @@ public:
 		}
 		Simulation->bWantsCollision = InEmitterInfo.bEnableCollision;
 		Simulation->CollisionMode = InEmitterInfo.CollisionMode;
+
+		// NvFlow begin
+		Simulation->bEnableNvFlowGridInteraction = InEmitterInfo.bEnableNvFlowGridInteraction;
+		// NvFlow end
 
 #if TRACK_TILE_ALLOCATIONS
 		TSet<class FGPUSpriteParticleEmitterInstance*>* EmitterSet = GPUSpriteParticleEmitterInstances.Find(FXSystem);
@@ -4712,7 +4723,7 @@ void FFXSystem::SimulateGPUParticles(
 
 				FNvFlowGridUniformParameters NvFlowGridParameters;
 				NvFlowGridParameters.Count = 0;
-				if (GGridAccessNvFlowHooks)
+				if (GGridAccessNvFlowHooks && Simulation->bEnableNvFlowGridInteraction)
 				{
 					GridExportParamsNvFlow NvFlowGridParams[MAX_NVFLOW_GRIDS];
 					NvFlowGridParameters.Count = GGridAccessNvFlowHooks->NvFlowQueryGridExportParams(RHICmdList, Simulation->Bounds, MAX_NVFLOW_GRIDS, NvFlowGridParams);
