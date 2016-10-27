@@ -29,6 +29,7 @@ Fix:
 * Fixed a crash when the hair normal bone index is -1.
 * Fixed hair shadow bug on Pascal GPU.
 * Some refactoring of C++ and shader codes.
+* Fixed hair skinning problem with Sequencer. 
 
 Artist Workflow
 =============
