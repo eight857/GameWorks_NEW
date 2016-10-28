@@ -83,6 +83,10 @@ class UFlowEmitterComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter, meta = (ClampMin = 1, UIMax = 10))
 	int32		NumSubsteps;
 
+	/** If true, emitter will disable velocity/density emission and will allocate based on the shape instead of the bounding box. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter)
+	uint32		bAllocShapeOnly : 1;
+
 	uint32		bHasPreviousTransform : 1;
 	FTransform	PreviousTransform;
 };

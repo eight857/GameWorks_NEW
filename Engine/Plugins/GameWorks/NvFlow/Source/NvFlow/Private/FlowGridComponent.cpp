@@ -469,6 +469,12 @@ void UFlowGridComponent::UpdateShapes()
 						FlowEmitterComponent->AllocationScale
 					};
 
+					// alloc shape only mode
+					if (FlowEmitterComponent->bAllocShapeOnly)
+					{
+						emitParams.emitMode = eNvFlowGridEmitModeAllocShapeOnly;
+					}
+
 					// couple rates
 					float coupleRate = FlowEmitterComponent->CoupleRate;
 					emitParams.fuelCoupleRate        = coupleRate * FlowEmitterComponent->FuelMask;

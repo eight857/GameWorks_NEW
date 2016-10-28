@@ -298,6 +298,18 @@ union NvFlowShapeDesc
 	NvFlowShapeDescPlane plane;
 };
 
+//! Emitter modes
+enum NvFlowGridEmitMode
+{
+	eNvFlowGridEmitModeDefault = 0,					//!< Emitter will influence velocity and density channels, optionally allocate based on bounds
+	eNvFlowGridEmitModeDisableVelocity = 0x01,		//!< Flag to disable emitter interaction with velocity field
+	eNvFlowGridEmitModeDisableDensity = 0x02,		//!< Flag to disable emitter interaction with density field
+	eNvFlowGridEmitModeDisableAlloc = 0x04,			//!< Flag to disable emitter bound allocation
+	eNvFlowGridEmitModeAllocShape = 0x08,			//!< Emitter will allocate using shape to drive allocation instead of only bounds
+
+	eNvFlowGridEmitModeAllocShapeOnly = 0x0F,		//!< Flags to configure for shape aware allocation only
+};
+
 //! Parameters for both emission and collision
 struct NvFlowGridEmitParams
 {
@@ -305,6 +317,8 @@ struct NvFlowGridEmitParams
 	NvFlowUint shapeRangeSize;						//!< Size of shape range, in number of Shapes
 	NvFlowShapeType shapeType;						//!< Type of shape in the set
 	float shapeDistScale;							//!< Scale to apply to SDF value
+
+	NvFlowUint emitMode;							//!< Emitter behavior, based on NvFlowGridEmitMode, 0u is default
 
 	float deltaTime;								//!< DeltaTime used to compute impulse
 
@@ -1257,6 +1271,9 @@ struct NvFlowVolumeShadowDesc
 	NvFlowUint mapWidth;
 	NvFlowUint mapHeight;
 	NvFlowUint mapDepth;
+
+	float minResidentScale;				//!< Minimum (and initial) fraction of virtual cells to allocate memory for
+	float maxResidentScale;				//!< Maximum fraction of virtual cells to allocate memory for
 };
 
 struct NvFlowVolumeShadowParams
@@ -1275,6 +1292,14 @@ struct NvFlowVolumeShadowParams
 	NvFlowColorMap* colorMap;					//!< ColorMap to convert temperature to color
 };
 
+struct NvFlowVolumeShadowDebugRenderParams
+{
+	NvFlowRenderTargetView* renderTargetView;
+
+	NvFlowFloat4x4 projectionMatrix;			//!< Render target projection matrix, row major
+	NvFlowFloat4x4 viewMatrix;					//!< Render target view matrix, row major
+};
+
 NV_FLOW_API NvFlowVolumeShadow* NvFlowCreateVolumeShadow(NvFlowContext* context, const NvFlowVolumeShadowDesc* desc);
 
 NV_FLOW_API void NvFlowReleaseVolumeShadow(NvFlowVolumeShadow* volumeShadow);
@@ -1283,6 +1308,6 @@ NV_FLOW_API void NvFlowVolumeShadowUpdate(NvFlowVolumeShadow* volumeShadow, NvFl
 
 NV_FLOW_API NvFlowGridView* NvFlowVolumeShadowGetGridView(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context);
 
-NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, NvFlowRenderTargetView* renderTargetView);
+NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, const NvFlowVolumeShadowDebugRenderParams* params);
 
 ///@}
