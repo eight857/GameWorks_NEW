@@ -4725,8 +4725,17 @@ void FFXSystem::SimulateGPUParticles(
 				NvFlowGridParameters.Count = 0;
 				if (GGridAccessNvFlowHooks && Simulation->bEnableNvFlowGridInteraction)
 				{
+					ParticleSimulationParamsNvFlow ParticleSimulationParams;
+					ParticleSimulationParams.Bounds = Simulation->Bounds;
+					ParticleSimulationParams.TextureSizeX = GParticleSimulationTextureSizeX;
+					ParticleSimulationParams.TextureSizeY = GParticleSimulationTextureSizeY;
+					ParticleSimulationParams.PositionTextureRHI = ParticleSimulationResources->GetVisualizeStateTextures().PositionTextureRHI;
+					ParticleSimulationParams.VelocityTextureRHI = ParticleSimulationResources->GetVisualizeStateTextures().VelocityTextureRHI;
+					ParticleSimulationParams.ParticleCount = Simulation->VertexBuffer.ParticleCount;
+					ParticleSimulationParams.VertexBufferSRV = Simulation->VertexBuffer.VertexBufferSRV;
+
 					GridExportParamsNvFlow NvFlowGridParams[MAX_NVFLOW_GRIDS];
-					NvFlowGridParameters.Count = GGridAccessNvFlowHooks->NvFlowQueryGridExportParams(RHICmdList, Simulation->Bounds, MAX_NVFLOW_GRIDS, NvFlowGridParams);
+					NvFlowGridParameters.Count = GGridAccessNvFlowHooks->NvFlowQueryGridExportParams(RHICmdList, ParticleSimulationParams, MAX_NVFLOW_GRIDS, NvFlowGridParams);
 					for (int32 i = 0; i < NvFlowGridParameters.Count; ++i)
 					{
 						NvFlowGridParameters.BlockDim[i] = NvFlowGridParams[i].BlockDim;

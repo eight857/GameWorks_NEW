@@ -24,4 +24,9 @@ struct FRHINvFlowResourceViewDesc
 {
 	ID3D11ShaderResourceView* srv;
 };
+
+struct FRHINvFlowResourceRWViewDesc
+{
+	ID3D11UnorderedAccessView* uav;
+};
 // NvFlow end

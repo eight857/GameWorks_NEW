@@ -35,7 +35,7 @@ void FD3D11DynamicRHI::NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewD
 	desc->viewport = NvFlowGetViewport(Direct3DDeviceIMContext);
 }
 
-FShaderResourceViewRHIRef FD3D11DynamicRHI::NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc)
+namespace
 {
 	class FEmptyResource : public FRHIResource, public FD3D11BaseShaderResource
 	{
@@ -58,11 +58,23 @@ FShaderResourceViewRHIRef FD3D11DynamicRHI::NvFlowCreateSRV(const FRHINvFlowReso
 			return FRHIResource::GetRefCount();
 		}
 	};
+}
 
-	TRefCountPtr<FD3D11BaseShaderResource> Resource = new FEmptyResource();
+FShaderResourceViewRHIRef FD3D11DynamicRHI::NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc)
+{
 	TRefCountPtr<ID3D11ShaderResourceView> View = desc->srv;
+	TRefCountPtr<FD3D11BaseShaderResource> Resource = new FEmptyResource();
 
 	return new FD3D11ShaderResourceView(View, Resource);
+}
+
+FUnorderedAccessViewRHIRef FD3D11DynamicRHI::NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc)
+{
+	TRefCountPtr<ID3D11UnorderedAccessView> View = desc->uav;
+	TRefCountPtr<FD3D11BaseShaderResource> Resource = new FEmptyResource();
+	Resource->SetCurrentGPUAccess(EResourceTransitionAccess::EWritable);
+
+	return new FD3D11UnorderedAccessView(View, Resource);
 }
 
 // NvFlow end

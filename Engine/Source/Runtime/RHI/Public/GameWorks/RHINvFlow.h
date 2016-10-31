@@ -5,6 +5,7 @@ struct FRHINvFlowDeviceDesc;
 struct FRHINvFlowDepthStencilViewDesc;
 struct FRHINvFlowRenderTargetViewDesc;
 struct FRHINvFlowResourceViewDesc;
+struct FRHINvFlowResourceRWViewDesc;
 
 struct FRHINvFlowCleanup
 {

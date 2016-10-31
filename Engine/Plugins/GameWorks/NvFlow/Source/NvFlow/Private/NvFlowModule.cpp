@@ -11,7 +11,7 @@ DEFINE_LOG_CATEGORY(LogNvFlow);
 void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives);
 bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo);
 void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
-uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const FBox& Bounds, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList);
+uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList);
 #endif
 // NvFlow end
 
@@ -36,9 +36,9 @@ RendererHooksNvFlowImpl GRendererHooksNvFlowImpl;
 
 struct GridAccessHooksNvFlowImpl : public GridAccessHooksNvFlow
 {
-	virtual uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const FBox& Bounds, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList)
+	virtual uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList)
 	{
-		return ::NvFlowQueryGridExportParams(RHICmdList, Bounds, MaxCount, ResultParamsList);
+		return ::NvFlowQueryGridExportParams(RHICmdList, ParticleSimulationParams, MaxCount, ResultParamsList);
 	}
 };
 GridAccessHooksNvFlowImpl GGridAccessHooksNvFlowImpl;

@@ -24,9 +24,23 @@ struct GridExportParamsNvFlow
 	FShaderResourceViewRHIRef BlockTableSRV;
 };
 
+struct ParticleSimulationParamsNvFlow
+{
+	FBox Bounds;
+
+	int32 TextureSizeX;
+	int32 TextureSizeY;
+	FTexture2DRHIRef PositionTextureRHI;
+	FTexture2DRHIRef VelocityTextureRHI;
+
+	int32 ParticleCount;
+	FShaderResourceViewRHIRef VertexBufferSRV;
+
+};
+
 struct GridAccessHooksNvFlow
 {
-	virtual uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const FBox& Bounds, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList) = 0;
+	virtual uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList) = 0;
 };
 
 extern ENGINE_API struct GridAccessHooksNvFlow* GGridAccessNvFlowHooks;

@@ -70,6 +70,7 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 	FlowGridProperties.bActive = false;
 	FlowGridProperties.bMultiAdapterEnabled = false;
 	FlowGridProperties.bEnableParticlesInteraction = false;
+	FlowGridProperties.bEnableParticleMode = false;
 	FlowGridProperties.SubstepSize = 0.0f;
 	FlowGridProperties.VirtualGridExtents = FVector(0.f);
 
@@ -673,6 +674,9 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		bool OldEnableParticlesInteraction = FlowGridProperties.bEnableParticlesInteraction;
 		bool NewEnableParticlesInteraction = FlowGridAssetRef->bEnableParticlesInteraction;
 
+		bool OldEnableParticleMode = FlowGridProperties.bEnableParticleMode;
+		bool NewEnableParticleMode = FlowGridAssetRef->bEnableParticleMode;
+
 		// grab default desc
 		NvFlowGridDesc defaultGridDesc = {};
 		NvFlowGridDescDefaults(&defaultGridDesc);
@@ -683,6 +687,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		newGridDesc.virtualDim = { uint32(NewVirtualDim.X), uint32(NewVirtualDim.Y), uint32(NewVirtualDim.Z) };
 		newGridDesc.residentScale = defaultGridDesc.residentScale * FlowGridAssetRef->MemoryLimitScale;
 
+		newGridDesc.densityMultiRes = NewEnableParticleMode ? eNvFlowMultiRes1x1x1 : eNvFlowMultiRes2x2x2;
+
 		if (FlowGridProperties.bActive && 
 			(newGridDesc.halfSize.x != FlowGridProperties.GridDesc.halfSize.x ||
 			 newGridDesc.halfSize.y != FlowGridProperties.GridDesc.halfSize.y ||
@@ -691,8 +697,10 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			 newGridDesc.virtualDim.y != FlowGridProperties.GridDesc.virtualDim.y ||
 			 newGridDesc.virtualDim.z != FlowGridProperties.GridDesc.virtualDim.z ||
 			 newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
+			 newGridDesc.densityMultiRes != FlowGridProperties.GridDesc.densityMultiRes ||
 			 NewMultiAdapterEnabled != OldMultiAdapterEnabled ||
-			 NewEnableParticlesInteraction != OldEnableParticlesInteraction))
+			 NewEnableParticlesInteraction != OldEnableParticlesInteraction ||
+			 NewEnableParticleMode != OldEnableParticleMode))
 		{
 			// rebuild required
 			FlowGridProperties.bActive = false;
@@ -704,6 +712,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		FlowGridProperties.GridDesc = newGridDesc;
 		FlowGridProperties.bMultiAdapterEnabled = NewMultiAdapterEnabled;
 		FlowGridProperties.bEnableParticlesInteraction = NewEnableParticlesInteraction;
+		FlowGridProperties.bEnableParticleMode = NewEnableParticleMode;
 
 		//Properties that can be changed without rebuilding grid
 		FlowGridProperties.VirtualGridExtents = FVector(FlowGridAssetRef->GetVirtualGridExtent());

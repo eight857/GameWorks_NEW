@@ -47,6 +47,8 @@ struct FFlowGridProperties
 
 	uint32 bEnableParticlesInteraction : 1;
 
+	uint32 bEnableParticleMode : 1;
+
 	// target simulation time step
 	float SubstepSize;
 

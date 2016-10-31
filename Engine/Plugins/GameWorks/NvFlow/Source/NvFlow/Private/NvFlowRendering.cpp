@@ -15,6 +15,7 @@ NFlowRendering.cpp: Translucent rendering implementation.
 #include "SceneUtils.h"
 
 #include "Stats.h"
+#include "GridAccessHooksNvFlow.h"
 
 #if NVFLOW_ADAPTIVE
 // For HMD support
@@ -80,6 +81,25 @@ namespace NvFlow
 
 		bool getExportParams(FRHICommandListImmediate& RHICmdList, GridExportParamsNvFlow& OutParams);
 
+
+		struct EmitCustomAllocData
+		{
+			NvFlow::Scene* Scene;
+			FRHICommandListImmediate& RHICmdList;
+
+			EmitCustomAllocData(NvFlow::Scene* InScene, FRHICommandListImmediate& InRHICmdList)
+				: Scene(InScene), RHICmdList(InRHICmdList)
+			{
+			}
+		};
+
+		static void sEmitCustomAllocCallback(void* userdata, const NvFlowGridEmitCustomAllocParams* params)
+		{
+			EmitCustomAllocData* allocData = (EmitCustomAllocData*)userdata;
+			allocData->Scene->emitCustomAllocCallback(allocData->RHICmdList, params);
+		}
+		void emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList, const NvFlowGridEmitCustomAllocParams* params);
+
 		bool m_multiAdapter = false;
 		float m_timeSuccess = 0.f;
 		float m_timeTotal = 0.f;
@@ -105,6 +125,8 @@ namespace NvFlow
 		FFlowGridSceneProxy* FlowGridSceneProxy = nullptr;
 
 		NvFlowGridExport* m_gridExport = nullptr;
+		TArray<ParticleSimulationParamsNvFlow> m_particleParamsArray;
+		FMatrix m_worldToVolume;
 	};
 
 	void cleanupContext(void* ptr);
@@ -270,6 +292,9 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 
 	scene->updateParameters(RHICmdList);
 
+	NvFlow::Scene::EmitCustomAllocData userData(scene, RHICmdList);
+	NvFlowGridEmitCustomRegisterAllocFunc(scene->m_grid, &NvFlow::Scene::sEmitCustomAllocCallback, &userData);
+
 	// process simulation events
 	if (FlowGridSceneProxy->FlowGridProperties.SubstepSize > 0.0f)
 	{
@@ -279,6 +304,8 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 		}
 	}
 	FlowGridSceneProxy->NumScheduledSubsteps = 0;
+
+	NvFlowGridEmitCustomRegisterAllocFunc(scene->m_grid, nullptr, nullptr);
 }
 
 // ------------------ NvFlow::Scene -----------------
@@ -615,6 +642,20 @@ namespace
 		return FShaderResourceViewRHIRef();
 	}
 
+	FUnorderedAccessViewRHIRef NvFlowConvertUAV(IRHICommandContext& RHICmdCtx, NvFlowContext* Context, NvFlowResourceRW* ResourceRW)
+	{
+		if (ResourceRW)
+		{
+			NvFlowResourceRWViewDesc ViewDesc;
+			NvFlowUpdateResourceRWViewDesc(Context, ResourceRW, &ViewDesc);
+
+			FRHINvFlowResourceRWViewDesc RHIViewDesc;
+			RHIViewDesc.uav = ViewDesc.uav;
+			return RHICmdCtx.NvFlowCreateUAV(&RHIViewDesc);
+		}
+		return FUnorderedAccessViewRHIRef();
+	}
+
 	inline FIntVector NvFlowConvert(const NvFlowUint4& in)
 	{
 		return FIntVector(in.x, in.y, in.z);
@@ -674,7 +715,167 @@ bool NvFlow::Scene::getExportParams(FRHICommandListImmediate& RHICmdList, GridEx
 	FMatrix VolumeToWorld = VolumeToLocal * LocalToWorld;
 	OutParams.WorldToVolume = VolumeToWorld.Inverse();
 	OutParams.VelocityScale = scale;
+
+	m_worldToVolume = OutParams.WorldToVolume;
 	return true;
+}
+
+
+#define MASK_FROM_PARTICLES_THREAD_COUNT 64
+
+BEGIN_UNIFORM_BUFFER_STRUCT(FNvFlowMaskFromParticlesParameters, )
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(uint32, TextureSizeX)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(uint32, TextureSizeY)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(uint32, ParticleCount)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, MaskDim)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FMatrix, WorldToVolume)
+END_UNIFORM_BUFFER_STRUCT(FNvFlowMaskFromParticlesParameters)
+
+IMPLEMENT_UNIFORM_BUFFER_STRUCT(FNvFlowMaskFromParticlesParameters, TEXT("NvFlowMaskFromParticles"));
+typedef TUniformBufferRef<FNvFlowMaskFromParticlesParameters> FNvFlowMaskFromParticlesUniformBufferRef;
+
+class FNvFlowMaskFromParticlesCS : public FGlobalShader
+{
+	DECLARE_SHADER_TYPE(FNvFlowMaskFromParticlesCS, Global);
+
+public:
+
+	static bool ShouldCache(EShaderPlatform Platform)
+	{
+		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+	}
+
+	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREAD_COUNT"), MASK_FROM_PARTICLES_THREAD_COUNT);
+	}
+
+	/** Default constructor. */
+	FNvFlowMaskFromParticlesCS()
+	{
+	}
+
+	/** Initialization constructor. */
+	explicit FNvFlowMaskFromParticlesCS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+		: FGlobalShader(Initializer)
+	{
+		InParticleIndices.Bind(Initializer.ParameterMap, TEXT("InParticleIndices"));
+		PositionTexture.Bind(Initializer.ParameterMap, TEXT("PositionTexture"));
+		PositionTextureSampler.Bind(Initializer.ParameterMap, TEXT("PositionTextureSampler"));
+		OutMask.Bind(Initializer.ParameterMap, TEXT("OutMask"));
+	}
+
+	/** Serialization. */
+	virtual bool Serialize(FArchive& Ar) override
+	{
+		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
+		Ar << InParticleIndices;
+		Ar << PositionTexture;
+		Ar << PositionTextureSampler;
+		Ar << OutMask;
+		return bShaderHasOutdatedParameters;
+	}
+
+	/**
+	* Set output buffers for this shader.
+	*/
+	void SetOutput(FRHICommandList& RHICmdList, FUnorderedAccessViewRHIParamRef OutMaskUAV)
+	{
+		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
+		if (OutMask.IsBound())
+		{
+			RHICmdList.SetUAVParameter(ComputeShaderRHI, OutMask.GetBaseIndex(), OutMaskUAV);
+		}
+	}
+
+	/**
+	* Set input parameters.
+	*/
+	void SetParameters(
+		FRHICommandList& RHICmdList,
+		FNvFlowMaskFromParticlesUniformBufferRef& UniformBuffer,
+		FShaderResourceViewRHIParamRef InIndicesSRV,
+		FTexture2DRHIParamRef PositionTextureRHI
+	)
+	{
+		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
+		SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowMaskFromParticlesParameters>(), UniformBuffer);
+		if (InParticleIndices.IsBound())
+		{
+			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), InIndicesSRV);
+		}
+		if (PositionTexture.IsBound())
+		{
+			RHICmdList.SetShaderTexture(ComputeShaderRHI, PositionTexture.GetBaseIndex(), PositionTextureRHI);
+		}
+	}
+
+	/**
+	* Unbinds any buffers that have been bound.
+	*/
+	void UnbindBuffers(FRHICommandList& RHICmdList)
+	{
+		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
+		if (InParticleIndices.IsBound())
+		{
+			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), FShaderResourceViewRHIParamRef());
+		}
+		if (OutMask.IsBound())
+		{
+			RHICmdList.SetUAVParameter(ComputeShaderRHI, OutMask.GetBaseIndex(), FUnorderedAccessViewRHIParamRef());
+		}
+	}
+
+private:
+
+	/** Input buffer containing particle indices. */
+	FShaderResourceParameter InParticleIndices;
+	/** Texture containing particle positions. */
+	FShaderResourceParameter PositionTexture;
+	FShaderResourceParameter PositionTextureSampler;
+	/** Output key buffer. */
+	FShaderResourceParameter OutMask;
+};
+IMPLEMENT_SHADER_TYPE(, FNvFlowMaskFromParticlesCS, TEXT("NvFlowAllocShader"), TEXT("ComputeMaskFromParticles"), SF_Compute);
+
+
+void NvFlow::Scene::emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList, const NvFlowGridEmitCustomAllocParams* params)
+{
+	if (m_particleParamsArray.Num() > 0)
+	{
+		NvFlowContextPop(m_context->m_context);
+
+		TShaderMapRef<FNvFlowMaskFromParticlesCS> MaskFromParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		RHICmdList.SetComputeShader(MaskFromParticlesCS->GetComputeShader());
+
+		for (int32 i = 0; i < m_particleParamsArray.Num(); ++i)
+		{
+			const ParticleSimulationParamsNvFlow& ParticleParams = m_particleParamsArray[i];
+			if (ParticleParams.ParticleCount > 0)
+			{
+				FNvFlowMaskFromParticlesParameters MaskFromParticlesParameters;
+				MaskFromParticlesParameters.ParticleCount = ParticleParams.ParticleCount;
+				MaskFromParticlesParameters.TextureSizeX = ParticleParams.TextureSizeX;
+				MaskFromParticlesParameters.TextureSizeY = ParticleParams.TextureSizeY;
+				MaskFromParticlesParameters.MaskDim = FIntVector(params->maskDim.x, params->maskDim.y, params->maskDim.z);
+				MaskFromParticlesParameters.WorldToVolume = m_worldToVolume;
+				FNvFlowMaskFromParticlesUniformBufferRef UniformBuffer = FNvFlowMaskFromParticlesUniformBufferRef::CreateUniformBufferImmediate(MaskFromParticlesParameters, UniformBuffer_SingleFrame);
+
+				uint32 GroupCount = (ParticleParams.ParticleCount + MASK_FROM_PARTICLES_THREAD_COUNT - 1) / MASK_FROM_PARTICLES_THREAD_COUNT;
+
+				FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->maskResourceRW);
+				MaskFromParticlesCS->SetOutput(RHICmdList, MaskUAV);
+				MaskFromParticlesCS->SetParameters(RHICmdList, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI);
+				DispatchComputeShader(RHICmdList, *MaskFromParticlesCS, GroupCount, 1, 1);
+				MaskFromParticlesCS->UnbindBuffers(RHICmdList);
+			}
+		}
+
+		m_particleParamsArray.Reset();
+
+		NvFlowContextPush(m_context->m_context);
+	}
 }
 
 // ---------------- global interface functions ---------------------
@@ -733,6 +934,13 @@ bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 	{
 		if (PrimitiveSceneInfo->Proxy->FlowData.bFlowGrid)
 		{
+			FFlowGridSceneProxy* FlowGridSceneProxy = (FFlowGridSceneProxy*)PrimitiveSceneInfo->Proxy;
+			if (FlowGridSceneProxy->FlowGridProperties.bEnableParticleMode != 0 && 
+				FlowGridSceneProxy->FlowGridProperties.RenderParams.bDebugWireframe == 0)
+			{
+				return false;
+			}
+
 			SCOPE_CYCLE_COUNTER(STAT_Flow_RenderGrids);
 			SCOPED_DRAW_EVENT(RHICmdList, FlowRenderGrids);
 
@@ -741,7 +949,6 @@ bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 				NvFlow::gContext->interopBegin(RHICmdList, false);
 			}
 
-			FFlowGridSceneProxy* FlowGridSceneProxy = (FFlowGridSceneProxy*)PrimitiveSceneInfo->Proxy;
 			NvFlow::gContext->renderScene(RHICmdList, View, FlowGridSceneProxy);
 			return true;
 		}
@@ -765,7 +972,7 @@ void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo&
 	}
 }
 
-uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const FBox& Bounds, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList)
+uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList)
 {
 	if (NvFlow::gContext)
 	{
@@ -776,10 +983,11 @@ uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const F
 			FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
 			if (FlowGridSceneProxy &&
 				FlowGridSceneProxy->FlowGridProperties.bEnableParticlesInteraction &&
-				Bounds.Intersect(FlowGridSceneProxy->GetBounds().GetBox()))
+				ParticleSimulationParams.Bounds.Intersect(FlowGridSceneProxy->GetBounds().GetBox()))
 			{
 				if (Scene->getExportParams(RHICmdList, ResultParamsList[Count]))
 				{
+					Scene->m_particleParamsArray.Push(ParticleSimulationParams);
 					++Count;
 				}
 			}
