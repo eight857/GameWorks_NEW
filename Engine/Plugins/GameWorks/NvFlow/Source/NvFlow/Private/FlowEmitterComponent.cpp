@@ -42,6 +42,8 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 	BlendInPhysicalVelocity = 1.0f;
 	NumSubsteps = 1;
 
+	bAllocShapeOnly = 0u;
+
 	bHasPreviousTransform = false;
 }
 
