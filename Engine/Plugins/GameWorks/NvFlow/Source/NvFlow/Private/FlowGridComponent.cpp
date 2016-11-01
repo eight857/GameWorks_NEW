@@ -192,9 +192,9 @@ void UFlowGridComponent::UpdateShapes()
 	Overlaps.Reset();
 	GetWorld()->OverlapMultiByChannel(Overlaps, Center, FQuat::Identity, FlowGridAssetRef->ObjectType, Shape, FCollisionQueryParams(NAME_None, false), FCollisionResponseParams(FlowGridAssetRef->ResponseToChannels));
 
-	for (int32 i = 0; i < Overlaps.Num(); ++i)
+	for (int32 OverlapIdx = 0; OverlapIdx < Overlaps.Num(); ++OverlapIdx)
 	{
-		const FOverlapResult& hit = Overlaps[i];
+		const FOverlapResult& hit = Overlaps[OverlapIdx];
 
 		const UPrimitiveComponent* PrimComp = hit.Component.Get();
 		if (!PrimComp)
@@ -203,8 +203,8 @@ void UFlowGridComponent::UpdateShapes()
 		ECollisionResponse Response = PrimComp->GetCollisionResponseToChannel(FlowGridAssetRef->ObjectType);
 
 		// try to grab any attached component
-		auto owner = PrimComp->GetOwner();
-		auto rootComponent = owner ? owner->GetRootComponent() : nullptr;
+		auto PrimCompOwner = PrimComp->GetOwner();
+		auto rootComponent = PrimCompOwner ? PrimCompOwner->GetRootComponent() : nullptr;
 		if (rootComponent)
 		{
 			auto& children = rootComponent->GetAttachChildren();
@@ -375,9 +375,9 @@ void UFlowGridComponent::UpdateShapes()
 						UnitToActualScale = FVector(CapsuleGeometry.radius * (1.f / NvFlow::sdfRadius) * NvFlow::scaleInv);
 
 						// extends bounds on x axis
-						FVector BoundsScale = BoundsTransform.GetScale3D();
-						BoundsScale.X = (0.5f * ShapeDescsPtr[0].capsule.length + 1.f);
-						BoundsTransform.SetScale3D(BoundsScale);
+						FVector CapsuleBoundsScale = BoundsTransform.GetScale3D();
+						CapsuleBoundsScale.X = (0.5f * ShapeDescsPtr[0].capsule.length + 1.f);
+						BoundsTransform.SetScale3D(CapsuleBoundsScale);
 					}
 					else if (PxGeometryType == PxGeometryType::eCONVEXMESH)
 					{
@@ -532,19 +532,19 @@ void UFlowGridComponent::UpdateShapes()
 						emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
 
 						// establish bounds and localToWorld
-						FTransform Bounds = BlendedTransform;
-						FTransform LocalToWorld = BlendedTransform;
-						Bounds = BoundsTransform * Bounds;
-						LocalToWorld.SetScale3D(LocalToWorld.GetScale3D() * LocalToWorldScale);
+						FTransform BlendedBounds = BlendedTransform;
+						FTransform BlendedLocalToWorld = BlendedTransform;
+						BlendedBounds = BoundsTransform * BlendedBounds;
+						BlendedLocalToWorld.SetScale3D(BlendedLocalToWorld.GetScale3D() * LocalToWorldScale);
 
 						// scale bounds as a function of emitter inflate
 						{
 							const float k = (EmitterInflate + 1.f);
-							Bounds.SetScale3D(Bounds.GetScale3D() * k);
+							BlendedBounds.SetScale3D(BlendedBounds.GetScale3D() * k);
 						}
 
-						emitParams.bounds = *(NvFlowFloat4x4*)(&Bounds.ToMatrixWithScale().M[0][0]);
-						emitParams.localToWorld = *(NvFlowFloat4x4*)(&LocalToWorld.ToMatrixWithScale().M[0][0]);
+						emitParams.bounds = *(NvFlowFloat4x4*)(&BlendedBounds.ToMatrixWithScale().M[0][0]);
+						emitParams.localToWorld = *(NvFlowFloat4x4*)(&BlendedLocalToWorld.ToMatrixWithScale().M[0][0]);
 
 						// set timestep based on subtepping mode
 						emitParams.deltaTime = isStationary ? FlowGridProperties.SubstepSize : emitterSubstepDt;
@@ -637,13 +637,13 @@ void UFlowGridComponent::UpdateShapes()
 					emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
 
 					// establish bounds and localToWorld
-					FTransform Bounds = ScaledTransform;
-					FTransform LocalToWorld = ScaledTransform;
-					Bounds = BoundsTransform * Bounds;
-					LocalToWorld.SetScale3D(LocalToWorld.GetScale3D() * LocalToWorldScale);
+					FTransform BlendedBounds = ScaledTransform;
+					FTransform BlendedLocalToWorld = ScaledTransform;
+					BlendedBounds = BoundsTransform * BlendedBounds;
+					BlendedLocalToWorld.SetScale3D(BlendedLocalToWorld.GetScale3D() * LocalToWorldScale);
 
-					emitParams.bounds = *(NvFlowFloat4x4*)(&Bounds.ToMatrixWithScale().M[0][0]);
-					emitParams.localToWorld = *(NvFlowFloat4x4*)(&LocalToWorld.ToMatrixWithScale().M[0][0]);
+					emitParams.bounds = *(NvFlowFloat4x4*)(&BlendedBounds.ToMatrixWithScale().M[0][0]);
+					emitParams.localToWorld = *(NvFlowFloat4x4*)(&BlendedLocalToWorld.ToMatrixWithScale().M[0][0]);
 
 					// step size
 					emitParams.deltaTime = FlowGridProperties.SubstepSize;
@@ -891,7 +891,7 @@ FFlowGridSceneProxy::~FFlowGridSceneProxy()
 
 void FFlowGridSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const
 {
-	const FMatrix& LocalToWorld = GetLocalToWorld();
+	const FMatrix& ProxyLocalToWorld = GetLocalToWorld();
 
 	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
 	{
@@ -904,7 +904,7 @@ void FFlowGridSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>
 			if (FlowGridProperties.RenderParams.bDebugWireframe)
 			{
 				const FLinearColor DrawColor = FLinearColor(1.0f, 1.0f, 1.0f);
-				FBox Box(LocalToWorld.GetOrigin() - FlowGridProperties.VirtualGridExtents, LocalToWorld.GetOrigin() + FlowGridProperties.VirtualGridExtents);
+				FBox Box(ProxyLocalToWorld.GetOrigin() - FlowGridProperties.VirtualGridExtents, ProxyLocalToWorld.GetOrigin() + FlowGridProperties.VirtualGridExtents);
 				DrawWireBox(PDI, Box, DrawColor, SDPG_World, 2.0f);
 			}
 		}
