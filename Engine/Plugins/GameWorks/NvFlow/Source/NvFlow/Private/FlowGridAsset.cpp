@@ -62,6 +62,8 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	VelocityMacCormackBlendFactor = FlowGridParams.velocityMacCormackBlendFactor;
 	DensityMacCormackBlendFactor = FlowGridParams.densityMacCormackBlendFactor;
 	VorticityStrength = FlowGridParams.vorticityStrength;
+	VorticityVelocityMask = FlowGridParams.vorticityVelocityMask;
+	bPressureLegacyMode = FlowGridParams.pressureLegacyMode;
 	IgnitionTemperature = FlowGridParams.combustion.ignitionTemp;
 	CoolingRate = FlowGridParams.combustion.coolingRate;
 
