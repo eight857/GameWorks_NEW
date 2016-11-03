@@ -8,19 +8,23 @@ DEFINE_LOG_CATEGORY(LogNvFlowEditor);
 
 inline void FlowRegister()
 {
-	if (GUnrealEd != nullptr)
+	// No need for visualizers when cooking (this was the only way to detect the cooking cases, AFAICT)
+	if (!IsRunningCommandlet())
 	{
-		TSharedPtr<FComponentVisualizer> Visualizer = MakeShareable(new FFlowGridComponentVisualizer);
-
-		if (Visualizer.IsValid())
+		if (GUnrealEd != nullptr)
 		{
-			GUnrealEd->RegisterComponentVisualizer(UFlowGridComponent::StaticClass()->GetFName(), Visualizer);
-			Visualizer->OnRegister();
+			TSharedPtr<FComponentVisualizer> Visualizer = MakeShareable(new FFlowGridComponentVisualizer);
+
+			if (Visualizer.IsValid())
+			{
+				GUnrealEd->RegisterComponentVisualizer(UFlowGridComponent::StaticClass()->GetFName(), Visualizer);
+				Visualizer->OnRegister();
+			}
 		}
-	}
-	else
-	{
-		AsyncTask(ENamedThreads::GameThread, [=]() { FlowRegister(); });
+		else
+		{
+			AsyncTask(ENamedThreads::GameThread, [=]() { FlowRegister(); });
+		}
 	}
 }
 
