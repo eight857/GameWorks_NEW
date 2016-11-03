@@ -59,6 +59,7 @@ class UFlowGridComponent : public UPrimitiveComponent
 
 	class UFlowGridAsset* FlowGridAssetOverride;
 	class UFlowGridAsset** FlowGridAssetCurrent;
+	class UFlowGridAsset* FlowGridAssetOld;
 
 	/** If true, Flow Grid will collide with emitter/colliders. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Grid)
