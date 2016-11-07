@@ -3,6 +3,7 @@
 
 // NvFlow begin
 
+#include "GridInteractionNvFlow.h"
 #include "FlowGridAsset.generated.h"
 
 UENUM()
@@ -41,6 +42,14 @@ class UFlowGridAsset : public UObject
 	/** If true, grid affects GPU particles*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	uint32		bEnableParticlesInteraction : 1;
+
+	/** Enum indicating what interaction channel this object has */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
+
+	/** Custom Channels for Responses */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
 
 	/** If true, higher res density and volume rendering are disabled */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)

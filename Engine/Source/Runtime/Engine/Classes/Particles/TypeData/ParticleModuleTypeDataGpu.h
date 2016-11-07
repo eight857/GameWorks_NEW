@@ -10,6 +10,9 @@
 #include "Particles/TypeData/ParticleModuleTypeDataBase.h"
 #include "Particles/ParticleSpriteEmitter.h"
 #include "Particles/Orientation/ParticleModuleOrientationAxisLock.h"
+// NvFlow begin
+#include "GridInteractionNvFlow.h"
+// NvFlow end
 #include "ParticleModuleTypeDataGpu.generated.h"
 
 /**
@@ -193,9 +196,17 @@ struct FGPUSpriteEmitterInfo
 	FRawDistributionFloat DynamicAlphaScale;
 
 	// NvFlow begin
-	/** When true, particles are affected by NvFlow grid. */
+	/** When true, particles are interacting with NvFlow grid. */
 	UPROPERTY()
-	uint32 bEnableNvFlowGridInteraction : 1;
+	uint32 bEnableGridInteraction : 1;
+
+	/** Enum indicating what interaction channel this object has */
+	UPROPERTY()
+	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
+
+	/** Custom Channels for Responses */
+	UPROPERTY()
+	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
 	// NvFlow end
 
 	FGPUSpriteEmitterInfo()
@@ -216,7 +227,8 @@ struct FGPUSpriteEmitterInfo
 		, bEnableCollision(false)
 		, CollisionMode(EParticleCollisionMode::SceneDepth)
 		// NvFlow begin
-		, bEnableNvFlowGridInteraction(false)
+		, bEnableGridInteraction(false)
+		, InteractionChannel(EIC_Channel1)
 		// NvFlow end
 	{
 	}
@@ -428,9 +440,17 @@ class UParticleModuleTypeDataGpu : public UParticleModuleTypeDataBase
 	uint32 bClearExistingParticlesOnInit:1;
 
 	// NvFlow begin
-	/** When true, particles are affected by NvFlow grid. */
-	UPROPERTY(EditAnywhere, Category = ParticleModuleTypeDataGpu)
-	uint32 bEnableNvFlowGridInteraction : 1;
+	/** When true, particles are interacting with NvFlow grid. */
+	UPROPERTY(EditAnywhere, Category = NvFlow)
+	uint32 bEnableGridInteraction : 1;
+
+	/** Enum indicating what interaction channel this object has */
+	UPROPERTY(EditAnywhere, Category = NvFlow)
+	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
+
+	/** Custom Channels for Responses */
+	UPROPERTY(EditAnywhere, Category = NvFlow)
+	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
 	// NvFlow end
 
 	//~ Begin UObject Interface

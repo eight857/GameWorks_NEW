@@ -46,6 +46,8 @@ struct FFlowGridProperties
 	uint32 bMultiAdapterEnabled : 1;
 
 	uint32 bEnableParticlesInteraction : 1;
+	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
+	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
 
 	uint32 bEnableParticleMode : 1;
 

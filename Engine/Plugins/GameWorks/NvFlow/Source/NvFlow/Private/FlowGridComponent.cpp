@@ -677,9 +677,6 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		bool OldMultiAdapterEnabled = FlowGridProperties.bMultiAdapterEnabled;
 		bool NewMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
 
-		bool OldEnableParticlesInteraction = FlowGridProperties.bEnableParticlesInteraction;
-		bool NewEnableParticlesInteraction = FlowGridAssetRef->bEnableParticlesInteraction;
-
 		bool OldEnableParticleMode = FlowGridProperties.bEnableParticleMode;
 		bool NewEnableParticleMode = FlowGridAssetRef->bEnableParticleMode;
 
@@ -705,7 +702,6 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			 newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
 			 newGridDesc.densityMultiRes != FlowGridProperties.GridDesc.densityMultiRes ||
 			 NewMultiAdapterEnabled != OldMultiAdapterEnabled ||
-			 NewEnableParticlesInteraction != OldEnableParticlesInteraction ||
 			 NewEnableParticleMode != OldEnableParticleMode))
 		{
 			// rebuild required
@@ -717,7 +713,9 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		// Commit any changes
 		FlowGridProperties.GridDesc = newGridDesc;
 		FlowGridProperties.bMultiAdapterEnabled = NewMultiAdapterEnabled;
-		FlowGridProperties.bEnableParticlesInteraction = NewEnableParticlesInteraction;
+		FlowGridProperties.bEnableParticlesInteraction = FlowGridAssetRef->bEnableParticlesInteraction;
+		FlowGridProperties.InteractionChannel = FlowGridAssetRef->InteractionChannel;
+		FlowGridProperties.ResponseToInteractionChannels = FlowGridAssetRef->ResponseToInteractionChannels;
 		FlowGridProperties.bEnableParticleMode = NewEnableParticleMode;
 
 		//Properties that can be changed without rebuilding grid

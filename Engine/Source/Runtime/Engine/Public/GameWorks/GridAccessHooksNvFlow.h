@@ -2,6 +2,8 @@
 
 // NvFlow begin
 
+#include "GridInteractionNvFlow.h"
+
 enum { MAX_NVFLOW_GRIDS = 4 };
 
 struct GridExportParamsNvFlow
@@ -26,6 +28,9 @@ struct GridExportParamsNvFlow
 
 struct ParticleSimulationParamsNvFlow
 {
+	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
+	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
+
 	FBox Bounds;
 
 	int32 TextureSizeX;
@@ -35,7 +40,6 @@ struct ParticleSimulationParamsNvFlow
 
 	int32 ParticleCount;
 	FShaderResourceViewRHIRef VertexBufferSRV;
-
 };
 
 struct GridAccessHooksNvFlow

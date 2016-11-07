@@ -2591,7 +2591,9 @@ public:
 	bool bEnabled;
 
 	// NvFlow begin
-	bool bEnableNvFlowGridInteraction;
+	bool bEnableGridInteraction;
+	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
+	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
 	// NvFlow end
 
 	/** Default constructor. */
@@ -2607,7 +2609,8 @@ public:
 		, bDestroyed_GameThread(false)
 		, bEnabled(true)
 		// NvFlow begin
-		, bEnableNvFlowGridInteraction(false)
+		, bEnableGridInteraction(false)
+		, InteractionChannel(EIC_Channel1)
 		// NvFlow end
 	{
 	}
@@ -3182,7 +3185,9 @@ public:
 		Simulation->CollisionMode = InEmitterInfo.CollisionMode;
 
 		// NvFlow begin
-		Simulation->bEnableNvFlowGridInteraction = InEmitterInfo.bEnableNvFlowGridInteraction;
+		Simulation->bEnableGridInteraction = InEmitterInfo.bEnableGridInteraction;
+		Simulation->InteractionChannel = InEmitterInfo.InteractionChannel;
+		Simulation->ResponseToInteractionChannels = InEmitterInfo.ResponseToInteractionChannels;
 		// NvFlow end
 
 #if TRACK_TILE_ALLOCATIONS
@@ -4723,9 +4728,11 @@ void FFXSystem::SimulateGPUParticles(
 
 				FNvFlowGridUniformParameters NvFlowGridParameters;
 				NvFlowGridParameters.Count = 0;
-				if (GGridAccessNvFlowHooks && Simulation->bEnableNvFlowGridInteraction)
+				if (GGridAccessNvFlowHooks && Simulation->bEnableGridInteraction)
 				{
 					ParticleSimulationParamsNvFlow ParticleSimulationParams;
+					ParticleSimulationParams.InteractionChannel = Simulation->InteractionChannel;
+					ParticleSimulationParams.ResponseToInteractionChannels = Simulation->ResponseToInteractionChannels;
 					ParticleSimulationParams.Bounds = Simulation->Bounds;
 					ParticleSimulationParams.TextureSizeX = GParticleSimulationTextureSizeX;
 					ParticleSimulationParams.TextureSizeY = GParticleSimulationTextureSizeY;

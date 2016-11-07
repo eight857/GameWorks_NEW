@@ -93,6 +93,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	ResponseToChannels = Template.ResponseToChannels;
 
 	bEnableParticlesInteraction = false;
+	InteractionChannel = EIC_Channel1;
 	bEnableParticleMode = false;
 }
 
