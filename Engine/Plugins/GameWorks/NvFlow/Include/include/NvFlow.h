@@ -473,6 +473,9 @@ struct NvFlowGridEmitCustomEmitParams
 
 	NvFlowGridEmitCustomEmitShaderParams shaderParams;	//!< Parameters used in GPU side operations
 
+	NvFlowUint numBlocks;								//!< Number of active blocks
+	NvFlowUint maxBlocks;								//!< Maximum possible active blocks
+
 	NvFlowFloat3 gridLocation;							//!< Location of grid's axis aligned bounding box
 	NvFlowFloat3 gridHalfSize;							//!< Half size of grid's axis aligned bounding box
 };
