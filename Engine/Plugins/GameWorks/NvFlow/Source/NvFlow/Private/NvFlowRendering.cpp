@@ -876,24 +876,24 @@ void NvFlow::Scene::emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList
 		TShaderMapRef<FNvFlowMaskFromParticlesCS> MaskFromParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		RHICmdList.SetComputeShader(MaskFromParticlesCS->GetComputeShader());
 
-		FMatrix WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
+		FNvFlowMaskFromParticlesParameters MaskFromParticlesParameters;
+		MaskFromParticlesParameters.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);;
+		MaskFromParticlesParameters.MaskDim = FIntVector(params->maskDim.x, params->maskDim.y, params->maskDim.z);
+
+		FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->maskResourceRW);
 
 		for (int32 i = 0; i < m_particleParamsArray.Num(); ++i)
 		{
 			const ParticleSimulationParamsNvFlow& ParticleParams = m_particleParamsArray[i];
 			if (ParticleParams.ParticleCount > 0)
 			{
-				FNvFlowMaskFromParticlesParameters MaskFromParticlesParameters;
 				MaskFromParticlesParameters.ParticleCount = ParticleParams.ParticleCount;
 				MaskFromParticlesParameters.TextureSizeX = ParticleParams.TextureSizeX;
 				MaskFromParticlesParameters.TextureSizeY = ParticleParams.TextureSizeY;
-				MaskFromParticlesParameters.MaskDim = FIntVector(params->maskDim.x, params->maskDim.y, params->maskDim.z);
-				MaskFromParticlesParameters.WorldToVolume = WorldToVolume;
 				FNvFlowMaskFromParticlesUniformBufferRef UniformBuffer = FNvFlowMaskFromParticlesUniformBufferRef::CreateUniformBufferImmediate(MaskFromParticlesParameters, UniformBuffer_SingleFrame);
 
 				uint32 GroupCount = (ParticleParams.ParticleCount + MASK_FROM_PARTICLES_THREAD_COUNT - 1) / MASK_FROM_PARTICLES_THREAD_COUNT;
 
-				FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->maskResourceRW);
 				MaskFromParticlesCS->SetOutput(RHICmdList, MaskUAV);
 				MaskFromParticlesCS->SetParameters(RHICmdList, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI);
 				DispatchComputeShader(RHICmdList, *MaskFromParticlesCS, GroupCount, 1, 1);
@@ -911,7 +911,7 @@ void NvFlow::Scene::emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList
 #define COPY_THREAD_COUNT_Z 4
 
 BEGIN_UNIFORM_BUFFER_STRUCT(FNvFlowCopyGridDataParameters, )
-DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, GridDim)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, ThreadDim)
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, BlockDim)
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, BlockDimBits)
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(int32, IsVTR)
@@ -948,6 +948,7 @@ public:
 	explicit FNvFlowCopyGridDataCS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
 		: FGlobalShader(Initializer)
 	{
+		BlockList.Bind(Initializer.ParameterMap, TEXT("BlockList"));
 		BlockTable.Bind(Initializer.ParameterMap, TEXT("BlockTable"));
 		DataIn.Bind(Initializer.ParameterMap, TEXT("DataIn"));
 		DataOut.Bind(Initializer.ParameterMap, TEXT("DataOut"));
@@ -957,6 +958,7 @@ public:
 	virtual bool Serialize(FArchive& Ar) override
 	{
 		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
+		Ar << BlockList;
 		Ar << BlockTable;
 		Ar << DataIn;
 		Ar << DataOut;
@@ -981,12 +983,17 @@ public:
 	void SetParameters(
 		FRHICommandList& RHICmdList,
 		FNvFlowCopyGridDataUniformBufferRef& UniformBuffer,
+		FShaderResourceViewRHIParamRef BlockListSRV,
 		FShaderResourceViewRHIParamRef BlockTableSRV,
 		FShaderResourceViewRHIParamRef DataInSRV
 	)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
 		SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowCopyGridDataParameters>(), UniformBuffer);
+		if (BlockList.IsBound())
+		{
+			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, BlockList.GetBaseIndex(), BlockListSRV);
+		}
 		if (BlockTable.IsBound())
 		{
 			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, BlockTable.GetBaseIndex(), BlockTableSRV);
@@ -1010,70 +1017,236 @@ public:
 	}
 
 private:
+	FShaderResourceParameter BlockList;
 	FShaderResourceParameter BlockTable;
 	FShaderResourceParameter DataIn;
 	FShaderResourceParameter DataOut;
 };
 IMPLEMENT_SHADER_TYPE(, FNvFlowCopyGridDataCS, TEXT("NvFlowCopyShader"), TEXT("CopyGridData"), SF_Compute);
 
+
+#define COUPLE_PARTICLES_THREAD_COUNT 64
+
+BEGIN_UNIFORM_BUFFER_STRUCT(FNvFlowCoupleParticlesParameters, )
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(uint32, TextureSizeX)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(uint32, TextureSizeY)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(uint32, ParticleCount)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FMatrix, WorldToVolume)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, VDim)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, BlockDim)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, BlockDimBits)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(int32, IsVTR)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, AccelRate)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, DecelRate)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, Threshold)
+END_UNIFORM_BUFFER_STRUCT(FNvFlowCoupleParticlesParameters)
+
+IMPLEMENT_UNIFORM_BUFFER_STRUCT(FNvFlowCoupleParticlesParameters, TEXT("NvFlowCoupleParticles"));
+typedef TUniformBufferRef<FNvFlowCoupleParticlesParameters> FNvFlowCoupleParticlesUniformBufferRef;
+
+class FNvFlowCoupleParticlesCS : public FGlobalShader
+{
+	DECLARE_SHADER_TYPE(FNvFlowCoupleParticlesCS, Global);
+
+public:
+
+	static bool ShouldCache(EShaderPlatform Platform)
+	{
+		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+	}
+
+	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREAD_COUNT"), COUPLE_PARTICLES_THREAD_COUNT);
+	}
+
+	/** Default constructor. */
+	FNvFlowCoupleParticlesCS()
+	{
+	}
+
+	/** Initialization constructor. */
+	explicit FNvFlowCoupleParticlesCS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+		: FGlobalShader(Initializer)
+	{
+		InParticleIndices.Bind(Initializer.ParameterMap, TEXT("InParticleIndices"));
+		PositionTexture.Bind(Initializer.ParameterMap, TEXT("PositionTexture"));
+		VelocityTexture.Bind(Initializer.ParameterMap, TEXT("VelocityTexture"));
+		BlockTable.Bind(Initializer.ParameterMap, TEXT("BlockTable"));
+		DataIn.Bind(Initializer.ParameterMap, TEXT("DataIn"));
+		DataOut.Bind(Initializer.ParameterMap, TEXT("DataOut"));
+	}
+
+	/** Serialization. */
+	virtual bool Serialize(FArchive& Ar) override
+	{
+		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
+		Ar << InParticleIndices;
+		Ar << PositionTexture;
+		Ar << VelocityTexture;
+		Ar << BlockTable;
+		Ar << DataIn;
+		Ar << DataOut;
+		return bShaderHasOutdatedParameters;
+	}
+
+	/**
+	* Set output buffers for this shader.
+	*/
+	void SetOutput(FRHICommandList& RHICmdList, FUnorderedAccessViewRHIParamRef DataOutUAV)
+	{
+		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
+		if (DataOut.IsBound())
+		{
+			RHICmdList.SetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), DataOutUAV);
+		}
+	}
+
+	/**
+	* Set input parameters.
+	*/
+	void SetParameters(
+		FRHICommandList& RHICmdList,
+		FNvFlowCoupleParticlesUniformBufferRef& UniformBuffer,
+		FShaderResourceViewRHIParamRef InIndicesSRV,
+		FTexture2DRHIParamRef PositionTextureRHI,
+		FTexture2DRHIParamRef VelocityTextureRHI,
+		FShaderResourceViewRHIParamRef BlockTableSRV,
+		FShaderResourceViewRHIParamRef DataInSRV)
+	{
+		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
+		SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowCoupleParticlesParameters>(), UniformBuffer);
+		if (InParticleIndices.IsBound())
+		{
+			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), InIndicesSRV);
+		}
+		if (PositionTexture.IsBound())
+		{
+			RHICmdList.SetShaderTexture(ComputeShaderRHI, PositionTexture.GetBaseIndex(), PositionTextureRHI);
+		}
+		if (VelocityTexture.IsBound())
+		{
+			RHICmdList.SetShaderTexture(ComputeShaderRHI, VelocityTexture.GetBaseIndex(), VelocityTextureRHI);
+		}
+		if (BlockTable.IsBound())
+		{
+			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, BlockTable.GetBaseIndex(), BlockTableSRV);
+		}
+		if (DataIn.IsBound())
+		{
+			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, DataIn.GetBaseIndex(), DataInSRV);
+		}
+	}
+
+	/**
+	* Unbinds any buffers that have been bound.
+	*/
+	void UnbindBuffers(FRHICommandList& RHICmdList)
+	{
+		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
+		if (InParticleIndices.IsBound())
+		{
+			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), FShaderResourceViewRHIParamRef());
+		}
+		if (DataOut.IsBound())
+		{
+			RHICmdList.SetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), FUnorderedAccessViewRHIParamRef());
+		}
+	}
+
+private:
+
+	/** Input buffer containing particle indices. */
+	FShaderResourceParameter InParticleIndices;
+	/** Texture containing particle positions. */
+	FShaderResourceParameter PositionTexture;
+	FShaderResourceParameter VelocityTexture;
+
+	FShaderResourceParameter BlockTable;
+	FShaderResourceParameter DataIn;
+	FShaderResourceParameter DataOut;
+};
+IMPLEMENT_SHADER_TYPE(, FNvFlowCoupleParticlesCS, TEXT("NvFlowCoupleShader"), TEXT("CoupleParticlesToGrid"), SF_Compute);
+
 void NvFlow::Scene::emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params)
 {
-	return;
-	if (m_particleParamsArray.Num() > 0)
+	float DeltaTime = 1.0f / 50; //TODO: get real value
+
+	if (m_particleParamsArray.Num() > 0 && params->numBlocks > 0)
 	{
 		NvFlowContextPop(m_context->m_context);
+		{
+			TShaderMapRef<FNvFlowCopyGridDataCS> CopyGridDataCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			RHICmdList.SetComputeShader(CopyGridDataCS->GetComputeShader());
 
-		TShaderMapRef<FNvFlowCopyGridDataCS> CopyGridDataCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		RHICmdList.SetComputeShader(CopyGridDataCS->GetComputeShader());
+			FNvFlowCopyGridDataParameters CopyGridDataParameters;
+			CopyGridDataParameters.BlockDim = NvFlowConvert(params->shaderParams.blockDim);
+			CopyGridDataParameters.BlockDimBits = NvFlowConvert(params->shaderParams.blockDimBits);
+			CopyGridDataParameters.IsVTR = params->shaderParams.isVTR.x;
+			CopyGridDataParameters.ThreadDim = CopyGridDataParameters.BlockDim;
+			CopyGridDataParameters.ThreadDim.X *= params->numBlocks;
+			FNvFlowCopyGridDataUniformBufferRef UniformBuffer = FNvFlowCopyGridDataUniformBufferRef::CreateUniformBufferImmediate(CopyGridDataParameters, UniformBuffer_SingleFrame);
 
-		FNvFlowCopyGridDataParameters CopyGridDataParameters;
-		CopyGridDataParameters.GridDim = NvFlowConvert(params->shaderParams.gridDim);
-		CopyGridDataParameters.BlockDim = NvFlowConvert(params->shaderParams.blockDim);
-		CopyGridDataParameters.BlockDimBits = NvFlowConvert(params->shaderParams.blockDimBits);
-		CopyGridDataParameters.IsVTR = params->shaderParams.isVTR.x;
-		FNvFlowCopyGridDataUniformBufferRef UniformBuffer = FNvFlowCopyGridDataUniformBufferRef::CreateUniformBufferImmediate(CopyGridDataParameters, UniformBuffer_SingleFrame);
+			uint32 GroupCountX = (CopyGridDataParameters.ThreadDim.X + COPY_THREAD_COUNT_X - 1) / COPY_THREAD_COUNT_X;
+			uint32 GroupCountY = (CopyGridDataParameters.ThreadDim.Y + COPY_THREAD_COUNT_Y - 1) / COPY_THREAD_COUNT_Y;
+			uint32 GroupCountZ = (CopyGridDataParameters.ThreadDim.Z + COPY_THREAD_COUNT_Z - 1) / COPY_THREAD_COUNT_Z;
 
-		uint32 GroupCountX = (CopyGridDataParameters.GridDim.X + COPY_THREAD_COUNT_X - 1) / COPY_THREAD_COUNT_X;
-		uint32 GroupCountY = (CopyGridDataParameters.GridDim.Y + COPY_THREAD_COUNT_Y - 1) / COPY_THREAD_COUNT_Y;
-		uint32 GroupCountZ = (CopyGridDataParameters.GridDim.Z + COPY_THREAD_COUNT_Z - 1) / COPY_THREAD_COUNT_Z;
+			FShaderResourceViewRHIRef BlockListSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->blockList);
+			FShaderResourceViewRHIRef BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->blockTable);
+			FShaderResourceViewRHIRef DataInSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx]);
+			FUnorderedAccessViewRHIRef DataOutUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx ^ 1]);
+
+			CopyGridDataCS->SetOutput(RHICmdList, DataOutUAV);
+			CopyGridDataCS->SetParameters(RHICmdList, UniformBuffer, BlockListSRV, BlockTableSRV, DataInSRV);
+			DispatchComputeShader(RHICmdList, *CopyGridDataCS, GroupCountX, GroupCountY, GroupCountZ);
+			CopyGridDataCS->UnbindBuffers(RHICmdList);
+
+			*dataFrontIdx ^= 1;
+		}
+
+		TShaderMapRef<FNvFlowCoupleParticlesCS> CoupleParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		RHICmdList.SetComputeShader(CoupleParticlesCS->GetComputeShader());
+		
+		FNvFlowCoupleParticlesParameters CoupleParticlesParameters;
+		CoupleParticlesParameters.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
+		CoupleParticlesParameters.VDim = FIntVector(
+			params->shaderParams.blockDim.x * params->shaderParams.gridDim.x,
+			params->shaderParams.blockDim.y * params->shaderParams.gridDim.y,
+			params->shaderParams.blockDim.z * params->shaderParams.gridDim.z);
+		CoupleParticlesParameters.BlockDim = NvFlowConvert(params->shaderParams.blockDim);
+		CoupleParticlesParameters.BlockDimBits = NvFlowConvert(params->shaderParams.blockDimBits);
+		CoupleParticlesParameters.IsVTR = params->shaderParams.isVTR.x;
+
+		CoupleParticlesParameters.AccelRate = DeltaTime / 0.01f;
+		CoupleParticlesParameters.DecelRate = DeltaTime / 10.f;
+		CoupleParticlesParameters.Threshold = 2.f;
 
 		FShaderResourceViewRHIRef BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->blockTable);
 		FShaderResourceViewRHIRef DataInSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx]);
 		FUnorderedAccessViewRHIRef DataOutUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx ^ 1]);
-
-		CopyGridDataCS->SetOutput(RHICmdList, DataOutUAV);
-		CopyGridDataCS->SetParameters(RHICmdList, UniformBuffer, BlockTableSRV, DataInSRV);
-		DispatchComputeShader(RHICmdList, *CopyGridDataCS, GroupCountX, GroupCountY, GroupCountZ);
-		CopyGridDataCS->UnbindBuffers(RHICmdList);
-
-		*dataFrontIdx ^= 1;
-
-#if 0
-		FMatrix WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
 
 		for (int32 i = 0; i < m_particleParamsArray.Num(); ++i)
 		{
 			const ParticleSimulationParamsNvFlow& ParticleParams = m_particleParamsArray[i];
 			if (ParticleParams.ParticleCount > 0)
 			{
-				FNvFlowMaskFromParticlesParameters MaskFromParticlesParameters;
-				MaskFromParticlesParameters.ParticleCount = ParticleParams.ParticleCount;
-				MaskFromParticlesParameters.TextureSizeX = ParticleParams.TextureSizeX;
-				MaskFromParticlesParameters.TextureSizeY = ParticleParams.TextureSizeY;
-				MaskFromParticlesParameters.MaskDim = FIntVector(params->maskDim.x, params->maskDim.y, params->maskDim.z);
-				MaskFromParticlesParameters.WorldToVolume = WorldToVolume;
-				FNvFlowMaskFromParticlesUniformBufferRef UniformBuffer = FNvFlowMaskFromParticlesUniformBufferRef::CreateUniformBufferImmediate(MaskFromParticlesParameters, UniformBuffer_SingleFrame);
+				CoupleParticlesParameters.ParticleCount = ParticleParams.ParticleCount;
+				CoupleParticlesParameters.TextureSizeX = ParticleParams.TextureSizeX;
+				CoupleParticlesParameters.TextureSizeY = ParticleParams.TextureSizeY;
+				FNvFlowCoupleParticlesUniformBufferRef UniformBuffer = FNvFlowCoupleParticlesUniformBufferRef::CreateUniformBufferImmediate(CoupleParticlesParameters, UniformBuffer_SingleFrame);
 
-				uint32 GroupCount = (ParticleParams.ParticleCount + MASK_FROM_PARTICLES_THREAD_COUNT - 1) / MASK_FROM_PARTICLES_THREAD_COUNT;
+				uint32 GroupCount = (ParticleParams.ParticleCount + COUPLE_PARTICLES_THREAD_COUNT - 1) / COUPLE_PARTICLES_THREAD_COUNT;
 
-				FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->maskResourceRW);
-				MaskFromParticlesCS->SetOutput(RHICmdList, MaskUAV);
-				MaskFromParticlesCS->SetParameters(RHICmdList, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI);
-				DispatchComputeShader(RHICmdList, *MaskFromParticlesCS, GroupCount, 1, 1);
-				MaskFromParticlesCS->UnbindBuffers(RHICmdList);
+				CoupleParticlesCS->SetOutput(RHICmdList, DataOutUAV);
+				CoupleParticlesCS->SetParameters(RHICmdList, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI, ParticleParams.VelocityTextureRHI, BlockTableSRV, DataInSRV);
+				DispatchComputeShader(RHICmdList, *CoupleParticlesCS, GroupCount, 1, 1);
+				CoupleParticlesCS->UnbindBuffers(RHICmdList);
 			}
 		}
-#endif
+
+		*dataFrontIdx ^= 1;
+
 		NvFlowContextPush(m_context->m_context);
 	}
 }

@@ -756,7 +756,7 @@ void FTranslucentPrimSet::DrawPrimitives(
 
 		checkSlow(ViewRelevance.HasTranslucency());
 
-		//Begin NvFlow
+		// NvFlow begin
 		if (GRendererNvFlowHooks)
 		{
 			if (GRendererNvFlowHooks->NvFlowDoRenderPrimitive(RHICmdList, View, PrimitiveSceneInfo))
@@ -764,19 +764,19 @@ void FTranslucentPrimSet::DrawPrimitives(
 				continue;
 			}
 		}
-		//End NvFlow
+		// NvFlow end
 
 		const FProjectedShadowInfo* TranslucentSelfShadow = Renderer.PrepareTranslucentShadowMap(RHICmdList, View, PrimitiveSceneInfo, TranslucenyPassType);
 
 		RenderPrimitive(RHICmdList, View, PrimitiveSceneInfo, ViewRelevance, TranslucentSelfShadow, TranslucenyPassType);
 	}
 
-	//Begin NvFlow
+	// NvFlow begin
 	if (GRendererNvFlowHooks)
 	{
 		GRendererNvFlowHooks->NvFlowDoRenderFinish(RHICmdList, View);
 	}
-	//End NvFlow
+	// NvFlow end
 
 	View.SimpleElementCollector.DrawBatchedElements(RHICmdList, View, FTexture2DRHIRef(), EBlendModeFilter::Translucent);
 }

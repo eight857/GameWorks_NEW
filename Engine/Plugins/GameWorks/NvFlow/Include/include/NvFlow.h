@@ -78,6 +78,14 @@ NV_FLOW_API void NvFlowReleaseRenderTargetView(NvFlowRenderTargetView* view);
 NV_FLOW_API void NvFlowUpdateContext(NvFlowContext* context, const NvFlowContextDesc* desc);
 
 /**
+ * Gets a Flow context description from a Flow context.
+ *
+ * @param[in] context The Flow context.
+ * @param[out] desc The graphics API dependent description.
+ */
+NV_FLOW_API void NvFlowUpdateContextDesc(NvFlowContext* context, NvFlowContextDesc* desc);
+
+/**
  * Updates a Flow depth stencil view with information provided by the application.
  *
  * @param[in] context The Flow context used to create the depth stencil view.
@@ -222,6 +230,9 @@ struct NvFlowGridParams
 	NvFlowGridCombustionParams combustion;	//!< Combustion parameters
 
 	float vorticityStrength;				//!< Higher values increase rotation, reduce laminar flow
+	float vorticityVelocityMask;			//!< 0.f means zero velocity magnitude influence on vorticity
+
+	bool pressureLegacyMode;				//!< If true, run older less accurate pressure solver
 
 	float velocityWeight;					//!< Relative importance of velocity for allocation, 0.0 means not important
 	float densityWeight;					//!< Relative importance of density for allocation, 0.0 means not important
@@ -461,6 +472,9 @@ struct NvFlowGridEmitCustomEmitParams
 	NvFlowResource* blockList;							//!< List of active blocks
 
 	NvFlowGridEmitCustomEmitShaderParams shaderParams;	//!< Parameters used in GPU side operations
+
+	NvFlowUint numBlocks;								//!< Number of active blocks
+	NvFlowUint maxBlocks;								//!< Maximum possible active blocks
 
 	NvFlowFloat3 gridLocation;							//!< Location of grid's axis aligned bounding box
 	NvFlowFloat3 gridHalfSize;							//!< Half size of grid's axis aligned bounding box

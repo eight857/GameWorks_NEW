@@ -2,11 +2,12 @@
 
 #include "Common.usf"
 
-
+Buffer<uint> BlockList;
 Texture3D<uint> BlockTable;
 
 Texture3D<float4> DataIn;
 RWTexture3D<float4> DataOut;
+
 
 int3 TableValToCoord(uint val)
 {
@@ -20,20 +21,14 @@ int3 TableValToCoord(uint val)
 [numthreads(THREAD_COUNT_X, THREAD_COUNT_Y, THREAD_COUNT_Z)]
 void CopyGridData(uint3 DispatchThreadId : SV_DispatchThreadID)
 {
-	uint3 Index = DispatchThreadId;
-	if (all(Index < (NvFlowCopyGridData.GridDim.xyz << NvFlowCopyGridData.BlockDimBits.xyz)))
+	if (all(DispatchThreadId < NvFlowCopyGridData.ThreadDim.xyz))
 	{
-		int3 VBlockIdx = Index >> NvFlowCopyGridData.BlockDimBits.xyz;
-		uint TableValue = BlockTable[VBlockIdx];
-		if (TableValue != 0)
-		{
-			if (NvFlowCopyGridData.IsVTR == 0)
-			{
-				int3 RBlockIdx = TableValToCoord(TableValue);
-				Index = (RBlockIdx << NvFlowCopyGridData.BlockDimBits.xyz) | (Index & (NvFlowCopyGridData.BlockDim.xyz - int3(1, 1, 1)));
-			}
-			//DataOut[Index] = DataIn[Index];
-		}
+		uint BlockListIdx = DispatchThreadId.x >> NvFlowCopyGridData.BlockDimBits.x;
+		int3 VBlockIdx = TableValToCoord(BlockList[BlockListIdx]);
+		int3 BlockIdx = NvFlowCopyGridData.IsVTR ? VBlockIdx : TableValToCoord(BlockTable[VBlockIdx]);
+		int3 Index = (BlockIdx << NvFlowCopyGridData.BlockDimBits.xyz) | (DispatchThreadId & (NvFlowCopyGridData.BlockDim.xyz - int3(1, 1, 1)));
+
+		DataOut[Index] = DataIn[Index];
 	}
 }
 
