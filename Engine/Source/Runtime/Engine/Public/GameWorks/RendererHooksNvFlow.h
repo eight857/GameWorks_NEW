@@ -11,4 +11,13 @@ struct RendererHooksNvFlow
 
 extern ENGINE_API struct RendererHooksNvFlow* GRendererNvFlowHooks;
 
+class FComponentVisualizersModule;
+
+struct EditorRendererHooksNvFlow
+{
+	virtual void NvFlowRegisterVisualizer(FComponentVisualizersModule* module) = 0;
+};
+
+extern ENGINE_API struct EditorRendererHooksNvFlow* GEditorRendererHooksNvFlow;
+
 // NvFlow end

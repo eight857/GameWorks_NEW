@@ -8,4 +8,6 @@
 
 RendererHooksNvFlow* GRendererNvFlowHooks = nullptr;
 
+EditorRendererHooksNvFlow* GEditorRendererHooksNvFlow = nullptr;
+
 // NvFlow end

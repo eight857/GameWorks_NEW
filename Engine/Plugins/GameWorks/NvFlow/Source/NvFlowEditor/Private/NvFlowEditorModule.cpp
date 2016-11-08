@@ -1,32 +1,20 @@
 #include "NvFlowEditorPCH.h"
 #include "PropertyEditorModule.h"
 
-#include "Async.h"
+#include "ComponentVisualizers.h"
+#include "GameWorks/RendererHooksNvFlow.h"
 
 IMPLEMENT_MODULE( FNvFlowEditorModule, NvFlowEditor );
 DEFINE_LOG_CATEGORY(LogNvFlowEditor);
 
-inline void FlowRegister()
+struct EditorRendererHooksNvFlowImpl : public EditorRendererHooksNvFlow
 {
-	// No need for visualizers when cooking (this was the only way to detect the cooking cases, AFAICT)
-	if (!IsRunningCommandlet())
+	virtual void NvFlowRegisterVisualizer(FComponentVisualizersModule* module)
 	{
-		if (GUnrealEd != nullptr)
-		{
-			TSharedPtr<FComponentVisualizer> Visualizer = MakeShareable(new FFlowGridComponentVisualizer);
-
-			if (Visualizer.IsValid())
-			{
-				GUnrealEd->RegisterComponentVisualizer(UFlowGridComponent::StaticClass()->GetFName(), Visualizer);
-				Visualizer->OnRegister();
-			}
-		}
-		else
-		{
-			AsyncTask(ENamedThreads::GameThread, [=]() { FlowRegister(); });
-		}
+		module->RegisterComponentVisualizer(UFlowGridComponent::StaticClass()->GetFName(), MakeShareable(new FFlowGridComponentVisualizer));
 	}
-}
+};
+EditorRendererHooksNvFlowImpl GEditorRendererHooksNvFlowImpl;
 
 void FNvFlowEditorModule::StartupModule()
 {
@@ -35,7 +23,7 @@ void FNvFlowEditorModule::StartupModule()
 	FlowGridAssetTypeActions = MakeShareable(new FAssetTypeActions_FlowGridAsset);
 	AssetTools.RegisterAssetTypeActions(FlowGridAssetTypeActions.ToSharedRef());
 
-	FlowRegister();
+	GEditorRendererHooksNvFlow = &GEditorRendererHooksNvFlowImpl;
 }
 
 void FNvFlowEditorModule::ShutdownModule()
