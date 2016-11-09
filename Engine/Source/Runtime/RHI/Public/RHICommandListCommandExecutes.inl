@@ -523,6 +523,6 @@ template struct FRHICommandPopEvent<ECmdList::ECompute>;
 void FRHICommandNvFlowWork::Execute(FRHICommandListBase& CmdList)
 {
 	RHISTAT(NvFlowWork);
-	INTERNAL_DECORATOR(NvFlowWork)(workFunc, ptr);
+	INTERNAL_DECORATOR(NvFlowWork)(WorkFunc, ParamData, NumBytes);
 }
 // NvFlow end

@@ -465,11 +465,11 @@ public:
 	virtual void NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc) {}
 	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) {}
 	FRHINvFlowCleanup NvFlowCleanup;
-	virtual void NvFlowWork(void(*workFunc)(void*,IRHICommandContext*), void* ptr)
+	virtual void NvFlowWork(void(*workFunc)(void*,SIZE_T,IRHICommandContext*), void* paramData, SIZE_T numBytes)
 	{
 		if (workFunc)
 		{
-			workFunc(ptr, this);
+			workFunc(paramData, numBytes, this);
 		}
 	}
 	// NvFlow end
