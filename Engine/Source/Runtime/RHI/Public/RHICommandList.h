@@ -1353,6 +1353,19 @@ struct FRHICommandUpdateTextureReference : public FRHICommand<FRHICommandUpdateT
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
 
+// NvFlow begin
+struct FRHICommandNvFlowWork : public FRHICommand<FRHICommandNvFlowWork>
+{
+	void(*workFunc)(void*,IRHICommandContext*);
+	void* ptr;
+	FORCEINLINE_DEBUGGABLE FRHICommandNvFlowWork(void(*workFunc)(void*,IRHICommandContext*), void* ptr)
+		: workFunc(workFunc)
+		, ptr(ptr)
+	{
+	}
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+// NvFlow end
 
 #define CMD_CONTEXT(Method) GetContext().Method
 #define COMPUTE_CONTEXT(Method) GetComputeContext().Method
@@ -2100,6 +2113,18 @@ public:
 		new (AllocCommand<FRHICommandDebugBreak>()) FRHICommandDebugBreak();
 #endif
 	}
+
+	// NvFlow begin
+	FORCEINLINE_DEBUGGABLE void NvFlowWork(void(*workFunc)(void*,IRHICommandContext*), void* ptr)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(NvFlowWork)(workFunc, ptr);
+			return;
+		}
+		new (AllocCommand<FRHICommandNvFlowWork>()) FRHICommandNvFlowWork(workFunc, ptr);
+	}
+	// NvFlow end
 };
 
 class RHI_API FRHIAsyncComputeCommandList : public FRHICommandListBase

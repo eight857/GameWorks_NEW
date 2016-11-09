@@ -519,4 +519,10 @@ void FRHICommandPopEvent<CmdListType>::Execute(FRHICommandListBase& CmdList)
 template struct FRHICommandPopEvent<ECmdList::EGfx>;
 template struct FRHICommandPopEvent<ECmdList::ECompute>;
 
-
+// NvFlow begin
+void FRHICommandNvFlowWork::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(NvFlowWork);
+	INTERNAL_DECORATOR(NvFlowWork)(workFunc, ptr);
+}
+// NvFlow end
