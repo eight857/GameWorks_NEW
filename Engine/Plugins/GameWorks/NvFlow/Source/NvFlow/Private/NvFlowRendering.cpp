@@ -306,7 +306,10 @@ void NvFlow::Context::release()
 	// proxies and scenes should all be released by now
 	check(m_sceneList.Num() == 0);
 
-	UE_LOG(LogFlow, Display, TEXT("NvFlow Context Cleanup"));
+	if (m_flowContext)
+	{
+		UE_LOG(LogFlow, Display, TEXT("NvFlow Context Cleanup"));
+	}
 
 	if (m_rtv) NvFlowReleaseRenderTargetView(m_rtv);
 	if (m_dsv) NvFlowReleaseDepthStencilView(m_dsv);
@@ -366,6 +369,11 @@ NvFlow::Scene::~Scene()
 
 void NvFlow::Scene::release()
 {
+	if (m_context)
+	{
+		UE_LOG(LogFlow, Display, TEXT("NvFlow Scene %p Cleanup"), this);
+	}
+
 	if (m_grid) NvFlowReleaseGrid(m_grid);
 	if (m_gridProxy) NvFlowReleaseGridProxy(m_gridProxy);
 	if (m_volumeRender) NvFlowReleaseVolumeRender(m_volumeRender);
@@ -379,8 +387,6 @@ void NvFlow::Scene::release()
 	m_context = nullptr;
 
 	FlowGridSceneProxy = nullptr;
-
-	UE_LOG(LogFlow, Display, TEXT("NvFlow Scene %p Cleanup"), this);
 }
 
 void NvFlow::Scene::init(Context* context, FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* InFlowGridSceneProxy)
