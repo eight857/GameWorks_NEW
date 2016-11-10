@@ -86,9 +86,10 @@ namespace NvFlow
 		{
 			NvFlow::Scene* Scene;
 			FRHICommandListImmediate& RHICmdList;
+			float DeltaTime;
 
-			CallbackUserData(NvFlow::Scene* InScene, FRHICommandListImmediate& InRHICmdList)
-				: Scene(InScene), RHICmdList(InRHICmdList)
+			CallbackUserData(NvFlow::Scene* InScene, FRHICommandListImmediate& InRHICmdList, float InDeltaTime)
+				: Scene(InScene), RHICmdList(InRHICmdList), DeltaTime(InDeltaTime)
 			{
 			}
 		};
@@ -101,10 +102,10 @@ namespace NvFlow
 		static void sEmitCustomEmitCallback(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params)
 		{
 			CallbackUserData* callbackUserData = (CallbackUserData*)userdata;
-			callbackUserData->Scene->emitCustomEmitCallback(callbackUserData->RHICmdList, dataFrontIdx, params);
+			callbackUserData->Scene->emitCustomEmitCallback(callbackUserData->RHICmdList, dataFrontIdx, params, callbackUserData->DeltaTime);
 		}
 		void emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList, const NvFlowGridEmitCustomAllocParams* params);
-		void emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params);
+		void emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, float dt);
 
 
 		bool m_multiAdapter = false;
@@ -298,10 +299,6 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 
 	scene->updateParameters(RHICmdList);
 
-	NvFlow::Scene::CallbackUserData userData(scene, RHICmdList);
-	NvFlowGridEmitCustomRegisterAllocFunc(scene->m_grid, &NvFlow::Scene::sEmitCustomAllocCallback, &userData);
-	NvFlowGridEmitCustomRegisterEmitFunc(scene->m_grid, eNvFlowGridChannelVelocity, &NvFlow::Scene::sEmitCustomEmitCallback, &userData);
-
 	// process simulation events
 	if (FlowGridSceneProxy->FlowGridProperties.SubstepSize > 0.0f)
 	{
@@ -312,8 +309,6 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 	}
 	FlowGridSceneProxy->NumScheduledSubsteps = 0;
 
-	NvFlowGridEmitCustomRegisterAllocFunc(scene->m_grid, nullptr, nullptr);
-	NvFlowGridEmitCustomRegisterEmitFunc(scene->m_grid, eNvFlowGridChannelVelocity, nullptr, nullptr);
 	scene->m_particleParamsArray.Reset();
 }
 
@@ -542,7 +537,16 @@ void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt
 			if (adaptiveDt > clampDt) adaptiveDt = clampDt;
 		}
 
-		NvFlowGridUpdate(m_grid, computeContext, adaptiveDt);
+		{
+			NvFlow::Scene::CallbackUserData userData(this, RHICmdList, adaptiveDt);
+			NvFlowGridEmitCustomRegisterAllocFunc(m_grid, &NvFlow::Scene::sEmitCustomAllocCallback, &userData);
+			NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, &NvFlow::Scene::sEmitCustomEmitCallback, &userData);
+
+			NvFlowGridUpdate(m_grid, computeContext, adaptiveDt);
+
+			NvFlowGridEmitCustomRegisterAllocFunc(m_grid, nullptr, nullptr);
+			NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, nullptr, nullptr);
+		}
 
 		NvFlowGridProxyPush(m_gridProxy, computeContext, m_grid);
 	}
@@ -744,6 +748,10 @@ bool NvFlow::Scene::getExportParams(FRHICommandListImmediate& RHICmdList, GridEx
 
 	OutParams.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
 	OutParams.VelocityScale = scale;
+
+	OutParams.GridToParticleAccelTimeConstant = FlowGridSceneProxy->FlowGridProperties.GridToParticleAccelTimeConstant;
+	OutParams.GridToParticleDecelTimeConstant = FlowGridSceneProxy->FlowGridProperties.GridToParticleDecelTimeConstant;
+	OutParams.GridToParticleThresholdMultiplier = FlowGridSceneProxy->FlowGridProperties.GridToParticleThresholdMultiplier;
 	return true;
 }
 
@@ -1169,10 +1177,8 @@ private:
 };
 IMPLEMENT_SHADER_TYPE(, FNvFlowCoupleParticlesCS, TEXT("NvFlowCoupleShader"), TEXT("CoupleParticlesToGrid"), SF_Compute);
 
-void NvFlow::Scene::emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params)
+void NvFlow::Scene::emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, float dt)
 {
-	float DeltaTime = 1.0f / 50; //TODO: get real value
-
 	if (m_particleParamsArray.Num() > 0 && params->numBlocks > 0)
 	{
 		NvFlowContextPop(m_context->m_context);
@@ -1218,9 +1224,9 @@ void NvFlow::Scene::emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList,
 		CoupleParticlesParameters.BlockDimBits = NvFlowConvert(params->shaderParams.blockDimBits);
 		CoupleParticlesParameters.IsVTR = params->shaderParams.isVTR.x;
 
-		CoupleParticlesParameters.AccelRate = DeltaTime / 0.01f;
-		CoupleParticlesParameters.DecelRate = DeltaTime / 10.f;
-		CoupleParticlesParameters.Threshold = 2.f;
+		CoupleParticlesParameters.AccelRate = dt / FlowGridSceneProxy->FlowGridProperties.ParticleToGridAccelTimeConstant;
+		CoupleParticlesParameters.DecelRate = dt / FlowGridSceneProxy->FlowGridProperties.ParticleToGridDecelTimeConstant;
+		CoupleParticlesParameters.Threshold = FlowGridSceneProxy->FlowGridProperties.ParticleToGridThresholdMultiplier;
 
 		FShaderResourceViewRHIRef BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->blockTable);
 		FShaderResourceViewRHIRef DataInSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx]);

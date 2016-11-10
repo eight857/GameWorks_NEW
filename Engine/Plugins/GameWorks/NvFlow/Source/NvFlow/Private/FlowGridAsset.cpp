@@ -95,6 +95,13 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	bEnableParticlesInteraction = false;
 	InteractionChannel = EIC_Channel1;
 	bEnableParticleMode = false;
+
+	ParticleToGridAccelTimeConstant = 0.01f;
+	ParticleToGridDecelTimeConstant = 10.0f;
+	ParticleToGridThresholdMultiplier = 2.f;
+	GridToParticleAccelTimeConstant = 0.01f;
+	GridToParticleDecelTimeConstant = 0.01f;
+	GridToParticleThresholdMultiplier = 1.f;
 }
 
 // NvFlow end

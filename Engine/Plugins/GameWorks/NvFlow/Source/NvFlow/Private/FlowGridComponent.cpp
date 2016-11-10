@@ -718,6 +718,13 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		FlowGridProperties.ResponseToInteractionChannels = FlowGridAssetRef->ResponseToInteractionChannels;
 		FlowGridProperties.bEnableParticleMode = NewEnableParticleMode;
 
+		FlowGridProperties.ParticleToGridAccelTimeConstant = FlowGridAssetRef->ParticleToGridAccelTimeConstant;
+		FlowGridProperties.ParticleToGridDecelTimeConstant = FlowGridAssetRef->ParticleToGridDecelTimeConstant;
+		FlowGridProperties.ParticleToGridThresholdMultiplier = FlowGridAssetRef->ParticleToGridThresholdMultiplier;
+		FlowGridProperties.GridToParticleAccelTimeConstant = FlowGridAssetRef->GridToParticleAccelTimeConstant;
+		FlowGridProperties.GridToParticleDecelTimeConstant = FlowGridAssetRef->GridToParticleDecelTimeConstant;
+		FlowGridProperties.GridToParticleThresholdMultiplier = FlowGridAssetRef->GridToParticleThresholdMultiplier;
+
 		//Properties that can be changed without rebuilding grid
 		FlowGridProperties.VirtualGridExtents = FVector(FlowGridAssetRef->GetVirtualGridExtent());
 		FlowGridProperties.SubstepSize = TimeStepper.FixedDt;

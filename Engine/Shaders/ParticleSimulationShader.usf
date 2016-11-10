@@ -185,7 +185,11 @@ float3 ComputeOrbitVelocity(float Time, float RandomOrbit)
  * @param Position - Position of the particle.
  * @param PerParticleScale - Amount by which to scale the influence on this particle.
  */
-void EvaluateVectorFields(out float3 OutForce, out float4 OutVelocity, float3 Position, float PerParticleScale)
+void EvaluateVectorFields(out float3 OutForce, out float4 OutVelocity, float3 Position, float PerParticleScale
+	// NvFlow begin
+	, float3 Velocity
+	// NvFlow end
+)
 {
 	float3 TotalForce = 0;
 	float3 WeightedVelocity = 0;
@@ -219,7 +223,7 @@ void EvaluateVectorFields(out float3 OutForce, out float4 OutVelocity, float3 Po
 	}
 
 	// NvFlow begin
-	NvFlowEvaluateGrids(Position, TotalForce, WeightedVelocity, TotalWeight, FinalWeight);
+	NvFlowEvaluateGrids(Position, Velocity, TotalForce, WeightedVelocity, TotalWeight, FinalWeight);
 	// NvFlow end
 
 	// Forces are additive.
@@ -512,7 +516,11 @@ void PixelMain(
 		// Evalute vector fields.
 		float3 FieldForce = 0;
 		float4 FieldVelocity = 0;
-		EvaluateVectorFields(FieldForce, FieldVelocity, Position.xyz, PerParticleVectorFieldScale);
+		EvaluateVectorFields(FieldForce, FieldVelocity, Position.xyz, PerParticleVectorFieldScale
+			// NvFlow begin
+			, Velocity.xyz
+			// NvFlow end
+		);
 
 		// Add in force from vector fields.
 		Force += FieldForce;

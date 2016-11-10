@@ -51,6 +51,13 @@ struct FFlowGridProperties
 
 	uint32 bEnableParticleMode : 1;
 
+	float ParticleToGridAccelTimeConstant;
+	float ParticleToGridDecelTimeConstant;
+	float ParticleToGridThresholdMultiplier;
+	float GridToParticleAccelTimeConstant;
+	float GridToParticleDecelTimeConstant;
+	float GridToParticleThresholdMultiplier;
+
 	// target simulation time step
 	float SubstepSize;
 

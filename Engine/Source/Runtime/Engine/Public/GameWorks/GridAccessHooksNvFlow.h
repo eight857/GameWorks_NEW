@@ -22,6 +22,10 @@ struct GridExportParamsNvFlow
 	FMatrix    WorldToVolume;
 	float      VelocityScale;
 
+	float GridToParticleAccelTimeConstant;
+	float GridToParticleDecelTimeConstant;
+	float GridToParticleThresholdMultiplier;
+
 	FShaderResourceViewRHIRef DataSRV;
 	FShaderResourceViewRHIRef BlockTableSRV;
 };

@@ -55,6 +55,24 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	uint32		bEnableParticleMode : 1;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	float		ParticleToGridAccelTimeConstant;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	float		ParticleToGridDecelTimeConstant;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	float		ParticleToGridThresholdMultiplier;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	float		GridToParticleAccelTimeConstant;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	float		GridToParticleDecelTimeConstant;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	float		GridToParticleThresholdMultiplier;
+
 	//* Relative importance of velocity for allocation, 0.0 means not important*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
 	float	VelocityWeight;

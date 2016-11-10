@@ -901,6 +901,9 @@ DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, GridDim, [MAX_NVFLOW_GRID
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(int32, IsVTR, [MAX_NVFLOW_GRIDS])
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FMatrix, WorldToVolume, [MAX_NVFLOW_GRIDS])
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(float, VelocityScale, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(float, GridToParticleAccelRate, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(float, GridToParticleDecelRate, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(float, GridToParticleThreshold, [MAX_NVFLOW_GRIDS])
 END_UNIFORM_BUFFER_STRUCT(FNvFlowGridUniformParameters)
 
 IMPLEMENT_UNIFORM_BUFFER_STRUCT(FNvFlowGridUniformParameters, TEXT("NvFlowParams"));
@@ -4758,6 +4761,10 @@ void FFXSystem::SimulateGPUParticles(
 						NvFlowGridParameters.IsVTR[i] = NvFlowGridParams[i].IsVTR ? 1 : 0;
 						NvFlowGridParameters.WorldToVolume[i] = NvFlowGridParams[i].WorldToVolume;
 						NvFlowGridParameters.VelocityScale[i] = NvFlowGridParams[i].VelocityScale;
+
+						NvFlowGridParameters.GridToParticleAccelRate[i] = Simulation->PerFrameSimulationParameters.DeltaSeconds / NvFlowGridParams[i].GridToParticleAccelTimeConstant;
+						NvFlowGridParameters.GridToParticleDecelRate[i] = Simulation->PerFrameSimulationParameters.DeltaSeconds / NvFlowGridParams[i].GridToParticleDecelTimeConstant;
+						NvFlowGridParameters.GridToParticleThreshold[i] = NvFlowGridParams[i].GridToParticleThresholdMultiplier;
 
 						SimulationCommand->NvFlowGridDataSRV[i] = NvFlowGridParams[i].DataSRV;
 						SimulationCommand->NvFlowGridBlockTableSRV[i] = NvFlowGridParams[i].BlockTableSRV;
