@@ -722,6 +722,16 @@ void FTranslucentPrimSet::DrawPrimitivesParallel(
 
 		checkSlow(ViewRelevance.HasTranslucency());
 
+		//Begin NvFlow
+		if (GRendererNvFlowHooks)
+		{
+			if (GRendererNvFlowHooks->NvFlowDoRenderPrimitive(RHICmdList, View, PrimitiveSceneInfo))
+			{
+				continue;
+			}
+		}
+		//End NvFlow
+
 		if (PrimitiveSceneInfo->Proxy && PrimitiveSceneInfo->Proxy->CastsVolumetricTranslucentShadow())
 		{
 			check(!IsInActualRenderingThread());
@@ -770,13 +780,6 @@ void FTranslucentPrimSet::DrawPrimitives(
 
 		RenderPrimitive(RHICmdList, View, PrimitiveSceneInfo, ViewRelevance, TranslucentSelfShadow, TranslucenyPassType);
 	}
-
-	//Begin NvFlow
-	if (GRendererNvFlowHooks)
-	{
-		GRendererNvFlowHooks->NvFlowDoRenderFinish(RHICmdList, View);
-	}
-	//End NvFlow
 
 	View.SimpleElementCollector.DrawBatchedElements(RHICmdList, View, FTexture2DRHIRef(), EBlendModeFilter::Translucent);
 }
@@ -1107,6 +1110,13 @@ void FDeferredShadingSceneRenderer::RenderTranslucencyParallel(FRHICommandListIm
 				DrawViewElementsParallel<FTranslucencyDrawingPolicyFactory>(GParallelTranslucencyContext, SDPG_Foreground, false, ParallelCommandListSet);
 			}
 
+			//Begin NvFlow
+			if (GRendererNvFlowHooks)
+			{
+				GRendererNvFlowHooks->NvFlowDoRenderFinish(RHICmdList, View);
+			}
+			//End NvFlow
+
 			FinishTranslucentRenderTarget(RHICmdList, View, TranslucenyPassType);
 		}
 #if STATS
@@ -1243,6 +1253,13 @@ void FDeferredShadingSceneRenderer::RenderTranslucency(FRHICommandListImmediate&
 						LightPropagationVolume->Visualise(RHICmdList, View);
 					}
 				}
+
+				//Begin NvFlow
+				if (GRendererNvFlowHooks)
+				{
+					GRendererNvFlowHooks->NvFlowDoRenderFinish(RHICmdList, View);
+				}
+				//End NvFlow
 
 				FinishTranslucentRenderTarget(RHICmdList, View, ETranslucencyPass::TPT_NonSeparateTransluceny);
 
