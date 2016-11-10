@@ -835,17 +835,17 @@ bool NvFlow::Scene::getExportParams(FRHICommandListImmediate& RHICmdList, GridEx
 		NvFlowGridExportDesc Desc;
 		Desc.gridView = m_gridView;
 
-		m_gridExport = NvFlowCreateGridExport(m_context->m_context, &Desc);
+		m_gridExport = NvFlowCreateGridExport(m_context->m_flowContext, &Desc);
 	}
 
 
-	NvFlowGridExportUpdate(m_gridExport, m_context->m_context, m_gridView, eNvFlowGridChannelVelocity);
+	NvFlowGridExportUpdate(m_gridExport, m_context->m_flowContext, m_gridView, eNvFlowGridChannelVelocity);
 
 	NvFlowGridExportView GridExportView;
-	NvFlowGridExportGetView(m_gridExport, m_context->m_context, &GridExportView, eNvFlowGridChannelVelocity);
+	NvFlowGridExportGetView(m_gridExport, m_context->m_flowContext, &GridExportView, eNvFlowGridChannelVelocity);
 
-	OutParams.DataSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, GridExportView.data);
-	OutParams.BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, GridExportView.blockTable);
+	OutParams.DataSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, GridExportView.data);
+	OutParams.BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, GridExportView.blockTable);
 
 	OutParams.BlockDim = NvFlowConvert(GridExportView.shaderParams.blockDim);
 	OutParams.BlockDimBits = NvFlowConvert(GridExportView.shaderParams.blockDimBits);
@@ -1000,7 +1000,7 @@ void NvFlow::Scene::emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList
 {
 	if (m_particleParamsArray.Num() > 0)
 	{
-		NvFlowContextPop(m_context->m_context);
+		NvFlowContextPop(m_context->m_flowContext);
 
 		TShaderMapRef<FNvFlowMaskFromParticlesCS> MaskFromParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		RHICmdList.SetComputeShader(MaskFromParticlesCS->GetComputeShader());
@@ -1020,7 +1020,7 @@ void NvFlow::Scene::emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList
 
 				uint32 GroupCount = (ParticleParams.ParticleCount + MASK_FROM_PARTICLES_THREAD_COUNT - 1) / MASK_FROM_PARTICLES_THREAD_COUNT;
 
-				FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->maskResourceRW);
+				FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_flowContext, params->maskResourceRW);
 				MaskFromParticlesCS->SetOutput(RHICmdList, MaskUAV);
 				MaskFromParticlesCS->SetParameters(RHICmdList, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI);
 				DispatchComputeShader(RHICmdList, *MaskFromParticlesCS, GroupCount, 1, 1);
@@ -1030,7 +1030,7 @@ void NvFlow::Scene::emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList
 
 		m_particleParamsArray.Reset();
 
-		NvFlowContextPush(m_context->m_context);
+		NvFlowContextPush(m_context->m_flowContext);
 	}
 }
 
