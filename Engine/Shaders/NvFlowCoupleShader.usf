@@ -23,7 +23,7 @@ int3 TableValToCoord(uint val)
 		(valInv >> 20) & 0x3FF);
 }
 
-void CoupleParticleToGrid(inout float4 uvwa, float4 partVel)
+void CoupleParticleToGrid(inout float4 uvwa, float3 partVel)
 {
 	float3 error3 = partVel.xyz - uvwa.xyz;
 
@@ -79,7 +79,7 @@ void CoupleParticlesToGrid(uint3 DispatchThreadId : SV_DispatchThreadID)
 			const float4 ParticleVelocity = VelocityTexture.Load(ParticleTexel);
 			float4 GridVelocity = DataIn[Index];
 
-			CoupleParticleToGrid(GridVelocity, ParticleVelocity);
+			CoupleParticleToGrid(GridVelocity, ParticleVelocity.xyz * NvFlowCoupleParticles.InvVelocityScale);
 			DataOut[Index] = GridVelocity;
 		}
 	}

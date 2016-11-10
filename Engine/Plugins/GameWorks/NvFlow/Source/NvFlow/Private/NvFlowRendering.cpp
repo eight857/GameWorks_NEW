@@ -1047,6 +1047,7 @@ DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(int32, IsVTR)
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, AccelRate)
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, DecelRate)
 DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, Threshold)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, InvVelocityScale)
 END_UNIFORM_BUFFER_STRUCT(FNvFlowCoupleParticlesParameters)
 
 IMPLEMENT_UNIFORM_BUFFER_STRUCT(FNvFlowCoupleParticlesParameters, TEXT("NvFlowCoupleParticles"));
@@ -1227,6 +1228,8 @@ void NvFlow::Scene::emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList,
 		CoupleParticlesParameters.AccelRate = dt / FlowGridSceneProxy->FlowGridProperties.ParticleToGridAccelTimeConstant;
 		CoupleParticlesParameters.DecelRate = dt / FlowGridSceneProxy->FlowGridProperties.ParticleToGridDecelTimeConstant;
 		CoupleParticlesParameters.Threshold = FlowGridSceneProxy->FlowGridProperties.ParticleToGridThresholdMultiplier;
+
+		CoupleParticlesParameters.InvVelocityScale = 1.0f / scale;
 
 		FShaderResourceViewRHIRef BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->blockTable);
 		FShaderResourceViewRHIRef DataInSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx]);
