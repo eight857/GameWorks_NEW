@@ -467,6 +467,13 @@ public:
 	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) { return FShaderResourceViewRHIRef(); }
 	virtual FUnorderedAccessViewRHIRef NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc) { return FUnorderedAccessViewRHIRef(); }
 	FRHINvFlowCleanup NvFlowCleanup;
+	virtual void NvFlowWork(void(*workFunc)(void*,SIZE_T,IRHICommandContext*), void* paramData, SIZE_T numBytes)
+	{
+		if (workFunc)
+		{
+			workFunc(paramData, numBytes, this);
+		}
+	}
 	// NvFlow end
 };
 

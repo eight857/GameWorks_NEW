@@ -141,6 +141,14 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vorticity", meta = (ClampMin = 0.0f, ClampMax = 20.0f))
 	float		VorticityStrength;
 
+	/** 0.f means zero velocity magnitude influence on vorticity*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vorticity", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
+	float		VorticityVelocityMask;
+
+	/** If true, run older less accurate pressure solver*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pressure")
+	uint32		bPressureLegacyMode : 1;
+
 	/** Minimum temperature for combustion*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combustion", meta = (ClampMin = 0.0f, ClampMax = 5.0f))
 	float		IgnitionTemperature;

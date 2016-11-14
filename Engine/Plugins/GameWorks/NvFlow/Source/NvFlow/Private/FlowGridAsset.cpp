@@ -62,6 +62,8 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	VelocityMacCormackBlendFactor = FlowGridParams.velocityMacCormackBlendFactor;
 	DensityMacCormackBlendFactor = FlowGridParams.densityMacCormackBlendFactor;
 	VorticityStrength = FlowGridParams.vorticityStrength;
+	VorticityVelocityMask = FlowGridParams.vorticityVelocityMask;
+	bPressureLegacyMode = FlowGridParams.pressureLegacyMode;
 	IgnitionTemperature = FlowGridParams.combustion.ignitionTemp;
 	CoolingRate = FlowGridParams.combustion.coolingRate;
 
@@ -87,10 +89,31 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	ColorMapMaxX = 1.f;
 
 	//Collision
-	ObjectType = ECC_WorldDynamic; /// ECC_Flow;
-	FCollisionResponseTemplate Template;
-	UCollisionProfile::Get()->GetProfileTemplate(TEXT("WorldDynamic"/*"Flow"*/), Template);
-	ResponseToChannels = Template.ResponseToChannels;
+	FCollisionResponseParams FlowResponseParams;
+	int32 FlowChannelIdx = INDEX_NONE;
+	// search engine trace channels for Flow
+	for (int32 ChannelIdx = ECC_GameTraceChannel1; ChannelIdx <= ECC_GameTraceChannel18; ChannelIdx++)
+	{
+		if (FName(TEXT("Flow")) == UCollisionProfile::Get()->ReturnChannelNameFromContainerIndex(ChannelIdx))
+		{
+			FlowChannelIdx = ChannelIdx;
+			break;
+		}
+	}
+	if (FlowChannelIdx != INDEX_NONE)
+	{
+		ObjectType = (ECollisionChannel)FlowChannelIdx;
+		FCollisionResponseTemplate Template;
+		UCollisionProfile::Get()->GetProfileTemplate(UCollisionProfile::BlockAll_ProfileName, Template);
+		ResponseToChannels = Template.ResponseToChannels;
+	}
+	else
+	{
+		ObjectType = ECC_WorldDynamic; /// ECC_Flow;
+		FCollisionResponseTemplate Template;
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("WorldDynamic"/*"Flow"*/), Template);
+		ResponseToChannels = Template.ResponseToChannels;
+	}
 
 	bEnableParticlesInteraction = false;
 	InteractionChannel = EIC_Channel1;

@@ -3,6 +3,9 @@
 // NvFlow begin
 #if WITH_NVFLOW
 
+DECLARE_LOG_CATEGORY_EXTERN(LogFlow, Log, All);
+DEFINE_LOG_CATEGORY(LogFlow);
+
 /*=============================================================================
 NFlowRendering.cpp: Translucent rendering implementation.
 =============================================================================*/
@@ -36,13 +39,12 @@ namespace NvFlow
 
 	struct Context
 	{
-		Context() { m_interopStarted = false; }
+		Context() { }
 		~Context() { release(); }
 
 		void init(FRHICommandListImmediate& RHICmdList);
 		void interopBegin(FRHICommandList& RHICmdList, bool computeOnly);
 		void interopEnd(FRHICommandList& RHICmdList, bool computeOnly, bool shouldFlush);
-		bool isInteropStarted() const { return m_interopStarted; }
 
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
 		void renderScene(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy);
@@ -50,7 +52,9 @@ namespace NvFlow
 
 		void updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush);
 
-		NvFlowContext* m_context = nullptr;
+		TArray<Scene*> m_sceneList;
+
+		NvFlowContext* m_flowContext = nullptr;
 		NvFlowDepthStencilView* m_dsv = nullptr;
 		NvFlowRenderTargetView* m_rtv = nullptr;
 
@@ -61,9 +65,21 @@ namespace NvFlow
 		NvFlowDevice* m_computeDevice = nullptr;
 		NvFlowContext* m_computeContext = nullptr;
 
-		TArray<Scene*> m_sceneList;
+		// deferred mechanism for proper RHI command list support
+		void initDeferred(IRHICommandContext* RHICmdCtx);
+		void interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly);
+		void interopEndDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool shouldFlush);
 
-		bool m_interopStarted;
+		struct InteropBeginEndParams
+		{
+			Context* context;
+			bool computeOnly;
+			bool shouldFlush;
+		};
+
+		static void initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void interopBeginCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void interopEndCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 	};
 
 	struct Scene
@@ -76,6 +92,8 @@ namespace NvFlow
 		void updateParameters(FRHICommandListImmediate& RHICmdList);
 
 		void updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush);
+		void finilizeUpdate(FRHICommandListImmediate& RHICmdList);
+
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
 		void render(FRHICommandList& RHICmdList, const FViewInfo& View);
 
@@ -85,27 +103,22 @@ namespace NvFlow
 		struct CallbackUserData
 		{
 			NvFlow::Scene* Scene;
-			FRHICommandListImmediate& RHICmdList;
+			IRHICommandContext* RHICmdCtx;
 			float DeltaTime;
-
-			CallbackUserData(NvFlow::Scene* InScene, FRHICommandListImmediate& InRHICmdList, float InDeltaTime)
-				: Scene(InScene), RHICmdList(InRHICmdList), DeltaTime(InDeltaTime)
-			{
-			}
 		};
 
 		static void sEmitCustomAllocCallback(void* userdata, const NvFlowGridEmitCustomAllocParams* params)
 		{
 			CallbackUserData* callbackUserData = (CallbackUserData*)userdata;
-			callbackUserData->Scene->emitCustomAllocCallback(callbackUserData->RHICmdList, params);
+			callbackUserData->Scene->emitCustomAllocCallback(callbackUserData->RHICmdCtx, params);
 		}
 		static void sEmitCustomEmitCallback(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params)
 		{
 			CallbackUserData* callbackUserData = (CallbackUserData*)userdata;
-			callbackUserData->Scene->emitCustomEmitCallback(callbackUserData->RHICmdList, dataFrontIdx, params, callbackUserData->DeltaTime);
+			callbackUserData->Scene->emitCustomEmitCallback(callbackUserData->RHICmdCtx, dataFrontIdx, params, callbackUserData->DeltaTime);
 		}
-		void emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList, const NvFlowGridEmitCustomAllocParams* params);
-		void emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, float dt);
+		void emitCustomAllocCallback(IRHICommandContext* RHICmdCtx, const NvFlowGridEmitCustomAllocParams* params);
+		void emitCustomEmitCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, float dt);
 
 
 		bool m_multiAdapter = false;
@@ -134,6 +147,29 @@ namespace NvFlow
 
 		NvFlowGridExport* m_gridExport = nullptr;
 		TArray<ParticleSimulationParamsNvFlow> m_particleParamsArray;
+
+		// deferred mechanism for proper RHI command list support
+		float m_updateSubstep_dt = 0.f;
+
+		struct RenderParams
+		{
+			Scene* scene;
+			NvFlowVolumeRenderParams volumeRenderParams;
+		};
+
+		void initDeferred(IRHICommandContext* RHICmdCtx);
+		void updateParametersDeferred(IRHICommandContext* RHICmdCtx);
+		void updateSubstepDeferred(IRHICommandContext* RHICmdCtx);
+		void finilizeUpdateDeferred(IRHICommandContext* RHICmdCtx);
+		void updateGridViewDeferred(IRHICommandContext* RHICmdCtx);
+		void renderDeferred(IRHICommandContext* RHICmdCtx, RenderParams* renderParams);
+
+		static void initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void updateParametersCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void updateSubstepCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void finilizeUpdateCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void updateGridViewCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void renderCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 	};
 
 	void cleanupContext(void* ptr);
@@ -170,9 +206,22 @@ void NvFlow::cleanupScene(void* ptr)
 
 void NvFlow::Context::init(FRHICommandListImmediate& RHICmdList)
 {
-	auto& appctx = RHICmdList.GetContext();
+	UE_LOG(LogFlow, Display, TEXT("NvFlow Context Init"));
 
-	m_context = NvFlowInteropCreateContext(appctx);
+	RHICmdList.NvFlowWork(initCallback, this, 0u);
+}
+
+void NvFlow::Context::initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto context = (NvFlow::Context*)paramData;
+	context->initDeferred(RHICmdCtx);
+}
+
+void NvFlow::Context::initDeferred(IRHICommandContext* RHICmdCtx)
+{
+	auto& appctx = *RHICmdCtx;
+
+	m_flowContext = NvFlowInteropCreateContext(appctx);
 
 	// register cleanup
 	NvFlowCleanupFunc(appctx, cleanupContext, this);
@@ -184,13 +233,13 @@ void NvFlow::Context::init(FRHICommandListImmediate& RHICmdList)
 	NvIsPhysXHighSupported(bDedicatedPhysXGPU);
 	UE_LOG(LogInit, Display, TEXT("NvFlow using dedicated PhysX GPU: %s"), bDedicatedPhysXGPU ? TEXT("true") : TEXT("false"));
 #endif
-	m_computeDeviceAvailable = NvFlowDedicatedDeviceAvailable(m_context) && bDedicatedPhysXGPU;
+	m_computeDeviceAvailable = NvFlowDedicatedDeviceAvailable(m_flowContext) && bDedicatedPhysXGPU;
 	if (m_computeDeviceAvailable)
 	{
 		NvFlowDeviceDesc desc = {};
 		NvFlowDeviceDescDefaults(&desc);
 
-		m_computeDevice = NvFlowCreateDevice(m_context, &desc);
+		m_computeDevice = NvFlowCreateDevice(m_flowContext, &desc);
 
 		m_computeContext = NvFlowDeviceCreateContext(m_computeDevice);
 
@@ -201,16 +250,31 @@ void NvFlow::Context::init(FRHICommandListImmediate& RHICmdList)
 
 void NvFlow::Context::interopBegin(FRHICommandList& RHICmdList, bool computeOnly)
 {
-	auto& appctx = RHICmdList.GetContext();
+	InteropBeginEndParams params = {};
+	params.context = this;
+	params.computeOnly = computeOnly;
+	params.shouldFlush = false;
+	RHICmdList.NvFlowWork(interopBeginCallback, &params, sizeof(params));
+}
 
-	NvFlowInteropUpdateContext(appctx, m_context);
+void NvFlow::Context::interopBeginCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto params = (NvFlow::Context::InteropBeginEndParams*)paramData;
+	params->context->interopBeginDeferred(RHICmdCtx, params->computeOnly);
+}
+
+void NvFlow::Context::interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly)
+{
+	auto& appctx = *RHICmdCtx;
+
+	NvFlowInteropUpdateContext(appctx, m_flowContext);
 	if (!computeOnly)
 	{
-		if(m_dsv == nullptr) m_dsv = NvFlowInteropCreateDepthStencilView(appctx, m_context);
-		if(m_rtv == nullptr) m_rtv = NvFlowInteropCreateRenderTargetView(appctx, m_context);
+		if (m_dsv == nullptr) m_dsv = NvFlowInteropCreateDepthStencilView(appctx, m_flowContext);
+		if (m_rtv == nullptr) m_rtv = NvFlowInteropCreateRenderTargetView(appctx, m_flowContext);
 
-		NvFlowInteropUpdateDepthStencilView(appctx, m_context, m_dsv);
-		NvFlowInteropUpdateRenderTargetView(appctx, m_context, m_rtv);
+		NvFlowInteropUpdateDepthStencilView(appctx, m_flowContext, m_dsv);
+		NvFlowInteropUpdateRenderTargetView(appctx, m_flowContext, m_rtv);
 	}
 
 	if (computeOnly && m_computeDevice)
@@ -220,21 +284,34 @@ void NvFlow::Context::interopBegin(FRHICommandList& RHICmdList, bool computeOnly
 		m_computeFramesInFlight = status.framesInFlight;
 	}
 
-	NvFlowInteropPush(appctx, m_context);
-	m_interopStarted = true;
+	NvFlowInteropPush(appctx, m_flowContext);
 }
 
 void NvFlow::Context::interopEnd(FRHICommandList& RHICmdList, bool computeOnly, bool shouldFlush)
 {
-	auto& appctx = RHICmdList.GetContext();
+	InteropBeginEndParams params = {};
+	params.context = this;
+	params.computeOnly = computeOnly;
+	params.shouldFlush = shouldFlush;
+	RHICmdList.NvFlowWork(interopEndCallback, &params, sizeof(params));
+}
+
+void NvFlow::Context::interopEndCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto params = (NvFlow::Context::InteropBeginEndParams*)paramData;
+	params->context->interopEndDeferred(RHICmdCtx, params->computeOnly, params->shouldFlush);
+}
+
+void NvFlow::Context::interopEndDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool shouldFlush)
+{
+	auto& appctx = *RHICmdCtx;
 
 	if (computeOnly && m_computeDevice && shouldFlush)
 	{
 		NvFlowDeviceFlush(m_computeDevice);
 	}
 
-	NvFlowInteropPop(appctx, m_context);
-	m_interopStarted = false;
+	NvFlowInteropPop(appctx, m_flowContext);
 }
 
 void NvFlow::Context::updateGridView(FRHICommandListImmediate& RHICmdList)
@@ -261,16 +338,21 @@ void NvFlow::Context::release()
 	// proxies and scenes should all be released by now
 	check(m_sceneList.Num() == 0);
 
+	if (m_flowContext)
+	{
+		UE_LOG(LogFlow, Display, TEXT("NvFlow Context Cleanup"));
+	}
+
 	if (m_rtv) NvFlowReleaseRenderTargetView(m_rtv);
 	if (m_dsv) NvFlowReleaseDepthStencilView(m_dsv);
-	if (m_context) NvFlowReleaseContext(m_context);
+	if (m_flowContext) NvFlowReleaseContext(m_flowContext);
 
 	if (m_computeDevice) NvFlowReleaseDevice(m_computeDevice);
 	if (m_computeContext) NvFlowReleaseContext(m_computeContext);
 
 	m_rtv = nullptr;
 	m_dsv = nullptr;
-	m_context = nullptr;
+	m_flowContext = nullptr;
 
 	m_computeDevice = nullptr;
 	m_computeContext = nullptr;
@@ -309,7 +391,7 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 	}
 	FlowGridSceneProxy->NumScheduledSubsteps = 0;
 
-	scene->m_particleParamsArray.Reset();
+	scene->finilizeUpdate(RHICmdList);
 }
 
 // ------------------ NvFlow::Scene -----------------
@@ -321,6 +403,11 @@ NvFlow::Scene::~Scene()
 
 void NvFlow::Scene::release()
 {
+	if (m_context)
+	{
+		UE_LOG(LogFlow, Display, TEXT("NvFlow Scene %p Cleanup"), this);
+	}
+
 	if (m_gridExport) NvFlowReleaseGridExport(m_gridExport);
 	if (m_grid) NvFlowReleaseGrid(m_grid);
 	if (m_gridProxy) NvFlowReleaseGridProxy(m_gridProxy);
@@ -340,12 +427,25 @@ void NvFlow::Scene::release()
 
 void NvFlow::Scene::init(Context* context, FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* InFlowGridSceneProxy)
 {
+	UE_LOG(LogFlow, Display, TEXT("NvFlow Scene %p Init"), this);
+
 	m_context = context;
 	FlowGridSceneProxy = InFlowGridSceneProxy;
 	FlowGridSceneProxy->scenePtr = this;
 	FlowGridSceneProxy->cleanupSceneFunc = NvFlow::cleanupScene;
 
-	auto& appctx = RHICmdList.GetContext();
+	RHICmdList.NvFlowWork(initCallback, this, 0u);
+}
+
+void NvFlow::Scene::initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto scene = (NvFlow::Scene*)paramData;
+	scene->initDeferred(RHICmdCtx);
+}
+
+void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
+{
+	auto& appctx = *RHICmdCtx;
 
 	// create local grid desc copy
 	m_gridDesc = FlowGridSceneProxy->FlowGridProperties.GridDesc;
@@ -355,12 +455,12 @@ void NvFlow::Scene::init(Context* context, FRHICommandListImmediate& RHICmdList,
 	m_gridDesc.initialLocation = *(NvFlowFloat3*)(&FlowOrigin.X);
 
 	bool multiAdapterEnabled = FlowGridSceneProxy->FlowGridProperties.bMultiAdapterEnabled;
-	m_multiAdapter = multiAdapterEnabled && context->m_computeDeviceAvailable;
+	m_multiAdapter = multiAdapterEnabled && m_context->m_computeDeviceAvailable;
 
 	// if multiAdapter, disable VTR to remove VTR induced stalls
 	if (m_multiAdapter) m_gridDesc.enableVTR = false;
 
-	NvFlowContext* computeContext = m_multiAdapter ? context->m_computeContext : context->m_context;
+	NvFlowContext* computeContext = m_multiAdapter ? m_context->m_computeContext : m_context->m_flowContext;
 
 	m_grid = NvFlowCreateGrid(computeContext, &m_gridDesc);
 
@@ -369,16 +469,16 @@ void NvFlow::Scene::init(Context* context, FRHICommandListImmediate& RHICmdList,
 
 	m_gridProxy = NvFlowCreateGridProxy(computeContext, m_grid, &proxyDesc);
 
-	auto gridView = NvFlowGridProxyGetGridView(m_gridProxy, context->m_context);
+	auto gridView = NvFlowGridProxyGetGridView(m_gridProxy, m_context->m_flowContext);
 
 	NvFlowVolumeRenderDesc volumeRenderDesc;
 	volumeRenderDesc.view = gridView;
 
-	m_volumeRender = NvFlowCreateVolumeRender(m_context->m_context, &volumeRenderDesc);
+	m_volumeRender = NvFlowCreateVolumeRender(m_context->m_flowContext, &volumeRenderDesc);
 
 	NvFlowColorMapDesc colorMapDesc;
 	NvFlowColorMapDescDefaults(&colorMapDesc);
-	m_colorMap = NvFlowCreateColorMap(m_context->m_context, &colorMapDesc);
+	m_colorMap = NvFlowCreateColorMap(m_context->m_flowContext, &colorMapDesc);
 }
 
 void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
@@ -467,30 +567,70 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 		m_renderParams.screenPercentage = Properties.RenderParams.MaxScreenPercentage;
 	}
 
+	// deferred parameter updates
+	RHICmdList.NvFlowWork(updateParametersCallback, this, 0u);
+}
+
+void NvFlow::Scene::updateParametersCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto scene = (NvFlow::Scene*)paramData;
+	scene->updateParametersDeferred(RHICmdCtx);
+}
+
+void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
+{
+	auto& appctx = *RHICmdCtx;
+
+	const FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
+
 	// set color map
 	{
-		auto mapped = NvFlowColorMapMap(m_colorMap, m_context->m_context);
+		auto mapped = NvFlowColorMapMap(m_colorMap, m_context->m_flowContext);
 		if (mapped.data)
 		{
 			check(mapped.dim == Properties.RenderParams.ColorMap.Num());
 			FMemory::Memcpy(mapped.data, Properties.RenderParams.ColorMap.GetData(), sizeof(NvFlowFloat4)*Properties.RenderParams.ColorMap.Num());
-			NvFlowColorMapUnmap(m_colorMap, m_context->m_context);
+			NvFlowColorMapUnmap(m_colorMap, m_context->m_flowContext);
 		}
 	}
 }
 
 void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush)
 {
-	auto& appctx = RHICmdList.GetContext();
-
 	bool shouldUpdateGrid = (m_context->m_computeFramesInFlight < m_context->m_computeMaxFramesInFlight);
-	bool shouldUpdateEmitters = (m_context->m_computeFramesInFlight < m_context->m_computeMaxFramesInFlight);
+
+	shouldFlush = shouldFlush || (m_multiAdapter && shouldUpdateGrid);
+
+	// update adaptive timing
+	{
+		const float decayRate = 0.98f;
+
+		m_timeTotal += dt;
+		if (shouldUpdateGrid) m_timeSuccess += dt;
+
+		m_timeTotal *= decayRate;
+		m_timeSuccess *= decayRate;
+	}
+
+	m_updateSubstep_dt = dt;
+
+	if (shouldUpdateGrid)
+	{
+		RHICmdList.NvFlowWork(updateSubstepCallback, this, 0u);
+	}
+}
+
+void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx)
+{
+	auto& appctx = *RHICmdCtx;
+
+	float dt = m_updateSubstep_dt;
 
 	NvFlowGridSetParams(m_grid, &m_gridParams);
 
 	FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
 
-	if (shouldUpdateEmitters)
+	// update emitters
 	{
 		// emit
 		NvFlowGridEmit(
@@ -511,60 +651,79 @@ void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt
 			);
 	}
 
-	NvFlowContext* computeContext = m_multiAdapter ? m_context->m_computeContext : m_context->m_context;
+	NvFlowContext* computeContext = m_multiAdapter ? m_context->m_computeContext : m_context->m_flowContext;
 
-	shouldFlush = shouldFlush || (m_multiAdapter && shouldUpdateGrid);
-
-	// update adaptive timing
+	float adaptiveDt = dt;
+	// adaptive timestepping for multi-GPU
+	if (m_multiAdapter)
 	{
-		const float decayRate = 0.98f;
-
-		m_timeTotal += dt;
-		if (shouldUpdateGrid) m_timeSuccess += dt;
-
-		m_timeTotal *= decayRate;
-		m_timeSuccess *= decayRate;
+		const float clampDt = 2.f * dt;
+		adaptiveDt = m_timeTotal / m_timeSuccess * dt;
+		if (adaptiveDt > clampDt) adaptiveDt = clampDt;
 	}
 
-	if (shouldUpdateGrid)
 	{
-		float adaptiveDt = dt;
-		// adaptive timestepping for multi-GPU
-		if (m_multiAdapter)
-		{
-			const float clampDt = 2.f * dt;
-			adaptiveDt = m_timeTotal / m_timeSuccess * dt;
-			if (adaptiveDt > clampDt) adaptiveDt = clampDt;
-		}
+		CallbackUserData callbackUserData;
+		callbackUserData.Scene = this;
+		callbackUserData.RHICmdCtx = RHICmdCtx;
+		callbackUserData.DeltaTime = adaptiveDt;
 
-		{
-			NvFlow::Scene::CallbackUserData userData(this, RHICmdList, adaptiveDt);
-			NvFlowGridEmitCustomRegisterAllocFunc(m_grid, &NvFlow::Scene::sEmitCustomAllocCallback, &userData);
-			NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, &NvFlow::Scene::sEmitCustomEmitCallback, &userData);
+		NvFlowGridEmitCustomRegisterAllocFunc(m_grid, &NvFlow::Scene::sEmitCustomAllocCallback, &callbackUserData);
+		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, &NvFlow::Scene::sEmitCustomEmitCallback, &callbackUserData);
 
-			NvFlowGridUpdate(m_grid, computeContext, adaptiveDt);
+		NvFlowGridUpdate(m_grid, computeContext, adaptiveDt);
 
-			NvFlowGridEmitCustomRegisterAllocFunc(m_grid, nullptr, nullptr);
-			NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, nullptr, nullptr);
-		}
-
-		NvFlowGridProxyPush(m_gridProxy, computeContext, m_grid);
+		NvFlowGridEmitCustomRegisterAllocFunc(m_grid, nullptr, nullptr);
+		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, nullptr, nullptr);
 	}
+
+	NvFlowGridProxyPush(m_gridProxy, computeContext, m_grid);
+}
+
+void NvFlow::Scene::updateSubstepCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto scene = (NvFlow::Scene*)paramData;
+	scene->updateSubstepDeferred(RHICmdCtx);
+}
+
+void NvFlow::Scene::finilizeUpdate(FRHICommandListImmediate& RHICmdList)
+{
+	RHICmdList.NvFlowWork(finilizeUpdateCallback, this, 0u);
+}
+
+void NvFlow::Scene::finilizeUpdateCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto scene = (NvFlow::Scene*)paramData;
+	scene->finilizeUpdateDeferred(RHICmdCtx);
+}
+
+void NvFlow::Scene::finilizeUpdateDeferred(IRHICommandContext* RHICmdCtx)
+{
+	m_particleParamsArray.Reset();
 }
 
 void NvFlow::Scene::updateGridView(FRHICommandListImmediate& RHICmdList)
 {
-	NvFlowContext* computeContext = m_multiAdapter ? m_context->m_computeContext : m_context->m_context;
+	RHICmdList.NvFlowWork(updateGridViewCallback, this, 0u);
+}
+
+void NvFlow::Scene::updateGridViewCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto scene = (NvFlow::Scene*)paramData;
+	scene->updateGridViewDeferred(RHICmdCtx);
+}
+
+void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
+{
+	NvFlowContext* computeContext = m_multiAdapter ? m_context->m_computeContext : m_context->m_flowContext;
 
 	NvFlowGridProxyFlush(m_gridProxy, computeContext);
 
-	m_gridView = NvFlowGridProxyGetGridView(m_gridProxy, m_context->m_context);
+	m_gridView = NvFlowGridProxyGetGridView(m_gridProxy, m_context->m_flowContext);
 }
 
 void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 {
-	auto& appctx = RHICmdList.GetContext();
-
 	FMatrix viewMatrix = View.ViewMatrices.ViewMatrix;
 	FMatrix projMatrix = View.ViewMatrices.ProjMatrix;
 
@@ -579,8 +738,6 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 	memcpy(&m_renderParams.projectionMatrix, &projMatrix.M[0][0], sizeof(m_renderParams.projectionMatrix));
 	memcpy(&m_renderParams.viewMatrix, &viewMatrix.M[0][0], sizeof(m_renderParams.viewMatrix));
 
-	m_renderParams.depthStencilView = m_context->m_dsv;
-	m_renderParams.renderTargetView = m_context->m_rtv;
 	m_renderParams.colorMap = m_colorMap;
 
 #if NVFLOW_SMP
@@ -629,7 +786,15 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 
 #endif
 
-	NvFlowVolumeRenderGridView(m_volumeRender, m_context->m_context, m_gridView, &m_renderParams);
+	// push work
+	{
+		RenderParams renderParams = {};
+
+		renderParams.scene = this;
+		renderParams.volumeRenderParams = m_renderParams;
+
+		RHICmdList.NvFlowWork(renderCallback, &renderParams, sizeof(RenderParams));
+	}
 
 #if NVFLOW_SMP
 	if (m_renderParams.lensMatchedShading.enabled)
@@ -637,6 +802,22 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 		RHICmdList.SetModifiedWMode(View.LensMatchedShadingConf, true, true);
 	}
 #endif
+}
+
+void NvFlow::Scene::renderCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto renderParams = (RenderParams*)paramData;
+	renderParams->scene->renderDeferred(RHICmdCtx, renderParams);
+}
+
+void NvFlow::Scene::renderDeferred(IRHICommandContext* RHICmdCtx, RenderParams* renderParams)
+{
+	auto& volumeRenderParams = renderParams->volumeRenderParams;
+
+	volumeRenderParams.depthStencilView = m_context->m_dsv;
+	volumeRenderParams.renderTargetView = m_context->m_rtv;
+
+	NvFlowVolumeRenderGridView(m_volumeRender, m_context->m_flowContext, m_gridView, &volumeRenderParams);
 }
 
 namespace
@@ -722,17 +903,17 @@ bool NvFlow::Scene::getExportParams(FRHICommandListImmediate& RHICmdList, GridEx
 		NvFlowGridExportDesc Desc;
 		Desc.gridView = m_gridView;
 
-		m_gridExport = NvFlowCreateGridExport(m_context->m_context, &Desc);
+		m_gridExport = NvFlowCreateGridExport(m_context->m_flowContext, &Desc);
 	}
 
 
-	NvFlowGridExportUpdate(m_gridExport, m_context->m_context, m_gridView, eNvFlowGridChannelVelocity);
+	NvFlowGridExportUpdate(m_gridExport, m_context->m_flowContext, m_gridView, eNvFlowGridChannelVelocity);
 
 	NvFlowGridExportView GridExportView;
-	NvFlowGridExportGetView(m_gridExport, m_context->m_context, &GridExportView, eNvFlowGridChannelVelocity);
+	NvFlowGridExportGetView(m_gridExport, m_context->m_flowContext, &GridExportView, eNvFlowGridChannelVelocity);
 
-	OutParams.DataSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, GridExportView.data);
-	OutParams.BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, GridExportView.blockTable);
+	OutParams.DataSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, GridExportView.data);
+	OutParams.BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, GridExportView.blockTable);
 
 	OutParams.BlockDim = NvFlowConvert(GridExportView.shaderParams.blockDim);
 	OutParams.BlockDimBits = NvFlowConvert(GridExportView.shaderParams.blockDimBits);
@@ -815,12 +996,12 @@ public:
 	/**
 	* Set output buffers for this shader.
 	*/
-	void SetOutput(FRHICommandList& RHICmdList, FUnorderedAccessViewRHIParamRef OutMaskUAV)
+	void SetOutput(IRHICommandContext* RHICmdCtx, FUnorderedAccessViewRHIParamRef OutMaskUAV)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
 		if (OutMask.IsBound())
 		{
-			RHICmdList.SetUAVParameter(ComputeShaderRHI, OutMask.GetBaseIndex(), OutMaskUAV);
+			RHICmdCtx->RHISetUAVParameter(ComputeShaderRHI, OutMask.GetBaseIndex(), OutMaskUAV);
 		}
 	}
 
@@ -828,37 +1009,46 @@ public:
 	* Set input parameters.
 	*/
 	void SetParameters(
-		FRHICommandList& RHICmdList,
+		IRHICommandContext* RHICmdCtx,
 		FNvFlowMaskFromParticlesUniformBufferRef& UniformBuffer,
 		FShaderResourceViewRHIParamRef InIndicesSRV,
 		FTexture2DRHIParamRef PositionTextureRHI
 	)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
-		SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowMaskFromParticlesParameters>(), UniformBuffer);
+		//SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowMaskFromParticlesParameters>(), UniformBuffer);
+		{
+			auto Shader = ComputeShaderRHI;
+			const auto& Parameter = GetUniformBufferParameter<FNvFlowMaskFromParticlesParameters>();
+			auto UniformBufferRHI = UniformBuffer;
+			if (Parameter.IsBound())
+			{
+				RHICmdCtx->RHISetShaderUniformBuffer(Shader, Parameter.GetBaseIndex(), UniformBufferRHI);
+			}
+		}
 		if (InParticleIndices.IsBound())
 		{
-			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), InIndicesSRV);
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), InIndicesSRV);
 		}
 		if (PositionTexture.IsBound())
 		{
-			RHICmdList.SetShaderTexture(ComputeShaderRHI, PositionTexture.GetBaseIndex(), PositionTextureRHI);
+			RHICmdCtx->RHISetShaderTexture(ComputeShaderRHI, PositionTexture.GetBaseIndex(), PositionTextureRHI);
 		}
 	}
 
 	/**
 	* Unbinds any buffers that have been bound.
 	*/
-	void UnbindBuffers(FRHICommandList& RHICmdList)
+	void UnbindBuffers(IRHICommandContext* RHICmdCtx)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
 		if (InParticleIndices.IsBound())
 		{
-			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), FShaderResourceViewRHIParamRef());
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), FShaderResourceViewRHIParamRef());
 		}
 		if (OutMask.IsBound())
 		{
-			RHICmdList.SetUAVParameter(ComputeShaderRHI, OutMask.GetBaseIndex(), FUnorderedAccessViewRHIParamRef());
+			RHICmdCtx->RHISetUAVParameter(ComputeShaderRHI, OutMask.GetBaseIndex(), FUnorderedAccessViewRHIParamRef());
 		}
 	}
 
@@ -875,20 +1065,20 @@ private:
 IMPLEMENT_SHADER_TYPE(, FNvFlowMaskFromParticlesCS, TEXT("NvFlowAllocShader"), TEXT("ComputeMaskFromParticles"), SF_Compute);
 
 
-void NvFlow::Scene::emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList, const NvFlowGridEmitCustomAllocParams* params)
+void NvFlow::Scene::emitCustomAllocCallback(IRHICommandContext* RHICmdCtx, const NvFlowGridEmitCustomAllocParams* params)
 {
 	if (m_particleParamsArray.Num() > 0)
 	{
-		NvFlowContextPop(m_context->m_context);
+		NvFlowContextPop(m_context->m_flowContext);
 
 		TShaderMapRef<FNvFlowMaskFromParticlesCS> MaskFromParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		RHICmdList.SetComputeShader(MaskFromParticlesCS->GetComputeShader());
+		RHICmdCtx->RHISetComputeShader(MaskFromParticlesCS->GetComputeShader());
 
 		FNvFlowMaskFromParticlesParameters MaskFromParticlesParameters;
-		MaskFromParticlesParameters.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);;
+		MaskFromParticlesParameters.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
 		MaskFromParticlesParameters.MaskDim = FIntVector(params->maskDim.x, params->maskDim.y, params->maskDim.z);
 
-		FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->maskResourceRW);
+		FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(*RHICmdCtx, m_context->m_flowContext, params->maskResourceRW);
 
 		for (int32 i = 0; i < m_particleParamsArray.Num(); ++i)
 		{
@@ -902,14 +1092,15 @@ void NvFlow::Scene::emitCustomAllocCallback(FRHICommandListImmediate& RHICmdList
 
 				uint32 GroupCount = (ParticleParams.ParticleCount + MASK_FROM_PARTICLES_THREAD_COUNT - 1) / MASK_FROM_PARTICLES_THREAD_COUNT;
 
-				MaskFromParticlesCS->SetOutput(RHICmdList, MaskUAV);
-				MaskFromParticlesCS->SetParameters(RHICmdList, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI);
-				DispatchComputeShader(RHICmdList, *MaskFromParticlesCS, GroupCount, 1, 1);
-				MaskFromParticlesCS->UnbindBuffers(RHICmdList);
+				MaskFromParticlesCS->SetOutput(RHICmdCtx, MaskUAV);
+				MaskFromParticlesCS->SetParameters(RHICmdCtx, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI);
+				//DispatchComputeShader(RHICmdCtx, *MaskFromParticlesCS, GroupCount, 1, 1);
+				RHICmdCtx->RHIDispatchComputeShader(GroupCount, 1, 1);
+				MaskFromParticlesCS->UnbindBuffers(RHICmdCtx);
 			}
 		}
 
-		NvFlowContextPush(m_context->m_context);
+		NvFlowContextPush(m_context->m_flowContext);
 	}
 }
 
@@ -976,12 +1167,12 @@ public:
 	/**
 	* Set output buffers for this shader.
 	*/
-	void SetOutput(FRHICommandList& RHICmdList, FUnorderedAccessViewRHIParamRef DataOutUAV)
+	void SetOutput(IRHICommandContext* RHICmdCtx, FUnorderedAccessViewRHIParamRef DataOutUAV)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
 		if (DataOut.IsBound())
 		{
-			RHICmdList.SetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), DataOutUAV);
+			RHICmdCtx->RHISetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), DataOutUAV);
 		}
 	}
 
@@ -989,7 +1180,7 @@ public:
 	* Set input parameters.
 	*/
 	void SetParameters(
-		FRHICommandList& RHICmdList,
+		IRHICommandContext* RHICmdCtx,
 		FNvFlowCopyGridDataUniformBufferRef& UniformBuffer,
 		FShaderResourceViewRHIParamRef BlockListSRV,
 		FShaderResourceViewRHIParamRef BlockTableSRV,
@@ -997,30 +1188,39 @@ public:
 	)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
-		SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowCopyGridDataParameters>(), UniformBuffer);
+		//SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowCopyGridDataParameters>(), UniformBuffer);
+		{
+			auto Shader = ComputeShaderRHI;
+			const auto& Parameter = GetUniformBufferParameter<FNvFlowCopyGridDataParameters>();
+			auto UniformBufferRHI = UniformBuffer;
+			if (Parameter.IsBound())
+			{
+				RHICmdCtx->RHISetShaderUniformBuffer(Shader, Parameter.GetBaseIndex(), UniformBufferRHI);
+			}
+		}
 		if (BlockList.IsBound())
 		{
-			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, BlockList.GetBaseIndex(), BlockListSRV);
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, BlockList.GetBaseIndex(), BlockListSRV);
 		}
 		if (BlockTable.IsBound())
 		{
-			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, BlockTable.GetBaseIndex(), BlockTableSRV);
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, BlockTable.GetBaseIndex(), BlockTableSRV);
 		}
 		if (DataIn.IsBound())
 		{
-			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, DataIn.GetBaseIndex(), DataInSRV);
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, DataIn.GetBaseIndex(), DataInSRV);
 		}
 	}
 
 	/**
 	* Unbinds any buffers that have been bound.
 	*/
-	void UnbindBuffers(FRHICommandList& RHICmdList)
+	void UnbindBuffers(IRHICommandContext* RHICmdCtx)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
 		if (DataOut.IsBound())
 		{
-			RHICmdList.SetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), FUnorderedAccessViewRHIParamRef());
+			RHICmdCtx->RHISetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), FUnorderedAccessViewRHIParamRef());
 		}
 	}
 
@@ -1103,12 +1303,12 @@ public:
 	/**
 	* Set output buffers for this shader.
 	*/
-	void SetOutput(FRHICommandList& RHICmdList, FUnorderedAccessViewRHIParamRef DataOutUAV)
+	void SetOutput(IRHICommandContext* RHICmdCtx, FUnorderedAccessViewRHIParamRef DataOutUAV)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
 		if (DataOut.IsBound())
 		{
-			RHICmdList.SetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), DataOutUAV);
+			RHICmdCtx->RHISetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), DataOutUAV);
 		}
 	}
 
@@ -1116,7 +1316,7 @@ public:
 	* Set input parameters.
 	*/
 	void SetParameters(
-		FRHICommandList& RHICmdList,
+		IRHICommandContext* RHICmdCtx,
 		FNvFlowCoupleParticlesUniformBufferRef& UniformBuffer,
 		FShaderResourceViewRHIParamRef InIndicesSRV,
 		FTexture2DRHIParamRef PositionTextureRHI,
@@ -1125,42 +1325,51 @@ public:
 		FShaderResourceViewRHIParamRef DataInSRV)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
-		SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowCoupleParticlesParameters>(), UniformBuffer);
+		//SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowCoupleParticlesParameters>(), UniformBuffer);
+		{
+			auto Shader = ComputeShaderRHI;
+			const auto& Parameter = GetUniformBufferParameter<FNvFlowCoupleParticlesParameters>();
+			auto UniformBufferRHI = UniformBuffer;
+			if (Parameter.IsBound())
+			{
+				RHICmdCtx->RHISetShaderUniformBuffer(Shader, Parameter.GetBaseIndex(), UniformBufferRHI);
+			}
+		}
 		if (InParticleIndices.IsBound())
 		{
-			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), InIndicesSRV);
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), InIndicesSRV);
 		}
 		if (PositionTexture.IsBound())
 		{
-			RHICmdList.SetShaderTexture(ComputeShaderRHI, PositionTexture.GetBaseIndex(), PositionTextureRHI);
+			RHICmdCtx->RHISetShaderTexture(ComputeShaderRHI, PositionTexture.GetBaseIndex(), PositionTextureRHI);
 		}
 		if (VelocityTexture.IsBound())
 		{
-			RHICmdList.SetShaderTexture(ComputeShaderRHI, VelocityTexture.GetBaseIndex(), VelocityTextureRHI);
+			RHICmdCtx->RHISetShaderTexture(ComputeShaderRHI, VelocityTexture.GetBaseIndex(), VelocityTextureRHI);
 		}
 		if (BlockTable.IsBound())
 		{
-			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, BlockTable.GetBaseIndex(), BlockTableSRV);
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, BlockTable.GetBaseIndex(), BlockTableSRV);
 		}
 		if (DataIn.IsBound())
 		{
-			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, DataIn.GetBaseIndex(), DataInSRV);
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, DataIn.GetBaseIndex(), DataInSRV);
 		}
 	}
 
 	/**
 	* Unbinds any buffers that have been bound.
 	*/
-	void UnbindBuffers(FRHICommandList& RHICmdList)
+	void UnbindBuffers(IRHICommandContext* RHICmdCtx)
 	{
 		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
 		if (InParticleIndices.IsBound())
 		{
-			RHICmdList.SetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), FShaderResourceViewRHIParamRef());
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, InParticleIndices.GetBaseIndex(), FShaderResourceViewRHIParamRef());
 		}
 		if (DataOut.IsBound())
 		{
-			RHICmdList.SetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), FUnorderedAccessViewRHIParamRef());
+			RHICmdCtx->RHISetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), FUnorderedAccessViewRHIParamRef());
 		}
 	}
 
@@ -1178,14 +1387,14 @@ private:
 };
 IMPLEMENT_SHADER_TYPE(, FNvFlowCoupleParticlesCS, TEXT("NvFlowCoupleShader"), TEXT("CoupleParticlesToGrid"), SF_Compute);
 
-void NvFlow::Scene::emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, float dt)
+void NvFlow::Scene::emitCustomEmitCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, float dt)
 {
 	if (m_particleParamsArray.Num() > 0 && params->numBlocks > 0)
 	{
-		NvFlowContextPop(m_context->m_context);
+		NvFlowContextPop(m_context->m_flowContext);
 		{
 			TShaderMapRef<FNvFlowCopyGridDataCS> CopyGridDataCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-			RHICmdList.SetComputeShader(CopyGridDataCS->GetComputeShader());
+			RHICmdCtx->RHISetComputeShader(CopyGridDataCS->GetComputeShader());
 
 			FNvFlowCopyGridDataParameters CopyGridDataParameters;
 			CopyGridDataParameters.BlockDim = NvFlowConvert(params->shaderParams.blockDim);
@@ -1199,21 +1408,22 @@ void NvFlow::Scene::emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList,
 			uint32 GroupCountY = (CopyGridDataParameters.ThreadDim.Y + COPY_THREAD_COUNT_Y - 1) / COPY_THREAD_COUNT_Y;
 			uint32 GroupCountZ = (CopyGridDataParameters.ThreadDim.Z + COPY_THREAD_COUNT_Z - 1) / COPY_THREAD_COUNT_Z;
 
-			FShaderResourceViewRHIRef BlockListSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->blockList);
-			FShaderResourceViewRHIRef BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->blockTable);
-			FShaderResourceViewRHIRef DataInSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx]);
-			FUnorderedAccessViewRHIRef DataOutUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx ^ 1]);
+			FShaderResourceViewRHIRef BlockListSRV = NvFlowConvertSRV(*RHICmdCtx, m_context->m_flowContext, params->blockList);
+			FShaderResourceViewRHIRef BlockTableSRV = NvFlowConvertSRV(*RHICmdCtx, m_context->m_flowContext, params->blockTable);
+			FShaderResourceViewRHIRef DataInSRV = NvFlowConvertSRV(*RHICmdCtx, m_context->m_flowContext, params->dataRW[*dataFrontIdx]);
+			FUnorderedAccessViewRHIRef DataOutUAV = NvFlowConvertUAV(*RHICmdCtx, m_context->m_flowContext, params->dataRW[*dataFrontIdx ^ 1]);
 
-			CopyGridDataCS->SetOutput(RHICmdList, DataOutUAV);
-			CopyGridDataCS->SetParameters(RHICmdList, UniformBuffer, BlockListSRV, BlockTableSRV, DataInSRV);
-			DispatchComputeShader(RHICmdList, *CopyGridDataCS, GroupCountX, GroupCountY, GroupCountZ);
-			CopyGridDataCS->UnbindBuffers(RHICmdList);
+			CopyGridDataCS->SetOutput(RHICmdCtx, DataOutUAV);
+			CopyGridDataCS->SetParameters(RHICmdCtx, UniformBuffer, BlockListSRV, BlockTableSRV, DataInSRV);
+			//DispatchComputeShader(RHICmdCtx, *CopyGridDataCS, GroupCountX, GroupCountY, GroupCountZ);
+			RHICmdCtx->RHIDispatchComputeShader(GroupCountX, GroupCountY, GroupCountZ);
+			CopyGridDataCS->UnbindBuffers(RHICmdCtx);
 
 			*dataFrontIdx ^= 1;
 		}
 
 		TShaderMapRef<FNvFlowCoupleParticlesCS> CoupleParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		RHICmdList.SetComputeShader(CoupleParticlesCS->GetComputeShader());
+		RHICmdCtx->RHISetComputeShader(CoupleParticlesCS->GetComputeShader());
 		
 		FNvFlowCoupleParticlesParameters CoupleParticlesParameters;
 		CoupleParticlesParameters.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
@@ -1231,9 +1441,9 @@ void NvFlow::Scene::emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList,
 
 		CoupleParticlesParameters.InvVelocityScale = 1.0f / scale;
 
-		FShaderResourceViewRHIRef BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->blockTable);
-		FShaderResourceViewRHIRef DataInSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx]);
-		FUnorderedAccessViewRHIRef DataOutUAV = NvFlowConvertUAV(RHICmdList.GetContext(), m_context->m_context, params->dataRW[*dataFrontIdx ^ 1]);
+		FShaderResourceViewRHIRef BlockTableSRV = NvFlowConvertSRV(*RHICmdCtx, m_context->m_flowContext, params->blockTable);
+		FShaderResourceViewRHIRef DataInSRV = NvFlowConvertSRV(*RHICmdCtx, m_context->m_flowContext, params->dataRW[*dataFrontIdx]);
+		FUnorderedAccessViewRHIRef DataOutUAV = NvFlowConvertUAV(*RHICmdCtx, m_context->m_flowContext, params->dataRW[*dataFrontIdx ^ 1]);
 
 		for (int32 i = 0; i < m_particleParamsArray.Num(); ++i)
 		{
@@ -1247,16 +1457,17 @@ void NvFlow::Scene::emitCustomEmitCallback(FRHICommandListImmediate& RHICmdList,
 
 				uint32 GroupCount = (ParticleParams.ParticleCount + COUPLE_PARTICLES_THREAD_COUNT - 1) / COUPLE_PARTICLES_THREAD_COUNT;
 
-				CoupleParticlesCS->SetOutput(RHICmdList, DataOutUAV);
-				CoupleParticlesCS->SetParameters(RHICmdList, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI, ParticleParams.VelocityTextureRHI, BlockTableSRV, DataInSRV);
-				DispatchComputeShader(RHICmdList, *CoupleParticlesCS, GroupCount, 1, 1);
-				CoupleParticlesCS->UnbindBuffers(RHICmdList);
+				CoupleParticlesCS->SetOutput(RHICmdCtx, DataOutUAV);
+				CoupleParticlesCS->SetParameters(RHICmdCtx, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI, ParticleParams.VelocityTextureRHI, BlockTableSRV, DataInSRV);
+				//DispatchComputeShader(RHICmdCtx, *CoupleParticlesCS, GroupCount, 1, 1);
+				RHICmdCtx->RHIDispatchComputeShader(GroupCount, 1, 1);
+				CoupleParticlesCS->UnbindBuffers(RHICmdCtx);
 			}
 		}
 
 		*dataFrontIdx ^= 1;
 
-		NvFlowContextPush(m_context->m_context);
+		NvFlowContextPush(m_context->m_flowContext);
 	}
 }
 
@@ -1326,18 +1537,13 @@ bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 			SCOPE_CYCLE_COUNTER(STAT_Flow_RenderGrids);
 			SCOPED_DRAW_EVENT(RHICmdList, FlowRenderGrids);
 
-			if (!NvFlow::gContext->isInteropStarted())
-			{
-				NvFlow::gContext->interopBegin(RHICmdList, false);
-			}
+			NvFlow::gContext->interopBegin(RHICmdList, false);
 
 			NvFlow::gContext->renderScene(RHICmdList, View, FlowGridSceneProxy);
-			return true;
-		}
 
-		if (NvFlow::gContext->isInteropStarted())
-		{
 			NvFlow::gContext->interopEnd(RHICmdList, false, false);
+
+			return true;
 		}
 	}
 	return false;
@@ -1345,13 +1551,9 @@ bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 
 void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
 {
-	if (!GUsingNullRHI && NvFlow::gContext)
-	{
-		if (NvFlow::gContext->isInteropStarted())
-		{
-			NvFlow::gContext->interopEnd(RHICmdList, false, false);
-		}
-	}
+	//if (!GUsingNullRHI && NvFlow::gContext)
+	//{
+	//}
 }
 
 uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList)

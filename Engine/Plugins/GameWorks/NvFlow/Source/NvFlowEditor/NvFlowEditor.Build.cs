@@ -27,7 +27,8 @@ namespace UnrealBuildTool.Rules
 				    "AssetTools",
     				"Engine",
                     "UnrealEd",
-					"RenderCore",
+                    "ComponentVisualizers",
+                    "RenderCore",
                     "Renderer",
 				    "PropertyEditor",
                     "XmlParser"

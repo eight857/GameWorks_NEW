@@ -722,6 +722,16 @@ void FTranslucentPrimSet::DrawPrimitivesParallel(
 
 		checkSlow(ViewRelevance.HasTranslucency());
 
+		// NvFlow begin
+		if (GRendererNvFlowHooks)
+		{
+			if (GRendererNvFlowHooks->NvFlowDoRenderPrimitive(RHICmdList, View, PrimitiveSceneInfo))
+			{
+				continue;
+			}
+		}
+		// NvFlow end
+
 		if (PrimitiveSceneInfo->Proxy && PrimitiveSceneInfo->Proxy->CastsVolumetricTranslucentShadow())
 		{
 			check(!IsInActualRenderingThread());
@@ -770,13 +780,6 @@ void FTranslucentPrimSet::DrawPrimitives(
 
 		RenderPrimitive(RHICmdList, View, PrimitiveSceneInfo, ViewRelevance, TranslucentSelfShadow, TranslucenyPassType);
 	}
-
-	// NvFlow begin
-	if (GRendererNvFlowHooks)
-	{
-		GRendererNvFlowHooks->NvFlowDoRenderFinish(RHICmdList, View);
-	}
-	// NvFlow end
 
 	View.SimpleElementCollector.DrawBatchedElements(RHICmdList, View, FTexture2DRHIRef(), EBlendModeFilter::Translucent);
 }

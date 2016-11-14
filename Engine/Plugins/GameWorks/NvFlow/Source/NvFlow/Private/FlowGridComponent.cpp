@@ -51,6 +51,7 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 	: Super(ObjectInitializer)
 	, FlowGridAssetCurrent(&FlowGridAsset)
 	, FlowGridAssetOverride(nullptr)
+	, FlowGridAssetOld(nullptr)
 {
 	BodyInstance.SetUseAsyncScene(true);
 
@@ -692,17 +693,27 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		newGridDesc.densityMultiRes = NewEnableParticleMode ? eNvFlowMultiRes1x1x1 : eNvFlowMultiRes2x2x2;
 
-		if (FlowGridProperties.bActive && 
-			(newGridDesc.halfSize.x != FlowGridProperties.GridDesc.halfSize.x ||
-			 newGridDesc.halfSize.y != FlowGridProperties.GridDesc.halfSize.y ||
-			 newGridDesc.halfSize.z != FlowGridProperties.GridDesc.halfSize.z ||
-			 newGridDesc.virtualDim.x != FlowGridProperties.GridDesc.virtualDim.x ||
-			 newGridDesc.virtualDim.y != FlowGridProperties.GridDesc.virtualDim.y ||
-			 newGridDesc.virtualDim.z != FlowGridProperties.GridDesc.virtualDim.z ||
-			 newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
-			 newGridDesc.densityMultiRes != FlowGridProperties.GridDesc.densityMultiRes ||
-			 NewMultiAdapterEnabled != OldMultiAdapterEnabled ||
-			 NewEnableParticleMode != OldEnableParticleMode))
+		bool changed = (newGridDesc.halfSize.x != FlowGridProperties.GridDesc.halfSize.x ||
+			newGridDesc.halfSize.y != FlowGridProperties.GridDesc.halfSize.y ||
+			newGridDesc.halfSize.z != FlowGridProperties.GridDesc.halfSize.z ||
+			newGridDesc.virtualDim.x != FlowGridProperties.GridDesc.virtualDim.x ||
+			newGridDesc.virtualDim.y != FlowGridProperties.GridDesc.virtualDim.y ||
+			newGridDesc.virtualDim.z != FlowGridProperties.GridDesc.virtualDim.z ||
+			newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
+			newGridDesc.densityMultiRes != FlowGridProperties.GridDesc.densityMultiRes ||
+			NewMultiAdapterEnabled != OldMultiAdapterEnabled ||
+			NewEnableParticleMode != OldEnableParticleMode);
+
+		if (changed || (FlowGridAssetOld != FlowGridAssetRef))
+		{
+			// make sure transform is good
+			UpdateBounds();
+			MarkRenderTransformDirty();
+
+			FlowGridAssetOld = FlowGridAssetRef;
+		}
+
+		if (FlowGridProperties.bActive && changed)
 		{
 			// rebuild required
 			FlowGridProperties.bActive = false;

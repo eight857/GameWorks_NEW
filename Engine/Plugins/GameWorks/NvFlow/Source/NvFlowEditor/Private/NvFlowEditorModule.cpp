@@ -1,28 +1,20 @@
 #include "NvFlowEditorPCH.h"
 #include "PropertyEditorModule.h"
 
-#include "Async.h"
+#include "ComponentVisualizers.h"
+#include "GameWorks/RendererHooksNvFlow.h"
 
 IMPLEMENT_MODULE( FNvFlowEditorModule, NvFlowEditor );
 DEFINE_LOG_CATEGORY(LogNvFlowEditor);
 
-inline void FlowRegister()
+struct EditorRendererHooksNvFlowImpl : public EditorRendererHooksNvFlow
 {
-	if (GUnrealEd != nullptr)
+	virtual void NvFlowRegisterVisualizer(FComponentVisualizersModule* module)
 	{
-		TSharedPtr<FComponentVisualizer> Visualizer = MakeShareable(new FFlowGridComponentVisualizer);
-
-		if (Visualizer.IsValid())
-		{
-			GUnrealEd->RegisterComponentVisualizer(UFlowGridComponent::StaticClass()->GetFName(), Visualizer);
-			Visualizer->OnRegister();
-		}
+		module->RegisterComponentVisualizer(UFlowGridComponent::StaticClass()->GetFName(), MakeShareable(new FFlowGridComponentVisualizer));
 	}
-	else
-	{
-		AsyncTask(ENamedThreads::GameThread, [=]() { FlowRegister(); });
-	}
-}
+};
+EditorRendererHooksNvFlowImpl GEditorRendererHooksNvFlowImpl;
 
 void FNvFlowEditorModule::StartupModule()
 {
@@ -31,7 +23,7 @@ void FNvFlowEditorModule::StartupModule()
 	FlowGridAssetTypeActions = MakeShareable(new FAssetTypeActions_FlowGridAsset);
 	AssetTools.RegisterAssetTypeActions(FlowGridAssetTypeActions.ToSharedRef());
 
-	FlowRegister();
+	GEditorRendererHooksNvFlow = &GEditorRendererHooksNvFlowImpl;
 }
 
 void FNvFlowEditorModule::ShutdownModule()
