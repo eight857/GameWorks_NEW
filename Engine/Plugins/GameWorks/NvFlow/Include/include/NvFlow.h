@@ -149,6 +149,15 @@ NV_FLOW_API void NvFlowSetMallocFunc(void*(*malloc)(size_t size));
  */
 NV_FLOW_API void NvFlowSetFreeFunc(void(*free)(void* ptr));
 
+/**
+ * Should be called before DLL unload, to ensure complete cleanup.
+ *
+ * @param[in] timeoutMS Wait timeout, in milliseconds
+ *
+ * @return The current number of active deferred release units.
+ */
+NV_FLOW_API NvFlowUint NvFlowDeferredRelease(float timeoutMS);
+
 ///@}
 // -------------------------- NvFlowGrid -------------------------------
 ///@defgroup NvFlowGrid
@@ -198,6 +207,20 @@ struct NvFlowGridDesc
  * @param[out] desc The description for Flow to fill out.
  */
 NV_FLOW_API void NvFlowGridDescDefaults(NvFlowGridDesc* desc);
+
+//! Description required to reset a NvFlowGrid
+struct NvFlowGridResetDesc
+{
+	NvFlowFloat3 initialLocation;		//!< Initial location of axis aligned bounding box
+	NvFlowFloat3 halfSize;				//!< Initial half size of axis aligned bounding box
+};
+
+/**
+ * Allows the application to request a default grid reset description from Flow.
+ *
+ * @param[out] desc The description for Flow to fill out.
+ */
+NV_FLOW_API void NvFlowGridResetDescDefaults(NvFlowGridResetDesc* desc);
 
 //! Grid wide parameters controls combustion behavior
 struct NvFlowGridCombustionParams
@@ -547,6 +570,14 @@ NV_FLOW_API NvFlowGrid* NvFlowCreateGrid(NvFlowContext* context, const NvFlowGri
  * @param[in] grid The Flow grid to be released.
  */
 NV_FLOW_API void NvFlowReleaseGrid(NvFlowGrid* grid);
+
+/**
+ * Submits a request to reset a Flow grid, preserving memory allocations
+ *
+ * @param[in] context The Flow context to reset the Flow grid
+ * @param[in] desc The Flow grid description.
+ */
+NV_FLOW_API void NvFlowGridReset(NvFlowGrid* grid, const NvFlowGridResetDesc* desc);
 
 /**
  * Queries support for features that depend on hardware/OS.
@@ -1041,6 +1072,93 @@ NV_FLOW_API void NvFlowDeviceUpdateContext(NvFlowDevice* device, NvFlowContext* 
 NV_FLOW_API void NvFlowDeviceFlush(NvFlowDevice* device);
 
 ///@}
+///@defgroup NvFlowCommandQueue
+///@{
+
+//! A command queue exclusively for Flow simulation
+struct NvFlowCommandQueue;
+
+//! Description required for creating a Flow command queue
+struct NvFlowCommandQueueDesc
+{
+	bool computeOnly;
+	bool lowLatency;
+};
+
+//! Flow command queue status to allow app to throttle maximum queued work
+struct NvFlowCommandQueueStatus
+{
+	NvFlowUint framesInFlight;			//!< Number of flushes that have not completed work on the GPU
+	NvFlowUint64 lastFenceCompleted;	//!< The last fence completed on commandQueue
+	NvFlowUint64 nextFenceValue;		//!< The fence value signaled after flush
+};
+
+/**
+ * Allows the application to request a default Flow command queue description from Flow.
+ *
+ * @param[out] desc The description for Flow to fill out.
+ */
+NV_FLOW_API void NvFlowCommandQueueDescDefaults(NvFlowCommandQueueDesc* desc);
+
+/**
+ * Checks if multiple command queues are supported
+ *
+ * @param[in] renderContext A Flow context that maps to the application graphics GPU.
+ *
+ * @return Returns true if multiple command queues are supported.
+ */
+NV_FLOW_API bool NvFlowCommandQueuesSupported(NvFlowContext* renderContext);
+
+/**
+ * Creates a Flow command queue.
+ *
+ * @param[in] renderContext A Flow context that maps to the application graphics GPU.
+ * @param[in] desc Description that controls kind of command queue to create.
+ *
+ * @return The created Flow command queue.
+ */
+NV_FLOW_API NvFlowCommandQueue* NvFlowCreateCommandQueue(NvFlowContext* renderContext, const NvFlowCommandQueueDesc* desc);
+
+/**
+ * Releases a Flow command queue.
+ *
+ * @param[in] commandQueue The Flow command queue to be released.
+ */
+NV_FLOW_API void NvFlowReleaseCommandQueue(NvFlowCommandQueue* commandQueue);
+
+/**
+ * Creates a Flow context that uses a Flow command queue.
+ *
+ * @param[in] commandQueue The Flow command queue to create the context against.
+ *
+ * @return The created Flow context.
+ */
+NV_FLOW_API NvFlowContext* NvFlowCommandQueueCreateContext(NvFlowCommandQueue* commandQueue);
+
+/**
+ * Updates a Flow context that uses a Flow command queue.
+ *
+ * @param[in] commandQueue The Flow command queue the context was created against.
+ * @param[in] context The Flow context update.
+ */
+NV_FLOW_API void NvFlowCommandQueueUpdateContext(NvFlowCommandQueue* commandQueue, NvFlowContext* context, NvFlowCommandQueueStatus* status);
+
+/**
+ * Flushes all submitted work to the Flow commandQueue. Must be called to submit work to queue.
+ *
+ * @param[in] commandQueue The Flow commandQueue to flush.
+ */
+NV_FLOW_API void NvFlowCommandQueueFlush(NvFlowCommandQueue* commandQueue);
+
+/**
+ * Blocks CPU until fenceValue is reached.
+ *
+ * @param[in] commandQueue The Flow commandQueue to flush.
+ * @param[in] fenceValue The fence value to wait for.
+ */
+NV_FLOW_API void NvFlowCommandQueueWaitOnFence(NvFlowCommandQueue* commandQueue, NvFlowUint64 fenceValue);
+
+///@}
 ///@defgroup NvFlowGridProxy
 ///@{
 
@@ -1050,7 +1168,8 @@ struct NvFlowGridProxy;
 //! Description required to create a grid proxy.
 struct NvFlowGridProxyDesc
 {
-	bool singleGPUMode;				//!< if true, proxy is transparent, simply passes pushed grid view
+	bool singleGPUMode;				//!< if true, proxy assumes a single memory space/GPU
+	bool interQueueMode;			//!< if true, proxy pipelines simulation and rendering
 };
 
 /**
