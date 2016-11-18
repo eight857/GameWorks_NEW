@@ -662,6 +662,13 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 	FMatrix viewMatrix = View.ViewMatrices.ViewMatrix;
 	FMatrix projMatrix = View.ViewMatrices.ProjMatrix;
 
+	// Do this on the stack for thread safety
+	RenderParams renderParams = {};
+	renderParams.scene = this;
+	renderParams.volumeRenderParams = m_renderParams;
+
+	auto& rp = renderParams.volumeRenderParams;
+
 	for (int j = 0; j < 3; j++)
 	{
 		for (int i = 0; i < 3; i++)
@@ -670,51 +677,51 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 		}
 	}
 
-	memcpy(&m_renderParams.projectionMatrix, &projMatrix.M[0][0], sizeof(m_renderParams.projectionMatrix));
-	memcpy(&m_renderParams.viewMatrix, &viewMatrix.M[0][0], sizeof(m_renderParams.viewMatrix));
+	memcpy(&rp.projectionMatrix, &projMatrix.M[0][0], sizeof(rp.projectionMatrix));
+	memcpy(&rp.viewMatrix, &viewMatrix.M[0][0], sizeof(rp.viewMatrix));
 
-	m_renderParams.colorMap = m_colorMap;
+	rp.colorMap = m_colorMap;
 
 #if NVFLOW_SMP
 	auto& multiResConfig = View.MultiResConf;
 
-	m_renderParams.multiRes.enabled = View.bVRProjectEnabled && (View.VRProjMode == FSceneView::EVRProjectMode::MultiRes);
-	m_renderParams.multiRes.centerWidth = multiResConfig.CenterWidth;
-	m_renderParams.multiRes.centerHeight = multiResConfig.CenterHeight;
-	m_renderParams.multiRes.centerX = multiResConfig.CenterX;
-	m_renderParams.multiRes.centerY = multiResConfig.CenterY;
-	m_renderParams.multiRes.densityScaleX[0] = multiResConfig.DensityScaleX[0];
-	m_renderParams.multiRes.densityScaleX[1] = multiResConfig.DensityScaleX[1];
-	m_renderParams.multiRes.densityScaleX[2] = multiResConfig.DensityScaleX[2];
-	m_renderParams.multiRes.densityScaleY[0] = multiResConfig.DensityScaleY[0];
-	m_renderParams.multiRes.densityScaleY[1] = multiResConfig.DensityScaleY[1];
-	m_renderParams.multiRes.densityScaleY[2] = multiResConfig.DensityScaleY[2];
-	m_renderParams.multiRes.viewport.topLeftX = View.ViewRect.Min.X;
-	m_renderParams.multiRes.viewport.topLeftY = View.ViewRect.Min.Y;
-	m_renderParams.multiRes.viewport.width = View.ViewRect.Width();
-	m_renderParams.multiRes.viewport.height = View.ViewRect.Height();
-	m_renderParams.multiRes.nonMultiResWidth = View.NonVRProjectViewRect.Width();
-	m_renderParams.multiRes.nonMultiResHeight = View.NonVRProjectViewRect.Height();
+	rp.multiRes.enabled = View.bVRProjectEnabled && (View.VRProjMode == FSceneView::EVRProjectMode::MultiRes);
+	rp.multiRes.centerWidth = multiResConfig.CenterWidth;
+	rp.multiRes.centerHeight = multiResConfig.CenterHeight;
+	rp.multiRes.centerX = multiResConfig.CenterX;
+	rp.multiRes.centerY = multiResConfig.CenterY;
+	rp.multiRes.densityScaleX[0] = multiResConfig.DensityScaleX[0];
+	rp.multiRes.densityScaleX[1] = multiResConfig.DensityScaleX[1];
+	rp.multiRes.densityScaleX[2] = multiResConfig.DensityScaleX[2];
+	rp.multiRes.densityScaleY[0] = multiResConfig.DensityScaleY[0];
+	rp.multiRes.densityScaleY[1] = multiResConfig.DensityScaleY[1];
+	rp.multiRes.densityScaleY[2] = multiResConfig.DensityScaleY[2];
+	rp.multiRes.viewport.topLeftX = View.ViewRect.Min.X;
+	rp.multiRes.viewport.topLeftY = View.ViewRect.Min.Y;
+	rp.multiRes.viewport.width = View.ViewRect.Width();
+	rp.multiRes.viewport.height = View.ViewRect.Height();
+	rp.multiRes.nonMultiResWidth = View.NonVRProjectViewRect.Width();
+	rp.multiRes.nonMultiResHeight = View.NonVRProjectViewRect.Height();
 
 	auto& LMSConfig = View.LensMatchedShadingConf;
 
-	m_renderParams.lensMatchedShading.enabled = View.bVRProjectEnabled && (View.VRProjMode == FSceneView::EVRProjectMode::LensMatched);
-	m_renderParams.lensMatchedShading.warpLeft = LMSConfig.WarpLeft;
-	m_renderParams.lensMatchedShading.warpRight = LMSConfig.WarpRight;
-	m_renderParams.lensMatchedShading.warpUp = LMSConfig.WarpUp;
-	m_renderParams.lensMatchedShading.warpDown = LMSConfig.WarpDown;
-	m_renderParams.lensMatchedShading.sizeLeft = FMath::CeilToInt(LMSConfig.RelativeSizeLeft * View.NonVRProjectViewRect.Width());
-	m_renderParams.lensMatchedShading.sizeRight = FMath::CeilToInt(LMSConfig.RelativeSizeRight * View.NonVRProjectViewRect.Width());
-	m_renderParams.lensMatchedShading.sizeUp = FMath::CeilToInt(LMSConfig.RelativeSizeUp * View.NonVRProjectViewRect.Height());
-	m_renderParams.lensMatchedShading.sizeDown = FMath::CeilToInt(LMSConfig.RelativeSizeDown * View.NonVRProjectViewRect.Height());
-	m_renderParams.lensMatchedShading.viewport.topLeftX = View.ViewRect.Min.X;
-	m_renderParams.lensMatchedShading.viewport.topLeftY = View.ViewRect.Min.Y;
-	m_renderParams.lensMatchedShading.viewport.width = View.ViewRect.Width();
-	m_renderParams.lensMatchedShading.viewport.height = View.ViewRect.Height();
-	m_renderParams.lensMatchedShading.nonLMSWidth = View.NonVRProjectViewRect.Width();
-	m_renderParams.lensMatchedShading.nonLMSHeight = View.NonVRProjectViewRect.Height();
+	rp.lensMatchedShading.enabled = View.bVRProjectEnabled && (View.VRProjMode == FSceneView::EVRProjectMode::LensMatched);
+	rp.lensMatchedShading.warpLeft = LMSConfig.WarpLeft;
+	rp.lensMatchedShading.warpRight = LMSConfig.WarpRight;
+	rp.lensMatchedShading.warpUp = LMSConfig.WarpUp;
+	rp.lensMatchedShading.warpDown = LMSConfig.WarpDown;
+	rp.lensMatchedShading.sizeLeft = FMath::CeilToInt(LMSConfig.RelativeSizeLeft * View.NonVRProjectViewRect.Width());
+	rp.lensMatchedShading.sizeRight = FMath::CeilToInt(LMSConfig.RelativeSizeRight * View.NonVRProjectViewRect.Width());
+	rp.lensMatchedShading.sizeUp = FMath::CeilToInt(LMSConfig.RelativeSizeUp * View.NonVRProjectViewRect.Height());
+	rp.lensMatchedShading.sizeDown = FMath::CeilToInt(LMSConfig.RelativeSizeDown * View.NonVRProjectViewRect.Height());
+	rp.lensMatchedShading.viewport.topLeftX = View.ViewRect.Min.X;
+	rp.lensMatchedShading.viewport.topLeftY = View.ViewRect.Min.Y;
+	rp.lensMatchedShading.viewport.width = View.ViewRect.Width();
+	rp.lensMatchedShading.viewport.height = View.ViewRect.Height();
+	rp.lensMatchedShading.nonLMSWidth = View.NonVRProjectViewRect.Width();
+	rp.lensMatchedShading.nonLMSHeight = View.NonVRProjectViewRect.Height();
 
-	if (m_renderParams.lensMatchedShading.enabled)
+	if (rp.lensMatchedShading.enabled)
 	{
 		RHICmdList.SetModifiedWMode(View.LensMatchedShadingConf, true, false);
 	}
@@ -722,17 +729,10 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 #endif
 
 	// push work
-	{
-		RenderParams renderParams = {};
-
-		renderParams.scene = this;
-		renderParams.volumeRenderParams = m_renderParams;
-
-		RHICmdList.NvFlowWork(renderCallback, &renderParams, sizeof(RenderParams));
-	}
+	RHICmdList.NvFlowWork(renderCallback, &renderParams, sizeof(RenderParams));
 
 #if NVFLOW_SMP
-	if (m_renderParams.lensMatchedShading.enabled)
+	if (rp.lensMatchedShading.enabled)
 	{
 		RHICmdList.SetModifiedWMode(View.LensMatchedShadingConf, true, true);
 	}
