@@ -13,6 +13,7 @@
 #include "Curves/CurveLinearColor.h"
 #include "RHIStaticStates.h"
 #include "PhysicsPublic.h"
+#include "Collision/PhysXCollision.h"
 
 // CPU stats, use "stat flow" to enable
 DECLARE_CYCLE_STAT(TEXT("Tick Grid Component"), STAT_Flow_Tick, STATGROUP_Flow);
@@ -190,8 +191,15 @@ void UFlowGridComponent::UpdateShapes()
 	auto& FlowGridAssetRef = (*FlowGridAssetCurrent);
 
 	// do PhysX quer
+	auto TraceChannel = FlowGridAssetRef->ObjectType;
+	FCollisionQueryParams QueryParams(NAME_None, false);
+	FCollisionResponseParams ResponseParams(FlowGridAssetRef->ResponseToChannels);
+
 	Overlaps.Reset();
-	GetWorld()->OverlapMultiByChannel(Overlaps, Center, FQuat::Identity, FlowGridAssetRef->ObjectType, Shape, FCollisionQueryParams(NAME_None, false), FCollisionResponseParams(FlowGridAssetRef->ResponseToChannels));
+	GetWorld()->OverlapMultiByChannel(Overlaps, Center, FQuat::Identity, TraceChannel, Shape, QueryParams, ResponseParams);
+
+	PxFilterData PFilter = CreateQueryFilterData(TraceChannel, QueryParams.bTraceComplex, ResponseParams.CollisionResponse, QueryParams, FCollisionObjectQueryParams::DefaultObjectQueryParam, true);
+	FPxQueryFilterCallback PQueryCallback(QueryParams);
 
 	for (int32 OverlapIdx = 0; OverlapIdx < Overlaps.Num(); ++OverlapIdx)
 	{
@@ -263,6 +271,10 @@ void UFlowGridComponent::UpdateShapes()
 			PxShape* PhysXShape = Shapes[ShapeIndex];
 
 			if (!PhysXActor || !PhysXShape)
+				continue;
+
+			PxSceneQueryFlags QueryFlags;
+			if (PQueryCallback.preFilter(PFilter, PhysXShape, PhysXActor, QueryFlags) == PxSceneQueryHitType::eNONE)
 				continue;
 
 			// check if we've already processed this actor-shape pair
