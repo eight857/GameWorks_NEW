@@ -693,6 +693,13 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		Scene->MotionBlurInfoData.StartFrame(ViewFamily.bWorldIsPaused);
 	}
 
+	// NvFlow begin
+	if (GRendererNvFlowHooks)
+	{
+		GRendererNvFlowHooks->NvFlowUpdateScene(RHICmdList, Scene->Primitives);
+	}
+	// NvFlow end
+
 	// Notify the FX system that the scene is about to be rendered.
 	bool bLateFXPrerender = CVarFXSystemPreRenderAfterPrepass.GetValueOnRenderThread() > 0;
 	bool bDoFXPrerender = Scene->FXSystem && Views.IsValidIndex(0);
@@ -825,13 +832,6 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		RHICmdList.TransitionResource(EResourceTransitionAccess::EWritable, SceneContext.GetSceneDepthTexture());
 		ServiceLocalQueue();
 	}
-
-	// NvFlow begin
-	if (GRendererNvFlowHooks)
-	{
-		GRendererNvFlowHooks->NvFlowUpdateScene(RHICmdList, Scene->Primitives);
-	}
-	// NvFlow end
 
 	// Clear the G Buffer render targets
 	bool bIsGBufferCurrent = false;
