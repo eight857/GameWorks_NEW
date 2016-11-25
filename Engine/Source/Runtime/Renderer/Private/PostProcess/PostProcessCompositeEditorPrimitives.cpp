@@ -9,6 +9,9 @@
 #include "PostProcessing.h"
 #include "SceneFilterRendering.h"
 #include "SceneUtils.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 
 // temporary
@@ -226,6 +229,12 @@ void FRCPassPostProcessCompositeEditorPrimitives::Process(FRenderingCompositePas
 			Context.RHICmdList.ClearColorTexture(ColorTarget, FLinearColor(0, 0, 0, 0), FIntRect());
 			Context.RHICmdList.ClearDepthStencilTexture(DepthTarget, EClearDepthStencil::Depth, (float)ERHIZBuffer::FarPlane, 0, FIntRect());
 		}
+
+		// @third party code - BEGIN HairWorks
+		// Hair visualization for debug.
+		if(View.VisibleHairs.Num())
+			HairWorksRenderer::RenderVisualization(Context.RHICmdList, View);
+		// @third party code - END HairWorks
 
 		SCOPED_DRAW_EVENT(Context.RHICmdList, RenderEditorPrimitives);
 

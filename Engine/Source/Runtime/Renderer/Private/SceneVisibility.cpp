@@ -11,6 +11,9 @@
 #include "SceneUtils.h"
 #include "PostProcessing.h"
 #include "PlanarReflectionSceneProxy.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 /*------------------------------------------------------------------------------
 	Globals
@@ -2902,6 +2905,11 @@ void FDeferredShadingSceneRenderer::InitViewsPossiblyAfterPrepass(FRHICommandLis
 		// Now that the indirect lighting cache is updated, we can update the primitive precomputed lighting buffers.
 		UpdatePrimitivePrecomputedLightingBuffers();
 	}
+
+	// @third party code - BEGIN HairWorks
+	// Setup views for hair
+	HairWorksRenderer::SetupViews(Views);
+	// @third party code - END HairWorks
 
 	UpdateTranslucencyTimersAndSeparateTranslucencyBufferSize(RHICmdList);
 

@@ -26,6 +26,9 @@
 #include "IHeadMountedDisplay.h"
 #include "SceneViewExtension.h"
 #include "GPUSkinCache.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 TAutoConsoleVariable<int32> CVarEarlyZPass(
 	TEXT("r.EarlyZPass"),
@@ -833,6 +836,25 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		ServiceLocalQueue();
 	}
 
+	// @third party code - BEGIN HairWorks
+	// Prepare hair rendering
+	{
+		// Do hair simulation
+		{
+			SCOPED_DRAW_EVENT(RHICmdList, HairSimulation);
+			HairWorksRenderer::StepSimulation(RHICmdList, ViewFamily.CurrentWorldTime, ViewFamily.DeltaWorldTime);
+		}
+
+		// Allocate hair render targets
+		static auto* AlwaysCreateRenderTargets = IConsoleManager::Get().FindConsoleVariable(TEXT("r.HairWorks.AlwaysCreateRenderTargets"));
+		if(
+			(!AlwaysCreateRenderTargets->GetInt() && HairWorksRenderer::ViewsHasHair(Views)) ||
+			AlwaysCreateRenderTargets->GetInt()
+			)
+			HairWorksRenderer::AllocRenderTargets(RHICmdList, FSceneRenderTargets::Get(RHICmdList).GetBufferSizeXY());
+	}
+	// @third party code - END HairWorks
+
 	// Clear the G Buffer render targets
 	bool bIsGBufferCurrent = false;
 	if (bRequiresRHIClear)
@@ -1086,6 +1108,12 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		}
 		ServiceLocalQueue();
 	}
+
+	// @third party code - BEGIN HairWorks
+	// Blend hair lighting
+	if(HairWorksRenderer::ViewsHasHair(Views))
+		HairWorksRenderer::BlendLightingColor(RHICmdList);
+	// @third party code - END HairWorks
 
 	FLightShaftsOutput LightShaftOutput;
 
