@@ -643,8 +643,7 @@ void FDeferredShadingSceneRenderer::RenderLights(FRHICommandListImmediate& RHICm
 						SceneContext.AllocLightAttenuation(RHICmdList);	// To avoid an assertion in GetLightAttenuation()
 
 						SceneContext.GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
-						SceneContext.BeginRenderingLightAttenuation(RHICmdList, false);
-						RHICmdList.Clear(true, FLinearColor::White, false, 0, false, 0, FIntRect());
+						SceneContext.BeginRenderingLightAttenuation(RHICmdList, true);
 						SceneContext.GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
 					}
 					// @third party code - END HairWorks

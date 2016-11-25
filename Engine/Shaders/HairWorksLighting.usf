@@ -21,12 +21,7 @@ float3 GetHairWorksSimpleLighting(float3 ScreenVector, uint2 SamplePos, FHairScr
 {
 	float3 WorldPosition = ScreenVector * HairScreenSpaceData.Depth + View.WorldCameraOrigin.xyz;
 
-	FScreenSpaceData ScreenSpaceData = (FScreenSpaceData)0;
-	ScreenSpaceData.GBuffer.DiffuseColor = PI;
-	ScreenSpaceData.GBuffer.WorldNormal = HairScreenSpaceData.Normal;
-	ScreenSpaceData.AmbientOcclusion = 1;
-
-	return GetSimpleDynamicLighting(WorldPosition, float3(0, 0, 0), ScreenSpaceData, LightData) * HairScreenSpaceData.Color;
+	return GetSimpleDynamicLighting(WorldPosition, float3(0, 0, 0), HairScreenSpaceData.Normal, 1, PI, 0, 1, LightData) * HairScreenSpaceData.Color;
 }
 
 float3 GetHairWorksDynamicLighting(float3 ScreenVector, uint2 SamplePos, FHairScreenSpaceData HairScreenSpaceData, FDeferredLightData LightData)

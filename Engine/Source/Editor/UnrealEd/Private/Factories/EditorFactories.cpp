@@ -7019,7 +7019,7 @@ UHairWorksFactory::UHairWorksFactory(const FObjectInitializer& ObjectInitializer
 
 bool UHairWorksFactory::FactoryCanImport(const FString& Filename)
 {
-	if(HairWorks::GetSDK() == nullptr)
+	if(::HairWorks::GetSDK() == nullptr)
 		return false;
 
 	TArray<uint8> Buffer;
@@ -7027,11 +7027,11 @@ bool UHairWorksFactory::FactoryCanImport(const FString& Filename)
 
 	auto HairAssetId = NvHair::ASSET_ID_NULL;
 	NvCo::MemoryReadStream ReadStream(Buffer.GetData(), Buffer.Num());
-	HairWorks::GetSDK()->loadAsset(&ReadStream, HairAssetId);
+	::HairWorks::GetSDK()->loadAsset(&ReadStream, HairAssetId);
 
 	if(HairAssetId != NvHair::ASSET_ID_NULL)
 	{
-		HairWorks::GetSDK()->freeAsset(HairAssetId);
+		::HairWorks::GetSDK()->freeAsset(HairAssetId);
 		return true;
 	}
 	else
@@ -7046,8 +7046,8 @@ FText UHairWorksFactory::GetDisplayName() const
 void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, const NvHair::InstanceDescriptor* NewInstanceDesc)
 {
 	// Get bones. Used for bone remapping, etc.
-	check(HairWorks::GetSDK() != nullptr);
-	auto& HairSdk = *HairWorks::GetSDK();
+	check(::HairWorks::GetSDK() != nullptr);
+	auto& HairSdk = *::HairWorks::GetSDK();
 
 	{
 		Nv::Int BoneNum = HairSdk.getNumBones(Hair.AssetId);
@@ -7127,7 +7127,7 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 	auto HairAssetId = NvHair::ASSET_ID_NULL;
 	
 	NvCo::MemoryReadStream ReadStream(Buffer, BufferEnd - Buffer);
-	HairWorks::GetSDK()->loadAsset(&ReadStream, HairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
+	::HairWorks::GetSDK()->loadAsset(&ReadStream, HairAssetId, nullptr, &::HairWorks::GetAssetConversionSettings());
 	if(HairAssetId == NvHair::ASSET_ID_NULL)
 	{
 		FEditorDelegates::OnAssetPostImport.Broadcast(this, nullptr);
@@ -7172,7 +7172,7 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 		{
 			// Check existing asset. Codes are copied from FAssetTools::ImportAssets()
 			char TextureFileNameRaw[NV_HAIR_MAX_STRING] = "";
-			HairWorks::GetSDK()->getTextureName(Hair->AssetId, (NvHair::ETextureType)TextureIdx, TextureFileNameRaw);
+			::HairWorks::GetSDK()->getTextureName(Hair->AssetId, (NvHair::ETextureType)TextureIdx, TextureFileNameRaw);
 
 			const FString TextureFileName = FString(ANSI_TO_TCHAR(TextureFileNameRaw)).Trim().TrimTrailing();
 			if(TextureFileName.IsEmpty())
@@ -7249,7 +7249,7 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 
 bool UHairWorksFactory::CanReimport(UObject* Obj, TArray<FString>& OutFilenames)
 {
-	if(HairWorks::GetSDK() == nullptr)
+	if(::HairWorks::GetSDK() == nullptr)
 		return false;
 
 	auto* Hair = Cast<UHairWorksAsset>(Obj);
@@ -7281,8 +7281,8 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 		return EReimportResult::Failed;
 
 	// Load new hair asset
-	check(HairWorks::GetSDK() != nullptr);
-	auto& HairSdk = *HairWorks::GetSDK();
+	check(::HairWorks::GetSDK() != nullptr);
+	auto& HairSdk = *::HairWorks::GetSDK();
 
 	auto NewHairAssetId = NvHair::ASSET_ID_NULL;
 	{	
@@ -7296,7 +7296,7 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 
 		// Create HairWorks asset
 		NvCo::MemoryReadStream ReadStream(FileData.GetData(), FileData.Num());
-		HairSdk.loadAsset(&ReadStream, NewHairAssetId, nullptr, &HairWorks::GetAssetConversionSettings());
+		HairSdk.loadAsset(&ReadStream, NewHairAssetId, nullptr, &::HairWorks::GetAssetConversionSettings());
 		if(NewHairAssetId == NvHair::ASSET_ID_NULL)
 		{
 			UE_LOG(LogEditorFactories, Error, TEXT("Can't create Hair asset"));

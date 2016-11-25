@@ -565,8 +565,8 @@ namespace HairWorksRenderer
 				HairViewPort.init(ViewRect.Min.X, ViewRect.Min.Y, ViewRect.Width(), ViewRect.Height());
 
 				auto& sdk = *HairWorks::GetSDK();
-				sdk.setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
-				sdk.setPrevViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(PrevViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(PrevViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+				sdk.setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.GetViewMatrix().M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.GetProjectionMatrix().M), NvHair::HandednessHint::LEFT);
+				sdk.setPrevViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(PrevViewMatrices.GetViewMatrix().M), reinterpret_cast<const gfsdk_float4x4&>(PrevViewMatrices.GetProjectionMatrix().M), NvHair::HandednessHint::LEFT);
 			}
 		};
 
@@ -630,7 +630,7 @@ namespace HairWorksRenderer
 		{
 			const FViewInfo& View = Views[ViewIndex];
 
-			bool bTemporalAA = (View.FinalPostProcessSettings.AntiAliasingMethod == AAM_TemporalAA) && !View.bCameraCut;
+			bool bTemporalAA = (View.AntiAliasingMethod == AAM_TemporalAA) && !View.bCameraCut;
 			bool bMotionBlur = IsMotionBlurEnabled(View);
 
 			bNeedsVelocity |= bMotionBlur || bTemporalAA;
@@ -1275,25 +1275,25 @@ namespace HairWorksRenderer
 				// Setup camera
 				const FBoxSphereBounds& PrimitiveBounds = HairSceneProxy.GetBounds();
 
-				FViewMatrices ViewMatrices[6];
+				FMatrix ViewProjMatrices[6];
 
 				bool Visible[6];
 				for (int32 FaceIndex = 0; FaceIndex < 6; FaceIndex++)
 				{
-					ViewMatrices[FaceIndex].ViewMatrix = Shadow.OnePassShadowViewProjectionMatrices[FaceIndex];
+					ViewProjMatrices[FaceIndex] = Shadow.OnePassShadowViewProjectionMatrices[FaceIndex];
 					Visible[FaceIndex] = Shadow.OnePassShadowFrustums[FaceIndex].IntersectBox(PrimitiveBounds.Origin, PrimitiveBounds.BoxExtent);
 				}
 
 				struct FRHICmdSetCubeMapViewProj: public FRHICommand<FRHICmdSetCubeMapViewProj>
 				{
 					FIntPoint ShadowSize;
-					FViewMatrices ViewMatrices[6];
+					FMatrix ViewProjMatrices[6];
 					bool Visible[6];
 
-					FRHICmdSetCubeMapViewProj(const FIntPoint& InShadowSize, const FViewMatrices InViewMatrices[6], const bool InVisible[6])
+					FRHICmdSetCubeMapViewProj(const FIntPoint& InShadowSize, const FMatrix InViewProjMatrices[6], const bool InVisible[6])
 						:ShadowSize(InShadowSize)
 					{
-						CopyAssignItems(ViewMatrices, InViewMatrices, 6);
+						CopyAssignItems(ViewProjMatrices, InViewProjMatrices, 6);
 						CopyAssignItems(Visible, InVisible, 6);
 					}
 
@@ -1310,8 +1310,8 @@ namespace HairWorksRenderer
 						gfsdk_float4x4 HairProjMatrices[6];
 						for(int FaceIdx = 0; FaceIdx < 6; ++FaceIdx)
 						{
-							HairViewMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewMatrices[FaceIdx].ViewMatrix.M;
-							HairProjMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewMatrices[FaceIdx].ProjMatrix.M;
+							HairViewMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewProjMatrices[FaceIdx].M;
+							HairProjMatrices[FaceIdx] = *(gfsdk_float4x4*)FMatrix::Identity.M;
 						}
 
 						HairWorks::GetSDK()->setCubeMapViewProjection(viewPorts, HairViewMatrices, HairProjMatrices, Visible, NvHair::HandednessHint::LEFT);
@@ -1319,9 +1319,9 @@ namespace HairWorksRenderer
 				};
 
 				if(RHICmdList.Bypass())
-					FRHICmdSetCubeMapViewProj(FIntPoint(Shadow.ResolutionX, Shadow.ResolutionX), ViewMatrices, Visible).Execute(RHICmdList);
+					FRHICmdSetCubeMapViewProj(FIntPoint(Shadow.ResolutionX, Shadow.ResolutionX), ViewProjMatrices, Visible).Execute(RHICmdList);
 				else
-					new (RHICmdList.AllocCommand<FRHICmdSetCubeMapViewProj>()) FRHICmdSetCubeMapViewProj(FIntPoint(Shadow.ResolutionX, Shadow.ResolutionX), ViewMatrices, Visible);
+					new (RHICmdList.AllocCommand<FRHICmdSetCubeMapViewProj>()) FRHICmdSetCubeMapViewProj(FIntPoint(Shadow.ResolutionX, Shadow.ResolutionX), ViewProjMatrices, Visible);
 
 				// Setup shader
 				static FGlobalBoundShaderState BoundShaderState;
@@ -1331,30 +1331,29 @@ namespace HairWorksRenderer
 			else
 			{
 				// Setup camera
-				FViewMatrices ViewMatrices;
-				ViewMatrices.ViewMatrix = FTranslationMatrix(Shadow.PreShadowTranslation) * Shadow.SubjectAndReceiverMatrix;
+				const FMatrix ViewProjMatrix = FTranslationMatrix(Shadow.PreShadowTranslation) * Shadow.SubjectAndReceiverMatrix;
 
 				struct FRHICmdSetProjViewInfo: public FRHICommand<FRHICmdSetProjViewInfo>
 				{
 					const FIntRect ViewRect;
-					const FViewMatrices ViewMatrices;
+					const FMatrix ViewProjMatrix;
 
-					FRHICmdSetProjViewInfo(const FIntRect& InViewRect, const FViewMatrices& InViewMatrices)
-						:ViewRect(InViewRect), ViewMatrices(InViewMatrices){}
+					FRHICmdSetProjViewInfo(const FIntRect& InViewRect, const FMatrix& InViewProjMatrix)
+						:ViewRect(InViewRect), ViewProjMatrix(InViewProjMatrix){}
 
 					void Execute(FRHICommandListBase& CmdList)
 					{
 						NvHair::Viewport HairViewPort;
 						HairViewPort.init(ViewRect.Min.X, ViewRect.Min.Y, ViewRect.Width(), ViewRect.Height());
 
-						HairWorks::GetSDK()->setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ViewMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.ProjMatrix.M), NvHair::HandednessHint::LEFT);
+						HairWorks::GetSDK()->setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewProjMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(FMatrix::Identity.M), NvHair::HandednessHint::LEFT);
 					}
 				};
 
 				if(RHICmdList.Bypass())
-					FRHICmdSetProjViewInfo(View.ViewRect, ViewMatrices).Execute(RHICmdList);
+					FRHICmdSetProjViewInfo(View.ViewRect, ViewProjMatrix).Execute(RHICmdList);
 				else
-					new (RHICmdList.AllocCommand<FRHICmdSetProjViewInfo>()) FRHICmdSetProjViewInfo(View.ViewRect, ViewMatrices);
+					new (RHICmdList.AllocCommand<FRHICmdSetProjViewInfo>()) FRHICmdSetProjViewInfo(View.ViewRect, ViewProjMatrix);
 
 				// Setup shader
 				TShaderMapRef<FHairWorksShadowDepthPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
