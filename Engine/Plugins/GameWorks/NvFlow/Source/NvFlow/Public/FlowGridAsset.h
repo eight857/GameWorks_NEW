@@ -207,6 +207,21 @@ class UFlowGridAsset : public UObject
 	static bool sGlobalDebugDraw;
 	static uint32 sGlobalRenderingMode;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
+	uint32		bDistanceFieldCollisionEnabled : 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
+	float		MinActiveDistance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
+	float		MaxActiveDistance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
+	float		VelocitySleepFactor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
+	float		VelocitySlipThickness;
+
 	// Helper methods
 
 	FORCEINLINE static float GetFlowToUE4Scale() { return 100.0f; }

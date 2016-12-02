@@ -2765,7 +2765,11 @@ bool FDeferredShadingSceneRenderer::ShouldPrepareForDistanceFieldAO() const
 			|| (GDistanceFieldAOApplyToStaticIndirect && ViewFamily.EngineShowFlags.DistanceFieldAO));
 }
 
-bool FDeferredShadingSceneRenderer::ShouldPrepareDistanceFields() const
+bool FDeferredShadingSceneRenderer::ShouldPrepareDistanceFields(
+	// NvFlow begin
+	bool bCustomShouldPrepare
+	// NvFlow end
+) const
 {
 	if (!ensure(Scene != nullptr))
 	{
@@ -2775,7 +2779,11 @@ bool FDeferredShadingSceneRenderer::ShouldPrepareDistanceFields() const
 	bool bShouldPrepareForAO = SupportsDistanceFieldAO(Scene->GetFeatureLevel(), Scene->GetShaderPlatform())
 		&& (ShouldPrepareForDistanceFieldAO()
 			|| ((Views.Num() > 0) && Views[0].bUsesGlobalDistanceField)
-			|| ((Scene->FXSystem != nullptr) && Scene->FXSystem->UsesGlobalDistanceField()));
+			|| ((Scene->FXSystem != nullptr) && Scene->FXSystem->UsesGlobalDistanceField())
+			// NvFlow begin
+			|| bCustomShouldPrepare
+			// NvFlow end
+			);
 
 	return bShouldPrepareForAO || ShouldPrepareForDistanceFieldShadows();
 }

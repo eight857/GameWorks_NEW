@@ -592,7 +592,11 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		}	
 	}
 
-	if (ShouldPrepareDistanceFields())
+	if (ShouldPrepareDistanceFields(
+		// NvFlow begin
+		GRendererNvFlowHooks && GRendererNvFlowHooks->NvFlowUsesGlobalDistanceField()
+		// NvFlow end
+	))
 	{
 		SCOPE_CYCLE_COUNTER(STAT_FDeferredShadingSceneRenderer_DistanceFieldAO_Init);
 		GDistanceFieldVolumeTextureAtlas.UpdateAllocations();
@@ -696,7 +700,7 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 	// NvFlow begin
 	if (GRendererNvFlowHooks)
 	{
-		GRendererNvFlowHooks->NvFlowUpdateScene(RHICmdList, Scene->Primitives);
+		GRendererNvFlowHooks->NvFlowUpdateScene(RHICmdList, Scene->Primitives, &Views[0].GlobalDistanceFieldInfo.ParameterData);
 	}
 	// NvFlow end
 

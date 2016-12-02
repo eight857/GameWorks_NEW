@@ -50,7 +50,7 @@ namespace NvFlow
 		void renderScene(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy);
 		void release();
 
-		void updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush);
+		void updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData);
 
 		TArray<Scene*> m_sceneList;
 
@@ -91,7 +91,7 @@ namespace NvFlow
 		void release();
 		void updateParameters(FRHICommandListImmediate& RHICmdList);
 
-		void updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush);
+		void updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData);
 		void finilizeUpdate(FRHICommandListImmediate& RHICmdList);
 
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
@@ -105,20 +105,30 @@ namespace NvFlow
 			NvFlow::Scene* Scene;
 			IRHICommandContext* RHICmdCtx;
 			float DeltaTime;
+			const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData;
 		};
 
 		static void sEmitCustomAllocCallback(void* userdata, const NvFlowGridEmitCustomAllocParams* params)
 		{
 			CallbackUserData* callbackUserData = (CallbackUserData*)userdata;
-			callbackUserData->Scene->emitCustomAllocCallback(callbackUserData->RHICmdCtx, params);
+			callbackUserData->Scene->emitCustomAllocCallback(callbackUserData->RHICmdCtx, params, callbackUserData->GlobalDistanceFieldParameterData);
 		}
-		static void sEmitCustomEmitCallback(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params)
+		static void sEmitCustomEmitVelocityCallback(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params)
 		{
 			CallbackUserData* callbackUserData = (CallbackUserData*)userdata;
-			callbackUserData->Scene->emitCustomEmitCallback(callbackUserData->RHICmdCtx, dataFrontIdx, params, callbackUserData->DeltaTime);
+			callbackUserData->Scene->emitCustomEmitVelocityCallback(callbackUserData->RHICmdCtx, dataFrontIdx, params, callbackUserData->GlobalDistanceFieldParameterData, callbackUserData->DeltaTime);
 		}
-		void emitCustomAllocCallback(IRHICommandContext* RHICmdCtx, const NvFlowGridEmitCustomAllocParams* params);
-		void emitCustomEmitCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, float dt);
+		static void sEmitCustomEmitDensityCallback(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params)
+		{
+			CallbackUserData* callbackUserData = (CallbackUserData*)userdata;
+			callbackUserData->Scene->emitCustomEmitDensityCallback(callbackUserData->RHICmdCtx, dataFrontIdx, params, callbackUserData->GlobalDistanceFieldParameterData, callbackUserData->DeltaTime);
+		}
+		void emitCustomAllocCallback(IRHICommandContext* RHICmdCtx, const NvFlowGridEmitCustomAllocParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData);
+		void emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt);
+		void emitCustomEmitDensityCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt);
+
+		void applyDistanceField(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt,
+			float InSlipFactor = 0, float InSlipThickness = 0, FVector4 InEmitValue = FVector4(ForceInitToZero));
 
 
 		bool m_multiAdapter = false;
@@ -151,6 +161,11 @@ namespace NvFlow
 		// deferred mechanism for proper RHI command list support
 		float m_updateSubstep_dt = 0.f;
 
+		struct UpdateParams
+		{
+			Scene* Scene;
+			const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData;
+		};
 		struct RenderParams
 		{
 			Scene* scene;
@@ -159,7 +174,7 @@ namespace NvFlow
 
 		void initDeferred(IRHICommandContext* RHICmdCtx);
 		void updateParametersDeferred(IRHICommandContext* RHICmdCtx);
-		void updateSubstepDeferred(IRHICommandContext* RHICmdCtx);
+		void updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateParams* updateParams);
 		void finilizeUpdateDeferred(IRHICommandContext* RHICmdCtx);
 		void updateGridViewDeferred(IRHICommandContext* RHICmdCtx);
 		void renderDeferred(IRHICommandContext* RHICmdCtx, RenderParams* renderParams);
@@ -358,7 +373,7 @@ void NvFlow::Context::release()
 	m_computeContext = nullptr;
 }
 
-void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush)
+void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
 {
 	// proxy not active, release scene if necessary and return
 	if (!FlowGridSceneProxy->FlowGridProperties.bActive)
@@ -386,7 +401,7 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 	{
 		for (uint32 i = 0; i < uint32(FlowGridSceneProxy->NumScheduledSubsteps); i++)
 		{
-			scene->updateSubstep(RHICmdList, FlowGridSceneProxy->FlowGridProperties.SubstepSize, i, uint32(FlowGridSceneProxy->NumScheduledSubsteps), shouldFlush);
+			scene->updateSubstep(RHICmdList, FlowGridSceneProxy->FlowGridProperties.SubstepSize, i, uint32(FlowGridSceneProxy->NumScheduledSubsteps), shouldFlush, GlobalDistanceFieldParameterData);
 		}
 	}
 	FlowGridSceneProxy->NumScheduledSubsteps = 0;
@@ -595,7 +610,7 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 	}
 }
 
-void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush)
+void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
 {
 	bool shouldUpdateGrid = (m_context->m_computeFramesInFlight < m_context->m_computeMaxFramesInFlight);
 
@@ -616,11 +631,16 @@ void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt
 
 	if (shouldUpdateGrid)
 	{
-		RHICmdList.NvFlowWork(updateSubstepCallback, this, 0u);
+		// Do this on the stack for thread safety
+		UpdateParams updateParams = {};
+		updateParams.Scene = this;
+		updateParams.GlobalDistanceFieldParameterData = GlobalDistanceFieldParameterData;
+
+		RHICmdList.NvFlowWork(updateSubstepCallback, &updateParams, sizeof(updateParams));
 	}
 }
 
-void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx)
+void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateParams* updateParams)
 {
 	auto& appctx = *RHICmdCtx;
 
@@ -667,14 +687,17 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx)
 		callbackUserData.Scene = this;
 		callbackUserData.RHICmdCtx = RHICmdCtx;
 		callbackUserData.DeltaTime = adaptiveDt;
+		callbackUserData.GlobalDistanceFieldParameterData = updateParams->GlobalDistanceFieldParameterData;
 
 		NvFlowGridEmitCustomRegisterAllocFunc(m_grid, &NvFlow::Scene::sEmitCustomAllocCallback, &callbackUserData);
-		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, &NvFlow::Scene::sEmitCustomEmitCallback, &callbackUserData);
+		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, &NvFlow::Scene::sEmitCustomEmitVelocityCallback, &callbackUserData);
+		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelDensity, &NvFlow::Scene::sEmitCustomEmitDensityCallback, &callbackUserData);
 
 		NvFlowGridUpdate(m_grid, computeContext, adaptiveDt);
 
 		NvFlowGridEmitCustomRegisterAllocFunc(m_grid, nullptr, nullptr);
 		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, nullptr, nullptr);
+		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelDensity, nullptr, nullptr);
 	}
 
 	NvFlowGridProxyPush(m_gridProxy, computeContext, m_grid);
@@ -682,8 +705,8 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx)
 
 void NvFlow::Scene::updateSubstepCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
 {
-	auto scene = (NvFlow::Scene*)paramData;
-	scene->updateSubstepDeferred(RHICmdCtx);
+	auto updateParams = (UpdateParams*)paramData;
+	updateParams->Scene->updateSubstepDeferred(RHICmdCtx, updateParams);
 }
 
 void NvFlow::Scene::finilizeUpdate(FRHICommandListImmediate& RHICmdList)
@@ -874,8 +897,7 @@ namespace
 		return FVector(in.x, in.y, in.z);
 	}
 
-
-	inline FMatrix NvFlowGetWorldToVolume(FFlowGridSceneProxy* FlowGridSceneProxy)
+	inline FMatrix NvFlowGetVolumeToWorld(FFlowGridSceneProxy* FlowGridSceneProxy)
 	{
 		const FBoxSphereBounds& LocalBounds = FlowGridSceneProxy->GetLocalBounds();
 		const FMatrix& LocalToWorld = FlowGridSceneProxy->GetLocalToWorld();
@@ -886,8 +908,11 @@ namespace
 			FPlane(0.0f, 0.0f, LocalBounds.BoxExtent.Z * 2, 0.0f),
 			FPlane(LocalBounds.Origin - LocalBounds.BoxExtent, 1.0f));
 
-		FMatrix VolumeToWorld = VolumeToLocal * LocalToWorld;
-		return VolumeToWorld.Inverse();
+		return VolumeToLocal * LocalToWorld;
+	}
+	inline FMatrix NvFlowGetWorldToVolume(FFlowGridSceneProxy* FlowGridSceneProxy)
+	{
+		return NvFlowGetVolumeToWorld(FlowGridSceneProxy).Inverse();
 	}
 }
 
@@ -1065,43 +1090,44 @@ private:
 IMPLEMENT_SHADER_TYPE(, FNvFlowMaskFromParticlesCS, TEXT("NvFlowAllocShader"), TEXT("ComputeMaskFromParticles"), SF_Compute);
 
 
-void NvFlow::Scene::emitCustomAllocCallback(IRHICommandContext* RHICmdCtx, const NvFlowGridEmitCustomAllocParams* params)
+void NvFlow::Scene::emitCustomAllocCallback(IRHICommandContext* RHICmdCtx, const NvFlowGridEmitCustomAllocParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
 {
-	if (m_particleParamsArray.Num() > 0)
+	if (m_particleParamsArray.Num() == 0)
 	{
-		NvFlowContextPop(m_context->m_flowContext);
-
-		TShaderMapRef<FNvFlowMaskFromParticlesCS> MaskFromParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		RHICmdCtx->RHISetComputeShader(MaskFromParticlesCS->GetComputeShader());
-
-		FNvFlowMaskFromParticlesParameters MaskFromParticlesParameters;
-		MaskFromParticlesParameters.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
-		MaskFromParticlesParameters.MaskDim = FIntVector(params->maskDim.x, params->maskDim.y, params->maskDim.z);
-
-		FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(*RHICmdCtx, m_context->m_flowContext, params->maskResourceRW);
-
-		for (int32 i = 0; i < m_particleParamsArray.Num(); ++i)
-		{
-			const ParticleSimulationParamsNvFlow& ParticleParams = m_particleParamsArray[i];
-			if (ParticleParams.ParticleCount > 0)
-			{
-				MaskFromParticlesParameters.ParticleCount = ParticleParams.ParticleCount;
-				MaskFromParticlesParameters.TextureSizeX = ParticleParams.TextureSizeX;
-				MaskFromParticlesParameters.TextureSizeY = ParticleParams.TextureSizeY;
-				FNvFlowMaskFromParticlesUniformBufferRef UniformBuffer = FNvFlowMaskFromParticlesUniformBufferRef::CreateUniformBufferImmediate(MaskFromParticlesParameters, UniformBuffer_SingleFrame);
-
-				uint32 GroupCount = (ParticleParams.ParticleCount + MASK_FROM_PARTICLES_THREAD_COUNT - 1) / MASK_FROM_PARTICLES_THREAD_COUNT;
-
-				MaskFromParticlesCS->SetOutput(RHICmdCtx, MaskUAV);
-				MaskFromParticlesCS->SetParameters(RHICmdCtx, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI);
-				//DispatchComputeShader(RHICmdCtx, *MaskFromParticlesCS, GroupCount, 1, 1);
-				RHICmdCtx->RHIDispatchComputeShader(GroupCount, 1, 1);
-				MaskFromParticlesCS->UnbindBuffers(RHICmdCtx);
-			}
-		}
-
-		NvFlowContextPush(m_context->m_flowContext);
+		return;
 	}
+	NvFlowContextPop(m_context->m_flowContext);
+
+	TShaderMapRef<FNvFlowMaskFromParticlesCS> MaskFromParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+	RHICmdCtx->RHISetComputeShader(MaskFromParticlesCS->GetComputeShader());
+
+	FNvFlowMaskFromParticlesParameters MaskFromParticlesParameters;
+	MaskFromParticlesParameters.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
+	MaskFromParticlesParameters.MaskDim = FIntVector(params->maskDim.x, params->maskDim.y, params->maskDim.z);
+
+	FUnorderedAccessViewRHIRef MaskUAV = NvFlowConvertUAV(*RHICmdCtx, m_context->m_flowContext, params->maskResourceRW);
+
+	for (int32 i = 0; i < m_particleParamsArray.Num(); ++i)
+	{
+		const ParticleSimulationParamsNvFlow& ParticleParams = m_particleParamsArray[i];
+		if (ParticleParams.ParticleCount > 0)
+		{
+			MaskFromParticlesParameters.ParticleCount = ParticleParams.ParticleCount;
+			MaskFromParticlesParameters.TextureSizeX = ParticleParams.TextureSizeX;
+			MaskFromParticlesParameters.TextureSizeY = ParticleParams.TextureSizeY;
+			FNvFlowMaskFromParticlesUniformBufferRef UniformBuffer = FNvFlowMaskFromParticlesUniformBufferRef::CreateUniformBufferImmediate(MaskFromParticlesParameters, UniformBuffer_SingleFrame);
+
+			uint32 GroupCount = (ParticleParams.ParticleCount + MASK_FROM_PARTICLES_THREAD_COUNT - 1) / MASK_FROM_PARTICLES_THREAD_COUNT;
+
+			MaskFromParticlesCS->SetOutput(RHICmdCtx, MaskUAV);
+			MaskFromParticlesCS->SetParameters(RHICmdCtx, UniformBuffer, ParticleParams.VertexBufferSRV, ParticleParams.PositionTextureRHI);
+			//DispatchComputeShader(RHICmdCtx, *MaskFromParticlesCS, GroupCount, 1, 1);
+			RHICmdCtx->RHIDispatchComputeShader(GroupCount, 1, 1);
+			MaskFromParticlesCS->UnbindBuffers(RHICmdCtx);
+		}
+	}
+
+	NvFlowContextPush(m_context->m_flowContext);
 }
 
 
@@ -1118,6 +1144,26 @@ END_UNIFORM_BUFFER_STRUCT(FNvFlowCopyGridDataParameters)
 
 IMPLEMENT_UNIFORM_BUFFER_STRUCT(FNvFlowCopyGridDataParameters, TEXT("NvFlowCopyGridData"));
 typedef TUniformBufferRef<FNvFlowCopyGridDataParameters> FNvFlowCopyGridDataUniformBufferRef;
+
+BEGIN_UNIFORM_BUFFER_STRUCT(FNvFlowApplyDistanceFieldParameters, )
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, ThreadDim)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, BlockDim)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FIntVector, BlockDimBits)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(int32, IsVTR)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FVector, VDimInv)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FMatrix, VolumeToWorld)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, DistanceScale)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, MinActiveDist)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, MaxActiveDist)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, ValueCoupleRate)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FVector4, EmitValue)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, SlipFactor)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, SlipThickness)
+END_UNIFORM_BUFFER_STRUCT(FNvFlowApplyDistanceFieldParameters)
+
+IMPLEMENT_UNIFORM_BUFFER_STRUCT(FNvFlowApplyDistanceFieldParameters, TEXT("NvFlowApplyDistanceField"));
+typedef TUniformBufferRef<FNvFlowApplyDistanceFieldParameters> FNvFlowApplyDistanceFieldUniformBufferRef;
+
 
 class FNvFlowCopyGridDataCS : public FGlobalShader
 {
@@ -1181,7 +1227,7 @@ public:
 	*/
 	void SetParameters(
 		IRHICommandContext* RHICmdCtx,
-		FNvFlowCopyGridDataUniformBufferRef& UniformBuffer,
+		TUniformBufferRef<FNvFlowCopyGridDataParameters>& UniformBuffer,
 		FShaderResourceViewRHIParamRef BlockListSRV,
 		FShaderResourceViewRHIParamRef BlockTableSRV,
 		FShaderResourceViewRHIParamRef DataInSRV
@@ -1231,6 +1277,130 @@ private:
 	FShaderResourceParameter DataOut;
 };
 IMPLEMENT_SHADER_TYPE(, FNvFlowCopyGridDataCS, TEXT("NvFlowCopyShader"), TEXT("CopyGridData"), SF_Compute);
+
+
+class FNvFlowApplyDistanceFieldCS : public FGlobalShader
+{
+	DECLARE_SHADER_TYPE(FNvFlowApplyDistanceFieldCS, Global);
+
+public:
+
+	static bool ShouldCache(EShaderPlatform Platform)
+	{
+		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+	}
+
+	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREAD_COUNT_X"), COPY_THREAD_COUNT_X);
+		OutEnvironment.SetDefine(TEXT("THREAD_COUNT_Y"), COPY_THREAD_COUNT_Y);
+		OutEnvironment.SetDefine(TEXT("THREAD_COUNT_Z"), COPY_THREAD_COUNT_Z);
+	}
+
+	/** Default constructor. */
+	FNvFlowApplyDistanceFieldCS()
+	{
+	}
+
+	/** Initialization constructor. */
+	explicit FNvFlowApplyDistanceFieldCS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+		: FGlobalShader(Initializer)
+	{
+		BlockList.Bind(Initializer.ParameterMap, TEXT("BlockList"));
+		BlockTable.Bind(Initializer.ParameterMap, TEXT("BlockTable"));
+		DataIn.Bind(Initializer.ParameterMap, TEXT("DataIn"));
+		DataOut.Bind(Initializer.ParameterMap, TEXT("DataOut"));
+
+		GlobalDistanceFieldParameters.Bind(Initializer.ParameterMap);
+	}
+
+	/** Serialization. */
+	virtual bool Serialize(FArchive& Ar) override
+	{
+		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
+		Ar << BlockList;
+		Ar << BlockTable;
+		Ar << DataIn;
+		Ar << DataOut;
+		Ar << GlobalDistanceFieldParameters;
+		return bShaderHasOutdatedParameters;
+	}
+
+	/**
+	* Set output buffers for this shader.
+	*/
+	void SetOutput(IRHICommandContext* RHICmdCtx, FUnorderedAccessViewRHIParamRef DataOutUAV)
+	{
+		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
+		if (DataOut.IsBound())
+		{
+			RHICmdCtx->RHISetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), DataOutUAV);
+		}
+	}
+
+	/**
+	* Set input parameters.
+	*/
+	void SetParameters(
+		IRHICommandContext* RHICmdCtx,
+		TUniformBufferRef<FNvFlowApplyDistanceFieldParameters>& UniformBuffer,
+		FShaderResourceViewRHIParamRef BlockListSRV,
+		FShaderResourceViewRHIParamRef BlockTableSRV,
+		FShaderResourceViewRHIParamRef DataInSRV,
+		const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData
+	)
+	{
+		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
+		//SetUniformBufferParameter(RHICmdList, ComputeShaderRHI, GetUniformBufferParameter<FNvFlowApplyDistanceFieldParameters>(), UniformBuffer);
+		{
+			auto Shader = ComputeShaderRHI;
+			const auto& Parameter = GetUniformBufferParameter<FNvFlowApplyDistanceFieldParameters>();
+			auto UniformBufferRHI = UniformBuffer;
+			if (Parameter.IsBound())
+			{
+				RHICmdCtx->RHISetShaderUniformBuffer(Shader, Parameter.GetBaseIndex(), UniformBufferRHI);
+			}
+		}
+		if (BlockList.IsBound())
+		{
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, BlockList.GetBaseIndex(), BlockListSRV);
+		}
+		if (BlockTable.IsBound())
+		{
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, BlockTable.GetBaseIndex(), BlockTableSRV);
+		}
+		if (DataIn.IsBound())
+		{
+			RHICmdCtx->RHISetShaderResourceViewParameter(ComputeShaderRHI, DataIn.GetBaseIndex(), DataInSRV);
+		}
+		if (GlobalDistanceFieldParameterData != nullptr)
+		{
+			GlobalDistanceFieldParameters.Set(RHICmdCtx, ComputeShaderRHI, *GlobalDistanceFieldParameterData);
+		}
+	}
+
+	/**
+	* Unbinds any buffers that have been bound.
+	*/
+	void UnbindBuffers(IRHICommandContext* RHICmdCtx)
+	{
+		FComputeShaderRHIParamRef ComputeShaderRHI = GetComputeShader();
+		if (DataOut.IsBound())
+		{
+			RHICmdCtx->RHISetUAVParameter(ComputeShaderRHI, DataOut.GetBaseIndex(), FUnorderedAccessViewRHIParamRef());
+		}
+	}
+
+private:
+	FShaderResourceParameter BlockList;
+	FShaderResourceParameter BlockTable;
+	FShaderResourceParameter DataIn;
+	FShaderResourceParameter DataOut;
+
+	FGlobalDistanceFieldParameters GlobalDistanceFieldParameters;
+};
+IMPLEMENT_SHADER_TYPE(, FNvFlowApplyDistanceFieldCS, TEXT("NvFlowDistanceFieldShader"), TEXT("ApplyDistanceField"), SF_Compute);
 
 
 #define COUPLE_PARTICLES_THREAD_COUNT 64
@@ -1387,11 +1557,67 @@ private:
 };
 IMPLEMENT_SHADER_TYPE(, FNvFlowCoupleParticlesCS, TEXT("NvFlowCoupleShader"), TEXT("CoupleParticlesToGrid"), SF_Compute);
 
-void NvFlow::Scene::emitCustomEmitCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, float dt)
+
+void NvFlow::Scene::applyDistanceField(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt,
+	float InSlipFactor, float InSlipThickness, FVector4 InEmitValue)
 {
-	if (m_particleParamsArray.Num() > 0 && params->numBlocks > 0)
+	TShaderMapRef<FNvFlowApplyDistanceFieldCS> ApplyDistanceFieldCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+	RHICmdCtx->RHISetComputeShader(ApplyDistanceFieldCS->GetComputeShader());
+
+	FIntVector VDim = FIntVector(
+		params->shaderParams.blockDim.x * params->shaderParams.gridDim.x,
+		params->shaderParams.blockDim.y * params->shaderParams.gridDim.y,
+		params->shaderParams.blockDim.z * params->shaderParams.gridDim.z);
+
+	FNvFlowApplyDistanceFieldParameters Parameters;
+	Parameters.BlockDim = NvFlowConvert(params->shaderParams.blockDim);
+	Parameters.BlockDimBits = NvFlowConvert(params->shaderParams.blockDimBits);
+	Parameters.IsVTR = params->shaderParams.isVTR.x;
+	Parameters.ThreadDim = Parameters.BlockDim;
+	Parameters.ThreadDim.X *= params->numBlocks;
+	Parameters.VDimInv = FVector(1.0f / VDim.X, 1.0f / VDim.Y, 1.0f / VDim.Z);
+	Parameters.VolumeToWorld = NvFlowGetVolumeToWorld(FlowGridSceneProxy);
+	Parameters.MinActiveDist = FlowGridSceneProxy->FlowGridProperties.MinActiveDistance;
+	Parameters.MaxActiveDist = FlowGridSceneProxy->FlowGridProperties.MaxActiveDistance;
+	Parameters.ValueCoupleRate = 100.0f * dt;
+	Parameters.DistanceScale = 1.0f / scale;
+	Parameters.EmitValue = InEmitValue;
+	Parameters.SlipFactor = InSlipFactor;
+	Parameters.SlipThickness = InSlipThickness;
+
+	FNvFlowApplyDistanceFieldUniformBufferRef UniformBuffer = FNvFlowApplyDistanceFieldUniformBufferRef::CreateUniformBufferImmediate(Parameters, UniformBuffer_SingleFrame);
+
+	uint32 GroupCountX = (Parameters.ThreadDim.X + COPY_THREAD_COUNT_X - 1) / COPY_THREAD_COUNT_X;
+	uint32 GroupCountY = (Parameters.ThreadDim.Y + COPY_THREAD_COUNT_Y - 1) / COPY_THREAD_COUNT_Y;
+	uint32 GroupCountZ = (Parameters.ThreadDim.Z + COPY_THREAD_COUNT_Z - 1) / COPY_THREAD_COUNT_Z;
+
+	FShaderResourceViewRHIRef BlockListSRV = NvFlowConvertSRV(*RHICmdCtx, m_context->m_flowContext, params->blockList);
+	FShaderResourceViewRHIRef BlockTableSRV = NvFlowConvertSRV(*RHICmdCtx, m_context->m_flowContext, params->blockTable);
+	FShaderResourceViewRHIRef DataInSRV = NvFlowConvertSRV(*RHICmdCtx, m_context->m_flowContext, params->dataRW[*dataFrontIdx]);
+	FUnorderedAccessViewRHIRef DataOutUAV = NvFlowConvertUAV(*RHICmdCtx, m_context->m_flowContext, params->dataRW[*dataFrontIdx ^ 1]);
+
+	ApplyDistanceFieldCS->SetOutput(RHICmdCtx, DataOutUAV);
+	ApplyDistanceFieldCS->SetParameters(RHICmdCtx, UniformBuffer, BlockListSRV, BlockTableSRV, DataInSRV, GlobalDistanceFieldParameterData);
+	//DispatchComputeShader(RHICmdCtx, *ApplyDistanceFieldCS, GroupCountX, GroupCountY, GroupCountZ);
+	RHICmdCtx->RHIDispatchComputeShader(GroupCountX, GroupCountY, GroupCountZ);
+	ApplyDistanceFieldCS->UnbindBuffers(RHICmdCtx);
+
+	*dataFrontIdx ^= 1;
+}
+
+void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt)
+{
+	bool bHasDistanceFieldCollision = FlowGridSceneProxy->FlowGridProperties.bDistanceFieldCollisionEnabled &&
+		(GlobalDistanceFieldParameterData->Textures[0] != nullptr);
+
+	if (params->numBlocks == 0 || !(bHasDistanceFieldCollision || m_particleParamsArray.Num() > 0))
 	{
-		NvFlowContextPop(m_context->m_flowContext);
+		return;
+	}
+	NvFlowContextPop(m_context->m_flowContext);
+
+	if (m_particleParamsArray.Num() > 0)
+	{
 		{
 			TShaderMapRef<FNvFlowCopyGridDataCS> CopyGridDataCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 			RHICmdCtx->RHISetComputeShader(CopyGridDataCS->GetComputeShader());
@@ -1424,7 +1650,7 @@ void NvFlow::Scene::emitCustomEmitCallback(IRHICommandContext* RHICmdCtx, NvFlow
 
 		TShaderMapRef<FNvFlowCoupleParticlesCS> CoupleParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		RHICmdCtx->RHISetComputeShader(CoupleParticlesCS->GetComputeShader());
-		
+
 		FNvFlowCoupleParticlesParameters CoupleParticlesParameters;
 		CoupleParticlesParameters.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
 		CoupleParticlesParameters.VDim = FIntVector(
@@ -1466,14 +1692,50 @@ void NvFlow::Scene::emitCustomEmitCallback(IRHICommandContext* RHICmdCtx, NvFlow
 		}
 
 		*dataFrontIdx ^= 1;
-
-		NvFlowContextPush(m_context->m_flowContext);
 	}
+	if (bHasDistanceFieldCollision)
+	{
+		applyDistanceField(RHICmdCtx, dataFrontIdx, params, GlobalDistanceFieldParameterData, dt,
+			FlowGridSceneProxy->FlowGridProperties.VelocitySleepFactor, FlowGridSceneProxy->FlowGridProperties.VelocitySlipThickness);
+	}
+
+	NvFlowContextPush(m_context->m_flowContext);
+}
+
+void NvFlow::Scene::emitCustomEmitDensityCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt)
+{
+	bool bHasDistanceFieldCollision = FlowGridSceneProxy->FlowGridProperties.bDistanceFieldCollisionEnabled &&
+		(GlobalDistanceFieldParameterData->Textures[0] != nullptr);
+
+	if (params->numBlocks == 0 || !bHasDistanceFieldCollision)
+	{
+		return;
+	}
+	NvFlowContextPop(m_context->m_flowContext);
+
+	applyDistanceField(RHICmdCtx, dataFrontIdx, params, GlobalDistanceFieldParameterData, dt);
+
+	NvFlowContextPush(m_context->m_flowContext);
 }
 
 // ---------------- global interface functions ---------------------
 
-void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives)
+bool NvFlowUsesGlobalDistanceField()
+{
+	bool bResult = false;
+	if (NvFlow::gContext)
+	{
+		for (int32 i = 0; i < NvFlow::gContext->m_sceneList.Num(); i++)
+		{
+			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
+			FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
+			bResult |= FlowGridSceneProxy->FlowGridProperties.bDistanceFieldCollisionEnabled;
+		}
+	}
+	return bResult;
+}
+
+void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
 {
 	if (GUsingNullRHI)
 	{
@@ -1505,7 +1767,7 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 			if (PrimitiveSceneInfo->Proxy->FlowData.bFlowGrid)
 			{
 				FlowGridSceneProxy = (FFlowGridSceneProxy*)PrimitiveSceneInfo->Proxy;
-				NvFlow::gContext->updateScene(RHICmdList, FlowGridSceneProxy, shouldFlush);
+				NvFlow::gContext->updateScene(RHICmdList, FlowGridSceneProxy, shouldFlush, GlobalDistanceFieldParameterData);
 			}
 		}
 	}

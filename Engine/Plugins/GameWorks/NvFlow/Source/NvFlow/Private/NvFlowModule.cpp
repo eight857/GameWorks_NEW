@@ -8,7 +8,8 @@ DEFINE_LOG_CATEGORY(LogNvFlow);
 
 // NvFlow begin
 #if WITH_NVFLOW
-void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives);
+bool NvFlowUsesGlobalDistanceField();
+void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData);
 bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo);
 void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
 uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList);
@@ -17,9 +18,14 @@ uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const P
 
 struct RendererHooksNvFlowImpl : public RendererHooksNvFlow
 {
-	virtual void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives)
+	virtual bool NvFlowUsesGlobalDistanceField() const
 	{
-		::NvFlowUpdateScene(RHICmdList, Primitives);
+		return ::NvFlowUsesGlobalDistanceField();
+	}
+
+	virtual void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
+	{
+		::NvFlowUpdateScene(RHICmdList, Primitives, GlobalDistanceFieldParameterData);
 	}
 
 	virtual bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo)

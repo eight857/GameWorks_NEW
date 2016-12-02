@@ -130,6 +130,13 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	GridToParticleAccelTimeConstant = 0.01f;
 	GridToParticleDecelTimeConstant = 0.01f;
 	GridToParticleThresholdMultiplier = 1.f;
+
+	bDistanceFieldCollisionEnabled = false;
+	MinActiveDistance = -1.0f;
+	MaxActiveDistance = 0.0f;
+	VelocitySleepFactor = 0.0f;
+	VelocitySlipThickness = 0.0f;
+
 }
 
 // NvFlow end

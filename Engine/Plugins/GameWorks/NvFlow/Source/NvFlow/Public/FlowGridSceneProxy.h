@@ -72,6 +72,12 @@ struct FFlowGridProperties
 	TArray<NvFlowShapeDesc> GridEmitShapeDescs;
 	TArray<NvFlowShapeDesc> GridCollideShapeDescs;
 
+	uint32 bDistanceFieldCollisionEnabled : 1;
+	float MinActiveDistance;
+	float MaxActiveDistance;
+	float VelocitySleepFactor;
+	float VelocitySlipThickness;
+
 	// rendering parameters
 	FFlowGridRenderParams RenderParams;
 };

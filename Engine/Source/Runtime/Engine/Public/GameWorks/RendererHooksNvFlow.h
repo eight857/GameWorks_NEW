@@ -2,9 +2,12 @@
 
 // NvFlow begin
 
+class FGlobalDistanceFieldParameterData;
+
 struct RendererHooksNvFlow
 {
-	virtual void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives) = 0;
+	virtual bool NvFlowUsesGlobalDistanceField() const = 0;
+	virtual void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData) = 0;
 	virtual bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo) = 0;
 	virtual void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View) = 0;
 };
