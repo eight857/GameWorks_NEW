@@ -418,6 +418,8 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 	FVector FlowOrigin = FlowGridSceneProxy->GetLocalToWorld().GetOrigin() * scaleInv;
 	m_gridDesc.initialLocation = *(NvFlowFloat3*)(&FlowOrigin.X);
 
+	m_gridDesc.lowLatencyMapping = FlowGridSceneProxy->FlowGridProperties.bLowLatencyMapping;
+
 	bool multiAdapterEnabled = FlowGridSceneProxy->FlowGridProperties.bMultiAdapterEnabled;
 	m_multiAdapter = multiAdapterEnabled && m_context->m_computeDeviceAvailable;
 

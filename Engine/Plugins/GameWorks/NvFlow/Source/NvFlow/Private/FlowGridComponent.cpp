@@ -70,6 +70,7 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 
 	// set critical property defaults
 	FlowGridProperties.bActive = false;
+	FlowGridProperties.bLowLatencyMapping = false;
 	FlowGridProperties.bMultiAdapterEnabled = false;
 	FlowGridProperties.SubstepSize = 0.0f;
 	FlowGridProperties.VirtualGridExtents = FVector(0.f);
@@ -685,6 +686,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		// derive parameters from asset
 		FVector NewHalfSize = NvFlow::scaleInv * FVector(FlowGridAssetRef->GetVirtualGridDimension() * 0.5f * FlowGridAssetRef->GridCellSize);
 		FIntVector NewVirtualDim = FIntVector(FlowGridAssetRef->GetVirtualGridDimension());
+		bool OldLowLatencyMapping = FlowGridProperties.bLowLatencyMapping;
+		bool NewLowLatencyMapping = FlowGridAssetRef->bLowLatencyMapping;
 		bool OldMultiAdapterEnabled = FlowGridProperties.bMultiAdapterEnabled;
 		bool NewMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
 
@@ -705,6 +708,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			newGridDesc.virtualDim.y != FlowGridProperties.GridDesc.virtualDim.y ||
 			newGridDesc.virtualDim.z != FlowGridProperties.GridDesc.virtualDim.z ||
 			newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
+			NewLowLatencyMapping != OldLowLatencyMapping ||
 			NewMultiAdapterEnabled != OldMultiAdapterEnabled);
 
 		if (changed || (FlowGridAssetOld != FlowGridAssetRef))
@@ -726,6 +730,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		// Commit any changes
 		FlowGridProperties.GridDesc = newGridDesc;
+		FlowGridProperties.bLowLatencyMapping = NewLowLatencyMapping;
 		FlowGridProperties.bMultiAdapterEnabled = NewMultiAdapterEnabled;
 
 		//Properties that can be changed without rebuilding grid
