@@ -70,6 +70,7 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 
 	// set critical property defaults
 	FlowGridProperties.bActive = false;
+	FlowGridProperties.bLowLatencyMapping = false;
 	FlowGridProperties.bMultiAdapterEnabled = false;
 	FlowGridProperties.bEnableParticlesInteraction = false;
 	FlowGridProperties.bEnableParticleMode = false;
@@ -687,6 +688,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		// derive parameters from asset
 		FVector NewHalfSize = NvFlow::scaleInv * FVector(FlowGridAssetRef->GetVirtualGridDimension() * 0.5f * FlowGridAssetRef->GridCellSize);
 		FIntVector NewVirtualDim = FIntVector(FlowGridAssetRef->GetVirtualGridDimension());
+		bool OldLowLatencyMapping = FlowGridProperties.bLowLatencyMapping;
+		bool NewLowLatencyMapping = FlowGridAssetRef->bLowLatencyMapping;
 		bool OldMultiAdapterEnabled = FlowGridProperties.bMultiAdapterEnabled;
 		bool NewMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
 
@@ -713,6 +716,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			newGridDesc.virtualDim.z != FlowGridProperties.GridDesc.virtualDim.z ||
 			newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
 			newGridDesc.densityMultiRes != FlowGridProperties.GridDesc.densityMultiRes ||
+			NewLowLatencyMapping != OldLowLatencyMapping ||
 			NewMultiAdapterEnabled != OldMultiAdapterEnabled ||
 			NewEnableParticleMode != OldEnableParticleMode);
 
@@ -735,6 +739,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		// Commit any changes
 		FlowGridProperties.GridDesc = newGridDesc;
+		FlowGridProperties.bLowLatencyMapping = NewLowLatencyMapping;
 		FlowGridProperties.bMultiAdapterEnabled = NewMultiAdapterEnabled;
 		FlowGridProperties.bEnableParticlesInteraction = FlowGridAssetRef->bEnableParticlesInteraction;
 		FlowGridProperties.InteractionChannel = FlowGridAssetRef->InteractionChannel;
