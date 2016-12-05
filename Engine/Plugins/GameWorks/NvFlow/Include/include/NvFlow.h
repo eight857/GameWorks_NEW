@@ -8,11 +8,106 @@
  * license agreement from NVIDIA CORPORATION is strictly prohibited.
  */
 
-#pragma once
+#ifndef NV_FLOW_H
+#define NV_FLOW_H
+
+#if (NV_FLOW_SHADER_PARAMS_ONLY == 0)
 
 #include "NvFlowContext.h"
 
 #define NV_FLOW_VERSION 0
+
+#endif
+
+ // --------------------------- NvFlow Shader Parameters -------------------------------
+ ///@defgroup NvFlowContext
+ ///@{
+
+#if (NV_FLOW_SHADER_PARAMS_ONLY != 0)
+
+int3 NvFlow_tableVal_to_coord(uint val)
+{
+	uint valInv = ~val;
+	return int3(
+		(valInv >> 0) & 0x3FF,
+		(valInv >> 10) & 0x3FF,
+		(valInv >> 20) & 0x3FF);
+}
+
+#define NV_FLOW_DISPATCH_ID_TO_VIRTUAL(blockListSRV, params) \
+	int3 DispatchIDToVirtual(uint3 tidx) \
+	{ \
+		uint blockID = tidx.x >> params.blockDimBits.x; \
+		int3 vBlockIdx = NvFlow_tableVal_to_coord(blockListSRV[blockID]); \
+		int3 vidx = (vBlockIdx << params.blockDimBits.xyz) | (tidx & (params.blockDim.xyz - int3(1,1,1))); \
+		return vidx; \
+	}
+
+#define NV_FLOW_VIRTUAL_TO_REAL(name, blockTableSRV, params) \
+	int3 name(int3 vidx) \
+	{ \
+		if(params.isVTR.x != 0) \
+		{ \
+			return vidx; \
+		} \
+		else \
+		{ \
+			int3 vBlockIdx = vidx >> params.blockDimBits.xyz; \
+			int3 rBlockIdx = NvFlow_tableVal_to_coord(blockTableSRV[vBlockIdx]); \
+			int3 ridx = (rBlockIdx << params.blockDimBits.xyz) | (vidx & (params.blockDim.xyz - int3(1, 1, 1))); \
+			return ridx; \
+		} \
+	}
+
+#define NV_FLOW_VIRTUAL_TO_REAL_LINEAR(name, blockTableSRV, params) \
+	float3 name(float3 vidx) \
+	{ \
+		if(params.isVTR.x != 0) \
+		{ \
+			return vidx; \
+		} \
+		else \
+		{ \
+			float3 vBlockIdxf = params.blockDimInv.xyz * vidx; \
+			int3 vBlockIdx = int3(floor(vBlockIdxf)); \
+			int3 rBlockIdx = NvFlow_tableVal_to_coord(blockTableSRV[vBlockIdx]); \
+			float3 rBlockIdxf = float3(rBlockIdx); \
+			float3 ridx = float3(params.linearBlockDim.xyz * rBlockIdx) + float3(params.blockDim.xyz) * (vBlockIdxf - float3(vBlockIdx)) + float3(params.linearBlockOffset.xyz); \
+			return ridx; \
+		} \
+	}
+
+#endif
+
+//! Parameters for shaders using the point format (no linear interpolation)
+struct NvFlowShaderPointParams
+{
+	NvFlowUint4 isVTR;
+	NvFlowUint4 blockDim;
+	NvFlowUint4 blockDimBits;
+	NvFlowUint4 poolGridDim;
+	NvFlowUint4 gridDim;
+};
+
+//! Parameters for shaders using the linear format (linear interpolation)
+struct NvFlowShaderLinearParams
+{
+	NvFlowUint4 isVTR;
+	NvFlowUint4 blockDim;
+	NvFlowUint4 blockDimBits;
+	NvFlowUint4 poolGridDim;
+	NvFlowUint4 gridDim;
+
+	NvFlowFloat4 blockDimInv;
+	NvFlowUint4 linearBlockDim;
+	NvFlowUint4 linearBlockOffset;
+	NvFlowFloat4 dimInv;
+	NvFlowFloat4 vdim;
+	NvFlowFloat4 vdimInv;
+};
+
+///@}
+#if (NV_FLOW_SHADER_PARAMS_ONLY == 0)
 
 // --------------------------- NvFlowContext -------------------------------
 ///@defgroup NvFlowContext
@@ -247,6 +342,8 @@ struct NvFlowGridParams
 
 	float velocityMacCormackBlendFactor;	//!< Higher values make a sharper appearance, but with more artifacts
 	float densityMacCormackBlendFactor;		//!< Higher values make a sharper appearance, but with more artifacts
+	float velocityMacCormackBlendThreshold;	//!< Minimum absolute value to apply MacCormack correction. Increasing can improve performance.
+	float densityMacCormackBlendThreshold;	//!< Minimum absolute value to apply MacCormack correction. Increasing can improve performance.
 
 	NvFlowFloat3 gravity;					//!< Gravity vector for use by buoyancy
 
@@ -477,16 +574,6 @@ struct NvFlowGridEmitCustomAllocParams
 
 typedef void(*NvFlowGridEmitCustomAllocFunc)(void* userdata, const NvFlowGridEmitCustomAllocParams* params);
 
-//! Necessary shader parameters for custom emit operations
-struct NvFlowGridEmitCustomEmitShaderParams
-{
-	NvFlowUint4 blockDim;
-	NvFlowUint4 blockDimBits;
-	NvFlowUint4 poolGridDim;
-	NvFlowUint4 gridDim;
-	NvFlowUint4 isVTR;
-};
-
 //! Necessary parameters/resources for custom emit operations
 struct NvFlowGridEmitCustomEmitParams
 {
@@ -494,7 +581,7 @@ struct NvFlowGridEmitCustomEmitParams
 	NvFlowResource* blockTable;							//!< Table to map virtual blocks to real blocks
 	NvFlowResource* blockList;							//!< List of active blocks
 
-	NvFlowGridEmitCustomEmitShaderParams shaderParams;	//!< Parameters used in GPU side operations
+	NvFlowShaderPointParams shaderParams;				//!< Parameters used in GPU side operations
 
 	NvFlowUint numBlocks;								//!< Number of active blocks
 	NvFlowUint maxBlocks;								//!< Maximum possible active blocks
@@ -504,43 +591,6 @@ struct NvFlowGridEmitCustomEmitParams
 };
 
 typedef void(*NvFlowGridEmitCustomEmitFunc)(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params);
-
-// Shader utilities for computing real/write indices
-/*
-int3 tableVal_to_coord(uint val)
-{
-	uint valInv = ~val;
-	return int3(
-		(valInv >> 0) & 0x3FF,
-		(valInv >> 10) & 0x3FF,
-		(valInv >> 20) & 0x3FF);
-}
-
-#define DISPATCH_ID_TO_VIRTUAL(blockListSRV, params) \
-	int3 DispatchIDToVirtual(uint3 tidx) \
-	{ \
-		uint blockID = tidx.x >> params.blockDimBits.x; \
-		int3 vBlockIdx = tableVal_to_coord(blockListSRV[blockID]); \
-		int3 vidx = (vBlockIdx << params.blockDimBits.xyz) | (tidx & (params.blockDim.xyz - int3(1,1,1))); \
-		return vidx; \
-	}
-
-#define VIRTUAL_TO_REAL_EMIT(name, blockTableSRV, params) \
-	int3 name(int3 vidx) \
-	{ \
-		if(params.isVTR.x != 0) \
-		{ \
-			return vidx; \
-		} \
-		else \
-		{ \
-			int3 vBlockIdx = vidx >> params.blockDimBits.xyz; \
-			int3 rBlockIdx = tableVal_to_coord(blockTableSRV[vBlockIdx]); \
-			int3 ridx = (rBlockIdx << params.blockDimBits.xyz) | (vidx & (params.blockDim.xyz - int3(1, 1, 1))); \
-			return ridx; \
-		} \
-	}
-*/
 
 //! Description of feature support on the queried Flow context GPU.
 struct NvFlowSupport
@@ -1222,45 +1272,6 @@ NV_FLOW_API NvFlowGridView* NvFlowGridProxyGetGridView(NvFlowGridProxy* proxy, N
 ///@defgroup NvFlowGridExport
 ///@{
 
-// Shader utilities for computing real/write indices
-/*
-int3 tableVal_to_coord(uint val)
-{
-	uint valInv = ~val;
-	return int3(
-		(valInv >> 0) & 0x3FF,
-		(valInv >> 10) & 0x3FF,
-		(valInv >> 20) & 0x3FF);
-}
-
-#define DISPATCH_ID_TO_VIRTUAL(blockListSRV, params) \
-	int3 DispatchIDToVirtual(uint3 tidx) \
-	{ \
-		uint blockID = tidx.x >> params.blockDimBits.x; \
-		int3 vBlockIdx = tableVal_to_coord(blockListSRV[blockID]); \
-		int3 vidx = (vBlockIdx << params.blockDimBits.xyz) | (tidx & (params.blockDim.xyz - int3(1,1,1))); \
-		return vidx; \
-	}
-
-#define VIRTUAL_TO_REAL_EXPORT(name, blockTableSRV, params) \
-	float3 name(float3 vidx) \
-	{ \
-		if(params.isVTR.x != 0) \
-		{ \
-			return vidx; \
-		} \
-		else \
-		{ \
-			float3 vBlockIdxf = params.blockDimInv.xyz * vidx; \
-			int3 vBlockIdx = int3(floor(vBlockIdxf)); \
-			int3 rBlockIdx = tableVal_to_coord(blockTableSRV[vBlockIdx]); \
-			float3 rBlockIdxf = float3(rBlockIdx); \
-			float3 ridx = float3(params.linearBlockDim.xyz * rBlockIdx) + float3(params.blockDim.xyz) * (vBlockIdxf - float3(vBlockIdx)) + float3(params.linearBlockOffset.xyz); \
-			return ridx; \
-		} \
-	}
-*/
-
 //! Object to expose read access Flow grid simulation data
 struct NvFlowGridExport;
 
@@ -1269,28 +1280,13 @@ struct NvFlowGridExportDesc
 	NvFlowGridView* gridView;
 };
 
-struct NvFlowGridExportViewShaderParams
-{
-	NvFlowUint4 blockDim;
-	NvFlowUint4 blockDimBits;
-	NvFlowFloat4 blockDimInv;
-	NvFlowUint4 linearBlockDim;
-	NvFlowUint4 linearBlockOffset;
-	NvFlowFloat4 dimInv;
-	NvFlowFloat4 vdim;
-	NvFlowFloat4 vdimInv;
-	NvFlowUint4 poolGridDim;
-	NvFlowUint4 gridDim;
-	NvFlowUint4 isVTR;
-};
-
 struct NvFlowGridExportView
 {
 	NvFlowResource* data;
 	NvFlowResource* blockTable;
 	NvFlowResource* blockList;
 
-	NvFlowGridExportViewShaderParams shaderParams;
+	NvFlowShaderLinearParams shaderParams;
 
 	NvFlowUint numBlocks;
 	NvFlowUint maxBlocks;
@@ -1311,43 +1307,6 @@ NV_FLOW_API void NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowCon
 ///@defgroup NvFlowGridImport
 ///@{
 
-// Shader utilities for computing real/write indices
-/*
-int3 tableVal_to_coord(uint val)
-{
-	uint valInv = ~val;
-	return int3(
-		(valInv >> 0) & 0x3FF,
-		(valInv >> 10) & 0x3FF,
-		(valInv >> 20) & 0x3FF);
-}
-
-#define DISPATCH_ID_TO_VIRTUAL(blockListSRV, params) \
-	int3 DispatchIDToVirtual(uint3 tidx) \
-	{ \
-		uint blockID = tidx.x >> params.blockDimBits.x; \
-		int3 vBlockIdx = tableVal_to_coord(blockListSRV[blockID]); \
-		int3 vidx = (vBlockIdx << params.blockDimBits.xyz) | (tidx & (params.blockDim.xyz - int3(1,1,1))); \
-		return vidx; \
-	}
-
-#define VIRTUAL_TO_REAL_IMPORT(name, blockTableSRV, params) \
-	int3 name(int3 vidx) \
-	{ \
-		if(params.isVTR.x != 0) \
-		{ \
-			return vidx; \
-		} \
-		else \
-		{ \
-			int3 vBlockIdx = vidx >> params.blockDimBits.xyz; \
-			int3 rBlockIdx = tableVal_to_coord(blockTableSRV[vBlockIdx]); \
-			int3 ridx = (rBlockIdx << params.blockDimBits.xyz) | (vidx & (params.blockDim.xyz - int3(1, 1, 1))); \
-			return ridx; \
-		} \
-	}
-*/
-
 //! Object to expose write access to Flow grid simulation data
 struct NvFlowGridImport;
 
@@ -1356,22 +1315,13 @@ struct NvFlowGridImportDesc
 	NvFlowGridView* gridView;
 };
 
-struct NvFlowGridImportViewShaderParams
-{
-	NvFlowUint4 blockDim;
-	NvFlowUint4 blockDimBits;
-	NvFlowUint4 poolGridDim;
-	NvFlowUint4 gridDim;
-	NvFlowUint4 isVTR;
-};
-
 struct NvFlowGridImportView
 {
 	NvFlowResourceRW* dataRW;
 	NvFlowResource* blockTable;
 	NvFlowResource* blockList;
 
-	NvFlowGridImportViewShaderParams shaderParams;
+	NvFlowShaderLinearParams shaderParams;
 
 	NvFlowUint numBlocks;
 	NvFlowUint maxBlocks;
@@ -1386,6 +1336,10 @@ NV_FLOW_API void NvFlowReleaseGridImport(NvFlowGridImport* gridImport);
 NV_FLOW_API void NvFlowGridImportGetView(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridImportView* view, NvFlowGridView* gridView, NvFlowGridChannel channel);
 
 NV_FLOW_API void NvFlowGridImportUpdate(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridChannel channel);
+
+NV_FLOW_API void NvFlowGridImportGetViewLinear(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridImportView* view, NvFlowGridView* gridView, NvFlowGridChannel channel);
+
+NV_FLOW_API void NvFlowGridImportUpdateLinear(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridChannel channel);
 
 NV_FLOW_API NvFlowGridView* NvFlowGridImportGetGridView(NvFlowGridImport* gridImport, NvFlowContext* context);
 
@@ -1444,3 +1398,6 @@ NV_FLOW_API NvFlowGridView* NvFlowVolumeShadowGetGridView(NvFlowVolumeShadow* vo
 NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, const NvFlowVolumeShadowDebugRenderParams* params);
 
 ///@}
+
+#endif
+#endif

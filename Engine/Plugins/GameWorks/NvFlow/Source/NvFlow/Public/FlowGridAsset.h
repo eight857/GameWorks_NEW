@@ -35,6 +35,10 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	float		SimulationRate;
 
+	/** If true, block allocation will update faster at the cost of extra overhead.*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	uint32		bLowLatencyMapping : 1;
+
 	/** If true, multiAdapter is used if supported*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	uint32		bMultiAdapterEnabled : 1;
