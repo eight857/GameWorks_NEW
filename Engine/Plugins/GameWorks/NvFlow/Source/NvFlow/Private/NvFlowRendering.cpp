@@ -1696,7 +1696,7 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 	if (bHasDistanceFieldCollision)
 	{
 		applyDistanceField(RHICmdCtx, dataFrontIdx, params, GlobalDistanceFieldParameterData, dt,
-			FlowGridSceneProxy->FlowGridProperties.VelocitySleepFactor, FlowGridSceneProxy->FlowGridProperties.VelocitySlipThickness);
+			FlowGridSceneProxy->FlowGridProperties.VelocitySlipFactor, FlowGridSceneProxy->FlowGridProperties.VelocitySlipThickness);
 	}
 
 	NvFlowContextPush(m_context->m_flowContext);
@@ -1790,7 +1790,7 @@ bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 		if (PrimitiveSceneInfo->Proxy->FlowData.bFlowGrid)
 		{
 			FFlowGridSceneProxy* FlowGridSceneProxy = (FFlowGridSceneProxy*)PrimitiveSceneInfo->Proxy;
-			if (FlowGridSceneProxy->FlowGridProperties.bEnableParticleMode != 0 && 
+			if (FlowGridSceneProxy->FlowGridProperties.bParticleModeEnabled != 0 && 
 				FlowGridSceneProxy->FlowGridProperties.RenderParams.bDebugWireframe == 0)
 			{
 				return false;
@@ -1828,7 +1828,7 @@ uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const P
 			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
 			FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
 			if (FlowGridSceneProxy &&
-				FlowGridSceneProxy->FlowGridProperties.bEnableParticlesInteraction &&
+				FlowGridSceneProxy->FlowGridProperties.bParticlesInteractionEnabled &&
 				ParticleSimulationParams.Bounds.Intersect(FlowGridSceneProxy->GetBounds().GetBox()))
 			{
 				EInteractionResponseNvFlow ParticleSystemResponse = ParticleSimulationParams.ResponseToInteractionChannels.GetResponse(FlowGridSceneProxy->FlowGridProperties.InteractionChannel);

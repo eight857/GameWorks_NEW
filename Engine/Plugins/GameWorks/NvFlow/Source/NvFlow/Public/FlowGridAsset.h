@@ -41,7 +41,7 @@ class UFlowGridAsset : public UObject
 
 	/** If true, grid affects GPU particles*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
-	uint32		bEnableParticlesInteraction : 1;
+	uint32		bParticlesInteractionEnabled : 1;
 
 	/** Enum indicating what interaction channel this object has */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
@@ -53,7 +53,7 @@ class UFlowGridAsset : public UObject
 
 	/** If true, higher res density and volume rendering are disabled */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
-	uint32		bEnableParticleMode : 1;
+	uint32		bParticleModeEnabled : 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	float		ParticleToGridAccelTimeConstant;
@@ -217,7 +217,7 @@ class UFlowGridAsset : public UObject
 	float		MaxActiveDistance;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
-	float		VelocitySleepFactor;
+	float		VelocitySlipFactor;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
 	float		VelocitySlipThickness;

@@ -45,11 +45,11 @@ struct FFlowGridProperties
 	// multi-GPU enable, requires reset if changed
 	uint32 bMultiAdapterEnabled : 1;
 
-	uint32 bEnableParticlesInteraction : 1;
+	uint32 bParticlesInteractionEnabled : 1;
 	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
 	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
 
-	uint32 bEnableParticleMode : 1;
+	uint32 bParticleModeEnabled : 1;
 
 	float ParticleToGridAccelTimeConstant;
 	float ParticleToGridDecelTimeConstant;
@@ -75,7 +75,7 @@ struct FFlowGridProperties
 	uint32 bDistanceFieldCollisionEnabled : 1;
 	float MinActiveDistance;
 	float MaxActiveDistance;
-	float VelocitySleepFactor;
+	float VelocitySlipFactor;
 	float VelocitySlipThickness;
 
 	// rendering parameters

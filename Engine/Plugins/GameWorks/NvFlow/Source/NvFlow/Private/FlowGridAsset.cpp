@@ -120,9 +120,9 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 		ResponseToChannels = Template.ResponseToChannels;
 	}
 
-	bEnableParticlesInteraction = false;
+	bParticlesInteractionEnabled = false;
 	InteractionChannel = EIC_Channel1;
-	bEnableParticleMode = false;
+	bParticleModeEnabled = false;
 
 	ParticleToGridAccelTimeConstant = 0.01f;
 	ParticleToGridDecelTimeConstant = 10.0f;
@@ -134,7 +134,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	bDistanceFieldCollisionEnabled = false;
 	MinActiveDistance = -1.0f;
 	MaxActiveDistance = 0.0f;
-	VelocitySleepFactor = 0.0f;
+	VelocitySlipFactor = 0.0f;
 	VelocitySlipThickness = 0.0f;
 
 }
