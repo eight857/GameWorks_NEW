@@ -35,18 +35,51 @@ RendererHooksNvFlowImpl GRendererHooksNvFlowImpl;
 struct FNvFlowCommands
 {
 	FAutoConsoleCommand ConsoleCommandFlowVis;
+	FAutoConsoleCommand ConsoleCommandFlowVisRenderChannel;
+	FAutoConsoleCommand ConsoleCommandFlowVisRenderMode;
 	FAutoConsoleCommand ConsoleCommandFlowVisMode;
+
+	static const uint32 debugVisDefault = eNvFlowGridDebugVisBlocks | eNvFlowGridDebugVisEmitBounds | eNvFlowGridDebugVisShapesSimple;
 
 	void CommandFlowVis(const TArray<FString>& Args)
 	{
 		UFlowGridAsset::sGlobalDebugDraw = !UFlowGridAsset::sGlobalDebugDraw;
+		if (UFlowGridAsset::sGlobalDebugDraw)
+		{
+			// reset to defaults
+			UFlowGridAsset::sGlobalRenderChannel = eNvFlowGridChannelDensity;
+			UFlowGridAsset::sGlobalRenderMode = eNvFlowVolumeRenderMode_rainbow;
+			UFlowGridAsset::sGlobalMode = debugVisDefault;
+		}
+	}
+
+	void CommandFlowVisRenderChannel(const TArray<FString>& Args)
+	{
+		UFlowGridAsset::sGlobalDebugDraw = true;
+		uint32 FlowVisMode = (Args.Num() >= 1) ? FCString::Atoi(*Args[0]) : eNvFlowGridChannelDensity;
+		UFlowGridAsset::sGlobalRenderChannel = FMath::Clamp<uint32>(FlowVisMode, eNvFlowGridChannelVelocity, eNvFlowGridChannelCount - 1);
+		if (UFlowGridAsset::sGlobalRenderChannel == eNvFlowGridChannelVelocity)
+		{
+			UFlowGridAsset::sGlobalRenderMode = eNvFlowVolumeRenderMode_debug;
+		}
+		else 
+		{
+			UFlowGridAsset::sGlobalRenderMode = eNvFlowVolumeRenderMode_rainbow;
+		}
+	}
+
+	void CommandFlowVisRenderMode(const TArray<FString>& Args)
+	{
+		UFlowGridAsset::sGlobalDebugDraw = true;
+		uint32 FlowVisMode = (Args.Num() >= 1) ? FCString::Atoi(*Args[0]) : eNvFlowVolumeRenderMode_rainbow;
+		UFlowGridAsset::sGlobalRenderMode = FMath::Clamp<uint32>(FlowVisMode, eNvFlowVolumeRenderMode_colormap, eNvFlowVolumeRenderModeCount - 1);
 	}
 
 	void CommandFlowVisMode(const TArray<FString>& Args)
 	{
-		uint32 FlowVisMode = FCString::Atoi(*Args[0]);
 		UFlowGridAsset::sGlobalDebugDraw = true;
-		UFlowGridAsset::sGlobalRenderingMode = FMath::Clamp<uint32>(FlowVisMode, 0, 5);
+		uint32 FlowVisMode = (Args.Num() >= 1) ? FCString::Atoi(*Args[0]) : debugVisDefault;
+		UFlowGridAsset::sGlobalMode = FlowVisMode;
 	}
 
 	FNvFlowCommands() :
@@ -55,11 +88,21 @@ struct FNvFlowCommands
 			*NSLOCTEXT("Flow", "CommandText_FlowVis", "Enable/Disable Flow debug visualization").ToString(),
 			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowVis)
 			),
+		ConsoleCommandFlowVisRenderChannel(
+			TEXT("flowvisrenderchannel"),
+			*NSLOCTEXT("Flow", "CommandText_FlowVisRenderChannel", "Set Flow debug render channel").ToString(),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowVisRenderChannel)
+		),
+		ConsoleCommandFlowVisRenderMode(
+			TEXT("flowvisrendermode"),
+			*NSLOCTEXT("Flow", "CommandText_FlowVisRenderMode", "Set Flow debug render mode").ToString(),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowVisRenderMode)
+			),
 		ConsoleCommandFlowVisMode(
 			TEXT("flowvismode"),
-			*NSLOCTEXT("Flow", "CommandText_FlowVisMode", "Set Flow debug visualization mode").ToString(),
+			*NSLOCTEXT("Flow", "CommandText_FlowVisMode", "Set Flow grid debug visualization mode").ToString(),
 			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowVisMode)
-			)
+		)
 	{
 	}
 };

@@ -460,6 +460,7 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 	NvFlowVolumeRenderParamsDefaults(&m_renderParams);
 	m_renderParams.alphaScale = Properties.RenderParams.RenderingAlphaScale;
 	m_renderParams.renderMode = (NvFlowVolumeRenderMode)Properties.RenderParams.RenderingMode;
+	m_renderParams.renderChannel = (NvFlowGridChannel)Properties.RenderParams.RenderingChannel;
 	m_renderParams.debugMode = Properties.RenderParams.bDebugWireframe;
 	m_renderParams.colorMapMinX = Properties.RenderParams.ColorMapMinX;
 	m_renderParams.colorMapMaxX = Properties.RenderParams.ColorMapMaxX;

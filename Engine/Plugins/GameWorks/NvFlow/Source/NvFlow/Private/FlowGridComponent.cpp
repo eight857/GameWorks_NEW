@@ -771,13 +771,17 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		
 		if (UFlowGridAsset::sGlobalDebugDraw)
 		{
+			GridParams.debugVisFlags = NvFlowGridDebugVisFlags(UFlowGridAsset::sGlobalMode);
 			FlowGridProperties.RenderParams.bDebugWireframe = true;
-			FlowGridProperties.RenderParams.RenderingMode = UFlowGridAsset::sGlobalRenderingMode;
+			FlowGridProperties.RenderParams.RenderingMode = UFlowGridAsset::sGlobalRenderMode;
+			FlowGridProperties.RenderParams.RenderingChannel = UFlowGridAsset::sGlobalRenderChannel;
 		}
 		else
 		{
+			GridParams.debugVisFlags = eNvFlowGridDebugVisDisabled;
 			FlowGridProperties.RenderParams.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
 			FlowGridProperties.RenderParams.RenderingMode = FlowGridAssetRef->RenderingMode;
+			FlowGridProperties.RenderParams.RenderingChannel = eNvFlowGridChannelDensity;
 		}
 
 		//ColorMap
