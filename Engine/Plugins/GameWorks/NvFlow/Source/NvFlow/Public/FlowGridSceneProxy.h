@@ -25,6 +25,7 @@ struct FFlowGridRenderParams
 	// NvFlowVolumeRenderParams
 	float RenderingAlphaScale;
 	uint32 RenderingMode;
+	uint32 RenderingChannel;
 	uint32 bAdaptiveScreenPercentage : 1;
 	float AdaptiveTargetFrameTime;
 	float MaxScreenPercentage;

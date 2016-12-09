@@ -209,7 +209,9 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")
 	uint32		bDebugWireframe : 1;
 	static bool sGlobalDebugDraw;
-	static uint32 sGlobalRenderingMode;
+	static uint32 sGlobalRenderChannel;
+	static uint32 sGlobalRenderMode;
+	static uint32 sGlobalMode;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
 	uint32		bDistanceFieldCollisionEnabled : 1;
