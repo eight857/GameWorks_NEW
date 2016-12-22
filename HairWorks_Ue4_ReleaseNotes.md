@@ -2,7 +2,7 @@
 =============
 New:
 * Upgraded to HairWorks 1.2.
-* Upgraded to UE4.13
+* Upgraded to UE4.14
 * Textures are now automatically imported when a HairWorks asset is imported. 
 * Added support for tiled deferred shading. 
 * Made hairs darker on back faces with un-shadowed lights. 
@@ -47,3 +47,4 @@ Known Issues
 * Duplicated property categories in HairWorks assets and components. 
 * Needs to read data back from GPU buffer to CPU for dynamic pin, so there would be potential performance issue. 
 * Assets of old version HairWorks, such as 1.0, would not be loaded, due to HairWorks SDK change. 
+* Support for forword rendering mode is not added yet. 
