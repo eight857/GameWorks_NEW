@@ -61,6 +61,11 @@ class UFlowGridComponent : public UPrimitiveComponent
 	class UFlowGridAsset** FlowGridAssetCurrent;
 	class UFlowGridAsset* FlowGridAssetOld;
 
+	/** Default flow material. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	class UFlowMaterial* DefaultFlowMaterial;
+
+
 	/** If true, Flow Grid will collide with emitter/colliders. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Grid)
 	uint32 bFlowGridCollisionEnabled : 1;

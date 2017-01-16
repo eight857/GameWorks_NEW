@@ -77,89 +77,13 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	float		GridToParticleThresholdMultiplier;
 
-	//* Relative importance of velocity for allocation, 0.0 means not important*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
-	float	VelocityWeight;
-
-	//* Relative importance of density for allocation, 0.0 means not important*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
-	float	DensityWeight;
-
-	//* Relative importance of temperature for allocation, 0.0 means not important*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
-	float	TempWeight;
-
-	//* Relative importance of fuel for allocation, 0.0 means not important*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
-	float	FuelWeight;
-
-	//* Minimum velocity magnitude that is considered relevant*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
-	float	VelocityThreshold;
-
-	//* Minimum density magnitude that is considered relevant*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
-	float	DensityThreshold;
-
-	//* Minimum temperature magnitude that is considered relevant*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
-	float	TempThreshold;
-
-	//* Minimum fuel magnitude that is considered relevant*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
-	float	FuelThreshold;
-
-	//* Global importance threshold, to scale quality/performance*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Block Allocation", meta = (ClampMin = 0.0f, UIMin = 0.f, UIMax = 1.0f))
-	float	ImportanceThreshold;
-
 	/** Gravity vector for use by buoyancy*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	FVector		Gravity;
 
-	/** Higher values reduce velocity faster (exponential decay curve)*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damping", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
-	float		VelocityDamping;
-
-	/** Higher values reduce density faster (exponential decay curve)*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damping", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
-	float		DensityDamping;
-
-	/** Fade velocity rate in units / sec*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fade", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
-	float		VelocityFade;
-
-	/** Fade density rate in units / sec*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fade", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
-	float		DensityFade;
-
-	/** Higher values make a sharper appearance, but with more artifacts*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MacCormack Correction", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
-	float		VelocityMacCormackBlendFactor;
-
-	/** Higher values make a sharper appearance, but with more artifacts*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MacCormack Correction", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
-	float		DensityMacCormackBlendFactor;
-
-	/** Higher values increase rotation, reduce laminar flow*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vorticity", meta = (ClampMin = 0.0f, ClampMax = 20.0f))
-	float		VorticityStrength;
-
-	/** 0.f means zero velocity magnitude influence on vorticity*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vorticity", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
-	float		VorticityVelocityMask;
-
 	/** If true, run older less accurate pressure solver*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pressure")
 	uint32		bPressureLegacyMode : 1;
-
-	/** Minimum temperature for combustion*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combustion", meta = (ClampMin = 0.0f, ClampMax = 5.0f))
-	float		IgnitionTemperature;
-
-	/** Cooling rate, exponential*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combustion", meta = (ClampMin = 0.0f, ClampMax = 10.0f))
-	float		CoolingRate;
 
 	/** Enum indicating what type of object this should be considered as */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collision")
@@ -168,26 +92,6 @@ class UFlowGridAsset : public UObject
 	/** Custom Channels for Responses*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collision")
 	struct FCollisionResponseContainer	ResponseToChannels;
-
-	/** Alpha scale*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
-	float		RenderingAlphaScale;
-
-	/** Color curve*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Export, Category = "Rendering")
-	class UCurveLinearColor* ColorMap;
-
-	/** Color curve minimum X value*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (UIMin = -1.0f, UIMax = 1.0f))
-	float		ColorMapMinX;
-
-	/** Color curve maximum X value*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (UIMin = -1.0f, UIMax = 1.0f))
-	float		ColorMapMaxX;
-
-	/** Rendering mode*/
-	UPROPERTY(EditAnywhere, Category = "Rendering", meta = (ClampMin = 0, ClampMax = 5))
-	uint32		RenderingMode;
 
 	/** Adaptive ScreenPercentage */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")

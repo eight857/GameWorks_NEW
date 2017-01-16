@@ -45,6 +45,8 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 	bAllocShapeOnly = 0u;
 
 	bHasPreviousTransform = false;
+
+	FlowMaterial = nullptr;
 }
 
 // NvFlow end

@@ -23,19 +23,22 @@ namespace NvFlow
 struct FFlowGridRenderParams
 {
 	// NvFlowVolumeRenderParams
-	float RenderingAlphaScale;
-	uint32 RenderingMode;
-	uint32 RenderingChannel;
 	uint32 bAdaptiveScreenPercentage : 1;
 	float AdaptiveTargetFrameTime;
 	float MaxScreenPercentage;
 	float MinScreenPercentage;
 	uint32 bDebugWireframe : 1;
+};
+
+typedef void* FlowMaterialKeyType;
+
+struct FFlowMaterialParams
+{
+	NvFlowGridMaterialParams GridParams;
+	NvFlowRenderMaterialParams RenderParams;
 
 	// Color map
 	TArray<FLinearColor> ColorMap;
-	float ColorMapMinX;
-	float ColorMapMaxX;
 };
 
 struct FFlowGridProperties
@@ -76,6 +79,7 @@ struct FFlowGridProperties
 	TArray<NvFlowShapeDesc> GridEmitShapeDescs;
 	TArray<NvFlowShapeDesc> GridCollideShapeDescs;
 
+
 	uint32 bDistanceFieldCollisionEnabled : 1;
 	float MinActiveDistance;
 	float MaxActiveDistance;
@@ -84,6 +88,11 @@ struct FFlowGridProperties
 
 	// rendering parameters
 	FFlowGridRenderParams RenderParams;
+
+	TArray<FlowMaterialKeyType> GridEmitMaterialKeys;
+	FlowMaterialKeyType DefaultMaterialKey;
+
+	TMap<FlowMaterialKeyType, FFlowMaterialParams> MaterialsMap;
 };
 
 class UFlowGridComponent;

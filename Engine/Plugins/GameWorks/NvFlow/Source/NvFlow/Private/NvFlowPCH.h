@@ -14,7 +14,6 @@ DECLARE_LOG_CATEGORY_EXTERN(LogNvFlow, Verbose, All);
 #include "FlowEmitterComponent.h"
 #include "FlowGridActor.h"
 #include "FlowGridSceneProxy.h"
+#include "FlowMaterial.h"
 
 #include "NvFlowInterop.h"
-
-

@@ -146,8 +146,8 @@ namespace NvFlow
 
 		NvFlowGrid* m_grid = nullptr;
 		NvFlowGridProxy* m_gridProxy = nullptr;
-		NvFlowColorMap* m_colorMap = nullptr;
 		NvFlowVolumeRender* m_volumeRender = nullptr;
+		NvFlowRenderMaterialPool* m_renderMaterialPool = nullptr;
 
 		NvFlowGridDesc m_gridDesc;
 		NvFlowGridParams m_gridParams;
@@ -157,6 +157,15 @@ namespace NvFlow
 
 		NvFlowGridExport* m_gridExport = nullptr;
 		TArray<ParticleSimulationParamsNvFlow> m_particleParamsArray;
+
+		struct MaterialData
+		{
+			NvFlowGridMaterialHandle gridMaterialHandle;
+			NvFlowRenderMaterialHandle renderMaterialHandle;
+		};
+		TMap<FlowMaterialKeyType, MaterialData> m_materialMap;
+
+		const MaterialData& updateMaterial(FlowMaterialKeyType materialKey, const FFlowMaterialParams& materialParams);
 
 		// deferred mechanism for proper RHI command list support
 		float m_updateSubstep_dt = 0.f;
@@ -427,13 +436,13 @@ void NvFlow::Scene::release()
 	if (m_grid) NvFlowReleaseGrid(m_grid);
 	if (m_gridProxy) NvFlowReleaseGridProxy(m_gridProxy);
 	if (m_volumeRender) NvFlowReleaseVolumeRender(m_volumeRender);
-	if (m_colorMap) NvFlowReleaseColorMap(m_colorMap);
+	if (m_renderMaterialPool) NvFlowReleaseRenderMaterialPool(m_renderMaterialPool);
 
 	m_gridExport = nullptr;
 	m_grid = nullptr;
 	m_gridProxy = nullptr;
 	m_volumeRender = nullptr;
-	m_colorMap = nullptr;
+	m_renderMaterialPool = nullptr;
 
 	m_context = nullptr;
 
@@ -493,9 +502,10 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 
 	m_volumeRender = NvFlowCreateVolumeRender(m_context->m_flowContext, &volumeRenderDesc);
 
-	NvFlowColorMapDesc colorMapDesc;
-	NvFlowColorMapDescDefaults(&colorMapDesc);
-	m_colorMap = NvFlowCreateColorMap(m_context->m_flowContext, &colorMapDesc);
+	NvFlowRenderMaterialPoolDesc renderMaterialPoolDesc;
+	renderMaterialPoolDesc.colorMapResolution = 64; //TODO:
+
+	m_renderMaterialPool = NvFlowCreateRenderMaterialPool(m_context->m_flowContext, &renderMaterialPoolDesc);
 }
 
 void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
@@ -509,12 +519,8 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 
 	// configure render params
 	NvFlowVolumeRenderParamsDefaults(&m_renderParams);
-	m_renderParams.alphaScale = Properties.RenderParams.RenderingAlphaScale;
-	m_renderParams.renderMode = (NvFlowVolumeRenderMode)Properties.RenderParams.RenderingMode;
-	m_renderParams.renderChannel = (NvFlowGridChannel)Properties.RenderParams.RenderingChannel;
 	m_renderParams.debugMode = Properties.RenderParams.bDebugWireframe;
-	m_renderParams.colorMapMinX = Properties.RenderParams.ColorMapMinX;
-	m_renderParams.colorMapMaxX = Properties.RenderParams.ColorMapMaxX;
+	m_renderParams.materialPool = m_renderMaterialPool;
 
 #if NVFLOW_ADAPTIVE
 	// adaptive screen percentage
@@ -599,19 +605,71 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 {
 	auto& appctx = *RHICmdCtx;
 
-	const FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
+	FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
 
-	// set color map
+	for (auto It = Properties.MaterialsMap.CreateConstIterator(); It; ++It)
 	{
-		auto mapped = NvFlowColorMapMap(m_colorMap, m_context->m_flowContext);
-		if (mapped.data)
+		updateMaterial(It.Key(), It.Value());
+	}
+
+	check(Properties.GridEmitParams.Num() == Properties.GridEmitMaterialKeys.Num());
+	for (int32 i = 0; i < Properties.GridEmitParams.Num(); ++i)
+	{
+		NvFlowGridMaterialHandle gridMaterialHandle = { nullptr, 0 };
+
+		FlowMaterialKeyType materialKey = Properties.GridEmitMaterialKeys[i];
+		if (materialKey != nullptr)
 		{
-			check(mapped.dim == Properties.RenderParams.ColorMap.Num());
-			FMemory::Memcpy(mapped.data, Properties.RenderParams.ColorMap.GetData(), sizeof(NvFlowFloat4)*Properties.RenderParams.ColorMap.Num());
-			NvFlowColorMapUnmap(m_colorMap, m_context->m_flowContext);
+			MaterialData* materialData = m_materialMap.Find(materialKey);
+			if (materialData != nullptr)
+			{
+				gridMaterialHandle = materialData->gridMaterialHandle;
+			}
 		}
+
+		Properties.GridEmitParams[i].material = gridMaterialHandle;
 	}
 }
+
+const NvFlow::Scene::MaterialData& NvFlow::Scene::updateMaterial(FlowMaterialKeyType materialKey, const FFlowMaterialParams& materialParams)
+{
+	MaterialData* materialData = m_materialMap.Find(materialKey);
+	if (materialData == nullptr)
+	{
+		materialData = &m_materialMap.Add(materialKey);
+
+		materialData->gridMaterialHandle = NvFlowGridCreateMaterial(m_grid, &materialParams.GridParams);
+
+		NvFlowRenderMaterialParams renderMaterialParams = materialParams.RenderParams;
+		renderMaterialParams.material = materialData->gridMaterialHandle;
+		materialData->renderMaterialHandle = NvFlowCreateRenderMaterial(m_context->m_flowContext, m_renderMaterialPool, &renderMaterialParams);
+	}
+	else
+	{
+		//TODO: add dirty check
+		NvFlowGridSetMaterialParams(m_grid, materialData->gridMaterialHandle, &materialParams.GridParams);
+
+		NvFlowRenderMaterialParams renderMaterialParams = materialParams.RenderParams;
+		renderMaterialParams.material = materialData->gridMaterialHandle;
+
+		NvFlowRenderMaterialUpdate(materialData->renderMaterialHandle, &renderMaterialParams);
+	}
+
+	// update color map
+	{
+		//TODO: add dirty check
+		auto mapped = NvFlowRenderMaterialColorMap(m_context->m_flowContext, materialData->renderMaterialHandle);
+		if (mapped.data)
+		{
+			check(mapped.dim == materialParams.ColorMap.Num());
+			FMemory::Memcpy(mapped.data, materialParams.ColorMap.GetData(), sizeof(NvFlowFloat4)*mapped.dim);
+			NvFlowRenderMaterialColorUnmap(m_context->m_flowContext, materialData->renderMaterialHandle);
+		}
+	}
+
+	return *materialData;
+}
+
 
 void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
 {
@@ -693,14 +751,14 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateP
 		callbackUserData.GlobalDistanceFieldParameterData = updateParams->GlobalDistanceFieldParameterData;
 
 		NvFlowGridEmitCustomRegisterAllocFunc(m_grid, &NvFlow::Scene::sEmitCustomAllocCallback, &callbackUserData);
-		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, &NvFlow::Scene::sEmitCustomEmitVelocityCallback, &callbackUserData);
-		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelDensity, &NvFlow::Scene::sEmitCustomEmitDensityCallback, &callbackUserData);
+		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridTextureChannelVelocity, &NvFlow::Scene::sEmitCustomEmitVelocityCallback, &callbackUserData);
+		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridTextureChannelDensity, &NvFlow::Scene::sEmitCustomEmitDensityCallback, &callbackUserData);
 
 		NvFlowGridUpdate(m_grid, computeContext, adaptiveDt);
 
 		NvFlowGridEmitCustomRegisterAllocFunc(m_grid, nullptr, nullptr);
-		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelVelocity, nullptr, nullptr);
-		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridChannelDensity, nullptr, nullptr);
+		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridTextureChannelVelocity, nullptr, nullptr);
+		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridTextureChannelDensity, nullptr, nullptr);
 	}
 
 	NvFlowGridProxyPush(m_gridProxy, computeContext, m_grid);
@@ -770,8 +828,6 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 
 	memcpy(&rp.projectionMatrix, &projMatrix.M[0][0], sizeof(rp.projectionMatrix));
 	memcpy(&rp.viewMatrix, &viewMatrix.M[0][0], sizeof(rp.viewMatrix));
-
-	rp.colorMap = m_colorMap;
 
 #if NVFLOW_SMP
 	auto& multiResConfig = View.MultiResConf;
@@ -935,10 +991,10 @@ bool NvFlow::Scene::getExportParams(FRHICommandListImmediate& RHICmdList, GridEx
 	}
 
 
-	NvFlowGridExportUpdate(m_gridExport, m_context->m_flowContext, m_gridView, eNvFlowGridChannelVelocity);
+	NvFlowGridExportUpdate(m_gridExport, m_context->m_flowContext, m_gridView, eNvFlowGridTextureChannelVelocity);
 
 	NvFlowGridExportView GridExportView;
-	NvFlowGridExportGetView(m_gridExport, m_context->m_flowContext, &GridExportView, eNvFlowGridChannelVelocity);
+	NvFlowGridExportGetView(m_gridExport, m_context->m_flowContext, &GridExportView, eNvFlowGridTextureChannelVelocity);
 
 	OutParams.DataSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, GridExportView.data);
 	OutParams.BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, GridExportView.blockTable);

@@ -23,6 +23,9 @@ void FNvFlowEditorModule::StartupModule()
 	FlowGridAssetTypeActions = MakeShareable(new FAssetTypeActions_FlowGridAsset);
 	AssetTools.RegisterAssetTypeActions(FlowGridAssetTypeActions.ToSharedRef());
 
+	FlowMaterialTypeActions = MakeShareable(new FAssetTypeActions_FlowMaterial);
+	AssetTools.RegisterAssetTypeActions(FlowMaterialTypeActions.ToSharedRef());
+
 	GEditorRendererHooksNvFlow = &GEditorRendererHooksNvFlowImpl;
 }
 
@@ -31,6 +34,10 @@ void FNvFlowEditorModule::ShutdownModule()
 	if (FModuleManager::Get().IsModuleLoaded("AssetTools"))
 	{
 		IAssetTools& AssetTools = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools").Get();
+		if (FlowMaterialTypeActions.IsValid())
+		{
+			AssetTools.UnregisterAssetTypeActions(FlowMaterialTypeActions.ToSharedRef());
+		}
 		if (FlowGridAssetTypeActions.IsValid())
 		{
 			AssetTools.UnregisterAssetTypeActions(FlowGridAssetTypeActions.ToSharedRef());

@@ -89,5 +89,10 @@ class UFlowEmitterComponent : public UActorComponent
 
 	uint32		bHasPreviousTransform : 1;
 	FTransform	PreviousTransform;
+
+	/** Flow material, if null then taken default material from grid. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	class UFlowMaterial* FlowMaterial;
+
 };
 

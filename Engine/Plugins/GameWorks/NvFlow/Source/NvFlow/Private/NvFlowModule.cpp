@@ -64,7 +64,7 @@ struct FNvFlowCommands
 		if (UFlowGridAsset::sGlobalDebugDraw)
 		{
 			// reset to defaults
-			UFlowGridAsset::sGlobalRenderChannel = eNvFlowGridChannelDensity;
+			UFlowGridAsset::sGlobalRenderChannel = eNvFlowGridTextureChannelDensity;
 			UFlowGridAsset::sGlobalRenderMode = eNvFlowVolumeRenderMode_rainbow;
 			UFlowGridAsset::sGlobalMode = debugVisDefault;
 		}
@@ -73,9 +73,9 @@ struct FNvFlowCommands
 	void CommandFlowVisRenderChannel(const TArray<FString>& Args)
 	{
 		UFlowGridAsset::sGlobalDebugDraw = true;
-		uint32 FlowVisMode = (Args.Num() >= 1) ? FCString::Atoi(*Args[0]) : eNvFlowGridChannelDensity;
-		UFlowGridAsset::sGlobalRenderChannel = FMath::Clamp<uint32>(FlowVisMode, eNvFlowGridChannelVelocity, eNvFlowGridChannelCount - 1);
-		if (UFlowGridAsset::sGlobalRenderChannel == eNvFlowGridChannelVelocity)
+		uint32 FlowVisMode = (Args.Num() >= 1) ? FCString::Atoi(*Args[0]) : eNvFlowGridTextureChannelDensity;
+		UFlowGridAsset::sGlobalRenderChannel = FMath::Clamp<uint32>(FlowVisMode, eNvFlowGridTextureChannelVelocity, eNvFlowGridTextureChannelCount - 1);
+		if (UFlowGridAsset::sGlobalRenderChannel == eNvFlowGridTextureChannelVelocity)
 		{
 			UFlowGridAsset::sGlobalRenderMode = eNvFlowVolumeRenderMode_debug;
 		}

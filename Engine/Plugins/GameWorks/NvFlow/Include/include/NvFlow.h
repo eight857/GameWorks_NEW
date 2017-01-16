@@ -168,20 +168,17 @@ NV_FLOW_API NvFlowUint NvFlowDeferredRelease(float timeoutMS);
 //! A Flow dynamic grid
 struct NvFlowGrid;
 
-//! Grid data for rendering
-struct NvFlowGridView;
-
-//! Grid simulation channel
-enum NvFlowGridChannel
+//! Grid texture channel, four components per channel
+enum NvFlowGridTextureChannel
 {
-	eNvFlowGridChannelVelocity = 0,
-	eNvFlowGridChannelDensity = 1,
-	eNvFlowGridChannelDensityCoarse = 2,
+	eNvFlowGridTextureChannelVelocity = 0,
+	eNvFlowGridTextureChannelDensity = 1,
+	eNvFlowGridTextureChannelDensityCoarse = 2,
 
-	eNvFlowGridChannelCount
+	eNvFlowGridTextureChannelCount
 };
 
-//! Enumeration used to describe density resolution relative to velocity resolution
+//! Enumeration used to describe density texture channel resolution relative to velocity resolution
 enum NvFlowMultiRes
 {
 	eNvFlowMultiRes1x1x1 = 0,
@@ -210,6 +207,23 @@ struct NvFlowGridDesc
  */
 NV_FLOW_API void NvFlowGridDescDefaults(NvFlowGridDesc* desc);
 
+/**
+ * Creates a Flow grid.
+ *
+ * @param[in] context The Flow context used to create the new Flow grid
+ * @param[in] desc The Flow grid description.
+ *
+ * @return The created Flow grid
+ */
+NV_FLOW_API NvFlowGrid* NvFlowCreateGrid(NvFlowContext* context, const NvFlowGridDesc* desc);
+
+/**
+ * Releases a Flow grid.
+ *
+ * @param[in] grid The Flow grid to be released.
+ */
+NV_FLOW_API void NvFlowReleaseGrid(NvFlowGrid* grid);
+
 //! Description required to reset a NvFlowGrid
 struct NvFlowGridResetDesc
 {
@@ -224,6 +238,22 @@ struct NvFlowGridResetDesc
  */
 NV_FLOW_API void NvFlowGridResetDescDefaults(NvFlowGridResetDesc* desc);
 
+/**
+ * Submits a request to reset a Flow grid, preserving memory allocations
+ *
+ * @param[in] context The Flow context to reset the Flow grid
+ * @param[in] desc The Flow grid description.
+ */
+NV_FLOW_API void NvFlowGridReset(NvFlowGrid* grid, const NvFlowGridResetDesc* desc);
+
+/**
+ * Not fully supported yet. Allows the application to request the grid move to a new location.
+ *
+ * @param[in] grid The Flow grid to move.
+ * @param[in] targetLocation The location the center of the grid should make a best effort attempt to reach.
+ */
+NV_FLOW_API void NvFlowGridSetTargetLocation(NvFlowGrid* grid, NvFlowFloat3 targetLocation);
+
 //! Flags to control grid debug visualization
 enum NvFlowGridDebugVisFlags
 {
@@ -235,54 +265,12 @@ enum NvFlowGridDebugVisFlags
 	eNvFlowGridDebugVisCount
 };
 
-//! Grid wide parameters controls combustion behavior
-struct NvFlowGridCombustionParams
-{
-	float ignitionTemp;			//!< Minimum temperature for combustion
-	float burnPerTemp;			//!< Burn amount per unit temperature above ignitionTemp
-	float fuelPerBurn;			//!< Fuel consumed per unit burn
-	float tempPerBurn;			//!< Temperature increase per unit burn
-	float densityPerBurn;		//!< Density increase per unit burn
-	float divergencePerBurn;	//!< Expansion per unit burn
-	float buoyancyPerTemp;		//!< Buoyant force per unit temperature
-	float coolingRate;			//!< Cooling rate, exponential
-};
-
 //! Parameters controlling grid behavior
 struct NvFlowGridParams
 {
-	float velocityDamping;					//!< Higher values reduce velocity faster (exponential decay curve)
-	float densityDamping;					//!< Higher values reduce density faster (exponential decay curve)
-	float fuelDamping;						//!< Higher values reduce fuel faster (exponential decay curve)
-	float velocityFade;						//!< Fade velocity rate in units / sec
-	float densityFade;						//!< Fade density rate in units / sec
-	float fuelFade;							//!< Fade fuel rate in units / sec
-
-	float velocityMacCormackBlendFactor;	//!< Higher values make a sharper appearance, but with more artifacts
-	float densityMacCormackBlendFactor;		//!< Higher values make a sharper appearance, but with more artifacts
-	float velocityMacCormackBlendThreshold;	//!< Minimum absolute value to apply MacCormack correction. Increasing can improve performance.
-	float densityMacCormackBlendThreshold;	//!< Minimum absolute value to apply MacCormack correction. Increasing can improve performance.
-
 	NvFlowFloat3 gravity;					//!< Gravity vector for use by buoyancy
 
-	NvFlowGridCombustionParams combustion;	//!< Combustion parameters
-
-	float vorticityStrength;				//!< Higher values increase rotation, reduce laminar flow
-	float vorticityVelocityMask;			//!< 0.f means zero velocity magnitude influence on vorticity
-
 	bool pressureLegacyMode;				//!< If true, run older less accurate pressure solver
-
-	float velocityWeight;					//!< Relative importance of velocity for allocation, 0.0 means not important
-	float densityWeight;					//!< Relative importance of density for allocation, 0.0 means not important
-	float tempWeight;						//!< Relative importance of temperature for allocation, 0.0 means not important
-	float fuelWeight;						//!< Relative importance of fuel for allocation, 0.0 means not important
-
-	float velocityThreshold;				//!< Minimum velocity magnitude that is considered relevant
-	float densityThreshold;					//!< Minimum density magnitude that is considered relevant
-	float tempThreshold;					//!< Minimum temperature magnitude that is considered relevant
-	float fuelThreshold;					//!< Minimum fuel magnitude that is considered relevant
-
-	float importanceThreshold;				//!< Global importance threshold, to scale quality/performance
 
 	NvFlowGridDebugVisFlags debugVisFlags;	//!< Flags to control what debug visualization information is generated
 };
@@ -293,6 +281,169 @@ struct NvFlowGridParams
  * @param[out] params The parameters for Flow to fill out.
  */
 NV_FLOW_API void NvFlowGridParamsDefaults(NvFlowGridParams* params);
+
+/**
+ * Sets grid simulation parameters, persistent over multiple grid updates.
+ *
+ * @param[in] grid The Flow grid to set parameters on.
+ * @param[in] params The new parameter values.
+ */
+NV_FLOW_API void NvFlowGridSetParams(NvFlowGrid* grid, const NvFlowGridParams* params);
+
+//! Description of feature support on the queried Flow context GPU.
+struct NvFlowSupport
+{
+	bool supportsVTR;		//!< True if volume tiled resources are supported
+};
+
+/**
+ * Queries support for features that depend on hardware/OS.
+ *
+ * @param[in] grid The Flow grid to query for support.
+ * @param[out] support Description of what is supported.
+ *
+ * @return Returns eNvFlowSuccess if information is available.
+ */
+NV_FLOW_API NvFlowResult NvFlowGridQuerySupport(NvFlowGrid* grid, NvFlowSupport* support);
+
+//! CPU/GPU timing info
+struct NvFlowQueryTime
+{
+	float simulation;
+};
+
+/**
+ * Queries simulation timing data.
+ *
+ * @param[in] grid The Flow grid to query for timing.
+ * @param[out] gpuTime Simulation overhead on GPU.
+ * @param[out] cpuTime Simulation overhead on CPU.
+ *
+ * @return Returns eNvFlowSuccess if information is available.
+ */
+NV_FLOW_API NvFlowResult NvFlowGridQueryTime(NvFlowGrid* grid, NvFlowQueryTime* gpuTime, NvFlowQueryTime* cpuTime);
+
+/**
+ * Queries simulation GPU memory usage.
+ *
+ * @param[in] grid The Flow grid to query for timing.
+ * @param[out] numBytes GPU memory allocated in bytes.
+ */
+NV_FLOW_API void NvFlowGridGPUMemUsage(NvFlowGrid* grid, NvFlowUint64* numBytes);
+
+/**
+ * Steps the simulation dt forward in time.
+ *
+ * @param[in] grid The Flow grid to update.
+ * @param[in] context The Flow context to perform the update.
+ * @param[in] dt The time step, typically in seconds.
+ */
+NV_FLOW_API void NvFlowGridUpdate(NvFlowGrid* grid, NvFlowContext* context, float dt);
+
+//! Grid data for rendering
+struct NvFlowGridView;
+
+/**
+* Gets a view of the grid data for rendering.
+*
+* @param[in] grid The Flow grid to extract a view from.
+* @param[in] context The Flow context used to simulate the grid.
+*
+* @return The grid view for passing to rendering.
+*/
+NV_FLOW_API NvFlowGridView* NvFlowGridGetGridView(NvFlowGrid* grid, NvFlowContext* context);
+
+///@}
+// -------------------------- NvFlowGridMaterial -------------------------------
+///@defgroup NvFlowGridMaterial
+///@{
+
+//! Handle provided by grid to reference materials
+struct NvFlowGridMaterialHandle
+{
+	NvFlowGrid* grid;		//!< The grid that created this material handle
+	NvFlowUint64 uid;
+};
+
+//! Grid component IDs
+enum NvFlowGridComponent
+{
+	eNvFlowGridComponentVelocity = 0,
+	eNvFlowGridComponentDensity = 1,
+	eNvFlowGridComponentTemperature = 2,
+	eNvFlowGridComponentFuel = 3,
+
+	eNvFlowGridNumComponents = 4
+};
+
+//! Grid material per component parameters
+struct NvFlowGridMaterialPerComponent
+{
+	float damping;						//!< Higher values reduce component value faster (exponential decay curve)
+	float fade;							//!< Fade component value rate in units / sec
+	float macCormackBlendFactor;		//!< Higher values make a sharper appearance, but with more artifacts
+	float macCormackBlendThreshold;		//!< Minimum absolute value to apply MacCormack correction. Increasing can improve performance.
+	float allocWeight;					//!< Relative importance of component value for allocation, 0.0 means not important
+	float allocThreshold;				//!< Minimum component value magnitude that is considered relevant
+};
+
+//! Grid material parameters
+struct NvFlowGridMaterialParams
+{
+	NvFlowGridMaterialPerComponent velocity;	//!< Velocity component parameters
+	NvFlowGridMaterialPerComponent density;		//!< Density component parameters
+	NvFlowGridMaterialPerComponent temperature;	//!< Temperature component parameters
+	NvFlowGridMaterialPerComponent fuel;		//!< Fuel component parameters
+
+	float vorticityStrength;					//!< Higher values increase rotation, reduce laminar flow
+	float vorticityVelocityMask;				//!< 0.f means zero velocity magnitude influence on vorticity
+
+	float ignitionTemp;							//!< Minimum temperature for combustion
+	float burnPerTemp;							//!< Burn amount per unit temperature above ignitionTemp
+	float fuelPerBurn;							//!< Fuel consumed per unit burn
+	float tempPerBurn;							//!< Temperature increase per unit burn
+	float densityPerBurn;						//!< Density increase per unit burn
+	float divergencePerBurn;					//!< Expansion per unit burn
+	float buoyancyPerTemp;						//!< Buoyant force per unit temperature
+	float coolingRate;							//!< Cooling rate, exponential
+};
+
+/**
+* Allows the application to request default grid material parameters from Flow.
+*
+* @param[out] params The parameters for Flow to fill out.
+*/
+NV_FLOW_API void NvFlowGridMaterialParamsDefaults(NvFlowGridMaterialParams* params);
+
+/**
+* Creates new grid material, initializes to params
+*
+* @param[in] grid The Flow grid to set parameters on.
+* @param[in] params The new parameter values.
+*/
+NV_FLOW_API NvFlowGridMaterialHandle NvFlowGridCreateMaterial(NvFlowGrid* grid, const NvFlowGridMaterialParams* params);
+
+/**
+* Release grid material
+*
+* @param[in] grid The Flow grid to set parameters on.
+* @param[in] material Handle to material to release.
+*/
+NV_FLOW_API void NvFlowGridReleaseMaterial(NvFlowGrid* grid, NvFlowGridMaterialHandle material);
+
+/**
+* Sets material parameters, persistent over multiple grid updates.
+*
+* @param[in] grid The Flow grid to set parameters on.
+* @param[in] material Handle to material to update.
+* @param[in] params The new parameter values.
+*/
+NV_FLOW_API void NvFlowGridSetMaterialParams(NvFlowGrid* grid, NvFlowGridMaterialHandle material, const NvFlowGridMaterialParams* params);
+
+///@}
+// -------------------------- NvFlowShape -------------------------------
+///@defgroup NvFlowShape
+///@{
 
 //! Types of shapes for emit/collide behavior
 enum NvFlowShapeType
@@ -349,6 +500,78 @@ union NvFlowShapeDesc
 	NvFlowShapeDescPlane plane;
 };
 
+//! Description required to create a signed distance field object.
+struct NvFlowShapeSDFDesc
+{
+	NvFlowDim resolution;		//!< The resolution of the 3D texture used to store the signed distance field.
+};
+
+/**
+* Allows the application to request a default signed distance field object description from Flow.
+*
+* @param[out] desc The description for Flow to fill out.
+*/
+NV_FLOW_API void NvFlowShapeSDFDescDefaults(NvFlowShapeSDFDesc* desc);
+
+//! Required information for writing to a CPU mapped signed distance field.
+struct NvFlowShapeSDFData
+{
+	float* data;				//!< Pointer to mapped data
+	NvFlowUint rowPitch;		//!< Row pitch in floats
+	NvFlowUint depthPitch;		//!< Depth pitch in floats
+	NvFlowDim dim;				//!< Dimension of the sdf texture
+};
+
+/**
+* Creates a signed distance field object with no initial data.
+*
+* @param[in] context The Flow context to use for creation.
+* @param[in] desc A description needed for memory allocation.
+*
+* @return The created signed distance field object.
+*/
+NV_FLOW_API NvFlowShapeSDF* NvFlowCreateShapeSDF(NvFlowContext* context, const NvFlowShapeSDFDesc* desc);
+
+/**
+* Creates a signed distance field object with data from a Flow 3D texture.
+*
+* @param[in] context The Flow context to use for creation.
+* @param[in] texture The Flow 3D texture containing the signed distance field to use.
+*
+* @return The created signed distance field object.
+*/
+NV_FLOW_API NvFlowShapeSDF* NvFlowCreateShapeSDFFromTexture3D(NvFlowContext* context, NvFlowTexture3D* texture);
+
+/**
+* Releases a Flow signed distance field object.
+*
+* @param[in] shape The Flow signed distance field to be released.
+*/
+NV_FLOW_API void NvFlowReleaseShapeSDF(NvFlowShapeSDF* shape);
+
+/**
+* Maps a signed distance field object for CPU write access.
+*
+* @param[in] shape The Flow signed distance field object to map.
+* @param[in] context The Flow context used to create the Flow signed distance field.
+*
+* @return The information needed to properly write to the mapped signed distance field object.
+*/
+NV_FLOW_API NvFlowShapeSDFData NvFlowShapeSDFMap(NvFlowShapeSDF* shape, NvFlowContext* context);
+
+/**
+* Unmaps a signed distance field object from CPU write access, uploads update field to GPU.
+*
+* @param[in] shape The Flow signed distance field object to unmap.
+* @param[in] context The Flow context used to create the Flow signed distance field.
+*/
+NV_FLOW_API void NvFlowShapeSDFUnmap(NvFlowShapeSDF* shape, NvFlowContext* context);
+
+///@}
+// -------------------------- NvFlowGridEmit -------------------------------
+///@defgroup NvFlowGridEmit
+///@{
+
 //! Emitter modes
 enum NvFlowGridEmitMode
 {
@@ -369,24 +592,34 @@ struct NvFlowGridEmitParams
 	NvFlowShapeType shapeType;						//!< Type of shape in the set
 	float shapeDistScale;							//!< Scale to apply to SDF value
 
-	NvFlowUint emitMode;							//!< Emitter behavior, based on NvFlowGridEmitMode, 0u is default
+	NvFlowFloat4x4 bounds;							//!< Transform from emitter ndc to world space
+	NvFlowFloat4x4 localToWorld;					//!< Transform from shape local space to world space
+	NvFlowFloat3 centerOfMass; 						//!< Center of mass in emitter local coordinate space
 
 	float deltaTime;								//!< DeltaTime used to compute impulse
 
-	NvFlowFloat4x4 bounds;							//!< Transform from emitter ndc to world space
-	NvFlowFloat4x4 localToWorld;					//!< Transform from shape local space to world space
+	NvFlowGridMaterialHandle material;				//!< Material for this emitter
+	NvFlowUint emitMode;							//!< Emitter behavior, based on NvFlowGridEmitMode, 0u is default
+	NvFlowUint numSubSteps;							//!< Numbers of interations to perform on cell value
+
+	NvFlowFloat3 allocationScale;					//!< Higher values cause more blocks to allocate around emitter; 0.f means no allocation, 1.f is default
+	float allocationPredict;						//!< Higher values cause extra allocation based on linear velocity and predict velocity
+	NvFlowFloat3 predictVelocity;					//!< Velocity used only for predict
+	float predictVelocityWeight;					//!< Blend weight between linearVelocity and predictVelocity
 
 	float minActiveDist;							//!< Minimum distance value for active emission
 	float maxActiveDist;							//!< Maximum distance value for active emission
+	float minEdgeDist;								//!< Distance from minActiveDist to 1.0 emitter opacity
+	float maxEdgeDist;								//!< Distance before maxActiveDist to 0.0 emitter opacity
 	float slipThickness;							//!< Thickness of slip boundary region
 	float slipFactor;								//!< 0.0 => no slip, fully damped; 1.0 => full slip
 
-	NvFlowFloat3 centerOfMass; 						//!< Center of mass in emitter ndc coordinate space
-
 	NvFlowFloat3 velocityLinear;					//!< Linear velocity, in world units, emitter direction
 	NvFlowFloat3 velocityAngular;					//!< Angular velocity, in world units, emitter direction
-
 	NvFlowFloat3 velocityCoupleRate;				//!< Rate of correction to target, inf means instantaneous
+
+	float density;									//!< Target density
+	float densityCoupleRate;						//!< Rate of correction to target, inf means instantaneous
 
 	float temperature;								//!< Target temperature
 	float temperatureCoupleRate;					//!< Rate of correction to target, inf means instantaneous
@@ -395,91 +628,30 @@ struct NvFlowGridEmitParams
 	float fuelCoupleRate;							//!< Rate of correction to target, inf means instantaneous
 	float fuelReleaseTemp;							//!< Minimum temperature to release fuelRelease additional fuel
 	float fuelRelease;								//!< Fuel released when temperature exceeds release temperature
-
-	float density;									//!< Target density
-	float densityCoupleRate;						//!< Rate of correction to target, inf means instantaneous
-
-	NvFlowFloat3 allocationScale;					//!< Higher values cause more blocks to allocate around emitter; 0.f means no allocation, 1.f is default
-	float allocationPredict;						//!< Higher values cause extra allocation based on linear velocity and predict velocity
-	NvFlowFloat3 predictVelocity;					//!< Velocity used only for predict
-	float predictVelocityWeight;					//!< Blend weight between linearVelocity and predictVelocity
-
-	NvFlowUint numSubSteps;							//!< Numbers of interations to perform on cell value
 };
 
 /**
- * Allows the application to request default emit parameters from Flow.
- *
- * @param[out] params The parameters for Flow to fill out.
- */
+* Allows the application to request default emit parameters from Flow.
+*
+* @param[out] params The parameters for Flow to fill out.
+*/
 NV_FLOW_API void NvFlowGridEmitParamsDefaults(NvFlowGridEmitParams* params);
 
-//! Description required to create a signed distance field object.
-struct NvFlowShapeSDFDesc
-{
-	NvFlowDim resolution;		//!< The resolution of the 3D texture used to store the signed distance field.
-};
-
 /**
- * Allows the application to request a default signed distance field object description from Flow.
- *
- * @param[out] desc The description for Flow to fill out.
- */
-NV_FLOW_API void NvFlowShapeSDFDescDefaults(NvFlowShapeSDFDesc* desc);
+* Adds one or more emit events to be applied with the next grid update.
+*
+* @param[in] grid The Flow grid to apply the emit events.
+* @param[in] shapes Array of shape data referenced by emit params.
+* @param[in] numShapes Number of shapes in the array.
+* @param[in] params Array of emit event parameters.
+* @param[in] numParams Number of emit events in the array.
+*/
+NV_FLOW_API void NvFlowGridEmit(NvFlowGrid* grid, const NvFlowShapeDesc* shapes, NvFlowUint numShapes, const NvFlowGridEmitParams* params, NvFlowUint numParams);
 
-//! Required information for writing to a CPU mapped signed distance field.
-struct NvFlowShapeSDFData
-{
-	float* data;				//!< Pointer to mapped data
-	NvFlowUint rowPitch;		//!< Row pitch in floats
-	NvFlowUint depthPitch;		//!< Depth pitch in floats
-	NvFlowDim dim;				//!< Dimension of the sdf texture
-};
-
-/**
- * Creates a signed distance field object with no initial data.
- *
- * @param[in] context The Flow context to use for creation.
- * @param[in] desc A description needed for memory allocation.
- * 
- * @return The created signed distance field object.
- */
-NV_FLOW_API NvFlowShapeSDF* NvFlowCreateShapeSDF(NvFlowContext* context, const NvFlowShapeSDFDesc* desc);
-
-/**
- * Creates a signed distance field object with data from a Flow 3D texture.
- *
- * @param[in] context The Flow context to use for creation.
- * @param[in] texture The Flow 3D texture containing the signed distance field to use.
- *
- * @return The created signed distance field object.
- */
-NV_FLOW_API NvFlowShapeSDF* NvFlowCreateShapeSDFFromTexture3D(NvFlowContext* context, NvFlowTexture3D* texture);
-
-/**
- * Releases a Flow signed distance field object.
- *
- * @param[in] shape The Flow signed distance field to be released.
- */
-NV_FLOW_API void NvFlowReleaseShapeSDF(NvFlowShapeSDF* shape);
-
-/**
- * Maps a signed distance field object for CPU write access.
- *
- * @param[in] shape The Flow signed distance field object to map.
- * @param[in] context The Flow context used to create the Flow signed distance field.
- *
- * @return The information needed to properly write to the mapped signed distance field object.
- */
-NV_FLOW_API NvFlowShapeSDFData NvFlowShapeSDFMap(NvFlowShapeSDF* shape, NvFlowContext* context);
-
-/**
- * Unmaps a signed distance field object from CPU write access, uploads update field to GPU.
- *
- * @param[in] shape The Flow signed distance field object to unmap.
- * @param[in] context The Flow context used to create the Flow signed distance field.
- */
-NV_FLOW_API void NvFlowShapeSDFUnmap(NvFlowShapeSDF* shape, NvFlowContext* context);
+///@}
+// -------------------------- NvFlowGridEmitCustomAlloc -------------------------------
+///@defgroup NvFlowGridEmitCustomAlloc
+///@{
 
 //! Necessary parameters/resources for custom grid block allocation
 struct NvFlowGridEmitCustomAllocParams
@@ -512,118 +684,6 @@ struct NvFlowGridEmitCustomEmitParams
 
 typedef void(*NvFlowGridEmitCustomEmitFunc)(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params);
 
-//! Description of feature support on the queried Flow context GPU.
-struct NvFlowSupport
-{
-	bool supportsVTR;		//!< True if volume tiled resources are supported
-};
-
-//! CPU/GPU timing info
-struct NvFlowQueryTime
-{
-	float simulation;
-};
-
-/**
- * Creates a Flow grid.
- *
- * @param[in] context The Flow context used to create the new Flow grid
- * @param[in] desc The Flow grid description.
- *
- * @return The created Flow grid
- */
-NV_FLOW_API NvFlowGrid* NvFlowCreateGrid(NvFlowContext* context, const NvFlowGridDesc* desc);
-
-/**
- * Releases a Flow grid.
- *
- * @param[in] grid The Flow grid to be released.
- */
-NV_FLOW_API void NvFlowReleaseGrid(NvFlowGrid* grid);
-
-/**
- * Submits a request to reset a Flow grid, preserving memory allocations
- *
- * @param[in] context The Flow context to reset the Flow grid
- * @param[in] desc The Flow grid description.
- */
-NV_FLOW_API void NvFlowGridReset(NvFlowGrid* grid, const NvFlowGridResetDesc* desc);
-
-/**
- * Queries support for features that depend on hardware/OS.
- *
- * @param[in] grid The Flow grid to query for support.
- * @param[out] support Description of what is supported.
- *
- * @return Returns eNvFlowSuccess if information is available.
- */
-NV_FLOW_API NvFlowResult NvFlowGridQuerySupport(NvFlowGrid* grid, NvFlowSupport* support);
-
-/**
- * Queries simulation timing data.
- *
- * @param[in] grid The Flow grid to query for timing.
- * @param[out] gpuTime Simulation overhead on GPU.
- * @param[out] cpuTime Simulation overhead on CPU.
- *
- * @return Returns eNvFlowSuccess if information is available.
- */
-NV_FLOW_API NvFlowResult NvFlowGridQueryTime(NvFlowGrid* grid, NvFlowQueryTime* gpuTime, NvFlowQueryTime* cpuTime);
-
-/**
- * Queries simulation GPU memory usage.
- *
- * @param[in] grid The Flow grid to query for timing.
- * @param[out] numBytes GPU memory allocated in bytes.
- */
-NV_FLOW_API void NvFlowGridGPUMemUsage(NvFlowGrid* grid, NvFlowUint64* numBytes);
-
-/**
- * Steps the simulation dt forward in time.
- *
- * @param[in] grid The Flow grid to update.
- * @param[in] context The Flow context to perform the update.
- * @param[in] dt The time step, typically in seconds.
- */
-NV_FLOW_API void NvFlowGridUpdate(NvFlowGrid* grid, NvFlowContext* context, float dt);
-
-/**
- * Gets a view of the grid data for rendering.
- *
- * @param[in] grid The Flow grid to extract a view from.
- * @param[in] context The Flow context used to simulate the grid.
- *
- * @return The grid view for passing to rendering.
- */
-NV_FLOW_API NvFlowGridView* NvFlowGridGetGridView(NvFlowGrid* grid, NvFlowContext* context);
-
-/**
- * Not fully supported yet. Allows the application to request the grid move to a new location.
- *
- * @param[in] grid The Flow grid to move.
- * @param[in] targetLocation The location the center of the grid should make a best effort attempt to reach.
- */
-NV_FLOW_API void NvFlowGridSetTargetLocation(NvFlowGrid* grid, NvFlowFloat3 targetLocation);
-
-/**
- * Sets grid simulation parameters, persistent over multiple grid updates.
- *
- * @param[in] grid The Flow grid to set parameters on.
- * @param[in] params The new parameter values.
- */
-NV_FLOW_API void NvFlowGridSetParams(NvFlowGrid* grid, const NvFlowGridParams* params);
-
-/**
- * Adds one or more emit events to be applied with the next grid update.
- *
- * @param[in] grid The Flow grid to apply the emit events.
- * @param[in] shapes Array of shape data referenced by emit params.
- * @param[in] numShapes Number of shapes in the array.
- * @param[in] params Array of emit event parameters.
- * @param[in] numParams Number of emit events in the array.
- */
-NV_FLOW_API void NvFlowGridEmit(NvFlowGrid* grid, const NvFlowShapeDesc* shapes, NvFlowUint numShapes, const NvFlowGridEmitParams* params, NvFlowUint numParams);
-
 /**
  * Sets custom allocation callback.
  *
@@ -641,21 +701,179 @@ NV_FLOW_API void NvFlowGridEmitCustomRegisterAllocFunc(NvFlowGrid* grid, NvFlowG
  * @param[in] func The callback function.
  * @param[in] userdata Pointer to provide to the callback function during execution.
  */
-NV_FLOW_API void NvFlowGridEmitCustomRegisterEmitFunc(NvFlowGrid* grid, NvFlowGridChannel channel, NvFlowGridEmitCustomEmitFunc func, void* userdata);
+NV_FLOW_API void NvFlowGridEmitCustomRegisterEmitFunc(NvFlowGrid* grid, NvFlowGridTextureChannel channel, NvFlowGridEmitCustomEmitFunc func, void* userdata);
 
 ///@}
-// -------------------------- NvFlowVolumeRender -------------------------------
-///@defgroup NvFlowVolumeRender
+// -------------------------- NvFlowGridExport -------------------------------
+///@defgroup NvFlowGridExport
 ///@{
 
-//! A 1D texture mapping temperature and density to color
-struct NvFlowColorMap;
+//! Object to expose read access Flow grid simulation data
+struct NvFlowGridExport;
 
-//! Description required to create a color map
-struct NvFlowColorMapDesc
+struct NvFlowGridExportDesc
 {
-	NvFlowUint resolution;		//!< Dimension of 1D texture used to store color map
+	NvFlowGridView* gridView;
 };
+
+struct NvFlowGridExportView
+{
+	NvFlowResource* data;
+	NvFlowResource* blockTable;
+	NvFlowResource* blockList;
+
+	NvFlowShaderLinearParams shaderParams;
+
+	NvFlowUint numBlocks;
+	NvFlowUint maxBlocks;
+
+	NvFlowFloat4x4 modelMatrix;
+};
+
+NV_FLOW_API NvFlowGridExport* NvFlowCreateGridExport(NvFlowContext* context, const NvFlowGridExportDesc* desc);
+
+NV_FLOW_API void NvFlowReleaseGridExport(NvFlowGridExport* gridExport);
+
+NV_FLOW_API void NvFlowGridExportUpdate(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridView* gridView, NvFlowGridTextureChannel channel);
+
+NV_FLOW_API void NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridExportView* view, NvFlowGridTextureChannel channel);
+
+///@}
+// -------------------------- NvFlowGridImport -------------------------------
+///@defgroup NvFlowGridImport
+///@{
+
+//! Object to expose write access to Flow grid simulation data
+struct NvFlowGridImport;
+
+struct NvFlowGridImportDesc
+{
+	NvFlowGridView* gridView;
+};
+
+struct NvFlowGridImportView
+{
+	NvFlowResourceRW* dataRW;
+	NvFlowResource* blockTable;
+	NvFlowResource* blockList;
+
+	NvFlowShaderLinearParams shaderParams;
+
+	NvFlowUint numBlocks;
+	NvFlowUint maxBlocks;
+
+	NvFlowFloat4x4 modelMatrix;
+};
+
+NV_FLOW_API NvFlowGridImport* NvFlowCreateGridImport(NvFlowContext* context, const NvFlowGridImportDesc* desc);
+
+NV_FLOW_API void NvFlowReleaseGridImport(NvFlowGridImport* gridImport);
+
+NV_FLOW_API void NvFlowGridImportGetView(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridImportView* view, NvFlowGridView* gridView, NvFlowGridTextureChannel channel);
+
+NV_FLOW_API void NvFlowGridImportUpdate(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridTextureChannel channel);
+
+NV_FLOW_API void NvFlowGridImportGetViewLinear(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridImportView* view, NvFlowGridView* gridView, NvFlowGridTextureChannel channel);
+
+NV_FLOW_API void NvFlowGridImportUpdateLinear(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridTextureChannel channel);
+
+NV_FLOW_API NvFlowGridView* NvFlowGridImportGetGridView(NvFlowGridImport* gridImport, NvFlowContext* context);
+
+///@}
+// -------------------------- NvFlowRenderMaterial -------------------------------
+///@defgroup NvFlowRenderMaterial
+///@{
+
+//! A pool of render materials
+struct NvFlowRenderMaterialPool;
+
+struct NvFlowRenderMaterialPoolDesc
+{
+	NvFlowUint colorMapResolution;		//!< Dimension of 1D texture used to store color map, 64 is a good default
+};
+
+/**
+* Creates a Flow render material pool object.
+*
+* @param[in] context The Flow context for GPU resource allocation.
+* @param[in] desc Description for memory allocation.
+*
+* @return The created Flow volume render object.
+*/
+NV_FLOW_API NvFlowRenderMaterialPool* NvFlowCreateRenderMaterialPool(NvFlowContext* context, const NvFlowRenderMaterialPoolDesc* desc);
+
+/**
+* Releases a Flow volume render object.
+*
+* @param[in] pool The Flow volume render object to be released.
+*/
+NV_FLOW_API void NvFlowReleaseRenderMaterialPool(NvFlowRenderMaterialPool* pool);
+
+//! A handle to a volume render material
+struct NvFlowRenderMaterialHandle
+{
+	NvFlowRenderMaterialPool* pool;			//!< The pool that created this material
+	NvFlowUint64 uid;
+};
+
+//! Render modes
+enum NvFlowVolumeRenderMode
+{
+	eNvFlowVolumeRenderMode_colormap = 0,
+	eNvFlowVolumeRenderMode_colormapShadow = 1,
+	eNvFlowVolumeRenderMode_raw = 2,
+
+	eNvFlowVolumeRenderMode_rainbow = 3,
+	eNvFlowVolumeRenderMode_debug = 4,
+
+	eNvFlowVolumeRenderModeCount
+};
+
+//! Per material parameters for Flow grid rendering
+struct NvFlowRenderMaterialParams
+{
+	NvFlowGridMaterialHandle material;			//!< Grid material to align these parameters with
+
+	float alphaScale;							//!< Global alpha scale for adjust net opacity without color map changes
+	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowGridTextureChannel renderChannel;		//!< GridView channel to render
+	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
+	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
+};
+
+/**
+* Allows the application to request default volume render material parameters from Flow.
+*
+* @param[out] params The parameters for Flow to fill out.
+*/
+NV_FLOW_API void NvFlowRenderMaterialParamsDefaults(NvFlowRenderMaterialParams* params);
+
+/**
+* Create a render material.
+*
+* @param[in] context The context to use for GPU resource creation.
+* @param[in] pool The pool to create/own the material.
+* @param[in] params Material parameters.
+*
+* @return A handle to the material.
+*/
+NV_FLOW_API NvFlowRenderMaterialHandle NvFlowCreateRenderMaterial(NvFlowContext* context, NvFlowRenderMaterialPool* pool, const NvFlowRenderMaterialParams* params);
+
+/**
+* Release a render material.
+*
+* @param[in] handle Handle to the material to release.
+*/
+NV_FLOW_API void NvFlowReleaseRenderMaterial(NvFlowRenderMaterialHandle handle);
+
+/**
+* Update a render material.
+*
+* @param[in] volumeRender The Flow volume render object.
+* @param[in] handle Handle to the material to update.
+* @param[in] params Material parameter.
+*/
+NV_FLOW_API void NvFlowRenderMaterialUpdate(NvFlowRenderMaterialHandle handle, const NvFlowRenderMaterialParams* params);
 
 //! Required information for writing to a CPU mapped color map
 struct NvFlowColorMapData
@@ -665,46 +883,52 @@ struct NvFlowColorMapData
 };
 
 /**
- * Allows the application to request a default color map description from Flow.
- *
- * @param[out] desc The description for Flow to fill out.
- */
-NV_FLOW_API void NvFlowColorMapDescDefaults(NvFlowColorMapDesc* desc);
+* Map the color map associated with the material.
+*
+* @param[in] context The context to use for mapping.
+* @param[in] handle Handle to the material to map.
+*/
+NV_FLOW_API NvFlowColorMapData NvFlowRenderMaterialColorMap(NvFlowContext* context, NvFlowRenderMaterialHandle handle);
 
 /**
- * Creates a Flow color map, data uninitialized.
- *
- * @param[in] context The Flow context for 1D Texture allocation.
- * @param[in] desc Description for memory allocation.
- *
- * @return The created Flow color map.
- */
-NV_FLOW_API NvFlowColorMap* NvFlowCreateColorMap(NvFlowContext* context, const NvFlowColorMapDesc* desc);
+* Unmap the color map associated with the material.
+*
+* @param[in] context The context to perform unmap.
+* @param[in] handle Handle to the material to unmap.
+*/
+NV_FLOW_API void NvFlowRenderMaterialColorUnmap(NvFlowContext* context, NvFlowRenderMaterialHandle handle);
+
+
+///@}
+// -------------------------- NvFlowVolumeRender -------------------------------
+///@defgroup NvFlowVolumeRender
+///@{
+
+//! A Flow grid volume renderer
+struct NvFlowVolumeRender;
+
+//! Description needed to a create a Flow volume render object
+struct NvFlowVolumeRenderDesc
+{
+	NvFlowGridView* view;				//!< Grid view for allocation purposes.
+};
 
 /**
- * Releases a Flow color map.
- *
- * @param[in] colorMap The Flow color map to be released.
- */
-NV_FLOW_API void NvFlowReleaseColorMap(NvFlowColorMap* colorMap);
+* Creates a Flow volume render object.
+*
+* @param[in] context The Flow context for GPU resource allocation.
+* @param[in] desc Description for memory allocation.
+*
+* @return The created Flow volume render object.
+*/
+NV_FLOW_API NvFlowVolumeRender* NvFlowCreateVolumeRender(NvFlowContext* context, const NvFlowVolumeRenderDesc* desc);
 
 /**
- * Maps a color map for CPU write access.
- *
- * @param[in] colorMap The Flow color map object to map.
- * @param[in] context The Flow context used to create the Flow color map.
- *
- * @return The information needed to properly write to the mapped color map.
- */
-NV_FLOW_API NvFlowColorMapData NvFlowColorMapMap(NvFlowColorMap* colorMap, NvFlowContext* context);
-
-/**
- * Unmaps a color map from CPU write access, uploads updated color map to GPU.
- *
- * @param[in] colorMap The Flow color map to unmap.
- * @param[in] context The Flow context used to create the color map.
- */
-NV_FLOW_API void NvFlowColorMapUnmap(NvFlowColorMap* colorMap, NvFlowContext* context);
+* Releases a Flow volume render object.
+*
+* @param[in] volumeRender The Flow volume render object to be released.
+*/
+NV_FLOW_API void NvFlowReleaseVolumeRender(NvFlowVolumeRender* volumeRender);
 
 //! Downsample options for offscreen ray march
 enum NvFlowVolumeRenderDownsample
@@ -721,12 +945,6 @@ enum NvFlowMultiResRayMarch
 	eNvFlowMultiResRayMarch4x4 = 2,
 	eNvFlowMultiResRayMarch8x8 = 3,
 	eNvFlowMultiResRayMarch16x16 = 4,
-};
-
-//! Description needed to a create a Flow volume render object
-struct NvFlowVolumeRenderDesc
-{
-	NvFlowGridView* view;								//!< Grid view for allocation purposes.
 };
 
 //! Rendering viewport
@@ -770,19 +988,6 @@ struct NvFlowVolumeRenderLMSParams
 	float nonLMSHeight;						//!< The render target height if lens matched shading was disabled
 };
 
-//! Render modes
-enum NvFlowVolumeRenderMode
-{
-	eNvFlowVolumeRenderMode_colormap = 0,
-	eNvFlowVolumeRenderMode_colormapShadow = 1,
-	eNvFlowVolumeRenderMode_raw = 2,
-
-	eNvFlowVolumeRenderMode_rainbow = 3,
-	eNvFlowVolumeRenderMode_debug = 4,
-
-	eNvFlowVolumeRenderModeCount
-};
-
 //! Parameters for Flow grid rendering
 struct NvFlowVolumeRenderParams
 {
@@ -793,13 +998,10 @@ struct NvFlowVolumeRenderParams
 	NvFlowDepthStencilView* depthStencilView;	//!< Depth stencil view for depth testing with ray march
 	NvFlowRenderTargetView* renderTargetView;	//!< Render target view to composite ray marched result against
 
-	float alphaScale;							//!< Global alpha scale for adjust net opacity without color map changes
-	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
-	NvFlowGridChannel renderChannel;			//!< GridView channel to render
-	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
-	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
+	NvFlowRenderMaterialPool* materialPool;		//!< Pool of materials to look for matches to GridMaterials
 
-	NvFlowColorMap* colorMap;					//!< ColorMap to convert temperature to color
+	bool forceRenderModeEnabled;				//!< If true, ignore material render mode and force forceRenderMode
+	NvFlowVolumeRenderMode forceRenderMode;		//!< Render mode, see NvFlowVolumeRenderMode
 
 	bool debugMode;								//!< If true, wireframe visualization is rendered
 
@@ -825,33 +1027,8 @@ NV_FLOW_API void NvFlowVolumeRenderParamsDefaults(NvFlowVolumeRenderParams* para
 //! Parameters for Flow grid lighting
 struct NvFlowVolumeLightingParams
 {
-	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
-	NvFlowGridChannel renderChannel;			//!< GridView channel to render
-	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
-	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
-
-	NvFlowColorMap* colorMap;					//!< ColorMap to convert temperature to color
+	NvFlowRenderMaterialPool* materialPool;		//!< Pool of materials to look for matches to GridMaterials
 };
-
-//! A Flow grid volume renderer
-struct NvFlowVolumeRender;
-
-/**
- * Creates a Flow volume render object.
- *
- * @param[in] context The Flow context for GPU resource allocation.
- * @param[in] desc Description for memory allocation.
- *
- * @return The created Flow volume render object.
- */
-NV_FLOW_API NvFlowVolumeRender* NvFlowCreateVolumeRender(NvFlowContext* context, const NvFlowVolumeRenderDesc* desc);
-
-/**
- * Releases a Flow volume render object.
- *
- * @param[in] volumeRender The Flow volume render object to be released.
- */
-NV_FLOW_API void NvFlowReleaseVolumeRender(NvFlowVolumeRender* volumeRender);
 
 /**
 * Lights a Flow grid view to produce another grid view that can be ray marched raw.
@@ -885,6 +1062,285 @@ NV_FLOW_API void NvFlowVolumeRenderGridView(NvFlowVolumeRender* volumeRender, Nv
  * @param[in] params Parameters for rendering.
  */
 NV_FLOW_API void NvFlowVolumeRenderTexture3D(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowTexture3D* density, const NvFlowVolumeRenderParams* params);
+
+///@}
+// -------------------------- NvFlowVolumeShadow -------------------------------
+///@defgroup NvFlowVolumeShadow
+///@{
+
+//! Object to generate shadows from gridView
+struct NvFlowVolumeShadow;
+
+struct NvFlowVolumeShadowDesc
+{
+	NvFlowGridView* gridView;
+
+	NvFlowUint mapWidth;
+	NvFlowUint mapHeight;
+	NvFlowUint mapDepth;
+
+	float minResidentScale;				//!< Minimum (and initial) fraction of virtual cells to allocate memory for
+	float maxResidentScale;				//!< Maximum fraction of virtual cells to allocate memory for
+};
+
+struct NvFlowVolumeShadowParams
+{
+	NvFlowFloat4x4 projectionMatrix;			//!< Projection matrix, row major
+	NvFlowFloat4x4 viewMatrix;					//!< View matrix, row major
+
+	NvFlowRenderMaterialPool* materialPool;		//!< Pool of materials to look for matches to GridMaterials
+
+	bool forceRenderModeEnabled;				//!< If true, ignore material render mode and force forceRenderMode
+	NvFlowVolumeRenderMode forceRenderMode;		//!< Render mode, see NvFlowVolumeRenderMode
+
+	float intensityScale;						//!< Shadow intensity scale
+	float minIntensity;							//!< Minimum shadow intensity
+};
+
+struct NvFlowVolumeShadowDebugRenderParams
+{
+	NvFlowRenderTargetView* renderTargetView;
+
+	NvFlowFloat4x4 projectionMatrix;			//!< Render target projection matrix, row major
+	NvFlowFloat4x4 viewMatrix;					//!< Render target view matrix, row major
+};
+
+NV_FLOW_API NvFlowVolumeShadow* NvFlowCreateVolumeShadow(NvFlowContext* context, const NvFlowVolumeShadowDesc* desc);
+
+NV_FLOW_API void NvFlowReleaseVolumeShadow(NvFlowVolumeShadow* volumeShadow);
+
+NV_FLOW_API void NvFlowVolumeShadowUpdate(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, NvFlowGridView* gridView, const NvFlowVolumeShadowParams* params);
+
+NV_FLOW_API NvFlowGridView* NvFlowVolumeShadowGetGridView(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context);
+
+NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, const NvFlowVolumeShadowDebugRenderParams* params);
+
+///@}
+// -------------------------- NvFlowGridProxy -------------------------------
+///@defgroup NvFlowGridProxy
+///@{
+
+//! A proxy for a grid simulated on one device to render on a different device, currently limited to Windows 10 for multi-GPU support.
+struct NvFlowGridProxy;
+
+//! Description required to create a grid proxy.
+struct NvFlowGridProxyDesc
+{
+	bool singleGPUMode;				//!< if true, proxy assumes a single memory space/GPU
+	bool interQueueMode;			//!< if true, proxy pipelines simulation and rendering
+};
+
+/**
+* Creates a Flow grid proxy.
+*
+* @param[in] gridContext The Flow context that simulates the Flow grid.
+* @param[in] grid The Flow grid to create a proxy for.
+* @param[in] desc Description describing kind of proxy to create.
+*
+* @return The created Flow grid proxy.
+*/
+NV_FLOW_API NvFlowGridProxy* NvFlowCreateGridProxy(NvFlowContext* gridContext, NvFlowGrid* grid, const NvFlowGridProxyDesc* desc);
+
+/**
+* Releases a Flow grid proxy.
+*
+* @param[in] proxy The Flow grid proxy to be released.
+*/
+NV_FLOW_API void NvFlowReleaseGridProxy(NvFlowGridProxy* proxy);
+
+/**
+* Pushes simulation results to the proxy, should be updated after each simulation update.
+*
+* @param[in] proxy The Flow grid proxy to be updated.
+* @param[in] gridContext The Flow context that simulated the grid.
+* @param[in] grid The Flow grid with updated simulation results.
+*/
+NV_FLOW_API void NvFlowGridProxyPush(NvFlowGridProxy* proxy, NvFlowContext* gridContext, NvFlowGrid* grid);
+
+/**
+* Helps simulation results move faster between GPUs, should be called before each render.
+*
+* @param[in] proxy The Flow grid proxy to be updated.
+* @param[in] gridContext The Flow context that simulated the grid.
+*/
+NV_FLOW_API void NvFlowGridProxyFlush(NvFlowGridProxy* proxy, NvFlowContext* gridContext);
+
+/**
+* Returns the latest grid view available on the render GPU.
+*
+* @param[in] proxy The Flow grid proxy supplying the grid view.
+* @param[in] renderContext The Flow context that will render the grid view.
+*
+* @return The latest grid view available from the proxy.
+*/
+NV_FLOW_API NvFlowGridView* NvFlowGridProxyGetGridView(NvFlowGridProxy* proxy, NvFlowContext* renderContext);
+
+///@}
+// -------------------------- NvFlowDevice -------------------------------
+///@defgroup NvFlowDevice
+///@{
+
+//! A device exclusively for NvFlow simulation
+struct NvFlowDevice;
+
+//! Description required for creating a Flow device
+struct NvFlowDeviceDesc
+{
+	bool autoSelectDevice;			//!< if true, NvFlow tries to identify best compute device
+	NvFlowUint adapterIdx;			//!< preferred device index
+};
+
+//! Flow device status to allow app to throttle maximum queued work
+struct NvFlowDeviceStatus
+{
+	NvFlowUint framesInFlight;		//!< Number of flushes that have not completed work on the GPU
+};
+
+/**
+* Allows the application to request a default Flow device description from Flow.
+*
+* @param[out] desc The description for Flow to fill out.
+*/
+NV_FLOW_API void NvFlowDeviceDescDefaults(NvFlowDeviceDesc* desc);
+
+/**
+* Checks if a GPU is available that is not being used for application graphics work.
+*
+* @param[in] renderContext A Flow context that maps to the application graphics GPU.
+*
+* @return Returns true if dedicated GPU is available.
+*/
+NV_FLOW_API bool NvFlowDedicatedDeviceAvailable(NvFlowContext* renderContext);
+
+/**
+* Creates a Flow compute device.
+*
+* @param[in] renderContext A Flow context that maps to the application graphics GPU.
+* @param[in] desc Description that controls what GPU is selected.
+*
+* @return The created Flow compute device.
+*/
+NV_FLOW_API NvFlowDevice* NvFlowCreateDevice(NvFlowContext* renderContext, const NvFlowDeviceDesc* desc);
+
+/**
+* Releases a Flow compute device.
+*
+* @param[in] device The Flow compute device to be released.
+*/
+NV_FLOW_API void NvFlowReleaseDevice(NvFlowDevice* device);
+
+/**
+* Creates a Flow context that uses a Flow compute device.
+*
+* @param[in] device The Flow compute device to create the context against.
+*
+* @return The created Flow context.
+*/
+NV_FLOW_API NvFlowContext* NvFlowDeviceCreateContext(NvFlowDevice* device);
+
+/**
+* Updates a Flow context that uses a Flow compute device.
+*
+* @param[in] device The Flow compute device the context was created against.
+* @param[in] context The Flow context update.
+* @param[out] status The status of device for management of work queued.
+*/
+NV_FLOW_API void NvFlowDeviceUpdateContext(NvFlowDevice* device, NvFlowContext* context, NvFlowDeviceStatus* status);
+
+/**
+* Flushes all submitted work to the Flow device. Needed for reliable execution with a compute only device.
+*
+* @param[in] device The Flow compute device to flush.
+*/
+NV_FLOW_API void NvFlowDeviceFlush(NvFlowDevice* device);
+
+///@}
+// -------------------------- NvFlowCommandQueue -------------------------------
+///@defgroup NvFlowCommandQueue
+///@{
+
+//! A command queue exclusively for Flow simulation
+struct NvFlowCommandQueue;
+
+//! Description required for creating a Flow command queue
+struct NvFlowCommandQueueDesc
+{
+	bool computeOnly;
+	bool lowLatency;
+};
+
+//! Flow command queue status to allow app to throttle maximum queued work
+struct NvFlowCommandQueueStatus
+{
+	NvFlowUint framesInFlight;			//!< Number of flushes that have not completed work on the GPU
+	NvFlowUint64 lastFenceCompleted;	//!< The last fence completed on commandQueue
+	NvFlowUint64 nextFenceValue;		//!< The fence value signaled after flush
+};
+
+/**
+* Allows the application to request a default Flow command queue description from Flow.
+*
+* @param[out] desc The description for Flow to fill out.
+*/
+NV_FLOW_API void NvFlowCommandQueueDescDefaults(NvFlowCommandQueueDesc* desc);
+
+/**
+* Checks if multiple command queues are supported
+*
+* @param[in] renderContext A Flow context that maps to the application graphics GPU.
+*
+* @return Returns true if multiple command queues are supported.
+*/
+NV_FLOW_API bool NvFlowCommandQueuesSupported(NvFlowContext* renderContext);
+
+/**
+* Creates a Flow command queue.
+*
+* @param[in] renderContext A Flow context that maps to the application graphics GPU.
+* @param[in] desc Description that controls kind of command queue to create.
+*
+* @return The created Flow command queue.
+*/
+NV_FLOW_API NvFlowCommandQueue* NvFlowCreateCommandQueue(NvFlowContext* renderContext, const NvFlowCommandQueueDesc* desc);
+
+/**
+* Releases a Flow command queue.
+*
+* @param[in] commandQueue The Flow command queue to be released.
+*/
+NV_FLOW_API void NvFlowReleaseCommandQueue(NvFlowCommandQueue* commandQueue);
+
+/**
+* Creates a Flow context that uses a Flow command queue.
+*
+* @param[in] commandQueue The Flow command queue to create the context against.
+*
+* @return The created Flow context.
+*/
+NV_FLOW_API NvFlowContext* NvFlowCommandQueueCreateContext(NvFlowCommandQueue* commandQueue);
+
+/**
+* Updates a Flow context that uses a Flow command queue.
+*
+* @param[in] commandQueue The Flow command queue the context was created against.
+* @param[in] context The Flow context update.
+*/
+NV_FLOW_API void NvFlowCommandQueueUpdateContext(NvFlowCommandQueue* commandQueue, NvFlowContext* context, NvFlowCommandQueueStatus* status);
+
+/**
+* Flushes all submitted work to the Flow commandQueue. Must be called to submit work to queue.
+*
+* @param[in] commandQueue The Flow commandQueue to flush.
+*/
+NV_FLOW_API void NvFlowCommandQueueFlush(NvFlowCommandQueue* commandQueue);
+
+/**
+* Blocks CPU until fenceValue is reached.
+*
+* @param[in] commandQueue The Flow commandQueue to flush.
+* @param[in] fenceValue The fence value to wait for.
+*/
+NV_FLOW_API void NvFlowCommandQueueWaitOnFence(NvFlowCommandQueue* commandQueue, NvFlowUint64 fenceValue);
 
 ///@}
 // -------------------------- NvFlowSDFGenerator -------------------------------
@@ -969,360 +1425,5 @@ NV_FLOW_API void NvFlowSDFGenUpdate(NvFlowSDFGen* sdfGen, NvFlowContext* context
  * @return The 3D texture storing the latest signed distance field.
  */
 NV_FLOW_API NvFlowTexture3D* NvFlowSDFGenShape(NvFlowSDFGen* sdfGen, NvFlowContext* context);
-
-///@}
-// -------------------------- Multiple GPU Support -------------------------------
-///@defgroup NvFlowDevice
-///@{
-
-//! A device exclusively for NvFlow simulation
-struct NvFlowDevice;
-
-//! Description required for creating a Flow device
-struct NvFlowDeviceDesc
-{
-	bool autoSelectDevice;			//!< if true, NvFlow tries to identify best compute device
-	NvFlowUint adapterIdx;			//!< preferred device index
-};
-
-//! Flow device status to allow app to throttle maximum queued work
-struct NvFlowDeviceStatus
-{
-	NvFlowUint framesInFlight;		//!< Number of flushes that have not completed work on the GPU
-};
-
-/**
- * Allows the application to request a default Flow device description from Flow.
- *
- * @param[out] desc The description for Flow to fill out.
- */
-NV_FLOW_API void NvFlowDeviceDescDefaults(NvFlowDeviceDesc* desc);
-
-/**
- * Checks if a GPU is available that is not being used for application graphics work.
- *
- * @param[in] renderContext A Flow context that maps to the application graphics GPU.
- *
- * @return Returns true if dedicated GPU is available.
- */
-NV_FLOW_API bool NvFlowDedicatedDeviceAvailable(NvFlowContext* renderContext);
-
-/**
- * Creates a Flow compute device.
- *
- * @param[in] renderContext A Flow context that maps to the application graphics GPU.
- * @param[in] desc Description that controls what GPU is selected.
- *
- * @return The created Flow compute device.
- */
-NV_FLOW_API NvFlowDevice* NvFlowCreateDevice(NvFlowContext* renderContext, const NvFlowDeviceDesc* desc);
-
-/**
- * Releases a Flow compute device.
- *
- * @param[in] device The Flow compute device to be released.
- */
-NV_FLOW_API void NvFlowReleaseDevice(NvFlowDevice* device);
-
-/**
- * Creates a Flow context that uses a Flow compute device.
- *
- * @param[in] device The Flow compute device to create the context against.
- *
- * @return The created Flow context.
- */
-NV_FLOW_API NvFlowContext* NvFlowDeviceCreateContext(NvFlowDevice* device);
-
-/**
- * Updates a Flow context that uses a Flow compute device.
- *
- * @param[in] device The Flow compute device the context was created against.
- * @param[in] context The Flow context update.
- * @param[out] status The status of device for management of work queued.
- */
-NV_FLOW_API void NvFlowDeviceUpdateContext(NvFlowDevice* device, NvFlowContext* context, NvFlowDeviceStatus* status);
-
-/**
- * Flushes all submitted work to the Flow device. Needed for reliable execution with a compute only device.
- *
- * @param[in] device The Flow compute device to flush.
- */
-NV_FLOW_API void NvFlowDeviceFlush(NvFlowDevice* device);
-
-///@}
-///@defgroup NvFlowCommandQueue
-///@{
-
-//! A command queue exclusively for Flow simulation
-struct NvFlowCommandQueue;
-
-//! Description required for creating a Flow command queue
-struct NvFlowCommandQueueDesc
-{
-	bool computeOnly;
-	bool lowLatency;
-};
-
-//! Flow command queue status to allow app to throttle maximum queued work
-struct NvFlowCommandQueueStatus
-{
-	NvFlowUint framesInFlight;			//!< Number of flushes that have not completed work on the GPU
-	NvFlowUint64 lastFenceCompleted;	//!< The last fence completed on commandQueue
-	NvFlowUint64 nextFenceValue;		//!< The fence value signaled after flush
-};
-
-/**
- * Allows the application to request a default Flow command queue description from Flow.
- *
- * @param[out] desc The description for Flow to fill out.
- */
-NV_FLOW_API void NvFlowCommandQueueDescDefaults(NvFlowCommandQueueDesc* desc);
-
-/**
- * Checks if multiple command queues are supported
- *
- * @param[in] renderContext A Flow context that maps to the application graphics GPU.
- *
- * @return Returns true if multiple command queues are supported.
- */
-NV_FLOW_API bool NvFlowCommandQueuesSupported(NvFlowContext* renderContext);
-
-/**
- * Creates a Flow command queue.
- *
- * @param[in] renderContext A Flow context that maps to the application graphics GPU.
- * @param[in] desc Description that controls kind of command queue to create.
- *
- * @return The created Flow command queue.
- */
-NV_FLOW_API NvFlowCommandQueue* NvFlowCreateCommandQueue(NvFlowContext* renderContext, const NvFlowCommandQueueDesc* desc);
-
-/**
- * Releases a Flow command queue.
- *
- * @param[in] commandQueue The Flow command queue to be released.
- */
-NV_FLOW_API void NvFlowReleaseCommandQueue(NvFlowCommandQueue* commandQueue);
-
-/**
- * Creates a Flow context that uses a Flow command queue.
- *
- * @param[in] commandQueue The Flow command queue to create the context against.
- *
- * @return The created Flow context.
- */
-NV_FLOW_API NvFlowContext* NvFlowCommandQueueCreateContext(NvFlowCommandQueue* commandQueue);
-
-/**
- * Updates a Flow context that uses a Flow command queue.
- *
- * @param[in] commandQueue The Flow command queue the context was created against.
- * @param[in] context The Flow context update.
- */
-NV_FLOW_API void NvFlowCommandQueueUpdateContext(NvFlowCommandQueue* commandQueue, NvFlowContext* context, NvFlowCommandQueueStatus* status);
-
-/**
- * Flushes all submitted work to the Flow commandQueue. Must be called to submit work to queue.
- *
- * @param[in] commandQueue The Flow commandQueue to flush.
- */
-NV_FLOW_API void NvFlowCommandQueueFlush(NvFlowCommandQueue* commandQueue);
-
-/**
- * Blocks CPU until fenceValue is reached.
- *
- * @param[in] commandQueue The Flow commandQueue to flush.
- * @param[in] fenceValue The fence value to wait for.
- */
-NV_FLOW_API void NvFlowCommandQueueWaitOnFence(NvFlowCommandQueue* commandQueue, NvFlowUint64 fenceValue);
-
-///@}
-///@defgroup NvFlowGridProxy
-///@{
-
-//! A proxy for a grid simulated on one device to render on a different device, currently limited to Windows 10 for multi-GPU support.
-struct NvFlowGridProxy;
-
-//! Description required to create a grid proxy.
-struct NvFlowGridProxyDesc
-{
-	bool singleGPUMode;				//!< if true, proxy assumes a single memory space/GPU
-	bool interQueueMode;			//!< if true, proxy pipelines simulation and rendering
-};
-
-/**
- * Creates a Flow grid proxy.
- *
- * @param[in] gridContext The Flow context that simulates the Flow grid.
- * @param[in] grid The Flow grid to create a proxy for.
- * @param[in] desc Description describing kind of proxy to create.
- *
- * @return The created Flow grid proxy.
- */
-NV_FLOW_API NvFlowGridProxy* NvFlowCreateGridProxy(NvFlowContext* gridContext, NvFlowGrid* grid, const NvFlowGridProxyDesc* desc);
-
-/**
- * Releases a Flow grid proxy.
- *
- * @param[in] proxy The Flow grid proxy to be released.
- */
-NV_FLOW_API void NvFlowReleaseGridProxy(NvFlowGridProxy* proxy);
-
-/**
- * Pushes simulation results to the proxy, should be updated after each simulation update.
- *
- * @param[in] proxy The Flow grid proxy to be updated.
- * @param[in] gridContext The Flow context that simulated the grid.
- * @param[in] grid The Flow grid with updated simulation results.
- */
-NV_FLOW_API void NvFlowGridProxyPush(NvFlowGridProxy* proxy, NvFlowContext* gridContext, NvFlowGrid* grid);
-
-/**
- * Helps simulation results move faster between GPUs, should be called before each render.
- *
- * @param[in] proxy The Flow grid proxy to be updated.
- * @param[in] gridContext The Flow context that simulated the grid.
- */
-NV_FLOW_API void NvFlowGridProxyFlush(NvFlowGridProxy* proxy, NvFlowContext* gridContext);
-
-/**
- * Returns the latest grid view available on the render GPU.
- *
- * @param[in] proxy The Flow grid proxy supplying the grid view.
- * @param[in] renderContext The Flow context that will render the grid view.
- *
- * @return The latest grid view available from the proxy.
- */
-NV_FLOW_API NvFlowGridView* NvFlowGridProxyGetGridView(NvFlowGridProxy* proxy, NvFlowContext* renderContext);
-
-///@}
-// -------------------------- NvFlowGridExport -------------------------------
-///@defgroup NvFlowGridExport
-///@{
-
-//! Object to expose read access Flow grid simulation data
-struct NvFlowGridExport;
-
-struct NvFlowGridExportDesc
-{
-	NvFlowGridView* gridView;
-};
-
-struct NvFlowGridExportView
-{
-	NvFlowResource* data;
-	NvFlowResource* blockTable;
-	NvFlowResource* blockList;
-
-	NvFlowShaderLinearParams shaderParams;
-
-	NvFlowUint numBlocks;
-	NvFlowUint maxBlocks;
-
-	NvFlowFloat4x4 modelMatrix;
-};
-
-NV_FLOW_API NvFlowGridExport* NvFlowCreateGridExport(NvFlowContext* context, const NvFlowGridExportDesc* desc);
-
-NV_FLOW_API void NvFlowReleaseGridExport(NvFlowGridExport* gridExport);
-
-NV_FLOW_API void NvFlowGridExportUpdate(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridView* gridView, NvFlowGridChannel channel);
-
-NV_FLOW_API void NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridExportView* view, NvFlowGridChannel channel);
-
-///@}
-// -------------------------- NvFlowGridImport -------------------------------
-///@defgroup NvFlowGridImport
-///@{
-
-//! Object to expose write access to Flow grid simulation data
-struct NvFlowGridImport;
-
-struct NvFlowGridImportDesc
-{
-	NvFlowGridView* gridView;
-};
-
-struct NvFlowGridImportView
-{
-	NvFlowResourceRW* dataRW;
-	NvFlowResource* blockTable;
-	NvFlowResource* blockList;
-
-	NvFlowShaderLinearParams shaderParams;
-
-	NvFlowUint numBlocks;
-	NvFlowUint maxBlocks;
-
-	NvFlowFloat4x4 modelMatrix;
-};
-
-NV_FLOW_API NvFlowGridImport* NvFlowCreateGridImport(NvFlowContext* context, const NvFlowGridImportDesc* desc);
-
-NV_FLOW_API void NvFlowReleaseGridImport(NvFlowGridImport* gridImport);
-
-NV_FLOW_API void NvFlowGridImportGetView(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridImportView* view, NvFlowGridView* gridView, NvFlowGridChannel channel);
-
-NV_FLOW_API void NvFlowGridImportUpdate(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridChannel channel);
-
-NV_FLOW_API void NvFlowGridImportGetViewLinear(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridImportView* view, NvFlowGridView* gridView, NvFlowGridChannel channel);
-
-NV_FLOW_API void NvFlowGridImportUpdateLinear(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridChannel channel);
-
-NV_FLOW_API NvFlowGridView* NvFlowGridImportGetGridView(NvFlowGridImport* gridImport, NvFlowContext* context);
-
-///@}
-// -------------------------- NvFlowVolumeShadow -------------------------------
-///@defgroup NvFlowVolumeShadow
-///@{
-
-//! Object to generate shadows from gridView
-struct NvFlowVolumeShadow;
-
-struct NvFlowVolumeShadowDesc
-{
-	NvFlowGridView* gridView;
-
-	NvFlowUint mapWidth;
-	NvFlowUint mapHeight;
-	NvFlowUint mapDepth;
-
-	float minResidentScale;				//!< Minimum (and initial) fraction of virtual cells to allocate memory for
-	float maxResidentScale;				//!< Maximum fraction of virtual cells to allocate memory for
-};
-
-struct NvFlowVolumeShadowParams
-{
-	NvFlowFloat4x4 projectionMatrix;			//!< Projection matrix, row major
-	NvFlowFloat4x4 viewMatrix;					//!< View matrix, row major
-
-	float alphaScale;							//!< Global alpha scale for adjust net opacity without color map changes
-	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
-	NvFlowGridChannel renderChannel;			//!< GridView channel to render
-	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
-	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
-
-	float minIntensity;							//!< Minimum shadow intensity
-
-	NvFlowColorMap* colorMap;					//!< ColorMap to convert temperature to color
-};
-
-struct NvFlowVolumeShadowDebugRenderParams
-{
-	NvFlowRenderTargetView* renderTargetView;
-
-	NvFlowFloat4x4 projectionMatrix;			//!< Render target projection matrix, row major
-	NvFlowFloat4x4 viewMatrix;					//!< Render target view matrix, row major
-};
-
-NV_FLOW_API NvFlowVolumeShadow* NvFlowCreateVolumeShadow(NvFlowContext* context, const NvFlowVolumeShadowDesc* desc);
-
-NV_FLOW_API void NvFlowReleaseVolumeShadow(NvFlowVolumeShadow* volumeShadow);
-
-NV_FLOW_API void NvFlowVolumeShadowUpdate(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, NvFlowGridView* gridView, const NvFlowVolumeShadowParams* params);
-
-NV_FLOW_API NvFlowGridView* NvFlowVolumeShadowGetGridView(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context);
-
-NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, const NvFlowVolumeShadowDebugRenderParams* params);
 
 ///@}

@@ -93,6 +93,8 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 	// initialize desc/param defaults
 	NvFlowGridDescDefaults(&FlowGridProperties.GridDesc);
 	NvFlowGridParamsDefaults(&FlowGridProperties.GridParams);
+
+	DefaultFlowMaterial = CreateDefaultSubobject<UFlowMaterial>(TEXT("DefaultFlowMaterial0"));
 }
 
 UFlowGridAsset* UFlowGridComponent::CreateOverrideAsset()
@@ -131,31 +133,82 @@ FPrimitiveSceneProxy* UFlowGridComponent::CreateSceneProxy()
 
 namespace
 {
-	void FillColorMap(FFlowGridRenderParams& RenderParams, UFlowGridAsset& FlowGridAsset)
+	void CopyMaterialPerComponent(const FFlowMaterialPerComponent& In, NvFlowGridMaterialPerComponent& Out)
 	{
+		Out.damping = In.Damping;
+		Out.fade = In.Fade;
+		Out.macCormackBlendFactor = In.MacCormackBlendFactor;
+		Out.macCormackBlendThreshold = In.MacCormackBlendThreshold;
+		Out.allocWeight = In.AllocWeight;
+		Out.allocThreshold = In.AllocThreshold;
+	}
+
+	FlowMaterialKeyType AddMaterialParams(FFlowGridProperties& GridProperties, UFlowMaterial* FlowMaterial, FlowMaterialKeyType DefaultMaterialKey = nullptr)
+	{
+		if (FlowMaterial == nullptr)
+		{
+			return DefaultMaterialKey;
+		}
+		if (GridProperties.MaterialsMap.Contains(FlowMaterial))
+		{
+			return FlowMaterial;
+		}
+		FFlowMaterialParams& MaterialParams = GridProperties.MaterialsMap.Add(FlowMaterial);
+
+		//Grid part
+		CopyMaterialPerComponent(FlowMaterial->Velocity, MaterialParams.GridParams.velocity);
+		CopyMaterialPerComponent(FlowMaterial->Density, MaterialParams.GridParams.density);
+		CopyMaterialPerComponent(FlowMaterial->Temperature, MaterialParams.GridParams.temperature);
+		CopyMaterialPerComponent(FlowMaterial->Fuel, MaterialParams.GridParams.fuel);
+
+		MaterialParams.GridParams.vorticityStrength = FlowMaterial->VorticityStrength;
+		MaterialParams.GridParams.vorticityVelocityMask = FlowMaterial->VorticityVelocityMask;
+		MaterialParams.GridParams.ignitionTemp = FlowMaterial->IgnitionTemp;
+		MaterialParams.GridParams.burnPerTemp = FlowMaterial->BurnPerTemp;
+		MaterialParams.GridParams.fuelPerBurn = FlowMaterial->FuelPerBurn;
+		MaterialParams.GridParams.tempPerBurn = FlowMaterial->TempPerBurn;
+		MaterialParams.GridParams.densityPerBurn = FlowMaterial->DensityPerBurn;
+		MaterialParams.GridParams.divergencePerBurn = FlowMaterial->DivergencePerBurn;
+		MaterialParams.GridParams.buoyancyPerTemp = FlowMaterial->BuoyancyPerTemp;
+		MaterialParams.GridParams.coolingRate = FlowMaterial->CoolingRate;
+
+		//Render part
+		MaterialParams.RenderParams.alphaScale = FlowMaterial->AlphaScale;
+
+		if (UFlowGridAsset::sGlobalDebugDraw)
+		{
+			MaterialParams.RenderParams.renderMode = (NvFlowVolumeRenderMode)UFlowGridAsset::sGlobalRenderMode;
+			MaterialParams.RenderParams.renderChannel = (NvFlowGridTextureChannel)UFlowGridAsset::sGlobalRenderChannel;
+		}
+		else
+		{
+			MaterialParams.RenderParams.renderMode = (NvFlowVolumeRenderMode)FlowMaterial->RenderMode.GetValue();
+			MaterialParams.RenderParams.renderChannel = (NvFlowGridTextureChannel)FlowMaterial->RenderChannel.GetValue();
+		}
+
 		SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateColorMap);
 
 		//Alloc color map size to default specified by the flow library. NvFlowRendering.cpp assumes that for now.
-		if (RenderParams.ColorMap.Num() == 0)
+		if (MaterialParams.ColorMap.Num() == 0)
 		{
-			NvFlowColorMapDesc FlowColorMapDesc;
-			NvFlowColorMapDescDefaults(&FlowColorMapDesc);
-			RenderParams.ColorMap.SetNum(FlowColorMapDesc.resolution);
+			MaterialParams.ColorMap.SetNum(64);
 		}
 
-		float xmin = FlowGridAsset.ColorMapMinX;
-		float xmax = FlowGridAsset.ColorMapMaxX;
-		RenderParams.ColorMapMinX = xmin;
-		RenderParams.ColorMapMaxX = xmax;
+		float xmin = FlowMaterial->ColorMapMinX;
+		float xmax = FlowMaterial->ColorMapMaxX;
+		MaterialParams.RenderParams.colorMapMinX = xmin;
+		MaterialParams.RenderParams.colorMapMaxX = xmax;
 
-		for (int32 i = 0; i < RenderParams.ColorMap.Num(); i++)
+		for (int32 i = 0; i < MaterialParams.ColorMap.Num(); i++)
 		{
-			float t = float(i) / (RenderParams.ColorMap.Num() - 1);
+			float t = float(i) / (MaterialParams.ColorMap.Num() - 1);
 
 			float s = (xmax - xmin) * t + xmin;
 
-			RenderParams.ColorMap[i] = FlowGridAsset.ColorMap ? FlowGridAsset.ColorMap->GetLinearColorValue(s) : FLinearColor(0.f, 0.f, 0.f, 1.f);
+			MaterialParams.ColorMap[i] = FlowMaterial->ColorMap ? FlowMaterial->ColorMap->GetLinearColorValue(s) : FLinearColor(0.f, 0.f, 0.f, 1.f);
 		}
+
+		return FlowMaterial;
 	}
 
 	// helpers to find actor, shape pairs in a TSet
@@ -174,6 +227,7 @@ void UFlowGridComponent::UpdateShapes()
 	FlowGridProperties.GridCollideParams.SetNum(0);
 	FlowGridProperties.GridEmitShapeDescs.SetNum(0);
 	FlowGridProperties.GridCollideShapeDescs.SetNum(0);
+	FlowGridProperties.GridEmitMaterialKeys.SetNum(0);
 
 	// only update if enabled
 	if (!bFlowGridCollisionEnabled)
@@ -579,6 +633,11 @@ void UFlowGridComponent::UpdateShapes()
 						// push parameters
 						FlowGridProperties.GridEmitParams.Push(emitParams);
 
+						// add material
+						FlowGridProperties.GridEmitMaterialKeys.Push(
+							AddMaterialParams(FlowGridProperties, FlowEmitterComponent->FlowMaterial, FlowGridProperties.DefaultMaterialKey)
+						);
+
 						// collision factor support
 						if (CollisionFactor > 0.f)
 						{
@@ -606,6 +665,8 @@ void UFlowGridComponent::UpdateShapes()
 							collideParams.minActiveDist = -1.f;
 
 							FlowGridProperties.GridEmitParams.Push(collideParams);
+
+							FlowGridProperties.GridEmitMaterialKeys.Push(FlowGridProperties.GridEmitMaterialKeys.Last());
 						}
 					}
 				}
@@ -780,30 +841,11 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		//NvFlowGridParams
 		auto& GridParams = FlowGridProperties.GridParams;
 		NvFlowGridParamsDefaults(&GridParams);
-		GridParams.velocityWeight = FlowGridAssetRef->VelocityWeight;
-		GridParams.densityWeight = FlowGridAssetRef->DensityWeight;
-		GridParams.tempWeight = FlowGridAssetRef->TempWeight;
-		GridParams.fuelWeight = FlowGridAssetRef->FuelWeight;
-		GridParams.velocityThreshold = FlowGridAssetRef->VelocityThreshold;
-		GridParams.densityThreshold = FlowGridAssetRef->DensityThreshold;
-		GridParams.tempThreshold = FlowGridAssetRef->TempThreshold;
-		GridParams.fuelThreshold = FlowGridAssetRef->FuelThreshold;
-		GridParams.importanceThreshold = FlowGridAssetRef->ImportanceThreshold;
 
 		FVector ScaledGravity(FlowGridAssetRef->Gravity * NvFlow::scaleInv);
 		GridParams.gravity = *(NvFlowFloat3*)(&ScaledGravity);
-		GridParams.velocityDamping = FlowGridAssetRef->VelocityDamping;
-		GridParams.densityDamping = FlowGridAssetRef->DensityDamping;
-		GridParams.velocityFade = FlowGridAssetRef->VelocityFade;
-		GridParams.densityFade = FlowGridAssetRef->DensityFade;
-		GridParams.velocityMacCormackBlendFactor = FlowGridAssetRef->VelocityMacCormackBlendFactor;
-		GridParams.densityMacCormackBlendFactor = FlowGridAssetRef->DensityMacCormackBlendFactor;
-		GridParams.vorticityStrength = FlowGridAssetRef->VorticityStrength;
-		GridParams.combustion.ignitionTemp = FlowGridAssetRef->IgnitionTemperature;
-		GridParams.combustion.coolingRate = FlowGridAssetRef->CoolingRate;
 		
 		//NvFlowVolumeRenderParams
-		FlowGridProperties.RenderParams.RenderingAlphaScale = FlowGridAssetRef->RenderingAlphaScale;
 		FlowGridProperties.RenderParams.bAdaptiveScreenPercentage = FlowGridAssetRef->bAdaptiveScreenPercentage;
 		FlowGridProperties.RenderParams.AdaptiveTargetFrameTime = FlowGridAssetRef->AdaptiveTargetFrameTime;
 		FlowGridProperties.RenderParams.MaxScreenPercentage = FlowGridAssetRef->MaxScreenPercentage;
@@ -813,19 +855,15 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		{
 			GridParams.debugVisFlags = NvFlowGridDebugVisFlags(UFlowGridAsset::sGlobalMode);
 			FlowGridProperties.RenderParams.bDebugWireframe = true;
-			FlowGridProperties.RenderParams.RenderingMode = UFlowGridAsset::sGlobalRenderMode;
-			FlowGridProperties.RenderParams.RenderingChannel = UFlowGridAsset::sGlobalRenderChannel;
 		}
 		else
 		{
 			GridParams.debugVisFlags = eNvFlowGridDebugVisDisabled;
 			FlowGridProperties.RenderParams.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
-			FlowGridProperties.RenderParams.RenderingMode = FlowGridAssetRef->RenderingMode;
-			FlowGridProperties.RenderParams.RenderingChannel = eNvFlowGridChannelDensity;
 		}
 
-		//ColorMap
-		FillColorMap(FlowGridProperties.RenderParams, *FlowGridAssetRef);
+		FlowGridProperties.MaterialsMap.Reset();
+		FlowGridProperties.DefaultMaterialKey = AddMaterialParams(FlowGridProperties, DefaultFlowMaterial);
 
 		//EmitShapes & CollisionShapes
 		UpdateShapes();
