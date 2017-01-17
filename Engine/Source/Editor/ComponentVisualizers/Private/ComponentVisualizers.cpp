@@ -32,6 +32,10 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/StereoLayerComponent.h"
 
+// NvFlow begin
+#include "GameWorks/RendererHooksNvFlow.h"
+// NvFlow end
+
 IMPLEMENT_MODULE( FComponentVisualizersModule, ComponentVisualizers );
 
 void FComponentVisualizersModule::StartupModule()
@@ -50,6 +54,13 @@ void FComponentVisualizersModule::StartupModule()
 	RegisterComponentVisualizer(UPrimitiveComponent::StaticClass()->GetFName(), MakeShareable(new FPrimitiveComponentVisualizer));
 	RegisterComponentVisualizer(UDecalComponent::StaticClass()->GetFName(), MakeShareable(new FDecalComponentVisualizer));
 	RegisterComponentVisualizer(UStereoLayerComponent::StaticClass()->GetFName(), MakeShareable(new FStereoLayerComponentVisualizer));
+
+	// NvFlow begin
+	if (GEditorRendererHooksNvFlow)
+	{
+		GEditorRendererHooksNvFlow->NvFlowRegisterVisualizer(this);
+	}
+	// NvFlow end
 }
 
 void FComponentVisualizersModule::ShutdownModule()

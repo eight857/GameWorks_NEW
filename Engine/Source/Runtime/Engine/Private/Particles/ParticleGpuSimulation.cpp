@@ -31,6 +31,9 @@
 #include "SceneUtils.h"
 #include "MeshBatch.h"
 #include "GlobalDistanceFieldParameters.h"
+// NvFlow begin
+#include "GridAccessHooksNvFlow.h"
+// NvFlow end
 
 DECLARE_CYCLE_STAT(TEXT("GPUSpriteEmitterInstance Init"), STAT_GPUSpriteEmitterInstance_Init, STATGROUP_Particles);
 DECLARE_FLOAT_COUNTER_STAT(TEXT("Particle Simulation"), Stat_GPU_ParticleSimulation, STATGROUP_GPU);
@@ -887,6 +890,34 @@ IMPLEMENT_UNIFORM_BUFFER_STRUCT(FVectorFieldUniformParameters,TEXT("VectorFields
 
 typedef TUniformBufferRef<FVectorFieldUniformParameters> FVectorFieldUniformBufferRef;
 
+// NvFlow begin
+
+BEGIN_UNIFORM_BUFFER_STRUCT(FNvFlowGridUniformParameters, )
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(int32, Count)
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, BlockDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, BlockDimBits, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FVector, BlockDimInv, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, LinearBlockDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, LinearBlockOffset, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FVector, DimInv, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FVector, VDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FVector, VDimInv, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, PoolGridDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FIntVector, GridDim, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(int32, IsVTR, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FMatrix, WorldToVolume, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(float, VelocityScale, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(float, GridToParticleAccelRate, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(float, GridToParticleDecelRate, [MAX_NVFLOW_GRIDS])
+DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(float, GridToParticleThreshold, [MAX_NVFLOW_GRIDS])
+END_UNIFORM_BUFFER_STRUCT(FNvFlowGridUniformParameters)
+
+IMPLEMENT_UNIFORM_BUFFER_STRUCT(FNvFlowGridUniformParameters, TEXT("NvFlowParams"));
+
+typedef TUniformBufferRef<FNvFlowGridUniformParameters> FNvFlowGridUniformBufferRef;
+
+// NvFlow end
+
 /**
  * Vertex shader for drawing particle tiles on the GPU.
  */
@@ -1011,6 +1042,15 @@ public:
 		CollisionDepthBounds.Bind(Initializer.ParameterMap,TEXT("CollisionDepthBounds"));
 		PerFrameParameters.Bind(Initializer.ParameterMap);
 		GlobalDistanceFieldParameters.Bind(Initializer.ParameterMap);
+
+		// NvFlow begin
+		for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+		{
+			NvFlowExportData[i].Bind(Initializer.ParameterMap, *FString::Printf(TEXT("NvFlowExportData%d"), i));
+			NvFlowExportBlockTable[i].Bind(Initializer.ParameterMap, *FString::Printf(TEXT("NvFlowExportBlockTable%d"), i));
+		}
+		NvFlowExportDataSampler.Bind(Initializer.ParameterMap, TEXT("NvFlowExportDataSampler"));
+		// NvFlow end
 	}
 
 	/** Serialization. */
@@ -1039,6 +1079,14 @@ public:
 		Ar << CollisionDepthBounds;
 		Ar << PerFrameParameters;
 		Ar << GlobalDistanceFieldParameters;
+		// NvFlow begin
+		for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+		{
+			Ar << NvFlowExportData[i];
+			Ar << NvFlowExportBlockTable[i];
+		}
+		Ar << NvFlowExportDataSampler;
+		// NvFlow end
 		return bShaderHasOutdatedParameters;
 	}
 
@@ -1151,7 +1199,31 @@ public:
 				RHICmdList.SetShaderResourceViewParameter(PixelShaderRHI, VectorFieldTextures[i].GetBaseIndex(), NullSRV);
 			}
 		}
+		// NvFlow begin
+		for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+		{
+			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportData[i], NullSRV);
+			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportBlockTable[i], NullSRV);
+		}
+		// NvFlow end
 	}
+	
+	// NvFlow begin
+	void SetNvFlowGridParameters(FRHICommandList& RHICmdList, FNvFlowGridUniformBufferRef UniformBuffer, const FShaderResourceViewRHIRef DataSRV[], const FShaderResourceViewRHIRef BlockTableSRV[])
+	{
+		FPixelShaderRHIParamRef PixelShaderRHI = GetPixelShader();
+		SetUniformBufferParameter(RHICmdList, PixelShaderRHI, GetUniformBufferParameter<FNvFlowGridUniformParameters>(), UniformBuffer);
+
+		for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+		{
+			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportData[i], DataSRV[i]);
+			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportBlockTable[i], BlockTableSRV[i]);
+		}
+
+		FSamplerStateRHIParamRef BorderSampler = TStaticSamplerState<SF_Bilinear, AM_Border, AM_Border, AM_Border>::GetRHI();
+		SetSamplerParameter(RHICmdList, PixelShaderRHI, NvFlowExportDataSampler, BorderSampler);
+	}
+	// NvFlow end
 
 private:
 
@@ -1184,6 +1256,12 @@ private:
 	/** Collision depth bounds. */
 	FShaderParameter CollisionDepthBounds;
 	FGlobalDistanceFieldParameters GlobalDistanceFieldParameters;
+
+	// NvFlow begin
+	FShaderResourceParameter NvFlowExportData[MAX_NVFLOW_GRIDS];
+	FShaderResourceParameter NvFlowExportBlockTable[MAX_NVFLOW_GRIDS];
+	FShaderResourceParameter NvFlowExportDataSampler;
+	// NvFlow end
 };
 
 /**
@@ -1354,6 +1432,12 @@ struct FSimulationCommandGPU
 	/** The number of tiles to simulate. */
 	int32 TileCount;
 
+	// NvFlow begin
+	FNvFlowGridUniformBufferRef NvFlowGridUniformBuffer;
+	FShaderResourceViewRHIRef NvFlowGridDataSRV[MAX_NVFLOW_GRIDS];
+	FShaderResourceViewRHIRef NvFlowGridBlockTableSRV[MAX_NVFLOW_GRIDS];
+	// NvFlow end
+
 	/** Initialization constructor. */
 	FSimulationCommandGPU(FParticleShaderParamRef InTileOffsetsRef, FUniformBufferRHIParamRef InUniformBuffer, const FParticlePerFrameSimulationParameters& InPerFrameParameters, FVectorFieldUniformBufferRef& InVectorFieldsUniformBuffer, int32 InTileCount)
 		: TileOffsetsRef(InTileOffsetsRef)
@@ -1436,6 +1520,7 @@ void ExecuteSimulationCommands(
 			Command.VectorFieldsUniformBuffer,
 			Command.VectorFieldTexturesRHI
 			);
+		PixelShader->SetNvFlowGridParameters(RHICmdList, Command.NvFlowGridUniformBuffer, Command.NvFlowGridDataSRV, Command.NvFlowGridBlockTableSRV);
 		DrawAlignedParticleTiles(RHICmdList, Command.TileCount);
 	}
 
@@ -2516,6 +2601,12 @@ public:
 	/** Allows disabling of simulation. */
 	bool bEnabled;
 
+	// NvFlow begin
+	bool bEnableGridInteraction;
+	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
+	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
+	// NvFlow end
+
 	/** Default constructor. */
 	FParticleSimulationGPU()
 		: EmitterSimulationResources(NULL)
@@ -2528,6 +2619,10 @@ public:
 		, bReleased_GameThread(true)
 		, bDestroyed_GameThread(false)
 		, bEnabled(true)
+		// NvFlow begin
+		, bEnableGridInteraction(false)
+		, InteractionChannel(EIC_Channel1)
+		// NvFlow end
 	{
 	}
 
@@ -3103,6 +3198,12 @@ public:
 		}
 		Simulation->bWantsCollision = InEmitterInfo.bEnableCollision;
 		Simulation->CollisionMode = InEmitterInfo.CollisionMode;
+
+		// NvFlow begin
+		Simulation->bEnableGridInteraction = InEmitterInfo.bEnableGridInteraction;
+		Simulation->InteractionChannel = InEmitterInfo.InteractionChannel;
+		Simulation->ResponseToInteractionChannels = InEmitterInfo.ResponseToInteractionChannels;
+		// NvFlow end
 
 #if TRACK_TILE_ALLOCATIONS
 		TSet<class FGPUSpriteParticleEmitterInstance*>* EmitterSet = GPUSpriteParticleEmitterInstances.Find(FXSystem);
@@ -4641,7 +4742,59 @@ void FFXSystem::SimulateGPUParticles(
 					SimulationCommand->VectorFieldsUniformBuffer = FVectorFieldUniformBufferRef::CreateUniformBufferImmediate(VectorFieldParameters, UniformBuffer_SingleFrame);
 				}
 			}
-		
+			// NvFlow begin
+			{
+				for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
+				{
+					SimulationCommand->NvFlowGridDataSRV[i] = FShaderResourceViewRHIRef();
+					SimulationCommand->NvFlowGridBlockTableSRV[i] = FShaderResourceViewRHIRef();
+				}
+
+				FNvFlowGridUniformParameters NvFlowGridParameters;
+				NvFlowGridParameters.Count = 0;
+				if (GGridAccessNvFlowHooks && Simulation->bEnableGridInteraction)
+				{
+					ParticleSimulationParamsNvFlow ParticleSimulationParams;
+					ParticleSimulationParams.InteractionChannel = Simulation->InteractionChannel;
+					ParticleSimulationParams.ResponseToInteractionChannels = Simulation->ResponseToInteractionChannels;
+					ParticleSimulationParams.Bounds = Simulation->Bounds;
+					ParticleSimulationParams.TextureSizeX = GParticleSimulationTextureSizeX;
+					ParticleSimulationParams.TextureSizeY = GParticleSimulationTextureSizeY;
+					ParticleSimulationParams.PositionTextureRHI = ParticleSimulationResources->GetVisualizeStateTextures().PositionTextureRHI;
+					ParticleSimulationParams.VelocityTextureRHI = ParticleSimulationResources->GetVisualizeStateTextures().VelocityTextureRHI;
+					ParticleSimulationParams.ParticleCount = Simulation->VertexBuffer.ParticleCount;
+					ParticleSimulationParams.VertexBufferSRV = Simulation->VertexBuffer.VertexBufferSRV;
+
+					GridExportParamsNvFlow NvFlowGridParams[MAX_NVFLOW_GRIDS];
+					NvFlowGridParameters.Count = GGridAccessNvFlowHooks->NvFlowQueryGridExportParams(RHICmdList, ParticleSimulationParams, MAX_NVFLOW_GRIDS, NvFlowGridParams);
+					for (int32 i = 0; i < NvFlowGridParameters.Count; ++i)
+					{
+						NvFlowGridParameters.BlockDim[i] = NvFlowGridParams[i].BlockDim;
+						NvFlowGridParameters.BlockDimBits[i] = NvFlowGridParams[i].BlockDimBits;
+						NvFlowGridParameters.BlockDimInv[i] = NvFlowGridParams[i].BlockDimInv;
+						NvFlowGridParameters.LinearBlockDim[i] = NvFlowGridParams[i].LinearBlockDim;
+						NvFlowGridParameters.LinearBlockOffset[i] = NvFlowGridParams[i].LinearBlockOffset;
+						NvFlowGridParameters.DimInv[i] = NvFlowGridParams[i].DimInv;
+						NvFlowGridParameters.VDim[i] = NvFlowGridParams[i].VDim;
+						NvFlowGridParameters.VDimInv[i] = NvFlowGridParams[i].VDimInv;
+						NvFlowGridParameters.PoolGridDim[i] = NvFlowGridParams[i].PoolGridDim;
+						NvFlowGridParameters.GridDim[i] = NvFlowGridParams[i].GridDim;
+						NvFlowGridParameters.IsVTR[i] = NvFlowGridParams[i].IsVTR ? 1 : 0;
+						NvFlowGridParameters.WorldToVolume[i] = NvFlowGridParams[i].WorldToVolume;
+						NvFlowGridParameters.VelocityScale[i] = NvFlowGridParams[i].VelocityScale;
+
+						NvFlowGridParameters.GridToParticleAccelRate[i] = Simulation->PerFrameSimulationParameters.DeltaSeconds / NvFlowGridParams[i].GridToParticleAccelTimeConstant;
+						NvFlowGridParameters.GridToParticleDecelRate[i] = Simulation->PerFrameSimulationParameters.DeltaSeconds / NvFlowGridParams[i].GridToParticleDecelTimeConstant;
+						NvFlowGridParameters.GridToParticleThreshold[i] = NvFlowGridParams[i].GridToParticleThresholdMultiplier;
+
+						SimulationCommand->NvFlowGridDataSRV[i] = NvFlowGridParams[i].DataSRV;
+						SimulationCommand->NvFlowGridBlockTableSRV[i] = NvFlowGridParams[i].BlockTableSRV;
+					}
+				}
+				SimulationCommand->NvFlowGridUniformBuffer = FNvFlowGridUniformBufferRef::CreateUniformBufferImmediate(NvFlowGridParameters, UniformBuffer_SingleFrame);
+			}
+			// NvFlow end
+
 			// Add to the list of tiles to clear.
 			TilesToClear.Append(Simulation->TilesToClear);
 			Simulation->TilesToClear.Reset();

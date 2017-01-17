@@ -11,6 +11,10 @@
 #include "LightPropagationVolume.h"
 #include "SceneUtils.h"
 
+// NvFlow begin
+#include "GameWorks/RendererHooksNvFlow.h"
+// NvFlow end
+
 DECLARE_CYCLE_STAT(TEXT("TranslucencyTimestampQueryFence Wait"), STAT_TranslucencyTimestampQueryFence_Wait, STATGROUP_SceneRendering);
 DECLARE_CYCLE_STAT(TEXT("TranslucencyTimestampQuery Wait"), STAT_TranslucencyTimestampQuery_Wait, STATGROUP_SceneRendering);
 
@@ -720,6 +724,16 @@ void FTranslucentPrimSet::DrawPrimitivesParallel(
 
 		checkSlow(ViewRelevance.HasTranslucency());
 
+		// NvFlow begin
+		if (GRendererNvFlowHooks)
+		{
+			if (GRendererNvFlowHooks->NvFlowDoRenderPrimitive(RHICmdList, View, PrimitiveSceneInfo))
+			{
+				continue;
+			}
+		}
+		// NvFlow end
+
 		if (PrimitiveSceneInfo->Proxy && PrimitiveSceneInfo->Proxy->CastsVolumetricTranslucentShadow())
 		{
 			check(!IsInActualRenderingThread());
@@ -753,7 +767,17 @@ void FTranslucentPrimSet::DrawPrimitives(
 		const FPrimitiveViewRelevance& ViewRelevance = View.PrimitiveViewRelevanceMap[PrimitiveId];
 
 		checkSlow(ViewRelevance.HasTranslucency());
-			
+
+		// NvFlow begin
+		if (GRendererNvFlowHooks)
+		{
+			if (GRendererNvFlowHooks->NvFlowDoRenderPrimitive(RHICmdList, View, PrimitiveSceneInfo))
+			{
+				continue;
+			}
+		}
+		// NvFlow end
+
 		const FProjectedShadowInfo* TranslucentSelfShadow = Renderer.PrepareTranslucentShadowMap(RHICmdList, View, PrimitiveSceneInfo, TranslucenyPassType);
 
 		RenderPrimitive(RHICmdList, View, PrimitiveSceneInfo, ViewRelevance, TranslucentSelfShadow, TranslucenyPassType);

@@ -394,7 +394,11 @@ private:
 	/** Whether distance field global data structures should be prepared for features that use it. */
 	bool ShouldPrepareForDistanceFieldShadows() const;
 	bool ShouldPrepareForDistanceFieldAO() const;
-	bool ShouldPrepareDistanceFields() const;
+	bool ShouldPrepareDistanceFields(
+// NvFlow begin
+		bool bCustomShouldPrepare = false
+// NvFlow end
+	) const;
 
 	void UpdateGlobalDistanceFieldObjectBuffers(FRHICommandListImmediate& RHICmdList);
 

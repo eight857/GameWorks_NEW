@@ -8,6 +8,10 @@ DynamicRHI.h: Dynamically bound Render Hardware Interface definitions.
 
 #include "ModuleInterface.h"
 
+// NvFlow begin
+#include "GameWorks/RHINvFlow.h"
+// NvFlow end
+
 FORCEINLINE FBoundShaderStateRHIRef RHICreateBoundShaderState(
 	FVertexDeclarationRHIParamRef VertexDeclaration,
 	FVertexShaderRHIParamRef VertexShader,
@@ -502,6 +506,22 @@ public:
 	virtual void RHIPopEvent() = 0;
 
 	virtual void RHIUpdateTextureReference(FTextureReferenceRHIParamRef TextureRef, FTextureRHIParamRef NewTexture) = 0;
+
+	// NvFlow begin
+	virtual void NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc) {}
+	virtual void NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc) {}
+	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) {}
+	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) { return FShaderResourceViewRHIRef(); }
+	virtual FUnorderedAccessViewRHIRef NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc) { return FUnorderedAccessViewRHIRef(); }
+	FRHINvFlowCleanup NvFlowCleanup;
+	virtual void NvFlowWork(void(*workFunc)(void*,SIZE_T,IRHICommandContext*), void* paramData, SIZE_T numBytes)
+	{
+		if (workFunc)
+		{
+			workFunc(paramData, numBytes, this);
+		}
+	}
+	// NvFlow end
 };
 
 /** The interface which is implemented by the dynamically bound RHI. */
