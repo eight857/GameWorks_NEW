@@ -503,7 +503,7 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 	m_volumeRender = NvFlowCreateVolumeRender(m_context->m_flowContext, &volumeRenderDesc);
 
 	NvFlowRenderMaterialPoolDesc renderMaterialPoolDesc;
-	renderMaterialPoolDesc.colorMapResolution = 64; //TODO:
+	renderMaterialPoolDesc.colorMapResolution = FlowGridSceneProxy->FlowGridProperties.ColorMapResolution;
 
 	m_renderMaterialPool = NvFlowCreateRenderMaterialPool(m_context->m_flowContext, &renderMaterialPoolDesc);
 }

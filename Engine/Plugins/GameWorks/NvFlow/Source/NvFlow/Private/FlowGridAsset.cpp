@@ -45,6 +45,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	MaxScreenPercentage = 1.f;
 	MinScreenPercentage = 0.5f;
 	bDebugWireframe = FlowVolumeRenderParams.debugMode;
+	ColorMapResolution = 64;
 
 	//Collision
 	FCollisionResponseParams FlowResponseParams;

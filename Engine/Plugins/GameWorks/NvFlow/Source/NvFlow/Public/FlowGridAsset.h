@@ -93,6 +93,11 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collision")
 	struct FCollisionResponseContainer	ResponseToChannels;
 
+
+	/** Color map resolution.*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (UIMin = 1))
+	int32		ColorMapResolution;
+
 	/** Adaptive ScreenPercentage */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")
 	uint32		bAdaptiveScreenPercentage : 1;

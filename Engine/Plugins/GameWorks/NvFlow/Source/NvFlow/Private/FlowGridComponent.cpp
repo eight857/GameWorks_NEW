@@ -770,6 +770,9 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		bool OldParticleModeEnabled = FlowGridProperties.bParticleModeEnabled;
 		bool NewParticleModeEnabled = FlowGridAssetRef->bParticleModeEnabled;
 
+		uint32 OldColorMapResolution = FlowGridProperties.ColorMapResolution;
+		uint32 NewColorMapResolution = FlowGridAssetRef->ColorMapResolution;
+
 		// grab default desc
 		NvFlowGridDesc defaultGridDesc = {};
 		NvFlowGridDescDefaults(&defaultGridDesc);
@@ -792,7 +795,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			newGridDesc.densityMultiRes != FlowGridProperties.GridDesc.densityMultiRes ||
 			NewLowLatencyMapping != OldLowLatencyMapping ||
 			NewMultiAdapterEnabled != OldMultiAdapterEnabled ||
-			NewParticleModeEnabled != OldParticleModeEnabled);
+			NewParticleModeEnabled != OldParticleModeEnabled ||
+			NewColorMapResolution != OldColorMapResolution);
 
 		if (changed || (FlowGridAssetOld != FlowGridAssetRef))
 		{
@@ -845,6 +849,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		FVector ScaledGravity(FlowGridAssetRef->Gravity * NvFlow::scaleInv);
 		GridParams.gravity = *(NvFlowFloat3*)(&ScaledGravity);
 		
+		FlowGridProperties.ColorMapResolution = NewColorMapResolution;
+
 		//NvFlowVolumeRenderParams
 		FlowGridProperties.RenderParams.bAdaptiveScreenPercentage = FlowGridAssetRef->bAdaptiveScreenPercentage;
 		FlowGridProperties.RenderParams.AdaptiveTargetFrameTime = FlowGridAssetRef->AdaptiveTargetFrameTime;

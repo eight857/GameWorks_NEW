@@ -87,6 +87,7 @@ struct FFlowGridProperties
 	float VelocitySlipThickness;
 
 	// rendering parameters
+	int32 ColorMapResolution;
 	FFlowGridRenderParams RenderParams;
 
 	TArray<FlowMaterialKeyType> GridEmitMaterialKeys;
