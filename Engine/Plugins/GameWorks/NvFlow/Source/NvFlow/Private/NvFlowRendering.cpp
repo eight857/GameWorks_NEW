@@ -140,8 +140,6 @@ namespace NvFlow
 		float m_frameTimeAverage = 0.f;
 		float m_currentAdaptiveScale = -1.f;
 
-		NvFlowGridView* m_gridView = nullptr;
-
 		Context* m_context = nullptr;
 
 		NvFlowGrid* m_grid = nullptr;
@@ -149,13 +147,14 @@ namespace NvFlow
 		NvFlowVolumeRender* m_volumeRender = nullptr;
 		NvFlowRenderMaterialPool* m_renderMaterialPool = nullptr;
 
+		NvFlowGridExport* m_gridProxyExport = nullptr;
+
 		NvFlowGridDesc m_gridDesc;
 		NvFlowGridParams m_gridParams;
 		NvFlowVolumeRenderParams m_renderParams;
 
 		FFlowGridSceneProxy* FlowGridSceneProxy = nullptr;
 
-		NvFlowGridExport* m_gridExport = nullptr;
 		TArray<ParticleSimulationParamsNvFlow> m_particleParamsArray;
 
 		struct MaterialData
@@ -432,13 +431,11 @@ void NvFlow::Scene::release()
 		UE_LOG(LogFlow, Display, TEXT("NvFlow Scene %p Cleanup"), this);
 	}
 
-	if (m_gridExport) NvFlowReleaseGridExport(m_gridExport);
 	if (m_grid) NvFlowReleaseGrid(m_grid);
 	if (m_gridProxy) NvFlowReleaseGridProxy(m_gridProxy);
 	if (m_volumeRender) NvFlowReleaseVolumeRender(m_volumeRender);
 	if (m_renderMaterialPool) NvFlowReleaseRenderMaterialPool(m_renderMaterialPool);
 
-	m_gridExport = nullptr;
 	m_grid = nullptr;
 	m_gridProxy = nullptr;
 	m_volumeRender = nullptr;
@@ -495,10 +492,8 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 
 	m_gridProxy = NvFlowCreateGridProxy(computeContext, m_grid, &proxyDesc);
 
-	auto gridView = NvFlowGridProxyGetGridView(m_gridProxy, m_context->m_flowContext);
-
 	NvFlowVolumeRenderDesc volumeRenderDesc;
-	volumeRenderDesc.view = gridView;
+	volumeRenderDesc.gridExport = NvFlowGridProxyGetGridExport(m_gridProxy, m_context->m_flowContext);;
 
 	m_volumeRender = NvFlowCreateVolumeRender(m_context->m_flowContext, &volumeRenderDesc);
 
@@ -803,7 +798,7 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 
 	NvFlowGridProxyFlush(m_gridProxy, computeContext);
 
-	m_gridView = NvFlowGridProxyGetGridView(m_gridProxy, m_context->m_flowContext);
+	m_gridProxyExport = NvFlowGridProxyGetGridExport(m_gridProxy, m_context->m_flowContext);
 }
 
 void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
@@ -899,7 +894,7 @@ void NvFlow::Scene::renderDeferred(IRHICommandContext* RHICmdCtx, RenderParams* 
 	volumeRenderParams.depthStencilView = m_context->m_dsv;
 	volumeRenderParams.renderTargetView = m_context->m_rtv;
 
-	NvFlowVolumeRenderGridView(m_volumeRender, m_context->m_flowContext, m_gridView, &volumeRenderParams);
+	NvFlowVolumeRenderGridExport(m_volumeRender, m_context->m_flowContext, m_gridProxyExport, &volumeRenderParams);
 }
 
 namespace
@@ -977,39 +972,29 @@ namespace
 
 bool NvFlow::Scene::getExportParams(FRHICommandListImmediate& RHICmdList, GridExportParamsNvFlow& OutParams)
 {
-	if (m_gridExport == nullptr)
-	{
-		if (m_gridView == nullptr)
-		{
-			return false;
-		}
+	auto gridExport = NvFlowGridGetGridExport(m_context->m_flowContext, m_grid);
 
-		NvFlowGridExportDesc Desc;
-		Desc.gridView = m_gridView;
+	auto gridExportView = NvFlowGridExportGetView(gridExport, m_context->m_flowContext, eNvFlowGridTextureChannelVelocity);
+	check(gridExportView.numLayerViews > 0);
 
-		m_gridExport = NvFlowCreateGridExport(m_context->m_flowContext, &Desc);
-	}
+	NvFlowGridExportLayerView gridExportLayerView;
+	NvFlowGridExportGetLayerView(gridExportView, 0, &gridExportLayerView);
 
 
-	NvFlowGridExportUpdate(m_gridExport, m_context->m_flowContext, m_gridView, eNvFlowGridTextureChannelVelocity);
+	OutParams.DataSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, gridExportLayerView.data);
+	OutParams.BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, gridExportLayerView.blockTable);
 
-	NvFlowGridExportView GridExportView;
-	NvFlowGridExportGetView(m_gridExport, m_context->m_flowContext, &GridExportView, eNvFlowGridTextureChannelVelocity);
-
-	OutParams.DataSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, GridExportView.data);
-	OutParams.BlockTableSRV = NvFlowConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, GridExportView.blockTable);
-
-	OutParams.BlockDim = NvFlowConvert(GridExportView.shaderParams.blockDim);
-	OutParams.BlockDimBits = NvFlowConvert(GridExportView.shaderParams.blockDimBits);
-	OutParams.BlockDimInv = NvFlowConvert(GridExportView.shaderParams.blockDimInv);
-	OutParams.LinearBlockDim = NvFlowConvert(GridExportView.shaderParams.linearBlockDim);
-	OutParams.LinearBlockOffset = NvFlowConvert(GridExportView.shaderParams.linearBlockOffset);
-	OutParams.DimInv = NvFlowConvert(GridExportView.shaderParams.dimInv);
-	OutParams.VDim = NvFlowConvert(GridExportView.shaderParams.vdim);
-	OutParams.VDimInv = NvFlowConvert(GridExportView.shaderParams.vdimInv);
-	OutParams.PoolGridDim = NvFlowConvert(GridExportView.shaderParams.poolGridDim);
-	OutParams.GridDim = NvFlowConvert(GridExportView.shaderParams.gridDim);
-	OutParams.IsVTR = (GridExportView.shaderParams.isVTR.x != 0);
+	OutParams.BlockDim = NvFlowConvert(gridExportLayerView.shaderParams.blockDim);
+	OutParams.BlockDimBits = NvFlowConvert(gridExportLayerView.shaderParams.blockDimBits);
+	OutParams.BlockDimInv = NvFlowConvert(gridExportLayerView.shaderParams.blockDimInv);
+	OutParams.LinearBlockDim = NvFlowConvert(gridExportLayerView.shaderParams.linearBlockDim);
+	OutParams.LinearBlockOffset = NvFlowConvert(gridExportLayerView.shaderParams.linearBlockOffset);
+	OutParams.DimInv = NvFlowConvert(gridExportLayerView.shaderParams.dimInv);
+	OutParams.VDim = NvFlowConvert(gridExportLayerView.shaderParams.vdim);
+	OutParams.VDimInv = NvFlowConvert(gridExportLayerView.shaderParams.vdimInv);
+	OutParams.PoolGridDim = NvFlowConvert(gridExportLayerView.shaderParams.poolGridDim);
+	OutParams.GridDim = NvFlowConvert(gridExportLayerView.shaderParams.gridDim);
+	OutParams.IsVTR = (gridExportLayerView.shaderParams.isVTR.x != 0);
 
 	OutParams.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
 	OutParams.VelocityScale = scale;

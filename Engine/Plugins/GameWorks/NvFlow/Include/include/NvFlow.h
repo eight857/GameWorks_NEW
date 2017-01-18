@@ -340,19 +340,6 @@ NV_FLOW_API void NvFlowGridGPUMemUsage(NvFlowGrid* grid, NvFlowUint64* numBytes)
  */
 NV_FLOW_API void NvFlowGridUpdate(NvFlowGrid* grid, NvFlowContext* context, float dt);
 
-//! Grid data for rendering
-struct NvFlowGridView;
-
-/**
-* Gets a view of the grid data for rendering.
-*
-* @param[in] grid The Flow grid to extract a view from.
-* @param[in] context The Flow context used to simulate the grid.
-*
-* @return The grid view for passing to rendering.
-*/
-NV_FLOW_API NvFlowGridView* NvFlowGridGetGridView(NvFlowGrid* grid, NvFlowContext* context);
-
 ///@}
 // -------------------------- NvFlowGridMaterial -------------------------------
 ///@defgroup NvFlowGridMaterial
@@ -414,6 +401,13 @@ struct NvFlowGridMaterialParams
 * @param[out] params The parameters for Flow to fill out.
 */
 NV_FLOW_API void NvFlowGridMaterialParamsDefaults(NvFlowGridMaterialParams* params);
+
+/**
+* Gets a handle to the default grid material
+*
+* @param[in] grid The Flow grid to set parameters on.
+*/
+NV_FLOW_API NvFlowGridMaterialHandle NvFlowGridGetDefaultMaterial(NvFlowGrid* grid);
 
 /**
 * Creates new grid material, initializes to params
@@ -708,16 +702,22 @@ NV_FLOW_API void NvFlowGridEmitCustomRegisterEmitFunc(NvFlowGrid* grid, NvFlowGr
 ///@defgroup NvFlowGridExport
 ///@{
 
-//! Object to expose read access Flow grid simulation data
+//! Interface to expose read access Flow grid simulation data
 struct NvFlowGridExport;
 
-struct NvFlowGridExportDesc
-{
-	NvFlowGridView* gridView;
-};
-
+//! Texture channel description
 struct NvFlowGridExportView
 {
+	NvFlowGridExport* gridExport;
+	NvFlowGridTextureChannel channel;
+	NvFlowUint numLayerViews;
+};
+
+//! Description of a single exported layer
+struct NvFlowGridExportLayerView
+{
+	NvFlowGridMaterialHandle material;
+
 	NvFlowResource* data;
 	NvFlowResource* blockTable;
 	NvFlowResource* blockList;
@@ -730,13 +730,35 @@ struct NvFlowGridExportView
 	NvFlowFloat4x4 modelMatrix;
 };
 
-NV_FLOW_API NvFlowGridExport* NvFlowCreateGridExport(NvFlowContext* context, const NvFlowGridExportDesc* desc);
+//! Data to visualize simple shape
+struct NvFlowGridExportSimpleShape
+{
+	NvFlowFloat4x4 localToWorld;
+	NvFlowShapeDesc shapeDesc;
+};
 
-NV_FLOW_API void NvFlowReleaseGridExport(NvFlowGridExport* gridExport);
+//! Debug vis data
+struct NvFlowGridExportDebugVisView
+{
+	NvFlowGridDebugVisFlags debugVisFlags;
 
-NV_FLOW_API void NvFlowGridExportUpdate(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridView* gridView, NvFlowGridTextureChannel channel);
+	NvFlowFloat4x4* bounds;
+	NvFlowUint numBounds;
+	NvFlowGridExportSimpleShape* spheres;
+	NvFlowUint numSpheres;
+	NvFlowGridExportSimpleShape* capsules;
+	NvFlowUint numCapsules;
+	NvFlowGridExportSimpleShape* boxes;
+	NvFlowUint numBoxes;
+};
 
-NV_FLOW_API void NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridExportView* view, NvFlowGridTextureChannel channel);
+NV_FLOW_API NvFlowGridExport* NvFlowGridGetGridExport(NvFlowContext* context, NvFlowGrid* grid);
+
+NV_FLOW_API NvFlowGridExportView NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridTextureChannel channel);
+
+NV_FLOW_API void NvFlowGridExportGetLayerView(NvFlowGridExportView exportView, NvFlowUint layerIdx, NvFlowGridExportLayerView* layerView);
+
+NV_FLOW_API void NvFlowGridExportGetDebugVisView(NvFlowGridExport* gridExport, NvFlowGridExportDebugVisView* view);
 
 ///@}
 // -------------------------- NvFlowGridImport -------------------------------
@@ -746,13 +768,39 @@ NV_FLOW_API void NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowCon
 //! Object to expose write access to Flow grid simulation data
 struct NvFlowGridImport;
 
+//! Description to create grid import
 struct NvFlowGridImportDesc
 {
-	NvFlowGridView* gridView;
+	NvFlowGridExport* gridExport;
 };
 
+enum NvFlowGridImportMode
+{
+	eNvFlowGridImportModePoint = 0,
+	eNvFlowGridImportModeLinear = 1
+};
+
+//! Parameters for grabbing import view
+struct NvFlowGridImportParams
+{
+	NvFlowGridExport* gridExport;
+	NvFlowGridTextureChannel channel;
+	NvFlowGridImportMode importMode;
+};
+
+//! Texture channel description
 struct NvFlowGridImportView
 {
+	NvFlowGridImport* gridImport;
+	NvFlowGridTextureChannel channel;
+	NvFlowUint numLayerViews;
+};
+
+//! Description of a single imported layer
+struct NvFlowGridImportLayerView
+{
+	NvFlowGridMaterialHandle material;
+
 	NvFlowResourceRW* dataRW;
 	NvFlowResource* blockTable;
 	NvFlowResource* blockList;
@@ -769,15 +817,13 @@ NV_FLOW_API NvFlowGridImport* NvFlowCreateGridImport(NvFlowContext* context, con
 
 NV_FLOW_API void NvFlowReleaseGridImport(NvFlowGridImport* gridImport);
 
-NV_FLOW_API void NvFlowGridImportGetView(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridImportView* view, NvFlowGridView* gridView, NvFlowGridTextureChannel channel);
+NV_FLOW_API NvFlowGridImportView NvFlowGridImportGetView(NvFlowGridImport* gridImport, NvFlowContext* context, const NvFlowGridImportParams* params);
 
-NV_FLOW_API void NvFlowGridImportUpdate(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridTextureChannel channel);
+NV_FLOW_API void NvFlowGridImportGetLayerView(NvFlowGridImportView importView, NvFlowUint layerIdx, NvFlowGridImportLayerView* layerView);
 
-NV_FLOW_API void NvFlowGridImportGetViewLinear(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridImportView* view, NvFlowGridView* gridView, NvFlowGridTextureChannel channel);
+NV_FLOW_API void NvFlowGridImportReleaseChannel(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridTextureChannel channel);
 
-NV_FLOW_API void NvFlowGridImportUpdateLinear(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridTextureChannel channel);
-
-NV_FLOW_API NvFlowGridView* NvFlowGridImportGetGridView(NvFlowGridImport* gridImport, NvFlowContext* context);
+NV_FLOW_API NvFlowGridExport* NvFlowGridImportGetGridExport(NvFlowGridImport* gridImport, NvFlowContext* context);
 
 ///@}
 // -------------------------- NvFlowRenderMaterial -------------------------------
@@ -849,6 +895,15 @@ struct NvFlowRenderMaterialParams
 NV_FLOW_API void NvFlowRenderMaterialParamsDefaults(NvFlowRenderMaterialParams* params);
 
 /**
+* Get the default render material.
+*
+* @param[in] pool The pool to create/own the material.
+*
+* @return A handle to the material.
+*/
+NV_FLOW_API NvFlowRenderMaterialHandle NvFlowGetDefaultRenderMaterial(NvFlowRenderMaterialPool* pool);
+
+/**
 * Create a render material.
 *
 * @param[in] context The context to use for GPU resource creation.
@@ -910,7 +965,7 @@ struct NvFlowVolumeRender;
 //! Description needed to a create a Flow volume render object
 struct NvFlowVolumeRenderDesc
 {
-	NvFlowGridView* view;				//!< Grid view for allocation purposes.
+	NvFlowGridExport* gridExport;				//!< Export interface
 };
 
 /**
@@ -1041,7 +1096,7 @@ struct NvFlowVolumeLightingParams
 *
 * @return The lit grid view.
 */
-NV_FLOW_API NvFlowGridView* NvFlowVolumeRenderLightGridView(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridView* gridView, const NvFlowVolumeLightingParams* params);
+NV_FLOW_API NvFlowGridExport* NvFlowVolumeRenderLightGridExport(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridExport* gridExport, const NvFlowVolumeLightingParams* params);
 
 /**
  * Renders a Flow grid view.
@@ -1051,7 +1106,7 @@ NV_FLOW_API NvFlowGridView* NvFlowVolumeRenderLightGridView(NvFlowVolumeRender* 
  * @param[in] gridView The grid view to ray march.
  * @param[in] params Parameters for rendering.
  */
-NV_FLOW_API void NvFlowVolumeRenderGridView(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridView* gridView, const NvFlowVolumeRenderParams* params);
+NV_FLOW_API void NvFlowVolumeRenderGridExport(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridExport* gridExport, const NvFlowVolumeRenderParams* params);
 
 /**
  * Renders a Flow 3D texture.
@@ -1073,7 +1128,7 @@ struct NvFlowVolumeShadow;
 
 struct NvFlowVolumeShadowDesc
 {
-	NvFlowGridView* gridView;
+	NvFlowGridExport* gridExport;
 
 	NvFlowUint mapWidth;
 	NvFlowUint mapHeight;
@@ -1109,9 +1164,9 @@ NV_FLOW_API NvFlowVolumeShadow* NvFlowCreateVolumeShadow(NvFlowContext* context,
 
 NV_FLOW_API void NvFlowReleaseVolumeShadow(NvFlowVolumeShadow* volumeShadow);
 
-NV_FLOW_API void NvFlowVolumeShadowUpdate(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, NvFlowGridView* gridView, const NvFlowVolumeShadowParams* params);
+NV_FLOW_API void NvFlowVolumeShadowUpdate(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, NvFlowGridExport* gridView, const NvFlowVolumeShadowParams* params);
 
-NV_FLOW_API NvFlowGridView* NvFlowVolumeShadowGetGridView(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context);
+NV_FLOW_API NvFlowGridExport* NvFlowVolumeShadowGetGridExport(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context);
 
 NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, const NvFlowVolumeShadowDebugRenderParams* params);
 
@@ -1173,7 +1228,7 @@ NV_FLOW_API void NvFlowGridProxyFlush(NvFlowGridProxy* proxy, NvFlowContext* gri
 *
 * @return The latest grid view available from the proxy.
 */
-NV_FLOW_API NvFlowGridView* NvFlowGridProxyGetGridView(NvFlowGridProxy* proxy, NvFlowContext* renderContext);
+NV_FLOW_API NvFlowGridExport* NvFlowGridProxyGetGridExport(NvFlowGridProxy* proxy, NvFlowContext* renderContext);
 
 ///@}
 // -------------------------- NvFlowDevice -------------------------------
