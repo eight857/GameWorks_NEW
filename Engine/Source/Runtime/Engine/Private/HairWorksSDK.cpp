@@ -53,7 +53,7 @@ namespace HairWorks{
 	};
 #endif
 
-	ID3DHelper* D3DHelper = nullptr;
+	FD3DHelper* D3DHelper = nullptr;
 
 	ENGINE_API NvHair::Sdk* SDK = nullptr;
 
@@ -69,13 +69,13 @@ namespace HairWorks{
 		return AssetConversionSettings;
 	}
 
-	ENGINE_API ID3DHelper& GetD3DHelper()
+	ENGINE_API FD3DHelper& GetD3DHelper()
 	{
 		check(GetSDK());
 		return *D3DHelper;
 	}
 
-	ENGINE_API void Initialize(ID3D11Device& D3DDevice, ID3D11DeviceContext& D3DContext, ID3DHelper& InD3DHelper)
+	ENGINE_API void Initialize(ID3D11Device& D3DDevice, ID3D11DeviceContext& D3DContext, FD3DHelper& InD3DHelper)
 	{
 		// Check feature level.
 		if(D3DDevice.GetFeatureLevel() < D3D_FEATURE_LEVEL_11_0)

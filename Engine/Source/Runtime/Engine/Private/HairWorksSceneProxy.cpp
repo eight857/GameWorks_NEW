@@ -217,6 +217,13 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 		CurrentSkinningMatrices = DynamicData.BoneMatrices;
 	}
 
+	// Set morph vertices
+	HairWorks::GetSDK()->updateMorphVertices(
+		NvCo::Dx11Type::wrap(HairWorks::GetD3DHelper().GetDeviceContext(GetImmediateCommandList_ForRenderCommand().GetContext())),
+		HairInstanceId,
+		reinterpret_cast<const gfsdk_float3*>(DynamicData.MorphVertices.Positions.GetData())
+	);
+
 	// Update normal center bone
 	auto HairDesc = DynamicData.HairInstanceDesc;
 
@@ -264,7 +271,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 	for (auto Idx = 0; Idx < NvHair::ETextureType::COUNT_OF; ++Idx)
 	{
 		auto TextureRef = HairTextures[Idx];
-		HairWorks::GetSDK()->setTexture(HairInstanceId, (NvHair::ETextureType)Idx, NvCo::Dx11Type::wrap(HairWorks::GetD3DHelper().GetShaderResourceView(TextureRef.GetReference())));
+		HairWorks::GetSDK()->setTexture(HairInstanceId, (NvHair::ETextureType)Idx, NvCo::Dx11Type::wrap(reinterpret_cast<ID3D11ShaderResourceView*>(TextureRef ? TextureRef->GetNativeShaderResourceView() : nullptr)));
 	}
 
 	// Add pin meshes

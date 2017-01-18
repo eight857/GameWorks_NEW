@@ -1464,6 +1464,8 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true. */
 	virtual Result updateSkinningDqs(InstanceId	instanceId, Int numBones, const gfsdk_dualquaternion* dqs, ETeleportMode teleportMode = TeleportMode::NONE) = 0;
 
+	virtual void updateMorphVertices(const NvCo::ApiContext& context, InstanceId instanceId, const gfsdk_float3* positions) = 0;
+
 	/**
 		\brief Runs simulation for all currently active hair instances for one frame.
 		\details Compute GPU skinning for hair and run hair simulation for all the active hair instances.

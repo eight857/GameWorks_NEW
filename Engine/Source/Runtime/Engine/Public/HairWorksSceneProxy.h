@@ -26,6 +26,11 @@ public:
 		TArray<UTexture2D*> Textures;
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
+
+		struct
+		{
+			TArray<FVector> Positions;
+		}MorphVertices;
 	};
 
 	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::AssetId HairAssetId);

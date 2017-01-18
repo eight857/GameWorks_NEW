@@ -290,6 +290,11 @@ public:
 	}
 	//~ End FSkeletalMeshObject Interface
 
+	// @third party code - BEGIN HairWorks
+	const TArray<FMorphGPUSkinVertex>& GetMorphVertices()const;
+	void SetNeedMorphVertices(bool bNeedMorphVertices);
+	// @third party code - END HairWorks
+
 	/** 
 	 * Vertex buffers that can be used for GPU skinning factories 
 	 */
@@ -467,7 +472,11 @@ private:
 		 * @param ActiveMorphTargets - Morph to accumulate. assumed to be weighted and have valid targets
 		 * @param MorphTargetWeights - All Morph weights
 		 */
-		void UpdateMorphVertexBuffer(FRHICommandListImmediate& RHICmdList, const TArray<FActiveMorphTarget>& ActiveMorphTargets, const TArray<float>& MorphTargetWeights, FShaderResourceViewRHIRef MorphWeightsSRV, int32 NumInfluencedVerticesByMorph, FShaderResourceViewRHIRef MorphPerVertexInfoSRV, FShaderResourceViewRHIRef MorphFlattenedSRV);
+		void UpdateMorphVertexBuffer(FRHICommandListImmediate& RHICmdList, const TArray<FActiveMorphTarget>& ActiveMorphTargets, const TArray<float>& MorphTargetWeights, FShaderResourceViewRHIRef MorphWeightsSRV, int32 NumInfluencedVerticesByMorph, FShaderResourceViewRHIRef MorphPerVertexInfoSRV, FShaderResourceViewRHIRef MorphFlattenedSRV,
+			// @third party code - BEGIN HairWorks
+			TArray<FMorphGPUSkinVertex>* MorphVertices = nullptr
+			// @third party code - END HairWorks
+		);
 
 		/**
 		 * Determine the current vertex buffers valid for this LOD
@@ -515,6 +524,11 @@ private:
 
 	/** Vertex buffer that stores the weights for all morph targets (matches USkeletalMesh::MorphTargets). */
 	FVertexBufferAndSRV MorphWeightsVertexBuffer;
+
+	// @third party code - BEGIN HairWorks
+	TArray<FMorphGPUSkinVertex> MorphVertices;
+	bool bNeedMorphVertices;
+	// @third party code - END HairWorks
 };
 
 
