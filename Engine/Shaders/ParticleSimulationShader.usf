@@ -5,8 +5,11 @@
 ==============================================================================*/
 
 #include "Common.usf"
+
 // NvFlow begin
+#if NV_FLOW_WITH_GPU_PARTICLES
 #include "NvFlowCommon.usf"
+#endif
 // NvFlow end
 
 #if DISTANCE_FIELD_COLLISION
@@ -188,7 +191,9 @@ float3 ComputeOrbitVelocity(float Time, float RandomOrbit)
  */
 void EvaluateVectorFields(out float3 OutForce, out float4 OutVelocity, float3 Position, float PerParticleScale
 	// NvFlow begin
+#if NV_FLOW_WITH_GPU_PARTICLES
 	, float3 Velocity
+#endif
 	// NvFlow end
 )
 {
@@ -224,7 +229,9 @@ void EvaluateVectorFields(out float3 OutForce, out float4 OutVelocity, float3 Po
 	}
 
 	// NvFlow begin
+#if NV_FLOW_WITH_GPU_PARTICLES
 	NvFlowEvaluateGrids(Position, Velocity, TotalForce, WeightedVelocity, TotalWeight, FinalWeight);
+#endif
 	// NvFlow end
 
 	// Forces are additive.
@@ -545,7 +552,9 @@ void PixelMain(
 		float4 FieldVelocity = 0;
 		EvaluateVectorFields(FieldForce, FieldVelocity, Position.xyz, PerParticleVectorFieldScale
 			// NvFlow begin
+#if NV_FLOW_WITH_GPU_PARTICLES
 			, Velocity.xyz
+#endif
 			// NvFlow end
 		);
 
