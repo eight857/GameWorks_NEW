@@ -65,26 +65,28 @@ namespace UnrealBuildTool.Rules
             if (Target.Platform == UnrealTargetPlatform.Win32)
             {
                 PublicLibraryPaths.Add(libbase + "/win32/");
-                PublicAdditionalLibraries.Add("NvFlowD3D11Release_win32.lib");
-                PublicDelayLoadDLLs.Add("NvFlowD3D11Release_win32.dll");
-                RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Plugins/GameWorks/NvFlow/Libraries/win32/NvFlowD3D11Release_win32.dll"));
+                PublicAdditionalLibraries.Add("NvFlowLibRelease_win32.lib");
+                PublicDelayLoadDLLs.Add("NvFlowLibRelease_win32.dll");
+                RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Plugins/GameWorks/NvFlow/Libraries/win32/NvFlowLibRelease_win32.dll"));
             }
             else if (Target.Platform == UnrealTargetPlatform.Win64)
             {
                 PublicLibraryPaths.Add(libbase + "/win64/");
-                PublicAdditionalLibraries.Add("NvFlowD3D11Release_win64.lib");
-                PublicDelayLoadDLLs.Add("NvFlowD3D11Release_win64.dll");
-                RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Plugins/GameWorks/NvFlow/Libraries/win64/NvFlowD3D11Release_win64.dll"));
+                PublicAdditionalLibraries.Add("NvFlowLibRelease_win64.lib");
+                PublicDelayLoadDLLs.Add("NvFlowLibRelease_win64.dll");
+                RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Plugins/GameWorks/NvFlow/Libraries/win64/NvFlowLibRelease_win64.dll"));
             }
 
             // Add direct rendering dependencies on a per-platform basis
             if (Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Win64)
             {
-                PrivateDependencyModuleNames.AddRange(new string[] { "D3D11RHI" });
+                PrivateDependencyModuleNames.AddRange(new string[] { "D3D11RHI", "D3D12RHI" });
                 PrivateIncludePaths.AddRange(
                     new string[] {
   					    "../../../../Source/Runtime/Windows/D3D11RHI/Private",
   					    "../../../../Source/Runtime/Windows/D3D11RHI/Private/Windows",
+                        "../../../../Source/Runtime/Windows/D3D12RHI/Private",
+                        "../../../../Source/Runtime/Windows/D3D12RHI/Private/Windows",
 					    // ... add other private include paths required here ...
     				    }
                     );

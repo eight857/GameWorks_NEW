@@ -11,162 +11,17 @@
 #pragma once
 
 #include "NvFlowContext.h"
-
-#define NV_FLOW_VERSION 0
-
 #include "NvFlowShader.h"
 
-// --------------------------- NvFlowContext -------------------------------
-///@defgroup NvFlowContext
-///@{
-
-/**
- * Creates a graphics/compute context for Flow.
- * 
- * @param[in] version Should be set by app to NV_FLOW_VERSION.
- * @param[in] desc A graphics-API dependent structure containing data needed for a FlowContext to interoperate with the app.
- *
- * @return The created Flow context.
- */
-NV_FLOW_API NvFlowContext* NvFlowCreateContext(NvFlowUint version, const NvFlowContextDesc* desc);
-
-/**
- * Releases a Flow context.
- *
- * @param[in] context The Flow context to be released.
- */
-NV_FLOW_API void NvFlowReleaseContext(NvFlowContext* context);
-
-/**
- * Creates a Flow depth stencil view based on information provided by the application.
- * 
- * @param[in] context The Flow context to create and use the depth stencil view.
- * @param[in] desc The graphics API dependent description.
- *
- * @return The created Flow depth stencil view.
- */
-NV_FLOW_API NvFlowDepthStencilView* NvFlowCreateDepthStencilView(NvFlowContext* context, const NvFlowDepthStencilViewDesc* desc);
-
-/**
- * Releases a Flow depth stencil view.
- *
- * @param[in] view The Flow depth stencil view to be released.
- */
-NV_FLOW_API void NvFlowReleaseDepthStencilView(NvFlowDepthStencilView* view);
-
-/**
- * Creates a Flow render target view based on information provided by the application.
- *
- * @param[in] context The Flow context to create and use the render target view.
- * @param[in] desc The graphics API dependent description.
- *
- * @return The created Flow render target view.
- */
-NV_FLOW_API NvFlowRenderTargetView* NvFlowCreateRenderTargetView(NvFlowContext* context, const NvFlowRenderTargetViewDesc* desc);
-
-/**
- * Releases a Flow render target view.
- *
- * @param[in] view The Flow render target view to be released.
- */
-NV_FLOW_API void NvFlowReleaseRenderTargetView(NvFlowRenderTargetView* view);
-
-/**
- * Updates a Flow context with information provided by the application.
- *
- * @param[in] context The Flow context to update.
- * @param[in] desc The graphics API dependent description.
- */
-NV_FLOW_API void NvFlowUpdateContext(NvFlowContext* context, const NvFlowContextDesc* desc);
-
-/**
- * Gets a Flow context description from a Flow context.
- *
- * @param[in] context The Flow context.
- * @param[out] desc The graphics API dependent description.
- */
-NV_FLOW_API void NvFlowUpdateContextDesc(NvFlowContext* context, NvFlowContextDesc* desc);
-
-/**
- * Updates a Flow depth stencil view with information provided by the application.
- *
- * @param[in] context The Flow context used to create the depth stencil view.
- * @param[in] view The Flow depth stencil view to update.
- * @param[in] desc The graphics API dependent description.
- */
-NV_FLOW_API void NvFlowUpdateDepthStencilView(NvFlowContext* context, NvFlowDepthStencilView* view, const NvFlowDepthStencilViewDesc* desc);
-
-/**
- * Updates a Flow render target view with information provided by the application.
- *
- * @param[in] context The Flow context used to create the render target view.
- * @param[in] view The Flow render target view to update.
- * @param[in] desc The graphics API dependent description.
- */
-NV_FLOW_API void NvFlowUpdateRenderTargetView(NvFlowContext* context, NvFlowRenderTargetView* view, const NvFlowRenderTargetViewDesc* desc);
-
-/**
- * Updates an application visible description with internal Flow resource information.
- *
- * @param[in] context The Flow context that created the resource.
- * @param[in] resource The Flow resource to describe.
- * @param[out] desc The graphics API dependent Flow resource description.
- */
-NV_FLOW_API void NvFlowUpdateResourceViewDesc(NvFlowContext* context, NvFlowResource* resource, NvFlowResourceViewDesc* desc);
-
-/**
- * Updates an application visible description with internal Flow resourceRW information.
- *
- * @param[in] context The Flow context that created the resourceRW.
- * @param[in] buffer The Flow resourceRW to describe.
- * @param[out] desc The graphics API dependent Flow resourceRW description.
- */
-NV_FLOW_API void NvFlowUpdateResourceRWViewDesc(NvFlowContext* context, NvFlowResourceRW* resourceRW, NvFlowResourceRWViewDesc* desc);
-
-/**
- * Pushes graphics/compute pipeline state for later restoration by NvFlowContextPop.
- *
- * @param[in] context The Flow context to push.
- */
-NV_FLOW_API void NvFlowContextPush(NvFlowContext* context);
-
-/**
- * Restores graphics/compute pipeline state pushed by NvFlowContextPush.
- *
- * @param[in] context The Flow context to restore.
- */
-NV_FLOW_API void NvFlowContextPop(NvFlowContext* context);
-
-/**
- * An optional callback to allow the application to control how Flow allocates CPU memory.
- *
- * @param[in] malloc The allocation function for Flow to use.
- */
-NV_FLOW_API void NvFlowSetMallocFunc(void*(*malloc)(size_t size));
-
-/**
- * An optional callback to allow the application to control how Flow releases CPU memory.
- *
- * @param[in] free The free function for Flow to use.
- */
-NV_FLOW_API void NvFlowSetFreeFunc(void(*free)(void* ptr));
-
-/**
- * Should be called before DLL unload, to ensure complete cleanup.
- *
- * @param[in] timeoutMS Wait timeout, in milliseconds
- *
- * @return The current number of active deferred release units.
- */
-NV_FLOW_API NvFlowUint NvFlowDeferredRelease(float timeoutMS);
-
-///@}
 // -------------------------- NvFlowGrid -------------------------------
 ///@defgroup NvFlowGrid
 ///@{
 
 //! A Flow dynamic grid
 struct NvFlowGrid;
+
+//! Interface to expose read access Flow grid simulation data
+struct NvFlowGridExport;
 
 //! Grid texture channel, four components per channel
 enum NvFlowGridTextureChannel
@@ -339,6 +194,16 @@ NV_FLOW_API void NvFlowGridGPUMemUsage(NvFlowGrid* grid, NvFlowUint64* numBytes)
  * @param[in] dt The time step, typically in seconds.
  */
 NV_FLOW_API void NvFlowGridUpdate(NvFlowGrid* grid, NvFlowContext* context, float dt);
+
+/**
+* Get read interface to the grid simulation results
+*
+* @param[in] context The context the grid was created with.
+* @param[in] grid The Flow grid to query for timing.
+*
+* @return Returns gridExport interface
+*/
+NV_FLOW_API NvFlowGridExport* NvFlowGridGetGridExport(NvFlowContext* context, NvFlowGrid* grid);
 
 ///@}
 // -------------------------- NvFlowGridMaterial -------------------------------
@@ -656,27 +521,11 @@ struct NvFlowGridEmitCustomAllocParams
 
 	NvFlowFloat3 gridLocation;			//!< Location of grid's axis aligned bounding box
 	NvFlowFloat3 gridHalfSize;			//!< Half size of grid's axis aligned bounding box
+
+	NvFlowGridMaterialHandle material;	//!< Grid material
 };
 
 typedef void(*NvFlowGridEmitCustomAllocFunc)(void* userdata, const NvFlowGridEmitCustomAllocParams* params);
-
-//! Necessary parameters/resources for custom emit operations
-struct NvFlowGridEmitCustomEmitParams
-{
-	NvFlowResourceRW* dataRW[2u];						//!< Read/Write 3D textures for channel data
-	NvFlowResource* blockTable;							//!< Table to map virtual blocks to real blocks
-	NvFlowResource* blockList;							//!< List of active blocks
-
-	NvFlowShaderPointParams shaderParams;				//!< Parameters used in GPU side operations
-
-	NvFlowUint numBlocks;								//!< Number of active blocks
-	NvFlowUint maxBlocks;								//!< Maximum possible active blocks
-
-	NvFlowFloat3 gridLocation;							//!< Location of grid's axis aligned bounding box
-	NvFlowFloat3 gridHalfSize;							//!< Half size of grid's axis aligned bounding box
-};
-
-typedef void(*NvFlowGridEmitCustomEmitFunc)(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params);
 
 /**
  * Sets custom allocation callback.
@@ -686,6 +535,34 @@ typedef void(*NvFlowGridEmitCustomEmitFunc)(void* userdata, NvFlowUint* dataFron
  * @param[in] userdata Pointer to provide to the callback function during execution.
  */
 NV_FLOW_API void NvFlowGridEmitCustomRegisterAllocFunc(NvFlowGrid* grid, NvFlowGridEmitCustomAllocFunc func, void* userdata);
+
+//! Handle for requesting per layer emitter data
+struct NvFlowGridEmitCustomEmitParams
+{
+	NvFlowGrid* grid;			//!< The grid associated with this callback
+	NvFlowUint numLayers;		//!< The number of layers to write to
+	void* flowInternal;			//!< For Flow internal use, do not modify
+};
+
+//! Necessary parameters/resources for custom emit operations
+struct NvFlowGridEmitCustomEmitLayerParams
+{
+	NvFlowResourceRW* dataRW[2u];				//!< Read/Write 3D textures for channel data
+	NvFlowResource* blockTable;					//!< Table to map virtual blocks to real blocks
+	NvFlowResource* blockList;					//!< List of active blocks
+
+	NvFlowShaderPointParams shaderParams;		//!< Parameters used in GPU side operations
+
+	NvFlowUint numBlocks;						//!< Number of active blocks
+	NvFlowUint maxBlocks;						//!< Maximum possible active blocks
+
+	NvFlowFloat3 gridLocation;					//!< Location of grid's axis aligned bounding box
+	NvFlowFloat3 gridHalfSize;					//!< Half size of grid's axis aligned bounding box
+
+	NvFlowGridMaterialHandle material;			//!< Grid material
+};
+
+typedef void(*NvFlowGridEmitCustomEmitFunc)(void* userdata, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params);
 
 /**
  * Sets custom emit callback for given simulation channel.
@@ -697,13 +574,19 @@ NV_FLOW_API void NvFlowGridEmitCustomRegisterAllocFunc(NvFlowGrid* grid, NvFlowG
  */
 NV_FLOW_API void NvFlowGridEmitCustomRegisterEmitFunc(NvFlowGrid* grid, NvFlowGridTextureChannel channel, NvFlowGridEmitCustomEmitFunc func, void* userdata);
 
+/**
+* Get per layer custom emit parameters, should only be called inside the custom emit callback
+*
+* @param[in] emitParams The custom emit parameters
+* @param[in] layerIdx The layerIdx to fetch, should be least than emitParams->numLayers
+* @param[out] emitLayerParams Pointer to write parameters to.
+*/
+NV_FLOW_API void NvFlowGridEmitCustomGetLayerParams(const NvFlowGridEmitCustomEmitParams* emitParams, NvFlowUint layerIdx, NvFlowGridEmitCustomEmitLayerParams* emitLayerParams);
+
 ///@}
 // -------------------------- NvFlowGridExport -------------------------------
 ///@defgroup NvFlowGridExport
 ///@{
-
-//! Interface to expose read access Flow grid simulation data
-struct NvFlowGridExport;
 
 //! Texture channel description
 struct NvFlowGridExportView
@@ -751,8 +634,6 @@ struct NvFlowGridExportDebugVisView
 	NvFlowGridExportSimpleShape* boxes;
 	NvFlowUint numBoxes;
 };
-
-NV_FLOW_API NvFlowGridExport* NvFlowGridGetGridExport(NvFlowContext* context, NvFlowGrid* grid);
 
 NV_FLOW_API NvFlowGridExportView NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridTextureChannel channel);
 

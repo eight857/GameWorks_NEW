@@ -136,10 +136,10 @@ void FNvFlowModule::StartupModule()
 #if PLATFORM_WINDOWS
 	#if PLATFORM_64BITS
 	LibPath = FPaths::EngineDir() / TEXT("Plugins/GameWorks/NvFlow/Libraries/win64/");
-	LibName = TEXT("NvFlowD3D11Release_win64.dll");
+	LibName = TEXT("NvFlowLibRelease_win64.dll");
 	#else
 	LibPath = FPaths::EngineDir() / TEXT("Plugins/GameWorks/NvFlow/Libraries/win32/");
-	LibName = TEXT("NvFlowD3D11Release_win32.dll");
+	LibName = TEXT("NvFlowLibRelease_win32.dll");
 	#endif
 #endif
 
