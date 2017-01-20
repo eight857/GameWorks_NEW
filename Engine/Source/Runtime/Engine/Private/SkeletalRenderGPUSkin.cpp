@@ -27,6 +27,10 @@
 #include "GPUSkinCache.h"
 #include "Animation/MorphTarget.h"
 #include "Components/SkeletalMeshComponent.h"
+// @third party code - BEGIN HairWorks
+#include "Components/HairWorksComponent.h"
+// @third party code - END HairWorks
+
 #include "LocalVertexFactory.h"
 
 #include "GlobalShader.h"
@@ -256,6 +260,24 @@ void FSkeletalMeshObjectGPUSkin::Update(int32 LODIndex,USkinnedMeshComponent* In
 
 	// We prepare the next frame but still have the value from the last one
 	uint32 FrameNumberToPrepare = GFrameNumber + 1;
+
+	// @third party code - BEGIN HairWorks
+	const bool bHasHairWorks = InMeshComponent->GetAttachChildren().FindItemByClass<UHairWorksComponent>();
+	auto SetNeedMorphVertices = [this, bHasHairWorks]()
+	{
+		bNeedMorphVertices = bHasHairWorks;
+		if(!bNeedMorphVertices)
+			MorphVertices.Empty();
+	};
+
+	ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
+		SkelMeshObjectRequireMorphVerticesForHairWorks,
+		decltype(SetNeedMorphVertices), SetNeedMorphVertices, SetNeedMorphVertices,
+		{
+			SetNeedMorphVertices();
+		}
+	);
+	// @third party code - END HairWorks
 
 	// queue a call to update this data
 	ENQUEUE_UNIQUE_RENDER_COMMAND_THREEPARAMETER(
@@ -1288,12 +1310,6 @@ const FTwoVectors& FSkeletalMeshObjectGPUSkin::GetCustomLeftRightVectors(int32 S
 const TArray<FMorphGPUSkinVertex>& FSkeletalMeshObjectGPUSkin::GetMorphVertices() const
 {
 	return MorphVertices;
-}
-
-void FSkeletalMeshObjectGPUSkin::SetNeedMorphVertices(bool bInNeedMorphVertices)
-{
-	bNeedMorphVertices = bInNeedMorphVertices;
-	MorphVertices.Empty();
 }
 
 /*-----------------------------------------------------------------------------

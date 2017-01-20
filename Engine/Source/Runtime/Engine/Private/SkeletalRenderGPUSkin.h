@@ -292,7 +292,6 @@ public:
 
 	// @third party code - BEGIN HairWorks
 	const TArray<FMorphGPUSkinVertex>& GetMorphVertices()const;
-	void SetNeedMorphVertices(bool bNeedMorphVertices);
 	// @third party code - END HairWorks
 
 	/** 

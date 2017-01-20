@@ -3,16 +3,16 @@
 
 #include <Nv/HairWorks/NvHairSdk.h>
 
+struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct ID3D11ShaderResourceView;
-struct ID3D11Device;
 
 namespace HairWorks{
 	class FD3DHelper
 	{
 	public:
-		virtual ID3D11DeviceContext* GetDeviceContext(const IRHICommandContext&) = 0;
-		virtual void CommitShaderResources(IRHICommandContext&) = 0;
+		virtual void SetShaderResourceView(ID3D11ShaderResourceView* Srv, int32 Index) = 0;
+		virtual void CommitShaderResources() = 0;
 	};
 
 	ENGINE_API NvHair::Sdk* GetSDK();

@@ -354,22 +354,18 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 		AddPinMesh(PinComponent);
 	}
 
-	if(ParentSkeleton != nullptr)
+	// Update morph data
+	do
 	{
-		auto& ParentSkinning = *static_cast<FSkeletalMeshObjectGPUSkin*>(ParentSkeleton->MeshObject);
-		const auto& MorphVertices = ParentSkinning.GetMorphVertices();
+		if(MorphIndices.Num() <= 0 || ParentSkeleton == nullptr || ParentSkeleton->MeshObject == nullptr)
+			break;
 
-		if(MorphVertices.Num() > 0)
-		{
-			auto& MorphPositions = DynamicData->MorphVertices.Positions;
-			MorphPositions.SetNumZeroed(MorphIndices.Num());
+		if(ParentSkeleton->MeshObject->IsCPUSkinned())
+			break;
 
-			for(auto GuideRootIdx = 0; GuideRootIdx < MorphPositions.Num(); ++GuideRootIdx)
-			{
-				MorphPositions[GuideRootIdx] = MorphVertices[MorphIndices[GuideRootIdx]].DeltaPosition;
-			}
-		}
-	}
+		DynamicData->MorphIndices = MorphIndices;
+		DynamicData->ParentSkinning = static_cast<FSkeletalMeshObjectGPUSkin*>(ParentSkeleton->MeshObject);
+	} while(false);	
 
 	// Send to proxy
 	ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
@@ -412,28 +408,26 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 		);
 	}
 
-	// Setup morph mapping
-	do
+	// Clear morph indices
+	MorphIndices.Empty(true);
+
+	// Setup morph index mapping
+	extern int32 GEnableGPUSkinCache;
+	if(ParentSkeleton->MorphTargetWeights.Num() > 0 && !GEnableGPUSkinCache)
 	{
-		// Require morph data
-		MorphIndices.Empty(true);
+		// Get vertices of parent skeletal mesh
+		const auto& ParentMeshVertexBuffer = ParentSkeleton->SkeletalMesh->GetResourceForRendering()->LODModels[0].VertexBufferGPUSkin;
 
-		if(ParentSkeleton->MorphTargetWeights.Num() <= 0)
-			break;
+		TArray<FVector> ParentMeshVertices;
+		ParentMeshVertices.SetNumUninitialized(ParentMeshVertexBuffer.GetNumVertices());
 
-		auto& Skinning = *static_cast<FSkeletalMeshObjectGPUSkin*>(ParentSkeleton->MeshObject);
-		Skinning.SetNeedMorphVertices(true);
+		for(auto VertexIdx = 0; VertexIdx < ParentMeshVertices.Num(); ++VertexIdx)
+		{
+			ParentMeshVertices[VertexIdx] = ParentMeshVertexBuffer.GetVertexPositionSlow(VertexIdx);
+		}
 
-		// Get vertices of skeletal mesh
-		extern int32 GEnableGPUSkinCache;
-		if(Skinning.IsCPUSkinned() || GEnableGPUSkinCache)
-			break;
-
-		const auto& RenderSections = Skinning.GetRenderSections(Skinning.GetLOD());
-		const auto& SkeletalMeshVertices = RenderSections[0].SoftVertices;
-
-		// Get root vertices of hair guides
-		auto GuideNum = HairWorks::GetSDK()->getNumGuideHairs(HairInstance.Hair->AssetId);
+		// Get vertices of hair growth mesh
+		const auto GuideNum = HairWorks::GetSDK()->getNumGuideHairs(HairInstance.Hair->AssetId);
 
 		TArray<FVector> GuideRootVertices;
 		GuideRootVertices.SetNumUninitialized(GuideNum);
@@ -442,7 +436,7 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 		// Find closest skeletal mesh vertex for each vertex of HairWorks growth mesh
 		const auto Transform = GetRelativeTransform();
 
-		MorphIndices.SetNumZeroed(GuideNum, true);
+		MorphIndices.SetNumUninitialized(GuideNum, true);
 
 		for(auto GuideIdx = 0; GuideIdx < GuideNum; ++GuideIdx)
 		{
@@ -451,9 +445,9 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 			float ClosestSqrDist = FLT_MAX;
 			int32 ClosestVertexIdx = 0;
 
-			for(auto VertexIdx = 0; VertexIdx < SkeletalMeshVertices.Num(); ++VertexIdx)
+			for(auto VertexIdx = 0; VertexIdx < ParentMeshVertices.Num(); ++VertexIdx)
 			{
-				const float SqrDist = FVector::DistSquared(GuideRootVertex, SkeletalMeshVertices[VertexIdx].Position);
+				const float SqrDist = FVector::DistSquared(GuideRootVertex, ParentMeshVertices[VertexIdx]);
 				if(SqrDist < ClosestSqrDist)
 				{
 					ClosestSqrDist = SqrDist;
@@ -463,7 +457,7 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 
 			MorphIndices[GuideIdx] = ClosestVertexIdx;
 		}
-	} while(false);
+	}
 }
 
 void UHairWorksComponent::UpdateBoneMatrices()const

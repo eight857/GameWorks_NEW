@@ -103,6 +103,9 @@ namespace HairWorks{
 #else
 		LibPath += TEXT("32");
 #endif
+		static TAutoConsoleVariable<int32> CVarHairLoadDebugDll(TEXT("r.HairWorks.LoadDebugDll"), 0, TEXT(""), 0);
+		if(CVarHairLoadDebugDll.GetValueOnAnyThread())
+			LibPath += TEXT(".D");
 
 		LibPath += TEXT(".dll");
 

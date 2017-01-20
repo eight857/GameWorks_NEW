@@ -439,15 +439,15 @@ void FD3D11DynamicRHI::Init()
 	// Initialize HairWorks
 	class FHairWorksD3DHelper: public HairWorks::FD3DHelper
 	{
-		virtual ID3D11DeviceContext* GetDeviceContext(const IRHICommandContext& CmdContext) override
+		virtual void SetShaderResourceView(ID3D11ShaderResourceView* Srv, int32 Index) override
 		{
-			auto& RHI = static_cast<const FD3D11DynamicRHI&>(CmdContext);
-			return RHI.GetDeviceContext();
+			auto& D3dContext = *static_cast<FD3D11DynamicRHI*>(GDynamicRHI)->GetDeviceContext();
+			D3dContext.PSSetShaderResources(Index, 1, &Srv);
 		}
 
-		virtual void CommitShaderResources(IRHICommandContext& CmdContext) override
+		virtual void CommitShaderResources() override
 		{
-			auto& RHI = static_cast<FD3D11DynamicRHI&>(CmdContext);
+			auto& RHI = *static_cast<FD3D11DynamicRHI*>(GDynamicRHI);
 			RHI.CommitNonComputeShaderConstants();
 			RHI.CommitGraphicsResourceTables();
 		}
