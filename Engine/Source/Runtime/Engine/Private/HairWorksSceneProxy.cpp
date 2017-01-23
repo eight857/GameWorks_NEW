@@ -290,21 +290,26 @@ void FHairWorksSceneProxy::PreSimulate()
 		return;
 
 	TArray<FVector> MorphPositions;
+	TArray<FVector> MorphNormals;
 
 	const auto& ParentMorphVertices = ParentSkinning->GetMorphVertices();
 	if(ParentMorphVertices.Num() > 0)
 	{
 		MorphPositions.SetNumZeroed(MorphIndices.Num());
+		MorphNormals.SetNumZeroed(MorphIndices.Num());
 
-		for(auto VertexIdx = 0; VertexIdx < MorphPositions.Num(); ++VertexIdx)
+		for(auto VertexIdx = 0; VertexIdx < MorphIndices.Num(); ++VertexIdx)
 		{
-			MorphPositions[VertexIdx] = ParentMorphVertices[MorphIndices[VertexIdx]].DeltaPosition;
+			const auto& MorphVertex = ParentMorphVertices[MorphIndices[VertexIdx]];
+			MorphPositions[VertexIdx] = MorphVertex.DeltaPosition;
+			MorphNormals[VertexIdx] = MorphVertex.DeltaTangentZ;
 		}
 	}
 
-	HairWorks::GetSDK()->updateMorphVertices(
+	HairWorks::GetSDK()->updateMorphDeltas(
 		HairInstanceId,
-		reinterpret_cast<const gfsdk_float3*>(MorphPositions.GetData())
+		reinterpret_cast<const gfsdk_float3*>(MorphPositions.GetData()),
+		reinterpret_cast<const gfsdk_float3*>(MorphNormals.GetData())
 	);
 }
 // @third party code - END HairWorks

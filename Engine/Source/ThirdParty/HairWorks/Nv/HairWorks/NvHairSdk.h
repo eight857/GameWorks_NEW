@@ -1464,7 +1464,7 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true. */
 	virtual Result updateSkinningDqs(InstanceId	instanceId, Int numBones, const gfsdk_dualquaternion* dqs, ETeleportMode teleportMode = TeleportMode::NONE) = 0;
 
-	virtual void updateMorphVertices(InstanceId instanceId, const gfsdk_float3* positions) = 0;
+	virtual void updateMorphDeltas(InstanceId instanceId, const gfsdk_float3* positions, const gfsdk_float3* normals) = 0;
 
 	/**
 		\brief Runs simulation for all currently active hair instances for one frame.
