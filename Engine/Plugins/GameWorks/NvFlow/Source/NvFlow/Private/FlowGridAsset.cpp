@@ -40,12 +40,14 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 
 	NvFlowVolumeRenderParams FlowVolumeRenderParams;
 	NvFlowVolumeRenderParamsDefaults(&FlowVolumeRenderParams);
+	RenderMode = (EFlowRenderMode)FlowVolumeRenderParams.renderMode;
+	RenderChannel = (EFlowRenderChannel)FlowVolumeRenderParams.renderChannel;
+	ColorMapResolution = 64;
 	bAdaptiveScreenPercentage = false;
 	AdaptiveTargetFrameTime = 10.f;
 	MaxScreenPercentage = 1.f;
 	MinScreenPercentage = 0.5f;
 	bDebugWireframe = FlowVolumeRenderParams.debugMode;
-	ColorMapResolution = 64;
 
 	//Collision
 	FCollisionResponseParams FlowResponseParams;

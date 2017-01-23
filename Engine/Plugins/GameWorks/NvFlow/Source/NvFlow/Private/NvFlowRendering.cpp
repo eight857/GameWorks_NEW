@@ -539,6 +539,8 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 
 	// configure render params
 	NvFlowVolumeRenderParamsDefaults(&m_renderParams);
+	m_renderParams.renderMode = Properties.RenderParams.RenderMode;
+	m_renderParams.renderChannel = Properties.RenderParams.RenderChannel;
 	m_renderParams.debugMode = Properties.RenderParams.bDebugWireframe;
 	m_renderParams.materialPool = m_renderMaterialPool;
 
@@ -957,27 +959,33 @@ bool NvFlow::Scene::getExportParams(FRHICommandListImmediate& RHICmdList, GridEx
 {
 	auto gridExport = NvFlowGridGetGridExport(m_context->m_flowContext, m_grid);
 
-	auto gridExportView = NvFlowGridExportGetView(gridExport, m_context->m_flowContext, eNvFlowGridTextureChannelVelocity);
-	check(gridExportView.numLayerViews > 0);
+	auto gridExportHandle = NvFlowGridExportGetHandle(gridExport, m_context->m_flowContext, eNvFlowGridTextureChannelVelocity);
+	check(gridExportHandle.numLayerViews > 0);
 
+	// Note: assuming single layer
+	const NvFlowUint layerIdx = 0u;
+
+	NvFlowGridExportLayeredView gridExportLayeredView;
+	NvFlowGridExportGetLayeredView(gridExportHandle, &gridExportLayeredView);
 	NvFlowGridExportLayerView gridExportLayerView;
-	NvFlowGridExportGetLayerView(gridExportView, 0, &gridExportLayerView);
-
+	NvFlowGridExportGetLayerView(gridExportHandle, layerIdx, &gridExportLayerView);
 
 	OutParams.DataSRV = m_context->m_flowInterop->ConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, gridExportLayerView.data);
-	OutParams.BlockTableSRV = m_context->m_flowInterop->ConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, gridExportLayerView.blockTable);
+	OutParams.BlockTableSRV = m_context->m_flowInterop->ConvertSRV(RHICmdList.GetContext(), m_context->m_flowContext, gridExportLayerView.mapping.blockTable);
 
-	OutParams.BlockDim = NvFlowConvert(gridExportLayerView.shaderParams.blockDim);
-	OutParams.BlockDimBits = NvFlowConvert(gridExportLayerView.shaderParams.blockDimBits);
-	OutParams.BlockDimInv = NvFlowConvert(gridExportLayerView.shaderParams.blockDimInv);
-	OutParams.LinearBlockDim = NvFlowConvert(gridExportLayerView.shaderParams.linearBlockDim);
-	OutParams.LinearBlockOffset = NvFlowConvert(gridExportLayerView.shaderParams.linearBlockOffset);
-	OutParams.DimInv = NvFlowConvert(gridExportLayerView.shaderParams.dimInv);
-	OutParams.VDim = NvFlowConvert(gridExportLayerView.shaderParams.vdim);
-	OutParams.VDimInv = NvFlowConvert(gridExportLayerView.shaderParams.vdimInv);
-	OutParams.PoolGridDim = NvFlowConvert(gridExportLayerView.shaderParams.poolGridDim);
-	OutParams.GridDim = NvFlowConvert(gridExportLayerView.shaderParams.gridDim);
-	OutParams.IsVTR = (gridExportLayerView.shaderParams.isVTR.x != 0);
+	const auto& shaderParams = gridExportLayeredView.mapping.shaderParams;
+
+	OutParams.BlockDim = NvFlowConvert(shaderParams.blockDim);
+	OutParams.BlockDimBits = NvFlowConvert(shaderParams.blockDimBits);
+	OutParams.BlockDimInv = NvFlowConvert(shaderParams.blockDimInv);
+	OutParams.LinearBlockDim = NvFlowConvert(shaderParams.linearBlockDim);
+	OutParams.LinearBlockOffset = NvFlowConvert(shaderParams.linearBlockOffset);
+	OutParams.DimInv = NvFlowConvert(shaderParams.dimInv);
+	OutParams.VDim = NvFlowConvert(shaderParams.vdim);
+	OutParams.VDimInv = NvFlowConvert(shaderParams.vdimInv);
+	OutParams.PoolGridDim = NvFlowConvert(shaderParams.poolGridDim);
+	OutParams.GridDim = NvFlowConvert(shaderParams.gridDim);
+	OutParams.IsVTR = (shaderParams.isVTR.x != 0);
 
 	OutParams.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
 	OutParams.VelocityScale = scale;

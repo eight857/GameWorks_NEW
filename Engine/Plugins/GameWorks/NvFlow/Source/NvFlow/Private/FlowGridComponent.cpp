@@ -175,17 +175,6 @@ namespace
 		//Render part
 		MaterialParams.RenderParams.alphaScale = FlowMaterial->AlphaScale;
 
-		if (UFlowGridAsset::sGlobalDebugDraw)
-		{
-			MaterialParams.RenderParams.renderMode = (NvFlowVolumeRenderMode)UFlowGridAsset::sGlobalRenderMode;
-			MaterialParams.RenderParams.renderChannel = (NvFlowGridTextureChannel)UFlowGridAsset::sGlobalRenderChannel;
-		}
-		else
-		{
-			MaterialParams.RenderParams.renderMode = (NvFlowVolumeRenderMode)FlowMaterial->RenderMode.GetValue();
-			MaterialParams.RenderParams.renderChannel = (NvFlowGridTextureChannel)FlowMaterial->RenderChannel.GetValue();
-		}
-
 		SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateColorMap);
 
 		//Alloc color map size to default specified by the flow library. NvFlowRendering.cpp assumes that for now.
@@ -852,6 +841,16 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		FlowGridProperties.ColorMapResolution = NewColorMapResolution;
 
 		//NvFlowVolumeRenderParams
+		if (UFlowGridAsset::sGlobalDebugDraw)
+		{
+			FlowGridProperties.RenderParams.RenderMode = (NvFlowVolumeRenderMode)UFlowGridAsset::sGlobalRenderMode;
+			FlowGridProperties.RenderParams.RenderChannel = (NvFlowGridTextureChannel)UFlowGridAsset::sGlobalRenderChannel;
+		}
+		else
+		{
+			FlowGridProperties.RenderParams.RenderMode = (NvFlowVolumeRenderMode)FlowGridAssetRef->RenderMode.GetValue();
+			FlowGridProperties.RenderParams.RenderChannel = (NvFlowGridTextureChannel)FlowGridAssetRef->RenderChannel.GetValue();
+		}
 		FlowGridProperties.RenderParams.bAdaptiveScreenPercentage = FlowGridAssetRef->bAdaptiveScreenPercentage;
 		FlowGridProperties.RenderParams.AdaptiveTargetFrameTime = FlowGridAssetRef->AdaptiveTargetFrameTime;
 		FlowGridProperties.RenderParams.MaxScreenPercentage = FlowGridAssetRef->MaxScreenPercentage;

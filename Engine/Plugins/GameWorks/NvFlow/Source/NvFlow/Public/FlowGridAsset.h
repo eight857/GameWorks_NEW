@@ -14,6 +14,28 @@ enum EFlowGridDimension
 	EFGD_1024 = 10,
 };
 
+UENUM(BlueprintType)
+enum EFlowRenderMode
+{
+	EFRM_Colormap = 0 UMETA(DisplayName = "Colormap"),
+	EFRM_ColormapShadow = 1 UMETA(DisplayName = "Colormap Shadow"),
+	EFRM_Raw = 2 UMETA(DisplayName = "Raw"),
+	EFRM_Rainbow = 3 UMETA(DisplayName = "Rainbow"),
+	EFRM_Debug = 4 UMETA(DisplayName = "Debug"),
+
+	EFRM_MAX,
+};
+
+UENUM(BlueprintType)
+enum EFlowRenderChannel
+{
+	EFRC_Velocity = 0 UMETA(DisplayName = "Velocity"),
+	EFRC_Density = 1 UMETA(DisplayName = "Density"),
+	EFRC_DensityCoarse = 2 UMETA(DisplayName = "Density Coarse"),
+
+	EFRC_MAX,
+};
+
 UCLASS(BlueprintType, hidecategories=object, MinimalAPI)
 class UFlowGridAsset : public UObject
 {
@@ -93,6 +115,13 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collision")
 	struct FCollisionResponseContainer	ResponseToChannels;
 
+	/** Render mode */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")
+	TEnumAsByte<EFlowRenderMode> RenderMode;
+
+	/** Render channel */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")
+	TEnumAsByte<EFlowRenderChannel> RenderChannel;
 
 	/** Color map resolution.*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (UIMin = 1))

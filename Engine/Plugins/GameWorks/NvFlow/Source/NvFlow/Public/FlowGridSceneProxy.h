@@ -23,6 +23,8 @@ namespace NvFlow
 struct FFlowGridRenderParams
 {
 	// NvFlowVolumeRenderParams
+	NvFlowVolumeRenderMode RenderMode;
+	NvFlowGridTextureChannel RenderChannel;
 	uint32 bAdaptiveScreenPercentage : 1;
 	float AdaptiveTargetFrameTime;
 	float MaxScreenPercentage;

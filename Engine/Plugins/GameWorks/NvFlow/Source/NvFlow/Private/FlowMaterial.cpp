@@ -53,8 +53,6 @@ UFlowMaterial::UFlowMaterial(const FObjectInitializer& ObjectInitializer)
 	NvFlowRenderMaterialParamsDefaults(&FlowRenderMaterialParams);
 
 	AlphaScale = FlowRenderMaterialParams.alphaScale;
-	RenderMode = (EFlowRenderMode)FlowRenderMaterialParams.renderMode;
-	RenderChannel = (EFlowRenderChannel)FlowRenderMaterialParams.renderChannel;
 
 	ColorMap = CreateDefaultSubobject<UCurveLinearColor>(TEXT("DefaultColorMap0"));
 	AddColorMapPoint(ColorMap, 0.f, FLinearColor(0.0f, 0.f, 0.f, 0.f));
