@@ -27,6 +27,11 @@ struct NvFlowDim
 	NvFlowUint x, y, z;
 };
 
+struct NvFlowUint2
+{
+	NvFlowUint x, y;
+};
+
 struct NvFlowUint3
 {
 	NvFlowUint x, y, z;

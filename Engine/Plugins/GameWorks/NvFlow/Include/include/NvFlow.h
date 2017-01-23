@@ -584,12 +584,40 @@ NV_FLOW_API void NvFlowGridEmitCustomRegisterEmitFunc(NvFlowGrid* grid, NvFlowGr
 NV_FLOW_API void NvFlowGridEmitCustomGetLayerParams(const NvFlowGridEmitCustomEmitParams* emitParams, NvFlowUint layerIdx, NvFlowGridEmitCustomEmitLayerParams* emitLayerParams);
 
 ///@}
+// -------------------------- NvFlowGridExportImport -------------------------------
+///@defgroup NvFlowGridExport
+///@{
+
+//! Description of a single exported layer
+struct NvFlowGridExportImportLayerMapping
+{
+	NvFlowGridMaterialHandle material;
+
+	NvFlowResource* blockTable;
+	NvFlowResource* blockList;
+
+	NvFlowUint numBlocks;
+};
+
+//! Description applying to all exported layers
+struct NvFlowGridExportImportLayeredMapping
+{
+	NvFlowShaderLinearParams shaderParams;
+	NvFlowUint maxBlocks;
+
+	NvFlowUint2* layeredBlockListCPU;
+	NvFlowUint layeredNumBlocks;
+
+	NvFlowFloat4x4 modelMatrix;
+};
+
+///@}
 // -------------------------- NvFlowGridExport -------------------------------
 ///@defgroup NvFlowGridExport
 ///@{
 
-//! Texture channel description
-struct NvFlowGridExportView
+//! Texture channel export handle
+struct NvFlowGridExportHandle
 {
 	NvFlowGridExport* gridExport;
 	NvFlowGridTextureChannel channel;
@@ -599,18 +627,14 @@ struct NvFlowGridExportView
 //! Description of a single exported layer
 struct NvFlowGridExportLayerView
 {
-	NvFlowGridMaterialHandle material;
-
 	NvFlowResource* data;
-	NvFlowResource* blockTable;
-	NvFlowResource* blockList;
+	NvFlowGridExportImportLayerMapping mapping;
+};
 
-	NvFlowShaderLinearParams shaderParams;
-
-	NvFlowUint numBlocks;
-	NvFlowUint maxBlocks;
-
-	NvFlowFloat4x4 modelMatrix;
+//! Description applying to all exported layers
+struct NvFlowGridExportLayeredView
+{
+	NvFlowGridExportImportLayeredMapping mapping;
 };
 
 //! Data to visualize simple shape
@@ -635,9 +659,11 @@ struct NvFlowGridExportDebugVisView
 	NvFlowUint numBoxes;
 };
 
-NV_FLOW_API NvFlowGridExportView NvFlowGridExportGetView(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridTextureChannel channel);
+NV_FLOW_API NvFlowGridExportHandle NvFlowGridExportGetHandle(NvFlowGridExport* gridExport, NvFlowContext* context, NvFlowGridTextureChannel channel);
 
-NV_FLOW_API void NvFlowGridExportGetLayerView(NvFlowGridExportView exportView, NvFlowUint layerIdx, NvFlowGridExportLayerView* layerView);
+NV_FLOW_API void NvFlowGridExportGetLayerView(NvFlowGridExportHandle handle, NvFlowUint layerIdx, NvFlowGridExportLayerView* layerView);
+
+NV_FLOW_API void NvFlowGridExportGetLayeredView(NvFlowGridExportHandle handle, NvFlowGridExportLayeredView* layeredView);
 
 NV_FLOW_API void NvFlowGridExportGetDebugVisView(NvFlowGridExport* gridExport, NvFlowGridExportDebugVisView* view);
 
@@ -669,8 +695,8 @@ struct NvFlowGridImportParams
 	NvFlowGridImportMode importMode;
 };
 
-//! Texture channel description
-struct NvFlowGridImportView
+//! Texture channel handle
+struct NvFlowGridImportHandle
 {
 	NvFlowGridImport* gridImport;
 	NvFlowGridTextureChannel channel;
@@ -680,27 +706,25 @@ struct NvFlowGridImportView
 //! Description of a single imported layer
 struct NvFlowGridImportLayerView
 {
-	NvFlowGridMaterialHandle material;
-
 	NvFlowResourceRW* dataRW;
-	NvFlowResource* blockTable;
-	NvFlowResource* blockList;
+	NvFlowGridExportImportLayerMapping mapping;
+};
 
-	NvFlowShaderLinearParams shaderParams;
-
-	NvFlowUint numBlocks;
-	NvFlowUint maxBlocks;
-
-	NvFlowFloat4x4 modelMatrix;
+//! Description applying to all imported layers
+struct NvFlowGridImportLayeredView
+{
+	NvFlowGridExportImportLayeredMapping mapping;
 };
 
 NV_FLOW_API NvFlowGridImport* NvFlowCreateGridImport(NvFlowContext* context, const NvFlowGridImportDesc* desc);
 
 NV_FLOW_API void NvFlowReleaseGridImport(NvFlowGridImport* gridImport);
 
-NV_FLOW_API NvFlowGridImportView NvFlowGridImportGetView(NvFlowGridImport* gridImport, NvFlowContext* context, const NvFlowGridImportParams* params);
+NV_FLOW_API NvFlowGridImportHandle NvFlowGridImportGetHandle(NvFlowGridImport* gridImport, NvFlowContext* context, const NvFlowGridImportParams* params);
 
-NV_FLOW_API void NvFlowGridImportGetLayerView(NvFlowGridImportView importView, NvFlowUint layerIdx, NvFlowGridImportLayerView* layerView);
+NV_FLOW_API void NvFlowGridImportGetLayerView(NvFlowGridImportHandle handle, NvFlowUint layerIdx, NvFlowGridImportLayerView* layerView);
+
+NV_FLOW_API void NvFlowGridImportGetLayeredView(NvFlowGridImportHandle handle, NvFlowGridImportLayeredView* layeredView);
 
 NV_FLOW_API void NvFlowGridImportReleaseChannel(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridTextureChannel channel);
 
@@ -762,8 +786,6 @@ struct NvFlowRenderMaterialParams
 	NvFlowGridMaterialHandle material;			//!< Grid material to align these parameters with
 
 	float alphaScale;							//!< Global alpha scale for adjust net opacity without color map changes
-	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
-	NvFlowGridTextureChannel renderChannel;		//!< GridView channel to render
 	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
 	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
 };
@@ -936,8 +958,8 @@ struct NvFlowVolumeRenderParams
 
 	NvFlowRenderMaterialPool* materialPool;		//!< Pool of materials to look for matches to GridMaterials
 
-	bool forceRenderModeEnabled;				//!< If true, ignore material render mode and force forceRenderMode
-	NvFlowVolumeRenderMode forceRenderMode;		//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowGridTextureChannel renderChannel;		//!< GridView channel to render
 
 	bool debugMode;								//!< If true, wireframe visualization is rendered
 
@@ -964,6 +986,9 @@ NV_FLOW_API void NvFlowVolumeRenderParamsDefaults(NvFlowVolumeRenderParams* para
 struct NvFlowVolumeLightingParams
 {
 	NvFlowRenderMaterialPool* materialPool;		//!< Pool of materials to look for matches to GridMaterials
+
+	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowGridTextureChannel renderChannel;		//!< GridView channel to render
 };
 
 /**
@@ -1026,8 +1051,8 @@ struct NvFlowVolumeShadowParams
 
 	NvFlowRenderMaterialPool* materialPool;		//!< Pool of materials to look for matches to GridMaterials
 
-	bool forceRenderModeEnabled;				//!< If true, ignore material render mode and force forceRenderMode
-	NvFlowVolumeRenderMode forceRenderMode;		//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowGridTextureChannel renderChannel;		//!< GridView channel to render
 
 	float intensityScale;						//!< Shadow intensity scale
 	float minIntensity;							//!< Minimum shadow intensity
