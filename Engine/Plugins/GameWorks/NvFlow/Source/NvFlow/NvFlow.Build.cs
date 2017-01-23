@@ -80,15 +80,11 @@ namespace UnrealBuildTool.Rules
             // Add direct rendering dependencies on a per-platform basis
             if (Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Win64)
             {
-                PrivateDependencyModuleNames.AddRange(new string[] { "D3D11RHI", "D3D12RHI" });
+                PrivateDependencyModuleNames.AddRange(new string[] { "DX11", "DX12" });
                 PrivateIncludePaths.AddRange(
                     new string[] {
-  					    "../../../../Source/Runtime/Windows/D3D11RHI/Private",
-  					    "../../../../Source/Runtime/Windows/D3D11RHI/Private/Windows",
-                        "../../../../Source/Runtime/Windows/D3D12RHI/Private",
-                        "../../../../Source/Runtime/Windows/D3D12RHI/Private/Windows",
-					    // ... add other private include paths required here ...
-    				    }
+                        // ... add other private include paths required here ...
+                        }
                     );
             }
 

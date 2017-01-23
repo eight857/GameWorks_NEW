@@ -16,6 +16,7 @@ NFlowRendering.cpp: Translucent rendering implementation.
 #include "PostProcess/SceneFilterRendering.h"
 #include "LightPropagationVolume.h"
 #include "SceneUtils.h"
+#include "HardwareInfo.h"
 
 #include "Stats.h"
 #include "GridAccessHooksNvFlow.h"
@@ -245,7 +246,26 @@ void NvFlow::Context::initDeferred(IRHICommandContext* RHICmdCtx)
 {
 	auto& appctx = *RHICmdCtx;
 
-	m_flowInterop = NvFlowCreateInteropD3D11();
+	FString RHIName = TEXT("");
+	{
+		// Create the folder name based on the hardware specs we have been provided
+		FString HardwareDetails = FHardwareInfo::GetHardwareDetailsString();
+		FString RHILookup = NAME_RHI.ToString() + TEXT("=");
+		FParse::Value(*HardwareDetails, *RHILookup, RHIName);
+	}
+	if (RHIName == TEXT("D3D11"))
+	{
+		m_flowInterop = NvFlowCreateInteropD3D11();
+	}
+	else
+	if (RHIName == TEXT("D3D12"))
+	{
+		m_flowInterop = NvFlowCreateInteropD3D12();
+	}
+	else
+	{
+		UE_LOG(LogInit, Error, TEXT("Unsupported RHI type: %s"), *RHIName);
+	}
 	m_flowContext = m_flowInterop->CreateContext(appctx);
 
 	// register cleanup

@@ -18,21 +18,24 @@ inline D3D11_VIEWPORT NvFlowGetViewport(ID3D11DeviceContext* context)
 
 void FD3D11DynamicRHI::NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc)
 {
-	desc->device = Direct3DDevice;
-	desc->deviceContext = Direct3DDeviceIMContext;
+	FRHINvFlowDeviceDescD3D11* descD3D11 = static_cast<FRHINvFlowDeviceDescD3D11*>(desc);
+	descD3D11->device = Direct3DDevice;
+	descD3D11->deviceContext = Direct3DDeviceIMContext;
 }
 
 void FD3D11DynamicRHI::NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc)
 {
-	desc->dsv = CurrentDepthStencilTarget;
-	desc->srv = CurrentDepthTexture->GetShaderResourceView();
-	desc->viewport = NvFlowGetViewport(Direct3DDeviceIMContext);
+	FRHINvFlowDepthStencilViewDescD3D11* descD3D11 = static_cast<FRHINvFlowDepthStencilViewDescD3D11*>(desc);
+	descD3D11->dsv = CurrentDepthStencilTarget;
+	descD3D11->srv = CurrentDepthTexture->GetShaderResourceView();
+	descD3D11->viewport = NvFlowGetViewport(Direct3DDeviceIMContext);
 }
 
 void FD3D11DynamicRHI::NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc)
 {
-	desc->rtv = CurrentRenderTargets[0];
-	desc->viewport = NvFlowGetViewport(Direct3DDeviceIMContext);
+	FRHINvFlowRenderTargetViewDescD3D11* descD3D11 = static_cast<FRHINvFlowRenderTargetViewDescD3D11*>(desc);
+	descD3D11->rtv = CurrentRenderTargets[0];
+	descD3D11->viewport = NvFlowGetViewport(Direct3DDeviceIMContext);
 }
 
 namespace
@@ -62,7 +65,9 @@ namespace
 
 FShaderResourceViewRHIRef FD3D11DynamicRHI::NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc)
 {
-	TRefCountPtr<ID3D11ShaderResourceView> View = desc->srv;
+	const FRHINvFlowResourceViewDescD3D11* descD3D11 = static_cast<const FRHINvFlowResourceViewDescD3D11*>(desc);
+
+	TRefCountPtr<ID3D11ShaderResourceView> View = descD3D11->srv;
 	TRefCountPtr<FD3D11BaseShaderResource> Resource = new FEmptyResource();
 
 	return new FD3D11ShaderResourceView(View, Resource);
@@ -70,7 +75,9 @@ FShaderResourceViewRHIRef FD3D11DynamicRHI::NvFlowCreateSRV(const FRHINvFlowReso
 
 FUnorderedAccessViewRHIRef FD3D11DynamicRHI::NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc)
 {
-	TRefCountPtr<ID3D11UnorderedAccessView> View = desc->uav;
+	const FRHINvFlowResourceRWViewDescD3D11* descD3D11 = static_cast<const FRHINvFlowResourceRWViewDescD3D11*>(desc);
+
+	TRefCountPtr<ID3D11UnorderedAccessView> View = descD3D11->uav;
 	TRefCountPtr<FD3D11BaseShaderResource> Resource = new FEmptyResource();
 	Resource->SetCurrentGPUAccess(EResourceTransitionAccess::EWritable);
 

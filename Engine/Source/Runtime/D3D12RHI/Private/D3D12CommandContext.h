@@ -362,6 +362,14 @@ public:
 	virtual void RHIEnableDepthBoundsTest(bool bEnable, float MinDepth, float MaxDepth) override;
 	virtual void RHIUpdateTextureReference(FTextureReferenceRHIParamRef TextureRef, FTextureRHIParamRef NewTexture) final override;
 
+	// NvFlow begin
+	virtual void NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc) override;
+	virtual void NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc) override;
+	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) override;
+	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) override;
+	virtual FUnorderedAccessViewRHIRef NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc) override;
+	// NvFlow end
+
 	virtual void RHIClearMRTImpl(bool bClearColor, int32 NumClearColors, const FLinearColor* ColorArray, bool bClearDepth, float Depth, bool bClearStencil, uint32 Stencil, FIntRect ExcludeRect);
 
 	virtual void UpdateMemoryStats();

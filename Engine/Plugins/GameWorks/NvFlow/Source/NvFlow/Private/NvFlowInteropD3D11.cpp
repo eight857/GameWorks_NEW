@@ -1,6 +1,10 @@
 #include "NvFlowPCH.h"
 
-#include "D3D11RHIPrivate.h"
+#if PLATFORM_WINDOWS
+#include "AllowWindowsPlatformTypes.h"
+#include <d3d11.h>
+#include "HideWindowsPlatformTypes.h"
+#endif
 
 #include "GameWorks/RHINvFlowD3D11.h"
 
@@ -13,7 +17,7 @@ class NvFlowInteropD3D11 : public NvFlowInterop
 public:
 	virtual NvFlowContext* CreateContext(IRHICommandContext& RHICmdCtx)
 	{
-		FRHINvFlowDeviceDesc deviceDesc = {};
+		FRHINvFlowDeviceDescD3D11 deviceDesc = {};
 		RHICmdCtx.NvFlowGetDeviceDesc(&deviceDesc);
 
 		NvFlowContextDescD3D11 desc = {};
@@ -25,7 +29,7 @@ public:
 
 	virtual NvFlowDepthStencilView* CreateDepthStencilView(IRHICommandContext& RHICmdCtx, NvFlowContext* context)
 	{
-		FRHINvFlowDepthStencilViewDesc dsvDesc = {};
+		FRHINvFlowDepthStencilViewDescD3D11 dsvDesc = {};
 		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);
 
 		NvFlowDepthStencilViewDescD3D11 desc = {};
@@ -38,7 +42,7 @@ public:
 
 	virtual NvFlowRenderTargetView* CreateRenderTargetView(IRHICommandContext& RHICmdCtx, NvFlowContext* context)
 	{
-		FRHINvFlowRenderTargetViewDesc rtvDesc = {};
+		FRHINvFlowRenderTargetViewDescD3D11 rtvDesc = {};
 		RHICmdCtx.NvFlowGetRenderTargetViewDesc(&rtvDesc);
 
 		NvFlowRenderTargetViewDescD3D11 desc = {};
@@ -50,7 +54,7 @@ public:
 
 	virtual void UpdateContext(IRHICommandContext& RHICmdCtx, NvFlowContext* context)
 	{
-		FRHINvFlowDeviceDesc deviceDesc = {};
+		FRHINvFlowDeviceDescD3D11 deviceDesc = {};
 		RHICmdCtx.NvFlowGetDeviceDesc(&deviceDesc);
 
 		NvFlowContextDescD3D11 desc = {};
@@ -62,7 +66,7 @@ public:
 
 	virtual void UpdateDepthStencilView(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowDepthStencilView* view)
 	{
-		FRHINvFlowDepthStencilViewDesc dsvDesc = {};
+		FRHINvFlowDepthStencilViewDescD3D11 dsvDesc = {};
 		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);
 
 		NvFlowDepthStencilViewDescD3D11 desc = {};
@@ -75,7 +79,7 @@ public:
 
 	virtual void UpdateRenderTargetView(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowRenderTargetView* view)
 	{
-		FRHINvFlowRenderTargetViewDesc rtvDesc = {};
+		FRHINvFlowRenderTargetViewDescD3D11 rtvDesc = {};
 		RHICmdCtx.NvFlowGetRenderTargetViewDesc(&rtvDesc);
 
 		NvFlowRenderTargetViewDescD3D11 desc = {};
@@ -107,7 +111,7 @@ public:
 			NvFlowResourceViewDescD3D11 viewDesc;
 			NvFlowUpdateResourceViewDescD3D11(context, resource, &viewDesc);
 
-			FRHINvFlowResourceViewDesc viewDescRHI;
+			FRHINvFlowResourceViewDescD3D11 viewDescRHI;
 			viewDescRHI.srv = viewDesc.srv;
 			return RHICmdCtx.NvFlowCreateSRV(&viewDescRHI);
 		}
@@ -121,7 +125,7 @@ public:
 			NvFlowResourceRWViewDescD3D11 viewDesc;
 			NvFlowUpdateResourceRWViewDescD3D11(context, resourceRW, &viewDesc);
 
-			FRHINvFlowResourceViewDesc viewDescRHI;
+			FRHINvFlowResourceViewDescD3D11 viewDescRHI;
 			viewDescRHI.srv = viewDesc.resourceView.srv;
 			return RHICmdCtx.NvFlowCreateSRV(&viewDescRHI);
 		}
@@ -135,7 +139,7 @@ public:
 			NvFlowResourceRWViewDescD3D11 viewDesc;
 			NvFlowUpdateResourceRWViewDescD3D11(context, resourceRW, &viewDesc);
 
-			FRHINvFlowResourceRWViewDesc viewDescRHI;
+			FRHINvFlowResourceRWViewDescD3D11 viewDescRHI;
 			viewDescRHI.uav = viewDesc.uav;
 			return RHICmdCtx.NvFlowCreateUAV(&viewDescRHI);
 		}

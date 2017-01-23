@@ -1,11 +1,11 @@
 #pragma once
 
 // NvFlow begin
-struct FRHINvFlowDeviceDesc;
-struct FRHINvFlowDepthStencilViewDesc;
-struct FRHINvFlowRenderTargetViewDesc;
-struct FRHINvFlowResourceViewDesc;
-struct FRHINvFlowResourceRWViewDesc;
+struct FRHINvFlowDeviceDesc {};
+struct FRHINvFlowDepthStencilViewDesc {};
+struct FRHINvFlowRenderTargetViewDesc {};
+struct FRHINvFlowResourceViewDesc {};
+struct FRHINvFlowResourceRWViewDesc {};
 
 struct FRHINvFlowCleanup
 {

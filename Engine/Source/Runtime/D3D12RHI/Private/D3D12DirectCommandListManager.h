@@ -91,6 +91,10 @@ public:
 
 	void Destroy();
 
+	// NvFlow begin
+	inline FD3D12FenceCore* GetFenceCode() const { return FenceCore; }
+	// NvFlow end
+
 private:
 	uint64 CurrentFence;
 	uint64 SignalFence;
