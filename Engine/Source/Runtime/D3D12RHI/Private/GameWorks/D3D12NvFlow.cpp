@@ -18,7 +18,7 @@ void FD3D12CommandContext::NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc)
 	descD3D12->commandList = CommandListHandle.GraphicsCommandList();
 	//TODO: check that these values are correct!
 	descD3D12->lastFenceCompleted = GetCommandListManager().GetFence().GetLastCompletedFence();
-	descD3D12->nextFenceValue = GetCommandListManager().GetFence().GetSignalFence();
+	descD3D12->nextFenceValue = GetCommandListManager().GetFence().GetCurrentFence();
 }
 
 void FD3D12CommandContext::NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc)
