@@ -155,11 +155,12 @@ struct NvFlowSupport
  * Queries support for features that depend on hardware/OS.
  *
  * @param[in] grid The Flow grid to query for support.
+ * @param[in] context The Flow context the grid was created against.
  * @param[out] support Description of what is supported.
  *
  * @return Returns eNvFlowSuccess if information is available.
  */
-NV_FLOW_API NvFlowResult NvFlowGridQuerySupport(NvFlowGrid* grid, NvFlowSupport* support);
+NV_FLOW_API NvFlowResult NvFlowGridQuerySupport(NvFlowGrid* grid, NvFlowContext* context, NvFlowSupport* support);
 
 //! CPU/GPU timing info
 struct NvFlowQueryTime

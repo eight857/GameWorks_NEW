@@ -125,6 +125,8 @@ public:
 	virtual void Pop(IRHICommandContext& RHICmdCtx, NvFlowContext* context)
 	{
 		NvFlowContextPop(context);
+
+		RHICmdCtx.NvFlowRestoreState();
 	}
 
 	virtual void CleanupFunc(IRHICommandContext& RHICmdCtx, void(*func)(void*), void* ptr)

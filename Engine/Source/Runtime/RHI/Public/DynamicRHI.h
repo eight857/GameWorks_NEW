@@ -513,6 +513,7 @@ public:
 	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) {}
 	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) { return FShaderResourceViewRHIRef(); }
 	virtual FUnorderedAccessViewRHIRef NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc) { return FUnorderedAccessViewRHIRef(); }
+	virtual void NvFlowRestoreState() {}
 	FRHINvFlowCleanup NvFlowCleanup;
 	virtual void NvFlowWork(void(*workFunc)(void*,SIZE_T,IRHICommandContext*), void* paramData, SIZE_T numBytes)
 	{

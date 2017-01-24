@@ -66,4 +66,15 @@ FUnorderedAccessViewRHIRef FD3D12CommandContext::NvFlowCreateUAV(const FRHINvFlo
 	return nullptr;
 }
 
+void FD3D12CommandContext::NvFlowRestoreState()
+{
+	CommandListHandle->SetDescriptorHeaps(DescriptorHeaps.Num(), DescriptorHeaps.GetData());
+	StateCache.ForceSetGraphicsRootSignature();
+	StateCache.ForceSetComputeRootSignature();
+
+	StateCache.GetDescriptorCache()->NotifyCurrentCommandList(CommandListHandle);
+
+	StateCache.RestoreState();
+}
+
 // NvFlow end

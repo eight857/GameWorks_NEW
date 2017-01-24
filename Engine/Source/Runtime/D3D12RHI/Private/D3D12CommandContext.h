@@ -368,6 +368,7 @@ public:
 	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) override;
 	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) override;
 	virtual FUnorderedAccessViewRHIRef NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc) override;
+	virtual void NvFlowRestoreState() override;
 	// NvFlow end
 
 	virtual void RHIClearMRTImpl(bool bClearColor, int32 NumClearColors, const FLinearColor* ColorArray, bool bClearDepth, float Depth, bool bClearStencil, uint32 Stencil, FIntRect ExcludeRect);
