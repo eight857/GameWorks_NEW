@@ -24,14 +24,12 @@ void FD3D12CommandContext::NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilV
 {
 	FRHINvFlowDepthStencilViewDescD3D12* descD3D12 = static_cast<FRHINvFlowDepthStencilViewDescD3D12*>(desc);
 
-	descD3D12->dsv = CurrentDepthStencilTarget->GetView();
-	descD3D12->srv = CurrentDepthTexture->GetShaderResourceView()->GetView();
-	descD3D12->dsv_format = CurrentDepthStencilTarget->GetDesc().Format;
-	descD3D12->srv_format = CurrentDepthTexture->GetShaderResourceView()->GetDesc().Format;
+	descD3D12->dsvHandle = CurrentDepthStencilTarget->GetView();
+	descD3D12->dsvDesc   = CurrentDepthStencilTarget->GetDesc();
+	descD3D12->srvHandle = CurrentDepthTexture->GetShaderResourceView()->GetView();
+	descD3D12->srvDesc   = CurrentDepthTexture->GetShaderResourceView()->GetDesc();
 	descD3D12->resource = CurrentDepthStencilTarget->GetResource()->GetResource();
 	descD3D12->currentState = CurrentDepthStencilTarget->GetResource()->GetResourceState()->GetSubresourceState(0);
-	descD3D12->width = CurrentDepthStencilTarget->GetResource()->GetDesc().Width;
-	descD3D12->height = CurrentDepthStencilTarget->GetResource()->GetDesc().Height;
 
 	StateCache.GetViewport(&descD3D12->viewport);
 }
@@ -40,9 +38,9 @@ void FD3D12CommandContext::NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetV
 {
 	FRHINvFlowRenderTargetViewDescD3D12* descD3D12 = static_cast<FRHINvFlowRenderTargetViewDescD3D12*>(desc);
 
-	descD3D12->rtv = CurrentRenderTargets[0]->GetView();
-	descD3D12->rtv_format = CurrentRenderTargets[0]->GetDesc().Format;
-	descD3D12->resource = CurrentRenderTargets[0]->GetResource()->GetResource();
+	descD3D12->rtvHandle = CurrentRenderTargets[0]->GetView();
+	descD3D12->rtvDesc   = CurrentRenderTargets[0]->GetDesc();
+	descD3D12->resource  = CurrentRenderTargets[0]->GetResource()->GetResource();
 	descD3D12->currentState = CurrentRenderTargets[0]->GetResource()->GetResourceState()->GetSubresourceState(0);
 
 	StateCache.GetViewport(&descD3D12->viewport);
@@ -67,7 +65,7 @@ FShaderResourceViewRHIRef FD3D12CommandContext::NvFlowCreateSRV(const FRHINvFlow
 {
 	const FRHINvFlowResourceViewDescD3D12* descD3D12 = static_cast<const FRHINvFlowResourceViewDescD3D12*>(desc);
 
-	return new FD3D12ShaderResourceViewNvFlow(GetParentDevice(), CD3DX12_CPU_DESCRIPTOR_HANDLE(descD3D12->srv));
+	return new FD3D12ShaderResourceViewNvFlow(GetParentDevice(), CD3DX12_CPU_DESCRIPTOR_HANDLE(descD3D12->srvHandle));
 }
 
 class FD3D12UnorderedAccessViewNvFlow : public FD3D12UnorderedAccessView
@@ -88,7 +86,7 @@ FUnorderedAccessViewRHIRef FD3D12CommandContext::NvFlowCreateUAV(const FRHINvFlo
 {
 	const FRHINvFlowResourceRWViewDescD3D12* descD3D12 = static_cast<const FRHINvFlowResourceRWViewDescD3D12*>(desc);
 
-	return new FD3D12UnorderedAccessViewNvFlow(GetParentDevice(), CD3DX12_CPU_DESCRIPTOR_HANDLE(descD3D12->uav));
+	return new FD3D12UnorderedAccessViewNvFlow(GetParentDevice(), CD3DX12_CPU_DESCRIPTOR_HANDLE(descD3D12->uavHandle));
 }
 
 void FD3D12CommandContext::NvFlowRestoreState()

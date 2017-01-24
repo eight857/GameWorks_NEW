@@ -13,21 +13,19 @@ struct FRHINvFlowDeviceDescD3D12 : FRHINvFlowDeviceDesc
 
 struct FRHINvFlowDepthStencilViewDescD3D12 : FRHINvFlowDepthStencilViewDesc
 {
-	D3D12_CPU_DESCRIPTOR_HANDLE dsv;
-	D3D12_CPU_DESCRIPTOR_HANDLE srv;
-	DXGI_FORMAT dsv_format;
-	DXGI_FORMAT srv_format;
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle;
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
+	D3D12_CPU_DESCRIPTOR_HANDLE srvHandle;
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 	ID3D12Resource* resource;
 	D3D12_RESOURCE_STATES currentState;
 	D3D12_VIEWPORT viewport;
-	UINT32 width;
-	UINT32 height;
 };
 
 struct FRHINvFlowRenderTargetViewDescD3D12 : FRHINvFlowRenderTargetViewDesc
 {
-	D3D12_CPU_DESCRIPTOR_HANDLE rtv;
-	DXGI_FORMAT rtv_format;
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle;
+	D3D12_RENDER_TARGET_VIEW_DESC rtvDesc;
 	ID3D12Resource* resource;
 	D3D12_RESOURCE_STATES currentState;
 	D3D12_VIEWPORT viewport;
@@ -36,11 +34,16 @@ struct FRHINvFlowRenderTargetViewDescD3D12 : FRHINvFlowRenderTargetViewDesc
 
 struct FRHINvFlowResourceViewDescD3D12 : FRHINvFlowResourceViewDesc
 {
-	D3D12_CPU_DESCRIPTOR_HANDLE srv;
+	D3D12_CPU_DESCRIPTOR_HANDLE srvHandle;
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+	ID3D12Resource* resource;
+	D3D12_RESOURCE_STATES* currentState;
 };
 
 struct FRHINvFlowResourceRWViewDescD3D12 : FRHINvFlowResourceRWViewDesc
 {
-	D3D12_CPU_DESCRIPTOR_HANDLE uav;
+	FRHINvFlowResourceViewDescD3D12 resourceView;
+	D3D12_CPU_DESCRIPTOR_HANDLE uavHandle;
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc;
 };
 // NvFlow end

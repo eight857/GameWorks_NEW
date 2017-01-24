@@ -37,15 +37,13 @@ public:
 		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);
 
 		NvFlowDepthStencilViewDescD3D12 desc = {};
-		desc.dsv = dsvDesc.dsv;
-		desc.srv = dsvDesc.srv;
-		desc.dsv_format = dsvDesc.dsv_format;
-		desc.srv_format = dsvDesc.srv_format;
+		desc.dsvHandle = dsvDesc.dsvHandle;
+		desc.dsvDesc   = dsvDesc.dsvDesc;
+		desc.srvHandle = dsvDesc.srvHandle;
+		desc.srvDesc   = dsvDesc.srvDesc;
 		desc.resource = dsvDesc.resource;
 		desc.currentState = dsvDesc.currentState;
 		desc.viewport = dsvDesc.viewport;
-		desc.width = dsvDesc.width;
-		desc.height = dsvDesc.height;
 
 		return NvFlowCreateDepthStencilViewD3D12(context, &desc);
 	}
@@ -56,8 +54,8 @@ public:
 		RHICmdCtx.NvFlowGetRenderTargetViewDesc(&rtvDesc);
 
 		NvFlowRenderTargetViewDescD3D12 desc = {};
-		desc.rtv = rtvDesc.rtv;
-		desc.rtv_format = rtvDesc.rtv_format;
+		desc.rtvHandle = rtvDesc.rtvHandle;
+		desc.rtvDesc   = rtvDesc.rtvDesc;
 		desc.resource = rtvDesc.resource;
 		desc.currentState = rtvDesc.currentState;
 		desc.viewport = rtvDesc.viewport;
@@ -88,15 +86,13 @@ public:
 		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);
 
 		NvFlowDepthStencilViewDescD3D12 desc = {};
-		desc.dsv = dsvDesc.dsv;
-		desc.srv = dsvDesc.srv;
-		desc.dsv_format = dsvDesc.dsv_format;
-		desc.srv_format = dsvDesc.srv_format;
+		desc.dsvHandle = dsvDesc.dsvHandle;
+		desc.dsvDesc   = dsvDesc.dsvDesc;
+		desc.srvHandle = dsvDesc.srvHandle;
+		desc.srvDesc   = dsvDesc.srvDesc;
 		desc.resource = dsvDesc.resource;
 		desc.currentState = dsvDesc.currentState;
 		desc.viewport = dsvDesc.viewport;
-		desc.width = dsvDesc.width;
-		desc.height = dsvDesc.height;
 
 		NvFlowUpdateDepthStencilViewD3D12(context, view, &desc);
 	}
@@ -107,8 +103,8 @@ public:
 		RHICmdCtx.NvFlowGetRenderTargetViewDesc(&rtvDesc);
 
 		NvFlowRenderTargetViewDescD3D12 desc = {};
-		desc.rtv = rtvDesc.rtv;
-		desc.rtv_format = rtvDesc.rtv_format;
+		desc.rtvHandle = rtvDesc.rtvHandle;
+		desc.rtvDesc   = rtvDesc.rtvDesc;
 		desc.resource = rtvDesc.resource;
 		desc.currentState = rtvDesc.currentState;
 		desc.viewport = rtvDesc.viewport;
@@ -142,7 +138,7 @@ public:
 			NvFlowUpdateResourceViewDescD3D12(context, resource, &viewDesc);
 
 			FRHINvFlowResourceViewDescD3D12 viewDescRHI;
-			viewDescRHI.srv = viewDesc.srv;
+			viewDescRHI.srvHandle = viewDesc.srvHandle;
 			return RHICmdCtx.NvFlowCreateSRV(&viewDescRHI);
 		}
 		return FShaderResourceViewRHIRef();
@@ -156,7 +152,7 @@ public:
 			NvFlowUpdateResourceRWViewDescD3D12(context, resourceRW, &viewDesc);
 
 			FRHINvFlowResourceViewDescD3D12 viewDescRHI;
-			viewDescRHI.srv = viewDesc.resourceView.srv;
+			viewDescRHI.srvHandle = viewDesc.resourceView.srvHandle;
 			return RHICmdCtx.NvFlowCreateSRV(&viewDescRHI);
 		}
 		return FShaderResourceViewRHIRef();
@@ -170,7 +166,7 @@ public:
 			NvFlowUpdateResourceRWViewDescD3D12(context, resourceRW, &viewDesc);
 
 			FRHINvFlowResourceRWViewDescD3D12 viewDescRHI;
-			viewDescRHI.uav = viewDesc.uav;
+			viewDescRHI.uavHandle = viewDesc.uavHandle;
 			return RHICmdCtx.NvFlowCreateUAV(&viewDescRHI);
 		}
 		return FUnorderedAccessViewRHIRef();
