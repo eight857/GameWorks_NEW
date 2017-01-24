@@ -92,7 +92,7 @@ public:
 	void Destroy();
 
 	// NvFlow begin
-	inline FD3D12FenceCore* GetFenceCode() const { return FenceCore; }
+	inline FD3D12FenceCore* GetFenceCore() const { return FenceCore; }
 	// NvFlow end
 
 private:

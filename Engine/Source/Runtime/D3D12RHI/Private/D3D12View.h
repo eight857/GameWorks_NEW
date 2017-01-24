@@ -621,12 +621,20 @@ protected:
 	uint32 DescriptorHeapIndex;
 	FD3D12ResourceLocation* ResourceLocation;
 	FD3D12ResidencyHandle* ResidencyHandle;
+	bool bHasOwnership;
 
-	explicit FD3D12ViewGeneric(FD3D12ResourceLocation* InResourceLocation)
+	explicit FD3D12ViewGeneric(FD3D12ResourceLocation* InResourceLocation
+		// NvFlow begin
+		, CD3DX12_CPU_DESCRIPTOR_HANDLE InDescriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(CD3DX12_DEFAULT())
+		// NvFlow end
+	)
 		: ResourceLocation(InResourceLocation)
 		, ResidencyHandle((InResourceLocation) ? InResourceLocation->GetResource()->GetResidencyHandle() : nullptr)
 	{
-		Descriptor.ptr = 0;
+		// NvFlow begin
+		Descriptor.ptr = InDescriptor.ptr;
+		bHasOwnership = (InDescriptor.ptr == 0);
+		// NvFlow end
 		DescriptorHeapIndex = 0;
 	}
 
@@ -634,6 +642,9 @@ protected:
 	{
 		ResourceLocation = InResourceLocation;
 		Descriptor.ptr = 0;
+		// NvFlow begin
+		bHasOwnership = true;
+		// NvFlow end
 		DescriptorHeapIndex = 0;
 
 		if (InResourceLocation)
@@ -681,8 +692,16 @@ protected:
 	{
 	}
 
-	explicit FD3D12View(FD3D12Device* InParent, const TDesc* InDesc, FD3D12ResourceLocation* InResourceLocation, ViewSubresourceSubsetFlags InFlags)
-		: FD3D12ViewGeneric(InResourceLocation)
+	explicit FD3D12View(FD3D12Device* InParent, const TDesc* InDesc, FD3D12ResourceLocation* InResourceLocation, ViewSubresourceSubsetFlags InFlags
+		// NvFlow begin
+		, CD3DX12_CPU_DESCRIPTOR_HANDLE InDescriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(CD3DX12_DEFAULT())
+		// NvFlow end
+	)
+		: FD3D12ViewGeneric(InResourceLocation
+			// NvFlow begin
+			, InDescriptor
+			// NvFlow end
+		)
 		, ViewSubresourceSubset(*InDesc,
 			GetResource() ? GetResource()->GetMipLevels() : 0,
 			GetResource() ? GetResource()->GetArraySize() : 0,
@@ -713,8 +732,15 @@ protected:
 
 	void AllocateHeapSlot()
 	{
-		FD3D12OfflineDescriptorManager& DescriptorAllocator = GetParentDevice()->GetViewDescriptorAllocator<TDesc>();
-		Descriptor = DescriptorAllocator.AllocateHeapSlot(DescriptorHeapIndex);
+		// NvFlow begin
+		if (bHasOwnership)
+		{
+		// NvFlow end
+			FD3D12OfflineDescriptorManager& DescriptorAllocator = GetParentDevice()->GetViewDescriptorAllocator<TDesc>();
+			Descriptor = DescriptorAllocator.AllocateHeapSlot(DescriptorHeapIndex);
+		// NvFlow begin
+		}
+		// NvFlow end
 		check(Descriptor.ptr != 0);
 	}
 
@@ -722,8 +748,16 @@ protected:
 	{
 		if (Descriptor.ptr)
 		{
-			FD3D12OfflineDescriptorManager& DescriptorAllocator = GetParentDevice()->GetViewDescriptorAllocator<TDesc>();
-			DescriptorAllocator.FreeHeapSlot(Descriptor, DescriptorHeapIndex);
+			// NvFlow begin
+			if (bHasOwnership)
+			{
+			// NvFlow end
+				FD3D12OfflineDescriptorManager& DescriptorAllocator = GetParentDevice()->GetViewDescriptorAllocator<TDesc>();
+				DescriptorAllocator.FreeHeapSlot(Descriptor, DescriptorHeapIndex);
+			// NvFlow begin
+			}
+			bHasOwnership = true;
+			// NvFlow end
 			Descriptor.ptr = 0;
 		}
 	}
@@ -766,6 +800,14 @@ public:
 			UpdateViewSubresourceSubset(InResource);
 		}
 
+		// NvFlow begin
+		if (!bHasOwnership)
+		{
+			bHasOwnership = true;
+			AllocateHeapSlot();
+		}
+		// NvFlow end
+
 		check(Descriptor.ptr != 0);
 		(GetParentDevice()->GetDevice()->*TCreateViewMap<TDesc>::GetCreate()) (
 			InResource ? InResource->GetResource() : nullptr, &Desc, Descriptor);
@@ -782,6 +824,14 @@ public:
 			// Only need to update the view's subresource subset if a new resource is used
 			UpdateViewSubresourceSubset(InResource);
 		}
+
+		// NvFlow begin
+		if (!bHasOwnership)
+		{
+			bHasOwnership = true;
+			AllocateHeapSlot();
+		}
+		// NvFlow end
 
 		check(Descriptor.ptr != 0);
 		(GetParentDevice()->GetDevice()->*TCreateViewMap<TDesc>::GetCreate()) (
@@ -808,6 +858,17 @@ class FD3D12ShaderResourceView : public FRHIShaderResourceView, public FD3D12Vie
 	uint32 Stride;
 
 public:
+	// NvFlow begin
+	FD3D12ShaderResourceView(FD3D12Device* InParent, CD3DX12_CPU_DESCRIPTOR_HANDLE InDescriptor)
+		: FD3D12View(InParent, nullptr, nullptr, ViewSubresourceSubsetFlags_None, InDescriptor)
+		, bIsBuffer(false)
+		, bContainsDepthPlane(false)
+		, bContainsStencilPlane(false)
+		, Stride(1)
+	{
+	}
+	// NvFlow end
+
 	FD3D12ShaderResourceView(FD3D12Device* InParent, D3D12_SHADER_RESOURCE_VIEW_DESC* InSRVDesc, FD3D12ResourceLocation* InResourceLocation, uint32 InStride = 1)
 		: FD3D12View(InParent, InSRVDesc, InResourceLocation, ViewSubresourceSubsetFlags_None)
 		, bIsBuffer(InSRVDesc->ViewDimension == D3D12_SRV_DIMENSION_BUFFER)
@@ -841,6 +902,10 @@ public:
 		}
 		else
 		{
+			// NvFlow begin
+			FreeHeapSlot();
+			// NvFlow end
+
 			// Otherwise use the provided descriptor and index
 			Descriptor.ptr = InDescriptor.ptr;
 			DescriptorHeapIndex = InDescriptorHeapIndex;
@@ -885,6 +950,15 @@ public:
 	{
 		CreateViewWithCounter(nullptr, CounterResource);
 	}
+
+	// NvFlow begin
+	FD3D12UnorderedAccessView(FD3D12Device* InParent, CD3DX12_CPU_DESCRIPTOR_HANDLE InDescriptor)
+		: FD3D12View(InParent, nullptr, nullptr, ViewSubresourceSubsetFlags_None, InDescriptor)
+		, CounterResource(nullptr)
+		, CounterResourceInitialized(false)
+	{
+	}
+	// NvFlow end
 };
 
 class FD3D12RenderTargetView : public FD3D12View<D3D12_RENDER_TARGET_VIEW_DESC>, public FRHIResource, public FD3D12LinkedAdapterObject<FD3D12RenderTargetView>

@@ -14,9 +14,8 @@ void FD3D12CommandContext::NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc)
 
 	descD3D12->device = GetParentDevice()->GetDevice();
 	descD3D12->commandQueue = GetCommandListManager().GetD3DCommandQueue();
-	descD3D12->commandQueueFence = GetCommandListManager().GetFence().GetFenceCode()->GetFence();
+	descD3D12->commandQueueFence = GetCommandListManager().GetFence().GetFenceCore()->GetFence();
 	descD3D12->commandList = CommandListHandle.GraphicsCommandList();
-	//TODO: check that these values are correct!
 	descD3D12->lastFenceCompleted = GetCommandListManager().GetFence().GetLastCompletedFence();
 	descD3D12->nextFenceValue = GetCommandListManager().GetFence().GetCurrentFence();
 }
@@ -50,20 +49,46 @@ void FD3D12CommandContext::NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetV
 	StateCache.GetScissorRect(&descD3D12->scissor);
 }
 
+class FD3D12ShaderResourceViewNvFlow : public FD3D12ShaderResourceView
+{
+private:
+	FD3D12ResourceLocation ResourceLocationInstance;
+
+public:
+	FD3D12ShaderResourceViewNvFlow(FD3D12Device* InParent, CD3DX12_CPU_DESCRIPTOR_HANDLE InDescriptor)
+		: FD3D12ShaderResourceView(InParent, InDescriptor)
+		, ResourceLocationInstance(InParent)
+	{
+		ResourceLocation = &ResourceLocationInstance;
+	}
+};
+
 FShaderResourceViewRHIRef FD3D12CommandContext::NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc)
 {
 	const FRHINvFlowResourceViewDescD3D12* descD3D12 = static_cast<const FRHINvFlowResourceViewDescD3D12*>(desc);
 
-	//TODO: implement
-	return nullptr;
+	return new FD3D12ShaderResourceViewNvFlow(GetParentDevice(), CD3DX12_CPU_DESCRIPTOR_HANDLE(descD3D12->srv));
 }
+
+class FD3D12UnorderedAccessViewNvFlow : public FD3D12UnorderedAccessView
+{
+private:
+	FD3D12ResourceLocation ResourceLocationInstance;
+
+public:
+	FD3D12UnorderedAccessViewNvFlow(FD3D12Device* InParent, CD3DX12_CPU_DESCRIPTOR_HANDLE InDescriptor)
+		: FD3D12UnorderedAccessView(InParent, InDescriptor)
+		, ResourceLocationInstance(InParent)
+	{
+		ResourceLocation = &ResourceLocationInstance;
+	}
+};
 
 FUnorderedAccessViewRHIRef FD3D12CommandContext::NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc)
 {
 	const FRHINvFlowResourceRWViewDescD3D12* descD3D12 = static_cast<const FRHINvFlowResourceRWViewDescD3D12*>(desc);
 
-	//TODO: implement
-	return nullptr;
+	return new FD3D12UnorderedAccessViewNvFlow(GetParentDevice(), CD3DX12_CPU_DESCRIPTOR_HANDLE(descD3D12->uav));
 }
 
 void FD3D12CommandContext::NvFlowRestoreState()
