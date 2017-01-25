@@ -67,21 +67,26 @@ FShaderResourceViewRHIRef FD3D11DynamicRHI::NvFlowCreateSRV(const FRHINvFlowReso
 {
 	const FRHINvFlowResourceViewDescD3D11* descD3D11 = static_cast<const FRHINvFlowResourceViewDescD3D11*>(desc);
 
-	TRefCountPtr<ID3D11ShaderResourceView> View = descD3D11->srv;
 	TRefCountPtr<FD3D11BaseShaderResource> Resource = new FEmptyResource();
 
-	return new FD3D11ShaderResourceView(View, Resource);
+	TRefCountPtr<ID3D11ShaderResourceView> SRV = descD3D11->srv;
+	return new FD3D11ShaderResourceView(SRV, Resource);
 }
 
-FUnorderedAccessViewRHIRef FD3D11DynamicRHI::NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc)
+FUnorderedAccessViewRHIRef FD3D11DynamicRHI::NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV)
 {
 	const FRHINvFlowResourceRWViewDescD3D11* descD3D11 = static_cast<const FRHINvFlowResourceRWViewDescD3D11*>(desc);
 
-	TRefCountPtr<ID3D11UnorderedAccessView> View = descD3D11->uav;
 	TRefCountPtr<FD3D11BaseShaderResource> Resource = new FEmptyResource();
-	Resource->SetCurrentGPUAccess(EResourceTransitionAccess::EWritable);
 
-	return new FD3D11UnorderedAccessView(View, Resource);
+	if (pRHIRefSRV)
+	{
+		TRefCountPtr<ID3D11ShaderResourceView> SRV = descD3D11->srv;
+		*pRHIRefSRV = new FD3D11ShaderResourceView(SRV, Resource);
+	}
+
+	TRefCountPtr<ID3D11UnorderedAccessView> UAV = descD3D11->uav;
+	return new FD3D11UnorderedAccessView(UAV, Resource);
 }
 
 // NvFlow end

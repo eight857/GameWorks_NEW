@@ -130,7 +130,7 @@ namespace NvFlow
 		void emitCustomEmitDensityCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt);
 
 		void applyDistanceField(IRHICommandContext* RHICmdCtx, NvFlowUint dataFrontIdx, const NvFlowGridEmitCustomEmitLayerParams& layerParams, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt,
-			float InSlipFactor = 0, float InSlipThickness = 0, FVector4 InEmitValue = FVector4(ForceInitToZero));
+			FShaderResourceViewRHIRef DataInSRV, FUnorderedAccessViewRHIRef DataOutUAV, float InSlipFactor = 0, float InSlipThickness = 0, FVector4 InEmitValue = FVector4(ForceInitToZero));
 
 
 		bool m_multiAdapter = false;
@@ -1594,7 +1594,7 @@ IMPLEMENT_SHADER_TYPE(, FNvFlowCoupleParticlesCS, TEXT("NvFlowCoupleShader"), TE
 
 
 void NvFlow::Scene::applyDistanceField(IRHICommandContext* RHICmdCtx, NvFlowUint dataFrontIdx, const NvFlowGridEmitCustomEmitLayerParams& layerParams, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt,
-	float InSlipFactor, float InSlipThickness, FVector4 InEmitValue)
+	FShaderResourceViewRHIRef DataInSRV, FUnorderedAccessViewRHIRef DataOutUAV, float InSlipFactor, float InSlipThickness, FVector4 InEmitValue)
 {
 	if (layerParams.numBlocks == 0)
 	{
@@ -1633,8 +1633,6 @@ void NvFlow::Scene::applyDistanceField(IRHICommandContext* RHICmdCtx, NvFlowUint
 
 	FShaderResourceViewRHIRef BlockListSRV = m_context->m_flowInterop->ConvertSRV(*RHICmdCtx, m_context->m_flowContext, layerParams.blockList);
 	FShaderResourceViewRHIRef BlockTableSRV = m_context->m_flowInterop->ConvertSRV(*RHICmdCtx, m_context->m_flowContext, layerParams.blockTable);
-	FShaderResourceViewRHIRef DataInSRV = m_context->m_flowInterop->ConvertSRV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[dataFrontIdx]);
-	FUnorderedAccessViewRHIRef DataOutUAV = m_context->m_flowInterop->ConvertUAV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[dataFrontIdx ^ 1]);
 
 	ApplyDistanceFieldCS->SetOutput(RHICmdCtx, DataOutUAV);
 	ApplyDistanceFieldCS->SetParameters(RHICmdCtx, UniformBuffer, BlockListSRV, BlockTableSRV, DataInSRV, GlobalDistanceFieldParameterData);
@@ -1662,6 +1660,12 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 		NvFlowGridEmitCustomEmitLayerParams layerParams;
 		NvFlowGridEmitCustomGetLayerParams(emitParams, layerId, &layerParams);
 
+		FShaderResourceViewRHIRef Data0SRV;
+		FUnorderedAccessViewRHIRef Data0UAV = m_context->m_flowInterop->ConvertUAV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[*dataFrontIdx], &Data0SRV);
+
+		FShaderResourceViewRHIRef Data1SRV;
+		FUnorderedAccessViewRHIRef Data1UAV = m_context->m_flowInterop->ConvertUAV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[*dataFrontIdx ^ 1], &Data1SRV);
+
 		if (bHasParticles)
 		{
 			{
@@ -1682,8 +1686,8 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 
 				FShaderResourceViewRHIRef BlockListSRV = m_context->m_flowInterop->ConvertSRV(*RHICmdCtx, m_context->m_flowContext, layerParams.blockList);
 				FShaderResourceViewRHIRef BlockTableSRV = m_context->m_flowInterop->ConvertSRV(*RHICmdCtx, m_context->m_flowContext, layerParams.blockTable);
-				FShaderResourceViewRHIRef DataInSRV = m_context->m_flowInterop->ConvertSRV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[*dataFrontIdx]);
-				FUnorderedAccessViewRHIRef DataOutUAV = m_context->m_flowInterop->ConvertUAV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[*dataFrontIdx ^ 1]);
+				FShaderResourceViewRHIRef DataInSRV = Data0SRV;
+				FUnorderedAccessViewRHIRef DataOutUAV = Data1UAV;
 
 				CopyGridDataCS->SetOutput(RHICmdCtx, DataOutUAV);
 				CopyGridDataCS->SetParameters(RHICmdCtx, UniformBuffer, BlockListSRV, BlockTableSRV, DataInSRV);
@@ -1712,8 +1716,8 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 			CoupleParticlesParameters.InvVelocityScale = 1.0f / scale;
 
 			FShaderResourceViewRHIRef BlockTableSRV = m_context->m_flowInterop->ConvertSRV(*RHICmdCtx, m_context->m_flowContext, layerParams.blockTable);
-			FShaderResourceViewRHIRef DataInSRV = m_context->m_flowInterop->ConvertSRV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[*dataFrontIdx ^ 1]);
-			FUnorderedAccessViewRHIRef DataOutUAV = m_context->m_flowInterop->ConvertUAV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[*dataFrontIdx]);
+			FShaderResourceViewRHIRef DataInSRV = Data1SRV;
+			FUnorderedAccessViewRHIRef DataOutUAV = Data0UAV;
 
 			for (int32 i = 0; i < m_particleParamsArray.Num(); ++i)
 			{
@@ -1738,7 +1742,7 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 
 		if (bHasDistanceFieldCollision)
 		{
-			applyDistanceField(RHICmdCtx, *dataFrontIdx, layerParams, GlobalDistanceFieldParameterData, dt,
+			applyDistanceField(RHICmdCtx, *dataFrontIdx, layerParams, GlobalDistanceFieldParameterData, dt, Data0SRV, Data1UAV,
 				FlowGridSceneProxy->FlowGridProperties.VelocitySlipFactor, FlowGridSceneProxy->FlowGridProperties.VelocitySlipThickness);
 		}
 	}
@@ -1768,7 +1772,11 @@ void NvFlow::Scene::emitCustomEmitDensityCallback(IRHICommandContext* RHICmdCtx,
 		NvFlowGridEmitCustomEmitLayerParams layerParams;
 		NvFlowGridEmitCustomGetLayerParams(emitParams, layerId, &layerParams);
 
-		applyDistanceField(RHICmdCtx, *dataFrontIdx, layerParams, GlobalDistanceFieldParameterData, dt);
+		FShaderResourceViewRHIRef Data0SRV;
+		FUnorderedAccessViewRHIRef Data0UAV = m_context->m_flowInterop->ConvertUAV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[*dataFrontIdx], &Data0SRV);
+		FUnorderedAccessViewRHIRef Data1UAV = m_context->m_flowInterop->ConvertUAV(*RHICmdCtx, m_context->m_flowContext, layerParams.dataRW[*dataFrontIdx ^ 1]);
+
+		applyDistanceField(RHICmdCtx, *dataFrontIdx, layerParams, GlobalDistanceFieldParameterData, dt, Data0SRV, Data1UAV);
 	}
 
 	*dataFrontIdx ^= 1;
