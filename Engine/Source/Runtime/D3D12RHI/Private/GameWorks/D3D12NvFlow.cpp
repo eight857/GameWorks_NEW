@@ -47,46 +47,78 @@ void FD3D12CommandContext::NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetV
 	StateCache.GetScissorRect(&descD3D12->scissor);
 }
 
-class FD3D12ShaderResourceViewNvFlow : public FD3D12ShaderResourceView
+class FD3D12ResourceLocationNvFlow
 {
-private:
-	FD3D12ResourceLocation ResourceLocationInstance;
-
 public:
-	FD3D12ShaderResourceViewNvFlow(FD3D12Device* InParent, CD3DX12_CPU_DESCRIPTOR_HANDLE InDescriptor)
-		: FD3D12ShaderResourceView(InParent, InDescriptor)
+	FD3D12Resource ResourceInstance;
+	FD3D12ResourceLocation ResourceLocationInstance;
+	D3D12_RESOURCE_STATES* ResourceState = nullptr;
+
+	FD3D12ResourceLocationNvFlow(
+		FD3D12Device* InParent,
+		GPUNodeMask VisibleNodes,
+		ID3D12Resource* InResource,
+		D3D12_RESOURCE_STATES InitialState,
+		D3D12_RESOURCE_DESC const& InDesc
+	)
+		: ResourceInstance(InParent, VisibleNodes, InResource, InitialState, InDesc)
 		, ResourceLocationInstance(InParent)
 	{
-		ResourceLocation = &ResourceLocationInstance;
+		ResourceLocationInstance.SetResource(&ResourceInstance);
+	}
+};
+
+class FD3D12ShaderResourceViewNvFlow : public FD3D12ResourceLocationNvFlow, public FD3D12ShaderResourceView
+{
+public:
+	FD3D12ShaderResourceViewNvFlow(FD3D12Device* InParent, D3D12_SHADER_RESOURCE_VIEW_DESC* InSRVDesc,
+		GPUNodeMask VisibleNodes,
+		ID3D12Resource* InResource,
+		D3D12_RESOURCE_STATES InitialState,
+		D3D12_RESOURCE_DESC const& InDesc)
+		: FD3D12ShaderResourceView(InParent, InSRVDesc, &ResourceLocationInstance)
+		, FD3D12ResourceLocationNvFlow(InParent, VisibleNodes, InResource, InitialState, InDesc)
+	{
 	}
 };
 
 FShaderResourceViewRHIRef FD3D12CommandContext::NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc)
 {
 	const FRHINvFlowResourceViewDescD3D12* descD3D12 = static_cast<const FRHINvFlowResourceViewDescD3D12*>(desc);
+	auto localSrvDesc = descD3D12->srvDesc;
 
-	return new FD3D12ShaderResourceViewNvFlow(GetParentDevice(), CD3DX12_CPU_DESCRIPTOR_HANDLE(descD3D12->srvHandle));
+	return new FD3D12ShaderResourceViewNvFlow(GetParentDevice(), &localSrvDesc, 
+		GetParentDevice()->GetNodeMask(), descD3D12->resource, 
+		*descD3D12->currentState, descD3D12->resource->GetDesc()
+	);
 }
 
-class FD3D12UnorderedAccessViewNvFlow : public FD3D12UnorderedAccessView
+class FD3D12UnorderedAccessViewNvFlow : public FD3D12ResourceLocationNvFlow, public FD3D12UnorderedAccessView
 {
-private:
-	FD3D12ResourceLocation ResourceLocationInstance;
-
 public:
-	FD3D12UnorderedAccessViewNvFlow(FD3D12Device* InParent, CD3DX12_CPU_DESCRIPTOR_HANDLE InDescriptor)
-		: FD3D12UnorderedAccessView(InParent, InDescriptor)
-		, ResourceLocationInstance(InParent)
+	FD3D12UnorderedAccessViewNvFlow(FD3D12Device* InParent, D3D12_UNORDERED_ACCESS_VIEW_DESC* InUAVDesc,
+		GPUNodeMask VisibleNodes,
+		ID3D12Resource* InResource,
+		D3D12_RESOURCE_STATES InitialState,
+		D3D12_RESOURCE_DESC const& InDesc,
+		D3D12_RESOURCE_STATES* InResourceState)
+		: FD3D12UnorderedAccessView(InParent, InUAVDesc, &ResourceLocationInstance)
+		, FD3D12ResourceLocationNvFlow(InParent, VisibleNodes, InResource, InitialState, InDesc)
 	{
-		ResourceLocation = &ResourceLocationInstance;
+		ResourceState = InResourceState;
 	}
 };
 
 FUnorderedAccessViewRHIRef FD3D12CommandContext::NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc)
 {
 	const FRHINvFlowResourceRWViewDescD3D12* descD3D12 = static_cast<const FRHINvFlowResourceRWViewDescD3D12*>(desc);
+	auto localUavDesc = descD3D12->uavDesc;
 
-	return new FD3D12UnorderedAccessViewNvFlow(GetParentDevice(), CD3DX12_CPU_DESCRIPTOR_HANDLE(descD3D12->uavHandle));
+	return new FD3D12UnorderedAccessViewNvFlow(GetParentDevice(), &localUavDesc, 
+		GetParentDevice()->GetNodeMask(), descD3D12->resourceView.resource, 
+		*descD3D12->resourceView.currentState, descD3D12->resourceView.resource->GetDesc(),
+		descD3D12->resourceView.currentState
+	);
 }
 
 void FD3D12CommandContext::NvFlowRestoreState()
