@@ -1131,7 +1131,7 @@ void NvFlow::Scene::emitCustomAllocCallback(IRHICommandContext* RHICmdCtx, const
 	{
 		return;
 	}
-	NvFlowContextPop(m_context->m_flowContext);
+	m_context->m_flowInterop->Pop(*RHICmdCtx, m_context->m_flowContext);
 
 	TShaderMapRef<FNvFlowMaskFromParticlesCS> MaskFromParticlesCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 	RHICmdCtx->RHISetComputeShader(MaskFromParticlesCS->GetComputeShader());
@@ -1162,7 +1162,7 @@ void NvFlow::Scene::emitCustomAllocCallback(IRHICommandContext* RHICmdCtx, const
 		}
 	}
 
-	NvFlowContextPush(m_context->m_flowContext);
+	m_context->m_flowInterop->Push(*RHICmdCtx, m_context->m_flowContext);
 }
 
 
@@ -1655,7 +1655,7 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 		return;
 	}
 
-	NvFlowContextPop(m_context->m_flowContext);
+	m_context->m_flowInterop->Pop(*RHICmdCtx, m_context->m_flowContext);
 
 	for (uint32 layerId = 0; layerId < emitParams->numLayers; ++layerId)
 	{
@@ -1748,7 +1748,7 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 		*dataFrontIdx ^= 1;
 	}
 
-	NvFlowContextPush(m_context->m_flowContext);
+	m_context->m_flowInterop->Push(*RHICmdCtx, m_context->m_flowContext);
 }
 
 void NvFlow::Scene::emitCustomEmitDensityCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* emitParams, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt)
@@ -1761,7 +1761,7 @@ void NvFlow::Scene::emitCustomEmitDensityCallback(IRHICommandContext* RHICmdCtx,
 		return;
 	}
 
-	NvFlowContextPop(m_context->m_flowContext);
+	m_context->m_flowInterop->Pop(*RHICmdCtx, m_context->m_flowContext);
 
 	for (uint32 layerId = 0; layerId < emitParams->numLayers; ++layerId)
 	{
@@ -1773,7 +1773,7 @@ void NvFlow::Scene::emitCustomEmitDensityCallback(IRHICommandContext* RHICmdCtx,
 
 	*dataFrontIdx ^= 1;
 
-	NvFlowContextPush(m_context->m_flowContext);
+	m_context->m_flowInterop->Push(*RHICmdCtx, m_context->m_flowContext);
 }
 
 // ---------------- global interface functions ---------------------
