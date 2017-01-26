@@ -60,13 +60,15 @@ public:
 		ID3D12Resource* InResource,
 		D3D12_RESOURCE_STATES InitialState,
 		D3D12_RESOURCE_DESC const& InDesc,
-		D3D12_RESOURCE_STATES* InResourceState = nullptr
+		D3D12_RESOURCE_STATES* InResourceState
 	)
 		: Resource(InParent, VisibleNodes, InResource, InitialState, InDesc)
 		, ResourceLocation(InParent)
 		, ResourceState(InResourceState)
 	{
 		ResourceLocation.SetResource(&Resource);
+		Resource.bIsNvFlowResource = true;
+		Resource.NvFlowResourceState = ResourceState;
 	}
 };
 
@@ -89,7 +91,7 @@ FShaderResourceViewRHIRef FD3D12CommandContext::NvFlowCreateSRV(const FRHINvFlow
 
 	TRefCountPtr<FD3D12ResourceNvFlow> ResourceRef = new FD3D12ResourceNvFlow(
 		GetParentDevice(), GetParentDevice()->GetNodeMask(), descD3D12->resource,
-		*descD3D12->currentState, descD3D12->resource->GetDesc());
+		*descD3D12->currentState, descD3D12->resource->GetDesc(), descD3D12->currentState);
 
 	auto localSrvDesc = descD3D12->srvDesc;
 	return new FD3D12ShaderResourceViewNvFlow(GetParentDevice(), &localSrvDesc, ResourceRef);

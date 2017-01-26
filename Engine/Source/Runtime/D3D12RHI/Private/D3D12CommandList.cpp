@@ -66,7 +66,19 @@ void inline FD3D12CommandListHandle::FD3D12CommandListData::FCommandListResource
 	{
 		ResourceState.Initialize(pResource->GetSubresourceCount());
 		check(ResourceState.CheckResourceState(D3D12_RESOURCE_STATE_TBD));
+		// NvFlow begin
+		if (pResource->bIsNvFlowResource)
+		{
+			ResourceState = *pResource->GetResourceState();
+		}
+		// NvFlow end
 	}
+	// NvFlow begin
+	if (pResource->bIsNvFlowResource)
+	{
+		*pResource->NvFlowResourceState = ResourceState.GetSubresourceState(0u);
+	}
+	// NvFlow end
 
 	check(ResourceState.CheckResourceStateInitalized());
 }
