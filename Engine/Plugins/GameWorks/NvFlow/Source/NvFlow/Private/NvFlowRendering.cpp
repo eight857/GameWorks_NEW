@@ -405,6 +405,8 @@ void NvFlow::Context::release()
 
 	m_computeDevice = nullptr;
 	m_computeContext = nullptr;
+
+	NvFlowDeferredRelease(1000.f);
 }
 
 void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
