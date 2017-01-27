@@ -47,27 +47,6 @@ void FD3D12CommandContext::NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetV
 	StateCache.GetScissorRect(&descD3D12->scissor);
 }
 
-class FD3D12ShaderResourceViewNvFlowRO : public FD3D12ShaderResourceView
-{
-	FD3D12ResourceLocation ResourceLocation;
-
-public:
-	FD3D12ShaderResourceViewNvFlowRO(FD3D12Device* InParent, D3D12_SHADER_RESOURCE_VIEW_DESC* InSRVDesc)
-		: FD3D12ShaderResourceView(InParent, InSRVDesc, &ResourceLocation)
-		, ResourceLocation(InParent)
-	{
-	}
-};
-
-FShaderResourceViewRHIRef FD3D12CommandContext::NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc)
-{
-	const FRHINvFlowResourceViewDescD3D12* descD3D12 = static_cast<const FRHINvFlowResourceViewDescD3D12*>(desc);
-
-	check(*descD3D12->currentState & (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
-
-	auto localSrvDesc = descD3D12->srvDesc;
-	return new FD3D12ShaderResourceViewNvFlowRO(GetParentDevice(), &localSrvDesc);
-}
 
 class FD3D12NvFlowResourceRW : public FRHINvFlowResourceRW
 {
@@ -103,6 +82,21 @@ public:
 	}
 };
 
+FShaderResourceViewRHIRef FD3D12CommandContext::NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc)
+{
+	const FRHINvFlowResourceViewDescD3D12* descD3D12 = static_cast<const FRHINvFlowResourceViewDescD3D12*>(desc);
+
+	check(*descD3D12->currentState & (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+
+	FD3D12NvFlowResourceRW* NvFlowResource = new FD3D12NvFlowResourceRW(
+		GetParentDevice(), GetParentDevice()->GetNodeMask(), descD3D12->resource,
+		descD3D12->resource->GetDesc(), descD3D12->currentState);
+
+	auto localSrvDesc = descD3D12->srvDesc;
+	return new FD3D12ShaderResourceViewNvFlow(GetParentDevice(), &localSrvDesc, NvFlowResource);
+}
+
+
 class FD3D12UnorderedAccessViewNvFlow : public FD3D12UnorderedAccessView
 {
 	TRefCountPtr<FD3D12NvFlowResourceRW> NvFlowResourceRWRef;
@@ -122,7 +116,6 @@ FRHINvFlowResourceRW* FD3D12CommandContext::NvFlowCreateResourceRW(const FRHINvF
 	FD3D12NvFlowResourceRW* NvFlowResourceRW = new FD3D12NvFlowResourceRW(
 		GetParentDevice(), GetParentDevice()->GetNodeMask(), descD3D12->resourceView.resource,
 		descD3D12->resourceView.resource->GetDesc(), descD3D12->resourceView.currentState);
-
 
 	if (pRHIRefSRV)
 	{
