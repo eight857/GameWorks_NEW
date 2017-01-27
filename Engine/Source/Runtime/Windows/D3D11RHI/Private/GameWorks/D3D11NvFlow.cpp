@@ -73,7 +73,7 @@ FShaderResourceViewRHIRef FD3D11DynamicRHI::NvFlowCreateSRV(const FRHINvFlowReso
 	return new FD3D11ShaderResourceView(SRV, Resource);
 }
 
-FUnorderedAccessViewRHIRef FD3D11DynamicRHI::NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV)
+FRHINvFlowResourceRW* FD3D11DynamicRHI::NvFlowCreateResourceRW(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV, FUnorderedAccessViewRHIRef* pRHIRefUAV)
 {
 	const FRHINvFlowResourceRWViewDescD3D11* descD3D11 = static_cast<const FRHINvFlowResourceRWViewDescD3D11*>(desc);
 
@@ -84,9 +84,12 @@ FUnorderedAccessViewRHIRef FD3D11DynamicRHI::NvFlowCreateUAV(const FRHINvFlowRes
 		TRefCountPtr<ID3D11ShaderResourceView> SRV = descD3D11->srv;
 		*pRHIRefSRV = new FD3D11ShaderResourceView(SRV, Resource);
 	}
-
-	TRefCountPtr<ID3D11UnorderedAccessView> UAV = descD3D11->uav;
-	return new FD3D11UnorderedAccessView(UAV, Resource);
+	if (pRHIRefUAV)
+	{
+		TRefCountPtr<ID3D11UnorderedAccessView> UAV = descD3D11->uav;
+		*pRHIRefUAV = new FD3D11UnorderedAccessView(UAV, Resource);
+	}
+	return nullptr;
 }
 
 // NvFlow end

@@ -104,7 +104,7 @@ public:
 		RHICmdCtx.NvFlowCleanup.Set(func, ptr);
 	}
 
-	virtual FShaderResourceViewRHIRef ConvertSRV(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowResource* resource)
+	virtual FShaderResourceViewRHIRef CreateSRV(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowResource* resource)
 	{
 		if (resource)
 		{
@@ -118,7 +118,7 @@ public:
 		return FShaderResourceViewRHIRef();
 	}
 
-	virtual FUnorderedAccessViewRHIRef ConvertUAV(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowResourceRW* resourceRW, FShaderResourceViewRHIRef* pRHIRefSRV)
+	virtual FRHINvFlowResourceRW* CreateResourceRW(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowResourceRW* resourceRW, FShaderResourceViewRHIRef* pRHIRefSRV, FUnorderedAccessViewRHIRef* pRHIRefUAV)
 	{
 		if (resourceRW)
 		{
@@ -128,9 +128,16 @@ public:
 			FRHINvFlowResourceRWViewDescD3D11 viewDescRHI;
 			viewDescRHI.srv = viewDesc.resourceView.srv;
 			viewDescRHI.uav = viewDesc.uav;
-			return RHICmdCtx.NvFlowCreateUAV(&viewDescRHI, pRHIRefSRV);
+			return RHICmdCtx.NvFlowCreateResourceRW(&viewDescRHI, pRHIRefSRV, pRHIRefUAV);
 		}
-		return FUnorderedAccessViewRHIRef();
+		return nullptr;
+	}
+	virtual void ReleaseResourceRW(IRHICommandContext& RHICmdCtx, FRHINvFlowResourceRW* pRHIResourceRW)
+	{
+		if (pRHIResourceRW)
+		{
+			RHICmdCtx.NvFlowReleaseResourceRW(pRHIResourceRW);
+		}
 	}
 
 };

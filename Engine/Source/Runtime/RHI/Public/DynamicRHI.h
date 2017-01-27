@@ -512,7 +512,9 @@ public:
 	virtual void NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc) {}
 	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) {}
 	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) { return FShaderResourceViewRHIRef(); }
-	virtual FUnorderedAccessViewRHIRef NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV) { return FUnorderedAccessViewRHIRef(); }
+	virtual FRHINvFlowResourceRW* NvFlowCreateResourceRW(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV, FUnorderedAccessViewRHIRef* pRHIRefUAV) { return nullptr; }
+	virtual void NvFlowReleaseResourceRW(FRHINvFlowResourceRW*) {}
+	
 	virtual void NvFlowRestoreState() {}
 	FRHINvFlowCleanup NvFlowCleanup;
 	virtual void NvFlowWork(void(*workFunc)(void*,SIZE_T,IRHICommandContext*), void* paramData, SIZE_T numBytes)

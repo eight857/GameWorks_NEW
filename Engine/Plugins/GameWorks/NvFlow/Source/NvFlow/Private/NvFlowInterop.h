@@ -23,8 +23,10 @@ public:
 	virtual void Pop(IRHICommandContext& RHICmdCtx, NvFlowContext* context) = 0;
 	virtual void CleanupFunc(IRHICommandContext& RHICmdCtx, void(*func)(void*), void* ptr) = 0;
 
-	virtual FShaderResourceViewRHIRef ConvertSRV(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowResource* resource) = 0;
-	virtual FUnorderedAccessViewRHIRef ConvertUAV(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowResourceRW* resourceRW, FShaderResourceViewRHIRef* pRHIRefSRV = nullptr) = 0;
+	virtual FShaderResourceViewRHIRef CreateSRV(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowResource* resource) = 0;
+
+	virtual FRHINvFlowResourceRW* CreateResourceRW(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowResourceRW* resourceRW, FShaderResourceViewRHIRef* pRHIRefSRV, FUnorderedAccessViewRHIRef* pRHIRefUAV) = 0;
+	virtual void ReleaseResourceRW(IRHICommandContext& RHICmdCtx, FRHINvFlowResourceRW* pRHIResourceRW) = 0;
 };
 
 NvFlowInterop* NvFlowCreateInteropD3D11();

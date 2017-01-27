@@ -7,6 +7,10 @@ struct FRHINvFlowRenderTargetViewDesc {};
 struct FRHINvFlowResourceViewDesc {};
 struct FRHINvFlowResourceRWViewDesc {};
 
+class FRHINvFlowResourceRW : public FRHIResource
+{
+};
+
 struct FRHINvFlowCleanup
 {
 protected:

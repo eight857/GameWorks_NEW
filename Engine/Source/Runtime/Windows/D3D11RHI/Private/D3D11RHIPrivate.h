@@ -502,7 +502,7 @@ public:
 	virtual void NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc) override;
 	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) override;
 	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) override;
-	virtual FUnorderedAccessViewRHIRef NvFlowCreateUAV(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV) override;
+	virtual FRHINvFlowResourceRW* NvFlowCreateResourceRW(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV, FUnorderedAccessViewRHIRef* pRHIRefUAV) override;
 	// NvFlow end
 
 	// Accessors.
