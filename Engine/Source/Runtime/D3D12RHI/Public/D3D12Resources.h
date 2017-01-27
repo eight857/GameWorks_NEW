@@ -162,11 +162,6 @@ public:
 	D3D12_RESOURCE_STATES GetReadableState() const { return ReadableState; }
 	bool RequiresResourceStateTracking() const { return bRequiresResourceStateTracking; }
 
-	// NvFlow begin
-	bool bIsNvFlowResource = false;
-	D3D12_RESOURCE_STATES* NvFlowResourceState;
-	// NvFlow end
-
 	void SetName(const TCHAR* Name)
 	{
 		DebugName = FName(Name);
