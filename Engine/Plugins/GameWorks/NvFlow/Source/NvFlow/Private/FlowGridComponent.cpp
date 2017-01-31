@@ -133,7 +133,7 @@ FPrimitiveSceneProxy* UFlowGridComponent::CreateSceneProxy()
 
 namespace
 {
-	void CopyMaterialPerComponent(const FFlowMaterialPerComponent& In, NvFlowGridMaterialPerComponent& Out)
+	inline void CopyMaterialPerComponent(const FFlowMaterialPerComponent& In, NvFlowGridMaterialPerComponent& Out)
 	{
 		Out.damping = In.Damping;
 		Out.fade = In.Fade;
@@ -141,6 +141,14 @@ namespace
 		Out.macCormackBlendThreshold = In.MacCormackBlendThreshold;
 		Out.allocWeight = In.AllocWeight;
 		Out.allocThreshold = In.AllocThreshold;
+	}
+
+	inline void FromLinearColor(const FLinearColor& In, NvFlowFloat4& Out)
+	{
+		Out.x = In.R;
+		Out.y = In.G;
+		Out.z = In.B;
+		Out.w = In.A;
 	}
 
 	FlowMaterialKeyType AddMaterialParams(FFlowGridProperties& GridProperties, UFlowMaterial* FlowMaterial, FlowMaterialKeyType DefaultMaterialKey = nullptr)
@@ -173,30 +181,54 @@ namespace
 		MaterialParams.GridParams.coolingRate = FlowMaterial->CoolingRate;
 
 		//Render part
-		MaterialParams.RenderParams.alphaScale = FlowMaterial->AlphaScale;
-
-		SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateColorMap);
-
-		//Alloc color map size to default specified by the flow library. NvFlowRendering.cpp assumes that for now.
-		if (MaterialParams.ColorMap.Num() == 0)
+		check(FlowMaterial->RenderMaterials.Num() > 0);
+		MaterialParams.RenderMaterials.Reset();
+		MaterialParams.RenderMaterials.Reserve(FlowMaterial->RenderMaterials.Num());
+		for (auto it = FlowMaterial->RenderMaterials.CreateIterator(); it; ++it)
 		{
-			MaterialParams.ColorMap.SetNum(64);
+			UFlowRenderMaterial* RenderMaterial = *it;
+			if (RenderMaterial == nullptr)
+			{
+				continue;
+			}
+
+			MaterialParams.RenderMaterials.AddDefaulted(1);
+			FFlowRenderMaterialParams& RenderMaterialParams = MaterialParams.RenderMaterials.Last();
+
+			RenderMaterialParams.Key = RenderMaterial;
+
+			RenderMaterialParams.alphaScale = RenderMaterial->AlphaScale;
+			RenderMaterialParams.additiveFactor = RenderMaterial->AdditiveFactor;
+
+			FromLinearColor(RenderMaterial->ColorMapCompMask, RenderMaterialParams.colorMapCompMask);
+			FromLinearColor(RenderMaterial->AlphaCompMask, RenderMaterialParams.alphaCompMask);
+			FromLinearColor(RenderMaterial->IntensityCompMask, RenderMaterialParams.intensityCompMask);
+
+			RenderMaterialParams.alphaBias = RenderMaterial->AlphaBias;
+			RenderMaterialParams.intensityBias = RenderMaterial->IntensityBias;
+
+			SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateColorMap);
+
+			//Alloc color map size to default specified by the flow library. NvFlowRendering.cpp assumes that for now.
+			if (RenderMaterialParams.ColorMap.Num() == 0)
+			{
+				RenderMaterialParams.ColorMap.SetNum(64);
+			}
+
+			float xmin = RenderMaterial->ColorMapMinX;
+			float xmax = RenderMaterial->ColorMapMaxX;
+			RenderMaterialParams.colorMapMinX = xmin;
+			RenderMaterialParams.colorMapMaxX = xmax;
+
+			for (int32 i = 0; i < RenderMaterialParams.ColorMap.Num(); i++)
+			{
+				float t = float(i) / (RenderMaterialParams.ColorMap.Num() - 1);
+
+				float s = (xmax - xmin) * t + xmin;
+
+				RenderMaterialParams.ColorMap[i] = RenderMaterial->ColorMap ? RenderMaterial->ColorMap->GetLinearColorValue(s) : FLinearColor(0.f, 0.f, 0.f, 1.f);
+			}
 		}
-
-		float xmin = FlowMaterial->ColorMapMinX;
-		float xmax = FlowMaterial->ColorMapMaxX;
-		MaterialParams.RenderParams.colorMapMinX = xmin;
-		MaterialParams.RenderParams.colorMapMaxX = xmax;
-
-		for (int32 i = 0; i < MaterialParams.ColorMap.Num(); i++)
-		{
-			float t = float(i) / (MaterialParams.ColorMap.Num() - 1);
-
-			float s = (xmax - xmin) * t + xmin;
-
-			MaterialParams.ColorMap[i] = FlowMaterial->ColorMap ? FlowMaterial->ColorMap->GetLinearColorValue(s) : FLinearColor(0.f, 0.f, 0.f, 1.f);
-		}
-
 		return FlowMaterial;
 	}
 

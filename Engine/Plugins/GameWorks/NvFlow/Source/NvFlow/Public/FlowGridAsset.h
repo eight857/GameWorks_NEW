@@ -18,10 +18,9 @@ UENUM(BlueprintType)
 enum EFlowRenderMode
 {
 	EFRM_Colormap = 0 UMETA(DisplayName = "Colormap"),
-	EFRM_ColormapShadow = 1 UMETA(DisplayName = "Colormap Shadow"),
-	EFRM_Raw = 2 UMETA(DisplayName = "Raw"),
-	EFRM_Rainbow = 3 UMETA(DisplayName = "Rainbow"),
-	EFRM_Debug = 4 UMETA(DisplayName = "Debug"),
+	EFRM_Raw = 1 UMETA(DisplayName = "Raw"),
+	EFRM_Rainbow = 2 UMETA(DisplayName = "Rainbow"),
+	EFRM_Debug = 3 UMETA(DisplayName = "Debug"),
 
 	EFRM_MAX,
 };

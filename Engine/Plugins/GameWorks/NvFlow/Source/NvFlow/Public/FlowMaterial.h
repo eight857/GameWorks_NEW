@@ -95,21 +95,9 @@ class UFlowMaterial : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Combustion)
 	float CoolingRate;
 
-	/** Alpha scale */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (ClampMin = 0.0f, ClampMax = 1.0f))
-	float AlphaScale;
-
-	/** Color curve */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Export, Category = "Rendering")
-	class UCurveLinearColor* ColorMap;
-
-	/** Color curve minimum X value */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (UIMin = -1.0f, UIMax = 1.0f))
-	float ColorMapMinX;
-
-	/** Color curve maximum X value */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (UIMin = -1.0f, UIMax = 1.0f))
-	float ColorMapMaxX;
+	/** Array of render materials */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Rendering)
+	TArray<class UFlowRenderMaterial*> RenderMaterials;
 };
 
 // NvFlow end

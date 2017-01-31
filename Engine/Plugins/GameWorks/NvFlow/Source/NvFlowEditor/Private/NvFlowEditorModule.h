@@ -14,6 +14,7 @@ public:
 private:
 	TSharedPtr<IAssetTypeActions>	FlowGridAssetTypeActions;
 	TSharedPtr<IAssetTypeActions>	FlowMaterialTypeActions;
+	TSharedPtr<IAssetTypeActions>	FlowRenderMaterialTypeActions;
 };
 
 //////////////////////////////////////////////////////////////////////////

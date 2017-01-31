@@ -33,14 +33,20 @@ struct FFlowGridRenderParams
 };
 
 typedef void* FlowMaterialKeyType;
+typedef void* FlowRenderMaterialKeyType;
+
+struct FFlowRenderMaterialParams : NvFlowRenderMaterialParams
+{
+	FlowRenderMaterialKeyType Key;
+	// Color map
+	TArray<FLinearColor> ColorMap;
+};
 
 struct FFlowMaterialParams
 {
 	NvFlowGridMaterialParams GridParams;
-	NvFlowRenderMaterialParams RenderParams;
 
-	// Color map
-	TArray<FLinearColor> ColorMap;
+	TArray<FFlowRenderMaterialParams> RenderMaterials;
 };
 
 struct FFlowGridProperties

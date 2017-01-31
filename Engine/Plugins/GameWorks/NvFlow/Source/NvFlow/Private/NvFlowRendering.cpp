@@ -160,10 +160,24 @@ namespace NvFlow
 
 		TArray<ParticleSimulationParamsNvFlow> m_particleParamsArray;
 
+		struct RenderMaterialData
+		{
+			enum
+			{
+				RELEASED = 2u,
+				PENDING_RELEASE = 0u,
+				CREATED = 1u
+			};
+			uint32 state = RELEASED;
+
+			NvFlowRenderMaterialHandle renderMaterialHandle;
+		};
+
 		struct MaterialData
 		{
 			NvFlowGridMaterialHandle gridMaterialHandle;
-			NvFlowRenderMaterialHandle renderMaterialHandle;
+
+			TMap<FlowRenderMaterialKeyType, RenderMaterialData> renderMaterialMap;
 		};
 		TMap<FlowMaterialKeyType, MaterialData> m_materialMap;
 
@@ -664,31 +678,58 @@ const NvFlow::Scene::MaterialData& NvFlow::Scene::updateMaterial(FlowMaterialKey
 		materialData = &m_materialMap.Add(materialKey);
 
 		materialData->gridMaterialHandle = NvFlowGridCreateMaterial(m_grid, &materialParams.GridParams);
-
-		NvFlowRenderMaterialParams renderMaterialParams = materialParams.RenderParams;
-		renderMaterialParams.material = materialData->gridMaterialHandle;
-		materialData->renderMaterialHandle = NvFlowCreateRenderMaterial(m_context->m_flowContext, m_renderMaterialPool, &renderMaterialParams);
 	}
 	else
 	{
 		//TODO: add dirty check
 		NvFlowGridSetMaterialParams(m_grid, materialData->gridMaterialHandle, &materialParams.GridParams);
-
-		NvFlowRenderMaterialParams renderMaterialParams = materialParams.RenderParams;
-		renderMaterialParams.material = materialData->gridMaterialHandle;
-
-		NvFlowRenderMaterialUpdate(materialData->renderMaterialHandle, &renderMaterialParams);
 	}
 
-	// update color map
+	for (auto It = materialData->renderMaterialMap.CreateIterator(); It; ++It)
 	{
-		//TODO: add dirty check
-		auto mapped = NvFlowRenderMaterialColorMap(m_context->m_flowContext, materialData->renderMaterialHandle);
-		if (mapped.data)
+		RenderMaterialData& renderMaterialData = It.Value();
+		renderMaterialData.state &= ~RenderMaterialData::CREATED; // CREATED -> PENDING_RELEASE
+	}
+
+	for (auto It = materialParams.RenderMaterials.CreateConstIterator(); It; ++It)
+	{
+		const FFlowRenderMaterialParams& renderMaterialParams = *It;
+
+		NvFlowRenderMaterialParams renderMaterialParamsCopy = renderMaterialParams;
+		renderMaterialParamsCopy.material = materialData->gridMaterialHandle;
+
+		RenderMaterialData& renderMaterialData = materialData->renderMaterialMap.FindOrAdd(renderMaterialParams.Key);
+		if (renderMaterialData.state == RenderMaterialData::RELEASED)
 		{
-			check(mapped.dim == materialParams.ColorMap.Num());
-			FMemory::Memcpy(mapped.data, materialParams.ColorMap.GetData(), sizeof(NvFlowFloat4)*mapped.dim);
-			NvFlowRenderMaterialColorUnmap(m_context->m_flowContext, materialData->renderMaterialHandle);
+			renderMaterialData.renderMaterialHandle = NvFlowCreateRenderMaterial(m_context->m_flowContext, m_renderMaterialPool, &renderMaterialParamsCopy);
+		}
+		else
+		{
+			NvFlowRenderMaterialUpdate(renderMaterialData.renderMaterialHandle, &renderMaterialParamsCopy);
+		}
+		renderMaterialData.state = RenderMaterialData::CREATED;
+
+		// update color map
+		{
+			//TODO: add dirty check
+			auto mapped = NvFlowRenderMaterialColorMap(m_context->m_flowContext, renderMaterialData.renderMaterialHandle);
+			if (mapped.data)
+			{
+				check(mapped.dim == renderMaterialParams.ColorMap.Num());
+				FMemory::Memcpy(mapped.data, renderMaterialParams.ColorMap.GetData(), sizeof(NvFlowFloat4)*mapped.dim);
+				NvFlowRenderMaterialColorUnmap(m_context->m_flowContext, renderMaterialData.renderMaterialHandle);
+			}
+		}
+	}
+
+	for (auto It = materialData->renderMaterialMap.CreateIterator(); It; ++It)
+	{
+		RenderMaterialData& renderMaterialData = It.Value();
+		if (renderMaterialData.state == RenderMaterialData::PENDING_RELEASE)
+		{
+			NvFlowReleaseRenderMaterial(renderMaterialData.renderMaterialHandle);
+
+			renderMaterialData.state = RenderMaterialData::RELEASED;
 		}
 	}
 

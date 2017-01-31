@@ -772,11 +772,9 @@ struct NvFlowRenderMaterialHandle
 enum NvFlowVolumeRenderMode
 {
 	eNvFlowVolumeRenderMode_colormap = 0,
-	eNvFlowVolumeRenderMode_colormapShadow = 1,
-	eNvFlowVolumeRenderMode_raw = 2,
-
-	eNvFlowVolumeRenderMode_rainbow = 3,
-	eNvFlowVolumeRenderMode_debug = 4,
+	eNvFlowVolumeRenderMode_raw = 1,
+	eNvFlowVolumeRenderMode_rainbow = 2,
+	eNvFlowVolumeRenderMode_debug = 3,
 
 	eNvFlowVolumeRenderModeCount
 };
@@ -786,9 +784,17 @@ struct NvFlowRenderMaterialParams
 {
 	NvFlowGridMaterialHandle material;			//!< Grid material to align these parameters with
 
-	float alphaScale;							//!< Global alpha scale for adjust net opacity without color map changes
+	float alphaScale;							//!< Global alpha scale for adjust net opacity without color map changes, applied after saturate(alpha)
+	float additiveFactor;						//!< 1.0 makes material blend fully additive
+
+	NvFlowFloat4 colorMapCompMask;				//!< Component mask for colormap, control what channel drives color map X axis;
+	NvFlowFloat4 alphaCompMask;					//!< Component mask to control which channel(s) modulation the alpha
+	NvFlowFloat4 intensityCompMask;				//!< Component mask to control which channel(s) modulates the intensity
+
 	float colorMapMinX;							//!< Minimum value on the x channel (typically temperature), maps to colorMap u = 0.0
 	float colorMapMaxX;							//!< Maximum value on the x channel (typically temperature), maps to colorMap u = 1.0
+	float alphaBias;							//!< Offsets alpha before saturate(alpha)
+	float intensityBias;						//!< Offsets intensity before modulating color
 };
 
 /**
