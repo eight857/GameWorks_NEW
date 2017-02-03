@@ -30,6 +30,10 @@ struct FFlowGridRenderParams
 	float MaxScreenPercentage;
 	float MinScreenPercentage;
 	uint32 bDebugWireframe : 1;
+
+	uint32 bVolumeShadowEnabled : 1;
+	float ShadowIntensityScale;
+	float ShadowMinIntensity;
 };
 
 typedef void* FlowMaterialKeyType;

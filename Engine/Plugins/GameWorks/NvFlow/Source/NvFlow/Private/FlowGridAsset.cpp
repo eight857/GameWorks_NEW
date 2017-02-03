@@ -12,6 +12,7 @@ bool UFlowGridAsset::sGlobalDebugDraw = false;
 uint32 UFlowGridAsset::sGlobalRenderChannel = eNvFlowGridTextureChannelDensity;
 uint32 UFlowGridAsset::sGlobalRenderMode = eNvFlowVolumeRenderMode_rainbow;
 uint32 UFlowGridAsset::sGlobalMode = eNvFlowGridDebugVisBlocks;
+bool UFlowGridAsset::sGlobalDebugDrawShadow = false;
 
 
 UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
@@ -92,6 +93,10 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	MaxActiveDistance = 0.0f;
 	VelocitySlipFactor = 0.0f;
 	VelocitySlipThickness = 0.0f;
+
+	bVolumeShadowEnabled = false;
+	ShadowIntensityScale = 0.5f;
+	ShadowMinIntensity = 0.15f;
 
 }
 

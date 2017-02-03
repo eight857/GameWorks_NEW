@@ -55,6 +55,7 @@ struct FNvFlowCommands
 	FAutoConsoleCommand ConsoleCommandFlowVisRenderChannel;
 	FAutoConsoleCommand ConsoleCommandFlowVisRenderMode;
 	FAutoConsoleCommand ConsoleCommandFlowVisMode;
+	FAutoConsoleCommand ConsoleCommandFlowVisShadow;
 
 	static const uint32 debugVisDefault = eNvFlowGridDebugVisBlocks | eNvFlowGridDebugVisEmitBounds | eNvFlowGridDebugVisShapesSimple;
 
@@ -99,12 +100,17 @@ struct FNvFlowCommands
 		UFlowGridAsset::sGlobalMode = FlowVisMode;
 	}
 
+	void CommandFlowVisShadow(const TArray<FString>& Args)
+	{
+		UFlowGridAsset::sGlobalDebugDrawShadow = !UFlowGridAsset::sGlobalDebugDrawShadow;
+	}
+
 	FNvFlowCommands() :
 		ConsoleCommandFlowVis(
 			TEXT("flowvis"),
 			*NSLOCTEXT("Flow", "CommandText_FlowVis", "Enable/Disable Flow debug visualization").ToString(),
 			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowVis)
-			),
+		),
 		ConsoleCommandFlowVisRenderChannel(
 			TEXT("flowvisrenderchannel"),
 			*NSLOCTEXT("Flow", "CommandText_FlowVisRenderChannel", "Set Flow debug render channel").ToString(),
@@ -114,13 +120,18 @@ struct FNvFlowCommands
 			TEXT("flowvisrendermode"),
 			*NSLOCTEXT("Flow", "CommandText_FlowVisRenderMode", "Set Flow debug render mode").ToString(),
 			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowVisRenderMode)
-			),
+		),
 		ConsoleCommandFlowVisMode(
 			TEXT("flowvismode"),
 			*NSLOCTEXT("Flow", "CommandText_FlowVisMode", "Set Flow grid debug visualization mode").ToString(),
 			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowVisMode)
+		),
+		ConsoleCommandFlowVisShadow(
+			TEXT("flowvisshadow"),
+			*NSLOCTEXT("Flow", "CommandText_FlowVisShadow", "Enable/Disable Flow debug visualization for shadow").ToString(),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowVisShadow)
 		)
-	{
+		{
 	}
 };
 

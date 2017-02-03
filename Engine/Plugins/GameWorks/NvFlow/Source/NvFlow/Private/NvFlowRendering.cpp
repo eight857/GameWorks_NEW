@@ -148,9 +148,10 @@ namespace NvFlow
 		NvFlowGrid* m_grid = nullptr;
 		NvFlowGridProxy* m_gridProxy = nullptr;
 		NvFlowVolumeRender* m_volumeRender = nullptr;
+		NvFlowVolumeShadow* m_volumeShadow = nullptr;
 		NvFlowRenderMaterialPool* m_renderMaterialPool = nullptr;
 
-		NvFlowGridExport* m_gridProxyExport = nullptr;
+		NvFlowGridExport* m_gridExport4Render = nullptr;
 
 		NvFlowGridDesc m_gridDesc;
 		NvFlowGridParams m_gridParams;
@@ -476,11 +477,13 @@ void NvFlow::Scene::release()
 	if (m_grid) NvFlowReleaseGrid(m_grid);
 	if (m_gridProxy) NvFlowReleaseGridProxy(m_gridProxy);
 	if (m_volumeRender) NvFlowReleaseVolumeRender(m_volumeRender);
+	if (m_volumeShadow) NvFlowReleaseVolumeShadow(m_volumeShadow);
 	if (m_renderMaterialPool) NvFlowReleaseRenderMaterialPool(m_renderMaterialPool);
 
 	m_grid = nullptr;
 	m_gridProxy = nullptr;
 	m_volumeRender = nullptr;
+	m_volumeShadow = nullptr;
 	m_renderMaterialPool = nullptr;
 
 	m_context = nullptr;
@@ -869,7 +872,83 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 
 	NvFlowGridProxyFlush(m_gridProxy, computeContext);
 
-	m_gridProxyExport = NvFlowGridProxyGetGridExport(m_gridProxy, m_context->m_flowContext);
+	FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
+
+	m_gridExport4Render = NvFlowGridProxyGetGridExport(m_gridProxy, m_context->m_flowContext);
+
+	FLightSceneInfo* DirectionalLight = nullptr;
+
+	auto RenderScene = FlowGridSceneProxy->GetScene().GetRenderScene();
+	if (RenderScene)
+	{
+		DirectionalLight = RenderScene->SimpleDirectionalLight;
+	}
+
+
+	if (Properties.RenderParams.bVolumeShadowEnabled && DirectionalLight != nullptr)
+	{
+		if (m_volumeShadow == nullptr)
+		{
+			NvFlowVolumeShadowDesc volumeShadowDesc;
+			volumeShadowDesc.gridExport = m_gridExport4Render;
+			volumeShadowDesc.mapWidth = 4 * 256u;
+			volumeShadowDesc.mapHeight = 4 * 256u;
+			volumeShadowDesc.mapDepth = 4 * 256u;
+			volumeShadowDesc.minResidentScale = 0.25f * (1.f / 64.f);
+			volumeShadowDesc.maxResidentScale = 4.f * 0.25f * (1.f / 64.f);
+
+			m_volumeShadow = NvFlowCreateVolumeShadow(m_context->m_flowContext, &volumeShadowDesc);
+		}
+
+
+		NvFlowVolumeShadowParams shadowParams;
+		shadowParams.materialPool = m_renderMaterialPool;
+		shadowParams.renderMode = Properties.RenderParams.RenderMode;
+		shadowParams.renderChannel = Properties.RenderParams.RenderChannel;
+		shadowParams.intensityScale = Properties.RenderParams.ShadowIntensityScale;
+		shadowParams.minIntensity = Properties.RenderParams.ShadowMinIntensity;
+
+		FMatrix ShadowViewMatrix = DirectionalLight->Proxy->GetWorldToLight();
+		ShadowViewMatrix *= FMatrix(
+			FPlane(0, 0, 1, 0),
+			FPlane(1, 0, 0, 0),
+			FPlane(0, 1, 0, 0),
+			FPlane(0, 0, 0, 1));
+
+		FBox BoundBox = FlowGridSceneProxy->GetBounds().GetBox();
+		BoundBox.Min *= (1.0f / scale);
+		BoundBox.Max *= (1.0f / scale);
+
+		//set view origin to the center of bounding box
+		ShadowViewMatrix.SetOrigin( -FVector(ShadowViewMatrix.TransformVector(BoundBox.GetCenter())) );
+
+		FVector Extent = BoundBox.GetExtent();
+
+		float ExtentX = FVector::DotProduct(ShadowViewMatrix.GetColumn(0).GetAbs(), Extent);
+		float ExtentY = FVector::DotProduct(ShadowViewMatrix.GetColumn(1).GetAbs(), Extent);
+		float ExtentZ = FVector::DotProduct(ShadowViewMatrix.GetColumn(2).GetAbs(), Extent);
+
+		FMatrix ShadowProjMatrix = FMatrix::Identity;
+		ShadowProjMatrix.M[0][0] = 1.0f / ExtentX;
+		ShadowProjMatrix.M[1][1] = 1.0f / ExtentY;
+		ShadowProjMatrix.M[2][2] = 0.5f / ExtentZ;
+		ShadowProjMatrix.M[3][2] = 0.5f;
+
+		memcpy(&shadowParams.projectionMatrix, &ShadowProjMatrix.M[0][0], sizeof(shadowParams.projectionMatrix));
+		memcpy(&shadowParams.viewMatrix, &ShadowViewMatrix.M[0][0], sizeof(shadowParams.viewMatrix));
+
+		NvFlowVolumeShadowUpdate(m_volumeShadow, m_context->m_flowContext, m_gridExport4Render, &shadowParams);
+
+		m_gridExport4Render = NvFlowVolumeShadowGetGridExport(m_volumeShadow, m_context->m_flowContext);
+	}
+	else
+	{
+		if (m_volumeShadow)
+		{
+			NvFlowReleaseVolumeShadow(m_volumeShadow);
+			m_volumeShadow = nullptr;
+		}
+	}
 }
 
 void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
@@ -965,7 +1044,20 @@ void NvFlow::Scene::renderDeferred(IRHICommandContext* RHICmdCtx, RenderParams* 
 	volumeRenderParams.depthStencilView = m_context->m_dsv;
 	volumeRenderParams.renderTargetView = m_context->m_rtv;
 
-	NvFlowVolumeRenderGridExport(m_volumeRender, m_context->m_flowContext, m_gridProxyExport, &volumeRenderParams);
+	NvFlowVolumeRenderGridExport(m_volumeRender, m_context->m_flowContext, m_gridExport4Render, &volumeRenderParams);
+
+	if (m_volumeShadow && UFlowGridAsset::sGlobalDebugDrawShadow)
+	{
+		NvFlowVolumeShadowDebugRenderParams params = {};
+
+		params.renderTargetView = m_context->m_rtv;
+
+		params.projectionMatrix = volumeRenderParams.projectionMatrix;
+		params.viewMatrix = volumeRenderParams.viewMatrix;
+
+		NvFlowVolumeShadowDebugRender(m_volumeShadow, m_context->m_flowContext, &params);
+	}
+
 }
 
 namespace

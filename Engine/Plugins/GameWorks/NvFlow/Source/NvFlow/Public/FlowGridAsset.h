@@ -149,6 +149,16 @@ class UFlowGridAsset : public UObject
 	static uint32 sGlobalRenderChannel;
 	static uint32 sGlobalRenderMode;
 	static uint32 sGlobalMode;
+	static bool sGlobalDebugDrawShadow;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
+	uint32		bVolumeShadowEnabled : 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
+	float		ShadowIntensityScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
+	float		ShadowMinIntensity;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
 	uint32		bDistanceFieldCollisionEnabled : 1;

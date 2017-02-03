@@ -687,7 +687,8 @@ void UFlowGridComponent::UpdateShapes()
 
 							FlowGridProperties.GridEmitParams.Push(collideParams);
 
-							FlowGridProperties.GridEmitMaterialKeys.Push(FlowGridProperties.GridEmitMaterialKeys.Last());
+							FlowMaterialKeyType LastMaterialKey = FlowGridProperties.GridEmitMaterialKeys.Last();
+							FlowGridProperties.GridEmitMaterialKeys.Push(LastMaterialKey);
 						}
 					}
 				}
@@ -898,6 +899,10 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			GridParams.debugVisFlags = eNvFlowGridDebugVisDisabled;
 			FlowGridProperties.RenderParams.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
 		}
+
+		FlowGridProperties.RenderParams.bVolumeShadowEnabled = FlowGridAssetRef->bVolumeShadowEnabled;
+		FlowGridProperties.RenderParams.ShadowIntensityScale = FlowGridAssetRef->ShadowIntensityScale;
+		FlowGridProperties.RenderParams.ShadowMinIntensity = FlowGridAssetRef->ShadowMinIntensity;
 
 		FlowGridProperties.MaterialsMap.Reset();
 		FlowGridProperties.DefaultMaterialKey = AddMaterialParams(FlowGridProperties, DefaultFlowMaterial);
