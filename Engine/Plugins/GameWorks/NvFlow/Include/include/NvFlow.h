@@ -1395,3 +1395,73 @@ NV_FLOW_API void NvFlowSDFGenUpdate(NvFlowSDFGen* sdfGen, NvFlowContext* context
 NV_FLOW_API NvFlowTexture3D* NvFlowSDFGenShape(NvFlowSDFGen* sdfGen, NvFlowContext* context);
 
 ///@}
+// -------------------------- NvFlowParticleSurface -------------------------------
+///@defgroup NvFlowParticleSurface
+///@{
+
+//! A particle surface generator
+struct NvFlowParticleSurface;
+
+//! Description for creation
+struct NvFlowParticleSurfaceDesc
+{
+	NvFlowFloat3 initialLocation;		//!< Initial location of axis aligned bounding box
+	NvFlowFloat3 halfSize;				//!< Initial half size of axis aligned bounding box
+
+	NvFlowDim virtualDim;				//!< Resolution of virtual address space inside of bounding box
+	float residentScale;				//!< Fraction of virtual cells to allocate memory for
+
+	NvFlowUint maxParticles;			//!< Maximum particle count for memory allocation
+};
+
+//! Particle data
+struct NvFlowParticleSurfaceData
+{
+	const float* positions;
+	NvFlowUint positionStride;
+	NvFlowUint numParticles;
+};
+
+//! Parameters for update
+struct NvFlowParticleSurfaceParams
+{
+	float surfaceThreshold;
+	float smoothRadius;
+	bool separableSmoothing;
+};
+
+//! Parameter for surface emission
+struct NvFlowParticleSurfaceEmitParams
+{
+	float deltaTime;
+
+	NvFlowFloat3 velocityLinear;					//!< Linear velocity, in world units, emitter direction
+	NvFlowFloat3 velocityCoupleRate;				//!< Rate of correction to target, inf means instantaneous
+
+	float density;									//!< Target density
+	float densityCoupleRate;						//!< Rate of correction to target, inf means instantaneous
+
+	float temperature;								//!< Target temperature
+	float temperatureCoupleRate;					//!< Rate of correction to target, inf means instantaneous
+
+	float fuel;										//!< Target fuel
+	float fuelCoupleRate;							//!< Rate of correction to target, inf means instantaneous
+};
+
+NV_FLOW_API NvFlowParticleSurface* NvFlowCreateParticleSurface(NvFlowContext* context, const NvFlowParticleSurfaceDesc* desc);
+
+NV_FLOW_API void NvFlowReleaseParticleSurface(NvFlowParticleSurface* surface);
+
+NV_FLOW_API void NvFlowParticleSurfaceUpdateParticles(NvFlowParticleSurface* surface, NvFlowContext* context, const NvFlowParticleSurfaceData* data);
+
+NV_FLOW_API void NvFlowParticleSurfaceUpdateSurface(NvFlowParticleSurface* surface, NvFlowContext* context, const NvFlowParticleSurfaceParams* params);
+
+NV_FLOW_API void NvFlowParticleSurfaceAllocFunc(NvFlowParticleSurface* surface, NvFlowContext* context, const NvFlowGridEmitCustomAllocParams* params);
+
+NV_FLOW_API void NvFlowParticleSurfaceEmitVelocityFunc(NvFlowParticleSurface* surface, NvFlowContext* context, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, const NvFlowParticleSurfaceEmitParams* emitParams);
+
+NV_FLOW_API void NvFlowParticleSurfaceEmitDensityFunc(NvFlowParticleSurface* surface, NvFlowContext* context, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* params, const NvFlowParticleSurfaceEmitParams* emitParams);
+
+NV_FLOW_API NvFlowGridExport* NvFlowParticleSurfaceDebugGridExport(NvFlowParticleSurface* surface, NvFlowContext* context);
+
+///@}
