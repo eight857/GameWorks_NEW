@@ -20,6 +20,46 @@ void FD3D12CommandContext::NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc)
 	descD3D12->nextFenceValue = GetCommandListManager().GetFence().GetCurrentFence();
 }
 
+class FRHINvFlowStateCacheAccessD3D12
+{
+	FD3D12StateCacheBase* StateCache = nullptr;
+public:
+	FRHINvFlowStateCacheAccessD3D12(FD3D12CommandContext* cmdctx)
+	{
+		StateCache = &cmdctx->StateCache;
+	}
+	FD3D12DescriptorCache& DescriptorCache()
+	{
+		return StateCache->DescriptorCache;
+	}
+};
+
+void FD3D12CommandContext::NvFlowReserveDescriptors(FRHINvFlowDescriptorReserveHandle* dstHandle, uint32 numDescriptors, uint64 lastFenceCompleted, uint64 nextFenceValue)
+{
+	FRHINvFlowStateCacheAccessD3D12 StateCacheAccess(this);
+	auto& DescriptorCache = StateCacheAccess.DescriptorCache();
+	uint32 ViewHeapSlot = 0u;
+	for (uint32 iTries = 0; iTries < 2; ++iTries)
+	{
+		const uint32 NumViews = numDescriptors;
+		if (!DescriptorCache.GetCurrentViewHeap()->CanReserveSlots(NumViews))
+		{
+			DescriptorCache.GetCurrentViewHeap()->RollOver();
+			continue;
+		}
+		ViewHeapSlot = DescriptorCache.GetCurrentViewHeap()->ReserveSlots(NumViews);
+		break;
+	}
+	if (dstHandle)
+	{
+		auto handle = static_cast<FRHINvFlowDescriptorReserveHandleD3D12*>(dstHandle);
+		handle->heap = DescriptorCache.GetCurrentViewHeap()->GetHeap();
+		handle->descriptorSize = DescriptorCache.GetCurrentViewHeap()->GetDescriptorSize();
+		handle->cpuHandle = DescriptorCache.GetCurrentViewHeap()->GetCPUSlotHandle(ViewHeapSlot);
+		handle->gpuHandle = DescriptorCache.GetCurrentViewHeap()->GetGPUSlotHandle(ViewHeapSlot);
+	}
+}
+
 void FD3D12CommandContext::NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc)
 {
 	FRHINvFlowDepthStencilViewDescD3D12* descD3D12 = static_cast<FRHINvFlowDepthStencilViewDescD3D12*>(desc);

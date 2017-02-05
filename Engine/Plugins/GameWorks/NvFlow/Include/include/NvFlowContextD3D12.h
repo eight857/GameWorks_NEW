@@ -31,6 +31,20 @@ struct NvFlowRenderTargetViewDescD3D12
 	D3D12_RECT scissor;
 };
 
+struct NvFlowDescriptorReserveHandleD3D12
+{
+	ID3D12DescriptorHeap* heap;
+	NvFlowUint descriptorSize;
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
+	D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle;
+};
+
+struct NvFlowDynamicDescriptorHeapD3D12
+{
+	void* userdata;
+	NvFlowDescriptorReserveHandleD3D12 (*reserveDescriptors)(void* userdata, NvFlowUint numDescriptors, NvFlowUint64 lastFenceCompleted, NvFlowUint64 nextFenceValue);
+};
+
 struct NvFlowContextDescD3D12
 {
 	ID3D12Device* device;						//!< The desired d3d12 device to use
@@ -39,6 +53,8 @@ struct NvFlowContextDescD3D12
 	ID3D12GraphicsCommandList* commandList;		//!< The commandlist for recording
 	UINT64 lastFenceCompleted;					//!< The last fence completed on commandQueue
 	UINT64 nextFenceValue;						//!< The fence value signaled after commandList is submitted
+
+	NvFlowDynamicDescriptorHeapD3D12 dynamicHeapCbvSrvUav; //!< Optional interface to share app descriptor heap with Flow
 };
 
 struct NvFlowResourceViewDescD3D12

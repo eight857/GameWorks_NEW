@@ -1,6 +1,14 @@
 #pragma once
 
 // NvFlow begin
+struct FRHINvFlowDescriptorReserveHandleD3D12 : FRHINvFlowDescriptorReserveHandle
+{
+	ID3D12DescriptorHeap* heap;
+	uint32 descriptorSize;
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
+	D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle;
+};
+
 struct FRHINvFlowDeviceDescD3D12 : FRHINvFlowDeviceDesc
 {
 	ID3D12Device* device;						//!< The desired d3d12 device to use

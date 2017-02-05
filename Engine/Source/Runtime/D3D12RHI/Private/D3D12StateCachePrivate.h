@@ -158,6 +158,9 @@ struct FD3D12ShaderResourceViewCache
 class FD3D12StateCacheBase : public FD3D12DeviceChild , public FD3D12SingleNodeGPUObject
 {
 	friend class FD3D12DynamicRHI;
+	// NvFlow begin
+	friend class FRHINvFlowStateCacheAccessD3D12;
+	// NvFlow end
 
 public:
 	enum ESRV_Type

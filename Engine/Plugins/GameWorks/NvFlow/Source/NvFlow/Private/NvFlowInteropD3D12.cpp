@@ -15,12 +15,21 @@
 class NvFlowInteropD3D12 : public NvFlowInterop
 {
 public:
-	virtual NvFlowContext* CreateContext(IRHICommandContext& RHICmdCtx)
+	static NvFlowDescriptorReserveHandleD3D12 ReserveDescriptors(void* userdata, NvFlowUint numDescriptors, NvFlowUint64 lastFenceCompleted, NvFlowUint64 nextFenceValue)
 	{
-		FRHINvFlowDeviceDescD3D12 deviceDesc = {};
-		RHICmdCtx.NvFlowGetDeviceDesc(&deviceDesc);
+		auto CmdCtx = static_cast<IRHICommandContext*>(userdata);
+		FRHINvFlowDescriptorReserveHandleD3D12 handle = {};
+		CmdCtx->NvFlowReserveDescriptors(&handle, numDescriptors, lastFenceCompleted, nextFenceValue);
+		NvFlowDescriptorReserveHandleD3D12 dstHandle = {};
+		dstHandle.heap = handle.heap;
+		dstHandle.descriptorSize = handle.descriptorSize;
+		dstHandle.cpuHandle = handle.cpuHandle;
+		dstHandle.gpuHandle = handle.gpuHandle;
+		return dstHandle;
+	}
 
-		NvFlowContextDescD3D12 desc = {};
+	void updateContextDesc(IRHICommandContext& RHICmdCtx, NvFlowContextDescD3D12& desc, FRHINvFlowDeviceDescD3D12& deviceDesc)
+	{
 		desc.device = deviceDesc.device;
 		desc.commandQueue = deviceDesc.commandQueue;
 		desc.commandQueueFence = deviceDesc.commandQueueFence;
@@ -28,6 +37,37 @@ public:
 		desc.lastFenceCompleted = deviceDesc.lastFenceCompleted;
 		desc.nextFenceValue = deviceDesc.nextFenceValue;
 
+		desc.dynamicHeapCbvSrvUav.userdata = &RHICmdCtx;
+		desc.dynamicHeapCbvSrvUav.reserveDescriptors = ReserveDescriptors;
+	}
+
+	void updateDepthStencilViewDesc(NvFlowDepthStencilViewDescD3D12& desc, FRHINvFlowDepthStencilViewDescD3D12& dsvDesc)
+	{
+		desc.dsvHandle = dsvDesc.dsvHandle;
+		desc.dsvDesc = dsvDesc.dsvDesc;
+		desc.srvHandle = dsvDesc.srvHandle;
+		desc.srvDesc = dsvDesc.srvDesc;
+		desc.resource = dsvDesc.resource;
+		desc.currentState = dsvDesc.currentState;
+		desc.viewport = dsvDesc.viewport;
+	}
+
+	void updateRenderTargetViewDesc(NvFlowRenderTargetViewDescD3D12& desc, FRHINvFlowRenderTargetViewDescD3D12& rtvDesc)
+	{
+		desc.rtvHandle = rtvDesc.rtvHandle;
+		desc.rtvDesc = rtvDesc.rtvDesc;
+		desc.resource = rtvDesc.resource;
+		desc.currentState = rtvDesc.currentState;
+		desc.viewport = rtvDesc.viewport;
+		desc.scissor = rtvDesc.scissor;
+	}
+
+	virtual NvFlowContext* CreateContext(IRHICommandContext& RHICmdCtx)
+	{
+		FRHINvFlowDeviceDescD3D12 deviceDesc = {};
+		RHICmdCtx.NvFlowGetDeviceDesc(&deviceDesc);
+		NvFlowContextDescD3D12 desc = {};
+		updateContextDesc(RHICmdCtx, desc, deviceDesc);
 		return NvFlowCreateContextD3D12(NV_FLOW_VERSION, &desc);
 	}
 
@@ -35,16 +75,8 @@ public:
 	{
 		FRHINvFlowDepthStencilViewDescD3D12 dsvDesc = {};
 		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);
-
 		NvFlowDepthStencilViewDescD3D12 desc = {};
-		desc.dsvHandle = dsvDesc.dsvHandle;
-		desc.dsvDesc   = dsvDesc.dsvDesc;
-		desc.srvHandle = dsvDesc.srvHandle;
-		desc.srvDesc   = dsvDesc.srvDesc;
-		desc.resource = dsvDesc.resource;
-		desc.currentState = dsvDesc.currentState;
-		desc.viewport = dsvDesc.viewport;
-
+		updateDepthStencilViewDesc(desc, dsvDesc);
 		return NvFlowCreateDepthStencilViewD3D12(context, &desc);
 	}
 
@@ -52,15 +84,8 @@ public:
 	{
 		FRHINvFlowRenderTargetViewDescD3D12 rtvDesc = {};
 		RHICmdCtx.NvFlowGetRenderTargetViewDesc(&rtvDesc);
-
 		NvFlowRenderTargetViewDescD3D12 desc = {};
-		desc.rtvHandle = rtvDesc.rtvHandle;
-		desc.rtvDesc   = rtvDesc.rtvDesc;
-		desc.resource = rtvDesc.resource;
-		desc.currentState = rtvDesc.currentState;
-		desc.viewport = rtvDesc.viewport;
-		desc.scissor = rtvDesc.scissor;
-
+		updateRenderTargetViewDesc(desc, rtvDesc);
 		return NvFlowCreateRenderTargetViewD3D12(context, &desc);
 	}
 
@@ -68,15 +93,8 @@ public:
 	{
 		FRHINvFlowDeviceDescD3D12 deviceDesc = {};
 		RHICmdCtx.NvFlowGetDeviceDesc(&deviceDesc);
-
 		NvFlowContextDescD3D12 desc = {};
-		desc.device = deviceDesc.device;
-		desc.commandQueue = deviceDesc.commandQueue;
-		desc.commandQueueFence = deviceDesc.commandQueueFence;
-		desc.commandList = deviceDesc.commandList;
-		desc.lastFenceCompleted = deviceDesc.lastFenceCompleted;
-		desc.nextFenceValue = deviceDesc.nextFenceValue;
-
+		updateContextDesc(RHICmdCtx, desc, deviceDesc);
 		NvFlowUpdateContextD3D12(context, &desc);
 	}
 
@@ -84,16 +102,8 @@ public:
 	{
 		FRHINvFlowDepthStencilViewDescD3D12 dsvDesc = {};
 		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);
-
 		NvFlowDepthStencilViewDescD3D12 desc = {};
-		desc.dsvHandle = dsvDesc.dsvHandle;
-		desc.dsvDesc   = dsvDesc.dsvDesc;
-		desc.srvHandle = dsvDesc.srvHandle;
-		desc.srvDesc   = dsvDesc.srvDesc;
-		desc.resource = dsvDesc.resource;
-		desc.currentState = dsvDesc.currentState;
-		desc.viewport = dsvDesc.viewport;
-
+		updateDepthStencilViewDesc(desc, dsvDesc);
 		NvFlowUpdateDepthStencilViewD3D12(context, view, &desc);
 	}
 
@@ -101,15 +111,8 @@ public:
 	{
 		FRHINvFlowRenderTargetViewDescD3D12 rtvDesc = {};
 		RHICmdCtx.NvFlowGetRenderTargetViewDesc(&rtvDesc);
-
 		NvFlowRenderTargetViewDescD3D12 desc = {};
-		desc.rtvHandle = rtvDesc.rtvHandle;
-		desc.rtvDesc   = rtvDesc.rtvDesc;
-		desc.resource = rtvDesc.resource;
-		desc.currentState = rtvDesc.currentState;
-		desc.viewport = rtvDesc.viewport;
-		desc.scissor = rtvDesc.scissor;
-
+		updateRenderTargetViewDesc(desc, rtvDesc);
 		NvFlowUpdateRenderTargetViewD3D12(context, view, &desc);
 	}
 
