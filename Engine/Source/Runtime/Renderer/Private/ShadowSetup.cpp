@@ -1516,7 +1516,9 @@ void FSceneRenderer::CreatePerObjectProjectedShadow(
 		MaxScreenPercent = FMath::Max(MaxScreenPercent, ScreenPercent);
 
 		// Determine the amount of shadow buffer resolution needed for this view.
-		const float UnclampedResolution = ScreenRadius * CVarShadowTexelsPerPixel.GetValueOnRenderThread();
+		// @third party code - BEGIN HairWorks
+		/*const*/ float UnclampedResolution = ScreenRadius * CVarShadowTexelsPerPixel.GetValueOnRenderThread();
+		// @third party code - END HairWorks
 
 		// Calculate fading based on resolution
 		// Compute FadeAlpha before ShadowResolutionScale contribution (artists want to modify the softness of the shadow, not change the fade ranges)
@@ -1554,6 +1556,28 @@ void FSceneRenderer::CreatePerObjectProjectedShadow(
 				FMath::Min<int32>(MinShadowResolution, ShadowBufferResolution.X - SHADOW_BORDER * 2)
 				)
 			);
+
+		// @third party code - BEGIN HairWorks
+		// Increase shadow resolution for hairs
+		{
+			const auto& PrimViewRel = View.PrimitiveViewRelevanceMap[ShadowGroupPrimitives[0]->GetIndex()];
+			if(PrimViewRel.bHairWorks)
+			{
+				static const auto& CVarHairTexelsScale = *IConsoleManager::Get().FindConsoleVariable(TEXT("r.HairWorks.Shadow.TexelsScale"));
+				const float HairUnclampedResolution = UnclampedResolution * CVarHairTexelsScale.GetFloat();
+
+				MaxUnclampedResolution = FMath::Max(MaxUnclampedResolution, HairUnclampedResolution);
+				MaxDesiredResolution = FMath::Max(
+					MaxDesiredResolution,
+					FMath::Clamp<uint32>(
+					HairUnclampedResolution,
+					FMath::Min<int32>(MinShadowResolution, ShadowBufferResolution.X - SHADOW_BORDER * 2),
+					MaxShadowResolution
+					)
+					);
+			}
+		}
+		// @third party code - END HairWorks
 	}
 
 	FBoxSphereBounds Bounds = OriginalBounds;

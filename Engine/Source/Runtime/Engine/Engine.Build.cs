@@ -412,5 +412,9 @@ public class Engine : ModuleRules
 		}
 
         DynamicallyLoadedModuleNames.Add("Niagara");
+        
+		// @third party code - BEGIN HairWorks
+		AddEngineThirdPartyPrivateStaticDependencies(Target, "HairWorks");
+		// @third party code - END HairWorks
     }
 }

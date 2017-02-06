@@ -21,6 +21,9 @@
 #include "DeferredShadingRenderer.h"
 #include "ScenePrivate.h"
 #include "LightRendering.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 /**
  * A vertex shader for projecting a light function onto the scene.
@@ -281,6 +284,17 @@ bool FDeferredShadingSceneRenderer::RenderLightFunctionForMaterial(
 
 	if (MaterialProxy && MaterialProxy->GetMaterial(Scene->GetFeatureLevel())->IsLightFunction())
 	{
+		// @third party code - BEGIN HairWorks
+		bool bHairPass = false;
+
+RenderForHair:
+		if(bHairPass)
+		{
+			FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+			FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+		}
+		// @third party code - END HairWorks
+
 		FSceneRenderTargets::Get(RHICmdList).BeginRenderingLightAttenuation(RHICmdList);
 
 		bRenderedLightFunction = true;
@@ -322,6 +336,11 @@ bool FDeferredShadingSceneRenderer::RenderLightFunctionForMaterial(
 				}
 				else
 				{
+					// @third party code - BEGIN HairWorks
+					if(bHairPass && !HairWorksRenderer::IsLightAffectHair(*LightSceneInfo, View))
+						continue;
+					// @third party code - END HairWorks
+
 					// Set the device viewport for the view.
 					RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
 
@@ -379,6 +398,20 @@ bool FDeferredShadingSceneRenderer::RenderLightFunctionForMaterial(
 
 		// Restore states.
 		RHICmdList.SetScissorRect(false, 0, 0, 0, 0);
+
+		// @third party code - BEGIN HairWorks
+		if(bHairPass)
+		{
+			FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+			FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+		}
+
+		if(!bHairPass && HairWorksRenderer::ViewsHasHair(Views))
+		{
+			bHairPass = true;
+			goto RenderForHair;
+		}
+		// @third party code - END HairWorks
 	}
 	return bRenderedLightFunction;
 }

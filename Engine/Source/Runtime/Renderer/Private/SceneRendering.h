@@ -742,6 +742,9 @@ public:
 
 	/** The dynamic primitives visible in this view. */
 	TArray<const FPrimitiveSceneInfo*,SceneRenderingAllocator> VisibleDynamicPrimitives;
+	// @third party code - BEGIN HairWorks
+	TArray<const FPrimitiveSceneInfo*, SceneRenderingAllocator> VisibleHairs;
+	// @third party code - END HairWorks
 
 	/** The dynamic editor primitives visible in this view. */
 	TArray<const FPrimitiveSceneInfo*,SceneRenderingAllocator> VisibleEditorPrimitives;
@@ -1347,6 +1350,12 @@ protected:
 
 	/** Performs once per frame setup prior to visibility determination. */
 	void PreVisibilityFrameSetup(FRHICommandListImmediate& RHICmdList);
+
+	/** Performs once per frame temporal sampling setup. */
+	void TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList);
+
+	/** Performs once per frame view RHI resource initialization. */
+	void InitViewsRHIResources(FRHICommandListImmediate& RHICmdList, const bool bDitheredLODTransitionsUseStencil);
 
 	/** Computes which primitives are visible and relevant for each view. */
 	void ComputeViewVisibility(FRHICommandListImmediate& RHICmdList);
