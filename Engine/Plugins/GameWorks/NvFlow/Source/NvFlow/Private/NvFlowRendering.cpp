@@ -2021,13 +2021,15 @@ bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 
 			SCOPE_CYCLE_COUNTER(STAT_Flow_RenderGrids);
 			SCOPED_DRAW_EVENT(RHICmdList, FlowRenderGrids);
+			{
+				SCOPED_DRAW_EVENT(RHICmdList, FlowContextRenderGrids);
 
-			NvFlow::gContext->interopBegin(RHICmdList, false);
+				NvFlow::gContext->interopBegin(RHICmdList, false);
 
-			NvFlow::gContext->renderScene(RHICmdList, View, FlowGridSceneProxy);
+				NvFlow::gContext->renderScene(RHICmdList, View, FlowGridSceneProxy);
 
-			NvFlow::gContext->interopEnd(RHICmdList, false, false);
-
+				NvFlow::gContext->interopEnd(RHICmdList, false, false);
+			}
 			return true;
 		}
 	}
