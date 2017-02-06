@@ -1019,6 +1019,18 @@ namespace HairWorksRenderer
 
 		SetProjViewInfo(RHICmdList, View);
 
+		// Render visualization. This should go first to get LOD information ready for colorizaton. 
+		for(auto& PrimitiveInfo : View.VisibleHairs)
+		{
+			// Draw hair
+			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
+
+			// Prepare
+			HairWorks::GetSDK()->preRenderInstance(HairSceneProxy.GetHairInstanceId(), 1);
+
+			HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Visualization);
+		}
+
 		// Render colorize
 		for(auto& PrimitiveInfo : View.VisibleHairs)
 		{
@@ -1045,18 +1057,6 @@ namespace HairWorksRenderer
 
 			// Draw
 			HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Normal);
-		}
-
-		// Render visualization
-		for(auto& PrimitiveInfo : View.VisibleHairs)
-		{
-			// Draw hair
-			auto& HairSceneProxy = static_cast<FHairWorksSceneProxy&>(*PrimitiveInfo->Proxy);
-
-			// Prepare
-			HairWorks::GetSDK()->preRenderInstance(HairSceneProxy.GetHairInstanceId(), 1);
-
-			HairSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Visualization);
 		}
 	}
 
