@@ -89,6 +89,10 @@
 #include "AssetTypeActions/AssetTypeActions_VectorFieldAnimated.h"
 #include "AssetTypeActions/AssetTypeActions_VectorFieldStatic.h"
 #include "AssetTypeActions/AssetTypeActions_World.h"
+// @third party code - BEGIN HairWorks
+#include "AssetTypeActions/AssetTypeActions_HairWorks.h"
+// @third party code - END HairWorks
+
 #include "SDiscoveringAssetsDialog.h"
 #include "AssetFixUpRedirectors.h"
 #include "ObjectTools.h"

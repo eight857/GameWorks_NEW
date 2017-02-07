@@ -119,6 +119,10 @@
 #include "Factories/FbxSkeletalMeshImportData.h"
 #include "Factories/FbxStaticMeshImportData.h"
 #include "Factories/FbxImportUI.h"
+// @third party code - BEGIN HairWorks
+#include "Factories/HairWorksFactory.h"
+// @third party code - END HairWorks
+
 #include "Editor/GroupActor.h"
 #include "Particles/ParticleSystem.h"
 #include "Engine/Texture2D.h"

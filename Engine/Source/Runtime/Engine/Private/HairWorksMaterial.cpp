@@ -1,7 +1,6 @@
 // @third party code - BEGIN HairWorks
-#include "EnginePrivate.h"
-#include "HairWorksSDK.h"
 #include "Engine/HairWorksMaterial.h"
+#include "HairWorksSDK.h"
 
 UHairWorksMaterial::UHairWorksMaterial(const class FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -13,7 +12,7 @@ void UHairWorksMaterial::PostLoad()
 	Super::PostLoad();
 
 	// Compile shader
-	if(HairWorks::GetSDK() == nullptr)
+	if(::HairWorks::GetSDK() == nullptr)
 		return;
 
 	NvHair::InstanceDescriptor HairDesc;
@@ -33,7 +32,7 @@ void UHairWorksMaterial::PostLoad()
 		HairUpdateDynamicData,
 		const NvHair::ShaderCacheSettings, ShaderCacheSettings, ShaderCacheSettings,
 		{
-			HairWorks::GetSDK()->addToShaderCache(ShaderCacheSettings);
+			::HairWorks::GetSDK()->addToShaderCache(ShaderCacheSettings);
 		}
 	);
 }

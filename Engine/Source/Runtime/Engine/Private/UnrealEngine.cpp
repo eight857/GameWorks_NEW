@@ -8243,7 +8243,7 @@ void DrawStatsHUD( UWorld* World, FViewport* Viewport, FCanvas* Canvas, UCanvas*
 		// @third party code - BEGIN HairWorks
 #if STATS
 		// Render HairWorks stats
-		HairWorks::RenderStats(X, Y, Canvas);
+		::HairWorks::RenderStats(X, Y, Canvas);
 #endif
 		// @third party code - END HairWorks
 

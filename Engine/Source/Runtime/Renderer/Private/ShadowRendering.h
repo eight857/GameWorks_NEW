@@ -871,7 +871,7 @@ public:
 	 */
 	void RenderProjection(FRHICommandListImmediate& RHICmdList, int32 ViewIndex, const class FViewInfo* View, bool bProjectingForForwardShading, bool bMobile
 		// @third party code - BEGIN HairWorks
-		, bool bHairPass = false
+		, bool bHairPass
 		// @third party code - END HairWorks
 		) const;
 
@@ -1062,7 +1062,11 @@ private:
 		const FViewInfo* View,
 		const TArray<FVector4, TInlineAllocator<8>>& FrustumVertices,
 		bool bMobileModulatedProjections,
-		bool bCameraInsideShadowFrustum) const;
+		bool bCameraInsideShadowFrustum
+		// @third party code - BEGIN HairWorks
+		, bool bHairPass
+		// @third party code - END HairWorks
+	) const;
 
 	friend class FShadowDepthVS;
 	template <bool bRenderingReflectiveShadowMaps> friend class TShadowDepthBasePS;

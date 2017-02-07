@@ -83,6 +83,12 @@ void TiledDeferredLightingMain(
 
     GroupMemoryBarrierWithGroupSync();
 
+	// Use shared memory atomics to build the depth bounds for this tile
+	// Each thread is assigned to a pixel at this point
+	//@todo - move depth range computation to a central point where it can be reused by all the frame's tiled deferred passes!
+	InterlockedMin(IntegerTileMinZ, asuint(SceneDepth));
+	InterlockedMax(IntegerTileMaxZ, asuint(SceneDepth));
+
 	// @third party code - BEGIN HairWorks
 #if SM5_PROFILE
 	if(bHairDeferredRendering)

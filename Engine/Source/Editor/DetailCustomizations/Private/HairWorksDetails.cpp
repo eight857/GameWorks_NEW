@@ -1,9 +1,8 @@
 // @third party code - BEGIN HairWorks
-#include "DetailCustomizationsPrivatePCH.h"
+#include "HairWorksDetails.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
 #include "Components/HairWorksComponent.h"
-#include "HairWorksDetails.h"
 
 TSharedRef<IDetailCustomization> FHairWorksMaterialDetails::MakeInstance()
 {

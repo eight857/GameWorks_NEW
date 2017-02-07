@@ -1,6 +1,4 @@
 // @third party code - BEGIN HairWorks
-#include "EnginePrivate.h"
-
 #include "HairWorksSDK.h"
 
 #include "AllowWindowsPlatformTypes.h"

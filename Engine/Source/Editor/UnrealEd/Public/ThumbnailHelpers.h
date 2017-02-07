@@ -342,6 +342,8 @@ private:
 	TMap<FName, TSharedPtr<ThumbnailSceneType>> InstancedThumbnailScenes;
 };
 
+// @third party code - BEGIN HairWorks
+class UHairWorksAsset;
 class UHairWorksComponent;
 
 class UNREALED_API FHairWorksAssetThumbnailScene : public FThumbnailPreviewScene
@@ -360,3 +362,4 @@ private:
 	/** The HairWorks component used to display HairWorks asset thumbnails */
 	UHairWorksComponent* PreviewComp = nullptr;
 };
+// @third party code - END HairWorks

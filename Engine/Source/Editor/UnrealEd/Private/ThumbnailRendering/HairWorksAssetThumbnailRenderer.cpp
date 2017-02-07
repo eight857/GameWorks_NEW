@@ -1,10 +1,8 @@
 // Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
-
-#include "UnrealEd.h"
+#include "Classes/ThumbnailRendering/HairWorksAssetThumbnailRenderer.h"
 #include "EngineModule.h"
 #include "Engine/HairWorksAsset.h"
 #include "ThumbnailHelpers.h"
-#include "Classes/ThumbnailRendering/HairWorksAssetThumbnailRenderer.h"
 
 UHairWorksAssetThumbnailRenderer::UHairWorksAssetThumbnailRenderer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

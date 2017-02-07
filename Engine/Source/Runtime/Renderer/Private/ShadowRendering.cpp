@@ -452,11 +452,7 @@ void FProjectedShadowInfo::SetBlendStateForProjection(FRHICommandListImmediate& 
 		bMobileModulatedProjections);
 }
 
-void FProjectedShadowInfo::SetupFrustumForProjection(const FViewInfo* View, TArray<FVector4, TInlineAllocator<8>>& OutFrustumVertices, bool& bOutCameraInsideShadowFrustum
-	// @third party code - BEGIN HairWorks
-	, bool bHairPass
-	// @third party code - END HairWorks
-) const
+void FProjectedShadowInfo::SetupFrustumForProjection(const FViewInfo* View, TArray<FVector4, TInlineAllocator<8>>& OutFrustumVertices, bool& bOutCameraInsideShadowFrustum) const
 {
 	bOutCameraInsideShadowFrustum = true;
 
@@ -538,7 +534,11 @@ void FProjectedShadowInfo::SetupProjectionStencilMask(
 	const FViewInfo* View, 
 	const TArray<FVector4, TInlineAllocator<8>>& FrustumVertices,
 	bool bMobileModulatedProjections, 
-	bool bCameraInsideShadowFrustum) const
+	bool bCameraInsideShadowFrustum
+	// @third party code - BEGIN HairWorks
+	, bool bHairPass
+	// @third party code - END HairWorks
+) const
 {
 	FDrawingPolicyRenderState DrawRenderState(&RHICmdList, *View);
 
@@ -548,7 +548,7 @@ void FProjectedShadowInfo::SetupProjectionStencilMask(
 
 	// If this is a preshadow, mask the projection by the receiver primitives.
 	// @third party code - BEGIN HairWorks
-	if((bPreShadow || bSelfShadowOnly)&& !bHairPass)	// For hairs, we use the same method of dynamic shadow to handle pre-shadow.
+	if((bPreShadow || bSelfShadowOnly) && !bHairPass)	// For hairs, we use the same method of dynamic shadow to handle pre-shadow.
 	// @third party code - END HairWorks
 	{
 		SCOPED_DRAW_EVENTF(RHICmdList, EventMaskSubjects, TEXT("Stencil Mask Subjects"));
@@ -767,7 +767,11 @@ void FProjectedShadowInfo::SetupProjectionStencilMask(
 	}
 }
 
-void FProjectedShadowInfo::RenderProjection(FRHICommandListImmediate& RHICmdList, int32 ViewIndex, const FViewInfo* View, bool bProjectingForForwardShading, bool bMobileModulatedProjections) const
+void FProjectedShadowInfo::RenderProjection(FRHICommandListImmediate& RHICmdList, int32 ViewIndex, const FViewInfo* View, bool bProjectingForForwardShading, bool bMobileModulatedProjections
+	// @third party code - BEGIN HairWorks
+	, bool bHairPass
+	// @third party code - END HairWorks
+) const
 {
 #if WANTS_DRAW_MESH_EVENTS
 	FString EventName;
@@ -797,7 +801,11 @@ void FProjectedShadowInfo::RenderProjection(FRHICommandListImmediate& RHICmdList
 
 	if (!bDepthBoundsTestEnabled)
 	{
-		SetupProjectionStencilMask(RHICmdList, View, FrustumVertices, bMobileModulatedProjections, bCameraInsideShadowFrustum);
+		SetupProjectionStencilMask(RHICmdList, View, FrustumVertices, bMobileModulatedProjections, bCameraInsideShadowFrustum
+			// @third party code - BEGIN HairWorks
+			, bHairPass
+			// @third party code - END HairWorks
+		);
 	}
 
 	// solid rasterization w/ back-face culling.

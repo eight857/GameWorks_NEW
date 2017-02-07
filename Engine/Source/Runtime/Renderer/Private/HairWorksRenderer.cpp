@@ -1,5 +1,5 @@
 // @third party code - BEGIN HairWorks
-#include "RendererPrivate.h"
+#include "HairWorksRenderer.h"
 
 #include "HairWorksSDK.h"
 
@@ -17,7 +17,6 @@
 #include "SceneFilterRendering.h"
 #include "AmbientCubemapParameters.h"
 #include "HairWorksSceneProxy.h"
-#include "HairWorksRenderer.h"
 
 // UE4 uses shader class names, so we need put these classes in global name space to let compiler check name conflicts.
 // Pixel shaders

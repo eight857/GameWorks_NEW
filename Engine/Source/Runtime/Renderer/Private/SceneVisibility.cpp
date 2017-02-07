@@ -2085,7 +2085,8 @@ void FSceneRenderer::PreVisibilityFrameSetup(FRHICommandListImmediate& RHICmdLis
 		}
 	}
 
-	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+	// Setup motion blur parameters (also check for camera movement thresholds)
+	for(int32 ViewIndex = 0;ViewIndex < Views.Num();ViewIndex++)
 	{
 		FViewInfo& View = Views[ViewIndex];
 		FSceneViewState* ViewState = View.ViewState;
@@ -2107,38 +2108,26 @@ void FSceneRenderer::PreVisibilityFrameSetup(FRHICommandListImmediate& RHICmdLis
 		FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
 
 		// set up the screen area for occlusion
-		float NumPossiblePixels = SceneContext.UseDownsizedOcclusionQueries() && IsValidRef(SceneContext.GetSmallDepthSurface()) ?
+		float NumPossiblePixels = SceneContext.UseDownsizedOcclusionQueries() && IsValidRef(SceneContext.GetSmallDepthSurface()) ? 
 			(float)View.ViewRect.Width() / SceneContext.GetSmallColorDepthDownsampleFactor() * (float)View.ViewRect.Height() / SceneContext.GetSmallColorDepthDownsampleFactor() :
 			View.ViewRect.Width() * View.ViewRect.Height();
 		View.OneOverNumPossiblePixels = NumPossiblePixels > 0.0 ? 1.0f / NumPossiblePixels : 0.0f;
-	}
-}
-
-void FSceneRenderer::TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList)
-{
-	SCOPED_DRAW_EVENT(RHICmdList, TemporalSamplingSetup);
-
-	// Setup motion blur parameters (also check for camera movement thresholds)
-	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
-	{
-		FViewInfo& View = Views[ViewIndex];
-		FSceneViewState* ViewState = View.ViewState;
 
 		// Still need no jitter to be set for temporal feedback on SSR (it is enabled even when temporal AA is off).
 		View.TemporalJitterPixelsX = 0.0f;
 		View.TemporalJitterPixelsY = 0.0f;
 
-		if (ViewState)
+		if ( ViewState )
 		{
 			ViewState->SetupDistanceFieldTemporalOffset(ViewFamily);
 		}
 
-		if (View.AntiAliasingMethod == AAM_TemporalAA && ViewState)
+		if( View.AntiAliasingMethod == AAM_TemporalAA && ViewState )
 		{
 			// Subpixel jitter for temporal AA
 			int32 TemporalAASamples = CVarTemporalAASamples.GetValueOnRenderThread();
-
-			if (TemporalAASamples > 1 && View.bAllowTemporalJitter)
+		
+			if( TemporalAASamples > 1 && View.bAllowTemporalJitter )
 			{
 				float SampleX, SampleY;
 
@@ -2148,41 +2137,41 @@ void FSceneRenderer::TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList)
 					TemporalAASamples = 2;
 				}
 
-				if (TemporalAASamples == 2)
+				if( TemporalAASamples == 2 )
 				{
-#if 0
-					// 2xMSAA
-					// Pattern docs: http://msdn.microsoft.com/en-us/library/windows/desktop/ff476218(v=vs.85).aspx
-					//   N.
-					//   .S
-					float SamplesX[] = { -4.0f / 16.0f, 4.0 / 16.0f };
-					float SamplesY[] = { -4.0f / 16.0f, 4.0 / 16.0f };
-#else
-					// This pattern is only used for mobile.
-					// Shift to reduce blur.
-					float SamplesX[] = { -8.0f / 16.0f, 0.0 / 16.0f };
-					float SamplesY[] = { /* - */ 0.0f / 16.0f, 8.0 / 16.0f };
-#endif
+					#if 0
+						// 2xMSAA
+						// Pattern docs: http://msdn.microsoft.com/en-us/library/windows/desktop/ff476218(v=vs.85).aspx
+						//   N.
+						//   .S
+						float SamplesX[] = { -4.0f/16.0f, 4.0/16.0f };
+						float SamplesY[] = { -4.0f/16.0f, 4.0/16.0f };
+					#else
+						// This pattern is only used for mobile.
+						// Shift to reduce blur.
+						float SamplesX[] = { -8.0f/16.0f, 0.0/16.0f };
+						float SamplesY[] = { /* - */ 0.0f/16.0f, 8.0/16.0f };
+					#endif
 					ViewState->OnFrameRenderingSetup(ARRAY_COUNT(SamplesX), ViewFamily);
 					uint32 Index = ViewState->GetCurrentTemporalAASampleIndex();
-					SampleX = SamplesX[Index];
-					SampleY = SamplesY[Index];
+					SampleX = SamplesX[ Index ];
+					SampleY = SamplesY[ Index ];
 				}
-				else if (TemporalAASamples == 3)
+				else if( TemporalAASamples == 3 )
 				{
 					// 3xMSAA
 					//   A..
 					//   ..B
 					//   .C.
 					// Rolling circle pattern (A,B,C).
-					float SamplesX[] = { -2.0f / 3.0f,  2.0 / 3.0f,  0.0 / 3.0f };
-					float SamplesY[] = { -2.0f / 3.0f,  0.0 / 3.0f,  2.0 / 3.0f };
+					float SamplesX[] = { -2.0f/3.0f,  2.0/3.0f,  0.0/3.0f };
+					float SamplesY[] = { -2.0f/3.0f,  0.0/3.0f,  2.0/3.0f };
 					ViewState->OnFrameRenderingSetup(ARRAY_COUNT(SamplesX), ViewFamily);
 					uint32 Index = ViewState->GetCurrentTemporalAASampleIndex();
-					SampleX = SamplesX[Index];
-					SampleY = SamplesY[Index];
+					SampleX = SamplesX[ Index ];
+					SampleY = SamplesY[ Index ];
 				}
-				else if (TemporalAASamples == 4)
+				else if( TemporalAASamples == 4 )
 				{
 					// 4xMSAA
 					// Pattern docs: http://msdn.microsoft.com/en-us/library/windows/desktop/ff476218(v=vs.85).aspx
@@ -2191,14 +2180,14 @@ void FSceneRenderer::TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList)
 					//   W...
 					//   ..S.
 					// Rolling circle pattern (N,E,S,W).
-					float SamplesX[] = { -2.0f / 16.0f,  6.0 / 16.0f, 2.0 / 16.0f, -6.0 / 16.0f };
-					float SamplesY[] = { -6.0f / 16.0f, -2.0 / 16.0f, 6.0 / 16.0f,  2.0 / 16.0f };
+					float SamplesX[] = { -2.0f/16.0f,  6.0/16.0f, 2.0/16.0f, -6.0/16.0f };
+					float SamplesY[] = { -6.0f/16.0f, -2.0/16.0f, 6.0/16.0f,  2.0/16.0f };
 					ViewState->OnFrameRenderingSetup(ARRAY_COUNT(SamplesX), ViewFamily);
 					uint32 Index = ViewState->GetCurrentTemporalAASampleIndex();
-					SampleX = SamplesX[Index];
-					SampleY = SamplesY[Index];
+					SampleX = SamplesX[ Index ];
+					SampleY = SamplesY[ Index ];
 				}
-				else if (TemporalAASamples == 5)
+				else if( TemporalAASamples == 5 )
 				{
 					// Compressed 4 sample pattern on same vertical and horizontal line (less temporal flicker).
 					// Compressed 1/2 works better than correct 2/3 (reduced temporal flicker).
@@ -2206,20 +2195,20 @@ void FSceneRenderer::TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList)
 					//   W . E
 					//   . S .
 					// Rolling circle pattern (N,E,S,W).
-					float SamplesX[] = { 0.0f / 2.0f,  1.0 / 2.0f,  0.0 / 2.0f, -1.0 / 2.0f };
-					float SamplesY[] = { -1.0f / 2.0f,  0.0 / 2.0f,  1.0 / 2.0f,  0.0 / 2.0f };
+					float SamplesX[] = {  0.0f/2.0f,  1.0/2.0f,  0.0/2.0f, -1.0/2.0f };
+					float SamplesY[] = { -1.0f/2.0f,  0.0/2.0f,  1.0/2.0f,  0.0/2.0f };
 					ViewState->OnFrameRenderingSetup(ARRAY_COUNT(SamplesX), ViewFamily);
 					uint32 Index = ViewState->GetCurrentTemporalAASampleIndex();
-					SampleX = SamplesX[Index];
-					SampleY = SamplesY[Index];
+					SampleX = SamplesX[ Index ];
+					SampleY = SamplesY[ Index ];
 				}
 				else
 				{
 					ViewState->OnFrameRenderingSetup(TemporalAASamples, ViewFamily);
 					uint32 Index = ViewState->GetCurrentTemporalAASampleIndex();
 
-					float u1 = Halton(Index + 1, 2);
-					float u2 = Halton(Index + 1, 3);
+					float u1 = Halton( Index + 1, 2 );
+					float u2 = Halton( Index + 1, 3 );
 
 					// Generates samples in normal distribution
 					// exp( x^2 / Sigma^2 )
@@ -2250,7 +2239,7 @@ void FSceneRenderer::TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList)
 				View.ViewMatrices.HackAddTemporalAAProjectionJitter(FVector2D(SampleX * 2.0f / View.ViewRect.Width(), SampleY * -2.0f / View.ViewRect.Height()));
 			}
 		}
-		else if (ViewState)
+		else if(ViewState)
 		{
 			// no TemporalAA
 			ViewState->OnFrameRenderingSetup(1, ViewFamily);
@@ -2259,7 +2248,7 @@ void FSceneRenderer::TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList)
 			ViewState->PendingTemporalAAHistoryRT.SafeRelease();
 		}
 
-		if (ViewState)
+		if ( ViewState )
 		{
 			// update previous frame matrices in case world origin was rebased on this frame
 			if (!View.OriginOffsetThisFrame.IsZero())
@@ -2267,27 +2256,27 @@ void FSceneRenderer::TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList)
 				ViewState->PrevViewMatrices.ApplyWorldOffset(View.OriginOffsetThisFrame);
 				ViewState->PendingPrevViewMatrices.ApplyWorldOffset(View.OriginOffsetThisFrame);
 			}
-
+			
 			// determine if we are initializing or we should reset the persistent state
 			const float DeltaTime = View.Family->CurrentRealTime - ViewState->LastRenderTime;
 			const bool bFirstFrameOrTimeWasReset = DeltaTime < -0.0001f || ViewState->LastRenderTime < 0.0001f;
 
 			// detect conditions where we should reset occlusion queries
-			if (bFirstFrameOrTimeWasReset ||
+			if (bFirstFrameOrTimeWasReset || 
 				ViewState->LastRenderTime + GEngine->PrimitiveProbablyVisibleTime < View.Family->CurrentRealTime ||
 				View.bCameraCut ||
 				IsLargeCameraMovement(
-					View,
-					ViewState->PrevViewMatrixForOcclusionQuery,
-					ViewState->PrevViewOriginForOcclusionQuery,
-					GEngine->CameraRotationThreshold, GEngine->CameraTranslationThreshold))
+					View, 
+				    ViewState->PrevViewMatrixForOcclusionQuery, 
+				    ViewState->PrevViewOriginForOcclusionQuery, 
+				    GEngine->CameraRotationThreshold, GEngine->CameraTranslationThreshold))
 			{
 				View.bIgnoreExistingQueries = true;
 				View.bDisableDistanceBasedFadeTransitions = true;
 			}
 			ViewState->PrevViewMatrixForOcclusionQuery = View.ViewMatrices.GetViewMatrix();
 			ViewState->PrevViewOriginForOcclusionQuery = View.ViewMatrices.GetViewOrigin();
-
+				
 			// store old view matrix and detect conditions where we should reset motion blur 
 			{
 				bool bResetCamera = bFirstFrameOrTimeWasReset
@@ -2305,15 +2294,15 @@ void FSceneRenderer::TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList)
 					//     shader does.  The correct fix would be to disable the effect when we don't need it and to properly mark
 					//     the uber-postprocessing effect as the last effect in the chain.
 
-					View.bPrevTransformsReset = true;
+					View.bPrevTransformsReset				= true;
 				}
 				else
 				{
 					// check for pause so we can keep motion blur in paused mode (doesn't work in editor)
-					if (!ViewFamily.bWorldIsPaused)
+					if(!ViewFamily.bWorldIsPaused)
 					{
 						ViewState->PrevViewMatrices = ViewState->PendingPrevViewMatrices;
-						if (ViewState->PendingTemporalAAHistoryRT.GetRefCount())
+						if( ViewState->PendingTemporalAAHistoryRT.GetRefCount() )
 						{
 							ViewState->TemporalAAHistoryRT = ViewState->PendingTemporalAAHistoryRT;
 							ViewState->PendingTemporalAAHistoryRT.SafeRelease();
@@ -2344,24 +2333,6 @@ void FSceneRenderer::TemporalSamplingSetup(FRHICommandListImmediate& RHICmdList)
 
 			ViewState->UpdateTemporalLODTransition(View);
 		}
-	}
-}
-
-void FSceneRenderer::InitViewsRHIResources(FRHICommandListImmediate& RHICmdList, const bool bDitheredLODTransitionsUseStencil)
-{
-	QUICK_SCOPE_CYCLE_COUNTER(STAT_InitViews_InitRHIResources);
-
-	for (int32 ViewIndex = 0; ViewIndex < ViewFamily.Views.Num(); ++ViewIndex)
-	{
-		FViewInfo& View = Views[ViewIndex];
-
-		View.ForwardLightingResources = View.ViewState ? &View.ViewState->ForwardLightingResources : &View.ForwardLightingResourcesStorage;
-
-		// Possible stencil dither optimization approach
-		View.bAllowStencilDither = bDitheredLODTransitionsUseStencil;
-
-		// Initialize the view's RHI resources.
-		View.InitRHIResources();
 	}
 }
 
@@ -2872,7 +2843,6 @@ uint32 GetShadowQuality();
 bool FDeferredShadingSceneRenderer::InitViews(FRHICommandListImmediate& RHICmdList, struct FILCUpdatePrimTaskData& ILCTaskData, FGraphEventArray& SortEvents)
 {	
 	SCOPE_CYCLE_COUNTER(STAT_InitViewsTime);
-	SCOPED_DRAW_EVENT(RHICmdList, InitViews);
 
 	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
 	{		
@@ -2887,7 +2857,6 @@ bool FDeferredShadingSceneRenderer::InitViews(FRHICommandListImmediate& RHICmdLi
 		}
 	}
 	PreVisibilityFrameSetup(RHICmdList);
-
 	ComputeViewVisibility(RHICmdList);
 
 	// This has to happen before Scene->IndirectLightingCache.UpdateCache, since primitives in View.IndirectShadowPrimitives need ILC updates
@@ -2912,17 +2881,28 @@ bool FDeferredShadingSceneRenderer::InitViews(FRHICommandListImmediate& RHICmdLi
 		SortBasePassStaticData(AverageViewPosition);
 	}
 
-	const bool bHMDUsePostInit = GEngine &&
-		GEngine->HMDDevice.IsValid() &&
-		GEngine->HMDDevice->IsStereoEnabled() &&
-		GEngine->HMDDevice->GetViewExtension().IsValid() &&
-		GEngine->HMDDevice->GetViewExtension()->UsePostInitView();
-
-	bool bDoInitViewAftersPrepass = !!GDoInitViewsLightingAfterPrepass && !bHMDUsePostInit;
+	bool bDoInitViewAftersPrepass = !!GDoInitViewsLightingAfterPrepass;
 
 	if (!bDoInitViewAftersPrepass)
 	{
 		InitViewsPossiblyAfterPrepass(RHICmdList, ILCTaskData, SortEvents);
+	}
+
+	{
+		QUICK_SCOPE_CYCLE_COUNTER(STAT_InitViews_InitRHIResources);
+		// initialize per-view uniform buffer.
+		for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+		{
+			FViewInfo& View = Views[ViewIndex];
+
+			View.ForwardLightingResources = View.ViewState ? &View.ViewState->ForwardLightingResources : &View.ForwardLightingResourcesStorage;
+
+			// Possible stencil dither optimization approach
+			View.bAllowStencilDither = bDitheredLODTransitionsUseStencil;
+
+			// Initialize the view's RHI resources.
+			View.InitRHIResources();
+		}
 	}
 
 	{

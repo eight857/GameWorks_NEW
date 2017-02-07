@@ -653,10 +653,6 @@ void FDeferredShadingSceneRenderer::RenderHitProxies(FRHICommandListImmediate& R
 		FGraphEventArray SortEvents;
 		FILCUpdatePrimTaskData ILCTaskData;
 		bool bDoInitViewAftersPrepass = InitViews(RHICmdList, ILCTaskData, SortEvents);
-
-		TemporalSamplingSetup(RHICmdList);
-		InitViewsRHIResources(RHICmdList, bDitheredLODTransitionsUseStencil);
-
 		if (bDoInitViewAftersPrepass)
 		{
 			InitViewsPossiblyAfterPrepass(RHICmdList, ILCTaskData, SortEvents);

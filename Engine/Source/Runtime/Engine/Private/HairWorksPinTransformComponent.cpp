@@ -1,5 +1,4 @@
 // @third party code - BEGIN HairWorks
-#include "EnginePrivate.h"
 #include "Components/HairWorksPinTransformComponent.h"
 
 UHairWorksPinTransformComponent::UHairWorksPinTransformComponent(const FObjectInitializer& ObjectInitializer)

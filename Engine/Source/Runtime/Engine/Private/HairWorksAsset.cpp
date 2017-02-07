@@ -1,11 +1,10 @@
 // @third party code - BEGIN HairWorks
-#include "EnginePrivate.h"
+#include "Engine/HairWorksAsset.h"
 #include <Nv/Common/NvCoMemoryReadStream.h>
 #include "EditorFramework/AssetImportData.h"
 #include "HairWorksSDK.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Components/HairWorksComponent.h"
-#include "Engine/HairWorksAsset.h"
 
 UHairWorksAsset::UHairWorksAsset(const class FObjectInitializer& ObjectInitializer):
 	Super(ObjectInitializer),
@@ -16,7 +15,7 @@ UHairWorksAsset::UHairWorksAsset(const class FObjectInitializer& ObjectInitializ
 UHairWorksAsset::~UHairWorksAsset()
 {
 	if(AssetId != NvHair::ASSET_ID_NULL)
-		HairWorks::GetSDK()->freeAsset(AssetId);
+		::HairWorks::GetSDK()->freeAsset(AssetId);
 }
 
 void UHairWorksAsset::Serialize(FArchive & Ar)
@@ -44,14 +43,14 @@ void UHairWorksAsset::PostLoad()
 	Super::PostLoad();
 
 	// Preload asset
-	if(HairWorks::GetSDK() == nullptr)
+	if(::HairWorks::GetSDK() == nullptr)
 		return;
 
-	auto& HairSdk = *HairWorks::GetSDK();
+	auto& HairSdk = *::HairWorks::GetSDK();
 
 	check(AssetId == NvHair::ASSET_ID_NULL);
 	NvCo::MemoryReadStream ReadStream(AssetData.GetData(), AssetData.Num());
-	HairSdk.loadAsset(&ReadStream, AssetId, nullptr, &HairWorks::GetAssetConversionSettings());
+	HairSdk.loadAsset(&ReadStream, AssetId, nullptr, &::HairWorks::GetAssetConversionSettings());
 
 	// Initialize pins
 	if(AssetId != NvHair::ASSET_ID_NULL && HairMaterial->Pins.Num() == 0)
@@ -80,12 +79,12 @@ void UHairWorksAsset::InitPins() const
 {
 	// Empty engine pins
 	check(AssetId != NvHair::ASSET_ID_NULL);
-	check(HairWorks::GetSDK() != nullptr);
+	check(::HairWorks::GetSDK() != nullptr);
 
 	HairMaterial->Pins.Empty();
 
 	// Get pins
-	auto& HairSdk = *HairWorks::GetSDK();
+	auto& HairSdk = *::HairWorks::GetSDK();
 	TArray<NvHair::Pin> Pins;
 	Pins.AddDefaulted(HairSdk.getNumPins(AssetId));
 	if(Pins.Num() == 0)

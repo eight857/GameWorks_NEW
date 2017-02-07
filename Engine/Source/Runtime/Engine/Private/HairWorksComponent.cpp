@@ -1,12 +1,13 @@
 // @third party code - BEGIN HairWorks
-#include "EnginePrivate.h"
+#include "Components/HairWorksComponent.h"
+#include "Serialization/ObjectWriter.h"
+#include "Serialization/ObjectReader.h"
 #include <Nv/Common/NvCoMemoryReadStream.h>
 #include "HairWorksSDK.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
 #include "HairWorksSceneProxy.h"
 #include "Components/HairWorksPinTransformComponent.h"
-#include "Components/HairWorksComponent.h"
 
 UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -54,10 +55,10 @@ FBoxSphereBounds UHairWorksComponent::CalcBounds(const FTransform& LocalToWorld)
 
 	UpdateBoneMatrices();
 
-	checkSlow(BoneMatrices.Num() == 0 || BoneMatrices.Num() == HairWorks::GetSDK()->getNumBones(HairInstance.Hair->AssetId));
+	checkSlow(BoneMatrices.Num() == 0 || BoneMatrices.Num() == ::HairWorks::GetSDK()->getNumBones(HairInstance.Hair->AssetId));
 
 	gfsdk_float3 HairBoundMin, HairBoundMax;
-	HairWorks::GetSDK()->getBounds(
+	::HairWorks::GetSDK()->getBounds(
 		HairInstance.Hair->AssetId,
 		BoneMatrices.Num() > 0 ? reinterpret_cast<const gfsdk_float4x4*>(BoneMatrices.GetData()) : nullptr,
 		HairBoundMin,
@@ -163,7 +164,7 @@ FActorComponentInstanceData * UHairWorksComponent::GetComponentInstanceData() co
 			if(CacheApplyPhase != ECacheApplyPhase::PostUserConstructionScript || SavedProperties.Num() == 0)
 				return;
 
-			class FHairInstancePropertyReader: public FObjectReader
+			class FHairInstancePropertyReader : public FObjectReader
 			{
 			public:
 				FHairInstancePropertyReader(UHairWorksComponent& InComponent, TArray<uint8>& InBytes)
@@ -195,7 +196,7 @@ FActorComponentInstanceData * UHairWorksComponent::GetComponentInstanceData() co
 
 bool UHairWorksComponent::ShouldCreateRenderState() const
 {
-	return HairWorks::GetSDK() != nullptr && HairInstance.Hair != nullptr && HairInstance.Hair->AssetId != NvHair::ASSET_ID_NULL;
+	return ::HairWorks::GetSDK() != nullptr && HairInstance.Hair != nullptr && HairInstance.Hair->AssetId != NvHair::ASSET_ID_NULL;
 }
 
 void UHairWorksComponent::CreateRenderState_Concurrent()
@@ -222,7 +223,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 	TSharedRef<FHairWorksSceneProxy::FDynamicRenderData> DynamicData(new FHairWorksSceneProxy::FDynamicRenderData);
 
 	DynamicData->Textures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
-	HairWorks::GetSDK()->getInstanceDescriptorFromAsset(HairInstance.Hair->AssetId, DynamicData->HairInstanceDesc);
+	::HairWorks::GetSDK()->getInstanceDescriptorFromAsset(HairInstance.Hair->AssetId, DynamicData->HairInstanceDesc);
 
 	FName HairNormalCenter;
 
@@ -290,7 +291,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 			{
 				TArray<NvHair::Pin> Pins;
 				Pins.AddDefaulted(EnginePins.Num());
-				HairWorks::GetSDK()->getPins(AssetId, 0, Pins.Num(), Pins.GetData());
+				::HairWorks::GetSDK()->getPins(AssetId, 0, Pins.Num(), Pins.GetData());
 
 				for(auto PinIndex = 0; PinIndex < Pins.Num(); ++PinIndex)
 				{
@@ -305,7 +306,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 					Pin.m_influenceFallOffCurve = reinterpret_cast<const gfsdk_float4&>(SrcPin.InfluenceFallOffCurve);
 				}
 
-				HairWorks::GetSDK()->setPins(AssetId, 0, Pins.Num(), Pins.GetData());
+				::HairWorks::GetSDK()->setPins(AssetId, 0, Pins.Num(), Pins.GetData());
 			}
 		);
 	}
@@ -372,7 +373,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 			FHairWorksSceneProxy&, ThisProxy, static_cast<FHairWorksSceneProxy&>(*SceneProxy),
 			{
 				if(ThisProxy.GetHairInstanceId() != NvHair::INSTANCE_ID_NULL)
-					HairWorks::GetSDK()->stepInstanceSimulation(ThisProxy.GetHairInstanceId(), 0);
+					::HairWorks::GetSDK()->stepInstanceSimulation(ThisProxy.GetHairInstanceId(), 0);
 			}
 		);
 	}
