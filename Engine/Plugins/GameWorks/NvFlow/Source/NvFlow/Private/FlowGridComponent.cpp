@@ -143,12 +143,12 @@ namespace
 		Out.allocThreshold = In.AllocThreshold;
 	}
 
-	inline void FromLinearColor(const FLinearColor& In, NvFlowFloat4& Out)
+	inline void CopyRenderCompMask(const FFlowRenderCompMask & In, NvFlowFloat4& Out)
 	{
-		Out.x = In.R;
-		Out.y = In.G;
-		Out.z = In.B;
-		Out.w = In.A;
+		Out.x = In.Temperature;
+		Out.y = In.Fuel;
+		Out.z = In.Burn;
+		Out.w = In.Smoke;
 	}
 
 	FlowMaterialKeyType AddMaterialParams(FFlowGridProperties& GridProperties, UFlowMaterial* FlowMaterial, FlowMaterialKeyType DefaultMaterialKey = nullptr)
@@ -200,9 +200,9 @@ namespace
 			RenderMaterialParams.alphaScale = RenderMaterial->AlphaScale;
 			RenderMaterialParams.additiveFactor = RenderMaterial->AdditiveFactor;
 
-			FromLinearColor(RenderMaterial->ColorMapCompMask, RenderMaterialParams.colorMapCompMask);
-			FromLinearColor(RenderMaterial->AlphaCompMask, RenderMaterialParams.alphaCompMask);
-			FromLinearColor(RenderMaterial->IntensityCompMask, RenderMaterialParams.intensityCompMask);
+			CopyRenderCompMask(RenderMaterial->ColorMapCompMask, RenderMaterialParams.colorMapCompMask);
+			CopyRenderCompMask(RenderMaterial->AlphaCompMask, RenderMaterialParams.alphaCompMask);
+			CopyRenderCompMask(RenderMaterial->IntensityCompMask, RenderMaterialParams.intensityCompMask);
 
 			RenderMaterialParams.alphaBias = RenderMaterial->AlphaBias;
 			RenderMaterialParams.intensityBias = RenderMaterial->IntensityBias;

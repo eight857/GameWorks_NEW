@@ -16,9 +16,19 @@ namespace
 		ColorMap->FloatCurves[3].AddKey(Time, Color.A);
 	}
 
-	inline FLinearColor ToLinearColor(const NvFlowFloat4& In)
+	inline void CopyRenderCompMask(const NvFlowFloat4& In, FFlowRenderCompMask& Out)
 	{
-		return FLinearColor(In.x, In.y, In.z, In.w);
+		Out.Temperature = In.x;
+		Out.Fuel = In.y;
+		Out.Burn = In.z;
+		Out.Smoke = In.w;
+	}
+	inline void SetRenderCompMask(float T, float F, float B, float S, FFlowRenderCompMask& Out)
+	{
+		Out.Temperature = T;
+		Out.Fuel = F;
+		Out.Burn = B;
+		Out.Smoke = S;
 	}
 }
 
@@ -30,10 +40,6 @@ UFlowRenderMaterial::UFlowRenderMaterial(const FObjectInitializer& ObjectInitial
 
 	AlphaScale = FlowRenderMaterialParams.alphaScale;
 	AdditiveFactor = FlowRenderMaterialParams.additiveFactor;
-
-	ColorMapCompMask = ToLinearColor(FlowRenderMaterialParams.colorMapCompMask);
-	AlphaCompMask = ToLinearColor(FlowRenderMaterialParams.alphaCompMask);
-	IntensityCompMask = ToLinearColor(FlowRenderMaterialParams.intensityCompMask);
 
 	ColorMap = CreateDefaultSubobject<UCurveLinearColor>(TEXT("DefaultColorMap0"));
 	AddColorMapPoint(ColorMap, 0.f, FLinearColor(0.0f, 0.f, 0.f, 0.f));
@@ -51,8 +57,104 @@ UFlowRenderMaterial::UFlowRenderMaterial(const FObjectInitializer& ObjectInitial
 	ColorMapMinX = 0.f;
 	ColorMapMaxX = 1.f;
 
-	AlphaBias = FlowRenderMaterialParams.alphaBias;
-	IntensityBias = FlowRenderMaterialParams.intensityBias;
+	bUseRenderPreset = true;
+	RenderPreset = EFRP_Default;
+
+	SyncRenderPresetProperties();
+}
+
+#if WITH_EDITOR
+void UFlowRenderMaterial::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	static bool IsReentrant = false;
+
+	if (!IsReentrant)
+	{
+		IsReentrant = true;
+
+		FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
+		if (PropertyName == GET_MEMBER_NAME_CHECKED(UFlowRenderMaterial, bUseRenderPreset))
+		{
+			if (bUseRenderPreset)
+			{
+				SyncRenderPresetProperties();
+			}
+		}
+		else if (PropertyName == GET_MEMBER_NAME_CHECKED(UFlowRenderMaterial, RenderPreset))
+		{
+			SyncRenderPresetProperties();
+		}
+
+		IsReentrant = false;
+	}
+}
+#endif
+
+void UFlowRenderMaterial::SyncRenderPresetProperties()
+{
+	switch (RenderPreset)
+	{
+		case EFRP_Default:
+		{
+			NvFlowRenderMaterialParams FlowRenderMaterialParams;
+			NvFlowRenderMaterialParamsDefaults(&FlowRenderMaterialParams);
+
+			CopyRenderCompMask(FlowRenderMaterialParams.colorMapCompMask, ColorMapCompMask);
+			CopyRenderCompMask(FlowRenderMaterialParams.alphaCompMask, AlphaCompMask);
+			CopyRenderCompMask(FlowRenderMaterialParams.intensityCompMask, IntensityCompMask);
+
+			AlphaBias = FlowRenderMaterialParams.alphaBias;
+			IntensityBias = FlowRenderMaterialParams.intensityBias;
+
+			break;
+		}
+		case EFRP_Temperature:
+		{
+			SetRenderCompMask(1.0f, 0.0f, 0.0f, 0.0f, ColorMapCompMask);
+			SetRenderCompMask(0.0f, 0.0f, 0.0f, 0.0f, AlphaCompMask);
+			SetRenderCompMask(0.0f, 0.0f, 0.0f, 0.0f, IntensityCompMask);
+
+			AlphaBias = 1.0f;
+			IntensityBias = 1.0f;
+
+			break;
+		}
+		case EFRP_Fuel:
+		{
+			SetRenderCompMask(0.0f, 1.0f, 0.0f, 0.0f, ColorMapCompMask);
+			SetRenderCompMask(0.0f, 0.0f, 0.0f, 0.0f, AlphaCompMask);
+			SetRenderCompMask(0.0f, 0.0f, 0.0f, 0.0f, IntensityCompMask);
+
+			AlphaBias = 1.0f;
+			IntensityBias = 1.0f;
+
+			break;
+		}
+		case EFRP_Smoke:
+		{
+			SetRenderCompMask(0.0f, 0.0f, 0.0f, 1.0f, ColorMapCompMask);
+			SetRenderCompMask(0.0f, 0.0f, 0.0f, 0.0f, AlphaCompMask);
+			SetRenderCompMask(0.0f, 0.0f, 0.0f, 0.0f, IntensityCompMask);
+
+			AlphaBias = 1.0f;
+			IntensityBias = 1.0f;
+
+			break;
+		}
+		case EFRP_SmokeWithShadow:
+		{
+			SetRenderCompMask(0.0f, 0.0f, 0.0f, 1.0f, ColorMapCompMask);
+			SetRenderCompMask(0.0f, 0.0f, 0.0f, 0.0f, AlphaCompMask);
+			SetRenderCompMask(0.0f, 0.0f, 1.0f, 0.0f, IntensityCompMask);
+
+			AlphaBias = 1.0f;
+			IntensityBias = 0.0f;
+
+			break;
+		}
+	}
 }
 
 // NvFlow end
