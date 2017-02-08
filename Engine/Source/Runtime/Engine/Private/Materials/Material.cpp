@@ -969,22 +969,27 @@ void UMaterial::OverrideScalarParameterDefault(FName ParameterName, float Value,
 
 float UMaterial::GetScalarParameterDefault(FName ParameterName, ERHIFeatureLevel::Type InFeatureLevel)
 {
-	FMaterialResource* Resource = GetMaterialResource(InFeatureLevel);
-	// Iterate over both the 2D textures and cube texture expressions.
-	const TArray<TRefCountPtr<FMaterialUniformExpression> >& UniformExpressions = Resource->GetUniformScalarParameterExpressions();
-
-	// Iterate over each of the material's texture expressions.
-	for (FMaterialUniformExpression* UniformExpression : UniformExpressions)
+	if (FApp::CanEverRender())
 	{
-		if (UniformExpression->GetType() == &FMaterialUniformExpressionScalarParameter::StaticType)
-		{
-			FMaterialUniformExpressionScalarParameter* ScalarExpression = static_cast<FMaterialUniformExpressionScalarParameter*>(UniformExpression);
+		FMaterialResource* Resource = GetMaterialResource(InFeatureLevel);
+		check(Resource);
 
-			if (ScalarExpression->GetParameterName() == ParameterName)
+		// Iterate over both the 2D textures and cube texture expressions.
+		const TArray<TRefCountPtr<FMaterialUniformExpression> >& UniformExpressions = Resource->GetUniformScalarParameterExpressions();
+
+		// Iterate over each of the material's texture expressions.
+		for (FMaterialUniformExpression* UniformExpression : UniformExpressions)
+		{
+			if (UniformExpression->GetType() == &FMaterialUniformExpressionScalarParameter::StaticType)
 			{
-				float Value = 0.f;
-				ScalarExpression->GetDefaultValue(Value);
-				return Value;
+				FMaterialUniformExpressionScalarParameter* ScalarExpression = static_cast<FMaterialUniformExpressionScalarParameter*>(UniformExpression);
+
+				if (ScalarExpression->GetParameterName() == ParameterName)
+				{
+					float Value = 0.f;
+					ScalarExpression->GetDefaultValue(Value);
+					return Value;
+				}
 			}
 		}
 	}
