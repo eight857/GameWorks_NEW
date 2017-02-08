@@ -907,6 +907,8 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 		shadowParams.renderChannel = Properties.RenderParams.RenderChannel;
 		shadowParams.intensityScale = Properties.RenderParams.ShadowIntensityScale;
 		shadowParams.minIntensity = Properties.RenderParams.ShadowMinIntensity;
+		shadowParams.shadowBlendCompMask = Properties.RenderParams.ShadowBlendCompMask;
+		shadowParams.shadowBlendBias = Properties.RenderParams.ShadowBlendBias;
 
 		FMatrix ShadowViewMatrix = DirectionalLight->Proxy->GetWorldToLight();
 		ShadowViewMatrix *= FMatrix(

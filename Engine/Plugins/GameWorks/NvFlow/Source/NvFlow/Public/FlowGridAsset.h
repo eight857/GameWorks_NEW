@@ -4,6 +4,7 @@
 // NvFlow begin
 
 #include "GridInteractionNvFlow.h"
+#include "FlowRenderMaterial.h"
 #include "FlowGridAsset.generated.h"
 
 UENUM()
@@ -64,38 +65,42 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	uint32		bMultiAdapterEnabled : 1;
 
-	/** If true, grid affects GPU particles*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
-	uint32		bParticlesInteractionEnabled : 1;
-
-	/** Enum indicating what interaction channel this object has */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
-	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
-
-	/** Custom Channels for Responses */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
-	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
-
 	/** If true, higher res density and volume rendering are disabled */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	uint32		bParticleModeEnabled : 1;
 
+	/** Tweaks block allocation for better big effect behavior*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	uint32		bBigEffectMode : 1;
+
+	/** If true, grid affects GPU particles*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction with Particles")
+	uint32		bParticlesInteractionEnabled : 1;
+
+	/** Enum indicating what interaction channel this object has */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction with Particles")
+	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;
+
+	/** Custom Channels for Responses */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction with Particles")
+	struct FInteractionResponseContainerNvFlow ResponseToInteractionChannels;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction with Particles")
 	float		ParticleToGridAccelTimeConstant;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction with Particles")
 	float		ParticleToGridDecelTimeConstant;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction with Particles")
 	float		ParticleToGridThresholdMultiplier;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction with Particles")
 	float		GridToParticleAccelTimeConstant;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction with Particles")
 	float		GridToParticleDecelTimeConstant;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction with Particles")
 	float		GridToParticleThresholdMultiplier;
 
 	/** Gravity vector for use by buoyancy*/
@@ -159,6 +164,12 @@ class UFlowGridAsset : public UObject
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
 	float		ShadowMinIntensity;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
+	FFlowRenderCompMask ShadowBlendCompMask;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
+	float		ShadowBlendBias;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
 	uint32		bDistanceFieldCollisionEnabled : 1;

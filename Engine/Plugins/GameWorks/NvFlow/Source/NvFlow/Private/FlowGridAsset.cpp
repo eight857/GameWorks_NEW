@@ -38,6 +38,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 
 	Gravity = FVector(FlowGridParams.gravity.x, FlowGridParams.gravity.z, FlowGridParams.gravity.y) * GetFlowToUE4Scale();
 	bPressureLegacyMode = FlowGridParams.pressureLegacyMode;
+	bBigEffectMode = FlowGridParams.bigEffectMode;
 
 	NvFlowVolumeRenderParams FlowVolumeRenderParams;
 	NvFlowVolumeRenderParamsDefaults(&FlowVolumeRenderParams);
@@ -98,6 +99,8 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	ShadowIntensityScale = 0.5f;
 	ShadowMinIntensity = 0.15f;
 
+	ShadowBlendCompMask = { 0.0f, 0.0f, 0.0f, 0.0f };
+	ShadowBlendBias = 1.0f;
 }
 
 // NvFlow end

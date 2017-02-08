@@ -10,8 +10,13 @@
 #include "PhysicsEngine/PhysXSupport.h"
 #include "NvFlow.h"
 
+static const float Density_DEPRECATED_Default = 0.5f;
+static const float DensityMask_DEPRECATED_Default = 1.0f;
+
 UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, Density_DEPRECATED(Density_DEPRECATED_Default)
+	, DensityMask_DEPRECATED(DensityMask_DEPRECATED_Default)
 {
 	bIsActive = true;
 	bAutoActivate = true;
@@ -24,7 +29,7 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 
 	LinearVelocity = *(FVector*)(&FlowGridEmitParams.velocityLinear.x) * UFlowGridAsset::GetFlowToUE4Scale();
 	AngularVelocity = *(FVector*)(&FlowGridEmitParams.velocityAngular.x);
-	Density = FlowGridEmitParams.density;
+	Smoke = FlowGridEmitParams.smoke;
 	Temperature = FlowGridEmitParams.temperature;
 	Fuel = FlowGridEmitParams.fuel;
 	FuelReleaseTemp = FlowGridEmitParams.fuelReleaseTemp;
@@ -35,7 +40,7 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 	EmitterInflate = 0.f;
 	CoupleRate = 0.5f;
 	VelocityMask = 1.f;
-	DensityMask = 1.f;
+	SmokeMask = 1.f;
 	TemperatureMask = 1.f;
 	FuelMask = 1.f;
 
@@ -47,6 +52,20 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 	bHasPreviousTransform = false;
 
 	FlowMaterial = nullptr;
+}
+
+void UFlowEmitterComponent::PostLoad()
+{
+	Super::PostLoad();
+
+	if (Density_DEPRECATED != Density_DEPRECATED_Default)
+	{
+		Smoke = Density_DEPRECATED;
+	}
+	if (DensityMask_DEPRECATED != DensityMask_DEPRECATED_Default)
+	{
+		SmokeMask = DensityMask_DEPRECATED;
+	}
 }
 
 // NvFlow end

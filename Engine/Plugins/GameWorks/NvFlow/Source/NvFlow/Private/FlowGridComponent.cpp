@@ -165,7 +165,7 @@ namespace
 
 		//Grid part
 		CopyMaterialPerComponent(FlowMaterial->Velocity, MaterialParams.GridParams.velocity);
-		CopyMaterialPerComponent(FlowMaterial->Density, MaterialParams.GridParams.density);
+		CopyMaterialPerComponent(FlowMaterial->Smoke, MaterialParams.GridParams.smoke);
 		CopyMaterialPerComponent(FlowMaterial->Temperature, MaterialParams.GridParams.temperature);
 		CopyMaterialPerComponent(FlowMaterial->Fuel, MaterialParams.GridParams.fuel);
 
@@ -175,7 +175,7 @@ namespace
 		MaterialParams.GridParams.burnPerTemp = FlowMaterial->BurnPerTemp;
 		MaterialParams.GridParams.fuelPerBurn = FlowMaterial->FuelPerBurn;
 		MaterialParams.GridParams.tempPerBurn = FlowMaterial->TempPerBurn;
-		MaterialParams.GridParams.densityPerBurn = FlowMaterial->DensityPerBurn;
+		MaterialParams.GridParams.smokePerBurn = FlowMaterial->SmokePerBurn;
 		MaterialParams.GridParams.divergencePerBurn = FlowMaterial->DivergencePerBurn;
 		MaterialParams.GridParams.buoyancyPerTemp = FlowMaterial->BuoyancyPerTemp;
 		MaterialParams.GridParams.coolingRate = FlowMaterial->CoolingRate;
@@ -564,7 +564,7 @@ void UFlowGridComponent::UpdateShapes()
 					emitParams.fuel = FlowEmitterComponent->Fuel;
 					emitParams.fuelReleaseTemp = FlowEmitterComponent->FuelReleaseTemp;
 					emitParams.fuelRelease = FlowEmitterComponent->FuelRelease;
-					emitParams.density = FlowEmitterComponent->Density;
+					emitParams.smoke = FlowEmitterComponent->Smoke;
 					emitParams.temperature = FlowEmitterComponent->Temperature;
 					emitParams.allocationPredict = FlowEmitterComponent->AllocationPredict;
 					emitParams.allocationScale = {
@@ -583,7 +583,7 @@ void UFlowGridComponent::UpdateShapes()
 					float coupleRate = FlowEmitterComponent->CoupleRate;
 					emitParams.fuelCoupleRate        = coupleRate * FlowEmitterComponent->FuelMask;
 					emitParams.temperatureCoupleRate = coupleRate * FlowEmitterComponent->TemperatureMask;
-					emitParams.densityCoupleRate     = coupleRate * FlowEmitterComponent->DensityMask;
+					emitParams.smokeCoupleRate       = coupleRate * FlowEmitterComponent->SmokeMask;
 					float velocityCoupleRate         = coupleRate * FlowEmitterComponent->VelocityMask;
 					emitParams.velocityCoupleRate = { velocityCoupleRate, velocityCoupleRate, velocityCoupleRate };
 
@@ -676,8 +676,8 @@ void UFlowGridComponent::UpdateShapes()
 							collideParams.fuel = 0.f;
 							collideParams.fuelCoupleRate = 100.f * FlowEmitterComponent->FuelMask;
 
-							collideParams.density = 0.f;
-							collideParams.densityCoupleRate = 100.f * FlowEmitterComponent->DensityMask;
+							collideParams.smoke = 0.f;
+							collideParams.smokeCoupleRate = 100.f * FlowEmitterComponent->SmokeMask;
 
 							collideParams.temperature = 0.f;
 							collideParams.temperatureCoupleRate = 100.0f * FlowEmitterComponent->TemperatureMask;
@@ -719,7 +719,7 @@ void UFlowGridComponent::UpdateShapes()
 					emitParams.velocityLinear = *(NvFlowFloat3*)(&CollisionScaledVelocityLinear.X);
 					emitParams.velocityAngular = *(NvFlowFloat3*)(&CollisionScaledVelocityAngular.X);
 					emitParams.fuel = 0.f;
-					emitParams.density = 0.f;
+					emitParams.smoke = 0.f;
 					emitParams.temperature = 0.f;
 					emitParams.allocationScale = { 0.f, 0.f, 0.f };
 
@@ -727,7 +727,7 @@ void UFlowGridComponent::UpdateShapes()
 					float coupleRate = 100.f;
 					emitParams.fuelCoupleRate = coupleRate;
 					emitParams.temperatureCoupleRate = coupleRate;
-					emitParams.densityCoupleRate = coupleRate;
+					emitParams.smokeCoupleRate = coupleRate;
 					float velocityCoupleRate = coupleRate;
 					emitParams.velocityCoupleRate = { velocityCoupleRate, velocityCoupleRate, velocityCoupleRate };
 
@@ -870,7 +870,9 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		FVector ScaledGravity(FlowGridAssetRef->Gravity * NvFlow::scaleInv);
 		GridParams.gravity = *(NvFlowFloat3*)(&ScaledGravity);
-		
+		GridParams.pressureLegacyMode = FlowGridAssetRef->bPressureLegacyMode;
+		GridParams.bigEffectMode = FlowGridAssetRef->bBigEffectMode;
+
 		FlowGridProperties.ColorMapResolution = NewColorMapResolution;
 
 		//NvFlowVolumeRenderParams
@@ -903,6 +905,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		FlowGridProperties.RenderParams.bVolumeShadowEnabled = FlowGridAssetRef->bVolumeShadowEnabled;
 		FlowGridProperties.RenderParams.ShadowIntensityScale = FlowGridAssetRef->ShadowIntensityScale;
 		FlowGridProperties.RenderParams.ShadowMinIntensity = FlowGridAssetRef->ShadowMinIntensity;
+		CopyRenderCompMask(FlowGridAssetRef->ShadowBlendCompMask, FlowGridProperties.RenderParams.ShadowBlendCompMask);
+		FlowGridProperties.RenderParams.ShadowBlendBias = FlowGridAssetRef->ShadowBlendBias;
 
 		FlowGridProperties.MaterialsMap.Reset();
 		FlowGridProperties.DefaultMaterialKey = AddMaterialParams(FlowGridProperties, DefaultFlowMaterial);

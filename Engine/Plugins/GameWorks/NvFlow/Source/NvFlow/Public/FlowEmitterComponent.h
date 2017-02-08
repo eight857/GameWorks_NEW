@@ -23,9 +23,12 @@ class UFlowEmitterComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter, meta = (ClampMin = 0.0f, UIMax = 1.0f))
 	float 		BlendInPhysicalVelocity;
 
-	/**  Target density*/
+	UPROPERTY()
+	float		Density_DEPRECATED;
+
+	/**  Target smoke*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter, meta = (UIMin = 0.0f, UIMax = 10.0f))
-	float		Density;
+	float		Smoke;
 
 	/** Target temperature*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter, meta = (UIMin = 0.0f, UIMax = 10.0f))
@@ -67,9 +70,12 @@ class UFlowEmitterComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter, meta = (ClampMin = 0.0f, UIMax = 1.0f))
 	float VelocityMask;
 
-	/** 1.0 makes density change based on CoupleRate. 0.0 makes emitter have no effect on density. */
+	UPROPERTY()
+	float DensityMask_DEPRECATED;
+
+	/** 1.0 makes smoke change based on CoupleRate. 0.0 makes emitter have no effect on smoke. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter, meta = (ClampMin = 0.0f, UIMax = 1.0f))
-	float DensityMask;
+	float SmokeMask;
 
 	/** 1.0 makes temperature change based on CoupleRate. 0.0 makes emitter have no effect on temperature. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter, meta = (ClampMin = 0.0f, UIMax = 1.0f))
@@ -94,5 +100,6 @@ class UFlowEmitterComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	class UFlowMaterial* FlowMaterial;
 
+	virtual void PostLoad() override;
 };
 

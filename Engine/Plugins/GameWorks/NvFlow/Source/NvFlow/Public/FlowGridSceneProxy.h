@@ -34,6 +34,8 @@ struct FFlowGridRenderParams
 	uint32 bVolumeShadowEnabled : 1;
 	float ShadowIntensityScale;
 	float ShadowMinIntensity;
+	NvFlowFloat4 ShadowBlendCompMask;
+	float ShadowBlendBias;
 };
 
 typedef void* FlowMaterialKeyType;

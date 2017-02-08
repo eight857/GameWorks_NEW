@@ -127,6 +127,8 @@ struct NvFlowGridParams
 
 	bool pressureLegacyMode;				//!< If true, run older less accurate pressure solver
 
+	bool bigEffectMode;						//!< Tweaks block allocation for better big effect behavior
+
 	NvFlowGridDebugVisFlags debugVisFlags;	//!< Flags to control what debug visualization information is generated
 };
 
@@ -222,7 +224,7 @@ struct NvFlowGridMaterialHandle
 enum NvFlowGridComponent
 {
 	eNvFlowGridComponentVelocity = 0,
-	eNvFlowGridComponentDensity = 1,
+	eNvFlowGridComponentSmoke = 1,
 	eNvFlowGridComponentTemperature = 2,
 	eNvFlowGridComponentFuel = 3,
 
@@ -244,7 +246,7 @@ struct NvFlowGridMaterialPerComponent
 struct NvFlowGridMaterialParams
 {
 	NvFlowGridMaterialPerComponent velocity;	//!< Velocity component parameters
-	NvFlowGridMaterialPerComponent density;		//!< Density component parameters
+	NvFlowGridMaterialPerComponent smoke;		//!< Smoke component parameters
 	NvFlowGridMaterialPerComponent temperature;	//!< Temperature component parameters
 	NvFlowGridMaterialPerComponent fuel;		//!< Fuel component parameters
 
@@ -255,7 +257,7 @@ struct NvFlowGridMaterialParams
 	float burnPerTemp;							//!< Burn amount per unit temperature above ignitionTemp
 	float fuelPerBurn;							//!< Fuel consumed per unit burn
 	float tempPerBurn;							//!< Temperature increase per unit burn
-	float densityPerBurn;						//!< Density increase per unit burn
+	float smokePerBurn;							//!< Smoke increase per unit burn
 	float divergencePerBurn;					//!< Expansion per unit burn
 	float buoyancyPerTemp;						//!< Buoyant force per unit temperature
 	float coolingRate;							//!< Cooling rate, exponential
@@ -478,8 +480,8 @@ struct NvFlowGridEmitParams
 	NvFlowFloat3 velocityAngular;					//!< Angular velocity, in world units, emitter direction
 	NvFlowFloat3 velocityCoupleRate;				//!< Rate of correction to target, inf means instantaneous
 
-	float density;									//!< Target density
-	float densityCoupleRate;						//!< Rate of correction to target, inf means instantaneous
+	float smoke;									//!< Target smoke
+	float smokeCoupleRate;							//!< Rate of correction to target, inf means instantaneous
 
 	float temperature;								//!< Target temperature
 	float temperatureCoupleRate;					//!< Rate of correction to target, inf means instantaneous
@@ -1063,6 +1065,9 @@ struct NvFlowVolumeShadowParams
 
 	float intensityScale;						//!< Shadow intensity scale
 	float minIntensity;							//!< Minimum shadow intensity
+
+	NvFlowFloat4 shadowBlendCompMask;			//!< Component mask to control which channel(s) modulate the shadow blending
+	float shadowBlendBias;						//!< Bias on shadow blend factor
 };
 
 struct NvFlowVolumeShadowDebugRenderParams
@@ -1438,8 +1443,8 @@ struct NvFlowParticleSurfaceEmitParams
 	NvFlowFloat3 velocityLinear;					//!< Linear velocity, in world units, emitter direction
 	NvFlowFloat3 velocityCoupleRate;				//!< Rate of correction to target, inf means instantaneous
 
-	float density;									//!< Target density
-	float densityCoupleRate;						//!< Rate of correction to target, inf means instantaneous
+	float smoke;									//!< Target smoke
+	float smokeCoupleRate;							//!< Rate of correction to target, inf means instantaneous
 
 	float temperature;								//!< Target temperature
 	float temperatureCoupleRate;					//!< Rate of correction to target, inf means instantaneous

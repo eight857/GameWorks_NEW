@@ -43,9 +43,12 @@ class UFlowMaterial : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Components)
 	FFlowMaterialPerComponent Velocity;
 
+	UPROPERTY()
+	FFlowMaterialPerComponent Density_DEPRECATED;
+
 	/** Density component parameters */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Components)
-	FFlowMaterialPerComponent Density;
+	FFlowMaterialPerComponent Smoke;
 
 	/** Temperature component parameters */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Components)
@@ -79,9 +82,12 @@ class UFlowMaterial : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Combustion)
 	float TempPerBurn;
 
-	/** Density increase per unit burn */
+	UPROPERTY()
+	float DensityPerBurn_DEPRECATED;
+
+	/** Smoke increase per unit burn */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Combustion)
-	float DensityPerBurn;
+	float SmokePerBurn;
 
 	/** Expansion per unit burn */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Combustion)
@@ -98,6 +104,8 @@ class UFlowMaterial : public UObject
 	/** Array of render materials */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Rendering)
 	TArray<class UFlowRenderMaterial*> RenderMaterials;
+
+	virtual void PostLoad() override;
 };
 
 // NvFlow end
