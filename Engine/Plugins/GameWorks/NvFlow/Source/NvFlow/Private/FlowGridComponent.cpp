@@ -111,6 +111,22 @@ void UFlowGridComponent::SetOverrideAsset(class UFlowGridAsset* asset)
 	else FlowGridAssetCurrent = &FlowGridAsset;
 }
 
+class UFlowMaterial* UFlowGridComponent::CreateOverrideMaterial(class UFlowMaterial* materialToDuplicate)
+{
+	// duplicate material
+	auto material = DuplicateObject<UFlowMaterial>(materialToDuplicate, this);
+	return material;
+}
+
+void UFlowGridComponent::SetOverrideMaterial(class UFlowMaterial* materialToOverride, class UFlowMaterial* overrideMaterial)
+{
+	if (materialToOverride != nullptr)
+	{
+		MaterialsMap.FindOrAdd(materialToOverride).OverrideMaterial = overrideMaterial;
+	}
+}
+
+
 FBoxSphereBounds UFlowGridComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
 	FBoxSphereBounds NewBounds(ForceInit);
@@ -149,87 +165,6 @@ namespace
 		Out.y = In.Fuel;
 		Out.z = In.Burn;
 		Out.w = In.Smoke;
-	}
-
-	FlowMaterialKeyType AddMaterialParams(FFlowGridProperties& GridProperties, UFlowMaterial* FlowMaterial, FlowMaterialKeyType DefaultMaterialKey = nullptr)
-	{
-		if (FlowMaterial == nullptr)
-		{
-			return DefaultMaterialKey;
-		}
-		if (GridProperties.MaterialsMap.Contains(FlowMaterial))
-		{
-			return FlowMaterial;
-		}
-		FFlowMaterialParams& MaterialParams = GridProperties.MaterialsMap.Add(FlowMaterial);
-
-		//Grid part
-		CopyMaterialPerComponent(FlowMaterial->Velocity, MaterialParams.GridParams.velocity);
-		CopyMaterialPerComponent(FlowMaterial->Smoke, MaterialParams.GridParams.smoke);
-		CopyMaterialPerComponent(FlowMaterial->Temperature, MaterialParams.GridParams.temperature);
-		CopyMaterialPerComponent(FlowMaterial->Fuel, MaterialParams.GridParams.fuel);
-
-		MaterialParams.GridParams.vorticityStrength = FlowMaterial->VorticityStrength;
-		MaterialParams.GridParams.vorticityVelocityMask = FlowMaterial->VorticityVelocityMask;
-		MaterialParams.GridParams.ignitionTemp = FlowMaterial->IgnitionTemp;
-		MaterialParams.GridParams.burnPerTemp = FlowMaterial->BurnPerTemp;
-		MaterialParams.GridParams.fuelPerBurn = FlowMaterial->FuelPerBurn;
-		MaterialParams.GridParams.tempPerBurn = FlowMaterial->TempPerBurn;
-		MaterialParams.GridParams.smokePerBurn = FlowMaterial->SmokePerBurn;
-		MaterialParams.GridParams.divergencePerBurn = FlowMaterial->DivergencePerBurn;
-		MaterialParams.GridParams.buoyancyPerTemp = FlowMaterial->BuoyancyPerTemp;
-		MaterialParams.GridParams.coolingRate = FlowMaterial->CoolingRate;
-
-		//Render part
-		check(FlowMaterial->RenderMaterials.Num() > 0);
-		MaterialParams.RenderMaterials.Reset();
-		MaterialParams.RenderMaterials.Reserve(FlowMaterial->RenderMaterials.Num());
-		for (auto it = FlowMaterial->RenderMaterials.CreateIterator(); it; ++it)
-		{
-			UFlowRenderMaterial* RenderMaterial = *it;
-			if (RenderMaterial == nullptr)
-			{
-				continue;
-			}
-
-			MaterialParams.RenderMaterials.AddDefaulted(1);
-			FFlowRenderMaterialParams& RenderMaterialParams = MaterialParams.RenderMaterials.Last();
-
-			RenderMaterialParams.Key = RenderMaterial;
-
-			RenderMaterialParams.alphaScale = RenderMaterial->AlphaScale;
-			RenderMaterialParams.additiveFactor = RenderMaterial->AdditiveFactor;
-
-			CopyRenderCompMask(RenderMaterial->ColorMapCompMask, RenderMaterialParams.colorMapCompMask);
-			CopyRenderCompMask(RenderMaterial->AlphaCompMask, RenderMaterialParams.alphaCompMask);
-			CopyRenderCompMask(RenderMaterial->IntensityCompMask, RenderMaterialParams.intensityCompMask);
-
-			RenderMaterialParams.alphaBias = RenderMaterial->AlphaBias;
-			RenderMaterialParams.intensityBias = RenderMaterial->IntensityBias;
-
-			SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateColorMap);
-
-			//Alloc color map size to default specified by the flow library. NvFlowRendering.cpp assumes that for now.
-			if (RenderMaterialParams.ColorMap.Num() == 0)
-			{
-				RenderMaterialParams.ColorMap.SetNum(64);
-			}
-
-			float xmin = RenderMaterial->ColorMapMinX;
-			float xmax = RenderMaterial->ColorMapMaxX;
-			RenderMaterialParams.colorMapMinX = xmin;
-			RenderMaterialParams.colorMapMaxX = xmax;
-
-			for (int32 i = 0; i < RenderMaterialParams.ColorMap.Num(); i++)
-			{
-				float t = float(i) / (RenderMaterialParams.ColorMap.Num() - 1);
-
-				float s = (xmax - xmin) * t + xmin;
-
-				RenderMaterialParams.ColorMap[i] = RenderMaterial->ColorMap ? RenderMaterial->ColorMap->GetLinearColorValue(s) : FLinearColor(0.f, 0.f, 0.f, 1.f);
-			}
-		}
-		return FlowMaterial;
 	}
 
 	// helpers to find actor, shape pairs in a TSet
@@ -655,8 +590,9 @@ void UFlowGridComponent::UpdateShapes()
 						FlowGridProperties.GridEmitParams.Push(emitParams);
 
 						// add material
+						auto EmitterFlowMaterial = FlowEmitterComponent->FlowMaterial;
 						FlowGridProperties.GridEmitMaterialKeys.Push(
-							AddMaterialParams(FlowGridProperties, FlowEmitterComponent->FlowMaterial, FlowGridProperties.DefaultMaterialKey)
+							AddMaterialParams(EmitterFlowMaterial != nullptr ? EmitterFlowMaterial : DefaultFlowMaterial)
 						);
 
 						// collision factor support
@@ -769,6 +705,94 @@ void UFlowGridComponent::UpdateShapes()
 	INC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.GridCollideParams.Num());
 
 	SCENE_UNLOCK_READ(SyncScene);
+}
+
+FlowMaterialKeyType UFlowGridComponent::AddMaterialParams(UFlowMaterial* InFlowMaterial)
+{
+	check(InFlowMaterial != nullptr);
+
+	MaterialData& MaterialData = MaterialsMap.FindOrAdd(InFlowMaterial);
+
+	UFlowMaterial* FlowMaterial = (MaterialData.OverrideMaterial != nullptr) ? MaterialData.OverrideMaterial : InFlowMaterial;
+
+	if (MaterialData.bUpdated)
+	{
+		return FlowMaterial;
+	}
+	MaterialData.bUpdated = true;
+
+	FlowGridProperties.Materials.AddDefaulted(1);
+	FlowGridProperties.Materials.Last().Key = FlowMaterial;
+	FFlowMaterialParams& MaterialParams = FlowGridProperties.Materials.Last().Value;
+
+	//Grid part
+	CopyMaterialPerComponent(FlowMaterial->Velocity, MaterialParams.GridParams.velocity);
+	CopyMaterialPerComponent(FlowMaterial->Smoke, MaterialParams.GridParams.smoke);
+	CopyMaterialPerComponent(FlowMaterial->Temperature, MaterialParams.GridParams.temperature);
+	CopyMaterialPerComponent(FlowMaterial->Fuel, MaterialParams.GridParams.fuel);
+
+	MaterialParams.GridParams.vorticityStrength = FlowMaterial->VorticityStrength;
+	MaterialParams.GridParams.vorticityVelocityMask = FlowMaterial->VorticityVelocityMask;
+	MaterialParams.GridParams.ignitionTemp = FlowMaterial->IgnitionTemp;
+	MaterialParams.GridParams.burnPerTemp = FlowMaterial->BurnPerTemp;
+	MaterialParams.GridParams.fuelPerBurn = FlowMaterial->FuelPerBurn;
+	MaterialParams.GridParams.tempPerBurn = FlowMaterial->TempPerBurn;
+	MaterialParams.GridParams.smokePerBurn = FlowMaterial->SmokePerBurn;
+	MaterialParams.GridParams.divergencePerBurn = FlowMaterial->DivergencePerBurn;
+	MaterialParams.GridParams.buoyancyPerTemp = FlowMaterial->BuoyancyPerTemp;
+	MaterialParams.GridParams.coolingRate = FlowMaterial->CoolingRate;
+
+	//Render part
+	check(FlowMaterial->RenderMaterials.Num() > 0);
+	MaterialParams.RenderMaterials.Reset();
+	MaterialParams.RenderMaterials.Reserve(FlowMaterial->RenderMaterials.Num());
+	for (auto it = FlowMaterial->RenderMaterials.CreateIterator(); it; ++it)
+	{
+		UFlowRenderMaterial* RenderMaterial = *it;
+		if (RenderMaterial == nullptr)
+		{
+			continue;
+		}
+
+		MaterialParams.RenderMaterials.AddDefaulted(1);
+		FFlowRenderMaterialParams& RenderMaterialParams = MaterialParams.RenderMaterials.Last();
+
+		RenderMaterialParams.Key = RenderMaterial;
+
+		RenderMaterialParams.alphaScale = RenderMaterial->AlphaScale;
+		RenderMaterialParams.additiveFactor = RenderMaterial->AdditiveFactor;
+
+		CopyRenderCompMask(RenderMaterial->ColorMapCompMask, RenderMaterialParams.colorMapCompMask);
+		CopyRenderCompMask(RenderMaterial->AlphaCompMask, RenderMaterialParams.alphaCompMask);
+		CopyRenderCompMask(RenderMaterial->IntensityCompMask, RenderMaterialParams.intensityCompMask);
+
+		RenderMaterialParams.alphaBias = RenderMaterial->AlphaBias;
+		RenderMaterialParams.intensityBias = RenderMaterial->IntensityBias;
+
+		SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateColorMap);
+
+		//Alloc color map size to default specified by the flow library. NvFlowRendering.cpp assumes that for now.
+		if (RenderMaterialParams.ColorMap.Num() == 0)
+		{
+			RenderMaterialParams.ColorMap.SetNum(64);
+		}
+
+		float xmin = RenderMaterial->ColorMapMinX;
+		float xmax = RenderMaterial->ColorMapMaxX;
+		RenderMaterialParams.colorMapMinX = xmin;
+		RenderMaterialParams.colorMapMaxX = xmax;
+
+		for (int32 i = 0; i < RenderMaterialParams.ColorMap.Num(); i++)
+		{
+			float t = float(i) / (RenderMaterialParams.ColorMap.Num() - 1);
+
+			float s = (xmax - xmin) * t + xmin;
+
+			RenderMaterialParams.ColorMap[i] = RenderMaterial->ColorMap ? RenderMaterial->ColorMap->GetLinearColorValue(s) : FLinearColor(0.f, 0.f, 0.f, 1.f);
+		}
+	}
+
+	return FlowMaterial;
 }
 
 
@@ -908,8 +932,12 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		CopyRenderCompMask(FlowGridAssetRef->ShadowBlendCompMask, FlowGridProperties.RenderParams.ShadowBlendCompMask);
 		FlowGridProperties.RenderParams.ShadowBlendBias = FlowGridAssetRef->ShadowBlendBias;
 
-		FlowGridProperties.MaterialsMap.Reset();
-		FlowGridProperties.DefaultMaterialKey = AddMaterialParams(FlowGridProperties, DefaultFlowMaterial);
+		for (auto It = MaterialsMap.CreateIterator(); It; ++It)
+		{
+			It.Value().bUpdated = false;
+		}
+		FlowGridProperties.Materials.Reset();
+		FlowGridProperties.DefaultMaterialKey = AddMaterialParams(DefaultFlowMaterial);
 
 		//EmitShapes & CollisionShapes
 		UpdateShapes();

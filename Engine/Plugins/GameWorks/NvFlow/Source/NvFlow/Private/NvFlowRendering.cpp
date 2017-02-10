@@ -649,9 +649,9 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 
 	FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
 
-	for (auto It = Properties.MaterialsMap.CreateConstIterator(); It; ++It)
+	for (auto It = Properties.Materials.CreateConstIterator(); It; ++It)
 	{
-		updateMaterial(It.Key(), It.Value());
+		updateMaterial(It->Key, It->Value);
 	}
 
 	check(Properties.GridEmitParams.Num() == Properties.GridEmitMaterialKeys.Num());

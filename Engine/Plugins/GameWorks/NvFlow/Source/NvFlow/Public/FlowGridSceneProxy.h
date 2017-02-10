@@ -107,7 +107,7 @@ struct FFlowGridProperties
 	TArray<FlowMaterialKeyType> GridEmitMaterialKeys;
 	FlowMaterialKeyType DefaultMaterialKey;
 
-	TMap<FlowMaterialKeyType, FFlowMaterialParams> MaterialsMap;
+	TArray<TPair<FlowMaterialKeyType, FFlowMaterialParams> > Materials;
 };
 
 class UFlowGridComponent;

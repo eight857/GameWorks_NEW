@@ -62,9 +62,14 @@ class UFlowGridComponent : public UPrimitiveComponent
 	class UFlowGridAsset* FlowGridAssetOld;
 
 	/** Default flow material. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	UPROPERTY(NoClear, EditAnywhere, BlueprintReadWrite, Category = Grid)
 	class UFlowMaterial* DefaultFlowMaterial;
 
+	UFUNCTION(BlueprintCallable, Category = Grid)
+	class UFlowMaterial* CreateOverrideMaterial(class UFlowMaterial* materialToDuplicate);
+
+	UFUNCTION(BlueprintCallable, Category = Grid)
+	void SetOverrideMaterial(class UFlowMaterial* materialToOverride, class UFlowMaterial* overrideMaterial);
 
 	/** If true, Flow Grid will collide with emitter/colliders. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Grid)
@@ -103,8 +108,19 @@ protected:
 	// End UActorComponent Interface
 
 	void UpdateShapes();
+	FlowMaterialKeyType AddMaterialParams(class UFlowMaterial* FlowMaterial);
 
 	FTimeStepper TimeStepper;
+
+
+	struct MaterialData
+	{
+		bool bUpdated = false;
+		class UFlowMaterial* OverrideMaterial = nullptr;
+	};
+
+	TMap<class UFlowMaterial*, MaterialData> MaterialsMap;
+
 };
 
 // NvFlow end
