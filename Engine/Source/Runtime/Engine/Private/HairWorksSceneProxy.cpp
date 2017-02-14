@@ -220,7 +220,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData & D
 		CurrentSkinningMatrices = MoveTemp(DynamicData.BoneMatrices);
 	}
 
-	// Morph data
+	// Morph data. It's too early to update morph data here. It's not ready yet. 
 	MorphIndices = MoveTemp(DynamicData.MorphIndices);
 	ParentSkinning = DynamicData.ParentSkinning;
 	bMorphDataUpdated = true;
@@ -281,6 +281,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData & D
 
 void FHairWorksSceneProxy::PreSimulate()
 {
+	// Get morph data from skeleton
 	if(!bMorphDataUpdated)
 		return;
 
@@ -306,6 +307,7 @@ void FHairWorksSceneProxy::PreSimulate()
 		}
 	}
 
+	// Update morph data
 	HairWorks::GetSDK()->updateMorphDeltas(
 		HairInstanceId,
 		reinterpret_cast<const gfsdk_float3*>(MorphPositions.GetData()),
