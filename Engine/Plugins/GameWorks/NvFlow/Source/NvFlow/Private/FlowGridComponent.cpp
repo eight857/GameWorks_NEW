@@ -1034,6 +1034,20 @@ void UFlowGridComponent::SendRenderTransform_Concurrent()
 	Super::SendRenderTransform_Concurrent();
 }
 
+void UFlowGridComponent::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
+{
+	Super::AddReferencedObjects(InThis, Collector);
+
+	auto This = CastChecked<UFlowGridComponent>(InThis);
+
+	for (auto It = This->MaterialsMap.CreateIterator(); It; ++It)
+	{
+		auto OverrideMaterial = It.Value().OverrideMaterial;
+
+		Collector.AddReferencedObject(OverrideMaterial, This);
+	}
+}
+
 /*=============================================================================
 FFlowGridSceneProxy
 =============================================================================*/

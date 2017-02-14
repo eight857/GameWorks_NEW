@@ -57,7 +57,9 @@ class UFlowGridComponent : public UPrimitiveComponent
 	UFUNCTION(BlueprintCallable, Category = Grid)
 	void SetOverrideAsset(class UFlowGridAsset* asset);
 
+	UPROPERTY(Transient)
 	class UFlowGridAsset* FlowGridAssetOverride;
+
 	class UFlowGridAsset** FlowGridAssetCurrent;
 	class UFlowGridAsset* FlowGridAssetOld;
 
@@ -121,6 +123,8 @@ protected:
 
 	TMap<class UFlowMaterial*, MaterialData> MaterialsMap;
 
+public:
+	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
 };
 
 // NvFlow end
