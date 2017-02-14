@@ -153,6 +153,7 @@ FPrimitiveViewRelevance FHairWorksSceneProxy::GetViewRelevance(const FSceneView*
 	ViewRel.bShadowRelevance = IsShadowCast(View);
 	ViewRel.bDynamicRelevance = true;
 	ViewRel.bRenderInMainPass = false;	// Hair is rendered in a special path.
+	ViewRel.bUsesLightingChannels = GetLightingChannelMask() != GetDefaultLightingChannelMask();
 
 	ViewRel.bHairWorks = View->Family->EngineShowFlags.HairWorks && HairInstanceId != NvHair::INSTANCE_ID_NULL;
 
