@@ -12,6 +12,10 @@
 #include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>
 #include "HideWindowsPlatformTypes.h"
 
+#include "SceneRendering.h"
+#include "RenderTargetPool.h"
+#include "VelocityRendering.h"
+#include "LightMapRendering.h"
 #include "SceneUtils.h"
 #include "ScreenRendering.h"
 #include "SceneFilterRendering.h"
@@ -417,6 +421,8 @@ protected:
 };
 
 IMPLEMENT_SHADER_TYPE(, FHairWorksHitProxyPs, TEXT("HairWorks"), TEXT("HitProxyPs"), SF_Pixel);
+
+bool IsMotionBlurEnabled(const FViewInfo& View);
 
 namespace HairWorksRenderer
 {

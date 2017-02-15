@@ -1,6 +1,8 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
+#include "IDetailCustomization.h"
+
 class FHairWorksMaterialDetails : public IDetailCustomization
 {
 public:

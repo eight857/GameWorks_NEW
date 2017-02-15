@@ -1,6 +1,7 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
+#include "SceneComponent.h"
 #include "HairWorksPinTransformComponent.generated.h"
 
 /**

@@ -1,6 +1,8 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
+#include "AssetTypeActions_Base.h"
+
 class FAssetTypeActions_HairWorks : public FAssetTypeActions_Base
 {
 public:

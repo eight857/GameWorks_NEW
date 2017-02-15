@@ -4,6 +4,8 @@
 #include "Serialization/ObjectReader.h"
 #include <Nv/Common/NvCoMemoryReadStream.h>
 #include "HairWorksSDK.h"
+#include "Engine/SkeletalMesh.h"
+#include "Components/SkinnedMeshComponent.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
 #include "HairWorksSceneProxy.h"

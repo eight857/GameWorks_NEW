@@ -1,5 +1,10 @@
 // @third party code - BEGIN HairWorks
 #include "HairWorksDetails.h"
+#include "IDetailPropertyRow.h"
+#include "PropertyHandle.h"
+#include "DetailLayoutBuilder.h"
+#include "DetailCategoryBuilder.h"
+#include "IDetailGroup.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
 #include "Components/HairWorksComponent.h"

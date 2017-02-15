@@ -4,6 +4,8 @@
 #include "AllowWindowsPlatformTypes.h"
 #include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>
 #include "HideWindowsPlatformTypes.h"
+#include "ScopeLock.h"
+#include "Engine/Texture2D.h"
 #include "HairWorksSDK.h"
 #include "Engine/HairWorksAsset.h"
 

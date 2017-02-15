@@ -1,6 +1,7 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
+#include "Object.h"
 #include "HairWorksAsset.generated.h"
 
 namespace nvidia{namespace HairWorks{

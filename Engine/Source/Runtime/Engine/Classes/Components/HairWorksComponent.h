@@ -1,6 +1,7 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
+#include "PrimitiveComponent.h"
 #include "Engine/HairWorksInstance.h"
 #include "HairWorksComponent.generated.h"
 

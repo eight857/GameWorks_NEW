@@ -6,6 +6,7 @@
 struct ID3D11DeviceContext;
 struct ID3D11ShaderResourceView;
 struct ID3D11Device;
+class FCanvas;
 
 namespace HairWorks{
 	class ID3DHelper

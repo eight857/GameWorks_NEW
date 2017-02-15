@@ -1,5 +1,7 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// @third party code - BEGIN HairWorks
 #include "Classes/ThumbnailRendering/HairWorksAssetThumbnailRenderer.h"
+#include "SceneView.h"
+#include "RendererInterface.h"
 #include "EngineModule.h"
 #include "Engine/HairWorksAsset.h"
 #include "ThumbnailHelpers.h"
@@ -44,3 +46,4 @@ void UHairWorksAssetThumbnailRenderer::BeginDestroy()
 
 	Super::BeginDestroy();
 }
+// @third party code - END HairWorks

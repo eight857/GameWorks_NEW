@@ -1,10 +1,15 @@
+// @third party code - BEGIN HairWorks
 /**
  *
  * This thumbnail renderer displays a given HairWorks Asset
  */
 
 #pragma once
+
+#include "DefaultSizedThumbnailRenderer.h"
 #include "HairWorksAssetThumbnailRenderer.generated.h"
+
+class FHairWorksAssetThumbnailScene;
 
 UCLASS(config = Editor, MinimalAPI)
 class UHairWorksAssetThumbnailRenderer: public UDefaultSizedThumbnailRenderer
@@ -21,4 +26,4 @@ class UHairWorksAssetThumbnailRenderer: public UDefaultSizedThumbnailRenderer
 private:
 	FHairWorksAssetThumbnailScene* ThumbnailScene;
 };
-
+// @third party code - END HairWorks

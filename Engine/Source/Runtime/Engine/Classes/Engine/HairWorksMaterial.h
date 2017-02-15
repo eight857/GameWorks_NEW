@@ -1,7 +1,9 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
+#include "Object.h"
 #include "HairWorksMaterial.generated.h"
+
 namespace nvidia{namespace HairWorks{
 	struct InstanceDescriptor;
 	struct Pin;
@@ -52,6 +54,8 @@ struct ENGINE_API FHairWorksPin
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|Pin")
 	FVector4 InfluenceFallOffCurve = FVector4(1, 1, 1, 1);
 };
+
+class UTexture2D;
 
 /**
 * HairWorksMaterial represents physical and graphics attributes of a hair.

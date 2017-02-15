@@ -2,6 +2,7 @@
 #include "Engine/HairWorksAsset.h"
 #include <Nv/Common/NvCoMemoryReadStream.h>
 #include "EditorFramework/AssetImportData.h"
+#include "UObjectIterator.h"
 #include "HairWorksSDK.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Components/HairWorksComponent.h"

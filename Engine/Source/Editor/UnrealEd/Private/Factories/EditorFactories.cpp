@@ -252,6 +252,9 @@
 #include "Factories/ForceFeedbackAttenuationFactory.h"
 
 // @third party code - BEGIN HairWorks
+#include "ObjectTools.h"
+#include "Misc/FileHelper.h"
+#include "FileHelpers.h"
 #include "SkelImport.h"
 #include <Nv/Common/NvCoMemoryReadStream.h>
 #include "HairWorksSDK.h"

@@ -1,5 +1,6 @@
 // @third party code - BEGIN HairWorks
 #include "Engine/HairWorksMaterial.h"
+#include "RenderingThread.h"
 #include "HairWorksSDK.h"
 
 UHairWorksMaterial::UHairWorksMaterial(const class FObjectInitializer& ObjectInitializer)

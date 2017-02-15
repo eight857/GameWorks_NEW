@@ -7,6 +7,7 @@ namespace nvidia{namespace HairWorks{
 	enum AssetId;
 	struct InstanceDescriptor;
 }}
+
 class UHairWorksAsset;
 
 UCLASS()

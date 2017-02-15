@@ -9,6 +9,7 @@
 #include <Nv/HairWorks/Platform/Win/NvHairWinLoadSdk.h>
 #pragma warning(pop)
 #include "HideWindowsPlatformTypes.h"
+#include "Engine.h"
 
 DEFINE_LOG_CATEGORY(LogHairWorks);
 

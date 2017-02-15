@@ -1,6 +1,8 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
+#include "PrimitiveSceneProxy.h"
+
 /**
 * HairWorks component scene proxy.
 */

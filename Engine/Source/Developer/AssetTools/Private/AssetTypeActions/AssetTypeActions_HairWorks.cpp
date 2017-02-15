@@ -1,5 +1,6 @@
 // @third party code - BEGIN HairWorks
 #include "AssetTypeActions_HairWorks.h"
+#include "EditorFramework/AssetImportData.h"
 #include "Engine/HairWorksAsset.h"
 
 FText FAssetTypeActions_HairWorks::GetName() const
