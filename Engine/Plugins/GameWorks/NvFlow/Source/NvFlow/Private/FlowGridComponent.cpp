@@ -1043,8 +1043,10 @@ void UFlowGridComponent::AddReferencedObjects(UObject* InThis, FReferenceCollect
 	for (auto It = This->MaterialsMap.CreateIterator(); It; ++It)
 	{
 		auto OverrideMaterial = It.Value().OverrideMaterial;
-
-		Collector.AddReferencedObject(OverrideMaterial, This);
+		if (OverrideMaterial != nullptr)
+		{
+			Collector.AddReferencedObject(OverrideMaterial, This);
+		}
 	}
 }
 
