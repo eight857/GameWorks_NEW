@@ -86,7 +86,7 @@ protected:
 
 				void Execute(FRHICommandListBase& CmdList)
 				{
-					HairWorks::GetD3DHelper().GetDeviceContext(CmdList.GetContext())->PSSetShaderResources(SrvIndex, 1, &Srv);
+					HairWorks::GetD3DHelper().SetShaderResourceView(Srv, SrvIndex);
 				}
 			};
 
@@ -762,8 +762,6 @@ namespace HairWorksRenderer
 		auto DepthStencilState = TStaticDepthStencilState<true, CF_GreaterEqual, true, CF_Always, SO_Keep, SO_Keep, SO_Replace, true, CF_Always, SO_Keep, SO_Keep, SO_Replace>::GetRHI();
 
 		// Draw hairs
-		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::wrap(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
-
 		FHairInstanceDataShaderUniform HairShaderUniformStruct;
 		TArray<TPair<FHairWorksSceneProxy*, int>, SceneRenderingAllocator> HairStencilValues;	// We use the same stencil value for a hair existing in multiple views
 
@@ -1020,8 +1018,6 @@ namespace HairWorksRenderer
 		RHICmdList.SetDepthStencilState(TStaticDepthStencilState<>::GetRHI());
 
 		// Setup camera
-		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::wrap(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
-
 		SetProjViewInfo(RHICmdList, View);
 
 		// Render visualization. This should go first to get LOD information ready for colorizaton. 
@@ -1069,8 +1065,6 @@ namespace HairWorksRenderer
 	{
 		SCOPED_DRAW_EVENT(RHICmdList, RenderHairHitProxies);
 
-		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::wrap(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
-
 		for(auto& View : Views)
 		{
 			// Pass camera information
@@ -1116,8 +1110,6 @@ namespace HairWorksRenderer
 			return;
 
 		// Trigger simulation
-		HairWorks::GetSDK()->setCurrentContext(NvCo::Dx11Type::wrap(HairWorks::GetD3DHelper().GetDeviceContext(RHICmdList.GetContext())));
-
 		// Handle frame rate independent rendering
 		const float SimulateStepTime = 1.f / CVarHairSimulateFps.GetValueOnRenderThread();
 

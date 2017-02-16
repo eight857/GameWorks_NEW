@@ -5,11 +5,11 @@
 #include <Nv/Common/NvCoMemoryReadStream.h>
 #include "HairWorksSDK.h"
 #include "Engine/SkeletalMesh.h"
-#include "Components/SkinnedMeshComponent.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
-#include "HairWorksSceneProxy.h"
+#include "Components/SkinnedMeshComponent.h"
 #include "Components/HairWorksPinTransformComponent.h"
+#include "HairWorksSceneProxy.h"
 
 UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -383,6 +383,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 
 void UHairWorksComponent::SetupBoneMapping()
 {
+	// Setup bone mapping
 	if(HairInstance.Hair == nullptr || ParentSkeleton == nullptr || ParentSkeleton->SkeletalMesh == nullptr)
 		return;
 

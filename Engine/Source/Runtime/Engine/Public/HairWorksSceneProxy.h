@@ -1,6 +1,7 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
+#include <Nv/HairWorks/NvHairSdk.h>
 #include "PrimitiveSceneProxy.h"
 
 /**
@@ -40,7 +41,7 @@ public:
 	virtual void OnTransformChanged()override;
 	//~ End FPrimitiveSceneProxy interface.
 
-	void UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData);
+	void UpdateDynamicData_RenderThread(FDynamicRenderData & DynamicData);
 
 	void Draw(FRHICommandList& RHICmdList, EDrawType DrawType)const;
 
@@ -55,8 +56,6 @@ public:
 	static FHairWorksSceneProxy* GetHairInstances();
 
 protected:
-	void DoRender(FRHICommandListBase& RHICmdList, EDrawType DrawType)const;
-
 	//** The hair */
 	NvHair::InstanceId HairInstanceId;
 
