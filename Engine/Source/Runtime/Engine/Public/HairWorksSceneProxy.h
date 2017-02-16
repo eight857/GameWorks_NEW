@@ -1,7 +1,9 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
+#include <Nv/HairWorks/NvHairSdk.h>
 #include "PrimitiveSceneProxy.h"
+
 class FSkeletalMeshObjectGPUSkin;
 
 /**

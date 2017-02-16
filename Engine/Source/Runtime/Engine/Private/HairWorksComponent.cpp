@@ -5,11 +5,12 @@
 #include <Nv/Common/NvCoMemoryReadStream.h>
 #include "HairWorksSDK.h"
 #include "Engine/SkeletalMesh.h"
-#include "Components/SkinnedMeshComponent.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
-#include "HairWorksSceneProxy.h"
+#include "SkeletalRenderGPUSkin.h"
+#include "Components/SkinnedMeshComponent.h"
 #include "Components/HairWorksPinTransformComponent.h"
+#include "HairWorksSceneProxy.h"
 
 UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -429,11 +430,11 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 		}
 
 		// Get vertices of hair growth mesh
-		const auto GuideNum = HairWorks::GetSDK()->getNumGuideHairs(HairInstance.Hair->AssetId);
+		const auto GuideNum = ::HairWorks::GetSDK()->getNumGuideHairs(HairInstance.Hair->AssetId);
 
 		TArray<FVector> GuideRootVertices;
 		GuideRootVertices.SetNumUninitialized(GuideNum);
-		HairWorks::GetSDK()->getRootVertices(HairInstance.Hair->AssetId, reinterpret_cast<gfsdk_float3*>(GuideRootVertices.GetData()));
+		::HairWorks::GetSDK()->getRootVertices(HairInstance.Hair->AssetId, reinterpret_cast<gfsdk_float3*>(GuideRootVertices.GetData()));
 
 		// Find closest skeletal mesh vertex for each vertex of HairWorks growth mesh
 		const auto Transform = GetRelativeTransform();

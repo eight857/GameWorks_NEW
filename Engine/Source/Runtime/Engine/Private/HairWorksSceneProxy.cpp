@@ -4,9 +4,10 @@
 #include "AllowWindowsPlatformTypes.h"
 #include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>
 #include "HideWindowsPlatformTypes.h"
-#include "ScopeLock.h"
-#include "Engine/Texture2D.h"
 #include "HairWorksSDK.h"
+#include "ScopeLock.h"
+#include "SkeletalRenderGPUSkin.h"
+#include "Engine/Texture2D.h"
 #include "Engine/HairWorksAsset.h"
 
 // Debug render console variables.
@@ -65,27 +66,27 @@ void FHairWorksSceneProxy::Draw(FRHICommandList& RHICmdList, EDrawType DrawType)
 		//HairWorks::GetSDK()->preRender(RenderInterp);
 
 		// Flush render states
-		HairWorks::GetD3DHelper().CommitShaderResources();
+		::HairWorks::GetD3DHelper().CommitShaderResources();
 
 		// Draw
 		if(DrawType == EDrawType::Visualization)
 		{
 			NvHair::VisualizationSettings VisSettings;
 			VisSettings.m_depthOp = NvHair::DepthOp::WRITE_GREATER;
-			HairWorks::GetSDK()->renderVisualization(HairInstanceId, &VisSettings);
+			::HairWorks::GetSDK()->renderVisualization(HairInstanceId, &VisSettings);
 		}
 		else
 		{
 			// Special for shadow
 			NvHair::InstanceDescriptor HairDesc;
-			HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, HairDesc);
+			::HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, HairDesc);
 
 			if(DrawType == EDrawType::Shadow)
 			{
 				HairDesc.m_useBackfaceCulling = false;
 				HairDesc.m_useViewfrustrumCulling = false;
 
-				HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairDesc);
+				::HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairDesc);
 			}
 
 			// Handle shader cache.
@@ -97,14 +98,14 @@ void FHairWorksSceneProxy::Draw(FRHICommandList& RHICmdList, EDrawType DrawType)
 				ShaderCacheSetting.setTextureUsed(i, HairTextures[i] != nullptr);
 			}
 
-			HairWorks::GetSDK()->addToShaderCache(ShaderCacheSetting);
+			::HairWorks::GetSDK()->addToShaderCache(ShaderCacheSetting);
 
 			// Draw
 			NvHair::ShaderSettings HairShaderSettings;
 			HairShaderSettings.m_useCustomConstantBuffer = true;
 			HairShaderSettings.m_shadowPass = (DrawType == EDrawType::Shadow);
 
-			HairWorks::GetSDK()->renderHairs(HairInstanceId, &HairShaderSettings);
+			::HairWorks::GetSDK()->renderHairs(HairInstanceId, &HairShaderSettings);
 		}
 	};
 
@@ -273,7 +274,11 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData & D
 	for (auto Idx = 0; Idx < NvHair::ETextureType::COUNT_OF; ++Idx)
 	{
 		auto TextureRef = HairTextures[Idx];
-		::HairWorks::GetSDK()->setTexture(HairInstanceId, (NvHair::ETextureType)Idx, NvCo::Dx11Type::wrap(::HairWorks::GetD3DHelper().GetShaderResourceView(TextureRef.GetReference())));
+		::HairWorks::GetSDK()->setTexture(
+			HairInstanceId,
+			(NvHair::ETextureType)Idx,
+			NvCo::Dx11Type::wrap(static_cast<ID3D11ShaderResourceView*>(TextureRef ? TextureRef->GetNativeShaderResourceView() : nullptr))
+		);
 	}
 
 	// Add pin meshes
@@ -309,7 +314,7 @@ void FHairWorksSceneProxy::PreSimulate()
 	}
 
 	// Update morph data
-	HairWorks::GetSDK()->updateMorphDeltas(
+	::HairWorks::GetSDK()->updateMorphDeltas(
 		HairInstanceId,
 		reinterpret_cast<const gfsdk_float3*>(MorphPositions.GetData()),
 		reinterpret_cast<const gfsdk_float3*>(MorphNormals.GetData())
