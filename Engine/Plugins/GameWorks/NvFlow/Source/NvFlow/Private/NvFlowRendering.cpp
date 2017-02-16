@@ -21,6 +21,8 @@ NFlowRendering.cpp: Translucent rendering implementation.
 #include "Stats.h"
 #include "GridAccessHooksNvFlow.h"
 
+#include "DistanceFieldAtlas.h"
+
 #if NVFLOW_ADAPTIVE
 // For HMD support
 #include "IHeadMountedDisplay.h"
@@ -66,6 +68,8 @@ namespace NvFlow
 		int m_computeFramesInFlight = 0;
 		NvFlowDevice* m_computeDevice = nullptr;
 		NvFlowContext* m_computeContext = nullptr;
+
+		TMap<const FDistanceFieldVolumeData*, NvFlowShapeSDF*> m_mapForShapeSDF;
 
 		// deferred mechanism for proper RHI command list support
 		void initDeferred(IRHICommandContext* RHICmdCtx);
@@ -183,6 +187,7 @@ namespace NvFlow
 		TMap<FlowMaterialKeyType, MaterialData> m_materialMap;
 
 		const MaterialData& updateMaterial(FlowMaterialKeyType materialKey, const FFlowMaterialParams& materialParams);
+		void updateShapeSDF(NvFlowShapeDesc& shapeDesc);
 
 		// deferred mechanism for proper RHI command list support
 		float m_updateSubstep_dt = 0.f;
@@ -670,8 +675,65 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 		}
 
 		Properties.GridEmitParams[i].material = gridMaterialHandle;
+
+		if (Properties.GridEmitParams[i].shapeType == eNvFlowShapeTypeSDF)
+		{
+			updateShapeSDF(Properties.GridEmitShapeDescs[Properties.GridEmitParams[i].shapeRangeOffset]);
+		}
+	}
+
+	// update SDF shapes
+	for (int32 i = 0; i < Properties.GridCollideParams.Num(); ++i)
+	{
+		if (Properties.GridCollideParams[i].shapeType == eNvFlowShapeTypeSDF)
+		{
+			updateShapeSDF(Properties.GridCollideShapeDescs[Properties.GridCollideParams[i].shapeRangeOffset]);
+		}
 	}
 }
+
+void NvFlow::Scene::updateShapeSDF(NvFlowShapeDesc& shapeDesc)
+{
+	check(shapeDesc.sdf.sdf != nullptr);
+
+	const FDistanceFieldVolumeData* DistanceFieldVolumeData = const_cast<const FDistanceFieldVolumeData*>(reinterpret_cast<FDistanceFieldVolumeData*>(shapeDesc.sdf.sdf));
+
+	NvFlowShapeSDF*& ShapeSDF = m_context->m_mapForShapeSDF.FindOrAdd(DistanceFieldVolumeData);
+	if (ShapeSDF == nullptr)
+	{
+		//create new NvFlowShapeSDF
+		NvFlowShapeSDFDesc DescSDF;
+		DescSDF.resolution.x = DistanceFieldVolumeData->Size.X;
+		DescSDF.resolution.y = DistanceFieldVolumeData->Size.Y;
+		DescSDF.resolution.z = DistanceFieldVolumeData->Size.Z;
+
+		ShapeSDF = NvFlowCreateShapeSDF(m_context->m_flowContext, &DescSDF);
+
+		NvFlowShapeSDFData ShapeData = NvFlowShapeSDFMap(ShapeSDF, m_context->m_flowContext);
+
+		check(ShapeData.dim.x == DescSDF.resolution.x);
+		check(ShapeData.dim.y == DescSDF.resolution.y);
+		check(ShapeData.dim.z == DescSDF.resolution.z);
+		for (NvFlowUint z = 0; z < ShapeData.dim.z; ++z)
+		{
+			for (NvFlowUint y = 0; y < ShapeData.dim.y; ++y)
+			{
+				for (NvFlowUint x = 0; x < ShapeData.dim.x; ++x)
+				{
+					FFloat16 valueF16 = DistanceFieldVolumeData->DistanceFieldVolume[x + ShapeData.dim.x * (y + ShapeData.dim.y * z)];
+					float value = valueF16.GetFloat();
+
+					ShapeData.data[x + ShapeData.rowPitch * y + ShapeData.depthPitch * z] = value;
+				}
+			}
+		}
+
+		NvFlowShapeSDFUnmap(ShapeSDF, m_context->m_flowContext);
+	}
+
+	shapeDesc.sdf.sdf = ShapeSDF;
+}
+
 
 const NvFlow::Scene::MaterialData& NvFlow::Scene::updateMaterial(FlowMaterialKeyType materialKey, const FFlowMaterialParams& materialParams)
 {

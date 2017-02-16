@@ -100,6 +100,10 @@ class UFlowEmitterComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	class UFlowMaterial* FlowMaterial;
 
+	/** If true, emitter will use DistanceField from a StaticMeshComponent in the same Actor. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter)
+	uint32		bUseDistanceField : 1;
+
 	virtual void PostLoad() override;
 };
 

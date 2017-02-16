@@ -15,6 +15,9 @@
 #include "PhysicsPublic.h"
 #include "Collision/PhysXCollision.h"
 
+#include "StaticMeshResources.h"
+#include "DistanceFieldAtlas.h"
+
 // CPU stats, use "stat flow" to enable
 DECLARE_CYCLE_STAT(TEXT("Tick Grid Component"), STAT_Flow_Tick, STATGROUP_Flow);
 DECLARE_CYCLE_STAT(TEXT("Update Emit and Collide Shapes"), STAT_Flow_UpdateShapes, STATGROUP_Flow);
@@ -290,38 +293,78 @@ void UFlowGridComponent::UpdateShapes()
 			}
 		}
 
+		const UStaticMeshComponent* StaticMeshComponent = nullptr;
+		const FDistanceFieldVolumeData* DistanceFieldVolumeData = nullptr;
+		if (FlowEmitterComponent != nullptr && FlowEmitterComponent->bUseDistanceField)
+		{
+			StaticMeshComponent = Actor->FindComponentByClass<UStaticMeshComponent>();
+			// search in attached component actors, as needed
+			if (rootComponent && StaticMeshComponent == nullptr)
+			{
+				auto& children = rootComponent->GetAttachChildren();
+				for (int32 j = 0; j < children.Num(); j++)
+				{
+					auto owner = children[j]->GetOwner();
+					if (owner)
+					{
+						StaticMeshComponent = owner->FindComponentByClass<UStaticMeshComponent>();
+						if (StaticMeshComponent)
+						{
+							break;
+						}
+					}
+				}
+			}
+
+			if (StaticMeshComponent != nullptr)
+			{
+				const FStaticMeshLODResources& RenderData = StaticMeshComponent->GetStaticMesh()->RenderData->LODResources[0];
+				DistanceFieldVolumeData = RenderData.DistanceFieldData;
+			}
+		}
+
+		if (DistanceFieldVolumeData != nullptr)
+		{
+			NumSyncShapes = 1;
+		}
+
 		for (int ShapeIndex = 0; ShapeIndex < NumSyncShapes; ++ShapeIndex)
 		{
-			PxShape* PhysXShape = Shapes[ShapeIndex];
+			PxShape* PhysXShape = nullptr;
+			bool IsSupported = true;
+			auto PxGeometryType = PxGeometryType::eINVALID;
 
-			if (!PhysXActor || !PhysXShape)
-				continue;
+			if (DistanceFieldVolumeData == nullptr)
+			{
+				PhysXShape = Shapes[ShapeIndex];
 
-			PxSceneQueryFlags QueryFlags;
-			if (PQueryCallback.preFilter(PFilter, PhysXShape, PhysXActor, QueryFlags) == PxQueryHitType::eNONE)
-				continue;
+				if (!PhysXActor || !PhysXShape)
+					continue;
 
-			// check if we've already processed this actor-shape pair
-			bool alreadyProcessed = false;
-			OverlapSet.Add(PxActorShape(PhysXActor, PhysXShape), &alreadyProcessed);
-			if (alreadyProcessed)
-				continue;
+				PxSceneQueryFlags QueryFlags;
+				if (PQueryCallback.preFilter(PFilter, PhysXShape, PhysXActor, QueryFlags) == PxQueryHitType::eNONE)
+					continue;
 
-			const PxTransform& ActorTransform = PhysXActor->getGlobalPose();
-			const PxTransform& ShapeTransform = PhysXShape->getLocalPose();
+				// check if we've already processed this actor-shape pair
+				bool alreadyProcessed = false;
+				OverlapSet.Add(PxActorShape(PhysXActor, PhysXShape), &alreadyProcessed);
+				if (alreadyProcessed)
+					continue;
 
-			PxFilterData Filter = PhysXShape->getQueryFilterData();
+				PxFilterData Filter = PhysXShape->getQueryFilterData();
 
-			// only process simple collision shapes for now
-			if ((Filter.word3 & EPDF_SimpleCollision) == 0)
-				continue;
+				// only process simple collision shapes for now
+				if ((Filter.word3 & EPDF_SimpleCollision) == 0)
+					continue;
 
-			auto PxGeometryType = PhysXShape->getGeometryType();
-			bool IsSupported =
-				(PxGeometryType == PxGeometryType::eSPHERE) ||
-				(PxGeometryType == PxGeometryType::eBOX) ||
-				(PxGeometryType == PxGeometryType::eCAPSULE) ||
-				(PxGeometryType == PxGeometryType::eCONVEXMESH);
+				PxGeometryType = PhysXShape->getGeometryType();
+				IsSupported =
+					(PxGeometryType == PxGeometryType::eSPHERE) ||
+					(PxGeometryType == PxGeometryType::eBOX) ||
+					(PxGeometryType == PxGeometryType::eCAPSULE) ||
+					(PxGeometryType == PxGeometryType::eCONVEXMESH);
+			}
+
 			bool IsEmitter = FlowEmitterComponent != nullptr;
 			bool IsCollider = Response == ECollisionResponse::ECR_Block;
 
@@ -336,14 +379,38 @@ void UFlowGridComponent::UpdateShapes()
 
 			if (IsSupported && (IsEmitter || IsCollider))
 			{
-				PxTransform WorldTransform = ActorTransform*ShapeTransform;
-				FTransform WorldTransformU = P2UTransform(WorldTransform);
+				FTransform WorldTransformU;
+
 				FVector UnitToActualScale(1.f, 1.f, 1.f);
 				FVector LocalToWorldScale(1.f, 1.f, 1.f);
 				FTransform BoundsTransform(FTransform::Identity);
-				NvFlowShapeType FlowShapeType = eNvFlowShapeTypeSphere;
+				NvFlowShapeType FlowShapeType = eNvFlowShapeTypeSDF;
 				float FlowShapeDistScale = 1.f;
 				uint32 NumShapeDescs = 1u;
+
+				if (DistanceFieldVolumeData == nullptr)
+				{
+					const PxTransform& ActorTransform = PhysXActor->getGlobalPose();
+					const PxTransform& ShapeTransform = PhysXShape->getLocalPose();
+
+					PxTransform WorldTransform = ActorTransform*ShapeTransform;
+					WorldTransformU = P2UTransform(WorldTransform);
+				}
+				else
+				{
+					check(StaticMeshComponent != nullptr);
+
+					auto LocalExtent = DistanceFieldVolumeData->LocalBoundingBox.GetExtent();
+					auto LocalCenter = DistanceFieldVolumeData->LocalBoundingBox.GetCenter();
+
+					WorldTransformU.SetLocation(LocalCenter);
+					WorldTransformU.SetScale3D(LocalExtent);
+					WorldTransformU *= StaticMeshComponent->ComponentToWorld;
+
+					UnitToActualScale = FVector(NvFlow::scaleInv);
+
+					FlowShapeDistScale = LocalExtent.GetMax() * NvFlow::scaleInv;
+				}
 
 				int32 EmitShapeStartIndex = FlowGridProperties.GridEmitShapeDescs.Num();
 				int32 CollideShapeStartIndex = FlowGridProperties.GridCollideShapeDescs.Num();
@@ -453,6 +520,13 @@ void UFlowGridComponent::UpdateShapes()
 
 						// scale local to world, scaleInv cancels out because planes are in UE4 space
 						LocalToWorldScale = MeshScale * NvFlow::scaleInv / UnitToActualScale;
+					}
+					else
+					{
+						//DistanceField
+						check(DistanceFieldVolumeData != nullptr);
+
+						ShapeDescsPtr[0].sdf.sdf = reinterpret_cast<NvFlowShapeSDF*>(const_cast<FDistanceFieldVolumeData*>(DistanceFieldVolumeData));
 					}
 				}
 

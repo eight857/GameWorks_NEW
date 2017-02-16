@@ -52,6 +52,8 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 	bHasPreviousTransform = false;
 
 	FlowMaterial = nullptr;
+
+	bUseDistanceField = false;
 }
 
 void UFlowEmitterComponent::PostLoad()
