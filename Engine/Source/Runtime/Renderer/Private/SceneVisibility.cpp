@@ -33,7 +33,6 @@
 // @third party code - BEGIN HairWorks
 #include "HairWorksRenderer.h"
 // @third party code - END HairWorks
-
 /*------------------------------------------------------------------------------
 	Globals
 ------------------------------------------------------------------------------*/
