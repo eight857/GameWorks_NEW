@@ -47,7 +47,7 @@ protected:
 	void SendHairDynamicData(bool bForceSkinning = false)const;
 
 	/** Bone mapping */
-	void SetupBoneMapping();
+	void SetupBoneAndMorphMapping();
 
 	/** Update bones */
 	void UpdateBoneMatrices()const;
@@ -58,6 +58,9 @@ protected:
 
 	/** Bone remapping */
 	TArray<uint16> BoneIndices;
+
+	/** Morph remapping */
+	TArray<int32> MorphIndices;
 
 	/** Skinning data*/
 	mutable TArray<FMatrix> BoneMatrices;

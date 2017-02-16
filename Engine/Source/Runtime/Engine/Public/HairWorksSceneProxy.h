@@ -2,6 +2,7 @@
 #pragma once
 
 #include "PrimitiveSceneProxy.h"
+class FSkeletalMeshObjectGPUSkin;
 
 /**
 * HairWorks component scene proxy.
@@ -28,6 +29,8 @@ public:
 		TArray<UTexture2D*> Textures;
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
+		TArray<int32> MorphIndices;
+		FSkeletalMeshObjectGPUSkin* ParentSkinning = nullptr;
 	};
 
 	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::AssetId HairAssetId);
@@ -40,7 +43,9 @@ public:
 	virtual void OnTransformChanged()override;
 	//~ End FPrimitiveSceneProxy interface.
 
-	void UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData);
+	void UpdateDynamicData_RenderThread(FDynamicRenderData & DynamicData);
+
+	void PreSimulate();
 
 	void Draw(FRHICommandList& RHICmdList, EDrawType DrawType)const;
 
@@ -55,8 +60,6 @@ public:
 	static FHairWorksSceneProxy* GetHairInstances();
 
 protected:
-	void DoRender(FRHICommandListBase& RHICmdList, EDrawType DrawType)const;
-
 	//** The hair */
 	NvHair::InstanceId HairInstanceId;
 
@@ -78,6 +81,11 @@ protected:
 	//** Skinning matrices, mainly for interpolated rendering*/
 	TArray<FMatrix> CurrentSkinningMatrices;
 	TArray<FMatrix> PrevSkinningMatrices;
+
+	//** For morph targets*/
+	TArray<int32> MorphIndices;
+	FSkeletalMeshObjectGPUSkin* ParentSkinning = nullptr;
+	bool bMorphDataUpdated = false;
 
 	//** All created hair instances*/
 	static FHairWorksSceneProxy* HairInstances;

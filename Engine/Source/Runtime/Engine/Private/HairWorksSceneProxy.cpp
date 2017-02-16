@@ -58,25 +58,76 @@ uint32 FHairWorksSceneProxy::GetMemoryFootprint(void) const
 
 void FHairWorksSceneProxy::Draw(FRHICommandList& RHICmdList, EDrawType DrawType)const
 {
+	// The real render function
+	auto DoRender = [this, DrawType]()
+	{
+		// Can't call it here. It changes render states, so we must call it earlier before we set render states. 
+		//HairWorks::GetSDK()->preRender(RenderInterp);
+
+		// Flush render states
+		HairWorks::GetD3DHelper().CommitShaderResources();
+
+		// Draw
+		if(DrawType == EDrawType::Visualization)
+		{
+			NvHair::VisualizationSettings VisSettings;
+			VisSettings.m_depthOp = NvHair::DepthOp::WRITE_GREATER;
+			HairWorks::GetSDK()->renderVisualization(HairInstanceId, &VisSettings);
+		}
+		else
+		{
+			// Special for shadow
+			NvHair::InstanceDescriptor HairDesc;
+			HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, HairDesc);
+
+			if(DrawType == EDrawType::Shadow)
+			{
+				HairDesc.m_useBackfaceCulling = false;
+				HairDesc.m_useViewfrustrumCulling = false;
+
+				HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairDesc);
+			}
+
+			// Handle shader cache.
+			NvHair::ShaderCacheSettings ShaderCacheSetting;
+			ShaderCacheSetting.setFromInstanceDescriptor(HairDesc);
+			check(HairTextures.Num() == NvHair::ETextureType::COUNT_OF);
+			for(int i = 0; i < NvHair::ETextureType::COUNT_OF; i++)
+			{
+				ShaderCacheSetting.setTextureUsed(i, HairTextures[i] != nullptr);
+			}
+
+			HairWorks::GetSDK()->addToShaderCache(ShaderCacheSetting);
+
+			// Draw
+			NvHair::ShaderSettings HairShaderSettings;
+			HairShaderSettings.m_useCustomConstantBuffer = true;
+			HairShaderSettings.m_shadowPass = (DrawType == EDrawType::Shadow);
+
+			HairWorks::GetSDK()->renderHairs(HairInstanceId, &HairShaderSettings);
+		}
+	};
+
+	// Call or schedule the render function
 	if(RHICmdList.Bypass())
-		DoRender(RHICmdList, DrawType);
+		DoRender();
 	else
 	{
 		struct FRHICmdDraw: public FRHICommand<FRHICmdDraw>
 		{
-			const FHairWorksSceneProxy& HairProxy;
-			EDrawType DrawType;
-
-			FRHICmdDraw(const FHairWorksSceneProxy& InHairProxy, EDrawType InDrawType)
-				:HairProxy(InHairProxy), DrawType(InDrawType){}
+			FRHICmdDraw(decltype(DoRender) InRender)
+				:Render(InRender)
+			{}
 
 			void Execute(FRHICommandListBase& CmdList)
 			{
-				HairProxy.DoRender(CmdList, DrawType);
+				Render();
 			}
+
+			decltype(DoRender) Render;
 		};
 
-		new (RHICmdList.AllocCommand<FRHICmdDraw>()) FRHICmdDraw(*this, DrawType);
+		new (RHICmdList.AllocCommand<FRHICmdDraw>())FRHICmdDraw(DoRender);
 	}
 }
 
@@ -97,55 +148,6 @@ const TArray<FMatrix>& FHairWorksSceneProxy::GetPinMatrices()
 FHairWorksSceneProxy * FHairWorksSceneProxy::GetHairInstances()
 {
 	return HairInstances;
-}
-
-void FHairWorksSceneProxy::DoRender(FRHICommandListBase & RHICmdList, EDrawType DrawType) const
-{
-	// Can't call it here. It changes render states, so we must call it earlier before we set render states. 
-	//::HairWorks::GetSDK()->preRender(RenderInterp);
-
-	// Flush render states
-	::HairWorks::GetD3DHelper().CommitShaderResources(RHICmdList.GetContext());
-
-	// Draw
-	if (DrawType == EDrawType::Visualization)
-	{
-		NvHair::VisualizationSettings VisSettings;
-		VisSettings.m_depthOp = NvHair::DepthOp::WRITE_GREATER;
-		::HairWorks::GetSDK()->renderVisualization(HairInstanceId, &VisSettings);
-	}
-	else
-	{
-		// Special for shadow
-		NvHair::InstanceDescriptor HairDesc;
-		::HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, HairDesc);
-
-		if (DrawType == EDrawType::Shadow)
-		{
-			HairDesc.m_useBackfaceCulling = false;
-			HairDesc.m_useViewfrustrumCulling = false;
-
-			::HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairDesc);
-		}
-
-		// Handle shader cache.
-		NvHair::ShaderCacheSettings ShaderCacheSetting;
-		ShaderCacheSetting.setFromInstanceDescriptor(HairDesc);
-		check(HairTextures.Num() == NvHair::ETextureType::COUNT_OF);
-		for(int i = 0; i < NvHair::ETextureType::COUNT_OF; i++)
-		{
-			ShaderCacheSetting.setTextureUsed(i, HairTextures[i] != nullptr);
-		}
-
-		::HairWorks::GetSDK()->addToShaderCache(ShaderCacheSetting);
-
-		// Draw
-		NvHair::ShaderSettings HairShaderSettings;
-		HairShaderSettings.m_useCustomConstantBuffer = true;
-		HairShaderSettings.m_shadowPass = (DrawType == EDrawType::Shadow);
-
-		::HairWorks::GetSDK()->renderHairs(HairInstanceId, &HairShaderSettings);
-	}
 }
 
 FPrimitiveViewRelevance FHairWorksSceneProxy::GetViewRelevance(const FSceneView* View)const
@@ -201,7 +203,7 @@ void FHairWorksSceneProxy::OnTransformChanged()
 	::HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, InstDesc);
 }
 
-void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderData& DynamicData)
+void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData & DynamicData)
 {
 	// Set skinning data
 	if(DynamicData.BoneMatrices.Num() > 0)
@@ -212,12 +214,17 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 		);
 
 		if(CurrentSkinningMatrices.Num() > 0)
-			PrevSkinningMatrices = CurrentSkinningMatrices;
+			PrevSkinningMatrices = MoveTemp(CurrentSkinningMatrices);
 		else
 			PrevSkinningMatrices = DynamicData.BoneMatrices;
 
-		CurrentSkinningMatrices = DynamicData.BoneMatrices;
+		CurrentSkinningMatrices = MoveTemp(DynamicData.BoneMatrices);
 	}
+
+	// Morph data. It's too early to update morph data here. It's not ready yet. 
+	MorphIndices = MoveTemp(DynamicData.MorphIndices);
+	ParentSkinning = DynamicData.ParentSkinning;
+	bMorphDataUpdated = true;
 
 	// Update normal center bone
 	auto HairDesc = DynamicData.HairInstanceDesc;
@@ -271,5 +278,41 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(const FDynamicRenderDa
 
 	// Add pin meshes
 	HairPinMeshes = DynamicData.PinMeshes;
+}
+
+void FHairWorksSceneProxy::PreSimulate()
+{
+	// Get morph data from skeleton
+	if(!bMorphDataUpdated)
+		return;
+
+	bMorphDataUpdated = false;
+
+	if(ParentSkinning == nullptr)
+		return;
+
+	TArray<FVector> MorphPositions;
+	TArray<FVector> MorphNormals;
+
+	const auto& ParentMorphVertices = ParentSkinning->GetMorphVertices();
+	if(ParentMorphVertices.Num() > 0)
+	{
+		MorphPositions.SetNumZeroed(MorphIndices.Num());
+		MorphNormals.SetNumZeroed(MorphIndices.Num());
+
+		for(auto VertexIdx = 0; VertexIdx < MorphIndices.Num(); ++VertexIdx)
+		{
+			const auto& MorphVertex = ParentMorphVertices[MorphIndices[VertexIdx]];
+			MorphPositions[VertexIdx] = MorphVertex.DeltaPosition;
+			MorphNormals[VertexIdx] = MorphVertex.DeltaTangentZ;
+		}
+	}
+
+	// Update morph data
+	HairWorks::GetSDK()->updateMorphDeltas(
+		HairInstanceId,
+		reinterpret_cast<const gfsdk_float3*>(MorphPositions.GetData()),
+		reinterpret_cast<const gfsdk_float3*>(MorphNormals.GetData())
+	);
 }
 // @third party code - END HairWorks

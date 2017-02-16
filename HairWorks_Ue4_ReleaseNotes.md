@@ -3,6 +3,7 @@
 New:
 * Upgraded to HairWorks 1.2.
 * Upgraded to UE4.14
+* Added support for morph targets of skeletal meshes. 
 * Textures are now automatically imported when a HairWorks asset is imported. 
 * Added support for tiled deferred shading. 
 * Made hairs darker on back faces with un-shadowed lights. 
