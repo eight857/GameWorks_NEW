@@ -56,6 +56,7 @@ struct FNvFlowCommands
 	FAutoConsoleCommand ConsoleCommandFlowVisRenderMode;
 	FAutoConsoleCommand ConsoleCommandFlowVisMode;
 	FAutoConsoleCommand ConsoleCommandFlowVisShadow;
+	FAutoConsoleCommand ConsoleCommandFlowMultiGPU;
 
 	static const uint32 debugVisDefault = eNvFlowGridDebugVisBlocks | eNvFlowGridDebugVisEmitBounds | eNvFlowGridDebugVisShapesSimple;
 
@@ -105,6 +106,12 @@ struct FNvFlowCommands
 		UFlowGridAsset::sGlobalDebugDrawShadow = !UFlowGridAsset::sGlobalDebugDrawShadow;
 	}
 
+	void CommandFlowMultiGPU(const TArray<FString>& Args)
+	{
+		UFlowGridAsset::sGlobalMultiGPU = (Args.Num() >= 1) ? FCString::Atoi(*Args[0]) : ((UFlowGridAsset::sGlobalMultiGPU + 1) % 3);
+		UFlowGridAsset::sGlobalMultiGPUResetRequest = true;
+	}
+
 	FNvFlowCommands() :
 		ConsoleCommandFlowVis(
 			TEXT("flowvis"),
@@ -130,6 +137,11 @@ struct FNvFlowCommands
 			TEXT("flowvisshadow"),
 			*NSLOCTEXT("Flow", "CommandText_FlowVisShadow", "Enable/Disable Flow debug visualization for shadow").ToString(),
 			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowVisShadow)
+		),
+		ConsoleCommandFlowMultiGPU(
+			TEXT("flowmultigpu"),
+			*NSLOCTEXT("Flow", "CommandText_FlowMultiGPU", "Enable/Disable Flow multiGPU").ToString(),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowMultiGPU)
 		)
 		{
 	}

@@ -155,6 +155,8 @@ class UFlowGridAsset : public UObject
 	static uint32 sGlobalRenderMode;
 	static uint32 sGlobalMode;
 	static bool sGlobalDebugDrawShadow;
+	static uint32 sGlobalMultiGPU;
+	static bool sGlobalMultiGPUResetRequest;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
 	uint32		bVolumeShadowEnabled : 1;
