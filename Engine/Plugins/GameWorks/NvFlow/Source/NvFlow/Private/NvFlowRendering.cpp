@@ -151,13 +151,13 @@ namespace NvFlow
 
 
 		bool m_multiAdapter = false;
-		float m_timeSuccess = 0.f;
-		float m_timeTotal = 0.f;
 
+#if NVFLOW_ADAPTIVE
 		float m_frameTimeSum = 0.f;
 		float m_frameTimeCount = 0.f;
 		float m_frameTimeAverage = 0.f;
 		float m_currentAdaptiveScale = -1.f;
+#endif
 
 		Context* m_context = nullptr;
 
@@ -934,17 +934,6 @@ void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt
 
 	shouldFlush = shouldFlush || (m_multiAdapter && shouldUpdateGrid);
 
-	// update adaptive timing
-	{
-		const float decayRate = 0.98f;
-
-		m_timeTotal += dt;
-		if (shouldUpdateGrid) m_timeSuccess += dt;
-
-		m_timeTotal *= decayRate;
-		m_timeSuccess *= decayRate;
-	}
-
 	m_updateSubstep_dt = dt;
 
 	if (shouldUpdateGrid)
@@ -989,27 +978,18 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateP
 			);
 	}
 
-	float adaptiveDt = dt;
-	// adaptive timestepping for multi-GPU
-	if (m_multiAdapter)
-	{
-		const float clampDt = 2.f * dt;
-		adaptiveDt = m_timeTotal / m_timeSuccess * dt;
-		if (adaptiveDt > clampDt) adaptiveDt = clampDt;
-	}
-
 	{
 		CallbackUserData callbackUserData;
 		callbackUserData.Scene = this;
 		callbackUserData.RHICmdCtx = RHICmdCtx;
-		callbackUserData.DeltaTime = adaptiveDt;
+		callbackUserData.DeltaTime = dt;
 		callbackUserData.GlobalDistanceFieldParameterData = updateParams->GlobalDistanceFieldParameterData;
 
 		NvFlowGridEmitCustomRegisterAllocFunc(m_grid, &NvFlow::Scene::sEmitCustomAllocCallback, &callbackUserData);
 		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridTextureChannelVelocity, &NvFlow::Scene::sEmitCustomEmitVelocityCallback, &callbackUserData);
 		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridTextureChannelDensity, &NvFlow::Scene::sEmitCustomEmitDensityCallback, &callbackUserData);
 
-		NvFlowGridUpdate(m_grid, m_gridContext, adaptiveDt);
+		NvFlowGridUpdate(m_grid, m_gridContext, dt);
 
 		NvFlowGridEmitCustomRegisterAllocFunc(m_grid, nullptr, nullptr);
 		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridTextureChannelVelocity, nullptr, nullptr);
