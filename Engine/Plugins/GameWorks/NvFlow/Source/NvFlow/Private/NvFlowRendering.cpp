@@ -45,6 +45,8 @@ namespace NvFlow
 		Context() { }
 		~Context() { release(); }
 
+		FCriticalSection m_criticalSection;
+
 		void init(FRHICommandListImmediate& RHICmdList);
 		void conditionalInitMultiGPU(FRHICommandListImmediate& RHICmdList);
 		void interopBegin(FRHICommandList& RHICmdList, bool computeOnly);
@@ -57,6 +59,7 @@ namespace NvFlow
 		void updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData);
 
 		TArray<Scene*> m_sceneList;
+		TArray<Scene*> m_cleanupSceneList;
 
 		NvFlowInterop* m_flowInterop = nullptr;
 		NvFlowContext* m_renderContext = nullptr;
@@ -86,6 +89,7 @@ namespace NvFlow
 		void conditionalInitMultiGPUDeferred(IRHICommandContext* RHICmdCtx);
 		void interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly);
 		void interopEndDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool shouldFlush);
+		void cleanupSceneListDeferred();
 
 		struct InteropBeginEndParams
 		{
@@ -98,6 +102,7 @@ namespace NvFlow
 		static void conditionalInitMultiGPUCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void interopBeginCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void interopEndCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void cleanupSceneListCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 	};
 
 	struct Scene
@@ -241,6 +246,11 @@ namespace NvFlow
 
 	Context gContextImpl;
 	Context* gContext = nullptr;
+
+	static uint32 getThreadID()
+	{
+		return FPlatformTLS::GetCurrentThreadId();
+	}
 }
 
 // ------------------ NvFlow::Context -----------------
@@ -260,12 +270,40 @@ void NvFlow::cleanupScene(void* ptr)
 	auto scene = (Scene*)ptr;
 	if (scene)
 	{
+		scene->m_context->m_criticalSection.Lock();
+
 		TArray<Scene*>& sceneList = scene->m_context->m_sceneList;
 		check(sceneList.Contains(scene));
+
+		UE_LOG(LogFlow, Display, TEXT("NvFlow cleanup scene %p scheduled tid(%d)"), scene, getThreadID());
+
+		scene->m_context->m_cleanupSceneList.Add(scene);
+
 		sceneList.RemoveSingleSwap(scene);
 
+		scene->m_context->m_criticalSection.Unlock();
+	}
+}
+
+void NvFlow::Context::cleanupSceneListDeferred()
+{
+	m_criticalSection.Lock();
+	for (int32 sceneIdx = 0u; sceneIdx < m_cleanupSceneList.Num(); sceneIdx++)
+	{
+		auto scene = m_cleanupSceneList[sceneIdx];
+
+		UE_LOG(LogFlow, Display, TEXT("NvFlow cleanup scene %p executed tid(%d)"), scene, getThreadID());
+		
 		delete scene;
 	}
+	m_cleanupSceneList.Reset();
+	m_criticalSection.Unlock();
+}
+
+void NvFlow::Context::cleanupSceneListCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto context = (Context*)paramData;
+	context->cleanupSceneListDeferred();
 }
 
 void NvFlow::Context::init(FRHICommandListImmediate& RHICmdList)
@@ -466,6 +504,8 @@ void NvFlow::Context::renderScene(FRHICommandList& RHICmdList, const FViewInfo& 
 
 void NvFlow::Context::release()
 {
+	cleanupSceneListDeferred();
+
 	// proxies and scenes should all be released by now
 	check(m_sceneList.Num() == 0);
 
@@ -2193,6 +2233,10 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 		}
 
 		NvFlow::gContext->interopEnd(RHICmdList, true, shouldFlush);
+	}
+	if (NvFlow::gContext)
+	{
+		RHICmdList.NvFlowWork(NvFlow::Context::cleanupSceneListCallback, NvFlow::gContext, 0u);
 	}
 }
 
