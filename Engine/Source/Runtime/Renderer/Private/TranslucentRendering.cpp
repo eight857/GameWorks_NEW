@@ -1188,7 +1188,7 @@ void FDeferredShadingSceneRenderer::RenderTranslucencyParallel(FRHICommandListIm
 
 static TAutoConsoleVariable<int32> CVarParallelTranslucency(
 	TEXT("r.ParallelTranslucency"),
-	1,
+	0,
 	TEXT("Toggles parallel translucency rendering. Parallel rendering must be enabled for this to have an effect."),
 	ECVF_RenderThreadSafe
 	);
