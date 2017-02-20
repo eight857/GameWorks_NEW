@@ -2,7 +2,8 @@
 =============
 New:
 * Upgraded to HairWorks 1.2.
-* Upgraded to UE4.14
+* Upgraded to UE4.15
+* Added suport for exporting HairWorks assets. 
 * Textures are now automatically imported when a HairWorks asset is imported. 
 * Added support for tiled deferred shading. 
 * Made hairs darker on back faces with un-shadowed lights. 
