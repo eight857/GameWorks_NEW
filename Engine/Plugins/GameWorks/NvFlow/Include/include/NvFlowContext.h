@@ -48,6 +48,36 @@ struct NvFlowTexture3D;
 NV_FLOW_API NvFlowContextAPI NvFlowContextGetContextType(NvFlowContext* context);
 
 /**
+* Push a request for the Flow context to request a flush to queue
+*
+* @param[in] context The Flow context to make the request on.
+*/
+NV_FLOW_API void NvFlowContextFlushRequestPush(NvFlowContext* context);
+
+/**
+* Pop any pending requests for the Flow context to flush to queue, resets the request state
+*
+* @param[in] context The Flow context to check for requests on.
+*
+* @return true if a flush is requested
+*/
+NV_FLOW_API bool NvFlowContextFlushRequestPop(NvFlowContext* context);
+
+/**
+* Process pending GPU wait on fence, on deviceQueue associated with this context
+*
+* @param[in] context The Flow context to submit fence waits on.
+*/
+NV_FLOW_API void NvFlowContextProcessFenceWait(NvFlowContext* context);
+
+/**
+* Process pending GPU fence signals, on deviceQueue associated with this context
+*
+* @param[in] context The Flow context to submit fence signals on.
+*/
+NV_FLOW_API void NvFlowContextProcessFenceSignal(NvFlowContext* context);
+
+/**
 * Releases a Flow context.
 *
 * @param[in] context The Flow context to be released.

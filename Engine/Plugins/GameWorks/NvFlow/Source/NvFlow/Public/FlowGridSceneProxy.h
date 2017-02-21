@@ -60,9 +60,6 @@ struct FFlowGridProperties
 	// indicates if grid should be allocated
 	int32 bActive : 1;
 
-	// low latency mapping, requires reset if changed
-	uint32 bLowLatencyMapping : 1;
-
 	// multi-GPU enable, requires reset if changed
 	uint32 bMultiAdapterEnabled : 1;
 
@@ -84,6 +81,8 @@ struct FFlowGridProperties
 
 	// virtual extents
 	FVector VirtualGridExtents;
+
+	float GridCellSize;
 
 	// simulation parameters
 	NvFlowGridDesc GridDesc;

@@ -13,7 +13,8 @@ uint32 UFlowGridAsset::sGlobalRenderChannel = eNvFlowGridTextureChannelDensity;
 uint32 UFlowGridAsset::sGlobalRenderMode = eNvFlowVolumeRenderMode_rainbow;
 uint32 UFlowGridAsset::sGlobalMode = eNvFlowGridDebugVisBlocks;
 bool UFlowGridAsset::sGlobalDebugDrawShadow = false;
-
+uint32 UFlowGridAsset::sGlobalMultiGPU = 0;
+bool UFlowGridAsset::sGlobalMultiGPUResetRequest = false;
 
 UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -30,7 +31,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	MemoryLimitScale = 1.f;
 
 	SimulationRate = 60.f;
-	bLowLatencyMapping = false;
+	bLowLatencyMapping = true;
 	bMultiAdapterEnabled = false;
 
 	NvFlowGridParams FlowGridParams;

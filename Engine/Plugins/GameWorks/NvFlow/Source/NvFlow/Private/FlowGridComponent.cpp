@@ -73,12 +73,12 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 
 	// set critical property defaults
 	FlowGridProperties.bActive = false;
-	FlowGridProperties.bLowLatencyMapping = false;
 	FlowGridProperties.bMultiAdapterEnabled = false;
 	FlowGridProperties.bParticlesInteractionEnabled = false;
 	FlowGridProperties.bParticleModeEnabled = false;
 	FlowGridProperties.SubstepSize = 0.0f;
 	FlowGridProperties.VirtualGridExtents = FVector(0.f);
+	FlowGridProperties.GridCellSize = 0.f;
 
 	FlowGridProperties.ParticleToGridAccelTimeConstant = 0.01f;
 	FlowGridProperties.ParticleToGridDecelTimeConstant = 10.0f;
@@ -887,18 +887,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 	if (FlowGridAssetRef && SceneProxy)
 	{
 		// derive parameters from asset
-		FVector NewHalfSize = NvFlow::scaleInv * FVector(FlowGridAssetRef->GetVirtualGridDimension() * 0.5f * FlowGridAssetRef->GridCellSize);
-		FIntVector NewVirtualDim = FIntVector(FlowGridAssetRef->GetVirtualGridDimension());
-		bool OldLowLatencyMapping = FlowGridProperties.bLowLatencyMapping;
-		bool NewLowLatencyMapping = FlowGridAssetRef->bLowLatencyMapping;
-		bool OldMultiAdapterEnabled = FlowGridProperties.bMultiAdapterEnabled;
-		bool NewMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
-
-		bool OldParticleModeEnabled = FlowGridProperties.bParticleModeEnabled;
-		bool NewParticleModeEnabled = FlowGridAssetRef->bParticleModeEnabled;
-
-		uint32 OldColorMapResolution = FlowGridProperties.ColorMapResolution;
-		uint32 NewColorMapResolution = FlowGridAssetRef->ColorMapResolution;
+		FVector CurrentHalfSize = NvFlow::scaleInv * FVector(FlowGridAssetRef->GetVirtualGridDimension() * 0.5f * FlowGridAssetRef->GridCellSize);
+		FIntVector CurrentVirtualDim = FIntVector(FlowGridAssetRef->GetVirtualGridDimension());
 
 		// grab default desc
 		NvFlowGridDesc defaultGridDesc = {};
@@ -906,24 +896,22 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		//NvFlowGridDesc
 		NvFlowGridDesc newGridDesc = FlowGridProperties.GridDesc;
-		newGridDesc.halfSize = { NewHalfSize.X, NewHalfSize.Y, NewHalfSize.Z };
-		newGridDesc.virtualDim = { uint32(NewVirtualDim.X), uint32(NewVirtualDim.Y), uint32(NewVirtualDim.Z) };
+		newGridDesc.halfSize = { CurrentHalfSize.X, CurrentHalfSize.Y, CurrentHalfSize.Z };
+		newGridDesc.virtualDim = { uint32(CurrentVirtualDim.X), uint32(CurrentVirtualDim.Y), uint32(CurrentVirtualDim.Z) };
+		newGridDesc.densityMultiRes = FlowGridAssetRef->bParticleModeEnabled ? eNvFlowMultiRes1x1x1 : eNvFlowMultiRes2x2x2;
 		newGridDesc.residentScale = defaultGridDesc.residentScale * FlowGridAssetRef->MemoryLimitScale;
+		newGridDesc.lowLatencyMapping = FlowGridAssetRef->bLowLatencyMapping;
 
-		newGridDesc.densityMultiRes = NewParticleModeEnabled ? eNvFlowMultiRes1x1x1 : eNvFlowMultiRes2x2x2;
-
-		bool changed = (newGridDesc.halfSize.x != FlowGridProperties.GridDesc.halfSize.x ||
-			newGridDesc.halfSize.y != FlowGridProperties.GridDesc.halfSize.y ||
-			newGridDesc.halfSize.z != FlowGridProperties.GridDesc.halfSize.z ||
+		bool changed = (
 			newGridDesc.virtualDim.x != FlowGridProperties.GridDesc.virtualDim.x ||
 			newGridDesc.virtualDim.y != FlowGridProperties.GridDesc.virtualDim.y ||
 			newGridDesc.virtualDim.z != FlowGridProperties.GridDesc.virtualDim.z ||
-			newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
 			newGridDesc.densityMultiRes != FlowGridProperties.GridDesc.densityMultiRes ||
-			NewLowLatencyMapping != OldLowLatencyMapping ||
-			NewMultiAdapterEnabled != OldMultiAdapterEnabled ||
-			NewParticleModeEnabled != OldParticleModeEnabled ||
-			NewColorMapResolution != OldColorMapResolution);
+			newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
+			newGridDesc.lowLatencyMapping != FlowGridProperties.GridDesc.lowLatencyMapping ||
+			FlowGridAssetRef->bMultiAdapterEnabled != FlowGridProperties.bMultiAdapterEnabled ||
+			FlowGridAssetRef->bParticleModeEnabled != FlowGridProperties.bParticleModeEnabled ||
+			FlowGridAssetRef->ColorMapResolution   != FlowGridProperties.ColorMapResolution);
 
 		if (changed || (FlowGridAssetOld != FlowGridAssetRef))
 		{
@@ -944,12 +932,11 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		// Commit any changes
 		FlowGridProperties.GridDesc = newGridDesc;
-		FlowGridProperties.bLowLatencyMapping = NewLowLatencyMapping;
-		FlowGridProperties.bMultiAdapterEnabled = NewMultiAdapterEnabled;
+		FlowGridProperties.bMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
 		FlowGridProperties.bParticlesInteractionEnabled = FlowGridAssetRef->bParticlesInteractionEnabled;
 		FlowGridProperties.InteractionChannel = FlowGridAssetRef->InteractionChannel;
 		FlowGridProperties.ResponseToInteractionChannels = FlowGridAssetRef->ResponseToInteractionChannels;
-		FlowGridProperties.bParticleModeEnabled = NewParticleModeEnabled;
+		FlowGridProperties.bParticleModeEnabled = FlowGridAssetRef->bParticleModeEnabled;
 
 		FlowGridProperties.ParticleToGridAccelTimeConstant = FlowGridAssetRef->ParticleToGridAccelTimeConstant;
 		FlowGridProperties.ParticleToGridDecelTimeConstant = FlowGridAssetRef->ParticleToGridDecelTimeConstant;
@@ -967,6 +954,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		//Properties that can be changed without rebuilding grid
 		FlowGridProperties.VirtualGridExtents = FVector(FlowGridAssetRef->GetVirtualGridExtent());
+		FlowGridProperties.GridCellSize = FlowGridAssetRef->GridCellSize;
 		FlowGridProperties.SubstepSize = TimeStepper.FixedDt;
 
 		//NvFlowGridParams
@@ -978,7 +966,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		GridParams.pressureLegacyMode = FlowGridAssetRef->bPressureLegacyMode;
 		GridParams.bigEffectMode = FlowGridAssetRef->bBigEffectMode;
 
-		FlowGridProperties.ColorMapResolution = NewColorMapResolution;
+		FlowGridProperties.ColorMapResolution = FlowGridAssetRef->ColorMapResolution;
 
 		//NvFlowVolumeRenderParams
 		if (UFlowGridAsset::sGlobalDebugDraw)

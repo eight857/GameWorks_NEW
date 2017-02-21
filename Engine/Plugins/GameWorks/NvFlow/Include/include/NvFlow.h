@@ -50,6 +50,7 @@ struct NvFlowGridDesc
 	NvFlowMultiRes densityMultiRes;		//!< Number of density cells per velocity cell
 
 	float residentScale;				//!< Fraction of virtual cells to allocate memory for
+	float coarseResidentScaleFactor;	//!< Allows relative increase of resident scale for coarse sparse textures
 
 	bool enableVTR;						//!< Enable use of volume tiled resources, if supported
 	bool lowLatencyMapping;				//!< Faster mapping updates, more mapping overhead but less prediction required
@@ -128,6 +129,7 @@ struct NvFlowGridParams
 	bool pressureLegacyMode;				//!< If true, run older less accurate pressure solver
 
 	bool bigEffectMode;						//!< Tweaks block allocation for better big effect behavior
+	float bigEffectPredictTime;				//!< Time constant to tune big effect prediction
 
 	NvFlowGridDebugVisFlags debugVisFlags;	//!< Flags to control what debug visualization information is generated
 };
@@ -678,7 +680,7 @@ NV_FLOW_API void NvFlowGridExportGetDebugVisView(NvFlowGridExport* gridExport, N
 //! Object to expose write access to Flow grid simulation data
 struct NvFlowGridImport;
 
-//! Description to create grid import
+//! Description required to create GridImport
 struct NvFlowGridImportDesc
 {
 	NvFlowGridExport* gridExport;
@@ -709,7 +711,9 @@ struct NvFlowGridImportHandle
 //! Description of a single imported layer
 struct NvFlowGridImportLayerView
 {
-	NvFlowResourceRW* dataRW;
+	NvFlowResourceRW* dataRW;			//!< This always should be written
+	NvFlowResourceRW* blockTableRW;		//!< If StateCPU path is used, this needs to be written, else is nullptr
+	NvFlowResourceRW* blockListRW;		//!< If StateCPU path is used, this needs to be written, else is nullptr
 	NvFlowGridExportImportLayerMapping mapping;
 };
 
@@ -732,6 +736,25 @@ NV_FLOW_API void NvFlowGridImportGetLayeredView(NvFlowGridImportHandle handle, N
 NV_FLOW_API void NvFlowGridImportReleaseChannel(NvFlowGridImport* gridImport, NvFlowContext* context, NvFlowGridTextureChannel channel);
 
 NV_FLOW_API NvFlowGridExport* NvFlowGridImportGetGridExport(NvFlowGridImport* gridImport, NvFlowContext* context);
+
+//! Object to hold captured CPU export state
+struct NvFlowGridImportStateCPU;
+
+//! Parameters for grabbing import view
+struct NvFlowGridImportStateCPUParams
+{
+	NvFlowGridImportStateCPU* stateCPU;
+	NvFlowGridTextureChannel channel;
+	NvFlowGridImportMode importMode;
+};
+
+NV_FLOW_API NvFlowGridImportStateCPU* NvFlowCreateGridImportStateCPU(NvFlowGridImport* gridImport);
+
+NV_FLOW_API void NvFlowReleaseGridImportStateCPU(NvFlowGridImportStateCPU* stateCPU);
+
+NV_FLOW_API void NvFlowGridImportUpdateStateCPU(NvFlowGridImportStateCPU* stateCPU, NvFlowContext* context, NvFlowGridExport* gridExport);
+
+NV_FLOW_API NvFlowGridImportHandle NvFlowGridImportStateCPUGetHandle(NvFlowGridImport* gridImport, NvFlowContext* context, const NvFlowGridImportStateCPUParams* params);
 
 ///@}
 // -------------------------- NvFlowRenderMaterial -------------------------------
@@ -1078,6 +1101,13 @@ struct NvFlowVolumeShadowDebugRenderParams
 	NvFlowFloat4x4 viewMatrix;					//!< Render target view matrix, row major
 };
 
+struct NvFlowVolumeShadowStats
+{
+	NvFlowUint shadowColumnsActive;
+	NvFlowUint shadowBlocksActive;
+	NvFlowUint shadowCellsActive;
+};
+
 NV_FLOW_API NvFlowVolumeShadow* NvFlowCreateVolumeShadow(NvFlowContext* context, const NvFlowVolumeShadowDesc* desc);
 
 NV_FLOW_API void NvFlowReleaseVolumeShadow(NvFlowVolumeShadow* volumeShadow);
@@ -1088,6 +1118,8 @@ NV_FLOW_API NvFlowGridExport* NvFlowVolumeShadowGetGridExport(NvFlowVolumeShadow
 
 NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, const NvFlowVolumeShadowDebugRenderParams* params);
 
+NV_FLOW_API void NvFlowVolumeShadowGetStats(NvFlowVolumeShadow* volumeShadow, NvFlowVolumeShadowStats* stats);
+
 ///@}
 // -------------------------- NvFlowGridProxy -------------------------------
 ///@defgroup NvFlowGridProxy
@@ -1096,23 +1128,43 @@ NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow,
 //! A proxy for a grid simulated on one device to render on a different device, currently limited to Windows 10 for multi-GPU support.
 struct NvFlowGridProxy;
 
-//! Description required to create a grid proxy.
+//! Proxy types
+enum NvFlowGridProxyType
+{
+	eNvFlowGridProxyTypePassThrough = 0,
+	eNvFlowGridProxyTypeMultiGPU = 1,
+	eNvFlowGridProxyTypeInterQueue = 2,
+};
+
+//! Parameters need to create a grid proxy
 struct NvFlowGridProxyDesc
 {
-	bool singleGPUMode;				//!< if true, proxy assumes a single memory space/GPU
-	bool interQueueMode;			//!< if true, proxy pipelines simulation and rendering
+	NvFlowContext* gridContext;			//!< FlowContext used to simulate grid
+	NvFlowContext* renderContext;		//!< FlowContext used to render grid
+	NvFlowContext* gridCopyContext;		//!< FlowContext with copy capability on gridContext device
+	NvFlowContext* renderCopyContext;	//!< FlowContext with copy capability on renderContext device
+
+	NvFlowGridExport* gridExport;		//!< GridExport to base allocation on
+
+	NvFlowGridProxyType proxyType;		//!< GridProxy type to create
+};
+
+//! Parameters need to create a multi-GPU proxy
+struct NvFlowGridProxyFlushParams
+{
+	NvFlowContext* gridContext;
+	NvFlowContext* gridCopyContext;
+	NvFlowContext* renderCopyContext;
 };
 
 /**
-* Creates a Flow grid proxy.
+* Creates a passthrough Flow grid proxy, for improved single vs multi-GPU compatibility
 *
-* @param[in] gridContext The Flow context that simulates the Flow grid.
-* @param[in] grid The Flow grid to create a proxy for.
-* @param[in] desc Description describing kind of proxy to create.
+* @param[in] desc Description required to create grid proxy
 *
 * @return The created Flow grid proxy.
 */
-NV_FLOW_API NvFlowGridProxy* NvFlowCreateGridProxy(NvFlowContext* gridContext, NvFlowGrid* grid, const NvFlowGridProxyDesc* desc);
+NV_FLOW_API NvFlowGridProxy* NvFlowCreateGridProxy(const NvFlowGridProxyDesc* desc);
 
 /**
 * Releases a Flow grid proxy.
@@ -1125,18 +1177,18 @@ NV_FLOW_API void NvFlowReleaseGridProxy(NvFlowGridProxy* proxy);
 * Pushes simulation results to the proxy, should be updated after each simulation update.
 *
 * @param[in] proxy The Flow grid proxy to be updated.
-* @param[in] gridContext The Flow context that simulated the grid.
-* @param[in] grid The Flow grid with updated simulation results.
+* @param[in] gridExport The Flow gridExport with updated simulation results.
+* @param[in] params Parameters needed to flush the data.
 */
-NV_FLOW_API void NvFlowGridProxyPush(NvFlowGridProxy* proxy, NvFlowContext* gridContext, NvFlowGrid* grid);
+NV_FLOW_API void NvFlowGridProxyPush(NvFlowGridProxy* proxy, NvFlowGridExport* gridExport, const NvFlowGridProxyFlushParams* params);
 
 /**
 * Helps simulation results move faster between GPUs, should be called before each render.
 *
 * @param[in] proxy The Flow grid proxy to be updated.
-* @param[in] gridContext The Flow context that simulated the grid.
+* @param[in] params Parameters needed to flush the data.
 */
-NV_FLOW_API void NvFlowGridProxyFlush(NvFlowGridProxy* proxy, NvFlowContext* gridContext);
+NV_FLOW_API void NvFlowGridProxyFlush(NvFlowGridProxy* proxy, const NvFlowGridProxyFlushParams* params);
 
 /**
 * Returns the latest grid view available on the render GPU.
@@ -1156,17 +1208,19 @@ NV_FLOW_API NvFlowGridExport* NvFlowGridProxyGetGridExport(NvFlowGridProxy* prox
 //! A device exclusively for NvFlow simulation
 struct NvFlowDevice;
 
+//! Device Type
+enum NvFlowDeviceMode
+{
+	eNvFlowDeviceModeProxy = 0,		//!< Exposes renderContext device
+	eNvFlowDeviceModeUnique = 1,	//!< Generates unique device, not matching renderContext
+};
+
 //! Description required for creating a Flow device
 struct NvFlowDeviceDesc
 {
+	NvFlowDeviceMode mode;			//!< Type of device to create
 	bool autoSelectDevice;			//!< if true, NvFlow tries to identify best compute device
 	NvFlowUint adapterIdx;			//!< preferred device index
-};
-
-//! Flow device status to allow app to throttle maximum queued work
-struct NvFlowDeviceStatus
-{
-	NvFlowUint framesInFlight;		//!< Number of flushes that have not completed work on the GPU
 };
 
 /**
@@ -1186,6 +1240,15 @@ NV_FLOW_API void NvFlowDeviceDescDefaults(NvFlowDeviceDesc* desc);
 NV_FLOW_API bool NvFlowDedicatedDeviceAvailable(NvFlowContext* renderContext);
 
 /**
+* Checks if a GPU can support a dedicated queue
+*
+* @param[in] renderContext A Flow context that maps to the application graphics GPU.
+*
+* @return Returns true if dedicated device queue is available.
+*/
+NV_FLOW_API bool NvFlowDedicatedDeviceQueueAvailable(NvFlowContext* renderContext);
+
+/**
 * Creates a Flow compute device.
 *
 * @param[in] renderContext A Flow context that maps to the application graphics GPU.
@@ -1202,118 +1265,90 @@ NV_FLOW_API NvFlowDevice* NvFlowCreateDevice(NvFlowContext* renderContext, const
 */
 NV_FLOW_API void NvFlowReleaseDevice(NvFlowDevice* device);
 
-/**
-* Creates a Flow context that uses a Flow compute device.
-*
-* @param[in] device The Flow compute device to create the context against.
-*
-* @return The created Flow context.
-*/
-NV_FLOW_API NvFlowContext* NvFlowDeviceCreateContext(NvFlowDevice* device);
+//! A device queue created through an NvFlowDevice
+struct NvFlowDeviceQueue;
 
-/**
-* Updates a Flow context that uses a Flow compute device.
-*
-* @param[in] device The Flow compute device the context was created against.
-* @param[in] context The Flow context update.
-* @param[out] status The status of device for management of work queued.
-*/
-NV_FLOW_API void NvFlowDeviceUpdateContext(NvFlowDevice* device, NvFlowContext* context, NvFlowDeviceStatus* status);
-
-/**
-* Flushes all submitted work to the Flow device. Needed for reliable execution with a compute only device.
-*
-* @param[in] device The Flow compute device to flush.
-*/
-NV_FLOW_API void NvFlowDeviceFlush(NvFlowDevice* device);
-
-///@}
-// -------------------------- NvFlowCommandQueue -------------------------------
-///@defgroup NvFlowCommandQueue
-///@{
-
-//! A command queue exclusively for Flow simulation
-struct NvFlowCommandQueue;
-
-//! Description required for creating a Flow command queue
-struct NvFlowCommandQueueDesc
+//! Types of queues
+enum NvFlowDeviceQueueType
 {
-	bool computeOnly;
+	eNvFlowDeviceQueueTypeGraphics = 0,
+	eNvFlowDeviceQueueTypeCompute = 1,
+	eNvFlowDeviceQueueTypeCopy = 2
+};
+
+//! Description required for creating a Flow device queue
+struct NvFlowDeviceQueueDesc
+{
+	NvFlowDeviceQueueType queueType;
 	bool lowLatency;
 };
 
-//! Flow command queue status to allow app to throttle maximum queued work
-struct NvFlowCommandQueueStatus
+//! Flow device queue status to allow app to throttle maximum queued work
+struct NvFlowDeviceQueueStatus
 {
 	NvFlowUint framesInFlight;			//!< Number of flushes that have not completed work on the GPU
-	NvFlowUint64 lastFenceCompleted;	//!< The last fence completed on commandQueue
+	NvFlowUint64 lastFenceCompleted;	//!< The last fence completed on device queue
 	NvFlowUint64 nextFenceValue;		//!< The fence value signaled after flush
 };
 
 /**
-* Allows the application to request a default Flow command queue description from Flow.
-*
-* @param[out] desc The description for Flow to fill out.
-*/
-NV_FLOW_API void NvFlowCommandQueueDescDefaults(NvFlowCommandQueueDesc* desc);
-
-/**
-* Checks if multiple command queues are supported
+* Creates a Flow device queue.
 *
 * @param[in] renderContext A Flow context that maps to the application graphics GPU.
+* @param[in] desc Description that controls kind of device queue to create.
 *
-* @return Returns true if multiple command queues are supported.
+* @return The created Flow device queue.
 */
-NV_FLOW_API bool NvFlowCommandQueuesSupported(NvFlowContext* renderContext);
+NV_FLOW_API NvFlowDeviceQueue* NvFlowCreateDeviceQueue(NvFlowDevice* device, const NvFlowDeviceQueueDesc* desc);
 
 /**
-* Creates a Flow command queue.
+* Releases a Flow device queue.
 *
-* @param[in] renderContext A Flow context that maps to the application graphics GPU.
-* @param[in] desc Description that controls kind of command queue to create.
-*
-* @return The created Flow command queue.
+* @param[in] deviceQueue The Flow device queue to be released.
 */
-NV_FLOW_API NvFlowCommandQueue* NvFlowCreateCommandQueue(NvFlowContext* renderContext, const NvFlowCommandQueueDesc* desc);
+NV_FLOW_API void NvFlowReleaseDeviceQueue(NvFlowDeviceQueue* deviceQueue);
 
 /**
-* Releases a Flow command queue.
+* Creates a Flow context that uses a Flow device queue.
 *
-* @param[in] commandQueue The Flow command queue to be released.
-*/
-NV_FLOW_API void NvFlowReleaseCommandQueue(NvFlowCommandQueue* commandQueue);
-
-/**
-* Creates a Flow context that uses a Flow command queue.
-*
-* @param[in] commandQueue The Flow command queue to create the context against.
+* @param[in] deviceQueue The Flow device queue to create the context against.
 *
 * @return The created Flow context.
 */
-NV_FLOW_API NvFlowContext* NvFlowCommandQueueCreateContext(NvFlowCommandQueue* commandQueue);
+NV_FLOW_API NvFlowContext* NvFlowDeviceQueueCreateContext(NvFlowDeviceQueue* deviceQueue);
 
 /**
-* Updates a Flow context that uses a Flow command queue.
+* Updates a Flow context that uses a Flow device queue.
 *
-* @param[in] commandQueue The Flow command queue the context was created against.
+* @param[in] deviceQueue The Flow device queue the context was created against.
 * @param[in] context The Flow context update.
 */
-NV_FLOW_API void NvFlowCommandQueueUpdateContext(NvFlowCommandQueue* commandQueue, NvFlowContext* context, NvFlowCommandQueueStatus* status);
+NV_FLOW_API void NvFlowDeviceQueueUpdateContext(NvFlowDeviceQueue* deviceQueue, NvFlowContext* context, NvFlowDeviceQueueStatus* status);
 
 /**
-* Flushes all submitted work to the Flow commandQueue. Must be called to submit work to queue.
+* Flushes all submitted work to the Flow deviceQueue. Must be called to submit work to queue.
 *
-* @param[in] commandQueue The Flow commandQueue to flush.
+* @param[in] deviceQueue The Flow deviceQueue to flush.
+* @param[in] context The Flow context to sync with the flush event
 */
-NV_FLOW_API void NvFlowCommandQueueFlush(NvFlowCommandQueue* commandQueue);
+NV_FLOW_API void NvFlowDeviceQueueFlush(NvFlowDeviceQueue* deviceQueue, NvFlowContext* context);
+
+/**
+* Flushes all submitted work to the Flow deviceQueue if the context requests a flush.
+*
+* @param[in] deviceQueue The Flow deviceQueue to conditionally flush.
+* @param[in] context The Flow context to sync with the flush event
+*/
+NV_FLOW_API void NvFlowDeviceQueueConditionalFlush(NvFlowDeviceQueue* deviceQueue, NvFlowContext* context);
 
 /**
 * Blocks CPU until fenceValue is reached.
 *
-* @param[in] commandQueue The Flow commandQueue to flush.
+* @param[in] deviceQueue The Flow deviceQueue to flush.
+* @param[in] context The Flow context to sync with the flush event
 * @param[in] fenceValue The fence value to wait for.
 */
-NV_FLOW_API void NvFlowCommandQueueWaitOnFence(NvFlowCommandQueue* commandQueue, NvFlowUint64 fenceValue);
+NV_FLOW_API void NvFlowDeviceQueueWaitOnFence(NvFlowDeviceQueue* deviceQueue, NvFlowContext* context, NvFlowUint64 fenceValue);
 
 ///@}
 // -------------------------- NvFlowSDFGenerator -------------------------------
