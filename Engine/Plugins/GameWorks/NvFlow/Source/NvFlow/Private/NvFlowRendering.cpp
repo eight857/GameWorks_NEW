@@ -36,6 +36,11 @@ NFlowRendering.cpp: Translucent rendering implementation.
 DEFINE_STAT(STAT_Flow_SimulateGrids);
 DEFINE_STAT(STAT_Flow_RenderGrids);
 
+DECLARE_DWORD_ACCUMULATOR_STAT(TEXT("Density Block Count"), STAT_Flow_DensityBlockCount, STATGROUP_Flow);
+DECLARE_DWORD_ACCUMULATOR_STAT(TEXT("Density Block Max"), STAT_Flow_DensityBlockMax, STATGROUP_Flow);
+DECLARE_DWORD_ACCUMULATOR_STAT(TEXT("Velocity Block Count"), STAT_Flow_VelocityBlockCount, STATGROUP_Flow);
+DECLARE_DWORD_ACCUMULATOR_STAT(TEXT("Velocity Block Max"), STAT_Flow_VelocityBlockMax, STATGROUP_Flow);
+
 namespace NvFlow
 {
 	struct Scene;
@@ -1037,6 +1042,24 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateP
 	}
 
 	auto gridExport = NvFlowGridGetGridExport(m_gridContext, m_grid);
+
+	// update block count stats
+	if (gridExport)
+	{
+		auto exportHandle = NvFlowGridExportGetHandle(gridExport, m_gridContext, eNvFlowGridTextureChannelDensity);
+		NvFlowGridExportLayeredView exportLayeredView = {};
+		NvFlowGridExportGetLayeredView(exportHandle, &exportLayeredView);
+		SET_DWORD_STAT(STAT_Flow_DensityBlockCount, exportLayeredView.mapping.layeredNumBlocks);
+		SET_DWORD_STAT(STAT_Flow_DensityBlockMax, exportLayeredView.mapping.maxBlocks);
+	}
+	if (gridExport)
+	{
+		auto exportHandle = NvFlowGridExportGetHandle(gridExport, m_gridContext, eNvFlowGridTextureChannelVelocity);
+		NvFlowGridExportLayeredView exportLayeredView = {};
+		NvFlowGridExportGetLayeredView(exportHandle, &exportLayeredView);
+		SET_DWORD_STAT(STAT_Flow_VelocityBlockCount, exportLayeredView.mapping.layeredNumBlocks);
+		SET_DWORD_STAT(STAT_Flow_VelocityBlockMax, exportLayeredView.mapping.maxBlocks);
+	}
 
 	NvFlowGridProxyFlushParams flushParams = {};
 	flushParams.gridContext = m_gridContext;
