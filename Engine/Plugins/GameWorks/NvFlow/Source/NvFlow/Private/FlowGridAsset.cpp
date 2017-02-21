@@ -31,7 +31,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	MemoryLimitScale = 1.f;
 
 	SimulationRate = 60.f;
-	bLowLatencyMapping = false;
+	bLowLatencyMapping = true;
 	bMultiAdapterEnabled = false;
 
 	NvFlowGridParams FlowGridParams;
