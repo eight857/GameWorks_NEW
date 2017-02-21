@@ -36,8 +36,33 @@ NFlowRendering.cpp: Translucent rendering implementation.
 DEFINE_STAT(STAT_Flow_SimulateGrids);
 DEFINE_STAT(STAT_Flow_RenderGrids);
 
+
 namespace NvFlow
 {
+	static TStatId NvFlowCreateStatId(const TCHAR* StatNameText, const TCHAR* StatDescText)
+	{
+#if	STATS
+		FName StatName(StatNameText);
+
+		FStartupMessages::Get().AddMetadata(StatName, StatDescText,
+			FStatGroup_STATGROUP_Flow::GetGroupName(),
+			FStatGroup_STATGROUP_Flow::GetGroupCategory(),
+			FStatGroup_STATGROUP_Flow::GetDescription(),
+			false, EStatDataType::ST_int64, false);
+
+		TStatId StatID = IStatGroupEnableManager::Get().GetHighPerformanceEnableForStat(StatName,
+			FStatGroup_STATGROUP_Flow::GetGroupName(),
+			FStatGroup_STATGROUP_Flow::GetGroupCategory(),
+			FStatGroup_STATGROUP_Flow::DefaultEnable,
+			false, EStatDataType::ST_int64, StatDescText, false);
+
+		return StatID;
+#endif // STATS
+
+		return TStatId();
+	}
+
+
 	struct Scene;
 
 	struct Context
@@ -70,6 +95,13 @@ namespace NvFlow
 		NvFlowContext* m_computeContext = nullptr;
 
 		TMap<const FDistanceFieldVolumeData*, NvFlowShapeSDF*> m_mapForShapeSDF;
+
+		struct SceneStatData
+		{
+			TStatId statIdNumBlocks;
+			TStatId statIdMaxBlocks;
+		};
+		TMap<FName, SceneStatData> m_mapForSceneStats;
 
 		// deferred mechanism for proper RHI command list support
 		void initDeferred(IRHICommandContext* RHICmdCtx);
@@ -137,7 +169,6 @@ namespace NvFlow
 			FShaderResourceViewRHIRef DataInSRV, FUnorderedAccessViewRHIRef DataOutUAV, FShaderResourceViewRHIRef BlockListSRV, FShaderResourceViewRHIRef BlockTableSRV,
 			float InSlipFactor = 0, float InSlipThickness = 0, FVector4 InEmitValue = FVector4(ForceInitToZero));
 
-
 		bool m_multiAdapter = false;
 		float m_timeSuccess = 0.f;
 		float m_timeTotal = 0.f;
@@ -191,6 +222,9 @@ namespace NvFlow
 
 		// deferred mechanism for proper RHI command list support
 		float m_updateSubstep_dt = 0.f;
+
+		TStatId m_statIdMaxBlocks;
+		TStatId m_statIdNumBlocks;
 
 		struct UpdateParams
 		{
@@ -474,6 +508,9 @@ NvFlow::Scene::~Scene()
 
 void NvFlow::Scene::release()
 {
+	FThreadStats::AddMessage(m_statIdMaxBlocks.GetName(), EStatOperation::Clear, int64(0));
+	FThreadStats::AddMessage(m_statIdNumBlocks.GetName(), EStatOperation::Clear, int64(0));
+
 	if (m_context)
 	{
 		UE_LOG(LogFlow, Display, TEXT("NvFlow Scene %p Cleanup"), this);
@@ -506,6 +543,27 @@ void NvFlow::Scene::init(Context* context, FRHICommandListImmediate& RHICmdList,
 	FlowGridSceneProxy->cleanupSceneFunc = NvFlow::cleanupScene;
 
 	RHICmdList.NvFlowWork(initCallback, this, 0u);
+
+
+	const FName ownerName = InFlowGridSceneProxy->GetOwnerName();
+
+	Context::SceneStatData* sceneStatData = m_context->m_mapForSceneStats.Find(ownerName);
+	if (sceneStatData == nullptr)
+	{
+		int32 sceneId = m_context->m_mapForSceneStats.Num();
+
+		sceneStatData = &m_context->m_mapForSceneStats.Add(ownerName);
+
+		FString sceneName;
+		InFlowGridSceneProxy->GetOwnerName().ToString(sceneName);
+
+		sceneStatData->statIdNumBlocks = NvFlowCreateStatId(*FString::Printf(TEXT("STAT_Flow_%i_NumBlocks"), int32(sceneId)), *FString::Printf(TEXT("'%s' Num Blocks"), *sceneName));
+		sceneStatData->statIdMaxBlocks = NvFlowCreateStatId(*FString::Printf(TEXT("STAT_Flow_%i_MaxBlocks"), int32(sceneId)), *FString::Printf(TEXT("'%s' Max Blocks"), *sceneName));
+	}
+	check(sceneStatData != nullptr)
+
+	m_statIdNumBlocks = sceneStatData->statIdNumBlocks;
+	m_statIdMaxBlocks = sceneStatData->statIdMaxBlocks;
 }
 
 void NvFlow::Scene::initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
@@ -937,6 +995,18 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 	FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
 
 	m_gridExport4Render = NvFlowGridProxyGetGridExport(m_gridProxy, m_context->m_flowContext);
+
+#if STATS
+	if (FThreadStats::IsCollectingData(m_statIdMaxBlocks))
+	{
+		NvFlowGridExportHandle gridExportHandle = NvFlowGridExportGetHandle(m_gridExport4Render, m_context->m_flowContext, eNvFlowGridTextureChannelVelocity);
+		NvFlowGridExportLayeredView gridExportLayeredView;
+		NvFlowGridExportGetLayeredView(gridExportHandle, &gridExportLayeredView);
+
+		FThreadStats::AddMessage(m_statIdMaxBlocks.GetName(), EStatOperation::Set, int64(gridExportLayeredView.mapping.maxBlocks));
+		FThreadStats::AddMessage(m_statIdNumBlocks.GetName(), EStatOperation::Set, int64(gridExportLayeredView.mapping.layeredNumBlocks));
+	}
+#endif
 
 	FLightSceneInfo* DirectionalLight = nullptr;
 
