@@ -186,6 +186,8 @@ namespace NvFlow
 		NvFlowGridExport* m_gridExport4Render = nullptr;
 
 		NvFlowGridDesc m_gridDesc;
+		float m_diffGridCellSize = 0.f;
+		FVector m_diffGridLocation = FVector(0.f);
 		NvFlowGridParams m_gridParams;
 		NvFlowVolumeRenderParams m_renderParams;
 
@@ -659,12 +661,12 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 
 	// create local grid desc copy
 	m_gridDesc = FlowGridSceneProxy->FlowGridProperties.GridDesc;
+	m_diffGridCellSize = FlowGridSceneProxy->FlowGridProperties.GridCellSize;
+	m_diffGridLocation = FlowGridSceneProxy->GetLocalToWorld().GetOrigin();
 
 	// set initial location using proxy location
 	FVector FlowOrigin = FlowGridSceneProxy->GetLocalToWorld().GetOrigin() * scaleInv;
 	m_gridDesc.initialLocation = *(NvFlowFloat3*)(&FlowOrigin.X);
-
-	m_gridDesc.lowLatencyMapping = FlowGridSceneProxy->FlowGridProperties.bLowLatencyMapping;
 
 	bool multiAdapterEnabled = FlowGridSceneProxy->FlowGridProperties.bMultiAdapterEnabled;
 	m_multiAdapter = multiAdapterEnabled && m_context->m_multiGPUActive;
@@ -1033,6 +1035,38 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateP
 		NvFlowGridEmitCustomRegisterAllocFunc(m_grid, &NvFlow::Scene::sEmitCustomAllocCallback, &callbackUserData);
 		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridTextureChannelVelocity, &NvFlow::Scene::sEmitCustomEmitVelocityCallback, &callbackUserData);
 		NvFlowGridEmitCustomRegisterEmitFunc(m_grid, eNvFlowGridTextureChannelDensity, &NvFlow::Scene::sEmitCustomEmitDensityCallback, &callbackUserData);
+
+		// check for grid location or halfSize change
+		{
+			FVector newDiffGridLocation = FlowGridSceneProxy->GetLocalToWorld().GetOrigin();
+			float newDiffGridCellSize = FlowGridSceneProxy->FlowGridProperties.GridCellSize;
+
+			bool changed = (
+				m_diffGridLocation.X != newDiffGridLocation.X ||
+				m_diffGridLocation.Y != newDiffGridLocation.Y ||
+				m_diffGridLocation.Z != newDiffGridLocation.Z ||
+				m_diffGridCellSize != newDiffGridCellSize
+				);
+
+			m_diffGridLocation.X = newDiffGridLocation.X;
+			m_diffGridLocation.Y = newDiffGridLocation.Y;
+			m_diffGridLocation.Z = newDiffGridLocation.Z;
+			m_diffGridCellSize = newDiffGridCellSize;
+
+			if (changed)
+			{
+				FVector FlowOrigin = FlowGridSceneProxy->GetLocalToWorld().GetOrigin() * scaleInv;
+
+				NvFlowGridResetDesc resetDesc = {};
+				resetDesc.initialLocation = *(NvFlowFloat3*)(&FlowOrigin.X);
+				resetDesc.halfSize = FlowGridSceneProxy->FlowGridProperties.GridDesc.halfSize;
+			
+				NvFlowGridReset(m_grid, &resetDesc);
+
+				m_gridDesc.halfSize = resetDesc.halfSize;
+				m_gridDesc.initialLocation = resetDesc.initialLocation;
+			}
+		}
 
 		NvFlowGridUpdate(m_grid, m_gridContext, dt);
 
