@@ -50,6 +50,7 @@ struct NvFlowGridDesc
 	NvFlowMultiRes densityMultiRes;		//!< Number of density cells per velocity cell
 
 	float residentScale;				//!< Fraction of virtual cells to allocate memory for
+	float coarseResidentScaleFactor;	//!< Allows relative increase of resident scale for coarse sparse textures
 
 	bool enableVTR;						//!< Enable use of volume tiled resources, if supported
 	bool lowLatencyMapping;				//!< Faster mapping updates, more mapping overhead but less prediction required
