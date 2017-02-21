@@ -318,8 +318,15 @@ void UFlowGridComponent::UpdateShapes()
 
 			if (StaticMeshComponent != nullptr)
 			{
-				const FStaticMeshLODResources& RenderData = StaticMeshComponent->GetStaticMesh()->RenderData->LODResources[0];
-				DistanceFieldVolumeData = RenderData.DistanceFieldData;
+				const FStaticMeshRenderData* RenderData = StaticMeshComponent->GetStaticMesh()->RenderData;
+				if (RenderData != nullptr && RenderData->LODResources.Num() > 0)
+				{
+					DistanceFieldVolumeData = RenderData->LODResources[0].DistanceFieldData;
+					if (DistanceFieldVolumeData != nullptr && DistanceFieldVolumeData->Size.GetMax() == 0)
+					{
+						DistanceFieldVolumeData = nullptr;
+					}
+				}
 			}
 		}
 
@@ -526,7 +533,7 @@ void UFlowGridComponent::UpdateShapes()
 						//DistanceField
 						check(DistanceFieldVolumeData != nullptr);
 
-						ShapeDescsPtr[0].sdf.sdf = reinterpret_cast<NvFlowShapeSDF*>(const_cast<FDistanceFieldVolumeData*>(DistanceFieldVolumeData));
+						ShapeDescsPtr[0].sdf.sdf = reinterpret_cast<NvFlowShapeSDF*>(StaticMeshComponent->GetStaticMesh());
 					}
 				}
 

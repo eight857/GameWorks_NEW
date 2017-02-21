@@ -21,6 +21,7 @@ NFlowRendering.cpp: Translucent rendering implementation.
 #include "Stats.h"
 #include "GridAccessHooksNvFlow.h"
 
+#include "StaticMeshResources.h"
 #include "DistanceFieldAtlas.h"
 
 #if NVFLOW_ADAPTIVE
@@ -94,7 +95,12 @@ namespace NvFlow
 		NvFlowDevice* m_computeDevice = nullptr;
 		NvFlowContext* m_computeContext = nullptr;
 
-		TMap<const FDistanceFieldVolumeData*, NvFlowShapeSDF*> m_mapForShapeSDF;
+		struct SDFshapeData
+		{
+			const FDistanceFieldVolumeData* volumeData = nullptr;
+			NvFlowShapeSDF* flowShapeSDF = nullptr;
+		};
+		TMap<UStaticMesh*, SDFshapeData> m_mapForShapeSDF;
 
 		struct SceneStatData
 		{
@@ -754,42 +760,50 @@ void NvFlow::Scene::updateShapeSDF(NvFlowShapeDesc& shapeDesc)
 {
 	check(shapeDesc.sdf.sdf != nullptr);
 
-	const FDistanceFieldVolumeData* DistanceFieldVolumeData = const_cast<const FDistanceFieldVolumeData*>(reinterpret_cast<FDistanceFieldVolumeData*>(shapeDesc.sdf.sdf));
+	UStaticMesh* StaticMesh = reinterpret_cast<UStaticMesh*>(shapeDesc.sdf.sdf);
+	const FDistanceFieldVolumeData* DistanceFieldVolumeData = StaticMesh->RenderData->LODResources[0].DistanceFieldData;
+	check(DistanceFieldVolumeData != nullptr);
 
-	NvFlowShapeSDF*& ShapeSDF = m_context->m_mapForShapeSDF.FindOrAdd(DistanceFieldVolumeData);
-	if (ShapeSDF == nullptr)
+	Context::SDFshapeData& shapeData = m_context->m_mapForShapeSDF.FindOrAdd(StaticMesh);
+	if (DistanceFieldVolumeData != shapeData.volumeData)
 	{
-		//create new NvFlowShapeSDF
-		NvFlowShapeSDFDesc DescSDF;
-		DescSDF.resolution.x = DistanceFieldVolumeData->Size.X;
-		DescSDF.resolution.y = DistanceFieldVolumeData->Size.Y;
-		DescSDF.resolution.z = DistanceFieldVolumeData->Size.Z;
-
-		ShapeSDF = NvFlowCreateShapeSDF(m_context->m_flowContext, &DescSDF);
-
-		NvFlowShapeSDFData ShapeData = NvFlowShapeSDFMap(ShapeSDF, m_context->m_flowContext);
-
-		check(ShapeData.dim.x == DescSDF.resolution.x);
-		check(ShapeData.dim.y == DescSDF.resolution.y);
-		check(ShapeData.dim.z == DescSDF.resolution.z);
-		for (NvFlowUint z = 0; z < ShapeData.dim.z; ++z)
+		if (shapeData.flowShapeSDF != nullptr)
 		{
-			for (NvFlowUint y = 0; y < ShapeData.dim.y; ++y)
+			NvFlowReleaseShapeSDF(shapeData.flowShapeSDF);
+		}
+
+		//create new NvFlowShapeSDF
+		NvFlowShapeSDFDesc descSDF;
+		descSDF.resolution.x = DistanceFieldVolumeData->Size.X;
+		descSDF.resolution.y = DistanceFieldVolumeData->Size.Y;
+		descSDF.resolution.z = DistanceFieldVolumeData->Size.Z;
+
+		shapeData.flowShapeSDF = NvFlowCreateShapeSDF(m_context->m_flowContext, &descSDF);
+
+		NvFlowShapeSDFData mappedShapeData = NvFlowShapeSDFMap(shapeData.flowShapeSDF, m_context->m_flowContext);
+
+		check(mappedShapeData.dim.x == descSDF.resolution.x);
+		check(mappedShapeData.dim.y == descSDF.resolution.y);
+		check(mappedShapeData.dim.z == descSDF.resolution.z);
+		for (NvFlowUint z = 0; z < mappedShapeData.dim.z; ++z)
+		{
+			for (NvFlowUint y = 0; y < mappedShapeData.dim.y; ++y)
 			{
-				for (NvFlowUint x = 0; x < ShapeData.dim.x; ++x)
+				for (NvFlowUint x = 0; x < mappedShapeData.dim.x; ++x)
 				{
-					FFloat16 valueF16 = DistanceFieldVolumeData->DistanceFieldVolume[x + ShapeData.dim.x * (y + ShapeData.dim.y * z)];
+					FFloat16 valueF16 = DistanceFieldVolumeData->DistanceFieldVolume[x + mappedShapeData.dim.x * (y + mappedShapeData.dim.y * z)];
 					float value = valueF16.GetFloat();
 
-					ShapeData.data[x + ShapeData.rowPitch * y + ShapeData.depthPitch * z] = value;
+					mappedShapeData.data[x + mappedShapeData.rowPitch * y + mappedShapeData.depthPitch * z] = value;
 				}
 			}
 		}
 
-		NvFlowShapeSDFUnmap(ShapeSDF, m_context->m_flowContext);
+		NvFlowShapeSDFUnmap(shapeData.flowShapeSDF, m_context->m_flowContext);
 	}
+	check(shapeData.flowShapeSDF != nullptr);
 
-	shapeDesc.sdf.sdf = ShapeSDF;
+	shapeDesc.sdf.sdf = shapeData.flowShapeSDF;
 }
 
 
