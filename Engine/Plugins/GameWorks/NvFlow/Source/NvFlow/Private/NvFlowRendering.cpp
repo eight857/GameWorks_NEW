@@ -1222,7 +1222,7 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 #if STATS
 	if (FThreadStats::IsCollectingData(m_statIdMaxBlocks))
 	{
-		NvFlowGridExportHandle gridExportHandle = NvFlowGridExportGetHandle(m_gridExport4Render, m_context->m_flowContext, eNvFlowGridTextureChannelVelocity);
+		NvFlowGridExportHandle gridExportHandle = NvFlowGridExportGetHandle(m_gridExport4Render, m_renderContext, eNvFlowGridTextureChannelVelocity);
 		NvFlowGridExportLayeredView gridExportLayeredView;
 		NvFlowGridExportGetLayeredView(gridExportHandle, &gridExportLayeredView);
 

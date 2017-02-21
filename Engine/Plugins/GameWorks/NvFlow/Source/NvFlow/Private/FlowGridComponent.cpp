@@ -550,9 +550,12 @@ void UFlowGridComponent::UpdateShapes()
 					FlowEmitterComponent->PreviousTransform = Transform;
 
 					// physics
-					FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
-					FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
-					FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
+					//FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
+					//FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
+					//FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
+					FVector physicsLinearVelocity = Body->GetUnrealWorldVelocity_AssumesLocked();
+					FVector physicsAngularVelocity = Body->GetUnrealWorldAngularVelocity_AssumesLocked();
+					FVector physicsCenterOfMass = (PhysXActor->is<PxRigidStatic>() == nullptr) ? Body->OwnerComponent->GetCenterOfMass() : Transform.GetLocation();
 
 					FVector CollisionLinearVelocity = Transform.InverseTransformVector(physicsLinearVelocity);
 					FVector CollisionAngularVelocity = Transform.InverseTransformVector(physicsAngularVelocity);
@@ -716,9 +719,12 @@ void UFlowGridComponent::UpdateShapes()
 					FTransform Transform = WorldTransformU;
 
 					// physics
-					FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
-					FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
-					FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
+					//FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
+					//FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
+					//FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
+					FVector physicsLinearVelocity = Body->GetUnrealWorldVelocity_AssumesLocked();
+					FVector physicsAngularVelocity = Body->GetUnrealWorldAngularVelocity_AssumesLocked();
+					FVector physicsCenterOfMass = (PhysXActor->is<PxRigidStatic>() == nullptr) ? Body->OwnerComponent->GetCenterOfMass() : Transform.GetLocation();
 
 					FVector CollisionLinearVelocity = Transform.InverseTransformVector(physicsLinearVelocity);
 					FVector CollisionAngularVelocity = Transform.InverseTransformVector(physicsAngularVelocity);
