@@ -40,9 +40,9 @@ DEFINE_STAT(STAT_Flow_RenderGrids);
 
 namespace NvFlow
 {
+#if	STATS
 	static TStatId NvFlowCreateStatId(const TCHAR* StatNameText, const TCHAR* StatDescText)
 	{
-#if	STATS
 		FName StatName(StatNameText);
 
 		FStartupMessages::Get().AddMetadata(StatName, StatDescText,
@@ -58,11 +58,8 @@ namespace NvFlow
 			false, EStatDataType::ST_int64, StatDescText, false);
 
 		return StatID;
-#endif // STATS
-
-		return TStatId();
 	}
-
+#endif // STATS
 
 	struct Scene;
 
@@ -115,6 +112,7 @@ namespace NvFlow
 		bool m_enableMultiGPU = false;
 		bool m_multiGPUActive = false;
 
+#if STATS
 		struct SceneStatData
 		{
 			TStatId statIdVelocityNumBlocks;
@@ -123,6 +121,7 @@ namespace NvFlow
 			TStatId statIdDensityMaxBlocks;
 		};
 		TMap<FName, SceneStatData> m_mapForSceneStats;
+#endif
 
 		// deferred mechanism for proper RHI command list support
 		void initDeferred(IRHICommandContext* RHICmdCtx);
@@ -259,8 +258,9 @@ namespace NvFlow
 
 		// deferred mechanism for proper RHI command list support
 		float m_updateSubstep_dt = 0.f;
-
+#if STATS
 		Context::SceneStatData m_stats;
+#endif
 
 		struct UpdateParams
 		{
@@ -655,10 +655,12 @@ NvFlow::Scene::~Scene()
 
 void NvFlow::Scene::release()
 {
+#if STATS
 	FThreadStats::AddMessage(m_stats.statIdVelocityMaxBlocks.GetName(), EStatOperation::Clear, int64(0));
 	FThreadStats::AddMessage(m_stats.statIdVelocityNumBlocks.GetName(), EStatOperation::Clear, int64(0));
 	FThreadStats::AddMessage(m_stats.statIdDensityMaxBlocks.GetName(), EStatOperation::Clear, int64(0));
 	FThreadStats::AddMessage(m_stats.statIdDensityNumBlocks.GetName(), EStatOperation::Clear, int64(0));
+#endif
 
 	if (m_context)
 	{
@@ -693,7 +695,7 @@ void NvFlow::Scene::init(Context* context, FRHICommandListImmediate& RHICmdList,
 
 	RHICmdList.NvFlowWork(initCallback, this, 0u);
 
-
+#if STATS
 	const FName ownerName = InFlowGridSceneProxy->GetOwnerName();
 
 	Context::SceneStatData* sceneStatData = m_context->m_mapForSceneStats.Find(ownerName);
@@ -715,6 +717,7 @@ void NvFlow::Scene::init(Context* context, FRHICommandListImmediate& RHICmdList,
 	check(sceneStatData != nullptr)
 
 	m_stats = *sceneStatData;
+#endif
 }
 
 void NvFlow::Scene::initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
