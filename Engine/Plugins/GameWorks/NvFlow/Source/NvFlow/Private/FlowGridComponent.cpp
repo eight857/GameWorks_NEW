@@ -74,6 +74,7 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 	// set critical property defaults
 	FlowGridProperties.bActive = false;
 	FlowGridProperties.bMultiAdapterEnabled = false;
+	FlowGridProperties.bAsyncComputeEnabled = false;
 	FlowGridProperties.bParticlesInteractionEnabled = false;
 	FlowGridProperties.bParticleModeEnabled = false;
 	FlowGridProperties.SubstepSize = 0.0f;
@@ -916,6 +917,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
 			newGridDesc.lowLatencyMapping != FlowGridProperties.GridDesc.lowLatencyMapping ||
 			FlowGridAssetRef->bMultiAdapterEnabled != FlowGridProperties.bMultiAdapterEnabled ||
+			FlowGridAssetRef->bAsyncComputeEnabled != FlowGridProperties.bAsyncComputeEnabled ||
 			FlowGridAssetRef->bParticleModeEnabled != FlowGridProperties.bParticleModeEnabled ||
 			FlowGridAssetRef->ColorMapResolution   != FlowGridProperties.ColorMapResolution);
 
@@ -939,6 +941,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		// Commit any changes
 		FlowGridProperties.GridDesc = newGridDesc;
 		FlowGridProperties.bMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
+		FlowGridProperties.bAsyncComputeEnabled = FlowGridAssetRef->bAsyncComputeEnabled;
 		FlowGridProperties.bParticlesInteractionEnabled = FlowGridAssetRef->bParticlesInteractionEnabled;
 		FlowGridProperties.InteractionChannel = FlowGridAssetRef->InteractionChannel;
 		FlowGridProperties.ResponseToInteractionChannels = FlowGridAssetRef->ResponseToInteractionChannels;

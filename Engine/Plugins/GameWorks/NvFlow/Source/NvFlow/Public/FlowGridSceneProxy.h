@@ -67,6 +67,7 @@ struct FFlowGridProperties
 
 	// multi-GPU enable, requires reset if changed
 	uint32 bMultiAdapterEnabled : 1;
+	uint32 bAsyncComputeEnabled : 1;
 
 	uint32 bParticlesInteractionEnabled : 1;
 	TEnumAsByte<enum EInteractionChannelNvFlow> InteractionChannel;

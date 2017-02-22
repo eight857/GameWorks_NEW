@@ -90,16 +90,28 @@ namespace NvFlow
 		NvFlowRenderTargetView* m_rtv = nullptr;
 
 		int m_maxFramesInFlight = 3u;
-		int m_framesInFlight = 0;
+		int m_framesInFlightMultiGPU = 0;
+		int m_framesInFlightAsyncCompute = 0;
 
+		// optional graphics GPU queues
 		NvFlowDevice* m_renderDevice = nullptr;
+		NvFlowDeviceQueue* m_renderCopyQueue = nullptr;
+		NvFlowDeviceQueue* m_renderDeviceComputeQueue = nullptr;
+		NvFlowContext* m_renderCopyContext = nullptr;
+		NvFlowContext* m_renderDeviceComputeContext = nullptr;
+
+		// optional simulation GPU queues
 		NvFlowDevice* m_gridDevice = nullptr;
 		NvFlowDeviceQueue* m_gridQueue = nullptr;
 		NvFlowDeviceQueue* m_gridCopyQueue = nullptr;
-		NvFlowDeviceQueue* m_renderCopyQueue = nullptr;
 		NvFlowContext* m_gridContext = nullptr;
 		NvFlowContext* m_gridCopyContext = nullptr;
-		NvFlowContext* m_renderCopyContext = nullptr;
+
+		bool m_multiGPUSupported = false;
+		bool m_multiGPUActive = false;
+
+		bool m_asyncComputeSupported = false;
+		bool m_asyncComputeActive = false;
 
 		struct SDFshapeData
 		{
@@ -107,10 +119,6 @@ namespace NvFlow
 			NvFlowShapeSDF* flowShapeSDF = nullptr;
 		};
 		TMap<UStaticMesh*, SDFshapeData> m_mapForShapeSDF;
-
-		bool m_multiGPUSupported = false;
-		bool m_enableMultiGPU = false;
-		bool m_multiGPUActive = false;
 
 #if STATS
 		struct SceneStatData
@@ -194,6 +202,7 @@ namespace NvFlow
 			float InSlipFactor = 0, float InSlipThickness = 0, FVector4 InEmitValue = FVector4(ForceInitToZero));
 
 		bool m_multiAdapter = false;
+		bool m_asyncCompute = false;
 
 #if NVFLOW_ADAPTIVE
 		float m_frameTimeSum = 0.f;
@@ -388,36 +397,62 @@ void NvFlow::Context::conditionalInitMultiGPUDeferred(IRHICommandContext* RHICmd
 	if (!m_multiGPUActive)
 	{
 		m_multiGPUActive = m_multiGPUSupported && (UFlowGridAsset::sGlobalMultiGPU > 0);
-		if (m_multiGPUActive)
+	}
+	if (!m_asyncComputeActive)
+	{
+		m_asyncComputeActive = m_asyncComputeSupported && (UFlowGridAsset::sGlobalAsyncCompute > 0);
+	}
+	if (m_multiGPUActive || m_asyncComputeActive)
+	{
+		// All multi-queue systems have a proxy device and copy queue
+		if (m_renderDevice == nullptr)
 		{
 			NvFlowDeviceDesc deviceDesc = {};
 			NvFlowDeviceDescDefaults(&deviceDesc);
-
 			deviceDesc.mode = eNvFlowDeviceModeProxy;
+
 			m_renderDevice = NvFlowCreateDevice(m_renderContext, &deviceDesc);
+
+			NvFlowDeviceQueueDesc deviceQueueDesc = {};
+			deviceQueueDesc.queueType = eNvFlowDeviceQueueTypeCopy;
+			deviceQueueDesc.lowLatency = false;
+			m_renderCopyQueue = NvFlowCreateDeviceQueue(m_renderDevice, &deviceQueueDesc);
+			m_renderCopyContext = NvFlowDeviceQueueCreateContext(m_renderCopyQueue);
+		}
+
+		// async compute just adds a compute queue on the render device
+		if (m_asyncComputeActive && m_renderDeviceComputeQueue == nullptr)
+		{
+			NvFlowDeviceQueueDesc deviceQueueDesc = {};
+			deviceQueueDesc.queueType = eNvFlowDeviceQueueTypeCompute;
+			deviceQueueDesc.lowLatency = true;
+
+			m_renderDeviceComputeQueue = NvFlowCreateDeviceQueue(m_renderDevice, &deviceQueueDesc);
+			m_renderDeviceComputeContext = NvFlowDeviceQueueCreateContext(m_renderDeviceComputeQueue);
+		}
+
+		// multiGPU adds a unique device with a direct queue and a copy queue
+		if (m_multiGPUActive && m_gridDevice == nullptr)
+		{
+			NvFlowDeviceDesc deviceDesc = {};
+			NvFlowDeviceDescDefaults(&deviceDesc);
 			deviceDesc.mode = eNvFlowDeviceModeUnique;
+
 			m_gridDevice = NvFlowCreateDevice(m_renderContext, &deviceDesc);
 
 			NvFlowDeviceQueueDesc deviceQueueDesc = {};
 			deviceQueueDesc.queueType = eNvFlowDeviceQueueTypeGraphics;
 			deviceQueueDesc.lowLatency = false;
+
 			m_gridQueue = NvFlowCreateDeviceQueue(m_gridDevice, &deviceQueueDesc);
+			m_gridContext = NvFlowDeviceQueueCreateContext(m_gridQueue);
+
 			deviceQueueDesc.queueType = eNvFlowDeviceQueueTypeCopy;
 			m_gridCopyQueue = NvFlowCreateDeviceQueue(m_gridDevice, &deviceQueueDesc);
-			m_renderCopyQueue = NvFlowCreateDeviceQueue(m_renderDevice, &deviceQueueDesc);
-
-			m_gridContext = NvFlowDeviceQueueCreateContext(m_gridQueue);
 			m_gridCopyContext = NvFlowDeviceQueueCreateContext(m_gridCopyQueue);
-			m_renderCopyContext = NvFlowDeviceQueueCreateContext(m_renderCopyQueue);
 
 			NvFlowDeviceQueueStatus status = {};
 			NvFlowDeviceQueueUpdateContext(m_gridQueue, m_gridContext, &status);
-		}
-		else
-		{
-			m_gridContext = m_renderContext;
-			m_gridCopyContext = m_renderContext;
-			m_renderCopyContext = m_renderContext;
 		}
 	}
 }
@@ -459,6 +494,7 @@ void NvFlow::Context::initDeferred(IRHICommandContext* RHICmdCtx)
 	UE_LOG(LogInit, Display, TEXT("NvFlow using dedicated PhysX GPU: %s"), bDedicatedPhysXGPU ? TEXT("true") : TEXT("false"));
 #endif
 	m_multiGPUSupported = NvFlowDedicatedDeviceAvailable(m_renderContext) && bDedicatedPhysXGPU;
+	m_asyncComputeSupported = NvFlowDedicatedDeviceQueueAvailable(m_renderContext);
 	conditionalInitMultiGPUDeferred(RHICmdCtx);
 }
 
@@ -491,14 +527,24 @@ void NvFlow::Context::interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool c
 		m_flowInterop->UpdateRenderTargetView(appctx, m_renderContext, m_rtv);
 	}
 
-	if (m_gridDevice != m_renderDevice)
+	if (m_gridDevice)
 	{
 		NvFlowDeviceQueueStatus status = {};
 		NvFlowDeviceQueueUpdateContext(m_gridQueue, m_gridContext, &status);
-		m_framesInFlight = status.framesInFlight;
+		m_framesInFlightMultiGPU = status.framesInFlight;
 
 		NvFlowDeviceQueueUpdateContext(m_gridCopyQueue, m_gridCopyContext, &status);
+	}
+	if (m_renderDevice)
+	{
+		NvFlowDeviceQueueStatus status = {};
 		NvFlowDeviceQueueUpdateContext(m_renderCopyQueue, m_renderCopyContext, &status);
+	}
+	if (m_renderDeviceComputeContext)
+	{
+		NvFlowDeviceQueueStatus status = {};
+		NvFlowDeviceQueueUpdateContext(m_renderDeviceComputeQueue, m_renderDeviceComputeContext, &status);
+		m_framesInFlightAsyncCompute = status.framesInFlight;
 	}
 
 	m_flowInterop->Push(appctx, m_renderContext);
@@ -523,11 +569,21 @@ void NvFlow::Context::interopEndDeferred(IRHICommandContext* RHICmdCtx, bool com
 {
 	auto& appctx = *RHICmdCtx;
 
-	if (computeOnly && m_gridDevice != m_renderDevice/* && shouldFlush*/)
+	if (computeOnly/* && shouldFlush*/)
 	{
-		NvFlowDeviceQueueConditionalFlush(m_gridQueue, m_gridContext);
-		NvFlowDeviceQueueConditionalFlush(m_gridCopyQueue, m_gridCopyContext);
-		NvFlowDeviceQueueConditionalFlush(m_renderCopyQueue, m_renderCopyContext);
+		if (m_gridDevice)
+		{
+			NvFlowDeviceQueueConditionalFlush(m_gridQueue, m_gridContext);
+			NvFlowDeviceQueueConditionalFlush(m_gridCopyQueue, m_gridCopyContext);
+		}
+		if (m_renderDevice)
+		{
+			NvFlowDeviceQueueConditionalFlush(m_renderCopyQueue, m_renderCopyContext);
+		}
+		if (m_renderDeviceComputeContext)
+		{
+			NvFlowDeviceQueueConditionalFlush(m_renderDeviceComputeQueue, m_renderDeviceComputeContext);
+		}
 	}
 
 	m_flowInterop->Pop(appctx, m_renderContext);
@@ -568,40 +624,30 @@ void NvFlow::Context::release()
 	if (m_dsv) NvFlowReleaseDepthStencilView(m_dsv);
 	if (m_renderContext) NvFlowReleaseContext(m_renderContext);
 
-	if (m_gridDevice != m_renderDevice)
-	{
-		NvFlowReleaseContext(m_gridContext);
-		NvFlowReleaseContext(m_gridCopyContext);
-		NvFlowReleaseContext(m_renderCopyContext);
-		m_gridContext = nullptr;
-		m_gridCopyContext = nullptr;
-		m_renderCopyContext = nullptr;
+	if (m_gridContext) NvFlowReleaseContext(m_gridContext);
+	if (m_gridCopyContext) NvFlowReleaseContext(m_gridCopyContext);
+	if (m_renderCopyContext) NvFlowReleaseContext(m_renderCopyContext);
+	if (m_renderDeviceComputeContext) NvFlowReleaseContext(m_renderDeviceComputeContext);
 
-		NvFlowReleaseDeviceQueue(m_gridQueue);
-		NvFlowReleaseDeviceQueue(m_gridCopyQueue);
-		NvFlowReleaseDeviceQueue(m_renderCopyQueue);
-		m_gridQueue = nullptr;
-		m_gridCopyQueue = nullptr;
-		m_renderCopyQueue = nullptr;
+	if (m_gridQueue) NvFlowReleaseDeviceQueue(m_gridQueue);
+	if (m_gridCopyQueue) NvFlowReleaseDeviceQueue(m_gridCopyQueue);
+	if (m_renderCopyQueue) NvFlowReleaseDeviceQueue(m_renderCopyQueue);
+	if (m_renderDeviceComputeQueue) NvFlowReleaseDeviceQueue(m_renderDeviceComputeQueue);
 
-		NvFlowReleaseDevice(m_gridDevice);
-		NvFlowReleaseDevice(m_renderDevice);
-		m_gridDevice = nullptr;
-		m_renderDevice = nullptr;
-	}
-	else
-	{
-		m_gridContext = nullptr;
-		m_gridCopyContext = nullptr;
-		m_renderCopyContext = nullptr;
+	if (m_gridDevice) NvFlowReleaseDevice(m_gridDevice);
+	if (m_renderDevice) NvFlowReleaseDevice(m_renderDevice);
 
-		m_gridQueue = nullptr;
-		m_gridCopyQueue = nullptr;
-		m_renderCopyQueue = nullptr;
+	m_renderDevice = nullptr;
+	m_renderCopyQueue = nullptr;
+	m_renderDeviceComputeQueue = nullptr;
+	m_renderCopyContext = nullptr;
+	m_renderDeviceComputeContext = nullptr;
 
-		m_gridDevice = nullptr;
-		m_renderDevice = nullptr;
-	}
+	m_gridDevice = nullptr;
+	m_gridQueue = nullptr;
+	m_gridCopyQueue = nullptr;
+	m_gridContext = nullptr;
+	m_gridCopyContext = nullptr;
 
 	if (m_flowInterop) NvFlowReleaseInterop(m_flowInterop);
 
@@ -743,10 +789,16 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 	m_gridDesc.initialLocation = *(NvFlowFloat3*)(&FlowOrigin.X);
 
 	bool multiAdapterEnabled = FlowGridSceneProxy->FlowGridProperties.bMultiAdapterEnabled;
+	bool asyncComputeEnabled = FlowGridSceneProxy->FlowGridProperties.bAsyncComputeEnabled;
 	m_multiAdapter = multiAdapterEnabled && m_context->m_multiGPUActive;
+	m_asyncCompute = !m_multiAdapter && asyncComputeEnabled && m_context->m_asyncComputeActive;
 	if (UFlowGridAsset::sGlobalMultiGPU > 1)
 	{
 		m_multiAdapter = m_context->m_multiGPUActive;
+	}
+	if (UFlowGridAsset::sGlobalAsyncCompute > 1)
+	{
+		m_asyncCompute = !m_multiAdapter && m_context->m_asyncComputeActive;
 	}
 
 	if (m_multiAdapter)
@@ -754,6 +806,13 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 		m_renderContext = m_context->m_renderContext;
 		m_gridContext = m_context->m_gridContext;
 		m_gridCopyContext = m_context->m_gridCopyContext;
+		m_renderCopyContext = m_context->m_renderCopyContext;
+	}
+	else if (m_asyncCompute)
+	{
+		m_renderContext = m_context->m_renderContext;
+		m_gridContext = m_context->m_renderDeviceComputeContext;
+		m_gridCopyContext = m_context->m_renderCopyContext;
 		m_renderCopyContext = m_context->m_renderCopyContext;
 	}
 	else
@@ -778,6 +837,10 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 	if (m_multiAdapter)
 	{
 		proxyDesc.proxyType = eNvFlowGridProxyTypeMultiGPU;
+	}
+	else if (m_asyncCompute)
+	{
+		proxyDesc.proxyType = eNvFlowGridProxyTypeInterQueue;
 	}
 
 	m_gridProxy = NvFlowCreateGridProxy(&proxyDesc);
@@ -1054,16 +1117,24 @@ const NvFlow::Scene::MaterialData& NvFlow::Scene::updateMaterial(FlowMaterialKey
 
 void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
 {
-	bool shouldUpdateGrid = (m_context->m_framesInFlight < m_context->m_maxFramesInFlight);
+	bool shouldUpdateGrid = true;
+	if (m_multiAdapter)
+	{
+		shouldUpdateGrid = (m_context->m_framesInFlightMultiGPU < m_context->m_maxFramesInFlight);
+	}
+	else if (m_asyncCompute)
+	{
+		shouldUpdateGrid = (m_context->m_framesInFlightAsyncCompute < m_context->m_maxFramesInFlight);
+	}
 
 	if (shouldUpdateGrid)
 	{
-		NvFlowContextFlushRequestPush(m_context->m_gridContext);
-		NvFlowContextFlushRequestPush(m_context->m_gridCopyContext);
-		NvFlowContextFlushRequestPush(m_context->m_renderCopyContext);
+		NvFlowContextFlushRequestPush(m_gridContext);
+		NvFlowContextFlushRequestPush(m_gridCopyContext);
+		NvFlowContextFlushRequestPush(m_renderCopyContext);
 	}
 
-	shouldFlush = shouldFlush || (m_multiAdapter && shouldUpdateGrid);
+	shouldFlush = shouldFlush || (m_multiAdapter && shouldUpdateGrid) || (m_asyncCompute && shouldUpdateGrid);
 
 	m_updateSubstep_dt = dt;
 

@@ -75,6 +75,10 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	uint32		bMultiAdapterEnabled : 1;
 
+	/** If true, async compute is used if supported*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
+	uint32		bAsyncComputeEnabled : 1;
+
 	/** If true, higher res density and volume rendering are disabled */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)
 	uint32		bParticleModeEnabled : 1;
@@ -166,6 +170,7 @@ class UFlowGridAsset : public UObject
 	static uint32 sGlobalMode;
 	static bool sGlobalDebugDrawShadow;
 	static uint32 sGlobalMultiGPU;
+	static uint32 sGlobalAsyncCompute;
 	static bool sGlobalMultiGPUResetRequest;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
