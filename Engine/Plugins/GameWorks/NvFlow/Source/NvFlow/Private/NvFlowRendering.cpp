@@ -1127,13 +1127,6 @@ void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt
 		shouldUpdateGrid = (m_context->m_framesInFlightAsyncCompute < m_context->m_maxFramesInFlight);
 	}
 
-	if (shouldUpdateGrid)
-	{
-		NvFlowContextFlushRequestPush(m_gridContext);
-		NvFlowContextFlushRequestPush(m_gridCopyContext);
-		NvFlowContextFlushRequestPush(m_renderCopyContext);
-	}
-
 	shouldFlush = shouldFlush || (m_multiAdapter && shouldUpdateGrid) || (m_asyncCompute && shouldUpdateGrid);
 
 	m_updateSubstep_dt = dt;
@@ -1152,6 +1145,10 @@ void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt
 void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateParams* updateParams)
 {
 	auto& appctx = *RHICmdCtx;
+
+	NvFlowContextFlushRequestPush(m_gridContext);
+	NvFlowContextFlushRequestPush(m_gridCopyContext);
+	NvFlowContextFlushRequestPush(m_renderCopyContext);
 
 	float dt = m_updateSubstep_dt;
 
