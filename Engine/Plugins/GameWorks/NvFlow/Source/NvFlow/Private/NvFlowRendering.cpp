@@ -220,6 +220,9 @@ namespace NvFlow
 		float m_shadowMaxResidentScale;
 		uint32 m_shadowResolution;
 
+		FMatrix m_shadowViewMatrix;
+		bool m_shadowViewMatrixValid = false;
+
 		NvFlowGridExport* m_gridExport4Render = nullptr;
 
 		NvFlowGridDesc m_gridDesc;
@@ -1189,6 +1192,25 @@ void NvFlow::Scene::finilizeUpdateDeferred(IRHICommandContext* RHICmdCtx)
 
 void NvFlow::Scene::updateGridView(FRHICommandListImmediate& RHICmdList)
 {
+	if (FlowGridSceneProxy)
+	{
+		FLightSceneInfo* DirectionalLight = nullptr;
+		auto RenderScene = FlowGridSceneProxy->GetScene().GetRenderScene();
+		if (RenderScene)
+		{
+			DirectionalLight = RenderScene->SimpleDirectionalLight;
+		}
+		if (DirectionalLight)
+		{
+			m_shadowViewMatrix = DirectionalLight->Proxy->GetWorldToLight();
+			m_shadowViewMatrixValid = true;
+		}
+		else
+		{
+			m_shadowViewMatrixValid = false;
+		}
+	}
+
 	RHICmdList.NvFlowWork(updateGridViewCallback, this, 0u);
 }
 
@@ -1232,16 +1254,7 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 	}
 #endif
 
-	FLightSceneInfo* DirectionalLight = nullptr;
-
-	auto RenderScene = FlowGridSceneProxy->GetScene().GetRenderScene();
-	if (RenderScene)
-	{
-		DirectionalLight = RenderScene->SimpleDirectionalLight;
-	}
-
-
-	if (Properties.RenderParams.bVolumeShadowEnabled && DirectionalLight != nullptr)
+	if (Properties.RenderParams.bVolumeShadowEnabled && m_shadowViewMatrixValid)
 	{
 		if (m_volumeShadow == nullptr || 
 			m_shadowResolution != Properties.RenderParams.ShadowResolution ||
@@ -1277,7 +1290,7 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 		shadowParams.shadowBlendCompMask = Properties.RenderParams.ShadowBlendCompMask;
 		shadowParams.shadowBlendBias = Properties.RenderParams.ShadowBlendBias;
 
-		FMatrix ShadowViewMatrix = DirectionalLight->Proxy->GetWorldToLight();
+		FMatrix ShadowViewMatrix = m_shadowViewMatrix;
 		ShadowViewMatrix *= FMatrix(
 			FPlane(0, 0, 1, 0),
 			FPlane(1, 0, 0, 0),
