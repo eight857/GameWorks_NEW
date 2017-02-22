@@ -24,10 +24,6 @@ enum EFlowStats
 	STAT_Flow_GridCount,
 	STAT_Flow_EmitterCount,
 	STAT_Flow_ColliderCount,
-	STAT_Flow_DensityBlockCount,
-	STAT_Flow_DensityBlockMax,
-	STAT_Flow_VelocityBlockCount,
-	STAT_Flow_VelocityBlockMax
 };
 
 DECLARE_CYCLE_STAT_EXTERN(TEXT("RenderThread, Simulate Grids"), STAT_Flow_SimulateGrids, STATGROUP_Flow, );
