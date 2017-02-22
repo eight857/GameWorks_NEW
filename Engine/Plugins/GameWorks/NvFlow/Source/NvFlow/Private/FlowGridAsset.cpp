@@ -102,6 +102,11 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 
 	ShadowBlendCompMask = { 0.0f, 0.0f, 0.0f, 0.0f };
 	ShadowBlendBias = 1.0f;
+
+	ShadowResolution = EFSR_High;
+	ShadowFrustrumScale = 1.0f;
+	ShadowMinResidentScale = 0.25f * (1.f / 64.f);
+	ShadowMaxResidentScale = 4.f * 0.25f * (1.f / 64.f);
 }
 
 // NvFlow end

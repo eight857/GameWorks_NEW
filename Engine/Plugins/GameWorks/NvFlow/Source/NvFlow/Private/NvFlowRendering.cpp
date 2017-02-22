@@ -217,6 +217,10 @@ namespace NvFlow
 		NvFlowVolumeShadow* m_volumeShadow = nullptr;
 		NvFlowRenderMaterialPool* m_renderMaterialPool = nullptr;
 
+		float m_shadowMinResidentScale;
+		float m_shadowMaxResidentScale;
+		uint32 m_shadowResolution;
+
 		NvFlowGridExport* m_gridExport4Render = nullptr;
 
 		NvFlowGridDesc m_gridDesc;
@@ -1236,19 +1240,30 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 
 	if (Properties.RenderParams.bVolumeShadowEnabled && DirectionalLight != nullptr)
 	{
-		if (m_volumeShadow == nullptr)
+		if (m_volumeShadow == nullptr || 
+			m_shadowResolution != Properties.RenderParams.ShadowResolution ||
+			m_shadowMinResidentScale != Properties.RenderParams.ShadowMinResidentScale ||
+			m_shadowMaxResidentScale != Properties.RenderParams.ShadowMaxResidentScale)
 		{
+			if (m_volumeShadow != nullptr)
+			{
+				NvFlowReleaseVolumeShadow(m_volumeShadow);
+			}
+
 			NvFlowVolumeShadowDesc volumeShadowDesc;
 			volumeShadowDesc.gridExport = m_gridExport4Render;
-			volumeShadowDesc.mapWidth = 4 * 256u;
-			volumeShadowDesc.mapHeight = 4 * 256u;
-			volumeShadowDesc.mapDepth = 4 * 256u;
-			volumeShadowDesc.minResidentScale = 0.25f * (1.f / 64.f);
-			volumeShadowDesc.maxResidentScale = 4.f * 0.25f * (1.f / 64.f);
+			volumeShadowDesc.mapWidth = Properties.RenderParams.ShadowResolution;
+			volumeShadowDesc.mapHeight = Properties.RenderParams.ShadowResolution;
+			volumeShadowDesc.mapDepth = Properties.RenderParams.ShadowResolution;
+			volumeShadowDesc.minResidentScale = Properties.RenderParams.ShadowMinResidentScale;
+			volumeShadowDesc.maxResidentScale = Properties.RenderParams.ShadowMaxResidentScale;
 
 			m_volumeShadow = NvFlowCreateVolumeShadow(m_renderContext, &volumeShadowDesc);
-		}
 
+			m_shadowResolution = Properties.RenderParams.ShadowResolution;
+			m_shadowMinResidentScale = Properties.RenderParams.ShadowMinResidentScale;
+			m_shadowMaxResidentScale = Properties.RenderParams.ShadowMaxResidentScale;
+		}
 
 		NvFlowVolumeShadowParams shadowParams;
 		shadowParams.materialPool = m_renderMaterialPool;
@@ -1275,9 +1290,9 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 
 		FVector Extent = BoundBox.GetExtent();
 
-		float ExtentX = FVector::DotProduct(ShadowViewMatrix.GetColumn(0).GetAbs(), Extent);
-		float ExtentY = FVector::DotProduct(ShadowViewMatrix.GetColumn(1).GetAbs(), Extent);
-		float ExtentZ = FVector::DotProduct(ShadowViewMatrix.GetColumn(2).GetAbs(), Extent);
+		float ExtentX = FVector::DotProduct(ShadowViewMatrix.GetColumn(0).GetAbs(), Extent) * Properties.RenderParams.ShadowFrustrumScale;
+		float ExtentY = FVector::DotProduct(ShadowViewMatrix.GetColumn(1).GetAbs(), Extent) * Properties.RenderParams.ShadowFrustrumScale;
+		float ExtentZ = FVector::DotProduct(ShadowViewMatrix.GetColumn(2).GetAbs(), Extent) * Properties.RenderParams.ShadowFrustrumScale;
 
 		FMatrix ShadowProjMatrix = FMatrix::Identity;
 		ShadowProjMatrix.M[0][0] = 1.0f / ExtentX;

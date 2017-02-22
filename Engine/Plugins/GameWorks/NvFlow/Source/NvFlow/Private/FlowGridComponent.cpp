@@ -1007,6 +1007,11 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		CopyRenderCompMask(FlowGridAssetRef->ShadowBlendCompMask, FlowGridProperties.RenderParams.ShadowBlendCompMask);
 		FlowGridProperties.RenderParams.ShadowBlendBias = FlowGridAssetRef->ShadowBlendBias;
 
+		FlowGridProperties.RenderParams.ShadowResolution = 1u << FlowGridAssetRef->ShadowResolution;
+		FlowGridProperties.RenderParams.ShadowFrustrumScale = FlowGridAssetRef->ShadowFrustrumScale;
+		FlowGridProperties.RenderParams.ShadowMinResidentScale = FlowGridAssetRef->ShadowMinResidentScale;
+		FlowGridProperties.RenderParams.ShadowMaxResidentScale = FlowGridAssetRef->ShadowMaxResidentScale;
+
 		for (auto It = MaterialsMap.CreateIterator(); It; ++It)
 		{
 			It.Value().bUpdated = false;

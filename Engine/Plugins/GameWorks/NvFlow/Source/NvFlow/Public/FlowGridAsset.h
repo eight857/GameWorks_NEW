@@ -36,6 +36,16 @@ enum EFlowRenderChannel
 	EFRC_MAX,
 };
 
+UENUM()
+enum EFlowShadowResolution
+{
+	EFSR_Low = 8 UMETA(DisplayName = "Low-256"),
+	EFSR_Medium = 9 UMETA(DisplayName = "Medium-512"),
+	EFSR_High = 10 UMETA(DisplayName = "High-1024"),
+	EFSR_Ultra = 11 UMETA(DisplayName = "Ultra-2048"),
+};
+
+
 UCLASS(BlueprintType, hidecategories=object, MinimalAPI)
 class UFlowGridAsset : public UObject
 {
@@ -172,6 +182,18 @@ class UFlowGridAsset : public UObject
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
 	float		ShadowBlendBias;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
+	TEnumAsByte<EFlowShadowResolution> ShadowResolution;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow", meta = (UIMin = 1.0f, UIMax = 2.0f))
+	float		ShadowFrustrumScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
+	float		ShadowMinResidentScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
+	float		ShadowMaxResidentScale;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
 	uint32		bDistanceFieldCollisionEnabled : 1;
