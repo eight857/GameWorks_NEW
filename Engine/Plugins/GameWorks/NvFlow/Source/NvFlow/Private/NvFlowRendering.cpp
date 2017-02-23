@@ -800,6 +800,11 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 	{
 		m_asyncCompute = !m_multiAdapter && m_context->m_asyncComputeActive;
 	}
+	if (UFlowGridAsset::sGlobalAsyncCompute > 2 && UFlowGridAsset::sGlobalAsyncCompute > UFlowGridAsset::sGlobalMultiGPU)
+	{
+		m_multiAdapter = false;
+		m_asyncCompute = m_context->m_asyncComputeActive;
+	}
 
 	if (m_multiAdapter)
 	{
