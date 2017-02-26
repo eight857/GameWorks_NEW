@@ -1003,6 +1003,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			GridParams.debugVisFlags = eNvFlowGridDebugVisDisabled;
 			FlowGridProperties.RenderParams.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
 		}
+		
+		FlowGridProperties.RenderParams.bEstimateDepth = FlowGridAssetRef->bEstimateDepth;
 
 		FlowGridProperties.RenderParams.bVolumeShadowEnabled = FlowGridAssetRef->bVolumeShadowEnabled;
 		FlowGridProperties.RenderParams.ShadowIntensityScale = FlowGridAssetRef->ShadowIntensityScale;

@@ -58,6 +58,8 @@ struct FNvFlowCommands
 	FAutoConsoleCommand ConsoleCommandFlowVisShadow;
 	FAutoConsoleCommand ConsoleCommandFlowMultiGPU;
 	FAutoConsoleCommand ConsoleCommandFlowAsyncCompute;
+	FAutoConsoleCommand ConsoleCommandFlowDepth;
+	FAutoConsoleCommand ConsoleCommandFlowDepthDebugDraw;
 
 	static const uint32 debugVisDefault = eNvFlowGridDebugVisBlocks | eNvFlowGridDebugVisEmitBounds | eNvFlowGridDebugVisShapesSimple;
 
@@ -119,6 +121,16 @@ struct FNvFlowCommands
 		UFlowGridAsset::sGlobalMultiGPUResetRequest = true;
 	}
 
+	void CommandFlowDepth(const TArray<FString>& Args)
+	{
+		UFlowGridAsset::sGlobalDepth = (Args.Num() >= 1) ? FCString::Atoi(*Args[0]) : ((UFlowGridAsset::sGlobalDepth + 1) % 3);
+	}
+
+	void CommandFlowDepthDebugDraw(const TArray<FString>& Args)
+	{
+		UFlowGridAsset::sGlobalDepthDebugDraw = (Args.Num() >= 1) ? FCString::Atoi(*Args[0]) : ((UFlowGridAsset::sGlobalDepthDebugDraw + 1) % 3);
+	}
+
 	FNvFlowCommands() :
 		ConsoleCommandFlowVis(
 			TEXT("flowvis"),
@@ -154,6 +166,16 @@ struct FNvFlowCommands
 			TEXT("flowasynccompute"),
 			*NSLOCTEXT("Flow", "CommandText_FlowAsyncCompute", "Enable/Disable Flow async compute").ToString(),
 			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowAsyncCompute)
+		),
+		ConsoleCommandFlowDepth(
+			TEXT("flowdepth"),
+			*NSLOCTEXT("Flow", "CommandText_FlowDepth", "Enable/Disable Flow depth").ToString(),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowDepth)
+		),
+		ConsoleCommandFlowDepthDebugDraw(
+			TEXT("flowdepthdebugdraw"),
+			*NSLOCTEXT("Flow", "CommandText_FlowDepthDebugDraw", "Enable/Disable Flow depth debug visualization").ToString(),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FNvFlowCommands::CommandFlowDepthDebugDraw)
 		)
 		{
 	}

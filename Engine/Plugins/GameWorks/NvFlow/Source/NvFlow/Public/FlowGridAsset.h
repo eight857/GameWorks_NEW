@@ -164,6 +164,11 @@ class UFlowGridAsset : public UObject
 	/** Debug rendering*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")
 	uint32		bDebugWireframe : 1;
+
+	/** Depth Estimation*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")
+	uint32		bEstimateDepth : 1;
+
 	static bool sGlobalDebugDraw;
 	static uint32 sGlobalRenderChannel;
 	static uint32 sGlobalRenderMode;
@@ -172,6 +177,8 @@ class UFlowGridAsset : public UObject
 	static uint32 sGlobalMultiGPU;
 	static uint32 sGlobalAsyncCompute;
 	static bool sGlobalMultiGPUResetRequest;
+	static uint32 sGlobalDepth;
+	static uint32 sGlobalDepthDebugDraw;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
 	uint32		bVolumeShadowEnabled : 1;

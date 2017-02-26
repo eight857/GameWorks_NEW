@@ -16,6 +16,8 @@ bool UFlowGridAsset::sGlobalDebugDrawShadow = false;
 uint32 UFlowGridAsset::sGlobalMultiGPU = 1;
 uint32 UFlowGridAsset::sGlobalAsyncCompute = 0;
 bool UFlowGridAsset::sGlobalMultiGPUResetRequest = false;
+uint32 UFlowGridAsset::sGlobalDepth = 1;
+uint32 UFlowGridAsset::sGlobalDepthDebugDraw = 0;
 
 UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -53,6 +55,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	MaxScreenPercentage = 1.f;
 	MinScreenPercentage = 0.5f;
 	bDebugWireframe = FlowVolumeRenderParams.debugMode;
+	bEstimateDepth = false;
 
 	//Collision
 	FCollisionResponseParams FlowResponseParams;

@@ -877,6 +877,16 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 	m_renderParams.debugMode = Properties.RenderParams.bDebugWireframe;
 	m_renderParams.materialPool = m_renderMaterialPool;
 
+	if (UFlowGridAsset::sGlobalDepth > 0)
+	{
+		m_renderParams.estimateDepth = Properties.RenderParams.bEstimateDepth || (UFlowGridAsset::sGlobalDepth > 1);
+	}
+	else
+	{
+		m_renderParams.estimateDepth = false;
+	}
+	m_renderParams.estimateDepthDebugMode = (UFlowGridAsset::sGlobalDepthDebugDraw > 0);
+
 #if NVFLOW_ADAPTIVE
 	// adaptive screen percentage
 	bool bHMDConnected = (GEngine && GEngine->HMDDevice.IsValid() && GEngine->HMDDevice->IsHMDConnected());
