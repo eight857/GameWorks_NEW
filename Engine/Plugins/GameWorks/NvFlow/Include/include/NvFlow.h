@@ -1002,6 +1002,9 @@ struct NvFlowVolumeRenderParams
 
 	bool smoothColorUpsample;						//!< If true, color upsample will do extra work to remove jaggies around depth discontinuities
 
+	bool estimateDepth;								//!< If true, generate nominal depth, and write to scene depth buffer
+	bool estimateDepthDebugMode;					//!< If true, visualize depth estimate
+
 	NvFlowVolumeRenderMultiResParams multiRes;			//!< Multires parameters
 
 	NvFlowVolumeRenderLMSParams lensMatchedShading;		//!< Lens matched shading parameters
@@ -1119,6 +1122,61 @@ NV_FLOW_API NvFlowGridExport* NvFlowVolumeShadowGetGridExport(NvFlowVolumeShadow
 NV_FLOW_API void NvFlowVolumeShadowDebugRender(NvFlowVolumeShadow* volumeShadow, NvFlowContext* context, const NvFlowVolumeShadowDebugRenderParams* params);
 
 NV_FLOW_API void NvFlowVolumeShadowGetStats(NvFlowVolumeShadow* volumeShadow, NvFlowVolumeShadowStats* stats);
+
+///@}
+// -------------------------- NvFlowCrossSection -------------------------------
+///@defgroup NvFlowCrossSection
+///@{
+
+//! Object to visualize cross section from gridView
+struct NvFlowCrossSection;
+
+struct NvFlowCrossSectionDesc
+{
+	NvFlowGridExport* gridExport;
+};
+
+struct NvFlowCrossSectionParams
+{
+	NvFlowGridExport* gridExport;				//!< gridExport used for final rendering
+	NvFlowGridExport* gridExportDebugVis;		//!< gridExport direct from simulation
+
+	NvFlowFloat4x4 projectionMatrix;			//!< Projection matrix, row major
+	NvFlowFloat4x4 viewMatrix;					//!< View matrix, row major
+
+	NvFlowDepthStencilView* depthStencilView;	//!< Depth stencil view for depth testing with ray march
+	NvFlowRenderTargetView* renderTargetView;	//!< Render target view to composite ray marched result against
+
+	NvFlowRenderMaterialPool* materialPool;		//!< Pool of materials to look for matches to GridMaterials
+
+	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
+	NvFlowGridTextureChannel renderChannel;		//!< GridView channel to render
+
+	NvFlowUint crossSectionAxis;				//!< Cross section to visualize, 0 to 2 range
+	NvFlowFloat3 crossSectionPosition;			//!< Offset in grid NDC for view
+	float crossSectionScale;					//!< Scale on cross section to allow zooming
+
+	float intensityScale;						//!< scales the visualization intensity
+
+	bool pointFilter;							//!< If true, point filter so the cells are easy to see
+
+	bool velocityVectors;						//!< If true, overlay geometric velocity vectors
+	float velocityScale;						//!< Scale to adjust vector length as a function of velocity
+	float vectorLengthScale;					//!< Controls maximum velocity vector line length
+
+	bool fullscreen;							//!< If true, covers entire viewport, if false, top right corner
+
+	NvFlowFloat4 lineColor;						//!< Color to use for any lines drawn
+	NvFlowFloat4 backgroundColor;				//!< Background color
+};
+
+NV_FLOW_API void NvFlowCrossSectionParamsDefaults(NvFlowCrossSectionParams* params);
+
+NV_FLOW_API NvFlowCrossSection* NvFlowCreateCrossSection(NvFlowContext* context, const NvFlowCrossSectionDesc* desc);
+
+NV_FLOW_API void NvFlowReleaseCrossSection(NvFlowCrossSection* crossSection);
+
+NV_FLOW_API void NvFlowCrossSectionRender(NvFlowCrossSection* crossSection, NvFlowContext* context, const NvFlowCrossSectionParams* params);
 
 ///@}
 // -------------------------- NvFlowGridProxy -------------------------------
