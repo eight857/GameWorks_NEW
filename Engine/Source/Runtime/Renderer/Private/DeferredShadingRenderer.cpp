@@ -942,6 +942,13 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 	SceneContext.ResolveSceneDepthTexture(RHICmdList, FResolveRect(0, 0, ViewFamily.FamilySizeX, ViewFamily.FamilySizeY));
 	SceneContext.ResolveSceneDepthToAuxiliaryTexture(RHICmdList);
 
+	// NvFlow begin
+	if (GRendererNvFlowHooks)
+	{
+		GRendererNvFlowHooks->NvFlowDoDepth(RHICmdList, Views);
+	}
+	// NvFlow end
+
 	bool bOcclusionAfterBasePass = bIsOcclusionTesting && !bOcclusionBeforeBasePass;
 	bool bHZBAfterBasePass = !bHZBBeforeBasePass;
 	RenderOcclusion(RHICmdList, bOcclusionAfterBasePass, bHZBAfterBasePass);

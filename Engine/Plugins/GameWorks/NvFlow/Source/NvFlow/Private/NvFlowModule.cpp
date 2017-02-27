@@ -12,6 +12,7 @@ bool NvFlowUsesGlobalDistanceField();
 void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData);
 bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo);
 void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
+void NvFlowDoDepth(FRHICommandListImmediate& RHICmdList, const TArray<FViewInfo>& Views);
 uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList);
 #endif
 // NvFlow end
@@ -36,6 +37,11 @@ struct RendererHooksNvFlowImpl : public RendererHooksNvFlow
 	virtual void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
 	{
 		::NvFlowDoRenderFinish(RHICmdList, View);
+	}
+
+	virtual void NvFlowDoDepth(FRHICommandListImmediate& RHICmdList, const TArray<FViewInfo>& Views)
+	{
+		::NvFlowDoDepth(RHICmdList, Views);
 	}
 };
 RendererHooksNvFlowImpl GRendererHooksNvFlowImpl;
