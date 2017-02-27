@@ -1026,6 +1026,15 @@ struct NvFlowVolumeLightingParams
 	NvFlowGridTextureChannel renderChannel;		//!< GridView channel to render
 };
 
+//! Parameters for Flow scene depth capture
+struct NvFlowVolumeRenderDepthCaptureParams
+{
+	NvFlowFloat4x4 projectionMatrix;			//!< Projection matrix, row major
+	NvFlowFloat4x4 viewMatrix;					//!< View matrix, row major
+
+	NvFlowDepthStencilView* depthStencilView;	//!< Depth stencil view for depth testing with ray march
+};
+
 /**
 * Lights a Flow grid view to produce another grid view that can be ray marched raw.
 *
@@ -1048,6 +1057,25 @@ NV_FLOW_API NvFlowGridExport* NvFlowVolumeRenderLightGridExport(NvFlowVolumeRend
  * @param[in] params Parameters for rendering.
  */
 NV_FLOW_API void NvFlowVolumeRenderGridExport(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridExport* gridExport, const NvFlowVolumeRenderParams* params);
+
+/**
+* Captures the scene depth for later use.
+*
+* @param[in] volumeRender The Flow volume render object to perform the rendering.
+* @param[in] context The Flow context that created the Flow volume render object.
+* @param[in] params Parameters for scene depth capture.
+*/
+NV_FLOW_API void NvFlowVolumeRenderCaptureDepth(NvFlowVolumeRender* volumeRender, NvFlowContext* context, const NvFlowVolumeRenderDepthCaptureParams* params);
+
+/**
+* Renders a Flow grid export depth.
+*
+* @param[in] volumeRender The Flow volume render object to perform the rendering.
+* @param[in] context The Flow context that created the Flow volume render object.
+* @param[in] gridView The grid view to ray march.
+* @param[in] params Parameters for rendering.
+*/
+NV_FLOW_API void NvFlowVolumeRenderGridExportRenderDepth(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridExport* gridExport, const NvFlowVolumeRenderParams* params);
 
 /**
  * Renders a Flow 3D texture.
