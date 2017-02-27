@@ -1164,10 +1164,13 @@ struct NvFlowCrossSectionParams
 	float velocityScale;						//!< Scale to adjust vector length as a function of velocity
 	float vectorLengthScale;					//!< Controls maximum velocity vector line length
 
+	bool outlineCells;							//!< Draw lines around cell boundaries
+
 	bool fullscreen;							//!< If true, covers entire viewport, if false, top right corner
 
 	NvFlowFloat4 lineColor;						//!< Color to use for any lines drawn
 	NvFlowFloat4 backgroundColor;				//!< Background color
+	NvFlowFloat4 cellColor;						//!< Color for cell outline
 };
 
 NV_FLOW_API void NvFlowCrossSectionParamsDefaults(NvFlowCrossSectionParams* params);
