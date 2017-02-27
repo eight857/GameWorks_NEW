@@ -434,6 +434,15 @@ static TAutoConsoleVariable<int32> CVarOcclusionQueryLocation(
 	TEXT("0: After BasePass.")
 	TEXT("1: After EarlyZPass, but before BasePass."));
 
+// NvFlow begin
+static TAutoConsoleVariable<int32> CVarNvFlowHZB(
+	TEXT("r.NvFlowHZB"),
+	0,
+	TEXT("If nonzero, enables late rendering of HZB")
+	TEXT("0: Disabled.")
+	TEXT("1: Enabled."));
+// NvFlow end
+
 void FDeferredShadingSceneRenderer::RenderOcclusion(FRHICommandListImmediate& RHICmdList, bool bRenderQueries, bool bRenderHZB)
 {		
 	if (bRenderQueries || bRenderHZB)
@@ -468,7 +477,12 @@ void FDeferredShadingSceneRenderer::RenderOcclusion(FRHICommandListImmediate& RH
 				const uint32 bSSR = ShouldRenderScreenSpaceReflections(View);
 				const bool bSSAO = ShouldRenderScreenSpaceAmbientOcclusion(View);
 
-				if (bSSAO || bHZBOcclusion || bSSR)
+				// NvFlow begin
+				const uint32 bNvFlowSSR = (CVarNvFlowHZB.GetValueOnRenderThread() != 0) ?
+					((!bSSAO && !bHZBOcclusion && bSSR) ? 0u : bSSR) : (bSSR);
+				// NvFlow end
+
+				if (bSSAO || bHZBOcclusion || /*bSSR*/bNvFlowSSR)
 				{
 					BuildHZB(RHICmdList, Views[ViewIndex]);
 				}
@@ -507,6 +521,56 @@ void FDeferredShadingSceneRenderer::RenderOcclusion(FRHICommandListImmediate& RH
 		}
 	}
 }
+
+// NvFlow begin
+void FDeferredShadingSceneRenderer::NvFlowRenderHZBPostTranslucency(FRHICommandListImmediate& RHICmdList)
+{
+	bool bShouldUpdateHZB = false;
+	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+	{
+		FViewInfo& View = Views[ViewIndex];
+		FSceneViewState* ViewState = (FSceneViewState*)View.State;
+
+		const uint32 bSSR = ShouldRenderScreenSpaceReflections(View);
+
+		if (bSSR)
+		{
+			bShouldUpdateHZB = true;
+			break;
+		}
+	}
+	if (bShouldUpdateHZB)
+	{
+		FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
+
+		SCOPED_GPU_STAT(RHICmdList, Stat_GPU_HZB);
+
+		{
+			// Update the quarter-sized depth buffer with the current contents of the scene depth texture.
+			// This needs to happen before occlusion tests, which makes use of the small depth buffer.
+			SCOPE_CYCLE_COUNTER(STAT_FDeferredShadingSceneRenderer_UpdateDownsampledDepthSurface);
+			UpdateDownsampledDepthSurface(RHICmdList);
+		}
+
+		{
+			RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, SceneContext.GetSceneDepthSurface());
+
+			for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+			{
+				FViewInfo& View = Views[ViewIndex];
+				FSceneViewState* ViewState = (FSceneViewState*)View.State;
+
+				const uint32 bSSR = ShouldRenderScreenSpaceReflections(View);
+
+				if (bSSR)
+				{
+					BuildHZB(RHICmdList, Views[ViewIndex]);
+				}
+			}
+		}
+	}
+}
+// NvFlow end
 
 // The render thread is involved in sending stuff to the RHI, so we will periodically service that queue
 void ServiceLocalQueue()
@@ -1202,6 +1266,13 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		}
 		RHICmdList.SetCurrentStat(GET_STATID(STAT_CLM_AfterTranslucency));
 	}
+
+	// NvFlow begin
+	if (ViewFamily.EngineShowFlags.Translucency && (CVarNvFlowHZB.GetValueOnRenderThread() != 0))
+	{
+		NvFlowRenderHZBPostTranslucency(RHICmdList);
+	}
+	// NvFlow end
 
 	if (ViewFamily.EngineShowFlags.LightShafts)
 	{

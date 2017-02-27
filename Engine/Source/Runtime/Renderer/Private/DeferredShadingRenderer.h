@@ -104,6 +104,10 @@ public:
 
 	void RenderOcclusion(FRHICommandListImmediate& RHICmdList, bool bRenderQueries, bool bRenderHZB);
 
+	// NvFlow begin
+	void NvFlowRenderHZBPostTranslucency(FRHICommandListImmediate& RHICmdList);
+	// NvFlow end
+
 	/** Renders the view family. */
 	virtual void Render(FRHICommandListImmediate& RHICmdList) override;
 
