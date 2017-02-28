@@ -206,6 +206,11 @@ void FNvFlowModule::StartupModule()
 
 	GRendererNvFlowHooks = &GRendererHooksNvFlowImpl;
 	GGridAccessNvFlowHooks = &GGridAccessHooksNvFlowImpl;
+
+	if (!IsRunningDedicatedServer())
+	{
+		AHUD::OnShowDebugInfo.AddStatic(&FNvFlowModule::OnShowDebugInfo);
+	}
 }
 
 void FNvFlowModule::ShutdownModule()
@@ -214,5 +219,18 @@ void FNvFlowModule::ShutdownModule()
 	{
 		FPlatformProcess::FreeDllHandle(FlowModule);
 		FlowModule = nullptr;
+	}
+}
+
+void FNvFlowModule::OnShowDebugInfo(AHUD* HUD, UCanvas* Canvas, const FDebugDisplayInfo& DisplayInfo, float& YL, float& YPos)
+{
+	static const FName NAME_NvFlow("NvFlow");
+	if (Canvas && HUD->ShouldDisplayDebug(NAME_NvFlow))
+	{
+		FDisplayDebugManager& DisplayDebugManager = Canvas->DisplayDebugManager;
+		DisplayDebugManager.SetFont(GEngine->GetSmallFont());
+		DisplayDebugManager.SetDrawColor(FColor::Red);
+		DisplayDebugManager.DrawString(FString(TEXT("===== NvFlow =====")));
+
 	}
 }
