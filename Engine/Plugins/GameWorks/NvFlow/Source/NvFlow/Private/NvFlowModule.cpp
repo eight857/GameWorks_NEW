@@ -12,7 +12,8 @@ bool NvFlowUsesGlobalDistanceField();
 void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData);
 bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo);
 void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
-void NvFlowDoDepth(FRHICommandListImmediate& RHICmdList, const TArray<FViewInfo>& Views);
+bool NvFlowShouldDoPreComposite(FRHICommandListImmediate& RHICmdList);
+void NvFlowDoPreComposite(FRHICommandListImmediate& RHICmdList, const FViewInfo& View);
 uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList);
 #endif
 // NvFlow end
@@ -39,9 +40,14 @@ struct RendererHooksNvFlowImpl : public RendererHooksNvFlow
 		::NvFlowDoRenderFinish(RHICmdList, View);
 	}
 
-	virtual void NvFlowDoDepth(FRHICommandListImmediate& RHICmdList, const TArray<FViewInfo>& Views)
+	virtual bool NvFlowShouldDoPreComposite(FRHICommandListImmediate& RHICmdList)
 	{
-		::NvFlowDoDepth(RHICmdList, Views);
+		return ::NvFlowShouldDoPreComposite(RHICmdList);
+	}
+
+	virtual void NvFlowDoPreComposite(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
+	{
+		::NvFlowDoPreComposite(RHICmdList, View);
 	}
 };
 RendererHooksNvFlowImpl GRendererHooksNvFlowImpl;

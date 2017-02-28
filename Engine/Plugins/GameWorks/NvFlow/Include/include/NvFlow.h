@@ -1002,8 +1002,12 @@ struct NvFlowVolumeRenderParams
 
 	bool smoothColorUpsample;						//!< If true, color upsample will do extra work to remove jaggies around depth discontinuities
 
-	bool estimateDepth;								//!< If true, generate nominal depth, and write to scene depth buffer
-	bool estimateDepthDebugMode;					//!< If true, visualize depth estimate
+	bool preColorCompositeOnly;						//!< If true, do all operations except color composite
+	bool colorCompositeOnly;						//!< If true, only apply color composite
+	bool generateDepth;								//!< If true, generate nominal depth, and write to scene depth buffer
+	bool generateDepthDebugMode;					//!< If true, visualize depth estimate
+	float depthAlphaThreshold;						//!< Minimum alpha to trigger depth write
+	float depthIntensityThreshold;					//!< Intensity on R or G or B to trigger depth write
 
 	NvFlowVolumeRenderMultiResParams multiRes;			//!< Multires parameters
 
@@ -1024,15 +1028,6 @@ struct NvFlowVolumeLightingParams
 
 	NvFlowVolumeRenderMode renderMode;			//!< Render mode, see NvFlowVolumeRenderMode
 	NvFlowGridTextureChannel renderChannel;		//!< GridView channel to render
-};
-
-//! Parameters for Flow scene depth capture
-struct NvFlowVolumeRenderDepthCaptureParams
-{
-	NvFlowFloat4x4 projectionMatrix;			//!< Projection matrix, row major
-	NvFlowFloat4x4 viewMatrix;					//!< View matrix, row major
-
-	NvFlowDepthStencilView* depthStencilView;	//!< Depth stencil view for depth testing with ray march
 };
 
 /**
@@ -1057,25 +1052,6 @@ NV_FLOW_API NvFlowGridExport* NvFlowVolumeRenderLightGridExport(NvFlowVolumeRend
  * @param[in] params Parameters for rendering.
  */
 NV_FLOW_API void NvFlowVolumeRenderGridExport(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridExport* gridExport, const NvFlowVolumeRenderParams* params);
-
-/**
-* Captures the scene depth for later use.
-*
-* @param[in] volumeRender The Flow volume render object to perform the rendering.
-* @param[in] context The Flow context that created the Flow volume render object.
-* @param[in] params Parameters for scene depth capture.
-*/
-NV_FLOW_API void NvFlowVolumeRenderCaptureDepth(NvFlowVolumeRender* volumeRender, NvFlowContext* context, const NvFlowVolumeRenderDepthCaptureParams* params);
-
-/**
-* Renders a Flow grid export depth.
-*
-* @param[in] volumeRender The Flow volume render object to perform the rendering.
-* @param[in] context The Flow context that created the Flow volume render object.
-* @param[in] gridView The grid view to ray march.
-* @param[in] params Parameters for rendering.
-*/
-NV_FLOW_API void NvFlowVolumeRenderGridExportRenderDepth(NvFlowVolumeRender* volumeRender, NvFlowContext* context, NvFlowGridExport* gridExport, const NvFlowVolumeRenderParams* params);
 
 /**
  * Renders a Flow 3D texture.

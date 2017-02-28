@@ -10,7 +10,8 @@ struct RendererHooksNvFlow
 	virtual void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSceneInfo*>& Primitives, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData) = 0;
 	virtual bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo) = 0;
 	virtual void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View) = 0;
-	virtual void NvFlowDoDepth(FRHICommandListImmediate& RHICmdList, const TArray<FViewInfo>& Views) = 0;
+	virtual bool NvFlowShouldDoPreComposite(FRHICommandListImmediate& RHICmdList) = 0;
+	virtual void NvFlowDoPreComposite(FRHICommandListImmediate& RHICmdList, const FViewInfo& View) = 0;
 };
 
 extern ENGINE_API struct RendererHooksNvFlow* GRendererNvFlowHooks;
