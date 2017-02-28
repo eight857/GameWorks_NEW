@@ -55,7 +55,9 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	MaxScreenPercentage = 1.f;
 	MinScreenPercentage = 0.5f;
 	bDebugWireframe = FlowVolumeRenderParams.debugMode;
-	bEstimateDepth = false;
+	bGenerateDepth = false;
+	DepthAlphaThreshold = FlowVolumeRenderParams.depthAlphaThreshold;
+	DepthIntensityThreshold = FlowVolumeRenderParams.depthIntensityThreshold;
 
 	//Collision
 	FCollisionResponseParams FlowResponseParams;

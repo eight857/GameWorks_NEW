@@ -70,11 +70,12 @@ namespace NvFlow
 
 		void init(FRHICommandListImmediate& RHICmdList);
 		void conditionalInitMultiGPU(FRHICommandListImmediate& RHICmdList);
-		void interopBegin(FRHICommandList& RHICmdList, bool computeOnly);
+		void interopBegin(FRHICommandList& RHICmdList, bool computeOnly, bool updateRenderTarget);
 		void interopEnd(FRHICommandList& RHICmdList, bool computeOnly, bool shouldFlush);
 
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
 		void renderScene(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy);
+		void renderScenePreComposite(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy);
 		void release();
 
 		void updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData);
@@ -127,7 +128,7 @@ namespace NvFlow
 		// deferred mechanism for proper RHI command list support
 		void initDeferred(IRHICommandContext* RHICmdCtx);
 		void conditionalInitMultiGPUDeferred(IRHICommandContext* RHICmdCtx);
-		void interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly);
+		void interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool updateRenderTarget);
 		void interopEndDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool shouldFlush);
 		void cleanupSceneListDeferred();
 
@@ -136,6 +137,7 @@ namespace NvFlow
 			Context* context;
 			bool computeOnly;
 			bool shouldFlush;
+			bool updateRenderTarget;
 		};
 
 		static void initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
@@ -159,9 +161,9 @@ namespace NvFlow
 
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
 		void render(FRHICommandList& RHICmdList, const FViewInfo& View);
+		void renderDepth(FRHICommandList& RHICmdList, const FViewInfo& View);
 
 		bool getExportParams(FRHICommandListImmediate& RHICmdList, GridExportParamsNvFlow& OutParams);
-
 
 		struct CallbackUserData
 		{
@@ -284,6 +286,7 @@ namespace NvFlow
 		void finilizeUpdateDeferred(IRHICommandContext* RHICmdCtx);
 		void updateGridViewDeferred(IRHICommandContext* RHICmdCtx);
 		void renderDeferred(IRHICommandContext* RHICmdCtx, RenderParams* renderParams);
+		void renderDepthDeferred(IRHICommandContext* RHICmdCtx, RenderParams* renderParams);
 
 		static void initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void updateParametersCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
@@ -291,6 +294,7 @@ namespace NvFlow
 		static void finilizeUpdateCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void updateGridViewCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void renderCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void renderDepthCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 	};
 
 	void cleanupContext(void* ptr);
@@ -491,33 +495,39 @@ void NvFlow::Context::initDeferred(IRHICommandContext* RHICmdCtx)
 	conditionalInitMultiGPUDeferred(RHICmdCtx);
 }
 
-void NvFlow::Context::interopBegin(FRHICommandList& RHICmdList, bool computeOnly)
+void NvFlow::Context::interopBegin(FRHICommandList& RHICmdList, bool computeOnly, bool updateRenderTarget)
 {
 	InteropBeginEndParams params = {};
 	params.context = this;
 	params.computeOnly = computeOnly;
 	params.shouldFlush = false;
+	params.updateRenderTarget = updateRenderTarget;
 	RHICmdList.NvFlowWork(interopBeginCallback, &params, sizeof(params));
 }
 
 void NvFlow::Context::interopBeginCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
 {
 	auto params = (NvFlow::Context::InteropBeginEndParams*)paramData;
-	params->context->interopBeginDeferred(RHICmdCtx, params->computeOnly);
+	params->context->interopBeginDeferred(RHICmdCtx, params->computeOnly, params->updateRenderTarget);
 }
 
-void NvFlow::Context::interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly)
+void NvFlow::Context::interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool updateRenderTarget)
 {
 	auto& appctx = *RHICmdCtx;
 
 	m_flowInterop->UpdateContext(appctx, m_renderContext);
 	if (!computeOnly)
 	{
+		if (updateRenderTarget)
+		{
+			if (m_rtv == nullptr) m_rtv = m_flowInterop->CreateRenderTargetView(appctx, m_renderContext);
+
+			m_flowInterop->UpdateRenderTargetView(appctx, m_renderContext, m_rtv);
+		}
+
 		if (m_dsv == nullptr) m_dsv = m_flowInterop->CreateDepthStencilView(appctx, m_renderContext);
-		if (m_rtv == nullptr) m_rtv = m_flowInterop->CreateRenderTargetView(appctx, m_renderContext);
 
 		m_flowInterop->UpdateDepthStencilView(appctx, m_renderContext, m_dsv);
-		m_flowInterop->UpdateRenderTargetView(appctx, m_renderContext, m_rtv);
 	}
 
 	if (m_gridDevice)
@@ -598,6 +608,15 @@ void NvFlow::Context::renderScene(FRHICommandList& RHICmdList, const FViewInfo& 
 	{
 		auto scene = (Scene*)FlowGridSceneProxy->scenePtr;
 		scene->render(RHICmdList, View);
+	}
+}
+
+void NvFlow::Context::renderScenePreComposite(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy)
+{
+	if (FlowGridSceneProxy->scenePtr != nullptr)
+	{
+		auto scene = (Scene*)FlowGridSceneProxy->scenePtr;
+		scene->renderDepth(RHICmdList, View);
 	}
 }
 
@@ -854,6 +873,18 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 	m_renderMaterialPool = NvFlowCreateRenderMaterialPool(m_renderContext, &renderMaterialPoolDesc);
 }
 
+static TAutoConsoleVariable<float> CVarNvFlowDepthAlphaThreshold(
+	TEXT("flowdepthalphathreshold"),
+	0.9f,
+	TEXT("Alpha threshold for depth write")
+);
+
+static TAutoConsoleVariable<float> CVarNvFlowDepthIntensityThreshold(
+	TEXT("flowdepthintensitythreshold"),
+	4.f,
+	TEXT("Intensity threshold for depth write")
+);
+
 void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 {
 	auto& appctx = RHICmdList.GetContext();
@@ -870,15 +901,18 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 	m_renderParams.debugMode = Properties.RenderParams.bDebugWireframe;
 	m_renderParams.materialPool = m_renderMaterialPool;
 
-	if (UFlowGridAsset::sGlobalDepth > 0)
+	m_renderParams.generateDepth = (UFlowGridAsset::sGlobalDepth > 0) && (Properties.RenderParams.bGenerateDepth || (UFlowGridAsset::sGlobalDepth > 1));
+	m_renderParams.generateDepthDebugMode = (UFlowGridAsset::sGlobalDepthDebugDraw > 0);
+	if (UFlowGridAsset::sGlobalDepth > 1)
 	{
-		m_renderParams.estimateDepth = Properties.RenderParams.bEstimateDepth || (UFlowGridAsset::sGlobalDepth > 1);
+		m_renderParams.depthAlphaThreshold = CVarNvFlowDepthAlphaThreshold.GetValueOnRenderThread();
+		m_renderParams.depthIntensityThreshold = CVarNvFlowDepthIntensityThreshold.GetValueOnRenderThread();
 	}
 	else
 	{
-		m_renderParams.estimateDepth = false;
+		m_renderParams.depthAlphaThreshold = Properties.RenderParams.DepthAlphaThreshold;
+		m_renderParams.depthIntensityThreshold = Properties.RenderParams.DepthIntensityThreshold;
 	}
-	m_renderParams.estimateDepthDebugMode = (UFlowGridAsset::sGlobalDepthDebugDraw > 0);
 
 #if NVFLOW_ADAPTIVE
 	// adaptive screen percentage
@@ -1485,6 +1519,113 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 #endif
 }
 
+void NvFlow::Scene::renderDepth(FRHICommandList& RHICmdList, const FViewInfo& View)
+{
+	if (!m_renderParams.generateDepth)
+	{
+		return;
+	}
+
+	// render depth
+	{
+		FMatrix viewMatrix = View.ViewMatrices.GetViewMatrix();
+		FMatrix projMatrix = View.ViewMatrices.GetProjectionMatrix();
+
+		// Do this on the stack for thread safety
+		RenderParams renderParams = {};
+		renderParams.scene = this;
+		renderParams.volumeRenderParams = m_renderParams;
+
+		auto& rp = renderParams.volumeRenderParams;
+
+		for (int j = 0; j < 3; j++)
+		{
+			for (int i = 0; i < 3; i++)
+			{
+				viewMatrix.M[j][i] *= scale;
+			}
+		}
+
+		memcpy(&rp.projectionMatrix, &projMatrix.M[0][0], sizeof(rp.projectionMatrix));
+		memcpy(&rp.viewMatrix, &viewMatrix.M[0][0], sizeof(rp.viewMatrix));
+
+	#if NVFLOW_SMP
+		auto& multiResConfig = View.MultiResConf;
+
+		rp.multiRes.enabled = View.bVRProjectEnabled && (View.VRProjMode == FSceneView::EVRProjectMode::MultiRes);
+		rp.multiRes.centerWidth = multiResConfig.CenterWidth;
+		rp.multiRes.centerHeight = multiResConfig.CenterHeight;
+		rp.multiRes.centerX = multiResConfig.CenterX;
+		rp.multiRes.centerY = multiResConfig.CenterY;
+		rp.multiRes.densityScaleX[0] = multiResConfig.DensityScaleX[0];
+		rp.multiRes.densityScaleX[1] = multiResConfig.DensityScaleX[1];
+		rp.multiRes.densityScaleX[2] = multiResConfig.DensityScaleX[2];
+		rp.multiRes.densityScaleY[0] = multiResConfig.DensityScaleY[0];
+		rp.multiRes.densityScaleY[1] = multiResConfig.DensityScaleY[1];
+		rp.multiRes.densityScaleY[2] = multiResConfig.DensityScaleY[2];
+		rp.multiRes.viewport.topLeftX = View.ViewRect.Min.X;
+		rp.multiRes.viewport.topLeftY = View.ViewRect.Min.Y;
+		rp.multiRes.viewport.width = View.ViewRect.Width();
+		rp.multiRes.viewport.height = View.ViewRect.Height();
+		rp.multiRes.nonMultiResWidth = View.NonVRProjectViewRect.Width();
+		rp.multiRes.nonMultiResHeight = View.NonVRProjectViewRect.Height();
+
+		auto& LMSConfig = View.LensMatchedShadingConf;
+
+		rp.lensMatchedShading.enabled = View.bVRProjectEnabled && (View.VRProjMode == FSceneView::EVRProjectMode::LensMatched);
+		rp.lensMatchedShading.warpLeft = LMSConfig.WarpLeft;
+		rp.lensMatchedShading.warpRight = LMSConfig.WarpRight;
+		rp.lensMatchedShading.warpUp = LMSConfig.WarpUp;
+		rp.lensMatchedShading.warpDown = LMSConfig.WarpDown;
+		rp.lensMatchedShading.sizeLeft = FMath::CeilToInt(LMSConfig.RelativeSizeLeft * View.NonVRProjectViewRect.Width());
+		rp.lensMatchedShading.sizeRight = FMath::CeilToInt(LMSConfig.RelativeSizeRight * View.NonVRProjectViewRect.Width());
+		rp.lensMatchedShading.sizeUp = FMath::CeilToInt(LMSConfig.RelativeSizeUp * View.NonVRProjectViewRect.Height());
+		rp.lensMatchedShading.sizeDown = FMath::CeilToInt(LMSConfig.RelativeSizeDown * View.NonVRProjectViewRect.Height());
+		rp.lensMatchedShading.viewport.topLeftX = View.ViewRect.Min.X;
+		rp.lensMatchedShading.viewport.topLeftY = View.ViewRect.Min.Y;
+		rp.lensMatchedShading.viewport.width = View.ViewRect.Width();
+		rp.lensMatchedShading.viewport.height = View.ViewRect.Height();
+		rp.lensMatchedShading.nonLMSWidth = View.NonVRProjectViewRect.Width();
+		rp.lensMatchedShading.nonLMSHeight = View.NonVRProjectViewRect.Height();
+
+		if (rp.lensMatchedShading.enabled)
+		{
+			RHICmdList.SetModifiedWMode(View.LensMatchedShadingConf, true, false);
+		}
+
+	#endif
+
+		// push work
+		RHICmdList.NvFlowWork(renderDepthCallback, &renderParams, sizeof(RenderParams));
+
+	#if NVFLOW_SMP
+		if (rp.lensMatchedShading.enabled)
+		{
+			RHICmdList.SetModifiedWMode(View.LensMatchedShadingConf, true, true);
+		}
+	#endif
+	}
+}
+
+void NvFlow::Scene::renderDepthDeferred(IRHICommandContext* RHICmdCtx, RenderParams* renderParams)
+{
+	auto& volumeRenderParams = renderParams->volumeRenderParams;
+
+	volumeRenderParams.depthStencilView = m_context->m_dsv;
+	volumeRenderParams.renderTargetView = nullptr;
+
+	volumeRenderParams.preColorCompositeOnly = true;
+	volumeRenderParams.colorCompositeOnly = false;
+
+	NvFlowVolumeRenderGridExport(m_volumeRender, m_renderContext, m_gridExport4Render, &volumeRenderParams);
+}
+
+void NvFlow::Scene::renderDepthCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	auto renderParams = (RenderParams*)paramData;
+	renderParams->scene->renderDepthDeferred(RHICmdCtx, renderParams);
+}
+
 void NvFlow::Scene::renderCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
 {
 	auto renderParams = (RenderParams*)paramData;
@@ -1497,6 +1638,17 @@ void NvFlow::Scene::renderDeferred(IRHICommandContext* RHICmdCtx, RenderParams* 
 
 	volumeRenderParams.depthStencilView = m_context->m_dsv;
 	volumeRenderParams.renderTargetView = m_context->m_rtv;
+
+	if (volumeRenderParams.generateDepth)
+	{
+		volumeRenderParams.preColorCompositeOnly = false;
+		volumeRenderParams.colorCompositeOnly = true;
+	}
+	else
+	{
+		volumeRenderParams.preColorCompositeOnly = false;
+		volumeRenderParams.colorCompositeOnly = false;
+	}
 
 	NvFlowVolumeRenderGridExport(m_volumeRender, m_renderContext, m_gridExport4Render, &volumeRenderParams);
 
@@ -2436,7 +2588,7 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 
 		NvFlow::gContext->conditionalInitMultiGPU(RHICmdList);
 
-		NvFlow::gContext->interopBegin(RHICmdList, true);
+		NvFlow::gContext->interopBegin(RHICmdList, true, false);
 
 		// look for FFlowGridSceneProxy, TODO replace with adding special member to FScene
 		FFlowGridSceneProxy* FlowGridSceneProxy = nullptr;
@@ -2495,7 +2647,7 @@ bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 			{
 				SCOPED_DRAW_EVENT(RHICmdList, FlowContextRenderGrids);
 
-				NvFlow::gContext->interopBegin(RHICmdList, false);
+				NvFlow::gContext->interopBegin(RHICmdList, false, true);
 
 				NvFlow::gContext->renderScene(RHICmdList, View, FlowGridSceneProxy);
 
@@ -2512,6 +2664,45 @@ void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo&
 	//if (!GUsingNullRHI && NvFlow::gContext)
 	//{
 	//}
+}
+
+bool NvFlowShouldDoPreComposite(FRHICommandListImmediate& RHICmdList)
+{
+	if (!GUsingNullRHI && NvFlow::gContext && UFlowGridAsset::sGlobalDepth > 0)
+	{
+		uint32 Count = 0;
+		for (int32 i = 0; i < NvFlow::gContext->m_sceneList.Num(); i++)
+		{
+			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
+			//FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
+			if (Scene->m_renderParams.generateDepth)
+			{
+				Count++;
+			}
+		}
+		return (Count > 0);
+	}
+	return false;
+}
+
+void NvFlowDoPreComposite(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
+{
+	if (!GUsingNullRHI && NvFlow::gContext && UFlowGridAsset::sGlobalDepth > 0)
+	{
+		NvFlow::gContext->interopBegin(RHICmdList, false, false);
+
+		for (int32 i = 0; i < NvFlow::gContext->m_sceneList.Num(); i++)
+		{
+			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
+			FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
+			if (FlowGridSceneProxy && Scene->m_renderParams.generateDepth)
+			{
+				NvFlow::gContext->renderScenePreComposite(RHICmdList, View, FlowGridSceneProxy);
+			}
+		}
+
+		NvFlow::gContext->interopEnd(RHICmdList, false, false);
+	}
 }
 
 uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList)

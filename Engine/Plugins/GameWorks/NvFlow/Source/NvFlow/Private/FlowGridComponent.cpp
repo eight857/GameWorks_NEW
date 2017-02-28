@@ -98,6 +98,10 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 	NvFlowGridDescDefaults(&FlowGridProperties.GridDesc);
 	NvFlowGridParamsDefaults(&FlowGridProperties.GridParams);
 
+	FlowGridProperties.RenderParams.bGenerateDepth = false;
+	FlowGridProperties.RenderParams.DepthAlphaThreshold = 1.f;
+	FlowGridProperties.RenderParams.DepthIntensityThreshold = 10.f;
+
 	DefaultFlowMaterial = CreateDefaultSubobject<UFlowMaterial>(TEXT("DefaultFlowMaterial0"));
 }
 
@@ -1026,7 +1030,9 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			FlowGridProperties.RenderParams.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
 		}
 		
-		FlowGridProperties.RenderParams.bEstimateDepth = FlowGridAssetRef->bEstimateDepth;
+		FlowGridProperties.RenderParams.bGenerateDepth = FlowGridAssetRef->bGenerateDepth;
+		FlowGridProperties.RenderParams.DepthAlphaThreshold = FlowGridAssetRef->DepthAlphaThreshold;
+		FlowGridProperties.RenderParams.DepthIntensityThreshold = FlowGridAssetRef->DepthIntensityThreshold;
 
 		FlowGridProperties.RenderParams.bVolumeShadowEnabled = FlowGridAssetRef->bVolumeShadowEnabled;
 		FlowGridProperties.RenderParams.ShadowIntensityScale = FlowGridAssetRef->ShadowIntensityScale;

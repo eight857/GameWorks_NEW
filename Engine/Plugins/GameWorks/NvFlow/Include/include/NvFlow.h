@@ -1002,8 +1002,12 @@ struct NvFlowVolumeRenderParams
 
 	bool smoothColorUpsample;						//!< If true, color upsample will do extra work to remove jaggies around depth discontinuities
 
-	bool estimateDepth;								//!< If true, generate nominal depth, and write to scene depth buffer
-	bool estimateDepthDebugMode;					//!< If true, visualize depth estimate
+	bool preColorCompositeOnly;						//!< If true, do all operations except color composite
+	bool colorCompositeOnly;						//!< If true, only apply color composite
+	bool generateDepth;								//!< If true, generate nominal depth, and write to scene depth buffer
+	bool generateDepthDebugMode;					//!< If true, visualize depth estimate
+	float depthAlphaThreshold;						//!< Minimum alpha to trigger depth write
+	float depthIntensityThreshold;					//!< Intensity on R or G or B to trigger depth write
 
 	NvFlowVolumeRenderMultiResParams multiRes;			//!< Multires parameters
 

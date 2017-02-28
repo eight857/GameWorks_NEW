@@ -165,9 +165,17 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")
 	uint32		bDebugWireframe : 1;
 
-	/** Depth Estimation*/
+	/** Depth generation*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering")
-	uint32		bEstimateDepth : 1;
+	uint32		bGenerateDepth : 1;
+
+	/** Alpha threshold for depth write when generateDepth enabled. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (UIMin = 0.0f, UIMax = 2.0f))
+	float		DepthAlphaThreshold;
+
+	/** Intensity threshold for depth write when generateDepth enabled. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering", meta = (UIMin = 0.0f, UIMax = 10.0f))
+	float		DepthIntensityThreshold;
 
 	static bool sGlobalDebugDraw;
 	static uint32 sGlobalRenderChannel;

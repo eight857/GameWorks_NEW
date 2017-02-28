@@ -942,6 +942,28 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 	SceneContext.ResolveSceneDepthTexture(RHICmdList, FResolveRect(0, 0, ViewFamily.FamilySizeX, ViewFamily.FamilySizeY));
 	SceneContext.ResolveSceneDepthToAuxiliaryTexture(RHICmdList);
 
+	// NvFlow begin
+	if (GRendererNvFlowHooks)
+	{
+		bool ShouldDoPreComposite = GRendererNvFlowHooks->NvFlowShouldDoPreComposite(RHICmdList);
+		if (ShouldDoPreComposite)
+		{
+			SceneContext.BeginRenderingSceneColor(RHICmdList, ESimpleRenderTargetMode::EExistingColorAndDepth, FExclusiveDepthStencil::DepthWrite_StencilWrite);
+
+			for (int32 ViewIdx = 0; ViewIdx < Views.Num(); ViewIdx++)
+			{
+				const auto& View = Views[ViewIdx];
+
+				RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
+
+				GRendererNvFlowHooks->NvFlowDoPreComposite(RHICmdList, View);
+			}
+
+			SceneContext.FinishRenderingSceneColor(RHICmdList);
+		}
+	}
+	// NvFlow end
+
 	bool bOcclusionAfterBasePass = bIsOcclusionTesting && !bOcclusionBeforeBasePass;
 	bool bHZBAfterBasePass = !bHZBBeforeBasePass;
 	RenderOcclusion(RHICmdList, bOcclusionAfterBasePass, bHZBAfterBasePass);
