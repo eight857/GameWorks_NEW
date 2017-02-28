@@ -189,6 +189,8 @@ void UFlowGridComponent::UpdateShapes()
 	FlowGridProperties.GridCollideShapeDescs.SetNum(0);
 	FlowGridProperties.GridEmitMaterialKeys.SetNum(0);
 
+	FlowGridProperties.NewDistanceFieldList.SetNum(0);
+
 	// only update if enabled
 	if (!bFlowGridCollisionEnabled)
 	{
@@ -295,6 +297,7 @@ void UFlowGridComponent::UpdateShapes()
 		}
 
 		const UStaticMeshComponent* StaticMeshComponent = nullptr;
+		const UStaticMesh* StaticMesh = nullptr;
 		const FDistanceFieldVolumeData* DistanceFieldVolumeData = nullptr;
 		if (FlowEmitterComponent != nullptr && FlowEmitterComponent->bUseDistanceField)
 		{
@@ -319,7 +322,12 @@ void UFlowGridComponent::UpdateShapes()
 
 			if (StaticMeshComponent != nullptr)
 			{
-				const FStaticMeshRenderData* RenderData = StaticMeshComponent->GetStaticMesh()->RenderData;
+				StaticMesh = StaticMeshComponent->GetStaticMesh();
+			}
+
+			if (StaticMesh != nullptr)
+			{
+				const FStaticMeshRenderData* RenderData = StaticMesh->RenderData;
 				if (RenderData != nullptr && RenderData->LODResources.Num() > 0)
 				{
 					DistanceFieldVolumeData = RenderData->LODResources[0].DistanceFieldData;
@@ -407,6 +415,7 @@ void UFlowGridComponent::UpdateShapes()
 				else
 				{
 					check(StaticMeshComponent != nullptr);
+					check(StaticMesh != nullptr);
 
 					auto LocalExtent = DistanceFieldVolumeData->LocalBoundingBox.GetExtent();
 					auto LocalCenter = DistanceFieldVolumeData->LocalBoundingBox.GetCenter();
@@ -418,6 +427,19 @@ void UFlowGridComponent::UpdateShapes()
 					UnitToActualScale = FVector(NvFlow::scaleInv);
 
 					FlowShapeDistScale = LocalExtent.GetMax() * NvFlow::scaleInv;
+
+					const FDistanceFieldVolumeData* &OldDistanceFieldVolumeData = DistanceFieldMap.FindOrAdd(StaticMesh);
+					if (OldDistanceFieldVolumeData != DistanceFieldVolumeData)
+					{
+						OldDistanceFieldVolumeData = DistanceFieldVolumeData;
+
+						FlowGridProperties.NewDistanceFieldList.AddDefaulted(1);
+						FFlowDistanceFieldParams& DistanceFieldParams = FlowGridProperties.NewDistanceFieldList.Last();
+
+						DistanceFieldParams.StaticMesh = StaticMesh;
+						DistanceFieldParams.Size = DistanceFieldVolumeData->Size;
+						DistanceFieldParams.DistanceFieldVolume = DistanceFieldVolumeData->DistanceFieldVolume;
+					}
 				}
 
 				int32 EmitShapeStartIndex = FlowGridProperties.GridEmitShapeDescs.Num();

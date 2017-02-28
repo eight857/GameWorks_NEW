@@ -61,6 +61,14 @@ struct FFlowMaterialParams
 	TArray<FFlowRenderMaterialParams> RenderMaterials;
 };
 
+struct FFlowDistanceFieldParams
+{
+	const class UStaticMesh* StaticMesh;
+
+	FIntVector Size;
+	TArray<FFloat16> DistanceFieldVolume;
+};
+
 struct FFlowGridProperties
 {
 	// indicates if grid should be allocated
@@ -114,6 +122,8 @@ struct FFlowGridProperties
 	FlowMaterialKeyType DefaultMaterialKey;
 
 	TArray<TPair<FlowMaterialKeyType, FFlowMaterialParams> > Materials;
+
+	TArray<FFlowDistanceFieldParams> NewDistanceFieldList;
 };
 
 class UFlowGridComponent;

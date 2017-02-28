@@ -123,6 +123,8 @@ protected:
 
 	TMap<class UFlowMaterial*, MaterialData> MaterialsMap;
 
+	TMap<const class UStaticMesh*, const class FDistanceFieldVolumeData*> DistanceFieldMap;
+
 public:
 	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
 };
