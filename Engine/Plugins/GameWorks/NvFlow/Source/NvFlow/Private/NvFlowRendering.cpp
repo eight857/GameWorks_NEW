@@ -172,11 +172,6 @@ namespace NvFlow
 
 		bool getExportParams(FRHICommandListImmediate& RHICmdList, GridExportParamsNvFlow& OutParams);
 
-		bool shouldRenderDepth()
-		{
-			return (UFlowGridAsset::sGlobalDepth > 0) && (m_renderParams.generateDepth || (UFlowGridAsset::sGlobalDepth > 1));
-		}
-
 		struct CallbackUserData
 		{
 			NvFlow::Scene* Scene;
@@ -885,6 +880,18 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 	m_renderMaterialPool = NvFlowCreateRenderMaterialPool(m_renderContext, &renderMaterialPoolDesc);
 }
 
+static TAutoConsoleVariable<float> CVarNvFlowDepthAlphaThreshold(
+	TEXT("flowdepthalphathreshold"),
+	0.9f,
+	TEXT("Alpha threshold for depth write")
+);
+
+static TAutoConsoleVariable<float> CVarNvFlowDepthIntensityThreshold(
+	TEXT("flowdepthintensitythreshold"),
+	4.f,
+	TEXT("Intensity threshold for depth write")
+);
+
 void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 {
 	auto& appctx = RHICmdList.GetContext();
@@ -901,8 +908,18 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 	m_renderParams.debugMode = Properties.RenderParams.bDebugWireframe;
 	m_renderParams.materialPool = m_renderMaterialPool;
 
-	m_renderParams.generateDepth = shouldRenderDepth();
+	m_renderParams.generateDepth = (UFlowGridAsset::sGlobalDepth > 0) && (Properties.RenderParams.bGenerateDepth || (UFlowGridAsset::sGlobalDepth > 1));
 	m_renderParams.generateDepthDebugMode = (UFlowGridAsset::sGlobalDepthDebugDraw > 0);
+	if (UFlowGridAsset::sGlobalDepth > 1)
+	{
+		m_renderParams.depthAlphaThreshold = CVarNvFlowDepthAlphaThreshold.GetValueOnRenderThread();
+		m_renderParams.depthIntensityThreshold = CVarNvFlowDepthIntensityThreshold.GetValueOnRenderThread();
+	}
+	else
+	{
+		m_renderParams.depthAlphaThreshold = Properties.RenderParams.DepthAlphaThreshold;
+		m_renderParams.depthIntensityThreshold = Properties.RenderParams.DepthIntensityThreshold;
+	}
 
 #if NVFLOW_ADAPTIVE
 	// adaptive screen percentage
@@ -1513,21 +1530,9 @@ void NvFlow::Scene::render(FRHICommandList& RHICmdList, const FViewInfo& View)
 #endif
 }
 
-static TAutoConsoleVariable<float> CVarNvFlowDepthAlphaThreshold(
-	TEXT("FlowDepthAlphaThreshold"),
-	0.9f,
-	TEXT("Alpha threshold for depth write")
-);
-
-static TAutoConsoleVariable<float> CVarNvFlowDepthIntensityThreshold(
-	TEXT("FlowDepthIntensityThreshold"),
-	4.f,
-	TEXT("Intensity threshold for depth write")
-);
-
 void NvFlow::Scene::renderDepth(FRHICommandList& RHICmdList, const FViewInfo& View)
 {
-	if (!shouldRenderDepth())
+	if (!m_renderParams.generateDepth)
 	{
 		return;
 	}
@@ -1554,10 +1559,6 @@ void NvFlow::Scene::renderDepth(FRHICommandList& RHICmdList, const FViewInfo& Vi
 
 		memcpy(&rp.projectionMatrix, &projMatrix.M[0][0], sizeof(rp.projectionMatrix));
 		memcpy(&rp.viewMatrix, &viewMatrix.M[0][0], sizeof(rp.viewMatrix));
-
-		// TODO: fully expose
-		rp.depthAlphaThreshold = CVarNvFlowDepthAlphaThreshold.GetValueOnRenderThread();
-		rp.depthIntensityThreshold = CVarNvFlowDepthIntensityThreshold.GetValueOnRenderThread();
 
 	#if NVFLOW_SMP
 		auto& multiResConfig = View.MultiResConf;
@@ -2685,7 +2686,7 @@ bool NvFlowShouldDoPreComposite(FRHICommandListImmediate& RHICmdList)
 		{
 			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
 			//FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
-			if (Scene->shouldRenderDepth())
+			if (Scene->m_renderParams.generateDepth)
 			{
 				Count++;
 			}
@@ -2705,7 +2706,7 @@ void NvFlowDoPreComposite(FRHICommandListImmediate& RHICmdList, const FViewInfo&
 		{
 			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
 			FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
-			if (FlowGridSceneProxy && Scene->shouldRenderDepth())
+			if (FlowGridSceneProxy && Scene->m_renderParams.generateDepth)
 			{
 				NvFlow::gContext->renderScenePreComposite(RHICmdList, View, FlowGridSceneProxy);
 			}

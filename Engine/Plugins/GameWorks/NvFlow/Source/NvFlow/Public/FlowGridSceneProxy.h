@@ -30,7 +30,9 @@ struct FFlowGridRenderParams
 	float MaxScreenPercentage;
 	float MinScreenPercentage;
 	uint32 bDebugWireframe : 1;
-	uint32 bEstimateDepth : 1;
+	uint32 bGenerateDepth : 1;
+	float DepthAlphaThreshold;
+	float DepthIntensityThreshold;
 
 	uint32 bVolumeShadowEnabled : 1;
 	float ShadowIntensityScale;
