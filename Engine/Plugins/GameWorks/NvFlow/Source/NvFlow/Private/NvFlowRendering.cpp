@@ -38,27 +38,6 @@ DEFINE_STAT(STAT_Flow_RenderGrids);
 
 namespace NvFlow
 {
-#if	STATS
-	static TStatId NvFlowCreateStatId(const TCHAR* StatNameText, const TCHAR* StatDescText)
-	{
-		FName StatName(StatNameText);
-
-		FStartupMessages::Get().AddMetadata(StatName, StatDescText,
-			FStatGroup_STATGROUP_Flow::GetGroupName(),
-			FStatGroup_STATGROUP_Flow::GetGroupCategory(),
-			FStatGroup_STATGROUP_Flow::GetDescription(),
-			false, EStatDataType::ST_int64, false);
-
-		TStatId StatID = IStatGroupEnableManager::Get().GetHighPerformanceEnableForStat(StatName,
-			FStatGroup_STATGROUP_Flow::GetGroupName(),
-			FStatGroup_STATGROUP_Flow::GetGroupCategory(),
-			FStatGroup_STATGROUP_Flow::DefaultEnable,
-			false, EStatDataType::ST_int64, StatDescText, false);
-
-		return StatID;
-	}
-#endif // STATS
-
 	struct Scene;
 
 	struct Context
@@ -114,17 +93,6 @@ namespace NvFlow
 
 		TMap<const class UStaticMesh*, NvFlowShapeSDF*> m_mapForShapeSDF;
 
-#if STATS
-		struct SceneStatData
-		{
-			TStatId statIdVelocityNumBlocks;
-			TStatId statIdVelocityMaxBlocks;
-			TStatId statIdDensityNumBlocks;
-			TStatId statIdDensityMaxBlocks;
-		};
-		TMap<FName, SceneStatData> m_mapForSceneStats;
-#endif
-
 		// deferred mechanism for proper RHI command list support
 		void initDeferred(IRHICommandContext* RHICmdCtx);
 		void conditionalInitMultiGPUDeferred(IRHICommandContext* RHICmdCtx);
@@ -145,6 +113,9 @@ namespace NvFlow
 		static void interopBeginCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void interopEndCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void cleanupSceneListCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+
+		static void updateGridViewStart(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void updateGridViewFinish(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 	};
 
 	struct Scene
@@ -265,9 +236,6 @@ namespace NvFlow
 
 		// deferred mechanism for proper RHI command list support
 		float m_updateSubstep_dt = 0.f;
-#if STATS
-		Context::SceneStatData m_stats;
-#endif
 
 		struct UpdateParams
 		{
@@ -594,13 +562,30 @@ void NvFlow::Context::interopEndDeferred(IRHICommandContext* RHICmdCtx, bool com
 
 void NvFlow::Context::updateGridView(FRHICommandListImmediate& RHICmdList)
 {
+	RHICmdList.NvFlowWork(updateGridViewStart, this, 0u);
+
 	// iterate scenes and update grid view
 	for (int32 i = 0; i < m_sceneList.Num(); i++)
 	{
 		Scene* scene = m_sceneList[i];
 		scene->updateGridView(RHICmdList);
 	}
+
+	RHICmdList.NvFlowWork(updateGridViewFinish, this, 0u);
 }
+
+void NvFlow::Context::updateGridViewStart(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	//clear debug info
+	NvFlowDebugInfoQueue.GetInfo_Produce()->Empty();
+}
+
+void NvFlow::Context::updateGridViewFinish(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+{
+	//submit debug info
+	NvFlowDebugInfoQueue.SubmitInfo_Produce();
+}
+
 
 void NvFlow::Context::renderScene(FRHICommandList& RHICmdList, const FViewInfo& View, FFlowGridSceneProxy* FlowGridSceneProxy)
 {
@@ -716,13 +701,6 @@ NvFlow::Scene::~Scene()
 
 void NvFlow::Scene::release()
 {
-#if STATS
-	FThreadStats::AddMessage(m_stats.statIdVelocityMaxBlocks.GetName(), EStatOperation::Clear, int64(0));
-	FThreadStats::AddMessage(m_stats.statIdVelocityNumBlocks.GetName(), EStatOperation::Clear, int64(0));
-	FThreadStats::AddMessage(m_stats.statIdDensityMaxBlocks.GetName(), EStatOperation::Clear, int64(0));
-	FThreadStats::AddMessage(m_stats.statIdDensityNumBlocks.GetName(), EStatOperation::Clear, int64(0));
-#endif
-
 	if (m_context)
 	{
 		UE_LOG(LogFlow, Display, TEXT("NvFlow Scene %p Cleanup"), this);
@@ -755,30 +733,6 @@ void NvFlow::Scene::init(Context* context, FRHICommandListImmediate& RHICmdList,
 	FlowGridSceneProxy->cleanupSceneFunc = NvFlow::cleanupScene;
 
 	RHICmdList.NvFlowWork(initCallback, this, 0u);
-
-#if STATS
-	const FName ownerName = InFlowGridSceneProxy->GetOwnerName();
-
-	Context::SceneStatData* sceneStatData = m_context->m_mapForSceneStats.Find(ownerName);
-	if (sceneStatData == nullptr)
-	{
-		int32 sceneId = m_context->m_mapForSceneStats.Num();
-
-		sceneStatData = &m_context->m_mapForSceneStats.Add(ownerName);
-
-		FString sceneName;
-		InFlowGridSceneProxy->GetOwnerName().ToString(sceneName);
-
-		sceneStatData->statIdVelocityNumBlocks = NvFlowCreateStatId(*FString::Printf(TEXT("STAT_Flow_%i_VelocityNumBlocks"), int32(sceneId)), *FString::Printf(TEXT("'%s' Velocity Num Blocks"), *sceneName));
-		sceneStatData->statIdVelocityMaxBlocks = NvFlowCreateStatId(*FString::Printf(TEXT("STAT_Flow_%i_VelocityMaxBlocks"), int32(sceneId)), *FString::Printf(TEXT("'%s' Velocity Max Blocks"), *sceneName));
-
-		sceneStatData->statIdDensityNumBlocks = NvFlowCreateStatId(*FString::Printf(TEXT("STAT_Flow_%i_DensityNumBlocks"), int32(sceneId)), *FString::Printf(TEXT("'%s' Density Num Blocks"), *sceneName));
-		sceneStatData->statIdDensityMaxBlocks = NvFlowCreateStatId(*FString::Printf(TEXT("STAT_Flow_%i_DensityMaxBlocks"), int32(sceneId)), *FString::Printf(TEXT("'%s' Density Max Blocks"), *sceneName));
-	}
-	check(sceneStatData != nullptr)
-
-	m_stats = *sceneStatData;
-#endif
 }
 
 void NvFlow::Scene::initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
@@ -1339,26 +1293,21 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 
 	m_gridExport4Render = NvFlowGridProxyGetGridExport(m_gridProxy, m_renderContext);
 
-#if STATS
-	if (FThreadStats::IsCollectingData(m_stats.statIdVelocityMaxBlocks))
 	{
-		NvFlowGridExportHandle gridExportHandle = NvFlowGridExportGetHandle(m_gridExport4Render, m_renderContext, eNvFlowGridTextureChannelVelocity);
-		NvFlowGridExportLayeredView gridExportLayeredView;
-		NvFlowGridExportGetLayeredView(gridExportHandle, &gridExportLayeredView);
+		FString gridName;
+		FlowGridSceneProxy->GetOwnerName().ToString(gridName);
 
-		FThreadStats::AddMessage(m_stats.statIdVelocityMaxBlocks.GetName(), EStatOperation::Set, int64(gridExportLayeredView.mapping.maxBlocks));
-		FThreadStats::AddMessage(m_stats.statIdVelocityNumBlocks.GetName(), EStatOperation::Set, int64(gridExportLayeredView.mapping.layeredNumBlocks));
-	}
-	if (FThreadStats::IsCollectingData(m_stats.statIdDensityMaxBlocks))
-	{
-		NvFlowGridExportHandle gridExportHandle = NvFlowGridExportGetHandle(m_gridExport4Render, m_renderContext, eNvFlowGridTextureChannelDensity);
-		NvFlowGridExportLayeredView gridExportLayeredView;
-		NvFlowGridExportGetLayeredView(gridExportHandle, &gridExportLayeredView);
+		NvFlowGridExportHandle gridVelocityHandle = NvFlowGridExportGetHandle(m_gridExport4Render, m_renderContext, eNvFlowGridTextureChannelVelocity);
+		NvFlowGridExportLayeredView gridVelocityLayeredView;
+		NvFlowGridExportGetLayeredView(gridVelocityHandle, &gridVelocityLayeredView);
 
-		FThreadStats::AddMessage(m_stats.statIdDensityMaxBlocks.GetName(), EStatOperation::Set, int64(gridExportLayeredView.mapping.maxBlocks));
-		FThreadStats::AddMessage(m_stats.statIdDensityNumBlocks.GetName(), EStatOperation::Set, int64(gridExportLayeredView.mapping.layeredNumBlocks));
+		NvFlowGridExportHandle gridDensityHandle = NvFlowGridExportGetHandle(m_gridExport4Render, m_renderContext, eNvFlowGridTextureChannelDensity);
+		NvFlowGridExportLayeredView gridDensityLayeredView;
+		NvFlowGridExportGetLayeredView(gridDensityHandle, &gridDensityLayeredView);
+
+		NvFlowDebugInfoQueue.GetInfo_Produce()->Add(FString::Printf(TEXT("Grid '%s': velocity blocks %d of %d"), *gridName, gridVelocityLayeredView.mapping.layeredNumBlocks, gridVelocityLayeredView.mapping.maxBlocks));
+		NvFlowDebugInfoQueue.GetInfo_Produce()->Add(FString::Printf(TEXT("Grid '%s': density blocks %d of %d"), *gridName, gridDensityLayeredView.mapping.layeredNumBlocks, gridDensityLayeredView.mapping.maxBlocks));
 	}
-#endif
 
 	if (Properties.RenderParams.bVolumeShadowEnabled && m_shadowViewMatrixValid)
 	{

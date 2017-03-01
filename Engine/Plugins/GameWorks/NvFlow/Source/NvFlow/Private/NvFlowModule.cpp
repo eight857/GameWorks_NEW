@@ -234,15 +234,24 @@ void FNvFlowModule::ShutdownModule()
 	}
 }
 
+
+FNvFlowDebugInfoQueue NvFlowDebugInfoQueue;
+
 void FNvFlowModule::OnShowDebugInfo(AHUD* HUD, UCanvas* Canvas, const FDebugDisplayInfo& DisplayInfo, float& YL, float& YPos)
 {
 	static const FName NAME_NvFlow("NvFlow");
 	if (Canvas && HUD->ShouldDisplayDebug(NAME_NvFlow))
 	{
 		FDisplayDebugManager& DisplayDebugManager = Canvas->DisplayDebugManager;
-		DisplayDebugManager.SetFont(GEngine->GetSmallFont());
+		DisplayDebugManager.SetFont(GEngine->GetMediumFont());
 		DisplayDebugManager.SetDrawColor(FColor::Red);
-		DisplayDebugManager.DrawString(FString(TEXT("===== NvFlow =====")));
+		DisplayDebugManager.DrawString(FString(TEXT("~~~~~ NvFlow ~~~~~")));
 
+		FNvFlowDebugInfoQueue::DebugInfo_t* DebugInfo = NvFlowDebugInfoQueue.FetchInfo_Consume();
+		for (auto It = DebugInfo->CreateConstIterator(); It; ++It)
+		{
+			DisplayDebugManager.DrawString(*It);
+		}
+		DisplayDebugManager.DrawString(FString(TEXT("~~~~~~~~~~~~~~~~~~")));
 	}
 }
