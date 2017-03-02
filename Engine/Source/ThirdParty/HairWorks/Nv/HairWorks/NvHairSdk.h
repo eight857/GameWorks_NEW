@@ -48,7 +48,7 @@ namespace.
 
 Initialize D3D Device.
 
-	hairSdk->initRenderResources(NvCo::Dx11Type::getHandle(d3dDevice));
+	hairSdk->initRenderResources(NvCo::Dx11Type::wrap(d3dDevice));
 
 Create the hair asset manually from your asset data
 
@@ -81,7 +81,7 @@ Create a hair instance from the hair asset.
 
 Set render context for HairWorks.
 
-	hairSdk->setCurrentContext(NvCo::Dx11Type::getHandle(d3dContext));
+	hairSdk->setCurrentContext(NvCo::Dx11Type::wrap(d3dContext));
 
 Update descriptor parameters for each hair instance.
 
@@ -160,8 +160,8 @@ When converting to text, will drop trailing 0 version numbers.
 1101 -> "11.0.1"
 */
 
-#define NV_HAIR_VERSION 121				// Versions for Dll BINARY compatibility 
-#define NV_HAIR_RELEASE_VERSION 121		// The release version, must be equal or greater than NV_HAIR_VERSION
+#define NV_HAIR_VERSION 130				// Versions for Dll BINARY compatibility 
+#define NV_HAIR_RELEASE_VERSION 130		// The release version, must be equal or greater than NV_HAIR_VERSION
 
 /*! The version number of serial files. Can be less than or equal to the NV_HAIR_RELEASE_VERSION. 
 If a serialization change is made, it should be set to the NV_HAIR_RELEASE_VERSION the change corresponds to. 
@@ -169,7 +169,7 @@ NOTE An implementation may be able to load prior versions */
 #define NV_HAIR_SERIAL_VERSION 120
 
 /*! release version as a string. NOTE! May contain text after version number */
-#define NV_HAIR_RELEASE_VERSION_STRING "1.2.1"
+#define NV_HAIR_RELEASE_VERSION_STRING "1.3"
 
 // Macro to generate a version number 
 #define NV_HAIR_MAKE_VERSION(major, minor, point) ((major * 100) + (minor * 10) + point)
@@ -1323,7 +1323,7 @@ public:
 		To pass those parameters, make sure you include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>, and to call the method wrap them like so 
 		ID3D11Device* device = ...;
 		ID3D11DeviceContext* context = ...;
-		hairSdk->initRenderResources(NvCo::Dx11Type::getHandle(device), NvCo::Dx11Type::getHandle(context));
+		hairSdk->initRenderResources(NvCo::Dx11Type::wrap(device), NvCo::Dx11Type::wrap(context));
 		\endcode
 		\note On Dx12 ApiDevice and ApiContext are ID3D12Device* and ID3dGraphicsCommandList* respectively. 
 		To pass those parameters, make sure you 

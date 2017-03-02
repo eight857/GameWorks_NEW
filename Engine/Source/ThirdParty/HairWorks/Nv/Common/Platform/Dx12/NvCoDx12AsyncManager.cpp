@@ -5,8 +5,6 @@
 * distribution of this software and related documentation without an express
 * license agreement from NVIDIA CORPORATION is strictly prohibited. */
 
-#include <Nv/HairWorks/Internal/NvHairInternal.h>
-
 // this
 #include "NvCoDx12AsyncManager.h"
 

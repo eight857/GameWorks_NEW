@@ -20,7 +20,7 @@ namespace HairWorks {
 } // namespace HairWorks
 namespace Hair = HairWorks;
 } // namespace nvidia
-namespace NvHair = Nv::Hair;
+namespace NvHair = nvidia::Hair;
 
 #pragma pack(push,8) // Make sure we have consistent structure packings
 

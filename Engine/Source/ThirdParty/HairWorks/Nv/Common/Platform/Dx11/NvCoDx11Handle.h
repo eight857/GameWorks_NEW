@@ -123,7 +123,7 @@ struct Dx11Type
 	static Void logCastFailure(Int fromType, Int toType);
 };
 
-/* For generic handles you can use Dx11Handle. If you want the typed handle type use Dx11Type::getHandle(texture) */
+/* For generic handles you can use Dx11Handle. If you want the typed handle type use Dx11Type::wrap(texture) */
 typedef WrapApiHandle<Dx11Type> Dx11Handle;
 
 } // namespace Common 

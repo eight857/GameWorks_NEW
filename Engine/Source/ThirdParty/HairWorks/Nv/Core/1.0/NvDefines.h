@@ -579,21 +579,21 @@ General defines
 // Apparently the apple-clang-llvm compiler doesn't support malign-double.
 
 #if NV_PS4 || NV_APPLE_FAMILY
-typedef long NvPackValidationType;
+typedef long NvCorePackValidateType;
 #elif NV_ANDROID
-typedef double NvPackValidationType;
+typedef double NvCorePackValidateType;
 #else
-typedef long long NvPackValidationType;
+typedef long long NvCorePackValidateType;
 #endif
 
-typedef struct NvPackValidation
+typedef struct NvCorePackValidate
 {
 	char _;
-	NvPackValidationType  a;
-} NvPackValidation;
+	NvCorePackValidateType  a;
+} NvCorePackValidate;
 
 #if !NV_APPLE_FAMILY
-NV_COMPILE_TIME_ASSERT(NV_OFFSET_OF(NvPackValidation, a) == 8);
+NV_COMPILE_TIME_ASSERT(NV_OFFSET_OF(NvCorePackValidate, a) == 8);
 #endif
 
 // use in a cpp file to suppress LNK4221
@@ -631,15 +631,9 @@ modules. The C++ compliant types for the core library are in the nvidia namespac
 
 The types, and functions of the nvidia namespace can be accessed via the fully qualified namespace
 of nvidia, but it often easier and more readable to use the shortened namespace alias Nv.
-
-Also note that in general the generic types defined in nvidia namespace, are designed to be compatible with C - and
-they are just aliases to an underlying C type, which is generally the type prefixed with Nv. 
-
-For example nvidia::Int is the same as Nv::Int and NvInt. 
 */
+
 namespace nvidia {}
-/*! Short version of the nvidia namespace */
-namespace Nv = nvidia;
 
 // C++ specific macros
 

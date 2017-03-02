@@ -15,7 +15,6 @@
 
 namespace nvidia {
 namespace HairWorks {
-using namespace NvCo;
 
 class Dx12DescriptorFlag { Dx12DescriptorFlag(); public: enum Enum {
 	CBV = 0x01,
@@ -30,7 +29,7 @@ struct Dx12InitInfo
 	/// Initialize
 
 	Void init() { m_targetInfo.init(); }
-	Dx12TargetInfo m_targetInfo;
+	NvCo::Dx12TargetInfo m_targetInfo;
 };
 
 /* Describes the pixel shader used to render with on Dx12. 
@@ -59,7 +58,7 @@ struct Dx12PixelShaderInfo
 	Int m_numCbvs;							///< Number of constant buffer views  
 	Int m_numSrvs;							///< Number or shader resource views 
 
-	Dx12TargetInfo m_targetInfo;
+	NvCo::Dx12TargetInfo m_targetInfo;
 };
 
 /*! Structure for specifying data needed for rendering on DirectX12. 
@@ -135,7 +134,7 @@ struct Dx12SdkType
 	typedef Dx12SdkSubType ScopeSubType;
 
 		/// Get the full type for the subtype
-	NV_FORCE_INLINE static Int getType(ScopeSubType::Enum subType) { return (Int(ApiType::HAIR_WORKS_DX12) << 8) | Int(subType); }
+	NV_FORCE_INLINE static Int getType(ScopeSubType::Enum subType) { return (Int(NvCo::ApiType::HAIR_WORKS_DX12) << 8) | Int(subType); }
 		/// Get the type via template, needed for arrays
 	template <typename T>
 	NV_FORCE_INLINE static Int getType() { return getType((T*)NV_NULL); }
@@ -149,20 +148,20 @@ struct Dx12SdkType
 
 		/// Get a pointer
 	template <typename T>
-	NV_FORCE_INLINE static ConstApiPtr wrapPtr(const T* in) { return ConstApiPtr(getPtrType<T>(), in); }
+	NV_FORCE_INLINE static NvCo::ConstApiPtr wrapPtr(const T* in) { return NvCo::ConstApiPtr(getPtrType<T>(), in); }
 	template <typename T>
-	NV_FORCE_INLINE static ApiPtr wrapPtr(T* in) { return ApiPtr(getPtrType<T>(), in); }
+	NV_FORCE_INLINE static NvCo::ApiPtr wrapPtr(T* in) { return NvCo::ApiPtr(getPtrType<T>(), in); }
 
 		/// Get from 
 	template <typename T>
-	NV_FORCE_INLINE static const T* cast(const ConstApiPtr& ptr) { const Int type = getPtrType<T>(); return reinterpret_cast<const T*>((ptr.m_type == type) ? ptr.getData() : NV_NULL); }
+	NV_FORCE_INLINE static const T* cast(const NvCo::ConstApiPtr& ptr) { const Int type = getPtrType<T>(); return reinterpret_cast<const T*>((ptr.m_type == type) ? ptr.getData() : NV_NULL); }
 		// Get from 
 	template <typename T>
-	NV_FORCE_INLINE static T* cast(const ApiPtr& ptr) { const Int type = getPtrType<T>(); return reinterpret_cast<T*>((ptr.m_type == type) ? ptr.getData() : NV_NULL); }
+	NV_FORCE_INLINE static T* cast(const NvCo::ApiPtr& ptr) { const Int type = getPtrType<T>(); return reinterpret_cast<T*>((ptr.m_type == type) ? ptr.getData() : NV_NULL); }
 };
 
-/* For generic handles you can use Dx11Handle. If you want the typed handle type use Dx11Type::getHandle(texture) */
-typedef WrapApiHandle<Dx12Type> Dx12Handle;
+/* For generic handles you can use Dx12Handle. If you want the typed handle type use Dx12Type::wrap(texture) */
+typedef NvCo::WrapApiHandle<NvCo::Dx12Type> Dx12Handle;
 
 } // namespace HairWorks
 } // namespace nvidia
