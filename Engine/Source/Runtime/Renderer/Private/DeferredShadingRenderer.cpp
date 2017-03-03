@@ -23,6 +23,10 @@
 #include "SceneViewExtension.h"
 #include "GPUSkinCache.h"
 
+// NvFlow begin
+#include "GameWorks/RendererHooksNvFlow.h"
+// NvFlow end
+
 TAutoConsoleVariable<int32> CVarEarlyZPass(
 	TEXT("r.EarlyZPass"),
 	3,	
@@ -615,7 +619,11 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		}	
 	}
 
-	if (ShouldPrepareDistanceFieldScene())
+	if (ShouldPrepareDistanceFieldScene(
+		// NvFlow begin
+		GRendererNvFlowHooks && GRendererNvFlowHooks->NvFlowUsesGlobalDistanceField()
+		// NvFlow end
+	))
 	{
 		SCOPE_CYCLE_COUNTER(STAT_FDeferredShadingSceneRenderer_DistanceFieldAO_Init);
 		GDistanceFieldVolumeTextureAtlas.UpdateAllocations();
@@ -715,6 +723,13 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		SCOPE_CYCLE_COUNTER(STAT_FDeferredShadingSceneRenderer_MotionBlurStartFrame);
 		Scene->MotionBlurInfoData.StartFrame(ViewFamily.bWorldIsPaused);
 	}
+
+	// NvFlow begin
+	if (GRendererNvFlowHooks)
+	{
+		GRendererNvFlowHooks->NvFlowUpdateScene(RHICmdList, Scene->Primitives, &Views[0].GlobalDistanceFieldInfo.ParameterData);
+	}
+	// NvFlow end
 
 	// Notify the FX system that the scene is about to be rendered.
 	bool bLateFXPrerender = CVarFXSystemPreRenderAfterPrepass.GetValueOnRenderThread() > 0;
@@ -939,6 +954,28 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 	
 	SceneContext.ResolveSceneDepthTexture(RHICmdList, FResolveRect(0, 0, ViewFamily.FamilySizeX, ViewFamily.FamilySizeY));
 	SceneContext.ResolveSceneDepthToAuxiliaryTexture(RHICmdList);
+
+	// NvFlow begin
+	if (GRendererNvFlowHooks)
+	{
+		bool ShouldDoPreComposite = GRendererNvFlowHooks->NvFlowShouldDoPreComposite(RHICmdList);
+		if (ShouldDoPreComposite)
+		{
+			SceneContext.BeginRenderingSceneColor(RHICmdList, ESimpleRenderTargetMode::EExistingColorAndDepth, FExclusiveDepthStencil::DepthWrite_StencilWrite);
+
+			for (int32 ViewIdx = 0; ViewIdx < Views.Num(); ViewIdx++)
+			{
+				const auto& View = Views[ViewIdx];
+
+				RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
+
+				GRendererNvFlowHooks->NvFlowDoPreComposite(RHICmdList, View);
+			}
+
+			SceneContext.FinishRenderingSceneColor(RHICmdList);
+		}
+	}
+	// NvFlow end
 
 	bool bOcclusionAfterBasePass = bIsOcclusionTesting && !bOcclusionBeforeBasePass;
 	bool bHZBAfterBasePass = !bHZBBeforeBasePass;

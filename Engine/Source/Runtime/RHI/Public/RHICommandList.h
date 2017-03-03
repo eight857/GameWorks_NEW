@@ -1570,6 +1570,21 @@ struct FRHICommandUpdateTextureReference : public FRHICommand<FRHICommandUpdateT
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
 
+// NvFlow begin
+struct FRHICommandNvFlowWork : public FRHICommand<FRHICommandNvFlowWork>
+{
+	void(*WorkFunc)(void*,SIZE_T,IRHICommandContext*);
+	void* ParamData;
+	SIZE_T NumBytes;
+	FORCEINLINE_DEBUGGABLE FRHICommandNvFlowWork(void(*WorkFunc)(void*,SIZE_T,IRHICommandContext*), void* ParamData, SIZE_T NumBytes)
+		: WorkFunc(WorkFunc)
+		, ParamData(ParamData)
+		, NumBytes(NumBytes)
+	{
+	}
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+// NvFlow end
 
 #define CMD_CONTEXT(Method) GetContext().Method
 #define COMPUTE_CONTEXT(Method) GetComputeContext().Method
@@ -2492,6 +2507,25 @@ public:
 		new (AllocCommand<FRHICommandDebugBreak>()) FRHICommandDebugBreak();
 #endif
 	}
+
+	// NvFlow begin
+	FORCEINLINE_DEBUGGABLE void NvFlowWork(void(*WorkFunc)(void*,SIZE_T,IRHICommandContext*), void* ParamData, SIZE_T NumBytes)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(NvFlowWork)(WorkFunc, ParamData, NumBytes);
+			return;
+		}
+		// need local copy
+		void* UseData = ParamData;
+		if (NumBytes > 0u)
+		{
+			UseData = Alloc(NumBytes, 16u);
+			FMemory::Memcpy(UseData, ParamData, NumBytes);
+		}
+		new (AllocCommand<FRHICommandNvFlowWork>()) FRHICommandNvFlowWork(WorkFunc, UseData, NumBytes);
+	}
+	// NvFlow end
 };
 
 class RHI_API FRHIAsyncComputeCommandList : public FRHICommandListBase

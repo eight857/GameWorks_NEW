@@ -1,0 +1,27 @@
+{
+	"FileVersion" : 3,
+
+	"FriendlyName" : "NvFlow",
+	"Version" : 1,
+	"VersionName" : "1.0",
+	"CreatedBy" : "NVIDIA",
+	"CreatedByURL" : "http://developer.nvidia.com/nvidia-flow",
+	"EngineVersion" : "4.12.0",
+	"Description" : "NvFlow",
+	"Category" : "Visual FX",
+	"EnabledByDefault" : true,
+
+	"Modules" :
+	[
+		{
+			"Name" : "NvFlow",
+			"Type" : "Runtime",
+			"LoadingPhase" : "PostConfigInit",
+			"WhitelistPlatforms" : [ "Win64", "Win32" ]
+		},
+		{
+			"Name" : "NvFlowEditor",
+			"Type" : "Editor"
+		}
+	]
+}

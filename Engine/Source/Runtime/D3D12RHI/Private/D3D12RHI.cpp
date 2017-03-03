@@ -185,6 +185,9 @@ FD3D12DynamicRHI::FD3D12DynamicRHI(TArray<FD3D12Adapter*>& ChosenAdaptersIn) :
 
 	// Enable async compute by default
 	GEnableAsyncCompute = true;
+	// NvFlow begin disable native async compute
+	GEnableAsyncCompute = false;
+	// NvFlow end disable native async compute
 }
 
 FD3D12DynamicRHI::~FD3D12DynamicRHI()

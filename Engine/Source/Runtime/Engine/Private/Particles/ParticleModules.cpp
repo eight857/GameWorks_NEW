@@ -4567,6 +4567,10 @@ bool UDistributionVectorParticleParameter::GetParamValue(UObject* Data, FName Pa
 UParticleModuleTypeDataGpu::UParticleModuleTypeDataGpu(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, bClearExistingParticlesOnInit(false)
+	// NvFlow begin
+	, bEnableGridInteraction(false)
+	, InteractionChannel(EIC_Channel1)
+	// NvFlow end
 {
 }
 
@@ -4898,8 +4902,13 @@ void UParticleModuleTypeDataGpu::Build( FParticleEmitterBuildInfo& EmitterBuildI
 	// Collision flag.
 	EmitterInfo.bEnableCollision = EmitterBuildInfo.bEnableCollision;
 	EmitterInfo.CollisionMode = (EParticleCollisionMode::Type)EmitterBuildInfo.CollisionMode;
-#endif
 
+	// NvFlow begin
+	EmitterInfo.bEnableGridInteraction = this->bEnableGridInteraction;
+	EmitterInfo.InteractionChannel = this->InteractionChannel;
+	EmitterInfo.ResponseToInteractionChannels = this->ResponseToInteractionChannels;
+	// NvFlow end
+#endif
 
 	// Create or update GPU resources.
 	if ( EmitterInfo.Resources )
