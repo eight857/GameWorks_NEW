@@ -576,14 +576,12 @@ void NvFlow::Context::updateGridView(FRHICommandListImmediate& RHICmdList)
 
 void NvFlow::Context::updateGridViewStart(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
 {
-	//clear debug info
-	NvFlowDebugInfoQueue.GetInfo_Produce()->Empty();
+	NvFlowDebugInfoQueue.StartSubmitInfo();
 }
 
 void NvFlow::Context::updateGridViewFinish(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
 {
-	//submit debug info
-	NvFlowDebugInfoQueue.SubmitInfo_Produce();
+	NvFlowDebugInfoQueue.FinishSubmitInfo();
 }
 
 
@@ -1293,6 +1291,8 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 
 	m_gridExport4Render = NvFlowGridProxyGetGridExport(m_gridProxy, m_renderContext);
 
+	auto SubmitInfo = NvFlowDebugInfoQueue.GetSubmitInfo();
+	if (SubmitInfo)
 	{
 		FString gridName;
 		FlowGridSceneProxy->GetOwnerName().ToString(gridName);
@@ -1305,8 +1305,8 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 		NvFlowGridExportLayeredView gridDensityLayeredView;
 		NvFlowGridExportGetLayeredView(gridDensityHandle, &gridDensityLayeredView);
 
-		NvFlowDebugInfoQueue.GetInfo_Produce()->Add(FString::Printf(TEXT("Grid '%s': velocity blocks %d of %d"), *gridName, gridVelocityLayeredView.mapping.layeredNumBlocks, gridVelocityLayeredView.mapping.maxBlocks));
-		NvFlowDebugInfoQueue.GetInfo_Produce()->Add(FString::Printf(TEXT("Grid '%s': density blocks %d of %d"), *gridName, gridDensityLayeredView.mapping.layeredNumBlocks, gridDensityLayeredView.mapping.maxBlocks));
+		SubmitInfo->Add(FString::Printf(TEXT("Grid '%s': velocity blocks %d of %d"), *gridName, gridVelocityLayeredView.mapping.layeredNumBlocks, gridVelocityLayeredView.mapping.maxBlocks));
+		SubmitInfo->Add(FString::Printf(TEXT("Grid '%s': density blocks %d of %d"), *gridName, gridDensityLayeredView.mapping.layeredNumBlocks, gridDensityLayeredView.mapping.maxBlocks));
 	}
 
 	if (Properties.RenderParams.bVolumeShadowEnabled && m_shadowViewMatrixValid)

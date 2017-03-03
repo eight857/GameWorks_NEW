@@ -11,35 +11,47 @@ class FNvFlowDebugInfoQueue
 public:
 	typedef TArray<FString> DebugInfo_t;
 
-	inline DebugInfo_t* GetInfo_Produce() const
+	void StartSubmitInfo()
 	{
-		return Info_Produce;
+		bSubmitEnabled = (SubmitInfoCount < SubmitInfoCountThreshold);
+		InfoToSubmit->Empty();
 	}
 
-	void SubmitInfo_Produce()
+	inline DebugInfo_t* GetSubmitInfo() const
 	{
-		Info_Produce = (DebugInfo_t*)FPlatformAtomics::InterlockedExchangePtr((void**)&Info_Exchange, Info_Produce);
-
-		InterlockedCompareExchange(&NewInfoFlag, 1, 0);
+		return bSubmitEnabled ? InfoToSubmit : nullptr;
 	}
 
-	DebugInfo_t* FetchInfo_Consume()
+	void FinishSubmitInfo()
 	{
-		if (InterlockedCompareExchange(&NewInfoFlag, 0, 1) == 1)
+		if (bSubmitEnabled)
 		{
-			Info_Consume = (DebugInfo_t*)FPlatformAtomics::InterlockedExchangePtr((void**)&Info_Exchange, Info_Consume);
+			InfoToSubmit = (DebugInfo_t*)FPlatformAtomics::InterlockedExchangePtr((void**)&InfoToExchange, InfoToSubmit);
+
+			InterlockedIncrement(&SubmitInfoCount);
 		}
-		return Info_Consume;
+	}
+
+	DebugInfo_t* FetchInfo()
+	{
+		if (InterlockedExchange(&SubmitInfoCount, 0) > 0)
+		{
+			InfoToFetch = (DebugInfo_t*)FPlatformAtomics::InterlockedExchangePtr((void**)&InfoToExchange, InfoToFetch);
+		}
+		return InfoToFetch;
 	}
 
 private:
 	DebugInfo_t Info[3];
 
-	DebugInfo_t* Info_Produce = &Info[0];
-	DebugInfo_t* Info_Consume = &Info[1];
-	volatile DebugInfo_t* Info_Exchange = &Info[2];
+	DebugInfo_t* InfoToSubmit = &Info[0];
+	DebugInfo_t* InfoToFetch = &Info[1];
+	volatile DebugInfo_t* InfoToExchange = &Info[2];
 
-	volatile uint32 NewInfoFlag = false;
+	static const uint32 SubmitInfoCountThreshold = 4;
+	volatile uint32 SubmitInfoCount = SubmitInfoCountThreshold;
+
+	bool bSubmitEnabled = false;
 };
 extern FNvFlowDebugInfoQueue NvFlowDebugInfoQueue;
 

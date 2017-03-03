@@ -247,7 +247,7 @@ void FNvFlowModule::OnShowDebugInfo(AHUD* HUD, UCanvas* Canvas, const FDebugDisp
 		DisplayDebugManager.SetDrawColor(FColor::Red);
 		DisplayDebugManager.DrawString(FString(TEXT("~~~~~ NvFlow ~~~~~")));
 
-		FNvFlowDebugInfoQueue::DebugInfo_t* DebugInfo = NvFlowDebugInfoQueue.FetchInfo_Consume();
+		FNvFlowDebugInfoQueue::DebugInfo_t* DebugInfo = NvFlowDebugInfoQueue.FetchInfo();
 		for (auto It = DebugInfo->CreateConstIterator(); It; ++It)
 		{
 			DisplayDebugManager.DrawString(*It);
