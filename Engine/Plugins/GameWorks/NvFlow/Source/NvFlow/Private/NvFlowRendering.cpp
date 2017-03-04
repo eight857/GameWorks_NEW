@@ -1034,8 +1034,11 @@ void NvFlow::Scene::convertShapeSDF(NvFlowShapeDesc& shapeDesc)
 	const class UStaticMesh* StaticMesh = reinterpret_cast<const class UStaticMesh*>(shapeDesc.sdf.sdf);
 	check(StaticMesh != nullptr);
 
-	shapeDesc.sdf.sdf = m_context->m_mapForShapeSDF[StaticMesh];
-	check(shapeDesc.sdf.sdf != nullptr);
+	if (m_context->m_mapForShapeSDF.Find(StaticMesh))
+	{
+		shapeDesc.sdf.sdf = m_context->m_mapForShapeSDF[StaticMesh];
+		check(shapeDesc.sdf.sdf != nullptr);
+	}
 }
 
 const NvFlow::Scene::MaterialData& NvFlow::Scene::updateMaterial(FlowMaterialKeyType materialKey, const FFlowMaterialParams& materialParams)
