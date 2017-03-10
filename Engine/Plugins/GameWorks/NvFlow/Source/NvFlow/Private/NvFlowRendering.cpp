@@ -1031,13 +1031,15 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 
 void NvFlow::Scene::convertShapeSDF(NvFlowShapeDesc& shapeDesc)
 {
-	const class UStaticMesh* StaticMesh = reinterpret_cast<const class UStaticMesh*>(shapeDesc.sdf.sdf);
+	const class UStaticMesh* StaticMesh = *reinterpret_cast<const class UStaticMesh**>(&shapeDesc.sdf.sdfOffset);
 	check(StaticMesh != nullptr);
 
 	if (m_context->m_mapForShapeSDF.Find(StaticMesh))
 	{
-		shapeDesc.sdf.sdf = m_context->m_mapForShapeSDF[StaticMesh];
-		check(shapeDesc.sdf.sdf != nullptr);
+		shapeDesc.sdf.sdfOffset = 0u;	
+		// TODO : Have table to associate UStaticMesh to sdfOffset
+		//shapeDesc.sdf.sdf = m_context->m_mapForShapeSDF[StaticMesh];
+		//check(shapeDesc.sdf.sdf != nullptr);
 	}
 }
 

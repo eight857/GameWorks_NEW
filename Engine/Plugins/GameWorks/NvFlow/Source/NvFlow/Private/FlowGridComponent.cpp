@@ -560,7 +560,7 @@ void UFlowGridComponent::UpdateShapes()
 						//DistanceField
 						check(DistanceFieldVolumeData != nullptr);
 
-						ShapeDescsPtr[0].sdf.sdf = reinterpret_cast<NvFlowShapeSDF*>(StaticMeshComponent->GetStaticMesh());
+						*reinterpret_cast<UStaticMesh**>(&ShapeDescsPtr[0].sdf.sdfOffset) = StaticMeshComponent->GetStaticMesh();
 					}
 				}
 
