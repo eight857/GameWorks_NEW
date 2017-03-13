@@ -128,6 +128,8 @@ struct FFlowGridProperties
 	TArray<TPair<FlowMaterialKeyType, FFlowMaterialParams> > Materials;
 
 	TArray<FFlowDistanceFieldParams> NewDistanceFieldList;
+
+	TArray<const class UStaticMesh*> DistanceFieldKeys;
 };
 
 class UFlowGridComponent;

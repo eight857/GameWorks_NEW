@@ -210,6 +210,8 @@ namespace NvFlow
 
 		TArray<ParticleSimulationParamsNvFlow> m_particleParamsArray;
 
+		TArray<NvFlowShapeSDF*> m_sdfs;
+
 		struct RenderMaterialData
 		{
 			enum
@@ -232,7 +234,6 @@ namespace NvFlow
 		TMap<FlowMaterialKeyType, MaterialData> m_materialMap;
 
 		const MaterialData& updateMaterial(FlowMaterialKeyType materialKey, const FFlowMaterialParams& materialParams);
-		inline void convertShapeSDF(NvFlowShapeDesc& shapeDesc);
 
 		// deferred mechanism for proper RHI command list support
 		float m_updateSubstep_dt = 0.f;
@@ -1012,34 +1013,27 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 		}
 
 		Properties.GridEmitParams[i].material = gridMaterialHandle;
-
-		if (Properties.GridEmitParams[i].shapeType == eNvFlowShapeTypeSDF)
-		{
-			convertShapeSDF(Properties.GridEmitShapeDescs[Properties.GridEmitParams[i].shapeRangeOffset]);
-		}
 	}
 
-	// update SDF shapes
-	for (int32 i = 0; i < Properties.GridCollideParams.Num(); ++i)
+	// update SDF array
+	bool bNeedUpdateSDFs = false;
+	m_sdfs.SetNumZeroed(Properties.DistanceFieldKeys.Num(), false);
+	for (int32 i = 0; i < m_sdfs.Num(); ++i)
 	{
-		if (Properties.GridCollideParams[i].shapeType == eNvFlowShapeTypeSDF)
+		const class UStaticMesh* StaticMesh = Properties.DistanceFieldKeys[i];
+		check(StaticMesh != nullptr);
+
+		NvFlowShapeSDF* sdf = m_context->m_mapForShapeSDF.FindChecked(StaticMesh);
+		check(sdf != nullptr);
+		if (m_sdfs[i] != sdf)
 		{
-			convertShapeSDF(Properties.GridCollideShapeDescs[Properties.GridCollideParams[i].shapeRangeOffset]);
+			m_sdfs[i] = sdf;
+			bNeedUpdateSDFs = true;
 		}
 	}
-}
-
-void NvFlow::Scene::convertShapeSDF(NvFlowShapeDesc& shapeDesc)
-{
-	const class UStaticMesh* StaticMesh = *reinterpret_cast<const class UStaticMesh**>(&shapeDesc.sdf.sdfOffset);
-	check(StaticMesh != nullptr);
-
-	if (m_context->m_mapForShapeSDF.Find(StaticMesh))
+	if (bNeedUpdateSDFs)
 	{
-		shapeDesc.sdf.sdfOffset = 0u;	
-		// TODO : Have table to associate UStaticMesh to sdfOffset
-		//shapeDesc.sdf.sdf = m_context->m_mapForShapeSDF[StaticMesh];
-		//check(shapeDesc.sdf.sdf != nullptr);
+		NvFlowGridUpdateEmitSDFs(m_grid, m_sdfs.GetData(), m_sdfs.Num());
 	}
 }
 

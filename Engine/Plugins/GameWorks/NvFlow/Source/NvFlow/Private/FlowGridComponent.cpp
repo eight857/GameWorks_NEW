@@ -194,6 +194,7 @@ void UFlowGridComponent::UpdateShapes()
 	FlowGridProperties.GridEmitMaterialKeys.SetNum(0);
 
 	FlowGridProperties.NewDistanceFieldList.SetNum(0);
+	FlowGridProperties.DistanceFieldKeys.SetNum(0);
 
 	// only update if enabled
 	if (!bFlowGridCollisionEnabled)
@@ -444,6 +445,8 @@ void UFlowGridComponent::UpdateShapes()
 						DistanceFieldParams.Size = DistanceFieldVolumeData->Size;
 						DistanceFieldParams.DistanceFieldVolume = DistanceFieldVolumeData->DistanceFieldVolume;
 					}
+
+					FlowGridProperties.DistanceFieldKeys.Add(StaticMesh);
 				}
 
 				int32 EmitShapeStartIndex = FlowGridProperties.GridEmitShapeDescs.Num();
@@ -558,9 +561,9 @@ void UFlowGridComponent::UpdateShapes()
 					else
 					{
 						//DistanceField
-						check(DistanceFieldVolumeData != nullptr);
+						check(FlowGridProperties.DistanceFieldKeys.Num() > 0);
 
-						*reinterpret_cast<UStaticMesh**>(&ShapeDescsPtr[0].sdf.sdfOffset) = StaticMeshComponent->GetStaticMesh();
+						ShapeDescsPtr[0].sdf.sdfOffset = FlowGridProperties.DistanceFieldKeys.Num() - 1;
 					}
 				}
 
