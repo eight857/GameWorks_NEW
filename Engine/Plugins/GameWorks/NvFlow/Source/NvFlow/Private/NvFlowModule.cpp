@@ -1,6 +1,9 @@
 #include "NvFlowModule.h"
 #include "NvFlowPCH.h"
 
+#include "GameFramework/HUD.h"
+#include "Engine/Canvas.h"
+
 #include "GameWorks/RendererHooksNvFlow.h"
 #include "GameWorks/GridAccessHooksNvFlow.h"
 

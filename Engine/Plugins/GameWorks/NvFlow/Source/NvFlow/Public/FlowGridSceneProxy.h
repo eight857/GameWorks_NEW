@@ -12,6 +12,7 @@ FFlowGridSceneProxy
 
 #pragma once
 
+#define NV_FLOW_SHADER_UTILS 0
 #include "NvFlow.h"
 
 namespace NvFlow

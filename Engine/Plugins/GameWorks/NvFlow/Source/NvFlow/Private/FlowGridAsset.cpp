@@ -6,7 +6,6 @@
 #include "PhysicsEngine/PhysXSupport.h"
 #include "Curves/CurveLinearColor.h"
 
-#include "NvFlow.h"
 
 bool UFlowGridAsset::sGlobalDebugDraw = false;
 uint32 UFlowGridAsset::sGlobalRenderChannel = eNvFlowGridTextureChannelDensity;

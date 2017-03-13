@@ -8,8 +8,6 @@
 
 #include "GameWorks/RHINvFlowD3D12.h"
 
-#include "NvFlow.h"
-#include "NvFlowContext.h"
 #include "NvFlowContextD3D12.h"
 
 class NvFlowInteropD3D12 : public NvFlowInterop

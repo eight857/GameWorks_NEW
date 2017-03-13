@@ -3,8 +3,6 @@
 
 // NvFlow begin
 
-#include "NvFlow.h"
-
 namespace
 {
 	inline void AddColorMapPoint(UCurveLinearColor* ColorMap, float Time, FLinearColor Color)

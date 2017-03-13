@@ -6,9 +6,6 @@
 =============================================================================*/
 
 // NvFlow begin
-
-#include "NvFlow.h"
-
 #include "PhysicsEngine/PhysXSupport.h"
 #include "Curves/CurveLinearColor.h"
 #include "RHIStaticStates.h"

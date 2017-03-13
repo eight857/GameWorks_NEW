@@ -3,8 +3,6 @@
 
 // NvFlow begin
 
-#include "NvFlow.h"
-
 namespace
 {
 	void CopyMaterialPerComponent(const NvFlowGridMaterialPerComponent& In, FFlowMaterialPerComponent& Out)

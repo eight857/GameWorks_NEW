@@ -1,9 +1,12 @@
 #pragma once
 
-#include "Engine.h"
+#include "UObject/ObjectMacros.h"
+#include "ConstructorHelpers.h"
+#include "Engine/CollisionProfile.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogNvFlow, Verbose, All);
 
+#define NV_FLOW_SHADER_UTILS 0
 #include "NvFlow.h"
 #include "NvFlowContext.h"
 

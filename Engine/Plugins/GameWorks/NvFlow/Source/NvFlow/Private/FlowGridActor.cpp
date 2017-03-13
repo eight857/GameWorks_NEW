@@ -7,6 +7,7 @@
 
 // NvFlow begin
 
+#include "Components/BillboardComponent.h"
 #include "PhysicsEngine/PhysXSupport.h"
 
 AFlowGridActor::AFlowGridActor(const FObjectInitializer& ObjectInitializer)

@@ -8,7 +8,6 @@
 // NvFlow begin
 
 #include "PhysicsEngine/PhysXSupport.h"
-#include "NvFlow.h"
 
 static const float Density_DEPRECATED_Default = 0.5f;
 static const float DensityMask_DEPRECATED_Default = 1.0f;

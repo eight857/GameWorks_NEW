@@ -6,6 +6,20 @@
 DECLARE_LOG_CATEGORY_EXTERN(LogFlow, Log, All);
 DEFINE_LOG_CATEGORY(LogFlow);
 
+
+#ifndef NVFLOW_ADAPTIVE
+#define NVFLOW_ADAPTIVE 0
+#endif
+
+#ifndef WITH_CUDA_CONTEXT
+#define WITH_CUDA_CONTEXT 0
+#endif
+
+#ifndef NVFLOW_SMP
+#define NVFLOW_SMP 0
+#endif
+
+
 /*=============================================================================
 NFlowRendering.cpp: Translucent rendering implementation.
 =============================================================================*/

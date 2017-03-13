@@ -2,14 +2,18 @@
 
 #if PLATFORM_WINDOWS
 #include "AllowWindowsPlatformTypes.h"
+#undef D3D11_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS
+#undef D3D11_ERROR_FILE_NOT_FOUND
+#undef D3D11_ERROR_TOO_MANY_UNIQUE_VIEW_OBJECTS
+#undef D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD
+#undef D3D10_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS
+#undef D3D10_ERROR_FILE_NOT_FOUND
 #include <d3d11.h>
 #include "HideWindowsPlatformTypes.h"
 #endif
 
 #include "GameWorks/RHINvFlowD3D11.h"
 
-#include "NvFlow.h"
-#include "NvFlowContext.h"
 #include "NvFlowContextD3D11.h"
 
 class NvFlowInteropD3D11 : public NvFlowInterop

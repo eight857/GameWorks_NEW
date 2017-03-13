@@ -1,9 +1,8 @@
 #pragma once
 
-#include "Engine.h"
-
 DECLARE_LOG_CATEGORY_EXTERN(LogNvFlowEditor, Verbose, All);
 
+#define NV_FLOW_SHADER_UTILS 0
 #include "NvFlow.h"
 #include "NvFlowContext.h"
 
