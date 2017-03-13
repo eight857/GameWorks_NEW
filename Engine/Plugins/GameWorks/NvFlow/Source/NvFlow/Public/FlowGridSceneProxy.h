@@ -165,6 +165,8 @@ public:
 	// shared resources 
 	int32 NumScheduledSubsteps;
 
+	bool bWasDynamicDataUsed;
+
 	// resources managed in render thread
 	void* scenePtr;
 	void(*cleanupSceneFunc)(void*);

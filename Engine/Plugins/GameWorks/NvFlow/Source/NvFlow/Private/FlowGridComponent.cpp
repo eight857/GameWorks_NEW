@@ -1174,6 +1174,7 @@ FFlowGridSceneProxy::FFlowGridSceneProxy(UFlowGridComponent* Component)
 	: FPrimitiveSceneProxy(Component)
 	, FlowGridProperties(Component->FlowGridProperties)
 	, NumScheduledSubsteps(0)
+	, bWasDynamicDataUsed(false)
 	, scenePtr(nullptr)
 	, cleanupSceneFunc(nullptr)
 {
@@ -1237,6 +1238,8 @@ void FFlowGridSceneProxy::SetDynamicData_RenderThread(const FFlowGridProperties&
 	{
 		NumScheduledSubsteps = 0;
 	}
+
+	bWasDynamicDataUsed = false;
 }
 
 void FFlowGridSceneProxy::Simulate_RenderThread(int32 NumSubSteps)

@@ -666,6 +666,13 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 		return;
 	}
 
+	if (FlowGridSceneProxy->bWasDynamicDataUsed)
+	{
+		// don't update more than once!
+		return;
+	}
+	FlowGridSceneProxy->bWasDynamicDataUsed = true;
+
 	// create scene if necessary
 	if (FlowGridSceneProxy->scenePtr == nullptr)
 	{
