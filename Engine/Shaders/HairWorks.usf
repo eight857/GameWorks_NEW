@@ -344,4 +344,44 @@ float4 HitProxyPs(NvHair_PixelShaderInput Input): SV_Target0
 	return HitProxyId;
 }
 
+uint HairId;
+
+float CopyStencilPs(float4 Position : SV_POSITION) : SV_Depth
+{
+	uint2 Size;
+	uint SampleNum;
+	DepthTexture.GetDimensions(Size.x, Size.y, SampleNum);
+
+	float NearestDepth = 0;
+	for(uint i = 0; i < SampleNum; ++i)
+	{
+		// Skip depth of other hair instances
+		uint Stencil = StencilTexture.Load(Position.xy, i).g;
+		if(Stencil != HairId)
+			continue;
+
+		// Store nearer depth
+		float Depth = DepthTexture.Load(Position.xy, i);
+		if(Depth > NearestDepth)
+		{
+			NearestDepth = Depth;
+		}
+	}
+
+	if(NearestDepth == 0)
+		discard;
+
+	return NearestDepth;
+}
+
+float4 BoundInfo;	// Position + radius
+
+float4 SphereVs(float3 InPosition : ATTRIBUTE0) : SV_Position
+{
+	InPosition *= BoundInfo.w;
+	InPosition += BoundInfo.xyz;
+
+	return mul(float4(InPosition, 1), View.WorldToClip);
+}
+
 // @third party code - END HairWorks
