@@ -1,9 +1,10 @@
 ﻿HairWorks Preview Release 3
 =============
 New:
-* Upgraded to HairWorks 1.2.
+* Upgraded to HairWorks 1.3.
 * Upgraded to UE4.15
-* Added suport for exporting HairWorks assets. 
+* Added support of outputting stencil value of HairWorks instances. 
+* Added support for exporting HairWorks assets. 
 * Textures are now automatically imported when a HairWorks asset is imported. 
 * Added support for tiled deferred shading. 
 * Made hairs darker on back faces with un-shadowed lights. 
