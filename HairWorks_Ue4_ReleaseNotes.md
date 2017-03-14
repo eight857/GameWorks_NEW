@@ -1,7 +1,7 @@
 ﻿HairWorks Preview Release 3
 =============
 New:
-* Upgraded to HairWorks 1.2.
+* Upgraded to HairWorks 1.3.
 * Upgraded to UE4.15
 * Added suport for exporting HairWorks assets. 
 * Textures are now automatically imported when a HairWorks asset is imported. 
