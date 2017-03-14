@@ -1,9 +1,11 @@
 ï»¿HairWorks Preview Release 3
 =============
 New:
-* Upgraded to HairWorks 1.2.
-* Upgraded to UE4.14
+* Upgraded to HairWorks 1.3.
+* Upgraded to UE4.15
 * Added support for morph targets of skeletal meshes. 
+* Added support of outputting stencil value of HairWorks instances. 
+* Added support for exporting HairWorks assets. 
 * Textures are now automatically imported when a HairWorks asset is imported. 
 * Added support for tiled deferred shading. 
 * Made hairs darker on back faces with un-shadowed lights. 
@@ -26,7 +28,7 @@ Fix:
 * HairWorks component now has right bounding box.
 * Fixed some problems when a HairWorks component is edited.
 * Fixed a bug that hair transform is sometimes wrong.
-* Fixed a bug that view frustum culling doesnâ€™t work.
+* Fixed a bug that view frustum culling doesn?™t work.
 * Fixed a crash when the hair normal bone index is -1.
 * Fixed hair shadow bug on Pascal GPU.
 * Some refactoring of C++ and shader codes.
@@ -34,7 +36,7 @@ Fix:
 
 Artist Workflow
 =============
-HairWorks assets are imported directly into the content browser. All the attributes of a HairWorks asset are now directly editable on the assetâ€™s Details panel. The details panel is set up to be consistent with the HairWorks Viewerâ€™s UI as close as possible.
+HairWorks assets are imported directly into the content browser. All the attributes of a HairWorks asset are now directly editable on the asset?™s Details panel. The details panel is set up to be consistent with the HairWorks Viewer?™s UI as close as possible.
 
 To use a HairWorks asset on a character, it must be added as a BluePrint component.
 

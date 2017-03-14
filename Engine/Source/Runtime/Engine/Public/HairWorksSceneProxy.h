@@ -61,6 +61,8 @@ public:
 
 	static FHairWorksSceneProxy* GetHairInstances();
 
+	uint32 HairIdInStencil = 0;
+
 protected:
 	//** The hair */
 	NvHair::InstanceId HairInstanceId;

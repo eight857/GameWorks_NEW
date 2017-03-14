@@ -27,10 +27,11 @@
 // Copyright (c) 2004-2008 AGEIA Technologies, Inc. All rights reserved.
 // Copyright (c) 2001-2004 NovodeX AG. All rights reserved.
 
-#ifndef NV_KEY_CODE_H
-#define NV_KEY_CODE_H
+#ifndef NV_CO_KEY_CODE_H
+#define NV_CO_KEY_CODE_H
 
 namespace nvidia {
+namespace Common {
 
 struct MouseButtonFlag { enum Enum
 {
@@ -245,6 +246,7 @@ struct VirtualKey { enum Enum
 }; };
 typedef VirtualKey::Enum EVirtualKey;
 
+} // namespace Common
 } // namespace nvidia
 
 #endif // NV_KEY_CODE_H

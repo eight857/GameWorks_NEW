@@ -175,7 +175,7 @@ struct ApiPtr: public ConstApiPtr
 	NV_FORCE_INLINE static const ApiPtr& getNull() { return static_cast<const ApiPtr&>(ConstApiPtr::getNull()); }
 };
 
-/*! \brief Templates for generating 'wrapped' types so you can use Dx11Handle(blah) etc instead of using Dx11Type::getHandle(blah). */
+/*! \brief Templates for generating 'wrapped' types so you can use Dx11Handle(blah) etc instead of using Dx11Type::wrap(blah). */
 template <typename REFLECT_TYPE>
 class WrapApiHandle : public ApiHandle
 {

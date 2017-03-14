@@ -6329,13 +6329,13 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, const NvHair::I
 	auto& HairSdk = *::HairWorks::GetSDK();
 
 	{
-		Nv::Int BoneNum = HairSdk.getNumBones(Hair.AssetId);
+		auto BoneNum = HairSdk.getNumBones(Hair.AssetId);
 
 		Hair.BoneNames.Empty(BoneNum);
 
-		for (Nv::Int Idx = 0; Idx < BoneNum; ++Idx)
+		for (auto Idx = 0; Idx < BoneNum; ++Idx)
 		{
-			Nv::Char BoneName[NV_HAIR_MAX_STRING];
+			NvChar BoneName[NV_HAIR_MAX_STRING];
 			HairSdk.getBoneName(Hair.AssetId, Idx, BoneName);
 
 			Hair.BoneNames.Add(*FSkeletalMeshImportData::FixupBoneName(BoneName));
@@ -6611,14 +6611,14 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 		public:
 			FNvWriteStream(TArray<uint8>& WriteBuffer): Buffer(WriteBuffer) {}
 
-			virtual Nv::Int64 write(const Nv::Void* data, Nv::Int64 numBytes)override
+			virtual NvInt64 write(const void* data, NvInt64 numBytes)override
 			{
 				Buffer.Append(static_cast<const uint8*>(data), numBytes);
 				return numBytes;
 			}
-			virtual Nv::Void flush()override{}
-			virtual Nv::Void close()override{}
-			virtual Nv::Bool isClosed()override{ return false; }
+			virtual void flush()override{}
+			virtual void close()override{}
+			virtual bool isClosed()override{ return false; }
 
 			TArray<uint8>& Buffer;
 		};

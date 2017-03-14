@@ -79,7 +79,7 @@ static Result _readFile(HANDLE fileHandle, void** dataOut, UINT* sizeOut)
 {
 	// Work out the size
 	LONGLONG fileSize = _getFileSize(fileHandle);
-	void* mem = MemoryAllocator::getInstance()->simpleAllocate(Nv::SizeT(fileSize));
+	void* mem = MemoryAllocator::getInstance()->simpleAllocate(NvSizeT(fileSize));
 	if (!mem)
 	{
 		return E_FAIL;

@@ -18,7 +18,7 @@ namespace HairWorks{
 #if !NO_LOGGING
 	class Logger: public NvCo::Logger
 	{
-		virtual void log(NvCo::ELogSeverity severity, const Nv::Char* text, const Nv::Char* function, const Nv::Char* filename, Nv::Int lineNumber) override
+		virtual void log(NvCo::ELogSeverity severity, const NvChar* text, const NvChar* function, const NvChar* filename, NvInt lineNumber) override
 		{
 			ELogVerbosity::Type UELogVerb;
 
