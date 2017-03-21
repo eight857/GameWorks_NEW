@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
  * and proprietary rights in and to this software, related documentation
@@ -97,7 +97,7 @@ NV_FLOW_API void NvFlowGridResetDescDefaults(NvFlowGridResetDesc* desc);
 /**
  * Submits a request to reset a grid, preserving memory allocations
  *
- * @param[in] context The context to reset the Flow grid.
+ * @param[in] grid The grid to reset.
  * @param[in] desc The grid reset description.
  */
 NV_FLOW_API void NvFlowGridReset(NvFlowGrid* grid, const NvFlowGridResetDesc* desc);
@@ -1156,7 +1156,6 @@ struct NvFlowVolumeLightingParams
  *
  * @param[in] volumeRender The volume render object to perform the lighting.
  * @param[in] context The context that created the volume render object.
- * @param[in] colorMap The colorMap to use with colorMap render modes.
  * @param[in] gridExport The grid export to ray march.
  * @param[in] params Parameters for lighting.
  *
@@ -1553,7 +1552,7 @@ struct NvFlowDeviceQueueStatus
 /**
  * Creates a Flow device queue.
  *
- * @param[in] renderContext A context that maps to the application graphics GPU.
+ * @param[in] device The device to create the queue on.
  * @param[in] desc Description that controls kind of device queue to create.
  *
  * @return The created Flow device queue.

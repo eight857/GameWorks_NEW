@@ -1,5 +1,9 @@
 #pragma once
 
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "GameFramework/HUD.h"
+
 #include "ModuleInterface.h"
 
 struct FNvFlowCommands;

@@ -2,6 +2,10 @@
 
 // NvFlow begin
 
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "GameFramework/Actor.h"
+
 #include "FlowGridActor.generated.h"
 
 UCLASS(MinimalAPI, hidecategories=(Input))

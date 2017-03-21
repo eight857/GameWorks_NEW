@@ -6,6 +6,10 @@
 
 // NvFlow begin
 
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "Components/PrimitiveComponent.h"
+
 #include "FlowGridSceneProxy.h"
 #include "FlowGridComponent.generated.h"
 

@@ -12,6 +12,10 @@ FFlowGridSceneProxy
 
 #pragma once
 
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "PrimitiveSceneProxy.h"
+
 #define NV_FLOW_SHADER_UTILS 0
 #include "NvFlow.h"
 

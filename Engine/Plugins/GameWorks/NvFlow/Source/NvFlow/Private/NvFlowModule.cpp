@@ -1,6 +1,10 @@
 #include "NvFlowModule.h"
 #include "NvFlowPCH.h"
 
+#include "Engine/Engine.h"
+#include "Modules/ModuleManager.h"
+#include "Misc/Paths.h"
+
 #include "GameFramework/HUD.h"
 #include "Engine/Canvas.h"
 
