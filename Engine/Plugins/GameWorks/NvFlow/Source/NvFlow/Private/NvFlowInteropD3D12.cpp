@@ -69,7 +69,7 @@ public:
 		return NvFlowCreateContextD3D12(NV_FLOW_VERSION, &desc);
 	}
 
-	virtual NvFlowDepthStencilView* CreateDepthStencilView(IRHICommandContext& RHICmdCtx, NvFlowContext* context)
+	virtual NvFlowDepthStencilView* CreateDepthStencilView(IRHICommandContext& RHICmdCtx, const FTexture2DRHIRef& sceneDepthSurface, const FTexture2DRHIRef& sceneDepthTexture, NvFlowContext* context)
 	{
 		FRHINvFlowDepthStencilViewDescD3D12 dsvDesc = {};
 		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);
@@ -96,7 +96,7 @@ public:
 		NvFlowUpdateContextD3D12(context, &desc);
 	}
 
-	virtual void UpdateDepthStencilView(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowDepthStencilView* view)
+	virtual void UpdateDepthStencilView(IRHICommandContext& RHICmdCtx, const FTexture2DRHIRef& sceneDepthSurface, const FTexture2DRHIRef& sceneDepthTexture, NvFlowContext* context, NvFlowDepthStencilView* view)
 	{
 		FRHINvFlowDepthStencilViewDescD3D12 dsvDesc = {};
 		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);

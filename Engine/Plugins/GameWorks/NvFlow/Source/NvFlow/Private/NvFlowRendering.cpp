@@ -110,7 +110,7 @@ namespace NvFlow
 		// deferred mechanism for proper RHI command list support
 		void initDeferred(IRHICommandContext* RHICmdCtx);
 		void conditionalInitMultiGPUDeferred(IRHICommandContext* RHICmdCtx);
-		void interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool updateRenderTarget);
+		void interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool updateRenderTarget, const FTexture2DRHIRef& sceneDepthSurface, const FTexture2DRHIRef& sceneDepthTexture);
 		void interopEndDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool shouldFlush);
 		void cleanupSceneListDeferred();
 
@@ -120,6 +120,9 @@ namespace NvFlow
 			bool computeOnly;
 			bool shouldFlush;
 			bool updateRenderTarget;
+
+			FTexture2DRHIRef sceneDepthSurface;
+			FTexture2DRHIRef sceneDepthTexture;
 		};
 
 		static void initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
@@ -485,16 +488,25 @@ void NvFlow::Context::interopBegin(FRHICommandList& RHICmdList, bool computeOnly
 	params.computeOnly = computeOnly;
 	params.shouldFlush = false;
 	params.updateRenderTarget = updateRenderTarget;
+
+	if (!computeOnly)
+	{
+		FSceneRenderTargets& SceneContext = RHICmdList.IsImmediate() ? FSceneRenderTargets::Get(static_cast<FRHICommandListImmediate&>(RHICmdList)) : FSceneRenderTargets::Get(RHICmdList);
+
+		params.sceneDepthSurface = SceneContext.GetSceneDepthSurface();
+		params.sceneDepthTexture = SceneContext.GetSceneDepthTexture();
+	}
+
 	RHICmdList.NvFlowWork(interopBeginCallback, &params, sizeof(params));
 }
 
 void NvFlow::Context::interopBeginCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
 {
 	auto params = (NvFlow::Context::InteropBeginEndParams*)paramData;
-	params->context->interopBeginDeferred(RHICmdCtx, params->computeOnly, params->updateRenderTarget);
+	params->context->interopBeginDeferred(RHICmdCtx, params->computeOnly, params->updateRenderTarget, params->sceneDepthSurface, params->sceneDepthTexture);
 }
 
-void NvFlow::Context::interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool updateRenderTarget)
+void NvFlow::Context::interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool computeOnly, bool updateRenderTarget, const FTexture2DRHIRef& sceneDepthSurface, const FTexture2DRHIRef& sceneDepthTexture)
 {
 	auto& appctx = *RHICmdCtx;
 
@@ -508,9 +520,9 @@ void NvFlow::Context::interopBeginDeferred(IRHICommandContext* RHICmdCtx, bool c
 			m_flowInterop->UpdateRenderTargetView(appctx, m_renderContext, m_rtv);
 		}
 
-		if (m_dsv == nullptr) m_dsv = m_flowInterop->CreateDepthStencilView(appctx, m_renderContext);
+		if (m_dsv == nullptr) m_dsv = m_flowInterop->CreateDepthStencilView(appctx, sceneDepthSurface, sceneDepthTexture, m_renderContext);
 
-		m_flowInterop->UpdateDepthStencilView(appctx, m_renderContext, m_dsv);
+		m_flowInterop->UpdateDepthStencilView(appctx, sceneDepthSurface, sceneDepthTexture, m_renderContext, m_dsv);
 	}
 
 	if (m_gridDevice)
