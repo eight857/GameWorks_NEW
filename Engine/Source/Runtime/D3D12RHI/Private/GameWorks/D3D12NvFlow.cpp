@@ -60,16 +60,24 @@ void FD3D12CommandContext::NvFlowReserveDescriptors(FRHINvFlowDescriptorReserveH
 	}
 }
 
-void FD3D12CommandContext::NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc)
+void FD3D12CommandContext::NvFlowGetDepthStencilViewDesc(FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, FRHINvFlowDepthStencilViewDesc* desc)
 {
+	check(depthSurface != nullptr);
+	check(depthTexture != nullptr);
 	FRHINvFlowDepthStencilViewDescD3D12* descD3D12 = static_cast<FRHINvFlowDepthStencilViewDescD3D12*>(desc);
 
-	descD3D12->dsvHandle = CurrentDepthStencilTarget->GetView();
-	descD3D12->dsvDesc   = CurrentDepthStencilTarget->GetDesc();
-	descD3D12->srvHandle = CurrentDepthTexture->GetShaderResourceView()->GetView();
-	descD3D12->srvDesc   = CurrentDepthTexture->GetShaderResourceView()->GetDesc();
-	descD3D12->resource = CurrentDepthStencilTarget->GetResource()->GetResource();
-	descD3D12->currentState = CurrentDepthStencilTarget->GetResource()->GetResourceState()->GetSubresourceState(0);
+	auto DSV = RetrieveTextureBase(depthSurface)->GetDepthStencilView(CurrentDSVAccessType);
+	auto SRV = RetrieveTextureBase(depthTexture)->GetShaderResourceView();
+
+	descD3D12->dsvHandle = DSV->GetView();
+	descD3D12->dsvDesc   = DSV->GetDesc();
+	descD3D12->dsvResource = DSV->GetResource()->GetResource();
+	descD3D12->dsvCurrentState = DSV->GetResource()->GetResourceState()->GetSubresourceState(0);
+
+	descD3D12->srvHandle = SRV->GetView();
+	descD3D12->srvDesc   = SRV->GetDesc();
+	descD3D12->srvResource = SRV->GetResource()->GetResource();
+	descD3D12->srvCurrentState = SRV->GetResource()->GetResourceState()->GetSubresourceState(0);
 
 	StateCache.GetViewport(&descD3D12->viewport);
 }

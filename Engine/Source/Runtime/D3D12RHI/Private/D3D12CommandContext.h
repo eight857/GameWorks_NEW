@@ -288,7 +288,7 @@ public:
 
 	// NvFlow begin
 	virtual void NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc) override;
-	virtual void NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc) override;
+	virtual void NvFlowGetDepthStencilViewDesc(FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, FRHINvFlowDepthStencilViewDesc* desc) override;
 	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) override;
 	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) override;
 	virtual FRHINvFlowResourceRW* NvFlowCreateResourceRW(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV, FUnorderedAccessViewRHIRef* pRHIRefUAV) override;

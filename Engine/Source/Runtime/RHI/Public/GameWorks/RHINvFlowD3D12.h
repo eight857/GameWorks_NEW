@@ -23,10 +23,12 @@ struct FRHINvFlowDepthStencilViewDescD3D12 : FRHINvFlowDepthStencilViewDesc
 {
 	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle;
 	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
+	ID3D12Resource* dsvResource;
+	D3D12_RESOURCE_STATES dsvCurrentState;
 	D3D12_CPU_DESCRIPTOR_HANDLE srvHandle;
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
-	ID3D12Resource* resource;
-	D3D12_RESOURCE_STATES currentState;
+	ID3D12Resource* srvResource;
+	D3D12_RESOURCE_STATES srvCurrentState;
 	D3D12_VIEWPORT viewport;
 };
 

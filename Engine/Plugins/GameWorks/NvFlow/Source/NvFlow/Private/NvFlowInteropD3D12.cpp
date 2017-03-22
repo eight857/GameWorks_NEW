@@ -43,10 +43,12 @@ public:
 	{
 		desc.dsvHandle = dsvDesc.dsvHandle;
 		desc.dsvDesc = dsvDesc.dsvDesc;
+		desc.dsvResource = dsvDesc.dsvResource;
+		desc.dsvCurrentState = dsvDesc.dsvCurrentState;
 		desc.srvHandle = dsvDesc.srvHandle;
 		desc.srvDesc = dsvDesc.srvDesc;
-		desc.resource = dsvDesc.resource;
-		desc.currentState = dsvDesc.currentState;
+		desc.srvResource = dsvDesc.srvResource;
+		desc.srvCurrentState = dsvDesc.srvCurrentState;
 		desc.viewport = dsvDesc.viewport;
 	}
 
@@ -69,10 +71,10 @@ public:
 		return NvFlowCreateContextD3D12(NV_FLOW_VERSION, &desc);
 	}
 
-	virtual NvFlowDepthStencilView* CreateDepthStencilView(IRHICommandContext& RHICmdCtx, const FTexture2DRHIRef& sceneDepthSurface, const FTexture2DRHIRef& sceneDepthTexture, NvFlowContext* context)
+	virtual NvFlowDepthStencilView* CreateDepthStencilView(IRHICommandContext& RHICmdCtx, FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, NvFlowContext* context)
 	{
 		FRHINvFlowDepthStencilViewDescD3D12 dsvDesc = {};
-		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);
+		RHICmdCtx.NvFlowGetDepthStencilViewDesc(depthSurface, depthTexture, &dsvDesc);
 		NvFlowDepthStencilViewDescD3D12 desc = {};
 		updateDepthStencilViewDesc(desc, dsvDesc);
 		return NvFlowCreateDepthStencilViewD3D12(context, &desc);
@@ -96,10 +98,10 @@ public:
 		NvFlowUpdateContextD3D12(context, &desc);
 	}
 
-	virtual void UpdateDepthStencilView(IRHICommandContext& RHICmdCtx, const FTexture2DRHIRef& sceneDepthSurface, const FTexture2DRHIRef& sceneDepthTexture, NvFlowContext* context, NvFlowDepthStencilView* view)
+	virtual void UpdateDepthStencilView(IRHICommandContext& RHICmdCtx, FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, NvFlowContext* context, NvFlowDepthStencilView* view)
 	{
 		FRHINvFlowDepthStencilViewDescD3D12 dsvDesc = {};
-		RHICmdCtx.NvFlowGetDepthStencilViewDesc(&dsvDesc);
+		RHICmdCtx.NvFlowGetDepthStencilViewDesc(depthSurface, depthTexture, &dsvDesc);
 		NvFlowDepthStencilViewDescD3D12 desc = {};
 		updateDepthStencilViewDesc(desc, dsvDesc);
 		NvFlowUpdateDepthStencilViewD3D12(context, view, &desc);

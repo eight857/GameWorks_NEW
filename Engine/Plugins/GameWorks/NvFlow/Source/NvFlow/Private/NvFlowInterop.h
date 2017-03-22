@@ -14,10 +14,10 @@ class NvFlowInterop
 {
 public:
 	virtual NvFlowContext* CreateContext(IRHICommandContext& RHICmdCtx) = 0;
-	virtual NvFlowDepthStencilView* CreateDepthStencilView(IRHICommandContext& RHICmdCtx, const FTexture2DRHIRef& sceneDepthSurface, const FTexture2DRHIRef& sceneDepthTexture, NvFlowContext* context) = 0;
+	virtual NvFlowDepthStencilView* CreateDepthStencilView(IRHICommandContext& RHICmdCtx, FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, NvFlowContext* context) = 0;
 	virtual NvFlowRenderTargetView* CreateRenderTargetView(IRHICommandContext& RHICmdCtx, NvFlowContext* context) = 0;
 	virtual void UpdateContext(IRHICommandContext& RHICmdCtx, NvFlowContext* context) = 0;
-	virtual void UpdateDepthStencilView(IRHICommandContext& RHICmdCtx, const FTexture2DRHIRef& sceneDepthSurface, const FTexture2DRHIRef& sceneDepthTexture, NvFlowContext* context, NvFlowDepthStencilView* view) = 0;
+	virtual void UpdateDepthStencilView(IRHICommandContext& RHICmdCtx, FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, NvFlowContext* context, NvFlowDepthStencilView* view) = 0;
 	virtual void UpdateRenderTargetView(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowRenderTargetView* view) = 0;
 	virtual void Push(IRHICommandContext& RHICmdCtx, NvFlowContext* context) = 0;
 	virtual void Pop(IRHICommandContext& RHICmdCtx, NvFlowContext* context) = 0;

@@ -23,11 +23,13 @@ void FD3D11DynamicRHI::NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc)
 	descD3D11->deviceContext = Direct3DDeviceIMContext;
 }
 
-void FD3D11DynamicRHI::NvFlowGetDepthStencilViewDesc(FRHINvFlowDepthStencilViewDesc* desc)
+void FD3D11DynamicRHI::NvFlowGetDepthStencilViewDesc(FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, FRHINvFlowDepthStencilViewDesc* desc)
 {
+	check(depthSurface != nullptr);
+	check(depthTexture != nullptr);
 	FRHINvFlowDepthStencilViewDescD3D11* descD3D11 = static_cast<FRHINvFlowDepthStencilViewDescD3D11*>(desc);
-	descD3D11->dsv = CurrentDepthStencilTarget;
-	descD3D11->srv = CurrentDepthTexture->GetShaderResourceView();
+	descD3D11->dsv = GetD3D11TextureFromRHITexture(depthSurface)->GetDepthStencilView(CurrentDSVAccessType);
+	descD3D11->srv = GetD3D11TextureFromRHITexture(depthTexture)->GetShaderResourceView();
 	descD3D11->viewport = NvFlowGetViewport(Direct3DDeviceIMContext);
 }
 
