@@ -197,9 +197,13 @@ class ENGINE_API ULightComponent : public ULightComponentBase
 	float RayStartOffsetDepthScale;
 
 	// NvFlow begin
-	/** If value is the same as GridShadowChannel in FlowGridComponent, then this Light is used to generate grid shadow. */
+	/** If true, then Flow grid shadow is generated depended of FlowGridShadowChannel match. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NvFlow")
-	int32 GridShadowChannel;
+	bool bFlowGridShadowEnabled;
+
+	/** If value is the same as ShadowChannel in FlowGridComponent, then this Light is used to generate Flow grid shadow. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NvFlow")
+	int32 FlowGridShadowChannel;
 	// NvFlow end
 
 public:

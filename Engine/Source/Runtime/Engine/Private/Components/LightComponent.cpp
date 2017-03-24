@@ -214,7 +214,8 @@ FLightSceneProxy::FLightSceneProxy(const ULightComponent* InLightComponent)
 	, FarShadowDistance(0)
 	, FarShadowCascadeCount(0)
 // NvFlow begin
-	, GridShadowChannel(InLightComponent->GridShadowChannel)
+	, bFlowGridShadowEnabled(InLightComponent->bFlowGridShadowEnabled)
+	, FlowGridShadowChannel(InLightComponent->FlowGridShadowChannel)
 // NvFlow end
 {
 	const FLightComponentMapBuildData* MapBuildData = InLightComponent->GetLightComponentMapBuildData();
@@ -347,7 +348,8 @@ ULightComponent::ULightComponent(const FObjectInitializer& ObjectInitializer)
 	bAddedToSceneVisible = false;
 
 	// NvFlow begin
-	GridShadowChannel = 0;
+	bFlowGridShadowEnabled = false;
+	FlowGridShadowChannel = 0;
 	// NvFlow end
 }
 

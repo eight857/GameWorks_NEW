@@ -1051,7 +1051,8 @@ public:
 	virtual float GetFadeRange() const { return 0.0f; }
 
 	// NvFlow begin
-	inline int32 GetGridShadowChannel() const { return GridShadowChannel; }
+	inline int32 GetFlowGridShadowEnabled() const { return bFlowGridShadowEnabled; }
+	inline int32 GetFlowGridShadowChannel() const { return FlowGridShadowChannel; }
 	// NvFlow end
 
 
@@ -1192,8 +1193,8 @@ protected:
 	FLinearColor ModulatedShadowColor;
 
 	// NvFlow begin
-	/** If value is the same as GridShadowIndex in FlowGridComponent, then this Light is used to generate grid shadow. */
-	int32 GridShadowChannel;
+	bool bFlowGridShadowEnabled;
+	int32 FlowGridShadowChannel;
 	// NvFlow end
 
 	/**

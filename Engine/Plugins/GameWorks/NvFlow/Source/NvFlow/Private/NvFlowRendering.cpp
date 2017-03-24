@@ -1290,17 +1290,29 @@ void NvFlow::Scene::updateGridView(FRHICommandListImmediate& RHICmdList)
 		auto RenderScene = FlowGridSceneProxy->GetScene().GetRenderScene();
 		if (RenderScene)
 		{
+			FLightSceneProxy* FoundLightSceneProxy = nullptr;
 			for (auto It = RenderScene->Lights.CreateIterator(); It; ++It)
 			{
 				auto LightSceneProxy = (*It).LightSceneInfo->Proxy;
-				if (LightSceneProxy->GetGridShadowChannel() == FlowGridSceneProxy->FlowGridProperties.RenderParams.ShadowChannel)
+				if (LightSceneProxy->GetFlowGridShadowEnabled() && LightSceneProxy->GetFlowGridShadowChannel() == FlowGridSceneProxy->FlowGridProperties.RenderParams.ShadowChannel)
 				{
-					m_shadowLightType = LightSceneProxy->GetLightType();
-					m_shadowWorldToLight = LightSceneProxy->GetWorldToLight();
-					m_shadowOuterConeAngle = LightSceneProxy->GetOuterConeAngle();
-					m_shadowRadius = LightSceneProxy->GetRadius();
+					FoundLightSceneProxy = LightSceneProxy;
 					break;
 				}
+			}
+
+			// select Default DirectionalLight if there are no enabled lights
+			if (FoundLightSceneProxy == nullptr && RenderScene->SimpleDirectionalLight != nullptr)
+			{
+				FoundLightSceneProxy = RenderScene->SimpleDirectionalLight->Proxy;
+			}
+
+			if (FoundLightSceneProxy != nullptr)
+			{
+				m_shadowLightType = FoundLightSceneProxy->GetLightType();
+				m_shadowWorldToLight = FoundLightSceneProxy->GetWorldToLight();
+				m_shadowOuterConeAngle = FoundLightSceneProxy->GetOuterConeAngle();
+				m_shadowRadius = FoundLightSceneProxy->GetRadius();
 			}
 		}
 	}
@@ -1438,7 +1450,7 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 			}
 
 
-			const float MinZ = 0.1f * scaleInv;
+			const float MinZ = 1.0f * scaleInv;
 			const float MaxZ = m_shadowRadius * scaleInv;
 			const float TanOuterCone = FMath::Tan(m_shadowOuterConeAngle);
 
