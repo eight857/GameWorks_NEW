@@ -828,15 +828,16 @@ FlowMaterialKeyType UFlowGridComponent::AddMaterialParams(UFlowMaterial* InFlowM
 	MaterialData& MaterialData = MaterialsMap.FindOrAdd(InFlowMaterial);
 
 	UFlowMaterial* FlowMaterial = (MaterialData.OverrideMaterial != nullptr) ? MaterialData.OverrideMaterial : InFlowMaterial;
+	FlowMaterialKeyType FlowMaterialKey = InFlowMaterial; //OverrideMaterial change only parameters without adding new material
 
 	if (MaterialData.bUpdated)
 	{
-		return FlowMaterial;
+		return FlowMaterialKey;
 	}
 	MaterialData.bUpdated = true;
 
 	FlowGridProperties.Materials.AddDefaulted(1);
-	FlowGridProperties.Materials.Last().Key = FlowMaterial;
+	FlowGridProperties.Materials.Last().Key = FlowMaterialKey;
 	FFlowMaterialParams& MaterialParams = FlowGridProperties.Materials.Last().Value;
 
 	//Grid part
@@ -906,7 +907,7 @@ FlowMaterialKeyType UFlowGridComponent::AddMaterialParams(UFlowMaterial* InFlowM
 		}
 	}
 
-	return FlowMaterial;
+	return FlowMaterialKey;
 }
 
 
