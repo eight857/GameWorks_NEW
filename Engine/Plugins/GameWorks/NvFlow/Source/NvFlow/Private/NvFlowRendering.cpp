@@ -212,8 +212,10 @@ namespace NvFlow
 		float m_shadowMaxResidentScale;
 		uint32 m_shadowResolution;
 
-		FMatrix m_shadowViewMatrix;
-		bool m_shadowViewMatrixValid = false;
+		FMatrix m_shadowWorldToLight;
+		uint8 m_shadowLightType = LightType_MAX;
+		float m_shadowOuterConeAngle;
+		float m_shadowRadius;
 
 		NvFlowGridExport* m_gridExport4Render = nullptr;
 
@@ -1282,22 +1284,24 @@ void NvFlow::Scene::finilizeUpdateDeferred(IRHICommandContext* RHICmdCtx)
 
 void NvFlow::Scene::updateGridView(FRHICommandListImmediate& RHICmdList)
 {
+	m_shadowLightType = LightType_MAX;
 	if (FlowGridSceneProxy)
 	{
-		FLightSceneInfo* DirectionalLight = nullptr;
 		auto RenderScene = FlowGridSceneProxy->GetScene().GetRenderScene();
 		if (RenderScene)
 		{
-			DirectionalLight = RenderScene->SimpleDirectionalLight;
-		}
-		if (DirectionalLight)
-		{
-			m_shadowViewMatrix = DirectionalLight->Proxy->GetWorldToLight();
-			m_shadowViewMatrixValid = true;
-		}
-		else
-		{
-			m_shadowViewMatrixValid = false;
+			for (auto It = RenderScene->Lights.CreateIterator(); It; ++It)
+			{
+				auto LightSceneProxy = (*It).LightSceneInfo->Proxy;
+				if (LightSceneProxy->GetGridShadowChannel() == FlowGridSceneProxy->FlowGridProperties.RenderParams.ShadowChannel)
+				{
+					m_shadowLightType = LightSceneProxy->GetLightType();
+					m_shadowWorldToLight = LightSceneProxy->GetWorldToLight();
+					m_shadowOuterConeAngle = LightSceneProxy->GetOuterConeAngle();
+					m_shadowRadius = LightSceneProxy->GetRadius();
+					break;
+				}
+			}
 		}
 	}
 
@@ -1341,7 +1345,7 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 		SubmitInfo->Add(FString::Printf(TEXT("Grid '%s': density blocks %d of %d"), *gridName, gridDensityLayeredView.mapping.layeredNumBlocks, gridDensityLayeredView.mapping.maxBlocks));
 	}
 
-	if (Properties.RenderParams.bVolumeShadowEnabled && m_shadowViewMatrixValid)
+	if (Properties.RenderParams.bVolumeShadowEnabled && (m_shadowLightType == LightType_Directional || m_shadowLightType == LightType_Spot))
 	{
 		if (m_volumeShadow == nullptr || 
 			m_shadowResolution != Properties.RenderParams.ShadowResolution ||
@@ -1377,7 +1381,7 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 		shadowParams.shadowBlendCompMask = Properties.RenderParams.ShadowBlendCompMask;
 		shadowParams.shadowBlendBias = Properties.RenderParams.ShadowBlendBias;
 
-		FMatrix ShadowViewMatrix = m_shadowViewMatrix;
+		FMatrix ShadowViewMatrix = m_shadowWorldToLight;
 		ShadowViewMatrix *= FMatrix(
 			FPlane(0, 0, 1, 0),
 			FPlane(1, 0, 0, 0),
@@ -1385,30 +1389,143 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 			FPlane(0, 0, 0, 1));
 
 		FBox BoundBox = FlowGridSceneProxy->GetBounds().GetBox();
-		BoundBox.Min *= (1.0f / scale);
-		BoundBox.Max *= (1.0f / scale);
+		BoundBox.Min *= scaleInv;
+		BoundBox.Max *= scaleInv;
 
-		//set view origin to the center of bounding box
-		ShadowViewMatrix.SetOrigin( -FVector(ShadowViewMatrix.TransformVector(BoundBox.GetCenter())) );
-
-		FVector Extent = BoundBox.GetExtent();
-
-		float ExtentX = FVector::DotProduct(ShadowViewMatrix.GetColumn(0).GetAbs(), Extent) * Properties.RenderParams.ShadowFrustrumScale;
-		float ExtentY = FVector::DotProduct(ShadowViewMatrix.GetColumn(1).GetAbs(), Extent) * Properties.RenderParams.ShadowFrustrumScale;
-		float ExtentZ = FVector::DotProduct(ShadowViewMatrix.GetColumn(2).GetAbs(), Extent) * Properties.RenderParams.ShadowFrustrumScale;
-
+		bool bShadowProjValid = true;
 		FMatrix ShadowProjMatrix = FMatrix::Identity;
-		ShadowProjMatrix.M[0][0] = 1.0f / ExtentX;
-		ShadowProjMatrix.M[1][1] = 1.0f / ExtentY;
-		ShadowProjMatrix.M[2][2] = 0.5f / ExtentZ;
-		ShadowProjMatrix.M[3][2] = 0.5f;
+		if (m_shadowLightType == LightType_Spot)
+		{
+			ShadowViewMatrix.SetOrigin(ShadowViewMatrix.GetOrigin() * scaleInv);
+
+			// Creates an array of vertices and edges for a bounding box.
+			FVector BoundVertices[8];
+			for (int32 X = 0; X < 2; X++)
+			{
+				for (int32 Y = 0; Y < 2; Y++)
+				{
+					for (int32 Z = 0; Z < 2; Z++)
+					{
+						BoundVertices[X * 4 + Y * 2 + Z] = ShadowViewMatrix.TransformPosition(FVector(
+							X ? BoundBox.Min.X : BoundBox.Max.X,
+							Y ? BoundBox.Min.Y : BoundBox.Max.Y,
+							Z ? BoundBox.Min.Z : BoundBox.Max.Z
+						));
+					}
+				}
+			}
+
+			struct FBoundEdge
+			{
+				int FirstIndex;
+				int SecondIndex;
+
+				FBoundEdge(int InFirstIndex, int InSecondIndex)	: FirstIndex(InFirstIndex), SecondIndex(InSecondIndex) {}
+				FBoundEdge() {}
+			};
+			FBoundEdge BoundEdges[12];
+			for (int X = 0; X < 2; X++)
+			{
+				int BaseIndex = X * 4;
+				BoundEdges[X * 4 + 0] = FBoundEdge(BaseIndex, BaseIndex + 1);
+				BoundEdges[X * 4 + 1] = FBoundEdge(BaseIndex + 1, BaseIndex + 3);
+				BoundEdges[X * 4 + 2] = FBoundEdge(BaseIndex + 3, BaseIndex + 2);
+				BoundEdges[X * 4 + 3] = FBoundEdge(BaseIndex + 2, BaseIndex);
+			}
+			for (int XEdge = 0; XEdge < 4; XEdge++)
+			{
+				BoundEdges[8 + XEdge] = FBoundEdge(XEdge, XEdge + 4);
+			}
+
+
+			const float MinZ = 0.1f * scaleInv;
+			const float MaxZ = m_shadowRadius * scaleInv;
+			const float TanOuterCone = FMath::Tan(m_shadowOuterConeAngle);
+
+			FVector BoundMin = FVector(+FLT_MAX, +FLT_MAX, +FLT_MAX);
+			FVector BoundMax = FVector(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+			for (int32 VIdx = 0; VIdx < 8; VIdx++)
+			{
+				const FVector& BoundVertex = BoundVertices[VIdx];
+				if (BoundVertex.Z >= MinZ)
+				{
+					const FVector ProjectedVertex(BoundVertex.X / BoundVertex.Z, BoundVertex.Y / BoundVertex.Z, BoundVertex.Z);
+					BoundMin = BoundMin.ComponentMin(ProjectedVertex);
+					BoundMax = BoundMax.ComponentMax(ProjectedVertex);
+				}
+			}
+			for (int32 EIdx = 0; EIdx < 12; EIdx++)
+			{
+				const FVector& BoundVertex1 = BoundVertices[BoundEdges[EIdx].FirstIndex];
+				const FVector& BoundVertex2 = BoundVertices[BoundEdges[EIdx].SecondIndex];
+
+				const float DeltaZ1 = BoundVertex1.Z - MinZ;
+				const float DeltaZ2 = MinZ - BoundVertex2.Z;
+				if (DeltaZ1 * DeltaZ2 > 0.0f)
+				{
+					const float DeltaZ = BoundVertex1.Z - BoundVertex2.Z;
+					const FVector EdgeVertex = BoundVertex1 * (DeltaZ2 / DeltaZ) + BoundVertex2 * (DeltaZ1 / DeltaZ);
+
+					const FVector ProjectedVertex(EdgeVertex.X / MinZ, EdgeVertex.Y / MinZ, MinZ);
+					BoundMin = BoundMin.ComponentMin(ProjectedVertex);
+					BoundMax = BoundMax.ComponentMax(ProjectedVertex);
+				}
+			}
+
+			// clip to SpotLight frustrum
+			FVector LightMin = FVector(-TanOuterCone, -TanOuterCone, MinZ);
+			FVector LightMax = FVector(+TanOuterCone, +TanOuterCone, MaxZ);
+
+			BoundMin = BoundMin.ComponentMin(LightMax).ComponentMax(LightMin);
+			BoundMax = BoundMax.ComponentMin(LightMax).ComponentMax(LightMin);
+
+			bShadowProjValid = (BoundMax.X > BoundMin.X) && (BoundMax.Y > BoundMin.Y) && (BoundMax.Z > BoundMin.Z);
+			if (!bShadowProjValid)
+			{
+				BoundMin = LightMin;
+				BoundMax = LightMax;
+			}
+
+			const float XSum = BoundMax.X + BoundMin.X;
+			const float YSum = BoundMax.Y + BoundMin.Y;
+			const float XFactor = 1.0f / (BoundMax.X - BoundMin.X);
+			const float YFactor = 1.0f / (BoundMax.Y - BoundMin.Y);
+			const float ZFactor = BoundMax.Z / (BoundMax.Z - BoundMin.Z);
+			ShadowProjMatrix = FMatrix(
+				FPlane(2.0f * XFactor,  0.0f,            0.0f,                  0.0f),
+				FPlane(0.0f,            2.0f * YFactor,  0.0f,                  0.0f),
+				FPlane(0.0f,            0.0f,            ZFactor,               1.0f),
+				FPlane(-XSum * XFactor, -YSum * YFactor, -BoundMin.Z * ZFactor, 0.0f));
+		}
+		else
+		{
+			check(m_shadowLightType == LightType_Directional);
+
+			//set view origin to the center of bounding box
+			ShadowViewMatrix.SetOrigin(-FVector(ShadowViewMatrix.TransformVector(BoundBox.GetCenter())));
+
+			FVector Extent = BoundBox.GetExtent();
+
+			float ExtentX = FVector::DotProduct(ShadowViewMatrix.GetColumn(0).GetAbs(), Extent) * Properties.RenderParams.ShadowFrustrumScale;
+			float ExtentY = FVector::DotProduct(ShadowViewMatrix.GetColumn(1).GetAbs(), Extent) * Properties.RenderParams.ShadowFrustrumScale;
+			float ExtentZ = FVector::DotProduct(ShadowViewMatrix.GetColumn(2).GetAbs(), Extent) * Properties.RenderParams.ShadowFrustrumScale;
+
+			ShadowProjMatrix.M[0][0] = 1.0f / ExtentX;
+			ShadowProjMatrix.M[1][1] = 1.0f / ExtentY;
+			ShadowProjMatrix.M[2][2] = 0.5f / ExtentZ;
+			ShadowProjMatrix.M[3][2] = 0.5f;
+		}
 
 		memcpy(&shadowParams.projectionMatrix, &ShadowProjMatrix.M[0][0], sizeof(shadowParams.projectionMatrix));
 		memcpy(&shadowParams.viewMatrix, &ShadowViewMatrix.M[0][0], sizeof(shadowParams.viewMatrix));
 
-		NvFlowVolumeShadowUpdate(m_volumeShadow, m_renderContext, m_gridExport4Render, &shadowParams);
+		if (bShadowProjValid)
+		{
+			NvFlowVolumeShadowUpdate(m_volumeShadow, m_renderContext, m_gridExport4Render, &shadowParams);
 
-		m_gridExport4Render = NvFlowVolumeShadowGetGridExport(m_volumeShadow, m_renderContext);
+			m_gridExport4Render = NvFlowVolumeShadowGetGridExport(m_volumeShadow, m_renderContext);
+		}
 	}
 	else
 	{

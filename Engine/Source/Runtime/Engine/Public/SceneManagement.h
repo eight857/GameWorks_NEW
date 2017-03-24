@@ -1050,6 +1050,11 @@ public:
 	virtual float GetMaxDrawDistance() const { return 0.0f; }
 	virtual float GetFadeRange() const { return 0.0f; }
 
+	// NvFlow begin
+	inline int32 GetGridShadowChannel() const { return GridShadowChannel; }
+	// NvFlow end
+
+
 protected:
 
 	friend class FScene;
@@ -1185,6 +1190,11 @@ protected:
 	
 	/** Modulated shadow color. */
 	FLinearColor ModulatedShadowColor;
+
+	// NvFlow begin
+	/** If value is the same as GridShadowIndex in FlowGridComponent, then this Light is used to generate grid shadow. */
+	int32 GridShadowChannel;
+	// NvFlow end
 
 	/**
 	 * Updates the light proxy's cached transforms.

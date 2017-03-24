@@ -51,6 +51,8 @@ struct FFlowGridRenderParams
 	float ShadowFrustrumScale;
 	float ShadowMinResidentScale;
 	float ShadowMaxResidentScale;
+
+	int32 ShadowChannel;
 };
 
 typedef void* FlowMaterialKeyType;

@@ -196,6 +196,12 @@ class ENGINE_API ULightComponent : public ULightComponentBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=DistanceFieldShadows, meta=(UIMin = "0", UIMax = ".1"), AdvancedDisplay)
 	float RayStartOffsetDepthScale;
 
+	// NvFlow begin
+	/** If value is the same as GridShadowChannel in FlowGridComponent, then this Light is used to generate grid shadow. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NvFlow")
+	int32 GridShadowChannel;
+	// NvFlow end
+
 public:
 	/** Set intensity of the light */
 	UFUNCTION(BlueprintCallable, Category="Rendering|Components|Light")

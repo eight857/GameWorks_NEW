@@ -113,6 +113,8 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	ShadowFrustrumScale = 1.0f;
 	ShadowMinResidentScale = 0.25f * (1.f / 64.f);
 	ShadowMaxResidentScale = 4.f * 0.25f * (1.f / 64.f);
+
+	ShadowChannel = 0;
 }
 
 // NvFlow end
