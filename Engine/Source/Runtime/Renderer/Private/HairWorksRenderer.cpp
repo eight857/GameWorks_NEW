@@ -1165,7 +1165,7 @@ namespace HairWorksRenderer
 
 	void RenderCustomStencil(FRHICommandList & RHICmdList, const FViewInfo & View)
 	{
-		// Setup global shaders
+		// Setup shaders
 		if(HairRenderTargets->HairDepthZ == nullptr)
 			return;
 
@@ -1175,15 +1175,18 @@ namespace HairWorksRenderer
 		static FGlobalBoundShaderState State;
 		SetGlobalBoundShaderState(RHICmdList, ERHIFeatureLevel::SM5, State, GetVertexDeclarationFVector3(), *VertexShader, *PixelShader);
 
-		// Global shader parameters
+		// Shader parameters
 		VertexShader->SetParameters(RHICmdList, VertexShader->GetVertexShader(), View);
 
 		PixelShader->SetParameters(RHICmdList, PixelShader->GetPixelShader(), View);
 		SetTextureParameter(RHICmdList, PixelShader->GetPixelShader(), PixelShader->DepthTexture, HairRenderTargets->HairDepthZ->GetRenderTargetItem().TargetableTexture);
 		SetSRVParameter(RHICmdList, PixelShader->GetPixelShader(), PixelShader->StencilTexture, HairRenderTargets->StencilSRV);
 
-		// Global depth state
+		// Render states
 		auto DepthStencilState = TStaticDepthStencilState<false, CF_DepthNearOrEqual, true, CF_Always, SO_Keep, SO_Keep, SO_Replace>::GetRHI();
+
+		auto RasterState = TStaticRasterizerState<FM_Solid, CM_CCW>::GetRHI();
+		RHICmdList.SetRasterizerState(RasterState);
 
 		// Draw each hair that has stencil value
 		for(auto PrimSceneInfo : View.VisibleHairs)
