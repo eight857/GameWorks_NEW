@@ -1166,6 +1166,9 @@ namespace HairWorksRenderer
 	void RenderCustomStencil(FRHICommandList & RHICmdList, const FViewInfo & View)
 	{
 		// Setup global shaders
+		if(HairRenderTargets->HairDepthZ == nullptr)
+			return;
+
 		TShaderMapRef<FHairWorksSphereVs> VertexShader(View.ShaderMap);
 		TShaderMapRef<FHairWorksCopyStencilPs> PixelShader(View.ShaderMap);
 
