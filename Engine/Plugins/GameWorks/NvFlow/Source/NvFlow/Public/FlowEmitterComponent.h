@@ -7,8 +7,136 @@
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "Components/ActorComponent.h"
+#include "Containers/List.h"
 
 #include "FlowEmitterComponent.generated.h"
+
+
+
+template <typename T>
+class FStateInterpolator
+{
+	struct FNode : public TIntrusiveLinkedList<FNode>
+	{
+		float Time;
+		T State;
+
+		FNode(float InTime, const T& InState) : Time(InTime), State(InState) {}
+	};
+
+	FNode* Head;
+	FNode* Tail;
+
+	bool bIsStationary;
+
+public:
+	FStateInterpolator()
+	{
+		Head = Tail = nullptr;
+		bIsStationary = true;
+	}
+
+	void Add(float InTime, const T& InState)
+	{
+		if (Tail == nullptr)
+		{
+			check(Head == nullptr);
+			Head = Tail = new FNode(0.0f, InState);
+		}
+		check(InTime > Tail->Time);
+		bIsStationary &= InState.Equals(Tail->State);
+
+		FNode* NewNode = new FNode(InTime, InState);
+		NewNode->LinkAfter(Tail);
+		Tail = NewNode;
+	}
+
+	void DiscardBefore(float InTime)
+	{
+		if (InTime > 0.0f)
+		{
+			check(InTime <= Tail->Time);
+
+			check(Head != nullptr);
+			for (FNode* Node = Head; Node->Next() != nullptr && Node->Next()->Time <= InTime; )
+			{
+				Head = Node->Next();
+				Node->Unlink();
+				delete Node;
+				Node = Head;
+			}
+
+			check(Head != nullptr);
+			Head->Time -= InTime;
+			bIsStationary = true;
+			for (FNode* Node = Head->Next(); Node != nullptr; Node = Node->Next())
+			{
+				Node->Time -= InTime;
+				bIsStationary &= Node->State.Equals(Head->State);
+			}
+		}
+	}
+
+	bool IsStationary() const { return bIsStationary; }
+
+	class FSampler
+	{
+		float Time;
+		FNode* Node;
+	public:
+		FSampler(const FStateInterpolator& InOwner, float InTime = 0.0f)
+		{
+			Time = InTime;
+			Node = InOwner.Head;
+			check(Node->Time <= InTime);
+		}
+
+		void AdvanceAndSample(float InTimeStep, T& OutState)
+		{
+			Time += InTimeStep;
+
+			while (Node->Next() != nullptr && Node->Next()->Time < Time)
+			{
+				Node = Node->Next();
+			}
+			check(Node->Time <= Time);
+			check(Node->Next() != nullptr && Node->Next()->Time >= Time);
+
+			if (Node->Next() != nullptr)
+			{
+				const float Alpha = (Time - Node->Time) / (Node->Next()->Time - Node->Time);
+				OutState.Blend(Node->State, Node->Next()->State, Alpha);
+			}
+			else
+			{
+				OutState = Node->State;
+			}
+		}
+	};
+
+	friend class FSampler;
+};
+
+struct FBodyState
+{
+	FTransform Transform;
+	FVector LinearVelocity;
+	FVector AngularVelocity;
+
+	bool Equals(const FBodyState& Other) const
+	{
+		return Transform.Equals(Other.Transform) && LinearVelocity.Equals(Other.LinearVelocity) && AngularVelocity.Equals(Other.AngularVelocity);
+	}
+
+	void Blend(const FBodyState& State0, const FBodyState& State1, float Alpha)
+	{
+		Transform.Blend(State0.Transform, State1.Transform, Alpha);
+		LinearVelocity = FMath::Lerp(State0.LinearVelocity, State1.LinearVelocity, Alpha);
+		AngularVelocity = FMath::Lerp(State0.AngularVelocity, State1.AngularVelocity, Alpha);
+	}
+};
+
+typedef FStateInterpolator<FBodyState> FBodyStateInterpolator;
 
 UCLASS(ClassGroup = Physics, config = Engine, editinlinenew, HideCategories = (Activation, PhysX), meta = (BlueprintSpawnableComponent), MinimalAPI)
 class UFlowEmitterComponent : public UActorComponent
@@ -97,8 +225,7 @@ class UFlowEmitterComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter)
 	uint32		bAllocShapeOnly : 1;
 
-	uint32		bHasPreviousTransform : 1;
-	FTransform	PreviousTransform;
+	FBodyStateInterpolator BodyStateInterpolator;
 
 	/** Flow material, if null then taken default material from grid. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)

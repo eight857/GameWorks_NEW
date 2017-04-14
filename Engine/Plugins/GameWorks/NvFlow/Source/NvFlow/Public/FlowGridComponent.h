@@ -41,6 +41,7 @@ struct FTimeStepper
 	float TimeError;
 	float FixedDt;
 	int32 MaxSteps;
+	int32 NumSteps;
 
 	FTimeStepper();
 	int32 GetNumSteps(float TimeStep);

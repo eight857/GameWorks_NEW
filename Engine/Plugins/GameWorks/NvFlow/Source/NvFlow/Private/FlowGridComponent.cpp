@@ -29,6 +29,7 @@ FTimeStepper::FTimeStepper()
 	TimeError = 0.f;
 	FixedDt = (1.f / 60.f);
 	MaxSteps = 1;
+	NumSteps = 0;
 }
 
 int32 FTimeStepper::GetNumSteps(float TimeStep)
@@ -38,14 +39,13 @@ int32 FTimeStepper::GetNumSteps(float TimeStep)
 	// compute time steps
 	TimeError += DeltaTime;
 
-	int32 NumSteps = int32(TimeError / FixedDt);
-	if (NumSteps < 0) NumSteps = 0;
+	NumSteps = FPlatformMath::FloorToInt(TimeError / FixedDt);
+	check(NumSteps >= 0);
 
 	TimeError -= FixedDt * float(NumSteps);
+	check(TimeError >= 0.0f);
 
-	if (NumSteps > MaxSteps) NumSteps = MaxSteps;
-
-	return NumSteps;
+	return FMath::Min(NumSteps, MaxSteps);
 }
 
 UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializer)
@@ -346,6 +346,50 @@ void UFlowGridComponent::UpdateShapes()
 			NumSyncShapes = 1;
 		}
 
+		FTransform ActorTransform;
+		if (DistanceFieldVolumeData == nullptr)
+		{
+			ActorTransform = P2UTransform(PhysXActor->getGlobalPose());
+		}
+		else
+		{
+			check(StaticMeshComponent != nullptr);
+			check(StaticMesh != nullptr);
+
+			auto LocalExtent = DistanceFieldVolumeData->LocalBoundingBox.GetExtent();
+			auto LocalCenter = DistanceFieldVolumeData->LocalBoundingBox.GetCenter();
+
+			ActorTransform.SetLocation(LocalCenter);
+			ActorTransform.SetScale3D(LocalExtent);
+			ActorTransform *= StaticMeshComponent->ComponentToWorld;
+		}
+
+		bool IsEmitter = FlowEmitterComponent != nullptr;
+		bool IsCollider = Response == ECollisionResponse::ECR_Block;
+
+		// optimization: kick out early if couple rate is zero
+		if (IsEmitter)
+		{
+			if (FlowEmitterComponent->CoupleRate <= 0.f)
+			{
+				IsEmitter = false;
+			}
+		}
+
+		FVector physicsLinearVelocity = Body->GetUnrealWorldVelocity_AssumesLocked();
+		FVector physicsAngularVelocity = Body->GetUnrealWorldAngularVelocity_AssumesLocked();
+
+		const float NumStepsTime = (TimeStepper.FixedDt * TimeStepper.NumSteps);
+		if (FlowEmitterComponent != nullptr)
+		{
+			FBodyState BodyState;
+			BodyState.Transform = ActorTransform;
+			BodyState.LinearVelocity = physicsLinearVelocity;
+			BodyState.AngularVelocity = physicsAngularVelocity;
+
+			FlowEmitterComponent->BodyStateInterpolator.Add(NumStepsTime + TimeStepper.TimeError, BodyState);
+		}
+
 		for (int ShapeIndex = 0; ShapeIndex < NumSyncShapes; ++ShapeIndex)
 		{
 			PxShape* PhysXShape = nullptr;
@@ -383,21 +427,9 @@ void UFlowGridComponent::UpdateShapes()
 					(PxGeometryType == PxGeometryType::eCONVEXMESH);
 			}
 
-			bool IsEmitter = FlowEmitterComponent != nullptr;
-			bool IsCollider = Response == ECollisionResponse::ECR_Block;
-
-			// optimization: kick out early if couple rate is zero
-			if (IsEmitter)
-			{
-				if (FlowEmitterComponent->CoupleRate <= 0.f)
-				{
-					IsEmitter = false;
-				}
-			}
-
 			if (IsSupported && (IsEmitter || IsCollider))
 			{
-				FTransform WorldTransformU;
+				FTransform ShapeTransform(FTransform::Identity);
 
 				FVector UnitToActualScale(1.f, 1.f, 1.f);
 				FVector LocalToWorldScale(1.f, 1.f, 1.f);
@@ -408,26 +440,13 @@ void UFlowGridComponent::UpdateShapes()
 
 				if (DistanceFieldVolumeData == nullptr)
 				{
-					const PxTransform& ActorTransform = PhysXActor->getGlobalPose();
-					const PxTransform& ShapeTransform = PhysXShape->getLocalPose();
-
-					PxTransform WorldTransform = ActorTransform*ShapeTransform;
-					WorldTransformU = P2UTransform(WorldTransform);
+					ShapeTransform = P2UTransform(PhysXShape->getLocalPose());
 				}
 				else
 				{
-					check(StaticMeshComponent != nullptr);
-					check(StaticMesh != nullptr);
-
-					auto LocalExtent = DistanceFieldVolumeData->LocalBoundingBox.GetExtent();
-					auto LocalCenter = DistanceFieldVolumeData->LocalBoundingBox.GetCenter();
-
-					WorldTransformU.SetLocation(LocalCenter);
-					WorldTransformU.SetScale3D(LocalExtent);
-					WorldTransformU *= StaticMeshComponent->ComponentToWorld;
-
 					UnitToActualScale = FVector(NvFlow::scaleInv);
 
+					auto LocalExtent = DistanceFieldVolumeData->LocalBoundingBox.GetExtent();
 					FlowShapeDistScale = LocalExtent.GetMax() * NvFlow::scaleInv;
 
 					const FDistanceFieldVolumeData* &OldDistanceFieldVolumeData = DistanceFieldMap.FindOrAdd(StaticMesh);
@@ -566,47 +585,11 @@ void UFlowGridComponent::UpdateShapes()
 
 				if (IsEmitter)
 				{
-					// update transforms
-					FTransform Transform = WorldTransformU;
-					if (!FlowEmitterComponent->bHasPreviousTransform)
-					{
-						FlowEmitterComponent->PreviousTransform = Transform;
-						FlowEmitterComponent->bHasPreviousTransform = true;
-					}
-					FTransform PreviousTransform = FlowEmitterComponent->PreviousTransform;
-					FlowEmitterComponent->PreviousTransform = Transform;
-
-					// physics
-					//FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
-					//FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
-					//FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
-					FVector physicsLinearVelocity = Body->GetUnrealWorldVelocity_AssumesLocked();
-					FVector physicsAngularVelocity = Body->GetUnrealWorldAngularVelocity_AssumesLocked();
-					FVector physicsCenterOfMass = (PhysXActor->is<PxRigidStatic>() == nullptr) ? Body->OwnerComponent->GetCenterOfMass() : Transform.GetLocation();
-
-					FVector CollisionLinearVelocity = Transform.InverseTransformVector(physicsLinearVelocity);
-					FVector CollisionAngularVelocity = Transform.InverseTransformVector(physicsAngularVelocity);
-					FVector CollisionCenterOfRotationOffset = physicsCenterOfMass;
-
-					FVector LinearVelocity = FlowEmitterComponent->LinearVelocity + CollisionLinearVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
-					FVector AngularVelocity = FlowEmitterComponent->AngularVelocity + CollisionAngularVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
-					FVector CenterOfRotationOffset = CollisionCenterOfRotationOffset * FlowEmitterComponent->BlendInPhysicalVelocity;
-
-					FVector CollisionScaledVelocityLinear = CollisionLinearVelocity * NvFlow::scaleInv;
-					FVector CollisionScaledVelocityAngular = CollisionAngularVelocity * NvFlow::angularScale;
-					FVector CollisionScaledCenterOfMass = CollisionCenterOfRotationOffset * NvFlow::scaleInv;
-
-					FVector ScaledVelocityLinear = LinearVelocity * NvFlow::scaleInv;
-					FVector ScaledVelocityAngular = AngularVelocity * NvFlow::angularScale;
-					FVector ScaledCenterOfMass = CenterOfRotationOffset * NvFlow::scaleInv;
-
 					// substep invariant params
 					NvFlowGridEmitParams emitParams;
 					NvFlowGridEmitParamsDefaults(&emitParams);
 
 					// emit values
-					emitParams.velocityLinear  = *(NvFlowFloat3*)(&ScaledVelocityLinear.X);
-					emitParams.velocityAngular = *(NvFlowFloat3*)(&ScaledVelocityAngular.X);
 					emitParams.fuel = FlowEmitterComponent->Fuel;
 					emitParams.fuelReleaseTemp = FlowEmitterComponent->FuelReleaseTemp;
 					emitParams.fuelRelease = FlowEmitterComponent->FuelRelease;
@@ -649,31 +632,54 @@ void UFlowGridComponent::UpdateShapes()
 					float NumSubsteps = FlowEmitterComponent->NumSubsteps;
 					float emitterSubstepDt = FlowGridProperties.SubstepSize / NumSubsteps;
 
-					// transforms
-					FTransform BeginTransform = PreviousTransform;
-					BeginTransform.SetLocation(PreviousTransform.GetLocation() * NvFlow::scaleInv);
-					BeginTransform.SetScale3D(BeginTransform.GetScale3D() * UnitToActualScale);
-
-					FTransform EndTransform = Transform;
-					EndTransform.SetLocation(Transform.GetLocation() * NvFlow::scaleInv);
-					EndTransform.SetScale3D(EndTransform.GetScale3D() * UnitToActualScale);
-
 					// optimization: use NvFlow emitter substep for stationary enough objects
-					bool isStationary = BeginTransform.Equals(EndTransform);
+					bool isStationary = FlowEmitterComponent->BodyStateInterpolator.IsStationary();
 					uint32 iterations = isStationary ? 1u : NumSubsteps;
-					emitParams.numSubSteps = isStationary ? NumSubsteps : 1u;
+					emitParams.numSubSteps = 1u; //TODO: remove numSteps from NvFlowGridEmitParams!
 
+					FBodyStateInterpolator::FSampler Sampler(FlowEmitterComponent->BodyStateInterpolator);
+					const float SamplerTimeStep = NumStepsTime / iterations;
+
+					FTransform BlendedTransform = ShapeTransform * ActorTransform;
+					FVector BlendedLinearVelocity = physicsLinearVelocity;
+					FVector BlendedAngularVelocity = physicsAngularVelocity;
 					// substepping
 					for (uint32 i = 0u; i < iterations; i++)
 					{
-						// Note: substep and numSubsteps are for future simulation substep support
-						const float substep = 0.f;
-						const float numSubsteps = 1.f;
+						if (!isStationary)
+						{
+							// Generate interpolated transform
+							FBodyState BlendedBodyState;
+							Sampler.AdvanceAndSample(SamplerTimeStep, BlendedBodyState);
 
-						// Generate interpolated transform
-						FTransform BlendedTransform;
-						float alpha = float(substep*NumSubsteps + i + 1) / (NumSubsteps*numSubsteps);
-						BlendedTransform.Blend(BeginTransform, EndTransform, alpha);
+							BlendedTransform = ShapeTransform * BlendedBodyState.Transform;
+							BlendedLinearVelocity = BlendedBodyState.LinearVelocity;
+							BlendedAngularVelocity = BlendedBodyState.AngularVelocity;
+						}
+						BlendedTransform.SetLocation(BlendedTransform.GetLocation() * NvFlow::scaleInv);
+						BlendedTransform.SetScale3D(BlendedTransform.GetScale3D() * UnitToActualScale);
+
+						// physics
+						FVector physicsCenterOfMass = (PhysXActor->is<PxRigidStatic>() == nullptr) ? Body->OwnerComponent->GetCenterOfMass() : BlendedTransform.GetLocation();
+
+						FVector CollisionLinearVelocity = BlendedTransform.InverseTransformVector(physicsLinearVelocity);
+						FVector CollisionAngularVelocity = BlendedTransform.InverseTransformVector(physicsAngularVelocity);
+						FVector CollisionCenterOfRotationOffset = physicsCenterOfMass;
+
+						FVector LinearVelocity = FlowEmitterComponent->LinearVelocity + CollisionLinearVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
+						FVector AngularVelocity = FlowEmitterComponent->AngularVelocity + CollisionAngularVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
+						FVector CenterOfRotationOffset = CollisionCenterOfRotationOffset * FlowEmitterComponent->BlendInPhysicalVelocity;
+
+						FVector CollisionScaledVelocityLinear = CollisionLinearVelocity * NvFlow::scaleInv;
+						FVector CollisionScaledVelocityAngular = CollisionAngularVelocity * NvFlow::angularScale;
+						FVector CollisionScaledCenterOfMass = CollisionCenterOfRotationOffset * NvFlow::scaleInv;
+
+						FVector ScaledVelocityLinear = LinearVelocity * NvFlow::scaleInv;
+						FVector ScaledVelocityAngular = AngularVelocity * NvFlow::angularScale;
+						FVector ScaledCenterOfMass = CenterOfRotationOffset * NvFlow::scaleInv;
+
+						emitParams.velocityLinear = *(NvFlowFloat3*)(&ScaledVelocityLinear.X);
+						emitParams.velocityAngular = *(NvFlowFloat3*)(&ScaledVelocityAngular.X);
 
 						// compute centerOfMass in emitter local space
 						FVector centerOfMass = BlendedTransform.InverseTransformPosition(ScaledCenterOfMass);
@@ -743,14 +749,9 @@ void UFlowGridComponent::UpdateShapes()
 				if (IsCollider)
 				{
 					// update transforms
-					FTransform Transform = WorldTransformU;
+					FTransform Transform = ShapeTransform * ActorTransform;
 
 					// physics
-					//FVector physicsLinearVelocity = Body->OwnerComponent->GetPhysicsLinearVelocity();
-					//FVector physicsAngularVelocity = Body->OwnerComponent->GetPhysicsAngularVelocity();
-					//FVector physicsCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
-					FVector physicsLinearVelocity = Body->GetUnrealWorldVelocity_AssumesLocked();
-					FVector physicsAngularVelocity = Body->GetUnrealWorldAngularVelocity_AssumesLocked();
 					FVector physicsCenterOfMass = (PhysXActor->is<PxRigidStatic>() == nullptr) ? Body->OwnerComponent->GetCenterOfMass() : Transform.GetLocation();
 
 					FVector CollisionLinearVelocity = Transform.InverseTransformVector(physicsLinearVelocity);
@@ -812,6 +813,11 @@ void UFlowGridComponent::UpdateShapes()
 					FlowGridProperties.GridCollideParams.Push(emitParams);
 				}
 			}
+		}
+
+		if (FlowEmitterComponent != nullptr)
+		{
+			FlowEmitterComponent->BodyStateInterpolator.DiscardBefore(NumStepsTime);
 		}
 	}
 
@@ -991,7 +997,6 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		//Properties that can be changed without rebuilding grid
 		FlowGridProperties.VirtualGridExtents = FVector(FlowGridAssetRef->GetVirtualGridExtent());
 		FlowGridProperties.GridCellSize = FlowGridAssetRef->GridCellSize;
-		FlowGridProperties.SubstepSize = TimeStepper.FixedDt;
 
 		//NvFlowGridParams
 		auto& GridParams = FlowGridProperties.GridParams;
@@ -1055,6 +1060,13 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		FlowGridProperties.Materials.Reset();
 		FlowGridProperties.DefaultMaterialKey = AddMaterialParams(DefaultFlowMaterial);
 
+
+		TimeStepper.FixedDt = 1.f / FlowGridAssetRef->SimulationRate;
+		FlowGridProperties.SubstepSize = TimeStepper.FixedDt;
+
+		//trigger simulation substeps in render thread
+		int32 NumSubSteps = TimeStepper.GetNumSteps(DeltaTime);
+
 		//EmitShapes & CollisionShapes
 		UpdateShapes();
 
@@ -1064,10 +1076,6 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		//push all flow properties to proxy
 		MarkRenderDynamicDataDirty();
 
-		TimeStepper.FixedDt = 1.f / FlowGridAssetRef->SimulationRate;
-
-		//trigger simulation substeps in render thread
-		int32 NumSubSteps = TimeStepper.GetNumSteps(DeltaTime);
 
 		if (NumSubSteps > 0)
 		{
