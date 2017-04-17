@@ -218,6 +218,9 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
 	int32		ShadowChannel;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
+	float		ShadowNearDistance;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Distance Field")
 	uint32		bDistanceFieldCollisionEnabled : 1;
 

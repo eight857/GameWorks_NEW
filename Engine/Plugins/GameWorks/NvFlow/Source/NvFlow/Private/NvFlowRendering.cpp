@@ -1450,7 +1450,7 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 			}
 
 
-			const float MinZ = 1.0f * scaleInv;
+			const float MinZ = Properties.RenderParams.ShadowNearDistance * scaleInv;
 			const float MaxZ = m_shadowRadius * scaleInv;
 			const float TanOuterCone = FMath::Tan(m_shadowOuterConeAngle);
 

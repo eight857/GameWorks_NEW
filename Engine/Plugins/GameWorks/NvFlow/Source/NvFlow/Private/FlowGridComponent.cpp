@@ -1052,6 +1052,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		FlowGridProperties.RenderParams.ShadowMaxResidentScale = FlowGridAssetRef->ShadowMaxResidentScale;
 
 		FlowGridProperties.RenderParams.ShadowChannel = FlowGridAssetRef->ShadowChannel;
+		FlowGridProperties.RenderParams.ShadowNearDistance = FlowGridAssetRef->ShadowNearDistance;
 
 		for (auto It = MaterialsMap.CreateIterator(); It; ++It)
 		{
