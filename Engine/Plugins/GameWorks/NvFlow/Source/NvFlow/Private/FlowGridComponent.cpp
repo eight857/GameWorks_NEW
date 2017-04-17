@@ -346,24 +346,6 @@ void UFlowGridComponent::UpdateShapes()
 			NumSyncShapes = 1;
 		}
 
-		FTransform ActorTransform;
-		if (DistanceFieldVolumeData == nullptr)
-		{
-			ActorTransform = P2UTransform(PhysXActor->getGlobalPose());
-		}
-		else
-		{
-			check(StaticMeshComponent != nullptr);
-			check(StaticMesh != nullptr);
-
-			auto LocalExtent = DistanceFieldVolumeData->LocalBoundingBox.GetExtent();
-			auto LocalCenter = DistanceFieldVolumeData->LocalBoundingBox.GetCenter();
-
-			ActorTransform.SetLocation(LocalCenter);
-			ActorTransform.SetScale3D(LocalExtent);
-			ActorTransform *= StaticMeshComponent->ComponentToWorld;
-		}
-
 		bool IsEmitter = FlowEmitterComponent != nullptr;
 		bool IsCollider = Response == ECollisionResponse::ECR_Block;
 
@@ -376,16 +358,41 @@ void UFlowGridComponent::UpdateShapes()
 			}
 		}
 
-		FVector physicsLinearVelocity = Body->GetUnrealWorldVelocity_AssumesLocked();
-		FVector physicsAngularVelocity = Body->GetUnrealWorldAngularVelocity_AssumesLocked();
+		FTransform ActorTransform;
+		if (DistanceFieldVolumeData == nullptr)
+		{
+			ActorTransform = P2UTransform(PhysXActor->getGlobalPose());
+		}
+		else
+		{
+			check(StaticMeshComponent != nullptr);
+			ActorTransform = StaticMeshComponent->ComponentToWorld;
+		}
+
+		// ActorCenterOfMass, ActorLinearVelocity, ActorAngularVelocity are in Actor's Local Space!!!
+		// also assuming ActorCenterOfMass doesn't change in time
+		FVector WorldCenterOfMass;
+		FVector ActorCenterOfMass;
+		if (PhysXActor->is<PxRigidStatic>() == nullptr)
+		{
+			WorldCenterOfMass = Body->OwnerComponent->GetCenterOfMass();
+			ActorCenterOfMass = ActorTransform.InverseTransformPosition(WorldCenterOfMass);
+		}
+		else
+		{
+			WorldCenterOfMass = ActorTransform.GetLocation();
+			ActorCenterOfMass = FVector::ZeroVector;
+		}
+		FVector ActorLinearVelocity = ActorTransform.InverseTransformVector(Body->GetUnrealWorldVelocity_AssumesLocked());
+		FVector ActorAngularVelocity = ActorTransform.InverseTransformVector(Body->GetUnrealWorldAngularVelocity_AssumesLocked());
 
 		const float NumStepsTime = (TimeStepper.FixedDt * TimeStepper.NumSteps);
 		if (FlowEmitterComponent != nullptr)
 		{
 			FBodyState BodyState;
 			BodyState.Transform = ActorTransform;
-			BodyState.LinearVelocity = physicsLinearVelocity;
-			BodyState.AngularVelocity = physicsAngularVelocity;
+			BodyState.LinearVelocity = ActorLinearVelocity;
+			BodyState.AngularVelocity = ActorAngularVelocity;
 
 			FlowEmitterComponent->BodyStateInterpolator.Add(NumStepsTime + TimeStepper.TimeError, BodyState);
 		}
@@ -447,6 +454,13 @@ void UFlowGridComponent::UpdateShapes()
 					UnitToActualScale = FVector(NvFlow::scaleInv);
 
 					auto LocalExtent = DistanceFieldVolumeData->LocalBoundingBox.GetExtent();
+					auto LocalCenter = DistanceFieldVolumeData->LocalBoundingBox.GetCenter();
+
+					ShapeTransform.SetLocation(LocalCenter);
+
+					BoundsTransform.SetScale3D(LocalExtent);
+					LocalToWorldScale = LocalExtent;
+
 					FlowShapeDistScale = LocalExtent.GetMax() * NvFlow::scaleInv;
 
 					const FDistanceFieldVolumeData* &OldDistanceFieldVolumeData = DistanceFieldMap.FindOrAdd(StaticMesh);
@@ -640,54 +654,43 @@ void UFlowGridComponent::UpdateShapes()
 					FBodyStateInterpolator::FSampler Sampler(FlowEmitterComponent->BodyStateInterpolator);
 					const float SamplerTimeStep = NumStepsTime / iterations;
 
-					FTransform BlendedTransform = ShapeTransform * ActorTransform;
-					FVector BlendedLinearVelocity = physicsLinearVelocity;
-					FVector BlendedAngularVelocity = physicsAngularVelocity;
 					// substepping
 					for (uint32 i = 0u; i < iterations; i++)
 					{
-						if (!isStationary)
-						{
-							// Generate interpolated transform
-							FBodyState BlendedBodyState;
-							Sampler.AdvanceAndSample(SamplerTimeStep, BlendedBodyState);
+						// Generate interpolated transform
+						FBodyState BlendedBodyState;
+						Sampler.AdvanceAndSample(SamplerTimeStep, BlendedBodyState);
 
-							BlendedTransform = ShapeTransform * BlendedBodyState.Transform;
-							BlendedLinearVelocity = BlendedBodyState.LinearVelocity;
-							BlendedAngularVelocity = BlendedBodyState.AngularVelocity;
-						}
-						BlendedTransform.SetLocation(BlendedTransform.GetLocation() * NvFlow::scaleInv);
-						BlendedTransform.SetScale3D(BlendedTransform.GetScale3D() * UnitToActualScale);
+						const FTransform& BlendedActorTransform = BlendedBodyState.Transform;
+						const FVector& BlendedActorLinearVelocity = BlendedBodyState.LinearVelocity;
+						const FVector& BlendedActorAngularVelocity = BlendedBodyState.AngularVelocity;
 
 						// physics
-						FVector physicsCenterOfMass = (PhysXActor->is<PxRigidStatic>() == nullptr) ? Body->OwnerComponent->GetCenterOfMass() : BlendedTransform.GetLocation();
-
-						FVector CollisionLinearVelocity = BlendedTransform.InverseTransformVector(physicsLinearVelocity);
-						FVector CollisionAngularVelocity = BlendedTransform.InverseTransformVector(physicsAngularVelocity);
-						FVector CollisionCenterOfRotationOffset = physicsCenterOfMass;
-
-						FVector LinearVelocity = FlowEmitterComponent->LinearVelocity + CollisionLinearVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
-						FVector AngularVelocity = FlowEmitterComponent->AngularVelocity + CollisionAngularVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
-						FVector CenterOfRotationOffset = CollisionCenterOfRotationOffset * FlowEmitterComponent->BlendInPhysicalVelocity;
+						FVector CollisionLinearVelocity = ShapeTransform.InverseTransformVector(BlendedActorLinearVelocity);
+						FVector CollisionAngularVelocity = ShapeTransform.InverseTransformVector(BlendedActorAngularVelocity);
+						FVector CollisionCenterOfRotationOffset = BlendedActorTransform.TransformPosition(ActorCenterOfMass);
 
 						FVector CollisionScaledVelocityLinear = CollisionLinearVelocity * NvFlow::scaleInv;
 						FVector CollisionScaledVelocityAngular = CollisionAngularVelocity * NvFlow::angularScale;
 						FVector CollisionScaledCenterOfMass = CollisionCenterOfRotationOffset * NvFlow::scaleInv;
 
+						FVector LinearVelocity = FlowEmitterComponent->LinearVelocity + CollisionLinearVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
+						FVector AngularVelocity = FlowEmitterComponent->AngularVelocity + CollisionAngularVelocity * FlowEmitterComponent->BlendInPhysicalVelocity;
+
 						FVector ScaledVelocityLinear = LinearVelocity * NvFlow::scaleInv;
 						FVector ScaledVelocityAngular = AngularVelocity * NvFlow::angularScale;
-						FVector ScaledCenterOfMass = CenterOfRotationOffset * NvFlow::scaleInv;
 
 						emitParams.velocityLinear = *(NvFlowFloat3*)(&ScaledVelocityLinear.X);
 						emitParams.velocityAngular = *(NvFlowFloat3*)(&ScaledVelocityAngular.X);
 
-						// compute centerOfMass in emitter local space
-						FVector centerOfMass = BlendedTransform.InverseTransformPosition(ScaledCenterOfMass);
-						emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
+						// scaled transform
+						FTransform ScaledTransform = ShapeTransform * BlendedActorTransform;
+						ScaledTransform.SetLocation(ScaledTransform.GetLocation() * NvFlow::scaleInv);
+						ScaledTransform.SetScale3D(ScaledTransform.GetScale3D() * UnitToActualScale);
 
 						// establish bounds and localToWorld
-						FTransform BlendedBounds = BlendedTransform;
-						FTransform BlendedLocalToWorld = BlendedTransform;
+						FTransform BlendedBounds = ScaledTransform;
+						FTransform BlendedLocalToWorld = ScaledTransform;
 						BlendedBounds = BoundsTransform * BlendedBounds;
 						BlendedLocalToWorld.SetScale3D(BlendedLocalToWorld.GetScale3D() * LocalToWorldScale);
 
@@ -696,6 +699,10 @@ void UFlowGridComponent::UpdateShapes()
 							const float k = (EmitterInflate + 1.f);
 							BlendedBounds.SetScale3D(BlendedBounds.GetScale3D() * k);
 						}
+
+						// compute centerOfMass in bounds local space
+						FVector centerOfMass = BlendedBounds.InverseTransformPosition(CollisionScaledCenterOfMass);
+						emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
 
 						emitParams.bounds = *(NvFlowFloat4x4*)(&BlendedBounds.ToMatrixWithScale().M[0][0]);
 						emitParams.localToWorld = *(NvFlowFloat4x4*)(&BlendedLocalToWorld.ToMatrixWithScale().M[0][0]);
@@ -748,15 +755,10 @@ void UFlowGridComponent::UpdateShapes()
 
 				if (IsCollider)
 				{
-					// update transforms
-					FTransform Transform = ShapeTransform * ActorTransform;
-
 					// physics
-					FVector physicsCenterOfMass = (PhysXActor->is<PxRigidStatic>() == nullptr) ? Body->OwnerComponent->GetCenterOfMass() : Transform.GetLocation();
-
-					FVector CollisionLinearVelocity = Transform.InverseTransformVector(physicsLinearVelocity);
-					FVector CollisionAngularVelocity = Transform.InverseTransformVector(physicsAngularVelocity);
-					FVector CollisionCenterOfRotationOffset = physicsCenterOfMass;
+					FVector CollisionLinearVelocity = ShapeTransform.InverseTransformVector(ActorLinearVelocity);
+					FVector CollisionAngularVelocity = ShapeTransform.InverseTransformVector(ActorAngularVelocity);
+					FVector CollisionCenterOfRotationOffset = WorldCenterOfMass;
 
 					FVector CollisionScaledVelocityLinear = CollisionLinearVelocity * NvFlow::scaleInv;
 					FVector CollisionScaledVelocityAngular = CollisionAngularVelocity * NvFlow::angularScale;
@@ -789,19 +791,19 @@ void UFlowGridComponent::UpdateShapes()
 					emitParams.shapeDistScale = FlowShapeDistScale;
 
 					// scaled transform
-					FTransform ScaledTransform = Transform;
-					ScaledTransform.SetLocation(Transform.GetLocation() * NvFlow::scaleInv);
+					FTransform ScaledTransform = ShapeTransform * ActorTransform;
+					ScaledTransform.SetLocation(ScaledTransform.GetLocation() * NvFlow::scaleInv);
 					ScaledTransform.SetScale3D(ScaledTransform.GetScale3D() * UnitToActualScale);
-
-					// compute centerOfMass in emitter local space
-					FVector centerOfMass = ScaledTransform.InverseTransformPosition(CollisionScaledCenterOfMass);
-					emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
 
 					// establish bounds and localToWorld
 					FTransform BlendedBounds = ScaledTransform;
 					FTransform BlendedLocalToWorld = ScaledTransform;
 					BlendedBounds = BoundsTransform * BlendedBounds;
 					BlendedLocalToWorld.SetScale3D(BlendedLocalToWorld.GetScale3D() * LocalToWorldScale);
+
+					// compute centerOfMass in bounds local space
+					FVector centerOfMass = BlendedBounds.InverseTransformPosition(CollisionScaledCenterOfMass);
+					emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
 
 					emitParams.bounds = *(NvFlowFloat4x4*)(&BlendedBounds.ToMatrixWithScale().M[0][0]);
 					emitParams.localToWorld = *(NvFlowFloat4x4*)(&BlendedLocalToWorld.ToMatrixWithScale().M[0][0]);
