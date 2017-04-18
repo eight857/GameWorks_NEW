@@ -411,13 +411,26 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 		);
 	}
 
-	// Clear morph indices
-	MorphIndices.Empty(true);
-
 	// Setup morph index mapping
-	extern int32 GEnableGPUSkinCache;
-	if(ParentSkeleton->MorphTargetWeights.Num() > 0 && !GEnableGPUSkinCache)
+	do
 	{
+		// Only handle CPU morph case
+		extern int32 GEnableGPUSkinCache;
+		if(ParentSkeleton->MorphTargetWeights.Num() <= 0 || GEnableGPUSkinCache)
+		{
+			MorphIndices.Empty(true);
+			break;
+		}
+
+		// Check if parent skeletal mesh has changed. 
+		if(!bAutoRemapMorphTarget)
+		{
+			if(CachedSkeletalMeshForMorph == ParentSkeleton->SkeletalMesh)
+				break;
+
+			CachedSkeletalMeshForMorph = ParentSkeleton->SkeletalMesh;
+		}
+
 		// Get vertices of parent skeletal mesh
 		const auto& ParentMeshVertexBuffer = ParentSkeleton->SkeletalMesh->GetResourceForRendering()->LODModels[0].VertexBufferGPUSkin;
 
@@ -460,7 +473,33 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 
 			MorphIndices[GuideIdx] = ClosestVertexIdx;
 		}
-	}
+
+		// Propagate to all instances in editor
+#if WITH_EDITOR
+		do
+		{
+			if(bAutoRemapMorphTarget)
+				break;
+
+			auto* Archetype = GetArchetype();
+			if(Archetype == nullptr)
+				break;
+
+			TArray<UObject*> Instances;
+			Archetype->GetArchetypeInstances(Instances);
+
+			Instances.Add(Archetype);
+
+			for(auto* Instance : Instances)
+			{
+				auto* HairWorksComp = CastChecked<UHairWorksComponent>(Instance);
+				HairWorksComp->CachedSkeletalMeshForMorph = CachedSkeletalMeshForMorph;
+				HairWorksComp->MorphIndices = MorphIndices;
+				HairWorksComp->Modify();
+			}
+		} while(false);
+#endif
+	} while(false);
 }
 
 void UHairWorksComponent::UpdateBoneMatrices()const
