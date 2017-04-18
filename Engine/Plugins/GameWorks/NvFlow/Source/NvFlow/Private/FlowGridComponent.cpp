@@ -43,7 +43,7 @@ int32 FTimeStepper::GetNumSteps(float TimeStep)
 	check(NumSteps >= 0);
 
 	TimeError -= FixedDt * float(NumSteps);
-	check(TimeError >= 0.0f);
+	if (TimeError < 0.0f) TimeError = 0.0f;
 
 	return FMath::Min(NumSteps, MaxSteps);
 }
@@ -396,6 +396,10 @@ void UFlowGridComponent::UpdateShapes()
 
 			FlowEmitterComponent->BodyStateInterpolator.Add(NumStepsTime + TimeStepper.TimeError, BodyState);
 		}
+
+		//skip if no simulation (NumSteps == 0)
+		if (NumStepsTime == 0.0f)
+			continue;
 
 		for (int ShapeIndex = 0; ShapeIndex < NumSyncShapes; ++ShapeIndex)
 		{

@@ -9,6 +9,10 @@
 
 #include "PhysicsEngine/PhysXSupport.h"
 
+#if LOG_STATE_INTERPOLATOR
+DEFINE_LOG_CATEGORY(LogFlowDebug);
+#endif
+
 static const float Density_DEPRECATED_Default = 0.5f;
 static const float DensityMask_DEPRECATED_Default = 1.0f;
 

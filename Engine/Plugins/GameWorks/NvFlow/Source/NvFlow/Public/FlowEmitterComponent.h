@@ -12,6 +12,10 @@
 #include "FlowEmitterComponent.generated.h"
 
 
+#define LOG_STATE_INTERPOLATOR 0
+#if LOG_STATE_INTERPOLATOR
+DECLARE_LOG_CATEGORY_EXTERN(LogFlowDebug, Log, All);
+#endif
 
 template <typename T>
 class FStateInterpolator
@@ -42,6 +46,10 @@ public:
 		{
 			check(Head == nullptr);
 			Head = Tail = new FNode(0.0f, InState);
+
+#if LOG_STATE_INTERPOLATOR
+			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: Add at 0 node: %s"), *InState.ToString())
+#endif
 		}
 		check(InTime > Tail->Time);
 		bIsStationary &= InState.Equals(Tail->State);
@@ -49,10 +57,17 @@ public:
 		FNode* NewNode = new FNode(InTime, InState);
 		NewNode->LinkAfter(Tail);
 		Tail = NewNode;
+
+#if LOG_STATE_INTERPOLATOR
+		UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: Add at %f node: %s"), InTime, *InState.ToString())
+#endif
 	}
 
 	void DiscardBefore(float InTime)
 	{
+#if LOG_STATE_INTERPOLATOR
+		UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore %f"), InTime)
+#endif
 		if (InTime > 0.0f)
 		{
 			check(InTime <= Tail->Time);
@@ -67,10 +82,17 @@ public:
 			}
 
 			check(Head != nullptr);
+#if LOG_STATE_INTERPOLATOR
+			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore node %f -> %f"), Head->Time, Head->Time - InTime);
+#endif
+
 			Head->Time -= InTime;
 			bIsStationary = true;
 			for (FNode* Node = Head->Next(); Node != nullptr; Node = Node->Next())
 			{
+#if LOG_STATE_INTERPOLATOR
+				UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore node %f -> %f"), Node->Time, Node->Time - InTime);
+#endif
 				Node->Time -= InTime;
 				bIsStationary &= Node->State.Equals(Head->State);
 			}
@@ -111,6 +133,9 @@ public:
 			{
 				OutState = Node->State;
 			}
+#if LOG_STATE_INTERPOLATOR
+			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: Sample at %f (%f) result: %s"), Time, InTimeStep, *OutState.ToString());
+#endif
 		}
 	};
 
@@ -134,6 +159,14 @@ struct FBodyState
 		LinearVelocity = FMath::Lerp(State0.LinearVelocity, State1.LinearVelocity, Alpha);
 		AngularVelocity = FMath::Lerp(State0.AngularVelocity, State1.AngularVelocity, Alpha);
 	}
+
+#if LOG_STATE_INTERPOLATOR
+	FString ToString() const
+	{
+		const FVector Location = Transform.GetLocation();
+		return FString::Printf(TEXT("loc=(%f %f %f), lvel=(%f %f %f)"), Location.X, Location.Y, Location.Z, LinearVelocity.X, LinearVelocity.Y, LinearVelocity.Z);
+	}
+#endif
 };
 
 typedef FStateInterpolator<FBodyState> FBodyStateInterpolator;
