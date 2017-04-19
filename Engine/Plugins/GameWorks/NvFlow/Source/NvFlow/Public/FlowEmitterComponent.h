@@ -18,45 +18,111 @@ DECLARE_LOG_CATEGORY_EXTERN(LogFlowDebug, Log, All);
 #endif
 
 template <typename T>
+class TResizeableCircularBuffer
+{
+public:
+	TResizeableCircularBuffer(uint32 InCapacity)
+	{
+		Capacity = FMath::RoundUpToPowerOfTwo(InCapacity);
+		BeginIdx = EndIdx = 0;
+		Elements = new T[Capacity];
+	}
+
+	~TResizeableCircularBuffer()
+	{
+		delete[] Elements;
+	}
+
+	void PushBack(const T& Value)
+	{
+		uint32 NewEndIdx = (EndIdx + 1) & (Capacity - 1);
+		if (NewEndIdx == BeginIdx)
+		{
+			// need to resize
+			const uint32 NewCapacity = Capacity * 2;
+			T* NewElements = new T[NewCapacity];
+
+			uint32 DstIdx = 0;
+			for (uint32 SrcIdx = BeginIdx; SrcIdx < Capacity; ++SrcIdx) NewElements[DstIdx++] = Elements[SrcIdx];
+			for (uint32 SrcIdx = 0; SrcIdx < BeginIdx; ++SrcIdx) NewElements[DstIdx++] = Elements[SrcIdx];
+
+			delete[] Elements;
+
+			BeginIdx = 0;
+			EndIdx = Capacity - 1;
+			NewEndIdx = Capacity;
+
+			Capacity = NewCapacity;
+			Elements = NewElements;
+		}
+
+		Elements[EndIdx] = Value;
+		EndIdx = NewEndIdx;
+	}
+
+	bool IsEmpty() const { return (BeginIdx == EndIdx); }
+
+	bool PopFront()
+	{
+		if (!IsEmpty())
+		{
+			BeginIdx = (BeginIdx + 1) & (Capacity - 1);
+			return true;
+		}
+		return false;
+	}
+
+	T& GetFront() {	check(!IsEmpty()); return Elements[BeginIdx]; }
+	const T& GetFront() const { check(!IsEmpty()); return Elements[BeginIdx]; }
+
+	T& GetBack() { check(!IsEmpty()); return Elements[(EndIdx - 1) & (Capacity - 1)]; }
+	const T& GetBack() const { check(!IsEmpty()); return Elements[(EndIdx - 1) & (Capacity - 1)]; }
+
+	const uint32 Count() const { return (EndIdx - BeginIdx) & (Capacity - 1); }
+
+	T& operator[] (uint32 Idx) { return Elements[(BeginIdx + Idx) & (Capacity - 1)]; }
+	const T& operator[] (uint32 Idx) const { return Elements[(BeginIdx + Idx) & (Capacity - 1)]; }
+
+protected:
+	T* Elements;
+	uint32 Capacity;
+	uint32 BeginIdx;
+	uint32 EndIdx;
+};
+
+template <typename T>
 class FStateInterpolator
 {
-	struct FNode : public TIntrusiveLinkedList<FNode>
+	struct FTimeState
 	{
 		float Time;
 		T State;
-
-		FNode(float InTime, const T& InState) : Time(InTime), State(InState) {}
 	};
 
-	FNode* Head;
-	FNode* Tail;
-
+	TResizeableCircularBuffer<FTimeState> CircularBuffer;
 	bool bIsStationary;
 
 public:
 	FStateInterpolator()
+		: CircularBuffer(8), bIsStationary(true)
 	{
-		Head = Tail = nullptr;
-		bIsStationary = true;
 	}
 
 	void Add(float InTime, const T& InState)
 	{
-		if (Tail == nullptr)
+		if (CircularBuffer.IsEmpty())
 		{
-			check(Head == nullptr);
-			Head = Tail = new FNode(0.0f, InState);
+			CircularBuffer.PushBack( {0.0f, InState} );
 
 #if LOG_STATE_INTERPOLATOR
 			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: Add at 0 node: %s"), *InState.ToString())
 #endif
 		}
-		check(InTime > Tail->Time);
-		bIsStationary &= InState.Equals(Tail->State);
+		const FTimeState& Back = CircularBuffer.GetBack();
+		check(InTime > Back.Time);
+		bIsStationary &= InState.Equals(Back.State);
 
-		FNode* NewNode = new FNode(InTime, InState);
-		NewNode->LinkAfter(Tail);
-		Tail = NewNode;
+		CircularBuffer.PushBack( {InTime, InState} );
 
 #if LOG_STATE_INTERPOLATOR
 		UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: Add at %f node: %s"), InTime, *InState.ToString())
@@ -68,33 +134,29 @@ public:
 #if LOG_STATE_INTERPOLATOR
 		UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore %f"), InTime)
 #endif
-		if (InTime > 0.0f)
+		if (InTime > 0.0f && !CircularBuffer.IsEmpty())
 		{
-			check(InTime <= Tail->Time);
+			check(InTime <= CircularBuffer.GetBack().Time);
 
-			check(Head != nullptr);
-			for (FNode* Node = Head; Node->Next() != nullptr && Node->Next()->Time <= InTime; )
+			while (CircularBuffer.Count() > 1 && CircularBuffer[1].Time <= InTime)
 			{
-				Head = Node->Next();
-				Node->Unlink();
-				delete Node;
-				Node = Head;
+				CircularBuffer.PopFront();
 			}
 
-			check(Head != nullptr);
+			FTimeState& Front = CircularBuffer.GetFront();
 #if LOG_STATE_INTERPOLATOR
-			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore node %f -> %f"), Head->Time, Head->Time - InTime);
+			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore node %f -> %f"), Front.Time, Front.Time - InTime);
 #endif
-
-			Head->Time -= InTime;
+			Front.Time -= InTime;
 			bIsStationary = true;
-			for (FNode* Node = Head->Next(); Node != nullptr; Node = Node->Next())
+			for (uint32 Idx = 1, Count = CircularBuffer.Count(); Idx < Count; ++Idx)
 			{
+				FTimeState& Curr = CircularBuffer[Idx];
 #if LOG_STATE_INTERPOLATOR
-				UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore node %f -> %f"), Node->Time, Node->Time - InTime);
+				UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore node %f -> %f"), Curr.Time, Curr.Time - InTime);
 #endif
-				Node->Time -= InTime;
-				bIsStationary &= Node->State.Equals(Head->State);
+				Curr.Time -= InTime;
+				bIsStationary &= Curr.State.Equals(Front.State);
 			}
 		}
 	}
@@ -103,35 +165,36 @@ public:
 
 	class FSampler
 	{
+		const TResizeableCircularBuffer<FTimeState>& CircularBuffer;
 		float Time;
-		FNode* Node;
+		uint32 Idx;
 	public:
-		FSampler(const FStateInterpolator& InOwner, float InTime = 0.0f)
+		FSampler(const FStateInterpolator& InInterpolator, float InTime = 0.0f)
+			: CircularBuffer(InInterpolator.CircularBuffer), Time(InTime), Idx(0)
 		{
-			Time = InTime;
-			Node = InOwner.Head;
-			check(Node->Time <= InTime);
+			check(CircularBuffer.GetFront().Time <= InTime);
 		}
 
 		void AdvanceAndSample(float InTimeStep, T& OutState)
 		{
 			Time += InTimeStep;
 
-			while (Node->Next() != nullptr && Node->Next()->Time < Time)
-			{
-				Node = Node->Next();
-			}
-			check(Node->Time <= Time);
-			check(Node->Next() != nullptr && Node->Next()->Time >= Time);
+			uint32 Count = CircularBuffer.Count();
+			for (; Idx + 1 < Count && CircularBuffer[Idx + 1].Time < Time; ++Idx) {}
 
-			if (Node->Next() != nullptr)
+			check(CircularBuffer[Idx].Time <= Time);
+			check(Idx + 1 < Count && CircularBuffer[Idx + 1].Time >= Time);
+
+			if (Idx + 1 < Count)
 			{
-				const float Alpha = (Time - Node->Time) / (Node->Next()->Time - Node->Time);
-				OutState.Blend(Node->State, Node->Next()->State, Alpha);
+				const FTimeState& Curr = CircularBuffer[Idx];
+				const FTimeState& Next = CircularBuffer[Idx + 1];
+				const float Alpha = (Time - Curr.Time) / (Next.Time - Curr.Time);
+				OutState.Blend(Curr.State, Next.State, Alpha);
 			}
 			else
 			{
-				OutState = Node->State;
+				OutState = CircularBuffer[Idx].State;
 			}
 #if LOG_STATE_INTERPOLATOR
 			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: Sample at %f (%f) result: %s"), Time, InTimeStep, *OutState.ToString());
