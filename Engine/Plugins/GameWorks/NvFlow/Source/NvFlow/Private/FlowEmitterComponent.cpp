@@ -9,8 +9,8 @@
 
 #include "PhysicsEngine/PhysXSupport.h"
 
-#if LOG_STATE_INTERPOLATOR
-DEFINE_LOG_CATEGORY(LogFlowDebug);
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+DEFINE_LOG_CATEGORY(LogFlowEmitterState);
 #endif
 
 static const float Density_DEPRECATED_Default = 0.5f;
@@ -55,6 +55,11 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 	FlowMaterial = nullptr;
 
 	bUseDistanceField = false;
+
+#if !FLOW_EMITTER_ACCUM_EXACT_FRAME_STATE
+	LastFrameTime = FLT_MAX;
+	bIsLastStateTheSame = false;
+#endif
 }
 
 void UFlowEmitterComponent::PostLoad()

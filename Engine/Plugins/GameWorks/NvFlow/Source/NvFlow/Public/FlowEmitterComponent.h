@@ -12,18 +12,46 @@
 #include "FlowEmitterComponent.generated.h"
 
 
-#define LOG_STATE_INTERPOLATOR 0
-#if LOG_STATE_INTERPOLATOR
-DECLARE_LOG_CATEGORY_EXTERN(LogFlowDebug, Log, All);
+#define FLOW_EMITTER_ACCUM_EXACT_FRAME_STATE 0
+#define FLOW_EMITTER_LOG_ACCUM_STATE 0
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+DECLARE_LOG_CATEGORY_EXTERN(LogFlowEmitterState, Log, All);
 #endif
+
+struct FBodyState
+{
+	FTransform Transform;
+	FVector LinearVelocity;
+	FVector AngularVelocity;
+
+	bool Equals(const FBodyState& Other) const
+	{
+		return Transform.Equals(Other.Transform) && LinearVelocity.Equals(Other.LinearVelocity) && AngularVelocity.Equals(Other.AngularVelocity);
+	}
+
+	void Blend(const FBodyState& State0, const FBodyState& State1, float Alpha)
+	{
+		Transform.Blend(State0.Transform, State1.Transform, Alpha);
+		LinearVelocity = FMath::Lerp(State0.LinearVelocity, State1.LinearVelocity, Alpha);
+		AngularVelocity = FMath::Lerp(State0.AngularVelocity, State1.AngularVelocity, Alpha);
+	}
+
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+	FString ToString() const
+	{
+		const FVector Location = Transform.GetLocation();
+		return FString::Printf(TEXT("loc=(%f %f %f), lvel=(%f %f %f)"), Location.X, Location.Y, Location.Z, LinearVelocity.X, LinearVelocity.Y, LinearVelocity.Z);
+	}
+#endif
+};
 
 template <typename T>
 class TResizeableCircularBuffer
 {
 public:
-	TResizeableCircularBuffer(uint32 InCapacity)
+	TResizeableCircularBuffer(uint32 InReserveCount)
 	{
-		Capacity = FMath::RoundUpToPowerOfTwo(InCapacity);
+		Capacity = FMath::RoundUpToPowerOfTwo(InReserveCount + 1);
 		BeginIdx = EndIdx = 0;
 		Elements = new T[Capacity];
 	}
@@ -90,8 +118,9 @@ protected:
 	uint32 EndIdx;
 };
 
+
 template <typename T>
-class FStateInterpolator
+class FStateAccumulator
 {
 	struct FTimeState
 	{
@@ -103,8 +132,8 @@ class FStateInterpolator
 	bool bIsStationary;
 
 public:
-	FStateInterpolator()
-		: CircularBuffer(8), bIsStationary(true)
+	FStateAccumulator()
+		: CircularBuffer(7), bIsStationary(true)
 	{
 	}
 
@@ -114,8 +143,8 @@ public:
 		{
 			CircularBuffer.PushBack( {0.0f, InState} );
 
-#if LOG_STATE_INTERPOLATOR
-			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: Add at 0 node: %s"), *InState.ToString())
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+			UE_LOG(LogFlowEmitterState, Display, TEXT("FStateAccumulator: Add at 0 node: %s"), *InState.ToString())
 #endif
 		}
 		const FTimeState& Back = CircularBuffer.GetBack();
@@ -124,15 +153,15 @@ public:
 
 		CircularBuffer.PushBack( {InTime, InState} );
 
-#if LOG_STATE_INTERPOLATOR
-		UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: Add at %f node: %s"), InTime, *InState.ToString())
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+		UE_LOG(LogFlowEmitterState, Display, TEXT("FStateAccumulator: Add at %f node: %s"), InTime, *InState.ToString())
 #endif
 	}
 
 	void DiscardBefore(float InTime)
 	{
-#if LOG_STATE_INTERPOLATOR
-		UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore %f"), InTime)
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+		UE_LOG(LogFlowEmitterState, Display, TEXT("FStateAccumulator: DiscardBefore %f"), InTime)
 #endif
 		if (InTime > 0.0f && !CircularBuffer.IsEmpty())
 		{
@@ -144,16 +173,16 @@ public:
 			}
 
 			FTimeState& Front = CircularBuffer.GetFront();
-#if LOG_STATE_INTERPOLATOR
-			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore node %f -> %f"), Front.Time, Front.Time - InTime);
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+			UE_LOG(LogFlowEmitterState, Display, TEXT("FStateAccumulator: DiscardBefore node %f -> %f"), Front.Time, Front.Time - InTime);
 #endif
 			Front.Time -= InTime;
 			bIsStationary = true;
 			for (uint32 Idx = 1, Count = CircularBuffer.Count(); Idx < Count; ++Idx)
 			{
 				FTimeState& Curr = CircularBuffer[Idx];
-#if LOG_STATE_INTERPOLATOR
-				UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: DiscardBefore node %f -> %f"), Curr.Time, Curr.Time - InTime);
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+				UE_LOG(LogFlowEmitterState, Display, TEXT("FStateAccumulator: DiscardBefore node %f -> %f"), Curr.Time, Curr.Time - InTime);
 #endif
 				Curr.Time -= InTime;
 				bIsStationary &= Curr.State.Equals(Front.State);
@@ -163,14 +192,14 @@ public:
 
 	bool IsStationary() const { return bIsStationary; }
 
-	class FSampler
+	class FInterpolator
 	{
 		const TResizeableCircularBuffer<FTimeState>& CircularBuffer;
 		float Time;
 		uint32 Idx;
 	public:
-		FSampler(const FStateInterpolator& InInterpolator, float InTime = 0.0f)
-			: CircularBuffer(InInterpolator.CircularBuffer), Time(InTime), Idx(0)
+		FInterpolator(const FStateAccumulator& InAccumulator, float InTime = 0.0f)
+			: CircularBuffer(InAccumulator.CircularBuffer), Time(InTime), Idx(0)
 		{
 			check(CircularBuffer.GetFront().Time <= InTime);
 		}
@@ -196,43 +225,61 @@ public:
 			{
 				OutState = CircularBuffer[Idx].State;
 			}
-#if LOG_STATE_INTERPOLATOR
-			UE_LOG(LogFlowDebug, Display, TEXT("FStateInterpolator: Sample at %f (%f) result: %s"), Time, InTimeStep, *OutState.ToString());
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+			UE_LOG(LogFlowEmitterState, Display, TEXT("FStateAccumulator: Sample at %f (%f) result: %s"), Time, InTimeStep, *OutState.ToString());
 #endif
 		}
 	};
+	friend class FInterpolator;
 
-	friend class FSampler;
-};
-
-struct FBodyState
-{
-	FTransform Transform;
-	FVector LinearVelocity;
-	FVector AngularVelocity;
-
-	bool Equals(const FBodyState& Other) const
+	float GetLastTime() const
 	{
-		return Transform.Equals(Other.Transform) && LinearVelocity.Equals(Other.LinearVelocity) && AngularVelocity.Equals(Other.AngularVelocity);
+		return CircularBuffer.IsEmpty() ? 0.0f : CircularBuffer.GetBack().Time;
 	}
 
-	void Blend(const FBodyState& State0, const FBodyState& State1, float Alpha)
+	class FIterator
 	{
-		Transform.Blend(State0.Transform, State1.Transform, Alpha);
-		LinearVelocity = FMath::Lerp(State0.LinearVelocity, State1.LinearVelocity, Alpha);
-		AngularVelocity = FMath::Lerp(State0.AngularVelocity, State1.AngularVelocity, Alpha);
-	}
+		const TResizeableCircularBuffer<FTimeState>& CircularBuffer;
+		float LastTime;
+		float EndTime;
+		uint32 Idx;
+	public:
+		FIterator(const FStateAccumulator& InAccumulator, float InBeginTime, float InEndTime)
+			: CircularBuffer(InAccumulator.CircularBuffer), LastTime(InBeginTime), EndTime(InEndTime)
+		{
+			const uint32 Count = CircularBuffer.Count();
+			//skip to BeginTime
+			for (Idx = 0; Idx < Count && CircularBuffer[Idx].Time <= InBeginTime; ++Idx) {}
+		}
 
-#if LOG_STATE_INTERPOLATOR
-	FString ToString() const
-	{
-		const FVector Location = Transform.GetLocation();
-		return FString::Printf(TEXT("loc=(%f %f %f), lvel=(%f %f %f)"), Location.X, Location.Y, Location.Z, LinearVelocity.X, LinearVelocity.Y, LinearVelocity.Z);
-	}
+		bool Next(float& DeltaTime, T& OutState)
+		{
+			const uint32 Count = CircularBuffer.Count();
+			if (Idx < Count)
+			{
+				const FTimeState& Curr = CircularBuffer[Idx];
+				if (Curr.Time <= EndTime)
+				{
+					DeltaTime = Curr.Time - LastTime;
+					OutState = Curr.State;
+					++Idx;
+					LastTime = Curr.Time;
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+					UE_LOG(LogFlowEmitterState, Display, TEXT("FStateAccumulator: Iterate at %f (%f) node: %s"), Curr.Time, DeltaTime, *OutState.ToString())
 #endif
+					return true;
+				}
+			}
+			return false;
+		}
+	};
+	friend class FIterator;
 };
 
-typedef FStateInterpolator<FBodyState> FBodyStateInterpolator;
+typedef FStateAccumulator<FBodyState> FBodyStateAccumulator;
+
+
+
 
 UCLASS(ClassGroup = Physics, config = Engine, editinlinenew, HideCategories = (Activation, PhysX), meta = (BlueprintSpawnableComponent), MinimalAPI)
 class UFlowEmitterComponent : public UActorComponent
@@ -321,7 +368,12 @@ class UFlowEmitterComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter)
 	uint32		bAllocShapeOnly : 1;
 
-	FBodyStateInterpolator BodyStateInterpolator;
+#if !FLOW_EMITTER_ACCUM_EXACT_FRAME_STATE
+	float LastFrameTime;
+	FBodyState LastBodyState;
+	bool bIsLastStateTheSame;
+#endif
+	FBodyStateAccumulator BodyStateAccumulator;
 
 	/** Flow material, if null then taken default material from grid. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)

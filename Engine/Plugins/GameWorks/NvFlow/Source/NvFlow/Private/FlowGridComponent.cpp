@@ -386,19 +386,104 @@ void UFlowGridComponent::UpdateShapes()
 		FVector ActorLinearVelocity = ActorTransform.InverseTransformVector(Body->GetUnrealWorldVelocity_AssumesLocked());
 		FVector ActorAngularVelocity = ActorTransform.InverseTransformVector(Body->GetUnrealWorldAngularVelocity_AssumesLocked());
 
-		const float NumStepsTime = (TimeStepper.FixedDt * TimeStepper.NumSteps);
+		const float SimDeltaTime = (TimeStepper.FixedDt * TimeStepper.NumSteps);
 		if (FlowEmitterComponent != nullptr)
 		{
+			float FrameTime = SimDeltaTime + TimeStepper.TimeError;
+
 			FBodyState BodyState;
 			BodyState.Transform = ActorTransform;
 			BodyState.LinearVelocity = ActorLinearVelocity;
 			BodyState.AngularVelocity = ActorAngularVelocity;
 
-			FlowEmitterComponent->BodyStateInterpolator.Add(NumStepsTime + TimeStepper.TimeError, BodyState);
+#if FLOW_EMITTER_ACCUM_EXACT_FRAME_STATE
+			FlowEmitterComponent->BodyStateAccumulator.Add(FrameTime, BodyState);
+#else
+			if (FlowEmitterComponent->LastFrameTime == FLT_MAX)
+			{
+				FlowEmitterComponent->LastFrameTime = 0.0f;
+				FlowEmitterComponent->LastBodyState = BodyState;
+			}
+			check(FlowEmitterComponent->LastFrameTime >= 0.0f);
+
+			const int32 NumSubsteps = FlowEmitterComponent->NumSubsteps;
+			const float SubstepDt = (SimDeltaTime > 0.0f ? SimDeltaTime : FlowGridProperties.SubstepSize) / NumSubsteps;
+
+			bool bIsStateTheSame = FlowEmitterComponent->LastBodyState.Equals(BodyState);
+#if FLOW_EMITTER_LOG_ACCUM_STATE
+			UE_LOG(LogFlowEmitterState, Display, TEXT("UpdateShapes: FrameTime = %f -> %f, SimDt = %f, StepDt = %f, StateEquals = %d"), FlowEmitterComponent->LastFrameTime, FrameTime, SimDeltaTime, SubstepDt, bIsStateTheSame ? 1 : 0);
+#endif
+			if (!bIsStateTheSame)
+			{
+				int32 LastSubstepIdx = FPlatformMath::FloorToInt(FlowEmitterComponent->LastFrameTime / SubstepDt);
+				if (FlowEmitterComponent->bIsLastStateTheSame)
+				{
+					float LastSubstepTime = LastSubstepIdx * SubstepDt;
+					float LastAccumTime = FlowEmitterComponent->BodyStateAccumulator.GetLastTime();
+
+					// the following should be (LastSubstepTime - LastAccumTime > 0) with infinite precision, but we have round-off errors, so using threshold of half substep
+					if (LastSubstepTime - LastAccumTime > SubstepDt * 0.5f)
+					{
+						//don't need to interpolate because LastBodyState is the same as before it
+						FlowEmitterComponent->BodyStateAccumulator.Add(LastSubstepTime, FlowEmitterComponent->LastBodyState);
+					}
+				}
+
+#define FLOW_ADD_INTERPOLATED_STATE(Time) \
+{ \
+	float Alpha = (Time - FlowEmitterComponent->LastFrameTime) / (FrameTime - FlowEmitterComponent->LastFrameTime); \
+	FBodyState BlendedBodyState; \
+	BlendedBodyState.Blend(FlowEmitterComponent->LastBodyState, BodyState, Alpha); \
+	FlowEmitterComponent->BodyStateAccumulator.Add(Time, BlendedBodyState); \
+} \
+
+				if (SimDeltaTime > 0.0f)
+				{
+					check(LastSubstepIdx < NumSubsteps);
+					for (int32 SubstepIdx = LastSubstepIdx + 1; SubstepIdx < NumSubsteps; ++SubstepIdx)
+					{
+						const float SubstepTime = SubstepIdx * SubstepDt;
+						FLOW_ADD_INTERPOLATED_STATE(SubstepTime)
+					}
+					//explicitly add state at SimDeltaTime to remove float point error accumulation!
+					{
+						FLOW_ADD_INTERPOLATED_STATE(SimDeltaTime)
+					}
+					LastSubstepIdx = NumSubsteps;
+				}
+
+				const int32 EndSubstepIdx = FPlatformMath::FloorToInt(FrameTime / SubstepDt);
+				if (LastSubstepIdx < EndSubstepIdx)
+				{
+					for (int32 SubstepIdx = LastSubstepIdx + 1; SubstepIdx < EndSubstepIdx; ++SubstepIdx)
+					{
+						const float SubstepTime = SubstepIdx * SubstepDt;
+						FLOW_ADD_INTERPOLATED_STATE(SubstepTime)
+					}
+					{
+						const float EndSubstepTime = FMath::Min(EndSubstepIdx * SubstepDt, FrameTime);
+						FLOW_ADD_INTERPOLATED_STATE(EndSubstepTime)
+					}
+				}
+
+#undef FLOW_ADD_INTERPOLATED_STATE
+			}
+			else
+			{
+				if (SimDeltaTime > 0.0f)
+				{
+					FlowEmitterComponent->BodyStateAccumulator.Add(SimDeltaTime, BodyState);
+				}
+			}
+
+			FlowEmitterComponent->LastFrameTime = FrameTime;
+			FlowEmitterComponent->LastBodyState = BodyState;
+			FlowEmitterComponent->bIsLastStateTheSame = bIsStateTheSame;
+#endif
 		}
 
 		//skip if no simulation (NumSteps == 0)
-		if (NumStepsTime == 0.0f)
+		if (SimDeltaTime == 0.0f)
 			continue;
 
 		for (int ShapeIndex = 0; ShapeIndex < NumSyncShapes; ++ShapeIndex)
@@ -650,21 +735,28 @@ void UFlowGridComponent::UpdateShapes()
 					float NumSubsteps = FlowEmitterComponent->NumSubsteps;
 					float emitterSubstepDt = FlowGridProperties.SubstepSize / NumSubsteps;
 
-					// optimization: use NvFlow emitter substep for stationary enough objects
-					bool isStationary = FlowEmitterComponent->BodyStateInterpolator.IsStationary();
-					uint32 iterations = isStationary ? 1u : NumSubsteps;
 					emitParams.numSubSteps = 1u; //TODO: remove numSteps from NvFlowGridEmitParams!
 
-					FBodyStateInterpolator::FSampler Sampler(FlowEmitterComponent->BodyStateInterpolator);
-					const float SamplerTimeStep = NumStepsTime / iterations;
+					FBodyState BlendedBodyState;
+#if FLOW_EMITTER_ACCUM_EXACT_FRAME_STATE
+					FBodyStateAccumulator::FInterpolator Interpolator(FlowEmitterComponent->BodyStateAccumulator);
+					const float SamplerTimeStep = SimDeltaTime / iterations;
+
+					bool isStationary = FlowEmitterComponent->BodyStateAccumulator.IsStationary();
+					uint32 iterations = isStationary ? 1u : NumSubsteps;
+					// set timestep based on subtepping mode
+					emitParams.deltaTime = isStationary ? FlowGridProperties.SubstepSize : emitterSubstepDt;
 
 					// substepping
 					for (uint32 i = 0u; i < iterations; i++)
 					{
 						// Generate interpolated transform
-						FBodyState BlendedBodyState;
-						Sampler.AdvanceAndSample(SamplerTimeStep, BlendedBodyState);
-
+						Interpolator.AdvanceAndSample(SamplerTimeStep, BlendedBodyState);
+#else
+					FBodyStateAccumulator::FIterator Iterator(FlowEmitterComponent->BodyStateAccumulator, 0.0f, SimDeltaTime);
+					while (Iterator.Next(emitParams.deltaTime, BlendedBodyState))
+					{
+#endif
 						const FTransform& BlendedActorTransform = BlendedBodyState.Transform;
 						const FVector& BlendedActorLinearVelocity = BlendedBodyState.LinearVelocity;
 						const FVector& BlendedActorAngularVelocity = BlendedBodyState.AngularVelocity;
@@ -710,9 +802,6 @@ void UFlowGridComponent::UpdateShapes()
 
 						emitParams.bounds = *(NvFlowFloat4x4*)(&BlendedBounds.ToMatrixWithScale().M[0][0]);
 						emitParams.localToWorld = *(NvFlowFloat4x4*)(&BlendedLocalToWorld.ToMatrixWithScale().M[0][0]);
-
-						// set timestep based on subtepping mode
-						emitParams.deltaTime = isStationary ? FlowGridProperties.SubstepSize : emitterSubstepDt;
 
 						// push parameters
 						FlowGridProperties.GridEmitParams.Push(emitParams);
@@ -823,7 +912,10 @@ void UFlowGridComponent::UpdateShapes()
 
 		if (FlowEmitterComponent != nullptr)
 		{
-			FlowEmitterComponent->BodyStateInterpolator.DiscardBefore(NumStepsTime);
+			FlowEmitterComponent->BodyStateAccumulator.DiscardBefore(SimDeltaTime);
+#if !FLOW_EMITTER_ACCUM_EXACT_FRAME_STATE
+			FlowEmitterComponent->LastFrameTime -= SimDeltaTime;
+#endif
 		}
 	}
 
