@@ -105,8 +105,13 @@ class UFlowGridComponent : public UPrimitiveComponent
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
 	// End UPrimitiveComponent interface.
 
-	FFlowGridProperties FlowGridProperties;
+	virtual ~UFlowGridComponent();
+
+	FFlowGridProperties* FlowGridProperties;
+	TArray<FFlowGridProperties*> FlowGridPropertiesPool;
 protected:
+
+	static void InitializeGridProperties(FFlowGridProperties* FlowGridProperties);
 
 	// Begin UActorComponent Interface
 	virtual FBoxSphereBounds CalcBounds(const FTransform & LocalToWorld) const override;

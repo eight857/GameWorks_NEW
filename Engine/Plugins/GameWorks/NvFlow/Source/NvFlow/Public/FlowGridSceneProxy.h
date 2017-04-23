@@ -81,8 +81,44 @@ struct FFlowDistanceFieldParams
 	TArray<FFloat16> DistanceFieldVolume;
 };
 
+#define LOG_FLOW_GRID_PROPERTIES 0
+
 struct FFlowGridProperties
 {
+	volatile int32 refCount = 1;
+
+#if LOG_FLOW_GRID_PROPERTIES
+	static volatile int32 LogRefCount;
+	static void LogCreate(FFlowGridProperties* Ptr);
+	static void LogRelease(FFlowGridProperties* Ptr);
+#endif
+
+	int32 AddRef()
+	{
+		return FPlatformAtomics::InterlockedIncrement(&refCount);
+	}
+
+	int32 Release()
+	{
+		int32 ref = FPlatformAtomics::InterlockedDecrement(&refCount);
+		if (ref == 0)
+		{
+			delete this;
+		}
+		return ref;
+	}
+
+#if LOG_FLOW_GRID_PROPERTIES
+	FFlowGridProperties() { LogCreate(this); }
+	~FFlowGridProperties() { LogRelease(this);  }
+#else
+	FFlowGridProperties() {}
+	~FFlowGridProperties() {}
+#endif
+
+	FFlowGridProperties(const FFlowGridProperties& rhs) = delete;
+	FFlowGridProperties& operator=(const FFlowGridProperties& rhs) = delete;
+
 	// indicates if grid should be allocated
 	int32 bActive : 1;
 
@@ -140,6 +176,39 @@ struct FFlowGridProperties
 	TArray<const class UStaticMesh*> DistanceFieldKeys;
 };
 
+struct FFlowGridPropertiesRef
+{
+	FFlowGridProperties* Ref = nullptr;
+	void Initialize(FFlowGridProperties* InRef)
+	{
+		Ref = InRef;
+		if (Ref)
+		{
+			Ref->AddRef();
+		}
+	}
+	FFlowGridPropertiesRef(FFlowGridProperties* InRef)
+	{
+		Initialize(InRef);
+	}
+	FFlowGridPropertiesRef(const FFlowGridPropertiesRef& InRef)
+	{
+		Initialize(InRef.Ref);
+	}
+	FFlowGridPropertiesRef& operator=(const FFlowGridPropertiesRef& InRef)
+	{
+		Initialize(InRef.Ref);
+	}
+	~FFlowGridPropertiesRef()
+	{
+		if (Ref)
+		{
+			Ref->Release();
+			Ref = nullptr;
+		}
+	}
+};
+
 class UFlowGridComponent;
 
 class FFlowGridSceneProxy : public FPrimitiveSceneProxy
@@ -162,13 +231,13 @@ public:
 
 	uint32 GetAllocatedSize(void) const { return(FPrimitiveSceneProxy::GetAllocatedSize()); }
 
-	void SetDynamicData_RenderThread(const FFlowGridProperties& FlowGridProperties);
+	void SetDynamicData_RenderThread(FFlowGridProperties* InFlowGridProperties);
 	void Simulate_RenderThread(int32 NumSubSteps);
 
 public:
 
 	// resources managed by game thread
-	FFlowGridProperties FlowGridProperties;
+	FFlowGridProperties* FlowGridProperties;
 
 	// shared resources 
 	int32 NumScheduledSubsteps;

@@ -82,9 +82,9 @@ bool NvFlow::Scene::getExportParams(FRHICommandListImmediate& RHICmdList, GridEx
 	OutParams.WorldToVolume = NvFlowGetWorldToVolume(FlowGridSceneProxy);
 	OutParams.VelocityScale = scale;
 
-	OutParams.GridToParticleAccelTimeConstant = FlowGridSceneProxy->FlowGridProperties.GridToParticleAccelTimeConstant;
-	OutParams.GridToParticleDecelTimeConstant = FlowGridSceneProxy->FlowGridProperties.GridToParticleDecelTimeConstant;
-	OutParams.GridToParticleThresholdMultiplier = FlowGridSceneProxy->FlowGridProperties.GridToParticleThresholdMultiplier;
+	OutParams.GridToParticleAccelTimeConstant = FlowGridSceneProxy->FlowGridProperties->GridToParticleAccelTimeConstant;
+	OutParams.GridToParticleDecelTimeConstant = FlowGridSceneProxy->FlowGridProperties->GridToParticleDecelTimeConstant;
+	OutParams.GridToParticleThresholdMultiplier = FlowGridSceneProxy->FlowGridProperties->GridToParticleThresholdMultiplier;
 	return true;
 }
 
@@ -714,8 +714,8 @@ void NvFlow::Scene::applyDistanceField(IRHICommandContext* RHICmdCtx, NvFlowUint
 	Parameters.ThreadDim.X *= layerParams.numBlocks;
 	Parameters.VDimInv = FVector(1.0f / VDim.X, 1.0f / VDim.Y, 1.0f / VDim.Z);
 	Parameters.VolumeToWorld = NvFlowGetVolumeToWorld(FlowGridSceneProxy);
-	Parameters.MinActiveDist = FlowGridSceneProxy->FlowGridProperties.MinActiveDistance;
-	Parameters.MaxActiveDist = FlowGridSceneProxy->FlowGridProperties.MaxActiveDistance;
+	Parameters.MinActiveDist = FlowGridSceneProxy->FlowGridProperties->MinActiveDistance;
+	Parameters.MaxActiveDist = FlowGridSceneProxy->FlowGridProperties->MaxActiveDistance;
 	Parameters.ValueCoupleRate = 100.0f * dt;
 	Parameters.DistanceScale = 1.0f / scale;
 	Parameters.EmitValue = InEmitValue;
@@ -737,7 +737,7 @@ void NvFlow::Scene::applyDistanceField(IRHICommandContext* RHICmdCtx, NvFlowUint
 
 void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* emitParams, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt)
 {
-	const bool bHasDistanceFieldCollision = FlowGridSceneProxy->FlowGridProperties.bDistanceFieldCollisionEnabled &&
+	const bool bHasDistanceFieldCollision = FlowGridSceneProxy->FlowGridProperties->bDistanceFieldCollisionEnabled &&
 		(GlobalDistanceFieldParameterData->Textures[0] != nullptr);
 
 	const bool bHasParticles = m_particleParamsArray.Num() > 0;
@@ -807,9 +807,9 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 			CoupleParticlesParameters.BlockDimBits = NvFlowConvert(layerParams.shaderParams.blockDimBits);
 			CoupleParticlesParameters.IsVTR = layerParams.shaderParams.isVTR.x;
 
-			CoupleParticlesParameters.AccelRate = dt / FlowGridSceneProxy->FlowGridProperties.ParticleToGridAccelTimeConstant;
-			CoupleParticlesParameters.DecelRate = dt / FlowGridSceneProxy->FlowGridProperties.ParticleToGridDecelTimeConstant;
-			CoupleParticlesParameters.Threshold = FlowGridSceneProxy->FlowGridProperties.ParticleToGridThresholdMultiplier;
+			CoupleParticlesParameters.AccelRate = dt / FlowGridSceneProxy->FlowGridProperties->ParticleToGridAccelTimeConstant;
+			CoupleParticlesParameters.DecelRate = dt / FlowGridSceneProxy->FlowGridProperties->ParticleToGridDecelTimeConstant;
+			CoupleParticlesParameters.Threshold = FlowGridSceneProxy->FlowGridProperties->ParticleToGridThresholdMultiplier;
 
 			CoupleParticlesParameters.InvVelocityScale = 1.0f / scale;
 
@@ -841,7 +841,7 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 		{
 			applyDistanceField(RHICmdCtx, *dataFrontIdx, layerParams, GlobalDistanceFieldParameterData, dt,
 				Data0SRV, Data1UAV, BlockListSRV, BlockTableSRV,
-				FlowGridSceneProxy->FlowGridProperties.VelocitySlipFactor, FlowGridSceneProxy->FlowGridProperties.VelocitySlipThickness);
+				FlowGridSceneProxy->FlowGridProperties->VelocitySlipFactor, FlowGridSceneProxy->FlowGridProperties->VelocitySlipThickness);
 		}
 
 		m_context->m_flowInterop->ReleaseResourceRW(*RHICmdCtx, pData1ResourceRW);
@@ -858,7 +858,7 @@ void NvFlow::Scene::emitCustomEmitVelocityCallback(IRHICommandContext* RHICmdCtx
 
 void NvFlow::Scene::emitCustomEmitDensityCallback(IRHICommandContext* RHICmdCtx, NvFlowUint* dataFrontIdx, const NvFlowGridEmitCustomEmitParams* emitParams, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt)
 {
-	bool bHasDistanceFieldCollision = FlowGridSceneProxy->FlowGridProperties.bDistanceFieldCollisionEnabled &&
+	bool bHasDistanceFieldCollision = FlowGridSceneProxy->FlowGridProperties->bDistanceFieldCollisionEnabled &&
 		(GlobalDistanceFieldParameterData->Textures[0] != nullptr);
 
 	if (emitParams->numLayers == 0 || !bHasDistanceFieldCollision)

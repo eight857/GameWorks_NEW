@@ -432,7 +432,7 @@ void NvFlow::Context::release()
 void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
 {
 	// proxy not active, release scene if necessary and return
-	if (!FlowGridSceneProxy->FlowGridProperties.bActive)
+	if (!FlowGridSceneProxy->FlowGridProperties->bActive)
 	{
 		cleanupScene(FlowGridSceneProxy->scenePtr);
 		FlowGridSceneProxy->scenePtr = nullptr;
@@ -460,11 +460,11 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 	scene->updateParameters(RHICmdList);
 
 	// process simulation events
-	if (FlowGridSceneProxy->FlowGridProperties.SubstepSize > 0.0f)
+	if (FlowGridSceneProxy->FlowGridProperties->SubstepSize > 0.0f)
 	{
 		for (uint32 i = 0; i < uint32(FlowGridSceneProxy->NumScheduledSubsteps); i++)
 		{
-			scene->updateSubstep(RHICmdList, FlowGridSceneProxy->FlowGridProperties.SubstepSize, i, uint32(FlowGridSceneProxy->NumScheduledSubsteps), shouldFlush, GlobalDistanceFieldParameterData);
+			scene->updateSubstep(RHICmdList, FlowGridSceneProxy->FlowGridProperties->SubstepSize, i, uint32(FlowGridSceneProxy->NumScheduledSubsteps), shouldFlush, GlobalDistanceFieldParameterData);
 		}
 	}
 	FlowGridSceneProxy->NumScheduledSubsteps = 0;
@@ -526,16 +526,16 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 	auto& appctx = *RHICmdCtx;
 
 	// create local grid desc copy
-	m_gridDesc = FlowGridSceneProxy->FlowGridProperties.GridDesc;
-	m_diffGridCellSize = FlowGridSceneProxy->FlowGridProperties.GridCellSize;
+	m_gridDesc = FlowGridSceneProxy->FlowGridProperties->GridDesc;
+	m_diffGridCellSize = FlowGridSceneProxy->FlowGridProperties->GridCellSize;
 	m_diffGridLocation = FlowGridSceneProxy->GetLocalToWorld().GetOrigin();
 
 	// set initial location using proxy location
 	FVector FlowOrigin = FlowGridSceneProxy->GetLocalToWorld().GetOrigin() * scaleInv;
 	m_gridDesc.initialLocation = *(NvFlowFloat3*)(&FlowOrigin.X);
 
-	bool multiAdapterEnabled = FlowGridSceneProxy->FlowGridProperties.bMultiAdapterEnabled;
-	bool asyncComputeEnabled = FlowGridSceneProxy->FlowGridProperties.bAsyncComputeEnabled;
+	bool multiAdapterEnabled = FlowGridSceneProxy->FlowGridProperties->bMultiAdapterEnabled;
+	bool asyncComputeEnabled = FlowGridSceneProxy->FlowGridProperties->bAsyncComputeEnabled;
 	m_multiAdapter = multiAdapterEnabled && m_context->m_multiGPUActive;
 	m_asyncCompute = !m_multiAdapter && asyncComputeEnabled && m_context->m_asyncComputeActive;
 	if (UFlowGridAsset::sGlobalMultiGPU > 1)
@@ -602,7 +602,7 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 	m_volumeRender = NvFlowCreateVolumeRender(m_renderContext, &volumeRenderDesc);
 
 	NvFlowRenderMaterialPoolDesc renderMaterialPoolDesc;
-	renderMaterialPoolDesc.colorMapResolution = FlowGridSceneProxy->FlowGridProperties.ColorMapResolution;
+	renderMaterialPoolDesc.colorMapResolution = FlowGridSceneProxy->FlowGridProperties->ColorMapResolution;
 
 	m_renderMaterialPool = NvFlowCreateRenderMaterialPool(m_renderContext, &renderMaterialPoolDesc);
 }
@@ -623,7 +623,7 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 {
 	auto& appctx = RHICmdList.GetContext();
 
-	const FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
+	const FFlowGridProperties& Properties = *FlowGridSceneProxy->FlowGridProperties;
 
 	// configure grid params
 	m_gridParams = Properties.GridParams;
@@ -731,7 +731,7 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 {
 	auto& appctx = *RHICmdCtx;
 
-	FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
+	FFlowGridProperties& Properties = *FlowGridSceneProxy->FlowGridProperties;
 
 	for (auto It = Properties.Materials.CreateConstIterator(); It; ++It)
 	{
@@ -932,7 +932,7 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateP
 
 	NvFlowGridSetParams(m_grid, &m_gridParams);
 
-	FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
+	FFlowGridProperties& Properties = *FlowGridSceneProxy->FlowGridProperties;
 
 	// update emitters
 	{
@@ -969,7 +969,7 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateP
 		// check for grid location or halfSize change
 		{
 			FVector newDiffGridLocation = FlowGridSceneProxy->GetLocalToWorld().GetOrigin();
-			float newDiffGridCellSize = FlowGridSceneProxy->FlowGridProperties.GridCellSize;
+			float newDiffGridCellSize = FlowGridSceneProxy->FlowGridProperties->GridCellSize;
 
 			bool changed = (
 				m_diffGridLocation.X != newDiffGridLocation.X ||
@@ -989,7 +989,7 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateP
 
 				NvFlowGridResetDesc resetDesc = {};
 				resetDesc.initialLocation = *(NvFlowFloat3*)(&FlowOrigin.X);
-				resetDesc.halfSize = FlowGridSceneProxy->FlowGridProperties.GridDesc.halfSize;
+				resetDesc.halfSize = FlowGridSceneProxy->FlowGridProperties->GridDesc.halfSize;
 			
 				NvFlowGridReset(m_grid, &resetDesc);
 
@@ -1048,7 +1048,7 @@ void NvFlow::Scene::updateGridView(FRHICommandListImmediate& RHICmdList)
 			for (auto It = RenderScene->Lights.CreateIterator(); It; ++It)
 			{
 				auto LightSceneProxy = (*It).LightSceneInfo->Proxy;
-				if (LightSceneProxy->GetFlowGridShadowEnabled() && LightSceneProxy->GetFlowGridShadowChannel() == FlowGridSceneProxy->FlowGridProperties.RenderParams.ShadowChannel)
+				if (LightSceneProxy->GetFlowGridShadowEnabled() && LightSceneProxy->GetFlowGridShadowChannel() == FlowGridSceneProxy->FlowGridProperties->RenderParams.ShadowChannel)
 				{
 					FoundLightSceneProxy = LightSceneProxy;
 					break;
@@ -1089,7 +1089,7 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 
 	NvFlowGridProxyFlush(m_gridProxy, &flushParams);
 
-	FFlowGridProperties& Properties = FlowGridSceneProxy->FlowGridProperties;
+	FFlowGridProperties& Properties = *FlowGridSceneProxy->FlowGridProperties;
 
 	m_gridExport4Render = NvFlowGridProxyGetGridExport(m_gridProxy, m_renderContext);
 
@@ -1541,7 +1541,7 @@ bool NvFlowUsesGlobalDistanceField()
 		{
 			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
 			FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
-			bResult |= FlowGridSceneProxy->FlowGridProperties.bDistanceFieldCollisionEnabled;
+			bResult |= FlowGridSceneProxy->FlowGridProperties->bDistanceFieldCollisionEnabled;
 		}
 	}
 	return bResult;
@@ -1584,7 +1584,7 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 
 				if (UFlowGridAsset::sGlobalMultiGPUResetRequest)
 				{
-					FlowGridSceneProxy->FlowGridProperties.bActive = false;
+					FlowGridSceneProxy->FlowGridProperties->bActive = false;
 				}
 
 				NvFlow::gContext->updateScene(RHICmdList, FlowGridSceneProxy, shouldFlush, GlobalDistanceFieldParameterData);
@@ -1619,8 +1619,8 @@ bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 		if (PrimitiveSceneInfo->Proxy->FlowData.bFlowGrid)
 		{
 			FFlowGridSceneProxy* FlowGridSceneProxy = (FFlowGridSceneProxy*)PrimitiveSceneInfo->Proxy;
-			if (FlowGridSceneProxy->FlowGridProperties.bParticleModeEnabled != 0 && 
-				FlowGridSceneProxy->FlowGridProperties.RenderParams.bDebugWireframe == 0)
+			if (FlowGridSceneProxy->FlowGridProperties->bParticleModeEnabled != 0 &&
+				FlowGridSceneProxy->FlowGridProperties->RenderParams.bDebugWireframe == 0)
 			{
 				return false;
 			}
@@ -1698,11 +1698,11 @@ uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const P
 			NvFlow::Scene* Scene = NvFlow::gContext->m_sceneList[i];
 			FFlowGridSceneProxy* FlowGridSceneProxy = Scene->FlowGridSceneProxy;
 			if (FlowGridSceneProxy &&
-				FlowGridSceneProxy->FlowGridProperties.bParticlesInteractionEnabled &&
+				FlowGridSceneProxy->FlowGridProperties->bParticlesInteractionEnabled &&
 				ParticleSimulationParams.Bounds.Intersect(FlowGridSceneProxy->GetBounds().GetBox()))
 			{
-				EInteractionResponseNvFlow ParticleSystemResponse = ParticleSimulationParams.ResponseToInteractionChannels.GetResponse(FlowGridSceneProxy->FlowGridProperties.InteractionChannel);
-				EInteractionResponseNvFlow GridRespone = FlowGridSceneProxy->FlowGridProperties.ResponseToInteractionChannels.GetResponse(ParticleSimulationParams.InteractionChannel);
+				EInteractionResponseNvFlow ParticleSystemResponse = ParticleSimulationParams.ResponseToInteractionChannels.GetResponse(FlowGridSceneProxy->FlowGridProperties->InteractionChannel);
+				EInteractionResponseNvFlow GridRespone = FlowGridSceneProxy->FlowGridProperties->ResponseToInteractionChannels.GetResponse(ParticleSimulationParams.InteractionChannel);
 
 				bool GridAffectsParticleSystem =
 					(ParticleSystemResponse == EIR_Receive || ParticleSystemResponse == EIR_TwoWay) &&

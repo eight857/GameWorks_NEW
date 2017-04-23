@@ -48,12 +48,54 @@ int32 FTimeStepper::GetNumSteps(float TimeStep)
 	return FMath::Min(NumSteps, MaxSteps);
 }
 
+void UFlowGridComponent::InitializeGridProperties(FFlowGridProperties* FlowGridProperties)
+{
+	// set critical property defaults
+	FlowGridProperties->bActive = false;
+	FlowGridProperties->bMultiAdapterEnabled = false;
+	FlowGridProperties->bAsyncComputeEnabled = false;
+	FlowGridProperties->bParticlesInteractionEnabled = false;
+	FlowGridProperties->bParticleModeEnabled = false;
+	FlowGridProperties->SubstepSize = 0.0f;
+	FlowGridProperties->VirtualGridExtents = FVector(0.f);
+	FlowGridProperties->GridCellSize = 0.f;
+
+	FlowGridProperties->ParticleToGridAccelTimeConstant = 0.01f;
+	FlowGridProperties->ParticleToGridDecelTimeConstant = 10.0f;
+	FlowGridProperties->ParticleToGridThresholdMultiplier = 2.f;
+	FlowGridProperties->GridToParticleAccelTimeConstant = 0.01f;
+	FlowGridProperties->GridToParticleDecelTimeConstant = 0.01f;
+	FlowGridProperties->GridToParticleThresholdMultiplier = 1.f;
+
+	FlowGridProperties->bDistanceFieldCollisionEnabled = false;
+	FlowGridProperties->MinActiveDistance = -1.0f;
+	FlowGridProperties->MaxActiveDistance = 0.0f;
+	FlowGridProperties->VelocitySlipFactor = 0.0f;
+	FlowGridProperties->VelocitySlipThickness = 0.0f;
+
+	// initialize desc/param defaults
+	NvFlowGridDescDefaults(&FlowGridProperties->GridDesc);
+	NvFlowGridParamsDefaults(&FlowGridProperties->GridParams);
+
+	FlowGridProperties->RenderParams.bGenerateDepth = false;
+	FlowGridProperties->RenderParams.DepthAlphaThreshold = 1.f;
+	FlowGridProperties->RenderParams.DepthIntensityThreshold = 10.f;
+}
+
 UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, FlowGridAssetCurrent(&FlowGridAsset)
 	, FlowGridAssetOverride(nullptr)
 	, FlowGridAssetOld(nullptr)
 {
+	{
+		FFlowGridProperties* gridProperties = new FFlowGridProperties();
+
+		FlowGridPropertiesPool.Add(gridProperties);
+
+		FlowGridProperties = gridProperties;
+	}
+
 	BodyInstance.SetUseAsyncScene(true);
 
 	bFlowGridCollisionEnabled = true;
@@ -68,38 +110,22 @@ UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializ
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 
-	// set critical property defaults
-	FlowGridProperties.bActive = false;
-	FlowGridProperties.bMultiAdapterEnabled = false;
-	FlowGridProperties.bAsyncComputeEnabled = false;
-	FlowGridProperties.bParticlesInteractionEnabled = false;
-	FlowGridProperties.bParticleModeEnabled = false;
-	FlowGridProperties.SubstepSize = 0.0f;
-	FlowGridProperties.VirtualGridExtents = FVector(0.f);
-	FlowGridProperties.GridCellSize = 0.f;
-
-	FlowGridProperties.ParticleToGridAccelTimeConstant = 0.01f;
-	FlowGridProperties.ParticleToGridDecelTimeConstant = 10.0f;
-	FlowGridProperties.ParticleToGridThresholdMultiplier = 2.f;
-	FlowGridProperties.GridToParticleAccelTimeConstant = 0.01f;
-	FlowGridProperties.GridToParticleDecelTimeConstant = 0.01f;
-	FlowGridProperties.GridToParticleThresholdMultiplier = 1.f;
-
-	FlowGridProperties.bDistanceFieldCollisionEnabled = false;
-	FlowGridProperties.MinActiveDistance = -1.0f;
-	FlowGridProperties.MaxActiveDistance = 0.0f;
-	FlowGridProperties.VelocitySlipFactor = 0.0f;
-	FlowGridProperties.VelocitySlipThickness = 0.0f;
-
-	// initialize desc/param defaults
-	NvFlowGridDescDefaults(&FlowGridProperties.GridDesc);
-	NvFlowGridParamsDefaults(&FlowGridProperties.GridParams);
-
-	FlowGridProperties.RenderParams.bGenerateDepth = false;
-	FlowGridProperties.RenderParams.DepthAlphaThreshold = 1.f;
-	FlowGridProperties.RenderParams.DepthIntensityThreshold = 10.f;
+	InitializeGridProperties(FlowGridProperties);
 
 	DefaultFlowMaterial = CreateDefaultSubobject<UFlowMaterial>(TEXT("DefaultFlowMaterial0"));
+}
+
+UFlowGridComponent::~UFlowGridComponent()
+{	
+	for (int32 idx = 0; idx < FlowGridPropertiesPool.Num(); idx++)
+	{
+		FFlowGridProperties*& prop = FlowGridPropertiesPool[idx];
+		if (prop)
+		{
+			prop->Release();
+			prop = nullptr;
+		}
+	}
 }
 
 UFlowGridAsset* UFlowGridComponent::CreateOverrideAsset()
@@ -182,16 +208,16 @@ void UFlowGridComponent::UpdateShapes()
 {
 	SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateShapes);
 
-	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties.GridEmitParams.Num());
-	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.GridCollideParams.Num());
-	FlowGridProperties.GridEmitParams.SetNum(0);
-	FlowGridProperties.GridCollideParams.SetNum(0);
-	FlowGridProperties.GridEmitShapeDescs.SetNum(0);
-	FlowGridProperties.GridCollideShapeDescs.SetNum(0);
-	FlowGridProperties.GridEmitMaterialKeys.SetNum(0);
+	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties->GridEmitParams.Num());
+	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties->GridCollideParams.Num());
+	FlowGridProperties->GridEmitParams.SetNum(0);
+	FlowGridProperties->GridCollideParams.SetNum(0);
+	FlowGridProperties->GridEmitShapeDescs.SetNum(0);
+	FlowGridProperties->GridCollideShapeDescs.SetNum(0);
+	FlowGridProperties->GridEmitMaterialKeys.SetNum(0);
 
-	FlowGridProperties.NewDistanceFieldList.SetNum(0);
-	FlowGridProperties.DistanceFieldKeys.SetNum(0);
+	FlowGridProperties->NewDistanceFieldList.SetNum(0);
+	FlowGridProperties->DistanceFieldKeys.SetNum(0);
 
 	// only update if enabled
 	if (!bFlowGridCollisionEnabled)
@@ -407,7 +433,7 @@ void UFlowGridComponent::UpdateShapes()
 			check(FlowEmitterComponent->LastFrameTime >= 0.0f);
 
 			const int32 NumSubsteps = FlowEmitterComponent->NumSubsteps;
-			const float SubstepDt = (SimDeltaTime > 0.0f ? SimDeltaTime : FlowGridProperties.SubstepSize) / NumSubsteps;
+			const float SubstepDt = (SimDeltaTime > 0.0f ? SimDeltaTime : FlowGridProperties->SubstepSize) / NumSubsteps;
 
 			bool bIsStateTheSame = FlowEmitterComponent->LastBodyState.Equals(BodyState);
 #if FLOW_EMITTER_LOG_ACCUM_STATE
@@ -557,24 +583,24 @@ void UFlowGridComponent::UpdateShapes()
 					{
 						OldDistanceFieldVolumeData = DistanceFieldVolumeData;
 
-						FlowGridProperties.NewDistanceFieldList.AddDefaulted(1);
-						FFlowDistanceFieldParams& DistanceFieldParams = FlowGridProperties.NewDistanceFieldList.Last();
+						FlowGridProperties->NewDistanceFieldList.AddDefaulted(1);
+						FFlowDistanceFieldParams& DistanceFieldParams = FlowGridProperties->NewDistanceFieldList.Last();
 
 						DistanceFieldParams.StaticMesh = StaticMesh;
 						DistanceFieldParams.Size = DistanceFieldVolumeData->Size;
 						DistanceFieldParams.DistanceFieldVolume = DistanceFieldVolumeData->DistanceFieldVolume;
 					}
 
-					FlowGridProperties.DistanceFieldKeys.Add(StaticMesh);
+					FlowGridProperties->DistanceFieldKeys.Add(StaticMesh);
 				}
 
-				int32 EmitShapeStartIndex = FlowGridProperties.GridEmitShapeDescs.Num();
-				int32 CollideShapeStartIndex = FlowGridProperties.GridCollideShapeDescs.Num();
+				int32 EmitShapeStartIndex = FlowGridProperties->GridEmitShapeDescs.Num();
+				int32 CollideShapeStartIndex = FlowGridProperties->GridCollideShapeDescs.Num();
 
 				bool IsEnabledArray[2] = { IsEmitter, IsCollider };
 				TArray<NvFlowShapeDesc>* ShapeDescsArray[2] = { 
-					&FlowGridProperties.GridEmitShapeDescs, 
-					&FlowGridProperties.GridCollideShapeDescs 
+					&FlowGridProperties->GridEmitShapeDescs,
+					&FlowGridProperties->GridCollideShapeDescs
 				};
 				for (uint32 passID = 0u; passID < 2u; passID++)
 				{
@@ -680,9 +706,9 @@ void UFlowGridComponent::UpdateShapes()
 					else
 					{
 						//DistanceField
-						check(FlowGridProperties.DistanceFieldKeys.Num() > 0);
+						check(FlowGridProperties->DistanceFieldKeys.Num() > 0);
 
-						ShapeDescsPtr[0].sdf.sdfOffset = FlowGridProperties.DistanceFieldKeys.Num() - 1;
+						ShapeDescsPtr[0].sdf.sdfOffset = FlowGridProperties->DistanceFieldKeys.Num() - 1;
 					}
 				}
 
@@ -733,7 +759,7 @@ void UFlowGridComponent::UpdateShapes()
 
 					// substep
 					float NumSubsteps = FlowEmitterComponent->NumSubsteps;
-					float emitterSubstepDt = FlowGridProperties.SubstepSize / NumSubsteps;
+					float emitterSubstepDt = FlowGridProperties->SubstepSize / NumSubsteps;
 
 					FBodyState BlendedBodyState;
 #if FLOW_EMITTER_ACCUM_EXACT_FRAME_STATE
@@ -743,7 +769,7 @@ void UFlowGridComponent::UpdateShapes()
 					bool isStationary = FlowEmitterComponent->BodyStateAccumulator.IsStationary();
 					uint32 iterations = isStationary ? 1u : NumSubsteps;
 					// set timestep based on subtepping mode
-					emitParams.deltaTime = isStationary ? FlowGridProperties.SubstepSize : emitterSubstepDt;
+					emitParams.deltaTime = isStationary ? FlowGridProperties->SubstepSize : emitterSubstepDt;
 
 					// substepping
 					for (uint32 i = 0u; i < iterations; i++)
@@ -802,11 +828,11 @@ void UFlowGridComponent::UpdateShapes()
 						emitParams.localToWorld = *(NvFlowFloat4x4*)(&BlendedLocalToWorld.ToMatrixWithScale().M[0][0]);
 
 						// push parameters
-						FlowGridProperties.GridEmitParams.Push(emitParams);
+						FlowGridProperties->GridEmitParams.Push(emitParams);
 
 						// add material
 						auto EmitterFlowMaterial = FlowEmitterComponent->FlowMaterial;
-						FlowGridProperties.GridEmitMaterialKeys.Push(
+						FlowGridProperties->GridEmitMaterialKeys.Push(
 							AddMaterialParams(EmitterFlowMaterial != nullptr ? EmitterFlowMaterial : DefaultFlowMaterial)
 						);
 
@@ -836,10 +862,10 @@ void UFlowGridComponent::UpdateShapes()
 							collideParams.maxActiveDist = -1.f + CollisionFactor - collideParams.slipThickness;
 							collideParams.minActiveDist = -1.f;
 
-							FlowGridProperties.GridEmitParams.Push(collideParams);
+							FlowGridProperties->GridEmitParams.Push(collideParams);
 
-							FlowMaterialKeyType LastMaterialKey = FlowGridProperties.GridEmitMaterialKeys.Last();
-							FlowGridProperties.GridEmitMaterialKeys.Push(LastMaterialKey);
+							FlowMaterialKeyType LastMaterialKey = FlowGridProperties->GridEmitMaterialKeys.Last();
+							FlowGridProperties->GridEmitMaterialKeys.Push(LastMaterialKey);
 						}
 					}
 				}
@@ -900,10 +926,10 @@ void UFlowGridComponent::UpdateShapes()
 					emitParams.localToWorld = *(NvFlowFloat4x4*)(&BlendedLocalToWorld.ToMatrixWithScale().M[0][0]);
 
 					// step size
-					emitParams.deltaTime = FlowGridProperties.SubstepSize;
+					emitParams.deltaTime = FlowGridProperties->SubstepSize;
 
 					// push parameters
-					FlowGridProperties.GridCollideParams.Push(emitParams);
+					FlowGridProperties->GridCollideParams.Push(emitParams);
 				}
 			}
 		}
@@ -917,8 +943,8 @@ void UFlowGridComponent::UpdateShapes()
 		}
 	}
 
-	INC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties.GridEmitParams.Num());
-	INC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.GridCollideParams.Num());
+	INC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties->GridEmitParams.Num());
+	INC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties->GridCollideParams.Num());
 
 	SCENE_UNLOCK_READ(SyncScene);
 }
@@ -938,9 +964,9 @@ FlowMaterialKeyType UFlowGridComponent::AddMaterialParams(UFlowMaterial* InFlowM
 	}
 	MaterialData.bUpdated = true;
 
-	FlowGridProperties.Materials.AddDefaulted(1);
-	FlowGridProperties.Materials.Last().Key = FlowMaterialKey;
-	FFlowMaterialParams& MaterialParams = FlowGridProperties.Materials.Last().Value;
+	FlowGridProperties->Materials.AddDefaulted(1);
+	FlowGridProperties->Materials.Last().Key = FlowMaterialKey;
+	FFlowMaterialParams& MaterialParams = FlowGridProperties->Materials.Last().Value;
 
 	NvFlowGridMaterialParamsDefaults(&MaterialParams.GridParams);
 
@@ -1037,7 +1063,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		NvFlowGridDescDefaults(&defaultGridDesc);
 
 		//NvFlowGridDesc
-		NvFlowGridDesc newGridDesc = FlowGridProperties.GridDesc;
+		NvFlowGridDesc newGridDesc = FlowGridProperties->GridDesc;
 		newGridDesc.halfSize = { CurrentHalfSize.X, CurrentHalfSize.Y, CurrentHalfSize.Z };
 		newGridDesc.virtualDim = { uint32(CurrentVirtualDim.X), uint32(CurrentVirtualDim.Y), uint32(CurrentVirtualDim.Z) };
 		newGridDesc.densityMultiRes = FlowGridAssetRef->bParticleModeEnabled ? eNvFlowMultiRes1x1x1 : eNvFlowMultiRes2x2x2;
@@ -1045,16 +1071,16 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		newGridDesc.lowLatencyMapping = FlowGridAssetRef->bLowLatencyMapping;
 
 		bool changed = (
-			newGridDesc.virtualDim.x != FlowGridProperties.GridDesc.virtualDim.x ||
-			newGridDesc.virtualDim.y != FlowGridProperties.GridDesc.virtualDim.y ||
-			newGridDesc.virtualDim.z != FlowGridProperties.GridDesc.virtualDim.z ||
-			newGridDesc.densityMultiRes != FlowGridProperties.GridDesc.densityMultiRes ||
-			newGridDesc.residentScale != FlowGridProperties.GridDesc.residentScale ||
-			newGridDesc.lowLatencyMapping != FlowGridProperties.GridDesc.lowLatencyMapping ||
-			FlowGridAssetRef->bMultiAdapterEnabled != FlowGridProperties.bMultiAdapterEnabled ||
-			FlowGridAssetRef->bAsyncComputeEnabled != FlowGridProperties.bAsyncComputeEnabled ||
-			FlowGridAssetRef->bParticleModeEnabled != FlowGridProperties.bParticleModeEnabled ||
-			FlowGridAssetRef->ColorMapResolution   != FlowGridProperties.ColorMapResolution);
+			newGridDesc.virtualDim.x != FlowGridProperties->GridDesc.virtualDim.x ||
+			newGridDesc.virtualDim.y != FlowGridProperties->GridDesc.virtualDim.y ||
+			newGridDesc.virtualDim.z != FlowGridProperties->GridDesc.virtualDim.z ||
+			newGridDesc.densityMultiRes != FlowGridProperties->GridDesc.densityMultiRes ||
+			newGridDesc.residentScale != FlowGridProperties->GridDesc.residentScale ||
+			newGridDesc.lowLatencyMapping != FlowGridProperties->GridDesc.lowLatencyMapping ||
+			FlowGridAssetRef->bMultiAdapterEnabled != FlowGridProperties->bMultiAdapterEnabled ||
+			FlowGridAssetRef->bAsyncComputeEnabled != FlowGridProperties->bAsyncComputeEnabled ||
+			FlowGridAssetRef->bParticleModeEnabled != FlowGridProperties->bParticleModeEnabled ||
+			FlowGridAssetRef->ColorMapResolution   != FlowGridProperties->ColorMapResolution);
 
 		if (changed || (FlowGridAssetOld != FlowGridAssetRef))
 		{
@@ -1065,43 +1091,43 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 			FlowGridAssetOld = FlowGridAssetRef;
 		}
 
-		if (FlowGridProperties.bActive && changed)
+		if (FlowGridProperties->bActive && changed)
 		{
 			// rebuild required
-			FlowGridProperties.bActive = false;
+			FlowGridProperties->bActive = false;
 			MarkRenderDynamicDataDirty();
 			return;
 		}
 
 		// Commit any changes
-		FlowGridProperties.GridDesc = newGridDesc;
-		FlowGridProperties.bMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
-		FlowGridProperties.bAsyncComputeEnabled = FlowGridAssetRef->bAsyncComputeEnabled;
-		FlowGridProperties.bParticlesInteractionEnabled = FlowGridAssetRef->bParticlesInteractionEnabled;
-		FlowGridProperties.InteractionChannel = FlowGridAssetRef->InteractionChannel;
-		FlowGridProperties.ResponseToInteractionChannels = FlowGridAssetRef->ResponseToInteractionChannels;
-		FlowGridProperties.bParticleModeEnabled = FlowGridAssetRef->bParticleModeEnabled;
+		FlowGridProperties->GridDesc = newGridDesc;
+		FlowGridProperties->bMultiAdapterEnabled = FlowGridAssetRef->bMultiAdapterEnabled;
+		FlowGridProperties->bAsyncComputeEnabled = FlowGridAssetRef->bAsyncComputeEnabled;
+		FlowGridProperties->bParticlesInteractionEnabled = FlowGridAssetRef->bParticlesInteractionEnabled;
+		FlowGridProperties->InteractionChannel = FlowGridAssetRef->InteractionChannel;
+		FlowGridProperties->ResponseToInteractionChannels = FlowGridAssetRef->ResponseToInteractionChannels;
+		FlowGridProperties->bParticleModeEnabled = FlowGridAssetRef->bParticleModeEnabled;
 
-		FlowGridProperties.ParticleToGridAccelTimeConstant = FlowGridAssetRef->ParticleToGridAccelTimeConstant;
-		FlowGridProperties.ParticleToGridDecelTimeConstant = FlowGridAssetRef->ParticleToGridDecelTimeConstant;
-		FlowGridProperties.ParticleToGridThresholdMultiplier = FlowGridAssetRef->ParticleToGridThresholdMultiplier;
-		FlowGridProperties.GridToParticleAccelTimeConstant = FlowGridAssetRef->GridToParticleAccelTimeConstant;
-		FlowGridProperties.GridToParticleDecelTimeConstant = FlowGridAssetRef->GridToParticleDecelTimeConstant;
-		FlowGridProperties.GridToParticleThresholdMultiplier = FlowGridAssetRef->GridToParticleThresholdMultiplier;
+		FlowGridProperties->ParticleToGridAccelTimeConstant = FlowGridAssetRef->ParticleToGridAccelTimeConstant;
+		FlowGridProperties->ParticleToGridDecelTimeConstant = FlowGridAssetRef->ParticleToGridDecelTimeConstant;
+		FlowGridProperties->ParticleToGridThresholdMultiplier = FlowGridAssetRef->ParticleToGridThresholdMultiplier;
+		FlowGridProperties->GridToParticleAccelTimeConstant = FlowGridAssetRef->GridToParticleAccelTimeConstant;
+		FlowGridProperties->GridToParticleDecelTimeConstant = FlowGridAssetRef->GridToParticleDecelTimeConstant;
+		FlowGridProperties->GridToParticleThresholdMultiplier = FlowGridAssetRef->GridToParticleThresholdMultiplier;
 
-		FlowGridProperties.bDistanceFieldCollisionEnabled = FlowGridAssetRef->bDistanceFieldCollisionEnabled;
-		FlowGridProperties.MinActiveDistance = FlowGridAssetRef->MinActiveDistance;
-		FlowGridProperties.MaxActiveDistance = FlowGridAssetRef->MaxActiveDistance;
-		FlowGridProperties.VelocitySlipFactor = FlowGridAssetRef->VelocitySlipFactor;
-		FlowGridProperties.VelocitySlipThickness = FlowGridAssetRef->VelocitySlipThickness;
+		FlowGridProperties->bDistanceFieldCollisionEnabled = FlowGridAssetRef->bDistanceFieldCollisionEnabled;
+		FlowGridProperties->MinActiveDistance = FlowGridAssetRef->MinActiveDistance;
+		FlowGridProperties->MaxActiveDistance = FlowGridAssetRef->MaxActiveDistance;
+		FlowGridProperties->VelocitySlipFactor = FlowGridAssetRef->VelocitySlipFactor;
+		FlowGridProperties->VelocitySlipThickness = FlowGridAssetRef->VelocitySlipThickness;
 
 
 		//Properties that can be changed without rebuilding grid
-		FlowGridProperties.VirtualGridExtents = FVector(FlowGridAssetRef->GetVirtualGridExtent());
-		FlowGridProperties.GridCellSize = FlowGridAssetRef->GridCellSize;
+		FlowGridProperties->VirtualGridExtents = FVector(FlowGridAssetRef->GetVirtualGridExtent());
+		FlowGridProperties->GridCellSize = FlowGridAssetRef->GridCellSize;
 
 		//NvFlowGridParams
-		auto& GridParams = FlowGridProperties.GridParams;
+		auto& GridParams = FlowGridProperties->GridParams;
 		NvFlowGridParamsDefaults(&GridParams);
 
 		FVector ScaledGravity(FlowGridAssetRef->Gravity * NvFlow::scaleInv);
@@ -1110,63 +1136,63 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		GridParams.pressureLegacyMode = FlowGridAssetRef->bPressureLegacyMode;
 		GridParams.bigEffectMode = FlowGridAssetRef->bBigEffectMode;
 
-		FlowGridProperties.ColorMapResolution = FlowGridAssetRef->ColorMapResolution;
+		FlowGridProperties->ColorMapResolution = FlowGridAssetRef->ColorMapResolution;
 
 		//NvFlowVolumeRenderParams
 		if (UFlowGridAsset::sGlobalDebugDraw)
 		{
-			FlowGridProperties.RenderParams.RenderMode = (NvFlowVolumeRenderMode)UFlowGridAsset::sGlobalRenderMode;
-			FlowGridProperties.RenderParams.RenderChannel = (NvFlowGridTextureChannel)UFlowGridAsset::sGlobalRenderChannel;
+			FlowGridProperties->RenderParams.RenderMode = (NvFlowVolumeRenderMode)UFlowGridAsset::sGlobalRenderMode;
+			FlowGridProperties->RenderParams.RenderChannel = (NvFlowGridTextureChannel)UFlowGridAsset::sGlobalRenderChannel;
 		}
 		else
 		{
-			FlowGridProperties.RenderParams.RenderMode = (NvFlowVolumeRenderMode)FlowGridAssetRef->RenderMode.GetValue();
-			FlowGridProperties.RenderParams.RenderChannel = (NvFlowGridTextureChannel)FlowGridAssetRef->RenderChannel.GetValue();
+			FlowGridProperties->RenderParams.RenderMode = (NvFlowVolumeRenderMode)FlowGridAssetRef->RenderMode.GetValue();
+			FlowGridProperties->RenderParams.RenderChannel = (NvFlowGridTextureChannel)FlowGridAssetRef->RenderChannel.GetValue();
 		}
-		FlowGridProperties.RenderParams.bAdaptiveScreenPercentage = FlowGridAssetRef->bAdaptiveScreenPercentage;
-		FlowGridProperties.RenderParams.AdaptiveTargetFrameTime = FlowGridAssetRef->AdaptiveTargetFrameTime;
-		FlowGridProperties.RenderParams.MaxScreenPercentage = FlowGridAssetRef->MaxScreenPercentage;
-		FlowGridProperties.RenderParams.MinScreenPercentage = FlowGridAssetRef->MinScreenPercentage;
+		FlowGridProperties->RenderParams.bAdaptiveScreenPercentage = FlowGridAssetRef->bAdaptiveScreenPercentage;
+		FlowGridProperties->RenderParams.AdaptiveTargetFrameTime = FlowGridAssetRef->AdaptiveTargetFrameTime;
+		FlowGridProperties->RenderParams.MaxScreenPercentage = FlowGridAssetRef->MaxScreenPercentage;
+		FlowGridProperties->RenderParams.MinScreenPercentage = FlowGridAssetRef->MinScreenPercentage;
 		
 		if (UFlowGridAsset::sGlobalDebugDraw)
 		{
 			GridParams.debugVisFlags = NvFlowGridDebugVisFlags(UFlowGridAsset::sGlobalMode);
-			FlowGridProperties.RenderParams.bDebugWireframe = true;
+			FlowGridProperties->RenderParams.bDebugWireframe = true;
 		}
 		else
 		{
 			GridParams.debugVisFlags = eNvFlowGridDebugVisDisabled;
-			FlowGridProperties.RenderParams.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
+			FlowGridProperties->RenderParams.bDebugWireframe = FlowGridAssetRef->bDebugWireframe;
 		}
 		
-		FlowGridProperties.RenderParams.bGenerateDepth = FlowGridAssetRef->bGenerateDepth;
-		FlowGridProperties.RenderParams.DepthAlphaThreshold = FlowGridAssetRef->DepthAlphaThreshold;
-		FlowGridProperties.RenderParams.DepthIntensityThreshold = FlowGridAssetRef->DepthIntensityThreshold;
+		FlowGridProperties->RenderParams.bGenerateDepth = FlowGridAssetRef->bGenerateDepth;
+		FlowGridProperties->RenderParams.DepthAlphaThreshold = FlowGridAssetRef->DepthAlphaThreshold;
+		FlowGridProperties->RenderParams.DepthIntensityThreshold = FlowGridAssetRef->DepthIntensityThreshold;
 
-		FlowGridProperties.RenderParams.bVolumeShadowEnabled = FlowGridAssetRef->bVolumeShadowEnabled;
-		FlowGridProperties.RenderParams.ShadowIntensityScale = FlowGridAssetRef->ShadowIntensityScale;
-		FlowGridProperties.RenderParams.ShadowMinIntensity = FlowGridAssetRef->ShadowMinIntensity;
-		CopyRenderCompMask(FlowGridAssetRef->ShadowBlendCompMask, FlowGridProperties.RenderParams.ShadowBlendCompMask);
-		FlowGridProperties.RenderParams.ShadowBlendBias = FlowGridAssetRef->ShadowBlendBias;
+		FlowGridProperties->RenderParams.bVolumeShadowEnabled = FlowGridAssetRef->bVolumeShadowEnabled;
+		FlowGridProperties->RenderParams.ShadowIntensityScale = FlowGridAssetRef->ShadowIntensityScale;
+		FlowGridProperties->RenderParams.ShadowMinIntensity = FlowGridAssetRef->ShadowMinIntensity;
+		CopyRenderCompMask(FlowGridAssetRef->ShadowBlendCompMask, FlowGridProperties->RenderParams.ShadowBlendCompMask);
+		FlowGridProperties->RenderParams.ShadowBlendBias = FlowGridAssetRef->ShadowBlendBias;
 
-		FlowGridProperties.RenderParams.ShadowResolution = 1u << FlowGridAssetRef->ShadowResolution;
-		FlowGridProperties.RenderParams.ShadowFrustrumScale = FlowGridAssetRef->ShadowFrustrumScale;
-		FlowGridProperties.RenderParams.ShadowMinResidentScale = FlowGridAssetRef->ShadowMinResidentScale;
-		FlowGridProperties.RenderParams.ShadowMaxResidentScale = FlowGridAssetRef->ShadowMaxResidentScale;
+		FlowGridProperties->RenderParams.ShadowResolution = 1u << FlowGridAssetRef->ShadowResolution;
+		FlowGridProperties->RenderParams.ShadowFrustrumScale = FlowGridAssetRef->ShadowFrustrumScale;
+		FlowGridProperties->RenderParams.ShadowMinResidentScale = FlowGridAssetRef->ShadowMinResidentScale;
+		FlowGridProperties->RenderParams.ShadowMaxResidentScale = FlowGridAssetRef->ShadowMaxResidentScale;
 
-		FlowGridProperties.RenderParams.ShadowChannel = FlowGridAssetRef->ShadowChannel;
-		FlowGridProperties.RenderParams.ShadowNearDistance = FlowGridAssetRef->ShadowNearDistance;
+		FlowGridProperties->RenderParams.ShadowChannel = FlowGridAssetRef->ShadowChannel;
+		FlowGridProperties->RenderParams.ShadowNearDistance = FlowGridAssetRef->ShadowNearDistance;
 
 		for (auto It = MaterialsMap.CreateIterator(); It; ++It)
 		{
 			It.Value().bUpdated = false;
 		}
-		FlowGridProperties.Materials.Reset();
-		FlowGridProperties.DefaultMaterialKey = AddMaterialParams(DefaultFlowMaterial);
+		FlowGridProperties->Materials.Reset();
+		FlowGridProperties->DefaultMaterialKey = AddMaterialParams(DefaultFlowMaterial);
 
 
 		TimeStepper.FixedDt = 1.f / FlowGridAssetRef->SimulationRate;
-		FlowGridProperties.SubstepSize = TimeStepper.FixedDt;
+		FlowGridProperties->SubstepSize = TimeStepper.FixedDt;
 
 		//trigger simulation substeps in render thread
 		int32 NumSubSteps = TimeStepper.GetNumSteps(DeltaTime);
@@ -1175,7 +1201,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 		UpdateShapes();
 
 		//set active, since we are ticking
-		FlowGridProperties.bActive = true;
+		FlowGridProperties->bActive = true;
 
 		//push all flow properties to proxy
 		MarkRenderDynamicDataDirty();
@@ -1225,8 +1251,8 @@ void UFlowGridComponent::BeginPlay()
 
 void UFlowGridComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {	
-	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties.GridEmitParams.Num());
-	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties.GridCollideParams.Num());
+	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties->GridEmitParams.Num());
+	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties->GridCollideParams.Num());
 	DEC_DWORD_STAT(STAT_Flow_GridCount);
 	Super::EndPlay(EndPlayReason);
 }
@@ -1237,7 +1263,7 @@ void UFlowGridComponent::OnUpdateTransform(EUpdateTransformFlags UpdateTransform
 	Super::OnUpdateTransform(EUpdateTransformFlags::SkipPhysicsUpdate, Teleport);
 
 	// Reset simulation - will get turned on with Tick again
-	FlowGridProperties.bActive = false;
+	FlowGridProperties->bActive = false;
 	MarkRenderDynamicDataDirty();
 }
 
@@ -1250,10 +1276,32 @@ void UFlowGridComponent::SendRenderDynamicData_Concurrent()
 		ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
 			FSendFlowGridDynamicData,
 			FFlowGridSceneProxy*, FlowGridSceneProxy, (FFlowGridSceneProxy*)SceneProxy,
-			FFlowGridProperties, FlowGridProperties, FlowGridProperties,
+			FFlowGridPropertiesRef, FlowGridPropertiesRef, FFlowGridPropertiesRef(FlowGridProperties),
 			{
-				FlowGridSceneProxy->SetDynamicData_RenderThread(FlowGridProperties);
+				FlowGridSceneProxy->SetDynamicData_RenderThread(FlowGridPropertiesRef.Ref);
 			});
+
+		// switch to new FlowGridProperties version
+		int32 idx = 0;
+		for (; idx < FlowGridPropertiesPool.Num(); idx++)
+		{
+			FFlowGridProperties* prop = FlowGridPropertiesPool[idx];
+			if (prop && prop->refCount == 1)
+			{
+				FlowGridProperties = prop;
+				break;
+			}
+		}
+		if (idx == FlowGridPropertiesPool.Num())
+		{
+			FFlowGridProperties* gridProperties = new FFlowGridProperties();
+
+			FlowGridPropertiesPool.Add(gridProperties);
+
+			FlowGridProperties = gridProperties;
+
+			InitializeGridProperties(FlowGridProperties);
+		}
 	}
 }
 
@@ -1290,11 +1338,19 @@ FFlowGridSceneProxy::FFlowGridSceneProxy(UFlowGridComponent* Component)
 	, scenePtr(nullptr)
 	, cleanupSceneFunc(nullptr)
 {
+	FlowGridProperties->AddRef();
+
 	FlowData.bFlowGrid = true;
 }
 
 FFlowGridSceneProxy::~FFlowGridSceneProxy()
 {
+	if (FlowGridProperties)
+	{
+		FlowGridProperties->Release();
+		FlowGridProperties = nullptr;
+	}
+
 	if (scenePtr != nullptr)
 	{
 		check(cleanupSceneFunc != nullptr);
@@ -1315,10 +1371,10 @@ void FFlowGridSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>
 
 			FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
 
-			if (FlowGridProperties.RenderParams.bDebugWireframe)
+			if (FlowGridProperties && FlowGridProperties->RenderParams.bDebugWireframe)
 			{
 				const FLinearColor DrawColor = FLinearColor(1.0f, 1.0f, 1.0f);
-				FBox Box(ProxyLocalToWorld.GetOrigin() - FlowGridProperties.VirtualGridExtents, ProxyLocalToWorld.GetOrigin() + FlowGridProperties.VirtualGridExtents);
+				FBox Box(ProxyLocalToWorld.GetOrigin() - FlowGridProperties->VirtualGridExtents, ProxyLocalToWorld.GetOrigin() + FlowGridProperties->VirtualGridExtents);
 				DrawWireBox(PDI, Box, DrawColor, SDPG_World, 2.0f);
 			}
 		}
@@ -1341,12 +1397,14 @@ FPrimitiveViewRelevance FFlowGridSceneProxy::GetViewRelevance(const FSceneView* 
 	return Relevance;
 }
 
-void FFlowGridSceneProxy::SetDynamicData_RenderThread(const FFlowGridProperties& InFlowGridProperties)
+void FFlowGridSceneProxy::SetDynamicData_RenderThread(FFlowGridProperties* InFlowGridProperties)
 {
+	FlowGridProperties->Release();
 	FlowGridProperties = InFlowGridProperties;
+	FlowGridProperties->AddRef();
 
 	// if bActive was turned off, clean up the scheduled substeps
-	if (!FlowGridProperties.bActive)
+	if (!FlowGridProperties->bActive)
 	{
 		NumScheduledSubsteps = 0;
 	}
@@ -1358,5 +1416,23 @@ void FFlowGridSceneProxy::Simulate_RenderThread(int32 NumSubSteps)
 {
 	NumScheduledSubsteps += NumSubSteps;
 }
+
+#if LOG_FLOW_GRID_PROPERTIES
+
+volatile int32 FFlowGridProperties::LogRefCount = 0;
+
+void FFlowGridProperties::LogCreate(FFlowGridProperties* Ptr)
+{
+	auto Ref = FPlatformAtomics::InterlockedIncrement(&LogRefCount);
+	UE_LOG(LogNvFlow, Display, TEXT("NvFlow Create Properties(%p) refCount(%d)"), Ptr, Ref);
+}
+
+void FFlowGridProperties::LogRelease(FFlowGridProperties* Ptr)
+{
+	auto Ref = FPlatformAtomics::InterlockedDecrement(&LogRefCount);
+	UE_LOG(LogNvFlow, Display, TEXT("NvFlow Release Properties(%p) refCount(%d)"), Ptr, Ref);
+}
+
+#endif
 
 // NvFlow end
