@@ -9,10 +9,6 @@
 
 #include "PhysicsEngine/PhysXSupport.h"
 
-#if FLOW_EMITTER_LOG_ACCUM_STATE
-DEFINE_LOG_CATEGORY(LogFlowEmitterState);
-#endif
-
 static const float Density_DEPRECATED_Default = 0.5f;
 static const float DensityMask_DEPRECATED_Default = 1.0f;
 
@@ -56,10 +52,8 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 
 	bUseDistanceField = false;
 
-#if !FLOW_EMITTER_ACCUM_EXACT_FRAME_STATE
-	LastFrameTime = FLT_MAX;
-	bIsLastStateTheSame = false;
-#endif
+	bPreviousStateInitialized = false;
+	PreviousTransform = FTransform::Identity;
 }
 
 void UFlowEmitterComponent::PostLoad()

@@ -440,13 +440,6 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 		return;
 	}
 
-	if (FlowGridSceneProxy->bWasDynamicDataUsed)
-	{
-		// don't update more than once!
-		return;
-	}
-	FlowGridSceneProxy->bWasDynamicDataUsed = true;
-
 	// create scene if necessary
 	if (FlowGridSceneProxy->scenePtr == nullptr)
 	{
@@ -457,19 +450,25 @@ void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGri
 
 	auto scene = (Scene*)FlowGridSceneProxy->scenePtr;
 
-	scene->updateParameters(RHICmdList);
+	auto Properties = FlowGridSceneProxy->FlowGridProperties;
 
-	// process simulation events
-	if (FlowGridSceneProxy->FlowGridProperties->SubstepSize > 0.0f)
+	if (Properties->Version > scene->LatestVersion)
 	{
-		for (uint32 i = 0; i < uint32(FlowGridSceneProxy->NumScheduledSubsteps); i++)
+		scene->LatestVersion = Properties->Version;
+
+		scene->updateParameters(RHICmdList);
+
+		// process simulation events
+		if (Properties->SubstepSize > 0.0f)
 		{
-			scene->updateSubstep(RHICmdList, FlowGridSceneProxy->FlowGridProperties->SubstepSize, i, uint32(FlowGridSceneProxy->NumScheduledSubsteps), shouldFlush, GlobalDistanceFieldParameterData);
+			for (uint32 i = 0; i < uint32(Properties->NumScheduledSubsteps); i++)
+			{
+				scene->updateSubstep(RHICmdList, Properties->SubstepSize, i, uint32(Properties->NumScheduledSubsteps), shouldFlush, GlobalDistanceFieldParameterData);
+			}
 		}
 	}
-	FlowGridSceneProxy->NumScheduledSubsteps = 0;
 
-	scene->finilizeUpdate(RHICmdList);
+	scene->finalizeUpdate(RHICmdList);
 }
 
 // ------------------ NvFlow::Scene -----------------
@@ -920,6 +919,26 @@ void NvFlow::Scene::updateSubstep(FRHICommandListImmediate& RHICmdList, float dt
 	}
 }
 
+#define FLOW_EMIT_LOGGER 0
+
+#if FLOW_EMIT_LOGGER
+#include <stdio.h>
+
+struct MyLogger
+{
+	FILE* file = nullptr;
+	int parity = 0;
+	MyLogger()
+	{
+		fopen_s(&file, "FlowEmitLog.txt", "w");
+	}
+	~MyLogger()
+	{
+		fclose(file);
+	}
+};
+#endif;
+
 void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateParams* updateParams)
 {
 	auto& appctx = *RHICmdCtx;
@@ -933,6 +952,23 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateP
 	NvFlowGridSetParams(m_grid, &m_gridParams);
 
 	FFlowGridProperties& Properties = *FlowGridSceneProxy->FlowGridProperties;
+
+#if FLOW_EMIT_LOGGER
+	static MyLogger myLogger;
+
+	myLogger.parity ^= 0x01;
+
+	for (int32 i = 0; i < Properties.GridEmitParams.Num(); i++)
+	{
+		auto& EmitParams = Properties.GridEmitParams[i];
+
+		fprintf(myLogger.file, "%d, %d, %f, %f, %f, %f, %f, %f\n",
+			myLogger.parity, i,
+			EmitParams.bounds.w.x, EmitParams.bounds.w.y, EmitParams.bounds.w.z,
+			EmitParams.velocityLinear.x, EmitParams.velocityLinear.y, EmitParams.velocityLinear.z
+		);
+	}
+#endif
 
 	// update emitters
 	{
@@ -1020,18 +1056,18 @@ void NvFlow::Scene::updateSubstepCallback(void* paramData, SIZE_T numBytes, IRHI
 	updateParams->Scene->updateSubstepDeferred(RHICmdCtx, updateParams);
 }
 
-void NvFlow::Scene::finilizeUpdate(FRHICommandListImmediate& RHICmdList)
+void NvFlow::Scene::finalizeUpdate(FRHICommandListImmediate& RHICmdList)
 {
-	RHICmdList.NvFlowWork(finilizeUpdateCallback, this, 0u);
+	RHICmdList.NvFlowWork(finalizeUpdateCallback, this, 0u);
 }
 
-void NvFlow::Scene::finilizeUpdateCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
+void NvFlow::Scene::finalizeUpdateCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx)
 {
 	auto scene = (NvFlow::Scene*)paramData;
-	scene->finilizeUpdateDeferred(RHICmdCtx);
+	scene->finalizeUpdateDeferred(RHICmdCtx);
 }
 
-void NvFlow::Scene::finilizeUpdateDeferred(IRHICommandContext* RHICmdCtx)
+void NvFlow::Scene::finalizeUpdateDeferred(IRHICommandContext* RHICmdCtx)
 {
 	m_particleParamsArray.Reset();
 }

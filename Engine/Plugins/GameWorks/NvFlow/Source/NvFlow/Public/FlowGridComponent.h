@@ -10,6 +10,8 @@
 #include "UObject/ObjectMacros.h"
 #include "Components/PrimitiveComponent.h"
 
+#include "FlowTimeStepper.h"
+
 #include "FlowGridSceneProxy.h"
 #include "FlowGridComponent.generated.h"
 
@@ -34,18 +36,6 @@ DECLARE_CYCLE_STAT_EXTERN(TEXT("RenderThread, Simulate Grids"), STAT_Flow_Simula
 DECLARE_CYCLE_STAT_EXTERN(TEXT("RenderThread, Render Grids"), STAT_Flow_RenderGrids, STATGROUP_Flow, );
 
 #endif
-
-struct FTimeStepper
-{
-	float DeltaTime;
-	float TimeError;
-	float FixedDt;
-	int32 MaxSteps;
-	int32 NumSteps;
-
-	FTimeStepper();
-	int32 GetNumSteps(float TimeStep);
-};
 
 UCLASS(ClassGroup = Physics, config = Engine, editinlinenew, HideCategories = (Physics, Collision, Activation, PhysX), meta = (BlueprintSpawnableComponent), MinimalAPI)
 class UFlowGridComponent : public UPrimitiveComponent
@@ -119,10 +109,14 @@ protected:
 	virtual void SendRenderDynamicData_Concurrent() override;
 	// End UActorComponent Interface
 
-	void UpdateShapes();
+	void ResetShapes();
+	void UpdateShapes(float DeltaTime, uint32 numSimSubSteps);
 	FlowMaterialKeyType AddMaterialParams(class UFlowMaterial* FlowMaterial);
 
-	FTimeStepper TimeStepper;
+	uint64 VersionCounter = 0ul;
+	uint64 LastVersionPushed = 0ul;
+
+	FFlowTimeStepper TimeStepper;
 
 
 	struct MaterialData

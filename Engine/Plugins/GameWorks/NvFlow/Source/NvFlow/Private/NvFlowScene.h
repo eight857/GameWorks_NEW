@@ -97,7 +97,7 @@ namespace NvFlow
 		void updateParameters(FRHICommandListImmediate& RHICmdList);
 
 		void updateSubstep(FRHICommandListImmediate& RHICmdList, float dt, uint32 substep, uint32 numSubsteps, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData);
-		void finilizeUpdate(FRHICommandListImmediate& RHICmdList);
+		void finalizeUpdate(FRHICommandListImmediate& RHICmdList);
 
 		void updateGridView(FRHICommandListImmediate& RHICmdList);
 		void render(FRHICommandList& RHICmdList, const FViewInfo& View);
@@ -135,6 +135,8 @@ namespace NvFlow
 		void applyDistanceField(IRHICommandContext* RHICmdCtx, NvFlowUint dataFrontIdx, const NvFlowGridEmitCustomEmitLayerParams& layerParams, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt,
 			FShaderResourceViewRHIRef DataInSRV, FUnorderedAccessViewRHIRef DataOutUAV, FShaderResourceViewRHIRef BlockListSRV, FShaderResourceViewRHIRef BlockTableSRV,
 			float InSlipFactor = 0, float InSlipThickness = 0, FVector4 InEmitValue = FVector4(ForceInitToZero));
+
+		uint64 LatestVersion = 0ul;
 
 		bool m_multiAdapter = false;
 		bool m_asyncCompute = false;
@@ -225,7 +227,7 @@ namespace NvFlow
 		void initDeferred(IRHICommandContext* RHICmdCtx);
 		void updateParametersDeferred(IRHICommandContext* RHICmdCtx);
 		void updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateParams* updateParams);
-		void finilizeUpdateDeferred(IRHICommandContext* RHICmdCtx);
+		void finalizeUpdateDeferred(IRHICommandContext* RHICmdCtx);
 		void updateGridViewDeferred(IRHICommandContext* RHICmdCtx);
 		void renderDeferred(IRHICommandContext* RHICmdCtx, RenderParams* renderParams);
 		void renderDepthDeferred(IRHICommandContext* RHICmdCtx, RenderParams* renderParams);
@@ -233,7 +235,7 @@ namespace NvFlow
 		static void initCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void updateParametersCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void updateSubstepCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
-		static void finilizeUpdateCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
+		static void finalizeUpdateCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void updateGridViewCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void renderCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);
 		static void renderDepthCallback(void* paramData, SIZE_T numBytes, IRHICommandContext* RHICmdCtx);

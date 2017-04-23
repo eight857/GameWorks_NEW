@@ -83,9 +83,9 @@ struct FFlowDistanceFieldParams
 
 #define LOG_FLOW_GRID_PROPERTIES 0
 
-struct FFlowGridProperties
+struct FFlowGridPropertiesObject
 {
-	volatile int32 refCount = 1;
+	volatile int32 RefCount = 1;
 
 #if LOG_FLOW_GRID_PROPERTIES
 	static volatile int32 LogRefCount;
@@ -95,12 +95,12 @@ struct FFlowGridProperties
 
 	int32 AddRef()
 	{
-		return FPlatformAtomics::InterlockedIncrement(&refCount);
+		return FPlatformAtomics::InterlockedIncrement(&RefCount);
 	}
 
 	int32 Release()
 	{
-		int32 ref = FPlatformAtomics::InterlockedDecrement(&refCount);
+		int32 ref = FPlatformAtomics::InterlockedDecrement(&RefCount);
 		if (ref == 0)
 		{
 			delete this;
@@ -109,15 +109,22 @@ struct FFlowGridProperties
 	}
 
 #if LOG_FLOW_GRID_PROPERTIES
-	FFlowGridProperties() { LogCreate(this); }
-	~FFlowGridProperties() { LogRelease(this);  }
+	FFlowGridPropertiesObject() { LogCreate(this); }
+	~FFlowGridPropertiesObject() { LogRelease(this); }
 #else
-	FFlowGridProperties() {}
-	~FFlowGridProperties() {}
+	FFlowGridPropertiesObject() {}
+	~FFlowGridPropertiesObject() {}
 #endif
 
-	FFlowGridProperties(const FFlowGridProperties& rhs) = delete;
-	FFlowGridProperties& operator=(const FFlowGridProperties& rhs) = delete;
+	FFlowGridPropertiesObject(const FFlowGridPropertiesObject& rhs) = delete;
+	FFlowGridPropertiesObject& operator=(const FFlowGridPropertiesObject& rhs) = delete;
+};
+
+struct FFlowGridProperties : public FFlowGridPropertiesObject
+{
+	uint64 Version = 0ul;
+
+	uint32 NumScheduledSubsteps = 1u;
 
 	// indicates if grid should be allocated
 	int32 bActive : 1;
@@ -232,17 +239,11 @@ public:
 	uint32 GetAllocatedSize(void) const { return(FPrimitiveSceneProxy::GetAllocatedSize()); }
 
 	void SetDynamicData_RenderThread(FFlowGridProperties* InFlowGridProperties);
-	void Simulate_RenderThread(int32 NumSubSteps);
 
 public:
 
 	// resources managed by game thread
 	FFlowGridProperties* FlowGridProperties;
-
-	// shared resources 
-	int32 NumScheduledSubsteps;
-
-	bool bWasDynamicDataUsed;
 
 	// resources managed in render thread
 	void* scenePtr;
