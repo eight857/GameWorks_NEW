@@ -1,5 +1,17 @@
 #pragma once
 
+#ifndef NVFLOW_ADAPTIVE
+#define NVFLOW_ADAPTIVE 0
+#endif
+
+#ifndef WITH_CUDA_CONTEXT
+#define WITH_CUDA_CONTEXT 0
+#endif
+
+#ifndef NVFLOW_SMP
+#define NVFLOW_SMP 0
+#endif
+
 #include "UObject/ObjectMacros.h"
 #include "ConstructorHelpers.h"
 #include "Engine/CollisionProfile.h"
