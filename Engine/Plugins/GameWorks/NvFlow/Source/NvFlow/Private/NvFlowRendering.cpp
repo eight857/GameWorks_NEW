@@ -247,10 +247,12 @@ namespace NvFlow
 		struct MaterialData
 		{
 			NvFlowGridMaterialHandle gridMaterialHandle;
+			uint32 emitMaterialIndex;
 
 			TMap<FlowRenderMaterialKeyType, RenderMaterialData> renderMaterialMap;
 		};
 		TMap<FlowMaterialKeyType, MaterialData> m_materialMap;
+		TArray<NvFlowGridMaterialHandle> m_emitMaterialsArray;
 
 		const MaterialData& updateMaterial(FlowMaterialKeyType materialKey, const FFlowMaterialParams& materialParams);
 
@@ -1035,7 +1037,7 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 	check(Properties.GridEmitParams.Num() == Properties.GridEmitMaterialKeys.Num());
 	for (int32 i = 0; i < Properties.GridEmitParams.Num(); ++i)
 	{
-		NvFlowGridMaterialHandle gridMaterialHandle = { nullptr, 0 };
+		uint32 emitMaterialIdx = ~0u;
 
 		FlowMaterialKeyType materialKey = Properties.GridEmitMaterialKeys[i];
 		if (materialKey != nullptr)
@@ -1043,11 +1045,16 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 			MaterialData* materialData = m_materialMap.Find(materialKey);
 			if (materialData != nullptr)
 			{
-				gridMaterialHandle = materialData->gridMaterialHandle;
+				emitMaterialIdx = materialData->emitMaterialIndex;
 			}
 		}
 
-		Properties.GridEmitParams[i].material = gridMaterialHandle;
+		Properties.GridEmitParams[i].emitMaterialIndex = emitMaterialIdx;
+	}
+
+	// update material array
+	{
+		NvFlowGridUpdateEmitMaterials(m_grid, m_emitMaterialsArray.GetData(), m_emitMaterialsArray.Num());
 	}
 
 	// update SDF array
@@ -1080,6 +1087,9 @@ const NvFlow::Scene::MaterialData& NvFlow::Scene::updateMaterial(FlowMaterialKey
 		materialData = &m_materialMap.Add(materialKey);
 
 		materialData->gridMaterialHandle = NvFlowGridCreateMaterial(m_grid, &materialParams.GridParams);
+		materialData->emitMaterialIndex = m_emitMaterialsArray.Num();
+
+		m_emitMaterialsArray.Add(materialData->gridMaterialHandle);
 	}
 	else
 	{

@@ -735,8 +735,6 @@ void UFlowGridComponent::UpdateShapes()
 					float NumSubsteps = FlowEmitterComponent->NumSubsteps;
 					float emitterSubstepDt = FlowGridProperties.SubstepSize / NumSubsteps;
 
-					emitParams.numSubSteps = 1u; //TODO: remove numSteps from NvFlowGridEmitParams!
-
 					FBodyState BlendedBodyState;
 #if FLOW_EMITTER_ACCUM_EXACT_FRAME_STATE
 					FBodyStateAccumulator::FInterpolator Interpolator(FlowEmitterComponent->BodyStateAccumulator);
@@ -944,6 +942,8 @@ FlowMaterialKeyType UFlowGridComponent::AddMaterialParams(UFlowMaterial* InFlowM
 	FlowGridProperties.Materials.Last().Key = FlowMaterialKey;
 	FFlowMaterialParams& MaterialParams = FlowGridProperties.Materials.Last().Value;
 
+	NvFlowGridMaterialParamsDefaults(&MaterialParams.GridParams);
+
 	//Grid part
 	CopyMaterialPerComponent(FlowMaterial->Velocity, MaterialParams.GridParams.velocity);
 	CopyMaterialPerComponent(FlowMaterial->Smoke, MaterialParams.GridParams.smoke);
@@ -952,6 +952,10 @@ FlowMaterialKeyType UFlowGridComponent::AddMaterialParams(UFlowMaterial* InFlowM
 
 	MaterialParams.GridParams.vorticityStrength = FlowMaterial->VorticityStrength;
 	MaterialParams.GridParams.vorticityVelocityMask = FlowMaterial->VorticityVelocityMask;
+	MaterialParams.GridParams.vorticityTemperatureMask = FlowMaterial->VorticityTemperatureMask;
+	MaterialParams.GridParams.vorticitySmokeMask = FlowMaterial->VorticitySmokeMask;
+	MaterialParams.GridParams.vorticityFuelMask = FlowMaterial->VorticityFuelMask;
+	MaterialParams.GridParams.vorticityConstantMask = FlowMaterial->VorticityConstantMask;
 	MaterialParams.GridParams.ignitionTemp = FlowMaterial->IgnitionTemp;
 	MaterialParams.GridParams.burnPerTemp = FlowMaterial->BurnPerTemp;
 	MaterialParams.GridParams.fuelPerBurn = FlowMaterial->FuelPerBurn;
@@ -1102,6 +1106,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		FVector ScaledGravity(FlowGridAssetRef->Gravity * NvFlow::scaleInv);
 		GridParams.gravity = *(NvFlowFloat3*)(&ScaledGravity);
+		GridParams.singlePassAdvection = FlowGridAssetRef->bSinglePassAdvection;
 		GridParams.pressureLegacyMode = FlowGridAssetRef->bPressureLegacyMode;
 		GridParams.bigEffectMode = FlowGridAssetRef->bBigEffectMode;
 

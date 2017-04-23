@@ -41,6 +41,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	NvFlowGridParamsDefaults(&FlowGridParams);
 
 	Gravity = FVector(FlowGridParams.gravity.x, FlowGridParams.gravity.z, FlowGridParams.gravity.y) * GetFlowToUE4Scale();
+	bSinglePassAdvection = FlowGridParams.singlePassAdvection;
 	bPressureLegacyMode = FlowGridParams.pressureLegacyMode;
 	bBigEffectMode = FlowGridParams.bigEffectMode;
 

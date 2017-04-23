@@ -121,6 +121,10 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gravity")
 	FVector		Gravity;
 
+	/** If true, enables single pass advection */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Advect")
+	uint32		bSinglePassAdvection : 1;
+
 	/** If true, run older less accurate pressure solver*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pressure")
 	uint32		bPressureLegacyMode : 1;

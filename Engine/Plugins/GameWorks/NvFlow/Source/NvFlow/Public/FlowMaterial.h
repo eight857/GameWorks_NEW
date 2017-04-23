@@ -62,9 +62,25 @@ class UFlowMaterial : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Vorticity)
 	float VorticityStrength;
 
-	/** 0.f means zero velocity magnitude influence on vorticity */
+	/** 0.f disabled; 1.0f higher velocities, higher strength; -1.0f for inverse */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Vorticity)
 	float VorticityVelocityMask;
+
+	/** 0.f disabled; 1.0f higher temperatures, higher strength; -1.0f for inverse */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Vorticity)
+	float VorticityTemperatureMask;
+
+	/** 0.f disabled; 1.0f higher smoke, higher strength; -1.0f for inverse */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Vorticity)
+	float VorticitySmokeMask;
+
+	/** 0.f disabled; 1.0f higher fuel, higher strength; -1.0f for inverse */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Vorticity)
+	float VorticityFuelMask;
+
+	/** Works as other masks, provides fixed offset */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Vorticity)
+	float VorticityConstantMask;
 
 	/** Minimum temperature for combustion */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Combustion)

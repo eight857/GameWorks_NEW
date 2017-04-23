@@ -43,6 +43,10 @@ UFlowMaterial::UFlowMaterial(const FObjectInitializer& ObjectInitializer)
 
 	VorticityStrength = FlowGridMaterialParams.vorticityStrength;
 	VorticityVelocityMask = FlowGridMaterialParams.vorticityVelocityMask;
+	VorticityTemperatureMask = FlowGridMaterialParams.vorticityTemperatureMask;
+	VorticitySmokeMask = FlowGridMaterialParams.vorticitySmokeMask;
+	VorticityFuelMask = FlowGridMaterialParams.vorticityFuelMask;
+	VorticityConstantMask = FlowGridMaterialParams.vorticityConstantMask;
 	IgnitionTemp = FlowGridMaterialParams.ignitionTemp;
 	BurnPerTemp = FlowGridMaterialParams.burnPerTemp;
 	FuelPerBurn = FlowGridMaterialParams.fuelPerBurn;
