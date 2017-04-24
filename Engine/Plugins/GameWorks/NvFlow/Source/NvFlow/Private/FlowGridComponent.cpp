@@ -210,8 +210,6 @@ void UFlowGridComponent::ResetShapes()
 {
 	//UE_LOG(LogNvFlow, Display, TEXT("NvFlow Reset begin (%d)"), FlowGridProperties->GridEmitParams.Num());
 
-	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties->GridEmitParams.Num());
-	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties->GridCollideParams.Num());
 	FlowGridProperties->GridEmitParams.SetNum(0);
 	FlowGridProperties->GridCollideParams.SetNum(0);
 	FlowGridProperties->GridEmitShapeDescs.SetNum(0);
@@ -674,14 +672,20 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 numSimSubSteps)
 					emitParams.deltaTime = EmitSubstepDt;
 
 					FTransform PreviousTransform = FlowEmitterComponent->PreviousTransform;
+					FVector PreviousLinearVelocity = FlowEmitterComponent->PreviousLinearVelocity;
+					FVector PreviousAngularVelocity = FlowEmitterComponent->PreviousAngularVelocity;
 					if (FlowEmitterComponent->bPreviousStateInitialized == false)
 					{
 						PreviousTransform = ActorTransform;
+						PreviousLinearVelocity = ActorLinearVelocity;
+						PreviousAngularVelocity = ActorAngularVelocity;
 
 						FlowEmitterComponent->bPreviousStateInitialized = true;
 					}
 					// Update Previous Transform
 					FlowEmitterComponent->PreviousTransform = ActorTransform;
+					FlowEmitterComponent->PreviousLinearVelocity = PreviousLinearVelocity;
+					FlowEmitterComponent->PreviousAngularVelocity = PreviousAngularVelocity;
 
 					float EmitTimerStepperError = 0.f;
 					if (FlowEmitterComponent->NumSubsteps == 1u)
@@ -703,8 +707,8 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 numSimSubSteps)
 					for (int32 SubStepIdx = 0; SubStepIdx < NumSubsteps; SubStepIdx++)
 					{
 						FTransform BlendedActorTransform = ActorTransform;
-						const FVector& BlendedActorLinearVelocity = ActorLinearVelocity;
-						const FVector& BlendedActorAngularVelocity = ActorAngularVelocity;
+						FVector BlendedActorLinearVelocity = ActorLinearVelocity;
+						FVector BlendedActorAngularVelocity = ActorAngularVelocity;
 
 						// interpolate as needed
 						if (FlowEmitterComponent->NumSubsteps > 1u)
@@ -719,6 +723,8 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 numSimSubSteps)
 							float Alpha = (Substep_t - TimeNew) / (TimeOld - TimeNew);
 
 							BlendedActorTransform.Blend(ActorTransform, PreviousTransform, Alpha);
+							BlendedActorLinearVelocity = FMath::Lerp(ActorLinearVelocity, PreviousLinearVelocity, Alpha);
+							BlendedActorAngularVelocity = FMath::Lerp(ActorAngularVelocity, PreviousAngularVelocity, Alpha);
 						}
 
 						// physics
@@ -870,9 +876,6 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 numSimSubSteps)
 			}
 		}
 	}
-
-	INC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties->GridEmitParams.Num());
-	INC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties->GridCollideParams.Num());
 
 	SCENE_UNLOCK_READ(SyncScene);
 }
@@ -1180,8 +1183,12 @@ void UFlowGridComponent::BeginPlay()
 
 void UFlowGridComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {	
-	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, FlowGridProperties->GridEmitParams.Num());
-	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, FlowGridProperties->GridCollideParams.Num());
+	DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, GridEmitParams_Num_Old);
+	DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, GridCollideParams_Num_Old);
+
+	GridEmitParams_Num_Old = 0;
+	GridCollideParams_Num_Old = 0;
+
 	DEC_DWORD_STAT(STAT_Flow_GridCount);
 	Super::EndPlay(EndPlayReason);
 }
@@ -1208,6 +1215,18 @@ void UFlowGridComponent::SendRenderDynamicData_Concurrent()
 		if (FlowGridProperties->Version > LastVersionPushed)
 		{
 			LastVersionPushed = FlowGridProperties->Version;
+
+			// Update emitter stat
+			{
+				DEC_DWORD_STAT_BY(STAT_Flow_EmitterCount, GridEmitParams_Num_Old);
+				DEC_DWORD_STAT_BY(STAT_Flow_ColliderCount, GridCollideParams_Num_Old);
+
+				GridEmitParams_Num_Old = FlowGridProperties->GridEmitParams.Num();
+				GridCollideParams_Num_Old = FlowGridProperties->GridCollideParams.Num();
+
+				INC_DWORD_STAT_BY(STAT_Flow_EmitterCount, GridEmitParams_Num_Old);
+				INC_DWORD_STAT_BY(STAT_Flow_ColliderCount, GridCollideParams_Num_Old);
+			}
 
 			// Enqueue command to send to render thread
 			ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(

@@ -118,6 +118,8 @@ protected:
 
 	FFlowTimeStepper TimeStepper;
 
+	int32 GridEmitParams_Num_Old = 0;
+	int32 GridCollideParams_Num_Old = 0;
 
 	struct MaterialData
 	{
