@@ -100,11 +100,11 @@ class UFlowEmitterComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Emitter)
 	uint32		bAllocShapeOnly : 1;
 
-	FFlowTimeStepper EmitTimeStepper;
 	uint32		bPreviousStateInitialized : 1;
 	FTransform	PreviousTransform;
-	FVector PreviousLinearVelocity;
-	FVector PreviousAngularVelocity;
+	FVector		PreviousLinearVelocity;
+	FVector		PreviousAngularVelocity;
+	float		PreviousStateTimeError;
 
 	/** Flow material, if null then taken default material from grid. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Grid)

@@ -665,11 +665,6 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 					emitParams.shapeRangeSize = NumShapeDescs;
 					emitParams.shapeDistScale = FlowShapeDistScale;
 
-					// substep
-					float NumSubsteps = FlowEmitterComponent->NumSubsteps;
-					float EmitSubstepDt = FlowGridProperties->SubstepSize / NumSubsteps;
-
-					emitParams.deltaTime = EmitSubstepDt;
 
 					FTransform PreviousTransform = FlowEmitterComponent->PreviousTransform;
 					FVector PreviousLinearVelocity = FlowEmitterComponent->PreviousLinearVelocity;
@@ -687,21 +682,39 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 					FlowEmitterComponent->PreviousLinearVelocity = PreviousLinearVelocity;
 					FlowEmitterComponent->PreviousAngularVelocity = PreviousAngularVelocity;
 
-					float EmitTimerStepperError = 0.f;
+					// substep
+					float EmitSubstepDt = FlowGridProperties->SubstepSize / FlowEmitterComponent->NumSubsteps;
+					if (uint32(TimeStepper.NumSteps) > NumSimSubSteps)
+					{
+						//long frame time case - increase EmitSubstepDt
+						EmitSubstepDt *= float(TimeStepper.NumSteps) / NumSimSubSteps;
+					}
+
+					float SubstepsStartTime = 0.0f;
+					int32 NumSubsteps = 0;
+					float FirstSubstepDt = EmitSubstepDt;
 					if (FlowEmitterComponent->NumSubsteps == 1u)
 					{
 						NumSubsteps = NumSimSubSteps;
+						emitParams.deltaTime = FlowGridProperties->SubstepSize;
 					}
 					else
 					{
-						auto& EmitTimerStepper = FlowEmitterComponent->EmitTimeStepper;
-
-						EmitTimerStepper.FixedDt = EmitSubstepDt;
-						EmitTimerStepper.MaxSteps = 64u;	// TODO: Maybe expose
-
-						NumSubsteps = EmitTimerStepper.GetNumSteps(DeltaTime);
-
-						EmitTimerStepperError = EmitTimerStepper.TimeError;
+						check(FlowEmitterComponent->PreviousStateTimeError >= 0.0f);
+						// FirstSubstepDt can be larger than EmitSubstepDt in case previous EmitSubstepDt was larger than current one
+						FirstSubstepDt = (FPlatformMath::FloorToInt(FlowEmitterComponent->PreviousStateTimeError / EmitSubstepDt) + 1) * EmitSubstepDt;
+						SubstepsStartTime = FMath::Max(FirstSubstepDt - FlowEmitterComponent->PreviousStateTimeError, 0.0f);
+						float RemainTime = DeltaTime - SubstepsStartTime;
+						if (RemainTime >= 0.0f)
+						{
+							NumSubsteps = FPlatformMath::FloorToInt(RemainTime) + 1;
+							FlowEmitterComponent->PreviousStateTimeError = FMath::Max(RemainTime - (NumSubsteps - 1) * EmitSubstepDt, 0.0f);
+						}
+						else
+						{
+							NumSubsteps = 0;
+							FlowEmitterComponent->PreviousStateTimeError += DeltaTime;
+						}
 					}
 
 					for (int32 SubStepIdx = 0; SubStepIdx < NumSubsteps; SubStepIdx++)
@@ -713,18 +726,14 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 						// interpolate as needed
 						if (FlowEmitterComponent->NumSubsteps > 1u)
 						{
-							int32 Substep_i = NumSubsteps - 1 - SubStepIdx;
+							const float SubstepTime = SubstepsStartTime + EmitSubstepDt * SubStepIdx;
+							const float Alpha = SubstepTime / DeltaTime;
 
-							float Substep_t = EmitSubstepDt * Substep_i + EmitTimerStepperError;
+							BlendedActorTransform.Blend(PreviousTransform, ActorTransform, Alpha);
+							BlendedActorLinearVelocity = FMath::Lerp(PreviousLinearVelocity, ActorLinearVelocity, Alpha);
+							BlendedActorAngularVelocity = FMath::Lerp(PreviousAngularVelocity, ActorAngularVelocity, Alpha);
 
-							const float TimeNew = 0.f;
-							const float TimeOld = DeltaTime;
-
-							float Alpha = (Substep_t - TimeNew) / (TimeOld - TimeNew);
-
-							BlendedActorTransform.Blend(ActorTransform, PreviousTransform, Alpha);
-							BlendedActorLinearVelocity = FMath::Lerp(ActorLinearVelocity, PreviousLinearVelocity, Alpha);
-							BlendedActorAngularVelocity = FMath::Lerp(ActorAngularVelocity, PreviousAngularVelocity, Alpha);
+							emitParams.deltaTime = (SubStepIdx > 0) ? EmitSubstepDt : FirstSubstepDt;
 						}
 
 						// physics
