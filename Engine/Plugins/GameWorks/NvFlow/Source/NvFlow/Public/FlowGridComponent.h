@@ -110,7 +110,7 @@ protected:
 	// End UActorComponent Interface
 
 	void ResetShapes();
-	void UpdateShapes(float DeltaTime, uint32 numSimSubSteps);
+	void UpdateShapes(float DeltaTime, uint32 NumSimSubSteps);
 	FlowMaterialKeyType AddMaterialParams(class UFlowMaterial* FlowMaterial);
 
 	uint64 VersionCounter = 0ul;

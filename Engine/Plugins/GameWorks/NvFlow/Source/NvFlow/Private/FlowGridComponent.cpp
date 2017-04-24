@@ -221,7 +221,7 @@ void UFlowGridComponent::ResetShapes()
 }
 
 // send bodies from synchronous PhysX scene to Flow scene
-void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 numSimSubSteps)
+void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 {
 	SCOPE_CYCLE_COUNTER(STAT_Flow_UpdateShapes);
 
@@ -690,7 +690,7 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 numSimSubSteps)
 					float EmitTimerStepperError = 0.f;
 					if (FlowEmitterComponent->NumSubsteps == 1u)
 					{
-						NumSubsteps = numSimSubSteps;
+						NumSubsteps = NumSimSubSteps;
 					}
 					else
 					{
@@ -812,7 +812,7 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 numSimSubSteps)
 					}
 				}
 
-				if (IsCollider)
+				if (IsCollider && NumSimSubSteps > 0u)
 				{
 					// physics
 					FVector CollisionLinearVelocity = ShapeTransform.InverseTransformVector(ActorLinearVelocity);
