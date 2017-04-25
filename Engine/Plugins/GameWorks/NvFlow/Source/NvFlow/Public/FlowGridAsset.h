@@ -213,11 +213,17 @@ class UFlowGridAsset : public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow", meta = (UIMin = 1.0f, UIMax = 2.0f))
 	float		ShadowFrustrumScale;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
-	float		ShadowMinResidentScale;
+	UPROPERTY()
+	float		ShadowMinResidentScale_DEPRECATED;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
-	float		ShadowMaxResidentScale;
+	UPROPERTY()
+	float		ShadowMaxResidentScale_DEPRECATED;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow", meta = (UIMin = 1, UIMax = 10000))
+	int32		ShadowMinResidentBlocks;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow", meta = (UIMin = 1, UIMax = 10000))
+	int32		ShadowMaxResidentBlocks;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rendering Shadow")
 	int32		ShadowChannel;
@@ -253,6 +259,8 @@ class UFlowGridAsset : public UObject
 
 	FORCEINLINE float GetVirtualGridDimension() const { return GetVirtualGridDimension(VirtualGridDimension); }
 	FORCEINLINE float GetVirtualGridExtent() const { return GetVirtualGridExtent(GridCellSize, VirtualGridDimension); }
+
+	virtual void PostLoad() override;
 };
 
 // NvFlow end

@@ -204,6 +204,18 @@ namespace
 	// helpers to find actor, shape pairs in a TSet
 	bool operator == (const PxActorShape& lhs, const PxActorShape& rhs) { return lhs.actor == rhs.actor && lhs.shape == rhs.shape; }
 	uint32 GetTypeHash(const PxActorShape& h) { return ::GetTypeHash((void*)(h.actor)) ^ ::GetTypeHash((void*)(h.shape)); }
+
+	float ShadowResidentBlocksToScale(int32 ResidentBlocks, EFlowShadowResolution ShadowResolution)
+	{
+		const int32 ShadowDim = (1 << ShadowResolution);
+
+		const int ShadowBlockDim = 16;
+		const int32 ShadowGridDim = (ShadowDim + ShadowBlockDim - 1) / ShadowBlockDim;
+
+		const int32 MaxBlocks = ShadowGridDim * ShadowGridDim * ShadowGridDim;
+
+		return FMath::Min(float(ResidentBlocks) / MaxBlocks, 1.0f);
+	}
 }
 
 void UFlowGridComponent::ResetShapes()
@@ -1123,8 +1135,8 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		FlowGridProperties->RenderParams.ShadowResolution = 1u << FlowGridAssetRef->ShadowResolution;
 		FlowGridProperties->RenderParams.ShadowFrustrumScale = FlowGridAssetRef->ShadowFrustrumScale;
-		FlowGridProperties->RenderParams.ShadowMinResidentScale = FlowGridAssetRef->ShadowMinResidentScale;
-		FlowGridProperties->RenderParams.ShadowMaxResidentScale = FlowGridAssetRef->ShadowMaxResidentScale;
+		FlowGridProperties->RenderParams.ShadowMinResidentScale = ShadowResidentBlocksToScale(FlowGridAssetRef->ShadowMinResidentBlocks, FlowGridAssetRef->ShadowResolution);
+		FlowGridProperties->RenderParams.ShadowMaxResidentScale = ShadowResidentBlocksToScale(FlowGridAssetRef->ShadowMaxResidentBlocks, FlowGridAssetRef->ShadowResolution);
 
 		FlowGridProperties->RenderParams.ShadowChannel = FlowGridAssetRef->ShadowChannel;
 		FlowGridProperties->RenderParams.ShadowNearDistance = FlowGridAssetRef->ShadowNearDistance;

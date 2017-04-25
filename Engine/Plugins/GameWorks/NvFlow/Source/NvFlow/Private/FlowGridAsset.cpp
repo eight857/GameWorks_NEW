@@ -18,6 +18,25 @@ bool UFlowGridAsset::sGlobalMultiGPUResetRequest = false;
 uint32 UFlowGridAsset::sGlobalDepth = 1;
 uint32 UFlowGridAsset::sGlobalDepthDebugDraw = 0;
 
+
+static const float ShadowMinResidentScale_DEPRECATED_Default = 0.25f * (1.f / 64.f);
+static const float ShadowMaxResidentScale_DEPRECATED_Default = 4.f * 0.25f * (1.f / 64.f);
+
+namespace
+{
+	int32 ShadowResidentScaleToBlocks(float ResidentScale, EFlowShadowResolution ShadowResolution)
+	{
+		const int32 ShadowDim = (1 << ShadowResolution);
+
+		const int ShadowBlockDim = 16;
+		const int32 ShadowGridDim = (ShadowDim + ShadowBlockDim-1) / ShadowBlockDim;
+
+		const int32 MaxBlocks = ShadowGridDim * ShadowGridDim * ShadowGridDim;
+
+		return ResidentScale * MaxBlocks;
+	}
+}
+
 UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -112,11 +131,28 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 
 	ShadowResolution = EFSR_High;
 	ShadowFrustrumScale = 1.0f;
-	ShadowMinResidentScale = 0.25f * (1.f / 64.f);
-	ShadowMaxResidentScale = 4.f * 0.25f * (1.f / 64.f);
+	ShadowMinResidentScale_DEPRECATED = ShadowMinResidentScale_DEPRECATED_Default;
+	ShadowMaxResidentScale_DEPRECATED = ShadowMaxResidentScale_DEPRECATED_Default;
+	
+	ShadowMinResidentBlocks = ShadowResidentScaleToBlocks(ShadowMinResidentScale_DEPRECATED, ShadowResolution);
+	ShadowMaxResidentBlocks = ShadowResidentScaleToBlocks(ShadowMaxResidentScale_DEPRECATED, ShadowResolution);
 
 	ShadowChannel = 0;
 	ShadowNearDistance = 10.0f;
+}
+
+void UFlowGridAsset::PostLoad()
+{
+	Super::PostLoad();
+
+	if (ShadowMinResidentScale_DEPRECATED != ShadowMinResidentScale_DEPRECATED_Default)
+	{
+		ShadowMinResidentBlocks = ShadowResidentScaleToBlocks(ShadowMinResidentScale_DEPRECATED, ShadowResolution);
+	}
+	if (ShadowMaxResidentScale_DEPRECATED != ShadowMaxResidentScale_DEPRECATED_Default)
+	{
+		ShadowMaxResidentBlocks = ShadowResidentScaleToBlocks(ShadowMaxResidentScale_DEPRECATED, ShadowResolution);
+	}
 }
 
 // NvFlow end

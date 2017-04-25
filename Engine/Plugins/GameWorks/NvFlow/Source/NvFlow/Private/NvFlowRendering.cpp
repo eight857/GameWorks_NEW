@@ -1129,10 +1129,10 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 
 	m_gridExport4Render = NvFlowGridProxyGetGridExport(m_gridProxy, m_renderContext);
 
+	FString gridName;
 	auto SubmitInfo = NvFlowDebugInfoQueue.GetSubmitInfo();
 	if (SubmitInfo)
 	{
-		FString gridName;
 		FlowGridSceneProxy->GetOwnerName().ToString(gridName);
 
 		NvFlowGridExportHandle gridVelocityHandle = NvFlowGridExportGetHandle(m_gridExport4Render, m_renderContext, eNvFlowGridTextureChannelVelocity);
@@ -1143,8 +1143,8 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 		NvFlowGridExportLayeredView gridDensityLayeredView;
 		NvFlowGridExportGetLayeredView(gridDensityHandle, &gridDensityLayeredView);
 
-		SubmitInfo->Add(FString::Printf(TEXT("Grid '%s': velocity blocks %d of %d"), *gridName, gridVelocityLayeredView.mapping.layeredNumBlocks, gridVelocityLayeredView.mapping.maxBlocks));
-		SubmitInfo->Add(FString::Printf(TEXT("Grid '%s': density blocks %d of %d"), *gridName, gridDensityLayeredView.mapping.layeredNumBlocks, gridDensityLayeredView.mapping.maxBlocks));
+		SubmitInfo->Add(FString::Printf(TEXT("Grid '%s': velocity blocks = %d of %d"), *gridName, gridVelocityLayeredView.mapping.layeredNumBlocks, gridVelocityLayeredView.mapping.maxBlocks));
+		SubmitInfo->Add(FString::Printf(TEXT("Grid '%s': density blocks  = %d of %d"), *gridName, gridDensityLayeredView.mapping.layeredNumBlocks, gridDensityLayeredView.mapping.maxBlocks));
 	}
 
 	if (Properties.RenderParams.bVolumeShadowEnabled && (m_shadowLightType == LightType_Directional || m_shadowLightType == LightType_Spot))
@@ -1327,6 +1327,14 @@ void NvFlow::Scene::updateGridViewDeferred(IRHICommandContext* RHICmdCtx)
 			NvFlowVolumeShadowUpdate(m_volumeShadow, m_renderContext, m_gridExport4Render, &shadowParams);
 
 			m_gridExport4Render = NvFlowVolumeShadowGetGridExport(m_volumeShadow, m_renderContext);
+
+			if (SubmitInfo)
+			{
+				NvFlowVolumeShadowStats shadowStats;
+				NvFlowVolumeShadowGetStats(m_volumeShadow, &shadowStats);
+
+				SubmitInfo->Add(FString::Printf(TEXT("Grid '%s': shadow blocks active = %d"), *gridName, shadowStats.shadowBlocksActive));
+			}
 		}
 	}
 	else
