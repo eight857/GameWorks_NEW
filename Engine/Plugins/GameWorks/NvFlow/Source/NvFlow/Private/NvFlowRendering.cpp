@@ -526,8 +526,6 @@ void NvFlow::Scene::initDeferred(IRHICommandContext* RHICmdCtx)
 
 	// create local grid desc copy
 	m_gridDesc = FlowGridSceneProxy->FlowGridProperties->GridDesc;
-	m_diffGridCellSize = FlowGridSceneProxy->FlowGridProperties->GridCellSize;
-	m_diffGridLocation = FlowGridSceneProxy->GetLocalToWorld().GetOrigin();
 
 	// set initial location using proxy location
 	FVector FlowOrigin = FlowGridSceneProxy->GetLocalToWorld().GetOrigin() * scaleInv;
@@ -1004,33 +1002,39 @@ void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateP
 
 		// check for grid location or halfSize change
 		{
-			FVector newDiffGridLocation = FlowGridSceneProxy->GetLocalToWorld().GetOrigin();
-			float newDiffGridCellSize = FlowGridSceneProxy->FlowGridProperties->GridCellSize;
+			const FVector FlowOrigin = FlowGridSceneProxy->GetLocalToWorld().GetOrigin() * scaleInv;
+			const NvFlowFloat3 TargetLocation = *(const NvFlowFloat3*)(&FlowOrigin.X);
+			const NvFlowFloat3 TargetHalfSize = FlowGridSceneProxy->FlowGridProperties->GridDesc.halfSize;
 
-			bool changed = (
-				m_diffGridLocation.X != newDiffGridLocation.X ||
-				m_diffGridLocation.Y != newDiffGridLocation.Y ||
-				m_diffGridLocation.Z != newDiffGridLocation.Z ||
-				m_diffGridCellSize != newDiffGridCellSize
-				);
+			const bool bChangedLocation = (
+				TargetLocation.x != m_gridDesc.initialLocation.x ||
+				TargetLocation.y != m_gridDesc.initialLocation.y ||
+				TargetLocation.z != m_gridDesc.initialLocation.z);
 
-			m_diffGridLocation.X = newDiffGridLocation.X;
-			m_diffGridLocation.Y = newDiffGridLocation.Y;
-			m_diffGridLocation.Z = newDiffGridLocation.Z;
-			m_diffGridCellSize = newDiffGridCellSize;
+			const bool bChangedHalfSize = (
+				TargetHalfSize.x != m_gridDesc.halfSize.x ||
+				TargetHalfSize.y != m_gridDesc.halfSize.y ||
+				TargetHalfSize.z != m_gridDesc.halfSize.z);
 
-			if (changed)
+			if (bChangedLocation || bChangedHalfSize)
 			{
-				FVector FlowOrigin = FlowGridSceneProxy->GetLocalToWorld().GetOrigin() * scaleInv;
+				if (bChangedLocation && !bChangedHalfSize)
+				{
+					NvFlowGridSetTargetLocation(m_grid, TargetLocation);
 
-				NvFlowGridResetDesc resetDesc = {};
-				resetDesc.initialLocation = *(NvFlowFloat3*)(&FlowOrigin.X);
-				resetDesc.halfSize = FlowGridSceneProxy->FlowGridProperties->GridDesc.halfSize;
-			
-				NvFlowGridReset(m_grid, &resetDesc);
+					m_gridDesc.initialLocation = TargetLocation;
+				}
+				else
+				{
+					NvFlowGridResetDesc resetDesc = {};
+					resetDesc.initialLocation = TargetLocation;
+					resetDesc.halfSize = TargetHalfSize;
 
-				m_gridDesc.halfSize = resetDesc.halfSize;
-				m_gridDesc.initialLocation = resetDesc.initialLocation;
+					NvFlowGridReset(m_grid, &resetDesc);
+
+					m_gridDesc.initialLocation = TargetLocation;
+					m_gridDesc.halfSize = TargetHalfSize;
+				}
 			}
 		}
 

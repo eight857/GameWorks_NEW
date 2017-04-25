@@ -174,8 +174,6 @@ namespace NvFlow
 		NvFlowGridExport* m_gridExport4Render = nullptr;
 
 		NvFlowGridDesc m_gridDesc;
-		float m_diffGridCellSize = 0.f;
-		FVector m_diffGridLocation = FVector(0.f);
 		NvFlowGridParams m_gridParams;
 		NvFlowVolumeRenderParams m_renderParams;
 
