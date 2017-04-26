@@ -54,7 +54,6 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 
 	bPreviousStateInitialized = false;
 	PreviousTransform = FTransform::Identity;
-	PreviousStateTimeError = 0.0f;
 }
 
 void UFlowEmitterComponent::PostLoad()
