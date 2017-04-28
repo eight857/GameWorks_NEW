@@ -1,5 +1,8 @@
 #include "FlowGridActor.h"
-#include "NvFlowPCH.h"
+
+#include "NvFlowCommon.h"
+#include "FlowGridAsset.h"
+#include "FlowGridComponent.h"
 
 /*=============================================================================
 	FlowGridActor.cpp: AFlowGridActor methods.
@@ -7,6 +10,9 @@
 
 // NvFlow begin
 
+#include "UObject/ConstructorHelpers.h"
+
+#include "Engine/Texture2D.h"
 #include "Components/BillboardComponent.h"
 #include "PhysicsEngine/PhysXSupport.h"
 

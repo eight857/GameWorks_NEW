@@ -2,6 +2,13 @@
 
 // NvFlow begin
 
+#include "Containers/Array.h"
+
+class FRHICommandListImmediate;
+class FRHICommandList;
+class FPrimitiveSceneInfo;
+class FViewInfo;
+
 class FGlobalDistanceFieldParameterData;
 
 struct RendererHooksNvFlow

@@ -1,5 +1,7 @@
 #include "FlowEmitterComponent.h"
-#include "NvFlowPCH.h"
+
+#include "NvFlowCommon.h"
+#include "FlowGridAsset.h"
 
 /*=============================================================================
 	FlowEmitterComponent.cpp: UFlowEmitterComponent methods.

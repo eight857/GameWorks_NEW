@@ -2,8 +2,11 @@
 
 // NvFlow begin
 
-#include "FlowRenderMaterial.generated.h"
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "UObject/Object.h"
 
+#include "FlowRenderMaterial.generated.h"
 
 UENUM()
 enum EFlowRenderPreset

@@ -1,4 +1,7 @@
-#include "NvFlowPCH.h"
+#include "NvFlowCommon.h"
+
+#include "RHI.h"
+#include "NvFlowInterop.h"
 
 #if PLATFORM_WINDOWS
 #include "AllowWindowsPlatformTypes.h"

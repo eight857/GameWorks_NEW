@@ -1,5 +1,7 @@
 #include "ActorFactoryFlowGridActor.h"
-#include "NvFlowEditorPCH.h"
+#include "NvFlowEditorCommon.h"
+
+#include "AssetTypeActions_FlowGridAsset.h"
 
 #define LOCTEXT_NAMESPACE "ActorFactory"
 

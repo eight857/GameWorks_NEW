@@ -3,6 +3,11 @@
 
 // NvFlow begin
 
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "UObject/Object.h"
+#include "Engine/EngineTypes.h"
+
 #include "GridInteractionNvFlow.h"
 #include "FlowRenderMaterial.h"
 #include "FlowGridAsset.generated.h"

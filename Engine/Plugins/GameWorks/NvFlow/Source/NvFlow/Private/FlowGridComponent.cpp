@@ -1,5 +1,11 @@
 #include "FlowGridComponent.h"
-#include "NvFlowPCH.h"
+
+#include "NvFlowCommon.h"
+#include "FlowGridAsset.h"
+#include "FlowGridActor.h"
+#include "FlowEmitterComponent.h"
+#include "FlowMaterial.h"
+#include "FlowRenderMaterial.h"
 
 /*=============================================================================
 	FlowGridComponent.cpp: UFlowGridComponent methods.

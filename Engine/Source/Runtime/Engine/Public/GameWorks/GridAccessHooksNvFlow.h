@@ -2,6 +2,11 @@
 
 // NvFlow begin
 
+#include "RHI.h"
+#include "RHIResources.h"
+
+class FRHICommandListImmediate;
+
 #include "GridInteractionNvFlow.h"
 
 enum { MAX_NVFLOW_GRIDS = 4 };

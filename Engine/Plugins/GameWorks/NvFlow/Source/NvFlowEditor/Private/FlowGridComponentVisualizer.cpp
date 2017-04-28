@@ -1,8 +1,9 @@
 #include "FlowGridComponentVisualizer.h"
-#include "NvFlowEditorPCH.h"
+#include "NvFlowEditorCommon.h"
+
+#include "SceneManagement.h"
 
 // NvFlow begin
-
 
 void FFlowGridComponentVisualizer::DrawVisualization(const UActorComponent* Component, const FSceneView* View, FPrimitiveDrawInterface* PDI)
 {

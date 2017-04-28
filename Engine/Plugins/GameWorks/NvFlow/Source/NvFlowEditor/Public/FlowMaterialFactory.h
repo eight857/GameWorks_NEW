@@ -6,6 +6,10 @@
 
 // NvFlow begin
 
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "Factories/Factory.h"
+
 #include "FlowMaterialFactory.generated.h"
 
 UCLASS(hidecategories=Object)

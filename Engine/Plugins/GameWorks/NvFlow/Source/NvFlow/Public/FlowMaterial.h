@@ -2,6 +2,10 @@
 
 // NvFlow begin
 
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "UObject/Object.h"
+
 #include "FlowMaterial.generated.h"
 
 USTRUCT()

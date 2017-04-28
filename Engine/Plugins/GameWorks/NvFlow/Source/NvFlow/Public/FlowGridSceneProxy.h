@@ -16,6 +16,8 @@ FFlowGridSceneProxy
 #include "UObject/ObjectMacros.h"
 #include "PrimitiveSceneProxy.h"
 
+#include "GameWorks/GridInteractionNvFlow.h"
+
 #define NV_FLOW_SHADER_UTILS 0
 #include "NvFlow.h"
 

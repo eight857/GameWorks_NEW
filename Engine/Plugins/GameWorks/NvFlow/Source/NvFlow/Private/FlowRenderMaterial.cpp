@@ -1,5 +1,7 @@
 #include "FlowRenderMaterial.h"
-#include "NvFlowPCH.h"
+#include "NvFlowCommon.h"
+
+#include "Curves/CurveLinearColor.h"
 
 // NvFlow begin
 

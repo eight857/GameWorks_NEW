@@ -1,4 +1,17 @@
-#include "NvFlowPCH.h"
+#include "NvFlowCommon.h"
+
+#include "RHI.h"
+#include "NvFlowInterop.h"
+
+#include "FlowGridAsset.h"
+#include "FlowGridActor.h"
+#include "FlowGridComponent.h"
+#include "FlowEmitterComponent.h"
+#include "FlowMaterial.h"
+#include "FlowRenderMaterial.h"
+#include "FlowGridSceneProxy.h"
+
+#include "NvFlowModule.h"
 
 // NvFlow begin
 #if WITH_NVFLOW

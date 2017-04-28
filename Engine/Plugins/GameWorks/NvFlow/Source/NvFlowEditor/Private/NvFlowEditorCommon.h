@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Logging/LogMacros.h"
+
 DECLARE_LOG_CATEGORY_EXTERN(LogNvFlowEditor, Verbose, All);
 
 #define NV_FLOW_SHADER_UTILS 0
@@ -13,12 +15,3 @@ DECLARE_LOG_CATEGORY_EXTERN(LogNvFlowEditor, Verbose, All);
 #include "FlowRenderMaterial.h"
 #include "FlowGridComponent.h"
 #include "FlowGridActor.h"
-#include "ActorFactoryFlowGridActor.h"
-#include "FlowGridAssetFactory.h"
-#include "FlowMaterialFactory.h"
-#include "FlowRenderMaterialFactory.h"
-#include "AssetTypeActions_FlowGridAsset.h"
-#include "AssetTypeActions_FlowMaterial.h"
-#include "AssetTypeActions_FlowRenderMaterial.h"
-
-#include "FlowGridComponentVisualizer.h"

@@ -1,5 +1,7 @@
 #include "NvFlowModule.h"
-#include "NvFlowPCH.h"
+
+#include "NvFlowCommon.h"
+#include "FlowGridAsset.h"
 
 #include "Engine/Engine.h"
 #include "Modules/ModuleManager.h"

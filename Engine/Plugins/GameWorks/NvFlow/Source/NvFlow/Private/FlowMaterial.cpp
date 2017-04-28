@@ -1,5 +1,7 @@
 #include "FlowMaterial.h"
-#include "NvFlowPCH.h"
+
+#include "NvFlowCommon.h"
+#include "FlowRenderMaterial.h"
 
 // NvFlow begin
 

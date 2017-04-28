@@ -1,5 +1,11 @@
 #include "NvFlowEditorModule.h"
-#include "NvFlowEditorPCH.h"
+#include "NvFlowEditorCommon.h"
+
+#include "FlowGridComponentVisualizer.h"
+#include "AssetTypeActions_FlowGridAsset.h"
+#include "AssetTypeActions_FlowMaterial.h"
+#include "AssetTypeActions_FlowRenderMaterial.h"
+
 #include "PropertyEditorModule.h"
 
 #include "ComponentVisualizers.h"

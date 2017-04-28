@@ -1,11 +1,11 @@
 #include "FlowGridAsset.h"
-#include "NvFlowPCH.h"
+#include "NvFlowCommon.h"
 
 // NvFlow begin
 
 #include "PhysicsEngine/PhysXSupport.h"
 #include "Curves/CurveLinearColor.h"
-
+#include "Engine/CollisionProfile.h"
 
 bool UFlowGridAsset::sGlobalDebugDraw = false;
 uint32 UFlowGridAsset::sGlobalRenderChannel = eNvFlowGridTextureChannelDensity;
@@ -17,7 +17,6 @@ uint32 UFlowGridAsset::sGlobalAsyncCompute = 0;
 bool UFlowGridAsset::sGlobalMultiGPUResetRequest = false;
 uint32 UFlowGridAsset::sGlobalDepth = 1;
 uint32 UFlowGridAsset::sGlobalDepthDebugDraw = 0;
-
 
 static const float ShadowMinResidentScale_DEPRECATED_Default = 0.25f * (1.f / 64.f);
 static const float ShadowMaxResidentScale_DEPRECATED_Default = 4.f * 0.25f * (1.f / 64.f);
