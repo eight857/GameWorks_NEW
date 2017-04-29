@@ -2763,7 +2763,11 @@ bool FDeferredShadingSceneRenderer::ShouldPrepareForDistanceFieldAO() const
 			|| (GDistanceFieldAOApplyToStaticIndirect && ViewFamily.EngineShowFlags.DistanceFieldAO));
 }
 
-bool FDeferredShadingSceneRenderer::ShouldPrepareDistanceFieldScene() const
+bool FDeferredShadingSceneRenderer::ShouldPrepareDistanceFieldScene(
+	// NvFlow begin
+	bool bCustomShouldPrepare
+	// NvFlow end
+) const
 {
 	if (!ensure(Scene != nullptr))
 	{
@@ -2775,7 +2779,11 @@ bool FDeferredShadingSceneRenderer::ShouldPrepareDistanceFieldScene() const
 	bool bShouldPrepareForDFInsetIndirectShadow = ShouldPrepareForDFInsetIndirectShadow();
 
 	// Prepare the distance field scene (object buffers and distance field atlas) if any feature needs it
-	return bShouldPrepareGlobalDistanceField || bShouldPrepareForAO || ShouldPrepareForDistanceFieldShadows() || bShouldPrepareForDFInsetIndirectShadow;
+	return bShouldPrepareGlobalDistanceField || bShouldPrepareForAO || ShouldPrepareForDistanceFieldShadows() || bShouldPrepareForDFInsetIndirectShadow
+		// NvFlow begin
+		|| bCustomShouldPrepare
+		// NvFlow end
+	;
 }
 
 bool FDeferredShadingSceneRenderer::ShouldPrepareGlobalDistanceField() const

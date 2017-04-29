@@ -97,14 +97,18 @@ void FD3D12CommandContext::ResolveTextureUsingShader(
 			CommandListHandle.UpdateResidency(DestTextureDSV->GetResource());
 		}
 
-		RHICmdList.SetDepthStencilState(TStaticDepthStencilState<true, CF_Always>::GetRHI(), 0);
-		RHICmdList.Flush(); // always call flush when using a command list in RHI implementations before doing anything else. This is super hazardous.
+		// NvFlow begin: RHICmdList.SetDepthStencilState breaks on checks for Depth/Stencil access, because CurrentDSVAccessType is not valid (from previous RHICmdList.SetRenderTargets)
+		//RHICmdList.SetDepthStencilState(TStaticDepthStencilState<true, CF_Always>::GetRHI(), 0);
+		//RHICmdList.Flush(); // always call flush when using a command list in RHI implementations before doing anything else. This is super hazardous.
+
+		FD3D12DepthStencilState* DepthStencilState = FD3D12DynamicRHI::ResourceCast(TStaticDepthStencilState<true, CF_Always>::GetRHI());
+		StateCache.SetDepthStencilState(&DepthStencilState->Desc, 0);
+		// NvFlow end
 
 		// Write to the dest texture as a depth-stencil target.
 		FD3D12RenderTargetView* NullRTV = NULL;
 
 		StateCache.SetRenderTargets(1, &NullRTV, DestTextureDSV);
-
 	}
 	else
 	{
@@ -126,8 +130,13 @@ void FD3D12CommandContext::ResolveTextureUsingShader(
 			CommandListHandle.UpdateResidency(DestTextureRTV->GetResource());
 		}
 
-		RHICmdList.SetDepthStencilState(TStaticDepthStencilState<false, CF_Always>::GetRHI(), 0);
-		RHICmdList.Flush(); // always call flush when using a command list in RHI implementations before doing anything else. This is super hazardous.
+		// NvFlow begin: RHICmdList.SetDepthStencilState breaks on checks for Depth/Stencil access, because CurrentDSVAccessType is not valid (from previous RHICmdList.SetRenderTargets)
+		//RHICmdList.SetDepthStencilState(TStaticDepthStencilState<false, CF_Always>::GetRHI(), 0);
+		//RHICmdList.Flush(); // always call flush when using a command list in RHI implementations before doing anything else. This is super hazardous.
+
+		FD3D12DepthStencilState* DepthStencilState = FD3D12DynamicRHI::ResourceCast(TStaticDepthStencilState<false, CF_Always>::GetRHI());
+		StateCache.SetDepthStencilState(&DepthStencilState->Desc, 0);
+		// NvFlow end
 
 		// Write to the dest surface as a render target.
 		StateCache.SetRenderTargets(1, &DestTextureRTV, NULL);

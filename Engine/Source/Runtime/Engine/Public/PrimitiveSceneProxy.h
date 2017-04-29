@@ -16,6 +16,10 @@
 #include "SceneView.h"
 #include "PrimitiveUniformShaderParameters.h"
 
+// NvFlow begin
+#include "GameWorks/PrimitiveSceneProxyNvFlow.h"
+// NvFlow end
+
 class FLightSceneInfo;
 class FLightSceneProxy;
 class FPrimitiveDrawInterface;
@@ -601,6 +605,10 @@ public:
 	* Get the lightmap resolution for this primitive. Used in VMI_LightmapDensity.
 	*/
 	virtual int32 GetLightMapResolution() const { return 0; }
+
+	// NvFlow begin
+	FPrimitiveSceneProxyNvFlow FlowData;
+	// NvFlow end
 
 protected:
 
