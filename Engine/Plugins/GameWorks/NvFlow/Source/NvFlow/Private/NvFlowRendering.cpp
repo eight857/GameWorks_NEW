@@ -745,7 +745,7 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 
 	for (auto It = Properties.Materials.CreateConstIterator(); It; ++It)
 	{
-		updateMaterial(It->Key, It->Value);
+		updateMaterial(It->Key, Properties.DefaultMaterialKey, Properties.bParticleModeEnabled, It->Value);
 	}
 
 	for (auto It = Properties.NewDistanceFieldList.CreateConstIterator(); It; ++It)
@@ -833,14 +833,22 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 	}
 }
 
-const NvFlow::Scene::MaterialData& NvFlow::Scene::updateMaterial(FlowMaterialKeyType materialKey, const FFlowMaterialParams& materialParams)
+const NvFlow::Scene::MaterialData& NvFlow::Scene::updateMaterial(FlowMaterialKeyType materialKey, FlowMaterialKeyType defaultKey, bool particleMode, const FFlowMaterialParams& materialParams)
 {
 	MaterialData* materialData = m_materialMap.Find(materialKey);
 	if (materialData == nullptr)
 	{
 		materialData = &m_materialMap.Add(materialKey);
 
-		materialData->gridMaterialHandle = NvFlowGridCreateMaterial(m_grid, &materialParams.GridParams);
+		if (particleMode && materialKey == defaultKey)
+		{
+			materialData->gridMaterialHandle = NvFlowGridGetDefaultMaterial(m_grid);
+			NvFlowGridSetMaterialParams(m_grid, materialData->gridMaterialHandle, &materialParams.GridParams);
+		}
+		else
+		{
+			materialData->gridMaterialHandle = NvFlowGridCreateMaterial(m_grid, &materialParams.GridParams);
+		}
 		materialData->emitMaterialIndex = m_emitMaterialsArray.Num();
 
 		m_emitMaterialsArray.Add(materialData->gridMaterialHandle);

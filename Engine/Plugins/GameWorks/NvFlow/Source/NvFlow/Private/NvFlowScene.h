@@ -206,7 +206,7 @@ namespace NvFlow
 		TMap<FlowMaterialKeyType, MaterialData> m_materialMap;
 		TArray<NvFlowGridMaterialHandle> m_emitMaterialsArray;
 
-		const MaterialData& updateMaterial(FlowMaterialKeyType materialKey, const FFlowMaterialParams& materialParams);
+		const MaterialData& updateMaterial(FlowMaterialKeyType materialKey, FlowMaterialKeyType defaultKey, bool particleMode, const FFlowMaterialParams& materialParams);
 
 		// deferred mechanism for proper RHI command list support
 		float m_updateSubstep_dt = 0.f;
