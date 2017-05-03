@@ -1216,6 +1216,7 @@ void UFlowGridComponent::OnUpdateTransform(EUpdateTransformFlags UpdateTransform
 	// We are handling the physics move below, so don't handle it at higher levels
 	Super::OnUpdateTransform(EUpdateTransformFlags::SkipPhysicsUpdate, Teleport);
 
+	/* Disabled, no longer needed with grid translation
 	// Reset simulation - will get turned on with Tick again
 	FlowGridProperties->bActive = false;
 
@@ -1223,6 +1224,7 @@ void UFlowGridComponent::OnUpdateTransform(EUpdateTransformFlags UpdateTransform
 	FlowGridProperties->Version = VersionCounter;
 
 	MarkRenderDynamicDataDirty();
+	*/
 }
 
 void UFlowGridComponent::SendRenderDynamicData_Concurrent()
