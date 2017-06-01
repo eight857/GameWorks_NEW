@@ -865,6 +865,7 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 
 	// @third party code - BEGIN HairWorks
 	// Prepare hair rendering
+	if (!IsForwardShadingEnabled(FeatureLevel))
 	{
 		// Do hair simulation
 		{

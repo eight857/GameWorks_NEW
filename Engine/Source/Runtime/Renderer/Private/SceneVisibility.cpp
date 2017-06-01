@@ -2943,7 +2943,8 @@ void FDeferredShadingSceneRenderer::InitViewsPossiblyAfterPrepass(FRHICommandLis
 
 	// @third party code - BEGIN HairWorks
 	// Setup views for hair
-	HairWorksRenderer::SetupViews(Views);
+	if (!IsForwardShadingEnabled(FeatureLevel))
+		HairWorksRenderer::SetupViews(Views);
 	// @third party code - END HairWorks
 
 	UpdateTranslucencyTimersAndSeparateTranslucencyBufferSize(RHICmdList);
