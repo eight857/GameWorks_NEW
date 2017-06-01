@@ -975,8 +975,6 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 
 				GRendererNvFlowHooks->NvFlowDoPreComposite(RHICmdList, View);
 			}
-
-			SceneContext.FinishRenderingSceneColor(RHICmdList);
 		}
 	}
 	// NvFlow end

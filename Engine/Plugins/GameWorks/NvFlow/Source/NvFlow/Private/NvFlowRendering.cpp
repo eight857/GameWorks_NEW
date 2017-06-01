@@ -777,8 +777,11 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 			{
 				for (NvFlowUint x = 0; x < mappedShapeData.dim.x; ++x)
 				{
-					FFloat16 valueF16 = DistanceFieldParams.DistanceFieldVolume[x + mappedShapeData.dim.x * (y + mappedShapeData.dim.y * z)];
-					float value = valueF16.GetFloat();
+					uint32 idx = x + mappedShapeData.dim.x * (y + mappedShapeData.dim.y * z);
+					FFloat16 val16f;
+					val16f.Encoded = DistanceFieldParams.CompressedDistanceFieldVolume[2 * idx + 0];
+					val16f.Encoded |= ((DistanceFieldParams.CompressedDistanceFieldVolume[2 * idx + 1]) << 8u);
+					float value = val16f.GetFloat();
 
 					mappedShapeData.data[x + mappedShapeData.rowPitch * y + mappedShapeData.depthPitch * z] = value;
 				}

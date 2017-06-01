@@ -80,7 +80,7 @@ struct FFlowDistanceFieldParams
 	const class UStaticMesh* StaticMesh;
 
 	FIntVector Size;
-	TArray<FFloat16> DistanceFieldVolume;
+	TArray<uint8> CompressedDistanceFieldVolume;
 };
 
 #define LOG_FLOW_GRID_PROPERTIES 0

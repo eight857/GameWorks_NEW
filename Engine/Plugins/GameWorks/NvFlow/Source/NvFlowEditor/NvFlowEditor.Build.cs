@@ -2,7 +2,7 @@ namespace UnrealBuildTool.Rules
 {
 	public class NvFlowEditor : ModuleRules
 	{
-		public NvFlowEditor(TargetInfo Target)
+		public NvFlowEditor(ReadOnlyTargetRules Target) : base(Target)
 		{
 			PrivateIncludePaths.AddRange(
 				new string[] {
