@@ -437,7 +437,11 @@ private:
 		bool bCustomShouldPrepare = false
 // NvFlow end
 	) const;
-	bool ShouldPrepareGlobalDistanceField() const;
+	bool ShouldPrepareGlobalDistanceField(
+// NvFlow begin
+		bool bCustomShouldPrepare = false
+// NvFlow end
+	) const;
 
 	void UpdateGlobalDistanceFieldObjectBuffers(FRHICommandListImmediate& RHICmdList);
 

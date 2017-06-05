@@ -621,7 +621,11 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		{
 			Views[ViewIndex].HeightfieldLightingViewInfo.SetupVisibleHeightfields(Views[ViewIndex], RHICmdList);
 
-			if (ShouldPrepareGlobalDistanceField())
+			if (ShouldPrepareGlobalDistanceField(
+				// NvFlow begin
+				GRendererNvFlowHooks && GRendererNvFlowHooks->NvFlowUsesGlobalDistanceField()
+				// NvFlow end
+			))
 			{
 				// Use the skylight's max distance if there is one
 				const float OcclusionMaxDistance = Scene->SkyLight && !Scene->SkyLight->bWantsStaticShadowing ? Scene->SkyLight->OcclusionMaxDistance : Scene->DefaultMaxDistanceFieldOcclusionDistance;
