@@ -27,6 +27,9 @@
 #include "DistanceFieldAmbientOcclusion.h"
 #include "PipelineStateCache.h"
 #include "ClearQuad.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 int32 GDistanceFieldShadowing = 1;
 FAutoConsoleVariableRef CVarDistanceFieldShadowing(
@@ -928,6 +931,17 @@ void FProjectedShadowInfo::RenderRayTracedDistanceFieldProjection(FRHICommandLis
 
 		FIntRect ScissorRect;
 
+		// @third party code - BEGIN HairWorks
+		bool bHairPass = false;
+
+RenderForHair:
+		if (bHairPass)
+		{
+			FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+			FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+		}
+		// @third party code - END HairWorks
+
 		if (!LightSceneInfo->Proxy->GetScissorRect(ScissorRect, View))
 		{
 			ScissorRect = View.ViewRect;
@@ -989,6 +1003,23 @@ void FProjectedShadowInfo::RenderRayTracedDistanceFieldProjection(FRHICommandLis
 			{
 				DisableDepthBoundsTest(RHICmdList);
 			}
+
+// @third party code - BEGIN HairWorks
+			if(bHairPass)
+			{
+				FSceneRenderTargets::Get(RHICmdList).SceneDepthZ.Swap(HairWorksRenderer::HairRenderTargets->HairDepthZForShadow);
+				FSceneRenderTargets::Get(RHICmdList).GetLightAttenuation().Swap(HairWorksRenderer::HairRenderTargets->LightAttenuation);
+				FSceneRenderTargets::Get(RHICmdList).BeginRenderingLightAttenuation(RHICmdList);
+				RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
+			}
+
+			// Render for hair
+			if(!bHairPass && ShouldRenderForHair(View))
+			{
+				bHairPass = true;
+				goto RenderForHair;
+			}
+// @third party code - END HairWorks
 		}
 
 		RayTracedShadowsRT = NULL;
