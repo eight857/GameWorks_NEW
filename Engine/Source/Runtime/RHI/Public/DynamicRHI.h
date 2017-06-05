@@ -17,6 +17,9 @@ DynamicRHI.h: Dynamically bound Render Hardware Interface definitions.
 #include "Math/ScaleMatrix.h"
 #include "Math/Float16Color.h"
 #include "Modules/ModuleInterface.h"
+// NvFlow begin
+#include "GameWorks/RHINvFlow.h"
+// NvFlow end
 
 class FBlendStateInitializerRHI;
 class FGraphicsPipelineStateInitializer;
@@ -554,7 +557,27 @@ public:
 
 	virtual void RHIPopEvent() = 0;
 
-	virtual void RHIUpdateTextureReference(FTextureReferenceRHIParamRef TextureRef, FTextureRHIParamRef NewTexture) = 0;	
+	virtual void RHIUpdateTextureReference(FTextureReferenceRHIParamRef TextureRef, FTextureRHIParamRef NewTexture) = 0;
+
+	// NvFlow begin
+	virtual void NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc) {}
+	virtual void NvFlowGetDepthStencilViewDesc(FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, FRHINvFlowDepthStencilViewDesc* desc) {}
+	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) {}
+	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) { return FShaderResourceViewRHIRef(); }
+	virtual FRHINvFlowResourceRW* NvFlowCreateResourceRW(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV, FUnorderedAccessViewRHIRef* pRHIRefUAV) { return nullptr; }
+	virtual void NvFlowReleaseResourceRW(FRHINvFlowResourceRW*) {}
+	virtual void NvFlowReserveDescriptors(FRHINvFlowDescriptorReserveHandle* dstHandle, uint32 numDescriptors, uint64 lastFenceCompleted, uint64 nextFenceValue) {}
+	
+	virtual void NvFlowRestoreState() {}
+	FRHINvFlowCleanup NvFlowCleanup;
+	virtual void NvFlowWork(void(*workFunc)(void*,SIZE_T,IRHICommandContext*), void* paramData, SIZE_T numBytes)
+	{
+		if (workFunc)
+		{
+			workFunc(paramData, numBytes, this);
+		}
+	}
+	// NvFlow end
 };
 
 /** The interface which is implemented by the dynamically bound RHI. */

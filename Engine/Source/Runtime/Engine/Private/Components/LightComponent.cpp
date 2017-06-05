@@ -225,6 +225,10 @@ FLightSceneProxy::FLightSceneProxy(const ULightComponent* InLightComponent)
 	, StatId(InLightComponent->GetStatID(true))
 	, FarShadowDistance(0)
 	, FarShadowCascadeCount(0)
+// NvFlow begin
+	, bFlowGridShadowEnabled(InLightComponent->bFlowGridShadowEnabled)
+	, FlowGridShadowChannel(InLightComponent->FlowGridShadowChannel)
+// NvFlow end
 {
 	const FLightComponentMapBuildData* MapBuildData = InLightComponent->GetLightComponentMapBuildData();
 	
@@ -358,6 +362,11 @@ ULightComponent::ULightComponent(const FObjectInitializer& ObjectInitializer)
 	MaxDrawDistance = 0.0f;
 	MaxDistanceFadeRange = 0.0f;
 	bAddedToSceneVisible = false;
+
+	// NvFlow begin
+	bFlowGridShadowEnabled = false;
+	FlowGridShadowChannel = 0;
+	// NvFlow end
 
 	MaxDrawDistance = 0.0f;
 	MaxDistanceFadeRange = 0.0f;

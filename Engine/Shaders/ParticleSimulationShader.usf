@@ -6,6 +6,12 @@
 
 #include "Common.usf"
 
+// NvFlow begin
+#if NV_FLOW_WITH_GPU_PARTICLES
+#include "NvFlowCommon.usf"
+#endif
+// NvFlow end
+
 #if DISTANCE_FIELD_COLLISION
 	#include "GlobalDistanceFieldShared.usf"
 #endif
@@ -183,7 +189,13 @@ float3 ComputeOrbitVelocity(float Time, float RandomOrbit)
  * @param Position - Position of the particle.
  * @param PerParticleScale - Amount by which to scale the influence on this particle.
  */
-void EvaluateVectorFields(out float3 OutForce, out float4 OutVelocity, float3 Position, float PerParticleScale)
+void EvaluateVectorFields(out float3 OutForce, out float4 OutVelocity, float3 Position, float PerParticleScale
+	// NvFlow begin
+#if NV_FLOW_WITH_GPU_PARTICLES
+	, float3 Velocity
+#endif
+	// NvFlow end
+)
 {
 	float3 TotalForce = 0;
 	float3 WeightedVelocity = 0;
@@ -215,6 +227,12 @@ void EvaluateVectorFields(out float3 OutForce, out float4 OutVelocity, float3 Po
 		TotalWeight += (DistanceWeight * Tightness);
 		FinalWeight = max(FinalWeight, DistanceWeight * Tightness);
 	}
+
+	// NvFlow begin
+#if NV_FLOW_WITH_GPU_PARTICLES
+	NvFlowEvaluateGrids(Position, Velocity, TotalForce, WeightedVelocity, TotalWeight, FinalWeight);
+#endif
+	// NvFlow end
 
 	// Forces are additive.
 	OutForce = TotalForce;
@@ -558,7 +576,13 @@ void PixelMain(
 		// Evalute vector fields.
 		float3 FieldForce = 0;
 		float4 FieldVelocity = 0;
-		EvaluateVectorFields(FieldForce, FieldVelocity, Position.xyz, PerParticleVectorFieldScale);
+		EvaluateVectorFields(FieldForce, FieldVelocity, Position.xyz, PerParticleVectorFieldScale
+			// NvFlow begin
+#if NV_FLOW_WITH_GPU_PARTICLES
+			, Velocity.xyz
+#endif
+			// NvFlow end
+		);
 
 		// Add in force from vector fields.
 		Force += FieldForce;
