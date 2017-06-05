@@ -936,7 +936,7 @@ void FDeferredShadingSceneRenderer::RenderLight(FRHICommandList& RHICmdList, con
 	// @third party code - BEGIN HairWorks
 	// Set blend state of second render target for hair
 	if(HairWorksRenderer::ViewsHasHair(Views))
-		RHICmdList.SetBlendState(TStaticBlendState<CW_RGBA, BO_Add, BF_One, BF_One, BO_Add, BF_One, BF_One, CW_RGBA, BO_Add, BF_One, BF_One, BO_Add, BF_One, BF_One>::GetRHI());
+		GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGBA, BO_Add, BF_One, BF_One, BO_Add, BF_One, BF_One, CW_RGBA, BO_Add, BF_One, BF_One, BO_Add, BF_One, BF_One>::GetRHI();
 	// @third party code - END HairWorks
 
 	bool bStencilDirty = false;
@@ -1019,8 +1019,8 @@ RenderForHair:
 
 			// @third party code - BEGIN HairWorks
 			// Depth buffer is not for hair so we disable depth test
-			if(bHairPass)
-				RHICmdList.SetDepthStencilState(TStaticDepthStencilState<false, CF_Always>::GetRHI());
+			if (bHairPass)
+				GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 			// @third party code - END HairWorks
 
 			if (bRenderOverlap)

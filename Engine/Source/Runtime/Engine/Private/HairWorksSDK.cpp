@@ -1,5 +1,10 @@
 // @third party code - BEGIN HairWorks
 #include "HairWorksSDK.h"
+#include "EngineLogs.h"
+#include "Misc/Paths.h"
+#include "HAL/IConsoleManager.h"
+#include "Engine/Engine.h"
+#include "CanvasTypes.h"
 
 #include "AllowWindowsPlatformTypes.h"
 #include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>

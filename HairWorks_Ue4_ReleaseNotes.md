@@ -1,5 +1,27 @@
-﻿HairWorks Preview Release 3
+﻿Artist Workflow
 =============
+HairWorks assets are imported directly into the content browser. All the attributes of a HairWorks asset are now directly editable on the asset’s Details panel. The details panel is set up to be consistent with the HairWorks Viewer’s UI as close as possible.
+
+To use a HairWorks asset on a character, it must be added as a BluePrint component.
+
+* http://docs.nvidia.com/gameworks/content/artisttools/hairworks/HairWorks_Tutorials.html
+
+Known Issues
+=============
+* Indirect Lighting may not light Hair correctly on occluded side of character.
+* HairWorks visualizers do work in play mode.
+* HairWorks shadow maps are generally crisper when compared to other objects in scene.
+* Duplicated property categories in HairWorks assets and components. 
+* Needs to read data back from GPU buffer to CPU for dynamic pin, so there would be potential performance issue. 
+* Assets of old version HairWorks, such as 1.0, would not be loaded, due to HairWorks SDK change. 
+* Support for forword rendering mode is not added yet. 
+
+Changes
+=============
+## 7 Jun 2017
+* Upgraded to UE4.16.1
+
+## Legacy
 New:
 * Upgraded to HairWorks 1.3.
 * Upgraded to UE4.15
@@ -32,21 +54,3 @@ Fix:
 * Fixed hair shadow bug on Pascal GPU.
 * Some refactoring of C++ and shader codes.
 * Fixed hair skinning problem with Sequencer. 
-
-Artist Workflow
-=============
-HairWorks assets are imported directly into the content browser. All the attributes of a HairWorks asset are now directly editable on the asset’s Details panel. The details panel is set up to be consistent with the HairWorks Viewer’s UI as close as possible.
-
-To use a HairWorks asset on a character, it must be added as a BluePrint component.
-
-* http://docs.nvidia.com/gameworks/content/artisttools/hairworks/HairWorks_Tutorials.html
-
-Known Issues
-=============
-* Indirect Lighting may not light Hair correctly on occluded side of character.
-* HairWorks visualizers do work in play mode.
-* HairWorks shadow maps are generally crisper when compared to other objects in scene.
-* Duplicated property categories in HairWorks assets and components. 
-* Needs to read data back from GPU buffer to CPU for dynamic pin, so there would be potential performance issue. 
-* Assets of old version HairWorks, such as 1.0, would not be loaded, due to HairWorks SDK change. 
-* Support for forword rendering mode is not added yet. 

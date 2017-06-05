@@ -1,5 +1,6 @@
 // @third party code - BEGIN HairWorks
 #include "HairWorksRenderer.h"
+#include "PipelineStateCache.h"
 
 #include "HairWorksSDK.h"
 
@@ -550,24 +551,29 @@ namespace HairWorksRenderer
 	void DrawFullScreen(FRHICommandList& RHICmdList, Funtion SetShaderParameters, bool bBlend = false, bool bDepth = false)
 	{
 		// Set render states
-		RHICmdList.SetRasterizerState(GetStaticRasterizerState<false>(FM_Solid, CM_None));
+		FGraphicsPipelineStateInitializer GraphicsPSOInit;
+
+		GraphicsPSOInit.RasterizerState = GetStaticRasterizerState<false>(FM_Solid, CM_None);
 
 		if(bDepth)
-			RHICmdList.SetDepthStencilState(TStaticDepthStencilState<true, CF_Always>::GetRHI());
+			GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<true, CF_Always>::GetRHI();
 		else
-			RHICmdList.SetDepthStencilState(TStaticDepthStencilState<false, CF_Always>::GetRHI());
+			GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 
 		if(bBlend)
-			RHICmdList.SetBlendState(TStaticBlendState<CW_RGBA, BO_Add, BF_SourceAlpha, BF_InverseSourceAlpha>::GetRHI());
+			GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGBA, BO_Add, BF_SourceAlpha, BF_InverseSourceAlpha>::GetRHI();
 		else
-			RHICmdList.SetBlendState(TStaticBlendState<>::GetRHI());
+			GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
 
 		// Set shader
 		TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 		TShaderMapRef<FPixelShader> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 
-		static FGlobalBoundShaderState BoundShaderState;
-		SetGlobalBoundShaderState(RHICmdList, ERHIFeatureLevel::SM5, BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
+		GraphicsPSOInit.BoundShaderState.VertexShaderRHI = VertexShader->GetVertexShader();
+		GraphicsPSOInit.BoundShaderState.PixelShaderRHI = PixelShader->GetPixelShader();
+		GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI;
+
+		SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, EApplyRendertargetOption::ForceApply);
 
 		// Set shader parameters
 		SetShaderParameters(**PixelShader);
@@ -814,7 +820,7 @@ namespace HairWorksRenderer
 			RenderTargetViews,
 			FRHIDepthRenderTargetView(
 				HairRenderTargets->HairDepthZ->GetRenderTargetItem().TargetableTexture,
-				ERenderTargetLoadAction::ENoAction,
+				ERenderTargetLoadAction::EClear,
 				ERenderTargetStoreAction::ENoAction
 			)
 		);
@@ -828,10 +834,6 @@ namespace HairWorksRenderer
 			false,
 			true
 			);
-
-		// Render states
-		RHICmdList.SetBlendState(TStaticBlendState<>::GetRHI());
-		auto DepthStencilState = TStaticDepthStencilState<true, CF_GreaterEqual, true, CF_Always, SO_Keep, SO_Keep, SO_Replace, true, CF_Always, SO_Keep, SO_Keep, SO_Replace>::GetRHI();
 
 		// Draw hairs
 		FHairInstanceDataShaderUniform HairShaderUniformStruct;
@@ -899,9 +901,6 @@ namespace HairWorksRenderer
 					NewStencilValue = (NewStencilValue + 1) % HairInstanceMaterialArraySize;
 				}
 
-				// Set stencil state
-				RHICmdList.SetDepthStencilState(DepthStencilState, HairSceneProxy.HairIdInStencil);
-
 				// Setup hair instance data uniform
 				HairShaderUniformStruct.Spec0_SpecPower0_Spec1_SpecPower1[HairSceneProxy.HairIdInStencil] = FVector4(
 					HairDescriptor.m_specularPrimary,
@@ -924,16 +923,17 @@ namespace HairWorksRenderer
 				TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 				TShaderMapRef<FHairWorksBasePassPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 
-				static FGlobalBoundShaderState BoundShaderState;
+				FGraphicsPipelineStateInitializer GraphicsPSOInit;
+				GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<true, CF_GreaterEqual, true, CF_Always, SO_Keep, SO_Keep, SO_Replace, true, CF_Always, SO_Keep, SO_Keep, SO_Replace>::GetRHI();;
+				GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
+				GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
+				GraphicsPSOInit.BoundShaderState.VertexShaderRHI = VertexShader->GetVertexShader();
+				GraphicsPSOInit.BoundShaderState.PixelShaderRHI = PixelShader->GetPixelShader();
+				GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GSimpleElementVertexDeclaration.VertexDeclarationRHI;
 
-				SetGlobalBoundShaderState(
-					RHICmdList,
-					ERHIFeatureLevel::SM5,
-					BoundShaderState,
-					GSimpleElementVertexDeclaration.VertexDeclarationRHI,
-					*VertexShader,
-					*PixelShader
-					);
+				SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, EApplyRendertargetOption::ForceApply);
+
+				RHICmdList.SetStencilRef(HairSceneProxy.HairIdInStencil);
 
 				// Setup shader constants
 				FUniformBufferRHIParamRef PrecomputedLightingBuffer = GEmptyPrecomputedLightingUniformBuffer.GetUniformBufferRHI();
@@ -1069,28 +1069,26 @@ namespace HairWorksRenderer
 		// Render hairs
 		SCOPED_DRAW_EVENT(RHICmdList, RenderHairVisualization);
 
-		// Setup shader for colorize
+		// Setup render state for colorize
 		TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 		TShaderMapRef<FHairWorksColorizePs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 
-		static FGlobalBoundShaderState BoundShaderState;
+		FGraphicsPipelineStateInitializer GraphicsPSOInit;
+		FBoundShaderStateInput ShaderState;
+		ShaderState.VertexDeclarationRHI = GSimpleElementVertexDeclaration.VertexDeclarationRHI;
+		ShaderState.VertexShaderRHI = VertexShader->GetVertexShader();
+		ShaderState.PixelShaderRHI = PixelShader->GetPixelShader();
+		GraphicsPSOInit.BoundShaderState = ShaderState;
+		GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<>::GetRHI();
+		GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
+		GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
 
-		SetGlobalBoundShaderState(
-			RHICmdList,
-			ERHIFeatureLevel::SM5,
-			BoundShaderState,
-			GSimpleElementVertexDeclaration.VertexDeclarationRHI,
-			*VertexShader,
-			*PixelShader
-			);
-
-		// Setup render state
-		RHICmdList.SetDepthStencilState(TStaticDepthStencilState<>::GetRHI());
+		SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, EApplyRendertargetOption::ForceApply);
 
 		// Setup camera
 		SetProjViewInfo(RHICmdList, View);
 
-		// Render visualization. This should go first to get LOD information ready for colorizaton. 
+		// Render visualization. This should go first to get LOD information ready for colorization. 
 		for(auto& PrimitiveInfo : View.VisibleHairs)
 		{
 			// Draw hair
@@ -1147,20 +1145,21 @@ namespace HairWorksRenderer
 				// Prepare
 				HairWorks::GetSDK()->preRenderInstance(HairSceneProxy.GetHairInstanceId(), 1);
 
-				// Setup shader
+				// Setup render states
 				TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 				TShaderMapRef<FHairWorksHitProxyPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 
-				static FGlobalBoundShaderState BoundShaderState;
+				FGraphicsPipelineStateInitializer GraphicsPSOInit;
+				FBoundShaderStateInput ShaderState;
+				ShaderState.VertexDeclarationRHI = GSimpleElementVertexDeclaration.VertexDeclarationRHI;
+				ShaderState.VertexShaderRHI = VertexShader->GetVertexShader();
+				ShaderState.PixelShaderRHI = PixelShader->GetPixelShader();
+				GraphicsPSOInit.BoundShaderState = ShaderState;
+				GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<>::GetRHI();
+				GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
+				GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
 
-				SetGlobalBoundShaderState(
-					RHICmdList,
-					ERHIFeatureLevel::SM5,
-					BoundShaderState,
-					GSimpleElementVertexDeclaration.VertexDeclarationRHI,
-					*VertexShader,
-					*PixelShader
-					);
+				SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, EApplyRendertargetOption::ForceApply);
 
 				// Setup shader constants
 				PixelShader->SetParameters(RHICmdList, PrimitiveInfo->DefaultDynamicHitProxyId, View);
@@ -1173,15 +1172,24 @@ namespace HairWorksRenderer
 
 	void RenderCustomStencil(FRHICommandList & RHICmdList, const FViewInfo & View)
 	{
-		// Setup shaders
+		// Setup render states
 		if(HairRenderTargets->HairDepthZ == nullptr)
 			return;
 
 		TShaderMapRef<FHairWorksSphereVs> VertexShader(View.ShaderMap);
 		TShaderMapRef<FHairWorksCopyStencilPs> PixelShader(View.ShaderMap);
 
-		static FGlobalBoundShaderState State;
-		SetGlobalBoundShaderState(RHICmdList, ERHIFeatureLevel::SM5, State, GetVertexDeclarationFVector3(), *VertexShader, *PixelShader);
+		FGraphicsPipelineStateInitializer GraphicsPSOInit;
+		FBoundShaderStateInput ShaderState;
+		ShaderState.VertexDeclarationRHI = GetVertexDeclarationFVector3();
+		ShaderState.VertexShaderRHI = VertexShader->GetVertexShader();
+		ShaderState.PixelShaderRHI = PixelShader->GetPixelShader();
+		GraphicsPSOInit.BoundShaderState = ShaderState;
+		GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_DepthNearOrEqual, true, CF_Always, SO_Keep, SO_Keep, SO_Replace>::GetRHI();
+		GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
+		GraphicsPSOInit.RasterizerState = TStaticRasterizerState<FM_Solid, CM_CCW>::GetRHI();
+
+		SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, EApplyRendertargetOption::ForceApply);
 
 		// Shader parameters
 		VertexShader->SetParameters<FViewUniformShaderParameters>(RHICmdList, VertexShader->GetVertexShader(), View.ViewUniformBuffer);
@@ -1189,12 +1197,6 @@ namespace HairWorksRenderer
 		PixelShader->SetParameters<FViewUniformShaderParameters>(RHICmdList, PixelShader->GetPixelShader(), View.ViewUniformBuffer);
 		SetTextureParameter(RHICmdList, PixelShader->GetPixelShader(), PixelShader->DepthTexture, HairRenderTargets->HairDepthZ->GetRenderTargetItem().TargetableTexture);
 		SetSRVParameter(RHICmdList, PixelShader->GetPixelShader(), PixelShader->StencilTexture, HairRenderTargets->StencilSRV);
-
-		// Render states
-		auto DepthStencilState = TStaticDepthStencilState<false, CF_DepthNearOrEqual, true, CF_Always, SO_Keep, SO_Keep, SO_Replace>::GetRHI();
-
-		auto RasterState = TStaticRasterizerState<FM_Solid, CM_CCW>::GetRHI();
-		RHICmdList.SetRasterizerState(RasterState);
 
 		// Draw each hair that has stencil value
 		for(auto PrimSceneInfo : View.VisibleHairs)
@@ -1204,7 +1206,7 @@ namespace HairWorksRenderer
 			if(!HairSceneProxy.ShouldRenderCustomDepth())
 				continue;
 
-			// Set hader parameters for each hair
+			// Set shader parameters for each hair
 			auto Bounds = HairSceneProxy.GetBounds();
 			FVector4 BoundInfo(Bounds.Origin, Bounds.SphereRadius);
 			SetShaderValue(RHICmdList, VertexShader->GetVertexShader(), VertexShader->BoundInfo, BoundInfo);
@@ -1212,7 +1214,7 @@ namespace HairWorksRenderer
 			SetShaderValue(RHICmdList, PixelShader->GetPixelShader(), PixelShader->HairId, HairSceneProxy.HairIdInStencil);
 
 			// Stencil value for each hair
-			RHICmdList.SetDepthStencilState(DepthStencilState, PrimSceneInfo->Proxy->GetCustomDepthStencilValue());
+			RHICmdList.SetStencilRef(PrimSceneInfo->Proxy->GetCustomDepthStencilValue());
 
 			// Draw bounding sphere to output stencil value
 			StencilingGeometry::DrawVectorSphere(RHICmdList);
@@ -1364,6 +1366,13 @@ namespace HairWorksRenderer
 	{
 		SCOPED_DRAW_EVENT(RHICmdList, RenderHairShadow);
 
+		// Some render state
+		FGraphicsPipelineStateInitializer GraphicsPSOInit;
+		GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<true, CF_DepthFartherOrEqual>::GetRHI();
+		GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
+		GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
+
+		// Render each HairWorks instance
 		for (auto PrimitiveIdx = 0; PrimitiveIdx < SubjectPrimitives.Num(); ++PrimitiveIdx)
 		{
 			// Skip
@@ -1383,7 +1392,8 @@ namespace HairWorksRenderer
 			HairWorks::GetSDK()->preRenderInstance(HairSceneProxy.GetHairInstanceId(), 1);
 
 			// Setup render states and shaders
-			TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
+			GraphicsPSOInit.BoundShaderState.VertexShaderRHI = TShaderMapRef<FScreenVS>(GetGlobalShaderMap(ERHIFeatureLevel::SM5))->GetVertexShader();
+			GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GSimpleElementVertexDeclaration.VertexDeclarationRHI;
 
 			if(Shadow.bOnePassPointLightShadow)
 			{
@@ -1438,10 +1448,7 @@ namespace HairWorksRenderer
 				else
 					new (RHICmdList.AllocCommand<FRHICmdSetCubeMapViewProj>()) FRHICmdSetCubeMapViewProj(FIntPoint(Shadow.ResolutionX, Shadow.ResolutionX), ViewProjMatrices, Visible);
 
-				// Setup shader
-				static FGlobalBoundShaderState BoundShaderState;
-				SetGlobalBoundShaderState(RHICmdList, ERHIFeatureLevel::SM5, BoundShaderState, GSimpleElementVertexDeclaration.VertexDeclarationRHI,
-					*VertexShader, nullptr);
+				SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, EApplyRendertargetOption::ForceApply);
 			}
 			else
 			{
@@ -1473,9 +1480,9 @@ namespace HairWorksRenderer
 				// Setup shader
 				TShaderMapRef<FHairWorksShadowDepthPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 
-				static FGlobalBoundShaderState BoundShaderState;
-				SetGlobalBoundShaderState(RHICmdList, ERHIFeatureLevel::SM5, BoundShaderState, GSimpleElementVertexDeclaration.VertexDeclarationRHI,
-					*VertexShader, *PixelShader);
+				GraphicsPSOInit.BoundShaderState.PixelShaderRHI = PixelShader->GetPixelShader();
+
+				SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, EApplyRendertargetOption::ForceApply);
 
 				SetShaderValue(RHICmdList, PixelShader->GetPixelShader(), PixelShader->ShadowParams, FVector2D(Shadow.GetShaderDepthBias() * CVarHairShadowBiasScale.GetValueOnRenderThread(), Shadow.InvMaxSubjectDepth));
 			}

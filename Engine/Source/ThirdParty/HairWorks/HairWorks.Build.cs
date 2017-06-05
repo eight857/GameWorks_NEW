@@ -3,7 +3,7 @@ using UnrealBuildTool;
 
 public class HairWorks : ModuleRules
 {
-	public HairWorks(TargetInfo Target)
+	public HairWorks(ReadOnlyTargetRules Target) : base(Target)
 	{
 		Type = ModuleType.External;
 
