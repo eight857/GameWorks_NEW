@@ -18,6 +18,8 @@
 #include "PhysicsPublic.h"
 #include "Collision/PhysXCollision.h"
 
+#include "Engine/StaticMesh.h"
+
 #include "StaticMeshResources.h"
 #include "DistanceFieldAtlas.h"
 
