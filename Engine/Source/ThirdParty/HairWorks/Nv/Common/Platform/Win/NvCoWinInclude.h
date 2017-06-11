@@ -10,17 +10,10 @@
 
 #include <Nv/Common/NvCoCommon.h>
 
+#include <sdkddkver.h>
+
 #ifndef _WIN32
 	#error "This file should only be included by Windows builds!!"
-#endif
-
-// We only support >= Windows XP, and we need this for critical section and 
-#ifndef _WIN32_WINNT
-#	ifndef NV_WINMODERN
-#		define _WIN32_WINNT 0x0500 
-#	else
-#		define _WIN32_WINNT 0x0602 
-#	endif
 #endif
 
 #pragma warning (push)

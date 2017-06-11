@@ -8,7 +8,7 @@
 #ifndef NV_HAIR_DX12_SDK_HANDLE_H
 #define NV_HAIR_DX12_SDK_HANDLE_H
 
-#include <Nv/Common/Platform/Dx12/NvCoDx12Handle.h>
+#include <Nv/Common/Render/Dx12/NvCoDx12Handle.h>
 /** \addtogroup HairWorks
 @{
 */

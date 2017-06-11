@@ -44,6 +44,11 @@ struct WinPathUtil
 
 		/// Gets the substring (or empty if not found)
 	static SubString getExtension(const SubString& pathIn);
+
+		/// Return the combined path. If path is absolute just returns it.
+	static String combine(const SubString& dirPath, const SubString& path);
+		/// Use pathOut to store constructed string. 
+	static SubString combine(const SubString& dirPath, const SubString& path, String& pathOut);
 };
 
 } // namespace Common 

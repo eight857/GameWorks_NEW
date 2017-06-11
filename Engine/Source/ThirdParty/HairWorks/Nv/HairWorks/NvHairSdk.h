@@ -160,8 +160,8 @@ When converting to text, will drop trailing 0 version numbers.
 1101 -> "11.0.1"
 */
 
-#define NV_HAIR_VERSION 130				// Versions for Dll BINARY compatibility 
-#define NV_HAIR_RELEASE_VERSION 130		// The release version, must be equal or greater than NV_HAIR_VERSION
+#define NV_HAIR_VERSION 140				// Versions for Dll BINARY compatibility 
+#define NV_HAIR_RELEASE_VERSION 140		// The release version, must be equal or greater than NV_HAIR_VERSION
 
 /*! The version number of serial files. Can be less than or equal to the NV_HAIR_RELEASE_VERSION. 
 If a serialization change is made, it should be set to the NV_HAIR_RELEASE_VERSION the change corresponds to. 
@@ -169,7 +169,7 @@ NOTE An implementation may be able to load prior versions */
 #define NV_HAIR_SERIAL_VERSION 120
 
 /*! release version as a string. NOTE! May contain text after version number */
-#define NV_HAIR_RELEASE_VERSION_STRING "1.3"
+#define NV_HAIR_RELEASE_VERSION_STRING "1.4"
 
 // Macro to generate a version number 
 #define NV_HAIR_MAKE_VERSION(major, minor, point) ((major * 100) + (minor * 10) + point)
@@ -1464,7 +1464,14 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true. */
 	virtual Result updateSkinningDqs(InstanceId	instanceId, Int numBones, const gfsdk_dualquaternion* dqs, ETeleportMode teleportMode = TeleportMode::NONE) = 0;
 
-	virtual void updateMorphDeltas(InstanceId instanceId, const gfsdk_float3* positions, const gfsdk_float3* normals) = 0;
+	/*! \brief update the morph delta/s if using morph targets. Morph targets can be used alongside bones. 
+	The values passed in are the delta differences between instances root positions and/or normals. 
+	\param [in] instanceId hair instance to update the morph target deltas on
+	\param [in] positionDeltas. (Can be null if positions don't need to be morphs) 
+	\param [in] morphed normals. The hair will be rotated from the growth mesh normal to this normal. (Can be null if normals don't need to be morphed)
+	\return Successful if NV_SUCCEEDED(Result) is true. */
+
+	virtual Result updateMorphDeltas(InstanceId instanceId, const gfsdk_float3* positionsDeltas, const gfsdk_float3* normals) = 0;
 
 	/**
 		\brief Runs simulation for all currently active hair instances for one frame.

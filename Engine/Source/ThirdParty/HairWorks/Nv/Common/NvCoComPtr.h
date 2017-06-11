@@ -97,6 +97,8 @@ public:
 
 		/// Detach
 	NV_FORCE_INLINE T* detach() { T* ptr = m_ptr; m_ptr = NV_NULL; return ptr; }
+		/// Set to a pointer without changing the ref count
+	NV_FORCE_INLINE void attach(T* in) { m_ptr = in; }
 
 		/// Get ready for writing (nulls contents)
 	NV_FORCE_INLINE T** writeRef() { setNull(); return &m_ptr; }

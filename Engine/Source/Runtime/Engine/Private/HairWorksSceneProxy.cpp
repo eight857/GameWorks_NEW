@@ -2,7 +2,7 @@
 #include "HairWorksSceneProxy.h"
 #include <Nv/Common/NvCoMemoryReadStream.h>
 #include "AllowWindowsPlatformTypes.h"
-#include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>
+#include <Nv/Common/Render/Dx11/NvCoDx11Handle.h>
 #include "HideWindowsPlatformTypes.h"
 #include "HairWorksSDK.h"
 #include "ScopeLock.h"

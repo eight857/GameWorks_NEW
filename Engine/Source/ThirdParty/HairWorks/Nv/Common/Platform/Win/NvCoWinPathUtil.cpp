@@ -39,7 +39,14 @@ Bool WinPathUtil::isAbsolutePath(const SubString& path)
 {
 	if (path.getSize() >= 2)
 	{
-		return path[1] == ':';
+		// Strictly speaking a path starting with \ is not absolute, because it doesn't contain 
+		// the drive letter, and so just takes the current drive
+		// A path starting with \\ indicates a network drive
+		if ((path[1] == ':') ||
+			(path[0] == '\\' && path[1] == '\\'))
+		{
+			return true;
+		}
 	}
 	return false;
 }
@@ -111,6 +118,36 @@ Bool WinPathUtil::isAbsolutePath(const SubString& path)
 		}
 	}
 	return SubString();
+}
+
+/* static */SubString WinPathUtil::combine(const SubString& dirPath, const SubString& path, String& pathOut)
+{
+	if (isAbsolutePath(path))
+	{
+		return path;
+	}
+	pathOut = dirPath;
+	if (pathOut.getSize() > 0 && !isSeparator(pathOut.getLast()))
+	{
+		pathOut.concat('/');
+	}
+	if (path.getSize() > 0 && isSeparator(path[0]))
+	{
+		pathOut.concat(path.tail(1));
+	}
+	else
+	{
+		pathOut.concat(path);
+	}
+		
+	return pathOut;
+}
+
+/* static */String WinPathUtil::combine(const SubString& dirPath, const SubString& path)
+{	
+	String newPath;
+	combine(dirPath, path, newPath);
+	return newPath;
 }
 
 } // namespace Common 

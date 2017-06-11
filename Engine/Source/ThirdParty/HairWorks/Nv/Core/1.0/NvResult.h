@@ -102,7 +102,7 @@ It can be useful to have a consistent short name for a facility, as used in the 
 //! Indicates that a handle passed in as parameter to a method is invalid. 
 #define NV_E_MISC_INVALID_HANDLE		NV_MAKE_ERROR(MISC, 4)
 
-/*! Set NV_HANDLE_RESULT_ERROR(x) to code to be executed whenever an error occurs, and is detected by one of the macros */
+/*! Set NV_HANDLE_RESULT_FAIL(x) to code to be executed whenever an error occurs, and is detected by one of the macros */
 #ifndef NV_HANDLE_RESULT_FAIL
 #	define NV_HANDLE_RESULT_FAIL(x)
 #endif
@@ -118,10 +118,14 @@ It can be useful to have a consistent short name for a facility, as used in the 
 #define NV_RETURN_ON_FAIL(x) { NvResult _res = (x); if (NV_FAILED(_res)) { NV_HANDLE_RESULT_FAIL(_res); return _res; } }
 //! Helper macro that can be used to test the return value from a call, and will return in a void method/function
 #define NV_RETURN_VOID_ON_FAIL(x) { NvResult _res = (x); if (NV_FAILED(_res)) { NV_HANDLE_RESULT_FAIL(_res); return; } }
+//! Helper macro that will return false on failure.
+#define NV_RETURN_FALSE_ON_FAIL(x) { NvResult _res = (x); if (NV_FAILED(_res)) { NV_HANDLE_RESULT_FAIL(_res); return false; } }
+
 //! Helper macro that will assert if the return code from a call is failure, also returns the failure.
 #define NV_CORE_ASSERT_ON_FAIL(x) { NvResult _res = (x); if (NV_FAILED(_res)) { NV_CORE_ASSERT(false); return _res; } }
 //! Helper macro that will assert if the result from a call is a failure, also returns. 
 #define NV_CORE_ASSERT_VOID_ON_FAIL(x) { NvResult _res = (x); if (NV_FAILED(_res)) { NV_CORE_ASSERT(false); return; } }
+
 
 #if __cplusplus
 namespace nvidia {

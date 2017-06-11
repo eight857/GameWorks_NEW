@@ -60,6 +60,9 @@ class SubString
 		/// Takes the characters from start until the end. Can use negative numbers to wrap around.
 	SubString tail(IndexT start) const;
 
+		// Get's the last character of the string, or 0 if it's empty
+	Char getLast() const { return m_size > 0 ? m_chars[m_size - 1] : 0; }
+
 		/// Clear the contents
 	Void clear() { m_size = 0; }
 

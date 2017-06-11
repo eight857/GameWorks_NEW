@@ -7,7 +7,7 @@
 #include "CanvasTypes.h"
 
 #include "AllowWindowsPlatformTypes.h"
-#include <Nv/Common/Platform/Dx11/NvCoDx11Handle.h>
+#include <Nv/Common/Render/Dx11/NvCoDx11Handle.h>
 #pragma warning(push)
 #pragma warning(disable: 4191)	// For DLL function pointer conversion
 #undef DWORD	// To fix a compiling error
