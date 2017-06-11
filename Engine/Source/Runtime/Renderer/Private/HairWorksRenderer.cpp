@@ -1229,6 +1229,12 @@ namespace HairWorksRenderer
 		if(HairWorks::GetSDK() == nullptr)
 			return;
 
+		// Prepare for simulation
+		for(FHairWorksSceneProxy::TIterator Itr(FHairWorksSceneProxy::GetHairInstances()); Itr; Itr.Next())
+		{
+			(*Itr).PreSimulate();
+		}
+
 		// Trigger simulation
 		// Handle frame rate independent rendering
 		const float SimulateStepTime = 1.f / CVarHairSimulateFps.GetValueOnRenderThread();

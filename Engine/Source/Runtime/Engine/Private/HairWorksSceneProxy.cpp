@@ -6,6 +6,7 @@
 #include "HideWindowsPlatformTypes.h"
 #include "HairWorksSDK.h"
 #include "ScopeLock.h"
+#include "SkeletalRenderGPUSkin.h"
 #include "Engine/Texture2D.h"
 #include "Engine/HairWorksAsset.h"
 
@@ -221,6 +222,11 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData & D
 		CurrentSkinningMatrices = MoveTemp(DynamicData.BoneMatrices);
 	}
 
+	// Morph data. It's too early to update morph data here. It's not ready yet. 
+	MorphIndices = MoveTemp(DynamicData.MorphIndices);
+	ParentSkinning = DynamicData.ParentSkinning;
+	bMorphDataUpdated = true;
+
 	// Update normal center bone
 	auto HairDesc = DynamicData.HairInstanceDesc;
 
@@ -277,5 +283,41 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData & D
 
 	// Add pin meshes
 	HairPinMeshes = DynamicData.PinMeshes;
+}
+
+void FHairWorksSceneProxy::PreSimulate()
+{
+	// Get morph data from skeleton
+	if(!bMorphDataUpdated)
+		return;
+
+	bMorphDataUpdated = false;
+
+	if(ParentSkinning == nullptr)
+		return;
+
+	TArray<FVector> MorphPositions;
+	TArray<FVector> MorphNormals;
+
+	const auto& ParentMorphVertices = ParentSkinning->GetMorphVertices();
+	if(ParentMorphVertices.Num() > 0)
+	{
+		MorphPositions.SetNumZeroed(MorphIndices.Num());
+		MorphNormals.SetNumZeroed(MorphIndices.Num());
+
+		for(auto VertexIdx = 0; VertexIdx < MorphIndices.Num(); ++VertexIdx)
+		{
+			const auto& MorphVertex = ParentMorphVertices[MorphIndices[VertexIdx]];
+			MorphPositions[VertexIdx] = MorphVertex.DeltaPosition;
+			MorphNormals[VertexIdx] = MorphVertex.DeltaTangentZ;
+		}
+	}
+
+	// Update morph data
+	::HairWorks::GetSDK()->updateMorphDeltas(
+		HairInstanceId,
+		reinterpret_cast<const gfsdk_float3*>(MorphPositions.GetData()),
+		reinterpret_cast<const gfsdk_float3*>(MorphNormals.GetData())
+	);
 }
 // @third party code - END HairWorks

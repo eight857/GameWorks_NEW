@@ -9,6 +9,8 @@ namespace nvidia{namespace HairWorks{
 	enum InstanceId;
 }}
 
+class USkeletalMesh;
+
 /**
 * HairWorksComponent manages and renders a hair asset.
 */
@@ -19,6 +21,10 @@ class ENGINE_API UHairWorksComponent : public UPrimitiveComponent
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Hair, meta = (ShowOnlyInnerProperties))
 	FHairWorksInstance HairInstance;
+
+	/** It requires a remapping progress to support morph target of skeletal mesh. This progress would be slow when vertex number is very large, and cause long halt in editor. If this option is on, remapping happens when any edit occurs. If this option is off, remapping happens only when the parent skeletal mesh of a HairWorks component changers. If you want to do remapping once when you need, just turn it on and then off. */
+	UPROPERTY(EditAnywhere, Category = Asset)
+	bool bAutoRemapMorphTarget = false;
 
 	//~ Begin UPrimitiveComponent interface
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
@@ -47,7 +53,7 @@ protected:
 	void SendHairDynamicData(bool bForceSkinning = false)const;
 
 	/** Bone mapping */
-	void SetupBoneMapping();
+	void SetupBoneAndMorphMapping();
 
 	/** Update bones */
 	void UpdateBoneMatrices()const;
@@ -58,6 +64,14 @@ protected:
 
 	/** Bone remapping */
 	TArray<uint16> BoneIndices;
+
+	/** Morph remapping */
+	UPROPERTY()
+	TArray<int32> MorphIndices;
+
+	/** Usually we do remapping for morph target only when parent skeletal mesh is changed. */
+	UPROPERTY()
+	USkeletalMesh* CachedSkeletalMeshForMorph;
 
 	/** Skinning data*/
 	mutable TArray<FMatrix> BoneMatrices;

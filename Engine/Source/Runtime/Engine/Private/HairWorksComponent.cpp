@@ -7,6 +7,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/HairWorksMaterial.h"
 #include "Engine/HairWorksAsset.h"
+#include "SkeletalRenderGPUSkin.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Components/HairWorksPinTransformComponent.h"
 #include "HairWorksSceneProxy.h"
@@ -41,8 +42,8 @@ void UHairWorksComponent::OnAttachmentChanged()
 	// Parent as skeleton
 	ParentSkeleton = Cast<USkinnedMeshComponent>(GetAttachParent());
 
-	// Setup bone mapping
-	SetupBoneMapping();
+	// Setup mapping
+	SetupBoneAndMorphMapping();
 
 	// Refresh render data
 	MarkRenderDynamicDataDirty();
@@ -206,8 +207,8 @@ void UHairWorksComponent::CreateRenderState_Concurrent()
 	// Call super
 	Super::CreateRenderState_Concurrent();
 
-	// Setup bone mapping
-	SetupBoneMapping();
+	// Setup mapping
+	SetupBoneAndMorphMapping();
 
 	// Update bone matrices
 	UpdateBoneMatrices();
@@ -356,6 +357,19 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 		AddPinMesh(PinComponent);
 	}
 
+	// Update morph data
+	do
+	{
+		if(MorphIndices.Num() <= 0 || ParentSkeleton == nullptr || ParentSkeleton->MeshObject == nullptr)
+			break;
+
+		if(ParentSkeleton->MeshObject->IsCPUSkinned())
+			break;
+
+		DynamicData->MorphIndices = MorphIndices;
+		DynamicData->ParentSkinning = static_cast<FSkeletalMeshObjectGPUSkin*>(ParentSkeleton->MeshObject);
+	} while(false);	
+
 	// Send to proxy
 	ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
 		HairUpdateDynamicData,
@@ -381,7 +395,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 	}
 }
 
-void UHairWorksComponent::SetupBoneMapping()
+void UHairWorksComponent::SetupBoneAndMorphMapping()
 {
 	// Setup bone mapping
 	if(HairInstance.Hair == nullptr || ParentSkeleton == nullptr || ParentSkeleton->SkeletalMesh == nullptr)
@@ -396,6 +410,96 @@ void UHairWorksComponent::SetupBoneMapping()
 			[&](const FMeshBoneInfo& BoneInfo){return BoneInfo.Name == HairInstance.Hair->BoneNames[Idx]; }
 		);
 	}
+
+	// Setup morph index mapping
+	do
+	{
+		// Only handle CPU morph case
+		extern int32 GEnableGPUSkinCache;
+		if(ParentSkeleton->MorphTargetWeights.Num() <= 0 || GEnableGPUSkinCache)
+		{
+			MorphIndices.Empty(true);
+			break;
+		}
+
+		// Check if parent skeletal mesh has changed. 
+		if(!bAutoRemapMorphTarget)
+		{
+			if(CachedSkeletalMeshForMorph == ParentSkeleton->SkeletalMesh)
+				break;
+
+			CachedSkeletalMeshForMorph = ParentSkeleton->SkeletalMesh;
+		}
+
+		// Get vertices of parent skeletal mesh
+		const auto& ParentMeshVertexBuffer = ParentSkeleton->SkeletalMesh->GetResourceForRendering()->LODModels[0].VertexBufferGPUSkin;
+
+		TArray<FVector> ParentMeshVertices;
+		ParentMeshVertices.SetNumUninitialized(ParentMeshVertexBuffer.GetNumVertices());
+
+		for(auto VertexIdx = 0; VertexIdx < ParentMeshVertices.Num(); ++VertexIdx)
+		{
+			ParentMeshVertices[VertexIdx] = ParentMeshVertexBuffer.GetVertexPositionSlow(VertexIdx);
+		}
+
+		// Get vertices of hair growth mesh
+		const auto GuideNum = ::HairWorks::GetSDK()->getNumGuideHairs(HairInstance.Hair->AssetId);
+
+		TArray<FVector> GuideRootVertices;
+		GuideRootVertices.SetNumUninitialized(GuideNum);
+		::HairWorks::GetSDK()->getRootVertices(HairInstance.Hair->AssetId, reinterpret_cast<gfsdk_float3*>(GuideRootVertices.GetData()));
+
+		// Find closest skeletal mesh vertex for each vertex of HairWorks growth mesh
+		const auto Transform = GetRelativeTransform();
+
+		MorphIndices.SetNumUninitialized(GuideNum, true);
+
+		for(auto GuideIdx = 0; GuideIdx < GuideNum; ++GuideIdx)
+		{
+			const auto GuideRootVertex = Transform.TransformPosition(GuideRootVertices[GuideIdx]);
+
+			float ClosestSqrDist = FLT_MAX;
+			int32 ClosestVertexIdx = 0;
+
+			for(auto VertexIdx = 0; VertexIdx < ParentMeshVertices.Num(); ++VertexIdx)
+			{
+				const float SqrDist = FVector::DistSquared(GuideRootVertex, ParentMeshVertices[VertexIdx]);
+				if(SqrDist < ClosestSqrDist)
+				{
+					ClosestSqrDist = SqrDist;
+					ClosestVertexIdx = VertexIdx;
+				}
+			}
+
+			MorphIndices[GuideIdx] = ClosestVertexIdx;
+		}
+
+		// Propagate to all instances in editor
+#if WITH_EDITOR
+		do
+		{
+			if(bAutoRemapMorphTarget)
+				break;
+
+			auto* Archetype = GetArchetype();
+			if(Archetype == nullptr)
+				break;
+
+			TArray<UObject*> Instances;
+			Archetype->GetArchetypeInstances(Instances);
+
+			Instances.Add(Archetype);
+
+			for(auto* Instance : Instances)
+			{
+				auto* HairWorksComp = CastChecked<UHairWorksComponent>(Instance);
+				HairWorksComp->CachedSkeletalMeshForMorph = CachedSkeletalMeshForMorph;
+				HairWorksComp->MorphIndices = MorphIndices;
+				HairWorksComp->Modify();
+			}
+		} while(false);
+#endif
+	} while(false);
 }
 
 void UHairWorksComponent::UpdateBoneMatrices()const
