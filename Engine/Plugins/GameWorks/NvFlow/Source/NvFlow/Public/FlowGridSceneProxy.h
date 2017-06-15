@@ -207,6 +207,7 @@ struct FFlowGridPropertiesRef
 	FFlowGridPropertiesRef& operator=(const FFlowGridPropertiesRef& InRef)
 	{
 		Initialize(InRef.Ref);
+		return *this;
 	}
 	~FFlowGridPropertiesRef()
 	{

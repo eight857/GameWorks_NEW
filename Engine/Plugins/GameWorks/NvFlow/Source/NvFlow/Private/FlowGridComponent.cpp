@@ -95,8 +95,8 @@ void UFlowGridComponent::InitializeGridProperties(FFlowGridProperties* FlowGridP
 
 UFlowGridComponent::UFlowGridComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, FlowGridAssetCurrent(&FlowGridAsset)
 	, FlowGridAssetOverride(nullptr)
+	, FlowGridAssetCurrent(&FlowGridAsset)
 	, FlowGridAssetOld(nullptr)
 {
 	{
@@ -209,10 +209,6 @@ namespace
 		Out.w = In.Smoke;
 	}
 
-	// helpers to find actor, shape pairs in a TSet
-	bool operator == (const PxActorShape& lhs, const PxActorShape& rhs) { return lhs.actor == rhs.actor && lhs.shape == rhs.shape; }
-	uint32 GetTypeHash(const PxActorShape& h) { return ::GetTypeHash((void*)(h.actor)) ^ ::GetTypeHash((void*)(h.shape)); }
-
 	float ShadowResidentBlocksToScale(int32 ResidentBlocks, EFlowShadowResolution ShadowResolution)
 	{
 		const int32 ShadowDim = (1 << ShadowResolution);
@@ -224,6 +220,13 @@ namespace
 
 		return FMath::Min(float(ResidentBlocks) / MaxBlocks, 1.0f);
 	}
+}
+
+namespace physx
+{
+	// helpers to find actor, shape pairs in a TSet
+	inline bool operator == (const PxActorShape& lhs, const PxActorShape& rhs) { return lhs.actor == rhs.actor && lhs.shape == rhs.shape; }
+	inline uint32 GetTypeHash(const PxActorShape& h) { return ::GetTypeHash((void*)(h.actor)) ^ ::GetTypeHash((void*)(h.shape)); }
 }
 
 void UFlowGridComponent::ResetShapes()

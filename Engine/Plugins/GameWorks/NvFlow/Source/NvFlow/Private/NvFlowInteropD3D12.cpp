@@ -7,7 +7,6 @@
 #include "AllowWindowsPlatformTypes.h"
 #include <d3d12.h>
 #include "HideWindowsPlatformTypes.h"
-#endif
 
 #include "GameWorks/RHINvFlowD3D12.h"
 
@@ -186,3 +185,5 @@ NvFlowInterop* NvFlowCreateInteropD3D12()
 {
 	return new NvFlowInteropD3D12();
 }
+
+#endif

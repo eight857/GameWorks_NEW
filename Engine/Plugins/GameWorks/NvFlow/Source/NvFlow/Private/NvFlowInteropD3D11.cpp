@@ -13,7 +13,6 @@
 #undef D3D10_ERROR_FILE_NOT_FOUND
 #include <d3d11.h>
 #include "HideWindowsPlatformTypes.h"
-#endif
 
 #include "GameWorks/RHINvFlowD3D11.h"
 
@@ -153,3 +152,5 @@ NvFlowInterop* NvFlowCreateInteropD3D11()
 {
 	return new NvFlowInteropD3D11();
 }
+
+#endif

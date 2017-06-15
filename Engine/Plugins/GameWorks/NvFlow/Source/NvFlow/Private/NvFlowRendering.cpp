@@ -959,7 +959,7 @@ struct MyLogger
 		fclose(file);
 	}
 };
-#endif;
+#endif
 
 void NvFlow::Scene::updateSubstepDeferred(IRHICommandContext* RHICmdCtx, UpdateParams* updateParams)
 {
@@ -1626,6 +1626,9 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 		return;
 	}
 
+// Only create context on Windows for now
+#if PLATFORM_WINDOWS
+
 	bool shouldFlush = false;
 
 	SCOPE_CYCLE_COUNTER(STAT_Flow_SimulateGrids);
@@ -1682,6 +1685,8 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 	{
 		RHICmdList.NvFlowWork(NvFlow::Context::cleanupSceneListCallback, NvFlow::gContext, 0u);
 	}
+
+#endif
 }
 
 bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo)

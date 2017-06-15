@@ -27,6 +27,8 @@ public:
 
 	virtual FRHINvFlowResourceRW* CreateResourceRW(IRHICommandContext& RHICmdCtx, NvFlowContext* context, NvFlowResourceRW* resourceRW, FShaderResourceViewRHIRef* pRHIRefSRV, FUnorderedAccessViewRHIRef* pRHIRefUAV) = 0;
 	virtual void ReleaseResourceRW(IRHICommandContext& RHICmdCtx, FRHINvFlowResourceRW* pRHIResourceRW) = 0;
+
+	virtual ~NvFlowInterop() {}
 };
 
 NvFlowInterop* NvFlowCreateInteropD3D11();
