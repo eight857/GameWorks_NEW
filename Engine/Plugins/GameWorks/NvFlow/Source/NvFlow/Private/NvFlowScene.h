@@ -57,6 +57,8 @@ namespace NvFlow
 		bool m_asyncComputeSupported = false;
 		bool m_asyncComputeActive = false;
 
+		bool m_needNvFlowDeferredRelease = false;
+
 		TMap<const class UStaticMesh*, NvFlowShapeSDF*> m_mapForShapeSDF;
 
 		// deferred mechanism for proper RHI command list support

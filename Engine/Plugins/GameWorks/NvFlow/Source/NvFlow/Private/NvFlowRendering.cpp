@@ -113,6 +113,8 @@ void NvFlow::Context::init(FRHICommandListImmediate& RHICmdList)
 {
 	UE_LOG(LogFlow, Display, TEXT("NvFlow Context Init"));
 
+	m_needNvFlowDeferredRelease = true;
+
 	RHICmdList.NvFlowWork(initCallback, this, 0u);
 }
 
@@ -440,9 +442,12 @@ void NvFlow::Context::release()
 	m_flowInterop = nullptr;
 
 	// NvFlow: Windows only for now
-#if PLATFORM_WINDOWS
-	NvFlowDeferredRelease(1000.f);
-#endif
+	#if PLATFORM_WINDOWS
+	if (m_needNvFlowDeferredRelease)
+	{
+		NvFlowDeferredRelease(1000.f);
+	}
+	#endif
 }
 
 void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
