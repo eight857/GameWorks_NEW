@@ -12,15 +12,17 @@ Texture3D<uint> NvFlowExportBlockTable2;
 Texture3D<float4> NvFlowExportData3;
 Texture3D<uint> NvFlowExportBlockTable3;
 
-SamplerState NvFlowExportDataSampler;
-
+SamplerState NvFlowExportDataSampler0;
+SamplerState NvFlowExportDataSampler1;
+SamplerState NvFlowExportDataSampler2;
+SamplerState NvFlowExportDataSampler3;
 
 float4 NvFlowFetchExportData(int Index, float3 TexCoord)
 {
-	if (Index == 0) return Texture3DSampleLevel(NvFlowExportData0, NvFlowExportDataSampler, TexCoord, 0);
-	if (Index == 1) return Texture3DSampleLevel(NvFlowExportData1, NvFlowExportDataSampler, TexCoord, 0);
-	if (Index == 2) return Texture3DSampleLevel(NvFlowExportData2, NvFlowExportDataSampler, TexCoord, 0);
-	return Texture3DSampleLevel(NvFlowExportData3, NvFlowExportDataSampler, TexCoord, 0);
+	if (Index == 0) return Texture3DSampleLevel(NvFlowExportData0, NvFlowExportDataSampler0, TexCoord, 0);
+	if (Index == 1) return Texture3DSampleLevel(NvFlowExportData1, NvFlowExportDataSampler1, TexCoord, 0);
+	if (Index == 2) return Texture3DSampleLevel(NvFlowExportData2, NvFlowExportDataSampler2, TexCoord, 0);
+	return Texture3DSampleLevel(NvFlowExportData3, NvFlowExportDataSampler3, TexCoord, 0);
 }
 
 uint NvFlowFetchExportDataTable(int Index, int3 BlockCoord)

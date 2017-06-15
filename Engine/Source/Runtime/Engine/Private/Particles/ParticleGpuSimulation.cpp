@@ -1086,8 +1086,8 @@ public:
 		{
 			NvFlowExportData[i].Bind(Initializer.ParameterMap, *FString::Printf(TEXT("NvFlowExportData%d"), i));
 			NvFlowExportBlockTable[i].Bind(Initializer.ParameterMap, *FString::Printf(TEXT("NvFlowExportBlockTable%d"), i));
+			NvFlowExportDataSampler[i].Bind(Initializer.ParameterMap, *FString::Printf(TEXT("NvFlowExportDataSampler%d"), i));
 		}
-		NvFlowExportDataSampler.Bind(Initializer.ParameterMap, TEXT("NvFlowExportDataSampler"));
 #endif
 		// NvFlow end
 	}
@@ -1124,8 +1124,8 @@ public:
 		{
 			Ar << NvFlowExportData[i];
 			Ar << NvFlowExportBlockTable[i];
+			Ar << NvFlowExportDataSampler[i];
 		}
-		Ar << NvFlowExportDataSampler;
 #endif
 		// NvFlow end
 		return bShaderHasOutdatedParameters;
@@ -1258,14 +1258,14 @@ public:
 		FPixelShaderRHIParamRef PixelShaderRHI = GetPixelShader();
 		SetUniformBufferParameter(RHICmdList, PixelShaderRHI, GetUniformBufferParameter<FNvFlowGridUniformParameters>(), UniformBuffer);
 
+		FSamplerStateRHIParamRef BorderSampler = TStaticSamplerState<SF_Bilinear, AM_Border, AM_Border, AM_Border>::GetRHI();
+
 		for (int32 i = 0; i < MAX_NVFLOW_GRIDS; ++i)
 		{
 			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportData[i], DataSRV[i]);
 			SetSRVParameter(RHICmdList, PixelShaderRHI, NvFlowExportBlockTable[i], BlockTableSRV[i]);
+			SetSamplerParameter(RHICmdList, PixelShaderRHI, NvFlowExportDataSampler[i], BorderSampler);
 		}
-
-		FSamplerStateRHIParamRef BorderSampler = TStaticSamplerState<SF_Bilinear, AM_Border, AM_Border, AM_Border>::GetRHI();
-		SetSamplerParameter(RHICmdList, PixelShaderRHI, NvFlowExportDataSampler, BorderSampler);
 	}
 #endif
 	// NvFlow end
@@ -1306,7 +1306,7 @@ private:
 #if NV_FLOW_WITH_GPU_PARTICLES
 	FShaderResourceParameter NvFlowExportData[MAX_NVFLOW_GRIDS];
 	FShaderResourceParameter NvFlowExportBlockTable[MAX_NVFLOW_GRIDS];
-	FShaderResourceParameter NvFlowExportDataSampler;
+	FShaderResourceParameter NvFlowExportDataSampler[MAX_NVFLOW_GRIDS];
 #endif
 	// NvFlow end
 };
