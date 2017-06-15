@@ -10,7 +10,14 @@
 
 #pragma once
 
+//! \cond HIDDEN_SYMBOLS
+#if _WIN32
 #define NV_FLOW_API extern "C" __declspec(dllexport)
+#else
+#define NV_FLOW_API
+#endif
+
+#define NV_FLOW_API_INLINE inline
 
 enum NvFlowResult
 {
