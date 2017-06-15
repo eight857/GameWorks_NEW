@@ -439,7 +439,10 @@ void NvFlow::Context::release()
 	m_renderContext = nullptr;
 	m_flowInterop = nullptr;
 
+	// NvFlow: Windows only for now
+#if PLATFORM_WINDOWS
 	NvFlowDeferredRelease(1000.f);
+#endif
 }
 
 void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
@@ -1626,7 +1629,7 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 		return;
 	}
 
-// Only create context on Windows for now
+// NvFlow: Windows only for now
 #if PLATFORM_WINDOWS
 
 	bool shouldFlush = false;
