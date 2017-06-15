@@ -26,7 +26,7 @@ UFlowEmitterComponent::UFlowEmitterComponent(const FObjectInitializer& ObjectIni
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 
 	NvFlowGridEmitParams FlowGridEmitParams;
-	NvFlowGridEmitParamsDefaults(&FlowGridEmitParams);
+	NvFlowGridEmitParamsDefaultsInline(&FlowGridEmitParams);
 
 	LinearVelocity = *(FVector*)(&FlowGridEmitParams.velocityLinear.x) * UFlowGridAsset::GetFlowToUE4Scale();
 	AngularVelocity = *(FVector*)(&FlowGridEmitParams.velocityAngular.x);

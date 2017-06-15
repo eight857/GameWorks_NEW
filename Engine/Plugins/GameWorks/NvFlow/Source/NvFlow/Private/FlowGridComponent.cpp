@@ -85,7 +85,7 @@ void UFlowGridComponent::InitializeGridProperties(FFlowGridProperties* FlowGridP
 	FlowGridProperties->VelocitySlipThickness = 0.0f;
 
 	// initialize desc/param defaults
-	NvFlowGridDescDefaults(&FlowGridProperties->GridDesc);
+	NvFlowGridDescDefaultsInline(&FlowGridProperties->GridDesc);
 	NvFlowGridParamsDefaults(&FlowGridProperties->GridParams);
 
 	FlowGridProperties->RenderParams.bGenerateDepth = false;
@@ -647,7 +647,7 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 				{
 					// substep invariant params
 					NvFlowGridEmitParams emitParams;
-					NvFlowGridEmitParamsDefaults(&emitParams);
+					NvFlowGridEmitParamsDefaultsInline(&emitParams);
 
 					// emit values
 					emitParams.fuel = FlowEmitterComponent->Fuel;
@@ -848,7 +848,7 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 
 					// parameters
 					NvFlowGridEmitParams emitParams;
-					NvFlowGridEmitParamsDefaults(&emitParams);
+					NvFlowGridEmitParamsDefaultsInline(&emitParams);
 
 					// emit values
 					emitParams.velocityLinear = *(NvFlowFloat3*)(&CollisionScaledVelocityLinear.X);
@@ -922,7 +922,7 @@ FlowMaterialKeyType UFlowGridComponent::AddMaterialParams(UFlowMaterial* InFlowM
 	FlowGridProperties->Materials.Last().Key = FlowMaterialKey;
 	FFlowMaterialParams& MaterialParams = FlowGridProperties->Materials.Last().Value;
 
-	NvFlowGridMaterialParamsDefaults(&MaterialParams.GridParams);
+	NvFlowGridMaterialParamsDefaultsInline(&MaterialParams.GridParams);
 
 	//Grid part
 	CopyMaterialPerComponent(FlowMaterial->Velocity, MaterialParams.GridParams.velocity);
@@ -1016,7 +1016,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		// grab default desc
 		NvFlowGridDesc defaultGridDesc = {};
-		NvFlowGridDescDefaults(&defaultGridDesc);
+		NvFlowGridDescDefaultsInline(&defaultGridDesc);
 
 		//NvFlowGridDesc
 		NvFlowGridDesc newGridDesc = FlowGridProperties->GridDesc;
@@ -1088,7 +1088,7 @@ void UFlowGridComponent::TickComponent(float DeltaTime, enum ELevelTick TickType
 
 		//NvFlowGridParams
 		auto& GridParams = FlowGridProperties->GridParams;
-		NvFlowGridParamsDefaults(&GridParams);
+		NvFlowGridParamsDefaultsInline(&GridParams);
 
 		FVector ScaledGravity(FlowGridAssetRef->Gravity * NvFlow::scaleInv);
 		GridParams.gravity = *(NvFlowFloat3*)(&ScaledGravity);

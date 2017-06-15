@@ -35,7 +35,7 @@ UFlowRenderMaterial::UFlowRenderMaterial(const FObjectInitializer& ObjectInitial
 	: Super(ObjectInitializer)
 {
 	NvFlowRenderMaterialParams FlowRenderMaterialParams;
-	NvFlowRenderMaterialParamsDefaults(&FlowRenderMaterialParams);
+	NvFlowRenderMaterialParamsDefaultsInline(&FlowRenderMaterialParams);
 
 	AlphaScale = FlowRenderMaterialParams.alphaScale;
 	AdditiveFactor = FlowRenderMaterialParams.additiveFactor;
@@ -98,7 +98,7 @@ void UFlowRenderMaterial::SyncRenderPresetProperties()
 		case EFRP_Default:
 		{
 			NvFlowRenderMaterialParams FlowRenderMaterialParams;
-			NvFlowRenderMaterialParamsDefaults(&FlowRenderMaterialParams);
+			NvFlowRenderMaterialParamsDefaultsInline(&FlowRenderMaterialParams);
 
 			CopyRenderCompMask(FlowRenderMaterialParams.colorMapCompMask, ColorMapCompMask);
 			CopyRenderCompMask(FlowRenderMaterialParams.alphaCompMask, AlphaCompMask);

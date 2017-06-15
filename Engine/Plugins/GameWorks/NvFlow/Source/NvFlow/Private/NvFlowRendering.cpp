@@ -152,7 +152,7 @@ void NvFlow::Context::conditionalInitMultiGPUDeferred(IRHICommandContext* RHICmd
 		if (m_renderDevice == nullptr)
 		{
 			NvFlowDeviceDesc deviceDesc = {};
-			NvFlowDeviceDescDefaults(&deviceDesc);
+			NvFlowDeviceDescDefaultsInline(&deviceDesc);
 			deviceDesc.mode = eNvFlowDeviceModeProxy;
 
 			m_renderDevice = NvFlowCreateDevice(m_renderContext, &deviceDesc);
@@ -179,7 +179,7 @@ void NvFlow::Context::conditionalInitMultiGPUDeferred(IRHICommandContext* RHICmd
 		if (m_multiGPUActive && m_gridDevice == nullptr)
 		{
 			NvFlowDeviceDesc deviceDesc = {};
-			NvFlowDeviceDescDefaults(&deviceDesc);
+			NvFlowDeviceDescDefaultsInline(&deviceDesc);
 			deviceDesc.mode = eNvFlowDeviceModeUnique;
 
 			m_gridDevice = NvFlowCreateDevice(m_renderContext, &deviceDesc);
@@ -639,7 +639,7 @@ void NvFlow::Scene::updateParameters(FRHICommandListImmediate& RHICmdList)
 	m_gridParams = Properties.GridParams;
 
 	// configure render params
-	NvFlowVolumeRenderParamsDefaults(&m_renderParams);
+	NvFlowVolumeRenderParamsDefaultsInline(&m_renderParams);
 	m_renderParams.renderMode = Properties.RenderParams.RenderMode;
 	m_renderParams.renderChannel = Properties.RenderParams.RenderChannel;
 	m_renderParams.debugMode = Properties.RenderParams.bDebugWireframe;

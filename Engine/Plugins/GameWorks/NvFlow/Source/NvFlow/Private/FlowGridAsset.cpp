@@ -41,7 +41,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 {
 
 	NvFlowGridDesc FlowGridDesc;
-	NvFlowGridDescDefaults(&FlowGridDesc);
+	NvFlowGridDescDefaultsInline(&FlowGridDesc);
 
 	GridCellSize = FlowGridDesc.halfSize.x * 2 * GetFlowToUE4Scale() / FlowGridDesc.virtualDim.x;
 
@@ -56,7 +56,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	bAsyncComputeEnabled = false;
 
 	NvFlowGridParams FlowGridParams;
-	NvFlowGridParamsDefaults(&FlowGridParams);
+	NvFlowGridParamsDefaultsInline(&FlowGridParams);
 
 	Gravity = FVector(FlowGridParams.gravity.x, FlowGridParams.gravity.z, FlowGridParams.gravity.y) * GetFlowToUE4Scale();
 	bSinglePassAdvection = FlowGridParams.singlePassAdvection;
@@ -64,7 +64,7 @@ UFlowGridAsset::UFlowGridAsset(const FObjectInitializer& ObjectInitializer)
 	bBigEffectMode = FlowGridParams.bigEffectMode;
 
 	NvFlowVolumeRenderParams FlowVolumeRenderParams;
-	NvFlowVolumeRenderParamsDefaults(&FlowVolumeRenderParams);
+	NvFlowVolumeRenderParamsDefaultsInline(&FlowVolumeRenderParams);
 	RenderMode = (EFlowRenderMode)FlowVolumeRenderParams.renderMode;
 	RenderChannel = (EFlowRenderChannel)FlowVolumeRenderParams.renderChannel;
 	ColorMapResolution = 64;

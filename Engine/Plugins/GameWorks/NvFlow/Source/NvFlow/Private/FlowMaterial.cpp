@@ -36,7 +36,7 @@ UFlowMaterial::UFlowMaterial(const FObjectInitializer& ObjectInitializer)
 	, DensityPerBurn_DEPRECATED(DensityPerBurn_DEPRECATED_Default)
 {
 	NvFlowGridMaterialParams FlowGridMaterialParams;
-	NvFlowGridMaterialParamsDefaults(&FlowGridMaterialParams);
+	NvFlowGridMaterialParamsDefaultsInline(&FlowGridMaterialParams);
 
 	CopyMaterialPerComponent(FlowGridMaterialParams.velocity, Velocity);
 	CopyMaterialPerComponent(FlowGridMaterialParams.smoke, Smoke);
