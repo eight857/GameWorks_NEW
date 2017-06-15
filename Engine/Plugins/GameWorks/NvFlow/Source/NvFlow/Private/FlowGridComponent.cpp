@@ -86,7 +86,7 @@ void UFlowGridComponent::InitializeGridProperties(FFlowGridProperties* FlowGridP
 
 	// initialize desc/param defaults
 	NvFlowGridDescDefaultsInline(&FlowGridProperties->GridDesc);
-	NvFlowGridParamsDefaults(&FlowGridProperties->GridParams);
+	NvFlowGridParamsDefaultsInline(&FlowGridProperties->GridParams);
 
 	FlowGridProperties->RenderParams.bGenerateDepth = false;
 	FlowGridProperties->RenderParams.DepthAlphaThreshold = 1.f;
