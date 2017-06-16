@@ -27,6 +27,8 @@
 
 #include "NvFlowScene.h"
 
+#if WITH_NVFLOW_BACKEND
+
 namespace
 {
 	inline FIntVector NvFlowConvert(const NvFlowUint4& in)
@@ -907,6 +909,8 @@ void NvFlow::Scene::emitCustomEmitDensityCallback(IRHICommandContext* RHICmdCtx,
 
 	m_context->m_flowInterop->Push(*RHICmdCtx, m_renderContext);
 }
+
+#endif // WITH_NVFLOW_BACKEND
 
 #endif
 // NvFlow end

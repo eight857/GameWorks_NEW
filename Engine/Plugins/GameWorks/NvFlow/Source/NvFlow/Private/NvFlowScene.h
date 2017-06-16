@@ -2,6 +2,10 @@
 
 #pragma once
 
+#define WITH_NVFLOW_BACKEND PLATFORM_WINDOWS
+
+#if WITH_NVFLOW_BACKEND
+
 namespace NvFlow
 {
 	struct Scene;
@@ -252,5 +256,7 @@ namespace NvFlow
 		return FPlatformTLS::GetCurrentThreadId();
 	}
 }
+
+#endif
 
 // NvFlow end

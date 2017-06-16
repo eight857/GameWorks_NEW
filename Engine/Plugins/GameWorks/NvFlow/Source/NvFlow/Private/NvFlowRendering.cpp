@@ -50,6 +50,8 @@ DEFINE_STAT(STAT_Flow_RenderGrids);
 
 #include "NvFlowScene.h"
 
+#if WITH_NVFLOW_BACKEND
+
 namespace NvFlow
 {
 	Context gContextImpl;
@@ -441,13 +443,10 @@ void NvFlow::Context::release()
 	m_renderContext = nullptr;
 	m_flowInterop = nullptr;
 
-	// NvFlow: Windows only for now
-	#if PLATFORM_WINDOWS
 	if (m_needNvFlowDeferredRelease)
 	{
 		NvFlowDeferredRelease(1000.f);
 	}
-	#endif
 }
 
 void NvFlow::Context::updateScene(FRHICommandListImmediate& RHICmdList, FFlowGridSceneProxy* FlowGridSceneProxy, bool& shouldFlush, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
@@ -1610,11 +1609,14 @@ void NvFlow::Scene::renderDeferred(IRHICommandContext* RHICmdCtx, RenderParams* 
 
 }
 
+#endif // WITH_NVFLOW_BACKEND
+
 // ---------------- global interface functions ---------------------
 
 bool NvFlowUsesGlobalDistanceField()
 {
 	bool bResult = false;
+#if WITH_NVFLOW_BACKEND
 	if (NvFlow::gContext)
 	{
 		for (int32 i = 0; i < NvFlow::gContext->m_sceneList.Num(); i++)
@@ -1624,6 +1626,7 @@ bool NvFlowUsesGlobalDistanceField()
 			bResult |= FlowGridSceneProxy->FlowGridProperties->bDistanceFieldCollisionEnabled;
 		}
 	}
+#endif // WITH_NVFLOW_BACKEND
 	return bResult;
 }
 
@@ -1634,8 +1637,7 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 		return;
 	}
 
-// NvFlow: Windows only for now
-#if PLATFORM_WINDOWS
+#if WITH_NVFLOW_BACKEND
 
 	bool shouldFlush = false;
 
@@ -1694,11 +1696,12 @@ void NvFlowUpdateScene(FRHICommandListImmediate& RHICmdList, TArray<FPrimitiveSc
 		RHICmdList.NvFlowWork(NvFlow::Context::cleanupSceneListCallback, NvFlow::gContext, 0u);
 	}
 
-#endif
+#endif // WITH_NVFLOW_BACKEND
 }
 
 bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View, FPrimitiveSceneInfo* PrimitiveSceneInfo)
 {
+#if WITH_NVFLOW_BACKEND
 	if (!GUsingNullRHI && NvFlow::gContext)
 	{
 		if (PrimitiveSceneInfo->Proxy->FlowData.bFlowGrid)
@@ -1724,18 +1727,22 @@ bool NvFlowDoRenderPrimitive(FRHICommandList& RHICmdList, const FViewInfo& View,
 			return true;
 		}
 	}
+#endif // WITH_NVFLOW_BACKEND
 	return false;
 }
 
 void NvFlowDoRenderFinish(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
 {
+#if WITH_NVFLOW_BACKEND
 	//if (!GUsingNullRHI && NvFlow::gContext)
 	//{
 	//}
+#endif // WITH_NVFLOW_BACKEND
 }
 
 bool NvFlowShouldDoPreComposite(FRHICommandListImmediate& RHICmdList)
 {
+#if WITH_NVFLOW_BACKEND
 	if (!GUsingNullRHI && NvFlow::gContext && UFlowGridAsset::sGlobalDepth > 0)
 	{
 		uint32 Count = 0;
@@ -1750,11 +1757,13 @@ bool NvFlowShouldDoPreComposite(FRHICommandListImmediate& RHICmdList)
 		}
 		return (Count > 0);
 	}
+#endif // WITH_NVFLOW_BACKEND
 	return false;
 }
 
 void NvFlowDoPreComposite(FRHICommandListImmediate& RHICmdList, const FViewInfo& View)
 {
+#if WITH_NVFLOW_BACKEND
 	if (!GUsingNullRHI && NvFlow::gContext && UFlowGridAsset::sGlobalDepth > 0)
 	{
 		NvFlow::gContext->interopBegin(RHICmdList, false, false);
@@ -1771,10 +1780,12 @@ void NvFlowDoPreComposite(FRHICommandListImmediate& RHICmdList, const FViewInfo&
 
 		NvFlow::gContext->interopEnd(RHICmdList, false, false);
 	}
+#endif // WITH_NVFLOW_BACKEND
 }
 
 uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const ParticleSimulationParamsNvFlow& ParticleSimulationParams, uint32 MaxCount, GridExportParamsNvFlow* ResultParamsList)
 {
+#if WITH_NVFLOW_BACKEND
 	if (NvFlow::gContext)
 	{
 		uint32 Count = 0;
@@ -1809,6 +1820,7 @@ uint32 NvFlowQueryGridExportParams(FRHICommandListImmediate& RHICmdList, const P
 		}
 		return Count;
 	}
+#endif // WITH_NVFLOW_BACKEND
 	return 0;
 }
 
