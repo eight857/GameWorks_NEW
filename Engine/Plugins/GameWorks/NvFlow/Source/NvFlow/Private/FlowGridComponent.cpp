@@ -224,10 +224,10 @@ namespace
 	inline NvFlowFloat4x4 ConvertToNvFlowFloat4x4(const FMatrix& Mat)
 	{
 		return NvFlowFloat4x4{
-			Mat.M[0][0], Mat.M[0][1], Mat.M[0][2], Mat.M[0][3],
-			Mat.M[1][0], Mat.M[1][1], Mat.M[1][2], Mat.M[1][3],
-			Mat.M[2][0], Mat.M[2][1], Mat.M[2][2], Mat.M[2][3],
-			Mat.M[3][0], Mat.M[3][1], Mat.M[3][2], Mat.M[3][3],
+			{Mat.M[0][0], Mat.M[0][1], Mat.M[0][2], Mat.M[0][3]},
+			{Mat.M[1][0], Mat.M[1][1], Mat.M[1][2], Mat.M[1][3]},
+			{Mat.M[2][0], Mat.M[2][1], Mat.M[2][2], Mat.M[2][3]},
+			{Mat.M[3][0], Mat.M[3][1], Mat.M[3][2], Mat.M[3][3]}
 		};
 	}
 }
