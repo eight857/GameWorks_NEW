@@ -157,7 +157,7 @@ NV_FLOW_API void NvFlowUpdateResourceViewDescD3D12(NvFlowContext* context, NvFlo
  * Updates an application visible description with internal Flow resourceRW information.
  *
  * @param[in] context The Flow context that created the resourceRW.
- * @param[in] buffer The Flow resourceRW to describe.
+ * @param[in] resourceRW The Flow resourceRW to describe.
  * @param[out] desc The graphics API dependent Flow resourceRW description.
  */
 NV_FLOW_API void NvFlowUpdateResourceRWViewDescD3D12(NvFlowContext* context, NvFlowResourceRW* resourceRW, NvFlowResourceRWViewDescD3D12* desc);

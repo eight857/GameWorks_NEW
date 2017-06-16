@@ -388,6 +388,7 @@ struct NvFlowRenderTargetView;
 NV_FLOW_API NvFlowRenderTarget* NvFlowRenderTargetViewGetRenderTarget(NvFlowRenderTargetView* rtv);
 
 //! Constants for dispatch and draw commands
+
 #define NV_FLOW_DISPATCH_MAX_READ_TEXTURES ( 16u )
 #define NV_FLOW_DISPATCH_MAX_WRITE_TEXTURES ( 8u )
 

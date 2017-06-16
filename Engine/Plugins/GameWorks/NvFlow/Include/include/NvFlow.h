@@ -103,7 +103,7 @@ NV_FLOW_API void NvFlowGridResetDescDefaults(NvFlowGridResetDesc* desc);
 NV_FLOW_API void NvFlowGridReset(NvFlowGrid* grid, const NvFlowGridResetDesc* desc);
 
 /**
- * Not fully supported yet. Allows the application to request the grid move to a new location.
+ * Allows the application to request the grid move to a new location.
  *
  * @param[in] grid The grid to move.
  * @param[in] targetLocation The location the center of the grid should make a best effort attempt to reach.
@@ -468,7 +468,7 @@ struct NvFlowGridEmitParams
 
 	NvFlowFloat4x4 bounds;							//!< Transform from emitter ndc to world space
 	NvFlowFloat4x4 localToWorld;					//!< Transform from shape local space to world space
-	NvFlowFloat3 centerOfMass; 						//!< Center of mass in emitter local coordinate space
+	NvFlowFloat3 centerOfMass; 						//!< Center of mass in emitter bounds coordinate space
 
 	float deltaTime;								//!< DeltaTime used to compute impulse
 
