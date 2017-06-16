@@ -220,6 +220,16 @@ namespace
 
 		return FMath::Min(float(ResidentBlocks) / MaxBlocks, 1.0f);
 	}
+
+	inline NvFlowFloat4x4 ConvertToNvFlowFloat4x4(const FMatrix& Mat)
+	{
+		return NvFlowFloat4x4{
+			Mat.M[0][0], Mat.M[0][1], Mat.M[0][2], Mat.M[0][3],
+			Mat.M[1][0], Mat.M[1][1], Mat.M[1][2], Mat.M[1][3],
+			Mat.M[2][0], Mat.M[2][1], Mat.M[2][2], Mat.M[2][3],
+			Mat.M[3][0], Mat.M[3][1], Mat.M[3][2], Mat.M[3][3],
+		};
+	}
 }
 
 namespace physx
@@ -789,8 +799,8 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 						FVector centerOfMass = BlendedBounds.InverseTransformPosition(CollisionScaledCenterOfMass);
 						emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
 
-						emitParams.bounds = *(NvFlowFloat4x4*)(&BlendedBounds.ToMatrixWithScale().M[0][0]);
-						emitParams.localToWorld = *(NvFlowFloat4x4*)(&BlendedLocalToWorld.ToMatrixWithScale().M[0][0]);
+						emitParams.bounds = ConvertToNvFlowFloat4x4(BlendedBounds.ToMatrixWithScale());
+						emitParams.localToWorld = ConvertToNvFlowFloat4x4(BlendedLocalToWorld.ToMatrixWithScale());
 
 						// push parameters
 						FlowGridProperties->GridEmitParams.Push(emitParams);
@@ -887,8 +897,8 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 					FVector centerOfMass = BlendedBounds.InverseTransformPosition(CollisionScaledCenterOfMass);
 					emitParams.centerOfMass = *(NvFlowFloat3*)(&centerOfMass.X);
 
-					emitParams.bounds = *(NvFlowFloat4x4*)(&BlendedBounds.ToMatrixWithScale().M[0][0]);
-					emitParams.localToWorld = *(NvFlowFloat4x4*)(&BlendedLocalToWorld.ToMatrixWithScale().M[0][0]);
+					emitParams.bounds = ConvertToNvFlowFloat4x4(BlendedBounds.ToMatrixWithScale());
+					emitParams.localToWorld = ConvertToNvFlowFloat4x4(BlendedLocalToWorld.ToMatrixWithScale());
 
 					// step size
 					emitParams.deltaTime = FlowGridProperties->SubstepSize;
