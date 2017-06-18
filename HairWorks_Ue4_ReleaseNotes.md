@@ -18,11 +18,11 @@ Known Issues
 
 Changes
 =============
-## 15 Jun 2017
+## Jun 15, 2017
 * Upgraded to HairWorks 1.4
 * Added support for morph target skeletal mesh. 
 
-## 17 Jun 2017
+## Jun 17, 2017
 * Upgraded to UE4.16.1
 * Added selection outline. 
 
