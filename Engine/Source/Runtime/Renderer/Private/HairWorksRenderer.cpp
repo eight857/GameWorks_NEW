@@ -1222,6 +1222,7 @@ namespace HairWorksRenderer
 		}
 	}
 
+#if WITH_EDITOR
 	void RenderSelectionOutline(FRHICommandList& RHICmdList, const FViewInfo& View)
 	{
 		// Setup render states
@@ -1256,6 +1257,7 @@ namespace HairWorksRenderer
 			HairWorksSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Normal);
 		}
 	}
+#endif
 
 	void StepSimulation(FRHICommandList& RHICmdList, const float CurrentWorldTime, const float DeltaWorldTime)
 	{
