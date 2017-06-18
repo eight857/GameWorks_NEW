@@ -16,6 +16,7 @@ namespace HairWorksRenderer
 	void RenderVisualization(FRHICommandList& RHICmdList, const FViewInfo& View);
 	void RenderHitProxies(FRHICommandList& RHICmdList, const TArray<FViewInfo>& Views);
 	void RenderCustomStencil(FRHICommandList& RHICmdList, const FViewInfo& View);
+	void RenderSelectionOutline(FRHICommandList& RHICmdList, const FViewInfo& View);
 	void BeginRenderingSceneColor(FRHICommandList& RHICmdList);	// Add a render target for hair
 	void BlendLightingColor(FRHICommandList& RHICmdList);
 	bool IsLightAffectHair(const FLightSceneInfo& LightSceneInfo, const FViewInfo& View);

@@ -22,6 +22,7 @@
 #include "SceneFilterRendering.h"
 #include "AmbientCubemapParameters.h"
 #include "HairWorksSceneProxy.h"
+#include "SceneHitProxyRendering.h"
 
 // UE4 uses shader class names, so we need put these classes in global name space to let compiler check name conflicts.
 // Pixel shaders
@@ -1220,6 +1221,43 @@ namespace HairWorksRenderer
 			StencilingGeometry::DrawVectorSphere(RHICmdList);
 		}
 	}
+
+#if WITH_EDITOR
+	void RenderSelectionOutline(FRHICommandList& RHICmdList, const FViewInfo& View)
+	{
+		// Setup render states
+		TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
+		TShaderMapRef<FHairWorksHitProxyPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
+
+		FBoundShaderStateInput ShaderState;
+		ShaderState.VertexDeclarationRHI = GSimpleElementVertexDeclaration.VertexDeclarationRHI;
+		ShaderState.VertexShaderRHI = VertexShader->GetVertexShader();
+		ShaderState.PixelShaderRHI = PixelShader->GetPixelShader();
+
+		FGraphicsPipelineStateInitializer GraphicsPSOInit;
+		GraphicsPSOInit.BoundShaderState = ShaderState;
+		GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<true, CF_DepthNearOrEqual, true, CF_Always, SO_Keep, SO_Keep, SO_Replace>::GetRHI();
+		GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
+		GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
+
+		SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, EApplyRendertargetOption::ForceApply);
+
+		// Set camera
+		SetProjViewInfo(RHICmdList, View);
+
+		// Draw selected hair
+		for (auto SceneInfo : View.VisibleHairs)
+		{
+			if (!SceneInfo->Proxy->IsSelected() || !SceneInfo->Proxy->WantsSelectionOutline())
+				continue;
+
+			RHICmdList.SetStencilRef(FEditorSelectionDrawingPolicy::GetStencilValue(View, SceneInfo->Proxy));
+
+			auto& HairWorksSceneProxy = static_cast<FHairWorksSceneProxy&>(*SceneInfo->Proxy);
+			HairWorksSceneProxy.Draw(RHICmdList, FHairWorksSceneProxy::EDrawType::Normal);
+		}
+	}
+#endif
 
 	void StepSimulation(FRHICommandList& RHICmdList, const float CurrentWorldTime, const float DeltaWorldTime)
 	{

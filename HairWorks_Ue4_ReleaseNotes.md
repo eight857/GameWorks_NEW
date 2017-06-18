@@ -22,8 +22,9 @@ Changes
 * Upgraded to HairWorks 1.4
 * Added support for morph target skeletal mesh. 
 
-## 7 Jun 2017
+## 17 Jun 2017
 * Upgraded to UE4.16.1
+* Added selection outline. 
 
 ## Legacy
 New:
@@ -53,7 +54,7 @@ Fix:
 * HairWorks component now has right bounding box.
 * Fixed some problems when a HairWorks component is edited.
 * Fixed a bug that hair transform is sometimes wrong.
-* Fixed a bug that view frustum culling doesn?â„¢t work.
+* Fixed a bug that view frustum culling doesn??¢t work.
 * Fixed a crash when the hair normal bone index is -1.
 * Fixed hair shadow bug on Pascal GPU.
 * Some refactoring of C++ and shader codes.

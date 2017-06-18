@@ -15,9 +15,6 @@
 UHairWorksComponent::UHairWorksComponent(const class FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	// No need to select
-	bSelectable = false;
-
 	// Setup shadow
 	CastShadow = true;
 	bAffectDynamicIndirectLighting = false;
