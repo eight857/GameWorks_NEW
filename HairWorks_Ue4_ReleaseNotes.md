@@ -1,4 +1,4 @@
-Artist Workflow
+﻿Artist Workflow
 =============
 HairWorks assets are imported directly into the content browser. All the attributes of a HairWorks asset are now directly editable on the asset's Details panel. The details panel is set up to be consistent with the HairWorks Viewer's UI as close as possible.
 
@@ -54,7 +54,7 @@ Fix:
 * HairWorks component now has right bounding box.
 * Fixed some problems when a HairWorks component is edited.
 * Fixed a bug that hair transform is sometimes wrong.
-* Fixed a bug that view frustum culling doesn??�t work.
+* Fixed a bug that view frustum culling doesn’t work.
 * Fixed a crash when the hair normal bone index is -1.
 * Fixed hair shadow bug on Pascal GPU.
 * Some refactoring of C++ and shader codes.
