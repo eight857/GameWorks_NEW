@@ -1468,10 +1468,10 @@ public:
 	The values passed in are the delta differences between instances root positions and/or normals. 
 	\param [in] instanceId hair instance to update the morph target deltas on
 	\param [in] positionDeltas. (Can be null if positions don't need to be morphs) 
-	\param [in] morphed normals. The hair will be rotated from the growth mesh normal to this normal. (Can be null if normals don't need to be morphed)
+	\param [in] normalsDeltas. The hair will be rotated from the growth mesh normal to morphed normal. (Can be null if normals don't need to be morphed)
 	\return Successful if NV_SUCCEEDED(Result) is true. */
 
-	virtual Result updateMorphDeltas(InstanceId instanceId, const gfsdk_float3* positionsDeltas, const gfsdk_float3* normals) = 0;
+	virtual Result updateMorphDeltas(InstanceId instanceId, const gfsdk_float3* positionsDeltas, const gfsdk_float3* normalsDeltas) = 0;
 
 	/**
 		\brief Runs simulation for all currently active hair instances for one frame.
