@@ -1299,10 +1299,12 @@ const FTwoVectors& FSkeletalMeshObjectGPUSkin::GetCustomLeftRightVectors(int32 S
 	}
 }
 
+// @third party code - BEGIN HairWorks
 const TArray<FMorphGPUSkinVertex>& FSkeletalMeshObjectGPUSkin::GetMorphVertices() const
 {
 	return MorphVertices;
 }
+// @third party code - END HairWorks
 
 /*-----------------------------------------------------------------------------
 FDynamicSkelMeshObjectDataGPUSkin
