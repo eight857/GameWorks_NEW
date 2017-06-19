@@ -161,5 +161,6 @@ Saved/
 # Explcitly ignore Mac DS_Store files, regardless of where they are
 .DS_Store
 
-# Add D3D compiler dll for HairWorks
+# Add back some files for HairWorks
 !/Engine/Binaries/Win64/d3dcompiler_*.dll
+!/Engine/Binaries/ThirdParty/HairWorksNvHairWorksDx11.win64.dll
