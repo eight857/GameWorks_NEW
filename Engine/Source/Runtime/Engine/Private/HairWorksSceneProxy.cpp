@@ -204,11 +204,19 @@ void FHairWorksSceneProxy::OnTransformChanged()
 	::HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, InstDesc);
 }
 
-void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData & DynamicData)
+void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& DynamicData)
 {
 	// Set skinning data
 	if(DynamicData.BoneMatrices.Num() > 0)
 	{
+		if (DynamicData.bSimulateInWorldSpace)
+		{
+			for (auto& BoneMatrix : DynamicData.BoneMatrices)
+			{
+				BoneMatrix *= GetLocalToWorld();
+			}
+		}
+
 		::HairWorks::GetSDK()->updateSkinningMatrices(
 			HairInstanceId, DynamicData.BoneMatrices.Num(),
 			reinterpret_cast<const gfsdk_float4x4*>(DynamicData.BoneMatrices.GetData())
@@ -251,7 +259,14 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData & D
 	HairDesc.m_drawRenderHairs &= CVarHairVisualizationHair.GetValueOnRenderThread() != 0;
 
 	// Other parameters
-	HairDesc.m_modelToWorld = (gfsdk_float4x4&)GetLocalToWorld().M;
+	if (DynamicData.bSimulateInWorldSpace)
+	{
+		HairDesc.m_modelToWorld = reinterpret_cast<const gfsdk_float4x4&>(FMatrix::Identity.M);
+	}
+	else
+	{
+		HairDesc.m_modelToWorld = reinterpret_cast<const gfsdk_float4x4&>(GetLocalToWorld().M);
+	}
 
 	// Set parameters to HairWorks
 	::HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, HairDesc);	// Mainly for simulation.

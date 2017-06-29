@@ -225,22 +225,23 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 	DynamicData->Textures.SetNumZeroed(NvHair::ETextureType::COUNT_OF);
 	::HairWorks::GetSDK()->getInstanceDescriptorFromAsset(HairInstance.Hair->AssetId, DynamicData->HairInstanceDesc);
 
-	FName HairNormalCenter;
-
 	// Always load from asset to propagate visualization flags
-	if(HairInstance.Hair->HairMaterial != nullptr)
+	checkSlow(HairInstance.Hair->HairMaterial);
+
+	auto* HairMaterial = HairInstance.Hair->HairMaterial;
+	if(HairMaterial != nullptr)
 	{
 		HairInstance.Hair->HairMaterial->GetHairInstanceParameters(DynamicData->HairInstanceDesc, DynamicData->Textures);
-		HairNormalCenter = HairInstance.Hair->HairMaterial->HairNormalCenter;
 	}
 
 	// Load from component hair material
 	checkSlow(HairInstance.HairMaterial->GetOuter() == this);
 	if(HairInstance.HairMaterial != nullptr && HairInstance.bOverride)
 	{
+		HairMaterial = HairInstance.HairMaterial;
+
 		NvHair::InstanceDescriptor OverideHairDesc;
 		HairInstance.HairMaterial->GetHairInstanceParameters(OverideHairDesc, DynamicData->Textures);
-		HairNormalCenter = HairInstance.HairMaterial->HairNormalCenter;
 
 		// Propagate visualization flags
 #define HairWorksMergeVisFlag(FlagName) OverideHairDesc.m_visualize##FlagName |= DynamicData->HairInstanceDesc.m_visualize##FlagName
@@ -270,11 +271,18 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 	if(bForceSkinning)
 		DynamicData->HairInstanceDesc.m_simulate = false;
 
-	auto* BoneIdx = HairInstance.Hair->BoneNameToIdx.Find(HairNormalCenter);
-	if(BoneIdx != nullptr)
-		DynamicData->HairInstanceDesc.m_hairNormalBoneIndex = *BoneIdx;
-	else
-		DynamicData->HairInstanceDesc.m_hairNormalWeight = 0;
+	if (HairMaterial)
+	{
+		// Hair normal center
+		auto* BoneIdx = HairInstance.Hair->BoneNameToIdx.Find(HairMaterial->HairNormalCenter);
+		if (BoneIdx != nullptr)
+			DynamicData->HairInstanceDesc.m_hairNormalBoneIndex = *BoneIdx;
+		else
+			DynamicData->HairInstanceDesc.m_hairNormalWeight = 0;
+
+		// Simulation flag
+		DynamicData->bSimulateInWorldSpace = HairMaterial->bSimulateInWorldSpace;
+	}
 
 	// Set skinning data
 	DynamicData->BoneMatrices = BoneMatrices;

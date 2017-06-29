@@ -18,9 +18,10 @@ Known Issues
 
 Changes
 =============
-## Jun 15, 2017
+## Jun 28, 2017
 * Upgraded to HairWorks 1.4
 * Added support for morph target skeletal mesh. 
+* Added world space simulation mode. 
 
 ## Jun 17, 2017
 * Upgraded to UE4.16.1

@@ -121,6 +121,10 @@ class ENGINE_API UHairWorksMaterial: public UObject
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|General")
 	bool bSimulate = true;
 
+	/** Whether to simulate in world space. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|General")
+	bool bSimulateInWorldSpace = false;
+
 	/** Mass scale for this hair. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physical|General", meta = (ClampMin = "-50", ClampMax = "50"))
 	float MassScale = 10;

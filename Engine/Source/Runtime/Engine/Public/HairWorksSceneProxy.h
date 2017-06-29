@@ -28,6 +28,7 @@ public:
 	struct FDynamicRenderData
 	{
 		NvHair::InstanceDescriptor HairInstanceDesc;
+		bool bSimulateInWorldSpace = false;
 		TArray<UTexture2D*> Textures;
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
