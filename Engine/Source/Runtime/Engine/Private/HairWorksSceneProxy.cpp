@@ -175,6 +175,9 @@ void FHairWorksSceneProxy::CreateRenderThreadResources()
 	if(HairInstanceId == NvHair::INSTANCE_ID_NULL)
 		return;
 
+	// Add to list
+	LinkHead(HairInstances);
+
 	// Disable this instance at first.
 	NvHair::InstanceDescriptor HairInstanceDesc;
 	HairSdk.getInstanceDescriptor(HairInstanceId, HairInstanceDesc);
@@ -183,9 +186,6 @@ void FHairWorksSceneProxy::CreateRenderThreadResources()
 		HairInstanceDesc.m_enable = false;
 		HairSdk.updateInstanceDescriptor(HairInstanceId, HairInstanceDesc);
 	}
-
-	// Add to list
-	LinkHead(HairInstances);
 }
 
 void FHairWorksSceneProxy::OnTransformChanged()
@@ -257,6 +257,18 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 #undef HairVisualizerCVarUpdate
 
 	HairDesc.m_drawRenderHairs &= CVarHairVisualizationHair.GetValueOnRenderThread() != 0;
+
+	// Wind
+	if (reinterpret_cast<FVector&>(HairDesc.m_wind).Size() == 0)
+	{
+		FVector WindDirection;
+		float WindSpeed;
+		float WindMinGustAmt;
+		float WindMaxGustAmt;
+		GetScene().GetDirectionalWindParameters(WindDirection, WindSpeed, WindMinGustAmt, WindMaxGustAmt);
+
+		reinterpret_cast<FVector&>(HairDesc.m_wind) = GetLocalToWorld().Inverse().TransformVector(WindDirection) * WindSpeed;
+	}
 
 	// Other parameters
 	if (DynamicData.bSimulateInWorldSpace)
