@@ -258,19 +258,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 
 	HairDesc.m_drawRenderHairs &= CVarHairVisualizationHair.GetValueOnRenderThread() != 0;
 
-	// Wind
-	if (reinterpret_cast<FVector&>(HairDesc.m_wind).Size() == 0)
-	{
-		FVector WindDirection;
-		float WindSpeed;
-		float WindMinGustAmt;
-		float WindMaxGustAmt;
-		GetScene().GetDirectionalWindParameters(WindDirection, WindSpeed, WindMinGustAmt, WindMaxGustAmt);
-
-		reinterpret_cast<FVector&>(HairDesc.m_wind) = GetLocalToWorld().Inverse().TransformVector(WindDirection) * WindSpeed;
-	}
-
-	// Other parameters
+	// World transform
 	if (DynamicData.bSimulateInWorldSpace)
 	{
 		HairDesc.m_modelToWorld = reinterpret_cast<const gfsdk_float4x4&>(FMatrix::Identity.M);
@@ -278,6 +266,21 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 	else
 	{
 		HairDesc.m_modelToWorld = reinterpret_cast<const gfsdk_float4x4&>(GetLocalToWorld().M);
+	}
+
+	// Wind
+	if (reinterpret_cast<FVector&>(HairDesc.m_wind).Size() == 0)
+	{
+		FVector WindDirection;
+		float WindSpeed;
+		float WindMinGustAmt;
+		float WindMaxGustAmt;
+		GetScene().GetWindParameters(GetBounds().Origin, WindDirection, WindSpeed, WindMinGustAmt, WindMaxGustAmt);
+
+		static TAutoConsoleVariable<float> CVarWindScale(TEXT("r.HairWorks.WindScale"), 50, TEXT(""), ECVF_RenderThreadSafe);
+
+		auto& ModelToWorld = reinterpret_cast<FMatrix&>(HairDesc.m_modelToWorld);
+		reinterpret_cast<FVector&>(HairDesc.m_wind) = ModelToWorld.Inverse().TransformVector(WindDirection) * WindSpeed * CVarWindScale.GetValueOnRenderThread() * (FMath::FRand() * 0.5f + 1);
 	}
 
 	// Set parameters to HairWorks
