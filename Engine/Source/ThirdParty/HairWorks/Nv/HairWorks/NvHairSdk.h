@@ -411,7 +411,7 @@ struct AssetDescriptor
 	EHandednessHint m_handedness; //!< handedness of coordinate system this asset used at time of creation/conversion.  See HandednessHint.
 	EAxisHint		m_upAxis;		//!< up axis of coordinate system this asset used at time of creation/conversion.  See AxisHint.
 	
-	AssetDescriptor::AssetDescriptor() :
+	AssetDescriptor() :
 		m_numGuideHairs(0),
 		m_numVertices(0),		
 		m_vertices(NV_NULL),
