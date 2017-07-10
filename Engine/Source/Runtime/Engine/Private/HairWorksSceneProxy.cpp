@@ -10,6 +10,8 @@
 #include "Engine/Texture2D.h"
 #include "Engine/HairWorksAsset.h"
 
+static TAutoConsoleVariable<float> CVarWindScale(TEXT("r.HairWorks.WindScale"), 50, TEXT(""), ECVF_RenderThreadSafe);
+
 // Debug render console variables.
 #define HairVisualizationCVarDefine(Name)	\
 	static TAutoConsoleVariable<int> CVarHairVisualization##Name(TEXT("r.HairWorks.Visualization.") TEXT(#Name), 0, TEXT(""), ECVF_RenderThreadSafe)
@@ -276,8 +278,6 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 		float WindMinGustAmt;
 		float WindMaxGustAmt;
 		GetScene().GetWindParameters(GetBounds().Origin, WindDirection, WindSpeed, WindMinGustAmt, WindMaxGustAmt);
-
-		static TAutoConsoleVariable<float> CVarWindScale(TEXT("r.HairWorks.WindScale"), 50, TEXT(""), ECVF_RenderThreadSafe);
 
 		auto& ModelToWorld = reinterpret_cast<FMatrix&>(HairDesc.m_modelToWorld);
 		reinterpret_cast<FVector&>(HairDesc.m_wind) = ModelToWorld.Inverse().TransformVector(WindDirection) * WindSpeed * CVarWindScale.GetValueOnRenderThread() * (FMath::FRand() * 0.5f + 1);
