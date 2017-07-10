@@ -23,6 +23,8 @@ DEFINE_LOG_CATEGORY(LogFlow);
 NFlowRendering.cpp: Translucent rendering implementation.
 =============================================================================*/
 
+#include "CoreMinimal.h"
+#include "RenderUtils.h"
 #include "RendererPrivate.h"
 #include "ScenePrivate.h"
 #include "ScreenRendering.h"
@@ -744,6 +746,38 @@ void NvFlow::Scene::updateParametersCallback(void* paramData, SIZE_T numBytes, I
 	scene->updateParametersDeferred(RHICmdCtx);
 }
 
+namespace
+{
+	void NvFlowCopyDistanceField(NvFlowShapeSDFData& mappedShapeData, const TArray<uint8>& UncompressedData,
+		const FVector2D& DistanceMinMax, const EPixelFormat Format)
+	{
+		for (NvFlowUint z = 0; z < mappedShapeData.dim.z; ++z)
+		{
+			for (NvFlowUint y = 0; y < mappedShapeData.dim.y; ++y)
+			{
+				for (NvFlowUint x = 0; x < mappedShapeData.dim.x; ++x)
+				{
+					uint32 idx = x + mappedShapeData.dim.x * (y + mappedShapeData.dim.y * z);
+					float value = 0.f;
+					if (Format == PF_R16F)
+					{
+						FFloat16 val16f;
+						val16f.Encoded = UncompressedData[2 * idx + 0];
+						val16f.Encoded |= ((UncompressedData[2 * idx + 1]) << 8u);
+						value = val16f.GetFloat();
+					}
+					else if (Format == PF_G8)
+					{
+						uint32 val32u = UncompressedData[idx];
+						value = (1.f / 255.f) * (float(val32u)) * DistanceMinMax.Y + DistanceMinMax.X;
+					}
+					mappedShapeData.data[x + mappedShapeData.rowPitch * y + mappedShapeData.depthPitch * z] = value;
+				}
+			}
+		}
+	}
+}
+
 void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 {
 	auto& appctx = *RHICmdCtx;
@@ -778,21 +812,35 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 		check(mappedShapeData.dim.x == descSDF.resolution.x);
 		check(mappedShapeData.dim.y == descSDF.resolution.y);
 		check(mappedShapeData.dim.z == descSDF.resolution.z);
-		for (NvFlowUint z = 0; z < mappedShapeData.dim.z; ++z)
-		{
-			for (NvFlowUint y = 0; y < mappedShapeData.dim.y; ++y)
-			{
-				for (NvFlowUint x = 0; x < mappedShapeData.dim.x; ++x)
-				{
-					uint32 idx = x + mappedShapeData.dim.x * (y + mappedShapeData.dim.y * z);
-					FFloat16 val16f;
-					val16f.Encoded = DistanceFieldParams.CompressedDistanceFieldVolume[2 * idx + 0];
-					val16f.Encoded |= ((DistanceFieldParams.CompressedDistanceFieldVolume[2 * idx + 1]) << 8u);
-					float value = val16f.GetFloat();
 
-					mappedShapeData.data[x + mappedShapeData.rowPitch * y + mappedShapeData.depthPitch * z] = value;
-				}
-			}
+		// From DistanceFieldAtlas.cpp, to determine if compression is enabled
+		static const auto CVarCompress = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.DistanceFieldBuild.Compress"));
+		const bool bDataIsCompressed = CVarCompress->GetValueOnAnyThread() != 0;
+
+		static const auto CVarEightBit = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.DistanceFieldBuild.EightBit"));
+		const bool bEightBitFixedPoint = CVarEightBit->GetValueOnAnyThread() != 0;
+
+		EPixelFormat Format = bEightBitFixedPoint ? PF_G8 : PF_R16F;
+		const int32 FormatSize = GPixelFormats[Format].BlockBytes;
+
+		if (bDataIsCompressed)
+		{
+			const int32 UncompressedSize = descSDF.resolution.x * descSDF.resolution.y * descSDF.resolution.z * FormatSize;
+
+			TArray<uint8> UncompressedData;
+			UncompressedData.Empty(UncompressedSize);
+			UncompressedData.AddUninitialized(UncompressedSize);
+
+			verify(FCompression::UncompressMemory((ECompressionFlags)COMPRESS_ZLIB, UncompressedData.GetData(), UncompressedSize, 
+				DistanceFieldParams.CompressedDistanceFieldVolume.GetData(), DistanceFieldParams.CompressedDistanceFieldVolume.Num()));
+
+			NvFlowCopyDistanceField(mappedShapeData, UncompressedData, DistanceFieldParams.DistanceMinMax, Format);
+		}
+		else
+		{
+			auto& UncompressedData = DistanceFieldParams.CompressedDistanceFieldVolume;
+
+			NvFlowCopyDistanceField(mappedShapeData, UncompressedData, DistanceFieldParams.DistanceMinMax, Format);
 		}
 
 		NvFlowShapeSDFUnmap(shapeSDF, m_gridContext);

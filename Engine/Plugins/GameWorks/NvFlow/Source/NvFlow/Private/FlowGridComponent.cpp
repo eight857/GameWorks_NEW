@@ -529,6 +529,7 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 
 						DistanceFieldParams.StaticMesh = StaticMesh;
 						DistanceFieldParams.Size = DistanceFieldVolumeData->Size;
+						DistanceFieldParams.DistanceMinMax = DistanceFieldVolumeData->DistanceMinMax;
 						DistanceFieldParams.CompressedDistanceFieldVolume = DistanceFieldVolumeData->CompressedDistanceFieldVolume;
 					}
 

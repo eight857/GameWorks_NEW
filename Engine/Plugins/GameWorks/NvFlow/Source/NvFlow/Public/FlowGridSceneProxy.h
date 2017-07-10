@@ -80,6 +80,7 @@ struct FFlowDistanceFieldParams
 	const class UStaticMesh* StaticMesh;
 
 	FIntVector Size;
+	FVector2D DistanceMinMax;
 	TArray<uint8> CompressedDistanceFieldVolume;
 };
 
