@@ -748,8 +748,7 @@ void NvFlow::Scene::updateParametersCallback(void* paramData, SIZE_T numBytes, I
 
 namespace
 {
-	void NvFlowCopyDistanceField(NvFlowShapeSDFData& mappedShapeData, const TArray<uint8>& UncompressedData,
-		const FVector2D& DistanceMinMax, const EPixelFormat Format)
+	void NvFlowCopyDistanceFieldFP16(NvFlowShapeSDFData& mappedShapeData, const TArray<uint8>& UncompressedData)
 	{
 		for (NvFlowUint z = 0; z < mappedShapeData.dim.z; ++z)
 		{
@@ -758,22 +757,48 @@ namespace
 				for (NvFlowUint x = 0; x < mappedShapeData.dim.x; ++x)
 				{
 					uint32 idx = x + mappedShapeData.dim.x * (y + mappedShapeData.dim.y * z);
-					float value = 0.f;
-					if (Format == PF_R16F)
-					{
-						FFloat16 val16f;
-						val16f.Encoded = UncompressedData[2 * idx + 0];
-						val16f.Encoded |= ((UncompressedData[2 * idx + 1]) << 8u);
-						value = val16f.GetFloat();
-					}
-					else if (Format == PF_G8)
-					{
-						uint32 val32u = UncompressedData[idx];
-						value = (1.f / 255.f) * (float(val32u)) * DistanceMinMax.Y + DistanceMinMax.X;
-					}
+
+					FFloat16 val16f;
+					val16f.Encoded = UncompressedData[2 * idx + 0];
+					val16f.Encoded |= ((UncompressedData[2 * idx + 1]) << 8u);
+					float value = val16f.GetFloat();
+
 					mappedShapeData.data[x + mappedShapeData.rowPitch * y + mappedShapeData.depthPitch * z] = value;
 				}
 			}
+		}
+	}
+
+	void NvFlowCopyDistanceFieldG8(NvFlowShapeSDFData& mappedShapeData, const TArray<uint8>& UncompressedData,
+		const FVector2D& DistanceFieldMAD)
+	{
+		for (NvFlowUint z = 0; z < mappedShapeData.dim.z; ++z)
+		{
+			for (NvFlowUint y = 0; y < mappedShapeData.dim.y; ++y)
+			{
+				for (NvFlowUint x = 0; x < mappedShapeData.dim.x; ++x)
+				{
+					uint32 idx = x + mappedShapeData.dim.x * (y + mappedShapeData.dim.y * z);
+
+					uint32 val32u = UncompressedData[idx];
+					float value = (1.f / 255.f) * (float(val32u)) * DistanceFieldMAD.X + DistanceFieldMAD.Y;
+
+					mappedShapeData.data[x + mappedShapeData.rowPitch * y + mappedShapeData.depthPitch * z] = value;
+				}
+			}
+		}
+	}
+
+	void NvFlowCopyDistanceField(NvFlowShapeSDFData& mappedShapeData, const TArray<uint8>& UncompressedData,
+		const FVector2D& DistanceFieldMAD, const EPixelFormat Format)
+	{
+		if (Format == PF_R16F)
+		{
+			NvFlowCopyDistanceFieldFP16(mappedShapeData, UncompressedData);
+		}
+		else if (Format == PF_G8)
+		{
+			NvFlowCopyDistanceFieldG8(mappedShapeData, UncompressedData, DistanceFieldMAD);
 		}
 	}
 }
@@ -823,6 +848,9 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 		EPixelFormat Format = bEightBitFixedPoint ? PF_G8 : PF_R16F;
 		const int32 FormatSize = GPixelFormats[Format].BlockBytes;
 
+		const auto& DistanceMinMax = DistanceFieldParams.DistanceMinMax;
+		FVector2D DistanceFieldMAD = FVector2D(DistanceMinMax.Y - DistanceMinMax.X, DistanceMinMax.X);
+
 		if (bDataIsCompressed)
 		{
 			const int32 UncompressedSize = descSDF.resolution.x * descSDF.resolution.y * descSDF.resolution.z * FormatSize;
@@ -834,13 +862,13 @@ void NvFlow::Scene::updateParametersDeferred(IRHICommandContext* RHICmdCtx)
 			verify(FCompression::UncompressMemory((ECompressionFlags)COMPRESS_ZLIB, UncompressedData.GetData(), UncompressedSize, 
 				DistanceFieldParams.CompressedDistanceFieldVolume.GetData(), DistanceFieldParams.CompressedDistanceFieldVolume.Num()));
 
-			NvFlowCopyDistanceField(mappedShapeData, UncompressedData, DistanceFieldParams.DistanceMinMax, Format);
+			NvFlowCopyDistanceField(mappedShapeData, UncompressedData, DistanceFieldMAD, Format);
 		}
 		else
 		{
 			auto& UncompressedData = DistanceFieldParams.CompressedDistanceFieldVolume;
 
-			NvFlowCopyDistanceField(mappedShapeData, UncompressedData, DistanceFieldParams.DistanceMinMax, Format);
+			NvFlowCopyDistanceField(mappedShapeData, UncompressedData, DistanceFieldMAD, Format);
 		}
 
 		NvFlowShapeSDFUnmap(shapeSDF, m_gridContext);
