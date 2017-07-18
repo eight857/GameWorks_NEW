@@ -6394,7 +6394,8 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, const NvHair::I
 			NvChar BoneName[NV_HAIR_MAX_STRING];
 			HairSdk.getBoneName(Hair.AssetId, Idx, BoneName);
 
-			Hair.BoneNames.Add(*FSkeletalMeshImportData::FixupBoneName(BoneName));
+			auto* NewName = UnFbx::FFbxImporter::GetInstance()->MakeName(BoneName);
+			Hair.BoneNames.Add(*FSkeletalMeshImportData::FixupBoneName(NewName));
 		}
 	}
 	 
