@@ -35,6 +35,9 @@
 #include "WideCustomResolveShaders.h"
 #include "PipelineStateCache.h"
 #include "GPUSkinCache.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 /*-----------------------------------------------------------------------------
 	Globals
@@ -1656,10 +1659,18 @@ void FSceneRenderer::RenderCustomDepthPass(FRHICommandListImmediate& RHICmdList)
 					OverriddenViewUniformShaderParameters);
 				DrawRenderState.SetViewUniformBuffer(TUniformBufferRef<FViewUniformShaderParameters>::CreateUniformBufferImmediate(OverriddenViewUniformShaderParameters, UniformBuffer_SingleFrame));
 				View.CustomDepthSet.DrawPrims(RHICmdList, View, DrawRenderState, bWriteCustomStencilValues);
+
+				// @third party code - BEGIN HairWorks
+				HairWorksRenderer::RenderCustomStencil(RHICmdList, View);
+				// @third party code - END HairWorks
 			}
 			else
 			{
 				View.CustomDepthSet.DrawPrims(RHICmdList, View, DrawRenderState, bWriteCustomStencilValues);
+
+				// @third party code - BEGIN HairWorks
+				HairWorksRenderer::RenderCustomStencil(RHICmdList, View);
+				// @third party code - END HairWorks
 			}
 		}
 

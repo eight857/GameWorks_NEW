@@ -123,6 +123,9 @@
 #include "AssetViewerSettingsCustomization.h"
 #include "MeshMergingSettingsCustomization.h"
 #include "MaterialAttributePropertyDetails.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksDetails.h"
+// @third party code - END HairWorks
 
 IMPLEMENT_MODULE( FDetailCustomizationsModule, DetailCustomizations );
 
@@ -348,6 +351,11 @@ void FDetailCustomizationsModule::RegisterObjectCustomizations()
 
 	RegisterCustomClassLayout("MaterialExpressionGetMaterialAttributes", FOnGetDetailCustomizationInstance::CreateStatic(&FMaterialAttributePropertyDetails::MakeInstance));
 	RegisterCustomClassLayout("MaterialExpressionSetMaterialAttributes", FOnGetDetailCustomizationInstance::CreateStatic(&FMaterialAttributePropertyDetails::MakeInstance));
+
+	// @third party code - BEGIN HairWorks
+	RegisterCustomClassLayout("HairWorksMaterial", FOnGetDetailCustomizationInstance::CreateStatic(&FHairWorksMaterialDetails::MakeInstance));
+	RegisterCustomClassLayout("HairWorksComponent", FOnGetDetailCustomizationInstance::CreateStatic(&FHairWorksComponentDetails::MakeInstance));
+	// @third party code - END HairWorks
 }
 
 

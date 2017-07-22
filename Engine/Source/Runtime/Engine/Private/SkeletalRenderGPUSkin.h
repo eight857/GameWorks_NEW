@@ -320,6 +320,10 @@ public:
 
 	FSkinWeightVertexBuffer* GetSkinWeightVertexBuffer(int32 LODIndex) const;
 
+	// @third party code - BEGIN HairWorks
+	const TArray<FMorphGPUSkinVertex>& GetMorphVertices()const;
+	// @third party code - END HairWorks
+
 	/** 
 	 * Vertex buffers that can be used for GPU skinning factories 
 	 */
@@ -507,7 +511,11 @@ private:
 		 * @param ActiveMorphTargets - Morph to accumulate. assumed to be weighted and have valid targets
 		 * @param MorphTargetWeights - All Morph weights
 		 */
-		void UpdateMorphVertexBufferCPU(const TArray<FActiveMorphTarget>& ActiveMorphTargets, const TArray<float>& MorphTargetWeights);
+		void UpdateMorphVertexBufferCPU(const TArray<FActiveMorphTarget>& ActiveMorphTargets, const TArray<float>& MorphTargetWeights
+			// @third party code - BEGIN HairWorks
+			, TArray<FMorphGPUSkinVertex>* MorphVertices = nullptr
+			// @third party code - END HairWorks
+		);
 		void UpdateMorphVertexBufferGPU(FRHICommandListImmediate& RHICmdList, const TArray<float>& MorphTargetWeights, const FMorphTargetVertexInfoBuffers& MorphTargetVertexInfoBuffers);
 
 		/**
@@ -552,6 +560,11 @@ private:
 
 	/** true if the morph resources have been initialized */
 	bool bMorphResourcesInitialized;
+
+	// @third party code - BEGIN HairWorks
+	TArray<FMorphGPUSkinVertex> MorphVertices;
+	bool bNeedMorphVertices;
+	// @third party code - END HairWorks
 };
 
 

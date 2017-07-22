@@ -21,6 +21,9 @@
 // Disabled by default since introduces stalls between render and driver threads
 int32 GDX11NVAfterMathEnabled = 0;
 #endif
+// @third party code - BEGIN HairWorks
+#include "HairWorksSDK.h"
+// @third party code - END HairWorks
 
 extern bool D3D11RHI_ShouldCreateWithD3DDebug();
 extern bool D3D11RHI_ShouldAllowAsyncResourceCreation();
@@ -811,6 +814,29 @@ FDynamicRHI* FD3D11DynamicRHIModule::CreateRHI(ERHIFeatureLevel::Type RequestedF
 void FD3D11DynamicRHI::Init()
 {
 	InitD3DDevice();
+
+	// @third party code - BEGIN HairWorks
+	// Initialize HairWorks
+	class FHairWorksD3DHelper: public HairWorks::FD3DHelper
+	{
+		virtual void SetShaderResourceView(ID3D11ShaderResourceView* Srv, int32 Index) override
+		{
+			auto& D3dContext = *static_cast<FD3D11DynamicRHI*>(GDynamicRHI)->GetDeviceContext();
+			D3dContext.PSSetShaderResources(Index, 1, &Srv);
+		}
+
+		virtual void CommitShaderResources() override
+		{
+			auto& RHI = *static_cast<FD3D11DynamicRHI*>(GDynamicRHI);
+			RHI.CommitNonComputeShaderConstants();
+			RHI.CommitGraphicsResourceTables();
+		}
+	};
+
+	static FHairWorksD3DHelper HairWorksD3DHelper;
+
+	HairWorks::Initialize(*GetDevice(), *Direct3DDeviceIMContext, HairWorksD3DHelper);
+	// @third party code - END HairWorks
 }
 
 void FD3D11DynamicRHI::FlushPendingLogs()
