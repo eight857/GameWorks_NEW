@@ -8,18 +8,19 @@ To use a HairWorks asset on a character, it must be added as a BluePrint compone
 
 Known Issues
 =============
-* Indirect Lighting may not light Hair correctly on occluded side of character.
 * HairWorks visualizers do work in play mode.
 * HairWorks shadow maps are generally crisper when compared to other objects in scene.
 * Duplicated property categories in HairWorks assets and components. 
 * Needs to read data back from GPU buffer to CPU for dynamic pin, so there would be potential performance issue. 
+* GPU morph targed is not supported. 
 * Assets of old version HairWorks, such as 1.0, would not be loaded, due to HairWorks SDK change. 
 * Support for forword rendering mode is not added yet. 
 
 Changes
 =============
-## July 5, 2017
-* Upgraded to HairWorks 1.4
+## July 24, 2017
+* Upgraded to HairWorks 1.4.
+* Upgraded to UE4.17.
 * Added support for morph target skeletal mesh. 
 * Added world space simulation mode. 
 * Added support for level wind. 
