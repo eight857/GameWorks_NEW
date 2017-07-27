@@ -477,14 +477,13 @@ public:
 
 		FORCEINLINE bool operator == (const FProjectedShadowKey &Other) const
 		{
-			return (PrimitiveId == Other.PrimitiveId && Light == Other.Light && ShadowSplitIndex == Other.ShadowSplitIndex && CacheMode == Other.CacheMode && bTranslucentShadow == Other.bTranslucentShadow);
+			return (PrimitiveId == Other.PrimitiveId && Light == Other.Light && ShadowSplitIndex == Other.ShadowSplitIndex && bTranslucentShadow == Other.bTranslucentShadow);
 		}
 
 		FProjectedShadowKey(const FProjectedShadowInfo& ProjectedShadowInfo)
 			: PrimitiveId(ProjectedShadowInfo.GetParentSceneInfo() ? ProjectedShadowInfo.GetParentSceneInfo()->PrimitiveComponentId : FPrimitiveComponentId())
 			, Light(ProjectedShadowInfo.GetLightSceneInfo().Proxy->GetLightComponent())
 			, ShadowSplitIndex(ProjectedShadowInfo.CascadeSettings.ShadowSplitIndex)
-			, CacheMode(ProjectedShadowInfo.CacheMode)
 			, bTranslucentShadow(ProjectedShadowInfo.bTranslucentShadow)
 		{
 		}
@@ -493,7 +492,6 @@ public:
 			: PrimitiveId(InPrimitiveId)
 			, Light(InLight)
 			, ShadowSplitIndex(InSplitIndex)
-			, CacheMode(SDCM_Uncached)
 			, bTranslucentShadow(bInTranslucentShadow)
 		{
 		}
@@ -507,7 +505,6 @@ public:
 		FPrimitiveComponentId PrimitiveId;
 		const ULightComponent* Light;
 		int32 ShadowSplitIndex;
-		EShadowDepthCacheMode CacheMode;
 		bool bTranslucentShadow;
 	};
 
@@ -906,7 +903,7 @@ public:
 	 * @param Primitive - The shadow subject.
 	 * @param Light - The shadow source.
 	 */
-	bool IsShadowOccluded(FRHICommandListImmediate& RHICmdList, FPrimitiveComponentId PrimitiveId, const ULightComponent* Light, int32 SplitIndex, bool bTranslucentShadow, int32 NumBufferedFrames) const;
+	bool IsShadowOccluded(FRHICommandListImmediate& RHICmdList, FSceneViewState::FProjectedShadowKey ShadowKey, int32 NumBufferedFrames) const;
 
 	/**
 	* Retrieve a single-pixel render targets with intra-frame state for use in eye adaptation post processing.
