@@ -5,6 +5,7 @@
 #include "PrimitiveSceneProxy.h"
 
 class FSkeletalMeshObjectGPUSkin;
+class FMorphVertexBuffer;
 
 /**
 * HairWorks component scene proxy.
@@ -33,7 +34,7 @@ public:
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
 		TArray<int32> MorphIndices;
-		FSkeletalMeshObjectGPUSkin* ParentSkinning = nullptr;
+		const FMorphVertexBuffer* MorphVertexBuffer = nullptr;
 	};
 
 	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::AssetId HairAssetId);
@@ -89,8 +90,9 @@ protected:
 
 	//** For morph targets*/
 	TArray<int32> MorphIndices;
-	FSkeletalMeshObjectGPUSkin* ParentSkinning = nullptr;
-	bool bMorphDataUpdated = false;
+	const FMorphVertexBuffer* MorphVertexBuffer = nullptr;
+	FRWBufferStructured MorphPositionDeltaBuffer;
+	FRWBufferStructured MorphNormalDeltaBuffer;
 
 	//** All created hair instances*/
 	static FHairWorksSceneProxy* HairInstances;

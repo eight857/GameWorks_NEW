@@ -322,6 +322,7 @@ public:
 
 	// @third party code - BEGIN HairWorks
 	const TArray<FMorphGPUSkinVertex>& GetMorphVertices()const;
+	const FMorphVertexBuffer& GetMorphVertexBuffer()const;
 	// @third party code - END HairWorks
 
 	/** 

@@ -1472,6 +1472,7 @@ public:
 	\return Successful if NV_SUCCEEDED(Result) is true. */
 
 	virtual Result updateMorphDeltas(InstanceId instanceId, const gfsdk_float3* positionsDeltas, const gfsdk_float3* normalsDeltas) = 0;
+	virtual Result updateMorphDeltas(InstanceId instanceId, const NvCo::ApiHandle& positionsDeltas, const NvCo::ApiHandle& normalsDeltas) = 0;
 
 	/**
 		\brief Runs simulation for all currently active hair instances for one frame.

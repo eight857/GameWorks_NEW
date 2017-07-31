@@ -234,8 +234,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 
 	// Morph data. It's too early to update morph data here. It's not ready yet. 
 	MorphIndices = MoveTemp(DynamicData.MorphIndices);
-	ParentSkinning = DynamicData.ParentSkinning;
-	bMorphDataUpdated = true;
+	MorphVertexBuffer = DynamicData.MorphVertexBuffer;
 
 	// Update normal center bone
 	auto HairDesc = DynamicData.HairInstanceDesc;
@@ -318,36 +317,42 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 void FHairWorksSceneProxy::PreSimulate()
 {
 	// Get morph data from skeleton
-	if(!bMorphDataUpdated)
-		return;
+	//TArray<FVector> MorphPositions;
+	//TArray<FVector> MorphNormals;
 
-	bMorphDataUpdated = false;
+	//const auto& ParentMorphVertices = ParentSkinning->GetMorphVertices();
+	//if(ParentMorphVertices.Num() > 0)
+	//{
+	//	MorphPositions.SetNumZeroed(MorphIndices.Num());
+	//	MorphNormals.SetNumZeroed(MorphIndices.Num());
 
-	if(ParentSkinning == nullptr)
-		return;
+	//	for(auto VertexIdx = 0; VertexIdx < MorphIndices.Num(); ++VertexIdx)
+	//	{
+	//		const auto& MorphVertex = ParentMorphVertices[MorphIndices[VertexIdx]];
+	//		MorphPositions[VertexIdx] = MorphVertex.DeltaPosition;
+	//		MorphNormals[VertexIdx] = MorphVertex.DeltaTangentZ;
+	//	}
+	//}
 
-	TArray<FVector> MorphPositions;
-	TArray<FVector> MorphNormals;
-
-	const auto& ParentMorphVertices = ParentSkinning->GetMorphVertices();
-	if(ParentMorphVertices.Num() > 0)
+	if (MorphVertexBuffer && MorphVertexBuffer->bHasBeenUpdated)
 	{
-		MorphPositions.SetNumZeroed(MorphIndices.Num());
-		MorphNormals.SetNumZeroed(MorphIndices.Num());
-
-		for(auto VertexIdx = 0; VertexIdx < MorphIndices.Num(); ++VertexIdx)
+		if (MorphPositionDeltaBuffer.NumBytes != MorphIndices.Num() * sizeof(FVector))
 		{
-			const auto& MorphVertex = ParentMorphVertices[MorphIndices[VertexIdx]];
-			MorphPositions[VertexIdx] = MorphVertex.DeltaPosition;
-			MorphNormals[VertexIdx] = MorphVertex.DeltaTangentZ;
+			MorphPositionDeltaBuffer.Initialize(sizeof(FVector), MorphIndices.Num());
+			MorphNormalDeltaBuffer.Initialize(sizeof(FVector), MorphIndices.Num());
 		}
+	}
+	else
+	{
+		MorphPositionDeltaBuffer.Release();
+		MorphNormalDeltaBuffer.Release();
 	}
 
 	// Update morph data
 	::HairWorks::GetSDK()->updateMorphDeltas(
 		HairInstanceId,
-		reinterpret_cast<const gfsdk_float3*>(MorphPositions.GetData()),
-		reinterpret_cast<const gfsdk_float3*>(MorphNormals.GetData())
+		NvCo::Dx11Type::wrap(::HairWorks::GetD3DHelper().GetShaderResourceView(MorphPositionDeltaBuffer.SRV)),
+		NvCo::Dx11Type::wrap(::HairWorks::GetD3DHelper().GetShaderResourceView(MorphNormalDeltaBuffer.SRV))
 	);
 }
 // @third party code - END HairWorks

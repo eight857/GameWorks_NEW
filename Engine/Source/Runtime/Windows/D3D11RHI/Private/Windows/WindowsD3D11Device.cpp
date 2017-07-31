@@ -825,6 +825,15 @@ void FD3D11DynamicRHI::Init()
 			D3dContext.PSSetShaderResources(Index, 1, &Srv);
 		}
 
+		virtual ID3D11ShaderResourceView* GetShaderResourceView(FRHIShaderResourceView* RHIShaderResourceView) override
+		{
+			if (!RHIShaderResourceView)
+				return nullptr;
+
+			auto* D3D11Srv = static_cast<FD3D11ShaderResourceView*>(RHIShaderResourceView);
+			return D3D11Srv->View;
+		}
+
 		virtual void CommitShaderResources() override
 		{
 			auto& RHI = *static_cast<FD3D11DynamicRHI*>(GDynamicRHI);

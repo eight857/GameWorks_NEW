@@ -1382,6 +1382,10 @@ const TArray<FMorphGPUSkinVertex>& FSkeletalMeshObjectGPUSkin::GetMorphVertices(
 {
 	return MorphVertices;
 }
+const FMorphVertexBuffer& FSkeletalMeshObjectGPUSkin::GetMorphVertexBuffer() const
+{
+	return LODs[GetLOD()].MorphVertexBuffer;
+}
 // @third party code - END HairWorks
 
 /*-----------------------------------------------------------------------------

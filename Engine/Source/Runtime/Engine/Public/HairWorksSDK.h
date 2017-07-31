@@ -14,6 +14,7 @@ namespace HairWorks{
 	{
 	public:
 		virtual void SetShaderResourceView(ID3D11ShaderResourceView* Srv, int32 Index) = 0;
+		virtual ID3D11ShaderResourceView* GetShaderResourceView(FRHIShaderResourceView* RHIShaderResourceView) = 0;
 		virtual void CommitShaderResources() = 0;
 	};
 
