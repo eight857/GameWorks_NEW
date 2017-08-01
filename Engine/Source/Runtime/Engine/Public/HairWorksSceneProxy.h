@@ -54,7 +54,7 @@ public:
 
 	NvHair::InstanceId GetHairInstanceId()const { return HairInstanceId; }
 	const TArray<FTexture2DRHIRef>& GetTextures()const { return HairTextures; }
-	const TArray<TArray<FPinMesh>>& GetPinMeshes()const { return HairPinMeshes; }
+	TArray<TArray<FPinMesh>>& GetPinMeshes() { return HairPinMeshes; }
 	void SetPinMatrices(const TArray<FMatrix>& PinMatrices);
 	const TArray<FMatrix>& GetPinMatrices();
 	const TArray<FMatrix>& GetSkinningMatrices()const { return CurrentSkinningMatrices; }

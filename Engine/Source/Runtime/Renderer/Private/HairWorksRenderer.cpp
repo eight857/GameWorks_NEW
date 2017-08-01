@@ -1391,7 +1391,7 @@ namespace HairWorksRenderer
 			// Set pin mesh transform
 			for(auto PinIndex = 0; PinIndex < Pins.Num(); ++PinIndex)
 			{
-				const auto& PinMeshes = Pins[PinIndex];
+				auto& PinMeshes = Pins[PinIndex];
 
 				// Update mesh transform
 				for(const auto& PinMesh : PinMeshes)
@@ -1402,6 +1402,9 @@ namespace HairWorksRenderer
 					if(PinMesh.Mesh->NeedsUniformBufferUpdate())
 						PinMesh.Mesh->UpdateUniformBuffer();
 				}
+
+				// During editing, pin mesh would be deleted before next FHairWorksSceneProxy::UpdateDynamicData_RenderThread() is called. So, we clear it. 
+				PinMeshes.Reset();
 			}
 
 			// Set pin matrices for access from game thread. Mainly for editor.
