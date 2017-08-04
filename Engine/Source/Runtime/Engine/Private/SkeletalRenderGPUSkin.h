@@ -242,6 +242,10 @@ public:
 
 	FStaticLODModel* GetStaticLODModel() const { return &SkelMeshResource->LODModels[LODIdx]; }
 
+	// @third party code - BEGIN HairWorks
+	void RequireSRV();
+	// @third party code - END HairWorks
+
 protected:
 	// guaranteed only to be valid if the vertex buffer is valid
 	FShaderResourceViewRHIRef SRVValue;
@@ -322,7 +326,7 @@ public:
 
 	// @third party code - BEGIN HairWorks
 	const TArray<FMorphGPUSkinVertex>& GetMorphVertices()const;
-	const FMorphVertexBuffer& GetMorphVertexBuffer()const;
+	FMorphVertexBuffer& GetMorphVertexBuffer();
 	// @third party code - END HairWorks
 
 	/** 

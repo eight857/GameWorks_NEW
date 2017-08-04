@@ -57,10 +57,10 @@ FBoxSphereBounds UHairWorksComponent::CalcBounds(const FTransform& LocalToWorld)
 
 	checkSlow(BoneMatrices.Num() == 0 || BoneMatrices.Num() == ::HairWorks::GetSDK()->getNumBones(HairInstance.Hair->AssetId));
 
-	gfsdk_float3 HairBoundMin, HairBoundMax;
+	NvHair::Vec3 HairBoundMin, HairBoundMax;
 	::HairWorks::GetSDK()->getBounds(
 		HairInstance.Hair->AssetId,
-		BoneMatrices.Num() > 0 ? reinterpret_cast<const gfsdk_float4x4*>(BoneMatrices.GetData()) : nullptr,
+		BoneMatrices.Num() > 0 ? reinterpret_cast<const NvHair::Mat4x4*>(BoneMatrices.GetData()) : nullptr,
 		HairBoundMin,
 		HairBoundMax
 	);
@@ -311,7 +311,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 					Pin.m_doLra = SrcPin.bTetherPin;
 					Pin.m_pinStiffness = SrcPin.Stiffness;
 					Pin.m_influenceFallOff = SrcPin.InfluenceFallOff;
-					Pin.m_influenceFallOffCurve = reinterpret_cast<const gfsdk_float4&>(SrcPin.InfluenceFallOffCurve);
+					Pin.m_influenceFallOffCurve = reinterpret_cast<const NvHair::Vec4&>(SrcPin.InfluenceFallOffCurve);
 				}
 
 				::HairWorks::GetSDK()->setPins(AssetId, 0, Pins.Num(), Pins.GetData());
@@ -403,7 +403,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 void UHairWorksComponent::SetupBoneAndMorphMapping()
 {
 	// Setup bone mapping
-	if(HairInstance.Hair == nullptr || ParentSkeleton == nullptr || ParentSkeleton->SkeletalMesh == nullptr)
+	if (::HairWorks::GetSDK() == nullptr || HairInstance.Hair == nullptr || ParentSkeleton == nullptr || ParentSkeleton->SkeletalMesh == nullptr)
 		return;
 
 	auto& Bones = ParentSkeleton->SkeletalMesh->RefSkeleton.GetRefBoneInfo();
@@ -452,7 +452,7 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 
 		TArray<FVector> GuideRootVertices;
 		GuideRootVertices.SetNumUninitialized(GuideNum);
-		::HairWorks::GetSDK()->getRootVertices(HairInstance.Hair->AssetId, reinterpret_cast<gfsdk_float3*>(GuideRootVertices.GetData()));
+		::HairWorks::GetSDK()->getRootVertices(HairInstance.Hair->AssetId, reinterpret_cast<NvHair::Vec3*>(GuideRootVertices.GetData()));
 
 		// Find closest skeletal mesh vertex for each vertex of HairWorks growth mesh
 		const auto Transform = GetRelativeTransform();

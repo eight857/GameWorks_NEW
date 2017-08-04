@@ -4,7 +4,8 @@
 #include <Nv/Common/NvCoCommon.h>
 #include <Nv/Core/1.0/NvResult.h>
 #include <Nv/Common/NvCoApiHandle.h>
-#include <Nv/Common/NvCoMathTypes.h>
+
+#include <Nv/Common/Math/NvCoMathTypes.h>
 
 #include <DirectXMath.h>
 

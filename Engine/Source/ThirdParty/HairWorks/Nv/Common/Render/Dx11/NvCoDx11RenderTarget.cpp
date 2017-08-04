@@ -1,3 +1,5 @@
+#include <Nv/Common/NvCoCommon.h>
+
 #include <Nv/Common/Render/Context/Dx11/NvCoDx11RenderInterface.h>
 
 #include "NvCoDx11RenderTarget.h"

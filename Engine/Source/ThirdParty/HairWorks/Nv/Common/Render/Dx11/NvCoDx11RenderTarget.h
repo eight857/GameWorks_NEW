@@ -3,7 +3,8 @@
 
 #include <Nv/Common/NvCoCommon.h>
 #include <Nv/Common/NvCoComPtr.h>
-#include <Nv/Common/NvCoMathTypes.h>
+
+#include <Nv/Common/Math/NvCoMathTypes.h>
 
 #include <Nv/Common/Render/Dx/NvCoDxFormatUtil.h>
 #include <Nv/Common/Render/Context/Dx11/NvCoDx11RenderInterface.h>

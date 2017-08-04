@@ -790,7 +790,7 @@ float2 NvHair_unpackSignedFloat2(float x)
 //////////////////////////////////////////////////////////////////////////////
 // input to this pixel shader (output from eariler geometry/vertex stages)
 // These values are packed/compressed to minimize shader overhead
-// Do NOT use these values directly from your shader. Use GFSDK_HairGetShaderAttributes() below.
+// Do NOT use these values directly from your shader. Use NvHair_GetShaderAttributes() below.
 //////////////////////////////////////////////////////////////////////////////
 
 struct NvHair_PixelShaderInput

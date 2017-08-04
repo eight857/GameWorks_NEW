@@ -94,7 +94,7 @@ Update descriptor parameters for each hair instance.
 	hairSdk->updateInstanceDescriptor(instanceId, desc);
 
 Update skinning matrices for each hair
-	hairSdk->updateSkinningMatrices(instanceId, numBones, natrices); 
+	hairSdk->updateSkinningMatrices(instanceId, numBones, matrices); 
 
 Run simulation for all hairs.
 
@@ -104,7 +104,7 @@ Set view matrix and projection matrix.
 
 	D3DXMATRIX projection = camera.getProjectionMatrix();
 	D3DXMATRIX view = camera.getViewMatrix();
-	hairSdk->setViewProjection((const gfsdk_float4x4*)&view,(const gfsdk_float4x4*)&projection);
+	hairSdk->setViewProjection((const Mat4x4*)&view,(const Mat4x4*)&projection);
 
 Set your hair pixel shader before rendering hairs.
 
@@ -319,7 +319,7 @@ struct BoneSphere
 {
 	UInt32	m_boneSphereIndex;			//!< index for the bone where the collision sphere is attached to
 	Float32	m_boneSphereRadius;			//!< radius for the collision sphere
-	gfsdk_float3 m_boneSphereLocalPos;	//!< offset value with regard to bind position of the bone
+	Vec3    m_boneSphereLocalPos;	//!< offset value with regard to bind position of the bone
 };
 
 /*! \brief Descriptor to control properties of pin
@@ -329,7 +329,7 @@ struct Pin
 {
 	UInt32			m_boneIndex;				//!< index for the bone where the pin is attached to
 	Float32			m_radius;					//!< radius of the sphere the pin influence on
-	gfsdk_float3	m_localPos;					//!< offset value with regard to bind position of the bone
+	Vec3			m_localPos;					//!< offset value with regard to bind position of the bone
 	Float32			m_pinStiffness;				//!< [0 - 1.0] stiffness for pin constraints
 	Float32			m_influenceFallOff;			//!< [0 - 1.0] how soft/hard the fall off of the hair pin zone of influence is
 	Bool			m_useDynamicPin;			//! [true/false] whether to turn on/off dynamic pin
@@ -337,7 +337,7 @@ struct Pin
 	Bool			m_doLra;					//! [true/false] whether to turn on/off LRA pin
 	Bool			m_selected;					//! [true/false] whether this pin is selected
 
-	gfsdk_float4	m_influenceFallOffCurve;	//! [0 - 1.0] curve values for influence fall off
+	Vec4			m_influenceFallOffCurve;	//! [0 - 1.0] curve values for influence fall off
 
 	Pin() :
 		m_boneIndex(0),
@@ -349,14 +349,8 @@ struct Pin
 		m_doLra(false),
 		m_selected(false)
 	{
-		m_localPos.x = 0.0;
-		m_localPos.y = 0.0;
-		m_localPos.z = 0.0;
-
-		m_influenceFallOffCurve.x = 1.0;
-		m_influenceFallOffCurve.y = 1.0;
-		m_influenceFallOffCurve.z = 1.0;
-		m_influenceFallOffCurve.w = 1.0;
+		NvCo::setZero(m_localPos);
+		NvCo::setAll(m_influenceFallOffCurve, 1.0f);
 	}
 };
 
@@ -380,20 +374,20 @@ struct AssetDescriptor
 
 	Int32			m_numGuideHairs;//!< number of hair guide hair curves
 	Int32			m_numVertices;	//!< total # of cv(control vertices) in guide curves
-	gfsdk_float3*	m_vertices;		//!< all the cv positions of guide curves
+	Vec3*			m_vertices;		//!< all the cv positions of guide curves
 	UInt32*			m_endIndices;	//!< index of last vertex for each hair curve pointing to the m_vertices array
 									//!< size of this array should be 'm_numGuideHairs'	
 
 	Int32			m_numFaces;		//!< number of hair triangles, we grow hairs for each mesh triangles
 	UInt32*			m_faceIndices;	//!< triangle indices for hair faces, size must be 3 * m_numFaces
-	gfsdk_float2*	m_faceUvs;		//!< uv values for hair faces, size must be 3 * m_numFaces
+	Vec2*			m_faceUvs;		//!< uv values for hair faces, size must be 3 * m_numFaces
 
 	Int32			m_numBones;		//!< number of bones used to skin hair curves
-	gfsdk_float4*	m_boneIndices;	//!< size should be 'm_numGuideHairs'. each mesh vertex (hair root) can have up to 4 bone indices.
-	gfsdk_float4*	m_boneWeights;	//!< size should be 'm_numGuideHairs'. each mesh vertex (hair root) can have up to 4 bone weights.
+	Vec4*			m_boneIndices;	//!< size should be 'm_numGuideHairs'. each mesh vertex (hair root) can have up to 4 bone indices.
+	Vec4*			m_boneWeights;	//!< size should be 'm_numGuideHairs'. each mesh vertex (hair root) can have up to 4 bone weights.
 
 	Char*			m_boneNames;	//!<[OPTIONAL] names for each bone used to check if bone names match. buffer size should be at least NV_HAIR_MAX_STRING * 'm_numBones'.
-	gfsdk_float4x4*	m_bindPoses;	//!<[OPTIONAL] bind pose matrices for each bone. buffer size should be at least sizeof(gfsdk_float4x4) * m_numBones.
+	Mat4x4*			m_bindPoses;	//!<[OPTIONAL] bind pose matrices for each bone. buffer size should be at least sizeof(Mat4x4) * m_numBones.
 	Int32*			m_boneParents;	//!<[OPTIONAL] parent index for each bone.  if this is a root bone, the index will be -1. buffer size should be at least sizeof(Nv::Int32) * m_numBones.
 
 	Int32			m_numBoneSpheres;//!< [OPTIONAL] collision spheres used for collision handling between body and hair 
@@ -599,8 +593,8 @@ struct InstanceDescriptor
 
 	/// shading controls
 	Float32		m_rootAlphaFalloff;			//!< [0 - 1.0] falloff factor for alpha transition from root 
-	gfsdk_float4 m_rootColor;				//!< [0 - 1.0] color of hair root (when hair textures are not used)
-	gfsdk_float4 m_tipColor;				//!< [0 - 1.0] color of hair tip (when hair textures are not used)
+	Vec4		m_rootColor;				//!< [0 - 1.0] color of hair root (when hair textures are not used)
+	Vec4		m_tipColor;				//!< [0 - 1.0] color of hair tip (when hair textures are not used)
 	Float32		m_rootTipColorWeight;		//!< [0 - 1.0] blend factor between root and tip color in addition to hair length
 	Float32		m_rootTipColorFalloff;		//!< [0 - 1.0] falloff factor for root/tip color interpolation
 
@@ -608,7 +602,7 @@ struct InstanceDescriptor
 	Float32		m_hairNormalWeight;			//!< [0 - 1.0] blend factor between mesh normal vs hair normal. Use higher value for longer (surface like) hair.
 	Int32		m_hairNormalBoneIndex;		//!< [-1 - number of bones] index for the bone which we use as model center for diffuse shading purpose. If < 0 uses the model shading center.
 
-	gfsdk_float4 m_specularColor;			//!< [0 - 1.0] specular color
+	Vec4		m_specularColor;			//!< [0 - 1.0] specular color
 	Float32		m_specularNoiseScale;		//!< [0 - 1.0] amount of specular noise
 	Float32		m_specularEnvScale;			//!< [0 - 1.0] amount of specular scale from env probe
 	Float32		m_specularPrimary;			//!< [0 - 1.0] primary specular factor
@@ -633,7 +627,7 @@ struct InstanceDescriptor
 	Float32		m_backStopRadius;			//!< [0 - 1.0] radius of backstop collision (normalized along hair length)
 	Float32		m_bendStiffness;			//!< [0 - 1.0] stiffness for bending, useful for long hair
 	Float32		m_damping;					//!< [0 - ] damping to slow down hair motion
-	gfsdk_float3 m_gravityDir;				//!< [0 - 1.0] gravity force direction (unit vector)
+	Vec3		m_gravityDir;				//!< [0 - 1.0] gravity force direction (unit vector) (in worldspace)
 	Float32		m_friction;					//!< [0 - 1.0] friction when capsule collision is used
 	Float32		m_massScale;				//!< [In Meters] mass scale for this hair
 	Float32		m_inertiaScale;				//!< [0 - 1.0] inertia control. (0: no inertia, 1: full inertia)
@@ -647,15 +641,15 @@ struct InstanceDescriptor
 	Float32		m_stiffnessDamping;			//!< [0 - 1.0] how fast hair stiffness generated motion decays over time
 	Float32		m_tipStiffness;				//!< [0 - 1.0] attenuation of stiffness away from the tip (stiffer at tip, weaker toward root)
 	Bool		m_useCollision;				//!< [true/false] whether to use the sphere/capsule collision or not for hair/body collision
-	gfsdk_float3 m_wind;					//!< [In Meters] vector force for main wind direction
+	Vec3		m_wind;						//!< [In Meters] vector force for main wind direction (in worldspace)
 	Float32		m_windNoise;				//!< [0 - 1.0] strength of wind noise
 
-	gfsdk_float4	m_stiffnessCurve;			//! [0 - 1.0] curve values for stiffness 
-	gfsdk_float4	m_stiffnessStrengthCurve;	//! [0 - 1.0] curve values for stiffness strength
-	gfsdk_float4	m_stiffnessDampingCurve;	//! [0 - 1.0] curve values for stiffness damping
-	gfsdk_float4	m_bendStiffnessCurve;		//! [0 - 1.0] curve values for bend stiffness
-	gfsdk_float4	m_interactionStiffnessCurve;//! [0 - 1.0] curve values for interaction stiffness
-	Bool			m_useDynamicPin;			//! [true/false] whether to turn on/off dynamic pin
+	Vec4		m_stiffnessCurve;			//! [0 - 1.0] curve values for stiffness 
+	Vec4		m_stiffnessStrengthCurve;	//! [0 - 1.0] curve values for stiffness strength
+	Vec4		m_stiffnessDampingCurve;	//! [0 - 1.0] curve values for stiffness damping
+	Vec4		m_bendStiffnessCurve;		//! [0 - 1.0] curve values for bend stiffness
+	Vec4		m_interactionStiffnessCurve;//! [0 - 1.0] curve values for interaction stiffness
+	Bool		m_useDynamicPin;			//! [true/false] whether to turn on/off dynamic pin
 
 	// lod controls
 	Bool		m_enableLod;				//!< [true/false] whether to enable/disable entire lod scheme
@@ -680,7 +674,7 @@ struct InstanceDescriptor
 	Float32		m_backfaceCullingThreshold; //!< [-1 - 1.0] threshold to determine backface, note that this value should be slightly smaller 0 to avoid hairs at the silhouette from disappearing
 
 	Bool		m_useCullSphere;			//!< [true/false] when this is on, hairs get culled when their root points are inside the sphere
-	gfsdk_float4x4 m_cullSphereInvTransform;	//!< inverse of general affine transform (scale, rotation, translation..) applied to a unit sphere centered at origin
+	Mat4x4		m_cullSphereInvTransform;	//!< inverse of general affine transform (scale, rotation, translation..) applied to a unit sphere centered at origin
 
 	UInt32		m_splineMultiplier;			//!< how many vertices are generated per each control hair segments in spline curves
 
@@ -711,7 +705,7 @@ struct InstanceDescriptor
 	
 	ETextureChannel m_textureChannels[TextureType::COUNT_OF]; //!< texture channel for each control textures.  
 	
-	gfsdk_float4x4	m_modelToWorld;			//!< render time transformation to offset hair from its simulated position
+	Mat4x4		m_modelToWorld;			//!< render time transformation to offset hair from its simulated position
 
 	// default values
 	InstanceDescriptor() :
@@ -850,6 +844,10 @@ struct InstanceDescriptor
 			m_rootColor.x = 1.0f; m_rootColor.y = 1.0f; m_rootColor.z = 1.0f; m_rootColor.w = 1.0f;
 			m_tipColor.x = 1.0f; m_tipColor.y = 1.0f; m_tipColor.z = 1.0f; m_tipColor.w = 1.0f;
 			m_specularColor.x = 1.0f; m_specularColor.y = 1.0f; m_specularColor.z = 1.0f; m_specularColor.w = 1.0f;
+
+			NvCo::setIdentity(m_modelToWorld);
+			NvCo::setIdentity(m_cullSphereInvTransform);
+
 
 #define NV_HAIR_MAKE_IDENTITY(M) M._11 = 1.0f; M._12 = 0.0f; M._13 = 0.0f; M._14 = 0.0f; \
 			M._21 = 0.0f; M._22 = 1.0f; M._23 = 0.0f; M._24 = 0.0f; \
@@ -1062,7 +1060,7 @@ struct ConversionSettings
 
 	EAxisHint m_targetUpAxisHint;				//!< up axis used by the game engine that will use this asset in runtime
 	EHandednessHint m_targetHandednessHint;	//!< handedness of original tools that generated this asset
-	gfsdk_float4x4*	m_conversionMatrix;				//!< If not NV_NULL, we use this conversion matrix instead
+	Mat4x4*	m_conversionMatrix;				//!< If not NV_NULL, we use this conversion matrix instead
 	Float32	m_targetSceneUnit;						//!< scene unit (in centimeters) for game engine.  0 means unknown (use source unit)
 													// Centimeter (default): 1.0, Meter: 100.0, Inch: 2.54, Decimeter: 10.0
 	ConversionSettings() :
@@ -1454,7 +1452,7 @@ public:
 		\note The bone order should match the one defined in AssetDescriptor.m_boneNames.  
 			The bone name can be also retrieved by Sdk.getBoneName() as well.  
 			Make sure that the bone ordering is consistent between hair asset and characters used in the host application. */
-	virtual Result updateSkinningMatrices( InstanceId instanceId, Int numBones, const gfsdk_float4x4* skinningMatrices, ETeleportMode teleportMode = TeleportMode::NONE) = 0;
+	virtual Result updateSkinningMatrices( InstanceId instanceId, Int numBones, const Mat4x4* skinningMatrices, ETeleportMode teleportMode = TeleportMode::NONE) = 0;
 
 	/*! \brief update skinning matrices by dual quaternions
 		\param [in] instanceId hair instance to update the bone data
@@ -1462,7 +1460,7 @@ public:
 		\param [in] dqs array of dual quaternions.
 		\param [in] teleportMode teleport mode if any teleport option is used
 		\return Successful if NV_SUCCEEDED(Result) is true. */
-	virtual Result updateSkinningDqs(InstanceId	instanceId, Int numBones, const gfsdk_dualquaternion* dqs, ETeleportMode teleportMode = TeleportMode::NONE) = 0;
+	virtual Result updateSkinningDqs(InstanceId	instanceId, Int numBones, const DualQuaternion* dqs, ETeleportMode teleportMode = TeleportMode::NONE) = 0;
 
 	/*! \brief update the morph delta/s if using morph targets. Morph targets can be used alongside bones. 
 	The values passed in are the delta differences between instances root positions and/or normals. 
@@ -1471,7 +1469,7 @@ public:
 	\param [in] normalsDeltas. The hair will be rotated from the growth mesh normal to morphed normal. (Can be null if normals don't need to be morphed)
 	\return Successful if NV_SUCCEEDED(Result) is true. */
 
-	virtual Result updateMorphDeltas(InstanceId instanceId, const gfsdk_float3* positionsDeltas, const gfsdk_float3* normalsDeltas) = 0;
+	virtual Result updateMorphDeltas(InstanceId instanceId, const Vec3* positionsDeltas, const Vec3* normalsDeltas) = 0;
 	virtual Result updateMorphDeltas(InstanceId instanceId, const NvCo::ApiHandle& positionsDeltas, const NvCo::ApiHandle& normalsDeltas) = 0;
 
 	/**
@@ -1483,7 +1481,7 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true. 
 		\note At least one simulation step must take place before rendering can take place
 		\note The view should be set (via setViewProjection), before calling - as LOD alters simulation, and may not step the simulation at all */
-	virtual Result stepSimulation( Float timeStepSize = 1.0f / 60.0f, const gfsdk_float4x4* worldReference = NV_NULL, Bool simulateOnly = false) = 0;
+	virtual Result stepSimulation( Float timeStepSize = 1.0f / 60.0f, const Mat4x4* worldReference = NV_NULL, Bool simulateOnly = false) = 0;
 	
 	/** \brief Runs simulation for a single hair instance. 
 		\details Compute GPU skinning for hair and run hair simulation for all the active hair instances.
@@ -1494,7 +1492,7 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true. 
 		\note At least one simulation step must take place before rendering can take place 
 		\note Unlike Sdk.stepSimulation this method will do a simulation step even if LOD indicates the instance is not visible */
-	virtual Result stepInstanceSimulation(InstanceId instanceId, Float timeStep = 1.0f / 60.0f, const gfsdk_float4x4* worldReference = NV_NULL, Bool simulateOnly = false) = 0;
+	virtual Result stepInstanceSimulation(InstanceId instanceId, Float timeStep = 1.0f / 60.0f, const Mat4x4* worldReference = NV_NULL, Bool simulateOnly = false) = 0;
 
 	/*! \brief Returns a conservative bounds for hairs.
 		\param [in] instanceId hair instance to get the bounds information
@@ -1504,7 +1502,7 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true. 
 		\note This function is intended for approximate, but fast culling purpose.
 			This does not return exact bounds, but rather conservative bounds that are guaranteed to enclose all hairs regardless of current simulation/animation changes. */
-	virtual Result getBounds(InstanceId	instanceId, gfsdk_float3& bbMinOut, gfsdk_float3& bbMaxOut, Bool growthMeshOnly = false) = 0;
+	virtual Result getBounds(InstanceId	instanceId, Vec3& bbMinOut, Vec3& bbMaxOut, Bool growthMeshOnly = false) = 0;
 	
 	/*! \brief Returns a conservative bounds for hairs.
 		\param [in] assetId hair asset to get the bounds information
@@ -1515,7 +1513,7 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true.
 		\note This function is intended for approximate, but fast culling purpose.
 		This does not return exact bounds, but rather conservative bounds that are guaranteed to enclose all hairs regardless of current simulation/animation changes. */
-	virtual Result getBounds(AssetId assetId, const gfsdk_float4x4* skinningMatrices, gfsdk_float3& bbMinOut, gfsdk_float3& bbMaxOut, Bool growthMeshOnly = false) = 0;
+	virtual Result getBounds(AssetId assetId, const Mat4x4* skinningMatrices, Vec3& bbMinOut, Vec3& bbMaxOut, Bool growthMeshOnly = false) = 0;
 
 	/*! \brief Returns a conservative bounds for hairs.
 		\param [in] assetId hair asset to get the bounds information
@@ -1526,7 +1524,7 @@ public:
 		\return Successful if NV_SUCCEEDED(Result) is true.
 		\note This function is intended for approximate, but fast culling purpose.
 		This does not return exact bounds, but rather conservative bounds that are guaranteed to enclose all hairs regardless of current simulation/animation changes. */
-	virtual Result getBounds(AssetId assetId, const gfsdk_dualquaternion* skinningDqs, gfsdk_float3& bbMinOut, gfsdk_float3& bbMaxOut, Bool growthMeshOnly = false) = 0;
+	virtual Result getBounds(AssetId assetId, const DualQuaternion* skinningDqs, Vec3& bbMinOut, Vec3& bbMaxOut, Bool growthMeshOnly = false) = 0;
 
 	/*=============================================================================================
 		RENDERING HAIRS
@@ -1543,7 +1541,7 @@ public:
 		\param [in] proj The standard camera projection matrix (same order as D3D)
 		\param [in] visibility True if the face should be rendered to (because contents are visisble)
 		\param [in] handedness The handedness used */
-	virtual void setCubeMapViewProjection(const Viewport viewports[6], const gfsdk_float4x4 view[6], const gfsdk_float4x4 proj[6], const bool visibility[6], EHandednessHint handedness = HandednessHint::RIGHT) = 0;
+	virtual void setCubeMapViewProjection(const Viewport viewports[6], const Mat4x4 view[6], const Mat4x4 proj[6], const bool visibility[6], EHandednessHint handedness = HandednessHint::RIGHT) = 0;
 
 	/*! \brief set camera projection matrices
 		\param [in] viewport The viewport being rendered to
@@ -1559,7 +1557,7 @@ public:
 				Also, it is possible to render hairs onto multiple windows, each with differing camera setups.
 				So this setting should be set in each SetViewProjection call.
 				Otherwise, some functionality such as backface culling may behave incorrectly. */
-	virtual Result setViewProjection(const Viewport& viewport, const gfsdk_float4x4& view, const gfsdk_float4x4& proj, EHandednessHint handedness = HandednessHint::RIGHT, Float fov = 70.0f) = 0;
+	virtual Result setViewProjection(const Viewport& viewport, const Mat4x4& view, const Mat4x4& proj, EHandednessHint handedness = HandednessHint::RIGHT, Float fov = 70.0f) = 0;
 
 	/*! \brief set previous camera projection matrices for pixel velocity attributes, etc.
 		\param [in] viewport The viewport being rendered to
@@ -1574,7 +1572,7 @@ public:
 				Also, it is possible to render hairs onto multiple windows, each with differing camera setups.
 				So this setting should be set in each SetViewProjection call.
 				Otherwise, some functionality such as backface culling may behave incorrectly */
-	virtual Result setPrevViewProjection(const Viewport& viewport, const gfsdk_float4x4& view, const gfsdk_float4x4& proj, Float fov = 70.0f) = 0;
+	virtual Result setPrevViewProjection(const Viewport& viewport, const Mat4x4& view, const Mat4x4& proj, Float fov = 70.0f) = 0;
 
 	/*! \brief fill constant buffer for custom hair shading
 		\details This function fills constant buffer data structure ShaderConstantBuffer for binding custom constant buffer in connection with custom hair pixel shader.
@@ -1681,15 +1679,15 @@ public:
 
 	/*! \brief get control vertices of the specified hair asset
 		\param [in] assetId hair asset ID to use
-		\param [out] verticesOut data to copy from the asset. It should be pre-allocated to at least number of hair control vertices * sizeof(gfsdk_float3).
+		\param [out] verticesOut data to copy from the asset. It should be pre-allocated to at least number of hair control vertices * sizeof(Vec3).
 		\return Successful if NV_SUCCEEDED(Result) is true. */
-	virtual Result getHairVertices( AssetId assetId, gfsdk_float3* verticesOut) = 0;
+	virtual Result getHairVertices( AssetId assetId, Vec3* verticesOut) = 0;
 
 	/*! \brief get root vertices (growth mesh vertices) of the specified hair asset
 		\param [in] assetId hair asset ID to use
-		\param [out] verticesOut data to copy from the asset.  It should be pre-allocated to at least number of hair curves * sizeof(gfsdk_float3).
+		\param [out] verticesOut data to copy from the asset.  It should be pre-allocated to at least number of hair curves * sizeof(Vec3).
 		\return Successful if NV_SUCCEEDED(Result) is true. */
-	virtual Result getRootVertices(AssetId assetId, gfsdk_float3* verticesOut) = 0;
+	virtual Result getRootVertices(AssetId assetId, Vec3* verticesOut) = 0;
 
 	/*! \brief get end indices from the specified hair asset
 		\param [in] assetId hair asset ID to use
@@ -1707,7 +1705,7 @@ public:
 		\param [in] assetId hair asset ID to use
 		\param [out] uvsOut data to copy from the asset
 		\return Successful if NV_SUCCEEDED(Result) is true. */
-	virtual Result getFaceUvs(AssetId assetId, gfsdk_float2* uvsOut) = 0;
+	virtual Result getFaceUvs(AssetId assetId, Vec2* uvsOut) = 0;
 
 	/*! \brief changes bone order based on new bone names
 		This function changes bone ordering of current hair asset identified by assetID.
@@ -1736,19 +1734,19 @@ public:
 		\param [in] boneId bone id to use
 		\param [out] bindPoseOut bind pose data to copy the matrix to.
 		\return Successful if NV_SUCCEEDED(Result) is true. */
-	virtual Result getBindPose(AssetId assetId, Int boneId, gfsdk_float4x4*	bindPoseOut) = 0;
+	virtual Result getBindPose(AssetId assetId, Int boneId, Mat4x4*	bindPoseOut) = 0;
 
 	/*! \brief get bone indices from the specified hair asset
 		\param [in] assetId hair asset ID to use
 		\param [out] boneIndicesOut bone indices array to copy from the asset
 		\return Successful if NV_SUCCEEDED(Result) is true. */
-	virtual Result getBoneIndices(AssetId assetId, gfsdk_float4* boneIndicesOut) = 0;
+	virtual Result getBoneIndices(AssetId assetId, Vec4* boneIndicesOut) = 0;
 
 	/*! \brief get bone weights from the specified hair asset
 		\param [in] assetId hair asset ID to use
 		\param [out] boneWeightsOut bone weights array to copy from the asset
 		\return Successful if NV_SUCCEEDED(Result) is true. */
-	virtual Result getBoneWeights(AssetId assetId, gfsdk_float4* boneWeightsOut) = 0;
+	virtual Result getBoneWeights(AssetId assetId, Vec4* boneWeightsOut) = 0;
 
 	/*!\brief get texture file name from the specified hair asset
 		\param [in] assetId hair asset ID to use
@@ -1790,7 +1788,7 @@ public:
 		\param[in] pinIndex index of the specified pin
 		\param[out] matrixOut reference to the matrix 
 		\see AsyncHandle */
-	virtual Result getPinMatrix(AsyncHandle* asyncInOut, Bool asyncLatest, InstanceId instanceId, Int pinIndex, gfsdk_float4x4& matrixOut) = 0;
+	virtual Result getPinMatrix(AsyncHandle* asyncInOut, Bool asyncLatest, InstanceId instanceId, Int pinIndex, Mat4x4& matrixOut) = 0;
 
 	/*!\brief Get matrices for multiple pins
 		\param[inout] asyncInOut Async handle. \see AsyncHandle to describe how async works.
@@ -1800,7 +1798,7 @@ public:
 		\param[in] numPins The number of pins
 		\param[out] matricesOut The matrices associated with the pins *
 		\see AsyncHandle */ 
-	virtual Result getPinMatrices(AsyncHandle* asyncInOut, Bool asyncLatest, InstanceId instanceId, Int startPinIndex, Int numPins, gfsdk_float4x4* matricesOut) = 0;
+	virtual Result getPinMatrices(AsyncHandle* asyncInOut, Bool asyncLatest, InstanceId instanceId, Int startPinIndex, Int numPins, Mat4x4* matricesOut) = 0;
 
 	/*!\brief Called to inform the API that async requests identified by AsyncHandles are no longer needed
 		\param[in] handles A list of handles produced by calls to the async API. They must be valid pending handles or NV_NULL 

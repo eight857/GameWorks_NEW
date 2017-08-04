@@ -4,7 +4,6 @@
 #include <Nv/HairWorks/NvHairSdk.h>
 #include "PrimitiveSceneProxy.h"
 
-class FSkeletalMeshObjectGPUSkin;
 class FMorphVertexBuffer;
 
 /**
@@ -34,7 +33,7 @@ public:
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
 		TArray<int32> MorphIndices;
-		const FMorphVertexBuffer* MorphVertexBuffer = nullptr;
+		FMorphVertexBuffer* MorphVertexBuffer = nullptr;
 	};
 
 	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::AssetId HairAssetId);
@@ -49,7 +48,7 @@ public:
 
 	void UpdateDynamicData_RenderThread(FDynamicRenderData & DynamicData);
 
-	void PreSimulate();
+	void PreSimulate(FRHICommandList& RHICmdList);
 
 	void Draw(FRHICommandList& RHICmdList, EDrawType DrawType)const;
 
@@ -90,7 +89,7 @@ protected:
 
 	//** For morph targets*/
 	TArray<int32> MorphIndices;
-	const FMorphVertexBuffer* MorphVertexBuffer = nullptr;
+	FMorphVertexBuffer* MorphVertexBuffer = nullptr;
 	FRWBufferStructured MorphPositionDeltaBuffer;
 	FRWBufferStructured MorphNormalDeltaBuffer;
 

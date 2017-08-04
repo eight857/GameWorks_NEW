@@ -6425,7 +6425,7 @@ void UHairWorksFactory::InitHairAssetInfo(UHairWorksAsset& Hair, const NvHair::I
 			HairSdk.getInstanceDescriptorFromAsset(Hair.AssetId, HairInstanceDesc);
 
 		// sRGB conversion
-		auto ConvertColorToSRGB = [](gfsdk_float4& Color)
+		auto ConvertColorToSRGB = [](NvHair::Vec4& Color)
 		{
 			reinterpret_cast<FLinearColor&>(Color) = FLinearColor(FColor(Color.x * 255, Color.y * 255, Color.z * 255));
 		};

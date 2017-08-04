@@ -6,6 +6,7 @@
 #include "HideWindowsPlatformTypes.h"
 #include "HairWorksSDK.h"
 #include "ScopeLock.h"
+#include "ShaderParameterUtils.h"
 #include "SkeletalRenderGPUSkin.h"
 #include "Engine/Texture2D.h"
 #include "Engine/HairWorksAsset.h"
@@ -30,6 +31,46 @@ HairVisualizationCVarDefine(ShadingNormal);
 HairVisualizationCVarDefine(ShadingNormalCenter);
 
 #undef HairVisualizationCVarDefine
+
+class FHairWorksCopyMorphDeltasCs: public FGlobalShader
+{
+	DECLARE_SHADER_TYPE(FHairWorksCopyMorphDeltasCs, Global);
+
+	FHairWorksCopyMorphDeltasCs()
+	{}
+
+	FHairWorksCopyMorphDeltasCs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+		: FGlobalShader(Initializer)
+	{
+		MorphVertexBuffer.Bind(Initializer.ParameterMap, TEXT("MorphVertexBuffer"));
+		MorphPositionDeltaBuffer.Bind(Initializer.ParameterMap, TEXT("MorphPositionDeltaBuffer"));
+		MorphNormalDeltaBuffer.Bind(Initializer.ParameterMap, TEXT("MorphNormalDeltaBuffer"));
+	}
+
+	virtual bool Serialize(FArchive& Ar)
+	{
+		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
+		Ar << MorphVertexBuffer << MorphPositionDeltaBuffer << MorphNormalDeltaBuffer;
+		return bShaderHasOutdatedParameters;
+	}
+
+	static bool ShouldCache(EShaderPlatform Platform)
+	{
+		return Platform == EShaderPlatform::SP_PCD3D_SM5;
+	}
+
+	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+	}
+
+	FShaderResourceParameter MorphVertexBuffer;
+	FShaderResourceParameter MorphPositionDeltaBuffer;
+	FShaderResourceParameter MorphNormalDeltaBuffer;
+};
+
+IMPLEMENT_SHADER_TYPE(, FHairWorksCopyMorphDeltasCs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("CopyMorphDeltas"), SF_Compute);
+
 
 FHairWorksSceneProxy* FHairWorksSceneProxy::HairInstances = nullptr;
 
@@ -201,7 +242,7 @@ void FHairWorksSceneProxy::OnTransformChanged()
 	NvHair::InstanceDescriptor InstDesc;
 	::HairWorks::GetSDK()->getInstanceDescriptor(HairInstanceId, InstDesc);
 
-	InstDesc.m_modelToWorld = (gfsdk_float4x4&)GetLocalToWorld().M;
+	InstDesc.m_modelToWorld = (NvHair::Mat4x4&)GetLocalToWorld().M;
 
 	::HairWorks::GetSDK()->updateInstanceDescriptor(HairInstanceId, InstDesc);
 }
@@ -221,7 +262,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 
 		::HairWorks::GetSDK()->updateSkinningMatrices(
 			HairInstanceId, DynamicData.BoneMatrices.Num(),
-			reinterpret_cast<const gfsdk_float4x4*>(DynamicData.BoneMatrices.GetData())
+			reinterpret_cast<const NvHair::Mat4x4*>(DynamicData.BoneMatrices.GetData())
 		);
 
 		if(CurrentSkinningMatrices.Num() > 0)
@@ -262,11 +303,11 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 	// World transform
 	if (DynamicData.bSimulateInWorldSpace)
 	{
-		HairDesc.m_modelToWorld = reinterpret_cast<const gfsdk_float4x4&>(FMatrix::Identity.M);
+		HairDesc.m_modelToWorld = reinterpret_cast<const NvHair::Mat4x4&>(FMatrix::Identity.M);
 	}
 	else
 	{
-		HairDesc.m_modelToWorld = reinterpret_cast<const gfsdk_float4x4&>(GetLocalToWorld().M);
+		HairDesc.m_modelToWorld = reinterpret_cast<const NvHair::Mat4x4&>(GetLocalToWorld().M);
 	}
 
 	// Wind
@@ -314,7 +355,7 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 	HairPinMeshes = DynamicData.PinMeshes;
 }
 
-void FHairWorksSceneProxy::PreSimulate()
+void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 {
 	// Get morph data from skeleton
 	//TArray<FVector> MorphPositions;
@@ -334,13 +375,25 @@ void FHairWorksSceneProxy::PreSimulate()
 	//	}
 	//}
 
-	if (MorphVertexBuffer && MorphVertexBuffer->bHasBeenUpdated)
+	if (MorphVertexBuffer != nullptr && MorphVertexBuffer->bHasBeenUpdated)
 	{
+		MorphVertexBuffer->RequireSRV();
+
 		if (MorphPositionDeltaBuffer.NumBytes != MorphIndices.Num() * sizeof(FVector))
 		{
 			MorphPositionDeltaBuffer.Initialize(sizeof(FVector), MorphIndices.Num());
 			MorphNormalDeltaBuffer.Initialize(sizeof(FVector), MorphIndices.Num());
 		}
+
+		TShaderMapRef<FHairWorksCopyMorphDeltasCs> CopyMorphDeltasCs(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
+
+		RHICmdList.SetComputeShader(CopyMorphDeltasCs->GetComputeShader());
+
+		SetSRVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphVertexBuffer, MorphVertexBuffer->GetSRV());
+		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphPositionDeltaBuffer, MorphPositionDeltaBuffer.UAV);
+		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphNormalDeltaBuffer, MorphNormalDeltaBuffer.UAV);
+
+		RHICmdList.DispatchComputeShader(MorphIndices.Num() / 192 + 1, 1, 1);
 	}
 	else
 	{

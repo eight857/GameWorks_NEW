@@ -116,6 +116,16 @@ void FMorphVertexBuffer::ReleaseDynamicRHI()
 	SRVValue.SafeRelease();
 }
 
+// @third party code - BEGIN HairWorks
+void FMorphVertexBuffer::RequireSRV()
+{
+	if (SRVValue != nullptr)
+		return;
+
+	SRVValue = RHICreateShaderResourceView(VertexBufferRHI, 4, PF_R32_FLOAT);
+}
+// @third party code - END HairWorks
+
 /*-----------------------------------------------------------------------------
 FSkeletalMeshObjectGPUSkin
 -----------------------------------------------------------------------------*/
@@ -1382,7 +1392,7 @@ const TArray<FMorphGPUSkinVertex>& FSkeletalMeshObjectGPUSkin::GetMorphVertices(
 {
 	return MorphVertices;
 }
-const FMorphVertexBuffer& FSkeletalMeshObjectGPUSkin::GetMorphVertexBuffer() const
+FMorphVertexBuffer& FSkeletalMeshObjectGPUSkin::GetMorphVertexBuffer()
 {
 	return LODs[GetLOD()].MorphVertexBuffer;
 }

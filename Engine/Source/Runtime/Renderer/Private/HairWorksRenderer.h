@@ -1,9 +1,6 @@
 // @third party code - BEGIN HairWorks
 #pragma once
 
-#include "UniformBuffer.h"
-#include "ShadowRendering.h"
-
 namespace HairWorksRenderer
 {
 	void StepSimulation(FRHICommandList& RHICmdList, const float CurrentWorldTime, const float DeltaWorldTime);

@@ -381,4 +381,19 @@ float4 SphereVs(float3 InPosition : ATTRIBUTE0) : SV_Position
 	return mul(float4(InPosition, 1), View.WorldToClip);
 }
 
+Buffer<float> MorphVertexBuffer;
+RWBuffer<float3> MorphPositionDeltaBuffer;
+RWBuffer<float3> MorphNormalDeltaBuffer;
+
+[numthreads(192, 1, 1)]
+void CopyMorphDeltas(uint DispatchId : SV_DispatchThreadID)
+{
+	MorphPositionDeltaBuffer[DispatchId] = float3(
+		MorphVertexBuffer[DispatchId],
+		MorphVertexBuffer[DispatchId + 1],
+		MorphVertexBuffer[DispatchId + 2]
+	);
+	MorphNormalDeltaBuffer[DispatchId] = 0;
+}
+
 // @third party code - END HairWorks

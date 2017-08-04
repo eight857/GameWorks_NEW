@@ -641,8 +641,8 @@ namespace HairWorksRenderer
 				HairViewPort.init(ViewRect.Min.X, ViewRect.Min.Y, ViewRect.Width(), ViewRect.Height());
 
 				auto& sdk = *HairWorks::GetSDK();
-				sdk.setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.GetViewMatrix().M), reinterpret_cast<const gfsdk_float4x4&>(ViewMatrices.GetProjectionMatrix().M), NvHair::HandednessHint::LEFT);
-				sdk.setPrevViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(PrevViewMatrices.GetViewMatrix().M), reinterpret_cast<const gfsdk_float4x4&>(PrevViewMatrices.GetProjectionMatrix().M), NvHair::HandednessHint::LEFT);
+				sdk.setViewProjection(HairViewPort, reinterpret_cast<const NvHair::Mat4x4&>(ViewMatrices.GetViewMatrix().M), reinterpret_cast<const NvHair::Mat4x4&>(ViewMatrices.GetProjectionMatrix().M), NvHair::HandednessHint::LEFT);
+				sdk.setPrevViewProjection(HairViewPort, reinterpret_cast<const NvHair::Mat4x4&>(PrevViewMatrices.GetViewMatrix().M), reinterpret_cast<const NvHair::Mat4x4&>(PrevViewMatrices.GetProjectionMatrix().M), NvHair::HandednessHint::LEFT);
 			}
 		};
 
@@ -1225,6 +1225,9 @@ namespace HairWorksRenderer
 #if WITH_EDITOR
 	void RenderSelectionOutline(FRHICommandList& RHICmdList, const FViewInfo& View)
 	{
+		if (View.VisibleHairs.Num() <= 0)
+			return;
+
 		// Setup render states
 		TShaderMapRef<FScreenVS> VertexShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 		TShaderMapRef<FHairWorksHitProxyPs> PixelShader(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
@@ -1270,7 +1273,7 @@ namespace HairWorksRenderer
 		// Prepare for simulation
 		for(FHairWorksSceneProxy::TIterator Itr(FHairWorksSceneProxy::GetHairInstances()); Itr; Itr.Next())
 		{
-			(*Itr).PreSimulate();
+			(*Itr).PreSimulate(RHICmdList);
 		}
 
 		// Trigger simulation
@@ -1329,7 +1332,7 @@ namespace HairWorksRenderer
 					HairWorks::GetSDK()->updateSkinningMatrices(
 						HairSceneProxy.GetHairInstanceId(),
 						InterpolatedSkinningMatrices.Num(),
-						reinterpret_cast<gfsdk_float4x4*>(InterpolatedSkinningMatrices.GetData())
+						reinterpret_cast<NvHair::Mat4x4*>(InterpolatedSkinningMatrices.GetData())
 					);		
 				}
 
@@ -1347,7 +1350,7 @@ namespace HairWorksRenderer
 				HairWorks::GetSDK()->updateSkinningMatrices(
 					HairSceneProxy.GetHairInstanceId(),
 					HairSceneProxy.GetSkinningMatrices().Num(),
-					reinterpret_cast<const gfsdk_float4x4*>(HairSceneProxy.GetSkinningMatrices().GetData())
+					reinterpret_cast<const NvHair::Mat4x4*>(HairSceneProxy.GetSkinningMatrices().GetData())
 				);
 			}
 
@@ -1373,7 +1376,7 @@ namespace HairWorksRenderer
 			TArray<FMatrix> PinMatrices;
 			PinMatrices.SetNumUninitialized(Pins.Num());
 
-			HairWorks::GetSDK()->getPinMatrices(nullptr, false, HairSceneProxy.GetHairInstanceId(), 0, PinMatrices.Num(), reinterpret_cast<gfsdk_float4x4*>(PinMatrices.GetData()));
+			HairWorks::GetSDK()->getPinMatrices(nullptr, false, HairSceneProxy.GetHairInstanceId(), 0, PinMatrices.Num(), reinterpret_cast<NvHair::Mat4x4*>(PinMatrices.GetData()));
 
 			// UE4 uses left hand system.
 			for(auto& PinMatrix : PinMatrices)
@@ -1475,12 +1478,12 @@ namespace HairWorksRenderer
 							viewPort.init(0, 0, ShadowSize.X, ShadowSize.X);
 						}
 
-						gfsdk_float4x4 HairViewMatrices[6];
-						gfsdk_float4x4 HairProjMatrices[6];
+						NvHair::Mat4x4 HairViewMatrices[6];
+						NvHair::Mat4x4 HairProjMatrices[6];
 						for(int FaceIdx = 0; FaceIdx < 6; ++FaceIdx)
 						{
-							HairViewMatrices[FaceIdx] = *(gfsdk_float4x4*)ViewProjMatrices[FaceIdx].M;
-							HairProjMatrices[FaceIdx] = *(gfsdk_float4x4*)FMatrix::Identity.M;
+							HairViewMatrices[FaceIdx] = *(NvHair::Mat4x4*)ViewProjMatrices[FaceIdx].M;
+							HairProjMatrices[FaceIdx] = *(NvHair::Mat4x4*)FMatrix::Identity.M;
 						}
 
 						HairWorks::GetSDK()->setCubeMapViewProjection(viewPorts, HairViewMatrices, HairProjMatrices, Visible, NvHair::HandednessHint::LEFT);
@@ -1512,7 +1515,7 @@ namespace HairWorksRenderer
 						NvHair::Viewport HairViewPort;
 						HairViewPort.init(ViewRect.Min.X, ViewRect.Min.Y, ViewRect.Width(), ViewRect.Height());
 
-						HairWorks::GetSDK()->setViewProjection(HairViewPort, reinterpret_cast<const gfsdk_float4x4&>(ViewProjMatrix.M), reinterpret_cast<const gfsdk_float4x4&>(FMatrix::Identity.M), NvHair::HandednessHint::LEFT);
+						HairWorks::GetSDK()->setViewProjection(HairViewPort, reinterpret_cast<const NvHair::Mat4x4&>(ViewProjMatrix.M), reinterpret_cast<const NvHair::Mat4x4&>(FMatrix::Identity.M), NvHair::HandednessHint::LEFT);
 					}
 				};
 
