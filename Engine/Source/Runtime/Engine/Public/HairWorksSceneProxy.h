@@ -88,7 +88,7 @@ protected:
 	TArray<FMatrix> PrevSkinningMatrices;
 
 	//** For morph targets*/
-	TArray<int32> MorphIndices;
+	FReadBuffer MorphIndexBuffer;
 	FMorphVertexBuffer* MorphVertexBuffer = nullptr;
 	FRWBufferStructured MorphPositionDeltaBuffer;
 	FRWBufferStructured MorphNormalDeltaBuffer;

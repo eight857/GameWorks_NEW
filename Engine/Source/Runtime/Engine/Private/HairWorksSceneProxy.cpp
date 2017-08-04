@@ -42,6 +42,8 @@ class FHairWorksCopyMorphDeltasCs: public FGlobalShader
 	FHairWorksCopyMorphDeltasCs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
 		: FGlobalShader(Initializer)
 	{
+		MorphVertexCount.Bind(Initializer.ParameterMap, TEXT("MorphVertexCount"));
+		MorphIndexBuffer.Bind(Initializer.ParameterMap, TEXT("MorphIndexBuffer"));
 		MorphVertexBuffer.Bind(Initializer.ParameterMap, TEXT("MorphVertexBuffer"));
 		MorphPositionDeltaBuffer.Bind(Initializer.ParameterMap, TEXT("MorphPositionDeltaBuffer"));
 		MorphNormalDeltaBuffer.Bind(Initializer.ParameterMap, TEXT("MorphNormalDeltaBuffer"));
@@ -50,7 +52,7 @@ class FHairWorksCopyMorphDeltasCs: public FGlobalShader
 	virtual bool Serialize(FArchive& Ar)
 	{
 		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
-		Ar << MorphVertexBuffer << MorphPositionDeltaBuffer << MorphNormalDeltaBuffer;
+		Ar << MorphVertexCount << MorphIndexBuffer << MorphVertexBuffer << MorphPositionDeltaBuffer << MorphNormalDeltaBuffer;
 		return bShaderHasOutdatedParameters;
 	}
 
@@ -64,6 +66,8 @@ class FHairWorksCopyMorphDeltasCs: public FGlobalShader
 		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
 	}
 
+	FShaderParameter MorphVertexCount;
+	FShaderResourceParameter MorphIndexBuffer;
 	FShaderResourceParameter MorphVertexBuffer;
 	FShaderResourceParameter MorphPositionDeltaBuffer;
 	FShaderResourceParameter MorphNormalDeltaBuffer;
@@ -273,8 +277,19 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 		CurrentSkinningMatrices = MoveTemp(DynamicData.BoneMatrices);
 	}
 
-	// Morph data. It's too early to update morph data here. It's not ready yet. 
-	MorphIndices = MoveTemp(DynamicData.MorphIndices);
+	// Morph data. It's too early to update morph data here. It's not ready yet. Delay it just before simulation. 
+	if (MorphIndexBuffer.NumBytes != DynamicData.MorphIndices.Num() * sizeof(int32))
+		MorphIndexBuffer.Initialize(sizeof(int32), DynamicData.MorphIndices.Num(), EPixelFormat::PF_R32_SINT);
+
+	if (MorphIndexBuffer.NumBytes > 0)
+	{
+		void* MorphIndices = RHILockVertexBuffer(MorphIndexBuffer.Buffer, 0, MorphIndexBuffer.NumBytes, EResourceLockMode::RLM_WriteOnly);
+
+		FMemory::BigBlockMemcpy(MorphIndices, DynamicData.MorphIndices.GetData(), MorphIndexBuffer.NumBytes);
+
+		RHIUnlockVertexBuffer(MorphIndexBuffer.Buffer);
+	}
+
 	MorphVertexBuffer = DynamicData.MorphVertexBuffer;
 
 	// Update normal center bone
@@ -379,21 +394,25 @@ void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 	{
 		MorphVertexBuffer->RequireSRV();
 
-		if (MorphPositionDeltaBuffer.NumBytes != MorphIndices.Num() * sizeof(FVector))
+		const auto VertexCount = MorphIndexBuffer.NumBytes / sizeof(int32);
+
+		if (MorphPositionDeltaBuffer.NumBytes != VertexCount * sizeof(FVector))
 		{
-			MorphPositionDeltaBuffer.Initialize(sizeof(FVector), MorphIndices.Num());
-			MorphNormalDeltaBuffer.Initialize(sizeof(FVector), MorphIndices.Num());
+			MorphPositionDeltaBuffer.Initialize(sizeof(FVector), VertexCount);
+			MorphNormalDeltaBuffer.Initialize(sizeof(FVector), VertexCount);
 		}
 
 		TShaderMapRef<FHairWorksCopyMorphDeltasCs> CopyMorphDeltasCs(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 
 		RHICmdList.SetComputeShader(CopyMorphDeltasCs->GetComputeShader());
 
+		SetShaderValue(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphVertexCount, VertexCount);
+		SetSRVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphIndexBuffer, MorphIndexBuffer.SRV);
 		SetSRVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphVertexBuffer, MorphVertexBuffer->GetSRV());
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphPositionDeltaBuffer, MorphPositionDeltaBuffer.UAV);
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphNormalDeltaBuffer, MorphNormalDeltaBuffer.UAV);
 
-		RHICmdList.DispatchComputeShader(MorphIndices.Num() / 192 + 1, 1, 1);
+		RHICmdList.DispatchComputeShader(VertexCount / 192 + 1, 1, 1);
 	}
 	else
 	{
