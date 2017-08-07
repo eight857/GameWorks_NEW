@@ -372,28 +372,10 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 
 void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 {
-	// Get morph data from skeleton
-	//TArray<FVector> MorphPositions;
-	//TArray<FVector> MorphNormals;
-
-	//const auto& ParentMorphVertices = ParentSkinning->GetMorphVertices();
-	//if(ParentMorphVertices.Num() > 0)
-	//{
-	//	MorphPositions.SetNumZeroed(MorphIndices.Num());
-	//	MorphNormals.SetNumZeroed(MorphIndices.Num());
-
-	//	for(auto VertexIdx = 0; VertexIdx < MorphIndices.Num(); ++VertexIdx)
-	//	{
-	//		const auto& MorphVertex = ParentMorphVertices[MorphIndices[VertexIdx]];
-	//		MorphPositions[VertexIdx] = MorphVertex.DeltaPosition;
-	//		MorphNormals[VertexIdx] = MorphVertex.DeltaTangentZ;
-	//	}
-	//}
-
+	// Pass morph delta to HairWorks
 	if (MorphVertexBuffer != nullptr && MorphVertexBuffer->bHasBeenUpdated)
 	{
-		MorphVertexBuffer->RequireSRV();
-
+		// Create buffers
 		const auto VertexCount = MorphIndexBuffer.NumBytes / sizeof(int32);
 
 		if (MorphPositionDeltaBuffer.NumBytes != VertexCount * sizeof(FVector))
@@ -402,6 +384,10 @@ void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 			MorphNormalDeltaBuffer.Initialize(sizeof(FVector), VertexCount);
 		}
 
+		// SRV is not created by default. So we create here
+		MorphVertexBuffer->RequireSRV();
+
+		// Copy position and normal delta
 		TShaderMapRef<FHairWorksCopyMorphDeltasCs> CopyMorphDeltasCs(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 
 		RHICmdList.SetComputeShader(CopyMorphDeltasCs->GetComputeShader());
@@ -413,6 +399,9 @@ void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphNormalDeltaBuffer, MorphNormalDeltaBuffer.UAV);
 
 		RHICmdList.DispatchComputeShader(VertexCount / 192 + 1, 1, 1);
+
+		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphPositionDeltaBuffer, nullptr);
+		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphNormalDeltaBuffer, nullptr);
 	}
 	else
 	{
@@ -420,7 +409,7 @@ void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 		MorphNormalDeltaBuffer.Release();
 	}
 
-	// Update morph data
+	// Pass morph data
 	::HairWorks::GetSDK()->updateMorphDeltas(
 		HairInstanceId,
 		NvCo::Dx11Type::wrap(::HairWorks::GetD3DHelper().GetShaderResourceView(MorphPositionDeltaBuffer.SRV)),

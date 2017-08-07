@@ -419,9 +419,7 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 	// Setup morph index mapping
 	do
 	{
-		// Only handle CPU morph case
-		extern int32 GEnableGPUSkinCache;
-		if(ParentSkeleton->MorphTargetWeights.Num() <= 0 || GEnableGPUSkinCache)
+		if(ParentSkeleton->SkeletalMesh->MorphTargets.Num() <= 0)
 		{
 			MorphIndices.Empty(true);
 			break;
