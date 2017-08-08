@@ -278,19 +278,17 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 	}
 
 	// Morph data. It's too early to update morph data here. It's not ready yet. Delay it just before simulation. 
-	if (MorphIndexBuffer.NumBytes != DynamicData.MorphIndices.Num() * sizeof(int32))
-		MorphIndexBuffer.Initialize(sizeof(int32), DynamicData.MorphIndices.Num(), EPixelFormat::PF_R32_SINT);
-
-	if (MorphIndexBuffer.NumBytes > 0)
+	if (DynamicData.MorphVertexBuffer && DynamicData.MorphVertexBuffer->bHasBeenUpdated)
 	{
-		void* MorphIndices = RHILockVertexBuffer(MorphIndexBuffer.Buffer, 0, MorphIndexBuffer.NumBytes, EResourceLockMode::RLM_WriteOnly);
-
-		FMemory::BigBlockMemcpy(MorphIndices, DynamicData.MorphIndices.GetData(), MorphIndexBuffer.NumBytes);
-
-		RHIUnlockVertexBuffer(MorphIndexBuffer.Buffer);
+		DynamicData.MorphVertexBuffer->RequireSRV();
+		MorphVertexBuffer = DynamicData.MorphVertexBuffer->GetSRV();
+	}
+	else
+	{
+		MorphVertexBuffer = nullptr;
 	}
 
-	MorphVertexBuffer = DynamicData.MorphVertexBuffer;
+	MorphVertexUpdateFrameNumber = GFrameNumberRenderThread;
 
 	// Update normal center bone
 	auto HairDesc = DynamicData.HairInstanceDesc;
@@ -370,10 +368,29 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 	HairPinMeshes = DynamicData.PinMeshes;
 }
 
+void FHairWorksSceneProxy::UpdateMorphIndices_RenderThread(const TArray<int32>& MorphIndices)
+{
+	if (MorphIndexBuffer.NumBytes != MorphIndices.Num() * sizeof(int32))
+		MorphIndexBuffer.Initialize(sizeof(int32), MorphIndices.Num(), EPixelFormat::PF_R32_SINT);
+
+	if (MorphIndexBuffer.NumBytes <= 0)
+		return;
+
+	void* LockedMorphIndices = RHILockVertexBuffer(MorphIndexBuffer.Buffer, 0, MorphIndexBuffer.NumBytes, EResourceLockMode::RLM_WriteOnly);
+
+	FMemory::BigBlockMemcpy(LockedMorphIndices, MorphIndices.GetData(), MorphIndexBuffer.NumBytes);
+
+	RHIUnlockVertexBuffer(MorphIndexBuffer.Buffer);
+
+}
+
 void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 {
 	// Pass morph delta to HairWorks
-	if (MorphVertexBuffer != nullptr && MorphVertexBuffer->bHasBeenUpdated)
+	if (GFrameNumberRenderThread > MorphVertexUpdateFrameNumber)
+		return;		
+
+	if (MorphVertexBuffer && MorphIndexBuffer.NumBytes > 0)
 	{
 		// Create buffers
 		const auto VertexCount = MorphIndexBuffer.NumBytes / sizeof(int32);
@@ -384,9 +401,6 @@ void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 			MorphNormalDeltaBuffer.Initialize(sizeof(FVector), VertexCount);
 		}
 
-		// SRV is not created by default. So we create here
-		MorphVertexBuffer->RequireSRV();
-
 		// Copy position and normal delta
 		TShaderMapRef<FHairWorksCopyMorphDeltasCs> CopyMorphDeltasCs(GetGlobalShaderMap(ERHIFeatureLevel::SM5));
 
@@ -394,7 +408,7 @@ void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 
 		SetShaderValue(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphVertexCount, VertexCount);
 		SetSRVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphIndexBuffer, MorphIndexBuffer.SRV);
-		SetSRVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphVertexBuffer, MorphVertexBuffer->GetSRV());
+		SetSRVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphVertexBuffer, MorphVertexBuffer);
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphPositionDeltaBuffer, MorphPositionDeltaBuffer.UAV);
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphNormalDeltaBuffer, MorphNormalDeltaBuffer.UAV);
 
@@ -402,6 +416,9 @@ void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphPositionDeltaBuffer, nullptr);
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphNormalDeltaBuffer, nullptr);
+
+		// In editor, it would be invalid sometimes. So set it to null and wait for update. 
+		MorphVertexBuffer = nullptr;
 	}
 	else
 	{

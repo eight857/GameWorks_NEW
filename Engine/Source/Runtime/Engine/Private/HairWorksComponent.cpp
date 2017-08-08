@@ -371,7 +371,6 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 		if(ParentSkeleton->MeshObject->IsCPUSkinned())
 			break;
 
-		DynamicData->MorphIndices = MorphIndices;
 		DynamicData->MorphVertexBuffer = &static_cast<FSkeletalMeshObjectGPUSkin*>(ParentSkeleton->MeshObject)->GetMorphVertexBuffer();
 	} while(false);	
 
@@ -503,6 +502,25 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 		} while(false);
 #endif
 	} while(false);
+
+	// Update morph indices to scene proxy
+	if (SceneProxy)
+	{
+		const auto& LocalMorphIndices = MorphIndices;
+		auto& HairWorksSceneProxy = static_cast<FHairWorksSceneProxy&>(*SceneProxy);
+		auto UpdateMorphIndices = [&HairWorksSceneProxy, LocalMorphIndices]()
+		{
+			HairWorksSceneProxy.UpdateMorphIndices_RenderThread(LocalMorphIndices);
+		};
+
+		ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
+			HairUpdateMorphIndices,
+			decltype(UpdateMorphIndices), UpdateMorphIndices, UpdateMorphIndices,
+			{
+				UpdateMorphIndices();
+			}
+		);
+	}
 }
 
 void UHairWorksComponent::UpdateBoneMatrices()const

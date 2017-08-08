@@ -32,7 +32,6 @@ public:
 		TArray<UTexture2D*> Textures;
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
-		TArray<int32> MorphIndices;
 		FMorphVertexBuffer* MorphVertexBuffer = nullptr;
 	};
 
@@ -47,6 +46,7 @@ public:
 	//~ End FPrimitiveSceneProxy interface.
 
 	void UpdateDynamicData_RenderThread(FDynamicRenderData & DynamicData);
+	void UpdateMorphIndices_RenderThread(const TArray<int32>& MorphIndices);
 
 	void PreSimulate(FRHICommandList& RHICmdList);
 
@@ -88,8 +88,9 @@ protected:
 	TArray<FMatrix> PrevSkinningMatrices;
 
 	//** For morph targets*/
+	uint32 MorphVertexUpdateFrameNumber = 0;
 	FReadBuffer MorphIndexBuffer;
-	FMorphVertexBuffer* MorphVertexBuffer = nullptr;
+	FShaderResourceViewRHIRef MorphVertexBuffer;
 	FRWBufferStructured MorphPositionDeltaBuffer;
 	FRWBufferStructured MorphNormalDeltaBuffer;
 
