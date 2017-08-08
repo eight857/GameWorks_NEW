@@ -1465,11 +1465,9 @@ public:
 	/*! \brief update the morph delta/s if using morph targets. Morph targets can be used alongside bones. 
 	The values passed in are the delta differences between instances root positions and/or normals. 
 	\param [in] instanceId hair instance to update the morph target deltas on
-	\param [in] positionDeltas. (Can be null if positions don't need to be morphs) 
-	\param [in] normalsDeltas. The hair will be rotated from the growth mesh normal to morphed normal. (Can be null if normals don't need to be morphed)
+	\param [in] positionDeltas. SRV used as StructuredBuffer<float3>. (Can be null if positions don't need to be morphs) 
+	\param [in] normalsDeltas. SRV used as StructuredBuffer<float3>. The hair will be rotated from the growth mesh normal to morphed normal. (Can be null if normals don't need to be morphed)
 	\return Successful if NV_SUCCEEDED(Result) is true. */
-
-	virtual Result updateMorphDeltas(InstanceId instanceId, const Vec3* positionsDeltas, const Vec3* normalsDeltas) = 0;
 	virtual Result updateMorphDeltas(InstanceId instanceId, const NvCo::ApiHandle& positionsDeltas, const NvCo::ApiHandle& normalsDeltas) = 0;
 
 	/**

@@ -12,9 +12,6 @@
 #include "Animation/MorphTarget.h"
 #include "ClearQuad.h"
 #include "ShaderParameterUtils.h"
-// @third party code - BEGIN HairWorks
-#include "Components/HairWorksComponent.h"
-// @third party code - END HairWorks
 
 
 DEFINE_LOG_CATEGORY_STATIC(LogSkeletalGPUSkinMesh, Warning, All);
@@ -136,9 +133,6 @@ FSkeletalMeshObjectGPUSkin::FSkeletalMeshObjectGPUSkin(USkinnedMeshComponent* In
 	,	bNeedsUpdateDeferred(false)
 	,	bMorphNeedsUpdateDeferred(false)
 	,	bMorphResourcesInitialized(false)
-	// @third party code - BEGIN HairWorks
-	,	bNeedMorphVertices(false)
-	// @third party code - END HairWorks
 {
 	// create LODs to match the base mesh
 	LODs.Empty(SkeletalMeshResource->LODModels.Num());
@@ -258,24 +252,6 @@ void FSkeletalMeshObjectGPUSkin::Update(int32 LODIndex,USkinnedMeshComponent* In
 		FrameNumberToPrepare = InMeshComponent->SceneProxy->GetScene().GetFrameNumber() + 1;
 		GPUSkinCache = InMeshComponent->SceneProxy->GetScene().GetGPUSkinCache();
 	}
-
-	// @third party code - BEGIN HairWorks
-	const bool bHasHairWorks = InMeshComponent->GetAttachChildren().FindItemByClass<UHairWorksComponent>();
-	auto SetNeedMorphVertices = [this, bHasHairWorks]()
-	{
-		bNeedMorphVertices = bHasHairWorks;
-		if(!bNeedMorphVertices)
-			MorphVertices.Empty();
-	};
-
-	ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
-		SkelMeshObjectRequireMorphVerticesForHairWorks,
-		decltype(SetNeedMorphVertices), SetNeedMorphVertices, SetNeedMorphVertices,
-		{
-			SetNeedMorphVertices();
-		}
-	);
-	// @third party code - END HairWorks
 
 	// queue a call to update this data
 	FSkeletalMeshObjectGPUSkin* MeshObject = this;
@@ -426,11 +402,7 @@ void FSkeletalMeshObjectGPUSkin::ProcessUpdatedDynamicData(FGPUSkinCache* GPUSki
 			else
 			{
 				// update the morph data for the lod (before SkinCache)
-				LOD.UpdateMorphVertexBufferCPU(DynamicData->ActiveMorphTargets, DynamicData->MorphTargetWeights
-					// @third party code - BEGIN HairWorks
-					,bNeedMorphVertices ? &MorphVertices : nullptr
-					// @third party code - END HairWorks
-				);
+				LOD.UpdateMorphVertexBufferCPU(DynamicData->ActiveMorphTargets, DynamicData->MorphTargetWeights);
 			}		
 		}
 	}
@@ -703,11 +675,7 @@ void FSkeletalMeshObjectGPUSkin::FSkeletalMeshObjectLOD::UpdateMorphVertexBuffer
 	}
 }
 
-void FSkeletalMeshObjectGPUSkin::FSkeletalMeshObjectLOD::UpdateMorphVertexBufferCPU(const TArray<FActiveMorphTarget>& ActiveMorphTargets, const TArray<float>& MorphTargetWeights
-	// @third party code - BEGIN HairWorks
-	, TArray<FMorphGPUSkinVertex>* MorphVertices
-	// @third party code - END HairWorks
-)
+void FSkeletalMeshObjectGPUSkin::FSkeletalMeshObjectLOD::UpdateMorphVertexBufferCPU(const TArray<FActiveMorphTarget>& ActiveMorphTargets, const TArray<float>& MorphTargetWeights)
 {
 	SCOPE_CYCLE_COUNTER(STAT_MorphVertexBuffer_Update);
 
@@ -808,14 +776,6 @@ void FSkeletalMeshObjectGPUSkin::FSkeletalMeshObjectLOD::UpdateMorphVertexBuffer
 				}
 			}
 		} // ApplyDelta
-
-		// @third party code - BEGIN HairWorks
-		if(MorphVertices)
-		{
-			MorphVertices->Empty(LodModel.NumVertices);
-			MorphVertices->Append(Buffer, LodModel.NumVertices);
-		}
-		// @third party code - END HairWorks
 
 		// Lock the real buffer.
 		{
@@ -1388,10 +1348,6 @@ const FTwoVectors& FSkeletalMeshObjectGPUSkin::GetCustomLeftRightVectors(int32 S
 }
 
 // @third party code - BEGIN HairWorks
-const TArray<FMorphGPUSkinVertex>& FSkeletalMeshObjectGPUSkin::GetMorphVertices() const
-{
-	return MorphVertices;
-}
 FMorphVertexBuffer& FSkeletalMeshObjectGPUSkin::GetMorphVertexBuffer()
 {
 	return LODs[GetLOD()].MorphVertexBuffer;
