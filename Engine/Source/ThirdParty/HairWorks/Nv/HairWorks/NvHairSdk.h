@@ -1545,7 +1545,7 @@ public:
 		\param [in] viewport The viewport being rendered to
 		\param [in] view The standard camera view matrix (same order as D3D)
 		\param [in] proj The standard camera projection matrix (same order as D3D)
-		\param [in] fov field of view in angles.
+		\param [in] fov field of view in angles. Used by LOD. 
 		\param [in] handedness Whether the provided view projection matrices use left handed or right handed coordinate system
 		\return Successful if NV_SUCCEEDED(Result) is true. 
 		\note It is important to set camera properly before rendering or simulation, 
