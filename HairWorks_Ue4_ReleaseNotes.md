@@ -23,6 +23,8 @@ Changes
 * Added support for morph target skeletal mesh. 
 * Added world space simulation mode. 
 * Added support for level wind. 
+* Fixed a crash of pin mesh.
+* Fixed a render bug of pin mesh. 
 
 ## Jun 17, 2017
 * Upgraded to UE4.16.1
