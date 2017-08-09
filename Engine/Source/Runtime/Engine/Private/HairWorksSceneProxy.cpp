@@ -412,7 +412,7 @@ void FHairWorksSceneProxy::PreSimulate(FRHICommandList& RHICmdList)
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphPositionDeltaBuffer, MorphPositionDeltaBuffer.UAV);
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphNormalDeltaBuffer, MorphNormalDeltaBuffer.UAV);
 
-		RHICmdList.DispatchComputeShader(VertexCount / 192 + 1, 1, 1);
+		RHICmdList.DispatchComputeShader(VertexCount / 256 + 1, 1, 1);
 
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphPositionDeltaBuffer, nullptr);
 		SetUAVParameter(RHICmdList, CopyMorphDeltasCs->GetComputeShader(), CopyMorphDeltasCs->MorphNormalDeltaBuffer, nullptr);

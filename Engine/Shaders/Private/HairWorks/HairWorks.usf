@@ -388,7 +388,7 @@ Buffer<float> MorphVertexBuffer;
 RWStructuredBuffer<float3> MorphPositionDeltaBuffer;
 RWStructuredBuffer<float3> MorphNormalDeltaBuffer;
 
-[numthreads(192, 1, 1)]
+[numthreads(256, 1, 1)]
 void CopyMorphDeltas(uint DispatchId : SV_DispatchThreadID)
 {
 	if (DispatchId >= MorphVertexCount)
