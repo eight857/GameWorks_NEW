@@ -12,13 +12,12 @@ Known Issues
 * HairWorks shadow maps are generally crisper when compared to other objects in scene.
 * Duplicated property categories in HairWorks assets and components. 
 * Needs to read data back from GPU buffer to CPU for dynamic pin, so there would be potential performance issue. 
-* GPU morph targed is not supported. 
 * Assets of old version HairWorks, such as 1.0, would not be loaded, due to HairWorks SDK change. 
 * Support for forword rendering mode is not added yet. 
 
 Changes
 =============
-## July 24, 2017
+## August 9, 2017
 * Upgraded to HairWorks 1.4.
 * Upgraded to UE4.17.
 * Added support for morph target skeletal mesh. 
