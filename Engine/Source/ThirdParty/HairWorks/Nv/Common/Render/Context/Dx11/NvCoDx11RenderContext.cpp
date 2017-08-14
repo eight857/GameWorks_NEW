@@ -274,8 +274,8 @@ void Dx11RenderContext::onSizeChanged(Int width, Int height, Bool minimized)
 	swapChainDesc.BufferDesc.Width = width;
 	swapChainDesc.BufferDesc.Height = height;
 
-	m_width = width;
-	m_height = height;
+	// Update the width, height, and aspect ratio member variables.
+	updateForSizeChange(width, height);
 
 	NV_RETURN_VOID_ON_FAIL(createFrameResources());
 

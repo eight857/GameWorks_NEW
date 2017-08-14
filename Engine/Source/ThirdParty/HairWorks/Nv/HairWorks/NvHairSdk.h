@@ -997,7 +997,7 @@ struct ShaderCacheSettings
 	{
 		m_channelPerTexture &= rhs.m_channelPerTexture;
 		m_textureUsedFlags &= rhs.m_textureUsedFlags;
-		m_textureUsedFlags &= rhs.m_useFlags;
+		m_useFlags &= rhs.m_useFlags;
 	}
 		// ==
 	Bool operator==(const ThisType& rhs) const
