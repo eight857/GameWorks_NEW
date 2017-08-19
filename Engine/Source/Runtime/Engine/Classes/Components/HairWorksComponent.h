@@ -14,7 +14,7 @@ class USkeletalMesh;
 /**
 * HairWorksComponent manages and renders a hair asset.
 */
-UCLASS(ClassGroup = Rendering, meta = (BlueprintSpawnableComponent), HideCategories = (Collision, Base, Object, PhysicsVolume))
+UCLASS(ClassGroup = Rendering, meta = (BlueprintSpawnableComponent), HideCategories = (Collision, Base, Object, PhysicsVolume, Physics, Mobile))
 class ENGINE_API UHairWorksComponent : public UPrimitiveComponent
 {
 	GENERATED_UCLASS_BODY()
