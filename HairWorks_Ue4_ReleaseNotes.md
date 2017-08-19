@@ -14,6 +14,7 @@ Known Issues
 * Needs to read data back from GPU buffer to CPU for dynamic pin, so there would be potential performance issue. 
 * Assets of old version HairWorks, such as 1.0, would not be loaded, due to HairWorks SDK change. 
 * Support for forword rendering mode is not added yet. 
+* Override property of HairWorks component is not editable in level. [Bug report](https://answers.unrealengine.com/questions/697408/struct-property-cant-be-edited-in-level.html?sort=oldest).
 
 Changes
 =============
