@@ -169,7 +169,7 @@ NOTE An implementation may be able to load prior versions */
 #define NV_HAIR_SERIAL_VERSION 120
 
 /*! release version as a string. NOTE! May contain text after version number */
-#define NV_HAIR_RELEASE_VERSION_STRING "1.4"
+#define NV_HAIR_RELEASE_VERSION_STRING "1.4 beta"
 
 // Macro to generate a version number 
 #define NV_HAIR_MAKE_VERSION(major, minor, point) ((major * 100) + (minor * 10) + point)
@@ -1463,12 +1463,14 @@ public:
 	virtual Result updateSkinningDqs(InstanceId	instanceId, Int numBones, const DualQuaternion* dqs, ETeleportMode teleportMode = TeleportMode::NONE) = 0;
 
 	/*! \brief update the morph delta/s if using morph targets. Morph targets can be used alongside bones. 
-	The values passed in are the delta differences between instances root positions and/or normals. 
-	\param [in] instanceId hair instance to update the morph target deltas on
-	\param [in] positionDeltas. SRV used as StructuredBuffer<float3>. (Can be null if positions don't need to be morphs) 
-	\param [in] normalsDeltas. SRV used as StructuredBuffer<float3>. The hair will be rotated from the growth mesh normal to morphed normal. (Can be null if normals don't need to be morphed)
-	\return Successful if NV_SUCCEEDED(Result) is true. */
-	virtual Result updateMorphDeltas(InstanceId instanceId, const NvCo::ApiHandle& positionsDeltas, const NvCo::ApiHandle& normalsDeltas) = 0;
+		The values passed in are the delta differences between instances root positions and/or normals. 
+		\param [in] instanceId hair instance to update the morph target deltas on
+		\param [in] positionDeltas. SRV used as StructuredBuffer<float3>. (Can be null if positions don't need to be morphs) 
+		\param [in] normalDeltas. SRV used as StructuredBuffer<float3>. The hair will be rotated from the growth mesh normal to morphed normal. (Can be null if normals don't need to be morphed)
+		\return Successful if NV_SUCCEEDED(Result) is true.
+		\note On Dx11, the handles passed to positionDeltas, or normalDeltaa should be wrapped ID3D11ShaderResourceView*
+		\note On Dx12, this feature is currently not implemented. Will have no effect will return NV_FAIL. */
+	virtual Result updateMorphDeltas(InstanceId instanceId, const NvCo::ApiHandle& positionDeltas, const NvCo::ApiHandle& normalDeltas) = 0;
 
 	/**
 		\brief Runs simulation for all currently active hair instances for one frame.
