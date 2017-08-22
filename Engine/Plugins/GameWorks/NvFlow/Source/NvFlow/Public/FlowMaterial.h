@@ -8,7 +8,7 @@
 
 #include "FlowMaterial.generated.h"
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FFlowMaterialPerComponent
 {
 	GENERATED_USTRUCT_BODY()

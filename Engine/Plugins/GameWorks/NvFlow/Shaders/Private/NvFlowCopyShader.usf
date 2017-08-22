@@ -1,6 +1,7 @@
 // NvFlow begin
 
-#include "Common.usf"
+#include "/Engine/Public/Platform.ush"
+#include "/Engine/Generated/GeneratedUniformBuffers.ush" 
 
 Buffer<uint> BlockList;
 Texture3D<uint> BlockTable;

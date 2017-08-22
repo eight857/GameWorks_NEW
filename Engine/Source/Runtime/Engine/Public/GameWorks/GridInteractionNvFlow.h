@@ -32,7 +32,7 @@ enum EInteractionResponseNvFlow
 	EIR_MAX,
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct ENGINE_API FInteractionResponseContainerNvFlow
 {
 	GENERATED_USTRUCT_BODY()

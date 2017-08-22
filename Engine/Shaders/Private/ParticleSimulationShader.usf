@@ -8,7 +8,7 @@
 
 // NvFlow begin
 #if NV_FLOW_WITH_GPU_PARTICLES
-#include "NvFlowCommon.usf"
+#include "/Plugin/NvFlow/Public/NvFlowCommon.ush"
 #endif
 // NvFlow end
 

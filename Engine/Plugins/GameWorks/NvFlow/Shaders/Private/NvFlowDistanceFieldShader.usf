@@ -1,7 +1,10 @@
 // NvFlow begin
 
-#include "Common.usf"
-#include "GlobalDistanceFieldShared.usf"
+#include "/Engine/Public/Platform.ush"
+
+// Note : Unclear if /Engine/Private/ should be accessible here
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/GlobalDistanceFieldShared.ush"
 
 
 Buffer<uint> BlockList;

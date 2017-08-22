@@ -20,7 +20,7 @@ enum EFlowRenderPreset
 	EFRP_MAX,
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FFlowRenderCompMask
 {
 	GENERATED_USTRUCT_BODY()

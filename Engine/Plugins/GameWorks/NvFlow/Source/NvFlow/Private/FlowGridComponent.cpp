@@ -433,7 +433,7 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 		else
 		{
 			check(StaticMeshComponent != nullptr);
-			ActorTransform = StaticMeshComponent->ComponentToWorld;
+			ActorTransform = StaticMeshComponent->GetComponentTransform();
 		}
 
 		// ActorCenterOfMass, ActorLinearVelocity, ActorAngularVelocity are in Actor's Local Space!!!

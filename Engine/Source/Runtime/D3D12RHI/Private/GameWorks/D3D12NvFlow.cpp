@@ -72,12 +72,12 @@ void FD3D12CommandContext::NvFlowGetDepthStencilViewDesc(FTexture2DRHIParamRef d
 	descD3D12->dsvHandle = DSV->GetView();
 	descD3D12->dsvDesc   = DSV->GetDesc();
 	descD3D12->dsvResource = DSV->GetResource()->GetResource();
-	descD3D12->dsvCurrentState = DSV->GetResource()->GetResourceState()->GetSubresourceState(0);
+	descD3D12->dsvCurrentState = DSV->GetResource()->GetResourceState().GetSubresourceState(0);
 
 	descD3D12->srvHandle = SRV->GetView();
 	descD3D12->srvDesc   = SRV->GetDesc();
 	descD3D12->srvResource = SRV->GetResource()->GetResource();
-	descD3D12->srvCurrentState = SRV->GetResource()->GetResourceState()->GetSubresourceState(0);
+	descD3D12->srvCurrentState = SRV->GetResource()->GetResourceState().GetSubresourceState(0);
 
 	StateCache.GetViewport(&descD3D12->viewport);
 }
@@ -89,7 +89,7 @@ void FD3D12CommandContext::NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetV
 	descD3D12->rtvHandle = CurrentRenderTargets[0]->GetView();
 	descD3D12->rtvDesc   = CurrentRenderTargets[0]->GetDesc();
 	descD3D12->resource  = CurrentRenderTargets[0]->GetResource()->GetResource();
-	descD3D12->currentState = CurrentRenderTargets[0]->GetResource()->GetResourceState()->GetSubresourceState(0);
+	descD3D12->currentState = CurrentRenderTargets[0]->GetResource()->GetResourceState().GetSubresourceState(0);
 
 	StateCache.GetViewport(&descD3D12->viewport);
 	StateCache.GetScissorRect(&descD3D12->scissor);

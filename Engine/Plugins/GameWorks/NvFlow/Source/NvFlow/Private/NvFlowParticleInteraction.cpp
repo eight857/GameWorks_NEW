@@ -227,7 +227,7 @@ private:
 	/** Output key buffer. */
 	FShaderResourceParameter OutMask;
 };
-IMPLEMENT_SHADER_TYPE(, FNvFlowMaskFromParticlesCS, TEXT("NvFlowAllocShader"), TEXT("ComputeMaskFromParticles"), SF_Compute);
+IMPLEMENT_SHADER_TYPE(, FNvFlowMaskFromParticlesCS, TEXT("/Plugin/NvFlow/Private/NvFlowAllocShader.usf"), TEXT("ComputeMaskFromParticles"), SF_Compute);
 
 
 void NvFlow::Scene::emitCustomAllocCallback(IRHICommandContext* RHICmdCtx, const NvFlowGridEmitCustomAllocParams* params, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData)
@@ -420,7 +420,7 @@ private:
 	FShaderResourceParameter DataIn;
 	FShaderResourceParameter DataOut;
 };
-IMPLEMENT_SHADER_TYPE(, FNvFlowCopyGridDataCS, TEXT("NvFlowCopyShader"), TEXT("CopyGridData"), SF_Compute);
+IMPLEMENT_SHADER_TYPE(, FNvFlowCopyGridDataCS, TEXT("/Plugin/NvFlow/Private/NvFlowCopyShader.usf"), TEXT("CopyGridData"), SF_Compute);
 
 
 class FNvFlowApplyDistanceFieldCS : public FGlobalShader
@@ -544,7 +544,7 @@ private:
 
 	FGlobalDistanceFieldParameters GlobalDistanceFieldParameters;
 };
-IMPLEMENT_SHADER_TYPE(, FNvFlowApplyDistanceFieldCS, TEXT("NvFlowDistanceFieldShader"), TEXT("ApplyDistanceField"), SF_Compute);
+IMPLEMENT_SHADER_TYPE(, FNvFlowApplyDistanceFieldCS, TEXT("/Plugin/NvFlow/Private/NvFlowDistanceFieldShader.usf"), TEXT("ApplyDistanceField"), SF_Compute);
 
 
 #define COUPLE_PARTICLES_THREAD_COUNT 64
@@ -699,7 +699,7 @@ private:
 	FShaderResourceParameter DataIn;
 	FShaderResourceParameter DataOut;
 };
-IMPLEMENT_SHADER_TYPE(, FNvFlowCoupleParticlesCS, TEXT("NvFlowCoupleShader"), TEXT("CoupleParticlesToGrid"), SF_Compute);
+IMPLEMENT_SHADER_TYPE(, FNvFlowCoupleParticlesCS, TEXT("/Plugin/NvFlow/Private/NvFlowCoupleShader.usf"), TEXT("CoupleParticlesToGrid"), SF_Compute);
 
 
 void NvFlow::Scene::applyDistanceField(IRHICommandContext* RHICmdCtx, NvFlowUint dataFrontIdx, const NvFlowGridEmitCustomEmitLayerParams& layerParams, const class FGlobalDistanceFieldParameterData* GlobalDistanceFieldParameterData, float dt,

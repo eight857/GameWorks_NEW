@@ -1,7 +1,7 @@
 // NvFlow begin
 
-#include "Common.usf"
-
+#include "/Engine/Public/Platform.ush"
+#include "/Engine/Generated/GeneratedUniformBuffers.ush" 
 
 /** Input buffer containing particle indices. */
 Buffer<float2> InParticleIndices;
