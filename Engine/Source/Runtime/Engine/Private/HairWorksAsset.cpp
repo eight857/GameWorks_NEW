@@ -79,8 +79,8 @@ void UHairWorksAsset::PostEditChangeProperty(FPropertyChangedEvent & PropertyCha
 void UHairWorksAsset::InitPins() const
 {
 	// Empty engine pins
-	check(AssetId != NvHair::ASSET_ID_NULL);
-	check(::HairWorks::GetSDK() != nullptr);
+	if (::HairWorks::GetSDK() == nullptr || AssetId == NvHair::ASSET_ID_NULL)
+		return;
 
 	HairMaterial->Pins.Empty();
 

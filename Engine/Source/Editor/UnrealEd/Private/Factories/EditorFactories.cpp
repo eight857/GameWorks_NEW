@@ -6655,9 +6655,10 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 
 	// Copy asset content
 	NvHair::InstanceDescriptor NewInstanceDesc;
-	{
-		HairSdk.getInstanceDescriptorFromAsset(NewHairAssetId, NewInstanceDesc);
+	HairSdk.getInstanceDescriptorFromAsset(NewHairAssetId, NewInstanceDesc);
 
+	if(Hair->AssetId != NvHair::ASSET_ID_NULL)
+	{
 		NvHair::AssetCopySettings CopySettings;
 		CopySettings.m_copyAll = false;
 		CopySettings.m_copyCollision = Hair->bCollisions;
@@ -6668,8 +6669,15 @@ EReimportResult::Type UHairWorksFactory::Reimport(UObject* Obj)
 
 		// Finished copy. Clear.
 		HairSdk.freeAsset(NewHairAssetId);
-		NewHairAssetId = NvHair::ASSET_ID_NULL;
 	}
+	else	// Old asset is null. So just use the new asset.
+	{
+		Hair->AssetId = NewHairAssetId;
+
+		UE_LOG(LogHairWorks, Warning, TEXT("Original asset is invalid. So the new asset is used. "));
+	}
+	
+	NewHairAssetId = NvHair::ASSET_ID_NULL;
 
 	// Initialize hair
 	InitHairAssetInfo(*Hair, &NewInstanceDesc);
