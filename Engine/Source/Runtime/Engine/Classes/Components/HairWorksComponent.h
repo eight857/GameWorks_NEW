@@ -23,7 +23,7 @@ class ENGINE_API UHairWorksComponent : public UPrimitiveComponent
 	FHairWorksInstance HairInstance;
 
 	/** It requires a remapping progress to support morph target of skeletal mesh. This progress would be slow when vertex number is very large, and cause long halt in editor. If this option is on, remapping happens when any edit occurs. If this option is off, remapping happens only when the parent skeletal mesh of a HairWorks component changers. If you want to do remapping once when you need, just turn it on and then off. */
-	UPROPERTY(EditAnywhere, Category = Asset)
+	UPROPERTY(EditDefaultsOnly, Category = Asset)
 	bool bAutoRemapMorphTarget = false;
 
 	//~ Begin UPrimitiveComponent interface
