@@ -185,6 +185,11 @@ FActorComponentInstanceData * UHairWorksComponent::GetComponentInstanceData() co
 					);
 				}
 			} HairInstancePropertyReader(*CastChecked<UHairWorksComponent>(Component), SavedProperties);
+
+			// If a property is instanced or contains instanced sub properties, it is treated as UCS modified, and it will become readonly. We fix it here. https://answers.unrealengine.com/questions/700589/struct-property-cant-be-edited-in-level-1.html. 
+			TArray<UProperty*> Properties;
+			Properties.Add(Component->GetClass()->FindPropertyByName("HairInstance"));
+			Component->RemoveUCSModifiedProperties(Properties);
 		}
 
 	protected:
