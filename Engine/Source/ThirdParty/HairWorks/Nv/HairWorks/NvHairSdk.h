@@ -136,13 +136,13 @@ Render each hair instance.
 */
 
 namespace nvidia {
-/*! \namespace HairWorks 
-\brief Main HairWorks SDK namespace
-\details The nvidia::HairWorks namespace, holds the majority of the types, classes and methods of the SDK. Types in the 
-namespace can be referenced either with nvidia::HairWorks, but often it is easier and more readable to use
-the the shortened namespace alias NvHair. 
-*/
 namespace HairWorks {
+/*! \namespace nvidia::HairWorks
+\brief Main HairWorks SDK namespace
+\details The nvidia::HairWorks namespace, holds the majority of the types, classes and methods of the SDK. Types in the
+namespace can be referenced either with nvidia::HairWorks, but often it is easier and more readable to use
+the the shortened namespace alias NvHair.
+*/
 
 /*! Version numbers are encoded as strings as
 major.minor.point 

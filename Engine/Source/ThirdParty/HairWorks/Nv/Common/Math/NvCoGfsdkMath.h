@@ -20,6 +20,10 @@
 namespace nvidia {
 namespace Common {
 namespace GfsdkMath { 
+/*! \namespace nvidia::Common::GfsdkMath
+\brief Legacy maths library based on gfsdk_ maths library.
+\details Maths library for doing graphics related maths. Uses NvCoMathTypes.h types as underlying vector and matrix types. 
+*/
 
 // implicit row major
 typedef NvCo_EleRowMat4x4 Mat4x4;
