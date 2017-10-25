@@ -18,6 +18,9 @@ Known Issues
 
 Changes
 =============
+## Oct 25, 2017
+* Upgraded to UE4.18.0
+
 ## August 9, 2017
 * Upgraded to HairWorks 1.4.
 * Upgraded to UE4.17.
