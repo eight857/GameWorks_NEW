@@ -21,6 +21,9 @@
 #include "SceneRenderTargetParameters.h"
 #include "DeferredShadingRenderer.h"
 #include "ScenePrivate.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 /** 
  * Maximum number of lights that can be handled by tiled deferred in a single compute shader pass.
@@ -108,6 +111,11 @@ public:
 		ViewDimensions.Bind(Initializer.ParameterMap, TEXT("ViewDimensions"));
 		PreIntegratedBRDF.Bind(Initializer.ParameterMap, TEXT("PreIntegratedBRDF"));
 		PreIntegratedBRDFSampler.Bind(Initializer.ParameterMap, TEXT("PreIntegratedBRDFSampler"));
+		// @third party code - BEGIN HairWorks
+		HairDeferredParameters.Bind(Initializer.ParameterMap);
+		HairInTexture.Bind(Initializer.ParameterMap, TEXT("HairInTexture"));
+		HairOutTexture.Bind(Initializer.ParameterMap, TEXT("HairOutTexture"));
+		// @third party code - END HairWorks
 	}
 
 	FTiledDeferredLightingCS()
@@ -126,7 +134,12 @@ public:
 		int32 StartIndex, 
 		int32 NumThisPass,
 		IPooledRenderTarget& InTextureValue,
-		IPooledRenderTarget& OutTextureValue)
+		IPooledRenderTarget& OutTextureValue
+		// @third party code - BEGIN HairWorks
+		, bool bWithHairWorks = false
+		// @third party code - END HairWorks
+		)
+
 	{
 		FComputeShaderRHIParamRef ShaderRHI = GetComputeShader();
 
@@ -234,6 +247,15 @@ public:
 		SetUniformBufferParameterImmediate(RHICmdList, ShaderRHI, GetUniformBufferParameter<FTiledDeferredLightData>(), LightData);
 		SetUniformBufferParameterImmediate(RHICmdList, ShaderRHI, GetUniformBufferParameter<FTiledDeferredLightData2>(), LightData2);
 		SetShaderValue(RHICmdList, ShaderRHI, NumLights, NumThisPass);
+
+		// @third party code - BEGIN HairWorks
+		HairDeferredParameters.SetParameters(RHICmdList, ShaderRHI, *this, bWithHairWorks);
+		if(bWithHairWorks)
+		{
+			SetTextureParameter(RHICmdList, ShaderRHI, HairInTexture, HairWorksRenderer::HairRenderTargets->AccumulatedColor->GetRenderTargetItem().ShaderResourceTexture);
+			HairOutTexture.SetTexture(RHICmdList, ShaderRHI, nullptr, HairWorksRenderer::HairRenderTargets->AccumulatedColor->GetRenderTargetItem().UAV);
+		}
+		// @third party code - END HairWorks
 	}
 
 	void UnsetParameters(FRHICommandList& RHICmdList, IPooledRenderTarget& OutTextureValue)
@@ -254,6 +276,11 @@ public:
 		Ar << ViewDimensions;
 		Ar << PreIntegratedBRDF;
 		Ar << PreIntegratedBRDFSampler;
+		// @third party code - BEGIN HairWorks
+		Ar << HairDeferredParameters;
+		Ar << HairInTexture;
+		Ar << HairOutTexture;
+		// @third party code - END HairWorks
 		return bShaderHasOutdatedParameters;
 	}
 
@@ -276,6 +303,11 @@ private:
 	FShaderParameter ViewDimensions;
 	FShaderResourceParameter PreIntegratedBRDF;
 	FShaderResourceParameter PreIntegratedBRDFSampler;
+	// @third party code - BEGIN HairWorks
+	HairWorksRenderer::FDeferredShadingParameters HairDeferredParameters;
+	FShaderResourceParameter HairInTexture;
+	FRWShaderParameter HairOutTexture;
+	// @third party code - END HairWorks
 };
 
 // #define avoids a lot of code duplication
@@ -314,7 +346,11 @@ static void SetShaderTemplTiledLighting(
 	TShaderMapRef<FTiledDeferredLightingCS<bVisualizeLightCulling> > ComputeShader(View.ShaderMap);
 	RHICmdList.SetComputeShader(ComputeShader->GetComputeShader());
 
-	ComputeShader->SetParameters(RHICmdList, View, ViewIndex, NumViews, SortedLights, NumLightsToRenderInSortedLights, SimpleLights, StartIndex, NumThisPass, InTexture, OutTexture);
+	ComputeShader->SetParameters(RHICmdList, View, ViewIndex, NumViews, SortedLights, NumLightsToRenderInSortedLights, SimpleLights, StartIndex, NumThisPass, InTexture, OutTexture
+	// @third party code - BEGIN HairWorks
+	, View.VisibleHairs.Num() > 0
+	// @third party code - END HairWorks
+	);
 
 	uint32 GroupSizeX = (View.ViewRect.Size().X + GDeferredLightTileSizeX - 1) / GDeferredLightTileSizeX;
 	uint32 GroupSizeY = (View.ViewRect.Size().Y + GDeferredLightTileSizeY - 1) / GDeferredLightTileSizeY;

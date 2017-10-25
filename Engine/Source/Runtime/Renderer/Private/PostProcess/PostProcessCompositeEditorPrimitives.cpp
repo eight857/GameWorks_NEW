@@ -17,6 +17,9 @@
 
 #include "PostProcess/PostProcessing.h"
 #include "PostProcess/SceneFilterRendering.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 
 // temporary
@@ -245,6 +248,12 @@ void FRCPassPostProcessCompositeEditorPrimitives::Process(FRenderingCompositePas
 			SCOPED_DRAW_EVENT(Context.RHICmdList, ClearViewEditorPrimitives);
 			DrawClearQuad(Context.RHICmdList, true, FLinearColor(0, 0, 0, 0), true, (float)ERHIZBuffer::FarPlane, false, 0, ColorTarget->GetSizeXY(), FIntRect());
 		}
+
+		// @third party code - BEGIN HairWorks
+		// Hair visualization for debug.
+		if(View.VisibleHairs.Num())
+			HairWorksRenderer::RenderVisualization(Context.RHICmdList, View);
+		// @third party code - END HairWorks
 
 		SCOPED_DRAW_EVENT(Context.RHICmdList, RenderEditorPrimitives);
 

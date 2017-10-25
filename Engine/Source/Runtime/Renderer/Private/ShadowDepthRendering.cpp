@@ -37,6 +37,9 @@
 #include "ScreenRendering.h"
 #include "ClearQuad.h"
 #include "PipelineStateCache.h"
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 
 DECLARE_FLOAT_COUNTER_STAT(TEXT("Shadow Depths"), Stat_GPU_ShadowDepths, STATGROUP_GPU);
 
@@ -1459,6 +1462,13 @@ void FProjectedShadowInfo::RenderDepthDynamic(FRHICommandList& RHICmdList, FScen
 		const FMeshBatch& MeshBatch = *MeshBatchAndRelevance.Mesh;
 		FShadowDepthDrawingPolicyFactory::DrawDynamicMesh(RHICmdList, *FoundView, Context, MeshBatch, true, DrawRenderState, MeshBatchAndRelevance.PrimitiveSceneProxy, MeshBatch.BatchHitProxyId);
 	}
+
+	// @third party code - BEGIN HairWorks
+	// Draw hairs.
+	checkSlow(RHICmdList.IsImmediate());
+	if(RHICmdList.IsImmediate())
+		HairWorksRenderer::RenderShadow(static_cast<FRHICommandListImmediate&>(RHICmdList), *this, DynamicSubjectPrimitives, *FoundView);
+	// @third party code - END HairWorks
 }
 
 class FDrawShadowMeshElementsThreadTask : public FRenderTask

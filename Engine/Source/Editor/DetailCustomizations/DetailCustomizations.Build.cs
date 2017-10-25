@@ -79,5 +79,9 @@ public class DetailCustomizations : ModuleRules
                 "MeshReductionInterface",
             }
 		);
+
+		// @third party code - BEGIN HairWorks
+		AddEngineThirdPartyPrivateStaticDependencies(Target, "HairWorks");
+		// @third party code - END HairWorks
 	}
 }

@@ -326,5 +326,9 @@ SHOWFLAG_ALWAYS_ACCESSIBLE(WidgetComponents, SFG_Normal, LOCTEXT("WidgetComponen
 SHOWFLAG_FIXED_IN_SHIPPING(0, Bones, SFG_Developer, LOCTEXT("BoneSF", "Bones"))
 /** If media planes should be shown */
 SHOWFLAG_ALWAYS_ACCESSIBLE(MediaPlanes, SFG_Normal, LOCTEXT("MediaPlanesSF", "Media Planes"))
+// @third party code - BEGIN HairWorks
+/** Render hair */
+SHOWFLAG_ALWAYS_ACCESSIBLE(HairWorks, SFG_Advanced, LOCTEXT("HairWorks", "HairWorks"))
+// @third party code - END HairWorks
 #undef SHOWFLAG_ALWAYS_ACCESSIBLE
 #undef SHOWFLAG_FIXED_IN_SHIPPING
