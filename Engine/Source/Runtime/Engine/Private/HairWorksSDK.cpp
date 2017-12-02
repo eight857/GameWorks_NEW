@@ -98,8 +98,12 @@ namespace HairWorks{
 		static Logger logger;
 #endif
 
+		// Load dependency DLL
+		const auto HairWorksBinaryDir = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/HairWorks");
+		FPlatformProcess::GetDllHandle(*(HairWorksBinaryDir / TEXT("d3dcompiler_47.dll")));
+
 		// Initialize SDK
-		FString LibPath = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/HairWorks/NvHairWorksDx11.win");
+		FString LibPath = HairWorksBinaryDir / TEXT("NvHairWorksDx11.win");
 
 #if PLATFORM_64BITS
 		LibPath += TEXT("64");

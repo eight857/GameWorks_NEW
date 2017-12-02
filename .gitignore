@@ -172,6 +172,4 @@ Saved/
 .vs
 
 # Add back some files for HairWorks
-!/Engine/Binaries/Win64/d3dcompiler_*.dll
-!/Engine/Binaries/ThirdParty/HairWorksNvHairWorksDx11.win64.dll
-!/Engine/Shaders/Private/HairWorks/*
+!/Engine/Binaries/ThirdParty/HairWorks/*.dll
