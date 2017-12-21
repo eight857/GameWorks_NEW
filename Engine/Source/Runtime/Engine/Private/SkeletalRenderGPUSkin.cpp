@@ -1352,6 +1352,7 @@ const FTwoVectors& FSkeletalMeshObjectGPUSkin::GetCustomLeftRightVectors(int32 S
 // @third party code - BEGIN HairWorks
 FMorphVertexBuffer& FSkeletalMeshObjectGPUSkin::GetMorphVertexBuffer()
 {
+	// GetLOD() should be called in rendering thread to avoid crash. 
 	return LODs[GetLOD()].MorphVertexBuffer;
 }
 // @third party code - END HairWorks

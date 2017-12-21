@@ -4,7 +4,7 @@
 #include <Nv/HairWorks/NvHairSdk.h>
 #include "PrimitiveSceneProxy.h"
 
-class FMorphVertexBuffer;
+class FSkeletalMeshObjectGPUSkin;
 
 /**
 * HairWorks component scene proxy.
@@ -32,7 +32,7 @@ public:
 		TArray<UTexture2D*> Textures;
 		TArray<TArray<FPinMesh>> PinMeshes;
 		TArray<FMatrix> BoneMatrices;
-		FMorphVertexBuffer* MorphVertexBuffer = nullptr;
+		FSkeletalMeshObjectGPUSkin* ParentSkin = nullptr;
 	};
 
 	FHairWorksSceneProxy(const UPrimitiveComponent* InComponent, NvHair::AssetId HairAssetId);

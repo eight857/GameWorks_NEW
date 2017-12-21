@@ -376,7 +376,7 @@ void UHairWorksComponent::SendHairDynamicData(bool bForceSkinning)const
 		if(ParentSkeleton->MeshObject->IsCPUSkinned())
 			break;
 
-		DynamicData->MorphVertexBuffer = &static_cast<FSkeletalMeshObjectGPUSkin*>(ParentSkeleton->MeshObject)->GetMorphVertexBuffer();
+		DynamicData->ParentSkin = static_cast<FSkeletalMeshObjectGPUSkin*>(ParentSkeleton->MeshObject);
 	} while(false);	
 
 	// Send to proxy

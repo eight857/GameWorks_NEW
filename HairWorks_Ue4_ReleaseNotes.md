@@ -18,9 +18,10 @@ Known Issues
 
 Changes
 =============
-## Dec 2, 2017
-* Upgraded to UE4.18.1
+## Dec 21, 2017
+* Upgraded to UE4.18.2
 * Better way to handle shader compiler DLL. 
+* Fixed a potential crash of morph target skeletal mesh. 
 
 ## August 9, 2017
 * Upgraded to HairWorks 1.4.

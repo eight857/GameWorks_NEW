@@ -277,11 +277,11 @@ void FHairWorksSceneProxy::UpdateDynamicData_RenderThread(FDynamicRenderData& Dy
 		CurrentSkinningMatrices = MoveTemp(DynamicData.BoneMatrices);
 	}
 
-	// Morph data. It's too early to update morph data here. It's not ready yet. Delay it just before simulation. 
-	if (DynamicData.MorphVertexBuffer && DynamicData.MorphVertexBuffer->bHasBeenUpdated)
+	// Morph data. It's too early to update morph data here. It's not ready yet. Delay it just before simulation.
+	if(DynamicData.ParentSkin != nullptr && DynamicData.ParentSkin->GetMorphVertexBuffer().bHasBeenUpdated)
 	{
-		DynamicData.MorphVertexBuffer->RequireSRV();
-		MorphVertexBuffer = DynamicData.MorphVertexBuffer->GetSRV();
+		DynamicData.ParentSkin->GetMorphVertexBuffer().RequireSRV();
+		MorphVertexBuffer = DynamicData.ParentSkin->GetMorphVertexBuffer().GetSRV();
 	}
 	else
 	{
