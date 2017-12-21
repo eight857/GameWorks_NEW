@@ -6323,7 +6323,7 @@ UObject* UHairWorksFactory::FactoryCreateBinary(
 			char TextureFileNameRaw[NV_HAIR_MAX_STRING] = "";
 			::HairWorks::GetSDK()->getTextureName(Hair->AssetId, (NvHair::ETextureType)TextureIdx, TextureFileNameRaw);
 
-			const FString TextureFileName = FString(ANSI_TO_TCHAR(TextureFileNameRaw)).Trim().TrimTrailing();
+			const FString TextureFileName = FString(ANSI_TO_TCHAR(TextureFileNameRaw)).TrimStart().TrimEnd();
 			if(TextureFileName.IsEmpty())
 				continue;
 
