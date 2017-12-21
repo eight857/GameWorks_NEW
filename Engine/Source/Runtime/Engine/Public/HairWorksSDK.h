@@ -2,11 +2,11 @@
 #pragma once
 
 #include <Nv/HairWorks/NvHairSdk.h>
-#include "CoreMinimal.h"
 
 struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct ID3D11ShaderResourceView;
+class FRHIShaderResourceView;
 class FCanvas;
 
 namespace HairWorks{
