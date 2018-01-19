@@ -32,6 +32,9 @@
 #include "PostProcess/PostProcessBokehDOFRecombine.h"
 #include "PostProcess/PostProcessCombineLUTs.h"
 #include "PostProcess/PostProcessTemporalAA.h"
+#if WITH_TXAA
+#include "PostProcess/PostProcessTXAA.h"
+#endif
 #include "PostProcess/PostProcessMotionBlur.h"
 #include "PostProcess/PostProcessDOF.h"
 #include "PostProcess/PostProcessCircleDOF.h"
@@ -897,6 +900,43 @@ static void AddTemporalAA( FPostprocessContext& Context, FRenderingCompositeOutp
 	Context.FinalOutput = FRenderingCompositeOutputRef( TemporalAAPass );
 }
 
+#if WITH_TXAA
+static void AddTXAA(FPostprocessContext& Context, FRenderingCompositeOutputRef& VelocityInput)
+{
+    check(VelocityInput.IsValid());
+
+    FSceneViewState* ViewState = (FSceneViewState*)Context.View.State;
+
+    // Add motion vector compute pass
+    FRenderingCompositePass* MotionVectorInput;
+    {
+        MotionVectorInput = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessComputeMotionVector);
+        MotionVectorInput->SetInput(ePId_Input0, VelocityInput);
+    }
+
+    // Add TXAA pass
+    {
+        FRenderingCompositePass* HistoryInput;
+        if (ViewState && ViewState->TemporalAAHistoryRT && !Context.View.bCameraCut)
+        {
+            HistoryInput = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(ViewState->TemporalAAHistoryRT));
+        }
+        else
+        {
+            // No history so use current as history
+            HistoryInput = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(FSceneRenderTargets::Get(Context.RHICmdList).GetSceneColor()));
+
+        }
+
+        FRenderingCompositePass* TXAAPass = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessTXAA);
+        TXAAPass->SetInput(ePId_Input0, Context.FinalOutput);
+        TXAAPass->SetInput(ePId_Input1, FRenderingCompositeOutputRef(HistoryInput));
+        TXAAPass->SetInput(ePId_Input2, FRenderingCompositeOutputRef(MotionVectorInput));
+        TXAAPass->SetInput(ePId_Input3, Context.SceneDepth);
+        Context.FinalOutput = FRenderingCompositeOutputRef(TXAAPass);
+    }
+}
+#endif
 FPostProcessMaterialNode* IteratePostProcessMaterialNodes(const FFinalPostProcessSettings& Dest, EBlendableLocation InLocation, FBlendableEntry*& Iterator)
 {
 	for(;;)
@@ -1464,7 +1504,21 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 					AddTemporalAA( Context, NoVelocityRef );
 				}
 			}
-
+#if WITH_TXAA
+            else if (AntiAliasingMethod == AAM_TXAA && ViewState) {
+                if (VelocityInput.IsValid())
+                {
+                    AddTXAA(Context, VelocityInput);
+                }
+                else
+                {
+                    // black is how we clear the velocity buffer so this means no velocity
+                    FRenderingCompositePass* NoVelocity = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(GSystemTextures.BlackDummy));
+                    FRenderingCompositeOutputRef NoVelocityRef(NoVelocity);
+                    AddTXAA(Context, NoVelocityRef);
+                }
+            }
+#endif // WITH_TXAA
 			if(IsMotionBlurEnabled(View) && VelocityInput.IsValid() && !bVisualizeMotionBlur)
 			{
 				// Motion blur

@@ -1542,6 +1542,35 @@ template<> void FRHICommandSetShaderTexture<FComputeShaderRHIParamRef, ECmdList:
 template<> void FRHICommandSetShaderResourceViewParameter<FComputeShaderRHIParamRef, ECmdList::ECompute>::Execute(FRHICommandListBase& CmdList);
 template<> void FRHICommandSetShaderSampler<FComputeShaderRHIParamRef, ECmdList::ECompute>::Execute(FRHICommandListBase& CmdList);
 
+#if WITH_TXAA
+
+struct FRHICommandResolveTXAA : public FRHICommand<FRHICommandResolveTXAA>
+{
+    FTextureRHIParamRef Target;
+    FTextureRHIParamRef Source;
+    FTextureRHIParamRef Feedback;
+    FTextureRHIParamRef Velocity;
+    FTextureRHIParamRef Depth;
+    FVector2D Jitter;
+
+    FORCEINLINE_DEBUGGABLE FRHICommandResolveTXAA(FTextureRHIParamRef InTarget,
+        FTextureRHIParamRef InSource,
+        FTextureRHIParamRef InFeedback,
+        FTextureRHIParamRef InVelocity,
+        FTextureRHIParamRef InDepth,
+        const FVector2D& InJitter)
+        : Target(InTarget)
+        , Source(InSource)
+        , Feedback(InFeedback)
+        , Velocity(InVelocity)
+        , Depth(InDepth)
+        , Jitter(InJitter)
+    {
+    }
+    RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+
+#endif
 class RHI_API FRHICommandList : public FRHICommandListBase
 {
 public:
@@ -2432,6 +2461,17 @@ public:
 		new (AllocCommand<FRHICommandDebugBreak>()) FRHICommandDebugBreak();
 #endif
 	}
+#if WITH_TXAA
+    FORCEINLINE_DEBUGGABLE void ResolveTXAA(FTextureRHIParamRef Target, FTextureRHIParamRef Source, FTextureRHIParamRef Feedback, FTextureRHIParamRef Velocity, FTextureRHIParamRef Depth, const FVector2D& Jitter)
+    {
+        if (Bypass())
+        {
+            CMD_CONTEXT(RHIResolveTXAA)(Target, Source, Feedback, Velocity, Depth, Jitter);
+            return;
+        }
+        new (AllocCommand<FRHICommandResolveTXAA>()) FRHICommandResolveTXAA(Target, Source, Feedback, Velocity, Depth, Jitter);
+    }
+#endif
 };
 
 class RHI_API FRHIAsyncComputeCommandList : public FRHICommandListBase

@@ -290,7 +290,9 @@ public:
 	virtual void RHIUpdateTextureReference(FTextureReferenceRHIParamRef TextureRef, FTextureRHIParamRef NewTexture) final override;
 
 	virtual void RHIClearMRTImpl(bool bClearColor, int32 NumClearColors, const FLinearColor* ColorArray, bool bClearDepth, float Depth, bool bClearStencil, uint32 Stencil);
-
+#if WITH_TXAA
+    virtual void RHIResolveTXAA(FTextureRHIParamRef Target, FTextureRHIParamRef Source, FTextureRHIParamRef Feedback, FTextureRHIParamRef Velocity, FTextureRHIParamRef Depth, const FVector2D& Jitter) override;
+#endif
 	virtual void UpdateMemoryStats();
 
 	// When using Alternate Frame Rendering some temporal effects i.e. effects which consume GPU work from previous frames must sychronize their resources
@@ -714,6 +716,13 @@ public:
 	{
 		ContextRedirect(RHIBroadcastTemporalEffect(InEffectName, InTextures, NumTextures));
 	}
+    
+#if WITH_TXAA   
+    FORCEINLINE virtual void RHIResolveTXAA(FTextureRHIParamRef Target, FTextureRHIParamRef Source, FTextureRHIParamRef Feedback, FTextureRHIParamRef Velocity, FTextureRHIParamRef Depth, const FVector2D& Jitter) final AFR_API_OVERRIDE
+    {
+        ContextRedirect(RHIResolveTXAA(Target, Source, Feedback, Velocity, Depth, Jitter));
+    }
+#endif // WITH_TXAA
 
 	FORCEINLINE void SetCurrentDeviceIndex(uint32 Index)
 	{

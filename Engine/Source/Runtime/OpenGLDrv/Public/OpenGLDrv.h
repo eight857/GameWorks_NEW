@@ -489,7 +489,9 @@ public:
 	virtual void RHIPopEvent() final override;
 
 	void Cleanup();
-
+#if WITH_TXAA
+    virtual void RHIResolveTXAA(FTextureRHIParamRef Target, FTextureRHIParamRef Source, FTextureRHIParamRef Feedback, FTextureRHIParamRef Velocity, FTextureRHIParamRef Depth, const FVector2D& Jitter) override;
+#endif
 	void PurgeFramebufferFromCaches(GLuint Framebuffer);
 	void OnVertexBufferDeletion(GLuint VertexBufferResource);
 	void OnIndexBufferDeletion(GLuint IndexBufferResource);

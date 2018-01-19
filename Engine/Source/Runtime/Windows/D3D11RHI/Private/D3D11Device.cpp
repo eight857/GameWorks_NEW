@@ -53,6 +53,10 @@ FD3D11DynamicRHI::FD3D11DynamicRHI(IDXGIFactory1* InDXGIFactory1,D3D_FEATURE_LEV
 	CurrentDSVAccessType(FExclusiveDepthStencil::DepthWrite_StencilWrite),
 	bDiscardSharedConstants(false),
 	bUsingTessellation(false),
+#if WITH_TXAA
+    TxaaContext(),
+    TxaaInitialized(false),
+#endif
 	PendingNumVertices(0),
 	PendingVertexDataStride(0),
 	PendingPrimitiveType(0),
@@ -501,6 +505,14 @@ void FD3D11DynamicRHI::CleanupD3DDevice()
 
 		ReleasePooledUniformBuffers();
 		ReleasePooledTextures();
+
+#if WITH_TXAA
+        if (TxaaInitialized)
+        {
+            GFSDK_TXAA_DX11_ReleaseContext(&TxaaContext);
+            TxaaInitialized = false;
+        }
+#endif
 
 		// When running with D3D debug, clear state and flush the device to get rid of spurious live objects in D3D11's report.
 		if (D3D11RHI_ShouldCreateWithD3DDebug())

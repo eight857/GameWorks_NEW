@@ -636,4 +636,11 @@ void FRHICommandPopEvent<CmdListType>::Execute(FRHICommandListBase& CmdList)
 template struct FRHICommandPopEvent<ECmdList::EGfx>;
 template struct FRHICommandPopEvent<ECmdList::ECompute>;
 
+#if WITH_TXAA
+void FRHICommandResolveTXAA::Execute(FRHICommandListBase& CmdList)
+{
+    RHISTAT(ResolveTXAA);
+    INTERNAL_DECORATOR(RHIResolveTXAA)(Target, Source, Feedback, Velocity, Depth, Jitter);
+}
 
+#endif
