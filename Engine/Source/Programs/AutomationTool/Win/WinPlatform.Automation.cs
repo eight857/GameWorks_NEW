@@ -29,10 +29,14 @@ public abstract class BaseWinPlatform : Platform
 				Receipt.ExpandPathVariables(CommandUtils.EngineDirectory, (Params.RawProjectPath == null)? CommandUtils.EngineDirectory : Params.RawProjectPath.Directory);
 				SC.StageBuildProductsFromReceipt(Receipt, true, false);
 			}
-		}
+        }
 
-		// Stage all the build products
-		foreach(StageTarget Target in SC.StageTargets)
+        // NVCHANGE_BEGIN: Add TXAA
+        SC.StageFiles(StagedFileType.NonUFS, CommandUtils.CombinePaths(SC.LocalRoot, "Engine/Binaries/ThirdParty/NVIDIA/TXAA"), "*.dll");
+        // NVCHANGE_END: Add TXAA
+
+        // Stage all the build products
+        foreach (StageTarget Target in SC.StageTargets)
 		{
 			SC.StageBuildProductsFromReceipt(Target.Receipt, Target.RequireFilesExist, Params.bTreatNonShippingBinariesAsDebugFiles);
 		}
