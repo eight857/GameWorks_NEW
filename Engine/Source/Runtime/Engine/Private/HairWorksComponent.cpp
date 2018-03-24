@@ -439,14 +439,14 @@ void UHairWorksComponent::SetupBoneAndMorphMapping()
 		}
 
 		// Get vertices of parent skeletal mesh
-		const auto& ParentMeshVertexBuffer = ParentSkeleton->SkeletalMesh->GetResourceForRendering()->LODModels[0].VertexBufferGPUSkin;
+		const auto& ParentMeshVertexBuffer = ParentSkeleton->SkeletalMesh->GetResourceForRendering()->LODRenderData[0].StaticVertexBuffers.PositionVertexBuffer;
 
 		TArray<FVector> ParentMeshVertices;
 		ParentMeshVertices.SetNumUninitialized(ParentMeshVertexBuffer.GetNumVertices());
 
 		for(auto VertexIdx = 0; VertexIdx < ParentMeshVertices.Num(); ++VertexIdx)
 		{
-			ParentMeshVertices[VertexIdx] = ParentMeshVertexBuffer.GetVertexPositionSlow(VertexIdx);
+			ParentMeshVertices[VertexIdx] = ParentMeshVertexBuffer.VertexPosition(VertexIdx);
 		}
 
 		// Get vertices of hair growth mesh

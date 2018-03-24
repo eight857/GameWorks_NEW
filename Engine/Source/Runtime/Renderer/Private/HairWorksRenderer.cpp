@@ -26,23 +26,30 @@
 
 // UE4 uses shader class names, so we need put these classes in global name space to let compiler check name conflicts.
 // Pixel shaders
-class FHairWorksShaderBase
+class FHairWorksShaderBase: public FGlobalShader
 {
 public:
-	static bool ShouldCache(EShaderPlatform Platform)
+	using FGlobalShader::FGlobalShader;
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return Platform == EShaderPlatform::SP_PCD3D_SM5;
+		return Parameters.Platform == EShaderPlatform::SP_PCD3D_SM5;
+	}
+
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 	}
 };
 
-class FHairWorksBasicPs: public FGlobalShader
+class FHairWorksBasicPs: public FHairWorksShaderBase
 {
 protected:
 	FHairWorksBasicPs()
 	{}
 
 	FHairWorksBasicPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		HairConstantBuffer.Bind(Initializer.ParameterMap, TEXT("HairConstantBuffer"));
 
@@ -114,6 +121,11 @@ protected:
 		return bShaderHasOutdatedParameters;
 	}
 
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+	}
+
 	FShaderParameter HairConstantBuffer;
 
 	FShaderResourceParameter TextureSampler;
@@ -131,9 +143,9 @@ protected:
 
 };
 
-class FHairWorksBasePassPs: public FHairWorksBasicPs, public FHairWorksShaderBase
+class FHairWorksBasePassPs: public FHairWorksBasicPs
 {
-	DECLARE_SHADER_TYPE(FHairWorksBasePassPs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksBasePassPs);
 
 	FHairWorksBasePassPs()
 	{}
@@ -166,21 +178,16 @@ class FHairWorksBasePassPs: public FHairWorksBasicPs, public FHairWorksShaderBas
 		SetUniformBufferParameter(RHICmdList, GetPixelShader(), PrecomputedLightingBuffer, InPrecomputedLightingBuffer);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 	FCubemapShaderParameters CubemapShaderParameters;
 	FShaderParameter CubemapAmbient;
 	FShaderUniformBufferParameter PrecomputedLightingBuffer;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksBasePassPs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("BasePassPs"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksBasePassPs, "/Engine/Private/HairWorks/HairWorks.usf", "BasePassPs", SF_Pixel);
 
-class FHairWorksColorizePs: public FHairWorksBasicPs, public FHairWorksShaderBase
+class FHairWorksColorizePs: public FHairWorksBasicPs
 {
-	DECLARE_SHADER_TYPE(FHairWorksColorizePs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksColorizePs);
 
 	FHairWorksColorizePs()
 	{}
@@ -190,24 +197,19 @@ class FHairWorksColorizePs: public FHairWorksBasicPs, public FHairWorksShaderBas
 	{}
 
 	using FHairWorksBasicPs::SetParameters;
-
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksColorizePs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("ColorizePs"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksColorizePs, "/Engine/Private/HairWorks/HairWorks.usf", "ColorizePs", SF_Pixel);
 
-class FHairWorksShadowDepthPs: public FGlobalShader, public FHairWorksShaderBase
+class FHairWorksShadowDepthPs: public FHairWorksShaderBase
 {
-	DECLARE_SHADER_TYPE(FHairWorksShadowDepthPs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksShadowDepthPs);
 
 	FHairWorksShadowDepthPs()
 	{}
 
 	FHairWorksShadowDepthPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		ShadowParams.Bind(Initializer.ParameterMap, TEXT("ShadowParams"));
 	}
@@ -219,25 +221,20 @@ class FHairWorksShadowDepthPs: public FGlobalShader, public FHairWorksShaderBase
 		return bSerialized;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 	FShaderParameter ShadowParams;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksShadowDepthPs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("ShadowDepthMain"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksShadowDepthPs, "/Engine/Private/HairWorks/HairWorks.usf", "ShadowDepthMain", SF_Pixel);
 
-class FHairWorksCopyDepthPs: public FGlobalShader, public FHairWorksShaderBase
+class FHairWorksCopyDepthPs: public FHairWorksShaderBase
 {
-	DECLARE_SHADER_TYPE(FHairWorksCopyDepthPs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksCopyDepthPs);
 
 	FHairWorksCopyDepthPs()
 	{}
 
 	FHairWorksCopyDepthPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		SceneDepthTexture.Bind(Initializer.ParameterMap, TEXT("SceneDepthTexture"));
 	}
@@ -249,25 +246,20 @@ class FHairWorksCopyDepthPs: public FGlobalShader, public FHairWorksShaderBase
 		return bShaderHasOutdatedParameters;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 	FShaderResourceParameter SceneDepthTexture;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksCopyDepthPs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("CopyDepthPs"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksCopyDepthPs, "/Engine/Private/HairWorks/HairWorks.usf", "CopyDepthPs", SF_Pixel);
 
-class FHairWorksCopyNearestDepthShader: public FGlobalShader, public FHairWorksShaderBase	// Original class name is FResolveDepthPs. But it causes streaming error with FResolveDepthPS, which allocates numerous memory.
+class FHairWorksCopyNearestDepthShader: public FHairWorksShaderBase	// Original class name is FResolveDepthPs. But it causes streaming error with FResolveDepthPS, which allocates numerous memory.
 {
-	DECLARE_SHADER_TYPE(FHairWorksCopyNearestDepthShader, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksCopyNearestDepthShader);
 
 	FHairWorksCopyNearestDepthShader()
 	{}
 
 	FHairWorksCopyNearestDepthShader(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		DepthTexture.Bind(Initializer.ParameterMap, TEXT("DepthTexture"));
 		StencilTexture.Bind(Initializer.ParameterMap, TEXT("StencilTexture"));
@@ -280,26 +272,21 @@ class FHairWorksCopyNearestDepthShader: public FGlobalShader, public FHairWorksS
 		return bShaderHasOutdatedParameters;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 	FShaderResourceParameter DepthTexture;
 	FShaderResourceParameter StencilTexture;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksCopyNearestDepthShader, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("CopyNearestDepthPs"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksCopyNearestDepthShader, "/Engine/Private/HairWorks/HairWorks.usf", "CopyNearestDepthPs", SF_Pixel);
 
-class FHairWorksCopyOpaqueDepthPs: public FGlobalShader, public FHairWorksShaderBase
+class FHairWorksCopyOpaqueDepthPs: public FHairWorksShaderBase
 {
-	DECLARE_SHADER_TYPE(FHairWorksCopyOpaqueDepthPs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksCopyOpaqueDepthPs);
 
 	FHairWorksCopyOpaqueDepthPs()
 	{}
 
 	FHairWorksCopyOpaqueDepthPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		DepthTexture.Bind(Initializer.ParameterMap, TEXT("DepthTexture"));
 		HairColorTexture.Bind(Initializer.ParameterMap, TEXT("HairColorTexture"));
@@ -312,26 +299,21 @@ class FHairWorksCopyOpaqueDepthPs: public FGlobalShader, public FHairWorksShader
 		return bShaderHasOutdatedParameters;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 	FShaderResourceParameter DepthTexture;
 	FShaderResourceParameter HairColorTexture;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksCopyOpaqueDepthPs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("CopyOpaqueDepthPs"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksCopyOpaqueDepthPs, "/Engine/Private/HairWorks/HairWorks.usf", "CopyOpaqueDepthPs", SF_Pixel);
 
-class FHairWorksCopyVelocityPs: public FGlobalShader, public FHairWorksShaderBase
+class FHairWorksCopyVelocityPs: public FHairWorksShaderBase
 {
-	DECLARE_SHADER_TYPE(FHairWorksCopyVelocityPs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksCopyVelocityPs);
 
 	FHairWorksCopyVelocityPs()
 	{}
 
 	FHairWorksCopyVelocityPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		VelocityTexture.Bind(Initializer.ParameterMap, TEXT("VelocityTexture"));
 		DepthTexture.Bind(Initializer.ParameterMap, TEXT("DepthTexture"));
@@ -344,26 +326,21 @@ class FHairWorksCopyVelocityPs: public FGlobalShader, public FHairWorksShaderBas
 		return bShaderHasOutdatedParameters;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 	FShaderResourceParameter VelocityTexture;
 	FShaderResourceParameter DepthTexture;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksCopyVelocityPs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("CopyVelocityPs"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksCopyVelocityPs, "/Engine/Private/HairWorks/HairWorks.usf", "CopyVelocityPs", SF_Pixel);
 
-class FHairWorksBlendLightingColorPs: public FGlobalShader, public FHairWorksShaderBase
+class FHairWorksBlendLightingColorPs: public FHairWorksShaderBase
 {
-	DECLARE_SHADER_TYPE(FHairWorksBlendLightingColorPs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksBlendLightingColorPs);
 
 	FHairWorksBlendLightingColorPs()
 	{}
 
 	FHairWorksBlendLightingColorPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		AccumulatedColorTexture.Bind(Initializer.ParameterMap, TEXT("AccumulatedColorTexture"));
 		PrecomputedLightTexture.Bind(Initializer.ParameterMap, TEXT("PrecomputedLightTexture"));
@@ -376,26 +353,21 @@ class FHairWorksBlendLightingColorPs: public FGlobalShader, public FHairWorksSha
 		return bShaderHasOutdatedParameters;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 	FShaderResourceParameter AccumulatedColorTexture;
 	FShaderResourceParameter PrecomputedLightTexture;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksBlendLightingColorPs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("BlendLightingColorPs"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksBlendLightingColorPs, "/Engine/Private/HairWorks/HairWorks.usf", "BlendLightingColorPs", SF_Pixel);
 
-class FHairWorksHitProxyPs: public FGlobalShader, public FHairWorksShaderBase
+class FHairWorksHitProxyPs: public FHairWorksShaderBase
 {
-	DECLARE_SHADER_TYPE(FHairWorksHitProxyPs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksHitProxyPs);
 
 	FHairWorksHitProxyPs()
 	{}
 
 	FHairWorksHitProxyPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		HitProxyId.Bind(Initializer.ParameterMap, TEXT("HitProxyId"));
 	}
@@ -413,26 +385,21 @@ class FHairWorksHitProxyPs: public FGlobalShader, public FHairWorksShaderBase
 		SetShaderValue(RHICmdList, GetPixelShader(), HitProxyId, HitProxyIdValue.GetColor().ReinterpretAsLinear());
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 protected:
 	FShaderParameter HitProxyId;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksHitProxyPs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("HitProxyPs"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksHitProxyPs, "/Engine/Private/HairWorks/HairWorks.usf", "HitProxyPs", SF_Pixel);
 
-class FHairWorksCopyStencilPs : public FGlobalShader, public FHairWorksShaderBase
+class FHairWorksCopyStencilPs : public FHairWorksShaderBase
 {
-	DECLARE_SHADER_TYPE(FHairWorksCopyStencilPs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksCopyStencilPs);
 
 	FHairWorksCopyStencilPs()
 	{}
 
 	FHairWorksCopyStencilPs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		HairId.Bind(Initializer.ParameterMap, TEXT("HairId"));
 		DepthTexture.Bind(Initializer.ParameterMap, TEXT("DepthTexture"));
@@ -446,27 +413,22 @@ class FHairWorksCopyStencilPs : public FGlobalShader, public FHairWorksShaderBas
 		return bShaderHasOutdatedParameters;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 	FShaderParameter HairId;
 	FShaderResourceParameter DepthTexture;
 	FShaderResourceParameter StencilTexture;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksCopyStencilPs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("CopyStencilPs"), SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksCopyStencilPs, "/Engine/Private/HairWorks/HairWorks.usf", "CopyStencilPs", SF_Pixel);
 
-class FHairWorksSphereVs : public FGlobalShader, public FHairWorksShaderBase
+class FHairWorksSphereVs : public FHairWorksShaderBase
 {
-	DECLARE_SHADER_TYPE(FHairWorksSphereVs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksSphereVs);
 
 	FHairWorksSphereVs()
 	{}
 
 	FHairWorksSphereVs(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
+		: FHairWorksShaderBase(Initializer)
 	{
 		BoundInfo.Bind(Initializer.ParameterMap, TEXT("BoundInfo"));
 	}
@@ -478,15 +440,10 @@ class FHairWorksSphereVs : public FGlobalShader, public FHairWorksShaderBase
 		return bShaderHasOutdatedParameters;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	}
-
 	FShaderParameter BoundInfo;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksSphereVs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("SphereVs"), SF_Vertex);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksSphereVs, "/Engine/Private/HairWorks/HairWorks.usf", "SphereVs", SF_Vertex);
 
 bool IsMotionBlurEnabled(const FViewInfo& View);
 
@@ -633,7 +590,7 @@ namespace HairWorksRenderer
 			const FViewMatrices PrevViewMatrices;
 
 			FRHICmdSetProjViewInfo(const FViewInfo& View)
-				:ViewRect(View.ViewRect), ViewMatrices(View.ViewMatrices), PrevViewMatrices(View.PrevViewMatrices){}
+				:ViewRect(View.ViewRect), ViewMatrices(View.ViewMatrices), PrevViewMatrices(View.PrevViewInfo.ViewMatrices){}
 
 			void Execute(FRHICommandListBase& CmdList)
 			{

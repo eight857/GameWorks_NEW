@@ -39,6 +39,7 @@ public:
 	~FHairWorksSceneProxy();
 	
 	//~ Begin FPrimitiveSceneProxy interface.
+	virtual SIZE_T GetTypeHash() const override;
 	virtual uint32 GetMemoryFootprint(void) const override;
 	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View)const override;
 	virtual void CreateRenderThreadResources() override;

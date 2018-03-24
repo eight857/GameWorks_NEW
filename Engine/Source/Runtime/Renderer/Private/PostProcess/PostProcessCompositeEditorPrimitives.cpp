@@ -486,8 +486,8 @@ void FRCPassPostProcessCompositeEditorPrimitives::Process(FRenderingCompositePas
 
 		// @third party code - BEGIN HairWorks
 		// Hair visualization for debug.
-		if(View.VisibleHairs.Num())
-			HairWorksRenderer::RenderVisualization(Context.RHICmdList, View);
+		if(Context.View.VisibleHairs.Num())
+			HairWorksRenderer::RenderVisualization(Context.RHICmdList, Context.View);
 		// @third party code - END HairWorks
 
 		// Draw editor primitives.

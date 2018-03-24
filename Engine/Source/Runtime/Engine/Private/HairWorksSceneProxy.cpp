@@ -34,7 +34,7 @@ HairVisualizationCVarDefine(ShadingNormalCenter);
 
 class FHairWorksCopyMorphDeltasCs: public FGlobalShader
 {
-	DECLARE_SHADER_TYPE(FHairWorksCopyMorphDeltasCs, Global);
+	DECLARE_GLOBAL_SHADER(FHairWorksCopyMorphDeltasCs);
 
 	FHairWorksCopyMorphDeltasCs()
 	{}
@@ -56,14 +56,14 @@ class FHairWorksCopyMorphDeltasCs: public FGlobalShader
 		return bShaderHasOutdatedParameters;
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return Platform == EShaderPlatform::SP_PCD3D_SM5;
+		return Parameters.Platform == EShaderPlatform::SP_PCD3D_SM5;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 	}
 
 	FShaderParameter MorphVertexCount;
@@ -73,7 +73,7 @@ class FHairWorksCopyMorphDeltasCs: public FGlobalShader
 	FShaderResourceParameter MorphNormalDeltaBuffer;
 };
 
-IMPLEMENT_SHADER_TYPE(, FHairWorksCopyMorphDeltasCs, TEXT("/Engine/Private/HairWorks/HairWorks.usf"), TEXT("CopyMorphDeltas"), SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FHairWorksCopyMorphDeltasCs, "/Engine/Private/HairWorks/HairWorks.usf", "CopyMorphDeltas", SF_Compute);
 
 
 FHairWorksSceneProxy* FHairWorksSceneProxy::HairInstances = nullptr;
@@ -97,6 +97,12 @@ FHairWorksSceneProxy::~FHairWorksSceneProxy()
 
 		Unlink();
 	}
+}
+
+SIZE_T FHairWorksSceneProxy::GetTypeHash() const
+{
+	static size_t UniquePointer;
+	return reinterpret_cast<size_t>(&UniquePointer);
 }
 
 uint32 FHairWorksSceneProxy::GetMemoryFootprint(void) const
