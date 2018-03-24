@@ -179,3 +179,6 @@ Engine/Binaries/DotNET/SwarmAgent.Options.xml
 # Ignore VS / VS Code settings directory
 .vs
 .vscode
+
+# Add back some files for HairWorks
+!/Engine/Binaries/ThirdParty/HairWorks/*.dll

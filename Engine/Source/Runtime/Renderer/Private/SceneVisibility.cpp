@@ -32,6 +32,9 @@
 #include "PostProcess/PostProcessing.h"
 #include "SceneView.h"
 
+// @third party code - BEGIN HairWorks
+#include "HairWorksRenderer.h"
+// @third party code - END HairWorks
 /*------------------------------------------------------------------------------
 	Globals
 ------------------------------------------------------------------------------*/
@@ -2301,7 +2304,7 @@ void FSceneRenderer::PreVisibilityFrameSetup(FRHICommandListImmediate& RHICmdLis
 		// Cache the projection matrix before AA is applied
 		View.ViewMatrices.SaveProjectionNoAAMatrix();
 
-		if (ViewState)
+		if ( ViewState )
 		{
 			ViewState->SetupDistanceFieldTemporalOffset(ViewFamily);
 		}
@@ -3262,6 +3265,12 @@ void FDeferredShadingSceneRenderer::InitViewsPossiblyAfterPrepass(FRHICommandLis
 		// Now that the indirect lighting cache is updated, we can update the primitive precomputed lighting buffers.
 		UpdatePrimitivePrecomputedLightingBuffers();
 	}
+
+	// @third party code - BEGIN HairWorks
+	// Setup views for hair
+	if (!IsForwardShadingEnabled(FeatureLevel))
+		HairWorksRenderer::SetupViews(Views);
+	// @third party code - END HairWorks
 
 	UpdateTranslucencyTimersAndSeparateTranslucencyBufferSize(RHICmdList);
 
