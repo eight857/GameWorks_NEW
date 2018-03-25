@@ -83,6 +83,9 @@ void UHairWorksComponent::TickComponent(float DeltaTime, enum ELevelTick TickTyp
 	// Call super
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	// Update bounds
+	UpdateBounds();
+
 	// Update pin transforms. Mainly for editor
 	if(SceneProxy != nullptr && HairInstance.Hair->HairMaterial->Pins.Num() > 0)
 	{

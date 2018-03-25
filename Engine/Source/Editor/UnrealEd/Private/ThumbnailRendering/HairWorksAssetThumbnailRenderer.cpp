@@ -32,7 +32,7 @@ void UHairWorksAssetThumbnailRenderer::Draw(UObject* Object, int32 X, int32 Y, u
 	ViewFamily.EngineShowFlags.LOD = 0;
 
 	ThumbnailScene->GetView(&ViewFamily, X, Y, Width, Height);
-	GetRendererModule().BeginRenderingViewFamily(Canvas, &ViewFamily);
+	RenderViewFamily(Canvas, &ViewFamily);
 	ThumbnailScene->SetHairAsset(nullptr);
 }
 

@@ -192,7 +192,7 @@ float3 GetHairWorksDynamicLighting(float3 ScreenVector, uint2 SamplePos, FHairSc
 
 	// IES lighting
 	if(LightData.bRadialLight)
-		OutColor *= ComputeLightProfileMultiplier(WorldPosition, DeferredLightUniforms.LightPosition, DeferredLightUniforms.NormalizedLightDirection);
+		OutColor *= ComputeLightProfileMultiplier(WorldPosition, DeferredLightUniforms.LightPosition, DeferredLightUniforms.NormalizedLightDirection, DeferredLightUniforms.NormalizedLightTangent);
 
 	return OutColor;
 }
