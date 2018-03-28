@@ -63,6 +63,18 @@ FD3D11DynamicRHI::FD3D11DynamicRHI(IDXGIFactory1* InDXGIFactory1,D3D_FEATURE_LEV
 	GPUProfilingData(this),
 	ChosenAdapter(InChosenAdapter),
 	ChosenDescription(InChosenDescription)
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	, VxgiInterface(NULL)
+	, VxgiRendererD3D11(NULL)
+#endif
+	// NVCHANGE_END: Add VXGI
+	// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+	, HBAOContext(NULL)
+	, HBAOModuleHandle(NULL)
+#endif
+	// NVCHANGE_END: Add HBAO+
 {
 	// This should be called once at the start 
 	check(ChosenAdapter >= 0);
@@ -181,6 +193,11 @@ FD3D11DynamicRHI::FD3D11DynamicRHI(IDXGIFactory1* InDXGIFactory1,D3D_FEATURE_LEV
 	GPixelFormats[ PF_BC6H			].PlatformFormat	= DXGI_FORMAT_BC6H_UF16;
 	GPixelFormats[ PF_BC7			].PlatformFormat	= DXGI_FORMAT_BC7_TYPELESS;
 	GPixelFormats[ PF_R8_UINT		].PlatformFormat	= DXGI_FORMAT_R8_UINT;
+
+	// NVCHANGE_BEGIN: Add VXGI
+	GPixelFormats[ PF_L8            ].PlatformFormat    = DXGI_FORMAT_R8_TYPELESS;
+	GPixelFormats[ PF_L8            ].Supported         = true;
+	// NVCHANGE_END: Add VXGI
 
 	if (FeatureLevel >= D3D_FEATURE_LEVEL_11_0)
 	{
@@ -487,6 +504,21 @@ void FD3D11DynamicRHI::CleanupD3DDevice()
 		extern void EmptyD3DSamplerStateCache();
 		EmptyD3DSamplerStateCache();
 
+		// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+		if (HBAOContext)
+		{
+			HBAOContext->Release();
+			HBAOContext = NULL;
+		}
+		if (HBAOModuleHandle)
+		{
+			FreeLibrary(HBAOModuleHandle);
+			HBAOModuleHandle = NULL;
+		}
+#endif
+		// NVCHANGE_END: Add HBAO+
+
 		// release our dynamic VB and IB buffers
 		DynamicVB = NULL;
 		DynamicIB = NULL;
@@ -556,6 +588,13 @@ void FD3D11DynamicRHI::CleanupD3DDevice()
 			Direct3DDeviceIMContext = nullptr;
 			Direct3DDevice = nullptr;
 		}
+
+		// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+		ReleaseVxgiInterface();
+		FWindowsPlatformMisc::UnloadVxgiModule();
+#endif
+		// NVCHANGE_END: Add VXGI
 	}
 }
 

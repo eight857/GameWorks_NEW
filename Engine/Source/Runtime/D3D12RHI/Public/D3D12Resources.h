@@ -108,6 +108,11 @@ private:
 	void* ResourceBaseAddress;
 	FName DebugName;
 
+	// NVCHANGE_BEGIN: Add VXGI
+	bool bEnableUAVBarriers;
+	bool bFirstUAVBarrierPlaced;
+	// NVCHANGE_END: Add VXGI
+
 #if UE_BUILD_DEBUG
 	static int64 TotalResourceCount;
 	static int64 NoStateTrackingResourceCount;
@@ -253,6 +258,28 @@ public:
 		const uint32 bBuffer : 1;
 		const uint32 bReadBackResource : 1;
 	};
+
+	// NVCHANGE_BEGIN: Add VXGI
+	void SetEnableUAVBarriers(bool Enable)
+	{
+		bEnableUAVBarriers = Enable;
+		bFirstUAVBarrierPlaced = false;
+	}
+
+	bool RequestUAVBarrier()
+	{
+		if (bEnableUAVBarriers)
+			return true;
+
+		if (!bFirstUAVBarrierPlaced)
+		{
+			bFirstUAVBarrierPlaced = true;
+			return true;
+		}
+
+		return false;
+	}
+	// NVCHANGE_END: Add VXGI
 
 private:
 	void InitalizeResourceState(D3D12_RESOURCE_STATES InitialState)

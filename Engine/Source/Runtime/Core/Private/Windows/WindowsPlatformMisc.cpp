@@ -591,8 +591,8 @@ void FWindowsPlatformMisc::SetHighDPIMode()
 					if (Hr != S_OK)
 					{
 						UE_LOG(LogInit, Warning, TEXT("SetProcessDpiAwareness failed.  Error code %x"), Hr);
-					}
-				}
+			}
+		}
 			}
 
 			FPlatformProcess::FreeDllHandle(ShCoreDll);
@@ -608,10 +608,10 @@ void FWindowsPlatformMisc::SetHighDPIMode()
 
 				BOOL Result = SetProcessDpiAware();
 				if (Result == 0)
-				{
+	{
 					UE_LOG(LogInit, Warning, TEXT("SetProcessDpiAware failed"));
-				}
 			}
+		}
 
 			FPlatformProcess::FreeDllHandle(User32Dll);
 		}
@@ -2720,3 +2720,41 @@ IPlatformChunkInstall* FWindowsPlatformMisc::GetPlatformChunkInstall()
 
 	return ChunkInstall;
 }
+
+// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+
+#include "WindowsPlatformProcess.h"
+
+static void* VXGIDLLHandle = 0;
+static int32 VXGIDLLHandleRefCount = 0;
+static FCriticalSection VXGILoadCS;
+
+void FWindowsPlatformMisc::LoadVxgiModule()
+{
+	if (FPlatformAtomics::InterlockedIncrement(&VXGIDLLHandleRefCount) == 1)
+	{
+		VXGILoadCS.Lock();
+		check(VXGIDLLHandle == 0);
+		FString VXGIBinariesRoot = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/GameWorks/VXGI/");
+		FString VXGIPath(VXGIBinariesRoot + TEXT("GFSDK_VXGI_x64.dll"));
+		VXGIDLLHandle = FPlatformProcess::GetDllHandle(*VXGIPath);
+		check(VXGIDLLHandle);
+		VXGILoadCS.Unlock();
+	}
+}
+
+void FWindowsPlatformMisc::UnloadVxgiModule()
+{
+	if (FPlatformAtomics::InterlockedDecrement(&VXGIDLLHandleRefCount) == 0)
+	{
+		VXGILoadCS.Lock();
+		check(VXGIDLLHandle != 0);
+		FPlatformProcess::FreeDllHandle(VXGIDLLHandle);
+		VXGIDLLHandle = 0;
+		VXGILoadCS.Unlock();
+	}
+}
+
+#endif
+// NVCHANGE_END: Add VXGI

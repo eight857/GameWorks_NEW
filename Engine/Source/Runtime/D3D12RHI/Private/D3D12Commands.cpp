@@ -1025,11 +1025,18 @@ void FD3D12DynamicRHI::RHIDiscardRenderTargets(bool Depth, bool Stencil, uint32 
 
 void FD3D12CommandContext::RHISetRenderTargetsAndClear(const FRHISetRenderTargetsInfo& RenderTargetsInfo)
 {
+	// Here convert to FUnorderedAccessViewRHIParamRef* in order to call RHISetRenderTargets
+	FUnorderedAccessViewRHIParamRef UAVs[MaxSimultaneousUAVs] = {};
+	for (int32 UAVIndex = 0; UAVIndex < RenderTargetsInfo.NumUAVs; ++UAVIndex)
+	{
+		UAVs[UAVIndex] = RenderTargetsInfo.UnorderedAccessView[UAVIndex].GetReference();
+	}
+
 	this->RHISetRenderTargets(RenderTargetsInfo.NumColorRenderTargets,
 		RenderTargetsInfo.ColorRenderTarget,
 		&RenderTargetsInfo.DepthStencilRenderTarget,
-		0,
-		nullptr);
+		RenderTargetsInfo.NumUAVs,
+		UAVs);
 	if (RenderTargetsInfo.bClearColor || RenderTargetsInfo.bClearStencil || RenderTargetsInfo.bClearDepth)
 	{
 		FLinearColor ClearColors[MaxSimultaneousRenderTargets];
@@ -1461,7 +1468,9 @@ void FD3D12CommandContext::RHIDrawPrimitiveIndirect(uint32 PrimitiveType, FVerte
 
 	numDraws++;
 	CommandListHandle->ExecuteIndirect(
-		GetParentDevice()->GetParentAdapter()->GetDrawIndirectCommandSignature(),
+		// NVCHANGE_BEGIN: Add VXGI
+		GetParentDevice()->GetParentAdapter()->GetDrawIndexedIndirectCommandSignature(),
+		// NVCHANGE_END: Add VXGI
 		1,
 		Location.GetResource()->GetResource(),
 		Location.GetOffsetFromBaseOfResource() + ArgumentOffset,
@@ -1477,6 +1486,49 @@ void FD3D12CommandContext::RHIDrawPrimitiveIndirect(uint32 PrimitiveType, FVerte
 	DEBUG_EXECUTE_COMMAND_LIST(this);
 
 }
+
+// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+void FD3D12CommandContext::RHIDrawIndirect(uint32 PrimitiveType, FStructuredBufferRHIParamRef ArgumentBufferRHI, uint32 ArgumentOffset)
+{
+	FD3D12StructuredBuffer* ArgumentBuffer = RetrieveObject<FD3D12StructuredBuffer>(ArgumentBufferRHI);
+
+	RHI_DRAW_CALL_INC();
+
+	if (IsDefaultContext())
+	{
+		GetParentDevice()->RegisterGPUWork(0);
+	}
+
+	CommitGraphicsResourceTables();
+	CommitNonComputeShaderConstants();
+
+	StateCache.SetPrimitiveTopology(GetD3D12PrimitiveType(PrimitiveType, bUsingTessellation));
+
+	FD3D12ResourceLocation& Location = ArgumentBuffer->ResourceLocation;
+	FD3D12DynamicRHI::TransitionResource(CommandListHandle, Location.GetResource(), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+
+	StateCache.ApplyState();
+
+	numDraws++;
+	CommandListHandle->ExecuteIndirect(
+		GetParentDevice()->GetParentAdapter()->GetDrawIndirectCommandSignature(),
+		1,
+		Location.GetResource()->GetResource(),
+		Location.GetOffsetFromBaseOfResource() + ArgumentOffset,
+		NULL,
+		0
+	);
+
+	CommandListHandle.UpdateResidency(Location.GetResource());
+
+#if UE_BUILD_DEBUG	
+	OwningRHI.DrawCount++;
+#endif
+	DEBUG_EXECUTE_COMMAND_LIST(this);
+}
+#endif
+// NVCHANGE_END: Add VXGI
 
 void FD3D12CommandContext::RHIDrawIndexedIndirect(FIndexBufferRHIParamRef IndexBufferRHI, uint32 PrimitiveType, FStructuredBufferRHIParamRef ArgumentsBufferRHI, int32 DrawArgumentsIndex, uint32 NumInstances)
 {
@@ -2092,3 +2144,21 @@ void FD3D12CommandContext::RHIBroadcastTemporalEffect(const FName& InEffectName,
 	}
 #endif
 }
+// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+
+void FD3D12CommandContext::RHIRenderHBAO(
+	const FTextureRHIParamRef SceneDepthTextureRHI,
+	const FMatrix& ProjectionMatrix,
+	const FTextureRHIParamRef SceneNormalTextureRHI,
+	const FMatrix& ViewMatrix,
+	const FTextureRHIParamRef SceneColorTextureRHI,
+	const GFSDK_SSAO_Parameters& BaseParams
+)
+{
+	// Empty method because HBAO+ doesn't support DX12 yet.
+	// Just override the base so that the engine doesn't crash.
+}
+
+#endif
+// NVCHANGE_END: Add HBAO+

@@ -665,6 +665,43 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Usage, AdvancedDisplay)
 	uint32 bAutomaticallySetUsageInEditor:1;
 
+	// NVCHANGE_BEGIN: Add VXGI
+
+	/**
+	* Indicates that the material and its instances can use VxgiTraceCone function. Only applies to translucent materials.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Translucency)
+	uint32 bVxgiConeTracingEnable : 1;
+
+	/**
+	* Indicates that the material and its instances can be used with VXGI scene voxelization.
+	* This will result in the shaders required to support VXGI being compiled which will increase shader compile time and memory usage.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI)
+	uint32 bUsedWithVxgiVoxelization : 1;
+
+	/**
+	* Indicates that the material has tessellation enabled in MaterialTessellationMode and should be voxelized with tessellation enabled.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI)
+	uint32 bVxgiAllowTesselationDuringVoxelization : 1;
+	
+	/**
+	* This flag controls the material sampling rate during emittance voxelization, basically the rasterization resolution.
+	* Materials that have binary masks and other non-filterable elements should be voxelized with this flag enabled
+	* in order to make emittance voxelized into coarse LODs consistent with emittance downsampled from finer LODs.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI)
+	uint32 bVxgiAdaptiveMaterialSamplingRate : 1;
+
+	/**
+	* Scaler for material opacity used in voxelization. Larger values produce stronger occluision.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI, meta = (ClampMin = "0", ClampMax = "4"))
+	float VxgiOpacityScale;
+
+	// NVCHANGE_END: Add VXGI
+
 	/* Forces the material to be completely rough. Saves a number of instructions and one sampler. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Material, AdvancedDisplay)
 	uint32 bFullyRough:1;
@@ -909,6 +946,11 @@ public:
 	ENGINE_API virtual bool IsDitheredLODTransition() const override;
 	ENGINE_API virtual bool IsTranslucencyWritingCustomDepth() const override;
 	ENGINE_API virtual bool IsMasked() const override;
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	ENGINE_API virtual FVxgiMaterialProperties GetVxgiMaterialProperties() const override;
+#endif
+	// NVCHANGE_END: Add VXGI
 	ENGINE_API virtual bool IsUIMaterial() const { return MaterialDomain == MD_UI; }
 	ENGINE_API virtual bool IsPostProcessMaterial() const { return MaterialDomain == MD_PostProcess; }
 	ENGINE_API virtual USubsurfaceProfile* GetSubsurfaceProfile_Internal() const override;

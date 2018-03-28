@@ -254,6 +254,13 @@ struct CORE_API FWindowsPlatformMisc
 	static EConvertibleLaptopMode GetConvertibleLaptopMode();
 
 	static IPlatformChunkInstall* GetPlatformChunkInstall();
+	
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	static void LoadVxgiModule();
+	static void UnloadVxgiModule();
+#endif
+	// NVCHANGE_END: Add VXGI
 };
 
 

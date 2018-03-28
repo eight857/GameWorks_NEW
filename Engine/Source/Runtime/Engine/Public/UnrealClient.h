@@ -197,6 +197,15 @@ struct FStatUnitData
 	float RawGPUFrameTime;
 	float RawFrameTime;
 
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	float VxgiWorldSpaceTime;
+	float VxgiScreenSpaceTime;
+	float RawVxgiWorldSpaceTime;
+	float RawVxgiScreenSpaceTime;
+#endif
+	// NVCHANGE_END: Add VXGI
+
 	/** Time that has transpired since the last draw call */
 	double LastTime;
 
@@ -220,6 +229,14 @@ struct FStatUnitData
 		, RawGPUFrameTime(0.0f)
 		, RawFrameTime(0.0f)
 		, LastTime(0.0)
+		// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+		, VxgiWorldSpaceTime(0.0f)
+		, VxgiScreenSpaceTime(0.0f)
+		, RawVxgiWorldSpaceTime(0.0f)
+		, RawVxgiScreenSpaceTime(0.0f)
+#endif
+		// NVCHANGE_END: Add VXGI
 	{
 #if !UE_BUILD_SHIPPING
 		CurrentIndex = 0;

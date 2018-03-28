@@ -25,6 +25,12 @@
 #include "PipelineStateCache.h"
 #include "ClearQuad.h"
 
+// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+#include "GFSDK_SSAO.h"
+#endif
+// NVCHANGE_END: Add HBAO+
+
 TAutoConsoleVariable<int32> CVarEarlyZPass(
 	TEXT("r.EarlyZPass"),
 	3,	
@@ -96,6 +102,25 @@ static TAutoConsoleVariable<int32> CVarFXSystemPreRenderAfterPrepass(
 	TEXT("If > 0, then do the FX prerender after the prepass. This improves pipelining for greater performance. Experiemental option."),
 	ECVF_RenderThreadSafe
 	);
+
+// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+
+static TAutoConsoleVariable<int32> CVarHBAOEnable(
+	TEXT("r.HBAO.Enable"),
+	0,
+	TEXT("Enable HBAO+"),
+	ECVF_RenderThreadSafe);
+
+static TAutoConsoleVariable<int32> CVarHBAOHighPrecisionDepth(
+	TEXT("r.HBAO.HighPrecisionDepth"),
+	0,
+	TEXT("0: use FP16 for internal depth storage in HBAO+")
+	TEXT("1: use FP32 for internal depth storage. Use this option to avoid self-occlusion bands on objects far away."),
+	ECVF_RenderThreadSafe);
+
+#endif
+// NVCHANGE_END: Add HBAO+
 
 int32 GbEnableAsyncComputeTranslucencyLightingVolumeClear = 1;
 static FAutoConsoleVariableRef CVarEnableAsyncComputeTranslucencyLightingVolumeClear(
@@ -227,6 +252,13 @@ FDeferredShadingSceneRenderer::FDeferredShadingSceneRenderer(const FSceneViewFam
 		EarlyZPassMode = DDM_AllOpaque;
 		bEarlyZPassMovable = true;
 	}
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	InitVxgiRenderingState(InViewFamily);
+	InitVxgiView();
+#endif
+	// NVCHANGE_END: Add VXGI
 }
 
 float GetSceneColorClearAlpha()
@@ -432,41 +464,41 @@ static void SetAndClearViewGBuffer(FRHICommandListImmediate& RHICmdList, FViewIn
 
 bool FDeferredShadingSceneRenderer::RenderHzb(FRHICommandListImmediate& RHICmdList)
 {
-	FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
-	SCOPED_GPU_STAT(RHICmdList, Stat_GPU_HZB);
+		FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
+		SCOPED_GPU_STAT(RHICmdList, Stat_GPU_HZB);
 
 	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, SceneContext.GetSceneDepthSurface());
 
-	static const auto ICVarHZBOcc = IConsoleManager::Get().FindConsoleVariable(TEXT("r.HZBOcclusion"));
-	bool bHZBOcclusion = ICVarHZBOcc->GetInt() != 0;
+			static const auto ICVarHZBOcc	= IConsoleManager::Get().FindConsoleVariable(TEXT("r.HZBOcclusion"));
+			bool bHZBOcclusion				= ICVarHZBOcc->GetInt() != 0;
 
-	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+			for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+			{
+				FViewInfo& View = Views[ViewIndex];
+				FSceneViewState* ViewState = (FSceneViewState*)View.State;
+
+				const uint32 bSSR = ShouldRenderScreenSpaceReflections(View);
+				const bool bSSAO = ShouldRenderScreenSpaceAmbientOcclusion(View);
+
+				if (bSSAO || bHZBOcclusion || bSSR)
+				{
+					BuildHZB(RHICmdList, Views[ViewIndex]);
+				}
+
+				if (bHZBOcclusion && ViewState && ViewState->HZBOcclusionTests.GetNum() != 0)
+				{
+					check(ViewState->HZBOcclusionTests.IsValidFrame(ViewState->OcclusionFrameCounter));
+
+					SCOPED_DRAW_EVENT(RHICmdList, HZB);
+					ViewState->HZBOcclusionTests.Submit(RHICmdList, View);
+				}
+			}
+
+			//async ssao only requires HZB and depth as inputs so get started ASAP
+			if (GCompositionLighting.CanProcessAsyncSSAO(Views))
 	{
-		FViewInfo& View = Views[ViewIndex];
-		FSceneViewState* ViewState = (FSceneViewState*)View.State;
-
-		const uint32 bSSR = ShouldRenderScreenSpaceReflections(View);
-		const bool bSSAO = ShouldRenderScreenSpaceAmbientOcclusion(View);
-
-		if (bSSAO || bHZBOcclusion || bSSR)
-		{
-			BuildHZB(RHICmdList, Views[ViewIndex]);
-		}
-
-		if (bHZBOcclusion && ViewState && ViewState->HZBOcclusionTests.GetNum() != 0)
-		{
-			check(ViewState->HZBOcclusionTests.IsValidFrame(ViewState->OcclusionFrameCounter));
-
-			SCOPED_DRAW_EVENT(RHICmdList, HZB);
-			ViewState->HZBOcclusionTests.Submit(RHICmdList, View);
-		}
-	}
-
-	//async ssao only requires HZB and depth as inputs so get started ASAP
-	if (GCompositionLighting.CanProcessAsyncSSAO(Views))
-	{
-		GCompositionLighting.ProcessAsyncSSAO(RHICmdList, Views);
-	}
+				GCompositionLighting.ProcessAsyncSSAO(RHICmdList, Views);
+			}
 
 	return bHZBOcclusion;
 }
@@ -481,7 +513,7 @@ void FDeferredShadingSceneRenderer::RenderOcclusion(FRHICommandListImmediate& RH
 		// This needs to happen before occlusion tests, which makes use of the small depth buffer.
 		SCOPE_CYCLE_COUNTER(STAT_FDeferredShadingSceneRenderer_UpdateDownsampledDepthSurface);
 		UpdateDownsampledDepthSurface(RHICmdList);
-	}
+		}
 		
 	// Issue occlusion queries
 	// This is done after the downsampled depth buffer is created so that it can be used for issuing queries
@@ -492,22 +524,22 @@ void FDeferredShadingSceneRenderer::FinishOcclusion(FRHICommandListImmediate& RH
 {
 	SCOPED_GPU_STAT(RHICmdList, Stat_GPU_HZB);
 
-	// Hint to the RHI to submit commands up to this point to the GPU if possible.  Can help avoid CPU stalls next frame waiting
-	// for these query results on some platforms.
-	RHICmdList.SubmitCommandsHint();
+		// Hint to the RHI to submit commands up to this point to the GPU if possible.  Can help avoid CPU stalls next frame waiting
+		// for these query results on some platforms.
+		RHICmdList.SubmitCommandsHint();
 
 	if (IsRunningRHIInSeparateThread())
-	{
-		SCOPE_CYCLE_COUNTER(STAT_OcclusionSubmittedFence_Dispatch);
-		int32 NumFrames = FOcclusionQueryHelpers::GetNumBufferedFrames();
-		for (int32 Dest = 1; Dest < NumFrames; Dest++)
 		{
-			CA_SUPPRESS(6385);
-			OcclusionSubmittedFence[Dest] = OcclusionSubmittedFence[Dest - 1];
+			SCOPE_CYCLE_COUNTER(STAT_OcclusionSubmittedFence_Dispatch);
+			int32 NumFrames = FOcclusionQueryHelpers::GetNumBufferedFrames();
+			for (int32 Dest = 1; Dest < NumFrames; Dest++)
+			{
+				CA_SUPPRESS(6385);
+				OcclusionSubmittedFence[Dest] = OcclusionSubmittedFence[Dest - 1];
+			}
+			OcclusionSubmittedFence[0] = RHICmdList.RHIThreadFence();
+			RHICmdList.ImmediateFlush(EImmediateFlushType::DispatchToRHIThread);
 		}
-		OcclusionSubmittedFence[0] = RHICmdList.RHIThreadFence();
-		RHICmdList.ImmediateFlush(EImmediateFlushType::DispatchToRHIThread);
-	}
 }
 // The render thread is involved in sending stuff to the RHI, so we will periodically service that queue
 void ServiceLocalQueue()
@@ -807,7 +839,7 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		? FExclusiveDepthStencil::DepthRead_StencilWrite 
 		: FExclusiveDepthStencil::DepthWrite_StencilWrite;
 
-	SceneContext.ResolveSceneDepthTexture(RHICmdList, FResolveRect(0, 0, ViewFamily.FamilySizeX, ViewFamily.FamilySizeY));
+		SceneContext.ResolveSceneDepthTexture(RHICmdList, FResolveRect(0, 0, ViewFamily.FamilySizeX, ViewFamily.FamilySizeY));
 
     if (bComputeLightGrid)
     {
@@ -827,6 +859,19 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		SceneContext.PreallocGBufferTargets(); // Even if !bShouldRenderVelocities, the velocity buffer must be bound because it's a compile time option for the shader.
 		SceneContext.AllocGBufferTargets(RHICmdList);
 	}	
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	ViewFamily.bVxgiAvailable = false;
+
+	// This needs to happen before RenderHzb because that function looks at View.bVxgiAmbientOcclusionMode,
+	// and if that's set to None, HZB rendering might be skipped. But the HZB is later required for the SSAO pass.
+	bool bVxgiEnabled = InitializeVxgiVoxelizationParameters();
+
+	if (!VxgiView)
+		bVxgiEnabled = false;
+#endif
+	// NVCHANGE_END: Add VXGI
 
 	const bool bOcclusionBeforeBasePass = (EarlyZPassMode == EDepthDrawingMode::DDM_AllOccluders) || (EarlyZPassMode == EDepthDrawingMode::DDM_AllOpaque);
 
@@ -986,7 +1031,7 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 
 		bRequiresFarZQuadClear = false;
 	}
-	
+
 	VisualizeVolumetricLightmap(RHICmdList);
 
 	SceneContext.ResolveSceneDepthToAuxiliaryTexture(RHICmdList);
@@ -1062,6 +1107,39 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 	{
 		GCompositionLighting.GfxWaitForAsyncSSAO(RHICmdList);
 	}
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	
+	GDynamicRHI->RHIVXGISetCommandList(&RHICmdList);
+
+	if (bVxgiEnabled)
+	{
+		if (!Views[0].bIsSceneCapture)
+		{
+			RenderVxgiVoxelization(RHICmdList);
+		}
+
+		RenderVxgiTracing(RHICmdList);
+
+		for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+		{
+			FViewInfo& View = Views[ViewIndex];
+
+			if (!bVxgiAmbientOcclusionMode && View.FinalPostProcessSettings.VxgiDiffuseTracingEnabled || View.FinalPostProcessSettings.VxgiAreaLightsEnabled)
+			{
+				CompositeVxgiDiffuseTracing(RHICmdList, Views[ViewIndex]);
+			}
+		}
+	}
+
+	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+	{
+		if(!bVxgiEnabled || Views[ViewIndex].VxgiAmbientOcclusionMode == EVxgiAmbientOcclusionMode::None)
+			Views[ViewIndex].FinalPostProcessSettings.VxgiAmbientMixIntensity = 0.0f;
+	}
+#endif
+	// NVCHANGE_END: Add VXGI
 
 	// Pre-lighting composition lighting stage
 	// e.g. deferred decals, SSAO
@@ -1174,6 +1252,57 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 			SCOPED_CONDITIONAL_DRAW_EVENTF(RHICmdList, EventView,Views.Num() > 1, TEXT("View%d"), ViewIndex);
 			GCompositionLighting.ProcessAfterLighting(RHICmdList, Views[ViewIndex]);
 		}
+		ServiceLocalQueue();
+	}
+
+	// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+	if (GMaxRHIShaderPlatform == SP_PCD3D_SM5 &&
+		CVarHBAOEnable.GetValueOnRenderThread() &&
+		ViewFamily.EngineShowFlags.HBAO)
+	{
+		for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+		{
+			const FViewInfo& View = Views[ViewIndex];
+
+			if (View.IsPerspectiveProjection() &&
+				View.FinalPostProcessSettings.HBAOPowerExponent > 0.f)
+			{
+				// Set the viewport to the current view
+				RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1);
+
+				GFSDK_SSAO_Parameters Params;
+				Params.Radius = View.FinalPostProcessSettings.HBAORadius;
+				Params.Bias = View.FinalPostProcessSettings.HBAOBias;
+				Params.PowerExponent = View.FinalPostProcessSettings.HBAOPowerExponent;
+				Params.SmallScaleAO = View.FinalPostProcessSettings.HBAOSmallScaleAO;
+				Params.Blur.Enable = View.FinalPostProcessSettings.HBAOBlurRadius != AOBR_BlurRadius0;
+				Params.Blur.Sharpness = View.FinalPostProcessSettings.HBAOBlurSharpness;
+				Params.Blur.Radius = View.FinalPostProcessSettings.HBAOBlurRadius == AOBR_BlurRadius2 ? GFSDK_SSAO_BLUR_RADIUS_2 : GFSDK_SSAO_BLUR_RADIUS_4;
+				Params.ForegroundAO.Enable = View.FinalPostProcessSettings.HBAOForegroundAOEnable;
+				Params.ForegroundAO.ForegroundViewDepth = View.FinalPostProcessSettings.HBAOForegroundAODistance;
+				Params.BackgroundAO.Enable = View.FinalPostProcessSettings.HBAOBackgroundAOEnable;
+				Params.BackgroundAO.BackgroundViewDepth = View.FinalPostProcessSettings.HBAOBackgroundAODistance;
+				Params.DepthStorage = CVarHBAOHighPrecisionDepth.GetValueOnRenderThread() ? GFSDK_SSAO_FP32_VIEW_DEPTHS : GFSDK_SSAO_FP16_VIEW_DEPTHS;
+
+				// Render HBAO and multiply the AO over the SceneColorSurface.RGB, preserving destination alpha
+				RHICmdList.RenderHBAO(
+					SceneContext.GetSceneDepthTexture(),
+					View.ViewMatrices.GetProjectionMatrix(),
+					SceneContext.GetGBufferATexture(),
+					View.ViewMatrices.GetViewMatrix(),
+					SceneContext.GetSceneColorTexture(),
+					Params);
+			}
+		}
+	}
+#endif
+	// NVCHANGE_END: Add HBAO+
+
+	if (ViewFamily.EngineShowFlags.StationaryLightOverlap &&
+		FeatureLevel >= ERHIFeatureLevel::SM4)
+	{
+		RenderStationaryLightOverlap(RHICmdList);
 		ServiceLocalQueue();
 	}
 
@@ -1327,11 +1456,21 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 
 	CopySceneCaptureComponentToTarget(RHICmdList);
 
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+	{
+		SCOPED_CONDITIONAL_DRAW_EVENTF(RHICmdList, EventView, Views.Num() > 1, TEXT("View%d"), ViewIndex);
+		RenderVxgiDebug(RHICmdList, Views[ViewIndex], ViewIndex);
+	}
+#endif
+	// NVCHANGE_END: Add VXGI
+
 	// Finish rendering for each view.
 	if (ViewFamily.bResolveScene)
 	{
 		SCOPED_DRAW_EVENT(RHICmdList, PostProcessing);
-		SCOPED_GPU_STAT(RHICmdList, Stat_GPU_Postprocessing);
+   		SCOPED_GPU_STAT(RHICmdList, Stat_GPU_Postprocessing);
 
 		SCOPE_CYCLE_COUNTER(STAT_FinishRenderViewTargetTime);
 
@@ -1368,6 +1507,21 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		RHICmdList.SetCurrentStat(GET_STATID(STAT_CLM_AfterFrame));
 	}
 	ServiceLocalQueue();
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	SceneContext.ReleaseVxgiTargets();
+
+	GDynamicRHI->RHIVXGISetCommandList(nullptr);
+	GDynamicRHI->RHIVXGIReleaseUnmanagedTextures();
+
+	if (VxgiView)
+	{
+		delete VxgiView;
+		VxgiView = nullptr;
+	}
+#endif
+	// NVCHANGE_END: Add VXGI
 }
 
 /** A simple pixel shader used on PC to read scene depth from scene color alpha and write it to a downsized depth buffer. */

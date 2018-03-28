@@ -38,6 +38,13 @@ public class D3D12RHI : ModuleRules
 			AddEngineThirdPartyPrivateStaticDependencies(Target, "DX12");
 			AddEngineThirdPartyPrivateStaticDependencies(Target, "DX11");
 			AddEngineThirdPartyPrivateStaticDependencies(Target, "NVAPI");
+
+            // NVCHANGE_BEGIN: Add VXGI
+            if ((Target.Platform == UnrealTargetPlatform.Win64) || (Target.Platform == UnrealTargetPlatform.Win32))
+            {
+                AddEngineThirdPartyPrivateStaticDependencies(Target, "VXGI");
+            }
+            // NVCHANGE_END: Add VXGI
 		}
-	}
+		}
 }

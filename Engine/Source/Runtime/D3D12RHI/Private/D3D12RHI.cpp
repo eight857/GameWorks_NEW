@@ -35,6 +35,12 @@ using namespace D3D12RHI;
 FD3D12DynamicRHI::FD3D12DynamicRHI(TArray<FD3D12Adapter*>& ChosenAdaptersIn) :
 	NumThreadDynamicHeapAllocators(0),
 	ChosenAdapters(ChosenAdaptersIn)
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	, VxgiInterface(NULL)
+	, VxgiRendererD3D12(NULL)
+#endif
+	// NVCHANGE_END: Add VXGI
 {
 	LLM(D3D12LLM::Initialise());
 
@@ -174,6 +180,11 @@ FD3D12DynamicRHI::FD3D12DynamicRHI(TArray<FD3D12Adapter*>& ChosenAdaptersIn) :
 	GPixelFormats[PF_BC7			].PlatformFormat = DXGI_FORMAT_BC7_TYPELESS;
 	GPixelFormats[PF_R8_UINT		].PlatformFormat = DXGI_FORMAT_R8_UINT;
 
+	// NVCHANGE_BEGIN: Add VXGI
+	GPixelFormats[PF_L8				].PlatformFormat = DXGI_FORMAT_R8_TYPELESS;
+	GPixelFormats[PF_L8				].Supported = true;
+	// NVCHANGE_END: Add VXGI
+
 	// MS - Not doing any feature level checks. D3D12 currently supports these limits.
 	// However this may need to be revisited if new feature levels are introduced with different HW requirement
 	GSupportsSeparateRenderTargetBlendState = true;
@@ -224,6 +235,13 @@ FD3D12DynamicRHI::~FD3D12DynamicRHI()
 void FD3D12DynamicRHI::Shutdown()
 {
 	check(IsInGameThread() && IsInRenderingThread());  // require that the render thread has been shut down
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	ReleaseVxgiInterface();
+	FWindowsPlatformMisc::UnloadVxgiModule();
+#endif
+	// NVCHANGE_END: Add VXGI
 
 	// Cleanup All of the Adapters
 	for (FD3D12Adapter*& Adapter : ChosenAdapters)

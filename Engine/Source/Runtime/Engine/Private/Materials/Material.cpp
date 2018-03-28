@@ -49,6 +49,11 @@
 #include "Interfaces/ITargetPlatformManagerModule.h"
 #include "Interfaces/ITargetPlatform.h"
 #include "Materials/MaterialExpressionComment.h"
+
+// NVCHANGE_BEGIN: Add VXGI
+#include "Materials/MaterialExpressionVxgiVoxelization.h"
+// NVCHANGE_END: Add VXGI
+
 #if WITH_EDITOR
 #include "Logging/TokenizedMessage.h"
 #include "Logging/MessageLog.h"
@@ -339,6 +344,13 @@ public:
 		FMaterialRenderProxy(bInSelected, bInHovered),
 		Material(InMaterial)
 	{}
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	virtual FVxgiMaterialProperties GetVxgiMaterialProperties() const override { return Material->GetVxgiMaterialProperties(); }
+	virtual bool IsTwoSided() const override { return Material->IsTwoSided(); }
+#endif
+	// NVCHANGE_END: Add VXGI
 
 private:
 
@@ -778,6 +790,24 @@ UMaterial::UMaterial(const FObjectInitializer& ObjectInitializer)
 	bAllowDevelopmentShaderCompile = true;
 	bIsMaterialEditorStatsMaterial = false;
 
+	// NVCHANGE_BEGIN: Add VXGI
+	bVxgiConeTracingEnable = false;
+	bUsedWithVxgiVoxelization = true;
+	bVxgiAllowTesselationDuringVoxelization = false;
+	bVxgiAdaptiveMaterialSamplingRate = false;
+	VxgiOpacityScale = 1.0f;
+
+	if (UObject* Outer = GetOuter())
+	{
+		// Guess the special materials from the file path, disable voxelization on them
+
+		FString OuterName = Outer->GetName();
+		if (OuterName.StartsWith("/Engine/"))
+			bUsedWithVxgiVoxelization = false;
+	}
+
+	// NVCHANGE_END: Add VXGI
+
 #if WITH_EDITORONLY_DATA
 	MaterialGraph = NULL;
 #endif //WITH_EDITORONLY_DATA
@@ -1147,6 +1177,11 @@ bool UMaterial::GetUsageByFlag(EMaterialUsage Usage) const
 		case MATUSAGE_SplineMesh: UsageValue = bUsedWithSplineMeshes; break;
 		case MATUSAGE_InstancedStaticMeshes: UsageValue = bUsedWithInstancedStaticMeshes; break;
 		case MATUSAGE_Clothing: UsageValue = bUsedWithClothing; break;
+			// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+		case MATUSAGE_VxgiVoxelization: UsageValue = bUsedWithVxgiVoxelization; break;
+#endif
+			// NVCHANGE_END: Add VXGI
 		default: UE_LOG(LogMaterial, Fatal,TEXT("Unknown material usage: %u"), (int32)Usage);
 	};
 	return UsageValue;
@@ -1237,6 +1272,14 @@ void UMaterial::SetUsageByFlag(EMaterialUsage Usage, bool NewValue)
 		{
 			bUsedWithClothing = NewValue; break;
 		}
+		// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+		case MATUSAGE_VxgiVoxelization:
+		{
+			bUsedWithVxgiVoxelization = NewValue; break;
+		}
+#endif
+		// NVCHANGE_END: Add VXGI
 		default: UE_LOG(LogMaterial, Fatal,TEXT("Unknown material usage: %u"), (int32)Usage);
 	};
 #if WITH_EDITOR
@@ -1262,6 +1305,11 @@ FString UMaterial::GetUsageName(EMaterialUsage Usage) const
 		case MATUSAGE_SplineMesh: UsageName = TEXT("bUsedWithSplineMeshes"); break;
 		case MATUSAGE_InstancedStaticMeshes: UsageName = TEXT("bUsedWithInstancedStaticMeshes"); break;
 		case MATUSAGE_Clothing: UsageName = TEXT("bUsedWithClothing"); break;
+			// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+		case MATUSAGE_VxgiVoxelization: UsageName = TEXT("bUsedWithVxgiVoxelization"); break;
+#endif
+			// NVCHANGE_END: Add VXGI
 		default: UE_LOG(LogMaterial, Fatal,TEXT("Unknown material usage: %u"), (int32)Usage);
 	};
 	return UsageName;
@@ -3248,6 +3296,18 @@ void UMaterial::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEve
 		{
 			bRequiresCompilation = false;
 		}
+		// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+		else if (PropertyThatChanged->GetNameCPP() == TEXT("VxgiOpacityScale"))
+		{
+			bRequiresCompilation = false;
+		}
+		else if (PropertyThatChanged->GetNameCPP() == TEXT("bVxgiAdaptiveMaterialSamplingRate"))
+		{
+			bRequiresCompilation = false;
+		}
+#endif
+		// NVCHANGE_END: Add VXGI
 	}
 
 	TranslucencyDirectionalLightingIntensity = FMath::Clamp(TranslucencyDirectionalLightingIntensity, .1f, 10.0f);
@@ -4743,6 +4803,21 @@ bool UMaterial::IsPropertyActive(EMaterialProperty InProperty) const
 	}
 	return Active;
 }
+
+// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+FVxgiMaterialProperties UMaterial::GetVxgiMaterialProperties() const
+{
+	FVxgiMaterialProperties Properties;
+	Properties.bVxgiConeTracingEnabled = bVxgiConeTracingEnable;
+	Properties.bUsedWithVxgiVoxelization = bUsedWithVxgiVoxelization;
+	Properties.bVxgiAllowTesselationDuringVoxelization = bVxgiAllowTesselationDuringVoxelization;
+	Properties.bVxgiAdaptiveMaterialSamplingRate = bVxgiAdaptiveMaterialSamplingRate;
+	Properties.VxgiOpacityScale = VxgiOpacityScale;
+	return Properties;
+}
+#endif
+// NVCHANGE_END: Add VXGI
 
 #if WITH_EDITORONLY_DATA
 void UMaterial::FlipExpressionPositions(const TArray<UMaterialExpression*>& Expressions, const TArray<UMaterialExpressionComment*>& Comments, bool bScaleCoords, UMaterial* InMaterial)

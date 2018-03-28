@@ -170,3 +170,8 @@ Saved/
 
 # Ignore VS / VS Code settings directory
 .vs
+
+# NVCHANGE_BEGIN: Add VXGI
+BuildScripts/
+# NVCHANGE_END: Add VXGI
+

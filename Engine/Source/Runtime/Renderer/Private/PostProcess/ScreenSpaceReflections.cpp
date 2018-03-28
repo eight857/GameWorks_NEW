@@ -53,10 +53,30 @@ static TAutoConsoleVariable<int32> CVarSSRCone(
 	TEXT(" 0 is off (default), 1 is on"),
 	ECVF_RenderThreadSafe);
 
+// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+static TAutoConsoleVariable<int32> CVarCombineVXGISpecularWithSSR(
+	TEXT("r.VXGI.CombineSpecularWithSSR"),
+	0,
+	TEXT("Defines if VXGI specular tracing fills is combined with SSR or replaces it\n")
+	TEXT(" 0 is replace, 1 is combine"),
+	ECVF_RenderThreadSafe);
+#endif
+// NVCHANGE_END: Add VXGI
+
 DECLARE_FLOAT_COUNTER_STAT(TEXT("ScreenSpace Reflections"), Stat_GPU_ScreenSpaceReflections, STATGROUP_GPU);
 
 bool ShouldRenderScreenSpaceReflections(const FViewInfo& View)
 {
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	if (View.FinalPostProcessSettings.VxgiSpecularTracingEnabled && !CVarCombineVXGISpecularWithSSR.GetValueOnRenderThread())
+	{
+		return false;
+	}
+#endif
+	// NVCHANGE_END: Add VXGI
+
 	if(!View.Family->EngineShowFlags.ScreenSpaceReflections)
 	{
 		return false;

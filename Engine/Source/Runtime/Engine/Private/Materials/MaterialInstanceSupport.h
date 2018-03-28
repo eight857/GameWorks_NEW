@@ -155,6 +155,13 @@ public:
 		return NULL;
 	}
 	
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	virtual FVxgiMaterialProperties GetVxgiMaterialProperties() const override { return Owner->GetVxgiMaterialProperties(); }
+	virtual bool IsTwoSided() const override { return Owner->IsTwoSided(); }
+#endif
+	// NVCHANGE_END: Add VXGI
+
 private:
 	/**
 	 * Retrieves the array of values for a given type.

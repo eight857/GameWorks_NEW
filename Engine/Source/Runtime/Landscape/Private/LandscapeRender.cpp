@@ -1470,7 +1470,15 @@ void FLandscapeComponentSceneProxy::GetDynamicMeshElements(const TArray<const FS
 			UMaterialInterface* const MaterialInterface = MaterialInterfacesByLOD[MaterialLOD];
 
 			// Could be different from bRequiresAdjacencyInformation during shader compilation
-			const bool bCurrentRequiresAdjacencyInformation = MaterialRenderingRequiresAdjacencyInformation_RenderingThread(MaterialInterface, VertexFactory->GetType(), View->GetFeatureLevel());
+			// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+			bool bIsVxgiVoxelization = View->bIsVxgiVoxelization;
+#else
+			// View->bIsVxgiVoxelization is not declared if WITH_GFSDK_VXGI == 0
+			bool bIsVxgiVoxelization = false;
+#endif
+			const bool bCurrentRequiresAdjacencyInformation = MaterialRenderingRequiresAdjacencyInformation_RenderingThread(MaterialInterface, VertexFactory->GetType(), View->GetFeatureLevel(), bIsVxgiVoxelization);
+			// NVCHANGE_END: Add VXGI
 			Mesh.Type = bCurrentRequiresAdjacencyInformation ? PT_12_ControlPointPatchList : PT_TriangleList;
 
 			for (int32 SubY = 0; SubY < NumSubsections; SubY++)

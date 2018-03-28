@@ -9,6 +9,7 @@
 FRCPassPostProcessInput::FRCPassPostProcessInput(TRefCountPtr<IPooledRenderTarget>& InData)
 	: Data(InData)
 {
+	check(Data);
 }
 
 void FRCPassPostProcessInput::Process(FRenderingCompositePassContext& Context)

@@ -1,136 +1,103 @@
-Unreal Engine
-=============
+Unreal Engine with VXGI and HBAO+
+=================================
 
-Welcome to the Unreal Engine source code! 
+**Note**: for up-to-date information on Unreal Engine in general, please refer to [README by Epic Games](https://github.com/EpicGames/UnrealEngine/blob/release/README.md).
 
-From this repository you can build the Unreal Editor for Windows and Mac, compile Unreal Engine games for Android, iOS, Playstation 4, Xbox One, HTML5 and Linux,
-and build tools like Unreal Lightmass and Unreal Frontend. Modify them in any way you can imagine, and share your changes with others! 
+Introduction
+------------
 
-We have a heap of documentation available for the engine on the web. If you're looking for the answer to something, you may want to start here: 
+VXGI stands for [Voxel Global Illumination](http://www.geforce.com/hardware/technology/vxgi), and it's an advanced rendering technique for real-time indirect illumination.
 
-* [Unreal Engine Programming Guide](https://docs.unrealengine.com/latest/INT/Programming/index.html)
-* [Unreal Engine API Reference](https://docs.unrealengine.com/latest/INT/API/index.html)
-* [Engine source and GitHub on the Unreal Engine forums](https://forums.unrealengine.com/forumdisplay.php?1-Development-Discussion)
+Global illumination (GI) is a way of computing lighting in the scene that includes indirect illumination, i.e. simulating objects that are lit by other objects as well as ideal light sources. Adding GI to the scene greatly improves the realism of the rendered images. Modern real-time rendering engines simulate indirect illumination using different approaches, which include precomputed light maps (offline GI), local light sources placed by artists, and simple ambient light.
 
-If you need more, just ask! A lot of Epic developers hang out on the [forums](https://forums.unrealengine.com/) or [AnswerHub](https://answers.unrealengine.com/), 
-and we're proud to be part of a well-meaning, friendly and welcoming community of thousands. 
+![Alt text](CornellBoxLightingModes.png "Cornell Box Scene")
 
+HBAO+ stands for [Horizon-Based Ambient Occlusion Plus](http://www.geforce.com/hardware/technology/hbao-plus), and it's a fast and relatively stable screen-space ambient occlusion solution.
 
-Branches
---------
+How to Build
+------------
 
-We publish source for the engine in three rolling branches:
+First, you need to download the source code. For beginners, it's easier to download a .zip file (look for the "Download ZIP" button on top of this page). Alternatively, you can use a Git client and clone the repository from GitHub onto your machine, then switch to the right branch - this way, keeping your copy up to date will be much easier. 
 
-The **[release branch](https://github.com/EpicGames/UnrealEngine/tree/release)** is extensively tested by our QA team and makes a great starting point for learning the engine or
-making your own games. We work hard to make releases stable and reliable, and aim to publish new releases every few months.
+When you have the source code on your local hard drive, follow these steps to build it:
 
-The **[promoted branch](https://github.com/EpicGames/UnrealEngine/tree/promoted)** is updated with builds for our artists and designers to use. We try to update it daily 
-(though we often catch things that prevent us from doing so) and it's a good balance between getting the latest cool stuff and knowing most things work.
+1.  Run Setup.bat, answer "N" when it asks you about overwriting some files - otherwise it will replace new NVAPI libraries with old ones, and UE4 won't build.
 
-The **[master branch](https://github.com/EpicGames/UnrealEngine/tree/master)** tracks [live changes](https://github.com/EpicGames/UnrealEngine/commits/master) by our engine team. 
-This is the cutting edge and may be buggy - it may not even compile. Battle-hardened developers eager to work lock-step with us on the latest and greatest should head here.
+2.	Run GenerateProjectFiles.bat
+	
+3.	Open UE4.sln, build UE4 and **ShaderCompileWorker** projects.
 
-Other short-lived branches may pop-up from time to time as we stabilize new releases or hotfixes.
+4.	Run UE4 Editor, open CornellBox or SciFiHallway projects.
 
+How to Use
+----------
 
-Getting up and running
-----------------------
+Please see the [overview document](UE4_VXGI_Overview.pdf).
 
-The steps below will take you through cloning your own private fork, then compiling and running the editor yourself:
+FAQ
+---
 
-### Windows
+**Q:** Is VXGI a plug-in for Unreal Engine? Can it be combined with other GameWorks techs, such as WaveWorks or HairWorks?
+**A:** No, it's a separate branch of the engine. The UE plug-in interface is very limiting, and complicated technologies like VXGI cannot work through it. In order to combine several GameWorks technologies, you have to merge the corresponding branches. Alternatively, you can use a third-party merged branch, like [this one](https://github.com/GalaxyMan2015/UnrealEngine/tree/4.9.2_NVIDIA_Techs) (not supported by NVIDIA).
 
-1. Install **[GitHub for Windows](https://windows.github.com/)** then **[fork and clone our repository](https://guides.github.com/activities/forking/)**. 
-   To use Git from the command line, see the [Setting up Git](https://help.github.com/articles/set-up-git/) and [Fork a Repo](https://help.github.com/articles/fork-a-repo/) articles.
+**Q:** What are the minimum and recommended PC system requirements to run VXGI?
+**A:** Minimum: a 64-bit Windows 7 system with any DirectX 11 class GPU. Recommended: a fast 4+ core processor (more is better because VXGI needs to compile a few heavy shaders for every material), 16 GB of system memory, and an NVIDIA GeForce GTX 9xx series GPU (GM20x or newer architecture).
 
-   If you'd prefer not to use Git, you can get the source with the 'Download ZIP' button on the right. The built-in Windows zip utility will mark the contents of zip files 
-   downloaded from the Internet as unsafe to execute, so right-click the zip file and select 'Properties...' and 'Unblock' before decompressing it. Third-party zip utilities don't normally do this.
+**Q:** Do I have to build the engine from source to use VXGI, or there is a binary distribution available somewhere?
+**A:** Currently there are no binary distributions, so you have to build it. It's not that hard, all you need is a free edition of Microsoft Visual Studio 2013 or 2015.
 
-1. Install **Visual Studio 2017**. 
-   All desktop editions of Visual Studio 2017 can build UE4, including [Visual Studio Community 2017](http://www.visualstudio.com/products/visual-studio-community-vs), which is free for small teams and individual developers.
-   To install the correct components for UE4 development, check the "Game Development with C++" workload, and the "Unreal Engine Installer" optional component.
-  
-1. Open your source folder in Explorer and run **Setup.bat**. 
-   This will download binary content for the engine, as well as installing prerequisites and setting up Unreal file associations. 
-   On Windows 8, a warning from SmartScreen may appear.  Click "More info", then "Run anyway" to continue.
-   
-   A clean download of the engine binaries is currently 3-4gb, which may take some time to complete.
-   Subsequent checkouts only require incremental downloads and will be much quicker.
- 
-1. Run **GenerateProjectFiles.bat** to create project files for the engine. It should take less than a minute to complete.  
+**Q:** I loaded a map but there is no indirect lighting.
+**A:** Please make sure that...
 
-1. Load the project into Visual Studio by double-clicking on the **UE4.sln** file. Set your solution configuration to **Development Editor** and your solution
-   platform to **Win64**, then right click on the **UE4** target and select **Build**. It may take anywhere between 10 and 40 minutes to finish compiling, depending on your system specs.
+- Console variable r.VXGI.DiffuseTracingEnable is set to 1
+- Directly lit or emissive materials have "Used with VXGI Voxelization" box checked
+- Direct lights are Movable and have "VXGI Indirect Lighting" box checked
+- There is an active PostProcessVolume and the camera is inside it (or it's unbounded)
+- In the PostProcessVolume, the "Settings/VXGI Diffuse/Enable Diffuse Tracing" box is checked
 
-1. After compiling finishes, you can load the editor from Visual Studio by setting your startup project to **UE4** and pressing **F5** to debug.
+It is also useful to switch the View mode to "VXGI Opacity Voxels" or "VXGI Emittance Voxels" to make sure that the objects you need are represented as voxels and emit (or reflect) light.
 
+**Q:** I'm trying to build the engine, and there are some linker errors related to NVAPI.
+**A:** This means Setup.bat has overwritten the NVAPI libraries with older versions. You need to copy the right version (from the original zip file or from GitHub) of this file: `Engine\Source\ThirdParty\NVIDIA\nvapi\amd64\nvapi64.lib`
 
+**Q:** There are no specular reflections on translucent objects, how do I add them?
+**A:** You need to modify the translucent material and make it trace specular cones. See [this forum post](https://forums.unrealengine.com/showthread.php?53735-NVIDIA-GameWorks-Integration&p=423841&highlight=vxgi#post423841) for an example.
 
+**Q:** Can specular reflections be less blurry?
+**A:** Usually yes, but there is a limit. The quality of reflections is determined by the size of voxels representing the reflected object(s), so you need to reduce that size. There are several ways to do that:
 
-### Mac
-   
-1. Install **[GitHub for Mac](https://mac.github.com/)** then **[fork and clone our repository](https://guides.github.com/activities/forking/)**. 
-   To use Git from the Terminal, see the [Setting up Git](https://help.github.com/articles/set-up-git/) and [Fork a Repo](https://help.github.com/articles/fork-a-repo/) articles.
-   If you'd rather not use Git, use the 'Download ZIP' button on the right to get the source directly.
+- Place a "VXGI Anchor" actor near the reflected objects. VXGI's scene representation has a region where it is most detailed, and this actor controls the location of that region.
+- Reduce r.VXGI.Range, which will make all voxels smaller, but also obviously reduce the range of VXGI effects.
+- Increase r.VXGI.MapSize, but there are only 3 options for that parameter: 64, 128 and 256, and the latter is extremely expensive.
 
-1. Install the latest version of [Xcode](https://itunes.apple.com/us/app/xcode/id497799835).
+**Q:** Is it possible to pre-compute lighting with VXGI to use on low-end PCs or mobile devices?
+**A:** No, as VXGI was designed as a fully dynamic solution. It is theoretically possible to use VXGI cone tracing to bake light maps, but such feature is not implemented, and it doesn't add enough value compared to traditional light map solutions like Lightmass: the only advantage is that baking will be faster.
 
-1. Open your source folder in Finder and double-click on **Setup.command** to download binary content for the engine. You can close the Terminal window afterwards.
+**Q:** Does VXGI support DirectX 12?
+**A:** It does, but in a limited and still experimental way. Switching to DX12 is not yet recommended. It will be slower than on DX11.
 
-   If you downloaded the source as a .zip file, you may see a warning about it being from an unidentified developer (because .zip files on GitHub aren't digitally signed).
-   To work around it, right-click on Setup.command, select Open, then click the Open button.
-
-1. In the same folder, double-click **GenerateProjectFiles.command**.  It should take less than a minute to complete.  
-
-1. Load the project into Xcode by double-clicking on the **UE4.xcworkspace** file. Select the **ShaderCompileWorker** for **My Mac** target in the title bar,
-   then select the 'Product > Build' menu item. When Xcode finishes building, do the same for the **UE4** for **My Mac** target. Compiling may take anywhere between 15 and 40 minutes, depending on your system specs.
-   
-1. After compiling finishes, select the 'Product > Run' menu item to load the editor.
+**Q:** Can I use VXGI in my own rendering engine, without Unreal Engine?
+**A:** Yes. The SDK package is available on [NVIDIA GameWorks Developer website](https://developer.nvidia.com/vxgi).
 
 
+Tech Support
+------------
 
+This branch of UE4 is primarily discussed on the Unreal Engine forums: [NVIDIA GameWorks Integration](https://forums.unrealengine.com/showthread.php?53735-NVIDIA-GameWorks-Integration). That forum thread contains many questions and answers, and some NVIDIA engineers also participate in the discussion. For VXGI related questions, comment on that thread, or contact [Alexey.Panteleev](https://forums.unrealengine.com/member.php?29363-Alexey-Panteleev) on the forum, or post an issue on GitHub.
 
-### Linux
+Additional Resources
+--------------------
 
-1. [Set up Git](https://help.github.com/articles/set-up-git/) and [fork our repository](https://help.github.com/articles/fork-a-repo/).
-   If you'd prefer not to use Git, use the 'Download ZIP' button on the right to get the source as a zip file.
+- [Interactive Indirect Illumination Using Voxel Cone Tracing](http://maverick.inria.fr/Publications/2011/CNSGE11b/GIVoxels-pg2011-authors.pdf) - the original paper on voxel cone tracing.
+- [NVIDIA VXGI: Dynamic Global Illumination for Games](http://on-demand.gputechconf.com/gtc/2015/presentation/S5670-Alexey-Panteleev.pdf) - a presentation about VXGI basics and its use in UE4.
+- [Practical Real-Time Voxel-Based Global Illumination for Current GPUs](http://on-demand.gputechconf.com/gtc/2014/presentations/S4552-rt-voxel-based-global-illumination-gpus.pdf) - a technical presentation about VXGI while it was still work-in-progress.
 
-1. Open your source folder and run **Setup.sh** to download binary content for the engine.
+Licensing
+---------
 
-1. Both cross-compiling and native builds are supported. 
+This branch of UE4 is covered by the general [Unreal Engine End User License Agreement](LICENSE.pdf). There is no additional registration or fees associated with the use of VXGI or HBAO+ within Unreal Engine.
 
-   **Cross-compiling** is handy when you are a Windows (Mac support planned too) developer who wants to package your game for Linux with minimal hassle, and it requires a [cross-compiler toolchain](http://cdn.unrealengine.com/qfe/v8_clang-3.9.0-centos7.zip) to be installed (see the [Linux cross-compiling page on the wiki](https://docs.unrealengine.com/latest/INT/Platforms/Linux/GettingStarted/)).
-
-   **Native compilation** is discussed in [a separate README](Engine/Build/BatchFiles/Linux/README.md) and [community wiki page](https://wiki.unrealengine.com/Building_On_Linux). 
-
-
-
-
-### Additional target platforms
-
-**Android** support will be downloaded by the setup script if you have the Android NDK installed. See the [Android getting started guide](https://docs.unrealengine.com/latest/INT/Platforms/Android/GettingStarted/).
-
-**iOS** programming requires a Mac. Instructions are in the [iOS getting started guide](https://docs.unrealengine.com/latest/INT/Platforms/iOS/GettingStarted/index.html).
-
-**HTML5** support will be downloaded by the setup script if you have Emscripten installed. Please see the [HTML5 getting started guide](https://docs.unrealengine.com/latest/INT/Platforms/HTML5/GettingStarted/index.html).
-
-**Playstation 4** or **XboxOne** development require additional files that can only be provided after your registered developer status is confirmed by Sony or Microsoft. See [the announcement blog post](https://www.unrealengine.com/blog/playstation-4-and-xbox-one-now-supported) for more information.
-
-
-Licensing and Contributions
----------------------------
-
-Your access to and use of Unreal Engine on GitHub is governed by the [Unreal Engine End User License Agreement](https://www.unrealengine.com/eula). If you don't agree to those terms, as amended from time to time, you are not permitted to access or use Unreal Engine.
-
-We welcome any contributions to Unreal Engine development through [pull requests](https://github.com/EpicGames/UnrealEngine/pulls/) on GitHub. Most of our active development is in the **master** branch, so we prefer to take pull requests there (particularly for new features). We try to make sure that all new code adheres to the [Epic coding standards](https://docs.unrealengine.com/latest/INT/Programming/Development/CodingStandard/).  All contributions are governed by the terms of the EULA.
-
-
-Additional Notes
+Acknowledgements
 ----------------
 
-The first time you start the editor from a fresh source build, you may experience long load times. 
-The engine is optimizing content for your platform to the _derived data cache_, and it should only happen once.
-
-Your private forks of the Unreal Engine code are associated with your GitHub account permissions.
-If you unsubscribe or switch GitHub user names, you'll need to re-fork and upload your changes from a local copy. 
-
+The VXGI integration was ported from UE 4.12 to 4.13 mostly by Unreal Engine Forums and GitHub user "GalaxyMan2015". 

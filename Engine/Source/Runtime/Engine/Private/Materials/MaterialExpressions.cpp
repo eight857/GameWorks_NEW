@@ -193,6 +193,11 @@
 #include "Materials/MaterialExpressionAtmosphericLightVector.h"
 #include "Materials/MaterialExpressionAtmosphericLightColor.h"
 
+// NVCHANGE_BEGIN: Add VXGI
+#include "Materials/MaterialExpressionVxgiVoxelization.h"
+#include "Materials/MaterialExpressionVxgiTraceCone.h"
+// NVCHANGE_END: Add VXGI
+
 #include "EditorSupportDelegates.h"
 #include "MaterialCompiler.h"
 #if WITH_EDITOR
@@ -3300,6 +3305,104 @@ bool UMaterialExpressionStaticComponentMaskParameter::IsNamedParameter(FName InP
 
 	return false;
 }
+
+// NVCHANGE_BEGIN: Add VXGI
+
+//
+//	UMaterialExpressionVxgiVoxelization
+//
+
+UMaterialExpressionVxgiVoxelization::UMaterialExpressionVxgiVoxelization(const class FObjectInitializer& PCIP)
+	: Super(PCIP)
+{
+	// Structure to hold one-time initialization
+	struct FConstructorStatics
+	{
+		FText NAME_Constants;
+		FConstructorStatics()
+			: NAME_Constants(LOCTEXT("Constants", "Constants"))
+		{
+		}
+	};
+	static FConstructorStatics ConstructorStatics;
+
+#if WITH_EDITORONLY_DATA
+	MenuCategories.Add(ConstructorStatics.NAME_Constants);
+#endif
+	bShaderInputData = true;
+}
+
+#if WITH_EDITOR
+int32 UMaterialExpressionVxgiVoxelization::Compile(class FMaterialCompiler* Compiler, int32 OutputIndex)
+{
+#if WITH_GFSDK_VXGI
+	return Compiler->VxgiVoxelization();
+#else
+	return Compiler->Constant(0);
+#endif
+}
+
+void UMaterialExpressionVxgiVoxelization::GetCaption(TArray<FString>& OutCaptions) const
+{
+	OutCaptions.Add(TEXT("IsVxgiVoxelization"));
+}
+#endif // WITH_EDITOR
+//
+//	UMaterialExpressionVxgiTraceCone
+//
+
+UMaterialExpressionVxgiTraceCone::UMaterialExpressionVxgiTraceCone(const class FObjectInitializer& PCIP)
+	: Super(PCIP)
+{
+	// Structure to hold one-time initialization
+	struct FConstructorStatics
+	{
+		FText NAME_Lighting;
+		FConstructorStatics()
+			: NAME_Lighting(LOCTEXT("Lighting", "Lighting"))
+		{
+		}
+	};
+	static FConstructorStatics ConstructorStatics;
+
+#if WITH_EDITORONLY_DATA
+	MenuCategories.Add(ConstructorStatics.NAME_Lighting);
+#endif
+	bShaderInputData = true;
+
+	MaxSamples = 128;
+
+	Outputs.Reset();
+	Outputs.Add(FExpressionOutput(TEXT("Irradiance"), 1, 1, 1, 1, 0));
+}
+
+#if WITH_EDITOR
+int32 UMaterialExpressionVxgiTraceCone::Compile(class FMaterialCompiler* Compiler, int32 OutputIndex)
+{
+#if WITH_GFSDK_VXGI
+	if (!StartPos.Expression || !Direction.Expression || !ConeFactor.Expression)
+	{
+		return CompilerError(Compiler, TEXT("Cone tracing requires StartPos, Direction and ConeFactor arguments"));
+	}
+
+	int32 StartPosArg = StartPos.Compile(Compiler);
+	int32 DirectionArg = Direction.Compile(Compiler);
+	int32 ConeFactorArg = ConeFactor.Compile(Compiler);
+	int32 InitialOffsetArg = InitialOffset.Expression ? InitialOffset.Compile(Compiler) : Compiler->Constant(1.f);
+	int32 TracingStepArg = TracingStep.Expression ? TracingStep.Compile(Compiler) : Compiler->Constant(1.f);
+
+	return Compiler->VxgiTraceCone(StartPosArg, DirectionArg, ConeFactorArg, InitialOffsetArg, TracingStepArg, MaxSamples);
+#else
+	return Compiler->Constant(0);
+#endif
+}
+
+void UMaterialExpressionVxgiTraceCone::GetCaption(TArray<FString>& OutCaptions) const
+{
+	OutCaptions.Add(TEXT("VxgiTraceCone"));
+}
+#endif // WITH_EDITOR
+// NVCHANGE_END: Add VXGI
 
 //
 //	UMaterialExpressionTime

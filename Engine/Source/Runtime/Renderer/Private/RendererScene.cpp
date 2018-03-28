@@ -154,6 +154,16 @@ FSceneViewState::FSceneViewState()
 	SmoothedHalfResTranslucencyGPUDuration = 0;
 	SmoothedFullResTranslucencyGPUDuration = 0;
 	bShouldAutoDownsampleTranslucency = false;
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	VxgiViewTracer = NULL;
+	PrevGBufferA.SetNum(GNumActiveGPUsForRendering);
+	PrevGBufferB.SetNum(GNumActiveGPUsForRendering);
+	PrevViewMatricesPerGPU.SetNum(GNumActiveGPUsForRendering);
+	PrevViewRectPerGPU.SetNum(GNumActiveGPUsForRendering);
+#endif
+	// NVCHANGE_END: Add VXGI
 }
 
 void DestroyRenderResource(FRenderResource* RenderResource)
@@ -2440,6 +2450,12 @@ void FScene::UpdateStaticDrawListsForMaterials_RenderThread(FRHICommandListImmed
 		}
 	}
 
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	VxgiVoxelizationDrawList.GetUsedPrimitivesBasedOnMaterials(SceneFeatureLevel, Materials, PrimitivesToUpdate);
+#endif
+	// NVCHANGE_END: Add VXGI
+
 	PositionOnlyDepthDrawList.GetUsedPrimitivesBasedOnMaterials(SceneFeatureLevel, Materials, PrimitivesToUpdate);
 	DepthDrawList.GetUsedPrimitivesBasedOnMaterials(SceneFeatureLevel, Materials, PrimitivesToUpdate);
 	MaskedDepthDrawList.GetUsedPrimitivesBasedOnMaterials(SceneFeatureLevel, Materials, PrimitivesToUpdate);
@@ -2676,6 +2692,11 @@ void FScene::DumpStaticMeshDrawListStats() const
 	DUMP_DRAW_LIST(MobileBasePassUniformLightMapPolicyDrawList[EBasePass_Masked]);
 	DUMP_DRAW_LIST(MobileBasePassUniformLightMapPolicyDrawListWithCSM[EBasePass_Default]);
 	DUMP_DRAW_LIST(MobileBasePassUniformLightMapPolicyDrawListWithCSM[EBasePass_Masked]);
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	DUMP_DRAW_LIST(VxgiVoxelizationDrawList);
+#endif
+	// NVCHANGE_END: Add VXGI
 	DUMP_DRAW_LIST(HitProxyDrawList);
 	DUMP_DRAW_LIST(HitProxyDrawList_OpaqueOnly);
 #if WITH_EDITOR
@@ -2843,6 +2864,12 @@ void FScene::ApplyWorldOffset_RenderThread(FVector InOffset)
 	StaticMeshDrawListApplyWorldOffset(WholeSceneShadowDepthDrawList, InOffset);
 	StaticMeshDrawListApplyWorldOffset(MobileBasePassUniformLightMapPolicyDrawList, InOffset);
 	StaticMeshDrawListApplyWorldOffset(MobileBasePassUniformLightMapPolicyDrawListWithCSM, InOffset);
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	StaticMeshDrawListApplyWorldOffset(VxgiVoxelizationDrawList, InOffset);
+#endif
+	// NVCHANGE_END: Add VXGI
 
 	// Motion blur 
 	MotionBlurInfoData.ApplyOffset(InOffset);

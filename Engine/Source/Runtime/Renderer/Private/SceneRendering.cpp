@@ -553,6 +553,9 @@ FViewInfo::FViewInfo(const FSceneViewInitOptions& InitOptions)
 	:	FSceneView(InitOptions)
 	,	IndividualOcclusionQueries((FSceneViewState*)InitOptions.SceneViewStateInterface, 1)
 	,	GroupedOcclusionQueries((FSceneViewState*)InitOptions.SceneViewStateInterface, FOcclusionQueryBatcher::OccludedPrimitiveQueryBatchSize)
+	// NVCHANGE_BEGIN: Add VXGI
+	, CustomVisibilityQuery(nullptr)
+	// NVCHANGE_END: Add VXGI
 {
 	Init();
 }
@@ -923,6 +926,11 @@ void FViewInfo::SetupUniformBufferParameters(
 
 	ViewUniformShaderParameters.StateFrameIndexMod8 = StateFrameIndexMod8;
 
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	if(!bIsVxgiVoxelization)
+#endif
+	// NVCHANGE_END: Add VXGI
 	{
 		// If rendering in stereo, the right eye uses the left eye's translucency lighting volume.
 		const FViewInfo* PrimaryView = this;
@@ -939,7 +947,23 @@ void FViewInfo::SetupUniformBufferParameters(
 			}
 		}
 		PrimaryView->CalcTranslucencyLightingVolumeBounds(OutTranslucentCascadeBoundsArray, NumTranslucentCascades);
-	}
+    }
+    // NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+    else
+    {
+        const FSceneView* PrimaryView = Family->Views[0];
+        if (PrimaryView->bIsViewInfo)
+        {
+            const FViewInfo* PrimaryViewInfo = static_cast<const FViewInfo*>(PrimaryView);
+
+            // Copy the view parameters that are used for tessellation factors from the primary view.
+            ViewUniformShaderParameters.TranslatedWorldCameraOrigin = PrimaryViewInfo->CachedViewUniformShaderParameters->WorldCameraOrigin + CachedViewUniformShaderParameters->PreViewTranslation;
+            ViewUniformShaderParameters.AdaptiveTessellationFactor = PrimaryViewInfo->CachedViewUniformShaderParameters->AdaptiveTessellationFactor;
+        }
+    }
+#endif
+    // NVCHANGE_END: Add VXGI
 
 	for (int32 CascadeIndex = 0; CascadeIndex < NumTranslucentCascades; CascadeIndex++)
 	{
@@ -1357,6 +1381,11 @@ FSceneRenderer::FSceneRenderer(const FSceneViewFamily* InViewFamily,FHitProxyCon
 :	Scene(InViewFamily->Scene ? InViewFamily->Scene->GetRenderScene() : NULL)
 ,	ViewFamily(*InViewFamily)
 ,	bUsedPrecomputedVisibility(false)
+// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+,	VxgiView(nullptr)
+#endif
+// NVCHANGE_END: Add VXGI
 {
 	check(Scene != NULL);
 

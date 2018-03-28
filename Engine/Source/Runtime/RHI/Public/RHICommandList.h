@@ -1662,6 +1662,139 @@ struct FRHICommandUpdateTextureReference : public FRHICommand<FRHICommandUpdateT
 #define CMD_CONTEXT(Method) GetContext().Method
 #define COMPUTE_CONTEXT(Method) GetComputeContext().Method
 
+// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+
+struct FRHICommandRenderHBAO : public FRHICommand<FRHICommandRenderHBAO>
+{
+	FTextureRHIParamRef SceneDepthTextureRHI;
+	FMatrix ProjectionMatrix;
+	FTextureRHIParamRef SceneNormalTextureRHI;
+	FMatrix ViewMatrix;
+	FTextureRHIParamRef SceneColorTextureRHI;
+	GFSDK_SSAO_Parameters AOParams;
+
+	FORCEINLINE_DEBUGGABLE FRHICommandRenderHBAO(
+		const FTextureRHIParamRef InSceneDepthTextureRHI,
+		const FMatrix& InProjectionMatrix,
+		const FTextureRHIParamRef InSceneNormalTextureRHI,
+		const FMatrix& InViewMatrix,
+		const FTextureRHIParamRef InSceneColorTextureRHI,
+		const GFSDK_SSAO_Parameters& InAOParams
+	)
+		: SceneDepthTextureRHI(InSceneDepthTextureRHI)
+		, ProjectionMatrix(InProjectionMatrix)
+		, SceneNormalTextureRHI(InSceneNormalTextureRHI)
+		, ViewMatrix(InViewMatrix)
+		, SceneColorTextureRHI(InSceneColorTextureRHI)
+		, AOParams(InAOParams)
+	{
+	}
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+
+#endif
+// NVCHANGE_END: Add HBAO+
+
+// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+
+struct FRHIVXGICleanupAfterVoxelization : public FRHICommand<FRHIVXGICleanupAfterVoxelization>
+{
+	FORCEINLINE_DEBUGGABLE FRHIVXGICleanupAfterVoxelization()
+	{
+	}
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+
+struct FRHISetViewportsAndScissorRects : public FRHICommand<FRHISetViewportsAndScissorRects>
+{
+	uint32 Count;
+	TArray<FViewportBounds> Viewports;
+	TArray<FScissorRect> ScissorRects;
+
+	FORCEINLINE_DEBUGGABLE FRHISetViewportsAndScissorRects(uint32 InCount, const FViewportBounds* InViewports, const FScissorRect* InScissorRects)
+	{
+		Count = InCount;
+		Viewports.SetNum(Count);
+		ScissorRects.SetNum(Count);
+		FMemory::Memmove(Viewports.GetData(), InViewports, Count * sizeof(FViewportBounds));
+		FMemory::Memmove(ScissorRects.GetData(), InScissorRects, Count * sizeof(FScissorRect));
+	}
+
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+
+struct FRHIDispatchIndirectComputeShaderStructured : public FRHICommand<FRHIDispatchIndirectComputeShaderStructured>
+{
+	FStructuredBufferRHIRef ArgumentBuffer;
+	uint32 ArgumentOffset;
+
+	FORCEINLINE_DEBUGGABLE FRHIDispatchIndirectComputeShaderStructured(FStructuredBufferRHIParamRef InArgumentBuffer, uint32 InArgumentOffset)
+		: ArgumentBuffer(InArgumentBuffer)
+		, ArgumentOffset(InArgumentOffset)
+	{
+	}
+
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+
+struct FRHIDrawIndirect : public FRHICommand<FRHIDrawIndirect>
+{
+	FStructuredBufferRHIParamRef ArgumentBuffer;
+	uint32 PrimitiveType;
+	uint32 ArgumentOffset;
+	FORCEINLINE_DEBUGGABLE FRHIDrawIndirect(uint32 InPrimitiveType, FStructuredBufferRHIParamRef InArgumentBuffer, uint32 InArgumentOffset)
+		: ArgumentBuffer(InArgumentBuffer)
+		, PrimitiveType(InPrimitiveType)
+		, ArgumentOffset(InArgumentOffset)
+	{
+	}
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+
+struct FRHICopyStructuredBufferData : public FRHICommand<FRHICopyStructuredBufferData>
+{
+	FStructuredBufferRHIRef DestBuffer;
+	uint32 DestOffset;
+	FStructuredBufferRHIRef SrcBuffer;
+	uint32 SrcOffset;
+	uint32 DataSize;
+
+	FORCEINLINE_DEBUGGABLE FRHICopyStructuredBufferData(
+		FStructuredBufferRHIParamRef InDestBuffer,
+		uint32 InDestOffset,
+		FStructuredBufferRHIParamRef InSrcBuffer,
+		uint32 InSrcOffset,
+		uint32 InDataSize
+	)
+		: DestBuffer(InDestBuffer)
+		, DestOffset(InDestOffset)
+		, SrcBuffer(InSrcBuffer)
+		, SrcOffset(InSrcOffset)
+		, DataSize(InDataSize)
+	{
+	}
+
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+
+struct FRHIExecuteVxgiRenderingCommand : public FRHICommand<FRHIExecuteVxgiRenderingCommand>
+{
+	NVRHI::IRenderThreadCommand* Command;
+
+	FORCEINLINE_DEBUGGABLE FRHIExecuteVxgiRenderingCommand(
+		NVRHI::IRenderThreadCommand* InCommand
+	)
+		: Command(InCommand)
+	{
+	}
+
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+#endif
+// NVCHANGE_END: Add VXGI
+
 template<> void FRHICommandSetShaderParameter<FComputeShaderRHIParamRef, ECmdList::ECompute>::Execute(FRHICommandListBase& CmdList);
 template<> void FRHICommandSetShaderUniformBuffer<FComputeShaderRHIParamRef, ECmdList::ECompute>::Execute(FRHICommandListBase& CmdList);
 template<> void FRHICommandSetShaderTexture<FComputeShaderRHIParamRef, ECmdList::ECompute>::Execute(FRHICommandListBase& CmdList);
@@ -2948,6 +3081,41 @@ public:
 		new (AllocCommand<FRHICommandClearTinyUAV>()) FRHICommandClearTinyUAV(UnorderedAccessViewRHI, Values);
 	}
 
+	// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+
+	FORCEINLINE_DEBUGGABLE void RenderHBAO(
+		const FTextureRHIParamRef SceneDepthTextureRHI,
+		const FMatrix& ProjectionMatrix,
+		const FTextureRHIParamRef SceneNormalTextureRHI,
+		const FMatrix& ViewMatrix,
+		const FTextureRHIParamRef SceneColorTextureRHI,
+		const GFSDK_SSAO_Parameters& AOParams
+	)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(RHIRenderHBAO)(
+				SceneDepthTextureRHI,
+				ProjectionMatrix,
+				SceneNormalTextureRHI,
+				ViewMatrix,
+				SceneColorTextureRHI,
+				AOParams);
+			return;
+		}
+		new (AllocCommand<FRHICommandRenderHBAO>()) FRHICommandRenderHBAO(
+			SceneDepthTextureRHI,
+			ProjectionMatrix,
+			SceneNormalTextureRHI,
+			ViewMatrix,
+			SceneColorTextureRHI,
+			AOParams);
+	}
+
+#endif
+	// NVCHANGE_END: Add HBAO+
+
 	FORCEINLINE_DEBUGGABLE void BeginRenderQuery(FRenderQueryRHIParamRef RenderQuery)
 	{
 		if (Bypass())
@@ -3222,6 +3390,70 @@ public:
 		new (AllocCommand<FRHICommandDebugBreak>()) FRHICommandDebugBreak();
 #endif
 	}
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	FORCEINLINE_DEBUGGABLE void VXGICleanupAfterVoxelization()
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(RHIVXGICleanupAfterVoxelization)();
+			return;
+		}
+		new (AllocCommand<FRHIVXGICleanupAfterVoxelization>()) FRHIVXGICleanupAfterVoxelization();
+	}
+
+	FORCEINLINE_DEBUGGABLE void SetViewportsAndScissorRects(uint32 Count, const FViewportBounds* Viewports, const FScissorRect* ScissorRects)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(RHISetViewportsAndScissorRects)(Count, Viewports, ScissorRects);
+			return;
+		}
+		new (AllocCommand<FRHISetViewportsAndScissorRects>()) FRHISetViewportsAndScissorRects(Count, Viewports, ScissorRects);
+	}
+
+	FORCEINLINE_DEBUGGABLE void DispatchIndirectComputeShaderStructured(FStructuredBufferRHIParamRef ArgumentBuffer, uint32 ArgumentOffset)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(RHIDispatchIndirectComputeShaderStructured)(ArgumentBuffer, ArgumentOffset);
+			return;
+		}
+		new (AllocCommand<FRHIDispatchIndirectComputeShaderStructured>()) FRHIDispatchIndirectComputeShaderStructured(ArgumentBuffer, ArgumentOffset);
+	}
+
+	FORCEINLINE_DEBUGGABLE void DrawIndirect(uint32 PrimitiveType, FStructuredBufferRHIParamRef ArgumentBuffer, uint32 ArgumentOffset)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(RHIDrawIndirect)(PrimitiveType, ArgumentBuffer, ArgumentOffset);
+			return;
+		}
+		new (AllocCommand<FRHIDrawIndirect>()) FRHIDrawIndirect(PrimitiveType, ArgumentBuffer, ArgumentOffset);
+	}
+
+	FORCEINLINE_DEBUGGABLE void CopyStructuredBufferData(FStructuredBufferRHIParamRef DestBuffer, uint32 DestOffset, FStructuredBufferRHIParamRef SrcBuffer, uint32 SrcOffset, uint32 DataSize)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(RHICopyStructuredBufferData)(DestBuffer, DestOffset, SrcBuffer, SrcOffset, DataSize);
+			return;
+		}
+		new (AllocCommand<FRHICopyStructuredBufferData>()) FRHICopyStructuredBufferData(DestBuffer, DestOffset, SrcBuffer, SrcOffset, DataSize);
+	}
+
+	FORCEINLINE_DEBUGGABLE void ExecuteVxgiRenderingCommand(NVRHI::IRenderThreadCommand* Command)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(RHIExecuteVxgiRenderingCommand)(Command);
+			return;
+		}
+		new (AllocCommand<FRHIExecuteVxgiRenderingCommand>()) FRHIExecuteVxgiRenderingCommand(Command);
+	}
+#endif
+	// NVCHANGE_END: Add VXGI
 };
 
 class RHI_API FRHIAsyncComputeCommandList : public FRHICommandListBase

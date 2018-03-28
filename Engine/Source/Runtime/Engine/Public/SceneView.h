@@ -26,6 +26,29 @@ class ISceneViewExtension;
 class FSceneViewFamily;
 class FVolumetricFogViewResources;
 
+// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+#include "RendererInterface.h"
+class FLightSceneInfo;
+class FProjectedShadowInfo;
+
+struct FVxgiVoxelizationArgs
+{
+	FVxgiVoxelizationArgs()
+		: LightSceneInfo(NULL)
+		, bEnableEmissiveMaterials(false)
+		, bEnableSkyLight(false)
+	{
+	}
+	const FLightSceneInfo* LightSceneInfo;
+	TArray<FProjectedShadowInfo*, SceneRenderingAllocator> Shadows;
+	bool bEnableEmissiveMaterials;
+	bool bEnableSkyLight;
+	bool bAmbientOcclusionMode;
+};
+#endif
+//NVCHANGE_END: Add VXGI
+
 // Projection data for a FSceneView
 struct FSceneViewProjectionData
 {
@@ -792,6 +815,16 @@ namespace EDrawDynamicFlags
 	};
 }
 
+namespace EVxgiAmbientOcclusionMode
+{
+	enum Type
+	{
+		None = 0,
+		RedChannel = 1,
+		AlphaChannel = 2
+	};
+};
+
 /**
  * A projection from scene space into a 2D screen region.
  */
@@ -1192,6 +1225,22 @@ public:
 		const FIntRect& InEffectiveViewRect,
 		const FViewMatrices& InViewMatrices,
 		const FViewMatrices& InPrevViewMatrices) const;
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	bool bEnableVxgiForSceneCapture;
+	bool bIsVxgiVoxelization;
+	FBoxSphereBounds VxgiClipmapBounds;
+	FVxgiVoxelizationArgs VxgiVoxelizationArgs;
+	mutable NVRHI::DrawCallState VxgiDrawCallState;
+
+	int32 VxgiVoxelizationPass;
+	EVxgiAmbientOcclusionMode::Type VxgiAmbientOcclusionMode;
+
+private:
+	mutable VXGI::MaterialInfo VxgiPreviousMaterialInfo;
+#endif
+	// NVCHANGE_END: Add VXGI
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -1431,6 +1480,13 @@ public:
 	 */
 	bool bNullifyWorldSpacePosition;
 #endif
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	// Indicates that VXGI voxelization is enabled and has been performed for the view family.
+	bool bVxgiAvailable;
+#endif
+	// NVCHANGE_END: Add VXGI
 
 	/** Initialization constructor. */
 	FSceneViewFamily( const ConstructionValues& CVS );

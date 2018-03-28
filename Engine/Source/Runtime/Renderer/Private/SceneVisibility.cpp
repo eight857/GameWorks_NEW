@@ -353,6 +353,33 @@ static int32 FrustumCull(const FScene* Scene, FViewInfo& View)
 						MaxDrawDistance = FLT_MAX;
 					}
 
+					// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+					if (View.bIsVxgiVoxelization)
+					{
+						bool bIsVisible = false;
+
+						if (View.VxgiClipmapBounds.GetBox().Intersect(Bounds.BoxSphereBounds.GetBox()))
+						{
+							bIsVisible = true;
+						}
+
+						if (!bIsVisible)
+						{
+							STAT(NumCulledPrimitives.Increment());
+						}
+						else
+						{
+							// The primitive is visible!
+							VisBits |= Mask;
+						}
+					}
+					else
+					{
+#endif
+						// NVCHANGE_END: Add VXGI
+
+						// The primitive is always culled if it exceeds the max fade distance or lay outside the view frustum.
 					if (DistanceSquared > FMath::Square(MaxDrawDistance + FadeRadius) ||
 						(DistanceSquared < Bounds.MinDrawDistanceSq) ||
 						(UseCustomCulling && !View.CustomVisibilityQuery->IsVisible(VisibilityId, FBoxSphereBounds(Bounds.BoxSphereBounds.Origin, Bounds.BoxSphereBounds.BoxExtent, Bounds.BoxSphereBounds.SphereRadius))) ||
@@ -378,6 +405,12 @@ static int32 FrustumCull(const FScene* Scene, FViewInfo& View)
 							}
 						}
 					}
+
+					// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+					}
+#endif
+					// NVCHANGE_END: Add VXGI
 				}
 				if (FadingBits)
 				{
@@ -1495,6 +1528,17 @@ struct FRelevancePacket
 			const bool bEditorSelectionRelevance = ViewRelevance.bEditorStaticSelectionRelevance;
 			const bool bTranslucentRelevance = ViewRelevance.HasTranslucency();
 
+
+			// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+			if (View.bIsVxgiVoxelization && bTranslucentRelevance)
+			{
+				NotDrawRelevant.AddPrim(BitIndex);
+				continue;
+			}
+#endif
+			// NVCHANGE_END: Add VXGI
+
 			if (View.bIsReflectionCapture && !PrimitiveSceneInfo->Proxy->IsVisibleInReflectionCaptures())
 			{
 				NotDrawRelevant.AddPrim(BitIndex);
@@ -1953,6 +1997,17 @@ void FSceneRenderer::GatherDynamicMeshElements(
 			Collector.AddViewMeshArrays(&InViews[ViewIndex], &InViews[ViewIndex].DynamicMeshElements, &InViews[ViewIndex].SimpleElementCollector, InViewFamily.GetFeatureLevel());
 		}
 
+		// NVCHANGE_BEGIN: Add VXGI
+		TArray<const FSceneView*> LocalViews = InViewFamily.Views;
+#if WITH_GFSDK_VXGI
+		if (VxgiView)
+		{
+			LocalViews.Add(VxgiView);
+			Collector.AddViewMeshArrays(VxgiView, &VxgiView->DynamicMeshElements, &VxgiView->SimpleElementCollector, InViewFamily.GetFeatureLevel());
+		}
+#endif
+		// NVCHANGE_END: Add VXGI
+
 		const bool bIsInstancedStereo = (ViewCount > 0) ? (InViews[0].IsInstancedStereoPass() || InViews[0].bIsMobileMultiViewEnabled) : false;
 
 		for (int32 PrimitiveIndex = 0; PrimitiveIndex < NumPrimitives; ++PrimitiveIndex)
@@ -1966,7 +2021,9 @@ void FSceneRenderer::GatherDynamicMeshElements(
 
 				FPrimitiveSceneInfo* PrimitiveSceneInfo = InScene->Primitives[PrimitiveIndex];
 				Collector.SetPrimitive(PrimitiveSceneInfo->Proxy, PrimitiveSceneInfo->DefaultDynamicHitProxyId);
-				PrimitiveSceneInfo->Proxy->GetDynamicMeshElements(InViewFamily.Views, InViewFamily, ViewMaskFinal, Collector);
+				// NVCHANGE_BEGIN: Add VXGI
+				PrimitiveSceneInfo->Proxy->GetDynamicMeshElements(LocalViews, InViewFamily, ViewMaskFinal, Collector);
+				// NVCHANGE_END: Add VXGI
 			}
 
 			// to support GetDynamicMeshElementRange()
@@ -1974,6 +2031,15 @@ void FSceneRenderer::GatherDynamicMeshElements(
 			{
 				InViews[ViewIndex].DynamicMeshEndIndices[PrimitiveIndex] = Collector.GetMeshBatchCount(ViewIndex);
 			}
+
+			// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+			if (VxgiView)
+			{
+				VxgiView->DynamicMeshEndIndices[PrimitiveIndex] = Collector.GetMeshBatchCount(ViewCount);
+			}
+#endif
+			// NVCHANGE_END: Add VXGI
 		}
 	}
 
@@ -2056,7 +2122,7 @@ void FSceneRenderer::PreVisibilityFrameSetup(FRHICommandListImmediate& RHICmdLis
 	RHICmdList.BeginScene();
 
 	// Notify the FX system that the scene is about to perform visibility checks.
-	if (Scene->FXSystem && !Views[0].bIsPlanarReflection)
+	if (Scene->FXSystem  && !Views[0].bIsPlanarReflection)
 	{
 		Scene->FXSystem->PreInitViews();
 	}
@@ -2384,11 +2450,13 @@ void FSceneRenderer::ComputeViewVisibility(FRHICommandListImmediate& RHICmdList)
 	}
 
 	uint8 ViewBit = 0x1;
-	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex, ViewBit <<= 1)
+	// NVCHANGE_BEGIN: Add VXGI
+	for (int32 ViewIndex = 0; ViewIndex < GetNumViewsWithVxgi(); ++ViewIndex, ViewBit <<= 1)
 	{
 		STAT(NumProcessedPrimitives += NumPrimitives);
 
-		FViewInfo& View = Views[ViewIndex];
+		FViewInfo& View = GetViewWithVxgi(ViewIndex);
+		// NVCHANGE_END: Add VXGI
 		FSceneViewState* ViewState = (FSceneViewState*)View.State;
 
 		// Allocate the view's visibility maps.
@@ -2903,9 +2971,11 @@ bool FDeferredShadingSceneRenderer::InitViews(FRHICommandListImmediate& RHICmdLi
 	{
 		QUICK_SCOPE_CYCLE_COUNTER(STAT_InitViews_InitRHIResources);
 		// initialize per-view uniform buffer.
-		for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+		// NVCHANGE_BEGIN: Add VXGI
+		for (int32 ViewIndex = 0; ViewIndex < GetNumViewsWithVxgi(); ViewIndex++)
 		{
-			FViewInfo& View = Views[ViewIndex];
+			FViewInfo& View = GetViewWithVxgi(ViewIndex);
+			// NVCHANGE_END: Add VXGI
 
 			View.ForwardLightingResources = View.ViewState ? &View.ViewState->ForwardLightingResources : &View.ForwardLightingResourcesStorage;
 

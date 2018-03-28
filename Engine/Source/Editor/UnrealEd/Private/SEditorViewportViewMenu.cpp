@@ -275,6 +275,13 @@ TSharedRef<SWidget> SEditorViewportViewMenu::GenerateViewMenuContent() const
 				ViewMenuBuilder.AddMenuEntry( BaseViewportActions.DetailLightingMode, NAME_None, LOCTEXT("DetailLightingViewModeDisplayName", "Detail Lighting") );
 				ViewMenuBuilder.AddMenuEntry( BaseViewportActions.LightingOnlyMode, NAME_None, LOCTEXT("LightingOnlyViewModeDisplayName", "Lighting Only") );
 				ViewMenuBuilder.AddMenuEntry( BaseViewportActions.ReflectionOverrideMode, NAME_None, LOCTEXT("ReflectionOverrideViewModeDisplayName", "Reflections") );
+				// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+				ViewMenuBuilder.AddMenuEntry(BaseViewportActions.VxgiOpacityVoxelsMode, NAME_None, LOCTEXT("VxgiOpacityVoxelsModeDisplayName", "VXGI Opacity Voxels"));
+				ViewMenuBuilder.AddMenuEntry(BaseViewportActions.VxgiEmittanceVoxelsMode, NAME_None, LOCTEXT("VxgiEmittanceVoxelsModeDisplayName", "VXGI Emittance Voxels"));
+				ViewMenuBuilder.AddMenuEntry(BaseViewportActions.VxgiIrradianceVoxelsMode, NAME_None, LOCTEXT("VxgiIrradianceVoxelsModeDisplayName", "VXGI Irradiance Voxels"));
+#endif
+				// NVCHANGE_END: Add VXGI
 			}
 
 			// Optimization
