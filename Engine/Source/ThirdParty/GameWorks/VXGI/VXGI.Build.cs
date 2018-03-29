@@ -10,11 +10,11 @@ public class VXGI : ModuleRules
 		if (Target.Platform != UnrealTargetPlatform.Win64)
 		{
 			// We only ship the x64 build of VXGI
-			Definitions.Add("WITH_GFSDK_VXGI=0"); // avoid the warnings on undefined symbol
+			PublicDefinitions.Add("WITH_GFSDK_VXGI=0"); // avoid the warnings on undefined symbol
 			return;
 		}
 
-		Definitions.Add("WITH_GFSDK_VXGI=1");
+		PublicDefinitions.Add("WITH_GFSDK_VXGI=1");
 
 		string VXGIDir = Target.UEThirdPartySourceDirectory + "GameWorks/VXGI";
 		PublicIncludePaths.Add(VXGIDir + "/include");

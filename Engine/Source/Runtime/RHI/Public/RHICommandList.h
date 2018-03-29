@@ -1767,7 +1767,7 @@ struct FRHICommandUpdateTextureReference final : public FRHICommand<FRHICommandU
 // NVCHANGE_BEGIN: Add HBAO+
 #if WITH_GFSDK_SSAO
 
-struct FRHICommandRenderHBAO : public FRHICommand<FRHICommandRenderHBAO>
+struct FRHICommandRenderHBAO final : public FRHICommand<FRHICommandRenderHBAO>
 {
 	FTextureRHIParamRef SceneDepthTextureRHI;
 	FMatrix ProjectionMatrix;
@@ -1801,7 +1801,7 @@ struct FRHICommandRenderHBAO : public FRHICommand<FRHICommandRenderHBAO>
 // NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI
 
-struct FRHIVXGICleanupAfterVoxelization : public FRHICommand<FRHIVXGICleanupAfterVoxelization>
+struct FRHIVXGICleanupAfterVoxelization final : public FRHICommand<FRHIVXGICleanupAfterVoxelization>
 {
 	FORCEINLINE_DEBUGGABLE FRHIVXGICleanupAfterVoxelization()
 	{
@@ -1809,7 +1809,7 @@ struct FRHIVXGICleanupAfterVoxelization : public FRHICommand<FRHIVXGICleanupAfte
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
 
-struct FRHISetViewportsAndScissorRects : public FRHICommand<FRHISetViewportsAndScissorRects>
+struct FRHISetViewportsAndScissorRects final : public FRHICommand<FRHISetViewportsAndScissorRects>
 {
 	uint32 Count;
 	TArray<FViewportBounds> Viewports;
@@ -1827,7 +1827,7 @@ struct FRHISetViewportsAndScissorRects : public FRHICommand<FRHISetViewportsAndS
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
 
-struct FRHIDispatchIndirectComputeShaderStructured : public FRHICommand<FRHIDispatchIndirectComputeShaderStructured>
+struct FRHIDispatchIndirectComputeShaderStructured final : public FRHICommand<FRHIDispatchIndirectComputeShaderStructured>
 {
 	FStructuredBufferRHIRef ArgumentBuffer;
 	uint32 ArgumentOffset;
@@ -1841,7 +1841,7 @@ struct FRHIDispatchIndirectComputeShaderStructured : public FRHICommand<FRHIDisp
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
 
-struct FRHIDrawIndirect : public FRHICommand<FRHIDrawIndirect>
+struct FRHIDrawIndirect final : public FRHICommand<FRHIDrawIndirect>
 {
 	FStructuredBufferRHIParamRef ArgumentBuffer;
 	uint32 PrimitiveType;
@@ -1855,7 +1855,7 @@ struct FRHIDrawIndirect : public FRHICommand<FRHIDrawIndirect>
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
 
-struct FRHICopyStructuredBufferData : public FRHICommand<FRHICopyStructuredBufferData>
+struct FRHICopyStructuredBufferData final : public FRHICommand<FRHICopyStructuredBufferData>
 {
 	FStructuredBufferRHIRef DestBuffer;
 	uint32 DestOffset;
@@ -1881,7 +1881,7 @@ struct FRHICopyStructuredBufferData : public FRHICommand<FRHICopyStructuredBuffe
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
 
-struct FRHIExecuteVxgiRenderingCommand : public FRHICommand<FRHIExecuteVxgiRenderingCommand>
+struct FRHIExecuteVxgiRenderingCommand final : public FRHICommand<FRHIExecuteVxgiRenderingCommand>
 {
 	NVRHI::IRenderThreadCommand* Command;
 

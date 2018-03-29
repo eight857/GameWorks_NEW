@@ -685,7 +685,7 @@ public:
 #endif
 	// NVCHANGE_END: Add VXGI
 	/** @return the shader's pixel shader */
-	inline const FPixelShaderRHIParamRef GetPixelShader() const
+	const FPixelShaderRHIParamRef GetPixelShader() const
 	{
 		return Resource->GetPixelShader();
 	}

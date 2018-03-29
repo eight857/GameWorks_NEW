@@ -281,8 +281,7 @@ struct FD3DGPUProfiler : public FGPUProfiler
 	/** GPU hitch profile histories */
 	TIndirectArray<FD3D11EventNodeFrame> GPUHitchEventNodeFrames;
 
-	FD3DGPUProfiler(class FD3D11DynamicRHI* InD3DRHI);
-	// NVCHANGE_BEGIN: Add VXGI
+		// NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI 
 	bool bRequestProfileForStatUnitVxgi;
 	bool bLatchedRequestProfileForStatUnitVxgi;
@@ -291,22 +290,7 @@ struct FD3DGPUProfiler : public FGPUProfiler
 #endif
 	// NVCHANGE_END: Add VXGI
 
-	FD3DGPUProfiler(class FD3D11DynamicRHI* InD3DRHI) :
-		FGPUProfiler(),
-		FrameTiming(InD3DRHI, 4),
-		D3D11RHI(InD3DRHI)
-		// NVCHANGE_BEGIN: Add VXGI
-#if WITH_GFSDK_VXGI 
-		, bRequestProfileForStatUnitVxgi(false)
-		, bLatchedRequestProfileForStatUnitVxgi(false)
-		, VxgiWorldSpaceTime(0.f)
-		, VxgiScreenSpaceTime(0.f)
-#endif
-		// NVCHANGE_END: Add VXGI
-	{
-		// Initialize Buffered timestamp queries 
-		FrameTiming.InitResource();
-	}
+	FD3DGPUProfiler(class FD3D11DynamicRHI* InD3DRHI);
 
 	virtual FGPUProfilerEventNode* CreateEventNode(const TCHAR* InName, FGPUProfilerEventNode* InParent) override
 	{

@@ -2159,9 +2159,10 @@ void FSceneRenderer::GatherDynamicMeshElements(
 
 				FPrimitiveSceneInfo* PrimitiveSceneInfo = InScene->Primitives[PrimitiveIndex];
 				Collector.SetPrimitive(PrimitiveSceneInfo->Proxy, PrimitiveSceneInfo->DefaultDynamicHitProxyId);
-				// NVCHANGE_BEGIN: Add VXGI
-				SetDynamicMeshElementViewCustomData(LocalViews, HasViewCustomDataMasks, PrimitiveSceneInfo);
 
+				SetDynamicMeshElementViewCustomData(InViews, HasViewCustomDataMasks, PrimitiveSceneInfo);
+
+				// NVCHANGE_BEGIN: Add VXGI
 				PrimitiveSceneInfo->Proxy->GetDynamicMeshElements(LocalViews, InViewFamily, ViewMaskFinal, Collector);
 				// NVCHANGE_END: Add VXGI
 			}

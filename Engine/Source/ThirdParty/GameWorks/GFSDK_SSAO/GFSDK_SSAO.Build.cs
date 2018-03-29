@@ -8,7 +8,7 @@ public class GFSDK_SSAO : ModuleRules
 	{
 		Type = ModuleType.External;
 
-		Definitions.Add("WITH_GFSDK_SSAO=1");
+		PublicDefinitions.Add("WITH_GFSDK_SSAO=1");
 
 		string LibDir = Target.UEThirdPartySourceDirectory + "GameWorks/GFSDK_SSAO";
 		PublicIncludePaths.Add(LibDir + "/include");

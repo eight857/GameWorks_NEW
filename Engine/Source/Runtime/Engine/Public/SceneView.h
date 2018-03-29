@@ -1273,6 +1273,7 @@ public:
 	FBoxSphereBounds VxgiClipmapBounds;
 	FVxgiVoxelizationArgs VxgiVoxelizationArgs;
 	mutable NVRHI::DrawCallState VxgiDrawCallState;
+	FViewMatrices PrevViewMatrices;
 
 	int32 VxgiVoxelizationPass;
 	EVxgiAmbientOcclusionMode::Type VxgiAmbientOcclusionMode;

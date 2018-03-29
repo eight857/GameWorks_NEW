@@ -590,6 +590,13 @@ FD3DGPUProfiler::FD3DGPUProfiler(class FD3D11DynamicRHI* InD3DRHI) :
 	FGPUProfiler(),
 	FrameTiming(InD3DRHI, 4),
 	D3D11RHI(InD3DRHI)
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI 
+	, bRequestProfileForStatUnitVxgi(false)
+	, bLatchedRequestProfileForStatUnitVxgi(false)
+	, VxgiWorldSpaceTime(0.f)
+	, VxgiScreenSpaceTime(0.f)
+#endif
 {
 	// Initialize Buffered timestamp queries 
 	FrameTiming.InitResource();

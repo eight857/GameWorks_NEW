@@ -600,25 +600,25 @@ int32 FStatUnitData::DrawStat(FViewport* InViewport, FCanvas* InCanvas, int32 In
 			}
 			InY += RowHeight;
 		}
-	}
 
-	// NVCHANGE_BEGIN: Add VXGI
+		// NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI
-	const bool bHaveVxgiData = (VxgiWorldSpaceTime > 0) || (VxgiScreenSpaceTime > 0);
-	if (bHaveVxgiData)
-	{
-		const int32 X1V = X2 - Font->GetStringSize(TEXT("VXGI WS: "));
-		FColor Color = VxgiWorldSpaceTime < 10.0f ? FColor::Green : (VxgiWorldSpaceTime < 25.0f ? FColor::Yellow : FColor::Red);
-		InCanvas->DrawShadowedString(X1V, InY, TEXT("VXGI WS:"), Font, FColor::White);
-		InCanvas->DrawShadowedString(X2, InY, *FString::Printf(TEXT("%3.2f ms"), VxgiWorldSpaceTime), Font, Color);
-		InY += RowHeight;
-		Color = VxgiScreenSpaceTime < 10.0f ? FColor::Green : (VxgiScreenSpaceTime < 25.0f ? FColor::Yellow : FColor::Red);
-		InCanvas->DrawShadowedString(X1V, InY, TEXT("VXGI SS:"), Font, FColor::White);
-		InCanvas->DrawShadowedString(X2, InY, *FString::Printf(TEXT("%3.2f ms"), VxgiScreenSpaceTime), Font, Color);
-		InY += RowHeight;
-	}
+		const bool bHaveVxgiData = (VxgiWorldSpaceTime > 0) || (VxgiScreenSpaceTime > 0);
+		if (bHaveVxgiData)
+		{
+			const int32 X1V = X2 - Font->GetStringSize(TEXT("VXGI WS: "));
+			FColor Color = VxgiWorldSpaceTime < 10.0f ? FColor::Green : (VxgiWorldSpaceTime < 25.0f ? FColor::Yellow : FColor::Red);
+			InCanvas->DrawShadowedString(X1V, InY, TEXT("VXGI WS:"), Font, FColor::White);
+			InCanvas->DrawShadowedString(X2, InY, *FString::Printf(TEXT("%3.2f ms"), VxgiWorldSpaceTime), Font, Color);
+			InY += RowHeight;
+			Color = VxgiScreenSpaceTime < 10.0f ? FColor::Green : (VxgiScreenSpaceTime < 25.0f ? FColor::Yellow : FColor::Red);
+			InCanvas->DrawShadowedString(X1V, InY, TEXT("VXGI SS:"), Font, FColor::White);
+			InCanvas->DrawShadowedString(X2, InY, *FString::Printf(TEXT("%3.2f ms"), VxgiScreenSpaceTime), Font, Color);
+			InY += RowHeight;
+		}
 #endif
-	// NVCHANGE_END: Add VXGI
+		// NVCHANGE_END: Add VXGI
+	}
 
 #if !UE_BUILD_SHIPPING
 	// Draw simple unit time graph

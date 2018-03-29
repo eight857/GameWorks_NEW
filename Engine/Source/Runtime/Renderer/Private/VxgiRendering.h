@@ -26,7 +26,7 @@ struct EVxgiVoxelizationPass
 class FVXGIVoxelizationNoLightMapPolicy : public FNoLightMapPolicy
 {
 public:
-	static bool ShouldCache(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType);
+	static bool ShouldCompilePermutation(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType);
 	static void ModifyCompilationEnvironment(EShaderPlatform Platform, const FMaterial* Material, FShaderCompilerEnvironment& OutEnvironment);
 
 	/** Initialization constructor. */
@@ -44,12 +44,13 @@ public:
 		const TCHAR* InSourceFilename,
 		const TCHAR* InFunctionName,
 		uint32 InFrequency,
+		int32 InTotalPermutationCount,
 		ConstructSerializedType InConstructSerializedRef,
 		ConstructCompiledType InConstructCompiledRef,
 		ModifyCompilationEnvironmentType InModifyCompilationEnvironmentRef,
-		ShouldCacheType InShouldCacheRef,
+		ShouldCompilePermutationType InShouldCompilePermutationRef,
 		GetStreamOutElementsType InGetStreamOutElementsRef
-	) : FGlobalShaderType(InName, InSourceFilename, InFunctionName, InFrequency, InConstructSerializedRef, InConstructCompiledRef, InModifyCompilationEnvironmentRef, InShouldCacheRef, InGetStreamOutElementsRef)
+	) : FGlobalShaderType(InName, InSourceFilename, InFunctionName, InFrequency, InTotalPermutationCount, InConstructSerializedRef, InConstructCompiledRef, InModifyCompilationEnvironmentRef, InShouldCompilePermutationRef, InGetStreamOutElementsRef)
 		, bHashInitialized(false)
 	{ }
 
@@ -67,12 +68,13 @@ public:
 		const TCHAR* InSourceFilename,
 		const TCHAR* InFunctionName,
 		uint32 InFrequency,
+		int32 InTotalPermutationCount,
 		ConstructSerializedType InConstructSerializedRef,
 		ConstructCompiledType InConstructCompiledRef,
 		ModifyCompilationEnvironmentType InModifyCompilationEnvironmentRef,
-		ShouldCacheType InShouldCacheRef,
+		ShouldCompilePermutationType InShouldCompilePermutationRef,
 		GetStreamOutElementsType InGetStreamOutElementsRef
-	) : FMeshMaterialShaderType(InName, InSourceFilename, InFunctionName, InFrequency, InConstructSerializedRef, InConstructCompiledRef, InModifyCompilationEnvironmentRef, InShouldCacheRef, InGetStreamOutElementsRef)
+	) : FMeshMaterialShaderType(InName, InSourceFilename, InFunctionName, InFrequency, InTotalPermutationCount, InConstructSerializedRef, InConstructCompiledRef, InModifyCompilationEnvironmentRef, InShouldCompilePermutationRef, InGetStreamOutElementsRef)
 		, bHashInitialized(false)
 	{ }
 
@@ -90,14 +92,14 @@ protected:
 	}
 
 public:
-	static bool ShouldCache(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType)
 	{
 		if (Platform != SP_PCD3D_SM5)
 		{
 			return false;
 		}
 
-		bool LightMapResult = LightMapPolicyType::ShouldCache(Platform, Material, VertexFactoryType);
+		bool LightMapResult = LightMapPolicyType::ShouldCompilePermutation(Platform, Material, VertexFactoryType);
 		bool MaterialResult = TVXGIVoxelizationDrawingPolicyFactory::IsMaterialVoxelized(Material);
 		return LightMapResult && MaterialResult;
 	}
@@ -474,7 +476,7 @@ public:
 	}
 	TVXGIVoxelizationShaderPermutationPS() {}
 
-	virtual const FPixelShaderRHIParamRef GetPixelShader() override
+	virtual const FPixelShaderRHIParamRef GetPixelShader() const override
 	{
 		//Store this here since our resource is null since we are not a real shader.
 		return MyShader;
@@ -501,7 +503,7 @@ public:
 		EmittanceVoxelizationParameters.SetMeshLocal(RHICmdList, MyShader);
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType)
 	{
 		return false;
 	}
@@ -637,10 +639,10 @@ protected:
 		FBaseHS(Initializer)
 	{}
 
-	static bool ShouldCache(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
 	{
-		return FBaseHS::ShouldCache(Platform, Material, VertexFactoryType) && Material->GetVxgiMaterialProperties().bVxgiAllowTesselationDuringVoxelization
-			&& TVXGIVoxelizationShader<LightMapPolicyType>::ShouldCache(Platform,Material,VertexFactoryType);
+		return FBaseHS::ShouldCompilePermutation(Platform, Material, VertexFactoryType) && Material->GetVxgiMaterialProperties().bVxgiAllowTesselationDuringVoxelization
+			&& TVXGIVoxelizationShader<LightMapPolicyType>::ShouldCompilePermutation(Platform,Material,VertexFactoryType);
 	}
 
 	static void ModifyCompilationEnvironment(EShaderPlatform Platform, const FMaterial* Material, FShaderCompilerEnvironment& OutEnvironment)
@@ -666,10 +668,10 @@ protected:
 	{
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
 	{
-		return FBaseDS::ShouldCache(Platform, Material, VertexFactoryType)  && Material->GetVxgiMaterialProperties().bVxgiAllowTesselationDuringVoxelization
-			&& TVXGIVoxelizationShader<LightMapPolicyType>::ShouldCache(Platform,Material,VertexFactoryType);
+		return FBaseDS::ShouldCompilePermutation(Platform, Material, VertexFactoryType)  && Material->GetVxgiMaterialProperties().bVxgiAllowTesselationDuringVoxelization
+			&& TVXGIVoxelizationShader<LightMapPolicyType>::ShouldCompilePermutation(Platform,Material,VertexFactoryType);
 	}
 
 	static void ModifyCompilationEnvironment(EShaderPlatform Platform, const FMaterial* Material, FShaderCompilerEnvironment& OutEnvironment)
@@ -739,11 +741,13 @@ public:
 			DomainShader = NULL;
 			MatInfo.geometryShader = VertexShader->GetVxgiUserDefinedShaderSet();
 		}
+
+		BaseVertexShader = VertexShader;
 	}
 
 	// FMeshDrawingPolicy interface.
 
-	FDrawingPolicyMatchResult Matches(const TVXGIVoxelizationDrawingPolicy& Other) const
+	FDrawingPolicyMatchResult Matches(const TVXGIVoxelizationDrawingPolicy& Other, bool bForReals = false) const
 	{
 		DRAWING_POLICY_MATCH_BEGIN
 			DRAWING_POLICY_MATCH(FMeshDrawingPolicy::Matches(Other)) &&
@@ -879,9 +883,9 @@ public:
 		RHIAllowTessellation(HullShader && DomainShader);
 	}
 
-	void DrawMesh(FRHICommandList& RHICmdList, const FMeshBatch& Mesh, int32 BatchElementIndex, const bool bIsInstancedStereo) const
+	void DrawMesh(FRHICommandList& RHICmdList, const FSceneView& View, const FMeshBatch& Mesh, int32 BatchElementIndex, const bool bIsInstancedStereo) const
 	{
-		FMeshDrawingPolicy::DrawMesh(RHICmdList, Mesh, BatchElementIndex, bIsInstancedStereo);
+		FMeshDrawingPolicy::DrawMesh(RHICmdList, View, Mesh, BatchElementIndex, bIsInstancedStereo);
 
 		RHIAllowTessellation(true); //turn it back on
 	}
@@ -967,13 +971,13 @@ public:
 
 	TVXGIConeTracingShaderPermutationPS() {}
 
-	virtual const FPixelShaderRHIParamRef GetPixelShader() override
+	virtual const FPixelShaderRHIParamRef GetPixelShader() const override
 	{
 		//Store this here since our resource is null since we are not a real shader.
 		return MyShader;
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType)
 	{
 		return false;
 	}
@@ -1039,7 +1043,7 @@ protected:
 	TVXGIConeTracingShaderPermutationPS<LightMapPolicyType>* ActualPermutationInUse;
 
 public:
-	static bool ShouldCache(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform, const FMaterial* Material, const FVertexFactoryType* VertexFactoryType)
 	{
 		if (Platform != SP_PCD3D_SM5)
 		{
@@ -1056,7 +1060,7 @@ public:
 			return false;
 		}
 
-		bool LightMapResult = LightMapPolicyType::ShouldCache(Platform, Material, VertexFactoryType);
+		bool LightMapResult = LightMapPolicyType::ShouldCompilePermutation(Platform, Material, VertexFactoryType);
 
 		return LightMapResult;
 	}
@@ -1094,12 +1098,11 @@ public:
 		const FMaterial& MaterialResource, 
 		const FViewInfo* View, 
 		EBlendMode BlendMode, 
-		bool bEnableEditorPrimitveDepthTest,
 		ESceneRenderTargetsMode::Type TextureMode,
 		bool bIsInstancedStereo,
 		bool bUseDownsampledTranslucencyViewUniformBuffer) override
 	{
-		ActualPermutationInUse->SetParameters(RHICmdList, MaterialRenderProxy, MaterialResource, View, BlendMode, bEnableEditorPrimitveDepthTest, TextureMode, bIsInstancedStereo, bUseDownsampledTranslucencyViewUniformBuffer);
+		ActualPermutationInUse->SetParameters(RHICmdList, MaterialRenderProxy, MaterialResource, View, BlendMode, TextureMode, bIsInstancedStereo, bUseDownsampledTranslucencyViewUniformBuffer);
 	}
 
 	virtual void SetMesh(
@@ -1126,7 +1129,7 @@ public:
 		UE_LOG(LogShaders, Log, TEXT("Compiling Material %s with VXGI cone tracing"), *Material->GetFriendlyName());
 	}
 
-	virtual const FPixelShaderRHIParamRef GetPixelShader() override
+	virtual const FPixelShaderRHIParamRef GetPixelShader() const override
 	{
 		return ActualPermutationInUse->MyShader;
 	}

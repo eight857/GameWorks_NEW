@@ -1069,7 +1069,7 @@ namespace NVRHI
 		}
 
 		FD3D12TextureBase* Texture = GetD3D12TextureFromRHITexture(t->TextureRHI);
-		FRHIShaderResourceView* View = new FD3D12ShaderResourceView(m_Device, &SRVDesc, &Texture->ResourceLocation);
+		FRHIShaderResourceView* View = new FD3D12ShaderResourceView(m_Device, SRVDesc, Texture->ResourceLocation);
 		t->ShaderResourceViews[key] = View;
 		return View;
 	}
@@ -1113,7 +1113,7 @@ namespace NVRHI
 		}
 
 		FD3D12TextureBase* Texture = GetD3D12TextureFromRHITexture(t->TextureRHI);
-		FRHIUnorderedAccessView* View = new FD3D12UnorderedAccessView(m_Device, &UAVDesc, &Texture->ResourceLocation); 
+		FRHIUnorderedAccessView* View = new FD3D12UnorderedAccessView(m_Device, UAVDesc, Texture->ResourceLocation); 
 		t->UnorderedAccessViews[key] = View;
 		return View;
 	}
@@ -1153,7 +1153,7 @@ namespace NVRHI
 		SRVDesc.Buffer.FirstElement = StructuredBuffer->ResourceLocation.GetOffsetFromBaseOfResource() / EffectiveStride;
 		SRVDesc.Buffer.NumElements = StructuredBuffer->ResourceLocation.GetSize() / EffectiveStride;
 
-		FRHIShaderResourceView* View = new FD3D12ShaderResourceView(m_Device, &SRVDesc, &StructuredBuffer->ResourceLocation, EffectiveStride);
+		FRHIShaderResourceView* View = new FD3D12ShaderResourceView(m_Device, SRVDesc, StructuredBuffer->ResourceLocation, EffectiveStride);
 		b->ShaderResourceView = View;
 		return View;
 	}
@@ -1189,7 +1189,7 @@ namespace NVRHI
 		UAVDesc.Buffer.FirstElement = StructuredBuffer->ResourceLocation.GetOffsetFromBaseOfResource() / EffectiveStride;
 		UAVDesc.Buffer.NumElements = StructuredBuffer->ResourceLocation.GetSize() / EffectiveStride;
 
-		FRHIUnorderedAccessView* View = new FD3D12UnorderedAccessView(m_Device, &UAVDesc, &StructuredBuffer->ResourceLocation);
+		FRHIUnorderedAccessView* View = new FD3D12UnorderedAccessView(m_Device, UAVDesc, StructuredBuffer->ResourceLocation);
 		b->UnorderedAccessView = View;
 		return View;
 	}

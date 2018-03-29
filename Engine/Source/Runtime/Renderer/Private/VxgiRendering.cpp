@@ -363,14 +363,14 @@ public:
 		}
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Params)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+		return IsFeatureLevelSupported(Params.Platform, ERHIFeatureLevel::SM5);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 
 		// A flag to D3D11ShaderCompiler that requests special processing
 		OutEnvironment.SetDefine(TEXT("VXGI_GBUFFER_ACCESS"), 1);
@@ -409,6 +409,7 @@ void FSceneRenderer::InitVxgiView()
 	ViewInitOptions.ViewRotationMatrix = *(FMatrix*)&ViewParams.viewMatrix;
 
 	VxgiView = new FViewInfo(ViewInitOptions);
+	VxgiView->ViewRect = ViewInitOptions.GetViewRect();
 
 	// Setup the prev matrices for particle system factories
 	VxgiView->PrevViewMatrices = VxgiView->ViewMatrices;
@@ -1394,7 +1395,7 @@ void FSceneRenderer::RenderVxgiVoxelizationPass(
 			}
 		}
 
-		View.SimpleElementCollector.DrawBatchedElements(RHICmdList, RenderState, View, FTexture2DRHIRef(), EBlendModeFilter::OpaqueAndMasked);
+		View.SimpleElementCollector.DrawBatchedElements(RHICmdList, RenderState, View, EBlendModeFilter::OpaqueAndMasked);
 
 		if (!View.Family->EngineShowFlags.CompositeEditorPrimitives)
 		{
@@ -1496,9 +1497,9 @@ class FAddVxgiDiffusePS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FAddVxgiDiffusePS, Global);
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Params)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+		return IsFeatureLevelSupported(Params.Platform, ERHIFeatureLevel::SM5);
 	}
 
 	/** Default constructor. */
@@ -1611,7 +1612,7 @@ void FSceneRenderer::CompositeVxgiDiffuseTracing(FRHICommandListImmediate& RHICm
 	}
 }
 
-bool FVXGIVoxelizationNoLightMapPolicy::ShouldCache(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
+bool FVXGIVoxelizationNoLightMapPolicy::ShouldCompilePermutation(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
 {
 	return true;
 }
@@ -1755,7 +1756,7 @@ bool TVXGIVoxelizationDrawingPolicyFactory::DrawDynamicMesh(
 	for (int32 BatchElementIndex = 0; BatchElementIndex < Mesh.Elements.Num(); BatchElementIndex++)
 	{
 		TDrawEvent<FRHICommandList> MeshEvent;
-		BeginMeshDrawEvent(RHICmdList, PrimitiveSceneProxy, Mesh, MeshEvent);
+		BeginMeshDrawEvent(RHICmdList, PrimitiveSceneProxy, Mesh, MeshEvent, EnumHasAnyFlags(EShowMaterialDrawEventTypes(GShowMaterialDrawEventTypes), EShowMaterialDrawEventTypes::VxgiVoxelization));
 
 		DrawingPolicy.SetMeshRenderState(
 			RHICmdList,
@@ -1768,7 +1769,7 @@ bool TVXGIVoxelizationDrawingPolicyFactory::DrawDynamicMesh(
 			typename TVXGIVoxelizationDrawingPolicy<FVXGIVoxelizationNoLightMapPolicy>::ContextDataType()
 		);
 
-		DrawingPolicy.DrawMesh(RHICmdList, Mesh, BatchElementIndex, false);
+		DrawingPolicy.DrawMesh(RHICmdList, View, Mesh, BatchElementIndex, false);
 	}
 
 	return true;

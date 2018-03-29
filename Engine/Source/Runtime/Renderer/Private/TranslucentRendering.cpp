@@ -516,7 +516,7 @@ public:
 						typename TBasePassDrawingPolicy<LightMapPolicyType>::ElementDataType(LightMapElementData),
 						typename TBasePassDrawingPolicy<LightMapPolicyType>::ContextDataType()
 					);
-					DrawingPolicy.DrawMesh(RHICmdList, Parameters.Mesh, BatchElementIndex);
+					DrawingPolicy.DrawMesh(RHICmdList, View, Parameters.Mesh, BatchElementIndex);
 				}
 
 				BatchElementMask >>= 1;

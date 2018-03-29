@@ -3204,7 +3204,7 @@ void FSceneRenderer::AllocateShadowDepthTargets(FRHICommandListImmediate& RHICmd
 				}
 				// NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI
-				const bool bNeedsShadowmapSetup = !bIsCapsuleShadow && (!ProjectedShadowInfo->bRayTracedDistanceField || LightSceneInfo->Proxy->CastVxgiIndirectLighting());
+				const bool bNeedsShadowmapSetup = !ProjectedShadowInfo->bCapsuleShadow && (!ProjectedShadowInfo->bRayTracedDistanceField || LightSceneInfo->Proxy->CastVxgiIndirectLighting());
 #else
 				const bool bNeedsShadowmapSetup = !ProjectedShadowInfo->bCapsuleShadow && !ProjectedShadowInfo->bRayTracedDistanceField;
 #endif
