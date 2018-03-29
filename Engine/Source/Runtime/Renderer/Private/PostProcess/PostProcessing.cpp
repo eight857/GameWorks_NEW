@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessing.cpp: The center for all post processing activities.
@@ -158,6 +158,12 @@ static TAutoConsoleVariable<int32> CVarMotionBlurSeparable(
 	TEXT("Adds a second motion blur pass that smooths noise for a higher quality blur."),
 	ECVF_RenderThreadSafe
 );
+
+static TAutoConsoleVariable<int32> CVarMotionBlurPreferCompute(
+	TEXT("r.MotionBlur.PreferCompute"),
+	0,
+	TEXT("Will use compute shaders for motion blur pass."),
+	ECVF_RenderThreadSafe);
 
 static TAutoConsoleVariable<int32> CVarAlphaChannel(
 	TEXT("r.PostProcessing.PropagateAlpha"),
@@ -490,9 +496,9 @@ static void AddPostProcessDepthOfFieldBokeh(FPostprocessContext& Context, FRende
 	if( Context.View.AntiAliasingMethod == AAM_TemporalAA && ViewState )
 	{
 		FRenderingCompositePass* HistoryInput;
-		if( ViewState->DOFHistoryRT && ViewState->bDOFHistory && !Context.View.bCameraCut )
+		if( ViewState->DOFHistory.IsValid() && ViewState->bDOFHistory && !Context.View.bCameraCut )
 		{
-			HistoryInput = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessInput( ViewState->DOFHistoryRT ) );
+			HistoryInput = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessInput( ViewState->DOFHistory.RT[0] ) );
 		}
 		else
 		{
@@ -500,11 +506,13 @@ static void AddPostProcessDepthOfFieldBokeh(FPostprocessContext& Context, FRende
 			HistoryInput = DOFSetup;
 		}
 
-		FRenderingCompositePass* NodeTemporalAA = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessDOFTemporalAA(bIsComputePass) );
+		FRenderingCompositePass* NodeTemporalAA = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessDOFTemporalAA(
+			ViewState->DOFHistory,
+			&ViewState->DOFHistory,
+			bIsComputePass) );
 		NodeTemporalAA->SetInput( ePId_Input0, DOFSetup );
 		NodeTemporalAA->SetInput( ePId_Input1, FRenderingCompositeOutputRef( HistoryInput ) );
-		NodeTemporalAA->SetInput( ePId_Input2, FRenderingCompositeOutputRef( HistoryInput ) );
-		NodeTemporalAA->SetInput( ePId_Input3, VelocityInput );
+		NodeTemporalAA->SetInput( ePId_Input2, VelocityInput );
 
 		DOFInputPass = NodeTemporalAA;
 		ViewState->bDOFHistory = true;
@@ -540,23 +548,24 @@ static bool AddPostProcessDepthOfFieldGaussian(FPostprocessContext& Context, FDe
 				// If no history use current as history
 				FRenderingCompositeOutputRef HistoryInput = DOFSetup;
 
-				TRefCountPtr<IPooledRenderTarget> DOFHistoryRT = bFarPass ? ViewState->DOFHistoryRT : ViewState->DOFHistoryRT2;
+				FTemporalAAHistory* DOFHistory = bFarPass ? &ViewState->DOFHistory : &ViewState->DOFHistory2;
 				bool& bDOFHistory = bFarPass ? ViewState->bDOFHistory : ViewState->bDOFHistory2;
 
-				if (DOFHistoryRT && !bDOFHistory && !Context.View.bCameraCut)
+				if (DOFHistory->IsValid() && !bDOFHistory && !Context.View.bCameraCut)
 				{
-					HistoryInput = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(DOFHistoryRT));
+					HistoryInput = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(DOFHistory->RT[0]));
 				}
 
 				const bool bIsComputePass = CVarPostProcessingPreferCompute.GetValueOnRenderThread() && Context.View.FeatureLevel >= ERHIFeatureLevel::SM5;
 				FRenderingCompositePass* NodeTemporalAA = bFarPass ?
-					(FRenderingCompositePass*)Context.Graph.RegisterPass(new (FMemStack::Get()) FRCPassPostProcessDOFTemporalAA(bIsComputePass)) :
-					(FRenderingCompositePass*)Context.Graph.RegisterPass(new (FMemStack::Get()) FRCPassPostProcessDOFTemporalAANear);
+					(FRenderingCompositePass*)Context.Graph.RegisterPass(new (FMemStack::Get()) FRCPassPostProcessDOFTemporalAA(
+						*DOFHistory, DOFHistory, bIsComputePass)) :
+					(FRenderingCompositePass*)Context.Graph.RegisterPass(new (FMemStack::Get()) FRCPassPostProcessDOFTemporalAANear(
+						*DOFHistory, DOFHistory));
 
 				NodeTemporalAA->SetInput(ePId_Input0, DOFSetup);
 				NodeTemporalAA->SetInput(ePId_Input1, HistoryInput);
-				NodeTemporalAA->SetInput(ePId_Input2, HistoryInput);
-				NodeTemporalAA->SetInput(ePId_Input3, VelocityInput);
+				NodeTemporalAA->SetInput(ePId_Input2, VelocityInput);
 
 				DOFInputPass = FRenderingCompositeOutputRef(NodeTemporalAA);
 				bDOFHistory = false;
@@ -639,7 +648,7 @@ static bool AddPostProcessDepthOfFieldGaussian(FPostprocessContext& Context, FDe
 	}
 }
 
-static void AddPostProcessDepthOfFieldCircle(FPostprocessContext& Context, FDepthOfFieldStats& Out, FRenderingCompositeOutputRef& VelocityInput)
+static void AddPostProcessDepthOfFieldCircle(FPostprocessContext& Context, const FRenderingCompositeOutputRef& VelocityInput)
 {
 	if(Context.View.Family->EngineShowFlags.VisualizeDOF)
 	{
@@ -658,9 +667,9 @@ static void AddPostProcessDepthOfFieldCircle(FPostprocessContext& Context, FDept
 	if( Context.View.AntiAliasingMethod == AAM_TemporalAA && ViewState )
 	{
 		FRenderingCompositePass* HistoryInput;
-		if( ViewState->DOFHistoryRT && !ViewState->bDOFHistory && !Context.View.bCameraCut )
+		if( ViewState->DOFHistory.IsValid() && !ViewState->bDOFHistory && !Context.View.bCameraCut )
 		{
-			HistoryInput = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessInput( ViewState->DOFHistoryRT ) );
+			HistoryInput = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessInput( ViewState->DOFHistory.RT[0] ) );
 		}
 		else
 		{
@@ -669,11 +678,13 @@ static void AddPostProcessDepthOfFieldCircle(FPostprocessContext& Context, FDept
 		}
 
 		const bool bIsComputePass = CVarPostProcessingPreferCompute.GetValueOnRenderThread() && Context.View.FeatureLevel >= ERHIFeatureLevel::SM5;
-		FRenderingCompositePass* NodeTemporalAA = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessDOFTemporalAA(bIsComputePass) );
+		FRenderingCompositePass* NodeTemporalAA = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessDOFTemporalAA(
+			ViewState->DOFHistory,
+			&ViewState->DOFHistory,
+			bIsComputePass) );
 		NodeTemporalAA->SetInput( ePId_Input0, DOFSetup );
 		NodeTemporalAA->SetInput( ePId_Input1, FRenderingCompositeOutputRef( HistoryInput ) );
-		NodeTemporalAA->SetInput( ePId_Input2, FRenderingCompositeOutputRef( HistoryInput ) );
-		NodeTemporalAA->SetInput( ePId_Input3, VelocityInput );
+		NodeTemporalAA->SetInput( ePId_Input2, VelocityInput );
 
 		ColorSetup = FRenderingCompositeOutputRef(NodeTemporalAA);
 		ViewState->bDOFHistory = false;
@@ -885,26 +896,27 @@ static FRenderingCompositeOutputRef AddBloom(FBloomDownSampleArray& BloomDownSam
 static void AddTemporalAA( FPostprocessContext& Context, FRenderingCompositeOutputRef& VelocityInput )
 {
 	check(VelocityInput.IsValid());
+	check(Context.View.ViewState);
 
-	FSceneViewState* ViewState = (FSceneViewState*)Context.View.State;
+	FSceneViewState* ViewState = Context.View.ViewState;
 
-	FRenderingCompositePass* HistoryInput;
-	if( ViewState && ViewState->TemporalAAHistoryRT && !Context.View.bCameraCut )
+	FRenderingCompositeOutputRef HistoryInput = Context.FinalOutput;
+	if (Context.View.PrevViewInfo.TemporalAAHistory.IsValid())
 	{
-		HistoryInput = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessInput( ViewState->TemporalAAHistoryRT ) );
-	}
-	else
-	{
-		// No history so use current as history
-		HistoryInput = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessInput( FSceneRenderTargets::Get(Context.RHICmdList).GetSceneColor() ) );
+		HistoryInput = Context.Graph.RegisterPass(
+			new(FMemStack::Get()) FRCPassPostProcessInput( Context.View.PrevViewInfo.TemporalAAHistory.RT[0] ) );
 	}
 
 	const bool bIsComputePass = CVarPostProcessingPreferCompute.GetValueOnRenderThread() && Context.View.FeatureLevel >= ERHIFeatureLevel::SM5;
-	FRenderingCompositePass* TemporalAAPass = Context.Graph.RegisterPass( new(FMemStack::Get()) FRCPassPostProcessTemporalAA(bIsComputePass) );
+	FRenderingCompositePass* TemporalAAPass = Context.Graph.RegisterPass(
+		new(FMemStack::Get()) FRCPassPostProcessTemporalAA(
+			Context,
+			Context.View.PrevViewInfo.TemporalAAHistory,
+			&ViewState->PendingPrevFrameViewInfo.TemporalAAHistory,
+			bIsComputePass));
 	TemporalAAPass->SetInput( ePId_Input0, Context.FinalOutput );
-	TemporalAAPass->SetInput( ePId_Input1, FRenderingCompositeOutputRef( HistoryInput ) );
-	TemporalAAPass->SetInput( ePId_Input2, FRenderingCompositeOutputRef( HistoryInput ) );
-	TemporalAAPass->SetInput( ePId_Input3, VelocityInput );
+	TemporalAAPass->SetInput( ePId_Input1, HistoryInput );
+	TemporalAAPass->SetInput( ePId_Input2, VelocityInput );
 	Context.FinalOutput = FRenderingCompositeOutputRef( TemporalAAPass );
 }
 
@@ -974,7 +986,7 @@ static FRenderingCompositePass* AddSinglePostProcessMaterial(FPostprocessContext
 	return 0;
 }
 
-// simplied version of AddPostProcessMaterial(), side effect free
+// simplied version of AddPostProcessMaterialChain(), side effect free
 static bool HasPostProcessMaterial(FPostprocessContext& Context, EBlendableLocation InLocation)
 {
 	if(!Context.View.Family->EngineShowFlags.PostProcessing || !Context.View.Family->EngineShowFlags.PostProcessMaterial)
@@ -1004,13 +1016,18 @@ static bool HasPostProcessMaterial(FPostprocessContext& Context, EBlendableLocat
 	return false;
 }
 
-static void AddPostProcessMaterial(FPostprocessContext& Context, EBlendableLocation InLocation, FRenderingCompositeOutputRef SeparateTranslucency, FRenderingCompositeOutputRef PreTonemapHDRColor = FRenderingCompositeOutputRef(), FRenderingCompositeOutputRef PostTonemapHDRColor = FRenderingCompositeOutputRef())
+static FRenderingCompositeOutputRef AddPostProcessMaterialChain(
+	FPostprocessContext& Context,
+	EBlendableLocation InLocation,
+	FRenderingCompositeOutputRef SeparateTranslucency = FRenderingCompositeOutputRef(),
+	FRenderingCompositeOutputRef PreTonemapHDRColor = FRenderingCompositeOutputRef(),
+	FRenderingCompositeOutputRef PostTonemapHDRColor = FRenderingCompositeOutputRef())
 {
 	if( !Context.View.Family->EngineShowFlags.PostProcessing ||
 		!Context.View.Family->EngineShowFlags.PostProcessMaterial ||
 		Context.View.Family->EngineShowFlags.VisualizeShadingModels)		// we should add more
 	{
-		return;
+		return Context.FinalOutput;
 	}
 
 	// hard coded - this should be a reasonable limit
@@ -1050,6 +1067,8 @@ static void AddPostProcessMaterial(FPostprocessContext& Context, EBlendableLocat
 
 	ERHIFeatureLevel::Type FeatureLevel = Context.View.GetFeatureLevel();
 
+	FRenderingCompositeOutputRef LastestOutput = Context.FinalOutput;
+
 	for(uint32 i = 0; i < PPNodeCount; ++i)
 	{
 		UMaterialInterface* MaterialInterface = PPNodes[i].GetMaterialInterface();
@@ -1069,7 +1088,7 @@ static void AddPostProcessMaterial(FPostprocessContext& Context, EBlendableLocat
 		}
 
 		FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessMaterial(MaterialInterface,FeatureLevel));
-		Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
+		Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(LastestOutput));
 
 		// We are binding separate translucency here because the post process SceneTexture node can reference 
 		// the separate translucency buffers through ePId_Input1. 
@@ -1083,8 +1102,10 @@ static void AddPostProcessMaterial(FPostprocessContext& Context, EBlendableLocat
 			Node->SetInput(ePId_Input3, PostTonemapHDRColor);
 		}
 
-		Context.FinalOutput = FRenderingCompositeOutputRef(Node);
+		LastestOutput = FRenderingCompositeOutputRef(Node);
 	}
+
+	return LastestOutput;
 }
 
 static void AddHighResScreenshotMask(FPostprocessContext& Context, FRenderingCompositeOutputRef& SeparateTranslucencyInput)
@@ -1256,7 +1277,41 @@ bool FPostProcessing::AllowFullPostProcessing(const FViewInfo& View, ERHIFeature
 		&& !View.Family->EngineShowFlags.VisualizeDistanceFieldGI
 		&& !View.Family->EngineShowFlags.VisualizeShadingModels
 		&& !View.Family->EngineShowFlags.VisualizeMeshDistanceFields
-		&& !View.Family->EngineShowFlags.VisualizeGlobalDistanceField;
+		&& !View.Family->EngineShowFlags.VisualizeGlobalDistanceField
+		&& !View.Family->EngineShowFlags.ShaderComplexity;
+}
+
+void FPostProcessing::RegisterHMDPostprocessPass(FPostprocessContext& Context, const FEngineShowFlags& EngineShowFlags) const
+{
+	if (EngineShowFlags.StereoRendering && EngineShowFlags.HMDDistortion)
+	{
+		check(GEngine && GEngine->XRSystem.IsValid());
+		FRenderingCompositePass* Node = nullptr;
+
+		const IHeadMountedDisplay* HMD = GEngine->XRSystem->GetHMDDevice();
+		checkf(HMD, TEXT("EngineShowFlags.HMDDistortion can not be true when IXRTrackingSystem::GetHMDDevice returns null"));
+
+		static const FName MorpheusName(TEXT("PSVR"));
+#if defined(MORPHEUS_ENGINE_DISTORTION) && MORPHEUS_ENGINE_DISTORTION
+		if (GEngine->XRSystem->GetSystemName() == MorpheusName)
+		{
+
+			FRCPassPostProcessMorpheus* MorpheusPass = new FRCPassPostProcessMorpheus();
+			MorpheusPass->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
+			Node = Context.Graph.RegisterPass(MorpheusPass);
+		}
+		else
+#endif
+		{
+			Node = Context.Graph.RegisterPass(new FRCPassPostProcessHMD());
+		}
+
+		if (Node)
+		{
+			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
+			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
+		}
+	}
 }
 
 void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewInfo& View, TRefCountPtr<IPooledRenderTarget>& VelocityRT)
@@ -1264,6 +1319,7 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 	QUICK_SCOPE_CYCLE_COUNTER( STAT_PostProcessing_Process );
 
 	check(IsInRenderingThread());
+	check(View.VerifyMembersChecks());
 
 	const auto FeatureLevel = View.GetFeatureLevel();
 
@@ -1311,8 +1367,6 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 		// in the following code some feature might set this to false
 		bool bAllowTonemapper = FeatureLevel >= ERHIFeatureLevel::SM4;
 		//
-		bool bStereoRenderingAndHMD = View.Family->EngineShowFlags.StereoRendering && View.Family->EngineShowFlags.HMDDistortion;
-		//
 		FRCPassPostProcessUpscale::PaniniParams PaniniConfig(View);
 		//
 		EStereoscopicPass StereoPass = View.StereoPass;
@@ -1329,16 +1383,6 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 #endif
 		// NVCHANGE_END: Add VXGI
 		FSceneViewState* ViewState = (FSceneViewState*)Context.View.State;
-		//
-		bool bDoScreenPercentage;
-		{
-			//
-			bool bHMDWantsUpscale = bStereoRenderingAndHMD && GEngine->XRSystem->GetHMDDevice()->NeedsUpscalePostProcessPass();
-			// Do not use upscale if SeparateRenderTarget is in use! (stereo rendering wants to control this)
-			bool bAllowScreenPercentage = bHMDWantsUpscale || !View.Family->EngineShowFlags.StereoRendering || (!View.Family->EngineShowFlags.HMDDistortion && !View.Family->bUseSeparateRenderTarget);
-			// is Upscale from a lower resolution needed and allowed
-			bDoScreenPercentage = bAllowScreenPercentage && (View.UnscaledViewRect != View.ViewRect);
-		}
 
 		{
 			if (FSceneRenderTargets::Get(RHICmdList).SeparateTranslucencyRT)
@@ -1373,6 +1417,8 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 		FRCPassPostProcessTonemap* Tonemapper = 0;
 
+		FRenderingCompositeOutputRef SSRInputChain;
+
 		// add the passes we want to add to the graph (commenting a line means the pass is not inserted into the graph) ---------
 
 		if (AllowFullPostProcessing(View, FeatureLevel))
@@ -1383,7 +1429,7 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				VelocityInput = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(VelocityRT));
 			}
 
-			AddPostProcessMaterial(Context, BL_BeforeTranslucency, SeparateTranslucency);
+			Context.FinalOutput = AddPostProcessMaterialChain(Context, BL_BeforeTranslucency, SeparateTranslucency);
 
 			static const auto CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.DepthOfFieldQuality"));
 			check(CVar)
@@ -1395,8 +1441,7 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 			if(bDepthOfField && View.FinalPostProcessSettings.DepthOfFieldMethod != DOFM_BokehDOF)
 			{
-				bool bCircleDOF = View.FinalPostProcessSettings.DepthOfFieldMethod == DOFM_CircleDOF;
-				if(!bCircleDOF)
+				if(View.FinalPostProcessSettings.DepthOfFieldMethod == DOFM_Gaussian)
 				{
 					if (FPostProcessing::HasAlphaChannelSupport())
 					{
@@ -1418,18 +1463,21 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				}
 				else
 				{
-					if(VelocityInput.IsValid())
+					FRenderingCompositeOutputRef DOFVelocityRef(VelocityInput);
+
+					if(!DOFVelocityRef.IsValid())
 					{
-						AddPostProcessDepthOfFieldCircle(Context, DepthOfFieldStat, VelocityInput);
+						FRenderingCompositePass* NoVelocity = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(GSystemTextures.BlackDummy));
+						DOFVelocityRef = FRenderingCompositeOutputRef(NoVelocity);
+					}
+					
+					if (View.FinalPostProcessSettings.DepthOfFieldMethod == DOFM_CircleDOF)
+					{
+						AddPostProcessDepthOfFieldCircle(Context, DOFVelocityRef);
 					}
 					else
 					{
-						// todo: black/white default is a compositing graph feature, no need to hook up a node
-
-						// black is how we clear the velocity buffer so this means no velocity
-						FRenderingCompositePass* NoVelocity = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(GSystemTextures.BlackDummy));
-						FRenderingCompositeOutputRef NoVelocityRef(NoVelocity);
-						AddPostProcessDepthOfFieldCircle(Context, DepthOfFieldStat, NoVelocityRef);
+						check(0);
 					}
 				}
 			}
@@ -1473,7 +1521,7 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				Context.FinalOutput = FRenderingCompositeOutputRef(NodeRecombined);
 			}
 
-			AddPostProcessMaterial(Context, BL_BeforeTonemapping, SeparateTranslucency);
+			Context.FinalOutput = AddPostProcessMaterialChain(Context, BL_BeforeTonemapping, SeparateTranslucency);
 
 			EAntiAliasingMethod AntiAliasingMethod = Context.View.AntiAliasingMethod;
 
@@ -1490,6 +1538,9 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 					FRenderingCompositeOutputRef NoVelocityRef(NoVelocity);
 					AddTemporalAA( Context, NoVelocityRef );
 				}
+
+
+				SSRInputChain = AddPostProcessMaterialChain(Context, BL_SSRInput);
 			}
 
 			if(IsMotionBlurEnabled(View) && VelocityInput.IsValid() && !bVisualizeMotionBlur)
@@ -1603,7 +1654,7 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 					bHistogramNeeded = true;
 				}
 
-				if (!GIsHighResScreenshot && bHistogramNeeded && FeatureLevel >= ERHIFeatureLevel::SM5 && StereoPass != eSSP_RIGHT_EYE)
+				if (!GIsHighResScreenshot && bHistogramNeeded && FeatureLevel >= ERHIFeatureLevel::SM5 && IStereoRendering::IsAPrimaryView(StereoPass))
 				{
 					FRenderingCompositePass* NodeHistogram = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessHistogram());
 
@@ -1627,8 +1678,8 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				if (Context.View.FinalPostProcessSettings.BloomThreshold <= -1 && Context.View.Family->Views.Num() == 1)
 				{
 					if (!GIsHighResScreenshot && View.State &&
-						(StereoPass != eSSP_RIGHT_EYE) &&
-						(AutoExposure.MethodId == EAutoExposureMethod::AEM_Basic))
+						IStereoRendering::IsAPrimaryView(StereoPass) &&
+						AutoExposure.MethodId == EAutoExposureMethod::AEM_Basic)
 					{
 						BloomAndEyeDownSamplesPtr = CreateDownSampleArray(Context, SceneColorHalfRes, true /*bGenerateLog2Alpha*/);
 					}
@@ -1636,10 +1687,10 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 			}
 
 			// some views don't have a state (thumbnail rendering)
-			if(!GIsHighResScreenshot && View.State && (StereoPass != eSSP_RIGHT_EYE))
+			if(!GIsHighResScreenshot && View.State && IStereoRendering::IsAPrimaryView(StereoPass))
 			{
 				
-				const bool bUseBasicEyeAdaptation = (AutoExposure.MethodId == EAutoExposureMethod::AEM_Basic);  
+				const bool bUseBasicEyeAdaptation = (AutoExposure.MethodId == EAutoExposureMethod::AEM_Basic);
 
 				if (bUseBasicEyeAdaptation) // log average ps reduction ( non histogram ) 
 				{
@@ -1834,8 +1885,14 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 			}
 		}
 		
+		// Whether Context.FinalOutput is already unscaled.
+		// If doing temporal upsampling, the final output is already unscaled in TAA pass.
+		bool bUnscaledFinalOutput = Context.View.PrimaryScreenPercentageMethod == EPrimaryScreenPercentageMethod::TemporalUpscale;
+
 		if(View.Family->EngineShowFlags.StationaryLightOverlap)
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("Should not unscale final output multiple times."));
+
 			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessVisualizeComplexity(GEngine->StationaryLightOverlapColors, FVisualizeComplexityApplyPS::CS_RAMP, 1.f, false));
 			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.SceneColor));
 			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
@@ -1844,6 +1901,8 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 		const EDebugViewShaderMode DebugViewShaderMode = View.Family->GetDebugViewShaderMode();
 		if(DebugViewShaderMode == DVSM_QuadComplexity)
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("Should not unscale final output multiple times."));
+
 			float ComplexityScale = 1.f / (float)(GEngine->QuadComplexityColors.Num() - 1) / NormalizedQuadComplexityValue; // .1f comes from the values used in LightAccumulator_GetResult
 			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessVisualizeComplexity(GEngine->QuadComplexityColors, FVisualizeComplexityApplyPS::CS_STAIR, ComplexityScale, true));
 			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
@@ -1852,6 +1911,8 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 		if(DebugViewShaderMode == DVSM_ShaderComplexity || DebugViewShaderMode == DVSM_ShaderComplexityContainedQuadOverhead || DebugViewShaderMode == DVSM_ShaderComplexityBleedingQuadOverhead)
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("Should not unscale final output multiple times."));
+
 			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessVisualizeComplexity(GEngine->ShaderComplexityColors, FVisualizeComplexityApplyPS::CS_RAMP, 1.f, true));
 			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
 			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
@@ -1859,6 +1920,8 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 		if (DebugViewShaderMode == DVSM_PrimitiveDistanceAccuracy || DebugViewShaderMode == DVSM_MeshUVDensityAccuracy || DebugViewShaderMode == DVSM_MaterialTextureScaleAccuracy ||DebugViewShaderMode == DVSM_RequiredTextureResolution)
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("Should not unscale final output multiple times."));
+
 			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessStreamingAccuracyLegend(GEngine->StreamingAccuracyColors));
 			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
 			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
@@ -1866,6 +1929,8 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 		if(View.Family->EngineShowFlags.VisualizeLightCulling) 
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("Should not unscale final output multiple times."));
+
 			float ComplexityScale = 1.f / (float)(GEngine->LightComplexityColors.Num() - 1) / .1f; // .1f comes from the values used in LightAccumulator_GetResult
 			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessVisualizeComplexity(GEngine->LightComplexityColors, FVisualizeComplexityApplyPS::CS_LINEAR,  ComplexityScale, false));
 			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.SceneColor));
@@ -1874,6 +1939,9 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 		if(View.Family->EngineShowFlags.VisualizeLPV && !View.Family->EngineShowFlags.VisualizeHDR)
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("Should not unscale final output multiple times."));
+			bUnscaledFinalOutput = true;
+
 			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessVisualizeLPV());
 			Node->SetInput(ePId_Input0, Context.FinalOutput);
 			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
@@ -1895,6 +1963,8 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 		// Composite editor primitives if we had any to draw and compositing is enabled
 		if (FSceneRenderer::ShouldCompositeEditorPrimitives(View) && !bVisualizeBloom)
 		{
+			//ensureMsgf(!bUnscaledFinalOutput, TEXT("Editor primitives should not be composited with already unscaled output."));
+
 			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessCompositeEditorPrimitives(true));
 			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
 			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
@@ -1902,6 +1972,8 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 #endif
 		if(View.Family->EngineShowFlags.VisualizeShadingModels && FeatureLevel >= ERHIFeatureLevel::SM4)
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("VisualizeShadingModels is incompatible with unscaled output."));
+
 			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessVisualizeShadingModels(RHICmdList));
 			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
 			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
@@ -1909,6 +1981,8 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 		if (View.Family->EngineShowFlags.GBufferHints && FeatureLevel >= ERHIFeatureLevel::SM4)
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("GBufferHints is incompatible with unscaled output."));
+
 			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessGBufferHints(RHICmdList));
 			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
 			// Ideally without lighting as we want the emissive, we should do that later.
@@ -1916,7 +1990,7 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
 		}
 		
-		AddPostProcessMaterial(Context, BL_AfterTonemapping, SeparateTranslucency, PreTonemapHDRColor, PostTonemapHDRColor);
+		Context.FinalOutput = AddPostProcessMaterialChain(Context, BL_AfterTonemapping, SeparateTranslucency, PreTonemapHDRColor, PostTonemapHDRColor);
 
 #if WITH_EDITOR
 		//Inspect the Final color, GBuffer and HDR
@@ -1935,11 +2009,15 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 		if(bVisualizeBloom)
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("VisualizeBloom is incompatible with unscaled output."));
+
 			AddVisualizeBloomOverlay(Context, PreTonemapHDRColor, BloomOutputCombined);
 		}
 
 		if (View.Family->EngineShowFlags.VisualizeSSS)
 		{
+			ensureMsgf(!bUnscaledFinalOutput, TEXT("VisualizeSSS is incompatible with unscaled output."));
+
 			// the setup pass also does visualization, based on EngineShowFlags.VisualizeSSS
 			FRenderingCompositePass* PassVisualize = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessSubsurfaceVisualize(RHICmdList));
 			PassVisualize->SetInput(ePId_Input0, Context.FinalOutput);
@@ -1948,30 +2026,7 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 		AddGBufferVisualizationOverview(Context, SeparateTranslucency, PreTonemapHDRColor, PostTonemapHDRColor);
 
-		if (bStereoRenderingAndHMD)
-		{
-			FRenderingCompositePass* Node = NULL;
-			const EHMDDeviceType::Type DeviceType = GEngine->XRSystem->GetHMDDevice() ? GEngine->XRSystem->GetHMDDevice()->GetHMDDeviceType() : EHMDDeviceType::DT_ES2GenericStereoMesh;
-			if((DeviceType == EHMDDeviceType::DT_OculusRift) || (DeviceType == EHMDDeviceType::DT_GoogleVR))
-			{
-				Node = Context.Graph.RegisterPass(new FRCPassPostProcessHMD());
-			}
-			else if(DeviceType == EHMDDeviceType::DT_Morpheus && GEngine->StereoRenderingDevice->IsStereoEnabled())
-			{
-				
-#if defined(MORPHEUS_ENGINE_DISTORTION) && MORPHEUS_ENGINE_DISTORTION
-				FRCPassPostProcessMorpheus* MorpheusPass = new FRCPassPostProcessMorpheus();
-				MorpheusPass->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
-				Node = Context.Graph.RegisterPass(MorpheusPass);
-#endif
-			}
-
-			if(Node)
-			{
-				Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
-				Context.FinalOutput = FRenderingCompositeOutputRef(Node);
-			}
-		}
+		RegisterHMDPostprocessPass(Context, View.Family->EngineShowFlags);
 
 		if(bVisualizeHDR)
 		{
@@ -1994,8 +2049,13 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 		AddHighResScreenshotMask(Context, SeparateTranslucency);
 
-		if(bDoScreenPercentage)
+		FIntPoint PrimaryUpscaleViewSize = Context.View.GetSecondaryViewRectSize();
+
+		// If the final output is still not unscaled, therefore add Upscale pass.
+		if ((!bUnscaledFinalOutput && View.PrimaryScreenPercentageMethod == EPrimaryScreenPercentageMethod::SpatialUpscale && View.ViewRect.Size() != PrimaryUpscaleViewSize) || PaniniConfig.IsEnabled())
 		{
+			bool bRequireUpscalePass = true;
+
 			// Check if we can save the Upscale pass and do it in the Tonemapper to save performance
 			if(Tonemapper && !PaniniConfig.IsEnabled() && !Tonemapper->bDoGammaOnly)
 			{
@@ -2018,13 +2078,13 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 					if (bCombineTonemapperAndUpsample)
 					{
 						Tonemapper->bDoScreenPercentageInTonemapper = true;
-						// the following pass is no longer needed
-						bDoScreenPercentage = false;
+						// the upscale pass is no longer needed.
+						bRequireUpscalePass = false;
 					}
 				}
 			}
 
-			if (PaniniConfig.IsEnabled() || bDoScreenPercentage)
+			if (PaniniConfig.IsEnabled() || bRequireUpscalePass)
 			{
 				int32 UpscaleQuality = CVarUpscaleQuality.GetValueOnRenderThread();
 				UpscaleQuality = FMath::Clamp(UpscaleQuality, 0, 5);
@@ -2033,6 +2093,18 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				Node->SetInput(ePId_Input1, FRenderingCompositeOutputRef(Context.FinalOutput)); // Point sampling.
 				Context.FinalOutput = FRenderingCompositeOutputRef(Node);
 			}
+		}
+
+		// Adds secondary upscale.
+		if (Context.View.RequiresSecondaryUpscale())
+		{
+			int32 UpscaleQuality = View.Family->SecondaryScreenPercentageMethod == ESecondaryScreenPercentageMethod::LowerPixelDensitySimulation ? 6 : 0;
+
+			FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessUpscale(
+				View, UpscaleQuality, FRCPassPostProcessUpscale::PaniniParams::Default, /* bIsSecondaryUpscale = */ true));
+			Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
+			Node->SetInput(ePId_Input1, FRenderingCompositeOutputRef(Context.FinalOutput));
+			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
 		}
 
 		// After the graph is built but before the graph is processed.
@@ -2089,8 +2161,17 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 			OverrideRenderTarget(Context.FinalOutput, Temp, Desc);
 
+			TArray<FRenderingCompositePass*> TargetedRoots;
+			TargetedRoots.Add(Context.FinalOutput.GetPass());
+
+			if (SSRInputChain.IsValid())
+			{
+				check(ViewState);
+				TargetedRoots.Add(SSRInputChain.GetPass());
+			}
+
 			// execute the graph/DAG
-			CompositeContext.Process(Context.FinalOutput.GetPass(), TEXT("PostProcessing"));
+			CompositeContext.Process(TargetedRoots, TEXT("PostProcessing"));
 
 			// May need to wait on the final pass to complete
 			if (Context.FinalOutput.IsAsyncComputePass())
@@ -2100,6 +2181,12 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				{
 					Context.RHICmdList.WaitComputeFence(ComputeFinalizeFence);
 				}
+			}
+
+			if (SSRInputChain.IsValid())
+			{
+				check(ViewState);
+				ViewState->PendingPrevFrameViewInfo.CustomSSRInput = SSRInputChain.GetOutput()->PooledRenderTarget;
 			}
 		}
 	}
@@ -2206,8 +2293,8 @@ void FPostProcessing::ProcessES2(FRHICommandListImmediate& RHICmdList, const FVi
 
 			if(bUsePost)
 			{
-				AddPostProcessMaterial(Context, BL_BeforeTranslucency, nullptr);
-				AddPostProcessMaterial(Context, BL_BeforeTonemapping, nullptr);
+				Context.FinalOutput = AddPostProcessMaterialChain(Context, BL_BeforeTranslucency, nullptr);
+				Context.FinalOutput = AddPostProcessMaterialChain(Context, BL_BeforeTonemapping, nullptr);
 						
 				// Skip this pass if the pass was done prior before resolve.
 				if ((!bUsedFramebufferFetch) && (bUseSun || bUseDof))
@@ -2464,7 +2551,7 @@ void FPostProcessing::ProcessES2(FRHICommandListImmediate& RHICmdList, const FVi
 
 
 		static const auto VarTonemapperUpscale = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.MobileTonemapperUpscale"));
-		bool bDisableUpscaleInTonemapper = Context.View.Family->bUseSeparateRenderTarget || IsMobileHDRMosaic() || !VarTonemapperUpscale || VarTonemapperUpscale->GetValueOnRenderThread() == 0;
+		bool bDisableUpscaleInTonemapper = IsMobileHDRMosaic() || !VarTonemapperUpscale || VarTonemapperUpscale->GetValueOnRenderThread() == 0;
 
 		bool* DoScreenPercentageInTonemapperPtr = nullptr;
 		if (bUseTonemapperFilm)
@@ -2494,13 +2581,7 @@ void FPostProcessing::ProcessES2(FRHICommandListImmediate& RHICmdList, const FVi
 		{
 			if (IsMobileHDR() && !IsMobileHDRMosaic())
 			{
-				AddPostProcessMaterial(Context, BL_AfterTonemapping, nullptr);
-
-				// Tonemapper is not the final pass so if we may need to use a separate upscale pass
-				if (Context.FinalOutput.GetPass() != TonemapperPass)
-				{
-					bDisableUpscaleInTonemapper = true;
-				}
+				Context.FinalOutput = AddPostProcessMaterialChain(Context, BL_AfterTonemapping, nullptr);
 			}
 
 			if (bUseAa)
@@ -2554,7 +2635,7 @@ void FPostProcessing::ProcessES2(FRHICommandListImmediate& RHICmdList, const FVi
 		// Apply ScreenPercentage
 		if (View.UnscaledViewRect != View.ViewRect)
 		{
-			if (bDisableUpscaleInTonemapper)
+			if (bDisableUpscaleInTonemapper || Context.FinalOutput.GetPass() != TonemapperPass)
 			{
 				FRenderingCompositePass* Node = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessUpscaleES2(View));
 				Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput)); // Bilinear sampling.
@@ -2573,7 +2654,6 @@ void FPostProcessing::ProcessES2(FRHICommandListImmediate& RHICmdList, const FVi
 			*DoScreenPercentageInTonemapperPtr = false;
 		}
 
-
 		const EDebugViewShaderMode DebugViewShaderMode = View.Family->GetDebugViewShaderMode();
 		if(DebugViewShaderMode == DVSM_QuadComplexity)
 		{
@@ -2591,22 +2671,7 @@ void FPostProcessing::ProcessES2(FRHICommandListImmediate& RHICmdList, const FVi
 			Context.FinalOutput = FRenderingCompositeOutputRef(Node);
 		}
 
-		bool bStereoRenderingAndHMD = View.Family->EngineShowFlags.StereoRendering && View.Family->EngineShowFlags.HMDDistortion;
-		if (bStereoRenderingAndHMD)
-		{
-			FRenderingCompositePass* Node = NULL;
-			const EHMDDeviceType::Type DeviceType = GEngine->XRSystem->GetHMDDevice() ? GEngine->XRSystem->GetHMDDevice()->GetHMDDeviceType() : EHMDDeviceType::DT_ES2GenericStereoMesh;
-			if (DeviceType == EHMDDeviceType::DT_ES2GenericStereoMesh)
-			{
-				Node = Context.Graph.RegisterPass(new FRCPassPostProcessHMD());
-			}
-
-			if (Node)
-			{
-				Node->SetInput(ePId_Input0, FRenderingCompositeOutputRef(Context.FinalOutput));
-				Context.FinalOutput = FRenderingCompositeOutputRef(Node);
-			}
-		}
+		RegisterHMDPostprocessPass(Context, View.Family->EngineShowFlags);
 
 		// The graph setup should be finished before this line ----------------------------------------
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 ActorFactory.cpp: 
@@ -567,7 +567,7 @@ void UActorFactoryDeferredDecal::PostSpawnActor(UObject* Asset, AActor* NewActor
 
 		DecalComponent->UnregisterComponent();
 
-		DecalComponent->DecalMaterial = Material;
+		DecalComponent->SetDecalMaterial(Material);
 
 		// Init Component
 		DecalComponent->RegisterComponent();
@@ -592,7 +592,7 @@ void UActorFactoryDeferredDecal::PostCreateBlueprint( UObject* Asset, AActor* CD
 			}
 
 			check(DecalComponent);
-			DecalComponent->DecalMaterial = Material;
+			DecalComponent->SetDecalMaterial(Material);
 		}
 	}
 }

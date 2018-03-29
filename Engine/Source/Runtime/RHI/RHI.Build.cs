@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System;
@@ -28,8 +28,10 @@ public class RHI : ModuleRules
             }
             // NVCHANGE_END: Add HBAO+
 
-            // UEBuildAndroid.cs adds VulkanRHI for Android builds if it is enabled
-            if ((Target.Platform == UnrealTargetPlatform.Win32) || (Target.Platform == UnrealTargetPlatform.Win64))
+			if (Target.Type != TargetRules.TargetType.Server)   // Dedicated servers should skip loading everything but NullDrv
+			{
+				// UEBuildAndroid.cs adds VulkanRHI for Android builds if it is enabled
+				if ((Target.Platform == UnrealTargetPlatform.Win32) || (Target.Platform == UnrealTargetPlatform.Win64))
 			{
 				DynamicallyLoadedModuleNames.Add("D3D11RHI");
 
@@ -51,6 +53,7 @@ public class RHI : ModuleRules
 			{
 				DynamicallyLoadedModuleNames.Add("OpenGLDrv");
 			}
+        }
         }
 
 		if (Target.Configuration != UnrealTargetConfiguration.Shipping)

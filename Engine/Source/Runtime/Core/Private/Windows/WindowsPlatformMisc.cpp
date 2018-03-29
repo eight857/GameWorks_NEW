@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Windows/WindowsPlatformMisc.h"
 #include "Misc/DateTime.h"
@@ -87,109 +87,6 @@ static TAutoConsoleVariable<int32> CVarDriverDetectionMethod(
 	TEXT("  4: Use Windows functions, use the one names like the DirectX Device (newest, most promising)"),
 	ECVF_RenderThreadSafe);
 
-typedef HRESULT(STDAPICALLTYPE *GetDpiForMonitorProc)(HMONITOR Monitor, int32 DPIType, uint32 *DPIX, uint32 *DPIY);
-CORE_API GetDpiForMonitorProc GetDpiForMonitor = nullptr;
-
-namespace
-{
-	/**
-	 * According to MSDN GetVersionEx without special targeting works to 6.2
-	 * version only. To retrive proper version for later version we can check
-	 * version of system libraries e.g. kernel32.dll.
-	 */
-	int32 GetWindowsGT62Versions(bool bIsWorkstation, FString& out_OSVersionLabel)
-	{
-		const int BufferSize = 256;
-		TCHAR Buffer[BufferSize];
-		
-		if (!GetSystemDirectory(Buffer, BufferSize))
-		{
-			return (int32)FWindowsOSVersionHelper::ERROR_GETWINDOWSGT62VERSIONS_FAILED;
-		}
-
-		FString SystemDir(Buffer);
-		FString KernelPath = FPaths::Combine(*SystemDir, TEXT("kernel32.dll"));
-
-		DWORD Size = GetFileVersionInfoSize(*KernelPath, nullptr);
-
-		if (Size <= 0)
-		{
-			return (int32)FWindowsOSVersionHelper::ERROR_GETWINDOWSGT62VERSIONS_FAILED;
-		}
-
-		TArray<uint8> VerBlock;
-		VerBlock.Reserve(Size);
-
-		if (!GetFileVersionInfo(*KernelPath, 0, Size, VerBlock.GetData()))
-		{
-			return (int32)FWindowsOSVersionHelper::ERROR_GETWINDOWSGT62VERSIONS_FAILED;
-		}
-
-		VS_FIXEDFILEINFO* FileInfo = nullptr;
-		uint32 Len;
-
-		if (!VerQueryValue(VerBlock.GetData(), TEXT("\\"), (void **)&FileInfo, &Len))
-		{
-			return (int32)FWindowsOSVersionHelper::ERROR_GETWINDOWSGT62VERSIONS_FAILED;
-		}
-
-		int Major = FileInfo->dwProductVersionMS >> 16;
-		int Minor = FileInfo->dwProductVersionMS & 0xFFFF;
-
-		switch (Major)
-		{
-		case 6:
-			switch (Minor)
-			{
-			case 3:
-				if (bIsWorkstation)
-				{
-					out_OSVersionLabel = TEXT("Windows 8.1");
-				}
-				else
-				{
-					out_OSVersionLabel = TEXT("Windows Server 2012 R2");
-				}
-				break;
-			case 2:
-				if (bIsWorkstation)
-				{
-					out_OSVersionLabel = TEXT("Windows 8");
-				}
-				else
-				{
-					out_OSVersionLabel = TEXT("Windows Server 2012");
-				}
-				break;
-			default:
-				return (int32)FWindowsOSVersionHelper::ERROR_UNKNOWNVERSION;
-			}
-			break;
-		case 10:
-			switch (Minor)
-			{
-			case 0:
-				if (bIsWorkstation)
-				{
-					out_OSVersionLabel = TEXT("Windows 10");
-				}
-				else
-				{
-					out_OSVersionLabel = TEXT("Windows Server Technical Preview");
-				}
-				break;
-			default:
-				return (int32)FWindowsOSVersionHelper::ERROR_UNKNOWNVERSION;
-			}
-			break;
-		default:
-			return (int32)FWindowsOSVersionHelper::ERROR_UNKNOWNVERSION;
-		}
-
-		return (int32)FWindowsOSVersionHelper::SUCCEEDED;
-	}
-}
-
 int32 FWindowsOSVersionHelper::GetOSVersions( FString& out_OSVersionLabel, FString& out_OSSubVersionLabel )
 {
 	int32 ErrorCode = (int32)SUCCEEDED;
@@ -217,65 +114,65 @@ int32 FWindowsOSVersionHelper::GetOSVersions( FString& out_OSVersionLabel, FStri
 	{
 		bool bIsInvalidVersion = false;
 
-		switch( OsVersionInfo.dwMajorVersion )
+		switch (OsVersionInfo.dwMajorVersion)
 		{
 			case 5:
-				switch( OsVersionInfo.dwMinorVersion )
+			switch (OsVersionInfo.dwMinorVersion)
 				{
 					case 0:
-						out_OSVersionLabel = TEXT( "Windows 2000" );
-						if( OsVersionInfo.wProductType == VER_NT_WORKSTATION )
+				out_OSVersionLabel = TEXT("Windows 2000");
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
 						{
-							out_OSSubVersionLabel = TEXT( "Professional" );
+					out_OSSubVersionLabel = TEXT("Professional");
 						}
 						else
 						{
-							if( OsVersionInfo.wSuiteMask & VER_SUITE_DATACENTER )
+					if (OsVersionInfo.wSuiteMask & VER_SUITE_DATACENTER)
 							{
-								out_OSSubVersionLabel = TEXT( "Datacenter Server" );
+						out_OSSubVersionLabel = TEXT("Datacenter Server");
 							}
-							else if( OsVersionInfo.wSuiteMask & VER_SUITE_ENTERPRISE )
+					else if (OsVersionInfo.wSuiteMask & VER_SUITE_ENTERPRISE)
 							{
-								out_OSSubVersionLabel = TEXT( "Advanced Server" );
+						out_OSSubVersionLabel = TEXT("Advanced Server");
 							}
 							else
 							{
-								out_OSSubVersionLabel = TEXT( "Server" );
+						out_OSSubVersionLabel = TEXT("Server");
 							}
 						}
 						break;
 					case 1:
-						out_OSVersionLabel = TEXT( "Windows XP" );
-						if( OsVersionInfo.wSuiteMask & VER_SUITE_PERSONAL )
+				out_OSVersionLabel = TEXT("Windows XP");
+				if (OsVersionInfo.wSuiteMask & VER_SUITE_PERSONAL)
 						{
-							out_OSSubVersionLabel = TEXT( "Home Edition" );
+					out_OSSubVersionLabel = TEXT("Home Edition");
 						}
 						else
 						{
-							out_OSSubVersionLabel = TEXT( "Professional" );
+					out_OSSubVersionLabel = TEXT("Professional");
 						}
 						break;
 					case 2:
-						if( GetSystemMetrics( SM_SERVERR2 ) )
+				if (GetSystemMetrics(SM_SERVERR2))
 						{
-							out_OSVersionLabel = TEXT( "Windows Server 2003 R2" );
+					out_OSVersionLabel = TEXT("Windows Server 2003 R2");
 						}
-						else if( OsVersionInfo.wSuiteMask & VER_SUITE_STORAGE_SERVER )
+				else if (OsVersionInfo.wSuiteMask & VER_SUITE_STORAGE_SERVER)
 						{
-							out_OSVersionLabel = TEXT( "Windows Storage Server 2003" );
+					out_OSVersionLabel = TEXT("Windows Storage Server 2003");
 						}
-						else if( OsVersionInfo.wSuiteMask & VER_SUITE_WH_SERVER )
+				else if (OsVersionInfo.wSuiteMask & VER_SUITE_WH_SERVER)
 						{
-							out_OSVersionLabel = TEXT( "Windows Home Server" );
+					out_OSVersionLabel = TEXT("Windows Home Server");
 						}
-						else if( OsVersionInfo.wProductType == VER_NT_WORKSTATION && SystemInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 )
+				else if (OsVersionInfo.wProductType == VER_NT_WORKSTATION && SystemInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64)
 						{
-							out_OSVersionLabel = TEXT( "Windows XP" );
-							out_OSSubVersionLabel = TEXT( "Professional x64 Edition" );
+					out_OSVersionLabel = TEXT("Windows XP");
+					out_OSSubVersionLabel = TEXT("Professional x64 Edition");
 						}
 						else
 						{
-							out_OSVersionLabel = TEXT( "Windows Server 2003" );
+					out_OSVersionLabel = TEXT("Windows Server 2003");
 						}
 						break;
 					default:
@@ -283,35 +180,77 @@ int32 FWindowsOSVersionHelper::GetOSVersions( FString& out_OSVersionLabel, FStri
 				}
 				break;
 			case 6:
-				switch( OsVersionInfo.dwMinorVersion )
+			switch (OsVersionInfo.dwMinorVersion)
 				{
 					case 0:
-						if( OsVersionInfo.wProductType == VER_NT_WORKSTATION )
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
 						{
-							out_OSVersionLabel = TEXT( "Windows Vista" );
+					out_OSVersionLabel = TEXT("Windows Vista");
 						}
 						else
 						{
-							out_OSVersionLabel = TEXT( "Windows Server 2008" );
+					out_OSVersionLabel = TEXT("Windows Server 2008");
 						}
 						break;
 					case 1:
-						if( OsVersionInfo.wProductType == VER_NT_WORKSTATION )
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
 						{
-							out_OSVersionLabel = TEXT( "Windows 7" );
+					out_OSVersionLabel = TEXT("Windows 7");
 						}
 						else
 						{
-							out_OSVersionLabel = TEXT( "Windows Server 2008 R2" );
+					out_OSVersionLabel = TEXT("Windows Server 2008 R2");
 						}
 						break;
 					case 2:
-						ErrorCode |= GetWindowsGT62Versions(OsVersionInfo.wProductType == VER_NT_WORKSTATION, out_OSVersionLabel);
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
+				{
+					out_OSVersionLabel = TEXT("Windows 8");
+				}
+				else
+				{
+					out_OSVersionLabel = TEXT("Windows Server 2012");
+				}
 						break;
+			case 3:
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
+				{
+					out_OSVersionLabel = TEXT("Windows 8.1");
+				}
+				else
+				{
+					out_OSVersionLabel = TEXT("Windows Server 2012 R2");
+				}
+				break;
 					default:
 						ErrorCode |= (int32)ERROR_UNKNOWNVERSION;
+				break;
 				}
+			break;
+		case 10:
+			switch (OsVersionInfo.dwMinorVersion)
+			{
+			case 0:
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
+				{
+					out_OSVersionLabel = TEXT("Windows 10");
+				}
+				else
+				{
+					out_OSVersionLabel = TEXT("Windows Server Technical Preview");
+				}
+				break;
+			default:
+				ErrorCode |= (int32)ERROR_UNKNOWNVERSION;
+				break;
+			}
+			break;
+		default:
+			ErrorCode |= ERROR_UNKNOWNVERSION;
+			break;
+		}
 
+		if(OsVersionInfo.dwMajorVersion >= 6)
 			{
 #pragma warning( push )
 #pragma warning( disable: 4191 )	// unsafe conversion from 'type of expression' to 'type required'
@@ -387,10 +326,6 @@ int32 FWindowsOSVersionHelper::GetOSVersions( FString& out_OSVersionLabel, FStri
 					ErrorCode |= (int32)ERROR_GETPRODUCTINFO_FAILED;
 				}
 			}
-				break;
-			default:
-				ErrorCode |= ERROR_UNKNOWNVERSION;
-		}
 
 #if 0
 		// THIS BIT ADDS THE SERVICE PACK INFO TO THE EDITION STRING
@@ -466,7 +401,7 @@ _purecall_handler DefaultPureCallHandler;
 static void PureCallHandler()
 {
 	static bool bHasAlreadyBeenCalled = false;
-	FPlatformMisc::DebugBreak();
+	UE_DEBUG_BREAK();
 	if( bHasAlreadyBeenCalled )
 	{
 		// Call system handler if we're double faulting.
@@ -556,67 +491,6 @@ static void SetProcessMemoryLimit( SIZE_T ProcessMemoryLimitMB )
 	const BOOL bSetJob = ::SetInformationJobObject(JobObject,JobObjectExtendedLimitInformation,&JobLimitInfo,sizeof(JobLimitInfo));
 
 	const BOOL bAssign = ::AssignProcessToJobObject(JobObject, GetCurrentProcess());
-}
-
-void FWindowsPlatformMisc::SetHighDPIMode()
-{
-	if (!FParse::Param(FCommandLine::Get(), TEXT("nohighdpi")))
-	{
-		if (void* ShCoreDll = FPlatformProcess::GetDllHandle(TEXT("shcore.dll")))
-		{
-			typedef enum _PROCESS_DPI_AWARENESS {
-				PROCESS_DPI_UNAWARE = 0,
-				PROCESS_SYSTEM_DPI_AWARE = 1,
-				PROCESS_PER_MONITOR_DPI_AWARE = 2
-			} PROCESS_DPI_AWARENESS;
-
-			typedef HRESULT(STDAPICALLTYPE *SetProcessDpiAwarenessProc)(PROCESS_DPI_AWARENESS Value);
-			SetProcessDpiAwarenessProc SetProcessDpiAwareness = (SetProcessDpiAwarenessProc)FPlatformProcess::GetDllExport(ShCoreDll, TEXT("SetProcessDpiAwareness"));
-			GetDpiForMonitor = (GetDpiForMonitorProc)FPlatformProcess::GetDllExport(ShCoreDll, TEXT("GetDpiForMonitor"));
-
-			typedef HRESULT(STDAPICALLTYPE *GetProcessDpiAwarenessProc)(HANDLE hProcess, PROCESS_DPI_AWARENESS* Value);
-			GetProcessDpiAwarenessProc GetProcessDpiAwareness = (GetProcessDpiAwarenessProc)FPlatformProcess::GetDllExport(ShCoreDll, TEXT("GetProcessDpiAwareness"));
-
-			if (SetProcessDpiAwareness && GetProcessDpiAwareness && !IsRunningCommandlet() && !FApp::IsUnattended())
-			{
-				PROCESS_DPI_AWARENESS CurrentAwareness = PROCESS_DPI_UNAWARE;
-
-				GetProcessDpiAwareness(nullptr, &CurrentAwareness);
-
-				if(CurrentAwareness != PROCESS_PER_MONITOR_DPI_AWARE)
-				{
-					UE_LOG(LogInit, Log, TEXT("Setting process to per monitor DPI aware"));
-					HRESULT Hr = SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE); // PROCESS_PER_MONITOR_DPI_AWARE_VALUE
-					// We dont care about this warning if we are in any kind of headless mode
-					if (Hr != S_OK)
-					{
-						UE_LOG(LogInit, Warning, TEXT("SetProcessDpiAwareness failed.  Error code %x"), Hr);
-			}
-		}
-			}
-
-			FPlatformProcess::FreeDllHandle(ShCoreDll);
-		}
-		else if (void* User32Dll = FPlatformProcess::GetDllHandle(TEXT("user32.dll")))
-		{
-			typedef BOOL(WINAPI *SetProcessDpiAwareProc)(void);
-			SetProcessDpiAwareProc SetProcessDpiAware = (SetProcessDpiAwareProc)FPlatformProcess::GetDllExport(User32Dll, TEXT("SetProcessDPIAware"));
-
-			if (SetProcessDpiAware && !IsRunningCommandlet() && !FApp::IsUnattended())
-			{
-				UE_LOG(LogInit, Log, TEXT("Setting process to DPI aware"));
-
-				BOOL Result = SetProcessDpiAware();
-				if (Result == 0)
-	{
-					UE_LOG(LogInit, Warning, TEXT("SetProcessDpiAware failed"));
-			}
-		}
-
-			FPlatformProcess::FreeDllHandle(User32Dll);
-		}
-	}
-
 }
 
 void FWindowsPlatformMisc::PlatformPreInit()
@@ -954,6 +828,11 @@ bool FWindowsPlatformMisc::IsDebuggerPresent()
 	return !GIgnoreDebugger && !!::IsDebuggerPresent();
 }
 #endif // UE_BUILD_SHIPPING
+
+bool FWindowsPlatformMisc::IsRemoteSession()
+{
+	return ::GetSystemMetrics(SM_REMOTESESSION) != 0;
+}
 
 void FWindowsPlatformMisc::SetUTF8Output()
 {
@@ -1741,6 +1620,29 @@ int32 FWindowsPlatformMisc::NumberOfCoresIncludingHyperthreads()
 		CoreCount = (int32)SI.dwNumberOfProcessors;
 	}
 	return CoreCount;
+}
+
+int32 FWindowsPlatformMisc::NumberOfWorkerThreadsToSpawn()
+{
+	static int32 MaxServerWorkerThreads = 4;
+	static int32 MaxWorkerThreads = 26;
+
+	int32 NumberOfCores = FWindowsPlatformMisc::NumberOfCores();
+	int32 NumberOfCoresIncludingHyperthreads = FWindowsPlatformMisc::NumberOfCoresIncludingHyperthreads();
+	int32 NumberOfThreads = 0;
+
+	if (NumberOfCoresIncludingHyperthreads > NumberOfCores)
+	{
+		NumberOfThreads = NumberOfCoresIncludingHyperthreads - 2;
+	}
+	else
+	{
+		NumberOfThreads = NumberOfCores - 1;
+	}
+
+	int32 MaxWorkerThreadsWanted = IsRunningDedicatedServer() ? MaxServerWorkerThreads : MaxWorkerThreads;
+	// need to spawn at least one worker thread (see FTaskGraphImplementation)
+	return FMath::Max(FMath::Min(NumberOfThreads, MaxWorkerThreadsWanted), 1);
 }
 
 bool FWindowsPlatformMisc::OsExecute(const TCHAR* CommandType, const TCHAR* Command, const TCHAR* CommandLine)

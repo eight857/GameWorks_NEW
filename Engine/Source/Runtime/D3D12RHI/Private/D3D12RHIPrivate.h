@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D12RHIPrivate.h: Private D3D RHI definitions.
@@ -182,6 +182,9 @@ struct FD3D12UpdateTexture3DData
 	FD3D12ResourceLocation* UploadHeapResourceLocation;
 	bool bComputeShaderCopy;
 };
+
+/** Forward declare the context for the AMD AGS utility library. */
+struct AGSContext;
 
 /** The interface which is implemented by the dynamically bound RHI. */
 class FD3D12DynamicRHI : public FDynamicRHI
@@ -383,7 +386,7 @@ public:
 	template<class BufferType>
 	void UnlockBuffer(FRHICommandListImmediate* RHICmdList, BufferType* Buffer);
 
-	inline bool ShouldDeferBufferLockOperation(FRHICommandList* RHICmdList)
+	static inline bool ShouldDeferBufferLockOperation(FRHICommandList* RHICmdList)
 	{
 		if (RHICmdList == nullptr)
 		{
@@ -854,7 +857,7 @@ public:
 		if (HelperThreadDynamicHeapAllocator == nullptr)
 		{
 			uint32 NextIndex = FPlatformAtomics::InterlockedIncrement(&NumThreadDynamicHeapAllocators) - 1;
-			check(NextIndex < _countof(ThreadDynamicHeapAllocatorArray));
+			check(NextIndex < (uint32)ThreadDynamicHeapAllocatorArray.Num());
 			HelperThreadDynamicHeapAllocator = new FD3D12FastAllocator(Device, Node, D3D12_HEAP_TYPE_UPLOAD, AsyncTexturePoolSize);
 
 			ThreadDynamicHeapAllocatorArray[NextIndex] = HelperThreadDynamicHeapAllocator;
@@ -863,7 +866,7 @@ public:
 		return *HelperThreadDynamicHeapAllocator;
 	}
 
-	FD3D12FastAllocator* ThreadDynamicHeapAllocatorArray[16];
+	TArray<FD3D12FastAllocator*> ThreadDynamicHeapAllocatorArray;
 	int32 NumThreadDynamicHeapAllocators;
 	static __declspec(thread) FD3D12FastAllocator* HelperThreadDynamicHeapAllocator;
 
@@ -877,12 +880,21 @@ public:
 	FD3D12Adapter& GetAdapter(uint32_t Index = 0) { return *ChosenAdapters[Index]; }
 	int32 GetNumAdapters() const { return ChosenAdapters.Num(); }
 
+	AGSContext* GetAmdAgsContext() { return AmdAgsContext; }
+
 protected:
 
 	TArray<FD3D12Adapter*> ChosenAdapters;
 
 	/** The feature level of the device. */
 	D3D_FEATURE_LEVEL FeatureLevel;
+
+	/**
+	 * The context for the AMD AGS utility library.
+	 * AGSContext does not implement AddRef/Release.
+	 * Just use a bare pointer.
+	 */
+	AGSContext* AmdAgsContext;
 
 	/** A buffer in system memory containing all zeroes of the specified size. */
 	void* ZeroBuffer;
@@ -925,6 +937,8 @@ protected:
 	{
 		return GetAdapter().GetDevice();
 	}
+
+	HANDLE FlipEvent;
 };
 
 /** Implements the D3D12RHI module as a dynamic RHI providing module. */

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RHI.h: Render Hardware Interface definitions.
@@ -11,6 +11,10 @@
 #include "RHIDefinitions.h"
 #include "Containers/StaticArray.h"
 
+#ifndef RHI_COMMAND_LIST_DEBUG_TRACES
+#define RHI_COMMAND_LIST_DEBUG_TRACES 0
+#endif
+
 // NVCHANGE_BEGIN: Add HBAO+
 #ifndef WITH_GFSDK_SSAO
 #define WITH_GFSDK_SSAO 0
@@ -20,7 +24,6 @@
 #endif
 // NVCHANGE_END: Add HBAO+
 
-#define INVALID_FENCE_ID (0xffffffffffffffffull)
 
 class FResourceArrayInterface;
 class FResourceBulkDataInterface;
@@ -88,6 +91,15 @@ extern RHI_API bool GSupportsRenderDepthTargetableShaderResources;
 /** true if the RHI supports binding depth as a texture when testing against depth */
 extern RHI_API bool GSupportsDepthFetchDuringDepthTest;
 
+// The maximum feature level and shader platform available on this system
+// GRHIFeatureLevel and GRHIShaderPlatform have been deprecated. There is no longer a current featurelevel/shaderplatform that
+// should be used for all rendering, rather a specific set for each view.
+extern RHI_API ERHIFeatureLevel::Type GMaxRHIFeatureLevel;
+extern RHI_API EShaderPlatform GMaxRHIShaderPlatform;
+
+/** true if the RHI supports SRVs */
+extern RHI_API bool GSupportsResourceView;
+
 /** 
  * only set if RHI has the information (after init of the RHI and only if RHI has that information, never changes after that)
  * e.g. "NVIDIA GeForce GTX 670"
@@ -129,23 +141,23 @@ RHI_API bool RHIGetPreviewFeatureLevel(ERHIFeatureLevel::Type& PreviewFeatureLev
 inline bool RHISupportsInstancedStereo(const EShaderPlatform Platform)
 {
 	// Only D3D SM5, PS4 and Metal SM5 supports Instanced Stereo
-	return (Platform == EShaderPlatform::SP_PCD3D_SM5 || Platform == EShaderPlatform::SP_PS4 || Platform == EShaderPlatform::SP_METAL_SM5);
+	return (Platform == EShaderPlatform::SP_PCD3D_SM5 || Platform == EShaderPlatform::SP_PS4 || Platform == EShaderPlatform::SP_METAL_SM5 || Platform == EShaderPlatform::SP_METAL_SM5_NOTESS);
 }
 
 inline bool RHISupportsMultiView(const EShaderPlatform Platform)
 {
 	// Only PS4 and Metal SM5 from 10.13 onward supports Multi-View
-	return (Platform == EShaderPlatform::SP_PS4) || (Platform == EShaderPlatform::SP_METAL_SM5 && RHIGetShaderLanguageVersion(Platform) >= 3);
+	return (Platform == EShaderPlatform::SP_PS4) || ((Platform == EShaderPlatform::SP_METAL_SM5 || Platform == SP_METAL_SM5_NOTESS) && RHIGetShaderLanguageVersion(Platform) >= 3);
 }
 
 inline bool RHISupportsMSAA(EShaderPlatform Platform)
 {
-	return Platform != SP_PS4
+	return 
 		//@todo-rco: Fix when iOS OpenGL supports MSAA
-		&& Platform != SP_OPENGL_ES2_IOS
-		// @todo marksatt Metal on macOS 10.12 and earlier (or Intel on any macOS) don't reliably support our MSAA usage & custom resolve.
+		Platform != SP_OPENGL_ES2_IOS
+		// @todo marksatt Metal on macOS 10.12 and earlier (or Intel on any macOS < 10.13.2) don't reliably support our MSAA usage & custom resolve.
 #if PLATFORM_MAC
-		&& IsMetalPlatform(Platform) && !IsRHIDeviceIntel() && (FPlatformMisc::MacOSXVersionCompare(10, 13, 0) >= 0)
+		&& IsMetalPlatform(Platform) && (FPlatformMisc::MacOSXVersionCompare(10, 13, 0) >= 0) && (!IsRHIDeviceIntel() || FPlatformMisc::MacOSXVersionCompare(10, 13, 2) >= 0)
 #endif
 		// @todo marksatt iOS Desktop Forward needs more work internally
 		&& Platform != SP_METAL_MRT;
@@ -155,6 +167,13 @@ inline bool RHISupportsMSAA(EShaderPlatform Platform)
 inline bool RHISupportsVolumeTextures(ERHIFeatureLevel::Type FeatureLevel)
 {
 	return FeatureLevel >= ERHIFeatureLevel::SM4;
+}
+
+/** Whether Manual Vertex Fetch is supported for the specified shader platform.
+    Shader Platform must not use the mobile renderer, and for Metal, the shader lanugage must be at least 2. */
+inline bool RHISupportsManualVertexFetch(EShaderPlatform InShaderPlatform)
+{
+	return !IsMobilePlatform(InShaderPlatform) && (!IsMetalPlatform(InShaderPlatform) || RHIGetShaderLanguageVersion(InShaderPlatform) >= 2);
 }
 
 // Wrapper for GRHI## global variables, allows values to be overridden for mobile preview modes.
@@ -225,6 +244,12 @@ extern RHI_API bool GSupportsShaderDepthStencilFetch;
 /** true if RQT_AbsoluteTime is supported by RHICreateRenderQuery */
 extern RHI_API bool GSupportsTimestampRenderQueries;
 
+/** true if RQT_AbsoluteTime is supported by RHICreateRenderQuery */
+extern RHI_API bool GRHISupportsGPUTimestampBubblesRemoval;
+
+/** true if RHIGetGPUFrameCycles removes CPu generated bubbles. */
+extern RHI_API bool GRHISupportsFrameCyclesBubblesRemoval;
+
 /** true if the GPU supports hidden surface removal in hardware. */
 extern RHI_API bool GHardwareHiddenSurfaceRemoval;
 
@@ -257,9 +282,6 @@ extern RHI_API bool GSupportsMobileMultiView;
 
 /** true if the RHI supports image external */
 extern RHI_API bool GSupportsImageExternal;
-
-/** true if the RHI supports SRVs */
-extern RHI_API bool GSupportsResourceView;
 
 /** true if the RHI supports MRT */
 extern RHI_API TRHIGlobal<bool> GSupportsMultipleRenderTargets;
@@ -392,8 +414,8 @@ extern RHI_API bool GRHISupportsResolveCubemapFaces;
 /** Whether or not the RHI can handle a non-zero FirstInstance - extra SetStreamSource calls will be needed if this is false */
 extern RHI_API bool GRHISupportsFirstInstance;
 
-/** Whether or not the engine should set the BackBuffer as a render target early in the frame. */
-extern RHI_API bool GRHIRequiresEarlyBackBufferRenderTarget;
+/** Whether or not the RHI can handle dynamic resolution or not. */
+extern RHI_API bool GRHISupportsDynamicResolution;
 
 /** Whether or not the RHI supports an RHI thread.
 Requirements for RHI thread
@@ -422,6 +444,9 @@ extern RHI_API bool GRHISupportsHDROutput;
 
 /** Format used for the backbuffer when outputting to a HDR display. */
 extern RHI_API EPixelFormat GRHIHDRDisplayOutputFormat;
+
+/** Counter incremented once on each frame present. Used to support game thread synchronization with swap chain frame flips. */
+extern RHI_API uint64 GRHIPresentCounter;
 
 /** Called once per frame only from within an RHI. */
 extern RHI_API void RHIPrivateBeginFrame();
@@ -457,11 +482,6 @@ extern RHI_API void GetFeatureLevelName(ERHIFeatureLevel::Type InFeatureLevel, F
 /** Creates an FName for the given feature level. */
 extern RHI_API void GetFeatureLevelName(ERHIFeatureLevel::Type InFeatureLevel, FName& OutName);
 
-// The maximum feature level and shader platform available on this system
-// GRHIFeatureLevel and GRHIShaderPlatform have been deprecated. There is no longer a current featurelevel/shaderplatform that
-// should be used for all rendering, rather a specific set for each view.
-extern RHI_API ERHIFeatureLevel::Type GMaxRHIFeatureLevel;
-extern RHI_API EShaderPlatform GMaxRHIShaderPlatform;
 
 /** Table for finding out which shader platform corresponds to a given feature level for this RHI. */
 extern RHI_API EShaderPlatform GShaderPlatformForFeatureLevel[ERHIFeatureLevel::Num];
@@ -666,7 +686,7 @@ struct FSamplerStateInitializerRHI
 		ESamplerAddressMode InAddressU = AM_Wrap,
 		ESamplerAddressMode InAddressV = AM_Wrap,
 		ESamplerAddressMode InAddressW = AM_Wrap,
-		int32 InMipBias = 0,
+		float InMipBias = 0,
 		int32 InMaxAnisotropy = 0,
 		float InMinMipLevel = 0,
 		float InMaxMipLevel = FLT_MAX,
@@ -690,7 +710,7 @@ struct FSamplerStateInitializerRHI
 	TEnumAsByte<ESamplerAddressMode> AddressU;
 	TEnumAsByte<ESamplerAddressMode> AddressV;
 	TEnumAsByte<ESamplerAddressMode> AddressW;
-	int32 MipBias;
+	float MipBias;
 	/** Smallest mip map level that will be used, where 0 is the highest resolution mip level. */
 	float MinMipLevel;
 	/** Largest mip map level that will be used, where 0 is the highest resolution mip level. */
