@@ -569,6 +569,8 @@ public:
 				{
 					SkeletalMesh->Materials.Add(meshes[i]->SkeletalMesh->Materials[mat]);
 					SkeletalMesh->Materials.Last().MaterialInterface = inmats[mat];
+					SkeletalMesh->Materials.Last().ImportedMaterialSlotName = inmats[mat]->GetFName();
+					SkeletalMesh->Materials.Last().MaterialSlotName = inmats[mat]->GetFName();
 					materialMapping[i][mat] = SkeletalMesh->Materials.Num() - 1;
 				}
 				else
@@ -578,6 +580,8 @@ public:
 					{
 						SkeletalMesh->Materials.Add(meshes[i]->SkeletalMesh->Materials[mat]);
 						SkeletalMesh->Materials.Last().MaterialInterface = inmats[mat];
+						SkeletalMesh->Materials.Last().ImportedMaterialSlotName = inmats[mat]->GetFName();
+						SkeletalMesh->Materials.Last().MaterialSlotName = inmats[mat]->GetFName();
 						materialMapping[i][mat] = SkeletalMesh->Materials.Num() - 1;
 						materialToIndex.Add(inmats[mat], materialMapping[i][mat]);
 					}
