@@ -2087,6 +2087,16 @@ FSceneRenderer::~FSceneRenderer()
 
 	// Manually release references to TRefCountPtrs that are allocated on the mem stack, which doesn't call dtors
 	SortedShadowsForShadowDepthPass.Release();
+
+	// NVCHANGE_BEGIN: Add VXGI
+#if WITH_GFSDK_VXGI
+	if (VxgiView)
+	{
+		delete VxgiView;
+		VxgiView = nullptr;
+	}
+#endif
+	// NVCHANGE_END: Add VXGI
 }
 
 /** 

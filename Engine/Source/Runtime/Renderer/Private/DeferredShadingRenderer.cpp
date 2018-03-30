@@ -1563,12 +1563,6 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 
 	GDynamicRHI->RHIVXGISetCommandList(nullptr);
 	GDynamicRHI->RHIVXGIReleaseUnmanagedTextures();
-
-	if (VxgiView)
-	{
-		delete VxgiView;
-		VxgiView = nullptr;
-	}
 #endif
 	// NVCHANGE_END: Add VXGI
 }
