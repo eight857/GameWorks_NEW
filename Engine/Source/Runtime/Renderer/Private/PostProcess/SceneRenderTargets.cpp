@@ -1902,6 +1902,17 @@ void FSceneRenderTargets::AllocateCommonDepthTargets(FRHICommandList& RHICmdList
 		SceneStencilSRV = RHICreateShaderResourceView((FTexture2DRHIRef&)SceneDepthZ->GetRenderTargetItem().TargetableTexture, 0, 1, PF_X24_G8);
 	}
 
+	// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+	if (!HBAOSceneDepthDualLayer)
+	{
+		// Create a texture with same size and format with sceneDepthZ to store first layer of basePass
+		FPooledRenderTargetDesc Desc(SceneDepthZ->GetDesc());
+		GRenderTargetPool.FindFreeElement(RHICmdList, Desc, HBAOSceneDepthDualLayer, TEXT("HBAOSceneDepthDualLayer"));
+	}
+#endif
+	// NVCHANGE_END: Add HBAO+
+
 	// When targeting DX Feature Level 10, create an auxiliary texture to store the resolved scene depth, and a render-targetable surface to hold the unresolved scene depth.
 	if (!AuxiliarySceneDepthZ && !GSupportsDepthFetchDuringDepthTest)
 	{
@@ -2308,6 +2319,12 @@ void FSceneRenderTargets::ReleaseAllTargets()
 	PrevSceneDepthZ.SafeRelease();
 #endif
 	// NVCHANGE_END: Add VXGI
+	// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+	HBAOSceneDepthDualLayer.SafeRelease();
+#endif
+	// NVCHANGE_END: Add HBAO+
+
 
 	for (int32 i = 0; i < ARRAY_COUNT(ReflectionColorScratchCubemap); i++)
 	{

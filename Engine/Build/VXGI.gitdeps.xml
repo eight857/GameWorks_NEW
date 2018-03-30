@@ -4,10 +4,10 @@
     <File Name="CornellBoxLightingModes.png" Hash="ef7b33aeaa58716f50bba20811a3b1244003ca7c" />
     <File Name="Documentation/VXGI/UE4_VXGI_Overview.pdf" Hash="b2e416f7ea7b6f5593a3caedf515b33f3096a89c" />
     <File Name="Documentation/VXGI/UE4_VXGI_Overview.pptx" Hash="b04dde815bb939400cdcad69b9a1743bdf5cee5f" />
-    <File Name="Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/GFSDK_SSAO_D3D11.win32.dll" Hash="627ef5ff5b2e21e913f33e6bf624a8074b54f83a" />
-    <File Name="Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/GFSDK_SSAO_D3D11.win64.dll" Hash="889cc588a3a964d791243a68b277515b993a1377" />
-    <File Name="Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/GFSDK_SSAO_D3D12.win32.dll" Hash="4b37fd4f1067e990bc4f05d539375753eaa1dc57" />
-    <File Name="Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/GFSDK_SSAO_D3D12.win64.dll" Hash="17b9fd0018808c28d4bf7a5855e280401dfb96f6" />
+    <File Name="Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/GFSDK_SSAO_D3D11.win32.dll" Hash="4d81963e435c474e31569ff389d62c872bc39674" />
+    <File Name="Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/GFSDK_SSAO_D3D11.win64.dll" Hash="9bbcf06932e1338a21cb6decb9e05f47c93bd228" />
+    <File Name="Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/GFSDK_SSAO_D3D12.win32.dll" Hash="f006e6f47f40fb2254abcaf1e755365559e5d87e" />
+    <File Name="Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/GFSDK_SSAO_D3D12.win64.dll" Hash="4de7122d8615bc5e1aabf95eb3ab36b79b890520" />
     <File Name="Engine/Binaries/ThirdParty/GameWorks/VXGI/D3DCompiler_47.dll" Hash="c7843ea284748e0afb9e74e2c67e00d6e6cf01aa" />
     <File Name="Engine/Binaries/ThirdParty/GameWorks/VXGI/GFSDK_VXGI_x64.dll" Hash="383e60082e762722f85a0c9a73c1112a6771ccc7" />
     <File Name="Engine/Binaries/ThirdParty/GameWorks/VXGI/GFSDK_VXGI_x64.pdb" Hash="621c7cead1e2bc46b33aaf0a769a0f9ddd1b5e7d" />
@@ -15,10 +15,10 @@
     <File Name="Engine/Content/BufferVisualization/VxgiAreaLightSpecular.uasset" Hash="f8acadc84ef2ecba9f5a107ed307a4041cee3b7c" />
     <File Name="Engine/Content/BufferVisualization/VxgiDiffuse.uasset" Hash="ff80382bf3ddde6ae2760398548e47d16ef5bf29" />
     <File Name="Engine/Content/BufferVisualization/VxgiSpecular.uasset" Hash="3d582a4ddec671c705645b02e360ccf0df1f38a5" />
-    <File Name="Engine/Source/ThirdParty/GameWorks/GFSDK_SSAO/lib/GFSDK_SSAO_D3D11.win32.lib" Hash="a17750aad7564ba583ec76c77525c31b26c08253" />
-    <File Name="Engine/Source/ThirdParty/GameWorks/GFSDK_SSAO/lib/GFSDK_SSAO_D3D11.win64.lib" Hash="6e47bc8cd59887099a858942ac0b178564afbf01" />
-    <File Name="Engine/Source/ThirdParty/GameWorks/GFSDK_SSAO/lib/GFSDK_SSAO_D3D12.win32.lib" Hash="fad5a1dceb38cf4b964f394fbe3c3d005bf75cf9" />
-    <File Name="Engine/Source/ThirdParty/GameWorks/GFSDK_SSAO/lib/GFSDK_SSAO_D3D12.win64.lib" Hash="1f2f3ae5bb9cb6e87d7c92dc2adcbbdc2d78a2fa" />
+    <File Name="Engine/Source/ThirdParty/GameWorks/GFSDK_SSAO/lib/GFSDK_SSAO_D3D11.win32.lib" Hash="9aaa59504a886105d80f3d63965a5f360d547b6a" />
+    <File Name="Engine/Source/ThirdParty/GameWorks/GFSDK_SSAO/lib/GFSDK_SSAO_D3D11.win64.lib" Hash="d72686c0f413c82bbd171ad3b5eb7ade43af18f9" />
+    <File Name="Engine/Source/ThirdParty/GameWorks/GFSDK_SSAO/lib/GFSDK_SSAO_D3D12.win32.lib" Hash="1c6fa4fd2640f73e82a44f78470b59d4494ec869" />
+    <File Name="Engine/Source/ThirdParty/GameWorks/GFSDK_SSAO/lib/GFSDK_SSAO_D3D12.win64.lib" Hash="3c63dce86a53e1b5a830aba5e0ece5d60e699967" />
     <File Name="Engine/Source/ThirdParty/GameWorks/VXGI/lib/x64/GFSDK_VXGI_x64.lib" Hash="fe6e635be0bfeaa50a7e61c8900409f9176e1fea" />
     <File Name="Samples/UserContent/CornellBox/Content/Blueprints/CustomGameMode.uasset" Hash="22d6f26dee16e8d5b9068a6fa50dd4b8ff31d50f" />
     <File Name="Samples/UserContent/CornellBox/Content/Blueprints/CustomPawn.uasset" Hash="35212fa2ec8d70dc810a9e98f468d6c122f018fe" />
@@ -1258,6 +1258,14 @@
     <Blob Hash="ff2d12151dc30099561e6dfe73dc8f72f6e5eae2" Size="87547" PackHash="6bd6dd82ddc58a928f9b25cb7e3471b4b9c06706" PackOffset="5137161" />
     <Blob Hash="ff51eabfff83c6295ab23cc9812153b4d6386497" Size="456" PackHash="85be8fa3035af0541438005d4b1e4d16b9cdd705" PackOffset="12315904" />
     <Blob Hash="ff80382bf3ddde6ae2760398548e47d16ef5bf29" Size="73531" PackHash="6bd6dd82ddc58a928f9b25cb7e3471b4b9c06706" PackOffset="5712037" />
+    <Blob Hash="1c6fa4fd2640f73e82a44f78470b59d4494ec869" Size="2328" PackHash="d4d17bbfe6a488d360cf189a2ea4c7000694b6b1" PackOffset="959496" />
+    <Blob Hash="3c63dce86a53e1b5a830aba5e0ece5d60e699967" Size="2326" PackHash="61f271a8c361066fdf9e24197d7fc094b23c972b" PackOffset="1039368" />
+    <Blob Hash="4d81963e435c474e31569ff389d62c872bc39674" Size="1039360" PackHash="61f271a8c361066fdf9e24197d7fc094b23c972b" PackOffset="8" />
+    <Blob Hash="4de7122d8615bc5e1aabf95eb3ab36b79b890520" Size="1065984" PackHash="463ae3f27e73fc0655bb309a4838c588f75941e8" PackOffset="8" />
+    <Blob Hash="9aaa59504a886105d80f3d63965a5f360d547b6a" Size="2328" PackHash="d4d17bbfe6a488d360cf189a2ea4c7000694b6b1" PackOffset="961824" />
+    <Blob Hash="9bbcf06932e1338a21cb6decb9e05f47c93bd228" Size="1181696" PackHash="11c1a5de13598afc395527668ddc4b2ffca57f9f" PackOffset="8" />
+    <Blob Hash="d72686c0f413c82bbd171ad3b5eb7ade43af18f9" Size="2326" PackHash="d4d17bbfe6a488d360cf189a2ea4c7000694b6b1" PackOffset="964152" />
+    <Blob Hash="f006e6f47f40fb2254abcaf1e755365559e5d87e" Size="959488" PackHash="d4d17bbfe6a488d360cf189a2ea4c7000694b6b1" PackOffset="8" />
   </Blobs>
   <Packs>
     <Pack Hash="00d70d89d2b0655b7efca0caf61fd8b12019ffd1" Size="15198724" CompressedSize="15200758" RemotePath="VXGI" />
@@ -1312,5 +1320,9 @@
     <Pack Hash="f4292175366f3db60e3dbc36d2e209c9f3b5118b" Size="12192080" CompressedSize="12191096" RemotePath="VXGI" />
     <Pack Hash="f4e51f15a1535332ba07065c059c535ffb8d76a4" Size="11145224" CompressedSize="2530478" RemotePath="VXGI" />
     <Pack Hash="f5d33cf34bd61b651c45416cd1c0770f60959871" Size="15312063" CompressedSize="10748512" RemotePath="VXGI" />
+    <Pack Hash="11c1a5de13598afc395527668ddc4b2ffca57f9f" Size="1181704" CompressedSize="238553" RemotePath="VXGI" />
+    <Pack Hash="463ae3f27e73fc0655bb309a4838c588f75941e8" Size="1065992" CompressedSize="212090" RemotePath="VXGI" />
+    <Pack Hash="61f271a8c361066fdf9e24197d7fc094b23c972b" Size="1041694" CompressedSize="197215" RemotePath="VXGI" />
+    <Pack Hash="d4d17bbfe6a488d360cf189a2ea4c7000694b6b1" Size="966478" CompressedSize="184902" RemotePath="VXGI" />
   </Packs>
 </DependencyManifest>

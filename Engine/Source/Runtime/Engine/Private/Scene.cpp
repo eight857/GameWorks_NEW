@@ -505,6 +505,8 @@ FPostProcessSettings::FPostProcessSettings()
 		HBAOSmallScaleAO = 1.f;
 		HBAOBlurRadius = AOBR_BlurRadius2;
 		HBAOBlurSharpness = 16.f;
+		HBAOMaxViewDepth = 9500.f;
+		HBAODepthSharpness = 50.0f;
 		HBAOForegroundAOEnable = false;
 		HBAOForegroundAODistance = 100.f;
 		HBAOBackgroundAOEnable = false;

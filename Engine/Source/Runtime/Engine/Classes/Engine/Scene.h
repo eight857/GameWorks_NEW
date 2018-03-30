@@ -919,6 +919,11 @@ struct FPostProcessSettings
 
 	UPROPERTY(BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault))
 	uint32 bOverride_HBAOBlurSharpness : 1;
+	UPROPERTY(BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault))
+ 	uint32 bOverride_HBAOMaxViewDepth : 1;
+
+	UPROPERTY(BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault))
+	uint32 bOverride_HBAODepthSharpness : 1;
 
 	UPROPERTY(BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault))
 	uint32 bOverride_HBAOForegroundAOEnable : 1;
@@ -1624,6 +1629,15 @@ struct FPostProcessSettings
 	/** 0..32 the larger, the more the HBAO blur preserves edges */
 	UPROPERTY(interp, BlueprintReadWrite, Category = "HBAO+", meta = (ClampMin = "0.0", UIMax = "32.0", editcondition = "bOverride_HBAOBlurSharpness", DisplayName = "Blur Sharpness"))
 	float HBAOBlurSharpness;
+
+	/** depth threshold max view depth */
+	UPROPERTY(interp, BlueprintReadWrite, Category = "HBAO+", meta = (ClampMin = "0.0", UIMax = "400.0", editcondition = "bOverride_HBAOMaxViewDepth", DisplayName = "Max Depth"))
+	float HBAOMaxViewDepth;
+
+	/** depth threshold sharpness in edge */
+	UPROPERTY(interp, BlueprintReadWrite, Category = "HBAO+", meta = (ClampMin = "0.0", UIMax = "100.0", editcondition = "bOverride_HBAODepthSharpness", DisplayName = "Depth Sharpness"))
+	float HBAODepthSharpness;
+
 
 	/** Enables clamping of AO radius for foreground objects */
 	UPROPERTY(interp, BlueprintReadWrite, Category = "HBAO+", meta = (editcondition = "bOverride_HBAOForegroundAOEnable", DisplayName = "Clamp Foreground AO"))

@@ -1770,6 +1770,7 @@ struct FRHICommandUpdateTextureReference final : public FRHICommand<FRHICommandU
 struct FRHICommandRenderHBAO final : public FRHICommand<FRHICommandRenderHBAO>
 {
 	FTextureRHIParamRef SceneDepthTextureRHI;
+	FTextureRHIParamRef SceneDepthTextureRHI2ndLayer;
 	FMatrix ProjectionMatrix;
 	FTextureRHIParamRef SceneNormalTextureRHI;
 	FMatrix ViewMatrix;
@@ -1778,6 +1779,7 @@ struct FRHICommandRenderHBAO final : public FRHICommand<FRHICommandRenderHBAO>
 
 	FORCEINLINE_DEBUGGABLE FRHICommandRenderHBAO(
 		const FTextureRHIParamRef InSceneDepthTextureRHI,
+		const FTextureRHIParamRef InSceneDepthTextureRHI2ndLayer,
 		const FMatrix& InProjectionMatrix,
 		const FTextureRHIParamRef InSceneNormalTextureRHI,
 		const FMatrix& InViewMatrix,
@@ -1785,6 +1787,7 @@ struct FRHICommandRenderHBAO final : public FRHICommand<FRHICommandRenderHBAO>
 		const GFSDK_SSAO_Parameters& InAOParams
 	)
 		: SceneDepthTextureRHI(InSceneDepthTextureRHI)
+		, SceneDepthTextureRHI2ndLayer(InSceneDepthTextureRHI2ndLayer)
 		, ProjectionMatrix(InProjectionMatrix)
 		, SceneNormalTextureRHI(InSceneNormalTextureRHI)
 		, ViewMatrix(InViewMatrix)
@@ -3180,6 +3183,7 @@ public:
 
 	FORCEINLINE_DEBUGGABLE void RenderHBAO(
 		const FTextureRHIParamRef SceneDepthTextureRHI,
+		const FTextureRHIParamRef SceneDepthTextureRHI2ndLayer,
 		const FMatrix& ProjectionMatrix,
 		const FTextureRHIParamRef SceneNormalTextureRHI,
 		const FMatrix& ViewMatrix,
@@ -3191,6 +3195,7 @@ public:
 		{
 			CMD_CONTEXT(RHIRenderHBAO)(
 				SceneDepthTextureRHI,
+				SceneDepthTextureRHI2ndLayer,
 				ProjectionMatrix,
 				SceneNormalTextureRHI,
 				ViewMatrix,
@@ -3200,6 +3205,7 @@ public:
 		}
 		new (AllocCommand<FRHICommandRenderHBAO>()) FRHICommandRenderHBAO(
 			SceneDepthTextureRHI,
+			SceneDepthTextureRHI2ndLayer,
 			ProjectionMatrix,
 			SceneNormalTextureRHI,
 			ViewMatrix,

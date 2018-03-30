@@ -119,6 +119,24 @@ static TAutoConsoleVariable<int32> CVarHBAOHighPrecisionDepth(
 	TEXT("0: use FP16 for internal depth storage in HBAO+")
 	TEXT("1: use FP32 for internal depth storage. Use this option to avoid self-occlusion bands on objects far away."),
 	ECVF_RenderThreadSafe);
+static TAutoConsoleVariable<int32> CVarHBAOGBufferNormals(
+	TEXT("r.HBAO.GBufferNormals"),
+	1,
+	TEXT(" 0: reconstruct normals from depths\n")
+	TEXT(" 1: fetch GBuffer normals\n"),
+	ECVF_RenderThreadSafe);
+
+static TAutoConsoleVariable<int32> CVarHBAOVisualizeAO(
+	TEXT("r.HBAO.VisualizeAO"),
+	0,
+	TEXT("To visualize the AO only"),
+	ECVF_Cheat | ECVF_RenderThreadSafe);
+
+static TAutoConsoleVariable<int32> CVarHBAODualLayerBlend(
+	TEXT("r.HBAO.DualLayerBlend"),
+	0,
+	TEXT("To enable dual layer feature"),
+	ECVF_Cheat | ECVF_RenderThreadSafe);
 
 #endif
 // NVCHANGE_END: Add HBAO+
@@ -1321,6 +1339,7 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 				RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1);
 
 				GFSDK_SSAO_Parameters Params;
+				Params.EnableDualLayerAO = CVarHBAODualLayerBlend.GetValueOnRenderThread();
 				Params.Radius = View.FinalPostProcessSettings.HBAORadius;
 				Params.Bias = View.FinalPostProcessSettings.HBAOBias;
 				Params.PowerExponent = View.FinalPostProcessSettings.HBAOPowerExponent;
@@ -1337,6 +1356,7 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 				// Render HBAO and multiply the AO over the SceneColorSurface.RGB, preserving destination alpha
 				RHICmdList.RenderHBAO(
 					SceneContext.GetSceneDepthTexture(),
+					SceneContext.GetHBAOSceneDepthTexture(),
 					View.ViewMatrices.GetProjectionMatrix(),
 					SceneContext.GetGBufferATexture(),
 					View.ViewMatrices.GetViewMatrix(),

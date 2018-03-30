@@ -1360,7 +1360,13 @@ void FSceneView::OverridePostProcessSettings(const FPostProcessSettings& Src, fl
 		LERP_PP(HBAOBias);
 		LERP_PP(HBAOSmallScaleAO);
 		LERP_PP(HBAOBlurSharpness);
-		if (Src.bOverride_HBAOBlurRadius)  Dest.HBAOBlurRadius = Src.HBAOBlurRadius;
+		LERP_PP(HBAOMaxViewDepth);
+		LERP_PP(HBAODepthSharpness);
+
+		if (Src.bOverride_HBAOBlurRadius)
+		{
+			Dest.HBAOBlurRadius = Src.HBAOBlurRadius;
+		}
 		if (Src.bOverride_HBAOForegroundAOEnable)  Dest.HBAOForegroundAOEnable = Src.HBAOForegroundAOEnable;
 		LERP_PP(HBAOForegroundAODistance);
 		if (Src.bOverride_HBAOBackgroundAOEnable)  Dest.HBAOBackgroundAOEnable = Src.HBAOBackgroundAOEnable;

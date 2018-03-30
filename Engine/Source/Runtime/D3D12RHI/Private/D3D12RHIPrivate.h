@@ -54,6 +54,12 @@ DECLARE_LOG_CATEGORY_EXTERN(LogD3D12RHI, Log, All);
 #endif
 // NVCHANGE_END: Add VXGI
 
+// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+#include "GFSDK_SSAO.h"
+#endif
+// NVCHANGE_END: Add HBAO
+
 #include "AllowWindowsPlatformTypes.h"
 #include "dxgi1_4.h"
 #include "HideWindowsPlatformTypes.h"
@@ -215,6 +221,15 @@ public:
 	virtual void PostInit() override;
 	virtual void Shutdown() override;
 	virtual const TCHAR* GetName() override { return TEXT("D3D12"); }
+
+	// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+	GFSDK_SSAO_Context_D3D12* HBAOContext;
+	GFSDK_SSAO_DescriptorHeaps_D3D12* HBAODescriptorHeaps;
+	HMODULE HBAOModuleHandle;
+	virtual void CreateHBAOContext(FD3D12Device* device, FD3D12SubAllocatedOnlineHeap::SubAllocationDesc& heapInfo);
+#endif
+	// NVCHANGE_END: Add HBAO+
 
 	template<typename TRHIType>
 	static FORCEINLINE typename TD3D12ResourceTraits<TRHIType>::TConcreteType* ResourceCast(TRHIType* Resource)

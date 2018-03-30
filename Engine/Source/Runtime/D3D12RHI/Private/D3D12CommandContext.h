@@ -308,6 +308,7 @@ public:
 #if WITH_GFSDK_SSAO
 	virtual void RHIRenderHBAO(
 		const FTextureRHIParamRef SceneDepthTextureRHI,
+		const FTextureRHIParamRef SceneDepthTextureRHI2ndLayer,
 		const FMatrix& ProjectionMatrix,
 		const FTextureRHIParamRef SceneNormalTextureRHI,
 		const FMatrix& ViewMatrix,

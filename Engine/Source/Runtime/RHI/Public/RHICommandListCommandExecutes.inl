@@ -515,6 +515,7 @@ void FRHICommandRenderHBAO::Execute(FRHICommandListBase& CmdList)
 	RHISTAT(RenderHBAO);
 	INTERNAL_DECORATOR(RHIRenderHBAO)(
 		SceneDepthTextureRHI,
+		SceneDepthTextureRHI2ndLayer,
 		ProjectionMatrix,
 		SceneNormalTextureRHI,
 		ViewMatrix,

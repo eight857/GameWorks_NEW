@@ -615,6 +615,13 @@ public:
 	/** Temporary storage during SH irradiance map generation. */
 	TRefCountPtr<IPooledRenderTarget> SkySHIrradianceMap;
 
+	// NVCHANGE_BEGIN: Add HBAO+
+#if WITH_GFSDK_SSAO
+	TRefCountPtr<IPooledRenderTarget> HBAOSceneDepthDualLayer;
+	const FTexture2DRHIRef& GetHBAOSceneDepthTexture() const { return (const FTexture2DRHIRef&)HBAOSceneDepthDualLayer->GetRenderTargetItem().ShaderResourceTexture; }
+#endif
+	// NVCHANGE_END: Add HBAO+
+
 	// NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI
 public:
