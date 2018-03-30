@@ -416,6 +416,7 @@ void FSceneRenderer::InitVxgiView()
 	VxgiView->bPrevTransformsReset = true;
 
 	VxgiView->VxgiClipmapBounds = VxgiClipmapBounds;
+	VxgiView->VxgiNumClipmapLevels = VoxelizationParams.stackLevels;
 	VxgiView->AntiAliasingMethod = AAM_None; //Turn off temporal AA jitter
 	VxgiView->bIsVxgiVoxelization = true;
 	VxgiView->bDisableDistanceBasedFadeTransitions = true;

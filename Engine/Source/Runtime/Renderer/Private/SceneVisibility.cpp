@@ -2094,7 +2094,8 @@ static void ComputeAndMarkRelevanceForViewParallel(
 	}
 }
 
-static void SetDynamicMeshElementViewCustomData(TArray<FViewInfo>& InViews, const FPrimitiveViewMasks& InHasViewCustomDataMasks, const FPrimitiveSceneInfo* InPrimitiveSceneInfo)
+// NVCHANGE_BEGIN: Add VXGI
+static void SetDynamicMeshElementViewCustomData(TArray<FViewInfo*>& InViews, const FPrimitiveViewMasks& InHasViewCustomDataMasks, const FPrimitiveSceneInfo* InPrimitiveSceneInfo)
 {
 	int32 PrimitiveIndex = InPrimitiveSceneInfo->GetIndex();
 
@@ -2102,7 +2103,7 @@ static void SetDynamicMeshElementViewCustomData(TArray<FViewInfo>& InViews, cons
 	{
 		for (int32 ViewIndex = 0; ViewIndex < InViews.Num(); ViewIndex++)
 		{
-			FViewInfo& ViewInfo = InViews[ViewIndex];
+			FViewInfo& ViewInfo = *InViews[ViewIndex];
 
 			if (InHasViewCustomDataMasks[PrimitiveIndex] & (1 << ViewIndex) && ViewInfo.GetCustomData(InPrimitiveSceneInfo->GetIndex()) == nullptr)
 			{
@@ -2126,6 +2127,12 @@ void FSceneRenderer::GatherDynamicMeshElements(
 	int32 NumPrimitives = InScene->Primitives.Num();
 	check(HasDynamicMeshElementsMasks.Num() == NumPrimitives);
 
+	TArray<FViewInfo*> LocalViews;
+	for (FViewInfo& View : InViews)
+	{
+		LocalViews.Add(&View);
+	}
+
 	int32 ViewCount = InViews.Num();
 	{
 		Collector.ClearViewMeshArrays();
@@ -2135,8 +2142,6 @@ void FSceneRenderer::GatherDynamicMeshElements(
 			Collector.AddViewMeshArrays(&InViews[ViewIndex], &InViews[ViewIndex].DynamicMeshElements, &InViews[ViewIndex].SimpleElementCollector, InViewFamily.GetFeatureLevel());
 		}
 
-		// NVCHANGE_BEGIN: Add VXGI
-		TArray<const FSceneView*> LocalViews = InViewFamily.Views;
 #if WITH_GFSDK_VXGI
 		if (VxgiView)
 		{
@@ -2144,7 +2149,6 @@ void FSceneRenderer::GatherDynamicMeshElements(
 			Collector.AddViewMeshArrays(VxgiView, &VxgiView->DynamicMeshElements, &VxgiView->SimpleElementCollector, InViewFamily.GetFeatureLevel());
 		}
 #endif
-		// NVCHANGE_END: Add VXGI
 
 		const bool bIsInstancedStereo = (ViewCount > 0) ? (InViews[0].IsInstancedStereoPass() || InViews[0].bIsMobileMultiViewEnabled) : false;
 
@@ -2160,11 +2164,9 @@ void FSceneRenderer::GatherDynamicMeshElements(
 				FPrimitiveSceneInfo* PrimitiveSceneInfo = InScene->Primitives[PrimitiveIndex];
 				Collector.SetPrimitive(PrimitiveSceneInfo->Proxy, PrimitiveSceneInfo->DefaultDynamicHitProxyId);
 
-				SetDynamicMeshElementViewCustomData(InViews, HasViewCustomDataMasks, PrimitiveSceneInfo);
+				SetDynamicMeshElementViewCustomData(LocalViews, HasViewCustomDataMasks, PrimitiveSceneInfo);
 
-				// NVCHANGE_BEGIN: Add VXGI
-				PrimitiveSceneInfo->Proxy->GetDynamicMeshElements(LocalViews, InViewFamily, ViewMaskFinal, Collector);
-				// NVCHANGE_END: Add VXGI
+				PrimitiveSceneInfo->Proxy->GetDynamicMeshElements(static_cast<TArray<const FSceneView*>>(LocalViews), InViewFamily, ViewMaskFinal, Collector);
 			}
 
 			// to support GetDynamicMeshElementRange()
@@ -2173,15 +2175,20 @@ void FSceneRenderer::GatherDynamicMeshElements(
 				InViews[ViewIndex].DynamicMeshEndIndices[PrimitiveIndex] = Collector.GetMeshBatchCount(ViewIndex);
 			}
 
-			// NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI
 			if (VxgiView)
 			{
 				VxgiView->DynamicMeshEndIndices[PrimitiveIndex] = Collector.GetMeshBatchCount(ViewCount);
 			}
 #endif
-			// NVCHANGE_END: Add VXGI
 		}
+
+#if WITH_GFSDK_VXGI
+		if (VxgiView)
+		{
+			LocalViews.RemoveAt(LocalViews.Num() - 1);
+		}
+#endif
 	}
 
 	if (GIsEditor)
@@ -2202,14 +2209,15 @@ void FSceneRenderer::GatherDynamicMeshElements(
 				FPrimitiveSceneInfo* PrimitiveSceneInfo = InScene->Primitives[PrimitiveIndex];
 				Collector.SetPrimitive(PrimitiveSceneInfo->Proxy, PrimitiveSceneInfo->DefaultDynamicHitProxyId);
 
-				SetDynamicMeshElementViewCustomData(InViews, HasViewCustomDataMasks, PrimitiveSceneInfo);
+				SetDynamicMeshElementViewCustomData(LocalViews, HasViewCustomDataMasks, PrimitiveSceneInfo);
 
-				PrimitiveSceneInfo->Proxy->GetDynamicMeshElements(InViewFamily.Views, InViewFamily, ViewMask, Collector);
+				PrimitiveSceneInfo->Proxy->GetDynamicMeshElements(static_cast<TArray<const FSceneView*>>(LocalViews), InViewFamily, ViewMask, Collector);
 			}
 		}
 	}
 	MeshCollector.ProcessTasks();
 }
+// NVCHANGE_END: Add VXGI
 
 static void MarkAllPrimitivesForReflectionProxyUpdate(FScene* Scene)
 {
@@ -3257,9 +3265,13 @@ void FDeferredShadingSceneRenderer::PostInitViewCustomData(FGraphEventArray& Out
 
 		const int32 MaxPrimitiveUpdateTaskCount = 10;
 		const int32 MinPrimitiveCountByTask = 100;
-		
-		for (FViewInfo& ViewInfo : Views)
+
+		// NVCHANGE_BEGIN: Add VXGI
+		for (int32 ViewIndex = 0; ViewIndex < GetNumViewsWithVxgi(); ++ViewIndex)
 		{
+			FViewInfo& ViewInfo = GetViewWithVxgi(ViewIndex);
+		// NVCHANGE_END: Add VXGI
+
 			if (ViewInfo.PrimitivesWithCustomData.Num() > 0)
 			{
 				const int32 BatchSize = FMath::Max(FMath::Max(FMath::RoundToInt((float)ViewInfo.PrimitivesWithCustomData.Num() / (float)MaxPrimitiveUpdateTaskCount), 1), MinPrimitiveCountByTask);
@@ -3287,8 +3299,12 @@ void FDeferredShadingSceneRenderer::PostInitViewCustomData(FGraphEventArray& Out
 	{
 		QUICK_SCOPE_CYCLE_COUNTER(STAT_PostInitViewCustomData);
 
-		for (FViewInfo& ViewInfo : Views)
+		// NVCHANGE_BEGIN: Add VXGI
+		for (int32 ViewIndex = 0; ViewIndex < GetNumViewsWithVxgi(); ++ViewIndex)
 		{
+			FViewInfo& ViewInfo = GetViewWithVxgi(ViewIndex);
+		// NVCHANGE_END: Add VXGI
+
 			for (const FPrimitiveSceneInfo* PrimitiveSceneInfo : ViewInfo.PrimitivesWithCustomData)
 			{
 				if (!ViewInfo.UpdatedPrimitivesWithCustomData[PrimitiveSceneInfo->GetIndex()])

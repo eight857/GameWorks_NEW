@@ -1271,6 +1271,7 @@ public:
 	bool bEnableVxgiForSceneCapture;
 	bool bIsVxgiVoxelization;
 	FBoxSphereBounds VxgiClipmapBounds;
+	int32 VxgiNumClipmapLevels;
 	FVxgiVoxelizationArgs VxgiVoxelizationArgs;
 	mutable NVRHI::DrawCallState VxgiDrawCallState;
 	FViewMatrices PrevViewMatrices;
