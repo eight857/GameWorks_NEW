@@ -93,11 +93,14 @@ namespace NVRHI
 
 		template<typename ShaderType>
 		void applyShaderState(PipelineStageBindings bindings);
+		template<typename ShaderType>
+		void unapplyShaderState(PipelineStageBindings bindings);
 
 		void applyState(DrawCallState state, const FBoundShaderStateInput* BoundShaderStateInput, EPrimitiveType PrimitiveTypeOverride);
 		void applyResources(DrawCallState state);
+		void unapplyResources(DrawCallState state);
 		void applyState(DispatchState state);
-		void clearUAVs(DispatchState state);
+		void unapplyState(DispatchState state);
 
 		void setPixelShaderResourceAttributes(NVRHI::ShaderHandle PixelShader, const TArray<uint8>& ShaderResourceTable, bool bUsesGlobalCB);
 		void setRHICommandList(FRHICommandList* RHICmdList);

@@ -336,6 +336,11 @@ namespace NVRHI
 			check(texture->TextureRHI.IsValid());
 		}
 
+		if (d.debugName)
+		{
+			GDynamicRHI->RHIBindDebugLabelName(texture->TextureRHI, ANSI_TO_TCHAR(d.debugName));
+		}
+
 		return texture;
 	}
 
@@ -835,6 +840,8 @@ namespace NVRHI
 
 			m_RHICmdList->DrawPrimitive(PrimitiveType, args[n].startVertexLocation, PrimitiveCount, args[n].instanceCount);
 		}
+
+		unapplyResources(state);
 	}
 
 	void FRendererInterfaceD3D11::drawIndexed(const DrawCallState& state, const DrawArguments* args, uint32 numDrawCalls) 
@@ -855,6 +862,8 @@ namespace NVRHI
 		convertPrimTypeAndCount(state.primType, 0, PrimitiveType, PrimitiveCount);
 
 		m_RHICmdList->DrawIndirect(PrimitiveType, static_cast<FBuffer*>(indirectParams)->BufferRHI, offsetBytes);
+
+		unapplyResources(state);
 	}
 
 	void FRendererInterfaceD3D11::dispatch(const DispatchState& state, uint32 groupsX, uint32 groupsY, uint32 groupsZ) 
@@ -865,7 +874,7 @@ namespace NVRHI
 
 		m_RHICmdList->DispatchComputeShader(groupsX, groupsY, groupsZ);
 
-		clearUAVs(state);
+		unapplyState(state);
 	}
 
 	void FRendererInterfaceD3D11::dispatchIndirect(const DispatchState& state, BufferHandle indirectParams, uint32 offsetBytes) 
@@ -878,7 +887,7 @@ namespace NVRHI
 
 		m_RHICmdList->DispatchIndirectComputeShaderStructured(static_cast<FBuffer*>(indirectParams)->BufferRHI, offsetBytes);
 
-		clearUAVs(state);
+		unapplyState(state);
 	}
 
 	void FRendererInterfaceD3D11::executeRenderThreadCommand(IRenderThreadCommand* onCommand) 
@@ -1524,7 +1533,46 @@ namespace NVRHI
 			m_RHICmdList->SetShaderSampler(shader, binding.slot, FSampler::Unwrap(binding.sampler));
 		}
 	}
-		
+
+	template<typename ShaderType>
+	void FRendererInterfaceD3D11::unapplyShaderState(PipelineStageBindings bindings)
+	{
+		checkCommandList();
+
+		if (!bindings.shader)
+			return;
+
+		ShaderType shader = static_cast<ShaderType>(FShader::Unwrap(bindings.shader));
+
+		for (uint32 n = 0; n < bindings.constantBufferBindingCount; n++)
+		{
+			const auto& binding = bindings.constantBuffers[n];
+			m_RHICmdList->SetShaderUniformBuffer(shader, binding.slot, nullptr);
+		}
+
+		for (uint32 n = 0; n < bindings.textureBindingCount; n++)
+		{
+			const auto& binding = bindings.textures[n];
+
+			// UAVs are handled elsewhere
+			if (!binding.isWritable)
+			{
+				m_RHICmdList->SetShaderResourceViewParameter(shader, binding.slot, nullptr);
+			}
+		}
+
+		for (uint32 n = 0; n < bindings.bufferBindingCount; n++)
+		{
+			const auto& binding = bindings.buffers[n];
+
+			// UAVs are handled elsewhere
+			if (!binding.isWritable)
+			{
+				m_RHICmdList->SetShaderResourceViewParameter(shader, binding.slot, nullptr);
+			}
+		}
+	}
+
 	void FRendererInterfaceD3D11::applyState(DrawCallState state, const FBoundShaderStateInput* BoundShaderStateInput, EPrimitiveType PrimitiveTypeOverride)
 	{
 		checkCommandList();
@@ -1706,6 +1754,17 @@ namespace NVRHI
 		applyShaderState<FPixelShaderRHIParamRef>(state.PS);
 	}
 
+	void FRendererInterfaceD3D11::unapplyResources(DrawCallState state)
+	{
+		checkCommandList();
+
+		unapplyShaderState<FVertexShaderRHIParamRef>(state.VS);
+		unapplyShaderState<FHullShaderRHIParamRef>(state.HS);
+		unapplyShaderState<FDomainShaderRHIParamRef>(state.DS);
+		unapplyShaderState<FGeometryShaderRHIParamRef>(state.GS);
+		unapplyShaderState<FPixelShaderRHIParamRef>(state.PS);
+	}
+
 	void FRendererInterfaceD3D11::applyState(DispatchState state)
 	{
 		checkCommandList();
@@ -1742,7 +1801,7 @@ namespace NVRHI
 		applyShaderState<FComputeShaderRHIParamRef>(state);
 	}
 
-	void FRendererInterfaceD3D11::clearUAVs(DispatchState state)
+	void FRendererInterfaceD3D11::unapplyState(DispatchState state)
 	{
 		checkCommandList();
 
@@ -1754,8 +1813,6 @@ namespace NVRHI
 
 			if (binding.isWritable)
 			{
-				check(binding.slot < 8);
-
 				m_RHICmdList->SetUAVParameter(ComputeShader, binding.slot, nullptr);
 			}
 		}
@@ -1771,6 +1828,8 @@ namespace NVRHI
 				m_RHICmdList->SetUAVParameter(ComputeShader, binding.slot, nullptr);
 			}
 		}
+
+		unapplyShaderState<FComputeShaderRHIParamRef>(state);
 	}
 
 	void FRendererInterfaceD3D11::setRHICommandList(FRHICommandList* RHICmdList)

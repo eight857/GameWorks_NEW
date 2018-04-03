@@ -779,15 +779,17 @@ public:
 	explicit FD3D12ResourceBarrierBatcher()
 	{};
 
-	// Add a UAV barrier to the batch. Ignoring the actual resource for now.
-	void AddUAV()
+	// NVCHANGE_BEGIN: Add VXGI
+	// Add a UAV barrier to the batch. 
+	void AddUAV(ID3D12Resource* pResource)
 	{
 		Barriers.AddUninitialized();
 		D3D12_RESOURCE_BARRIER& Barrier = Barriers.Last();
 		Barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
 		Barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		Barrier.UAV.pResource = nullptr;	// Ignore the resource ptr for now. HW doesn't do anything with it.
+		Barrier.UAV.pResource = pResource;
 	}
+	// NVCHANGE_END: Add VXGI
 
 	// Add a transition resource barrier to the batch.
 	void AddTransition(ID3D12Resource* pResource, D3D12_RESOURCE_STATES Before, D3D12_RESOURCE_STATES After, uint32 Subresource)

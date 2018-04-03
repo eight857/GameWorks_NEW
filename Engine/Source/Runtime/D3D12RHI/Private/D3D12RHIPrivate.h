@@ -744,6 +744,15 @@ public:
 					hCommandList.AddTransitionBarrier(pResource, before, after, SubresourceIndex);
 					ResourceState.SetSubresourceState(SubresourceIndex, after);
 				}
+				// NVCHANGE_BEGIN: Add VXGI
+				else if (before == D3D12_RESOURCE_STATE_UNORDERED_ACCESS && after == D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+				{
+					if (pResource->RequestUAVBarrier())
+					{
+						hCommandList.AddUAVBarrier(pResource);
+					}
+				}
+				// NVCHANGE_END: Add VXGI
 			}
 
 			// The entire resource should now be in the after state on this command list (even if all barriers are pending)
@@ -764,6 +773,15 @@ public:
 				hCommandList.AddTransitionBarrier(pResource, before, after, subresource);
 				ResourceState.SetSubresourceState(subresource, after);
 			}
+			// NVCHANGE_BEGIN: Add VXGI
+			else if (before == D3D12_RESOURCE_STATE_UNORDERED_ACCESS && after == D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+			{
+				if (pResource->RequestUAVBarrier())
+				{
+					hCommandList.AddUAVBarrier(pResource);
+				}
+			}
+			// NVCHANGE_END: Add VXGI
 		}
 #endif // USE_D3D12RHI_RESOURCE_STATE_TRACKING
 	}
@@ -801,14 +819,7 @@ public:
 			{
 				if (pResource->RequestUAVBarrier())
 				{
-					D3D12_RESOURCE_BARRIER desc = {};
-					desc.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-					desc.UAV.pResource = pResource->GetResource();
-
-					// Skipping the call to LogResourceBarriers because it doesn't understand UAV barriers.
-
-					hCommandList.GetCurrentOwningContext()->numBarriers++;
-					hCommandList->ResourceBarrier(1, &desc);
+					hCommandList.AddUAVBarrier(pResource);
 				}
 			}
 			// NVCHANGE_END: Add VXGI

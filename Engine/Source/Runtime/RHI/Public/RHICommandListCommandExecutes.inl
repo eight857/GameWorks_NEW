@@ -564,6 +564,18 @@ void FRHIExecuteVxgiRenderingCommand::Execute(FRHICommandListBase& CmdList)
 	RHISTAT(ExecuteVxgiRenderingCommand);
 	INTERNAL_DECORATOR(RHIExecuteVxgiRenderingCommand)(Command);
 }
+
+void FRHISetEnableUAVBarriersTexture::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(SetEnableUAVBarriers);
+	INTERNAL_DECORATOR(RHISetEnableUAVBarriers)(TextureRHI, bEnable);
+}
+
+void FRHISetEnableUAVBarriersBuffer::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(SetEnableUAVBarriers);
+	INTERNAL_DECORATOR(RHISetEnableUAVBarriers)(BufferRHI, bEnable);
+}
 #endif
 // NVCHANGE_END: Add VXGI
 

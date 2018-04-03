@@ -218,6 +218,15 @@ void FD3D12CommandContext::RHICopyStructuredBufferData(FStructuredBufferRHIParam
 	DEBUG_EXECUTE_COMMAND_LIST(this);
 }
 
+void FD3D12CommandContext::RHISetEnableUAVBarriers(FTextureRHIParamRef TextureRHI, bool bEnable)
+{
+	GetD3D12TextureFromRHITexture(TextureRHI)->GetResource()->SetEnableUAVBarriers(bEnable);
+}
+
+void FD3D12CommandContext::RHISetEnableUAVBarriers(FStructuredBufferRHIParamRef BufferRHI, bool bEnable)
+{
+	FD3D12DynamicRHI::ResourceCast(BufferRHI)->ResourceLocation.GetResource()->SetEnableUAVBarriers(bEnable);
+}
 
 #endif
 // NVCHANGE_END: Add VXGI

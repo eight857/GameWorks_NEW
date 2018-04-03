@@ -1897,6 +1897,40 @@ struct FRHIExecuteVxgiRenderingCommand final : public FRHICommand<FRHIExecuteVxg
 
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
+
+struct FRHISetEnableUAVBarriersTexture final : public FRHICommand<FRHISetEnableUAVBarriersTexture>
+{
+	FTextureRHIRef TextureRHI;
+	bool bEnable;
+
+	FORCEINLINE_DEBUGGABLE FRHISetEnableUAVBarriersTexture(
+		FTextureRHIRef InTextureRHI,
+		bool InEnable
+	)
+		: TextureRHI(InTextureRHI)
+		, bEnable(InEnable)
+	{
+	}
+
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
+
+struct FRHISetEnableUAVBarriersBuffer final : public FRHICommand<FRHISetEnableUAVBarriersBuffer>
+{
+	FStructuredBufferRHIRef BufferRHI;
+	bool bEnable;
+
+	FORCEINLINE_DEBUGGABLE FRHISetEnableUAVBarriersBuffer(
+		FStructuredBufferRHIRef InBufferRHI,
+		bool InEnable
+	)
+		: BufferRHI(InBufferRHI)
+		, bEnable(InEnable)
+	{
+	}
+
+	RHI_API void Execute(FRHICommandListBase& CmdList);
+};
 #endif
 // NVCHANGE_END: Add VXGI
 
@@ -3551,6 +3585,26 @@ public:
 			return;
 		}
 		new (AllocCommand<FRHIExecuteVxgiRenderingCommand>()) FRHIExecuteVxgiRenderingCommand(Command);
+	}
+
+	FORCEINLINE_DEBUGGABLE void SetEnableUAVBarriers(FTextureRHIParamRef TextureRHI, bool bEnable)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(RHISetEnableUAVBarriers)(TextureRHI, bEnable);
+			return;
+		}
+		new (AllocCommand<FRHISetEnableUAVBarriersTexture>()) FRHISetEnableUAVBarriersTexture(TextureRHI, bEnable);
+	}
+
+	FORCEINLINE_DEBUGGABLE void SetEnableUAVBarriers(FStructuredBufferRHIParamRef BufferRHI, bool bEnable)
+	{
+		if (Bypass())
+		{
+			CMD_CONTEXT(RHISetEnableUAVBarriers)(BufferRHI, bEnable);
+			return;
+		}
+		new (AllocCommand<FRHISetEnableUAVBarriersBuffer>()) FRHISetEnableUAVBarriersBuffer(BufferRHI, bEnable);
 	}
 #endif
 	// NVCHANGE_END: Add VXGI
