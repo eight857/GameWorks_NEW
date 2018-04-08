@@ -81,6 +81,13 @@ void UDestructibleMesh::PostLoad()
 	}
 #endif
 
+#if WITH_EDITOR
+	// Old mesh which doesn't contain these
+	if (GetIndexBufferRanges().Num() == 0)
+	{
+		RebuildIndexBufferRanges();
+	}
+#endif
 }
 
 #if WITH_EDITOR

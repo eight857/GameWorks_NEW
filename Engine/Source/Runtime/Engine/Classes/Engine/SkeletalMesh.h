@@ -117,6 +117,52 @@ struct FBoneMirrorExport
 
 };
 
+/** Structures to store dynamic index buffer data */
+USTRUCT()
+struct ENGINE_API FSkeletalMeshIndexBufferRanges
+{
+	GENERATED_BODY();
+
+	struct FPerSectionInfo
+	{
+		TArray<FInt32Range, TInlineAllocator<1>> Regions;
+
+		friend FArchive& operator<<(FArchive& Ar, FPerSectionInfo& S)
+		{
+			return Ar << S.Regions;
+		}
+	};
+
+	struct FPerLODInfo
+	{
+		TArray<FPerSectionInfo> Sections;
+
+		friend FArchive& operator<<(FArchive& Ar, FPerLODInfo& S)
+		{
+			return Ar << S.Sections;
+		}
+	};
+
+	TArray<FPerLODInfo> LODModels;
+
+	//Using UPROPERTIES here would result in a very large data size since the name is stored for each entry
+	bool Serialize(FArchive& Ar)
+	{
+		Ar << LODModels;
+		return true;
+	}
+};
+
+template<>
+struct TStructOpsTypeTraits<FSkeletalMeshIndexBufferRanges> : public TStructOpsTypeTraitsBase2<FSkeletalMeshIndexBufferRanges>
+{
+	enum
+	{
+		WithSerializer = true,
+		WithCopy = true,
+	};
+};
+
 /**
 * FSkeletalMeshOptimizationSettings - The settings used to optimize a skeletal mesh LOD.
 */
@@ -849,6 +895,10 @@ private:
 	/** Cached matrices from GetComposedRefPoseMatrix */
 	TArray<FMatrix> CachedComposedRefPoseMatrices;
 
+	/** Cached index buffer ranges */
+	UPROPERTY()
+	TArray<FSkeletalMeshIndexBufferRanges> IndexBufferRanges;
+
 public:
 	/**
 	* Initialize the mesh's render resources.
@@ -998,8 +1048,24 @@ public:
 	 * @param InSectionIndex Section index to remove
 	 */
 	void RemoveMeshSection(int32 InLodIndex, int32 InSectionIndex);
-
 #endif // #if WITH_EDITOR
+
+#if WITH_EDITOR
+	/**
+	* Ensure that IndexBufferRanges is updated
+	*/
+	void RebuildIndexBufferRanges();
+#endif // #if WITH_EDITOR
+
+	/**
+	* Const accessor to IndexBufferRanges
+	*
+	* @return const reference to IndexBufferRanges
+	*/
+	const TArray<FSkeletalMeshIndexBufferRanges>& GetIndexBufferRanges() const
+	{
+		return IndexBufferRanges;
+	}
 
 	/**
 	* Verify SkeletalMeshLOD is set up correctly	

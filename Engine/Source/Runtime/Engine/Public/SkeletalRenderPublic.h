@@ -190,6 +190,15 @@ public:
 	/** Get the skeletal mesh resource for which this mesh object was created. */
 	FORCEINLINE FSkeletalMeshRenderData& GetSkeletalMeshRenderData() const { return *SkeletalMeshRenderData; }
 
+	/** Get index buffer dynamic override. */
+	FORCEINLINE FSkeletalMeshDynamicOverride* GetSkeletalMeshDynamicOverride() const { return SkeletalMeshDynamicOverride; }
+
+	/** Set index buffer dynamic override. */
+	void SetSkeletalMeshDynamicOverride(FSkeletalMeshDynamicOverride* NewSkeletalMeshDynamicOverride)
+	{
+		SkeletalMeshDynamicOverride = NewSkeletalMeshDynamicOverride;
+	}
+
 	/** Setup for rendering a specific LOD entry of the component */
 	struct FSkelMeshObjectLODInfo
 	{
@@ -242,6 +251,9 @@ public:
 protected:
 	/** The skeletal mesh resource with which to render. */
 	FSkeletalMeshRenderData* SkeletalMeshRenderData;
+
+	/** Dynamic index buffer data. */
+	FSkeletalMeshDynamicOverride* SkeletalMeshDynamicOverride;
 
 	/** Per-LOD info. */
 	TArray<FSkeletalMeshLODInfo> SkeletalMeshLODInfo;

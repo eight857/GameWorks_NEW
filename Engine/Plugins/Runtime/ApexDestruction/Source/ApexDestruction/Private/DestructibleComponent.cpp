@@ -51,6 +51,8 @@ UDestructibleComponent::UDestructibleComponent(const FObjectInitializer& ObjectI
 	// Get contact offset params
 	FBodySetupShapeIterator::GetContactOffsetParams(ContactOffsetFactor, MinContactOffset, MaxContactOffset);
 #endif //WITH_PHYSX
+
+	BoneHidingMethod = BHM_Dynamic_Index_Buffer;
 }
 
 #if WITH_EDITORONLY_DATA

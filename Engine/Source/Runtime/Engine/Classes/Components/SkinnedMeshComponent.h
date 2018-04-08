@@ -10,6 +10,7 @@
 #include "Components/SceneComponent.h"
 #include "Engine/TextureStreamingTypes.h"
 #include "Components/MeshComponent.h"
+#include "SkeletalMeshRenderData.h"
 #include "SkinnedMeshComponent.generated.h"
 
 class FPrimitiveSceneProxy;
@@ -19,6 +20,7 @@ class FSkeletalMeshRenderData;
 class FSkeletalMeshLODRenderData;
 struct FSkelMeshRenderSection;
 class FPositionVertexBuffer;
+struct FSkeletalMeshIndexBufferRanges;
 
 DECLARE_DELEGATE_OneParam(FOnAnimUpdateRateParamsCreated, FAnimUpdateRateParameters*)
 
@@ -37,6 +39,17 @@ enum EBoneVisibilityStatus
 	/** Bone is hidden directly. */
 	BVS_ExplicitlyHidden,
 	BVS_MAX,
+};
+
+/** The method by which to hide bones */
+UENUM()
+enum EBoneHidingMethod
+{
+	/** Set bone transformation scales to 0 to hide them. */
+	BHM_Zero_Scale,
+	/** Use a dynamic index buffer to hide bones. */
+	BHM_Dynamic_Index_Buffer,
+	BHM_MAX,
 };
 
 /** PhysicsBody options when bone is hidden */
@@ -668,7 +681,7 @@ public:
 	 * 
 	 * @param MeshObject - Mesh Object owned by this component
 	 */
-	virtual void PostInitMeshObject(class FSkeletalMeshObject*) {}
+	virtual void PostInitMeshObject(class FSkeletalMeshObject*);
 
 	/**
 	* Simple, CPU evaluation of a vertex's skinned position (returned in component space)
@@ -941,6 +954,32 @@ public:
 	 */
 	class USkeletalMeshSocket const* GetSocketByName( FName InSocketName ) const;
 
+	/**
+	* Set the method by which component hides bones during rendering.
+	*
+	* @param InBoneHidingMethod Enumerated index for bone hiding method (see EBoneHidingMethod)
+	*/
+	void SetBoneHidingMethod(EBoneHidingMethod InBoneHidingMethod);
+
+	/**
+	* Read the method by which component hides bones during rendering.
+	*
+	* @return current bone hiding method
+	*/
+	EBoneHidingMethod GetBoneHidingMethod() const
+	{
+		return BoneHidingMethod;
+	}
+
+protected:
+	EBoneHidingMethod BoneHidingMethod;
+
+	FSkeletalMeshDynamicOverride IndexBufferOverride;
+
+	void RebuildBoneVisibilityUpdateIndexBuffer_RenderThread(FSkeletalMeshIndexBufferRanges* CombinedResult);
+	void RebuildBoneVisibilityIndexBuffer();
+
+public:
 
 	/** 
 	 * Get Bone Matrix from index
