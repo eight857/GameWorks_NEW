@@ -16,7 +16,7 @@ struct FRawMesh;
 
 
 #ifndef USE_DYNAMIC_INDEX_BUFFER
-#define USE_DYNAMIC_INDEX_BUFFER 0
+#define USE_DYNAMIC_INDEX_BUFFER 1
 #endif
 
 
