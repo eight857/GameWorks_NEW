@@ -190,6 +190,7 @@ public:
 	/** Get the skeletal mesh resource for which this mesh object was created. */
 	FORCEINLINE FSkeletalMeshRenderData& GetSkeletalMeshRenderData() const { return *SkeletalMeshRenderData; }
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	/** Get index buffer dynamic override. */
 	FORCEINLINE FSkeletalMeshDynamicOverride* GetSkeletalMeshDynamicOverride() const { return SkeletalMeshDynamicOverride; }
 
@@ -198,7 +199,7 @@ public:
 	{
 		SkeletalMeshDynamicOverride = NewSkeletalMeshDynamicOverride;
 	}
-
+//nv end
 	/** Setup for rendering a specific LOD entry of the component */
 	struct FSkelMeshObjectLODInfo
 	{
@@ -252,9 +253,10 @@ protected:
 	/** The skeletal mesh resource with which to render. */
 	FSkeletalMeshRenderData* SkeletalMeshRenderData;
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	/** Dynamic index buffer data. */
 	FSkeletalMeshDynamicOverride* SkeletalMeshDynamicOverride;
-
+//nv end
 	/** Per-LOD info. */
 	TArray<FSkeletalMeshLODInfo> SkeletalMeshLODInfo;
 

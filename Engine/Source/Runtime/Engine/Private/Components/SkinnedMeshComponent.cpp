@@ -23,8 +23,11 @@
 #include "Rendering/SkinWeightVertexBuffer.h"
 #include "SkeletalMeshTypes.h"
 #include "Animation/MorphTarget.h"
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 #include "ComponentRecreateRenderStateContext.h"
-#include "RawIndexBuffer.h"
+// RawIndexBuffer.h Not needed ?
+#include "RawIndexBuffer.h" 
+//nv end
 
 DEFINE_LOG_CATEGORY_STATIC(LogSkinnedMeshComp, Log, All);
 
@@ -350,8 +353,9 @@ USkinnedMeshComponent::USkinnedMeshComponent(const FObjectInitializer& ObjectIni
 	bSyncAttachParentLOD = true;
 
 	CurrentBoneTransformRevisionNumber = 0;
-
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	BoneHidingMethod = BHM_Zero_Scale;
+//nv end
 }
 
 
@@ -398,8 +402,9 @@ void USkinnedMeshComponent::GetResourceSizeEx(FResourceSizeEx& CumulativeResourc
 	{
 		MeshObject->GetResourceSizeEx(CumulativeResourceSize);
 	}
-
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	IndexBufferOverride.GetResourceSizeEx(CumulativeResourceSize);
+//nv end
 }
 
 FPrimitiveSceneProxy* USkinnedMeshComponent::CreateSceneProxy()
@@ -544,6 +549,7 @@ void USkinnedMeshComponent::CreateRenderState_Concurrent()
 		// scene proxy update of material usage based on active morphs
 		UpdateMorphMaterialUsageOnProxy();
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 		auto MeshResource = ShouldRender() ? SkeletalMesh->GetResourceForRendering() : nullptr;
 		if (MeshResource)
 		{
@@ -557,6 +563,7 @@ void USkinnedMeshComponent::CreateRenderState_Concurrent()
 		{
 			RebuildBoneVisibilityIndexBuffer();
 		}
+//nv end
 	}
 }
 
@@ -580,6 +587,7 @@ void USkinnedMeshComponent::DestroyRenderState_Concurrent()
 		MeshObject = NULL;
 	}
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	// The index buffer override cannot be called from the render thread.
 	// DestroyRenderState_Concurrent() may be called during rendering for various reasons, e.g. to clear decals after fracturing.
 	// It is not necessary to reinitialize the IndexBufferOverride when this occurs, so we can skip the release here.
@@ -592,6 +600,7 @@ void USkinnedMeshComponent::DestroyRenderState_Concurrent()
 
 		IndexBufferOverride = FSkeletalMeshDynamicOverride();
 	}
+//nv end
 }
 
 FString USkinnedMeshComponent::GetDetailedInfoInternal() const
@@ -1666,6 +1675,7 @@ FName USkinnedMeshComponent::GetSocketBoneName(FName InSocketName) const
 	return NAME_None;
 }
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 void USkinnedMeshComponent::SetBoneHidingMethod(EBoneHidingMethod InBoneHidingMethod)
 {
 	if (InBoneHidingMethod < 0 || InBoneHidingMethod > BHM_MAX)
@@ -1812,6 +1822,7 @@ void USkinnedMeshComponent::PostInitMeshObject(FSkeletalMeshObject* NewMeshObjec
 		NewMeshObject->SetSkeletalMeshDynamicOverride(&IndexBufferOverride);
 	}
 }
+//nv end
 
 FQuat USkinnedMeshComponent::GetBoneQuaternion(FName BoneName, EBoneSpaces::Type Space) const
 {
