@@ -25,9 +25,6 @@
 #include "Animation/MorphTarget.h"
 //#nv begin #Blast Ability to hide bones using a dynamic index buffer
 #include "ComponentRecreateRenderStateContext.h"
-// RawIndexBuffer.h Not needed ?
-#include "RawIndexBuffer.h" 
-//nv end
 
 DEFINE_LOG_CATEGORY_STATIC(LogSkinnedMeshComp, Log, All);
 
