@@ -24,7 +24,6 @@
 #include "SkeletalMeshTypes.h"
 #include "Animation/MorphTarget.h"
 #include "ComponentRecreateRenderStateContext.h"
-#include "RawIndexBuffer.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSkinnedMeshComp, Log, All);
 
