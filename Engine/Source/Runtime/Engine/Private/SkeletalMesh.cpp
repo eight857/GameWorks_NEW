@@ -47,7 +47,7 @@
 #include "Rendering/SkeletalMeshRenderData.h"
 #include "UObject/PropertyPortFlags.h"
 #include "Templates/UniquePtr.h"
-#include "Misc/ScopedSlowTask.h"
+#include "Misc/ScopedSlowTask.h" //#nv #Blast Ability to hide bones using a dynamic index buffer
 
 #if WITH_EDITOR
 #include "Rendering/SkeletalMeshModel.h"
@@ -214,6 +214,7 @@ void FreeSkeletalMeshBuffersSinkCallback()
 }
 
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 /*-----------------------------------------------------------------------------
 FDynamicLODModelOverride
 -----------------------------------------------------------------------------*/
@@ -337,7 +338,7 @@ SIZE_T FSkeletalMeshDynamicOverride::GetResourceSizeBytes()
 	GetResourceSizeEx(ResSize);
 	return ResSize.GetTotalMemoryBytes();
 }
-
+//nv end
 
 /*-----------------------------------------------------------------------------
 	FClothingAssetData
@@ -2363,6 +2364,7 @@ void USkeletalMesh::RemoveMeshSection(int32 InLodIndex, int32 InSectionIndex)
 	PostEditChange();
 }
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 void USkeletalMesh::RebuildIndexBufferRanges()
 {
 	IndexBufferRanges.Reset();
@@ -2452,6 +2454,7 @@ void USkeletalMesh::RebuildIndexBufferRanges()
 		}
 	}
 }
+//nv end
 #endif // #if WITH_EDITOR
 
 void USkeletalMesh::ReleaseCPUResources()

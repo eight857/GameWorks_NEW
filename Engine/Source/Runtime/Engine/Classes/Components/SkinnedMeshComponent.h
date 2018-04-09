@@ -41,6 +41,7 @@ enum EBoneVisibilityStatus
 	BVS_MAX,
 };
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 /** The method by which to hide bones */
 UENUM()
 enum EBoneHidingMethod
@@ -51,6 +52,7 @@ enum EBoneHidingMethod
 	BHM_Dynamic_Index_Buffer,
 	BHM_MAX,
 };
+//nv end
 
 /** PhysicsBody options when bone is hidden */
 UENUM()
@@ -681,8 +683,9 @@ public:
 	 * 
 	 * @param MeshObject - Mesh Object owned by this component
 	 */
+	 //#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	virtual void PostInitMeshObject(class FSkeletalMeshObject*);
-
+	//nv end
 	/**
 	* Simple, CPU evaluation of a vertex's skinned position (returned in component space)
 	*
@@ -954,6 +957,8 @@ public:
 	 */
 	class USkeletalMeshSocket const* GetSocketByName( FName InSocketName ) const;
 
+
+	//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	/**
 	* Set the method by which component hides bones during rendering.
 	*
@@ -980,7 +985,7 @@ protected:
 	void RebuildBoneVisibilityIndexBuffer();
 
 public:
-
+	//nv end
 	/** 
 	 * Get Bone Matrix from index
 	 *
