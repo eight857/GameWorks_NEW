@@ -35,14 +35,14 @@
 
 #define VXGI_FAILED(status) ((status) != ::VXGI::Status::OK)
 #define VXGI_SUCCEEDED(status) ((status) == ::VXGI::Status::OK)
-#define VXGI_VERSION_STRING "2.0.0.23757393"
+#define VXGI_VERSION_STRING "2.0.0.23908614"
 
 GI_BEGIN_PACKING
 namespace VXGI
 {
     struct Version
-    {
-        Version() : Major(2), Minor(0), Branch(0), Revision(23757393)
+	{
+		Version() : Major(2), Minor(0), Branch(0), Revision(23908614)
         { }
 
         uint32_t Major;
@@ -126,19 +126,7 @@ namespace VXGI
             QUARTER = 4
         };
     };
-
-    class IAreaLightTexture
-    {
-        IAreaLightTexture& operator=(const IAreaLightTexture& other);
-    public:
-        virtual void update(
-            NVRHI::TextureHandle sourceTexture, 
-            float2 topLeftUV = float2(0, 0), 
-            float2 topRightUV = float2(1, 0), 
-            float2 bottomLeftUV = float2(0, 1), 
-            float2 bottomRightUV = float2(1, 1)) = 0;
-    };
-
+    
     struct AreaLight 
     {
         // Some data that uniquely identifies a particular light and does not change between frames.
@@ -146,8 +134,8 @@ namespace VXGI
         void*       identifier;
 
         // Texture to be applied to the light. Can be NULL, which means the light has solid color.
-        // If not NULL, texture->update(...) has to be called at least once before rendering the area lights.
-        IAreaLightTexture* texture;
+        // The texture has to be a complete MIP chain.
+        NVRHI::TextureHandle texture;
 
         // Center of the light in world space.
         float3      center;
@@ -162,6 +150,14 @@ namespace VXGI
         // Color of the light. Can be any positive value.
         // Color is multiplied by diffuseIntensity or specularIntensity, and by samples from the light texture, to determine the final outgoing radiance of the light.
         float3      color;
+
+        // Distance from the light plane where irradiance becomes zero.
+        // Such attenuation is not physically correct, but it improves performance by limiting the lights' volume of influence.
+        // 0 means no attenuation.
+        float       attenuationRadius;
+
+        // Radial length of the region where irradiance is transitioned from physically correct values to zero.
+        float       transitionLength;
 
         // Color multiplier for diffuse lighting.
         // Set diffuseIntensity to 0 to prevent diffuse lighting and occlusion from being calculated.
@@ -205,13 +201,20 @@ namespace VXGI
         float       neighborhoodClampingWidth;
 
         // Enables screen-space occluder search between the surface and the first voxel sample.
-        // Requires AreaLightViewInfo::matricesAreValid = true and the matrices to be set.
+        // Requires ViewInfo::matricesAreValid = true and the matrices to be set.
         bool        enableScreenSpaceOcclusion;
 
         // Quality of the screen space occlusion, [0..1].
         float       screenSpaceOcclusionQuality;
 
-        AreaLight() 
+        // Enables generation of shadows that reflect which part of the light's texture is occluded.
+        bool        texturedShadows;
+
+        // Enables the use of a bicubic B-spline filter to sample the texture, instead of bilinear.
+        // Produces smoother lighting, especially fine specular reflections, at a small performance cost.
+        bool        highQualityTextureFilter;
+
+        AreaLight()
             : identifier(nullptr)
             , center(0, 0, 0)
             , majorAxis(1, 0, 0)
@@ -231,6 +234,10 @@ namespace VXGI
             , neighborhoodClampingWidth(1.f)
             , enableScreenSpaceOcclusion(false)
             , screenSpaceOcclusionQuality(0.25f)
+            , attenuationRadius(0.f)
+            , transitionLength(1.f)
+            , texturedShadows(true)
+            , highQualityTextureFilter(true)
         { }
     };
 
@@ -272,6 +279,13 @@ namespace VXGI
         // Controls the tradeoff between noise in high-detail areas (0) and temporal trailing under dynamic lighting (1).
         float       temporalReprojectionDetailReconstruction;
 
+        // Controls whether neighborhood color clamping (NCC) should be used in the temporal reprojection filter.
+        // NCC greatly reduces trailing artifacts, but adds some noise in high-detail areas.
+        bool        enableNeighborhoodClamping;
+
+        // Controls the variance in color that's allowed during NCC.
+        float       neighborhoodClampingWidth;
+
         // Minimum pixel weight for sparse tracing interpolation. When a pixel is below that weight, it is considered to be
         // a hole and submitted for refinement. When refinement is disabled, such pixels will be black with zero confidence.
         // Using a higher threshold improves image quality and reduces temporal noise at the cost of refinement pass performance.
@@ -301,6 +315,8 @@ namespace VXGI
             , temporalReprojectionMaxDistanceInVoxels(0.25f)
             , temporalReprojectionNormalWeightExponent(20.f)
             , temporalReprojectionDetailReconstruction(0.5f)
+            , enableNeighborhoodClamping(true)
+            , neighborhoodClampingWidth(1.f)
             , interpolationWeightThreshold(1e-4f)
             , enableViewReprojection(false)
             , viewReprojectionWeightThreshold(0.1f)
@@ -699,15 +715,10 @@ namespace VXGI
         // in order to make emittance voxelized into coarse LODs consistent with emittance downsampled from finer LODs.
         bool adaptiveMaterialSamplingRate;
 
-        // Allows the geometry shader to cull triangles that fit into one page which is not marked for invalidation.
-        // Improves performance when application mesh culling is too coarse in incremental voxelization mode.
-        bool enableTriangleCulling;
-
         MaterialInfo()
             : pixelShader(NULL)
             , geometryShader(NULL)
             , adaptiveMaterialSamplingRate(false)
-            , enableTriangleCulling(true)
         { }
 
         bool operator == (const MaterialInfo& b) const
@@ -720,8 +731,7 @@ namespace VXGI
             return
                 pixelShader != b.pixelShader ||
                 geometryShader != b.geometryShader ||
-                adaptiveMaterialSamplingRate != b.adaptiveMaterialSamplingRate ||
-                enableTriangleCulling != b.enableTriangleCulling;
+                adaptiveMaterialSamplingRate != b.adaptiveMaterialSamplingRate;
         }
     };
 
@@ -768,41 +778,25 @@ namespace VXGI
         {
             NVRHI::Rect extents;
 
+            // Projection parameters. Necessary for SSAO and screen-space shadows for area lights. Can be omitted otherwise.
+            bool matricesAreValid;
+            bool reverseProjection;
+            float3 preViewTranslation;
+            float4x4 viewMatrix;
+            float4x4 projMatrix;
+
             // Index into the 'views' array for the view which should be used for view reprojection.
             // For view reprojection to work, this value should be non-negative and less than the current view index.
             // Otherwise, reprojection will be disabled for this view.
             int reprojectionSourceViewIndex;
 
             ViewInfo()
-                : reprojectionSourceViewIndex(-1)
-            { }
-        };
-
-        struct SsaoViewInfo
-        {
-            NVRHI::Rect extents;
-            float4x4 viewMatrix; // translation doesn't matter for SSAO
-            float4x4 projMatrix;
-
-            SsaoViewInfo()
-            { }
-        };
-
-        struct AreaLightViewInfo
-        {
-            NVRHI::Rect extents;
-            bool matricesAreValid;
-            bool reverseProjection;
-            float3 preViewTranslation;
-            float4x4 viewMatrix; 
-            float4x4 projMatrix;
-
-            AreaLightViewInfo()
                 : matricesAreValid(false)
                 , reverseProjection(false)
+                , reprojectionSourceViewIndex(-1)
             { }
         };
-
+        
         // Computes the indirect diffuse illumination and ambient occlusion and returns the surfaces with it.
         // In VXAO mode, outDiffuseAndAmbient is a single-channel surface with ambient occlusion, [0..1];
         // In VXGI mode, outDiffuseAndAmbient is a 4-channel surface where RGB channels store indirect illumination 
@@ -831,7 +825,7 @@ namespace VXGI
             const SsaoParamaters& params,
             const NVRHI::PipelineStageBindings& gbufferBindings,
             const int2 gbufferSize,
-            const SsaoViewInfo* views,
+            const ViewInfo* views,
             uint32_t numViews,
             NVRHI::TextureHandle& outSSAO) = 0;
 
@@ -840,7 +834,7 @@ namespace VXGI
             const AreaLightTracingParameters& params,
             const NVRHI::PipelineStageBindings& gbufferBindings,
             const int2 gbufferTextureSize,
-            const AreaLightViewInfo* views,
+            const ViewInfo* views,
             uint32_t numViews,
             const AreaLight* pAreaLights,
             uint32_t numAreaLights,
@@ -1117,8 +1111,12 @@ namespace VXGI
         // Opacity that will be written into the .a channel of destinationTexture for covered pixels
         float targetOpacity;
 
-        // Clipmap level to visualize (for opacity and emittance views)
-        uint32_t level;
+        // Level of detail to visualize (only relevant for opacity and emittance views)
+        // -1 means "all clipmap levels"
+        // 0 .. (stackLevels - 1) are clipmap levels
+        // stackLevels .. (stackLevels + mipLevels - 1) are mipmap levels
+        // Anything else is invalid and will draw nothing.
+        int level;
 
         // Allocation map bit index to visualize (for the allocation map view)
         uint32_t bitToDisplay;
@@ -1130,16 +1128,24 @@ namespace VXGI
         float nearClipZ;
         float farClipZ;
 
+        // Color that will be used for near-zero opacity voxels
+        float3 opacityLowColor;
+
+        // Color that will be used for fully opaque voxels
+        float3 opacityHighColor;
+
         DebugRenderParameters()
             : debugMode(DebugRenderMode::DISABLED)
             , destinationTexture(NULL)
             , destinationDepth(NULL)
             , targetOpacity(1.0f)
-            , level(0)
+            , level(-1)
             , bitToDisplay(0)
             , voxelsToSkip(0)
             , nearClipZ(0.0f)
             , farClipZ(1.0f)
+            , opacityLowColor(0.f, 0.f, 1.f)  // blue
+            , opacityHighColor(1.f, 0.f, 0.f) // red
         { }
     };
 
@@ -1167,19 +1173,14 @@ namespace VXGI
         // - worldNormal should be normalized; it can be a flat geometry normal or actual normal used for shading.
         // - opacity, emissiveColorFront and emissiveColorBack can be computed as required.
         //
-        // The following functions:
-        //     bool VxgiCanWriteOpacity();
+        // The function:
         //     bool VxgiCanWriteEmittance();
         // can be used to determine the parameters of the current voxelization pass, i.e. what has been passed to 
         // the getVoxelizationState(...) function. In VXAO mode, VxgiCanWriteEmittance() always returns false.
-        // These functions can be used to skip some unnecessary calculations in the user code, like shading.
+        // This function can be used to skip some unnecessary calculations in the user code, like shading.
         //
         // VxgiGetIndirectIrradiance(...) function is also available to the user code to get the indirect irradiance,
         // see the comments for VoxelizationParameters::multiBounceMode for more details.
-        // 
-        // The useForOpacity and useForEmittance parameters control whether this shader will be used for opacity and 
-        // emittance voxelization, respectively. When one of this flags is false and the shader is actually used for that kind 
-        // of voxelization, calling getVoxelizationState will return a SHADER_MISSING error. 
         // 
         virtual Status::Enum compileVoxelizationPixelShader(IBlob** ppBlob, const char* source, size_t sourceSize, const char* entryFunc, const ShaderResources& userShaderCodeResources) = 0;
 
@@ -1271,9 +1272,9 @@ namespace VXGI
         //    //    struct VxgiSpecularShaderParameters
         //    //    {
         //    //        bool        enable;
-        //    //        float3      coneDirection;
+        //    //        float3      viewDirection;
         //    //        float       irradianceScale;
-        //    //        float       coneFactor;
+        //    //        float       roughness;
         //    //        float       tracingStep;
         //    //        float       opacityCorrectionFactor;
         //    //        float       initialOffsetBias;
@@ -1396,12 +1397,6 @@ namespace VXGI
         // Releases all the previously created resources for a specific tracer
         virtual void destroyTracer(IViewTracer* pTracer) = 0;
 
-        // Creates an internal representation of area light texture
-        virtual Status::Enum createAreaLightTexture(uint32_t width, uint32_t height, NVRHI::Format::Enum format, IAreaLightTexture** ppTexture) = 0;
-
-        // Destroys an area light texture
-        virtual void destroyAreaLightTexture(IAreaLightTexture* pTexture) = 0;
-
         // Get the current renderer interface
         virtual NVRHI::IRendererInterface* getRendererInterface() = 0;
 
@@ -1422,8 +1417,7 @@ namespace VXGI
 
         // This function performs all steps necessary to begin voxelization for a new frame. It should only be called once per frame.
         // The performOpacityVoxelization and performEmittanceVoxelization reference parameters are returned from this function,
-        // indicating whether the application is allowed to perform opacity or emittance voxelization draw calls on this frame, respectively.
-        // If the app tries to call getVoxelizationState when the respective perform... value is false, an INVALID_STATE error will be returned.
+        // indicating whether there is any region of voxel data where opacity or emittance is allowed to be updated on this frame, respectively.
         virtual Status::Enum prepareForVoxelization(
             const UpdateVoxelizationParameters& params,
             bool& performOpacityVoxelization,
@@ -1431,11 +1425,11 @@ namespace VXGI
 
         // Marks the beginning of a group of independent draw calls used for voxelization, useful for performance.
         // If this function is not called, a barrier will be inserted by the D3D runtime between these draw calls because they use a UAV.
-        // Inside, this methods enqueues a call to NvAPI_D3D11_BeginUAVOverlap, which removes the barrier.
+        // Inside, this methods calls NVRHI::IRendererInterface::setEnableUavBarriers(false, ...) with the right set of textures.
         virtual Status::Enum beginVoxelizationDrawCallGroup() = 0;
 
         // Marks the end of a group of independent draw calls used for voxelization.
-        // Inside, this methods enqueues a call to NvAPI_D3D11_EndUAVOverlap.
+        // Inside, this methods calls NVRHI::IRendererInterface::setEnableUavBarriers(true, ...)
         virtual Status::Enum endVoxelizationDrawCallGroup() = 0;
 
         // Returns the list of world-space regions that have to be revoxelized on this frame.
@@ -1458,13 +1452,12 @@ namespace VXGI
         // For preparing view parameters in advance, use the VFX_VXGI_ComputeVoxelizationViewParameters function. 
         virtual Status::Enum getVoxelizationViewParameters(VoxelizationViewParameters& outParams) = 0;
 
-        // Computes the state necessary to perform opacity voxelization or emittance voxelization for a given material.
-        // If this function is called after prepareForOpacityVoxelization(...), a state for opacity voxelization is returned;
-        // if it is called after prepareForEmittanceVoxelization(), a state for emittance voxelization is returned,
-        // and otherwise an INVALID_STATE error is returned.
-        // In order to voxelize geometry, set the returned state and don't forget to call preDraw/postDraw functions of the state.
+        // Computes the state necessary to perform voxelization for a given material.
+        // Has to be called between prepareForVoxelization(...) and finalizeVoxelization(), otherwise an INVALID_STATE error will occur.
         // The state object passed into this function will be completely overwritten.
-        virtual Status::Enum getVoxelizationState(const MaterialInfo& materialInfo, bool writesOpacity, bool writesEmittance, NVRHI::DrawCallState& state) = 0;
+        // This function does not modify any internal state or make any rendering calls, so it's safe to call it from threads 
+        // other than the primary rendering thread as long as it's called between prepareForVoxelization(...) and finalizeVoxelization().
+        virtual Status::Enum getVoxelizationState(const MaterialInfo& materialInfo, bool writesEmittance, NVRHI::DrawCallState& state) = 0;
 
         // Finalizes all voxel representation updates and prepares for cone tracing.
         virtual Status::Enum finalizeVoxelization() = 0;

@@ -22,21 +22,6 @@ typedef struct _NV_CUSTOM_SEMANTIC NV_CUSTOM_SEMANTIC;
 
 namespace NVRHI
 {
-    class IRenderThreadCommand
-    {
-        IRenderThreadCommand& operator=(const IRenderThreadCommand& other); //undefined
-    protected:
-        //The user cannot delete this
-        virtual ~IRenderThreadCommand() {};
-    public:
-        //execute the operation
-        virtual void execute() = 0;
-        //the caller is finished with this object and it can be destroyed
-        virtual void dispose() = 0;
-        //do both
-        virtual void executeAndDispose() = 0;
-    };
-
     //////////////////////////////////////////////////////////////////////////
     // Basic Types
     //////////////////////////////////////////////////////////////////////////
@@ -141,13 +126,13 @@ namespace NVRHI
             D24S8,
             X24G8_UINT,
             D32,
-			BC1,
-			BC2,
-			BC3,
-			BC4,
-			BC5,
-			BC6H,
-			BC7
+            BC1,
+            BC2,
+            BC3,
+            BC4,
+            BC5,
+            BC6H,
+            BC7
         };
     };
 
@@ -946,12 +931,6 @@ namespace NVRHI
         virtual void dispatch(const DispatchState& state, uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) = 0;
         virtual void dispatchIndirect(const DispatchState& state, BufferHandle indirectParams, uint32_t offsetBytes) = 0;
 
-        // A simple implementation would just look like
-        // {
-        //     onCommand->executeAndDispose();
-        // }
-        virtual void executeRenderThreadCommand(IRenderThreadCommand* onCommand) = 0;
-
 		virtual void setModifiedWMode(bool enabled, uint32_t numViewports, const float* pA, const float* pB) = 0;
 
 		virtual void setSinglePassStereoMode(bool enabled, uint32_t renderTargetIndexOffset, bool independentViewportMask) = 0;
@@ -965,10 +944,10 @@ namespace NVRHI
         // The application is passed the number of AFR groups for validation.
         virtual uint32_t getAFRGroupOfCurrentFrame(uint32_t numAFRGroups) = 0;
 
-		// Tells the D3D12 backend whether UAV barriers should be used for the given texture or buffer between draw calls.
-		// A barrier should still be placed before the first draw call in the group and after the last one.
-		virtual void setEnableUavBarriersForTexture(TextureHandle texture, bool enableBarriers) = 0;
-		virtual void setEnableUavBarriersForBuffer(BufferHandle buffer, bool enableBarriers) = 0;
+        // Tells the backend whether UAV barriers should be used for the given textures and buffers between draw calls.
+        // A barrier should still be placed before the first draw call in the group and after the last one.
+        // On D3D11, the textures and buffers arguments can be ignored, and a global "UAV overlap" section should be used.
+        virtual void setEnableUavBarriers(bool enableBarriers, const TextureHandle* textures = nullptr, size_t numTextures = 0, const BufferHandle* buffers = nullptr, size_t numBuffers = 0) = 0;
 
         virtual void beginRenderingPass() = 0;
         virtual void endRenderingPass() = 0;

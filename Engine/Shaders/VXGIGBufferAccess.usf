@@ -260,12 +260,8 @@ VxgiSpecularShaderParameters VxgiGetGBufferSpecularShaderParameters(VxgiGBufferS
 {
 	VxgiSpecularShaderParameters result;
 	result.enable = gbufferSample.valid && gbufferSample.specular > 0 && gbufferSample.roughness >= g_SpecularMinRoughness;
-	float roughness = min(gbufferSample.roughness * g_SpecularRoughnessScale, 0.75);
-	result.coneFactor = roughness * roughness * sqrt(PI);
-
-	float3 viewVector = gbufferSample.worldPos.xyz - gbufferSample.cameraPos.xyz;
-	result.coneDirection = normalize(reflect(viewVector.xyz, gbufferSample.normal.xyz));
-
+	result.roughness = min(gbufferSample.roughness * g_SpecularRoughnessScale, 0.75);
+	result.viewDirection = normalize(gbufferSample.worldPos.xyz - gbufferSample.cameraPos.xyz);
 	result.irradianceScale = g_SpecularIrradianceScale;
 	result.tracingStep = g_SpecularTracingStep;
 	result.opacityCorrectionFactor = g_SpecularOpacityCorrectionFactor;

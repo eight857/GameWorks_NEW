@@ -8,6 +8,11 @@
 
 #include "GFSDK_NVRHI.h"
 
+#include "AllowWindowsPlatformTypes.h"
+	#include <d3d11.h>
+#include "HideWindowsPlatformTypes.h"
+#include "nvapi.h"
+
 VXGI::IGlobalIllumination* FD3D11DynamicRHI::RHIVXGIGetInterface()
 {
 	return VxgiInterface;
@@ -188,13 +193,12 @@ void FD3D11DynamicRHI::RHICopyStructuredBufferData(FStructuredBufferRHIParamRef 
 	Direct3DDeviceIMContext->CopySubresourceRegion(DestBuffer->Resource, 0, DestOffset, 0, 0, SrcBuffer->Resource, 0, &SrcBox);
 }
 
-void FD3D11DynamicRHI::RHIExecuteVxgiRenderingCommand(NVRHI::IRenderThreadCommand* Command)
+void FD3D11DynamicRHI::RHISetEnableUAVBarriers(bool bEnable, const FTextureRHIParamRef* Textures, uint32 NumTextures, const FStructuredBufferRHIParamRef* Buffers, uint32 NumBuffers)
 {
-	check(Command != nullptr);
-
-	Command->executeAndDispose();
+	if (bEnable)
+		NvAPI_D3D11_EndUAVOverlap(GetDevice());
+	else
+		NvAPI_D3D11_BeginUAVOverlap(GetDevice());
 }
-
-
 #endif
 // NVCHANGE_END: Add VXGI

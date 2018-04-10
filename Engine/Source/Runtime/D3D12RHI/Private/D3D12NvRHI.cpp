@@ -917,10 +917,6 @@ namespace NVRHI
 		unapplyState(state);
 	}
 
-	void FRendererInterfaceD3D12::executeRenderThreadCommand(IRenderThreadCommand* onCommand)
-	{
-	}
-
 	void FRendererInterfaceD3D12::setModifiedWMode(bool enabled, uint32_t numViewports, const float* pA, const float* pB)
 	{
 		checkNoEntry();
@@ -941,20 +937,35 @@ namespace NVRHI
 		return 0;
 	}
 
-	void FRendererInterfaceD3D12::setEnableUavBarriersForTexture(TextureHandle t, bool enable)
+	void FRendererInterfaceD3D12::setEnableUavBarriers(bool enableBarriers, const TextureHandle* textures, size_t numTextures, const BufferHandle* buffers, size_t numBuffers)
 	{
 		checkCommandList();
 
-		m_RHICmdList->SetEnableUAVBarriers(static_cast<FTexture*>(t)->TextureRHI, enable);
+		enum { MAX_ELEMENTS = 16 };
+		TArray<FTextureRHIParamRef, TFixedAllocator<MAX_ELEMENTS>> Textures;
+		TArray<FStructuredBufferRHIParamRef, TFixedAllocator<MAX_ELEMENTS>> Buffers;
+
+		check(numTextures < MAX_ELEMENTS);
+		for (uint32 TextureIndex = 0; TextureIndex < uint32(numTextures); TextureIndex++)
+		{
+			Textures.Add(static_cast<FTexture*>(textures[TextureIndex])->TextureRHI);
+		}
+
+		check(numBuffers < MAX_ELEMENTS);
+		for (uint32 BufferIndex = 0; BufferIndex < uint32(numBuffers); BufferIndex++)
+		{
+			Buffers.Add(static_cast<FBuffer*>(buffers[BufferIndex])->BufferRHI);
+		}
+
+		FTextureRHIParamRef* pTextures = nullptr;
+		if (numTextures) pTextures = &Textures[0];
+
+		FStructuredBufferRHIParamRef* pBuffers = nullptr;
+		if (numBuffers) pBuffers = &Buffers[0];
+
+		m_RHICmdList->SetEnableUAVBarriers(enableBarriers, pTextures, uint32(numTextures), pBuffers, uint32(numBuffers));
 	}
 
-	void FRendererInterfaceD3D12::setEnableUavBarriersForBuffer(BufferHandle b, bool enable)
-	{
-		checkCommandList();
-
-		m_RHICmdList->SetEnableUAVBarriers(static_cast<FBuffer*>(b)->BufferRHI, enable);
-	}
-	
 	TextureHandle FRendererInterfaceD3D12::getTextureFromRHI(FRHITexture* TextureRHI)
 	{
 		if (!TextureRHI) return nullptr;

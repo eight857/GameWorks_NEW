@@ -301,8 +301,7 @@ public:
 	virtual void RHIDispatchIndirectComputeShaderStructured(FStructuredBufferRHIParamRef ArgumentBuffer, uint32 ArgumentOffset) final override;
 	virtual void RHIDrawIndirect(uint32 PrimitiveType, FStructuredBufferRHIParamRef ArgumentBuffer, uint32 ArgumentOffset) final override;
 	virtual void RHICopyStructuredBufferData(FStructuredBufferRHIParamRef DestBuffer, uint32 DestOffset, FStructuredBufferRHIParamRef SrcBuffer, uint32 SrcOffset, uint32 DataSize) final override;
-	virtual void RHISetEnableUAVBarriers(FTextureRHIParamRef TextureRHI, bool bEnable) final override;
-	virtual void RHISetEnableUAVBarriers(FStructuredBufferRHIParamRef BufferRHI, bool bEnable) final override;
+	virtual void RHISetEnableUAVBarriers(bool bEnable, const FTextureRHIParamRef* Textures, uint32 NumTextures, const FStructuredBufferRHIParamRef* Buffers, uint32 NumBuffers) final override;
 #endif
 	// NVCHANGE_END: Add VXGI
 

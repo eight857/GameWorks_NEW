@@ -71,8 +71,6 @@ namespace NVRHI
 		virtual void dispatch(const DispatchState& state, uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ);
 		virtual void dispatchIndirect(const DispatchState& state, BufferHandle indirectParams, uint32_t offsetBytes);
 
-		virtual void executeRenderThreadCommand(IRenderThreadCommand* onCommand);
-
         virtual void setModifiedWMode(bool enabled, uint32_t numViewports, const float* pA, const float* pB);
 
         virtual void setSinglePassStereoMode(bool enabled, uint32_t renderTargetIndexOffset, bool independentViewportMask);
@@ -80,8 +78,7 @@ namespace NVRHI
 		virtual uint32 getNumberOfAFRGroups();
 		virtual uint32 getAFRGroupOfCurrentFrame(uint32_t numAFRGroups);
 
-		virtual void setEnableUavBarriersForTexture(TextureHandle texture, bool enableBarriers);
-		virtual void setEnableUavBarriersForBuffer(BufferHandle buffer, bool enableBarriers);
+		virtual void setEnableUavBarriers(bool enableBarriers, const TextureHandle* textures = nullptr, size_t numTextures = 0, const BufferHandle* buffers = nullptr, size_t numBuffers = 0);
 
 		virtual void beginRenderingPass();
 		virtual void endRenderingPass();

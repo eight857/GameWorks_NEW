@@ -327,7 +327,7 @@ void Main(
 
 	// Get WorldPosition from attributes because normally it's reconstructed from SvPosition,
 	// which doesn't (easily) work for voxelization
-	float3 TranslatedWorldPosition = BasePassInterpolants.PixelPosition + ResolvedView.PreViewTranslation.xyz;
+	float3 TranslatedWorldPosition = BasePassInterpolants.PixelPosition.xyz + ResolvedView.PreViewTranslation.xyz;
 	CalcMaterialParametersEx(MaterialParameters, PixelMaterialInputs, SvPosition, ScreenPosition, bIsFrontFace, TranslatedWorldPosition, TranslatedWorldPosition);
 
 	//Clip if the blend mode requires it.
@@ -389,7 +389,7 @@ void Main(
 		}
 	}
 
-	if (VxgiCanWriteOpacity())
+	if (OpacityScale > 0)
 	{
 		Opacity = OpacityScale * GetMaterialOpacity(PixelMaterialInputs);
 	}

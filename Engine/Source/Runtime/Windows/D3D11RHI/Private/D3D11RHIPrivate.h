@@ -578,7 +578,7 @@ public:
 	virtual void RHIDispatchIndirectComputeShaderStructured(FStructuredBufferRHIParamRef ArgumentBuffer, uint32 ArgumentOffset) final override;
 	virtual void RHIDrawIndirect(uint32 PrimitiveType, FStructuredBufferRHIParamRef ArgumentBuffer, uint32 ArgumentOffset) final override;
 	virtual void RHICopyStructuredBufferData(FStructuredBufferRHIParamRef DestBuffer, uint32 DestOffset, FStructuredBufferRHIParamRef SrcBuffer, uint32 SrcOffset, uint32 DataSize) final override;
-	virtual void RHIExecuteVxgiRenderingCommand(NVRHI::IRenderThreadCommand* Command) final override;
+	virtual void RHISetEnableUAVBarriers(bool bEnable, const FTextureRHIParamRef* Textures, uint32 NumTextures, const FStructuredBufferRHIParamRef* Buffers, uint32 NumBuffers) final override;
 private:
 	VXGI::IGlobalIllumination* VxgiInterface;
 	VXGI::VoxelizationParameters VxgiVoxelizationParameters;

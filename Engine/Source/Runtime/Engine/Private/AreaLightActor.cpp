@@ -16,10 +16,10 @@ AAreaLightActor::AAreaLightActor(const FObjectInitializer& ObjectInitializer)
 	, LightColor(FLinearColor::White)
 	, LightIntensityDiffuse(1.0f)
 	, LightIntensitySpecular(1.0f)
+	, AttenuationRadius(1000.f)
+	, TransitionLength(250.f)
 	, bEnableLight(true)
 	, LightTexture(nullptr)
-	, VxgiTexture(nullptr)
-	, bVxgiTextureUpdateRequired(false)
 {
 #if WITH_GFSDK_VXGI
 	VXGI::AreaLight Default;
@@ -34,6 +34,8 @@ AAreaLightActor::AAreaLightActor(const FObjectInitializer& ObjectInitializer)
 	TemporalDetailReconstruction = Default.temporalReprojectionDetailReconstruction;
 	bEnableNeighborhoodColorClamping = Default.enableNeighborhoodClamping;
 	NeighborhoodClampingWidth = Default.neighborhoodClampingWidth;
+	bTexturedShadows = Default.texturedShadows;
+	bHighQualityTextureFilter = Default.highQualityTextureFilter;
 #else
 	// Some values to initialize the fields. They don't really matter.
 	Quality = 0.5f;
@@ -47,23 +49,10 @@ AAreaLightActor::AAreaLightActor(const FObjectInitializer& ObjectInitializer)
 	TemporalDetailReconstruction = 0.5f;
 	bEnableNeighborhoodColorClamping = false;
 	NeighborhoodClampingWidth = 1.0f;
+	bTexturedShadows = true;
+	bHighQualityTextureFilter = true;
 #endif
 }
-
-#if WITH_EDITOR
-void AAreaLightActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
-{
-	Super::PostEditChangeProperty(PropertyChangedEvent);
-
-	if (PropertyChangedEvent.Property != nullptr)
-	{
-		if (PropertyChangedEvent.Property->GetFName() == FName(TEXT("LightTexture")))
-		{
-			bVxgiTextureUpdateRequired = true;
-		}
-	}
-}
-#endif // WITH_EDITOR	
 
 #undef LOCTEXT_NAMESPACE
 

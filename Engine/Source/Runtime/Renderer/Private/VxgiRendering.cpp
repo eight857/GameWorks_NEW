@@ -167,9 +167,9 @@ static TAutoConsoleVariable<int32> CVarVxgiEmittanceShadowQuality(
 
 static TAutoConsoleVariable<int32> CVarVxgiDebugClipmapLevel(
 	TEXT("r.VXGI.DebugClipmapLevel"),
-	15,
+	-1,
 	TEXT("Current clipmap level visualized (for the opacity and emittance debug modes).\n")
-	TEXT("15: visualize all levels at once"),
+	TEXT("-1: visualize all levels at once"),
 	ECVF_Default);
 
 static TAutoConsoleVariable<int32> CVarVxgiCompositingMode(
@@ -487,6 +487,10 @@ void FSceneRenderer::InitVxgiRenderingState(const FSceneViewFamily* InViewFamily
 			Light.enableNeighborhoodClamping = Itr->bEnableNeighborhoodColorClamping;
 			Light.neighborhoodClampingWidth = Itr->NeighborhoodClampingWidth;
 			Light.identifier = *Itr;
+			Light.texturedShadows = Itr->bTexturedShadows;
+			Light.highQualityTextureFilter = Itr->bHighQualityTextureFilter;
+			Light.attenuationRadius = Itr->AttenuationRadius;
+			Light.transitionLength = Itr->TransitionLength;
 
 			if (Light.color.lengthSq() == 0 || Light.diffuseIntensity <= 0 && Light.specularIntensity <= 0 || !Itr->bEnableLight)
 				continue;
@@ -787,6 +791,7 @@ void SetVxgiSpecularTracingParameters(const FViewInfo& View, VXGI::SpecularTraci
 		TracingParams.filter = VXGI::SpecularTracingParameters::FILTER_NONE;
 
 	TracingParams.enableViewReprojection = bEnableStereoReprojection;
+	TracingParams.perPixelRandomOffsetScale = 0.5f;
 }
 
 void SetVxgiAreaLightTracingParameters(const FViewInfo& View, VXGI::AreaLightTracingParameters &TracingParams, bool bEnableTemporalReprojection)
@@ -955,7 +960,6 @@ void FSceneRenderer::RenderVxgiTracing(FRHICommandListImmediate& RHICmdList)
 	bool bEnableSpecularStereoReprojection = !!CVarVxgiSpecularStereoReprojectionEnable.GetValueOnRenderThread();
 
 	VXGI::IViewTracer::ViewInfo VxgiViewInfos[FVxgiGBufferAccessShader::MaxViews];
-	VXGI::IViewTracer::AreaLightViewInfo VxgiAreaLightViewInfos[FVxgiGBufferAccessShader::MaxViews];
 
 	for (int32 ViewIndex = 0; ViewIndex < NumViewsToProcess; ViewIndex++)
 	{
@@ -979,11 +983,10 @@ void FSceneRenderer::RenderVxgiTracing(FRHICommandListImmediate& RHICmdList)
 			}
 		}
 
-		VxgiAreaLightViewInfos[ViewIndex].extents = VxgiViewInfos[ViewIndex].extents;
-		VxgiAreaLightViewInfos[ViewIndex].matricesAreValid = true;
-		VxgiAreaLightViewInfos[ViewIndex].reverseProjection = true;
-		FMemory::Memcpy(&VxgiAreaLightViewInfos[ViewIndex].viewMatrix, &View.ViewMatrices.GetViewMatrix(), sizeof(VXGI::float4x4));
-		FMemory::Memcpy(&VxgiAreaLightViewInfos[ViewIndex].projMatrix, &View.ViewMatrices.GetProjectionMatrix(), sizeof(VXGI::float4x4));
+		VxgiViewInfos[ViewIndex].matricesAreValid = true;
+		VxgiViewInfos[ViewIndex].reverseProjection = true;
+		FMemory::Memcpy(&VxgiViewInfos[ViewIndex].viewMatrix, &View.ViewMatrices.GetViewMatrix(), sizeof(VXGI::float4x4));
+		FMemory::Memcpy(&VxgiViewInfos[ViewIndex].projMatrix, &View.ViewMatrices.GetProjectionMatrix(), sizeof(VXGI::float4x4));
 	}
 
 	// This needs to happen after the loop above because the loop patches some constants
@@ -1069,47 +1072,17 @@ void FSceneRenderer::RenderVxgiTracing(FRHICommandListImmediate& RHICmdList)
 				VXGI::AreaLight& Light = VxgiAreaLights[LightIndex];
 				AAreaLightActor* Actor = VxgiAreaLightActors[LightIndex];
 
-				if (Actor->bVxgiTextureUpdateRequired)
+				if (Actor->LightTexture)
 				{
-					if (Actor->VxgiTexture)
-					{
-						VxgiInterface->destroyAreaLightTexture(Actor->VxgiTexture);
-						Actor->VxgiTexture = nullptr;
-					}
-
-					Actor->bVxgiTextureUpdateRequired = false;
+					Light.texture = GDynamicRHI->GetVXGITextureFromRHI(Actor->LightTexture->Resource->TextureRHI->GetTexture2D());
 				}
-
-				if (Actor->LightTexture && !Actor->VxgiTexture)
-				{
-					NVRHI::Format::Enum TextureFormat = NVRHI::Format::SBGRA8_UNORM;
-					switch (Actor->LightTexture->GetPixelFormat())
-					{
-					case PF_A32B32G32R32F:
-					case PF_FloatRGB:
-					case PF_FloatRGBA:
-						TextureFormat = NVRHI::Format::RGBA16_FLOAT;
-						break;
-					}
-
-					VxgiInterface->createAreaLightTexture(Actor->LightTexture->GetSizeX(), Actor->LightTexture->GetSizeY(), TextureFormat, &Actor->VxgiTexture);
-
-					if (Actor->VxgiTexture)
-					{
-						NVRHI::TextureHandle SourceTextureHandle = GDynamicRHI->GetVXGITextureFromRHI(Actor->LightTexture->Resource->TextureRHI->GetTexture2D());
-
-						Actor->VxgiTexture->update(SourceTextureHandle);
-					}
-				}
-
-				Light.texture = Actor->VxgiTexture;
 			}
 
 			auto Status = VxgiViewTracer->computeAreaLightChannels(
 				AreaLightTracingParams,
 				GBufferBindings,
 				VXGI::int2(GBufferSize.X, GBufferSize.Y),
-				VxgiAreaLightViewInfos,
+				VxgiViewInfos,
 				NumViewsToProcess,
 				&VxgiAreaLights[0],
 				VxgiAreaLights.Num(),
@@ -1469,16 +1442,7 @@ void FSceneRenderer::RenderVxgiDebug(FRHICommandListImmediate& RHICmdList, const
 	FMemory::Memcpy(&Params.viewMatrix, &View.ViewMatrices.GetViewMatrix(), sizeof(VXGI::float4x4));
 	FMemory::Memcpy(&Params.projMatrix, &View.ViewMatrices.GetProjectionMatrix(), sizeof(VXGI::float4x4));
 
-	if (Params.debugMode == VXGI::DebugRenderMode::OPACITY_TEXTURE || Params.debugMode == VXGI::DebugRenderMode::EMITTANCE_TEXTURE)
-	{
-		Params.level = CVarVxgiDebugClipmapLevel.GetValueOnRenderThread();
-		Params.level = FMath::Min(Params.level, VxgiVoxelizationParameters.stackLevels * 2 + VxgiVoxelizationParameters.mipLevels);
-	}
-	else
-	{
-		Params.level = 0;
-	}
-
+	Params.level = CVarVxgiDebugClipmapLevel.GetValueOnRenderThread();
 	Params.bitToDisplay = 0;
 	Params.voxelsToSkip = 0;
 	Params.nearClipZ = nearClipZ;

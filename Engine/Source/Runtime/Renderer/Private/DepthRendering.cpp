@@ -1158,19 +1158,15 @@ bool FDeferredShadingSceneRenderer::RenderPrePassViewParallel(const FViewInfo& V
 		HBAODualLayer->GetInt() &&
 		ViewFamily.EngineShowFlags.HBAO)
 	{
-		for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+		if (View.IsPerspectiveProjection() && View.FinalPostProcessSettings.HBAOPowerExponent > 0.f && !View.bIsReflectionCapture)
 		{
-			const FViewInfo& View = Views[ViewIndex];
-			if (View.IsPerspectiveProjection() && View.FinalPostProcessSettings.HBAOPowerExponent > 0.f && !View.bIsReflectionCapture)
-			{
-				//copy depth buffer after static pre-pass
-				ParentCmdList.CopyToResolveTarget(
-					SceneContext.GetSceneDepthTexture(),
-					SceneContext.GetHBAOSceneDepthTexture(),
-					true,
-					FResolveParams()
-				);
-			}
+			//copy depth buffer after static pre-pass
+			ParentCmdList.CopyToResolveTarget(
+				SceneContext.GetSceneDepthTexture(),
+				SceneContext.GetHBAOSceneDepthTexture(),
+				true,
+				FResolveParams()
+			);
 		}
 	}
 #endif //WITH_GFSDK_SSAO

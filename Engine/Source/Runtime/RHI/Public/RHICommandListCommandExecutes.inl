@@ -559,23 +559,33 @@ void FRHICopyStructuredBufferData::Execute(FRHICommandListBase& CmdList)
 	INTERNAL_DECORATOR(RHICopyStructuredBufferData)(DestBuffer, DestOffset, SrcBuffer, SrcOffset, DataSize);
 }
 
-void FRHIExecuteVxgiRenderingCommand::Execute(FRHICommandListBase& CmdList)
-{
-	RHISTAT(ExecuteVxgiRenderingCommand);
-	INTERNAL_DECORATOR(RHIExecuteVxgiRenderingCommand)(Command);
-}
-
-void FRHISetEnableUAVBarriersTexture::Execute(FRHICommandListBase& CmdList)
+void FRHISetEnableUAVBarriers::Execute(FRHICommandListBase& CmdList)
 {
 	RHISTAT(SetEnableUAVBarriers);
-	INTERNAL_DECORATOR(RHISetEnableUAVBarriers)(TextureRHI, bEnable);
+
+	TArray<FTextureRHIParamRef, TFixedAllocator<FRHISetEnableUAVBarriers::MAX_ELEMENTS>> TextureParamRefs;
+	TArray<FStructuredBufferRHIParamRef, TFixedAllocator<FRHISetEnableUAVBarriers::MAX_ELEMENTS>> BufferParamRefs;
+
+	for (int32 TextureIndex = 0; TextureIndex < Textures.Num(); TextureIndex++)
+	{
+		TextureParamRefs.Add(Textures[TextureIndex]);
+	}
+
+	for (int32 BufferIndex = 0; BufferIndex < Buffers.Num(); BufferIndex++)
+	{
+		BufferParamRefs.Add(Buffers[BufferIndex]);
+	}
+
+	FTextureRHIParamRef* pTextures = nullptr;
+	if (Textures.Num()) pTextures = &TextureParamRefs[0];
+
+	FStructuredBufferRHIParamRef* pBuffers = nullptr;
+	if (Buffers.Num()) pBuffers = &BufferParamRefs[0];
+
+	
+	INTERNAL_DECORATOR(RHISetEnableUAVBarriers)(bEnable, pTextures, Textures.Num(), pBuffers, Buffers.Num());
 }
 
-void FRHISetEnableUAVBarriersBuffer::Execute(FRHICommandListBase& CmdList)
-{
-	RHISTAT(SetEnableUAVBarriers);
-	INTERNAL_DECORATOR(RHISetEnableUAVBarriers)(BufferRHI, bEnable);
-}
 #endif
 // NVCHANGE_END: Add VXGI
 

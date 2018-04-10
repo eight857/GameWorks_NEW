@@ -1884,53 +1884,32 @@ struct FRHICopyStructuredBufferData final : public FRHICommand<FRHICopyStructure
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
 
-struct FRHIExecuteVxgiRenderingCommand final : public FRHICommand<FRHIExecuteVxgiRenderingCommand>
+struct FRHISetEnableUAVBarriers final : public FRHICommand<FRHISetEnableUAVBarriers>
 {
-	NVRHI::IRenderThreadCommand* Command;
-
-	FORCEINLINE_DEBUGGABLE FRHIExecuteVxgiRenderingCommand(
-		NVRHI::IRenderThreadCommand* InCommand
-	)
-		: Command(InCommand)
-	{
-	}
-
-	RHI_API void Execute(FRHICommandListBase& CmdList);
-};
-
-struct FRHISetEnableUAVBarriersTexture final : public FRHICommand<FRHISetEnableUAVBarriersTexture>
-{
-	FTextureRHIRef TextureRHI;
+	enum { MAX_ELEMENTS = 16 };
+	TArray<FTextureRHIRef, TFixedAllocator<MAX_ELEMENTS>> Textures;
+	TArray<FStructuredBufferRHIRef, TFixedAllocator<MAX_ELEMENTS>> Buffers;
 	bool bEnable;
 
-	FORCEINLINE_DEBUGGABLE FRHISetEnableUAVBarriersTexture(
-		FTextureRHIRef InTextureRHI,
-		bool InEnable
-	)
-		: TextureRHI(InTextureRHI)
-		, bEnable(InEnable)
+	FORCEINLINE_DEBUGGABLE FRHISetEnableUAVBarriers(bool InEnable, const FTextureRHIParamRef* InTextures, uint32 InNumTextures, const FStructuredBufferRHIParamRef* InBuffers, uint32 InNumBuffers)
+		: bEnable(InEnable)
 	{
+		check(InNumTextures < MAX_ELEMENTS);
+		for (uint32 TextureIndex = 0; TextureIndex < InNumTextures; TextureIndex++)
+		{
+			Textures.Add(InTextures[TextureIndex]);
+		}
+
+		check(InNumTextures < MAX_ELEMENTS);
+		for (uint32 BufferIndex = 0; BufferIndex < InNumBuffers; BufferIndex++)
+		{
+			Buffers.Add(InBuffers[BufferIndex]);
+		}
 	}
 
 	RHI_API void Execute(FRHICommandListBase& CmdList);
 };
 
-struct FRHISetEnableUAVBarriersBuffer final : public FRHICommand<FRHISetEnableUAVBarriersBuffer>
-{
-	FStructuredBufferRHIRef BufferRHI;
-	bool bEnable;
-
-	FORCEINLINE_DEBUGGABLE FRHISetEnableUAVBarriersBuffer(
-		FStructuredBufferRHIRef InBufferRHI,
-		bool InEnable
-	)
-		: BufferRHI(InBufferRHI)
-		, bEnable(InEnable)
-	{
-	}
-
-	RHI_API void Execute(FRHICommandListBase& CmdList);
-};
 #endif
 // NVCHANGE_END: Add VXGI
 
@@ -3577,34 +3556,14 @@ public:
 		new (AllocCommand<FRHICopyStructuredBufferData>()) FRHICopyStructuredBufferData(DestBuffer, DestOffset, SrcBuffer, SrcOffset, DataSize);
 	}
 
-	FORCEINLINE_DEBUGGABLE void ExecuteVxgiRenderingCommand(NVRHI::IRenderThreadCommand* Command)
+	FORCEINLINE_DEBUGGABLE void SetEnableUAVBarriers(bool bEnable, const FTextureRHIParamRef* Textures, uint32 NumTextures, const FStructuredBufferRHIParamRef* Buffers, uint32 NumBuffers)
 	{
 		if (Bypass())
 		{
-			CMD_CONTEXT(RHIExecuteVxgiRenderingCommand)(Command);
+			CMD_CONTEXT(RHISetEnableUAVBarriers)(bEnable, Textures, NumTextures, Buffers, NumBuffers);
 			return;
 		}
-		new (AllocCommand<FRHIExecuteVxgiRenderingCommand>()) FRHIExecuteVxgiRenderingCommand(Command);
-	}
-
-	FORCEINLINE_DEBUGGABLE void SetEnableUAVBarriers(FTextureRHIParamRef TextureRHI, bool bEnable)
-	{
-		if (Bypass())
-		{
-			CMD_CONTEXT(RHISetEnableUAVBarriers)(TextureRHI, bEnable);
-			return;
-		}
-		new (AllocCommand<FRHISetEnableUAVBarriersTexture>()) FRHISetEnableUAVBarriersTexture(TextureRHI, bEnable);
-	}
-
-	FORCEINLINE_DEBUGGABLE void SetEnableUAVBarriers(FStructuredBufferRHIParamRef BufferRHI, bool bEnable)
-	{
-		if (Bypass())
-		{
-			CMD_CONTEXT(RHISetEnableUAVBarriers)(BufferRHI, bEnable);
-			return;
-		}
-		new (AllocCommand<FRHISetEnableUAVBarriersBuffer>()) FRHISetEnableUAVBarriersBuffer(BufferRHI, bEnable);
+		new (AllocCommand<FRHISetEnableUAVBarriers>()) FRHISetEnableUAVBarriers(bEnable, Textures, NumTextures, Buffers, NumBuffers);
 	}
 #endif
 	// NVCHANGE_END: Add VXGI

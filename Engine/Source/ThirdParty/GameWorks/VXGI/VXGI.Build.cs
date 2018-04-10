@@ -6,25 +6,22 @@ public class VXGI : ModuleRules
 	public VXGI(ReadOnlyTargetRules Target) : base(Target)
     {
 		Type = ModuleType.External;
-
-		if (Target.Platform != UnrealTargetPlatform.Win64)
-		{
-			// We only ship the x64 build of VXGI
-			PublicDefinitions.Add("WITH_GFSDK_VXGI=0"); // avoid the warnings on undefined symbol
-			return;
-		}
-
+		
 		PublicDefinitions.Add("WITH_GFSDK_VXGI=1");
 
 		string VXGIDir = Target.UEThirdPartySourceDirectory + "GameWorks/VXGI";
 		PublicIncludePaths.Add(VXGIDir + "/include");
+		PublicLibraryPaths.Add(VXGIDir + "/lib");
 
-		string ArchName = "x64";
-		string DebugSuffix = "";
+		string ArchName = "<unknown>";
 
-		PublicLibraryPaths.Add(VXGIDir + "/lib/" + ArchName);
-		PublicAdditionalLibraries.Add("GFSDK_VXGI" + DebugSuffix + "_" + ArchName + ".lib");
-		PublicDelayLoadDLLs.Add("GFSDK_VXGI" + DebugSuffix + "_" + ArchName + ".dll");
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+			ArchName = "x64";
+		else if (Target.Platform == UnrealTargetPlatform.Win32)
+			ArchName = "x86";
+
+		PublicAdditionalLibraries.Add("GFSDK_VXGI_" + ArchName + ".lib");
+		PublicDelayLoadDLLs.Add("GFSDK_VXGI_" + ArchName + ".dll");
 	}
 }
 // NVCHANGE_END: Add VXGI

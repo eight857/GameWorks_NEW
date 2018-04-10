@@ -889,14 +889,7 @@ namespace NVRHI
 
 		unapplyState(state);
 	}
-
-	void FRendererInterfaceD3D11::executeRenderThreadCommand(IRenderThreadCommand* onCommand) 
-	{
-		checkCommandList();
-
-		m_RHICmdList->ExecuteVxgiRenderingCommand(onCommand);
-	}
-
+	
     void FRendererInterfaceD3D11::setModifiedWMode(bool enabled, uint32_t numViewports, const float* pA, const float* pB)
     {
         checkNoEntry();
@@ -931,12 +924,11 @@ namespace NVRHI
 		return 0;
 	}
 
-	void FRendererInterfaceD3D11::setEnableUavBarriersForTexture(TextureHandle, bool)
+	void FRendererInterfaceD3D11::setEnableUavBarriers(bool enableBarriers, const TextureHandle*, size_t, const BufferHandle*, size_t)
 	{
-	}
+		checkCommandList();
 
-	void FRendererInterfaceD3D11::setEnableUavBarriersForBuffer(BufferHandle, bool)
-	{
+		m_RHICmdList->SetEnableUAVBarriers(enableBarriers, nullptr, 0, nullptr, 0);
 	}
 
 	ID3D11Texture2D* GetTextureResource(FRHITexture* TextureRHI)

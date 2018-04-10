@@ -963,9 +963,8 @@ public:
 	virtual void RHIDispatchIndirectComputeShaderStructured(FStructuredBufferRHIParamRef ArgumentBuffer, uint32 ArgumentOffset) { checkNoEntry(); }
 	virtual void RHIDrawIndirect(uint32 PrimitiveType, FStructuredBufferRHIParamRef ArgumentBuffer, uint32 ArgumentOffset) { checkNoEntry(); }
 	virtual void RHICopyStructuredBufferData(FStructuredBufferRHIParamRef DestBuffer, uint32 DestOffset, FStructuredBufferRHIParamRef SrcBuffer, uint32 SrcOffset, uint32 DataSize) { checkNoEntry(); }
-	virtual void RHISetEnableUAVBarriers(FTextureRHIParamRef TextureRHI, bool bEnable) { checkNoEntry(); }
-	virtual void RHISetEnableUAVBarriers(FStructuredBufferRHIParamRef BufferRHI, bool bEnable) { checkNoEntry(); }
-
+	virtual void RHISetEnableUAVBarriers(bool bEnable, const FTextureRHIParamRef* Textures, uint32 NumTextures, const FStructuredBufferRHIParamRef* Buffers, uint32 NumBuffers) { checkNoEntry(); }
+	
 	virtual VXGI::IGlobalIllumination* RHIVXGIGetInterface() { return nullptr; }
 	virtual NVRHI::IRendererInterface* RHIVXGIGetRendererInterface() { return nullptr; }
     virtual bool RHIVXGIIsInitialized() { return false; }

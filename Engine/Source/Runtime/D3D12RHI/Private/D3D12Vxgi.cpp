@@ -218,14 +218,17 @@ void FD3D12CommandContext::RHICopyStructuredBufferData(FStructuredBufferRHIParam
 	DEBUG_EXECUTE_COMMAND_LIST(this);
 }
 
-void FD3D12CommandContext::RHISetEnableUAVBarriers(FTextureRHIParamRef TextureRHI, bool bEnable)
+void FD3D12CommandContext::RHISetEnableUAVBarriers(bool bEnable, const FTextureRHIParamRef* Textures, uint32 NumTextures, const FStructuredBufferRHIParamRef* Buffers, uint32 NumBuffers)
 {
-	GetD3D12TextureFromRHITexture(TextureRHI)->GetResource()->SetEnableUAVBarriers(bEnable);
-}
+	for (uint32 TextureIndex = 0; TextureIndex < NumTextures; TextureIndex++)
+	{
+		GetD3D12TextureFromRHITexture(Textures[TextureIndex])->GetResource()->SetEnableUAVBarriers(bEnable);
+	}
 
-void FD3D12CommandContext::RHISetEnableUAVBarriers(FStructuredBufferRHIParamRef BufferRHI, bool bEnable)
-{
-	FD3D12DynamicRHI::ResourceCast(BufferRHI)->ResourceLocation.GetResource()->SetEnableUAVBarriers(bEnable);
+	for (uint32 BufferIndex = 0; BufferIndex < NumBuffers; BufferIndex++)
+	{
+		FD3D12DynamicRHI::ResourceCast(Buffers[BufferIndex])->ResourceLocation.GetResource()->SetEnableUAVBarriers(bEnable);
+	}
 }
 
 #endif

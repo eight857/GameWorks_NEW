@@ -790,10 +790,9 @@ public:
 	void SetSharedState(FRHICommandList& RHICmdList, FDrawingPolicyRenderState& DrawRenderState, const FSceneView* View, const ContextDataType PolicyContext) const
 	{
 		bool bCanWriteEmittance = !View->VxgiVoxelizationArgs.bAmbientOcclusionMode && View->VxgiVoxelizationPass != EVxgiVoxelizationPass::EXTRA_OPACITY;
-		bool bCanWriteOpacity = !MatInfo.adaptiveMaterialSamplingRate || View->VxgiVoxelizationPass == EVxgiVoxelizationPass::EXTRA_OPACITY || View->VxgiVoxelizationPass == EVxgiVoxelizationPass::ONLY_OPACITY;
 
 		NVRHI::DrawCallState VxgiDrawCallState;
-		auto Status = GDynamicRHI->RHIVXGIGetInterface()->getVoxelizationState(MatInfo, bCanWriteOpacity, bCanWriteEmittance, VxgiDrawCallState);
+		auto Status = GDynamicRHI->RHIVXGIGetInterface()->getVoxelizationState(MatInfo, bCanWriteEmittance, VxgiDrawCallState);
 		check(VXGI_SUCCEEDED(Status));
 
 		FGeometryShaderRHIParamRef GeometryShaderInUse = static_cast<FGeometryShaderRHIParamRef>(GDynamicRHI->GetRHIShaderFromVXGI(VxgiDrawCallState.GS.shader));
