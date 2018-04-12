@@ -36,7 +36,7 @@
 
 #define LOCTEXT_NAMESPACE "BlastMeshEditor"
 
-#define USE_FRACTURE_UPDATE 1
+#define USE_FRACTURE_UPDATE 0
 
 namespace
 {
