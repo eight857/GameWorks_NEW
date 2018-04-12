@@ -36,6 +36,8 @@
 
 #define LOCTEXT_NAMESPACE "BlastMeshEditor"
 
+#define USE_FRACTURE_UPDATE 1
+
 namespace
 {
 	IMeshUtilities* MeshUtilities = FModuleManager::Get().LoadModulePtr<IMeshUtilities>("MeshUtilities");
@@ -108,7 +110,7 @@ void BuildSmoothingGroups(FRawMesh& RawMesh)
 	}
 }
 
-
+#if USE_FRACTURE_UPDATE
 void BuildSkeletalModelFromChunks(FSkeletalMeshLODModel& LODModel, const FReferenceSkeleton& RefSkeleton, int32 MaxBonesPerChunk,
 	TArray<FSkinnedMeshChunk*>& Chunks, const TArray<int32>& PointToOriginalMap, const TMap<int32, int32>& OldToNewBoneMap = {})
 {
@@ -396,6 +398,7 @@ void BuildSkeletalModelFromChunks(FSkeletalMeshLODModel& LODModel, const FRefere
 	USkeletalMesh::CalculateRequiredBones(LODModel, RefSkeleton, NULL);
 #endif // #if WITH_EDITORONLY_DATA
 }
+#endif // USE_FRACTURE_UPDATE
 
 Nv::Blast::Mesh* CreateAuthoringMeshFromRawMesh(const FRawMesh& RawMesh, const FTransform& UE4ToBlastTransform)
 {
@@ -938,6 +941,9 @@ void LoadFracturedChunk(TSharedPtr<FFractureSession> FractureSession, UMaterialI
 
 void UpdateSkeletalMeshFromAuthoring(TSharedPtr<FFractureSession> FractureSession, UMaterialInterface* InteriorMaterial)
 {
+#if !USE_FRACTURE_UPDATE
+	CreateSkeletalMeshFromAuthoring(FractureSession, false, InteriorMaterial);
+#else
 	TMap<int32, int32> OldToNewBoneMap;
 	TArray<int32> NewChunks;
 
@@ -1006,6 +1012,7 @@ void UpdateSkeletalMeshFromAuthoring(TSharedPtr<FFractureSession> FractureSessio
 	BuildSkeletalModelFromChunks(LODModel, SkeletalMesh->RefSkeleton, MaxGPUSkinBones, Chunks, LODPointToRawMap, OldToNewBoneMap);
 
 	FinallizeMeshCreation(SkeletalMesh, LODModel, ComponentContexts);
+#endif
 }
 
 

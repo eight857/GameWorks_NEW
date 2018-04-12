@@ -2921,21 +2921,16 @@ FPrimitiveSceneProxy* UBlastMeshComponent::CreateSceneProxy()
 	FBlastMeshSceneProxy* Result = nullptr;
 	FSkeletalMeshRenderData* SkelMeshRenderData = GetSkeletalMeshRenderData();
 
-	// Only create a scene proxy for rendering if properly initialized
-	if (SkeletalMesh)
+	if (ShouldRender() && SkelMeshRenderData &&
+		SkelMeshRenderData->LODRenderData.IsValidIndex(PredictedLODLevel) &&
+		!bHideSkin &&
+		MeshObject)
 	{
-		FSkeletalMeshModel& Resource = *SkeletalMesh->GetImportedModel();
-		if (ShouldRender() && SkelMeshRenderData &&
-			Resource.LODModels.IsValidIndex(PredictedLODLevel) &&
-			!bHideSkin &&
-			MeshObject)
+		// Only create a scene proxy if the bone count being used is supported, or if we don't have a skeleton (this is the case with destructibles)
+		int32 MaxBonesPerChunk = SkelMeshRenderData->GetMaxBonesPerSection();
+		if (MaxBonesPerChunk <= GetFeatureLevelMaxNumberOfBones(SceneFeatureLevel))
 		{
-			// Only create a scene proxy if the bone count being used is supported, or if we don't have a skeleton (this is the case with destructibles)
-			int32 MaxBonesPerChunk = SkelMeshRenderData->GetMaxBonesPerSection();
-			if (MaxBonesPerChunk <= GetFeatureLevelMaxNumberOfBones(SceneFeatureLevel))
-			{
-				Result = ::new FBlastMeshSceneProxy(this, SkelMeshRenderData);
-			}
+			Result = ::new FBlastMeshSceneProxy(this, SkelMeshRenderData);
 		}
 	}
 
