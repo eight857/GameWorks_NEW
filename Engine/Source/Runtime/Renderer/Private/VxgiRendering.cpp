@@ -298,6 +298,7 @@ public:
 	{
 		FMatrix     viewProjMatrix;
 		FMatrix     viewProjMatrixInv;
+		FMatrix     viewMatrixInv;
 		FVector4    cameraPosition;
 
 		FVector2D   viewportOrigin;
@@ -602,9 +603,9 @@ void FSceneRenderer::PrepareForVxgiVoxelization(FRHICommandList& RHICmdList)
 
 	switch (Views[0].FinalPostProcessSettings.VxgiMultiBounceLightLeaking)
 	{
-	case VXGILLM_Minimal: Parameters.indirectIrradianceMapTracingParameters.opacityLookback = 0; break;
-	case VXGILLM_Moderate: Parameters.indirectIrradianceMapTracingParameters.opacityLookback = 1; break;
-	case VXGILLM_Heavy: Parameters.indirectIrradianceMapTracingParameters.opacityLookback = 2; break;
+    case VXGILLM_Minimal: Parameters.indirectIrradianceMapTracingParameters.lightLeakingAmount = VXGI::LightLeakingAmount::MINIMAL; break;
+	case VXGILLM_Moderate: Parameters.indirectIrradianceMapTracingParameters.lightLeakingAmount = VXGI::LightLeakingAmount::MODERATE; break;
+	case VXGILLM_Heavy: Parameters.indirectIrradianceMapTracingParameters.lightLeakingAmount = VXGI::LightLeakingAmount::HEAVY; break;
 	}
 
 	Status = VxgiInterface->prepareForVoxelization(
@@ -775,9 +776,9 @@ void SetVxgiDiffuseTracingParameters(const FViewInfo& View, VXGI::DiffuseTracing
 
 	switch (PostSettings.VxgiDiffuseLightLeaking)
 	{
-	case VXGILLM_Minimal: TracingParams.opacityLookback = 0; break;
-	case VXGILLM_Moderate: TracingParams.opacityLookback = 1; break;
-	case VXGILLM_Heavy: TracingParams.opacityLookback = 2; break;
+	case VXGILLM_Minimal: TracingParams.lightLeakingAmount = VXGI::LightLeakingAmount::MINIMAL; break;
+	case VXGILLM_Moderate: TracingParams.lightLeakingAmount = VXGI::LightLeakingAmount::MODERATE; break;
+	case VXGILLM_Heavy: TracingParams.lightLeakingAmount = VXGI::LightLeakingAmount::HEAVY; break;
 	}
 }
 
@@ -829,6 +830,7 @@ void FillVxgiConstantBuffer(const TArray<FViewInfo>& Views, int32 NumViewsToProc
 
 		GBuffer.viewProjMatrix = ViewProjMatrix;
 		GBuffer.viewProjMatrixInv = ViewProjMatrix.Inverse();
+		GBuffer.viewMatrixInv = ViewMatrix.Inverse();
 		GBuffer.cameraPosition = View.ViewMatrices.GetViewOrigin();
 		GBuffer.projectionA = ProjectionMatrix.M[2][2] / ProjectionMatrix.M[2][3];
 		GBuffer.projectionB = ProjectionMatrix.M[3][2] / ProjectionMatrix.M[2][3];

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2012-2016, NVIDIA CORPORATION. All rights reserved.
+* Copyright (c) 2012-2018, NVIDIA CORPORATION. All rights reserved.
 *
 * NVIDIA CORPORATION and its licensors retain all intellectual property
 * and proprietary rights in and to this software, related documentation
@@ -35,14 +35,14 @@
 
 #define VXGI_FAILED(status) ((status) != ::VXGI::Status::OK)
 #define VXGI_SUCCEEDED(status) ((status) == ::VXGI::Status::OK)
-#define VXGI_VERSION_STRING "2.0.0.23908614"
+#define VXGI_VERSION_STRING "2.0.0.23927712"
 
 GI_BEGIN_PACKING
 namespace VXGI
 {
     struct Version
 	{
-		Version() : Major(2), Minor(0), Branch(0), Revision(23908614)
+		Version() : Major(2), Minor(0), Branch(0), Revision(23927712)
         { }
 
         uint32_t Major;
@@ -124,6 +124,16 @@ namespace VXGI
             HALF = 2,
             THIRD = 3, 
             QUARTER = 4
+        };
+    };
+
+    struct LightLeakingAmount
+    {
+        enum Enum
+        {
+            MINIMAL = 0,
+            MODERATE = 1,
+            HEAVY = 2
         };
     };
     
@@ -301,9 +311,9 @@ namespace VXGI
         float       viewReprojectionWeightThreshold;
 
         // Makes the cone tracing code use the accumulated opacity computed N steps back instead of the current value.
-        // Three options are supported: 0, 1 and 2.
-        // 0 produces less light leaking, 2 is the same setting that was used in VXGI 1.0, and 1 is something in between.
-        uint32_t    opacityLookback;
+        // Three options are supported: Minimal, Moderate, and Heavy.
+        // Minimal produces less light leaking, Heavy is the same setting that was used in VXGI 1.0, and Moderate is something in between.
+        LightLeakingAmount::Enum lightLeakingAmount;
 
         DiffuseTracingParameters()
             : tracingResolution(TracingResolution::QUARTER)
@@ -320,7 +330,7 @@ namespace VXGI
             , interpolationWeightThreshold(1e-4f)
             , enableViewReprojection(false)
             , viewReprojectionWeightThreshold(0.1f)
-            , opacityLookback(0)
+            , lightLeakingAmount(LightLeakingAmount::MINIMAL)
         {
         }
     };
@@ -403,8 +413,8 @@ namespace VXGI
         // the reprojected color is used, and tracing is not performed.
         float       viewReprojectionWeightThreshold;
 
-        // See the comment for opacityLookback in DiffuseTracingParameters.
-        uint32_t    opacityLookback;
+        // See the comment for lightLeakingAmount in DiffuseTracingParameters.
+        LightLeakingAmount::Enum lightLeakingAmount;
 
         SpecularTracingParameters()
             : filter(FILTER_SIMPLE)
@@ -414,6 +424,7 @@ namespace VXGI
             , temporalReprojectionNormalWeightExponent(20.f)
             , enableViewReprojection(false)
             , viewReprojectionWeightThreshold(0.1f)
+            , lightLeakingAmount(LightLeakingAmount::MINIMAL)
         { }
     };
 
@@ -458,7 +469,7 @@ namespace VXGI
         float       tracingStep;
         float       irradianceScale;
         float       opacityCorrectionFactor;
-        uint32_t        opacityLookback;
+        LightLeakingAmount::Enum lightLeakingAmount;
 
         // Auto-normalization is a safeguard algorithm that attempts to prevent irradiance from blowing up.
         // In some cases, such as when the value of irradianceScale in this structure is too large, or when multiple 
@@ -483,6 +494,7 @@ namespace VXGI
             , coneAngle(40.f)
             , useAutoNormalization(true)
             , irradianceClampValue(0.f)
+            , lightLeakingAmount(LightLeakingAmount::MODERATE)
         { }
     };
 

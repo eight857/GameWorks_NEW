@@ -1526,18 +1526,7 @@ void CompileD3D11Shader(const FShaderCompilerInput& Input,FShaderCompilerOutput&
 #if !PLATFORM_64BITS
 	CompilerPath.Append(TEXT("Binaries/ThirdParty/Windows/DirectX/x86/d3dcompiler_47.dll"));
 #else
-	// NVCHANGE_BEGIN: Add VXGI
-#if WITH_GFSDK_VXGI
-	// VXGI uses some features from a newer version of the compiler, such as Typed UAV Loads.
-	// The feature doesn't work on all platforms, and there is a fallback option available in VXGI,
-	// but all shaders still need to be compiled by the editor.
-	// This is not a good solution as the newer d3dcompiler will probably not load on Windows 7,
-	// but it will do for now.
-	CompilerPath.Append(TEXT("Binaries/ThirdParty/GameWorks/VXGI/d3dcompiler_47.dll"));
-#else
 	CompilerPath.Append(TEXT("Binaries/ThirdParty/Windows/DirectX/x64/d3dcompiler_47.dll"));
-#endif
-	// NVCHANGE_END: Add VXGI
 #endif
 
 	// @TODO - currently d3d11 uses d3d10 shader compiler flags... update when this changes in DXSDK

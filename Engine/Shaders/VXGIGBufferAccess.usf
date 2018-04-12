@@ -16,6 +16,7 @@ struct GBufferParameters
 {
 	float4x4    viewProjMatrix;
 	float4x4    viewProjMatrixInv;
+	float4x4    viewMatrixInv;
 	float4		cameraPosition;
 
 	float2		viewportOrigin;
@@ -96,6 +97,8 @@ struct VxgiGBufferSample
 	float4 clipPos;
 	float3 normal;
 	float3 cameraPos;
+	float3 viewRight;
+	float3 viewUp;
 	float specular;
 	float roughness;
 	bool valid;
@@ -110,6 +113,8 @@ VxgiGBufferSample VxgiGetDefaultGBufferSample()
 	result.clipPos = 0;
 	result.normal = 0;
 	result.cameraPos = 0;
+	result.viewRight = 0;
+	result.viewUp = 0;
 	result.specular = 0;
 	result.roughness = 0;
 	result.valid = false;
@@ -187,6 +192,8 @@ bool VxgiLoadGBufferSample(float2 windowPos, uint viewIndex, bool previous, bool
 		return false;
 	}
 
+	result.viewRight = gbuffer.viewMatrixInv[0].xyz;
+	result.viewUp = gbuffer.viewMatrixInv[1].xyz;
 	result.normal = UnrealGBuffer.WorldNormal;
 	result.specular = UnrealGBuffer.Specular;
 	result.roughness = UnrealGBuffer.Roughness;
@@ -228,6 +235,12 @@ float3 GetTangent(float3 direction)
 		tangent = float3(absNormal.z, absNormal.z, (-normal.x - normal.y) * sign(normal.z));
 
 	return normalize(tangent);
+}
+
+void VxgiGetGBufferRightAndUp(VxgiGBufferSample gbufferSample, out float3 right, out float3 up)
+{
+	right = gbufferSample.viewRight;
+	up = gbufferSample.viewUp;
 }
 
 float3 VxgiGetGBufferTangent(VxgiGBufferSample gbufferSample)
@@ -302,6 +315,18 @@ float2 VxgiGBufferMapClipToWindow(uint viewIndex, float2 clipPos)
 	
 	float2 UV = clipPos.xy * float2(0.5, -0.5) + 0.5;
 	return UV * gbuffer.viewportSize + gbuffer.viewportOrigin;
+}
+
+float2 VxgiGBufferMapWindowToClip(uint viewIndex, float2 windowPos)
+{
+	GBufferParameters gbuffer = g_GBuffer[viewIndex];
+
+	float2 UV = (windowPos - gbuffer.viewportOrigin.xy) * gbuffer.viewportSizeInv.xy;
+
+	float2 clipPos;
+	clipPos.x = UV.x * 2 - 1;
+	clipPos.y = 1 - UV.y * 2;
+	return clipPos;
 }
 
 bool VxgiGetGBufferPositionInOtherView(VxgiGBufferSample gbufferSample, uint viewIndex, bool previous, out float2 prevWindowPos)
