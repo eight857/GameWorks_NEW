@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <DependencyManifest xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" BaseUrl="http://carbon-deps.s3.amazonaws.com">
   <Files>
+    <File Name="Engine/Binaries/ThirdParty/GameWorks/VXGI/d3dcompiler_47.dll" Hash="4fca3aa401cee502d1d7be5104188552f57e6295" />
     <File Name="Engine/Binaries/ThirdParty/GameWorks/VXGI/GFSDK_VXGI_x64.dll" Hash="60e0740c6420ecdcbd738d76e1af44c71e0e9207" />
     <File Name="Engine/Binaries/ThirdParty/GameWorks/VXGI/GFSDK_VXGI_x86.dll" Hash="7de1ac123c03e0f091c25cc89ec6365363151a3f" />
     <File Name="Engine/Source/ThirdParty/GameWorks/VXGI/lib/GFSDK_VXGI_x64.lib" Hash="dff58765dc71fc8f4ba6419c57a74c8b9f18f049" />
     <File Name="Engine/Source/ThirdParty/GameWorks/VXGI/lib/GFSDK_VXGI_x86.lib" Hash="f84285a420e34cc1cf47d9f7c3edf756020d2132" />
   </Files>
   <Blobs>
+    <Blob Hash="4fca3aa401cee502d1d7be5104188552f57e6295" Size="4310320" PackHash="1c5eca47d14ad6e48a7fb4fbbe249c9e58acd9d8" PackOffset="8" />
     <Blob Hash="60e0740c6420ecdcbd738d76e1af44c71e0e9207" Size="1931264" PackHash="d5074c26dfbdeb2d7bfef614724278551d3dc9cd" PackOffset="8" />
     <Blob Hash="7de1ac123c03e0f091c25cc89ec6365363151a3f" Size="1720320" PackHash="19d800f67b1a99a5e57ae894d98293a801713d30" PackOffset="8" />
     <Blob Hash="dff58765dc71fc8f4ba6419c57a74c8b9f18f049" Size="3914" PackHash="ae8e2970a9c4832e593bb2979d327ef3889ec5c7" PackOffset="8" />
@@ -14,6 +16,7 @@
   </Blobs>
   <Packs>
     <Pack Hash="19d800f67b1a99a5e57ae894d98293a801713d30" Size="1720328" CompressedSize="1326757" RemotePath="VXGI" />
+    <Pack Hash="1c5eca47d14ad6e48a7fb4fbbe249c9e58acd9d8" Size="4310328" CompressedSize="1853113" RemotePath="VXGI" />
     <Pack Hash="3ab29a2f4aede4fd4c27bb23ec9d3c14be0f94e4" Size="3954" CompressedSize="871" RemotePath="VXGI" />
     <Pack Hash="ae8e2970a9c4832e593bb2979d327ef3889ec5c7" Size="3922" CompressedSize="882" RemotePath="VXGI" />
     <Pack Hash="d5074c26dfbdeb2d7bfef614724278551d3dc9cd" Size="1931272" CompressedSize="1398392" RemotePath="VXGI" />
