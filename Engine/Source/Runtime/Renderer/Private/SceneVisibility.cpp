@@ -1601,7 +1601,7 @@ struct FRelevancePacket
 
 			// NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI
-			if (View.bIsVxgiVoxelization && bTranslucentRelevance)
+			if (View.bIsVxgiVoxelization && bTranslucentRelevance && !ViewRelevance.bStaticRelevance)
 			{
 				NotDrawRelevant.AddPrim(BitIndex);
 				continue;
