@@ -554,7 +554,7 @@ bool FSceneRenderer::IsVxgiEnabled(const FViewInfo& View)
 
 	const auto& PostSettings = View.FinalPostProcessSettings;
 	return bVxgiAmbientOcclusionMode
-		? PostSettings.VxgiDiffuseTracingEnabled && PostSettings.bVxgiAmbientOcclusionEnabled || PostSettings.VxgiAreaLightsEnabled
+		? PostSettings.bVxgiAmbientOcclusionEnabled || PostSettings.VxgiAreaLightsEnabled
 		: PostSettings.VxgiDiffuseTracingEnabled || PostSettings.VxgiSpecularTracingEnabled || PostSettings.VxgiAreaLightsEnabled;
 }
 
@@ -645,7 +645,7 @@ bool FSceneRenderer::InitializeVxgiVoxelizationParameters()
 		}
 
 		const auto& PostSettings = Views[ViewIndex].FinalPostProcessSettings;
-		if (PostSettings.VxgiDiffuseTracingEnabled && PostSettings.bVxgiAmbientOcclusionEnabled)
+		if (PostSettings.bVxgiAmbientOcclusionEnabled)
 		{
 			Views[ViewIndex].VxgiAmbientOcclusionMode = bVxgiAmbientOcclusionMode
 				? EVxgiAmbientOcclusionMode::RedChannel
@@ -1008,7 +1008,7 @@ void FSceneRenderer::RenderVxgiTracing(FRHICommandListImmediate& RHICmdList)
 		VXGI::DiffuseTracingParameters DiffuseTracingParams;
 		SetVxgiDiffuseTracingParameters(PrimaryView, DiffuseTracingParams, bEnableTemporalReprojection, bEnableDiffuseStereoReprojection);
 
-		if (PrimaryView.FinalPostProcessSettings.VxgiDiffuseTracingEnabled)
+		if (PrimaryView.FinalPostProcessSettings.VxgiDiffuseTracingEnabled || PrimaryView.FinalPostProcessSettings.bVxgiAmbientOcclusionEnabled)
 		{
 			auto Status = VxgiViewTracer->computeDiffuseChannel(
 				DiffuseTracingParams,
@@ -1142,6 +1142,7 @@ void FSceneRenderer::EndVxgiFinalPostProcessSettings(FFinalPostProcessSettings& 
 	if (!CVarVxgiDiffuseTracingEnable.GetValueOnRenderThread() || !ViewFamily.EngineShowFlags.VxgiDiffuse)
 	{
 		FinalPostProcessSettings.VxgiDiffuseTracingEnabled = false;
+		FinalPostProcessSettings.bVxgiAmbientOcclusionEnabled = false;
 	}
 	if (!CVarVxgiSpecularTracingEnable.GetValueOnRenderThread() || !ViewFamily.EngineShowFlags.VxgiSpecular)
 	{

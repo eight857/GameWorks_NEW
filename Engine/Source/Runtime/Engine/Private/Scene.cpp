@@ -524,7 +524,7 @@ FPostProcessSettings::FPostProcessSettings()
 		VxgiDiffuseTracingIntensity = DefaultParams.irradianceScale;
 		VxgiDiffuseTracingResolution = VXGIDTR_Quarter;
 		VxgiDiffuseLightLeaking = VXGILLM_Minimal;
-		VxgiDiffuseTracingQuality = DefaultParams.quality;
+		VxgiDiffuseTracingQuality = 0.25f;
 		VxgiDiffuseTracingDirectionalSamplingRate = DefaultParams.directionalSamplingRate;
 		VxgiDiffuseTracingSoftness = DefaultParams.softness;
 		VxgiDiffuseTracingStep = DefaultParams.tracingStep;
@@ -538,7 +538,7 @@ FPostProcessSettings::FPostProcessSettings()
 		VxgiDiffuseTracingTemporalReprojectionDetailReconstruction = DefaultParams.temporalReprojectionDetailReconstruction;
 		
 		VxgiAmbientRange = DefaultParams.ambientRange;
-		VxgiAmbientScale = DefaultParams.ambientScale;
+		VxgiAmbientScale = 2.0f;
 		VxgiAmbientBias = DefaultParams.ambientBias;
 		VxgiAmbientPowerExponent = DefaultParams.ambientPower;
 		VxgiAmbientMixIntensity = 1.0f;

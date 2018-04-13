@@ -91,7 +91,7 @@ struct ENGINE_API FMaterialInstanceBasePropertyOverrides
 	UPROPERTY(EditAnywhere, Category = Material, meta = (editcondition = "bOverride_VxgiAdaptiveMaterialSamplingRate"))
 	uint32 bVxgiAdaptiveMaterialSamplingRate : 1;
 
-	UPROPERTY(EditAnywhere, Category = Material, meta = (ClampMin = "0", ClampMax = "4", editcondition = "bOverride_VxgiOpacityScale"))
+	UPROPERTY(EditAnywhere, Category = Material, meta = (ClampMin = "0", ClampMax = "2", editcondition = "bOverride_VxgiOpacityScale"))
 	float VxgiOpacityScale;
 	// NVCHANGE_END: Add VXGI
 
