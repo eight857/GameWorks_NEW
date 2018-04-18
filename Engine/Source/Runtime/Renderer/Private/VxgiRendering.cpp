@@ -17,7 +17,7 @@
 #include "PipelineStateCache.h"
 #include "Components/StaticMeshComponent.h"
 
-#define VXGI_EXPOSE_INTERNAL_PARAMETERS 1
+#define VXGI_EXPOSE_INTERNAL_PARAMETERS 0
 
 static TAutoConsoleVariable<int32> CVarVxgiMapSizeX(
 	TEXT("r.VXGI.MapSizeX"),
@@ -761,6 +761,7 @@ void SetVxgiDiffuseTracingParameters(const FViewInfo& View, VXGI::DiffuseTracing
 	TracingParams.directionalSamplingRate = PostSettings.VxgiDiffuseTracingDirectionalSamplingRate;
 	TracingParams.softness = PostSettings.VxgiDiffuseTracingSoftness;
 	TracingParams.enableTemporalReprojection = !!PostSettings.bVxgiDiffuseTracingTemporalReprojectionEnabled && bEnableTemporalReprojection;
+	TracingParams.enableTemporalJitter = TracingParams.enableTemporalReprojection;
 	TracingParams.temporalReprojectionWeight = PostSettings.VxgiDiffuseTracingTemporalReprojectionPreviousFrameWeight;
 	TracingParams.temporalReprojectionMaxDistanceInVoxels = PostSettings.VxgiDiffuseTracingTemporalReprojectionMaxDistanceInVoxels;
 	TracingParams.temporalReprojectionNormalWeightExponent = PostSettings.VxgiDiffuseTracingTemporalReprojectionNormalWeightExponent;
@@ -782,17 +783,26 @@ void SetVxgiDiffuseTracingParameters(const FViewInfo& View, VXGI::DiffuseTracing
 	}
 }
 
-void SetVxgiSpecularTracingParameters(const FViewInfo& View, VXGI::SpecularTracingParameters &TracingParams, bool bEnableTemporalReprojection, bool bEnableStereoReprojection)
+void SetVxgiSpecularTracingParameters(const FViewInfo& View, VXGI::SpecularTracingParameters &TracingParams, bool bEnableTemporalReprojection, bool bEnableStereoReprojection, float ViewSimilarity)
 {
 	const auto& PostSettings = View.FinalPostProcessSettings;
 
 	if (PostSettings.bVxgiSpecularTracingTemporalFilterEnabled && bEnableTemporalReprojection)
+	{
+		TracingParams.enableTemporalJitter = true;
 		TracingParams.filter = VXGI::SpecularTracingParameters::FILTER_TEMPORAL;
+	}
 	else
-		TracingParams.filter = VXGI::SpecularTracingParameters::FILTER_NONE;
+	{
+		TracingParams.enableTemporalJitter = false;
+		TracingParams.filter = VXGI::SpecularTracingParameters::FILTER_SIMPLE;
+	}
 
+	TracingParams.enableConeJitter = PostSettings.bVxgiSpecularTracingConeJitterEnabled;
 	TracingParams.enableViewReprojection = bEnableStereoReprojection;
 	TracingParams.perPixelRandomOffsetScale = 0.5f;
+
+	TracingParams.temporalReprojectionWeight = PostSettings.VxgiSpecularTracingTemporalReprojectionPreviousFrameWeight * ViewSimilarity;
 }
 
 void SetVxgiAreaLightTracingParameters(const FViewInfo& View, VXGI::AreaLightTracingParameters &TracingParams, bool bEnableTemporalReprojection)
@@ -800,6 +810,7 @@ void SetVxgiAreaLightTracingParameters(const FViewInfo& View, VXGI::AreaLightTra
 	const auto& PostSettings = View.FinalPostProcessSettings;
 
 	TracingParams.enableTemporalReprojection = !!PostSettings.bVxgiAreaLightTemporalReprojectionEnabled && bEnableTemporalReprojection;
+	TracingParams.enableTemporalJitter = TracingParams.enableTemporalReprojection;
 	TracingParams.temporalReprojectionMaxDistanceInVoxels = PostSettings.VxgiAreaLightTemporalReprojectionMaxDistanceInVoxels;
 	TracingParams.temporalReprojectionNormalWeightExponent = PostSettings.VxgiAreaLightTemporalReprojectionNormalWeightExponent;
 
@@ -962,6 +973,7 @@ void FSceneRenderer::RenderVxgiTracing(FRHICommandListImmediate& RHICmdList)
 	bool bEnableSpecularStereoReprojection = !!CVarVxgiSpecularStereoReprojectionEnable.GetValueOnRenderThread();
 
 	VXGI::IViewTracer::ViewInfo VxgiViewInfos[FVxgiGBufferAccessShader::MaxViews];
+	float ViewSimilarity = 1.0f;
 
 	for (int32 ViewIndex = 0; ViewIndex < NumViewsToProcess; ViewIndex++)
 	{
@@ -983,6 +995,14 @@ void FSceneRenderer::RenderVxgiTracing(FRHICommandListImmediate& RHICmdList)
 				Constants.g_GBuffer[ViewIndex].cameraPosition = MiddleEyePosition;
 				Constants.g_GBuffer[ViewIndex - 1].cameraPosition = MiddleEyePosition;
 			}
+		}
+
+		if (View.ViewState != NULL)
+		{
+			float CameraOffset = FMath::Sqrt((Constants.g_GBuffer[ViewIndex].cameraPosition - Constants.g_PreviousGBuffer[ViewIndex].cameraPosition).SizeSquared3());
+			float VoxelSize = CVarVxgiVoxelSize.GetValueOnRenderThread();
+			float Similarity = FMath::Max(0.f, 1.0f - 0.5f * CameraOffset / VoxelSize);
+			ViewSimilarity = FMath::Min(ViewSimilarity, Similarity);
 		}
 
 		VxgiViewInfos[ViewIndex].matricesAreValid = true;
@@ -1038,7 +1058,7 @@ void FSceneRenderer::RenderVxgiTracing(FRHICommandListImmediate& RHICmdList)
 		NVRHI::TextureHandle IlluminationSpecHandle = NULL;
 
 		VXGI::BasicSpecularTracingParameters SpecularTracingParams;
-		SetVxgiSpecularTracingParameters(PrimaryView, SpecularTracingParams, bEnableTemporalReprojection, bEnableSpecularStereoReprojection);
+		SetVxgiSpecularTracingParameters(PrimaryView, SpecularTracingParams, bEnableTemporalReprojection, bEnableSpecularStereoReprojection, ViewSimilarity);
 
 		if (PrimaryView.FinalPostProcessSettings.VxgiSpecularTracingEnabled)
 		{

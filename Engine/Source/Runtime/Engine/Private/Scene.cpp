@@ -557,6 +557,8 @@ FPostProcessSettings::FPostProcessSettings()
 		VxgiSpecularTracingInitialOffsetBias = DefaultParams.initialOffsetBias;
 		VxgiSpecularTracingInitialOffsetDistanceFactor = DefaultParams.initialOffsetDistanceFactor;
 		bVxgiSpecularTracingTemporalFilterEnabled = false;
+		bVxgiSpecularTracingConeJitterEnabled = false;
+		VxgiSpecularTracingTemporalReprojectionPreviousFrameWeight = DefaultParams.temporalReprojectionWeight;
 	}
 	{
 		VXGI::BasicAreaLightTracingParameters DefaultParams;

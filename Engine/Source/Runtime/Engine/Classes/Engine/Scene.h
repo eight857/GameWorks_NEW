@@ -1176,6 +1176,12 @@ struct FPostProcessSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_bVxgiSpecularTracingTemporalFilterEnabled : 1;
+    
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
+	uint32 bOverride_VxgiSpecularTracingTemporalReprojectionPreviousFrameWeight : 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
+	uint32 bOverride_bVxgiSpecularTracingConeJitterEnabled : 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_bVxgiDiffuseTracingTemporalReprojectionEnabled : 1;
@@ -2013,7 +2019,18 @@ struct FPostProcessSettings
 	/** Enable temporal filtering on the specular surface after tracing in order to reduce noise introduced by cone jitter. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VXGI Specular", meta = (editcondition = "bOverride_bVxgiSpecularTracingTemporalFilterEnabled"), DisplayName = "Temporal Filtering")
 	uint32 bVxgiSpecularTracingTemporalFilterEnabled : 1;
-	
+
+	/** Enable jittering the sample positions along narrow cones to reduce reflection blockiness. Adds noise. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VXGI Specular", meta = (editcondition = "bOverride_bVxgiSpecularTracingConeJitterEnabled"), DisplayName = "Cone Jitter")
+	uint32 bVxgiSpecularTracingConeJitterEnabled : 1;
+
+	/**
+	* Weight of the reprojected irradiance data relative to newly computed data, Reasonable values in [0.5, 0.9].
+	* where 0 means do not use reprojection, and values closer to 1 mean accumulate data over more previous frames.
+	*/
+	UPROPERTY(interp, BlueprintReadWrite, Category = "VXGI Specular", AdvancedDisplay, meta = (ClampMin = "0.0", ClampMax = "1.0", editcondition = "bOverride_VxgiSpecularTracingTemporalReprojectionPreviousFrameWeight"), DisplayName = "Temporal Filter Previous Frame Weight")
+	float VxgiSpecularTracingTemporalReprojectionPreviousFrameWeight;
+
 	/** Intensity multiplier for multi-bounce tracing. */
 	UPROPERTY(interp, BlueprintReadWrite, Category = "VXGI Multi-Bounce", meta = (editcondition = "bOverride_VxgiMultiBounceEnabled"), DisplayName = "Enable Multi-Bounce")
 	uint32 VxgiMultiBounceEnabled : 1;

@@ -35,14 +35,14 @@
 
 #define VXGI_FAILED(status) ((status) != ::VXGI::Status::OK)
 #define VXGI_SUCCEEDED(status) ((status) == ::VXGI::Status::OK)
-#define VXGI_VERSION_STRING "2.0.0.23927712"
+#define VXGI_VERSION_STRING "2.0.0.23960390"
 
 GI_BEGIN_PACKING
 namespace VXGI
 {
     struct Version
 	{
-		Version() : Major(2), Minor(0), Branch(0), Revision(23927712)
+		Version() : Major(2), Minor(0), Branch(0), Revision(23960390)
         { }
 
         uint32_t Major;
@@ -268,6 +268,9 @@ namespace VXGI
 
         // Softness of diffuse highlights, [0..1].
         float       softness;
+        
+        // Enables per-frame movement of shading points on the screen. Should be used if some kind of temporal filter is applied.
+        bool        enableTemporalJitter;
 
         // Enables reuse of diffuse tracing results from the previous frame.
         // For this mode to work, different G-buffer textures have to be used for consecutive frames,
@@ -320,6 +323,7 @@ namespace VXGI
             , quality(0.5f)
             , directionalSamplingRate(1.0f)
             , softness(0.5f)
+            , enableTemporalJitter(false)
             , enableTemporalReprojection(false)
             , temporalReprojectionWeight(0.9f)
             , temporalReprojectionMaxDistanceInVoxels(0.25f)
@@ -394,6 +398,12 @@ namespace VXGI
         // 0 or less means no random offset is used, 1.0 is one tracing step at the surface location.
         float       perPixelRandomOffsetScale;
 
+        // Enables per-frame changes of the noise pattern. Should be used if the the filters are enough to hide the noise.
+        bool        enableTemporalJitter;
+
+        // Enables jitter of sample positions along a cone. Should be used if the the filters are enough to hide the noise.
+        bool        enableConeJitter;
+
         // Weight of the reprojected irradiance data relative to newly computed data, [0..1).
         // Only applicable if filter == FILTER_TEMPORAL.
         // Also see the comment for DiffuseTracingParameters::enableTemporalReprojection and temporalReprojectionWeight.
@@ -419,6 +429,8 @@ namespace VXGI
         SpecularTracingParameters()
             : filter(FILTER_SIMPLE)
             , perPixelRandomOffsetScale(0.f)
+            , enableTemporalJitter(false)
+            , enableConeJitter(false)
             , temporalReprojectionWeight(0.8f)
             , temporalReprojectionMaxDistanceInVoxels(0.25f)
             , temporalReprojectionNormalWeightExponent(20.f)
@@ -503,6 +515,9 @@ namespace VXGI
         // Resolution for the diffuse cone tracing pass.
         TracingResolution::Enum    tracingResolution;
 
+        // Enables per-frame movement of shading points on the screen. Should be used if some kind of temporal filter is applied.
+        bool        enableTemporalJitter;
+
         // See DiffuseTracingParameters::enableTemporalReprojection
         bool        enableTemporalReprojection;
 
@@ -517,6 +532,7 @@ namespace VXGI
 
         AreaLightTracingParameters()
             : tracingResolution(TracingResolution::QUARTER)
+            , enableTemporalJitter(false)
             , enableTemporalReprojection(false)
             , temporalReprojectionMaxDistanceInVoxels(0.25f)
             , temporalReprojectionNormalWeightExponent(20.f)

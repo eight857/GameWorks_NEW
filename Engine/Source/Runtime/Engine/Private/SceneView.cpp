@@ -1409,6 +1409,8 @@ void FSceneView::OverridePostProcessSettings(const FPostProcessSettings& Src, fl
 		LERP_PP(VxgiSpecularTracingInitialOffsetBias);
 		LERP_PP(VxgiSpecularTracingInitialOffsetDistanceFactor);
 		IF_PP_ASSIGN(bVxgiSpecularTracingTemporalFilterEnabled);
+		IF_PP_ASSIGN(bVxgiSpecularTracingConeJitterEnabled);
+		LERP_PP(VxgiSpecularTracingTemporalReprojectionPreviousFrameWeight);
 
 		IF_PP_ASSIGN(VxgiMultiBounceEnabled);
 		LERP_PP(VxgiMultiBounceFeedbackGain);
