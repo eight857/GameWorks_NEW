@@ -117,6 +117,7 @@ struct FBoneMirrorExport
 
 };
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 /** Structures to store dynamic index buffer data */
 USTRUCT()
 struct ENGINE_API FSkeletalMeshIndexBufferRanges
@@ -162,6 +163,7 @@ struct TStructOpsTypeTraits<FSkeletalMeshIndexBufferRanges> : public TStructOpsT
 		WithCopy = true,
 	};
 };
+//nv end
 
 /**
 * FSkeletalMeshOptimizationSettings - The settings used to optimize a skeletal mesh LOD.
@@ -895,9 +897,11 @@ private:
 	/** Cached matrices from GetComposedRefPoseMatrix */
 	TArray<FMatrix> CachedComposedRefPoseMatrices;
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	/** Cached index buffer ranges */
 	UPROPERTY()
 	TArray<FSkeletalMeshIndexBufferRanges> IndexBufferRanges;
+//nv end
 
 public:
 	/**
@@ -1050,6 +1054,7 @@ public:
 	void RemoveMeshSection(int32 InLodIndex, int32 InSectionIndex);
 #endif // #if WITH_EDITOR
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 #if WITH_EDITOR
 	/**
 	* Ensure that IndexBufferRanges is updated
@@ -1066,6 +1071,7 @@ public:
 	{
 		return IndexBufferRanges;
 	}
+//nv end
 
 	/**
 	* Verify SkeletalMeshLOD is set up correctly	

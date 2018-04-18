@@ -81,6 +81,7 @@ void UDestructibleMesh::PostLoad()
 	}
 #endif
 
+//#nv #APEX-Destruction Ability to hide bones using a dynamic index buffer
 #if WITH_EDITOR
 	// Old mesh which doesn't contain these
 	if (GetIndexBufferRanges().Num() == 0)
@@ -88,6 +89,7 @@ void UDestructibleMesh::PostLoad()
 		RebuildIndexBufferRanges();
 	}
 #endif
+//nv end
 }
 
 #if WITH_EDITOR

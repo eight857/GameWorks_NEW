@@ -5,7 +5,7 @@
 #include "RHIDefinitions.h"
 #include "Containers/IndirectArray.h"
 #include "Rendering/SkeletalMeshLODRenderData.h"
-#include "Rendering/SkeletalMeshModel.h"
+#include "Rendering/SkeletalMeshModel.h"	//#nv #Blast Ability to hide bones using a dynamic index buffer
 
 struct FMeshUVChannelInfo;
 class USkeletalMesh;
@@ -58,6 +58,8 @@ private:
 	bool bInitialized;
 };
 
+
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 struct FSkelMeshSectionOverride
 {
 	/** The offset of this section's indices in the LOD's index buffer. */
@@ -123,3 +125,4 @@ private:
 	/** True if the resource has been initialized. */
 	bool bInitialized;
 };
+//nv end

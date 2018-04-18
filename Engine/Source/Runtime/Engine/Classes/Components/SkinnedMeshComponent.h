@@ -10,7 +10,7 @@
 #include "Components/SceneComponent.h"
 #include "Engine/TextureStreamingTypes.h"
 #include "Components/MeshComponent.h"
-#include "SkeletalMeshRenderData.h"
+#include "SkeletalMeshRenderData.h"	//#nv #Blast Ability to hide bones using a dynamic index buffer
 #include "SkinnedMeshComponent.generated.h"
 
 class FPrimitiveSceneProxy;
@@ -20,7 +20,7 @@ class FSkeletalMeshRenderData;
 class FSkeletalMeshLODRenderData;
 struct FSkelMeshRenderSection;
 class FPositionVertexBuffer;
-struct FSkeletalMeshIndexBufferRanges;
+struct FSkeletalMeshIndexBufferRanges;	//#nv #Blast Ability to hide bones using a dynamic index buffer
 
 DECLARE_DELEGATE_OneParam(FOnAnimUpdateRateParamsCreated, FAnimUpdateRateParameters*)
 
@@ -683,9 +683,10 @@ public:
 	 * 
 	 * @param MeshObject - Mesh Object owned by this component
 	 */
-	 //#nv begin #Blast Ability to hide bones using a dynamic index buffer
+	//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	virtual void PostInitMeshObject(class FSkeletalMeshObject*);
 	//nv end
+
 	/**
 	* Simple, CPU evaluation of a vertex's skinned position (returned in component space)
 	*
@@ -986,6 +987,7 @@ protected:
 
 public:
 	//nv end
+
 	/** 
 	 * Get Bone Matrix from index
 	 *

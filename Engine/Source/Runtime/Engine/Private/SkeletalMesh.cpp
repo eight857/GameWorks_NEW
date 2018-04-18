@@ -3549,6 +3549,7 @@ void FSkeletalMeshSceneProxy::GetDynamicElementsSection(const TArray<const FScen
 
 	const bool bIsWireframe = ViewFamily.EngineShowFlags.Wireframe;
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 	FSkeletalMeshDynamicOverride* DynamicOverride = MeshObject->GetSkeletalMeshDynamicOverride();
 	FDynamicLODModelOverride* LODModelDynamicOverride = nullptr;
 	FSkelMeshSectionOverride* SectionDynamicOverride = nullptr;
@@ -3557,6 +3558,7 @@ void FSkeletalMeshSceneProxy::GetDynamicElementsSection(const TArray<const FScen
 		LODModelDynamicOverride = &DynamicOverride->LODModels[LODIndex];
 		SectionDynamicOverride = &LODModelDynamicOverride->Sections[SectionIndex];
 	}
+//nv end
 
 	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
 	{
@@ -3579,6 +3581,7 @@ void FSkeletalMeshSceneProxy::GetDynamicElementsSection(const TArray<const FScen
 
 			Mesh.bSelectable = bInSelectable;
 
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 			int32 SectionNumTriangles;
 			if (SectionDynamicOverride) //If one is valid both are valid, no need to check both
 			{
@@ -3596,6 +3599,7 @@ void FSkeletalMeshSceneProxy::GetDynamicElementsSection(const TArray<const FScen
 				BatchElement.IndexBuffer = LODData.MultiSizeIndexContainer.GetIndexBuffer();
 				SectionNumTriangles = Section.NumTriangles;
 			}
+//nv end
 
 			BatchElement.MaxVertexIndex = LODData.GetNumVertices() - 1;
 			BatchElement.VertexFactoryUserData = FGPUSkinCache::GetFactoryUserData(MeshObject->SkinCacheEntry, SectionIndex);
@@ -3603,6 +3607,7 @@ void FSkeletalMeshSceneProxy::GetDynamicElementsSection(const TArray<const FScen
 			const bool bRequiresAdjacencyInformation = RequiresAdjacencyInformation( SectionElementInfo.Material, Mesh.VertexFactory->GetType(), ViewFamily.GetFeatureLevel() );
 			if ( bRequiresAdjacencyInformation )
 			{
+//#nv begin #Blast Ability to hide bones using a dynamic index buffer
 				if (LODModelDynamicOverride)
 				{
 					check(LODModelDynamicOverride->AdjacencyMultiSizeIndexContainer.IsIndexBufferValid());
@@ -3613,6 +3618,7 @@ void FSkeletalMeshSceneProxy::GetDynamicElementsSection(const TArray<const FScen
 					check(LODData.AdjacencyMultiSizeIndexContainer.IsIndexBufferValid());
 					BatchElement.IndexBuffer = LODData.AdjacencyMultiSizeIndexContainer.GetIndexBuffer();
 				}
+//nv end
 				Mesh.Type = PT_12_ControlPointPatchList;
 				BatchElement.FirstIndex *= 4;
 			}
@@ -3633,7 +3639,7 @@ void FSkeletalMeshSceneProxy::GetDynamicElementsSection(const TArray<const FScen
 
 			BatchElement.PrimitiveUniformBufferResource = &GetUniformBuffer();
 
-			BatchElement.NumPrimitives = SectionNumTriangles;
+			BatchElement.NumPrimitives = SectionNumTriangles;	//#nv #Blast Ability to hide bones using a dynamic index buffer
 
 #if WITH_EDITORONLY_DATA
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)

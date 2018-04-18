@@ -200,6 +200,7 @@ public:
 		SkeletalMeshDynamicOverride = NewSkeletalMeshDynamicOverride;
 	}
 //nv end
+
 	/** Setup for rendering a specific LOD entry of the component */
 	struct FSkelMeshObjectLODInfo
 	{
@@ -257,6 +258,7 @@ protected:
 	/** Dynamic index buffer data. */
 	FSkeletalMeshDynamicOverride* SkeletalMeshDynamicOverride;
 //nv end
+
 	/** Per-LOD info. */
 	TArray<FSkeletalMeshLODInfo> SkeletalMeshLODInfo;
 

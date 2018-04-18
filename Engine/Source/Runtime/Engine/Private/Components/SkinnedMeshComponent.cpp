@@ -23,8 +23,7 @@
 #include "Rendering/SkinWeightVertexBuffer.h"
 #include "SkeletalMeshTypes.h"
 #include "Animation/MorphTarget.h"
-//#nv begin #Blast Ability to hide bones using a dynamic index buffer
-#include "ComponentRecreateRenderStateContext.h"
+#include "ComponentRecreateRenderStateContext.h"	//#nv #Blast Ability to hide bones using a dynamic index buffer
 
 DEFINE_LOG_CATEGORY_STATIC(LogSkinnedMeshComp, Log, All);
 
