@@ -80,7 +80,7 @@ public:
 
 	/** Distance from the area light surface when the occlusion cones stop, in multiples of the voxel sample size at the area light. 
 	  * If the light or a surface behind it is voxelized, it will produce self-occlusion. Using a larger offset mitigates or prevents this self-occlusion. */
-	UPROPERTY(BlueprintReadWrite, Category = "Area Light", EditAnywhere, AdvancedDisplay, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(BlueprintReadWrite, Category = "Area Light", EditAnywhere, AdvancedDisplay, meta = (ClampMin = "0.0", ClampMax = "4.0", UIMax = "2.0"))
 	float LightSurfaceOffset;
 
 	/** Weight of occlusion and texture sampling data from the previous frame */

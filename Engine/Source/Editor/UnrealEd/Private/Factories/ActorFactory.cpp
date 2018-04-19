@@ -260,6 +260,7 @@ FQuat UActorFactory::AlignObjectToSurfaceNormal(const FVector& InSurfaceNormal, 
 	}
 }
 
+// NVCHANGE_BEGIN: Add VXGI
 AActor* UActorFactory::CreateActor( UObject* Asset, ULevel* InLevel, FTransform SpawnTransform, EObjectFlags InObjectFlags, const FName Name )
 {
 	AActor* NewActor = NULL;
@@ -275,13 +276,19 @@ AActor* UActorFactory::CreateActor( UObject* Asset, ULevel* InLevel, FTransform 
 			// Only do this if the actor wasn't already given a name
 			if (Name == NAME_None && Asset)
 			{
-				FActorLabelUtilities::SetActorLabelUnique(NewActor, Asset->GetName());
+				FActorLabelUtilities::SetActorLabelUnique(NewActor, GetDefaultLabel(Asset));
 			}
 		}
 	}
 
 	return NewActor;
 }
+
+FString UActorFactory::GetDefaultLabel(UObject* Asset)
+{
+	return Asset->GetName();
+}
+// NVCHANGE_END: Add VXGI
 
 UBlueprint* UActorFactory::CreateBlueprint( UObject* Asset, UObject* Outer, const FName Name, const FName CallingContext )
 {
@@ -471,6 +478,11 @@ bool UActorFactoryAreaLight::CanCreateActorFrom(const FAssetData& AssetData, FTe
 	}
 
 	return false;
+}
+
+FString UActorFactoryAreaLight::GetDefaultLabel(UObject* Asset)
+{
+	return TEXT("AreaLight");
 }
 // NVCHANGE_END: Add VXGI
 

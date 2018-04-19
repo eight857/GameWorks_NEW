@@ -17,4 +17,6 @@ class UActorFactoryAreaLight : public UActorFactoryBasicShape
 	GENERATED_UCLASS_BODY()
 
 	virtual bool CanCreateActorFrom( const FAssetData& AssetData, FText& OutErrorMsg ) override;
+
+	virtual FString GetDefaultLabel(UObject* Asset) override;
 };
