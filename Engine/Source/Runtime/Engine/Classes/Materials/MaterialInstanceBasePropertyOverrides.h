@@ -79,19 +79,19 @@ struct ENGINE_API FMaterialInstanceBasePropertyOverrides
 	uint32 bCastDynamicShadowAsMasked:1;
 
 	// NVCHANGE_BEGIN: Add VXGI
-	UPROPERTY(EditAnywhere, Category = Material, meta = (editcondition = "bOverride_VxgiConeTracingEnabled"))
+	UPROPERTY(EditAnywhere, Category = VXGI, meta = (DisplayName = "Enable VXGI Cone Tracing Functions", editcondition = "bOverride_VxgiConeTracingEnabled"))
 	uint32 bVxgiConeTracingEnabled : 1;
 
-	UPROPERTY(EditAnywhere, Category = Material, meta = (editcondition = "bOverride_UsedWithVxgiVoxelization"))
+	UPROPERTY(EditAnywhere, Category = VXGI, meta = (DisplayName = "Used with VXGI Voxelization", editcondition = "bOverride_UsedWithVxgiVoxelization"))
 	uint32 bUsedWithVxgiVoxelization : 1;
 
-	UPROPERTY(EditAnywhere, Category = Material, meta = (editcondition = "bOverride_VxgiAllowTesselationDuringVoxelization"))
+	UPROPERTY(EditAnywhere, Category = VXGI, meta = (DisplayName = "Allow Tessellation During Voxelization", editcondition = "bOverride_VxgiAllowTesselationDuringVoxelization"))
 	uint32 bVxgiAllowTesselationDuringVoxelization : 1;
 	
-	UPROPERTY(EditAnywhere, Category = Material, meta = (editcondition = "bOverride_VxgiAdaptiveMaterialSamplingRate"))
+	UPROPERTY(EditAnywhere, Category = VXGI, meta = (DisplayName = "Adaptive Material Sampling Rate", editcondition = "bOverride_VxgiAdaptiveMaterialSamplingRate"))
 	uint32 bVxgiAdaptiveMaterialSamplingRate : 1;
 
-	UPROPERTY(EditAnywhere, Category = Material, meta = (ClampMin = "0", ClampMax = "2", editcondition = "bOverride_VxgiOpacityScale"))
+	UPROPERTY(EditAnywhere, Category = VXGI, meta = (DisplayName = "Opacity Scale", ClampMin = "0", ClampMax = "2", editcondition = "bOverride_VxgiOpacityScale"))
 	float VxgiOpacityScale;
 	// NVCHANGE_END: Add VXGI
 

@@ -56,6 +56,21 @@ FAQ
 
 It is also useful to switch the View mode to "VXGI Opacity Voxels" or "VXGI Emittance Voxels" to make sure that the objects you need are represented as voxels and emit (or reflect) light.
 
+**Q:** Shadows from area lights are way too soft or missing.
+**A:** Make sure that the voxels are not too large, ideally they should be comparable in size to the features that you'd like too see in shadows. Use r.VXGI.VoxelSize to adjust that.
+
+**Q:** Some object doesn't cast a shadow or the shadow is not dark enough.
+**A:** Make sure that the shadow casting object is represented with opacity voxels at all, and if not, check "Used with VXGI Voxelization" on its material. If the shadow is too weak, increase the "Opacity Scale" parameter in the VXGI group of material properties.
+
+**Q:** Are area lights just static meshes? How does the Plane mesh and its material relate to the area light properties?
+**A:** Yes, area lights are a subtype of static meshes. They add some properties like intensity or texture, and those properties are picked up by VXGI. Plane position, orientation, and scale are also used by VXGI, but nothing else is. So the material used to render the plane into viewports is entirely separate from the light characteristics, and has to be edited separately to match. Alternatively, you can hide the plane by unchecking its Visible property, and it will still emit light. Also note that if the Plane's material has an emissive component, and VXGI diffuse or specular tracing is enabled, by default the plane will be voxelized and will also emit light through the voxels. It's recommended to disable voxelization of area light planes completely, or to make the Emissive output of their material dependent on the VXGI Voxelization material input (i.e. zero it when voxelization is performed).
+
+**Q:** If I only want to use area lights and/or VXAO, is there a way to improve performance?
+**A:** Yes, in this case, set r.VXGI.AmbientOcclusionMode to 1. In that mode, VXGI will only process opacity voxels and not emittance, which makes it significantly faster.
+
+**Q:** There was a way to add ambient light to diffuse tracing results before, where did that go?
+**A:** VXGI 2 always produces a separate ambient occlusion channel and no longer has an option to add that ambient light. You can use the VXAO / SSAO channel in combination with a Sky Light or Ambient Cubemap feature in the Post Process Volume to add ambient lighting.
+
 **Q:** There are no specular reflections on translucent objects, how do I add them?
 **A:** You need to modify the translucent material and make it trace specular cones. See [this forum post](https://forums.unrealengine.com/showthread.php?53735-NVIDIA-GameWorks-Integration&p=423841&highlight=vxgi#post423841) for an example.
 
@@ -63,7 +78,7 @@ It is also useful to switch the View mode to "VXGI Opacity Voxels" or "VXGI Emit
 **A:** Usually yes, but there is a limit. The quality of reflections is determined by the size of voxels representing the reflected object(s), so you need to reduce that size. There are several ways to do that:
 
 - Place a "VXGI Anchor" actor near the reflected objects. VXGI's scene representation has a region where it is most detailed, and this actor controls the location of that region.
-- Reduce r.VXGI.Range, which will make all voxels smaller, but also obviously reduce the range of VXGI effects.
+- Reduce r.VXGI.VoxelSize, which will make all voxels smaller, but also obviously reduce the range of VXGI effects.
 - Increase r.VXGI.MapSize{X,Y,Z}, but there are only 3 options for these parameters: 64, 128 and 256, and the latter is extremely expensive.
 
 **Q:** Is it possible to pre-compute lighting with VXGI to use on low-end PCs or mobile devices?

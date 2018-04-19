@@ -678,20 +678,20 @@ public:
 	/**
 	* Indicates that the material and its instances can use VxgiTraceCone function. Only applies to translucent materials.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Translucency)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Translucency, meta = (DisplayName = "Enable VXGI Cone Tracing Functions"))
 	uint32 bVxgiConeTracingEnable : 1;
 
 	/**
 	* Indicates that the material and its instances can be used with VXGI scene voxelization.
 	* This will result in the shaders required to support VXGI being compiled which will increase shader compile time and memory usage.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI, meta = (DisplayName = "Used with VXGI Voxelization"))
 	uint32 bUsedWithVxgiVoxelization : 1;
 
 	/**
 	* Indicates that the material has tessellation enabled in MaterialTessellationMode and should be voxelized with tessellation enabled.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI, meta = (DisplayName = "Allow Tessellation During Voxelization"))
 	uint32 bVxgiAllowTesselationDuringVoxelization : 1;
 	
 	/**
@@ -699,13 +699,13 @@ public:
 	* Materials that have binary masks and other non-filterable elements should be voxelized with this flag enabled
 	* in order to make emittance voxelized into coarse LODs consistent with emittance downsampled from finer LODs.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI, meta = (DisplayName = "Adaptive Material Sampling Rate"))
 	uint32 bVxgiAdaptiveMaterialSamplingRate : 1;
 
 	/**
 	* Scaler for material opacity used in voxelization. Larger values produce stronger occluision.
 	*/
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI, meta = (ClampMin = "0", ClampMax = "4"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = VXGI, meta = (DisplayName = "Opacity Scale", ClampMin = "0", ClampMax = "2"))
 	float VxgiOpacityScale;
 
 	// NVCHANGE_END: Add VXGI
