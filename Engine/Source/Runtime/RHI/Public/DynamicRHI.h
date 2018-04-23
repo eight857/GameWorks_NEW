@@ -8,6 +8,9 @@ DynamicRHI.h: Dynamically bound Render Hardware Interface definitions.
 
 #include "CoreTypes.h"
 #include "RHIContext.h"
+// NvFlow begin
+#include "GameWorks/RHINvFlow.h"
+// NvFlow end
 
 class FBlendStateInitializerRHI;
 class FGraphicsPipelineStateInitializer;
