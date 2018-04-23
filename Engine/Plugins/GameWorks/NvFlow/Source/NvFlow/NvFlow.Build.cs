@@ -58,23 +58,23 @@ namespace UnrealBuildTool.Rules
 // 				    "AssetRegistry"
 // 			    });
 
-            Definitions.Add("WITH_NVFLOW=1");
+            PublicDefinitions.Add("WITH_NVFLOW=1");
 
-            string libbase = UEBuildConfiguration.UEThirdPartySourceDirectory + "../../Plugins/GameWorks/NvFlow/Include";
+            string libbase = Target.UEThirdPartySourceDirectory + "../../Plugins/GameWorks/NvFlow/Include";
 
             if (Target.Platform == UnrealTargetPlatform.Win32)
             {
                 PublicLibraryPaths.Add(libbase + "/win32/");
                 PublicAdditionalLibraries.Add("NvFlowLibRelease_win32.lib");
                 PublicDelayLoadDLLs.Add("NvFlowLibRelease_win32.dll");
-                RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Plugins/GameWorks/NvFlow/Libraries/win32/NvFlowLibRelease_win32.dll"));
+                RuntimeDependencies.Add("$(EngineDir)/Plugins/GameWorks/NvFlow/Libraries/win32/NvFlowLibRelease_win32.dll");
             }
             else if (Target.Platform == UnrealTargetPlatform.Win64)
             {
                 PublicLibraryPaths.Add(libbase + "/win64/");
                 PublicAdditionalLibraries.Add("NvFlowLibRelease_win64.lib");
                 PublicDelayLoadDLLs.Add("NvFlowLibRelease_win64.dll");
-                RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Plugins/GameWorks/NvFlow/Libraries/win64/NvFlowLibRelease_win64.dll"));
+                RuntimeDependencies.Add("$(EngineDir)/Plugins/GameWorks/NvFlow/Libraries/win64/NvFlowLibRelease_win64.dll");
             }
 
             // Add direct rendering dependencies on a per-platform basis

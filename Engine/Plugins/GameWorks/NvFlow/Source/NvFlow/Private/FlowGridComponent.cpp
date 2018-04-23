@@ -451,7 +451,7 @@ void UFlowGridComponent::UpdateShapes(float DeltaTime, uint32 NumSimSubSteps)
 			ActorCenterOfMass = FVector::ZeroVector;
 		}
 		FVector ActorLinearVelocity = ActorTransform.InverseTransformVector(Body->GetUnrealWorldVelocity_AssumesLocked());
-		FVector ActorAngularVelocity = ActorTransform.InverseTransformVector(Body->GetUnrealWorldAngularVelocity_AssumesLocked());
+		FVector ActorAngularVelocity = ActorTransform.InverseTransformVector(Body->GetUnrealWorldAngularVelocityInRadians_AssumesLocked());
 
 		for (int ShapeIndex = 0; ShapeIndex < NumSyncShapes; ++ShapeIndex)
 		{

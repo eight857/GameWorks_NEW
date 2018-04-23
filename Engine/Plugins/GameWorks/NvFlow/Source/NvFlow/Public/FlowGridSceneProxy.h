@@ -26,7 +26,7 @@ namespace NvFlow
 	const float scale = 100.f;
 	const float scaleInv = 1.0f / scale;
 	const float sdfRadius = 0.8f;
-	const float angularScale = PI / 180.f;
+	const float angularScale = 1.f; // PI / 180.f;
 }
 
 struct FFlowGridRenderParams
@@ -225,6 +225,12 @@ class UFlowGridComponent;
 class FFlowGridSceneProxy : public FPrimitiveSceneProxy
 {
 public:
+
+	SIZE_T GetTypeHash() const override
+	{
+		static size_t UniquePointer;
+		return reinterpret_cast<size_t>(&UniquePointer);
+	}
 
 	FFlowGridSceneProxy(UFlowGridComponent* Component);
 

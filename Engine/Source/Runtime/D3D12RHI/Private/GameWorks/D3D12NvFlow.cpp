@@ -124,7 +124,7 @@ class FD3D12ShaderResourceViewNvFlow : public FD3D12ShaderResourceView
 
 public:
 	FD3D12ShaderResourceViewNvFlow(FD3D12Device* InParent, D3D12_SHADER_RESOURCE_VIEW_DESC* InSRVDesc, FD3D12NvFlowResourceRW* InNvFlowResourceRW)
-		: FD3D12ShaderResourceView(InParent, InSRVDesc, &InNvFlowResourceRW->ResourceLocation)
+		: FD3D12ShaderResourceView(InParent, *InSRVDesc, InNvFlowResourceRW->ResourceLocation)
 		, NvFlowResourceRWRef(InNvFlowResourceRW)
 	{
 	}
@@ -161,7 +161,7 @@ class FD3D12UnorderedAccessViewNvFlow : public FD3D12UnorderedAccessView
 
 public:
 	FD3D12UnorderedAccessViewNvFlow(FD3D12Device* InParent, D3D12_UNORDERED_ACCESS_VIEW_DESC* InUAVDesc, FD3D12NvFlowResourceRW* InNvFlowResourceRW)
-		: FD3D12UnorderedAccessView(InParent, InUAVDesc, &InNvFlowResourceRW->ResourceLocation)
+		: FD3D12UnorderedAccessView(InParent, *InUAVDesc, InNvFlowResourceRW->ResourceLocation)
 		, NvFlowResourceRWRef(InNvFlowResourceRW)
 	{
 	}
