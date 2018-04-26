@@ -78,17 +78,36 @@ void FRCPassPostProcessTXAA::Process(FRenderingCompositePassContext& Context)
     auto SampleX = Context.View.TemporalJitterPixels.X;
     auto SampleY = Context.View.TemporalJitterPixels.Y;
     static const auto TXAADbgJitter = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAADbgJitter"));
-    Context.RHICmdList.ResolveTXAA(DestRenderTarget.TargetableTexture, GetInputTexture(0), GetInputTexture(1), GetInputTexture(2), GetInputTexture(3),
-        TXAADbgJitter->GetValueOnRenderThread() ? 
-        FVector2D(SampleX * 2.0f / Context.View.ViewRect.Width(), SampleY * -2.0f / Context.View.ViewRect.Height()) :
-        FVector2D(SampleX , SampleY));
 
-	Context.RHICmdList.CopyToResolveTarget(DestRenderTarget.TargetableTexture, DestRenderTarget.ShaderResourceTexture, false, FResolveParams());
+	FTextureRHIParamRef SourceTex = GetInputTexture(0);
+	FTextureRHIParamRef FeedbackTex = GetInputTexture(1);
+	FTextureRHIParamRef VelocityTex = GetInputTexture(2);
+	FTextureRHIParamRef DepthTex = GetInputTexture(3);
+
+	FIntPoint RenderTargetSize = FSceneRenderTargets::Get(Context.RHICmdList).GetBufferSizeXY();
+	if (InputHistory.ReferenceBufferSize != RenderTargetSize)
+	{
+		FeedbackTex = nullptr;
+	}
+
+	if (FeedbackTex)
+	{
+		Context.RHICmdList.ResolveTXAA(DestRenderTarget.TargetableTexture, SourceTex, FeedbackTex, VelocityTex, DepthTex,
+			TXAADbgJitter->GetValueOnRenderThread() ?
+			FVector2D(SampleX * 2.0f / Context.View.ViewRect.Width(), SampleY * -2.0f / Context.View.ViewRect.Height()) :
+			FVector2D(SampleX, SampleY));
+
+		Context.RHICmdList.CopyToResolveTarget(DestRenderTarget.TargetableTexture, DestRenderTarget.ShaderResourceTexture, false, FResolveParams());
+	}
+	else
+	{
+		Context.RHICmdList.CopyTexture(SourceTex, DestRenderTarget.TargetableTexture, FResolveParams());
+	}
 
 	OutputHistory->SafeRelease();
 	OutputHistory->RT[0] = PassOutputs[0].PooledRenderTarget;
 	OutputHistory->ViewportRect = Context.View.ViewRect;
-	OutputHistory->ReferenceBufferSize = FSceneRenderTargets::Get(Context.RHICmdList).GetBufferSizeXY();
+	OutputHistory->ReferenceBufferSize = RenderTargetSize;
 	OutputHistory->SceneColorPreExposure = Context.View.PreExposure;
 }
 
