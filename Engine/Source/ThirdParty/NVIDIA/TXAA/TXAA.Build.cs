@@ -9,13 +9,13 @@ public class TXAA : ModuleRules
         Type = ModuleType.External;
 
         const bool debugTXAA = false;
-        Definitions.Add("WITH_TXAA=1");
+        PublicDefinitions.Add("WITH_TXAA=1");
         if (debugTXAA)
-            Definitions.Add("DEBUG_TXAA=1");
+            PublicDefinitions.Add("DEBUG_TXAA=1");
         else
-            Definitions.Add("DEBUG_TXAA=0");
+            PublicDefinitions.Add("DEBUG_TXAA=0");
 
-        string nvTxaaPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "NVIDIA/TXAA/";
+        string nvTxaaPath = Target.UEThirdPartySourceDirectory + "NVIDIA/TXAA/";
 
         string nvTxaaIncludePath = nvTxaaPath /*+ "inc/"*/;
         PublicSystemIncludePaths.Add(nvTxaaIncludePath);

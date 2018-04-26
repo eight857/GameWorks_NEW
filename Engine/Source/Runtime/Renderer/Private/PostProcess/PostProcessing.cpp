@@ -939,19 +939,17 @@ static void AddTXAA(FPostprocessContext& Context, FRenderingCompositeOutputRef& 
 
     // Add TXAA pass
     {
-        FRenderingCompositePass* HistoryInput;
-        if (ViewState && ViewState->TemporalAAHistoryRT && !Context.View.bCameraCut)
-        {
-            HistoryInput = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(ViewState->TemporalAAHistoryRT));
-        }
-        else
-        {
-            // No history so use current as history
-            HistoryInput = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessInput(FSceneRenderTargets::Get(Context.RHICmdList).GetSceneColor()));
+		FRenderingCompositeOutputRef HistoryInput = Context.FinalOutput;
+		if (Context.View.PrevViewInfo.TemporalAAHistory.IsValid())
+		{
+			HistoryInput = Context.Graph.RegisterPass(
+				new(FMemStack::Get()) FRCPassPostProcessInput(Context.View.PrevViewInfo.TemporalAAHistory.RT[0]));
+		}
 
-        }
+        FRenderingCompositePass* TXAAPass = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessTXAA(
+			Context.View.PrevViewInfo.TemporalAAHistory,
+			&ViewState->PendingPrevFrameViewInfo.TemporalAAHistory));
 
-        FRenderingCompositePass* TXAAPass = Context.Graph.RegisterPass(new(FMemStack::Get()) FRCPassPostProcessTXAA);
         TXAAPass->SetInput(ePId_Input0, Context.FinalOutput);
         TXAAPass->SetInput(ePId_Input1, FRenderingCompositeOutputRef(HistoryInput));
         TXAAPass->SetInput(ePId_Input2, FRenderingCompositeOutputRef(MotionVectorInput));

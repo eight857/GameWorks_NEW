@@ -18,6 +18,14 @@
 #include "NoExportTypes.h"
 #include "PipelineStateCache.h"
 
+FRCPassPostProcessTXAA::FRCPassPostProcessTXAA(
+	const FTemporalAAHistory& InInputHistory,
+	FTemporalAAHistory* OutOutputHistory)
+	: InputHistory(InInputHistory)
+	, OutputHistory(OutOutputHistory)
+{
+}
+
 void FRCPassPostProcessTXAA::Process(FRenderingCompositePassContext& Context)
 {
 	const FPooledRenderTargetDesc* InputDesc = GetInputDesc(ePId_Input0);
@@ -53,7 +61,7 @@ void FRCPassPostProcessTXAA::Process(FRenderingCompositePassContext& Context)
 	SetRenderTarget(Context.RHICmdList, DestRenderTarget.TargetableTexture, SceneContext.GetSceneDepthTexture(), ESimpleRenderTargetMode::EUninitializedColorExistingDepth, FExclusiveDepthStencil::DepthRead_StencilWrite);
 
 	// is optimized away if possible (RT size=view size, )
-    DrawClearQuad(Context.RHICmdList, Context.GetFeatureLevel(), true, FLinearColor::Black, false, 0, false, 0, PassOutputs[0].RenderTargetDesc.Extent, SrcRect);
+	DrawClearQuad(Context.RHICmdList, true, FLinearColor::Black, false, 0, false, 0, PassOutputs[0].RenderTargetDesc.Extent, SrcRect);
 
 	Context.SetViewportAndCallRHI(SrcRect);
 
@@ -67,8 +75,8 @@ void FRCPassPostProcessTXAA::Process(FRenderingCompositePassContext& Context)
 
 		return SrcTexture;
 	};
-    auto SampleX = Context.View.TemporalJitterPixelsX;
-    auto SampleY = Context.View.TemporalJitterPixelsY;
+    auto SampleX = Context.View.TemporalJitterPixels.X;
+    auto SampleY = Context.View.TemporalJitterPixels.Y;
     static const auto TXAADbgJitter = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAADbgJitter"));
     Context.RHICmdList.ResolveTXAA(DestRenderTarget.TargetableTexture, GetInputTexture(0), GetInputTexture(1), GetInputTexture(2), GetInputTexture(3),
         TXAADbgJitter->GetValueOnRenderThread() ? 
@@ -77,7 +85,11 @@ void FRCPassPostProcessTXAA::Process(FRenderingCompositePassContext& Context)
 
 	Context.RHICmdList.CopyToResolveTarget(DestRenderTarget.TargetableTexture, DestRenderTarget.ShaderResourceTexture, false, FResolveParams());
 
-	ViewState->TemporalAAHistoryRT = PassOutputs[0].PooledRenderTarget;
+	OutputHistory->SafeRelease();
+	OutputHistory->RT[0] = PassOutputs[0].PooledRenderTarget;
+	OutputHistory->ViewportRect = Context.View.ViewRect;
+	OutputHistory->ReferenceBufferSize = FSceneRenderTargets::Get(Context.RHICmdList).GetBufferSizeXY();
+	OutputHistory->SceneColorPreExposure = Context.View.PreExposure;
 }
 
 FPooledRenderTargetDesc FRCPassPostProcessTXAA::ComputeOutputDesc(EPassOutputId InPassOutputId) const
@@ -96,14 +108,14 @@ class FPostProcessComputeMotionVectorPS : public FGlobalShader
 {
     DECLARE_SHADER_TYPE(FPostProcessComputeMotionVectorPS, Global);
 
-    static bool ShouldCache(EShaderPlatform Platform)
-    {
-        return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4);
-    }
+    static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4);
+	}
 
-    static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+    static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
     {
-        FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+        FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
     }
 
     /** Default constructor. */
@@ -140,19 +152,17 @@ public:
         FSamplerStateRHIParamRef FilterTable[1];
         FilterTable[0] = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
 
-        PostprocessParameter.SetPS(ShaderRHI, Context, 0, eFC_0000, FilterTable);
+        PostprocessParameter.SetPS(Context.RHICmdList, ShaderRHI, Context, 0, eFC_0000, FilterTable);
 
         DeferredParameters.Set(Context.RHICmdList, ShaderRHI, Context.View, MD_PostProcess);
 
         FSceneViewState* ViewState = (FSceneViewState*)Context.View.State;
         const bool bIgnoreVelocity = (ViewState && ViewState->bSequencerIsPaused);
         SetShaderValue(Context.RHICmdList, ShaderRHI, VelocityScaling, bIgnoreVelocity ? 0.0f : 1.0f);
-
-        SetUniformBufferParameter(Context.RHICmdList, ShaderRHI, GetUniformBufferParameter<FCameraMotionParameters>(), CreateCameraMotionParametersUniformBuffer(Context.View));
     }
 };
 
-IMPLEMENT_SHADER_TYPE(, FPostProcessComputeMotionVectorPS, TEXT("PostProcessComputeMotionVector"), TEXT("ComputeMotionVectorPS"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(, FPostProcessComputeMotionVectorPS, TEXT("/Engine/Private/PostProcessComputeMotionVector.usf"), TEXT("ComputeMotionVectorPS"), SF_Pixel);
 
 
 void FRCPassPostProcessComputeMotionVector::Process(FRenderingCompositePassContext& Context)
@@ -191,7 +201,7 @@ void FRCPassPostProcessComputeMotionVector::Process(FRenderingCompositePassConte
 
     // is optimized away if possible (RT size=view size, )
     //Context.RHICmdList.Clear(true, FLinearColor::Black, false, (float)ERHIZBuffer::FarPlane, false, 0, SrcRect);
-    DrawClearQuad(Context.RHICmdList, Context.GetFeatureLevel(), true, FLinearColor::Black, false, 0, false, 0, PassOutputs[0].RenderTargetDesc.Extent, SrcRect);
+    DrawClearQuad(Context.RHICmdList, true, FLinearColor::Black, false, 0, false, 0, PassOutputs[0].RenderTargetDesc.Extent, SrcRect);
 
     Context.SetViewportAndCallRHI(SrcRect);
 

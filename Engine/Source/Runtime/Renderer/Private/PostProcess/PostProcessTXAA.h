@@ -6,10 +6,6 @@
 
 #pragma once
 
-#ifndef WITH_TXAA
-#define WITH_TXAA 1
-#endif
-
 #if WITH_TXAA
 
 #include "RenderingCompositionGraph.h"
@@ -23,10 +19,18 @@
 class FRCPassPostProcessTXAA : public TRenderingCompositePassBase<4, 1>
 {
 public:
+	FRCPassPostProcessTXAA(
+		const FTemporalAAHistory& InInputHistory,
+		FTemporalAAHistory* OutOutputHistory);
+
     // interface FRenderingCompositePass ---------
     virtual void Process(FRenderingCompositePassContext& Context) override;
     virtual void Release() override { delete this; }
     virtual FPooledRenderTargetDesc ComputeOutputDesc(EPassOutputId InPassOutputId) const override;
+
+private:
+	const FTemporalAAHistory& InputHistory;
+	FTemporalAAHistory* OutputHistory;
 };
 
 // ePId_Input0: Velocity (point)

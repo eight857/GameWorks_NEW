@@ -4,8 +4,8 @@
 	PostProcessTemporalAA.usf: Temporal AA
 =============================================================================*/
 
-#include "Common.usf"
-#include "PostProcessCommon.usf"
+#include "Common.ush"
+#include "PostProcessCommon.ush"
 
 #define AA_CROSS 2
 #define HAS_INVERTED_Z_BUFFER 1
