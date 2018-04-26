@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "RuntimeAssetCacheFilesystemBackend.h"
 #include "GenericPlatform/GenericPlatformFile.h"
@@ -23,7 +23,7 @@ FArchive* FRuntimeAssetCacheFilesystemBackend::CreateWriteArchive(FName Bucket, 
 FRuntimeAssetCacheFilesystemBackend::FRuntimeAssetCacheFilesystemBackend()
 {
 	GConfig->GetString(TEXT("RuntimeAssetCache"), TEXT("PathToRAC"), PathToRAC, GEngineIni);
-	PathToRAC = FPaths::GameSavedDir() / PathToRAC;
+	PathToRAC = FPaths::ProjectSavedDir() / PathToRAC;
 }
 
 bool FRuntimeAssetCacheFilesystemBackend::RemoveCacheEntry(const FName Bucket, const TCHAR* CacheKey)
@@ -39,7 +39,12 @@ bool FRuntimeAssetCacheFilesystemBackend::ClearCache()
 
 bool FRuntimeAssetCacheFilesystemBackend::ClearCache(FName Bucket)
 {
-	return IFileManager::Get().DeleteDirectory(*FPaths::Combine(*PathToRAC, *Bucket.ToString()), false, true);
+	if (Bucket != NAME_None)
+	{
+		return IFileManager::Get().DeleteDirectory(*FPaths::Combine(*PathToRAC, *Bucket.ToString()), false, true);
+	}
+
+	return false;
 }
 
 FRuntimeAssetCacheBucket* FRuntimeAssetCacheFilesystemBackend::PreLoadBucket(FName BucketName, int32 BucketSize)

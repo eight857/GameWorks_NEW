@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -23,8 +23,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAbilityStateDelegate);
  * 'OnStateInterrupted' will be called if:
  * - The ability itself is cancelled via AGameplayAbility::CancelAbility
  */
-UCLASS(MinimalAPI)
-class UAbilityTask_StartAbilityState : public UAbilityTask
+UCLASS()
+class GAMEPLAYABILITIES_API UAbilityTask_StartAbilityState : public UAbilityTask
 {
 	GENERATED_UCLASS_BODY()
 

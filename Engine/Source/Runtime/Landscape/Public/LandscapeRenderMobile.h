@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 LandscapeRenderMobile.h: Mobile landscape rendering
@@ -36,7 +36,8 @@ public:
 		TArray<FVertexStreamComponent,TFixedAllocator<LANDSCAPE_MAX_ES_LOD_COMP> > LODHeightsComponent;
 	};
 
-	FLandscapeVertexFactoryMobile()
+	FLandscapeVertexFactoryMobile(ERHIFeatureLevel::Type InFeatureLevel)
+		: FLandscapeVertexFactory(InFeatureLevel)
 	{
 	}
 
@@ -50,7 +51,7 @@ public:
 	/**
 	* Should we cache the material's shadertype on this platform with this vertex factory? 
 	*/
-	static bool ShouldCache(EShaderPlatform Platform, const class FMaterial* Material, const class FShaderType* ShaderType)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform, const class FMaterial* Material, const class FShaderType* ShaderType)
 	{
 		auto FeatureLevel = GetMaxSupportedFeatureLevel(Platform);
 		return (FeatureLevel == ERHIFeatureLevel::ES2 || FeatureLevel == ERHIFeatureLevel::ES3_1) &&
@@ -87,17 +88,16 @@ private:
 //
 class FLandscapeVertexBufferMobile : public FVertexBuffer
 {
-	const void* Data;
+	TArray<uint8> VertexData;
 	int32 DataSize;
 public:
 
 	/** Constructor. */
-	FLandscapeVertexBufferMobile(const void* InData, int32 InDataSize)
-	: 	Data(InData)
-	,	DataSize(InDataSize)
+	FLandscapeVertexBufferMobile(TArray<uint8> InVertexData)
+	:	VertexData(InVertexData)
+	,	DataSize(InVertexData.Num())
 	{
 		INC_DWORD_STAT_BY(STAT_LandscapeVertexMem, DataSize);
-		InitResource();
 	}
 
 	/** Destructor. */
@@ -116,16 +116,15 @@ public:
 //
 // FLandscapeComponentSceneProxy
 //
-class FLandscapeComponentSceneProxyMobile : public FLandscapeComponentSceneProxy
+class FLandscapeComponentSceneProxyMobile final : public FLandscapeComponentSceneProxy
 {
-	FLandscapeVertexBufferMobile* VertexBuffer;
-
-	// Cooked data
-	TArray<uint8> PlatformData;
+	TSharedPtr<FLandscapeMobileRenderData, ESPMode::ThreadSafe> MobileRenderData;
 
 	virtual ~FLandscapeComponentSceneProxyMobile();
 
 public:
+	SIZE_T GetTypeHash() const override;
+
 	FLandscapeComponentSceneProxyMobile(ULandscapeComponent* InComponent);
 
 	virtual void CreateRenderThreadResources() override;

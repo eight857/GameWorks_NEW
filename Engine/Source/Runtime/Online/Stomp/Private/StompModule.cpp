@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "StompModule.h"
 #include "Modules/ModuleManager.h"
@@ -44,7 +44,8 @@ FStompModule& FStompModule::Get()
 
 TSharedRef<IStompClient> FStompModule::CreateClient(const FString& Url)
 {
-	return MakeShareable(new FStompClient(Url, DefaultPingInterval, DefaultPingInterval));
+	// no server pong - wasteful having all the cloud websocket workers sending out heartbeats
+	return MakeShareable(new FStompClient(Url, DefaultPingInterval, 0));
 }
 
 #endif // #if WITH_STOMP

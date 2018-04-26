@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AndroidWebBrowserWindow.h"
 #include "AndroidWebBrowserDialog.h"
@@ -22,9 +22,11 @@ namespace {
 FAndroidWebBrowserWindow::FAndroidWebBrowserWindow(FString InUrl, TOptional<FString> InContentsToLoad, bool InShowErrorMessage, bool InThumbMouseButtonNavigation, bool InUseTransparency, bool bInJSBindingToLoweringEnabled)
 	: CurrentUrl(MoveTemp(InUrl))
 	, ContentsToLoad(MoveTemp(InContentsToLoad))
+	, bUseTransparency(InUseTransparency)
 	, DocumentState(EWebBrowserDocumentState::NoDocument)
 	, ErrorCode(0)
 	, Scripting(new FAndroidJSScripting(bInJSBindingToLoweringEnabled))
+	, AndroidWindowSize(FIntPoint(500, 500))
 {
 }
 
@@ -47,6 +49,7 @@ TSharedRef<SWidget> FAndroidWebBrowserWindow::CreateWidget()
 {
 	TSharedRef<SAndroidWebBrowserWidget> BrowserWidgetRef =
 		SNew(SAndroidWebBrowserWidget)
+		.UseTransparency(bUseTransparency)
 		.InitialURL(CurrentUrl)
 		.WebBrowserWindow(SharedThis(this));
 
@@ -56,6 +59,12 @@ TSharedRef<SWidget> FAndroidWebBrowserWindow::CreateWidget()
 
 void FAndroidWebBrowserWindow::SetViewportSize(FIntPoint WindowSize, FIntPoint WindowPos)
 {
+	AndroidWindowSize = WindowSize;
+}
+
+FIntPoint FAndroidWebBrowserWindow::GetViewportSize() const
+{
+	return AndroidWindowSize;
 }
 
 FSlateShaderResource* FAndroidWebBrowserWindow::GetTexture(bool bIsPopup /*= false*/)

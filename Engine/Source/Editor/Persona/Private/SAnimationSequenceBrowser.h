@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -16,6 +16,7 @@
 #include "Editor/ContentBrowser/Public/ContentBrowserDelegates.h"
 #include "EditorAnimUtils.h"
 #include "IAnimationSequenceBrowser.h"
+#include "ARFilter.h"
 
 class FSceneViewport;
 class FUICommandList;
@@ -25,6 +26,7 @@ class SViewport;
 class UAnimationAsset;
 class UDebugSkelMeshComponent;
 class USoundWave;
+class FFrontendFilter_Folder;
 
 //////////////////////////////////////////////////////////////////////////
 // FAnimationAssetViewportClient
@@ -250,6 +252,15 @@ protected:
 	// delegate to sync the asset picker to selected assets
 	FSyncToAssetsDelegate SyncToAssetsDelegate;
 	FGetCurrentSelectionDelegate GetCurrentSelectionDelegate;
+
+	/** Delegate used to set the AR filter after the fact */
+	FSetARFilterDelegate SetFilterDelegate;
+
+	/** Keep the AR filter around so we can modify it */
+	FARFilter Filter;
+
+	/** All the folder filters we have */
+	TArray<TSharedPtr<FFrontendFilter_Folder>> FolderFilters;
 
 	void RetargetAnimationHandler(USkeleton* OldSkeleton, USkeleton* NewSkeleton, bool bRemapReferencedAssets, bool bAllowRemapToExisting, bool bConvertSpaces, const EditorAnimUtils::FNameDuplicationRule* NameRule, TArray<TWeakObjectPtr<UObject>> InAnimAssets);
 

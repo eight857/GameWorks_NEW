@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ShaderCore.h: Shader core module definitions.
@@ -10,6 +10,7 @@
 #include "Stats/Stats.h"
 #include "Templates/RefCounting.h"
 #include "Misc/SecureHash.h"
+#include "Misc/Paths.h"
 #include "Misc/CoreStats.h"
 #include "UniformBuffer.h"
 
@@ -24,6 +25,9 @@ SHADERCORE_API DECLARE_LOG_CATEGORY_EXTERN(LogShaders, Log, All);
 #else
 SHADERCORE_API DECLARE_LOG_CATEGORY_EXTERN(LogShaders, Error, All);
 #endif
+
+DECLARE_DWORD_ACCUMULATOR_STAT_EXTERN(TEXT("Num Total Niagara Shaders"), STAT_ShaderCompiling_NumTotalNiagaraShaders, STATGROUP_ShaderCompiling, SHADERCORE_API);
+DECLARE_FLOAT_ACCUMULATOR_STAT_EXTERN(TEXT("Total Niagara Shader Compiling Time"), STAT_ShaderCompiling_NiagaraShaders, STATGROUP_ShaderCompiling, SHADERCORE_API);
 
 DECLARE_FLOAT_ACCUMULATOR_STAT_EXTERN(TEXT("Total Material Shader Compiling Time"),STAT_ShaderCompiling_MaterialShaders,STATGROUP_ShaderCompiling, SHADERCORE_API);
 DECLARE_FLOAT_ACCUMULATOR_STAT_EXTERN(TEXT("Total Global Shader Compiling Time"),STAT_ShaderCompiling_GlobalShaders,STATGROUP_ShaderCompiling, SHADERCORE_API);
@@ -98,8 +102,11 @@ struct FShaderTarget
 		uint32 TargetFrequency = Target.Frequency;
 		uint32 TargetPlatform = Target.Platform;
 		Ar << TargetFrequency << TargetPlatform;
-		Target.Frequency = TargetFrequency;
-		Target.Platform = TargetPlatform;
+		if (Ar.IsLoading())
+		{
+			Target.Frequency = TargetFrequency;
+			Target.Platform = TargetPlatform;
+		}
 		return Ar;
 	}
 };
@@ -130,7 +137,9 @@ enum ECompilerFlags
 	// Hint that its a vertex to geometry shader
 	CFLAG_VertexToGeometryShader,
 	// Prepare the shader for archiving in the native binary shader cache format
-	CFLAG_Archive
+	CFLAG_Archive,
+	// Shaders uses external texture so may need special runtime handling
+	CFLAG_UsesExternalTexture
 };
 
 /**
@@ -161,6 +170,11 @@ public:
 		return Ar << InParameterMap.ParameterMap;
 	}
 
+	inline void GetAllParameterNames(TArray<FString>& OutNames) const
+	{
+		ParameterMap.GenerateKeyArray(OutNames);
+	}
+
 private:
 	struct FParameterAllocation
 	{
@@ -180,6 +194,8 @@ private:
 	};
 
 	TMap<FString,FParameterAllocation> ParameterMap;
+public:
+
 };
 
 /** Container for shader compiler definitions. */
@@ -343,17 +359,23 @@ inline FArchive& operator<<(FArchive& Ar, FResourceTableEntry& Entry)
 /** The environment used to compile a shader. */
 struct FShaderCompilerEnvironment : public FRefCountedObject
 {
-	TMap<FString,TArray<ANSICHAR>> IncludeFileNameToContentsMap;
+	// Map of the virtual file path -> content.
+	// The virtual file paths are the ones that USF files query through the #include "<The Virtual Path of the file>"
+	TMap<FString,FString> IncludeVirtualPathToContentsMap;
+	
+	TMap<FString,TSharedPtr<FString>> IncludeVirtualPathToExternalContentsMap;
+
 	TArray<uint32> CompilerFlags;
 	TMap<uint32,uint8> RenderTargetOutputFormatsMap;
 	TMap<FString,FResourceTableEntry> ResourceTableMap;
 	TMap<FString,uint32> ResourceTableLayoutHashes;
+	TMap<FString, FString> RemoteServerData;
 
 	/** Default constructor. */
 	FShaderCompilerEnvironment()
 	{
 		// Presize to reduce re-hashing while building shader jobs
-		IncludeFileNameToContentsMap.Empty(15);
+		IncludeVirtualPathToContentsMap.Empty(15);
 	}
 
 	/** Initialization constructor. */
@@ -387,36 +409,45 @@ struct FShaderCompilerEnvironment : public FRefCountedObject
 	friend FArchive& operator<<(FArchive& Ar,FShaderCompilerEnvironment& Environment)
 	{
 		// Note: this serialize is used to pass between UE4 and the shader compile worker, recompile both when modifying
-		return Ar << Environment.IncludeFileNameToContentsMap << Environment.Definitions << Environment.CompilerFlags << Environment.RenderTargetOutputFormatsMap << Environment.ResourceTableMap << Environment.ResourceTableLayoutHashes;
-	}
+		Ar << Environment.IncludeVirtualPathToContentsMap;
 
+		// Note: skipping Environment.IncludeVirtualPathToExternalContentsMap, which is handled by FShaderCompileUtilities::DoWriteTasks in order to maintain sharing
+
+		Ar << Environment.Definitions;
+		Ar << Environment.CompilerFlags;
+		Ar << Environment.RenderTargetOutputFormatsMap;
+		Ar << Environment.ResourceTableMap;
+		Ar << Environment.ResourceTableLayoutHashes;
+		Ar << Environment.RemoteServerData;
+		return Ar;
+	}
+	
 	void Merge(const FShaderCompilerEnvironment& Other)
 	{
 		// Merge the include maps
 		// Merge the values of any existing keys
-		for (TMap<FString,TArray<ANSICHAR>>::TConstIterator It(Other.IncludeFileNameToContentsMap); It; ++It )
+		for (TMap<FString,FString>::TConstIterator It(Other.IncludeVirtualPathToContentsMap); It; ++It )
 		{
-			TArray<ANSICHAR>* ExistingContents = IncludeFileNameToContentsMap.Find(It.Key());
+			FString* ExistingContents = IncludeVirtualPathToContentsMap.Find(It.Key());
 
 			if (ExistingContents)
 			{
-				if (ExistingContents->Num() > 0)
-				{
-					ExistingContents->RemoveAt(ExistingContents->Num() - 1);
-				}
 				ExistingContents->Append(It.Value());
 			}
 			else
 			{
-				IncludeFileNameToContentsMap.Add(It.Key(), It.Value());
+				IncludeVirtualPathToContentsMap.Add(It.Key(), It.Value());
 			}
 		}
+
+		check(Other.IncludeVirtualPathToExternalContentsMap.Num() == 0);
 
 		CompilerFlags.Append(Other.CompilerFlags);
 		ResourceTableMap.Append(Other.ResourceTableMap);
 		ResourceTableLayoutHashes.Append(Other.ResourceTableLayoutHashes);
 		Definitions.Merge(Other.Definitions);
 		RenderTargetOutputFormatsMap.Append(Other.RenderTargetOutputFormatsMap);
+		RemoteServerData.Append(Other.RemoteServerData);
 	}
 
 private:
@@ -430,8 +461,7 @@ struct FShaderCompilerInput
 	FShaderTarget Target;
 	FName ShaderFormat;
 	FString SourceFilePrefix;
-	// e.g. BasePassPixelShader, ReflectionEnvironmentShaders, SlateElementPixelShader, PostProcessCombineLUTs
-	FString SourceFilename;
+	FString VirtualSourceFilePath;
 	FString EntryPointName;
 
 	// Skips the preprocessor and instead loads the usf file directly
@@ -470,15 +500,81 @@ struct FShaderCompilerInput
 
 		if(DebugGroupName == TEXT("Global"))
 		{
-			Name = SourceFilename + TEXT(".usf|") + EntryPointName;
+			Name = VirtualSourceFilePath + TEXT("|") + EntryPointName;
 		}
 		else
 		{
 			// we skip EntryPointName as it's usually not useful
-			Name = DebugGroupName + TEXT(":") + SourceFilename + TEXT(".usf");
+			Name = DebugGroupName + TEXT(":") + VirtualSourceFilePath;
 		}
 
 		return Name;
+	}
+
+	FString GetSourceFilename() const
+	{
+		return FPaths::GetCleanFilename(VirtualSourceFilePath);
+	}
+
+	void GatherSharedInputs(TMap<FString,FString>& ExternalIncludes, TArray<FShaderCompilerEnvironment*>& SharedEnvironments)
+	{
+		check(!SharedEnvironment || SharedEnvironment->IncludeVirtualPathToExternalContentsMap.Num() == 0);
+
+		for (TMap<FString, TSharedPtr<FString>>::TConstIterator It(Environment.IncludeVirtualPathToExternalContentsMap); It; ++It)
+		{
+			FString* FoundEntry = ExternalIncludes.Find(It.Key());
+
+			if (!FoundEntry)
+			{
+				ExternalIncludes.Add(It.Key(), *It.Value());
+			}
+		}
+
+		if (SharedEnvironment)
+		{
+			SharedEnvironments.AddUnique(SharedEnvironment.GetReference());
+		}
+	}
+
+	void SerializeSharedInputs(FArchive& Ar, const TArray<FShaderCompilerEnvironment*>& SharedEnvironments)
+	{
+		check(Ar.IsSaving());
+
+		TArray<FString> ReferencedExternalIncludes;
+		ReferencedExternalIncludes.Empty(Environment.IncludeVirtualPathToExternalContentsMap.Num());
+
+		for (TMap<FString, TSharedPtr<FString>>::TConstIterator It(Environment.IncludeVirtualPathToExternalContentsMap); It; ++It)
+		{
+			ReferencedExternalIncludes.Add(It.Key());
+		}
+
+		Ar << ReferencedExternalIncludes;
+
+		int32 SharedEnvironmentIndex = SharedEnvironments.Find(SharedEnvironment.GetReference());
+		Ar << SharedEnvironmentIndex;
+	}
+
+	void DeserializeSharedInputs(FArchive& Ar, const TMap<FString,TSharedPtr<FString>>& ExternalIncludes, const TArray<FShaderCompilerEnvironment>& SharedEnvironments)
+	{
+		check(Ar.IsLoading());
+
+		TArray<FString> ReferencedExternalIncludes;
+		Ar << ReferencedExternalIncludes;
+
+		Environment.IncludeVirtualPathToExternalContentsMap.Reserve(ReferencedExternalIncludes.Num());
+
+		for (int32 i = 0; i < ReferencedExternalIncludes.Num(); i++)
+		{
+			Environment.IncludeVirtualPathToExternalContentsMap.Add(ReferencedExternalIncludes[i], ExternalIncludes.FindChecked(ReferencedExternalIncludes[i]));
+		}
+
+		int32 SharedEnvironmentIndex = 0;
+		Ar << SharedEnvironmentIndex;
+
+		if (SharedEnvironments.IsValidIndex(SharedEnvironmentIndex))
+		{
+			Environment.Merge(SharedEnvironments[SharedEnvironmentIndex]);
+		}
 	}
 
 	friend FArchive& operator<<(FArchive& Ar,FShaderCompilerInput& Input)
@@ -491,7 +587,7 @@ struct FShaderCompilerInput
 			Input.ShaderFormat = FName(*ShaderFormatString);
 		}
 		Ar << Input.SourceFilePrefix;
-		Ar << Input.SourceFilename;
+		Ar << Input.VirtualSourceFilePath;
 		Ar << Input.EntryPointName;
 		Ar << Input.bSkipPreprocessedCache;
 		Ar << Input.bCompilingForShaderPipeline;
@@ -503,24 +599,7 @@ struct FShaderCompilerInput
 		Ar << Input.DebugGroupName;
 		Ar << Input.Environment;
 
-		bool bHasSharedEnvironment = IsValidRef(Input.SharedEnvironment);
-		Ar << bHasSharedEnvironment;
-
-		if (bHasSharedEnvironment)
-		{
-			if (Ar.IsSaving())
-			{
-				// Inline the shared environment when saving
-				Ar << *(Input.SharedEnvironment);
-			}
-
-			if (Ar.IsLoading())
-			{
-				// Create a new environment when loading, no sharing is happening anymore
-				Input.SharedEnvironment = new FShaderCompilerEnvironment();
-				Ar << *(Input.SharedEnvironment);
-			}
-		}
+		// Note: skipping Input.SharedEnvironment, which is handled by FShaderCompileUtilities::DoWriteTasks in order to maintain sharing
 
 		return Ar;
 	}
@@ -530,23 +609,26 @@ struct FShaderCompilerInput
 struct FShaderCompilerError
 {
 	FShaderCompilerError(const TCHAR* InStrippedErrorMessage = TEXT(""))
-	:	ErrorFile(TEXT(""))
+	:	ErrorVirtualFilePath(TEXT(""))
 	,	ErrorLineString(TEXT(""))
 	,	StrippedErrorMessage(InStrippedErrorMessage)
 	{}
 
-	FString ErrorFile;
+	FString ErrorVirtualFilePath;
 	FString ErrorLineString;
 	FString StrippedErrorMessage;
 
 	FString GetErrorString() const
 	{
-		return ErrorFile + TEXT("(") + ErrorLineString + TEXT("): ") + StrippedErrorMessage;
+		return ErrorVirtualFilePath + TEXT("(") + ErrorLineString + TEXT("): ") + StrippedErrorMessage; // TODO
 	}
+
+	/** Returns the path of the underlying source file relative to the process base dir. */
+	FString SHADERCORE_API GetShaderSourceFilePath() const;
 
 	friend FArchive& operator<<(FArchive& Ar,FShaderCompilerError& Error)
 	{
-		return Ar << Error.ErrorFile << Error.ErrorLineString << Error.StrippedErrorMessage;
+		return Ar << Error.ErrorVirtualFilePath << Error.ErrorLineString << Error.StrippedErrorMessage;
 	}
 };
 
@@ -840,6 +922,7 @@ struct FShaderCompilerOutput
 
 	FShaderParameterMap ParameterMap;
 	TArray<FShaderCompilerError> Errors;
+	TArray<FString> PragmaDirectives;
 	FShaderTarget Target;
 	FShaderCode ShaderCode;
 	FSHAHash OutputHash;
@@ -862,40 +945,47 @@ struct FShaderCompilerOutput
 	}
 };
 
+/** 
+ * Validates the format of a virtual shader file path.
+ * Meant to be use as such: check(CheckVirtualShaderFilePath(VirtualFilePath));
+ * CompileErrors output array is optional.
+ */
+extern SHADERCORE_API bool CheckVirtualShaderFilePath(const FString& VirtualPath, TArray<FShaderCompilerError>* CompileErrors = nullptr);
+
 /**
  * Converts an absolute or relative shader filename to a filename relative to
  * the shader directory.
  * @param InFilename - The shader filename.
  * @returns a filename relative to the shaders directory.
  */
-extern SHADERCORE_API FString GetRelativeShaderFilename(const FString& InFilename);
+extern SHADERCORE_API FString ParseVirtualShaderFilename(const FString& InFilename);
 
 /**
  * Loads the shader file with the given name.
- * @param Filename - The filename of the shader to load.
+ * @param VirtualFilePath - The virtual path of shader file to load.
  * @param OutFileContents - If true is returned, will contain the contents of the shader file.
  * @return True if the file was successfully loaded.
  */
-extern SHADERCORE_API bool LoadShaderSourceFile(const TCHAR* Filename,FString& OutFileContents);
+extern SHADERCORE_API bool LoadShaderSourceFile(const TCHAR* VirtualFilePath, FString& OutFileContents, TArray<FShaderCompilerError>* OutCompileErrors);
 
 /** Loads the shader file with the given name.  If the shader file couldn't be loaded, throws a fatal error. */
-extern SHADERCORE_API void LoadShaderSourceFileChecked(const TCHAR* Filename, FString& OutFileContents);
+extern SHADERCORE_API void LoadShaderSourceFileChecked(const TCHAR* VirtualFilePath, FString& OutFileContents);
 
 /**
  * Recursively populates IncludeFilenames with the include filenames from Filename
  */
-extern SHADERCORE_API void GetShaderIncludes(const TCHAR* Filename, TArray<FString>& IncludeFilenames, uint32 DepthLimit=7);
+extern SHADERCORE_API void GetShaderIncludes(const TCHAR* EntryPointVirtualFilePath, const TCHAR* VirtualFilePath, TArray<FString>& IncludeVirtualFilePaths, uint32 DepthLimit=100);
 
 /**
  * Calculates a Hash for the given filename if it does not already exist in the Hash cache.
  * @param Filename - shader file to Hash
  */
-extern SHADERCORE_API const class FSHAHash& GetShaderFileHash(const TCHAR* Filename);
+extern SHADERCORE_API const class FSHAHash& GetShaderFileHash(const TCHAR* VirtualFilePath);
 
 /**
  * Calculates a Hash for the list of filenames if it does not already exist in the Hash cache.
  */
-extern SHADERCORE_API const class FSHAHash& GetShaderFilesHash(const TArray<FString>& Filenames);
+extern SHADERCORE_API const class FSHAHash& GetShaderFilesHash(const TArray<FString>& VirtualFilePaths);
 
 extern void BuildShaderFileToUniformBufferMap(TMap<FString, TArray<const TCHAR*> >& ShaderFileToUniformBufferVariables);
 
@@ -909,7 +999,8 @@ extern SHADERCORE_API void VerifyShaderSourceFiles();
 
 struct FCachedUniformBufferDeclaration
 {
-	FString Declaration[SP_NumPlatforms];
+	// Using SharedPtr so we can hand off lifetime ownership to FShaderCompilerEnvironment::IncludeVirtualPathToExternalContentsMap when invalidating this cache
+	TSharedPtr<FString> Declaration[SP_NumPlatforms];
 };
 
 /** Parses the given source file and its includes for references of uniform buffers, which are then stored in UniformBufferEntries. */

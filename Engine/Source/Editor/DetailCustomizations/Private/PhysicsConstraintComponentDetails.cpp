@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PhysicsConstraintComponentDetails.h"
 #include "Layout/Visibility.h"
@@ -28,6 +28,7 @@
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Widgets/Input/SNumericEntryBox.h"
 #include "ScopedTransaction.h"
+#include "SRichTextBlock.h"
 
 #define LOCTEXT_NAMESPACE "PhysicsConstraintComponentDetails"
 namespace ConstraintDetails
@@ -36,7 +37,7 @@ namespace ConstraintDetails
 	{
 		bool bIsEnabled = false;
 
-		if (Prop->GetValue(bIsEnabled))
+		if (Prop->GetValue(bIsEnabled) == FPropertyAccess::Result::Success)
 		{
 			return bIsEnabled;
 		}
@@ -51,7 +52,7 @@ namespace ConstraintDetails
 		TargetWidget->SetEnabled(TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateLambda([StoreCheckProperty]()
 		{
 			bool bSet;
-			if (StoreCheckProperty->GetValue(bSet))
+			if (StoreCheckProperty->GetValue(bSet) == FPropertyAccess::Result::Success)
 			{
 				return bSet;
 			}
@@ -105,7 +106,7 @@ namespace ConstraintDetails
 				// This prevents an issue where multiple sets fail when using BlueprintComponents
 				// due to RerunConstructionScripts destroying the edit list.
 				FScopedTransaction Transaction(TransactionName);
-				ensure(Prop1->SetValue(NewValue));
+				ensure(Prop1->SetValue(NewValue) == FPropertyAccess::Result::Success);
 			}
 		};
 
@@ -146,7 +147,7 @@ namespace ConstraintDetails
 	bool IsAngularPropertyEqual(TSharedPtr<IPropertyHandle> Prop, EAngularConstraintMotion CheckMotion)
 	{
 		uint8 Val;
-		if (Prop->GetValue(Val))
+		if (Prop->GetValue(Val) == FPropertyAccess::Result::Success)
 		{
 			return Val == CheckMotion;
 		}
@@ -287,7 +288,9 @@ void FPhysicsConstraintComponentDetails::AddLinearLimits(IDetailLayoutBuilder& D
 	auto IsLinearMotionLimited = [LinearXMotionProperty, LinearYMotionProperty, LinearZMotionProperty]()
 	{
 		uint8 XMotion, YMotion, ZMotion;
-		if (LinearXMotionProperty->GetValue(XMotion) && LinearYMotionProperty->GetValue(YMotion) && LinearZMotionProperty->GetValue(ZMotion))
+		if (LinearXMotionProperty->GetValue(XMotion) == FPropertyAccess::Result::Success && 
+			LinearYMotionProperty->GetValue(YMotion) == FPropertyAccess::Result::Success && 
+			LinearZMotionProperty->GetValue(ZMotion) == FPropertyAccess::Result::Success)
 		{
 			return XMotion == LCM_Limited || YMotion == LCM_Limited || ZMotion == LCM_Limited;
 		}
@@ -341,6 +344,13 @@ void FPhysicsConstraintComponentDetails::AddAngularLimits(IDetailLayoutBuilder& 
 	uint8 AngularLimitEnum[LCM_MAX] = { ACM_Free, LCM_Limited, LCM_Locked };
 	TSharedPtr<IPropertyHandle> AngularLimitProperties[] = { AngularSwing1MotionProperty, AngularSwing2MotionProperty, AngularTwistMotionProperty };
 
+	const FName AxisStyleNames[3] =
+	{
+		"PhysicsAssetEditor.RadioButtons.Red",
+		"PhysicsAssetEditor.RadioButtons.Red",
+		"PhysicsAssetEditor.RadioButtons.Green"
+	};
+
 	for (int32 PropertyIdx = 0; PropertyIdx < 3; ++PropertyIdx)
 	{
 		TSharedPtr<IPropertyHandle> CurProperty = AngularLimitProperties[PropertyIdx];
@@ -363,7 +373,7 @@ void FPhysicsConstraintComponentDetails::AddAngularLimits(IDetailLayoutBuilder& 
 				.HAlign(HAlign_Left)
 				[
 					SNew(SCheckBox)
-					.Style(FEditorStyle::Get(), "RadioButton")
+					.Style(FEditorStyle::Get(), AxisStyleNames[PropertyIdx])
 					.IsChecked(this, &FPhysicsConstraintComponentDetails::IsLimitRadioChecked, CurProperty, AngularLimitEnum[0])
 					.OnCheckStateChanged(this, &FPhysicsConstraintComponentDetails::OnLimitRadioChanged, CurProperty, AngularLimitEnum[0])
 					.ToolTipText(AngularLimitOptionTooltips[0])
@@ -379,7 +389,7 @@ void FPhysicsConstraintComponentDetails::AddAngularLimits(IDetailLayoutBuilder& 
 					.Padding(5, 0, 0, 0)
 					[
 						SNew(SCheckBox)
-						.Style(FEditorStyle::Get(), "RadioButton")
+						.Style(FEditorStyle::Get(), AxisStyleNames[PropertyIdx])
 						.IsChecked(this, &FPhysicsConstraintComponentDetails::IsLimitRadioChecked, CurProperty, AngularLimitEnum[1])
 						.OnCheckStateChanged(this, &FPhysicsConstraintComponentDetails::OnLimitRadioChanged, CurProperty, AngularLimitEnum[1])
 						.ToolTipText(AngularLimitOptionTooltips[1])
@@ -395,7 +405,7 @@ void FPhysicsConstraintComponentDetails::AddAngularLimits(IDetailLayoutBuilder& 
 					.Padding(5, 0, 0, 0)
 					[
 						SNew(SCheckBox)
-						.Style(FEditorStyle::Get(), "RadioButton")
+						.Style(FEditorStyle::Get(), AxisStyleNames[PropertyIdx])
 						.IsChecked(this, &FPhysicsConstraintComponentDetails::IsLimitRadioChecked, CurProperty, AngularLimitEnum[2])
 						.OnCheckStateChanged(this, &FPhysicsConstraintComponentDetails::OnLimitRadioChanged, CurProperty, AngularLimitEnum[2])
 						.ToolTipText(AngularLimitOptionTooltips[2])
@@ -616,7 +626,7 @@ void FPhysicsConstraintComponentDetails::AddAngularDrive(IDetailLayoutBuilder& D
 	auto IsAngularMode = [AngularDriveModeProperty](EAngularDriveMode::Type CheckMode)
 	{
 		uint8 DriveMode;
-		if (AngularDriveModeProperty->GetValue(DriveMode))
+		if (AngularDriveModeProperty->GetValue(DriveMode) == FPropertyAccess::Result::Success)
 		{
 			return DriveMode == CheckMode;
 		}
@@ -868,7 +878,7 @@ void FPhysicsConstraintComponentDetails::CustomizeDetails( IDetailLayoutBuilder&
 		}
 	}
 
-	DetailBuilder.EditCategory("Constraint");	//Create this category first so it's at the top
+	IDetailCategoryBuilder& ConstraintCategory = DetailBuilder.EditCategory("Constraint");	//Create this category first so it's at the top
 	DetailBuilder.EditCategory("Constraint Behavior");	//Create this category first so it's at the top
 
 	TSharedPtr<IPropertyHandle> ProfileInstance = ConstraintInstance->GetChildHandle(GET_MEMBER_NAME_CHECKED(FConstraintInstance, ProfileInstance));
@@ -878,6 +888,47 @@ void FPhysicsConstraintComponentDetails::CustomizeDetails( IDetailLayoutBuilder&
 	AddAngularDrive(DetailBuilder, ConstraintInstance, ProfileInstance);
 
 	AddConstraintBehaviorProperties(DetailBuilder, ConstraintInstance, ProfileInstance);	//Now we've added all the complex UI, just dump the rest into Constraint category
+
+	if(bInPhat)
+	{
+		ConstraintCategory.HeaderContent(
+			SNew(SHorizontalBox)
+			+SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.HAlign(HAlign_Right)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SRichTextBlock)
+				.DecoratorStyleSet(&FEditorStyle::Get())
+				.Text_Lambda([Objects]()
+				{
+					if (Objects.Num() > 0)
+					{
+						if (UPhysicsConstraintTemplate* Constraint = Cast<UPhysicsConstraintTemplate>(Objects[0].Get()))
+						{
+							FName CurrentProfileName = Constraint->GetCurrentConstraintProfileName();
+							if(CurrentProfileName != NAME_None)
+							{
+								if(Constraint->ContainsConstraintProfile(CurrentProfileName))
+								{
+									return FText::Format(LOCTEXT("ProfileFormatAssigned", "Assigned to Profile: <RichTextBlock.Bold>{0}</>"), FText::FromName(CurrentProfileName));
+								}
+								else
+								{
+									return FText::Format(LOCTEXT("ProfileFormatNotAssigned", "Not Assigned to Profile: <RichTextBlock.Bold>{0}</>"), FText::FromName(CurrentProfileName));
+								}
+							}
+							else
+							{
+								return LOCTEXT("ProfileFormatNone", "Current Profile: <RichTextBlock.Bold>None</>");
+							}
+						}
+					}
+
+					return FText();
+				})
+			]);
+	}
 }
 
 
@@ -910,7 +961,7 @@ bool FPhysicsConstraintComponentDetails::IsPropertyEnabled( EPropertyType::Type 
 ECheckBoxState FPhysicsConstraintComponentDetails::IsLimitRadioChecked( TSharedPtr<IPropertyHandle> Property, uint8 Value ) const
 {
 	uint8 PropertyEnumValue = 0;
-	if (Property.IsValid() && Property->GetValue(PropertyEnumValue))
+	if (Property.IsValid() && Property->GetValue(PropertyEnumValue) == FPropertyAccess::Result::Success)
 	{
 		return PropertyEnumValue == Value ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	}

@@ -1,10 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 
 #include "CoreTypes.h"
-#include "Templates/AlignOf.h"
 
 /**
  * Used to declare an untyped array of data with compile-time alignment.
@@ -58,6 +57,6 @@ template<typename ElementType>
 struct TTypeCompatibleBytes :
 	public TAlignedBytes<
 		sizeof(ElementType),
-		ALIGNOF(ElementType)
+		alignof(ElementType)
 		>
 {};

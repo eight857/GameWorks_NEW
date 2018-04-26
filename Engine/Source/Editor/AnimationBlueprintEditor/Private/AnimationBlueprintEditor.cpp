@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "AnimationBlueprintEditor.h"
@@ -16,7 +16,7 @@
 #include "IAnimationBlueprintEditorModule.h"
 #include "AnimationBlueprintEditorModule.h"
 
-
+#include "BlueprintEditorTabs.h"
 #include "SKismetInspector.h"
 
 
@@ -61,6 +61,8 @@
 
 #include "AnimGraphNode_AimOffsetLookAt.h"
 #include "AnimGraphNode_RotationOffsetBlendSpace.h"
+#include "Algo/Transform.h"
+#include "ISkeletonTreeItem.h"
 
 #define LOCTEXT_NAMESPACE "AnimationBlueprintEditor"
 
@@ -201,13 +203,17 @@ void FAnimationBlueprintEditor::InitAnimationBlueprintEditor(const EToolkitMode:
 	FPersonaModule& PersonaModule = FModuleManager::GetModuleChecked<FPersonaModule>("Persona");
 	PersonaToolkit = PersonaModule.CreatePersonaToolkit(InAnimBlueprint);
 
+	PersonaToolkit->GetPreviewScene()->SetDefaultAnimationMode(EPreviewSceneDefaultAnimationMode::AnimationBlueprint);
+	PersonaToolkit->GetPreviewScene()->RegisterOnPreviewMeshChanged(FOnPreviewMeshChanged::CreateSP(this, &FAnimationBlueprintEditor::HandlePreviewMeshChanged));
+
 	TSharedRef<IAssetFamily> AssetFamily = PersonaModule.CreatePersonaAssetFamily(InAnimBlueprint);
 	AssetFamily->RecordAssetOpened(FAssetData(InAnimBlueprint));
 
 	// create the skeleton tree
-	FSkeletonTreeArgs SkeletonTreeArgs(OnPostUndo);
-	SkeletonTreeArgs.OnObjectSelected = FOnObjectSelected::CreateSP(this, &FAnimationBlueprintEditor::HandleObjectSelected);
+	FSkeletonTreeArgs SkeletonTreeArgs;
+	SkeletonTreeArgs.OnSelectionChanged = FOnSkeletonTreeSelectionChanged::CreateSP(this, &FAnimationBlueprintEditor::HandleSelectionChanged);
 	SkeletonTreeArgs.PreviewScene = GetPreviewScene();
+	SkeletonTreeArgs.ContextName = GetToolkitFName();
 
 	ISkeletonEditorModule& SkeletonEditorModule = FModuleManager::LoadModuleChecked<ISkeletonEditorModule>("SkeletonEditor");
 	SkeletonTree = SkeletonEditorModule.CreateSkeletonTree(PersonaToolkit->GetSkeleton(), SkeletonTreeArgs);
@@ -294,7 +300,9 @@ void FAnimationBlueprintEditor::ExtendToolbar()
 		FToolBarExtensionDelegate::CreateLambda([this](FToolBarBuilder& ParentToolbarBuilder)
 	{
 		FPersonaModule& PersonaModule = FModuleManager::LoadModuleChecked<FPersonaModule>("Persona");
-		PersonaModule.AddCommonToolbarExtensions(ParentToolbarBuilder, PersonaToolkit.ToSharedRef());
+		FPersonaModule::FCommonToolbarExtensionArgs Args;
+		Args.bPreviewAnimation = false;
+		PersonaModule.AddCommonToolbarExtensions(ParentToolbarBuilder, PersonaToolkit.ToSharedRef(), Args);
 
 		TSharedRef<class IAssetFamily> AssetFamily = PersonaModule.CreatePersonaAssetFamily(GetBlueprintObj());
 		AddToolbarWidget(PersonaModule.CreateAssetFamilyShortcutWidget(SharedThis(this), AssetFamily));
@@ -532,7 +540,7 @@ void FAnimationBlueprintEditor::OnConvertToSequenceEvaluator()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				// remove from selection and from graph
@@ -586,7 +594,7 @@ void FAnimationBlueprintEditor::OnConvertToSequencePlayer()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				// remove from selection and from graph
@@ -642,7 +650,7 @@ void FAnimationBlueprintEditor::OnConvertToBlendSpaceEvaluator()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				OldPosePin = OldNode->FindPin(TEXT("Y"));
@@ -650,7 +658,7 @@ void FAnimationBlueprintEditor::OnConvertToBlendSpaceEvaluator()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 
@@ -659,7 +667,7 @@ void FAnimationBlueprintEditor::OnConvertToBlendSpaceEvaluator()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				// remove from selection and from graph
@@ -712,7 +720,7 @@ void FAnimationBlueprintEditor::OnConvertToBlendSpacePlayer()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				OldPosePin = OldNode->FindPin(TEXT("Y"));
@@ -720,7 +728,7 @@ void FAnimationBlueprintEditor::OnConvertToBlendSpacePlayer()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 
@@ -729,7 +737,7 @@ void FAnimationBlueprintEditor::OnConvertToBlendSpacePlayer()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				// remove from selection and from graph
@@ -781,7 +789,7 @@ void FAnimationBlueprintEditor::OnConvertToPoseBlender()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				// remove from selection and from graph
@@ -835,7 +843,7 @@ void FAnimationBlueprintEditor::OnConvertToPoseByName()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				// remove from selection and from graph
@@ -891,7 +899,7 @@ void FAnimationBlueprintEditor::OnConvertToAimOffsetLookAt()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				OldPosePin = OldNode->FindPin(TEXT("BasePose"));
@@ -899,7 +907,7 @@ void FAnimationBlueprintEditor::OnConvertToAimOffsetLookAt()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				// remove from selection and from graph
@@ -953,7 +961,7 @@ void FAnimationBlueprintEditor::OnConvertToAimOffsetSimple()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				OldPosePin = OldNode->FindPin(TEXT("BasePose"));
@@ -961,7 +969,7 @@ void FAnimationBlueprintEditor::OnConvertToAimOffsetSimple()
 
 				if (ensure(OldPosePin && NewPosePin))
 				{
-					NewPosePin->CopyPersistentDataFromOldPin(*OldPosePin);
+					NewPosePin->MovePersistentDataFromOldPin(*OldPosePin);
 				}
 
 				// remove from selection and from graph
@@ -1024,32 +1032,31 @@ void FAnimationBlueprintEditor::RecompileAnimBlueprintIfDirty()
 
 void FAnimationBlueprintEditor::Compile()
 {
-	// Note if we were debugging the preview
-	UObject* CurrentDebugObject = GetBlueprintObj()->GetObjectBeingDebugged();
-	UDebugSkelMeshComponent* PreviewMeshComponent = PersonaToolkit->GetPreviewMeshComponent();
-	const bool bIsDebuggingPreview = (PreviewMeshComponent != NULL) && PreviewMeshComponent->IsAnimBlueprintInstanced() && (PreviewMeshComponent->GetAnimInstance() == CurrentDebugObject);
-
-	if (PreviewMeshComponent != NULL)
+	// Grab the currently debugged object, so we can re-set it below
+	USkeletalMeshComponent* DebuggedMeshComponent = nullptr;
+	if (UBlueprint* Blueprint = GetBlueprintObj())
 	{
-		// Force close any asset editors that are using the AnimScriptInstance (such as the Property Matrix), the class will be garbage collected
-		FAssetEditorManager::Get().CloseOtherEditors(PreviewMeshComponent->GetAnimInstance(), nullptr);
+		UAnimInstance* CurrentDebugObject = Cast<UAnimInstance>(Blueprint->GetObjectBeingDebugged());
+		if(CurrentDebugObject)
+		{
+			// Force close any asset editors that are using the AnimScriptInstance (such as the Property Matrix), the class will be garbage collected
+			FAssetEditorManager::Get().CloseOtherEditors(CurrentDebugObject, nullptr);
+			DebuggedMeshComponent = CurrentDebugObject->GetSkelMeshComponent();
+		}
 	}
 
 	// Compile the blueprint
 	FBlueprintEditor::Compile();
 
-	if (PreviewMeshComponent != NULL)
+	if (DebuggedMeshComponent != nullptr)
 	{
-		if (PreviewMeshComponent->GetAnimInstance() == NULL)
+		if (DebuggedMeshComponent->GetAnimInstance() == nullptr)
 		{
 			// try reinitialize animation if it doesn't exist
-			PreviewMeshComponent->InitAnim(true);
+			DebuggedMeshComponent->InitAnim(true);
 		}
 
-		if (bIsDebuggingPreview)
-		{
-			GetBlueprintObj()->SetObjectBeingDebugged(PreviewMeshComponent->GetAnimInstance());
-		}
+		GetBlueprintObj()->SetObjectBeingDebugged(DebuggedMeshComponent->GetAnimInstance());
 	}
 
 	// reset the selected skeletal control node
@@ -1303,22 +1310,6 @@ void FAnimationBlueprintEditor::OnBlueprintChangedImpl(UBlueprint* InBlueprint, 
 {
 	FBlueprintEditor::OnBlueprintChangedImpl(InBlueprint, bIsJustBeingCompiled);
 
-	UObject* CurrentDebugObject = GetBlueprintObj()->GetObjectBeingDebugged();
-	UDebugSkelMeshComponent* PreviewMeshComponent = PersonaToolkit->GetPreviewMeshComponent();
-	
-	if(PreviewMeshComponent != NULL)
-	{
-		// Reinitialize the animation, anything we reference could have changed triggering
-		// the blueprint change
-		PreviewMeshComponent->InitAnim(true);
-
-		const bool bIsDebuggingPreview = (PreviewMeshComponent != NULL) && PreviewMeshComponent->IsAnimBlueprintInstanced() && (PreviewMeshComponent->GetAnimInstance() == CurrentDebugObject);
-		if(bIsDebuggingPreview)
-		{
-			GetBlueprintObj()->SetObjectBeingDebugged(PreviewMeshComponent->GetAnimInstance());
-		}
-	}
-
 	// calls PostCompile to copy proper values between anim nodes
 	OnPostCompile();
 }
@@ -1336,6 +1327,13 @@ void FAnimationBlueprintEditor::HandleObjectsSelected(const TArray<UObject*>& In
 void FAnimationBlueprintEditor::HandleObjectSelected(UObject* InObject)
 {
 	SetDetailObject(InObject);
+}
+
+void FAnimationBlueprintEditor::HandleSelectionChanged(const TArrayView<TSharedPtr<ISkeletonTreeItem>>& InSelectedItems, ESelectInfo::Type InSelectInfo)
+{
+	TArray<UObject*> Objects;
+	Algo::TransformIf(InSelectedItems, Objects, [](const TSharedPtr<ISkeletonTreeItem>& InItem) { return InItem->GetObject() != nullptr; }, [](const TSharedPtr<ISkeletonTreeItem>& InItem) { return InItem->GetObject(); });
+	SetDetailObjects(Objects);
 }
 
 UObject* FAnimationBlueprintEditor::HandleGetObject()
@@ -1438,6 +1436,46 @@ void FAnimationBlueprintEditor::HandlePinDefaultValueChanged(UEdGraphPin* InPinT
 		{
 			AnimGraphNode->CopyNodeDataToPreviewNode(AnimNode);
 		}
+	}
+}
+
+void FAnimationBlueprintEditor::HandleSetObjectBeingDebugged(UObject* InObject)
+{
+	FBlueprintEditor::HandleSetObjectBeingDebugged(InObject);
+	
+	if (UAnimInstance* AnimInstance = Cast<UAnimInstance>(InObject))
+	{
+		USkeletalMeshComponent* SkeletalMeshComponent = AnimInstance->GetSkelMeshComponent();
+		if (SkeletalMeshComponent)
+		{
+			// If we are selecting the preview instance, reset us back to 'normal'
+			if (InObject->GetWorld()->IsPreviewWorld())
+			{
+				GetPreviewScene()->ShowDefaultMode();
+				GetPreviewScene()->GetPreviewMeshComponent()->PreviewInstance->SetDebugSkeletalMeshComponent(nullptr);
+			}
+			else
+			{
+				// Otherwise eet us to display the debugged instance via copy-pose
+				GetPreviewScene()->GetPreviewMeshComponent()->EnablePreview(true, nullptr);
+				GetPreviewScene()->GetPreviewMeshComponent()->PreviewInstance->SetDebugSkeletalMeshComponent(SkeletalMeshComponent);
+			}
+		}
+	}
+	else
+	{
+		// Clear the copy-pose component and set us back to 'normal'
+		GetPreviewScene()->ShowDefaultMode();
+		GetPreviewScene()->GetPreviewMeshComponent()->PreviewInstance->SetDebugSkeletalMeshComponent(nullptr);
+	}
+}
+
+void FAnimationBlueprintEditor::HandlePreviewMeshChanged(USkeletalMesh* OldPreviewMesh, USkeletalMesh* NewPreviewMesh)
+{
+	UObject* Object = GetBlueprintObj()->GetObjectBeingDebugged();
+	if(Object)
+	{
+		HandleSetObjectBeingDebugged(Object);
 	}
 }
 

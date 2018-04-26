@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
+using Tools.DotNETCommon;
 using UnrealBuildTool;
 
 namespace AutomationTool.Tasks
@@ -116,8 +117,8 @@ namespace AutomationTool.Tasks
 		/// <param name="Job">Information about the current job</param>
 		/// <param name="BuildProducts">Set of build products produced by this node.</param>
 		/// <param name="TagNameToFileSet">Mapping from tag names to the set of files they include</param>
-		/// <returns>True if the task succeeded</returns>
-		public override bool Execute(JobContext Job, HashSet<FileReference> BuildProducts, Dictionary<string, HashSet<FileReference>> TagNameToFileSet)
+		public override void Execute(JobContext Job, HashSet<FileReference
+			> BuildProducts, Dictionary<string, HashSet<FileReference>> TagNameToFileSet)
 		{
 			// Set the Engine directory
 			DirectoryReference EngineDir = DirectoryReference.Combine(CommandUtils.RootDirectory, "Engine");
@@ -136,27 +137,22 @@ namespace AutomationTool.Tasks
 			// Resolve the input list
 			IEnumerable<FileReference> TargetFiles = ResolveFilespec(CommandUtils.RootDirectory, Parameters.Files, TagNameToFileSet);
 			HashSet<FileReference> Files = new HashSet<FileReference>();
-			HashSet<string> WildcardDependencies = new HashSet<string>();
 
 			foreach (FileReference TargetFile in TargetFiles)
 			{
 				// check all files are .target files
 				if (TargetFile.GetExtension() != ".target")
 				{
-					CommandUtils.LogError("Invalid file passed to TagReceipt task ({0})",TargetFile.FullName);
-					continue;
+					throw new AutomationException("Invalid file passed to TagReceipt task ({0})", TargetFile.FullName);
 				}
 
 				// Read the receipt
 				TargetReceipt Receipt;
-				if (!TargetReceipt.TryRead(TargetFile.FullName, out Receipt))
+				if (!TargetReceipt.TryRead(TargetFile, EngineDir, ProjectDir, out Receipt))
 				{
 					CommandUtils.LogWarning("Unable to load file using TagReceipt task ({0})", TargetFile.FullName);
 					continue;
 				}
-
-				// Convert the paths to absolute
-				Receipt.ExpandPathVariables(EngineDir, ProjectDir);
 
 				if (Parameters.BuildProducts)
 				{
@@ -164,7 +160,7 @@ namespace AutomationTool.Tasks
 					{
 						if (String.IsNullOrEmpty(Parameters.BuildProductType) || BuildProduct.Type == BuildProductType)
 						{
-							Files.Add(new FileReference(BuildProduct.Path));
+							Files.Add(BuildProduct.Path);
 						}
 					}
 				}
@@ -175,24 +171,15 @@ namespace AutomationTool.Tasks
 					{
 						if (String.IsNullOrEmpty(Parameters.StagedFileType) || RuntimeDependency.Type == StagedFileType)
 						{
-							// If it doesn't contain any wildcards, just add the pattern directly
-							if (FileFilter.FindWildcardIndex(RuntimeDependency.Path) == -1)
+							// Only add files that exist as dependencies are assumed to always exist
+							FileReference DependencyPath = RuntimeDependency.Path;
+							if (FileReference.Exists(DependencyPath))
 							{
-								// Only add files that exist as dependencies are assumed to always exist
-								FileReference DependencyPath = new FileReference(RuntimeDependency.Path);
-								if (FileReference.Exists(DependencyPath))
-								{
-									Files.Add(DependencyPath);
-								}
-								else
-								{
-									// Give a warning about files that don't exist so that we can clean up build.cs files
-									CommandUtils.LogWarning("File listed as RuntimeDependency in {0} does not exist ({1})", TargetFile.FullName, DependencyPath.FullName);
-								}
+								Files.Add(DependencyPath);
 							}
 							else
 							{
-								WildcardDependencies.Add(RuntimeDependency.Path);
+								CommandUtils.LogWarning("File listed as RuntimeDependency in {0} does not exist ({1})", TargetFile.FullName, DependencyPath.FullName);
 							}
 						}
 					}
@@ -200,64 +187,41 @@ namespace AutomationTool.Tasks
 
 				if (Parameters.PrecompiledBuildDependencies)
 				{
-					foreach(string PrecompiledBuildDependency in Receipt.PrecompiledBuildDependencies)
+					foreach(FileReference PrecompiledBuildDependency in Receipt.PrecompiledBuildDependencies)
 					{
-						// If it doesn't contain any wildcards, just add the pattern directly
-						if (FileFilter.FindWildcardIndex(PrecompiledBuildDependency) == -1)
+						// Only add files that exist as dependencies are assumed to always exist
+						FileReference DependencyPath = PrecompiledBuildDependency;
+						if (FileReference.Exists(DependencyPath))
 						{
-							// Only add files that exist as dependencies are assumed to always exist
-							FileReference DependencyPath = new FileReference(PrecompiledBuildDependency);
-							if (FileReference.Exists(DependencyPath))
-							{
-								Files.Add(DependencyPath);
-							}
-							else
-							{
-								// Give a warning about files that don't exist so that we can clean up build.cs files
-								CommandUtils.LogWarning("File listed as PrecompiledBuildDependency in {0} does not exist ({1})", TargetFile.FullName, DependencyPath.FullName);
-							}
+							Files.Add(DependencyPath);
 						}
 						else
 						{
-							WildcardDependencies.Add(PrecompiledBuildDependency);
+							CommandUtils.LogWarning("File listed as PrecompiledBuildDependency in {0} does not exist ({1})", TargetFile.FullName, DependencyPath.FullName);
 						}
 					}
 				}
 
 				if (Parameters.PrecompiledRuntimeDependencies)
 				{
-					foreach (string PrecompiledRuntimeDependency in Receipt.PrecompiledRuntimeDependencies)
+					foreach (FileReference PrecompiledRuntimeDependency in Receipt.PrecompiledRuntimeDependencies)
 					{
-						// If it doesn't contain any wildcards, just add the pattern directly
-						if (FileFilter.FindWildcardIndex(PrecompiledRuntimeDependency) == -1)
+						// Only add files that exist as dependencies are assumed to always exist
+						FileReference DependencyPath = PrecompiledRuntimeDependency;
+						if (FileReference.Exists(DependencyPath))
 						{
-							// Only add files that exist as dependencies are assumed to always exist
-							FileReference DependencyPath = new FileReference(PrecompiledRuntimeDependency);
-							if (FileReference.Exists(DependencyPath))
-							{
-								Files.Add(DependencyPath);
-							}
-							else
-							{
-								// Give a warning about files that don't exist so that we can clean up build.cs files
-								CommandUtils.LogWarning("File listed as PrecompiledRuntimeDependency in {0} does not exist ({1})", TargetFile.FullName, DependencyPath.FullName);
-							}
+							Files.Add(DependencyPath);
 						}
 						else
 						{
-							WildcardDependencies.Add(PrecompiledRuntimeDependency);
+							CommandUtils.LogWarning("File listed as PrecompiledRuntimeDependency in {0} does not exist ({1})", TargetFile.FullName, DependencyPath.FullName);
 						}
 					}
 				}
 			}
 
-			// Turn any wildcards into a file list
-			Files.UnionWith(ResolveFilespecWithExcludePatterns(CommandUtils.RootDirectory, WildcardDependencies.ToList(), new List<string>(), TagNameToFileSet));
-
 			// Apply the tag to all the matching files
 			FindOrAddTagSet(TagNameToFileSet, Parameters.With).UnionWith(Files);
-
-			return true;
 		}
 
 		/// <summary>

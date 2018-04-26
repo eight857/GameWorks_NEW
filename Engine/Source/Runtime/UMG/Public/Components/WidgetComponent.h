@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -140,7 +140,7 @@ public:
 	TSubclassOf<UUserWidget> GetWidgetClass() const { return WidgetClass; }
 
 	/** @return The user widget object displayed by this component */
-	UFUNCTION(BlueprintCallable, Category=UserInterface)
+	UFUNCTION(BlueprintCallable, Category=UserInterface, meta=(UnsafeDuringActorConstruction=true))
 	UUserWidget* GetUserWidgetObject() const;
 
 	/** @return Returns the Slate widget that was assigned to this component, if any */
@@ -214,6 +214,7 @@ public:
 	void SetBackgroundColor( const FLinearColor NewBackgroundColor );
 
 	/** Sets the tint color and opacity scale for this widget */
+	UFUNCTION(BlueprintCallable, Category=UserInterface)
 	void SetTintColorAndOpacity( const FLinearColor NewTintColorAndOpacity );
 
 	/** Sets how much opacity from the UI widget's texture alpha is used when rendering to the viewport (0.0-1.0) */

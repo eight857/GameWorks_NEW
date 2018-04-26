@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MeshMergingTool/MeshMergingTool.h"
 #include "Misc/Paths.h"
@@ -19,6 +19,7 @@
 #include "ContentBrowserModule.h"
 #include "AssetRegistryModule.h"
 #include "ScopedTransaction.h"
+#include "MeshMergeModule.h"
 
 
 #define LOCTEXT_NAMESPACE "MeshMergingTool"
@@ -42,7 +43,7 @@ FText FMeshMergingTool::GetTooltipText() const
 
 FString FMeshMergingTool::GetDefaultPackageName() const
 {
-	FString PackageName = FPackageName::FilenameToLongPackageName(FPaths::GameContentDir() + TEXT("SM_MERGED"));
+	FString PackageName = FPackageName::FilenameToLongPackageName(FPaths::ProjectContentDir() + TEXT("SM_MERGED"));
 
 	USelection* SelectedActors = GEditor->GetSelectedActors();
 	// Iterate through selected actors and find first static mesh asset
@@ -68,7 +69,7 @@ FString FMeshMergingTool::GetDefaultPackageName() const
 
 bool FMeshMergingTool::RunMerge(const FString& PackageName)
 {
-	IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>("MeshUtilities");
+	const IMeshMergeUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshMergeModule>("MeshMergeUtilities").GetUtilities();
 	USelection* SelectedActors = GEditor->GetSelectedActors();
 	TArray<AActor*> Actors;
 	TArray<ULevel*> UniqueLevels;
@@ -98,22 +99,22 @@ bool FMeshMergingTool::RunMerge(const FString& PackageName)
 		SlowTask.MakeDialog();
 
 		// Extracting static mesh components from the selected mesh components in the dialog
-		const TArray<TSharedPtr<FMeshComponentData>>& SelectedMeshComponents = MergingDialog->GetSelectedMeshComponents();
-		TArray<UStaticMeshComponent*> MeshComponentsToMerge;
+		const TArray<TSharedPtr<FMergeComponentData>>& SelectedComponents = MergingDialog->GetSelectedComponents();
+		TArray<UPrimitiveComponent*> ComponentsToMerge;
 
-		for ( const TSharedPtr<FMeshComponentData>& SelectedMeshComponent : SelectedMeshComponents)
+		for ( const TSharedPtr<FMergeComponentData>& SelectedComponent : SelectedComponents)
 		{
 			// Determine whether or not this component should be incorporated according the user settings
-			if (SelectedMeshComponent->bShouldIncorporate)
+			if (SelectedComponent->bShouldIncorporate)
 			{
-				MeshComponentsToMerge.Add(SelectedMeshComponent->MeshComponent.Get());
+				ComponentsToMerge.Add(SelectedComponent->PrimComponent.Get());
 			}
 		}
 		
-		UWorld* World = MeshComponentsToMerge[0]->GetWorld();	
+		UWorld* World = ComponentsToMerge[0]->GetWorld();	
 		checkf(World != nullptr, TEXT("Invalid World retrieved from Mesh components"));
 		const float ScreenAreaSize = TNumericLimits<float>::Max();
-		MeshUtilities.MergeStaticMeshComponents(MeshComponentsToMerge, World, SettingsObject->Settings, nullptr, PackageName, AssetsToSync, MergedActorLocation, ScreenAreaSize, true);
+		MeshUtilities.MergeComponentsToStaticMesh(ComponentsToMerge, World, SettingsObject->Settings, nullptr, PackageName, AssetsToSync, MergedActorLocation, ScreenAreaSize, true);
 	}
 
 	if (AssetsToSync.Num())
@@ -147,7 +148,7 @@ bool FMeshMergingTool::RunMerge(const FString& PackageName)
 				AStaticMeshActor* MergedActor = World->SpawnActor<AStaticMeshActor>(MergedActorLocation, MergedActorRotation, Params);
 				MergedActor->GetStaticMeshComponent()->SetStaticMesh(MergedMesh);
 				MergedActor->SetActorLabel(AssetsToSync[0]->GetName());
-
+				World->UpdateCullDistanceVolumes(MergedActor, MergedActor->GetStaticMeshComponent());
 				// Remove source actors
 				for (AActor* Actor : Actors)
 				{

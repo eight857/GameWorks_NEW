@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -43,6 +43,10 @@ public:
 	/** Get a widget at the provided index */
 	UFUNCTION( BlueprintCallable, Category = "Switcher" )
 	UWidget* GetWidgetAtIndex( int32 Index ) const;
+	
+	/** Get the reference of the currently active widget */
+	UFUNCTION(BlueprintCallable, Category = "Switcher")
+	UWidget* GetActiveWidget() const;
 	
 	// UWidget interface
 	virtual void SynchronizeProperties() override;

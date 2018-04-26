@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using UnrealBuildTool;
 
 public class HierarchicalLODUtilities : ModuleRules
@@ -11,7 +11,7 @@ public class HierarchicalLODUtilities : ModuleRules
             new string[]
 			{
 				"Core",
-				"CoreUObject",
+				"CoreUObject"
 			}
         );
 
@@ -20,14 +20,24 @@ public class HierarchicalLODUtilities : ModuleRules
 			{
 				"Engine",
 				"UnrealEd",
-                "Projects"
+                "Projects",
 			}
+        );
+
+        PrivateIncludePaths.AddRange(
+            new string[]
+            {
+                "MeshMergeUtilities",
+                "MeshReductionInterface",
+            }
         );
 
         DynamicallyLoadedModuleNames.AddRange(
             new string[]
             {
-                "MeshUtilities"
+                "MeshUtilities",
+                "MeshMergeUtilities",
+                "MeshReductionInterface",
             }
         );
 	}

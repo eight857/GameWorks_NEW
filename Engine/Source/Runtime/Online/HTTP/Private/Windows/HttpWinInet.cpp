@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HttpWinInet.h"
 #include "Misc/ScopeLock.h"
@@ -1080,8 +1080,8 @@ void FHttpResponseWinInet::ProcessResponseHeaders()
 			FString HeaderKey,HeaderValue;
 			if (HeaderLine.Split(TEXT(":"), &HeaderKey, &HeaderValue, ESearchCase::CaseSensitive))
 			{
-				HeaderKey = HeaderKey.Trim().TrimTrailing();
-				HeaderValue = HeaderValue.Trim().TrimTrailing();
+				HeaderKey.TrimStartAndEndInline();
+				HeaderValue.TrimStartAndEndInline();
 				if (!HeaderKey.IsEmpty() && !HeaderValue.IsEmpty())
 				{
 					FString* PreviousValue = ResponseHeaders.Find(HeaderKey);
@@ -1090,7 +1090,8 @@ void FHttpResponseWinInet::ProcessResponseHeaders()
 					{
 						NewValue = (*PreviousValue) + TEXT(", ");
 					}
-					NewValue += HeaderValue.Trim();
+					HeaderValue.TrimStartInline();
+					NewValue += HeaderValue;
 					ResponseHeaders.Add(HeaderKey, NewValue);
 				}
 			}

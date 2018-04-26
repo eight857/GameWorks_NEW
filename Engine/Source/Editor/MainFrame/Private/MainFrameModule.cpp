@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MainFrameModule.h"
 #include "Widgets/Text/STextBlock.h"
@@ -7,11 +7,9 @@
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Input/SButton.h"
-#include "Interfaces/ICrashTrackerModule.h"
 #include "GameProjectGenerationModule.h"
 #include "MessageLogModule.h"
 #include "MRUFavoritesList.h"
-#include "SuperSearchModule.h"
 #include "OutputLogModule.h"
 #include "EditorStyleSet.h"
 #include "Editor/EditorPerProjectUserSettings.h"
@@ -21,14 +19,16 @@
 #include "Menus/MainMenu.h"
 #include "Frame/RootWindowLocation.h"
 #include "Kismet2/CompilerResultsLog.h"
-#include "Editor/EditorLiveStreaming/Public/IEditorLiveStreaming.h"
 #include "Developer/HotReload/Public/IHotReload.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#include "Widgets/Input/SEditableTextBox.h"
 #include "Framework/Commands/GenericCommands.h"
 #include "AnalyticsEventAttribute.h"
 #include "Interfaces/IAnalyticsProvider.h"
 #include "EngineAnalytics.h"
+#include "Editor/EditorPerformanceSettings.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 DEFINE_LOG_CATEGORY(LogMainFrame);
 #define LOCTEXT_NAMESPACE "FMainFrameModule"
@@ -38,10 +38,10 @@ const FText StaticGetApplicationTitle( const bool bIncludeGameName )
 {
 	static const FText ApplicationTitle = NSLOCTEXT("UnrealEditor", "ApplicationTitle", "Unreal Editor");
 
-	if (bIncludeGameName && FApp::HasGameName())
+	if (bIncludeGameName && FApp::HasProjectName())
 	{
 		FFormatNamedArguments Args;
-		Args.Add(TEXT("GameName"), FText::FromString( FString( FApp::GetGameName())));
+		Args.Add(TEXT("GameName"), FText::FromString( FString( FApp::GetProjectName())));
 		Args.Add(TEXT("AppTitle"), ApplicationTitle);
 
 		const EBuildConfigurations::Type BuildConfig = FApp::GetBuildConfiguration();
@@ -73,6 +73,7 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 		bool bIsUserSizable = true;
 		bool bSupportsMaximize = true;
 		bool bSupportsMinimize = true;
+		EAutoCenter CenterRules = EAutoCenter::None;
 		FText WindowTitle;
 		if ( ShouldShowProjectDialogAtStartup() )
 		{
@@ -84,17 +85,12 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 			// Do not maximize the window initially. Keep a small dialog feel.
 			DefaultWindowLocation.InitiallyMaximized = false;
 
-
-			FDisplayMetrics DisplayMetrics;
-			FSlateApplication::Get().GetDisplayMetrics(DisplayMetrics);
-			const float DPIScaleFactor = FPlatformMisc::GetDPIScaleFactorAtPoint(DisplayMetrics.PrimaryDisplayWorkAreaRect.Left, DisplayMetrics.PrimaryDisplayWorkAreaRect.Top);
-			DefaultWindowLocation.WindowSize = GetProjectBrowserWindowSize() * DPIScaleFactor;
-			DefaultWindowLocation.ScreenPosition = DefaultWindowLocation.GetCenteredScreenPosition();
+			DefaultWindowLocation.WindowSize = GetProjectBrowserWindowSize();
 
 			bIsUserSizable = true;
 			bSupportsMaximize = true;
 			bSupportsMinimize = true;
-
+			CenterRules = EAutoCenter::PreferredWorkArea;;
 			// When opening the project dialog, show "Project Browser" in the window title
 			WindowTitle = LOCTEXT("ProjectBrowserDialogTitle", "Unreal Project Browser");
 		}
@@ -111,7 +107,7 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 		}
 
 		TSharedRef<SWindow> RootWindow = SNew(SWindow)
-			.AutoCenter( EAutoCenter::None )
+			.AutoCenter(CenterRules)
 			.Title( WindowTitle )
 			.IsInitiallyMaximized( DefaultWindowLocation.InitiallyMaximized )
 			.ScreenPosition( DefaultWindowLocation.ScreenPosition )
@@ -139,12 +135,14 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 			FDisplayMetrics DisplayMetrics;
 			FSlateApplication::Get().GetDisplayMetrics( DisplayMetrics );
 
+			const float DPIScale = FPlatformApplicationMisc::GetDPIScaleFactorAtPoint(DisplayMetrics.PrimaryDisplayWorkAreaRect.Left, DisplayMetrics.PrimaryDisplayWorkAreaRect.Top);
+
 			// Setup a position and size for the main frame window that's centered in the desktop work area
 			const float CenterScale = 0.65f;
 			const FVector2D DisplaySize(
 				DisplayMetrics.PrimaryDisplayWorkAreaRect.Right - DisplayMetrics.PrimaryDisplayWorkAreaRect.Left,
 				DisplayMetrics.PrimaryDisplayWorkAreaRect.Bottom - DisplayMetrics.PrimaryDisplayWorkAreaRect.Top );
-			const FVector2D WindowSize = CenterScale * DisplaySize;
+			const FVector2D WindowSize = (CenterScale * DisplaySize) / DPIScale;
 
 			TSharedRef<FTabManager::FLayout> LoadedLayout = FLayoutSaveRestore::LoadFromConfig(GEditorLayoutIni,
 				// We persist the positioning of the level editor and the content browser.
@@ -219,7 +217,7 @@ void FMainFrameModule::CreateDefaultMainFrame( const bool bStartImmersive, const
 
 			// make sure we only allow the message log to be shown when we have a level editor main tab
 			FMessageLogModule& MessageLogModule = FModuleManager::LoadModuleChecked<FMessageLogModule>(TEXT("MessageLog"));
-			MessageLogModule.EnableMessageLogDisplay(true);
+			MessageLogModule.EnableMessageLogDisplay(!FApp::IsUnattended());
 		}
 
 		// Initialize the main frame window
@@ -310,81 +308,15 @@ TSharedRef<SWidget> FMainFrameModule::MakeDeveloperTools() const
 			FPlatformProcess::ExploreFolder( *( FPaths::GetPath(SourceFilePath) ) );
 		}
 
-		/** Clicked the SaveVideo button available */
-		static FReply OnClickSaveVideo()
-		{
-			// Default the result to fail it will be set to  SNotificationItem::CS_Success if saved ok
-			SNotificationItem::ECompletionState SaveResultState = SNotificationItem::CS_Fail;
-			// The string we will use to tell the user the result of the save
-			FText VideoSaveResultText;
-			FString HyperLinkText;
-
-			// Capture unavailable or inactive error string
-			ICrashTrackerModule* CrashTracker = FModuleManager::LoadModulePtr<ICrashTrackerModule>("CrashTracker");
-			if(CrashTracker)
-			{
-				FString VideoSaveName;
-				EWriteUserCaptureVideoError::Type WriteResult = CrashTracker->WriteUserVideoNow( VideoSaveName );
-				// If this returns None the capture was successful, otherwise report the error
-				if( WriteResult == EWriteUserCaptureVideoError::None )
-				{
-					// Setup the string with the path and name of the file
-					VideoSaveResultText = LOCTEXT( "VideoSavedAs", "Video capture saved as" );					
-					HyperLinkText = FPaths::ConvertRelativePathToFull(VideoSaveName);	
-					// Flag success
-					SaveResultState = SNotificationItem::CS_Success;
-				}
-				else
-				{
-					// Write returned an error - differentiate between directory creation failure and the capture unavailable
-					if( WriteResult == EWriteUserCaptureVideoError::FailedToCreateDirectory )
-					{
-						FFormatNamedArguments Args;
-						Args.Add( TEXT("VideoCaptureDirectory"), FText::FromString( FPaths::ConvertRelativePathToFull(FPaths::VideoCaptureDir()) ) );
-						VideoSaveResultText = LOCTEXT( "VideoSavedFailedFailedToCreateDir", "Video capture save failed - Failed to create directory\n{VideoCaptureDirectory}" );
-					}
-					else
-					{
-						VideoSaveResultText = LOCTEXT( "VideoSavedFailedNotRunning", "Video capture save failed - Capture not active or unavailable" );
-					}
-				}
-			}
-			else
-			{
-				// This shouldn't happen as the button is hidden when there is no crash tracker
-				VideoSaveResultText = LOCTEXT( "VideoSavedFailedNoTracker", "Video capture failed - CrashTracker inactive" );				
-			}
-
-			// Inform the user of the result of the operation
-			FNotificationInfo Info( VideoSaveResultText );
-			Info.ExpireDuration = 5.0f;
-			Info.FadeOutDuration = 0.5f;
-			Info.bUseSuccessFailIcons = false;
-			Info.bUseLargeFont = false;
-			if( HyperLinkText != "" )
-			{
-				Info.Hyperlink = FSimpleDelegate::CreateStatic(&Local::OpenVideo, HyperLinkText );
-				Info.HyperlinkText = FText::FromString( HyperLinkText );
-			}
-			
-			TWeakPtr<SNotificationItem> SaveMessagePtr;
-			SaveMessagePtr = FSlateNotificationManager::Get().AddNotification(Info);
-			SaveMessagePtr.Pin()->SetCompletionState(SaveResultState);
-
-			return FReply::Handled();
-		}
-
 
 		/** @return Returns true if frame rate and memory should be displayed in the UI */
 		static EVisibility ShouldShowFrameRateAndMemory()
 		{
-			return GetDefault<UEditorPerProjectUserSettings>()->bShowFrameRateAndMemory ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed;
+			return GetDefault<UEditorPerformanceSettings>()->bShowFrameRateAndMemory ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed;
 		}
 	};
 
 
-	
-	const FSuperSearchModule& SuperSearchModule = FModuleManager::LoadModuleChecked< FSuperSearchModule >(TEXT("SuperSearch"));
 
 	// We need the output log module in order to instantiate SConsoleInputBox widgets
 	const FOutputLogModule& OutputLogModule = FModuleManager::LoadModuleChecked< FOutputLogModule >(TEXT("OutputLog"));
@@ -395,13 +327,6 @@ TSharedRef<SWidget> FMainFrameModule::MakeDeveloperTools() const
 
 	TSharedPtr< SWidget > DeveloperTools;
 	TSharedPtr< SEditableTextBox > ExposedEditableTextBox;
-
-	ICrashTrackerModule* CrashTracker = FModuleManager::LoadModulePtr<ICrashTrackerModule>("CrashTracker");
-	bool bCrashTrackerVideoAvailable = false;
-	if (CrashTracker)
-	{
-		bCrashTrackerVideoAvailable = CrashTracker->IsVideoCaptureAvailable();
-	}
 
 	TSharedRef<SWidget> FrameRateAndMemoryWidget =
 		SNew( SHorizontalBox )
@@ -509,7 +434,6 @@ TSharedRef<SWidget> FMainFrameModule::MakeDeveloperTools() const
 		]
 	;
 
-	bool bUseSuperSearch = true;
 
 	// Invisible border, so that we can animate our box panel size
 	return SNew( SBorder )
@@ -521,79 +445,24 @@ TSharedRef<SWidget> FMainFrameModule::MakeDeveloperTools() const
 			SNew( SHorizontalBox )
 			.Visibility( EVisibility::SelfHitTestInvisible )
 
-			+SHorizontalBox::Slot()
-				.AutoWidth()
-				.Padding( 0.0f )
-				[
-					FrameRateAndMemoryWidget
-				]
-
-			+SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Bottom)
-				.Padding( 0.0f )
-				[
-					SNew(SBox)
-					.Padding( FMargin( 4.0f, 0.0f, 0.0f, 0.0f ) )
-					[
-						bUseSuperSearch ? SuperSearchModule.MakeSearchBox( ExposedEditableTextBox ) : OutputLogModule.MakeConsoleInputBox( ExposedEditableTextBox )
-					]
-				]
-			// Editor live streaming toggle button
-			+SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign( VAlign_Bottom )
-				[
-					SNew(SButton)
-					.Visibility_Static( []() -> EVisibility { return IEditorLiveStreaming::Get().IsLiveStreamingAvailable() ? EVisibility::Visible : EVisibility::Collapsed; } )
-					.ToolTipText( LOCTEXT( "BroadcastTooltip", "Starts or stops broadcasting of this editor session to a live internet streaming service." ) )
-					.OnClicked_Static( []
-						{ 
-							// Toggle broadcasting on or off
-							if( IEditorLiveStreaming::Get().IsBroadcastingEditor() ) 
-							{
-								IEditorLiveStreaming::Get().StopBroadcastingEditor();
-							}
-							else
-							{
-								IEditorLiveStreaming::Get().StartBroadcastingEditor();
-							}
-							return FReply::Handled();
-						} )
-					.ButtonStyle( FEditorStyle::Get(), "NoBorder" )
-					.ContentPadding(FMargin(1,0))
-					[
-						SNew(SImage)
-						.Image( FEditorStyle::GetBrush("EditorLiveStreaming.BroadcastButton") )
-						.ColorAndOpacity_Static( [] 
-							{ 
-								// Pulsate the button graphics while we're broadcasting
-								FSlateColor Color( FLinearColor::White );
-								if( IEditorLiveStreaming::Get().IsBroadcastingEditor() )
-								{
-									Color = FLinearColor( 1.0f, 1.0f, 1.0f, FMath::MakePulsatingValue( FSlateApplication::Get().GetCurrentTime(), 2.0f ) );
-								}
-								return Color;
-							} )
-					]
-				]
-
-			// Crash report "save video" button
-			+SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign( VAlign_Bottom )
-				[
-					SNew(SButton)
-					.Visibility( bCrashTrackerVideoAvailable ? EVisibility::Visible : EVisibility::Collapsed )						
-					.ToolTipText( LOCTEXT( "SaveReplayTooltip", "Saves a video of the last 20 seconds of your work." ) )
-					.OnClicked_Static( &Local::OnClickSaveVideo )
-					.ButtonStyle( FEditorStyle::Get(), "NoBorder" )
-					.ContentPadding(FMargin(1,0))
-					[
-						SNew(SImage)
-						. Image( FEditorStyle::GetBrush("CrashTracker.Record") )
-					]
-				]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding( 0.0f )
+			[
+				FrameRateAndMemoryWidget
+			]
+			
+			//+ SHorizontalBox::Slot()
+			//.AutoWidth()
+			//.VAlign(VAlign_Bottom)
+			//.Padding( 0.0f )
+			//[
+			//	SNew(SBox)
+			//	.Padding( FMargin( 4.0f, 0.0f, 0.0f, 0.0f ) )
+			//	[
+			//		OutputLogModule.MakeConsoleInputBox( ExposedEditableTextBox )
+			//	]
+			//]
 		];
 }
 END_SLATE_FUNCTION_BUILD_OPTIMIZATION
@@ -715,7 +584,7 @@ void FMainFrameModule::ShutdownModule( )
 
 bool FMainFrameModule::ShouldShowProjectDialogAtStartup( ) const
 {
-	return !FApp::HasGameName();
+	return !FApp::HasProjectName();
 }
 
 

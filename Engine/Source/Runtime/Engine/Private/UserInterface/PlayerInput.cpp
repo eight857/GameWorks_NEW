@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PlayerInput.cpp: Unreal input system.
@@ -27,6 +27,7 @@ static float DebugSmoothedMouseY = 0.f;
 static float DebugSmoothedMouseSensitivity = 8.f;
 
 const TArray<FInputActionKeyMapping> UPlayerInput::NoKeyMappings;
+const TArray<FInputAxisKeyMapping> UPlayerInput::NoAxisMappings;
 TArray<FInputActionKeyMapping> UPlayerInput::EngineDefinedActionMappings;
 TArray<FInputAxisKeyMapping> UPlayerInput::EngineDefinedAxisMappings;
 
@@ -452,20 +453,6 @@ void UPlayerInput::SetMouseSensitivity(const float Sensitivity)
 	}
 }
 
-void UPlayerInput::SetMouseSensitivityToDefault()
-{
-	// find default sensitivity restore to that
-	for (const FInputAxisConfigEntry& AxisConfigEntry : GetDefault<UInputSettings>()->AxisConfig)
-	{
-		const FKey AxisKey = AxisConfigEntry.AxisKeyName;
-		if (AxisKey == EKeys::MouseX)
-		{
-			SetMouseSensitivity(AxisConfigEntry.AxisProperties.Sensitivity);
-			break;
-		}
-	}
-}
-
 bool UPlayerInput::GetInvertAxis(const FName AxisName)
 {
 	ConditionalBuildKeyMappings();
@@ -544,11 +531,6 @@ void UPlayerInput::InvertAxisKey(const FKey AxisKey)
 		AxisKeyProperties.bInvert = !AxisKeyProperties.bInvert;
 		SetAxisProperties(AxisKey, AxisKeyProperties);
 	}
-}
-
-void UPlayerInput::InvertMouse()
-{
-	InvertAxisKey(EKeys::MouseY);
 }
 
 struct FAxisDelegate
@@ -1085,7 +1067,7 @@ void UPlayerInput::ProcessInputStack(const TArray<UInputComponent*>& InputCompon
 			{
 				FInputTouchBinding& TB = IC->TouchBindings[TouchBindingIndex];
 
-				for (ETouchIndex::Type TouchIndex = ETouchIndex::Touch1; TouchIndex <= ETouchIndex::Touch10; TouchIndex = ETouchIndex::Type(TouchIndex + 1))
+				for (int32 TouchIndex = 0; TouchIndex < EKeys::NUM_TOUCH_KEYS; TouchIndex++)
 				{
 					const FKey& TouchKey = EKeys::TouchKeys[TouchIndex];
 					if (!IsKeyConsumed(TouchKey) && KeyEventOccurred(TouchKey, TB.KeyEvent, EventIndices))
@@ -1094,7 +1076,7 @@ void UPlayerInput::ProcessInputStack(const TArray<UInputComponent*>& InputCompon
 						{
 							check(EventIndices.Num() > 0);
 							FVector *TouchedLocation = TouchEventLocations.Find(EventIndices[0]);
-							FDelegateDispatchDetails TouchInfo(EventIndices[0], NonAxisDelegates.Num(), TB.TouchDelegate, TouchedLocation != nullptr ? *TouchedLocation : FVector(-1.0f, -1.0f, 0.0f), TouchIndex);
+							FDelegateDispatchDetails TouchInfo(EventIndices[0], NonAxisDelegates.Num(), TB.TouchDelegate, TouchedLocation != nullptr ? *TouchedLocation : FVector(-1.0f, -1.0f, 0.0f), (ETouchIndex::Type)TouchIndex);
 							NonAxisDelegates.Add(TouchInfo);
 							for (int32 EventsIndex = 1; EventsIndex < EventIndices.Num(); ++EventsIndex)
 							{
@@ -1286,12 +1268,9 @@ void UPlayerInput::FinishProcessingPlayerInput()
 	// finished processing input for this frame, clean up for next update
 	for (TMap<FKey,FKeyState>::TIterator It(KeyStateMap); It; ++It)
 	{
-		FKeyState* const KeyState = &It.Value();
-		if (KeyState)
-		{
-			KeyState->bDownPrevious = KeyState->bDown;
-			KeyState->bConsumed = false;
-		}
+		FKeyState& KeyState = It.Value();
+		KeyState.bDownPrevious = KeyState.bDown;
+		KeyState.bConsumed = false;
 	}
 }
 
@@ -1769,6 +1748,19 @@ const TArray<FInputActionKeyMapping>& UPlayerInput::GetKeysForAction(const FName
 	}
 
 	return UPlayerInput::NoKeyMappings;
+}
+
+const TArray<FInputAxisKeyMapping>& UPlayerInput::GetKeysForAxis(const FName AxisName)
+{
+	ConditionalBuildKeyMappings();
+
+	const FAxisKeyDetails* KeyDetails = AxisKeyMap.Find(AxisName);
+	if (KeyDetails)
+	{
+		return KeyDetails->KeyMappings;
+	}
+
+	return UPlayerInput::NoAxisMappings;
 }
 
 #if !UE_BUILD_SHIPPING

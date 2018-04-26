@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NetworkFileServer.h"
 #include "HAL/RunnableThread.h"
@@ -16,21 +16,20 @@ class FNetworkFileServerClientConnectionThreaded
 {
 public:
 
-	FNetworkFileServerClientConnectionThreaded(FSocket* InSocket, const FFileRequestDelegate& InFileRequestDelegate, 
-		const FRecompileShadersDelegate& InRecompileShadersDelegate, const TArray<ITargetPlatform*>& InActiveTargetPlatforms )
-		:  FNetworkFileServerClientConnection( InFileRequestDelegate,InRecompileShadersDelegate,InActiveTargetPlatforms)
+	FNetworkFileServerClientConnectionThreaded(FSocket* InSocket, const FNetworkFileDelegateContainer* NetworkFileDelegates, const TArray<ITargetPlatform*>& InActiveTargetPlatforms )
+		:  FNetworkFileServerClientConnection( NetworkFileDelegates, InActiveTargetPlatforms)
 		  ,Socket(InSocket)
 	{
 		Running.Set(true);
 		StopRequested.Reset();
-
+	
 #if UE_BUILD_DEBUG
-			// this thread needs more space in debug builds as it tries to log messages and such
-			const static uint32 NetworkFileServerThreadSize = 2 * 1024 * 1024; 
+		// this thread needs more space in debug builds as it tries to log messages and such
+		const static uint32 NetworkFileServerThreadSize = 2 * 1024 * 1024; 
 #else
-			const static uint32 NetworkFileServerThreadSize = 1 * 1024 * 1024; 
+		const static uint32 NetworkFileServerThreadSize = 1 * 1024 * 1024; 
 #endif
-			WorkerThread = FRunnableThread::Create(this, TEXT("FNetworkFileServerClientConnection"), NetworkFileServerThreadSize, TPri_AboveNormal);
+		WorkerThread = FRunnableThread::Create(this, TEXT("FNetworkFileServerClientConnection"), NetworkFileServerThreadSize, TPri_AboveNormal);
 	}
 
 
@@ -102,7 +101,6 @@ public:
 	}
 
 private: 
-
 	FSocket* Socket; 
 	FThreadSafeCounter StopRequested;
 	FThreadSafeCounter Running;
@@ -114,7 +112,8 @@ private:
 /* FNetworkFileServer constructors
  *****************************************************************************/
 
-FNetworkFileServer::FNetworkFileServer( int32 InPort, const FFileRequestDelegate* InFileRequestDelegate,const FRecompileShadersDelegate* InRecompileShadersDelegate, const TArray<ITargetPlatform*>& InActiveTargetPlatforms )
+FNetworkFileServer::FNetworkFileServer( int32 InPort, FNetworkFileDelegateContainer InNetworkFileDelegateContainer,
+	const TArray<ITargetPlatform*>& InActiveTargetPlatforms )
 	:ActiveTargetPlatforms(InActiveTargetPlatforms)
 {
 	if(InPort <0)
@@ -126,15 +125,7 @@ FNetworkFileServer::FNetworkFileServer( int32 InPort, const FFileRequestDelegate
 	StopRequested.Set(false);
 	UE_LOG(LogFileServer, Warning, TEXT("Unreal Network File Server starting up..."));
 
-	if (InFileRequestDelegate && InFileRequestDelegate->IsBound())
-	{
-		FileRequestDelegate = *InFileRequestDelegate;
-	}
-
-	if (InRecompileShadersDelegate && InRecompileShadersDelegate->IsBound())
-	{
-		RecompileShadersDelegate = *InRecompileShadersDelegate;
-	}
+	NetworkFileDelegates = InNetworkFileDelegateContainer;
 
 	// make sure sockets are going
 	ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get();
@@ -230,39 +221,44 @@ uint32 FNetworkFileServer::Run( )
 		}
 
 		// check for incoming connections
-		if (Socket->HasPendingConnection(bReadReady) && bReadReady)
+		if (Socket->WaitForPendingConnection(bReadReady, FTimespan::FromSeconds(0.25f)))
 		{
-			FSocket* ClientSocket = Socket->Accept(TEXT("Remote Console Connection"));
-
-			if (ClientSocket != NULL)
+			if (bReadReady)
 			{
-				TSharedPtr<FInternetAddr> Addr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
-				ClientSocket->GetAddress(*Addr);
-				TSharedPtr<FInternetAddr> PeerAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
-				ClientSocket->GetPeerAddress(*PeerAddr);
+				FSocket* ClientSocket = Socket->Accept(TEXT("Remote Console Connection"));
 
-				for ( auto PreviousConnection : Connections )
+				if (ClientSocket != NULL)
 				{
-					TSharedPtr<FInternetAddr> PreviousAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();;
-					PreviousConnection->GetAddress( *PreviousAddr );
-					TSharedPtr<FInternetAddr> PreviousPeerAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();;
-					PreviousConnection->GetPeerAddress( *PreviousPeerAddr );
-					if ( ( *Addr == *PreviousAddr ) &&
-						(*PeerAddr == *PreviousPeerAddr ) )
-					{
-						// kill hte connection 
-						PreviousConnection->Stop();
-						UE_LOG(LogFileServer, Warning, TEXT( "Killing client connection %s because new client connected from same address." ), *PreviousConnection->GetDescription() );
-					}
-				}
+					TSharedPtr<FInternetAddr> Addr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
+					ClientSocket->GetAddress(*Addr);
+					TSharedPtr<FInternetAddr> PeerAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
+					ClientSocket->GetPeerAddress(*PeerAddr);
 
-				FNetworkFileServerClientConnectionThreaded* Connection = new FNetworkFileServerClientConnectionThreaded(ClientSocket, FileRequestDelegate, RecompileShadersDelegate, ActiveTargetPlatforms);
-				Connections.Add(Connection);
-				UE_LOG(LogFileServer, Display, TEXT( "Client %s connected." ), *Connection->GetDescription() );
+					for (auto PreviousConnection : Connections)
+					{
+						TSharedPtr<FInternetAddr> PreviousAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();;
+						PreviousConnection->GetAddress(*PreviousAddr);
+						TSharedPtr<FInternetAddr> PreviousPeerAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();;
+						PreviousConnection->GetPeerAddress(*PreviousPeerAddr);
+						if ((*Addr == *PreviousAddr) &&
+							(*PeerAddr == *PreviousPeerAddr))
+						{
+							// kill the connection 
+							PreviousConnection->Stop();
+							UE_LOG(LogFileServer, Warning, TEXT("Killing client connection %s because new client connected from same address."), *PreviousConnection->GetDescription());
+						}
+					}
+
+					FNetworkFileServerClientConnectionThreaded* Connection = new FNetworkFileServerClientConnectionThreaded(ClientSocket, &NetworkFileDelegates, ActiveTargetPlatforms);
+					Connections.Add(Connection);
+					UE_LOG(LogFileServer, Display, TEXT("Client %s connected."), *Connection->GetDescription());
+				}
 			}
 		}
-
-		FPlatformProcess::Sleep(0.25f);
+		else
+		{
+			FPlatformProcess::Sleep(0.25f);
+		}
 	}
 
 	return 0;
@@ -314,6 +310,7 @@ bool FNetworkFileServer::GetAddressList( TArray<TSharedPtr<FInternetAddr> >& Out
 
 	return (OutAddresses.Num() > 0);
 }
+
 
 bool FNetworkFileServer::IsItReadyToAcceptConnections(void) const
 {

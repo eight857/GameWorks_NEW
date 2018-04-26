@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SSequencerTransformBox.h"
 #include "Sequencer.h"
@@ -125,7 +125,11 @@ void SSequencerTransformBox::ToggleVisibility()
 
 	if (Border->GetVisibility() == EVisibility::Visible)
 	{
-		SlateApplication.SetAllUserFocus(LastFocusedWidget.Pin(), EFocusCause::Navigation);
+		if (LastFocusedWidget.IsValid())
+		{
+			SlateApplication.SetAllUserFocus(LastFocusedWidget.Pin(), EFocusCause::Navigation);
+		}
+		
 		Border->SetVisibility(EVisibility::Collapsed);
 	}
 	else

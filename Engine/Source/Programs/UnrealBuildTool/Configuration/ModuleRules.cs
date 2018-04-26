@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
+
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -117,6 +119,121 @@ namespace UnrealBuildTool
 		}
 
 		/// <summary>
+		/// Information about a file which is required by the target at runtime, and must be moved around with it.
+		/// </summary>
+		[Serializable]
+		public class RuntimeDependency
+		{
+			/// <summary>
+			/// The file that should be staged. Should use $(EngineDir) and $(ProjectDir) variables as a root, so that the target can be relocated to different machines.
+			/// </summary>
+			public string Path;
+
+			/// <summary>
+			/// How to stage this file.
+			/// </summary>
+			public StagedFileType Type;
+
+			/// <summary>
+			/// Constructor
+			/// </summary>
+			/// <param name="InPath">Path to the runtime dependency</param>
+			/// <param name="InType">How to stage the given path</param>
+			public RuntimeDependency(string InPath, StagedFileType InType = StagedFileType.NonUFS)
+			{
+				Path = InPath;
+				Type = InType;
+			}
+		}
+
+		/// <summary>
+		/// List of runtime dependencies, with convenience methods for adding new items
+		/// </summary>
+		[Serializable]
+		public class RuntimeDependencyList
+		{
+			/// <summary>
+			/// Inner list of runtime dependencies
+			/// </summary>
+			internal List<RuntimeDependency> Inner = new List<RuntimeDependency>();
+
+			/// <summary>
+			/// Default constructor
+			/// </summary>
+			public RuntimeDependencyList()
+			{
+			}
+
+			/// <summary>
+			/// Add a runtime dependency to the list
+			/// </summary>
+			/// <param name="InPath">Path to the runtime dependency. May include wildcards.</param>
+			public void Add(string InPath)
+			{
+				Inner.Add(new RuntimeDependency(InPath));
+			}
+
+			/// <summary>
+			/// Add a runtime dependency to the list
+			/// </summary>
+			/// <param name="InPath">Path to the runtime dependency. May include wildcards.</param>
+			/// <param name="InType">How to stage this file</param>
+			public void Add(string InPath, StagedFileType InType)
+			{
+				Inner.Add(new RuntimeDependency(InPath, InType));
+			}
+
+			/// <summary>
+			/// Add a runtime dependency to the list
+			/// </summary>
+			/// <param name="InRuntimeDependency">RuntimeDependency instance</param>
+			[Obsolete("Constructing a RuntimeDependency object is deprecated. Call RuntimeDependencies.Add() with the path to the file to stage.")]
+			public void Add(RuntimeDependency InRuntimeDependency)
+			{
+				Inner.Add(InRuntimeDependency);
+			}
+		}
+
+		/// <summary>
+		/// List of runtime dependencies, with convenience methods for adding new items
+		/// </summary>
+		[Serializable]
+		public class ReceiptPropertyList
+		{
+			/// <summary>
+			/// Inner list of runtime dependencies
+			/// </summary>
+			internal List<ReceiptProperty> Inner = new List<ReceiptProperty>();
+
+			/// <summary>
+			/// Default constructor
+			/// </summary>
+			public ReceiptPropertyList()
+			{
+			}
+
+			/// <summary>
+			/// Add a receipt property to the list
+			/// </summary>
+			/// <param name="Name">Name of the property</param>
+			/// <param name="Value">Value for the property</param>
+			public void Add(string Name, string Value)
+			{
+				Inner.Add(new ReceiptProperty(Name, Value));
+			}
+
+			/// <summary>
+			/// Add a receipt property to the list
+			/// </summary>
+			/// <param name="InReceiptProperty">ReceiptProperty instance</param>
+			[Obsolete("Constructing a ReceiptProperty object is deprecated. Call RuntimeDependencies.Add() with the path to the file to stage.")]
+			public void Add(ReceiptProperty InReceiptProperty)
+			{
+				Inner.Add(InReceiptProperty);
+			}
+		}
+
+		/// <summary>
 		/// Rules for the target that this module belongs to
 		/// </summary>
 		public readonly ReadOnlyTargetRules Target;
@@ -147,6 +264,11 @@ namespace UnrealBuildTool
 		/// This should only be set for header files that are included by a significant number of other C++ modules.
 		/// </summary>
 		public string SharedPCHHeaderFile;
+		
+		/// <summary>
+		/// Specifies an alternate name for intermediate directories and files for intermediates of this module. Useful when hitting path length limitations.
+		/// </summary>
+		public string ShortName = null;
 
 		/// <summary>
 		/// Precompiled header usage for this module
@@ -172,6 +294,11 @@ namespace UnrealBuildTool
 		/// Enable exception handling
 		/// </summary>
 		public bool bEnableExceptions = false;
+
+		/// <summary>
+		/// Enable objective C exception handling
+		/// </summary>
+		public bool bEnableObjCExceptions = false;
 
 		/// <summary>
 		/// Enable warnings for shadowed variables
@@ -226,6 +353,11 @@ namespace UnrealBuildTool
 		/// are used, and checks that source files include their matching header first.
 		/// </summary>
 		public bool bEnforceIWYU = true;
+
+		/// <summary>
+		/// Whether to add all the default include paths to the module (eg. the Source/Classes folder, subfolders under Source/Public).
+		/// </summary>
+		public bool bAddDefaultIncludePaths = true;
 
 		/// <summary>
 		/// List of modules names (no path needed) with header files that our module's public headers needs access to, but we don't need to "import" or link against.
@@ -312,9 +444,23 @@ namespace UnrealBuildTool
 		public List<string> PublicDelayLoadDLLs = new List<string>();
 
 		/// <summary>
-		/// Additional compiler definitions for this module
+		/// Accessor for the PublicDefinitions list
 		/// </summary>
-		public List<string> Definitions = new List<string>();
+		[Obsolete("The 'Definitions' property has been deprecated. Please use 'PublicDefinitions' instead.")]
+		public List<string> Definitions
+		{
+			get { return PublicDefinitions; }
+		}
+
+		/// <summary>
+		/// Private compiler definitions for this module
+		/// </summary>
+		public List<string> PrivateDefinitions = new List<string>();
+
+		/// <summary>
+		/// Public compiler definitions for this module
+		/// </summary>
+		public List<string> PublicDefinitions = new List<string>();
 
 		/// <summary>
 		/// Addition modules this module may require at run-time 
@@ -334,7 +480,7 @@ namespace UnrealBuildTool
 		/// <summary>
 		/// List of additional properties to be added to the build receipt
 		/// </summary>
-		public List<ReceiptProperty> AdditionalPropertiesForReceipt = new List<ReceiptProperty>();
+		public ReceiptPropertyList AdditionalPropertiesForReceipt = new ReceiptPropertyList();
 
 		/// <summary>
 		/// Which targets this module should be precompiled for
@@ -358,31 +504,12 @@ namespace UnrealBuildTool
 		}
 
 		/// <summary>
-		/// Default constructor. Deprecated in 4.15.
-		/// </summary>
-		[Obsolete("Please change your module constructor to take a ReadOnlyTargetRules parameter, and pass it to the base class constructor (eg. \"MyModuleRules(ReadOnlyTargetRules Target) : base(Target)\").")]
-		public ModuleRules()
-		{
-		}
-
-		/// <summary>
 		/// Constructor. For backwards compatibility while the parameterless constructor is being phased out, initialization which would happen here is done by 
 		/// RulesAssembly.CreateModulRules instead.
 		/// </summary>
 		/// <param name="Target">Rules for building this target</param>
 		public ModuleRules(ReadOnlyTargetRules Target)
 		{
-		}
-
-		/// <summary>
-		/// Made Obsolete so that we can more clearly show that this should be used for third party modules within the Engine directory
-		/// </summary>
-		/// <param name="Target">The target this module belongs to</param>
-		/// <param name="ModuleNames">The names of the modules to add</param>
-		[Obsolete("Use AddEngineThirdPartyPrivateStaticDependencies to add dependencies on ThirdParty modules within the Engine Directory")]
-		public void AddThirdPartyPrivateStaticDependencies(ReadOnlyTargetRules Target, params string[] ModuleNames)
-		{
-			AddEngineThirdPartyPrivateStaticDependencies(Target, ModuleNames);
 		}
 
 		/// <summary>
@@ -399,17 +526,6 @@ namespace UnrealBuildTool
 			{
 				PrivateDependencyModuleNames.AddRange(ModuleNames);
 			}
-		}
-
-		/// <summary>
-		/// Made Obsolete so that we can more clearly show that this should be used for third party modules within the Engine directory
-		/// </summary>
-		/// <param name="Target">Rules for the target being built</param>
-		/// <param name="ModuleNames">The names of the modules to add</param>
-		[Obsolete("Use AddEngineThirdPartyPrivateDynamicDependencies to add dependencies on ThirdParty modules within the Engine Directory")]
-		public void AddThirdPartyPrivateDynamicDependencies(ReadOnlyTargetRules Target, params string[] ModuleNames)
-		{
-			AddEngineThirdPartyPrivateDynamicDependencies(Target, ModuleNames);
 		}
 
 		/// <summary>
@@ -439,12 +555,12 @@ namespace UnrealBuildTool
 			// defines inside their Build.cs files won't leak out)
 			if (Target.bCompilePhysX == true)
 			{
-				AddEngineThirdPartyPrivateStaticDependencies(Target, "PhysX");
-				Definitions.Add("WITH_PHYSX=1");
+				PrivateDependencyModuleNames.Add("PhysX");
+				PublicDefinitions.Add("WITH_PHYSX=1");
 			}
 			else
 			{
-				Definitions.Add("WITH_PHYSX=0");
+				PublicDefinitions.Add("WITH_PHYSX=0");
 			}
 
 			if (Target.bCompileAPEX == true)
@@ -454,19 +570,19 @@ namespace UnrealBuildTool
 					throw new BuildException("APEX is enabled, without PhysX. This is not supported!");
 				}
 
-				AddEngineThirdPartyPrivateStaticDependencies(Target, "APEX");
-				Definitions.Add("WITH_APEX=1");
-				Definitions.Add("WITH_APEX_CLOTHING=1");
-				Definitions.Add("WITH_CLOTH_COLLISION_DETECTION=1");
-				Definitions.Add("WITH_PHYSICS_COOKING=1");  // APEX currently relies on cooking even at runtime
+				PrivateDependencyModuleNames.Add("APEX");
+				PublicDefinitions.Add("WITH_APEX=1");
+				PublicDefinitions.Add("WITH_APEX_CLOTHING=1");
+				PublicDefinitions.Add("WITH_CLOTH_COLLISION_DETECTION=1");
+				PublicDefinitions.Add("WITH_PHYSX_COOKING=1");  // APEX currently relies on cooking even at runtime
 
 			}
 			else
 			{
-				Definitions.Add("WITH_APEX=0");
-				Definitions.Add("WITH_APEX_CLOTHING=0");
-				Definitions.Add("WITH_CLOTH_COLLISION_DETECTION=0");
-				Definitions.Add(string.Format("WITH_PHYSICS_COOKING={0}", UEBuildConfiguration.bBuildEditor ? 1 : 0));  // without APEX, we only need cooking in editor builds
+				PublicDefinitions.Add("WITH_APEX=0");
+				PublicDefinitions.Add("WITH_APEX_CLOTHING=0");
+				PublicDefinitions.Add("WITH_CLOTH_COLLISION_DETECTION=0");
+				PublicDefinitions.Add(string.Format("WITH_PHYSX_COOKING={0}", Target.bBuildEditor && Target.bCompilePhysX ? 1 : 0));  // without APEX, we only need cooking in editor builds
 			}
 
 			if (Target.bCompileNvCloth == true)
@@ -476,70 +592,14 @@ namespace UnrealBuildTool
 					throw new BuildException("NvCloth is enabled, without PhysX. This is not supported!");
 				}
 
-				AddEngineThirdPartyPrivateStaticDependencies(Target, "NvCloth");
-                Definitions.Add("WITH_NVCLOTH=1");
+				PrivateDependencyModuleNames.Add("NvCloth");
+                PublicDefinitions.Add("WITH_NVCLOTH=1");
 
 			}
 			else
 			{
-				Definitions.Add("WITH_NVCLOTH=0");
+				PublicDefinitions.Add("WITH_NVCLOTH=0");
 			}
-
-			if (Target.bRuntimePhysicsCooking == true)
-			{
-				Definitions.Add("WITH_RUNTIME_PHYSICS_COOKING=1");
-			}
-			else
-			{
-				Definitions.Add("WITH_RUNTIME_PHYSICS_COOKING=0");
-			}
-		}
-
-		/// <summary>
-		/// Setup this module for Box2D support (based on the settings in UEBuildConfiguration)
-		/// </summary>
-		public void SetupModuleBox2DSupport(ReadOnlyTargetRules Target)
-		{
-			//@TODO: This need to be kept in sync with RulesCompiler.cs for now
-			bool bSupported = false;
-			if ((Target.Platform == UnrealTargetPlatform.Win64) || (Target.Platform == UnrealTargetPlatform.Win32))
-			{
-				bSupported = true;
-			}
-
-			bSupported = bSupported && Target.bCompileBox2D;
-
-			if (bSupported)
-			{
-				AddEngineThirdPartyPrivateStaticDependencies(Target, "Box2D");
-			}
-
-			// Box2D included define (required because pointer types may be in public exported structures)
-			Definitions.Add(string.Format("WITH_BOX2D={0}", bSupported ? 1 : 0));
-		}
-
-		/// <summary>
-		/// Hack to allow deprecating existing code which references the static BuildConfiguration object; redirect it to use properties on this object.
-		/// </summary>
-		public ReadOnlyTargetRules BuildConfiguration
-		{
-			get { return Target; }
-		}
-
-		/// <summary>
-		/// Hack to allow deprecating existing code which references the static UEBuildConfiguration object; redirect it to use properties on this object.
-		/// </summary>
-		public ReadOnlyTargetRules UEBuildConfiguration
-		{
-			get { return Target; }
-		}
-
-		/// <summary>
-		/// Hack to allow deprecating existing code which references the static WindowsPlatform object; redirect it to use properties on the target rules.
-		/// </summary>
-		public ReadOnlyWindowsTargetRules WindowsPlatform
-		{
-			get { return Target.WindowsPlatform; }
 		}
 	}
 }

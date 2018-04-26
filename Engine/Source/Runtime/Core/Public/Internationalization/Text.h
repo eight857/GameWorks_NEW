@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreTypes.h"
@@ -10,6 +10,7 @@
 #include "Containers/Map.h"
 #include "Containers/EnumAsByte.h"
 #include "Templates/SharedPointer.h"
+#include "Internationalization/LocKeyFuncs.h"
 #include "Internationalization/CulturePointer.h"
 #include "Internationalization/TextLocalizationManager.h"
 #include "Internationalization/StringTableCoreFwd.h"
@@ -25,11 +26,6 @@ class FTextHistory;
 class FTextFormatData;
 class FHistoricTextFormatData;
 class FHistoricTextNumericData;
-
-template<typename KeyType,typename ValueType,typename SetAllocator ,typename KeyFuncs > class TMap;
-
-#define ENABLE_TEXT_ERROR_CHECKING_RESULTS (UE_BUILD_DEBUG | UE_BUILD_DEVELOPMENT | UE_BUILD_TEST )
-
 
 //DECLARE_CYCLE_STAT_EXTERN( TEXT("Format Text"), STAT_TextFormat, STATGROUP_Text, );
 
@@ -113,7 +109,7 @@ namespace EFormatArgumentType
 }
 
 class FFormatArgumentValue;
-typedef TMap<FString, FFormatArgumentValue> FFormatNamedArguments;
+typedef TMap<FString, FFormatArgumentValue, FDefaultSetAllocator, FLocKeyMapFuncs<FFormatArgumentValue>> FFormatNamedArguments;
 typedef TArray<FFormatArgumentValue> FFormatOrderedArguments;
 
 /** Redeclared in KismetTextLibrary for meta-data extraction purposes, be sure to update there as well */
@@ -141,6 +137,9 @@ enum ERoundingMode
 struct CORE_API FNumberFormattingOptions
 {
 	FNumberFormattingOptions();
+
+	bool AlwaysSign;
+	FNumberFormattingOptions& SetAlwaysSign( bool InValue ){ AlwaysSign = InValue; return *this; }
 
 	bool UseGrouping;
 	FNumberFormattingOptions& SetUseGrouping( bool InValue ){ UseGrouping = InValue; return *this; }
@@ -173,6 +172,28 @@ struct CORE_API FNumberFormattingOptions
 
 	/** Get the default number formatting options with grouping disabled */
 	static const FNumberFormattingOptions& DefaultNoGrouping();
+};
+
+struct CORE_API FNumberParsingOptions
+{
+	FNumberParsingOptions();
+
+	bool UseGrouping;
+	FNumberParsingOptions& SetUseGrouping( bool InValue ){ UseGrouping = InValue; return *this; }
+
+	friend FArchive& operator<<(FArchive& Ar, FNumberParsingOptions& Value);
+
+	/** Get the hash code to use for the given parsing options */
+	friend uint32 GetTypeHash( const FNumberParsingOptions& Key );
+
+	/** Check to see if our parsing options match the other parsing options */
+	bool IsIdentical( const FNumberParsingOptions& Other ) const;
+
+	/** Get the default number parsing options with grouping enabled */
+	static const FNumberParsingOptions& DefaultWithGrouping();
+
+	/** Get the default number parsing options with grouping disabled */
+	static const FNumberParsingOptions& DefaultNoGrouping();
 };
 
 /**
@@ -481,12 +502,6 @@ public:
 	template < typename... TArguments >
 	static FText FormatOrdered( FTextFormat Fmt, TArguments&&... Args );
 
-	static void SetEnableErrorCheckingResults(bool bEnable){bEnableErrorCheckingResults=bEnable;}
-	static bool GetEnableErrorCheckingResults(){return bEnableErrorCheckingResults;}
-
-	static void SetSuppressWarnings(bool bSuppress){ bSuppressWarnings = bSuppress; }
-	static bool GetSuppressWarnings(){ return bSuppressWarnings; }
-
 	bool IsTransient() const;
 	bool IsCultureInvariant() const;
 	bool IsFromStringTable() const;
@@ -547,9 +562,6 @@ private:
 
 	/** Flags with various information on what sort of FText this is */
 	uint32 Flags;
-
-	static bool bEnableErrorCheckingResults;
-	static bool bSuppressWarnings;
 
 public:
 	friend class FTextCache;

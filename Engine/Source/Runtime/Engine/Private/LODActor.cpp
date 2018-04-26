@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	LODActorBase.cpp: Static mesh actor base class implementation.
@@ -19,6 +19,9 @@
 
 #if WITH_EDITOR
 #include "Editor.h"
+
+#include "HierarchicalLODUtilitiesModule.h"
+#include "ObjectTools.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "LODActor"
@@ -72,7 +75,7 @@ static void HLODConsoleCommand(const TArray<FString>& Args, UWorld* World)
 		{
 			const int32 ForcedLevel = FCString::Atoi(*Args[1]);
 
-			if (ForcedLevel >= -1 && ForcedLevel < World->GetWorldSettings()->HierarchicalLODSetup.Num())
+			if (ForcedLevel >= -1 && ForcedLevel < World->GetWorldSettings()->GetNumHierarchicalLODLevels())
 			{
 				const TArray<ULevel*>& Levels = World->GetLevels();
 				for (ULevel* Level : Levels)
@@ -188,6 +191,8 @@ FString ALODActor::GetDetailedInfoInternal() const
 void ALODActor::PostLoad()
 {
 	Super::PostLoad();
+	StaticMeshComponent->MinDrawDistance = LODDrawDistance;
+	StaticMeshComponent->bCastDynamicShadow = false;	
 	UpdateRegistrationToMatchMaximumLODLevel();
 
 #if WITH_EDITOR
@@ -301,9 +306,9 @@ void ALODActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEve
 		{
 			UWorld* World = GetWorld();
 			check(World != nullptr);
-			AWorldSettings* WorldSettings = World->GetWorldSettings();
-			checkf(WorldSettings->HierarchicalLODSetup.IsValidIndex(LODLevel - 1), TEXT("Out of range HLOD level (%i) found in LODActor (%s)"), LODLevel - 1, *GetName());
-			CalculateSreenSize = WorldSettings->HierarchicalLODSetup[LODLevel - 1].TransitionScreenSize;
+			const TArray<struct FHierarchicalSimplification>& HierarchicalLODSetups = World->GetWorldSettings()->GetHierarchicalLODSetup();
+			checkf(HierarchicalLODSetups.IsValidIndex(LODLevel - 1), TEXT("Out of range HLOD level (%i) found in LODActor (%s)"), LODLevel - 1, *GetName());
+			CalculateSreenSize = HierarchicalLODSetups[LODLevel - 1].TransitionScreenSize;
 		}
 
 		RecalculateDrawingDistance(CalculateSreenSize);
@@ -328,7 +333,10 @@ bool ALODActor::GetReferencedContentObjects( TArray<UObject*>& Objects ) const
 	// Retrieve referenced objects for sub actors as well
 	for (AActor* SubActor : SubActors)
 	{
-		SubActor->GetReferencedContentObjects(Objects);
+		if (SubActor)
+		{
+			SubActor->GetReferencedContentObjects(Objects);
+		}
 	}
 	return true;
 }
@@ -413,9 +421,10 @@ void ALODActor::AddSubActor(AActor* InActor)
 		InActor->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
 		for (UStaticMeshComponent* Component : StaticMeshComponents)
 		{
-			if (Component && Component->GetStaticMesh() && Component->GetStaticMesh()->RenderData)
+			const UStaticMesh* StaticMesh = (Component) ? Component->GetStaticMesh() : nullptr;
+			if (StaticMesh && StaticMesh->RenderData && StaticMesh->RenderData->LODResources.Num() > 0)
 			{
-				NumTrianglesInSubActors += Component->GetStaticMesh()->RenderData->LODResources[0].GetNumTriangles();
+				NumTrianglesInSubActors += StaticMesh->RenderData->LODResources[0].GetNumTriangles();
 			}
 			Component->MarkRenderStateDirty();
 		}
@@ -446,9 +455,10 @@ const bool ALODActor::RemoveSubActor(AActor* InActor)
 			InActor->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
 			for (UStaticMeshComponent* Component : StaticMeshComponents)
 			{
-				if (Component && Component->GetStaticMesh() && Component->GetStaticMesh()->RenderData)
+				const UStaticMesh* StaticMesh = (Component) ? Component->GetStaticMesh() : nullptr;
+				if (StaticMesh && StaticMesh->RenderData && StaticMesh->RenderData->LODResources.Num() > 0)
 				{
-					NumTrianglesInSubActors -= Component->GetStaticMesh()->RenderData->LODResources[0].GetNumTriangles();
+					NumTrianglesInSubActors -= StaticMesh->RenderData->LODResources[0].GetNumTriangles();
 				}
 
 				Component->MarkRenderStateDirty();
@@ -486,14 +496,17 @@ void ALODActor::DetermineShadowingFlags()
 	bool bCastFarShadow = false;
 	for (AActor* Actor : SubActors)
 	{
-		TArray<UStaticMeshComponent*> StaticMeshComponents;
-		Actor->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
-		for (UStaticMeshComponent* Component : StaticMeshComponents)
+		if (Actor)
 		{
-			bCastsShadow |= Component->CastShadow;
-			bCastsStaticShadow |= Component->bCastStaticShadow;
-			bCastsDynamicShadow |= Component->bCastDynamicShadow;
-			bCastFarShadow |= Component->bCastFarShadow;
+			TArray<UStaticMeshComponent*> StaticMeshComponents;
+			Actor->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
+			for (UStaticMeshComponent* Component : StaticMeshComponents)
+			{
+				bCastsShadow |= Component->CastShadow;
+				bCastsStaticShadow |= Component->bCastStaticShadow;
+				bCastsDynamicShadow |= Component->bCastDynamicShadow;
+				bCastFarShadow |= Component->bCastFarShadow;
+			}
 		}
 	}
 
@@ -531,6 +544,8 @@ void ALODActor::SetIsDirty(const bool bNewState)
 		{
 			GEditor->BroadcastHLODActorMarkedDirty(this);
 		}
+		PreviousSubObjects.Append(SubObjects);
+		SubObjects.Empty();
 #endif // WITH_EDITOR
 	}	
 	else
@@ -546,13 +561,30 @@ const bool ALODActor::HasValidSubActors() const
 	// Make sure there are at least two meshes in the subactors
 	for (AActor* SubActor : SubActors)
 	{
-		TInlineComponentArray<UStaticMeshComponent*> Components;
-		SubActor->GetComponents(/*out*/ Components);
-		NumMeshes += Components.Num();
-
-		if (NumMeshes > 1)
+		if (SubActor)
 		{
-			break;
+			TInlineComponentArray<UStaticMeshComponent*> Components;
+			SubActor->GetComponents(/*out*/ Components);
+
+#if WITH_EDITOR
+			FHierarchicalLODUtilitiesModule& Module = FModuleManager::LoadModuleChecked<FHierarchicalLODUtilitiesModule>("HierarchicalLODUtilities");
+			IHierarchicalLODUtilities* Utilities = Module.GetUtilities();
+
+			for (UStaticMeshComponent* Component : Components)
+			{
+				if (!Component->bHiddenInGame && Component->ShouldGenerateAutoLOD())
+				{
+					++NumMeshes;
+				}
+			}
+#else
+			NumMeshes += Components.Num();
+#endif
+
+			if (NumMeshes > 1)
+			{
+				break;
+			}
 		}
 	}
 
@@ -587,14 +619,17 @@ void ALODActor::SetHiddenFromEditorView(const bool InState, const int32 ForceLOD
 
 		for (AActor* Actor : SubActors)
 		{
-			// If this actor belongs to a lower HLOD level that is being forced hide the sub-actors
-			if (LODLevel < ForceLODLevel)
+			if (Actor)
 			{
-				Actor->SetIsTemporarilyHiddenInEditor(InState);
-			}
+				// If this actor belongs to a lower HLOD level that is being forced hide the sub-actors
+				if (LODLevel < ForceLODLevel)
+				{
+					Actor->SetIsTemporarilyHiddenInEditor(InState);
+				}
 
-			// Toggle/set the LOD parent to nullptr or this
-			Actor->SetLODParent((InState) ? nullptr : StaticMeshComponent, (InState) ? 0.0f : LODDrawDistance);
+				// Toggle/set the LOD parent to nullptr or this
+				Actor->SetLODParent((InState) ? nullptr : StaticMeshComponent, (InState) ? 0.0f : LODDrawDistance);
+			}
 		}
 	}
 
@@ -618,9 +653,10 @@ void ALODActor::SetStaticMesh(class UStaticMesh* InStaticMesh)
 		StaticMeshComponent->SetStaticMesh(InStaticMesh);
 		SetIsDirty(false);
 
-		if (StaticMeshComponent && StaticMeshComponent->GetStaticMesh() && StaticMeshComponent->GetStaticMesh()->RenderData)
+		ensure(StaticMeshComponent->GetStaticMesh() == InStaticMesh);
+		if (InStaticMesh && InStaticMesh->RenderData && InStaticMesh->RenderData->LODResources.Num() > 0)
 		{
-			NumTrianglesInMergedMesh = StaticMeshComponent->GetStaticMesh()->RenderData->LODResources[0].GetNumTriangles();
+			NumTrianglesInMergedMesh = InStaticMesh->RenderData->LODResources[0].GetNumTriangles();
 		}
 	}
 }
@@ -629,7 +665,10 @@ void ALODActor::UpdateSubActorLODParents()
 {
 	for (AActor* Actor : SubActors)
 	{	
-		Actor->SetLODParent(StaticMeshComponent, StaticMeshComponent->MinDrawDistance);
+		if (Actor)
+		{
+			Actor->SetLODParent(StaticMeshComponent, StaticMeshComponent->MinDrawDistance);
+		}
 	}
 }
 
@@ -748,10 +787,33 @@ void ALODActor::Serialize(FArchive& Ar)
 
 	bRequiresLODScreenSizeConversion = Ar.CustomVer(FFrameworkObjectVersion::GUID) < FFrameworkObjectVersion::LODsUseResolutionIndependentScreenSize;
 }
+
+void ALODActor::PreSave(const class ITargetPlatform* TargetPlatform)
+{
+	AActor::PreSave(TargetPlatform);
+	if (PreviousSubObjects.Num())
+	{
+		PreviousSubObjects.RemoveAll([](const UObject* Object) -> bool { return Object == nullptr; });
+		ObjectTools::DeleteObjectsUnchecked(PreviousSubObjects);
+		PreviousSubObjects.Empty();
+	}
+}
+
+void ALODActor::BeginDestroy()
+{
+	AActor::BeginDestroy();
+	if (PreviousSubObjects.Num())
+	{
+		for (UObject* Object : PreviousSubObjects)
+		{
+			if (Object)
+			{
+				Object->MarkPendingKill();
+			}
+		}
+		PreviousSubObjects.Empty();
+	}
+}
+
 #endif
-
-//////////////////////////////////////////////////////////////////////////
-// AHLODMeshCullingVolume
-
-
 #undef LOCTEXT_NAMESPACE

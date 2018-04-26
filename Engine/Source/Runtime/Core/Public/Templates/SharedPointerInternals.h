@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,8 +12,14 @@
 
 
 /** Default behavior. */
-#define	FORCE_THREADSAFE_SHAREDPTRS 0
+#define	FORCE_THREADSAFE_SHAREDPTRS PLATFORM_WEAKLY_CONSISTENT_MEMORY
+#define THREAD_SANITISE_UNSAFEPTR 0
 
+#if THREAD_SANITISE_UNSAFEPTR
+	#define TSAN_SAFE_UNSAFEPTR
+#else
+	#define TSAN_SAFE_UNSAFEPTR TSAN_SAFE
+#endif
 
 /**
  * ESPMode is used select between either 'fast' or 'thread safe' shared pointer types.
@@ -225,7 +231,7 @@ namespace SharedPointerInternals
 		static FORCEINLINE const int32 GetSharedReferenceCount(const FReferenceControllerBase* ReferenceController)
 		{
 			// This reference count may be accessed by multiple threads
-			return static_cast< int32 const volatile& >( ReferenceController->SharedReferenceCount );
+			return FPlatformAtomics::AtomicRead( (int32 volatile*)&ReferenceController->SharedReferenceCount );
 		}
 
 		/** Adds a shared reference to this counter */
@@ -245,7 +251,7 @@ namespace SharedPointerInternals
 			{
 				// Peek at the current shared reference count.  Remember, this value may be updated by
 				// multiple threads.
-				const int32 OriginalCount = static_cast< int32 const volatile& >( ReferenceController->SharedReferenceCount );
+				const int32 OriginalCount = FPlatformAtomics::AtomicRead( (int32 volatile*)&ReferenceController->SharedReferenceCount );
 				if( OriginalCount == 0 )
 				{
 					// Never add a shared reference if the pointer has already expired
@@ -306,13 +312,13 @@ namespace SharedPointerInternals
 	struct FReferenceControllerOps<ESPMode::NotThreadSafe>
 	{
 		/** Returns the shared reference count */
-		static FORCEINLINE const int32 GetSharedReferenceCount(const FReferenceControllerBase* ReferenceController)
+		static FORCEINLINE const int32 GetSharedReferenceCount(const FReferenceControllerBase* ReferenceController) TSAN_SAFE_UNSAFEPTR
 		{
 			return ReferenceController->SharedReferenceCount;
 		}
 
 		/** Adds a shared reference to this counter */
-		static FORCEINLINE void AddSharedReference(FReferenceControllerBase* ReferenceController)
+		static FORCEINLINE void AddSharedReference(FReferenceControllerBase* ReferenceController) TSAN_SAFE_UNSAFEPTR
 		{
 			++ReferenceController->SharedReferenceCount;
 		}
@@ -322,7 +328,7 @@ namespace SharedPointerInternals
 		 *
 		 * @return  True if the shared reference was added successfully
 		 */
-		static bool ConditionallyAddSharedReference(FReferenceControllerBase* ReferenceController)
+		static bool ConditionallyAddSharedReference(FReferenceControllerBase* ReferenceController) TSAN_SAFE_UNSAFEPTR
 		{
 			if( ReferenceController->SharedReferenceCount == 0 )
 			{
@@ -335,7 +341,7 @@ namespace SharedPointerInternals
 		}
 
 		/** Releases a shared reference to this counter */
-		static FORCEINLINE void ReleaseSharedReference(FReferenceControllerBase* ReferenceController)
+		static FORCEINLINE void ReleaseSharedReference(FReferenceControllerBase* ReferenceController) TSAN_SAFE_UNSAFEPTR
 		{
 			checkSlow( ReferenceController->SharedReferenceCount > 0 );
 
@@ -351,13 +357,13 @@ namespace SharedPointerInternals
 		}
 
 		/** Adds a weak reference to this counter */
-		static FORCEINLINE void AddWeakReference(FReferenceControllerBase* ReferenceController)
+		static FORCEINLINE void AddWeakReference(FReferenceControllerBase* ReferenceController) TSAN_SAFE_UNSAFEPTR
 		{
 			++ReferenceController->WeakReferenceCount;
 		}
 
 		/** Releases a weak reference to this counter */
-		static void ReleaseWeakReference(FReferenceControllerBase* ReferenceController)
+		static void ReleaseWeakReference(FReferenceControllerBase* ReferenceController) TSAN_SAFE_UNSAFEPTR
 		{
 			checkSlow( ReferenceController->WeakReferenceCount > 0 );
 

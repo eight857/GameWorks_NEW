@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
  
 #pragma once
 
@@ -18,7 +18,7 @@
 
 class FPaintArgs;
 class FSlateWindowElementList;
-class FTextBlockLayout;
+class FSlateTextBlockLayout;
 class IBreakIterator;
 enum class ETextShapingMethod : uint8;
 
@@ -61,7 +61,9 @@ public:
 		, _TextShapingMethod()
 		, _TextFlowDirection()
 		, _LineBreakPolicy()
-		{}
+		{
+			_Clipping = EWidgetClipping::OnDemand;
+		}
 
 		/** The text displayed in this text block */
 		SLATE_ATTRIBUTE( FText, Text )
@@ -174,9 +176,6 @@ public:
 	 */
 	void SetFont(const TAttribute< FSlateFontInfo >& InFont);
 
-	DEPRECATED(4.3, "SetForegroundColor is deprecated use SetColorAndOpacity instead.")
-	void SetForegroundColor(const TAttribute<FSlateColor>& InColorAndOpacity) { SetColorAndOpacity(InColorAndOpacity); }
-
 	/** See ColorAndOpacity attribute */
 	void SetColorAndOpacity(const TAttribute<FSlateColor>& InColorAndOpacity);
 
@@ -217,13 +216,13 @@ public:
 	void SetJustification(const TAttribute<ETextJustify::Type>& InJustification);
 
 	// SWidget interface
-	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
+	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
 	virtual FReply OnMouseButtonDoubleClick( const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent ) override;
 	virtual FVector2D ComputeDesiredSize(float) const override;
 	// End of SWidget interface
 
 protected:
-	// SWidget interface
+	// Begin SWidget overrides.
 	virtual bool ComputeVolatility() const override;
 	// End of SWidget interface
 
@@ -254,7 +253,7 @@ private:
 	TAttribute< FText > BoundText;
 
 	/** The wrapped layout for this text block */
-	TUniquePtr< FTextBlockLayout > TextLayoutCache;
+	TUniquePtr< FSlateTextBlockLayout > TextLayoutCache;
 
 	/** Default style used by the TextLayout */
 	FTextBlockStyle TextStyle;

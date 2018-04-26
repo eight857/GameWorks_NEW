@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -9,22 +9,31 @@ public class WebBrowser : ModuleRules
 	{
 		PublicIncludePaths.Add("Runtime/WebBrowser/Public");
 		PrivateIncludePaths.Add("Runtime/WebBrowser/Private");
-
-		PrivateDependencyModuleNames.AddRange(
+        PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
 				"Core",
 				"CoreUObject",
+				"ApplicationCore",
 				"RHI",
 				"InputCore",
 				"Slate",
 				"SlateCore",
 				"Serialization",
-			}
-		);
+            }
+        );
 
-		if (Target.Platform == UnrealTargetPlatform.Android)
+        if (Target.Platform == UnrealTargetPlatform.Android)
 		{
+			// We need these on Android for external texture support
+			PrivateDependencyModuleNames.AddRange(
+				new string[]
+				{
+					"WebBrowserTexture",
+					"Engine",
+				}
+			);
+
 			// We need this one on Android for URL decoding
 			PrivateDependencyModuleNames.Add("HTTP");
 		}
@@ -39,26 +48,29 @@ public class WebBrowser : ModuleRules
 				"CEF3"
 				);
 
-			if (Target.Platform == UnrealTargetPlatform.Mac)
+			if (Target.Type != TargetType.Server)
 			{
-				// Add contents of UnrealCefSubProcess.app directory as runtime dependencies
-				foreach (string FilePath in Directory.EnumerateFiles(BuildConfiguration.RelativeEnginePath + "/Binaries/Mac/UnrealCEFSubProcess.app", "*", SearchOption.AllDirectories))
+				if (Target.Platform == UnrealTargetPlatform.Mac)
 				{
-					RuntimeDependencies.Add(new RuntimeDependency(FilePath));
+					// Add contents of UnrealCefSubProcess.app directory as runtime dependencies
+					foreach (string FilePath in Directory.EnumerateFiles(Target.RelativeEnginePath + "/Binaries/Mac/UnrealCEFSubProcess.app", "*", SearchOption.AllDirectories))
+					{
+						RuntimeDependencies.Add(FilePath);
+					}
 				}
-			}
-			else if (Target.Platform == UnrealTargetPlatform.Linux)
-			{
-				RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Binaries/" + Target.Platform.ToString() + "/UnrealCEFSubProcess"));
-			}
-			else
-			{
-				RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Binaries/" + Target.Platform.ToString() + "/UnrealCEFSubProcess.exe"));
+				else if (Target.Platform == UnrealTargetPlatform.Linux)
+				{
+					RuntimeDependencies.Add("$(EngineDir)/Binaries/" + Target.Platform.ToString() + "/UnrealCEFSubProcess");
+				}
+				else
+				{
+					RuntimeDependencies.Add("$(EngineDir)/Binaries/" + Target.Platform.ToString() + "/UnrealCEFSubProcess.exe");
+				}
 			}
 		}
 
 		if (Target.Platform == UnrealTargetPlatform.PS4 &&
-			UEBuildConfiguration.bCompileAgainstEngine)
+			Target.bCompileAgainstEngine)
 		{
 			PrivateDependencyModuleNames.Add("Engine");
 		}

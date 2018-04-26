@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DSP/AllPassFilter.h"
 
@@ -32,7 +32,7 @@ namespace Audio
 		// form y(n) = -gw(n) + w(n-D)
 		float Yn = -G*Wn + WnD;
 
-		UnderflowClamp(Yn);
+		Yn = UnderflowClamp(Yn);
 		this->WriteDelayAndInc(Wn);
 		*OutputSample = Yn;
 	}

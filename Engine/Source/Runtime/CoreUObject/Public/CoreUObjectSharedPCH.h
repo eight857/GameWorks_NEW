@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -34,7 +34,6 @@
 #include "Templates/EnableIf.h"
 #include "Templates/RemoveReference.h"
 #include "Templates/TypeCompatibleBytes.h"
-#include "Templates/AlignOf.h"
 #include "Templates/ChooseClass.h"
 #include "Templates/IntegralConstant.h"
 #include "Templates/IsClass.h"
@@ -163,7 +162,6 @@
 #include "Math/Float16.h"
 #include "Math/Float32.h"
 #include "Math/Vector2DHalf.h"
-#include "Math/AlphaBlendType.h"
 #include "Math/Transform.h"
 #include "Math/ConvexHull2d.h"
 #include "HAL/ThreadSafeCounter.h"
@@ -183,13 +181,8 @@
 #include "Math/RandomStream.h"
 #include "Misc/Attribute.h"
 #include "Misc/Paths.h"
-#include "GenericPlatform/GenericApplication.h"
-#include "GenericPlatform/GenericApplicationMessageHandler.h"
-#include "GenericPlatform/GenericWindowDefinition.h"
-#include "GenericPlatform/GenericWindow.h"
 #include "Math/TransformCalculus2D.h"
 #include "Math/TransformCalculus.h"
-#include "GenericPlatform/ICursor.h"
 #include "Misc/MemStack.h"
 #include "Containers/LockFreeFixedSizeAllocator.h"
 #include "Modules/ModuleInterface.h"

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -28,6 +28,8 @@ typedef TSharedPtr<class FEventGraphColumn> FEventGraphColumnPtr;
 /** Type definition for shared references to instances of FEventGraphColumn. */
 typedef TSharedRef<class FEventGraphColumn> FEventGraphColumnRef;
 
+template <typename OptionType>
+class SComboBox;
 
 
 /** Enumerates event graph view modes. */
@@ -90,8 +92,8 @@ protected:
 	(
 		const EEventPropertyIndex InIndex,
 		const FName InSearchID,
-		const FText InShortName,
-		const FText InDescription,
+		FText InShortName,
+		FText InDescription,
 		const bool bInCanBeHidden,
 		const bool bInIsVisible,
 		const bool bInCanBeSorted,
@@ -756,6 +758,9 @@ protected:
 		/** Whether aggressive filtering is currently on */
 		bool bAggressiveFiltering;
 
+		/** Event Filter by thread name */
+		FName ThreadFilter;
+
 		void CreateOneToOneMapping();
 
 		const bool IsCulled() const
@@ -1060,8 +1065,8 @@ protected:
 			// aggressive filtering?
 			if (bAggressiveFiltering && TextBasedFilterStringTokens.Num() > 0)
 			{
-				FEventGraphData *NewData = new FEventGraphData(GetEventGraph().Get());
-				RebuildForFilter(NewData->GetRoot()->GetChildren());
+				// Rebuild the event graph in-place
+				RebuildForFilter(GetEventGraph()->GetRoot()->GetChildren());
 			}
 			else
 			{
@@ -1082,6 +1087,23 @@ protected:
 						FilterEventPtr, FEventGraphSample::GetEventPropertyByName(FilterPropertyName).Index,
 						EEventCompareOps::Less
 						);
+				}
+				else if (!ThreadFilter.IsNone())
+				{
+					// Filter by event Thread name
+					struct FFilterByThreadName
+					{
+						FFilterByThreadName(const FName InThreadName) : ThreadName(InThreadName) {}
+
+						void operator()(FEventGraphSample* InEventPtr)
+						{
+							InEventPtr->_bIsFiltered = InEventPtr->GetThread() != nullptr && InEventPtr->_ThreadName != ThreadName;
+							InEventPtr->_bIsCulled = InEventPtr->GetThread() != nullptr && InEventPtr->_ThreadName != ThreadName;
+						}
+
+						FName ThreadName;
+					};
+					GetRoot()->ExecuteOperationForAllChildren(FFilterByThreadName(ThreadFilter));
 				}
 				else
 				{
@@ -1245,4 +1267,14 @@ protected:
 
 	/** Name of the event that should be drawn as highlighted. */
 	FName HighlightedEventName;
+
+	/** ThreadName filter methods and data */
+	void FillThreadFilterOptions();
+	FText GenerateTextForThreadFilter( FName ThreadName ) const;
+	void OnThreadFilterChanged( TSharedPtr<FName> NewThread, ESelectInfo::Type SelectionType );
+	TSharedRef<SWidget> GetWidgetForThreadFilter();
+	TSharedRef<SWidget> OnGenerateWidgetForThreadFilter( TSharedPtr<FName> ThreadName ) const;
+
+	TSharedPtr<SComboBox<TSharedPtr<FName>>> ThreadFilterComboBox;
+	TArray<TSharedPtr<FName>> ThreadNamesForCombo;
 };

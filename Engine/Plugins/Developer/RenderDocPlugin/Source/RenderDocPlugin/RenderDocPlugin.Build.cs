@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -23,7 +23,7 @@ namespace UnrealBuildTool.Rules
 				, "RHI"				// RHI module: required for accessing the UE4 flag GUsingNullRHI.
 			});
 
-			if (UEBuildConfiguration.bBuildEditor == true)
+			if (Target.bBuildEditor == true)
 			{
 				DynamicallyLoadedModuleNames.AddRange(new string[] { "LevelEditor" });
 				PublicDependencyModuleNames.AddRange(new string[]

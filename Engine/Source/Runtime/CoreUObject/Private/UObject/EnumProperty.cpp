@@ -1,10 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UObject/EnumProperty.h"
 #include "UObject/PropertyPortFlags.h"
+#include "UObject/UObjectThreadContext.h"
 #include "PropertyTag.h"
 #include "Templates/ChooseClass.h"
 #include "Templates/IsSigned.h"
+#include "Algo/Find.h"
 
 namespace UE4EnumProperty_Private
 {
@@ -71,9 +73,8 @@ void UEnumProperty::AddCppProperty(UProperty* Inner)
 void UEnumProperty::SerializeItem( FArchive& Ar, void* Value, void const* Defaults ) const
 {
 	check(UnderlyingProp);
-	check(Enum);
 
-	if(Ar.UseToResolveEnumerators())
+	if (Enum && Ar.UseToResolveEnumerators())
 	{
 		int64 IntValue = UnderlyingProp->GetSignedIntPropertyValue(Value);
 		int64 ResolvedIndex = Enum->ResolveEnumerator(Ar, IntValue);
@@ -87,23 +88,27 @@ void UEnumProperty::SerializeItem( FArchive& Ar, void* Value, void const* Defaul
 		FName EnumValueName;
 		Ar << EnumValueName;
 
-		// Make sure enum is properly populated
-		if( Enum->HasAnyFlags(RF_NeedLoad) )
-		{
-			Ar.Preload(Enum);
-		}
+		int64 NewEnumValue = 0;
 
-		// There's no guarantee EnumValueName is still present in Enum, in which case Value will be set to the enum's max value.
-		// On save, it will then be serialized as NAME_None.
-		int32 EnumIndex = Enum->GetIndexByName(EnumValueName, true);
-		int64 NewEnumValue;
-		if (EnumIndex == INDEX_NONE)
+		if (Enum)
 		{
-			NewEnumValue = Enum->GetMaxEnumValue();
-		}
-		else
-		{
-			NewEnumValue = Enum->GetValueByIndex(EnumIndex);
+			// Make sure enum is properly populated
+			if (Enum->HasAnyFlags(RF_NeedLoad))
+			{
+				Ar.Preload(Enum);
+			}
+
+			// There's no guarantee EnumValueName is still present in Enum, in which case Value will be set to the enum's max value.
+			// On save, it will then be serialized as NAME_None.
+			const int32 EnumIndex = Enum->GetIndexByName(EnumValueName, EGetByNameFlags::ErrorIfNotFound);
+			if (EnumIndex == INDEX_NONE)
+			{
+				NewEnumValue = Enum->GetMaxEnumValue();
+			}
+			else
+			{
+				NewEnumValue = Enum->GetValueByIndex(EnumIndex);
+			}
 		}
 
 		UnderlyingProp->SetIntPropertyValue(Value, NewEnumValue);
@@ -112,17 +117,14 @@ void UEnumProperty::SerializeItem( FArchive& Ar, void* Value, void const* Defaul
 	else if (Ar.IsSaving())
 	{
 		FName EnumValueName;
-		int64 IntValue = UnderlyingProp->GetSignedIntPropertyValue(Value);
+		if (Enum)
+		{
+			const int64 IntValue = UnderlyingProp->GetSignedIntPropertyValue(Value);
 
-		// subtract 1 because the last entry in the enum's Names array
-		// is the _MAX entry
-		if (Enum->IsValidEnumValue(IntValue))
-		{
-			EnumValueName = Enum->GetNameByValue(IntValue);
-		}
-		else
-		{
-			EnumValueName = NAME_None;
+			if (Enum->IsValidEnumValue(IntValue))
+			{
+				EnumValueName = Enum->GetNameByValue(IntValue);
+			}
 		}
 
 		Ar << EnumValueName;
@@ -258,12 +260,25 @@ const TCHAR* UEnumProperty::ImportText_Internal(const TCHAR* InBuffer, void* Dat
 		FString Temp;
 		if (const TCHAR* Buffer = UPropertyHelpers::ReadToken(InBuffer, Temp, true))
 		{
-			int32 EnumIndex = Enum->GetIndexByName(*Temp, true);
+			int32 EnumIndex = Enum->GetIndexByName(*Temp);
+			if (EnumIndex == INDEX_NONE && (Temp.IsNumeric() && !Algo::Find(Temp, TEXT('.'))))
+			{
+				int64 EnumValue = INDEX_NONE;
+				Lex::FromString(EnumValue, *Temp);
+				EnumIndex = Enum->GetIndexByValue(EnumValue);
+			}
 			if (EnumIndex != INDEX_NONE)
 			{
 				UnderlyingProp->SetIntPropertyValue(Data, Enum->GetValueByIndex(EnumIndex));
 				return Buffer;
 			}
+
+			// Enum could not be created from value. This indicates a bad value so
+			// return null so that the caller of ImportText can generate a more meaningful
+			// warning/error
+			FUObjectThreadContext& ThreadContext = FUObjectThreadContext::Get();
+			UE_LOG(LogClass, Warning, TEXT("In asset '%s', there is an enum property of type '%s' with an invalid value of '%s'"), *GetPathNameSafe(ThreadContext.SerializedObject), *Enum->GetName(), *Temp);
+			return nullptr;
 		}
 	}
 
@@ -322,8 +337,11 @@ bool UEnumProperty::SameType(const UProperty* Other) const
 
 bool UEnumProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8* Data, UStruct* DefaultsStruct, bool& bOutAdvanceProperty)
 {
-	check(Enum);
-	check(UnderlyingProp);
+	if ((Enum == nullptr) || (UnderlyingProp == nullptr))
+	{
+		bOutAdvanceProperty = false;
+		return false;
+	}
 
 	bOutAdvanceProperty = true;
 
@@ -342,7 +360,7 @@ bool UEnumProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 				InnerPropertyTag.EnumName = Enum->GetFName();
 				InnerPropertyTag.ArrayIndex = 0;
 
-				PreviousValue = UNumericProperty::ReadEnumAsUint8(Ar, DefaultsStruct, InnerPropertyTag);
+				PreviousValue = (uint8)UNumericProperty::ReadEnumAsInt64(Ar, DefaultsStruct, InnerPropertyTag);
 			}
 			else
 			{
@@ -353,7 +371,7 @@ bool UEnumProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 		else
 		{
 			// attempt to find the old enum and get the byte value from the serialized enum name
-			PreviousValue = UNumericProperty::ReadEnumAsUint8(Ar, DefaultsStruct, Tag);
+			PreviousValue = (uint8)UNumericProperty::ReadEnumAsInt64(Ar, DefaultsStruct, Tag);
 		}
 
 		// now copy the value into the object's address space

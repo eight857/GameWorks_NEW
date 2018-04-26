@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,6 +6,29 @@
 #include "SourcesData.h"
 
 class FMenuBuilder;
+
+struct FSelectionData
+{
+	TSet<FName> SelectedAssets;
+	TSet<FString> SelectedFolders;
+
+	int32 Num() const
+	{
+		return SelectedAssets.Num() + SelectedFolders.Num();
+	}
+
+	void Reset()
+	{
+		SelectedAssets.Reset();
+		SelectedFolders.Reset();
+	}
+
+	void Empty()
+	{
+		SelectedAssets.Empty();
+		SelectedFolders.Empty();
+	}
+};
 
 /** The history data object, storing all important history data */
 struct FHistoryData
@@ -16,8 +39,8 @@ struct FHistoryData
 	/** The base set of filters on the asset view which includes selected paths and collections */
 	FSourcesData SourcesData;
 
-	/** The object paths for selected assets before the sources changed */
-	TSet<FName> SelectedAssets;
+	/** The selection data from before the sources changed */
+	FSelectionData SelectionData;
 };
 
 /** The delegate for when history data should be applied */

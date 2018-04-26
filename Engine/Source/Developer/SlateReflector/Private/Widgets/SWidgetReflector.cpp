@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/SWidgetReflector.h"
 #include "Rendering/DrawElements.h"
@@ -827,11 +827,11 @@ TSharedRef<SDockTab> SWidgetReflector::SpawnWidgetHierarchyTab(const FSpawnTabAr
 					(
 						SNew(SHeaderRow)
 
-						+SHeaderRow::Column("WidgetName")
+						+SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_WidgetName)
 						.DefaultLabel(LOCTEXT("WidgetName", "Widget Name"))
 						.FillWidth(0.65f)
 
-						+SHeaderRow::Column("ForegroundColor")
+						+SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_ForegroundColor)
 						.FixedWidth(24.0f)
 						.VAlignHeader(VAlign_Center)
 						.HeaderContent()
@@ -841,15 +841,38 @@ TSharedRef<SDockTab> SWidgetReflector::SpawnWidgetHierarchyTab(const FSpawnTabAr
 							.ToolTipText(LOCTEXT("ForegroundColorToolTip", "Foreground Color"))
 						]
 
-						+SHeaderRow::Column("Visibility")
-						.DefaultLabel(LOCTEXT("Visibility", "Visibility" ))
+						+SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_Visibility)
 						.FixedWidth(125.0f)
+						.HAlignHeader(HAlign_Center)
+						.VAlignHeader(VAlign_Center)
+						.HeaderContent()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("Visibility", "Visibility" ))
+							.ToolTipText(LOCTEXT("VisibilityTooltip", "Visibility"))
+						]
 
-						+SHeaderRow::Column("WidgetInfo")
+						+ SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_Focusable)
+						.DefaultLabel(LOCTEXT("Focusable", "Focusable?"))
+						.FixedWidth(125.0f)
+						.HAlignHeader(HAlign_Center)
+						.VAlignHeader(VAlign_Center)
+						.HeaderContent()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("Focusable", "Focusable?"))
+							.ToolTipText(LOCTEXT("FocusableTooltip", "Focusability (Note that for hit-test directional navigation to work it must be Focusable and \"Visible\"!)"))
+						]
+
+						+SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_Clipping)
+						.DefaultLabel(LOCTEXT("Clipping", "Clipping" ))
+						.FixedWidth(100.0f)
+
+						+SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_WidgetInfo)
 						.DefaultLabel(LOCTEXT("WidgetInfo", "Widget Info" ))
 						.FillWidth(0.25f)
 
-						+SHeaderRow::Column("Address")
+						+SHeaderRow::Column(SReflectorTreeWidgetItem::NAME_Address)
 						.DefaultLabel( LOCTEXT("Address", "Address") )
 						.FixedWidth(140.0f)
 					)
@@ -1224,7 +1247,6 @@ int32 SWidgetReflector::VisualizeCursorAndKeys(FSlateWindowElementList& OutDrawE
 				LayerId++,
 				CursorHighlightGeometry.ToPaintGeometry(),
 				FCoreStyle::Get().GetBrush(CursorPingBrush),
-				OutDrawElements.GetWindow()->GetClippingRectangleInWindow(),
 				ESlateDrawEffect::None,
 				PingColor
 				);
@@ -1294,7 +1316,6 @@ int32 SWidgetReflector::VisualizePickAsRectangles( const FWidgetPath& InWidgetsT
 			++LayerId,
 			WindowSpaceGeometry,
 			FCoreStyle::Get().GetBrush(TEXT("Debug.Border")),
-			InWidgetsToVisualize.TopLevelWindow->GetClippingRectangleInWindow(),
 			ESlateDrawEffect::None,
 			FMath::Lerp(TopmostWidgetColor, LeafmostWidgetColor, ColorFactor)
 		);
@@ -1316,7 +1337,7 @@ int32 SWidgetReflector::VisualizeSelectedNodesAsRectangles( const TArray<TShared
 		// and get us back into Window Space.
 		// This is nonstandard so we have to go through some hoops and a specially exposed method 
 		// in FPaintGeometry to allow appending layout transforms.
-		FPaintGeometry WindowSpaceGeometry(NodeToDraw->GetAccumulatedLayoutTransform(), NodeToDraw->GetAccumulatedRenderTransform(), NodeToDraw->GetLocalSize());
+		FPaintGeometry WindowSpaceGeometry(NodeToDraw->GetAccumulatedLayoutTransform(), NodeToDraw->GetAccumulatedRenderTransform(), NodeToDraw->GetLocalSize(), NodeToDraw->GetGeometry().HasRenderTransform());
 		WindowSpaceGeometry.AppendTransform(TransformCast<FSlateLayoutTransform>(Inverse(VisualizeInWindow->GetPositionInScreen())));
 
 		FSlateDrawElement::MakeBox(
@@ -1324,7 +1345,6 @@ int32 SWidgetReflector::VisualizeSelectedNodesAsRectangles( const TArray<TShared
 			++LayerId,
 			WindowSpaceGeometry,
 			FCoreStyle::Get().GetBrush(TEXT("Debug.Border")),
-			VisualizeInWindow->GetClippingRectangleInWindow(),
 			ESlateDrawEffect::None,
 			NodeToDraw->GetTint()
 		);

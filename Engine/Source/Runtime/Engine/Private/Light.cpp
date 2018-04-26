@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "Engine/Light.h"
@@ -62,8 +62,14 @@ void ALight::Destroyed()
 	{
 		// Mark the light as not affecting the world before updating the shadowmap channel allocation
 		LightComponent->bAffectsWorld = false;
-		// Force stationary light channel preview to be updated on editor delete
-		LightComponent->InvalidateLightingCache();
+
+		UWorld* World = GetWorld();
+
+		if (World && !World->IsGameWorld())
+		{
+			// Force stationary light channel preview to be updated on editor delete
+			LightComponent->InvalidateLightingCache();
+		}
 	}
 }
 
@@ -349,9 +355,3 @@ bool ALight::IsToggleable() const
 	return !LightComponent->HasStaticLighting();
 }
 
-/** Returns LightComponent subobject **/
-ULightComponent* ALight::GetLightComponent() const { return LightComponent; }
-#if WITH_EDITORONLY_DATA
-/** Returns ArrowComponent subobject **/
-UArrowComponent* ADirectionalLight::GetArrowComponent() const { return ArrowComponent; }
-#endif

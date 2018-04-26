@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "ItemPropertyNode.h"
@@ -111,16 +111,6 @@ uint8* FItemPropertyNode::GetValueAddress( uint8* StartAddress )
 	{
 		FScriptArrayHelper ArrayHelper(ArrayProperty,Result);
 		Result = ArrayHelper.GetRawPtr();
-	}
-	else if (Result && SetProperty)
-	{
-		FScriptSetHelper SetHelper(SetProperty, Result);
-		Result = SetHelper.GetElementPtr(0);
-	}
-	else if (Result && MapProperty)
-	{
-		FScriptMapHelper MapHelper(MapProperty, Result);
-		Result = MapHelper.GetPairPtr(0);
 	}
 
 	return Result;
@@ -343,7 +333,7 @@ void FItemPropertyNode::InitChildNodes()
 				if ( FPropertySettings::Get().ExpandDistributions() == false)
 				{
 					// auto-expand distribution structs
-					if ( Cast<UObjectProperty>(StructMember) || Cast<UWeakObjectProperty>(StructMember) || Cast<ULazyObjectProperty>(StructMember) || Cast<UAssetObjectProperty>(StructMember) )
+					if ( Cast<UObjectProperty>(StructMember) || Cast<UWeakObjectProperty>(StructMember) || Cast<ULazyObjectProperty>(StructMember) || Cast<USoftObjectProperty>(StructMember) )
 					{
 						const FName StructName = StructProperty->Struct->GetFName();
 						if (StructName == NAME_RawDistributionFloat || StructName == NAME_RawDistributionVector)

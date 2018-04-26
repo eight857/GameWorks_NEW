@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 PlanarReflectionRendering.h: shared planar reflection rendering declarations.
@@ -10,6 +10,7 @@ PlanarReflectionRendering.h: shared planar reflection rendering declarations.
 #include "ShaderParameters.h"
 
 class FShaderParameterMap;
+class FSceneView;
 
 /** Parameters needed for planar reflections, shared by multiple shaders. */
 class FPlanarReflectionParameters
@@ -28,6 +29,7 @@ public:
 		ProjectionWithExtraFOV.Bind(ParameterMap, TEXT("ProjectionWithExtraFOV"));
 		PlanarReflectionScreenScaleBias.Bind(ParameterMap, TEXT("PlanarReflectionScreenScaleBias"));
 		IsStereoParameter.Bind(ParameterMap, TEXT("bIsStereo"));
+		PlanarReflectionScreenBound.Bind(ParameterMap, TEXT("PlanarReflectionScreenBound"));
 		PlanarReflectionTexture.Bind(ParameterMap, TEXT("PlanarReflectionTexture"));
 		PlanarReflectionSampler.Bind(ParameterMap, TEXT("PlanarReflectionSampler"));
 	}
@@ -47,6 +49,7 @@ public:
 		Ar << P.ProjectionWithExtraFOV;
 		Ar << P.PlanarReflectionScreenScaleBias;
 		Ar << P.IsStereoParameter;
+		Ar << P.PlanarReflectionScreenBound;
 		Ar << P.PlanarReflectionTexture;
 		Ar << P.PlanarReflectionSampler;
 		return Ar;
@@ -64,6 +67,7 @@ private:
 	FShaderParameter ProjectionWithExtraFOV;
 	FShaderParameter PlanarReflectionScreenScaleBias;
 	FShaderParameter IsStereoParameter;
+	FShaderParameter PlanarReflectionScreenBound;
 	FShaderResourceParameter PlanarReflectionTexture;
 	FShaderResourceParameter PlanarReflectionSampler;
 };

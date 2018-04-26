@@ -1,45 +1,41 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once 
 
 #include "USDImportOptions.h"
 #include "TokenizedMessage.h"
+#include "USDPrimResolver.h"
 
-#if USING_CODE_ANALYSIS
-MSVC_PRAGMA(warning(push))
-MSVC_PRAGMA(warning(disable : ALL_CODE_ANALYSIS_WARNINGS))
-#endif	// USING_CODE_ANALYSIS
-
+THIRD_PARTY_INCLUDES_START
 #include "UnrealUSDWrapper.h"
-
-#if USING_CODE_ANALYSIS
-MSVC_PRAGMA(warning(pop))
-#endif	// USING_CODE_ANALYSIS
+THIRD_PARTY_INCLUDES_END
 
 #include "USDImporter.generated.h"
 
-class UGeometryCache;
-class UEditableStaticMesh;
+
+class UUSDPrimResolver;
 class IUsdPrim;
 class IUsdStage;
 struct FUsdGeomData;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogUSDImport, Log, All);
 
-struct FUsdPrimToImport
+namespace USDKindTypes
 {
-	IUsdPrim* Prim;
-	int32 NumLODs;
+	// Note: std::string for compatiblity with USD
 
-	const FUsdGeomData* GetGeomData(int32 LODIndex, double Time) const;
-};
+	const std::string Component("component"); 
+	const std::string Group("group");
+	const std::string SubComponent("subcomponent");
+}
 
 USTRUCT()
 struct FUsdImportContext
 {
 	GENERATED_BODY()
 	
-	TMap<IUsdPrim*, UObject*> PrimToAssetMap;
+	/** Mapping of path to imported assets  */
+	TMap<FString, UObject*> PathToImportAssetMap;
 
 	/** Parent package to import a single mesh to */
 	UPROPERTY()
@@ -55,6 +51,9 @@ struct FUsdImportContext
 	UPROPERTY()
 	UUSDImportOptions* ImportOptions;
 
+	UPROPERTY()
+	UUSDPrimResolver* PrimResolver;
+
 	IUsdStage* Stage;
 
 	/** Root Prim of the USD file */
@@ -64,7 +63,7 @@ struct FUsdImportContext
 	FTransform ConversionTransform;
 
 	/** Object flags to apply to newly imported objects */
-	EObjectFlags ObjectFlags;
+	EObjectFlags ImportObjectFlags;
 
 	/** Whether or not to apply world transformations to the actual geometry */
 	bool bApplyWorldTransformToGeometry;
@@ -72,10 +71,12 @@ struct FUsdImportContext
 	/** If true stop at any USD prim that has an unreal asset reference.  Geometry that is a child such prims will be ignored */
 	bool bFindUnrealAssetReferences;
 
-	virtual void Init(UObject* InParent, const FString& InName, EObjectFlags InFlags, IUsdStage* InStage);
+	virtual ~FUsdImportContext() { }
+
+	virtual void Init(UObject* InParent, const FString& InName, IUsdStage* InStage);
 
 	void AddErrorMessage(EMessageSeverity::Type MessageSeverity, FText ErrorMessage);
-	void DisplayErrorMessages();
+	void DisplayErrorMessages(bool bAutomated);
 	void ClearErrorMessages();
 private:
 	/** Error messages **/
@@ -91,14 +92,9 @@ class UUSDImporter : public UObject
 public:
 	bool ShowImportOptions(UObject& ImportOptions);
 
-	IUsdStage* ReadUSDFile(const FString& Filename);
+	IUsdStage* ReadUSDFile(FUsdImportContext& ImportContext, const FString& Filename);
 
-	void FindPrimsToImport(FUsdImportContext& ImportContext, TArray<FUsdPrimToImport>& OutPrimsToImport);
+	TArray<UObject*> ImportMeshes(FUsdImportContext& ImportContext, const TArray<FUsdAssetPrimToImport>& PrimsToImport);
 
-	UObject* ImportMeshes(FUsdImportContext& ImportContext, const TArray<FUsdPrimToImport>& PrimsToImport);
-
-	UObject* ImportSingleMesh(FUsdImportContext& ImportContext, EUsdMeshImportType ImportType, const FUsdPrimToImport& PrimToImport);
-private:
-	void FindPrimsToImport_Recursive(FUsdImportContext& ImportContext, IUsdPrim* Prim, TArray<FUsdPrimToImport>& OutTopLevelPrims);
-
+	UObject* ImportSingleMesh(FUsdImportContext& ImportContext, EUsdMeshImportType ImportType, const FUsdAssetPrimToImport& PrimToImport);
 };

@@ -1,11 +1,13 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
 public class LoginFlow : ModuleRules
 {
 	public LoginFlow(ReadOnlyTargetRules Target) : base(Target)
-    {
+	{
+		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
@@ -52,7 +54,5 @@ public class LoginFlow : ModuleRules
 				"AnalyticsET",
 			}
 		);
-
-		PrecompileForTargets = PrecompileTargetsType.None;
 	}
 }

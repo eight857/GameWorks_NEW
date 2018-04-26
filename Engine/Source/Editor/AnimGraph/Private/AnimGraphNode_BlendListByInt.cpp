@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "AnimGraphNode_BlendListByInt.h"
@@ -16,6 +16,8 @@
 UAnimGraphNode_BlendListByInt::UAnimGraphNode_BlendListByInt(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+	// Make sure we start out with a pin
+	Node.AddPose();
 }
 
 FText UAnimGraphNode_BlendListByInt::GetTooltipText() const
@@ -30,8 +32,6 @@ FText UAnimGraphNode_BlendListByInt::GetNodeTitle(ENodeTitleType::Type TitleType
 
 void UAnimGraphNode_BlendListByInt::PostPlacedNewNode()
 {
-	// Make sure we start out with a pin
-	Node.AddPose();
 	Node.AddPose();
 	ReconstructNode();
 }

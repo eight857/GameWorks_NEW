@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 PostProcessFFTBlooom.cpp: Post processing blom using an FFT-based convolution.
@@ -39,14 +39,15 @@ public:
 			  (DstBufferExtent,      TEXT("DstBufferExtent"));
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+		// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		
 		OutEnvironment.SetDefine(TEXT("INCLUDE_RESIZE_AND_CENTER"), 1);
 		OutEnvironment.SetDefine(TEXT("THREADS_PER_GROUP"), FResizeAndCenterTextureCS::NumThreadsPerGroup());
@@ -59,7 +60,7 @@ public:
 	// Method for use with the FScopedUAVBind
 	FShaderResourceParameter& DestinationResourceParamter() { return DstRWTexture; }
 
-	static const TCHAR* GetSourceFilename() { return TEXT("PostProcessFFTBloom"); }
+	static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/PostProcessFFTBloom.usf"); }
 	static const TCHAR* GetFunctionName()   { return TEXT("ResizeAndCenterTextureCS"); }
 
 	void SetCSParamters(FRHICommandList& RHICmdList, const FRenderingCompositePassContext& Context,
@@ -135,21 +136,22 @@ public:
 			(UVCenter,                    TEXT("UVCenter"));
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+		// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("INCLUDE_CAPTURE_KERNEL_WEIGHTS"), 1);
 	}
 
 	// Method for use with the FScopedUAVBind
 	FShaderResourceParameter& DestinationResourceParamter() { return DstRWTexture; }
 
-	static const TCHAR* GetSourceFilename() { return TEXT("PostProcessFFTBloom"); }
+	static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/PostProcessFFTBloom.usf"); }
 	static const TCHAR* GetFunctionName()   { return TEXT("CaptureKernelWeightsCS"); }
 
 
@@ -223,14 +225,15 @@ public:
 			  (HalfBufferSize,      TEXT("HalfBufferSize"));
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+		// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("INCLUDE_BLEND_LOW_RES"), 1);
 		OutEnvironment.SetDefine(TEXT("THREADS_PER_GROUP"), FBlendLowResCS::NumThreadsPerGroup());
 	}
@@ -241,7 +244,7 @@ public:
 	// Determine the number of threads used per scanline when writing the physical space kernel
 	static int32 NumThreadsPerGroup() { return 32; }
 
-	static const TCHAR* GetSourceFilename() { return TEXT("PostProcessFFTBloom"); }
+	static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/PostProcessFFTBloom.usf"); }
 	static const TCHAR* GetFunctionName()   { return TEXT("BlendLowResCS"); }
 
 
@@ -320,14 +323,14 @@ public:
 		      (SrcRect,      TEXT("SrcRect"));
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+		// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("INCLUDE_PASSTHROUGH"), 1);
 		OutEnvironment.SetDefine(TEXT("THREADS_PER_GROUP"), FPassThroughCS::NumThreadsPerGroup());
 	}
@@ -337,7 +340,7 @@ public:
 
 	static int32 NumThreadsPerGroup() { return 32; }
 
-	static const TCHAR* GetSourceFilename() { return TEXT("PostProcessFFTBloom"); }
+	static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/PostProcessFFTBloom.usf"); }
 	static const TCHAR* GetFunctionName()   { return TEXT("PassThroughCS"); }
 
 	void SetCSParamters(FRHICommandList& RHICmdList, const FRenderingCompositePassContext& Context,
@@ -631,7 +634,7 @@ void FRCPassFFTBloom::InitializeDomainParameters(FRenderingCompositePassContext&
 	}
 
 
-	const FSceneView& View = Context.View;
+	const FViewInfo& View = Context.View;
 
 	InputBufferSize = InputDesc->Extent;
 
@@ -653,8 +656,8 @@ void FRCPassFFTBloom::InitializeDomainParameters(FRenderingCompositePassContext&
 	const uint32 InputScaleFactor  = FMath::DivideAndRoundUp(FSceneRenderTargets::Get(Context.RHICmdList).GetBufferSizeXY().Y, InputBufferSize.Y);
 	const uint32 OutputScaleFactor = FMath::DivideAndRoundUp(FSceneRenderTargets::Get(Context.RHICmdList).GetBufferSizeXY().Y, OutputBufferSize.Y);
 
-	const FIntRect InputRect = View.ViewRect / InputScaleFactor;
-	const FIntRect OutputRect = View.ViewRect / OutputScaleFactor;
+	const FIntRect InputRect = Context.SceneColorViewRect / InputScaleFactor;
+	const FIntRect OutputRect = Context.SceneColorViewRect / OutputScaleFactor;
 
 	// Capture the region of interest
 	ImageRect = InputRect;
@@ -767,7 +770,7 @@ bool FRCPassFFTBloom::ConvolveWithKernel(FRenderingCompositePassContext& Context
 FSceneRenderTargetItem* FRCPassFFTBloom::InitDomainAndGetKernel(FRenderingCompositePassContext& Context)
 {
 
-	const FSceneView& View = Context.View;
+	const FViewInfo& View = Context.View;
 	FSceneViewState* ViewState = (FSceneViewState*)View.State;
 
 	
@@ -789,7 +792,7 @@ FSceneRenderTargetItem* FRCPassFFTBloom::InitDomainAndGetKernel(FRenderingCompos
 	
 
 	// The pre-filter boost parameters for bright pixels
-	const FVector PreFilter = PPSettings.BloomConvolutionPreFilter;
+	const FVector PreFilter(PPSettings.BloomConvolutionPreFilterMin, PPSettings.BloomConvolutionPreFilterMax, PPSettings.BloomConvolutionPreFilterMult);
 
 	
 	// Clip the Kernel support (i.e. bloom size) to 100% the screen width 
@@ -937,9 +940,10 @@ bool FRCPassFFTBloom::ConvolveImageWithKernel(FRenderingCompositePassContext& Co
 	const bool bIsHalfResolutionFFT = bHalfResolutionFFT();
 	
 
-	const FSceneView& View = Context.View;
+	const FViewInfo& View = Context.View;
+	const auto& FinalPPSettings = View.FinalPostProcessSettings;
 	// The pre-filter boost parameters for bright pixels
-	const FVector PreFilter = View.FinalPostProcessSettings.BloomConvolutionPreFilter;
+	const FVector PreFilter(FinalPPSettings.BloomConvolutionPreFilterMin, FinalPPSettings.BloomConvolutionPreFilterMax, FinalPPSettings.BloomConvolutionPreFilterMult);
 
 	const FLinearColor Tint(1, 1, 1, 1);
 
@@ -980,7 +984,7 @@ bool FRCPassFFTBloom::ConvolveImageWithKernel(FRenderingCompositePassContext& Co
 
 		// Blend with  alpha * SrcBuffer + betta * BloomedBuffer  where alpha = Weights[0], beta = Weights[1]
 		const FIntPoint& HalfResBufferSize = InputBufferSize;
-		BlendLowRes(Context, FullResResourceTexture, View.ViewRect, HalfResConvolutionRTItem.ShaderResourceTexture, ImageRect, HalfResBufferSize, CenterWeightTexture, PassOutput.UAV);
+		BlendLowRes(Context, FullResResourceTexture, Context.SceneColorViewRect, HalfResConvolutionRTItem.ShaderResourceTexture, ImageRect, HalfResBufferSize, CenterWeightTexture, PassOutput.UAV);
 
 	
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,6 @@
 #include "UObject/Object.h"
 #include "UObject/UnrealType.h"
 #include "PropertyPath.h"
-#include "IDetailTreeNode.h"
 
 class FComplexPropertyNode;
 class FNotifyHook;
@@ -57,6 +56,8 @@ namespace EPropertyNodeFlags
 	const Type	SkipChildValidation				= 1 << 21; /** true if this node should skip child validation */
 
 	const Type  ShowInnerObjectProperties		= 1 << 22;
+
+	const Type	HasCustomResetToDefault			= 1 << 23;	/** true if this node's visual representation of reset to default has been customized*/
 
 	const Type 	NoFlags							= 0;
 
@@ -251,6 +252,8 @@ enum EPropertyDataValidationResult : uint8
 	EditInlineNewValueChanged,
 	/** The size of an array changed (delete,insert,add) */
 	ArraySizeChanged,
+	/** An internal node's children were rebuilt for some reason */
+	ChildrenRebuilt,
 	/** All data is valid */
 	DataValid,
 };
@@ -503,6 +506,11 @@ public:
 	 */
 	void ResetToDefault(FNotifyHook* InNotifyHook);
 
+	/**
+	 * @return If this property node is associated with a property that can be reordered within an array
+	 */
+	bool IsReorderable();
+
 	/**Walks up the hierarchy and return true if any parent node is a favorite*/
 	bool IsChildOfFavorite(void) const;
 
@@ -530,9 +538,7 @@ public:
 	 * @param	Index						Index of the modified item
 	 */
 	void PropagateContainerPropertyChange(UObject* ModifiedObject, const FString& OriginalContainerContent,
-		EPropertyArrayChangeType::Type ChangeType, int32 Index);
-
-	static void AdditionalInitializationUDS(UProperty* Property, uint8* RawPtr);
+		EPropertyArrayChangeType::Type ChangeType, int32 Index, TMap<UObject*, bool>* PropagationResult = nullptr, int32 SwapIndex = INDEX_NONE);
 
 	/** Broadcasts when a property value changes */
 	DECLARE_EVENT(FPropertyNode, FPropertyValueChangedEvent);
@@ -540,6 +546,13 @@ public:
 
 	/** Broadcasts when a child of this property changes */
 	FPropertyValueChangedEvent& OnChildPropertyValueChanged() { return ChildPropertyValueChangedEvent; }
+
+	/** Broadcasts when a property value changes */
+	DECLARE_EVENT(FPropertyNode, FPropertyValuePreChangeEvent);
+	FPropertyValuePreChangeEvent& OnPropertyValuePreChange() { return PropertyValuePreChangeEvent; }
+
+	/** Broadcasts when a child of this property changes */
+	FPropertyValuePreChangeEvent& OnChildPropertyValuePreChange() { return ChildPropertyValuePreChangeEvent; }
 
 	/**
 	 * Marks window's seem due to filtering flags
@@ -850,6 +863,13 @@ protected:
 	 */
 	void BroadcastPropertyChangedDelegates();
 
+
+	/**
+	* Helper function for derived members to be able to
+	* broadcast property pre-change notifications
+	*/
+	void BroadcastPropertyPreChangeDelegates();
+
 	/**
 	 * Gets a value tracker for the default of this property in the passed in object
 	 *
@@ -893,6 +913,12 @@ protected:
 	/** Called when this node's children are rebuilt */
 	FSimpleDelegate OnRebuildChildren;
 
+	/** Called when this node's property value is about to change (called during NotifyPreChange) */
+	FPropertyValuePreChangeEvent PropertyValuePreChangeEvent;
+
+	/** Called when a child's property value is about to change */
+	FPropertyValuePreChangeEvent ChildPropertyValuePreChangeEvent;
+
 	/** Called when this node's property value has changed (called during NotifyPostChange) */
 	FPropertyValueChangedEvent PropertyValueChangedEvent;
 	
@@ -923,11 +949,14 @@ protected:
 	/** If true, children of this node will be rebuilt next tick. */
 	bool bRebuildChildrenRequested;
 
+	/** Set to true when RebuildChildren is called on the node */
+	bool bChildrenRebuilt;
+
 	/** An array of restrictions limiting this property's potential values in property editors.*/
 	TArray<TSharedRef<const class FPropertyRestriction>> Restrictions;
 
 	/** Optional reference to a tree node that is displaying this property */
-	TWeakPtr< class IDetailTreeNode > TreeNode;
+	TWeakPtr< class FDetailTreeNode > TreeNode;
 
 	/**
 	 * Stores metadata for this instasnce of the property (in contrast

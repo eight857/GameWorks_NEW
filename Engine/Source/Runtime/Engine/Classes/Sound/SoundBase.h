@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,14 +12,18 @@
 #include "Audio.h"
 #include "Sound/SoundConcurrency.h"
 #include "SoundSubmix.h"
+#include "Sound/SoundSourceBusSend.h"
 #include "SoundBase.generated.h"
 
 class USoundEffectSourcePreset;
 class USoundSubmix;
+class USoundSourceBus;
+class USoundEffectSourcePresetChain;
+
 struct FSoundSubmixSendInfo;
+struct FSoundSourceBusSendInfo;
 struct FActiveSound;
 struct FSoundParseParameters;
-
 
 UCLASS(config=Engine, hidecategories=Object, abstract, editinlinenew, BlueprintType)
 class ENGINE_API USoundBase : public UObject
@@ -32,7 +36,7 @@ public:
 
 protected:
 	/** Sound class this sound belongs to */
-	UPROPERTY(EditAnywhere, Category=Sound, meta=(DisplayName = "Sound Class"))
+	UPROPERTY(EditAnywhere, Category=Sound, meta=(DisplayName = "Sound Class"), AssetRegistrySearchable)
 	USoundClass* SoundClassObject;
 
 public:
@@ -45,9 +49,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Concurrency)
 	uint32 bOverrideConcurrency:1;
 
-	/** Whether or not to ignore focus on this sound. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Attenuation)
-	uint32 bIgnoreFocus:1;
+	/** Whether or not to only send this audio's output to a bus. If true, will not be this sound won't be audible except through bus sends. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Effects)
+	uint32 bOutputToBusOnly : 1;
+
+	UPROPERTY()
+	uint32 bIgnoreFocus_DEPRECATED:1;
 
 	/** If Override Concurrency is false, the sound concurrency settings to use for this sound. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Concurrency, meta = (EditCondition = "!bOverrideConcurrency"))
@@ -87,16 +94,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Effects)
 	TArray<FSoundSubmixSendInfo> SoundSubmixSends;
 
-	/** 
-	 * The default amount of audio to send to the master reverb effect for this sound if reverb is enabled for the sound. 
-	 * This can be overridden by sound attenuation settings for 3d sounds. 
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Effects)
-	float DefaultMasterReverbSendAmount;
-
 	/** The source effect chain to use for this sound. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Effects)
 	USoundEffectSourcePresetChain* SourceEffectChain;
+
+	/** This sound will send its audio output to this list of buses if there are bus instances playing after source effects are processed.  */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Effects, meta = (DisplayName = "Post-Effect Bus Sends"))
+	TArray<FSoundSourceBusSendInfo> BusSends;
+
+	/** This sound will send its audio output to this list of buses if there are bus instances playing before source effects are processed.  */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Effects, meta = (DisplayName = "Pre-Effect Bus Sends"))
+	TArray<FSoundSourceBusSendInfo> PreEffectBusSends;
 
 public:	
 	/** Number of times this cue is currently being played. */
@@ -109,6 +117,12 @@ public:
 	
 	/** Returns whether the sound base is set up in a playable manner */
 	virtual bool IsPlayable() const;
+
+	/** Returns whether a sound is allowed to be virtualized. */
+	virtual bool IsAllowedVirtual() const;
+
+	/** Returns whether or not this sound base has an attenuation node. */
+	virtual bool HasAttenuationNode() const;
 
 	/** Returns a pointer to the attenuation settings that are to be applied for this node */
 	virtual const FSoundAttenuationSettings* GetAttenuationSettingsToApply() const;
@@ -130,7 +144,12 @@ public:
 	virtual float GetSubtitlePriority() const { return DEFAULT_SUBTITLE_PRIORITY; };
 	
 	/** Returns whether or not any part of this sound wants interior volumes applied to it */
-	virtual bool ShouldApplyInteriorVolumes() const;
+	virtual bool ShouldApplyInteriorVolumes();
+
+	/** Returns curves associated with this sound if it has any. By default returns nullptr, but types
+	*	supporting curves can return a corresponding curve table.
+	*/
+	virtual class UCurveTable* GetCurveData() const { return nullptr; }
 
 	/** Returns whether or not this sound is looping. */
 	bool IsLooping();
@@ -146,6 +165,9 @@ public:
 
 	/** Returns the sound submix sends for this sound. */
 	void GetSoundSubmixSends(TArray<FSoundSubmixSendInfo>& OutSends) const;
+
+	/** Returns the sound source sends for this sound. */
+	void GetSoundSourceBusSends(EBusSendType BusSendType, TArray<FSoundSourceBusSendInfo>& OutSends) const;
 
 	/** Returns the FSoundConcurrencySettings struct to use. */
 	const FSoundConcurrencySettings* GetSoundConcurrencySettingsToApply();

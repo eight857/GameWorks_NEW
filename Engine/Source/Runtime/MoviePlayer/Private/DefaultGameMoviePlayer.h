@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -22,7 +22,7 @@ class SVirtualWindow;
 class FMoviePlayerWidgetRenderer
 {
 public:
-	FMoviePlayerWidgetRenderer(TSharedPtr<SWindow> InMainWindow, TSharedPtr<SVirtualWindow> InVirtualRenderWindowWindow, TSharedPtr<FSlateRenderer> InRenderer);
+	FMoviePlayerWidgetRenderer(TSharedPtr<SWindow> InMainWindow, TSharedPtr<SVirtualWindow> InVirtualRenderWindowWindow, FSlateRenderer* InRenderer);
 
 	void DrawWindow(float DeltaTime);
 
@@ -36,7 +36,7 @@ private:
 
 	TSharedPtr<FHittestGrid> HittestGrid;
 
-	TSharedPtr<FSlateRenderer> SlateRenderer;
+	FSlateRenderer* SlateRenderer;
 
 	FViewportRHIRef ViewportRHI;
 };
@@ -65,7 +65,7 @@ public:
 
 	/** IGameMoviePlayer Interface */
 	virtual void RegisterMovieStreamer(TSharedPtr<IMovieStreamer> InMovieStreamer) override;
-	virtual void Initialize(TSharedPtr<FSlateRenderer> InSlateRenderer) override;
+	virtual void Initialize(FSlateRenderer& InSlateRenderer) override;
 	virtual void Shutdown() override;
 	virtual void PassLoadingScreenWindowBackToGame() const override;
 	virtual void SetupLoadingScreen(const FLoadingScreenAttributes& LoadingScreenAttributes) override;
@@ -98,7 +98,7 @@ public:
 
 	virtual FString GetMovieName() override;
 	virtual bool IsLastMovieInPlaylist() override;
-
+	float GetViewportDPIScale() const;
 
 private:
 
@@ -123,6 +123,9 @@ private:
 	
 	/** Called via a delegate in the engine when maps finish loading */
 	void OnPostLoadMap(UWorld* LoadedWorld);
+	
+	/** Check if the device can render on a parallel thread on the initial loading*/
+	bool CanPlayMovie() const;
 private:
 	FDefaultGameMoviePlayer();
 
@@ -173,6 +176,10 @@ private:
 
 	/** Widget renderer used to tick and paint windows in a thread safe way */
 	TSharedPtr<FMoviePlayerWidgetRenderer, ESPMode::ThreadSafe> WidgetRenderer;
+
+	/** DPIScaler parented to the UserWidgetHolder to ensure correct scaling */
+	TSharedPtr<class SDPIScaler> UserWidgetDPIScaler;
+
 private:
 	/** Singleton handle */
 	static TSharedPtr<FDefaultGameMoviePlayer> MoviePlayer;

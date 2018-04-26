@@ -1,12 +1,14 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using AutomationTool;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using Tools.DotNETCommon;
 using UnrealBuildTool;
 
 namespace BuildGraph.Tasks
@@ -67,8 +69,7 @@ namespace BuildGraph.Tasks
 		/// <param name="Job">Information about the current job</param>
 		/// <param name="BuildProducts">Set of build products produced by this node.</param>
 		/// <param name="TagNameToFileSet">Mapping from tag names to the set of files they include</param>
-		/// <returns>True if the task succeeded</returns>
-		public override bool Execute(JobContext Job, HashSet<FileReference> BuildProducts, Dictionary<string, HashSet<FileReference>> TagNameToFileSet)
+		public override void Execute(JobContext Job, HashSet<FileReference> BuildProducts, Dictionary<string, HashSet<FileReference>> TagNameToFileSet)
 		{
 			// Parse all the source patterns
 			FilePattern SourcePattern = new FilePattern(CommandUtils.RootDirectory, Parameters.From);
@@ -85,17 +86,52 @@ namespace BuildGraph.Tasks
 			}
 
 			// Build the file mapping
-			Dictionary<FileReference, FileReference> TargetFileToSourceFile;
-			if(!FilePattern.TryCreateMapping(Files, SourcePattern, TargetPattern, out TargetFileToSourceFile))
-			{
-				return false;
-			}
+			Dictionary<FileReference, FileReference> TargetFileToSourceFile = FilePattern.CreateMapping(Files, SourcePattern, TargetPattern);
 
 			// Check we got some files
 			if(TargetFileToSourceFile.Count == 0)
 			{
 				CommandUtils.Log("No files found matching '{0}'", SourcePattern);
-				return true;
+				return;
+			}
+
+			// If the target is on a network share, retry creating the first directory until it succeeds
+			DirectoryReference FirstTargetDirectory = TargetFileToSourceFile.First().Key.Directory;
+			if(!DirectoryReference.Exists(FirstTargetDirectory))
+			{
+				const int MaxNumRetries = 15;
+				for(int NumRetries = 0;;NumRetries++)
+				{
+					try
+					{
+						DirectoryReference.CreateDirectory(FirstTargetDirectory);
+						if(NumRetries == 1)
+						{
+							Log.TraceInformation("Created target directory {0} after 1 retry.", FirstTargetDirectory);
+						}
+						else if(NumRetries > 1)
+						{
+							Log.TraceInformation("Created target directory {0} after {1} retries.", FirstTargetDirectory, NumRetries);
+						}
+						break;
+					}
+					catch(Exception Ex)
+					{
+						if(NumRetries == 0)
+						{
+							Log.TraceInformation("Unable to create directory '{0}' on first attempt. Retrying {1} times...", FirstTargetDirectory, MaxNumRetries);
+						}
+
+						Log.TraceLog("  {0}", Ex);
+
+						if(NumRetries >= 15)
+						{
+							throw new AutomationException(Ex, "Unable to create target directory '{0}' after {1} retries.", FirstTargetDirectory, NumRetries);
+						}
+
+						Thread.Sleep(2000);
+					}
+				}
 			}
 
 			// Copy them all
@@ -111,7 +147,6 @@ namespace BuildGraph.Tasks
 			{
 				FindOrAddTagSet(TagNameToFileSet, TagName).UnionWith(TargetFileToSourceFile.Keys);
 			}
-			return true;
 		}
 
 		/// <summary>

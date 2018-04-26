@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ScreenSpaceReflections.cpp: Post processing Screen Space Reflections implementation.
@@ -53,7 +53,7 @@ static TAutoConsoleVariable<int32> CVarSSRCone(
 	TEXT(" 0 is off (default), 1 is on"),
 	ECVF_RenderThreadSafe);
 
-DECLARE_FLOAT_COUNTER_STAT(TEXT("ScreenSpace Reflections"), Stat_GPU_ScreenSpaceReflections, STATGROUP_GPU);
+DECLARE_GPU_STAT_NAMED(ScreenSpaceReflections, TEXT("ScreenSpace Reflections"));
 
 bool ShouldRenderScreenSpaceReflections(const FViewInfo& View)
 {
@@ -152,16 +152,18 @@ FLinearColor ComputeSSRParams(const FRenderingCompositePassContext& Context, uin
  */
 class FPostProcessScreenSpaceReflectionsStencilPS : public FGlobalShader
 {
-	DECLARE_SHADER_TYPE(FPostProcessScreenSpaceReflectionsStencilPS, Global);
+	DECLARE_GLOBAL_SHADER(FPostProcessScreenSpaceReflectionsStencilPS);
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	using FPermutationDomain = FShaderPermutationNone;
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine( TEXT("PREV_FRAME_COLOR"), uint32(0) );
 		OutEnvironment.SetDefine( TEXT("SSR_QUALITY"), uint32(0) );
 	}
@@ -169,7 +171,6 @@ class FPostProcessScreenSpaceReflectionsStencilPS : public FGlobalShader
 	/** Default constructor. */
 	FPostProcessScreenSpaceReflectionsStencilPS() {}
 
-public:
 	FPostProcessPassParameters PostprocessParameter;
 	FDeferredPixelShaderParameters DeferredParameters;
 	FShaderParameter SSRParams;
@@ -183,20 +184,21 @@ public:
 		SSRParams.Bind(Initializer.ParameterMap, TEXT("SSRParams"));
 	}
 
-	void SetParameters(const FRenderingCompositePassContext& Context, uint32 SSRQuality, bool EnableDiscard)
+	template <typename TRHICmdList>
+	void SetParameters(TRHICmdList& RHICmdList, const FRenderingCompositePassContext& Context, uint32 SSRQuality, bool EnableDiscard)
 	{
 		const FFinalPostProcessSettings& Settings = Context.View.FinalPostProcessSettings;
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 
 		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
 
-		PostprocessParameter.SetPS(ShaderRHI, Context, TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
-		DeferredParameters.Set(Context.RHICmdList, ShaderRHI, Context.View, MD_PostProcess);
+		PostprocessParameter.SetPS(RHICmdList, ShaderRHI, Context, TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
+		DeferredParameters.Set(RHICmdList, ShaderRHI, Context.View, MD_PostProcess);
 
 		{
 			FLinearColor Value = ComputeSSRParams(Context, SSRQuality, EnableDiscard);
 
-			SetShaderValue(Context.RHICmdList, ShaderRHI, SSRParams, Value);
+			SetShaderValue(RHICmdList, ShaderRHI, SSRParams, Value);
 		}
 	}
 
@@ -209,39 +211,47 @@ public:
 	}
 };
 
-IMPLEMENT_SHADER_TYPE(,FPostProcessScreenSpaceReflectionsStencilPS,TEXT("ScreenSpaceReflections"),TEXT("ScreenSpaceReflectionsStencilPS"),SF_Pixel);
-static const uint32 SSRConeQuality = 5;
+IMPLEMENT_GLOBAL_SHADER(FPostProcessScreenSpaceReflectionsStencilPS, "/Engine/Private/ScreenSpaceReflections.usf", "ScreenSpaceReflectionsStencilPS", SF_Pixel);
 
-/**
- * Encapsulates the post processing screen space reflections pixel shader.
- * @param SSRQuality 0:Visualize Mask
- */
-template<uint32 PrevFrame, uint32 SSRQuality >
+namespace
+{
+static const uint32 SSRConeQuality = 5;
+static constexpr int32 QualityCount = 6;
+
+class FSSRQualityDim : SHADER_PERMUTATION_INT("SSR_QUALITY", QualityCount);
+class FSSRPrevFrameColorDim : SHADER_PERMUTATION_BOOL("PREV_FRAME_COLOR");
+class FSSRPrevFrameColorDim2 : SHADER_PERMUTATION_BOOL("PREV_FRAME_COLOR");
+}
+
+
+
+
+
 class FPostProcessScreenSpaceReflectionsPS : public FGlobalShader
 {
-	DECLARE_SHADER_TYPE(FPostProcessScreenSpaceReflectionsPS, Global);
+	DECLARE_GLOBAL_SHADER(FPostProcessScreenSpaceReflectionsPS);
 
-	static bool ShouldCache(EShaderPlatform Platform)
-	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4);
-	}
+	using FPermutationDomain = TShaderPermutationDomain<FSSRQualityDim, FSSRPrevFrameColorDim>;
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-		OutEnvironment.SetDefine( TEXT("PREV_FRAME_COLOR"), PrevFrame );
-		OutEnvironment.SetDefine( TEXT("SSR_QUALITY"), SSRQuality );
-		OutEnvironment.SetDefine( TEXT("SSR_CONE_QUALITY"), SSRConeQuality );
+		FPermutationDomain PermutationVector(Parameters.PermutationId);
+		if ((PermutationVector.Get<FSSRQualityDim>() == 0) && PermutationVector.Get<FSSRPrevFrameColorDim>())
+		{
+			return false;
+		}
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4);
 	}
 
 	/** Default constructor. */
 	FPostProcessScreenSpaceReflectionsPS() {}
 
-public:
 	FPostProcessPassParameters PostprocessParameter;
 	FDeferredPixelShaderParameters DeferredParameters;
 	FShaderParameter SSRParams;
 	FShaderParameter HZBUvFactorAndInvFactor;
+	FShaderParameter PrevScreenPositionScaleBias;
+	FShaderParameter PrevSceneColorPreExposureCorrection;
 
 	/** Initialization constructor. */
 	FPostProcessScreenSpaceReflectionsPS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
@@ -251,22 +261,27 @@ public:
 		DeferredParameters.Bind(Initializer.ParameterMap);
 		SSRParams.Bind(Initializer.ParameterMap, TEXT("SSRParams"));
 		HZBUvFactorAndInvFactor.Bind(Initializer.ParameterMap, TEXT("HZBUvFactorAndInvFactor"));
+		PrevScreenPositionScaleBias.Bind(Initializer.ParameterMap, TEXT("PrevScreenPositionScaleBias"));
+		PrevSceneColorPreExposureCorrection.Bind(Initializer.ParameterMap, TEXT("PrevSceneColorPreExposureCorrection"));
 	}
 
-	void SetParameters(const FRenderingCompositePassContext& Context)
+	template <typename TRHICmdList>
+	void SetParameters(TRHICmdList& RHICmdList, const FRenderingCompositePassContext& Context, int32 SSRQuality)
 	{
+		FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(Context.RHICmdList);
+
 		const FFinalPostProcessSettings& Settings = Context.View.FinalPostProcessSettings;
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 
-		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
 
-		PostprocessParameter.SetPS(ShaderRHI, Context, TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
-		DeferredParameters.Set(Context.RHICmdList, ShaderRHI, Context.View, MD_PostProcess);
+		PostprocessParameter.SetPS(RHICmdList, ShaderRHI, Context, TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
+		DeferredParameters.Set(RHICmdList, ShaderRHI, Context.View, MD_PostProcess);
 
 		{
 			FLinearColor Value = ComputeSSRParams(Context, SSRQuality, false);
 
-			SetShaderValue(Context.RHICmdList, ShaderRHI, SSRParams, Value);
+			SetShaderValue(RHICmdList, ShaderRHI, SSRParams, Value);
 		}
 
 		{
@@ -281,7 +296,40 @@ public:
 				1.0f / HZBUvFactor.Y
 				);
 			
-			SetShaderValue(Context.RHICmdList, ShaderRHI, HZBUvFactorAndInvFactor, HZBUvFactorAndInvFactorValue);
+			SetShaderValue(RHICmdList, ShaderRHI, HZBUvFactorAndInvFactor, HZBUvFactorAndInvFactorValue);
+		}
+
+		{
+			FIntPoint ViewportOffset = Context.View.ViewRect.Min;
+			FIntPoint ViewportExtent = Context.View.ViewRect.Size();
+			FIntPoint BufferSize = SceneContext.GetBufferSizeXY();
+
+			if (Context.View.PrevViewInfo.TemporalAAHistory.IsValid())
+			{
+				ViewportOffset = Context.View.PrevViewInfo.TemporalAAHistory.ViewportRect.Min;
+				ViewportExtent = Context.View.PrevViewInfo.TemporalAAHistory.ViewportRect.Size();
+				BufferSize = Context.View.PrevViewInfo.TemporalAAHistory.ReferenceBufferSize;
+			}
+
+			FVector2D InvBufferSize(1.0f / float(BufferSize.X), 1.0f / float(BufferSize.Y));
+
+			FVector4 ScreenPosToPixelValue(
+				ViewportExtent.X * 0.5f * InvBufferSize.X,
+				-ViewportExtent.Y * 0.5f * InvBufferSize.Y,
+				(ViewportExtent.X * 0.5f + ViewportOffset.X) * InvBufferSize.X,
+				(ViewportExtent.Y * 0.5f + ViewportOffset.Y) * InvBufferSize.Y);
+			SetShaderValue(Context.RHICmdList, ShaderRHI, PrevScreenPositionScaleBias, ScreenPosToPixelValue);
+		}
+
+		{
+			float PrevSceneColorPreExposureCorrectionValue = 1.0f;
+
+			if (Context.View.PrevViewInfo.TemporalAAHistory.IsValid())
+			{
+				PrevSceneColorPreExposureCorrectionValue = Context.View.PreExposure / Context.View.PrevViewInfo.TemporalAAHistory.SceneColorPreExposure;
+			}
+
+			SetShaderValue(RHICmdList, ShaderRHI, PrevSceneColorPreExposureCorrection, PrevSceneColorPreExposureCorrectionValue);
 		}
 	}
 
@@ -289,27 +337,12 @@ public:
 	virtual bool Serialize(FArchive& Ar) override
 	{
 		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
-		Ar << PostprocessParameter << DeferredParameters << SSRParams << HZBUvFactorAndInvFactor;
+		Ar << PostprocessParameter << DeferredParameters << SSRParams << HZBUvFactorAndInvFactor << PrevScreenPositionScaleBias << PrevSceneColorPreExposureCorrection;
 		return bShaderHasOutdatedParameters;
 	}
 };
 
-// Typedef is necessary because the C preprocessor thinks the comma in the template parameter list is a comma in the macro parameter list.
-#define IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(A, B) \
-	typedef FPostProcessScreenSpaceReflectionsPS<A,B> FPostProcessScreenSpaceReflectionsPS##A##B; \
-	IMPLEMENT_SHADER_TYPE(template<>,FPostProcessScreenSpaceReflectionsPS##A##B,TEXT("ScreenSpaceReflections"),TEXT("ScreenSpaceReflectionsPS"),SF_Pixel)
-
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(0,0);
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(0,1);
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(1,1);
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(0,2);
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(1,2);
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(0,3);
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(1,3);
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(0,4);
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(1,4);
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(0,5); // SSRConeQuality
-IMPLEMENT_REFLECTION_PIXELSHADER_TYPE(1,5); // SSRConeQuality
+IMPLEMENT_GLOBAL_SHADER(FPostProcessScreenSpaceReflectionsPS, "/Engine/Private/ScreenSpaceReflections.usf", "ScreenSpaceReflectionsPS", SF_Pixel);
 
 // --------------------------------------------------------
 
@@ -329,7 +362,7 @@ static int32 ComputeSSRQuality(float Quality)
 		Ret = (Quality >= 40.0f) ? 2 : 1;
 	}
 
-	int SSRQualityCVar = FMath::Max(0, CVarSSRQuality.GetValueOnRenderThread());
+	int SSRQualityCVar = FMath::Clamp(CVarSSRQuality.GetValueOnRenderThread(), 0, QualityCount - 1);
 
 	return FMath::Min(Ret, SSRQualityCVar);
 }
@@ -339,11 +372,10 @@ void FRCPassPostProcessScreenSpaceReflections::Process(FRenderingCompositePassCo
 	auto& RHICmdList = Context.RHICmdList;
 	FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
 
-	const FSceneView& View = Context.View;
+	const FViewInfo& View = Context.View;
 	const auto FeatureLevel = Context.GetFeatureLevel();
 
 	int32 SSRQuality = ComputeSSRQuality(View.FinalPostProcessSettings.ScreenSpaceReflectionQuality);
-	uint32 iPreFrame = bPrevFrame ? 1 : 0;
 
 	SSRQuality = FMath::Clamp(SSRQuality, 1, 4);
 	
@@ -356,7 +388,6 @@ void FRCPassPostProcessScreenSpaceReflections::Process(FRenderingCompositePassCo
 	
 	if (VisualizeSSR)
 	{
-		iPreFrame = 0;
 		SSRQuality = 0;
 	}
 	else if (SSRConeTracing)
@@ -366,7 +397,7 @@ void FRCPassPostProcessScreenSpaceReflections::Process(FRenderingCompositePassCo
 	
 	const FSceneRenderTargetItem& DestRenderTarget = PassOutputs[0].RequestSurface(Context);
 
-	SCOPED_GPU_STAT(RHICmdList, Stat_GPU_ScreenSpaceReflections);
+	SCOPED_GPU_STAT(RHICmdList, ScreenSpaceReflections);
 	
 	if (SSRStencilPrePass)
 	{ // ScreenSpaceReflectionsStencil draw event
@@ -380,7 +411,7 @@ void FRCPassPostProcessScreenSpaceReflections::Process(FRenderingCompositePassCo
 		Context.SetViewportAndCallRHI(View.ViewRect);
 
 		// Clear stencil to 0
-		DrawClearQuad(RHICmdList, Context.GetFeatureLevel(), false, FLinearColor(), false, 0, true, 0, PassOutputs[0].RenderTargetDesc.Extent, View.ViewRect);
+		DrawClearQuad(RHICmdList, false, FLinearColor(), false, 0, true, 0, PassOutputs[0].RenderTargetDesc.Extent, View.ViewRect);
 	
 		FGraphicsPipelineStateInitializer GraphicsPSOInit;
 		RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
@@ -404,7 +435,7 @@ void FRCPassPostProcessScreenSpaceReflections::Process(FRenderingCompositePassCo
 		RHICmdList.SetStencilRef(0x80);
 
 		VertexShader->SetParameters(Context);
-		PixelShader->SetParameters(Context, SSRQuality, true);	
+		PixelShader->SetParameters(Context.RHICmdList, Context, SSRQuality, true);
 	
 		DrawPostProcessPass(
 			Context.RHICmdList,
@@ -429,19 +460,20 @@ void FRCPassPostProcessScreenSpaceReflections::Process(FRenderingCompositePassCo
 		{
 			// set up the stencil test to match 0, meaning FPostProcessScreenSpaceReflectionsStencilPS has been discarded
 			GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always, true, CF_Equal, SO_Keep, SO_Keep, SO_Keep>::GetRHI();
+			RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
 		}
 		else
 		{
-			// bind only the dest render target
-			SetRenderTarget(RHICmdList, DestRenderTarget.TargetableTexture, FTextureRHIRef());
+			ERenderTargetLoadAction LoadAction = Context.GetLoadActionForRenderTarget(DestRenderTarget);
+
+			FRHIRenderTargetView RtView = FRHIRenderTargetView(DestRenderTarget.TargetableTexture, LoadAction);
+			FRHISetRenderTargetsInfo Info(1, &RtView, FRHIDepthRenderTargetView());
+			Context.RHICmdList.SetRenderTargetsAndClear(Info);
 			Context.SetViewportAndCallRHI(View.ViewRect);
 
 			GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
+			RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
 		}
-		RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
-
-		// clear DestRenderTarget only outside of the view's rectangle
-		DrawClearQuad(RHICmdList, SceneContext.GetCurrentFeatureLevel(), true, FLinearColor::Black, false, 0, false, 0, PassOutputs[0].RenderTargetDesc.Extent, View.ViewRect);
 
 		// set the state
 		GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
@@ -450,31 +482,17 @@ void FRCPassPostProcessScreenSpaceReflections::Process(FRenderingCompositePassCo
 
 		TShaderMapRef< FPostProcessVS > VertexShader(Context.GetShaderMap());
 
-		#define CASE(A, B) \
-			case (A + 2 * (B + 3 * 0 )): \
-			{ \
-				TShaderMapRef< FPostProcessScreenSpaceReflectionsPS<A, B> > PixelShader(Context.GetShaderMap()); \
-				GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI; \
-				GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader); \
-				GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader); \
-				SetGraphicsPipelineState(Context.RHICmdList, GraphicsPSOInit); \
-				VertexShader->SetParameters(Context); \
-				PixelShader->SetParameters(Context); \
-			}; \
-			break
+		FPostProcessScreenSpaceReflectionsPS::FPermutationDomain PermutationVector;
+		PermutationVector.Set<FSSRPrevFrameColorDim>(bPrevFrame && SSRQuality != 0);
+		PermutationVector.Set<FSSRQualityDim>(SSRQuality);
 
-		switch (iPreFrame + 2 * (SSRQuality + 3 * 0))
-		{
-			CASE(0,0);
-			CASE(0,1);	CASE(1,1);
-			CASE(0,2);	CASE(1,2);
-			CASE(0,3);	CASE(1,3);
-			CASE(0,4);	CASE(1,4);
-			CASE(0,5);	CASE(1,5); //SSRConeQuality
-			default:
-				check(!"Missing case in FRCPassPostProcessScreenSpaceReflections");
-		}
-		#undef CASE
+		TShaderMapRef<FPostProcessScreenSpaceReflectionsPS> PixelShader(Context.GetShaderMap(), PermutationVector);
+		GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI;
+		GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
+		GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
+		SetGraphicsPipelineState(Context.RHICmdList, GraphicsPSOInit);
+		VertexShader->SetParameters(Context);
+		PixelShader->SetParameters(RHICmdList, Context, SSRQuality);
 
 		DrawPostProcessPass(
 			RHICmdList,
@@ -497,6 +515,7 @@ FPooledRenderTargetDesc FRCPassPostProcessScreenSpaceReflections::ComputeOutputD
 {
 	FPooledRenderTargetDesc Ret(FPooledRenderTargetDesc::Create2DDesc(FSceneRenderTargets::Get_FrameConstantsOnly().GetBufferSizeXY(), PF_FloatRGBA, FClearValueBinding::None, TexCreate_None, TexCreate_RenderTargetable, false));
 
+	Ret.ClearValue = FClearValueBinding(FLinearColor(0, 0, 0, 0));
 	Ret.DebugName = TEXT("ScreenSpaceReflections");
 	Ret.AutoWritable = false;
 	return Ret;
@@ -513,13 +532,18 @@ void RenderScreenSpaceReflections(FRHICommandListImmediate& RHICmdList, FViewInf
 	FRenderingCompositePass* HZBInput = Context.Graph.RegisterPass( new FRCPassPostProcessInput( View.HZB ) );
 	FRenderingCompositePass* HCBInput = nullptr;
 
-	bool bPrevFrame = 0;
-	if( ViewState && ViewState->TemporalAAHistoryRT && !Context.View.bCameraCut )
+	bool bSamplePrevFrame = false;
+	if (View.PrevViewInfo.CustomSSRInput.IsValid())
 	{
-		SceneColorInput = Context.Graph.RegisterPass( new FRCPassPostProcessInput( ViewState->TemporalAAHistoryRT ) );
-		bPrevFrame = 1;
+		SceneColorInput = Context.Graph.RegisterPass(new FRCPassPostProcessInput(View.PrevViewInfo.CustomSSRInput));
+		bSamplePrevFrame = true;
 	}
-	
+	else if (View.PrevViewInfo.TemporalAAHistory.IsValid())
+	{
+		SceneColorInput = Context.Graph.RegisterPass(new FRCPassPostProcessInput(View.PrevViewInfo.TemporalAAHistory.RT[0]));
+		bSamplePrevFrame = true;
+	}
+
 	FRenderingCompositeOutputRef VelocityInput;
 	if ( VelocityRT && !Context.View.bCameraCut )
 	{
@@ -538,7 +562,8 @@ void RenderScreenSpaceReflections(FRHICommandListImmediate& RHICmdList, FViewInf
 	}
 
 	{
-		FRenderingCompositePass* TracePass = Context.Graph.RegisterPass( new FRCPassPostProcessScreenSpaceReflections( bPrevFrame ) );
+		FRenderingCompositePass* TracePass = Context.Graph.RegisterPass(
+			new FRCPassPostProcessScreenSpaceReflections( bSamplePrevFrame ) );
 		TracePass->SetInput( ePId_Input0, SceneColorInput );
 		TracePass->SetInput( ePId_Input1, HZBInput );
 		TracePass->SetInput( ePId_Input2, HCBInput );
@@ -553,9 +578,9 @@ void RenderScreenSpaceReflections(FRHICommandListImmediate& RHICmdList, FViewInf
 	{
 		{
 			FRenderingCompositeOutputRef HistoryInput;
-			if( ViewState && ViewState->SSRHistoryRT && !Context.View.bCameraCut )
+			if( ViewState->SSRHistory.IsValid() && !Context.View.bCameraCut )
 			{
-				HistoryInput = Context.Graph.RegisterPass( new FRCPassPostProcessInput( ViewState->SSRHistoryRT ) );
+				HistoryInput = Context.Graph.RegisterPass( new FRCPassPostProcessInput( ViewState->SSRHistory.RT[0] ) );
 			}
 			else
 			{
@@ -563,22 +588,18 @@ void RenderScreenSpaceReflections(FRHICommandListImmediate& RHICmdList, FViewInf
 				HistoryInput = Context.Graph.RegisterPass(new FRCPassPostProcessInput(GSystemTextures.BlackDummy));
 			}
 
-			FRenderingCompositePass* TemporalAAPass = Context.Graph.RegisterPass( new FRCPassPostProcessSSRTemporalAA );
+			FRenderingCompositePass* TemporalAAPass = Context.Graph.RegisterPass( new FRCPassPostProcessSSRTemporalAA(ViewState->SSRHistory, &ViewState->SSRHistory) );
 			TemporalAAPass->SetInput( ePId_Input0, Context.FinalOutput );
 			TemporalAAPass->SetInput( ePId_Input1, HistoryInput );
-			TemporalAAPass->SetInput( ePId_Input2, HistoryInput );
-			TemporalAAPass->SetInput( ePId_Input3, VelocityInput );
+			TemporalAAPass->SetInput( ePId_Input2, VelocityInput );
 
 			Context.FinalOutput = FRenderingCompositeOutputRef( TemporalAAPass );
 		}
 
-		if( ViewState )
-		{
-			FRenderingCompositePass* HistoryOutput = Context.Graph.RegisterPass( new FRCPassPostProcessOutput( &ViewState->SSRHistoryRT ) );
-			HistoryOutput->SetInput( ePId_Input0, Context.FinalOutput );
+		FRenderingCompositePass* HistoryOutput = Context.Graph.RegisterPass( new FRCPassPostProcessOutput( &ViewState->SSRHistory.RT[0] ) );
+		HistoryOutput->SetInput( ePId_Input0, Context.FinalOutput );
 
-			Context.FinalOutput = FRenderingCompositeOutputRef( HistoryOutput );
-		}
+		Context.FinalOutput = FRenderingCompositeOutputRef( HistoryOutput );
 	}
 
 	{

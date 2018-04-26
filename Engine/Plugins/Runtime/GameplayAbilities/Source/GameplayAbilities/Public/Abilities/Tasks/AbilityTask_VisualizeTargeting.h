@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -11,8 +11,8 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FVisualizeTargetingDelegate);
 
-UCLASS(MinimalAPI)
-class UAbilityTask_VisualizeTargeting: public UAbilityTask
+UCLASS()
+class GAMEPLAYABILITIES_API UAbilityTask_VisualizeTargeting: public UAbilityTask
 {
 	GENERATED_UCLASS_BODY()
 

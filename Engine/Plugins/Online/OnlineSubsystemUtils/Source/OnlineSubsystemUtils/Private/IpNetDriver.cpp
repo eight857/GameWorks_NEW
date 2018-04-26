@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	IpNetDriver.cpp: Unreal IP network driver.
@@ -18,13 +18,25 @@ Notes:
 #include "Engine/ChildConnection.h"
 #include "SocketSubsystem.h"
 #include "IpConnection.h"
+#include "HAL/LowLevelMemTracker.h"
+
+#include "PacketAudit.h"
 
 #include "IPAddress.h"
 #include "Sockets.h"
 
+/** For backwards compatibility with the engine stateless connect code */
+#ifndef STATELESSCONNECT_HAS_RANDOM_SEQUENCE
+	#define STATELESSCONNECT_HAS_RANDOM_SEQUENCE 0
+#endif
+
 /*-----------------------------------------------------------------------------
 	Declarations.
 -----------------------------------------------------------------------------*/
+
+DECLARE_CYCLE_STAT(TEXT("IpNetDriver Add new connection"), Stat_IpNetDriverAddNewConnection, STATGROUP_Net);
+DECLARE_CYCLE_STAT(TEXT("IpNetDriver ProcessRemoteFunction"), STAT_NetProcessRemoteFunc, STATGROUP_Net);
+DECLARE_CYCLE_STAT(TEXT("IpNetDriver Socket RecvFrom"), STAT_IpNetDriver_RecvFromSocket, STATGROUP_Net);
 
 UIpNetDriver::FOnNetworkProcessingCausingSlowFrame UIpNetDriver::OnNetworkProcessingCausingSlowFrame;
 
@@ -49,6 +61,10 @@ FAutoConsoleVariableRef GIpNetDriverLongFramePrintoutThresholdSecsCVar(
 
 UIpNetDriver::UIpNetDriver(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, ServerDesiredSocketReceiveBufferBytes(0x20000)
+	, ServerDesiredSocketSendBufferBytes(0x20000)
+	, ClientDesiredSocketReceiveBufferBytes(0x8000)
+	, ClientDesiredSocketSendBufferBytes(0x8000)
 {
 }
 
@@ -125,9 +141,9 @@ bool UIpNetDriver::InitBase( bool bInitAsClient, FNetworkNotify* InNotify, const
 	}
 
 	// Increase socket queue size, because we are polling rather than threading
-	// and thus we rely on Windows Sockets to buffer a lot of data on the server.
-	int32 RecvSize = bInitAsClient ? 0x8000 : 0x20000;
-	int32 SendSize = bInitAsClient ? 0x8000 : 0x20000;
+	// and thus we rely on the OS socket to buffer a lot of data.
+	int32 RecvSize = bInitAsClient ? ClientDesiredSocketReceiveBufferBytes	: ServerDesiredSocketReceiveBufferBytes;
+	int32 SendSize = bInitAsClient ? ClientDesiredSocketSendBufferBytes		: ServerDesiredSocketSendBufferBytes;
 	Socket->SetReceiveBufferSize(RecvSize,RecvSize);
 	Socket->SetSendBufferSize(SendSize,SendSize);
 	UE_LOG(LogInit, Log, TEXT("%s: Socket queue %i / %i"), SocketSubsystem->GetSocketAPIName(), RecvSize, SendSize );
@@ -196,23 +212,17 @@ bool UIpNetDriver::InitListen( FNetworkNotify* InNotify, FURL& LocalURL, bool bR
 
 void UIpNetDriver::TickDispatch( float DeltaTime )
 {
+	LLM_SCOPE(ELLMTag::Networking);
+
 	Super::TickDispatch( DeltaTime );
 
 	// Set the context on the world for this driver's level collection.
-	const FLevelCollection* FoundCollection = nullptr;
-	if (World)
+	const int32 FoundCollectionIndex = World ? World->GetLevelCollections().IndexOfByPredicate([this](const FLevelCollection& Collection)
 	{
-		for (const FLevelCollection& LC : World->GetLevelCollections())
-		{
-			if (LC.GetNetDriver() == this)
-			{
-				FoundCollection = &LC;
-				break;
-			}
-		}
-	}
+		return Collection.GetNetDriver() == this;
+	}) : INDEX_NONE;
 
-	FScopedLevelCollectionContextSwitch LCSwitch(FoundCollection, World);
+	FScopedLevelCollectionContextSwitch LCSwitch(FoundCollectionIndex, World);
 
 	ISocketSubsystem* SocketSubsystem = GetSocketSubsystem();
 
@@ -239,9 +249,11 @@ void UIpNetDriver::TickDispatch( float DeltaTime )
 		int32 BytesRead = 0;
 
 		// Get data, if any.
-		CLOCK_CYCLES(RecvCycles);
-		bool bOk = Socket->RecvFrom(Data, sizeof(Data), BytesRead, *FromAddr);
-		UNCLOCK_CYCLES(RecvCycles);
+		bool bOk = false;
+		{
+			SCOPE_CYCLE_COUNTER(STAT_IpNetDriver_RecvFromSocket);
+			bOk = Socket->RecvFrom(Data, sizeof(Data), BytesRead, *FromAddr);
+		}
 
 		if (bOk)
 		{
@@ -250,6 +262,8 @@ void UIpNetDriver::TickDispatch( float DeltaTime )
 			{
 				break;
 			}
+
+			FPacketAudit::NotifyLowLevelReceive(DataRef, BytesRead);
 		}
 		else
 		{
@@ -365,12 +379,13 @@ void UIpNetDriver::TickDispatch( float DeltaTime )
 					UE_LOG( LogNet, Log, TEXT( "NotifyAcceptingConnection accepted from: %s" ), *FromAddr->ToString( true ) );
 
 					bool bPassedChallenge = false;
+					TSharedPtr<StatelessConnectHandlerComponent> StatelessConnect;
 
 					bIgnorePacket = true;
 
 					if (ConnectionlessHandler.IsValid() && StatelessConnectComponent.IsValid())
 					{
-						TSharedPtr<StatelessConnectHandlerComponent> StatelessConnect = StatelessConnectComponent.Pin();
+						StatelessConnect = StatelessConnectComponent.Pin();
 						FString IncomingAddress = FromAddr->ToString(true);
 
 						const ProcessedPacket UnProcessedPacket =
@@ -407,11 +422,33 @@ void UIpNetDriver::TickDispatch( float DeltaTime )
 
 					if (bPassedChallenge)
 					{
+						SCOPE_CYCLE_COUNTER(Stat_IpNetDriverAddNewConnection);
+
 						UE_LOG(LogNet, Log, TEXT("Server accepting post-challenge connection from: %s"), *FromAddr->ToString(true));
 
 						Connection = NewObject<UIpConnection>(GetTransientPackage(), NetConnectionClass);
 						check(Connection);
+
+#if STATELESSCONNECT_HAS_RANDOM_SEQUENCE
+						// Set the initial packet sequence from the handshake data
+						if (StatelessConnect.IsValid())
+						{
+							int32 ServerSequence = 0;
+							int32 ClientSequence = 0;
+
+							StatelessConnect->GetChallengeSequence(ServerSequence, ClientSequence);
+
+							Connection->InitSequence(ClientSequence, ServerSequence);
+						}
+#endif
+
 						Connection->InitRemoteConnection( this, Socket,  FURL(), *FromAddr, USOCK_Open);
+
+						if (Connection->Handler.IsValid())
+						{
+							Connection->Handler->BeginHandshaking();
+						}
+
 						Notify->NotifyAcceptedConnection( Connection );
 						AddClientConnection(Connection);
 					}
@@ -497,66 +534,78 @@ void UIpNetDriver::LowLevelSend(FString Address, void* Data, int32 CountBits)
 
 void UIpNetDriver::ProcessRemoteFunction(class AActor* Actor, UFunction* Function, void* Parameters, FOutParmRec* OutParms, FFrame* Stack, class UObject* SubObject )
 {
-	bool bIsServer = IsServer();
+#if !UE_BUILD_SHIPPING
+	SCOPE_CYCLE_COUNTER(STAT_NetProcessRemoteFunc);
+	SCOPE_CYCLE_UOBJECT(Function, Function);
 
-	UNetConnection* Connection = NULL;
-	if (bIsServer)
+	bool bBlockSendRPC = false;
+
+	SendRPCDel.ExecuteIfBound(Actor, Function, Parameters, OutParms, Stack, SubObject, bBlockSendRPC);
+
+	if (!bBlockSendRPC)
+#endif
 	{
-		if ((Function->FunctionFlags & FUNC_NetMulticast))
+		bool bIsServer = IsServer();
+
+		UNetConnection* Connection = NULL;
+		if (bIsServer)
 		{
-			// Multicast functions go to every client
-			TArray<UNetConnection*> UniqueRealConnections;
-			for (int32 i=0; i<ClientConnections.Num(); ++i)
+			if ((Function->FunctionFlags & FUNC_NetMulticast))
 			{
-				Connection = ClientConnections[i];
-				if (Connection && Connection->ViewTarget)
+				// Multicast functions go to every client
+				TArray<UNetConnection*> UniqueRealConnections;
+				for (int32 i=0; i<ClientConnections.Num(); ++i)
 				{
-					// Do relevancy check if unreliable.
-					// Reliables will always go out. This is odd behavior. On one hand we wish to guarantee "reliables always get there". On the other
-					// hand, replicating a reliable to something on the other side of the map that is non relevant seems weird. 
-					//
-					// Multicast reliables should probably never be used in gameplay code for actors that have relevancy checks. If they are, the 
-					// rpc will go through and the channel will be closed soon after due to relevancy failing.
+					Connection = ClientConnections[i];
+					if (Connection && Connection->ViewTarget)
+					{
+						// Do relevancy check if unreliable.
+						// Reliables will always go out. This is odd behavior. On one hand we wish to guarantee "reliables always get there". On the other
+						// hand, replicating a reliable to something on the other side of the map that is non relevant seems weird. 
+						//
+						// Multicast reliables should probably never be used in gameplay code for actors that have relevancy checks. If they are, the 
+						// rpc will go through and the channel will be closed soon after due to relevancy failing.
 
-					bool IsRelevant = true;
-					if ((Function->FunctionFlags & FUNC_NetReliable) == 0)
-					{
-						FNetViewer Viewer(Connection, 0.f);
-						IsRelevant = Actor->IsNetRelevantFor(Viewer.InViewer, Viewer.ViewTarget, Viewer.ViewLocation);
-					}
-					
-					if (IsRelevant)
-					{
-						if (Connection->GetUChildConnection() != NULL)
+						bool IsRelevant = true;
+						if ((Function->FunctionFlags & FUNC_NetReliable) == 0)
 						{
-							Connection = ((UChildConnection*)Connection)->Parent;
+							FNetViewer Viewer(Connection, 0.f);
+							IsRelevant = Actor->IsNetRelevantFor(Viewer.InViewer, Viewer.ViewTarget, Viewer.ViewLocation);
 						}
+					
+						if (IsRelevant)
+						{
+							if (Connection->GetUChildConnection() != NULL)
+							{
+								Connection = ((UChildConnection*)Connection)->Parent;
+							}
 						
-						InternalProcessRemoteFunction( Actor, SubObject, Connection, Function, Parameters, OutParms, Stack, bIsServer );
+							InternalProcessRemoteFunction( Actor, SubObject, Connection, Function, Parameters, OutParms, Stack, bIsServer );
+						}
 					}
+				}			
+
+				// Replicate any RPCs to the replay net driver so that they can get saved in network replays
+				UNetDriver* NetDriver = GEngine->FindNamedNetDriver(GetWorld(), NAME_DemoNetDriver);
+				if (NetDriver)
+				{
+					NetDriver->ProcessRemoteFunction(Actor, Function, Parameters, OutParms, Stack, SubObject);
 				}
-			}			
-
-			// Replicate any RPCs to the replay net driver so that they can get saved in network replays
-			UNetDriver* NetDriver = GEngine->FindNamedNetDriver(GetWorld(), NAME_DemoNetDriver);
-			if (NetDriver)
-			{
-				NetDriver->ProcessRemoteFunction(Actor, Function, Parameters, OutParms, Stack, SubObject);
+				// Return here so we don't call InternalProcessRemoteFunction again at the bottom of this function
+				return;
 			}
-			// Return here so we don't call InternalProcessRemoteFunction again at the bottom of this function
-			return;
 		}
-	}
 
-	// Send function data to remote.
-	Connection = Actor->GetNetConnection();
-	if (Connection)
-	{
-		InternalProcessRemoteFunction( Actor, SubObject, Connection, Function, Parameters, OutParms, Stack, bIsServer );
-	}
-	else
-	{
-		UE_LOG(LogNet, Warning, TEXT("UIpNetDriver::ProcesRemoteFunction: No owning connection for actor %s. Function %s will not be processed."), *Actor->GetName(), *Function->GetName());
+		// Send function data to remote.
+		Connection = Actor->GetNetConnection();
+		if (Connection)
+		{
+			InternalProcessRemoteFunction( Actor, SubObject, Connection, Function, Parameters, OutParms, Stack, bIsServer );
+		}
+		else
+		{
+			UE_LOG(LogNet, Warning, TEXT("UIpNetDriver::ProcessRemoteFunction: No owning connection for actor %s. Function %s will not be processed."), *Actor->GetName(), *Function->GetName());
+		}
 	}
 }
 

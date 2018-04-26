@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,7 +15,7 @@
 class UAbilitySystemComponent;
 
 /** Struct representing parameters for a custom gameplay effect execution. Should not be held onto via reference, used just for the scope of the execution */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct GAMEPLAYABILITIES_API FGameplayEffectCustomExecutionParameters
 {
 	GENERATED_USTRUCT_BODY()
@@ -105,6 +105,18 @@ public:
 	 */
 	bool AttemptGetCapturedAttributeAggregatorSnapshot(const FGameplayEffectAttributeCaptureDefinition& InCaptureDef, OUT FAggregator& OutSnapshottedAggregator) const;
 
+	/** 
+	 *	Returns all modifiers for a given captured def. Note the returned list is a direct reference to the internal list stored in the attribute aggregators (possibly a snapshot copy or possibly the "real" ones).
+	 *	Also note that all modifiers are returned, even ones that do not qualify for the given InEvalParams. You will still need to check ::Qualifies() on the mods themselves to see if they "count".
+	 *  (we are returning a direct reference to the internal mod list, so we do not want to remove them or force a copy).
+	 *	
+	 *	Consider using ForEachQualifiedAttributeMod when you want to "do something for every qualifier mod".
+	 */
+	bool AttemptGatherAttributeMods(const FGameplayEffectAttributeCaptureDefinition& InCaptureDef, const FAggregatorEvaluateParameters& InEvalParams, OUT TMap<EGameplayModEvaluationChannel, const TArray<FAggregatorMod>*>& OutModMap) const;
+
+	/** Runs given TFunction on every qualifier mod for a given AttributeCaptureDefinition */
+	bool ForEachQualifiedAttributeMod(const FGameplayEffectAttributeCaptureDefinition& InCaptureDef, const FAggregatorEvaluateParameters& InEvalParams, TFunction< void(EGameplayModEvaluationChannel, EGameplayModOp::Type, const FAggregatorMod&) >) const;
+
 private:
 
 	/** Mapping of capture definition to aggregator with scoped modifiers added in; Used to process scoped modifiers w/o modifying underlying aggregators in the capture */
@@ -125,7 +137,7 @@ private:
 };
 
 /** Struct representing the output of a custom gameplay effect execution. */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct GAMEPLAYABILITIES_API FGameplayEffectCustomExecutionOutput
 {
 	GENERATED_USTRUCT_BODY()

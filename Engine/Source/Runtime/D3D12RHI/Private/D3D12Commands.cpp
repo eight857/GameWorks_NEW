@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 D3D12Commands.cpp: D3D RHI commands implementation.
@@ -24,10 +24,6 @@ static FAutoConsoleVariableRef CVarSyncTemporalResources(
 	ECVF_RenderThreadSafe
 	);
 
-namespace D3D12RHI
-{
-	TGlobalResource<FVector4VertexDeclaration> GD3D12Vector4VertexDeclaration;
-}
 using namespace D3D12RHI;
 
 #define DECLARE_ISBOUNDSHADER(ShaderType) inline void ValidateBoundShader(FD3D12StateCache& InStateCache, F##ShaderType##RHIParamRef ShaderType##RHI) \
@@ -45,6 +41,10 @@ DECLARE_ISBOUNDSHADER(HullShader)
 DECLARE_ISBOUNDSHADER(DomainShader)
 DECLARE_ISBOUNDSHADER(ComputeShader)
 
+#if EXECUTE_DEBUG_COMMAND_LISTS
+bool GIsDoingQuery = false;
+#endif
+
 #if DO_CHECK
 #define VALIDATE_BOUND_SHADER(s) ValidateBoundShader(StateCache, s)
 #else
@@ -61,6 +61,11 @@ void FD3D12DynamicRHI::SetupRecursiveResources()
 	}
 
 	extern ENGINE_API TGlobalResource<FScreenVertexDeclaration> GScreenVertexDeclaration;
+
+	{
+		TShaderMapRef<FLongGPUTaskPS> PixelShader(ShaderMap);
+		PixelShader->GetPixelShader();
+	}
 
 	// TODO: Waiting to integrate MSAA fix for ResolveShader.h
 	if (GMaxRHIShaderPlatform == SP_XBOXONE_D3D12)
@@ -83,11 +88,11 @@ void FD3D12DynamicRHI::SetupRecursiveResources()
 }
 
 // Vertex state.
-void FD3D12CommandContext::RHISetStreamSource(uint32 StreamIndex, FVertexBufferRHIParamRef VertexBufferRHI, uint32 Stride, uint32 Offset)
+void FD3D12CommandContext::RHISetStreamSource(uint32 StreamIndex, FVertexBufferRHIParamRef VertexBufferRHI, uint32 Offset)
 {
 	FD3D12VertexBuffer* VertexBuffer = RetrieveObject<FD3D12VertexBuffer>(VertexBufferRHI);
 
-	StateCache.SetStreamSource(VertexBuffer ? &VertexBuffer->ResourceLocation : nullptr, StreamIndex, Stride, Offset);
+	StateCache.SetStreamSource(VertexBuffer ? &VertexBuffer->ResourceLocation : nullptr, StreamIndex, Offset);
 }
 
 // Stream-Out state.
@@ -209,7 +214,8 @@ void FD3D12CommandContext::RHIDispatchIndirectComputeShader(FVertexBufferRHIPara
 void FD3D12CommandContext::RHITransitionResources(EResourceTransitionAccess TransitionType, FTextureRHIParamRef* InTextures, int32 NumTextures)
 {
 #if !USE_D3D12RHI_RESOURCE_STATE_TRACKING
-	check(TransitionType == EResourceTransitionAccess::EReadable || TransitionType == EResourceTransitionAccess::EWritable || TransitionType == EResourceTransitionAccess::ERWSubResBarrier);
+	// TODO: Make sure that EMetaData is supported with an aliasing barrier, otherwise the CMask decal optimisation will break.
+	check(TransitionType != EResourceTransitionAccess::EMetaData && (TransitionType == EResourceTransitionAccess::EReadable || TransitionType == EResourceTransitionAccess::EWritable || TransitionType == EResourceTransitionAccess::ERWSubResBarrier));
 	// TODO: Remove this skip.
 	// Skip for now because we don't have enough info about what mip to transition yet.
 	// Note: This causes visual corruption.
@@ -264,6 +270,11 @@ void FD3D12CommandContext::RHITransitionResources(EResourceTransitionAccess Tran
 
 			DUMP_TRANSITION(Resource->GetName(), TransitionType);
 		}
+	}
+#else
+	if (TransitionType == EResourceTransitionAccess::EMetaData)
+	{
+		FlushMetadata(InTextures, NumTextures);
 	}
 #endif // !USE_D3D12RHI_RESOURCE_STATE_TRACKING
 }
@@ -398,11 +409,6 @@ void FD3D12CommandContext::RHISetViewport(uint32 MinX, uint32 MinY, float MinZ, 
 	}
 }
 
-void FD3D12CommandContext::RHISetStereoViewport(uint32 LeftMinX, uint32 RightMinX, uint32 MinY, float MinZ, uint32 LeftMaxX, uint32 RightMaxX, uint32 MaxY, float MaxZ)
-{
-	UE_LOG(LogD3D12RHI, Fatal, TEXT("D3D12 RHI does not support set stereo viewport!"));
-}
-
 void FD3D12CommandContext::RHISetScissorRect(bool bEnable, uint32 MinX, uint32 MinY, uint32 MaxX, uint32 MaxY)
 {
 	if (bEnable)
@@ -423,7 +429,7 @@ void FD3D12CommandContext::RHISetScissorRect(bool bEnable, uint32 MinX, uint32 M
 */
 void FD3D12CommandContext::RHISetBoundShaderState(FBoundShaderStateRHIParamRef BoundShaderStateRHI)
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12SetBoundShaderState);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12SetBoundShaderState);
 	FD3D12BoundShaderState* const BoundShaderState = FD3D12DynamicRHI::ResourceCast(BoundShaderStateRHI);
 
 	StateCache.SetBoundShaderState(BoundShaderState);
@@ -656,78 +662,96 @@ void FD3D12CommandContext::RHISetShaderSampler(FComputeShaderRHIParamRef Compute
 
 void FD3D12CommandContext::RHISetShaderUniformBuffer(FVertexShaderRHIParamRef VertexShader, uint32 BufferIndex, FUniformBufferRHIParamRef BufferRHI)
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
 	VALIDATE_BOUND_SHADER(VertexShader);
 	FD3D12UniformBuffer* Buffer = RetrieveObject<FD3D12UniformBuffer>(BufferRHI);
 
 	StateCache.SetConstantsFromUniformBuffer<SF_Vertex>(BufferIndex, Buffer);
 
-	BoundUniformBufferRefs[SF_Vertex][BufferIndex] = BufferRHI;
+	if (!GRHINeedsExtraDeletionLatency)
+	{
+		BoundUniformBufferRefs[SF_Vertex][BufferIndex] = BufferRHI;
+	}
 	BoundUniformBuffers[SF_Vertex][BufferIndex] = Buffer;
 	DirtyUniformBuffers[SF_Vertex] |= (1 << BufferIndex);
 }
 
 void FD3D12CommandContext::RHISetShaderUniformBuffer(FHullShaderRHIParamRef HullShader, uint32 BufferIndex, FUniformBufferRHIParamRef BufferRHI)
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
 	VALIDATE_BOUND_SHADER(HullShader);
 	FD3D12UniformBuffer* Buffer = RetrieveObject<FD3D12UniformBuffer>(BufferRHI);
 
 	StateCache.SetConstantsFromUniformBuffer<SF_Hull>(BufferIndex, Buffer);
 
-	BoundUniformBufferRefs[SF_Hull][BufferIndex] = BufferRHI;
+	if (!GRHINeedsExtraDeletionLatency)
+	{
+		BoundUniformBufferRefs[SF_Hull][BufferIndex] = BufferRHI;
+	}
 	BoundUniformBuffers[SF_Hull][BufferIndex] = Buffer;
 	DirtyUniformBuffers[SF_Hull] |= (1 << BufferIndex);
 }
 
 void FD3D12CommandContext::RHISetShaderUniformBuffer(FDomainShaderRHIParamRef DomainShader, uint32 BufferIndex, FUniformBufferRHIParamRef BufferRHI)
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
 	VALIDATE_BOUND_SHADER(DomainShader);
 	FD3D12UniformBuffer* Buffer = RetrieveObject<FD3D12UniformBuffer>(BufferRHI);
 	
 	StateCache.SetConstantsFromUniformBuffer<SF_Domain>(BufferIndex, Buffer);
 
-	BoundUniformBufferRefs[SF_Domain][BufferIndex] = BufferRHI;
+	if (!GRHINeedsExtraDeletionLatency)
+	{
+		BoundUniformBufferRefs[SF_Domain][BufferIndex] = BufferRHI;
+	}
 	BoundUniformBuffers[SF_Domain][BufferIndex] = Buffer;
 	DirtyUniformBuffers[SF_Domain] |= (1 << BufferIndex);
 }
 
 void FD3D12CommandContext::RHISetShaderUniformBuffer(FGeometryShaderRHIParamRef GeometryShader, uint32 BufferIndex, FUniformBufferRHIParamRef BufferRHI)
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
 	VALIDATE_BOUND_SHADER(GeometryShader);
 	FD3D12UniformBuffer* Buffer = RetrieveObject<FD3D12UniformBuffer>(BufferRHI);
 
 	StateCache.SetConstantsFromUniformBuffer<SF_Geometry>(BufferIndex, Buffer);
 
-	BoundUniformBufferRefs[SF_Geometry][BufferIndex] = BufferRHI;
+	if (!GRHINeedsExtraDeletionLatency)
+	{
+		BoundUniformBufferRefs[SF_Geometry][BufferIndex] = BufferRHI;
+	}
 	BoundUniformBuffers[SF_Geometry][BufferIndex] = Buffer;
 	DirtyUniformBuffers[SF_Geometry] |= (1 << BufferIndex);
 }
 
 void FD3D12CommandContext::RHISetShaderUniformBuffer(FPixelShaderRHIParamRef PixelShader, uint32 BufferIndex, FUniformBufferRHIParamRef BufferRHI)
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
 	VALIDATE_BOUND_SHADER(PixelShader);
 	FD3D12UniformBuffer* Buffer = RetrieveObject<FD3D12UniformBuffer>(BufferRHI);
 
 	StateCache.SetConstantsFromUniformBuffer<SF_Pixel>(BufferIndex, Buffer);
 
-	BoundUniformBufferRefs[SF_Pixel][BufferIndex] = BufferRHI;
+	if (!GRHINeedsExtraDeletionLatency)
+	{
+		BoundUniformBufferRefs[SF_Pixel][BufferIndex] = BufferRHI;
+	}
 	BoundUniformBuffers[SF_Pixel][BufferIndex] = Buffer;
 	DirtyUniformBuffers[SF_Pixel] |= (1 << BufferIndex);
 }
 
 void FD3D12CommandContext::RHISetShaderUniformBuffer(FComputeShaderRHIParamRef ComputeShader, uint32 BufferIndex, FUniformBufferRHIParamRef BufferRHI)
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderUniformBuffer);
 	//VALIDATE_BOUND_SHADER(ComputeShader);
 	FD3D12UniformBuffer* Buffer = RetrieveObject<FD3D12UniformBuffer>(BufferRHI);
 
 	StateCache.SetConstantsFromUniformBuffer<SF_Compute>(BufferIndex, Buffer);
 
-	BoundUniformBufferRefs[SF_Compute][BufferIndex] = BufferRHI;
+	if (!GRHINeedsExtraDeletionLatency)
+	{
+		BoundUniformBufferRefs[SF_Compute][BufferIndex] = BufferRHI;
+	}
 	BoundUniformBuffers[SF_Compute][BufferIndex] = Buffer;
 	DirtyUniformBuffers[SF_Compute] |= (1 << BufferIndex);
 }
@@ -1012,11 +1036,19 @@ void FD3D12DynamicRHI::RHIDiscardRenderTargets(bool Depth, bool Stencil, uint32 
 
 void FD3D12CommandContext::RHISetRenderTargetsAndClear(const FRHISetRenderTargetsInfo& RenderTargetsInfo)
 {
+	FUnorderedAccessViewRHIParamRef UAVs[MaxSimultaneousUAVs] = {};
+	check(RenderTargetsInfo.NumUAVs <= MaxSimultaneousUAVs);
+	for (int32 UAVIndex = 0; UAVIndex < RenderTargetsInfo.NumUAVs; ++UAVIndex)
+	{
+		UAVs[UAVIndex] = RenderTargetsInfo.UnorderedAccessView[UAVIndex].GetReference();
+	}
+
 	this->RHISetRenderTargets(RenderTargetsInfo.NumColorRenderTargets,
 		RenderTargetsInfo.ColorRenderTarget,
 		&RenderTargetsInfo.DepthStencilRenderTarget,
-		0,
-		nullptr);
+		RenderTargetsInfo.NumUAVs,
+		UAVs);
+
 	if (RenderTargetsInfo.bClearColor || RenderTargetsInfo.bClearStencil || RenderTargetsInfo.bClearDepth)
 	{
 		FLinearColor ClearColors[MaxSimultaneousRenderTargets];
@@ -1183,7 +1215,7 @@ static D3D_PRIMITIVE_TOPOLOGY GetD3D12PrimitiveType(uint32 PrimitiveType, bool b
 
 void FD3D12CommandContext::CommitNonComputeShaderConstants()
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12CommitGraphicsConstants);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12CommitGraphicsConstants);
 
 	FD3D12BoundShaderState* RESTRICT CurrentBoundShaderStateRef = CurrentBoundShaderState.GetReference();
 
@@ -1363,7 +1395,7 @@ void FD3D12CommandContext::SetResourcesFromTables(const ShaderType* RESTRICT Sha
 
 void FD3D12CommandContext::CommitGraphicsResourceTables()
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12CommitResourceTables);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12CommitResourceTables);
 
 	const FD3D12BoundShaderState* const RESTRICT CurrentBoundShaderStateRef = CurrentBoundShaderState.GetReference();
 	check(CurrentBoundShaderStateRef);
@@ -1392,7 +1424,7 @@ void FD3D12CommandContext::CommitGraphicsResourceTables()
 
 void FD3D12CommandContext::CommitComputeResourceTables(FD3D12ComputeShader* InComputeShader)
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12CommitResourceTables);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12CommitResourceTables);
 
 	FD3D12ComputeShader* RESTRICT ComputeShader = InComputeShader;
 	check(ComputeShader);

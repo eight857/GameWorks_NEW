@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,6 +16,7 @@
 #include "Animation/AnimationAsset.h"
 #include "AlphaBlend.h"
 #include "Animation/AnimCompositeBase.h"
+#include "Animation/TimeStretchCurve.h"
 #include "AnimMontage.generated.h"
 
 class UAnimInstance;
@@ -151,6 +152,15 @@ struct FBranchingPointMarker
 	}
 };
 
+UENUM()
+enum class EMontageSubStepResult : uint8
+{
+	Moved,
+	NotMoved,
+	InvalidSection,
+	InvalidMontage,
+};
+
 /**
  * Delegate for when Montage is completed, whether interrupted or finished
  * Weight of this montage is 0.f, so it stops contributing to output pose
@@ -166,10 +176,114 @@ DECLARE_DELEGATE_TwoParams( FOnMontageEnded, class UAnimMontage*, bool /*bInterr
  */
 DECLARE_DELEGATE_TwoParams( FOnMontageBlendingOutStarted, class UAnimMontage*, bool /*bInterrupted*/) 
 
+/**
+	Helper struct to sub step through Montages when advancing time.
+	These require stopping at sections and branching points to potential jumps and loops.
+	And also stepping through TimeStretchMarkers to adjust play rate based on TimeStretchCurve.
+ */
+struct FMontageSubStepper
+{
+private:
+	const struct FAnimMontageInstance* MontageInstance;
+	const class UAnimMontage* Montage;
+
+	float TimeRemaining;
+	float Cached_CombinedPlayRate;
+	float PlayRate;
+	float DeltaMove;
+	bool bPlayingForward;
+
+	int32 CurrentSectionIndex;
+	float CurrentSectionStartTime;
+	float CurrentSectionLength;
+	bool bReachedEndOfSection;
+	bool bHasValidTimeStretchCurveData;
+
+	int32 TimeStretchMarkerIndex;
+
+	mutable TArray<float> SectionStartPositions_Target;
+	mutable TArray<float> SectionEndPositions_Target;
+
+	float Cached_P_Target;
+	float Cached_P_Original;
+
+	FTimeStretchCurveInstance TimeStretchCurveInstance;
+
+public:
+	FMontageSubStepper()
+		: MontageInstance(nullptr)
+		, Montage(nullptr)
+		, TimeRemaining(0.f)
+		, Cached_CombinedPlayRate(0.f)
+		, PlayRate(0.f)
+		, DeltaMove(0.f)
+		, bPlayingForward(true)
+		, CurrentSectionIndex(INDEX_NONE)
+		, CurrentSectionStartTime(0.f)
+		, CurrentSectionLength(0.f)
+		, bReachedEndOfSection(false)
+		, bHasValidTimeStretchCurveData(false)
+		, TimeStretchMarkerIndex(INDEX_NONE)
+		, Cached_P_Target(FLT_MAX)
+		, Cached_P_Original(FLT_MAX)
+	{}
+
+	void Initialize(const struct FAnimMontageInstance& InAnimInstance);
+
+	void AddEvaluationTime(float InDeltaTime) { TimeRemaining += InDeltaTime; }
+	bool HasTimeRemaining() const { return (TimeRemaining > SMALL_NUMBER); }
+	float GetRemainingTime() const { return TimeRemaining; }
+	EMontageSubStepResult Advance(float& InOut_P_Original, const FBranchingPointMarker** OutBranchingPointMarkerPtr);
+	bool HasReachedEndOfSection() const { return bReachedEndOfSection; }
+	float GetRemainingPlayTimeToSectionEnd(const float In_P_Original);
+
+	bool GetbPlayingForward() const { return bPlayingForward; }
+	float GetDeltaMove() const { return DeltaMove; }
+	int32 GetCurrentSectionIndex() const { return CurrentSectionIndex; }
+
+	/** Invalidate Cached_CombinedPlayRate to force data to be recached in 'ConditionallyUpdateCachedData' */
+	void ClearCachedData() { Cached_CombinedPlayRate = FLT_MAX; }
+
+private:
+	/** 
+		Updates markers P_Marker_Original and P_Marker_Target
+		*only* if T_Target has changed. 
+	*/
+	void ConditionallyUpdateTimeStretchCurveCachedData();
+
+	/** 
+		Finds montage position in 'target' space, given current position in 'original' space.
+		This means given a montage position, we find his play back time.
+		This should only be used for montage position, as we cache results and lazily update it for performance.
+	*/
+	float FindMontagePosition_Target(float In_P_Original);
+
+	/**
+		Finds montage position in 'original' space, given current position in 'target' space.
+		This means given a montage play back time, we find his actual position.
+		This should only be used for montage position, as we cache results and lazily update it for performance.
+	*/
+	float FindMontagePosition_Original(float In_P_Target);
+
+	/** 
+		Gets current section end position in target space. 
+		this is lazily cached, as it can be called every frame to test when to blend out. 
+	*/
+	float GetCurrSectionEndPosition_Target() const;
+
+	/** 
+		Gets current section start position in target space.
+		this is lazily cached, as it can be called every frame to test when to blend out. 
+	*/
+	float GetCurrSectionStartPosition_Target() const;
+};
+
 USTRUCT()
 struct FAnimMontageInstance
 {
 	GENERATED_USTRUCT_BODY()
+
+	friend struct FMontageSubStepper;
 
 	// Montage reference
 	UPROPERTY()
@@ -196,6 +310,8 @@ struct FAnimMontageInstance
 	bool bDidUseMarkerSyncThisTick;
 
 private:
+	struct FMontageSubStepper MontageSubStepper;
+
 	// list of next sections per section - index of array is section id
 	UPROPERTY()
 	TArray<int32> NextSections;
@@ -308,7 +424,7 @@ public:
 
 	//~ Begin montage instance Interfaces
 	void Play(float InPlayRate = 1.f);
-	void Stop(const FAlphaBlend& InBlendOut, bool bInterrupt=true);
+	ENGINE_API void Stop(const FAlphaBlend& InBlendOut, bool bInterrupt=true);
 	void Pause();
 	void Initialize(class UAnimMontage * InMontage);
 
@@ -337,6 +453,7 @@ public:
 	float GetPlayRate() const { return PlayRate; }
 	float GetDeltaMoved() const { return DeltaMoved; }
 	float GetPreviousPosition() const { return PreviousPosition;  }
+
 	/** 
 	 * Setters
 	 */
@@ -361,8 +478,12 @@ public:
 	 * second is normal tick. This tick has to happen later when all node ticks
 	 * to accumulate and update curve data/notifies/branching points
 	 */
-	void UpdateWeight(float DeltaTime);
-	//~ @fixme laurent can we make Advance use that, so we don't have 2 code paths which risk getting out of sync?
+	ENGINE_API void UpdateWeight(float DeltaTime);
+
+#if WITH_EDITOR	
+	ENGINE_API void EditorOnly_PreAdvance();
+#endif
+
 	/** Simulate is same as Advance, but without calling any events or touching any of the instance data. So it performs a simulation of advancing the timeline. */
 	bool SimulateAdvance(float DeltaTime, float& InOutPosition, struct FRootMotionMovementParams & OutRootMotionParams) const;
 	void Advance(float DeltaTime, struct FRootMotionMovementParams * OutRootMotionParams, bool bBlendRootMotion);
@@ -390,10 +511,15 @@ private:
 	void BranchingPointEventHandler(const FBranchingPointMarker* BranchingPointMarker);
 	void RefreshNextPrevSections();
 
+	float GetRemainingPlayTimeToSectionEnd(const FMontageSubStepper& MontageSubStepper) const;
+
 public:
 	/** static functions that are used by matinee functionality */
 	ENGINE_API static UAnimMontage* SetMatineeAnimPositionInner(FName SlotName, USkeletalMeshComponent* SkeletalMeshComponent, UAnimSequenceBase* InAnimSequence, float InPosition, bool bLooping);
 	ENGINE_API static UAnimMontage* PreviewMatineeSetAnimPositionInner(FName SlotName, USkeletalMeshComponent* SkeletalMeshComponent, UAnimSequenceBase* InAnimSequence, float InPosition, bool bLooping, bool bFireNotifies, float DeltaTime);
+	/** static functions that are used by sequencer montage support*/
+	ENGINE_API static UAnimMontage* SetSequencerMontagePosition(FName SlotName, USkeletalMeshComponent* SkeletalMeshComponent, int32& InOutInstanceId, UAnimSequenceBase* InAnimSequence, float InPosition, float Weight, bool bLooping);
+	ENGINE_API static UAnimMontage* PreviewSequencerMontagePosition(FName SlotName, USkeletalMeshComponent* SkeletalMeshComponent, int32& InOutInstanceId, UAnimSequenceBase* InAnimSequence, float InPosition, float Weight, bool bLooping, bool bFireNotifies);
 private:
 	static UAnimMontage* InitializeMatineeControl(FName SlotName, USkeletalMeshComponent* SkeletalMeshComponent, UAnimSequenceBase* InAnimSequence, bool bLooping);
 };
@@ -411,6 +537,8 @@ UCLASS(config=Engine, hidecategories=(UObject, Length), MinimalAPI, BlueprintTyp
 class UAnimMontage : public UAnimCompositeBase
 {
 	GENERATED_UCLASS_BODY()
+
+	friend struct FAnimMontageInstance;
 
 	/** Blend in option. */
 	UPROPERTY(EditAnywhere, Category=BlendOption)
@@ -473,12 +601,16 @@ class UAnimMontage : public UAnimCompositeBase
 	UAnimSequence* PreviewBasePose;
 #endif // WITH_EDITORONLY_DATA
 
+	// Add new slot track to this montage
+	ENGINE_API FSlotAnimationTrack& AddSlot(FName SlotName);
+
 	/** return true if valid slot */
 	ENGINE_API bool IsValidSlot(FName InSlotName) const;
 
 public:
 	//~ Begin UObject Interface
 	virtual void PostLoad() override;
+	virtual void PreSave(const class ITargetPlatform* TargetPlatform) override;
 
 	// Gets the sequence length of the montage by calculating it from the lengths of the segments in the montage
 	ENGINE_API float CalculateSequenceLength();
@@ -662,9 +794,14 @@ public:
 	TArray<int32> BranchingPointStateNotifyIndices;
 
 	/** Find first branching point marker between track positions */
-	const FBranchingPointMarker* FindFirstBranchingPointMarker(float StartTrackPos, float EndTrackPos);
+	const FBranchingPointMarker* FindFirstBranchingPointMarker(float StartTrackPos, float EndTrackPos) const;
+	
 	/** Filter out notifies from array that are marked as 'BranchingPoints' */
+	DEPRECATED(4.19, "Use the GetAnimNotifiesFromTrackPositions that takes FAnimNotifyEventReferences instead")
 	void FilterOutNotifyBranchingPoints(TArray<const FAnimNotifyEvent*>& InAnimNotifies);
+
+	/** Filter out notifies from array that are marked as 'BranchingPoints' */
+	void FilterOutNotifyBranchingPoints(TArray<FAnimNotifyEventReference>& InAnimNotifies);
 
 	bool CanUseMarkerSync() const { return MarkerData.AuthoredSyncMarkers.Num() > 0; }
 
@@ -675,4 +812,21 @@ public:
 	virtual void InvalidateRecursiveAsset() override;
 	virtual bool ContainRecursive(TArray<UAnimCompositeBase*>& CurrentAccumulatedList) override;
 	//~End UAnimCompositeBase Interface
+
+	/** Utility function to create dynamic montage from AnimSequence */
+	ENGINE_API static UAnimMontage* CreateSlotAnimationAsDynamicMontage(UAnimSequenceBase* Asset, FName SlotNodeName, float BlendInTime = 0.25f, float BlendOutTime = 0.25f, float InPlayRate = 1.f, int32 LoopCount = 1, float BlendOutTriggerTime = -1.f, float InTimeToStartMontageAt = 0.f);
+
+	//~Begin Time Stretch Curve
+public:
+	UPROPERTY(EditAnywhere, Category = TimeStretchCurve)
+	FTimeStretchCurve TimeStretchCurve;
+
+	/** Name of optional TimeStretchCurveName to look for in Montage. */
+	UPROPERTY(EditAnywhere, Category = TimeStretchCurve)
+	FName TimeStretchCurveName;
+
+private:
+	void BakeTimeStretchCurve();
+	//~End Time Stretch Curve
+
 };

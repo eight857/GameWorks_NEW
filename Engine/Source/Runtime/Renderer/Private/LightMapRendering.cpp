@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 LightMapRendering.cpp: Light map rendering implementations.
@@ -8,6 +8,7 @@ LightMapRendering.cpp: Light map rendering implementations.
 #include "Engine/LightMapTexture2D.h"
 #include "Engine/ShadowMapTexture2D.h"
 #include "ScenePrivate.h"
+#include "PrecomputedVolumetricLightmap.h"
 
 IMPLEMENT_UNIFORM_BUFFER_STRUCT(FPrecomputedLightingParameters, TEXT("PrecomputedLightingBuffer"));
 
@@ -48,7 +49,7 @@ void FUniformLightMapPolicy::Set(
 {
 	check(VertexFactory);
 
-	VertexFactory->Set(RHICmdList);
+	VertexFactory->Set(View->GetShaderPlatform(), RHICmdList);
 }
 
 void FUniformLightMapPolicy::SetMesh(
@@ -90,17 +91,150 @@ void FUniformLightMapPolicy::SetMesh(
 	}
 }
 
+void InterpolateVolumetricLightmap(
+	FVector LookupPosition,
+	const FVolumetricLightmapSceneData& VolumetricLightmapSceneData,
+	FVolumetricLightmapInterpolation& OutInterpolation)
+{
+	SCOPE_CYCLE_COUNTER(STAT_InterpolateVolumetricLightmapOnCPU);
+
+	checkSlow(VolumetricLightmapSceneData.HasData());
+	const FPrecomputedVolumetricLightmapData& VolumetricLightmapData = *VolumetricLightmapSceneData.GetLevelVolumetricLightmap()->Data;
+	
+	const FVector IndirectionDataSourceCoordinate = ComputeIndirectionCoordinate(LookupPosition, VolumetricLightmapData.GetBounds(), VolumetricLightmapData.IndirectionTextureDimensions);
+
+	check(VolumetricLightmapData.IndirectionTexture.Data.Num() > 0);
+	checkSlow(GPixelFormats[VolumetricLightmapData.IndirectionTexture.Format].BlockBytes == sizeof(uint8) * 4);
+	const int32 NumIndirectionTexels = VolumetricLightmapData.IndirectionTextureDimensions.X * VolumetricLightmapData.IndirectionTextureDimensions.Y * VolumetricLightmapData.IndirectionTextureDimensions.Z;
+	check(VolumetricLightmapData.IndirectionTexture.Data.Num() * VolumetricLightmapData.IndirectionTexture.Data.GetTypeSize() == NumIndirectionTexels * sizeof(uint8) * 4);
+	
+	FIntVector IndirectionBrickOffset;
+	int32 IndirectionBrickSize;
+	SampleIndirectionTexture(IndirectionDataSourceCoordinate, VolumetricLightmapData.IndirectionTextureDimensions, VolumetricLightmapData.IndirectionTexture.Data.GetData(), IndirectionBrickOffset, IndirectionBrickSize);
+
+	const FVector BrickTextureCoordinate = ComputeBrickTextureCoordinate(IndirectionDataSourceCoordinate, IndirectionBrickOffset, IndirectionBrickSize, VolumetricLightmapData.BrickSize);
+
+	const FVector AmbientVector = (FVector)FilteredVolumeLookup<FFloat3Packed>(BrickTextureCoordinate, VolumetricLightmapData.BrickDataDimensions, (const FFloat3Packed*)VolumetricLightmapData.BrickData.AmbientVector.Data.GetData());
+	
+	auto ReadSHCoefficient = [&BrickTextureCoordinate, &VolumetricLightmapData, &AmbientVector](uint32 CoefficientIndex)
+	{
+		check(CoefficientIndex < ARRAY_COUNT(VolumetricLightmapData.BrickData.SHCoefficients));
+
+		// Undo normalization done in FIrradianceBrickData::SetFromVolumeLightingSample
+		const FLinearColor SHDenormalizationScales0(
+			0.488603f / 0.282095f,
+			0.488603f / 0.282095f,
+			0.488603f / 0.282095f,
+			1.092548f / 0.282095f);
+
+		const FLinearColor SHDenormalizationScales1(
+			1.092548f / 0.282095f,
+			4.0f * 0.315392f / 0.282095f,
+			1.092548f / 0.282095f,
+			2.0f * 0.546274f / 0.282095f);
+
+		FLinearColor SHCoefficientEncoded = FilteredVolumeLookup<FColor>(BrickTextureCoordinate, VolumetricLightmapData.BrickDataDimensions, (const FColor*)VolumetricLightmapData.BrickData.SHCoefficients[CoefficientIndex].Data.GetData());
+		const FLinearColor& DenormalizationScales = ((CoefficientIndex & 1) == 0) ? SHDenormalizationScales0 : SHDenormalizationScales1;
+		return FVector4((SHCoefficientEncoded * 2.0f - FLinearColor(1.0f, 1.0f, 1.0f, 1.0f)) * AmbientVector[CoefficientIndex / 2] * DenormalizationScales);
+	};
+
+	auto GetSHVector3 = [](float Ambient, const FVector4& Coeffs0, const FVector4& Coeffs1 )
+	{
+		FSHVector3 Result;
+		Result.V[0] = Ambient;
+		FMemory::Memcpy(&Result.V[1], &Coeffs0, sizeof(Coeffs0));
+		FMemory::Memcpy(&Result.V[5], &Coeffs1, sizeof(Coeffs1));
+		return Result;
+	};
+
+	FSHVectorRGB3 LQSH;
+	LQSH.R = GetSHVector3(AmbientVector.X, ReadSHCoefficient(0), ReadSHCoefficient(1));
+	LQSH.G = GetSHVector3(AmbientVector.Y, ReadSHCoefficient(2), ReadSHCoefficient(3));
+	LQSH.B = GetSHVector3(AmbientVector.Z, ReadSHCoefficient(4), ReadSHCoefficient(5));
+
+	if(VolumetricLightmapData.BrickData.LQLightColor.Data.Num())
+	{
+		// Add stationary direct lighting to match ILC's LQ behavior.
+		FLinearColor LQLightColour = FilteredVolumeLookup<FFloat3Packed>(BrickTextureCoordinate, VolumetricLightmapData.BrickDataDimensions, (const FFloat3Packed*)VolumetricLightmapData.BrickData.LQLightColor.Data.GetData());
+		FVector LQLightDirection = (FVector)FilteredVolumeLookup<FColor>(BrickTextureCoordinate, VolumetricLightmapData.BrickDataDimensions, (const FColor*)VolumetricLightmapData.BrickData.LQLightDirection.Data.GetData());
+		LQLightDirection = LQLightDirection*2.0f - FVector(1.0f, 1.0f, 1.0f);
+		LQLightDirection.Normalize();
+
+		LQSH.AddIncomingRadiance(LQLightColour, 1.0f, LQLightDirection);
+	}
+
+	// Pack the 3rd order SH as the shader expects
+	OutInterpolation.IndirectLightingSHCoefficients0[0] = FVector4(LQSH.R.V[0], LQSH.R.V[1], LQSH.R.V[2], LQSH.R.V[3]) * INV_PI;
+	OutInterpolation.IndirectLightingSHCoefficients0[1] = FVector4(LQSH.G.V[0], LQSH.G.V[1], LQSH.G.V[2], LQSH.G.V[3]) * INV_PI;
+	OutInterpolation.IndirectLightingSHCoefficients0[2] = FVector4(LQSH.B.V[0], LQSH.B.V[1], LQSH.B.V[2], LQSH.B.V[3]) * INV_PI;
+	OutInterpolation.IndirectLightingSHCoefficients1[0] = FVector4(LQSH.R.V[4], LQSH.R.V[5], LQSH.R.V[6], LQSH.R.V[7]) * INV_PI;
+	OutInterpolation.IndirectLightingSHCoefficients1[1] = FVector4(LQSH.G.V[4], LQSH.G.V[5], LQSH.G.V[6], LQSH.G.V[7]) * INV_PI;
+	OutInterpolation.IndirectLightingSHCoefficients1[2] = FVector4(LQSH.B.V[4], LQSH.B.V[5], LQSH.B.V[6], LQSH.B.V[7]) * INV_PI;
+	OutInterpolation.IndirectLightingSHCoefficients2 = FVector4(LQSH.R.V[8], LQSH.G.V[8], LQSH.B.V[8], 0.0f) * INV_PI;
+
+	OutInterpolation.IndirectLightingSHSingleCoefficient = FVector4(AmbientVector.X, AmbientVector.Y, AmbientVector.Z)
+		* FSHVector2::ConstantBasisIntegral * .5f;
+
+	if (VolumetricLightmapData.BrickData.SkyBentNormal.Data.Num() > 0)
+	{
+		const FLinearColor SkyBentNormalUnpacked = FilteredVolumeLookup<FColor>(BrickTextureCoordinate, VolumetricLightmapData.BrickDataDimensions, (const FColor*)VolumetricLightmapData.BrickData.SkyBentNormal.Data.GetData());
+		const FVector SkyBentNormal(SkyBentNormalUnpacked.R, SkyBentNormalUnpacked.G, SkyBentNormalUnpacked.B);
+		const float BentNormalLength = SkyBentNormal.Size();
+		OutInterpolation.PointSkyBentNormal = FVector4(SkyBentNormal / FMath::Max(BentNormalLength, .0001f), BentNormalLength);
+	}
+	else
+	{
+		OutInterpolation.PointSkyBentNormal = FVector4(0, 0, 1, 1);
+	}
+
+	const FLinearColor DirectionalLightShadowingUnpacked = FilteredVolumeLookup<uint8>(BrickTextureCoordinate, VolumetricLightmapData.BrickDataDimensions, (const uint8*)VolumetricLightmapData.BrickData.DirectionalLightShadowing.Data.GetData());
+	OutInterpolation.DirectionalLightShadowing = DirectionalLightShadowingUnpacked.R;
+}
+
 void GetPrecomputedLightingParameters(
 	ERHIFeatureLevel::Type FeatureLevel,
 	FPrecomputedLightingParameters& Parameters, 
 	const FIndirectLightingCache* LightingCache, 
 	const FIndirectLightingCacheAllocation* LightingAllocation, 
+	FVector VolumetricLightmapLookupPosition,
+	uint32 SceneFrameNumber,
+	FVolumetricLightmapSceneData* VolumetricLightmapSceneData,
 	const FLightCacheInterface* LCI
 	)
 {
 	// FCachedVolumeIndirectLightingPolicy, FCachedPointIndirectLightingPolicy
 	{
-		if (LightingAllocation)
+		if (VolumetricLightmapSceneData)
+		{
+			FVolumetricLightmapInterpolation* Interpolation = VolumetricLightmapSceneData->CPUInterpolationCache.Find(VolumetricLightmapLookupPosition);
+
+			if (!Interpolation)
+			{
+				Interpolation = &VolumetricLightmapSceneData->CPUInterpolationCache.Add(VolumetricLightmapLookupPosition);
+				InterpolateVolumetricLightmap(VolumetricLightmapLookupPosition, *VolumetricLightmapSceneData, *Interpolation);
+			}
+
+			Interpolation->LastUsedSceneFrameNumber = SceneFrameNumber;
+			
+			Parameters.PointSkyBentNormal = Interpolation->PointSkyBentNormal;
+			Parameters.DirectionalLightShadowing = Interpolation->DirectionalLightShadowing;
+
+			for (int32 i = 0; i < 3; i++)
+			{
+				Parameters.IndirectLightingSHCoefficients0[i] = Interpolation->IndirectLightingSHCoefficients0[i];
+				Parameters.IndirectLightingSHCoefficients1[i] = Interpolation->IndirectLightingSHCoefficients1[i];
+			}
+
+			Parameters.IndirectLightingSHCoefficients2 = Interpolation->IndirectLightingSHCoefficients2;
+			Parameters.IndirectLightingSHSingleCoefficient = Interpolation->IndirectLightingSHSingleCoefficient;
+
+			// Unused
+			Parameters.IndirectLightingCachePrimitiveAdd = FVector(0, 0, 0);
+			Parameters.IndirectLightingCachePrimitiveScale = FVector(1, 1, 1);
+			Parameters.IndirectLightingCacheMinUV = FVector(0, 0, 0);
+			Parameters.IndirectLightingCacheMaxUV = FVector(1, 1, 1);
+		}
+		else if (LightingAllocation)
 		{
 			Parameters.IndirectLightingCachePrimitiveAdd = LightingAllocation->Add;
 			Parameters.IndirectLightingCachePrimitiveScale = LightingAllocation->Scale;
@@ -252,20 +386,21 @@ FUniformBufferRHIRef CreatePrecomputedLightingUniformBuffer(
 	ERHIFeatureLevel::Type FeatureLevel,
 	const FIndirectLightingCache* LightingCache, 
 	const FIndirectLightingCacheAllocation* LightingAllocation, 
+	FVector VolumetricLightmapLookupPosition,
+	uint32 SceneFrameNumber,
+	FVolumetricLightmapSceneData* VolumetricLightmapSceneData,
 	const FLightCacheInterface* LCI
 	)
 {
-	INC_DWORD_STAT(STAT_IndirectLightingCacheUpdates);
-
 	FPrecomputedLightingParameters Parameters;
-	GetPrecomputedLightingParameters(FeatureLevel, Parameters, LightingCache, LightingAllocation, LCI);
+	GetPrecomputedLightingParameters(FeatureLevel, Parameters, LightingCache, LightingAllocation, VolumetricLightmapLookupPosition, SceneFrameNumber, VolumetricLightmapSceneData, LCI);
 	return FPrecomputedLightingParameters::CreateUniformBuffer(Parameters, BufferUsage);
 }
 
 void FEmptyPrecomputedLightingUniformBuffer::InitDynamicRHI()
 {
 	FPrecomputedLightingParameters Parameters;
-	GetPrecomputedLightingParameters(GMaxRHIFeatureLevel, Parameters);
+	GetPrecomputedLightingParameters(GMaxRHIFeatureLevel, Parameters, NULL, NULL, FVector(0, 0, 0), 0, NULL, NULL);
 	SetContentsNoUpdate(Parameters);
 
 	Super::InitDynamicRHI();

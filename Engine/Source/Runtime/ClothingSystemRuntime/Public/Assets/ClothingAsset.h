@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,7 +11,10 @@
 #include "ClothingAsset.generated.h"
 
 class UClothingAsset;
+class UPhysicsAsset;
 struct FClothPhysicalMeshData;
+struct FSkelMeshSection;
+class UClothingSimulationInteractor;
 
 namespace nvidia
 {
@@ -31,6 +34,7 @@ enum class MaskTarget_PhysMesh : uint8
 	MaxDistance,
 	BackstopDistance,
 	BackstopRadius,
+	AnimDriveMultiplier
 };
 
 /** 
@@ -43,11 +47,26 @@ struct CLOTHINGSYSTEMRUNTIME_API FClothParameterMask_PhysMesh
 {
 	GENERATED_BODY();
 
+	FClothParameterMask_PhysMesh()
+		: MaskName(NAME_None)
+		, CurrentTarget(MaskTarget_PhysMesh::None)
+		, MaxValue(-MAX_flt)
+		, MinValue(MAX_flt)
+		, bEnabled(false)
+	{}
+
 	/** 
 	 * Initialize the mask based on the specified mesh data
 	 * @param InMeshData the mesh to initialize against
 	 */
 	void Initialize(const FClothPhysicalMeshData& InMeshData);
+
+	/** 
+	 * Copies the specified parameter from a physical mesh
+	 * @param InMeshData The mesh to copy from
+	 * @param InTarget The target parameter to copy
+	 */
+	void CopyFromPhysMesh(const FClothPhysicalMeshData& InMeshData, MaskTarget_PhysMesh InTarget);
 
 	/** 
 	 * Set a value in the mask
@@ -62,11 +81,15 @@ struct CLOTHINGSYSTEMRUNTIME_API FClothParameterMask_PhysMesh
 	 */
 	float GetValue(int32 InVertexIndex) const;
 	
-#if WITH_EDITOR
+	/** 
+	* Read only version of the array holding the mask values
+	*/
+	const TArray<float>& GetValueArray() const;
 
-	/** Calculates Min/Max values based on values. Call before querying colors */
+	/** Calculates Min/Max values based on values. */
 	void CalcRanges();
 
+#if WITH_EDITOR
 	/** 
 	 * Get a value represented as a preview color for painting
 	 * @param InVertexIndex the value/vertex index to retrieve
@@ -99,6 +122,10 @@ struct CLOTHINGSYSTEMRUNTIME_API FClothParameterMask_PhysMesh
 	/** The actual values stored in the mask */
 	UPROPERTY()
 	TArray<float> Values;
+
+	/** Whether this mask is enabled and able to effect final mesh values */
+	UPROPERTY()
+	bool bEnabled;
 };
 
 // Bone data for a vertex
@@ -112,6 +139,10 @@ struct FClothVertBoneData
 		FMemory::Memset(BoneIndices, (uint8)INDEX_NONE, sizeof(BoneIndices));
 		FMemory::Memset(BoneWeights, 0, sizeof(BoneWeights));
 	}
+
+	// Number of influences for this vertex.
+	UPROPERTY()
+	int32 NumInfluences;
 
 	// Up to MAX_TOTAL_INFLUENCES bone indices that this vert is weighted to
 	UPROPERTY()
@@ -131,6 +162,15 @@ struct CLOTHINGSYSTEMRUNTIME_API FClothPhysicalMeshData
 	GENERATED_BODY()
 
 	void Reset(const int32 InNumVerts);
+
+	// Clear out any target properties in this physical mesh
+	void ClearParticleParameters();
+
+	// Whether the mesh uses backstops
+	bool HasBackStops() const;
+
+	// Whether the mesh uses anim drives
+	bool HasAnimDrive() const;
 
 	// Positions of each simulation vertex
 	UPROPERTY(EditAnywhere, Category = SimMesh)
@@ -156,6 +196,10 @@ struct CLOTHINGSYSTEMRUNTIME_API FClothPhysicalMeshData
 	UPROPERTY(EditAnywhere, Category = SimMesh)
 	TArray<float> BackstopRadiuses;
 
+	// Strength of anim drive per-particle (spring driving particle back to skinned location
+	UPROPERTY(EditAnywhere, Category = SimMesh)
+	TArray<float> AnimDriveMultipliers;
+
 	// Inverse mass for each vertex in the physical mesh
 	UPROPERTY(EditAnywhere, Category = SimMesh)
 	TArray<float> InverseMasses;
@@ -178,7 +222,7 @@ struct CLOTHINGSYSTEMRUNTIME_API FClothPhysicalMeshData
 };
 
 USTRUCT()
-struct FClothLODData
+struct CLOTHINGSYSTEMRUNTIME_API FClothLODData
 {
 	GENERATED_BODY()
 
@@ -194,6 +238,10 @@ struct FClothLODData
 	// Parameter masks defining the physics mesh masked data
 	UPROPERTY(EditAnywhere, Category = Masks)
 	TArray<FClothParameterMask_PhysMesh> ParameterMasks;
+
+	// Get all available parameter masks for the specified target
+	void GetParameterMasksForTarget(const MaskTarget_PhysMesh& InTarget, TArray<FClothParameterMask_PhysMesh*>& OutMasks);
+
 #endif
 
 	// Skinning data for transitioning from a higher detail LOD to this one
@@ -269,7 +317,7 @@ enum class EClothingWindMethod : uint8
 	// Use updated wind calculation for NvCloth based solved taking into account
 	// drag and lift, this will require those properties to be correctly set in
 	// the clothing configuration
-	Accurate UMETA(Hidden)
+	Accurate
 };
 
 /** Holds initial, asset level config for clothing actors. */
@@ -298,6 +346,8 @@ struct FClothConfig
 		, TetherStiffness(1.0f)
 		, TetherLimit(1.0f)
 		, CollisionThickness(1.0f)
+		, AnimDriveSpringStiffness(1.0f)
+		, AnimDriveDamperStiffness(1.0f)
 	{}
 
 	bool HasSelfCollision() const;
@@ -377,7 +427,7 @@ struct FClothConfig
 	FVector CentrifugalInertiaScale;
 
 	// Frequency of the position solver, lower values will lead to stretchier, bouncier cloth
-	UPROPERTY(EditAnywhere, Category = ClothConfig)
+	UPROPERTY(EditAnywhere, Category = ClothConfig, meta = (UIMin = "30", UIMax = "240", ClampMin = "30", ClampMax = "1000"))
 	float SolverFrequency;
 
 	// Frequency for stiffness calculations, lower values will degrade stiffness of constraints
@@ -399,6 +449,14 @@ struct FClothConfig
 	// 'Thickness' of the simulated cloth, used to adjust collisions
 	UPROPERTY(EditAnywhere, Category = ClothConfig)
 	float CollisionThickness;
+
+	// Default spring stiffness for anim drive if an anim drive is in use
+	UPROPERTY(EditAnywhere, Category = ClothConfig)
+	float AnimDriveSpringStiffness;
+
+	// Default damper stiffness for anim drive if an anim drive is in use
+	UPROPERTY(EditAnywhere, Category = ClothConfig)
+	float AnimDriveDamperStiffness;
 };
 
 namespace ClothingAssetUtils
@@ -423,43 +481,10 @@ namespace ClothingAssetUtils
 	// Similar to above, but only inspects the specified LOD
 	void CLOTHINGSYSTEMRUNTIME_API GetMeshClothingAssetBindings(USkeletalMesh* InSkelMesh, TArray<FClothingAssetMeshBinding>& OutBindings, int32 InLodIndex);
 
-	/**
-	 * Given mesh information for two meshes, generate a list of skinning data to embed mesh0 in mesh1
-	 * @param OutSkinningData	- Final skinning data to map mesh0 to mesh1
-	 * @param Mesh0Verts		- Vertex positions for Mesh0
-	 * @param Mesh0Normals		- Vertex normals for Mesh0
-	 * @param Mesh0Tangents		- Vertex tangents for Mesh0
-	 * @param Mesh1Verts		- Vertex positions for Mesh1
-	 * @param Mesh1Normals		- Vertex normals for Mesh1
-	 * @param Mesh1Indices		- Triangle indices for Mesh1
-	 */
-	void GenerateMeshToMeshSkinningData(TArray<FMeshToMeshVertData>& OutSkinningData,
-													 const TArray<FVector>& Mesh0Verts,
-													 const TArray<FVector>& Mesh0Normals,
-													 const TArray<FVector>& Mesh0Tangents,
-													 const TArray<FVector>& Mesh1Verts,
-													 const TArray<FVector>& Mesh1Normals,
-													 const TArray<uint32>& Mesh1Indices);
-
-	/**
-	 * Given a triangle ABC with normals at each vertex NA, NB and NC, get a barycentric coordinate
-	 * and corresponding distance from the triangle encoded in an FVector4 where the components are
-	 * (BaryX, BaryY, BaryZ, Dist)
-	 * @param A		- Position of triangle vertex A
-	 * @param B		- Position of triangle vertex B
-	 * @param C		- Position of triangle vertex C
-	 * @param NA	- Normal at vertex A
-	 * @param NB	- Normal at vertex B
-	 * @param NC	- Normal at vertex C
-	 * @param Point	- Point to calculate Bary+Dist for
-	 */
-	FVector4 GetPointBaryAndDist(const FVector& A,
-								 const FVector& B,
-								 const FVector& C,
-								 const FVector& NA,
-								 const FVector& NB,
-								 const FVector& NC,
-								 const FVector& Point);
+#if WITH_EDITOR
+	// Clears the clothing tracking struct of a section.
+	CLOTHINGSYSTEMRUNTIME_API void ClearSectionClothingData(FSkelMeshSection& InSection);
+#endif
 }
 
 /**
@@ -488,12 +513,12 @@ public:
 
 	UClothingAsset(const FObjectInitializer& ObjectInitializer);
 
-#if WITH_EDITOR
 	// UClothingAssetBase Interface ////////////////////////////////////////////
-	virtual bool BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshLodIndex, int32 InSectionIndex, int32 InAssetLodIndex) override;
+	virtual void RefreshBoneMapping(USkeletalMesh* InSkelMesh) override;
+#if WITH_EDITOR
+	virtual bool BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshLodIndex, int32 InSectionIndex, int32 InAssetLodIndex, bool bCallPostEditChange=true) override;
 	virtual void UnbindFromSkeletalMesh(USkeletalMesh* InSkelMesh) override;
 	virtual void UnbindFromSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshLodIndex) override;
-	virtual void RefreshBoneMapping(USkeletalMesh* InSkelMesh) override;
 	virtual void InvalidateCachedData() override;
 	virtual bool IsValidLod(int32 InLodIndex) override;
 	virtual int32 GetNumLods() override;
@@ -505,9 +530,28 @@ public:
 	*	in exactly the same way the render mesh is skinned to create a smooth swap
 	*/
 	void BuildLodTransitionData();
+
+	/** 
+	 * Applies the painted parameter masks to the final parameters in the physical mesh
+	 */
+	void ApplyParameterMasks();
 #endif
 
+	// UObject Interface //////////////////////////////////////////////////////
+	
 	virtual void PostLoad() override;
+	virtual void Serialize(FArchive& Ar) override;
+
+#if WITH_EDITOR
+	virtual void PostEditChangeChainProperty(struct FPropertyChangedChainEvent& PropertyChangedEvent) override;
+#endif
+
+	// End UObject Interface //////////////////////////////////////////////////
+
+#if WITH_EDITOR
+	void ReregisterComponentsUsingClothing();
+	void ForEachInteractorUsingClothing(TFunction<void (UClothingSimulationInteractor*)> Func);
+#endif
 
 	/** 
 	 * Builds self collision data
@@ -518,6 +562,10 @@ public:
 
 	// Calculates the prefered root bone for the simulation
 	void CalculateReferenceBoneIndex();
+
+	// The physics asset to extract collisions from when building a simulation
+	UPROPERTY(EditAnywhere, Category = Config)
+	UPhysicsAsset* PhysicsAsset;
 
 	// Configuration of the cloth, contains all the parameters for how the clothing behaves
 	UPROPERTY(EditAnywhere, Category = Config)

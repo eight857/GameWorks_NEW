@@ -1,14 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "Misc/StringAssetReference.h"
 #include "Engine/Blueprint.h"
 #include "BlueprintNativeCodeGenManifest.generated.h"
 
-class FAssetData;
+struct FAssetData;
 struct FBlueprintNativeCodeGenPaths;
 
 /*******************************************************************************
@@ -22,18 +21,13 @@ struct FConvertedAssetRecord
 
 public:
 	FConvertedAssetRecord() {}
-	FConvertedAssetRecord(const FAssetData& AssetInfo, const FBlueprintNativeCodeGenPaths& TargetPaths);
-
-	/**
-	 * @return 
-	 */
-	FStringAssetReference ToAssetRef() const;
+	FConvertedAssetRecord(const FAssetData& AssetInfo, const FBlueprintNativeCodeGenPaths& TargetPaths, const FCompilerNativizationOptions& NativizationOptions);
 
 public:
 	UPROPERTY()
 	UClass* AssetType;
 
-	// cannot use a FStringAssetReference, as the json serializer has problems 
+	// cannot use a FSoftObjectPath, as the json serializer has problems 
 	// with some asset paths (for example, I had a folder named 'Folder()')
 	UPROPERTY()
 	FString TargetObjPath; 

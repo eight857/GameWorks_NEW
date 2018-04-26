@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "BlueprintCompilerCppBackendInterface.h"
 
 class UBlueprint;
@@ -11,7 +11,7 @@ struct FCompilerNativizationOptions;
 
 struct FNativizationSummary
 {
-	TMap<FStringAssetReference, int32> InaccessiblePropertyStat;
+	TMap<FSoftObjectPath, int32> InaccessiblePropertyStat;
 
 	struct FAnimBlueprintDetails
 	{
@@ -27,7 +27,7 @@ struct FNativizationSummary
 		{}
 	};
 
-	TMap<FStringAssetReference, FAnimBlueprintDetails> AnimBlueprintStat;
+	TMap<FSoftObjectPath, FAnimBlueprintDetails> AnimBlueprintStat;
 
 	int32 MemberVariablesFromGraph;
 
@@ -40,9 +40,9 @@ struct FNativizationSummary
 		FDependencyRecord() : Index(-1) {}
 	};
 
-	TMap<FStringAssetReference, FDependencyRecord> DependenciesGlobalMap;
+	TMap<FSoftObjectPath, FDependencyRecord> DependenciesGlobalMap;
 
-	TMap<FName, TSet<TAssetPtr<UPackage>>> ModulesRequiredByPlatform;
+	TMap<FName, TSet<TSoftObjectPtr<UPackage>>> ModulesRequiredByPlatform;
 
 	FNativizationSummary() : MemberVariablesFromGraph(0) {}
 };
@@ -61,7 +61,7 @@ public:
 	 * @param  AssetObj    The asset you want a source-file name for.
 	 * @return The filename (without an extension) for the target asset.
 	 */
-	virtual FString ConstructBaseFilename(const UObject* AssetObj) = 0;
+	virtual FString ConstructBaseFilename(const UObject* AssetObj, const FCompilerNativizationOptions& NativizationOptions) = 0;
 
 
 	DECLARE_DELEGATE_RetVal(FString, FPCHFilenameQuery);
@@ -92,7 +92,7 @@ public:
 	/**
 	 *	Provides a hook so that external modules can mark some unconverted blueprints as necessary for the generated native code.
 	 */
-	DECLARE_DELEGATE_TwoParams(FMarkUnconvertedBlueprintAsNecessary, TAssetPtr<UBlueprint>, const FCompilerNativizationOptions&);
+	DECLARE_DELEGATE_TwoParams(FMarkUnconvertedBlueprintAsNecessary, TSoftObjectPtr<UBlueprint>, const FCompilerNativizationOptions&);
 	virtual FMarkUnconvertedBlueprintAsNecessary& OnIncludingUnconvertedBP() = 0;
 
 	DECLARE_DELEGATE_RetVal_OneParam(bool, FIsFunctionUsedInADelegate, const UFunction*);

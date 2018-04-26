@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MetalParallelRenderCommandEncoder.cpp: Metal command encoder wrapper.
@@ -79,9 +79,13 @@ APPLE_PLATFORM_OBJECT_ALLOC_OVERRIDES(FMetalDebugParallelRenderCommandEncoder)
     [Inner popDebugGroup];
 }
 
+#if METAL_NEW_NONNULL_DECL
+- (nullable id <MTLRenderCommandEncoder>)renderCommandEncoder
+#else
 - (id <MTLRenderCommandEncoder>)renderCommandEncoder
+#endif
 {
-    return [[[FMetalDebugRenderCommandEncoder alloc] initWithEncoder:[Inner renderCommandEncoder] andCommandBuffer:Buffer] autorelease];
+	return [[[FMetalDebugRenderCommandEncoder alloc] initWithEncoder:[Inner renderCommandEncoder] fromDescriptor:RenderPassDescriptor andCommandBuffer:Buffer] autorelease];
 }
 
 - (void)setColorStoreAction:(MTLStoreAction)storeAction atIndex:(NSUInteger)colorAttachmentIndex
@@ -98,6 +102,32 @@ APPLE_PLATFORM_OBJECT_ALLOC_OVERRIDES(FMetalDebugParallelRenderCommandEncoder)
 {
     [Inner setStencilStoreAction:storeAction];
 }
+
+#if (METAL_NEW_NONNULL_DECL)
+- (void)setColorStoreActionOptions:(MTLStoreActionOptions)storeActionOptions atIndex:(NSUInteger)colorAttachmentIndex
+{
+	if (GMetalSupportsStoreActionOptions)
+	{
+		[Inner setColorStoreActionOptions:storeActionOptions atIndex:colorAttachmentIndex];
+	}
+}
+
+- (void)setDepthStoreActionOptions:(MTLStoreActionOptions)storeActionOptions
+{
+	if (GMetalSupportsStoreActionOptions)
+	{
+		[Inner setDepthStoreActionOptions:storeActionOptions];
+	}
+}
+
+- (void)setStencilStoreActionOptions:(MTLStoreActionOptions)storeActionOptions
+{
+	if (GMetalSupportsStoreActionOptions)
+	{
+		[Inner setStencilStoreActionOptions:storeActionOptions];
+	}
+}
+#endif //(METAL_NEW_NONNULL_DECL)
 
 @end
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	VolumeRendering.h: Volume rendering definitions.
@@ -48,49 +48,50 @@ class FWriteToSliceVS : public FGlobalShader
 	DECLARE_EXPORTED_SHADER_TYPE(FWriteToSliceVS,Global,ENGINE_API);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform) 
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) 
 	{ 
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4); 
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4); 
 	}
 
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment )
 	{
-		FGlobalShader::ModifyCompilationEnvironment( Platform, OutEnvironment );
+		FGlobalShader::ModifyCompilationEnvironment( Parameters, OutEnvironment );
 		OutEnvironment.CompilerFlags.Add( CFLAG_VertexToGeometryShader );
 	}
 
 	FWriteToSliceVS(const ShaderMetaType::CompiledShaderInitializerType& Initializer):
 		FGlobalShader(Initializer)
-    {
-        UVScaleBias.Bind(Initializer.ParameterMap, TEXT("UVScaleBias"));
-        MinZ.Bind(Initializer.ParameterMap, TEXT("MinZ"));
+	{
+		UVScaleBias.Bind(Initializer.ParameterMap, TEXT("UVScaleBias"));
+		MinZ.Bind(Initializer.ParameterMap, TEXT("MinZ"));
 	}
 
 	FWriteToSliceVS() {}
 
-	void SetParameters(FRHICommandList& RHICmdList, const FVolumeBounds& VolumeBounds, FIntVector VolumeResolution)
+	template <typename TRHICommandList>
+	void SetParameters(TRHICommandList& RHICmdList, const FVolumeBounds& VolumeBounds, FIntVector VolumeResolution)
 	{
 		const float InvVolumeResolutionX = 1.0f / VolumeResolution.X;
 		const float InvVolumeResolutionY = 1.0f / VolumeResolution.Y;
 		SetShaderValue(RHICmdList, GetVertexShader(), UVScaleBias, FVector4(
-			(VolumeBounds.MaxX - VolumeBounds.MinX) * InvVolumeResolutionX, 
+			(VolumeBounds.MaxX - VolumeBounds.MinX) * InvVolumeResolutionX,
 			(VolumeBounds.MaxY - VolumeBounds.MinY) * InvVolumeResolutionY,
 			VolumeBounds.MinX * InvVolumeResolutionX,
 			VolumeBounds.MinY * InvVolumeResolutionY));
-        SetShaderValue(RHICmdList, GetVertexShader(), MinZ, VolumeBounds.MinZ);
+		SetShaderValue(RHICmdList, GetVertexShader(), MinZ, VolumeBounds.MinZ);
 	}
 
 	virtual bool Serialize(FArchive& Ar) override
 	{
 		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
 		Ar << UVScaleBias;
-        Ar << MinZ;
-        return bShaderHasOutdatedParameters;
+		Ar << MinZ;
+		return bShaderHasOutdatedParameters;
 	}
 
 private:
-    FShaderParameter UVScaleBias;
-    FShaderParameter MinZ;
+	FShaderParameter UVScaleBias;
+	FShaderParameter MinZ;
 };
 
 /** Geometry shader used to write to a range of slices of a 3d volume texture. */
@@ -99,9 +100,9 @@ class FWriteToSliceGS : public FGlobalShader
 	DECLARE_EXPORTED_SHADER_TYPE(FWriteToSliceGS,Global,ENGINE_API);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform) 
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) 
 	{ 
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4) && RHISupportsGeometryShaders(Platform); 
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4) && RHISupportsGeometryShaders(Parameters.Platform); 
 	}
 
 	FWriteToSliceGS(const ShaderMetaType::CompiledShaderInitializerType& Initializer):
@@ -111,7 +112,8 @@ public:
 	}
 	FWriteToSliceGS() {}
 
-	void SetParameters(FRHICommandList& RHICmdList, int32 MinZValue)
+	template <typename TRHICommandList>
+	void SetParameters(TRHICommandList& RHICmdList, int32 MinZValue)
 	{
 		SetShaderValue(RHICmdList, GetGeometryShader(), MinZ, MinZValue);
 	}

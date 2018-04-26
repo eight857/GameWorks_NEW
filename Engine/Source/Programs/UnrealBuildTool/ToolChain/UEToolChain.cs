@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.IO;
 using Microsoft.Win32;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -36,10 +37,6 @@ namespace UnrealBuildTool
 		}
 
 
-		public virtual void CompileCSharpProject(CSharpEnvironment CompileEnvironment, FileReference ProjectFileName, FileReference DestinationFile, ActionGraph ActionGraph)
-		{
-		}
-
 		/// <summary>
 		/// Get the name of the response file for the current linker environment and output file
 		/// </summary>
@@ -67,6 +64,10 @@ namespace UnrealBuildTool
 		}
 
 		public virtual void ModifyBuildProducts(ReadOnlyTargetRules Target, UEBuildBinary Binary, List<string> Libraries, List<UEBuildBundleResource> BundleResources, Dictionary<FileReference, BuildProductType> BuildProducts)
+		{
+		}
+
+		public virtual void FinalizeOutput(ReadOnlyTargetRules Target, List<FileItem> OutputItems, ActionGraph ActionGraph)
 		{
 		}
 
@@ -110,5 +111,10 @@ namespace UnrealBuildTool
 		{
 
 		}
+
+        public virtual string GetSDKVersion()
+        {
+            return "Not Applicable";
+        }
 	};
 }

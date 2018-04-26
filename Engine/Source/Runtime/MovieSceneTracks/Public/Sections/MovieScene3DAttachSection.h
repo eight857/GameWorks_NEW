@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
+#include "Engine/EngineTypes.h"
 #include "Sections/MovieScene3DConstraintSection.h"
 #include "MovieScene3DAttachSection.generated.h"
 
@@ -21,21 +22,14 @@ class UMovieScene3DAttachSection
 
 public:
 
-	/**
-	 * Evaluates the attach track
-	 *
-	 * @param Time The position in time within the movie scene
-	 */
-	void Eval(USceneComponent* SceneComponent, float Time, AActor* Actor, FVector& OutTranslation, FRotator& OutRotation) const;
-
 	/** 
 	 * Adds an attach to the section
 	 *
 	 * @param Time	The location in time where the attach should be added
 	 * @param SequenceEndTime   The time at the end of the sequence, by default the attach is set to end at this time
-	 * @param InAttachId The id to the path
+	 * @param InAttachBindingId The object binding id to the path
 	 */
-	void AddAttach(float Time, float SequenceEndTime, const FGuid& InAttachId);
+	void AddAttach(float Time, float SequenceEndTime, const FMovieSceneObjectBindingID& InAttachBindingID);
 	
 public:
 
@@ -46,20 +40,20 @@ public:
 	FName AttachComponentName;
 
 	UPROPERTY(EditAnywhere, Category="Attach")
-	uint32 bConstrainTx:1;
+	EAttachmentRule AttachmentLocationRule;
 
 	UPROPERTY(EditAnywhere, Category="Attach")
-	uint32 bConstrainTy:1;
+	EAttachmentRule AttachmentRotationRule;
 
 	UPROPERTY(EditAnywhere, Category="Attach")
-	uint32 bConstrainTz:1;
+	EAttachmentRule AttachmentScaleRule;
 
 	UPROPERTY(EditAnywhere, Category="Attach")
-	uint32 bConstrainRx:1;
+	EDetachmentRule DetachmentLocationRule;
 
 	UPROPERTY(EditAnywhere, Category="Attach")
-	uint32 bConstrainRy:1;
+	EDetachmentRule DetachmentRotationRule;
 
 	UPROPERTY(EditAnywhere, Category="Attach")
-	uint32 bConstrainRz:1;
+	EDetachmentRule DetachmentScaleRule;
 };

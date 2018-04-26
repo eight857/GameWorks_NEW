@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include "Widgets/SWidget.h"
 #include "AssetTypeActions_Base.h"
 
-class FAssetData;
+struct FAssetData;
 class IClassTypeActions;
 
 /** Base class for "class type" assets (C++ classes and Blueprints */

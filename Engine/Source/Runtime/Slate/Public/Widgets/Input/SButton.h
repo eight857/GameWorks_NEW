@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -44,7 +44,8 @@ public:
 		, _ButtonColorAndOpacity(FLinearColor::White)
 		, _ForegroundColor( FCoreStyle::Get().GetSlateColor( "InvertedForeground" ) )
 		, _IsFocusable( true )
-		{}
+		{
+		}
 
 		/** Slot for this button's content (optional) */
 		SLATE_DEFAULT_SLOT( FArguments, Content )
@@ -156,33 +157,27 @@ public:
 	/** See ButtonStyle attribute */
 	void SetButtonStyle(const FButtonStyle* ButtonStyle);
 
+	void SetClickMethod(EButtonClickMethod::Type InClickMethod);
+	void SetTouchMethod(EButtonTouchMethod::Type InTouchMethod);
+	void SetPressMethod(EButtonPressMethod::Type InPressMethod);
+
 public:
 
 	// SWidget overrides
-
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
-
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 	virtual bool SupportsKeyboardFocus() const override;
-
 	virtual void OnFocusLost( const FFocusEvent& InFocusEvent ) override;
-
 	virtual FReply OnKeyDown( const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent ) override;
-
 	virtual FReply OnKeyUp( const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent ) override;
-
 	virtual FReply OnMouseButtonDown( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
-
 	virtual FReply OnMouseButtonDoubleClick( const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent ) override;
-	
 	virtual FReply OnMouseButtonUp( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
-	
 	virtual FReply OnMouseMove( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
-	
 	virtual void OnMouseEnter( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
-
 	virtual void OnMouseLeave( const FPointerEvent& MouseEvent ) override;
-
+	virtual void OnMouseCaptureLost() override;
 	virtual bool IsInteractable() const override;
+	// SWidget
 
 protected:
 
@@ -201,21 +196,8 @@ protected:
 	/** Padding that accounts for the button border when pressed */
 	FMargin PressedBorderPadding;
 
-	/** True if this button is currently in a pressed state */
-	bool bIsPressed;
-
-	/** The delegate to execute when the button is clicked */
-	FOnClicked OnClicked;
-
-	/** The delegate to execute when the button is pressed */
-	FSimpleDelegate OnPressed;
-
-	/** The delegate to execute when the button is released */
-	FSimpleDelegate OnReleased;
-
-	FSimpleDelegate OnHovered;
-
-	FSimpleDelegate OnUnhovered;
+	/** The location in screenspace the button was pressed */
+	FVector2D PressedScreenSpacePosition;
 
 	/** Style resource for the button */
 	const FButtonStyle* Style;
@@ -229,17 +211,18 @@ protected:
 	/** Brush resource that represents a button when it is disabled */
 	const FSlateBrush* DisabledImage;
 
-	/** Sets whether a click should be triggered on mouse down, mouse up, or that both a mouse down and up are required. */
-	EButtonClickMethod::Type ClickMethod;
+	/** The delegate to execute when the button is clicked */
+	FOnClicked OnClicked;
 
-	/** How should the button be clicked with touch events? */
-	EButtonTouchMethod::Type TouchMethod;
+	/** The delegate to execute when the button is pressed */
+	FSimpleDelegate OnPressed;
 
-	/** How should the button be clicked with keyboard/controller button events? */
-	EButtonPressMethod::Type PressMethod;
+	/** The delegate to execute when the button is released */
+	FSimpleDelegate OnReleased;
 
-	/** Can this button be focused? */
-	bool bIsFocusable;
+	FSimpleDelegate OnHovered;
+
+	FSimpleDelegate OnUnhovered;
 
 	/** Press the button */
 	virtual void Press();
@@ -261,6 +244,21 @@ protected:
 
 	/** The Sound to play when the button is pressed */
 	FSlateSound PressedSound;
+
+	/** Sets whether a click should be triggered on mouse down, mouse up, or that both a mouse down and up are required. */
+	TEnumAsByte<EButtonClickMethod::Type> ClickMethod;
+
+	/** How should the button be clicked with touch events? */
+	TEnumAsByte<EButtonTouchMethod::Type> TouchMethod;
+
+	/** How should the button be clicked with keyboard/controller button events? */
+	TEnumAsByte<EButtonPressMethod::Type> PressMethod;
+
+	/** Can this button be focused? */
+	uint8 bIsFocusable:1;
+
+	/** True if this button is currently in a pressed state */
+	uint8 bIsPressed:1;
 
 private:
 

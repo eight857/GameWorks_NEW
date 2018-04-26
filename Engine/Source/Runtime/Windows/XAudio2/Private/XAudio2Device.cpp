@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	XeAudioDevice.cpp: Unreal XAudio2 Audio interface object.
@@ -31,6 +31,10 @@ THIRD_PARTY_INCLUDES_END
 #include "XAudio2Support.h"
 #include "Runtime/HeadMountedDisplay/Public/IHeadMountedDisplayModule.h"
 
+#if WITH_XMA2
+#include "XMAAudioInfo.h"
+#endif
+
 DEFINE_LOG_CATEGORY(LogXAudio2);
 
 class FXAudio2DeviceModule : public IAudioDeviceModule
@@ -57,10 +61,6 @@ const float* FXAudioDeviceProperties::OutputMixMatrix = NULL;
 #if XAUDIO_SUPPORTS_DEVICE_DETAILS
 XAUDIO2_DEVICE_DETAILS FXAudioDeviceProperties::DeviceDetails;
 #endif	//XAUDIO_SUPPORTS_DEVICE_DETAILS
-
-#if PLATFORM_WINDOWS
-FMMNotificationClient* FXAudioDeviceProperties::NotificationClient = nullptr;
-#endif
 
 /*------------------------------------------------------------------------------------
 	FAudioDevice Interface.
@@ -90,8 +90,10 @@ bool FXAudio2Device::InitializeHardware()
 	DeviceProperties->XAudio2 = nullptr;
 	DeviceProperties->MasteringVoice = nullptr;
 
+#if WITH_OGGVORBIS
 	// Load ogg and vorbis dlls if they haven't been loaded yet
 	LoadVorbisLibraries();
+#endif
 
 	SampleRate = UE4_XAUDIO2_SAMPLERATE;
 
@@ -121,11 +123,16 @@ bool FXAudio2Device::InitializeHardware()
 	uint32 Flags = 0;
 #endif
 
+#if WITH_XMA2
+	// We don't use all of the SHAPE processor, so this flag prevents wasted resources
+	Flags |= XAUDIO2_DO_NOT_USE_SHAPE;
+#endif
+
 	// Create a new XAudio2 device object instance
 	if (XAudio2Create(&DeviceProperties->XAudio2, Flags, (XAUDIO2_PROCESSOR)FPlatformAffinity::GetAudioThreadMask()) != S_OK)
 	{
-		UE_LOG(LogInit, Log, TEXT( "Failed to create XAudio2 interface" ) );
-		return( false );
+		UE_LOG(LogInit, Log, TEXT("Failed to create XAudio2 interface"));
+		return(false);
 	}
 
 	check(DeviceProperties->XAudio2 != nullptr);
@@ -182,14 +189,14 @@ bool FXAudio2Device::InitializeHardware()
 		DeviceProperties->XAudio2 = nullptr;
 		return(false);
 	}
-#endif
+#endif // #if XAUDIO_SUPPORTS_DEVICE_DETAILS
 
 #if DEBUG_XAUDIO2
 	XAUDIO2_DEBUG_CONFIGURATION DebugConfig = {0};
 	DebugConfig.TraceMask = XAUDIO2_LOG_WARNINGS | XAUDIO2_LOG_DETAIL;
 	DebugConfig.BreakMask = XAUDIO2_LOG_ERRORS;
 	DeviceProperties->XAudio2->SetDebugConfiguration(&DebugConfig);
-#endif
+#endif // #if DEBUG_XAUDIO2
 
 	FXAudioDeviceProperties::NumSpeakers = UE4_XAUDIO2_NUMCHANNELS;
 	SampleRate = FXAudioDeviceProperties::DeviceDetails.OutputFormat.Format.nSamplesPerSec;
@@ -201,14 +208,12 @@ bool FXAudio2Device::InitializeHardware()
 		FXAudioDeviceProperties::DeviceDetails.OutputFormat.Format.nSamplesPerSec = SampleRate;
 	}
 
-#if XAUDIO_SUPPORTS_DEVICE_DETAILS
 	UE_LOG(LogInit, Log, TEXT( "XAudio2 using '%s' : %d channels at %g kHz using %d bits per sample (channel mask 0x%x)" ), 
 		FXAudioDeviceProperties::DeviceDetails.DisplayName,
 		FXAudioDeviceProperties::NumSpeakers, 
 		( float )SampleRate / 1000.0f, 
 		FXAudioDeviceProperties::DeviceDetails.OutputFormat.Format.wBitsPerSample,
 		(uint32)UE4_XAUDIO2_CHANNELMASK );
-#endif
 
 	if( !GetOutputMatrix( UE4_XAUDIO2_CHANNELMASK, FXAudioDeviceProperties::NumSpeakers ) )
 	{
@@ -225,7 +230,7 @@ bool FXAudio2Device::InitializeHardware()
 		DeviceProperties->XAudio2 = nullptr;
 		return( false );
 	}
-#else	//XAUDIO_SUPPORTS_DEVICE_DETAILS
+#else	// #if XAUDIO_SUPPORTS_DEVICE_DETAILS
 	// Create the final output voice
 	if (!ValidateAPICall(TEXT("CreateMasteringVoice"),
 		DeviceProperties->XAudio2->CreateMasteringVoice(&DeviceProperties->MasteringVoice, UE4_XAUDIO2_NUMCHANNELS, UE4_XAUDIO2_SAMPLERATE, 0, 0, nullptr )))
@@ -234,7 +239,7 @@ bool FXAudio2Device::InitializeHardware()
 		DeviceProperties->XAudio2 = nullptr;
 		return false;
 	}
-#endif	//XAUDIO_SUPPORTS_DEVICE_DETAILS
+#endif	// #else // #if XAUDIO_SUPPORTS_DEVICE_DETAILS
 
 	DeviceProperties->SpatializationHelper.Init();
 
@@ -257,6 +262,10 @@ bool FXAudio2Device::InitializeHardware()
 	// Now initialize the audio clock voice after xaudio2 is initialized
 	DeviceProperties->InitAudioClockVoice();
 
+#if WITH_XMA2
+	FXMAAudioInfo::Initialize();
+#endif
+
 	return true;
 }
 
@@ -278,6 +287,37 @@ void FXAudio2Device::TeardownHardware()
 
 void FXAudio2Device::UpdateHardware()
 {
+	// If the audio device changed, we need to tear down and restart the audio engine state
+	if (DeviceProperties->DidAudioDeviceChange())
+	{
+		//Cache the current audio clock.
+		CachedAudioClockStartTime = GetAudioClock();
+
+		// Flush stops all sources so sources can be safely deleted below.
+		Flush(nullptr);
+
+		// Remove the effects manager
+		if (Effects)
+		{
+			delete Effects;
+			Effects = nullptr;
+		}
+	
+		// Teardown hardware
+		TeardownHardware();
+		
+		// Restart the hardware
+		InitializeHardware();
+
+		// Recreate the effects manager
+		Effects = CreateEffectsManager();
+
+		// Now reset and restart the sound source objects
+		FreeSources.Reset();
+		Sources.Reset();
+
+		InitSoundSources();
+	}
 }
 
 void FXAudio2Device::UpdateAudioClock()
@@ -292,7 +332,7 @@ void FXAudio2Device::UpdateAudioClock()
 	}
 	else
 	{
-		AudioClock = NewAudioClock;
+		AudioClock = NewAudioClock + CachedAudioClockStartTime;
 	}
 }
 
@@ -310,7 +350,7 @@ FSoundSource* FXAudio2Device::CreateSoundSource()
 
 bool FXAudio2Device::HasCompressedAudioInfoClass(USoundWave* SoundWave)
 {
-#if WITH_OGGVORBIS
+#if WITH_OGGVORBIS || WITH_XMA2
 	return true;
 #else
 	return false;
@@ -338,14 +378,23 @@ class ICompressedAudioInfo* FXAudio2Device::CreateCompressedAudioInfo(USoundWave
 		}
 		return CompressedInfo;
 	}
-	else
-	{
-		return nullptr;
-	}
-#else
-	return nullptr;
 #endif
-	
+
+#if WITH_XMA2
+	static const FName NAME_XMA(TEXT("XMA"));
+	if (FPlatformProperties::RequiresCookedData() ? SoundWave->HasCompressedData(NAME_XMA) : (SoundWave->GetCompressedData(NAME_XMA) != nullptr))
+	{
+		ICompressedAudioInfo* CompressedInfo = new FXMAAudioInfo();
+		if (!CompressedInfo)
+		{
+			UE_LOG(LogAudio, Error, TEXT("Failed to create new FXMAAudioInfo for SoundWave %s: out of memory."), *SoundWave->GetName());
+			return nullptr;
+		}
+		return CompressedInfo;
+	}
+#endif
+
+	return nullptr;
 }
 
 /**  
@@ -532,6 +581,7 @@ bool FXAudio2Device::GetOutputMatrix( uint32 ChannelMask, uint32 NumChannels )
 /** Test decompress a vorbis file */
 void FXAudio2Device::TestDecompressOggVorbis( USoundWave* Wave )
 {
+#if WITH_OGGVORBIS
 	FVorbisAudioInfo	OggInfo;
 	FSoundQualityInfo	QualityInfo = { 0 };
 
@@ -551,6 +601,7 @@ void FXAudio2Device::TestDecompressOggVorbis( USoundWave* Wave )
 
 		FMemory::Free( Wave->RawPCMData );
 	}
+#endif
 }
 
 #if !UE_BUILD_SHIPPING

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_StartAbilityState.h"
 
@@ -12,7 +12,7 @@ UAbilityTask_StartAbilityState::UAbilityTask_StartAbilityState(const FObjectInit
 
 UAbilityTask_StartAbilityState* UAbilityTask_StartAbilityState::StartAbilityState(UGameplayAbility* OwningAbility, FName StateName, bool bEndCurrentState)
 {
-	auto Task = NewAbilityTask<UAbilityTask_StartAbilityState>(OwningAbility, StateName);
+	UAbilityTask_StartAbilityState* Task = NewAbilityTask<UAbilityTask_StartAbilityState>(OwningAbility, StateName);
 	Task->bEndCurrentState = bEndCurrentState;
 	return Task;
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -79,6 +79,11 @@ public:
 	virtual FRuntimeAssetCacheBucket* PreLoadBucket(FName BucketName, int32 BucketSize) = 0;
 
 protected:
+	/*
+	* Virtual destructor.
+	*/
+	virtual ~FRuntimeAssetCacheBackend() { }
+
 	/*
 	* Creates archive to read data from.
 	* @param Bucket Bucket containing cache entry.

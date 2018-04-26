@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Input/SSubMenuHandler.h"
 #include "Framework/MultiBox/MultiBox.h"
@@ -20,7 +20,7 @@ void SSubMenuHandler::Construct(const FArguments& InArgs, TWeakPtr<SMenuOwner> I
 		if (InArgs._OnGetMenuContent.IsBound() || InArgs._MenuContent.IsValid())
 		{
 			ChildSlotWidget = SAssignNew(MenuAnchor, SMenuAnchor)
-				.Placement(EMenuPlacement::MenuPlacement_MenuRight)
+				.Placement(InArgs._Placement)
 				.OnGetMenuContent(InArgs._OnGetMenuContent)
 				.MenuContent(InArgs._MenuContent)
 				[

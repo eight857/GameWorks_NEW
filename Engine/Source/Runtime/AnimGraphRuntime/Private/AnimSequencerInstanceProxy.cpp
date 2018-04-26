@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimSequencerInstanceProxy.h"
 #include "AnimSequencerInstance.h"
@@ -7,18 +7,22 @@ void FAnimSequencerInstanceProxy::Initialize(UAnimInstance* InAnimInstance)
 {
 	FAnimInstanceProxy::Initialize(InAnimInstance);
 	ConstructNodes();
+
+	UpdateCounter.Reset();
 }
 
 bool FAnimSequencerInstanceProxy::Evaluate(FPoseContext& Output)
 {
-	SequencerRootNode.Evaluate(Output);
+	SequencerRootNode.Evaluate_AnyThread(Output);
 
 	return true;
 }
 
 void FAnimSequencerInstanceProxy::UpdateAnimationNode(float DeltaSeconds)
 {
-	SequencerRootNode.Update(FAnimationUpdateContext(this, DeltaSeconds));
+	UpdateCounter.Increment();
+
+	SequencerRootNode.Update_AnyThread(FAnimationUpdateContext(this, DeltaSeconds));
 }
 
 void FAnimSequencerInstanceProxy::ConstructNodes()
@@ -102,7 +106,7 @@ void FAnimSequencerInstanceProxy::InitAnimTrack(UAnimSequenceBase* InAnimSequenc
 		PlayerState->PlayerNode.ExplicitTime = 0.f;
 
 		// initialize player
-		PlayerState->PlayerNode.Initialize(FAnimationInitializeContext(this));
+		PlayerState->PlayerNode.Initialize_AnyThread(FAnimationInitializeContext(this));
 	}
 }
 
@@ -146,5 +150,9 @@ void FAnimSequencerInstanceProxy::EnsureAnimTrack(UAnimSequenceBase* InAnimSeque
 	if (!PlayerState)
 	{
 		InitAnimTrack(InAnimSequence, SequenceId);
+	}
+	else if (PlayerState->PlayerNode.Sequence != InAnimSequence)
+	{
+		PlayerState->PlayerNode.OverrideAsset(InAnimSequence);
 	}
 }

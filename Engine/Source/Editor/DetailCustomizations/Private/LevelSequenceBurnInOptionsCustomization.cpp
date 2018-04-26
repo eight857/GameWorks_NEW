@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LevelSequenceBurnInOptionsCustomization.h"
 #include "Misc/Attribute.h"
@@ -19,7 +19,7 @@ void AddPropertiesRecursive(TSharedRef<IPropertyHandle> Property, IDetailChildre
 		TSharedRef<IPropertyHandle> Child = Property->GetChildHandle(Index).ToSharedRef();
 		if (Child->GetProperty())
 		{
-			ChildBuilder.AddChildProperty(Child);
+			ChildBuilder.AddProperty(Child);
 		}
 		else
 		{

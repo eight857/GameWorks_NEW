@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEffectBlockedImmunity.h"
 #include "AbilitySystemGlobals.h"
@@ -13,7 +13,7 @@ UAbilityTask_WaitGameplayEffectBlockedImmunity::UAbilityTask_WaitGameplayEffectB
 
 UAbilityTask_WaitGameplayEffectBlockedImmunity* UAbilityTask_WaitGameplayEffectBlockedImmunity::WaitGameplayEffectBlockedByImmunity(UGameplayAbility* OwningAbility, FGameplayTagRequirements InSourceTagRequirements, FGameplayTagRequirements InTargetTagRequirements, AActor* InOptionalExternalTarget, bool InTriggerOnce)
 {
-	auto MyObj = NewAbilityTask<UAbilityTask_WaitGameplayEffectBlockedImmunity>(OwningAbility);
+	UAbilityTask_WaitGameplayEffectBlockedImmunity* MyObj = NewAbilityTask<UAbilityTask_WaitGameplayEffectBlockedImmunity>(OwningAbility);
 	MyObj->SourceTagRequirements = InSourceTagRequirements;
 	MyObj->TargetTagRequirements = InTargetTagRequirements;
 	MyObj->TriggerOnce = InTriggerOnce;

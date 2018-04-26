@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,6 @@
 #include "HAL/UnrealMemory.h"
 #include "Templates/IsTriviallyCopyConstructible.h"
 #include "Templates/UnrealTypeTraits.h"
-#include "Templates/AlignOf.h"
 #include "Templates/UnrealTemplate.h"
 #include "Templates/IsTriviallyDestructible.h"
 #include "Containers/ContainerAllocationPolicies.h"
@@ -16,6 +15,13 @@
 #include "Math/UnrealMathUtility.h"
 #include "Containers/ScriptArray.h"
 #include "Containers/BitArray.h"
+
+
+#if UE_BUILD_SHIPPING || UE_BUILD_TEST
+	#define TSPARSEARRAY_RANGED_FOR_CHECKS 0
+#else
+	#define TSPARSEARRAY_RANGED_FOR_CHECKS 1
+#endif
 
 // Forward declarations.
 template<typename ElementType,typename Allocator = FDefaultSparseArrayAllocator >
@@ -55,9 +61,11 @@ class FScriptSparseArray;
  * to store whether each element index is allocated (for fast iteration over allocated elements).
  *
  **/
-template<typename ElementType,typename Allocator /*= FDefaultSparseArrayAllocator */>
+template<typename InElementType,typename Allocator /*= FDefaultSparseArrayAllocator */>
 class TSparseArray
 {
+	using ElementType = InElementType;
+
 	friend struct TContainerTraits<TSparseArray>;
 	friend class  FScriptSparseArray;
 
@@ -557,11 +565,13 @@ public:
 	/** Copy assignment operator. */
 	TSparseArray& operator=(const TSparseArray& InCopy)
 	{
-		if(this != &InCopy)
+		if (this != &InCopy)
 		{
+			int32 SrcMax = InCopy.GetMaxIndex();
+
 			// Reallocate the array.
-			Empty(InCopy.GetMaxIndex());
-			Data.AddUninitialized(InCopy.GetMaxIndex());
+			Empty(SrcMax);
+			Data.AddUninitialized(SrcMax);
 
 			// Copy the other array's element allocation state.
 			FirstFreeIndex  = InCopy.FirstFreeIndex;
@@ -571,26 +581,29 @@ public:
 			// Determine whether we need per element construction or bulk copy is fine
 			if (!TIsTriviallyCopyConstructible<ElementType>::Value)
 			{
-				      FElementOrFreeListLink* SrcData  = (FElementOrFreeListLink*)Data.GetData();
-				const FElementOrFreeListLink* DestData = (FElementOrFreeListLink*)InCopy.Data.GetData();
+				      FElementOrFreeListLink* DestData = (FElementOrFreeListLink*)Data.GetData();
+				const FElementOrFreeListLink* SrcData  = (FElementOrFreeListLink*)InCopy.Data.GetData();
 
 				// Use the inplace new to copy the element to an array element
-				for(int32 Index = 0;Index < InCopy.GetMaxIndex();Index++)
+				for (int32 Index = 0; Index < SrcMax; ++Index)
 				{
-					      FElementOrFreeListLink& DestElement   = SrcData [Index];
-					const FElementOrFreeListLink& SourceElement = DestData[Index];
-					if(InCopy.IsAllocated(Index))
+					      FElementOrFreeListLink& DestElement = DestData[Index];
+					const FElementOrFreeListLink& SrcElement  = SrcData [Index];
+					if (InCopy.IsAllocated(Index))
 					{
-						::new((uint8*)&DestElement.ElementData) ElementType(*(ElementType*)&SourceElement.ElementData);
+						::new((uint8*)&DestElement.ElementData) ElementType(*(const ElementType*)&SrcElement.ElementData);
 					}
-					DestElement.PrevFreeIndex = SourceElement.PrevFreeIndex;
-					DestElement.NextFreeIndex = SourceElement.NextFreeIndex;
+					else
+					{
+						DestElement.PrevFreeIndex = SrcElement.PrevFreeIndex;
+						DestElement.NextFreeIndex = SrcElement.NextFreeIndex;
+					}
 				}
 			}
 			else
 			{
 				// Use the much faster path for types that allow it
-				FMemory::Memcpy(Data.GetData(),InCopy.Data.GetData(),sizeof(FElementOrFreeListLink) * InCopy.GetMaxIndex());
+				FMemory::Memcpy(Data.GetData(), InCopy.Data.GetData(), sizeof(FElementOrFreeListLink) * SrcMax);
 			}
 		}
 		return *this;
@@ -745,6 +758,59 @@ public:
 		}
 	};
 
+	#if TSPARSEARRAY_RANGED_FOR_CHECKS
+		class TRangedForIterator : public TIterator
+		{
+		public:
+			TRangedForIterator(TSparseArray& InArray, const typename TBaseIterator<false>::BitArrayItType& InBitArrayIt)
+				: TIterator (InArray, InBitArrayIt)
+				, InitialNum(InArray.Num())
+			{
+			}
+
+		private:
+			int32 InitialNum;
+
+			friend FORCEINLINE bool operator!=(const TRangedForIterator& Lhs, const TRangedForIterator& Rhs)
+			{
+				// We only need to do the check in this operator, because no other operator will be
+				// called until after this one returns.
+				//
+				// Also, we should only need to check one side of this comparison - if the other iterator isn't
+				// even from the same array then the compiler has generated bad code.
+				ensureMsgf(Lhs.Array.Num() == Lhs.InitialNum, TEXT("Container has changed during ranged-for iteration!"));
+				return *(TIterator*)&Lhs != *(TIterator*)&Rhs;
+			}
+		};
+
+		class TRangedForConstIterator : public TConstIterator
+		{
+		public:
+			TRangedForConstIterator(const TSparseArray& InArray, const typename TBaseIterator<true>::BitArrayItType& InBitArrayIt)
+				: TConstIterator(InArray, InBitArrayIt)
+				, InitialNum    (InArray.Num())
+			{
+			}
+
+		private:
+			int32 InitialNum;
+
+			friend FORCEINLINE bool operator!=(const TRangedForConstIterator& Lhs, const TRangedForConstIterator& Rhs)
+			{
+				// We only need to do the check in this operator, because no other operator will be
+				// called until after this one returns.
+				//
+				// Also, we should only need to check one side of this comparison - if the other iterator isn't
+				// even from the same array then the compiler has generated bad code.
+				ensureMsgf(Lhs.Array.Num() == Lhs.InitialNum, TEXT("Container has changed during ranged-for iteration!"));
+				return *(TIterator*)&Lhs != *(TIterator*)&Rhs;
+			}
+		};
+	#else
+		using TRangedForIterator      = TIterator;
+		using TRangedForConstIterator = TConstIterator;
+	#endif
+
 	/** Creates an iterator for the contents of this array */
 	TIterator CreateIterator()
 	{
@@ -762,10 +828,10 @@ private:
 	 * DO NOT USE DIRECTLY
 	 * STL-like iterators to enable range-based for loop support.
 	 */
-	FORCEINLINE friend TIterator      begin(      TSparseArray& Array) { return TIterator     (Array, TConstSetBitIterator<typename Allocator::BitArrayAllocator>(Array.AllocationFlags)); }
-	FORCEINLINE friend TConstIterator begin(const TSparseArray& Array) { return TConstIterator(Array, TConstSetBitIterator<typename Allocator::BitArrayAllocator>(Array.AllocationFlags)); }
-	FORCEINLINE friend TIterator      end  (      TSparseArray& Array) { return TIterator     (Array, TConstSetBitIterator<typename Allocator::BitArrayAllocator>(Array.AllocationFlags, Array.AllocationFlags.Num())); }
-	FORCEINLINE friend TConstIterator end  (const TSparseArray& Array) { return TConstIterator(Array, TConstSetBitIterator<typename Allocator::BitArrayAllocator>(Array.AllocationFlags, Array.AllocationFlags.Num())); }
+	FORCEINLINE friend TRangedForIterator      begin(      TSparseArray& Array) { return TRangedForIterator     (Array, TConstSetBitIterator<typename Allocator::BitArrayAllocator>(Array.AllocationFlags)); }
+	FORCEINLINE friend TRangedForConstIterator begin(const TSparseArray& Array) { return TRangedForConstIterator(Array, TConstSetBitIterator<typename Allocator::BitArrayAllocator>(Array.AllocationFlags)); }
+	FORCEINLINE friend TRangedForIterator      end  (      TSparseArray& Array) { return TRangedForIterator     (Array, TConstSetBitIterator<typename Allocator::BitArrayAllocator>(Array.AllocationFlags, Array.AllocationFlags.Num())); }
+	FORCEINLINE friend TRangedForConstIterator end  (const TSparseArray& Array) { return TRangedForConstIterator(Array, TConstSetBitIterator<typename Allocator::BitArrayAllocator>(Array.AllocationFlags, Array.AllocationFlags.Num())); }
 
 public:
 	/** An iterator which only iterates over the elements of the array which correspond to set bits in a separate bit array. */
@@ -831,7 +897,7 @@ private:
 	 * compatible types.
 	 */
 	typedef TSparseArrayElementOrFreeListLink<
-		TAlignedBytes<sizeof(ElementType),ALIGNOF(ElementType)>
+		TAlignedBytes<sizeof(ElementType), alignof(ElementType)>
 		> FElementOrFreeListLink;
 
 	/** Extracts the element value from the array's element structure and passes it to the user provided comparison class. */
@@ -900,7 +966,7 @@ public:
 	{
 		FScriptSparseArrayLayout Result;
 		Result.ElementOffset = 0;
-		Result.Alignment     = FMath::Max(ElementAlignment, (int32)ALIGNOF(FFreeListLink));
+		Result.Alignment     = FMath::Max(ElementAlignment, (int32)alignof(FFreeListLink));
 		Result.Size          = FMath::Max(ElementSize,      (int32)sizeof (FFreeListLink));
 
 		return Result;
@@ -1015,7 +1081,7 @@ private:
 
 		// Check that the class footprint is the same
 		static_assert(sizeof (ScriptType) == sizeof (RealType), "FScriptSparseArray's size doesn't match TSparseArray");
-		static_assert(ALIGNOF(ScriptType) == ALIGNOF(RealType), "FScriptSparseArray's alignment doesn't match TSparseArray");
+		static_assert(alignof(ScriptType) == alignof(RealType), "FScriptSparseArray's alignment doesn't match TSparseArray");
 
 		// Check member sizes
 		static_assert(sizeof(DeclVal<ScriptType>().Data)            == sizeof(DeclVal<RealType>().Data),            "FScriptSparseArray's Data member size does not match TSparseArray's");

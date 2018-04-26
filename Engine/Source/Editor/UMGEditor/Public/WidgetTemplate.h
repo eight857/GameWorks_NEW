@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,6 +18,7 @@ class UMGEDITOR_API FWidgetTemplate : public TSharedFromThis<FWidgetTemplate>
 public:
 	/** Constructor */
 	FWidgetTemplate();
+	virtual ~FWidgetTemplate() { }
 
 	/** The category this template fits into. */
 	virtual FText GetCategory() const = 0;

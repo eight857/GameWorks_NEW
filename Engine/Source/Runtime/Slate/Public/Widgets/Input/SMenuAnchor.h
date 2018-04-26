@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -31,12 +31,6 @@ DECLARE_DELEGATE_OneParam(FOnIsOpenChanged, bool)
 class SLATE_API SMenuAnchor : public SPanel, public IMenuHost
 {
 public:
-	DEPRECATED(4.7, "You probably do not need this setting any more. See OnQueryPopupMethod() in SWidget.h.")
-	typedef ::EPopupMethod EMethod;
-	static const EPopupMethod CreateNewWindow = EPopupMethod::CreateNewWindow;
-	static const EPopupMethod UseCurrentWindow = EPopupMethod::UseCurrentWindow;
-	
-public:
 	SLATE_BEGIN_ARGS( SMenuAnchor )
 		: _Content()
 		, _Padding(FMargin(0.f))
@@ -47,6 +41,7 @@ public:
 		, _ShouldDeferPaintingAfterWindowContent(true)
 		, _UseApplicationMenuStack(true)
 		, _IsCollapsedByParent(false)
+		, _ApplyWidgetStyleToMenu(true)
 		{}
 		
 		SLATE_DEFAULT_SLOT( FArguments, Content )
@@ -69,6 +64,9 @@ public:
 		
 		/** True if this menu anchor should be collapsed when its parent receives focus, false (default) otherwise */
 		SLATE_ARGUMENT(bool, IsCollapsedByParent)
+
+		/** True to apply the InWidgetStyle of the menu anchor when painting the popup, false to always paint the popup with full opacity and no tint. */
+		SLATE_ARGUMENT(bool, ApplyWidgetStyleToMenu)
 
 	SLATE_END_ARGS()
 
@@ -125,7 +123,7 @@ protected:
 	virtual void OnArrangeChildren( const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren ) const override;
 	virtual FVector2D ComputeDesiredSize(float) const override;
 	virtual FChildren* GetChildren() override;
-	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
+	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
 	// End of SWidget interface
 
 	/** @return true if the popup is currently open and reusing an existing window */
@@ -137,9 +135,22 @@ protected:
 	/** Handler/callback called by menus created by this anchor, when they are dismissed */
 	void OnMenuClosed(TSharedRef<IMenu> InMenu);
 
+	/** Computes the placement geometry for menus displayed in a separately created window */
+	FGeometry ComputeNewWindowMenuPlacement(const FGeometry& AllottedGeometry, const FVector2D& PopupDesiredSize, EMenuPlacement PlacementMode) const;
+
 	static TArray<TWeakPtr<IMenu>> OpenApplicationMenus;
 
 protected:
+	struct SLATE_API FPopupPlacement
+	{
+		FPopupPlacement(const FGeometry& PlacementGeometry, const FVector2D& PopupDesiredSize, EMenuPlacement PlacementMode);
+		
+		FVector2D LocalPopupSize;
+		FVector2D LocalPopupOffset;
+		FSlateRect AnchorLocalSpace;
+		EOrientation Orientation;
+	};
+
 	/**
 	 * A pointer to the window presenting this popup.
 	 * Can be the window created to hold a menu or the window containing this anchor if the menu is drawn as a child of the this anchor.
@@ -191,6 +202,9 @@ protected:
 
 	/** Should the menu by created by the application stack code making it behave like and have the lifetime of a normal menu? */
 	bool bUseApplicationMenuStack;
+
+	/** Should we paint the popup using the received InWidgetStyle? */
+	bool bApplyWidgetStyleToMenu;
 
 	/**
 	 * @todo Slate : Unify geometry so that this is not necessary.

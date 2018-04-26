@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/TimeGuard.h"
 #include "Misc/ScopeLock.h"
@@ -9,9 +9,10 @@ DEFINE_LOG_CATEGORY_STATIC(LogTimeGuard, Log, All);
 
 TMap<const TCHAR*, FLightweightTimeGuard::FGuardInfo>  FLightweightTimeGuard::HitchData;
 bool FLightweightTimeGuard::bEnabled;
-double FLightweightTimeGuard::LastHitchTime;
 float FLightweightTimeGuard::FrameTimeThresholdMS = 1000.0 / 30.0;
 FCriticalSection FLightweightTimeGuard::ReportMutex;
+TSet<const TCHAR *> FLightweightTimeGuard::VolatileNames; // any names which come in volatile we allocate them to a static string and put them in this array
+
 
 void FLightweightTimeGuard::SetEnabled(bool InEnable)
 {
@@ -27,8 +28,6 @@ void FLightweightTimeGuard::ClearData()
 {
 	FScopeLock Lock(&ReportMutex);
 	HitchData.Empty();
-	// don't capture any hitches immediately
-	LastHitchTime = FPlatformTime::Seconds();
 }
 
 void FLightweightTimeGuard::GetData(TMap<const TCHAR*, FGuardInfo>& Dest)
@@ -37,19 +36,27 @@ void FLightweightTimeGuard::GetData(TMap<const TCHAR*, FGuardInfo>& Dest)
 	Dest = HitchData;
 }
 
-void FLightweightTimeGuard::ReportHitch(const TCHAR* InName, const float TimeMS)
+void FLightweightTimeGuard::ReportHitch(const TCHAR* VolatileInName, const float TimeMS, bool VolatileName)
 {
-	const double kHitchDebounceTime = 2.0;
-
-	// Don't report hitches that occur in the same 5sec window. This will also stop
-	// the outer scope of nested checks reporting
-	const double TimeNow = FPlatformTime::Seconds();
-	if (TimeNow < LastHitchTime + kHitchDebounceTime)
-	{
-		return;
-	}
-
 	FScopeLock lock(&ReportMutex);
+
+	const TCHAR* InName = VolatileInName;
+	if ( VolatileName )
+	{
+		const TCHAR** CachedName = VolatileNames.Find(VolatileInName);
+		if ( CachedName == nullptr )
+		{
+			int32 StringLength = FCString::Strlen(VolatileInName) + 1;
+			TCHAR *NewString = new TCHAR[StringLength];
+			FCString::Strcpy(NewString, StringLength, VolatileInName);
+			VolatileNames.Add(NewString);
+			InName = NewString;
+		}
+		else
+		{
+			InName = *CachedName;
+		}
+	}
 
 	FGuardInfo& Data = HitchData.FindOrAdd(InName);
 
@@ -63,8 +70,6 @@ void FLightweightTimeGuard::ReportHitch(const TCHAR* InName, const float TimeMS)
 	Data.Min = FMath::Min(Data.Min, TimeMS);
 	Data.Max = FMath::Max(Data.Max, TimeMS);
 	Data.LastTime = FDateTime::UtcNow();
-
-	LastHitchTime = TimeNow;
 
 	UE_LOG(LogTimeGuard, Warning, TEXT("Detected Hitch of %0.2fms in %s"), TimeMS, InName);
 }

@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "Layout/Visibility.h"
 #include "Input/Reply.h"
 #include "IPropertyTypeCustomization.h"
@@ -32,11 +32,11 @@ private:
 
 	TSharedPtr<IPropertyHandle> GameplayTagProperty;
 
-	TSharedRef<ITableRow> GenerateListRow(TSharedRef<FStringAssetReference> NotifyName, const TSharedRef<STableViewBase>& OwnerTable);
-	TArray<TSharedRef<FStringAssetReference> > NotifyList;
-	TSharedPtr< SListView < TSharedRef<FStringAssetReference> > > ListView;
+	TSharedRef<ITableRow> GenerateListRow(TSharedRef<FSoftObjectPath> NotifyName, const TSharedRef<STableViewBase>& OwnerTable);
+	TArray<TSharedRef<FSoftObjectPath> > NotifyList;
+	TSharedPtr< SListView < TSharedRef<FSoftObjectPath> > > ListView;
 
-	void NavigateToHandler(TSharedRef<FStringAssetReference> AssetRef);
+	void NavigateToHandler(TSharedRef<FSoftObjectPath> AssetRef);
 
 	FReply OnAddNewNotifyClicked();
 

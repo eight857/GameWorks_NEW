@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/FileHelper.h"
@@ -66,6 +66,7 @@ namespace UAudio
 
 			TArray<ESoundFileChannelMap::Type> ChannelMap;
 			Error = InputSoundFileInternal->GetChannelMap(ChannelMap);
+			check(Error == ESoundFileError::NONE);
 
 			FSoundFileDescription NewSoundFileDescription;
 			NewSoundFileDescription.NumChannels = InputDescription.NumChannels;
@@ -203,14 +204,14 @@ namespace UAudio
 		// Make an auto-deleting task to perform the sound file loading work in the background task thread pool
 		FAutoDeleteAsyncTask<FAsyncSoundFileConvertTask>* Task = new FAutoDeleteAsyncTask<FAsyncSoundFileConvertTask>(this, &InputFilePath, &OutputFilePath, &ConvertFormat);
 		Task->StartBackgroundTask();
-	}
+	} //-V773
 
 	void FUnrealAudioModule::ConvertSound(const FString& InputFilePath, const FString& OutputFilePath)
 	{
 		// Make an auto-deleting task to perform the sound file loading work in the background task thread pool
 		FAutoDeleteAsyncTask<FAsyncSoundFileConvertTask>* Task = new FAutoDeleteAsyncTask<FAsyncSoundFileConvertTask>(this, &InputFilePath, &OutputFilePath, &DefaultConvertFormat);
 		Task->StartBackgroundTask();
-	}
+	} //-V773
 
 }
 

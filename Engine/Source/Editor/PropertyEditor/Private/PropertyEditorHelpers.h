@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -10,6 +10,7 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "PropertyNode.h"
 #include "Presentation/PropertyEditor/PropertyEditor.h"
+#include "SDetailSingleItemRow.h"
 
 class FNotifyHook;
 class FObjectPropertyNode;
@@ -58,9 +59,11 @@ class SPropertyValueWidget : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS( SPropertyValueWidget )
-		: _ShowPropertyButtons( true )
+		: _ShowPropertyButtons( true ),
+		_OptionalResetWidget(SNullWidget::NullWidget)
 	{}
 		SLATE_ARGUMENT( bool, ShowPropertyButtons )
+		SLATE_ARGUMENT( TSharedRef<SWidget>, OptionalResetWidget)
 	SLATE_END_ARGS()
 
 	void Construct( const FArguments& InArgs, TSharedPtr<FPropertyEditor> InPropertyEditor, TSharedPtr<IPropertyUtilities> InPropertyUtilities );
@@ -71,14 +74,19 @@ public:
 	/** @return The maximum desired with if this property value */
 	float GetMaxDesiredWidth() const { return MaxDesiredWidth; }
 
+	/** @return Whether this widget handles its own reset button */
+	bool CreatedResetButton() const { return bCreatedResetButton; }
+
 private:
-	TSharedRef<SWidget> ConstructPropertyEditorWidget( TSharedPtr<FPropertyEditor>& PropertyEditor, TSharedPtr<IPropertyUtilities> InPropertyUtilities );
+	TSharedRef<SWidget> ConstructPropertyEditorWidget( TSharedPtr<FPropertyEditor>& PropertyEditor, TSharedPtr<IPropertyUtilities> InPropertyUtilities, TSharedRef<SWidget> InOptionalResetDefaultWidget = SNullWidget::NullWidget);
 private:
 	TSharedPtr< SWidget > ValueEditorWidget;
 	/** The minimum desired with if this property value */
 	float MinDesiredWidth;
 	/** The maximum desired with if this property value */
 	float MaxDesiredWidth;
+	/** Whether or not this value widget handled its own reset button */
+	bool bCreatedResetButton;
 };
 
 
@@ -108,6 +116,8 @@ private:
 
 namespace PropertyEditorHelpers
 {
+
+	static bool IsPropertyButtonEnabled(TWeakPtr<FPropertyNode> PropertyNode);
 	/**
 	 * Returns whether or not a property is a built in struct property like a vector or color
 	 *
@@ -218,7 +228,7 @@ namespace PropertyEditorHelpers
 	void MakeRequiredPropertyButtons( const TSharedRef< FPropertyEditor >& PropertyEditor, TArray< TSharedRef<SWidget> >& OutButtons, const TArray<EPropertyButton::Type>& ButtonsToIgnore = TArray<EPropertyButton::Type>(), bool bUsingAssetPicker = true );
 
 	TSharedRef<SWidget> MakePropertyButton( const EPropertyButton::Type ButtonType, const TSharedRef< FPropertyEditor >& PropertyEditor );
-
+	TSharedRef<SWidget> MakePropertyReorderHandle(const TSharedRef<FPropertyNode>& PropertyNode, TSharedPtr<SDetailSingleItemRow> InParentRow);
 	/**
 	 * Recursively finds all object property nodes in a property tree
 	 *
@@ -235,5 +245,22 @@ namespace PropertyEditorHelpers
 	 * @return The array of allowed enums.  NOTE: If an empty array is returned all enum values are allowed.  It is an error for a property to hide all enum values so that state is undefined here.
 	 */
 	TArray<FName> GetValidEnumsFromPropertyOverride(const UProperty* Property, const UEnum* InEnum);
+	/**
+	 * Whether or not a category is hidden by a given root object
+	 * @param InRootNode	The root node that for the objects we are customizing
+	 * @param CategoryName	The name of the category to check
+	 * @return true if a category is hidden, false otherwise
+	 */
+	bool IsCategoryHiddenByClass(const TSharedPtr<FComplexPropertyNode>& InRootNode, FName CategoryName);
+	
+	/**
+	 * Determines whether or not a property should be visible in the default generated detail layout
+	 *
+	 * @param PropertyNode	The property node to check
+	 * @param ParentNode	The parent property node to check
+	 * @return true if the property should be visible
+	 */
+	bool IsVisibleStandaloneProperty(const FPropertyNode& PropertyNode, const FPropertyNode& ParentNode);
 
 }
+

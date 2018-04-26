@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tasks/AITask_MoveTo.h"
 #include "UObject/Package.h"
@@ -22,11 +22,14 @@ UAITask_MoveTo::UAITask_MoveTo(const FObjectInitializer& ObjectInitializer)
 
 	AddRequiredResource(UAIResource_Movement::StaticClass());
 	AddClaimedResource(UAIResource_Movement::StaticClass());
-
+	
 	MoveResult = EPathFollowingResult::Invalid;
+	bUseContinuousTracking = false;
 }
 
-UAITask_MoveTo* UAITask_MoveTo::AIMoveTo(AAIController* Controller, FVector InGoalLocation, AActor* InGoalActor, float AcceptanceRadius, EAIOptionFlag::Type StopOnOverlap, EAIOptionFlag::Type AcceptPartialPath, bool bUsePathfinding, bool bLockAILogic)
+UAITask_MoveTo* UAITask_MoveTo::AIMoveTo(AAIController* Controller, FVector InGoalLocation, AActor* InGoalActor,
+	float AcceptanceRadius, EAIOptionFlag::Type StopOnOverlap, EAIOptionFlag::Type AcceptPartialPath,
+	bool bUsePathfinding, bool bLockAILogic, bool bUseContinuosGoalTracking)
 {
 	UAITask_MoveTo* MyTask = Controller ? UAITask::NewAITask<UAITask_MoveTo>(*Controller, EAITaskPriority::High) : nullptr;
 	if (MyTask)
@@ -51,6 +54,7 @@ UAITask_MoveTo* UAITask_MoveTo::AIMoveTo(AAIController* Controller, FVector InGo
 		}
 
 		MyTask->SetUp(Controller, MoveReq);
+		MyTask->SetContinuousGoalTracking(bUseContinuosGoalTracking);
 
 		if (bLockAILogic)
 		{
@@ -65,6 +69,11 @@ void UAITask_MoveTo::SetUp(AAIController* Controller, const FAIMoveRequest& InMo
 {
 	OwnerController = Controller;
 	MoveRequest = InMoveRequest;
+}
+
+void UAITask_MoveTo::SetContinuousGoalTracking(bool bEnable)
+{
+	bUseContinuousTracking = bEnable;
 }
 
 void UAITask_MoveTo::FinishMoveTask(EPathFollowingResult::Type InResult)
@@ -95,6 +104,9 @@ void UAITask_MoveTo::FinishMoveTask(EPathFollowingResult::Type InResult)
 void UAITask_MoveTo::Activate()
 {
 	Super::Activate();
+
+	UE_CVLOG(bUseContinuousTracking, GetGameplayTasksComponent(), LogGameplayTasks, Log, TEXT("Continuous goal tracking requested, moving to: %s"),
+		MoveRequest.IsMoveToActorRequest() ? TEXT("actor => looping successful moves!") : TEXT("location => will NOT loop"));
 
 	MoveRequestID = FAIRequestID::InvalidRequest;
 	ConditionalPerformMove();
@@ -146,7 +158,7 @@ void UAITask_MoveTo::PerformMove()
 		PathFinishDelegateHandle = PFComp->OnRequestFinished.AddUObject(this, &UAITask_MoveTo::OnRequestFinished);
 		SetObservedPath(FollowedPath);
 
-		if (TaskState == EGameplayTaskState::Finished)
+		if (IsFinished())
 		{
 			UE_VLOG(GetGameplayTasksComponent(), LogGameplayTasks, Error, TEXT("%s> re-Activating Finished task!"), *GetName());
 		}
@@ -173,7 +185,7 @@ void UAITask_MoveTo::Resume()
 {
 	Super::Resume();
 
-	if (!MoveRequestID.IsValid() || !OwnerController->ResumeMove(MoveRequestID))
+	if (!MoveRequestID.IsValid() || (OwnerController && !OwnerController->ResumeMove(MoveRequestID)))
 	{
 		UE_CVLOG(MoveRequestID.IsValid(), GetGameplayTasksComponent(), LogGameplayTasks, Log, TEXT("%s> Resume move failed, starting new one."), *GetName());
 		ConditionalPerformMove();
@@ -283,7 +295,16 @@ void UAITask_MoveTo::OnRequestFinished(FAIRequestID RequestID, const FPathFollow
 		{
 			// reset request Id, FinishMoveTask doesn't need to update path following's state
 			MoveRequestID = FAIRequestID::InvalidRequest;
-			FinishMoveTask(Result.Code);
+
+			if (bUseContinuousTracking && MoveRequest.IsMoveToActorRequest() && Result.IsSuccess())
+			{
+				UE_VLOG(GetGameplayTasksComponent(), LogGameplayTasks, Log, TEXT("%s> received OnRequestFinished and goal tracking is active! Moving again in next tick"), *GetName());
+				GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UAITask_MoveTo::PerformMove);
+			}
+			else
+			{
+				FinishMoveTask(Result.Code);
+			}
 		}
 	}
 	else if (IsActive())

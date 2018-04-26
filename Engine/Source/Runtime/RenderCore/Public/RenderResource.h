@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RenderResource.h: Render resource definitions.
@@ -93,12 +93,6 @@ public:
 	// Accessors.
 	FORCEINLINE bool IsInitialized() const { return bInitialized; }
 
-	// For those situations when the default ctor had to be used
-	inline void SetFeatureLevel(ERHIFeatureLevel::Type InFeatureLevel)
-	{
-		FeatureLevel = InFeatureLevel;
-	}
-
 protected:
 	// This is used during mobile editor preview refactor, this will eventually be replaced with a parameter to InitRHI() etc..
 	ERHIFeatureLevel::Type GetFeatureLevel() const { return FeatureLevel == ERHIFeatureLevel::Num ? GMaxRHIFeatureLevel : FeatureLevel; }
@@ -171,10 +165,18 @@ public:
 		InitGlobalResource();
 	}
 
-	/** Initialization constructor: 1 parameter. */
+	/** Initialization constructor: 2 parameters. */
 	template<typename T1, typename T2>
 	explicit TGlobalResource(T1 Param1, T2 Param2)
 		: ResourceType(Param1, Param2)
+	{
+		InitGlobalResource();
+	}
+
+	/** Initialization constructor: 3 parameters. */
+	template<typename T1, typename T2, typename T3>
+	explicit TGlobalResource(T1 Param1, T2 Param2, T3 Param3)
+		: ResourceType(Param1, Param2, Param3)
 	{
 		InitGlobalResource();
 	}
@@ -296,8 +298,8 @@ struct FMipBiasFade
 	 */
 	inline float	CalcMipBias() const
 	{
- 		float DeltaTime		= GRenderingRealtimeClock.GetCurrentTime() - StartTime;
- 		float TimeFactor	= FMath::Min<float>(DeltaTime * MipCountFadingRate, 1.0f);
+		float DeltaTime		= GRenderingRealtimeClock.GetCurrentTime() - StartTime;
+		float TimeFactor	= FMath::Min<float>(DeltaTime * MipCountFadingRate, 1.0f);
 		float MipBias		= BiasOffset - MipCountDelta*TimeFactor;
 		return FMath::FloatSelect(GEnableMipLevelFading, MipBias, 0.0f);
 	}
@@ -460,9 +462,12 @@ public:
 		FRHIResourceCreateInfo CreateInfo;
 		
 		void* LockedData = nullptr;
-		VertexBufferRHI = RHICreateAndLockVertexBuffer(sizeof(uint32), BUF_Static | BUF_ZeroStride | BUF_ShaderResource, CreateInfo, LockedData);
+		VertexBufferRHI = RHICreateAndLockVertexBuffer(sizeof(uint32) * 4, BUF_Static | BUF_ZeroStride | BUF_ShaderResource, CreateInfo, LockedData);
 		uint32* Vertices = (uint32*)LockedData;
 		Vertices[0] = FColor(255, 255, 255, 255).DWColor();
+		Vertices[1] = FColor(255, 255, 255, 255).DWColor();
+		Vertices[2] = FColor(255, 255, 255, 255).DWColor();
+		Vertices[3] = FColor(255, 255, 255, 255).DWColor();
 		RHIUnlockVertexBuffer(VertexBufferRHI);
 		VertexBufferSRV = RHICreateShaderResourceView(VertexBufferRHI, sizeof(FColor), PF_R8G8B8A8);
 	}
@@ -554,9 +559,15 @@ public:
 	 */
 	static FGlobalDynamicVertexBuffer& Get();
 
+	/** Returns true if log statements should be made because we exceeded GMaxVertexBytesAllocatedPerFrame */
+	bool IsRenderAlarmLoggingEnabled() const;
+
 private:
 	/** The pool of vertex buffers from which allocations are made. */
 	struct FDynamicVertexBufferPool* Pool;
+
+	/** A total of all allocations made since the last commit. Used to alert about spikes in memory usage. */
+	size_t TotalAllocatedSinceLastCommit;
 };
 
 /**

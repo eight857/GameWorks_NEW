@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/Note.h"
 #include "UObject/ConstructorHelpers.h"
@@ -62,10 +62,3 @@ ANote::ANote(const FObjectInitializer& ObjectInitializer)
 	bHidden = true;
 	bCanBeDamaged = false;
 }
-
-#if WITH_EDITORONLY_DATA
-/** Returns SpriteComponent subobject **/
-UBillboardComponent* ANote::GetSpriteComponent() const { return SpriteComponent; }
-/** Returns ArrowComponent subobject **/
-UArrowComponent* ANote::GetArrowComponent() const { return ArrowComponent; }
-#endif

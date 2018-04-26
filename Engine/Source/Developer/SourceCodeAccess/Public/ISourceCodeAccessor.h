@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,6 +11,8 @@
 class ISourceCodeAccessor : public IModularFeature
 {
 public:
+	virtual ~ISourceCodeAccessor() {}
+
 	/**
 	 * Not necessary to call unless you know you're changing the state of any installed compilers.
 	 * If that's the case, you should call this before checking the state the installed state of the
@@ -43,10 +45,23 @@ public:
 	virtual FText GetDescriptionText() const = 0;
 
 	/**
-	 * Open the code solution for editing
+	 * Open the current code solution for editing
 	 * @return true if successful
 	 */
 	virtual bool OpenSolution() = 0;
+
+	/**
+	* Open the code solution at a specific path for editing
+	* @param InSolutionPath	Path to project directory
+	* @return true if successful
+	*/
+	virtual bool OpenSolutionAtPath(const FString& InSolutionPath) = 0;
+
+	/**
+	 * Determine if the source code solution for the given accessor already exists
+	 * @return true if solution files exist
+	 */
+	virtual bool DoesSolutionExist() const = 0;
 
 	/** 
 	 * Opens a file in the correct running instance of this code accessor at a line and optionally to a column. 

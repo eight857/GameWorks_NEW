@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Engine.h: Unreal engine public header file.
@@ -46,7 +46,6 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "PrimitiveSceneProxy.h"
 #include "BoneIndices.h"
 #include "ReferenceSkeleton.h"
-#include "SkeletalMeshTypes.h"
 #include "AnimInterpFilter.h"
 #include "Animation/AnimTypes.h"
 #include "CustomBoneIndexArray.h"
@@ -180,7 +179,6 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "Debug/DebugDrawService.h"
 #include "Components/LineBatchComponent.h"
 #include "Components/MaterialBillboardComponent.h"
-#include "Components/DestructibleComponent.h"
 #include "Lightmass/LightmassPrimitiveSettingsObject.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -206,7 +204,6 @@ MONOLITHIC_HEADER_BOILERPLATE()
 #include "Engine/Blueprint.h"
 #include "Animation/AnimBlueprint.h"
 #include "Sound/DialogueTypes.h"
-#include "Kismet/HeadMountedDisplayFunctionLibrary.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Animation/AnimSequenceBase.h"
 #include "AlphaBlend.h"

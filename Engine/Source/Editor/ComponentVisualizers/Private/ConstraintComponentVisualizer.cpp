@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ConstraintComponentVisualizer.h"
 
@@ -49,9 +49,9 @@ void FConstraintComponentVisualizer::DrawVisualization( const UActorComponent* C
 		// Otherwise use the component frame
 		else
 		{
-			Con1Frame = ConstraintComp->ComponentToWorld;
+			Con1Frame = ConstraintComp->GetComponentTransform();
 			Con1Frame.RemoveScaling();
-			Con2Frame = ConstraintComp->ComponentToWorld;
+			Con2Frame = ConstraintComp->GetComponentTransform();
 			Con2Frame.SetRotation(Con2Frame.GetRotation() * ConstraintComp->ConstraintInstance.AngularRotationOffset.Quaternion());
 			Con1Frame.RemoveScaling();
 		}

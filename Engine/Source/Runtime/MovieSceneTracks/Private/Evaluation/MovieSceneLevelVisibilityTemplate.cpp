@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Evaluation/MovieSceneLevelVisibilityTemplate.h"
 #include "Engine/LevelStreaming.h"
@@ -169,7 +169,8 @@ struct FLevelStreamingSharedTrackData : IPersistentEvaluationData
 
 	void ApplyLevelVisibility(IMovieScenePlayer& Player)
 	{
-		UWorld* World = Player.GetPlaybackContext()->GetWorld();
+		UObject* Context = Player.GetPlaybackContext();
+		UWorld* World = Context ? Context->GetWorld() : nullptr;
 		if (!World)
 		{
 			return;

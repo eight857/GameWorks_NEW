@@ -61,6 +61,21 @@ public:
 		UIMin = "0.0", UIMax = "1.0", DisplayName = "High Frequency Absorption"))
 	float StaticMeshHighFreqAbsorption; 
 
+	// How much this material transmits low frequency sound.
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default Static Mesh Material", meta = (ClampMin = "0.0", ClampMax = "1.0",
+		UIMin = "0.0", UIMax = "1.0", DisplayName = "Low Frequency Transmission"))
+	float StaticMeshLowFreqTransmission;
+
+	// How much this material transmits mid frequency sound.
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default Static Mesh Material", meta = (ClampMin = "0.0", ClampMax = "1.0",
+		UIMin = "0.0", UIMax = "1.0", DisplayName = "Mid Frequency Transmission"))
+	float StaticMeshMidFreqTransmission;
+
+	// How much this material transmits high frequency sound.
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default Static Mesh Material", meta = (ClampMin = "0.0", ClampMax = "1.0",
+		UIMin = "0.0", UIMax = "1.0", DisplayName = "High Frequency Transmission"))
+	float StaticMeshHighFreqTransmission;
+
 	// Specifies how "rough" the surface is. Surfaces with a high scattering value randomly reflect sound in all directions;
 	// surfaces with a low scattering value reflect sound in a mirror-like manner.
 	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default Static Mesh Material", meta = (ClampMin = "0.0", ClampMax = "1.0", 
@@ -87,6 +102,21 @@ public:
 	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default BSP Material", meta = (ClampMin = "0.0", ClampMax = "1.0", 
 		UIMin = "0.0", UIMax = "1.0", DisplayName = "High Frequency Absorption"))
 	float BSPHighFreqAbsorption;
+
+	// How much this material transmits low frequency sound.
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default BSP Material", meta = (ClampMin = "0.0", ClampMax = "1.0",
+		UIMin = "0.0", UIMax = "1.0", DisplayName = "Low Frequency Transmission"))
+	float BSPLowFreqTransmission;
+
+	// How much this material transmits mid frequency sound.
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default BSP Material", meta = (ClampMin = "0.0", ClampMax = "1.0",
+		UIMin = "0.0", UIMax = "1.0", DisplayName = "Mid Frequency Transmission"))
+	float BSPMidFreqTransmission;
+
+	// How much this material transmits high frequency sound.
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default BSP Material", meta = (ClampMin = "0.0", ClampMax = "1.0",
+		UIMin = "0.0", UIMax = "1.0", DisplayName = "High Frequency Transmission"))
+	float BSPHighFreqTransmission;
 
 	// Specifies how "rough" the surface is. Surfaces with a high scattering value randomly reflect sound in all directions;
 	// surfaces with a low scattering value reflect sound in a mirror-like manner.
@@ -115,6 +145,21 @@ public:
 		UIMin = "0.0", UIMax = "1.0", DisplayName = "High Frequency Absorption"))
 	float LandscapeHighFreqAbsorption;
 
+	// How much this material transmits low frequency sound.
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default Landscape Material", meta = (ClampMin = "0.0", ClampMax = "1.0",
+		UIMin = "0.0", UIMax = "1.0", DisplayName = "Low Frequency Transmission"))
+	float LandscapeLowFreqTransmission;
+
+	// How much this material transmits mid frequency sound.
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default Landscape Material", meta = (ClampMin = "0.0", ClampMax = "1.0",
+		UIMin = "0.0", UIMax = "1.0", DisplayName = "Mid Frequency Transmission"))
+	float LandscapeMidFreqTransmission;
+
+	// How much this material transmits high frequency sound.
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default Landscape Material", meta = (ClampMin = "0.0", ClampMax = "1.0",
+		UIMin = "0.0", UIMax = "1.0", DisplayName = "High Frequency Transmission"))
+	float LandscapeHighFreqTransmission;
+
 	// Specifies how "rough" the surface is. Surfaces with a high scattering value randomly reflect sound in all directions;
 	// surfaces with a low scattering value reflect sound in a mirror-like manner.
 	UPROPERTY(GlobalConfig, EditAnywhere, Category = "Scene Export|Default Landscape Material", meta = (ClampMin = "0.0", ClampMax = "1.0", 
@@ -124,7 +169,7 @@ public:
 	//==============================================================================================================================================
 
 	// Output of indirect propagation is stored in ambisonics of this order.
-	UPROPERTY(GlobalConfig, EditAnywhere, Category = IndirectSound, meta = (ClampMin = "0", ClampMax = "4", UIMin = "0", UIMax = "4",
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = IndirectSound, meta = (ClampMin = "0", ClampMax = "3", UIMin = "0", UIMax = "3",
 		DisplayName = "Ambisonics Order"))
 	int32 IndirectImpulseResponseOrder;
 

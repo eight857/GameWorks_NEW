@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/GameplayAbilityTargetActor.h"
 #include "GameplayAbilitySpec.h"
@@ -143,7 +143,7 @@ bool AGameplayAbilityTargetActor::OnReplicatedTargetDataReceived(FGameplayAbilit
 bool AGameplayAbilityTargetActor::ShouldProduceTargetData() const
 {
 	// return true if we are locally owned, or (we are the server and this is a gameplaytarget ability that can produce target data server side)
-	return (MasterPC && (MasterPC->IsLocalController() || ShouldProduceTargetDataOnServer));
+	return (MasterPC && MasterPC->IsLocalController()) || ShouldProduceTargetDataOnServer;
 }
 
 void AGameplayAbilityTargetActor::BindToConfirmCancelInputs()

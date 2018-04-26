@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections;
@@ -53,10 +53,15 @@ namespace MemoryProfiler2
 		/// <summary> Font used to draw numbers on an axis. </summary>
 		public Font AxisFont = new Font( FontFamily.GenericSansSerif, 13, GraphicsUnit.Pixel );
 
-		/// <summary> Initializes common controls and setups all needed properties. </summary>
-		private void CommonInit()
+        /// <summary> Copy of original window title so we rebuild it when the loaded file changes </summary>
+        public string OriginalWindowTitle;
+
+        /// <summary> Initializes common controls and setups all needed properties. </summary>
+        private void CommonInit()
 		{
-			Options = UnrealControls.XmlHandler.ReadXml<SettableOptions>( Path.Combine( Application.StartupPath, "MemoryProfiler2.ClassGroups.xml" ) );
+			OriginalWindowTitle = Text;
+
+            Options = UnrealControls.XmlHandler.ReadXml<SettableOptions>( Path.Combine( Application.StartupPath, "MemoryProfiler2.ClassGroups.xml" ) );
 			Options.ApplyDefaults();
 
 			AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler( CurrentDomain_AssemblyResolve );
@@ -498,6 +503,8 @@ namespace MemoryProfiler2
 		private void ParseFile( string InCurrentFilename )
 		{
 			CurrentFilename = InCurrentFilename;
+
+            Text = OriginalWindowTitle + " - " + CurrentFilename;
 
 			MemoryPoolFilterButton.Enabled = false;
 
@@ -2465,6 +2472,10 @@ namespace MemoryProfiler2
 		{
 		}
 
+        public virtual void SetModuleOffset(ulong offset)
+        {
+        }
+
 		public virtual bool ResolveAddressToSymboInfo(ESymbolResolutionMode SymbolResolutionMode, ulong Address, out string OutFileName, out string OutFunction, out int OutLineNumber)
 		{
 			OutFileName = null;
@@ -2567,7 +2578,7 @@ namespace MemoryProfiler2
 					Callback(CallStack);
 				}
 			});
-
+            AsyncWorker.WorkerSupportsCancellation = true;
 			AsyncWorker.RunWorkerAsync();
 			ResolveCallstackSymbolInfoAsyncTasks.Add(AsyncWorker);
 		}

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,10 +14,6 @@ class IPropertyHandle;
 class FGameplayTagCustomization : public IPropertyTypeCustomization, public FEditorUndoClient
 {
 public:
-	static TSharedRef<IPropertyTypeCustomization> MakeInstance()
-	{
-		return MakeShareable(new FGameplayTagCustomization);
-	}
 
 	~FGameplayTagCustomization();
 
@@ -60,5 +56,8 @@ private:
 
 	/** Tag name selected*/
 	FString TagName;
+
+	void OnTagDoubleClicked();
+	EVisibility GetVisibilityForTagTextBlockWidget(bool ForTextWidget) const;
 };
 

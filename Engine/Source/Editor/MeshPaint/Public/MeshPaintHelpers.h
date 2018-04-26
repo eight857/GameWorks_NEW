@@ -1,8 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/EngineTypes.h"
+#include "MeshPaintTypes.h"
 
 class FMeshPaintParameters;
 class UVertexColorImportOptions;
@@ -24,8 +26,18 @@ struct FStaticMeshComponentLODInfo;
 
 enum class EMeshPaintColorViewMode : uint8;
 
+/** Parameters for paint actions, stored together for convenience */
+struct FPerVertexPaintActionArgs
+{
+	IMeshPaintGeometryAdapter* Adapter;
+	FVector CameraPosition;
+	FHitResult HitResult;
+	const UPaintBrushSettings* BrushSettings;
+	EMeshPaintAction Action;
+};
+
 /** Delegates used to call per-vertex/triangle actions */
-DECLARE_DELEGATE_TwoParams(FPerVertexPaintAction, IMeshPaintGeometryAdapter* /*Adapter*/, int32 /*VertexIndex*/);
+DECLARE_DELEGATE_TwoParams(FPerVertexPaintAction, FPerVertexPaintActionArgs& /*Args*/, int32 /*VertexIndex*/);
 DECLARE_DELEGATE_ThreeParams(FPerTrianglePaintAction, IMeshPaintGeometryAdapter* /*Adapter*/, int32 /*TriangleIndex*/, const int32[3] /*Vertex Indices*/);
 
 class MESHPAINT_API MeshPaintHelpers
@@ -56,13 +68,15 @@ public:
 	static void SetInstanceColorDataForLOD(UStaticMeshComponent* MeshComponent, int32 LODIndex, const TArray<FColor>& Colors);	
 	
 	/** Sets the specific (LOD Index) per-instance vertex colors for the given StaticMeshComponent to a single Color value */
-	static void SetInstanceColorDataForLOD(UStaticMeshComponent* MeshComponent, int32 LODIndex, const FColor FillColor);
+	static void SetInstanceColorDataForLOD(UStaticMeshComponent* MeshComponent, int32 LODIndex, const FColor FillColor, const FColor MaskColor);
 	
 	/** Fills all vertex colors for all LODs found in the given mesh component with Fill Color */
-	static void FillVertexColors(UMeshComponent* MeshComponent, const FColor FillColor, bool bInstanced = false);
+	static void FillVertexColors(UMeshComponent* MeshComponent, const FColor FillColor, const FColor MaskColor, bool bInstanced = false);
 	
 	/** Sets all vertex colors for a specific LOD level in the SkeletalMesh to FillColor */
-	static void SetColorDataForLOD(USkeletalMesh* SkeletalMesh, int32 LODIndex, const FColor FillColor);
+	static void SetColorDataForLOD(USkeletalMesh* SkeletalMesh, int32 LODIndex, const FColor FillColor, const FColor MaskColor);
+
+	static void ApplyFillWithMask(FColor& InOutColor, const FColor& MaskColor, const FColor& FillColor);
 
 	/** Helper function to import Vertex Colors from a Texture to the specified MeshComponent (makes use of SImportVertexColorsOptions Widget) */
 	static void ImportVertexColorsFromTexture(UMeshComponent* MeshComponent);
@@ -103,8 +117,8 @@ public:
 	/** Retrieves the number of bytes used to store the per-instance LOD vertex color data from the static mesh component */
 	static void GetInstanceColorDataInfo(const UStaticMeshComponent* StaticMeshComponent, int32 LODIndex, int32& OutTotalInstanceVertexColorBytes);
 
-	/** Given the adapter, settings and view-information retrieves influences vertices and applies Action to them */
-	static bool ApplyPerVertexPaintAction(IMeshPaintGeometryAdapter* Adapter, const FVector& CameraPosition, const FVector& HitPosition, const UPaintBrushSettings* Settings, FPerVertexPaintAction Action);
+	/** Given arguments for an action, and an action - retrieves influences vertices and applies Action to them */
+	static bool ApplyPerVertexPaintAction(FPerVertexPaintActionArgs& InArgs, FPerVertexPaintAction Action);
 	
 	/** Given the adapter, settings and view-information retrieves influences triangles and applies Action to them */
 	static bool ApplyPerTrianglePaintAction(IMeshPaintGeometryAdapter* Adapter, const FVector& CameraPosition, const FVector& HitPosition, const UPaintBrushSettings* Settings, FPerTrianglePaintAction Action);
@@ -130,7 +144,7 @@ public:
 	static bool IsPointInfluencedByBrush(const FVector2D& BrushSpacePosition, const float BrushRadiusSquared, float& OutInRangeValue);
 
 	template<typename T>
-	static void ApplyBrushToVertex(const FVector& VertexPosition, const FMatrix& InverseBrushMatrix, const float BrushRadius, const float BrushFalloff, const T& PaintValue, T& InOutValue);
+	static void ApplyBrushToVertex(const FVector& VertexPosition, const FMatrix& InverseBrushMatrix, const float BrushRadius, const float BrushFalloffAmount, const float BrushStrength, const T& PaintValue, T& InOutValue);
 
 public:
 	struct FPaintRay
@@ -157,23 +171,16 @@ protected:
 };
 
 template<typename T>
-void MeshPaintHelpers::ApplyBrushToVertex(const FVector& VertexPosition, const FMatrix& InverseBrushMatrix, const float BrushRadiusSquared, const float BrushFalloff, const T& PaintValue, T& InOutValue)
+void MeshPaintHelpers::ApplyBrushToVertex(const FVector& VertexPosition, const FMatrix& InverseBrushMatrix, const float BrushRadius, const float BrushFalloffAmount, const float BrushStrength, const T& PaintValue, T& InOutValue)
 {
 	const FVector BrushSpacePosition = InverseBrushMatrix.TransformPosition(VertexPosition);
 	const FVector2D BrushSpacePosition2D(BrushSpacePosition.X, BrushSpacePosition.Y);
 		
 	float InfluencedValue = 0.0f;
-	if (IsPointInfluencedByBrush(BrushSpacePosition2D, BrushRadiusSquared, InfluencedValue))
+	if (IsPointInfluencedByBrush(BrushSpacePosition2D, BrushRadius * BrushRadius, InfluencedValue))
 	{
-		float PaintStrength = 1.0f;
-
-		// Now know range from 0 - 1 how far vertex is inside of the sphere
-		// If this falls outside of the brush inner radius
-		const float InnerBrushPercentage = BrushFalloff;
-		if (InfluencedValue > InnerBrushPercentage)
-		{
-			PaintStrength *= (1.0f - InfluencedValue) / InnerBrushPercentage;
-		}
+		float InnerBrushRadius = BrushFalloffAmount * BrushRadius;
+		float PaintStrength = MeshPaintHelpers::ComputePaintMultiplier(BrushSpacePosition2D.SizeSquared(), BrushStrength, InnerBrushRadius, BrushRadius - InnerBrushRadius, 1.0f, 1.0f, 1.0f);
 
 		const T OldValue = InOutValue;
 		InOutValue = FMath::LerpStable(OldValue, PaintValue, PaintStrength);

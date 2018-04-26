@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Factories.h: Unreal Engine factory types.
@@ -9,6 +9,8 @@
 #include "CoreMinimal.h"
 #include "UObject/Class.h"
 #include "Animation/MorphTarget.h"
+
+UNREALED_API DECLARE_LOG_CATEGORY_EXTERN(LogEditorFactories, Log, All);
 
 class Error;
 class USkeletalMesh;
@@ -26,6 +28,7 @@ protected:
 public:
 	/** Constructor for the factory; takes a context for emitting warnings such as GWarn */
 	FCustomizableTextObjectFactory(FFeedbackContext* InWarningContext);
+	virtual ~FCustomizableTextObjectFactory() {}
 
 	/**
 	 *	Parse a text buffer and factories objects from it, subject to the restrictions imposed by CanCreateClass()
@@ -96,8 +99,6 @@ class FMorphTargetBinaryImport
 public:
 	/** for outputing warnings */
 	FFeedbackContext* Warn;
-	/** raw mesh data used for calculating differences */
-	FMorphMeshRawSource BaseMeshRawData;
 	/** base mesh lod entry to use */
 	int32 BaseLODIndex;
 	/** the base mesh */
@@ -105,8 +106,8 @@ public:
 
 	FMorphTargetBinaryImport( USkeletalMesh* InSrcMesh, int32 LODIndex=0, FFeedbackContext* InWarn=GWarn );
 	FMorphTargetBinaryImport( UStaticMesh* InSrcMesh, int32 LODIndex=0, FFeedbackContext* InWarn=GWarn );
+	virtual ~FMorphTargetBinaryImport() {}
 
-	void ImportMorphLODModel( UMorphTarget* MorphTarget, const TCHAR* SrcFilename, int32 LODIndex, EMorphImportError* Error=NULL );
     virtual USkeletalMesh* CreateSkeletalMesh(const TCHAR* SrcFilename, EMorphImportError* Error ) = 0;
 };
 

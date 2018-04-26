@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 /*=============================================================================================
@@ -15,17 +15,20 @@
 class Error;
 struct FGenericCrashContext;
 
+#if UE_BUILD_SHIPPING
+#define UE_DEBUG_BREAK() ((void)0)
+#else
+#define UE_DEBUG_BREAK() (FLinuxPlatformMisc::DebugBreakInternal())
+#endif
 /**
  * Linux implementation of the misc OS functions
  */
 struct CORE_API FLinuxPlatformMisc : public FGenericPlatformMisc
 {
-	static uint32 WindowStyle();
 	static void PlatformInit();
 	static void PlatformTearDown();
 	static void SetGracefulTerminationHandler();
 	static void SetCrashHandler(void (* CrashHandler)(const FGenericCrashContext& Context));
-	static class GenericApplication* CreateApplication();
 	static void GetEnvironmentVariable(const TCHAR* VariableName, TCHAR* Result, int32 ResultLength);
 	static void SetEnvironmentVar(const TCHAR* VariableName, const TCHAR* Value);
 	DEPRECATED(4.14, "GetMacAddress is deprecated. It is not reliable on all platforms")
@@ -34,26 +37,27 @@ struct CORE_API FLinuxPlatformMisc : public FGenericPlatformMisc
 
 #if !UE_BUILD_SHIPPING
 	static bool IsDebuggerPresent();
+	static void DebugBreakInternal();
+
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreak is deprecated. Use the UE_DEBUG_BREAK() macro instead.")
 	FORCEINLINE static void DebugBreak()
 	{
-		if( IsDebuggerPresent() )
-		{
-			UngrabAllInput();
-			raise(SIGTRAP);
-		}
+		UE_DEBUG_BREAK();
 	}
 #endif // !UE_BUILD_SHIPPING
 
 	/** Break into debugger. Returning false allows this function to be used in conditionals. */
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreakReturningFalse is deprecated. Use the (UE_DEBUG_BREAK(), false) expression instead.")
 	FORCEINLINE static bool DebugBreakReturningFalse()
 	{
 #if !UE_BUILD_SHIPPING
-		DebugBreak();
+		UE_DEBUG_BREAK();
 #endif
 		return false;
 	}
 
 	/** Prompts for remote debugging if debugger is not attached. Regardless of result, breaks into debugger afterwards. Returns false for use in conditionals. */
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreakAndPromptForRemoteReturningFalse() is deprecated.")
 	static FORCEINLINE bool DebugBreakAndPromptForRemoteReturningFalse(bool bIsEnsure = false)
 	{
 #if !UE_BUILD_SHIPPING
@@ -62,23 +66,17 @@ struct CORE_API FLinuxPlatformMisc : public FGenericPlatformMisc
 			PromptForRemoteDebugging(bIsEnsure);
 		}
 
-		DebugBreak();
+		UE_DEBUG_BREAK();
 #endif
 
 		return false;
 	}
 
-	static void PumpMessages(bool bFromMainLoop);
-	static uint32 GetKeyMap( uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings );
-	static uint32 GetCharKeyMap(uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings);
 	static void LowLevelOutputDebugString(const TCHAR *Message);
-	static bool ControlScreensaver(EScreenSaverAction Action);
 
 	static void RequestExit(bool Force);
 	static void RequestExitWithStatus(bool Force, uint8 ReturnCode);
 	static const TCHAR* GetSystemErrorMessage(TCHAR* OutBuffer, int32 BufferCount, int32 Error);
-	static void ClipboardCopy(const TCHAR* Str);
-	static void ClipboardPaste(class FString& Dest);
 
 	static void NormalizePath(FString& InPath);
 
@@ -114,8 +112,6 @@ struct CORE_API FLinuxPlatformMisc : public FGenericPlatformMisc
 
 	static int32 NumberOfCores();
 	static int32 NumberOfCoresIncludingHyperthreads();
-	static void LoadPreInitModules();
-	static void LoadStartupModules();
 	static FString GetOperatingSystemId();
 	static bool GetDiskTotalAndFreeSpace(const FString& InPath, uint64& TotalNumberOfBytes, uint64& NumberOfFreeBytes);
 
@@ -146,10 +142,8 @@ struct CORE_API FLinuxPlatformMisc : public FGenericPlatformMisc
 	 */
 	static uint32 GetCPUInfo();
 
-	/**
-	 * Initializes video (and not only) subsystem.
-	 */
-	static bool PlatformInitMultimedia();
+	static bool HasNonoptionalCPUFeatures();
+	static bool NeedsNonoptionalCPUFeaturesCheck();
 
 #if !UE_BUILD_SHIPPING	// only in non-shipping because we break into the debugger in non-shipping builds only
 	/**

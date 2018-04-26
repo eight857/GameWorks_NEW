@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineIdentityOculus.h"
 #include "OnlineSubsystemOculusPrivate.h"
 #include "OnlineSubsystemOculusPackage.h"
+#include "OnlineError.h"
 
 bool FUserOnlineAccountOculus::GetAuthAttribute(const FString& AttrName, FString& OutAttrValue) const
 {
@@ -250,11 +251,21 @@ FString FOnlineIdentityOculus::GetAuthToken(int32 LocalUserNum) const
 	return FString();
 }
 
-FOnlineIdentityOculus::FOnlineIdentityOculus(class FOnlineSubsystemOculus& InSubsystem)
+void FOnlineIdentityOculus::RevokeAuthToken(const FUniqueNetId& UserId, const FOnRevokeAuthTokenCompleteDelegate& Delegate)
+{
+	UE_LOG(LogOnline, Display, TEXT("FOnlineIdentityOculus::RevokeAuthToken not implemented"));
+	TSharedRef<const FUniqueNetId> UserIdRef(UserId.AsShared());
+	OculusSubsystem.ExecuteNextTick([UserIdRef, Delegate]()
+	{
+		Delegate.ExecuteIfBound(*UserIdRef, FOnlineError(FString(TEXT("RevokeAuthToken not implemented"))));
+	});
+}
+
+FOnlineIdentityOculus::FOnlineIdentityOculus(FOnlineSubsystemOculus& InSubsystem)
 	: OculusSubsystem(InSubsystem)
 {
 	// Auto login the 0-th player
-	AutoLogin(0);
+	FOnlineIdentityOculus::AutoLogin(0);
 }
 
 void FOnlineIdentityOculus::GetUserPrivilege(const FUniqueNetId& UserId, EUserPrivileges::Type Privilege, const FOnGetUserPrivilegeCompleteDelegate& Delegate)
@@ -272,18 +283,18 @@ void FOnlineIdentityOculus::GetUserPrivilege(const FUniqueNetId& UserId, EUserPr
 				auto Error = ovr_Message_GetError(Message);
 				FString ErrorMessage(ovr_Error_GetMessage(Error));
 				UE_LOG_ONLINE(Error, TEXT("Failed the entitlement check: %s"), *ErrorMessage);
-				PrivilegeResults = (uint32)IOnlineIdentity::EPrivilegeResults::UserNotFound;
+				PrivilegeResults = static_cast<uint32>(IOnlineIdentity::EPrivilegeResults::UserNotFound);
 			}
 			else
 			{
 				UE_LOG_ONLINE(Verbose, TEXT("User is entitled to app"));
-				PrivilegeResults = (uint32)IOnlineIdentity::EPrivilegeResults::NoFailures;
+				PrivilegeResults = static_cast<uint32>(IOnlineIdentity::EPrivilegeResults::NoFailures);
 			}
 			Delegate.ExecuteIfBound(UserId, Privilege, PrivilegeResults);
 		}));
 }
 
-FPlatformUserId FOnlineIdentityOculus::GetPlatformUserIdFromUniqueNetId(const FUniqueNetId& UniqueNetId)
+FPlatformUserId FOnlineIdentityOculus::GetPlatformUserIdFromUniqueNetId(const FUniqueNetId& UniqueNetId) const
 {
 	for (int i = 0; i < MAX_LOCAL_PLAYERS; ++i)
 	{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -23,6 +23,7 @@
 #include "Engine/PendingNetGame.h"
 #include "Engine/LatentActionManager.h"
 #include "Engine/GameInstance.h"
+#include "Engine/DemoNetDriver.h"
 
 #include "World.generated.h"
 
@@ -43,7 +44,6 @@ class FWorldInGamePerformanceTrackers;
 class IInterface_PostProcessVolume;
 class UAISystemBase;
 class UCanvas;
-class UDemoNetDriver;
 class UGameViewportClient;
 class ULevelStreaming;
 class ULocalPlayer;
@@ -56,6 +56,7 @@ class UNetDriver;
 class UPrimitiveComponent;
 class UTexture2D;
 struct FUniqueNetIdRepl;
+struct FEncryptionKeyResponse;
 
 template<typename,typename> class TOctree;
 
@@ -63,12 +64,12 @@ template<typename,typename> class TOctree;
  * Misc. Iterator types
  *
  */
-typedef TArray<TAutoWeakObjectPtr<AController> >::TConstIterator FConstControllerIterator;
-typedef TArray<TAutoWeakObjectPtr<APlayerController> >::TConstIterator FConstPlayerControllerIterator;
-typedef TArray<TAutoWeakObjectPtr<APawn> >::TConstIterator FConstPawnIterator;	
-typedef TArray<TAutoWeakObjectPtr<ACameraActor> >::TConstIterator FConstCameraActorIterator;
+typedef TArray<TWeakObjectPtr<AController> >::TConstIterator FConstControllerIterator;
+typedef TArray<TWeakObjectPtr<APlayerController> >::TConstIterator FConstPlayerControllerIterator;
+typedef TArray<TWeakObjectPtr<APawn> >::TConstIterator FConstPawnIterator;	
+typedef TArray<TWeakObjectPtr<ACameraActor> >::TConstIterator FConstCameraActorIterator;
 typedef TArray<class ULevel*>::TConstIterator FConstLevelIterator;
-typedef TArray<TAutoWeakObjectPtr<APhysicsVolume> >::TConstIterator FConstPhysicsVolumeIterator;
+typedef TArray<TWeakObjectPtr<APhysicsVolume> >::TConstIterator FConstPhysicsVolumeIterator;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogSpawn, Warning, All);
 
@@ -491,6 +492,11 @@ public:
 	
 	/* Determines whether or not the actor may be spawned when running a construction script. If true spawning will fail if a construction script is being run. */
 	uint16	bAllowDuringConstructionScript:1;
+
+#if WITH_EDITOR
+	/** Determines whether the begin play cycle will run on the spawned actor when in the editor. */
+	uint16 bTemporaryEditorActor:1;
+#endif
 	
 	/* Flags used to describe the spawned actor/object instance. */
 	EObjectFlags ObjectFlags;		
@@ -686,18 +692,29 @@ public:
 	/**
 	 * Constructor that will save the current relevant values of InWorld
 	 * and set the collection's context values for InWorld.
+	 * The constructor that takes an index is preferred, but this one
+	 * still exists for backwards compatibility.
 	 *
 	 * @param InLevelCollection The collection's context to use
 	 * @param InWorld The world on which to set the context.
 	 */
 	FScopedLevelCollectionContextSwitch(const FLevelCollection* const InLevelCollection, UWorld* const InWorld);
-	
+
+	/**
+	 * Constructor that will save the current relevant values of InWorld
+	 * and set the collection's context values for InWorld.
+	 *
+	 * @param InLevelCollectionIndex The index of the collection to use
+	 * @param InWorld The world on which to set the context.
+	 */
+	FScopedLevelCollectionContextSwitch(int32 InLevelCollectionIndex, UWorld* const InWorld);
+
 	/** The destructor restores the context on the world that was saved in the constructor. */
 	~FScopedLevelCollectionContextSwitch();
 
 private:
 	class UWorld* World;
-	const FLevelCollection* SavedTickingCollection;
+	int32 SavedTickingCollectionIndex;
 };
 
 /** 
@@ -845,8 +862,8 @@ private:
 	UPROPERTY(Transient, NonTransactional)
 	TArray<FLevelCollection>					LevelCollections;
 
-	/** Pointer to the level collection that's currently ticking. */
-	const FLevelCollection*						ActiveLevelCollection;
+	/** Index of the level collection that's currently ticking. */
+	int32										ActiveLevelCollectionIndex;
 
 	/** Creates the dynamic source and static level collections if they don't already exist. */
 	void ConditionallyCreateDefaultLevelCollections();
@@ -1096,15 +1113,6 @@ public:
 	/** Counter for allocating game- unique controller player numbers															*/
 	int32										PlayerNum;
 
-	/** Time in seconds (game time so we respect time dilation) since the last time we purged references to pending kill objects */
-	float										TimeSinceLastPendingKillPurge;
-
-	/** Whether a full purge has been triggered, so that the next GarbageCollect will do a full purge no matter what.			*/
-	bool										FullPurgeTriggered;
-	
-	/** Whether we should delay GC for one frame to finish some pending operation												*/
-	bool										bShouldDelayGarbageCollect;
-
 	/** Whether world object has been initialized via Init()																	*/
 	bool										bIsWorldInitialized;
 	
@@ -1151,6 +1159,16 @@ public:
 
 	/** When non-'None', all line traces where the TraceTag match this will be drawn */
 	FName    DebugDrawTraceTag;
+
+	/** When set to true, all scene queries will be drawn */
+	bool bDebugDrawAllTraceTags;
+
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+	bool DebugDrawSceneQueries(const FName& UsedTraceTag) const
+	{
+		return (bDebugDrawAllTraceTags || ((DebugDrawTraceTag != NAME_None) && (DebugDrawTraceTag == UsedTraceTag))) && IsInGameThread();
+	}
+#endif
 
 	/** An array of post processing volumes, sorted in ascending order of priority.					*/
 	TArray< IInterface_PostProcessVolume * > PostProcessVolumes;
@@ -1222,8 +1240,7 @@ public:
 	 **/
 	uint32 NumLightingUnbuiltObjects;
 	
-	/** Num of reflection capture components missing valid data. This can be non-zero only in game with FeatureLevel < SM4*/
-	uint32 NumInvalidReflectionCaptureComponents;
+	uint32 NumUnbuiltReflectionCaptures;
 
 	/** Num of components missing valid texture streaming data. Updated in map check. */
 	int32 NumTextureStreamingUnbuiltComponents;
@@ -1285,9 +1302,6 @@ public:
 	/** Keeps track whether actors moved via PostEditMove and therefore constraint syncup should be performed. */
 	UPROPERTY(transient)
 	uint32 bAreConstraintsDirty:1;
-
-	/** Coordinates async tasks started in post load that we want completed before we register components.  May not be here for long; currently used to convert foliage instance buffers.*/
-	FThreadSafeCounter AsyncPreRegisterLevelStreamingTasks;
 
 #if WITH_EDITORONLY_DATA
 	/** List of DDC async requests we need to wait on before we register components. Game thread only. */
@@ -1907,8 +1921,6 @@ private:
 
 public:
 
-	DEPRECATED(4.3, "GetBrush is deprecated use GetDefaultBrush instead.")
-	ABrush* GetBrush() const;
 	/** 
 	 * Returns the default brush for the persistent level.
 	 * This is usually the 'builder brush' for editor builds, undefined for non editor instances and may be NULL.
@@ -2113,7 +2125,7 @@ public:
 	virtual void Serialize( FArchive& Ar ) override;
 	virtual void FinishDestroy() override;
 	virtual void PostLoad() override;
-	virtual bool PreSaveRoot(const TCHAR* Filename, TArray<FString>& AdditionalPackagesToCook) override;
+	virtual bool PreSaveRoot(const TCHAR* Filename) override;
 	virtual void PostSaveRoot( bool bCleanupIsRequired ) override;
 	virtual UWorld* GetWorld() const override;
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
@@ -2172,9 +2184,6 @@ public:
 	 */
 	void CommitModelSurfaces();
 
-	/** Purges all reflection capture cached derived data and forces a re-render of captured scene data. */
-	void UpdateAllReflectionCaptures();
-
 	/** Purges all sky capture cached derived data and forces a re-render of captured scene data. */
 	void UpdateAllSkyCaptures();
 
@@ -2218,17 +2227,6 @@ public:
 	 * @param FlushType					Whether to only flush level visibility operations (optional)
 	 */
 	void FlushLevelStreaming(EFlushLevelStreamingType FlushType = EFlushLevelStreamingType::Full);
-
-	/**
-	 * [Deprecated] Flushes level streaming in blocking fashion and returns when all levels are loaded/ visible/ hidden
-	 * so further calls to UpdateLevelStreaming won't do any work unless state changes. Basically blocks
-	 * on all async operation like updating components.
-	 *
-	 * @param FlushType					Whether to only flush level visibility operations
-	 * @param ExcludeType				Exclude packages of this type from flushing
-	 */
-	DEPRECATED(4.9, "FlushLevelStreaming override that takes ExcludeType parameter is deprecated.")
-	void FlushLevelStreaming(EFlushLevelStreamingType FlushType, FName ExcludeType);
 
 	/**
 	 * Triggers a call to ULevel::BuildStreamingData(this,NULL,NULL) within a few seconds.
@@ -2359,11 +2357,13 @@ public:
 	/**
 	 *  Interface to allow WorldSettings to request immediate garbage collection
 	 */
+	DEPRECATED(4.18, "Use GEngine->PerformGarbageCollectionAndCleanupActors instead.")
 	void PerformGarbageCollectionAndCleanupActors();
 
 	/**
 	 *  Requests a one frame delay of Garbage Collection
 	 */
+	DEPRECATED(4.18, "Use GEngine->DelayGarbageCollection instead.")
 	void DelayGarbageCollection();
 
 	/**
@@ -2372,14 +2372,14 @@ public:
 	 *
 	 * Note: Things that force a GC will still force a GC after using this method (and they will also reset the timer)
 	 */
+	DEPRECATED(4.18, "Use GEngine->SetTimeUntilNextGarbageCollection instead.")
 	void SetTimeUntilNextGarbageCollection(float MinTimeUntilNextPass);
 
 	/**
 	 * Returns the current desired time between garbage collection passes (not the time remaining)
 	 */
+	DEPRECATED(4.18, "Call GEngine->GetTimeBetweenGarbageCollectionPasses instead")
 	float GetTimeBetweenGarbageCollectionPasses() const;
-
-protected:
 
 	/**
 	 *	Remove NULL entries from actor list. Only does so for dynamic actors to avoid resorting. 
@@ -2545,20 +2545,32 @@ public:
 	/** Returns the FLevelCollection for the given InType. If one does not exist, it is created. */
 	FLevelCollection& FindOrAddCollectionByType(const ELevelCollectionType InType);
 
+	/** Returns the index of the first FLevelCollection of the given InType. If one does not exist, it is created and its index returned. */
+	int32 FindOrAddCollectionByType_Index(const ELevelCollectionType InType);
+
 	/** Returns the FLevelCollection for the given InType, or null if a collection of that type hasn't been created yet. */
 	FLevelCollection* FindCollectionByType(const ELevelCollectionType InType);
 
 	/** Returns the FLevelCollection for the given InType, or null if a collection of that type hasn't been created yet. */
 	const FLevelCollection* FindCollectionByType(const ELevelCollectionType InType) const;
 
+	/** Returns the index of the FLevelCollection with the given InType, or INDEX_NONE if a collection of that type hasn't been created yet. */
+	int32 FindCollectionIndexByType(const ELevelCollectionType InType) const;
+	
 	/**
 	 * Returns the level collection which currently has its context set on this world. May be null.
 	 * If non-null, this implies that execution is currently within the scope of an FScopedLevelCollectionContextSwitch for this world.
 	 */
-	const FLevelCollection* GetActiveLevelCollection() const { return ActiveLevelCollection; }
+	const FLevelCollection* GetActiveLevelCollection() const;
+
+	/**
+	 * Returns the index of the level collection which currently has its context set on this world. May be INDEX_NONE.
+	 * If not INDEX_NONE, this implies that execution is currently within the scope of an FScopedLevelCollectionContextSwitch for this world.
+	 */
+	int32 GetActiveLevelCollectionIndex() const { return ActiveLevelCollectionIndex; }
 
 	/** Sets the level collection and its context on this world. Should only be called by FScopedLevelCollectionContextSwitch. */
-	void SetActiveLevelCollection(const FLevelCollection* InCollection);
+	void SetActiveLevelCollection(int32 LevelCollectionIndex);
 
 	/** Returns a read-only reference to the list of level collections in this world. */
 	const TArray<FLevelCollection>& GetLevelCollections() const { return LevelCollections; }
@@ -2606,6 +2618,9 @@ public:
 
 	// Destroys the current demo net driver
 	void DestroyDemoNetDriver();
+
+	/** Returns true if we are currently playing a replay */
+	bool IsPlayingReplay() const { return (DemoNetDriver ? DemoNetDriver->IsPlaying() : false); }
 
 	// Start listening for connections.
 	bool Listen( FURL& InURL );
@@ -2739,33 +2754,6 @@ public:
 	T* SpawnActorAbsolute(UClass* Class, FTransform const& Transform,const FActorSpawnParameters& SpawnParameters = FActorSpawnParameters())
 	{
 		return CastChecked<T>(SpawnActorAbsolute(Class, Transform, SpawnParameters), ECastCheckedType::NullAllowed);
-	}
-	/**
-	* Spawns given class and returns class T pointer, forcibly sets world position. WILL NOT run Construction Script of Blueprints 
-	* to give caller an opportunity to set parameters beforehand.  Caller is responsible for invoking construction
-	* manually by calling UGameplayStatics::FinishSpawningActor (see AActor::OnConstruction).
-	*/
-	template< class T >
-	DEPRECATED(4.9, "This version of SpawnActorDeferred is deprecated. Please use the version that takes an FTransform and ESpawnActorCollisionHandlingMethod.")
-	T* SpawnActorDeferred(
-		UClass* Class,
-		FVector const& Location,
-		FRotator const& Rotation,
-		AActor* Owner = nullptr,
-		APawn* Instigator = nullptr,
-		bool bNoCollisionFail = false
-		)
-	{
-		if( Owner )
-		{
-			check(this==Owner->GetWorld());
-		}
-		FActorSpawnParameters SpawnInfo;
-		SpawnInfo.SpawnCollisionHandlingOverride = bNoCollisionFail ? ESpawnActorCollisionHandlingMethod::AlwaysSpawn : ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
-		SpawnInfo.Owner = Owner;
-		SpawnInfo.Instigator = Instigator;
-		SpawnInfo.bDeferConstruction = true;
-		return (Class != NULL) ? Cast<T>(SpawnActor(Class, &Location, &Rotation, SpawnInfo )) : NULL;
 	}
 
 	/**
@@ -2917,6 +2905,10 @@ private:
 	/** Private version without inlining that does *not* check Dedicated server build flags (which should already have been done). */
 	ENetMode InternalGetNetMode() const;
 
+	// Sends the NMT_Challenge message to Connection.
+	void SendChallengeControlMessage(UNetConnection* Connection);
+	void SendChallengeControlMessage(const FEncryptionKeyResponse& Response, TWeakObjectPtr<UNetConnection> WeakConnection);
+
 public:
 
 #if WITH_EDITOR
@@ -3019,7 +3011,10 @@ public:
 	/** Returns true if this world is any kind of game world (including PIE worlds) */
 	bool IsGameWorld() const;
 
-	/** Returns true if this world is a preview game world (blueprint editor) */
+	/** Returns true if this world is any kind of editor world (including editor preview worlds) */
+	bool IsEditorWorld() const;
+
+	/** Returns true if this world is a preview game world (editor or game) */
 	bool IsPreviewWorld() const;
 
 	/** Returns true if this world should look at game hidden flags instead of editor hidden flags for the purposes of rendering */
@@ -3097,6 +3092,7 @@ public:
 	int32 GetDetailMode();
 
 	/** Updates the timer between garbage collection such that at the next opportunity garbage collection will be run. */
+	DEPRECATED(4.18, "Call GEngine->ForceGarbageCollection instead")
 	void ForceGarbageCollection( bool bFullPurge = false );
 
 	/** asynchronously loads the given levels in preparation for a streaming map transition.
@@ -3126,7 +3122,7 @@ public:
 	 * Sets NumLightingUnbuiltObjects to the specified value.  Marks the worldsettings package dirty if the value changed.
 	 * @param	InNumLightingUnbuiltObjects			The new value.
 	 */
-	void SetMapNeedsLightingFullyRebuilt(int32 InNumLightingUnbuiltObjects);
+	void SetMapNeedsLightingFullyRebuilt(int32 InNumLightingUnbuiltObjects, int32 InNumUnbuiltReflectionCaptures);
 
 	/** Returns TimerManager instance for this world. */
 	inline FTimerManager& GetTimerManager() const
@@ -3157,6 +3153,20 @@ public:
 		return OwningGameInstance;
 	}
 
+	/** Returns the OwningGameInstance cast to the template type. */
+	template<class T>
+	T* GetGameInstance() const
+	{
+		return Cast<T>(OwningGameInstance);
+	}
+
+	/** Returns the OwningGameInstance cast to the template type, asserting that it is of the correct type. */
+	template<class T>
+	T* GetGameInstanceChecked() const
+	{
+		return CastChecked<T>(OwningGameInstance);
+	}
+
 	/** Retrieves information whether all navigation with this world has been rebuilt */
 	bool IsNavigationRebuilt() const;
 
@@ -3181,6 +3191,9 @@ public:
 public:
 	/** Rename this world such that it has the prefix on names for the given PIE Instance ID */
 	void RenameToPIEWorld(int32 PIEInstanceID);
+
+	/** Given a level script actor, modify the string such that it points to the correct instance of the object. For replays. */
+	bool RemapCompiledScriptActor(FString& Str) const;
 
 	/** Given a PackageName and a PIE Instance ID return the name of that Package when being run as a PIE world */
 	static FString ConvertToPIEPackageName(const FString& PackageName, int32 PIEInstanceID);
@@ -3239,6 +3252,9 @@ public:
 	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnWorldTickStart, ELevelTick, float);
 	static FOnWorldTickStart OnWorldTickStart;
 
+	DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnWorldPostActorTick, UWorld* /*World*/, ELevelTick/**Tick Type*/, float/**Delta Seconds*/);
+	static FOnWorldPostActorTick OnWorldPostActorTick;
+
 	// Callback for world creation
 	static FWorldEvent OnPostWorldCreation;
 	
@@ -3256,8 +3272,11 @@ public:
 	// Post duplication event.
 	static FWorldPostDuplicateEvent OnPostDuplicate;
 
-	// Callback for world cleanup
+	// Callback for world cleanup start
 	static FWorldCleanupEvent OnWorldCleanup;
+
+	// Callback for world cleanup end
+	static FWorldCleanupEvent OnPostWorldCleanup;
 
 	// Callback for world destruction (only called for initialized worlds)
 	static FWorldEvent OnPreWorldFinishDestroy;

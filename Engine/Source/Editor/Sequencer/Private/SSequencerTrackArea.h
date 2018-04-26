@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -54,7 +54,9 @@ class SSequencerTrackArea
 public:
 
 	SLATE_BEGIN_ARGS( SSequencerTrackArea )
-	{ }
+	{
+		_Clipping = EWidgetClipping::ClipToBounds;
+	}
 	SLATE_END_ARGS()
 
 	/** Construct this widget */
@@ -83,6 +85,9 @@ public:
 	/** Access the currently active track area edit tool */
 	const ISequencerEditTool* GetEditTool() const { return EditTool.IsValid() ? EditTool.Get() : nullptr; }
 
+	/** Attempt to activate the tool specified by the identifier */
+	bool AttemptToActivateTool(FName Identifier);
+
 public:
 
 	// SWidget interface
@@ -93,22 +98,22 @@ public:
 	virtual FReply OnMouseWheel( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
 	virtual void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override;
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
 	virtual void OnMouseCaptureLost() override;
 	virtual FCursorReply OnCursorQuery( const FGeometry& MyGeometry, const FPointerEvent& CursorEvent ) const override;
 	virtual void Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime ) override;
 	virtual void OnArrangeChildren( const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren ) const override;
 	virtual FVector2D ComputeDesiredSize(float) const override;
 	virtual FChildren* GetChildren() override;
+	virtual void OnDragEnter(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
+	virtual void OnDragLeave(const FDragDropEvent& DragDropEvent) override;
+	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
+	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
 
 protected:
 
 	/** Check whether it's possible to activate the specified tool */
 	bool CanActivateEditTool(FName Identifier) const;
-
-	/** Attempt to activate the tool specified by the template parameter */
-	template<typename EditToolType>
-	bool AttemptToActivateTool();
 
 	/** Update any hover state required for the track area */
 	void UpdateHoverStates( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent );
@@ -139,7 +144,16 @@ private:
 	TOptional<FVector2D> SizeLastFrame;
 
 	/** The currently active edit tool on this track area */
-	TUniquePtr<ISequencerEditTool> EditTool;
+	TSharedPtr<ISequencerEditTool> EditTool;
+
+	/** The currently active edit tool on this track area */
+	TArray<TSharedPtr<ISequencerEditTool>> EditTools;
+
+	/** Weak pointer to the dropped node */
+	TWeakPtr<FSequencerDisplayNode> DroppedNode;
+
+	/** Whether the dropped node is allowed to be dropped onto */
+	bool bAllowDrop;
 
 private:
 

@@ -1,30 +1,18 @@
-/* Copyright 2016 Google Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2017 Google Inc.
 
 #include "GoogleVRController.h"
 #include "GoogleVRControllerPrivate.h"
 #include "CoreDelegates.h"
-#include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
 #include "Classes/GoogleVRControllerFunctionLibrary.h"
 #include "Classes/GoogleVRControllerEventManager.h"
-//#include "Engine/Engine.h"
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
 #include "GameFramework/WorldSettings.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+
+#include "GoogleVRAdbUtils.h"
 
 #if GOOGLEVRCONTROLLER_SUPPORTED_ANDROID_PLATFORMS
 #include "Android/AndroidJNI.h"
@@ -33,6 +21,13 @@
 extern gvr_context* GVRAPI;
 extern gvr_user_prefs* GVRUserPrefs;
 #endif // GOOGLEVRCONTROLLER_SUPPORTED_ANDROID_PLATFORMS
+
+DEFINE_LOG_CATEGORY_STATIC(LogGoogleVRController, Log, All);
+
+#if GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+#include "instant_preview_server.h"
+#include "GoogleVRInstantPreviewGetServer.h"
+#endif  // GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
 
 #if GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
 #define CONTROLLER_EVENT_FORWARDED_PORT 7003 //Change this port number if it is already taken.
@@ -43,7 +38,6 @@ static double LastTimeTryAdbForward = 0.0;
 static bool bIsLastTickInPlayMode = false;
 static bool SetupAdbForward();
 static bool ExecuteAdbCommand( const FString& CommandLine, FString* OutStdOut, FString* OutStdErr);
-static void GetAdbPath(FString& OutADBPath);
 static bool IsPlayInEditor();
 #endif
 
@@ -55,8 +49,10 @@ class FGoogleVRControllerPlugin : public IGoogleVRControllerPlugin
 		// Get controller API
 #if GOOGLEVRCONTROLLER_SUPPORTED_ANDROID_PLATFORMS
 		gvr::ControllerApi* pController = new gvr::ControllerApi();
-#elif GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
+#else
+#if GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
 		gvr::ControllerApi* pController = new gvr::ControllerEmulatorApi();
+#endif
 #endif
 		check(pController);
 
@@ -81,8 +77,10 @@ class FGoogleVRControllerPlugin : public IGoogleVRControllerPlugin
 		jobject classLoader = jenv->CallObjectMethod(MainClass, getClassLoaderMethod);
 
 		success = pController->Init(jenv, ApplicationContext, classLoader, options, GVRAPI);
-#elif GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
+#else
+#if GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
 		success = static_cast<gvr::ControllerEmulatorApi*>(pController)->InitEmulator(options, CONTROLLER_EVENT_FORWARDED_PORT);
+#endif
 #endif
 		if (!success)
 		{
@@ -120,6 +118,8 @@ class FGoogleVRControllerPlugin : public IGoogleVRControllerPlugin
 
 IMPLEMENT_MODULE( FGoogleVRControllerPlugin, GoogleVRController)
 
+FName FGoogleVRController::DeviceTypeName(TEXT("GoogleVRController"));
+
 #if GOOGLEVRCONTROLLER_SUPPORTED_PLATFORMS
 FGoogleVRController::FGoogleVRController(gvr::ControllerApi* pControllerAPI, const TSharedRef< FGenericApplicationMessageHandler >& InMessageHandler)
 	: pController(pControllerAPI)
@@ -132,6 +132,9 @@ FGoogleVRController::FGoogleVRController(const TSharedRef< FGenericApplicationMe
 	, CurrentControllerState(EGoogleVRControllerState::Disconnected)
 #if GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
 	, BaseEmulatorOrientation(FRotator::ZeroRotator)
+#endif
+#if GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+	, InstantPreviewControllerState()
 #endif
 {
 	UE_LOG(LogGoogleVRController, Log, TEXT("GoogleVR Controller Created"));
@@ -166,6 +169,11 @@ FGoogleVRController::FGoogleVRController(const TSharedRef< FGenericApplicationMe
 	);
 
 #endif
+
+#if GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+	IpServerHandle = InstantPreviewGetServerHandle();
+#endif
+
 	// Setup button mappings
 	Buttons[(int32)EControllerHand::Left][EGoogleVRControllerButton::ApplicationMenu] = FGamepadKeyNames::MotionController_Left_Shoulder;
 	Buttons[(int32)EControllerHand::Right][EGoogleVRControllerButton::ApplicationMenu] = FGamepadKeyNames::MotionController_Right_Shoulder;
@@ -191,7 +199,6 @@ FGoogleVRController::FGoogleVRController(const TSharedRef< FGenericApplicationMe
 	Buttons[(int32)EControllerHand::Left][EGoogleVRControllerButton::TouchPadPress] = FGamepadKeyNames::MotionController_Left_Thumbstick;
 	Buttons[(int32)EControllerHand::Right][EGoogleVRControllerButton::TouchPadPress] = FGamepadKeyNames::MotionController_Right_Thumbstick;
 
-	Buttons[(int32)EControllerHand::Left][EGoogleVRControllerButton::TouchPadTouch] = GoogleVRControllerKeyNames::Touch0;
 	Buttons[(int32)EControllerHand::Right][EGoogleVRControllerButton::TouchPadTouch] = GoogleVRControllerKeyNames::Touch0;
 
 	// Register callbacks for pause and resume
@@ -236,6 +243,13 @@ void FGoogleVRController::ApplicationResumeDelegate()
 void FGoogleVRController::PollController(float DeltaTime)
 {
 #if GOOGLEVRCONTROLLER_SUPPORTED_PLATFORMS
+#if GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+	instant_preview::Session *session = ip_static_server_acquire_active_session(IpServerHandle);
+	if (NULL != session) {
+		session->get_controller_state(&InstantPreviewControllerState);
+	}
+	ip_static_server_release_active_session(IpServerHandle, session);
+#endif
 #if GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
 	int32_t PreviousConnectionState = CachedControllerState.GetConnectionState();
 	// If controller connection is requested but it is not connected, try resetup adb forward.
@@ -287,24 +301,43 @@ void FGoogleVRController::PollController(float DeltaTime)
 		// Updating the Arm Model requires us to pass in some data in GVR space
 		gvr_arm_model::Controller::UpdateData UpdateData;
 
-		// get acceleration data
-		gvr_vec3f GvrAccel = CachedControllerState.GetAccel();
-		UpdateData.acceleration = gvr_arm_model::Vector3(GvrAccel.x, GvrAccel.y, GvrAccel.z);
+#if GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+		if (gvr::ControllerConnectionState::GVR_CONTROLLER_CONNECTED == InstantPreviewControllerState.connection_state)
+		{
+			UpdateData.acceleration = gvr_arm_model::Vector3(InstantPreviewControllerState.accel[0], InstantPreviewControllerState.accel[1], InstantPreviewControllerState.accel[2]);
+			UpdateData.orientation = gvr_arm_model::Quaternion(
+				InstantPreviewControllerState.orientation[0],
+				InstantPreviewControllerState.orientation[1],
+				InstantPreviewControllerState.orientation[2],
+				InstantPreviewControllerState.orientation[3]);
+			UpdateData.gyro = gvr_arm_model::Vector3(InstantPreviewControllerState.gyro[0], InstantPreviewControllerState.gyro[1], InstantPreviewControllerState.gyro[2]);
+			UpdateData.connected = true;
+		}
+		else
+#endif  // GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+		{
+			// get acceleration data
+			gvr_vec3f GvrAccel = CachedControllerState.GetAccel();
+			UpdateData.acceleration = gvr_arm_model::Vector3(GvrAccel.x, GvrAccel.y, GvrAccel.z);
 
-		// Get orientation data
-		gvr_quatf GvrOrientation = CachedControllerState.GetOrientation();
-		UpdateData.orientation = gvr_arm_model::Quaternion(GvrOrientation.qw, GvrOrientation.qx, GvrOrientation.qy, GvrOrientation.qz);
+			// Get orientation data
+			gvr_quatf GvrOrientation = CachedControllerState.GetOrientation();
+			UpdateData.orientation = gvr_arm_model::Quaternion(GvrOrientation.qw, GvrOrientation.qx, GvrOrientation.qy, GvrOrientation.qz);
 
-		// Get gyroscope data
-		gvr_vec3f GvrGyro = CachedControllerState.GetGyro();
-		UpdateData.gyro = gvr_arm_model::Vector3(GvrGyro.x, GvrGyro.y, GvrGyro.z);
+			// Get gyroscope data
+			gvr_vec3f GvrGyro = CachedControllerState.GetGyro();
+			UpdateData.gyro = gvr_arm_model::Vector3(GvrGyro.x, GvrGyro.y, GvrGyro.z);
+
+			// Get connected status
+			UpdateData.connected = CachedControllerState.GetConnectionState() == gvr::ControllerConnectionState::GVR_CONTROLLER_CONNECTED;
+		}
 
 		// Get head direction and position of the HMD, used for FollowGaze options
-		if (GEngine->HMDDevice.IsValid())
+		if (GEngine->XRSystem.IsValid())
 		{
 			FQuat HmdOrientation;
 			FVector HmdPosition;
-			GEngine->HMDDevice->GetCurrentOrientationAndPosition(HmdOrientation, HmdPosition);
+			GEngine->XRSystem->GetCurrentPose(IXRTrackingSystem::HMDDeviceId, HmdOrientation, HmdPosition);
 			FVector HmdDirection = HmdOrientation * FVector::ForwardVector;
 
 			const float WorldToMetersScale = GetWorldToMetersScale();
@@ -323,8 +356,6 @@ void FGoogleVRController::PollController(float DeltaTime)
 		// Get delta time
 		UpdateData.deltaTimeSeconds = DeltaTime;
 
-		// Get connected status
-		UpdateData.connected = CachedControllerState.GetConnectionState() == gvr::ControllerConnectionState::GVR_CONTROLLER_CONNECTED;
 
 		// Update the arm model
 		ArmModelController.Update(UpdateData);
@@ -337,73 +368,112 @@ void FGoogleVRController::ProcessControllerButtons()
 #if GOOGLEVRCONTROLLER_SUPPORTED_PLATFORMS
 	// Capture our current button states
 	bool CurrentButtonStates[EGoogleVRControllerButton::TotalButtonCount] = {0};
+
 	FVector2D TranslatedLocation = FVector2D::ZeroVector;
 
-	if (IsAvailable())
+#if GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+	if (gvr::ControllerConnectionState::GVR_CONTROLLER_CONNECTED == InstantPreviewControllerState.connection_state)
 	{
 		// Process our known set of buttons
-		if (CachedControllerState.GetButtonState(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_CLICK))
-		{
-			CurrentButtonStates[EGoogleVRControllerButton::TouchPadPress] = true;
-		}
-		else if (CachedControllerState.GetButtonUp(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_CLICK))
-		{
-			CurrentButtonStates[EGoogleVRControllerButton::TouchPadPress] = false;
-		}
-
-		if (CachedControllerState.GetButtonState(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_HOME))
-		{
-			CurrentButtonStates[EGoogleVRControllerButton::System] = true;
-		}
-		else if (CachedControllerState.GetButtonUp(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_HOME))
-		{
-			CurrentButtonStates[EGoogleVRControllerButton::System] = false;
-		}
-
-		// Note: VolumeUp and VolumeDown Controller states are also ignored as they are reserved
-
-		if (CachedControllerState.GetButtonState(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_APP))
-		{
-			CurrentButtonStates[EGoogleVRControllerButton::ApplicationMenu] = true;
-		}
-		else if (CachedControllerState.GetButtonUp(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_APP))
-		{
-			CurrentButtonStates[EGoogleVRControllerButton::ApplicationMenu] = false;
-		}
-
-		// Note: There is no Grip or Trigger button information from the CachedControllerState; so do nothing
-		// EGoogleVRControllerButton::TriggerPress - unhandled
-		// EGoogleVRControllerButton::Grip - unhandled
-
-		// Process touches and analog information
-		// OnDown
-		CurrentButtonStates[EGoogleVRControllerButton::TouchPadTouch] = CachedControllerState.IsTouching();
-
+		CurrentButtonStates[EGoogleVRControllerButton::TouchPadPress] = InstantPreviewControllerState.click_button_state;
+		CurrentButtonStates[EGoogleVRControllerButton::ApplicationMenu] = InstantPreviewControllerState.app_button_state;
+		CurrentButtonStates[EGoogleVRControllerButton::TouchPadTouch] = InstantPreviewControllerState.is_touching;
 		// The controller's touch positions are in [0,1]^2 coordinate space, we want to be in [-1,1]^2, so translate the touch positions.
-		TranslatedLocation = FVector2D((CachedControllerState.GetTouchPos().x * 2) - 1, (CachedControllerState.GetTouchPos().y * 2) - 1);
-
+		TranslatedLocation = FVector2D((InstantPreviewControllerState.touch_pos[0] * 2) - 1, (InstantPreviewControllerState.touch_pos[1] * 2) - 1);
 		// OnHold
-		if( CachedControllerState.IsTouching() || CachedControllerState.GetTouchUp() )
+		if (InstantPreviewControllerState.is_touching)
 		{
 			const FVector2D TouchDir = TranslatedLocation.GetSafeNormal();
 			const FVector2D UpDir(0.f, 1.f);
 			const FVector2D RightDir(1.f, 0.f);
-
 			const float VerticalDot = TouchDir | UpDir;
 			const float RightDot = TouchDir | RightDir;
-
 			const bool bPressed = !TouchDir.IsNearlyZero() && CurrentButtonStates[EGoogleVRControllerButton::TouchPadPress];
-
 			CurrentButtonStates[EGoogleVRControllerButton::TouchPadUp] = bPressed && (VerticalDot <= -DOT_45DEG);
 			CurrentButtonStates[EGoogleVRControllerButton::TouchPadDown] = bPressed && (VerticalDot >= DOT_45DEG);
 			CurrentButtonStates[EGoogleVRControllerButton::TouchPadLeft] = bPressed && (RightDot <= -DOT_45DEG);
 			CurrentButtonStates[EGoogleVRControllerButton::TouchPadRight] = bPressed && (RightDot >= DOT_45DEG);
 		}
-
-		else if(!CachedControllerState.IsTouching())
-		{
+		else {
 			TranslatedLocation.X = 0.0f;
 			TranslatedLocation.Y = 0.0f;
+		}
+	}
+	else
+#endif  // GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+	{
+		if (IsAvailable())
+		{
+			// Process our known set of buttons
+			if (CachedControllerState.GetButtonState(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_CLICK))
+			{
+				CurrentButtonStates[EGoogleVRControllerButton::TouchPadPress] = true;
+			}
+			else if (CachedControllerState.GetButtonUp(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_CLICK))
+			{
+				CurrentButtonStates[EGoogleVRControllerButton::TouchPadPress] = false;
+			}
+
+			if (CachedControllerState.GetButtonState(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_HOME))
+			{
+				CurrentButtonStates[EGoogleVRControllerButton::System] = true;
+			}
+			else if (CachedControllerState.GetButtonUp(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_HOME))
+			{
+				CurrentButtonStates[EGoogleVRControllerButton::System] = false;
+			}
+
+			// Note: VolumeUp and VolumeDown Controller states are also ignored as they are reserved
+
+			if (CachedControllerState.GetButtonState(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_APP))
+			{
+				CurrentButtonStates[EGoogleVRControllerButton::ApplicationMenu] = true;
+			}
+			else if (CachedControllerState.GetButtonUp(gvr::ControllerButton::GVR_CONTROLLER_BUTTON_APP))
+			{
+				CurrentButtonStates[EGoogleVRControllerButton::ApplicationMenu] = false;
+			}
+
+			// Note: There is no Grip or Trigger button information from the CachedControllerState; so do nothing
+			// EGoogleVRControllerButton::TriggerPress - unhandled
+			// EGoogleVRControllerButton::Grip - unhandled
+
+			// Process touches and analog information
+			// OnDown
+			CurrentButtonStates[EGoogleVRControllerButton::TouchPadTouch] = CachedControllerState.IsTouching();
+
+			// The controller's touch positions are in [0,1]^2 coordinate space, we want to be in [-1,1]^2, so translate the touch positions.
+			TranslatedLocation = FVector2D((CachedControllerState.GetTouchPos().x * 2) - 1, (CachedControllerState.GetTouchPos().y * 2) - 1);
+			// Clamp the translated location inside the circle with radius = 1 to match the controller touch pad.
+			float VectorLength = TranslatedLocation.Size();
+			if (VectorLength > 1.0f)
+			{
+				TranslatedLocation = TranslatedLocation / VectorLength;
+			}
+
+			// OnHold
+			if( CachedControllerState.IsTouching() || CachedControllerState.GetTouchUp() )
+			{
+				const FVector2D TouchDir = TranslatedLocation.GetSafeNormal();
+				const FVector2D UpDir(0.f, 1.f);
+				const FVector2D RightDir(1.f, 0.f);
+
+				const float VerticalDot = TouchDir | UpDir;
+				const float RightDot = TouchDir | RightDir;
+
+				const bool bPressed = !TouchDir.IsNearlyZero() && CurrentButtonStates[EGoogleVRControllerButton::TouchPadPress];
+
+				CurrentButtonStates[EGoogleVRControllerButton::TouchPadUp] = bPressed && (VerticalDot <= -DOT_45DEG);
+				CurrentButtonStates[EGoogleVRControllerButton::TouchPadDown] = bPressed && (VerticalDot >= DOT_45DEG);
+				CurrentButtonStates[EGoogleVRControllerButton::TouchPadLeft] = bPressed && (RightDot <= -DOT_45DEG);
+				CurrentButtonStates[EGoogleVRControllerButton::TouchPadRight] = bPressed && (RightDot >= DOT_45DEG);
+			}
+
+			else if(!CachedControllerState.IsTouching())
+			{
+				TranslatedLocation.X = 0.0f;
+				TranslatedLocation.Y = 0.0f;
+			}
 		}
 	}
 
@@ -421,13 +491,19 @@ void FGoogleVRController::ProcessControllerButtons()
 			// OnDown
 			if(CurrentButtonStates[ButtonIndex])
 			{
-				MessageHandler->OnControllerButtonPressed( Buttons[(int32)EControllerHand::Left][ButtonIndex], 0, false);
+				if (ButtonIndex != EGoogleVRControllerButton::TouchPadTouch)
+				{
+					MessageHandler->OnControllerButtonPressed(Buttons[(int32)EControllerHand::Left][ButtonIndex], 0, false);
+				}
 				MessageHandler->OnControllerButtonPressed( Buttons[(int32)EControllerHand::Right][ButtonIndex], 0, false);
 			}
 			// On Up
 			else
 			{
-				MessageHandler->OnControllerButtonReleased( Buttons[(int32)EControllerHand::Left][ButtonIndex], 0, false);
+				if (ButtonIndex != EGoogleVRControllerButton::TouchPadTouch)
+				{
+					MessageHandler->OnControllerButtonReleased(Buttons[(int32)EControllerHand::Left][ButtonIndex], 0, false);
+				}
 				MessageHandler->OnControllerButtonReleased( Buttons[(int32)EControllerHand::Right][ButtonIndex], 0, false);
 			}
 		}
@@ -445,17 +521,30 @@ void FGoogleVRController::ProcessControllerEvents()
 	{
 #if GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
 		// Perform recenter when using in editor controller emulation
-		if (GEngine->HMDDevice.IsValid() && GEngine->HMDDevice->GetVersionString().Contains(TEXT("GoogleVR")) )
+		if (GEngine->XRSystem.IsValid() && GEngine->XRSystem->GetSystemName() == FName("FGoogleVRHMD"))
 		{
-			GEngine->HMDDevice.Get()->ResetOrientation();
+			GEngine->XRSystem->ResetOrientation();
 		}
 		BaseEmulatorOrientation.Yaw += LastOrientation.Yaw;
 #endif
-		UGoogleVRControllerFunctionLibrary::GetGoogleVRControllerEventManager()->OnControllerRecenteredDelegate.Broadcast();
+
+		FCoreDelegates::VRControllerRecentered.Broadcast();
+
+		// Deprecate me!
+		UGoogleVRControllerFunctionLibrary::GetGoogleVRControllerEventManager()->OnControllerRecenteredDelegate_DEPRECATED.Broadcast();
 	}
 
+
 	EGoogleVRControllerState PreviousControllerState = CurrentControllerState;
-	CurrentControllerState = (EGoogleVRControllerState) CachedControllerState.GetConnectionState();
+#if GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+	if (gvr::ControllerConnectionState::GVR_CONTROLLER_DISCONNECTED != InstantPreviewControllerState.connection_state) {
+		CurrentControllerState = (EGoogleVRControllerState)InstantPreviewControllerState.connection_state;
+	}
+	else
+#endif  // GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+	{
+		CurrentControllerState = (EGoogleVRControllerState) CachedControllerState.GetConnectionState();
+	}
 	if (CurrentControllerState != PreviousControllerState)
 	{
 		UGoogleVRControllerFunctionLibrary::GetGoogleVRControllerEventManager()->OnControllerStateChangedDelegate.Broadcast(CurrentControllerState);
@@ -466,7 +555,13 @@ void FGoogleVRController::ProcessControllerEvents()
 bool FGoogleVRController::IsAvailable() const
 {
 #if GOOGLEVRCONTROLLER_SUPPORTED_PLATFORMS
-	if( CachedControllerState.GetApiStatus() == gvr::ControllerApiStatus::GVR_CONTROLLER_API_OK &&
+#if GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+	if (gvr::ControllerConnectionState::GVR_CONTROLLER_CONNECTED == InstantPreviewControllerState.connection_state) {
+		return true;
+	}
+	else
+#endif  // GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+	if(CachedControllerState.GetApiStatus() == gvr::ControllerApiStatus::GVR_CONTROLLER_API_OK &&
 		CachedControllerState.GetConnectionState() == gvr::ControllerConnectionState::GVR_CONTROLLER_CONNECTED )
 	{
 		return true;
@@ -486,6 +581,7 @@ int FGoogleVRController::GetGVRControllerHandedness() const
 	{
 		return -1;
 	}
+// TODO: get handedness preference from instant preview if connected.
 #elif GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
 	return EmulatorHandednessPreference;
 #else
@@ -584,6 +680,7 @@ gvr_arm_model::Controller& FGoogleVRController::GetArmModelController()
 
 void FGoogleVRController::Tick(float DeltaTime)
 {
+// TODO: do we need to do anything in tick for instant preview?  Do we need to do something different with the emulator?
 #if GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
 	bool bIsInPlayMode = IsPlayInEditor();
 	if(bIsInPlayMode && !bIsLastTickInPlayMode)
@@ -625,6 +722,14 @@ void FGoogleVRController::SetChannelValues(int32 ControllerId, const FForceFeedb
 
 bool FGoogleVRController::GetControllerOrientationAndPosition(const int32 ControllerIndex, const EControllerHand DeviceHand, FRotator& OutOrientation, FVector& OutPosition, float WorldToMetersScale) const
 {
+	// Opt-out the render thread late update for GoogleVR Controller for now.
+	// We can't do late update cleanly because updating controller state will also affect the controller
+	// button status.
+	if (IsInRenderingThread())
+	{
+		return false;
+	}
+
 	if(IsAvailable())
 	{
 		OutPosition = FVector::ZeroVector;
@@ -639,9 +744,13 @@ bool FGoogleVRController::GetControllerOrientationAndPosition(const int32 Contro
 			FQuat Orientation = ConvertGvrQuaternionToUnreal(ControllerRotation.w(), ControllerRotation.x(), ControllerRotation.y(), ControllerRotation.z());
 
 			FQuat BaseOrientation;
-			if (GEngine->HMDDevice.IsValid())
+			const bool bUsingGoogleVRHMD =
+				GEngine->XRSystem.IsValid() &&
+				(GEngine->XRSystem->GetSystemName() == FName(TEXT("FGoogleVRHMD")));
+
+			if (bUsingGoogleVRHMD)
 			{
-				BaseOrientation = GEngine->HMDDevice->GetBaseOrientation();
+				BaseOrientation = GEngine->XRSystem->GetBaseOrientation();
 			}
 
 			OutOrientation = (BaseOrientation * Orientation).Rotator();
@@ -649,8 +758,20 @@ bool FGoogleVRController::GetControllerOrientationAndPosition(const int32 Contro
 		}
 		else
 		{
-			gvr_quatf ControllerOrientation = CachedControllerState.GetOrientation();
-			OutOrientation = FQuat(ControllerOrientation.qz, -ControllerOrientation.qx, -ControllerOrientation.qy, ControllerOrientation.qw).Rotator();
+#if GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+			if (gvr::ControllerConnectionState::GVR_CONTROLLER_CONNECTED == InstantPreviewControllerState.connection_state)
+			{
+				OutOrientation = FQuat(InstantPreviewControllerState.orientation[3],
+					-InstantPreviewControllerState.orientation[1],
+					-InstantPreviewControllerState.orientation[2],
+					InstantPreviewControllerState.orientation[0]).Rotator();
+			}
+			else
+#endif  // GOOGLEVRCONTROLLER_SUPPORTED_INSTANT_PREVIEW_PLATFORMS
+			{
+				gvr_quatf ControllerOrientation = CachedControllerState.GetOrientation();
+				OutOrientation = FQuat(ControllerOrientation.qz, -ControllerOrientation.qx, -ControllerOrientation.qy, ControllerOrientation.qw).Rotator();
+			}
 		}
 #if GOOGLEVRCONTROLLER_SUPPORTED_EMULATOR_PLATFORMS
 		OutOrientation.Yaw -= BaseEmulatorOrientation.Yaw;
@@ -726,62 +847,6 @@ static bool ExecuteAdbCommand( const FString& CommandLine, FString* OutStdOut, F
 	}
 
 	return true;
-}
-
-// Copied from AndroidDeviceDetectionModule.cpp
-// TODO: would be nice if Unreal make that function public so we don't need to make a duplicate.
-static void GetAdbPath(FString& OutAdbPath)
-{
-	TCHAR AndroidDirectory[32768] = { 0 };
-	FPlatformMisc::GetEnvironmentVariable(TEXT("ANDROID_HOME"), AndroidDirectory, 32768);
-
-	#if PLATFORM_MAC
-	if (AndroidDirectory[0] == 0)
-	{
-		// didn't find ANDROID_HOME, so parse the .bash_profile file on MAC
-		FArchive* FileReader = IFileManager::Get().CreateFileReader(*FString([@"~/.bash_profile" stringByExpandingTildeInPath]));
-		if (FileReader)
-		{
-			const int64 FileSize = FileReader->TotalSize();
-			ANSICHAR* AnsiContents = (ANSICHAR*)FMemory::Malloc(FileSize + 1);
-			FileReader->Serialize(AnsiContents, FileSize);
-			FileReader->Close();
-			delete FileReader;
-
-			AnsiContents[FileSize] = 0;
-			TArray<FString> Lines;
-			FString(ANSI_TO_TCHAR(AnsiContents)).ParseIntoArrayLines(Lines);
-			FMemory::Free(AnsiContents);
-
-			for (int32 Index = Lines.Num()-1; Index >=0; Index--)
-			{
-				if (AndroidDirectory[0] == 0 && Lines[Index].StartsWith(TEXT("export ANDROID_HOME=")))
-				{
-					FString Directory;
-					Lines[Index].Split(TEXT("="), NULL, &Directory);
-					Directory = Directory.Replace(TEXT("\""), TEXT(""));
-					FCString::Strcpy(AndroidDirectory, *Directory);
-					setenv("ANDROID_HOME", TCHAR_TO_ANSI(AndroidDirectory), 1);
-				}
-			}
-		}
-	}
-	#endif
-
-	if (AndroidDirectory[0] != 0)
-	{
-	#if PLATFORM_WINDOWS
-		OutAdbPath = FString::Printf(TEXT("%s\\platform-tools\\adb.exe"), AndroidDirectory);
-	#else
-		OutAdbPath = FString::Printf(TEXT("%s/platform-tools/adb"), AndroidDirectory);
-	#endif
-
-		// if it doesn't exist then just clear the path as we might set it later
-		if (!FPaths::FileExists(*OutAdbPath))
-		{
-			OutAdbPath.Empty();
-		}
-	}
 }
 
 static bool IsPlayInEditor()

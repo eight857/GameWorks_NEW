@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,7 @@
 /** Is an entity visible? */
 struct SLATECORE_API EVisibility
 {
-	/** Default widget visibility - visible and can interactive with the cursor */
+	/** Default widget visibility - visible and can interact with the cursor */
 	static const EVisibility Visible;
 
 	/** Not visible and takes up no space in the layout; can never be clicked on because it takes up no space. */
@@ -108,5 +108,5 @@ private:
 
 public:
 
-	Private Value;
+	TEnumAsByte<Private> Value;
 };

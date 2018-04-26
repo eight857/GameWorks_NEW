@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -53,19 +53,35 @@ struct FMetalDebugCommand
 };
 
 /**
+ * Simpler NSObject extension that provides for an associated object to track debug groups in a command-buffer.
+ * This doesn't interfere with objc_msgSend invocation so doesn't cost as much on the CPU.
+ */
+@interface NSObject (IMetalDebugGroupAssociation)
+@property (nonatomic, strong) NSMutableArray<NSString*>* debugGroups;
+@end
+
+@protocol IMetalCommandBufferExtensions
+@property (readonly) CFTimeInterval kernelStartTime;
+@property (readonly) CFTimeInterval kernelEndTime;
+@property (readonly) CFTimeInterval GPUStartTime;
+@property (readonly) CFTimeInterval GPUEndTime;
+@end
+
+/**
  * FMetalDebugCommandBuffer: Wrapper around id<MTLCommandBuffer> that records information about commands.
  * This allows reporting of substantially more information in debug modes which can be especially helpful 
  * when debugging GPU command-buffer failures.
  */
 @interface FMetalDebugCommandBuffer : FApplePlatformObject<MTLCommandBuffer>
 {
-	TArray<FMetalDebugCommand*> DebugCommands;
 	NSMutableArray<NSString*>* DebugGroup;
 	NSString* ActiveEncoder;
 	TSet<id<MTLResource>> Resources;
 	TSet<id> States;
 	@public
+	TArray<FMetalDebugCommand*> DebugCommands;
     EMetalDebugLevel DebugLevel;
+	id<MTLBuffer> DebugInfoBuffer;
 };
 
 /** The wrapped native command-buffer for which we collect debug information. */

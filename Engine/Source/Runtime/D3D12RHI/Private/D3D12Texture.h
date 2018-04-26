@@ -1,19 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 D3D12Texture.h: Implementation of D3D12 Texture
 =============================================================================*/
 #pragma once
 
-#if PLATFORM_WINDOWS
-class FD3D12FastVRAMResource
-{
-	// Nothing special for fast ram
-};
-#endif
-
 /** Texture base class. */
-class FD3D12TextureBase : public FD3D12BaseShaderResource, public FD3D12FastVRAMResource, public FD3D12LinkedAdapterObject<FD3D12TextureBase>
+class FD3D12TextureBase : public FD3D12BaseShaderResource, public FD3D12TransientResource, public FD3D12LinkedAdapterObject<FD3D12TextureBase>
 {
 public:
 
@@ -22,9 +15,7 @@ public:
 		, MemorySize(0)
 		, BaseShaderResource(this)
 		, bCreatedRTVsPerSlice(false)
-		, RTVArraySize(MaxNumRTVs)
 		, NumDepthStencilViews(0)
-		, NumRenderTargetViews(0)
 	{
 	}
 
@@ -34,6 +25,12 @@ public:
 	{ 
 		bCreatedRTVsPerSlice = Value;
 		RTVArraySize = InRTVArraySize;
+	}
+
+	void SetNumRenderTargetViews(int32 InNumViews)
+	{
+		RenderTargetViews.Empty(InNumViews);
+		RenderTargetViews.AddDefaulted(InNumViews);
 	}
 
 	void SetDepthStencilView(FD3D12DepthStencilView* View, uint32 SubResourceIndex)
@@ -49,17 +46,22 @@ public:
 		}
 	}
 
-	void SetRenderTargetView(FD3D12RenderTargetView* View, uint32 SubResourceIndex)
+	void SetRenderTargetViewIndex(FD3D12RenderTargetView* View, uint32 SubResourceIndex)
 	{
-		if (SubResourceIndex < MaxNumRTVs)
+		if (SubResourceIndex < (uint32)RenderTargetViews.Num())
 		{
 			RenderTargetViews[SubResourceIndex] = View;
-			NumRenderTargetViews = FMath::Max(SubResourceIndex + 1, NumRenderTargetViews);
 		}
 		else
 		{
 			check(false);
 		}
+	}
+
+	void SetRenderTargetView(FD3D12RenderTargetView* View)
+	{
+		RenderTargetViews.Empty(1);
+		RenderTargetViews.Add(View);
 	}
 
 	int32 GetMemorySize() const
@@ -93,7 +95,7 @@ public:
 		{
 			check(ArraySliceIndex >= 0);
 			ArrayIndex = MipIndex * RTVArraySize + ArraySliceIndex;
-			check(ArrayIndex < MaxNumRTVs);
+			check(ArrayIndex < RenderTargetViews.Num());
 		}
 		else
 		{
@@ -101,7 +103,7 @@ public:
 			check(ArraySliceIndex == -1 || ArraySliceIndex == 0);
 		}
 
-		if ((uint32)ArrayIndex < NumRenderTargetViews)
+		if (ArrayIndex < RenderTargetViews.Num())
 		{
 			return RenderTargetViews[ArrayIndex];
 		}
@@ -121,7 +123,7 @@ public:
 
 	inline bool HasRenderTargetViews() const
 	{
-		return (NumRenderTargetViews > 0);
+		return (RenderTargetViews.Num() > 0);
 	}
 
 	void AliasResources(FD3D12TextureBase* Texture)
@@ -136,7 +138,7 @@ public:
 		{
 			DepthStencilViews[Index] = Texture->DepthStencilViews[Index];
 		}
-		for (uint32 Index = 0; Index < Texture->NumRenderTargetViews; Index++)
+		for (int32 Index = 0; Index < Texture->RenderTargetViews.Num(); Index++)
 		{
 			RenderTargetViews[Index] = Texture->RenderTargetViews[Index];
 		}
@@ -154,8 +156,7 @@ protected:
 	TRefCountPtr<FD3D12ShaderResourceView> ShaderResourceView;
 
 	/** A render targetable view of the texture. */
-	static const uint32 MaxNumRTVs = 64;
-	TRefCountPtr<FD3D12RenderTargetView> RenderTargetViews[MaxNumRTVs];
+	TArray<TRefCountPtr<FD3D12RenderTargetView>, TInlineAllocator<1>> RenderTargetViews;
 
 	bool bCreatedRTVsPerSlice;
 
@@ -166,34 +167,13 @@ protected:
 
 	/** Number of Depth Stencil Views - used for fast call tracking. */
 	uint32	NumDepthStencilViews;
-	uint32	NumRenderTargetViews;
 
 	TMap<uint32, FD3D12LockedResource*> LockedMap;
 };
 
-struct FD3D12TextureMipLayout
-{
-	uint64	SizeInBytes;
-	uint64	OffsetInBytes;
-	uint64	SliceSizeInBytes;
-};
-
-struct FD3D12TextureLayout
-{
-	void FillFromDesc(const struct D3D12_RESOURCE_DESC& D3DTextureDesc, bool CubeTexture);
-
-	uint64 GetSubresourceOffset(uint32 Plane, uint32 Mip, uint32 Slice) const
-	{
-		check(Plane == 0);
-		return Plane0MipLayout[Mip].OffsetInBytes + (Plane0MipLayout[Mip].SliceSizeInBytes * Slice);
-	}
-
-	uint64							SizeInBytes;				// Size in bytes, rounded to FD3D12_TEXTURE_DATA_PITCH_ALIGNMENT
-	uint32							AlignmentInBytes;			// Alignment in bytes
-	uint32							MipLevels;					// Number of mip levels
-	uint32							Planes;						// Number of planes
-	FD3D12TextureMipLayout			Plane0MipLayout[15];		// 15 == Maximum texture dimension
-};
+#if !PLATFORM_SUPPORTS_VIRTUAL_TEXTURES
+struct FD3D12TextureLayout {};
+#endif
 
 /** 2D texture (vanilla, cubemap or 2D array) */
 template<typename BaseResourceType>
@@ -270,7 +250,7 @@ public:
 			return false;
 		}
 
-		if (RHICmdList->Bypass() || !GRHIThread)
+		if (RHICmdList->Bypass() || !IsRunningRHIInSeparateThread())
 		{
 			return false;
 		}
@@ -404,7 +384,7 @@ public:
 	}
 };
 
-class FD3D12BaseTexture2D : public FRHITexture2D
+class FD3D12BaseTexture2D : public FRHITexture2D, public FD3D12FastClearResource
 {
 public:
 	FD3D12BaseTexture2D(uint32 InSizeX, uint32 InSizeY, uint32 InSizeZ, uint32 InNumMips, uint32 InNumSamples, EPixelFormat InFormat, uint32 InFlags, const FClearValueBinding& InClearValue)
@@ -413,7 +393,7 @@ public:
 	uint32 GetSizeZ() const { return 0; }
 };
 
-class FD3D12BaseTexture2DArray : public FRHITexture2DArray
+class FD3D12BaseTexture2DArray : public FRHITexture2DArray, public FD3D12FastClearResource
 {
 public:
 	FD3D12BaseTexture2DArray(uint32 InSizeX, uint32 InSizeY, uint32 InSizeZ, uint32 InNumMips, uint32 InNumSamples, EPixelFormat InFormat, uint32 InFlags, const FClearValueBinding& InClearValue)
@@ -423,7 +403,7 @@ public:
 	}
 };
 
-class FD3D12BaseTextureCube : public FRHITextureCube
+class FD3D12BaseTextureCube : public FRHITextureCube, public FD3D12FastClearResource
 {
 public:
 	FD3D12BaseTextureCube(uint32 InSizeX, uint32 InSizeY, uint32 InSizeZ, uint32 InNumMips, uint32 InNumSamples, EPixelFormat InFormat, uint32 InFlags, const FClearValueBinding& InClearValue)
@@ -436,7 +416,6 @@ public:
 	uint32 GetSizeZ() const { return 0; }
 };
 
-typedef TD3D12Texture2D<FRHITexture>              FD3D12Texture;
 typedef TD3D12Texture2D<FD3D12BaseTexture2D>      FD3D12Texture2D;
 typedef TD3D12Texture2D<FD3D12BaseTexture2DArray> FD3D12Texture2DArray;
 typedef TD3D12Texture2D<FD3D12BaseTextureCube>    FD3D12TextureCube;
@@ -522,11 +501,6 @@ template<>
 struct TD3D12ResourceTraits<FRHITexture3D>
 {
 	typedef FD3D12Texture3D TConcreteType;
-};
-template<>
-struct TD3D12ResourceTraits<FRHITexture>
-{
-	typedef FD3D12Texture TConcreteType;
 };
 template<>
 struct TD3D12ResourceTraits<FRHITexture2D>

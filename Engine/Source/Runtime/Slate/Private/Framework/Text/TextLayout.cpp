@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Framework/Text/TextLayout.h"
 #include "Fonts/FontCache.h"
@@ -9,6 +9,7 @@
 #include "Internationalization/BreakIterator.h"
 #include "Framework/Text/ShapedTextCache.h"
 
+DECLARE_CYCLE_STAT(TEXT("Text Layout"), STAT_SlateTextLayout, STATGROUP_Slate);
 
 static TAutoConsoleVariable<int32> CVarDefaultTextFlowDirection(
 	TEXT("Slate.DefaultTextFlowDirection"),
@@ -176,7 +177,7 @@ FTextLayout::FBreakCandidate FTextLayout::CreateBreakCandidate( int32& OutRunInd
 
 	FBreakCandidate BreakCandidate;
 	BreakCandidate.ActualSize = BreakSize;
-	BreakCandidate.TrimmedSize = BreakSizeWithoutTrailingWhitespace;
+	BreakCandidate.TrimmedWidth = BreakSizeWithoutTrailingWhitespace.X;
 	BreakCandidate.ActualRange = FTextRange( PreviousBreak, CurrentBreak );
 	BreakCandidate.TrimmedRange = FTextRange( PreviousBreak, WhitespaceStopIndex );
 	BreakCandidate.FirstTrailingWhitespaceCharWidth = FirstTrailingWhitespaceCharWidth;
@@ -191,7 +192,7 @@ FTextLayout::FBreakCandidate FTextLayout::CreateBreakCandidate( int32& OutRunInd
 	return BreakCandidate;
 }
 
-void FTextLayout::CreateLineViewBlocks( int32 LineModelIndex, const int32 StopIndex, const float WrappedLineWidth, int32& OutRunIndex, int32& OutRendererIndex, int32& OutPreviousBlockEnd, TArray< TSharedRef< ILayoutBlock > >& OutSoftLine )
+void FTextLayout::CreateLineViewBlocks( int32 LineModelIndex, const int32 StopIndex, const float WrappedLineWidth, const TOptional<float>& JustificationWidth, int32& OutRunIndex, int32& OutRendererIndex, int32& OutPreviousBlockEnd, TArray< TSharedRef< ILayoutBlock > >& OutSoftLine )
 {
 	const FLineModel& LineModel = LineModels[ LineModelIndex ];
 
@@ -240,6 +241,7 @@ void FTextLayout::CreateLineViewBlocks( int32 LineModelIndex, const int32 StopIn
 		return InFirst.StartIndex < InSecond.StartIndex;
 	});
 
+	FTextRange SoftLineRange = FTextRange(MAX_int32, MIN_int32);
 	for (; OutRunIndex < LineModel.Runs.Num(); )
 	{
 		const FRunModel& Run = LineModel.Runs[ OutRunIndex ];
@@ -322,6 +324,11 @@ void FTextLayout::CreateLineViewBlocks( int32 LineModelIndex, const int32 StopIn
 
 			OutSoftLine.Add( Run.CreateBlock( BlockDefine, Scale, FLayoutBlockTextContext(RunTextContext, BlockTextDirection) ) );
 			OutPreviousBlockEnd = BlockStopIndex;
+
+			// Update the soft line bounds based on this new block (needed within this loop due to bi-directional text, as the extents of the line array are not always the start and end of the range)
+			const FTextRange& BlockRange = OutSoftLine.Last()->GetTextRange();
+			SoftLineRange.BeginIndex = FMath::Min(SoftLineRange.BeginIndex, BlockRange.BeginIndex);
+			SoftLineRange.EndIndex   = FMath::Max(SoftLineRange.EndIndex, BlockRange.EndIndex);
 		}
 
 		// Get the baseline and flip it's sign; Baselines are generally negative
@@ -418,16 +425,12 @@ void FTextLayout::CreateLineViewBlocks( int32 LineModelIndex, const int32 StopIn
 		LineSize.X = CurrentHorizontalPos;
 		LineSize.Y = UnscaleLineHeight * LineHeightPercentage;
 
-		// Calculate the range for this line, taking into account the fact that text may be flowing right-to-left, so the bounds may be inverted
-		const FTextRange& FirstBlockRange = OutSoftLine[0]->GetTextRange();
-		const FTextRange& LastBlockRange = OutSoftLine.Last()->GetTextRange();
-		const FTextRange LineViewRange = FTextRange(FMath::Min(FirstBlockRange.BeginIndex, LastBlockRange.BeginIndex), FMath::Max(FirstBlockRange.EndIndex, LastBlockRange.EndIndex));
-
 		FTextLayout::FLineView LineView;
 		LineView.Offset = CurrentOffset;
 		LineView.Size = LineSize;
-		LineView.TextSize = FVector2D(CurrentHorizontalPos, UnscaleLineHeight);
-		LineView.Range = LineViewRange;
+		LineView.TextHeight = UnscaleLineHeight;
+		LineView.JustificationWidth = JustificationWidth.Get(LineView.Size.X);
+		LineView.Range = SoftLineRange;
 		LineView.TextBaseDirection = LineModel.TextBaseDirection;
 		LineView.ModelIndex = LineModelIndex;
 		LineView.Blocks.Append( OutSoftLine );
@@ -435,7 +438,9 @@ void FTextLayout::CreateLineViewBlocks( int32 LineModelIndex, const int32 StopIn
 		LineViews.Add( LineView );
 
 		// Does this new line view require justification?
-		if (CalculateLineViewVisualJustification(LineView) != ETextJustify::Left)
+		// Any text that visually doesn't justify left requires justification, but so does a line that visually starts with RTL text as we may 
+		// need to adjust for the trailing whitespace on that soft-wrapped line (which will be visually leading whitespace for RTL text)
+		if (CalculateLineViewVisualJustification(LineView) != ETextJustify::Left || LineView.Blocks[0]->GetTextContext().TextDirection == TextBiDi::ETextDirection::RightToLeft)
 		{
 			LineViewsToJustify.Add(LineViews.Num() - 1);
 		}
@@ -460,16 +465,45 @@ void FTextLayout::JustifyLayout()
 		FLineView& LineView = LineViews[LineViewIndex];
 
 		const ETextJustify::Type VisualJustification = CalculateLineViewVisualJustification(LineView);
-		const float ExtraSpace = LayoutWidthNoMargin - LineView.Size.X;
+
+		// The JustificationWidth of a line omits any trailing whitespace that might have been left over from soft-wrapping the text
+		// We only want to use this (rather than the full line width) when the justification is at odds with the text flow direction at the edge being justified
+		// That is, when right-justifying LTR text we will use the JustificationWidth as the trailing whitespace is visually on the right, but when 
+		// right-justifying RTL text we will use the full line width as the trailing whitespace is visually on the left
+		float LineJustificationWidth = LineView.JustificationWidth;
+		if ((VisualJustification == ETextJustify::Right && LineView.Blocks.Last()->GetTextContext().TextDirection == TextBiDi::ETextDirection::RightToLeft) ||
+			(VisualJustification == ETextJustify::Left && LineView.Blocks[0]->GetTextContext().TextDirection == TextBiDi::ETextDirection::LeftToRight))
+		{
+			LineJustificationWidth = LineView.Size.X;
+		}
 
 		FVector2D OffsetAdjustment = FVector2D::ZeroVector;
-		if (VisualJustification == ETextJustify::Center)
+		switch (VisualJustification)
 		{
-			OffsetAdjustment.X = ExtraSpace * 0.5f;
-		}
-		else if (VisualJustification == ETextJustify::Right)
-		{
-			OffsetAdjustment.X = ExtraSpace;
+		case ETextJustify::Left:
+			{
+				const float ExtraSpace = LineView.Size.X - LineJustificationWidth;
+				OffsetAdjustment.X = -ExtraSpace;
+			}
+			break;
+
+		case ETextJustify::Center:
+			{
+				const float ExtraSpace = LayoutWidthNoMargin - LineJustificationWidth;
+				OffsetAdjustment.X = ExtraSpace * 0.5f;
+			}
+			break;
+
+		case ETextJustify::Right:
+			{
+				const float ExtraSpace = LayoutWidthNoMargin - LineJustificationWidth;
+				OffsetAdjustment.X = ExtraSpace;
+			}
+			break;
+
+		default:
+			checkf(false, TEXT("Unknown ETextJustify"));
+			break;
 		}
 
 		LineView.Offset += OffsetAdjustment;
@@ -529,7 +563,6 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 {
 	const FLineModel& LineModel = LineModels[ LineModelIndex ];
 
-	float CurrentWidth = 0.0f;
 	int32 CurrentRunIndex = 0;
 	int32 PreviousBlockEnd = 0;
 
@@ -545,22 +578,22 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 	if (!IsWrapping || LineModel.BreakCandidates.Num() == 0 )
 	{
 		//Then iterate over all of its runs
-		CreateLineViewBlocks( LineModelIndex, INDEX_NONE, 0.0f, /*OUT*/CurrentRunIndex, /*OUT*/CurrentRendererIndex, /*OUT*/PreviousBlockEnd, SoftLine );
+		CreateLineViewBlocks( LineModelIndex, INDEX_NONE, 0.0f, TOptional<float>(), /*OUT*/CurrentRunIndex, /*OUT*/CurrentRendererIndex, /*OUT*/PreviousBlockEnd, SoftLine );
 		checkf(CurrentRunIndex == LineModel.Runs.Num(), TEXT("Debug Source: %s"), *DebugSourceInfo.Get(FString()));
-		CurrentWidth = 0;
 		SoftLine.Reset();
 	}
 	else
 	{
+		float CurrentWidth = 0.0f;
 		for (int32 BreakIndex = 0; BreakIndex < LineModel.BreakCandidates.Num(); BreakIndex++)
 		{
 			const FBreakCandidate& Break = LineModel.BreakCandidates[ BreakIndex ];
 
 			const bool IsLastBreak = BreakIndex + 1 == LineModel.BreakCandidates.Num();
-			const bool IsFirstBreakOnSoftLine = CurrentWidth == 0;
+			const bool IsFirstBreakOnSoftLine = CurrentWidth == 0.0f;
 			const uint8 Kerning = ( IsFirstBreakOnSoftLine ) ? Break.Kerning : 0;
 			const bool BreakDoesFit = CurrentWidth + Break.ActualSize.X + Kerning <= WrappingDrawWidth;
-			const bool BreakWithoutTrailingWhitespaceDoesFit = CurrentWidth + Break.TrimmedSize.X + Kerning <= WrappingDrawWidth;
+			const bool BreakWithoutTrailingWhitespaceDoesFit = CurrentWidth + Break.TrimmedWidth + Kerning <= WrappingDrawWidth;
 
 			if ( WrappingPolicy == ETextWrappingPolicy::AllowPerCharacterWrapping && !BreakWithoutTrailingWhitespaceDoesFit && IsFirstBreakOnSoftLine )
 			{
@@ -582,7 +615,7 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 						const FTextRange RunRange = RunModel.GetTextRange();
 
 						const int32 StartIndex = FMath::Max(RunRange.BeginIndex - NonBreakingStringIndexOffset, PreviousBreak);
-						const int32 StopIndex = FMath::Min(RunRange.EndIndex - NonBreakingStringIndexOffset, CurrentBreak);
+						const int32 StopIndex = FMath::Max(StartIndex, FMath::Min(RunRange.EndIndex - NonBreakingStringIndexOffset, CurrentBreak));
 
 						BreakWidth += RunModel.GetRun()->Measure(StartIndex + NonBreakingStringIndexOffset, StopIndex + NonBreakingStringIndexOffset, Scale, RunTextContext).X;
 
@@ -595,8 +628,24 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 					bool bAdvanceIterator = true;
 
 					const bool IsLastGraphemeBreak = CurrentBreak == NonBreakingString.Len();
-					const bool IsFirstGraphemeBreakOnSoftLine = CurrentWidth == 0;
+					const bool IsFirstGraphemeBreakOnSoftLine = CurrentWidth == 0.0f;
 					const bool GraphemeBreakDoesFit = CurrentWidth + BreakWidth <= WrappingDrawWidth;
+					
+					// TODO : This probably needs to be handled differently
+					// if your break fits, 
+					// and you're the last grapheme, 
+					// and you have another break candidate available, 
+					// and that break candidate fits on the line (excluding trailing whitespace), 
+					// then hand over responsibility of adding the line to the next iteration of the outer loop
+					if (GraphemeBreakDoesFit && IsLastGraphemeBreak && BreakIndex + 1 < LineModel.BreakCandidates.Num())
+					{
+						const bool NextBreakWithoutTrailingWhitespaceDoesFit = CurrentWidth + BreakWidth + LineModel.BreakCandidates[BreakIndex + 1].TrimmedWidth + Kerning <= WrappingDrawWidth;
+						if (NextBreakWithoutTrailingWhitespaceDoesFit)
+						{
+							break;
+						}
+					}
+
 					if (!GraphemeBreakDoesFit || IsLastGraphemeBreak)
 					{
 						bool bHasTrailingText = IsLastGraphemeBreak;
@@ -620,7 +669,7 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 							CurrentBlockEnd = PreviousBreak + NonBreakingStringIndexOffset;
 						}
 						
-						CreateLineViewBlocks(LineModelIndex, CurrentBlockEnd, CurrentWidth, /*OUT*/CurrentRunIndex, /*OUT*/CurrentRendererIndex, /*OUT*/PreviousBlockEnd, SoftLine);
+						CreateLineViewBlocks(LineModelIndex, CurrentBlockEnd, CurrentWidth, TOptional<float>(), /*OUT*/CurrentRunIndex, /*OUT*/CurrentRendererIndex, /*OUT*/PreviousBlockEnd, SoftLine);
 
 						if (CurrentRunIndex < LineModel.Runs.Num() && CurrentBlockEnd == LineModel.Runs[CurrentRunIndex].GetTextRange().EndIndex)
 						{
@@ -629,14 +678,14 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 
 						PreviousBlockEnd = CurrentBlockEnd;
 
-						CurrentWidth = 0;
+						CurrentWidth = 0.0f;
 						SoftLine.Reset();
 
 						// Add any trailing text
 						if (bHasTrailingText)
 						{
 							CurrentBlockEnd = Break.ActualRange.EndIndex;
-							CreateLineViewBlocks(LineModelIndex, CurrentBlockEnd, CurrentWidth, /*OUT*/CurrentRunIndex, /*OUT*/CurrentRendererIndex, /*OUT*/PreviousBlockEnd, SoftLine);
+							CreateLineViewBlocks(LineModelIndex, CurrentBlockEnd, CurrentWidth, TOptional<float>(), /*OUT*/CurrentRunIndex, /*OUT*/CurrentRendererIndex, /*OUT*/PreviousBlockEnd, SoftLine);
 
 							if (CurrentRunIndex < LineModel.Runs.Num() && CurrentBlockEnd == LineModel.Runs[CurrentRunIndex].GetTextRange().EndIndex)
 							{
@@ -645,7 +694,7 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 
 							PreviousBlockEnd = CurrentBlockEnd;
 
-							CurrentWidth = 0;
+							CurrentWidth = 0.0f;
 							SoftLine.Reset();
 
 							// Always advance the iterator when we've finished processing the text so that we exit the loop
@@ -678,7 +727,7 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 				if ( BreakWithoutTrailingWhitespaceDoesFit )
 				{
 					// This break has trailing whitespace
-					WrappedLineWidth += ( FinalBreakOnSoftLine.TrimmedSize.X + FinalBreakOnSoftLine.FirstTrailingWhitespaceCharWidth );
+					WrappedLineWidth += ( FinalBreakOnSoftLine.TrimmedWidth + FinalBreakOnSoftLine.FirstTrailingWhitespaceCharWidth );
 				}
 				else
 				{
@@ -687,7 +736,17 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 					WrappedLineWidth = FMath::Min(WrappedLineWidth, WrappingDrawWidth);
 				}
 
-				CreateLineViewBlocks( LineModelIndex, FinalBreakOnSoftLine.ActualRange.EndIndex, WrappedLineWidth, /*OUT*/CurrentRunIndex, /*OUT*/CurrentRendererIndex, /*OUT*/PreviousBlockEnd, SoftLine );
+				// We want wrapped lines to ignore any trailing whitespace when justifying
+				// If FinalBreakOnSoftLine isn't the current Break, then the size of FinalBreakOnSoftLine (including its trailing whitespace) will have already
+				// been added to CurrentWidth, so we need to remove that again before adding the trimmed width (which is the width we should justify with)
+				// We should not attempt to adjust the last break on a soft-line as that might have explicit trailing whitespace
+				TOptional<float> JustifiedLineWidth;
+				if ( &FinalBreakOnSoftLine != &LineModel.BreakCandidates.Last() )
+				{
+					JustifiedLineWidth = CurrentWidth - (&FinalBreakOnSoftLine == &Break ? 0.0f : FinalBreakOnSoftLine.ActualSize.X) + FinalBreakOnSoftLine.TrimmedWidth;
+				}
+
+				CreateLineViewBlocks( LineModelIndex, FinalBreakOnSoftLine.ActualRange.EndIndex, WrappedLineWidth, JustifiedLineWidth, /*OUT*/CurrentRunIndex, /*OUT*/CurrentRendererIndex, /*OUT*/PreviousBlockEnd, SoftLine );
 
 				if ( CurrentRunIndex < LineModel.Runs.Num() && FinalBreakOnSoftLine.ActualRange.EndIndex == LineModel.Runs[ CurrentRunIndex ].GetTextRange().EndIndex )
 				{
@@ -696,7 +755,7 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 
 				PreviousBlockEnd = FinalBreakOnSoftLine.ActualRange.EndIndex;
 
-				CurrentWidth = 0;
+				CurrentWidth = 0.0f;
 				SoftLine.Reset();
 			} 
 			else
@@ -709,18 +768,6 @@ void FTextLayout::FlowLineLayout(const int32 LineModelIndex, const float Wrappin
 
 void FTextLayout::FlowHighlights()
 {
-	struct FVisualHighlightBoundary
-	{
-		FVisualHighlightBoundary()
-			: BlockIndex(INDEX_NONE)
-			, RangeIndex(INDEX_NONE)
-		{
-		}
-
-		int32 BlockIndex;
-		int32 RangeIndex;
-	};
-
 	// FlowLayout must have been called first
 	checkf(!(DirtyFlags & ETextLayoutDirtyState::Layout), TEXT("Debug Source: %s"), *DebugSourceInfo.Get(FString()));
 
@@ -747,158 +794,155 @@ void FTextLayout::FlowHighlights()
 				continue;
 			}
 
-			auto AppendLineViewHighlight = [&](const FLineViewHighlight& InLineViewHighlight)
-			{
-				if (LineHighlight.ZOrder < 0)
-				{
-					LineView.UnderlayHighlights.Add(InLineViewHighlight);
-				}
-				else
-				{
-					LineView.OverlayHighlights.Add(InLineViewHighlight);
-				}
-			};
-
 			FLineViewHighlight LineViewHighlight;
 			LineViewHighlight.OffsetX = 0.0f;
 			LineViewHighlight.Width = 0.0f;
 			LineViewHighlight.Highlighter = LineHighlight.Highlighter;
 
-			// Find the start and end block for this highlight
-			FVisualHighlightBoundary VisualHighlightStart;
-			FVisualHighlightBoundary VisualHighlightEnd;
+			bool bHasStartedHighlighting = false;
+			float RunningBlockOffset = LineViewHighlight.OffsetX;
+
+			auto AppendLineViewHighlight = [&LineHighlight, &LineView, &LineViewHighlight, &LineViewHighlightRange]()
+			{
+				if (LineViewHighlightRange.IsEmpty() || LineViewHighlight.Width > 0.0f)
+				{
+					if (LineHighlight.ZOrder < 0)
+					{
+						LineView.UnderlayHighlights.Add(LineViewHighlight);
+					}
+					else
+					{
+						LineView.OverlayHighlights.Add(LineViewHighlight);
+					}
+				}
+			};
+
+			auto AppendLineViewHighlightAndReset = [&AppendLineViewHighlight, &LineViewHighlight, &RunningBlockOffset]()
+			{
+				AppendLineViewHighlight();
+
+				LineViewHighlight.OffsetX = RunningBlockOffset;
+				LineViewHighlight.Width = 0.0f;
+			};
+
 			for (int32 CurrentBlockIndex = 0; CurrentBlockIndex < LineView.Blocks.Num(); ++CurrentBlockIndex)
 			{
 				const TSharedRef<ILayoutBlock>& Block = LineView.Blocks[CurrentBlockIndex];
 				const FTextRange& BlockTextRange = Block->GetTextRange();
+				const TSharedRef<IRun> Run = Block->GetRun();
 
-				if (BlockTextRange.InclusiveContains(LineViewHighlightRange.BeginIndex))
-				{
-					VisualHighlightStart.BlockIndex = CurrentBlockIndex;
-					VisualHighlightStart.RangeIndex = LineViewHighlightRange.BeginIndex;
-				}
+				const float CurrentBlockRunningOffset = RunningBlockOffset;
+				RunningBlockOffset += Block->GetSize().X;
 
-				if (BlockTextRange.InclusiveContains(LineViewHighlightRange.EndIndex))
-				{
-					VisualHighlightEnd.BlockIndex = CurrentBlockIndex;
-					VisualHighlightEnd.RangeIndex = LineViewHighlightRange.EndIndex;
-				}
-
-				if (VisualHighlightStart.BlockIndex != INDEX_NONE && VisualHighlightEnd.BlockIndex != INDEX_NONE)
-				{
-					break;
-				}
-			}
-			check(VisualHighlightStart.BlockIndex != INDEX_NONE && VisualHighlightEnd.BlockIndex != INDEX_NONE);
-
-			// Right-to-left text can lead to VisualHighlightStart being after VisualHighlightEnd, we need to flip them if this has happened since we walk the blocks to highlight left-to-right
-			if (VisualHighlightStart.BlockIndex > VisualHighlightEnd.BlockIndex)
-			{
-				Swap(VisualHighlightStart, VisualHighlightEnd);
-			}
-
-			// Measure the blocks up to the start of this highlight to get the correct start offset
-			for (int32 CurrentBlockIndex = 0; CurrentBlockIndex < VisualHighlightStart.BlockIndex; ++CurrentBlockIndex)
-			{
-				const TSharedRef<ILayoutBlock>& Block = LineView.Blocks[CurrentBlockIndex];
-				LineViewHighlight.OffsetX += Block->GetSize().X;
-			}
-
-			const TSharedRef<ILayoutBlock>& StartBlock = LineView.Blocks[VisualHighlightStart.BlockIndex];
-			const TSharedRef<ILayoutBlock>& EndBlock = LineView.Blocks[VisualHighlightEnd.BlockIndex];
-			const bool bIsSingleBlock = VisualHighlightStart.BlockIndex == VisualHighlightEnd.BlockIndex;
-			const bool bIsVisuallyContiguous = StartBlock->GetTextContext().TextDirection == EndBlock->GetTextContext().TextDirection && StartBlock->GetTextContext().TextDirection == StartBlock->GetTextContext().BaseDirection;
-
-			float RunningBlockOffset = LineViewHighlight.OffsetX;
-
-			// Handle any offset and size from the start block
-			{
-				RunningBlockOffset += StartBlock->GetSize().X;
-
-				const FTextRange& BlockTextRange = StartBlock->GetTextRange();
-				const TSharedRef<IRun> Run = StartBlock->GetRun();
-
-				// The width always includes size of the intersecting text
 				const FTextRange IntersectedRange = BlockTextRange.Intersect(LineViewHighlightRange);
-				if (!IntersectedRange.IsEmpty())
-				{
-					LineViewHighlight.Width += Run->Measure(IntersectedRange.BeginIndex, IntersectedRange.EndIndex, Scale, RunTextContext).X;
+				const bool bBlockIsHighlighted = !IntersectedRange.IsEmpty() || IntersectedRange == LineViewHighlightRange;
+				const bool bBlockIsFullyHighlighted = IntersectedRange == BlockTextRange;
 
-					// In left-to-right text, the space before the start of the text is added as an offset
-					// In right-to-left text, the space after the end of the text (which is visually on the left) is added as an offset
-					if (StartBlock->GetTextContext().TextDirection == TextBiDi::ETextDirection::LeftToRight)
+				if (bBlockIsHighlighted)
+				{
+					// This block should be part of the highlight... but how?
+					if (!bHasStartedHighlighting)
 					{
-						LineViewHighlight.OffsetX += Run->Measure(BlockTextRange.BeginIndex, IntersectedRange.BeginIndex, Scale, RunTextContext).X;
+						// This block is the start of the highlight
+						bHasStartedHighlighting = true;
+
+						LineViewHighlight.OffsetX = CurrentBlockRunningOffset;
+
+						// The width always includes size of the intersecting text
+						if (!IntersectedRange.IsEmpty())
+						{
+							LineViewHighlight.Width += Run->Measure(IntersectedRange.BeginIndex, IntersectedRange.EndIndex, Scale, RunTextContext).X;
+
+							// In LTR text, the space before the start of the text is added as an offset
+							// In RTL text, the space after the end of the text (which is visually on the left) is added as an offset
+							if (Block->GetTextContext().TextDirection == TextBiDi::ETextDirection::LeftToRight)
+							{
+								LineViewHighlight.OffsetX += Run->Measure(BlockTextRange.BeginIndex, IntersectedRange.BeginIndex, Scale, RunTextContext).X;
+							}
+							else
+							{
+								LineViewHighlight.OffsetX += Run->Measure(IntersectedRange.EndIndex, BlockTextRange.EndIndex, Scale, RunTextContext).X;
+							}
+						}
 					}
 					else
 					{
-						LineViewHighlight.OffsetX += Run->Measure(IntersectedRange.EndIndex, BlockTextRange.EndIndex, Scale, RunTextContext).X;
-					}
-				}
-			}
+						// Test to see whether the current highlight covered the RHS of the previous block
+						const bool bPrevBlockHighlightedRHS = (LineViewHighlight.OffsetX + LineViewHighlight.Width) >= CurrentBlockRunningOffset;
 
-			// If we need to deal with other blocks, then we also need to deal with splitting the highlight for non-contiguous text
-			if (!bIsSingleBlock)
-			{
-				if (!bIsVisuallyContiguous)
-				{
-					// Append the block for the first part of the highlight and reset it to deal with the middle part
-					AppendLineViewHighlight(LineViewHighlight);
-
-					LineViewHighlight.OffsetX = RunningBlockOffset;
-					LineViewHighlight.Width = 0.0f;
-				}
-
-				// Measure the blocks under this highlight to get the correct size
-				for (int32 CurrentBlockIndex = VisualHighlightStart.BlockIndex + 1; CurrentBlockIndex < VisualHighlightEnd.BlockIndex; ++CurrentBlockIndex)
-				{
-					const TSharedRef<ILayoutBlock>& Block = LineView.Blocks[CurrentBlockIndex];
-					LineViewHighlight.Width += Block->GetSize().X;
-					RunningBlockOffset += Block->GetSize().X;
-				}
-
-				if (!bIsVisuallyContiguous)
-				{
-					// Append the block for the middle part of the highlight (if any) and reset it to deal with the end part
-					if (LineViewHighlight.Width > 0.0f)
-					{
-						AppendLineViewHighlight(LineViewHighlight);
-					}
-
-					LineViewHighlight.OffsetX = RunningBlockOffset;
-					LineViewHighlight.Width = 0.0f;
-				}
-
-				// Handle any size from the end block
-				{
-					const FTextRange& BlockTextRange = EndBlock->GetTextRange();
-					const TSharedRef<IRun> Run = EndBlock->GetRun();
-
-					// The width always includes size of the intersecting text
-					const FTextRange IntersectedRange = BlockTextRange.Intersect(LineViewHighlightRange);
-					if (!IntersectedRange.IsEmpty())
-					{
-						LineViewHighlight.Width += Run->Measure(IntersectedRange.BeginIndex, IntersectedRange.EndIndex, Scale, RunTextContext).X;
-					}
-
-					// When the text flow direction doesn't match the block text flow direction, we'll need to apply an offset to compensate for the selection potentially starting mid-way through the block
-					if (EndBlock->GetTextContext().TextDirection != EndBlock->GetTextContext().BaseDirection)
-					{
-						// In left-to-right text, the space before the start of the text is added as an offset
-						// In right-to-left text, the space after the end of the text (which is visually on the left) is added as an offset
-						if (EndBlock->GetTextContext().TextDirection == TextBiDi::ETextDirection::LeftToRight)
+						// This block is part of an existing highlight... but should it split the current visual highlight?
+						if (bBlockIsFullyHighlighted)
 						{
-							LineViewHighlight.OffsetX += Run->Measure(BlockTextRange.BeginIndex, IntersectedRange.BeginIndex, Scale, RunTextContext).X;
+							if (bPrevBlockHighlightedRHS)
+							{
+								// Fully highlighted blocks following a block that highlighted its RHS can continue the current visual highlight, so just append its width
+								LineViewHighlight.Width += Block->GetSize().X;
+							}
+							else
+							{
+								// Fully highlighted blocks following a visual gap highlighted block have to start a new visual highlight
+								AppendLineViewHighlightAndReset();
+
+								LineViewHighlight.OffsetX = CurrentBlockRunningOffset;
+								LineViewHighlight.Width += Block->GetSize().X;
+							}
 						}
 						else
-					{
-						LineViewHighlight.OffsetX += Run->Measure(IntersectedRange.EndIndex, BlockTextRange.EndIndex, Scale, RunTextContext).X;
+						{
+							// When the text flow direction doesn't match the block text flow direction, we'll need to apply an offset to compensate for the selection potentially starting mid-way through the block
+							float BlockHighlightOffsetAdjustment = 0.0f;
+							if (Block->GetTextContext().TextDirection != Block->GetTextContext().BaseDirection)
+							{
+								// In LTR text, the space before the start of the text is added as an offset
+								// In RTL text, the space after the end of the text (which is visually on the left) is added as an offset
+								if (Block->GetTextContext().TextDirection == TextBiDi::ETextDirection::LeftToRight)
+								{
+									BlockHighlightOffsetAdjustment += Run->Measure(BlockTextRange.BeginIndex, IntersectedRange.BeginIndex, Scale, RunTextContext).X;
+								}
+								else
+								{
+									BlockHighlightOffsetAdjustment += Run->Measure(IntersectedRange.EndIndex, BlockTextRange.EndIndex, Scale, RunTextContext).X;
+								}
+							}
+
+							// Append the partial width to the current visual highlight before starting another
+							float BlockHighlightWidth = 0.0f;
+							if (!IntersectedRange.IsEmpty())
+							{
+								BlockHighlightWidth += Run->Measure(IntersectedRange.BeginIndex, IntersectedRange.EndIndex, Scale, RunTextContext).X;
+							}
+
+							// Test to see whether the extra highlight will cover the LHS of this block
+							const bool bBlockHighlighsLHS = BlockHighlightOffsetAdjustment == 0.0f;
+
+							// Partially highlighted blocks can continue the current visual highlight if it highlighted the RHS of the previous block, and this block highlights its LHS
+							const bool bIsVisuallyContiguous = bPrevBlockHighlightedRHS && bBlockHighlighsLHS;
+							
+							if (bIsVisuallyContiguous)
+							{
+								// Append the partial width to the current visual highlight before starting another
+								LineViewHighlight.Width += BlockHighlightWidth;
+								AppendLineViewHighlightAndReset();
+							}
+							else
+							{
+								// There's a visual gap, so we need to end this visual highlight and start another
+								AppendLineViewHighlightAndReset();
+								LineViewHighlight.OffsetX = CurrentBlockRunningOffset + BlockHighlightOffsetAdjustment;
+								LineViewHighlight.Width += BlockHighlightWidth;
+							}
+						}
 					}
 				}
-			}
+				else
+				{
+					// This block is not part of the current highlight... end any current highlight
+					AppendLineViewHighlightAndReset();
+				}
 			}
 
-			AppendLineViewHighlight(LineViewHighlight);
+			// Append any trailing highlight
+			AppendLineViewHighlight();
 		}
 	}
 }
@@ -1115,6 +1159,8 @@ void FTextLayout::UpdateIfNeeded()
 
 void FTextLayout::UpdateLayout()
 {
+	SCOPE_CYCLE_COUNTER(STAT_SlateTextLayout);
+
 	ClearView();
 	BeginLayout();
 
@@ -2193,7 +2239,7 @@ void FTextLayout::GetAsTextAndOffsets(FString* const OutDisplayText, FTextOffset
 		OutTextOffsetLocations->OffsetData.Reserve(LineModels.Num());
 	}
 
-	const int32 LineTerminatorLength = FCString::Strlen(LINE_TERMINATOR);
+	static const int32 LineTerminatorLength = FCString::Strlen(LINE_TERMINATOR);
 
 	for (int32 LineModelIndex = 0; LineModelIndex < LineModels.Num(); LineModelIndex++)
 	{
@@ -2316,7 +2362,7 @@ FTextSelection FTextLayout::GetWordAt(const FTextLocation& Location) const
 
 	WordBreakIterator->SetString(**LineModel.Text);
 
-	int32 PreviousBreak = WordBreakIterator->MoveToCandidateAfter(Offset);
+	int32 PreviousBreak = (Offset < LineModel.Text->Len()) ? WordBreakIterator->MoveToCandidateAfter(Offset) : WordBreakIterator->ResetToEnd();
 	int32 CurrentBreak = 0;
 
 	while ((CurrentBreak = WordBreakIterator->MoveToPrevious()) != INDEX_NONE)
@@ -2405,17 +2451,20 @@ void FTextLayout::SetMargin( const FMargin& InMargin )
 
 void FTextLayout::SetScale( float Value )
 {
-	if ( Scale == Value )
+	if (FMath::IsNaN(Value))
 	{
-		return;
+		Value = 0.0;
 	}
 
-	Scale = Value;
-	DirtyFlags |= ETextLayoutDirtyState::Layout;
+	if (Scale != Value)
+	{
+		Scale = Value;
+		DirtyFlags |= ETextLayoutDirtyState::Layout;
 
-	// Changing the scale will affect the wrapping information for *all lines*
-	// Clear out the entire cache so it gets regenerated on the text call to FlowLayout
-	DirtyAllLineModels(ELineModelDirtyState::WrappingInformation | ELineModelDirtyState::ShapingCache);
+		// Changing the scale will affect the wrapping information for *all lines*
+		// Clear out the entire cache so it gets regenerated on the text call to FlowLayout
+		DirtyAllLineModels(ELineModelDirtyState::WrappingInformation | ELineModelDirtyState::ShapingCache);
+	}
 }
 
 void FTextLayout::SetTextShapingMethod( const ETextShapingMethod InTextShapingMethod )
@@ -2461,6 +2510,11 @@ void FTextLayout::SetJustification( ETextJustify::Type Value )
 	DirtyFlags |= ETextLayoutDirtyState::Layout;
 }
 
+ETextJustify::Type FTextLayout::GetVisualJustification() const
+{
+	return LineViews.Num() > 0 ? CalculateLineViewVisualJustification(LineViews[0]) : GetJustification();
+}
+
 void FTextLayout::SetLineHeightPercentage( float Value )
 {
 	if ( LineHeightPercentage != Value )
@@ -2501,6 +2555,14 @@ void FTextLayout::SetWrappingPolicy(ETextWrappingPolicy Value)
 void FTextLayout::SetDebugSourceInfo(const TAttribute<FString>& InDebugSourceInfo)
 {
 	DebugSourceInfo = InDebugSourceInfo;
+#if !UE_BUILD_SHIPPING
+	DebugSourceInfo.Get(FString());
+#endif	// !UE_BUILD_SHIPPING
+}
+
+FVector2D FTextLayout::GetSize() const
+{
+	return TextLayoutSize.GetDrawSize() * Inverse(Scale);
 }
 
 FVector2D FTextLayout::GetDrawSize() const
@@ -2510,12 +2572,12 @@ FVector2D FTextLayout::GetDrawSize() const
 
 FVector2D FTextLayout::GetWrappedSize() const
 {
-	return TextLayoutSize.GetWrappedSize() * ( 1 / Scale );
+	return TextLayoutSize.GetWrappedSize() * Inverse(Scale);
 }
 
-FVector2D FTextLayout::GetSize() const
+FVector2D FTextLayout::GetWrappedDrawSize() const
 {
-	return TextLayoutSize.GetDrawSize() * ( 1 / Scale );
+	return TextLayoutSize.GetWrappedSize();
 }
 
 FTextLayout::~FTextLayout()

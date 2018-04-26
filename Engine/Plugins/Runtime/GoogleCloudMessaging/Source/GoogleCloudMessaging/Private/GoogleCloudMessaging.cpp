@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GoogleCloudMessaging.h"
 
@@ -20,13 +20,7 @@ DEFINE_LOG_CATEGORY( LogGoogleCloudMessaging );
 
 class FEditorGoogleCloudMessaging : public IGoogleCloudMessagingModuleInterface
 {
-	virtual void RegisterForRemoteNotifications() override;
 };
-
-void FEditorGoogleCloudMessaging::RegisterForRemoteNotifications()
-{
-	UE_LOG( LogGoogleCloudMessaging, Warning, TEXT("Not implemented in the editor") );
-}
 
 IMPLEMENT_MODULE( FEditorGoogleCloudMessaging, GoogleCloudMessaging )
 

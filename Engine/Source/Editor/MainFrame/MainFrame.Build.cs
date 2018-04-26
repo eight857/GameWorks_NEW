@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -18,7 +18,7 @@ public class MainFrame : ModuleRules
 			new string[] {
 				"Core",
 				"CoreUObject",
-				"CrashTracker",
+				"ApplicationCore",
 				"Engine",
 				"EngineSettings",
                 "InputCore",
@@ -34,7 +34,6 @@ public class MainFrame : ModuleRules
 				"UnrealEd",
 				"WorkspaceMenuStructure",
 				"MessageLog",
-//				"SearchUI",
 				"UATHelper",
 				"TranslationEditor",
 				"Projects",
@@ -52,7 +51,6 @@ public class MainFrame : ModuleRules
 				"ProjectTargetPlatformEditor",
 				"LevelEditor",
                 "OutputLog",
-				"SuperSearch",
 				"Settings",
 				"SourceCodeAccess",
                 "Toolbox",
@@ -75,9 +73,7 @@ public class MainFrame : ModuleRules
 				"ProjectTargetPlatformEditor",
 				"LevelEditor",
                 "OutputLog",
-				"SuperSearch",
 				"SourceCodeAccess",
-				"EditorLiveStreaming",
 				"HotReload",
                 "LocalizationDashboard",
 			}

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -108,6 +108,9 @@ class SANDBOXFILE_API FSandboxPlatformFile : public IPlatformFile
 	 * @param Files true to include directories in the Result
 	 */
 	void FindFiles( TArray<FString>& Result, const TCHAR* InFilename, bool Files, bool Directories );
+	
+	/** Allow IPlatformFile::FindFiles */
+	using IPlatformFile::FindFiles;
 
 	/**
 	 * Deletes a directory
@@ -475,7 +478,7 @@ public:
 				// Now convert the sandbox path back to engine path because the sandbox folder should not be exposed
 				// to the engine and remain transparent.
 				LocalFilename = LocalFilename.Mid(SandboxFile.GetSandboxDirectory().Len());
-				if (LocalFilename.StartsWith(TEXT("Engine/")))
+				if (LocalFilename.StartsWith(TEXT("Engine/")) || (FCString::Stricmp( *LocalFilename, TEXT("Engine") ) == 0))
 				{
 					LocalFilename = SandboxFile.GetAbsoluteRootDirectory() / LocalFilename;
 				}

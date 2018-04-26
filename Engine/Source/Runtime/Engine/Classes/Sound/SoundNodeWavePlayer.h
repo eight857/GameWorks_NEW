@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "Sound/SoundNodeAssetReferencer.h"
 #include "SoundNodeWavePlayer.generated.h"
 
@@ -26,7 +26,7 @@ class USoundNodeWavePlayer : public USoundNodeAssetReferencer
 
 private:
 	UPROPERTY(EditAnywhere, Category=WavePlayer, meta=(DisplayName="Sound Wave"))
-	TAssetPtr<USoundWave> SoundWaveAssetPtr;
+	TSoftObjectPtr<USoundWave> SoundWaveAssetPtr;
 
 	UPROPERTY(transient)
 	USoundWave* SoundWave;
@@ -52,6 +52,7 @@ public:
 	//~ Begin USoundNode Interface
 	virtual int32 GetMaxChildNodes() const override;
 	virtual float GetDuration() override;
+	virtual bool IsAllowedVirtual() const override;
 	virtual int32 GetNumSounds(const UPTRINT NodeWaveInstanceHash, FActiveSound& ActiveSound) const { return 1; }
 	virtual void ParseNodes(FAudioDevice* AudioDevice, const UPTRINT NodeWaveInstanceHash, FActiveSound& ActiveSound, const FSoundParseParameters& ParseParams, TArray<FWaveInstance*>& WaveInstances) override;
 #if WITH_EDITOR
@@ -61,6 +62,7 @@ public:
 
 	//~ Begin USoundNodeAssetReferencer Interface
 	virtual void LoadAsset(bool bAddToRoot = false) override;
+	virtual void ClearAssetReferences() override;
 	//~ End USoundNode Interface
 
 };

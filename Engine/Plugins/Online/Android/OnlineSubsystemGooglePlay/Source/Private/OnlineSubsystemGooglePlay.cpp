@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 //Google Play Services
 
@@ -245,13 +245,24 @@ bool FOnlineSubsystemGooglePlay::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutput
 	return false;
 }
 
-bool FOnlineSubsystemGooglePlay::IsEnabled(void)
+FText FOnlineSubsystemGooglePlay::GetOnlineServiceName() const
 {
-	bool bEnableGooglePlaySupport = true;
-	GConfig->GetBool(TEXT("/Script/AndroidRuntimeSettings.AndroidRuntimeSettings"), TEXT("bEnableGooglePlaySupport"), bEnableGooglePlaySupport, GEngineIni);
+	return NSLOCTEXT("OnlineSubsystemGooglePlay", "OnlineServiceName", "Google Play");
+}
 
-	FPlatformMisc::LowLevelOutputDebugStringf(TEXT("FOnlineSubsystemGooglePlay::IsEnabled %d"), bEnableGooglePlaySupport);
-	return bEnableGooglePlaySupport;
+bool FOnlineSubsystemGooglePlay::IsEnabled() const
+{
+	bool bEnabled = false;
+
+	// GameCircleRuntimeSettings holds a value for editor ease of use
+	if (!GConfig->GetBool(TEXT("/Script/AndroidRuntimeSettings.AndroidRuntimeSettings"), TEXT("bEnableGooglePlaySupport"), bEnabled, GEngineIni))
+	{
+		UE_LOG(LogOnline, Warning, TEXT("The [/Script/AndroidRuntimeSettings.AndroidRuntimeSettings]:bEnableGooglePlaySupport flag has not been set"));
+
+		// Fallback to regular OSS location
+		bEnabled = FOnlineSubsystemImpl::IsEnabled();
+	}
+	return bEnabled;
 }
 
 bool FOnlineSubsystemGooglePlay::IsV2StoreEnabled()
@@ -365,6 +376,10 @@ void FOnlineSubsystemGooglePlay::OnAuthActionFinished(AuthOperation Op, AuthStat
 
 			CurrentShowLoginUITask->OnAuthActionFinished(Op, Status);
 		}
+		else
+		{
+			UE_LOG(LogOnline, Log, TEXT("OnAuthActionFinished no handler!"));
+		}
 	}
 	else if (Op == AuthOperation::SIGN_OUT)
 	{
@@ -404,13 +419,15 @@ JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeGoogleClientConnectCom
 		jenv->ReleaseStringUTFChars(accessToken, charsToken);
 	}
 
+	UE_LOG(LogOnline, Log, TEXT("nativeGoogleClientConnectCompleted Success: %d Token: %s"), bSuccess, *AccessToken);
+
 	DECLARE_CYCLE_STAT(TEXT("FSimpleDelegateGraphTask.ProcessGoogleClientConnectResult"), STAT_FSimpleDelegateGraphTask_ProcessGoogleClientConnectResult, STATGROUP_TaskGraphTasks);
 
 	FSimpleDelegateGraphTask::CreateAndDispatchWhenReady(
 		FSimpleDelegateGraphTask::FDelegate::CreateLambda([=]()
 		{
 			FPlatformMisc::LowLevelOutputDebugStringf(TEXT("Google Client connected %s, Access Token: %s\n"), bSuccess ? TEXT("successfully") : TEXT("unsuccessfully"), *AccessToken);
-			if (FOnlineSubsystemGooglePlay* const OnlineSub = (FOnlineSubsystemGooglePlay*)IOnlineSubsystem::Get())
+			if (FOnlineSubsystemGooglePlay* const OnlineSub = static_cast<FOnlineSubsystemGooglePlay* const>(IOnlineSubsystem::Get(GOOGLEPLAY_SUBSYSTEM)))
 			{
 				OnlineSub->ProcessGoogleClientConnectResult(bSuccess, AccessToken);
 			}

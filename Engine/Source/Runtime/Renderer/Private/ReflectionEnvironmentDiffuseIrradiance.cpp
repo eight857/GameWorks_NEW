@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Functionality for computing SH diffuse irradiance from a cubemap
@@ -39,7 +39,7 @@ class FCopyDiffuseIrradiancePS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FCopyDiffuseIrradiancePS,Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		return true;
 	}
@@ -106,7 +106,7 @@ private:
 	FShaderParameter NumSamples;
 };
 
-IMPLEMENT_SHADER_TYPE(,FCopyDiffuseIrradiancePS,TEXT("ReflectionEnvironmentShaders"),TEXT("DiffuseIrradianceCopyPS"),SF_Pixel)
+IMPLEMENT_SHADER_TYPE(,FCopyDiffuseIrradiancePS,TEXT("/Engine/Private/ReflectionEnvironmentShaders.usf"),TEXT("DiffuseIrradianceCopyPS"),SF_Pixel)
 
 /**  */
 class FAccumulateDiffuseIrradiancePS : public FGlobalShader
@@ -114,7 +114,7 @@ class FAccumulateDiffuseIrradiancePS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FAccumulateDiffuseIrradiancePS,Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		return true;
 	}
@@ -130,11 +130,6 @@ public:
 		Sample23.Bind(Initializer.ParameterMap,TEXT("Sample23"));
 	}
 	FAccumulateDiffuseIrradiancePS() {}
-
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform,OutEnvironment);
-	}
 
 	void SetParameters(FRHICommandList& RHICmdList, int32 CubeFaceValue, int32 NumMips, int32 SourceMipIndexValue, int32 CoefficientIndex, FTextureRHIRef& SourceTextureValue)
 	{
@@ -178,7 +173,7 @@ private:
 	FShaderParameter Sample23;
 };
 
-IMPLEMENT_SHADER_TYPE(,FAccumulateDiffuseIrradiancePS,TEXT("ReflectionEnvironmentShaders"),TEXT("DiffuseIrradianceAccumulatePS"),SF_Pixel)
+IMPLEMENT_SHADER_TYPE(,FAccumulateDiffuseIrradiancePS,TEXT("/Engine/Private/ReflectionEnvironmentShaders.usf"),TEXT("DiffuseIrradianceAccumulatePS"),SF_Pixel)
 
 /**  */
 class FAccumulateCubeFacesPS : public FGlobalShader
@@ -186,7 +181,7 @@ class FAccumulateCubeFacesPS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FAccumulateCubeFacesPS,Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		return true;
 	}
@@ -228,7 +223,7 @@ private:
 	FShaderResourceParameter SourceTextureSampler;
 };
 
-IMPLEMENT_SHADER_TYPE(,FAccumulateCubeFacesPS,TEXT("ReflectionEnvironmentShaders"),TEXT("AccumulateCubeFacesPS"),SF_Pixel)
+IMPLEMENT_SHADER_TYPE(,FAccumulateCubeFacesPS,TEXT("/Engine/Private/ReflectionEnvironmentShaders.usf"),TEXT("AccumulateCubeFacesPS"),SF_Pixel)
 
 void ComputeDiffuseIrradiance(FRHICommandListImmediate& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIRef LightingSource, int32 LightingSourceMipIndex, FSHVectorRGB3* OutIrradianceEnvironmentMap)
 {

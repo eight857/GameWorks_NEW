@@ -1,10 +1,14 @@
-﻿INTSourceChangelist:3108692
+﻿INTSourceChangelist:3429247
 Availability:Public
 Title:パーティクル システムのリファレンス
 Crumbs: %ROOT%, Engine, Engine/Rendering/ParticleSystems
 Description:パーティクル システムのタイプデータおよびモジュール用リファレンスの完全版
 Version:4.9
-
+tags:Particles
+parent:Engine/Rendering/ParticleSystems
+order:3
+type:reference
+topic-image:particlereference_topic.png
 
 
 ## 基本クラス
@@ -361,7 +365,8 @@ ParticleSystem への追加時のエミッタのデフォルト タイプはス�
 
 
 
-<!-------------Random Seed Includes----------------
+[COMMENT:none]
+-----------Random Seed Includes----------------
 #### Includes
 
 [EXCERPT:RandomSeedInfo]
@@ -377,5 +382,6 @@ ParticleSystem への追加時のエミッタのデフォルト タイプはス�
 [/EXCERPT:RandomSeedInfo]
 
 
--------------Random Seed Includes--------------->
+-------------Random Seed Includes-------------
+[/COMMENT]
 

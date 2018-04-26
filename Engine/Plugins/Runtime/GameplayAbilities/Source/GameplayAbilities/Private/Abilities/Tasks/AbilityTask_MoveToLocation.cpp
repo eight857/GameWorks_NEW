@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_MoveToLocation.h"
 #include "Curves/CurveFloat.h"
@@ -17,7 +17,7 @@ UAbilityTask_MoveToLocation::UAbilityTask_MoveToLocation(const FObjectInitialize
 
 UAbilityTask_MoveToLocation* UAbilityTask_MoveToLocation::MoveToLocation(UGameplayAbility* OwningAbility, FName TaskInstanceName, FVector Location, float Duration, UCurveFloat* OptionalInterpolationCurve, UCurveVector* OptionalVectorInterpolationCurve)
 {
-	auto MyObj = NewAbilityTask<UAbilityTask_MoveToLocation>(OwningAbility, TaskInstanceName);
+	UAbilityTask_MoveToLocation* MyObj = NewAbilityTask<UAbilityTask_MoveToLocation>(OwningAbility, TaskInstanceName);
 
 	if (MyObj->GetAvatarActor() != nullptr)
 	{

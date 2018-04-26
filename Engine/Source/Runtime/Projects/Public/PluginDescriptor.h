@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,36 +6,25 @@
 #include "ModuleDescriptor.h"
 #include "CustomBuildSteps.h"
 #include "LocalizationDescriptor.h"
+#include "PluginReferenceDescriptor.h"
 
 class FJsonObject;
 
 /**
- * Version numbers for plugin descriptors.
+ * Setting for whether a plugin is enabled by default
  */ 
-namespace EPluginDescriptorVersion
+enum class EPluginEnabledByDefault : uint8
 {
-	enum Type
-	{
-		Invalid = 0,
-		Initial = 1,
-		NameHash = 2,
-		ProjectPluginUnification = 3,
-		// !!!!!!!!!! IMPORTANT: Remember to also update LatestPluginDescriptorFileVersion in Plugins.cs (and Plugin system documentation) when this changes!!!!!!!!!!!
-		// -----<new versions can be added before this line>-------------------------------------------------
-		// - this needs to be the last line (see note below)
-		LatestPlusOne,
-		Latest = LatestPlusOne - 1
-	};
-}
+	Unspecified,
+	Enabled,
+	Disabled,
+};
 
 /**
  * Descriptor for plugins. Contains all the information contained within a .uplugin file.
  */
 struct PROJECTS_API FPluginDescriptor
 {
-	/** Descriptor version number */
-	int32 FileVersion;
-
 	/** Version number for the plugin.  The version number must increase with every version of the plugin, so that the system 
 	    can determine whether one version of a plugin is newer than another, or to enforce other requirements.  This version
 		number is not displayed in front-facing UI.  Use the VersionName for that. */
@@ -72,8 +61,8 @@ struct PROJECTS_API FPluginDescriptor
 	/** Version of the engine that this plugin is compatible with */
 	FString EngineVersion;
 
-	/** For packaged plugins, contains the compatible changelist of the engine that built this plugin */
-	int32 CompatibleChangelist;
+	/** List of target platforms supported by this plugin. This list will be copied to any plugin reference from a project file, to allow filtering entire plugins from staged builds. */
+	TArray<FString> SupportedTargetPlatforms;
 
 	/** List of all modules associated with this plugin */
 	TArray<FModuleDescriptor> Modules;
@@ -82,7 +71,7 @@ struct PROJECTS_API FPluginDescriptor
 	TArray<FLocalizationTargetDescriptor> LocalizationTargets;
 
 	/** Whether this plugin should be enabled by default for all projects */
-	bool bEnabledByDefault;
+	EPluginEnabledByDefault EnabledByDefault;
 
 	/** Can this plugin contain content? */
 	bool bCanContainContent;
@@ -90,14 +79,14 @@ struct PROJECTS_API FPluginDescriptor
 	/** Marks the plugin as beta in the UI */
 	bool bIsBetaVersion;
 
-	/** Indicates that this plugin is a mod */
-	bool bIsMod;
-
 	/** Signifies that the plugin was installed on top of the engine */
 	bool bInstalled;
 
 	/** For plugins that are under a platform folder (eg. /PS4/), determines whether compiling the plugin requires the build platform and/or SDK to be available */
 	bool bRequiresBuildPlatform;
+
+	/** For auto-generated plugins that should not be listed in the plugin browser for users to disable freely. */
+	bool bIsHidden;
 
 	/** Pre-build steps for each host platform */
 	FCustomBuildSteps PreBuildSteps;
@@ -105,73 +94,31 @@ struct PROJECTS_API FPluginDescriptor
 	/** Pre-build steps for each host platform */
 	FCustomBuildSteps PostBuildSteps;
 
+	/** Dependent plugins */
+	TArray<FPluginReferenceDescriptor> Plugins;
+
 	/** Constructor. */
 	FPluginDescriptor();
 
 	/** Loads the descriptor from the given file. */
-	bool Load(const FString& FileName, bool bPluginTypeEnabledByDefault, FText& OutFailReason);
+	bool Load(const FString& FileName, FText& OutFailReason);
 
-	/** Reads the descriptor from the given JSON object */
-	bool Read(const FString& Text, bool bPluginTypeEnabledByDefault, FText& OutFailReason);
-
-	/** Saves the descriptor from the given file. */
-	bool Save(const FString& FileName, bool bPluginTypeEnabledByDefault, FText& OutFailReason) const;
-
-	/** Writes a descriptor to JSON */
-	void Write(FString& Text, bool bPluginTypeEnabledByDefault) const;
-};
-
-/**
- * Descriptor for a plugin reference. Contains the information required to enable or disable a plugin for a given platform.
- */
-struct PROJECTS_API FPluginReferenceDescriptor
-{
-	/** Name of the plugin */
-	FString Name;
-
-	/** Whether it should be enabled by default */
-	bool bEnabled;
-
-	/** Whether this plugin is optional, and the game should silently ignore it not being present */
-	bool bOptional;
-	
-	/** Description of the plugin for users that do not have it installed. */
-	FString Description;
-
-	/** URL for this plugin on the marketplace, if the user doesn't have it installed. */
-	FString MarketplaceURL;
-
-	/** If enabled, list of platforms for which the plugin should be enabled (or all platforms if blank). */
-	TArray<FString> WhitelistPlatforms;
-
-	/** If enabled, list of platforms for which the plugin should be disabled. */
-	TArray<FString> BlacklistPlatforms;
- 
-	/** If enabled, list of targets for which the plugin should be enabled (or all targets if blank). */
-	TArray<FString> WhitelistTargets;
-
-	/** If enabled, list of targets for which the plugin should be disabled. */
-	TArray<FString> BlacklistTargets;
-
-	/** Constructor */
-	FPluginReferenceDescriptor(const FString& InName = TEXT(""), bool bInEnabled = false, const FString& InMarketplaceURL = TEXT(""));
-
-	/** Determines whether the plugin is enabled for the given platform */
-	bool IsEnabledForPlatform(const FString& Platform) const;
-
-	/** Determines whether the plugin is enabled for the given target */
-	bool IsEnabledForTarget(const FString& Target) const;
+	/** Reads the descriptor from the given string */
+	bool Read(const FString& Text, FText& OutFailReason);
 
 	/** Reads the descriptor from the given JSON object */
 	bool Read(const FJsonObject& Object, FText& OutFailReason);
 
-	/** Reads an array of modules from the given JSON object */
-	static bool ReadArray(const FJsonObject& Object, const TCHAR* Name, TArray<FPluginReferenceDescriptor>& OutModules, FText& OutFailReason);
+	/** Saves the descriptor from the given file. */
+	bool Save(const FString& FileName, FText& OutFailReason) const;
+
+	/** Writes a descriptor to JSON */
+	void Write(FString& Text) const;
 
 	/** Writes a descriptor to JSON */
 	void Write(TJsonWriter<>& Writer) const;
 
-	/** Writes an array of modules to JSON */
-	static void WriteArray(TJsonWriter<>& Writer, const TCHAR* Name, const TArray<FPluginReferenceDescriptor>& Modules);
+	/** Determines whether the plugin supports the given platform */
+	bool SupportsTargetPlatform(const FString& Platform) const;
 };
 

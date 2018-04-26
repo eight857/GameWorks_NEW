@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * Manages selections of objects.  Used in the editor for selecting
@@ -66,6 +66,9 @@ public:
 	static FSimpleMulticastDelegate SelectNoneEvent;
 
 	USelection(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** Initializes the selection set with an annotation used to quickly look up selection state */
+	void Initialize(FUObjectAnnotationSparseBool* InSelectionAnnotation);
 
 	typedef ClassArray::TIterator TClassIterator;
 	typedef ClassArray::TConstIterator TClassConstIterator;
@@ -330,6 +333,8 @@ public:
 	//~ Begin UObject Interface
 	virtual void Serialize(FArchive& Ar) override;
 	virtual bool Modify( bool bAlwaysMarkDirty=true) override;
+	virtual void BeginDestroy() override;
+
 	//~ End UObject Interface
 
 
@@ -386,6 +391,10 @@ protected:
 	/** Tracks whether the selection set changed during a batch selection operation */
 	bool		bIsBatchDirty;
 	
+	/** Selection annotation for fast lookup */
+	FUObjectAnnotationSparseBool* SelectionAnnotation;
+
+	bool bOwnsSelectionAnnotation;
 private:
 	// Hide IsSelected(), as calling IsSelected() on a selection set almost always indicates
 	// an error where the caller should use IsSelected(UObject* InObject).

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,6 +8,7 @@
 #include "Animation/AnimTypes.h"
 #include "Animation/AnimCurveTypes.h"
 #include "BonePose.h"
+#include "Logging/TokenizedMessage.h"
 #include "AnimNodeBase.generated.h"
 
 class IAnimClassInterface;
@@ -42,6 +43,11 @@ public:
 	// Note: This can return NULL, so check the result.
 	ENGINE_API UAnimBlueprint* GetAnimBlueprint() const;
 #endif //WITH_EDITORONLY_DATA
+
+protected:
+
+	/** Interface for node contexts to register log messages with the proxy */
+	ENGINE_API void LogMessageInternal(FName InLogType, EMessageSeverity::Type InSeverity, FText InMessage);
 };
 
 
@@ -127,6 +133,9 @@ public:
 
 	// Returns the delta time for this update, in seconds
 	float GetDeltaTime() const { return DeltaTime; }
+
+	// Log update message
+	void LogMessage(EMessageSeverity::Type InSeverity, FText InMessage) { LogMessageInternal("Update", InSeverity, InMessage); }
 };
 
 
@@ -140,24 +149,36 @@ public:
 
 public:
 	// This constructor allocates a new uninitialized pose for the specified anim instance
-	FPoseContext(FAnimInstanceProxy* InAnimInstanceProxy)
+	FPoseContext(FAnimInstanceProxy* InAnimInstanceProxy, bool bInExpectsAdditivePose = false)
 		: FAnimationBaseContext(InAnimInstanceProxy)
+		, bExpectsAdditivePose(bInExpectsAdditivePose)
 	{
 		Initialize(InAnimInstanceProxy);
 	}
 
 	// This constructor allocates a new uninitialized pose, copying non-pose state from the source context
-	FPoseContext(const FPoseContext& SourceContext)
+	FPoseContext(const FPoseContext& SourceContext, bool bInOverrideExpectsAdditivePose = false)
 		: FAnimationBaseContext(SourceContext.AnimInstanceProxy)
+		, bExpectsAdditivePose(SourceContext.bExpectsAdditivePose || bInOverrideExpectsAdditivePose)
 	{
 		Initialize(SourceContext.AnimInstanceProxy);
 	}
 
 	ENGINE_API void Initialize(FAnimInstanceProxy* InAnimInstanceProxy);
 
+	// Log evaluation message
+	void LogMessage(EMessageSeverity::Type InSeverity, FText InMessage) { LogMessageInternal("Evaluate", InSeverity, InMessage); }
+
 	void ResetToRefPose()
 	{
-		Pose.ResetToRefPose();	
+		if (bExpectsAdditivePose)
+		{
+			Pose.ResetToAdditiveIdentity();
+		}
+		else
+		{
+			Pose.ResetToRefPose();
+		}
 	}
 
 	void ResetToAdditiveIdentity()
@@ -184,8 +205,17 @@ public:
 
 		Pose = Other.Pose;
 		Curve = Other.Curve;
+		bExpectsAdditivePose = Other.bExpectsAdditivePose;
 		return *this;
 	}
+
+	// Is this pose expected to be additive
+	bool ExpectsAdditivePose() const { return bExpectsAdditivePose; }
+
+private:
+
+	// Is this pose expected to be an additive pose
+	bool bExpectsAdditivePose;
 };
 
 
@@ -332,7 +362,7 @@ namespace EPinHidingMode
 #define ENABLE_ANIMGRAPH_TRAVERSAL_DEBUG 0
 
 /** A pose link to another node */
-USTRUCT()
+USTRUCT(BlueprintInternalUseOnly)
 struct ENGINE_API FPoseLinkBase
 {
 	GENERATED_USTRUCT_BODY()
@@ -390,14 +420,14 @@ public:
 #define ENABLE_ANIMNODE_POSE_DEBUG 0
 
 /** A local-space pose link to another node */
-USTRUCT()
+USTRUCT(BlueprintInternalUseOnly)
 struct ENGINE_API FPoseLink : public FPoseLinkBase
 {
 	GENERATED_USTRUCT_BODY()
 
 public:
 	// Interface
-	void Evaluate(FPoseContext& Output, bool bExpectsAdditivePose = false);
+	void Evaluate(FPoseContext& Output);
 
 #if ENABLE_ANIMNODE_POSE_DEBUG
 private:
@@ -407,7 +437,7 @@ private:
 };
 
 /** A component-space pose link to another node */
-USTRUCT()
+USTRUCT(BlueprintInternalUseOnly)
 struct ENGINE_API FComponentSpacePoseLink : public FPoseLinkBase
 {
 	GENERATED_USTRUCT_BODY()
@@ -425,6 +455,23 @@ enum class EPostCopyOperation : uint8
 	LogicalNegateBool,
 };
 
+UENUM()
+enum class ECopyType : uint8
+{
+	// Just copy the memory
+	MemCopy,
+
+	// Read and write properties using bool property helpers, as source/dest could be bitfirld or boolean
+	BoolProperty,
+	
+	// Use struct copy operation, as this needs to correctly handle CPP struct ops
+	StructProperty,
+
+	// Read and write properties using object property helpers, as source/dest could be regular/weak/lazy etc.
+	ObjectProperty,
+};
+
+
 USTRUCT()
 struct FExposedValueCopyRecord
 {
@@ -440,9 +487,9 @@ struct FExposedValueCopyRecord
 		, Size(0)
 		, bInstanceIsTarget(false)
 		, PostCopyOperation(EPostCopyOperation::None)
-		, CachedBoolSourceProperty(nullptr)
-		, CachedBoolDestProperty(nullptr)
-		, CachedStructDestProperty(nullptr)
+		, CopyType(ECopyType::MemCopy)
+		, CachedSourceProperty(nullptr)
+		, CachedSourceStructSubProperty(nullptr)
 		, CachedSourceContainer(nullptr)
 		, CachedDestContainer(nullptr)
 		, Source(nullptr)
@@ -479,17 +526,15 @@ struct FExposedValueCopyRecord
 	UPROPERTY()
 	EPostCopyOperation PostCopyOperation;
 
-	// cached source property for performing boolean operations
 	UPROPERTY(Transient)
-	UBoolProperty* CachedBoolSourceProperty;
+	ECopyType CopyType;
 
-	// cached dest property for performing boolean operations
-	UPROPERTY(Transient)
-	UBoolProperty* CachedBoolDestProperty;
+	// cached source property
+	UPROPERTY()
+	UProperty* CachedSourceProperty;
 
-	// Cached dest property for copying structs
-	UPROPERTY(Transient)
-	UStructProperty* CachedStructDestProperty;
+	UPROPERTY()
+	UProperty* CachedSourceStructSubProperty;
 
 	// cached source container for use with boolean operations
 	void* CachedSourceContainer;
@@ -535,6 +580,7 @@ struct ENGINE_API FExposedValueHandler
 	TArray<FExposedValueCopyRecord> CopyRecords;
 
 	// function pointer if BoundFunction != NAME_None
+	UPROPERTY()
 	UFunction* Function;
 
 	// Prevent multiple initialization
@@ -568,7 +614,7 @@ struct ENGINE_API FAnimNode_Base
 	 * This can be called on any thread.
 	 * @param	Context		Context structure providing access to relevant data
 	 */
-	virtual void Initialize(const FAnimationInitializeContext& Context);
+	virtual void Initialize_AnyThread(const FAnimationInitializeContext& Context);
 
 	/** 
 	 * Called to cache any bones that this node needs to track (e.g. in a FBoneReference). 
@@ -576,7 +622,7 @@ struct ENGINE_API FAnimNode_Base
 	 * This can be called on any thread.
 	 * @param	Context		Context structure providing access to relevant data
 	 */
-	virtual void CacheBones(const FAnimationCacheBonesContext& Context) {}
+	virtual void CacheBones_AnyThread(const FAnimationCacheBonesContext& Context);
 
 	/** 
 	 * Called to update the state of the graph relative to this node.
@@ -585,7 +631,7 @@ struct ENGINE_API FAnimNode_Base
 	 * This can be called on any thread.
 	 * @param	Context		Context structure providing access to relevant data
 	 */
-	virtual void Update(const FAnimationUpdateContext& Context) {}
+	virtual void Update_AnyThread(const FAnimationUpdateContext& Context);
 
 	/** 
 	 * Called to evaluate local-space bones transforms according to the weights set up in Update().
@@ -593,7 +639,7 @@ struct ENGINE_API FAnimNode_Base
 	 * This can be called on any thread.
 	 * @param	Output		Output structure to write pose or curve data to. Also provides access to relevant data as a context.
 	 */
-	virtual void Evaluate(FPoseContext& Output) { check(false); }
+	virtual void Evaluate_AnyThread(FPoseContext& Output);
 
 	/** 
 	 * Called to evaluate component-space bone transforms according to the weights set up in Update().
@@ -601,8 +647,7 @@ struct ENGINE_API FAnimNode_Base
 	 * This can be called on any thread.
 	 * @param	Output		Output structure to write pose or curve data to. Also provides access to relevant data as a context.
 	 */	
-	virtual void EvaluateComponentSpace(FComponentSpacePoseContext& Output) { check(false); }
-
+	virtual void EvaluateComponentSpace_AnyThread(FComponentSpacePoseContext& Output);
 	/** 
 	 * If a derived anim node should respond to asset overrides, OverrideAsset should be defined to handle changing the asset 
 	 * This is called during anim blueprint compilation to handle child anim blueprints.
@@ -652,12 +697,28 @@ struct ENGINE_API FAnimNode_Base
 
 	virtual ~FAnimNode_Base() {}
 
+	/** Deprecated functions */
+	DEPRECATED(4.17, "Please use Initialize_AnyThread instead")
+	virtual void Initialize(const FAnimationInitializeContext& Context);
+	DEPRECATED(4.17, "Please use CacheBones_AnyThread instead")
+	virtual void CacheBones(const FAnimationCacheBonesContext& Context) {}
+	DEPRECATED(4.17, "Please use Update_AnyThread instead")
+	virtual void Update(const FAnimationUpdateContext& Context) {}
+	DEPRECATED(4.17, "Please use Evaluate_AnyThread instead")
+	virtual void Evaluate(FPoseContext& Output) { check(false); }
+	DEPRECATED(4.17, "Please use EvaluateComponentSpace_AnyThread instead")
+	virtual void EvaluateComponentSpace(FComponentSpacePoseContext& Output) { check(false); }
+
 protected:
 	/** return true if enabled, otherwise, return false. This is utility function that can be used per node level */
 	bool IsLODEnabled(FAnimInstanceProxy* AnimInstanceProxy, int32 InLODThreshold);
 
-	/** Called once, from game thread as the parent anim instance is created */
+	/** Deprecated function */
+	DEPRECATED(4.17, "Please use OnInitializeAnimInstance instead")
 	virtual void RootInitialize(const FAnimInstanceProxy* InProxy) {}
+
+	/** Called once, from game thread as the parent anim instance is created */
+	virtual void OnInitializeAnimInstance(const FAnimInstanceProxy* InProxy, const UAnimInstance* InAnimInstance);
 
 	friend struct FAnimInstanceProxy;
 };

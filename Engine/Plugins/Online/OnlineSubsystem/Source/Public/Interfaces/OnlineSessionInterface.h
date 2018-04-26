@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -110,6 +110,32 @@ namespace EOnJoinSessionCompleteResult
 		UnknownError
 	};
 }
+
+namespace Lex
+{
+	/** Convert a EOnJoinSessionCompleteResult into a string */
+	inline const TCHAR* ToString(const EOnJoinSessionCompleteResult::Type Value)
+	{
+		switch (Value)
+		{
+		case EOnJoinSessionCompleteResult::Success:
+			return TEXT("Success");
+		case EOnJoinSessionCompleteResult::SessionIsFull:
+			return TEXT("SessionIsFull");
+		case EOnJoinSessionCompleteResult::SessionDoesNotExist:
+			return TEXT("SessionDoesNotExist");
+		case EOnJoinSessionCompleteResult::CouldNotRetrieveAddress:
+			return TEXT("CouldNotretrieveAddress");
+		case EOnJoinSessionCompleteResult::AlreadyInSession:
+			return TEXT("AlreadyInSession");
+		case EOnJoinSessionCompleteResult::UnknownError:
+			; // Intentional fall-through
+		}
+		
+		return TEXT("UnknownError");
+	}
+}
+
 /**
  * Delegate fired when the joining process for an online session has completed
  *
@@ -664,7 +690,7 @@ public:
 	 *
 	 * @return true if the call was successful, false otherwise
 	 */
-	virtual bool GetResolvedConnectString(FName SessionName, FString& ConnectInfo, FName PortType = GamePort) = 0;
+	virtual bool GetResolvedConnectString(FName SessionName, FString& ConnectInfo, FName PortType = NAME_GamePort) = 0;
 
 	/**
 	 * Returns the platform specific connection information for joining a search result.

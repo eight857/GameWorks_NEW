@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
@@ -251,6 +251,7 @@ void USetProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 			TempElementStorage = (uint8*)FMemory::Malloc(SetLayout.Size);
 			ElementProp->InitializeValue(TempElementStorage);
 
+			FSerializedPropertyScope SerializedProperty(Ar, ElementProp, this);
 			for (; NumElementsToRemove; --NumElementsToRemove)
 			{
 				// Read key into temporary storage
@@ -275,6 +276,7 @@ void USetProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 			ElementProp->InitializeValue(TempElementStorage);
 		}
 
+		FSerializedPropertyScope SerializedProperty(Ar, ElementProp, this);
 		// Read remaining items into container
 		for (; Num; --Num)
 		{
@@ -323,9 +325,12 @@ void USetProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 		// Write out the removed elements
 		int32 RemovedElementsNum = Indices.Num();
 		Ar << RemovedElementsNum;
-		for (int32 Index : Indices)
 		{
-			ElementProp->SerializeItem(Ar, DefaultsHelper.GetElementPtr(Index));
+			FSerializedPropertyScope SerializedProperty(Ar, ElementProp, this);
+			for (int32 Index : Indices)
+			{
+				ElementProp->SerializeItem(Ar, DefaultsHelper.GetElementPtr(Index));
+			}
 		}
 
 		// Write out added elements
@@ -351,6 +356,8 @@ void USetProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 			// Write out differences from defaults
 			int32 Num = Indices.Num();
 			Ar << Num;
+
+			FSerializedPropertyScope SerializedProperty(Ar, ElementProp, this);
 			for (int32 Index : Indices)
 			{
 				uint8* ElementPtr = SetHelper.GetElementPtrWithoutCheck(Index);
@@ -362,6 +369,8 @@ void USetProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 		{
 			int32 Num = SetHelper.Num();
 			Ar << Num;
+
+			FSerializedPropertyScope SerializedProperty(Ar, ElementProp, this);
 			for (int32 Index = 0; Num; ++Index)
 			{
 				if (SetHelper.IsValidIndex(Index))
@@ -405,19 +414,37 @@ FString USetProperty::GetCPPMacroType(FString& ExtendedTypeText) const
 	return TEXT("TSET");
 }
 
-FString USetProperty::GetCPPType(FString* ExtendedTypeText, uint32 CPPExportFlags) const
+FString USetProperty::GetCPPTypeCustom(FString* ExtendedTypeText, uint32 CPPExportFlags, const FString& ElementTypeText, const FString& InElementExtendedTypeText) const
 {
-	checkSlow(ElementProp);
-
 	if (ExtendedTypeText)
 	{
-		FString ElementExtendedTypeText;
-		const FString ElementTypeText = ElementProp->GetCPPType(&ElementExtendedTypeText, CPPExportFlags & ~CPPF_ArgumentOrReturnValue); // we won't consider set elements to be "arguments or return values"
+		// if property type is a template class, add a space between the closing brackets
+		FString ElementExtendedTypeText = InElementExtendedTypeText;
+		if ((ElementExtendedTypeText.Len() && ElementExtendedTypeText.Right(1) == TEXT(">"))
+			|| (!ElementExtendedTypeText.Len() && ElementTypeText.Len() && ElementTypeText.Right(1) == TEXT(">")))
+		{
+			ElementExtendedTypeText += TEXT(" ");
+		}
 
 		*ExtendedTypeText = FString::Printf(TEXT("<%s%s>"), *ElementTypeText, *ElementExtendedTypeText);
 	}
 
 	return TEXT("TSet");
+}
+
+FString USetProperty::GetCPPType(FString* ExtendedTypeText, uint32 CPPExportFlags) const
+{
+	checkSlow(ElementProp);
+
+	FString ElementTypeText;
+	FString ElementExtendedTypeText;
+
+	if (ExtendedTypeText)
+	{
+		ElementTypeText = ElementProp->GetCPPType(&ElementExtendedTypeText, CPPExportFlags & ~CPPF_ArgumentOrReturnValue); // we won't consider set elements to be "arguments or return values"
+	}
+
+	return GetCPPTypeCustom(ExtendedTypeText, CPPExportFlags, ElementTypeText, ElementExtendedTypeText);
 }
 
 FString USetProperty::GetCPPTypeForwardDeclaration() const
@@ -540,19 +567,23 @@ const TCHAR* USetProperty::ImportText_Internal(const TCHAR* Buffer, void* Data, 
 		return Buffer + 1;
 	}
 
-	uint8* TempElementStorage = (uint8*)FMemory::Malloc(SetLayout.Size);
+	uint8* TempElementStorage = (uint8*)FMemory::Malloc(ElementProp->ElementSize);
 	ElementProp->InitializeValue(TempElementStorage);
 
+	bool bSuccess = false;
 	ON_SCOPE_EXIT
 	{
-		if (TempElementStorage)
+		ElementProp->DestroyValue(TempElementStorage);
+		FMemory::Free(TempElementStorage);
+
+		// If we are returning because of an error, remove any already-added elements from the map before returning
+		// to ensure we're not left with a partial state.
+		if (!bSuccess)
 		{
-			ElementProp->DestroyValue(TempElementStorage);
-			FMemory::Free(TempElementStorage);
+			SetHelper.EmptyElements();
 		}
 	};
 
-	int32 Index = 0;
 	for (;;)
 	{
 		// Read key into temporary storage
@@ -580,16 +611,16 @@ const TCHAR* USetProperty::ImportText_Internal(const TCHAR* Buffer, void* Data, 
 		{
 		case TCHAR(')'):
 			SetHelper.Rehash();
+			bSuccess = true;
 			return Buffer;
 
 		case TCHAR(','):
+			SkipWhitespace(Buffer);
 			break;
 
 		default:
 			return nullptr;
 		}
-
-		++Index;
 	}
 }
 

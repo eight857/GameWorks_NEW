@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PhysicsEngine/PhysicsThruster.h"
 #include "UObject/ConstructorHelpers.h"
@@ -45,7 +45,7 @@ void UPhysicsThrusterComponent::TickComponent(float DeltaTime, enum ELevelTick T
 	// Applied force to the base, so if we don't have one, do nothing.
 	if( bIsActive && GetAttachParent())
 	{
-		FVector WorldForce = ThrustStrength * ComponentToWorld.TransformVectorNoScale( FVector(-1.f,0.f,0.f) );
+		FVector WorldForce = ThrustStrength * GetComponentTransform().TransformVectorNoScale( FVector(-1.f,0.f,0.f) );
 
 		UPrimitiveComponent* BasePrimComp = Cast<UPrimitiveComponent>(GetAttachParent());
 		if(BasePrimComp)
@@ -82,12 +82,5 @@ APhysicsThruster::APhysicsThruster(const FObjectInitializer& ObjectInitializer)
 	}
 #endif // WITH_EDITORONLY_DATA
 }
-
-/** Returns ThrusterComponent subobject **/
-UPhysicsThrusterComponent* APhysicsThruster::GetThrusterComponent() const { return ThrusterComponent; }
-#if WITH_EDITORONLY_DATA
-/** Returns ArrowComponent subobject **/
-UArrowComponent* APhysicsThruster::GetArrowComponent() const { return ArrowComponent; }
-#endif
 
 #undef LOCTEXT_NAMESPACE

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -119,6 +119,7 @@ extern PFNGLISVERTEXARRAYPROC 				glIsVertexArray;
 	EnumMacro(PFNGLDELETEVERTEXARRAYSPROC,glDeleteVertexArrays) \
 	EnumMacro(PFNGLGENVERTEXARRAYSPROC,glGenVertexArrays) \
 	EnumMacro(PFNGLISVERTEXARRAYPROC,glIsVertexArray) \
+	EnumMacro(PFNGLSCISSORPROC,glScissor) \
 
 #define DECLARE_GL_ENTRYPOINTS(Type,Func) extern Type Func;
 ENUM_GL_ENTRYPOINTS(DECLARE_GL_ENTRYPOINTS);

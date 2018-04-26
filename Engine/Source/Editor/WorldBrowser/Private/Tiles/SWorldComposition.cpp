@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "Tiles/SWorldComposition.h"
 #include "Layout/ArrangedChildren.h"
 #include "Rendering/DrawElements.h"
@@ -57,7 +57,7 @@ struct FWorldZoomLevelsContainer
 
 	int32	GetNumZoomLevels() const override
 	{
-		return 100;
+		return 300;
 	}
 
 	int32	GetDefaultZoomLevel() const override
@@ -106,30 +106,9 @@ public:
 		ZoomLevels = MakeUnique<FWorldZoomLevelsContainer>();
 
 		SNodePanel::Construct();
-	
-		//// bind commands
-		//const FWorldTileCommands& Commands = FWorldTileCommands::Get();
-		//FUICommandList& ActionList = *CommandList;
 
-		//ActionList.MapAction(Commands.FitToSelection,
-		//	FExecuteAction::CreateSP(this, &SWorldCompositionGrid::FitToSelection_Executed),
-		//	FCanExecuteAction::CreateSP(this, &SWorldCompositionGrid::AreAnyItemsSelected));
-
-		//ActionList.MapAction(Commands.MoveLevelLeft,
-		//	FExecuteAction::CreateSP(this, &SWorldCompositionGrid::MoveLevelLeft_Executed),
-		//	FCanExecuteAction::CreateSP(this, &SWorldCompositionGrid::AreAnyItemsSelected));
-
-		//ActionList.MapAction(Commands.MoveLevelRight,
-		//	FExecuteAction::CreateSP(this, &SWorldCompositionGrid::MoveLevelRight_Executed),
-		//	FCanExecuteAction::CreateSP(this, &SWorldCompositionGrid::AreAnyItemsSelected));
-
-		//ActionList.MapAction(Commands.MoveLevelUp,
-		//	FExecuteAction::CreateSP(this, &SWorldCompositionGrid::MoveLevelUp_Executed),
-		//	FCanExecuteAction::CreateSP(this, &SWorldCompositionGrid::AreAnyItemsSelected));
-
-		//ActionList.MapAction(Commands.MoveLevelDown,
-		//	FExecuteAction::CreateSP(this, &SWorldCompositionGrid::MoveLevelDown_Executed),
-		//	FCanExecuteAction::CreateSP(this, &SWorldCompositionGrid::AreAnyItemsSelected));
+		// otherwise tiles will be drawn outside of this widget area
+		SetClipping(EWidgetClipping::ClipToBounds);
 
 		//
 		WorldModel = InArgs._InWorldModel;
@@ -192,7 +171,7 @@ public:
 		if (bIsFirstTickCall)
 		{
 			bIsFirstTickCall = false;
-			ViewOffset-= AllottedGeometry.Size*0.5f/GetZoomAmount();
+			ViewOffset-= AllottedGeometry.GetLocalSize()*0.5f/GetZoomAmount();
 		}
 
 		FVector2D CursorPosition = FSlateApplication::Get().GetCursorPos();
@@ -217,8 +196,8 @@ public:
 				
 				FVector2D SizeWithZoom = RequestedZoomArea*ZoomLevels->GetZoomAmount(ZoomLevel);
 				
-				if (SizeWithZoom.X >= AllottedGeometry.Size.X || 
-					SizeWithZoom.Y >= AllottedGeometry.Size.Y)
+				if (SizeWithZoom.X >= AllottedGeometry.GetLocalSize().X ||
+					SizeWithZoom.Y >= AllottedGeometry.GetLocalSize().Y)
 				{
 					// maximum zoom out by default
 					ZoomLevel = ZoomLevels->GetDefaultZoomLevel();
@@ -228,7 +207,7 @@ public:
 					for (int32 Zoom = 0; Zoom < ZoomLevels->GetDefaultZoomLevel(); ++Zoom)
 					{
 						SizeWithZoom = RequestedZoomArea*ZoomLevels->GetZoomAmount(Zoom);
-						if (SizeWithZoom.X >= AllottedGeometry.Size.X || SizeWithZoom.Y >= AllottedGeometry.Size.Y)
+						if (SizeWithZoom.X >= AllottedGeometry.GetLocalSize().X || SizeWithZoom.Y >= AllottedGeometry.GetLocalSize().Y)
 						{
 							ZoomLevel = Zoom;
 							break;
@@ -241,7 +220,7 @@ public:
 			if (bHasScrollToRequest)
 			{
 				bHasScrollToRequest = false;
-				ViewOffset = RequestedScrollToValue - AllottedGeometry.Size*0.5f/GetZoomAmount();
+				ViewOffset = RequestedScrollToValue - AllottedGeometry.GetLocalSize() * 0.5f / GetZoomAmount();
 			}
 
 			// scroll by
@@ -275,11 +254,11 @@ public:
 	}
 
 	/**  SWidget interface */
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override
 	{
 		// First paint the background
 		{
-			LayerId = PaintBackground(AllottedGeometry, MyClippingRect, OutDrawElements, LayerId);
+			LayerId = PaintBackground(AllottedGeometry, MyCullingRect, OutDrawElements, LayerId);
 			LayerId++;
 		}
 
@@ -305,7 +284,7 @@ public:
 			TSharedRef<SWorldTileItem> ChildNode = StaticCastSharedRef<SWorldTileItem>(CurWidget.Widget);
 		
 			ChildNode->bAffectedByMarquee = SelectionToVisualize->Contains(ChildNode->GetObjectBeingDisplayed());
-			LayerId = CurWidget.Widget->Paint(Args.WithNewParent(this), CurWidget.Geometry, MyClippingRect, OutDrawElements, NodesLayerId, InWidgetStyle, ShouldBeEnabled(bParentEnabled));
+			LayerId = CurWidget.Widget->Paint(Args.WithNewParent(this), CurWidget.Geometry, MyCullingRect, OutDrawElements, NodesLayerId, InWidgetStyle, ShouldBeEnabled(bParentEnabled));
 			ChildNode->bAffectedByMarquee = false;
 		}
 		
@@ -318,7 +297,7 @@ public:
 			float Scale = 0.2f; // Scale down drawing border
 			FSlateLayoutTransform LayoutTransform(Scale, AllottedGeometry.GetAccumulatedLayoutTransform().GetTranslation() + PaintPosition);
 			FSlateRenderTransform SlateRenderTransform(Scale, AllottedGeometry.GetAccumulatedRenderTransform().GetTranslation() + PaintPosition);
-			FPaintGeometry EditableArea(LayoutTransform, SlateRenderTransform, PaintSize/Scale);
+			FPaintGeometry EditableArea(LayoutTransform, SlateRenderTransform, PaintSize/Scale, !SlateRenderTransform.IsIdentity());
 
 			FLinearColor PaintColor = FLinearColor::Yellow;
 			PaintColor.A = 0.4f;
@@ -328,17 +307,16 @@ public:
 				++LayerId,
 				EditableArea,
 				FEditorStyle::GetBrush(TEXT("Graph.CompactNode.ShadowSelected")),
-				MyClippingRect,
 				ESlateDrawEffect::None,
 				PaintColor
 				);
 		}
 		
 		// Draw the marquee selection rectangle
-		PaintMarquee(AllottedGeometry, MyClippingRect, OutDrawElements, ++LayerId);
+		PaintMarquee(AllottedGeometry, MyCullingRect, OutDrawElements, ++LayerId);
 
 		// Draw the software cursor
-		PaintSoftwareCursor(AllottedGeometry, MyClippingRect, OutDrawElements, ++LayerId);
+		PaintSoftwareCursor(AllottedGeometry, MyCullingRect, OutDrawElements, ++LayerId);
 
 		if(WorldModel->IsSimulating())
 		{
@@ -347,8 +325,7 @@ public:
 				OutDrawElements,
 				LayerId,
 				AllottedGeometry.ToPaintGeometry(),
-				FEditorStyle::GetBrush(TEXT("Graph.PlayInEditor")),
-				MyClippingRect
+				FEditorStyle::GetBrush(TEXT("Graph.PlayInEditor"))
 				);
 		}
 
@@ -361,17 +338,20 @@ public:
 				FVector2D ObserverPositionScreen = GraphCoordToPanelCoord(FVector2D(ObserverPosition.X, ObserverPosition.Y));
 				const FSlateBrush* CameraImage = FEditorStyle::GetBrush(TEXT("WorldBrowser.SimulationViewPositon"));
 	
+				//AllottedGeometry.GetAccumulatedRenderTransform();
+				//FSlateLayoutTransform LayoutTransform(Scale, AllottedGeometry.GetAccumulatedLayoutTransform().GetTranslation() - InflateAmount);
+				//FSlateRenderTransform SlateRenderTransform(Scale, AllottedGeometry.GetAccumulatedRenderTransform().GetTranslation() - InflateAmount);
+
 				FPaintGeometry PaintGeometry = AllottedGeometry.ToPaintGeometry(
 					ObserverPositionScreen - CameraImage->ImageSize*0.5f, 
 					CameraImage->ImageSize
-					);
+				);
 
 				FSlateDrawElement::MakeRotatedBox(
 					OutDrawElements,
 					++LayerId,
 					PaintGeometry,
 					CameraImage,
-					MyClippingRect,
 					ESlateDrawEffect::None,
 					FMath::DegreesToRadians(ObserverRotation.Yaw),
 					CameraImage->ImageSize*0.5f,
@@ -396,7 +376,6 @@ public:
 					++LayerId,
 					PaintGeometry,
 					CameraImage,
-					MyClippingRect,
 					ESlateDrawEffect::None,
 					FMath::DegreesToRadians(PlayerRotation.Yaw),
 					CameraImage->ImageSize*0.5f,
@@ -407,7 +386,7 @@ public:
 
 		}
 
-		LayerId = PaintScaleRuler(AllottedGeometry, MyClippingRect, OutDrawElements, LayerId);
+		LayerId = PaintScaleRuler(AllottedGeometry, MyCullingRect, OutDrawElements, LayerId);
 		return LayerId;
 	}
 		
@@ -416,6 +395,7 @@ public:
 	{
 		const bool bIsRightMouseButtonDown = MouseEvent.IsMouseButtonDown( EKeys::RightMouseButton );
 		const bool bIsLeftMouseButtonDown = MouseEvent.IsMouseButtonDown( EKeys::LeftMouseButton );
+		const bool bIsMiddleMouseButtonDown = MouseEvent.IsMouseButtonDown(EKeys::MiddleMouseButton);
 
 		PastePosition = PanelCoordToGraphCoord( MyGeometry.AbsoluteToLocal( MouseEvent.GetScreenSpacePosition() ) );
 
@@ -425,7 +405,7 @@ public:
 			// Track how much the mouse moved since the mouse down.
 			TotalMouseDelta += CursorDelta.Size();
 
-			if (bIsRightMouseButtonDown)
+			if (bIsRightMouseButtonDown || bIsMiddleMouseButtonDown)
 			{
 				FReply ReplyState = FReply::Handled();
 
@@ -435,7 +415,7 @@ public:
 				}
 
 				// Panning and mouse is outside of panel? Pasting should just go to the screen center.
-				PastePosition = PanelCoordToGraphCoord( 0.5 * MyGeometry.Size );
+				PastePosition = PanelCoordToGraphCoord( 0.5 * MyGeometry.GetLocalSize() );
 
 				this->bIsPanning = true;
 				ViewOffset -= CursorDelta / GetZoomAmount();
@@ -507,7 +487,7 @@ public:
 
 protected:
 	/**  Draws background for grid view */
-	uint32 PaintBackground(const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, uint32 LayerId) const
+	uint32 PaintBackground(const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, uint32 LayerId) const
 	{
 		FVector2D ScreenWorldOrigin = GraphCoordToPanelCoord(FVector2D(0, 0));
 		FSlateRect ScreenRect(FVector2D(0, 0), AllottedGeometry.GetLocalSize());
@@ -528,7 +508,6 @@ protected:
 				LayerId,
 				AllottedGeometry.ToPaintGeometry(),
 				LinePoints,
-				MyClippingRect,
 				ESlateDrawEffect::None,
 				YAxisColor);
 		}
@@ -549,7 +528,6 @@ protected:
 				LayerId,
 				AllottedGeometry.ToPaintGeometry(),
 				LinePoints,
-				MyClippingRect,
 				ESlateDrawEffect::None,
 				XAxisColor);
 		}
@@ -558,7 +536,7 @@ protected:
 	}
 
 	/**  Draws current scale */
-	uint32 PaintScaleRuler(const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, uint32 LayerId) const
+	uint32 PaintScaleRuler(const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, uint32 LayerId) const
 	{
 		const float	ScaleRulerLength = 100.f; // pixels
 		TArray<FVector2D> LinePoints;
@@ -570,7 +548,6 @@ protected:
 			LayerId,
 			AllottedGeometry.ToOffsetPaintGeometry(FVector2D(10, 40)),
 			LinePoints,
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FColor(200, 200, 200));
 
@@ -594,10 +571,9 @@ protected:
 			AllottedGeometry.ToOffsetPaintGeometry(FVector2D(10, 27)),
 			RulerText,
 			FEditorStyle::GetFontStyle("NormalFont"),
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FColor(200, 200, 200));
-	
+		
 		return LayerId + 1;
 	}
 		
@@ -730,7 +706,7 @@ protected:
 	virtual void OnEndNodeInteraction(const TSharedRef<SNode>& InNodeDragged) override
 	{
 		const SWorldTileItem& Item = static_cast<const SWorldTileItem&>(InNodeDragged.Get());
-		if (Item.IsItemEditable())
+		if (Item.IsItemEditable() && !WorldModel->IsLockTilesLocationEnabled())
 		{
 			FVector2D AbsoluteDelta = Item.GetLevelModel()->GetLevelTranslationDelta();
 			FIntPoint IntAbsoluteDelta = FIntPoint(AbsoluteDelta.X, AbsoluteDelta.Y);
@@ -797,8 +773,14 @@ protected:
 			FVector2D MinCorner, MaxCorner;
 			if (GetBoundsForNodes(true, MinCorner, MaxCorner, 0.f))
 			{
-				FVector2D TargetPosition = MaxCorner/2.f + MinCorner/2.f;
-				RequestScrollTo(TargetPosition, MaxCorner - MinCorner);
+				FSlateRect SelectionRect = FSlateRect(GraphCoordToPanelCoord(MinCorner), GraphCoordToPanelCoord(MaxCorner));
+				FSlateRect PanelRect = FSlateRect(FVector2D::ZeroVector, CachedGeometry.GetLocalSize());
+				bool bIsVisible = FSlateRect::DoRectanglesIntersect(PanelRect, SelectionRect);
+				if (!bIsVisible)
+				{
+					FVector2D TargetPosition = MaxCorner/2.f + MinCorner/2.f;
+					RequestScrollTo(TargetPosition, MaxCorner - MinCorner);
+				}
 			}
 		}
 		bUpdatingSelection = false;
@@ -893,7 +875,7 @@ protected:
 	{
 		auto ItemDragged = StaticCastSharedPtr<SWorldTileItem>(InNodeToDrag);
 	
-		if (ItemDragged->IsItemEditable())
+		if (ItemDragged->IsItemEditable() && !WorldModel->IsLockTilesLocationEnabled())
 		{
 			// Current translation snapping value
 			float SnappingDistanceWorld = 0.f;
@@ -1258,7 +1240,7 @@ FText SWorldComposition::GetCurrentLevelText() const
 
 	if (CurrentWorld->GetCurrentLevel())
 	{
-		UPackage* Package = CastChecked<UPackage>(CurrentWorld->GetCurrentLevel()->GetOutermost());
+		UPackage* Package = CurrentWorld->GetCurrentLevel()->GetOutermost();
 		return FText::FromString(FPackageName::GetShortName(Package->GetName()));
 	}
 	

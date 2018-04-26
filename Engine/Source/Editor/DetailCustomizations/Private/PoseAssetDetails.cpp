@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reservekd.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reservekd.
 
 #include "PoseAssetDetails.h"
 #include "Misc/MessageDialog.h"
@@ -25,10 +25,10 @@ TSharedRef<IDetailCustomization> FPoseAssetDetails::MakeInstance()
 
 void FPoseAssetDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 {
-	TArray< TWeakObjectPtr<UObject> > SelectedObjectsList = DetailBuilder.GetDetailsView().GetSelectedObjects();
+	const TArray< TWeakObjectPtr<UObject> >& SelectedObjectsList = DetailBuilder.GetSelectedObjects();
 	TArray< TWeakObjectPtr<UPoseAsset> > SelectedPoseAssets;
 
-	for (auto SelectionIt = SelectedObjectsList.CreateIterator(); SelectionIt; ++SelectionIt)
+	for (auto SelectionIt = SelectedObjectsList.CreateConstIterator(); SelectionIt; ++SelectionIt)
 	{
 		if (UPoseAsset* TestPoseAsset = Cast<UPoseAsset>(SelectionIt->Get()))
 		{

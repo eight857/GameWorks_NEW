@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -46,7 +46,17 @@ public:
 	 */
 	FORCEINLINE void Lock(void)
 	{
-        pthread_mutex_lock(&Mutex);
+		pthread_mutex_lock(&Mutex);
+	}
+	
+	/**
+	 * Attempt to take a lock and returns whether or not a lock was taken.
+	 *
+	 * @return true if a lock was taken, false otherwise.
+	 */
+	FORCEINLINE bool TryLock()
+	{
+		return 0 == pthread_mutex_trylock(&Mutex);
 	}
 
 	/**

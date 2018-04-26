@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MallocBinned.cpp: Binned memory allocator
@@ -11,6 +11,7 @@
 #include "GenericPlatform/GenericPlatformProcess.h"
 #include "Stats/Stats.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/MemoryMisc.h"
 
 
 #if BINNED2_ALLOW_RUNTIME_TWEAKING
@@ -50,6 +51,20 @@ static FAutoConsoleVariableRef GMallocBinned2AllocExtraCVar(
 	TEXT("When we do acquire the lock, how many blocks cached in TLS caches. In no case will we grab more than a page.")
 	);
 
+#endif
+
+#if BINNED2_ALLOCATOR_STATS
+int64 AllocatedSmallPoolMemory = 0; // memory that's requested to be allocated by the game
+int64 AllocatedOSSmallPoolMemory = 0;
+
+int64 AllocatedLargePoolMemory = 0; // memory requests to the OS which don't fit in the small pool
+int64 AllocatedLargePoolMemoryWAlignment = 0; // when we allocate at OS level we need to align to a size
+#endif
+
+#if BINNED2_ALLOCATOR_STATS_VALIDATION
+int64 AllocatedSmallPoolMemoryValidation = 0;
+FCriticalSection ValidationCriticalSection;
+int32 RecursionCounter = 0;
 #endif
 
 // Block sizes are based around getting the maximum amount of allocations per pool, with as little alignment waste as possible.
@@ -283,7 +298,12 @@ struct FMallocBinned2::Private
 		{
 			uint64 PoolArraySize = NumPools * sizeof(FPoolInfo);
 
-			void* Result = FPlatformMemory::BinnedAllocFromOS(PoolArraySize);
+			void* Result;
+			{
+				LLM_PLATFORM_SCOPE(ELLMTag::FMalloc);
+				Result = FPlatformMemory::BinnedAllocFromOS(PoolArraySize);
+			}
+
 			if (!Result)
 			{
 				OutOfMemory(PoolArraySize);
@@ -323,7 +343,10 @@ struct FMallocBinned2::Private
 		// Create a new hash bucket entry
 		if (!Allocator.HashBucketFreeList)
 		{
-			Allocator.HashBucketFreeList = (PoolHashBucket*)FPlatformMemory::BinnedAllocFromOS(FMallocBinned2::PageSize);
+			{
+				LLM_PLATFORM_SCOPE(ELLMTag::FMalloc);
+				Allocator.HashBucketFreeList = (PoolHashBucket*)FPlatformMemory::BinnedAllocFromOS(FMallocBinned2::PageSize);
+			}
 
 			for (UPTRINT i = 0, n = PageSize / sizeof(PoolHashBucket); i < n; ++i)
 			{
@@ -462,12 +485,18 @@ struct FMallocBinned2::Private
 				{
 					Table.ActivePools.LinkToFront(NodePool);
 				}
+				else
+				{
+					check(NodePool->FirstFreeBlock->Canary == 0 || NodePool->FirstFreeBlock->IsCanaryOk());
+				}
 
 				// Free a pooled allocation.
 				FFreeBlock* Free = (FFreeBlock*)Node;
 				Free->NumFreeBlocks = 1;
 				Free->NextFreeBlock = NodePool->FirstFreeBlock;
 				Free->BlockSize     = InBlockSize;
+				Free->Canary = FFreeBlock::CANARY_VALUE;
+				Free->PoolIndex = InPoolIndex;
 				NodePool->FirstFreeBlock   = Free;
 
 				// Free this pool.
@@ -480,6 +509,9 @@ struct FMallocBinned2::Private
 					// Free the OS memory.
 					NodePool->Unlink();
 					Allocator.CachedOSPageAllocator.Free(BasePtrOfNode, Allocator.PageSize);
+#if BINNED2_ALLOCATOR_STATS
+					AllocatedOSSmallPoolMemory -= ((int64)Allocator.PageSize);
+#endif
 				}
 
 				Node = NextNode;
@@ -488,9 +520,44 @@ struct FMallocBinned2::Private
 			Bundle = NextBundle;
 		}
 	}
+
+
+	static FCriticalSection FreeBlockListsRegistrationMutex;
+	static TArray<FPerThreadFreeBlockLists*> RegisteredFreeBlockLists;
+	static void RegisterThreadFreeBlockLists( FPerThreadFreeBlockLists* FreeBlockLists )
+	{
+		FScopeLock Lock(&FreeBlockListsRegistrationMutex);
+#if BINNED2_ALLOCATOR_STATS_VALIDATION
+		++RecursionCounter;
+#endif
+		RegisteredFreeBlockLists.Add(FreeBlockLists);
+#if BINNED2_ALLOCATOR_STATS_VALIDATION
+		--RecursionCounter;
+#endif
+	}
+	static void UnregisterThreadFreeBlockLists( FPerThreadFreeBlockLists* FreeBlockLists )
+	{
+		FScopeLock Lock(&FreeBlockListsRegistrationMutex);
+#if BINNED2_ALLOCATOR_STATS_VALIDATION
+		++RecursionCounter;
+#endif
+		RegisteredFreeBlockLists.Remove(FreeBlockLists);
+#if BINNED2_ALLOCATOR_STATS_VALIDATION
+		--RecursionCounter;
+#endif
+#if BINNED2_ALLOCATOR_STATS
+		FMallocBinned2::FPerThreadFreeBlockLists::ConsolidatedMemory += FreeBlockLists->AllocatedMemory;
+#endif
+	}
 };
 
 FMallocBinned2::Private::FGlobalRecycler FMallocBinned2::Private::GGlobalRecycler;
+
+TArray<FMallocBinned2::FPerThreadFreeBlockLists*> FMallocBinned2::Private::RegisteredFreeBlockLists;
+#if BINNED2_ALLOCATOR_STATS
+int64 FMallocBinned2::FPerThreadFreeBlockLists::ConsolidatedMemory = 0;
+#endif
+FCriticalSection FMallocBinned2::Private::FreeBlockListsRegistrationMutex;
 
 FORCEINLINE bool FMallocBinned2::FPoolList::IsEmpty() const
 {
@@ -520,11 +587,15 @@ FMallocBinned2::FPoolInfo& FMallocBinned2::FPoolList::PushNewPoolToFront(FMalloc
 	const uint32 LocalPageSize = Allocator.PageSize;
 
 	// Allocate memory.
-	FFreeBlock* Free = new (Allocator.CachedOSPageAllocator.Allocate(LocalPageSize)) FFreeBlock(LocalPageSize, InBlockSize, InPoolIndex);
-	if (!Free)
+	void* FreePtr = Allocator.CachedOSPageAllocator.Allocate(LocalPageSize);
+	if (!FreePtr)
 	{
 		Private::OutOfMemory(LocalPageSize);
 	}
+	FFreeBlock* Free = new (FreePtr) FFreeBlock(LocalPageSize, InBlockSize, InPoolIndex);
+#if BINNED2_ALLOCATOR_STATS
+	AllocatedOSSmallPoolMemory += (int64)LocalPageSize;
+#endif
 	check(IsAligned(Free, LocalPageSize));
 	// Create pool
 	FPoolInfo* Result = Private::GetOrCreatePoolInfo(Allocator, Free, FPoolInfo::ECanary::FirstFreeBlockIsPtr, false);
@@ -598,7 +669,11 @@ FMallocBinned2::FMallocBinned2()
 
 	uint64 MaxHashBuckets = PtrToPoolMapping.GetMaxHashBuckets();
 
-	HashBuckets = (PoolHashBucket*)FPlatformMemory::BinnedAllocFromOS(Align(MaxHashBuckets * sizeof(PoolHashBucket), OsAllocationGranularity));
+	{
+		LLM_PLATFORM_SCOPE(ELLMTag::FMalloc);
+		HashBuckets = (PoolHashBucket*)FPlatformMemory::BinnedAllocFromOS(Align(MaxHashBuckets * sizeof(PoolHashBucket), OsAllocationGranularity));
+	}
+
 	DefaultConstructItems<PoolHashBucket>(HashBuckets, MaxHashBuckets);
 	MallocBinned2 = this;
 	GFixedMallocLocationPtr = (FMalloc**)(&MallocBinned2);
@@ -622,7 +697,6 @@ void* FMallocBinned2::MallocExternal(SIZE_T Size, uint32 Alignment)
 	if ((Size <= BINNED2_MAX_SMALL_POOL_SIZE) & (Alignment <= BINNED2_MINIMUM_ALIGNMENT)) // one branch, not two
 	{
 		uint32 PoolIndex = BoundSizeToPoolIndex(Size);
-
 		FPerThreadFreeBlockLists* Lists = GMallocBinned2PerThreadCaches ? FPerThreadFreeBlockLists::Get() : nullptr;
 		if (Lists)
 		{
@@ -630,6 +704,10 @@ void* FMallocBinned2::MallocExternal(SIZE_T Size, uint32 Alignment)
 			{
 				if (void* Result = Lists->Malloc(PoolIndex))
 				{
+#if BINNED2_ALLOCATOR_STATS
+					uint32 BlockSize = PoolIndexToBlockSize(PoolIndex);
+					Lists->AllocatedMemory += BlockSize;
+#endif
 					return Result;
 				}
 			}
@@ -651,10 +729,14 @@ void* FMallocBinned2::MallocExternal(SIZE_T Size, uint32 Alignment)
 		}
 
 		void* Result = Pool->AllocateRegularBlock();
+#if BINNED2_ALLOCATOR_STATS
+		AllocatedSmallPoolMemory += PoolIndexToBlockSize(PoolIndex);
+#endif // BINNED2_ALLOCATOR_STATS
 		if (GMallocBinned2AllocExtra)
 		{
 			if (Lists)
 			{
+				// prefill the free list with some allocations so we are less likely to hit this slow path with the mutex 
 				for (int32 Index = 0; Index < GMallocBinned2AllocExtra && Pool->HasFreeRegularBlock(); Index++)
 				{
 					if (!Lists->Free(Result, PoolIndex, Table.BlockSize))
@@ -683,11 +765,19 @@ void* FMallocBinned2::MallocExternal(SIZE_T Size, uint32 Alignment)
 	// Use OS for non-pooled allocations.
 	UPTRINT AlignedSize = Align(Size, OsAllocationGranularity);
 	void* Result = CachedOSPageAllocator.Allocate(AlignedSize);
+
+	UE_CLOG(!IsAligned(Result, Alignment) ,LogMemory, Fatal, TEXT("FMallocBinned2 alignment was too large for OS. Alignment=%d   Ptr=%p"), Alignment, Result);
+
 	if (!Result)
 	{
 		Private::OutOfMemory(AlignedSize);
 	}
 	check(IsAligned(Result, PageSize) && IsOSAllocation(Result));
+
+#if BINNED2_ALLOCATOR_STATS
+	AllocatedLargePoolMemory += (int64)Size;
+	AllocatedLargePoolMemoryWAlignment += AlignedSize;
+#endif
 
 	// Create pool.
 	FPoolInfo* Pool = Private::GetOrCreatePoolInfo(*this, Result, FPoolInfo::ECanary::FirstFreeBlockIsOSAllocSize, false);
@@ -758,6 +848,11 @@ void* FMallocBinned2::ReallocExternal(void* Ptr, SIZE_T NewSize, uint32 Alignmen
 		return Result;
 	}
 
+#if BINNED2_ALLOCATOR_STATS
+	AllocatedLargePoolMemory += ((int64)NewSize) - ((int64)Pool->GetOSRequestedBytes());
+	// don't need to change the AllocatedLargePoolMemoryWAlignment because we didn't reallocate so it's the same size
+#endif
+	
 	Pool->SetOSAllocationSizes(NewSize, PoolOsBytes);
 
 	return Ptr;
@@ -772,6 +867,7 @@ void FMallocBinned2::FreeExternal(void* Ptr)
 		BasePtr->CanaryTest();
 		uint32 BlockSize = BasePtr->BlockSize;
 		uint32 PoolIndex = BasePtr->PoolIndex;
+
 		FBundleNode* BundlesToRecycle = nullptr;
 		FPerThreadFreeBlockLists* Lists = GMallocBinned2PerThreadCaches ? FPerThreadFreeBlockLists::Get() : nullptr;
 		if (Lists)
@@ -779,6 +875,9 @@ void FMallocBinned2::FreeExternal(void* Ptr)
 			BundlesToRecycle = Lists->RecycleFullBundle(BasePtr->PoolIndex);
 			bool bPushed = Lists->Free(Ptr, PoolIndex, BlockSize);
 			check(bPushed);
+#if BINNED2_ALLOCATOR_STATS
+			Lists->AllocatedMemory -= BlockSize;
+#endif
 		}
 		else
 		{
@@ -790,6 +889,13 @@ void FMallocBinned2::FreeExternal(void* Ptr)
 			BundlesToRecycle->NextBundle = nullptr;
 			FScopeLock Lock(&Mutex);
 			Private::FreeBundles(*this, BundlesToRecycle, BlockSize, PoolIndex);
+#if BINNED2_ALLOCATOR_STATS
+			if (!Lists)
+			{
+				// lists track their own stat track them instead in the global stat if we don't have lists
+				AllocatedSmallPoolMemory -= ((int64)(BlockSize));
+			}
+#endif
 		}
 	}
 	else if (Ptr)
@@ -802,6 +908,12 @@ void FMallocBinned2::FreeExternal(void* Ptr)
 		}
 		UPTRINT PoolOsBytes = Pool->GetOsAllocatedBytes();
 		uint32 PoolOSRequestedBytes = Pool->GetOSRequestedBytes();
+
+#if BINNED2_ALLOCATOR_STATS
+		AllocatedLargePoolMemory -= ((int64)PoolOSRequestedBytes);
+		AllocatedLargePoolMemoryWAlignment -= ((int64)PoolOsBytes);
+#endif
+
 		checkf(PoolOSRequestedBytes <= PoolOsBytes, TEXT("FMallocBinned2::FreeExternal %d %d"), int32(PoolOSRequestedBytes), int32(PoolOsBytes));
 		Pool->SetCanary(FPoolInfo::ECanary::Unassigned, true, false);
 		// Free an OS allocation.
@@ -833,7 +945,7 @@ bool FMallocBinned2::GetAllocationSizeExternal(void* Ptr, SIZE_T& SizeOut)
 	UPTRINT PoolOsBytes = Pool->GetOsAllocatedBytes();
 	uint32 PoolOSRequestedBytes = Pool->GetOSRequestedBytes();
 	checkf(PoolOSRequestedBytes <= PoolOsBytes, TEXT("FMallocBinned2::GetAllocationSizeExternal %d %d"), int32(PoolOSRequestedBytes), int32(PoolOsBytes));
-	SizeOut = PoolOSRequestedBytes;
+	SizeOut = PoolOsBytes;
 	return true;
 }
 
@@ -1011,14 +1123,21 @@ void FMallocBinned2::FPerThreadFreeBlockLists::SetTLS()
 	FPerThreadFreeBlockLists* ThreadSingleton = (FPerThreadFreeBlockLists*)FPlatformTLS::GetTlsValue(FMallocBinned2::Binned2TlsSlot);
 	if (!ThreadSingleton)
 	{
+		LLM_PLATFORM_SCOPE(ELLMTag::FMalloc);
 		ThreadSingleton = new (FPlatformMemory::BinnedAllocFromOS(Align(sizeof(FPerThreadFreeBlockLists), FMallocBinned2::OsAllocationGranularity))) FPerThreadFreeBlockLists();
 		FPlatformTLS::SetTlsValue(FMallocBinned2::Binned2TlsSlot, ThreadSingleton);
+		FMallocBinned2::Private::RegisterThreadFreeBlockLists(ThreadSingleton);
 	}
 }
 
 void FMallocBinned2::FPerThreadFreeBlockLists::ClearTLS()
 {
 	check(FMallocBinned2::Binned2TlsSlot);
+	FPerThreadFreeBlockLists* ThreadSingleton = (FPerThreadFreeBlockLists*)FPlatformTLS::GetTlsValue(FMallocBinned2::Binned2TlsSlot);
+	if ( ThreadSingleton )
+	{
+		FMallocBinned2::Private::UnregisterThreadFreeBlockLists(ThreadSingleton);
+	}
 	FPlatformTLS::SetTlsValue(FMallocBinned2::Binned2TlsSlot, nullptr);
 }
 
@@ -1027,6 +1146,65 @@ void FMallocBinned2::FFreeBlock::CanaryFail() const
 	UE_LOG(LogMemory, Fatal, TEXT("FMallocBinned2 Attempt to realloc an unrecognized block %p   canary == 0x%x != 0x%x"), (void*)this, (int32)Canary, (int32)FMallocBinned2::FFreeBlock::CANARY_VALUE);
 }
 
+#if BINNED2_ALLOCATOR_STATS
+int64 FMallocBinned2::GetTotalAllocatedSmallPoolMemory() const
+{
+	int64 FreeBlockAllocatedMemory = 0;
+	{
+		FScopeLock Lock(&Private::FreeBlockListsRegistrationMutex);
+		for (const FPerThreadFreeBlockLists* FreeBlockLists : Private::RegisteredFreeBlockLists)
+		{
+			FreeBlockAllocatedMemory += FreeBlockLists->AllocatedMemory;
+		}
+		FreeBlockAllocatedMemory += FPerThreadFreeBlockLists::ConsolidatedMemory;
+	}
+
+	return AllocatedSmallPoolMemory + FreeBlockAllocatedMemory;
+}
+#endif
+
+void FMallocBinned2::GetAllocatorStats( FGenericMemoryStats& OutStats )
+{
+#if BINNED2_ALLOCATOR_STATS
+
+	int64 TotalAllocatedSmallPoolMemory = GetTotalAllocatedSmallPoolMemory();
+
+	OutStats.Add(TEXT("AllocatedSmallPoolMemory"), TotalAllocatedSmallPoolMemory);
+	OutStats.Add(TEXT("AllocatedOSSmallPoolMemory"), AllocatedOSSmallPoolMemory);
+	OutStats.Add(TEXT("AllocatedLargePoolMemory"), AllocatedLargePoolMemory);
+	OutStats.Add(TEXT("AllocatedLargePoolMemoryWAlignment"), AllocatedLargePoolMemoryWAlignment);
+	OutStats.Add(TEXT("PageAllocatorFreeCacheSize"), CachedOSPageAllocator.GetCachedFreeTotal());
+
+	uint64 TotalAllocated = TotalAllocatedSmallPoolMemory + AllocatedLargePoolMemory;
+	uint64 TotalOSAllocated = AllocatedOSSmallPoolMemory + AllocatedLargePoolMemoryWAlignment + CachedOSPageAllocator.GetCachedFreeTotal();
+
+	OutStats.Add(TEXT("TotalAllocated"), TotalAllocated);
+	OutStats.Add(TEXT("TotalOSAllocated"), TotalOSAllocated);
+#endif
+	FMalloc::GetAllocatorStats(OutStats);
+}
+
+void FMallocBinned2::DumpAllocatorStats(class FOutputDevice& Ar)
+{
+#if BINNED2_ALLOCATOR_STATS
+
+	int64 TotalAllocatedSmallPoolMemory = GetTotalAllocatedSmallPoolMemory();
+
+	Ar.Logf(TEXT("FMallocBinned2 Mem report"));
+	Ar.Logf(TEXT("Small Pool"));
+	Ar.Logf(TEXT("Requested Allocations: %fmb  (including block size padding)"), ((double)TotalAllocatedSmallPoolMemory) / (1024.0f * 1024.0f) );
+	Ar.Logf(TEXT("OS Allocated: %fmb"), ((double)TotalAllocatedSmallPoolMemory) / (1024.0f * 1024.0f));
+	Ar.Logf(TEXT("Large Pool"));
+	Ar.Logf(TEXT("Requested Allocations: %fmb"), ((double)AllocatedLargePoolMemory) / (1024.0f * 1024.0f));
+	Ar.Logf(TEXT("OS Allocated: %fmb"), ((double)AllocatedLargePoolMemoryWAlignment) / (1024.0f * 1024.0f));
+
+	uint32 OSPageAllocatorCachedFreeSize = CachedOSPageAllocator.GetCachedFreeTotal();
+	Ar.Logf(TEXT("OS Page Allocator"));
+	Ar.Logf(TEXT("Cached free pages: %fmb"), ((double)OSPageAllocatorCachedFreeSize) / (1024.0f * 1024.0f));
+#else
+	Ar.Logf(TEXT("Allocator Stats for binned2 are not in this build set BINNED2_ALLOCATOR_STATS 1 in MallocBinned2.cpp"));
+#endif
+}
 #if !BINNED2_INLINE
 	#if PLATFORM_USES_FIXED_GMalloc_CLASS && !FORCE_ANSI_ALLOCATOR && USE_MALLOC_BINNED2
 		//#define FMEMORY_INLINE_FUNCTION_DECORATOR  FORCEINLINE

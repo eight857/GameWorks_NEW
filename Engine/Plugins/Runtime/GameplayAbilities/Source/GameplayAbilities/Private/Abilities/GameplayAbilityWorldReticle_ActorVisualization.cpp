@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/GameplayAbilityWorldReticle_ActorVisualization.h"
 #include "Abilities/GameplayAbilityTargetActor.h"
@@ -69,6 +69,3 @@ void AGameplayAbilityWorldReticle_ActorVisualization::EndPlay(const EEndPlayReas
 {
 	Super::EndPlay(EndPlayReason);
 }
-
-/** Returns CollisionComponent subobject **/
-UCapsuleComponent* AGameplayAbilityWorldReticle_ActorVisualization::GetCollisionComponent() { return CollisionComponent; }

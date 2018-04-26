@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -28,4 +28,45 @@ public:
 private:
 	FSystemWideCriticalSectionNotImplemented(const FSystemWideCriticalSectionNotImplemented&);
 	FSystemWideCriticalSectionNotImplemented& operator=(const FSystemWideCriticalSectionNotImplemented&);
+};
+
+/**
+ * TGenericPlatformRWLock - Read/Write Mutex
+ *	- Provides non-recursive Read/Write (or shared-exclusive) access.
+ *	- As a fallback default for non implemented platforms, using a single FCriticalSection to provide complete single mutual exclusion - no seperate Read/Write access.
+ */
+template<class CriticalSection>
+class TGenericPlatformRWLock
+{
+public:
+	FORCEINLINE TGenericPlatformRWLock()
+	{
+	}
+	
+	FORCEINLINE ~TGenericPlatformRWLock()
+	{
+	}
+	
+	FORCEINLINE void ReadLock()
+	{
+		Mutex.Lock();
+	}
+	
+	FORCEINLINE void WriteLock()
+	{
+		Mutex.Lock();
+	}
+	
+	FORCEINLINE void ReadUnlock()
+	{
+		Mutex.Unlock();
+	}
+	
+	FORCEINLINE void WriteUnlock()
+	{
+		Mutex.Unlock();
+	}
+	
+private:
+	CriticalSection Mutex;
 };

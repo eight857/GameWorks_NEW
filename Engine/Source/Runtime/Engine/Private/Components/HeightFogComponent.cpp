@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	HeightFogComponent.cpp: Height fog implementation.
@@ -41,6 +41,7 @@ UExponentialHeightFogComponent::UExponentialHeightFogComponent(const FObjectInit
 	VolumetricFogAlbedo = FColor::White;
 	VolumetricFogExtinctionScale = 1.0f;
 	VolumetricFogDistance = 6000.0f;
+	VolumetricFogStaticLightingScatteringIntensity = 1;
 }
 
 void UExponentialHeightFogComponent::AddFogIfNeeded()
@@ -358,5 +359,3 @@ void AExponentialHeightFog::OnRep_bEnabled()
 	Component->SetVisibility(bEnabled);
 }
 
-/** Returns Component subobject **/
-UExponentialHeightFogComponent* AExponentialHeightFog::GetComponent() const { return Component; }

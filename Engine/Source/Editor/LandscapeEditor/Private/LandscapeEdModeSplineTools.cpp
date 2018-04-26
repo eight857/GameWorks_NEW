@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "EngineDefines.h"
@@ -31,6 +31,8 @@
 #include "LandscapeSplineControlPoint.h"
 #include "ControlPointMeshComponent.h"
 #include "Containers/Algo/Copy.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "UnrealExporter.h"
 
 
 #define LOCTEXT_NAMESPACE "Landscape"
@@ -615,7 +617,7 @@ public:
 		FHitResult Hit;
 		UWorld* World = SplinesComponent->GetWorld();
 		check(World);
-		if (World->LineTraceSingleByObjectType(Hit, Start, End, FCollisionObjectQueryParams(ECC_WorldStatic), FCollisionQueryParams(NAME_None,true)))
+		if (World->LineTraceSingleByObjectType(Hit, Start, End, FCollisionObjectQueryParams(ECC_WorldStatic), FCollisionQueryParams(NAME_None, FCollisionQueryParams::GetUnknownStatId(),true)))
 		{
 			ControlPoint->Location = LocalToWorld.InverseTransformPosition(Hit.Location);
 			ControlPoint->UpdateSplinePoints();
@@ -657,7 +659,7 @@ public:
 					ToLandscape->SplineComponent->Modify();
 
 					const FTransform OldToNewTransform =
-						FromProxy->SplineComponent->ComponentToWorld.GetRelativeTransform(ToLandscape->SplineComponent->ComponentToWorld);
+						FromProxy->SplineComponent->GetComponentTransform().GetRelativeTransform(ToLandscape->SplineComponent->GetComponentTransform());
 
 					if (FromProxies.Find(FromProxy) == nullptr)
 					{
@@ -862,7 +864,7 @@ public:
 				SplinesComponent = Landscape->SplineComponent;
 			}
 
-			const FTransform LandscapeToSpline = Landscape->LandscapeActorToWorld().GetRelativeTransform(SplinesComponent->ComponentToWorld);
+			const FTransform LandscapeToSpline = Landscape->LandscapeActorToWorld().GetRelativeTransform(SplinesComponent->GetComponentTransform());
 
 			AddControlPoint(SplinesComponent, LandscapeToSpline.TransformPosition(InHitLocation));
 
@@ -1172,7 +1174,7 @@ public:
 						ClickedSplineSegment = SplineProxy->SplineSegment;
 						ALandscapeProxy* LandscapeProxy = ClickedSplineSegment->GetTypedOuter<ALandscapeProxy>();
 						check(LandscapeProxy);
-						LandscapeToSpline = LandscapeProxy->LandscapeActorToWorld().GetRelativeTransform(ClickedSplineSegment->GetOuterULandscapeSplinesComponent()->ComponentToWorld);
+						LandscapeToSpline = LandscapeProxy->LandscapeActorToWorld().GetRelativeTransform(ClickedSplineSegment->GetOuterULandscapeSplinesComponent()->GetComponentTransform());
 					}
 					else if (HitProxy->IsA(HActor::StaticGetType()))
 					{
@@ -1191,7 +1193,7 @@ public:
 									{
 										ClickedSplineSegment = SplineSegment;
 										ALandscapeProxy* LandscapeProxy = CastChecked<ALandscapeProxy>(SplineComponent->GetOwner());
-										LandscapeToSpline = LandscapeProxy->LandscapeActorToWorld().GetRelativeTransform(SplineComponent->ComponentToWorld);
+										LandscapeToSpline = LandscapeProxy->LandscapeActorToWorld().GetRelativeTransform(SplineComponent->GetComponentTransform());
 									}
 								}
 							}
@@ -1300,7 +1302,7 @@ public:
 			Connection.ControlPoint->GetConnectionLocationAndRotation(Connection.SocketName, StartLocation, StartRotation);
 
 			float OldTangentLen = Connection.TangentLen;
-			Connection.TangentLen += SplinesComponent->ComponentToWorld.InverseTransformVector(-Drag) | StartRotation.Vector();
+			Connection.TangentLen += SplinesComponent->GetComponentTransform().InverseTransformVector(-Drag) | StartRotation.Vector();
 
 			// Disallow a tangent of exactly 0
 			if (Connection.TangentLen == 0)
@@ -1332,11 +1334,11 @@ public:
 			{
 				const ULandscapeSplinesComponent* SplinesComponent = ControlPoint->GetOuterULandscapeSplinesComponent();
 
-				ControlPoint->Location += SplinesComponent->ComponentToWorld.InverseTransformVector(Drag);
+				ControlPoint->Location += SplinesComponent->GetComponentTransform().InverseTransformVector(Drag);
 
 				FVector RotAxis; float RotAngle;
 				InRot.Quaternion().ToAxisAndAngle(RotAxis, RotAngle);
-				RotAxis = (SplinesComponent->ComponentToWorld.GetRotation().Inverse() * ControlPoint->Rotation.Quaternion().Inverse()).RotateVector(RotAxis);
+				RotAxis = (SplinesComponent->GetComponentTransform().GetRotation().Inverse() * ControlPoint->Rotation.Quaternion().Inverse()).RotateVector(RotAxis);
 
 				// Hack: for some reason FQuat.Rotator() Clamps to 0-360 range, so use .GetNormalized() to recover the original negative rotation.
 				ControlPoint->Rotation += FQuat(RotAxis, RotAngle).Rotator().GetNormalized();
@@ -1450,8 +1452,8 @@ public:
 			{
 				const ULandscapeSplinesComponent* SplinesComponent = ControlPoint->GetOuterULandscapeSplinesComponent();
 
-				FVector HandlePos0 = SplinesComponent->ComponentToWorld.TransformPosition(ControlPoint->Location + ControlPoint->Rotation.Vector() * -20);
-				FVector HandlePos1 = SplinesComponent->ComponentToWorld.TransformPosition(ControlPoint->Location + ControlPoint->Rotation.Vector() * 20);
+				FVector HandlePos0 = SplinesComponent->GetComponentTransform().TransformPosition(ControlPoint->Location + ControlPoint->Rotation.Vector() * -20);
+				FVector HandlePos1 = SplinesComponent->GetComponentTransform().TransformPosition(ControlPoint->Location + ControlPoint->Rotation.Vector() * 20);
 				DrawDashedLine(PDI, HandlePos0, HandlePos1, FColor::White, 20, SDPG_Foreground);
 
 				if (GLevelEditorModeTools().GetWidgetMode() == FWidget::WM_Scale)
@@ -1461,8 +1463,8 @@ public:
 						FVector StartLocation; FRotator StartRotation;
 						Connection.GetNearConnection().ControlPoint->GetConnectionLocationAndRotation(Connection.GetNearConnection().SocketName, StartLocation, StartRotation);
 
-						FVector StartPos = SplinesComponent->ComponentToWorld.TransformPosition(StartLocation);
-						FVector HandlePos = SplinesComponent->ComponentToWorld.TransformPosition(StartLocation + StartRotation.Vector() * Connection.GetNearConnection().TangentLen / 2);
+						FVector StartPos = SplinesComponent->GetComponentTransform().TransformPosition(StartLocation);
+						FVector HandlePos = SplinesComponent->GetComponentTransform().TransformPosition(StartLocation + StartRotation.Vector() * Connection.GetNearConnection().TangentLen / 2);
 						PDI->DrawLine(StartPos, HandlePos, FColor::White, SDPG_Foreground);
 
 						if (PDI->IsHitTesting()) PDI->SetHitProxy(new HLandscapeSplineProxy_Tangent(Connection.Segment, Connection.End));
@@ -1484,8 +1486,8 @@ public:
 						FVector StartLocation; FRotator StartRotation;
 						Connection.ControlPoint->GetConnectionLocationAndRotation(Connection.SocketName, StartLocation, StartRotation);
 
-						FVector EndPos = SplinesComponent->ComponentToWorld.TransformPosition(StartLocation);
-						FVector EndHandlePos = SplinesComponent->ComponentToWorld.TransformPosition(StartLocation + StartRotation.Vector() * Connection.TangentLen / 2);
+						FVector EndPos = SplinesComponent->GetComponentTransform().TransformPosition(StartLocation);
+						FVector EndHandlePos = SplinesComponent->GetComponentTransform().TransformPosition(StartLocation + StartRotation.Vector() * Connection.TangentLen / 2);
 
 						PDI->DrawLine(EndPos, EndHandlePos, FColor::White, SDPG_Foreground);
 						if (PDI->IsHitTesting()) PDI->SetHitProxy(new HLandscapeSplineProxy_Tangent(Segment, !!End));
@@ -1560,7 +1562,7 @@ public:
 			{
 				ULandscapeSplineControlPoint* FirstPoint = *SelectedSplineControlPoints.CreateConstIterator();
 				ULandscapeSplinesComponent* SplinesComponent = FirstPoint->GetOuterULandscapeSplinesComponent();
-				return SplinesComponent->ComponentToWorld.TransformPosition(FirstPoint->Location);
+				return SplinesComponent->GetComponentTransform().TransformPosition(FirstPoint->Location);
 			}
 		}
 
@@ -1576,7 +1578,7 @@ public:
 			{
 				ULandscapeSplineControlPoint* FirstPoint = *SelectedSplineControlPoints.CreateConstIterator();
 				ULandscapeSplinesComponent* SplinesComponent = FirstPoint->GetOuterULandscapeSplinesComponent();
-				return FQuatRotationTranslationMatrix(FirstPoint->Rotation.Quaternion() * SplinesComponent->ComponentToWorld.GetRotation(), FVector::ZeroVector);
+				return FQuatRotationTranslationMatrix(FirstPoint->Rotation.Quaternion() * SplinesComponent->GetComponentTransform().GetRotation(), FVector::ZeroVector);
 			}
 		}
 
@@ -1626,7 +1628,7 @@ public:
 	virtual EEditAction::Type GetActionEditPaste() override
 	{
 		FString PasteString;
-		FPlatformMisc::ClipboardPaste(PasteString);
+		FPlatformApplicationMisc::ClipboardPaste(PasteString);
 		if (PasteString.StartsWith("BEGIN SPLINES"))
 		{
 			return EEditAction::Process;
@@ -1733,10 +1735,12 @@ public:
 
 			// Perform export to text format
 			FStringOutputDevice Ar;
+			const FExportObjectInnerContext Context;
+
 			Ar.Logf(TEXT("Begin Splines\r\n"));
 			for (UObject* Object : Objects)
 			{
-				UExporter::ExportToOutputDevice(NULL, Object, NULL, Ar, TEXT("copy"), 3, PPF_None, false);
+				UExporter::ExportToOutputDevice(&Context, Object, NULL, Ar, TEXT("copy"), 3, PPF_ExportsNotFullyQualified | PPF_Copy | PPF_Delimited, false);
 			}
 			Ar.Logf(TEXT("End Splines\r\n"));
 
@@ -1746,7 +1750,7 @@ public:
 			}
 			else
 			{
-				FPlatformMisc::ClipboardCopy(*Ar);
+				FPlatformApplicationMisc::ClipboardCopy(*Ar);
 			}
 		}
 	}
@@ -1775,7 +1779,7 @@ public:
 		}
 		else
 		{
-			FPlatformMisc::ClipboardPaste(PasteString);
+			FPlatformApplicationMisc::ClipboardPaste(PasteString);
 			Data = *PasteString;
 		}
 

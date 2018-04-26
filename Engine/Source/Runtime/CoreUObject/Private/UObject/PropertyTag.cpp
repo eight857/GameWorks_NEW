@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UObject/PropertyTag.h"
 #include "UObject/DebugSerializationFlags.h"
@@ -49,11 +49,14 @@ FPropertyTag::FPropertyTag( FArchive& InSaveAr, UProperty* Property, int32 InInd
 		}
 		else if (UEnumProperty* EnumProp = Cast<UEnumProperty>(Property))
 		{
-			EnumName = EnumProp->GetEnum()->GetFName();
+			if (UEnum* Enum = EnumProp->GetEnum())
+			{
+				EnumName = Enum->GetFName();
+			}
 		}
 		else if (UByteProperty* ByteProp = Cast<UByteProperty>(Property))
 		{
-			if (ByteProp->Enum != NULL)
+			if (ByteProp->Enum != nullptr)
 			{
 				EnumName = ByteProp->Enum->GetFName();
 			}
@@ -164,7 +167,7 @@ FArchive& operator<<( FArchive& Ar, FPropertyTag& Tag )
 }
 
 // Property serializer.
-void FPropertyTag::SerializeTaggedProperty( FArchive& Ar, UProperty* Property, uint8* Value, uint8* Defaults )
+void FPropertyTag::SerializeTaggedProperty( FArchive& Ar, UProperty* Property, uint8* Value, uint8* Defaults ) const
 {
 	if (Property->GetClass() == UBoolProperty::StaticClass())
 	{

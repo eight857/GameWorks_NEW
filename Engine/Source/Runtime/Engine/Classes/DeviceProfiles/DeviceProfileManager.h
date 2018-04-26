@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	DeviceProfileManager.h: Declares the FDeviceProfileManager class.
@@ -96,9 +96,6 @@ public:
 	*/
 	void GetAllPossibleParentProfiles(const UDeviceProfile* ChildProfile, OUT TArray<UDeviceProfile*>& PossibleParentProfiles) const;
 
-	
-private:
-
 	/**
 	* Get the selected device profile name, either the platform name, or the name
 	* provided by a Device Profile Selector Module.
@@ -107,6 +104,7 @@ private:
 	*/
 	static const FString GetActiveProfileName();
 
+private:
 	/**
 	 * Set the active device profile - set via the device profile blueprint.
 	 *

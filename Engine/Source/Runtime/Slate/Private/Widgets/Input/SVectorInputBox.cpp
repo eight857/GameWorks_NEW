@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Input/SVectorInputBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -179,7 +179,7 @@ void SVectorInputBox::OnArrangeChildren(const FGeometry& AllottedGeometry, FArra
 
 	if (bFoop)
 	{
-		const float AlottedWidth = AllottedGeometry.Size.X;
+		const float AlottedWidth = AllottedGeometry.GetLocalSize().X;
 
 		const float CrushBelow = CVarStartCrushWhenBelow.GetValueOnAnyThread();
 		const float StopCrushing = CVarStopCrushWhenAbove.GetValueOnAnyThread();

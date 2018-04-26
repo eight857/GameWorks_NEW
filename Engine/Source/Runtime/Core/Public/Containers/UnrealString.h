@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // This needed to be UnrealString.h to avoid conflicting with
 // the Windows platform SDK string.h
@@ -19,6 +19,9 @@
 #include "Misc/CString.h"
 #include "Misc/Crc.h"
 #include "Math/UnrealMathUtility.h"
+#include "Templates/IsValidVariadicFunctionArg.h"
+#include "Templates/AndOrNot.h"
+#include "Templates/IsArrayOrRefOfType.h"
 
 struct FStringFormatArg;
 template<typename KeyType,typename ValueType,typename SetAllocator ,typename KeyFuncs > class TMap;
@@ -65,43 +68,11 @@ private:
 public:
 	using ElementType = TCHAR;
 
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-
 	FString() = default;
 	FString(FString&&) = default;
 	FString(const FString&) = default;
 	FString& operator=(FString&&) = default;
 	FString& operator=(const FString&) = default;
-
-#else
-
-	FORCEINLINE FString()
-	{
-	}
-
-	FORCEINLINE FString(FString&& Other)
-		: Data(MoveTemp(Other.Data))
-	{
-	}
-
-	FORCEINLINE FString(const FString& Other)
-		: Data(Other.Data)
-	{
-	}
-
-	FORCEINLINE FString& operator=(FString&& Other)
-	{
-		Data = MoveTemp(Other.Data);
-		return *this;
-	}
-
-	FORCEINLINE FString& operator=(const FString& Other)
-	{
-		Data = Other.Data;
-		return *this;
-	}
-
-#endif
 
 	/**
 	 * Create a copy of the Other string with extra space for characters at the end of the string
@@ -130,8 +101,11 @@ public:
 	 *
 	 * @param In array of TCHAR
 	 */
-	template <typename CharType>
-	FORCEINLINE FString(const CharType* Src, typename TEnableIf<TIsCharType<CharType>::Value>::Type* Dummy = nullptr) // This TEnableIf is to ensure we don't instantiate this constructor for non-char types, like id* in Obj-C
+	template <
+		typename CharType,
+		typename = typename TEnableIf<TIsCharType<CharType>::Value>::Type // This TEnableIf is to ensure we don't instantiate this constructor for non-char types, like id* in Obj-C
+	>
+	FORCEINLINE FString(const CharType* Src)
 	{
 		if (Src && *Src)
 		{
@@ -611,11 +585,13 @@ private:
 		Rhs.CheckInvariants();
 
 		if (Lhs.IsEmpty())
-			return MoveTemp(Rhs);
+		{
+			return MoveTempIfPossible(Rhs);
+		}
 
 		int32 RhsLen = Rhs.Len();
 
-		FString Result(MoveTemp(Lhs), RhsLen);
+		FString Result(MoveTempIfPossible(Lhs), RhsLen);
 		Result.AppendChars(Rhs.Data.GetData(), RhsLen);
 		
 		return Result;
@@ -628,7 +604,9 @@ private:
 		Rhs.CheckInvariants();
 
 		if (!Lhs || !*Lhs)
-			return MoveTemp(Rhs);
+		{
+			return MoveTempIfPossible(Rhs);
+		}
 
 		int32 LhsLen = FCString::Strlen(Lhs);
 		int32 RhsLen = Rhs.Len();
@@ -654,11 +632,13 @@ private:
 		checkSlow(Rhs);
 
 		if (!Rhs || !*Rhs)
-			return MoveTemp(Lhs);
+		{
+			return MoveTempIfPossible(Lhs);
+		}
 
 		int32 RhsLen = FCString::Strlen(Rhs);
 
-		FString Result(MoveTemp(Lhs), RhsLen);
+		FString Result(MoveTempIfPossible(Lhs), RhsLen);
 		Result.AppendChars(Rhs, RhsLen);
 		
 		return Result;
@@ -1335,13 +1315,25 @@ public:
 	}
 
 	/** @return a new string with the characters of this converted to uppercase */
-	FString ToUpper() const;
+	FString ToUpper() const &;
+
+	/**
+	 * Converts all characters in this rvalue string to uppercase and moves it into the returned string.
+	 * @return a new string with the characters of this converted to uppercase
+	 */
+	FString ToUpper() &&;
 
 	/** Converts all characters in this string to uppercase */
 	void ToUpperInline();
 
 	/** @return a new string with the characters of this converted to lowercase */
-	FString ToLower() const;
+	FString ToLower() const &;
+
+	/**
+	 * Converts all characters in this rvalue string to lowercase and moves it into the returned string.
+	 * @return a new string with the characters of this converted to lowercase
+	 */
+	FString ToLower() &&;
 
 	/** Converts all characters in this string to lowercase */
 	void ToLowerInline();
@@ -1355,6 +1347,9 @@ public:
 	/** @return true if the string only contains numeric characters */
 	bool IsNumeric() const;
 	
+	/** Removes spaces from the string.  I.E. "Spaces Are Cool" --> "SpacesAreCool". */
+	void RemoveSpacesInline();
+
 	/**
 	 * Constructs FString object similarly to how classic sprintf works.
 	 *
@@ -1363,7 +1358,20 @@ public:
 	 *
 	 * @returns FString object that was constructed using format and additional parameters.
 	 */
-	VARARG_DECL( static FString, static FString, return, Printf, VARARG_NONE, const TCHAR*, VARARG_NONE, VARARG_NONE );
+	template <typename FmtType, typename... Types>
+	static FString Printf(const FmtType& Fmt, Types... Args)
+	{
+#if USE_FORMAT_STRING_TYPE_CHECKING
+		static_assert(TIsArrayOrRefOfType<FmtType, TCHAR>::Value, "Formatting string must be a TCHAR array.");
+#endif
+		static_assert(TAnd<TIsValidVariadicFunctionArg<Types>...>::Value, "Invalid argument(s) passed to FString::Printf");
+
+		return PrintfImpl(Fmt, Args...);
+	}
+
+private:
+	static FString VARARGS PrintfImpl(const TCHAR* Fmt, ...);
+public:
 
 	/**
 	 * Format the specified string using the specified arguments. Replaces instances of { Argument } with keys in the map matching 'Argument'
@@ -1450,12 +1458,65 @@ public:
 	/**
 	 * Removes whitespace characters from the front of this string.
 	 */
+	DEPRECATED(4.18, "FString::Trim() has been split into separate functions for copy and mutate semantics. Call FString::TrimStart() to return a copy of the string with whitespace trimmed from the start, or FString::TrimStartInline() to modify an FString object in-place.")
 	FString Trim();
 
 	/**
 	 * Removes trailing whitespace characters
 	 */
-	FString TrimTrailing( void );
+	DEPRECATED(4.18, "FString::TrimTrailing() has been split into separate functions for copy and mutate semantics. Call FString::TrimEnd() to return a copy of the string with whitespace trimmed from the start, or FString::TrimEndInline() to modify an FString object in-place.")
+	FString TrimTrailing();
+
+	/**
+	 * Removes whitespace characters from the start and end of this string. Modifies the string in-place.
+	 */
+	void TrimStartAndEndInline();
+
+	/**
+	 * Removes whitespace characters from the start and end of this string.
+	 * @note Unlike Trim() this function returns a copy, and does not mutate the string.
+	 */
+	FString TrimStartAndEnd() const &;
+
+	/**
+	 * Removes whitespace characters from the start and end of this string.
+	 * @note Unlike Trim() this function returns a copy, and does not mutate the string.
+	 */
+	FString TrimStartAndEnd() &&;
+
+	/**
+	 * Removes whitespace characters from the start of this string. Modifies the string in-place.
+	 */
+	void TrimStartInline();
+
+	/**
+	 * Removes whitespace characters from the start of this string.
+	 * @note Unlike Trim() this function returns a copy, and does not mutate the string.
+	 */
+	FString TrimStart() const &;
+
+	/**
+	 * Removes whitespace characters from the start of this string.
+	 * @note Unlike Trim() this function returns a copy, and does not mutate the string.
+	 */
+	FString TrimStart() &&;
+
+	/**
+	 * Removes whitespace characters from the end of this string. Modifies the string in-place.
+	 */
+	void TrimEndInline();
+
+	/**
+	 * Removes whitespace characters from the end of this string.
+	 * @note Unlike TrimTrailing() this function returns a copy, and does not mutate the string.
+	 */
+	FString TrimEnd() const &;
+
+	/**
+	 * Removes whitespace characters from the end of this string.
+	 * @note Unlike TrimTrailing() this function returns a copy, and does not mutate the string.
+	 */
+	FString TrimEnd() &&;
 
 	/** 
 	 * Trims the inner array after the null terminator.
@@ -1664,10 +1725,12 @@ public:
 	 * Converts a float string with the trailing zeros stripped
 	 * For example - 1.234 will be "1.234" rather than "1.234000"
 	 * 
-	 * @param	InFloat		The float to sanitize
-	 * @returns sanitized string version of float
+	 * @param	InFloat					The float to sanitize
+	 * @param	InMinFractionalDigits	The minimum number of fractional digits the number should have (will be padded with zero)
+	 *
+	 * @return sanitized string version of float
 	 */
-	static FString SanitizeFloat( double InFloat );
+	static FString SanitizeFloat( double InFloat, const int32 InMinFractionalDigits = 1 );
 
 	/**
 	 * Joins an array of 'something that can be concatentated to strings with +=' together into a single string with separators.
@@ -1910,9 +1973,12 @@ namespace Lex
 {
 	/**
 	 *	Expected functions in this namespace are as follows:
-	 *		static bool		TryParseString(T& OutValue, const TCHAR* Buffer);
-	 *		static void 	FromString(T& OutValue, const TCHAR* Buffer);
-	 *		static FString	ToString(const T& OutValue);
+	 *		bool								TryParseString(T& OutValue, const TCHAR* Buffer);
+	 *		void 								FromString(T& OutValue, const TCHAR* Buffer);
+	 *		<implicitly convertible to string>	ToString(T);
+	 *		                    ^-- Generally this means it can return either FString or const TCHAR* 
+	 *		                        Generic code that uses ToString should assign to an FString or forward along to other functions
+	 *		                        that accept types that are also implicitly convertible to FString 
 	 *
 	 *	Implement custom functionality externally.
 	 */
@@ -1968,11 +2034,16 @@ namespace Lex
 		return ToString(Value);
 	}
 
-	/** Specialized for floats */
-	template<>
-	inline FString ToSanitizedString<float>(const float& Value)
+	/** Overloaded for floats */
+	inline FString ToSanitizedString(float Value)
 	{
-		return FString::SanitizeFloat( Value );
+		return FString::SanitizeFloat(Value);
+	}
+
+	/** Overloaded for doubles */
+	inline FString ToSanitizedString(double Value)
+	{
+		return FString::SanitizeFloat(Value);
 	}
 
 
@@ -2039,42 +2110,11 @@ public:
 		}
 	}
 
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-
 	FStringOutputDevice(FStringOutputDevice&&) = default;
 	FStringOutputDevice(const FStringOutputDevice&) = default;
 	FStringOutputDevice& operator=(FStringOutputDevice&&) = default;
 	FStringOutputDevice& operator=(const FStringOutputDevice&) = default;
 
-#else
-
-	FORCEINLINE FStringOutputDevice(FStringOutputDevice&& Other)
-		: FString      ((FString&&)Other)
-		, FOutputDevice((FOutputDevice&&)Other)
-	{
-	}
-
-	FORCEINLINE FStringOutputDevice(const FStringOutputDevice& Other)
-		: FString      ((const FString&)Other)
-		, FOutputDevice((const FOutputDevice&)Other)
-	{
-	}
-
-	FORCEINLINE FStringOutputDevice& operator=(FStringOutputDevice&& Other)
-	{
-		(FString&)*this       = (FString&&)Other;
-		(FOutputDevice&)*this = (FOutputDevice&&)Other;
-		return *this;
-	}
-
-	FORCEINLINE FStringOutputDevice& operator=(const FStringOutputDevice& Other)
-	{
-		(FString&)*this       = (const FString&)Other;
-		(FOutputDevice&)*this = (const FOutputDevice&)Other;
-		return *this;
-	}
-
-#endif
 	// Make += operator virtual.
 	virtual FString& operator+=(const FString& Other)
 	{
@@ -2145,27 +2185,8 @@ public:
 		return LineCount;
 	}
 
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-
 	FStringOutputDeviceCountLines(const FStringOutputDeviceCountLines&) = default;
 	FStringOutputDeviceCountLines& operator=(const FStringOutputDeviceCountLines&) = default;
-
-#else
-
-	FORCEINLINE FStringOutputDeviceCountLines(const FStringOutputDeviceCountLines& Other)
-		: Super    ((const Super&)Other)
-		, LineCount(Other.LineCount)
-	{
-	}
-
-	FORCEINLINE FStringOutputDeviceCountLines& operator=(const FStringOutputDeviceCountLines& Other)
-	{
-		(Super&)*this = (const Super&)Other;
-		LineCount     = Other.LineCount;
-		return *this;
-	}
-
-#endif
 
 	FORCEINLINE FStringOutputDeviceCountLines(FStringOutputDeviceCountLines&& Other)
 		: Super    ((Super&&)Other)
@@ -2196,5 +2217,15 @@ public:
  * @return the index in the given string of the closing parenthesis
  */
 CORE_API int32 FindMatchingClosingParenthesis(const FString& TargetString, const int32 StartSearch = 0);
+
+/**
+* Given a display label string, generates an FString slug that only contains valid characters for an FName.
+* For example, "[MyObject]: Object Label" becomes "MyObjectObjectLabel" FName slug.
+*
+* @param DisplayLabel The label string to convert to an FName
+*
+* @return	The slugged string
+*/
+CORE_API FString SlugStringForValidName(const FString& DisplayString);
 
 #include "Misc/StringFormatArg.h"

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -86,11 +86,11 @@ struct FEdGraphPinType
 
 	/** Category of pin type */
 	UPROPERTY()
-	FString PinCategory;
+	FName PinCategory;
 
 	/** Sub-category of pin type */
 	UPROPERTY()
-	FString PinSubCategory;
+	FName PinSubCategory;
 
 	/** Sub-category object */
 	UPROPERTY()
@@ -104,65 +104,118 @@ struct FEdGraphPinType
 	UPROPERTY()
 	FEdGraphTerminalType PinValueType;
 
-	/** Whether or not this pin represents a map of keys to values */
 	UPROPERTY()
-	bool bIsMap;
+	EPinContainerType ContainerType;
 
-	/** Whether or not this pin represents a set of (unique) values */
+private:
+	/** DEPRECATED(4.17) Whether or not this pin represents an array of values */
 	UPROPERTY()
-	bool bIsSet;
+	uint8 bIsArray_DEPRECATED:1;
 
-	/** Whether or not this pin represents an array of values */
-	UPROPERTY()
-	bool bIsArray;
-
+public:
 	/** Whether or not this pin is a value passed by reference or not */
 	UPROPERTY()
-	bool bIsReference;
+	uint8 bIsReference:1;
 
 	/** Whether or not this pin is a immutable const value */
 	UPROPERTY()
-	bool bIsConst;
+	uint8 bIsConst:1;
 
 	/** Whether or not this is a weak reference */
 	UPROPERTY()
-	bool bIsWeakPointer;
+	uint8 bIsWeakPointer:1;
 
-	FORCEINLINE bool IsContainer() const { return bIsMap || bIsSet || bIsArray; }
+	FORCEINLINE bool IsContainer() const { return (ContainerType != EPinContainerType::None); }
+	FORCEINLINE bool IsArray() const { return (ContainerType == EPinContainerType::Array); }
+	FORCEINLINE bool IsSet() const { return (ContainerType == EPinContainerType::Set); }
+	FORCEINLINE bool IsMap() const { return (ContainerType == EPinContainerType::Map); }
 
 public:
 	FEdGraphPinType() 
+		: PinSubCategoryObject(nullptr)
+		, ContainerType(EPinContainerType::None)
+		, bIsArray_DEPRECATED(false)
+		, bIsReference(false)
+		, bIsConst(false)
+		, bIsWeakPointer(false)	
 	{
-		PinSubCategoryObject = nullptr;
-		bIsMap = false;
-		bIsSet = false;
-		bIsArray = false;
-		bIsReference = false;
-		bIsConst = false;
-		bIsWeakPointer = false;
 	}
-	FEdGraphPinType(const FString& InPinCategory, const FString& InPinSubCategory, UObject* InPinSubCategoryObject, bool bInIsArray, bool bInIsReference, bool bInIsSet, bool bInIsMap, const FEdGraphTerminalType& InValueTerminalType )
+
+	//DEPRECATED(4.19, "Remove this helper when removing deprecation as it will no longer be needed")
+	struct FNameParameterHelper
 	{
-		PinCategory = InPinCategory;
-		PinSubCategory = InPinSubCategory;
-		PinSubCategoryObject = InPinSubCategoryObject;
-		PinValueType = InValueTerminalType;
-		bIsMap = bInIsMap;
-		bIsSet = bInIsSet;
-		bIsArray = bInIsArray;
-		bIsReference = bInIsReference;
-		bIsConst = false;
-		bIsWeakPointer = false;
+		FNameParameterHelper(const FName InNameParameter) : NameParameter(InNameParameter) { }
+		FNameParameterHelper(const FString& InNameParameter) : NameParameter(*InNameParameter) { }
+		FNameParameterHelper(const TCHAR* InNameParameter) : NameParameter(InNameParameter) { }
+
+		FName operator*() const { return NameParameter; }
+
+	private:
+		FName NameParameter;
+	};
+
+	DEPRECATED(4.17, "Use version that supplies PinCategory and SubCategory as FName, and takes PinContainerType instead of separate booleans for array, set, and map")
+	FEdGraphPinType(const FNameParameterHelper InPinCategory, const FNameParameterHelper InPinSubCategory, UObject* InPinSubCategoryObject, bool bInIsArray, bool bInIsReference, bool bInIsSet, bool bInIsMap, const FEdGraphTerminalType& InValueTerminalType )
+		: PinCategory(*InPinCategory)
+		, PinSubCategory(*InPinSubCategory)
+		, PinSubCategoryObject(InPinSubCategoryObject)
+		, PinValueType(InValueTerminalType)
+		, ContainerType(ToPinContainerType(bInIsArray, bInIsSet, bInIsMap))
+		, bIsArray_DEPRECATED(false)
+		, bIsReference(bInIsReference)
+		, bIsConst(false)
+		, bIsWeakPointer(false)
+	{
 	}
+
+	DEPRECATED(4.19, "Use version that supplies SubCategory as FName")
+	FEdGraphPinType(FName InPinCategory, const FString& InPinSubCategory, UObject* InPinSubCategoryObject, EPinContainerType InPinContainerType, bool bInIsReference, const FEdGraphTerminalType& InValueTerminalType)
+		: PinCategory(InPinCategory)
+		, PinSubCategory(*InPinSubCategory)
+		, PinSubCategoryObject(InPinSubCategoryObject)
+		, PinValueType(InValueTerminalType)
+		, ContainerType(InPinContainerType)
+		, bIsArray_DEPRECATED(false)
+		, bIsReference(bInIsReference)
+		, bIsConst(false)
+		, bIsWeakPointer(false)
+	{
+	}
+
+	//DEPRECATED(4.19, "Remove this constructor when removing FString version, exists only to resolve ambiguity between FName/FString constructors when TCHAR* supplied")
+	FEdGraphPinType(FName InPinCategory, const TCHAR* InPinSubCategory, UObject* InPinSubCategoryObject, EPinContainerType InPinContainerType, bool bInIsReference, const FEdGraphTerminalType& InValueTerminalType)
+		: PinCategory(InPinCategory)
+		, PinSubCategory(InPinSubCategory)
+		, PinSubCategoryObject(InPinSubCategoryObject)
+		, PinValueType(InValueTerminalType)
+		, ContainerType(InPinContainerType)
+		, bIsArray_DEPRECATED(false)
+		, bIsReference(bInIsReference)
+		, bIsConst(false)
+		, bIsWeakPointer(false)
+	{
+	}
+
+	FEdGraphPinType(FName InPinCategory, FName InPinSubCategory, UObject* InPinSubCategoryObject, EPinContainerType InPinContainerType, bool bInIsReference, const FEdGraphTerminalType& InValueTerminalType )
+		: PinCategory(InPinCategory)
+		, PinSubCategory(InPinSubCategory)
+		, PinSubCategoryObject(InPinSubCategoryObject)
+		, PinValueType(InValueTerminalType)
+		, ContainerType(InPinContainerType)
+		, bIsArray_DEPRECATED(false)
+		, bIsReference(bInIsReference)
+		, bIsConst(false)
+		, bIsWeakPointer(false)
+	{
+	}
+
 	bool operator == ( const FEdGraphPinType& Other ) const
 	{
 		return (PinCategory == Other.PinCategory)
 			&& (PinSubCategory == Other.PinSubCategory)
 			&& (PinSubCategoryObject == Other.PinSubCategoryObject)
 			&& (PinValueType == Other.PinValueType)
-			&& (bIsMap == Other.bIsMap)
-			&& (bIsSet == Other.bIsSet)
-			&& (bIsArray == Other.bIsArray)
+			&& (ContainerType == Other.ContainerType)
 			&& (bIsReference == Other.bIsReference)
 			&& (bIsWeakPointer == Other.bIsWeakPointer)
 			&& (PinSubCategoryMemberReference == Other.PinSubCategoryMemberReference)
@@ -170,37 +223,50 @@ public:
 	}
 	bool operator != ( const FEdGraphPinType& Other ) const
 	{
-		return (PinCategory != Other.PinCategory) 
-			|| (PinSubCategory != Other.PinSubCategory) 
-			|| (PinSubCategoryObject != Other.PinSubCategoryObject) 
-			|| (PinValueType != Other.PinValueType)
-			|| (bIsMap != Other.bIsMap)
-			|| (bIsSet != Other.bIsSet)
-			|| (bIsArray != Other.bIsArray) 
-			|| (bIsReference != Other.bIsReference)
-			|| (bIsWeakPointer != Other.bIsWeakPointer)
-			|| (bIsConst != Other.bIsConst);
+		return !(*this == Other);
 	}
 
 	void ResetToDefaults()
 	{
-		PinCategory.Empty();
-		PinSubCategory.Empty();
+		PinCategory = NAME_None;
+		PinSubCategory = NAME_None;
 		PinSubCategoryObject = nullptr;
 		PinValueType = FEdGraphTerminalType();
 		PinSubCategoryMemberReference.Reset();
-		bIsMap = false;
-		bIsSet = false;
-		bIsArray = false;
+		ContainerType = EPinContainerType::None;
 		bIsReference = false;
 		bIsWeakPointer = false;
 		bIsConst = false;
 	}
 
 	ENGINE_API bool Serialize(FArchive& Ar);
+	ENGINE_API void PostSerialize(const FArchive& Ar);
 
 	static ENGINE_API FEdGraphPinType GetPinTypeForTerminalType( const FEdGraphTerminalType& TerminalType );
 	static ENGINE_API FEdGraphPinType GetTerminalTypeForContainer( const FEdGraphPinType& ContainerType );
+
+	static EPinContainerType ToPinContainerType(const bool bInIsArray, const bool bInIsSet, const bool bInIsMap)
+	{
+		EPinContainerType ContainerType = EPinContainerType::None;
+
+		if (bInIsArray)
+		{
+			check(!bInIsSet && !bInIsMap);
+			ContainerType = EPinContainerType::Array;
+		}
+		else if (bInIsSet)
+		{
+			check(!bInIsMap);
+			ContainerType = EPinContainerType::Set;
+		}
+		else if (bInIsMap)
+		{
+			ContainerType = EPinContainerType::Map;
+		}
+
+		return ContainerType;
+	}
+
 };
 
 template<>
@@ -209,6 +275,7 @@ struct TStructOpsTypeTraits< FEdGraphPinType > : public TStructOpsTypeTraitsBase
 	enum 
 	{
 		WithSerializer = true,
+		WithPostSerialize = true
 	};
 };
 
@@ -273,7 +340,7 @@ public:
 	FGuid PinId;
 
 	/** Name of this pin. */
-	FString PinName;
+	FName PinName;
 
 #if WITH_EDITORONLY_DATA
 	/** Used as the display name if set. */
@@ -341,6 +408,19 @@ public:
 
 	/** If true, the pin is displayed as ref. This is transient. */
 	uint32 bDisplayAsMutableRef:1;
+
+	/** 
+	 * If true, this pin existed on an older version of the owning node, but when the node was reconstructed a matching pin was not found.
+	 * This pin must be linked to other pins or have a non-default value and will be removed if disconnected, reset to default, or the node is refreshed.
+	 **/
+	uint32 bOrphanedPin:1;
+
+	/** If true, this pin will be retained when reconstructing a node if there is no matching pin on the new version of the pin. This is transient. */
+	uint32 bSavePinIfOrphaned:1;
+
+	/** Older content sometimes had an empty autogenerated default value string in cases where that does not mean the property default value (0, none, false, etc.) */
+	uint32 bUseBackwardsCompatForEmptyAutogeneratedValue:1;
+
 #endif // WITH_EDITORONLY_DATA
 
 	/** True when InvalidateAndTrash was called. This pin is intended to be discarded and destroyed. */
@@ -358,7 +438,14 @@ public:
 	ENGINE_API void BreakLinkTo(UEdGraphPin* ToPin);
 
 	/** Break all links from this pin */
-	ENGINE_API void BreakAllPinLinks();
+	ENGINE_API void BreakAllPinLinks(bool bNotifyNodes = false);
+
+	/**
+	* Moves the persistent data (across a node refresh) from the SourcePin.
+	*
+	* @param	SourcePin	Source pin.
+	*/
+	ENGINE_API void MovePersistentDataFromOldPin(UEdGraphPin& SourcePin);
 
 	/**
 	 * Copies the persistent data (across a node refresh) from the SourcePin.
@@ -394,8 +481,14 @@ public:
 #endif // WITH_EDITORONLY_DATA
 	}
 
-	/** Get the current DefaultObject path name, or DefaultValue if its null */
+	/** Returns an internal string representation of the string/object/text default value, that is compatible with AutogeneratedDefaultValue and ImportText */
 	ENGINE_API FString GetDefaultAsString() const;
+
+	/** Returns a human readable FText representation of the string/object/text default value */
+	ENGINE_API FText GetDefaultAsText() const;
+
+	/** Returns true if the current default value matches the autogenerated default value */
+	ENGINE_API bool DoesDefaultValueMatchAutogenerated() const;
 
 #if WITH_EDITORONLY_DATA
 	/** Returns how the name of the pin should be displayed in the UI */
@@ -411,6 +504,7 @@ public:
 	 */
 	const FString GetLinkInfoString( const FString& InFunctionName, const FString& InInfoData, const UEdGraphPin* InToPin ) const;
 
+	/** Reset default values to empty. This should not be called when AutogeneratedDefaultValue needs to be respected! */
 	void ResetDefaultValue()
 	{
 		DefaultValue.Empty();
@@ -418,17 +512,18 @@ public:
 		DefaultTextValue = FText::GetEmpty();
 	}
 
+	/** Resets node to default constructor state */
 	void ResetToDefaults()
 	{
 		check(LinkedTo.Num() == 0);
 
 		PinType.ResetToDefaults();
 
-		PinName.Empty();
+		PinName = NAME_None;
 #if WITH_EDITORONLY_DATA
 		PinFriendlyName = FText::GetEmpty();
 #endif // WITH_EDITORONLY_DATA
-		AutogeneratedDefaultValue.Empty();
+		AutogeneratedDefaultValue.Reset();
 		ResetDefaultValue();
 
 #if WITH_EDITORONLY_DATA
@@ -436,6 +531,8 @@ public:
 		bNotConnectable = false;
 		bDefaultValueIsReadOnly = false;
 		bDefaultValueIsIgnored = false;
+		bOrphanedPin = false;
+		bSavePinIfOrphaned = true;
 #endif // WITH_EDITORONLY_DATA
 	}
 
@@ -465,7 +562,8 @@ public:
 	ENGINE_API bool ExportTextItem(FString& ValueStr, int32 PortFlags) const;
 	ENGINE_API bool ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, class UObject* Parent, FOutputDevice* ErrorText);
 
-	ENGINE_API const FString& GetName() const { return PinName; }
+	ENGINE_API const FString GetName() const { return PinName.ToString(); }
+	ENGINE_API const FName GetFName() const { return PinName; }
 	ENGINE_API UEdGraphNode* GetOuter() const { return GetOwningNodeUnchecked(); }
 	ENGINE_API bool IsPendingKill() const {	return bWasTrashed; }
 	ENGINE_API FEdGraphTerminalType GetPrimaryTerminalType() const;
@@ -480,6 +578,10 @@ public:
 
 	/** This needs to be called if you want to use pin data within PostEditUndo */
 	ENGINE_API static void ResolveAllPinReferences();
+
+	ENGINE_API static bool AreOrphanPinsEnabled();
+
+	ENGINE_API static void SanitizePinsPostUndoRedo();
 private:
 	/** Private Constructor. Create pins using CreatePin since all pin instances are managed by TSharedPtr. */
 	UEdGraphPin(UEdGraphNode* InOwningNode, const FGuid& PinGuid);
@@ -493,7 +595,7 @@ private:
 	bool Serialize(FArchive& Ar);
 
 	// Helper functions
-	static void EnableAllConnectedNodes(class UEdGraphNode* InNode);
+	static void ConvertConnectedGhostNodesToRealNodes(UEdGraphNode* InNode);
 	static void ResolveReferencesToPin(UEdGraphPin* Pin, bool bStrictValidation = true);
 	static void SerializePinArray(FArchive& Ar, TArray<UEdGraphPin*>& ArrayRef, UEdGraphPin* RequestingPin, EPinResolveType ResolveType);
 	static bool SerializePin(FArchive& Ar, UEdGraphPin*& PinRef, int32 ArrayIdx, UEdGraphPin* RequestingPin, EPinResolveType ResolveType, TArray<UEdGraphPin*>& OldPins);

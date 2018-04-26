@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EnvQueryParamInstanceCustomization.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -46,10 +46,10 @@ void FEnvQueryParamInstanceCustomization::CustomizeHeader( TSharedRef<class IPro
 
 void FEnvQueryParamInstanceCustomization::CustomizeChildren( TSharedRef<class IPropertyHandle> StructPropertyHandle, class IDetailChildrenBuilder& StructBuilder, IPropertyTypeCustomizationUtils& StructCustomizationUtils )
 {
-	StructBuilder.AddChildProperty(NameProp.ToSharedRef());
-	StructBuilder.AddChildProperty(TypeProp.ToSharedRef());
+	StructBuilder.AddProperty(NameProp.ToSharedRef());
+	StructBuilder.AddProperty(TypeProp.ToSharedRef());
 	
-	StructBuilder.AddChildContent(LOCTEXT("ValueLabel", "Value"))
+	StructBuilder.AddCustomRow(LOCTEXT("ValueLabel", "Value"))
 		.NameContent()
 		[
 			ValueProp->CreatePropertyNameWidget()

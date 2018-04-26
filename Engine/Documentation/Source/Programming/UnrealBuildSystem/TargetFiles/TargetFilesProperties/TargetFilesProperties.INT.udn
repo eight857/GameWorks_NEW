@@ -2,7 +2,7 @@ Availability: NoPublish
 Title: Build Configuration Properties Page
 Crumbs:
 Description: This is a procedurally generated markdown page.
-Version: 4.16
+Version: 4.19
 
 ### Read-Only Properties
 
@@ -42,6 +42,8 @@ $ PakSigningKeysFile (String): Path to the set of pak signing keys to embed in t
 
 $ SolutionDirectory (String): Allows a Program Target to specify it's own solution folder path.
 
+$ bBuildInSolutionByDefault (Nullable&lt;Boolean&gt;): Whether the target should be included in the default solution build configuration
+
 $ bOutputToEngineBinaries (Boolean): Output the executable to the engine binaries folder.
 
 $ bShouldCompileAsDLL (Boolean): Whether this target should be compiled as a DLL.  Requires LinkType to be set to TargetLinkType.Monolithic.
@@ -55,10 +57,6 @@ $ bCompilePhysX (Boolean): Whether to include PhysX support.
 $ bCompileAPEX (Boolean): Whether to include PhysX APEX support.
 
 $ bCompileNvCloth (Boolean): Whether to include NvCloth.
-
-$ bRuntimePhysicsCooking (Boolean): Whether to allow runtime cooking of physics.
-
-$ bCompileBox2D (Boolean): Whether to include Box2D support.
 
 $ bCompileICU (Boolean): Whether to include ICU unicode/i18n support in Core.
 
@@ -82,6 +80,8 @@ $ bCompileSimplygonSSF (Boolean): Whether we should compile in support for Simpl
 
 $ bCompileLeanAndMeanUE (Boolean): Whether to compile lean and mean version of UE.
 
+$ bUseCacheFreedOSAllocs (Boolean): Whether to utilize cache freed OS allocs with MallocBinned
+
 $ bCompileAgainstEngine (Boolean): Enabled for all builds that include the engine project.  Disabled only when building standalone apps that only link with Core.
 
 $ bCompileAgainstCoreUObject (Boolean): Enabled for all builds that include the CoreUObject project.  Disabled only when building standalone apps that only link with Core.
@@ -94,6 +94,10 @@ $ bCompileSpeedTree (Boolean): Whether to compile SpeedTree support.
 
 $ bForceEnableExceptions (Boolean): Enable exceptions for all modules.
 
+$ bUseInlining (Boolean): Enable inlining for all modules.
+
+$ bForceEnableObjCExceptions (Boolean): Enable exceptions for all modules.
+
 $ bForceEnableRTTI (Boolean): Enable RTTI for all modules.
 
 $ bWithServerCode (Boolean): Compile server-only code.
@@ -101,6 +105,8 @@ $ bWithServerCode (Boolean): Compile server-only code.
 $ bCompileWithStatsWithoutEngine (Boolean): Whether to include stats support even without the engine.
 
 $ bCompileWithPluginSupport (Boolean): Whether to include plugin support.
+
+$ bIncludePluginsForTargetPlatforms (Boolean): Whether to allow plugins which support all target platforms.
 
 $ bWithPerfCounters (Boolean): Whether to include PerfCounters support.
 
@@ -121,6 +127,10 @@ $ bForceCompileDevelopmentAutomationTests (Boolean): Whether to compile developm
 $ bForceCompilePerformanceAutomationTests (Boolean): Whether to compile performance automation tests.
 
 $ bEventDrivenLoader (Boolean): If true, event driven loader will be used in cooked builds. @todoio This needs to be replaced by a runtime solution after async loading refactor.
+
+$ bUseXGEController (Boolean): Whether the XGE controller worker and modules should be included in the engine build. These are required for distributed shader compilation using the XGE interception interface.
+
+$ bIWYU (Boolean): Enables "include what you use" by default for modules in this target. Changes the default PCH mode for any module in this project to PCHUsageModule.UseExplicitOrSharedPCHs.
 
 $ bEnforceIWYU (Boolean): Enforce "include what you use" rules; warns if monolithic headers (Engine.h, UnrealEd.h, etc...) are used, and checks that source files include their matching header first.
 
@@ -180,6 +190,10 @@ $ bUseIncrementalLinking (Boolean): Whether to use incremental linking or not. I
 
 $ bAllowLTCG (Boolean): Whether to allow the use of link time code generation (LTCG).
 
+$ bPGOProfile (Boolean): Whether to enable Profile Guided Optimization (PGO) instrumentation in this build.
+
+$ bPGOOptimize (Boolean): Whether to optimize this build with Profile Guided Optimization (PGO).
+
 $ bAllowASLRInShipping (Boolean): Whether to allow the use of ASLR (address space layout randomization) if supported. Only applies to shipping builds.
 
 $ bSupportEditAndContinue (Boolean): Whether to support edit and continue.  Only works on Microsoft compilers in 32-bit compiles.
@@ -204,8 +218,6 @@ $ bUseFastPDBLinking (Boolean): Whether to use the :FASTLINK option when buildin
 
 $ bCreateMapFile (Boolean): Outputs a map file as part of the build.
 
-$ bEnableCodeAnalysis (Boolean): Enables code analysis mode.  Currently, this has specific requirements.  It only works on Windows platform with the MSVC compiler.  Also, it requires a version of the compiler that supports the /analyze option, such as Visual Studio 2013.
-
 $ BundleVersion (String): Bundle version for Mac apps.
 
 $ bDeployAfterCompile (Boolean): Whether to deploy the executable after compilation on platforms that require deployment.
@@ -226,6 +238,10 @@ $ bFlushBuildDirOnRemoteMac (Boolean): Whether to clean Builds directory on a re
 
 $ bPrintToolChainTimingInfo (Boolean): Whether to write detailed timing info from the compiler and linker.
 
+$ bHideSymbolsByDefault (Boolean): Whether to hide symbols by default on POSIX platforms
+
+$ bAllowGeneratedIniWhenCooked (Boolean): Whether to load generated ini files in cooked build
+
 $ PCHOutputDirectory (String): The directory to put precompiled header files in. Experimental setting to allow using a path on a faster drive. Defaults to the standard output directory if not set.
 
 $ GlobalDefinitions (List&lt;String&gt;): Macros to define globally across the whole target.
@@ -233,6 +249,10 @@ $ GlobalDefinitions (List&lt;String&gt;): Macros to define globally across the w
 $ ExtraModuleNames (List&lt;String&gt;): List of additional modules to be compiled into the target.
 
 $ BuildEnvironment (TargetBuildEnvironment): Specifies the build environment for this target. See TargetBuildEnvironment for more infomation on the available options.
+
+$ PreBuildSteps (List&lt;String&gt;): Specifies a list of steps which should be executed before this target is built, in the context of the host platform's shell. The following variables will be expanded before execution: $(EngineDir), $(ProjectDir), $(TargetName), $(TargetPlatform), $(TargetConfiguration), $(TargetType), $(ProjectFile).
+
+$ PostBuildSteps (List&lt;String&gt;): Specifies a list of steps which should be executed after this target is built, in the context of the host platform's shell. The following variables will be expanded before execution: $(EngineDir), $(ProjectDir), $(TargetName), $(TargetPlatform), $(TargetConfiguration), $(TargetType), $(ProjectFile).
 
 $ OverrideExecutableFileExtension (String): Can be set to override the file extension of the executable file (normally .exe or .dll on Windows, for example)
 

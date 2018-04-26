@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -123,10 +123,18 @@ public:
 	}
 
 	/** Displays the data gathered in various ways. */
-	FORCEINLINE static void DumpReport()
+	FORCEINLINE static void DumpReport(const TArray<FString>& Args)
 	{
 #if WITH_LOADPACKAGE_TIME_TRACKER
-		Get().InternalDumpReport();
+		Get().InternalDumpReport(Args);
+#endif
+	}
+
+	/** Resets the data. */
+	FORCEINLINE static void ResetReport()
+	{
+#if WITH_LOADPACKAGE_TIME_TRACKER
+		Get().InternalResetReport();
 #endif
 	}
 
@@ -188,7 +196,10 @@ private:
 	COREUOBJECT_API void InternalPopLoadPackage(UPackage* LoadedPackage, UObject* LoadedAsset);
 
 	/** Displays the data gathered in various ways. */
-	COREUOBJECT_API void InternalDumpReport() const;
+	COREUOBJECT_API void InternalDumpReport(const TArray<FString>& Args) const;
+
+	/** Resets the data */
+	COREUOBJECT_API void InternalResetReport();
 
 	/** Returns the load time for the specified package, excluding its dependencies */
 	COREUOBJECT_API double InternalGetExclusiveLoadTime(FName PackageName) const;
@@ -202,6 +213,9 @@ private:
 	/** Handler for the DumpReportCommand */
 	void DumpReportCommandHandler(const TArray<FString>& Args);
 
+	/** Handler for the ResetReportCommand */
+	void ResetReportCommandHandler(const TArray<FString>& Args);
+	
 	/** Time stack for tracked code sections. Does not have inclusive time set. That is done in the LoadTimes map. */
 	TArray<FLoadTime> TimeStack;
 
@@ -220,6 +234,9 @@ private:
 
 	/** Auto-registered console command to call DumpReport() */
 	const FAutoConsoleCommand DumpReportCommand;
+
+	/** Auto-registered console command to call ResetReport() */
+	const FAutoConsoleCommand ResetReportCommand;
 
 #endif // WITH_LOADPACKAGE_TIME_TRACKER
 };

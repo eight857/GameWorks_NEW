@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	OpenGLES2.h: Public OpenGL ES 2.0 definitions for non-common functionality
@@ -92,6 +92,7 @@ struct FOpenGLES2 : public FOpenGLBase
 	static FORCEINLINE bool SupportsSamplerObjects()					{ return false; }
 	static FORCEINLINE bool SupportsTexture3D()							{ return false; }
 	static FORCEINLINE bool SupportsMobileMultiView()					{ return false; }
+	static FORCEINLINE bool SupportsImageExternal()						{ return false; }
 	static FORCEINLINE bool SupportsTextureLODBias()					{ return false; }
 	static FORCEINLINE bool SupportsTextureCompare()					{ return false; }
 	static FORCEINLINE bool SupportsTextureBaseLevel()					{ return false; }
@@ -144,9 +145,10 @@ struct FOpenGLES2 : public FOpenGLBase
 	static FORCEINLINE bool SupportsStandardDerivativesExtension()		{ return bSupportsStandardDerivativesExtension; }
 	static FORCEINLINE bool RequiresGLFragCoordVaryingLimitHack()		{ return bRequiresGLFragCoordVaryingLimitHack; }
 	static FORCEINLINE bool RequiresTexture2DPrecisionHack()			{ return bRequiresTexture2DPrecisionHack; }
+	static FORCEINLINE bool RequiresRoundFunctionHack()					{ return bRequiresRoundFunctionHack; }
 	static FORCEINLINE bool RequiresARMShaderFramebufferFetchDepthStencilUndef() { return bRequiresARMShaderFramebufferFetchDepthStencilUndef; }
 	static FORCEINLINE bool IsCheckingShaderCompilerHacks()				{ return bIsCheckingShaderCompilerHacks; }
-    static FORCEINLINE bool IsLimitingShaderCompileCount()              { return bIsLimitingShaderCompileCount; }
+	static FORCEINLINE bool IsLimitingShaderCompileCount()				{ return bIsLimitingShaderCompileCount; }
 
 	static FORCEINLINE int32 GetReadHalfFloatPixelsEnum()				{ return GL_HALF_FLOAT_OES; }
 
@@ -154,12 +156,12 @@ struct FOpenGLES2 : public FOpenGLBase
 	static FORCEINLINE GLenum GetTextureHalfFloatPixelType()			{ return GL_HALF_FLOAT_OES; }
 	static FORCEINLINE GLenum GetTextureHalfFloatInternalFormat()		{ return GL_RGBA; }
 
-	
+
 	static FORCEINLINE bool NeedsVertexAttribRemapTable()				{ return bNeedsVertexAttribRemap; }
 
 	// On iOS both glMapBufferOES() and glBufferSubData() for immediate vertex and index data
 	// is the slow path (they both hit GPU sync and data cache flush in driver according to profiling in driver symbols).
-	// Turning this to false reverts back to not using vertex and index buffers 
+	// Turning this to false reverts back to not using vertex and index buffers
 	// for glDrawArrays() and glDrawElements() on dynamic data.
 	static FORCEINLINE bool SupportsFastBufferData()					{ return false; }
 
@@ -236,7 +238,7 @@ struct FOpenGLES2 : public FOpenGLBase
 	// Required
 	static FORCEINLINE void* MapBufferRange(GLenum Type, uint32 InOffset, uint32 InSize, EResourceLockMode LockMode)
 	{
-#if OPENGL_ES2_BRING_UP	
+#if OPENGL_ES2_BRING_UP
 		// Non-written areas retain prior values.
 		// Lack of unsynchronized in glMapBufferOES() is a perf bug which needs to be fixed later.
 		checkf(LockMode == RLM_WriteOnly || LockMode == RLM_WriteOnlyUnsynchronized, TEXT("OpenGL ES 2.0 only supports write-only buffer locks"));
@@ -392,7 +394,7 @@ struct FOpenGLES2 : public FOpenGLBase
 	{
 		glGenTextures( n, textures);
 	}
-	
+
 	static FORCEINLINE bool TimerQueryDisjoint()
 	{
 		bool Disjoint = false;
@@ -535,20 +537,23 @@ public:
 	/* This hack fixes an issue with SGX540 compiler which can get upset with some operations that mix highp and mediump */
 	static bool bRequiresTexture2DPrecisionHack;
 
+	/* This is a hack to add a round() function when not available to a shader compiler */
+	static bool bRequiresRoundFunctionHack;
+
 	/* This is to avoid a bug in Adreno drivers that define GL_ARM_shader_framebuffer_fetch_depth_stencil even when device does not support this extension  */
 	static bool bRequiresARMShaderFramebufferFetchDepthStencilUndef;
-	
+
 	/* Indicates shader compiler hack checks are being tested */
 	static bool bIsCheckingShaderCompilerHacks;
 
 	/** GL_OES_vertex_type_10_10_10_2 */
 	static bool bSupportsRGB10A2;
-	
+
 	/** GL_OES_get_program_binary */
 	static bool bSupportsProgramBinary;
 
-    /* Indicates shader compiler should be limited */
-    static bool bIsLimitingShaderCompileCount;
+	/* Indicates shader compiler should be limited */
+	static bool bIsLimitingShaderCompileCount;
 };
 
 
@@ -914,7 +919,7 @@ public:
 #define GL_UNPACK_IMAGE_HEIGHT 0x806E
 #define GL_NUM_EXTENSIONS 0x821D
 
-#if PLATFORM_HTML5_BROWSER
+#if PLATFORM_HTML5
 // Browser supports either GLES2.0 or GLES3.0 at runtime, so needs to read these
 #define GL_MAX_3D_TEXTURE_SIZE 0x8073
 #define GL_MAX_COLOR_ATTACHMENTS 0x8CDF

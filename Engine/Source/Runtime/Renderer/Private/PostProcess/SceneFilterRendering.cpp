@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SceneFilterRendering.cpp: Filter rendering implementation.
@@ -9,6 +9,7 @@
 #include "EngineGlobals.h"
 #include "Engine/Engine.h"
 #include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
 
 /**
 * Static vertex and index buffer used for 2D screen rectangles.
@@ -53,9 +54,9 @@ public:
 	/** Initialize the RHI for this rendering resource */
 	void InitRHI() override
 	{
-		// Indices 0 - 5 are used for rendering a quad. Indices 6 - 8 are used for triangle optimization. 
+		// Indices 0 - 5 are used for rendering a quad. Indices 6 - 8 are used for triangle optimization.
 		const uint16 Indices[] = { 0, 1, 2, 2, 1, 3, 0, 4, 5 };
-		
+
 		TResourceArray<uint16, INDEXBUFFER_ALIGNMENT> IndexBuffer;
 		uint32 NumIndices = ARRAY_COUNT(Indices);
 		IndexBuffer.AddUninitialized(NumIndices);
@@ -77,7 +78,7 @@ void FTesselatedScreenRectangleIndexBuffer::InitRHI()
 
 	uint32 NumIndices = NumPrimitives() * 3;
 	IndexBuffer.AddUninitialized(NumIndices);
-		
+
 	uint16* Out = (uint16*)IndexBuffer.GetData();
 
 	for(uint32 y = 0; y < Height; ++y)
@@ -126,13 +127,6 @@ TGlobalResource<FFilterVertexDeclaration> GFilterVertexDeclaration;
 /** Vertex declaration for vertex shaders that don't require any inputs (eg. generated via vertex ID). */
 TGlobalResource<FEmptyVertexDeclaration> GEmptyVertexDeclaration;
 
-/** Uniform buffer for computing the vertex positional and UV adjustments in the vertex shader. */
-BEGIN_UNIFORM_BUFFER_STRUCT( FDrawRectangleParameters,)
-	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER( FVector4, PosScaleBias )
-	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER( FVector4, UVScaleBias )
-	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER( FVector4, InvTargetSizeAndTextureSize )
-END_UNIFORM_BUFFER_STRUCT( FDrawRectangleParameters )
-
 IMPLEMENT_UNIFORM_BUFFER_STRUCT(FDrawRectangleParameters,TEXT("DrawRectangleParameters"));
 
 typedef TUniformBufferRef<FDrawRectangleParameters> FDrawRectangleBufferRef;
@@ -161,8 +155,9 @@ static void DoDrawRectangleFlagOverride(EDrawRectangleFlags& Flags)
 #endif
 }
 
-void DrawRectangle(
-	FRHICommandList& RHICmdList,
+template <typename TRHICommandList>
+static inline void InternalDrawRectangle(
+	TRHICommandList& RHICmdList,
 	float X,
 	float Y,
 	float SizeX,
@@ -196,8 +191,8 @@ void DrawRectangle(
 	Parameters.PosScaleBias = FVector4(SizeX, SizeY, X, Y);
 	Parameters.UVScaleBias = FVector4(SizeU, SizeV, U, V);
 
-	Parameters.InvTargetSizeAndTextureSize = FVector4( 
-		1.0f / TargetSize.X, 1.0f / TargetSize.Y, 
+	Parameters.InvTargetSizeAndTextureSize = FVector4(
+		1.0f / TargetSize.X, 1.0f / TargetSize.Y,
 		1.0f / TextureSize.X, 1.0f / TextureSize.Y);
 
 	SetUniformBufferParameterImmediate(RHICmdList, VertexShader->GetVertexShader(), VertexShader->GetUniformBufferParameter<FDrawRectangleParameters>(), Parameters);
@@ -205,7 +200,7 @@ void DrawRectangle(
 	if(Flags == EDRF_UseTesselatedIndexBuffer)
 	{
 		// no vertex buffer needed as we compute it in VS
-		RHICmdList.SetStreamSource(0, NULL, 0, 0);
+		RHICmdList.SetStreamSource(0, NULL, 0);
 
 		RHICmdList.DrawIndexedPrimitive(
 			GTesselatedScreenRectangleIndexBuffer.IndexBufferRHI,
@@ -220,7 +215,7 @@ void DrawRectangle(
 	}
 	else
 	{
-		RHICmdList.SetStreamSource(0, GScreenRectangleVertexBuffer.VertexBufferRHI, sizeof(FFilterVertex), 0);
+		RHICmdList.SetStreamSource(0, GScreenRectangleVertexBuffer.VertexBufferRHI, 0);
 
 		if (Flags == EDRF_UseTriangleOptimization)
 		{
@@ -241,7 +236,7 @@ void DrawRectangle(
 		}
 		else
 		{
-			RHICmdList.SetStreamSource(0, GScreenRectangleVertexBuffer.VertexBufferRHI, sizeof(FFilterVertex), 0);
+			RHICmdList.SetStreamSource(0, GScreenRectangleVertexBuffer.VertexBufferRHI, 0);
 
 			RHICmdList.DrawIndexedPrimitive(
 				GScreenRectangleIndexBuffer.IndexBufferRHI,
@@ -255,6 +250,26 @@ void DrawRectangle(
 				);
 		}
 	}
+}
+
+void DrawRectangle(
+	FRHICommandList& RHICmdList,
+	float X,
+	float Y,
+	float SizeX,
+	float SizeY,
+	float U,
+	float V,
+	float SizeU,
+	float SizeV,
+	FIntPoint TargetSize,
+	FIntPoint TextureSize,
+	FShader* VertexShader,
+	EDrawRectangleFlags Flags,
+	uint32 InstanceCount
+)
+{
+	InternalDrawRectangle(RHICmdList, X, Y, SizeX, SizeY, U, V, SizeU, SizeV, TargetSize, TextureSize, VertexShader, Flags, InstanceCount);
 }
 
 void DrawTransformedRectangle(
@@ -329,7 +344,10 @@ void DrawHmdMesh(
 
 	SetUniformBufferParameterImmediate(RHICmdList, VertexShader->GetVertexShader(), VertexShader->GetUniformBufferParameter<FDrawRectangleParameters>(), Parameters);
 
-	GEngine->HMDDevice->DrawVisibleAreaMesh_RenderThread(RHICmdList, StereoView);
+	if (GEngine->XRSystem->GetHMDDevice())
+	{
+		GEngine->XRSystem->GetHMDDevice()->DrawVisibleAreaMesh_RenderThread(RHICmdList, StereoView);
+	}
 }
 
 void DrawPostProcessPass(

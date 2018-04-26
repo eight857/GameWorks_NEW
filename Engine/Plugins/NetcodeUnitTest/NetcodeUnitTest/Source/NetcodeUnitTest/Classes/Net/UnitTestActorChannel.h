@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,7 +8,11 @@
 
 #include "UnitTestActorChannel.generated.h"
 
+
+// Forward declarations
 class FInBunch;
+class UMinimalClient;
+
 
 /**
  * An actor net channel override, for hooking ReceivedBunch, to aid in detecting/blocking of remote actors, of a specific class
@@ -16,10 +20,20 @@ class FInBunch;
 UCLASS(transient)
 class UUnitTestActorChannel : public UActorChannel
 {
+	friend UMinimalClient;
+
 	GENERATED_UCLASS_BODY()
 
+
+public:
 	virtual void ReceivedBunch(FInBunch& Bunch) override;
 
 	virtual void Tick() override;
+
+	virtual void NotifyActorChannelOpen(AActor* InActor, FInBunch& InBunch) override;
+
+private:
+	/** Cached referenced to the minimal client that owns this actor channel */
+	UMinimalClient* MinClient;
 };
 

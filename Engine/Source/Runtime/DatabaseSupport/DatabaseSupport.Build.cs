@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -6,7 +6,7 @@ namespace UnrealBuildTool.Rules
 	{
 		public DatabaseSupport(ReadOnlyTargetRules Target) : base(Target)
 		{
-			if ((UEBuildConfiguration.bIncludeADO == true) || (UEBuildConfiguration.bCompileAgainstEngine == true))
+			if ((Target.bIncludeADO == true) || (Target.bCompileAgainstEngine == true))
 			{
 				AddEngineThirdPartyPrivateStaticDependencies(Target, "ADO");
 				bBuildLocallyWithSNDBS = true;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,6 +16,7 @@
 class UAbilitySystemComponent;
 class UAttributeSet;
 struct FGameplayAbilityActorInfo;
+struct FAggregator;
 
 USTRUCT(BlueprintType)
 struct GAMEPLAYABILITIES_API FGameplayAttributeData
@@ -125,6 +126,9 @@ struct GAMEPLAYABILITIES_API FGameplayAttribute
 	UPROPERTY(Category = GameplayAttribute, VisibleAnywhere, BlueprintReadOnly)
 	FString AttributeName;
 
+	// In editor, this will filter out properties with meta tag "HideInDetailsView" or equal to FilterMetaStr. In non editor, it returns all properties.
+	static void GetAllAttributeProperties(TArray<UProperty*>& OutProperties, FString FilterMetaStr=FString(), bool UseEditorOnlyData=true);
+
 private:
 	friend class FAttributePropertyDetails;
 
@@ -195,6 +199,9 @@ public:
 	 */
 	virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const { }
 
+	/** Callback for when an FAggregator is created for an attribute in this set. Allows custom setup of FAggregator::EvaluationMetaData */
+	virtual void OnAttributeAggregatorCreated(const FGameplayAttribute& Attribute, FAggregator* NewAggregator) const { }
+
 	/** This signifies the attribute set can be ID'd by name over the network. */
 	void SetNetAddressable();
 
@@ -252,10 +259,10 @@ struct GAMEPLAYABILITIES_API FScalableFloat
 
 public:
 
-	UPROPERTY(EditDefaultsOnly, Category=ScalableFloat)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=ScalableFloat)
 	float	Value;
 
-	UPROPERTY(EditDefaultsOnly, Category=ScalableFloat)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=ScalableFloat)
 	FCurveTableRowHandle	Curve;
 
 	float GetValueAtLevel(float Level, const FString* ContextString = nullptr) const;
@@ -308,15 +315,11 @@ public:
 	/* Used to upgrade a float or int8/int16/int32 property into an FScalableFloat */
 	bool SerializeFromMismatchedTag(const FPropertyTag& Tag, FArchive& Ar);
 
-	static void InvalidateAllCachedCurves();
-
 private:
 
 	// Cached direct pointer to RichCurve we should evaluate
 	mutable FRichCurve* FinalCurve;
 	mutable int32 LocalCachedCurveID;
-
-	static int32 GlobalCachedCurveID;
 };
 
 template<>

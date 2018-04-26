@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "LightingSystem.h"
@@ -186,7 +186,6 @@ void FStaticLightingSystem::EmitPhotons()
 		CalculateIrradiancePhotons(ImportanceVolumeBounds, mIrradiancePhotons);
 		Stats.IrradiancePhotonCalculatingTime = FPlatformTime::Seconds() - StartCalculateIrradiancePhotonsTime;
 		LogSolverMessage(FString::Printf(TEXT("Calculate Irradiance Photons complete, %.3f million irradiance calculations in %.1f seconds"), Stats.NumFoundIrradiancePhotons / 1000000.0f, Stats.IrradiancePhotonCalculatingTime));
-
 	}
 
 	// Verify that temporary photon memory has been freed
@@ -229,17 +228,27 @@ void FStaticLightingSystem::EmitDirectPhotons(
 
 	const FDirectPhotonEmittingInput Input(ImportanceBounds, LightDistribution);
 
+	int32 NumIndirectPhotonPathsRemaining = NumIndirectPhotonPaths;
 	// Setup work ranges, which are sections of work that can be done in parallel.
 	DirectPhotonEmittingWorkRanges.Empty(NumPhotonWorkRanges);
 	for (int32 RangeIndex = 0; RangeIndex < NumPhotonWorkRanges - 1; RangeIndex++)
 	{
-		DirectPhotonEmittingWorkRanges.Add(FDirectPhotonEmittingWorkRange(RangeIndex, NumDirectPhotonsToEmit / NumPhotonWorkRanges, NumIndirectPhotonPaths / NumPhotonWorkRanges));
+		int32 NumIndirectPhotonPathsRange = FMath::Max(NumIndirectPhotonPaths / NumPhotonWorkRanges, 1);
+
+		if (NumIndirectPhotonPathsRemaining == 0)
+		{
+			NumIndirectPhotonPathsRange = 0;
+		}
+
+		NumIndirectPhotonPathsRemaining = FMath::Max(NumIndirectPhotonPathsRemaining - NumIndirectPhotonPathsRange, 0);
+
+		DirectPhotonEmittingWorkRanges.Add(FDirectPhotonEmittingWorkRange(RangeIndex, NumDirectPhotonsToEmit / NumPhotonWorkRanges, NumIndirectPhotonPathsRange));
 	}
 	// The last work range contains the remainders
 	DirectPhotonEmittingWorkRanges.Add(FDirectPhotonEmittingWorkRange(
 		NumPhotonWorkRanges - 1, 
 		NumDirectPhotonsToEmit / NumPhotonWorkRanges + NumDirectPhotonsToEmit % NumPhotonWorkRanges, 
-		NumIndirectPhotonPaths / NumPhotonWorkRanges + NumIndirectPhotonPaths % NumPhotonWorkRanges));
+		NumIndirectPhotonPathsRemaining));
 
 	DirectPhotonEmittingOutputs.Empty(NumPhotonWorkRanges);
 	for (int32 RangeIndex = 0; RangeIndex < NumPhotonWorkRanges; RangeIndex++)
@@ -346,36 +355,36 @@ void FStaticLightingSystem::EmitDirectPhotons(
 				{
 					NumDirectIrradiancePhotons += IrradiancePhotons[ArrayIndex].Num();
 				}
-				DebugOutput.IrradiancePhotons.Empty(NumDirectIrradiancePhotons);
+				StartupDebugOutput.IrradiancePhotons.Empty(NumDirectIrradiancePhotons);
 				for (int32 ArrayIndex = 0; ArrayIndex < IrradiancePhotons.Num(); ArrayIndex++)
 				{
 					for (int32 i = 0; i < IrradiancePhotons[ArrayIndex].Num(); i++)
 					{
-						DebugOutput.IrradiancePhotons.Add(FDebugPhoton(0, IrradiancePhotons[ArrayIndex][i].GetPosition(), IrradiancePhotons[ArrayIndex][i].GetSurfaceNormal(), IrradiancePhotons[ArrayIndex][i].GetSurfaceNormal()));
+						StartupDebugOutput.IrradiancePhotons.Add(FDebugPhoton(0, IrradiancePhotons[ArrayIndex][i].GetPosition(), IrradiancePhotons[ArrayIndex][i].GetSurfaceNormal(), IrradiancePhotons[ArrayIndex][i].GetSurfaceNormal()));
 					}
 				}
 			}
 			else
 			{
-				DebugOutput.DirectPhotons.Empty(Stats.NumDirectPhotonsGathered);
+				StartupDebugOutput.DirectPhotons.Empty(Stats.NumDirectPhotonsGathered);
 				for (int32 OutputIndex = 0; OutputIndex < DirectPhotonEmittingOutputs.Num(); OutputIndex++)
 				{
 					const FDirectPhotonEmittingOutput& CurrentOutput = DirectPhotonEmittingOutputs[OutputIndex];
 					for (int32 i = 0; i < CurrentOutput.DirectPhotons.Num(); i++)
 					{
-						DebugOutput.DirectPhotons.Add(FDebugPhoton(CurrentOutput.DirectPhotons[i].GetId(), CurrentOutput.DirectPhotons[i].GetPosition(), CurrentOutput.DirectPhotons[i].GetIncidentDirection(), CurrentOutput.DirectPhotons[i].GetSurfaceNormal()));
+						StartupDebugOutput.DirectPhotons.Add(FDebugPhoton(CurrentOutput.DirectPhotons[i].GetId(), CurrentOutput.DirectPhotons[i].GetPosition(), CurrentOutput.DirectPhotons[i].GetIncidentDirection(), CurrentOutput.DirectPhotons[i].GetSurfaceNormal()));
 					}
 				}
 			}
 		}
 		if (GeneralSettings.ViewSingleBounceNumber != 0)
 		{
-			DebugOutput.IndirectPhotonPaths.Empty(NumIndirectPhotonPathsGathered);
+			StartupDebugOutput.IndirectPhotonPaths.Empty(NumIndirectPhotonPathsGathered);
 			for (int32 LightIndex = 0; LightIndex < IndirectPathRays.Num(); LightIndex++)
 			{
 				for (int32 RayIndex = 0; RayIndex < IndirectPathRays[LightIndex].Num(); RayIndex++)
 				{
-					DebugOutput.IndirectPhotonPaths.Add(FDebugStaticLightingRay(
+					StartupDebugOutput.IndirectPhotonPaths.Add(FDebugStaticLightingRay(
 						IndirectPathRays[LightIndex][RayIndex].Start, 
 						IndirectPathRays[LightIndex][RayIndex].Start + IndirectPathRays[LightIndex][RayIndex].UnitDirection * IndirectPathRays[LightIndex][RayIndex].Length,
 						true));
@@ -547,7 +556,7 @@ void FStaticLightingSystem::EmitDirectPhotonsWorkRange(
 			{
 				LIGHTINGSTAT(FScopedRDTSCTimer CustomAttenuationTimer(Output.DirectCustomAttenuationThreadTime));
 				// Allow the light to attenuate in a non-physically correct way
-				PathAlpha *= Light->CustomAttenuation(PathIntersection.IntersectionVertex.WorldPosition, RandomStream);
+				PathAlpha *= Light->CustomAttenuation(PathIntersection.IntersectionVertex.WorldPosition, RandomStream, true);
 			}
 			
 			// Apply transmission
@@ -562,7 +571,7 @@ void FStaticLightingSystem::EmitDirectPhotonsWorkRange(
 			}
 
 			NumberOfPathVertices++;
-			// Note: SampleRay.Start is offset from the actual start position, but not enough to matter for the algorthims which make use of the photon's traveled distance.
+			// Note: SampleRay.Start is offset from the actual start position, but not enough to matter for the algorithms which make use of the photon's traveled distance.
 			const float RayLength = (SampleRay.Start - PathIntersection.IntersectionVertex.WorldPosition).Size3();
 			// Create a photon from this path vertex's information
 			const FPhoton NewPhoton(Output.NumPhotonsEmitted, PathIntersection.IntersectionVertex.WorldPosition, RayLength, -WorldPathDirection, PathIntersection.IntersectionVertex.WorldTangentZ, PathAlpha);
@@ -585,13 +594,13 @@ void FStaticLightingSystem::EmitDirectPhotonsWorkRange(
 			// Continue tracing this path if we don't have enough indirect photon paths yet
 			if (NumIndirectPathRaysGathered < WorkRange.TargetNumIndirectPhotonPaths)
 			{
-				PathIntersection.IntersectionVertex.GenerateVertexTangents();
+				FStaticLightingVertex IntersectionVertexWithTangents(PathIntersection.IntersectionVertex);
 				FVector4 NewWorldPathDirection;
 				float BRDFDirectionPDF;
 
 				// Generate a new path direction from the BRDF
 				const FLinearColor BRDF = PathIntersection.Mesh->SampleBRDF(
-					PathIntersection.IntersectionVertex, 
+					IntersectionVertexWithTangents, 
 					PathIntersection.ElementIndex,
 					-WorldPathDirection, 
 					NewWorldPathDirection, 
@@ -604,13 +613,13 @@ void FStaticLightingSystem::EmitDirectPhotonsWorkRange(
 					continue;
 				}
 
-				const float CosFactor = -Dot3(WorldPathDirection, PathIntersection.IntersectionVertex.WorldTangentZ);
+				const float CosFactor = -Dot3(WorldPathDirection, IntersectionVertexWithTangents.WorldTangentZ);
 				checkSlow(CosFactor >= 0.0f && CosFactor <= 1.0f);
 
-				const FVector4 RayStart = PathIntersection.IntersectionVertex.WorldPosition 
+				const FVector4 RayStart = IntersectionVertexWithTangents.WorldPosition 
 					+ NewWorldPathDirection * SceneConstants.VisibilityRayOffsetDistance 
-					+ PathIntersection.IntersectionVertex.WorldTangentZ * SceneConstants.VisibilityNormalOffsetDistance;
-				const FVector4 RayEnd = PathIntersection.IntersectionVertex.WorldPosition + NewWorldPathDirection * MaxRayDistance;
+					+ IntersectionVertexWithTangents.WorldTangentZ * SceneConstants.VisibilityNormalOffsetDistance;
+				const FVector4 RayEnd = IntersectionVertexWithTangents.WorldPosition + NewWorldPathDirection * MaxRayDistance;
 
 				FLightRay IndirectSampleRay(
 					RayStart,
@@ -637,6 +646,41 @@ void FStaticLightingSystem::EmitDirectPhotonsWorkRange(
 	}
 	// Indicate to the main thread that this output is ready for processing
 	FPlatformAtomics::InterlockedIncrement(&DirectPhotonEmittingOutputs[WorkRange.RangeIndex].OutputComplete);
+}
+
+void FStaticLightingSystem::BuildPhotonSegmentMap(const FPhotonOctree& SourcePhotonMap, FPhotonSegmentOctree& OutPhotonSegementMap, float AddToSegmentMapChance)
+{
+	FLMRandomStream RandomStream(12345);
+
+	for(FPhotonOctree::TConstIterator<> NodeIt(SourcePhotonMap); NodeIt.HasPendingNodes(); NodeIt.Advance())
+	{
+		const FPhotonOctree::FNode& CurrentNode = NodeIt.GetCurrentNode();
+
+		FOREACH_OCTREE_CHILD_NODE(ChildRef)
+		{
+			if (CurrentNode.HasChild(ChildRef))
+			{
+				NodeIt.PushChild(ChildRef);
+			}
+		}
+
+		for (FPhotonOctree::ElementConstIt ElementIt(CurrentNode.GetConstElementIt()); ElementIt; ++ElementIt)
+		{
+			const FPhotonElement& PhotonElement = *ElementIt;
+			
+			if (AddToSegmentMapChance >= 1 || RandomStream.GetFraction() < AddToSegmentMapChance)
+			{
+				const int32 NumSegments = FMath::DivideAndRoundUp(PhotonElement.Photon.GetDistance(), PhotonMappingSettings.PhotonSegmentMaxLength);
+				const float InvNumSegments = 1.0f / NumSegments;
+
+				for (int32 SegmentIndex = 0; SegmentIndex < NumSegments; SegmentIndex++)
+				{
+					FPhotonSegmentElement NewElement(&PhotonElement.Photon, SegmentIndex * InvNumSegments, InvNumSegments);
+					OutPhotonSegementMap.AddElement(NewElement);
+				}
+			}
+		}
+	}
 }
 
 /** Gathers indirect photons based on the indirect photon paths. */
@@ -696,6 +740,7 @@ void FStaticLightingSystem::EmitIndirectPhotons(
 
 	// Add the photons into spatial data structures to accelerate their searches later
 	FirstBouncePhotonMap = FPhotonOctree(ImportanceBounds.Origin, ImportanceBounds.BoxExtent.GetMax());
+	FirstBounceEscapedPhotonMap = FPhotonOctree(ImportanceBounds.Origin, ImportanceBounds.BoxExtent.GetMax());
 	SecondBouncePhotonMap = FPhotonOctree(ImportanceBounds.Origin, ImportanceBounds.BoxExtent.GetMax());
 
 	Stats.NumIndirectPhotonsGathered = 0;
@@ -716,6 +761,14 @@ void FStaticLightingSystem::EmitIndirectPhotons(
 			for (int32 PhotonIndex = 0; PhotonIndex < CurrentOutput.FirstBouncePhotons.Num(); PhotonIndex++)
 			{
 				FirstBouncePhotonMap.AddElement(FPhotonElement(CurrentOutput.FirstBouncePhotons[PhotonIndex]));
+			}
+
+			if (PhotonMappingSettings.bUsePhotonSegmentsForVolumeLighting)
+			{
+				for (int32 PhotonIndex = 0; PhotonIndex < CurrentOutput.FirstBounceEscapedPhotons.Num(); PhotonIndex++)
+				{
+					FirstBounceEscapedPhotonMap.AddElement(FPhotonElement(CurrentOutput.FirstBounceEscapedPhotons[PhotonIndex]));
+				}
 			}
 
 			for (int32 PhotonIndex = 0; PhotonIndex < CurrentOutput.SecondBouncePhotons.Num(); PhotonIndex++)
@@ -748,6 +801,17 @@ void FStaticLightingSystem::EmitIndirectPhotons(
 		}
 	}
 
+	FirstBouncePhotonSegmentMap = FPhotonSegmentOctree(ImportanceBounds.Origin, ImportanceBounds.BoxExtent.GetMax());
+
+	if (PhotonMappingSettings.bUsePhotonSegmentsForVolumeLighting)
+	{
+		const double SegmentStartTime = FPlatformTime::Seconds();
+		BuildPhotonSegmentMap(FirstBouncePhotonMap, FirstBouncePhotonSegmentMap, PhotonMappingSettings.GeneratePhotonSegmentChance);
+		BuildPhotonSegmentMap(FirstBounceEscapedPhotonMap, FirstBouncePhotonSegmentMap, 1.0f);
+		const float BuildSegmentMapTime = (float)(FPlatformTime::Seconds() - SegmentStartTime);
+		LogSolverMessage(FString::Printf(TEXT("Built photon segment map in %.1f seconds"), BuildSegmentMapTime));
+	}
+
 	Stats.EmitIndirectPhotonsThreadTime = FPlatformTime::Seconds() - StartEmittingIndirectPhotonsMainThread;
 
 	// Wait until all worker threads have completed
@@ -770,12 +834,12 @@ void FStaticLightingSystem::EmitIndirectPhotons(
 		{
 			NumIndirectIrradiancePhotons += IrradiancePhotons[RangeIndex].Num();
 		}
-		DebugOutput.IrradiancePhotons.Empty(NumIndirectIrradiancePhotons);
+		StartupDebugOutput.IrradiancePhotons.Empty(NumIndirectIrradiancePhotons);
 		for (int32 RangeIndex = NumPhotonWorkRanges; RangeIndex < IrradiancePhotons.Num(); RangeIndex++)
 		{
 			for (int32 i = 0; i < IrradiancePhotons[RangeIndex].Num(); i++)
 			{
-				DebugOutput.IrradiancePhotons.Add(FDebugPhoton(0, IrradiancePhotons[RangeIndex][i].GetPosition(), IrradiancePhotons[RangeIndex][i].GetSurfaceNormal(), IrradiancePhotons[RangeIndex][i].GetSurfaceNormal()));
+				StartupDebugOutput.IrradiancePhotons.Add(FDebugPhoton(0, IrradiancePhotons[RangeIndex][i].GetPosition(), IrradiancePhotons[RangeIndex][i].GetSurfaceNormal(), IrradiancePhotons[RangeIndex][i].GetSurfaceNormal()));
 			}
 		}
 	}
@@ -858,6 +922,7 @@ void FStaticLightingSystem::EmitIndirectPhotonsWorkRange(
 
 	//@todo - re-evaluate these sizes
 	Output.FirstBouncePhotons.Empty(FMath::TruncToInt(WorkRange.NumIndirectPhotonsToEmit * .6f * IndirectPhotonEfficiency));
+	Output.FirstBounceEscapedPhotons.Empty(FMath::TruncToInt(WorkRange.NumIndirectPhotonsToEmit * .6f * IndirectPhotonEfficiency * PhotonMappingSettings.GeneratePhotonSegmentChance));
 	Output.SecondBouncePhotons.Empty(FMath::TruncToInt(WorkRange.NumIndirectPhotonsToEmit * .4f * IndirectPhotonEfficiency));
 	if (PhotonMappingSettings.bUseIrradiancePhotons)
 	{
@@ -946,7 +1011,7 @@ void FStaticLightingSystem::EmitIndirectPhotonsWorkRange(
 			{
 				LIGHTINGSTAT(FScopedRDTSCTimer CustomAttenuationTimer(Output.IndirectCustomAttenuationThreadTime));
 				// Allow the light to attenuate in a non-physically correct way
-				PathAlpha *= Light->CustomAttenuation(PathIntersection.IntersectionVertex.WorldPosition, RandomStream);
+				PathAlpha *= Light->CustomAttenuation(PathIntersection.IntersectionVertex.WorldPosition, RandomStream, false);
 			}
 
 			// Apply transmission
@@ -958,19 +1023,22 @@ void FStaticLightingSystem::EmitIndirectPhotonsWorkRange(
 				break;
 			}
 
+			checkSlow(FLinearColorUtils::AreFloatsValid(PathAlpha));
+
 			NumberOfPathVertices++;
 
-			// Note: SampleRay.Start is offset from the actual start position, but not enough to matter for the algorthims which make use of the photon's traveled distance.
-			const float RayLength = (SampleRay.Start - PathIntersection.IntersectionVertex.WorldPosition).Size3();
-			// Create a photon from this path vertex's information
-			const FPhoton NewPhoton(Output.NumPhotonsEmitted, PathIntersection.IntersectionVertex.WorldPosition, RayLength, -WorldPathDirection, PathIntersection.IntersectionVertex.WorldTangentZ, PathAlpha);
-			checkSlow(FLinearColorUtils::AreFloatsValid(PathAlpha));
 			// Only deposit photons inside the importance bounds
 			if (Input.ImportanceBounds.GetBox().IsInside(PathIntersection.IntersectionVertex.WorldPosition))
 			{
 				// Only deposit a photon if it is not a direct lighting path, and we still need to gather more indirect photons
-				if (NumberOfPathVertices > 1 && Output.NumPhotonsEmitted < WorkRange.NumIndirectPhotonsToEmit)
+				if (NumberOfPathVertices > 1 
+					&& Output.NumPhotonsEmitted < WorkRange.NumIndirectPhotonsToEmit)
 				{
+					// Note: SampleRay.Start is offset from the actual start position, but not enough to matter for the algorithms which make use of the photon's traveled distance.
+					const float RayLength = (SampleRay.Start - PathIntersection.IntersectionVertex.WorldPosition).Size3();
+					// Create a photon from this path vertex's information
+					const FPhoton NewPhoton(Output.NumPhotonsEmitted, PathIntersection.IntersectionVertex.WorldPosition, RayLength, -WorldPathDirection, PathIntersection.IntersectionVertex.WorldTangentZ, PathAlpha);
+
 					bool bShouldCreateIrradiancePhoton = false;
 					if (NumberOfPathVertices == 2)
 					{ 
@@ -1002,11 +1070,11 @@ void FStaticLightingSystem::EmitIndirectPhotonsWorkRange(
 						|| !PhotonMappingSettings.bUseFinalGathering && GeneralSettings.ViewSingleBounceNumber > 0))
 					{
 						FScopeLock DebugOutputLock(&DebugOutputSync);
-						if (DebugOutput.IndirectPhotons.Num() == 0)
+						if (StartupDebugOutput.IndirectPhotons.Num() == 0)
 						{
-							DebugOutput.IndirectPhotons.Empty(FMath::TruncToInt(NumIndirectPhotonsToEmit * IndirectPhotonEfficiency));
+							StartupDebugOutput.IndirectPhotons.Empty(FMath::TruncToInt(NumIndirectPhotonsToEmit * IndirectPhotonEfficiency));
 						}
-						DebugOutput.IndirectPhotons.Add(FDebugPhoton(NewPhoton.GetId(), NewPhoton.GetPosition(), SampleRay.Start - NewPhoton.GetPosition(), NewPhoton.GetSurfaceNormal()));
+						StartupDebugOutput.IndirectPhotons.Add(FDebugPhoton(NewPhoton.GetId(), NewPhoton.GetPosition(), SampleRay.Start - NewPhoton.GetPosition(), NewPhoton.GetSurfaceNormal()));
 					}
 #endif
 					// Create an irradiance photon for a fraction of the deposited photons
@@ -1020,21 +1088,26 @@ void FStaticLightingSystem::EmitIndirectPhotonsWorkRange(
 				}
 			}
 
+			// Photon bounce number = NumberOfPathVertices - 1
+			// But with final gathering, a first bounce photon is second bounce lighting
+			const int32 EffectiveBounceNumber = NumberOfPathVertices - 1 + 1;
+
 			// Stop tracing this photon due to bounce number
-			if (NumberOfPathVertices > GeneralSettings.NumIndirectLightingBounces
+			if (EffectiveBounceNumber >= GeneralSettings.NumIndirectLightingBounces
 				// Ray can hit translucent meshes if they have bCastShadowAsMasked, but we don't have diffuse for translucency, so just terminate
 				|| PathIntersection.Mesh->IsTranslucent(PathIntersection.ElementIndex))
 			{
 				break;
 			}
 
-			PathIntersection.IntersectionVertex.GenerateVertexTangents();
+			FStaticLightingVertex IntersectionVertexWithTangents(PathIntersection.IntersectionVertex);
+
 			FVector4 NewWorldPathDirection;
 			float BRDFDirectionPDF;
 
 			// Generate a new path direction from the BRDF
 			const FLinearColor BRDF = PathIntersection.Mesh->SampleBRDF(
-				PathIntersection.IntersectionVertex, 
+				IntersectionVertexWithTangents, 
 				PathIntersection.ElementIndex,
 				-WorldPathDirection, 
 				NewWorldPathDirection, 
@@ -1049,7 +1122,7 @@ void FStaticLightingSystem::EmitIndirectPhotonsWorkRange(
 				break;
 			}
 
-			const float CosFactor = -Dot3(WorldPathDirection, PathIntersection.IntersectionVertex.WorldTangentZ);
+			const float CosFactor = -Dot3(WorldPathDirection, IntersectionVertexWithTangents.WorldTangentZ);
 			checkSlow(CosFactor >= 0.0f && CosFactor <= 1.0f);
 			if (NumberOfPathVertices == 1)
 			{
@@ -1082,10 +1155,10 @@ void FStaticLightingSystem::EmitIndirectPhotonsWorkRange(
 
 			checkSlow(FLinearColorUtils::AreFloatsValid(PathAlpha));
 
-			const FVector4 RayStart = PathIntersection.IntersectionVertex.WorldPosition 
+			const FVector4 RayStart = IntersectionVertexWithTangents.WorldPosition 
 				+ NewWorldPathDirection * SceneConstants.VisibilityRayOffsetDistance 
-				+ PathIntersection.IntersectionVertex.WorldTangentZ * SceneConstants.VisibilityNormalOffsetDistance;
-			FVector4 RayEnd = PathIntersection.IntersectionVertex.WorldPosition + NewWorldPathDirection * MaxRayDistance;
+				+ IntersectionVertexWithTangents.WorldTangentZ * SceneConstants.VisibilityNormalOffsetDistance;
+			FVector4 RayEnd = IntersectionVertexWithTangents.WorldPosition + NewWorldPathDirection * MaxRayDistance;
 
 			// Clip photon path end points to the importance volume, so we do not bother tracing rays outside the area that photons can be deposited.
 			// If the photon path does not intersect the importance volume at all, it did not originate from inside the volume, so skip to the next photon.
@@ -1107,6 +1180,29 @@ void FStaticLightingSystem::EmitIndirectPhotonsWorkRange(
 			SampleRay.TraceFlags |= LIGHTRAY_FLIP_SIDEDNESS;
 			AggregateMesh->IntersectLightRay(SampleRay, true, true, false, CoherentRayCache, PathIntersection);
 			WorldPathDirection = NewWorldPathDirection;
+		}
+
+		// First bounce escaped photon
+		if (!PathIntersection.bIntersects 
+			&& NumberOfPathVertices == 1 
+			&& PhotonMappingSettings.bUsePhotonSegmentsForVolumeLighting)
+		{
+			if (RandomStream.GetFraction() < PhotonMappingSettings.GeneratePhotonSegmentChance)
+			{
+				// Apply transmission
+				PathAlpha *= PathIntersection.Transmission;
+
+				checkSlow(FLinearColorUtils::AreFloatsValid(PathAlpha));
+
+				FVector4 RayEnd = SampleRay.Start + WorldPathDirection * Input.ImportanceBounds.SphereRadius * 2;
+				FVector4 ClippedStart, ClippedEnd;
+				if (ClipLineWithBox(Input.ImportanceBounds.GetBox(), SampleRay.Start, RayEnd, ClippedStart, ClippedEnd))
+				{
+					// Create the description for an escaped photon
+					const FPhoton NewPhoton(Output.NumPhotonsEmitted, ClippedEnd, (ClippedEnd - SampleRay.Start).Size3(), -WorldPathDirection, FVector4(0, 0, 1), PathAlpha);
+					Output.FirstBounceEscapedPhotons.Add(NewPhoton);
+				}
+			}
 		}
 	}
 	// Indicate to the main thread that this output is ready for processing
@@ -1599,8 +1695,8 @@ bool FStaticLightingSystem::FindAnyNearbyPhoton(
 					&& PhotonMappingSettings.bVisualizePhotonGathers
 					&& &PhotonMap == &DirectPhotonMap)
 				{
-					DebugOutput.bDirectPhotonValid = true;
-					DebugOutput.GatheredDirectPhoton = FDebugPhoton(PhotonElement.Photon.GetId(), PhotonElement.Photon.GetPosition(), PhotonElement.Photon.GetIncidentDirection(), PhotonElement.Photon.GetSurfaceNormal());
+					StartupDebugOutput.bDirectPhotonValid = true;
+					StartupDebugOutput.GatheredDirectPhoton = FDebugPhoton(PhotonElement.Photon.GetId(), PhotonElement.Photon.GetPosition(), PhotonElement.Photon.GetIncidentDirection(), PhotonElement.Photon.GetSurfaceNormal());
 				}
 #endif
 				return true;
@@ -1641,7 +1737,7 @@ float FStaticLightingSystem::FindNearbyPhotonsIterative(
 	{
 		// Verify that only one search is debugged
 		// This will not always catch multiple searches due to re-entrance by multiple threads
-		checkSlow(DebugOutput.GatheredPhotonNodes.Num() == 0);
+		checkSlow(StartupDebugOutput.GatheredPhotonNodes.Num() == 0);
 	}
 #endif
 
@@ -1652,7 +1748,7 @@ float FStaticLightingSystem::FindNearbyPhotonsIterative(
 		if (bDebugSearchProcess)
 		{
 			// Only capture the nodes visited on the last iteration
-			DebugOutput.GatheredPhotonNodes.Empty();
+			StartupDebugOutput.GatheredPhotonNodes.Empty();
 		}
 #endif
 		FurthestPhotonDistanceSquared = SearchDistance * SearchDistance;
@@ -1679,7 +1775,7 @@ float FStaticLightingSystem::FindNearbyPhotonsIterative(
 #if ALLOW_LIGHTMAP_SAMPLE_DEBUGGING
 								if (bDebugSearchProcess)
 								{
-									DebugOutput.GatheredPhotonNodes.Add(FDebugOctreeNode(ChildContext.Bounds.Center, ChildContext.Bounds.Extent));
+									StartupDebugOutput.GatheredPhotonNodes.Add(FDebugOctreeNode(ChildContext.Bounds.Center, ChildContext.Bounds.Extent));
 								}
 #endif
 								OctreeIt.PushChild(ChildRef);
@@ -1745,7 +1841,7 @@ float FStaticLightingSystem::FindNearbyPhotonsIterative(
 #if ALLOW_LIGHTMAP_SAMPLE_DEBUGGING
 				if (bDebugSearchProcess)
 				{
-					DebugOutput.IrradiancePhotons.Add(FDebugPhoton(PhotonElement.Photon.GetId(), PhotonElement.Photon.GetPosition(), PhotonElement.Photon.GetIncidentDirection(), PhotonElement.Photon.GetSurfaceNormal()));
+					StartupDebugOutput.IrradiancePhotons.Add(FDebugPhoton(PhotonElement.Photon.GetId(), PhotonElement.Photon.GetPosition(), PhotonElement.Photon.GetIncidentDirection(), PhotonElement.Photon.GetSurfaceNormal()));
 				}
 #endif
 			}
@@ -1763,18 +1859,137 @@ float FStaticLightingSystem::FindNearbyPhotonsIterative(
 		{
 			for (int32 i = 0; i < FoundPhotons.Num(); i++)
 			{
-				DebugOutput.GatheredImportancePhotons.Add(FDebugPhoton(FoundPhotons[i].GetId(), FoundPhotons[i].GetPosition(), FoundPhotons[i].GetIncidentDirection(), FoundPhotons[i].GetSurfaceNormal()));
+				StartupDebugOutput.GatheredImportancePhotons.Add(FDebugPhoton(FoundPhotons[i].GetId(), FoundPhotons[i].GetPosition(), FoundPhotons[i].GetIncidentDirection(), FoundPhotons[i].GetSurfaceNormal()));
 			}
 		}
 		else
 		{
 			for (int32 i = 0; i < FoundPhotons.Num(); i++)
 			{
-				DebugOutput.GatheredPhotons.Add(FDebugPhoton(FoundPhotons[i].GetId(), FoundPhotons[i].GetPosition(), FoundPhotons[i].GetIncidentDirection(), FoundPhotons[i].GetSurfaceNormal()));
+				StartupDebugOutput.GatheredPhotons.Add(FDebugPhoton(FoundPhotons[i].GetId(), FoundPhotons[i].GetPosition(), FoundPhotons[i].GetIncidentDirection(), FoundPhotons[i].GetSurfaceNormal()));
 			}
 		}
 	}
 #endif
+	return FurthestPhotonDistanceSquared;
+}
+
+/** 
+ * Searches a volume segment map for photons.  Can be used at any point in space, not just on surfaces. 
+ */
+float FStaticLightingSystem::FindNearbyPhotonsInVolumeIterative(
+	const FPhotonSegmentOctree& PhotonSegmentMap, 
+	const FVector4& SearchPosition, 
+	int32 NumPhotonsToFind,
+	float StartPhotonSearchDistance, 
+	float MaxPhotonSearchDistance,
+	TArray<FPhotonSegmentElement>& FoundPhotonSegments,
+	bool bDebugThisLookup) const
+{
+	FPlatformAtomics::InterlockedIncrement(&Stats.NumPhotonGathers);
+	float SearchDistance = StartPhotonSearchDistance;
+	float FurthestPhotonDistanceSquared = 0.0f;
+
+	// Continue searching until we have found enough photons or have exceeded the max search distance
+	while (FoundPhotonSegments.Num() < NumPhotonsToFind && SearchDistance <= MaxPhotonSearchDistance)
+	{
+		FurthestPhotonDistanceSquared = SearchDistance * SearchDistance;
+		// Presize to avoid unnecessary allocations
+		// Empty last search iteration's results so we don't have to use AddUniqueItem
+		FoundPhotonSegments.Empty(FMath::Max(NumPhotonsToFind, FoundPhotonSegments.Num() + FoundPhotonSegments.GetSlack()));
+		const FBox SearchBox = FBox::BuildAABB(SearchPosition, FVector4(SearchDistance, SearchDistance, SearchDistance));
+		for (FPhotonSegmentOctree::TConstIterator<TInlineAllocator<600>> OctreeIt(PhotonSegmentMap); OctreeIt.HasPendingNodes(); OctreeIt.Advance())
+		{
+			const FPhotonSegmentOctree::FNode& CurrentNode = OctreeIt.GetCurrentNode();
+			const FOctreeNodeContext& CurrentContext = OctreeIt.GetCurrentContext();
+			{
+				// Push children onto the iterator stack if they intersect the query box
+				if (!CurrentNode.IsLeaf())
+				{
+					FOREACH_OCTREE_CHILD_NODE(ChildRef)
+					{
+						if (CurrentNode.HasChild(ChildRef))
+						{
+							const FOctreeNodeContext ChildContext = CurrentContext.GetChildContext(ChildRef);
+							if (ChildContext.Bounds.GetBox().Intersect(SearchBox))
+							{
+								OctreeIt.PushChild(ChildRef);
+							}
+						}
+					}
+				}
+			}
+
+			// Iterate over all photons in the nodes intersecting the query box
+			for (FPhotonSegmentOctree::ElementConstIt MeshIt(CurrentNode.GetConstElementIt()); MeshIt; ++MeshIt)
+			{
+				const FPhotonSegmentElement& PhotonSegmentElement = *MeshIt;
+				const float SegmentDistanceSquared = PhotonSegmentElement.ComputeSquaredDistanceToPoint(SearchPosition);
+
+				// Only searching for photons closer than the max distance
+				if (SegmentDistanceSquared < FurthestPhotonDistanceSquared)
+				{
+					bool bNewPhoton = true;
+
+					for (int32 i = 0; i < FoundPhotonSegments.Num(); i++)
+					{
+						if (FoundPhotonSegments[i].Photon == PhotonSegmentElement.Photon)
+						{
+							bNewPhoton = false;
+							break;
+						}
+					}
+
+					if (bNewPhoton)
+					{
+						if (FoundPhotonSegments.Num() < NumPhotonsToFind)
+						{
+							FoundPhotonSegments.Add(PhotonSegmentElement);
+						}
+						else
+						{
+							checkSlow(FoundPhotonSegments.Num() == NumPhotonsToFind);
+							float FurthestFoundPhotonDistSq = 0;
+							int32 FurthestFoundPhotonIndex = -1;
+
+							// Find the furthest photon
+							for (int32 PhotonIndex = 0; PhotonIndex < FoundPhotonSegments.Num(); PhotonIndex++)
+							{
+								const float OtherSegmentDistanceSquared = FoundPhotonSegments[PhotonIndex].ComputeSquaredDistanceToPoint(SearchPosition);
+
+								if (OtherSegmentDistanceSquared > FurthestFoundPhotonDistSq)
+								{
+									FurthestFoundPhotonDistSq = OtherSegmentDistanceSquared;
+									FurthestFoundPhotonIndex = PhotonIndex;
+								}
+							}
+							checkSlow(FurthestFoundPhotonIndex >= 0);
+							FurthestPhotonDistanceSquared = FurthestFoundPhotonDistSq;
+							if (SegmentDistanceSquared < FurthestFoundPhotonDistSq)
+							{
+								// Replace the furthest photon with the new photon since the new photon is closer
+								FoundPhotonSegments[FurthestFoundPhotonIndex] = PhotonSegmentElement;
+							}
+						}
+					}
+				}
+			}
+		}
+		// Double the search radius for each iteration
+		SearchDistance *= 2.0f;
+	}
+
+#if ALLOW_LIGHTMAP_SAMPLE_DEBUGGING
+	if (bDebugThisLookup && PhotonMappingSettings.bVisualizePhotonGathers)
+	{
+		for (int32 i = 0; i < FoundPhotonSegments.Num(); i++)
+		{
+			const FPhoton& Photon = *FoundPhotonSegments[i].Photon;
+			StartupDebugOutput.GatheredImportancePhotons.Add(FDebugPhoton(Photon.GetId(), Photon.GetPosition(), Photon.GetIncidentDirection(), Photon.GetSurfaceNormal()));
+		}
+	}
+#endif
+
 	return FurthestPhotonDistanceSquared;
 }
 
@@ -1812,7 +2027,7 @@ float FStaticLightingSystem::FindNearbyPhotonsSorted(
 	{
 		// Verify that only one search is debugged
 		// This will not always catch multiple searches due to re-entrance by multiple threads
-		checkSlow(DebugOutput.GatheredPhotonNodes.Num() == 0);
+		checkSlow(StartupDebugOutput.GatheredPhotonNodes.Num() == 0);
 	}
 #endif
 
@@ -1885,7 +2100,7 @@ float FStaticLightingSystem::FindNearbyPhotonsSorted(
 #if ALLOW_LIGHTMAP_SAMPLE_DEBUGGING
 				if (bDebugSearchProcess)
 				{
-					DebugOutput.IrradiancePhotons.Add(FDebugPhoton(PhotonElement.Photon.GetId(), PhotonElement.Photon.GetPosition(), PhotonElement.Photon.GetIncidentDirection(), PhotonElement.Photon.GetSurfaceNormal()));
+					StartupDebugOutput.IrradiancePhotons.Add(FDebugPhoton(PhotonElement.Photon.GetId(), PhotonElement.Photon.GetPosition(), PhotonElement.Photon.GetIncidentDirection(), PhotonElement.Photon.GetSurfaceNormal()));
 				}
 #endif
 			}
@@ -1914,7 +2129,7 @@ float FStaticLightingSystem::FindNearbyPhotonsSorted(
 #if ALLOW_LIGHTMAP_SAMPLE_DEBUGGING
 						if (bDebugSearchProcess)
 						{
-							DebugOutput.GatheredPhotonNodes.Add(FDebugOctreeNode(ChildContext.Bounds.Center, ChildContext.Bounds.Extent));
+							StartupDebugOutput.GatheredPhotonNodes.Add(FDebugOctreeNode(ChildContext.Bounds.Center, ChildContext.Bounds.Extent));
 						}
 #endif
 						bAllNodesZeroDistance = bAllNodesZeroDistance && ClosestChildPointDistanceSquared < DELTA;
@@ -1952,14 +2167,14 @@ float FStaticLightingSystem::FindNearbyPhotonsSorted(
 		{
 			for (int32 i = 0; i < FoundPhotons.Num(); i++)
 			{
-				DebugOutput.GatheredImportancePhotons.Add(FDebugPhoton(FoundPhotons[i].GetId(), FoundPhotons[i].GetPosition(), FoundPhotons[i].GetIncidentDirection(), FoundPhotons[i].GetSurfaceNormal()));
+				StartupDebugOutput.GatheredImportancePhotons.Add(FDebugPhoton(FoundPhotons[i].GetId(), FoundPhotons[i].GetPosition(), FoundPhotons[i].GetIncidentDirection(), FoundPhotons[i].GetSurfaceNormal()));
 			}
 		}
 		else
 		{
 			for (int32 i = 0; i < FoundPhotons.Num(); i++)
 			{
-				DebugOutput.GatheredPhotons.Add(FDebugPhoton(FoundPhotons[i].GetId(), FoundPhotons[i].GetPosition(), FoundPhotons[i].GetIncidentDirection(), FoundPhotons[i].GetSurfaceNormal()));
+				StartupDebugOutput.GatheredPhotons.Add(FDebugPhoton(FoundPhotons[i].GetId(), FoundPhotons[i].GetPosition(), FoundPhotons[i].GetIncidentDirection(), FoundPhotons[i].GetSurfaceNormal()));
 			}
 		}
 	}
@@ -1988,7 +2203,7 @@ private:
 
 /** Finds the nearest irradiance photon, if one exists. */
 FIrradiancePhoton* FStaticLightingSystem::FindNearestIrradiancePhoton(
-	const FStaticLightingVertex& Vertex, 
+	const FMinimalStaticLightingVertex& Vertex, 
 	FStaticLightingMappingContext& MappingContext, 
 	TArray<FIrradiancePhoton*>& TempIrradiancePhotons,
 	bool bVisibleOnly, 
@@ -2096,7 +2311,7 @@ FIrradiancePhoton* FStaticLightingSystem::FindNearestIrradiancePhoton(
 				{
 					DebugRay.End = Intersection.IntersectionVertex.WorldPosition;
 				}
-				DebugOutput.ShadowRays.Add(DebugRay);
+				StartupDebugOutput.ShadowRays.Add(DebugRay);
 			}
 #endif
 			if (!Intersection.bIntersects)
@@ -2111,7 +2326,7 @@ FIrradiancePhoton* FStaticLightingSystem::FindNearestIrradiancePhoton(
 #if ALLOW_LIGHTMAP_SAMPLE_DEBUGGING
 	if (bDebugThisLookup && ClosestPhoton != NULL && PhotonMappingSettings.bVisualizePhotonGathers)
 	{
-		DebugOutput.GatheredPhotons.Add(FDebugPhoton(0, ClosestPhoton->GetPosition(), ClosestPhoton->GetSurfaceNormal(), ClosestPhoton->GetSurfaceNormal()));
+		StartupDebugOutput.GatheredPhotons.Add(FDebugPhoton(0, ClosestPhoton->GetPosition(), ClosestPhoton->GetSurfaceNormal(), ClosestPhoton->GetSurfaceNormal()));
 	}
 #endif
 
@@ -2237,7 +2452,7 @@ FLinearColor FStaticLightingSystem::CalculatePhotonExitantRadiance(
 	int32 NumPhotonsEmitted, 
 	float SearchDistance,
 	const FStaticLightingMesh* Mesh,
-	const FStaticLightingVertex& Vertex,
+	const FMinimalStaticLightingVertex& Vertex,
 	int32 ElementIndex,
 	const FVector4& OutgoingDirection,
 	bool bDebugThisDensityEstimation) const

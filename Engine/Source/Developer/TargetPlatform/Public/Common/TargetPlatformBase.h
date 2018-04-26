@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -43,15 +43,20 @@ public:
 		return true;
 	}
 
+	virtual bool CanSupportXGEShaderCompile() const override
+	{
+		return true;
+	}
+
 	virtual bool IsSdkInstalled(bool bProjectHasCode, FString& OutDocumentationPath) const override
 	{
 		return true;
 	}
 
-	virtual int32 CheckRequirements(const FString& ProjectPath, bool bProjectHasCode, FString& OutDocumentationPath) const override
+	virtual int32 CheckRequirements(const FString& ProjectPath, bool bProjectHasCode, FString& OutTutorialPath, FString& OutDocumentationPath, FText& CustomizedLogMessage) const override
 	{
 		int32 bReadyToBuild = ETargetPlatformReadyStatus::Ready; // @todo How do we check that the iOS SDK is installed when building from Windows? Is that even possible?
-		if (!IsSdkInstalled(bProjectHasCode, OutDocumentationPath))
+		if (!IsSdkInstalled(bProjectHasCode, OutTutorialPath))
 		{
 			bReadyToBuild |= ETargetPlatformReadyStatus::SDKNotFound;
 		}

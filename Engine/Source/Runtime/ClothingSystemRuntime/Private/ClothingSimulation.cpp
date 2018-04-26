@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ClothingSimulation.h"
 
@@ -26,8 +26,8 @@ void FClothingSimulationBase::SkinPhysicsMesh(UClothingAsset* InAsset, const FCl
 
 	const uint32 NumVerts = InMesh.Vertices.Num();
 
-	OutPositions.Empty(NumVerts);
-	OutNormals.Empty(NumVerts);
+	OutPositions.Reset(NumVerts);
+	OutNormals.Reset(NumVerts);
 	OutPositions.AddZeroed(NumVerts);
 	OutNormals.AddZeroed(NumVerts);
 
@@ -41,19 +41,6 @@ void FClothingSimulationBase::SkinPhysicsMesh(UClothingAsset* InAsset, const FCl
 		const uint16* RESTRICT BoneIndices = InMesh.BoneData[VertIndex].BoneIndices;
 		const float* RESTRICT BoneWeights = InMesh.BoneData[VertIndex].BoneWeights;
 
-		int32 ActualNumInfluences = 0;
-
-		// MaxInflunces is the max of any particle, need to calculate the number for us
-		// #TODOCLOTH: Move this to precalc?
-		for(int32 InfluenceIndex = 0; InfluenceIndex < MaxInfluences; ++InfluenceIndex)
-		{
-			if(BoneWeights[InfluenceIndex] == 0.0f || BoneIndices[InfluenceIndex] == INDEX_NONE)
-			{
-				break;
-			}
-			++ActualNumInfluences;
-		}
-
 		// WARNING - HORRIBLE UNROLLED LOOP + JUMP TABLE BELOW
 		// done this way because this is a pretty tight and perf critical loop. essentially
 		// rather than checking each influence we can just jump into this switch and fall through
@@ -62,7 +49,7 @@ void FClothingSimulationBase::SkinPhysicsMesh(UClothingAsset* InAsset, const FCl
 		const FVector& RefNormal = InMesh.Normals[VertIndex];
 		FVector& OutPosition = OutPositions[VertIndex];
 		FVector& OutNormal = OutNormals[VertIndex];
-		switch(ActualNumInfluences)
+		switch(InMesh.BoneData[VertIndex].NumInfluences)
 		{
 			default: break;
 			case 8:
@@ -137,51 +124,65 @@ void FClothingSimulationBase::SkinPhysicsMesh(UClothingAsset* InAsset, const FCl
 	}
 }
 
-void FClothingSimulationBase::FillContext(USkeletalMeshComponent* InComponent, IClothingSimulationContext* InOutContext)
+void FClothingSimulationBase::FillContext(USkeletalMeshComponent* InComponent, float InDeltaTime, IClothingSimulationContext* InOutContext)
 {
 	FClothingSimulationContextBase* BaseContext = static_cast<FClothingSimulationContextBase*>(InOutContext);
-	BaseContext->ComponentToWorld = InComponent->ComponentToWorld;
+	BaseContext->ComponentToWorld = InComponent->GetComponentTransform();
 	BaseContext->PredictedLod = InComponent->PredictedLODLevel;
 	InComponent->GetWindForCloth_GameThread(BaseContext->WindVelocity, BaseContext->WindAdaption);
 	USkeletalMesh* SkelMesh = InComponent->SkeletalMesh;
 
 	if(USkinnedMeshComponent* MasterComponent = InComponent->MasterPoseComponent.Get())
 	{
-		const int32 NumBones = InComponent->MasterBoneMap.Num();
+		int32 NumBones = InComponent->MasterBoneMap.Num();
 
-		BaseContext->BoneTransforms.Empty(NumBones);
-		BaseContext->BoneTransforms.AddDefaulted(NumBones);
-
-		for(int32 BoneIndex = 0; BoneIndex < NumBones; ++BoneIndex)
+		if(NumBones == 0)
 		{
-			bool bFoundMaster = false;
-			if(InComponent->MasterBoneMap.IsValidIndex(BoneIndex))
+			if(InComponent->SkeletalMesh)
 			{
-				const int32 MasterIndex = InComponent->MasterBoneMap[BoneIndex];
+				// This case indicates an invalid master pose component (e.g. no skeletal mesh)
+				NumBones = InComponent->SkeletalMesh->RefSkeleton.GetNum();
 
-				if(MasterIndex != INDEX_NONE)
-				{
-					BaseContext->BoneTransforms[BoneIndex] = MasterComponent->GetComponentSpaceTransforms()[MasterIndex];
-					bFoundMaster = true;
-				}
+				BaseContext->BoneTransforms.Empty(NumBones);
+				BaseContext->BoneTransforms.AddDefaulted(NumBones);
 			}
-
-			if(!bFoundMaster)
-			{
-				if(SkelMesh)
-				{
-					const int32 ParentIndex = SkelMesh->RefSkeleton.GetParentIndex(BoneIndex);
-
-					if(ParentIndex != INDEX_NONE)
-					{
-						BaseContext->BoneTransforms[BoneIndex] = BaseContext->BoneTransforms[ParentIndex] * SkelMesh->RefSkeleton.GetRefBonePose()[BoneIndex];
-					}
-					else
-					{
-						BaseContext->BoneTransforms[BoneIndex] = SkelMesh->RefSkeleton.GetRefBonePose()[BoneIndex];
-					}
-				}
-			}
+		}
+		else
+		{
+		    BaseContext->BoneTransforms.Reset(NumBones);
+		    BaseContext->BoneTransforms.AddDefaulted(NumBones);
+    
+		    for(int32 BoneIndex = 0; BoneIndex < NumBones; ++BoneIndex)
+		    {
+			    bool bFoundMaster = false;
+			    if(InComponent->MasterBoneMap.IsValidIndex(BoneIndex))
+			    {
+				    const int32 MasterIndex = InComponent->MasterBoneMap[BoneIndex];
+    
+				    if(MasterIndex != INDEX_NONE)
+				    {
+					    BaseContext->BoneTransforms[BoneIndex] = MasterComponent->GetComponentSpaceTransforms()[MasterIndex];
+					    bFoundMaster = true;
+				    }
+			    }
+    
+			    if(!bFoundMaster)
+			    {
+				    if(SkelMesh)
+				    {
+					    const int32 ParentIndex = SkelMesh->RefSkeleton.GetParentIndex(BoneIndex);
+    
+					    if(ParentIndex != INDEX_NONE)
+					    {
+						    BaseContext->BoneTransforms[BoneIndex] = BaseContext->BoneTransforms[ParentIndex] * SkelMesh->RefSkeleton.GetRefBonePose()[BoneIndex];
+					    }
+					    else
+					    {
+						    BaseContext->BoneTransforms[BoneIndex] = SkelMesh->RefSkeleton.GetRefBonePose()[BoneIndex];
+					    }
+				    }
+			    }
+		    }
 		}
 	}
 	else
@@ -192,9 +193,18 @@ void FClothingSimulationBase::FillContext(USkeletalMeshComponent* InComponent, I
 	UWorld* ComponentWorld = InComponent->GetWorld();
 	check(ComponentWorld);
 
-	BaseContext->DeltaSeconds = FMath::Min(ComponentWorld->GetDeltaSeconds(), MaxPhysicsDelta);
+	BaseContext->DeltaSeconds = FMath::Min(InDeltaTime, MaxPhysicsDelta);
 
 	BaseContext->TeleportMode = InComponent->ClothTeleportMode;
 
 	BaseContext->MaxDistanceScale = InComponent->GetClothMaxDistanceScale();
+
+	float GravityStrength = 981.0f;
+
+	if(UWorld* CurrWorld = InComponent->GetWorld())
+	{
+		GravityStrength = CurrWorld->GetGravityZ();
+	}
+
+	BaseContext->WorldGravity = FVector(0.0f, 0.0f, GravityStrength);
 }

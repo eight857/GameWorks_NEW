@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 /*=============================================================================================
@@ -14,33 +14,34 @@
 template <typename FuncType>
 class TFunction;
 
+#if UE_BUILD_SHIPPING
+#define UE_DEBUG_BREAK() ((void)0)
+#else
+#define UE_DEBUG_BREAK() (FAndroidMisc::DebugBreakInternal())
+#endif
+
 /**
  * Android implementation of the misc OS functions
  */
 struct CORE_API FAndroidMisc : public FGenericPlatformMisc
 {
-	static class GenericApplication* CreateApplication();
-
-	static void RequestMinimize();
 	static void RequestExit( bool Force );
 	static void LowLevelOutputDebugString(const TCHAR *Message);
 	static void LocalPrint(const TCHAR *Message);
 	static void PlatformPreInit();
 	static void PlatformInit();
-	static void PlatformPostInit();
+	static void PlatformTearDown();
 	static void PlatformHandleSplashScreen(bool ShowSplashScreen);
 	static void GetEnvironmentVariable(const TCHAR* VariableName, TCHAR* Result, int32 ResultLength);
-	static void* GetHardwareWindow();
-	static void SetHardwareWindow(void* InWindow);
 	static const TCHAR* GetSystemErrorMessage(TCHAR* OutBuffer, int32 BufferCount, int32 Error);
-	static void ClipboardCopy(const TCHAR* Str);
-	static void ClipboardPaste(class FString& Dest);
 	static EAppReturnType::Type MessageBoxExt( EAppMsgType::Type MsgType, const TCHAR* Text, const TCHAR* Caption );
-	static bool ControlScreensaver(EScreenSaverAction Action);
 	static bool AllowRenderThread();
 	static bool HasPlatformFeature(const TCHAR* FeatureName);
 	static bool ShouldDisablePluginAtRuntime(const FString& PluginName);
+	static void SetThreadName(const char* name);
 	static bool SupportsES30();
+
+public:
 
 	static bool AllowThreadHeartBeat()
 	{
@@ -60,45 +61,47 @@ struct CORE_API FAndroidMisc : public FGenericPlatformMisc
 
 	struct FCPUState
 	{
+		const static int32			MaxSupportedCores = 16; //Core count 16 is maximum for now
 		int32						CoreCount;
 		int32						ActivatedCoreCount;
-		ANSICHAR					Name[5];
-		FAndroidMisc::FCPUStatTime	CurrentUsage[8]; //Core count 8 is maximum for now
-		FAndroidMisc::FCPUStatTime	PreviousUsage[8];
-		int32						Status[8];
-		double						Utilization[8];
+		ANSICHAR					Name[6];
+		FAndroidMisc::FCPUStatTime	CurrentUsage[MaxSupportedCores]; 
+		FAndroidMisc::FCPUStatTime	PreviousUsage[MaxSupportedCores];
+		int32						Status[MaxSupportedCores];
+		double						Utilization[MaxSupportedCores];
 		double						AverageUtilization;
 		
 	};
 
 	static FCPUState& GetCPUState();
 	static int32 NumberOfCores();
-	static void LoadPreInitModules();
-	static void BeforeRenderThreadStarts();
 	static bool SupportsLocalCaching();
 	static void SetCrashHandler(void (* CrashHandler)(const FGenericCrashContext& Context));
 	// NOTE: THIS FUNCTION IS DEFINED IN ANDROIDOPENGL.CPP
 	static void GetValidTargetPlatforms(class TArray<class FString>& TargetPlatformNames);
 	static bool GetUseVirtualJoysticks();
-	static uint32 GetCharKeyMap(uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings);
-	static uint32 GetKeyMap( uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings );
+	static bool SupportsTouchInput();
 	static const TCHAR* GetDefaultDeviceProfileName() { return TEXT("Android_Default"); }
 	static bool GetVolumeButtonsHandledBySystem();
 	static void SetVolumeButtonsHandledBySystem(bool enabled);
-	static void ResetGamepadAssignments();
-	static void ResetGamepadAssignmentToController(int32 ControllerId);
-	static bool IsControllerAssignedToGamepad(int32 ControllerId);
 	// Returns current volume, 0-15
 	static int GetVolumeState(double* OutTimeOfChangeInSec = nullptr);
 	static const TCHAR* GamePersistentDownloadDir();
-
+	static FString GetDeviceId();
+	static FString GetLoginId();
+	static FString GetUniqueAdvertisingId();
+	static FString GetCPUVendor();
+	static FString GetCPUBrand();
+	static void GetOSVersions(FString& out_OSVersionLabel, FString& out_OSSubVersionLabel);
+	static bool GetDiskTotalAndFreeSpace(const FString& InPath, uint64& TotalNumberOfBytes, uint64& NumberOfFreeBytes);
+	
 	enum EBatteryState
 	{
+		BATTERY_STATE_UNKNOWN = 1,
 		BATTERY_STATE_CHARGING,
 		BATTERY_STATE_DISCHARGING,
-		BATTERY_STATE_FULL,
 		BATTERY_STATE_NOT_CHARGING,
-		BATTERY_STATE_UNKNOWN
+		BATTERY_STATE_FULL
 	};
 	struct FBatteryState
 	{
@@ -108,8 +111,13 @@ struct CORE_API FAndroidMisc : public FGenericPlatformMisc
 	};
 
 	static FBatteryState GetBatteryState();
+	static int GetBatteryLevel();
+	static bool IsRunningOnBattery();
 	static bool AreHeadPhonesPluggedIn();
 	static bool HasActiveWiFiConnection();
+
+	static void RegisterForRemoteNotifications();
+	static void UnregisterForRemoteNotifications();
 
 	/** @return Memory representing a true type or open type font provided by the platform as a default font for unreal to consume; empty array if the default font failed to load. */
 	static TArray<uint8> GetSystemFontBytes();
@@ -140,25 +148,33 @@ struct CORE_API FAndroidMisc : public FGenericPlatformMisc
 #if !UE_BUILD_SHIPPING
 	static bool IsDebuggerPresent();
 
-	FORCEINLINE static void DebugBreak()
+	FORCEINLINE static void DebugBreakInternal()
 	{
 		if( IsDebuggerPresent() )
 		{
 			__builtin_trap();
 		}
 	}
+
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreak is deprecated. Use the UE_DEBUG_BREAK() macro instead.")
+	FORCEINLINE static void DebugBreak()
+	{
+		DebugBreakInternal();
+	}
 #endif
 
 	/** Break into debugger. Returning false allows this function to be used in conditionals. */
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreakReturningFalse is deprecated. Use the (UE_DEBUG_BREAK(), false) expression instead.")
 	FORCEINLINE static bool DebugBreakReturningFalse()
 	{
 #if !UE_BUILD_SHIPPING
-		DebugBreak();
+		UE_DEBUG_BREAK();
 #endif
 		return false;
 	}
 
 	/** Prompts for remote debugging if debugger is not attached. Regardless of result, breaks into debugger afterwards. Returns false for use in conditionals. */
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreakAndPromptForRemoteReturningFalse() is deprecated.")
 	static FORCEINLINE bool DebugBreakAndPromptForRemoteReturningFalse(bool bIsEnsure = false)
 	{
 #if !UE_BUILD_SHIPPING
@@ -167,7 +183,7 @@ struct CORE_API FAndroidMisc : public FGenericPlatformMisc
 			PromptForRemoteDebugging(bIsEnsure);
 		}
 
-		DebugBreak();
+		UE_DEBUG_BREAK();
 #endif
 
 		return false;
@@ -179,7 +195,22 @@ struct CORE_API FAndroidMisc : public FGenericPlatformMisc
 	}
 
 
-	static void* NativeWindow ; //raw platform Main window
+#if STATS
+	/**
+	* Platform specific function for adding a named event that can be viewed in PIX
+	*/
+	static void BeginNamedEvent(const struct FColor& Color, const TCHAR* Text);
+	static void BeginNamedEvent(const struct FColor& Color, const ANSICHAR* Text);
+
+	/**
+	* Platform specific function for closing a named event that can be viewed in PIX
+	*/
+	static void EndNamedEvent();
+#endif
+
+#if STATS
+	static int32 TraceMarkerFileDescriptor;
+#endif
 	
 	// run time compatibility information
 	static FString AndroidVersion; // version of android we are running eg "4.0.4"
@@ -191,6 +222,15 @@ struct CORE_API FAndroidMisc : public FGenericPlatformMisc
 	static int32 AndroidBuildVersion;
 
 	static bool VolumeButtonsHandledBySystem;
+
+	enum class ECoreFrequencyProperty
+	{
+		CurrentFrequency,
+		MaxFrequency,
+		MinFrequency,
+	};
+
+	static uint32 GetCoreFrequency(int32 CoreIndex, ECoreFrequencyProperty CoreFrequencyProperty);
 };
 
 typedef FAndroidMisc FPlatformMisc;

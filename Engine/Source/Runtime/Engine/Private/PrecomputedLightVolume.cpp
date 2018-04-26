@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PrecomputedLightVolume.cpp: Implementation of a precomputed light volume.
@@ -12,6 +12,8 @@
 #include "UnrealEngine.h"
 #include "Engine/MapBuildDataRegistry.h"
 #include "Interfaces/ITargetPlatform.h"
+
+DECLARE_MEMORY_STAT(TEXT("Precomputed Light Volume"),STAT_PrecomputedLightVolumeBuildData,STATGROUP_MapBuildData);
 
 template<> TVolumeLightingSample<2>::TVolumeLightingSample(const TVolumeLightingSample<2>& Other)
 {
@@ -108,14 +110,14 @@ FPrecomputedLightVolumeData::~FPrecomputedLightVolumeData()
 	if (bInitialized)
 	{
 		const SIZE_T VolumeBytes = GetAllocatedBytes();
-		DEC_DWORD_STAT_BY(STAT_PrecomputedLightVolumeMemory, VolumeBytes);
+		DEC_DWORD_STAT_BY(STAT_PrecomputedLightVolumeBuildData, VolumeBytes);
 	}
 }
 
 static void LoadVolumeLightSamples(FArchive& Ar, int32 ArchiveNumSHSamples, TArray<FVolumeLightingSample>& Samples)
 {
 	// If it's the same number as what is currently compiled
-	if (ArchiveNumSHSamples == NUM_INDIRECT_LIGHTING_SH_COEFFICIENTS)
+	if (ArchiveNumSHSamples == NUM_INDIRECT_LIGHTING_SH_COEFFICIENTS) //-V517
 	{
 		Ar << Samples;		
 	}
@@ -153,8 +155,9 @@ FArchive& operator<<(FArchive& Ar,FPrecomputedLightVolumeData& Volume)
 	}
 	else if (Ar.IsLoading())
 	{
-		Ar << Volume.bInitialized;
-		if (Volume.bInitialized)
+		bool bVolumeInitialized = false;
+		Ar << bVolumeInitialized; // Volume.bInitilized will be set in Volume.Initialize() call
+		if (bVolumeInitialized)
 		{
 			FBox Bounds;
 			Ar << Bounds;
@@ -322,7 +325,7 @@ void FPrecomputedLightVolumeData::FinalizeSamples()
 	HighQualityLightmapOctree.ShrinkElements();
 	LowQualityLightmapOctree.ShrinkElements();
 	const SIZE_T VolumeBytes = GetAllocatedBytes();
-	INC_DWORD_STAT_BY(STAT_PrecomputedLightVolumeMemory, VolumeBytes);
+	INC_DWORD_STAT_BY(STAT_PrecomputedLightVolumeBuildData, VolumeBytes);
 }
 
 /** Invalidates anything produced by the last lighting build. */
@@ -332,7 +335,7 @@ void FPrecomputedLightVolumeData::InvalidateLightingCache()
 	{
 		// Release existing samples
 		const SIZE_T VolumeBytes = GetAllocatedBytes();
-		DEC_DWORD_STAT_BY(STAT_PrecomputedLightVolumeMemory, VolumeBytes);
+		DEC_DWORD_STAT_BY(STAT_PrecomputedLightVolumeBuildData, VolumeBytes);
 		HighQualityLightmapOctree.Destroy();
 		LowQualityLightmapOctree.Destroy();
 		bInitialized = false;
@@ -396,7 +399,7 @@ void FPrecomputedLightVolume::AddToScene(FSceneInterface* Scene, UMapBuildDataRe
 
 	if (Registry)
 	{
-		NewData = Registry->GetLevelBuildData(LevelBuildDataId);
+		NewData = Registry->GetLevelPrecomputedLightVolumeBuildData(LevelBuildDataId);
 	}
 
 	if (NewData && NewData->bInitialized && Scene)

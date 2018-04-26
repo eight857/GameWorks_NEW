@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,6 +8,7 @@
 class FMenuBuilder;
 class ISequencer;
 class ISequencerEditToolDragOperation;
+class SSequencerTrackArea;
 
 enum class ESequencerHotspot
 {
@@ -15,15 +16,28 @@ enum class ESequencerHotspot
 	Section,
 	SectionResize_L,
 	SectionResize_R,
+	EaseInHandle,
+	EaseOutHandle,
+	EasingArea,
 };
 
 
 /** A sequencer hotspot is used to identify specific areas on the sequencer track area */ 
 struct ISequencerHotspot
 {
+	ISequencerHotspot() : bIsLocked(false) {}
+
 	virtual ~ISequencerHotspot() { }
 	virtual ESequencerHotspot GetType() const = 0;
-	virtual TSharedPtr<ISequencerEditToolDragOperation> InitiateDrag(ISequencer&) = 0;
-	virtual void PopulateContextMenu(FMenuBuilder& MenuBuilder, ISequencer& Sequencer, float MouseDownTime){}
+	virtual void UpdateOnHover(SSequencerTrackArea& InTrackArea, ISequencer& InSequencer) const = 0;
+	virtual TOptional<float> GetTime() const { return TOptional<float>(); }
+	virtual TOptional<float> GetOffsetTime() const { return TOptional<float>(); }
+	virtual TSharedPtr<ISequencerEditToolDragOperation> InitiateDrag(ISequencer&) { return nullptr; }
+	virtual bool PopulateContextMenu(FMenuBuilder& MenuBuilder, ISequencer& Sequencer, float MouseDownTime){ return false; }
 	virtual FCursorReply GetCursor() const { return FCursorReply::Unhandled(); }
+
+public:
+
+	/** Whether this hotspot should be considered locked (ie, cannot be changed) */
+	bool bIsLocked;
 };

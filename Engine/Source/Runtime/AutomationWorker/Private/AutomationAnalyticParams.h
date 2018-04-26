@@ -1,8 +1,7 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
 
 namespace EAutomationEventName
 {
@@ -14,6 +13,7 @@ namespace EAutomationEventName
 		NUM_ENGINE_EVENT_NAMES
 	};
 }
+
 
 namespace EAutomationAnalyticParam
 {
@@ -45,4 +45,3 @@ namespace EAutomationAnalyticParam
 		NUM_ENGINE_PARAMS
 	};
 }
-

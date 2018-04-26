@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tests/TestTitleFileInterface.h"
 #include "OnlineSubsystemUtils.h"
@@ -40,7 +40,7 @@ void FTestTitleFileInterface::FinishTest()
 	delete this;
 }
 
-void FTestTitleFileInterface::OnEnumerateFilesComplete(bool bSuccess)
+void FTestTitleFileInterface::OnEnumerateFilesComplete(bool bSuccess, const FString& ErrorStr)
 {
 	TArray<FCloudFileHeader> Files;
 	OnlineTitleFile->GetFileList(Files);

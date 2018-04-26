@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -56,7 +56,7 @@ public:
 	{
 		FTrackSizeInfo(const FGeometry& TrackGeometry, EOrientation InOrientation, float InMinThumbSize, float ThumbSizeAsFractionOfTrack, float ThumbOffsetAsFractionOfTrack)
 		{
-			BiasedTrackSize = ((InOrientation == Orient_Horizontal) ? TrackGeometry.Size.X : TrackGeometry.Size.Y) - InMinThumbSize;
+			BiasedTrackSize = ((InOrientation == Orient_Horizontal) ? TrackGeometry.GetLocalSize().X : TrackGeometry.GetLocalSize().Y) - InMinThumbSize;
 			const float AccurateThumbSize = ThumbSizeAsFractionOfTrack * (BiasedTrackSize);
 			ThumbStart = BiasedTrackSize * ThumbOffsetAsFractionOfTrack;
 			ThumbSize = InMinThumbSize + AccurateThumbSize;

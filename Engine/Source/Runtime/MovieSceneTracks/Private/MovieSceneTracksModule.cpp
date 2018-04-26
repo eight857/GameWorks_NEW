@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
@@ -18,15 +18,15 @@ class FMovieSceneTracksModule
 		
 		MovieSceneModule.RegisterEvaluationGroupParameters(
 			IMovieSceneTracksModule::GetEvaluationGroupName(EBuiltInEvaluationGroup::PreEvaluation),
-			FMovieSceneEvaluationGroupParameters(0x8FFF, true));
+			FMovieSceneEvaluationGroupParameters(0x8FFF));
 
 		MovieSceneModule.RegisterEvaluationGroupParameters(
 			IMovieSceneTracksModule::GetEvaluationGroupName(EBuiltInEvaluationGroup::SpawnObjects),
-			FMovieSceneEvaluationGroupParameters(0x0FFF, true));
+			FMovieSceneEvaluationGroupParameters(0x0FFF));
 
 		MovieSceneModule.RegisterEvaluationGroupParameters(
 			IMovieSceneTracksModule::GetEvaluationGroupName(EBuiltInEvaluationGroup::PostEvaluation),
-			FMovieSceneEvaluationGroupParameters(0x0008, false));
+			FMovieSceneEvaluationGroupParameters(0x0008));
 	}
 };
 

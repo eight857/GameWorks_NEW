@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -54,6 +54,12 @@ public:
 	int32 NumIndirectLightingBounces;
 
 	/** 
+	 * Number of skylight and emissive bounces to simulate.  
+	 * Lightmass uses a non-distributable radiosity method for skylight bounces whose cost is proportional to the number of bounces.
+	 */
+	int32 NumSkyLightingBounces;
+
+	/** 
 	 * Whether to use Embree for ray tracing or not.
 	 */
 	bool bUseEmbree;
@@ -62,6 +68,15 @@ public:
 	 * Whether to check for Embree coherency.
 	 */
 	bool bVerifyEmbree;
+
+	/** Whether to build Embree data structures for packet tracing. WIP feature - no lightmass algorithms emit packet tracing requests yet. */
+	bool bUseEmbreePacketTracing;
+
+	/** 
+	 * Direct lighting, skylight radiosity and irradiance photons are cached on mapping surfaces to accelerate final gathering.
+	 * This controls the downsample factor for that cache, relative to the mapping's lightmap resolution.
+	 */
+	int32 MappingSurfaceCacheDownsampleFactor;
 
 	/** 
 	 * Smoothness factor to apply to indirect lighting.  This is useful in some lighting conditions when Lightmass cannot resolve accurate indirect lighting.
@@ -310,6 +325,51 @@ public:
 	int32 MaxSurfaceLightSamples;
 };
 
+/** Settings for the volumetric lightmap. */
+class FVolumetricLightmapSettings
+{
+public:
+
+	/** Size of the top level grid covering the volumetric lightmap, in bricks. */
+	FIntVector TopLevelGridSize;
+
+	/** World space size of the volumetric lightmap. */
+	FVector VolumeMin;
+	FVector VolumeSize;
+
+	/** 
+	 * Size of a brick of unique lighting data.  Must be a power of 2.  
+	 * Smaller values provide more granularity, but waste more memory due to padding.
+	 */
+	int32 BrickSize;
+
+	/** Maximum number of times to subdivide bricks around geometry. */
+	int32 MaxRefinementLevels;
+
+	/** 
+	 * Fraction of a cell's size to expand it by when voxelizing.  
+	 * Larger values add more resolution around geometry, improving the lighting gradients but costing more memory.
+	 */
+	float VoxelizationCellExpansionForSurfaceGeometry;
+	float VoxelizationCellExpansionForVolumeGeometry;
+	float VoxelizationCellExpansionForLights;
+
+	/** Bricks with RMSE below this value are culled. */
+	float MinBrickError;
+
+	/** Triangles with fewer lightmap texels than this don't cause refinement. */
+	float SurfaceLightmapMinTexelsPerVoxelAxis;
+
+	/** Whether to cull bricks entirely below landscape.  This can be an invalid optimization if the landscape has holes and caves that pass under landscape. */
+	bool bCullBricksBelowLandscape;
+
+	/** Subdivide bricks when a static point or spot light affects some part of the brick with brightness higher than this. */
+	float LightBrightnessSubdivideThreshold;
+
+	/** Maximum desired curvature in the lighting stored in Volumetric Lightmaps, used to reduce Spherical Harmonic ringing via a windowing filter. */
+	float WindowingTargetLaplacian;
+};
+
 /** Settings for precomputed visibility. */
 class FPrecomputedVisibilitySettings
 {
@@ -441,15 +501,9 @@ public:
 class FImportanceTracingSettings
 {
 public:
-	/** 
-	 * Debugging - whether to use a cosine probability distribution function when generating hemisphere samples.   
-	 * This is only usable with irradiance caching off.
-	 */
-	bool bUseCosinePDF;
 
 	/** 
 	 * Debugging - whether to stratify hemisphere samples, which reduces variance. 
-	 * This is not supported with bUseCosinePDF being true and is required when bUseIrradianceGradients is true.
 	 */
 	bool bUseStratifiedSampling;
 
@@ -458,9 +512,6 @@ public:
 	 * When photon mapping is enabled, these are called final gather rays.
 	 */
 	int32 NumHemisphereSamples;
-
-	/** Whether to use the adaptive sampling solver, which keeps all final gathering in one sampling domain and adaptively subdivides cells where needed (brightness differences, first bounce photons). */
-	bool bUseAdaptiveSolver;
 
 	/** Number of recursive levels allowed for adaptive refinement.  This has a huge impact on build time but also quality. */
 	int32 NumAdaptiveRefinementLevels;
@@ -476,6 +527,26 @@ public:
 
 	/** Starting threshold for what angle around a first bounce photon causes a refinement on all cells affected.  At each depth the effective threshold will be reduced. */
 	float AdaptiveFirstBouncePhotonConeAngle;
+
+	float AdaptiveSkyVarianceThreshold;
+
+	/** 
+	 * Whether to use radiosity iterations for solving skylight 2nd bounce and up, plus emissive 1st bounce and up. 
+	 * These light sources are not represented by photons so they need to be handled separately to have multiple bounces.
+	 */
+	bool bUseRadiositySolverForSkylightMultibounce;
+
+	/** 
+	 * Whether to cache final gather hit points for the radiosity algorithm, which reduces radiosity iteration time significantly but uses a lot of memory.
+	 * Memory use is proportional to the lightmap texels in the scene and number of final gather rays.
+	 */
+	bool bCacheFinalGatherHitPointsForRadiosity;
+
+	/**
+	 * Whether to use radiosity iterations for point / spot / directional lights, instead of photons. 
+	 * Has lower quality than photons in difficult indoor scenarios but useful as a reference.
+	 */
+	bool bUseRadiositySolverForLightMultibounce;
 };
 
 /** Settings controlling photon mapping behavior. */
@@ -622,8 +693,17 @@ public:
 	/** Cosine of the angle from the search normal that defines a cone which irradiance photons must be outside of to be valid for that search. */
 	float MinCosIrradiancePhotonSearchCone;
 
-	/** Downsample factor applied to each mapping's lighting resolution to get the resolution used for caching irradiance photons. */
-	float CachedIrradiancePhotonDownsampleFactor;
+	/** 
+	 * Whether to build a photon segment map, to guide importance sampling for volume queries.  
+	 * Currently costs too much memory and queries are too slow to be a net positive.
+	 */
+	bool bUsePhotonSegmentsForVolumeLighting;
+
+	/** Maximum world space length of segments that photons are split into for volumetric queries. */
+	float PhotonSegmentMaxLength;
+
+	/** Probability that a first bounce photon will be put into the photon segment map for volumetric queries. */
+	float GeneratePhotonSegmentChance;
 };
 
 /** Settings controlling irradiance caching behavior. */
@@ -729,6 +809,7 @@ struct FSceneFileHeader
 	FMeshAreaLightSettings			MeshAreaLightSettings;
 	FAmbientOcclusionSettings		AmbientOcclusionSettings;
 	FDynamicObjectSettings			DynamicObjectSettings;
+	FVolumetricLightmapSettings		VolumetricLightmapSettings;
 	FPrecomputedVisibilitySettings	PrecomputedVisibilitySettings;
 	FVolumeDistanceFieldSettings	VolumeDistanceFieldSettings;
 	FStaticShadowSettings			ShadowSettings;
@@ -761,6 +842,7 @@ struct FSceneFileHeader
 
 	int32		NumImportanceVolumes;
 	int32		NumCharacterIndirectDetailVolumes;
+	int32		NumVolumetricLightmapDensityVolumes;
 	int32		NumPortals;
 	int32		NumDirectionalLights;
 	int32		NumPointLights;
@@ -775,7 +857,9 @@ struct FSceneFileHeader
 	int32		NumFluidSurfaceTextureMappings;
 	int32		NumLandscapeTextureMappings;
 	int32		NumSpeedTreeMappings;
+	int32		NumVolumeMappings;
 	int32		NumPrecomputedVisibilityBuckets;
+	int32		NumVolumetricLightmapTasks;
 };
 
 //----------------------------------------------------------------------------
@@ -800,6 +884,8 @@ enum EDawnLightFlags
 
 struct FLightData
 {
+	static const int32 LightProfileTextureDataSize = 256 * 256;
+
 	FGuid			Guid;
 	/** Bit-wise combination of flags from EDawnLightFlags */
 	uint32			LightFlags;
@@ -820,21 +906,35 @@ struct FLightData
 	float			ShadowExponent;
 	/** Scales resolution of the static shadowmap for this light. */
 	float			ShadowResolutionScale;
-	//	only used if an LightProfile, 1d texture data 0:occluded, 255:not occluded
-	uint8			LightProfileTextureData[256];
 
-	// @param DotProd dot product of light direction and (normalized vector to surface) -1..1
-	inline float ComputeLightProfileMultiplier(const float DotProd) const
+	// @param WorldPosition		position of the point to light in the world
+	// @param LightPosition		position of the light in the world
+	// @param LightDirection	direction at which the light is emitting (x axis)
+	// @param LightTangent		tangent to the direction at which the light is emitting (z axis)
+	inline float ComputeLightProfileMultiplier(const TArray< uint8 >& LightProfileTextureData, FVector WorldPosition, FVector LightPosition, FVector LightDirection, FVector LightTangent) const
 	{
 		// optimization - only evaluate this function if needed
 		if(LightFlags & Lightmass::GI_LIGHT_USE_LIGHTPROFILE)
 		{
+			FVector LightBitangent = FVector::CrossProduct( LightTangent, LightDirection ).GetSafeNormal();
+
+			FMatrix LightTransform = FMatrix( LightDirection, LightBitangent, LightTangent, FVector4(0.f, 0.f, 0.f, 1.f) );
+			FMatrix InvLightTransform = LightTransform.GetTransposed();
+
+			FVector ToLight = (LightPosition - WorldPosition).GetSafeNormal();
+			FVector LocalToLight = InvLightTransform.TransformVector( ToLight );
+
+			// -1..1
+			float DotProd = FVector::DotProduct(ToLight, LightDirection);
 			// -PI..PI (this distortion could be put into the texture but not without quality loss or more memory)
 			float Angle = FMath::Asin(DotProd);
 			// 0..1
 			float NormAngle = Angle / PI + 0.5f;
 
-			return FilterLightProfile(NormAngle);
+			float TangentAngle = FMath::Atan2( -LocalToLight.Z, -LocalToLight.Y ); // -Y represents 0/360 horizontal angle and we're rotating counter-clockwise
+			float NormTangentAngle = TangentAngle / (PI * 2.f) + 0.5f;
+
+			return FilterLightProfile( LightProfileTextureData, NormAngle, NormTangentAngle );
 		}
 
 		return 1.0f;
@@ -843,24 +943,35 @@ struct FLightData
 private:
 	// @param X clamped in range 0..1
 	// @return 0..1
-	inline float FilterLightProfile(const float X) const
+	inline float FilterLightProfile(const TArray< uint8 >& LightProfileTextureData, const float X, const float Y) const
 	{
-		uint32 SizeX = sizeof(LightProfileTextureData);
+		const uint32 SizeX = FMath::Sqrt( LightProfileTextureDataSize );
+		const uint32 SizeY = LightProfileTextureDataSize / SizeX;
 
 		// can be optimized
 
 		// not 100% like GPU hardware but simple and almost the same
 		float UnNormalizedX = FMath::Clamp(X * SizeX, 0.0f, (float)(SizeX - 1));
-			
+		float UnNormalizedY = FMath::Clamp(Y * SizeY, 0.0f, (float)(SizeY - 1));
+
 		uint32 X0 = (uint32)UnNormalizedX;
 		uint32 X1 = FMath::Min(X0 + 1, SizeX - 1);
 
-		float Fraction = UnNormalizedX - X0;
+		uint32 Y0 = (uint32)UnNormalizedY;
+		uint32 Y1 = FMath::Min(Y0 + 1, SizeY - 1);
 
-		float V0 = LightProfileTextureData[X0] / 255.0f;
-		float V1 = LightProfileTextureData[X1] / 255.0f;
+		float XFraction = UnNormalizedX - X0;
+		float YFraction = UnNormalizedY - Y0;
 
-		return FMath::Lerp(V0, V1, Fraction);
+		float V00 = LightProfileTextureData[Y0 * SizeX + X0] / 255.0f;
+		float V10 = LightProfileTextureData[Y1 * SizeX + X0] / 255.0f;
+		float V01 = LightProfileTextureData[Y0 * SizeX + X1] / 255.0f;
+		float V11 = LightProfileTextureData[Y1 * SizeX + X1] / 255.0f;
+
+		float V0 = FMath::Lerp(V00, V10, YFraction);
+		float V1 = FMath::Lerp(V01, V11, YFraction);
+
+		return FMath::Lerp(V0, V1, XFraction);
 	}
 };
 
@@ -880,6 +991,8 @@ struct FPointLightData
 {
 	float		Radius;
 	float		FalloffExponent;
+	// Point lights need an additional axis to specify the direction of IES profiles, also used by spot lights for the direction of tube lights
+	FVector		LightTangent;
 };
 
 //----------------------------------------------------------------------------
@@ -887,7 +1000,9 @@ struct FPointLightData
 //----------------------------------------------------------------------------
 struct FSpotLightData
 {
+	/** Unclamped, in degrees */
 	float		InnerConeAngle;
+	/** Unclamped, in degrees */
 	float		OuterConeAngle;
 };
 
@@ -896,6 +1011,12 @@ struct FSpotLightData
 //----------------------------------------------------------------------------
 struct FSkyLightData
 {
+	/** 
+	 * Whether to use a filtered cubemap matching the Skylight Component's CubemapResolution to represent the skylight, or a 3rd order Spherical Harmonic. 
+	 * The filtered cubemap is much more accurate than 3rd order SH, especially in mostly shadowed areas.
+	 */ 
+	bool bUseFilteredCubemap;
+	int32 RadianceEnvironmentMapDataSize;
 	FSHVectorRGB3 IrradianceEnvironmentMap;
 };
 
@@ -1049,13 +1170,17 @@ struct FStaticMeshStaticLightingMeshData
 	FSplineMeshParams SplineParameters;
 };
 
-struct FStaticLightingVertexData
+struct FMinimalStaticLightingVertex
 {
 	FVector4 WorldPosition;
-	FVector4 WorldTangentX;
-	FVector4 WorldTangentY;
 	FVector4 WorldTangentZ;
 	FVector2D TextureCoordinates[MAX_TEXCOORDS];
+};
+
+struct FStaticLightingVertexData : public FMinimalStaticLightingVertex
+{
+	FVector4 WorldTangentX;
+	FVector4 WorldTangentY;
 };
 
 struct FBSPSurfaceStaticLightingData
@@ -1124,6 +1249,13 @@ struct FLandscapeStaticLightingMeshData
 	/** The number of quads we are expanding to eliminate seams. */
 	int32 ExpandQuadsX;
 	int32 ExpandQuadsY;
+};
+
+struct FVolumetricLightmapDensityVolumeData
+{
+	FBox Bounds;
+	FIntPoint AllowedMipLevelRange;
+	int32 NumPlanes;
 };
 
 #if !PLATFORM_MAC && !PLATFORM_LINUX

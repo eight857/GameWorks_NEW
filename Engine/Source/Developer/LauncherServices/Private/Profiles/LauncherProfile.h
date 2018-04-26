@@ -1,12 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Misc/Guid.h"
 #include "Modules/ModuleManager.h"
-#include "Interfaces/ILauncherProfile.h"
-#include "Interfaces/ILauncherServicesModule.h"
+#include "ILauncherProfile.h"
+#include "ILauncherServicesModule.h"
 #include "Misc/Paths.h"
 #include "Launcher/LauncherProjectPath.h"
 #include "Misc/CommandLine.h"
@@ -14,8 +14,9 @@
 #include "Misc/App.h"
 #include "Interfaces/ITargetPlatform.h"
 #include "Interfaces/ITargetPlatformManagerModule.h"
-#include "Interfaces/ITargetDeviceServicesModule.h"
-#include "Common/GameProjectHelper.h"
+#include "ITargetDeviceProxy.h"
+#include "ITargetDeviceServicesModule.h"
+#include "GameProjectHelper.h"
 #include "Profiles/LauncherProfileLaunchRole.h"
 #include "PlatformInfo.h"
 
@@ -38,6 +39,7 @@ enum ELauncherVersion
 	LAUNCHERSERVICES_FILEFORMATCHANGE = 22,
 	LAUNCHERSERVICES_ADDARCHIVE = 23,
 	LAUNCHERSERVICES_ADDEDENCRYPTINIFILES = 24,
+	LAUNCHERSERVICES_ADDEDMULTILEVELPATCHING = 25,
 	
 	//ADD NEW STUFF HERE
 
@@ -294,16 +296,16 @@ public:
 
 			if (DefaultDeployPlatform != NAME_None)
 			{
-				TArray<ITargetDeviceProxyPtr> PlatformDeviceProxies;
+				TArray<TSharedPtr<ITargetDeviceProxy>> PlatformDeviceProxies;
 				ITargetDeviceServicesModule& TargetDeviceServicesModule = FModuleManager::LoadModuleChecked<ITargetDeviceServicesModule>("TargetDeviceServices");
-				const ITargetDeviceProxyManagerRef& InDeviceProxyManager = TargetDeviceServicesModule.GetDeviceProxyManager();
+				const TSharedRef<ITargetDeviceProxyManager>& InDeviceProxyManager = TargetDeviceServicesModule.GetDeviceProxyManager();
 
 				InDeviceProxyManager->GetProxies(NAME_None, true, PlatformDeviceProxies);
 
-				ITargetDeviceProxyPtr DefaultPlatformDevice;
+				TSharedPtr<ITargetDeviceProxy> DefaultPlatformDevice;
 				for (int32 ProxyIndex = 0; ProxyIndex < PlatformDeviceProxies.Num(); ++ProxyIndex)
 				{
-					ITargetDeviceProxyPtr DeviceProxy = PlatformDeviceProxies[ProxyIndex];
+					TSharedPtr<ITargetDeviceProxy> DeviceProxy = PlatformDeviceProxies[ProxyIndex];
 
 					if (DeviceProxy->GetVanillaPlatformId(NAME_None) == DefaultDeployPlatform)
 					{
@@ -434,6 +436,15 @@ public:
 		return GeneratePatch;
 	}
 
+	virtual bool ShouldAddPatchLevel() const override
+	{
+		return AddPatchLevel;
+	}
+
+	virtual bool ShouldStageBaseReleasePaks() const override
+	{
+		return StageBaseReleasePaks;
+	}
 
 	virtual bool IsCreatingDLC() const override
 	{
@@ -830,7 +841,7 @@ public:
                 << ForceClose
                 << Timeout;
 
-		if (LAUNCHERSERVICES_SHAREABLEPROJECTPATHS)
+		if (Version >= LAUNCHERSERVICES_SHAREABLEPROJECTPATHS)
 		{
 			FullProjectPath = FPaths::ConvertRelativePathToFull(FPaths::RootDir(), ShareableProjectPath);
 		}
@@ -864,6 +875,11 @@ public:
 		if ( Version >= LAUNCHERSERVICES_REMOVEDPATCHSOURCECONTENTPATH )
 		{
 			Archive << GeneratePatch;
+		}
+		if ( Version >= LAUNCHERSERVICES_ADDEDMULTILEVELPATCHING )
+		{
+			Archive << AddPatchLevel;
+			Archive << StageBaseReleasePaks;
 		}
 		else if ( Version >= LAUNCHERSERVICES_ADDEDPATCHSOURCECONTENTPATH)
 		{
@@ -1017,6 +1033,8 @@ public:
 		Writer.WriteValue("SkipCookingEditorContent", bSkipCookingEditorContent);
 		Writer.WriteValue("DeployIncremental", DeployIncremental);
 		Writer.WriteValue("GeneratePatch", GeneratePatch);
+		Writer.WriteValue("AddPatchLevel", AddPatchLevel);
+		Writer.WriteValue("StageBaseReleasePaks", StageBaseReleasePaks);
 		Writer.WriteValue("DLCIncludeEngineContent", DLCIncludeEngineContent);
 		Writer.WriteValue("CreateReleaseVersion", CreateReleaseVersion);
 		Writer.WriteValue("CreateReleaseVersionName", CreateReleaseVersionName);
@@ -1127,7 +1145,7 @@ public:
 
 		// devices
 		ITargetDeviceServicesModule& DeviceServiceModule = FModuleManager::LoadModuleChecked<ITargetDeviceServicesModule>(TEXT("TargetDeviceServices"));
-		ITargetDeviceProxyManagerRef DeviceProxyManager = DeviceServiceModule.GetDeviceProxyManager();
+		TSharedRef<ITargetDeviceProxyManager> DeviceProxyManager = DeviceServiceModule.GetDeviceProxyManager();
 		ILauncherDeviceGroupPtr DeviceGroup = GetDeployedDeviceGroup();
 		TMap<FString, FString> RoleCommands;
 		FString CommandLine = GetDefaultLaunchRole()->GetUATCommandLine();
@@ -1148,7 +1166,7 @@ public:
 			for (int32 DeviceIndex = 0; DeviceIndex < Devices.Num(); ++DeviceIndex)
 			{
 				const FString& DeviceId = Devices[DeviceIndex];
-				ITargetDeviceProxyPtr DeviceProxy = DeviceProxyManager->FindProxyDeviceForTargetDevice(DeviceId);
+				TSharedPtr<ITargetDeviceProxy> DeviceProxy = DeviceProxyManager->FindProxyDeviceForTargetDevice(DeviceId);
 				Writer.WriteValue(DeviceId);
 				if (DeviceProxy.IsValid())
 				{
@@ -1235,7 +1253,13 @@ public:
 					if (GetBasedOnReleaseVersionName().IsEmpty() == false)
 					{
 						Writer.WriteValue("basedonreleaseversion", GetBasedOnReleaseVersionName());
+						Writer.WriteValue("stagebasereleasepaks", ShouldStageBaseReleasePaks());
 					}
+				}
+
+				if (IsGeneratingPatch())
+				{
+					Writer.WriteValue("addpatchlevel", ShouldAddPatchLevel());
 				}
 
 				Writer.WriteValue("manifests", IsGeneratingChunks());
@@ -1481,7 +1505,7 @@ public:
 
 		// Loading the Device Proxy Manager to get the needed Device Manager.
 		ITargetDeviceServicesModule& DeviceServiceModule = FModuleManager::LoadModuleChecked<ITargetDeviceServicesModule>(TEXT("TargetDeviceServices"));
-		ITargetDeviceProxyManagerRef DeviceProxyManager = DeviceServiceModule.GetDeviceProxyManager();
+		TSharedRef<ITargetDeviceProxyManager> DeviceProxyManager = DeviceServiceModule.GetDeviceProxyManager();
 
 		if (DeviceGroup.IsValid() && Platforms.Num() < 1)
 		{
@@ -1491,7 +1515,7 @@ public:
 			{
 				const FString& DeviceId = Devices[DeviceIndex];
 
-				ITargetDeviceProxyPtr DeviceProxy = DeviceProxyManager->FindProxyDeviceForTargetDevice(DeviceId);
+				TSharedPtr<ITargetDeviceProxy> DeviceProxy = DeviceProxyManager->FindProxyDeviceForTargetDevice(DeviceId);
 
 				if (DeviceProxy.IsValid())
 				{
@@ -1635,6 +1659,18 @@ public:
 		bSkipCookingEditorContent = Object.GetBoolField("SkipCookingEditorContent");
 		DeployIncremental = Object.GetBoolField("DeployIncremental");
 		GeneratePatch = Object.GetBoolField("GeneratePatch");
+
+		if (Version >= LAUNCHERSERVICES_ADDEDMULTILEVELPATCHING)
+		{
+			AddPatchLevel = Object.GetBoolField("AddPatchLevel");
+			StageBaseReleasePaks = Object.GetBoolField("StageBaseReleasePaks");
+		}
+		else
+		{
+			AddPatchLevel = false;
+			StageBaseReleasePaks = false;
+		}
+
 		DLCIncludeEngineContent = Object.GetBoolField("DLCIncludeEngineContent");
 		CreateReleaseVersion = Object.GetBoolField("CreateReleaseVersion");
 		CreateReleaseVersionName = Object.GetStringField("CreateReleaseVersionName");
@@ -1696,9 +1732,9 @@ public:
 		{
 			FullProjectPath = FPaths::GetProjectFilePath();
 		}
-		else if (FGameProjectHelper::IsGameAvailable(FApp::GetGameName()))
+		else if (FGameProjectHelper::IsGameAvailable(FApp::GetProjectName()))
 		{
-			FullProjectPath = FPaths::RootDir() / FApp::GetGameName() / FApp::GetGameName() + TEXT(".uproject");
+			FullProjectPath = FPaths::RootDir() / FApp::GetProjectName() / FApp::GetProjectName() + TEXT(".uproject");
 		}
 		else
 		{
@@ -1756,6 +1792,8 @@ public:
 
 		CreateReleaseVersion = false;
 		GeneratePatch = false;
+		AddPatchLevel = false;
+		StageBaseReleasePaks = false;
 		CreateDLC = false;
 		DLCIncludeEngineContent = false;
 
@@ -2218,6 +2256,16 @@ public:
 		GeneratePatch = InGeneratePatch;
 	}
 
+	virtual void SetAddPatchLevel( bool InAddPatchLevel) override
+	{
+		AddPatchLevel = InAddPatchLevel;
+	}
+
+	virtual void SetStageBaseReleasePaks(bool InStageBaseReleasePaks) override
+	{
+		StageBaseReleasePaks = InStageBaseReleasePaks;
+	}
+
 	virtual bool SupportsEngineMaps( ) const override
 	{
 		return false;
@@ -2321,9 +2369,19 @@ protected:
 		}
 
 
-		if ( IsGeneratingPatch() && (CookMode != ELauncherProfileCookModes::ByTheBook) )
+		if ( (IsGeneratingPatch() || ShouldAddPatchLevel()) && (CookMode != ELauncherProfileCookModes::ByTheBook) )
 		{
 			ValidationErrors.Add(ELauncherProfileValidationErrors::GeneratingPatchesCanOnlyRunFromByTheBookCookMode);
+		}
+
+		if (ShouldAddPatchLevel() && !IsGeneratingPatch() )
+		{
+			ValidationErrors.Add(ELauncherProfileValidationErrors::GeneratingMultiLevelPatchesRequiresGeneratePatch);
+		}
+
+		if (ShouldStageBaseReleasePaks() && BasedOnReleaseVersionName.IsEmpty())
+		{
+			ValidationErrors.Add(ELauncherProfileValidationErrors::StagingBaseReleasePaksWithoutABaseReleaseVersion);
 		}
 
 		if ( IsGeneratingChunks() && (CookMode != ELauncherProfileCookModes::ByTheBook) )
@@ -2422,11 +2480,11 @@ protected:
 			const TArray<FString>& Devices = DeployedDeviceGroup->GetDeviceIDs();
 			for(auto DeviceId : Devices)
 			{
-				TSharedPtr<ITargetDeviceServicesModule> TargetDeviceServicesModule = StaticCastSharedPtr<ITargetDeviceServicesModule>(FModuleManager::Get().LoadModule(TEXT("TargetDeviceServices")));
+				ITargetDeviceServicesModule* TargetDeviceServicesModule = static_cast<ITargetDeviceServicesModule*>(FModuleManager::Get().LoadModule(TEXT("TargetDeviceServices")));
 				
-				if (TargetDeviceServicesModule.IsValid())
+				if (TargetDeviceServicesModule)
 				{
-					ITargetDeviceProxyPtr DeviceProxy = TargetDeviceServicesModule->GetDeviceProxyManager()->FindProxy(DeviceId);
+					TSharedPtr<ITargetDeviceProxy> DeviceProxy = TargetDeviceServicesModule->GetDeviceProxyManager()->FindProxy(DeviceId);
 					
 					if(DeviceProxy.IsValid())
 					{
@@ -2553,6 +2611,12 @@ private:
 
 	// This build generate a patch based on some source content seealso PatchSourceContentPath
 	bool GeneratePatch;
+
+	// This build generates a new tier patch file for modified content
+	bool AddPatchLevel;
+
+	// This build stages pak files from the release version it is based on
+	bool StageBaseReleasePaks;
 
 	// This build will cook content for dlc See also DLCName
 	bool CreateDLC;

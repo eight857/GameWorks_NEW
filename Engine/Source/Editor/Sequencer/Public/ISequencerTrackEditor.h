@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,21 +15,20 @@ class FPaintArgs;
 class FSlateWindowElementList;
 class SHorizontalBox;
 class UMovieScene;
+class UMovieSceneSequence;
 
 /** Data structure containing information required to build an edit widget */
 struct FBuildEditWidgetParams
 {
+	FBuildEditWidgetParams()
+		: TrackInsertRowIndex(0)
+	{}
+
 	/** Attribute that specifies when the node relating to this edit widget is hovered */
 	TAttribute<bool> NodeIsHovered;
-};
 
-/** Defines different modes for editing sections on multiple rows. */
-enum class EMultipleRowMode
-{
-	/** Edit sections on multiple rows in a single track.  This does support editing keys in each section but results in a more compact UI. */
-	SingleTrack,
-	/** Edit sections on multiple sub-tracks contained in a single top level track.  The supports editing keys in sections, but results in a less compact UI. */
-	MultipleTrack
+	/** Track row index for any newly created sections */
+	int32 TrackInsertRowIndex;
 };
 
 /**
@@ -108,11 +107,23 @@ public:
 	 */
 	virtual bool HandleAssetAdded(UObject* Asset, const FGuid& TargetObjectGuid) = 0;
 
-	/** Gets whether the tool can key all*/
-	virtual bool IsAllowedKeyAll() const = 0;
+	/**
+	 * Called when attempting to drop an asset directly onto a track.
+	 *
+	 * @param DragDropEvent The drag drop event.
+	 * @param Track The track that is receiving this drop event.
+	 * @return Whether the drop event can be handled.
+	 */
+	virtual bool OnAllowDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track) = 0;
 
-	/** Gets whether the tool can legally autokey */
-	virtual bool IsAllowedToAutoKey() const = 0;
+	/**
+	 * Called when an asset is dropped directly onto a track.
+	 *
+	 * @param DragDropEvent The drag drop event.
+	 * @param Track The track that is receiving this drop event.
+	 * @return Whether the drop event was handled.
+	 */	
+	virtual FReply OnDrop(const FDragDropEvent& DragDropEvent, UMovieSceneTrack* Track) = 0;
 
 	/**
 	 * Called to generate a section layout for a particular section.
@@ -133,7 +144,7 @@ public:
 	virtual void OnRelease() = 0;
 
 	/** Allows the track editor to paint on a track area. */
-	virtual int32 PaintTrackArea(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle) = 0;
+	virtual int32 PaintTrackArea(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle) = 0;
 
 	/**
 	 * Returns whether a track class is supported by this tool.
@@ -173,8 +184,14 @@ public:
 	{
 		
 	}
-	/** Gets the mode used when supporting sections on multiple rows. */
-	virtual EMultipleRowMode GetMultipleRowMode() const = 0;
+
+	/**
+	 * @return The default expansion state of this track
+	 */
+	virtual bool GetDefaultExpansionState(UMovieSceneTrack* InTrack) const
+	{
+		return false;
+	}
 
 public:
 

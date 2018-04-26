@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SVisualLoggerLogsList.h"
 #include "Misc/OutputDeviceHelper.h"
@@ -7,6 +7,7 @@
 #include "VisualLoggerDatabase.h"
 #include "LogVisualizerStyle.h"
 #include "Widgets/Views/SListView.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #define LOCTEXT_NAMESPACE "SVisualLoggerLogsList"
 
@@ -68,7 +69,7 @@ FReply SVisualLoggerLogsList::OnKeyDown(const FGeometry& MyGeometry, const FKeyE
 
 			ClipboardString += TEXT("\n");
 		}
-		FPlatformMisc::ClipboardCopy(*ClipboardString);
+		FPlatformApplicationMisc::ClipboardCopy(*ClipboardString);
 		return FReply::Handled();
 	}
 

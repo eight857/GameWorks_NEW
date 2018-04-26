@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameFramework/NavMovementComponent.h"
 #include "AI/Navigation/NavigationSystem.h"
@@ -123,30 +123,4 @@ void UNavMovementComponent::UpdateNavAgent(const UCapsuleComponent& CapsuleCompo
 void UNavMovementComponent::SetUpdateNavAgentWithOwnersCollisions(bool bUpdateWithOwner)
 {
 	bUpdateNavAgentWithOwnersCollision = bUpdateWithOwner;
-}
-
-//----------------------------------------------------------------------//
-// DEPRECATED
-//----------------------------------------------------------------------//
-const FNavAgentProperties* UNavMovementComponent::GetNavAgentProperties() const
-{
-	return &GetNavAgentPropertiesRef();
-}
-FNavAgentProperties* UNavMovementComponent::GetNavAgentProperties()
-{
-	return &GetNavAgentPropertiesRef();
-}
-void UNavMovementComponent::UpdateNavAgent(AActor* Owner)
-{
-	if (Owner)
-	{
-		UpdateNavAgent(*Owner);
-	}
-}
-void UNavMovementComponent::UpdateNavAgent(UCapsuleComponent* CapsuleComponent)
-{
-	if (CapsuleComponent)
-	{
-		UpdateNavAgent(*CapsuleComponent);
-	}
 }

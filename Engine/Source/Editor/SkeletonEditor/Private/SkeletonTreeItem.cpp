@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SkeletonTreeItem.h"
 #include "SSkeletonTreeRow.h"
@@ -7,5 +7,6 @@ TSharedRef<ITableRow> FSkeletonTreeItem::MakeTreeRowWidget(const TSharedRef<STab
 {
 	return SNew(SSkeletonTreeRow, InOwnerTable)
 		.FilterText(InFilterText)
-		.Item(SharedThis(this));
+		.Item(SharedThis(this))
+		.OnDraggingItem(this, &FSkeletonTreeItem::OnDragDetected);
 }

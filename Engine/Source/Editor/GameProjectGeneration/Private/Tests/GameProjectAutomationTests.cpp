@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/FileManager.h"
@@ -69,7 +69,7 @@ namespace GameProjectAutomationUtils
 
 
 	/* 
-	 * Create a project from a templalte with a given criteria
+	 * Create a project from a template with a given criteria
 	 * @oaram	InTemplates			List of available project templates
 	 * @param	InTargetedHardware	Target hardware (EHardwareClass)
 	 * @param	InGraphicPreset		Graphics preset (EGraphicsPreset)
@@ -78,7 +78,7 @@ namespace GameProjectAutomationUtils
 	 * @param	OutMatchedProjects	Total projects matching criteria
 	 * @param	OutCreatedProjects	Total projects succesfully created
 	 */
-	static void CreateProjectSet(TMap<FName, TArray<TSharedPtr<FTemplateItem>> >& InTemplates, EHardwareClass::Type InTargetedHardware, EGraphicsPreset::Type InGraphicPreset, EContentSourceCategory InCategory, bool bInCopyStarterContent, int32 OutMatchedProjects, int32 OutCreatedProjects)
+	static void CreateProjectSet(TMap<FName, TArray<TSharedPtr<FTemplateItem>> >& InTemplates, EHardwareClass::Type InTargetedHardware, EGraphicsPreset::Type InGraphicPreset, EContentSourceCategory InCategory, bool bInCopyStarterContent, int32 &OutCreatedProjects, int32 &OutMatchedProjects)
 	{		
 		// If this is empty, it will use the same name for each project, otherwise it will create a project based on target platform and source template
 		FString TestRootFolder;// = "ProjectTests";
@@ -98,6 +98,10 @@ namespace GameProjectAutomationUtils
 		else if (InCategory == EContentSourceCategory::CodeFeature)
 		{
 			CategoryName = FTemplateCategory::CodeCategoryName;
+		}
+		else if (InCategory == EContentSourceCategory::EnterpriseFeature)
+		{
+			CategoryName = FTemplateCategory::EnterpriseCategoryName;
 		}
 		else
 		{
@@ -333,7 +337,7 @@ bool FBuildPromotionNewProjectMapTest::RunTest(const FString& Parameters)
 /*
 * Template project creation test
 */
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCreateBPTemplateProjectAutomationTests, "System.Promotion.Project Promotion Pass.Step 3 NewProjectCreationTests.CreateBlueprintProjects", EAutomationTestFlags::Disabled | EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter | EAutomationTestFlags::Disabled)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCreateBPTemplateProjectAutomationTests, "System.Promotion.Project Promotion Pass.Step 3 NewProjectCreationTests.CreateBlueprintProjects", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter | EAutomationTestFlags::Disabled)
 
 /** 
  * Uses the new project wizard to locate all templates available for new blueprint project creation and verifies creation succeeds.
@@ -361,7 +365,7 @@ bool FCreateBPTemplateProjectAutomationTests::RunTest(const FString& Parameters)
 /*
 * Template project creation test
 */
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCreateCPPTemplateProjectAutomationTests, "System.Promotion.Project Promotion Pass.Step 3 NewProjectCreationTests.CreateCodeProjects", EAutomationTestFlags::Disabled | EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter | EAutomationTestFlags::Disabled)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCreateCPPTemplateProjectAutomationTests, "System.Promotion.Project Promotion Pass.Step 3 NewProjectCreationTests.CreateCodeProjects", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter | EAutomationTestFlags::Disabled)
 
 /** 
  * Uses the new project wizard to locate all templates available for new code project creation and verifies creation succeeds.

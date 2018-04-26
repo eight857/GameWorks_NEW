@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	DistanceFieldLightingShared.h
@@ -14,6 +14,7 @@
 #include "RHIStaticStates.h"
 #include "DistanceFieldAtlas.h"
 #include "UniquePtr.h"
+#include "SceneRendering.h"
 
 class FLightSceneProxy;
 class FMaterialRenderProxy;
@@ -35,7 +36,7 @@ extern int32 GDistanceFieldGI;
 
 inline bool DoesPlatformSupportDistanceFieldGI(EShaderPlatform Platform)
 {
-	return Platform == SP_PCD3D_SM5;
+	return Platform == SP_PCD3D_SM5|| Platform == SP_VULKAN_SM5;
 }
 
 inline bool SupportsDistanceFieldGI(ERHIFeatureLevel::Type FeatureLevel, EShaderPlatform ShaderPlatform)
@@ -70,8 +71,8 @@ public:
 		{
 			const uint32 BufferFlags = BUF_ShaderResource;
 
-			Bounds.Initialize(sizeof(float), 4 * MaxObjects, PF_R32_FLOAT);
-			Data.Initialize(sizeof(float), 4 * MaxObjects * ObjectDataStride, PF_R32_FLOAT);
+			Bounds.Initialize(sizeof(float), 4 * MaxObjects, PF_R32_FLOAT, 0, TEXT("FDistanceFieldObjectBuffers::Bounds"));
+			Data.Initialize(sizeof(float), 4 * MaxObjects * ObjectDataStride, PF_R32_FLOAT, 0, TEXT("FDistanceFieldObjectBuffers::Data"));
 		}
 	}
 
@@ -291,15 +292,37 @@ public:
 	{
 		if (MaxObjects > 0)
 		{
+			const uint32 FastVRamFlag = GFastVRamConfig.DistanceFieldCulledObjectBuffers | ( IsTransientResourceBufferAliasingEnabled() ? BUF_Transient : BUF_None );
+
 			ObjectIndirectArguments.Initialize(sizeof(uint32), 5, PF_R32_UINT, BUF_Static | BUF_DrawIndirect);
 			ObjectIndirectDispatch.Initialize(sizeof(uint32), 3, PF_R32_UINT, BUF_Static | BUF_DrawIndirect);
-			Bounds.Initialize(sizeof(FVector4), MaxObjects, BUF_Static);
-			Data.Initialize(sizeof(FVector4), MaxObjects * ObjectDataStride, BUF_Static);
+			Bounds.Initialize(sizeof(FVector4), MaxObjects, BUF_Static | FastVRamFlag, TEXT("FDistanceFieldCulledObjectBuffers::Bounds"));
+			Data.Initialize(sizeof(FVector4), MaxObjects * ObjectDataStride, BUF_Static | FastVRamFlag, TEXT("FDistanceFieldCulledObjectBuffers::Data"));
 
 			if (bWantBoxBounds)
 			{
-				BoxBounds.Initialize(sizeof(FVector4), MaxObjects * ObjectBoxBoundsStride, BUF_Static);
+				BoxBounds.Initialize(sizeof(FVector4), MaxObjects * ObjectBoxBoundsStride, BUF_Static | FastVRamFlag, TEXT("FDistanceFieldCulledObjectBuffers::BoxBounds"));
 			}
+		}
+	}
+
+	void AcquireTransientResource()
+	{
+		Bounds.AcquireTransientResource();
+		Data.AcquireTransientResource();
+		if (bWantBoxBounds)
+		{
+			BoxBounds.AcquireTransientResource();
+		}
+	}
+
+	void DiscardTransientResource()
+	{
+		Bounds.DiscardTransientResource();
+		Data.DiscardTransientResource();
+		if (bWantBoxBounds)
+		{
+			BoxBounds.DiscardTransientResource();
 		}
 	}
 
@@ -443,6 +466,9 @@ public:
 	int32 Stride;
 	int32 MaxElements;
 
+	// Volatile must be written every frame before use.  Supports multiple writes per frame on PS4, unlike Dynamic.
+	bool bVolatile;
+
 	FVertexBufferRHIRef Buffer;
 	FShaderResourceViewRHIRef BufferSRV;
 
@@ -451,6 +477,7 @@ public:
 		Format = PF_A32B32G32R32F;
 		Stride = 1;
 		MaxElements = 0;
+		bVolatile = true;
 	}
 
 	void Initialize()
@@ -458,7 +485,7 @@ public:
 		if (MaxElements > 0 && Stride > 0)
 		{
 			FRHIResourceCreateInfo CreateInfo;
-			Buffer = RHICreateVertexBuffer(MaxElements * Stride * GPixelFormats[Format].BlockBytes, BUF_Dynamic | BUF_ShaderResource, CreateInfo);
+			Buffer = RHICreateVertexBuffer(MaxElements * Stride * GPixelFormats[Format].BlockBytes, (bVolatile ? BUF_Volatile : BUF_Dynamic)  | BUF_ShaderResource, CreateInfo);
 			BufferSRV = RHICreateShaderResourceView(Buffer, GPixelFormats[Format].BlockBytes, Format);
 		}
 	}

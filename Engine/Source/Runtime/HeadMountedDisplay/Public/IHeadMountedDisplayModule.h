@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,10 +8,12 @@
 #include "Features/IModularFeatures.h"
 #include "Features/IModularFeature.h"
 
-class IHeadMountedDisplay;
+#include "IHeadMountedDisplayVulkanExtensions.h"
+
+class IXRTrackingSystem;
 
 /**
- * The public interface of the MotionControlsModule
+ * The public interface of the HeadmountedDisplay Module
  */
 class IHeadMountedDisplayModule : public IModuleInterface, public IModularFeature
 {
@@ -24,13 +26,35 @@ public:
 
 	/** Returns the key into the HMDPluginPriority section of the config file for this module */
 	virtual FString GetModuleKeyName() const = 0;
+	/** Returns an array of alternative ini/config names for this module (helpful if the module's name changes, so we can have back-compat) */
+	virtual void GetModuleAliases(TArray<FString>& AliasesOut) const {}
 	
 	/** Returns the priority of this module from INI file configuration */
 	float GetModulePriority() const
 	{
+		TArray<FString> ModuleAliases;
+		GetModuleAliases(ModuleAliases);
+
+		FString DefaultName = GetModuleKeyName();
+		if (DefaultName.IsEmpty())
+		{
+			ModuleAliases.Add(TEXT("Default"));
+		}
+		else
+		{
+			// Search for aliases first. This favors old module names, and ensures 
+			// that overrides in project specific ini files get found (not just the one in BaseEngine.ini)
+			ModuleAliases.Add(DefaultName);
+		}
+
 		float ModulePriority = 0.f;
-		FString KeyName = GetModuleKeyName();
-		GConfig->GetFloat(TEXT("HMDPluginPriority"), (!KeyName.IsEmpty() ? *KeyName : TEXT("Default")), ModulePriority, GEngineIni);
+		for (const FString& KeyName : ModuleAliases)
+		{
+			if (GConfig->GetFloat(TEXT("HMDPluginPriority"), *KeyName, ModulePriority, GEngineIni))
+			{
+				break;
+			}
+		}	
 		return ModulePriority;
 	}
 
@@ -84,9 +108,21 @@ public:
 	virtual bool IsHMDConnected() { return false; }
 
 	/**
-	 * Get index of graphics adapter where the HMD was last connected
+	 * Get LUID of graphics adapter where the HMD was last connected.
+	 *
+	 * @TODO  currently, for mac, GetGraphicsAdapterLuid() is used to return a device index (how the function
+	 *        "GetGraphicsAdapter" used to work), not a ID... eventually we want the HMD module to return the
+	 *        MTLDevice's registryID, but we cannot fully handle that until we drop support for 10.12
+	 *  NOTE: this is why we  use -1 as a sentinel value representing "no device" (instead of 0, which is used in the LUID case)
 	 */
-	virtual int32 GetGraphicsAdapter() { return -1; }
+	virtual uint64 GetGraphicsAdapterLuid() 
+	{ 
+#if PLATFORM_MAC
+		return (uint64)-1;
+#else
+		return 0;
+#endif
+	}
 
 	/**
 	 * Get name of audio input device where the HMD was last connected
@@ -103,5 +139,11 @@ public:
 	 *
 	 * @return	Interface to the new head tracking device, if we were able to successfully create one
 	 */
-	virtual TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > CreateHeadMountedDisplay() = 0;
+	virtual TSharedPtr< class IXRTrackingSystem, ESPMode::ThreadSafe > CreateTrackingSystem() = 0;
+
+	/**
+	 * Extensions:
+	 * If the HMD supports the various extensions listed below, it should return a valid pointer to an implementation contained within it.
+	 */
+	virtual TSharedPtr< IHeadMountedDisplayVulkanExtensions, ESPMode::ThreadSafe > GetVulkanExtensions() { return nullptr; }
 };

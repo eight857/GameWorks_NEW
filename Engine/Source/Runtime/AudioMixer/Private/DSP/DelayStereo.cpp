@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DSP/DelayStereo.h"
 
@@ -75,8 +75,8 @@ namespace Audio
 		float LeftDelayOut = LeftDelay.Read();
 		float RightDelayOut = RightDelay.Read();
 
-		float LeftDelayIn;
-		float RightDelayIn;
+		float LeftDelayIn = 0.0f;
+		float RightDelayIn = 0.0f;
 
 		if (DelayMode == EStereoDelayMode::Normal)
 		{

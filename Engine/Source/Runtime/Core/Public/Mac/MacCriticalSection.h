@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "PThreadCriticalSection.h"
+#include "PThreadRWLock.h"
 #include "Containers/UnrealString.h"
 #include "Misc/Timespan.h"
 
@@ -38,3 +39,4 @@ private:
 
 typedef FPThreadsCriticalSection FCriticalSection;
 typedef FMacSystemWideCriticalSection FSystemWideCriticalSection;
+typedef FPThreadsRWLock FRWLock;

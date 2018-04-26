@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*================================================================================
 	HTML5Properties.h - Basic static properties of a platform 
@@ -21,7 +21,7 @@ struct FHTML5PlatformProperties
 {
 	static FORCEINLINE const char* GetPhysicsFormat( )
 	{
-		return "PhysXPC";
+		return "PhysXGeneric";
 	}
 
 	static FORCEINLINE bool HasEditorOnlyData( )

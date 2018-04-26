@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Layout/SWrapBox.h"
 #include "Layout/LayoutUtils.h"
@@ -51,7 +51,7 @@ void SWrapBox::Tick( const FGeometry& AllottedGeometry, const double InCurrentTi
 {
 	if (bUseAllottedWidth)
 	{
-		PreferredWidth = AllottedGeometry.Size.X;
+		PreferredWidth = AllottedGeometry.GetLocalSize().X;
 	}
 }
 

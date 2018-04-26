@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreTypes.h"
 #include "Misc/AssertionMacros.h"
@@ -23,6 +23,7 @@
 #include "Stats/StatsData.h"
 #include "HAL/IConsoleManager.h"
 #include "Async/TaskGraphInterfaces.h"
+#include "HAL/LowLevelMemTracker.h"
 
 /*-----------------------------------------------------------------------------
 	Global
@@ -112,7 +113,7 @@ void DebugLeakTest()
 		{
 			DECLARE_SCOPE_CYCLE_COUNTER( TEXT( "LeakTest::NewInt8" ), Stat_LeakTest_NewInt8, STATGROUP_Quick );
 			int8* Leak = new int8[1000 * 1000];
-		}
+		} //-V773
 
 
 		if (GFrameCounter < 250)
@@ -127,7 +128,7 @@ void DebugLeakTest()
 					int8* IntAlloc = new int8[112233];
 					int8* LeakTask = new int8[100000];
 					delete[] IntAlloc;
-				}
+				} //-V773
 			};
 
 			for (int32 Index = 0; Index < 40; ++Index)
@@ -145,7 +146,7 @@ void DebugLeakTest()
 					int8* IntAlloc = new int8[223311];
 					int8* LeakTask = new int8[100000];
 					delete[] IntAlloc;
-				}
+				} //-V773
 
 				TStatId GetStatId() const
 				{
@@ -166,7 +167,7 @@ void DebugLeakTest()
 			int8* IntAlloc = new int8[331122];
 			int8* LeakTask = new int8[100000];
 			delete[] IntAlloc;
-		}
+		} //-V773
 
 		if (GIsRequestingExit)
 		{
@@ -182,16 +183,16 @@ void DebugLeakTest()
 	FStats2
 -----------------------------------------------------------------------------*/
 
-int32 FStats::GameThreadStatsFrame = 1;
+TAtomic<int32> FStats::GameThreadStatsFrame(1);
 
 void FStats::AdvanceFrame( bool bDiscardCallstack, const FOnAdvanceRenderingThreadStats& AdvanceRenderingThreadStatsDelegate /*= FOnAdvanceRenderingThreadStats()*/ )
 {
 #if STATS
+	LLM_SCOPE(ELLMTag::Stats);
 	check( IsInGameThread() );
 	static int32 MasterDisableChangeTagStartFrame = -1;
-	FPlatformAtomics::InterlockedIncrement(&GameThreadStatsFrame);
+	int64 Frame = ++GameThreadStatsFrame;
 
-	int64 Frame = GameThreadStatsFrame;
 	if( bDiscardCallstack )
 	{
 		FThreadStats::FrameDataIsIncomplete(); // we won't collect call stack stats this frame
@@ -202,7 +203,7 @@ void FStats::AdvanceFrame( bool bDiscardCallstack, const FOnAdvanceRenderingThre
 	}
 	if( !FThreadStats::IsCollectingData() || MasterDisableChangeTagStartFrame != FThreadStats::MasterDisableChangeTag() )
 	{
-		Frame = -GameThreadStatsFrame; // mark this as a bad frame
+		Frame = -Frame; // mark this as a bad frame
 	}
 
 	// Update the seconds per cycle.
@@ -212,7 +213,7 @@ void FStats::AdvanceFrame( bool bDiscardCallstack, const FOnAdvanceRenderingThre
 
 	if( AdvanceRenderingThreadStatsDelegate.IsBound() )
 	{
-		AdvanceRenderingThreadStatsDelegate.Execute( bDiscardCallstack, GameThreadStatsFrame, MasterDisableChangeTagStartFrame );
+		AdvanceRenderingThreadStatsDelegate.Execute( bDiscardCallstack, Frame, MasterDisableChangeTagStartFrame );
 	}
 	else
 	{
@@ -342,7 +343,7 @@ FStartupMessages& FStartupMessages::Get()
 	FThreadSafeStaticStatBase
 -----------------------------------------------------------------------------*/
 
-void FThreadSafeStaticStatBase::DoSetup(const char* InStatName, const TCHAR* InStatDesc, const char* InGroupName, const char* InGroupCategory, const TCHAR* InGroupDesc, bool bDefaultEnable, bool bShouldClearEveryFrame, EStatDataType::Type InStatType, bool bCycleStat, FPlatformMemory::EMemoryCounterRegion InMemoryRegion) const
+const TStatIdData* FThreadSafeStaticStatBase::DoSetup(const char* InStatName, const TCHAR* InStatDesc, const char* InGroupName, const char* InGroupCategory, const TCHAR* InGroupDesc, bool bDefaultEnable, bool bShouldClearEveryFrame, EStatDataType::Type InStatType, bool bCycleStat, FPlatformMemory::EMemoryCounterRegion InMemoryRegion) const
 {
 	FName TempName(InStatName);
 
@@ -350,8 +351,10 @@ void FThreadSafeStaticStatBase::DoSetup(const char* InStatName, const TCHAR* InS
 	FStartupMessages::Get().AddMetadata(TempName, InStatDesc, InGroupName, InGroupCategory, InGroupDesc, bShouldClearEveryFrame, InStatType, bCycleStat, InMemoryRegion);
 
 	TStatIdData const* LocalHighPerformanceEnable(IStatGroupEnableManager::Get().GetHighPerformanceEnableForStat(FName(InStatName), InGroupName, InGroupCategory, bDefaultEnable, bShouldClearEveryFrame, InStatType, InStatDesc, bCycleStat, InMemoryRegion).GetRawPointer());
-	TStatIdData const* OldHighPerformanceEnable = (TStatIdData const*)FPlatformAtomics::InterlockedCompareExchangePointer((void**)&HighPerformanceEnable, (void*)LocalHighPerformanceEnable, NULL);
-	check(!OldHighPerformanceEnable || HighPerformanceEnable == OldHighPerformanceEnable); // we are assigned two different groups?
+	TStatIdData const* OldHighPerformanceEnable = HighPerformanceEnable.Exchange(LocalHighPerformanceEnable);
+	check(!OldHighPerformanceEnable || LocalHighPerformanceEnable == OldHighPerformanceEnable); // we are assigned two different groups?
+
+	return LocalHighPerformanceEnable;
 }
 
 /*-----------------------------------------------------------------------------
@@ -366,8 +369,8 @@ class FStatGroupEnableManager : public IStatGroupEnableManager
 	{
 		TMap<FName, TStatIdData *> NamesInThisGroup;
 		TMap<FName, TStatIdData *> AlwaysEnabledNamesInThisGroup;
-		bool DefaultEnable; 
-		bool CurrentEnable; 
+		bool DefaultEnable;
+		bool CurrentEnable;
 
 		FGroupEnable(bool InDefaultEnable)
 			: DefaultEnable(InDefaultEnable)
@@ -376,7 +379,7 @@ class FStatGroupEnableManager : public IStatGroupEnableManager
 		}
 	};
 
-	enum 
+	enum
 	{
 		/** Number of stats pointer allocated per block. */
 		NUM_PER_BLOCK = 16384,
@@ -387,7 +390,7 @@ class FStatGroupEnableManager : public IStatGroupEnableManager
 
 	/** Used to synchronize the access to the high performance stats groups. */
 	FCriticalSection SynchronizationObject;
-	
+
 	/** Pointer to the long name in the names block. */
 	TStatIdData* PendingStatIds;
 
@@ -404,25 +407,12 @@ class FStatGroupEnableManager : public IStatGroupEnableManager
 
 	void EnableStat(FName StatName, TStatIdData* DisablePtr)
 	{
-		// This is all complicated to ensure an atomic 8 byte write
-		static_assert(sizeof(FMinimalName) == sizeof(uint64), "FMinimalName should have the same size of uint64.");
-		check(UPTRINT(&DisablePtr->Name) % sizeof(FMinimalName) == 0);
-		MS_ALIGN(8) struct FAligner
-		{
-			FMinimalName Temp;
-		} GCC_ALIGN(8);
-		FAligner Align;
-		check(UPTRINT(&Align.Temp) % sizeof(FMinimalName) == 0);
-
-		Align.Temp = NameToMinimalName(StatName);
-		*(uint64*)&DisablePtr->Name = *(uint64 const*)&Align.Temp;
+		DisablePtr->Name = NameToMinimalName(StatName);
 	}
 
 	void DisableStat(TStatIdData* DisablePtr)
 	{
-		static_assert(sizeof( FMinimalName ) == sizeof( uint64 ), "FMinimalName should have the same size of uint64.");
-		check( UPTRINT( &DisablePtr->Name ) % sizeof( FMinimalName ) == 0 );
-		*(uint64*)&DisablePtr->Name = *(uint64 const*)TStatId::GetStatNone();
+		DisablePtr->Name = TStatId::GetStatNone().Name.Load();
 	}
 
 public:
@@ -519,6 +509,8 @@ public:
 
 	virtual TStatId GetHighPerformanceEnableForStat(FName StatShortName, const char* InGroup, const char* InCategory, bool bDefaultEnable, bool bShouldClearEveryFrame, EStatDataType::Type InStatType, TCHAR const* InDescription, bool bCycleStat, FPlatformMemory::EMemoryCounterRegion MemoryRegion = FPlatformMemory::MCR_Invalid) override
 	{
+		LLM_SCOPE(ELLMTag::Stats);
+
 		FScopeLock ScopeLock(&SynchronizationObject);
 
 		FStatNameAndInfo LongName(StatShortName, InGroup, InCategory, InDescription, InStatType, bShouldClearEveryFrame, bCycleStat, MemoryRegion);
@@ -588,7 +580,7 @@ public:
 		Result->AnsiString = reinterpret_cast<uint64>(StatDescAnsi);
 
 		MemoryCounter.Add( StatDescLen*(sizeof( ANSICHAR ) + sizeof( WIDECHAR )) );
-		
+
 		++PendingStatIds;
 
 		if( Found->CurrentEnable )
@@ -825,11 +817,12 @@ FName FStatNameAndInfo::GetGroupCategoryFrom(FName InLongName)
 
 static TAutoConsoleVariable<int32> CVarDumpStatPackets(	TEXT("DumpStatPackets"),0,	TEXT("If true, dump stat packets."));
 
+
 /** The rendering thread runnable object. */
 class FStatsThread : public FRunnable, FSingleThreadRunnable
 {
 	/** Array of stat packets, queued data to be processed on this thread. */
-	FStatPacketArray IncomingData; 
+	FStatPacketArray IncomingData;
 
 	/** Stats state. */
 	FStatsThreadState& State;
@@ -857,6 +850,7 @@ public:
 	/** Attaches to the task graph stats thread, all processing will be handled by the task graph. */
 	virtual uint32 Run() override
 	{
+		FThreadStats::GetThreadStats()->bIsStatsThread = true;
 		FMemory::SetupTLSCachesOnCurrentThread();
 		FTaskGraphInterface::Get().AttachToThread(ENamedThreads::StatsThread);
 		FTaskGraphInterface::Get().ProcessThreadUntilRequestReturn(ENamedThreads::StatsThread);
@@ -867,6 +861,8 @@ public:
 	/** Tick function. */
 	virtual void Tick() override
 	{
+		LLM_SCOPE(ELLMTag::Stats);
+
 		static double LastTime = -1.0;
 		bool bShouldProcess = false;
 
@@ -876,18 +872,18 @@ public:
 			// For raw stats we process every 24MB of packet data to minimize the stats messages memory usage.
 			//const bool bShouldProcessRawStats = IncomingData.Packets.Num() > 10;
 			const int32 MaxIncomingMessages = 24*1024*1024/sizeof(FStatMessage);
-			
+
 			int32 IncomingDataMessages = 0;
-			for( int32 Index = 0; Index < IncomingData.Packets.Num(); ++Index )
+			for( FStatPacket* Packet : IncomingData.Packets )
 			{
-				IncomingDataMessages += IncomingData.Packets[Index]->StatMessages.Num();
+				IncomingDataMessages += Packet->StatMessages.Num();
 			}
 
 			bShouldProcess = IncomingDataMessages > MaxIncomingMessages || IncomingData.Packets.Num() > MaxIncomingPackets;
 		}
 		else
 		{
-			// For regular stats we won't process more than every 5ms or every 16 packets. 
+			// For regular stats we won't process more than every 5ms or every 16 packets.
 			// Commandlet stats are flushed as soon as.
 			bShouldProcess = bReadyToProcess && (FPlatformTime::Seconds() - LastTime > 0.005f || IncomingData.Packets.Num() > MaxIncomingPackets || FStats::EnabledForCommandlet());
 		}
@@ -898,9 +894,9 @@ public:
 
 			IStatGroupEnableManager::Get().UpdateMemoryUsage();
 			State.UpdateStatMessagesMemoryUsage();
-		
+
 			bReadyToProcess = false;
-			FStatPacketArray NowData; 
+			FStatPacketArray NowData;
 			Exchange(NowData.Packets, IncomingData.Packets);
 			INC_DWORD_STAT_BY(STAT_StatFramePacketsRecv, NowData.Packets.Num());
 			{
@@ -915,11 +911,11 @@ public:
 					State.ProcessMetaDataOnly(MetaMessages);
 				}
 			}
-			{		
+			{
 				SCOPE_CYCLE_COUNTER(STAT_ScanForAdvance);
 				State.ScanForAdvance(NowData);
 			}
-			
+
 			if( FThreadStats::bIsRawStatsActive )
 			{
 				// Process raw stats.
@@ -948,6 +944,8 @@ public:
 	/** Received a stat packet from other thread and add to the processing queue. */
 	void StatMessage(FStatPacket* Packet)
 	{
+		LLM_SCOPE(ELLMTag::Stats);
+
 		if (CVarDumpStatPackets.GetValueOnAnyThread())
 		{
 			UE_LOG(LogStats, Log, TEXT("Packet from %x with %d messages"), Packet->ThreadId, Packet->StatMessages.Num());
@@ -960,12 +958,33 @@ public:
 		Tick();
 	}
 
+	void SelfStatMessage(FStatPacket* Packet)
+	{
+		if (CVarDumpStatPackets.GetValueOnAnyThread())
+		{
+			UE_LOG(LogStats, Log, TEXT("Self Packet from %x with %d messages"), Packet->ThreadId, Packet->StatMessages.Num());
+		}
+
+		IncomingData.Packets.Add(Packet);
+		State.NumStatMessages.Add(Packet->StatMessages.Num());
+	}
+
 	/** Start a stats runnable thread. */
 	void Start()
 	{
-		FRunnableThread* Thread = FRunnableThread::Create(this, TEXT("StatsThread"), 512 * 1024, TPri_BelowNormal, FPlatformAffinity::GetStatsThreadMask());
-		check(Thread != NULL);
+		Thread = FRunnableThread::Create(this, TEXT("StatsThread"), 512 * 1024, TPri_BelowNormal, FPlatformAffinity::GetStatsThreadMask());
+		check(Thread);
 	}
+
+	/** Ends the stats runnable thread. */
+	void End()
+	{
+		delete Thread;
+		Thread = nullptr;
+	}
+
+private:
+	FRunnableThread* Thread;
 };
 
 /*-----------------------------------------------------------------------------
@@ -1038,26 +1057,28 @@ bool FThreadStats::bMasterDisableForever = false;
 bool FThreadStats::bIsRawStatsActive = false;
 
 FThreadStats::FThreadStats():
-	CurrentGameFrame(FStats::GameThreadStatsFrame),
-	ScopeCount(0), 
+	CurrentGameFrame(FStats::GameThreadStatsFrame.Load(EMemoryOrder::Relaxed)),
+	ScopeCount(0),
 	bWaitForExplicitFlush(0),
 	MemoryMessageScope(0),
 	bReentranceGuard(false),
-	bSawExplicitFlush(false)
+	bSawExplicitFlush(false),
+	bIsStatsThread(false)
 {
 	Packet.SetThreadProperties();
 
-	check(FPlatformTLS::IsValidTlsSlot(TlsSlot));
+	check(TlsSlot && FPlatformTLS::IsValidTlsSlot(TlsSlot));
 	FPlatformTLS::SetTlsValue(TlsSlot, this);
 }
 
 FThreadStats::FThreadStats( EConstructor ):
 	CurrentGameFrame(-1),
-	ScopeCount(0), 
+	ScopeCount(0),
 	bWaitForExplicitFlush(0),
 	MemoryMessageScope(0),
 	bReentranceGuard(false),
-	bSawExplicitFlush(false)
+	bSawExplicitFlush(false),
+	bIsStatsThread(false)
 {}
 
 void FThreadStats::CheckEnable()
@@ -1092,6 +1113,8 @@ void FThreadStats::Flush( bool bHasBrokenCallstacks /*= false*/, bool bForceFlus
 
 void FThreadStats::FlushRegularStats( bool bHasBrokenCallstacks, bool bForceFlush )
 {
+	LLM_SCOPE(ELLMTag::Stats);
+
 	if (bReentranceGuard)
 	{
 		return;
@@ -1147,8 +1170,14 @@ void FThreadStats::FlushRegularStats( bool bHasBrokenCallstacks, bool bForceFlus
 			}
 			Packet.StatMessages.Empty(MaxPresize);
 		}
-
-		TGraphTask<FStatMessagesTask>::CreateTask().ConstructAndDispatchWhenReady(ToSend);
+		if (bIsStatsThread)
+		{
+			FStatsThread::Get().SelfStatMessage(ToSend);
+		}
+		else
+		{
+			TGraphTask<FStatMessagesTask>::CreateTask().ConstructAndDispatchWhenReady(ToSend);
+		}
 		UpdateExplicitFlush();
 	}
 }
@@ -1160,7 +1189,7 @@ void FThreadStats::FlushRawStats( bool bHasBrokenCallstacks /*= false*/, bool bF
 		return;
 	}
 	TGuardValue<bool> Guard( bReentranceGuard, true );
-	
+
 	enum
 	{
 		/** Maximum number of messages in the stat packet. */
@@ -1184,7 +1213,14 @@ void FThreadStats::FlushRawStats( bool bHasBrokenCallstacks /*= false*/, bool bF
 
 		check(!Packet.StatMessages.Num());
 
-		TGraphTask<FStatMessagesTask>::CreateTask().ConstructAndDispatchWhenReady(ToSend);
+		if (bIsStatsThread)
+		{
+			FStatsThread::Get().SelfStatMessage(ToSend);
+		}
+		else
+		{
+			TGraphTask<FStatMessagesTask>::CreateTask().ConstructAndDispatchWhenReady(ToSend);
+		}
 		UpdateExplicitFlush();
 
 		const float NumMessagesAsMB = NumMessages*sizeof(FStatMessage) / 1024.0f / 1024.0f;
@@ -1212,7 +1248,8 @@ void FThreadStats::CheckForCollectingStartupStats()
 		Cmds.ParseIntoArray(CmdsArray, TEXT( "," ), true);
 		for (int32 Index = 0; Index < CmdsArray.Num(); Index++)
 		{
-			FString StatCmd = FString("stat ") + CmdsArray[Index].Trim();
+			CmdsArray[Index].TrimStartInline();
+			FString StatCmd = FString("stat ") + CmdsArray[Index];
 			UE_LOG(LogStatGroupEnableManager, Log, TEXT("Sending Stat Command '%s'"), *StatCmd);
 			DirectStatsCommand(*StatCmd);
 		}
@@ -1224,7 +1261,7 @@ void FThreadStats::CheckForCollectingStartupStats()
 		}
 		CmdLine = CmdLine.Mid(Index + StatCmds.Len());
 	}
-	
+
 	if (FParse::Param( FCommandLine::Get(), TEXT( "LoadTimeStats" ) ))
 	{
 		DirectStatsCommand( TEXT( "stat group enable LinkerLoad" ) );
@@ -1283,21 +1320,21 @@ void FThreadStats::StartThread()
 	FThreadStats::FrameDataIsIncomplete(); // make this non-zero
 	check(IsInGameThread());
 	check(!IsThreadingReady());
-	FStatsThreadState::GetLocalState(); // start up the state
-	FStatsThread::Get();
-	FStatsThread::Get().Start();
-
 	// Preallocate a bunch of FThreadStats to avoid dynamic memory allocation.
 	// (Must do this before we expose ourselves to other threads via tls).
 	FThreadStatsPool::Get();
-
+	FStatsThreadState::GetLocalState(); // start up the state
 	if (!TlsSlot)
 	{
 		TlsSlot = FPlatformTLS::AllocTlsSlot();
+		check(TlsSlot);
 	}
+	FStatsThread::Get();
+	FStatsThread::Get().Start();
+
 	check(IsThreadingReady());
 	CheckEnable();
-	
+
 	if( FThreadStats::WillEverCollectData() )
 	{
 		FThreadStats::ExplicitFlush(); // flush the stats and set update the scope so we don't flush again until a frame update, this helps prevent fragmentation
@@ -1316,7 +1353,7 @@ void FThreadStats::StopThread()
 {
 	// Nothing to stop if it was never started
 	if (IsThreadingReady())
-	{	
+	{
 		if (FStats::HasLoadTimeStatsForCommandletToken())
 		{
 			// Dump all the collected stats to the log, if any.
@@ -1335,11 +1372,17 @@ void FThreadStats::StopThread()
 		}
 		FGraphEventRef QuitTask = TGraphTask<FReturnGraphTask>::CreateTask(NULL, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(FPlatformProcess::SupportsMultithreading() ? ENamedThreads::StatsThread : ENamedThreads::GameThread);
 		FTaskGraphInterface::Get().WaitUntilTaskCompletes(QuitTask, ENamedThreads::GameThread_Local);
+
+		FStatsThread::Get().End();
 	}
 }
 
 void FThreadStats::WaitForStats()
 {
+#if PLATFORM_HTML5
+	return;	// even checking FPlatformProcess::SupportsMultithreading() -- CreateTask() is still crashing on HTML5 -- TODO: check back after WASM w/multi-threading is in....
+#endif
+
 	check(IsInGameThread());
 	if (IsThreadingReady() && !bMasterDisableForever)
 	{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AbilitySystemTestPawn.h"
 #include "AbilitySystemComponent.h"
@@ -35,5 +35,3 @@ UAbilitySystemComponent* AAbilitySystemTestPawn::GetAbilitySystemComponent() con
 	return FindComponentByClass<UAbilitySystemComponent>();
 }
 
-/** Returns AbilitySystemComponent subobject **/
-UAbilitySystemComponent* AAbilitySystemTestPawn::GetAbilitySystemComponent() { return AbilitySystemComponent; }

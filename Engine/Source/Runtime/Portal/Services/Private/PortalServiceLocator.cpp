@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PortalServiceLocator.h"
 #include "Misc/WildcardString.h"
@@ -31,7 +31,6 @@ public:
 
 	virtual TSharedPtr<IPortalService> GetService(const FString& ServiceName, const FString& ProductId) override
 	{
-		TSharedPtr<void> Result;
 		TArray<FConfigEntry>& Entries = Configuration.FindOrAdd(ServiceName);
 
 		for (FConfigEntry& Entry : Entries)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -31,10 +31,18 @@ public class AudioMixerAudioUnit : ModuleRules
 		PublicFrameworks.AddRange(new string[]
 		{
 			"AudioToolbox",
-			"CoreAudio",
-			"AVFoundation"
+			"CoreAudio"
 		});
+		
+		if (Target.Platform == UnrealTargetPlatform.IOS)
+		{
+			PublicFrameworks.Add("AVFoundation");
+		}
+        else if (Target.Platform == UnrealTargetPlatform.Mac)
+        {
+            PublicFrameworks.Add("AudioUnit");
+        }
 
-		Definitions.Add("WITH_OGGVORBIS=1");
+		PublicDefinitions.Add("WITH_OGGVORBIS=1");
 	}
 }

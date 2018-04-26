@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Editor/GameplayDebuggerInputConfigCustomization.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -52,7 +52,7 @@ void FGameplayDebuggerInputConfigCustomization::CustomizeChildren(TSharedRef<cla
 			continue;
 		}
 
-		StructBuilder.AddChildProperty(PropHandle.ToSharedRef());
+		StructBuilder.AddProperty(PropHandle.ToSharedRef());
 	}
 };
 

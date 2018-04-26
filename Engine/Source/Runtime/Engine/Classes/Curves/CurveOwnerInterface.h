@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Curves/RichCurve.h"
-
+#include "UObject/PackageReload.h"
 
 /**
  * Interface you implement if you want the CurveEditor to be able to edit curves on you.
@@ -23,6 +23,9 @@ public:
 
 	/** Called to modify the owner of the curve */
 	virtual void ModifyOwner() = 0;
+
+	/** Called to modify the owner of the curve during interaction/while being edited. */
+	virtual void ModifyOwnerChange() { ModifyOwner(); }
 
 	/** Returns the owner(s) of the curve */
 	virtual TArray<const UObject*> GetOwners() const = 0;
@@ -56,4 +59,21 @@ public:
 
 	/** @return Color for this curve */
 	virtual FLinearColor GetCurveColor(FRichCurveEditInfo CurveInfo) const;
+
+	/** Called during package reload to repoint a curve interface asset */
+	virtual bool RepointCurveOwner(const FPackageReloadedEvent& InPackageReloadedEvent, FCurveOwnerInterface*& OutNewCurveOwner) const
+	{
+		return false;
+	}
+	
+protected:
+	/** Default implementation of RepointCurveOwner that can be used with UObject based types that inherit FCurveOwnerInterface */
+	template <typename AssetType>
+	static bool RepointCurveOwnerAsset(const FPackageReloadedEvent& InPackageReloadedEvent, const AssetType* InCurveOwnerAsset, FCurveOwnerInterface*& OutNewCurveOwner)
+	{
+		AssetType* NewCurveOwnerAsset = nullptr;
+		const bool bDidRepoint = InPackageReloadedEvent.GetRepointedObject(InCurveOwnerAsset, NewCurveOwnerAsset);
+		OutNewCurveOwner = NewCurveOwnerAsset;
+		return bDidRepoint;
+	}
 };

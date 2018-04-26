@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D12Resources.h: D3D resource RHI definitions.
@@ -96,7 +96,7 @@ private:
 	D3D12_RESOURCE_DESC Desc;
 	uint8 PlaneCount;
 	uint16 SubresourceCount;
-	CResourceState* pResourceState;
+	CResourceState ResourceState;
 	D3D12_RESOURCE_STATES DefaultResourceState;
 	D3D12_RESOURCE_STATES ReadableState;
 	D3D12_RESOURCE_STATES WritableState;
@@ -152,11 +152,12 @@ public:
 	uint16 GetArraySize() const { return (Desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D) ? 1 : Desc.DepthOrArraySize; }
 	uint8 GetPlaneCount() const { return PlaneCount; }
 	uint16 GetSubresourceCount() const { return SubresourceCount; }
-	CResourceState* GetResourceState()
+	CResourceState& GetResourceState()
 	{
+		check(bRequiresResourceStateTracking);
 		// This state is used as the resource's "global" state between command lists. It's only needed for resources that
 		// require state tracking.
-		return pResourceState;
+		return ResourceState;
 	}
 	D3D12_RESOURCE_STATES GetDefaultResourceState() const { check(!bRequiresResourceStateTracking); return DefaultResourceState; }
 	D3D12_RESOURCE_STATES GetWritableState() const { return WritableState; }
@@ -181,6 +182,7 @@ public:
 
 	inline bool ShouldDeferDelete() const { return bDeferDelete; }
 	inline bool IsPlacedResource() const { return Heap.GetReference() != nullptr; }
+	inline FD3D12Heap* GetHeap() const { return Heap; };
 	inline bool IsDepthStencilResource() const { return bDepthStencil; }
 
 	void StartTrackingForResidency();
@@ -205,7 +207,7 @@ public:
 			bReadBackResource(HeapType == D3D12_HEAP_TYPE_READBACK)
 		{}
 
-		const D3D12_RESOURCE_STATES GetOptimalInitialState() const
+		const D3D12_RESOURCE_STATES GetOptimalInitialState(bool bAccurateWriteableStates) const
 		{
 			if (bSRVOnly)
 			{
@@ -215,9 +217,28 @@ public:
 			{
 				return (bReadBackResource) ? D3D12_RESOURCE_STATE_COPY_DEST : D3D12_RESOURCE_STATE_GENERIC_READ;
 			}
-			else if (bWritable) // This things require tracking anyway
+			else if (bWritable)
 			{
-				return D3D12_RESOURCE_STATE_COMMON;
+				if (bAccurateWriteableStates)
+				{
+					if (bDSV)
+					{
+						return D3D12_RESOURCE_STATE_DEPTH_WRITE;
+					}
+					else if (bRTV)
+					{
+						return D3D12_RESOURCE_STATE_RENDER_TARGET;
+					}
+					else if (bUAV)
+					{
+						return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+					}
+				}
+				else
+				{
+					// This things require tracking anyway
+					return D3D12_RESOURCE_STATE_COMMON;
+				}
 			}
 
 			return D3D12_RESOURCE_STATE_COMMON;
@@ -242,9 +263,8 @@ private:
 		if (bRequiresResourceStateTracking)
 		{
 			// Only a few resources (~1%) actually need resource state tracking
-			pResourceState = new CResourceState();
-			pResourceState->Initialize(SubresourceCount);
-			pResourceState->SetResourceState(InitialState);
+			ResourceState.Initialize(SubresourceCount);
+			ResourceState.SetResourceState(InitialState);
 		}
 	}
 
@@ -355,8 +375,13 @@ public:
 		eStandAlone,
 		eSubAllocation,
 		eFastAllocation,
-		eAliased // Occulus is the only API that uses this
+		eAliased, // Oculus is the only API that uses this
+		eHeapAliased, 
 	};
+
+	// Resource locations shouldn't be copied or moved. Use TransferOwnership to move resource locations.
+	FD3D12ResourceLocation(FD3D12ResourceLocation&&) = delete;
+	FD3D12ResourceLocation(FD3D12ResourceLocation const&) = delete;
 
 	FD3D12ResourceLocation(FD3D12Device* Parent);
 	~FD3D12ResourceLocation();
@@ -390,11 +415,25 @@ public:
 
 	const inline bool IsValid() const { return Type != ResourceLocationType::eUndefined; }
 
-	inline void AsStandAlone(FD3D12Resource* Resource, uint32 BufferSize = 0)
+	inline void AsStandAlone(FD3D12Resource* Resource, uint32 BufferSize = 0, bool bInIsTransient = false )
 	{
 		SetType(FD3D12ResourceLocation::ResourceLocationType::eStandAlone);
 		SetResource(Resource);
 		SetSize(BufferSize);
+
+		if (!IsCPUInaccessible(Resource->GetHeapType()))
+		{
+			SetMappedBaseAddress(Resource->Map());
+		}
+		SetGPUVirtualAddress(Resource->GetGPUVirtualAddress());
+		SetTransient(bInIsTransient);
+	}
+
+	inline void AsHeapAliased(FD3D12Resource* Resource)
+	{
+		SetType(FD3D12ResourceLocation::ResourceLocationType::eHeapAliased);
+		SetResource(Resource);
+		SetSize(0);
 
 		if (IsCPUWritable(Resource->GetHeapType()))
 		{
@@ -402,6 +441,7 @@ public:
 		}
 		SetGPUVirtualAddress(Resource->GetGPUVirtualAddress());
 	}
+
 
 	inline void AsFastAllocation(FD3D12Resource* Resource, uint32 BufferSize, D3D12_GPU_VIRTUAL_ADDRESS GPUBase, void* CPUBase, uint64 Offset)
 	{
@@ -417,10 +457,19 @@ public:
 		SetGPUVirtualAddress(GPUBase + Offset);
 	}
 
-	// Occulus API Aliases textures so this allows 2+ resource locations to reference the same underlying
+	// Oculus API Aliases textures so this allows 2+ resource locations to reference the same underlying
 	// resource. We should avoid this as much as possible as it requires expensive reference counting and
 	// it complicates the resource ownership model.
 	static void Alias(FD3D12ResourceLocation& Destination, FD3D12ResourceLocation& Source);
+
+	void SetTransient(bool bInTransient)
+	{
+		bTransient = bInTransient;
+	}
+	bool IsTransient() const
+	{
+		return bTransient;
+	}
 
 private:
 
@@ -451,6 +500,8 @@ private:
 
 	// The size the application asked for
 	uint64 Size;
+
+	bool bTransient;
 };
 
 class FD3D12DeferredDeletionQueue : public FD3D12AdapterChild
@@ -526,6 +577,8 @@ struct FD3D12LockedResource : public FD3D12DeviceChild
 class FD3D12BaseShaderResource : public FD3D12DeviceChild, public IRefCountedObject
 {
 public:
+	FD3D12Resource* GetResource() const { return ResourceLocation.GetResource(); }
+
 	FD3D12ResourceLocation ResourceLocation;
 	uint32 BufferAlignment;
 
@@ -576,8 +629,16 @@ private:
 	class FD3D12DynamicRHI* D3D12RHI;
 };
 
+#if PLATFORM_WINDOWS
+class FD3D12TransientResource
+{
+	// Nothing special for fast ram
+};
+class FD3D12FastClearResource {};
+#endif
+
 /** Index buffer resource class that stores stride information. */
-class FD3D12IndexBuffer : public FRHIIndexBuffer, public FD3D12BaseShaderResource, public FD3D12LinkedAdapterObject<FD3D12IndexBuffer>
+class FD3D12IndexBuffer : public FRHIIndexBuffer, public FD3D12BaseShaderResource, public FD3D12TransientResource, public FD3D12LinkedAdapterObject<FD3D12IndexBuffer>
 {
 public:
 
@@ -609,7 +670,7 @@ public:
 };
 
 /** Structured buffer resource class. */
-class FD3D12StructuredBuffer : public FRHIStructuredBuffer, public FD3D12BaseShaderResource, public FD3D12LinkedAdapterObject<FD3D12StructuredBuffer>
+class FD3D12StructuredBuffer : public FRHIStructuredBuffer, public FD3D12BaseShaderResource, public FD3D12TransientResource, public FD3D12LinkedAdapterObject<FD3D12StructuredBuffer>
 {
 public:
 
@@ -644,7 +705,7 @@ public:
 class FD3D12ShaderResourceView;
 
 /** Vertex buffer resource class. */
-class FD3D12VertexBuffer : public FRHIVertexBuffer, public FD3D12BaseShaderResource, public FD3D12LinkedAdapterObject<FD3D12VertexBuffer>
+class FD3D12VertexBuffer : public FRHIVertexBuffer, public FD3D12BaseShaderResource, public FD3D12TransientResource, public FD3D12LinkedAdapterObject<FD3D12VertexBuffer>
 {
 public:
 	// Current SRV
@@ -666,11 +727,6 @@ public:
 	void SetDynamicSRV(FD3D12ShaderResourceView* InSRV)
 	{
 		DynamicSRV = InSRV;
-	}
-
-	FD3D12ShaderResourceView* GetDynamicSRV() const
-	{
-		return DynamicSRV;
 	}
 
 	// IRefCountedObject interface.
@@ -718,6 +774,16 @@ public:
 		Barrier.Transition.StateAfter = After;
 		Barrier.Transition.Subresource = Subresource;
 		Barrier.Transition.pResource = pResource;
+	}
+
+	void AddAliasingBarrier(ID3D12Resource* pResource)
+	{
+		Barriers.AddUninitialized();
+		D3D12_RESOURCE_BARRIER& Barrier = Barriers.Last();
+		Barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_ALIASING;
+		Barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+		Barrier.Aliasing.pResourceBefore = NULL;
+		Barrier.Aliasing.pResourceAfter = pResource;
 	}
 
 	// Flush the batch to the specified command list then reset.

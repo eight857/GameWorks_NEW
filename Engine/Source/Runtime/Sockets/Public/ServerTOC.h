@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -32,13 +32,25 @@ struct SOCKETS_API FServerTOC
 	 * @param Filename File name to find.
 	 * @return Pointer to a timestamp if the file was found, NULL otherwise.
 	 */
-	FDateTime* FindFile(const FString& Filename);
+	const FDateTime* FindFile(const FString& Filename) const;
 
 	/**
 	 * Finds a directory in TOC.
 	 *
 	 * @param Directory Directory to find.
-	 * @return Pointer to a timestamp if the directory was found, NULL otherwise.
+	 * @return Pointer to a FDirectory if the directory was found, NULL otherwise.
+	 */
+	const FDirectory* FindDirectory(const FString& Directory) const;
+
+	/**
+	 * Finds a directory in TOC non const version used internally 
+	 * see FindDirectory
+	 *
+	 * @param Directory Directory to find
+	 * @return pointer to a FDirectory if the directory was found, null otherwise
 	 */
 	FDirectory* FindDirectory(const FString& Directory);
+
+
+	int32 RemoveFileOrDirectory(const FString& Filename);
 };

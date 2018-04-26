@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PhysicsAsset.cpp
@@ -14,6 +14,10 @@
 #include "UObject/ReleaseObjectVersion.h"
 #include "Logging/MessageLog.h"
 #include "UObjectIterator.h"
+
+#if WITH_EDITOR
+#include "Misc/MessageDialog.h"
+#endif
 
 #define LOCTEXT_NAMESPACE "PhysicsAsset"
 
@@ -216,7 +220,7 @@ void UPhysicsAsset::Serialize(FArchive& Ar)
 #if WITH_EDITORONLY_DATA
 	if (DefaultSkelMesh_DEPRECATED != NULL)
 	{
-		PreviewSkeletalMesh = TAssetPtr<USkeletalMesh>(DefaultSkelMesh_DEPRECATED);
+		PreviewSkeletalMesh = TSoftObjectPtr<USkeletalMesh>(DefaultSkelMesh_DEPRECATED);
 		DefaultSkelMesh_DEPRECATED = NULL;
 	}
 #endif
@@ -260,6 +264,21 @@ void UPhysicsAsset::DisableCollision(int32 BodyIndexA, int32 BodyIndexB)
 	}
 
 	CollisionDisableTable.Add(Key, 0);
+}
+
+bool UPhysicsAsset::IsCollisionEnabled(int32 BodyIndexA, int32 BodyIndexB) const
+{
+	if(BodyIndexA == BodyIndexB)
+	{
+		return false;
+	}
+
+	if(CollisionDisableTable.Find(FRigidBodyIndexPair(BodyIndexA, BodyIndexB)))
+	{
+		return false;
+	}
+
+	return true;
 }
 
 FBox UPhysicsAsset::CalcAABB(const USkinnedMeshComponent* MeshComp, const FTransform& LocalToWorld) const
@@ -313,11 +332,10 @@ FBox UPhysicsAsset::CalcAABB(const USkinnedMeshComponent* MeshComp, const FTrans
 				int32 BoneIndex = MeshComp->GetBoneIndex(bs->BoneName);
 				if(BoneIndex != INDEX_NONE)
 				{
-					FTransform WorldBoneTransform = MeshComp->GetBoneTransform(BoneIndex, LocalToWorld);
-					if(FMath::Abs(WorldBoneTransform.GetDeterminant()) > (float)KINDA_SMALL_NUMBER)
-					{
-						Box += bs->AggGeom.CalcAABB( WorldBoneTransform );
-					}
+					const FTransform WorldBoneTransform = MeshComp->GetBoneTransform(BoneIndex, LocalToWorld);
+					const FBox BodySetupBounds = bs->AggGeom.CalcAABB(WorldBoneTransform);
+					
+					Box += BodySetupBounds;
 				}
 			}
 		}
@@ -343,6 +361,48 @@ FBox UPhysicsAsset::CalcAABB(const USkinnedMeshComponent* MeshComp, const FTrans
 
 	return Box;
 }
+
+#if WITH_EDITOR
+bool UPhysicsAsset::CanCalculateValidAABB(const USkinnedMeshComponent* MeshComp, const FTransform& LocalToWorld) const
+{
+	bool ValidBox = false;
+
+	if (!MeshComp)
+	{
+		return false;
+	}
+
+	FVector Scale3D = LocalToWorld.GetScale3D();
+	if (!Scale3D.IsUniform())
+	{
+		return false;
+	}
+
+	for (int32 i = 0; i < SkeletalBodySetups.Num(); i++)
+	{
+		UBodySetup* bs = SkeletalBodySetups[i];
+		// Check if setup should be considered for bounds, or if all bodies should be considered anyhow
+		if (bs->bConsiderForBounds || MeshComp->bConsiderAllBodiesForBounds)
+		{
+			int32 BoneIndex = MeshComp->GetBoneIndex(bs->BoneName);
+			if (BoneIndex != INDEX_NONE)
+			{
+				FTransform WorldBoneTransform = MeshComp->GetBoneTransform(BoneIndex, LocalToWorld);
+				if (FMath::Abs(WorldBoneTransform.GetDeterminant()) >(float)KINDA_SMALL_NUMBER)
+				{
+					FBox Box = bs->AggGeom.CalcAABB(WorldBoneTransform);
+					if (Box.GetSize().SizeSquared() > (float)KINDA_SMALL_NUMBER)
+					{
+						ValidBox = true;
+						break;
+					}
+				}
+			}
+		}
+	}
+	return ValidBox;
+}
+#endif //WITH_EDITOR
 
 int32	UPhysicsAsset::FindControllingBodyIndex(class USkeletalMesh* skelMesh, int32 StartBoneIndex)
 {
@@ -545,7 +605,7 @@ void SanitizeProfilesHelper(const TArray<T*>& SetupInstances, const TArray<FName
 
 	if (ArrayIdx != INDEX_NONE)
 	{
-		if(PropertyChangedEvent.ChangeType != EPropertyChangeType::Unspecified)
+		if(PropertyChangedEvent.ChangeType != EPropertyChangeType::Unspecified && PropertyChangedEvent.ChangeType != EPropertyChangeType::ArrayRemove)
 		{
 			int32 CollisionCount = 0;
 			FName NewName = PostProfiles[ArrayIdx] == NAME_None ? FName(TEXT("New")) : PostProfiles[ArrayIdx];
@@ -562,7 +622,7 @@ void SanitizeProfilesHelper(const TArray<T*>& SetupInstances, const TArray<FName
 	}
 	
 
-	if (PropertyChangedEvent.ChangeType == EPropertyChangeType::ValueSet)
+	if (PropertyChangedEvent.ChangeType == EPropertyChangeType::ValueSet || PropertyChangedEvent.ChangeType == EPropertyChangeType::ArrayClear)
 	{
 		if (ArrayIdx != INDEX_NONE)	//INDEX_NONE can come when emptying the array, so just ignore it
 		{
@@ -698,6 +758,8 @@ void UPhysicsAsset::BodyFindConstraints(int32 BodyIndex, TArray<int32>& Constrai
 }
 
 #if WITH_EDITOR
+UPhysicsAsset::FRefreshPhysicsAssetChangeDelegate UPhysicsAsset::OnRefreshPhysicsAssetChange;
+
 void UPhysicsAsset::RefreshPhysicsAssetChange() const
 {
 	for (FObjectIterator Iter(USkeletalMeshComponent::StaticClass()); Iter; ++Iter)
@@ -715,22 +777,59 @@ void UPhysicsAsset::RefreshPhysicsAssetChange() const
 			}
 		}
 	}
+
+	OnRefreshPhysicsAssetChange.Broadcast(this);
 }
+
+USkeletalMesh* UPhysicsAsset::GetPreviewMesh() const
+{
+	USkeletalMesh* PreviewMesh = PreviewSkeletalMesh.Get();
+	if(!PreviewMesh)
+	{
+		// if preview mesh isn't loaded, see if we have set
+		FSoftObjectPath PreviewMeshStringRef = PreviewSkeletalMesh.ToSoftObjectPath();
+		// load it since now is the time to load
+		if(!PreviewMeshStringRef.ToString().IsEmpty())
+		{
+			PreviewMesh = Cast<USkeletalMesh>(StaticLoadObject(USkeletalMesh::StaticClass(), nullptr, *PreviewMeshStringRef.ToString(), nullptr, LOAD_None, nullptr));
+		}
+	}
+
+	return PreviewMesh;
+}
+
+void UPhysicsAsset::SetPreviewMesh(USkeletalMesh* PreviewMesh)
+{
+	if(PreviewMesh)
+	{
+		// See if any bones are missing from the skeletal mesh we are trying to use
+		// @todo Could do more here - check for bone lengths etc. Maybe modify asset?
+		for (int32 i = 0; i < SkeletalBodySetups.Num(); ++i)
+		{
+			FName BodyName = SkeletalBodySetups[i]->BoneName;
+			int32 BoneIndex = PreviewMesh->RefSkeleton.FindBoneIndex(BodyName);
+			if (BoneIndex == INDEX_NONE)
+			{
+				FMessageDialog::Open(EAppMsgType::Ok,
+					FText::Format( LOCTEXT("BoneMissingFromSkelMesh", "The SkeletalMesh is missing bone '{0}' needed by this PhysicsAsset."), FText::FromName(BodyName) ));
+				return;
+			}
+		}
+	}
+
+	Modify();
+	PreviewSkeletalMesh = PreviewMesh;
+}
+
 #endif
 
 void UPhysicsAsset::GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize)
 {
 	Super::GetResourceSizeEx(CumulativeResourceSize);
 
-	for (const auto& SingleBody : SkeletalBodySetups)
-	{
-		SingleBody->GetResourceSizeEx(CumulativeResourceSize);
-	}
-
+	// Nested body setups are handled by default implementation
 	CumulativeResourceSize.AddDedicatedSystemMemoryBytes(BodySetupIndexMap.GetAllocatedSize());
 	CumulativeResourceSize.AddDedicatedSystemMemoryBytes(CollisionDisableTable.GetAllocatedSize());
-
-	// @todo implement inclusive mode
 }
 
 #undef LOCTEXT_NAMESPACE

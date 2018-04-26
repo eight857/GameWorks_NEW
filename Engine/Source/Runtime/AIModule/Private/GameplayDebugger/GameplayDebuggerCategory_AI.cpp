@@ -1,6 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayDebugger/GameplayDebuggerCategory_AI.h"
+
+#if WITH_GAMEPLAY_DEBUGGER
+
 #include "GameFramework/Pawn.h"
 #include "ShowFlags.h"
 #include "PrimitiveViewRelevance.h"
@@ -13,9 +16,6 @@
 #include "Engine/Canvas.h"
 #include "AIController.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
-
-#if WITH_GAMEPLAY_DEBUGGER
-
 #include "Engine/Texture2D.h"
 #include "DynamicMeshBuilder.h"
 #include "DebugRenderSceneProxy.h"
@@ -289,7 +289,7 @@ void FGameplayDebuggerCategory_AI::DrawData(APlayerController* OwnerPC, FGamepla
 	const bool bReducedMode = IsSimulateInEditor();
 	bShowCategoryName = !bReducedMode || DataPack.bHasController;
 
-	DrawPawnIcons(MyWorld, SelectedActor, OwnerPC ? OwnerPC->GetPawn() : nullptr, CanvasContext);
+	DrawPawnIcons(MyWorld, SelectedActor, OwnerPC->GetPawn(), CanvasContext);
 	if (SelectedActor)
 	{
 		DrawOverheadInfo(*SelectedActor, CanvasContext);
@@ -331,9 +331,15 @@ void FGameplayDebuggerCategory_AI::DrawData(APlayerController* OwnerPC, FGamepla
 
 FDebugRenderSceneProxy* FGameplayDebuggerCategory_AI::CreateDebugSceneProxy(const UPrimitiveComponent* InComponent, FDebugDrawDelegateHelper*& OutDelegateHelper)
 {
-	class FPathDebugRenderSceneProxy : public FDebugRenderSceneProxy
+	class FPathDebugRenderSceneProxy final : public FDebugRenderSceneProxy
 	{
 	public:
+		SIZE_T GetTypeHash() const override
+		{
+			static size_t UniquePointer;
+			return reinterpret_cast<size_t>(&UniquePointer);
+		}
+
 		FPathDebugRenderSceneProxy(const UPrimitiveComponent* InPrimitiveCComponent, const FString &InViewFlagName)
 			: FDebugRenderSceneProxy(InPrimitiveCComponent)
 		{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SpriteEditor/SpriteEditorViewportClient.h"
 #include "Modules/ModuleManager.h"
@@ -588,7 +588,7 @@ void FSpriteEditorViewportClient::Draw(const FSceneView* View, FPrimitiveDrawInt
 	{
 		const bool bCanSelectPivot = false;
 		const bool bHitTestingForPivot = PDI->IsHitTesting() && bCanSelectPivot;
-		FUnrealEdUtils::DrawWidget(View, PDI, RenderSpriteComponent->ComponentToWorld.ToMatrixWithScale(), 0, 0, EAxisList::XZ, EWidgetMovementMode::WMM_Translate, bHitTestingForPivot);
+		FUnrealEdUtils::DrawWidget(View, PDI, RenderSpriteComponent->GetComponentTransform().ToMatrixWithScale(), 0, 0, EAxisList::XZ, EWidgetMovementMode::WMM_Translate, bHitTestingForPivot);
 	}
 
 	if (bShowSockets && !IsInSourceRegionEditMode())

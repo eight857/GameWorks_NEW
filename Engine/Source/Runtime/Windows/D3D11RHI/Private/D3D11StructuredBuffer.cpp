@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "D3D11RHIPrivate.h"
 
@@ -53,7 +53,7 @@ FStructuredBufferRHIRef FD3D11DynamicRHI::RHICreateStructuredBuffer(uint32 Strid
 
 	Desc.StructureByteStride = Stride;
 
-	if (FPlatformProperties::SupportsFastVRAMMemory())
+	if (FPlatformMemory::SupportsFastVRAMMemory())
 	{
 		if (InUsage & BUF_FastVRAM)
 		{

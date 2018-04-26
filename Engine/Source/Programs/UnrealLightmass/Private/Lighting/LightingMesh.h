@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,6 +18,21 @@ class FMeshAreaLight;
 /** The vertex data used to build static lighting. */
 struct FStaticLightingVertex: public FStaticLightingVertexData
 {
+	FStaticLightingVertex() {}
+
+	FStaticLightingVertex(const FMinimalStaticLightingVertex& InVertex)
+	{
+		WorldPosition = InVertex.WorldPosition;
+		WorldTangentZ = InVertex.WorldTangentZ;
+
+		for (int32 i = 0; i < ARRAY_COUNT(TextureCoordinates); i++)
+		{
+			TextureCoordinates[i] = InVertex.TextureCoordinates[i];
+		}
+
+		GenerateVertexTangents();
+	}
+
 	/** Transforms a world space vector into the tangent space of this vertex. */
 	inline FVector4 TransformWorldVectorToTangent(const FVector4& WorldVector) const
 	{
@@ -185,6 +200,21 @@ struct FFullStaticLightingVertex : public FStaticLightingVertex
 	}
 
 	void ApplyVertexModifications(int32 ElementIndex, bool bUseNormalMapsForLighting, const class FStaticLightingMesh* Mesh);
+
+	inline void ComputePathDirections(const FVector4& TriangleTangentPathDirection, FVector4& WorldPathDirection, FVector4& TangentPathDirection) const
+	{
+		checkSlow(TriangleTangentPathDirection.Z >= 0.0f);
+		checkSlow(TriangleTangentPathDirection.IsUnit3());
+
+		// Generate the uniform hemisphere samples from a hemisphere based around the triangle normal, not the smoothed vertex normal
+		// This is important for cases where the smoothed vertex normal is very different from the triangle normal, in which case
+		// Using the smoothed vertex normal would cause self-intersection even on a plane
+		WorldPathDirection = TransformTriangleTangentVectorToWorld(TriangleTangentPathDirection);
+		checkSlow(WorldPathDirection.IsUnit3());
+
+		TangentPathDirection = TransformWorldVectorToTangent(WorldPathDirection);
+		checkSlow(TangentPathDirection.IsUnit3());
+	}
 };
 
 /** The result of an intersection between a light ray and the scene. */
@@ -196,7 +226,7 @@ public:
 	uint32 bIntersects : 1;
 
 	/** The differential geometry which the light ray intersected with, only valid if the ray intersected. */
-	FStaticLightingVertex IntersectionVertex;
+	FMinimalStaticLightingVertex IntersectionVertex;
 
 	/** Transmission of the ray, valid whether the ray intersected or not as long as Transmission was requested from FStaticLightingAggregateMesh::IntersectLightRay. */
 	FLinearColor Transmission;
@@ -206,9 +236,6 @@ public:
 
 	/** The mapping that was intersected by the ray, only valid if the ray intersected. */
 	const class FStaticLightingMapping* Mapping;
-
-	/** Index of one of the vertices in the triangle intersected. */
-	int32 VertexIndex;
 
 	/** Primitive type specific element index associated with the triangle that was hit, only valid if the ray intersected. */
 	int32 ElementIndex;
@@ -220,24 +247,22 @@ public:
 	/** Initialization constructor. */
 	FLightRayIntersection(
 		bool bInIntersects, 
-		const FStaticLightingVertex& InIntersectionVertex, 
+		const FMinimalStaticLightingVertex& InIntersectionVertex, 
 		const FStaticLightingMesh* InMesh, 
 		const FStaticLightingMapping* InMapping,
-		int32 InVertexIndex,
 		int32 InElementIndex)
 		:
 		bIntersects(bInIntersects),
 		IntersectionVertex(InIntersectionVertex),
 		Mesh(InMesh),
 		Mapping(InMapping),
-		VertexIndex(InVertexIndex),
 		ElementIndex(InElementIndex)
 	{
 		checkSlow(!bInIntersects || (InMesh && /*InMapping &&*/ ElementIndex >= 0));
 	}
 
 	/** No intersection constructor. */
-	static FLightRayIntersection None() { return FLightRayIntersection(false,FStaticLightingVertex(),NULL,NULL,INDEX_NONE,INDEX_NONE); }
+	static FLightRayIntersection None() { return FLightRayIntersection(false,FMinimalStaticLightingVertex(),NULL,NULL,INDEX_NONE); }
 };
 
 /** Stores information about an element of the mesh which can have its own material. */
@@ -256,7 +281,7 @@ public:
 	bool bIsTwoSided;
 	/** Whether Material wants to cast shadows as masked, cached here to avoid dereferencing Material. */
 	bool bCastShadowAsMasked;
-
+	bool bSurfaceDomain;
 	/** The material associated with this element.  After import, Material is always valid (non-null and points to an FMaterial). */
 	FMaterial* Material;
 
@@ -265,6 +290,7 @@ public:
 		bIsMasked(false),
 		bIsTwoSided(false),
 		bCastShadowAsMasked(false),
+		bSurfaceDomain(true),
 		Material(NULL)
 	{}
 };
@@ -318,6 +344,7 @@ public:
 	/** Whether samples using the given element are going to have backfaces visible, and therefore artifacts on backfaces should be avoided. */
 	inline bool IsTwoSided(int32 ElementIndex) const { return MaterialElements[ElementIndex].bIsTwoSided || MaterialElements[ElementIndex].bUseTwoSidedLighting; }
 	inline bool IsCastingShadowsAsMasked(int32 ElementIndex) const { return MaterialElements[ElementIndex].bCastShadowAsMasked; }
+	inline bool IsSurfaceDomain(int32 ElementIndex) const { return MaterialElements[ElementIndex].bSurfaceDomain; }
 	inline bool IsCastingShadowAsTwoSided() const { return bCastShadowAsTwoSided; }
 	inline bool IsEmissive(int32 ElementIndex) const { return MaterialElements[ElementIndex].bUseEmissiveForStaticLighting; }
 	inline bool IsIndirectlyShadowedOnly(int32 ElementIndex) const { return MaterialElements[ElementIndex].bShadowIndirectOnly; }
@@ -393,6 +420,7 @@ public:
 	/** Returns the LOD of this instance. */
 	virtual uint32 GetLODIndices() const { return 0; }
 	virtual uint32 GetHLODRange() const { return 0; }
+	bool DoesMeshBelongToLOD0() const;
 
 	/** For debugging */
 	virtual void SetDebugMaterial(bool bUseDebugMaterial, FLinearColor Diffuse);
@@ -501,7 +529,7 @@ public:
 	 * Which is the fraction of light that is reflected in any direction when the incident light is constant over all directions of the hemisphere.
 	 * This value is used to calculate exitant radiance, which is 1 / PI * HemisphericalHemisphericalReflectance * Irradiance, disregarding directional variation.
      */
-	inline FLinearColor EvaluateTotalReflectance(const FStaticLightingVertex& Vertex, int32 ElementIndex) const
+	inline FLinearColor EvaluateTotalReflectance(const FMinimalStaticLightingVertex& Vertex, int32 ElementIndex) const
 	{
 		return EvaluateDiffuse(Vertex.TextureCoordinates[0], ElementIndex);
 	}

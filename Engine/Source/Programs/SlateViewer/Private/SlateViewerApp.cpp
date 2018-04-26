@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SlateViewerApp.h"
 #include "RequiredProgramMainCPPInclude.h"
@@ -29,7 +29,7 @@ int RunSlateViewer( const TCHAR* CommandLine )
 	// Make sure all UObject classes are registered and default properties have been initialized
 	ProcessNewlyLoadedUObjects();
 	
-	// Tell the module manager is may now process newly-loaded UObjects when new C++ modules are loaded
+	// Tell the module manager it may now process newly-loaded UObjects when new C++ modules are loaded
 	FModuleManager::Get().StartProcessingNewlyLoadedObjects();
 
 	// crank up a normal Slate application using the platform's standalone renderer
@@ -211,7 +211,7 @@ namespace
 
 			FSlateApplication::Get().AddWindowAsNativeChild(BrowserWindowWidget, ParentWindow.ToSharedRef());
 			BrowserWindowWidget->BringToFront();
-			FSlateApplication::Get().SetKeyboardFocus( BrowserWidget, EKeyboardFocusCause::SetDirectly );
+			FSlateApplication::Get().SetKeyboardFocus( BrowserWidget, EFocusCause::SetDirectly );
 
 			BrowserWindowWidgets.Add(NewBrowserWindow, BrowserWindowWidget);
 			return true;

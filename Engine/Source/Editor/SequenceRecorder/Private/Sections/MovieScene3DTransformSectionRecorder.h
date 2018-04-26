@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,6 +12,7 @@
 class FMovieScene3DTransformSectionRecorder;
 class UMovieScene3DTransformSection;
 class UMovieScene3DTransformTrack;
+struct FActorRecordingSettings;
 
 class FMovieScene3DTransformSectionRecorderFactory : public IMovieSceneSectionRecorderFactory
 {
@@ -24,7 +25,7 @@ public:
 	TSharedPtr<class FMovieScene3DTransformSectionRecorder> CreateSectionRecorder(bool bRecordTransforms, TSharedPtr<class FMovieSceneAnimationSectionRecorder> InAnimRecorder) const;
 
 private:
-	virtual TSharedPtr<IMovieSceneSectionRecorder> CreateSectionRecorder(const struct FActorRecordingSettings& InActorRecordingSettings) const override;
+	virtual TSharedPtr<IMovieSceneSectionRecorder> CreateSectionRecorder(const FActorRecordingSettings& InActorRecordingSettings) const override;
 };
 
 /** Structure used to buffer up transform keys. Keys are inserted into tracks in FinalizeSection() */
@@ -65,7 +66,7 @@ public:
 	}
 
 private:
-	FTransform GetTransformToRecord();
+	bool GetTransformToRecord(FTransform& TransformToRecord);
 
 private:
 	/** Object to record from */
@@ -94,4 +95,7 @@ private:
 
 	/** Flag indicating that some time while this recorder was active an attachment was also in place */
 	bool bWasAttached;
+
+	/** The guid being recorded to */
+	FGuid Guid;
 };

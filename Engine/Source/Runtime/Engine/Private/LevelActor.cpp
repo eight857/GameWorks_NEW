@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -39,7 +39,11 @@
 #include "Components/BoxComponent.h"
 #include "GameFramework/MovementComponent.h"
 
+#include "Misc/TimeGuard.h"
+
 #define LOCTEXT_NAMESPACE "LevelActor"
+
+DECLARE_CYCLE_STAT(TEXT("Destroy Actor"), STAT_DestroyActor, STATGROUP_Game);
 
 // CVars
 static TAutoConsoleVariable<float> CVarEncroachEpsilon(
@@ -153,7 +157,7 @@ void LineCheckTracker::DumpLineChecks(int32 Threshold)
 {
 	if( LineCheckStackTracker )
 	{
-		const FString Filename = FString::Printf(TEXT("%sLineCheckLog-%s.csv"), *FPaths::GameLogDir(), *FDateTime::Now().ToString());
+		const FString Filename = FString::Printf(TEXT("%sLineCheckLog-%s.csv"), *FPaths::ProjectLogDir(), *FDateTime::Now().ToString());
 		FOutputDeviceFile OutputFile(*Filename);
 		LineCheckStackTracker->DumpStackTraces( Threshold, OutputFile );
 		OutputFile.TearDown();
@@ -161,7 +165,7 @@ void LineCheckTracker::DumpLineChecks(int32 Threshold)
 
 	if( LineCheckScriptStackTracker )
 	{
-		const FString Filename = FString::Printf(TEXT("%sScriptLineCheckLog-%s.csv"), *FPaths::GameLogDir(), *FDateTime::Now().ToString());
+		const FString Filename = FString::Printf(TEXT("%sScriptLineCheckLog-%s.csv"), *FPaths::ProjectLogDir(), *FDateTime::Now().ToString());
 		FOutputDeviceFile OutputFile(*Filename);
 		LineCheckScriptStackTracker->DumpStackTraces( Threshold, OutputFile );
 		OutputFile.TearDown();
@@ -247,7 +251,7 @@ void LineCheckTracker::CaptureLineCheck(int32 LineCheckFlags, const FVector* Ext
 	Level actor management.
 -----------------------------------------------------------------------------*/
 // LOOKING_FOR_PERF_ISSUES
-#define PERF_SHOW_MULTI_PAWN_SPAWN_FRAMES ((1 && !(UE_BUILD_SHIPPING || UE_BUILD_TEST)) || !WITH_EDITORONLY_DATA)
+#define PERF_SHOW_MULTI_PAWN_SPAWN_FRAMES (!(UE_BUILD_SHIPPING || UE_BUILD_TEST)) && (LOOKING_FOR_PERF_ISSUES || !WITH_EDITORONLY_DATA)
 
 #if PERF_SHOW_MULTI_PAWN_SPAWN_FRAMES
 	/** Array showing names of pawns spawned this frame. */
@@ -295,6 +299,9 @@ AActor* UWorld::SpawnActor( UClass* Class, FVector const* Location, FRotator con
 AActor* UWorld::SpawnActor( UClass* Class, FTransform const* UserTransformPtr, const FActorSpawnParameters& SpawnParameters )
 {
 	SCOPE_CYCLE_COUNTER(STAT_SpawnActorTime);
+	SCOPE_TIME_GUARD_NAMED_MS(TEXT("SpawnActor Of Type"), Class->GetFName(), 2);
+	
+
 	check( CurrentLevel ); 	
 	check(GIsEditor || (CurrentLevel == PersistentLevel));
 
@@ -401,7 +408,7 @@ AActor* UWorld::SpawnActor( UClass* Class, FTransform const* UserTransformPtr, c
 	// note: we can't handle all cases here, since we don't know the full component hierarchy until after the actor is spawned
 	if (CollisionHandlingMethod == ESpawnActorCollisionHandlingMethod::DontSpawnIfColliding)
 	{
-		USceneComponent* const TemplateRootComponent = Template ? Template->GetRootComponent() : nullptr;
+		USceneComponent* const TemplateRootComponent = Template->GetRootComponent();
 
 		// Note that we respect any initial transformation the root component may have from the CDO, so the final transform
 		// might necessarily be exactly the passed-in UserTransform.
@@ -453,6 +460,10 @@ AActor* UWorld::SpawnActor( UClass* Class, FTransform const* UserTransformPtr, c
 
 	// tell the actor what method to use, in case it was overridden
 	Actor->SpawnCollisionHandlingMethod = CollisionHandlingMethod;
+
+#if WITH_EDITOR
+	Actor->bIsEditorPreviewActor = SpawnParameters.bTemporaryEditorActor;
+#endif //WITH_EDITOR
 
 	Actor->PostSpawnInitialize(UserTransform, SpawnParameters.Owner, SpawnParameters.Instigator, SpawnParameters.IsRemoteOwned(), SpawnParameters.bNoFail, SpawnParameters.bDeferConstruction);
 
@@ -514,9 +525,13 @@ bool UWorld::EditorDestroyActor( AActor* ThisActor, bool bShouldModifyLevel )
  */
 bool UWorld::DestroyActor( AActor* ThisActor, bool bNetForce, bool bShouldModifyLevel )
 {
+	SCOPE_CYCLE_COUNTER(STAT_DestroyActor);
+
 	check(ThisActor);
 	check(ThisActor->IsValidLowLevel());
 	//UE_LOG(LogSpawn, Log,  "Destroy %s", *ThisActor->GetClass()->GetName() );
+
+	SCOPE_CYCLE_UOBJECT(ThisActor, ThisActor);
 
 	if (ThisActor->GetWorld() == NULL)
 	{
@@ -605,7 +620,7 @@ bool UWorld::DestroyActor( AActor* ThisActor, bool bNetForce, bool bShouldModify
 			OldParentActor->Modify();
 		}
 
-		ThisActor->DetachRootComponentFromParent();
+		ThisActor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
 #if WITH_EDITOR
 		if( GIsEditor )
@@ -650,7 +665,11 @@ bool UWorld::DestroyActor( AActor* ThisActor, bool bNetForce, bool bShouldModify
 	// Invalidate the lighting cache in the Editor.  We need to check for GIsEditor as play has not begun in network game and objects get destroyed on switching levels
 	if ( GIsEditor )
 	{
-		ThisActor->InvalidateLightingCache();
+		if (!IsGameWorld())
+		{
+			ThisActor->InvalidateLightingCache();
+		}
+		
 #if WITH_EDITOR
 		GEngine->BroadcastLevelActorDeleted(ThisActor);
 #endif
@@ -695,30 +714,33 @@ APlayerController* UWorld::SpawnPlayActor(UPlayer* NewPlayer, ENetRole RemoteRol
 		Options += InURL.Op[i];
 	}
 
-	AGameModeBase* GameMode = GetAuthGameMode();
-
-	// Give the GameMode a chance to accept the login
-	APlayerController* const NewPlayerController = GameMode->Login(NewPlayer, RemoteRole, *InURL.Portal, Options, UniqueId, Error);
-	if (NewPlayerController == NULL)
+	if (AGameModeBase* const GameMode = GetAuthGameMode())
 	{
-		UE_LOG(LogSpawn, Warning, TEXT("Login failed: %s"), *Error);
-		return NULL;
+		// Give the GameMode a chance to accept the login
+		APlayerController* const NewPlayerController = GameMode->Login(NewPlayer, RemoteRole, *InURL.Portal, Options, UniqueId, Error);
+		if (NewPlayerController == NULL)
+		{
+			UE_LOG(LogSpawn, Warning, TEXT("Login failed: %s"), *Error);
+			return NULL;
+		}
+
+		UE_LOG(LogSpawn, Log, TEXT("%s got player %s [%s]"), *NewPlayerController->GetName(), *NewPlayer->GetName(), UniqueId.IsValid() ? *UniqueId->ToString() : TEXT("Invalid"));
+
+		// Possess the newly-spawned player.
+		NewPlayerController->NetPlayerIndex = InNetPlayerIndex;
+		NewPlayerController->Role = ROLE_Authority;
+		NewPlayerController->SetReplicates(RemoteRole != ROLE_None);
+		if (RemoteRole == ROLE_AutonomousProxy)
+		{
+			NewPlayerController->SetAutonomousProxy(true);
+		}
+		NewPlayerController->SetPlayer(NewPlayer);
+		GameMode->PostLogin(NewPlayerController);
+		return NewPlayerController;
 	}
 
-	UE_LOG(LogSpawn, Log, TEXT("%s got player %s [%s]"), *NewPlayerController->GetName(), *NewPlayer->GetName(), UniqueId.IsValid() ? *UniqueId->ToString() : TEXT("Invalid"));
-
-	// Possess the newly-spawned player.
-	NewPlayerController->NetPlayerIndex = InNetPlayerIndex;
-	NewPlayerController->Role = ROLE_Authority;
-	NewPlayerController->SetReplicates(RemoteRole != ROLE_None);
-	if (RemoteRole == ROLE_AutonomousProxy)
-	{
-		NewPlayerController->SetAutonomousProxy(true);
-	}
-	NewPlayerController->SetPlayer(NewPlayer);
-	GameMode->PostLogin(NewPlayerController);
-
-	return NewPlayerController;
+	UE_LOG(LogSpawn, Warning, TEXT("Login failed: No game mode set."));
+	return nullptr;
 }
 
 /*-----------------------------------------------------------------------------
@@ -793,8 +815,6 @@ bool UWorld::FindTeleportSpot(AActor* TestActor, FVector& TestLocation, FRotator
 	return !EncroachingBlockingGeometry(TestActor, TestLocation, TestRotation, &Adjust);
 }
 
-static const FName NAME_ComponentEncroachesBlockingGeometry_NoAdjustment = FName(TEXT("ComponentEncroachesBlockingGeometry_NoAdjustment"));
-
 /** Tests shape components more efficiently than the with-adjustment case, but does less-efficient ppr-poly collision for meshes. */
 static bool ComponentEncroachesBlockingGeometry_NoAdjustment(UWorld const* World, AActor const* TestActor, UPrimitiveComponent const* PrimComp, FTransform const& TestWorldTransform, const TArray<AActor*>& IgnoreActors)
 {	
@@ -815,7 +835,7 @@ static bool ComponentEncroachesBlockingGeometry_NoAdjustment(UWorld const* World
 			{
 				// must be registered
 				TArray<FOverlapResult> Overlaps;
-				FComponentQueryParams Params(NAME_ComponentEncroachesBlockingGeometry_NoAdjustment, TestActor);
+				FComponentQueryParams Params(SCENE_QUERY_STAT(ComponentEncroachesBlockingGeometry_NoAdjustment), TestActor);
 				FCollisionResponseParams ResponseParams;
 				PrimComp->InitSweepCollisionParams(Params, ResponseParams);
 				Params.AddIgnoredActors(IgnoreActors);
@@ -829,7 +849,7 @@ static bool ComponentEncroachesBlockingGeometry_NoAdjustment(UWorld const* World
 		}
 		else
 		{
-			FCollisionQueryParams Params(NAME_ComponentEncroachesBlockingGeometry_NoAdjustment, false, TestActor);
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(ComponentEncroachesBlockingGeometry_NoAdjustment), false, TestActor);
 			FCollisionResponseParams ResponseParams;
 			PrimComp->InitSweepCollisionParams(Params, ResponseParams);
 			Params.AddIgnoredActors(IgnoreActors);
@@ -839,8 +859,6 @@ static bool ComponentEncroachesBlockingGeometry_NoAdjustment(UWorld const* World
 
 	return false;
 }
-
-static const FName NAME_ComponentEncroachesBlockingGeometry_WithAdjustment = FName(TEXT("ComponentEncroachesBlockingGeometry_WithAdjustment"));
 
 /** Tests shape components less efficiently than the no-adjustment case, but does quicker aabb collision for meshes. */
 static bool ComponentEncroachesBlockingGeometry_WithAdjustment(UWorld const* World, AActor const* TestActor, UPrimitiveComponent const* PrimComp, FTransform const& TestWorldTransform, FVector& OutProposedAdjustment, const TArray<AActor*>& IgnoreActors)
@@ -867,7 +885,7 @@ static bool ComponentEncroachesBlockingGeometry_WithAdjustment(UWorld const* Wor
 			if (PrimComp->IsRegistered())
 			{
 				// must be registered
-				FComponentQueryParams Params(NAME_ComponentEncroachesBlockingGeometry_WithAdjustment, TestActor);
+				FComponentQueryParams Params(SCENE_QUERY_STAT(ComponentEncroachesBlockingGeometry_WithAdjustment), TestActor);
 				FCollisionResponseParams ResponseParams;
 				PrimComp->InitSweepCollisionParams(Params, ResponseParams);
 				Params.AddIgnoredActors(IgnoreActors);
@@ -882,7 +900,7 @@ static bool ComponentEncroachesBlockingGeometry_WithAdjustment(UWorld const* Wor
 		else
 		{
 			// overlap our shape
-			FCollisionQueryParams Params(NAME_ComponentEncroachesBlockingGeometry_WithAdjustment, false, TestActor);
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(ComponentEncroachesBlockingGeometry_WithAdjustment), false, TestActor);
 			FCollisionResponseParams ResponseParams;
 			PrimComp->InitSweepCollisionParams(Params, ResponseParams);
 			Params.AddIgnoredActors(IgnoreActors);
@@ -1357,7 +1375,7 @@ FAudioDevice* UWorld::GetAudioDevice()
  *
  * @param	bInMapNeedsLightingFullyRebuild			The new value.
  */
-void UWorld::SetMapNeedsLightingFullyRebuilt(int32 InNumLightingUnbuiltObjects)
+void UWorld::SetMapNeedsLightingFullyRebuilt(int32 InNumLightingUnbuiltObjects, int32 InNumUnbuiltReflectionCaptures)
 {
 	static const TConsoleVariableData<int32>* AllowStaticLightingVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.AllowStaticLighting"));
 	const bool bAllowStaticLighting = (!AllowStaticLightingVar || AllowStaticLightingVar->GetValueOnGameThread() != 0);
@@ -1366,13 +1384,15 @@ void UWorld::SetMapNeedsLightingFullyRebuilt(int32 InNumLightingUnbuiltObjects)
 	if (bAllowStaticLighting && WorldSettings && !WorldSettings->bForceNoPrecomputedLighting)
 	{
 		check(IsInGameThread());
-		if (NumLightingUnbuiltObjects != InNumLightingUnbuiltObjects && (NumLightingUnbuiltObjects == 0 || InNumLightingUnbuiltObjects == 0))
+		if ((NumLightingUnbuiltObjects != InNumLightingUnbuiltObjects && (NumLightingUnbuiltObjects == 0 || InNumLightingUnbuiltObjects == 0))
+			|| (NumUnbuiltReflectionCaptures != InNumUnbuiltReflectionCaptures && (NumUnbuiltReflectionCaptures == 0 || InNumUnbuiltReflectionCaptures == 0)))
 		{
 			// Save the lighting invalidation for transactions.
 			Modify(false);
 		}
 
 		NumLightingUnbuiltObjects = InNumLightingUnbuiltObjects;
+		NumUnbuiltReflectionCaptures = InNumUnbuiltReflectionCaptures;
 
 		// Update last time unbuilt lighting was encountered.
 		if (NumLightingUnbuiltObjects > 0)

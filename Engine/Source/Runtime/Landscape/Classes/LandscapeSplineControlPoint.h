@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -159,7 +159,7 @@ protected:
 #if WITH_EDITORONLY_DATA
 	/** World reference for if mesh component is stored in another streaming level */
 	UPROPERTY(TextExportTransient, NonPIEDuplicateTransient)
-	TAssetPtr<UWorld> ForeignWorld;
+	TSoftObjectPtr<UWorld> ForeignWorld;
 
 	/** Key for tracking whether this segment has been modified relative to the mesh component stored in another streaming level */
 	UPROPERTY(TextExportTransient, NonPIEDuplicateTransient)
@@ -199,7 +199,7 @@ public:
 	/** Delete spline points */
 	virtual void DeleteSplinePoints();
 
-	const TAssetPtr<UWorld>& GetForeignWorld() const { return ForeignWorld; }
+	const TSoftObjectPtr<UWorld>& GetForeignWorld() const { return ForeignWorld; }
 	FGuid GetModificationKey() const { return ModificationKey; }
 #endif // WITH_EDITOR
 

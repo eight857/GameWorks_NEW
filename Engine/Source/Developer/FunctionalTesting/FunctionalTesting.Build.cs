@@ -1,34 +1,49 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
 public class FunctionalTesting : ModuleRules
 {
-	public FunctionalTesting(ReadOnlyTargetRules Target) : base(Target)
-	{
-		PrivateDependencyModuleNames.AddRange(
-			new string[] {
-				"Core",
-				"CoreUObject",
-				"Engine",
+    public FunctionalTesting(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PrivateDependencyModuleNames.AddRange(
+            new string[] {
+                "Core",
+                "CoreUObject",
+                "Engine",
                 "ShaderCore",
-				"Slate",
+                "Slate",
                 "MessageLog",
                 "AIModule",
                 "RenderCore",
                 "AssetRegistry",
                 "RHI",
-				"UMG"
-			}
-			);
+                "UMG",
+				"AutomationController",
+            }
+        );
 
-		PrivateIncludePaths.AddRange(
-			new string[] 
-			{
-				"MessageLog/Public",
-				"Stats/Public",
-				"Developer/FunctionalTesting/Private",
-			}
-		);
-	}
+        if (Target.bBuildEditor == true)
+		{
+			PrivateDependencyModuleNames.Add("UnrealEd");
+		}
+
+        PrivateIncludePaths.AddRange(
+            new string[]
+            {
+                "MessageLog/Public",
+                "Stats/Public",
+                "Developer/FunctionalTesting/Private",
+            }
+        );
+
+        if (Target.bBuildEditor == true)
+        {
+            PrivateDependencyModuleNames.AddRange(
+                new string[] {
+                    "SourceControl"
+                }
+            );
+        }
+    }
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "StreamingLevels/StreamingLevelModel.h"
 #include "UObject/UnrealType.h"
@@ -93,6 +93,25 @@ void FStreamingLevelModel::SetLevelColor(FLinearColor InColor)
 
 		FPropertyChangedEvent PropertyChangedEvent(DrawColorProperty, EPropertyChangeType::ValueSet);
 		LevelStreaming->PostEditChangeProperty(PropertyChangedEvent);
+	}
+}
+
+FName FStreamingLevelModel::GetFolderPath() const
+{
+	FName FolderPath = NAME_None;
+	if (LevelStreaming.IsValid())
+	{
+		FolderPath = LevelStreaming->GetFolderPath();
+	}
+
+	return FolderPath;
+}
+
+void FStreamingLevelModel::SetFolderPath(const FName& InFolderPath)
+{
+	if (LevelStreaming.IsValid())
+	{
+		LevelStreaming->SetFolderPath(InFolderPath);
 	}
 }
 

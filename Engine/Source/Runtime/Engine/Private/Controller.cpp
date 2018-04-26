@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Controller.cpp: 
@@ -223,8 +223,7 @@ bool AController::LineOfSightTo(const AActor* Other, FVector ViewPoint, bool bAl
 		GetActorEyesViewPoint(ViewPoint, ViewRotation);
 	}
 
-	static FName NAME_LineOfSight = FName(TEXT("LineOfSight"));
-	FCollisionQueryParams CollisionParms(NAME_LineOfSight, true, Other);
+	FCollisionQueryParams CollisionParms(SCENE_QUERY_STAT(LineOfSight), true, Other);
 	CollisionParms.AddIgnoredActor(this->GetPawn());
 	FVector TargetLocation = Other->GetTargetLocation(Pawn);
 	bool bHit = GetWorld()->LineTraceTestByChannel(ViewPoint, TargetLocation, ECC_Visibility, CollisionParms);
@@ -346,6 +345,8 @@ void AController::Reset()
 	StartSpot = NULL;
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 void AController::ClientSetLocation_Implementation( FVector NewLocation, FRotator NewRotation )
 {
 	ClientSetRotation(NewRotation);
@@ -363,6 +364,8 @@ void AController::ClientSetRotation_Implementation( FRotator NewRotation, bool b
 		Pawn->FaceRotation( NewRotation, 0.f );
 	}
 }
+
+/// @endcond
 
 void AController::RemovePawnTickDependency(APawn* InOldPawn)
 {
@@ -505,11 +508,12 @@ void AController::InitPlayerState()
 			PlayerState = World->SpawnActor<APlayerState>(GameMode->PlayerStateClass, SpawnInfo );
 	
 			// force a default player name if necessary
-			if (PlayerState && PlayerState->PlayerName.IsEmpty())
+			if (PlayerState && PlayerState->GetPlayerName().IsEmpty())
 			{
 				// don't call SetPlayerName() as that will broadcast entry messages but the GameMode hasn't had a chance
 				// to potentially apply a player/bot name yet
-				PlayerState->PlayerName = GameMode->DefaultPlayerName.ToString();
+				
+				PlayerState->SetPlayerNameInternal(GameMode->DefaultPlayerName.ToString());
 			}
 		}
 	}
@@ -561,7 +565,7 @@ void AController::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& DebugDi
 
 FString AController::GetHumanReadableName() const
 {
-	return PlayerState ? PlayerState->PlayerName : *GetName();
+	return PlayerState ? PlayerState->GetPlayerName() : *GetName();
 }
 
 void AController::CurrentLevelUnloaded() {}
@@ -679,8 +683,5 @@ void AController::GetLifetimeReplicatedProps( TArray< FLifetimeProperty > & OutL
 	DOREPLIFETIME( AController, PlayerState );
 	DOREPLIFETIME_CONDITION_NOTIFY(AController, Pawn, COND_None, REPNOTIFY_Always);
 }
-
-/** Returns TransformComponent subobject **/
-USceneComponent* AController::GetTransformComponent() const { return TransformComponent; }
 
 #undef LOCTEXT_NAMESPACE

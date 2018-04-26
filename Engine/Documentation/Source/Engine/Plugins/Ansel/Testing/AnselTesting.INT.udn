@@ -1,5 +1,5 @@
 Availability:Public
-TItle:Ansel Capture Testing
+TItle:NVIDIA Ansel Capture Testing
 Description:Overview of the Unreal Engine 4 integration of Nvidia's Ansel in-game photography tool that enables capturing and sharing enhanced images from games
 Crumbs:
 Parent:Engine/Plugins/Ansel
@@ -10,15 +10,11 @@ tags:Ansel
 version:4.14
 topic-image:Ansel_Testing_Topic.png
 
-**To test the Nvidia Ansel Photography Plugin with your game:**
+**To test the NVIDIA Ansel Photography Plugin with your game:**
 
 1. Run the NvCameraConfiguration.exe application and ensure that **NvCamera Status** is set to _Enable_, which is the default.
 
 		C:\Program Files\NVIDIA Corporation\Ansel\Tools\NvCameraConfiguration.exe
-
-1. Run the NvCameraEnable.exe application passing it `whitelisting-everything` to allow your game to use Ansel. This persists across reboots and may be reset by typing `whitelisting-default` in place of `whitelisting-everything`.
-
-		"C:\Program Files\NVIDIA Corporation\Ansel\Tools\NvCameraEnable.exe" whitelisting-everything
 
 1. In Unreal Editor, select **Play > Standalone Game** in the Level Editor toolbar to run as a Standalone Game. Ansel will not activate when playing in the Editor.
 

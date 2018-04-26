@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MatineeUtils.h"
 #include "Misc/ConfigCacheIni.h"
 #include "UObject/LinkerLoad.h"
 #include "AnimationUtils.h"
+#include "GameFramework/Actor.h"
 
 /////////////////////////////////////////////////////
 // FInterpPropertyGatherer
@@ -142,7 +143,7 @@ public:
 			BuildRedirectionTable();
 		}
 
-		if (FTrackRemapInfo* ClassRemapInfo = TrackRedirectMap.Find(TargetClass))
+		if (FTrackRemapInfo* ClassRemapInfo = TrackRedirectMap.Find(TargetClass->GetFName()))
 		{
 			// Scan thru prefixes to see if any match
 			const FString OldTrackName = TrackName.ToString();
@@ -185,7 +186,7 @@ private:
 
 				if (UClass* TargetClass = LoadClass<UObject>(NULL, *TargetClassName.ToString(), NULL, LOAD_None, NULL))
 				{
-					FTrackRemapInfo& ClassRemapInfo = TrackRedirectMap.FindOrAdd(TargetClass);
+					FTrackRemapInfo& ClassRemapInfo = TrackRedirectMap.FindOrAdd(TargetClass->GetFName());
 
 					FString OldFieldName;
 					FString NewFieldName;
@@ -212,13 +213,13 @@ private:
 	};
 private:
 	// A mapping from old track name to new track name, sorted by actor class being driven by the track.  Read in from MatineeTrackRedirects in ini files.
-	static TMultiMap<UClass*, FTrackRemapInfo> TrackRedirectMap;
+	static TMultiMap<FName, FTrackRemapInfo> TrackRedirectMap;
 
 	static bool bInitialized;
 };
 
 // Static members of FMatineeTrackRedirectionManager
-TMultiMap<UClass*, FMatineeTrackRedirectionManager::FTrackRemapInfo> FMatineeTrackRedirectionManager::TrackRedirectMap;
+TMultiMap<FName, FMatineeTrackRedirectionManager::FTrackRemapInfo> FMatineeTrackRedirectionManager::TrackRedirectMap;
 bool FMatineeTrackRedirectionManager::bInitialized = false;
 
 /////////////////////////////////////////////////////

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #if WITH_EDITOR
 
@@ -121,7 +121,7 @@ void FRenderDocPluginEditorExtension::Initialize(FRenderDocPluginModule* ThePlug
 	ExtensionManager->AddExtender(ToolbarExtender);
 
 	IsEditorInitialized = false;
-	FSlateRenderer* SlateRenderer = FSlateApplication::Get().GetRenderer().Get();
+	FSlateRenderer* SlateRenderer = FSlateApplication::Get().GetRenderer();
 	LoadedDelegateHandle = SlateRenderer->OnSlateWindowRendered().AddRaw(this, &FRenderDocPluginEditorExtension::OnEditorLoaded);
 }
 
@@ -135,7 +135,7 @@ void FRenderDocPluginEditorExtension::OnEditorLoaded(SWindow& SlateWindow, void*
 
 	if (IsInGameThread())
 	{
-		FSlateRenderer* SlateRenderer = FSlateApplication::Get().GetRenderer().Get();
+		FSlateRenderer* SlateRenderer = FSlateApplication::Get().GetRenderer();
 		SlateRenderer->OnSlateWindowRendered().Remove(LoadedDelegateHandle);
 	}
 

@@ -1,17 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HTTPTransport.h"
 
-#if ENABLE_HTTP_FOR_NFS
+#if ENABLE_HTTP_FOR_NF
 
 #include "Serialization/BufferArchive.h"
 #include "NetworkMessage.h"
 
-#if PLATFORM_HTML5_WIN32
-#include "WinHttp.h"
-#endif
-
-#if PLATFORM_HTML5_BROWSER
+#if PLATFORM_HTML5
 #include "HTML5JavaScriptFx.h"
 #include <emscripten/emscripten.h>
 #endif
@@ -41,18 +37,12 @@ bool FHTTPTransport::Initialize(const TCHAR* InHostIp)
 	// make sure that our string is again correctly formated
 	HostIp = FString::Printf(TEXT("http://%s"),*HostIp);
 
-	FCString::Sprintf(Url, *HostIp);
+	FCString::Strncpy(Url, *HostIp, ARRAY_COUNT(Url));
 
 #if !PLATFORM_HTML5
 	HttpRequest = FHttpModule::Get().CreateRequest();
 	HttpRequest->SetURL(Url);
-#endif
-
-#if PLATFORM_HTML5_WIN32
-	HTML5Win32::NFSHttp::Init(TCHAR_TO_ANSI(Url));
-#endif
-
-#if PLATFORM_HTML5_BROWSER
+#else
 	emscripten_log(EM_LOG_CONSOLE , "Unreal File Server URL : %s ", TCHAR_TO_ANSI(Url));
 #endif
 
@@ -63,7 +53,7 @@ bool FHTTPTransport::Initialize(const TCHAR* InHostIp)
 
 bool FHTTPTransport::SendPayloadAndReceiveResponse(TArray<uint8>& In, TArray<uint8>& Out)
 {
-	RecieveBuffer.Empty();
+	ReceiveBuffer.Empty();
 	ReadPtr = 0;
 
 #if !PLATFORM_HTML5
@@ -87,7 +77,7 @@ bool FHTTPTransport::SendPayloadAndReceiveResponse(TArray<uint8>& In, TArray<uin
 		TArray<uint8>& Out;
 	};
 
-	HTTPRequestHandler Handler(RecieveBuffer);
+	HTTPRequestHandler Handler(ReceiveBuffer);
 
 	HttpRequest->OnProcessRequestComplete().BindRaw(&Handler,&HTTPRequestHandler::HttpRequestComplete );
 	if ( In.Num() )
@@ -136,34 +126,22 @@ bool FHTTPTransport::SendPayloadAndReceiveResponse(TArray<uint8>& In, TArray<uin
 
 	bool RetVal = true;
 
-#if PLATFORM_HTML5_WIN32
-	RetVal = HTML5Win32::NFSHttp::SendPayLoadAndRecieve(Ar.GetData(), Ar.Num(), &OutData, OutSize);
-#endif
-#if PLATFORM_HTML5_BROWSER
 	UE_SendAndRecievePayLoad(TCHAR_TO_ANSI(Url),(char*)Ar.GetData(),Ar.Num(),(char**)&OutData,(int*)&OutSize);
-#endif
 
 //	if (!Ar.Num())
 	{
 		uint32 Size = OutSize;
 		uint32 Marker = 0xDeadBeef;
-		RecieveBuffer.Append((uint8*)&Marker,sizeof(uint32));
-		RecieveBuffer.Append((uint8*)&Size,sizeof(uint32));
+		ReceiveBuffer.Append((uint8*)&Marker,sizeof(uint32));
+		ReceiveBuffer.Append((uint8*)&Size,sizeof(uint32));
 	}
-
 
 	if (OutSize)
 	{
-		RecieveBuffer.Append(OutData,OutSize);
+		ReceiveBuffer.Append(OutData,OutSize);
 
-#if PLATFORM_HTML5_WIN32
-		free (OutData);
-#endif
-#if PLATFORM_HTML5_BROWSER
 		// don't go through the Unreal Memory system.
 		::free(OutData);
-#endif
-
 	}
 
 	return RetVal & ReceiveResponse(Out);
@@ -175,17 +153,17 @@ bool FHTTPTransport::ReceiveResponse(TArray<uint8> &Out)
 	// Read one Packet from Receive Buffer.
 	// read the size.
 
-	uint32 Marker = *(uint32*)(RecieveBuffer.GetData() + ReadPtr);
-	uint32 Size = *(uint32*)(RecieveBuffer.GetData() + ReadPtr + sizeof(uint32));
+	uint32 Marker = *(uint32*)(ReceiveBuffer.GetData() + ReadPtr);
+	uint32 Size = *(uint32*)(ReceiveBuffer.GetData() + ReadPtr + sizeof(uint32));
 
 	// make sure we have the right amount of data available in the buffer.
-	check( (ReadPtr + Size + 2*sizeof(uint32)) <= RecieveBuffer.Num());
+	check( (ReadPtr + Size + 2*sizeof(uint32)) <= ReceiveBuffer.Num());
 
-	Out.Append(RecieveBuffer.GetData() + ReadPtr + 2*sizeof(uint32),Size);
+	Out.Append(ReceiveBuffer.GetData() + ReadPtr + 2*sizeof(uint32),Size);
 
 	ReadPtr += 2*sizeof(uint32) + Size;
 
 	return true;
 }
 
-#endif
+#endif // ENABLE_HTTP_FOR_NF

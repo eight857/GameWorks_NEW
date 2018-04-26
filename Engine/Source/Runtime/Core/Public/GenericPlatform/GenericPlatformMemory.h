@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 /*=============================================================================================
@@ -23,11 +23,11 @@ struct FGenericMemoryStats;
  */
 struct FGenericPlatformMemoryConstants
 {
-	/** The amount of actual physical memory, in bytes. */
-	SIZE_T TotalPhysical;
+	/** The amount of actual physical memory, in bytes (needs to handle >4GB for 64-bit devices running 32-bit code). */
+	uint64 TotalPhysical;
 
 	/** The amount of virtual memory, in bytes. */
-	SIZE_T TotalVirtual;
+	uint64 TotalVirtual;
 
 	/** The size of a physical page, in bytes. This is also the granularity for PageProtect(), commitment and properties (e.g. ability to access) of the physical RAM. */
 	SIZE_T PageSize;
@@ -83,25 +83,25 @@ typedef FGenericPlatformMemoryConstants FPlatformMemoryConstants;
  * Struct used to hold common memory stats for all platforms.
  * These values may change over the entire life of the executable.
  */
-struct FGenericPlatformMemoryStats : public FPlatformMemoryConstants
+struct CORE_API FGenericPlatformMemoryStats : public FPlatformMemoryConstants
 {
 	/** The amount of physical memory currently available, in bytes. */
-	SIZE_T AvailablePhysical;
+	uint64 AvailablePhysical;
 
 	/** The amount of virtual memory currently available, in bytes. */
-	SIZE_T AvailableVirtual;
+	uint64 AvailableVirtual;
 
 	/** The amount of physical memory used by the process, in bytes. */
-	SIZE_T UsedPhysical;
+	uint64 UsedPhysical;
 
 	/** The peak amount of physical memory used by the process, in bytes. */
-	SIZE_T PeakUsedPhysical;
+	uint64 PeakUsedPhysical;
 
 	/** Total amount of virtual memory used by the process. */
-	SIZE_T UsedVirtual;
+	uint64 UsedVirtual;
 
 	/** The peak amount of virtual memory used by the process. */
-	SIZE_T PeakUsedVirtual;
+	uint64 PeakUsedVirtual;
 	
 	/** Default constructor, clears all variables. */
 	FGenericPlatformMemoryStats();
@@ -156,6 +156,7 @@ struct CORE_API FGenericPlatformMemory
 		MCR_StreamingPool, // amount of texture pool available for streaming.
 		MCR_UsedStreamingPool, // amount of texture pool used for streaming.
 		MCR_GPUDefragPool, // presized pool of memory that can be defragmented.
+		MCR_PhysicalLLM, // total physical memory including CPU and GPU
 		MCR_MAX
 	};
 
@@ -450,6 +451,29 @@ public:
 	 * @return true if successful
 	 */
 	static bool UnmapNamedSharedMemoryRegion(FSharedMemoryRegion * MemoryRegion);
+
+	/**
+	*	Gets whether this platform supports Fast VRAM memory
+	*		Ie, whether TexCreate_FastVRAM flags actually mean something or not
+	*
+	*	@return	bool		true if supported, false if not
+	*/
+	static FORCEINLINE bool SupportsFastVRAMMemory()
+	{
+		return false;
+	}
+
+	/**
+	* Returns true if debug memory has been assigned to the title for general use.
+	* Only applies to consoles with fixed memory and no paging.
+	*/
+	static bool IsExtraDevelopmentMemoryAvailable();
+
+	/**
+	* This function sets AllocFunction and FreeFunction and returns true, or just returns false.
+	* These functions are the platform dependant low low low level functions that LLM uses to allocate memory.
+	*/
+	static bool GetLLMAllocFunctions(void*(*&OutAllocFunction)(size_t), void(*&OutFreeFunction)(void*, size_t), int32& OutAlignment);
 
 protected:
 	friend struct FGenericStatsUpdater;

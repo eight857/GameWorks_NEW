@@ -1,12 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystem.h"
+#include "Logging/LogScopedVerbosityOverride.h"
 
 void DumpNamedSession(const FNamedOnlineSession* NamedSession)
 {
 	if (NamedSession != NULL)
 	{
+		LOG_SCOPE_VERBOSITY_OVERRIDE(LogOnline, ELogVerbosity::VeryVerbose);
 		UE_LOG(LogOnline, Verbose, TEXT("dumping NamedSession: "));
 		UE_LOG(LogOnline, Verbose, TEXT("	SessionName: %s"), *NamedSession->SessionName.ToString());	
 		UE_LOG(LogOnline, Verbose, TEXT("	HostingPlayerNum: %d"), NamedSession->HostingPlayerNum);
@@ -184,7 +186,7 @@ int32 FOnlineSessionSettings::GetID(FName Key) const
 	}
 
 	UE_LOG(LogOnline, Warning, TEXT("Unable to find key for ID request: %s"), *Key.ToString());
-	return -1;
+	return INVALID_SESSION_SETTING_ID;
 }
 
 template<typename ValueType>
@@ -203,6 +205,8 @@ void FOnlineSearchSettings::Set(FName Key, const ValueType& Value, EOnlineCompar
 	}
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 /** Explicit instantiation of supported types to Set template above */
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<int32>(FName Key, const int32& Value, EOnlineComparisonOp::Type InType, int32 InID);
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<float>(FName Key, const float& Value, EOnlineComparisonOp::Type InType, int32 InID);
@@ -211,6 +215,8 @@ template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<double>(FName Key, 
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<FString>(FName Key, const FString& Value, EOnlineComparisonOp::Type InType, int32 InID);
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set< TArray<uint8> >(FName Key, const TArray<uint8>& Value, EOnlineComparisonOp::Type InType, int32 InID);
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<bool>(FName Key, const bool& Value, EOnlineComparisonOp::Type InType, int32 InID);
+
+/// @endcond
 
 template<typename ValueType> 
 void FOnlineSearchSettings::Set(FName Key, const ValueType& Value, EOnlineComparisonOp::Type InType)
@@ -227,6 +233,8 @@ void FOnlineSearchSettings::Set(FName Key, const ValueType& Value, EOnlineCompar
 	}
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 /** Explicit instantiation of supported types to Set template above */
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<int32>(FName Key, const int32& Value, EOnlineComparisonOp::Type InType);
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<float>(FName Key, const float& Value, EOnlineComparisonOp::Type InType);
@@ -235,6 +243,8 @@ template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<double>(FName Key, 
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<FString>(FName Key, const FString& Value, EOnlineComparisonOp::Type InType);
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set< TArray<uint8> >(FName Key, const TArray<uint8>& Value, EOnlineComparisonOp::Type InType);
 template ONLINESUBSYSTEM_API void FOnlineSearchSettings::Set<bool>(FName Key, const bool& Value, EOnlineComparisonOp::Type InType);
+
+/// @endcond
 
 template<typename ValueType> 
 bool FOnlineSearchSettings::Get(FName Key, ValueType& Value) const
@@ -249,6 +259,8 @@ bool FOnlineSearchSettings::Get(FName Key, ValueType& Value) const
 	return false;
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 /** Explicit instantiation of supported types to Get template above */
 template ONLINESUBSYSTEM_API bool FOnlineSearchSettings::Get<int32>(FName Key, int32& Value) const;
 template ONLINESUBSYSTEM_API bool FOnlineSearchSettings::Get<float>(FName Key, float& Value) const;
@@ -257,6 +269,8 @@ template ONLINESUBSYSTEM_API bool FOnlineSearchSettings::Get<double>(FName Key, 
 template ONLINESUBSYSTEM_API bool FOnlineSearchSettings::Get<FString>(FName Key, FString& Value) const;
 template ONLINESUBSYSTEM_API bool FOnlineSearchSettings::Get< TArray<uint8> >(FName Key, TArray<uint8>& Value) const;
 template ONLINESUBSYSTEM_API bool FOnlineSearchSettings::Get<bool>(FName Key, bool& Value) const;
+
+/// @endcond
 
 EOnlineComparisonOp::Type FOnlineSearchSettings::GetComparisonOp(FName Key) const
 {

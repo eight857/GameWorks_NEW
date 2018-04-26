@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	UnParticleComponent.cpp: Particle component implementation.
@@ -81,29 +81,30 @@
 #include "Distributions/DistributionFloatConstantCurve.h"
 #include "Particles/SubUV/ParticleModuleSubUV.h"
 #include "GameFramework/GameState.h"
+#include "HAL/LowLevelMemTracker.h"
 
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent InitParticles"), STAT_ParticleSystemComponent_InitParticles, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent SendRenderDynamicData"), STAT_ParticleSystemComponent_SendRenderDynamicData_Concurrent, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent SendRenderTransform Concurrent"), STAT_ParticleSystemComponent_SendRenderTransform_Concurrent, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent DestroyRenderState Concurrent"), STAT_ParticleSystemComponent_DestroyRenderState_Concurrent, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData"), STAT_ParticleSystemComponent_CreateDynamicData, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData Replay"), STAT_ParticleSystemComponent_CreateDynamicData_Replay, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData Capture"), STAT_ParticleSystemComponent_CreateDynamicData_Capture, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData Gather"), STAT_ParticleSystemComponent_CreateDynamicData_Gather, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent GetDynamicData"), STAT_ParticleSystemComponent_GetDynamicData, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent GetDynamicData Selected"), STAT_ParticleSystemComponent_GetDynamicData_Selected, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData GatherCapture"), STAT_ParticleSystemComponent_CreateDynamicData_GatherCapture, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent UpdateDynamicData"), STAT_ParticleSystemComponent_UpdateDynamicData, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent OrientZAxisTowardCamera"), STAT_UParticleSystemComponent_OrientZAxisTowardCamera, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent QueueFinalize"), STAT_UParticleSystemComponent_QueueFinalize, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent CheckForReset"), STAT_UParticleSystemComponent_CheckForReset, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent LOD_Inactive"), STAT_UParticleSystemComponent_LOD_Inactive, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent LOD"), STAT_UParticleSystemComponent_LOD, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent ResetAndCheckParallel"), STAT_UParticleSystemComponent_ResetAndCheckParallel, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent QueueTasks"), STAT_UParticleSystemComponent_QueueTasks, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent QueueAsync"), STAT_UParticleSystemComponent_QueueAsync, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent WaitForAsyncAndFinalize"), STAT_UParticleSystemComponent_WaitForAsyncAndFinalize, STATGROUP_Particles);
-DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateRenderState Concurrent"), STAT_ParticleSystemComponent_CreateRenderState_Concurrent, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent InitParticles GT"), STAT_ParticleSystemComponent_InitParticles, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent SendRenderDynamicData GT"), STAT_ParticleSystemComponent_SendRenderDynamicData_Concurrent, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent SendRenderTransform Concurrent GT"), STAT_ParticleSystemComponent_SendRenderTransform_Concurrent, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent DestroyRenderState Concurrent GT"), STAT_ParticleSystemComponent_DestroyRenderState_Concurrent, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData GT"), STAT_ParticleSystemComponent_CreateDynamicData, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData Replay GT"), STAT_ParticleSystemComponent_CreateDynamicData_Replay, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData Capture GT"), STAT_ParticleSystemComponent_CreateDynamicData_Capture, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData Gather GT"), STAT_ParticleSystemComponent_CreateDynamicData_Gather, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent GetDynamicData GT"), STAT_ParticleSystemComponent_GetDynamicData, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent GetDynamicData Selected GT"), STAT_ParticleSystemComponent_GetDynamicData_Selected, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateDynamicData GatherCapture GT"), STAT_ParticleSystemComponent_CreateDynamicData_GatherCapture, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent UpdateDynamicData GT"), STAT_ParticleSystemComponent_UpdateDynamicData, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent OrientZAxisTowardCamera GT"), STAT_UParticleSystemComponent_OrientZAxisTowardCamera, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent QueueFinalize GT"), STAT_UParticleSystemComponent_QueueFinalize, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent CheckForReset GT"), STAT_UParticleSystemComponent_CheckForReset, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent LOD_Inactive GT"), STAT_UParticleSystemComponent_LOD_Inactive, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent LOD GT"), STAT_UParticleSystemComponent_LOD, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent ResetAndCheckParallel GT"), STAT_UParticleSystemComponent_ResetAndCheckParallel, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent QueueTasksGT"), STAT_UParticleSystemComponent_QueueTasks, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent QueueAsyncGT"), STAT_UParticleSystemComponent_QueueAsync, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent WaitForAsyncAndFinalize GT"), STAT_UParticleSystemComponent_WaitForAsyncAndFinalize, STATGROUP_Particles);
+DECLARE_CYCLE_STAT(TEXT("ParticleComponent CreateRenderState Concurrent GT"), STAT_ParticleSystemComponent_CreateRenderState_Concurrent, STATGROUP_Particles);
 
 #include "InGamePerformanceTracker.h"
 
@@ -115,12 +116,23 @@ int32 GParticleLODBias = 0;
 FAutoConsoleVariableRef CVarParticleLODBias(
 	TEXT("r.ParticleLODBias"),
 	GParticleLODBias,
-	TEXT("LOD bias for particle systems. Development feature, default is 0"),
-	ECVF_Cheat
+	TEXT("LOD bias for particle systems, default is 0"),
+	ECVF_Scalability
 	);
 
+static TAutoConsoleVariable<float> CVarQLSpawnRateReferenceLevel(
+	TEXT("fx.QualityLevelSpawnRateScaleReferenceLevel"),
+	2,
+	TEXT("Controls the reference level for quality level based spawn rate scaling. This is the FX quality level\n")
+	TEXT("at which spawn rate is not scaled down; Spawn rate scaling will happen by each emitter's\n")
+	TEXT("QualityLevelSpawnRateScale value for each reduction in level below the reference level.\n")
+	TEXT("\n")
+	TEXT("Default = 2. Value should range from 0 to the maximum FX quality level."),
+	ECVF_Scalability);
+
+
 /** Whether to allow particle systems to perform work. */
-bool GIsAllowingParticles = true;
+ENGINE_API bool GIsAllowingParticles = true;
 
 /** Whether to calculate LOD on the GameThread in-game. */
 bool GbEnableGameThreadLODCalculation = true;
@@ -1738,14 +1750,11 @@ void UParticleEmitter::CacheEmitterModuleInfo()
 
 float UParticleEmitter::GetQualityLevelSpawnRateMult()
 {
-	int32 EffectsQuality = Scalability::GetEffectsQualityDirect(true);
-	float Q = 1;
-	float Level = (1 - EffectsQuality);
-	for (int i = 0; i < Level + 1; i++)
-	{
-		Q = Q*QualityLevelSpawnRateScale;
-	}
-	return Q;
+	int32 EffectsQuality = Scalability::GetEffectsQualityDirect(IsInGameThread());
+	int32 ReferenceLevel = CVarQLSpawnRateReferenceLevel.GetValueOnAnyThread(true);
+	float Level = (ReferenceLevel - EffectsQuality);
+	float Q = FMath::Pow(QualityLevelSpawnRateScale, Level);
+	return FMath::Min(1.0f, Q);
 }
 
 bool UParticleEmitter::HasAnyEnabledLODs()const
@@ -1764,6 +1773,7 @@ bool UParticleEmitter::HasAnyEnabledLODs()const
 #if STATS
 
 DEFINE_STAT(STAT_EmittersStatGroupTester);
+DEFINE_STAT(STAT_EmittersRTStatGroupTester);
 
 void UParticleEmitter::CreateStatID() const
 {
@@ -1774,6 +1784,7 @@ void UParticleEmitter::CreateStatID() const
 	FString LongName;
 	LongName = FString(TEXT("Emitter")) / OuterName.ToString() / EmitterName.ToString();
 	StatID = FDynamicStats::CreateStatId<FStatGroup_STATGROUP_Emitters>(LongName);
+	StatIDRT = FDynamicStats::CreateStatId<FStatGroup_STATGROUP_EmittersRT>(LongName / TEXT("RT"));
 }
 #endif
 
@@ -1831,11 +1842,7 @@ FParticleEmitterInstance* UParticleSpriteEmitter::CreateInstance(UParticleSystem
 	if (LODLevel->TypeDataModule)
 	{
 		//@todo. This will NOT work for trails/beams!
-		UParticleModuleTypeDataBase* TypeData = CastChecked<UParticleModuleTypeDataBase>(LODLevel->TypeDataModule);
-		if (TypeData)
-		{
-			Instance = TypeData->CreateInstance(this, InComponent);
-		}
+		Instance = LODLevel->TypeDataModule->CreateInstance(this, InComponent);
 	}
 	else
 	{
@@ -1977,8 +1984,8 @@ UParticleSystem::UParticleSystem(const FObjectInitializer& ObjectInitializer)
 	EditorLODSetting = 0;
 #endif // WITH_EDITORONLY_DATA
 	FixedRelativeBoundingBox.Min = FVector(-1.0f, -1.0f, -1.0f);
-
 	FixedRelativeBoundingBox.Max = FVector(1.0f, 1.0f, 1.0f);
+	FixedRelativeBoundingBox.IsValid = true;
 
 	LODMethod = PARTICLESYSTEMLODMETHOD_Automatic;
 	LODDistanceCheckTime = 0.25f;
@@ -2776,6 +2783,11 @@ void UParticleSystem::SetupLODValidity()
 	}
 }
 
+void UParticleSystem::SetDelay(float InDelay)
+{
+	Delay = InDelay;
+}
+
 #if WITH_EDITOR
 
 bool UParticleSystem::RemoveAllDuplicateModules(bool bInMarkForCooker, TMap<UObject*,bool>* OutRemovedModules)
@@ -3415,11 +3427,13 @@ void UParticleSystemComponent::Serialize( FArchive& Ar )
 	}
 
 	Ar.UsingCustomVersion(FFrameworkObjectVersion::GUID);
+#if WITH_EDITORONLY_DATA
 
 	if (Ar.CustomVer(FFrameworkObjectVersion::GUID) < FFrameworkObjectVersion::ExplicitAttachmentRules)
 	{
 		USceneComponent::ConvertAttachLocation(AutoAttachLocationType_DEPRECATED, AutoAttachLocationRule, AutoAttachRotationRule, AutoAttachScaleRule);
 	}
+#endif
 }
 
 void UParticleSystemComponent::BeginDestroy()
@@ -3447,6 +3461,12 @@ void UParticleSystemComponent::FinishDestroy()
 	Super::FinishDestroy();
 }
 
+void UParticleSystemComponent::NotifyObjectReferenceEliminated() const
+{
+	UE_LOG(LogParticles, Error, TEXT("Garbage collector eliminated reference from particle system!  Particle system objects should not be cleaned up via MarkPendingKill().\n           ParticleSystem=%s"),
+		*GetPathName());
+}
+
 
 void UParticleSystemComponent::GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize)
 {
@@ -3468,18 +3488,15 @@ void UParticleSystemComponent::GetResourceSizeEx(FResourceSizeEx& CumulativeReso
 bool UParticleSystemComponent::ParticleLineCheck(FHitResult& Hit, AActor* SourceActor, const FVector& End, const FVector& Start, const FVector& HalfExtent, const FCollisionObjectQueryParams& ObjectParams)
 {
 	check(GetWorld());
-	static FName NAME_ParticleCollision = FName(TEXT("ParticleCollision"));
-
 	if ( HalfExtent.IsZero() )
 	{
-		FCollisionQueryParams QueryParams(NAME_ParticleCollision, true, SourceActor);
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ParticleCollision), true, SourceActor);
 		QueryParams.bReturnPhysicalMaterial = true;
 		return GetWorld()->LineTraceSingleByObjectType(Hit, Start, End, ObjectParams, QueryParams);
 	}
 	else
 	{
-		FCollisionQueryParams BoxParams;
-		BoxParams.TraceTag = NAME_ParticleCollision;
+		FCollisionQueryParams BoxParams(SCENE_QUERY_STAT(ParticleCollision));
 		BoxParams.AddIgnoredActor(SourceActor);
 		BoxParams.bReturnPhysicalMaterial = true;
 		return GetWorld()->SweepSingleByObjectType(Hit, Start, End, FQuat::Identity, ObjectParams, FCollisionShape::MakeBox(HalfExtent), BoxParams);
@@ -3797,7 +3814,7 @@ FDynamicEmitterDataBase* UParticleSystemComponent::CreateDynamicDataFromReplay( 
 #if STATS
 	if (EmitterData)
 	{
-		EmitterData->StatID = EmitterInstance->SpriteTemplate->GetStatID();
+		EmitterData->StatID = EmitterInstance->SpriteTemplate->GetStatIDRT();
 	}
 #endif
 
@@ -3849,7 +3866,7 @@ FParticleDynamicData* UParticleSystemComponent::CreateDynamicData(ERHIFeatureLev
 
 	if (Template)
 	{
-		ParticleDynamicData->SystemPositionForMacroUVs = ComponentToWorld.TransformPosition(Template->MacroUVPosition);
+		ParticleDynamicData->SystemPositionForMacroUVs = GetComponentTransform().TransformPosition(Template->MacroUVPosition);
 		ParticleDynamicData->SystemRadiusForMacroUVs = Template->MacroUVRadius;
 	}
 
@@ -3968,7 +3985,7 @@ FParticleDynamicData* UParticleSystemComponent::CreateDynamicData(ERHIFeatureLev
 					if( NewDynamicEmitterData != NULL )
 					{
 #if STATS
-						NewDynamicEmitterData->StatID = EmitterInst->SpriteTemplate->GetStatID();
+						NewDynamicEmitterData->StatID = EmitterInst->SpriteTemplate->GetStatIDRT();
 #endif
 						NewDynamicEmitterData->bValid = true;
 						ParticleDynamicData->DynamicEmitterDataArray.Add( NewDynamicEmitterData );
@@ -4054,6 +4071,14 @@ void UParticleSystemComponent::SetMaterial(int32 ElementIndex, UMaterialInterfac
 		EmitterMaterials[ElementIndex] = Material;
 		bIsViewRelevanceDirty = true;
 	}
+	for (int32 EmitterIndex = 0; EmitterIndex < EmitterInstances.Num(); ++EmitterIndex)
+	{
+		if (FParticleEmitterInstance* Inst = EmitterInstances[EmitterIndex])
+		{
+			Inst->Tick_MaterialOverrides(EmitterIndex);
+		}
+	}
+	MarkRenderDynamicDataDirty();
 }
 
 void UParticleSystemComponent::ClearDynamicData()
@@ -4166,7 +4191,7 @@ void UParticleSystemComponent::OrientZAxisTowardCamera()
 		DirToCamera.Normalize();
 
 		// Convert the camera direction to local space
-		DirToCamera = ComponentToWorld.InverseTransformVectorNoScale(DirToCamera);
+		DirToCamera = GetComponentTransform().InverseTransformVectorNoScale(DirToCamera);
 		
 		// Local Z axis
 		const FVector LocalZAxis = FVector(0,0,1);
@@ -4311,6 +4336,24 @@ public:
 	}
 };
 
+
+TAutoConsoleVariable<int32> CVarFXEarlySchedule(TEXT("FX.EarlyScheduleAsync"), 0, TEXT("If 1, particle system components that can run async will be scheduled earlier in the frame"));
+
+static int32 GBatchParticleAsync = 0;
+static FAutoConsoleVariableRef CVarBatchParticleAsync(
+	TEXT("FX.BatchAsync"),
+	GBatchParticleAsync,
+	TEXT("If 1, particle async tasks are batched because they often take less time than it takes to wake up a task thread. No effect on editor.")
+);
+
+static int32 GBatchParticleAsyncBatchSize = 32;
+static FAutoConsoleVariableRef CVarBatchParticleAsyncBatchSize(
+	TEXT("FX.BatchAsyncBatchSize"),
+	GBatchParticleAsyncBatchSize,
+	TEXT("When FX.BatchAsync = 1, controls the number of particle systems grouped together for threading.")
+);
+
+
 FAutoConsoleTaskPriority CPrio_ParticleAsyncTask(
 	TEXT("TaskGraph.TaskPriorities.ParticleAsyncTask"),
 	TEXT("Task and thread priority for FParticleAsyncTask."),
@@ -4323,9 +4366,14 @@ FAutoConsoleTaskPriority CPrio_ParticleAsyncTask(
 class FParticleAsyncTask
 {
 	UParticleSystemComponent* Target;
+	FGraphEventRef FinalizePrereq;
+	FThreadSafeCounter* FinalizeDispatchCounter;
+
 public:
-	FParticleAsyncTask(UParticleSystemComponent* InTarget)
+	FParticleAsyncTask(UParticleSystemComponent* InTarget, FGraphEventRef& InFinalizePrereq, FThreadSafeCounter* InFinalizeDispatchCounter)
 		: Target(InTarget)
+		, FinalizePrereq(InFinalizePrereq)
+		, FinalizeDispatchCounter(InFinalizeDispatchCounter)
 	{
 
 	}
@@ -4348,16 +4396,158 @@ public:
 #if !WITH_EDITOR  // otherwise this is queued by the calling code because we need to be able to block and wait on it
 		{
 			SCOPE_CYCLE_COUNTER(STAT_UParticleSystemComponent_QueueFinalize);
-			FGraphEventRef Finalize = TGraphTask<FParticleFinalizeTask>::CreateTask(nullptr, CurrentThread).ConstructAndDispatchWhenReady(Target);
+			FGraphEventArray Prereqs;
+			if (FinalizePrereq.GetReference())
+			{
+				Prereqs.Add(FinalizePrereq);
+			}
+			FGraphEventRef Finalize = TGraphTask<FParticleFinalizeTask>::CreateTask(&Prereqs, CurrentThread).ConstructAndDispatchWhenReady(Target);
+			MyCompletionGraphEvent->SetGatherThreadForDontCompleteUntil(ENamedThreads::GameThread);
 			MyCompletionGraphEvent->DontCompleteUntil(Finalize);
+			if (FinalizeDispatchCounter)
+			{
+				if (FinalizeDispatchCounter->Decrement() == 0)
+				{
+					check(FinalizePrereq.GetReference() && !FinalizePrereq->IsComplete());
+					{
+						TArray<FBaseGraphTask*> NewTasks;
+						FinalizePrereq->DispatchSubsequents(NewTasks);
+					}
+					delete FinalizeDispatchCounter;
+				}
+			}
 		}
 #endif
 	}
 };
 
-TAutoConsoleVariable<int32> CVarFXEarlySchedule(TEXT("FX.EarlyScheduleAsync"), 0, TEXT("If 1, particle system components that can run async will be scheduled earlier in the frame"));
 
-DECLARE_CYCLE_STAT(TEXT("PSys Comp Marshall Time"),STAT_UParticleSystemComponent_Marshall,STATGROUP_Particles);
+
+class FDispatchBatchedAsyncTasks
+{
+	FGraphEventRef Target;
+public:
+
+	FDispatchBatchedAsyncTasks(FGraphEventRef& InTarget)
+		: Target(InTarget)
+	{
+	}
+
+	FORCEINLINE TStatId GetStatId() const
+	{
+		RETURN_QUICK_DECLARE_CYCLE_STAT(FDispatchBatchedAsyncTasks, STATGROUP_TaskGraphTasks);
+	}
+
+	ENamedThreads::Type GetDesiredThread()
+	{
+		return CPrio_ParticleAsyncTask.Get();
+	}
+
+	static ESubsequentsMode::Type GetSubsequentsMode() { return ESubsequentsMode::FireAndForget; }
+
+	void DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)
+	{
+		check(Target.GetReference() && !Target->IsComplete());
+		{
+			TArray<FBaseGraphTask*> NewTasks;
+			Target->DispatchSubsequents(NewTasks);
+		}
+	}
+};
+
+class FGameThreadDispatchBatchedAsyncTasks
+{
+	FGraphEventRef Target;
+public:
+	FGameThreadDispatchBatchedAsyncTasks(FGraphEventRef& InTarget)
+		: Target(InTarget)
+	{
+
+	}
+
+	FORCEINLINE TStatId GetStatId() const
+	{
+		RETURN_QUICK_DECLARE_CYCLE_STAT(FGameThreadDispatchBatchedAsyncTasks, STATGROUP_TaskGraphTasks);
+	}
+
+	ENamedThreads::Type GetDesiredThread()
+	{
+		return ENamedThreads::GameThread;
+	}
+
+	static ESubsequentsMode::Type GetSubsequentsMode() { return ESubsequentsMode::FireAndForget; }
+
+	void DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent);
+};
+
+
+struct FFXAsyncBatcher
+{
+	FGraphEventArray DispatchEvent;
+	FGraphEventRef FinalizeOnGTDispatchEvent;
+	FThreadSafeCounter* FinalizeDispatchCounter;
+	int32 NumBatched = 0;
+
+
+	FGraphEventArray* GetAsyncPrereq(FGraphEventRef& OutFinalizeBatchEvent, FThreadSafeCounter*& OutFinalizeDispatchCounter)
+	{
+		check(IsInGameThread());
+#if !WITH_EDITOR
+		if (GBatchParticleAsync)
+		{
+			if (NumBatched >= GBatchParticleAsyncBatchSize || !DispatchEvent.Num() || !DispatchEvent[0].GetReference() || DispatchEvent[0]->IsComplete())
+			{
+				Flush();
+			}
+			if (DispatchEvent.Num() == 0)
+			{
+				check(NumBatched == 0 && !FinalizeDispatchCounter && !FinalizeOnGTDispatchEvent.GetReference());
+				DispatchEvent.Add(FGraphEvent::CreateGraphEvent());
+				FinalizeOnGTDispatchEvent = FGraphEvent::CreateGraphEvent();
+				TGraphTask<FGameThreadDispatchBatchedAsyncTasks>::CreateTask(nullptr, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(DispatchEvent[0]);
+				check(!FinalizeDispatchCounter);
+				FinalizeDispatchCounter = new FThreadSafeCounter();
+			}
+			OutFinalizeBatchEvent = FinalizeOnGTDispatchEvent;
+			FinalizeDispatchCounter->Increment();
+			OutFinalizeDispatchCounter = FinalizeDispatchCounter;
+			NumBatched++;
+			return &DispatchEvent;
+		}
+#endif
+		check(!OutFinalizeBatchEvent.GetReference() && !OutFinalizeDispatchCounter);
+		return nullptr;
+	}
+
+	void Flush()
+	{
+		if (NumBatched)
+		{
+			check(FinalizeDispatchCounter && FinalizeDispatchCounter->GetValue() == NumBatched);
+			check(DispatchEvent.Num() && DispatchEvent[0].GetReference() && !DispatchEvent[0]->IsComplete());
+			{
+				TGraphTask<FDispatchBatchedAsyncTasks>::CreateTask(nullptr, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(DispatchEvent[0]);
+			}
+
+			FinalizeOnGTDispatchEvent = nullptr;
+			DispatchEvent.Empty();
+			NumBatched = 0;
+			FinalizeDispatchCounter = nullptr; // deleted by the last task
+		}
+	}
+
+};
+
+static FFXAsyncBatcher FXAsyncBatcher;
+
+void FGameThreadDispatchBatchedAsyncTasks::DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)
+{
+	check(IsInGameThread());
+	FXAsyncBatcher.Flush();
+}
+
+
+DECLARE_CYCLE_STAT(TEXT("PSys Comp Marshall Time GT"),STAT_UParticleSystemComponent_Marshall,STATGROUP_Particles);
 
 bool UParticleSystemComponent::IsReadyForOwnerToAutoDestroy() const
 {
@@ -4366,6 +4556,8 @@ bool UParticleSystemComponent::IsReadyForOwnerToAutoDestroy() const
 
 void UParticleSystemComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
 {
+	LLM_SCOPE(ELLMTag::Particles);
+
 	FInGameScopedCycleCounter InGameCycleCounter(GetWorld(), EInGamePerfTrackers::VFXSignificance, EInGamePerfTrackerThreads::GameThread, bIsManagingSignificance);
 
 	if (Template == nullptr || Template->Emitters.Num() == 0)
@@ -4513,7 +4705,7 @@ void UParticleSystemComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 			{
 				bool bCalculateLODLevel = 
 					(bOverrideLODMethod == true) ? (LODMethod == PARTICLESYSTEMLODMETHOD_Automatic) : 
-						(Template ? (Template->LODMethod == PARTICLESYSTEMLODMETHOD_Automatic) : false);
+						(Template->LODMethod == PARTICLESYSTEMLODMETHOD_Automatic);
 				if (bCalculateLODLevel == true)
 				{
 					FVector EffectPosition = GetComponentLocation();
@@ -4611,7 +4803,7 @@ void UParticleSystemComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 			SCOPE_CYCLE_COUNTER(STAT_UParticleSystemComponent_Marshall)
 		bAsyncDataCopyIsValid = true;
 		check(!bParallelRenderThreadUpdate);
-		AsyncComponentToWorld = ComponentToWorld;
+		AsyncComponentToWorld = GetComponentTransform();
 		AsyncInstanceParameters.Reset();
 		AsyncInstanceParameters.Append(InstanceParameters);
 			AsyncBounds = Bounds;
@@ -4628,8 +4820,12 @@ void UParticleSystemComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 		
 		{
 			SCOPE_CYCLE_COUNTER(STAT_UParticleSystemComponent_QueueAsync);
-			AsyncWork = TGraphTask<FParticleAsyncTask>::CreateTask(nullptr, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(this);
+			FGraphEventRef OutFinalizeBatchEvent;
+			FThreadSafeCounter* FinalizeDispatchCounter = nullptr;
+			FGraphEventArray* Prereqs = FXAsyncBatcher.GetAsyncPrereq(OutFinalizeBatchEvent, FinalizeDispatchCounter);
+			AsyncWork = TGraphTask<FParticleAsyncTask>::CreateTask(Prereqs, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(this, OutFinalizeBatchEvent, FinalizeDispatchCounter);
 #if !WITH_EDITOR  // we need to not complete until this is done because the game thread finalize task has not beed queued yet
+			ThisTickFunction->GetCompletionHandle()->SetGatherThreadForDontCompleteUntil(ENamedThreads::GameThread);
 			ThisTickFunction->GetCompletionHandle()->DontCompleteUntil(AsyncWork);
 #endif
 		}
@@ -4639,6 +4835,7 @@ void UParticleSystemComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 			FGraphEventArray Prereqs;
 			Prereqs.Add(AsyncWork);
 			FGraphEventRef Finalize = TGraphTask<FParticleFinalizeTask>::CreateTask(&Prereqs, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(this);
+			ThisTickFunction->GetCompletionHandle()->SetGatherThreadForDontCompleteUntil(ENamedThreads::GameThread);
 			ThisTickFunction->GetCompletionHandle()->DontCompleteUntil(Finalize);
 		}
 #endif
@@ -4726,16 +4923,7 @@ void UParticleSystemComponent::ComputeTickComponent_Concurrent()
 
 				Instance->Tick(DeltaTimeTick, bSuppressSpawning);
 
-				if (!Instance->Tick_MaterialOverrides())
-				{
-					if (EmitterMaterials.IsValidIndex(EmitterIndex))
-					{
-						if (EmitterMaterials[EmitterIndex])
-						{
-							Instance->CurrentMaterial = EmitterMaterials[EmitterIndex];
-						}
-					}
-				}
+				Instance->Tick_MaterialOverrides(EmitterIndex);
 				TotalActiveParticles += Instance->ActiveParticles;
 			}
 
@@ -4786,7 +4974,7 @@ void UParticleSystemComponent::FinalizeTickComponent()
 			{
 				if (EmitterIndex + 1 < EmitterInstances.Num())
 				{
-				FParticleEmitterInstance* NextInstance = EmitterInstances[EmitterIndex+1];
+					FParticleEmitterInstance* NextInstance = EmitterInstances[EmitterIndex+1];
 					FPlatformMisc::Prefetch(NextInstance);
 				}
 
@@ -4827,14 +5015,14 @@ void UParticleSystemComponent::FinalizeTickComponent()
 	else
 	{
 		LastSignificantTime = CurrTime;
-	// If component has just totally finished, call script event.
-	const bool bIsCompleted = HasCompleted(); 
-	if (bIsCompleted && !bWasCompleted)
-	{
+		// If component has just totally finished, call script event.
+		const bool bIsCompleted = HasCompleted(); 
+		if (bIsCompleted && !bWasCompleted)
+		{
 			Complete();
 		}
 		bWasCompleted = bIsCompleted;
-		}
+	}
 
 	// Update bounding box.
 	if (!bWarmingUp && !bWasCompleted && !Template->bUseFixedRelativeBoundingBox && !bIsTransformDirty)
@@ -4945,6 +5133,8 @@ void UParticleSystemComponent::WaitForAsyncAndFinalize(EForceAsyncWorkCompletion
 
 void UParticleSystemComponent::InitParticles()
 {
+	LLM_SCOPE(ELLMTag::Particles);
+
 	SCOPE_CYCLE_COUNTER(STAT_ParticleSystemComponent_InitParticles);
 
 	if (IsTemplate() == true)
@@ -5202,6 +5392,11 @@ void UParticleSystemComponent::SetTemplate(class UParticleSystem* NewTemplate)
 	{
 		Template = NULL;
 	}
+	if (!ensureMsgf(IsRenderStateDirty() || EmitterMaterials.Num() == 0, TEXT("About to lose material references without calling MarkRenderStateDirty on: %s"), *GetOwner()->GetName()))
+	{
+		MarkRenderStateDirty();
+	}
+	
 	EmitterMaterials.Empty();
 
 	for (int32 Idx = 0; Idx < EmitterInstances.Num(); Idx++)
@@ -5325,6 +5520,19 @@ void UParticleSystemComponent::ActivateSystem(bool bFlagAsJustAttached)
 		bWasActive = false; // Set to false now, it may get set to true when it's deactivated due to unregister
 		SetComponentTickEnabled(true);
 
+		// Force an LOD update - [op] do this before InitializeSystem, as that's going to set LOD level on all instances 
+		if ((bIsGameWorld || (GIsEditor && GEngine->bEnableEditorPSysRealtimeLOD)) && (GbEnableGameThreadLODCalculation == true))
+		{
+			FVector EffectPosition = GetComponentLocation();
+			int32 DesiredLODLevel = DetermineLODLevelForLocation(EffectPosition);
+			SetLODLevel(DesiredLODLevel);
+		}
+		else
+		{
+			bForceLODUpdateFromRenderer = true;
+		}
+
+
 		// if no instances, or recycling
 		if (EmitterInstances.Num() == 0 || (bIsGameWorld && (!bAutoActivate || bHasBeenActivated)))
 		{
@@ -5345,20 +5553,6 @@ void UParticleSystemComponent::ActivateSystem(bool bFlagAsJustAttached)
 		}
 
 
-		// Force an LOD update
-		if ((bIsGameWorld || (GIsEditor && GEngine->bEnableEditorPSysRealtimeLOD)) && (GbEnableGameThreadLODCalculation == true))
-		{
-			FVector EffectPosition = GetComponentLocation();
-			int32 DesiredLODLevel = DetermineLODLevelForLocation(EffectPosition);
-			if (DesiredLODLevel != LODLevel)
-			{
-				SetLODLevel(DesiredLODLevel);
-			}
-		}
-		else
-		{
-			bForceLODUpdateFromRenderer = true;
-		}
 
 
 		// Flag the system as having been activated at least once
@@ -6217,11 +6411,12 @@ int32 UParticleSystemComponent::DetermineLODLevelForLocation(const FVector& Effe
 		return 0;
 	}
 
-	// Don't bother if we only have 1 LOD level...
-	if (Template->LODDistances.Num() <= 1)
+	// Don't bother if we only have 1 LOD level... Or if we want to ignore distance comparisons.
+	if (Template->LODDistances.Num() <= 1 || Template->LODMethod == PARTICLESYSTEMLODMETHOD_DirectSet)
 	{
 		return 0;
 	}
+
 	check(IsInGameThread());
 	int32 Retval = 0;
 	
@@ -6252,10 +6447,10 @@ int32 UParticleSystemComponent::DetermineLODLevelForLocation(const FVector& Effe
 		// This will now put everything in LODLevel 0 (high detail) by default
 		float LODDistanceSqr = (PlayerViewLocations.Num() ? FMath::Square(WORLD_MAX) : 0.0f);
 		for (const FVector& ViewLocation : PlayerViewLocations)
-			{
+		{
 			const float DistanceToEffectSqr = FVector(ViewLocation - EffectLocation).SizeSquared();
 			if (DistanceToEffectSqr < LODDistanceSqr)
-				{
+			{
 				LODDistanceSqr = DistanceToEffectSqr;
 			}
 		}
@@ -6288,7 +6483,7 @@ void UParticleSystemComponent::SetLODLevel(int32 InLODLevel)
 		return;
 	}
 
-	int32 NewLODLevel = FMath::Clamp(InLODLevel + GParticleLODBias,0,Template->GetLODLevelCount()-1);
+	int32 NewLODLevel = FMath::Clamp(InLODLevel + GParticleLODBias, 0, Template->GetLODLevelCount() - 1);
 	if (LODLevel != NewLODLevel)
 	{
 		MarkRenderStateDirty();
@@ -6723,6 +6918,115 @@ void UParticleSystemComponent::AutoPopulateInstanceProperties()
 	}
 }
 
+void UParticleLODLevel::GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, const TArray<FNamedEmitterMaterial>& Slots, const TArray<class UMaterialInterface*>& EmitterMaterials) const
+{
+	// Only process enabled emitters
+	if (bEnabled)
+	{
+		const UParticleModuleTypeDataMesh* MeshTypeData = Cast<UParticleModuleTypeDataMesh>(TypeDataModule);
+
+		if (MeshTypeData && MeshTypeData->Mesh)
+		{
+			const FStaticMeshLODResources& LODModel = MeshTypeData->Mesh->RenderData->LODResources[0];
+
+			// Gather the materials applied to the LOD.
+			for (int32 SectionIndex = 0; SectionIndex < LODModel.Sections.Num(); SectionIndex++)
+			{
+				UMaterialInterface* Material = NULL;
+							
+				TArray<FName>& NamedOverrides = RequiredModule->NamedMaterialOverrides;
+
+				if (NamedOverrides.IsValidIndex(SectionIndex))
+				{	
+					//If we have named material overrides then get it's index into the emitter materials array.	
+					for (int32 CheckIdx = 0; CheckIdx < Slots.Num(); ++CheckIdx)
+					{
+						if (NamedOverrides[SectionIndex] == Slots[CheckIdx].Name)
+						{
+							//Default to the default material for that slot.
+							Material = Slots[CheckIdx].Material;
+							if (EmitterMaterials.IsValidIndex(CheckIdx) && nullptr != EmitterMaterials[CheckIdx] )
+							{
+								//This material has been overridden externally, e.g. from a BP so use that one.
+								Material = EmitterMaterials[CheckIdx];
+							}
+
+							break;
+						}
+					}
+				}
+
+				// See if there is a mesh material module.
+				if (Material == NULL)
+				{
+					// Walk in reverse order as in the case of multiple modules, only the final result will be applied
+					for (int32 ModuleIndex = Modules.Num()-1; ModuleIndex >= 0; --ModuleIndex)
+					{
+						UParticleModuleMeshMaterial* MeshMatModule = Cast<UParticleModuleMeshMaterial>(Modules[ModuleIndex]);
+						if (MeshMatModule && MeshMatModule->bEnabled)
+						{
+							if (SectionIndex < MeshMatModule->MeshMaterials.Num())
+							{
+								Material = MeshMatModule->MeshMaterials[SectionIndex];
+								break;
+							}
+						}
+					}
+				}
+
+				// Overriding the material?
+				if (Material == NULL && MeshTypeData->bOverrideMaterial == true)
+				{
+					Material = RequiredModule->Material;
+				}
+
+				// Use the material set on the mesh.
+				if (Material == NULL)
+				{
+					Material = MeshTypeData->Mesh->GetMaterial(LODModel.Sections[SectionIndex].MaterialIndex);
+				}
+
+				if (Material)
+				{
+					OutMaterials.Add(Material);
+				}
+			}
+		}
+		else
+		{
+			UMaterialInterface* Material = NULL;
+							
+			TArray<FName>& NamedOverrides = RequiredModule->NamedMaterialOverrides;
+
+			if (NamedOverrides.Num() > 0)
+			{
+				for (int32 CheckIdx = 0; CheckIdx < Slots.Num(); ++CheckIdx)
+				{
+					if (NamedOverrides[0] == Slots[CheckIdx].Name)
+					{
+						//Default to the default material for that slot.
+						Material = Slots[CheckIdx].Material;
+						if (EmitterMaterials.IsValidIndex(CheckIdx) && nullptr != EmitterMaterials[CheckIdx])
+						{
+							//This material has been overridden externally, e.g. from a BP so use that one.
+							Material = EmitterMaterials[CheckIdx];
+						}
+        
+						break;
+					}
+				}
+			}
+
+			if (!Material)
+			{
+				Material = RequiredModule->Material;
+			}
+
+			OutMaterials.Add(Material);
+		}
+	}
+}
+
 void UParticleSystemComponent::GetUsedMaterials( TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials ) const
 {
 	if (Template)
@@ -6730,122 +7034,93 @@ void UParticleSystemComponent::GetUsedMaterials( TArray<UMaterialInterface*>& Ou
 		for (int32 EmitterIdx = 0; EmitterIdx < Template->Emitters.Num(); ++EmitterIdx)
 		{
 			const UParticleEmitter* Emitter = Template->Emitters[EmitterIdx];
+			if (!Emitter)
+			{
+				continue;
+			}
+
 			for (int32 LodIndex = 0; LodIndex < Emitter->LODLevels.Num(); ++LodIndex)
 			{
 				const UParticleLODLevel* LOD = Emitter->LODLevels[LodIndex];
-
-				// Only process enabled emitters
-				if (LOD->bEnabled)
+				if (LOD)
 				{
-					const UParticleModuleTypeDataMesh* MeshTypeData = Cast<UParticleModuleTypeDataMesh>(LOD->TypeDataModule);
-
-					if (MeshTypeData && MeshTypeData->Mesh)
-					{
-						const FStaticMeshLODResources& LODModel = MeshTypeData->Mesh->RenderData->LODResources[0];
-
-						// Gather the materials applied to the LOD.
-						for (int32 SectionIndex = 0; SectionIndex < LODModel.Sections.Num(); SectionIndex++)
-						{
-							UMaterialInterface* Material = NULL;
-							
-							TArray<FName>& NamedOverrides = LOD->RequiredModule->NamedMaterialOverrides;
-							TArray<FNamedEmitterMaterial>& Slots = Template->NamedMaterialSlots;
-
-							if (NamedOverrides.IsValidIndex(SectionIndex))
-							{	
-								//If we have named material overrides then get it's index into the emitter materials array.	
-								for (int32 CheckIdx = 0; CheckIdx < Slots.Num(); ++CheckIdx)
-								{
-									if (NamedOverrides[SectionIndex] == Slots[CheckIdx].Name)
-									{
-										//Default to the default material for that slot.
-										Material = Slots[CheckIdx].Material;
-										if (EmitterMaterials.IsValidIndex(CheckIdx) && nullptr != EmitterMaterials[CheckIdx] )
-										{
-											//This material has been overridden externally, e.g. from a BP so use that one.
-											Material = EmitterMaterials[CheckIdx];
-										}
-
-										break;
-									}
-								}
-							}
-
-							// See if there is a mesh material module.
-							if (Material == NULL)
-							{
-								// Walk in reverse order as in the case of multiple modules, only the final result will be applied
-								for (int32 ModuleIndex = LOD->Modules.Num()-1; ModuleIndex >= 0; --ModuleIndex)
-								{
-									UParticleModuleMeshMaterial* MeshMatModule = Cast<UParticleModuleMeshMaterial>(LOD->Modules[ModuleIndex]);
-									if (MeshMatModule && MeshMatModule->bEnabled)
-									{
-										if (SectionIndex < MeshMatModule->MeshMaterials.Num())
-										{
-											Material = MeshMatModule->MeshMaterials[SectionIndex];
-											break;
-										}
-									}
-								}
-							}
-
-							// Overriding the material?
-							if (Material == NULL && MeshTypeData->bOverrideMaterial == true)
-							{
-								Material = LOD->RequiredModule->Material;
-							}
-
-							// Use the material set on the mesh.
-							if (Material == NULL)
-							{
-								Material = MeshTypeData->Mesh->GetMaterial(LODModel.Sections[SectionIndex].MaterialIndex);
-							}
-
-							if (Material)
-							{
-								OutMaterials.Add(Material);
-							}
-						}
-					}
-					else
-					{
-						UMaterialInterface* Material = NULL;
-							
-						TArray<FName>& NamedOverrides = LOD->RequiredModule->NamedMaterialOverrides;
-						TArray<FNamedEmitterMaterial>& Slots = Template->NamedMaterialSlots;
-
-						if (NamedOverrides.Num() > 0)
-						{
-							for (int32 CheckIdx = 0; CheckIdx < Slots.Num(); ++CheckIdx)
-							{
-								if (NamedOverrides[0] == Slots[CheckIdx].Name)
-								{
-									//Default to the default material for that slot.
-									Material = Slots[CheckIdx].Material;
-									if (EmitterMaterials.IsValidIndex(CheckIdx) && nullptr != EmitterMaterials[CheckIdx])
-									{
-										//This material has been overridden externally, e.g. from a BP so use that one.
-										Material = EmitterMaterials[CheckIdx];
-									}
-        
-									break;
-								}
-							}
-						}
-
-						if (!Material)
-						{
-							Material = LOD->RequiredModule->Material;
-						}
-
-						OutMaterials.Add(Material);
-					}
+					LOD->GetUsedMaterials(OutMaterials, Template->NamedMaterialSlots, EmitterMaterials);
 				}
 			}
 		}
 	}
 
 	OutMaterials.Append(EmitterMaterials);
+}
+
+typedef TPair<const UMaterialInterface*, float> FMaterialWithScale;
+
+void AddMaterials(TArray<FMaterialWithScale, TInlineAllocator<12> >& OutMaterialWithScales, const TArray<UMaterialInterface*>& InMaterials, float InScale)
+{
+	for (const UMaterialInterface* Material : InMaterials)
+	{
+		if (Material)
+		{
+			FMaterialWithScale* Entry = OutMaterialWithScales.FindByPredicate([&](const FMaterialWithScale& Ref) { return Ref.Key == Material; });
+			if (Entry)
+			{
+				Entry->Value = FMath::Max<int32>(Entry->Value, InScale);
+			}
+			else
+			{
+				new (OutMaterialWithScales) FMaterialWithScale(Material, InScale);
+			}
+		}
+	}
+}
+
+void UParticleSystemComponent::GetStreamingTextureInfo(FStreamingTextureLevelContext& LevelContext, TArray<FStreamingTexturePrimitiveInfo>& OutStreamingTextures) const
+{
+	TArray<FMaterialWithScale, TInlineAllocator<12> > MaterialWithScales;
+
+	if (Template)
+	{
+		// Find the max sub uv scale of each texture as we can't apply them incrementally
+		TArray<UMaterialInterface*> LODLevelMaterials;
+
+		for (int32 EmitterIdx = 0; EmitterIdx < Template->Emitters.Num(); ++EmitterIdx)
+		{
+			const UParticleEmitter* Emitter = Template->Emitters[EmitterIdx];
+			if (!Emitter)
+			{
+				continue;
+			}
+
+			for (int32 LodIndex = 0; LodIndex < Emitter->LODLevels.Num(); ++LodIndex)
+			{
+				const UParticleLODLevel* LOD = Emitter->LODLevels[LodIndex];
+				if (!LOD || !LOD->RequiredModule)
+				{
+					continue;
+				}
+
+				LODLevelMaterials.Reset();
+				LOD->GetUsedMaterials(LODLevelMaterials, Template->NamedMaterialSlots, EmitterMaterials);
+				AddMaterials(MaterialWithScales, LODLevelMaterials, (float)FMath::Max<int32>(LOD->RequiredModule->SubImages_Horizontal, LOD->RequiredModule->SubImages_Vertical));
+			}
+		}
+
+		AddMaterials(MaterialWithScales, EmitterMaterials, 1.f);
+
+		if (MaterialWithScales.Num())
+		{
+			static const FMeshUVChannelInfo UVChannelData(1.f);
+			FPrimitiveMaterialInfo MaterialData;
+			MaterialData.PackedRelativeBox = PackedRelativeBox_Identity;
+			MaterialData.UVChannelData = &UVChannelData;
+
+			for (const FMaterialWithScale& MaterialWithScale : MaterialWithScales)
+			{
+				MaterialData.Material = MaterialWithScale.Key;
+				LevelContext.ProcessMaterial(Bounds, MaterialData, Bounds.SphereRadius * MaterialWithScale.Value, OutStreamingTextures);
+			}
+		}
+	}
 }
 
 FBodyInstance* UParticleSystemComponent::GetBodyInstance(FName BoneName /*= NAME_None*/, bool bGetWelded /*= true*/) const
@@ -7047,25 +7322,29 @@ UMaterialInterface* UParticleSystemComponent::GetNamedMaterial(FName Name) const
 		else
 		{
 			//This slot hasn't been overridden so just used the default.
-			return Template->NamedMaterialSlots[Index].Material;
+			return Template ? Template->NamedMaterialSlots[Index].Material : nullptr;
 		}
 	}
 	//Could not find this named materials slot.
-	return NULL;
+	return nullptr;
 }
 
 int32 UParticleSystemComponent::GetNamedMaterialIndex(FName Name) const
 {
-	TArray<FNamedEmitterMaterial>& Slots = Template->NamedMaterialSlots;
-	for (int32 SlotIdx = 0; SlotIdx < Slots.Num(); ++SlotIdx)
+	if (Template != nullptr)
 	{
-		if (Name == Slots[SlotIdx].Name)
+		TArray<FNamedEmitterMaterial>& Slots = Template->NamedMaterialSlots;
+		for (int32 SlotIdx = 0; SlotIdx < Slots.Num(); ++SlotIdx)
 		{
-			return SlotIdx;
+			if (Name == Slots[SlotIdx].Name)
+			{
+				return SlotIdx;
+			}
 		}
 	}
 	return INDEX_NONE;
 }
+
 
 UParticleSystemReplay::UParticleSystemReplay(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -7074,6 +7353,8 @@ UParticleSystemReplay::UParticleSystemReplay(const FObjectInitializer& ObjectIni
 
 void UParticleSystemReplay::Serialize( FArchive& Ar )
 {
+	LLM_SCOPE(ELLMTag::Particles);
+
 	Super::Serialize( Ar );
 
 	// Serialize clip ID number
@@ -7237,6 +7518,8 @@ void AEmitterCameraLensEffectBase::NotifyRetriggered()
 
 void AEmitterCameraLensEffectBase::PostInitializeComponents()
 {
+	LLM_SCOPE(ELLMTag::Particles);
+
 	GetParticleSystemComponent()->SetDepthPriorityGroup(SDPG_Foreground);
 	Super::PostInitializeComponents();
 	ActivateLensEffect();
@@ -7244,6 +7527,8 @@ void AEmitterCameraLensEffectBase::PostInitializeComponents()
 
 void AEmitterCameraLensEffectBase::PostLoad()
 {
+	LLM_SCOPE(ELLMTag::Particles);
+
 	Super::PostLoad();
 
 	// using TNumericLimits<float>::Max() as a sentinel value to indicate this deprecated data has been 

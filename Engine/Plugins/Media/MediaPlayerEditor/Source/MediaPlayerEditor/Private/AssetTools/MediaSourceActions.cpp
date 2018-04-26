@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetTools/MediaSourceActions.h"
 #include "AssetData.h"
@@ -17,7 +17,7 @@ bool FMediaSourceActions::CanFilter()
 }
 
 
-FText FMediaSourceActions::GetAssetDescription(const class FAssetData& AssetData) const
+FText FMediaSourceActions::GetAssetDescription(const struct FAssetData& AssetData) const
 {
 	auto MediaSource = Cast<UMediaSource>(AssetData.GetAsset());
 

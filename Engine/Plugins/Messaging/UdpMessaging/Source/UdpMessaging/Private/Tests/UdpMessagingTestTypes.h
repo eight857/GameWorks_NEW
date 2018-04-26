@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -80,7 +80,7 @@ private:
 	TSharedPtr<IMessageAttachment, ESPMode::ThreadSafe> Attachment;
 	FDateTime Expiration;
 	void* Message;
-	IMessageContextPtr OriginalContext;
+	TSharedPtr<IMessageContext, ESPMode::ThreadSafe> OriginalContext;
 	TArray<FMessageAddress> Recipients;
 	EMessageScope Scope;
 	FMessageAddress Sender;

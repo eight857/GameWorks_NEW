@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*------------------------------------------------------------------------------------
 	FALSoundSource.
@@ -10,6 +10,8 @@
 #include "Audio.h"
 #include "Sound/SoundWave.h"
 #include "ALAudioDevice.h"
+#include "ContentStreaming.h"
+
 /**
  * Initializes a source with a given wave instance and prepares it for playback.
  *
@@ -101,13 +103,12 @@ void FALSoundSource::Update( void )
 	}
 	else
 	{
-		Volume = WaveInstance->Volume * WaveInstance->VolumeMultiplier;
+		Volume = WaveInstance->GetActualVolume();
 		if (SetStereoBleed())
 		{
 			// Emulate the bleed to rear speakers followed by stereo fold down
 			Volume *= 1.25f;
 		}
-		Volume *= FApp::GetVolumeMultiplier();
 		Volume *= AudioDevice->GetPlatformAudioHeadroom();
 		Volume = FMath::Clamp(Volume, 0.0f, MAX_VOLUME);
 	}
@@ -120,20 +121,14 @@ void FALSoundSource::Update( void )
 	SetFilterFrequency();
 
 	FVector Location;
-	FVector	Velocity;
 
 	// See file header for coordinate system explanation.
 	Location.X = WaveInstance->Location.X;
 	Location.Y = WaveInstance->Location.Z; // Z/Y swapped on purpose, see file header
 	Location.Z = WaveInstance->Location.Y; // Z/Y swapped on purpose, see file header
 
-	Velocity.X = WaveInstance->Velocity.X;
-	Velocity.Y = WaveInstance->Velocity.Z; // Z/Y swapped on purpose, see file header
-	Velocity.Z = WaveInstance->Velocity.Y; // Z/Y swapped on purpose, see file header
-
 	// Convert to meters.
 	Location *= AUDIO_DISTANCE_FACTOR;
-	Velocity *= AUDIO_DISTANCE_FACTOR;
 
 	// We're using a relative coordinate system for un- spatialized sounds.
 	FVector RelativeDirection = FVector::ZeroVector;
@@ -156,7 +151,6 @@ void FALSoundSource::Update( void )
 	alSourcef(SourceId, AL_PITCH, Pitch);
 
 	alSourcefv(SourceId, AL_POSITION, (ALfloat*)&EmitterPosition);
-	alSourcefv(SourceId, AL_VELOCITY, (ALfloat*)&Velocity);
 }
 
 /**
@@ -179,6 +173,8 @@ void FALSoundSource::Play( void )
  */
 void FALSoundSource::Stop( void )
 {
+	IStreamingManager::Get().GetAudioStreamingManager().RemoveStreamingSoundSource(this);
+
 	if( WaveInstance )
 	{
 		GetALDevice()->MakeCurrent(TEXT("FALSoundSource::Stop()"));

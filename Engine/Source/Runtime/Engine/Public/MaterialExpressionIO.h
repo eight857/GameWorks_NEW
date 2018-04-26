@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,14 +16,14 @@ struct FExpressionInput
 #if WITH_EDITORONLY_DATA
 	/** 
 	 * Material expression that this input is connected to, or NULL if not connected. 
-	 * If you want to be safe when checking against dangling Reroute nodes, please use GetCheckedInput before accessing this property.
+	 * If you want to be safe when checking against dangling Reroute nodes, please use GetTracedInput before accessing this property.
 	*/
 	class UMaterialExpression*	Expression;
 #endif
 
 	/** 
 	 * Index into Expression's outputs array that this input is connected to.
-	 * If you want to be safe when checking against dangling Reroute nodes, please use GetCheckedInput before accessing this property.
+	 * If you want to be safe when checking against dangling Reroute nodes, please use GetTracedInput before accessing this property.
 	*/
 	int32						OutputIndex;
 
@@ -31,7 +31,7 @@ struct FExpressionInput
 	 * Optional name of the input.  
 	 * Note that this is the only member which is not derived from the output currently connected. 
 	 */
-	FString						InputName;
+	FName						InputName;
 
 	int32						Mask,
 								MaskR,
@@ -111,7 +111,7 @@ struct TStructOpsTypeTraits<FExpressionInput>
 
 struct FExpressionOutput
 {
-	FString	OutputName;
+	FName	OutputName;
 	int32	Mask,
 		MaskR,
 		MaskG,
@@ -126,7 +126,7 @@ struct FExpressionOutput
 		MaskA(InMaskA)
 	{}
 
-	FExpressionOutput(FString InOutputName, int32 InMask = 0, int32 InMaskR = 0, int32 InMaskG = 0, int32 InMaskB = 0, int32 InMaskA = 0) :
+	FExpressionOutput(FName InOutputName, int32 InMask = 0, int32 InMaskR = 0, int32 InMaskG = 0, int32 InMaskB = 0, int32 InMaskA = 0) :
 		OutputName(InOutputName),
 		Mask(InMask),
 		MaskR(InMaskR),

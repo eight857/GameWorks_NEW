@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -9,8 +9,10 @@
 #include "Templates/SubclassOf.h"
 #include "ActorFactory.generated.h"
 
+UNREALED_API DECLARE_LOG_CATEGORY_EXTERN(LogActorFactory, Log, All);
+
 class AActor;
-class FAssetData;
+struct FAssetData;
 class UBlueprint;
 class ULevel;
 
@@ -84,5 +86,4 @@ protected:
 	virtual void PostCreateBlueprint( UObject* Asset, AActor* CDO );
 };
 
-
-
+extern UNREALED_API FQuat FindActorAlignmentRotation(const FQuat& InActorRotation, const FVector& InModelAxis, const FVector& InWorldNormal);

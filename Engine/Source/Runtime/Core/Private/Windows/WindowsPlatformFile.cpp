@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Windows/WindowsPlatformFile.h"
 #include "CoreTypes.h"
@@ -14,8 +14,19 @@
 #include "CoreGlobals.h"
 #include "Windows/WindowsHWrapper.h"
 #include <sys/utime.h>
+#include "LockFreeList.h"
+#include "AsyncFileHandle.h"
+#include "Async/AsyncWork.h"
+#include "ScopeLock.h"
 
 #include "Windows/AllowWindowsPlatformTypes.h"
+
+#include "Private/Windows/WindowsAsyncIO.h"
+
+TLockFreePointerListUnordered<void, PLATFORM_CACHE_LINE_SIZE> WindowsAsyncIOEventPool;
+
+
+
 	namespace FileConstants
 	{
 		uint32 WIN_INVALID_SET_FILE_POINTER = INVALID_SET_FILE_POINTER;
@@ -422,88 +433,134 @@ public:
 /** 
  * Windows file handle implementation
 **/
+
 class CORE_API FFileHandleWindows : public IFileHandle
 {
-	enum {READWRITE_SIZE = 1024 * 1024};
+	enum { READWRITE_SIZE = 1024 * 1024 };
 	HANDLE FileHandle;
+	/** The overlapped IO struct to use for determining async state	*/
+	OVERLAPPED OverlappedIO;
+	/** Manages the location of our file position for setting on the overlapped struct for reads/writes */
+	int64 FilePos;
+	/** Need the file size for seek from end */
+	int64 FileSize;
 
-	FORCEINLINE int64 FileSeek(int64 Distance, uint32 MoveMethod)
-	{
-		LARGE_INTEGER li;
-		li.QuadPart = Distance;
-		li.LowPart = SetFilePointer(FileHandle, li.LowPart, &li.HighPart, MoveMethod);
-		if (li.LowPart == FileConstants::WIN_INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR)
-		{
-			li.QuadPart = -1;
-		}
-		return li.QuadPart;
-	}
 	FORCEINLINE bool IsValid()
 	{
 		return FileHandle != NULL && FileHandle != INVALID_HANDLE_VALUE;
 	}
 
+	FORCEINLINE void UpdateOverlappedPos()
+	{
+		ULARGE_INTEGER LI;
+		LI.QuadPart = FilePos;
+		OverlappedIO.Offset = LI.LowPart;
+		OverlappedIO.OffsetHigh = LI.HighPart;
+	}
+
+	FORCEINLINE void UpdateFileSize()
+	{
+		LARGE_INTEGER LI;
+		GetFileSizeEx(FileHandle, &LI);
+		FileSize = LI.QuadPart;
+	}
+
 public:
 	FFileHandleWindows(HANDLE InFileHandle = NULL)
 		: FileHandle(InFileHandle)
+		, FilePos(0)
+		, FileSize(0)
 	{
+		if (IsValid())
+		{
+			UpdateFileSize();
+		}
+		FMemory::Memzero(&OverlappedIO, sizeof(OVERLAPPED));
 	}
 	virtual ~FFileHandleWindows()
 	{
 		CloseHandle(FileHandle);
 		FileHandle = NULL;
 	}
-	virtual int64 Tell() override
+	virtual int64 Tell(void) override
 	{
 		check(IsValid());
-		return FileSeek(0, FILE_CURRENT);
+		return FilePos;
+	}
+	virtual int64 Size() override
+	{
+		check(IsValid());
+		return FileSize;
 	}
 	virtual bool Seek(int64 NewPosition) override
 	{
 		check(IsValid());
 		check(NewPosition >= 0);
-		return FileSeek(NewPosition, FILE_BEGIN) != -1;
+		check(NewPosition <= FileSize);
+
+		FilePos = NewPosition;
+		UpdateOverlappedPos();
+		return true;
 	}
 	virtual bool SeekFromEnd(int64 NewPositionRelativeToEnd = 0) override
 	{
 		check(IsValid());
 		check(NewPositionRelativeToEnd <= 0);
-		return FileSeek(NewPositionRelativeToEnd, FILE_END) != -1;
+
+		// Position is negative so this is actually subtracting
+		return Seek(FileSize + NewPositionRelativeToEnd);
 	}
 	virtual bool Read(uint8* Destination, int64 BytesToRead) override
 	{
 		check(IsValid());
-		while (BytesToRead)
+		uint32 NumRead = 0;
+		// Now kick off an async read
+		if (!ReadFile(FileHandle, Destination, BytesToRead, (::DWORD*)&NumRead, &OverlappedIO))
 		{
-			check(BytesToRead >= 0);
-			int64 ThisSize = FMath::Min<int64>(READWRITE_SIZE, BytesToRead);
-			check(Destination);
-			uint32 Result=0;
-			if (!ReadFile(FileHandle, Destination, uint32(ThisSize), (::DWORD *)&Result, NULL) || Result != uint32(ThisSize))
+			uint32 ErrorCode = GetLastError();
+			if (ErrorCode != ERROR_IO_PENDING)
 			{
+				// Read failed
 				return false;
 			}
-			Destination += ThisSize;
-			BytesToRead -= ThisSize;
+			// Wait for the read to complete
+			NumRead = 0;
+			if (!GetOverlappedResult(FileHandle, &OverlappedIO, (::DWORD*)&NumRead, true))
+			{
+				// Read failed
+				return false;
+			}
 		}
+		// Update where we are in the file
+		FilePos += NumRead;
+		UpdateOverlappedPos();
 		return true;
 	}
 	virtual bool Write(const uint8* Source, int64 BytesToWrite) override
 	{
 		check(IsValid());
-		while (BytesToWrite)
+		uint32 NumWritten = 0;
+		// Now kick off an async write
+		if (!WriteFile(FileHandle, Source, BytesToWrite, (::DWORD*)&NumWritten, &OverlappedIO))
 		{
-			check(BytesToWrite >= 0);
-			int64 ThisSize = FMath::Min<int64>(READWRITE_SIZE, BytesToWrite);
-			check(Source);
-			uint32 Result=0;
-			if (!WriteFile(FileHandle, Source, uint32(ThisSize), (::DWORD *)&Result, NULL) || Result != uint32(ThisSize))
+			uint32 ErrorCode = GetLastError();
+			if (ErrorCode != ERROR_IO_PENDING)
 			{
+				// Write failed
 				return false;
 			}
-			Source += ThisSize;
-			BytesToWrite -= ThisSize;
+			// Wait for the write to complete
+			NumWritten = 0;
+			if (!GetOverlappedResult(FileHandle, &OverlappedIO, (::DWORD*)&NumWritten, true))
+			{
+				// Write failed
+				return false;
+			}
 		}
+		// Update where we are in the file
+		FilePos += NumWritten;
+		UpdateOverlappedPos();
+		UpdateFileSize();
 		return true;
 	}
 };
@@ -624,37 +681,57 @@ public:
 
 	virtual FString GetFilenameOnDisk(const TCHAR* Filename) override
 	{
-		FString Result;
-		WIN32_FIND_DATAW Data;
-		FString NormalizedFilename = NormalizeFilename(Filename);
-		while (NormalizedFilename.Len())
+		HANDLE hFile = CreateFile(Filename, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+		if(hFile == INVALID_HANDLE_VALUE)
 		{
-			HANDLE Handle = FindFirstFileW(*NormalizedFilename, &Data);
-			if (Handle != INVALID_HANDLE_VALUE)
+			return NormalizeFilename(Filename);
+		}
+		else
+		{
+			TCHAR NormalizedFileName[MAX_PATH + 1];
+			int Length = (int)GetFinalPathNameByHandle(hFile, NormalizedFileName, MAX_PATH, FILE_NAME_NORMALIZED);
+			NormalizedFileName[Length] = 0;
+			CloseHandle(hFile);
+
+			int SrcIdx = 0;
+			if(FCString::Strncmp(NormalizedFileName, TEXT("\\\\?\\"), 4) == 0)
 			{
-				if (Result.Len())
+				SrcIdx = 4;
+			}
+
+			int DstIdx = 0;
+			for(; NormalizedFileName[SrcIdx] != 0; SrcIdx++, DstIdx++)
+			{
+				if(NormalizedFileName[SrcIdx] == '\\')
 				{
-					Result = FString(Data.cFileName) / Result;
+					NormalizedFileName[DstIdx] = '/';
 				}
 				else
 				{
-					Result = Data.cFileName;
-				}				
-				FindClose(Handle);
+					NormalizedFileName[DstIdx] = NormalizedFileName[SrcIdx];
+				}
 			}
-			int32 SeparatorIndex = INDEX_NONE;
-			if (NormalizedFilename.FindLastChar('/', SeparatorIndex))
-			{
-				NormalizedFilename = NormalizedFilename.Mid(0, SeparatorIndex);				
-			}
-			if (NormalizedFilename.Len() && (SeparatorIndex == INDEX_NONE || NormalizedFilename.EndsWith(TEXT(":"))))
-			{
-				Result = NormalizedFilename / Result;
-				NormalizedFilename.Empty();
-			}
+			NormalizedFileName[DstIdx] = 0;
+
+			return NormalizedFileName;
 		}
-		return Result;
 	}
+
+#define USE_WINDOWS_ASYNC_IMPL (!IS_PROGRAM && !WITH_EDITOR)
+#if USE_WINDOWS_ASYNC_IMPL
+	virtual IAsyncReadFileHandle* OpenAsyncRead(const TCHAR* Filename) override
+	{
+		uint32  Access = GENERIC_READ;
+		uint32  WinFlags = FILE_SHARE_READ;
+		uint32  Create = OPEN_EXISTING;
+
+		HANDLE Handle = CreateFileW(*NormalizeFilename(Filename), Access, WinFlags, NULL, Create, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
+		// we can't really fail here because this is intended to be an async open
+		return new FWindowsAsyncReadFileHandle(Handle);
+
+	}
+#endif
+
 	virtual IFileHandle* OpenRead(const TCHAR* Filename, bool bAllowWrite = false) override
 	{
 		uint32  Access    = GENERIC_READ;
@@ -683,7 +760,7 @@ public:
 		uint32  Access = GENERIC_READ;
 		uint32  WinFlags = FILE_SHARE_READ | (bAllowWrite ? FILE_SHARE_WRITE : 0);
 		uint32  Create = OPEN_EXISTING;
-		HANDLE Handle = CreateFileW(*NormalizeFilename(Filename), Access, WinFlags, NULL, Create, FILE_ATTRIBUTE_NORMAL, NULL);
+		HANDLE Handle = CreateFileW(*NormalizeFilename(Filename), Access, WinFlags, NULL, Create, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
 		if (Handle != INVALID_HANDLE_VALUE)
 		{
 			return new FFileHandleWindows(Handle);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetTypeActions/AssetTypeActions_SkeletalMesh.h"
 #include "Animation/Skeleton.h"
@@ -22,7 +22,7 @@
 #include "AssetTools.h"
 #include "AssetRegistryModule.h"
 #include "SSkeletonWidget.h"
-#include "Editor/PhAT/Public/PhATModule.h"
+#include "Editor/PhysicsAssetEditor/Public/PhysicsAssetEditorModule.h"
 #include "PersonaModule.h"
 #include "ContentBrowserModule.h"
 #include "AnimationEditorUtils.h"
@@ -34,6 +34,9 @@
 #include "ISkeletalMeshEditorModule.h"
 #include "ApexClothingUtils.h"
 #include "Algo/Transform.h"
+#include "Factories/PhysicsAssetFactory.h"
+
+#include "EditorReimportHandler.h"
 
 #define LOCTEXT_NAMESPACE "AssetTypeActions"
 
@@ -451,9 +454,19 @@ void FAssetTypeActions_SkeletalMesh::GetActions( const TArray<UObject*>& InObjec
 		LOCTEXT("SkeletalMesh_LODImportTooltip", "Select which LODs to import."),
 		FNewMenuDelegate::CreateSP(this, &FAssetTypeActions_SkeletalMesh::GetLODMenu, Meshes)
 		);
+	
+	MenuBuilder.AddMenuEntry(
+		LOCTEXT("ImportClothing_Entry", "Import Clothing Asset..."),
+		LOCTEXT("ImportClothing_ToolTip", "Import a clothing asset from a supported file on disk into this skeletal mesh."),
+		FSlateIcon(),
+		FUIAction(FExecuteAction::CreateSP(this, &FAssetTypeActions_SkeletalMesh::ExecuteImportClothing, Meshes)));
 
-	// Add actions that do not apply to destructible meshes
-	GetNonDestructibleActions(Meshes, MenuBuilder);
+	// skeleton menu
+	MenuBuilder.AddSubMenu(
+		LOCTEXT("SkeletonSubmenu", "Skeleton"),
+		LOCTEXT("SkeletonSubmenu_ToolTip", "Skeleton related actions"),
+		FNewMenuDelegate::CreateSP(this, &FAssetTypeActions_SkeletalMesh::FillSkeletonMenu, Meshes)
+	);
 }
 
 void FAssetTypeActions_SkeletalMesh::FillCreateMenu(FMenuBuilder& MenuBuilder, TArray<TWeakObjectPtr<USkeletalMesh>> Meshes) const
@@ -470,22 +483,6 @@ void FAssetTypeActions_SkeletalMesh::FillCreateMenu(FMenuBuilder& MenuBuilder, T
 	TArray<TWeakObjectPtr<UObject>> Objects;
 	Algo::Transform(Meshes, Objects, [](const TWeakObjectPtr<USkeletalMesh>& SkelMesh) { return SkelMesh; });
 	AnimationEditorUtils::FillCreateAssetMenu(MenuBuilder, Objects, FAnimAssetCreated::CreateSP(this, &FAssetTypeActions_SkeletalMesh::OnAssetCreated));
-}
-
-void FAssetTypeActions_SkeletalMesh::GetNonDestructibleActions( const TArray<TWeakObjectPtr<USkeletalMesh>>& Meshes, FMenuBuilder& MenuBuilder)
-{
-	MenuBuilder.AddMenuEntry(
-		LOCTEXT("ImportClothing_Entry", "Import Clothing Asset..."),
-		LOCTEXT("ImportClothing_ToolTip", "Import a clothing asset from a supported file on disk into this skeletal mesh."),
-		FSlateIcon(),
-		FUIAction(FExecuteAction::CreateSP(this, &FAssetTypeActions_SkeletalMesh::ExecuteImportClothing, Meshes)));
-
-	// skeleton menu
-	MenuBuilder.AddSubMenu(
-			LOCTEXT("SkeletonSubmenu", "Skeleton"),
-			LOCTEXT("SkeletonSubmenu_ToolTip", "Skeleton related actions"),
-			FNewMenuDelegate::CreateSP(this, &FAssetTypeActions_SkeletalMesh::FillSkeletonMenu, Meshes)
-			);
 }
 
 void FAssetTypeActions_SkeletalMesh::OpenAssetEditor( const TArray<UObject*>& InObjects, TSharedPtr<IToolkitHost> EditWithinLevelEditor )
@@ -568,17 +565,16 @@ void FAssetTypeActions_SkeletalMesh::GetResolvedSourceFilePaths(const TArray<UOb
 void FAssetTypeActions_SkeletalMesh::GetLODMenu(class FMenuBuilder& MenuBuilder,TArray<TWeakObjectPtr<USkeletalMesh>> Objects)
 {
 	check(Objects.Num() > 0);
-	auto First = Objects[0];
-	USkeletalMesh* SkeletalMesh = First.Get();
-
-	for(int32 LOD = 0;LOD<=First->LODInfo.Num();++LOD)
+	//Use the first object
+	USkeletalMesh* SkeletalMesh = Objects[0].Get();
+	int32 LODMax = SkeletalMesh->LODInfo.Num();
+	for(int32 LOD = 0; LOD < LODMax; ++LOD)
 	{
 		const FText Description = FText::Format( LOCTEXT("LODLevel", "LOD {0}"), FText::AsNumber( LOD ) );
-		const FText ToolTip = ( LOD == First->LODInfo.Num() ) ? LOCTEXT("NewImportTip", "Import new LOD") : LOCTEXT("ReimportTip", "Reimport over existing LOD");
-
+		const FText ToolTip = ( LOD == SkeletalMesh->LODInfo.Num() ) ? LOCTEXT("NewImportTip", "Import new LOD") : LOCTEXT("ReimportTip", "Reimport over existing LOD");
 		MenuBuilder.AddMenuEntry(	Description, 
 									ToolTip, FSlateIcon(),
-									FUIAction(FExecuteAction::CreateStatic( &FAssetTypeActions_SkeletalMesh::ExecuteImportMeshLOD, Cast<UObject>(SkeletalMesh), LOD) )) ;
+									FUIAction(FExecuteAction::CreateStatic( &FAssetTypeActions_SkeletalMesh::ExecuteImportMeshLOD, static_cast<UObject*>(SkeletalMesh), LOD) )) ;
 	}
 }
 
@@ -599,13 +595,25 @@ void FAssetTypeActions_SkeletalMesh::GetPhysicsAssetMenu(FMenuBuilder& MenuBuild
 
 void FAssetTypeActions_SkeletalMesh::ExecuteNewPhysicsAsset(TArray<TWeakObjectPtr<USkeletalMesh>> Objects, bool bSetAssetToMesh)
 {
+	TArray<UObject*> CreatedObjects;
+
 	for (auto ObjIt = Objects.CreateConstIterator(); ObjIt; ++ObjIt)
 	{
 		auto Object = (*ObjIt).Get();
 		if ( Object )
 		{
-			CreatePhysicsAssetFromMesh(Object, bSetAssetToMesh);
+			if(UObject* PhysicsAsset = UPhysicsAssetFactory::CreatePhysicsAssetFromMesh(NAME_None, nullptr, Object, bSetAssetToMesh))
+			{
+				CreatedObjects.Add(PhysicsAsset);
+			}
 		}
+	}
+
+	if(CreatedObjects.Num() > 0)
+	{
+		FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+		ContentBrowserModule.Get().SyncBrowserToAssets(CreatedObjects);
+		FAssetEditorManager::Get().OpenEditorForAssets(CreatedObjects);
 	}
 }
 
@@ -702,7 +710,17 @@ void FAssetTypeActions_SkeletalMesh::ExecuteFindSkeleton(TArray<TWeakObjectPtr<U
 
 void FAssetTypeActions_SkeletalMesh::ExecuteImportMeshLOD(UObject* Mesh, int32 LOD)
 {
-	FbxMeshUtils::ImportMeshLODDialog(Mesh, LOD);
+	if (LOD == 0)
+	{
+		//re-import of the asset
+		TArray<UObject *> AssetArray;
+		AssetArray.Add(Mesh);
+		FReimportManager::Instance()->ValidateAllSourceFileAndReimport(AssetArray);
+	}
+	else
+	{
+		FbxMeshUtils::ImportMeshLODDialog(Mesh, LOD);
+	}
 }
 
 void FAssetTypeActions_SkeletalMesh::ExecuteImportClothing(TArray<TWeakObjectPtr<USkeletalMesh>> Objects)
@@ -750,65 +768,6 @@ void FAssetTypeActions_SkeletalMesh::FillSkeletonMenu(FMenuBuilder& MenuBuilder,
 			FCanExecuteAction()
 			)
 		);
-}
-
-void FAssetTypeActions_SkeletalMesh::CreatePhysicsAssetFromMesh(USkeletalMesh* SkelMesh, bool bSetToMesh) const
-{
-	// Get a unique package and asset name
-	FString Name;
-	FString PackageName;
-	CreateUniqueAssetName(SkelMesh->GetOutermost()->GetName(), TEXT("_Physics"), PackageName, Name);
-
-	// Then find/create it.
-	UPackage* Package = CreatePackage(NULL, *PackageName);
-	if ( !ensure(Package) )
-	{
-		// There was a problem creating the package
-		return;
-	}
-
-	IPhATModule* PhATModule = &FModuleManager::LoadModuleChecked<IPhATModule>( "PhAT" );
-	FPhysAssetCreateParams NewBodyData;
-	EAppReturnType::Type NewBodyResponse;
-
-	// Now show the 'asset creation' options dialog
-	PhATModule->OpenNewBodyDlg(&NewBodyData, &NewBodyResponse);
-	bool bWasOkClicked = (NewBodyResponse == EAppReturnType::Ok);
-
-	if( bWasOkClicked )
-	{			
-		UPhysicsAsset* NewAsset = NewObject<UPhysicsAsset>(Package, *Name, RF_Public | RF_Standalone | RF_Transactional);
-		if(NewAsset)
-		{
-			// Do automatic asset generation.
-			FText ErrorMessage;
-			bool bSuccess = FPhysicsAssetUtils::CreateFromSkeletalMesh(NewAsset, SkelMesh, NewBodyData, ErrorMessage, bSetToMesh);
-			if(bSuccess)
-			{
-				NewAsset->MarkPackageDirty();
-				PhATModule->CreatePhAT(EToolkitMode::Standalone, TSharedPtr<IToolkitHost>(), NewAsset);
-
-				// Notify the asset registry
-				FAssetRegistryModule::AssetCreated(NewAsset);
-
-				if(bSetToMesh)
-				{
-					// auto-link source skelmesh to the new physasset and recreate physics state if needed
-					RefreshSkelMeshOnPhysicsAssetChange(SkelMesh);
-					SkelMesh->MarkPackageDirty();
-				}
-			}
-			else
-			{
-				FMessageDialog::Open(EAppMsgType::Ok, ErrorMessage);
-				NewAsset->ClearFlags( RF_Public| RF_Standalone );
-			}
-		}
-		else
-		{
-			FMessageDialog::Open( EAppMsgType::Ok, NSLOCTEXT("CreatePhysicsAsset", "CreatePhysicsAssetFailed", "Failed to create new Physics Asset.") );
-		}
-	}
 }
 
 void FAssetTypeActions_SkeletalMesh::AssignSkeletonToMesh(USkeletalMesh* SkelMesh) const
@@ -879,13 +838,13 @@ void FAssetTypeActions_SkeletalMesh::AssignSkeletonToMesh(USkeletalMesh* SkelMes
 	}
 }
 
-void FAssetTypeActions_SkeletalMesh::OnAssetCreated(TArray<UObject*> NewAssets) const
+bool FAssetTypeActions_SkeletalMesh::OnAssetCreated(TArray<UObject*> NewAssets) const
 {
 	if (NewAssets.Num() > 1)
 	{
 		FAssetTools::Get().SyncBrowserToAssets(NewAssets);
 	}
-
+	return true;
 }
 
 #undef LOCTEXT_NAMESPACE

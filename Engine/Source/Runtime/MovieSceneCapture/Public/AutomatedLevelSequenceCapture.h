@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "LevelSequencePlayer.h"
 #include "MovieSceneCapture.h"
 #include "AutomatedLevelSequenceCapture.generated.h"
@@ -68,6 +68,9 @@ public:
 
 	virtual void Close() override;
 
+	/** Override the render frames with the given start/end frames. Restore the values when done rendering. */
+	void SetFrameOverrides(int32 InStartFrame, int32 InEndFrame);
+
 protected:
 
 	virtual void AddFormatMappings(TMap<FString, FStringFormatArg>& OutFormatMappings, const FFrameMetrics& FrameMetrics) const override;
@@ -89,6 +92,9 @@ private:
 	/** Called to set up the player's playback range */
 	void SetupFrameRange();
 
+	/** Enable cinematic mode override */
+	void EnableCinematicMode();
+
 	/** Export EDL if requested */
 	void ExportEDL();
 
@@ -108,13 +114,23 @@ private:
 	/** Restore any modification to shots */
 	void RestoreShots();
 
+	/** Restore frame settings from overridden shot frames */
+	bool RestoreFrameOverrides();
+
+	void DelayBeforeWarmupFinished();
+
+	void PauseFinished();
+
 	/** A level sequence asset to playback at runtime - used where the level sequence does not already exist in the world. */
 	UPROPERTY()
-	FStringAssetReference LevelSequenceAsset;
+	FSoftObjectPath LevelSequenceAsset;
 
 	/** The pre-existing level sequence actor to use for capture that specifies playback settings */
 	UPROPERTY()
 	TWeakObjectPtr<ALevelSequenceActor> LevelSequenceActor;
+
+	/** The viewport being captured. */
+	TWeakPtr<FSceneViewport> Viewport;
 
 	/** Which state we're in right now */
 	enum class ELevelSequenceCaptureState
@@ -123,11 +139,10 @@ private:
 		DelayBeforeWarmUp,
 		ReadyToWarmUp,
 		WarmingUp,
-		FinishedWarmUp
+		FinishedWarmUp,
+		Paused,
+		FinishedPause,
 	} CaptureState;
-
-	/** Time left to wait before capturing */
-	float RemainingDelaySeconds;
 
 	/** The number of warm up frames left before we actually start saving out images */
 	int32 RemainingWarmUpFrames;
@@ -139,6 +154,10 @@ private:
 	int32 ShotIndex;
 
 	FLevelSequencePlayerSnapshot CachedState;
+
+	TOptional<float> CachedPlayRate;
+
+	FTimerHandle DelayTimer;
 
 	struct FCinematicShotCache
 	{
@@ -158,6 +177,11 @@ private:
 
 	TArray<FCinematicShotCache> CachedShotStates;
 	TRange<float> CachedPlaybackRange;
+
+	TOptional<int32> CachedStartFrame;
+	TOptional<int32> CachedEndFrame;
+	TOptional<bool> bCachedUseCustomStartFrame;
+	TOptional<bool> bCachedUseCustomEndFrame;
 #endif
 };
 

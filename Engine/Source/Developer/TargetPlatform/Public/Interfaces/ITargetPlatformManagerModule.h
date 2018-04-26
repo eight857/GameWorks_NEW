@@ -1,12 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Modules/ModuleInterface.h"
 #include "Interfaces/ITargetDevice.h"
+#include "Modules/ModuleInterface.h"
 
 class ITargetPlatform;
+
 
 /**
  * Module for the target platform manager
@@ -30,7 +31,7 @@ public:
 	 * @param Name Name of the format to find.
 	 * @return The PhysX format, or nullptr if not found.
 	 */
-	virtual const class IPhysXFormat* FindPhysXFormat( FName Name ) = 0;
+	virtual const class IPhysXCooking* FindPhysXCooking( FName Name ) = 0;
 
 	/**
 	 * Finds a shader format with the specified name.
@@ -86,11 +87,11 @@ public:
 	virtual const TArray<const class IAudioFormat*>& GetAudioFormats() = 0;
 
 	/**
-	 * Returns the list of all IPhysXFormats that were located in DLLs.
+	 * Returns the list of all IPhysXCooking that were located in DLLs.
 	 *
 	 * @return Collection of PhysX formats.
 	 */
-	virtual const TArray<const class IPhysXFormat*>& GetPhysXFormats() = 0;
+	virtual const TArray<const class IPhysXCooking*>& GetPhysXCooking() = 0;
 
 	/**
 	 * Returns the target platform that is currently running.
@@ -143,7 +144,7 @@ public:
 	 * @param Name Name of the shader format to get the version for.
 	 * @return Version number.
 	 */
-	virtual uint16 ShaderFormatVersion(FName Name) = 0;
+	virtual uint32 ShaderFormatVersion(FName Name) = 0;
 
 	/**
 	 * Allows changes to environment for a given platform

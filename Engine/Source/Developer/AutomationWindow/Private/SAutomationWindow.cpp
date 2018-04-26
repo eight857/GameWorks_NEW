@@ -1,7 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SAutomationWindow.h"
 #include "HAL/PlatformProcess.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include "Misc/MessageDialog.h"
 #include "Misc/TextFilter.h"
 #include "Misc/FilterCollection.h"
@@ -262,6 +263,7 @@ void SAutomationWindow::Construct( const FArguments& InArgs, const IAutomationCo
 	RequestedFilterComboList.Add(MakeShareable(new FString(TEXT("Performance Tests"))));
 	RequestedFilterComboList.Add(MakeShareable(new FString(TEXT("Stress Tests"))));
 	RequestedFilterComboList.Add(MakeShareable(new FString(TEXT("Standard Tests"))));
+	RequestedFilterComboList.Add(MakeShareable(new FString(TEXT("Negative Tests"))));
 
 	TSharedRef<SNotificationList> NotificationList = SNew(SNotificationList) .Visibility( EVisibility::HitTestInvisible );
 
@@ -471,12 +473,17 @@ void SAutomationWindow::Construct( const FArguments& InArgs, const IAutomationCo
 									SNew(SBorder)
 									.BorderImage(FEditorStyle::GetBrush("MessageLog.ListBorder"))
 									[
-										SAssignNew(LogListView, SListView<TSharedPtr<FAutomationOutputMessage> >)
-										.ItemHeight(18)
-										.ListItemsSource(&LogMessages)
-										.SelectionMode(ESelectionMode::Multi)
-										.OnGenerateRow(this, &SAutomationWindow::OnGenerateWidgetForLog)
-										.OnSelectionChanged(this, &SAutomationWindow::HandleLogListSelectionChanged)
+										SNew(SScrollBox)
+										.Orientation(EOrientation::Orient_Horizontal)
+										+SScrollBox::Slot()
+										[
+											SAssignNew(LogListView, SListView<TSharedPtr<FAutomationOutputMessage> >)
+											.ItemHeight(18)
+											.ListItemsSource(&LogMessages)
+											.SelectionMode(ESelectionMode::Multi)
+											.OnGenerateRow(this, &SAutomationWindow::OnGenerateWidgetForLog)
+											.OnSelectionChanged(this, &SAutomationWindow::HandleLogListSelectionChanged)
+										]
 									]
 								]
 
@@ -963,6 +970,9 @@ void SAutomationWindow::HandleRequesteFilterChanged(TSharedPtr<FString> Item, ES
 		case 6:	//	"Standard Tests"
 			NewRequestedFlags = EAutomationTestFlags::SmokeFilter | EAutomationTestFlags::EngineFilter | EAutomationTestFlags::ProductFilter | EAutomationTestFlags::PerfFilter;
 			break;
+		case 7: //  "Negative Tests"
+			NewRequestedFlags = EAutomationTestFlags::NegativeFilter;
+			break;
 	}
 	AutomationController->SetRequestedTestFlags(NewRequestedFlags);
 }
@@ -1261,7 +1271,7 @@ namespace
 {
 	bool MakeMapPathUrl(FString& InPath)
 	{
-		if ( FPaths::MakePathRelativeTo(InPath, *FPaths::GameContentDir()) )
+		if ( FPaths::MakePathRelativeTo(InPath, *FPaths::ProjectContentDir()) )
 		{
 			InPath.InsertAt(0, TEXT("/Game/"));
 			InPath.RemoveFromEnd(TEXT(".umap"));
@@ -2078,7 +2088,7 @@ void SAutomationWindow::CopyLog( )
 			SelectedText += LINE_TERMINATOR;
 		}
 
-		FPlatformMisc::ClipboardCopy( *SelectedText );
+		FPlatformApplicationMisc::ClipboardCopy( *SelectedText );
 	}
 }
 

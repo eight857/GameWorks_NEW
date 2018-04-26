@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 /*=============================================================================
 	UniformExpressions.h: Uniform expression definitions.
 =============================================================================*/
@@ -11,7 +11,11 @@
 #include "TextureResource.h"
 #include "Engine/Texture.h"
 #include "Materials/MaterialExpressionTextureProperty.h"
+#include "Materials/MaterialLayersFunctions.h"
 #include "UObject/RenderingObjectVersion.h"
+
+// Temporary flag for toggling experimental material layers functionality
+bool AreExperimentalMaterialLayersEnabled();
 
 /**
  */
@@ -122,8 +126,8 @@ public:
 		bUseOverriddenDefault(false)
 	{}
 
-	FMaterialUniformExpressionVectorParameter(FName InParameterName,const FLinearColor& InDefaultValue):
-		ParameterName(InParameterName),
+	FMaterialUniformExpressionVectorParameter(const FMaterialParameterInfo& InParameterInfo,const FLinearColor& InDefaultValue):
+		ParameterInfo(InParameterInfo),
 		DefaultValue(InDefaultValue),
 		bUseOverriddenDefault(false)
 	{}
@@ -131,7 +135,7 @@ public:
 	// FMaterialUniformExpression interface.
 	virtual void Serialize(FArchive& Ar)
 	{
-		Ar << ParameterName << DefaultValue;
+		Ar << ParameterInfo << DefaultValue;
 	}
 
 	// inefficient compared to GetGameThreadNumberValue(), for editor purpose
@@ -139,9 +143,22 @@ public:
 	{
 		OutValue.R = OutValue.G = OutValue.B = OutValue.A = 0;
 
-		if(!Context.MaterialRenderProxy->GetVectorValue(ParameterName, &OutValue, Context))
+		if(!Context.MaterialRenderProxy || !Context.MaterialRenderProxy->GetVectorValue(ParameterInfo, &OutValue, Context))
 		{
-			GetDefaultValue(OutValue);
+			const bool bOveriddenParameterOnly = ParameterInfo.Association == EMaterialParameterAssociation::GlobalParameter;
+			
+			if (AreExperimentalMaterialLayersEnabled())
+			{
+				UMaterialInterface* Interface = Context.Material.GetMaterialInterface();
+				if (!Interface || !Interface->GetVectorParameterDefaultValue(ParameterInfo, OutValue, bOveriddenParameterOnly))
+				{
+					GetDefaultValue(OutValue);
+				}
+			}
+			else
+			{
+				GetDefaultValue(OutValue);
+			}
 		}
 	}
 
@@ -158,9 +175,9 @@ public:
 		return false;
 	}
 
-	FName GetParameterName() const
+	const FMaterialParameterInfo& GetParameterInfo() const
 	{
-		return ParameterName;
+		return ParameterInfo;
 	}
 
 	virtual bool IsIdentical(const FMaterialUniformExpression* OtherExpression) const
@@ -170,7 +187,7 @@ public:
 			return false;
 		}
 		FMaterialUniformExpressionVectorParameter* OtherParameter = (FMaterialUniformExpressionVectorParameter*)OtherExpression;
-		return ParameterName == OtherParameter->ParameterName && DefaultValue == OtherParameter->DefaultValue;
+		return ParameterInfo == OtherParameter->ParameterInfo && DefaultValue == OtherParameter->DefaultValue;
 	}
 
 	void SetTransientOverrideDefaultValue(const FLinearColor& InOverrideDefaultValue, bool bInUseOverriddenDefault)
@@ -180,7 +197,7 @@ public:
 	}
 
 private:
-	FName ParameterName;
+	FMaterialParameterInfo ParameterInfo;
 	FLinearColor DefaultValue;
 	bool bUseOverriddenDefault;
 	FLinearColor OverriddenDefaultValue;
@@ -197,8 +214,8 @@ public:
 		bUseOverriddenDefault(false)
 	{}
 
-	FMaterialUniformExpressionScalarParameter(FName InParameterName,float InDefaultValue):
-		ParameterName(InParameterName),
+	FMaterialUniformExpressionScalarParameter(const FMaterialParameterInfo& InParameterInfo,float InDefaultValue):
+		ParameterInfo(InParameterInfo),
 		DefaultValue(InDefaultValue),
 		bUseOverriddenDefault(false)
 	{}
@@ -206,21 +223,33 @@ public:
 	// FMaterialUniformExpression interface.
 	virtual void Serialize(FArchive& Ar)
 	{
-		Ar << ParameterName << DefaultValue;
+		Ar << ParameterInfo << DefaultValue;
 	}
 
 	// inefficient compared to GetGameThreadNumberValue(), for editor purpose
 	virtual void GetNumberValue(const FMaterialRenderContext& Context,FLinearColor& OutValue) const
-	{
-		if(Context.MaterialRenderProxy->GetScalarValue(ParameterName, &OutValue.R, Context))
+	{	
+		OutValue.A = 0;
+
+		if (!Context.MaterialRenderProxy || !Context.MaterialRenderProxy->GetScalarValue(ParameterInfo, &OutValue.A, Context))
 		{
-			OutValue.G = OutValue.B = OutValue.A = OutValue.R;
+			const bool bOveriddenParameterOnly = ParameterInfo.Association == EMaterialParameterAssociation::GlobalParameter;
+			
+			if (AreExperimentalMaterialLayersEnabled())
+			{
+				UMaterialInterface* Interface = Context.Material.GetMaterialInterface();
+				if (!Interface || !Interface->GetScalarParameterDefaultValue(ParameterInfo, OutValue.A, bOveriddenParameterOnly))
+				{
+					GetDefaultValue(OutValue.A);
+				}
+			}
+			else
+			{
+				GetDefaultValue(OutValue.A);
+			}
 		}
-		else
-		{
-			GetDefaultValue(OutValue.A);
-			OutValue.R = OutValue.G = OutValue.B = OutValue.A;
-		}
+
+		OutValue.R = OutValue.G = OutValue.B = OutValue.A;
 	}
 
 	void GetDefaultValue(float& OutValue) const
@@ -236,9 +265,9 @@ public:
 		return false;
 	}
 
-	FName GetParameterName() const
+	const FMaterialParameterInfo& GetParameterInfo() const
 	{
-		return ParameterName;
+		return ParameterInfo;
 	}
 
 	virtual bool IsIdentical(const FMaterialUniformExpression* OtherExpression) const
@@ -248,7 +277,7 @@ public:
 			return false;
 		}
 		FMaterialUniformExpressionScalarParameter* OtherParameter = (FMaterialUniformExpressionScalarParameter*)OtherExpression;
-		return ParameterName == OtherParameter->ParameterName && DefaultValue == OtherParameter->DefaultValue;
+		return ParameterInfo == OtherParameter->ParameterInfo && DefaultValue == OtherParameter->DefaultValue;
 	}
 
 	void SetTransientOverrideDefaultValue(float InOverrideDefaultValue, bool bInUseOverriddenDefault)
@@ -258,7 +287,7 @@ public:
 	}
 
 private:
-	FName ParameterName;
+	FMaterialParameterInfo ParameterInfo;
 	float DefaultValue;
 	bool bUseOverriddenDefault;
 	float OverriddenDefaultValue;
@@ -297,31 +326,45 @@ public:
 
 	FMaterialUniformExpressionTextureParameter() {}
 
-	FMaterialUniformExpressionTextureParameter(FName InParameterName, int32 InTextureIndex, ESamplerSourceMode InSourceMode) :
+	FMaterialUniformExpressionTextureParameter(const FMaterialParameterInfo& InParameterInfo, int32 InTextureIndex, ESamplerSourceMode InSourceMode) :
 		Super(InTextureIndex, InSourceMode),
-		ParameterName(InParameterName)
+		ParameterInfo(InParameterInfo)
 	{}
 
 	// FMaterialUniformExpression interface.
 	virtual void Serialize(FArchive& Ar)
 	{
-		Ar << ParameterName;
+		Ar << ParameterInfo;
 		Super::Serialize(Ar);
 	}
 	virtual void GetTextureValue(const FMaterialRenderContext& Context,const FMaterial& Material,const UTexture*& OutValue,ESamplerSourceMode& OutSamplerSource) const
 	{
 		check(IsInParallelRenderingThread());
 		OutSamplerSource = SamplerSource;
-		if( TransientOverrideValue_RenderThread != NULL )
+		if (TransientOverrideValue_RenderThread != NULL)
 		{
 			OutValue = TransientOverrideValue_RenderThread;
 		}
 		else
 		{
-			OutValue = NULL;
-			if(!Context.MaterialRenderProxy->GetTextureValue(ParameterName,&OutValue,Context))
+			if (!Context.MaterialRenderProxy || !Context.MaterialRenderProxy->GetTextureValue(ParameterInfo, &OutValue, Context))
 			{
-				OutValue = GetIndexedTexture(Material, TextureIndex);
+				UTexture* Value = nullptr;
+
+				if (AreExperimentalMaterialLayersEnabled())
+				{
+					UMaterialInterface* Interface = Context.Material.GetMaterialInterface();
+					if (!Interface || !Interface->GetTextureParameterDefaultValue(ParameterInfo, Value))
+					{
+						Value = GetIndexedTexture(Material, TextureIndex);
+					}
+				}
+				else
+				{
+					Value = GetIndexedTexture(Material, TextureIndex);
+				}
+
+				OutValue = Value;
 			}
 		}
 	}
@@ -335,7 +378,8 @@ public:
 		else
 		{
 			OutValue = NULL;
-			if(!MaterialInterface->GetTextureParameterOverrideValue(ParameterName,OutValue))
+			const bool bOverrideValuesOnly = !AreExperimentalMaterialLayersEnabled();
+			if(!MaterialInterface->GetTextureParameterValue(ParameterInfo,OutValue,bOverrideValuesOnly))
 			{
 				OutValue = GetIndexedTexture(Material, TextureIndex);
 			}
@@ -349,7 +393,7 @@ public:
 
 	FName GetParameterName() const
 	{
-		return ParameterName;
+		return ParameterInfo.Name;
 	}
 
 	virtual bool IsIdentical(const FMaterialUniformExpression* OtherExpression) const
@@ -359,11 +403,11 @@ public:
 			return false;
 		}
 		FMaterialUniformExpressionTextureParameter* OtherParameter = (FMaterialUniformExpressionTextureParameter*)OtherExpression;
-		return ParameterName == OtherParameter->ParameterName && Super::IsIdentical(OtherParameter);
+		return ParameterInfo == OtherParameter->ParameterInfo && Super::IsIdentical(OtherParameter);
 	}
 
 private:
-	FName ParameterName;
+	FMaterialParameterInfo ParameterInfo;
 };
 
 /**
@@ -386,6 +430,27 @@ public:
 	{
 		return false;
 	}
+};
+
+
+/**
+ * An external texture parameter expression.
+ */
+class FMaterialUniformExpressionExternalTextureParameter: public FMaterialUniformExpressionExternalTexture
+{
+	typedef FMaterialUniformExpressionExternalTexture Super;
+	DECLARE_MATERIALUNIFORMEXPRESSION_TYPE(FMaterialUniformExpressionExternalTextureParameter);
+public:
+
+	FMaterialUniformExpressionExternalTextureParameter();
+	FMaterialUniformExpressionExternalTextureParameter(FName InParameterName, int32 InTextureIndex);
+
+	virtual void Serialize(FArchive& Ar) override;
+	virtual bool IsIdentical(const FMaterialUniformExpression* OtherExpression) const override;
+	virtual bool GetExternalTexture(const FMaterialRenderContext& Context, FTextureRHIRef& OutTextureRHI, FSamplerStateRHIRef& OutSamplerStateRHI) const override;
+
+private:
+	FName ParameterName;
 };
 
 /**
@@ -678,6 +743,57 @@ public:
 		}
 
 		auto OtherLog = static_cast<const FMaterialUniformExpressionLogarithm2 *>(OtherExpression);
+		return X->IsIdentical(OtherLog->X);
+	}
+
+private:
+	TRefCountPtr<FMaterialUniformExpression> X;
+};
+
+/**
+ */
+class FMaterialUniformExpressionLogarithm10: public FMaterialUniformExpression
+{
+	DECLARE_MATERIALUNIFORMEXPRESSION_TYPE(FMaterialUniformExpressionLogarithm10);
+public:
+
+	FMaterialUniformExpressionLogarithm10() {}
+	FMaterialUniformExpressionLogarithm10(FMaterialUniformExpression* InX):
+		X(InX)
+	{}
+
+	// FMaterialUniformExpression interface.
+	void Serialize(FArchive& Ar) override
+	{
+		Ar << X;
+	}
+	void GetNumberValue(const FMaterialRenderContext& Context,FLinearColor& OutValue) const override
+	{
+		FLinearColor ValueX = FLinearColor::Black;
+		X->GetNumberValue(Context,ValueX);
+
+		static const float LogToLog10 = 1.0f / FMath::Loge(10.f);
+		OutValue.R = FMath::Loge(ValueX.R) * LogToLog10;
+		OutValue.G = FMath::Loge(ValueX.G) * LogToLog10;
+		OutValue.B = FMath::Loge(ValueX.B) * LogToLog10;
+		OutValue.A = FMath::Loge(ValueX.A) * LogToLog10;
+	}
+	bool IsConstant() const override
+	{
+		return X->IsConstant();
+	}
+	bool IsChangingPerFrame() const override
+	{
+		return X->IsChangingPerFrame();
+	}
+	bool IsIdentical(const FMaterialUniformExpression* OtherExpression) const override
+	{
+		if (GetType() != OtherExpression->GetType())
+		{
+			return false;
+		}
+
+		auto OtherLog = static_cast<const FMaterialUniformExpressionLogarithm10*>(OtherExpression);
 		return X->IsIdentical(OtherLog->X);
 	}
 
@@ -1645,12 +1761,9 @@ public:
 	}
 	virtual void GetNumberValue(const FMaterialRenderContext& Context,FLinearColor& OutValue) const override
 	{
-		const UTexture* Texture;
-
-		{
-			ESamplerSourceMode SamplerSource;
-			TextureExpression->GetTextureValue(Context, Context.Material, Texture, SamplerSource);
-		}
+		const UTexture* Texture = nullptr;
+		ESamplerSourceMode SamplerSource;
+		TextureExpression->GetTextureValue(Context, Context.Material, Texture, SamplerSource);
 
 		if (!Texture || !Texture->Resource)
 		{
@@ -1692,4 +1805,51 @@ public:
 private:
 	TRefCountPtr<FMaterialUniformExpressionTexture> TextureExpression;
 	int8 TextureProperty;
+};
+
+
+/**
+ * A uniform expression to lookup the UV coordinate rotation and scale for an external texture
+ */
+class FMaterialUniformExpressionExternalTextureCoordinateScaleRotation : public FMaterialUniformExpressionExternalTextureBase
+{
+	DECLARE_MATERIALUNIFORMEXPRESSION_TYPE(FMaterialUniformExpressionExternalTextureCoordinateScaleRotation);
+public:
+
+	FMaterialUniformExpressionExternalTextureCoordinateScaleRotation(){}
+	FMaterialUniformExpressionExternalTextureCoordinateScaleRotation(const FGuid& InGuid) : FMaterialUniformExpressionExternalTextureBase(InGuid) {}
+	FMaterialUniformExpressionExternalTextureCoordinateScaleRotation(int32 InSourceTextureIndex, TOptional<FName> InParameterName) : FMaterialUniformExpressionExternalTextureBase(InSourceTextureIndex), ParameterName(InParameterName) {}
+
+	virtual void Serialize(FArchive& Ar) override;
+	virtual bool IsIdentical(const FMaterialUniformExpression* OtherExpression) const override;
+	virtual void GetNumberValue(const FMaterialRenderContext& Context, FLinearColor& OutValue) const override;
+
+protected:
+	typedef FMaterialUniformExpressionExternalTextureBase Super;
+
+	/** Optional texture parameter name */
+	TOptional<FName> ParameterName;
+};
+
+/**
+ * A uniform expression to lookup the UV coordinate offset for an external texture
+ */
+class FMaterialUniformExpressionExternalTextureCoordinateOffset : public FMaterialUniformExpressionExternalTextureBase
+{
+	DECLARE_MATERIALUNIFORMEXPRESSION_TYPE(FMaterialUniformExpressionExternalTextureCoordinateOffset);
+public:
+
+	FMaterialUniformExpressionExternalTextureCoordinateOffset(){}
+	FMaterialUniformExpressionExternalTextureCoordinateOffset(const FGuid& InGuid) : FMaterialUniformExpressionExternalTextureBase(InGuid) {}
+	FMaterialUniformExpressionExternalTextureCoordinateOffset(int32 InSourceTextureIndex, TOptional<FName> InParameterName) : FMaterialUniformExpressionExternalTextureBase(InSourceTextureIndex), ParameterName(InParameterName) {}
+
+	virtual void Serialize(FArchive& Ar) override;
+	virtual bool IsIdentical(const FMaterialUniformExpression* OtherExpression) const override;
+	virtual void GetNumberValue(const FMaterialRenderContext& Context, FLinearColor& OutValue) const override;
+
+protected:
+	typedef FMaterialUniformExpressionExternalTextureBase Super;
+
+	/** Optional texture parameter name */
+	TOptional<FName> ParameterName;
 };

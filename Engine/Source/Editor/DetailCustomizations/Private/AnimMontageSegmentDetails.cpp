@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimMontageSegmentDetails.h"
 #include "Widgets/SBoxPanel.h"
@@ -6,7 +6,6 @@
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/SViewport.h"
 #include "Animation/DebugSkelMeshComponent.h"
-#include "Settings/DestructableMeshEditorSettings.h"
 #include "Animation/AnimSequenceBase.h"
 #include "Animation/AnimMontage.h"
 #include "DetailWidgetRow.h"
@@ -19,6 +18,7 @@
 #include "AnimPreviewInstance.h"
 #include "Slate/SceneViewport.h"
 #define LOCTEXT_NAMESPACE "AnimMontageSegmentDetails"
+#include "Settings/SkeletalMeshEditorSettings.h"
 
 /////////////////////////////////////////////////////////////////////////
 FAnimationSegmentViewportClient::FAnimationSegmentViewportClient(FPreviewScene& InPreviewScene, const TWeakPtr<SEditorViewport>& InEditorViewportWidget)
@@ -46,7 +46,7 @@ FAnimationSegmentViewportClient::FAnimationSegmentViewportClient(FPreviewScene& 
 
 void FAnimationSegmentViewportClient::UpdateLighting()
 {
-	const UDestructableMeshEditorSettings* Options = GetDefault<UDestructableMeshEditorSettings>();
+	const USkeletalMeshEditorSettings* Options = GetDefault<USkeletalMeshEditorSettings>();
 
 	PreviewScene->SetLightDirection(Options->AnimPreviewLightingDirection);
 	PreviewScene->SetLightColor(Options->AnimPreviewDirectionalColor);
@@ -134,6 +134,7 @@ void FAnimMontageSegmentDetails::CustomizeDetails( IDetailLayoutBuilder& DetailB
 		.AnimRefPropertyHandle(DetailBuilder.GetProperty("AnimSegment.AnimReference"))
 		.StartTimePropertyHandle(DetailBuilder.GetProperty("AnimSegment.AnimStartTime"))
 		.EndTimePropertyHandle(DetailBuilder.GetProperty("AnimSegment.AnimEndTime"))
+		.PlayRatePropertyHandle(DetailBuilder.GetProperty("AnimSegment.AnimPlayRate"))
 	];	
 }
 
@@ -194,6 +195,7 @@ void SAnimationSegmentViewport::Construct(const FArguments& InArgs)
 	AnimRefPropertyHandle = InArgs._AnimRefPropertyHandle;
 	StartTimePropertyHandle = InArgs._StartTimePropertyHandle;
 	EndTimePropertyHandle = InArgs._EndTimePropertyHandle;
+	PlayRatePropertyHandle = InArgs._PlayRatePropertyHandle;
 
 	this->ChildSlot
 	[
@@ -228,7 +230,6 @@ void SAnimationSegmentViewport::Construct(const FArguments& InArgs)
 			.PreviewInstance(this, &SAnimationSegmentViewport::GetPreviewInstance)
 			.DraggableBars(this, &SAnimationSegmentViewport::GetBars)
 			.OnBarDrag(this, &SAnimationSegmentViewport::OnBarDrag)
-			.OnTickPlayback(this, &SAnimationSegmentViewport::OnTickPreview)
 			.bAllowZoom(true)
 		]
 	];
@@ -277,9 +278,13 @@ void SAnimationSegmentViewport::InitSkeleton()
 			if((Preview == NULL || Preview->GetCurrentAsset() != AnimSequence) ||
 				(PreviewComponent->SkeletalMesh != PreviewMesh))
 			{
+				float PlayRate;
+				PlayRatePropertyHandle->GetValue(PlayRate);
+
 				PreviewComponent->SetSkeletalMesh(PreviewMesh);
 				PreviewComponent->EnablePreview(true, AnimSequence);
 				PreviewComponent->PreviewInstance->SetLooping(true);
+				PreviewComponent->SetPlayRate(PlayRate);
 
 				//Place the camera at a good viewer position
 				FVector NewPosition = LevelViewportClient->GetViewLocation();
@@ -292,20 +297,6 @@ void SAnimationSegmentViewport::InitSkeleton()
 	TargetSkeleton = Skeleton;
 }
 
-void SAnimationSegmentViewport::OnTickPreview( double InCurrentTime, float InDeltaTime )
-{
-	// Clamp the sequence playing to the start/end values of the anim segment
-	float Start, End;
-	StartTimePropertyHandle->GetValue( Start );
-	EndTimePropertyHandle->GetValue( End );
-	if ( PreviewComponent->PreviewInstance->GetCurrentTime() > End || PreviewComponent->PreviewInstance->GetCurrentTime() < Start )
-	{
-		PreviewComponent->PreviewInstance->SetPosition( Start, false );
-	}
-
-	LevelViewportClient->Invalidate();
-}
-
 void SAnimationSegmentViewport::Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime )
 {
 	class UDebugSkelMeshComponent* Component = PreviewComponent;
@@ -316,6 +307,19 @@ void SAnimationSegmentViewport::Tick( const FGeometry& AllottedGeometry, const d
 	{
 		// Reinit the skeleton if the anim ref has changed
 		InitSkeleton();
+
+		float Start, End, PlayRate;
+		StartTimePropertyHandle->GetValue(Start);
+		EndTimePropertyHandle->GetValue(End);
+		PlayRatePropertyHandle->GetValue(PlayRate);
+
+		if (Component->PreviewInstance->GetCurrentTime() > End || Component->PreviewInstance->GetCurrentTime() < Start)
+		{
+			const float NewStart = PlayRate > 0.f ? Start : End;
+			Component->PreviewInstance->SetPosition(NewStart, false);
+		}
+
+		Component->SetPlayRate(PlayRate);
 
 		if (Component->IsPreviewOn())
 		{

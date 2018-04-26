@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -8,7 +8,7 @@
 #include "Factories/FbxSceneImportFactory.h"
 #include "Widgets/Views/SListView.h"
 
-class FAssetData;
+struct FAssetData;
 
 typedef TSharedPtr<FFbxMaterialInfo> FbxMaterialInfoPtr;
 typedef TSharedPtr<FFbxTextureInfo> FbxTextureInfoPtr;
@@ -21,14 +21,16 @@ public:
 	~SFbxSceneMaterialsListView();
 
 	SLATE_BEGIN_ARGS(SFbxSceneMaterialsListView)
-	: _SceneInfo(nullptr)
-	, _SceneInfoOriginal(nullptr)
-	, _GlobalImportSettings(nullptr)
-	, _TexturesArray(nullptr)
-	, _FullPath(TEXT(""))
-	, _IsReimport(false)
-	, _CreateContentFolderHierarchy(false)
-	{}
+		: _SceneInfo(nullptr)
+		, _SceneInfoOriginal(nullptr)
+		, _GlobalImportSettings(nullptr)
+		, _TexturesArray(nullptr)
+		, _FullPath(TEXT(""))
+		, _IsReimport(false)
+		, _CreateContentFolderHierarchy(false)
+	{
+		_Clipping = EWidgetClipping::ClipToBounds;
+	}
 		SLATE_ARGUMENT(TSharedPtr<FFbxSceneInfo>, SceneInfo)
 		SLATE_ARGUMENT(TSharedPtr<FFbxSceneInfo>, SceneInfoOriginal)
 		SLATE_ARGUMENT(UnFbx::FBXImportOptions*, GlobalImportSettings)

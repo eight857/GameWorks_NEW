@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Layout/SScrollBarTrack.h"
 #include "Layout/ArrangedChildren.h"
@@ -65,8 +65,8 @@ void SScrollBarTrack::OnArrangeChildren(const FGeometry& AllottedGeometry, FArra
 			: FVector2D(0, TrackSizeInfo.GetThumbEnd());
 
 		ChildSize = (Orientation == Orient_Horizontal)
-			? FVector2D(AllottedGeometry.Size.X - TrackSizeInfo.GetThumbEnd(), Height)
-			: FVector2D(Width, AllottedGeometry.Size.Y - TrackSizeInfo.GetThumbEnd());
+			? FVector2D(AllottedGeometry.GetLocalSize().X - TrackSizeInfo.GetThumbEnd(), Height)
+			: FVector2D(Width, AllottedGeometry.GetLocalSize().Y - TrackSizeInfo.GetThumbEnd());
 
 		ArrangedChildren.AddWidget(
 			AllottedGeometry.MakeChild(Children[BOTTOM_SLOT_INDEX].GetWidget(), ChildPos, ChildSize)

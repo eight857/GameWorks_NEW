@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Editor/EditorEngine.h"
 #include "Misc/MessageDialog.h"
@@ -55,7 +55,6 @@
 #include "Misc/ConfigCacheIni.h"
 #include "UObject/UObjectIterator.h"
 #include "Serialization/ArchiveReplaceObjectRef.h"
-#include "Misc/RedirectCollector.h"
 #include "GameFramework/WorldSettings.h"
 #include "Engine/Light.h"
 #include "Engine/StaticMeshActor.h"
@@ -88,6 +87,7 @@
 #include "Net/NetworkProfiler.h"
 #include "Interfaces/IPluginManager.h"
 #include "PackageReload.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 // needed for the RemotePropagator
 #include "AudioDevice.h"
@@ -148,8 +148,9 @@
 #include "Interfaces/IProjectManager.h"
 #include "Misc/RemoteConfigIni.h"
 
-#include "IDesktopPlatform.h"
-#include "DesktopPlatformModule.h"
+#include "AssetToolsModule.h"
+#include "ObjectTools.h"
+#include "MessageLogModule.h"
 
 #include "ActorEditorUtils.h"
 #include "SnappingUtils.h"
@@ -162,7 +163,6 @@
 
 // AIMdule
 
-#include "Misc/HotReloadInterface.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "GameFramework/GameUserSettings.h"
@@ -184,6 +184,21 @@
 
 #include "SourceCodeNavigation.h"
 #include "GameProjectUtils.h"
+#include "ActorGroupingUtils.h"
+
+#include "DesktopPlatformModule.h"
+
+#include "ILauncherPlatform.h"
+#include "LauncherPlatformModule.h"
+#include "Editor/EditorPerformanceSettings.h"
+
+#include "ILauncherPlatform.h"
+#include "LauncherPlatformModule.h"
+#include "Engine/MapBuildDataRegistry.h"
+
+#include "DynamicResolutionState.h"
+
+#include "Developer/HotReload/Public/IHotReload.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEditor, Log, All);
 
@@ -241,14 +256,17 @@ static void PrivateInitSelectedSets()
 {
 	PrivateGetSelectedActors() = NewObject<USelection>(GetTransientPackage(), TEXT("SelectedActors"), RF_Transactional);
 	PrivateGetSelectedActors()->AddToRoot();
+	PrivateGetSelectedActors()->Initialize(&GSelectedActorAnnotation);
 
 	PrivateGetSelectedActors()->SelectObjectEvent.AddStatic(&OnObjectSelected);
 
 	PrivateGetSelectedComponents() = NewObject<USelection>(GetTransientPackage(), TEXT("SelectedComponents"), RF_Transactional);
 	PrivateGetSelectedComponents()->AddToRoot();
+	PrivateGetSelectedComponents()->Initialize(&GSelectedComponentAnnotation);
 
 	PrivateGetSelectedObjects() = NewObject<USelection>(GetTransientPackage(), TEXT("SelectedObjects"), RF_Transactional);
 	PrivateGetSelectedObjects()->AddToRoot();
+	PrivateGetSelectedObjects()->Initialize(&GSelectedObjectAnnotation);
 }
 
 static void PrivateDestroySelectedSets()
@@ -318,6 +336,8 @@ UEditorEngine::UEditorEngine(const FObjectInitializer& ObjectInitializer)
 	DefaultWorldFeatureLevel = GMaxRHIFeatureLevel;
 
 	EditorWorldExtensionsManager = nullptr;
+
+	ActorGroupingUtilsClassName = UActorGroupingUtils::StaticClass();
 
 #if !UE_BUILD_SHIPPING
 	if (!AutomationCommon::OnEditorAutomationMapLoadDelegate().IsBound())
@@ -569,11 +589,11 @@ void UEditorEngine::InitEditor(IEngineLoop* InEngineLoop)
 		!FPlatformProcess::IsApplicationRunning(TEXT("EpicGamesLauncher-Mac-Shipping"))
 		))
 	{
-		IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
-		if ( DesktopPlatform != NULL )
+		ILauncherPlatform* LauncherPlatform = FLauncherPlatformModule::Get();
+		if (LauncherPlatform != NULL )
 		{
 			FOpenLauncherOptions SilentOpen;
-			DesktopPlatform->OpenLauncher(SilentOpen);
+			LauncherPlatform->OpenLauncher(SilentOpen);
 		}
 	}
 
@@ -590,7 +610,9 @@ void UEditorEngine::InitEditor(IEngineLoop* InEngineLoop)
 		FSlateApplication::Get().EnableMenuAnimations(GetDefault<UEditorStyleSettings>()->bEnableWindowAnimations);
 	}
 
-	const UEditorStyleSettings* StyleSettings = GetDefault<UEditorStyleSettings>();
+	UEditorStyleSettings* StyleSettings = GetMutableDefault<UEditorStyleSettings>();
+	StyleSettings->Init();
+
 	const ULevelEditorViewportSettings* ViewportSettings = GetDefault<ULevelEditorViewportSettings>();
 
 	// Needs to be set early as materials can be cached with selected material color baked in
@@ -643,6 +665,10 @@ void UEditorEngine::InitEditor(IEngineLoop* InEngineLoop)
 		// Setup a delegate to handle requests for opening assets
 		FSlateApplication::Get().SetWidgetReflectorAssetAccessDelegate(FAccessAsset::CreateUObject(this, &UEditorEngine::HandleOpenAsset));
 	}
+
+	IHotReloadModule& HotReloadModule = IHotReloadModule::Get();
+	HotReloadModule.OnModuleCompilerStarted ().AddUObject(this, &UEditorEngine::OnModuleCompileStarted);
+	HotReloadModule.OnModuleCompilerFinished().AddUObject(this, &UEditorEngine::OnModuleCompileFinished);
 }
 
 bool UEditorEngine::HandleOpenAsset(UObject* Asset)
@@ -666,7 +692,7 @@ void UEditorEngine::HandlePackageReloaded(const EPackageReloadPhase InPackageRel
 				// Notify about any BP assets that are about to be unloaded
 				if (UBlueprint* BP = Cast<UBlueprint>(InObject))
 				{
-					FKismetEditorUtilities::OnBlueprintUnloaded.Broadcast(BP);
+					BP->ClearEditorReferences();
 				}
 			}
 		}, false, RF_Transient, EInternalObjectFlags::PendingKill);
@@ -683,7 +709,22 @@ void UEditorEngine::HandlePackageReloaded(const EPackageReloadPhase InPackageRel
 			{
 				if (const UBlueprint* OldBlueprint = Cast<UBlueprint>(OldObject))
 				{
-					FBlueprintCompileReinstancer::ReplaceInstancesOfClass(OldBlueprint->GeneratedClass, NewObject ? CastChecked<UBlueprint>(NewObject)->GeneratedClass : nullptr);
+					if(NewObject && CastChecked<UBlueprint>(NewObject)->GeneratedClass)
+					{
+						FBlueprintCompileReinstancer::ReplaceInstancesOfClass(OldBlueprint->GeneratedClass, CastChecked<UBlueprint>(NewObject)->GeneratedClass);
+					}
+					else
+					{
+						// we failed to load the UBlueprint and/or it's GeneratedClass. Show a notification indicating that maps may need to be reloaded:
+						FNotificationInfo Warning( 
+							FText::Format(
+								NSLOCTEXT("UnrealEd", "Warning_FailedToLoadParentClass", "Failed to load ParentClass for {0}"),
+								FText::FromName(OldObject->GetFName())
+							)
+						);
+						Warning.ExpireDuration = 3.0f;
+						FSlateNotificationManager::Get().AddNotification(Warning);
+					}
 				}
 			}
 		}
@@ -775,7 +816,7 @@ void UEditorEngine::HandleSettingChanged( FName Name )
 		uint32 DeficiencyType = (uint32)GetDefault<UEditorStyleSettings>()->ColorVisionDeficiencyPreviewType.GetValue();
 		FSlateApplication::Get().GetRenderer()->SetColorVisionDeficiencyType(DeficiencyType);
 
-		GEngine->Exec(NULL, TEXT("RecompileShaders SlateElementPixelShader"));
+		GEngine->Exec(NULL, TEXT("RecompileShaders /Engine/Private/SlateElementPixelShader.usf"));
 	}
 	if (Name == FName("SelectionColor") || Name == NAME_None)
 	{
@@ -832,6 +873,24 @@ void UEditorEngine::Init(IEngineLoop* InEngineLoop)
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	AssetRegistryModule.Get().OnInMemoryAssetCreated().AddUObject(this, &UEditorEngine::OnAssetCreated);
 	
+	FEditorDelegates::BeginPIE.AddLambda([](bool)
+	{
+		FTextLocalizationManager::Get().PushAutoEnableGameLocalizationPreview();
+		FTextLocalizationManager::Get().EnableGameLocalizationPreview();
+
+		// Always make sure dynamic resolution starts with a clean history.
+		GEngine->GetDynamicResolutionState()->ResetHistory();
+	});
+
+	FEditorDelegates::EndPIE.AddLambda([](bool)
+	{
+		FTextLocalizationManager::Get().PopAutoEnableGameLocalizationPreview();
+		FTextLocalizationManager::Get().DisableGameLocalizationPreview();
+
+		// Always resume the dynamic resolution state to ensure it is same state as in game builds when starting PIE.
+		GEngine->ResumeDynamicResolution();
+	});
+
 	// Initialize vanilla status before other systems that consume its status are started inside InitEditor()
 	UpdateIsVanillaProduct();
 	FSourceCodeNavigation::AccessOnNewModuleAdded().AddLambda([this](FName InModuleName)
@@ -844,7 +903,7 @@ void UEditorEngine::Init(IEngineLoop* InEngineLoop)
 	GEditor = this;
 	InitEditor(InEngineLoop);
 
-	Layers = FLayers::Create( TWeakObjectPtr< UEditorEngine >( this ) );
+	Layers = FLayers::Create( MakeWeakObjectPtr( this ) );
 
 	// Init transactioning.
 	Trans = CreateTrans();
@@ -893,18 +952,13 @@ void UEditorEngine::Init(IEngineLoop* InEngineLoop)
 			TEXT("ProjectSettingsViewer"),
 			TEXT("Blutility"),
 			TEXT("XmlParser"),
-			TEXT("UserFeedback"),
 			TEXT("UndoHistory"),
 			TEXT("DeviceProfileEditor"),
 			TEXT("SourceCodeAccess"),
 			TEXT("BehaviorTreeEditor"),
 			TEXT("HardwareTargeting"),
 			TEXT("LocalizationDashboard"),
-			TEXT("ReferenceViewer"),
-			TEXT("TreeMap"),
-			TEXT("SizeMap"),
 			TEXT("MergeActors"),
-			TEXT("NiagaraEditor"),
 			TEXT("InputBindingEditor"),
 			TEXT("AudioEditor")
 		};
@@ -943,7 +997,6 @@ void UEditorEngine::Init(IEngineLoop* InEngineLoop)
 
 		if (!IsRunningCommandlet())
 		{
-			FModuleManager::Get().LoadModule(TEXT("EditorLiveStreaming"));
 			FModuleManager::Get().LoadModule(TEXT("IntroTutorials"));
 		}
 
@@ -1156,9 +1209,12 @@ void UEditorEngine::FinishDestroy()
 		FLevelStreamingGCHelper::OnGCStreamedOutLevels.RemoveAll(this);
 		GetMutableDefault<UEditorStyleSettings>()->OnSettingChanged().RemoveAll(this);
 
-		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-		AssetRegistryModule.Get().OnInMemoryAssetCreated().RemoveAll(this);
-		
+		FAssetRegistryModule* AssetRegistryModule = FModuleManager::GetModulePtr<FAssetRegistryModule>("AssetRegistry");
+		if (AssetRegistryModule)
+		{
+			AssetRegistryModule->Get().OnInMemoryAssetCreated().RemoveAll(this);
+		}
+
 		UWorld* World = GWorld;
 		if( World != NULL )
 		{
@@ -1184,6 +1240,13 @@ void UEditorEngine::FinishDestroy()
 
 		// Remove editor array from root.
 		UE_LOG(LogExit, Log, TEXT("Editor shut down") );
+
+		// Any access of GEditor after finish destroy is invalid
+		// Null out GEditor so that potential module shutdown that happens after can check for nullptr
+		if (GEditor == this)
+		{
+			GEditor = nullptr;
+		}
 	}
 
 	Super::FinishDestroy();
@@ -1227,13 +1290,6 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 
 	// early in the Tick() to get the callbacks for cvar changes called
 	IConsoleManager::Get().CallAllConsoleVariableSinks();
-
-	// Tick the hot reload interface
-	IHotReloadInterface* HotReload = IHotReloadInterface::GetPtr();
-	if(HotReload != nullptr)
-	{
-		HotReload->Tick();
-	}
 
 	// Tick the remote config IO manager
 	FRemoteConfigAsyncTaskManager::Get()->Tick();
@@ -1377,7 +1433,7 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 	}
 
 	// Find out if the editor has focus. Audio should only play if the editor has focus.
-	const bool bHasFocus = FPlatformProcess::IsThisApplicationForeground();
+	const bool bHasFocus = FPlatformApplicationMisc::IsThisApplicationForeground();
 
 	if (bHasFocus || GetDefault<ULevelEditorMiscSettings>()->bAllowBackgroundAudio)
 	{
@@ -1405,7 +1461,7 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 
 	// tick the directory watcher
 	// @todo: Put me into an FTicker that is created when the DW module is loaded
-	if( !FApp::IsGameNameEmpty() )
+	if( !FApp::IsProjectNameEmpty() )
 	{
 		static FName DirectoryWatcherName("DirectoryWatcher");
 		FDirectoryWatcherModule& DirectoryWatcherModule = FModuleManager::Get().LoadModuleChecked<FDirectoryWatcherModule>(DirectoryWatcherName);
@@ -1539,16 +1595,27 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 		UReflectionCaptureComponent::UpdateReflectionCaptureContents(EditorContext.World());
 	}
 
+	EmitDynamicResolutionEvent(EDynamicResolutionStateEvent::BeginFrame);
+
 	// if we have the side-by-side world for "Play From Here", tick it unless we are ensuring slate is responsive
 	if( FSlateThrottleManager::Get().IsAllowingExpensiveTasks() )
 	{
-		for (auto ContextIt = WorldList.CreateIterator(); ContextIt; ++ContextIt)
+		// Determine number of PIE worlds that should tick.
+		TArray<FWorldContext*> LocalPieContextPtrs;
+		for (FWorldContext& PieContext : WorldList)
 		{
-			FWorldContext &PieContext = *ContextIt;
-			if (PieContext.WorldType != EWorldType::PIE || PieContext.World() == NULL || !PieContext.World()->ShouldTick())
+			if (PieContext.WorldType == EWorldType::PIE && PieContext.World() != nullptr && PieContext.World()->ShouldTick())
 			{
-				continue;
+				LocalPieContextPtrs.Add(&PieContext);
 			}
+		}
+
+		// Note: WorldList can change size within this loop during PIE when stopped at a breakpoint. In that case, we are
+		// running in a nested tick loop within this loop, where a new editor window with a preview viewport can be opened.
+		// So we iterate on a local list here instead.
+		for (FWorldContext* PieContextPtr : LocalPieContextPtrs)
+		{
+			FWorldContext &PieContext = *PieContextPtr;
 
 			GPlayInEditorID = PieContext.PIEInstance;
 
@@ -1583,13 +1650,6 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 			{
 				// Decide whether to drop high detail because of frame rate
 				GameViewport->SetDropDetail(DeltaSeconds);
-			}
-
-			if (!bFirstTick)
-			{
-				// Update sky light first because sky diffuse will be visible in reflection capture indirect specular
-				USkyLightComponent::UpdateSkyCaptureContents(PlayWorld);
-				UReflectionCaptureComponent::UpdateReflectionCaptureContents(PlayWorld);
 			}
 
 			// Update the level.
@@ -1632,6 +1692,13 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 				PieContext.World()->Tick( LEVELTICK_All, DeltaSeconds );
 				bAWorldTicked = true;
 				TickType = LEVELTICK_All;
+
+				if (!bFirstTick)
+				{
+					// Update sky light first because sky diffuse will be visible in reflection capture indirect specular
+					USkyLightComponent::UpdateSkyCaptureContents(PlayWorld);
+					UReflectionCaptureComponent::UpdateReflectionCaptureContents(PlayWorld);
+				}
 
 				if( bIsRecordingActive )
 				{
@@ -1744,10 +1811,10 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 	bool bAllWindowsHidden = !bHasFocus && GEditor->AreAllWindowsHidden();
 	if( !bAllWindowsHidden )
 	{
-		FPixelInspectorModule* PixelInspectorModule = &FModuleManager::LoadModuleChecked<FPixelInspectorModule>(TEXT("PixelInspectorModule"));
-		if (PixelInspectorModule != nullptr && PixelInspectorModule->IsPixelInspectorEnable())
+		FPixelInspectorModule& PixelInspectorModule = FModuleManager::LoadModuleChecked<FPixelInspectorModule>(TEXT("PixelInspectorModule"));
+		if (PixelInspectorModule.IsPixelInspectorEnable())
 		{
-			PixelInspectorModule->ReadBackSync();
+			PixelInspectorModule.ReadBackSync();
 		}
 
 		// Render view parents, then view children.
@@ -1847,6 +1914,18 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 
 		// Update audio device.
 		AudioDeviceManager->UpdateActiveAudioDevices((!PlayWorld && bAudioIsRealtime) || (PlayWorld && !PlayWorld->IsPaused()));
+		if (bRequestEndPlayMapQueued)
+		{
+			// Shutdown all audio devices if we've requested end playmap now to avoid issues with GC running
+			TArray<FAudioDevice*>& AudioDevices = AudioDeviceManager->GetAudioDevices();
+			for (FAudioDevice* AudioDevice : AudioDevices)
+			{
+				if (AudioDevice)
+				{
+					AudioDevice->Flush(nullptr);
+				}
+			}
+		}
 
 		if (PlayWorld)
 		{
@@ -2129,13 +2208,16 @@ void UEditorEngine::Cleanse( bool ClearSelection, bool Redraw, const FText& Tran
 		// the fact that the loading routing will check that already
 		// existed, but the object was missing in cache.
 		const EObjectFlags FlagsToClear = RF_Standalone | RF_Transactional;
-		TArray<UPackage*> PackagesToUnload;
+		TSet<UPackage*> PackagesToUnload;
 		for (TObjectIterator<UObjectRedirector> RedirIt; RedirIt; ++RedirIt)
 		{
 			UPackage* RedirectorPackage = RedirIt->GetOutermost();
 
 			if (RedirectorPackage == GetTransientPackage())
 			{
+				RedirIt->ClearFlags(FlagsToClear);
+				RedirIt->RemoveFromRoot();
+
 				continue;
 			}
 
@@ -2145,7 +2227,8 @@ void UEditorEngine::Cleanse( bool ClearSelection, bool Redraw, const FText& Tran
 			if (!PackageObjects.ContainsByPredicate(
 					[](UObject* Object)
 					{
-						return !Object->IsA<UMetaData>() && !Object->IsA<UObjectRedirector>();
+						// Look for any standalone objects that are not a redirector or metadata, if found this is not a redirector-only package
+						return !Object->IsA<UMetaData>() && !Object->IsA<UObjectRedirector>() && Object->HasAnyFlags(RF_Standalone);
 					})
 				)
 			{
@@ -2159,11 +2242,11 @@ void UEditorEngine::Cleanse( bool ClearSelection, bool Redraw, const FText& Tran
 			}
 		}
 
-		for (auto* PackageToUnload : PackagesToUnload)
+		for (UPackage* PackageToUnload : PackagesToUnload)
 		{
 			TArray<UObject*> PackageObjects;
 			GetObjectsWithOuter(PackageToUnload, PackageObjects);
-			for (auto* Object : PackageObjects)
+			for (UObject* Object : PackageObjects)
 			{
 				Object->ClearFlags(FlagsToClear);
 				Object->RemoveFromRoot();
@@ -2854,7 +2937,7 @@ void UEditorEngine::SyncBrowserToObjects( TArray<UObject*>& InObjectsToSync, boo
 
 }
 
-void UEditorEngine::SyncBrowserToObjects( TArray<class FAssetData>& InAssetsToSync, bool bFocusContentBrowser )
+void UEditorEngine::SyncBrowserToObjects( TArray<struct FAssetData>& InAssetsToSync, bool bFocusContentBrowser )
 {
 	FContentBrowserModule& ContentBrowserModule = FModuleManager::Get().LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
 	ContentBrowserModule.Get().SyncBrowserToAssets( InAssetsToSync, false, bFocusContentBrowser );
@@ -3287,8 +3370,6 @@ void UEditorEngine::ConvertSelectedBrushesToVolumes( UClass* VolumeClass )
 		{
 			GEditor->RebuildLevel(*ChangedLevel);
 		}
-
-		CollectGarbage( GARBAGE_COLLECTION_KEEPFLAGS );
 	}
 }
 
@@ -3318,6 +3399,7 @@ struct FConvertStaticMeshActorInfo
 	UStaticMesh*						StaticMesh;
 	USkeletalMesh*						SkeletalMesh;
 	TArray<UMaterialInterface*>			OverrideMaterials;
+	TArray<FGuid>						IrrelevantLights;
 	float								CachedMaxDrawDistance;
 	bool								CastShadow;
 
@@ -3340,7 +3422,7 @@ struct FConvertStaticMeshActorInfo
 	 * We don't want to simply copy all properties, because classes with different defaults will have
 	 * their defaults hosed by other types.
 	 */
-	bool bComponentPropsDifferFromDefaults[6];
+	bool bComponentPropsDifferFromDefaults[7];
 
 	AGroupActor* ActorGroup;
 
@@ -3767,39 +3849,180 @@ void UEditorEngine::OpenMatinee(AMatineeActor* MatineeActor, bool bWarnUser)
 	OnOpenMatinee();
 }
 
-void UEditorEngine::UpdateReflectionCaptures(UWorld* World)
+void UEditorEngine::BuildReflectionCaptures(UWorld* World)
 {
-	const ERHIFeatureLevel::Type ActiveFeatureLevel = World->FeatureLevel;
-	if (ActiveFeatureLevel < ERHIFeatureLevel::SM4 && GMaxRHIFeatureLevel >= ERHIFeatureLevel::SM4)
-	{
-		FScopedSlowTask SlowTask(4, LOCTEXT("UpdatingReflectionCaptures", "Updating reflection captures"));
-		SlowTask.MakeDialog();
-		// change to GMaxRHIFeatureLevel feature level to generate capture images.
-		SlowTask.EnterProgressFrame();			
-		World->ChangeFeatureLevel(GMaxRHIFeatureLevel, false);
+	// Note: Lighting and reflection build operations should only dirty BuildData packages, not ULevel packages
 
-		// Wait for shaders to compile so the capture result isn't capture black
-		if (GShaderCompilingManager != NULL)
+	FText StatusText = FText(LOCTEXT("BuildReflectionCaptures", "Building Reflection Captures..."));
+	GWarn->BeginSlowTask(StatusText, true);
+	GWarn->StatusUpdate(0, 1, StatusText);
+
+	// Wait for shader compiling to finish so we don't capture the default material
+	if (GShaderCompilingManager != NULL)
+	{
+		GShaderCompilingManager->FinishAllCompilation();
+	}
+
+	// Process any outstanding captures before we start operating on scenarios
+	UReflectionCaptureComponent::UpdateReflectionCaptureContents(World);
+
+	// Only the cubemap array path supports reading back from the GPU
+	// Calling code should not allow building reflection captures on lower feature levels
+	check(World->FeatureLevel >= ERHIFeatureLevel::SM5);
+
+	// Update sky light first because it's considered direct lighting, sky diffuse will be visible in reflection capture indirect specular
+	World->UpdateAllSkyCaptures();
+
+	TArray<ULevel*> LightingScenarios;
+	
+	// The list of scene capture component from hidden levels to keep.
+	TSet<FGuid> ResourcesToKeep; 
+	for (ULevel* Level : World->GetLevels())
+	{
+		check(Level);
+		// If the level is hidden and not a lighting scenario, scene capture data from this level should be preserved.
+		if (!Level->bIsVisible && !Level->bIsLightingScenario)
 		{
-			GShaderCompilingManager->FinishAllCompilation();
+			for (const AActor* Actor : Level->Actors)
+			{
+				if (Actor)
+				{
+					for (const UActorComponent* Component : Actor->GetComponents())
+					{
+						const UReflectionCaptureComponent* ReflectionCaptureComponent = Cast<UReflectionCaptureComponent>(Component);
+						if (ReflectionCaptureComponent)
+						{
+							ResourcesToKeep.Add(ReflectionCaptureComponent->MapBuildDataId);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for (ULevel* Level : World->GetLevels())
+	{
+		if (Level->bIsVisible)
+		{
+			if (Level->MapBuildData)
+			{
+				// Remove all existing reflection capture data from visible levels before the build
+				Level->MapBuildData->InvalidateReflectionCaptures(Level->bIsLightingScenario ? &ResourcesToKeep : nullptr);
+			}
+
+			if (Level->bIsLightingScenario)
+			{
+				LightingScenarios.Add(Level);
+			}
+		}
+	}
+
+	if (LightingScenarios.Num() == 0)
+	{
+		// No lighting scenario levels present, add a null entry to represent the default case
+		LightingScenarios.Add(nullptr);
+		ResourcesToKeep.Empty();
+	}
+
+	// All but the first scenario start hidden
+	for (int32 LevelIndex = 1; LevelIndex < LightingScenarios.Num(); LevelIndex++)
+	{
+		ULevel* LightingScenario = LightingScenarios[LevelIndex];
+
+		if (LightingScenario)
+		{
+			EditorLevelUtils::SetLevelVisibilityTemporarily(LightingScenario, false);
+		}
+	}
+
+	for (int32 LevelIndex = 0; LevelIndex < LightingScenarios.Num(); LevelIndex++)
+	{
+		ULevel* LightingScenario = LightingScenarios[LevelIndex];
+
+		if (LightingScenario && LevelIndex > 0)
+		{
+			// Set current scenario visible
+			EditorLevelUtils::SetLevelVisibilityTemporarily(LightingScenario, true);	
 		}
 
-		// Update captures
-		SlowTask.EnterProgressFrame();
-		World->UpdateAllSkyCaptures();
-		SlowTask.EnterProgressFrame();
-		World->UpdateAllReflectionCaptures();
+		TArray<UReflectionCaptureComponent*> ReflectionCapturesToBuild;
 
-		// restore to the preview feature level.
-		SlowTask.EnterProgressFrame();
-		World->ChangeFeatureLevel(ActiveFeatureLevel, false);
-	}
-	else
-	{
+		for (TObjectIterator<UReflectionCaptureComponent> It; It; ++It)
+		{
+			UReflectionCaptureComponent* CaptureComponent = *It;
+
+			if (CaptureComponent->GetOwner()
+				&& World->ContainsActor(CaptureComponent->GetOwner()) 
+				&& !CaptureComponent->GetOwner()->bHiddenEdLevel
+				&& !CaptureComponent->IsPendingKill()
+				&& !ResourcesToKeep.Contains(CaptureComponent->MapBuildDataId))
+			{
+				// Queue an update
+				// Note InvalidateReflectionCaptures will guarantee this is a recapture, we don't want old data to persist
+				// We cannot modify MapBuildDataId to force a recapture as that would modify CaptureComponent's package, build operations should only modify the BuildData package
+				CaptureComponent->MarkDirtyForRecaptureOrUpload();	
+				ReflectionCapturesToBuild.Add(CaptureComponent);
+			}
+		}
+
+		FString UpdateReason = LightingScenario ? LightingScenario->GetOuter()->GetName() : TEXT("all levels");
+
+		// Passing in flag to verify all recaptures, no uploads
+		UReflectionCaptureComponent::UpdateReflectionCaptureContents(World, *UpdateReason, true);
+
+		for (int32 CaptureIndex = 0; CaptureIndex < ReflectionCapturesToBuild.Num(); CaptureIndex++)
+		{ 
+			UReflectionCaptureComponent* CaptureComponent = ReflectionCapturesToBuild[CaptureIndex];
+
+			FReflectionCaptureData ReadbackCaptureData;
+			World->Scene->GetReflectionCaptureData(CaptureComponent, ReadbackCaptureData);
+
+			// Capture can fail if there are more than GMaxNumReflectionCaptures captures
+			if (ReadbackCaptureData.CubemapSize > 0)
+			{
+				ULevel* StorageLevel = LightingScenarios[LevelIndex] ? LightingScenarios[LevelIndex] : CaptureComponent->GetOwner()->GetLevel();
+				UMapBuildDataRegistry* Registry = StorageLevel->GetOrCreateMapBuildData();
+				FReflectionCaptureMapBuildData& CaptureBuildData = Registry->AllocateReflectionCaptureBuildData(CaptureComponent->MapBuildDataId, true);
+				(FReflectionCaptureData&)CaptureBuildData = ReadbackCaptureData;
+
+				CaptureBuildData.FinalizeLoad();
+
+				// Recreate capture render state now that we have valid BuildData
+				CaptureComponent->MarkRenderStateDirty();
+			}
+			else
+			{
+				UE_LOG(LogEditor, Warning, TEXT("Unable to build Reflection Capture %s, max number of reflection captures exceeded"), *CaptureComponent->GetPathName());
+			}
+		}
+				// Queue an update
 		// Update sky light first because it's considered direct lighting, sky diffuse will be visible in reflection capture indirect specular
-		World->UpdateAllSkyCaptures();
-		World->UpdateAllReflectionCaptures();
+		if (LightingScenario)
+		{
+			// Hide current scenario now that we are done capturing it
+			EditorLevelUtils::SetLevelVisibilityTemporarily(LightingScenario, false);	
+		}
 	}
+
+		// Passing in flag to verify all recaptures, no uploads
+	// Restore initial visibility
+	for (int32 LevelIndex = 0; LevelIndex < LightingScenarios.Num(); LevelIndex++)
+	{
+		ULevel* LightingScenario = LightingScenarios[LevelIndex];
+
+			// Recreate capture render state now that we have valid BuildData
+
+
+		if (LightingScenario)
+		{
+			// Hide current scenario now that we are done capturing it
+
+	// Restore initial visibility
+			EditorLevelUtils::SetLevelVisibilityTemporarily(LightingScenario, true);
+		}
+	}
+
+	GWarn->EndSlowTask();
 }
 
 void UEditorEngine::EditorAddModalWindow( TSharedRef<SWindow> InModalWindow ) const
@@ -3874,8 +4097,7 @@ void UEditorEngine::ParentActors( AActor* ParentActor, AActor* ChildActor, const
 		}
 
 		// Snap to socket if a valid socket name was provided, otherwise attach without changing the relative transform
-		const bool bValidSocketName = !SocketName.IsNone() && ParentRoot->DoesSocketExist(SocketName);
-		ChildRoot->AttachToComponent(ParentRoot, bValidSocketName ? FAttachmentTransformRules::SnapToTargetNotIncludingScale : FAttachmentTransformRules::KeepWorldTransform, SocketName);
+		ChildRoot->AttachToComponent(ParentRoot, FAttachmentTransformRules::KeepWorldTransform, SocketName);
 
 		// Refresh editor in case child was translated after snapping to socket
 		RedrawLevelEditingViewports();
@@ -4017,11 +4239,10 @@ bool UEditorEngine::IsPackageValidForAutoAdding(UPackage* InPackage, const FStri
 		// and that the editor is not auto-saving.
 		if ( bPackageIsValid )
 		{
-			const bool bIsPlayOnConsolePackage = CleanFilename.StartsWith( PLAYWORLD_CONSOLE_BASE_PACKAGE_PREFIX );
 			const bool bIsPIEOrScriptPackage = InPackage->RootPackageHasAnyFlags( PKG_ContainsScript | PKG_PlayInEditor );
 			const bool bIsAutosave = GUnrealEd->GetPackageAutoSaver().IsAutoSaving();
 
-			if ( bIsPlayOnConsolePackage || bIsPIEOrScriptPackage || bIsAutosave || GIsAutomationTesting )
+			if ( bIsPIEOrScriptPackage || bIsAutosave || GIsAutomationTesting )
 			{
 				bPackageIsValid = false;
 			}
@@ -4032,40 +4253,6 @@ bool UEditorEngine::IsPackageValidForAutoAdding(UPackage* InPackage, const FStri
 
 bool UEditorEngine::IsPackageOKToSave(UPackage* InPackage, const FString& InFilename, FOutputDevice* Error)
 {
-	TArray<FString>	AllStartupPackageNames;
-	appGetAllPotentialStartupPackageNames(AllStartupPackageNames, GEngineIni, false);
-
-	FString ConvertedPackageName, ConversionError;
-	if (!FPackageName::TryConvertFilenameToLongPackageName(InFilename, ConvertedPackageName, &ConversionError))
-	{
-		Error->Logf(ELogVerbosity::Error, *FText::Format(NSLOCTEXT("UnrealEd", "CannotConvertPackageName", "Cannot save asset '{0}' as conversion of long package name failed. Reason: '{1}'."), FText::FromString(InFilename), FText::FromString(ConversionError)).ToString());
-		return false;
-	}
-
-	bool bIsStartupPackage = AllStartupPackageNames.Contains(ConvertedPackageName);
-
-	// Make sure that if the package is a startup package, the user indeed wants to save changes
-	if( !IsRunningCommandlet()																		&& // Don't prompt about saving startup packages when running UCC
-		InFilename.EndsWith(FPackageName::GetAssetPackageExtension())				&& // Maps, even startup maps, are ok
-		bIsStartupPackage && 
-		(!StartupPackageToWarnState.Find(InPackage) || (*(StartupPackageToWarnState.Find(InPackage)) == false))
-		)
-	{		
-		// Prompt to save startup packages
-		if( EAppReturnType::Yes == FMessageDialog::Open( EAppMsgType::YesNo, FText::Format(
-				NSLOCTEXT("UnrealEd", "Prompt_AboutToEditStartupPackage", "{0} is a startup package.  Startup packages are fully cooked and loaded when on consoles. ALL CONTENT IN THIS PACKAGE WILL ALWAYS USE MEMORY. Are you sure you want to save it?"),
-				FText::FromString(InPackage->GetName()))) )
-		{
-			StartupPackageToWarnState.Add( InPackage, true );
-		}
-		else
-		{
-			StartupPackageToWarnState.Add( InPackage, false );
-			Error->Logf(ELogVerbosity::Warning, *FText::Format( NSLOCTEXT( "UnrealEd", "CannotSaveStartupPackage", "Cannot save asset '{0}' as user opted not to save this startup asset" ), FText::FromString( InFilename ) ).ToString() );
-			return false;
-		}
-	}
-
 	return true;
 }
 
@@ -4091,20 +4278,72 @@ void UEditorEngine::OnSourceControlDialogClosed(bool bEnabled)
 	}
 }
 
+bool UEditorEngine::InitializePhysicsSceneForSaveIfNecessary(UWorld* World)
+{
+	// We need a physics scene at save time in case code does traces during onsave events.
+	bool bHasPhysicsScene = false;
+
+	// First check if our owning world has a physics scene
+	if (World->PersistentLevel && World->PersistentLevel->OwningWorld)
+	{
+		bHasPhysicsScene = (World->PersistentLevel->OwningWorld->GetPhysicsScene() != nullptr);
+	}
+
+	// If we didn't already find a physics scene in our owning world, maybe we personally have our own.
+	if (!bHasPhysicsScene)
+	{
+		bHasPhysicsScene = (World->GetPhysicsScene() != nullptr);
+	}
+
+
+	// If we didn't find any physics scene we will synthesize one and remove it after save
+	if (!bHasPhysicsScene)
+	{
+		// Clear world components first so that UpdateWorldComponents below properly adds them all to the physics scene
+		World->ClearWorldComponents();
+
+		if (World->bIsWorldInitialized)
+		{
+			// If we don't have a physics scene and the world was initialized without one (i.e. an inactive world) then we should create one here. We will remove it down below after the save
+			World->CreatePhysicsScene();
+		}
+		else
+		{
+			// If we aren't already initialized, initialize now and create a physics scene. Don't create an FX system because it uses too much video memory for bulk operations
+			World->InitWorld(GetEditorWorldInitializationValues().CreateFXSystem(false).CreatePhysicsScene(true));
+		}
+
+		// Update components now that a physics scene exists.
+		World->UpdateWorldComponents(true, true);
+
+		// Set this to true so we can clean up what we just did down below
+		return true;
+	}
+
+	return false;
+}
+
+void UEditorEngine::CleanupPhysicsSceneThatWasInitializedForSave(UWorld* World)
+{
+	// Make sure we clean up the physics scene here. If we leave too many scenes in memory, undefined behavior occurs when locking a scene for read/write.
+	World->ClearWorldComponents();
+	World->SetPhysicsScene(nullptr);
+#if WITH_PHYSX
+	if (GPhysCommandHandler)
+	{
+		GPhysCommandHandler->Flush();
+	}
+#endif // WITH_PHYSX
+
+	// Update components again in case it was a world without a physics scene but did have rendered components.
+	World->UpdateWorldComponents(true, true);
+}
+
 FSavePackageResultStruct UEditorEngine::Save( UPackage* InOuter, UObject* InBase, EObjectFlags TopLevelFlags, const TCHAR* Filename,
 				 FOutputDevice* Error, FLinkerLoad* Conform, bool bForceByteSwapping, bool bWarnOfLongFilename, 
-				 uint32 SaveFlags, const class ITargetPlatform* TargetPlatform, const FDateTime& FinalTimeStamp, bool bSlowTask )
+				 uint32 SaveFlags, const class ITargetPlatform* TargetPlatform, const FDateTime& FinalTimeStamp, bool bSlowTask, FArchiveDiffMap* InOutDiffMap)
 {
 	FScopedSlowTask SlowTask(100, FText(), bSlowTask);
-
-	// If we we need to fixup string asset references, load any referenced by this package before it is saved
-	static bool bForceLoadStringAssetReferences = FParse::Param(FCommandLine::Get(), TEXT("FixupStringAssetReferences"));
-
-	if (bForceLoadStringAssetReferences)
-	{
-		const FString PackageName = FPackageName::FilenameToLongPackageName(Filename);
-		GRedirectCollector.ResolveStringAssetReference(FName(*PackageName));
-	}
 
 	UObject* Base = InBase;
 	if ( !Base && InOuter && InOuter->HasAnyPackageFlags(PKG_ContainsMap) )
@@ -4119,51 +4358,17 @@ FSavePackageResultStruct UEditorEngine::Save( UPackage* InOuter, UObject* InBase
 
 	UWorld* World = Cast<UWorld>(Base);
 	bool bInitializedPhysicsSceneForSave = false;
+	const bool bSavingConcurrent = !!(SaveFlags & ESaveFlags::SAVE_Concurrent);
 	
 	UWorld *OriginalOwningWorld = nullptr;
 	if ( World )
 	{
-		// We need a physics scene at save time in case code does traces during onsave events.
-		bool bHasPhysicsScene = false;
-
-		// First check if our owning world has a physics scene
-		if (World->PersistentLevel && World->PersistentLevel->OwningWorld)
+		if (!bSavingConcurrent)
 		{
-			bHasPhysicsScene = (World->PersistentLevel->OwningWorld->GetPhysicsScene() != nullptr);
+			bInitializedPhysicsSceneForSave = InitializePhysicsSceneForSaveIfNecessary(World);
+
+			OnPreSaveWorld(SaveFlags, World);
 		}
-		
-		// If we didn't already find a physics scene in our owning world, maybe we personally have our own.
-		if (!bHasPhysicsScene)
-		{
-			bHasPhysicsScene = (World->GetPhysicsScene() != nullptr);
-		}
-
-		
-		// If we didn't find any physics scene we will synthesize one and remove it after save
-		if (!bHasPhysicsScene)
-		{
-			// Clear world components first so that UpdateWorldComponents below properly adds them all to the physics scene
-			World->ClearWorldComponents();
-
-			if (World->bIsWorldInitialized)
-			{
-				// If we don't have a physics scene and the world was initialized without one (i.e. an inactive world) then we should create one here. We will remove it down below after the save
-				World->CreatePhysicsScene();
-			}
-			else
-			{
-				// If we aren't already initialized, initialize now and create a physics scene. Don't create an FX system because it uses too much video memory for bulk operations
-				World->InitWorld(GetEditorWorldInitializationValues().CreateFXSystem(false).CreatePhysicsScene(true));
-			}
-
-			// Update components now that a physics scene exists.
-			World->UpdateWorldComponents(true, true);
-
-			// Set this to true so we can clean up what we just did down below
-			bInitializedPhysicsSceneForSave = true;
-		}
-
-		OnPreSaveWorld(SaveFlags, World);
 
 		OriginalOwningWorld = World->PersistentLevel->OwningWorld;
 		World->PersistentLevel->OwningWorld = World;
@@ -4180,7 +4385,7 @@ FSavePackageResultStruct UEditorEngine::Save( UPackage* InOuter, UObject* InBase
 	SlowTask.EnterProgressFrame(70);
 
 	UPackage::PreSavePackageEvent.Broadcast(InOuter);
-	const FSavePackageResultStruct Result = UPackage::Save(InOuter, Base, TopLevelFlags, Filename, Error, Conform, bForceByteSwapping, bWarnOfLongFilename, SaveFlags, TargetPlatform, FinalTimeStamp, bSlowTask);
+	const FSavePackageResultStruct Result = UPackage::Save(InOuter, Base, TopLevelFlags, Filename, Error, Conform, bForceByteSwapping, bWarnOfLongFilename, SaveFlags, TargetPlatform, FinalTimeStamp, bSlowTask, InOutDiffMap);
 
 	SlowTask.EnterProgressFrame(10);
 
@@ -4213,20 +4418,17 @@ FSavePackageResultStruct UEditorEngine::Save( UPackage* InOuter, UObject* InBase
 			World->PersistentLevel->OwningWorld = OriginalOwningWorld;
 		}
 
-		OnPostSaveWorld(SaveFlags, World, OriginalPackageFlags, Result == ESavePackageResult::Success);
-
-		if (bInitializedPhysicsSceneForSave)
+		if (!bSavingConcurrent)
 		{
-			// Make sure we clean up the physics scene here. If we leave too many scenes in memory, undefined behavior occurs when locking a scene for read/write.
-			World->ClearWorldComponents();
-			World->SetPhysicsScene(nullptr);
-			if (GPhysCommandHandler)
+			OnPostSaveWorld(SaveFlags, World, OriginalPackageFlags, Result == ESavePackageResult::Success);
+
+			if (bInitializedPhysicsSceneForSave)
 			{
-				GPhysCommandHandler->Flush();
+				CleanupPhysicsSceneThatWasInitializedForSave(World);
 			}
-			
-			// Update components again in case it was a world without a physics scene but did have rendered components.
-			World->UpdateWorldComponents(true, true);
+
+			// Rerunning construction scripts may have made it dirty again
+			InOuter->SetDirtyFlag(false);
 		}
 	}
 
@@ -4474,16 +4676,6 @@ TSharedPtr<SViewport> UEditorEngine::GetGameViewportWidget() const
 	return NULL;
 }
 
-bool UEditorEngine::SplitActorLabel( FString& InOutLabel, int32& OutIdx ) const
-{
-	return FActorLabelUtilities::SplitActorLabel(InOutLabel, OutIdx);
-}
-
-void UEditorEngine::SetActorLabelUnique(AActor* Actor, const FString& NewActorLabel, const FCachedActorLabels* InExistingActorLabels) const
-{
-	FActorLabelUtilities::SetActorLabelUnique(Actor, NewActorLabel, InExistingActorLabels);
-}
-
 FString UEditorEngine::GetFriendlyName( const UProperty* Property, UStruct* OwnerStruct/* = NULL*/ )
 {
 	// first, try to pull the friendly name from the loc file
@@ -4508,7 +4700,7 @@ FString UEditorEngine::GetFriendlyName( const UProperty* Property, UStruct* Owne
 
 	if ( !DidFindText )
 	{
-		FString DefaultFriendlyName = Property->GetMetaData(TEXT("DisplayName"));
+		const FString& DefaultFriendlyName = Property->GetMetaData(TEXT("DisplayName"));
 		if ( DefaultFriendlyName.IsEmpty() )
 		{
 			const bool bIsBool = Cast<const UBoolProperty>(Property) != NULL;
@@ -4518,6 +4710,22 @@ FString UEditorEngine::GetFriendlyName( const UProperty* Property, UStruct* Owne
 	}
 
 	return FoundText.ToString();
+}
+
+UActorGroupingUtils* UEditorEngine::GetActorGroupingUtils()
+{
+	if (ActorGroupingUtils == nullptr)
+	{
+		UClass* ActorGroupingUtilsClass = ActorGroupingUtilsClassName.ResolveClass();
+		if (!ActorGroupingUtilsClass)
+		{
+			ActorGroupingUtilsClass = UActorGroupingUtils::StaticClass();
+		}
+
+		ActorGroupingUtils = NewObject<UActorGroupingUtils>(this, ActorGroupingUtilsClass);
+	}
+
+	return ActorGroupingUtils;
 }
 
 AActor* UEditorEngine::UseActorFactoryOnCurrentSelection( UActorFactory* Factory, const FTransform* InActorTransform, EObjectFlags InObjectFlags )
@@ -4537,9 +4745,12 @@ AActor* UEditorEngine::UseActorFactory( UActorFactory* Factory, const FAssetData
 	if( !Factory->CanCreateActorFrom( AssetData, ActorErrorMsg ) )
 	{
 		bIsAllowedToCreateActor = false;
-		FMessageLog EditorErrors("EditorErrors");
-		EditorErrors.Warning(ActorErrorMsg);
-		EditorErrors.Notify();
+		if(!ActorErrorMsg.IsEmpty())
+		{
+			FMessageLog EditorErrors("EditorErrors");
+			EditorErrors.Warning(ActorErrorMsg);
+			EditorErrors.Notify();
+		}
 	}
 
 	//Load Asset
@@ -4679,12 +4890,12 @@ namespace ReattachActorsHelper
 
 				AActor* ChildActor = CurrentAttachmentInfo.AttachedActors[AttachedActorIdx].Actor;
 				ChildActor->Modify();
-				ChildActor->DetachRootComponentFromParent(true);
+				ChildActor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 			}
 
 			// Modify the actor so undo will reattach it.
 			ActorToReattach->Modify();
-			ActorToReattach->DetachRootComponentFromParent(true);
+			ActorToReattach->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 		}
 	}
 
@@ -4855,7 +5066,7 @@ void UEditorEngine::ReplaceSelectedActors(UActorFactory* Factory, const FAssetDa
 	ReplaceActors(Factory, AssetData, ActorsToReplace);
 }
 
-void UEditorEngine::ReplaceActors(UActorFactory* Factory, const FAssetData& AssetData, const TArray<AActor*> ActorsToReplace)
+void UEditorEngine::ReplaceActors(UActorFactory* Factory, const FAssetData& AssetData, const TArray<AActor*>& ActorsToReplace)
 {
 	// Cache for attachment info of all actors being converted.
 	TArray<ReattachActorsHelper::FActorAttachmentCache> AttachmentInfo;
@@ -5235,7 +5446,7 @@ void UEditorEngine::ConvertLightActors( UClass* ConvertToClass )
 
 			// Select the new actor
 			GEditor->SelectActor( ActorToConvert, false, true );
-			GEditor->SelectActor( NewActor, true, true );
+	
 
 			NewActor->InvalidateLightingCache();
 			NewActor->PostEditChange();
@@ -5246,19 +5457,23 @@ void UEditorEngine::ConvertLightActors( UClass* ConvertToClass )
 			// We have converted another light.
 			++NumLightsConverted;
 
-			UE_LOG(LogEditor, Log, TEXT("Converted: %s to %s"), *ActorToConvert->GetActorLabel(), *NewActor->GetActorLabel() );
+			UE_LOG(LogEditor, Log, TEXT("Converted: %s to %s"), *ActorToConvert->GetName(), *NewActor->GetName() );
 
 			// Destroy the old actor.
 			GEditor->Layers->DisassociateActorFromLayers( ActorToConvert );
 			World->EditorDestroyActor( ActorToConvert, true );
+
+			if (NewActor->IsPendingKillOrUnreachable())
+			{
+				UE_LOG(LogEditor, Log, TEXT("Newly converted actor ('%s') is pending kill"), *NewActor->GetName());
+			}
+			GEditor->SelectActor(NewActor, true, true);
 		}
 
 		GEditor->GetSelectedActors()->EndBatchSelectOperation();
 		GEditor->RedrawLevelEditingViewports();
 
 		ULevel::LevelDirtiedEvent.Broadcast();
-
-		CollectGarbage( GARBAGE_COLLECTION_KEEPFLAGS );
 	}
 }
 
@@ -5589,7 +5804,7 @@ void UEditorEngine::DoConvertActors( const TArray<AActor*>& ActorsToConvert, UCl
 		for( int32 ActorIdx = 0; ActorIdx < ActorsToConvert.Num(); ++ActorIdx )
 		{
 			AActor* ActorToConvert = ActorsToConvert[ActorIdx];
-			if (ActorToConvert->GetClass()->IsChildOf(ABrush::StaticClass()) && ConvertToClass == AStaticMeshActor::StaticClass())
+			if (!ActorToConvert->IsPendingKill() && ActorToConvert->GetClass()->IsChildOf(ABrush::StaticClass()) && ConvertToClass == AStaticMeshActor::StaticClass())
 			{
 				GEditor->SelectActor(ActorToConvert, true, true);
 				BrushList.Add(Cast<ABrush>(ActorToConvert));
@@ -5617,6 +5832,14 @@ void UEditorEngine::DoConvertActors( const TArray<AActor*>& ActorsToConvert, UCl
 		for( int32 ActorIdx = 0; ActorIdx < ActorsToConvert.Num(); ++ActorIdx )
 		{
 			AActor* ActorToConvert = ActorsToConvert[ ActorIdx ];
+
+
+			if (ActorToConvert->IsPendingKill())
+			{
+				UE_LOG(LogEditor, Error, TEXT("Actor '%s' is marked pending kill and cannot be converted"), *ActorToConvert->GetFullName());
+				continue;
+			}
+
 			// Source actor display label
 			FString ActorLabel = ActorToConvert->GetActorLabel();
 			// Low level source actor object name
@@ -5638,9 +5861,10 @@ void UEditorEngine::DoConvertActors( const TArray<AActor*>& ActorsToConvert, UCl
 			if (bUseSpecialCases)
 			{
 				// Disable grouping temporarily as the following code assumes only one actor will be selected at any given time
-				const bool bGroupingActiveSaved = GEditor->bGroupingActive;
+				const bool bGroupingActiveSaved = UActorGroupingUtils::IsGroupingActive();
 
-				GEditor->bGroupingActive = false;
+				UActorGroupingUtils::SetGroupingActive(false);
+
 				GEditor->SelectNone(true, true);
 				GEditor->SelectActor(ActorToConvert, true, true);
 
@@ -5648,24 +5872,31 @@ void UEditorEngine::DoConvertActors( const TArray<AActor*>& ActorsToConvert, UCl
 				// If it does it will mark the original for delete and select the new actor
 				if (ClassToReplace->IsChildOf(ALight::StaticClass()))
 				{
+					UE_LOG(LogEditor, Log, TEXT("Converting light from %s to %s"), *ActorToConvert->GetFullName(), *ConvertToClass->GetName());
 					ConvertLightActors(ConvertToClass);
 				}
 				else if (ClassToReplace->IsChildOf(ABrush::StaticClass()) && ConvertToClass->IsChildOf(AVolume::StaticClass()))
 				{
+					UE_LOG(LogEditor, Log, TEXT("Converting brush from %s to %s"), *ActorToConvert->GetFullName(), *ConvertToClass->GetName());
 					ConvertSelectedBrushesToVolumes(ConvertToClass);
 				}
 				else
 				{
+					UE_LOG(LogEditor, Log, TEXT("Converting actor from %s to %s"), *ActorToConvert->GetFullName(), *ConvertToClass->GetName());
 					ConvertActorsFromClass(ClassToReplace, ConvertToClass);
 				}
+
 				if (ActorToConvert->IsPendingKill())
 				{
 					// Converted by one of the above
 					check (1 == GEditor->GetSelectedActorCount());
-					NewActor = CastChecked< AActor >(GEditor->GetSelectedActors()->GetSelectedObject(0));
-
-					// Caches information for finding the new actor using the pre-converted actor.
-					ReattachActorsHelper::CacheActorConvert(ActorToConvert, NewActor, ConvertedMap, AttachmentInfo[ActorIdx]);
+					NewActor = Cast< AActor >(GEditor->GetSelectedActors()->GetSelectedObject(0));
+					if (ensureMsgf(NewActor, TEXT("Actor conversion of %s to %s failed"), *ActorToConvert->GetFullName(), *ConvertToClass->GetName()))
+					{
+						// Caches information for finding the new actor using the pre-converted actor.
+						ReattachActorsHelper::CacheActorConvert(ActorToConvert, NewActor, ConvertedMap, AttachmentInfo[ActorIdx]);
+					}
+					
 				}
 				else
 				{
@@ -5674,7 +5905,7 @@ void UEditorEngine::DoConvertActors( const TArray<AActor*>& ActorsToConvert, UCl
 				}
 
 				// Restore previous grouping setting
-				GEditor->bGroupingActive = bGroupingActiveSaved;
+				UActorGroupingUtils::SetGroupingActive(bGroupingActiveSaved);
 			}
 
 
@@ -5882,11 +6113,11 @@ bool UEditorEngine::ShouldThrottleCPUUsage() const
 {
 	bool bShouldThrottle = false;
 
-	bool bIsForeground = FPlatformProcess::IsThisApplicationForeground();
+	bool bIsForeground = FPlatformApplicationMisc::IsThisApplicationForeground();
 
 	if( !bIsForeground )
 	{
-		const UEditorPerProjectUserSettings* Settings = GetDefault<UEditorPerProjectUserSettings>();
+		const UEditorPerformanceSettings* Settings = GetDefault<UEditorPerformanceSettings>();
 		bShouldThrottle = Settings->bThrottleCPUWhenNotForeground;
 
 		// Check if we should throttle due to all windows being minimized
@@ -6211,8 +6442,7 @@ void UEditorEngine::UpdatePreviewMesh()
 
 		// Perform a line check from the camera eye to the surface to place the preview mesh. 
 		FHitResult Hit(ForceInit);
-		static FName UpdatePreviewMeshTrace = FName(TEXT("UpdatePreviewMeshTrace"));
-		FCollisionQueryParams LineParams(UpdatePreviewMeshTrace, true);
+		FCollisionQueryParams LineParams(SCENE_QUERY_STAT(UpdatePreviewMeshTrace), true);
 		LineParams.bTraceComplex = false;
 		if ( GWorld->LineTraceSingleByObjectType(Hit, LineCheckStart, LineCheckEnd, FCollisionObjectQueryParams(ECC_WorldStatic), LineParams) ) 
 		{
@@ -6277,7 +6507,7 @@ bool UEditorEngine::LoadPreviewMesh( int32 Index )
 	const ULevelEditorViewportSettings& ViewportSettings = *GetDefault<ULevelEditorViewportSettings>();
 	if( ViewportSettings.PreviewMeshes.IsValidIndex(Index) )
 	{
-		const FStringAssetReference& MeshName = ViewportSettings.PreviewMeshes[Index];
+		const FSoftObjectPath& MeshName = ViewportSettings.PreviewMeshes[Index];
 
 		// If we don't have a preview mesh component in the world yet, create one. 
 		if( !PreviewMeshComp )
@@ -6355,8 +6585,17 @@ void UEditorEngine::OnLevelRemovedFromWorld(ULevel* InLevel, UWorld* InWorld)
 	else
 	{
 		// UEngine::LoadMap broadcast this event with InLevel==NULL, before cleaning up the world
-		// Reset transactions buffer, to ensure that there are no references to a world which is about to be destroyed
-		ResetTransaction( NSLOCTEXT("UnrealEd", "LoadMapTransReset", "Loading a New Map") );
+		if (InWorld->IsPlayInEditor())
+		{
+			// Each additional instance of PIE in a multiplayer game will add another barrier, so if the event is triggered then this is the case and we need to lift it
+			// Otherwise there will be an imbalance between barriers set and barriers removed and we won't be able to undo when we return.
+			Trans->RemoveUndoBarrier();
+		}
+		else
+		{	
+			// If we're in editor mode, reset transactions buffer, to ensure that there are no references to a world which is about to be destroyed
+			ResetTransaction(NSLOCTEXT("UnrealEd", "LoadMapTransReset", "Loading a New Map"));
+		}
 	}
 }
 
@@ -6435,7 +6674,7 @@ void UEditorEngine::UpdateAutoLoadProject()
 		{
 			if(FSlateApplication::IsInitialized())
 			{
-				FSuppressableWarningDialog::FSetupInfo Info( LOCTEXT("UpdateMacOSX_Body","Please update to the latest version of macOS for best performance."), LOCTEXT("UpdateMacOSX_Title","Update macOS"), TEXT("UpdateMacOSX"), GEditorSettingsIni );
+				FSuppressableWarningDialog::FSetupInfo Info( LOCTEXT("UpdateMacOSX_Body","Please update to the latest version of macOS for best performance and stability."), LOCTEXT("UpdateMacOSX_Title","Update macOS"), TEXT("UpdateMacOSX"), GEditorSettingsIni );
 				Info.ConfirmText = LOCTEXT( "OK", "OK");
 				Info.bDefaultToSuppressInTheFuture = true;
 				FSuppressableWarningDialog OSUpdateWarning( Info );
@@ -6443,117 +6682,7 @@ void UEditorEngine::UpdateAutoLoadProject()
 			}
 			else
 			{
-				UE_LOG(LogEditor, Warning, TEXT("Please update to the latest version of macOS for best performance."));
-			}
-		}
-		
-		if(!FPlatformMisc::HasPlatformFeature(TEXT("Metal")))
-		{
-			if(FSlateApplication::IsInitialized())
-			{
-				FSuppressableWarningDialog::FSetupInfo Info(NSLOCTEXT("MessageDialog", "MessageMacOpenGLDeprecated","Support for running Unreal Engine 4 using OpenGL on macOS is deprecated and will be removed in a future release. Unreal Engine 4 may not render correctly and may run at substantially reduced performance."), NSLOCTEXT("MessageDialog", "TitleMacOpenGLDeprecated", "WARNING: OpenGL on macOS Deprecated"), TEXT("MacOpenGLDeprecated"), GEditorSettingsIni );
-				Info.ConfirmText = LOCTEXT( "OK", "OK");
-				Info.bDefaultToSuppressInTheFuture = true;
-				FSuppressableWarningDialog OSUpdateWarning( Info );
-				OSUpdateWarning.ShowModal();
-			}
-			else
-			{
-				UE_LOG(LogEditor, Warning, TEXT("Support for running Unreal Engine 4 using OpenGL on macOS is deprecated and will be removed in a future release. Unreal Engine 4 may not render correctly and may run at substantially reduced performance."));
-			}
-		}
-		
-		NSOpenGLContext* Context = [NSOpenGLContext currentContext];
-		const bool bTemporaryContext = (!Context);
-		if(bTemporaryContext)
-		{
-			NSOpenGLPixelFormatAttribute Attribs[] = {NSOpenGLPFAOpenGLProfile, (NSOpenGLPixelFormatAttribute)NSOpenGLProfileVersion3_2Core, (NSOpenGLPixelFormatAttribute)0};
-			NSOpenGLPixelFormat* PixelFormat = [[NSOpenGLPixelFormat alloc] initWithAttributes:Attribs];
-			if(PixelFormat)
-			{
-				Context = [[NSOpenGLContext alloc] initWithFormat:PixelFormat shareContext:nil];
-				[PixelFormat release];
-				if(Context)
-				{
-					[Context makeCurrentContext];
-				}
-			}
-		}
-		
-		GLint RendererID = 0;
-		if(Context)
-		{
-			[Context getValues:&RendererID forParameter:NSOpenGLCPCurrentRendererID];
-		}
-		
-		if(bTemporaryContext && Context)
-		{
-			[Context release];
-		}
-		
-		// This is quite a coarse test, alerting users who are running on GPUs which run on older drivers only - this is what we want to tell people running the only barely working OpenGL 3.3 cards.
-		// They can run, but they are largely on their own in terms of rendering performance and bugs as Apple/vendors won't fix OpenGL drivers for them.
-		const bool bOldGpuDriver = ((RendererID & 0x00022000 && RendererID < kCGLRendererGeForceID) || (RendererID & 0x00021000 && RendererID < kCGLRendererATIRadeonX3000ID) || (RendererID & 0x00024000 && RendererID < kCGLRendererIntelHD4000ID));
-		if(bOldGpuDriver)
-		{
-			if(FSlateApplication::IsInitialized())
-			{
-				FSuppressableWarningDialog::FSetupInfo Info( LOCTEXT("UnsupportedGPUWarning_Body","The current graphics card does not meet the minimum specification, for best performance an NVIDIA GeForce 470 GTX or AMD Radeon 6870 HD series card or higher is recommended. Rendering performance and compatibility are not guaranteed with this graphics card."), LOCTEXT("UnsupportedGPUWarning_Title","Unsupported Graphics Card"), TEXT("UnsupportedGPUWarning"), GEditorSettingsIni );
-				Info.ConfirmText = LOCTEXT( "OK", "OK");
-				Info.bDefaultToSuppressInTheFuture = true;
-				FSuppressableWarningDialog OSUpdateWarning( Info );
-				OSUpdateWarning.ShowModal();
-			}
-			else
-			{
-				UE_LOG(LogEditor, Warning, TEXT("The current graphics card does not meet the minimum specification, for best performance an NVIDIA GeForce 470 GTX or AMD Radeon 6870 HD series card or higher is recommended. Rendering performance and compatibility are not guaranteed with this graphics card."));
-			}
-		}
-		
-		// The editor is much more demanding than people realise, so warn them when they are beneath the official recommended specs.
-		// Any GPU slower than the Nvidia 470 GTX or AMD 6870 will receive a warning so that it is clear that the performance will not be stellar.
-		// This will affect all MacBooks, MacBook Pros and Mac Minis, none of which have shipped with a powerful GPU.
-		// Low-end or older iMacs and some older Mac Pros will also see this warning, though Mac Pro owners can upgrade their GPUs to something better if they choose.
-		// Newer, high-end iMacs and the new Mac Pros, or old Mac Pros with top-end/aftermarket GPUs shouldn't see this at all.
-
-		bool bSlowGpu = false;
-		// The 6970 and the 5870 were the only Apple supplied cards that are fast enough for the Editor supported by the kCGLRendererATIRadeonX3000ID driver
-		// All the kCGLRendererATIRadeonX4000ID supported cards should be more than sufficiently fast AFAICT
-		if(RendererID & 0x00021000 && RendererID == kCGLRendererATIRadeonX3000ID) // AMD
-		{
-			if(!GRHIAdapterName.Contains(TEXT("6970")) && !GRHIAdapterName.Contains(TEXT("5870")))
-			{
-				bSlowGpu = true;
-			}
-		}
-		else if(RendererID & 0x00022000 && RendererID == kCGLRendererGeForceID) // Nvidia
-		{
-			// Most of the 600 & 700 series Nvidia or later cards Apple use in iMacs should be fast enough
-			// but the ones in MacBook Pros are not.
-			if(GRHIAdapterName.Contains(TEXT("640")) || GRHIAdapterName.Contains(TEXT("650")) || GRHIAdapterName.Contains(TEXT("660")) || GRHIAdapterName.Contains(TEXT("750")) || GRHIAdapterName.Contains(TEXT("755")))
-			{
-				bSlowGpu = true;
-			}
-		}
-		else if(RendererID & 0x00024000 && RendererID == kCGLRendererIntelHD5000ID) // Intel
-		{
-			// Only the Iris Pro is even approaching fast enough - but even that is slower than our recommended specs by a wide margin
-			bSlowGpu = true;
-		}
-		
-		if(bSlowGpu)
-		{
-			if(FSlateApplication::IsInitialized())
-			{
-				FSuppressableWarningDialog::FSetupInfo Info( LOCTEXT("SlowGPUWarning_Body","The current graphics card is slower than the recommanded specification of an NVIDIA GeForce 470 GTX or AMD Radeon 6870 HD series card or higher, performance may be low."), LOCTEXT("SlowGPUWarning_Title","Slow Graphics Card"), TEXT("SlowGPUWarning"), GEditorSettingsIni );
-				Info.ConfirmText = LOCTEXT( "OK", "OK");
-				Info.bDefaultToSuppressInTheFuture = true;
-				FSuppressableWarningDialog OSUpdateWarning( Info );
-				OSUpdateWarning.ShowModal();
-			}
-			else
-			{
-				UE_LOG(LogEditor, Warning, TEXT("The current graphics card is slower than the recommanded specification of an NVIDIA GeForce 470 GTX or AMD Radeon 6870 HD series card or higher, performance may be low."));
+				UE_LOG(LogEditor, Warning, TEXT("Please update to the latest version of macOS for best performance and stability."));
 			}
 		}
 		
@@ -6590,68 +6719,67 @@ void UEditorEngine::UpdateAutoLoadProject()
 				UE_LOG(LogEditor, Warning, TEXT("For best performance a Quad-core Intel or AMD processor, 2.5 GHz or faster is recommended."));
 			}
 		}
+	}
 
-		extern bool IsSupportedXcodeVersionInstalled();
-		if (FSlateApplication::IsInitialized() && !IsSupportedXcodeVersionInstalled())
+	if (FSlateApplication::IsInitialized() && !FPlatformMisc::IsSupportedXcodeVersionInstalled())
+	{
+		/** Utility functions for the notification */
+		struct Local
 		{
-			/** Utility functions for the notification */
-			struct Local
+			static ECheckBoxState GetDontAskAgainCheckBoxState()
 			{
-				static ECheckBoxState GetDontAskAgainCheckBoxState()
-				{
-					bool bSuppressNotification = false;
-					GConfig->GetBool(TEXT("MacEditor"), TEXT("SuppressXcodeVersionWarningNotification"), bSuppressNotification, GEditorPerProjectIni);
-					return bSuppressNotification ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-				}
-
-				static void OnDontAskAgainCheckBoxStateChanged(ECheckBoxState NewState)
-				{
-					const bool bSuppressNotification = (NewState == ECheckBoxState::Checked);
-					GConfig->SetBool(TEXT("MacEditor"), TEXT("SuppressXcodeVersionWarningNotification"), bSuppressNotification, GEditorPerProjectIni);
-				}
-
-				static void OnXcodeWarningNotificationDismissed()
-				{
-					TSharedPtr<SNotificationItem> NotificationItem = GXcodeWarningNotificationPtr.Pin();
-
-					if (NotificationItem.IsValid())
-					{
-						NotificationItem->SetCompletionState(SNotificationItem::CS_Success);
-						NotificationItem->Fadeout();
-
-						GXcodeWarningNotificationPtr.Reset();
-					}
-				}
-			};
-
-			const bool bIsXcodeInstalled = FPlatformMisc::GetXcodePath().Len() > 0;
-
-			const ECheckBoxState DontAskAgainCheckBoxState = Local::GetDontAskAgainCheckBoxState();
-			if (DontAskAgainCheckBoxState == ECheckBoxState::Unchecked)
-			{
-				const FText NoXcodeMessageText = LOCTEXT("XcodeNotInstalledWarningNotification", "Xcode is not installed on this Mac.\nMetal shader compilation will fall back to runtime compiled text shaders, which are slower.\nPlease install latest version of Xcode for best performance.");
-				const FText OldXcodeMessageText = LOCTEXT("OldXcodeVersionWarningNotification", "Xcode installed on this Mac is too old to be used for Metal shader compilation.\nFalling back to runtime compiled text shaders, which are slower.\nPlease update to latest version of Xcode for best performance.");
-
-				FNotificationInfo Info(bIsXcodeInstalled ? OldXcodeMessageText : NoXcodeMessageText);
-				Info.bFireAndForget = false;
-				Info.FadeOutDuration = 3.0f;
-				Info.ExpireDuration = 0.0f;
-				Info.bUseLargeFont = false;
-				Info.bUseThrobber = false;
-
-				Info.ButtonDetails.Add(FNotificationButtonInfo(LOCTEXT("OK", "OK"), FText::GetEmpty(), FSimpleDelegate::CreateStatic(&Local::OnXcodeWarningNotificationDismissed)));
-
-				Info.CheckBoxState = TAttribute<ECheckBoxState>::Create(&Local::GetDontAskAgainCheckBoxState);
-				Info.CheckBoxStateChanged = FOnCheckStateChanged::CreateStatic(&Local::OnDontAskAgainCheckBoxStateChanged);
-				Info.CheckBoxText = NSLOCTEXT("ModalDialogs", "DefaultCheckBoxMessage", "Don't show this again");
-
-				GXcodeWarningNotificationPtr = FSlateNotificationManager::Get().AddNotification(Info);
-				GXcodeWarningNotificationPtr.Pin()->SetCompletionState(SNotificationItem::CS_Pending);
+				bool bSuppressNotification = false;
+				GConfig->GetBool(TEXT("MacEditor"), TEXT("SuppressXcodeVersionWarningNotification"), bSuppressNotification, GEditorPerProjectIni);
+				return bSuppressNotification ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 			}
+
+			static void OnDontAskAgainCheckBoxStateChanged(ECheckBoxState NewState)
+			{
+				const bool bSuppressNotification = (NewState == ECheckBoxState::Checked);
+				GConfig->SetBool(TEXT("MacEditor"), TEXT("SuppressXcodeVersionWarningNotification"), bSuppressNotification, GEditorPerProjectIni);
+			}
+
+			static void OnXcodeWarningNotificationDismissed()
+			{
+				TSharedPtr<SNotificationItem> NotificationItem = GXcodeWarningNotificationPtr.Pin();
+
+				if (NotificationItem.IsValid())
+				{
+					NotificationItem->SetCompletionState(SNotificationItem::CS_Success);
+					NotificationItem->Fadeout();
+
+					GXcodeWarningNotificationPtr.Reset();
+				}
+			}
+		};
+
+		const bool bIsXcodeInstalled = FPlatformMisc::GetXcodePath().Len() > 0;
+
+		const ECheckBoxState DontAskAgainCheckBoxState = Local::GetDontAskAgainCheckBoxState();
+		if (DontAskAgainCheckBoxState == ECheckBoxState::Unchecked)
+		{
+			const FText NoXcodeMessageText = LOCTEXT("XcodeNotInstalledWarningNotification", "Xcode is not installed on this Mac.\nMetal shader compilation will fall back to runtime compiled text shaders, which are slower.\nPlease install latest version of Xcode for best performance.");
+			const FText OldXcodeMessageText = LOCTEXT("OldXcodeVersionWarningNotification", "Xcode installed on this Mac is too old to be used for Metal shader compilation.\nFalling back to runtime compiled text shaders, which are slower.\nPlease update to latest version of Xcode for best performance.");
+
+			FNotificationInfo Info(bIsXcodeInstalled ? OldXcodeMessageText : NoXcodeMessageText);
+			Info.bFireAndForget = false;
+			Info.FadeOutDuration = 3.0f;
+			Info.ExpireDuration = 0.0f;
+			Info.bUseLargeFont = false;
+			Info.bUseThrobber = false;
+
+			Info.ButtonDetails.Add(FNotificationButtonInfo(LOCTEXT("OK", "OK"), FText::GetEmpty(), FSimpleDelegate::CreateStatic(&Local::OnXcodeWarningNotificationDismissed)));
+
+			Info.CheckBoxState = TAttribute<ECheckBoxState>::Create(&Local::GetDontAskAgainCheckBoxState);
+			Info.CheckBoxStateChanged = FOnCheckStateChanged::CreateStatic(&Local::OnDontAskAgainCheckBoxStateChanged);
+			Info.CheckBoxText = NSLOCTEXT("ModalDialogs", "DefaultCheckBoxMessage", "Don't show this again");
+
+			GXcodeWarningNotificationPtr = FSlateNotificationManager::Get().AddNotification(Info);
+			GXcodeWarningNotificationPtr.Pin()->SetCompletionState(SNotificationItem::CS_Pending);
 		}
 	}
 #endif
-	
+
 	// Clean up the auto-load-in-progress file, if it exists. This file prevents auto-loading of projects and must be deleted here to indicate the load was successful
 	const FString AutoLoadInProgressFilename = AutoLoadProjectFileName + TEXT(".InProgress");
 	const bool bRequireExists = false;
@@ -6660,45 +6788,62 @@ void UEditorEngine::UpdateAutoLoadProject()
 	IFileManager::Get().Delete(*AutoLoadInProgressFilename, bRequireExists, bEvenIfReadOnly, bQuiet);
 }
 
-FORCEINLINE bool NetworkRemapPath_local(FWorldContext &Context, FString &Str, bool reading)
+FORCEINLINE bool NetworkRemapPath_local(FWorldContext& Context, FString& Str, bool bReading, bool bIsReplay)
 {
-	if (reading)
+	if (bReading)
 	{
-		return (Str.ReplaceInline( *Context.PIERemapPrefix, *Context.PIEPrefix, ESearchCase::IgnoreCase) > 0);
+		if (bIsReplay && Context.World() && Context.World()->RemapCompiledScriptActor(Str))
+		{
+			return true;
+		}
+		
+		if (FPackageName::IsShortPackageName(Str))
+		{
+			return false;
+		}
+
+		// First strip any source prefix, then add the appropriate prefix for this context
+		FSoftObjectPath Path = UWorld::RemovePIEPrefix(Str);
+		
+		Path.FixupForPIE();
+		FString Remapped = Path.ToString();
+		if (!Remapped.Equals(Str, ESearchCase::CaseSensitive))
+		{
+			Str = Remapped;
+			return true;
+		}
 	}
 	else
 	{
-		return (Str.ReplaceInline( *Context.PIEPrefix, *Context.PIERemapPrefix, ESearchCase::IgnoreCase) > 0);
+		// When sending, strip prefix
+		FString Remapped = UWorld::RemovePIEPrefix(Str);
+		if (!Remapped.Equals(Str, ESearchCase::CaseSensitive))
+		{
+			Str = Remapped;
+			return true;
+		}
 	}
+	return false;
 }
 
-bool UEditorEngine::NetworkRemapPath(UNetDriver* Driver, FString &Str, bool reading)
+bool UEditorEngine::NetworkRemapPath(UNetDriver* Driver, FString& Str, bool bReading)
 {
 	if (Driver == nullptr)
 	{
 		return false;
 	}
 
-	FWorldContext &Context = GetWorldContextFromWorldChecked(Driver->GetWorld());
-	if (Context.PIEPrefix.IsEmpty() || Context.PIERemapPrefix.IsEmpty())
-	{
-		return false;
-	}
-
-	return NetworkRemapPath_local(Context, Str, reading);
+	// Pretty sure there's no case where you can't have a world by this point.
+	bool bIsAReplay = (Driver->GetWorld()) ? (Driver->GetWorld()->DemoNetDriver != NULL) : false;
+	FWorldContext& Context = GetWorldContextFromWorldChecked(Driver->GetWorld());
+	return NetworkRemapPath_local(Context, Str, bReading, bIsAReplay);
 }
 
-bool UEditorEngine::NetworkRemapPath( UPendingNetGame *PendingNetGame, FString &Str, bool reading)
+bool UEditorEngine::NetworkRemapPath( UPendingNetGame *PendingNetGame, FString& Str, bool bReading)
 {
-	FWorldContext &Context = GetWorldContextFromPendingNetGameChecked(PendingNetGame);
-	if (Context.PIEPrefix.IsEmpty() || Context.PIERemapPrefix.IsEmpty())
-	{
-		return false;
-	}
-
-	return NetworkRemapPath_local(Context, Str, reading);
+	FWorldContext& Context = GetWorldContextFromPendingNetGameChecked(PendingNetGame);
+	return NetworkRemapPath_local(Context, Str, bReading, PendingNetGame->DemoNetDriver != NULL);
 }
-
 
 void UEditorEngine::VerifyLoadMapWorldCleanup()
 {
@@ -6839,11 +6984,6 @@ FWorldContext* UEditorEngine::GetPIEWorldContext()
 	return nullptr;
 }
 
-bool UEditorEngine::IsUsingWorldAssets()
-{
-	return !FParse::Param(FCommandLine::Get(), TEXT("DisableWorldAssets"));
-}
-
 void UEditorEngine::OnAssetLoaded(UObject* Asset)
 {
 	UWorld* World = Cast<UWorld>(Asset);
@@ -6971,6 +7111,29 @@ void FActorLabelUtilities::SetActorLabelUnique(AActor* Actor, const FString& New
 	Actor->SetActorLabel(ModifiedActorLabel);
 }
 
+void FActorLabelUtilities::RenameExistingActor(AActor* Actor, const FString& NewActorLabel, bool bMakeUnique)
+{
+	FAssetToolsModule& AssetToolsModule = FModuleManager::GetModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+
+	FSoftObjectPath OldPath = FSoftObjectPath(Actor);
+	if (bMakeUnique)
+	{
+		SetActorLabelUnique(Actor, NewActorLabel, nullptr);
+	}
+	else
+	{
+		Actor->SetActorLabel(NewActorLabel);
+	}
+	FSoftObjectPath NewPath = FSoftObjectPath(Actor);
+
+	if (OldPath != NewPath)
+	{
+		TArray<FAssetRenameData> RenameData;
+		RenameData.Add(FAssetRenameData(OldPath, NewPath, true));
+		AssetToolsModule.Get().RenameAssetsWithDialog(RenameData);
+	}
+}
+
 void UEditorEngine::HandleTravelFailure(UWorld* InWorld, ETravelFailure::Type FailureType, const FString& ErrorString)
 {
 	if (InWorld && InWorld->IsPlayInEditor())
@@ -7033,16 +7196,18 @@ void UEditorEngine::AutomationLoadMap(const FString& MapName, FString* OutError)
 	{
 		if (Context.World())
 		{
+			FString WorldPackage = Context.World()->GetOutermost()->GetName();
+
 			if (Context.WorldType == EWorldType::PIE)
 			{
 				//don't quit!  This was triggered while pie was already running!
-				bNeedPieStart = !MapName.Contains(Context.World()->GetName());
+				bNeedPieStart = MapName != UWorld::StripPIEPrefixFromPackageName(WorldPackage, Context.World()->StreamingLevelsPrefix);
 				bPieRunning = true;
 				break;
 			}
 			else if (Context.WorldType == EWorldType::Editor)
 			{
-				bNeedLoadEditorMap = !MapName.Contains(Context.World()->GetName());
+				bNeedLoadEditorMap = MapName != WorldPackage;
 			}
 		}
 	}
@@ -7066,14 +7231,27 @@ void UEditorEngine::AutomationLoadMap(const FString& MapName, FString* OutError)
 		{
 			*OutError = TEXT("Error encountered.");
 		}
-	}
 
-	if (bNeedPieStart)
-	{
 		ADD_LATENT_AUTOMATION_COMMAND(FWaitForMapToLoadCommand);
 	}
 #endif
 	return;
+}
+
+bool UEditorEngine::IsHMDTrackingAllowed() const
+{
+	// @todo vreditor: Added GEnableVREditorHacks check below to allow head movement in non-PIE editor; needs revisit
+	return GEnableVREditorHacks || (PlayWorld && (bUseVRPreviewForPlayWorld || GetDefault<ULevelEditorPlaySettings>()->ViewportGetsHMDControl));
+}
+
+void UEditorEngine::OnModuleCompileStarted(bool bIsAsyncCompile)
+{
+	bIsCompiling = true;
+}
+
+void UEditorEngine::OnModuleCompileFinished(const FString& CompilationOutput, ECompilationResult::Type CompilationResult, bool bShowLog)
+{
+	bIsCompiling = false;
 }
 
 #undef LOCTEXT_NAMESPACE 

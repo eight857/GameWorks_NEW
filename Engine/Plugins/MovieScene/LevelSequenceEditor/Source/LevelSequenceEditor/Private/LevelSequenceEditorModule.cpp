@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LevelSequenceEditorModule.h"
 #include "Modules/ModuleManager.h"
@@ -34,6 +34,7 @@
 #include "Misc/LevelSequenceEditorActorBinding.h"
 #include "ILevelSequenceModule.h"
 #include "Misc/LevelSequenceEditorActorSpawner.h"
+#include "SequencerSettings.h"
 
 #define LOCTEXT_NAMESPACE "LevelSequenceEditor"
 
@@ -45,9 +46,14 @@ TSharedPtr<FLevelSequenceEditorStyle> FLevelSequenceEditorStyle::Singleton;
  * Implements the LevelSequenceEditor module.
  */
 class FLevelSequenceEditorModule
-	: public ILevelSequenceEditorModule
+	: public ILevelSequenceEditorModule, public FGCObject
 {
 public:
+
+	FLevelSequenceEditorModule()
+		: Settings(nullptr)
+	{
+	}
 
 	// IModuleInterface interface
 
@@ -167,13 +173,19 @@ protected:
 		ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings");
 
 		if (SettingsModule != nullptr)
-	{
-			// @todo sequencer: this should be moved into LevelSequenceEditor
+		{
 			SettingsModule->RegisterSettings("Project", "Plugins", "LevelSequencer",
-				LOCTEXT("LevelSequenceEditorSettingsName", "Level Sequencer"),
-				LOCTEXT("LevelSequenceEditorSettingsDescription", "Configure the Level Sequence Editor."),
+				LOCTEXT("LevelSequencerSettingsName", "Level Sequencer"),
+				LOCTEXT("LevelSequencerSettingsDescription", "Configure the Level Sequence Editor."),
 				GetMutableDefault<ULevelSequenceEditorSettings>()
 			);
+
+			Settings = USequencerSettingsContainer::GetOrCreate<USequencerSettings>(TEXT("LevelSequenceEditor"));
+
+			SettingsModule->RegisterSettings("Editor", "ContentEditors", "LevelSequenceEditor",
+				LOCTEXT("LevelSequenceEditorSettingsName", "Level Sequence Editor"),
+				LOCTEXT("LevelSequenceEditorSettingsDescription", "Configure the look and feel of the Level Sequence Editor."),
+				Settings);	
 		}
 	}
 
@@ -208,8 +220,8 @@ protected:
 		{
 			IAssetTools& AssetTools = AssetToolsModule->Get();
 
-			for (auto Action : RegisteredAssetTypeActions)
-			{
+				for (auto Action : RegisteredAssetTypeActions)
+				{
 				AssetTools.UnregisterAssetTypeActions(Action);
 			}
 		}
@@ -254,11 +266,12 @@ protected:
 		ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings");
 
 		if (SettingsModule != nullptr)
-	{
-			// @todo sequencer: this should be moved into LevelSequenceEditor
+		{
 			SettingsModule->UnregisterSettings("Project", "Plugins", "LevelSequencer");
-	}
+
+			SettingsModule->UnregisterSettings("Editor", "ContentEditors", "LevelSequenceEditor");
 		}
+	}
 
 protected:
 
@@ -279,7 +292,7 @@ protected:
 				UFactory* Factory = Cast<UFactory>(CurrentClass->GetDefaultObject());
 				if (Factory->CanCreateNew() && Factory->ImportPriority >= 0 && Factory->SupportedClass == ULevelSequence::StaticClass())
 				{
-					NewAsset = AssetTools.CreateAsset(ULevelSequence::StaticClass(), Factory);
+					NewAsset = AssetTools.CreateAssetWithDialog(ULevelSequence::StaticClass(), Factory);
 					break;
 				}
 			}
@@ -327,6 +340,15 @@ protected:
 		return MakeShareable(new FLevelSequenceEditorActorBinding(InSequencer));
 	}
 
+	/** FGCObject interface */
+	virtual void AddReferencedObjects( FReferenceCollector& Collector ) override
+	{
+		if (Settings)
+		{
+			Collector.AddReferencedObject(Settings);
+		}
+	}
+
 private:
 
 	/** The collection of registered asset type actions. */
@@ -342,6 +364,8 @@ private:
 	FDelegateHandle ActorBindingDelegateHandle;
 
 	FDelegateHandle EditorActorSpawnerDelegateHandle;
+
+	USequencerSettings* Settings;
 };
 
 

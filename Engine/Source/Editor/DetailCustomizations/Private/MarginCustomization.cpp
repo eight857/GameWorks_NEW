@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MarginCustomization.h"
 #include "Widgets/Text/STextBlock.h"
@@ -20,7 +20,7 @@ void FMarginStructCustomization::CustomizeHeader( TSharedRef<class IPropertyHand
 {
 	StructPropertyHandle = InStructPropertyHandle;
 
-	const FString UVSpaceString( StructPropertyHandle->GetProperty()->GetMetaData( TEXT( "UVSpace" ) ) );
+	const FString& UVSpaceString( StructPropertyHandle->GetProperty()->GetMetaData( TEXT( "UVSpace" ) ) );
 	bIsMarginUsingUVSpace = UVSpaceString.Len() > 0 && UVSpaceString == TEXT( "true" );
 
 	uint32 NumChildren;
@@ -57,7 +57,7 @@ void FMarginStructCustomization::CustomizeChildren( TSharedRef<class IPropertyHa
 	for( uint32 ChildIndex = 0; ChildIndex < NumChildren; ++ChildIndex )
 	{
 		TSharedRef<IPropertyHandle> ChildHandle = ChildPropertyHandles[ ChildIndex ];
-		IDetailPropertyRow& PropertyRow = StructBuilder.AddChildProperty( ChildHandle );
+		IDetailPropertyRow& PropertyRow = StructBuilder.AddProperty( ChildHandle );
 		PropertyRow
 		.CustomWidget()
 		.NameContent()
@@ -137,7 +137,7 @@ void FMarginStructCustomization::OnMarginTextCommitted( const FText& InText, ETe
 					InString.Empty();
 				}
 
-				LeftString = LeftString.Trim().TrimTrailing();
+				LeftString.TrimStartAndEndInline();
 
 				if( LeftString.IsNumeric() )
 				{

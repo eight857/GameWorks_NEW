@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Brush.cpp: Brush Actor implementation
@@ -168,16 +168,6 @@ void ABrush::SetIsTemporarilyHiddenInEditor( bool bIsHidden )
 	}
 }
 
-FVector ABrush::GetPrePivot() const
-{
-	return GetPivotOffset();
-}
-
-void ABrush::SetPrePivot( const FVector& InPrePivot )
-{
-	SetPivotOffset(InPrePivot);
-}
-
 void ABrush::PostLoad()
 {
 	Super::PostLoad();
@@ -315,5 +305,3 @@ bool ABrush::Modify(bool bAlwaysMarkDirty)
 	return bSavedToTransactionBuffer;
 }
 
-/** Returns BrushComponent subobject **/
-UBrushComponent* ABrush::GetBrushComponent() const { return BrushComponent; }

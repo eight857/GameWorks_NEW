@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameplayEffectAggregator.h"
@@ -660,11 +660,30 @@ FGameplayEffectSpecHandle UAbilitySystemBlueprintLibrary::AssignSetByCallerMagni
 	FGameplayEffectSpec* Spec = SpecHandle.Data.Get();
 	if (Spec)
 	{
+		PRAGMA_DISABLE_DEPRECATION_WARNINGS
+		
 		Spec->SetSetByCallerMagnitude(DataName, Magnitude);
+		
+		PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	}
 	else
 	{
 		ABILITY_LOG(Warning, TEXT("UAbilitySystemBlueprintLibrary::AssignSetByCallerMagnitude called with invalid SpecHandle"));
+	}
+
+	return SpecHandle;
+}
+
+FGameplayEffectSpecHandle UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(FGameplayEffectSpecHandle SpecHandle, FGameplayTag DataTag, float Magnitude)
+{
+	FGameplayEffectSpec* Spec = SpecHandle.Data.Get();
+	if (Spec)
+	{
+		Spec->SetSetByCallerMagnitude(DataTag, Magnitude);
+	}
+	else
+	{
+		ABILITY_LOG(Warning, TEXT("UAbilitySystemBlueprintLibrary::AssignSetByCallerTagMagnitude called with invalid SpecHandle"));
 	}
 
 	return SpecHandle;
@@ -862,21 +881,85 @@ int32 UAbilitySystemBlueprintLibrary::GetActiveGameplayEffectStackLimitCount(FAc
 	return 0;
 }
 
+float UAbilitySystemBlueprintLibrary::GetActiveGameplayEffectStartTime(FActiveGameplayEffectHandle ActiveHandle)
+{
+	UAbilitySystemComponent* ASC = ActiveHandle.GetOwningAbilitySystemComponent();
+	if (ASC)
+	{
+		if (const FActiveGameplayEffect* ActiveGE = ASC->GetActiveGameplayEffect(ActiveHandle))
+		{
+			return ActiveGE->StartWorldTime;
+		}
+	}
+	return 0;
+}
+	
+float UAbilitySystemBlueprintLibrary::GetActiveGameplayEffectExpectedEndTime(FActiveGameplayEffectHandle ActiveHandle)
+{
+	UAbilitySystemComponent* ASC = ActiveHandle.GetOwningAbilitySystemComponent();
+	if (ASC)
+	{
+		if (const FActiveGameplayEffect* ActiveGE = ASC->GetActiveGameplayEffect(ActiveHandle))
+		{
+			return ActiveGE->GetEndTime();
+		}
+	}
+	return 0;
+}
+
+float UAbilitySystemBlueprintLibrary::GetActiveGameplayEffectTotalDuration(FActiveGameplayEffectHandle ActiveHandle)
+{
+	UAbilitySystemComponent* ASC = ActiveHandle.GetOwningAbilitySystemComponent();
+	if (ASC)
+	{
+		if (const FActiveGameplayEffect* ActiveGE = ASC->GetActiveGameplayEffect(ActiveHandle))
+		{
+			return ActiveGE->GetDuration();
+		}
+	}
+	return 0;
+}
+float UAbilitySystemBlueprintLibrary::GetActiveGameplayEffectRemainingDuration(UObject* WorldContextObject, FActiveGameplayEffectHandle ActiveHandle)
+{
+	UAbilitySystemComponent* ASC = ActiveHandle.GetOwningAbilitySystemComponent();
+	if (ASC)
+	{
+		if (const FActiveGameplayEffect* ActiveGE = ASC->GetActiveGameplayEffect(ActiveHandle))
+		{
+			if (WorldContextObject)
+			{
+				if (UWorld* World = WorldContextObject->GetWorld())
+				{
+					return ActiveGE->GetTimeRemaining(World->GetTimeSeconds());
+				}
+			}
+		}
+	}
+	return 0;
+}
+
+float UAbilitySystemBlueprintLibrary::GetModifiedAttributeMagnitude(const FGameplayEffectSpec& Spec, FGameplayAttribute Attribute)
+{
+	float Delta = 0.f;
+	for (const FGameplayEffectModifiedAttribute &Mod : Spec.ModifiedAttributes)
+	{
+		if (Mod.Attribute == Attribute)
+		{
+			Delta += Mod.TotalMagnitude;
+		}
+	}
+	return Delta;
+}
+
 float UAbilitySystemBlueprintLibrary::GetModifiedAttributeMagnitude(FGameplayEffectSpecHandle SpecHandle, FGameplayAttribute Attribute)
 {
 	FGameplayEffectSpec* Spec = SpecHandle.Data.Get();
 	float Delta = 0.f;
 	if (Spec)
 	{
-		for (FGameplayEffectModifiedAttribute &Mod : Spec->ModifiedAttributes)
-		{
-			if (Mod.Attribute == Attribute)
-			{
-				Delta += Mod.TotalMagnitude;
-			}
-		}
+		return GetModifiedAttributeMagnitude(*Spec, Attribute);
 	}
-	return Delta;
+	return 0;
 }
 
 FString UAbilitySystemBlueprintLibrary::GetActiveGameplayEffectDebugString(FActiveGameplayEffectHandle ActiveHandle)

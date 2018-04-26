@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -105,8 +105,7 @@ class ENGINE_API ABrush
 	UPROPERTY(Instanced)
 	class UModel* Brush;
 
-private_subobject:
-	DEPRECATED_FORGAME(4.6, "BrushComponent should not be accessed directly, please use GetBrushComponent() function instead. BrushComponent will soon be private and your code will not compile.")
+private:
 	UPROPERTY(Category = Collision, VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class UBrushComponent* BrushComponent;
 public:
@@ -236,14 +235,6 @@ public:
 
 	// ABrush interface.
 
-	/** Returns the prepivot FVector of the RootComponent of this actor */
-	DEPRECATED(4.9, "This method has been superseded by AActor::GetPivotOffset.")
-	FVector GetPrePivot() const;
-
-	/** Set the PrePivot of the root component */
-	DEPRECATED(4.9, "This method has been superseded by AActor::SetPivotOffset.")
-	void SetPrePivot(const FVector& InPrePivot);
-
 	/** Figures out the best color to use for this brushes wireframe drawing.	*/
 	virtual FColor GetWireColor() const;
 
@@ -276,7 +267,7 @@ public:
 
 public:
 	/** Returns BrushComponent subobject **/
-	class UBrushComponent* GetBrushComponent() const;
+	class UBrushComponent* GetBrushComponent() const { return BrushComponent; }
 
 #if WITH_EDITOR
 	/** Debug purposes only; an attempt to catch the cause of UE-36265 */

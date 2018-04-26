@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -40,7 +40,7 @@ class UAnimGraphNode_TransitionPoseEvaluator : public UAnimGraphNode_Base
 private:
 
 	// Details customization helpers
-	EVisibility GetCacheFramesVisibility() const;
+	static EVisibility GetCacheFramesVisibility(IDetailLayoutBuilder* DetailLayoutBuilder);
 
 
 	// End of UK2Node interface

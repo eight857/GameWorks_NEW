@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,8 +14,8 @@ class ALightmassPortal : public AActor
 {
 	GENERATED_UCLASS_BODY()
 
-private_subobject:
-	UPROPERTY(Category = Portal, VisibleAnywhere, BlueprintReadOnly)
+private:
+	UPROPERTY(Category = Portal, VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class ULightmassPortalComponent* PortalComponent;
 
 #if WITH_EDITORONLY_DATA

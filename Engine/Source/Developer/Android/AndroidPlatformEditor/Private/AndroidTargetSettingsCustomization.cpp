@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AndroidTargetSettingsCustomization.h"
 #include "Misc/Paths.h"
@@ -32,6 +32,10 @@
 #include "Misc/EngineBuildSettings.h"
 #include "InstalledPlatformInfo.h"
 
+#include "AndroidLicenseDialog.h"
+#include "Interfaces/IMainFrameModule.h"
+#include "Framework/Application/SlateApplication.h"
+
 #define LOCTEXT_NAMESPACE "AndroidRuntimeSettings"
 
 //////////////////////////////////////////////////////////////////////////
@@ -47,9 +51,10 @@ TSharedRef<IDetailCustomization> FAndroidTargetSettingsCustomization::MakeInstan
 }
 
 FAndroidTargetSettingsCustomization::FAndroidTargetSettingsCustomization()
-	: AndroidRelativePath(TEXT(""))
+	: LastLicenseChecktime(-1.0)
+	, AndroidRelativePath(TEXT(""))
 	, EngineAndroidPath(FPaths::EngineDir() + TEXT("Build/Android/Java"))
-	, GameAndroidPath(FPaths::GameDir() + TEXT("Build/Android"))
+	, GameAndroidPath(FPaths::ProjectDir() + TEXT("Build/Android"))
 	, EngineGooglePlayAppIDPath(EngineAndroidPath / TEXT("res") / TEXT("values") / TEXT("GooglePlayAppID.xml"))
 	, GameGooglePlayAppIDPath(GameAndroidPath / TEXT("res") / TEXT("values") / TEXT("GooglePlayAppID.xml"))
 	, EngineProguardPath(EngineAndroidPath / TEXT("proguard-project.txt"))
@@ -81,6 +86,7 @@ void FAndroidTargetSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder&
 	BuildLaunchImageSection(DetailLayout);
 	BuildDaydreamAppTileImageSection(DetailLayout);
 	BuildGraphicsDebuggerSection(DetailLayout);
+	AudioPluginWidgetManager.BuildAudioCategory(DetailLayout, EAudioPlatform::Android);
 }
 
 static void OnBrowserLinkClicked(const FSlateHyperlinkRun::FMetadata& Metadata)
@@ -97,10 +103,12 @@ static void OnBrowserLinkClicked(const FSlateHyperlinkRun::FMetadata& Metadata)
 void FAndroidTargetSettingsCustomization::BuildAppManifestSection(IDetailLayoutBuilder& DetailLayout)
 {
 	// Cache some categories
-	IDetailCategoryBuilder& APKPackagingCategory = DetailLayout.EditCategory(TEXT("APKPackaging"));
+	IDetailCategoryBuilder& APKPackagingCategory = DetailLayout.EditCategory(TEXT("APK Packaging"));
 	IDetailCategoryBuilder& BuildCategory = DetailLayout.EditCategory(TEXT("Build"));
 	IDetailCategoryBuilder& AdvancedBuildCategory = DetailLayout.EditCategory(TEXT("AdvancedBuild"));
 	AdvancedBuildCategory.InitiallyCollapsed(true);
+	IDetailCategoryBuilder& SDKConfigCategory = DetailLayout.EditCategory(TEXT("Project SDK Override"));
+	SDKConfigCategory.InitiallyCollapsed(true);
 
 	IDetailCategoryBuilder& SigningCategory = DetailLayout.EditCategory(TEXT("DistributionSigning"));
 
@@ -128,7 +136,7 @@ void FAndroidTargetSettingsCustomization::BuildAppManifestSection(IDetailLayoutB
 				.FillWidth(1.0f)
 				[
 					SNew(SRichTextBlock)
-					.Text(LOCTEXT("UpgradeInfoMessage", "<RichTextBlock.TextHighlight>Note to users from 4.6 or earlier</>: We now <RichTextBlock.TextHighlight>GENERATE</> an AndroidManifest.xml when building, so if you have customized your .xml file, you will need to put all of your changes into the below settings. Note that we don't touch your AndroidManifest.xml that is in your project directory.\nAdditionally, we no longer use SigningConfig.xml, the settings are now set in the Distribution Signing section."))
+					.Text(LOCTEXT("UpgradeInfoMessage", "<RichTextBlock.TextHighlight>Note to users from 4.6 or earlier</>: We now <RichTextBlock.TextHighlight>GENERATE</> an AndroidManifest.xml when building, so if you have customized your .xml file, you will need to put all of your changes into the below settings. Note that we don't touch your AndroidManifest.xml that is in your project directory.\nAdditionally, we no longer use SigningConfig.xml, the settings are now set in the Distribution Signing section.\n\n<RichTextBlock.TextHighlight>NOTE</>: You must accept the SDK license agreement (click on button below) to use Gradle if it isn't grayed out."))
 					.TextStyle(FEditorStyle::Get(), "MessageLog")
 					.DecoratorStyleSet(&FEditorStyle::Get())
 					.AutoWrapText(true)
@@ -136,7 +144,27 @@ void FAndroidTargetSettingsCustomization::BuildAppManifestSection(IDetailLayoutB
 				]
 			]
 		];
-	
+
+	APKPackagingCategory.AddCustomRow(LOCTEXT("AndroidSDKLicenses", "Android SDK Licenses"), false)
+		.WholeRowWidget
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.Padding(FMargin(0, 5, 5, 5))
+			.AutoWidth()
+			[
+				SNew(SButton)
+				.HAlign(HAlign_Center)
+				.VAlign(VAlign_Center)
+				.OnClicked(this, &FAndroidTargetSettingsCustomization::OnAcceptSDKLicenseClicked)
+				.IsEnabled(this, &FAndroidTargetSettingsCustomization::IsLicenseInvalid)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("AcceptSDKLicense", "Accept SDK License"))
+				]
+			]
+		];
+
 	APKPackagingCategory.AddCustomRow(LOCTEXT("BuildFolderLabel", "Build Folder"), false)
 		.IsEnabled(SetupForPlatformAttribute)
 		.NameContent()
@@ -163,6 +191,32 @@ void FAndroidTargetSettingsCustomization::BuildAppManifestSection(IDetailLayoutB
 				.OnClicked(this, &FAndroidTargetSettingsCustomization::OpenBuildFolder)
 			]
 		];
+
+	SDKConfigCategory.AddCustomRow(LOCTEXT("SDKConfigInfo", "SDK Config Info"), false)
+		.WholeRowWidget
+		[
+			SNew(SBorder)
+			.Padding(1)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.Padding(FMargin(10, 10, 10, 10))
+				.FillWidth(1.0f)
+				[
+					SNew(SRichTextBlock)
+					.Text(LOCTEXT("SDKConfigMessage", "Leave these fields blank to use global Android SDK project settings. Changing these settings will only affect this project."))
+					.TextStyle(FEditorStyle::Get(), "MessageLog")
+					.DecoratorStyleSet(&FEditorStyle::Get())
+					.AutoWrapText(true)
+				]
+			]
+		];
+
+	TSharedRef<IPropertyHandle> SDKAPILevelOverrideProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UAndroidRuntimeSettings, SDKAPILevelOverride));
+	SDKConfigCategory.AddProperty(SDKAPILevelOverrideProperty);
+
+	TSharedRef<IPropertyHandle> NDKAPILevelOverrideProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UAndroidRuntimeSettings, NDKAPILevelOverride));
+	SDKConfigCategory.AddProperty(NDKAPILevelOverrideProperty);
 
 	// Signing category
 	SigningCategory.AddCustomRow(LOCTEXT("SigningHyperlink", "Signing Hyperlink"), false)
@@ -213,6 +267,10 @@ void FAndroidTargetSettingsCustomization::BuildAppManifestSection(IDetailLayoutB
 	GooglePlayCategory.AddProperty(AppIDProperty)
 		.EditCondition(SetupForGooglePlayAttribute, NULL);
 
+	TSharedRef<IPropertyHandle> SupportAdMobProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UAndroidRuntimeSettings, bSupportAdMob));
+	GooglePlayCategory.AddProperty(SupportAdMobProperty)
+		.EditCondition(SetupForGooglePlayAttribute, NULL);
+
 	TSharedRef<IPropertyHandle> AdMobAdUnitIDProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UAndroidRuntimeSettings, AdMobAdUnitID));
 	AdMobAdUnitIDProperty->MarkHiddenByCustomization();
 
@@ -244,10 +302,119 @@ void FAndroidTargetSettingsCustomization::BuildAppManifestSection(IDetailLayoutB
 	SETUP_ANDROIDARCH_PROP(TEXT("-x86"), bBuildForX86, BuildCategory, LOCTEXT("BuildForX86ToolTip", "Enable X86 CPU architecture support?"));
 	SETUP_ANDROIDARCH_PROP(TEXT("-x64"), bBuildForX8664, BuildCategory, LOCTEXT("BuildForX8664ToolTip", "Enable X86-64 CPU architecture support?"));
 	SETUP_ANDROIDARCH_PROP(TEXT("-es2"), bBuildForES2, BuildCategory, LOCTEXT("BuildForES2ToolTip", "Enable OpenGL ES2 rendering support? (this will be used if rendering types are unchecked)"));
-	SETUP_ANDROIDARCH_PROP(TEXT("-esdeferred"), bBuildForESDeferred, BuildCategory, LOCTEXT("BuildForESDeferredToolTip", "Enable the Deferred Shading Renderer using OpenGL ES 3.1+AEP (Android Extension Pack)? This setting is not recommended for general use and is supported only on Nvidia K1 and X1 devices."));
 
 	// @todo android fat binary: Put back in when we expose those
 //	SETUP_SOURCEONLY_PROP(bSplitIntoSeparateApks, BuildCategory, LOCTEXT("SplitIntoSeparateAPKsToolTip", "If checked, CPU architectures and rendering types will be split into separate .apk files"));
+
+	// check for Gradle change
+	TSharedRef<IPropertyHandle> EnableGradleProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UAndroidRuntimeSettings, bEnableGradle));
+	FSimpleDelegate EnableGradleChange = FSimpleDelegate::CreateSP(this, &FAndroidTargetSettingsCustomization::OnEnableGradleChange);
+	EnableGradleProperty->SetOnPropertyValueChanged(EnableGradleChange);
+}
+
+bool FAndroidTargetSettingsCustomization::IsLicenseInvalid() const
+{
+	static bool bInvalid = true;
+
+	// only check every 30 seconds after first time
+	double CurrentTime = FApp::GetCurrentTime();
+	if (LastLicenseChecktime < 0.0 || CurrentTime - LastLicenseChecktime >= 30.0)
+	{
+		const_cast<FAndroidTargetSettingsCustomization *>(this)->LastLicenseChecktime = CurrentTime;
+
+		TSharedPtr<SAndroidLicenseDialog> LicenseDialog = SNew(SAndroidLicenseDialog);
+		bInvalid = !LicenseDialog->HasLicense();
+	}
+
+	return bInvalid;
+}
+
+void FAndroidTargetSettingsCustomization::OnLicenseAccepted()
+{
+	LastLicenseChecktime = -1.0;
+}
+
+FReply FAndroidTargetSettingsCustomization::OnAcceptSDKLicenseClicked()
+{
+	// only show if don't have a valid license
+	TSharedPtr<SAndroidLicenseDialog> LicenseDialog = SNew(SAndroidLicenseDialog);
+	if (!LicenseDialog->HasLicense())
+	{
+		FSimpleDelegate LicenseAcceptedCallback = FSimpleDelegate::CreateSP(this, &FAndroidTargetSettingsCustomization::OnLicenseAccepted);
+		LicenseDialog->SetLicenseAcceptedCallback(LicenseAcceptedCallback);
+
+		const FText AndroidLicenseWindowTitle = LOCTEXT("AndroidLicenseUnrealEditor", "Android SDK License");
+
+		TSharedPtr<SWindow> AndroidLicenseWindow =
+			SNew(SWindow)
+			.Title(AndroidLicenseWindowTitle)
+			.ClientSize(FVector2D(600.f, 700.f))
+			.SupportsMaximize(false)
+			.SupportsMinimize(false)
+			.SizingRule(ESizingRule::FixedSize)
+			[
+				LicenseDialog.ToSharedRef()
+			];
+
+		IMainFrameModule& MainFrame = FModuleManager::LoadModuleChecked<IMainFrameModule>("MainFrame");
+		TSharedPtr<SWindow> ParentWindow = MainFrame.GetParentWindow();
+
+		if (ParentWindow.IsValid())
+		{
+			FSlateApplication::Get().AddModalWindow(AndroidLicenseWindow.ToSharedRef(), ParentWindow.ToSharedRef());
+		}
+		else
+		{
+			FSlateApplication::Get().AddWindow(AndroidLicenseWindow.ToSharedRef());
+		}
+	}
+
+	LastLicenseChecktime = -1.0;
+
+	return FReply::Handled();
+}
+
+void FAndroidTargetSettingsCustomization::OnEnableGradleChange()
+{
+	// only need to do this if enabling
+	if (!GetDefault<UAndroidRuntimeSettings>()->bEnableGradle)
+	{
+		return;
+	}
+
+	// only show if don't have a valid license
+	TSharedPtr<SAndroidLicenseDialog> LicenseDialog = SNew(SAndroidLicenseDialog);
+	if (!LicenseDialog->HasLicense())
+	{
+		FSimpleDelegate LicenseAcceptedCallback = FSimpleDelegate::CreateSP(this, &FAndroidTargetSettingsCustomization::OnLicenseAccepted);
+		LicenseDialog->SetLicenseAcceptedCallback(LicenseAcceptedCallback);
+
+		const FText AndroidLicenseWindowTitle = LOCTEXT("AndroidLicenseUnrealEditor", "Android SDK License");
+
+		TSharedPtr<SWindow> AndroidLicenseWindow =
+			SNew(SWindow)
+			.Title(AndroidLicenseWindowTitle)
+			.ClientSize(FVector2D(600.f, 700.f))
+			.HasCloseButton(false)
+			.SupportsMaximize(false)
+			.SupportsMinimize(false)
+			.SizingRule(ESizingRule::FixedSize)
+			[
+				LicenseDialog.ToSharedRef()
+			];
+
+		IMainFrameModule& MainFrame = FModuleManager::LoadModuleChecked<IMainFrameModule>("MainFrame");
+		TSharedPtr<SWindow> ParentWindow = MainFrame.GetParentWindow();
+
+		if (ParentWindow.IsValid())
+		{
+			FSlateApplication::Get().AddModalWindow(AndroidLicenseWindow.ToSharedRef(), ParentWindow.ToSharedRef());
+		}
+		else
+		{
+			FSlateApplication::Get().AddWindow(AndroidLicenseWindow.ToSharedRef());
+		}
+	}
 }
 
 void FAndroidTargetSettingsCustomization::BuildIconSection(IDetailLayoutBuilder& DetailLayout)
@@ -527,7 +694,6 @@ static FText GetMaliGraphicsDebuggerHelpText()
 	const static FText RunText1(LOCTEXT("MGDIRunText1", "Run the following command from your host to establish a tunnel between your PC and the MGD Daemon. This needs to be done each time you connect your device by USB."));
 	const static FString RunCommand(TEXT("adb forward tcp:5002 tcp:5002"));
 	const static FText RunText2(LOCTEXT("MGDIRunText2", "Next, ensure you are running the daemon. Run the MGD Daemon application and switch it to the \"ON\" state"));
-	const static FText AddInfoText(LOCTEXT("MGDAddInfo", "Applications configured for the Mali Graphics Debugger may crash when launched on non-Mali based devices."));
 	
 	FFormatOrderedArguments Args;
 	Args.Add(InstallText);
@@ -535,9 +701,8 @@ static FText GetMaliGraphicsDebuggerHelpText()
 	Args.Add(RunText1);
 	Args.Add(FText::FromString(RunCommand));
 	Args.Add(RunText2);
-	Args.Add(AddInfoText);
 
-	return FText::Format(LOCTEXT("MaliGraphicsDebuggerHelpText","<RichTextBlock.TextHighlight>Installation</>\n{0}\n{1}\n\n<RichTextBlock.TextHighlight>Run</>\n{2}\n{3}\n{4}\n\n<RichTextBlock.TextHighlight>Note</>\n{5}"), 
+	return FText::Format(LOCTEXT("MaliGraphicsDebuggerHelpText","<RichTextBlock.TextHighlight>Installation</>\n{0}\n{1}\n\n<RichTextBlock.TextHighlight>Run</>\n{2}\n{3}\n{4}"), 
 		Args);
 }
 
@@ -551,6 +716,39 @@ static FText GetAdrenoProfilerHelpText()
 	Args.Add(FText::FromString(RunCommand));
 
 	return FText::Format(LOCTEXT("AdrenoHelpText","{0}\n{1}"), Args);
+}
+
+static FText GetRenderDocHelpText()
+{
+	const static FText InstallText(LOCTEXT("RDOCInstallText", "Run the following command from a host command line from the android/apk/32 directory located in the installation directory of the RenderDoc tool, to install the RenderDocCmd application on your device."));
+	const static FString InstallCommand(TEXT("adb install -r RenderDocCmd.apk"));
+
+	const static FText RunText0(LOCTEXT("RDOCRunText0", "Open RenderDoc on the host"));
+	const static FText RunText1(LOCTEXT("RDOCRunText1", "1. In Tools -> Options -> Android, set the path to your adb executable."));
+	const static FText RunText2(LOCTEXT("RDOCRunText2", "2. Start the Remote Server using Tools -> Start Android Remote Server."));
+	const static FText RunText3(LOCTEXT("RDOCRunText3", "3. Check your device screen and 'Allow' RenderDocCmd to access files on your device."));
+	const static FText RunText4(LOCTEXT("RDOCRunText4", "4. Change your current Replay Context to your device using the bottom left menu, which should now show your device as Online."));
+	const static FText RunText5(LOCTEXT("RDOCRunText5", "5. In the capture executable tab, there is a button on the right of Executable Path that lets you select an installed Android package for capture."));
+	const static FText RunText6(LOCTEXT("RDOCRunText6", "6. Select your package and press the Launch button in the bottom right of the tab to start the package on the device."));
+	const static FText RunText7(LOCTEXT("RDOCRunText7", "7. If everything went well, a new tab will open with a button to Trigger captures."));
+
+	const static FText NoteText(LOCTEXT("RDOCNoteText", "If the latest RenderDoc release does not have Android functionality, download the latest nightly build."));
+
+	FFormatOrderedArguments Args;
+	Args.Add(InstallText);
+	Args.Add(FText::FromString(InstallCommand));
+	Args.Add(RunText0);
+	Args.Add(RunText1);
+	Args.Add(RunText2);
+	Args.Add(RunText3);
+	Args.Add(RunText4);
+	Args.Add(RunText5);
+	Args.Add(RunText6);
+	Args.Add(RunText7);
+	Args.Add(NoteText);
+
+	return FText::Format(LOCTEXT("RDOCHelpText","<RichTextBlock.TextHighlight>Installation</>\n{0}\n{1}\n\n<RichTextBlock.TextHighlight>Run</>\n{2}\n{3}\n{4}\n{5}\n{6}\n{7}\n{8}\n{9}\n\n<RichTextBlock.TextHighlight>Note</>\n{10}"), 
+		Args);
 }
 
 void FAndroidTargetSettingsCustomization::BuildGraphicsDebuggerSection(IDetailLayoutBuilder& DetailLayout)
@@ -641,6 +839,52 @@ void FAndroidTargetSettingsCustomization::BuildGraphicsDebuggerSection(IDetailLa
 						SNew(SHyperlinkLaunchURL, TEXT("https://developer.qualcomm.com/software/adreno-gpu-profiler"))
 						.Text(LOCTEXT("AdrenoProfilerPage", "Adreno Profiler home page"))
 						.ToolTipText(LOCTEXT("AdrenoProfilerPageTooltip", "Opens the Adreno Profiler home page on the Qualcomm website"))
+					]
+				]
+			]
+		];
+	}
+
+	// RenderDoc settings
+	{
+		TAttribute<EVisibility> RenderDocSettingsVisibility(
+			TAttribute<EVisibility>::Create(TAttribute<EVisibility>::FGetter::CreateStatic(GraphicsDebuggerSettingsVisibility, EAndroidGraphicsDebugger::RenderDoc, AndroidGraphicsDebuggerProperty))
+		);
+
+		TSharedPtr<IPropertyHandle> RenderDocPathProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UAndroidRuntimeSettings, RenderDocPath));
+		DetailLayout.HideProperty(RenderDocPathProperty);
+		GraphicsDebuggerCategory.AddProperty(RenderDocPathProperty).Visibility(RenderDocSettingsVisibility);
+		
+		FText RenderDocHelpText = GetRenderDocHelpText();
+		
+		GraphicsDebuggerCategory.AddCustomRow(LOCTEXT("RenderDocInfo", "RenderDoc Info"), false)
+		.Visibility(RenderDocSettingsVisibility)
+		.WholeRowWidget
+		[
+			SNew(SBorder)
+			.Padding(1)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.Padding(FMargin(10, 10, 10, 10))
+				.AutoHeight()
+				[
+					SNew(SRichTextBlock)
+					.Text(RenderDocHelpText)
+					.TextStyle(FEditorStyle::Get(), "MessageLog")
+					.DecoratorStyleSet(&FEditorStyle::Get())
+					.AutoWrapText(true)
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(10, 10, 10, 10))
+				[	
+					SNew(SBox)
+					.HAlign(HAlign_Left)
+					[
+						SNew(SHyperlinkLaunchURL, TEXT("https://renderdoc.org/"))
+						.Text(LOCTEXT("RenderDocPage", "RenderDoc home page"))
+						.ToolTipText(LOCTEXT("RenderDocPageTooltip", "Opens the RenderDoc home page"))
 					]
 				]
 			]

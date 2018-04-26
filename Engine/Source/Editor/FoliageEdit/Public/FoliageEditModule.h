@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -19,5 +19,6 @@ public:
 #if WITH_EDITOR
 	/** Move the selected foliage to the specified level */
 	virtual void MoveSelectedFoliageToLevel(ULevel* InTargetLevel) = 0;
+	virtual bool CanMoveSelectedFoliageToLevel(ULevel* InTargetLevel) const = 0;
 #endif
 };

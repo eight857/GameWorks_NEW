@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	IOSAudioSource.cpp: Unreal IOSAudio source interface object.
@@ -180,6 +180,12 @@ bool FIOSAudioSoundSource::Init(FWaveInstance* InWaveInstance)
 		UE_CLOG(Status != noErr, LogIOSAudio, Error, TEXT("Failed to set k3DMixerParam_Azimuth for audio mixer unit: BusNumber=%d, Channel=%d"), BusNumber, Channel);
 	}
 
+	// Seek into the file if we've been given a non-zero start time.
+	if (WaveInstance->StartTime > 0.0f)
+	{
+		IOSBuffer->DecompressionState->SeekToTime(WaveInstance->StartTime);
+	}
+
 	// Start in a disabled state
 	DetachFromAUGraph();
 	Update();
@@ -204,7 +210,7 @@ void FIOSAudioSoundSource::Update(void)
 
 	if (!AudioDevice->IsAudioDeviceMuted())
 	{
-		Volume = WaveInstance->Volume * WaveInstance->VolumeMultiplier;
+		Volume = WaveInstance->GetActualVolume();
 	}
 
 	if (SetStereoBleed())
@@ -227,9 +233,9 @@ void FIOSAudioSoundSource::Update(void)
 	if (IOSBuffer->NumChannels == 1 && WaveInstance->bUseSpatialization)
 	{
 		// Compute the directional offset
-		FVector Offset = WaveInstance->Location - IOSAudioDevice->PlayerLocation;
+		FVector Offset = GetSpatializationParams().EmitterPosition;
 		const AudioUnitParameterValue AzimuthRangeScale = 90.0f;
-		const AudioUnitParameterValue Pan = Offset.CosineAngle2D(IOSAudioDevice->PlayerRight) * AzimuthRangeScale;
+        const AudioUnitParameterValue Pan = Offset.Y * AzimuthRangeScale;
 
 		Status = AudioUnitSetParameter(IOSAudioDevice->GetMixerUnit(),
 		                               k3DMixerParam_Azimuth,
@@ -283,12 +289,10 @@ void FIOSAudioSoundSource::Stop(void)
 		FPlatformProcess::Sleep(0.0f);
 	}
 
+	IStreamingManager::Get().GetAudioStreamingManager().RemoveStreamingSoundSource(this);
+
 	if (WaveInstance)
 	{
-		
-		// At this point we are no longer in the render callback and we will not re-enter it either
-		
-		// This will turn off audio callbacks
 		Pause();
 
 		Paused = false;

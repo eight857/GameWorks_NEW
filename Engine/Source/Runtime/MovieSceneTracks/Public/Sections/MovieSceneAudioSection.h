@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,6 +7,7 @@
 #include "Curves/KeyHandle.h"
 #include "MovieSceneSection.h"
 #include "Runtime/Engine/Classes/Components/AudioComponent.h"
+#include "Sound/SoundAttenuation.h"
 #include "MovieSceneAudioSection.generated.h"
 
 class USoundBase;
@@ -109,6 +110,23 @@ public:
 	{
 		return bSuppressSubtitles;
 	}
+
+	/**
+	 * @return Whether override settings on this section should be used
+	 */
+	bool GetOverrideAttenuation() const
+	{
+		return bOverrideAttenuation;
+	}
+
+	/**
+	 * @return The attenuation settings
+	 */
+	USoundAttenuation* GetAttenuationSettings() const
+	{
+		return AttenuationSettings;
+	}
+
 	/** ~UObject interface */
 	virtual void PostLoad() override;
 
@@ -155,6 +173,7 @@ public:
 	virtual UMovieSceneSection* SplitSection(float SplitTime) override;
 	virtual void GetKeyHandles(TSet<FKeyHandle>& OutKeyHandles, TRange<float> TimeRange) const override;
 	virtual void GetSnapTimes(TArray<float>& OutSnapTimes, bool bGetSectionBorders) const override;
+	virtual TOptional<float> GetOffsetTime() const override { return TOptional<float>(StartOffset); }
 	virtual TOptional<float> GetKeyTime( FKeyHandle KeyHandle ) const override { return TOptional<float>(); }
 	virtual void SetKeyTime( FKeyHandle KeyHandle, float Time ) override { }
 	virtual FMovieSceneEvalTemplatePtr GenerateTemplate() const override;
@@ -189,8 +208,16 @@ private:
 	UPROPERTY( EditAnywhere, Category = "Audio" )
 	FRichCurve PitchMultiplier;
 
-	UPROPERTY(EditAnywhere, Category="Audio")
+	UPROPERTY( EditAnywhere, Category="Audio" )
 	bool bSuppressSubtitles;
+
+	/** Should the attenuation settings on this section be used. */
+	UPROPERTY( EditAnywhere, Category="Attenuation" )
+	bool bOverrideAttenuation;
+
+	/** The attenuation settings to use. */
+	UPROPERTY( EditAnywhere, Category="Attenuation" )
+	class USoundAttenuation* AttenuationSettings;
 
 	/** Called when subtitles are sent to the SubtitleManager.  Set this delegate if you want to hijack the subtitles for other purposes */
 	UPROPERTY()

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimNodes/AnimNode_Root.h"
 
@@ -9,25 +9,25 @@ FAnimNode_Root::FAnimNode_Root()
 {
 }
 
-void FAnimNode_Root::Initialize(const FAnimationInitializeContext& Context)
+void FAnimNode_Root::Initialize_AnyThread(const FAnimationInitializeContext& Context)
 {
-	FAnimNode_Base::Initialize(Context);
+	FAnimNode_Base::Initialize_AnyThread(Context);
 
 	Result.Initialize(Context);
 }
 
-void FAnimNode_Root::CacheBones(const FAnimationCacheBonesContext& Context) 
+void FAnimNode_Root::CacheBones_AnyThread(const FAnimationCacheBonesContext& Context) 
 {
 	Result.CacheBones(Context);
 }
 
-void FAnimNode_Root::Update(const FAnimationUpdateContext& Context)
+void FAnimNode_Root::Update_AnyThread(const FAnimationUpdateContext& Context)
 {
 	EvaluateGraphExposedInputs.Execute(Context);
 	Result.Update(Context);
 }
 
-void FAnimNode_Root::Evaluate(FPoseContext& Output)
+void FAnimNode_Root::Evaluate_AnyThread(FPoseContext& Output)
 {
 	Result.Evaluate(Output);
 }

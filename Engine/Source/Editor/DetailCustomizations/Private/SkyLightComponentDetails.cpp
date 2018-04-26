@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SkyLightComponentDetails.h"
 #include "Components/SceneComponent.h"
@@ -40,7 +40,7 @@ void FSkyLightComponentDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLa
 		LightIntensityProperty->SetInstanceMetaData("UIMax", TEXT("20.0f"));
 	}
 
-	const TArray< TWeakObjectPtr<UObject> >& SelectedObjects = DetailLayout.GetDetailsView().GetSelectedObjects();
+	const TArray< TWeakObjectPtr<UObject> >& SelectedObjects = DetailLayout.GetSelectedObjects();
 
 	for( int32 ObjectIndex = 0; ObjectIndex < SelectedObjects.Num(); ++ObjectIndex )
 	{
@@ -55,6 +55,12 @@ void FSkyLightComponentDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLa
 			}
 		}
 	}
+
+	DetailLayout.EditCategory("Light", FText::GetEmpty(), ECategoryPriority::TypeSpecific);
+
+	// The bVisible checkbox in the rendering category is frequently used on lights
+	// Editing the rendering category and giving it TypeSpecific priority will place it just under the Light category
+	DetailLayout.EditCategory("Rendering", FText::GetEmpty(), ECategoryPriority::TypeSpecific);
 
 	DetailLayout.EditCategory( "SkyLight" )
 	.AddCustomRow( NSLOCTEXT("SkyLightDetails", "UpdateSkyLight", "Recapture Scene") )

@@ -1,9 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieScene.h"
 #include "MovieSceneTrack.h"
 #include "MovieSceneFolder.h"
-#include "Evaluation/MovieSceneEvaluationCustomVersion.h"
 #include "Evaluation/MovieSceneEvaluationCustomVersion.h"
 #include "Compilation/MovieSceneSegmentCompiler.h"
 #include "SequencerObjectVersion.h"
@@ -103,6 +102,21 @@ FGuid UMovieScene::AddSpawnable( const FString& Name, UObject& ObjectTemplate )
 	return NewSpawnable.GetGuid();
 }
 
+void UMovieScene::AddSpawnable(const FMovieSceneSpawnable& InNewSpawnable, const FMovieSceneBinding& InNewBinding)
+{
+	Modify();
+
+	FMovieSceneSpawnable NewSpawnable;
+	NewSpawnable = InNewSpawnable;
+	Spawnables.Add(NewSpawnable);
+
+	FMovieSceneBinding NewBinding = InNewBinding;
+	for (auto Track : NewBinding.GetTracks())
+	{
+		Track->Rename(nullptr, this);
+	}
+	ObjectBindings.Add(NewBinding);
+}
 
 bool UMovieScene::RemoveSpawnable( const FGuid& Guid )
 {
@@ -165,6 +179,23 @@ FGuid UMovieScene::AddPossessable( const FString& Name, UClass* Class )
 	new (ObjectBindings) FMovieSceneBinding( NewPossessable.GetGuid(), NewPossessable.GetName() );
 
 	return NewPossessable.GetGuid();
+}
+
+
+void UMovieScene::AddPossessable(const FMovieScenePossessable& InNewPossessable, const FMovieSceneBinding& InNewBinding)
+{
+	Modify();
+
+	FMovieScenePossessable NewPossessable;
+	NewPossessable = InNewPossessable;
+	Possessables.Add(NewPossessable);
+
+	FMovieSceneBinding NewBinding = InNewBinding;
+	for (auto Track : NewBinding.GetTracks())
+	{
+		Track->Rename(nullptr, this);
+	}
+	ObjectBindings.Add(NewBinding);
 }
 
 
@@ -631,6 +662,7 @@ void UMovieScene::RemoveCameraCutTrack()
 void UMovieScene::SetCameraCutTrack(UMovieSceneTrack* InTrack)
 {
 	Modify();
+	InTrack->Rename(nullptr, this);
 	CameraCutTrack = InTrack;
 }
 
@@ -705,96 +737,6 @@ void UMovieScene::UpgradeTimeRanges()
 #endif
 }
 
-
-void UMovieScene::UpgradeTrackRows()
-{
-	int32 NumMasterTracks = MasterTracks.Num();
-	for (int32 MasterTrackIndex = 0; MasterTrackIndex < NumMasterTracks; ++MasterTrackIndex)
-	{
-		UpgradeTrackRow(MasterTracks[MasterTrackIndex]);
-	}
-
-	for (auto& Binding : ObjectBindings)
-	{
-		int32 NumTracks = Binding.GetTracks().Num();
-		for (int32 TrackIndex = 0; TrackIndex < NumTracks; ++TrackIndex)
-		{
-			UpgradeTrackRow(Binding.GetTracks()[TrackIndex]);
-		}
-	}
-}
-
-void UMovieScene::UpgradeTrackRow(UMovieSceneTrack* InTrack)
-{
-	if (GetLinkerCustomVersion(FSequencerObjectVersion::GUID) >= FSequencerObjectVersion::ConvertMultipleRowsToTracks)
-	{
-		return;
-	}
-
-	// Skeletal animation tracks and audio tracks went through a brief period of expanding their rows out to multiple tracks
-	// but that upgrade path was short-lived since we added better support for such tracks in the sequencer front-end.
-	// it was impossible to reliably implement such upgrades due the legacy 'evaluate nearest section' behavior on each of the duplicated tracks
-	static const FName SkeletalAnimationTrack("MovieSceneSkeletalAnimationTrack");
-	static const FName AudioTrack("MovieSceneAudioTrack");
-
-	FName TrackName = InTrack->GetClass()->GetFName();
-	if (TrackName != SkeletalAnimationTrack && TrackName != AudioTrack)
-	{
-		return;
-	}
-
-	// Even still, there is a small amount of upgrade to be done to ensure that blending does not occur on sections that were
-	// previously overridden by another, so we upgrade these cases by weighting such areas with keys at 0 or 1
-
-	// If there aren't sections on multiple rows, disregard
-	auto ContainsMultipleRows = [](UMovieSceneSection* InSection){ return InSection->GetRowIndex() > 0; };
-	if (!InTrack->GetAllSections().ContainsByPredicate(ContainsMultipleRows))
-	{
-		return;
-	}
-
-	// Deal with overlapping sections. For example, skeletal animation sections should be weighted along their evaluation bounds.
-	//
-	// For example,
-	//
-	//          [----A----]
-	// [-----B-----]
-	//
-	//
-	// Evaluation segments result in:
-	//
-	//          [----A----]
-	// [---B---]
-	//
-	// OR (depending upon order in the original track):
-	//
-	//              [--A--]
-	// [------B----]
-	//
-
-	TInlineValue<FMovieSceneSegmentCompilerRules> RowCompilerRules = InTrack->GetRowCompilerRules();
-	FMovieSceneTrackCompiler::FRows TrackRows(InTrack->GetAllSections(), RowCompilerRules.GetPtr(nullptr));
-	FMovieSceneTrackEvaluationField EvaluationField = FMovieSceneTrackCompiler().Compile(TrackRows.Rows, InTrack->GetTrackCompilerRules().GetPtr(nullptr));
-
-	for (const FMovieSceneSegment& EvalSegment : EvaluationField.Segments)
-	{
-		if (EvalSegment.Range.IsDegenerate() || EvalSegment.Range.IsEmpty())
-		{
-			continue;
-		}
-
-		for (FSectionEvaluationData EvalData : EvalSegment.Impls)
-		{
-			UMovieSceneSection* Section = InTrack->GetAllSections()[EvalData.ImplIndex];
-			Section->ConditionalPostLoad();
-			Section->PostLoadUpgradeTrackRow(EvalSegment.Range);
-		}
-	}
-
-	InTrack->MarkAsChanged();
-}
-
-
 /* UObject interface
  *****************************************************************************/
 
@@ -813,8 +755,22 @@ void UMovieScene::PostLoad()
 		}
 	}
 
+	for ( int32 ObjectBindingIndex = 0; ObjectBindingIndex < ObjectBindings.Num(); ++ObjectBindingIndex)
+	{
+		for( int32 TrackIndex = 0; TrackIndex < ObjectBindings[ObjectBindingIndex].GetTracks().Num(); )
+		{
+			if (ObjectBindings[ObjectBindingIndex].GetTracks()[TrackIndex] == nullptr)
+			{
+				ObjectBindings[ObjectBindingIndex].RemoveTrack(*ObjectBindings[ObjectBindingIndex].GetTracks()[TrackIndex]);
+			}
+			else
+			{
+				++TrackIndex;
+			}
+		}
+	}
+
 	UpgradeTimeRanges();
-	UpgradeTrackRows();
 
 	for (FMovieSceneSpawnable& Spawnable : Spawnables)
 	{

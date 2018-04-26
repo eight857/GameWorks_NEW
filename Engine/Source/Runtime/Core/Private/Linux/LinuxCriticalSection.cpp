@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Linux/LinuxCriticalSection.h"
 #include "Misc/DateTime.h"
@@ -11,7 +11,6 @@
 #include <sys/ioctl.h>
 #include <sys/file.h>
 #include <asm/ioctls.h>
-#include "Linux/LinuxApplication.h"
 
 FLinuxSystemWideCriticalSection::FLinuxSystemWideCriticalSection(const FString& InName, FTimespan InTimeout)
 {

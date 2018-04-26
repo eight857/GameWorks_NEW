@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Stack.h: Kismet VM execution stack definition.
@@ -41,22 +41,20 @@ enum EPropertyType
 	CPT_Name,
 	CPT_Delegate,
 	CPT_Interface,
-	CPT_Range,
+	CPT_Unused_Index_19,
 	CPT_Struct,
-	CPT_Vector,
-	CPT_Rotation,
+	CPT_Unused_Index_21,
+	CPT_Unused_Index_22,
 	CPT_String,
 	CPT_Text,
 	CPT_MulticastDelegate,
 	CPT_WeakObjectReference,
 	CPT_LazyObjectReference,
-	CPT_AssetObjectReference,
+	CPT_SoftObjectReference,
 	CPT_Double,
 	CPT_Map,
 	CPT_Set,
 
-	// when you add new property types, make sure you add the corresponding entry
-	// in the PropertyTypeToNameMap array in ScriptCompiler.cpp!!
 	CPT_MAX
 };
 
@@ -188,6 +186,11 @@ public:
 	* This will return the StackTrace of the all script frames currently active
 	**/
 	COREUOBJECT_API static FString GetScriptCallstack();
+
+	/** 
+	 * This will return a string of the form "ScopeName.FunctionName" associated with this stack frame:
+	 */
+	COREUOBJECT_API FString GetStackDescription() const;
 };
 
 
@@ -209,8 +212,7 @@ inline FFrame::FFrame( UObject* InObject, UFunction* InNode, void* InLocals, FFr
 	, bArrayContextFailed(false)
 {
 #if DO_BLUEPRINT_GUARD
-	FScriptTraceStackNode StackNode(InNode->GetOuter()->GetFName(), InNode->GetFName());
-	FBlueprintExceptionTracker::Get().ScriptStack.Push(StackNode);
+	FBlueprintExceptionTracker::Get().ScriptStack.Push(this);
 #endif
 }
 

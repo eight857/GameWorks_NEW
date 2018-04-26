@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -36,6 +36,7 @@ public:
 	FMovieSceneEvalTemplate()
 	{
 		CompletionMode = EMovieSceneCompletionMode::KeepState;
+		SourceSection = nullptr;
 	}
 
 	/**
@@ -120,8 +121,9 @@ public:
 	 *
 	 * @param Context				Evaluation context specifying the current evaluation time, sub sequence transform and other relevant information.
 	 * @param Container				Container to populate with the desired output from this track
+	 * @param BindingOverride		Optional binding to specify the object that is being animated by this track
 	 */
-	virtual void Interrogate(const FMovieSceneContext& Context, FMovieSceneInterrogationData& Container) const
+	virtual void Interrogate(const FMovieSceneContext& Context, FMovieSceneInterrogationData& Container, UObject* BindingOverride) const
 	{
 	}
 
@@ -131,13 +133,41 @@ public:
 	 * @param Context				Evaluation context specifying the current evaluation time, sub sequence transform and other relevant information.
 	 * @param SweptRange			The range to sweep, where this template evaluates with 'swept' evaluation
 	 * @param Container				Container to populate with the desired output from this track
+	 * @param BindingOverride		Optional binding to specify the object that is being animated by this track
 	 */
-	virtual void Interrogate(const FMovieSceneContext& Context, TRange<float> SweptRange, FMovieSceneInterrogationData& Container) const
+	virtual void Interrogate(const FMovieSceneContext& Context, TRange<float> SweptRange, FMovieSceneInterrogationData& Container, UObject* BindingOverride) const
 	{
 	}
 
+public:
+
+	/**
+	 * Set the source section from which this template originated
+	 *
+	 * @param SourceSection 		The source section
+	 */
+	void SetSourceSection(const UMovieSceneSection* InSourceSection)
+	{
+		SourceSection = InSourceSection;
+	}
+
+	/**
+	 * Get the source section from which this template originated
+	 *
+	 * @return The source section from which this template originated
+	 */
+	const UMovieSceneSection* GetSourceSection() const
+	{
+		return SourceSection;
+	}
+
 protected:
-	
+
+	/**
+	 * Evaluate this template's easing functions based on the specified time
+	 */
+	MOVIESCENE_API float EvaluateEasing(float CurrentTime) const;
+
 	/**
 	 * Enum evaluation flag structure defining which functions are to be called in implementations of this struct
 	 */
@@ -149,6 +179,10 @@ protected:
 	/** Enumeration value signifying whether we should restore any animated state stored by this entity when this eval tempalte is no longer evaluated */
 	UPROPERTY()
 	EMovieSceneCompletionMode CompletionMode;
+
+	/** The section from which this template originates */
+	UPROPERTY()
+	const UMovieSceneSection* SourceSection;
 };
 
 /**
@@ -199,14 +233,9 @@ struct FMovieSceneEvalTemplatePtr
 		return *this;
 	}
 
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
 	/** Templates are moveable */
 	FMovieSceneEvalTemplatePtr(FMovieSceneEvalTemplatePtr&&) = default;
 	FMovieSceneEvalTemplatePtr& operator=(FMovieSceneEvalTemplatePtr&&) = default;
-#else
-	FMovieSceneEvalTemplatePtr(FMovieSceneEvalTemplatePtr&& RHS) : TInlineValue(MoveTemp(RHS)) {}
-	FMovieSceneEvalTemplatePtr& operator=(FMovieSceneEvalTemplatePtr&& RHS) { static_cast<TInlineValue&>(*this) = MoveTemp(RHS); return *this; }
-#endif
 
 	/** Serialize the template */
 	MOVIESCENE_API bool Serialize(FArchive& Ar);

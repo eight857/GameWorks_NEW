@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/Border.h"
 #include "Slate/SlateBrushAsset.h"
@@ -50,14 +50,14 @@ TSharedRef<SWidget> UBorder::RebuildWidget()
 		Cast<UBorderSlot>(GetContentSlot())->BuildSlot(MyBorder.ToSharedRef());
 	}
 
-	return BuildDesignTimeWidget( MyBorder.ToSharedRef() );
+	return MyBorder.ToSharedRef();
 }
 
 void UBorder::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
 	
-	TAttribute<FLinearColor> ContentColorAndOpacityBinding = OPTIONAL_BINDING(FLinearColor, ContentColorAndOpacity);
+	TAttribute<FLinearColor> ContentColorAndOpacityBinding = PROPERTY_BINDING(FLinearColor, ContentColorAndOpacity);
 	TAttribute<FSlateColor> BrushColorBinding = OPTIONAL_BINDING_CONVERT(FLinearColor, BrushColor, FSlateColor, ConvertLinearColorToSlateColor);
 	TAttribute<const FSlateBrush*> ImageBinding = OPTIONAL_BINDING_CONVERT(FSlateBrush, Background, const FSlateBrush*, ConvertImage);
 	
@@ -68,7 +68,7 @@ void UBorder::SynchronizeProperties()
 	MyBorder->SetBorderImage(ImageBinding);
 	
 	MyBorder->SetDesiredSizeScale(DesiredSizeScale);
-	MyBorder->SetShowEffectWhenDisabled(bShowEffectWhenDisabled);
+	MyBorder->SetShowEffectWhenDisabled(bShowEffectWhenDisabled != 0);
 	
 	MyBorder->SetOnMouseButtonDown(BIND_UOBJECT_DELEGATE(FPointerEventHandler, HandleMouseButtonDown));
 	MyBorder->SetOnMouseButtonUp(BIND_UOBJECT_DELEGATE(FPointerEventHandler, HandleMouseButtonUp));
@@ -285,11 +285,13 @@ void UBorder::PostLoad()
 {
 	Super::PostLoad();
 
+#if WITH_EDITORONLY_DATA
 	if ( GetLinkerUE4Version() < VER_UE4_DEPRECATE_UMG_STYLE_ASSETS && Brush_DEPRECATED != nullptr )
 	{
 		Background = Brush_DEPRECATED->Brush;
 		Brush_DEPRECATED = nullptr;
 	}
+#endif
 
 	if ( GetChildrenCount() > 0 )
 	{

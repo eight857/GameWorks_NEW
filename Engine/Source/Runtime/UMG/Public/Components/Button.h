@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -103,6 +103,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Button")
 	bool IsPressed() const;
 
+	UFUNCTION(BlueprintCallable, Category="Button")
+	void SetClickMethod(EButtonClickMethod::Type InClickMethod);
+
+	UFUNCTION(BlueprintCallable, Category="Button")
+	void SetTouchMethod(EButtonTouchMethod::Type InTouchMethod);
+
+	//UFUNCTION(BlueprintCallable, Category="Button")
+	//void SetPressMethod(EButtonPressMethod::Type InPressMethod);
+
 public:
 
 	//~ Begin UWidget Interface
@@ -140,6 +149,9 @@ protected:
 protected:
 	//~ Begin UWidget Interface
 	virtual TSharedRef<SWidget> RebuildWidget() override;
+#if WITH_EDITOR
+	virtual TSharedRef<SWidget> RebuildDesignWidget(TSharedRef<SWidget> Content) override { return Content; }
+#endif
 	//~ End UWidget Interface
 
 protected:

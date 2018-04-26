@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -35,7 +35,7 @@ protected:
 protected:
 
 	/** Creates the color widget that when clicked spawns the color picker window. */
-	TSharedRef<SWidget> CreateColorWidget();
+	TSharedRef<SWidget> CreateColorWidget(TWeakPtr<IPropertyHandle>);
 
 	/**
 	 * Get the color used by this struct as a linear color value
@@ -59,7 +59,7 @@ protected:
 	void CreateColorPicker(bool bUseAlpha);
 	
 	/** Creates a new color picker for interactively selecting color */
-	TSharedRef<SColorPicker> CreateInlineColorPicker();
+	TSharedRef<SColorPicker> CreateInlineColorPicker(TWeakPtr<IPropertyHandle>);
 
 	/**
 	 * Called when the property is set from the color picker 
@@ -108,9 +108,26 @@ protected:
 	virtual void GetSortedChildren(TSharedRef<IPropertyHandle> StructPropertyHandle, TArray< TSharedRef<IPropertyHandle> >& OutChildren) override;
 
 protected:
+	/** Stores a linear or srb color without converting between the two. Only one is valid at a time */
+	struct FLinearOrSrgbColor
+	{
+		FLinearOrSrgbColor(const FLinearColor& InLinearColor)
+			: LinearColor(InLinearColor)
+		{}
+
+		FLinearOrSrgbColor(const FColor& InSrgbColor)
+			: SrgbColor(InSrgbColor)
+		{}
+
+		FLinearColor GetLinear() const { return LinearColor; }
+		FColor GetSrgb() const { return SrgbColor; }
+	private:
+		FLinearColor LinearColor;
+		FColor SrgbColor;
+	};
 
 	/** Saved per struct colors in case the user clicks cancel in the color picker */
-	TArray<FLinearColor> SavedPreColorPickerColors;
+	TArray<FLinearOrSrgbColor> SavedPreColorPickerColors;
 
 	/** Color struct handle */
 	TSharedPtr<IPropertyHandle> StructPropertyHandle;

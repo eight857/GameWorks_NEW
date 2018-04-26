@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -160,7 +160,7 @@ private:	// CONTEXT MENU
 	void FillReplaceFoliageTypeSubmenu(FMenuBuilder& MenuBuilder);
 
 	/** Handler for 'Replace' command  */
-	void OnReplaceFoliageTypeSelected(const class FAssetData& AssetData);
+	void OnReplaceFoliageTypeSelected(const struct FAssetData& AssetData);
 
 	/** Handler for 'Remove' command  */
 	void OnRemoveFoliageType();

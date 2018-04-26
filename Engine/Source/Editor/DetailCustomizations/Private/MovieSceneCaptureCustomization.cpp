@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneCaptureCustomization.h"
 #include "UObject/ObjectMacros.h"
@@ -42,7 +42,7 @@ void FMovieSceneCaptureCustomization::CustomizeDetails(IDetailLayoutBuilder& Det
 		for (TFieldIterator<UProperty> Iterator(ObjectValue->GetClass()); Iterator; ++Iterator)
 		{
 			EPropertyLocation::Type Location = Iterator->HasAnyPropertyFlags(CPF_AdvancedDisplay) ? EPropertyLocation::Advanced : EPropertyLocation::Default;
-			CustomSettingsCategory.AddExternalProperty(Objects, Iterator->GetFName(), Location);
+			CustomSettingsCategory.AddExternalObjectProperty(Objects, Iterator->GetFName(), Location);
 		}
 	}
 }

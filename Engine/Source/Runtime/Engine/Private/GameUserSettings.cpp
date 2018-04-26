@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameFramework/GameUserSettings.h"
 #include "HAL/FileManager.h"
@@ -12,6 +12,37 @@
 #include "UnrealEngine.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Engine/GameEngine.h"
+#include "Sound/AudioSettings.h"
+#include "Sound/SoundCue.h"
+#include "AudioDevice.h"
+#include "DynamicResolutionState.h"
+
+// Console platforms default HDR to on in the user settings, since this setting may not actually be exposed.
+#if PLATFORM_XBOXONE || PLATFORM_PS4
+const bool GUserSettingsDefaultHDRValue = true;
+#else
+const bool GUserSettingsDefaultHDRValue = false;
+#endif
+
+bool IsHDRAllowed()
+{
+	// HDR can be forced on or off on the commandline. Otherwise we check the cvar r.AllowHDR
+	if (FParse::Param(FCommandLine::Get(), TEXT("hdr")))
+	{
+		return true;
+	}
+	else if (FParse::Param(FCommandLine::Get(), TEXT("nohdr")))
+	{
+		return false;
+	}
+
+	static const auto CVarHDRAllow = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.AllowHDR"));
+	if (CVarHDRAllow && CVarHDRAllow->GetValueOnAnyThread() != 0)
+	{
+		return true;
+	}
+	return false;
+}
 
 extern EWindowMode::Type GetWindowModeType(EWindowMode::Type WindowMode);
 
@@ -115,6 +146,16 @@ bool UGameUserSettings::IsVSyncEnabled() const
 	return bUseVSync;
 }
 
+void UGameUserSettings::SetDynamicResolutionEnabled(bool bEnable)
+{
+	bUseDynamicResolution = bEnable;
+}
+
+bool UGameUserSettings::IsDynamicResolutionEnabled() const
+{
+	return bUseDynamicResolution;
+}
+
 bool UGameUserSettings::IsScreenResolutionDirty() const
 {
 	bool bIsDirty = false;
@@ -148,9 +189,19 @@ bool UGameUserSettings::IsVSyncDirty() const
 	return bIsDirty;
 }
 
+bool UGameUserSettings::IsDynamicResolutionDirty() const
+{
+	bool bIsDirty = false;
+	if (GEngine && GEngine->GameViewport && GEngine->GameViewport->ViewportFrame)
+	{
+		bIsDirty = (bUseDynamicResolution != GEngine->GetDynamicResolutionUserSetting());
+	}
+	return bIsDirty;
+}
+
 bool UGameUserSettings::IsDirty() const
 {
-	return IsScreenResolutionDirty() || IsFullscreenModeDirty() || IsVSyncDirty();
+	return IsScreenResolutionDirty() || IsFullscreenModeDirty() || IsVSyncDirty() || IsDynamicResolutionDirty();
 }
 
 void UGameUserSettings::ConfirmVideoMode()
@@ -196,7 +247,8 @@ void UGameUserSettings::SetToDefaults()
 		UpdateResolutionQuality();
 	}
 
-	bUseHDRDisplayOutput = false;
+	bUseDynamicResolution = false;
+	bUseHDRDisplayOutput = GUserSettingsDefaultHDRValue;
 	HDRDisplayOutputNits = 1000;
 }
 
@@ -289,10 +341,24 @@ float UGameUserSettings::FindResolutionQualityForScreenSize(float Width, float H
 
 void UGameUserSettings::SetFrameRateLimitCVar(float InLimit)
 {
-	static IConsoleVariable* MaxFPSCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("t.MaxFPS"));
-	if (ensure(MaxFPSCVar))
+	GEngine->SetMaxFPS(FMath::Max(InLimit, 0.0f));
+}
+
+void UGameUserSettings::SetSyncIntervalCVar(int32 InInterval)
+{
+	static IConsoleVariable* SyncIntervalCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("rhi.syncinterval"));
+	if (ensure(SyncIntervalCVar))
 	{
-		MaxFPSCVar->Set(FMath::Max(InLimit, 0.0f), ECVF_SetByGameSetting);
+		SyncIntervalCVar->Set(InInterval, ECVF_SetByCode);
+	}
+}
+
+void UGameUserSettings::SetSyncTypeCVar(int32 InType)
+{
+	static IConsoleVariable* SyncIntervalCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.GTSyncType"));
+	if (ensure(SyncIntervalCVar))
+	{
+		SyncIntervalCVar->Set(InType, ECVF_SetByCode);
 	}
 }
 
@@ -325,8 +391,13 @@ void UGameUserSettings::ValidateSettings()
 		{
 			// Force reset if there aren't any default .ini settings.
 			SetToDefaults();
-			static const auto CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.VSync"));
-			SetVSyncEnabled( CVar->GetValueOnGameThread() != 0 );
+			static const auto CVarVSync = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.VSync"));
+			SetVSyncEnabled(CVarVSync->GetValueOnGameThread() != 0 );
+
+			if (GEngine)
+			{
+				SetDynamicResolutionEnabled(GEngine->GetDynamicResolutionUserSetting());
+			}
 
 			IFileManager::Get().Delete( *GGameUserSettingsIni );
 			LoadSettings(true);
@@ -343,10 +414,13 @@ void UGameUserSettings::ValidateSettings()
 		LastUserConfirmedResolutionSizeY = ResolutionSizeY;
 	}
 
+#if !PLATFORM_PS4 && !PLATFORM_XBOXONE
+	// We do not modify the user setting on console if HDR is not supported
 	if (bUseHDRDisplayOutput && !SupportsHDRDisplayOutput())
 	{
 		bUseHDRDisplayOutput = false;
 	}
+#endif
 
 	// The user settings have now been validated for the current version.
 	UpdateVersion();
@@ -379,6 +453,8 @@ void UGameUserSettings::ApplyNonResolutionSettings()
 		}
 	}
 
+	GEngine->SetDynamicResolutionUserSetting(IsDynamicResolutionEnabled());
+
 	if (!IsRunningDedicatedServer())
 	{
 		SetFrameRateLimitCVar(GetEffectiveFrameRateLimit());
@@ -388,6 +464,13 @@ void UGameUserSettings::ApplyNonResolutionSettings()
 	if (GEngine->IsInitialized())
 	{
 		Scalability::SetQualityLevels(ScalabilityQuality);
+	}
+
+	FAudioDevice* AudioDevice = GEngine->GetMainAudioDevice();
+	if (AudioDevice)
+	{
+		FAudioQualitySettings AudioSettings = AudioDevice->GetQualityLevelSettings();
+		AudioDevice->SetMaxChannels(AudioSettings.MaxChannels);
 	}
 
 	IConsoleManager::Get().CallAllConsoleVariableSinks();
@@ -400,14 +483,10 @@ void UGameUserSettings::ApplyNonResolutionSettings()
 	}
 #endif
 
-	if (bUseHDRDisplayOutput && !bWithEditor)
-	{
-		EnableHDRDisplayOutput(true, HDRDisplayOutputNits);
-	}
-	else
-	{
-		EnableHDRDisplayOutput(false, HDRDisplayOutputNits);
-	}
+	bool bEnableHDR = ( IsHDRAllowed() && bUseHDRDisplayOutput && !bWithEditor );
+
+	EnableHDRDisplayOutput(bEnableHDR, HDRDisplayOutputNits);
+
 }
 
 void UGameUserSettings::ApplyResolutionSettings(bool bCheckForCommandLineOverrides)
@@ -531,15 +610,24 @@ void UGameUserSettings::PreloadResolutionSettings()
 			ResolutionY = DisplayMetrics.PrimaryDisplayHeight;
 		}
 #endif
-
-		if (GConfig->GetBool(*GameUserSettingsCategory, TEXT("bUseHDRDisplayOutput"), bUseHDR, GGameUserSettingsIni))
+		// Initialize HDR based on the high level switch and user settings
+		if ( IsHDRAllowed() )
 		{
-			static auto CVarHDROutputEnabled = IConsoleManager::Get().FindConsoleVariable(TEXT("r.HDR.EnableHDROutput"));
-			if (CVarHDROutputEnabled)
+			bool bUserSettingsUseHdr = GUserSettingsDefaultHDRValue;
+			if (GConfig->GetBool(*GameUserSettingsCategory, TEXT("bUseHDRDisplayOutput"), bUserSettingsUseHdr, GGameUserSettingsIni))
 			{
-				CVarHDROutputEnabled->Set(bUseHDR ? 1 : 0, ECVF_SetByGameSetting);
+				bUseHDR = bUserSettingsUseHdr;
 			}
 		}
+
+#if !PLATFORM_XBOXONE
+		// Set the HDR switch
+		static auto CVarHDROutputEnabled = IConsoleManager::Get().FindConsoleVariable(TEXT("r.HDR.EnableHDROutput"));
+		if (CVarHDROutputEnabled)
+		{
+			CVarHDROutputEnabled->Set(bUseHDR ? 1 : 0, ECVF_SetByGameSetting);
+		}
+#endif
 	}
 
 	RequestResolutionChange(ResolutionX, ResolutionY, WindowMode);
@@ -574,8 +662,11 @@ void UGameUserSettings::ResetToCurrentSettings()
 		SetScreenResolution(FIntPoint(GSystemResolution.ResX, GSystemResolution.ResY));
 
 		// Set the current VSync state
-		static const auto CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.VSync"));
-		SetVSyncEnabled( CVar->GetValueOnGameThread() != 0 );
+		static const auto CVarVSync = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.VSync"));
+		SetVSyncEnabled(CVarVSync->GetValueOnGameThread() != 0 );
+
+		// Set the current dynamic resolution state
+		SetDynamicResolutionEnabled(GEngine->GetDynamicResolutionUserSetting());
 
 		// Reset to confirmed settings
 		FullscreenMode = LastConfirmedFullscreenMode;
@@ -607,7 +698,12 @@ void UGameUserSettings::SetBenchmarkFallbackValues()
 
 void UGameUserSettings::SetAudioQualityLevel(int32 QualityLevel)
 {
-	AudioQualityLevel = QualityLevel;
+	if (AudioQualityLevel != QualityLevel)
+	{
+		AudioQualityLevel = QualityLevel;
+
+		USoundCue::StaticAudioQualityChanged(QualityLevel);
+	}
 }
 
 void UGameUserSettings::SetFrameRateLimit(float NewLimit)
@@ -773,6 +869,7 @@ void UGameUserSettings::EnableHDRDisplayOutput(bool bEnable, int32 DisplayNits /
 
 	if (ensure(CVarHDROutputDevice && CVarHDRColorGamut && CVarHDROutputEnabled))
 	{
+		check( !bEnable || IsHDRAllowed() );
 		if (bEnable && !GRHISupportsHDROutput)
 		{
 			UE_LOG(LogConsoleResponse, Display, TEXT("Tried to enable HDR display output but unsupported, forcing off."));
@@ -812,6 +909,12 @@ void UGameUserSettings::EnableHDRDisplayOutput(bool bEnable, int32 DisplayNits /
 				OutputDevice = (DisplayNitLevel == 1000) ? 5 : 6;
 				ColorGamut = 1;
 			}
+#elif PLATFORM_XBOXONE
+			{
+				// PQ, 1000 or 2000 nits, Rec2020
+				OutputDevice = (DisplayNitLevel == 1000) ? 3 : 4;
+				ColorGamut = 2;
+			}
 #endif
 
 			if (ensure(OutputDevice > 0 && ColorGamut > 0))
@@ -836,7 +939,10 @@ void UGameUserSettings::EnableHDRDisplayOutput(bool bEnable, int32 DisplayNits /
 		}
 
 		// Update final requested state for saved config
+#if !PLATFORM_PS4 && !PLATFORM_XBOXONE
+		// Do not override the user setting on console (we rely on the OS setting)
 		bUseHDRDisplayOutput = bEnable;
+#endif
 		HDRDisplayOutputNits = DisplayNitLevel;
 	}
 }

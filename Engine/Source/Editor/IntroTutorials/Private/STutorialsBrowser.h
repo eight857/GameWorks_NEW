@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,7 +12,7 @@
 #include "Widgets/Views/STableRow.h"
 #include "IIntroTutorials.h"
 
-class FAssetData;
+struct FAssetData;
 class FTutorialListEntry_Category;
 class SWindow;
 class UEditorTutorial;

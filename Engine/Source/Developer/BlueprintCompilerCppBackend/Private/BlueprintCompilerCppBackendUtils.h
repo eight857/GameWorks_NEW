@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma  once
 
 #include "CoreMinimal.h"
 #include "UObject/Class.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "UObject/UnrealType.h"
 #include "IBlueprintCompilerCppBackendModule.h"
 #include "BlueprintCompilerCppBackendGatherDependencies.h"
@@ -12,6 +12,7 @@
 class USCS_Node;
 class UUserDefinedEnum;
 class UUserDefinedStruct;
+struct FDefaultSubobjectData;
 struct FNonativeComponentData;
 enum class ENativizedTermUsage : uint8;
 struct FEmitterLocalContext;
@@ -300,7 +301,7 @@ struct FEmitHelper
 
 	static FString GenerateReplaceConvertedMD(UObject* Obj);
 
-	static FString GetBaseFilename(const UObject* AssetObj);
+	static FString GetBaseFilename(const UObject* AssetObj, const FCompilerNativizationOptions& NativizationOptions);
 
 	static FString ReplaceConvertedMetaData(UObject* Obj);
 
@@ -310,7 +311,7 @@ struct FEmitHelper
 
 	static FString GenerateGetPropertyByName(FEmitterLocalContext& EmitterContext, const UProperty* Property);
 
-	static FString AccessInaccessibleProperty(FEmitterLocalContext& EmitterContext, const UProperty* Property
+	static FString AccessInaccessibleProperty(FEmitterLocalContext& EmitterContext, const UProperty* Property, FString OverrideTypeDeclaration
 		, const FString& ContextStr, const FString& ContextAdressOp, int32 StaticArrayIdx
 		, ENativizedTermUsage TermUsage, FString* CustomSetExpressionEnding);
 
@@ -321,7 +322,7 @@ struct FNonativeComponentData;
 
 struct FEmitDefaultValueHelper
 {
-	static void GenerateGetDefaultValue(const UUserDefinedStruct* Struct, FEmitterLocalContext& EmitterContext);
+	static void GenerateUserStructConstructor(const UUserDefinedStruct* Struct, FEmitterLocalContext& EmitterContext);
 
 	static void GenerateConstructor(FEmitterLocalContext& Context);
 
@@ -345,6 +346,9 @@ struct FEmitDefaultValueHelper
 	// returns empty string if cannot handle
 	static FString HandleClassSubobject(FEmitterLocalContext& Context, UObject* Object, FEmitterLocalContext::EClassSubobjectList ListOfSubobjectsTyp, bool bCreate, bool bInitialize, bool bForceSubobjectOfClass = false);
 
+	// Creates or accesses an instanced subobject and returns its native local name. Also emits code to initialize the instance, unless the 'SubobjectData' param is not NULL (in which case it will be deferred to the caller).
+	static FString HandleInstancedSubobject(FEmitterLocalContext& Context, UObject* Object, bool bCreateInstance = true, bool bSkipEditorOnlyCheck = false, FDefaultSubobjectData* SubobjectData = nullptr);
+
 	// returns true, and fill OutResult, when the structure is handled in a custom way.
 	static bool SpecialStructureConstructor(const UStruct* Struct, const uint8* ValuePtr, FString* OutResult);
 
@@ -360,8 +364,6 @@ private:
 	static FString HandleNonNativeComponent(FEmitterLocalContext& Context, const USCS_Node* Node, TSet<const UProperty*>& OutHandledProperties
 		, TArray<FString>& NativeCreatedComponentProperties, const USCS_Node* ParentNode, TArray<FNonativeComponentData>& ComponentsToInit
 		, bool bBlockRecursion);
-
-	static FString HandleInstancedSubobject(FEmitterLocalContext& Context, UObject* Object, bool bCreateInstance = true, bool bSkipEditorOnlyCheck = false);
 };
 
 struct FBackendHelperUMG
@@ -384,8 +386,12 @@ struct FBackendHelperUMG
 struct FBackendHelperAnim
 {
 	static void AddHeaders(FEmitterLocalContext& EmitterContext);
-
 	static void CreateAnimClassData(FEmitterLocalContext& Context);
+	static bool ShouldAddAnimNodeInitializationFunctionCall(FEmitterLocalContext& Context, const UProperty* InProperty);
+	static void AddAllAnimNodesInitializationFunction(FEmitterLocalContext& Context, const FString& InCppClassName, const TArray<const UProperty*>& InAnimProperties);
+	static void AddAllAnimNodesInitializationFunctionCall(FEmitterLocalContext& Context);
+	static void AddAnimNodeInitializationFunctionCall(FEmitterLocalContext& Context, const UProperty* InProperty);
+	static void AddAnimNodeInitializationFunction(FEmitterLocalContext& Context, const FString& InCppClassName, const UProperty* InProperty, bool bInNewProperty, UObject* InCDO, UObject* InParentCDO);
 };
 
 /** this struct helps generate a static function that initializes Static Searchable Values. */
@@ -408,17 +414,17 @@ struct FNativizationSummaryHelper
 
 	static void ReducibleFunciton(const UClass* OriginalClass);
 
-	static void RegisterRequiredModules(const FName PlatformName, const TSet<TAssetPtr<UPackage>>& Modules);
+	static void RegisterRequiredModules(const FName PlatformName, const TSet<TSoftObjectPtr<UPackage>>& Modules);
 };
 struct FDependenciesGlobalMapHelper
 {
 	static FString EmitHeaderCode();
 	static FString EmitBodyCode(const FString& PCHFilename);
 
-	static FNativizationSummary::FDependencyRecord& FindDependencyRecord(const FStringAssetReference& Key);
+	static FNativizationSummary::FDependencyRecord& FindDependencyRecord(const FSoftObjectPath& Key);
 
 private:
-	static TMap<FStringAssetReference, FNativizationSummary::FDependencyRecord>& GetDependenciesGlobalMap();
+	static TMap<FSoftObjectPath, FNativizationSummary::FDependencyRecord>& GetDependenciesGlobalMap();
 };
 
 struct FDisableUnwantedWarningOnScope
@@ -429,6 +435,16 @@ private:
 public:
 	FDisableUnwantedWarningOnScope(FCodeText& InCodeText);
 	~FDisableUnwantedWarningOnScope();
+};
+
+struct FDisableOptimizationOnScope
+{
+private:
+	FCodeText& CodeText;
+
+public:
+	FDisableOptimizationOnScope(FCodeText& InCodeText);
+	~FDisableOptimizationOnScope();
 };
 
 struct FStructAccessHelper

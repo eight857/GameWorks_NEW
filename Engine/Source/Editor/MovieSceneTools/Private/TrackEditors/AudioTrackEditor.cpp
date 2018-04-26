@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TrackEditors/AudioTrackEditor.h"
 #include "Textures/SlateTextureData.h"
@@ -608,12 +608,13 @@ void FAudioThumbnail::SampleAudio(int32 NumChannels, const int16* LookupData, in
 }
 
 
-FAudioSection::FAudioSection( UMovieSceneSection& InSection, bool bOnAMasterTrack, TWeakPtr<ISequencer> InSequencer )
+FAudioSection::FAudioSection( UMovieSceneSection& InSection, TWeakPtr<ISequencer> InSequencer )
 	: Section( InSection )
 	, StoredDrawRange(TRange<float>::Empty())
 	, StoredSectionHeight(0.f)
-	, bIsOnAMasterTrack(bOnAMasterTrack)
 	, Sequencer(InSequencer)
+	, InitialStartOffsetDuringResize(0.f)
+	, InitialStartTimeDuringResize(0.f)
 {
 }
 
@@ -625,11 +626,6 @@ FAudioSection::~FAudioSection()
 UMovieSceneSection* FAudioSection::GetSectionObject()
 { 
 	return &Section;
-}
-
-FText FAudioSection::GetDisplayName() const
-{
-	return bIsOnAMasterTrack ? NSLOCTEXT("FAudioSection", "MasterAudioDisplayName", "Master Audio") :  NSLOCTEXT("FAudioSection", "AudioDisplayName", "Audio");
 }
 
 
@@ -673,7 +669,6 @@ int32 FAudioSection::OnPaintSection( FSequencerSectionPainter& Painter ) const
 			++LayerId,
 			Painter.SectionGeometry.ToPaintGeometry(FVector2D(StoredXOffset, 0), FVector2D(StoredXSize, GetSectionHeight() + 8.f)),
 			WaveformThumbnail,
-			Painter.SectionClippingRect,
 			(Painter.bParentEnabled ? ESlateDrawEffect::None : ESlateDrawEffect::DisabledEffect) | ESlateDrawEffect::NoGamma,
 			FLinearColor::White
 		);
@@ -741,6 +736,27 @@ void FAudioSection::Tick( const FGeometry& AllottedGeometry, const FGeometry& Pa
 	}
 }
 
+void FAudioSection::BeginSlipSection()
+{
+	UMovieSceneAudioSection* AudioSection = Cast<UMovieSceneAudioSection>(&Section);
+	InitialStartOffsetDuringResize = AudioSection->GetStartOffset();
+	InitialStartTimeDuringResize = AudioSection->GetStartTime();
+}
+
+void FAudioSection::SlipSection(float SlipTime)
+{
+	UMovieSceneAudioSection* AudioSection = Cast<UMovieSceneAudioSection>(&Section);
+
+	float StartOffset = (SlipTime - InitialStartTimeDuringResize);
+	StartOffset += InitialStartOffsetDuringResize;
+
+	// Ensure start offset is not less than 0
+	StartOffset = FMath::Max(StartOffset, 0.f);
+
+	AudioSection->SetStartOffset(StartOffset);
+
+	ISequencerSection::SlipSection(SlipTime);
+}
 
 void FAudioSection::RegenerateWaveforms(TRange<float> DrawRange, int32 XOffset, int32 XSize, const FColor& ColorTint, float DisplayScale)
 {
@@ -796,6 +812,16 @@ void FAudioTrackEditor::BuildAddTrackMenu(FMenuBuilder& MenuBuilder)
 bool FAudioTrackEditor::SupportsType( TSubclassOf<UMovieSceneTrack> Type ) const
 {
 	return Type == UMovieSceneAudioTrack::StaticClass();
+}
+
+
+bool FAudioTrackEditor::SupportsSequence(UMovieSceneSequence* InSequence) const
+{
+	static UClass* LevelSequenceClass = FindObject<UClass>(ANY_PACKAGE, TEXT("LevelSequence"), true);
+	static UClass* WidgetAnimationClass = FindObject<UClass>(ANY_PACKAGE, TEXT("WidgetAnimation"), true);
+	return InSequence != nullptr &&
+		((LevelSequenceClass != nullptr && InSequence->GetClass()->IsChildOf(LevelSequenceClass)) ||
+		(WidgetAnimationClass != nullptr && InSequence->GetClass()->IsChildOf(WidgetAnimationClass)));
 }
 
 
@@ -856,23 +882,10 @@ void FAudioTrackEditor::Resize(float NewSize, UMovieSceneTrack* InTrack)
 	}
 }
 
-EMultipleRowMode FAudioTrackEditor::GetMultipleRowMode() const
-{
-	return EMultipleRowMode::MultipleTrack;
-}
-
 TSharedRef<ISequencerSection> FAudioTrackEditor::MakeSectionInterface( UMovieSceneSection& SectionObject, UMovieSceneTrack& Track, FGuid ObjectBinding )
 {
 	check( SupportsType( SectionObject.GetOuter()->GetClass() ) );
-	
-	bool bIsAMasterTrack = false;
-	UMovieScene* MovieScene = Cast<UMovieScene>(Track.GetOuter());
-	if (MovieScene)
-	{
-		bIsAMasterTrack = MovieScene->IsAMasterTrack(Track);
-	}
-
-	return MakeShareable( new FAudioSection(SectionObject, bIsAMasterTrack, GetSequencer()) );
+	return MakeShareable( new FAudioSection(SectionObject, GetSequencer()) );
 }
 
 TSharedPtr<SWidget> FAudioTrackEditor::BuildOutlinerEditWidget(const FGuid& ObjectBinding, UMovieSceneTrack* Track, const FBuildEditWidgetParams& Params)
@@ -916,8 +929,10 @@ bool FAudioTrackEditor::HandleAssetAdded(UObject* Asset, const FGuid& TargetObje
 }
 
 
-bool FAudioTrackEditor::AddNewMasterSound( float KeyTime, USoundBase* Sound )
+FKeyPropertyResult FAudioTrackEditor::AddNewMasterSound( float KeyTime, USoundBase* Sound )
 {
+	FKeyPropertyResult KeyPropertyResult;
+
 	FFindOrCreateMasterTrackResult<UMovieSceneAudioTrack> TrackResult = FindOrCreateMasterTrack<UMovieSceneAudioTrack>();
 	UMovieSceneTrack* Track = TrackResult.Track;
 
@@ -928,15 +943,15 @@ bool FAudioTrackEditor::AddNewMasterSound( float KeyTime, USoundBase* Sound )
 		AudioTrack->SetDisplayName(LOCTEXT("AudioTrackName", "Audio"));
 	}
 
-	return true;
+	KeyPropertyResult.bTrackModified = true;
+
+	return KeyPropertyResult;
 }
 
 
-bool FAudioTrackEditor::AddNewAttachedSound( float KeyTime, USoundBase* Sound, TArray<TWeakObjectPtr<UObject>> ObjectsToAttachTo )
+FKeyPropertyResult FAudioTrackEditor::AddNewAttachedSound( float KeyTime, USoundBase* Sound, TArray<TWeakObjectPtr<UObject>> ObjectsToAttachTo )
 {
-	bool bHandleCreated = false;
-	bool bTrackCreated = false;
-	bool bTrackModified = false;
+	FKeyPropertyResult KeyPropertyResult;
 
 	for( int32 ObjectIndex = 0; ObjectIndex < ObjectsToAttachTo.Num(); ++ObjectIndex )
 	{
@@ -944,25 +959,25 @@ bool FAudioTrackEditor::AddNewAttachedSound( float KeyTime, USoundBase* Sound, T
 
 		FFindOrCreateHandleResult HandleResult = FindOrCreateHandleToObject( Object );
 		FGuid ObjectHandle = HandleResult.Handle;
-		bHandleCreated |= HandleResult.bWasCreated;
+		KeyPropertyResult.bHandleCreated |= HandleResult.bWasCreated;
 
 		if (ObjectHandle.IsValid())
 		{
 			FFindOrCreateTrackResult TrackResult = FindOrCreateTrackForObject(ObjectHandle, UMovieSceneAudioTrack::StaticClass());
 			UMovieSceneTrack* Track = TrackResult.Track;
-			bTrackCreated |= TrackResult.bWasCreated;
+			KeyPropertyResult.bTrackCreated |= TrackResult.bWasCreated;
 
 			if (ensure(Track))
 			{
 				auto AudioTrack = Cast<UMovieSceneAudioTrack>(Track);
 				AudioTrack->AddNewSound(Sound, KeyTime);
 				AudioTrack->SetDisplayName(LOCTEXT("AudioTrackName", "Audio"));
-				bTrackModified = true;
+				KeyPropertyResult.bTrackModified = true;
 			}
 		}
 	}
 
-	return bHandleCreated || bTrackCreated || bTrackModified;
+	return KeyPropertyResult;
 }
 
 

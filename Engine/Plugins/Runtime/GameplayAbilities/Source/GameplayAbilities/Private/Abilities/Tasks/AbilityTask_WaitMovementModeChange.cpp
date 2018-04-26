@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_WaitMovementModeChange.h"
 #include "GameFramework/Character.h"
@@ -12,7 +12,7 @@ UAbilityTask_WaitMovementModeChange::UAbilityTask_WaitMovementModeChange(const F
 
 UAbilityTask_WaitMovementModeChange* UAbilityTask_WaitMovementModeChange::CreateWaitMovementModeChange(class UGameplayAbility* OwningAbility, EMovementMode NewMode)
 {
-	auto MyObj = NewAbilityTask<UAbilityTask_WaitMovementModeChange>(OwningAbility);
+	UAbilityTask_WaitMovementModeChange* MyObj = NewAbilityTask<UAbilityTask_WaitMovementModeChange>(OwningAbility);
 	MyObj->RequiredMode = NewMode;
 	return MyObj;
 }

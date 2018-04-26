@@ -1,14 +1,16 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "CoreTypes.h"
 #include "AssetData.h"
 #include "Styling/ISlateStyle.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 
+class SWidget;
 class UMediaPlayer;
+
 
 /**
  * Implements the media library of the MediaPlayer asset editor.
@@ -47,7 +49,7 @@ protected:
 private:
 
 	/** Callback for double-clicking an asset in the asset picker. */
-	void HandleAssetPickerAssetDoubleClicked(const class FAssetData& AssetData);
+	void HandleAssetPickerAssetDoubleClicked(const struct FAssetData& AssetData);
 
 	/** Callback for pressing Enter on a selected asset in the asset picker. */
 	void HandleAssetPickerAssetEnterPressed(const TArray<FAssetData>& SelectedAssets);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,10 +11,10 @@
 #include "Serialization/BitWriter.h"
 #include "Misc/NetworkGuid.h"
 #include "UObject/CoreNetTypes.h"
+#include "UObject/SoftObjectPath.h"
 
 class FOutBunch;
 class INetDeltaBaseState;
-struct FStringAssetReference;
 
 DECLARE_DELEGATE_RetVal_OneParam( bool, FNetObjectIsDynamic, const UObject*);
 
@@ -113,6 +113,7 @@ class COREUOBJECT_API FClassNetCacheMgr
 {
 public:
 	FClassNetCacheMgr() : bDebugChecksum( false ), DebugChecksumIndent( 0 ) { }
+	~FClassNetCacheMgr() { ClearClassNetCache(); }
 
 	/** get the cached field to index mappings for the given class */
 	const FClassNetCache*	GetClassNetCache( const UClass* Class );
@@ -279,7 +280,7 @@ public:
 
 	virtual FArchive& operator<<(FName& Name) override;
 	virtual FArchive& operator<<(UObject*& Object) override;
-	virtual FArchive& operator<<(FStringAssetReference& Value) override;
+	virtual FArchive& operator<<(FSoftObjectPath& Value) override;
 	virtual FArchive& operator<<(struct FWeakObjectPtr& Value) override;
 };
 
@@ -293,13 +294,12 @@ class COREUOBJECT_API FNetBitReader : public FBitReader
 {
 public:
 	FNetBitReader( UPackageMap* InPackageMap=NULL, uint8* Src=NULL, int64 CountBits=0 );
-	FNetBitReader( int64 InMaxBits );
 
 	class UPackageMap * PackageMap;
 
 	virtual FArchive& operator<<(FName& Name) override;
 	virtual FArchive& operator<<(UObject*& Object) override;
-	virtual FArchive& operator<<(FStringAssetReference& Value) override;
+	virtual FArchive& operator<<(FSoftObjectPath& Value) override;
 	virtual FArchive& operator<<(struct FWeakObjectPtr& Value) override;
 };
 
@@ -470,7 +470,7 @@ COREUOBJECT_API void SerializeChecksum(FArchive &Ar, uint32 x, bool ErrorOK);
 /**
 * Values used for initializing UNetConnection and LanBeacon
 */
-enum { MAX_PACKET_SIZE = 512 }; // MTU for the connection
+enum { MAX_PACKET_SIZE = 1024 }; // MTU for the connection
 enum { LAN_BEACON_MAX_PACKET_SIZE = 1024 }; // MTU for the connection
 
 /**

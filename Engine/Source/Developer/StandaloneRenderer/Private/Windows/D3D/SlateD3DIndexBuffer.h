@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,7 +10,7 @@ class FSlateD3DIndexBuffer
 {
 public:
 	FSlateD3DIndexBuffer();
-	~FSlateD3DIndexBuffer();
+	virtual ~FSlateD3DIndexBuffer();
 
 	/** Initializes the index buffers resource. */
 	virtual void CreateBuffer();

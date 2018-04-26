@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,6 +11,7 @@
 #include "UObject/ScriptMacros.h"
 #include "UObject/Interface.h"
 #include "UObject/TextProperty.h"
+#include "UObject/SoftObjectPtr.h"
 #include "Engine/LatentActionManager.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Engine/CollisionProfile.h"
@@ -21,8 +22,6 @@ class ACameraActor;
 class APlayerController;
 class UPrimitiveComponent;
 class USceneComponent;
-
-template<class TClass> class TAssetSubclassOf;
 
 UENUM(BlueprintType)
 namespace EDrawDebugTrace
@@ -63,7 +62,7 @@ namespace EQuitPreference
 	};
 }
 
-USTRUCT()
+USTRUCT(BlueprintInternalUseOnly)
 struct FGenericStruct
 {
 	GENERATED_USTRUCT_BODY()
@@ -72,7 +71,7 @@ struct FGenericStruct
 	int32 Data;
 };
 
-UCLASS()
+UCLASS(meta=(ScriptName="SystemLibrary"))
 class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_UCLASS_BODY()
@@ -122,6 +121,18 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	UFUNCTION(BlueprintPure, Category="Game", meta=(BlueprintThreadSafe))
 	static FString GetGameName();
 
+	/** Get the directory of the current project */
+	UFUNCTION(BlueprintPure, Category="Utilities|Paths", meta=(BlueprintThreadSafe))
+	static FString GetProjectDirectory();
+
+	/** Get the content directory of the current project */
+	UFUNCTION(BlueprintPure, Category="Utilities|Paths", meta=(BlueprintThreadSafe))
+	static FString GetProjectContentDirectory();
+
+	/** Get the saved directory of the current project */
+	UFUNCTION(BlueprintPure, Category="Utilities|Paths", meta=(BlueprintThreadSafe))
+	static FString GetProjectSavedDirectory();
+
 	/**
 	 * Retrieves the game's platform-specific bundle identifier or package name of the game
 	 *
@@ -169,24 +180,71 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	UFUNCTION(BlueprintPure, Category="Utilities|Platform")
 	static FString GetDeviceId();
 
+	/** Converts an interfance into an object */
 	UFUNCTION(BlueprintPure, meta=(DisplayName = "ToObject (interface)", CompactNodeTitle = "->"), Category="Utilities")
 	static UObject* Conv_InterfaceToObject(const FScriptInterface& Interface); 
 
-	UFUNCTION(BlueprintPure, meta = (BlueprintInternalUseOnly = "true"), Category = "Utilities")
-	static UObject* Conv_AssetToObject(const TAssetPtr<UObject>& Asset);
+	/** Builds a SoftObjectPath struct. Generally you should be using Soft Object References/Ptr types instead */
+	UFUNCTION(BlueprintPure, Category = "SoftObjectPath", meta = (Keywords = "construct build", NativeMakeFunc))
+	static FSoftObjectPath MakeSoftObjectPath(const FString& PathString);
+
+	/** Gets the path string out of a Soft Object Path */
+	UFUNCTION(BlueprintPure, Category = "SoftObjectPath", meta = ( NativeBreakFunc))
+	static void BreakSoftObjectPath(FSoftObjectPath InSoftObjectPath, FString& PathString);
+
+	/** Returns true if the Soft Object Reference is not null */
+	UFUNCTION(BlueprintPure, Category = "Utilities")
+	static bool IsValidSoftObjectReference(const TSoftObjectPtr<UObject>& SoftObjectReference);
+
+	/** Converts a Soft Object Reference to a string. The other direction is not provided because it cannot be validated */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "ToString (SoftObjectReference)", CompactNodeTitle = "->"), Category = "Utilities")
+	static FString Conv_SoftObjectReferenceToString(const TSoftObjectPtr<UObject>& SoftObjectReference);
+
+	/** Returns true if the values are equal (A == B) */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "Equal (SoftObjectReference)", CompactNodeTitle = "=="), Category = "Utilities")
+	static bool EqualEqual_SoftObjectReference(const TSoftObjectPtr<UObject>& A, const TSoftObjectPtr<UObject>& B);
+
+	/** Returns true if the values are not equal (A != B) */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "NotEqual (SoftObjectReference)", CompactNodeTitle = "!="), Category = "Utilities")
+	static bool NotEqual_SoftObjectReference(const TSoftObjectPtr<UObject>& A, const TSoftObjectPtr<UObject>& B);
+
+	/** Returns true if the Soft Class Reference is not null */
+	UFUNCTION(BlueprintPure, Category = "Utilities")
+	static bool IsValidSoftClassReference(const TSoftClassPtr<UObject>& SoftClassReference);
+
+	/** Converts a Soft Class Reference to a string. The other direction is not provided because it cannot be validated */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "ToString (SoftObjectReference)", CompactNodeTitle = "->"), Category = "Utilities")
+	static FString Conv_SoftClassReferenceToString(const TSoftClassPtr<UObject>& SoftClassReference);
+
+	/** Returns true if the values are equal (A == B) */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "Equal (SoftClassReference)", CompactNodeTitle = "=="), Category = "Utilities")
+	static bool EqualEqual_SoftClassReference(const TSoftClassPtr<UObject>& A, const TSoftClassPtr<UObject>& B);
+
+	/** Returns true if the values are not equal (A != B) */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "NotEqual (SoftClassReference)", CompactNodeTitle = "!="), Category = "Utilities")
+	static bool NotEqual_SoftClassReference(const TSoftClassPtr<UObject>& A, const TSoftClassPtr<UObject>& B);
 
 	UFUNCTION(BlueprintPure, meta = (BlueprintInternalUseOnly = "true"), Category = "Utilities")
-	static TSubclassOf<UObject> Conv_AssetClassToClass(const TAssetSubclassOf<UObject>& AssetClass);
+	static UObject* Conv_SoftObjectReferenceToObject(const TSoftObjectPtr<UObject>& SoftObject);
+
+	UFUNCTION(BlueprintPure, meta = (BlueprintInternalUseOnly = "true"), Category = "Utilities")
+	static TSubclassOf<UObject> Conv_SoftClassReferenceToClass(const TSoftClassPtr<UObject>& SoftClass);
+
+	UFUNCTION(BlueprintPure, meta = (BlueprintInternalUseOnly = "true"), Category = "Utilities")
+	static TSoftObjectPtr<UObject> Conv_ObjectToSoftObjectReference(UObject* Object);
+
+	UFUNCTION(BlueprintPure, meta = (BlueprintInternalUseOnly = "true"), Category = "Utilities")
+	static TSoftClassPtr<UObject> Conv_ClassToSoftClassReference(const TSubclassOf<UObject>& Class);
 
 	DECLARE_DYNAMIC_DELEGATE_OneParam(FOnAssetLoaded, class UObject*, Loaded);
 
 	UFUNCTION(BlueprintCallable, meta = (Latent, LatentInfo = "LatentInfo", WorldContext = "WorldContextObject", BlueprintInternalUseOnly = "true"), Category = "Utilities")
-	static void LoadAsset(UObject* WorldContextObject, const TAssetPtr<UObject>& Asset, FOnAssetLoaded OnLoaded, FLatentActionInfo LatentInfo);
+	static void LoadAsset(UObject* WorldContextObject, TSoftObjectPtr<UObject> Asset, FOnAssetLoaded OnLoaded, FLatentActionInfo LatentInfo);
 
 	DECLARE_DYNAMIC_DELEGATE_OneParam(FOnAssetClassLoaded, TSubclassOf<UObject>, Loaded);
 
 	UFUNCTION(BlueprintCallable, meta = (Latent, LatentInfo = "LatentInfo", WorldContext = "WorldContextObject", BlueprintInternalUseOnly = "true"), Category = "Utilities")
-	static void LoadAssetClass(UObject* WorldContextObject, const TAssetSubclassOf<UObject>& AssetClass, FOnAssetClassLoaded OnLoaded, FLatentActionInfo LatentInfo);
+	static void LoadAssetClass(UObject* WorldContextObject, TSoftClassPtr<UObject> AssetClass, FOnAssetClassLoaded OnLoaded, FLatentActionInfo LatentInfo);
 
 
 	/**
@@ -235,7 +293,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @return	The literal string
 	 */
 	UFUNCTION(BlueprintPure, Category="Utilities|String", meta=(BlueprintThreadSafe))
-	static FString MakeLiteralString(const FString& Value);
+	static FString MakeLiteralString(FString Value);
 
 	/**
 	 * Creates a literal FText
@@ -296,6 +354,24 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	UFUNCTION(BlueprintCallable, Category="Development",meta=(WorldContext="WorldContextObject"))
 	static void ExecuteConsoleCommand(UObject* WorldContextObject, const FString& Command, class APlayerController* SpecificPlayer = NULL );
 
+	/**
+	 * Attempts to retrieve the value of the specified float console variable, if it exists.
+	 * 
+	 * @param	VariableName	Name of the console variable to find.
+	 * @return	The value if found, 0 otherwise.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Development",meta=(WorldContext="WorldContextObject"))
+	static float GetConsoleVariableFloatValue(UObject* WorldContextObject, const FString& VariableName);
+
+	/**
+	 * Attempts to retrieve the value of the specified integer console variable, if it exists.
+	 * 
+	 * @param	VariableName	Name of the console variable to find.
+	 * @return	The value if found, 0 otherwise.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Development",meta=(WorldContext="WorldContextObject"))
+	static int32 GetConsoleVariableIntValue(UObject* WorldContextObject, const FString& VariableName);
+
 	/** 
 	 *	Exit the current game 
 	 * @param	SpecificPlayer	The specific player to quit the game. If not specified, player 0 will quit.
@@ -350,28 +426,28 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param bLooping		True to keep executing the delegate every Time seconds, false to execute delegate only once.
 	 * @return				The timer handle to pass to other timer functions to manipulate this timer.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Set Timer by Event"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Set Timer by Event", ScriptName = "SetTimerDelegate"), Category="Utilities|Time")
 	static FTimerHandle K2_SetTimerDelegate(UPARAM(DisplayName="Event") FTimerDynamicDelegate Delegate, float Time, bool bLooping);
 
 	/**
 	 * Clears a set timer.
 	 * @param Event  Can be a K2 function or a Custom Event.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DeprecatedFunction, DeprecationMessage = "Use Clear Timer by Handle", DisplayName = "Clear Timer by Event"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DeprecatedFunction, DeprecationMessage = "Use Clear Timer by Handle", DisplayName = "Clear Timer by Event", ScriptName = "ClearTimerDelegate"), Category="Utilities|Time")
 	static void K2_ClearTimerDelegate(UPARAM(DisplayName="Event") FTimerDynamicDelegate Delegate);
 
 	/**
 	 * Pauses a set timer at its current elapsed time.
 	 * @param Event  Can be a K2 function or a Custom Event.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DeprecatedFunction, DeprecationMessage = "Use Pause Timer by Handle", DisplayName = "Pause Timer by Event"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DeprecatedFunction, DeprecationMessage = "Use Pause Timer by Handle", DisplayName = "Pause Timer by Event", ScriptName = "PauseTimerDelegate"), Category="Utilities|Time")
 	static void K2_PauseTimerDelegate(UPARAM(DisplayName="Event") FTimerDynamicDelegate Delegate);
 
 	/**
 	 * Resumes a paused timer from its current elapsed time.
 	 * @param Event  Can be a K2 function or a Custom Event.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DeprecatedFunction, DeprecationMessage = "Use Unpause Timer by Handle", DisplayName = "Unpause Timer by Event"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DeprecatedFunction, DeprecationMessage = "Use Unpause Timer by Handle", DisplayName = "Unpause Timer by Event", ScriptName = "UnPauseTimerDelegate"), Category="Utilities|Time")
 	static void K2_UnPauseTimerDelegate(UPARAM(DisplayName="Event") FTimerDynamicDelegate Delegate);
 
 	/**
@@ -379,7 +455,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Event  Can be a K2 function or a Custom Event.
 	 * @return				True if the timer exists and is active.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Is Timer Active by Handle", DisplayName = "Is Timer Active by Event"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Is Timer Active by Handle", DisplayName = "Is Timer Active by Event", ScriptName = "IsTimerActiveDelegate"), Category="Utilities|Time")
 	static bool K2_IsTimerActiveDelegate(UPARAM(DisplayName="Event") FTimerDynamicDelegate Delegate);
 
 	/**
@@ -387,7 +463,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Event  Can be a K2 function or a Custom Event.
 	 * @return				True if the timer exists and is paused.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Is Timer Paused by Handle", DisplayName = "Is Timer Paused by Event"), Category = "Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Is Timer Paused by Handle", DisplayName = "Is Timer Paused by Event", ScriptName = "IsTimerPausedDelegate"), Category = "Utilities|Time")
 	static bool K2_IsTimerPausedDelegate(UPARAM(DisplayName="Event") FTimerDynamicDelegate Delegate);
 
 	/**
@@ -395,7 +471,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Event  Can be a K2 function or a Custom Event.
 	 * @return				True if the timer exists.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Does Timer Exist by Handle", DisplayName = "Does Timer Exist by Event"), Category = "Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Does Timer Exist by Handle", DisplayName = "Does Timer Exist by Event", ScriptName = "TimerExistsDelegate"), Category = "Utilities|Time")
 	static bool K2_TimerExistsDelegate(UPARAM(DisplayName="Event") FTimerDynamicDelegate Delegate);
 	
 	/**
@@ -403,7 +479,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Event  Can be a K2 function or a Custom Event.
 	 * @return				How long has elapsed since the current iteration of the timer began.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Get Timer Elapsed Time by Handle", DisplayName = "Get Timer Elapsed Time by Event"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Get Timer Elapsed Time by Handle", DisplayName = "Get Timer Elapsed Time by Event", ScriptName = "GetTimerElapsedTimeDelegate"), Category="Utilities|Time")
 	static float K2_GetTimerElapsedTimeDelegate(UPARAM(DisplayName="Event") FTimerDynamicDelegate Delegate);
 
 	/**
@@ -411,7 +487,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Event  Can be a K2 function or a Custom Event.
 	 * @return				How long is remaining in the current iteration of the timer.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Get Timer Remaining Time by Handle", DisplayName = "Get Timer Remaining Time by Event"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DeprecatedFunction, DeprecationMessage = "Use Get Timer Remaining Time by Handle", DisplayName = "Get Timer Remaining Time by Event", ScriptName = "GetTimerRemainingTimeDelegate"), Category="Utilities|Time")
 	static float K2_GetTimerRemainingTimeDelegate(UPARAM(DisplayName="Event") FTimerDynamicDelegate Delegate);
 
 	// --- Timer functions with handle input ----------
@@ -421,43 +497,43 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Handle		The handle of the timer to check validity of.
 	 * @return				Whether the timer handle is valid.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "Is Valid"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DisplayName = "Is Valid", ScriptName = "IsValidTimerHandle"), Category="Utilities|Time")
 	static bool K2_IsValidTimerHandle(FTimerHandle Handle);
 
 	/**
-	 * Returns whether the timer handle is valid. This does not indicate that there is an active timer that this handle references, but rather that it once referenced a valid timer.
-	 * @param Handle		The handle of the timer to check validity of.
+	 * Invalidate the supplied TimerHandle and return it.
+	 * @param Handle		The handle of the timer to invalidate.
 	 * @return				Return the invalidated timer handle for convenience.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Invalidate"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Invalidate", ScriptName = "InvalidateTimerHandle"), Category="Utilities|Time")
 	static FTimerHandle K2_InvalidateTimerHandle(UPARAM(ref) FTimerHandle& Handle);
 
 	/**
 	 * Clears a set timer.
 	 * @param Handle		The handle of the timer to clear.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Clear Timer by Handle", WorldContext="WorldContextObject", DeprecatedFunction, DeprecationMessage = "Use Clear and Invalidate Timer by Handle. Note: you no longer need to reset your handle yourself after switching to the new function."), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Clear Timer by Handle", ScriptName = "ClearTimerHandle", WorldContext="WorldContextObject", DeprecatedFunction, DeprecationMessage = "Use Clear and Invalidate Timer by Handle. Note: you no longer need to reset your handle yourself after switching to the new function."), Category="Utilities|Time")
 	static void K2_ClearTimerHandle(UObject* WorldContextObject, FTimerHandle Handle);
 
 	/**
 	 * Clears a set timer.
 	 * @param Handle		The handle of the timer to clear.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Clear and Invalidate Timer by Handle", WorldContext="WorldContextObject"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Clear and Invalidate Timer by Handle", ScriptName = "ClearAndInvalidateTimerHandle", WorldContext="WorldContextObject"), Category="Utilities|Time")
 	static void K2_ClearAndInvalidateTimerHandle(UObject* WorldContextObject, UPARAM(ref) FTimerHandle& Handle);
 
 	/**
 	 * Pauses a set timer at its current elapsed time.
 	 * @param Handle		The handle of the timer to pause.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Pause Timer by Handle", WorldContext="WorldContextObject"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Pause Timer by Handle", ScriptName = "PauseTimerHandle", WorldContext="WorldContextObject"), Category="Utilities|Time")
 	static void K2_PauseTimerHandle(UObject* WorldContextObject, FTimerHandle Handle);
 
 	/**
 	 * Resumes a paused timer from its current elapsed time.
 	 * @param Handle		The handle of the timer to unpause.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Unpause Timer by Handle", WorldContext="WorldContextObject"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Unpause Timer by Handle", ScriptName = "UnPauseTimerHandle", WorldContext="WorldContextObject"), Category="Utilities|Time")
 	static void K2_UnPauseTimerHandle(UObject* WorldContextObject, FTimerHandle Handle);
 
 	/**
@@ -465,7 +541,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Handle		The handle of the timer to check whether it is active.
 	 * @return				True if the timer exists and is active.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "Is Timer Active by Handle", WorldContext="WorldContextObject"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DisplayName = "Is Timer Active by Handle", ScriptName = "IsTimerActiveHandle", WorldContext="WorldContextObject"), Category="Utilities|Time")
 	static bool K2_IsTimerActiveHandle(UObject* WorldContextObject, FTimerHandle Handle);
 
 	/**
@@ -473,7 +549,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Handle		The handle of the timer to check whether it is paused.
 	 * @return				True if the timer exists and is paused.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "Is Timer Paused by Handle", WorldContext="WorldContextObject"), Category = "Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DisplayName = "Is Timer Paused by Handle", ScriptName = "IsTimerPausedHandle", WorldContext="WorldContextObject"), Category = "Utilities|Time")
 	static bool K2_IsTimerPausedHandle(UObject* WorldContextObject, FTimerHandle Handle);
 
 	/**
@@ -481,7 +557,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Handle		The handle to check whether it exists.
  	 * @return				True if the timer exists.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "Does Timer Exist by Handle", WorldContext="WorldContextObject"), Category = "Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DisplayName = "Does Timer Exist by Handle", ScriptName = "TimerExistsHandle", WorldContext="WorldContextObject"), Category = "Utilities|Time")
 	static bool K2_TimerExistsHandle(UObject* WorldContextObject, FTimerHandle Handle);
 	
 	/**
@@ -489,7 +565,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Handle		The handle of the timer to get the elapsed time of.
 	 * @return				How long has elapsed since the current iteration of the timer began.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "Get Timer Elapsed Time by Handle", WorldContext="WorldContextObject"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DisplayName = "Get Timer Elapsed Time by Handle", ScriptName = "GetTimerElapsedTimeHandle", WorldContext="WorldContextObject"), Category="Utilities|Time")
 	static float K2_GetTimerElapsedTimeHandle(UObject* WorldContextObject, FTimerHandle Handle);
 
 	/**
@@ -497,7 +573,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Handle		The handle of the timer to time remaining of.
 	 * @return				How long is remaining in the current iteration of the timer.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "Get Timer Remaining Time by Handle", WorldContext="WorldContextObject"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DisplayName = "Get Timer Remaining Time by Handle", ScriptName = "GetTimerRemainingTimeHandle", WorldContext="WorldContextObject"), Category="Utilities|Time")
 	static float K2_GetTimerRemainingTimeHandle(UObject* WorldContextObject, FTimerHandle Handle);
 
 	// --- Timer functions ------------------------------
@@ -510,7 +586,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param bLooping		true to keep executing the delegate every Time seconds, false to execute delegate only once.
 	 * @return				The timer handle to pass to other timer functions to manipulate this timer.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Set Timer by Function Name", DefaultToSelf = "Object"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Set Timer by Function Name", ScriptName = "SetTimer", DefaultToSelf = "Object"), Category="Utilities|Time")
 	static FTimerHandle K2_SetTimer(UObject* Object, FString FunctionName, float Time, bool bLooping);
 
 	/**
@@ -518,7 +594,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Object		Object that implements the delegate function. Defaults to self (this blueprint)
 	 * @param FunctionName	Delegate function name. Can be a K2 function or a Custom Event.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Clear Timer by Function Name", DefaultToSelf = "Object"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Clear Timer by Function Name", ScriptName = "ClearTimer", DefaultToSelf = "Object"), Category="Utilities|Time")
 	static void K2_ClearTimer(UObject* Object, FString FunctionName);
 
 	/**
@@ -526,7 +602,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Object		Object that implements the delegate function. Defaults to self (this blueprint)
 	 * @param FunctionName	Delegate function name. Can be a K2 function or a Custom Event.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Pause Timer by Function Name", DefaultToSelf = "Object"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Pause Timer by Function Name", ScriptName = "PauseTimer", DefaultToSelf = "Object"), Category="Utilities|Time")
 	static void K2_PauseTimer(UObject* Object, FString FunctionName);
 
 	/**
@@ -534,7 +610,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param Object		Object that implements the delegate function. Defaults to self (this blueprint)
 	 * @param FunctionName	Delegate function name. Can be a K2 function or a Custom Event.
 	 */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Unpause Timer by Function Name", DefaultToSelf = "Object"), Category="Utilities|Time")
+	UFUNCTION(BlueprintCallable, meta=(DisplayName = "Unpause Timer by Function Name", ScriptName = "UnPauseTimer", DefaultToSelf = "Object"), Category="Utilities|Time")
 	static void K2_UnPauseTimer(UObject* Object, FString FunctionName);
 
 	/**
@@ -543,7 +619,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param FunctionName	Delegate function name. Can be a K2 function or a Custom Event.
 	 * @return				True if the timer exists and is active.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "Is Timer Active by Function Name", DefaultToSelf = "Object"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DisplayName = "Is Timer Active by Function Name", ScriptName = "IsTimerActive", DefaultToSelf = "Object"), Category="Utilities|Time")
 	static bool K2_IsTimerActive(UObject* Object, FString FunctionName);
 
 	/**
@@ -552,7 +628,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	* @param FunctionName	Delegate function name. Can be a K2 function or a Custom Event.
 	* @return				True if the timer exists and is paused.
 	*/
-	UFUNCTION(BlueprintPure, meta = (DisplayName = "Is Timer Paused by Function Name", DefaultToSelf = "Object"), Category = "Utilities|Time")
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "Is Timer Paused by Function Name", ScriptName = "IsTimerPaused", DefaultToSelf = "Object"), Category = "Utilities|Time")
 	static bool K2_IsTimerPaused(UObject* Object, FString FunctionName);
 
 	/**
@@ -561,7 +637,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	* @param FunctionName	Delegate function name. Can be a K2 function or a Custom Event.
 	* @return				True if the timer exists.
 	*/
-	UFUNCTION(BlueprintPure, meta = (DisplayName = "Does Timer Exist by Function Name", DefaultToSelf = "Object"), Category = "Utilities|Time")
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "Does Timer Exist by Function Name", ScriptName = "TimerExists", DefaultToSelf = "Object"), Category = "Utilities|Time")
 	static bool K2_TimerExists(UObject* Object, FString FunctionName);
 	
 	/**
@@ -570,7 +646,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param FunctionName	Delegate function name. Can be a K2 function or a Custom Event.
 	 * @return				How long has elapsed since the current iteration of the timer began.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "Get Timer Elapsed Time by Function Name", DefaultToSelf = "Object"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DisplayName = "Get Timer Elapsed Time by Function Name", ScriptName = "GetTimerElapsedTime", DefaultToSelf = "Object"), Category="Utilities|Time")
 	static float K2_GetTimerElapsedTime(UObject* Object, FString FunctionName);
 
 	/**
@@ -579,7 +655,7 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 * @param FunctionName	Delegate function name. Can be a K2 function or a Custom Event.
 	 * @return				How long is remaining in the current iteration of the timer.
 	 */
-	UFUNCTION(BlueprintPure, meta=(DisplayName = "Get Timer Remaining Time by Function Name", DefaultToSelf = "Object"), Category="Utilities|Time")
+	UFUNCTION(BlueprintPure, meta=(DisplayName = "Get Timer Remaining Time by Function Name", ScriptName = "GetTimerRemainingTime", DefaultToSelf = "Object"), Category="Utilities|Time")
 	static float K2_GetTimerRemainingTime(UObject* Object, FString FunctionName);
 
 
@@ -617,13 +693,13 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	UFUNCTION(BlueprintCallable, meta=(BlueprintInternalUseOnly = "true", AutoCreateRefTerm = "Value" ))
 	static void SetNamePropertyByName(UObject* Object, FName PropertyName, const FName& Value);
 
-	/** Set a ASSET property by name */
+	/** Set a SOFTOBJECT property by name */
 	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", AutoCreateRefTerm = "Value"))
-	static void SetAssetPropertyByName(UObject* Object, FName PropertyName, const TAssetPtr<UObject>& Value);
+	static void SetSoftObjectPropertyByName(UObject* Object, FName PropertyName, const TSoftObjectPtr<UObject>& Value);
 
-	/** Set a ASSETCLASS property by name */
+	/** Set a SOFTCLASS property by name */
 	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", AutoCreateRefTerm = "Value"))
-	static void SetAssetClassPropertyByName(UObject* Object, FName PropertyName, const TAssetSubclassOf<UObject>& Value);
+	static void SetSoftClassPropertyByName(UObject* Object, FName PropertyName, const TSoftClassPtr<UObject>& Value);
 
 	/** Set a STRING property by name */
 	UFUNCTION(BlueprintCallable, meta=(BlueprintInternalUseOnly = "true", AutoCreateRefTerm = "Value" ))
@@ -1502,8 +1578,24 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	static TArray<FString> GetPreferredLanguages();
 	
 	/**
-	 * Returns the user's preferred language and region
-	 * @return A language ID indicating the user's language and region
+	 * Get the default language (for localization) used by this platform
+	 * @note This is typically the same as GetDefaultLocale unless the platform distinguishes between the two
+	 * @note This should be returned in IETF language tag form:
+	 *  - A two-letter ISO 639-1 language code (eg, "zh")
+	 *  - An optional four-letter ISO 15924 script code (eg, "Hans")
+	 *  - An optional two-letter ISO 3166-1 country code (eg, "CN")
+	 * @return The language as an IETF language tag (eg, "zh-Hans-CN")
+	 */
+	UFUNCTION(BlueprintPure, Category = "Utilities|Platform")
+	static FString GetDefaultLanguage();
+
+	/**
+	 * Get the default locale (for internationalization) used by this platform
+	 * @note This should be returned in IETF language tag form:
+	 *  - A two-letter ISO 639-1 language code (eg, "zh")
+	 *  - An optional four-letter ISO 15924 script code (eg, "Hans")
+	 *  - An optional two-letter ISO 3166-1 country code (eg, "CN")
+	 * @return The locale as an IETF language tag (eg, "zh-Hans-CN")
 	 */
 	UFUNCTION(BlueprintPure, Category = "Utilities|Platform")
 	static FString GetDefaultLocale();
@@ -1524,10 +1616,17 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 
 	/**
 	 * Requests permission to send remote notifications to the user's device.
-	 * (iOS only)
+	 * (Android and iOS only)
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Utilities|Platform")
 	static void RegisterForRemoteNotifications();
+
+	/**
+	* Requests Requests unregistering from receiving remote notifications to the user's device.
+	* (Android only)
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Utilities|Platform")
+	static void UnregisterForRemoteNotifications();
 
 	/**
 	 * Tells the engine what the user is doing for debug, analytics, etc.
@@ -1540,6 +1639,100 @@ class ENGINE_API UKismetSystemLibrary : public UBlueprintFunctionLibrary
 	 */
 	UFUNCTION(BlueprintCallable, Category="Utilities")
 	static FString GetCommandLine();
+
+	// --- Asset Manager ------------------------------
+
+	/** Returns the Object associated with a Primary Asset Id, this will only return a valid object if it is in memory, it will not load it */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static UObject* GetObjectFromPrimaryAssetId(FPrimaryAssetId PrimaryAssetId);
+
+	/** Returns the Blueprint Class associated with a Primary Asset Id, this will only return a valid object if it is in memory, it will not load it */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static TSubclassOf<UObject> GetClassFromPrimaryAssetId(FPrimaryAssetId PrimaryAssetId);
+
+	/** Returns the Object Id associated with a Primary Asset Id, this works even if the asset is not loaded */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static TSoftObjectPtr<UObject> GetSoftObjectReferenceFromPrimaryAssetId(FPrimaryAssetId PrimaryAssetId);
+
+	/** Returns the Blueprint Class Id associated with a Primary Asset Id, this works even if the asset is not loaded */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static TSoftClassPtr<UObject> GetSoftClassReferenceFromPrimaryAssetId(FPrimaryAssetId PrimaryAssetId);
+
+	/** Returns the Primary Asset Id for an Object, this can return an invalid one if not registered */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static FPrimaryAssetId GetPrimaryAssetIdFromObject(UObject* Object);
+
+	/** Returns the Primary Asset Id for a Class, this can return an invalid one if not registered */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static FPrimaryAssetId GetPrimaryAssetIdFromClass(TSubclassOf<UObject> Class);
+
+	/** Returns the Primary Asset Id for a Soft Object Reference, this can return an invalid one if not registered */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static FPrimaryAssetId GetPrimaryAssetIdFromSoftObjectReference(TSoftObjectPtr<UObject> SoftObjectReference);
+
+	/** Returns the Primary Asset Id for a Soft Class Reference, this can return an invalid one if not registered */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static FPrimaryAssetId GetPrimaryAssetIdFromSoftClassReference(TSoftClassPtr<UObject> SoftClassReference);
+
+	/** Returns list of PrimaryAssetIds for a PrimaryAssetType */
+	UFUNCTION(BlueprintCallable, Category = "AssetManager")
+	static void GetPrimaryAssetIdList(FPrimaryAssetType PrimaryAssetType, TArray<FPrimaryAssetId>& OutPrimaryAssetIdList);
+
+	/** Returns true if the Primary Asset Id is valid */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static bool IsValidPrimaryAssetId(FPrimaryAssetId PrimaryAssetId);
+
+	/** Converts a Primary Asset Id to a string. The other direction is not provided because it cannot be validated */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "ToString (PrimaryAssetId)", CompactNodeTitle = "->"), Category = "AssetManager")
+	static FString Conv_PrimaryAssetIdToString(FPrimaryAssetId PrimaryAssetId);
+
+	/** Returns true if the values are equal (A == B) */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "Equal (PrimaryAssetId)", CompactNodeTitle = "=="), Category = "AssetManager")
+	static bool EqualEqual_PrimaryAssetId(FPrimaryAssetId A, FPrimaryAssetId B);
+
+	/** Returns true if the values are not equal (A != B) */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "NotEqual (PrimaryAssetId)", CompactNodeTitle = "!="), Category = "AssetManager")
+	static bool NotEqual_PrimaryAssetId(FPrimaryAssetId A, FPrimaryAssetId B);
+
+	/** Returns list of Primary Asset Ids for a PrimaryAssetType */
+	UFUNCTION(BlueprintPure, Category = "AssetManager")
+	static bool IsValidPrimaryAssetType(FPrimaryAssetType PrimaryAssetType);
+
+	/** Converts a Primary Asset Type to a string. The other direction is not provided because it cannot be validated */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "ToString (PrimaryAssetType)", CompactNodeTitle = "->"), Category = "AssetManager")
+	static FString Conv_PrimaryAssetTypeToString(FPrimaryAssetType PrimaryAssetType);
+
+	/** Returns true if the values are equal (A == B) */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "Equal (PrimaryAssetType)", CompactNodeTitle = "=="), Category = "AssetManager")
+	static bool EqualEqual_PrimaryAssetType(FPrimaryAssetType A, FPrimaryAssetType B);
+
+	/** Returns true if the values are not equal (A != B) */
+	UFUNCTION(BlueprintPure, meta = (DisplayName = "NotEqual (PrimaryAssetType)", CompactNodeTitle = "!="), Category = "AssetManager")
+	static bool NotEqual_PrimaryAssetType(FPrimaryAssetType A, FPrimaryAssetType B);
+
+	/** Unloads a primary asset, which allows it to be garbage collected if nothing else is referencing it */
+	UFUNCTION(BlueprintCallable, Category = "AssetManager")
+	static void UnloadPrimaryAsset(FPrimaryAssetId PrimaryAssetId);
+
+	/** Unloads a primary asset, which allows it to be garbage collected if nothing else is referencing it */
+	UFUNCTION(BlueprintCallable, Category = "AssetManager")
+	static void UnloadPrimaryAssetList(const TArray<FPrimaryAssetId>& PrimaryAssetIdList);
+
+	/** 
+	 * Returns the list of loaded bundles for a given Primary Asset. This will return false if the asset is not loaded at all.
+	 * If ForceCurrentState is true it will return the current state even if a load is in process
+	 */
+	UFUNCTION(BlueprintCallable, Category = "AssetManager")
+	static bool GetCurrentBundleState(FPrimaryAssetId PrimaryAssetId, bool bForceCurrentState, TArray<FName>& OutBundles);
+
+	/** 
+	 * Returns the list of assets that are in a given bundle state. Required Bundles must be specified
+	 * If ExcludedBundles is not empty, it will not return any assets in those bundle states
+	 * If ValidTypes is not empty, it will only return assets of those types
+	 * If ForceCurrentState is true it will use the current state even if a load is in process
+	 */
+	UFUNCTION(BlueprintCallable, Category = "AssetManager", meta=(AutoCreateRefTerm = "ExcludedBundles, ValidTypes"))
+	static void GetPrimaryAssetsWithBundleState(const TArray<FName>& RequiredBundles, const TArray<FName>& ExcludedBundles, const TArray<FPrimaryAssetType>& ValidTypes, bool bForceCurrentState, TArray<FPrimaryAssetId>& OutPrimaryAssetIdList);
 };
 
 
@@ -1583,7 +1776,7 @@ FORCEINLINE uint8 UKismetSystemLibrary::MakeLiteralByte(uint8 Value)
 	return Value;
 }
 
-FORCEINLINE FString UKismetSystemLibrary::MakeLiteralString(const FString& Value)
+FORCEINLINE FString UKismetSystemLibrary::MakeLiteralString(FString Value)
 {
 	return Value;
 }

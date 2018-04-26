@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SMorphTargetViewer.h"
@@ -12,6 +12,7 @@
 #include "Widgets/Input/SSearchBox.h"
 #include "Animation/MorphTarget.h"
 #include "Animation/AnimInstance.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #define LOCTEXT_NAMESPACE "SMorphTargetViewer"
 
@@ -276,8 +277,7 @@ float SMorphTargetListRow::GetWeight() const
 		if (AnimInstance)
 		{
 			// make sure if they have value that's not same as saved value
-			TMap<FName, float> MorphCurves;
-			AnimInstance->GetAnimationCurveList(EAnimCurveType::MorphTargetCurve, MorphCurves);
+			const TMap<FName, float>& MorphCurves = AnimInstance->GetAnimationCurveList(EAnimCurveType::MorphTargetCurve);
 			const float* CurrentWeightPtr = MorphCurves.Find(Item->Name);
 			if (CurrentWeightPtr)
 			{
@@ -518,7 +518,7 @@ void SMorphTargetViewer::OnCopyMorphTargetNames()
 
 	if(!CopyText.IsEmpty())
 	{
-		FPlatformMisc::ClipboardCopy(*CopyText);
+		FPlatformApplicationMisc::ClipboardCopy(*CopyText);
 	}
 }
 

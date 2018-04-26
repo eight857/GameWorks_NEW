@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -68,7 +68,6 @@ public:
 
 	//~ ISequencerSection interface
 
-	virtual bool AreSectionsConnected() const override;
 	virtual void GenerateSectionLayout(ISectionLayoutBuilder& LayoutBuilder) const override { }
 	virtual void BuildSectionContextMenu(FMenuBuilder& MenuBuilder, const FGuid& ObjectBinding) override;
 	virtual TSharedRef<SWidget> GenerateSectionWidget() override;
@@ -121,6 +120,8 @@ protected:
 
 	/** Enumeration value specifyin in which time-space to generate thumbnails */
 	ETimeSpace TimeSpace;
+
+	FDelegateHandle RedrawThumbnailDelegateHandle;
 };
 
 /**

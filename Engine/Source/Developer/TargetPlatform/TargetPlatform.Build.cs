@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -7,50 +7,50 @@ public class TargetPlatform : ModuleRules
 {
 	public TargetPlatform(ReadOnlyTargetRules Target) : base(Target)
 	{
-		PrivateDependencyModuleNames.Add("Core");		
-        PublicDependencyModuleNames.Add("DesktopPlatform");
+		PrivateDependencyModuleNames.Add("Core");
+		PublicDependencyModuleNames.Add("DesktopPlatform");
+		PublicDependencyModuleNames.Add("LauncherPlatform");
 
-        PrivateIncludePathModuleNames.Add("PhysXFormats");
+		PrivateIncludePathModuleNames.Add("Engine");
 
 		// no need for all these modules if the program doesn't want developer tools at all (like UnrealFileServer)
-		if (!UEBuildConfiguration.bBuildRequiresCookedData && UEBuildConfiguration.bBuildDeveloperTools)
+		if (!Target.bBuildRequiresCookedData && Target.bBuildDeveloperTools)
 		{
-            // these are needed by multiple platform specific target platforms, so we make sure they are built with the base editor
-            DynamicallyLoadedModuleNames.Add("ShaderPreprocessor");
-            DynamicallyLoadedModuleNames.Add("ShaderFormatOpenGL");
-            DynamicallyLoadedModuleNames.Add("ImageWrapper");
+			// these are needed by multiple platform specific target platforms, so we make sure they are built with the base editor
+			DynamicallyLoadedModuleNames.Add("ShaderPreprocessor");
+			DynamicallyLoadedModuleNames.Add("ShaderFormatOpenGL");
+			DynamicallyLoadedModuleNames.Add("ImageWrapper");
 
 			if ((Target.Platform == UnrealTargetPlatform.Win64) || (Target.Platform == UnrealTargetPlatform.Win32))
 			{
-				if (UEBuildConfiguration.bCompileLeanAndMeanUE == false)
+				if (Target.bCompileLeanAndMeanUE == false)
 				{
 					DynamicallyLoadedModuleNames.Add("TextureFormatIntelISPCTexComp");
 				}
 			}
 
-            if (Target.Platform == UnrealTargetPlatform.Win32 ||
-                Target.Platform == UnrealTargetPlatform.Win64 ||
-				(Target.Platform == UnrealTargetPlatform.HTML5 && Target.Architecture == "-win32"))
+			if (Target.Platform == UnrealTargetPlatform.Win32 ||
+				Target.Platform == UnrealTargetPlatform.Win64)
 			{
 
-                // these are needed by multiple platform specific target platforms, so we make sure they are built with the base editor
-                DynamicallyLoadedModuleNames.Add("ShaderFormatD3D");
+				// these are needed by multiple platform specific target platforms, so we make sure they are built with the base editor
+				DynamicallyLoadedModuleNames.Add("ShaderFormatD3D");
 				DynamicallyLoadedModuleNames.Add("MetalShaderFormat");
 
-                if (UEBuildConfiguration.bCompileLeanAndMeanUE == false)
+				if (Target.bCompileLeanAndMeanUE == false)
 				{
-                    DynamicallyLoadedModuleNames.Add("TextureFormatDXT");
-                    DynamicallyLoadedModuleNames.Add("TextureFormatPVR");
+					DynamicallyLoadedModuleNames.Add("TextureFormatDXT");
+					DynamicallyLoadedModuleNames.Add("TextureFormatPVR");
 					DynamicallyLoadedModuleNames.Add("TextureFormatASTC");
 				}
 
 				DynamicallyLoadedModuleNames.Add("TextureFormatUncompressed");
 
-				if (UEBuildConfiguration.bCompileAgainstEngine)
+				if (Target.bCompileAgainstEngine)
 				{
 					DynamicallyLoadedModuleNames.Add("AudioFormatADPCM"); // For IOS cooking
 					DynamicallyLoadedModuleNames.Add("AudioFormatOgg");
-					DynamicallyLoadedModuleNames.Add("AudioFormatOpus"); 
+					DynamicallyLoadedModuleNames.Add("AudioFormatOpus");
 				}
 
 				if (Target.Type == TargetType.Editor || Target.Type == TargetType.Program)
@@ -60,12 +60,13 @@ public class TargetPlatform : ModuleRules
 					DynamicallyLoadedModuleNames.Add("Android_ATCTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("Android_DXTTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("Android_ETC1TargetPlatform");
-					DynamicallyLoadedModuleNames.Add("Android_ETC2TargetPlatform");
+                    DynamicallyLoadedModuleNames.Add("Android_ETC1aTargetPlatform");
+                    DynamicallyLoadedModuleNames.Add("Android_ETC2TargetPlatform");
 					DynamicallyLoadedModuleNames.Add("Android_ASTCTargetPlatform");
-                    DynamicallyLoadedModuleNames.Add("Android_MultiTargetPlatform");
-                    DynamicallyLoadedModuleNames.Add("IOSTargetPlatform");
+					DynamicallyLoadedModuleNames.Add("Android_MultiTargetPlatform");
+					DynamicallyLoadedModuleNames.Add("IOSTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("TVOSTargetPlatform");
-                    DynamicallyLoadedModuleNames.Add("HTML5TargetPlatform");
+					DynamicallyLoadedModuleNames.Add("HTML5TargetPlatform");
 					DynamicallyLoadedModuleNames.Add("MacTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("MacNoEditorTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("MacServerTargetPlatform");
@@ -74,16 +75,16 @@ public class TargetPlatform : ModuleRules
 			}
 			else if (Target.Platform == UnrealTargetPlatform.Mac)
 			{
-				if (UEBuildConfiguration.bCompileLeanAndMeanUE == false)
+				if (Target.bCompileLeanAndMeanUE == false)
 				{
 					DynamicallyLoadedModuleNames.Add("TextureFormatDXT");
-                    DynamicallyLoadedModuleNames.Add("TextureFormatPVR");
+					DynamicallyLoadedModuleNames.Add("TextureFormatPVR");
 					DynamicallyLoadedModuleNames.Add("TextureFormatASTC");
 				}
 
 				DynamicallyLoadedModuleNames.Add("TextureFormatUncompressed");
 
-				if (UEBuildConfiguration.bCompileAgainstEngine)
+				if (Target.bCompileAgainstEngine)
 				{
 					DynamicallyLoadedModuleNames.Add("AudioFormatOgg");
 					DynamicallyLoadedModuleNames.Add("AudioFormatOpus");
@@ -97,25 +98,25 @@ public class TargetPlatform : ModuleRules
 					DynamicallyLoadedModuleNames.Add("Android_ATCTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("Android_DXTTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("Android_ETC1TargetPlatform");
-					DynamicallyLoadedModuleNames.Add("Android_ETC2TargetPlatform");
-					DynamicallyLoadedModuleNames.Add("Android_ASTCTargetPlatform");
+                    DynamicallyLoadedModuleNames.Add("Android_ETC1aTargetPlatform");
+                    DynamicallyLoadedModuleNames.Add("Android_ETC2TargetPlatform");
 					DynamicallyLoadedModuleNames.Add("IOSTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("TVOSTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("HTML5TargetPlatform");
 				}
 			}
-            else if (Target.Platform == UnrealTargetPlatform.Linux)
-            {
-                if (UEBuildConfiguration.bCompileLeanAndMeanUE == false)
-                {
-                    DynamicallyLoadedModuleNames.Add("TextureFormatDXT");
-                    DynamicallyLoadedModuleNames.Add("TextureFormatPVR");
+			else if (Target.Platform == UnrealTargetPlatform.Linux)
+			{
+				if (Target.bCompileLeanAndMeanUE == false)
+				{
+					DynamicallyLoadedModuleNames.Add("TextureFormatDXT");
+					DynamicallyLoadedModuleNames.Add("TextureFormatPVR");
 					DynamicallyLoadedModuleNames.Add("TextureFormatASTC");
-                }
+				}
 
 				DynamicallyLoadedModuleNames.Add("TextureFormatUncompressed");
 
-				if (UEBuildConfiguration.bCompileAgainstEngine)
+				if (Target.bCompileAgainstEngine)
 				{
 					DynamicallyLoadedModuleNames.Add("AudioFormatOgg");
 					DynamicallyLoadedModuleNames.Add("AudioFormatOpus");
@@ -129,16 +130,17 @@ public class TargetPlatform : ModuleRules
 					DynamicallyLoadedModuleNames.Add("Android_ATCTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("Android_DXTTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("Android_ETC1TargetPlatform");
-					DynamicallyLoadedModuleNames.Add("Android_ETC2TargetPlatform");
+                    DynamicallyLoadedModuleNames.Add("Android_ETC1aTargetPlatform");
+                    DynamicallyLoadedModuleNames.Add("Android_ETC2TargetPlatform");
 					DynamicallyLoadedModuleNames.Add("Android_ASTCTargetPlatform");
 					DynamicallyLoadedModuleNames.Add("HTML5TargetPlatform");
 				}
-            }
+			}
 		}
-        
-        if (UEBuildConfiguration.bBuildDeveloperTools == true && (UEBuildConfiguration.bBuildRequiresCookedData || UEBuildConfiguration.bRuntimePhysicsCooking) && UEBuildConfiguration.bCompileAgainstEngine && UEBuildConfiguration.bCompilePhysX)
-        {
-            DynamicallyLoadedModuleNames.Add("PhysXFormats");
-        }
+
+		if (Target.bBuildDeveloperTools == true && Target.bBuildRequiresCookedData && Target.bCompileAgainstEngine && Target.bCompilePhysX)
+		{
+			DynamicallyLoadedModuleNames.Add("PhysXCooking");
+		}
 	}
 }

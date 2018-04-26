@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,7 +10,7 @@ class UBlendProfile;
 class USkeletalMesh;
 
 /** Delegate fired when a set of smart names is removed */
-DECLARE_MULTICAST_DELEGATE_TwoParams(FOnSmartNameRemoved, const FName& /*InContainerName*/, const TArray<SmartName::UID_Type>& /*InNameUids*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnSmartNameChanged, const FName& /*InContainerName*/);
 
 /** Enum which tells us whether the parent of a socket is the skeleton or skeletal mesh */
 enum class ESocketParentType : int32
@@ -59,17 +59,14 @@ public:
 	/** Rename the specified smart name */
 	virtual void RenameSmartname(const FName& InContainerName, SmartName::UID_Type InNameUid, const FName& InNewName) = 0;
 
-	/** Remove the specified smart name */
-	virtual void RemoveSmartname(const FName& InContainerName, SmartName::UID_Type InNameUid) = 0;
-
 	/** Remove all the specified smart names and fixup animations that use them */
-	virtual void RemoveSmartnamesAndFixupAnimations(const FName& InContainerName, const TArray<SmartName::UID_Type>& InNameUids) = 0;
+	virtual void RemoveSmartnamesAndFixupAnimations(const FName& InContainerName, const TArray<FName>& InNames) = 0;
 
 	/** Sets Material Meta Data for the curve */
 	virtual void SetCurveMetaDataMaterial(const FSmartName& CurveName, bool bOverrideMaterial) = 0;
 
 	/** Sets Bone Links per curve */
-	virtual void SetCurveMetaBoneLinks(const FSmartName& CurveName, TArray<FBoneReference>& BoneLinks) = 0;
+	virtual void SetCurveMetaBoneLinks(const FSmartName& CurveName, TArray<FBoneReference>& BoneLinks, uint8 InMaxLOD) = 0;
 
 	/**
 	 * Makes sure all attached objects are valid and removes any that aren't.
@@ -95,6 +92,11 @@ public:
 	 */	
 	virtual int32 DeleteAnimNotifies(const TArray<FName>& InotifyNames) = 0;
 
+	/**
+	* Add a notify
+	*/
+	virtual void AddNotify(FName NewName) = 0;
+
 	/** 
 	 * Rename a notify
 	 * @return the number of animations modified
@@ -102,7 +104,7 @@ public:
 	virtual int32 RenameNotify(const FName& NewName, const FName& OldName) = 0;
 
 	/** Populates OutAssets with the AnimSequences that match this current skeleton */
-	virtual void GetCompatibleAnimSequences(TArray<class FAssetData>& OutAssets) = 0;
+	virtual void GetCompatibleAnimSequences(TArray<struct FAssetData>& OutAssets) = 0;
 
 	/** Set the preview mesh in the skeleton*/
 	virtual void SetPreviewMesh(class USkeletalMesh* InSkeletalMesh) = 0;
@@ -111,7 +113,7 @@ public:
 	virtual void LoadAdditionalPreviewSkeletalMeshes() = 0;
 
 	/** Set the additional skeletal meshes we use when previewing this skeleton */
-	virtual void SetAdditionalPreviewSkeletalMeshes(class UPreviewMeshCollection* InSkeletalMeshes) = 0;
+	virtual void SetAdditionalPreviewSkeletalMeshes(class UDataAsset* InPreviewCollectionAsset) = 0;
 
 	/** Rename the specified retarget source */
 	virtual void RenameRetargetSource(const FName& InOldName, const FName& InNewName) = 0;
@@ -159,10 +161,16 @@ public:
 	virtual void RenameSlotName(const FName& InOldSlotName, const FName& InNewSlotName) = 0;
 
 	/** Register a delegate to be called when a set of smart names are removed */
-	virtual FDelegateHandle RegisterOnSmartNameRemoved(const FOnSmartNameRemoved::FDelegate& InOnSmartNameRemoved) = 0;
+	virtual FDelegateHandle RegisterOnSmartNameChanged(const FOnSmartNameChanged::FDelegate& InOnSmartNameChanged) = 0;
 
 	/** Register a delegate to be called when a set of smart names are removed */
-	virtual void UnregisterOnSmartNameRemoved(FDelegateHandle InHandle) = 0;
+	virtual void UnregisterOnSmartNameChanged(FDelegateHandle InHandle) = 0;
+
+	/** Register a delegate to be called when this skeletons notifies are changed */
+	virtual void RegisterOnNotifiesChanged(const FSimpleMulticastDelegate::FDelegate& InDelegate) = 0;
+
+	/** Unregister a delegate to be called when this skeletons notifies are changed */
+	virtual void UnregisterOnNotifiesChanged(void* Thing) = 0;
 
 	/** Wrap USkeleton::SetBoneTranslationRetargetingMode */
 	virtual void SetBoneTranslationRetargetingMode(FName InBoneName, EBoneTranslationRetargetingMode::Type NewRetargetingMode) = 0;

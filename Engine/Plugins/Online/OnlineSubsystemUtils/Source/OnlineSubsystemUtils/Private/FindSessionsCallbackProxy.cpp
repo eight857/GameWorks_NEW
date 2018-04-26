@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "FindSessionsCallbackProxy.h"
 #include "EngineGlobals.h"
@@ -29,7 +29,7 @@ UFindSessionsCallbackProxy* UFindSessionsCallbackProxy::FindSessions(UObject* Wo
 
 void UFindSessionsCallbackProxy::Activate()
 {
-	FOnlineSubsystemBPCallHelper Helper(TEXT("FindSessions"), GEngine->GetWorldFromContextObject(WorldContextObject));
+	FOnlineSubsystemBPCallHelper Helper(TEXT("FindSessions"), WorldContextObject);
 	Helper.QueryIDFromPlayerController(PlayerControllerWeakPtr.Get());
 
 	if (Helper.IsValid())
@@ -62,7 +62,7 @@ void UFindSessionsCallbackProxy::Activate()
 
 void UFindSessionsCallbackProxy::OnCompleted(bool bSuccess)
 {
-	FOnlineSubsystemBPCallHelper Helper(TEXT("FindSessionsCallback"), GEngine->GetWorldFromContextObject(WorldContextObject));
+	FOnlineSubsystemBPCallHelper Helper(TEXT("FindSessionsCallback"), WorldContextObject);
 	Helper.QueryIDFromPlayerController(PlayerControllerWeakPtr.Get());
 
 	if (Helper.IsValid())

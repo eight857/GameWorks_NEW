@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,6 +15,7 @@ enum class FForceFeedbackChannelType;
 class IInputDevice
 {
 public:
+	virtual ~IInputDevice() {}
 
 	/** Tick the interface (e.g. check for new controllers) */
 	virtual void Tick( float DeltaTime ) = 0;

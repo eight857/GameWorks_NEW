@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameFramework/WorldSettings.h"
 #include "Misc/MessageDialog.h"
@@ -25,6 +25,7 @@
 
 #if WITH_EDITOR
 #include "Editor.h"
+#include "HierarchicalLOD.h"
 #endif 
 
 #define LOCTEXT_NAMESPACE "ErrorChecking"
@@ -58,6 +59,7 @@ AWorldSettings::AWorldSettings(const FObjectInitializer& ObjectInitializer)
  	FHierarchicalSimplification LODBaseSetup;
 	HierarchicalLODSetup.Add(LODBaseSetup);
 	NumHLODLevels = HierarchicalLODSetup.Num();
+	bGenerateSingleClusterForLevel = false;
 #endif
 
 	KillZ = -HALF_WORLD_MAX1;
@@ -269,6 +271,58 @@ UAssetUserData* AWorldSettings::GetAssetUserDataOfClass(TSubclassOf<UAssetUserDa
 	}
 	return NULL;
 }
+#if WITH_EDITOR
+const TArray<FHierarchicalSimplification>& AWorldSettings::GetHierarchicalLODSetup() const
+{
+	const UHierarchicalLODSettings* HLODSettings = GetDefault<UHierarchicalLODSettings>();
+
+	// If we have a HLOD asset set use this
+	if (HLODSetupAsset.LoadSynchronous())
+	{
+		return HLODSetupAsset->GetDefaultObject<UHierarchicalLODSetup>()->HierarchicalLODSetup;
+	}
+	else if (HLODSettings->bForceSettingsInAllMaps && HLODSettings->DefaultSetup.IsValid())
+	{
+		return HLODSettings->DefaultSetup->GetDefaultObject<UHierarchicalLODSetup>()->HierarchicalLODSetup;
+	}
+	
+	return HierarchicalLODSetup;
+}
+
+TArray<FHierarchicalSimplification>& AWorldSettings::GetHierarchicalLODSetup()
+{
+	UHierarchicalLODSettings* HLODSettings = GetMutableDefault<UHierarchicalLODSettings>();
+	
+	// If we have a HLOD asset set use this
+	if (HLODSetupAsset.LoadSynchronous())
+	{
+		return HLODSetupAsset->GetDefaultObject<UHierarchicalLODSetup>()->HierarchicalLODSetup;
+	}
+	else if (HLODSettings->bForceSettingsInAllMaps && HLODSettings->DefaultSetup.LoadSynchronous())
+	{
+		return HLODSettings->DefaultSetup->GetDefaultObject<UHierarchicalLODSetup>()->HierarchicalLODSetup;
+	}
+
+	return HierarchicalLODSetup;
+}
+
+int32 AWorldSettings::GetNumHierarchicalLODLevels() const
+{
+	const UHierarchicalLODSettings* HLODSettings = GetDefault<UHierarchicalLODSettings>();
+
+	// If we have a HLOD asset set use this
+	if (HLODSetupAsset.LoadSynchronous())
+	{
+		return HLODSetupAsset->GetDefaultObject<UHierarchicalLODSetup>()->HierarchicalLODSetup.Num();
+	}
+	else if (HLODSettings->bForceSettingsInAllMaps && HLODSettings->DefaultSetup.IsValid())
+	{
+		return HLODSettings->DefaultSetup->GetDefaultObject<UHierarchicalLODSetup>()->HierarchicalLODSetup.Num();
+	}
+
+	return  HierarchicalLODSetup.Num();
+}
+#endif // WITH_EDITOR
 
 void AWorldSettings::RemoveUserDataOfClass(TSubclassOf<UAssetUserData> InUserDataClass)
 {
@@ -293,6 +347,8 @@ void AWorldSettings::PostLoad()
 		Entry.ProxySetting.PostLoadDeprecated();
 		Entry.MergeSetting.LODSelectionType = EMeshLODSelectionType::CalculateLOD;
 	}
+
+	SetIsTemporarilyHiddenInEditor(true);
 #endif// WITH_EDITOR
 }
 
@@ -353,6 +409,18 @@ bool AWorldSettings::CanEditChange(const UProperty* InProperty) const
 				return LightmassSettings.bUseAmbientOcclusion;
 			}
 
+			if (PropertyName == GET_MEMBER_NAME_STRING_CHECKED(FLightmassWorldInfoSettings, VolumetricLightmapDetailCellSize)
+				|| PropertyName == GET_MEMBER_NAME_STRING_CHECKED(FLightmassWorldInfoSettings, VolumetricLightmapMaximumBrickMemoryMb)
+				|| PropertyName == GET_MEMBER_NAME_STRING_CHECKED(FLightmassWorldInfoSettings, VolumetricLightmapSphericalHarmonicSmoothing))
+			{
+				return LightmassSettings.VolumeLightingMethod == VLM_VolumetricLightmap;
+			}
+
+			if (PropertyName == GET_MEMBER_NAME_STRING_CHECKED(FLightmassWorldInfoSettings, VolumeLightSamplePlacementScale))
+			{
+				return LightmassSettings.VolumeLightingMethod == VLM_SparseVolumeLightingSamples;
+			}
+
 			if (PropertyName == GET_MEMBER_NAME_STRING_CHECKED(FLightmassWorldInfoSettings, EnvironmentColor))
 			{
 				return LightmassSettings.EnvironmentIntensity > 0;
@@ -403,8 +471,10 @@ void AWorldSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChang
 	}
 
 	LightmassSettings.NumIndirectLightingBounces = FMath::Clamp(LightmassSettings.NumIndirectLightingBounces, 0, 100);
+	LightmassSettings.NumSkyLightingBounces = FMath::Clamp(LightmassSettings.NumSkyLightingBounces, 0, 100);
 	LightmassSettings.IndirectLightingSmoothness = FMath::Clamp(LightmassSettings.IndirectLightingSmoothness, .25f, 10.0f);
 	LightmassSettings.VolumeLightSamplePlacementScale = FMath::Clamp(LightmassSettings.VolumeLightSamplePlacementScale, .1f, 100.0f);
+	LightmassSettings.VolumetricLightmapDetailCellSize = FMath::Clamp(LightmassSettings.VolumetricLightmapDetailCellSize, 1.0f, 10000.0f);
 	LightmassSettings.IndirectLightingQuality = FMath::Clamp(LightmassSettings.IndirectLightingQuality, .1f, 100.0f);
 	LightmassSettings.StaticLightingLevelScale = FMath::Clamp(LightmassSettings.StaticLightingLevelScale, .001f, 1000.0f);
 	LightmassSettings.EmissiveBoost = FMath::Max(LightmassSettings.EmissiveBoost, 0.0f);

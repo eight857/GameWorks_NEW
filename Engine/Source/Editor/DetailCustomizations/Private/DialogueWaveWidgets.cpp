@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DialogueWaveWidgets.h"
 #include "Widgets/Text/STextBlock.h"
@@ -330,7 +330,7 @@ bool SDialogueVoicePropertyEditor::CanBrowseToAsset()
 
 void SDialogueVoicePropertyEditor::OnBrowseToDialogueVoice()
 {
-	const UDialogueVoice* DialogueVoice = NULL;
+	UDialogueVoice* DialogueVoice = NULL;
 	{
 		UObject* Object = NULL;
 		DialogueVoicePropertyHandle->GetValue(Object);
@@ -340,7 +340,7 @@ void SDialogueVoicePropertyEditor::OnBrowseToDialogueVoice()
 	if( DialogueVoice )
 	{	
 		// Find the item in the content browser
-		GoToAssetInContentBrowser(DialogueVoice);
+		GoToAssetInContentBrowser(MakeWeakObjectPtr(DialogueVoice));
 	}
 }
 
@@ -516,7 +516,7 @@ FText STargetsSummaryWidget::GetDialogueVoiceDescription() const
 	return Result;
 }
 
-bool STargetsSummaryWidget::FilterTargets( const class FAssetData& InAssetData )
+bool STargetsSummaryWidget::FilterTargets( const struct FAssetData& InAssetData )
 {
 	bool ShouldAssetBeFilteredOut = false;
 

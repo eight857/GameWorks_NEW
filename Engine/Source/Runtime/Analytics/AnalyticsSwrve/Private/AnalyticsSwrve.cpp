@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnalyticsSwrve.h"
 
@@ -13,10 +13,9 @@
 #include "HttpModule.h"
 #include "Misc/EngineVersion.h"
 #include "Interfaces/IAnalyticsProvider.h"
+#include "Analytics.h"
 
 #if PLATFORM_DESKTOP
-
-DEFINE_LOG_CATEGORY_STATIC(LogAnalytics, Display, All);
 
 IMPLEMENT_MODULE( FAnalyticsSwrve, AnalyticsSwrve );
 
@@ -358,7 +357,7 @@ void FAnalyticsProviderSwrve::RecordEvent(const FString& EventName, const TArray
 			{
 				EventParams += TEXT(",");
 			}
-			EventParams += FString(TEXT("\"")) + Attributes[Ndx].AttrName + TEXT("\": \"") + Attributes[Ndx].AttrValue+ TEXT("\"");
+			EventParams += FString(TEXT("\"")) + Attributes[Ndx].AttrName + TEXT("\": \"") + Attributes[Ndx].ToString()+ TEXT("\"");
 		}
 		EventParams += TEXT("}");
 	}

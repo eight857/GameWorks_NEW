@@ -1,8 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BoneContainer.h"
 #include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
+#include "EngineLogs.h"
+
+DEFINE_LOG_CATEGORY(LogSkeletalControl);
 
 //////////////////////////////////////////////////////////////////////////
 // FBoneContainer
@@ -22,7 +25,7 @@ FBoneContainer::FBoneContainer()
 	PoseToSkeletonBoneIndexArray.Empty();
 }
 
-FBoneContainer::FBoneContainer(const TArray<FBoneIndexType>& InRequiredBoneIndexArray, UObject& InAsset)
+FBoneContainer::FBoneContainer(const TArray<FBoneIndexType>& InRequiredBoneIndexArray, const FCurveEvaluationOption& CurveEvalOption, UObject& InAsset)
 : BoneIndicesArray(InRequiredBoneIndexArray)
 , Asset(&InAsset)
 , AssetSkeletalMesh(NULL)
@@ -32,15 +35,15 @@ FBoneContainer::FBoneContainer(const TArray<FBoneIndexType>& InRequiredBoneIndex
 , bUseRAWData(false)
 , bUseSourceData(false)
 {
-	Initialize();
+	Initialize(CurveEvalOption);
 }
 
-void FBoneContainer::InitializeTo(const TArray<FBoneIndexType>& InRequiredBoneIndexArray, UObject& InAsset)
+void FBoneContainer::InitializeTo(const TArray<FBoneIndexType>& InRequiredBoneIndexArray, const FCurveEvaluationOption& CurveEvalOption, UObject& InAsset)
 {
 	BoneIndicesArray = InRequiredBoneIndexArray;
 	Asset = &InAsset;
 
-	Initialize();
+	Initialize(CurveEvalOption);
 }
 
 struct FBoneContainerScratchArea : public TThreadSingleton<FBoneContainerScratchArea>
@@ -48,7 +51,7 @@ struct FBoneContainerScratchArea : public TThreadSingleton<FBoneContainerScratch
 	TArray<int32> MeshIndexToCompactPoseIndex;
 };
 
-void FBoneContainer::Initialize()
+void FBoneContainer::Initialize(const FCurveEvaluationOption& CurveEvalOption)
 {
 	RefSkeleton = NULL;
 	UObject* AssetObj = Asset.Get();
@@ -179,12 +182,12 @@ void FBoneContainer::Initialize()
 	}
 
 	// cache required curve UID list according to new bone sets
-	CacheRequiredAnimCurveUids();
+	CacheRequiredAnimCurveUids(CurveEvalOption);
 }
 
-void FBoneContainer::CacheRequiredAnimCurveUids()
+void FBoneContainer::CacheRequiredAnimCurveUids(const FCurveEvaluationOption& CurveEvalOption)
 {
-	if (AssetSkeleton.IsValid())
+	if (CurveEvalOption.bAllowCurveEvaluation && AssetSkeleton.IsValid())
 	{
 		// this is placeholder. In the future, this will change to work with linked joint of curve meta data
 		// anim curve name Uids; For now it adds all of them
@@ -202,31 +205,51 @@ void FBoneContainer::CacheRequiredAnimCurveUids()
 			{
 				for (int32 CurveNameIndex = CurveNames.Num() - 1; CurveNameIndex >=0 ; --CurveNameIndex)
 				{
-					const FCurveMetaData* CurveMetaData = Mapping->GetCurveMetaData(CurveNames[CurveNameIndex]);
-					if (CurveMetaData && CurveMetaData->LinkedBones.Num() > 0)
+					const FName& CurveName = CurveNames[CurveNameIndex];
+					if (CurveEvalOption.DisallowedList && CurveEvalOption.DisallowedList->Contains(CurveName))
 					{
-						bool bRemove = true;
-						for (int32 LinkedBoneIndex = 0; LinkedBoneIndex < CurveMetaData->LinkedBones.Num(); ++LinkedBoneIndex)
+						//remove the UID
+						AnimCurveNameUids.RemoveAt(CurveNameIndex);
+					}
+					else
+					{
+						const FCurveMetaData* CurveMetaData = Mapping->GetCurveMetaData(CurveNames[CurveNameIndex]);
+						if (CurveMetaData)
 						{
-							const FBoneReference& BoneReference = CurveMetaData->LinkedBones[LinkedBoneIndex];
-							// we want to make sure all the joints are removed from RequiredBones before removing this UID
-							if (BoneReference.GetCompactPoseIndex(*this) != INDEX_NONE)
+							if (CurveMetaData->MaxLOD < CurveEvalOption.LODIndex)
 							{
-								// still has some joint that matters, do not remove
-								bRemove = false;
-								break;
+								AnimCurveNameUids.RemoveAt(CurveNameIndex);
 							}
-						}
+							else if (CurveMetaData->LinkedBones.Num() > 0)
+							{
+								bool bRemove = true;
+								for (int32 LinkedBoneIndex = 0; LinkedBoneIndex < CurveMetaData->LinkedBones.Num(); ++LinkedBoneIndex)
+								{
+									const FBoneReference& BoneReference = CurveMetaData->LinkedBones[LinkedBoneIndex];
+									// we want to make sure all the joints are removed from RequiredBones before removing this UID
+									if (BoneReference.GetCompactPoseIndex(*this) != INDEX_NONE)
+									{
+										// still has some joint that matters, do not remove
+										bRemove = false;
+										break;
+									}
+								}
 
-						if (bRemove)
-						{
-							//remove the UID
-							AnimCurveNameUids.RemoveAt(CurveNameIndex);
+								if (bRemove)
+								{
+									//remove the UID
+									AnimCurveNameUids.RemoveAt(CurveNameIndex);
+								}
+							}
 						}
 					}
 				}
 			}
 		}
+	}
+	else
+	{
+		AnimCurveNameUids.Reset();
 	}
 }
 
@@ -316,3 +339,59 @@ void FBoneContainer::RemapFromSkeleton(USkeleton const & SourceSkeleton)
 }
 
 
+/////////////////////////////////////////////////////
+// FBoneReference
+
+bool FBoneReference::Initialize(const FBoneContainer& RequiredBones)
+{
+	BoneName = *BoneName.ToString().TrimStartAndEnd();
+	BoneIndex = RequiredBones.GetPoseBoneIndexForBoneName(BoneName);
+
+	bUseSkeletonIndex = false;
+	// If bone name is not found, look into the master skeleton to see if it's found there.
+	// SkeletalMeshes can exclude bones from the master skeleton, and that's OK.
+	// If it's not found in the master skeleton, the bone does not exist at all! so we should report it as a warning.
+	if (BoneIndex == INDEX_NONE && BoneName != NAME_None)
+	{
+		if (USkeleton* SkeletonAsset = RequiredBones.GetSkeletonAsset())
+		{
+			if (SkeletonAsset->GetReferenceSkeleton().FindBoneIndex(BoneName) == INDEX_NONE)
+			{
+				UE_LOG(LogAnimation, Warning, TEXT("FBoneReference::Initialize BoneIndex for Bone '%s' does not exist in Skeleton '%s'"),
+					*BoneName.ToString(), *GetNameSafe(SkeletonAsset));
+			}
+		}
+	}
+
+	CachedCompactPoseIndex = RequiredBones.MakeCompactPoseIndex(GetMeshPoseIndex(RequiredBones));
+
+	return (BoneIndex != INDEX_NONE);
+}
+
+bool FBoneReference::Initialize(const USkeleton* Skeleton)
+{
+	if (Skeleton && (BoneName != NAME_None))
+	{
+		BoneName = *BoneName.ToString().TrimStartAndEnd();
+		BoneIndex = Skeleton->GetReferenceSkeleton().FindBoneIndex(BoneName);
+		bUseSkeletonIndex = true;
+	}
+	else
+	{
+		BoneIndex = INDEX_NONE;
+	}
+
+	CachedCompactPoseIndex = FCompactPoseBoneIndex(INDEX_NONE);
+
+	return (BoneIndex != INDEX_NONE);
+}
+
+bool FBoneReference::IsValidToEvaluate(const FBoneContainer& RequiredBones) const
+{
+	return (BoneIndex != INDEX_NONE && RequiredBones.Contains(BoneIndex));
+}
+
+bool FBoneReference::IsValid(const FBoneContainer& RequiredBones) const
+{
+	return IsValidToEvaluate(RequiredBones);
+}

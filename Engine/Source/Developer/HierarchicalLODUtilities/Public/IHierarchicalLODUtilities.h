@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,6 +13,23 @@ class FStaticMeshRenderData;
 class ULevel;
 class UStaticMeshComponent;
 struct FHierarchicalSimplification;
+
+enum class EClusterGenerationError : uint32
+{
+	None = 0,
+	ValidActor = 1 << 1,
+	InvalidActor = 1 << 2,
+	ActorHiddenInGame = 1 << 3,
+	ExcludedActor = 1 << 4,
+	LODActor = 1 << 5,
+	ActorTooSmall = 1 << 6,
+	AlreadyClustered = 1 << 7,
+	ComponentHiddenInGame = 1 << 8,
+	MoveableComponent = 1 << 9,
+	ExcludedComponent = 1 << 10
+};
+
+ENUM_CLASS_FLAGS(EClusterGenerationError);
 
 /**
  * IHierarchicalLODUtilities module interface
@@ -44,7 +61,7 @@ public:
 	virtual float CalculateDrawDistanceFromScreenSize(const float SphereRadius, const float ScreenSize, const FMatrix& ProjectionMatrix) = 0;
 
 	/** Creates or retrieves the HLOD package that is created for the given level */
-	virtual UPackage* CreateOrRetrieveLevelHLODPackage(ULevel* InLevel) = 0;
+	virtual UPackage* CreateOrRetrieveLevelHLODPackage(const ULevel* InLevel) = 0;
 
 	/**
 	* Builds a virtual mesh object for the given LODACtor
@@ -59,9 +76,9 @@ public:
 	* Returns whether or not the given actor is eligible for creating a HLOD cluster creation
 	*
 	* @param Actor - Actor to check for if it is eligible for cluster generation
-	* @return bool
+	* @return EClusterGenerationError
 	*/
-	virtual bool ShouldGenerateCluster(AActor* Actor) = 0;
+	virtual EClusterGenerationError ShouldGenerateCluster(AActor* Actor) = 0;
 
 	/** Returns the ALODActor parent for the given InActor, nullptr if none available */
 	virtual ALODActor* GetParentLODActor(const AActor* InActor) = 0;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	TextureRenderTarget2D.cpp: UTextureRenderTarget2D implementation
@@ -11,6 +11,7 @@
 #include "UnrealEngine.h"
 #include "DeviceProfiles/DeviceProfile.h"
 #include "DeviceProfiles/DeviceProfileManager.h"
+#include "RenderingObjectVersion.h"
 
 int32 GTextureRenderTarget2DMaxSizeX = 999999999;
 int32 GTextureRenderTarget2DMaxSizeY = 999999999;
@@ -22,7 +23,8 @@ int32 GTextureRenderTarget2DMaxSizeY = 999999999;
 UTextureRenderTarget2D::UTextureRenderTarget2D(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	bHDR = true;
+	bHDR_DEPRECATED = true;
+	RenderTargetFormat = RTF_RGBA16f;
 	bAutoGenerateMips = false;
 	NumMips = 0;
 	ClearColor = FLinearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -57,7 +59,7 @@ FTextureResource* UTextureRenderTarget2D::CreateResource()
 	return Result;
 }
 
-EMaterialValueType UTextureRenderTarget2D::GetMaterialType()
+EMaterialValueType UTextureRenderTarget2D::GetMaterialType() const
 {
 	return MCT_Texture2D;
 }
@@ -88,6 +90,16 @@ void UTextureRenderTarget2D::InitCustomFormat( uint32 InSizeX, uint32 InSizeY, E
 	SizeY = InSizeY;
 	OverrideFormat = InOverrideFormat;
 	bForceLinearGamma = bInForceLinearGamma;
+
+	if (!ensureMsgf(SizeX >= 0 && SizeX <= 65536, TEXT("Invalid SizeX=%u for RenderTarget %s"), SizeX, *GetName()))
+	{
+		SizeX = 1;
+	}
+
+	if (!ensureMsgf(SizeY >= 0 && SizeY <= 65536, TEXT("Invalid SizeY=%u for RenderTarget %s"), SizeY, *GetName()))
+	{
+		SizeY = 1;
+	}
 
 	// Recreate the texture's resource.
 	UpdateResource();
@@ -157,6 +169,18 @@ void UTextureRenderTarget2D::PostEditChangeProperty(FPropertyChangedEvent& Prope
 }
 #endif // WITH_EDITOR
 
+void UTextureRenderTarget2D::Serialize(FArchive& Ar)
+{
+	Super::Serialize(Ar);
+
+	Ar.UsingCustomVersion(FRenderingObjectVersion::GUID);
+
+	if (Ar.CustomVer(FRenderingObjectVersion::GUID) < FRenderingObjectVersion::AddedTextureRenderTargetFormats)
+	{
+		RenderTargetFormat = bHDR_DEPRECATED ? RTF_RGBA16f : RTF_RGBA8;
+	}
+}
+
 void UTextureRenderTarget2D::PostLoad()
 {
 	float OriginalSizeX = SizeX;
@@ -172,7 +196,7 @@ void UTextureRenderTarget2D::PostLoad()
 
 	SizeX = FMath::Min<int32>(SizeX, GTextureRenderTarget2DMaxSizeX);
 	SizeY = FMath::Min<int32>(SizeY, GTextureRenderTarget2DMaxSizeY);
-	
+
 	// Maintain aspect ratio if clamped
 	if( SizeX != OriginalSizeX || SizeY != OriginalSizeY )
 	{
@@ -347,6 +371,7 @@ FTextureRenderTarget2DResource::FTextureRenderTarget2DResource(const class UText
 	,	TargetSizeX(Owner->SizeX)
 	,	TargetSizeY(Owner->SizeY)
 {
+	
 }
 
 /**
@@ -365,6 +390,7 @@ void FTextureRenderTarget2DResource::ClampSize(int32 MaxSizeX,int32 MaxSizeY)
 		TargetSizeX = NewSizeX;
 		TargetSizeY = NewSizeY;
 		// reinit the resource with new TargetSizeX,TargetSizeY
+		check(TargetSizeX >= 0 && TargetSizeY >= 0);
 		UpdateRHI();
 	}	
 }
@@ -455,7 +481,7 @@ void FTextureRenderTarget2DResource::UpdateDeferredResource( FRHICommandListImme
 	if (bClearRenderTarget)
 	{
 		RHICmdList.SetViewport(0, 0, 0.0f, TargetSizeX, TargetSizeY, 1.0f);
-		ensure(RenderTargetTextureRHI->GetClearColor() == ClearColor);
+		ensure(RenderTargetTextureRHI.IsValid() && (RenderTargetTextureRHI->GetClearColor() == ClearColor));
 		SetRenderTarget(RHICmdList, RenderTargetTextureRHI, FTextureRHIRef(), ESimpleRenderTargetMode::EClearColorExistingDepth, FExclusiveDepthStencil::DepthWrite_StencilWrite, true);
 	}
  

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/ConfigCacheIni.h"
@@ -119,19 +119,19 @@ namespace EditorViewButtonHelper
 				AutomationParameters.ViewportClient->SetShowCollision();
 				break;
 			case EStaticMeshFlag::Pivot:
-				AutomationParameters.ViewportClient->SetShowPivot();
+				AutomationParameters.ViewportClient->ToggleShowPivot();
 				break;
 			case EStaticMeshFlag::Normals:
-				AutomationParameters.ViewportClient->SetShowNormals();
+				AutomationParameters.ViewportClient->ToggleShowNormals();
 				break;
 			case EStaticMeshFlag::Tangents:
-				AutomationParameters.ViewportClient->SetShowTangents();
+				AutomationParameters.ViewportClient->ToggleShowTangents();
 				break;
 			case EStaticMeshFlag::Binormals:
-				AutomationParameters.ViewportClient->SetShowBinormals();
+				AutomationParameters.ViewportClient->ToggleShowBinormals();
 				break;
 			case EStaticMeshFlag::UV:
-				AutomationParameters.ViewportClient->SetDrawUVOverlay();
+				AutomationParameters.ViewportClient->ToggleDrawUVOverlay();
 				break;
 			default:
 				//Break out immediately.

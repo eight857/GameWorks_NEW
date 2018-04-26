@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once 
 
@@ -100,7 +100,7 @@ protected:
 	FOptionalSize GetFrameWidth() const;
 
 	void OpenSpritePickerMenu(class FMenuBuilder& MenuBuilder);
-	void OnAssetSelected(const class FAssetData& AssetData);
+	void OnAssetSelected(const struct FAssetData& AssetData);
 	void CloseMenu();
 	void ShowInContentBrowser();
 	void EditKeyFrame();

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AudioMixerSourceDecode.h"
 #include "CoreMinimal.h"
@@ -11,134 +11,244 @@
 
 namespace Audio
 {
-	class FDecodeHandleBase : public IAudioTask
+
+class FAsyncDecodeWorker : public FNonAbandonableTask
+{
+public:
+	FAsyncDecodeWorker(const FHeaderParseAudioTaskData& InTaskData)
+		: HeaderParseAudioData(InTaskData)
+		, TaskType(EAudioTaskType::Header)
+		, bIsDone(false)
 	{
-	public:
-		FDecodeHandleBase()
-			: bFinished(false)
-		{}
+	}
 
-		virtual ~FDecodeHandleBase()
-		{
-			EnsureCompletion();
-		}
-
-		virtual bool IsDone() const override
-		{
-			return bFinished;
-		}
-
-		virtual void EnsureCompletion() override
-		{
-			Future.Get();
-		}
-
-	protected:
-		FThreadSafeBool bFinished;
-		TFuture<void> Future;
-	};
-
-	class FHeaderDecodeHandle : public FDecodeHandleBase
+	FAsyncDecodeWorker(const FProceduralAudioTaskData& InTaskData)
+		: ProceduralTaskData(InTaskData)
+		, TaskType(EAudioTaskType::Procedural)
+		, bIsDone(false)
 	{
-	public:
-		virtual EAudioTaskType GetType() const override { return EAudioTaskType::Header; }
+	}
 
-		void Decode(const FHeaderParseAudioTaskData& InJobData)
+	FAsyncDecodeWorker(const FDecodeAudioTaskData& InTaskData)
+		: DecodeTaskData(InTaskData)
+		, TaskType(EAudioTaskType::Decode)
+		, bIsDone(false)
+	{
+	}
+
+	~FAsyncDecodeWorker()
+	{
+	}
+
+	void DoWork()
+	{
+		switch (TaskType)
 		{
-			TFunction<void()> Func = [this, InJobData]()
+			case EAudioTaskType::Procedural:
 			{
-				InJobData.MixerBuffer->ReadCompressedInfo(InJobData.SoundWave);
-				bFinished = true;
-			};
+				// If we're not a float format, we need to convert the format to float
+				const EAudioMixerStreamDataFormat::Type FormatType = ProceduralTaskData.ProceduralSoundWave->GetGeneratedPCMDataFormat();
+				if (FormatType != EAudioMixerStreamDataFormat::Float)
+				{
+					check(FormatType == EAudioMixerStreamDataFormat::Int16);
 
-			Future = Async(EAsyncExecution::TaskGraph, Func);
-		}
-	};
+					int32 NumChannels = ProceduralTaskData.NumChannels;
+					int32 ByteSize = NumChannels * ProceduralTaskData.NumSamples * sizeof(int16);
 
-	class FProceduralDecodeHandle : public FDecodeHandleBase
-	{
-	public:
-		virtual EAudioTaskType GetType() const override { return EAudioTaskType::Procedural; }
+					TArray<uint8> DecodeBuffer;
+					DecodeBuffer.AddUninitialized(ByteSize);
 
-		void Decode(const FProceduralAudioTaskData& InJobData)
-		{
-			TFunction<void()> Func = [this, InJobData]()
+					const int32 NumBytesWritten = ProceduralTaskData.ProceduralSoundWave->GeneratePCMData(DecodeBuffer.GetData(), ProceduralTaskData.NumSamples);
+
+					check(NumBytesWritten <= ByteSize);
+
+					ProceduralResult.NumSamplesWritten = NumBytesWritten / sizeof(int16);
+
+					// Convert the buffer to float
+					int16* DecodedBufferPtr = (int16*)DecodeBuffer.GetData();
+					for (int32 SampleIndex = 0; SampleIndex < ProceduralResult.NumSamplesWritten; ++SampleIndex)
+					{
+						ProceduralTaskData.AudioData[SampleIndex] = (float)(DecodedBufferPtr[SampleIndex]) / 32768.0f;
+					}
+				}
+				else
+				{
+					const int32 NumBytesWritten = ProceduralTaskData.ProceduralSoundWave->GeneratePCMData((uint8*)ProceduralTaskData.AudioData, ProceduralTaskData.NumSamples);
+					ProceduralResult.NumSamplesWritten = NumBytesWritten / sizeof(float);
+				}
+			}
+			break;
+
+			case EAudioTaskType::Header:
 			{
-				Result.NumBytesWritten = InJobData.ProceduralSoundWave->GeneratePCMData(InJobData.AudioData, InJobData.MaxAudioDataSamples);
-				bFinished = true;
-			};
+				HeaderParseAudioData.MixerBuffer->ReadCompressedInfo(HeaderParseAudioData.SoundWave);
+			}
+			break;
 
-			Future = Async(EAsyncExecution::TaskGraph, Func);
-		}
-
-		virtual void GetResult(FProceduralAudioTaskResults& OutResult) override
-		{
-			EnsureCompletion();
-			OutResult = Result;
-		}
-
-	private:
-		FProceduralAudioTaskResults Result;
-	};
-
-	class FDecodeHandle : public FDecodeHandleBase
-	{
-	public:
-		virtual EAudioTaskType GetType() const override { return EAudioTaskType::Decode; }
-
-		void Decode(const FDecodeAudioTaskData& InJobData)
-		{
-
-			TFunction<void()> Func = [this, InJobData]()
+			case EAudioTaskType::Decode:
 			{
+				int32 NumChannels = DecodeTaskData.MixerBuffer->GetNumChannels();
+				int32 ByteSize = NumChannels * DecodeTaskData.NumFramesToDecode * sizeof(int16);
+
+				// Create a buffer to decode into that's of the appropriate size
+				TArray<uint8> DecodeBuffer;
+				DecodeBuffer.AddUninitialized(ByteSize);
+
 				// skip the first buffer if we've already decoded them
-				if (InJobData.bSkipFirstBuffer)
+				if (DecodeTaskData.bSkipFirstBuffer)
 				{
 #if PLATFORM_ANDROID
 					// Only skip one buffer on Android
-					InJobData.MixerBuffer->ReadCompressedData(InJobData.AudioData, InJobData.NumFramesToDecode, InJobData.bLoopingMode);
-#else
+					DecodeTaskData.MixerBuffer->ReadCompressedData(DecodeBuffer.GetData(), DecodeTaskData.NumFramesToDecode, DecodeTaskData.bLoopingMode);
+#else // #if PLATFORM_ANDROID
 					// If we're using cached data we need to skip the first two reads from the data
-					InJobData.MixerBuffer->ReadCompressedData(InJobData.AudioData, InJobData.NumFramesToDecode, InJobData.bLoopingMode);
-					InJobData.MixerBuffer->ReadCompressedData(InJobData.AudioData, InJobData.NumFramesToDecode, InJobData.bLoopingMode);
-#endif
+					DecodeTaskData.MixerBuffer->ReadCompressedData(DecodeBuffer.GetData(), DecodeTaskData.NumFramesToDecode, DecodeTaskData.bLoopingMode);
+					DecodeTaskData.MixerBuffer->ReadCompressedData(DecodeBuffer.GetData(), DecodeTaskData.NumFramesToDecode, DecodeTaskData.bLoopingMode);
+#endif // #else // #if PLATFORM_ANDROID
 				}
 
-				Result.bLooped = InJobData.MixerBuffer->ReadCompressedData(InJobData.AudioData, InJobData.NumFramesToDecode, InJobData.bLoopingMode);
-				bFinished = true;
-			};
+				DecodeResult.bLooped = DecodeTaskData.MixerBuffer->ReadCompressedData(DecodeBuffer.GetData(), DecodeTaskData.NumFramesToDecode, DecodeTaskData.bLoopingMode);
 
-			Future = Async(EAsyncExecution::TaskGraph, Func);
+				// Convert the decoded PCM data into a float buffer while still in the async task
+				int32 SampleIndex = 0;
+				int16* DecodedBufferPtr = (int16*)DecodeBuffer.GetData();
+				for (int32 Frame = 0; Frame < DecodeTaskData.NumFramesToDecode; ++Frame)
+				{
+					for (int32 Channel = 0; Channel < NumChannels; ++Channel, ++SampleIndex)
+					{
+						DecodeTaskData.AudioData[SampleIndex] = (float)(DecodedBufferPtr[SampleIndex]) / 32768.0f;
+					}
+				}
+			}
+			break;
 		}
+		bIsDone = true;
+	}
 
-		virtual void GetResult(FDecodeAudioTaskResults& OutResult) override
+	FORCEINLINE TStatId GetStatId() const
+	{
+		RETURN_QUICK_DECLARE_CYCLE_STAT(FAsyncDecodeWorker, STATGROUP_ThreadPoolAsyncTasks);
+	}
+
+	FHeaderParseAudioTaskData HeaderParseAudioData;
+	FDecodeAudioTaskData DecodeTaskData;
+	FDecodeAudioTaskResults DecodeResult;
+	FProceduralAudioTaskData ProceduralTaskData;
+	FProceduralAudioTaskResults ProceduralResult;
+	EAudioTaskType TaskType;
+	FThreadSafeBool bIsDone;
+};
+
+class FDecodeHandleBase : public IAudioTask
+{
+public:
+	FDecodeHandleBase()
+		: Task(nullptr)
+	{}
+
+	virtual ~FDecodeHandleBase()
+	{
+		if (Task)
 		{
-			EnsureCompletion();
-			OutResult = Result;
+			Task->EnsureCompletion();
+			delete Task;
 		}
-
-	private:
-		FDecodeAudioTaskResults Result;
-	};
-
-	IAudioTask* CreateAudioTask(const FProceduralAudioTaskData& InJobData)
-	{
-		FProceduralDecodeHandle* NewTask = new FProceduralDecodeHandle();
-		NewTask->Decode(InJobData);
-		return NewTask;
 	}
 
-	IAudioTask* CreateAudioTask(const FHeaderParseAudioTaskData& InJobData)
+	virtual bool IsDone() const override
 	{
-		FHeaderDecodeHandle* NewTask = new FHeaderDecodeHandle();
-		NewTask->Decode(InJobData);
-		return NewTask;
+		if (Task)
+		{
+			return Task->IsDone();
+		}
+		return true;
 	}
 
-	IAudioTask* CreateAudioTask(const FDecodeAudioTaskData& InJobData)
+	virtual void EnsureCompletion() override
 	{
-		FDecodeHandle* NewTask = new FDecodeHandle();
-		NewTask->Decode(InJobData);
-		return NewTask;
+		if (Task)
+		{
+			Task->EnsureCompletion();
+		}
 	}
+
+protected:
+
+	FAsyncTask<FAsyncDecodeWorker>* Task;
+};
+
+class FHeaderDecodeHandle : public FDecodeHandleBase
+{
+public:
+	FHeaderDecodeHandle(const FHeaderParseAudioTaskData& InJobData)
+	{
+		Task = new FAsyncTask<FAsyncDecodeWorker>(InJobData);
+		Task->StartBackgroundTask();
+	}
+
+	virtual EAudioTaskType GetType() const override
+	{
+		return EAudioTaskType::Header;
+	}
+};
+
+class FProceduralDecodeHandle : public FDecodeHandleBase
+{
+public:
+	FProceduralDecodeHandle(const FProceduralAudioTaskData& InJobData)
+	{
+		Task = new FAsyncTask<FAsyncDecodeWorker>(InJobData);
+		Task->StartBackgroundTask();
+	}
+
+	virtual EAudioTaskType GetType() const override
+	{ 
+		return EAudioTaskType::Procedural; 
+	}
+
+	virtual void GetResult(FProceduralAudioTaskResults& OutResult) override
+	{
+		Task->EnsureCompletion();
+		const FAsyncDecodeWorker& DecodeWorker = Task->GetTask();
+		OutResult = DecodeWorker.ProceduralResult;
+	}
+};
+
+class FDecodeHandle : public FDecodeHandleBase
+{
+public:
+	FDecodeHandle(const FDecodeAudioTaskData& InJobData)
+	{
+		Task = new FAsyncTask<FAsyncDecodeWorker>(InJobData);
+		Task->StartBackgroundTask();
+	}
+
+	virtual EAudioTaskType GetType() const override
+	{ 
+		return EAudioTaskType::Decode; 
+	}
+
+	virtual void GetResult(FDecodeAudioTaskResults& OutResult) override
+	{
+		Task->EnsureCompletion();
+		const FAsyncDecodeWorker& DecodeWorker = Task->GetTask();
+		OutResult = DecodeWorker.DecodeResult;
+	}
+};
+
+IAudioTask* CreateAudioTask(const FProceduralAudioTaskData& InJobData)
+{
+	return new FProceduralDecodeHandle(InJobData);
+}
+
+IAudioTask* CreateAudioTask(const FHeaderParseAudioTaskData& InJobData)
+{
+	return new FHeaderDecodeHandle(InJobData);
+}
+
+IAudioTask* CreateAudioTask(const FDecodeAudioTaskData& InJobData)
+{
+	return new FDecodeHandle(InJobData);
+}
+
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "QoSReporter.h"
 #include "HAL/PlatformTime.h"
@@ -68,7 +68,7 @@ QOSREPORTER_API void FQoSReporter::Initialize()
 		if (ConfigMap.Num() == 0)
 		{
 			ConfigMap.Add(TEXT("ProviderModuleName"), TEXT("QoSReporter"));
-			ConfigMap.Add(TEXT("APIKeyQoS"), FString::Printf(TEXT("%s.%s"), FApp::GetGameName(), AnalyticsBuildTypeToString(GetAnalyticsBuildType())));
+			ConfigMap.Add(TEXT("APIKeyQoS"), FString::Printf(TEXT("%s.%s"), FApp::GetProjectName(), AnalyticsBuildTypeToString(GetAnalyticsBuildType())));
 		}
 
 		// Check for overrides

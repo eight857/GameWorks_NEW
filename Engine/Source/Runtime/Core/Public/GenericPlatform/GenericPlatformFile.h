@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 /*=============================================================================================
@@ -94,6 +94,11 @@ public:
 	 * @return				true if the operation completed successfully.
 	**/
 	virtual bool		Write(const uint8* Source, int64 BytesToWrite) = 0;
+
+	/**
+	 * Flushes file.
+	**/
+	virtual void		Flush() { };
 
 public:
 	/////////// Utility Functions. These have a default implementation that uses the pure virtual operations.
@@ -231,6 +236,8 @@ public:
 		}
 	}
 
+	/** Platform file can override this to get a regular tick from the engine */
+	virtual void Tick() { }
 	/** Gets the platform file wrapped by this file. */
 	virtual IPlatformFile* GetLowerLevel() = 0;
 	/** Sets the platform file wrapped by this file. */
@@ -290,6 +297,8 @@ public:
 	class FDirectoryVisitor
 	{
 	public:
+		virtual ~FDirectoryVisitor() { }
+
 		/** 
 		 * Callback for a single file or a directory in a directory iteration.
 		 * @param FilenameOrDirectory		If bIsDirectory is true, this is a directory (with no trailing path delimiter), otherwise it is a file name.
@@ -303,6 +312,7 @@ public:
 	class FDirectoryStatVisitor
 	{
 	public:
+		virtual ~FDirectoryStatVisitor() { }
 		/** 
 		 * Callback for a single file or a directory in a directory iteration.
 		 * @param FilenameOrDirectory		If bIsDirectory is true, this is a directory (with no trailing path delimiter), otherwise it is a file name.
@@ -361,6 +371,24 @@ public:
 	 * @return				false if the directory did not exist or if the visitor returned false.
 	**/
 	virtual bool IterateDirectoryStatRecursively(const TCHAR* Directory, FDirectoryStatVisitor& Visitor);
+		
+	/**
+	 * Finds all the files within the given directory, with optional file extension filter
+	 * @param Directory			The directory to iterate the contents of
+	 * @param FileExtension		If FileExtension is NULL, or an empty string "" then all files are found.
+	 * 							Otherwise FileExtension can be of the form .EXT or just EXT and only files with that extension will be returned.
+	 * @return FoundFiles		All the files that matched the optional FileExtension filter, or all files if none was specified.
+	 */
+	virtual void FindFiles(TArray<FString>& FoundFiles, const TCHAR* Directory, const TCHAR* FileExtension);
+
+	/**
+	 * Finds all the files within the directory tree, with optional file extension filter
+	 * @param Directory			The starting directory to iterate the contents. This function explores subdirectories
+	 * @param FileExtension		If FileExtension is NULL, or an empty string "" then all files are found.
+	 * 							Otherwise FileExtension can be of the form .EXT or just EXT and only files with that extension will be returned.
+	 * @return FoundFiles		All the files that matched the optional FileExtension filter, or all files if none was specified.
+	 */
+	virtual void FindFilesRecursively(TArray<FString>& FoundFiles, const TCHAR* Directory, const TCHAR* FileExtension);
 
 	/** 
 	 * Delete all files and subdirectories in a directory, then delete the directory itself
@@ -415,6 +443,8 @@ public:
 	class IFileServerMessageHandler
 	{
 	public:
+		virtual ~IFileServerMessageHandler() { }
+
 		/** Subclass fills out an archive to send to the server */
 		virtual void FillPayload(FArchive& Payload) = 0;
 

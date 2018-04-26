@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ProceduralFoliageTile.h"
 #include "Engine/EngineTypes.h"
@@ -463,7 +463,7 @@ void UProceduralFoliageTile::ExtractDesiredInstances(TArray<FDesiredFoliageInsta
 {
 	InstancesToArray();
 
-	const FCollisionQueryParams Params(NAME_None,true);
+	const FCollisionQueryParams Params(NAME_None, FCollisionQueryParams::GetUnknownStatId(), true);
 	FHitResult Hit;
 
 	OutInstances.Reserve(InstancesSet.Num());

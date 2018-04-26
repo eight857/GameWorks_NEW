@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PlatformMediaSource.h"
 #include "UObject/SequencerObjectVersion.h"
@@ -59,7 +59,7 @@ void UPlatformMediaSource::Serialize(FArchive& Ar)
 		}
 		else
 		{
-			Ar << PlatformMediaSources;
+		Ar << PlatformMediaSources;
 		}
 #else
 		Ar << MediaSource;
@@ -83,13 +83,13 @@ bool UPlatformMediaSource::Validate() const
 	for (auto PlatformNameMediaSourcePair : PlatformMediaSources)
 	{
 		UMediaSource* PlatformMediaSource = PlatformNameMediaSourcePair.Value;
+
 		if (PlatformMediaSource != nullptr && PlatformMediaSource->Validate() == false)
 		{
-			// If any platform is specified but doesn't validate, the entire platform media source is not valid.
 			return false;
 		}
 	}
-	// If there are any platform media sources specified they will have been validated above.
+
 	return PlatformMediaSources.Num() > 0;
 #else
 	return (MediaSource != nullptr) ? MediaSource->Validate() : false;

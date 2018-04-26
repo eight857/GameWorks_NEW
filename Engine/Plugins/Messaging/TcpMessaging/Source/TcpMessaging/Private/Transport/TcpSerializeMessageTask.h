@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -22,7 +22,7 @@ public:
 	 * @param InMessageContext The context of the message to serialize.
 	 * @param InSerializedMessage Will hold the serialized message data.
 	 */
-	FTcpSerializeMessageTask(IMessageContextRef InMessageContext, FTcpSerializedMessageRef InSerializedMessage, const TArray<TSharedPtr<FTcpMessageTransportConnection>>& InRecipientConnections)
+	FTcpSerializeMessageTask(TSharedRef<IMessageContext, ESPMode::ThreadSafe> InMessageContext, FTcpSerializedMessageRef InSerializedMessage, const TArray<TSharedPtr<FTcpMessageTransportConnection>>& InRecipientConnections)
 		: MessageContext(InMessageContext)
 		, SerializedMessage(InSerializedMessage)
 		, RecipientConnections(InRecipientConnections)
@@ -62,7 +62,7 @@ public:
 private:
 
 	/** Holds the context of the message to serialize. */
-	IMessageContextRef MessageContext;
+	TSharedRef<IMessageContext, ESPMode::ThreadSafe> MessageContext;
 
 	/** Holds a reference to the serialized message data. */
 	FTcpSerializedMessageRef SerializedMessage;

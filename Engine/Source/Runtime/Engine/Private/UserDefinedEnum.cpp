@@ -1,9 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/UserDefinedEnum.h"
 #include "EditorObjectVersion.h"
 #if WITH_EDITOR
 #include "Kismet2/EnumEditorUtils.h"
+#include "UObject/MetaData.h"
+#include "UObject/Package.h"
 #endif	// WITH_EDITOR
 
 UUserDefinedEnum::UUserDefinedEnum(const FObjectInitializer& ObjectInitializer)
@@ -80,21 +82,53 @@ void UUserDefinedEnum::PostLoad()
 		FEnumEditorUtils::UpgradeDisplayNamesFromMetaData(this);
 	}
 	FEnumEditorUtils::EnsureAllDisplayNamesExist(this);
+
+	// Apply the transactional flag to user defined enums that were not created with it
+	SetFlags(RF_Transactional);
 }
 
 void UUserDefinedEnum::PostEditUndo()
 {
 	Super::PostEditUndo();
-	FEnumEditorUtils::UpdateAfterPathChanged(this);
+	FEnumEditorUtils::PostEditUndo(this);
+}
+
+void UUserDefinedEnum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	// Add the description to the tooltip
+ 	static const FName NAME_Tooltip(TEXT("Tooltip"));
+
+	UPackage* Package = GetOutermost();
+	check(Package);
+	UMetaData* PackageMetaData = Package->GetMetaData();
+
+	if (!EnumDescription.IsEmpty())
+	{
+		PackageMetaData->SetValue(this, NAME_Tooltip, *EnumDescription.ToString());
+	}
+	else
+	{
+		PackageMetaData->RemoveValue(this, NAME_Tooltip);
+	}
+}
+
+void UUserDefinedEnum::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const
+{
+	Super::GetAssetRegistryTags(OutTags);
+
+	FString DescriptionString;
+	FTextStringHelper::WriteToString(/*out*/ DescriptionString, EnumDescription);
+	OutTags.Emplace(GET_MEMBER_NAME_CHECKED(UUserDefinedEnum, EnumDescription), DescriptionString, FAssetRegistryTag::TT_Hidden);
 }
 
 FString UUserDefinedEnum::GenerateNewEnumeratorName()
 {
-	const TCHAR* EnumNameBase = TEXT("NewEnumerator");
 	FString EnumNameString;
 	do 
 	{
-		EnumNameString = FString::Printf(TEXT("%s%u"), EnumNameBase, UniqueNameIndex);
+		EnumNameString = FString::Printf(TEXT("NewEnumerator%u"), UniqueNameIndex);
 		++UniqueNameIndex;
 	} 
 	while (!FEnumEditorUtils::IsProperNameForUserDefinedEnumerator(this, EnumNameString));

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneControlRigTrack.h"
 #include "MovieSceneControlRigSection.h"
@@ -17,7 +17,7 @@ UMovieSceneControlRigTrack::UMovieSceneControlRigTrack(const FObjectInitializer&
 	TrackTint = FColor(108, 53, 0, 65);
 #endif
 
-	EvalOptions.bEvaluateNearestSection = EvalOptions.bCanEvaluateNearestSection = true;
+	EvalOptions.bEvaluateNearestSection_DEPRECATED = EvalOptions.bCanEvaluateNearestSection = true;
 }
 
 void UMovieSceneControlRigTrack::AddNewControlRig(float KeyTime, UControlRigSequence* InSequence)

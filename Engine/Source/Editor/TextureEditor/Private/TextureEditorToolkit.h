@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -106,15 +106,6 @@ protected:
 	 * @return The widget.
 	 */
 	TSharedRef<SWidget> BuildTexturePropertiesWidget( );
-
-	/**
-	 * Calculates the effective in-game resolution of the texture.
-	 *
-	 * @param LODBias 
-	 * @param EffectiveTextureWidth 
-	 * @param EffectiveTextureHeight 
-	 */
-	void CalculateEffectiveTextureDimensions( int32 LODBias, uint32& EffectiveTextureWidth, uint32& EffectiveTextureHeight );
 
 	/**
 	 * Creates all internal widgets for the tabs to point at.

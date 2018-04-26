@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -24,6 +24,8 @@ public:
 	virtual TSharedPtr<class FAssetThumbnailPool> GetThumbnailPool() const override;
 	virtual void NotifyFinishedChangingProperties(const FPropertyChangedEvent& PropertyChangedEvent) override;
 	virtual bool DontUpdateValueWhileEditing() const override;
+	const TArray<TWeakObjectPtr<UObject>>& GetSelectedObjects() const override;
+	virtual bool HasClassDefaultObject() const override;
 private:
 	IDetailsViewPrivate& DetailsView;
 };

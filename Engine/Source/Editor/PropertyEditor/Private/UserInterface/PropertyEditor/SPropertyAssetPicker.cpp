@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "UserInterface/PropertyEditor/SPropertyAssetPicker.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Modules/ModuleManager.h"
@@ -73,6 +73,7 @@ TSharedRef<SWidget> SPropertyAssetPicker::OnGenerateAssetPicker()
 	AssetPickerConfig.Filter.bRecursiveClasses = true;
 	// Set a delegate for setting the asset from the picker
 	AssetPickerConfig.OnAssetSelected = FOnAssetSelected::CreateSP(this, &SPropertyAssetPicker::OnAssetSelectedFromPicker);
+	AssetPickerConfig.OnAssetEnterPressed = FOnAssetEnterPressed::CreateSP(this, &SPropertyAssetPicker::OnAssetEnterPressedFromPicker);
 	AssetPickerConfig.bAllowDragging = false;
 	// Use the list view by default
 	AssetPickerConfig.InitialAssetViewType = EAssetViewType::List;
@@ -91,12 +92,23 @@ TSharedRef<SWidget> SPropertyAssetPicker::OnGenerateAssetPicker()
 	return MenuContent;
 }
 
-void SPropertyAssetPicker::OnAssetSelectedFromPicker( const class FAssetData& AssetData )
+void SPropertyAssetPicker::OnAssetSelectedFromPicker( const struct FAssetData& AssetData )
 {
 	// Close the asset picker
 	AssetPickerAnchor->SetIsOpen( false );
 
 	OnAssetSelected.ExecuteIfBound( AssetData.GetAsset() );
+}
+
+void SPropertyAssetPicker::OnAssetEnterPressedFromPicker( const TArray<struct FAssetData>& AssetData )
+{
+	// Close the asset picker
+	AssetPickerAnchor->SetIsOpen( false );
+
+	if(AssetData.Num() > 0)
+	{
+		OnAssetSelected.ExecuteIfBound( AssetData[0].GetAsset() );
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -186,7 +186,7 @@ private:
 	void ShowNotifyInDetailsView( FName NotifyName );
 
 	/** Populates OutAssets with the AnimSequences that match Personas current skeleton */
-	void GetCompatibleAnimMontages( TArray<class FAssetData>& OutAssets );
+	void GetCompatibleAnimMontages( TArray<struct FAssetData>& OutAssets );
 	/** Populates OutAssets with the Anim Blueprints that match Personas current skeleton */
 	void GetCompatibleAnimBlueprints( TArray<FAssetData>& OutAssets );
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -201,7 +201,7 @@ public:
 #endif // !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct AIMODULE_API FAISenseAffiliationFilter
 {
 	GENERATED_USTRUCT_BODY()

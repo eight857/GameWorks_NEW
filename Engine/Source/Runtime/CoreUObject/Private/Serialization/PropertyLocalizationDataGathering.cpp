@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Serialization/PropertyLocalizationDataGathering.h"
 #include "UObject/Script.h"
@@ -166,8 +166,6 @@ void FPropertyLocalizationDataGatherer::GatherLocalizationDataFromObjectFields(c
 
 void FPropertyLocalizationDataGatherer::GatherLocalizationDataFromStructFields(const FString& PathToParent, const UStruct* Struct, const void* StructData, const void* DefaultStructData, const EPropertyLocalizationGathererTextFlags GatherTextFlags)
 {
-	const UStruct* ArchetypeStruct = Cast<UStruct>(Struct->GetArchetype());
-
 	for (TFieldIterator<const UField> FieldIt(Struct, EFieldIteratorFlags::IncludeSuper, EFieldIteratorFlags::ExcludeDeprecated, EFieldIteratorFlags::IncludeInterfaces); FieldIt; ++FieldIt)
 	{
 		// Gather text from the property data
@@ -176,17 +174,7 @@ void FPropertyLocalizationDataGatherer::GatherLocalizationDataFromStructFields(c
 			if (PropertyField)
 			{
 				const void* ValueAddress = PropertyField->ContainerPtrToValuePtr<void>(StructData);
-				const void* DefaultValueAddress = nullptr;
-
-				if (ArchetypeStruct && DefaultStructData)
-				{
-					const UProperty* ArchetypePropertyField = FindField<UProperty>(ArchetypeStruct, *PropertyField->GetName());
-					if (ArchetypePropertyField && ArchetypePropertyField->IsA(PropertyField->GetClass()))
-					{
-						DefaultValueAddress = ArchetypePropertyField->ContainerPtrToValuePtr<void>(DefaultStructData);
-					}
-				}
-
+				const void* DefaultValueAddress = DefaultStructData ? PropertyField->ContainerPtrToValuePtr<void>(DefaultStructData) : nullptr;
 				GatherLocalizationDataFromChildTextProperties(PathToParent, PropertyField, ValueAddress, DefaultValueAddress, GatherTextFlags | (PropertyField->HasAnyPropertyFlags(CPF_EditorOnly) ? EPropertyLocalizationGathererTextFlags::ForceEditorOnly : EPropertyLocalizationGathererTextFlags::None));
 			}
 		}
@@ -265,7 +253,7 @@ void FPropertyLocalizationDataGatherer::GatherLocalizationDataFromChildTextPrope
 			// Iterate over all elements of the map.
 			FScriptMapHelper ScriptMapHelper(MapProperty, ElementValueAddress);
 			const int32 ElementCount = ScriptMapHelper.Num();
-			for(int32 j = 0; j < ElementCount; ++j)
+			for(int32 j = 0, ElementIndex = 0; ElementIndex < ElementCount; ++j)
 			{
 				if (!ScriptMapHelper.IsValidIndex(j))
 				{
@@ -273,8 +261,9 @@ void FPropertyLocalizationDataGatherer::GatherLocalizationDataFromChildTextPrope
 				}
 
 				const uint8* MapPairPtr = ScriptMapHelper.GetPairPtr(j);
-				GatherLocalizationDataFromChildTextProperties(PathToElement + FString::Printf(TEXT("(%d - Key)"), j), MapProperty->KeyProp, MapPairPtr + MapProperty->MapLayout.KeyOffset, nullptr, ChildPropertyGatherTextFlags);
-				GatherLocalizationDataFromChildTextProperties(PathToElement + FString::Printf(TEXT("(%d - Value)"), j), MapProperty->ValueProp, MapPairPtr + MapProperty->MapLayout.ValueOffset, nullptr, ChildPropertyGatherTextFlags);
+				GatherLocalizationDataFromChildTextProperties(PathToElement + FString::Printf(TEXT("(%d - Key)"), ElementIndex), MapProperty->KeyProp, MapPairPtr + MapProperty->MapLayout.KeyOffset, nullptr, ChildPropertyGatherTextFlags);
+				GatherLocalizationDataFromChildTextProperties(PathToElement + FString::Printf(TEXT("(%d - Value)"), ElementIndex), MapProperty->ValueProp, MapPairPtr + MapProperty->MapLayout.ValueOffset, nullptr, ChildPropertyGatherTextFlags);
+				++ElementIndex;
 			}
 		}
 		// Property is a set property.
@@ -283,7 +272,7 @@ void FPropertyLocalizationDataGatherer::GatherLocalizationDataFromChildTextPrope
 			// Iterate over all elements of the Set.
 			FScriptSetHelper ScriptSetHelper(SetProperty, ElementValueAddress);
 			const int32 ElementCount = ScriptSetHelper.Num();
-			for(int32 j = 0; j < ElementCount; ++j)
+			for(int32 j = 0, ElementIndex = 0; ElementIndex < ElementCount; ++j)
 			{
 				if (!ScriptSetHelper.IsValidIndex(j))
 				{
@@ -291,7 +280,8 @@ void FPropertyLocalizationDataGatherer::GatherLocalizationDataFromChildTextPrope
 				}
 
 				const uint8* ElementPtr = ScriptSetHelper.GetElementPtr(j);
-				GatherLocalizationDataFromChildTextProperties(PathToElement + FString::Printf(TEXT("(%d)"), j), SetProperty->ElementProp, ElementPtr + SetProperty->SetLayout.ElementOffset, nullptr, ChildPropertyGatherTextFlags);
+				GatherLocalizationDataFromChildTextProperties(PathToElement + FString::Printf(TEXT("(%d)"), ElementIndex), SetProperty->ElementProp, ElementPtr + SetProperty->SetLayout.ElementOffset, nullptr, ChildPropertyGatherTextFlags);
+				++ElementIndex;
 			}
 		}
 		// Property is a struct property.
@@ -313,6 +303,45 @@ void FPropertyLocalizationDataGatherer::GatherLocalizationDataFromChildTextPrope
 
 void FPropertyLocalizationDataGatherer::GatherTextInstance(const FText& Text, const FString& Description, const bool bIsEditorOnly)
 {
+	auto AddGatheredText = [this, &Description](const FString& InNamespace, const FString& InKey, const FTextSourceData& InSourceData, const bool InIsEditorOnly)
+	{
+		FGatherableTextData* GatherableTextData = GatherableTextDataArray.FindByPredicate([&](const FGatherableTextData& Candidate)
+		{
+			return Candidate.NamespaceName.Equals(InNamespace, ESearchCase::CaseSensitive)
+				&& Candidate.SourceData.SourceString.Equals(InSourceData.SourceString, ESearchCase::CaseSensitive)
+				&& Candidate.SourceData.SourceStringMetaData == InSourceData.SourceStringMetaData;
+		});
+		if (!GatherableTextData)
+		{
+			GatherableTextData = &GatherableTextDataArray[GatherableTextDataArray.AddDefaulted()];
+			GatherableTextData->NamespaceName = InNamespace;
+			GatherableTextData->SourceData = InSourceData;
+		}
+
+		// We might attempt to add the same text multiple times if we process the same object with slightly different flags - only add this source site once though.
+		{
+			static const FLocMetadataObject DefaultMetadataObject;
+			const bool bFoundSourceSiteContext = GatherableTextData->SourceSiteContexts.ContainsByPredicate([&](const FTextSourceSiteContext& InSourceSiteContext) -> bool
+			{
+				return InSourceSiteContext.KeyName.Equals(InKey, ESearchCase::CaseSensitive)
+					&& InSourceSiteContext.SiteDescription.Equals(Description, ESearchCase::CaseSensitive)
+					&& InSourceSiteContext.IsEditorOnly == InIsEditorOnly
+					&& InSourceSiteContext.IsOptional == false
+					&& InSourceSiteContext.InfoMetaData == DefaultMetadataObject
+					&& InSourceSiteContext.KeyMetaData == DefaultMetadataObject;
+			});
+
+			if (!bFoundSourceSiteContext)
+			{
+				FTextSourceSiteContext& SourceSiteContext = GatherableTextData->SourceSiteContexts[GatherableTextData->SourceSiteContexts.AddDefaulted()];
+				SourceSiteContext.KeyName = InKey;
+				SourceSiteContext.SiteDescription = Description;
+				SourceSiteContext.IsEditorOnly = InIsEditorOnly;
+				SourceSiteContext.IsOptional = false;
+			}
+		}
+	};
+
 	FString Namespace;
 	FString Key;
 	const FTextDisplayStringRef DisplayString = FTextInspector::GetSharedDisplayString(Text);
@@ -328,56 +357,12 @@ void FPropertyLocalizationDataGatherer::GatherTextInstance(const FText& Text, co
 	FTextSourceData SourceData;
 	{
 		const FString* SourceString = FTextInspector::GetSourceString(Text);
-		SourceData.SourceString = SourceString ? *SourceString : TEXT("");
+		SourceData.SourceString = SourceString ? *SourceString : FString();
 	}
 
-	FGatherableTextData* GatherableTextData = GatherableTextDataArray.FindByPredicate([&](const FGatherableTextData& Candidate)
-	{
-		return Candidate.NamespaceName.Equals(Namespace, ESearchCase::CaseSensitive)
-			&& Candidate.SourceData.SourceString.Equals(SourceData.SourceString, ESearchCase::CaseSensitive) 
-			&& Candidate.SourceData.SourceStringMetaData == SourceData.SourceStringMetaData;
-	});
-	if(!GatherableTextData)
-	{
-		GatherableTextData = &GatherableTextDataArray[GatherableTextDataArray.AddDefaulted()];
-		GatherableTextData->NamespaceName = Namespace;
-		GatherableTextData->SourceData = SourceData;
-	}
-
-#if USE_STABLE_LOCALIZATION_KEYS
-	// Make sure the namespace is what we expect for this package
-	// This would usually be done when the text is loaded, but we also gather text when saving packages so we need to make sure things are consistent
-	{
-		const FString PackageNamespace = TextNamespaceUtil::GetPackageNamespace(Package);
-		if (!PackageNamespace.IsEmpty())
-		{
-			Namespace = TextNamespaceUtil::BuildFullNamespace(Namespace, PackageNamespace);
-		}
-	}
-#endif // USE_STABLE_LOCALIZATION_KEYS
-
-	// We might attempt to add the same text multiple times if we process the same object with slightly different flags - only add this source site once though.
-	{
-		static const FLocMetadataObject DefaultMetadataObject;
-		const bool bFoundSourceSiteContext = GatherableTextData->SourceSiteContexts.ContainsByPredicate([&](const FTextSourceSiteContext& InSourceSiteContext) -> bool
-		{
-			return InSourceSiteContext.KeyName.Equals(Key, ESearchCase::CaseSensitive)
-				&& InSourceSiteContext.SiteDescription.Equals(Description, ESearchCase::CaseSensitive)
-				&& InSourceSiteContext.IsEditorOnly == bIsEditorOnly
-				&& InSourceSiteContext.IsOptional == false
-				&& InSourceSiteContext.InfoMetaData == DefaultMetadataObject
-				&& InSourceSiteContext.KeyMetaData == DefaultMetadataObject;
-		});
-
-		if (!bFoundSourceSiteContext)
-		{
-			FTextSourceSiteContext& SourceSiteContext = GatherableTextData->SourceSiteContexts[GatherableTextData->SourceSiteContexts.AddDefaulted()];
-			SourceSiteContext.KeyName = Key;
-			SourceSiteContext.SiteDescription = Description;
-			SourceSiteContext.IsEditorOnly = bIsEditorOnly;
-			SourceSiteContext.IsOptional = false;
-		}
-	}
+	// Always include the text without its package localization ID
+	const FString CleanNamespace = TextNamespaceUtil::StripPackageNamespace(Namespace);
+	AddGatheredText(CleanNamespace, Key, SourceData, bIsEditorOnly);
 }
 
 struct FGatherTextFromScriptBytecode

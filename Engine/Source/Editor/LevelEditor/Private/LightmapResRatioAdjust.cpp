@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*================================================================================
 	LightmapResRatioAdjust.cpp: Lightmap Resolution Ratio Adjustment helper
@@ -171,7 +171,7 @@ bool FLightmapResRatioAdjustSettings::ApplyRatioAdjustment()
 				{
 					bConvertIt = false;
 				}
-				else if( SMComp->GetWorld() && SMComp->GetWorld()->WorldType == EWorldType::EditorPreview && SMComp->GetWorld()->WorldType != EWorldType::Inactive )
+				else if( SMComp->GetWorld() && (SMComp->GetWorld()->WorldType == EWorldType::EditorPreview || SMComp->GetWorld()->WorldType == EWorldType::Inactive) )
 				{
 					// Don't do objects with an editor preview or inactive world
 					bConvertIt = false;

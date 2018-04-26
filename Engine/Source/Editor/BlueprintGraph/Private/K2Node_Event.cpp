@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "K2Node_Event.h"
 #include "UObject/UObjectHash.h"
@@ -16,7 +16,7 @@
 #include "KismetCompiler.h"
 #include "EventEntryHandler.h"
 
-const FString UK2Node_Event::DelegateOutputName(TEXT("OutputDelegate"));
+const FName UK2Node_Event::DelegateOutputName(TEXT("OutputDelegate"));
 
 bool UK2Node_Event::IsCosmeticTickEvent() const
 {
@@ -28,7 +28,7 @@ bool UK2Node_Event::IsCosmeticTickEvent() const
 		if (Blueprint)
 		{
 			UClass* BPClass = Blueprint->GeneratedClass;
-			const AActor* DefaultActor = BPClass ? Cast<const AActor>(BPClass->GetDefaultObject()) : NULL;
+			const AActor* DefaultActor = BPClass ? Cast<const AActor>(BPClass->GetDefaultObject()) : nullptr;
 			if (DefaultActor && !DefaultActor->AllowReceiveTickEventOnDedicatedServer())
 			{
 				return true;
@@ -75,8 +75,7 @@ void UK2Node_Event::PostLoad()
 	// Fix up legacy nodes that may not yet have a delegate pin
 	if (!FindPin(DelegateOutputName))
 	{
-		const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-		CreatePin(EGPD_Output, K2Schema->PC_Delegate, TEXT(""), NULL, false, false, DelegateOutputName);
+		CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Delegate, DelegateOutputName);
 	}
 }
 
@@ -191,7 +190,7 @@ FString UK2Node_Event::GetDocumentationLink() const
 		return FString::Printf(TEXT("Shared/Types/%s%s"), EventSignatureClass->GetPrefixCPP(), *EventSignatureClass->GetName());
 	}
 
-	return TEXT("");
+	return FString();
 }
 
 FString UK2Node_Event::GetDocumentationExcerptName() const
@@ -306,13 +305,11 @@ UFunction* UK2Node_Event::FindEventSignatureFunction()
 
 void UK2Node_Event::AllocateDefaultPins()
 {
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-
-	CreatePin(EGPD_Output, K2Schema->PC_Delegate, TEXT(""), NULL, false, false, DelegateOutputName);
-	CreatePin(EGPD_Output, K2Schema->PC_Exec, TEXT(""), NULL, false, false, K2Schema->PN_Then);
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Delegate, DelegateOutputName);
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
 
 	const UFunction* Function = FindEventSignatureFunction();
-	if (Function != NULL)
+	if (Function)
 	{
 		CreatePinsForFunctionEntryExit(Function, /*bIsFunctionEntry=*/ true);
 	}
@@ -333,7 +330,7 @@ void UK2Node_Event::ValidateNodeDuringCompilation(class FCompilerResultsLog& Mes
 		if (!Function)
 		{
 			// If we are overriding a function, but we can;t find the function we are overriding, that is a compile error
-			MessageLog.Error(*FString::Printf(*NSLOCTEXT("KismetCompiler", "MissingEventSig_Error", "Missing Event '%s' for @@").ToString(), *EventReference.GetMemberName().ToString()), this);
+			MessageLog.Error(*FText::Format(NSLOCTEXT("KismetCompiler", "MissingEventSig_ErrorFmt", "Missing Event '{0}' for @@"), FText::FromString(EventReference.GetMemberName().ToString())).ToString(), this);
 		}
 	}
 	else if (UBlueprint* Blueprint = GetBlueprint())
@@ -385,10 +382,11 @@ bool UK2Node_Event::IsFunctionEntryCompatible(const UK2Node_FunctionEntry* Entry
 	for(int32 i = 0; i < EventPins.Num(); i++)
 	{
 		const UEdGraphPin* CurPin = EventPins[i];
-		if( CurPin->PinType.PinCategory == K2Schema->PC_Exec 
-			|| CurPin->PinType.PinSubCategory == K2Schema->PSC_Self
+		if( CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec 
+			|| CurPin->PinType.PinSubCategory == UEdGraphSchema_K2::PSC_Self
 			|| CurPin->PinName == DelegateOutputName
-			|| CurPin->Direction == EGPD_Input )
+			|| CurPin->Direction == EGPD_Input
+			|| CurPin->ParentPin != nullptr )
 		{
 			EventPins.RemoveAt(i, 1);
 			i--;
@@ -398,9 +396,11 @@ bool UK2Node_Event::IsFunctionEntryCompatible(const UK2Node_FunctionEntry* Entry
 	for(int32 i = 0; i < EntryPins.Num(); i++)
 	{
 		const UEdGraphPin* CurPin = EntryPins[i];
-		if( CurPin->PinType.PinCategory == K2Schema->PC_Exec 
-			|| CurPin->PinType.PinSubCategory == K2Schema->PSC_Self
-			|| CurPin->Direction == EGPD_Input)
+		if( CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec 
+			|| CurPin->PinType.PinSubCategory == UEdGraphSchema_K2::PSC_Self
+			|| CurPin->PinName == DelegateOutputName
+			|| CurPin->Direction == EGPD_Input
+			|| CurPin->ParentPin != nullptr )
 		{
 			EntryPins.RemoveAt(i, 1);
 			i--;
@@ -480,7 +480,7 @@ bool UK2Node_Event::CanPasteHere(const UEdGraph* TargetGraph) const
 		UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(TargetGraph);
 		if(Blueprint && Blueprint->SkeletonGeneratedClass)
 		{
-			TArray<FName> ExistingNamesInUse;
+			TSet<FName> ExistingNamesInUse;
 			TArray<FString> ExcludedEventNames;
 			TArray<UK2Node_Event*> ExistingEventNodes;
 			TArray<UClass*> ImplementedInterfaceClasses;
@@ -496,7 +496,7 @@ bool UK2Node_Event::CanPasteHere(const UEdGraph* TargetGraph) const
 			const FString ExclusionListKeyName = TEXT("KismetHideOverrides");
 			if(Blueprint->ParentClass->HasMetaData(*ExclusionListKeyName))
 			{
-				const FString ExcludedEventNameString = Blueprint->ParentClass->GetMetaData(*ExclusionListKeyName);
+				const FString& ExcludedEventNameString = Blueprint->ParentClass->GetMetaData(*ExclusionListKeyName);
 				ExcludedEventNameString.ParseIntoArray(ExcludedEventNames, TEXT(","), true);
 			}
 
@@ -540,7 +540,7 @@ bool UK2Node_Event::CanPasteHere(const UEdGraph* TargetGraph) const
 								{
 									UK2Node_FunctionEntry* ExistingFunctionEntryNode = *NodeIt;
 									bDisallowPaste = ExistingFunctionEntryNode->bEnforceConstCorrectness
-										&& ExistingFunctionEntryNode->SignatureName == EventReference.GetMemberName();
+										&& ExistingFunctionEntryNode->FunctionReference.GetMemberName() == EventReference.GetMemberName();
 								}
 							}
 						}
@@ -673,7 +673,7 @@ void UK2Node_Event::ExpandNode(class FKismetCompilerContext& CompilerContext, UE
 		const FName FunctionName = GetFunctionName();
 		if(FunctionName == NAME_None)
 		{
-			CompilerContext.MessageLog.Error(*FString::Printf(*LOCTEXT("EventDelegateName_Error", "Event node @@ has no name of function.").ToString()), this);
+			CompilerContext.MessageLog.Error(*LOCTEXT("EventDelegateName_Error", "Event node @@ has no name of function.").ToString(), this);
 		}
 
 		UK2Node_Self* SelfNode = CompilerContext.SpawnIntermediateNode<UK2Node_Self>(this, SourceGraph);
@@ -682,7 +682,7 @@ void UK2Node_Event::ExpandNode(class FKismetCompilerContext& CompilerContext, UE
 		UK2Node_CreateDelegate* CreateDelegateNode = CompilerContext.SpawnIntermediateNode<UK2Node_CreateDelegate>(this, SourceGraph);
 		CreateDelegateNode->AllocateDefaultPins();
 		CompilerContext.MovePinLinksToIntermediate(*OrgDelegatePin, *CreateDelegateNode->GetDelegateOutPin());
-		Schema->TryCreateConnection(SelfNode->FindPinChecked(Schema->PN_Self), CreateDelegateNode->GetObjectInPin());
+		Schema->TryCreateConnection(SelfNode->FindPinChecked(UEdGraphSchema_K2::PN_Self), CreateDelegateNode->GetObjectInPin());
 		// When called UFunction is defined in the same class, it wasn't created yet (previously the Skeletal class was checked). So no "CreateDelegateNode->HandleAnyChangeWithoutNotifying();" is called.
 		CreateDelegateNode->SetFunction(FunctionName);
 	}

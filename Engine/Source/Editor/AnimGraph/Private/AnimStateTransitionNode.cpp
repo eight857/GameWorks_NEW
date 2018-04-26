@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AnimStateTransitionNode.cpp
@@ -15,6 +15,8 @@
 #include "Kismet2/CompilerResultsLog.h"
 #include "EdGraphUtilities.h"
 #include "Kismet2/Kismet2NameValidators.h"
+#include "ScopedTransaction.h"
+#include "Animation/BlendProfile.h"
 
 //////////////////////////////////////////////////////////////////////////
 // IAnimStateTransitionNodeSharedDataHelper
@@ -82,9 +84,9 @@ UAnimStateTransitionNode::UAnimStateTransitionNode(const FObjectInitializer& Obj
 
 void UAnimStateTransitionNode::AllocateDefaultPins()
 {
-	UEdGraphPin* Inputs = CreatePin(EGPD_Input, TEXT("Transition"), TEXT(""), NULL, false, false, TEXT("In"));
+	UEdGraphPin* Inputs = CreatePin(EGPD_Input, TEXT("Transition"), TEXT("In"));
 	Inputs->bHidden = true;
-	UEdGraphPin* Outputs = CreatePin(EGPD_Output, TEXT("Transition"), TEXT(""), NULL, false, false, TEXT("Out"));
+	UEdGraphPin* Outputs = CreatePin(EGPD_Output, TEXT("Transition"), TEXT("Out"));
 	Outputs->bHidden = true;
 }
 
@@ -124,6 +126,29 @@ void UAnimStateTransitionNode::PostLoad()
 				break;
 		}
 	}
+
+	if(GetLinkerCustomVersion(FAnimPhysObjectVersion::GUID) < FAnimPhysObjectVersion::FixupBadBlendProfileReferences)
+	{
+		ValidateBlendProfile();
+	}
+}
+
+bool UAnimStateTransitionNode::ValidateBlendProfile()
+{
+	if(BlendProfile)
+	{
+		// validate the skeleton of our blend profile
+		UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNodeChecked(this);
+		UAnimBlueprint* AnimBP = CastChecked<UAnimBlueprint>(Blueprint);
+
+		if(AnimBP->TargetSkeleton && !AnimBP->TargetSkeleton->BlendProfiles.Contains(BlendProfile))
+		{
+			BlendProfile = nullptr;
+			return false;
+		}
+	}
+
+	return true;
 }
 
 void UAnimStateTransitionNode::PostPasteNode()
@@ -157,6 +182,8 @@ void UAnimStateTransitionNode::PostPasteNode()
 		// Transactional flag is lost in copy/paste, restore it.
 		CustomTransitionGraph->SetFlags(RF_Transactional);
 	}
+
+	ValidateBlendProfile();
 
 	Super::PostPasteNode();
 
@@ -281,7 +308,10 @@ void UAnimStateTransitionNode::PostEditChangeProperty(struct FPropertyChangedEve
 {
 	FName PropertyName = (PropertyChangedEvent.Property != NULL) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
 
-	if ((PropertyName == FName(TEXT("CrossfadeDuration"))) || (PropertyName == FName(TEXT("CrossfadeMode"))) )
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UAnimStateTransitionNode, CrossfadeDuration) || 
+		PropertyName == GET_MEMBER_NAME_CHECKED(UAnimStateTransitionNode, BlendMode) ||
+		PropertyName == GET_MEMBER_NAME_CHECKED(UAnimStateTransitionNode, CustomBlendCurve) ||
+		PropertyName == GET_MEMBER_NAME_CHECKED(UAnimStateTransitionNode, BlendProfile))
 	{
 		PropagateCrossfadeSettings();
 	}
@@ -361,6 +391,15 @@ void UAnimStateTransitionNode::UnshareCrossade()
 
 void UAnimStateTransitionNode::UseSharedRules(const UAnimStateTransitionNode* Node)
 {
+	if(Node == this || Node == nullptr)
+	{
+		return;
+	}
+
+	FScopedTransaction Transaction(LOCTEXT("UseSharedRules", "Use Shared Rules"));
+
+	Modify();
+
 	UEdGraph* CurrentGraph = GetGraph();
 	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraphChecked(CurrentGraph);
 
@@ -392,6 +431,15 @@ void UAnimStateTransitionNode::UseSharedRules(const UAnimStateTransitionNode* No
 
 void UAnimStateTransitionNode::UseSharedCrossfade(const UAnimStateTransitionNode* Node)
 {
+	if(Node == this || Node == nullptr)
+	{
+		return;
+	}
+
+	FScopedTransaction Transaction(LOCTEXT("UseSharedCrossfade", "Use Shared Crossfade"));
+
+	Modify();
+
 	bSharedCrossfade = Node->bSharedCrossfade;
 	SharedCrossfadeName = Node->SharedCrossfadeName;
 	SharedCrossfadeGuid = Node->SharedCrossfadeGuid;
@@ -403,6 +451,8 @@ void UAnimStateTransitionNode::CopyCrossfadeSettings(const UAnimStateTransitionN
 	CrossfadeDuration = SrcNode->CrossfadeDuration;
 	CrossfadeMode_DEPRECATED = SrcNode->CrossfadeMode_DEPRECATED;
 	BlendMode = SrcNode->BlendMode;
+	CustomBlendCurve = SrcNode->CustomBlendCurve;
+	BlendProfile = SrcNode->BlendProfile;
 	SharedCrossfadeIdx = SrcNode->SharedCrossfadeIdx;
 	SharedCrossfadeName = SrcNode->SharedCrossfadeName;
 	SharedCrossfadeGuid = SrcNode->SharedCrossfadeGuid;
@@ -415,8 +465,9 @@ void UAnimStateTransitionNode::PropagateCrossfadeSettings()
 	{
 		if (UAnimStateTransitionNode* Node = Cast<UAnimStateTransitionNode>(CurrentGraph->Nodes[idx]))
 		{
-			if (Node->SharedCrossfadeIdx != INDEX_NONE)
+			if (Node->SharedCrossfadeIdx != INDEX_NONE && Node->SharedCrossfadeGuid == SharedCrossfadeGuid)
 			{
+				Node->Modify();
 				Node->CopyCrossfadeSettings(this);
 			}
 		}
@@ -479,6 +530,12 @@ void UAnimStateTransitionNode::CreateCustomTransitionGraph()
 	}
 }
 
+void UAnimStateTransitionNode::Serialize(FArchive& Ar)
+{
+	Super::Serialize(Ar);
+	Ar.UsingCustomVersion(FAnimPhysObjectVersion::GUID);
+}
+
 void UAnimStateTransitionNode::DestroyNode()
 {
 	// BoundGraph may be shared with another graph, if so, don't remove it here
@@ -522,6 +579,8 @@ bool UAnimStateTransitionNode::IsBoundGraphShared()
 
 void UAnimStateTransitionNode::ValidateNodeDuringCompilation(class FCompilerResultsLog& MessageLog) const
 {
+	Super::ValidateNodeDuringCompilation(MessageLog);
+
 	if (UAnimationTransitionGraph* TransGraph = Cast<UAnimationTransitionGraph>(BoundGraph))
 	{
 		UAnimGraphNode_TransitionResult* ResultNode = TransGraph->GetResultNode();

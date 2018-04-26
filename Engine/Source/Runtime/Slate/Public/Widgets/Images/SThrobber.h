@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,13 +14,17 @@ class FPaintArgs;
 class FSlateWindowElementList;
 class SHorizontalBox;
 
-/** A Throbber widget that uses 5 zooming circles in a row.*/
-class SLATE_API SThrobber : public SCompoundWidget
-{
 
-static const int32 DefaultNumPieces = 3;
+/**
+ * A throbber widget that uses 5 zooming circles in a row.
+ */
+class SLATE_API SThrobber
+	: public SCompoundWidget
+{
+	static const int32 DefaultNumPieces = 3;
 
 public:
+
 	enum EAnimation
 	{
 		Vertical = 0x1 << 0,
@@ -57,13 +61,14 @@ public:
 	void SetAnimate(EAnimation InAnimate);
 
 private:
+
 	FVector2D GetPieceScale(int32 PieceIndex) const;
 	FLinearColor GetPieceColor(int32 PieceIndex) const;
 
 	/** Constructs the curves and widgets for the pieces which make up the throbber. */
 	void ConstructPieces();
 
-	/** Gets the brush used to draw each piece of the thobber. */
+	/** Gets the brush used to draw each piece of the throbber. */
 	const FSlateBrush* GetPieceBrush() const;
 
 private:
@@ -71,19 +76,25 @@ private:
 	FCurveSequence AnimCurves;
 	TArray<FCurveHandle, TInlineAllocator<DefaultNumPieces> > ThrobberCurve;
 
-	/** The horizontal box which contains the widgets for the trobber pieces. */
+	/** The horizontal box which contains the widgets for the throbber pieces. */
 	TSharedPtr<SHorizontalBox> HBox;
 
 	/** The image used to draw each piece of the throbber. */
 	const FSlateBrush* PieceImage;
+
 	/** The number of pieces to display. */
 	int NumPieces;
-	/** Flags for which apsects of the throbber to animate. */
+
+	/** Flags for which aspects of the throbber to animate. */
 	EAnimation Animate;
 };
 
-/** A throbber widget that orients images in a spinning circle. */
-class SLATE_API SCircularThrobber : public SLeafWidget
+
+/**
+ * A throbber widget that orients images in a spinning circle.
+ */
+class SLATE_API SCircularThrobber
+	: public SLeafWidget
 {
 public:
 	static const float MinimumPeriodValue;
@@ -121,25 +132,29 @@ public:
 	/** Sets the radius of the circle */
 	void SetRadius(float InRadius);
 
-	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
+	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
 	virtual FVector2D ComputeDesiredSize(float) const override;
 
 private:
 
-	/** Constructs the sequence used to animate the trobber. */
+	/** Constructs the sequence used to animate the throbber. */
 	void ConstructSequence();
 
 private:
+
 	/** The sequence to drive the spinning animation */
 	FCurveSequence Sequence;
 	FCurveHandle Curve;
 
 	/** What each segment of the throbber looks like */
 	const FSlateBrush* PieceImage;
+
 	/** How many pieces there are */
 	int32 NumPieces;
+
 	/** The amount of time in seconds for a full circle */
 	float Period;
+
 	/** The radius of the circle */
 	float Radius;
 };

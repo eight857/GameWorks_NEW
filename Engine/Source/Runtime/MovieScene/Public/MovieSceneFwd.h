@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,6 +6,7 @@
 #include "Stats/Stats.h"
 #include "MovieSceneSequenceID.h"
 
+UENUM()
 namespace EMovieScenePlayerStatus
 {
 	enum Type
@@ -16,6 +17,7 @@ namespace EMovieScenePlayerStatus
 		Scrubbing,
 		Jumping,
 		Stepping,
+		Paused,
 		MAX
 	};
 }

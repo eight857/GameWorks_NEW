@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SFilterList.h"
@@ -185,9 +185,10 @@ public:
 
 		if ( AssetTypeActions.IsValid() )
 		{
-			// Add the supported class for this type to a filter
-			Filter.ClassNames.Add(AssetTypeActions.Pin()->GetSupportedClass()->GetFName());
-			Filter.bRecursiveClasses = true;
+			if (AssetTypeActions.Pin()->CanFilter())
+			{
+				AssetTypeActions.Pin()->BuildBackendFilter(Filter);
+			}
 		}
 
 		return Filter;
@@ -408,6 +409,8 @@ void SFilterList::Construct( const FArguments& InArgs )
 	AllFrontendFilters.Add( MakeShareable(new FFrontendFilter_ReplicatedBlueprint(DefaultCategory)) );
 	AllFrontendFilters.Add( MakeShareable(new FFrontendFilter_ShowRedirectors(DefaultCategory)) );
 	AllFrontendFilters.Add( MakeShareable(new FFrontendFilter_InUseByLoadedLevels(DefaultCategory)) );
+	AllFrontendFilters.Add( MakeShareable(new FFrontendFilter_UsedInAnyLevel(DefaultCategory)) );
+	AllFrontendFilters.Add( MakeShareable(new FFrontendFilter_NotUsedInAnyLevel(DefaultCategory)) );
 	AllFrontendFilters.Add( MakeShareable(new FFrontendFilter_ArbitraryComparisonOperation(DefaultCategory)) );
 
 	// Add any global user-defined frontend filters
@@ -415,7 +418,7 @@ void SFilterList::Construct( const FArguments& InArgs )
 	{
 		if (UContentBrowserFrontEndFilterExtension* PotentialExtension = *ExtensionIt)
 		{
-			if (PotentialExtension->HasAnyFlags(RF_ClassDefaultObject) && !PotentialExtension->GetClass()->HasAnyCastFlag(CLASS_Deprecated | CLASS_Abstract))
+			if (PotentialExtension->HasAnyFlags(RF_ClassDefaultObject) && !PotentialExtension->GetClass()->HasAnyClassFlags(CLASS_Deprecated | CLASS_Abstract))
 			{
 				// Grab the filters
 				TArray< TSharedRef<FFrontendFilter> > ExtendedFrontendFilters;

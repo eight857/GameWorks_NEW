@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PaperTileMapComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -55,7 +55,7 @@ FPrimitiveSceneProxy* UPaperTileMapComponent::CreateSceneProxy()
 	SCOPE_CYCLE_COUNTER(STAT_PaperRender_TileMapRebuild);
 
 	TArray<FSpriteRenderSection>* Sections;
-	TArray<FPaperSpriteVertex>* Vertices;
+	TArray<FDynamicMeshVertex>* Vertices;
 	FPaperTileMapRenderSceneProxy* Proxy = FPaperTileMapRenderSceneProxy::CreateTileMapProxy(this, /*out*/ Sections, /*out*/ Vertices);
 
 	RebuildRenderData(*Sections, *Vertices);
@@ -236,7 +236,7 @@ const UObject* UPaperTileMapComponent::AdditionalStatObject() const
 	return nullptr;
 }
 
-void UPaperTileMapComponent::RebuildRenderData(TArray<FSpriteRenderSection>& Sections, TArray<FPaperSpriteVertex>& Vertices)
+void UPaperTileMapComponent::RebuildRenderData(TArray<FSpriteRenderSection>& Sections, TArray<FDynamicMeshVertex>& Vertices)
 {
 	if (TileMap == nullptr)
 	{
@@ -387,8 +387,8 @@ void UPaperTileMapComponent::RebuildRenderData(TArray<FSpriteRenderSection>& Sec
 					{
 						CurrentBatch = new (Sections) FSpriteRenderSection();
 						CurrentBatch->BaseTexture = SourceTexture;
-						//CurrentBatch->AdditionalTextures = ?; //@TODO: PAPER2D: Need to add multi-texture support to tile sets / tile maps
-						// Probably also need to change the batch check here to TileSet changing to avoid checking each texture in the array
+						CurrentBatch->AdditionalTextures = TileInfo.TileSet->GetAdditionalTextures(); 
+						//@TODO: Not checking the AdditionalTextures array to see if it's changed to break a batch (almost always going to be fine to skip it as the same base texture is fairly unlikely to be shared with different additional textures)
 						CurrentBatch->Material = TileMapMaterial;
 						CurrentBatch->VertexOffset = Vertices.Num();
 						CurrentDestinationOrigin = TopLeftCornerOfTile.ProjectOnTo(PaperAxisZ);
@@ -611,7 +611,7 @@ void UPaperTileMapComponent::SetTileMapColor(FLinearColor NewColor)
 
 FLinearColor UPaperTileMapComponent::GetLayerColor(int32 Layer) const
 {
-	if (TileMap->TileLayers.IsValidIndex(Layer))
+	if ((TileMap != nullptr) && TileMap->TileLayers.IsValidIndex(Layer))
 	{
 		return TileMap->TileLayers[Layer]->GetLayerColor();
 	}
@@ -665,7 +665,7 @@ FVector UPaperTileMapComponent::GetTileCornerPosition(int32 TileX, int32 TileY, 
 
 	if (bWorldSpace)
 	{
-		Result = ComponentToWorld.TransformPosition(Result);
+		Result = GetComponentTransform().TransformPosition(Result);
 	}
 	return Result;
 }
@@ -681,7 +681,7 @@ FVector UPaperTileMapComponent::GetTileCenterPosition(int32 TileX, int32 TileY, 
 
 	if (bWorldSpace)
 	{
-		Result = ComponentToWorld.TransformPosition(Result);
+		Result = GetComponentTransform().TransformPosition(Result);
 	}
 	return Result;
 }
@@ -697,9 +697,10 @@ void UPaperTileMapComponent::GetTilePolygon(int32 TileX, int32 TileY, TArray<FVe
 
 	if (bWorldSpace)
 	{
+		const FTransform& ComponentTransform = GetComponentTransform();
 		for (FVector& Point : Points)
 		{
-			Point = ComponentToWorld.TransformPosition(Point);
+			Point = ComponentTransform.TransformPosition(Point);
 		}
 	}
 }
@@ -736,7 +737,7 @@ void UPaperTileMapComponent::SetLayerCollision(int32 Layer, bool bHasCollision, 
 		}
 		else
 		{
-			UE_LOG(LogPaper2D, Warning, TEXT("Invalid layer index %d for %s"), Layer, *TileMap->GetPathName());
+			UE_LOG(LogPaper2D, Warning, TEXT("Invalid layer index %d for %s"), Layer, *GetPathNameSafe(TileMap));
 		}
 	}
 }

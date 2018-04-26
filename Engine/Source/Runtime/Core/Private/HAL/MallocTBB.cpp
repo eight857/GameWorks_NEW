@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MallocTTB.cpp: IntelTTB Malloc
@@ -37,13 +37,25 @@ void* FMallocTBB::Malloc( SIZE_T Size, uint32 Alignment )
 {
 	IncrementTotalMallocCalls();
 
+#if !UE_BUILD_SHIPPING
+	uint64 LocalMaxSingleAlloc = MaxSingleAlloc.Load(EMemoryOrder::Relaxed);
+	if (LocalMaxSingleAlloc != 0 && Size > LocalMaxSingleAlloc)
+	{
+		FPlatformMemory::OnOutOfMemory(Size, Alignment);
+		return nullptr;
+	}
+#endif
+
 	MEM_TIME(MemTime -= FPlatformTime::Seconds());
 
 	void* NewPtr = NULL;
 #if PLATFORM_MAC
-	// macOS expects all allocations to be aligned to 16 bytes, but TBBs default alignment is 8, so on Mac we always have to use scalable_aligned_malloc
+	// macOS expects all allocations to be aligned to 16 bytes, but TBBs default alignment is 8, so on Mac we always have to use scalable_aligned_malloc.
+	// Contrary to scalable_malloc, scalable_aligned_malloc returns nullptr when trying to allocate 0 bytes, which is inconsistent with system malloc, so
+	// for 0 bytes requests we actually allocate sizeof(size_t), which is exactly what scalable_malloc does internally in such case.
+	// scalable_aligned_realloc and scalable_realloc behave the same in this regard, so this is only needed here.
 	Alignment = AlignArbitrary(FMath::Max((uint32)16, Alignment), (uint32)16);
-	NewPtr = scalable_aligned_malloc(Size, Alignment);
+	NewPtr = scalable_aligned_malloc(Size ? Size : sizeof(size_t), Alignment);
 #else
 	if( Alignment != DEFAULT_ALIGNMENT )
 	{
@@ -73,6 +85,15 @@ void* FMallocTBB::Malloc( SIZE_T Size, uint32 Alignment )
 void* FMallocTBB::Realloc( void* Ptr, SIZE_T NewSize, uint32 Alignment )
 {
 	IncrementTotalReallocCalls();
+
+#if !UE_BUILD_SHIPPING
+	uint64 LocalMaxSingleAlloc = MaxSingleAlloc.Load(EMemoryOrder::Relaxed);
+	if (LocalMaxSingleAlloc != 0 && NewSize > LocalMaxSingleAlloc)
+	{
+		FPlatformMemory::OnOutOfMemory(NewSize, Alignment);
+		return nullptr;
+	}
+#endif
 
 	MEM_TIME(MemTime -= FPlatformTime::Seconds())
 #if UE_BUILD_DEBUG || UE_BUILD_DEVELOPMENT

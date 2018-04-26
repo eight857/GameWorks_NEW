@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessLensBlur.cpp: Post processing lens blur implementation.
@@ -19,9 +19,9 @@ class FPostProcessLensBlurVS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FPostProcessLensBlurVS,Global);
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4);
 	}
 
 	/** Default constructor. */
@@ -81,16 +81,16 @@ public:
 	}
 };
 
-IMPLEMENT_SHADER_TYPE(,FPostProcessLensBlurVS,TEXT("PostProcessLensBlur"),TEXT("MainVS"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(,FPostProcessLensBlurVS,TEXT("/Engine/Private/PostProcessLensBlur.usf"),TEXT("MainVS"),SF_Vertex);
 
 /** Encapsulates a simple copy pixel shader. */
 class FPostProcessLensBlurPS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FPostProcessLensBlurPS, Global);
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4);
 	}
 
 	/** Default constructor. */
@@ -118,13 +118,14 @@ public:
 		return bShaderHasOutdatedParameters;
 	}
 
-	void SetParameters(const FRenderingCompositePassContext& Context, float PixelKernelSize)
+	template <typename TRHICmdList>
+	void SetParameters(TRHICmdList& RHICmdList, const FRenderingCompositePassContext& Context, float PixelKernelSize)
 	{
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 
-		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
 
-		PostprocessParameter.SetPS(ShaderRHI, Context, TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
+		PostprocessParameter.SetPS(RHICmdList, ShaderRHI, Context, TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
 				
 		{
 			FTextureRHIParamRef TextureRHI = GWhiteTexture->TextureRHI;
@@ -149,12 +150,12 @@ public:
 				}
 			}
 
-			SetTextureParameter(Context.RHICmdList, ShaderRHI, LensTexture, LensTextureSampler, TStaticSamplerState<SF_Bilinear, AM_Border, AM_Border, AM_Clamp>::GetRHI(), TextureRHI);
+			SetTextureParameter(RHICmdList, ShaderRHI, LensTexture, LensTextureSampler, TStaticSamplerState<SF_Bilinear, AM_Border, AM_Border, AM_Clamp>::GetRHI(), TextureRHI);
 		}
 	}
 };
 
-IMPLEMENT_SHADER_TYPE(,FPostProcessLensBlurPS,TEXT("PostProcessLensBlur"),TEXT("MainPS"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FPostProcessLensBlurPS,TEXT("/Engine/Private/PostProcessLensBlur.usf"),TEXT("MainPS"),SF_Pixel);
 
 
 FRCPassPostProcessLensBlur::FRCPassPostProcessLensBlur(float InPercentKernelSize, float InThreshold)
@@ -174,14 +175,14 @@ void FRCPassPostProcessLensBlur::Process(FRenderingCompositePassContext& Context
 		return;
 	}
 
-	const FSceneView& View = Context.View;
+	const FViewInfo& View = Context.View;
 
 	FIntPoint TexSize = InputDesc->Extent;
 
 	// usually 1, 2, 4 or 8
-	uint32 ScaleToFullRes = FSceneRenderTargets::Get(Context.RHICmdList).GetBufferSizeXY().X / TexSize.X;
+	uint32 ScaleToFullRes = Context.ReferenceBufferSize.X / TexSize.X;
 
-	FIntRect ViewRect = FIntRect::DivideAndRoundUp(View.ViewRect, ScaleToFullRes);
+	FIntRect ViewRect = FIntRect::DivideAndRoundUp(Context.SceneColorViewRect, ScaleToFullRes);
 	FIntPoint ViewSize = ViewRect.Size();
 
 	const FSceneRenderTargetItem& DestRenderTarget = PassOutputs[0].RequestSurface(Context);
@@ -216,9 +217,9 @@ void FRCPassPostProcessLensBlur::Process(FRenderingCompositePassContext& Context
 	float PixelKernelSize = PercentKernelSize / 100.0f * ViewSize.X;
 
 	VertexShader->SetParameters(Context, TileCount, TileSize, PixelKernelSize, Threshold);
-	PixelShader->SetParameters(Context, PixelKernelSize);
+	PixelShader->SetParameters(Context.RHICmdList, Context, PixelKernelSize);
 
-	Context.RHICmdList.SetStreamSource(0, NULL, 0, 0);
+	Context.RHICmdList.SetStreamSource(0, NULL, 0);
 
 	// needs to be the same on shader side (faster on NVIDIA and AMD)
 	int32 QuadsPerInstance = 4;

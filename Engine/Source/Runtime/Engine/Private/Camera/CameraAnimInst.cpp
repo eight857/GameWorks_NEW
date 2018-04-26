@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "Camera/CameraAnimInst.h"
@@ -304,12 +304,6 @@ void UCameraAnimInst::SetPlaySpace(ECameraAnimPlaySpace::Type NewSpace, FRotator
 	UserPlaySpaceMatrix = (PlaySpace == ECameraAnimPlaySpace::UserDefined) ? FRotationMatrix(UserPlaySpace) : FMatrix::Identity;
 }
 
-
-/** Returns InterpGroupInst subobject **/
-UInterpGroupInst* UCameraAnimInst::GetInterpGroupInst() const
-{ 
-	return InterpGroupInst;
-}
 
 void UCameraAnimInst::ApplyToView(FMinimalViewInfo& InOutPOV) const
 {

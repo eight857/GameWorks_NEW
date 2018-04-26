@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	UnObjGlobals.h: Unreal object system globals.
@@ -11,6 +11,8 @@
 #include "UObject/ObjectMacros.h"
 #include "Misc/OutputDeviceRedirector.h"
 #include "PrimaryAssetId.h"
+#include "Templates/IsArrayOrRefOfType.h"
+#include "Serialization/ArchiveUObject.h"
 
 struct FCustomPropertyListNode;
 struct FObjectInstancingGraph;
@@ -151,7 +153,7 @@ COREUOBJECT_API TArray<const TCHAR*> ParsePropertyFlags(uint64 Flags);
 COREUOBJECT_API UPackage* GetTransientPackage();
 
 /**
- * Gets INI file name from object's reference if it contains one.
+ * Gets INI file name from object's reference if it contains one. 
  *
  * @returns If object reference doesn't contain any INI reference the function
  *		returns nullptr. Otherwise a ptr to INI's file name.
@@ -159,15 +161,15 @@ COREUOBJECT_API UPackage* GetTransientPackage();
 COREUOBJECT_API const FString* GetIniFilenameFromObjectsReference(const FString& ObjectsReferenceString);
 
 /**
- * Resolves ini object path to string object path.
+ * Resolves ini object path to string object path. This used to happen automatically in ResolveName but now must be called manually
  *
- * @param ObjectReference Ini reference.
- * @param IniFilename Ini filename.
- * @param bThrow Can this function throw?
+ * @param ObjectReference Ini reference, of the form engine-ini:/Script/Engine.Engine.DefaultMaterialName
+ * @param IniFilename Ini filename. If null it will call GetIniFilenameFromObjectsReference
+ * @param bThrow If true, will print an error if it can't find the file
  *
  * @returns Resolved object path.
  */
-COREUOBJECT_API FString ResolveIniObjectsReference(const FString& ObjectReference, const FString* IniFilename, bool bThrow = false);
+COREUOBJECT_API FString ResolveIniObjectsReference(const FString& ObjectReference, const FString* IniFilename = nullptr, bool bThrow = false);
 
 COREUOBJECT_API bool ResolveName(UObject*& Outer, FString& ObjectsReferenceString, bool Create, bool Throw, uint32 LoadFlags = LOAD_None);
 COREUOBJECT_API void SafeLoadError( UObject* Outer, uint32 LoadFlags, const TCHAR* ErrorMessage);
@@ -242,26 +244,6 @@ COREUOBJECT_API UClass* StaticLoadClass(UClass* BaseClass, UObject* InOuter, con
 COREUOBJECT_API UObject* StaticConstructObject_Internal(UClass* Class, UObject* InOuter = (UObject*)GetTransientPackage(), FName Name = NAME_None, EObjectFlags SetFlags = RF_NoFlags, EInternalObjectFlags InternalSetFlags = EInternalObjectFlags::None, UObject* Template = NULL, bool bCopyTransientsFromClassDefaults = false, struct FObjectInstancingGraph* InstanceGraph = NULL, bool bAssumeTemplateIsArchetype = false);
 
 /**
- * Create a new instance of an object.  The returned object will be fully initialized.  If InFlags contains RF_NeedsLoad (indicating that the object still needs to load its object data from disk), components
- * are not instanced (this will instead occur in PostLoad()).  The different between StaticConstructObject and StaticAllocateObject is that StaticConstructObject will also call the class constructor on the object
- * and instance any components.
- * 
- * @param	Class		the class of the object to create
- * @param	InOuter		the object to create this object within (the Outer property for the new object will be set to the value specified here).
- * @param	Name		the name to give the new object. If no value (NAME_None) is specified, the object will be given a unique name in the form of ClassName_#.
- * @param	SetFlags	the ObjectFlags to assign to the new object. some flags can affect the behavior of constructing the object.
- * @param	Template	if specified, the property values from this object will be copied to the new object, and the new object's ObjectArchetype value will be set to this object.
- *						If NULL, the class default object is used instead.
- * @param	bInCopyTransientsFromClassDefaults - if true, copy transient from the class defaults instead of the pass in archetype ptr (often these are the same)
- * @param	InstanceGraph
- *						contains the mappings of instanced objects and components to their templates
- *
- * @return	a pointer to a fully initialized object of the specified class.
- */
-DEPRECATED(4.8, "StaticConstructObject is deprecated, please use NewObject instead. For internal CoreUObject module usage, please use StaticConstructObject_Internal.")
-COREUOBJECT_API UObject* StaticConstructObject( UClass* Class, UObject* InOuter=(UObject*)GetTransientPackage(), FName Name=NAME_None, EObjectFlags SetFlags=RF_NoFlags, UObject* Template=NULL, bool bCopyTransientsFromClassDefaults=false, struct FObjectInstancingGraph* InstanceGraph=NULL );
-
-/**
  * Creates a copy of SourceObject using the Outer and Name specified, as well as copies of all objects contained by SourceObject.  
  * Any objects referenced by SourceOuter or RootObject and contained by SourceOuter are also copied, maintaining their name relative to SourceOuter.  Any
  * references to objects that are duplicated are automatically replaced with the copy of the object.
@@ -326,22 +308,6 @@ typedef int32 TAsyncLoadPriority;
  * @param	Result		Result of async loading.
  */
 DECLARE_DELEGATE_ThreeParams(FLoadPackageAsyncDelegate, const FName& /*PackageName*/, UPackage* /*LoadedPackage*/, EAsyncLoadingResult::Type /*Result*/)
-
-/**
- * [Deprecated] Asynchronously load a package and all contained objects that match context flags. Non- blocking.
- *
- * @param	InName					Name of package to load
- * @param	InGuid					GUID of the package to load, or NULL for "don't care"
- * @param	InType					A type name associated with this package for later use
- * @param	InPackageToLoadFrom		If non-null, this is another package name. We load from this package name, into a (probably new) package named PackageName
- * @param	InCompletionDelegate	Delegate to be invoked when the packages has finished streaming
- * @param	InFlags					Package flags
- * @param	InPIEInstanceID			PIE instance ID
- * @param	InPackagePriority		Loading priority
- * @return Unique ID associated with this load request (the same package can be associated with multiple IDs).
- */
-DEPRECATED(4.9, "LoadPackageAsync override that takes package type parameter FName InType is deprecated.")
-COREUOBJECT_API int32 LoadPackageAsync(const FString& InName, const FGuid* InGuid, FName InType, const TCHAR* InPackageToLoadFrom = nullptr, FLoadPackageAsyncDelegate InCompletionDelegate = FLoadPackageAsyncDelegate(), EPackageFlags InPackageFlags = PKG_None, int32 InPIEInstanceID = INDEX_NONE, TAsyncLoadPriority InPackagePriority = 0);
 
 /**
 * Asynchronously load a package and all contained objects that match context flags. Non- blocking.
@@ -476,14 +442,6 @@ COREUOBJECT_API bool IsReferenced( UObject*& Res, EObjectFlags KeepFlags, EInter
  *        immediately without waiting for the remaining packages to finish loading.
  */
 COREUOBJECT_API void FlushAsyncLoading(int32 PackageID = INDEX_NONE);
-
-/**
-* [Deprecated] Blocks till all pending package/ linker requests are fulfilled.
-*
-* @param	ExcludeType		Do not flush packages associated with this specific type name
-*/
-DEPRECATED(4.9, "FlushAsyncLoading override that takes package type parameter FName ExcludeType is deprecated.")
-COREUOBJECT_API void FlushAsyncLoading(FName ExcludeType);
 
 /**
  * @return number of active async load package requests
@@ -714,10 +672,7 @@ template<class T> struct TIsPODType< TSubobjectPtrDeprecated<T> > { enum { Value
 template<class T> struct TIsZeroConstructType< TSubobjectPtrDeprecated<T> > { enum { Value = true }; };
 template<class T> struct TIsWeakPointerType< TSubobjectPtrDeprecated<T> > { enum { Value = false }; };
 
-#define TSubobjectPtr \
-	EMIT_DEPRECATED_WARNING_MESSAGE("TSubobjectPtr is deprecated and should no longer be used. Please use pointers instead.") \
-	TSubobjectPtrDeprecated
-	
+
 
 /**
  * Internal class to finalize UObject creation (initialize properties) after the real C++ constructor is called.
@@ -937,26 +892,6 @@ private:
 	 */
 	static void InitProperties(UObject* Obj, UClass* DefaultsClass, UObject* DefaultData, bool bCopyTransientsFromClassDefaults);
 
-	/**
-	 * Helper method to assist with initializing object properties from an explicit list.
-	 * 
-	 * @param	InPropertyList		only these properties will be copied from defaults
-	 * @param	InStruct			the current scope for which the given property list applies
-	 * @param	DataPtr				destination address (where to start copying values to)
-	 * @param	DefaultDataPtr		source address (where to start copying the defaults data from)
-	 */
-	static void InitPropertiesFromCustomList(const FCustomPropertyListNode* InPropertyList, UStruct* InStruct, uint8* DataPtr, const uint8* DefaultDataPtr);
-
-	/**
-	* Helper method to assist with initializing from an array property with an explicit item list.
-	*
-	* @param	ArrayProperty		the array property for which the given property list applies
-	* @param	InPropertyList		only these properties (indices) will be copied from defaults
-	* @param	DataPtr				destination address (where to start copying values to)
-	* @param	DefaultDataPtr		source address (where to start copying the defaults data from)
-	*/
-	static void InitArrayPropertyFromCustomList(const UArrayProperty* ArrayProperty, const FCustomPropertyListNode* InPropertyList, uint8* DataPtr, const uint8* DefaultDataPtr);
-
 	bool IsInstancingAllowed() const;
 
 	/**
@@ -1112,9 +1047,6 @@ private:
 #endif // USE_CIRCULAR_DEPENDENCY_LOAD_DEFERRING
 };
 
-#define FPostConstructInitializeProperties \
-	FObjectInitializer \
-	EMIT_DEPRECATED_WARNING_MESSAGE("FPostConstructInitializeProperties is deprecated and was renamed to FObjectInitializer. Please use that type instead.")
 
 /**
 * Helper class for script integrations to access some UObject innards. Needed for script-generated UObject classes
@@ -1172,26 +1104,6 @@ public:
 /**
  * Helper class for deferred execution of 
 */
-
-/**
- * Construct an object of a particular class.
- * 
- * @param	Class		the class of object to construct
- * @param	Outer		the outer for the new object.  If not specified, object will be created in the transient package.
- * @param	Name		the name for the new object.  If not specified, the object will be given a transient name via
- *						MakeUniqueObjectName
- * @param	SetFlags	the object flags to apply to the new object
- * @param	Template	the object to use for initializing the new object.  If not specified, the class's default object will
- *						be used
- * @param	bInCopyTransientsFromClassDefaults - if true, copy transient from the class defaults instead of the pass in archetype ptr (often these are the same)
- * @param	InstanceGraph
- *						contains the mappings of instanced objects and components to their templates
- *
- * @return	a pointer of type T to a new object of the specified class
- */
-template< class T >
-DEPRECATED(4.8, "ConstructObject is deprecated. Use NewObject instead")
-T* ConstructObject(UClass* Class, UObject* Outer = (UObject*)GetTransientPackage(), FName Name=NAME_None, EObjectFlags SetFlags=RF_NoFlags, UObject* Template=NULL, bool bCopyTransientsFromClassDefaults=false, struct FObjectInstancingGraph* InstanceGraph=NULL );
 
 #if DO_CHECK
 /** Called by NewObject to make sure Child is actually a child of Parent */
@@ -1252,21 +1164,6 @@ FUNCTION_NON_NULL_RETURN_END
 
 	return static_cast<T*>(StaticConstructObject_Internal(T::StaticClass(), Outer, Name, Flags, EInternalObjectFlags::None, Template, bCopyTransientsFromClassDefaults, InInstanceGraph));
 }
-
-/**
- * Convenience template for constructing a named object.
- *
- * @param	Outer	The outer for the new object.
- * @param	Name	The name of the new object.
- * @param	Flags	The object flags for the new object.
- */
-template< class TClass >
-DEPRECATED(4.8, "NewNamedObject is deprecated. Use NewObject instead")
-TClass* NewNamedObject(UObject* Outer, FName Name, EObjectFlags Flags = RF_NoFlags, UObject* Template=NULL)
-{
-	return NewObject<TClass>(Outer, Name, Flags, Template);
-}
-
 
 /**
  * Convenience template for duplicating an object
@@ -1597,6 +1494,95 @@ private:
 	bool					bExactClass;
 };
 
+/** Base class for reference serialization archives */
+class COREUOBJECT_API FReferenceCollectorArchive : public FArchiveUObject
+{
+	/** Object which is performing the serialization. */
+	const UObject* SerializingObject;
+	/** Object that owns the serialized data. */
+	const UObject* SerializedDataContainer;
+	/** Pointer to serialized data (read-only). */
+	const void* SerializedDataPtr;
+	/** Stored pointer to reference collector. */
+	class FReferenceCollector& Collector;
+
+protected:
+
+	class FReferenceCollector& GetCollector()
+	{
+		return Collector;
+	}
+
+public:
+
+	FReferenceCollectorArchive(const UObject* InSerializingObject, FReferenceCollector& InCollector)
+		: SerializingObject(InSerializingObject)
+		, SerializedDataContainer(nullptr)
+		, SerializedDataPtr(nullptr)
+		, Collector(InCollector)
+	{
+	}
+	void SetSerializingObject(const UObject* InSerializingObject)
+	{
+		SerializingObject = InSerializingObject;
+	}
+	const UObject* GetSerializingObject() const
+	{
+		return SerializingObject;
+	}
+	void SetSerializedDataContainer(const UObject* InDataContainer)
+	{
+		SerializedDataContainer = InDataContainer;
+	}
+	const UObject* GetSerializedDataContainer() const
+	{
+		return SerializedDataContainer;
+	}
+	void SetSerializedDataPtr(const void* InSerializedDataPtr)
+	{
+		SerializedDataPtr = InSerializedDataPtr;
+	}
+	const void* GetSerializedDataPtr() const
+	{
+		return SerializedDataPtr;
+	}
+};
+
+/** Helper class for setting and resetting attributes on the FReferenceCollectorArchive */
+class COREUOBJECT_API FVerySlowReferenceCollectorArchiveScope
+{	
+	FReferenceCollectorArchive& Archive;
+	const UObject* OldSerializingObject;
+	UProperty* OldSerializedProperty;
+	const UObject* OldSerializedDataContainer;
+	const void* OldSerializedDataPtr;
+
+public:
+	FVerySlowReferenceCollectorArchiveScope(FReferenceCollectorArchive& InArchive, const UObject* InSerializingObject, UProperty* InSerializedProperty = nullptr, const UObject* InSerializedDataContainer = nullptr, const void* InSerializedDataPtr = nullptr)
+		: Archive(InArchive)
+		, OldSerializingObject(InArchive.GetSerializingObject())
+		, OldSerializedProperty(InArchive.GetSerializedProperty())
+		, OldSerializedDataContainer(InArchive.GetSerializedDataContainer())
+		, OldSerializedDataPtr(InArchive.GetSerializedDataPtr())
+	{
+		Archive.SetSerializingObject(InSerializingObject);
+		Archive.SetSerializedProperty(InSerializedProperty);
+		Archive.SetSerializedDataContainer(InSerializedDataContainer);
+		Archive.SetSerializedDataPtr(InSerializedDataPtr);
+	}
+	~FVerySlowReferenceCollectorArchiveScope()
+	{
+		Archive.SetSerializingObject(OldSerializingObject);
+		Archive.SetSerializedProperty(OldSerializedProperty);
+		Archive.SetSerializedDataContainer(OldSerializedDataContainer);
+		Archive.SetSerializedDataPtr(OldSerializedDataPtr);
+	}
+	FReferenceCollectorArchive& GetArchive()
+	{
+		return Archive;
+	}
+};
+
 /**
  * FReferenceCollector.
  * Helper class used by the garbage collector to collect object references.
@@ -1604,6 +1590,10 @@ private:
 class COREUOBJECT_API FReferenceCollector
 {
 public:
+
+	FReferenceCollector();
+	virtual ~FReferenceCollector();
+
 	/**
 	 * Adds object reference.
 	 *
@@ -1627,7 +1617,8 @@ public:
 	template<class UObjectType>
 	void AddReferencedObjects(TArray<UObjectType*>& ObjectArray, const UObject* ReferencingObject = nullptr, const UProperty* ReferencingProperty = nullptr)
 	{
-		static_assert(TPointerIsConvertibleFromTo<UObjectType, const UObject>::Value, "'UObjectType' template parameter to AddReferencedObjects must be derived from UObject");
+		static_assert(sizeof(UObjectType) > 0, "AddReferencedObjects: Elements must be pointers to a fully-defined type");
+		static_assert(TPointerIsConvertibleFromTo<UObjectType, const UObjectBase>::Value, "AddReferencedObjects: Elements must be pointers to a type derived from UObject");
 		HandleObjectReferences(reinterpret_cast<UObject**>(ObjectArray.GetData()), ObjectArray.Num(), ReferencingObject, ReferencingProperty);
 	}
 
@@ -1639,65 +1630,54 @@ public:
 	* @param ReferencingProperty Referencing property (if available).
 	*/
 	template<class UObjectType>
-	void AddReferencedObjects(TSet<UObjectType>& ObjectSet, const UObject* ReferencingObject = nullptr, const UProperty* ReferencingProperty = nullptr)
+	void AddReferencedObjects(TSet<UObjectType*>& ObjectSet, const UObject* ReferencingObject = nullptr, const UProperty* ReferencingProperty = nullptr)
 	{
+		static_assert(sizeof(UObjectType) > 0, "AddReferencedObjects: Elements must be pointers to a fully-defined type");
+		static_assert(TPointerIsConvertibleFromTo<UObjectType, const UObjectBase>::Value, "AddReferencedObjects: Elements must be pointers to a type derived from UObject");
 		for (auto& Object : ObjectSet)
 		{
 			HandleObjectReference(*(UObject**)&Object, ReferencingObject, ReferencingProperty);
 		}
 	}
 
-private:
-
-	/** Compile time check if a type can be automatically converted to another one */
-	template<class From, class To>
-	class CanConverFromTo
-	{
-		static uint8 Test(...);
-		static uint16 Test(To);
-	public:
-		enum Type
-		{
-			Result = sizeof(Test(From())) - 1
-		};
-	};
-
 	/**
-	* Functions used by AddReferencedObject (TMap version). Adds references to UObjects, ignores value types
-	*/
-	template<class UObjectType>
-	void AddReferencedObjectOrIgnoreValue(UObjectType& Object, const UObject* ReferencingObject, const UProperty* ReferencingProperty)
+	 * Adds references to a map of objects.
+	 *
+	 * @param ObjectArray Referenced objects map.
+	 * @param ReferencingObject Referencing object (if available).
+	 * @param ReferencingProperty Referencing property (if available).
+	 */
+	template <typename KeyType, typename ValueType, typename Allocator, typename KeyFuncs>
+	void AddReferencedObjects(TMapBase<KeyType*, ValueType, Allocator, KeyFuncs>& Map, const UObject* ReferencingObject = nullptr, const UProperty* ReferencingProperty = nullptr)
 	{
-	}
-	template<class UObjectType>
-	void AddReferencedObjectOrIgnoreValue(UObjectType*& Object, const UObject* ReferencingObject, const UProperty* ReferencingProperty)
-	{
-		HandleObjectReference(*(UObject**)&Object, ReferencingObject, ReferencingProperty);
-	}
-
-public:
-
-	/**
-	* Adds references to a map of objects.
-	*
-	* @param ObjectArray Referenced objects map.
-	* @param ReferencingObject Referencing object (if available).
-	* @param ReferencingProperty Referencing property (if available).
-	*/
-	template <typename TKeyType, typename TValueType, typename TAllocator, typename TKeyFuncs >
-	void AddReferencedObjects(TMapBase<TKeyType, TValueType, TAllocator, TKeyFuncs>& Map, const UObject* ReferencingObject = NULL, const UProperty* ReferencingProperty = NULL)
-	{
-		static_assert(CanConverFromTo<TKeyType, UObjectBase*>::Result || CanConverFromTo<TValueType, UObjectBase*>::Result, "At least one of TMap template types must be derived from UObject");
+		static_assert(sizeof(KeyType) > 0, "AddReferencedObjects: Keys must be pointers to a fully-defined type");
+		static_assert(TPointerIsConvertibleFromTo<KeyType, const UObjectBase>::Value, "AddReferencedObjects: Keys must be pointers to a type derived from UObject");
 		for (auto& It : Map)
 		{
-			if (CanConverFromTo<TKeyType, UObjectBase*>::Result)
-			{
-				AddReferencedObjectOrIgnoreValue(It.Key, ReferencingObject, ReferencingProperty);
-			}
-			if (CanConverFromTo<TValueType, UObjectBase*>::Result)
-			{
-				AddReferencedObjectOrIgnoreValue(It.Value, ReferencingObject, ReferencingProperty);
-			}
+			HandleObjectReference(*(UObject**)&It.Key, ReferencingObject, ReferencingProperty);
+		}
+	}
+	template <typename KeyType, typename ValueType, typename Allocator, typename KeyFuncs>
+	void AddReferencedObjects(TMapBase<KeyType, ValueType*, Allocator, KeyFuncs>& Map, const UObject* ReferencingObject = nullptr, const UProperty* ReferencingProperty = nullptr)
+	{
+		static_assert(sizeof(ValueType) > 0, "AddReferencedObjects: Values must be pointers to a fully-defined type");
+		static_assert(TPointerIsConvertibleFromTo<ValueType, const UObjectBase>::Value, "AddReferencedObjects: Values must be pointers to a type derived from UObject");
+		for (auto& It : Map)
+		{
+			HandleObjectReference(*(UObject**)&It.Value, ReferencingObject, ReferencingProperty);
+		}
+	}
+	template <typename KeyType, typename ValueType, typename Allocator, typename KeyFuncs>
+	void AddReferencedObjects(TMapBase<KeyType*, ValueType*, Allocator, KeyFuncs>& Map, const UObject* ReferencingObject = nullptr, const UProperty* ReferencingProperty = nullptr)
+	{
+		static_assert(sizeof(KeyType) > 0, "AddReferencedObjects: Keys must be pointers to a fully-defined type");
+		static_assert(sizeof(ValueType) > 0, "AddReferencedObjects: Values must be pointers to a fully-defined type");
+		static_assert(TPointerIsConvertibleFromTo<KeyType, const UObjectBase>::Value, "AddReferencedObjects: Keys must be pointers to a type derived from UObject");
+		static_assert(TPointerIsConvertibleFromTo<ValueType, const UObjectBase>::Value, "AddReferencedObjects: Values must be pointers to a type derived from UObject");
+		for (auto& It : Map)
+		{
+			HandleObjectReference(*(UObject**)&It.Key, ReferencingObject, ReferencingProperty);
+			HandleObjectReference(*(UObject**)&It.Value, ReferencingObject, ReferencingProperty);
 		}
 	}
 
@@ -1714,15 +1694,47 @@ public:
 	 */
 	virtual void AllowEliminatingReferences(bool bAllow) {}
 	/**
-	* Sets the property that is currently being serialized
-	*/
+	 * Sets the property that is currently being serialized
+	 */
 	virtual void SetSerializedProperty(class UProperty* Inproperty) {}
 	/**
-	* Gets the property that is currently being serialized
-	*/
+	 * Gets the property that is currently being serialized
+	 */
 	virtual class UProperty* GetSerializedProperty() const { return nullptr; }
+	/** 
+	 * Marks a specific object reference as a weak reference. This does not affect GC but will be freed at a later point
+	 * The default behavior returns false as weak references must be explicitly supported
+	 */
+	virtual bool MarkWeakObjectReferenceForClearing(UObject** WeakReference) { return false; }
+
+	/**
+	* Returns the collector archive associated with this collector.
+	* NOTE THAT COLLECTING REFERENCES THROUGH SERIALIZATION IS VERY SLOW.
+	*/
+	FReferenceCollectorArchive& GetVerySlowReferenceCollectorArchive()
+	{
+		if (!DefaultReferenceCollectorArchive)
+		{
+			CreateVerySlowReferenceCollectorArchive();
+		}
+		return *DefaultReferenceCollectorArchive;
+	}
+
+	/**
+	* INTERNAL USE ONLY: returns the persistent frame collector archive associated with this collector.
+	* NOTE THAT COLLECTING REFERENCES THROUGH SERIALIZATION IS VERY SLOW.
+	*/
+	FReferenceCollectorArchive& GetInternalPersistentFrameReferenceCollectorArchive()
+	{
+		if (!PersistentFrameReferenceCollectorArchive)
+		{
+			CreatePersistentFrameReferenceCollectorArchive();
+		}
+		return *PersistentFrameReferenceCollectorArchive;
+	}
 
 	virtual void SetShouldHandleAsWeakRef(bool bWeakRef) {}
+
 protected:
 	/**
 	 * Handle object reference. Called by AddReferencedObject.
@@ -1749,6 +1761,18 @@ protected:
 			HandleObjectReference(Object, InReferencingObject, InReferencingProperty);
 		}
 	}
+
+private:
+
+	/** Creates the roxy archive that uses serialization to add objects to this collector */
+	void CreateVerySlowReferenceCollectorArchive();
+	/** Creates persistent frame proxy archive that uses serialization to add objects to this collector */
+	void CreatePersistentFrameReferenceCollectorArchive();
+
+	/** Default proxy archive that uses serialization to add objects to this collector */
+	FReferenceCollectorArchive* DefaultReferenceCollectorArchive;
+	/** Persistent frame proxy archive that uses serialization to add objects to this collector */
+	FReferenceCollectorArchive* PersistentFrameReferenceCollectorArchive;
 };
 
 /**
@@ -1814,50 +1838,34 @@ protected:
 	bool			bShouldIgnoreTransient;
 };
 
-
-/** Delegate types for source control package saving checks and adding package to default changelist */
-DECLARE_DELEGATE_RetVal_TwoParams( bool, FCheckForAutoAddDelegate, UPackage*, const FString& );
-DECLARE_DELEGATE_OneParam( FAddPackageToDefaultChangelistDelegate, const TCHAR* );
-
 /** Defined in PackageReload.h */
 enum class EPackageReloadPhase : uint8;
 class FPackageReloadedEvent;
+
+class FGarbageCollectionTracer;
 
 /**
  * Global CoreUObject delegates
  */
 struct COREUOBJECT_API FCoreUObjectDelegates
 {
-	// Callback for object property modifications
+#if WITH_EDITOR
+	/** Callback for object property modifications, called by UObject::PostEditChangeProperty with a single property event */
 	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnObjectPropertyChanged, UObject*, struct FPropertyChangedEvent&);
-
-	// Called when a property is changed
 	static FOnObjectPropertyChanged OnObjectPropertyChanged;
 
-	// Callback for PreEditChange
+	/** Callback for object property modifications, called by UObject::PreEditChange with a full property chain */
 	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPreObjectPropertyChanged, UObject*, const class FEditPropertyChain&);
-
-	// Called before a property is changed
 	static FOnPreObjectPropertyChanged OnPreObjectPropertyChanged;
 
-	/** Delegate type for making auto backup of package */
-	DECLARE_DELEGATE_RetVal_OneParam(bool, FAutoPackageBackupDelegate, const UPackage&);
-
-	/** Called by ReloadPackage during package reloading. It will be called several times for different phases of fix-up to allow custom code to handle updating objects as needed */
-	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPackageReloaded, EPackageReloadPhase, FPackageReloadedEvent*);
-	static FOnPackageReloaded OnPackageReloaded;
-
-#if WITH_EDITOR
-	// Callback for all object modifications
+	/** Called when an object is registered for change with UObject::Modify. This gets called in both the editor and standalone game editor builds, for every object modified */
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnObjectModified, UObject*);
-
-	// Called when any object is modified at all 
 	static FOnObjectModified OnObjectModified;
 
-	// Set of objects modified this frame, to prevent multiple triggerings of the OnObjectModified delegate.
+	/** Set of objects modified this frame, to prevent multiple triggerings of the OnObjectModified delegate */
 	static TSet<UObject*> ObjectsModifiedThisFrame;
 
-	// Broadcast OnObjectModified if the broadcast hasn't ocurred for this object in this frame
+	/** Broadcast OnObjectModified if the broadcast hasn't occurred for this object in this frame */
 	static void BroadcastOnObjectModified(UObject* Object)
 	{
 		if (OnObjectModified.IsBound() && !ObjectsModifiedThisFrame.Contains(Object))
@@ -1867,33 +1875,29 @@ struct COREUOBJECT_API FCoreUObjectDelegates
 		}
 	}
 
-	// Callback for when an asset is loaded (Editor)
-	DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssetLoaded, UObject*);
-
-	// Called when an asset is loaded
-	static FOnAssetLoaded OnAssetLoaded;
-
-	// Callback for when an asset is saved (Editor)
+	/** Callback for when an asset is saved. This is called from UObject::PreSave before it is actually written to disk, for every object saved */
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnObjectSaved, UObject*);
-
-	// Called when an asset is saved
 	static FOnObjectSaved OnObjectSaved;
 
-#endif	//WITH_EDITOR
-
-	// Delegate type for redirector followed events ( Params: const FString& PackageName, UObject* Redirector )
-	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnRedirectorFollowed, const FString&, UObject*);
-
-	// Sent when a UObjectRedirector was followed to find the destination object
-	static FOnRedirectorFollowed RedirectorFollowed;
+	/** Callback for when an asset is loaded. This gets called in both the editor and standalone game editor builds, but only for objects that return true for IsAsset() */
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnAssetLoaded, UObject*);
+	static FOnAssetLoaded OnAssetLoaded;
 
 	/** Delegate used by SavePackage() to create the package backup */
+	DECLARE_DELEGATE_RetVal_OneParam(bool, FAutoPackageBackupDelegate, const UPackage&);
 	static FAutoPackageBackupDelegate AutoPackageBackupDelegate;
+#endif // WITH_EDITOR
 
-	/** Delegate type for saving check */
-	DECLARE_DELEGATE_RetVal_ThreeParams(bool, FIsPackageOKToSaveDelegate, UPackage*, const FString&, FOutputDevice*);
+	/** Called by ReloadPackage during package reloading. It will be called several times for different phases of fix-up to allow custom code to handle updating objects as needed */
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPackageReloaded, EPackageReloadPhase, FPackageReloadedEvent*);
+	static FOnPackageReloaded OnPackageReloaded;
+
+	/** Called when a package reload request is received from a network file server */
+	DECLARE_DELEGATE_OneParam(FNetworkFileRequestPackageReload, const TArray<FString>& /*PackageNames*/);
+	static FNetworkFileRequestPackageReload NetworkFileRequestPackageReload;
 
 	/** Delegate used by SavePackage() to check whether a package should be saved */
+	DECLARE_DELEGATE_RetVal_ThreeParams(bool, FIsPackageOKToSaveDelegate, UPackage*, const FString&, FOutputDevice*);
 	static FIsPackageOKToSaveDelegate IsPackageOKToSaveDelegate;
 
 	/** Delegate for registering hot-reloaded classes that have been added  */
@@ -1908,57 +1912,61 @@ struct COREUOBJECT_API FCoreUObjectDelegates
 	DECLARE_MULTICAST_DELEGATE(FReinstanceHotReloadedClassesDelegate);
 	static FReinstanceHotReloadedClassesDelegate ReinstanceHotReloadedClassesDelegate;
 
-	// Sent at the very beginning of LoadMap
+	/** Sent at the very beginning of LoadMap */
 	DECLARE_MULTICAST_DELEGATE_OneParam(FPreLoadMapDelegate, const FString& /* MapName */);
 	static FPreLoadMapDelegate PreLoadMap;
 
-	// Sent at the _successful_ end of LoadMap
+	/** Sent at the _successful_ end of LoadMap */
 	DECLARE_MULTICAST_DELEGATE_OneParam(FPostLoadMapDelegate, UWorld* /* LoadedWorld */);
 	static FPostLoadMapDelegate PostLoadMapWithWorld;
 
-	DEPRECATED(4.16, "Use PostLoadMapWithWorld instead.")
-	static FSimpleMulticastDelegate PostLoadMap;
-
-	// Sent at the _successful_ end of LoadMap
+	/** Sent when a network replay has started */
 	static FSimpleMulticastDelegate PostDemoPlay;
 
-	// Called before garbage collection
-	static FSimpleMulticastDelegate PreGarbageCollect;
+	/** Called before garbage collection */
+	static FSimpleMulticastDelegate& GetPreGarbageCollectDelegate();
 
-	// Called after garbage collection
-	static FSimpleMulticastDelegate PostGarbageCollect;
+	/** Delegate type for reachability analysis external roots callback. First parameter is FGarbageCollectionTracer to use for tracing, second is flags with which objects should be kept alive regardless, third is whether to force single threading */
+	DECLARE_MULTICAST_DELEGATE_ThreeParams(FTraceExternalRootsForReachabilityAnalysisDelegate, FGarbageCollectionTracer&, EObjectFlags, bool);
 
-	// Called before ConditionalBeginDestroy phase of garbage collection
+	/** Called as last phase of reachability analysis. Allow external systems to add UObject roots *after* first reachability pass has been done */
+	static FTraceExternalRootsForReachabilityAnalysisDelegate TraceExternalRootsForReachabilityAnalysis;
+
+	/** Called after reachability analysis, before any purging */
+	static FSimpleMulticastDelegate PostReachabilityAnalysis;
+
+	/** Called after garbage collection */
+	static FSimpleMulticastDelegate& GetPostGarbageCollect();
+
+	/** Called before ConditionalBeginDestroy phase of garbage collection */
 	static FSimpleMulticastDelegate PreGarbageCollectConditionalBeginDestroy;
 
-	// Called after ConditionalBeginDestroy phase of garbage collection
+	/** Called after ConditionalBeginDestroy phase of garbage collection */
 	static FSimpleMulticastDelegate PostGarbageCollectConditionalBeginDestroy;
 
-	/** delegate type for querying whether a loaded object should replace an already existing one */
-	DECLARE_DELEGATE_RetVal_OneParam(bool, FOnLoadObjectsOnTop, const FString&);
-
 	/** Queries whether an object should be loaded on top ( replace ) an already existing one */
+	DECLARE_DELEGATE_RetVal_OneParam(bool, FOnLoadObjectsOnTop, const FString&);
 	static FOnLoadObjectsOnTop ShouldLoadOnTop;
 
-	/** called when loading a string asset reference */
-	DECLARE_DELEGATE_OneParam(FStringAssetReferenceLoaded, const FString&);
-	static FStringAssetReferenceLoaded StringAssetReferenceLoaded;
-
-	/** called when loading a string asset reference */
-	DECLARE_MULTICAST_DELEGATE_OneParam(FPackageLoadedFromStringAssetReference, const FName&);
-	static FPackageLoadedFromStringAssetReference PackageLoadedFromStringAssetReference;
-
-	/** called when path to world root is changed */
+	/** Called when path to world root is changed */
 	DECLARE_MULTICAST_DELEGATE_OneParam(FPackageCreatedForLoad, class UPackage*);
 	static FPackageCreatedForLoad PackageCreatedForLoad;
 
-	/** called when saving a string asset reference, can replace the value with something else */
-	DECLARE_DELEGATE_RetVal_OneParam(FString, FStringAssetReferenceSaving, FString const& /*SavingAssetLongPathname*/);
-	static FStringAssetReferenceSaving StringAssetReferenceSaving;
-
-	/** Called when trying to figure out if a UObject is a primary asset, if it doesn't know */
+	/** Called when trying to figure out if a UObject is a primary asset, if it doesn't implement GetPrimaryAssetId itself */
 	DECLARE_DELEGATE_RetVal_OneParam(FPrimaryAssetId, FGetPrimaryAssetIdForObject, const UObject*);
 	static FGetPrimaryAssetIdForObject GetPrimaryAssetIdForObject;
+
+	DECLARE_DELEGATE_OneParam(FSoftObjectPathLoaded, const FString&);
+	DEPRECATED(4.17, "StringAssetReferenceLoaded is deprecated, call FSoftObjectPath::PostLoadPath instead")
+	static FSoftObjectPathLoaded StringAssetReferenceLoaded;
+
+	DECLARE_DELEGATE_RetVal_OneParam(FString, FSoftObjectPathSaving, FString const& /*SavingAssetLongPathname*/);
+	DEPRECATED(4.17, "StringAssetReferenceSaving is deprecated, call FSoftObjectPath::PreSavePath instead")
+	static FSoftObjectPathSaving StringAssetReferenceSaving;
+
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnRedirectorFollowed, const FString&, UObject*);
+	DEPRECATED(4.17, "RedirectorFollowed is deprecated, FixeupRedirects was replaced with ResavePackages -FixupRedirect")
+	static FOnRedirectorFollowed RedirectorFollowed;
 };
 
 /** Allows release builds to override not verifying GC assumptions. Useful for profiling as it's hitchy. */
@@ -1995,16 +2003,507 @@ struct COREUOBJECT_API FDynamicClassStaticData
 
 COREUOBJECT_API TMap<FName, FDynamicClassStaticData>& GetDynamicClassMap();
 
+/**
+ * FAssetMsg
+ * This struct contains functions for asset-related messaging
+ */
+struct FAssetMsg
+{
+	/** Formats a path for the UE_ASSET_LOG macro */
+	static COREUOBJECT_API FString FormatPathForAssetLog(const TCHAR* Path);
+
+	/** If possible, finds a path to the underlying asset for the provided object and formats it for the UE_ASSET_LOG macro */
+	static COREUOBJECT_API FString FormatPathForAssetLog(const UObject* Object);
+};
+
+#if NO_LOGGING
+	#define UE_ASSET_LOG(...)
+#else
+	/**
+	 * A macro that outputs a formatted message to log with a canonical reference to an asset if a given logging category is active at a given verbosity level
+	 * @param CategoryName name of the logging category
+	 * @param Verbosity, verbosity level to test against
+	 * @param Asset, Object or asset path to format
+	 * @param Format, format text
+	 */
+	#define UE_ASSET_LOG(CategoryName, Verbosity, Asset, Format, ...) \
+	{ \
+		static_assert(TIsArrayOrRefOfType<decltype(Format), TCHAR>::Value, "Formatting string must be a TCHAR array."); \
+		static_assert((ELogVerbosity::Verbosity & ELogVerbosity::VerbosityMask) < ELogVerbosity::NumVerbosity && ELogVerbosity::Verbosity > 0, "Verbosity must be constant and in range."); \
+		CA_CONSTANT_IF((ELogVerbosity::Verbosity & ELogVerbosity::VerbosityMask) <= ELogVerbosity::COMPILED_IN_MINIMUM_VERBOSITY && (ELogVerbosity::Warning & ELogVerbosity::VerbosityMask) <= FLogCategory##CategoryName::CompileTimeVerbosity) \
+		{ \
+			UE_LOG_EXPAND_IS_FATAL(Verbosity, PREPROCESSOR_NOTHING, if (!CategoryName.IsSuppressed(ELogVerbosity::Verbosity))) \
+			{ \
+				FString NewFormat = FString::Printf(TEXT("%s: %s"), *FAssetMsg::FormatPathForAssetLog(Asset), Format);\
+				FMsg::Logf_Internal(__FILE__, __LINE__, CategoryName.GetCategoryName(), ELogVerbosity::Verbosity, *NewFormat, ##__VA_ARGS__); \
+				UE_LOG_EXPAND_IS_FATAL(Verbosity, \
+					{ \
+						_DebugBreakAndPromptForRemote(); \
+						FDebug::AssertFailed("", __FILE__, __LINE__, *NewFormat, ##__VA_ARGS__); \
+						CA_ASSUME(false); \
+					}, \
+					PREPROCESSOR_NOTHING \
+				) \
+			} \
+		} \
+	}
+#endif // NO_LOGGING
+
 #if WITH_EDITOR
 /** 
  * Returns if true if the object is editor-only:
- * - it's a package marked as PKG_EditorOnly
+ * - it's a package marked as PKG_EditorOnly or inside one
  * or
- * - it's a class from a package marked as PKG_EditorOnly
+ * - IsEditorOnly returns true
  * or
- * - its class is from a package marked as PKG_EditorOnly
- * or
- * - its outer is editor-only
+ * - if bCheckMarks is true, if it has the EditorOnly object mark
+ * or 
+ * - if bCheckRecursive is true, if it's class, outer, or archetypes are editor only
  */
-COREUOBJECT_API bool IsEditorOnlyObject(const UObject* InObject);
+COREUOBJECT_API bool IsEditorOnlyObject(const UObject* InObject, bool bCheckRecursive = true, bool bCheckMarks = true);
 #endif //WITH_EDITOR
+
+struct FClassFunctionLinkInfo;
+struct FCppClassTypeInfoStatic;
+
+namespace UE4CodeGen_Private
+{
+	enum class EPropertyClass
+	{
+		Byte,
+		Int8,
+		Int16,
+		Int,
+		Int64,
+		UInt16,
+		UInt32,
+		UInt64,
+		UnsizedInt,
+		UnsizedUInt,
+		Float,
+		Double,
+		Bool,
+		SoftClass,
+		WeakObject,
+		LazyObject,
+		SoftObject,
+		Class,
+		Object,
+		Interface,
+		Name,
+		Str,
+		Array,
+		Map,
+		Set,
+		Struct,
+		Delegate,
+		MulticastDelegate,
+		Text,
+		Enum,
+	};
+
+	enum class EDynamicType
+	{
+		NotDynamic,
+		Dynamic
+	};
+
+	enum class ENativeBool
+	{
+		NotNative,
+		Native
+	};
+
+	// These templates exist to help generate better code for pointers to lambdas in Clang.
+	// They simply provide a static function which, when called, will call the lambda, and we can take the
+	// address of this function.  Using lambdas' implicit conversion to function type will generate runtime code bloat.
+	template <typename LambdaType>
+	struct TBoolSetBitWrapper
+	{
+		static void SetBit(void* Ptr)
+		{
+			TBoolSetBitWrapper Empty;
+			(*(LambdaType*)&Empty)(Ptr);
+		}
+	};
+
+	template <typename LambdaType>
+	struct TNewCppStructOpsWrapper
+	{
+		static void* NewCppStructOps()
+		{
+			TNewCppStructOpsWrapper Empty;
+			return (*(LambdaType*)&Empty)();
+		}
+	};
+
+#if WITH_METADATA
+	struct FMetaDataPairParam
+	{
+		const char* NameUTF8;
+		const char* ValueUTF8;
+	};
+#endif
+
+	struct FEnumeratorParam
+	{
+		const char*               NameUTF8;
+		int64                     Value;
+#if WITH_METADATA
+		const FMetaDataPairParam* MetaDataArray;
+		int32                     NumMetaData;
+#endif
+	};
+
+	// This is not a base class but is just a common initial sequence of all of the F*PropertyParams types below.
+	// We don't want to use actual inheritance because we want to construct aggregated compile-time tables of these things.
+	struct FPropertyParamsBase
+	{
+		EPropertyClass Type;
+		const char*    NameUTF8;
+		EObjectFlags   ObjectFlags;
+		uint64         PropertyFlags;
+		int32          ArrayDim;
+		const char*    RepNotifyFuncUTF8;
+	};
+
+	struct FPropertyParamsBaseWithOffset // : FPropertyParamsBase
+	{
+		EPropertyClass Type;
+		const char*    NameUTF8;
+		EObjectFlags   ObjectFlags;
+		uint64         PropertyFlags;
+		int32          ArrayDim;
+		const char*    RepNotifyFuncUTF8;
+		int32          Offset;
+	};
+
+	struct FGenericPropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FBytePropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+		UEnum*         (*EnumFunc)();
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FBoolPropertyParams // : FPropertyParamsBase
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		uint32           ElementSize;
+		ENativeBool      NativeBool;
+		SIZE_T           SizeOfOuter;
+		void           (*SetBitFunc)(void* Obj);
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FObjectPropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+		UClass*        (*ClassFunc)();
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FClassPropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+		UClass*        (*MetaClassFunc)();
+		UClass*        (*ClassFunc)();
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FSoftClassPropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+		UClass*        (*MetaClassFunc)();
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FInterfacePropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+		UClass*        (*InterfaceClassFunc)();
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FStructPropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+		UScriptStruct* (*ScriptStructFunc)();
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FDelegatePropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+		UFunction*     (*SignatureFunctionFunc)();
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FMulticastDelegatePropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+		UFunction*     (*SignatureFunctionFunc)();
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FEnumPropertyParams // : FPropertyParamsBaseWithOffset
+	{
+		EPropertyClass   Type;
+		const char*      NameUTF8;
+		EObjectFlags     ObjectFlags;
+		uint64           PropertyFlags;
+		int32            ArrayDim;
+		const char*      RepNotifyFuncUTF8;
+		int32            Offset;
+		UEnum*         (*EnumFunc)();
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	// These property types don't add new any construction parameters to their base property
+	typedef FGenericPropertyParams FInt8PropertyParams;
+	typedef FGenericPropertyParams FInt16PropertyParams;
+	typedef FGenericPropertyParams FIntPropertyParams;
+	typedef FGenericPropertyParams FInt64PropertyParams;
+	typedef FGenericPropertyParams FUInt16PropertyParams;
+	typedef FGenericPropertyParams FUInt32PropertyParams;
+	typedef FGenericPropertyParams FUInt64PropertyParams;
+	typedef FGenericPropertyParams FUnsizedIntPropertyParams;
+	typedef FGenericPropertyParams FUnsizedUIntPropertyParams;
+	typedef FGenericPropertyParams FFloatPropertyParams;
+	typedef FGenericPropertyParams FDoublePropertyParams;
+	typedef FGenericPropertyParams FNamePropertyParams;
+	typedef FGenericPropertyParams FStrPropertyParams;
+	typedef FGenericPropertyParams FArrayPropertyParams;
+	typedef FGenericPropertyParams FMapPropertyParams;
+	typedef FGenericPropertyParams FSetPropertyParams;
+	typedef FGenericPropertyParams FTextPropertyParams;
+	typedef FObjectPropertyParams  FWeakObjectPropertyParams;
+	typedef FObjectPropertyParams  FLazyObjectPropertyParams;
+	typedef FObjectPropertyParams  FSoftObjectPropertyParams;
+
+	struct FFunctionParams
+	{
+		UObject*                          (*OuterFunc)();
+		const char*                         NameUTF8;
+		EObjectFlags                        ObjectFlags;
+		UFunction*                        (*SuperFunc)();
+		EFunctionFlags                      FunctionFlags;
+		SIZE_T                              StructureSize;
+		const FPropertyParamsBase* const*   PropertyArray;
+		int32                               NumProperties;
+		uint16                              RPCId;
+		uint16                              RPCResponseId;
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FEnumParams
+	{
+		UObject*                  (*OuterFunc)();
+		EDynamicType                DynamicType;
+		const char*                 NameUTF8;
+		EObjectFlags                ObjectFlags;
+		FText                     (*DisplayNameFunc)(int32);
+		uint8                       CppForm; // this is of type UEnum::ECppForm
+		const char*                 CppTypeUTF8;
+		const FEnumeratorParam*     EnumeratorParams;
+		int32                       NumEnumerators;
+#if WITH_METADATA
+		const FMetaDataPairParam*   MetaDataArray;
+		int32                       NumMetaData;
+#endif
+	};
+
+	struct FStructParams
+	{
+		UObject*                          (*OuterFunc)();
+		UScriptStruct*                    (*SuperFunc)();
+		void*                             (*StructOpsFunc)(); // really returns UScriptStruct::ICppStructOps*
+		const char*                         NameUTF8;
+		EObjectFlags                        ObjectFlags;
+		uint32                              StructFlags; // EStructFlags
+		SIZE_T                              SizeOf;
+		SIZE_T                              AlignOf;
+		const FPropertyParamsBase* const*   PropertyArray;
+		int32                               NumProperties;
+#if WITH_METADATA
+		const FMetaDataPairParam*           MetaDataArray;
+		int32                               NumMetaData;
+#endif
+	};
+
+	struct FPackageParams
+	{
+		const char*                        NameUTF8;
+		uint32                             PackageFlags; // EPackageFlags
+		uint32                             BodyCRC;
+		uint32                             DeclarationsCRC;
+		UObject*                  (*const *SingletonFuncArray)();
+		int32                              NumSingletons;
+#if WITH_METADATA
+		const FMetaDataPairParam*          MetaDataArray;
+		int32                              NumMetaData;
+#endif
+	};
+
+	struct FImplementedInterfaceParams
+	{
+		UClass* (*ClassFunc)();
+		int32     Offset;
+		bool      bImplementedByK2;
+	};
+
+	struct FClassParams
+	{
+		UClass*                                   (*ClassNoRegisterFunc)();
+		UObject*                           (*const *DependencySingletonFuncArray)();
+		int32                                       NumDependencySingletons;
+		uint32                                      ClassFlags; // EClassFlags
+		const FClassFunctionLinkInfo*               FunctionLinkArray;
+		int32                                       NumFunctions;
+		const FPropertyParamsBase* const*           PropertyArray;
+		int32                                       NumProperties;
+		const char*                                 ClassConfigNameUTF8;
+		const FCppClassTypeInfoStatic*              CppClassInfo;
+		const FImplementedInterfaceParams*          ImplementedInterfaceArray;
+		int32                                       NumImplementedInterfaces;
+#if WITH_METADATA
+		const FMetaDataPairParam*                   MetaDataArray;
+		int32                                       NumMetaData;
+#endif
+	};
+
+	COREUOBJECT_API void ConstructUFunction(UFunction*& OutFunction, const FFunctionParams& Params);
+	COREUOBJECT_API void ConstructUEnum(UEnum*& OutEnum, const FEnumParams& Params);
+	COREUOBJECT_API void ConstructUScriptStruct(UScriptStruct*& OutStruct, const FStructParams& Params);
+	COREUOBJECT_API void ConstructUPackage(UPackage*& OutPackage, const FPackageParams& Params);
+	COREUOBJECT_API void ConstructUClass(UClass*& OutClass, const FClassParams& Params);
+}
+
+// METADATA_PARAMS(x, y) expands to x, y, if WITH_METADATA is set, otherwise expands to nothing
+#if WITH_METADATA
+	#define METADATA_PARAMS(x, y) x, y,
+#else
+	#define METADATA_PARAMS(x, y)
+#endif
+
+// IF_WITH_EDITOR(x, y) expands to x if WITH_EDITOR is set, otherwise expands to y
+#if WITH_EDITOR
+	#define IF_WITH_EDITOR(x, y) x
+#else
+	#define IF_WITH_EDITOR(x, y) y
+#endif
+
+// IF_WITH_EDITORONLY_DATA(x, y) expands to x if WITH_EDITORONLY_DATA is set, otherwise expands to y
+#if WITH_EDITORONLY_DATA
+	#define IF_WITH_EDITORONLY_DATA(x, y) x
+#else
+	#define IF_WITH_EDITORONLY_DATA(x, y) y
+#endif
+
+enum class EDataValidationResult : uint8
+{
+	Invalid,
+	Valid,
+
+	NotValidated
+};

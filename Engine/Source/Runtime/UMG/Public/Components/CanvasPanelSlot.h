@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -58,6 +58,12 @@ public:
 	int32 ZOrder;
 
 public:
+#if WITH_EDITOR
+	virtual bool NudgeByDesigner(const FVector2D& NudgeDirection, const TOptional<int32>& GridSnapSize) override;
+	virtual bool DragDropPreviewByDesigner(const FVector2D& LocalCursorPosition, const TOptional<int32>& XGridSnapSize, const TOptional<int32>& YGridSnapSize) override;
+	virtual void SynchronizeFromTemplate(const UPanelSlot* const TemplateSlot) override;
+#endif //WITH_EDITOR
+
 	/** Sets the layout data of the slot */
 	UFUNCTION(BlueprintCallable, Category="Layout|Canvas Slot")
 	void SetLayout(const FAnchorData& InLayoutData);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -130,8 +130,12 @@ class UParticleSystem : public UObject
 	UPROPERTY()
 	float UpdateTime_Delta;
 
-	/** WarmupTime	- the time to warm-up the particle system when first rendered	*/
-	UPROPERTY(EditAnywhere, Category=ParticleSystem)
+	/** 
+	 * WarmupTime - the time to warm-up the particle system when first rendered	
+	 * Warning: WarmupTime is implemented by simulating the particle system for the time requested upon activation.  
+	 * This is extremely prone to cause hitches, especially with large particle counts - use with caution.
+	 */
+	UPROPERTY(EditAnywhere, Category=ParticleSystem, meta=(DisplayName="Warmup Time - beware hitches!"))
 	float WarmupTime;
 
 	/**	WarmupTickRate - the time step for each tick during warm up.
@@ -413,6 +417,11 @@ public:
 	 *	Editor helper function for setting the LOD validity flags used in Cascade.
 	 */
 	ENGINE_API void SetupLODValidity();
+
+	/**
+	 * Set the time to delay spawning the particle system
+	 */
+	ENGINE_API void SetDelay(float InDelay);
 
 #if WITH_EDITOR
 	/**

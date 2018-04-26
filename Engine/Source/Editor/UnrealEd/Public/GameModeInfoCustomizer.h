@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -23,6 +23,7 @@
 #include "PropertyCustomizationHelpers.h"
 #include "IDocumentation.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/BlueprintEditorUtils.h"
 #include "EditorClassUtils.h"
 
 #define LOCTEXT_NAMESPACE "FGameModeInfoCustomizer"
@@ -195,7 +196,7 @@ public:
 		if ((!GameModeClass || GameModeClass->GetPathName() != ClassName) && !GIsSavingPackage)
 		{
 			GameModeClass = FEditorClassUtils::GetClassFromString(ClassName);
-			CachedGameModeClass = GameModeClass;
+			CachedGameModeClass = MakeWeakObjectPtr(const_cast<UClass*>(GameModeClass));
 		}
 		return GameModeClass;
 	}
@@ -204,7 +205,7 @@ public:
 	{
 		if (DefaultGameModeClassHandle->SetValueFromFormattedString((NewGameModeClass) ? NewGameModeClass->GetPathName() : TEXT("None")) == FPropertyAccess::Success)
 		{
-			CachedGameModeClass = NewGameModeClass;
+			CachedGameModeClass = MakeWeakObjectPtr(const_cast<UClass*>(NewGameModeClass));
 		}
 	}
 
@@ -245,8 +246,12 @@ public:
 			const UClass** DefaultClassPtr = ClassProp->ContainerPtrToValuePtr<const UClass*>(GetCurrentGameModeCDO());
 			*DefaultClassPtr = NewDefaultClass;
 
-			// Indicate that the BP has changed and would need to be saved.
-			GameModeClass->MarkPackageDirty();
+			UBlueprint* Blueprint = Cast<UBlueprint>(GameModeClass->ClassGeneratedBy);
+			if (Blueprint)
+			{
+				// Indicate that the BP has changed and would need to be saved.
+				FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+			}
 		}
 	}
 

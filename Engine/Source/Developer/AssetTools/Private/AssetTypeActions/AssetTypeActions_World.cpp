@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetTypeActions/AssetTypeActions_World.h"
 #include "Misc/PackageName.h"
@@ -25,7 +25,7 @@ void FAssetTypeActions_World::OpenAssetEditor( const TArray<UObject*>& InObjects
 				const bool bShowProgress = true;
 				FEditorFileUtils::LoadMap(FileToOpen, bLoadAsTemplate, bShowProgress);
 			}
-
+			
 			// We can only edit one world at a time... so just break after the first valid world to load
 			break;
 		}

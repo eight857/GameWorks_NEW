@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessCombineLUTs.h: Post processing tone mapping implementation, can add bloom.
@@ -66,7 +66,6 @@ public:
 
 	// Explicit declarations here because templates unresolved when used in other files
 	void Set(FRHICommandList& RHICmdList, const FPixelShaderRHIParamRef ShaderRHI);
-	void Set(FRHICommandListImmediate& RHICmdList, const FPixelShaderRHIParamRef ShaderRHI) {};
 
 	template <typename TRHICmdList>
 	void Set(TRHICmdList& RHICmdList, const FComputeShaderRHIParamRef ShaderRHI);

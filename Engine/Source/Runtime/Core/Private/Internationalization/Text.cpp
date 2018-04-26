@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Internationalization/Text.h"
 #include "Misc/Parse.h"
@@ -107,7 +107,8 @@ bool FTextInspector::GetHistoricNumericData(const FText& Text, FHistoricTextNume
 
 // These default values have been duplicated to the KismetTextLibrary functions for Blueprints. Please replicate any changes there!
 FNumberFormattingOptions::FNumberFormattingOptions()
-	: UseGrouping(true)
+	: AlwaysSign(false)
+	, UseGrouping(true)
 	, RoundingMode(ERoundingMode::HalfToEven)
 	, MinimumIntegralDigits(1)
 	, MaximumIntegralDigits(DBL_MAX_10_EXP + DBL_DIG + 1)
@@ -119,6 +120,13 @@ FNumberFormattingOptions::FNumberFormattingOptions()
 
 FArchive& operator<<(FArchive& Ar, FNumberFormattingOptions& Value)
 {
+	Ar.UsingCustomVersion(FEditorObjectVersion::GUID);
+
+	if (Ar.CustomVer(FEditorObjectVersion::GUID) >= FEditorObjectVersion::AddedAlwaysSignNumberFormattingOption)
+	{
+		Ar << Value.AlwaysSign;
+	}
+
 	Ar << Value.UseGrouping;
 
 	int8 RoundingModeInt8 = (int8)Value.RoundingMode;
@@ -136,6 +144,7 @@ FArchive& operator<<(FArchive& Ar, FNumberFormattingOptions& Value)
 uint32 GetTypeHash( const FNumberFormattingOptions& Key )
 {
 	uint32 Hash = 0;
+	Hash = HashCombine(Hash, GetTypeHash(Key.AlwaysSign));
 	Hash = HashCombine(Hash, GetTypeHash(Key.UseGrouping));
 	Hash = HashCombine(Hash, GetTypeHash(Key.RoundingMode));
 	Hash = HashCombine(Hash, GetTypeHash(Key.MinimumIntegralDigits));
@@ -147,7 +156,8 @@ uint32 GetTypeHash( const FNumberFormattingOptions& Key )
 
 bool FNumberFormattingOptions::IsIdentical( const FNumberFormattingOptions& Other ) const
 {
-	return UseGrouping == Other.UseGrouping
+	return AlwaysSign == Other.AlwaysSign
+		&& UseGrouping == Other.UseGrouping
 		&& RoundingMode == Other.RoundingMode
 		&& MinimumIntegralDigits == Other.MinimumIntegralDigits
 		&& MaximumIntegralDigits == Other.MaximumIntegralDigits
@@ -167,8 +177,41 @@ const FNumberFormattingOptions& FNumberFormattingOptions::DefaultNoGrouping()
 	return Options;
 }
 
-bool FText::bEnableErrorCheckingResults = ENABLE_TEXT_ERROR_CHECKING_RESULTS;
-bool FText::bSuppressWarnings = false;
+// These default values have been duplicated to the KismetTextLibrary functions for Blueprints. Please replicate any changes there!
+FNumberParsingOptions::FNumberParsingOptions()
+	: UseGrouping(true)
+{
+
+}
+
+FArchive& operator<<(FArchive& Ar, FNumberParsingOptions& Value)
+{
+	Ar << Value.UseGrouping;
+	return Ar;
+}
+
+uint32 GetTypeHash(const FNumberParsingOptions& Key)
+{
+	uint32 Hash = GetTypeHash(Key.UseGrouping);
+	return Hash;
+}
+
+bool FNumberParsingOptions::IsIdentical(const FNumberParsingOptions& Other) const
+{
+	return UseGrouping == Other.UseGrouping;
+}
+
+const FNumberParsingOptions& FNumberParsingOptions::DefaultWithGrouping()
+{
+	static const FNumberParsingOptions Options = FNumberParsingOptions().SetUseGrouping(true);
+	return Options;
+}
+
+const FNumberParsingOptions& FNumberParsingOptions::DefaultNoGrouping()
+{
+	static const FNumberParsingOptions Options = FNumberParsingOptions().SetUseGrouping(false);
+	return Options;
+}
 
 FText::FText()
 	: TextData(GetEmpty().TextData)
@@ -190,44 +233,10 @@ CORE_API const FText& FText::GetEmpty() // @todo clang: Workaround for missing s
 }
 #endif
 
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-	FText::FText(const FText& Other) = default;
-	FText::FText(FText&& Other) = default;
-	FText& FText::operator=(const FText& Other) = default;
-	FText& FText::operator=(FText&& Other) = default;
-#else
-FText::FText(const FText& Source)
-	: TextData(Source.TextData)
-	, Flags(Source.Flags)
-{
-}
-
-FText::FText(FText&& Source)
-	: TextData(MoveTemp(Source.TextData))
-	, Flags(Source.Flags)
-{
-}
-
-FText& FText::operator=(const FText& Source)
-{
-	if (this != &Source)
-	{
-		TextData = Source.TextData;
-		Flags = Source.Flags;
-	}
-	return *this;
-}
-
-FText& FText::operator=(FText&& Source)
-{
-	if (this != &Source)
-	{
-		TextData = MoveTemp(Source.TextData);
-		Flags = Source.Flags;
-	}
-	return *this;
-}
-#endif
+FText::FText(FText&&) = default;
+FText::FText(const FText&) = default;
+FText& FText::operator=(FText&&) = default;
+FText& FText::operator=(const FText&) = default;
 
 FText::FText( TSharedRef<ITextData, ESPMode::ThreadSafe> InTextData )
 	: TextData(MoveTemp(InTextData))
@@ -1345,7 +1354,7 @@ FScopedTextIdentityPreserver::~FScopedTextIdentityPreserver()
 		check(SourceString);
 
 		// Create/update the display string instance for this identity in the text localization manager...
-		const FTextDisplayStringRef DisplayString = FTextLocalizationManager::Get().GetDisplayString(Namespace, Key, SourceString);
+		FTextDisplayStringRef DisplayString = FTextLocalizationManager::Get().GetDisplayString(Namespace, Key, SourceString);
 
 		// ... and update the data on the text instance
 		TextToPersist.TextData = MakeShared<TLocalizedTextData<FTextHistory_Base>, ESPMode::ThreadSafe>(MoveTemp(DisplayString), FTextHistory_Base(FString(*SourceString)));
@@ -1524,6 +1533,11 @@ bool FTextStringHelper::ReadFromString_ComplexText(const TCHAR* Buffer, FText& O
 				}
 			}
 #endif // USE_STABLE_LOCALIZATION_KEYS
+			if (!GIsEditor)
+			{
+				// Strip the package localization ID to match how text works at runtime (properties do this when saving during cook)
+				NamespaceString = TextNamespaceUtil::StripPackageNamespace(NamespaceString);
+			}
 			OutValue = FInternationalization::ForUseOnlyByLocMacroAndGraphNodeTextLiterals_CreateText(*SourceString, *NamespaceString, *KeyString);
 		}
 
@@ -1563,11 +1577,10 @@ bool FTextStringHelper::ReadFromString_ComplexText(const TCHAR* Buffer, FText& O
 		}
 		else
 		{
+			FString NamespaceString = (TextNamespace) ? TextNamespace : FString();
 #if USE_STABLE_LOCALIZATION_KEYS
 			if (GIsEditor && PackageNamespace && *PackageNamespace)
 			{
-				FString NamespaceString = (TextNamespace) ? TextNamespace : TEXT("");
-
 				const FString FullNamespace = TextNamespaceUtil::BuildFullNamespace(NamespaceString, PackageNamespace);
 				if (!NamespaceString.Equals(FullNamespace, ESearchCase::CaseSensitive))
 				{
@@ -1576,14 +1589,14 @@ bool FTextStringHelper::ReadFromString_ComplexText(const TCHAR* Buffer, FText& O
 					NamespaceString = FullNamespace;
 					KeyString = FGuid::NewGuid().ToString();
 				}
-
-				OutValue = FInternationalization::ForUseOnlyByLocMacroAndGraphNodeTextLiterals_CreateText(*SourceString, *NamespaceString, *KeyString);
 			}
-			else
 #endif // USE_STABLE_LOCALIZATION_KEYS
+			if (!GIsEditor)
 			{
-				OutValue = FInternationalization::ForUseOnlyByLocMacroAndGraphNodeTextLiterals_CreateText(*SourceString, (TextNamespace) ? TextNamespace : TEXT(""), *KeyString);
+				// Strip the package localization ID to match how text works at runtime (properties do this when saving during cook)
+				NamespaceString = TextNamespaceUtil::StripPackageNamespace(NamespaceString);
 			}
+			OutValue = FInternationalization::ForUseOnlyByLocMacroAndGraphNodeTextLiterals_CreateText(*SourceString, *NamespaceString, *KeyString);
 		}
 
 		if (OutNumCharsRead)
@@ -1604,11 +1617,6 @@ bool FTextStringHelper::ReadFromString_ComplexText(const TCHAR* Buffer, FText& O
 bool FTextStringHelper::ReadFromString(const TCHAR* Buffer, FText& OutValue, const TCHAR* TextNamespace, const TCHAR* PackageNamespace, int32* OutNumCharsRead, const bool bRequiresQuotes, const EStringTableLoadingPolicy InLoadingPolicy)
 {
 	const TCHAR* const Start = Buffer;
-
-	while (FChar::IsWhitespace(*Buffer))
-	{
-		++Buffer;
-	}
 
 	// First, try and parse the text as a complex text export
 	{

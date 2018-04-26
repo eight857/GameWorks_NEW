@@ -1,4 +1,4 @@
-﻿INTSourceChangelist:3231203
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title:アニメーション システムの概要
 Crumbs: %ROOT%, Engine, Engine/Animation
@@ -10,6 +10,7 @@ version:4.14
 type:overview
 topic-image:AnimationToolsTopic.png
 tags:Animation
+tags:Getting Started
 
 
 [TOC(start:2 end:2)]
@@ -28,113 +29,60 @@ UE4 のアニメーション システムは、いくつかのアニメーショ
 まず、 UE4 のアニメーション システムの主な用語と概念について説明します (詳しい情報を見るには各ヘッダーをクリックします)。
 
 (#Skeleton)
-[OBJECT:IconSection]
-	[PARAM:icon]
-		![](AnimationToolsTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		[](Engine/Animation/Persona/Modes)
-	[/PARAM]
-	[PARAM:description]
-	[INCLUDE:Engine/Animation/Persona/Modes#overview]
-	[/PARAM]
-[/OBJECT]
+### %Engine/Animation/Persona/Modes:title%
 
-[OBJECT:IconSection]
-	[PARAM:icon]
-		![](SkeletonTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		[](Engine/Animation/Skeleton)
-	[/PARAM]
-	[PARAM:description]
-		**スケルトン** は、スケルタルメッシュを変形するために使用するボーンの位置と回転の階層です。UE4 では、スケルトンはその独自のアセットにあるスケルタルメッシュから抽出されます。つまり、アニメーションは、スケルタルメッシュではなくスケルトンに適用されます。同じスケルトンを使用することで、複数のスケルタルメッシュがアニメーションを共有できます。
-	[/PARAM]
-[/OBJECT]
+%Engine/Animation/Persona/Modes:topiccompact%
 
-[OBJECT:IconSection]
-	[PARAM:icon]
-		![](AnimationSeqTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		[](Engine/Animation/Sequences)
-	[/PARAM]
-	[PARAM:description]
-		[INCLUDE:Engine/Animation/Sequences#Intro]
-	[/PARAM]
-[/OBJECT]
+[INCLUDE:Engine/Animation/Persona/Modes#overview]
 
-[OBJECT:IconSection]
-	[PARAM:icon]
-		![](AnimNotifiesTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		[](Engine/Animation/Sequences/Notifies)
-	[/PARAM]
-	[PARAM:description]
-		[INCLUDE:Engine/Animation/Sequences/Notifies#Intro]
-	[/PARAM]
-[/OBJECT]
+### %Engine/Animation/Skeleton:title%
 
-[OBJECT:IconSection]
-	[PARAM:icon]
-		![](AnimationBlueprintTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		[](Engine/Animation/AnimBlueprints)
-	[/PARAM]
-	[PARAM:description]
-		[INCLUDE:Engine/Animation/AnimBlueprints#Intro]
-	[/PARAM]
-[/OBJECT]
+%Engine/Animation/Skeleton:topiccompact%
 
-[OBJECT:IconSection]
-	[PARAM:icon]
-		![](BlendSpaceTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		[](Engine/Animation/Blendspaces)
-	[/PARAM]
-	[PARAM:description]
-		[INCLUDE:Engine/Animation/Blendspaces#Intro]
-	[/PARAM]
-[/OBJECT]
+**スケルトン** は、スケルタルメッシュを変形するために使用するボーンの位置と回転の階層です。UE4 では、スケルトンはその独自のアセットにあるスケルタルメッシュから抽出されます。つまり、アニメーションは、スケルタルメッシュではなくスケルトンに適用されます。同じスケルトンを使用することで、複数のスケルタルメッシュがアニメーションを共有できます。
 
-[OBJECT:IconSection]
-	[PARAM:icon]
-		![](MontageTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		[](Engine/Animation/AnimMontage)
-	[/PARAM]
-	[PARAM:description]
-		[INCLUDE:Engine/Animation/AnimMontage#Intro]
-	[/PARAM]
-[/OBJECT]
+### %Engine/Animation/Sequences:title%
 
-[OBJECT:IconSection]
-	[PARAM:icon]
-		![](SkeletonControlTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		[](Engine/Animation/NodeReference/SkeletalControls)
-	[/PARAM]
-	[PARAM:description]
-		[INCLUDE:Engine/Animation/NodeReference/SkeletalControls#Intro]
-	[/PARAM]
-[/OBJECT]
+%Engine/Animation/Sequences:topiccompact%
 
-[OBJECT:IconSection]
-	[PARAM:icon]
-		![](StateMachineTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		[](Engine/Animation/StateMachines)
-	[/PARAM]
-	[PARAM:description]
-		[INCLUDE:Engine/Animation/StateMachines#overview]
-	[/PARAM]
-[/OBJECT]
+[INCLUDE:Engine/Animation/Sequences#Intro]
+
+### %Engine/Animation/Sequences/Notifies:title%
+
+%Engine/Animation/Sequences/Notifies:topiccompact%
+
+[INCLUDE:Engine/Animation/Sequences/Notifies#Intro]
+
+### %Engine/Animation/AnimBlueprints:title%
+
+%Engine/Animation/AnimBlueprints:topiccompact%
+
+[INCLUDE:Engine/Animation/AnimBlueprints#Intro]
+
+### %Engine/Animation/Blendspaces:title%
+
+%Engine/Animation/Blendspaces:topiccompact%
+
+[INCLUDE:Engine/Animation/Blendspaces#Intro]
+
+### %Engine/Animation/AnimMontage:title%
+
+%Engine/Animation/AnimMontage:topiccompact%
+
+[INCLUDE:Engine/Animation/AnimMontage#Intro]
+
+### %Engine/Animation/NodeReference/SkeletalControls:title%
+
+%Engine/Animation/NodeReference/SkeletalControls:topiccompact%
+
+[INCLUDE:Engine/Animation/NodeReference/SkeletalControls#Intro]
+
+### %Engine/Animation/StateMachines:title%
+
+%Engine/Animation/StateMachines:topiccompact%
+
+[INCLUDE:Engine/Animation/StateMachines#Intro]
+
 
 [REGION:note]
 一部のアニメーション機能は、エピック ゲームズのランチャーの **[Learn (ラーニング)] タブ** から無料で利用できる [コンテンツ サンプル](https://docs.unrealengine.com/latest/INT/Resources/ContentExamples/) プロジェクトにもあります。 
@@ -190,14 +138,15 @@ UE4 のアニメーション システムは、いくつかのアニメーショ
 | **Notifies** | 現在有効になっている通知ステートを表示します。 |
 | **Graph** | アクティブなポーズ グラフを表示します。最終ポーズを表す最終ノード (ルートノード) から表示が始まり、最終ポーズを構成するすべてのノードがリスト化されていきます。ノードは階層が保たれるように表されるので、元のブループリント アセットを参照しなくてもノードの接続関係を理解することができます。アクティブなノードは緑に、(`ShowDebugToggleSubCategory FullGraph` を使って表示するよう切り替えられている場合) アクティブでないノードはグレー表示されます。 |
 
-<!-- Pulled from the intro section (overkill for overview page).
-		**Additive Animation (加算アニメーション)**
+[COMMENT:none]
+ Pulled from the intro section (overkill for overview page).
 
+		**加算アニメーション**
 		アニメーションはいつでも絶対的もしくは加算的なものとして使用することができます。システムでは、必要に応じてデータをオフセットに変換する 
-
-		適切な演算を実行します。この機能により、あらかじめ加算的アニメーションであることを指定する必要がないため、 
+		適切な演算を実行します。この機能により、あらかじめ加算的アニメーションであることを指定する必要がないため、
 		前バージョンのエンジンよりもよりシステムの柔軟性が高まりました。
-		**Blending Animations (アニメーションのブレンド)**
+
+		**アニメーションのブレンド**
 
 		[](Engine/Animation/NodeReference/Blend) および [](Engine/Animation/Blendspaces) を使用してアニメーションをブレンディングすることで一段と複雑な最終ポーズを作成できます。 
 
@@ -206,7 +155,7 @@ UE4 のアニメーション システムは、いくつかのアニメーショ
 		出力アニメーションを作成することができます。これにより、多くの状況でひとつのソース アニメーションを 
 		再利用することができます。
 
-		**Animation Poses (アニメーションのポーズ)**
+		**アニメーションのポーズ**
 
 		Animation Pose は、基本的に全てのボーンの位置と回転を含んだ、 
 		スケルトンのスナップショットです。アニメーションの再生を一時停止したときのポーズを考えてください。例えば、ランニングするアニメーションを途中で一時停止すると、 
@@ -234,4 +183,5 @@ UE4 のアニメーション システムは、いくつかのアニメーショ
 		**モーフ ターゲット**
 
 		[INCLUDE:Engine/Content\FBX\MorphTargets#Intro]
--->
+
+[/COMMENT]

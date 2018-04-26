@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UserInterface/PropertyTable/ColorPropertyTableCellPresenter.h"
 #include "Layout/Margin.h"
@@ -44,7 +44,7 @@ TSharedRef< class SWidget > FColorPropertyTableCellPresenter::ConstructDisplayWi
 		.HAlign( HAlign_Center )
 		.Padding( FMargin( 0, 0, 2, 0 ) )
 		[
-			SNew( SResetToDefaultPropertyEditor, PropertyEditor )
+			SNew( SResetToDefaultPropertyEditor, PropertyEditor->GetPropertyHandle() )
 		];
 	}
 

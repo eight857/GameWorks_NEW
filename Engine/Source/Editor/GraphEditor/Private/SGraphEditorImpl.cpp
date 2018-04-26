@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SGraphEditorImpl.h"
 #include "GraphEditAction.h"
@@ -577,7 +577,9 @@ void SGraphEditorImpl::ReconstructNodes()
 		{
 			if (UEdGraphNode* Node = Cast<UEdGraphNode>(*NodeIt))
 			{
+				TGuardValue<ESaveOrphanPinMode> GuardSaveMode(Node->OrphanedPinSaveMode, ESaveOrphanPinMode::SaveNone);
 				Schema->ReconstructNode(*Node);
+				Node->ClearCompilerMessage();
 			}
 		}
 	}
@@ -723,6 +725,11 @@ void SGraphEditorImpl::SetPinVisibility( SGraphEditor::EPinVisibility InVisibili
 			NotifyGraphChanged();
 		}
 	}
+}
+
+TSharedRef<FActiveTimerHandle> SGraphEditorImpl::RegisterActiveTimer(float TickPeriod, FWidgetActiveTimerDelegate TickFunction)
+{
+	return SWidget::RegisterActiveTimer(TickPeriod, TickFunction);
 }
 
 EVisibility SGraphEditorImpl::ReadOnlyVisibility() const

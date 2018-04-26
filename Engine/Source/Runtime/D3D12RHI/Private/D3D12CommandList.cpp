@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "D3D12RHIPrivate.h"
 #include "D3D12CommandList.h"
@@ -16,6 +16,13 @@ void FD3D12CommandListHandle::AddUAVBarrier()
 {
 	check(CommandListData);
 	CommandListData->ResourceBarrierBatcher.AddUAV();
+	CommandListData->CurrentOwningContext->numBarriers++;
+}
+
+void FD3D12CommandListHandle::AddAliasingBarrier(FD3D12Resource* pResource)
+{
+	check(CommandListData);
+	CommandListData->ResourceBarrierBatcher.AddAliasingBarrier(pResource->GetResource());
 	CommandListData->CurrentOwningContext->numBarriers++;
 }
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // Implementation of D3D12 Disk caching functions to preserve state across runs
 
@@ -24,7 +24,6 @@ void FDiskCacheInterface::Init(FString &filename)
 	mMapAddress = 0;
 	mCurrentFileMapSize = 0;
 	mCurrentOffset = 0;
-	mCacheExists = false;
 	mInErrorState = false;
 
 	mFileName = filename;
@@ -36,10 +35,17 @@ void FDiskCacheInterface::Init(FString &filename)
 	else
 	{
 		WIN32_FIND_DATA fileData;
-		FindFirstFile(mFileName.GetCharArray().GetData(), &fileData);
-		if (GetLastError() == ERROR_FILE_NOT_FOUND)
+		HANDLE Handle = FindFirstFile(mFileName.GetCharArray().GetData(), &fileData);
+		if (Handle == INVALID_HANDLE_VALUE)
 		{
-			mCacheExists = false;
+			if (GetLastError() == ERROR_FILE_NOT_FOUND)
+			{
+				mCacheExists = false;
+			}
+		}
+		else
+		{
+			FindClose(Handle);
 		}
 	}
 	bool fileFound = mCacheExists;

@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -9,7 +9,7 @@ public class Expat : ModuleRules
 	{
 		Type = ModuleType.External;
 
-		string ExpatPackagePath = UEBuildConfiguration.UEThirdPartySourceDirectory + "Expat";
+		string ExpatPackagePath = Target.UEThirdPartySourceDirectory + "Expat";
 
 		if (Target.Platform == UnrealTargetPlatform.XboxOne)
 		{
@@ -25,7 +25,7 @@ public class Expat : ModuleRules
 				ToolchainName += VersionName.ToString();
 			}
 
-			string ConfigPath = (Target.Configuration == UnrealTargetConfiguration.Debug && BuildConfiguration.bDebugBuildsActuallyUseDebugCRT) ? "Debug" : "Release";
+			string ConfigPath = (Target.Configuration == UnrealTargetConfiguration.Debug && Target.bDebugBuildsActuallyUseDebugCRT) ? "Debug" : "Release";
 			string LibraryPath = Path.Combine(ExpatPackagePath, "expat-2.2.0", "XboxOne", ToolchainName, ConfigPath);
 
 			PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "expat.lib"));

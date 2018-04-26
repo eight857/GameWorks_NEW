@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_VisualizeTargeting.h"
 #include "TimerManager.h"
@@ -73,7 +73,7 @@ bool UAbilityTask_VisualizeTargeting::BeginSpawningActor(UGameplayAbility* Ownin
 			UClass* Class = *InTargetClass;
 			if (Class != NULL)
 			{
-				UWorld* const World = GEngine->GetWorldFromContextObject(OwningAbility);
+				UWorld* const World = GEngine->GetWorldFromContextObject(OwningAbility, EGetWorldErrorMode::LogAndReturnNull);
 				if (World)
 				{
 					SpawnedActor = World->SpawnActorDeferred<AGameplayAbilityTargetActor>(Class, FTransform::Identity, NULL, NULL, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Slate/SlateBrushAsset.h"
 
@@ -8,6 +8,7 @@ USlateBrushAsset::USlateBrushAsset( const FObjectInitializer& ObjectInitializer 
 	
 }
 
+#if WITH_EDITORONLY_DATA
 void USlateBrushAsset::PostLoad()
 {
 	Super::PostLoad();
@@ -17,3 +18,4 @@ void USlateBrushAsset::PostLoad()
 		Brush.TintColor = FSlateColor( Brush.Tint_DEPRECATED );
 	}
 }
+#endif

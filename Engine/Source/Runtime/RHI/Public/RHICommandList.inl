@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RHICommandList.inl: RHI Command List inline definitions.
@@ -41,7 +41,7 @@ FORCEINLINE_DEBUGGABLE bool FRHICommandListBase::Bypass()
 FORCEINLINE_DEBUGGABLE FScopedRHIThreadStaller::FScopedRHIThreadStaller(class FRHICommandListImmediate& InImmed)
 	: Immed(nullptr)
 {
-	if (GRHIThread)
+	if (IsRunningRHIInSeparateThread())
 	{
 		check(IsInRenderingThread());
 		if (InImmed.StallRHIThread())
@@ -57,6 +57,17 @@ FORCEINLINE_DEBUGGABLE FScopedRHIThreadStaller::~FScopedRHIThreadStaller()
 	{
 		Immed->UnStallRHIThread();
 	}
+}
+
+FORCEINLINE_DEBUGGABLE void FRHIRenderPassCommandList::ApplyCachedRenderTargets(FGraphicsPipelineStateInitializer& GraphicsPSOInit)
+{
+	return GetParent().ApplyCachedRenderTargets(GraphicsPSOInit);
+}
+
+namespace PipelineStateCache
+{
+	/* Evicts unused state entries based on r.pso.evictiontime time. Called in RHICommandList::BeginFrame */
+	extern RHI_API void FlushResources();
 }
 
 FORCEINLINE_DEBUGGABLE void FRHICommandListImmediate::ImmediateFlush(EImmediateFlushType::Type FlushType)
@@ -93,7 +104,7 @@ FORCEINLINE_DEBUGGABLE void FRHICommandListImmediate::ImmediateFlush(EImmediateF
 				GRHICommandList.ExecuteList(*this);
 			}
 			WaitForDispatch();
-			if (GRHIThread)
+			if (IsRunningRHIInSeparateThread())
 			{
 				WaitForRHIThreadTasks();
 			}
@@ -109,6 +120,7 @@ FORCEINLINE_DEBUGGABLE void FRHICommandListImmediate::ImmediateFlush(EImmediateF
 			WaitForDispatch();
 			WaitForRHIThreadTasks();
 			WaitForTasks(true); // these are already done, but this resets the outstanding array
+			PipelineStateCache::FlushResources();
 			FRHIResource::FlushPendingDeletes();
 		}
 		break;

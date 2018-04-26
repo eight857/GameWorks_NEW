@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Stats/Stats.h"
 #include "UObject/Object.h"
-#include "UObject/WeakObjectPtr.h"
+#include "UObject/ObjectKey.h"
 #include "UObject/GCObject.h"
 #include "TickableEditorObject.h"
 
@@ -27,10 +27,10 @@ class BLUEPRINTGRAPH_API FBlueprintActionDatabase : public FGCObject, public FTi
 public:
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnDatabaseEntryUpdated, UObject*);
 
-	typedef TMap<TWeakObjectPtr<UObject>, int32>			FPrimingQueue;
-	typedef TArray<UBlueprintNodeSpawner*>					FActionList;
-	typedef TMap<UObject const*, FActionList>				FActionRegistry;
-	typedef TMap<FName, TArray<UBlueprintNodeSpawner*>>		FUnloadedActionRegistry;
+	typedef TMap<FObjectKey, int32>						FPrimingQueue;
+	typedef TArray<UBlueprintNodeSpawner*>				FActionList;
+	typedef TMap<FObjectKey, FActionList>				FActionRegistry;
+	typedef TMap<FName, TArray<UBlueprintNodeSpawner*>>	FUnloadedActionRegistry;
 
 public:
 	/**
@@ -43,7 +43,7 @@ public:
 
 	// FTickableEditorObject interface
 	virtual void Tick(float DeltaTime) override;
-	virtual bool IsTickable() const override { return true; }
+	virtual ETickableTickType GetTickableTickType() const override { return ETickableTickType::Always; }
 	virtual TStatId GetStatId() const override;
 	// End FTickableEditorObject interface
 
@@ -75,6 +75,11 @@ public:
 	 * Populates the action database with all level script actions from all active editor worlds.
 	 */
 	void RefreshWorlds();
+
+	/**
+	 * Removes the entry with the given key on the next tick.
+	 */
+	void DeferredRemoveEntry(FObjectKey const& InKey);
 
 	/**
 	 * Finds the database entry for the specified class and wipes it, 
@@ -165,6 +170,9 @@ private:
 	 * caching each spawner's template-node, etc.).
 	 */
 	FPrimingQueue ActionPrimingQueue;
+
+	/** List of action keys to be removed on the next tick. */
+	TArray<FObjectKey> ActionRemoveQueue;
 
 	/** */
 	FOnDatabaseEntryUpdated EntryRefreshDelegate;

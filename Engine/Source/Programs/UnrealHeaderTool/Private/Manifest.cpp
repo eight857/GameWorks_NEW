@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Manifest.h"
 #include "UnrealHeaderTool.h"
@@ -243,7 +243,6 @@ bool FManifestModule::IsCompatibleWith(const FManifestModule& ManifestModule)
 		&& BaseDirectory == ManifestModule.BaseDirectory
 		&& IncludeBase == ManifestModule.IncludeBase
 		&& GeneratedIncludeDirectory == ManifestModule.GeneratedIncludeDirectory
-		&& BaseDirectory == ManifestModule.BaseDirectory
 		&& PublicUObjectClassesHeaders == ManifestModule.PublicUObjectClassesHeaders
 		&& PublicUObjectHeaders == ManifestModule.PublicUObjectHeaders
 		&& PrivateUObjectHeaders == ManifestModule.PrivateUObjectHeaders

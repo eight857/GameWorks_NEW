@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,6 +16,7 @@
 #include "Styling/SlateWidgetStyleAsset.h"
 #include "Framework/SlateDelegates.h"
 #include "Framework/MultiBox/MultiBoxExtender.h"
+#include "Framework/Text/TextLayout.h"
 #include "Widgets/Text/ISlateEditableTextWidget.h"
 
 class FActiveTimerHandle;
@@ -39,6 +40,7 @@ public:
 	SLATE_BEGIN_ARGS( SEditableText )
 		: _Text()
 		, _HintText()
+		, _SearchText()
 		, _Style(&FCoreStyle::Get().GetWidgetStyle< FEditableTextStyle >("NormalEditableText"))
 		, _Font()
 		, _ColorAndOpacity()
@@ -51,19 +53,27 @@ public:
 		, _SelectAllTextWhenFocused( false )
 		, _RevertTextOnEscape( false )
 		, _ClearKeyboardFocusOnCommit(true)
+		, _Justification(ETextJustify::Left)
 		, _AllowContextMenu(true)
 		, _MinDesiredWidth(0.0f)
 		, _SelectAllTextOnCommit( false )
 		, _VirtualKeyboardType(EKeyboardType::Keyboard_Default)
+		, _VirtualKeyboardTrigger(EVirtualKeyboardTrigger::OnFocusByPointer)
+		, _VirtualKeyboardDismissAction(EVirtualKeyboardDismissAction::TextChangeOnDismiss)
 		, _TextShapingMethod()
 		, _TextFlowDirection()
-		{}
+		{
+			_Clipping = EWidgetClipping::ClipToBounds;
+		}
 
 		/** Sets the text content for this editable text widget */
 		SLATE_ATTRIBUTE( FText, Text )
 
 		/** The text that appears when there is nothing typed into the search box */
 		SLATE_ATTRIBUTE( FText, HintText )
+
+		/** Text to search for (a new search is triggered whenever this text changes) */
+		SLATE_ATTRIBUTE( FText, SearchText )
 
 		/** The style of the text block, which dictates the font, color */
 		SLATE_STYLE_ARGUMENT( FEditableTextStyle, Style )
@@ -101,6 +111,9 @@ public:
 		/** Whether to clear keyboard focus when pressing enter to commit changes */
 		SLATE_ATTRIBUTE( bool, ClearKeyboardFocusOnCommit )
 
+		/** How should the value be justified in the editable text field. */
+		SLATE_ATTRIBUTE(ETextJustify::Type, Justification)
+
 		/** Whether the context menu can be opened  */
 		SLATE_ATTRIBUTE(bool, AllowContextMenu)
 
@@ -127,6 +140,9 @@ public:
 		/** Whether to select all text when pressing enter to commit changes */
 		SLATE_ATTRIBUTE( bool, SelectAllTextOnCommit )
 
+		/** Callback delegate to have first chance handling of the OnKeyChar event */
+		SLATE_EVENT(FOnKeyChar, OnKeyCharHandler)
+
 		/** Callback delegate to have first chance handling of the OnKeyDown event */
 		SLATE_EVENT(FOnKeyDown, OnKeyDownHandler)
 
@@ -135,6 +151,12 @@ public:
 
 		/** The type of virtual keyboard to use on mobile devices */
 		SLATE_ATTRIBUTE( EKeyboardType, VirtualKeyboardType)
+
+		/** The type of event that will trigger the display of the virtual keyboard */
+		SLATE_ATTRIBUTE( EVirtualKeyboardTrigger, VirtualKeyboardTrigger )
+
+		/** The message action to take when the virtual keyboard is dismissed by the user */
+		SLATE_ATTRIBUTE( EVirtualKeyboardDismissAction, VirtualKeyboardDismissAction )
 
 		/** Which text shaping method should we use? (unset to use the default returned by GetDefaultTextShapingMethod) */
 		SLATE_ARGUMENT(TOptional<ETextShapingMethod>, TextShapingMethod)
@@ -177,6 +199,12 @@ public:
 	/** Get the text that appears when there is no text in the text box */
 	FText GetHintText() const;
 
+	/** Set the text that is currently being searched for (if any) */
+	void SetSearchText(const TAttribute<FText>& InSearchText);
+
+	/** Get the text that is currently being searched for (if any) */
+	FText GetSearchText() const;
+
 	/** See the IsReadOnly attribute */
 	void SetIsReadOnly( TAttribute< bool > InIsReadOnly );
 	
@@ -188,6 +216,9 @@ public:
 
 	/** See the AllowContextMenu attribute */
 	void SetAllowContextMenu(const TAttribute< bool >& InAllowContextMenu);
+
+	/** Set the VirtualKeyboardDismissAction attribute */
+	void SetVirtualKeyboardDismissAction(TAttribute< EVirtualKeyboardDismissAction > InVirtualKeyboardDismissAction);
 
 	/**
 	 * Sets the font used to draw the text
@@ -238,6 +269,18 @@ public:
 	 */
 	void SetSelectAllTextOnCommit(const TAttribute<bool>& InSelectAllTextOnCommit);
 
+	/** See Justification attribute */
+	void SetJustification(const TAttribute<ETextJustify::Type>& InJustification);
+	/**
+	 * Sets the OnKeyCharHandler to provide first chance handling of the OnKeyChar event
+	 *
+	 * @param InOnKeyCharHandler			Delegate to call during OnKeyChar event
+	 */
+	void SetOnKeyCharHandler(FOnKeyChar InOnKeyCharHandler)
+	{
+		OnKeyCharHandler = InOnKeyCharHandler;
+	}
+
 	/**
 	 * Sets the OnKeyDownHandler to provide first chance handling of the OnKeyDown event
 	 *
@@ -266,10 +309,25 @@ public:
 	/** Get the currently selected text */
 	FText GetSelectedText() const;
 
+	/** Move the cursor to the given location in the document (will also scroll to this point) */
+	void GoTo(const FTextLocation& NewLocation);
+
+	/** Move the cursor specified location */
+	void GoTo(ETextLocation NewLocation);
+
+	/** Scroll to the given location in the document (without moving the cursor) */
+	void ScrollTo(const FTextLocation& NewLocation);
+
+	/** Begin a new text search (this is called automatically when the bound search text changes) */
+	void BeginSearch(const FText& InSearchText, const ESearchCase::Type InSearchCase = ESearchCase::IgnoreCase, const bool InReverse = false);
+
+	/** Advance the current search to the next match (does nothing if not currently searching) */
+	void AdvanceSearch(const bool InReverse = false);
+
 protected:
 	//~ Begin SWidget Interface
 	virtual void Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime ) override;
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 	virtual void CacheDesiredSize(float LayoutScaleMultiplier) override;
 	virtual FVector2D ComputeDesiredSize(float LayoutScaleMultiplier) const override;
 	virtual FChildren* GetChildren() override;
@@ -315,6 +373,8 @@ protected:
 	virtual bool CanTypeCharacter(const TCHAR InChar) const override;
 	virtual void EnsureActiveTick() override;
 	virtual EKeyboardType GetVirtualKeyboardType() const override;
+	virtual EVirtualKeyboardTrigger GetVirtualKeyboardTrigger() const override;
+	virtual EVirtualKeyboardDismissAction GetVirtualKeyboardDismissAction() const override;
 	virtual TSharedRef<SWidget> GetSlateWidget() override;
 	virtual TSharedPtr<SWidget> GetSlateWidgetPtr() override;
 	virtual TSharedPtr<SWidget> BuildContextMenuContent() const override;
@@ -389,9 +449,18 @@ protected:
 	/** The iterator to use to detect word boundaries */
 	mutable TSharedPtr<IBreakIterator> WordBreakIterator;
 
+	/** Callback delegate to have first chance handling of the OnKeyChar event */
+	FOnKeyChar OnKeyCharHandler;
+
 	/** Callback delegate to have first chance handling of the OnKeyDown event */
 	FOnKeyDown OnKeyDownHandler;
 
 	/** The type of virtual keyboard to use for editing this text on mobile */
 	TAttribute<EKeyboardType> VirtualKeyboardType;
+
+	/** The type of event that will trigger the display of the virtual keyboard */
+	TAttribute<EVirtualKeyboardTrigger> VirtualKeyboardTrigger;
+
+	/** The message action to take when the virtual keyboard is dismissed by the user */
+	TAttribute<EVirtualKeyboardDismissAction> VirtualKeyboardDismissAction;
 };

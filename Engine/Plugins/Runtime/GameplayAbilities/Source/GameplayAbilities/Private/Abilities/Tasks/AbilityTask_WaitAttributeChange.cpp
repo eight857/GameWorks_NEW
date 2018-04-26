@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_WaitAttributeChange.h"
 
 #include "AbilitySystemComponent.h"
 
 #include "GameplayEffectExtension.h"
+#include "AbilitySystemGlobals.h"
 
 UAbilityTask_WaitAttributeChange::UAbilityTask_WaitAttributeChange(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -12,41 +13,46 @@ UAbilityTask_WaitAttributeChange::UAbilityTask_WaitAttributeChange(const FObject
 	bTriggerOnce = false;
 }
 
-UAbilityTask_WaitAttributeChange* UAbilityTask_WaitAttributeChange::WaitForAttributeChange(UGameplayAbility* OwningAbility, FGameplayAttribute InAttribute, FGameplayTag InWithTag, FGameplayTag InWithoutTag, bool TriggerOnce)
+UAbilityTask_WaitAttributeChange* UAbilityTask_WaitAttributeChange::WaitForAttributeChange(UGameplayAbility* OwningAbility, FGameplayAttribute InAttribute, FGameplayTag InWithTag, FGameplayTag InWithoutTag, bool TriggerOnce, AActor* OptionalExternalOwner)
 {
-	auto MyObj = NewAbilityTask<UAbilityTask_WaitAttributeChange>(OwningAbility);
+	UAbilityTask_WaitAttributeChange* MyObj = NewAbilityTask<UAbilityTask_WaitAttributeChange>(OwningAbility);
 	MyObj->WithTag = InWithTag;
 	MyObj->WithoutTag = InWithoutTag;
 	MyObj->Attribute = InAttribute;
 	MyObj->ComparisonType = EWaitAttributeChangeComparison::None;
 	MyObj->bTriggerOnce = TriggerOnce;
+	MyObj->ExternalOwner = OptionalExternalOwner ? UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(OptionalExternalOwner) : nullptr;
 
 	return MyObj;
 }
 
-UAbilityTask_WaitAttributeChange* UAbilityTask_WaitAttributeChange::WaitForAttributeChangeWithComparison(UGameplayAbility* OwningAbility, FGameplayAttribute InAttribute, FGameplayTag InWithTag, FGameplayTag InWithoutTag, TEnumAsByte<EWaitAttributeChangeComparison::Type> InComparisonType, float InComparisonValue, bool TriggerOnce)
+UAbilityTask_WaitAttributeChange* UAbilityTask_WaitAttributeChange::WaitForAttributeChangeWithComparison(UGameplayAbility* OwningAbility, FGameplayAttribute InAttribute, FGameplayTag InWithTag, FGameplayTag InWithoutTag, TEnumAsByte<EWaitAttributeChangeComparison::Type> InComparisonType, float InComparisonValue, bool TriggerOnce, AActor* OptionalExternalOwner)
 {
-	auto MyObj = NewAbilityTask<UAbilityTask_WaitAttributeChange>(OwningAbility);
+	UAbilityTask_WaitAttributeChange* MyObj = NewAbilityTask<UAbilityTask_WaitAttributeChange>(OwningAbility);
 	MyObj->WithTag = InWithTag;
 	MyObj->WithoutTag = InWithoutTag;
 	MyObj->Attribute = InAttribute;
 	MyObj->ComparisonType = InComparisonType;
 	MyObj->ComparisonValue = InComparisonValue;
 	MyObj->bTriggerOnce = TriggerOnce;
+	MyObj->ExternalOwner = OptionalExternalOwner ? UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(OptionalExternalOwner) : nullptr;
 
 	return MyObj;
 }
 
 void UAbilityTask_WaitAttributeChange::Activate()
 {
-	if (AbilitySystemComponent)
+	if (UAbilitySystemComponent* ASC = GetFocusedASC())
 	{
-		OnAttributeChangeDelegateHandle = AbilitySystemComponent->RegisterGameplayAttributeEvent(Attribute).AddUObject(this, &UAbilityTask_WaitAttributeChange::OnAttributeChange);
+		OnAttributeChangeDelegateHandle = ASC->GetGameplayAttributeValueChangeDelegate(Attribute).AddUObject(this, &UAbilityTask_WaitAttributeChange::OnAttributeChange);
 	}
 }
 
-void UAbilityTask_WaitAttributeChange::OnAttributeChange(float NewValue, const FGameplayEffectModCallbackData* Data)
+void UAbilityTask_WaitAttributeChange::OnAttributeChange(const FOnAttributeChangeData& CallbackData)
 {
+	float NewValue = CallbackData.NewValue;
+	const FGameplayEffectModCallbackData* Data = CallbackData.GEModData;
+
 	if (Data == nullptr)
 	{
 		// There may be no execution data associated with this change, for example a GE being removed. 
@@ -103,11 +109,16 @@ void UAbilityTask_WaitAttributeChange::OnAttributeChange(float NewValue, const F
 	}
 }
 
+UAbilitySystemComponent* UAbilityTask_WaitAttributeChange::GetFocusedASC()
+{
+	return ExternalOwner ? ExternalOwner : AbilitySystemComponent;
+}
+
 void UAbilityTask_WaitAttributeChange::OnDestroy(bool AbilityEnded)
 {
-	if (AbilitySystemComponent)
+	if (UAbilitySystemComponent* ASC = GetFocusedASC())
 	{
-		AbilitySystemComponent->RegisterGameplayAttributeEvent(Attribute).Remove(OnAttributeChangeDelegateHandle);
+		ASC->GetGameplayAttributeValueChangeDelegate(Attribute).Remove(OnAttributeChangeDelegateHandle);
 	}
 
 	Super::OnDestroy(AbilityEnded);

@@ -1,7 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ControlRig.h"
 #include "GameFramework/Actor.h"
+#include "Misc/RuntimeErrors.h"
 
 #define LOCTEXT_NAMESPACE "ControlRig"
 
@@ -61,18 +62,24 @@ void UControlRig::PostEvaluate()
 
 UControlRig* UControlRig::EvaluateControlRig(UControlRig* Target)
 {
-	Target->PreEvaluate();
-	Target->Evaluate();
-	Target->PostEvaluate();
+	if (ensureAsRuntimeWarning(Target != nullptr))
+	{
+		Target->PreEvaluate();
+		Target->Evaluate();
+		Target->PostEvaluate();
+	}
 	return Target;
 }
 
 UControlRig* UControlRig::EvaluateControlRigWithInputs(UControlRig* Target, FPreEvaluateGatherInputs PreEvaluate)
 {
 	PreEvaluate.ExecuteIfBound();
-	Target->PreEvaluate();
-	Target->Evaluate();
-	Target->PostEvaluate();
+	if (ensureAsRuntimeWarning(Target != nullptr))
+	{
+		Target->PreEvaluate();
+		Target->Evaluate();
+		Target->PostEvaluate();
+	}
 	return Target;
 }
 
@@ -100,21 +107,26 @@ float UControlRig::GetDeltaTime() const
 
 UControlRig* UControlRig::GetOrAllocateSubControlRig(TSubclassOf<UControlRig> ControlRigClass, int32 AllocationIndex)
 {
-	// Must have a valid index
-	check(AllocationIndex >= 0);
-
-	// reallocate the sub ControlRig reserve to accommodate this index
-	if (!SubControlRigs.IsValidIndex(AllocationIndex))
+	if (ensureAsRuntimeWarning(ControlRigClass != nullptr))
 	{
-		SubControlRigs.SetNum(FMath::Max(SubControlRigs.Num(), AllocationIndex + 1), false);
+		if (ensureAsRuntimeWarning(AllocationIndex >= 0))
+		{
+			// reallocate the sub ControlRig reserve to accommodate this index
+			if (!SubControlRigs.IsValidIndex(AllocationIndex))
+			{
+				SubControlRigs.SetNum(FMath::Max(SubControlRigs.Num(), AllocationIndex + 1), false);
+			}
+
+			if (SubControlRigs[AllocationIndex] == nullptr)
+			{
+				SubControlRigs[AllocationIndex] = NewObject<UControlRig>(this, ControlRigClass.Get(), "SubControlRig");
+			}
+
+			return SubControlRigs[AllocationIndex];
+		}
 	}
 
-	if(SubControlRigs[AllocationIndex] == nullptr)
-	{
-		SubControlRigs[AllocationIndex] = NewObject<UControlRig>(this, ControlRigClass.Get(), "SubControlRig");
-	}
-
-	return SubControlRigs[AllocationIndex];
+	return nullptr;
 }
 
 AActor* UControlRig::GetHostingActor() const

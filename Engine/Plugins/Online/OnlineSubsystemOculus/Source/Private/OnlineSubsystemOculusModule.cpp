@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSubsystemOculusModule.h"
 #include "OnlineSubsystemOculusPrivate.h"
@@ -22,11 +22,11 @@ public:
 	FOnlineFactoryOculus() {}	
 	virtual ~FOnlineFactoryOculus() {}
 
-	virtual IOnlineSubsystemPtr CreateSubsystem(FName InstanceName)
+	IOnlineSubsystemPtr CreateSubsystem(FName InstanceName) override
 	{
 		if (!OnlineSub.IsValid())
 		{
-			OnlineSub = MakeShareable(new FOnlineSubsystemOculus(InstanceName));
+			OnlineSub = MakeShared<FOnlineSubsystemOculus, ESPMode::ThreadSafe>(InstanceName);
 		}
 		if (OnlineSub->IsEnabled())
 		{

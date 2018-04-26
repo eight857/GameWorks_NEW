@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -19,6 +19,8 @@ class UWidgetBlueprint;
 class FWidgetViewModel : public TSharedFromThis<FWidgetViewModel>
 {
 public:
+	virtual ~FWidgetViewModel() { }
+
 	virtual FText GetName() const = 0;
 
 	virtual bool IsTemplate() const = 0;

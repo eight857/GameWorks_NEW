@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -145,4 +145,6 @@ protected:
 	void HandleOnMouseCaptureEnd();
 	void HandleOnControllerCaptureBegin();
 	void HandleOnControllerCaptureEnd();
+
+	PROPERTY_BINDING_IMPLEMENTATION(float, Value);
 };

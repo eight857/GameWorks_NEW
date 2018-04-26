@@ -1,8 +1,9 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System.Collections.Generic;
 using AutomationTool;
 using UnrealBuildTool;
+using Tools.DotNETCommon;
 
 namespace AutomationScripts.Automation
 {

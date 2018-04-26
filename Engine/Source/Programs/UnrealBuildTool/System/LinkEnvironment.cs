@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -26,6 +27,11 @@ namespace UnrealBuildTool
 		/// The architecture that is being compiled/linked (empty string by default)
 		/// </summary>
 		public readonly string Architecture;
+
+		/// <summary>
+		/// On Mac, indicates the path to the target's application bundle
+		/// </summary>
+		public DirectoryReference BundleDirectory;
 
 		/// <summary>
 		/// The directory to put the non-executable files in (PDBs, import library, etc)
@@ -124,7 +130,7 @@ namespace UnrealBuildTool
 		/// <summary>
 		/// True if debug symbols that are cached for some platforms should not be created.
 		/// </summary>
-		public bool bDisableSymbolCache = true;
+		public bool bDisableSymbolCache = false;
 
 		/// <summary>
 		/// True if we're compiling .cpp files that will go into a library (.lib file)
@@ -210,15 +216,35 @@ namespace UnrealBuildTool
 		/// </summary>
 		public bool bAllowLTCG;
 
-		/// <summary>
-		/// Whether to request the linker create a map file as part of the build
-		/// </summary>
-		public bool bCreateMapFile;
+        /// <summary>
+        /// Whether to enable Profile Guided Optimization (PGO) instrumentation in this build.
+        /// </summary>
+        public bool bPGOProfile;
+
+        /// <summary>
+        /// Whether to optimize this build with Profile Guided Optimization (PGO).
+        /// </summary>
+        public bool bPGOOptimize;
+
+        /// <summary>
+        /// Platform specific directory where PGO profiling data is stored.
+        /// </summary>
+        public string PGODirectory;
+
+        /// <summary>
+        /// Platform specific filename where PGO profiling data is saved.
+        /// </summary>
+        public string PGOFilenamePrefix;
+
+        /// <summary>
+        /// Whether to request the linker create a map file as part of the build
+        /// </summary>
+        public bool bCreateMapFile;
 
 		/// <summary>
 		/// Whether to allow the use of ASLR (address space layout randomization) if supported.
 		/// </summary>
-		public bool bAllowALSR;
+		public bool bAllowASLR;
 
 		/// <summary>
 		/// Whether PDB files should be used for Visual C++ builds.
@@ -266,6 +292,12 @@ namespace UnrealBuildTool
 		public List<FileItem> CommonResourceFiles = new List<FileItem>();
 
 		/// <summary>
+		/// Provides a Module Definition File (.def) to the linker to describe various attributes of a DLL.
+		/// Necessary when exporting functions by ordinal values instead of by name.
+		/// </summary>
+		public string ModuleDefinitionFile;
+
+		/// <summary>
 		/// Default constructor.
 		/// </summary>
 		public LinkEnvironment(CppPlatform Platform, CppConfiguration Configuration, string Architecture)
@@ -283,6 +315,7 @@ namespace UnrealBuildTool
 			Platform = Other.Platform;
 			Configuration = Other.Configuration;
 			Architecture = Other.Architecture;
+			BundleDirectory = Other.BundleDirectory;
 			OutputDirectory = Other.OutputDirectory;
 			IntermediateDirectory = Other.IntermediateDirectory;
 			LocalShadowDirectory = Other.LocalShadowDirectory;
@@ -307,13 +340,19 @@ namespace UnrealBuildTool
 			bIsCrossReferenced = Other.bIsCrossReferenced;
 			bHasExports = Other.bHasExports;
 			bIsBuildingDotNetAssembly = Other.bIsBuildingDotNetAssembly;
+			DefaultStackSize = Other.DefaultStackSize;
+			DefaultStackSizeCommit = Other.DefaultStackSizeCommit;
 			bOptimizeForSize = Other.bOptimizeForSize;
 			bOmitFramePointers = Other.bOmitFramePointers;
 			bSupportEditAndContinue = Other.bSupportEditAndContinue;
 			bUseIncrementalLinking = Other.bUseIncrementalLinking;
 			bAllowLTCG = Other.bAllowLTCG;
-			bCreateMapFile = Other.bCreateMapFile;
-			bAllowALSR = Other.bAllowALSR;
+            bPGOOptimize = Other.bPGOOptimize;
+            bPGOProfile = Other.bPGOProfile;
+            PGODirectory = Other.PGODirectory;
+            PGOFilenamePrefix = Other.PGOFilenamePrefix;
+            bCreateMapFile = Other.bCreateMapFile;
+            bAllowASLR = Other.bAllowASLR;
 			bUsePDBFiles = Other.bUsePDBFiles;
 			bUseFastPDBLinking = Other.bUseFastPDBLinking;
 			bPrintTimingInfo = Other.bPrintTimingInfo;
@@ -322,6 +361,7 @@ namespace UnrealBuildTool
 			InputLibraries.AddRange(Other.InputLibraries);
 			DefaultResourceFiles.AddRange(Other.DefaultResourceFiles);
 			CommonResourceFiles.AddRange(Other.CommonResourceFiles);
-		}
+			ModuleDefinitionFile = Other.ModuleDefinitionFile;
+        }
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // This code is based upon and adapted to UE4 from the code 
 // provided in the Sandbox project here:
@@ -1028,7 +1028,7 @@ void FAnimPhysSpring::ApplyForces(float DeltaTime)
 			Body1AngularAxis = Body1->GetPose().Orientation.GetAxisY();
 			break;
 		case AnimPhysTwistAxis::AxisZ:
-			Body1AngularAxis = Body1->GetPose().Orientation.GetAxisZ();
+			Body1AngularAxis = Body1->GetPose().Orientation.GetAxisZ(); //-V595
 			break;
 		default:
 			checkf(false, TEXT("Invalid target axis option"));

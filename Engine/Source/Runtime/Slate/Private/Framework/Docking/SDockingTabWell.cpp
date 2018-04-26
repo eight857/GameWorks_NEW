@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Framework/Docking/SDockingTabWell.h"
 #include "Types/PaintArgs.h"
 #include "Layout/ArrangedChildren.h"
 #include "Framework/Docking/FDockingDragOperation.h"
-
+#include "HAL/PlatformApplicationMisc.h"
 
 const FVector2D FDockingConstants::MaxMinorTabSize(150.f, 50.0f);
 const FVector2D FDockingConstants::MaxMajorTabSize(210.f, 50.f);
@@ -114,7 +114,7 @@ void SDockingTabWell::OnArrangeChildren( const FGeometry& AllottedGeometry, FArr
 }
 	
 
-int32 SDockingTabWell::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 SDockingTabWell::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
 	// When we are dragging a tab, it must be painted on top of the other tabs, so we cannot
 	// just reuse the Panel's default OnPaint.
@@ -129,10 +129,11 @@ int32 SDockingTabWell::OnPaint( const FPaintArgs& Args, const FGeometry& Allotte
 	int32 MaxLayerId = LayerId;
 
 	TSharedPtr<SDockTab> ForegroundTab = GetForegroundTab();
-	FArrangedWidget* ForegroundTabGeometry = NULL;
+	FArrangedWidget* ForegroundTabGeometry = nullptr;
 	
-	// Draw all inactive tabs first
-	for (int32 ChildIndex = 0; ChildIndex < ArrangedChildren.Num(); ++ChildIndex)
+	// Draw all inactive tabs first, from last, to first, so that the inactive tabs
+	// that come later, are drawn behind tabs that come before it.
+	for (int32 ChildIndex = ArrangedChildren.Num() - 1; ChildIndex >= 0; --ChildIndex)
 	{
 		FArrangedWidget& CurWidget = ArrangedChildren[ChildIndex];
 		if (CurWidget.Widget == ForegroundTab)
@@ -141,7 +142,7 @@ int32 SDockingTabWell::OnPaint( const FPaintArgs& Args, const FGeometry& Allotte
 		}
 		else
 		{
-			FSlateRect ChildClipRect = MyClippingRect.IntersectionWith( CurWidget.Geometry.GetClippingRect() );
+			FSlateRect ChildClipRect = MyCullingRect.IntersectionWith( CurWidget.Geometry.GetLayoutBoundingRect() );
 			const int32 CurWidgetsMaxLayerId = CurWidget.Widget->Paint( Args.WithNewParent(this), CurWidget.Geometry, ChildClipRect, OutDrawElements, MaxLayerId, InWidgetStyle, ShouldBeEnabled( bParentEnabled ) );
 			MaxLayerId = FMath::Max( MaxLayerId, CurWidgetsMaxLayerId );
 		}
@@ -151,7 +152,7 @@ int32 SDockingTabWell::OnPaint( const FPaintArgs& Args, const FGeometry& Allotte
 	if (ForegroundTab != TSharedPtr<SDockTab>())
 	{
 		checkSlow(ForegroundTabGeometry);
-		FSlateRect ChildClipRect = MyClippingRect.IntersectionWith( ForegroundTabGeometry->Geometry.GetClippingRect() );
+		FSlateRect ChildClipRect = MyCullingRect.IntersectionWith( ForegroundTabGeometry->Geometry.GetLayoutBoundingRect() );
 		const int32 CurWidgetsMaxLayerId = ForegroundTabGeometry->Widget->Paint( Args.WithNewParent(this), ForegroundTabGeometry->Geometry, ChildClipRect, OutDrawElements, MaxLayerId, InWidgetStyle, ShouldBeEnabled( bParentEnabled ) );
 		MaxLayerId = FMath::Max( MaxLayerId, CurWidgetsMaxLayerId );
 	}
@@ -203,8 +204,8 @@ FVector2D SDockingTabWell::ComputeChildSize( const FGeometry& AllottedGeometry )
 	// All children shall be the same size: evenly divide the alloted area.
 	// If we are dragging a tab, don't forget to take it into account when dividing.
 	const FVector2D ChildSize = TabBeingDraggedPtr.IsValid()
-		? FVector2D( (AllottedGeometry.Size.X - OverlapWidth) / ( NumChildren + 1 ) + OverlapWidth, AllottedGeometry.Size.Y )
-		: FVector2D( (AllottedGeometry.Size.X - OverlapWidth) / NumChildren + OverlapWidth, AllottedGeometry.Size.Y );
+		? FVector2D( (AllottedGeometry.GetLocalSize().X - OverlapWidth) / ( NumChildren + 1 ) + OverlapWidth, AllottedGeometry.GetLocalSize().Y )
+		: FVector2D( (AllottedGeometry.GetLocalSize().X - OverlapWidth) / NumChildren + OverlapWidth, AllottedGeometry.GetLocalSize().Y );
 
 	// Major vs. Minor tabs have different tab sizes.
 	// We will make our choice based on the first tab we encounter.
@@ -270,7 +271,7 @@ FReply SDockingTabWell::StartDraggingTab( TSharedRef<SDockTab> TabToStartDraggin
 
 #if PLATFORM_MAC
 		// On Mac we need to activate the app as we may be dragging a window that is set to be invisible if the app is inactive
-		FPlatformMisc::ActivateApplication();
+		FPlatformApplicationMisc::ActivateApplication();
 #endif
 
 		// Start dragging.
@@ -279,7 +280,7 @@ FReply SDockingTabWell::StartDraggingTab( TSharedRef<SDockTab> TabToStartDraggin
 				TabToStartDragging,
 				InTabGrabOffsetFraction,
 				GetDockArea().ToSharedRef(),
-				ParentTabStackPtr.Pin()->GetTabStackGeometry().Size
+				ParentTabStackPtr.Pin()->GetTabStackGeometry().GetLocalSize()
 			);
 
 		return FReply::Handled().BeginDragDrop( DragDropOperation );

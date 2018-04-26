@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CreateSessionCallbackProxy.h"
 #include "EngineGlobals.h"
@@ -31,7 +31,7 @@ UCreateSessionCallbackProxy* UCreateSessionCallbackProxy::CreateSession(UObject*
 
 void UCreateSessionCallbackProxy::Activate()
 {
-	FOnlineSubsystemBPCallHelper Helper(TEXT("CreateSession"), GEngine->GetWorldFromContextObject(WorldContextObject));
+	FOnlineSubsystemBPCallHelper Helper(TEXT("CreateSession"), WorldContextObject);
 	Helper.QueryIDFromPlayerController(PlayerControllerWeakPtr.Get());
 
 	if (Helper.IsValid())
@@ -49,7 +49,7 @@ void UCreateSessionCallbackProxy::Activate()
 			Settings.bUsesPresence = true;
 			Settings.bAllowJoinViaPresence = true;
 
-			Sessions->CreateSession(*Helper.UserID, GameSessionName, Settings);
+			Sessions->CreateSession(*Helper.UserID, NAME_GameSession, Settings);
 
 			// OnCreateCompleted will get called, nothing more to do now
 			return;
@@ -66,7 +66,7 @@ void UCreateSessionCallbackProxy::Activate()
 
 void UCreateSessionCallbackProxy::OnCreateCompleted(FName SessionName, bool bWasSuccessful)
 {
-	FOnlineSubsystemBPCallHelper Helper(TEXT("CreateSessionCallback"), GEngine->GetWorldFromContextObject(WorldContextObject));
+	FOnlineSubsystemBPCallHelper Helper(TEXT("CreateSessionCallback"), WorldContextObject);
 	Helper.QueryIDFromPlayerController(PlayerControllerWeakPtr.Get());
 
 	if (Helper.IsValid())
@@ -79,7 +79,7 @@ void UCreateSessionCallbackProxy::OnCreateCompleted(FName SessionName, bool bWas
 			if (bWasSuccessful)
 			{
 				StartCompleteDelegateHandle = Sessions->AddOnStartSessionCompleteDelegate_Handle(StartCompleteDelegate);
-				Sessions->StartSession(GameSessionName);
+				Sessions->StartSession(NAME_GameSession);
 
 				// OnStartCompleted will get called, nothing more to do now
 				return;
@@ -95,7 +95,7 @@ void UCreateSessionCallbackProxy::OnCreateCompleted(FName SessionName, bool bWas
 
 void UCreateSessionCallbackProxy::OnStartCompleted(FName SessionName, bool bWasSuccessful)
 {
-	FOnlineSubsystemBPCallHelper Helper(TEXT("StartSessionCallback"), GEngine->GetWorldFromContextObject(WorldContextObject));
+	FOnlineSubsystemBPCallHelper Helper(TEXT("StartSessionCallback"), WorldContextObject);
 	Helper.QueryIDFromPlayerController(PlayerControllerWeakPtr.Get());
 
 	if (Helper.IsValid())

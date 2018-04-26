@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/CurveHandle.h"
 #include "Animation/CurveSequence.h"
@@ -38,34 +38,11 @@ float FCurveHandle::GetLerp( ) const
 	return ApplyEasing(Time, TheCurve.EaseFunction);
 }
 
-float FCurveHandle::GetLerpLooping() const
-{
-	return DEPRECATED_GetLerpLooping();
-}
-float FCurveHandle::DEPRECATED_GetLerpLooping() const
-{
-	if (OwnerSequence == nullptr)
-	{
-		return 0.0f;
-	}
-
-	// How far we've played through the curve sequence so far.
-	const float CurSequenceTime = OwnerSequence->DEPRECATED_GetSequenceTimeLooping();
-
-	const FCurveSequence::FSlateCurve& TheCurve = OwnerSequence->GetCurve(CurveIndex);
-	const float TimeSinceStarted = CurSequenceTime - TheCurve.StartTime;
-
-	// How far we passed through the current curve scaled between 0 and 1.
-	const float Time = FMath::Clamp(TimeSinceStarted / TheCurve.DurationSeconds, 0.0f, 1.0f);
-
-	return ApplyEasing(Time, TheCurve.EaseFunction);
-}
-
 
 /* FCurveHandle static functions
  *****************************************************************************/
 
-float FCurveHandle::ApplyEasing( float Time, ECurveEaseFunction::Type EaseFunction )
+float FCurveHandle::ApplyEasing( float Time, ECurveEaseFunction EaseFunction )
 {
 	// Currently we always use normalized distances
 	const float Distance = 1.0f;
@@ -131,7 +108,7 @@ float FCurveHandle::ApplyEasing( float Time, ECurveEaseFunction::Type EaseFuncti
 
 		default:
 			// Unrecognized curve easing function type
-			checkf(0, *LOCTEXT("CurveFunction_Error", "Unrecognized curve easing function type [%i] for FCurveHandle").ToString(), (int)EaseFunction);
+			checkf(0, TEXT("Unrecognized curve easing function type [%i] for FCurveHandle"), (int)EaseFunction);
 			break;
 	}
 

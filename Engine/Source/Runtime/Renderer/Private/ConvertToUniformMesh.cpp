@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ConvertToUniformMesh.cpp
@@ -31,7 +31,7 @@ protected:
 	{
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
 	{
 		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) 
 			&& DoesPlatformSupportDistanceFieldGI(Platform)
@@ -52,7 +52,7 @@ public:
 	}
 };
 
-IMPLEMENT_MATERIAL_SHADER_TYPE(,FConvertToUniformMeshVS,TEXT("ConvertToUniformMesh"),TEXT("ConvertToUniformMeshVS"),SF_Vertex); 
+IMPLEMENT_MATERIAL_SHADER_TYPE(,FConvertToUniformMeshVS,TEXT("/Engine/Private/ConvertToUniformMesh.usf"),TEXT("ConvertToUniformMeshVS"),SF_Vertex); 
 
 void GetUniformMeshStreamOutLayout(FStreamOutElementList& Layout)
 {
@@ -114,7 +114,7 @@ protected:
 	{
 	}
 
-	static bool ShouldCache(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform,const FMaterial* Material,const FVertexFactoryType* VertexFactoryType)
 	{
 		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) 
 			&& DoesPlatformSupportDistanceFieldGI(Platform)
@@ -142,7 +142,7 @@ public:
 	}
 };
 
-IMPLEMENT_MATERIAL_SHADER_TYPE(,FConvertToUniformMeshGS,TEXT("ConvertToUniformMesh"),TEXT("ConvertToUniformMeshGS"),SF_Geometry); 
+IMPLEMENT_MATERIAL_SHADER_TYPE(,FConvertToUniformMeshGS,TEXT("/Engine/Private/ConvertToUniformMesh.usf"),TEXT("ConvertToUniformMeshGS"),SF_Geometry); 
 
 
 class FConvertToUniformMeshDrawingPolicy : public FMeshDrawingPolicy
@@ -173,7 +173,7 @@ public:
 	* @param Other - draw policy to compare
 	* @return true if the draw policies are a match
 	*/
-	FDrawingPolicyMatchResult Matches(const FConvertToUniformMeshDrawingPolicy& Other) const;
+	FDrawingPolicyMatchResult Matches(const FConvertToUniformMeshDrawingPolicy& Other, bool bForReals = false) const;
 
 	/**
 	* Sets the late state which can be shared between any meshes using this drawer.
@@ -229,14 +229,15 @@ FConvertToUniformMeshDrawingPolicy::FConvertToUniformMeshDrawingPolicy(
 {
 	VertexShader = InMaterialResource.GetShader<FConvertToUniformMeshVS>(InVertexFactory->GetType());
 	GeometryShader = InMaterialResource.GetShader<FConvertToUniformMeshGS>(InVertexFactory->GetType());
+	BaseVertexShader = VertexShader;
 }
 
 FDrawingPolicyMatchResult FConvertToUniformMeshDrawingPolicy::Matches(
-	const FConvertToUniformMeshDrawingPolicy& Other
+	const FConvertToUniformMeshDrawingPolicy& Other, bool bForReals
 	) const
 {
 	DRAWING_POLICY_MATCH_BEGIN
-		DRAWING_POLICY_MATCH(FMeshDrawingPolicy::Matches(Other)) &&
+		DRAWING_POLICY_MATCH(FMeshDrawingPolicy::Matches(Other, bForReals)) &&
 		DRAWING_POLICY_MATCH(VertexShader == Other.VertexShader) &&
 		DRAWING_POLICY_MATCH(GeometryShader == Other.GeometryShader);
 	DRAWING_POLICY_MATCH_END
@@ -382,7 +383,7 @@ int32 FUniformMeshConverter::Convert(
 						: *Mesh.Elements[BatchElementIndex].PrimitiveUniformBufferResource;
 
 					DrawingPolicy.SetMeshRenderState(RHICmdList, View, PrimitiveSceneProxy, Mesh, BatchElementIndex, DrawRenderState, FConvertToUniformMeshDrawingPolicy::ElementDataType(), FConvertToUniformMeshDrawingPolicy::ContextDataType());
-					DrawingPolicy.DrawMesh(RHICmdList, Mesh, BatchElementIndex);
+					DrawingPolicy.DrawMesh(RHICmdList, View, Mesh, BatchElementIndex);
 				}
 			}
 		}
@@ -401,7 +402,7 @@ class FEvaluateSurfelMaterialCS : public FMaterialShader
 	DECLARE_SHADER_TYPE(FEvaluateSurfelMaterialCS,Material)
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform, const FMaterial* Material)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform, const FMaterial* Material)
 	{
 		//@todo - lit materials only 
 		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Platform);
@@ -485,7 +486,7 @@ private:
 	FShaderParameter Instance0InverseTransform;
 };
 
-IMPLEMENT_MATERIAL_SHADER_TYPE(,FEvaluateSurfelMaterialCS,TEXT("EvaluateSurfelMaterial"),TEXT("EvaluateSurfelMaterialCS"),SF_Compute);
+IMPLEMENT_MATERIAL_SHADER_TYPE(,FEvaluateSurfelMaterialCS,TEXT("/Engine/Private/EvaluateSurfelMaterial.usf"),TEXT("EvaluateSurfelMaterialCS"),SF_Compute);
 
 void FUniformMeshConverter::GenerateSurfels(
 	FRHICommandListImmediate& RHICmdList, 

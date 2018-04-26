@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -43,7 +43,12 @@ public:
 	 * Process a response from the StoreKit
 	 */
 	void ProcessProductsResponse( SKProductsResponse* Response );
-    
+
+	/**
+	* Process a response from the StoreKit
+	*/
+	void ProcessRestorePurchases( EInAppPurchaseState::Type InCompletionState );
+
 	/** Cached in-app purchase query object, used to provide the user with product information attained from the server */
 	FOnlineProductInformationReadPtr CachedReadObject;
     

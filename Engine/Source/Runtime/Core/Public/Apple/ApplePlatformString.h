@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================================
 	ApplePlatformString.h: Apple platform string classes, mostly implemented with ANSI C++
@@ -16,6 +16,27 @@
 #elif PLATFORM_IOS
 #include "IOS/IOSSystemIncludes.h"
 #endif
+
+#ifdef __OBJC__
+#import <Foundation/NSString.h>
+
+class FString;
+
+@interface NSString (FString_Extensions)
+
+/**
+ * Converts an TCHAR string to an NSString
+ */
++ (NSString*) stringWithTCHARString:(const TCHAR*)MyTCHARString;
+
+/**
+ * Converts an FString to an NSString
+ */
++ (NSString*) stringWithFString:(const FString&)MyFString;
+
+@end
+#endif
+
 
 /**
 * Mac string implementation

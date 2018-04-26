@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	EditorModeInterpolation : Editor mode for setting up interpolation sequences.
@@ -17,6 +17,7 @@
 #include "Editor/Matinee/Public/IMatinee.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#include "ActorGroupingUtils.h"
 
 static const float	CurveHandleScale = 0.5f;
 
@@ -65,8 +66,8 @@ void FEdModeInterpEdit::Enter()
 	FEdMode::Enter();
 
 	// Disable Grouping while in InterpEdit mode
-	bGroupingActiveSaved = GEditor->bGroupingActive;
-	GEditor->bGroupingActive = false;
+	bGroupingActiveSaved = UActorGroupingUtils::IsGroupingActive();
+	UActorGroupingUtils::SetGroupingActive(false);
 }
 
 void FEdModeInterpEdit::Exit()
@@ -86,7 +87,7 @@ void FEdModeInterpEdit::Exit()
 	InterpEd = NULL;
 
 	// Grouping is always disabled while in InterpEdit Mode, re-enable the saved value on exit
-	GEditor->bGroupingActive = bGroupingActiveSaved;
+	UActorGroupingUtils::SetGroupingActive(bGroupingActiveSaved);
 	AGroupActor::SelectGroupsInSelection();
 
 	FEdMode::Exit();

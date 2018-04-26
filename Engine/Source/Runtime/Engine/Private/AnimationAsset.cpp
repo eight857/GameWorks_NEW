@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/AnimationAsset.h"
 #include "Engine/AssetUserData.h"
@@ -35,6 +35,7 @@ void FAnimGroupInstance::TestTickRecordForLeadership(EAnimGroupRole::Type Member
 		break;
 	default:
 	case EAnimGroupRole::AlwaysFollower:
+	case EAnimGroupRole::TransitionFollower:
 		// Never set the leader index; the actual tick code will handle the case of no leader by using the first element in the array
 		break;
 	}
@@ -183,6 +184,8 @@ UAnimationAsset::UAnimationAsset(const FObjectInitializer& ObjectInitializer)
 
 void UAnimationAsset::PostLoad()
 {
+	LLM_SCOPE(ELLMTag::Animation);
+
 	Super::PostLoad();
 
 	// Load skeleton, to make sure anything accessing from PostLoad
@@ -216,6 +219,8 @@ void UAnimationAsset::ResetSkeleton(USkeleton* NewSkeleton)
 
 void UAnimationAsset::Serialize(FArchive& Ar)
 {
+	LLM_SCOPE(ELLMTag::Animation);
+
 	Super::Serialize(Ar);
 
 	if (Ar.UE4Ver() >= VER_UE4_SKELETON_GUID_SERIALIZATION)
@@ -299,7 +304,7 @@ bool UAnimationAsset::ReplaceSkeleton(USkeleton* NewSkeleton, bool bConvertSpace
 			}
 		}
 
-		SetSkeleton(NewSkeleton);
+		RemapTracksToNewSkeleton(NewSkeleton, bConvertSpaces);
 
 		PostEditChange();
 		MarkPackageDirty();
@@ -366,22 +371,12 @@ void UAnimationAsset::ReplaceReferredAnimations(const TMap<UAnimationAsset*, UAn
 
 USkeletalMesh* UAnimationAsset::GetPreviewMesh()
 {
-	USkeletalMesh* PreviewMesh = PreviewSkeletalMesh.Get();
-	if(!PreviewMesh)
+	USkeletalMesh* PreviewMesh = PreviewSkeletalMesh.LoadSynchronous();
+	// if somehow skeleton changes, just nullify it. 
+	if (PreviewMesh && PreviewMesh->Skeleton != Skeleton)
 	{
-		// if preview mesh isn't loaded, see if we have set
-		FStringAssetReference PreviewMeshStringRef = PreviewSkeletalMesh.ToStringReference();
-		// load it since now is the time to load
-		if(!PreviewMeshStringRef.ToString().IsEmpty())
-		{
-			PreviewMesh = Cast<USkeletalMesh>(StaticLoadObject(USkeletalMesh::StaticClass(), NULL, *PreviewMeshStringRef.ToString(), NULL, LOAD_None, NULL));
-			// if somehow skeleton changes, just nullify it. 
-			if (PreviewMesh && PreviewMesh->Skeleton != Skeleton)
-			{
-				PreviewMesh = NULL;
-				SetPreviewMesh(NULL);
-			}
-		}
+		PreviewMesh = nullptr;
+		SetPreviewMesh(nullptr);
 	}
 
 	return PreviewMesh;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Windows/WindowsPlatformMisc.h"
 #include "Misc/DateTime.h"
@@ -31,7 +31,7 @@
 #include "Misc/App.h"
 #include "HAL/ExceptionHandling.h"
 #include "Misc/SecureHash.h"
-#include "Windows/WindowsApplication.h"
+#include "HAL/IConsoleManager.h"
 #include "Misc/EngineVersion.h"
 #include "GenericPlatform/GenericPlatformCrashContext.h"
 #include "Windows/WindowsPlatformCrashContext.h"
@@ -87,109 +87,6 @@ static TAutoConsoleVariable<int32> CVarDriverDetectionMethod(
 	TEXT("  4: Use Windows functions, use the one names like the DirectX Device (newest, most promising)"),
 	ECVF_RenderThreadSafe);
 
-typedef HRESULT(STDAPICALLTYPE *GetDpiForMonitorProc)(HMONITOR Monitor, int32 DPIType, uint32 *DPIX, uint32 *DPIY);
-static GetDpiForMonitorProc GetDpiForMonitor;
-
-namespace
-{
-	/**
-	 * According to MSDN GetVersionEx without special targeting works to 6.2
-	 * version only. To retrive proper version for later version we can check
-	 * version of system libraries e.g. kernel32.dll.
-	 */
-	int32 GetWindowsGT62Versions(bool bIsWorkstation, FString& out_OSVersionLabel)
-	{
-		const int BufferSize = 256;
-		TCHAR Buffer[BufferSize];
-		
-		if (!GetSystemDirectory(Buffer, BufferSize))
-		{
-			return (int32)FWindowsOSVersionHelper::ERROR_GETWINDOWSGT62VERSIONS_FAILED;
-		}
-
-		FString SystemDir(Buffer);
-		FString KernelPath = FPaths::Combine(*SystemDir, TEXT("kernel32.dll"));
-
-		DWORD Size = GetFileVersionInfoSize(*KernelPath, nullptr);
-
-		if (Size <= 0)
-		{
-			return (int32)FWindowsOSVersionHelper::ERROR_GETWINDOWSGT62VERSIONS_FAILED;
-		}
-
-		TArray<uint8> VerBlock;
-		VerBlock.Reserve(Size);
-
-		if (!GetFileVersionInfo(*KernelPath, 0, Size, VerBlock.GetData()))
-		{
-			return (int32)FWindowsOSVersionHelper::ERROR_GETWINDOWSGT62VERSIONS_FAILED;
-		}
-
-		VS_FIXEDFILEINFO* FileInfo = nullptr;
-		uint32 Len;
-
-		if (!VerQueryValue(VerBlock.GetData(), TEXT("\\"), (void **)&FileInfo, &Len))
-		{
-			return (int32)FWindowsOSVersionHelper::ERROR_GETWINDOWSGT62VERSIONS_FAILED;
-		}
-
-		int Major = FileInfo->dwProductVersionMS >> 16;
-		int Minor = FileInfo->dwProductVersionMS & 0xFFFF;
-
-		switch (Major)
-		{
-		case 6:
-			switch (Minor)
-			{
-			case 3:
-				if (bIsWorkstation)
-				{
-					out_OSVersionLabel = TEXT("Windows 8.1");
-				}
-				else
-				{
-					out_OSVersionLabel = TEXT("Windows Server 2012 R2");
-				}
-				break;
-			case 2:
-				if (bIsWorkstation)
-				{
-					out_OSVersionLabel = TEXT("Windows 8");
-				}
-				else
-				{
-					out_OSVersionLabel = TEXT("Windows Server 2012");
-				}
-				break;
-			default:
-				return (int32)FWindowsOSVersionHelper::ERROR_UNKNOWNVERSION;
-			}
-			break;
-		case 10:
-			switch (Minor)
-			{
-			case 0:
-				if (bIsWorkstation)
-				{
-					out_OSVersionLabel = TEXT("Windows 10");
-				}
-				else
-				{
-					out_OSVersionLabel = TEXT("Windows Server Technical Preview");
-				}
-				break;
-			default:
-				return (int32)FWindowsOSVersionHelper::ERROR_UNKNOWNVERSION;
-			}
-			break;
-		default:
-			return (int32)FWindowsOSVersionHelper::ERROR_UNKNOWNVERSION;
-		}
-
-		return (int32)FWindowsOSVersionHelper::SUCCEEDED;
-	}
-}
-
 int32 FWindowsOSVersionHelper::GetOSVersions( FString& out_OSVersionLabel, FString& out_OSSubVersionLabel )
 {
 	int32 ErrorCode = (int32)SUCCEEDED;
@@ -217,179 +114,217 @@ int32 FWindowsOSVersionHelper::GetOSVersions( FString& out_OSVersionLabel, FStri
 	{
 		bool bIsInvalidVersion = false;
 
-		switch( OsVersionInfo.dwMajorVersion )
+		switch (OsVersionInfo.dwMajorVersion)
 		{
-			case 5:
-				switch( OsVersionInfo.dwMinorVersion )
-				{
-					case 0:
-						out_OSVersionLabel = TEXT( "Windows 2000" );
-						if( OsVersionInfo.wProductType == VER_NT_WORKSTATION )
-						{
-							out_OSSubVersionLabel = TEXT( "Professional" );
-						}
-						else
-						{
-							if( OsVersionInfo.wSuiteMask & VER_SUITE_DATACENTER )
-							{
-								out_OSSubVersionLabel = TEXT( "Datacenter Server" );
-							}
-							else if( OsVersionInfo.wSuiteMask & VER_SUITE_ENTERPRISE )
-							{
-								out_OSSubVersionLabel = TEXT( "Advanced Server" );
-							}
-							else
-							{
-								out_OSSubVersionLabel = TEXT( "Server" );
-							}
-						}
-						break;
-					case 1:
-						out_OSVersionLabel = TEXT( "Windows XP" );
-						if( OsVersionInfo.wSuiteMask & VER_SUITE_PERSONAL )
-						{
-							out_OSSubVersionLabel = TEXT( "Home Edition" );
-						}
-						else
-						{
-							out_OSSubVersionLabel = TEXT( "Professional" );
-						}
-						break;
-					case 2:
-						if( GetSystemMetrics( SM_SERVERR2 ) )
-						{
-							out_OSVersionLabel = TEXT( "Windows Server 2003 R2" );
-						}
-						else if( OsVersionInfo.wSuiteMask & VER_SUITE_STORAGE_SERVER )
-						{
-							out_OSVersionLabel = TEXT( "Windows Storage Server 2003" );
-						}
-						else if( OsVersionInfo.wSuiteMask & VER_SUITE_WH_SERVER )
-						{
-							out_OSVersionLabel = TEXT( "Windows Home Server" );
-						}
-						else if( OsVersionInfo.wProductType == VER_NT_WORKSTATION && SystemInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 )
-						{
-							out_OSVersionLabel = TEXT( "Windows XP" );
-							out_OSSubVersionLabel = TEXT( "Professional x64 Edition" );
-						}
-						else
-						{
-							out_OSVersionLabel = TEXT( "Windows Server 2003" );
-						}
-						break;
-					default:
-						ErrorCode |= (int32)ERROR_UNKNOWNVERSION;
-				}
-				break;
-			case 6:
-				switch( OsVersionInfo.dwMinorVersion )
-				{
-					case 0:
-						if( OsVersionInfo.wProductType == VER_NT_WORKSTATION )
-						{
-							out_OSVersionLabel = TEXT( "Windows Vista" );
-						}
-						else
-						{
-							out_OSVersionLabel = TEXT( "Windows Server 2008" );
-						}
-						break;
-					case 1:
-						if( OsVersionInfo.wProductType == VER_NT_WORKSTATION )
-						{
-							out_OSVersionLabel = TEXT( "Windows 7" );
-						}
-						else
-						{
-							out_OSVersionLabel = TEXT( "Windows Server 2008 R2" );
-						}
-						break;
-					case 2:
-						ErrorCode |= GetWindowsGT62Versions(OsVersionInfo.wProductType == VER_NT_WORKSTATION, out_OSVersionLabel);
-						break;
-					default:
-						ErrorCode |= (int32)ERROR_UNKNOWNVERSION;
-				}
-
+		case 5:
+			switch (OsVersionInfo.dwMinorVersion)
 			{
-#pragma warning( push )
-#pragma warning( disable: 4191 )	// unsafe conversion from 'type of expression' to 'type required'
-				typedef BOOL( WINAPI *LPFN_GETPRODUCTINFO )(DWORD, DWORD, DWORD, DWORD, PDWORD);
-				LPFN_GETPRODUCTINFO fnGetProductInfo = (LPFN_GETPRODUCTINFO)GetProcAddress( GetModuleHandle( TEXT( "kernel32.dll" ) ), "GetProductInfo" );
-#pragma warning( pop )
-				if( fnGetProductInfo != NULL )
+			case 0:
+				out_OSVersionLabel = TEXT("Windows 2000");
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
 				{
-					DWORD Type;
-					fnGetProductInfo( OsVersionInfo.dwMajorVersion, OsVersionInfo.dwMinorVersion, 0, 0, &Type );
-
-					switch( Type )
-					{
-						case PRODUCT_ULTIMATE:
-							out_OSSubVersionLabel = TEXT( "Ultimate Edition" );
-							break;
-						case PRODUCT_PROFESSIONAL:
-							out_OSSubVersionLabel = TEXT( "Professional" );
-							break;
-						case PRODUCT_HOME_PREMIUM:
-							out_OSSubVersionLabel = TEXT( "Home Premium Edition" );
-							break;
-						case PRODUCT_HOME_BASIC:
-							out_OSSubVersionLabel = TEXT( "Home Basic Edition" );
-							break;
-						case PRODUCT_ENTERPRISE:
-							out_OSSubVersionLabel = TEXT( "Enterprise Edition" );
-							break;
-						case PRODUCT_BUSINESS:
-							out_OSSubVersionLabel = TEXT( "Business Edition" );
-							break;
-						case PRODUCT_STARTER:
-							out_OSSubVersionLabel = TEXT( "Starter Edition" );
-							break;
-						case PRODUCT_CLUSTER_SERVER:
-							out_OSSubVersionLabel = TEXT( "Cluster Server Edition" );
-							break;
-						case PRODUCT_DATACENTER_SERVER:
-							out_OSSubVersionLabel = TEXT( "Datacenter Edition" );
-							break;
-						case PRODUCT_DATACENTER_SERVER_CORE:
-							out_OSSubVersionLabel = TEXT( "Datacenter Edition (core installation)" );
-							break;
-						case PRODUCT_ENTERPRISE_SERVER:
-							out_OSSubVersionLabel = TEXT( "Enterprise Edition" );
-							break;
-						case PRODUCT_ENTERPRISE_SERVER_CORE:
-							out_OSSubVersionLabel = TEXT( "Enterprise Edition (core installation)" );
-							break;
-						case PRODUCT_ENTERPRISE_SERVER_IA64:
-							out_OSSubVersionLabel = TEXT( "Enterprise Edition for Itanium-based Systems" );
-							break;
-						case PRODUCT_SMALLBUSINESS_SERVER:
-							out_OSSubVersionLabel = TEXT( "Small Business Server" );
-							break;
-						case PRODUCT_SMALLBUSINESS_SERVER_PREMIUM:
-							out_OSSubVersionLabel = TEXT( "Small Business Server Premium Edition" );
-							break;
-						case PRODUCT_STANDARD_SERVER:
-							out_OSSubVersionLabel = TEXT( "Standard Edition" );
-							break;
-						case PRODUCT_STANDARD_SERVER_CORE:
-							out_OSSubVersionLabel = TEXT( "Standard Edition (core installation)" );
-							break;
-						case PRODUCT_WEB_SERVER:
-							out_OSSubVersionLabel = TEXT( "Web Server Edition" );
-							break;
-					}
+					out_OSSubVersionLabel = TEXT("Professional");
 				}
 				else
 				{
-					out_OSSubVersionLabel = TEXT( "(type unknown)" );
-					ErrorCode |= (int32)ERROR_GETPRODUCTINFO_FAILED;
+					if (OsVersionInfo.wSuiteMask & VER_SUITE_DATACENTER)
+					{
+						out_OSSubVersionLabel = TEXT("Datacenter Server");
+					}
+					else if (OsVersionInfo.wSuiteMask & VER_SUITE_ENTERPRISE)
+					{
+						out_OSSubVersionLabel = TEXT("Advanced Server");
+					}
+					else
+					{
+						out_OSSubVersionLabel = TEXT("Server");
+					}
 				}
-			}
+				break;
+			case 1:
+				out_OSVersionLabel = TEXT("Windows XP");
+				if (OsVersionInfo.wSuiteMask & VER_SUITE_PERSONAL)
+				{
+					out_OSSubVersionLabel = TEXT("Home Edition");
+				}
+				else
+				{
+					out_OSSubVersionLabel = TEXT("Professional");
+				}
+				break;
+			case 2:
+				if (GetSystemMetrics(SM_SERVERR2))
+				{
+					out_OSVersionLabel = TEXT("Windows Server 2003 R2");
+				}
+				else if (OsVersionInfo.wSuiteMask & VER_SUITE_STORAGE_SERVER)
+				{
+					out_OSVersionLabel = TEXT("Windows Storage Server 2003");
+				}
+				else if (OsVersionInfo.wSuiteMask & VER_SUITE_WH_SERVER)
+				{
+					out_OSVersionLabel = TEXT("Windows Home Server");
+				}
+				else if (OsVersionInfo.wProductType == VER_NT_WORKSTATION && SystemInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64)
+				{
+					out_OSVersionLabel = TEXT("Windows XP");
+					out_OSSubVersionLabel = TEXT("Professional x64 Edition");
+				}
+				else
+				{
+					out_OSVersionLabel = TEXT("Windows Server 2003");
+				}
 				break;
 			default:
-				ErrorCode |= ERROR_UNKNOWNVERSION;
+				ErrorCode |= (int32)ERROR_UNKNOWNVERSION;
+			}
+			break;
+		case 6:
+			switch (OsVersionInfo.dwMinorVersion)
+			{
+			case 0:
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
+				{
+					out_OSVersionLabel = TEXT("Windows Vista");
+				}
+				else
+				{
+					out_OSVersionLabel = TEXT("Windows Server 2008");
+				}
+				break;
+			case 1:
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
+				{
+					out_OSVersionLabel = TEXT("Windows 7");
+				}
+				else
+				{
+					out_OSVersionLabel = TEXT("Windows Server 2008 R2");
+				}
+				break;
+			case 2:
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
+				{
+					out_OSVersionLabel = TEXT("Windows 8");
+				}
+				else
+				{
+					out_OSVersionLabel = TEXT("Windows Server 2012");
+				}
+				break;
+			case 3:
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
+				{
+					out_OSVersionLabel = TEXT("Windows 8.1");
+				}
+				else
+				{
+					out_OSVersionLabel = TEXT("Windows Server 2012 R2");
+				}
+				break;
+			default:
+				ErrorCode |= (int32)ERROR_UNKNOWNVERSION;
+				break;
+			}
+			break;
+		case 10:
+			switch (OsVersionInfo.dwMinorVersion)
+			{
+			case 0:
+				if (OsVersionInfo.wProductType == VER_NT_WORKSTATION)
+				{
+					out_OSVersionLabel = TEXT("Windows 10");
+				}
+				else
+				{
+					out_OSVersionLabel = TEXT("Windows Server Technical Preview");
+				}
+				break;
+			default:
+				ErrorCode |= (int32)ERROR_UNKNOWNVERSION;
+				break;
+			}
+			break;
+		default:
+			ErrorCode |= ERROR_UNKNOWNVERSION;
+			break;
+		}
+
+		if(OsVersionInfo.dwMajorVersion >= 6)
+		{
+#pragma warning( push )
+#pragma warning( disable: 4191 )	// unsafe conversion from 'type of expression' to 'type required'
+			typedef BOOL( WINAPI *LPFN_GETPRODUCTINFO )(DWORD, DWORD, DWORD, DWORD, PDWORD);
+			LPFN_GETPRODUCTINFO fnGetProductInfo = (LPFN_GETPRODUCTINFO)GetProcAddress( GetModuleHandle( TEXT( "kernel32.dll" ) ), "GetProductInfo" );
+#pragma warning( pop )
+			if( fnGetProductInfo != NULL )
+			{
+				DWORD Type;
+				fnGetProductInfo( OsVersionInfo.dwMajorVersion, OsVersionInfo.dwMinorVersion, 0, 0, &Type );
+
+				switch( Type )
+				{
+					case PRODUCT_ULTIMATE:
+						out_OSSubVersionLabel = TEXT( "Ultimate Edition" );
+						break;
+					case PRODUCT_PROFESSIONAL:
+						out_OSSubVersionLabel = TEXT( "Professional" );
+						break;
+					case PRODUCT_HOME_PREMIUM:
+						out_OSSubVersionLabel = TEXT( "Home Premium Edition" );
+						break;
+					case PRODUCT_HOME_BASIC:
+						out_OSSubVersionLabel = TEXT( "Home Basic Edition" );
+						break;
+					case PRODUCT_ENTERPRISE:
+						out_OSSubVersionLabel = TEXT( "Enterprise Edition" );
+						break;
+					case PRODUCT_BUSINESS:
+						out_OSSubVersionLabel = TEXT( "Business Edition" );
+						break;
+					case PRODUCT_STARTER:
+						out_OSSubVersionLabel = TEXT( "Starter Edition" );
+						break;
+					case PRODUCT_CLUSTER_SERVER:
+						out_OSSubVersionLabel = TEXT( "Cluster Server Edition" );
+						break;
+					case PRODUCT_DATACENTER_SERVER:
+						out_OSSubVersionLabel = TEXT( "Datacenter Edition" );
+						break;
+					case PRODUCT_DATACENTER_SERVER_CORE:
+						out_OSSubVersionLabel = TEXT( "Datacenter Edition (core installation)" );
+						break;
+					case PRODUCT_ENTERPRISE_SERVER:
+						out_OSSubVersionLabel = TEXT( "Enterprise Edition" );
+						break;
+					case PRODUCT_ENTERPRISE_SERVER_CORE:
+						out_OSSubVersionLabel = TEXT( "Enterprise Edition (core installation)" );
+						break;
+					case PRODUCT_ENTERPRISE_SERVER_IA64:
+						out_OSSubVersionLabel = TEXT( "Enterprise Edition for Itanium-based Systems" );
+						break;
+					case PRODUCT_SMALLBUSINESS_SERVER:
+						out_OSSubVersionLabel = TEXT( "Small Business Server" );
+						break;
+					case PRODUCT_SMALLBUSINESS_SERVER_PREMIUM:
+						out_OSSubVersionLabel = TEXT( "Small Business Server Premium Edition" );
+						break;
+					case PRODUCT_STANDARD_SERVER:
+						out_OSSubVersionLabel = TEXT( "Standard Edition" );
+						break;
+					case PRODUCT_STANDARD_SERVER_CORE:
+						out_OSSubVersionLabel = TEXT( "Standard Edition (core installation)" );
+						break;
+					case PRODUCT_WEB_SERVER:
+						out_OSSubVersionLabel = TEXT( "Web Server Edition" );
+						break;
+				}
+			}
+			else
+			{
+				out_OSSubVersionLabel = TEXT( "(type unknown)" );
+				ErrorCode |= (int32)ERROR_GETPRODUCTINFO_FAILED;
+			}
 		}
 
 #if 0
@@ -418,12 +353,15 @@ FString FWindowsOSVersionHelper::GetOSVersion()
 
 	// Get system info
 	SYSTEM_INFO SystemInfo;
+	const TCHAR* Architecture;
 	if (FPlatformMisc::Is64bitOperatingSystem())
 	{
+		Architecture = TEXT("64bit");
 		GetNativeSystemInfo(&SystemInfo);
 	}
 	else
 	{
+		Architecture = TEXT("32bit");
 		GetSystemInfo(&SystemInfo);
 	}
 
@@ -435,7 +373,7 @@ FString FWindowsOSVersionHelper::GetOSVersion()
 	if (GetVersionEx((LPOSVERSIONINFO)&OsVersionInfo))
 #pragma warning(pop)
 	{
-		return FString::Printf(TEXT("%d.%d.%d.%d.%d"), OsVersionInfo.dwMajorVersion, OsVersionInfo.dwMinorVersion, OsVersionInfo.dwBuildNumber, OsVersionInfo.wProductType, OsVersionInfo.wSuiteMask);
+		return FString::Printf(TEXT("%d.%d.%d.%d.%d.%s"), OsVersionInfo.dwMajorVersion, OsVersionInfo.dwMinorVersion, OsVersionInfo.dwBuildNumber, OsVersionInfo.wProductType, OsVersionInfo.wSuiteMask, Architecture);
 	}
 	return FString();
 }
@@ -463,7 +401,7 @@ _purecall_handler DefaultPureCallHandler;
 static void PureCallHandler()
 {
 	static bool bHasAlreadyBeenCalled = false;
-	FPlatformMisc::DebugBreak();
+	UE_DEBUG_BREAK();
 	if( bHasAlreadyBeenCalled )
 	{
 		// Call system handler if we're double faulting.
@@ -555,63 +493,6 @@ static void SetProcessMemoryLimit( SIZE_T ProcessMemoryLimitMB )
 	const BOOL bAssign = ::AssignProcessToJobObject(JobObject, GetCurrentProcess());
 }
 
-void FWindowsPlatformMisc::SetHighDPIMode()
-{
-	if (FParse::Param(FCommandLine::Get(), TEXT("enablehighdpi")))
-	{
-		if (void* ShCoreDll = FPlatformProcess::GetDllHandle(TEXT("shcore.dll")))
-		{
-			typedef HRESULT(STDAPICALLTYPE *SetProcessDpiAwarenessProc)(int32 Value);
-			SetProcessDpiAwarenessProc SetProcessDpiAwareness = (SetProcessDpiAwarenessProc)FPlatformProcess::GetDllExport(ShCoreDll, TEXT("SetProcessDpiAwareness"));
-			GetDpiForMonitor = (GetDpiForMonitorProc)FPlatformProcess::GetDllExport(ShCoreDll, TEXT("GetDpiForMonitor"));
-			FPlatformProcess::FreeDllHandle(ShCoreDll);
-
-			if (SetProcessDpiAwareness)
-			{
-				SetProcessDpiAwareness(2); // PROCESS_PER_MONITOR_DPI_AWARE_VALUE
-			}
-		}
-		else if (void* User32Dll = FPlatformProcess::GetDllHandle(TEXT("user32.dll")))
-		{
-			typedef BOOL(WINAPI *SetProcessDpiAwareProc)(void);
-			SetProcessDpiAwareProc SetProcessDpiAware = (SetProcessDpiAwareProc)FPlatformProcess::GetDllExport(User32Dll, TEXT("SetProcessDPIAware"));
-			FPlatformProcess::FreeDllHandle(User32Dll);
-
-			if (SetProcessDpiAware)
-			{
-				SetProcessDpiAware();
-			}
-		}
-	}
-
-}
-
-float FWindowsPlatformMisc::GetDPIScaleFactorAtPoint(float X, float Y)
-{
-	if (FParse::Param(FCommandLine::Get(), TEXT("enablehighdpi")))
-	{
-		if (GetDpiForMonitor)
-		{
-			POINT Position = { X, Y };
-			HMONITOR Monitor = MonitorFromPoint(Position, MONITOR_DEFAULTTONEAREST);
-			if (Monitor)
-			{
-				uint32 DPIX = 0;
-				uint32 DPIY = 0;
-				return SUCCEEDED(GetDpiForMonitor(Monitor, 0/*MDT_EFFECTIVE_DPI_VALUE*/, &DPIX, &DPIY)) ? DPIX / 96.0f : 1.0f;
-			}
-		}
-		else
-		{
-			HDC Context = GetDC(nullptr);
-			const float DPIScaleFactor = GetDeviceCaps(Context, LOGPIXELSX) / 96.0f;
-			ReleaseDC(nullptr, Context);
-			return DPIScaleFactor;
-		}
-	}
-	return 1.0f;
-}
-
 void FWindowsPlatformMisc::PlatformPreInit()
 {
 	//SetProcessMemoryLimit( 92 );
@@ -630,8 +511,6 @@ void FWindowsPlatformMisc::PlatformPreInit()
 
 	// initialize the file SHA hash mapping
 	InitSHAHashes();
-
-	SetHighDPIMode();
 }
 
 
@@ -659,21 +538,6 @@ void FWindowsPlatformMisc::PlatformInit()
 	// Register on the game thread.
 	FWindowsPlatformStackWalk::RegisterOnModulesChanged();
 }
-
-
-void FWindowsPlatformMisc::PreventScreenSaver()
-{
-	INPUT Input = { 0 };
-	Input.type = INPUT_MOUSE;
-	Input.mi.dx = 0;
-	Input.mi.dy = 0;	
-	Input.mi.mouseData = 0;
-	Input.mi.dwFlags = MOUSEEVENTF_MOVE;
-	Input.mi.time = 0;
-	Input.mi.dwExtraInfo = 0; 	
-	SendInput(1,&Input,sizeof(INPUT));
-}
-
 
 
 /**
@@ -710,17 +574,6 @@ static BOOL WINAPI ConsoleCtrlHandler( ::DWORD /*Type*/ )
 		TerminateProcess(GetCurrentProcess(), 0);
 	}
 	return true;
-}
-
-GenericApplication* FWindowsPlatformMisc::CreateApplication()
-{
-	HICON AppIconHandle = LoadIcon( hInstance, MAKEINTRESOURCE( GetAppIcon() ) );
-	if( AppIconHandle == NULL )
-	{
-		AppIconHandle = LoadIcon( (HINSTANCE)NULL, IDI_APPLICATION ); 
-	}
-
-	return FWindowsApplication::CreateWindowsApplication( hInstance, AppIconHandle );
 }
 
 void FWindowsPlatformMisc::SetGracefulTerminationHandler()
@@ -814,7 +667,7 @@ void FWindowsPlatformMisc::SubmitErrorReport( const TCHAR* InErrorHist, EErrorRe
 		FString ReportDumpPath;
 		{
 			const TCHAR ReportDumpFilename[] = TEXT("UnrealAutoReportDump");
-			ReportDumpPath = FPaths::CreateTempFilename( *FPaths::GameLogDir(), ReportDumpFilename, TEXT( ".txt" ) );
+			ReportDumpPath = FPaths::CreateTempFilename( *FPaths::ProjectLogDir(), ReportDumpFilename, TEXT( ".txt" ) );
 		}
 
 		FArchive * AutoReportFile = IFileManager::Get().CreateFileWriter(*ReportDumpPath, FILEWRITE_EvenIfReadOnly);
@@ -825,7 +678,7 @@ void FWindowsPlatformMisc::SubmitErrorReport( const TCHAR* InErrorHist, EErrorRe
 			TCHAR UserName[MAX_STRING_LEN];
 			FCString::Strncpy(UserName, FPlatformProcess::UserName(), MAX_STRING_LEN);
 			TCHAR GameName[MAX_STRING_LEN];
-			FCString::Strncpy(GameName, *FString::Printf(TEXT("%s %s"), *FApp::GetBranchName(), FApp::GetGameName()), MAX_STRING_LEN);
+			FCString::Strncpy(GameName, *FString::Printf(TEXT("%s %s"), *FApp::GetBranchName(), FApp::GetProjectName()), MAX_STRING_LEN);
 			TCHAR PlatformName[MAX_STRING_LEN];
 #if PLATFORM_64BITS
 			FCString::Strncpy(PlatformName, TEXT("PC 64-bit"), MAX_STRING_LEN);
@@ -913,10 +766,10 @@ void FWindowsPlatformMisc::SubmitErrorReport( const TCHAR* InErrorHist, EErrorRe
 				TCHAR AutoReportExe[] = TEXT("../../../Engine/Binaries/DotNET/AutoReporter.exe");
 
 				FString IniDumpPath;
-				if (!FApp::IsGameNameEmpty())
+				if (!FApp::IsProjectNameEmpty())
 				{
 					const TCHAR IniDumpFilename[] = TEXT("UnrealAutoReportIniDump");
-					IniDumpPath = FPaths::CreateTempFilename(*FPaths::GameLogDir(), IniDumpFilename, TEXT(".txt"));
+					IniDumpPath = FPaths::CreateTempFilename(*FPaths::ProjectLogDir(), IniDumpFilename, TEXT(".txt"));
 					//build the ini dump
 					FOutputDeviceFile AutoReportIniFile(*IniDumpPath);
 					GConfig->Dump(AutoReportIniFile);
@@ -924,7 +777,7 @@ void FWindowsPlatformMisc::SubmitErrorReport( const TCHAR* InErrorHist, EErrorRe
 					AutoReportIniFile.TearDown();
 				}
 
-				FString CrashVideoPath = FPaths::GameLogDir() + TEXT("CrashVideo.avi");
+				FString CrashVideoPath = FPaths::ProjectLogDir() + TEXT("CrashVideo.avi");
 
 				//get the paths that the files will actually have been saved to
 				FString UserIniDumpPath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*IniDumpPath);
@@ -976,188 +829,9 @@ bool FWindowsPlatformMisc::IsDebuggerPresent()
 }
 #endif // UE_BUILD_SHIPPING
 
-static void WinPumpMessages()
+bool FWindowsPlatformMisc::IsRemoteSession()
 {
-	{
-		MSG Msg;
-		while( PeekMessage(&Msg,NULL,0,0,PM_REMOVE) )
-		{
-			TranslateMessage( &Msg );
-			DispatchMessage( &Msg );
-		}
-	}
-}
-
-static void WinPumpSentMessages()
-{
-	MSG Msg;
-	PeekMessage(&Msg,NULL,0,0,PM_NOREMOVE | PM_QS_SENDMESSAGE);
-}
-
-void FWindowsPlatformMisc::PumpMessages(bool bFromMainLoop)
-{
-	if (!bFromMainLoop)
-	{
-		TGuardValue<bool> PumpMessageGuard( GPumpingMessagesOutsideOfMainLoop, true );
-		// Process pending windows messages, which is necessary to the rendering thread in some rare cases where D3D
-		// sends window messages (from IDXGISwapChain::Present) to the main thread owned viewport window.
-		WinPumpSentMessages();
-		return;
-	}
-
-	GPumpingMessagesOutsideOfMainLoop = false;
-	WinPumpMessages();
-
-	// Determine if application has focus
-	bool HasFocus = FApp::UseVRFocus() ? FApp::HasVRFocus() : FWindowsPlatformProcess::IsThisApplicationForeground();
-
-	// If editor thread doesn't have the focus, don't suck up too much CPU time.
-	if( GIsEditor )
-	{
-		static bool HadFocus=1;
-		if( HadFocus && !HasFocus )
-		{
-			// Drop our priority to speed up whatever is in the foreground.
-			SetThreadPriority( GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL );
-		}
-		else if( HasFocus && !HadFocus )
-		{
-			// Boost our priority back to normal.
-			SetThreadPriority( GetCurrentThread(), THREAD_PRIORITY_NORMAL );
-		}
-		if( !HasFocus )
-		{
-			// Sleep for a bit to not eat up all CPU time.
-			FPlatformProcess::Sleep(0.005f);
-		}
-		HadFocus = HasFocus;
-	}
-
-	// if its our window, allow sound, otherwise apply multiplier
-	FApp::SetVolumeMultiplier( HasFocus ? 1.0f : FApp::GetUnfocusedVolumeMultiplier() );
-}
-
-uint32 FWindowsPlatformMisc::GetCharKeyMap(uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings)
-{
-	return FGenericPlatformMisc::GetStandardPrintableKeyMap(KeyCodes, KeyNames, MaxMappings, true, false);
-}
-
-uint32 FWindowsPlatformMisc::GetKeyMap( uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings )
-{
-#define ADDKEYMAP(KeyCode, KeyName)		if (NumMappings<MaxMappings) { KeyCodes[NumMappings]=KeyCode; KeyNames[NumMappings]=KeyName; ++NumMappings; };
-
-	uint32 NumMappings = 0;
-
-	if ( KeyCodes && KeyNames && (MaxMappings > 0) )
-	{
-		ADDKEYMAP( VK_LBUTTON, TEXT("LeftMouseButton") );
-		ADDKEYMAP( VK_RBUTTON, TEXT("RightMouseButton") );
-		ADDKEYMAP( VK_MBUTTON, TEXT("MiddleMouseButton") );
-
-		ADDKEYMAP( VK_XBUTTON1, TEXT("ThumbMouseButton") );
-		ADDKEYMAP( VK_XBUTTON2, TEXT("ThumbMouseButton2") );
-
-		ADDKEYMAP( VK_BACK, TEXT("BackSpace") );
-		ADDKEYMAP( VK_TAB, TEXT("Tab") );
-		ADDKEYMAP( VK_RETURN, TEXT("Enter") );
-		ADDKEYMAP( VK_PAUSE, TEXT("Pause") );
-
-		ADDKEYMAP( VK_CAPITAL, TEXT("CapsLock") );
-		ADDKEYMAP( VK_ESCAPE, TEXT("Escape") );
-		ADDKEYMAP( VK_SPACE, TEXT("SpaceBar") );
-		ADDKEYMAP( VK_PRIOR, TEXT("PageUp") );
-		ADDKEYMAP( VK_NEXT, TEXT("PageDown") );
-		ADDKEYMAP( VK_END, TEXT("End") );
-		ADDKEYMAP( VK_HOME, TEXT("Home") );
-
-		ADDKEYMAP( VK_LEFT, TEXT("Left") );
-		ADDKEYMAP( VK_UP, TEXT("Up") );
-		ADDKEYMAP( VK_RIGHT, TEXT("Right") );
-		ADDKEYMAP( VK_DOWN, TEXT("Down") );
-
-		ADDKEYMAP( VK_INSERT, TEXT("Insert") );
-		ADDKEYMAP( VK_DELETE, TEXT("Delete") );
-
-		ADDKEYMAP( VK_NUMPAD0, TEXT("NumPadZero") );
-		ADDKEYMAP( VK_NUMPAD1, TEXT("NumPadOne") );
-		ADDKEYMAP( VK_NUMPAD2, TEXT("NumPadTwo") );
-		ADDKEYMAP( VK_NUMPAD3, TEXT("NumPadThree") );
-		ADDKEYMAP( VK_NUMPAD4, TEXT("NumPadFour") );
-		ADDKEYMAP( VK_NUMPAD5, TEXT("NumPadFive") );
-		ADDKEYMAP( VK_NUMPAD6, TEXT("NumPadSix") );
-		ADDKEYMAP( VK_NUMPAD7, TEXT("NumPadSeven") );
-		ADDKEYMAP( VK_NUMPAD8, TEXT("NumPadEight") );
-		ADDKEYMAP( VK_NUMPAD9, TEXT("NumPadNine") );
-
-		ADDKEYMAP( VK_MULTIPLY, TEXT("Multiply") );
-		ADDKEYMAP( VK_ADD, TEXT("Add") );
-		ADDKEYMAP( VK_SUBTRACT, TEXT("Subtract") );
-		ADDKEYMAP( VK_DECIMAL, TEXT("Decimal") );
-		ADDKEYMAP( VK_DIVIDE, TEXT("Divide") );
-
-		ADDKEYMAP( VK_F1, TEXT("F1") );
-		ADDKEYMAP( VK_F2, TEXT("F2") );
-		ADDKEYMAP( VK_F3, TEXT("F3") );
-		ADDKEYMAP( VK_F4, TEXT("F4") );
-		ADDKEYMAP( VK_F5, TEXT("F5") );
-		ADDKEYMAP( VK_F6, TEXT("F6") );
-		ADDKEYMAP( VK_F7, TEXT("F7") );
-		ADDKEYMAP( VK_F8, TEXT("F8") );
-		ADDKEYMAP( VK_F9, TEXT("F9") );
-		ADDKEYMAP( VK_F10, TEXT("F10") );
-		ADDKEYMAP( VK_F11, TEXT("F11") );
-		ADDKEYMAP( VK_F12, TEXT("F12") );
-
-		ADDKEYMAP( VK_NUMLOCK, TEXT("NumLock") );
-
-		ADDKEYMAP( VK_SCROLL, TEXT("ScrollLock") );
-
-		ADDKEYMAP( VK_LSHIFT, TEXT("LeftShift") );
-		ADDKEYMAP( VK_RSHIFT, TEXT("RightShift") );
-		ADDKEYMAP( VK_LCONTROL, TEXT("LeftControl") );
-		ADDKEYMAP( VK_RCONTROL, TEXT("RightControl") );
-		ADDKEYMAP( VK_LMENU, TEXT("LeftAlt") );
-		ADDKEYMAP( VK_RMENU, TEXT("RightAlt") );
-		ADDKEYMAP( VK_LWIN, TEXT("LeftCommand") );
-		ADDKEYMAP( VK_RWIN, TEXT("RightCommand") );
-
-		TMap<uint32, uint32> ScanToVKMap;
-#define MAP_OEM_VK_TO_SCAN(KeyCode) { const uint32 CharCode = MapVirtualKey(KeyCode,2); if (CharCode != 0) { ScanToVKMap.Add(CharCode,KeyCode); } }
-		MAP_OEM_VK_TO_SCAN(VK_OEM_1);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_2);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_3);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_4);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_5);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_6);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_7);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_8);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_PLUS);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_COMMA);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_MINUS);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_PERIOD);
-		MAP_OEM_VK_TO_SCAN(VK_OEM_102);
-#undef  MAP_OEM_VK_TO_SCAN
-
-		static const uint32 MAX_KEY_MAPPINGS(256);
-		uint32 CharCodes[MAX_KEY_MAPPINGS];
-		FString CharKeyNames[MAX_KEY_MAPPINGS];
-		const int32 CharMappings = GetCharKeyMap(CharCodes, CharKeyNames, MAX_KEY_MAPPINGS);
-
-		for (int32 MappingIndex = 0; MappingIndex < CharMappings; ++MappingIndex)
-		{
-			ScanToVKMap.Remove(CharCodes[MappingIndex]);
-		}
-
-		for (auto It(ScanToVKMap.CreateConstIterator()); It; ++It)
-		{
-			ADDKEYMAP(It.Value(), FString::Chr(It.Key()));
-		}
-	}
-
-	check(NumMappings < MaxMappings);
-	return NumMappings;
-
-#undef ADDKEYMAP
+	return ::GetSystemMetrics(SM_REMOTESESSION) != 0;
 }
 
 void FWindowsPlatformMisc::SetUTF8Output()
@@ -1203,11 +877,6 @@ void FWindowsPlatformMisc::RequestExit( bool Force )
 	}
 }
 
-void FWindowsPlatformMisc::RequestMinimize()
-{
-	::ShowWindow(::GetActiveWindow(), SW_MINIMIZE);
-}
-
 const TCHAR* FWindowsPlatformMisc::GetSystemErrorMessage(TCHAR* OutBuffer, int32 BufferCount, int32 Error)
 {
 	check(OutBuffer && BufferCount);
@@ -1229,75 +898,6 @@ const TCHAR* FWindowsPlatformMisc::GetSystemErrorMessage(TCHAR* OutBuffer, int32
 	}
 	return OutBuffer;
 }
-
-// Disabling optimizations helps to reduce the frequency of OpenClipboard failing with error code 0. It still happens
-// though only with really large text buffers and we worked around this by changing the editor to use an intermediate
-// text buffer for internal operations.
-PRAGMA_DISABLE_OPTIMIZATION 
-
-void FWindowsPlatformMisc::ClipboardCopy(const TCHAR* Str)
-{
-	if( OpenClipboard(GetActiveWindow()) )
-	{
-		verify(EmptyClipboard());
-		HGLOBAL GlobalMem;
-		int32 StrLen = FCString::Strlen(Str);
-		GlobalMem = GlobalAlloc( GMEM_MOVEABLE, sizeof(TCHAR)*(StrLen+1) );
-		check(GlobalMem);
-		TCHAR* Data = (TCHAR*) GlobalLock( GlobalMem );
-		FCString::Strcpy( Data, (StrLen+1), Str );
-		GlobalUnlock( GlobalMem );
-		if( SetClipboardData( CF_UNICODETEXT, GlobalMem ) == NULL )
-			UE_LOG(LogWindows, Fatal,TEXT("SetClipboardData failed with error code %i"), (uint32)GetLastError() );
-		verify(CloseClipboard());
-	}
-}
-
-void FWindowsPlatformMisc::ClipboardPaste(class FString& Result)
-{
-	if( OpenClipboard(GetActiveWindow()) )
-	{
-		HGLOBAL GlobalMem = NULL;
-		bool Unicode = 0;
-		GlobalMem = GetClipboardData( CF_UNICODETEXT );
-		Unicode = 1;
-		if( !GlobalMem )
-		{
-			GlobalMem = GetClipboardData( CF_TEXT );
-			Unicode = 0;
-		}
-		if( !GlobalMem )
-		{
-			Result = TEXT("");
-		}
-		else
-		{
-			void* Data = GlobalLock( GlobalMem );
-			check( Data );	
-			if( Unicode )
-				Result = (TCHAR*) Data;
-			else
-			{
-				ANSICHAR* ACh = (ANSICHAR*) Data;
-				int32 i;
-				for( i=0; ACh[i]; i++ );
-				TArray<TCHAR> Ch;
-				Ch.AddUninitialized(i+1);
-				for( i=0; i<Ch.Num(); i++ )
-					Ch[i]=CharCast<TCHAR>(ACh[i]);
-				Result.GetCharArray() = MoveTemp(Ch);
-			}
-			GlobalUnlock( GlobalMem );
-		}
-		verify(CloseClipboard());
-	}
-	else 
-	{
-		Result=TEXT("");
-	}
-}
-
-PRAGMA_ENABLE_OPTIMIZATION 
 
 void FWindowsPlatformMisc::CreateGuid(FGuid& Result)
 {
@@ -1501,15 +1101,23 @@ int MessageBoxExtInternal( EAppMsgType::Type MsgType, HWND HandleWnd, const TCHA
 	GMessageBoxText = (TCHAR *) Text;
 	GMessageBoxCaption = (TCHAR *) Caption;
 
-	if( MsgType == EAppMsgType::YesNoYesAllNoAll )
+	switch (MsgType)
 	{
-		GCancelButtonEnabled = false;
-		return DialogBox( GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_YESNO2ALL), HandleWnd, MessageBoxDlgProc );
-	}
-	else if( MsgType == EAppMsgType::YesNoYesAllNoAllCancel )
-	{
-		GCancelButtonEnabled = true;
-		return DialogBox( GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_YESNO2ALLCANCEL), HandleWnd, MessageBoxDlgProc );
+		case EAppMsgType::YesNoYesAllNoAll:
+		{
+			GCancelButtonEnabled = false;
+			return DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_YESNO2ALL), HandleWnd, MessageBoxDlgProc);
+		}
+		case EAppMsgType::YesNoYesAllNoAllCancel:
+		{
+			GCancelButtonEnabled = true;
+			return DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_YESNO2ALLCANCEL), HandleWnd, MessageBoxDlgProc);
+		}
+		case EAppMsgType::YesNoYesAll:
+		{
+			GCancelButtonEnabled = false;
+			return DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_YESNOYESTOALL), HandleWnd, MessageBoxDlgProc);
+		}
 	}
 
 	return -1;
@@ -1525,6 +1133,11 @@ EAppReturnType::Type FWindowsPlatformMisc::MessageBoxExt( EAppMsgType::Type MsgT
 	HWND ParentWindow = (HWND)NULL;
 	switch( MsgType )
 	{
+	case EAppMsgType::Ok:
+		{
+			MessageBox(ParentWindow, Text, Caption, MB_OK|MB_SYSTEMMODAL);
+			return EAppReturnType::Ok;
+		}
 	case EAppMsgType::YesNo:
 		{
 			int32 Return = MessageBox( ParentWindow, Text, Caption, MB_YESNO|MB_SYSTEMMODAL );
@@ -1556,8 +1169,14 @@ EAppReturnType::Type FWindowsPlatformMisc::MessageBoxExt( EAppMsgType::Type MsgT
 		//These return codes just happen to match up with ours.
 		// return 0 for No, 1 for Yes, 2 for YesToAll, 3 for NoToAll, 4 for Cancel
 		break;
+
+	case EAppMsgType::YesNoYesAll:
+		return (EAppReturnType::Type)MessageBoxExtInternal(EAppMsgType::YesNoYesAll, ParentWindow, Text, Caption);
+		//These return codes just happen to match up with ours.
+		// return 0 for No, 1 for Yes, 2 for YesToAll
+		break;
+
 	default:
-		MessageBox( ParentWindow, Text, Caption, MB_OK|MB_SYSTEMMODAL );
 		break;
 	}
 	return EAppReturnType::Cancel;
@@ -1896,11 +1515,6 @@ bool FWindowsPlatformMisc::Is64bitOperatingSystem()
 #endif
 }
 
-int32 FWindowsPlatformMisc::GetAppIcon()
-{
-	return IDICON_UE4Game;
-}
-
 bool FWindowsPlatformMisc::VerifyWindowsVersion(uint32 MajorVersion, uint32 MinorVersion)
 {
 	OSVERSIONINFOEX Version;
@@ -2008,32 +1622,27 @@ int32 FWindowsPlatformMisc::NumberOfCoresIncludingHyperthreads()
 	return CoreCount;
 }
 
-void FWindowsPlatformMisc::LoadPreInitModules()
+int32 FWindowsPlatformMisc::NumberOfWorkerThreadsToSpawn()
 {
-	// D3D11 is not supported on WinXP, so in this case we use the OpenGL RHI
-	if(FWindowsPlatformMisc::VerifyWindowsVersion(6, 0))
+	static int32 MaxServerWorkerThreads = 4;
+	static int32 MaxWorkerThreads = 26;
+
+	int32 NumberOfCores = FWindowsPlatformMisc::NumberOfCores();
+	int32 NumberOfCoresIncludingHyperthreads = FWindowsPlatformMisc::NumberOfCoresIncludingHyperthreads();
+	int32 NumberOfThreads = 0;
+
+	if (NumberOfCoresIncludingHyperthreads > NumberOfCores)
 	{
-		//#todo-rco: Only try on Win10
-		const bool bForceD3D12 = FParse::Param(FCommandLine::Get(), TEXT("d3d12")) || FParse::Param(FCommandLine::Get(), TEXT("dx12"));
-		if (bForceD3D12)
-		{
-			FModuleManager::Get().LoadModule(TEXT("D3D12RHI"));
-		}
-		FModuleManager::Get().LoadModule(TEXT("D3D11RHI"));
+		NumberOfThreads = NumberOfCoresIncludingHyperthreads - 2;
 	}
-	FModuleManager::Get().LoadModule(TEXT("OpenGLDrv"));
-}
+	else
+	{
+		NumberOfThreads = NumberOfCores - 1;
+	}
 
-void FWindowsPlatformMisc::LoadStartupModules()
-{
-	FModuleManager::Get().LoadModule(TEXT("XAudio2"));
-#if !UE_SERVER
-	FModuleManager::Get().LoadModule(TEXT("HeadMountedDisplay"));
-#endif // !UE_SERVER
-
-#if WITH_EDITOR
-	FModuleManager::Get().LoadModule(TEXT("SourceCodeAccess"));
-#endif	//WITH_EDITOR
+	int32 MaxWorkerThreadsWanted = IsRunningDedicatedServer() ? MaxServerWorkerThreads : MaxWorkerThreads;
+	// need to spawn at least one worker thread (see FTaskGraphImplementation)
+	return FMath::Max(FMath::Min(NumberOfThreads, MaxWorkerThreadsWanted), 1);
 }
 
 bool FWindowsPlatformMisc::OsExecute(const TCHAR* CommandType, const TCHAR* Command, const TCHAR* CommandLine)
@@ -2084,35 +1693,6 @@ HWND FWindowsPlatformMisc::GetTopLevelWindowHandle(uint32 ProcessId)
 	::EnumWindows(GetMainWindowHandleCallback, (LPARAM)&Data);
 
 	return Data.Handle;
-}
-
-bool FWindowsPlatformMisc::GetWindowTitleMatchingText(const TCHAR* TitleStartsWith, FString& OutTitle)
-{
-	bool bWasFound = false;
-	WCHAR Buffer[8192];
-	// Get the first window so we can start walking the window chain
-	HWND hWnd = FindWindowW(NULL,NULL);
-	if (hWnd != NULL)
-	{
-		do
-		{
-			GetWindowText(hWnd,Buffer,8192);
-			// If this matches, then grab the full text
-			if (_tcsnccmp(TitleStartsWith, Buffer, _tcslen(TitleStartsWith)) == 0)
-			{
-				OutTitle = Buffer;
-				hWnd = NULL;
-				bWasFound = true;
-			}
-			else
-			{
-				// Get the next window to interrogate
-				hWnd = GetWindow(hWnd, GW_HWNDNEXT);
-			}
-		}
-		while (hWnd != NULL);
-	}
-	return bWasFound;
 }
 
 void FWindowsPlatformMisc::RaiseException( uint32 ExceptionCode )
@@ -2301,20 +1881,6 @@ void FWindowsPlatformMisc::PromptForRemoteDebugging(bool bIsEnsure)
 }
 #endif	//#if !UE_BUILD_SHIPPING
 
-FLinearColor FWindowsPlatformMisc::GetScreenPixelColor(const FVector2D& InScreenPos, float /*InGamma*/)
-{
-	COLORREF PixelColorRef = GetPixel(GetDC(HWND_DESKTOP), InScreenPos.X, InScreenPos.Y);
-
-	FColor sRGBScreenColor(
-		(PixelColorRef & 0xFF),
-		((PixelColorRef & 0xFF00) >> 8),
-		((PixelColorRef & 0xFF0000) >> 16),
-		255);
-
-	// Assume the screen color is coming in as sRGB space
-	return FLinearColor(sRGBScreenColor);
-}
-
 /**
 * Class that caches __cpuid queried data.
 */
@@ -2328,7 +1894,10 @@ public:
 		{
 			Vendor = QueryCPUVendor();
 			Brand = QueryCPUBrand();
-			CPUInfo = QueryCPUInfo();
+			int Info[4];
+			QueryCPUInfo(Info);
+			CPUInfo = Info[0];
+			CPUInfo2 = Info[2];
 			CacheLineSize = QueryCacheLineSize();
 		}
 	}
@@ -2373,7 +1942,17 @@ public:
 		return CPUIDStaticCache.CPUInfo;
 	}
 
-	/** 
+	/**
+	* Gets __cpuid CPU info.
+	*
+	* @returns CPU info unsigned int queried using __cpuid.
+	*/
+	static uint32 GetCPUInfo2()
+	{
+		return CPUIDStaticCache.CPUInfo2;
+	}
+
+	/**
 	 * Gets cache line size.
 	 *
 	 * @returns Cache line size.
@@ -2470,16 +2049,9 @@ private:
 	 *
 	 * @returns CPU info unsigned int queried using __cpuid.
 	 */
-	static uint32 QueryCPUInfo()
+	static void QueryCPUInfo(int Args[4])
 	{
-		uint32 Info = 0;
-
-		int Args[4];
 		__cpuid(Args, 1);
-
-		Info = Args[0];
-
-		return Info;
 	}
 
 	/**
@@ -2514,6 +2086,7 @@ private:
 
 	/** CPU info from __cpuid. */
 	uint32 CPUInfo;
+	uint32 CPUInfo2;
 
 	/** CPU cache line size. */
 	int32 CacheLineSize;
@@ -2888,6 +2461,18 @@ uint32 FWindowsPlatformMisc::GetCPUInfo()
 	return FCPUIDQueriedData::GetCPUInfo();
 }
 
+bool FWindowsPlatformMisc::HasNonoptionalCPUFeatures()
+{
+	// Check for popcnt is bit 23
+	return (FCPUIDQueriedData::GetCPUInfo2() & (1 << 23)) != 0;
+}
+
+bool FWindowsPlatformMisc::NeedsNonoptionalCPUFeaturesCheck()
+{
+	// popcnt is 64bit
+	return PLATFORM_ENABLE_POPCNT_INTRINSIC;
+}
+
 int32 FWindowsPlatformMisc::GetCacheLineSize()
 {
 	return FCPUIDQueriedData::GetCacheLineSize();
@@ -3007,25 +2592,28 @@ EConvertibleLaptopMode FWindowsPlatformMisc::GetConvertibleLaptopMode()
 IPlatformChunkInstall* FWindowsPlatformMisc::GetPlatformChunkInstall()
 {
 	static IPlatformChunkInstall* ChunkInstall = nullptr;
-	if (!ChunkInstall)
+	static bool bIniChecked = false;
+	if (!ChunkInstall || !bIniChecked)
 	{
-#if !(WITH_EDITORONLY_DATA || IS_PROGRAM)
-
 		IPlatformChunkInstallModule* PlatformChunkInstallModule = nullptr;
-
-		FModuleStatus Status;
-		if (FModuleManager::Get().QueryModule("HTTPChunkInstaller", Status))
+		if (!GEngineIni.IsEmpty())
 		{
-			PlatformChunkInstallModule = FModuleManager::LoadModulePtr<IPlatformChunkInstallModule>("HTTPChunkInstaller");
-			if (PlatformChunkInstallModule != nullptr)
-		{
-			// Attempt to grab the platform installer
-			ChunkInstall = PlatformChunkInstallModule->GetPlatformChunkInstall();
-		}
+			FString InstallModule;
+			GConfig->GetString(TEXT("StreamingInstall"), TEXT("DefaultProviderName"), InstallModule, GEngineIni);
+			FModuleStatus Status;
+			if (FModuleManager::Get().QueryModule(*InstallModule, Status))
+			{
+				PlatformChunkInstallModule = FModuleManager::LoadModulePtr<IPlatformChunkInstallModule>(*InstallModule);
+				if (PlatformChunkInstallModule != nullptr)
+				{
+					// Attempt to grab the platform installer
+					ChunkInstall = PlatformChunkInstallModule->GetPlatformChunkInstall();
+				}
+			}
+			bIniChecked = true;
 		}
 
 		if (PlatformChunkInstallModule == nullptr)
-#endif
 		{
 			// Placeholder instance
 			ChunkInstall = FGenericPlatformMisc::GetPlatformChunkInstall();

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -102,7 +102,7 @@ class UInterpTrackMove : public UInterpTrack
 	GENERATED_UCLASS_BODY()
 	
 	/** Actual position keyframe data. */
-	UPROPERTY()
+	UPROPERTY(BlueprintReadOnly, Category=InterpTrackMove)
 	FInterpCurveVector PosTrack;
 
 	/** Actual rotation keyframe data, stored as Euler angles in degrees, for easy editing on curve. */

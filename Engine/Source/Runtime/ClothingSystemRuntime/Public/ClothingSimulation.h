@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -50,6 +50,9 @@ public:
 	// Wind velocity at the component location
 	FVector WindVelocity;
 
+	// Gravity extracted from the world
+	FVector WorldGravity;
+
 	// Wind adaption, a measure of how quickly to adapt to the wind speed
 	// when using the legacy wind calculation mode
 	float WindAdaption;
@@ -77,7 +80,7 @@ public:
 protected:
 
 	/** Fills in the base data for a clothing simulation */
-	virtual void FillContext(USkeletalMeshComponent* InComponent, IClothingSimulationContext* InOutContext) override;
+	virtual void FillContext(USkeletalMeshComponent* InComponent, float InDeltaTime, IClothingSimulationContext* InOutContext) override;
 
 	/** Maximum physics time, incoming deltas will be clamped down to this value on long frames */
 	float MaxPhysicsDelta;

@@ -1,6 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "XORBlockEncryptor.h"
+
+#include "Modules/ModuleManager.h"
 
 IMPLEMENT_MODULE(FXORBlockEncryptorModuleInterface, XORBlockEncryptor);
 
@@ -11,7 +13,7 @@ BlockEncryptor* FXORBlockEncryptorModuleInterface::CreateBlockEncryptorInstance(
 }
 
 // XOR BLOCK
-void XORBlockEncryptor::Initialize(TArray<byte>* InKey)
+void XORBlockEncryptor::Initialize(TArray<uint8>* InKey)
 {
 	Key = InKey;
 
@@ -23,7 +25,7 @@ void XORBlockEncryptor::Initialize(TArray<byte>* InKey)
 	FixedBlockSize = Key->Num();
 }
 
-void XORBlockEncryptor::EncryptBlock(byte* Block)
+void XORBlockEncryptor::EncryptBlock(uint8* Block)
 {
 	if (Key->Num() == sizeof(int8))
 	{
@@ -49,7 +51,7 @@ void XORBlockEncryptor::EncryptBlock(byte* Block)
 	//UE_LOG(PacketHandlerLog, Log, TEXT("XOR Block Encrypted"));
 }
 
-void XORBlockEncryptor::DecryptBlock(byte* Block)
+void XORBlockEncryptor::DecryptBlock(uint8* Block)
 {
 	if (Key->Num() == sizeof(int8))
 	{

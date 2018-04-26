@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -90,6 +90,13 @@ class SLATE_API SSafeZone : public SBox
 
 public:
 
+	SSafeZone()
+	{
+		bCanTick = false;
+		bCanSupportFocus = false;
+	}
+	virtual ~SSafeZone();
+
 	void Construct( const FArguments& InArgs );
 	
 	void SafeAreaUpdated();
@@ -98,12 +105,17 @@ public:
 
 	void SetSidesToPad( bool InPadLeft, bool InPadRight, bool InPadTop, bool InPadBottom );
 
+	FMargin GetSafeMargin(float InLayoutScale) const;
+
 #if WITH_EDITOR
 	void SetOverrideScreenInformation(TOptional<FVector2D> InScreenSize, TOptional<float> InOverrideDpiScale);
 #endif
 
 	virtual void OnArrangeChildren( const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren ) const override;
 	virtual FVector2D ComputeDesiredSize(float LayoutScale) const override;
+
+	static void SetSafeZoneScale(float InScale);
+	static float GetSafeZoneScale();
 
 private:
 
@@ -125,5 +137,7 @@ private:
 
 	/** Screen space margin */
 	FMargin SafeMargin;
+
+	FDelegateHandle OnSafeFrameChangedHandle;
+	static float SafeZoneScale;
 };
- 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RenderCore.h: Render core module implementation.
@@ -13,7 +13,7 @@ IMPLEMENT_MODULE(FDefaultModuleImpl, RenderCore);
 
 DEFINE_LOG_CATEGORY(LogRendererCore);
 
-/*-----------------------------------------------------------------------------
+/*------------------------------------------------------------------------------
 	Stat declarations.
 -----------------------------------------------------------------------------*/
 // Cycle stats are rendered in reverse order from what they are declared in.
@@ -73,10 +73,11 @@ DEFINE_STAT(STAT_LightInteractionMemory);
 // The InitViews stats group contains information on how long visibility culling took and how effective it was
 
 DEFINE_STAT(STAT_GatherShadowPrimitivesTime);
-DEFINE_STAT(STAT_BuildCombinedStaticAndCSMVisibilityState);
+DEFINE_STAT(STAT_BuildCSMVisibilityState);
 DEFINE_STAT(STAT_UpdateIndirectLightingCache);
 DEFINE_STAT(STAT_UpdateIndirectLightingCachePrims);
 DEFINE_STAT(STAT_UpdateIndirectLightingCacheBlocks);
+DEFINE_STAT(STAT_InterpolateVolumetricLightmapOnCPU);
 DEFINE_STAT(STAT_UpdateIndirectLightingCacheTransitions);
 DEFINE_STAT(STAT_UpdateIndirectLightingCacheFinalize);
 DEFINE_STAT(STAT_SortStaticDrawLists);
@@ -172,16 +173,29 @@ DEFINE_STAT(STAT_RenderWholeSceneReflectiveShadowMapsTime);
 DEFINE_STAT(STAT_ShadowmapAtlasMemory);
 DEFINE_STAT(STAT_CachedShadowmapMemory);
 
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+DEFINE_STAT(STAT_RenderTargetPoolSize);
+DEFINE_STAT(STAT_RenderTargetPoolUsed);
+DEFINE_STAT(STAT_RenderTargetPoolCount);
+
+#define EXPOSE_FORCE_LOD !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+
+#if EXPOSE_FORCE_LOD
 
 static TAutoConsoleVariable<int32> CVarForceLOD(
 	TEXT("r.ForceLOD"),
 	-1,
 	TEXT("LOD level to force, -1 is off."),
-	ECVF_Cheat | ECVF_RenderThreadSafe
+	ECVF_Scalability | ECVF_Default | ECVF_RenderThreadSafe
 	);
 
-#endif // !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+static TAutoConsoleVariable<int32> CVarForceLODShadow(
+	TEXT("r.ForceLODShadow"),
+	-1,
+	TEXT("LOD level to force for the shadow map generation only, -1 is off."),
+	ECVF_Scalability | ECVF_Default | ECVF_RenderThreadSafe
+);
+
+#endif // EXPOSE_FORCE_LOD
 
 /** Whether to pause the global realtime clock for the rendering thread (read and write only on main thread). */
 bool GPauseRenderingRealtimeClock;
@@ -242,11 +256,40 @@ RENDERCORE_API int32 GetCVarForceLOD()
 {
 	int32 Ret = -1;
 
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+#if EXPOSE_FORCE_LOD
 	{
 		Ret = CVarForceLOD.GetValueOnRenderThread();
 	}
-#endif // !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+#endif // EXPOSE_FORCE_LOD
 
 	return Ret;
 }
+
+RENDERCORE_API int32 GetCVarForceLODShadow()
+{
+	int32 Ret = -1;
+
+#if EXPOSE_FORCE_LOD
+	{
+		Ret = CVarForceLODShadow.GetValueOnRenderThread();
+	}
+#endif // EXPOSE_FORCE_LOD
+
+	return Ret;
+}
+
+RENDERCORE_API bool IsHDREnabled()
+{
+	static const auto CVarHDROutputEnabled = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.HDR.EnableHDROutput"));
+	if (CVarHDROutputEnabled)
+	{
+		if (CVarHDROutputEnabled->GetValueOnAnyThread() != 0)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+

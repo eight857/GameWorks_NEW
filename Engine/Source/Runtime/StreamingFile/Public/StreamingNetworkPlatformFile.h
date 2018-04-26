@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -131,7 +131,11 @@ class STREAMINGFILE_API FStreamingNetworkPlatformFile
 public:
 
 	/** Default Constructor */
-	FStreamingNetworkPlatformFile() { };
+	FStreamingNetworkPlatformFile() 
+	{
+		HeartbeatFrequency = -1.0f;
+		ConnectionFlags |= EConnectionFlags::Streaming;
+	}
 
 	/** Virtual destructor */
 	virtual ~FStreamingNetworkPlatformFile();

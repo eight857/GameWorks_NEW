@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DecalComponentVisualizer.h"
 #include "SceneManagement.h"
@@ -11,7 +11,7 @@ void FDecalComponentVisualizer::DrawVisualization( const UActorComponent* Compon
 	const UDecalComponent* DecalComponent = Cast<const UDecalComponent>(Component);
 	if(DecalComponent)
 	{
-		const FMatrix LocalToWorld = DecalComponent->ComponentToWorld.ToMatrixWithScale();
+		const FMatrix LocalToWorld = DecalComponent->GetComponentTransform().ToMatrixWithScale();
 		
 		const FLinearColor DrawColor = FColor(0, 157, 0, 255);
 

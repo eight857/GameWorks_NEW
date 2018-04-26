@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,6 +8,7 @@
 #include "DisplayNodes/SequencerDisplayNode.h"
 #include "PropertyPath.h"
 
+class FSequencerTrackNode;
 class FMenuBuilder;
 struct FSlateBrush;
 
@@ -49,6 +50,13 @@ public:
 	{
 		return BindingType;
 	}
+
+	/**
+	 * Adds a new externally created node to this display node
+	 *
+	 * @param NewChild		The child node to add
+	 */
+	void AddTrackNode( TSharedRef<FSequencerTrackNode> NewChild );
 
 public:
 

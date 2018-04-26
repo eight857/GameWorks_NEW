@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
@@ -187,7 +187,7 @@ void UMapProperty::LinkInternal(FArchive& Ar)
 {
 	check(KeyProp && ValueProp);
 
-	if (auto* MyLinker = GetLinker())
+	if (FLinkerLoad* MyLinker = GetLinker())
 	{
 		MyLinker->Preload(this);
 	}
@@ -279,6 +279,7 @@ void UMapProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 			TempKeyStorage = (uint8*)FMemory::Malloc(MapLayout.SetLayout.Size);
 			KeyProp->InitializeValue(TempKeyStorage);
 
+			FSerializedPropertyScope SerializedProperty(Ar, KeyProp, this);
 			for (; NumKeysToRemove; --NumKeysToRemove)
 			{
 				// Read key into temporary storage
@@ -307,8 +308,11 @@ void UMapProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 		for (; NumEntries; --NumEntries)
 		{
 			// Read key into temporary storage
-			KeyProp->SerializeItem(Ar, TempKeyStorage);
-
+			{
+				FSerializedPropertyScope SerializedProperty(Ar, KeyProp, this);
+				KeyProp->SerializeItem(Ar, TempKeyStorage);
+			}
+			
 			// Add a new default value if the key doesn't currently exist in the map
 			int32 NextPairIndex = MapHelper.FindMapIndexWithKey(TempKeyStorage);
 			if (NextPairIndex == INDEX_NONE)
@@ -322,7 +326,10 @@ void UMapProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 			KeyProp->CopyCompleteValue_InContainer(NextPairPtr, TempKeyStorage);
 
 			// Deserialize value
-			ValueProp->SerializeItem(Ar, NextPairPtr + MapLayout.ValueOffset);
+			{
+				FSerializedPropertyScope SerializedProperty(Ar, ValueProp, this);
+				ValueProp->SerializeItem(Ar, NextPairPtr + MapLayout.ValueOffset);
+			}
 		}
 
 		MapHelper.Rehash();
@@ -356,9 +363,12 @@ void UMapProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 		// Write out the missing keys
 		int32 MissingKeysNum = Indices.Num();
 		Ar << MissingKeysNum;
-		for (int32 Index : Indices)
 		{
-			KeyProp->SerializeItem(Ar, DefaultsHelper.GetPairPtr(Index));
+			FSerializedPropertyScope SerializedProperty(Ar, KeyProp, this);
+			for (int32 Index : Indices)
+			{
+				KeyProp->SerializeItem(Ar, DefaultsHelper.GetPairPtr(Index));
+			}
 		}
 
 		// Write out differences from defaults
@@ -388,8 +398,14 @@ void UMapProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 			{
 				uint8* ValuePairPtr = MapHelper.GetPairPtrWithoutCheck(Index);
 
-				KeyProp  ->SerializeItem(Ar, ValuePairPtr);
-				ValueProp->SerializeItem(Ar, ValuePairPtr + MapLayout.ValueOffset);
+				{
+					FSerializedPropertyScope SerializedProperty(Ar, KeyProp, this);
+					KeyProp->SerializeItem(Ar, ValuePairPtr);
+				}
+				{
+					FSerializedPropertyScope SerializedProperty(Ar, ValueProp, this);
+					ValueProp->SerializeItem(Ar, ValuePairPtr + MapLayout.ValueOffset);
+				}
 			}
 		}
 		else
@@ -402,8 +418,14 @@ void UMapProperty::SerializeItem(FArchive& Ar, void* Value, const void* Defaults
 				{
 					uint8* ValuePairPtr = MapHelper.GetPairPtrWithoutCheck(Index);
 
-					KeyProp  ->SerializeItem(Ar, ValuePairPtr);
-					ValueProp->SerializeItem(Ar, ValuePairPtr + MapLayout.ValueOffset);
+					{
+						FSerializedPropertyScope SerializedProperty(Ar, KeyProp, this);
+						KeyProp->SerializeItem(Ar, ValuePairPtr);
+					}
+					{
+						FSerializedPropertyScope SerializedProperty(Ar, ValueProp, this);
+						ValueProp->SerializeItem(Ar, ValuePairPtr + MapLayout.ValueOffset);
+					}
 
 					--Num;
 				}
@@ -435,23 +457,47 @@ void UMapProperty::AddReferencedObjects(UObject* InThis, FReferenceCollector& Co
 	Super::AddReferencedObjects(This, Collector);
 }
 
-FString UMapProperty::GetCPPType(FString* ExtendedTypeText, uint32 CPPExportFlags) const
+FString UMapProperty::GetCPPTypeCustom(FString* ExtendedTypeText, uint32 CPPExportFlags, const FString& KeyTypeText, const FString& InKeyExtendedTypeText, const FString& ValueTypeText, const FString& InValueExtendedTypeText) const
 {
-	checkSlow(KeyProp);
-	checkSlow(ValueProp);
-
 	if (ExtendedTypeText)
 	{
-		FString KeyExtendedTypeText;
-		FString KeyTypeText = KeyProp->GetCPPType(&KeyExtendedTypeText, CPPExportFlags & ~CPPF_ArgumentOrReturnValue); // we won't consider map keys to be "arguments or return values"
+		// if property type is a template class, add a space between the closing brackets
+		FString KeyExtendedTypeText = InKeyExtendedTypeText;
+		if ((KeyExtendedTypeText.Len() && KeyExtendedTypeText.Right(1) == TEXT(">"))
+			|| (!KeyExtendedTypeText.Len() && KeyTypeText.Len() && KeyTypeText.Right(1) == TEXT(">")))
+		{
+			KeyExtendedTypeText += TEXT(" ");
+		}
 
-		FString ValueExtendedTypeText;
-		FString ValueTypeText = ValueProp->GetCPPType(&ValueExtendedTypeText, CPPExportFlags & ~CPPF_ArgumentOrReturnValue); // we won't consider map values to be "arguments or return values"
+		// if property type is a template class, add a space between the closing brackets
+		FString ValueExtendedTypeText = InValueExtendedTypeText;
+		if ((ValueExtendedTypeText.Len() && ValueExtendedTypeText.Right(1) == TEXT(">"))
+			|| (!ValueExtendedTypeText.Len() && ValueTypeText.Len() && ValueTypeText.Right(1) == TEXT(">")))
+		{
+			ValueExtendedTypeText += TEXT(" ");
+		}
 
 		*ExtendedTypeText = FString::Printf(TEXT("<%s%s,%s%s>"), *KeyTypeText, *KeyExtendedTypeText, *ValueTypeText, *ValueExtendedTypeText);
 	}
 
 	return TEXT("TMap");
+}
+
+FString UMapProperty::GetCPPType(FString* ExtendedTypeText, uint32 CPPExportFlags) const
+{
+	checkSlow(KeyProp);
+	checkSlow(ValueProp);
+
+	FString KeyTypeText, KeyExtendedTypeText;
+	FString ValueTypeText, ValueExtendedTypeText;
+
+	if (ExtendedTypeText)
+	{
+		KeyTypeText = KeyProp->GetCPPType(&KeyExtendedTypeText, CPPExportFlags & ~CPPF_ArgumentOrReturnValue); // we won't consider map keys to be "arguments or return values"
+		ValueTypeText = ValueProp->GetCPPType(&ValueExtendedTypeText, CPPExportFlags & ~CPPF_ArgumentOrReturnValue); // we won't consider map values to be "arguments or return values"
+	}
+
+	return GetCPPTypeCustom(ExtendedTypeText, CPPExportFlags, KeyTypeText, KeyExtendedTypeText, ValueTypeText, ValueExtendedTypeText);
 }
 
 FString UMapProperty::GetCPPTypeForwardDeclaration() const
@@ -490,7 +536,7 @@ void UMapProperty::ExportTextItem(FString& ValueStr, const void* PropertyValue, 
 	}
 
 	uint8* StructDefaults = nullptr;
-	if (auto* StructValueProp = dynamic_cast<UStructProperty*>(ValueProp))
+	if (UStructProperty* StructValueProp = dynamic_cast<UStructProperty*>(ValueProp))
 	{
 		checkSlow(StructValueProp->Struct);
 
@@ -599,24 +645,42 @@ const TCHAR* UMapProperty::ImportText_Internal(const TCHAR* Buffer, void* Data, 
 		return Buffer + 1;
 	}
 
-	int32 Index = 0;
+	uint8* TempPairStorage   = (uint8*)FMemory::Malloc(MapLayout.ValueOffset + ValueProp->ElementSize);
+	KeyProp  ->InitializeValue(TempPairStorage);
+	ValueProp->InitializeValue(TempPairStorage + MapLayout.ValueOffset);
+
+	bool bSuccess = false;
+	ON_SCOPE_EXIT
+	{
+		ValueProp->DestroyValue(TempPairStorage + MapLayout.ValueOffset);
+		KeyProp  ->DestroyValue(TempPairStorage);
+		FMemory::Free(TempPairStorage);
+
+		// If we are returning because of an error, remove any already-added elements from the map before returning
+		// to ensure we're not left with a partial state.
+		if (!bSuccess)
+		{
+			MapHelper.EmptyValues();
+		}
+	};
+
 	for (;;)
 	{
-		MapHelper.AddUninitializedValue();
-		MapHelper.ConstructItem(Index);
-		uint8* PairPtr = MapHelper.GetPairPtrWithoutCheck(Index);
-
 		if (*Buffer++ != TCHAR('('))
 		{
 			return nullptr;
 		}
 
 		// Parse the key
-		Buffer = KeyProp->ImportText(Buffer, PairPtr, PortFlags | PPF_Delimited, Parent, ErrorText);
+		SkipWhitespace(Buffer);
+		Buffer = KeyProp->ImportText(Buffer, TempPairStorage, PortFlags | PPF_Delimited, Parent, ErrorText);
 		if (!Buffer)
 		{
 			return nullptr;
 		}
+
+		// Skip this element if it's already in the map
+		bool bSkip = MapHelper.FindMapIndexWithKey(TempPairStorage) != INDEX_NONE;
 
 		SkipWhitespace(Buffer);
 		if (*Buffer++ != TCHAR(','))
@@ -626,7 +690,7 @@ const TCHAR* UMapProperty::ImportText_Internal(const TCHAR* Buffer, void* Data, 
 
 		// Parse the value
 		SkipWhitespace(Buffer);
-		Buffer = ValueProp->ImportText(Buffer, PairPtr + MapLayout.ValueOffset, PortFlags | PPF_Delimited, Parent, ErrorText);
+		Buffer = ValueProp->ImportText(Buffer, TempPairStorage + MapLayout.ValueOffset, PortFlags | PPF_Delimited, Parent, ErrorText);
 		if (!Buffer)
 		{
 			return nullptr;
@@ -638,20 +702,31 @@ const TCHAR* UMapProperty::ImportText_Internal(const TCHAR* Buffer, void* Data, 
 			return nullptr;
 		}
 
+		if (!bSkip)
+		{
+			int32  Index   = MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+			uint8* PairPtr = MapHelper.GetPairPtrWithoutCheck(Index);
+
+			// Copy over imported key and value from temporary storage
+			KeyProp  ->CopyCompleteValue_InContainer(PairPtr, TempPairStorage);
+			ValueProp->CopyCompleteValue_InContainer(PairPtr, TempPairStorage);
+		}
+
+		SkipWhitespace(Buffer);
 		switch (*Buffer++)
 		{
 			case TCHAR(')'):
 				MapHelper.Rehash();
+				bSuccess = true;
 				return Buffer;
 
 			case TCHAR(','):
+				SkipWhitespace(Buffer);
 				break;
 
 			default:
 				return nullptr;
 		}
-
-		++Index;
 	}
 }
 
@@ -659,9 +734,9 @@ void UMapProperty::AddCppProperty( UProperty* Property )
 {
 	check(Property);
 
-	if (Property->GetOffset_ForInternal() == 0)
+	if (!KeyProp)
 	{
-		// If it's at offset zero, assume it's the key
+		// If the key is unset, assume it's the key
 		check(!KeyProp);
 		ensureAlwaysMsgf(Property->HasAllPropertyFlags(CPF_HasGetValueTypeHash), TEXT("Attempting to create Map Property with unhashable key type: %s - Provide a GetTypeHash function!"), *Property->GetName());
 		KeyProp = Property;
@@ -805,7 +880,7 @@ void UMapProperty::InstanceSubobjects(void* Data, void const* DefaultData, UObje
 
 bool UMapProperty::SameType(const UProperty* Other) const
 {
-	auto* MapProp = (UMapProperty*)Other;
+	UMapProperty* MapProp = (UMapProperty*)Other;
 	return Super::SameType(Other) && KeyProp && ValueProp && KeyProp->SameType(MapProp->KeyProp) && ValueProp->SameType(MapProp->ValueProp);
 }
 
@@ -821,10 +896,12 @@ bool UMapProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8*
 
 	const auto SerializeOrConvert = [](UProperty* CurrentType, const FPropertyTag& InTag, FArchive& InAr, uint8* InData, UStruct* InDefaultsStruct) -> bool
 	{
+		// Serialize wants the property address, while convert wants the container address. InData is the container address
 		bool bDummyAdvance = false;
 		if(CurrentType->GetID() == InTag.Type)
 		{
-			CurrentType->SerializeItem(InAr, InData, InDefaultsStruct);
+			uint8* DestAddress = CurrentType->ContainerPtrToValuePtr<uint8>(InData, InTag.ArrayIndex);
+			CurrentType->SerializeItem(InAr, DestAddress, nullptr);
 			return true;
 		}
 		else if( CurrentType->ConvertFromType(InTag, InAr, InData, InDefaultsStruct, bDummyAdvance) )
@@ -926,7 +1003,7 @@ bool UMapProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8*
 						KeyProp->CopyCompleteValue_InContainer(NextPairPtr, TempKeyStorage);
 
 						// Deserialize value
-						if( SerializeOrConvert( ValueProp, ValuePropertyTag, Ar, NextPairPtr + MapLayout.ValueOffset, DefaultsStruct ) )
+						if( SerializeOrConvert( ValueProp, ValuePropertyTag, Ar, NextPairPtr, DefaultsStruct ) )
 						{
 							// first entry went fine, convert the rest:
 							for(int32 I = 1; I < NumEntries; ++I)
@@ -941,7 +1018,7 @@ bool UMapProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8*
 								NextPairPtr = MapHelper.GetPairPtrWithoutCheck(NextPairIndex);
 								// This copy is unnecessary when the key was already in the map:
 								KeyProp->CopyCompleteValue_InContainer(NextPairPtr, TempKeyStorage);
-								verify( SerializeOrConvert( ValueProp, ValuePropertyTag, Ar, NextPairPtr + MapLayout.ValueOffset, DefaultsStruct ) );
+								verify( SerializeOrConvert( ValueProp, ValuePropertyTag, Ar, NextPairPtr, DefaultsStruct ) );
 							}
 						}
 						else

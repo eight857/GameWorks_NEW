@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 D3D12Adapter.h: D3D12 Adapter Interfaces
@@ -45,7 +45,11 @@ enum EMultiGPUMode
 
 static const bool GRedirectDefaultContextForAFR = true;
 
+/// @cond DOXYGEN_WARNINGS
+
 void* FD3D12ThreadLocalObject<FD3D12FastConstantAllocator>::ThisThreadObject = nullptr;
+
+/// @endcond
 
 struct FD3D12AdapterDesc
 {
@@ -84,6 +88,7 @@ class FD3D12Adapter : public FNoncopyable
 public:
 
 	FD3D12Adapter(FD3D12AdapterDesc& DescIn);
+	virtual ~FD3D12Adapter() { }
 
 	void Initialize(FD3D12DynamicRHI* RHI);
 	void InitializeDevices();
@@ -175,8 +180,15 @@ public:
 	inline const EMultiGPUMode GetMultiGPUMode() const { return MultiGPUMode; }
 	inline void SetAFRMode() { MultiGPUMode = MGPU_AFR; }
 
-
+	inline void CreateDXGIFactory()
+	{
+#if PLATFORM_WINDOWS
+		VERIFYD3D12RESULT(::CreateDXGIFactory(IID_PPV_ARGS(DxgiFactory.GetInitReference())));
+		VERIFYD3D12RESULT(DxgiFactory->QueryInterface(IID_PPV_ARGS(DxgiFactory2.GetInitReference())));
+#endif
+	}
 	inline IDXGIFactory* GetDXGIFactory() const { return DxgiFactory; }
+	inline IDXGIFactory2* GetDXGIFactory2() const { return DxgiFactory2; }
 
 	inline FD3D12DynamicHeapAllocator& GetUploadHeapAllocator() { return *UploadHeapAllocator; }
 
@@ -190,6 +202,12 @@ public:
 
 	// Resource Creation
 	HRESULT CreateCommittedResource(const D3D12_RESOURCE_DESC& Desc,
+		const D3D12_HEAP_PROPERTIES& HeapProps,
+		const D3D12_RESOURCE_STATES& InitialUsage,
+		const D3D12_CLEAR_VALUE* ClearValue,
+		FD3D12Resource** ppOutResource);
+
+	HRESULT CreatePlacedResourceWithHeap(const D3D12_RESOURCE_DESC& Desc,
 		const D3D12_HEAP_PROPERTIES& HeapProps,
 		const D3D12_RESOURCE_STATES& InitialUsage,
 		const D3D12_CLEAR_VALUE* ClearValue,
@@ -295,6 +313,8 @@ public:
 		});
 	}
 
+	void BlockUntilIdle();
+
 protected:
 
 	virtual void CreateRootDevice(bool bWithDebug);
@@ -305,6 +325,7 @@ protected:
 		uint32 InUsage,
 		FRHIResourceCreateInfo& CreateInfo,
 		uint32 Alignment,
+		FD3D12TransientResource& TransientResource,
 		FD3D12ResourceLocation& ResourceLocation);
 
 	// Creates default root and execute indirect signatures
@@ -347,6 +368,7 @@ protected:
 	/** The viewport which is currently being drawn. */
 	TRefCountPtr<FD3D12Viewport> DrawingViewport;
 	TRefCountPtr<IDXGIFactory> DxgiFactory;
+	TRefCountPtr<IDXGIFactory2> DxgiFactory2;
 
 	/** A Fence whos value increases every frame*/
 	FD3D12ManualFence FrameFence;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -271,6 +271,11 @@ public:
 	 * Whether the provider uses changelists to identify commits/revisions
 	 */
 	virtual bool UsesChangelists() const = 0;
+
+	/**
+	 * Whether the provider uses the checkout workflow
+	 */
+	virtual bool UsesCheckout() const = 0;
 
 	/**
 	 * Called every update.

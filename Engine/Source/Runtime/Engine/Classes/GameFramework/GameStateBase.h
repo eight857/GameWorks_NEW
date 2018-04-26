@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -82,6 +82,7 @@ class ENGINE_API AGameStateBase : public AInfo
 	UFUNCTION(BlueprintCallable, Category=GameState)
 	virtual float GetPlayerRespawnDelay(AController* Controller) const;
 
+	virtual void GetLifetimeReplicatedProps(TArray< FLifetimeProperty > &OutLifetimeProps) const;
 
 	//~=============================================================================
 	// Interaction with GameModeBase

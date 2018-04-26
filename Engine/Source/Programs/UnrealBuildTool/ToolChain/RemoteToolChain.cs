@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections;
@@ -10,6 +10,7 @@ using System.Security.AccessControl;
 using System.Xml;
 using System.Text;
 using System.Text.RegularExpressions;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -489,7 +490,7 @@ namespace UnrealBuildTool
 					KeyProcess.StartInfo.WorkingDirectory = DirectoryReference.Combine(UnrealBuildTool.EngineDirectory, "Build", "BatchFiles").FullName;
 					KeyProcess.StartInfo.FileName = "MakeAndInstallSSHKey.bat";
 					KeyProcess.StartInfo.Arguments = string.Format(
-						"\"{0}\" {1} \"{2}\" {3} {4} \"{5}\" \"{6}\" \"{7}\"",
+                        "\"{0}\" {1} \"{2}\" \"{3}\" {4} \"{5}\" \"{6}\" \"{7}\"",
 						ResolvedSSHExe,
 						RemoteServerPort,
 						ResolvedRSyncExe,
@@ -548,6 +549,18 @@ namespace UnrealBuildTool
 
 			// connect to server
 			if (InitializeRemoteExecution(Target.bFlushBuildDirOnRemoteMac) == RemoteToolChainErrorCode.NoError)
+			{
+				// Setup root directory to use.
+				SetUserDevRootFromServer();
+			}
+		}
+
+		public void SetUpGlobalEnvironment(bool bFlushBuildDirOnRemoteMac)
+		{
+			ParseProjectSettings();
+
+			// connect to server
+			if (InitializeRemoteExecution(bFlushBuildDirOnRemoteMac) == RemoteToolChainErrorCode.NoError)
 			{
 				// Setup root directory to use.
 				SetUserDevRootFromServer();
@@ -633,7 +646,20 @@ namespace UnrealBuildTool
 			}
 		}
 
-		private static List<string> RsyncDirs = new List<string>();
+        protected string GetMacDevEngineRoot()
+        {
+            if (BuildHostPlatform.Current.Platform != UnrealTargetPlatform.Mac)
+            {
+                // figure out the remote version of Engine/Source
+                return ConvertPath(Path.GetFullPath(Path.Combine(BranchDirectory, "Engine/")));
+            }
+            else
+            {
+                return UnrealBuildTool.EngineDirectory.FullName;
+            }
+        }
+
+        private static List<string> RsyncDirs = new List<string>();
 		private static List<string> RsyncExtensions = new List<string>();
 
 		public static void QueueFileForBatchUpload(FileItem LocalFileItem)
@@ -656,6 +682,23 @@ namespace UnrealBuildTool
 				RsyncExtensions.Add(Ext);
 			}
 		}
+
+        public static void QueueDirectoryForBatchUpload(DirectoryReference LocalDirectory, bool bRecursive = true)
+        {
+            string Entry = LocalDirectory.FullName;
+            if (!RsyncDirs.Contains(Entry))
+            {
+                RsyncDirs.Add(Entry);
+            }
+
+            if (bRecursive)
+            {
+                foreach(var dir in DirectoryReference.EnumerateDirectories(LocalDirectory))
+                {
+                    QueueDirectoryForBatchUpload(dir);
+                }
+            }
+        }
 
 		public FileItem LocalToRemoteFileItem(FileItem LocalFileItem, bool bShouldUpload)
 		{
@@ -778,6 +821,32 @@ namespace UnrealBuildTool
 			}
 		}
 
+        static public void OutputErrorForRsync(Object Sender, DataReceivedEventArgs Line)
+        {
+            if ((Line != null) && (Line.Data != null) && (Line.Data != ""))
+            {
+                // check to see if we're trying to delete a floder that does not exist (not really an error in this case)
+                if (Line.Data.IndexOf("failed: No such file or directory") >= 0)
+                {
+                    int startDir = Line.Data.IndexOf('"');
+                    if (startDir >= 0)
+                    {
+                        int endDir = Line.Data.LastIndexOf('"');
+                        string dirPath = Line.Data.Substring(startDir + 1, endDir - startDir - 1) + "/";
+                        if (dirPath.StartsWith("/cygdrive/"))
+                        {
+                            dirPath = dirPath.Substring(10);
+                        }
+                        if (RelativeRsyncDirs.Contains(dirPath))
+                        {
+                            return;
+                        }
+                    }
+                }
+                Log.TraceInformation(Line.Data);
+            }
+        }
+
 		private static Dictionary<Object, StringBuilder> SSHOutputMap = new Dictionary<object, StringBuilder>();
 		private static System.Threading.Mutex DictionaryLock = new System.Threading.Mutex();
 		static public void OutputReceivedForSSH(Object Sender, DataReceivedEventArgs Line)
@@ -804,6 +873,7 @@ namespace UnrealBuildTool
 			return "/cygdrive/" + Utils.CleanDirectorySeparators(InPath.Replace(":", ""), '/');
 		}
 
+        static List<string> RelativeRsyncDirs = new List<string>();
 		public static void PreBuildSync()
 		{
 			// no need to sync on the Mac!
@@ -856,13 +926,14 @@ namespace UnrealBuildTool
 			}
 			else
 			{
-				List<string> RelativeRsyncDirs = new List<string>();
+				RelativeRsyncDirs.Clear();
 				foreach (string Dir in RsyncDirs)
 				{
 					RelativeRsyncDirs.Add(Utils.CleanDirectorySeparators(Dir.Replace(":", ""), '/') + "/");
 				}
 
 				// write out directories to copy
+                // NOTE: this can fail if you rach 64k tmp files in USER/username/AppData/Local/Temp, should catch this excpetion and either write out a better error message or try to clean the directory
 				string RSyncPathsFile = Path.GetTempFileName();
 				string IncludeFromFile = Path.GetTempFileName();
 				File.WriteAllLines(RSyncPathsFile, RelativeRsyncDirs.ToArray());
@@ -885,8 +956,8 @@ namespace UnrealBuildTool
 
 				// --exclude='*'  ??? why???
 				RsyncProcess.StartInfo.FileName = ResolvedRSyncExe;
-				RsyncProcess.StartInfo.Arguments = string.Format(
-					"-vzae \"{0}\" --rsync-path=\"mkdir -p {2} && rsync\" --chmod=ug=rwX,o=rxX --delete --files-from=\"{4}\" --include-from=\"{5}\" --include='*/' --exclude='*.o' --exclude='Timestamp' '{1}' {6}@{3}:'{2}'",
+                RsyncProcess.StartInfo.Arguments = string.Format(
+                    "-vzrltgoDe \"{0}\" --rsync-path=\"mkdir -p {2} && rsync\" --chmod=ug=rwX,o=rxX --delete --files-from=\"{4}\" --include-from=\"{5}\" --include='*/' --exclude='*.o' --exclude='Timestamp' '{1}' \"{6}@{3}\":'{2}'",
 					ResolvedRsyncAuthentication,
 					CygRootPath,
 					RemotePath,
@@ -897,7 +968,7 @@ namespace UnrealBuildTool
 				Console.WriteLine("Command: " + RsyncProcess.StartInfo.Arguments);
 
 				RsyncProcess.OutputDataReceived += new DataReceivedEventHandler(OutputReceivedForRsync);
-				RsyncProcess.ErrorDataReceived += new DataReceivedEventHandler(OutputReceivedForRsync);
+				RsyncProcess.ErrorDataReceived += new DataReceivedEventHandler(OutputErrorForRsync);
 
 				// run rsync
 				Utils.RunLocalProcess(RsyncProcess);
@@ -929,7 +1000,7 @@ namespace UnrealBuildTool
 			// make simple rsync commandline to send a file
 			RsyncProcess.StartInfo.FileName = ResolvedRSyncExe;
 			RsyncProcess.StartInfo.Arguments = string.Format(
-				"-zae \"{0}\" --rsync-path=\"mkdir -p {1} && rsync\" --chmod=ug=rwX,o=rxX '{2}' {3}@{4}:'{1}/{5}'",
+                "-zrltgoDe \"{0}\" --rsync-path=\"mkdir -p {1} && rsync\" --chmod=ug=rwX,o=rxX '{2}' \"{3}@{4}\":'{1}/{5}'",
 				ResolvedRsyncAuthentication,
 				RemoteDir,
 				ConvertPathToCygwin(LocalPath),
@@ -963,7 +1034,7 @@ namespace UnrealBuildTool
 			// make simple rsync commandline to send a file
 			RsyncProcess.StartInfo.FileName = ResolvedRSyncExe;
 			RsyncProcess.StartInfo.Arguments = string.Format(
-				"-zae \"{0}\" {2}@{3}:'{4}' \"{1}\"",
+                "-zrltgoDe \"{0}\" \"{2}@{3}\":'{4}' \"{1}\"",
 				ResolvedRsyncAuthentication,
 				ConvertPathToCygwin(LocalPath),
 				RSyncUsername,
@@ -1024,7 +1095,7 @@ namespace UnrealBuildTool
 
 			SSHProcess.StartInfo.FileName = ResolvedSSHExe;
 			SSHProcess.StartInfo.Arguments = string.Format(
-				"-o BatchMode=yes {0} {1}@{2} \"{3}\"",
+				"-o BatchMode=yes {0} \"{1}@{2}\" \"{3}\"",
 //				"-o CheckHostIP=no {0} {1}@{2} \"{3}\"",
 				ResolvedSSHAuthentication,
 				RSyncUsername,

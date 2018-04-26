@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using AutomationTool;
 using System;
@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
+using Tools.DotNETCommon;
 using UnrealBuildTool;
 
 namespace BuildGraph.Tasks
@@ -91,8 +92,7 @@ namespace BuildGraph.Tasks
 		/// <param name="Job">Information about the current job</param>
 		/// <param name="BuildProducts">Set of build products produced by this node.</param>
 		/// <param name="TagNameToFileSet">Mapping from tag names to the set of files they include</param>
-		/// <returns>True if the task succeeded</returns>
-		public override bool Execute(JobContext Job, HashSet<FileReference> BuildProducts, Dictionary<string, HashSet<FileReference>> TagNameToFileSet)
+		public override void Execute(JobContext Job, HashSet<FileReference> BuildProducts, Dictionary<string, HashSet<FileReference>> TagNameToFileSet)
 		{
 			// Get the project path, and check it exists
 			FileReference ProjectFile = null;
@@ -101,8 +101,7 @@ namespace BuildGraph.Tasks
 				ProjectFile = ResolveFile(Parameters.Project);
 				if(!FileReference.Exists(ProjectFile))
 				{
-					CommandUtils.LogError("Couldn't find project '{0}'", ProjectFile.FullName);
-					return false;
+					throw new AutomationException("Couldn't find project '{0}'", ProjectFile.FullName);
 				}
 			}
 
@@ -116,28 +115,24 @@ namespace BuildGraph.Tasks
 			DirectoryReference TargetProjectDir = DirectoryReference.Combine(TargetDir, ProjectFile.GetFileNameWithoutExtension());
 
 			// Get the path to the receipt
-			string ReceiptFileName = TargetReceipt.GetDefaultPath(SourceProjectDir.FullName, Parameters.Target, Parameters.Platform, Parameters.Configuration, Parameters.Architecture);
+			FileReference ReceiptFileName = TargetReceipt.GetDefaultPath(SourceProjectDir, Parameters.Target, Parameters.Platform, Parameters.Configuration, Parameters.Architecture);
 
 			// Try to load it
 			TargetReceipt Receipt;
-			if(!TargetReceipt.TryRead(ReceiptFileName, out Receipt))
+			if(!TargetReceipt.TryRead(ReceiptFileName, SourceEngineDir, SourceProjectDir, out Receipt))
 			{
-				CommandUtils.LogError("Couldn't read receipt '{0}'", ReceiptFileName);
-				return false;
+				throw new AutomationException("Couldn't read receipt '{0}'", ReceiptFileName);
 			}
 
-			// Expand all the paths from the receipt
-			Receipt.ExpandPathVariables(SourceEngineDir, SourceProjectDir);
-			
 			// Stage all the build products needed at runtime
 			HashSet<FileReference> SourceFiles = new HashSet<FileReference>();
 			foreach(BuildProduct BuildProduct in Receipt.BuildProducts.Where(x => x.Type != BuildProductType.StaticLibrary && x.Type != BuildProductType.ImportLibrary))
 			{
-				SourceFiles.Add(new FileReference(BuildProduct.Path));
+				SourceFiles.Add(BuildProduct.Path);
 			}
 			foreach(RuntimeDependency RuntimeDependency in Receipt.RuntimeDependencies.Where(x => x.Type != StagedFileType.UFS))
 			{
-				SourceFiles.UnionWith(CommandUtils.ResolveFilespec(CommandUtils.RootDirectory, RuntimeDependency.Path, new string[]{ ".../*.umap", ".../*.uasset" }));
+				SourceFiles.Add(RuntimeDependency.Path);
 			}
 
 			// Get all the target files
@@ -180,7 +175,6 @@ namespace BuildGraph.Tasks
 
 			// Add the target file to the list of build products
 			BuildProducts.UnionWith(TargetFiles);
-			return true;
 		}
 
 		/// <summary>

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SkeletalMeshImport.cpp: Skeletal mesh import code.
@@ -14,11 +14,9 @@
 #include "Materials/MaterialInterface.h"
 #include "GPUSkinPublicDefs.h"
 #include "ReferenceSkeleton.h"
-#include "SkeletalMeshTypes.h"
 #include "Engine/SkeletalMesh.h"
 #include "EditorFramework/ThumbnailInfo.h"
 #include "SkelImport.h"
-#include "SkeletalMeshSorting.h"
 #include "RawIndexBuffer.h"
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "Logging/TokenizedMessage.h"
@@ -30,6 +28,8 @@
 #include "MeshUtilities.h"
 #include "ClothingAssetInterface.h"
 #include "Factories/FbxSkeletalMeshImportData.h"
+#include "IMeshReductionManagerModule.h"
+#include "Rendering/SkeletalMeshModel.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSkeletalMeshImport, Log, All);
 
@@ -79,8 +79,7 @@ FString FSkeletalMeshImportData::FixupBoneName( const FString &InBoneName )
 {
 	FString BoneName = InBoneName;
 
-	BoneName.Trim();
-	BoneName.TrimTrailing();
+	BoneName.TrimStartAndEndInline();
 	BoneName = BoneName.Replace( TEXT( " " ), TEXT( "-" ) );
 	
 	return BoneName;
@@ -100,7 +99,7 @@ void FSkeletalMeshImportData::CopyLODImportData(
 					   TArray<FMeshWedge>& LODWedges,
 					   TArray<FMeshFace>& LODFaces,	
 					   TArray<FVertInfluence>& LODInfluences,
-					   TArray<int32>& LODPointToRawMap)
+					   TArray<int32>& LODPointToRawMap) const
 {
 	// Copy vertex data.
 	LODPoints.Empty( Points.Num() );
@@ -176,11 +175,13 @@ void ProcessImportMeshMaterials(TArray<FSkeletalMaterial>& Materials, FSkeletalM
 	// If direct linkup of materials is requested, try to find them here - to get a texture name from a 
 	// material name, cut off anything in front of the dot (beyond are special flags).
 	Materials.Empty();
+	int32 SkinOffset = INDEX_NONE;
 	for( int32 MatIndex=0; MatIndex < ImportedMaterials.Num(); ++MatIndex)
 	{			
 		const VMaterial& ImportedMaterial = ImportedMaterials[MatIndex];
 
 		UMaterialInterface* Material = NULL;
+		FString MaterialNameNoSkin = ImportedMaterial.MaterialImportName;
 		if( ImportedMaterial.Material.IsValid() )
 		{
 			Material = ImportedMaterial.Material.Get();
@@ -188,21 +189,25 @@ void ProcessImportMeshMaterials(TArray<FSkeletalMaterial>& Materials, FSkeletalM
 		else
 		{
 			const FString& MaterialName = ImportedMaterial.MaterialImportName;
+			MaterialNameNoSkin = MaterialName;
 			Material = FindObject<UMaterialInterface>(ANY_PACKAGE, *MaterialName);
-
 			if (Material == nullptr)
 			{
-				int32 SkinOffset = MaterialName.Find(TEXT("_skin"));
+				SkinOffset = MaterialName.Find(TEXT("_skin"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
 				if (SkinOffset != INDEX_NONE)
 				{
-					const FString& MaterialNameNoSkin = MaterialName.LeftChop(MaterialName.Len() - SkinOffset);
-					Material = FindObject<UMaterialInterface>(ANY_PACKAGE, *MaterialNameNoSkin);
+					FString SkinXXNumber = MaterialName.Right(MaterialName.Len() - (SkinOffset + 1)).RightChop(4);
+					if (SkinXXNumber.IsNumeric())
+					{
+						MaterialNameNoSkin = MaterialName.LeftChop(MaterialName.Len() - SkinOffset);
+						Material = FindObject<UMaterialInterface>(ANY_PACKAGE, *MaterialNameNoSkin);
+					}
 				}
 			}
 		}
 
 		const bool bEnableShadowCasting = true;
-		Materials.Add( FSkeletalMaterial( Material, bEnableShadowCasting, false, Material != nullptr ? Material->GetFName() : FName(*(ImportedMaterial.MaterialImportName)), FName(*(ImportedMaterial.MaterialImportName)) ) );
+		Materials.Add( FSkeletalMaterial( Material, bEnableShadowCasting, false, Material != nullptr ? Material->GetFName() : FName(*MaterialNameNoSkin), FName(*(ImportedMaterial.MaterialImportName)) ) );
 	}
 
 	int32 NumMaterialsToAdd = FMath::Max<int32>( ImportedMaterials.Num(), ImportData.MaxMaterialIndex + 1 );
@@ -438,330 +443,6 @@ void ProcessImportMeshInfluences(FSkeletalMeshImportData& ImportData)
 	}
 }
 
-//
-// FSavedCustomSortSectionInfo - saves and restores custom triangle order for a single section of the skeletal mesh.
-//
-FSavedCustomSortSectionInfo::FSavedCustomSortSectionInfo(USkeletalMesh* ExistingSkelMesh, int32 LODModelIndex, int32 InSectionIdx)
-:	SavedSectionIdx(InSectionIdx)
-{
-	FStaticLODModel& LODModel = ExistingSkelMesh->GetImportedResource()->LODModels[LODModelIndex];
-	FSkelMeshSection& Section = LODModel.Sections[SavedSectionIdx];
-
-	// Save the sort mode and number of triangles
-	SavedSortOption = Section.TriangleSorting;
-	SavedNumTriangles = Section.NumTriangles;
-
-	// Save CustomLeftRightAxis and CustomLeftRightBoneName
-	FTriangleSortSettings& TriangleSortSettings = ExistingSkelMesh->LODInfo[LODModelIndex].TriangleSortSettings[SavedSectionIdx];
-	SavedCustomLeftRightAxis  = TriangleSortSettings.CustomLeftRightAxis;
-	SavedCustomLeftRightBoneName = TriangleSortSettings.CustomLeftRightBoneName;
-
-	if( SavedSortOption == TRISORT_Custom || SavedSortOption == TRISORT_CustomLeftRight )
-	{
-		// Save the vertices
-		TArray<FSoftSkinVertex> Vertices;
-		LODModel.GetVertices(Vertices);
-		SavedVertices.AddUninitialized(Vertices.Num());
-		for( int32 i=0;i<Vertices.Num();i++ )
-		{
-			SavedVertices[i] = Vertices[i].Position;
-		}
-
-		// Save the indices
-		int32 NumIndices = SavedSortOption == TRISORT_CustomLeftRight ?  Section.NumTriangles * 6 :  Section.NumTriangles * 3;
-		SavedIndices.AddUninitialized(NumIndices);
-
-		if( LODModel.MultiSizeIndexContainer.GetDataTypeSize() == sizeof(uint16) )
-		{
-			// We cant copy indices directly if the source data is 16 bit.
-			for( int32 Index = 0; Index < NumIndices; ++Index )
-			{
-				SavedIndices[Index] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get( Section.BaseIndex + Index );
-			}
-		}
-		else
-		{
-			FMemory::Memcpy(SavedIndices.GetData(), LODModel.MultiSizeIndexContainer.GetIndexBuffer()->GetPointerTo(Section.BaseIndex), NumIndices*LODModel.MultiSizeIndexContainer.GetDataTypeSize());
-		}
-	}
-}
-
-void FSavedCustomSortSectionInfo::Restore(USkeletalMesh* NewSkelMesh, int32 LODModelIndex, TArray<int32>& UnmatchedSections)
-{
-	FStaticLODModel& LODModel = NewSkelMesh->GetImportedResource()->LODModels[LODModelIndex];
-	FSkeletalMeshLODInfo& LODInfo = NewSkelMesh->LODInfo[LODModelIndex];
-
-	// Re-order the UnmatchedSections so the old section index from the previous model is tried first
-	int32 PrevSectionIndex = UnmatchedSections.Find(SavedSectionIdx);
-	if( PrevSectionIndex != 0 && PrevSectionIndex != INDEX_NONE )
-	{
-		Exchange( UnmatchedSections[0], UnmatchedSections[PrevSectionIndex] );
-	}
-
-	// Find the strips in the old triangle data.
-	TArray< TArray<uint32> > OldStrips[2];
-	for( int32 IndexCopy=0; IndexCopy < (SavedSortOption==TRISORT_CustomLeftRight ? 2 : 1); IndexCopy++ )
-	{
-		const uint32* OldIndices = &SavedIndices[(SavedIndices.Num()>>1)*IndexCopy];
-		TArray<uint32> OldTriSet;
-		GetConnectedTriangleSets( SavedNumTriangles, OldIndices, OldTriSet );
-
-		// Convert to strips
-		int32 PrevTriSet = MAX_int32;
-		for( int32 TriIndex=0;TriIndex<SavedNumTriangles; TriIndex++ )
-		{
-			if( OldTriSet[TriIndex] != PrevTriSet )
-			{
-				OldStrips[IndexCopy].AddZeroed();
-				PrevTriSet = OldTriSet[TriIndex];
-			}
-			OldStrips[IndexCopy][OldStrips[IndexCopy].Num()-1].Add(OldIndices[TriIndex*3+0]);
-			OldStrips[IndexCopy][OldStrips[IndexCopy].Num()-1].Add(OldIndices[TriIndex*3+1]);
-			OldStrips[IndexCopy][OldStrips[IndexCopy].Num()-1].Add(OldIndices[TriIndex*3+2]);
-		}
-	}
-
-
-	bool bFoundMatchingSection = false; 
-
-	// Try all remaining sections to find a match
-	for( int32 UnmatchedSectionsIdx=0; !bFoundMatchingSection && UnmatchedSectionsIdx<UnmatchedSections.Num(); UnmatchedSectionsIdx++ )
-	{
-		// Section of the new mesh to try
-		int32 SectionIndex = UnmatchedSections[UnmatchedSectionsIdx];
-		FSkelMeshSection& Section = LODModel.Sections[SectionIndex];
-
-		TArray<uint32> Indices;
-		LODModel.MultiSizeIndexContainer.GetIndexBuffer( Indices );
-		const uint32* NewSectionIndices = Indices.GetData() + Section.BaseIndex;
-
-		// Build the list of triangle sets in the new mesh's section
-		TArray<uint32> TriSet;
-		GetConnectedTriangleSets( Section.NumTriangles, NewSectionIndices, TriSet );
-
-		// Mapping from triangle set number to the array of indices that make up the contiguous strip.
-		TMap<uint32, TArray<uint32> > NewStripsMap;
-		// Go through each triangle and assign it to the appropriate contiguous strip.
-		// This is necessary if the strips in the index buffer are not contiguous.
-		int32 Index=0;
-		for( int32 s=0;s<TriSet.Num();s++ )
-		{
-			// Store the indices for this triangle in the appropriate contiguous set.
-			TArray<uint32>* ThisStrip = NewStripsMap.Find(TriSet[s]);
-			if( !ThisStrip )
-			{
-				ThisStrip = &NewStripsMap.Add(TriSet[s],TArray<uint32>());
-			}
-
-			// Add the three indices for this triangle.
-			ThisStrip->Add(NewSectionIndices[Index++]);
-			ThisStrip->Add(NewSectionIndices[Index++]);
-			ThisStrip->Add(NewSectionIndices[Index++]);
-		}
-
-		// Get the new vertices
-		TArray<FSoftSkinVertex> NewVertices;
-		LODModel.GetVertices(NewVertices);
-
-		// Do the processing once for each copy if the index data
-		for( int32 IndexCopy=0; IndexCopy < (SavedSortOption==TRISORT_CustomLeftRight ? 2 : 1); IndexCopy++ )
-		{
-			// Copy strips in the new mesh's section into an array. We'll remove items from
-			// here as we match to the old strips, so we need to keep a new copy of it each time.
-			TArray<TArray<uint32> > NewStrips;
-			for( TMap<uint32, TArray<uint32> >::TIterator It(NewStripsMap); It; ++It )
-			{
-				NewStrips.Add(It.Value());
-			}
-
-			// Match up old strips to new
-			int32 NumMismatchedStrips = 0;
-			TArray<TArray<uint32> > NewSortedStrips; // output
-			for( int32 OsIdx=0;OsIdx<OldStrips[IndexCopy].Num();OsIdx++ )
-			{
-				TArray<uint32>& OldStripIndices = OldStrips[IndexCopy][OsIdx];
-
-				int32 MatchingNewStrip = INDEX_NONE;
-
-				for( int32 NsIdx=0;NsIdx<NewStrips.Num() && MatchingNewStrip==INDEX_NONE;NsIdx++ )
-				{
-					// Check if we have the same number of triangles in the old and new strips.
-					if( NewStrips[NsIdx].Num() != OldStripIndices.Num() )
-					{
-						continue;
-					}
-
-					// Make a copy of the indices, as we'll remove them as we try to match triangles.
-					TArray<uint32> NewStripIndices = NewStrips[NsIdx];
-
-					// Check if all the triangles in the new strip closely match those in the old.
-					for( int32 OldTriIdx=0;OldTriIdx<OldStripIndices.Num();OldTriIdx+=3 )
-					{
-						// Try to find a match for this triangle in the new strip.
-						bool FoundMatch = false;
-						for( int32 NewTriIdx=0;NewTriIdx<NewStripIndices.Num();NewTriIdx+=3 )
-						{
-							if( (SavedVertices[OldStripIndices[OldTriIdx+0]] - NewVertices[NewStripIndices[NewTriIdx+0]].Position).SizeSquared() < KINDA_SMALL_NUMBER &&
-								(SavedVertices[OldStripIndices[OldTriIdx+1]] - NewVertices[NewStripIndices[NewTriIdx+1]].Position).SizeSquared() < KINDA_SMALL_NUMBER &&
-								(SavedVertices[OldStripIndices[OldTriIdx+2]] - NewVertices[NewStripIndices[NewTriIdx+2]].Position).SizeSquared() < KINDA_SMALL_NUMBER )
-							{
-								// Found a triangle match. Remove the triangle from the new list and try to match the next old triangle.
-								NewStripIndices.RemoveAt(NewTriIdx,3);
-								FoundMatch = true;
-								break;
-							}
-						}
-
-						// If we didn't find a match for this old triangle, the whole strip doesn't match.
-						if( !FoundMatch )
-						{
-							break;
-						}
-					}
-
-					if( NewStripIndices.Num() == 0 )
-					{
-						// strip completely matched
-						MatchingNewStrip = NsIdx;
-					}
-				}
-
-				if( MatchingNewStrip != INDEX_NONE )
-				{
-					NewSortedStrips.Add( NewStrips[MatchingNewStrip] );
-					NewStrips.RemoveAt(MatchingNewStrip);
-				}
-				else
-				{
-					NumMismatchedStrips++;
-				}
-			}
-
-			if( IndexCopy == 0 )
-			{
-				if( 100 * NumMismatchedStrips / OldStrips[0].Num() > 50 )
-				{
-					// If less than 50% of this section's strips match, we assume this is not the correct section.
-					break;
-				}
-
-				// This section matches!
-				bFoundMatchingSection = true;
-
-				// Warn the user if we couldn't match things up.
-				if( NumMismatchedStrips )
-				{
-					UnFbx::FFbxImporter* FFbxImporter = UnFbx::FFbxImporter::GetInstance();
-					FFbxImporter->AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Warning, FText::Format(LOCTEXT("RestoreSortingMismatchedStripsForSection", "While restoring \"{0}\" sort order for section {1}, {2} of {3} strips could not be matched to the new data."),
-						FText::FromString(TriangleSortOptionToString((ETriangleSortOption)SavedSortOption)),
-						FText::AsNumber(SavedSectionIdx),
-						FText::AsNumber(NumMismatchedStrips),
-						FText::AsNumber(OldStrips[0].Num()))), 
-						FFbxErrors::SkeletalMesh_RestoreSortingMismatchedStrips);
-				}
-
-				// Restore the settings saved in the LODInfo (used for the UI)
-				FTriangleSortSettings& TriangleSortSettings = LODInfo.TriangleSortSettings[SectionIndex];
-				TriangleSortSettings.TriangleSorting = SavedSortOption;
-				TriangleSortSettings.CustomLeftRightAxis = SavedCustomLeftRightAxis;
-				TriangleSortSettings.CustomLeftRightBoneName = SavedCustomLeftRightBoneName;
-
-				// Restore the sorting mode. For TRISORT_CustomLeftRight, this will also make the second copy of the index data.
-				FVector SortCenter;
-				bool bHaveSortCenter = NewSkelMesh->GetSortCenterPoint(SortCenter);
-				LODModel.SortTriangles(SortCenter, bHaveSortCenter, SectionIndex, (ETriangleSortOption)SavedSortOption);
-			}
-
-			// Append any strips we couldn't match to the end
-			NewSortedStrips += NewStrips;
-
-			// Export the strips out to the index buffer in order
-			TArray<uint32> Indexes;
-			LODModel.MultiSizeIndexContainer.GetIndexBuffer( Indexes );
-			uint32* NewIndices = Indexes.GetData() + (Section.BaseIndex + Section.NumTriangles*3*IndexCopy);
-			for( int32 StripIdx=0;StripIdx<NewSortedStrips.Num();StripIdx++ )
-			{
-				FMemory::Memcpy( NewIndices, &NewSortedStrips[StripIdx][0], NewSortedStrips[StripIdx].Num() * sizeof(uint32) );
-
-				// Cache-optimize the triangle order inside the final strip
-				CacheOptimizeSortStrip( NewIndices, NewSortedStrips[StripIdx].Num() );
-
-				NewIndices += NewSortedStrips[StripIdx].Num();
-			}
-			LODModel.MultiSizeIndexContainer.CopyIndexBuffer( Indexes );
-		}
-	}
-
-	if( !bFoundMatchingSection )
-	{
-		UnFbx::FFbxImporter* FFbxImporter = UnFbx::FFbxImporter::GetInstance();
-		FFbxImporter->AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Warning, FText::Format(LOCTEXT("FailedRestoreSortingNoSectionMatch", "Unable to restore triangle sort setting \"{0}\" for section number {1} in the old mesh, as a matching section could not be found in the new mesh. The custom sorting information has been lost."),
-			FText::FromString(TriangleSortOptionToString((ETriangleSortOption)SavedSortOption)), FText::AsNumber(SavedSectionIdx))), FFbxErrors::SkeletalMesh_RestoreSortingNoSectionMatch);
-	}
-}
-
-void FSavedCustomSortInfo::Save(USkeletalMesh* ExistingSkelMesh, int32 LODModelIndex)
-{
-	FStaticLODModel& LODModel = ExistingSkelMesh->GetImportedResource()->LODModels[LODModelIndex];
-
-	for( int32 SectionIdx=0;SectionIdx < LODModel.Sections.Num(); SectionIdx++ )
-	{
-		FSkelMeshSection& Section = LODModel.Sections[SectionIdx];
-		if( Section.TriangleSorting != TRISORT_None && Section.NumTriangles > 0 )
-		{
-			new(SortSectionInfos) FSavedCustomSortSectionInfo(ExistingSkelMesh, LODModelIndex, SectionIdx);
-		}
-	}
-}
-
-void FSavedCustomSortInfo::Restore(USkeletalMesh* NewSkeletalMesh, int32 LODModelIndex)
-{
-	FStaticLODModel& LODModel = NewSkeletalMesh->GetImportedResource()->LODModels[LODModelIndex];
-	FSkeletalMeshLODInfo& LODInfo = NewSkeletalMesh->LODInfo[LODModelIndex];
-
-	// List of sections in the new model yet to be matched to the sorted sections
-	TArray<int32> UnmatchedSections;
-	for( int32 SectionIdx=0;SectionIdx<LODModel.Sections.Num();SectionIdx++ )
-	{
-		UnmatchedSections.Add(SectionIdx);
-	}
-
-	for( int32 Idx=0;Idx<SortSectionInfos.Num();Idx++ )
-	{
-		FSavedCustomSortSectionInfo& SortSectionInfo = SortSectionInfos[Idx];
-
-		if( SortSectionInfo.SavedSortOption == TRISORT_Custom || SortSectionInfo.SavedSortOption == TRISORT_CustomLeftRight )
-		{
-			// Restore saved custom sort order
-			SortSectionInfo.Restore(NewSkeletalMesh, LODModelIndex, UnmatchedSections);
-		}
-		else
-		{
-			if( !LODModel.Sections.IsValidIndex(SortSectionInfo.SavedSectionIdx) ||
-				!LODInfo.TriangleSortSettings.IsValidIndex(SortSectionInfo.SavedSectionIdx) )
-			{
-				UnFbx::FFbxImporter* FFbxImporter = UnFbx::FFbxImporter::GetInstance();
-				FFbxImporter->AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Error, FText::Format(LOCTEXT("FailedRestoreSortingForSectionNumber", "Unable to restore triangle sort setting \"{0}\" for section {1} as the new mesh does not contain that many sections. Please find the matching section and apply manually."),
-					FText::FromString(TriangleSortOptionToString((ETriangleSortOption)SortSectionInfo.SavedSortOption)),
-					FText::AsNumber(SortSectionInfo.SavedSectionIdx))), 
-					FFbxErrors::SkeletalMesh_RestoreSortingForSectionNumber);
-				continue;
-			}
-
-			// Update the UI version of the data.
-			FTriangleSortSettings& TriangleSortSettings = LODInfo.TriangleSortSettings[SortSectionInfo.SavedSectionIdx];
-			TriangleSortSettings.TriangleSorting = SortSectionInfo.SavedSortOption;
-			TriangleSortSettings.CustomLeftRightAxis = SortSectionInfo.SavedCustomLeftRightAxis;
-			TriangleSortSettings.CustomLeftRightBoneName = SortSectionInfo.SavedCustomLeftRightBoneName;
-
-			// Just reapply the same sorting method to the section again.
-			FVector SortCenter;
-			bool bHaveSortCenter = NewSkeletalMesh->GetSortCenterPoint(SortCenter);
-			LODModel.SortTriangles(SortCenter, bHaveSortCenter, SortSectionInfo.SavedSectionIdx, (ETriangleSortOption)SortSectionInfo.SavedSortOption);
-		}
-	}		
-}
-
 bool SkeletalMeshIsUsingMaterialSlotNameWorkflow(UAssetImportData* AssetImportData)
 {
 	UFbxSkeletalMeshImportData* ImportData = Cast<UFbxSkeletalMeshImportData>(AssetImportData);
@@ -792,7 +473,7 @@ ExistingSkelMeshData* SaveExistingSkelMeshData(USkeletalMesh* ExistingSkelMesh, 
 		
 		ExistingMeshDataPtr->UseMaterialNameSlotWorkflow = SkeletalMeshIsUsingMaterialSlotNameWorkflow(ExistingSkelMesh->AssetImportData);
 
-		FSkeletalMeshResource* ImportedResource = ExistingSkelMesh->GetImportedResource();
+		FSkeletalMeshModel* ImportedResource = ExistingSkelMesh->GetImportedModel();
 
 		//Add the existing Material slot name data
 		for (int32 MaterialIndex = 0; MaterialIndex < ExistingSkelMesh->Materials.Num(); ++MaterialIndex)
@@ -808,13 +489,11 @@ ExistingSkelMeshData* SaveExistingSkelMeshData(USkeletalMesh* ExistingSkelMesh, 
 				int32 SectionMaterialIndex = ImportedResource->LODModels[LodIndex].Sections[SectionIndex].MaterialIndex;
 				bool SectionCastShadow = ImportedResource->LODModels[LodIndex].Sections[SectionIndex].bCastShadow;
 				bool SectionRecomputeTangents = ImportedResource->LODModels[LodIndex].Sections[SectionIndex].bRecomputeTangent;
-				ExistingMeshDataPtr->ExistingImportMeshLodSectionMaterialData[LodIndex].Add(ExistingMeshLodSectionData(ExistingMeshDataPtr->ExistingImportMaterialOriginalNameData[SectionMaterialIndex], SectionCastShadow, SectionRecomputeTangents));
+				if (ExistingMeshDataPtr->ExistingImportMaterialOriginalNameData.IsValidIndex(SectionMaterialIndex))
+				{
+					ExistingMeshDataPtr->ExistingImportMeshLodSectionMaterialData[LodIndex].Add(ExistingMeshLodSectionData(ExistingMeshDataPtr->ExistingImportMaterialOriginalNameData[SectionMaterialIndex], SectionCastShadow, SectionRecomputeTangents));
+				}
 			}
-		}
-
-		if (ImportedResource->LODModels.Num() > 0)
-		{
-			ExistingMeshDataPtr->ExistingSortInfo.Save(ExistingSkelMesh, 0);
 		}
 
 		ExistingMeshDataPtr->ExistingSockets = ExistingSkelMesh->GetMeshOnlySocketList();
@@ -838,7 +517,7 @@ ExistingSkelMeshData* SaveExistingSkelMeshData(USkeletalMesh* ExistingSkelMesh, 
 			// Copy off the remaining LODs.
 			for ( int32 LODModelIndex = 0 ; LODModelIndex < ImportedResource->LODModels.Num() ; ++LODModelIndex )
 			{
-				FStaticLODModel& LODModel = ImportedResource->LODModels[LODModelIndex];
+				FSkeletalMeshLODModel& LODModel = ImportedResource->LODModels[LODModelIndex];
 				LODModel.RawPointIndices.Lock( LOCK_READ_ONLY );
 				LODModel.LegacyRawPointIndices.Lock( LOCK_READ_ONLY );
 			}
@@ -847,15 +526,6 @@ ExistingSkelMeshData* SaveExistingSkelMeshData(USkeletalMesh* ExistingSkelMesh, 
 			{
 				LODModel.RawPointIndices.Unlock();
 				LODModel.LegacyRawPointIndices.Unlock();
-
-				FMultiSizeIndexContainerData ExistingData;
-				LODModel.MultiSizeIndexContainer.GetIndexBufferData( ExistingData );
-				ExistingMeshDataPtr->ExistingIndexBufferData.Add( ExistingData );
-
-				FMultiSizeIndexContainerData ExistingAdjacencyData;
-				LODModel.AdjacencyMultiSizeIndexContainer.GetIndexBufferData(ExistingAdjacencyData);
-				ExistingMeshDataPtr->ExistingAdjacencyIndexBufferData.Add(ExistingAdjacencyData);
-
 			}
 
 			ExistingMeshDataPtr->ExistingLODInfo = ExistingSkelMesh->LODInfo;
@@ -891,6 +561,8 @@ ExistingSkelMeshData* SaveExistingSkelMeshData(USkeletalMesh* ExistingSkelMesh, 
 
 		ExistingMeshDataPtr->ExistingClothingAssets = ExistingSkelMesh->MeshClothingAssets;
 
+		ExistingMeshDataPtr->ExistingSamplingInfo = ExistingSkelMesh->GetSamplingInfo();
+
 		//Add the last fbx import data
 		UFbxSkeletalMeshImportData* ImportData = Cast<UFbxSkeletalMeshImportData>(ExistingSkelMesh->AssetImportData);
 		if (ImportData && ExistingMeshDataPtr->UseMaterialNameSlotWorkflow)
@@ -921,7 +593,8 @@ void TryRegenerateLODs(ExistingSkelMeshData* MeshData, USkeletalMesh* SkeletalMe
 	int32 TotalLOD = MeshData->ExistingLODModels.Num();
 
 	// see if mesh reduction util is available
-	static bool bAutoMeshReductionAvailable = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>("MeshUtilities").GetSkeletalMeshReductionInterface() != NULL;
+	IMeshReductionManagerModule& Module = FModuleManager::Get().LoadModuleChecked<IMeshReductionManagerModule>("MeshReductionInterface");
+	static bool bAutoMeshReductionAvailable = Module.GetSkeletalMeshReductionInterface() != NULL;
 
 	if (bAutoMeshReductionAvailable)
 	{
@@ -962,302 +635,330 @@ void TryRegenerateLODs(ExistingSkelMeshData* MeshData, USkeletalMesh* SkeletalMe
 	}
 }
 
-void RestoreExistingSkelMeshData(ExistingSkelMeshData* MeshData, USkeletalMesh* SkeletalMesh, int32 ReimportLODIndex)
+void RestoreExistingSkelMeshData(ExistingSkelMeshData* MeshData, USkeletalMesh* SkeletalMesh, int32 ReimportLODIndex, bool bResetMaterialSlots, bool bIsReimportPreview)
 {
-	if(MeshData && SkeletalMesh)
+	if (!MeshData || !SkeletalMesh)
+	{
+		return;
+	}
+
+	if (bResetMaterialSlots && MeshData->bSaveRestoreMaterials)
+	{
+		// If "Reset Material Slot" is enable we want to change the material array to reflect the incoming FBX
+		// But we want to try to keep material instance from the existing data, we will match the one that fit
+		// but simply put the same index material instance on the one that do not match. Because we will fill
+		// the material slot name, artist will be able to remap the material instance correctly
+		for (int32 MaterialIndex = 0; MaterialIndex < SkeletalMesh->Materials.Num(); ++MaterialIndex)
+		{
+			if (SkeletalMesh->Materials[MaterialIndex].MaterialInterface == nullptr)
+			{
+				bool bFoundMatch = false;
+				for (int32 ExistMaterialIndex = 0; ExistMaterialIndex < MeshData->ExistingMaterials.Num(); ++ExistMaterialIndex)
+				{
+					if (MeshData->ExistingMaterials[ExistMaterialIndex].ImportedMaterialSlotName == SkeletalMesh->Materials[MaterialIndex].ImportedMaterialSlotName)
+					{
+						bFoundMatch = true;
+						SkeletalMesh->Materials[MaterialIndex].MaterialInterface = MeshData->ExistingMaterials[ExistMaterialIndex].MaterialInterface;
+					}
+				}
+
+				if (!bFoundMatch && MeshData->ExistingMaterials.IsValidIndex(MaterialIndex))
+				{
+					SkeletalMesh->Materials[MaterialIndex].MaterialInterface = MeshData->ExistingMaterials[MaterialIndex].MaterialInterface;
+				}
+			}
+		}
+	}
+	else if (MeshData->bSaveRestoreMaterials)
 	{
 		// Fix Materials array to be the correct size.
-		if (MeshData->bSaveRestoreMaterials)
+
+		if (MeshData->ExistingMaterials.Num() > SkeletalMesh->Materials.Num())
 		{
-			if (MeshData->ExistingMaterials.Num() > SkeletalMesh->Materials.Num())
+			for (int32 i = 0; i < MeshData->ExistingLODModels.Num(); i++)
 			{
-				for (int32 i = 0; i < MeshData->ExistingLODModels.Num(); i++)
+				FSkeletalMeshLODModel& LODModel = MeshData->ExistingLODModels[i];
+				FSkeletalMeshLODInfo& LODInfo = MeshData->ExistingLODInfo[i];
+				for (int32 OldMaterialIndex : LODInfo.LODMaterialMap)
 				{
-					FStaticLODModel& LODModel = MeshData->ExistingLODModels[i];
-					FSkeletalMeshLODInfo& LODInfo = MeshData->ExistingLODInfo[i];
-					for (int32 OldMaterialIndex : LODInfo.LODMaterialMap)
+					int32 MaterialNumber = SkeletalMesh->Materials.Num();
+					if (OldMaterialIndex >= MaterialNumber && OldMaterialIndex < MeshData->ExistingMaterials.Num())
+					{
+						SkeletalMesh->Materials.AddZeroed((OldMaterialIndex + 1) - MaterialNumber);
+					}
+				}
+			}
+		}
+		else if (SkeletalMesh->Materials.Num() > MeshData->ExistingMaterials.Num())
+		{
+			int32 ExistingMaterialsCount = MeshData->ExistingMaterials.Num();
+			MeshData->ExistingMaterials.AddZeroed(SkeletalMesh->Materials.Num() - MeshData->ExistingMaterials.Num());
+			//Set the ImportedMaterialSlotName on new material slot to allow next reimport to reorder the array correctly
+			for (int32 MaterialIndex = ExistingMaterialsCount; MaterialIndex < SkeletalMesh->Materials.Num(); ++MaterialIndex)
+			{
+				MeshData->ExistingMaterials[MaterialIndex].ImportedMaterialSlotName = SkeletalMesh->Materials[MaterialIndex].ImportedMaterialSlotName;
+			}
+		}
+			
+		//Make sure the material array fit also with the LOD 0 restoration
+		//The save existing data is removing the LOD 0 model and info, so we must use the ExistingImportMeshLodSectionMaterialData
+		//to retrieve the user changes on the LOD 0.
+		if (MeshData->ExistingMaterials.Num() > SkeletalMesh->Materials.Num() && MeshData->ExistingImportMeshLodSectionMaterialData.Num() > 0)
+		{
+			for (int32 SectionIndex = 0; SectionIndex < MeshData->ExistingImportMeshLodSectionMaterialData[0].Num(); SectionIndex++)
+			{
+				FName ExistingMaterialSlotName = MeshData->ExistingImportMeshLodSectionMaterialData[0][SectionIndex].ImportedMaterialSlotName;
+				for (int32 MaterialIndex = 0; MaterialIndex < MeshData->ExistingMaterials.Num(); ++MaterialIndex)
+				{
+					if (ExistingMaterialSlotName == MeshData->ExistingMaterials[MaterialIndex].ImportedMaterialSlotName)
 					{
 						int32 MaterialNumber = SkeletalMesh->Materials.Num();
-						if (OldMaterialIndex >= MaterialNumber && OldMaterialIndex < MeshData->ExistingMaterials.Num())
+						if (MaterialIndex >= MaterialNumber && MaterialIndex < MeshData->ExistingMaterials.Num())
 						{
-							SkeletalMesh->Materials.AddZeroed((OldMaterialIndex + 1) - MaterialNumber);
+							SkeletalMesh->Materials.AddZeroed((MaterialIndex + 1) - MaterialNumber);
 						}
+						break;
 					}
 				}
-			}
-			else if (SkeletalMesh->Materials.Num() > MeshData->ExistingMaterials.Num())
-			{
-				int32 ExistingMaterialsCount = MeshData->ExistingMaterials.Num();
-				MeshData->ExistingMaterials.AddZeroed(SkeletalMesh->Materials.Num() - MeshData->ExistingMaterials.Num());
-				//Set the ImportedMaterialSlotName on new material slot to allow next reimport to reorder the array correctly
-				for (int32 MaterialIndex = ExistingMaterialsCount; MaterialIndex < SkeletalMesh->Materials.Num(); ++MaterialIndex)
-				{
-					MeshData->ExistingMaterials[MaterialIndex].ImportedMaterialSlotName = SkeletalMesh->Materials[MaterialIndex].ImportedMaterialSlotName;
-				}
-			}
-			
-			//Make sure the material array fit also with the LOD 0 restoration
-			//The save existing data is removing the LOD 0 model and info, so we must use the ExistingImportMeshLodSectionMaterialData
-			//to retrieve the user changes on the LOD 0.
-			if (MeshData->ExistingMaterials.Num() > SkeletalMesh->Materials.Num() && MeshData->ExistingImportMeshLodSectionMaterialData.Num() > 0)
-			{
-				for (int32 SectionIndex = 0; SectionIndex < MeshData->ExistingImportMeshLodSectionMaterialData[0].Num(); SectionIndex++)
-				{
-					FName ExistingMaterialSlotName = MeshData->ExistingImportMeshLodSectionMaterialData[0][SectionIndex].ImportedMaterialSlotName;
-					for (int32 MaterialIndex = 0; MaterialIndex < MeshData->ExistingMaterials.Num(); ++MaterialIndex)
-					{
-						if (ExistingMaterialSlotName == MeshData->ExistingMaterials[MaterialIndex].ImportedMaterialSlotName)
-						{
-							int32 MaterialNumber = SkeletalMesh->Materials.Num();
-							if (MaterialIndex >= MaterialNumber && MaterialIndex < MeshData->ExistingMaterials.Num())
-							{
-								SkeletalMesh->Materials.AddZeroed((MaterialIndex + 1) - MaterialNumber);
-							}
-							break;
-						}
-					}
 					
-				}
-			}
-
-			for (int32 CopyIndex = 0; CopyIndex < SkeletalMesh->Materials.Num(); ++CopyIndex)
-			{
-				if (MeshData->ExistingMaterials[CopyIndex].ImportedMaterialSlotName == NAME_None)
-				{
-					MeshData->ExistingMaterials[CopyIndex].ImportedMaterialSlotName = SkeletalMesh->Materials[CopyIndex].ImportedMaterialSlotName;
-					//Set some default value for the MaterialSlotName
-					if (MeshData->ExistingMaterials[CopyIndex].MaterialSlotName == NAME_None)
-					{
-						MeshData->ExistingMaterials[CopyIndex].MaterialSlotName = SkeletalMesh->Materials[CopyIndex].MaterialSlotName;
-					}
-				}
-				SkeletalMesh->Materials[CopyIndex] = MeshData->ExistingMaterials[CopyIndex];
 			}
 		}
 
-		//Do everything we need for base LOD re-import
-		if (ReimportLODIndex < 1)
+		for (int32 CopyIndex = 0; CopyIndex < SkeletalMesh->Materials.Num(); ++CopyIndex)
 		{
-			// this is not ideal. Ideally we'll have to save only diff with indicating which joints, 
-			// but for now, we allow them to keep the previous pose IF the element count is same
-			if (MeshData->ExistingRetargetBasePose.Num() == SkeletalMesh->RefSkeleton.GetRawBoneNum())
+			if (MeshData->ExistingMaterials[CopyIndex].ImportedMaterialSlotName == NAME_None)
 			{
-				SkeletalMesh->RetargetBasePose = MeshData->ExistingRetargetBasePose;
-			}
-
-			// Assign sockets from old version of this SkeletalMesh.
-			// Only copy ones for bones that exist in the new mesh.
-			for (int32 i = 0; i < MeshData->ExistingSockets.Num(); i++)
-			{
-				const int32 BoneIndex = SkeletalMesh->RefSkeleton.FindBoneIndex(MeshData->ExistingSockets[i]->BoneName);
-				if (BoneIndex != INDEX_NONE)
+				MeshData->ExistingMaterials[CopyIndex].ImportedMaterialSlotName = SkeletalMesh->Materials[CopyIndex].ImportedMaterialSlotName;
+				//Set some default value for the MaterialSlotName
+				if (MeshData->ExistingMaterials[CopyIndex].MaterialSlotName == NAME_None)
 				{
-					SkeletalMesh->GetMeshOnlySocketList().Add(MeshData->ExistingSockets[i]);
+					MeshData->ExistingMaterials[CopyIndex].MaterialSlotName = SkeletalMesh->Materials[CopyIndex].MaterialSlotName;
 				}
 			}
+			SkeletalMesh->Materials[CopyIndex] = MeshData->ExistingMaterials[CopyIndex];
+		}
+	}
 
-			// We copy back and fix-up the LODs that still work with this skeleton.
-			if (MeshData->ExistingLODModels.Num() > 0)
+	//Do everything we need for base LOD re-import
+	if (ReimportLODIndex < 1)
+	{
+		// this is not ideal. Ideally we'll have to save only diff with indicating which joints, 
+		// but for now, we allow them to keep the previous pose IF the element count is same
+		if (MeshData->ExistingRetargetBasePose.Num() == SkeletalMesh->RefSkeleton.GetRawBoneNum())
+		{
+			SkeletalMesh->RetargetBasePose = MeshData->ExistingRetargetBasePose;
+		}
+
+		// Assign sockets from old version of this SkeletalMesh.
+		// Only copy ones for bones that exist in the new mesh.
+		for (int32 i = 0; i < MeshData->ExistingSockets.Num(); i++)
+		{
+			const int32 BoneIndex = SkeletalMesh->RefSkeleton.FindBoneIndex(MeshData->ExistingSockets[i]->BoneName);
+			if (BoneIndex != INDEX_NONE)
 			{
-				bool bRegenLODs = true;
-				if (SkeletonsAreCompatible(SkeletalMesh->RefSkeleton, MeshData->ExistingRefSkeleton))
+				SkeletalMesh->GetMeshOnlySocketList().Add(MeshData->ExistingSockets[i]);
+			}
+		}
+
+		// We copy back and fix-up the LODs that still work with this skeleton.
+		if (MeshData->ExistingLODModels.Num() > 0)
+		{
+			bool bRegenLODs = true;
+			if (SkeletonsAreCompatible(SkeletalMesh->RefSkeleton, MeshData->ExistingRefSkeleton))
+			{
+				bRegenLODs = false;
+				// First create mapping table from old skeleton to new skeleton.
+				TArray<int32> OldToNewMap;
+				OldToNewMap.AddUninitialized(MeshData->ExistingRefSkeleton.GetRawBoneNum());
+				for (int32 i = 0; i < MeshData->ExistingRefSkeleton.GetRawBoneNum(); i++)
 				{
-					bRegenLODs = false;
-					// First create mapping table from old skeleton to new skeleton.
-					TArray<int32> OldToNewMap;
-					OldToNewMap.AddUninitialized(MeshData->ExistingRefSkeleton.GetRawBoneNum());
-					for (int32 i = 0; i < MeshData->ExistingRefSkeleton.GetRawBoneNum(); i++)
+					OldToNewMap[i] = SkeletalMesh->RefSkeleton.FindBoneIndex(MeshData->ExistingRefSkeleton.GetBoneName(i));
+				}
+
+				for (int32 i = 0; i < MeshData->ExistingLODModels.Num(); i++)
+				{
+					FSkeletalMeshLODModel& LODModel = MeshData->ExistingLODModels[i];
+					FSkeletalMeshLODInfo& LODInfo = MeshData->ExistingLODInfo[i];
+
+
+					// Fix ActiveBoneIndices array.
+					bool bMissingBone = false;
+					FName MissingBoneName = NAME_None;
+					for (int32 j = 0; j < LODModel.ActiveBoneIndices.Num() && !bMissingBone; j++)
 					{
-						OldToNewMap[i] = SkeletalMesh->RefSkeleton.FindBoneIndex(MeshData->ExistingRefSkeleton.GetBoneName(i));
+						int32 NewBoneIndex = OldToNewMap[LODModel.ActiveBoneIndices[j]];
+						if (NewBoneIndex == INDEX_NONE)
+						{
+							bMissingBone = true;
+							MissingBoneName = MeshData->ExistingRefSkeleton.GetBoneName(LODModel.ActiveBoneIndices[j]);
+						}
+						else
+						{
+							LODModel.ActiveBoneIndices[j] = NewBoneIndex;
+						}
 					}
 
-					for (int32 i = 0; i < MeshData->ExistingLODModels.Num(); i++)
+					// Fix RequiredBones array.
+					for (int32 j = 0; j < LODModel.RequiredBones.Num() && !bMissingBone; j++)
 					{
-						FStaticLODModel& LODModel = MeshData->ExistingLODModels[i];
-						FSkeletalMeshLODInfo& LODInfo = MeshData->ExistingLODInfo[i];
-
-
-						// Fix ActiveBoneIndices array.
-						bool bMissingBone = false;
-						FName MissingBoneName = NAME_None;
-						for (int32 j = 0; j < LODModel.ActiveBoneIndices.Num() && !bMissingBone; j++)
-						{
-							int32 NewBoneIndex = OldToNewMap[LODModel.ActiveBoneIndices[j]];
-							if (NewBoneIndex == INDEX_NONE)
-							{
-								bMissingBone = true;
-								MissingBoneName = MeshData->ExistingRefSkeleton.GetBoneName(LODModel.ActiveBoneIndices[j]);
-							}
-							else
-							{
-								LODModel.ActiveBoneIndices[j] = NewBoneIndex;
-							}
-						}
-
-						// Fix RequiredBones array.
-						for (int32 j = 0; j < LODModel.RequiredBones.Num() && !bMissingBone; j++)
-						{
 							const int32 OldBoneIndex = LODModel.RequiredBones[j];
 
 							if(OldToNewMap.IsValidIndex(OldBoneIndex))	//Previously virtual bones could end up in this array
 																		// Must validate against this
 							{
 								const int32 NewBoneIndex = OldToNewMap[OldBoneIndex];
-								if (NewBoneIndex == INDEX_NONE)
-								{
-									bMissingBone = true;
+							if (NewBoneIndex == INDEX_NONE)
+							{
+								bMissingBone = true;
 									MissingBoneName = MeshData->ExistingRefSkeleton.GetBoneName(OldBoneIndex);
-								}
-								else
-								{
-									LODModel.RequiredBones[j] = NewBoneIndex;
-								}
 							}
+							else
+							{
+								LODModel.RequiredBones[j] = NewBoneIndex;
+								}
+						}
 							else
 							{
 								//Bone didn't exist in our required bones, clean up. 
 								LODModel.RequiredBones.RemoveAt(j,1,false);
 								--j;
 							}
-						}
+					}
 
-						// Sort ascending for parent child relationship
-						LODModel.RequiredBones.Sort();
-						SkeletalMesh->RefSkeleton.EnsureParentExists(LODModel.ActiveBoneIndices);
+					// Sort ascending for parent child relationship
+					LODModel.RequiredBones.Sort();
+					SkeletalMesh->RefSkeleton.EnsureParentsExistAndSort(LODModel.ActiveBoneIndices);
 
-						// Fix the sections' BoneMaps.
-						for (int32 SectionIndex = 0; SectionIndex < LODModel.Sections.Num(); SectionIndex++)
+					// Fix the sections' BoneMaps.
+					for (int32 SectionIndex = 0; SectionIndex < LODModel.Sections.Num(); SectionIndex++)
+					{
+						FSkelMeshSection& Section = LODModel.Sections[SectionIndex];
+						for (int32 BoneIndex = 0; BoneIndex < Section.BoneMap.Num(); BoneIndex++)
 						{
-							FSkelMeshSection& Section = LODModel.Sections[SectionIndex];
-							for (int32 BoneIndex = 0; BoneIndex < Section.BoneMap.Num(); BoneIndex++)
+							int32 NewBoneIndex = OldToNewMap[Section.BoneMap[BoneIndex]];
+							if (NewBoneIndex == INDEX_NONE)
 							{
-								int32 NewBoneIndex = OldToNewMap[Section.BoneMap[BoneIndex]];
-								if (NewBoneIndex == INDEX_NONE)
-								{
-									bMissingBone = true;
-									MissingBoneName = MeshData->ExistingRefSkeleton.GetBoneName(Section.BoneMap[BoneIndex]);
-									break;
-								}
-								else
-								{
-									Section.BoneMap[BoneIndex] = NewBoneIndex;
-								}
-							}
-							if (bMissingBone)
-							{
+								bMissingBone = true;
+								MissingBoneName = MeshData->ExistingRefSkeleton.GetBoneName(Section.BoneMap[BoneIndex]);
 								break;
 							}
+							else
+							{
+								Section.BoneMap[BoneIndex] = NewBoneIndex;
+							}
 						}
-
 						if (bMissingBone)
 						{
-							UnFbx::FFbxImporter* FFbxImporter = UnFbx::FFbxImporter::GetInstance();
-							FFbxImporter->AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Warning, FText::Format(LOCTEXT("NewMeshMissingBoneFromLOD", "New mesh is missing bone '{0}' required by an LOD."), FText::FromName(MissingBoneName))), FFbxErrors::SkeletalMesh_LOD_MissingBone);
-							bRegenLODs = true;
 							break;
 						}
-						else
-						{
-							FStaticLODModel* NewLODModel = new(SkeletalMesh->GetImportedResource()->LODModels) FStaticLODModel(LODModel);
-
-							NewLODModel->RebuildIndexBuffer(&MeshData->ExistingIndexBufferData[i], &MeshData->ExistingAdjacencyIndexBufferData[i]);
-
-							SkeletalMesh->LODInfo.Add(LODInfo);
-						}
 					}
-				}
 
-				if (bRegenLODs)
-				{
-					TryRegenerateLODs(MeshData, SkeletalMesh);
-				}
-			}
-
-			for (int32 AssetIndex = 0; AssetIndex < MeshData->ExistingPhysicsAssets.Num(); ++AssetIndex)
-			{
-				UPhysicsAsset* PhysicsAsset = MeshData->ExistingPhysicsAssets[AssetIndex];
-				if (AssetIndex == 0)
-				{
-					// First asset is the one that the skeletal mesh should point too
-					SkeletalMesh->PhysicsAsset = PhysicsAsset;
-				}
-				// No need to mark as modified here, because the asset hasn't actually changed
-				if (PhysicsAsset)
-				{
-					PhysicsAsset->PreviewSkeletalMesh = SkeletalMesh;
-				}
-			}
-
-			SkeletalMesh->ShadowPhysicsAsset = MeshData->ExistingShadowPhysicsAsset;
-
-			SkeletalMesh->Skeleton = MeshData->ExistingSkeleton;
-
-			// Copy mirror table.
-			SkeletalMesh->ImportMirrorTable(MeshData->ExistingMirrorTable);
-
-			SkeletalMesh->MorphTargets.Empty(MeshData->ExistingMorphTargets.Num());
-			SkeletalMesh->MorphTargets.Append(MeshData->ExistingMorphTargets);
-			SkeletalMesh->InitMorphTargets();
-
-			SkeletalMesh->bUseFullPrecisionUVs = MeshData->bExistingUseFullPrecisionUVs;
-
-			MeshData->ExistingSortInfo.Restore(SkeletalMesh, 0);
-
-			SkeletalMesh->AssetImportData = MeshData->ExistingAssetImportData.Get();
-			SkeletalMesh->ThumbnailInfo = MeshData->ExistingThumbnailInfo.Get();
-
-			SkeletalMesh->MeshClothingAssets = MeshData->ExistingClothingAssets;
-
-			for(UClothingAssetBase* ClothingAsset : SkeletalMesh->MeshClothingAssets)
-			{
-				ClothingAsset->RefreshBoneMapping(SkeletalMesh);
-			}
-
-			//Restore the section change only for the base LOD, other LOD will be restore when setting the LOD
-			if (MeshData->UseMaterialNameSlotWorkflow)
-			{
-				FStaticLODModel &NewSkelMeshLodModel = SkeletalMesh->GetImportedResource()->LODModels[0];
-				//Restore the section changes from the old import data
-				for (int32 SectionIndex = 0; SectionIndex < NewSkelMeshLodModel.Sections.Num(); SectionIndex++)
-				{
-					if (MeshData->LastImportMeshLodSectionMaterialData.Num() < 1 || MeshData->LastImportMeshLodSectionMaterialData[0].Num() <= SectionIndex ||
-						MeshData->ExistingImportMeshLodSectionMaterialData.Num() < 1 || MeshData->ExistingImportMeshLodSectionMaterialData[0].Num() <= SectionIndex)
+					if (bMissingBone)
 					{
+						UnFbx::FFbxImporter* FFbxImporter = UnFbx::FFbxImporter::GetInstance();
+						FFbxImporter->AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Warning, FText::Format(LOCTEXT("NewMeshMissingBoneFromLOD", "New mesh is missing bone '{0}' required by an LOD."), FText::FromName(MissingBoneName))), FFbxErrors::SkeletalMesh_LOD_MissingBone);
+						bRegenLODs = true;
 						break;
 					}
-					//Get the current skelmesh section slot import name
-					FName ExistMeshSectionSlotName = MeshData->ExistingImportMeshLodSectionMaterialData[0][SectionIndex].ImportedMaterialSlotName;
-					bool ExistingSectionCastShadow = MeshData->ExistingImportMeshLodSectionMaterialData[0][SectionIndex].bCastShadow;
-					bool ExistingSectionRecomputeTangents = MeshData->ExistingImportMeshLodSectionMaterialData[0][SectionIndex].bRecomputeTangents;
-
-					//Get the new skelmesh section slot import name
-					int32 NewMeshSectionMaterialIndex = NewSkelMeshLodModel.Sections[SectionIndex].MaterialIndex;
-					FName NewMeshSectionSlotName = SkeletalMesh->Materials[NewMeshSectionMaterialIndex].ImportedMaterialSlotName;
-
-					//Get the Last imported skelmesh section slot import name
-					FName OriginalImportMeshSectionSlotName = MeshData->LastImportMeshLodSectionMaterialData[0][SectionIndex];
-
-					if (OriginalImportMeshSectionSlotName == NewMeshSectionSlotName && ExistMeshSectionSlotName != OriginalImportMeshSectionSlotName)
+					else
 					{
-						//The last import slot name match the New import slot name, but the Exist slot name is different then the last import slot name.
-						//This mean the user has change the section assign slot and the fbx file did not change it
-						//Override the new section material index to use the one that the user set
-						for (int32 RemapMaterialIndex = 0; RemapMaterialIndex < SkeletalMesh->Materials.Num(); ++RemapMaterialIndex)
+						FSkeletalMeshLODModel* NewLODModel = new(SkeletalMesh->GetImportedModel()->LODModels) FSkeletalMeshLODModel(LODModel);
+
+						SkeletalMesh->LODInfo.Add(LODInfo);
+					}
+				}
+			}
+
+			if (bRegenLODs && !bIsReimportPreview)
+			{
+				TryRegenerateLODs(MeshData, SkeletalMesh);
+			}
+		}
+
+		for (int32 AssetIndex = 0; AssetIndex < MeshData->ExistingPhysicsAssets.Num(); ++AssetIndex)
+		{
+			UPhysicsAsset* PhysicsAsset = MeshData->ExistingPhysicsAssets[AssetIndex];
+			if (AssetIndex == 0)
+			{
+				// First asset is the one that the skeletal mesh should point too
+				SkeletalMesh->PhysicsAsset = PhysicsAsset;
+			}
+			// No need to mark as modified here, because the asset hasn't actually changed
+			if (PhysicsAsset)
+			{
+				PhysicsAsset->PreviewSkeletalMesh = SkeletalMesh;
+			}
+		}
+
+		SkeletalMesh->ShadowPhysicsAsset = MeshData->ExistingShadowPhysicsAsset;
+
+		SkeletalMesh->Skeleton = MeshData->ExistingSkeleton;
+
+		// Copy mirror table.
+		SkeletalMesh->ImportMirrorTable(MeshData->ExistingMirrorTable);
+
+		SkeletalMesh->MorphTargets.Empty(MeshData->ExistingMorphTargets.Num());
+		SkeletalMesh->MorphTargets.Append(MeshData->ExistingMorphTargets);
+		SkeletalMesh->InitMorphTargets();
+
+		SkeletalMesh->bUseFullPrecisionUVs = MeshData->bExistingUseFullPrecisionUVs;
+
+		SkeletalMesh->AssetImportData = MeshData->ExistingAssetImportData.Get();
+		SkeletalMesh->ThumbnailInfo = MeshData->ExistingThumbnailInfo.Get();
+
+		SkeletalMesh->MeshClothingAssets = MeshData->ExistingClothingAssets;
+
+		for(UClothingAssetBase* ClothingAsset : SkeletalMesh->MeshClothingAssets)
+		{
+			ClothingAsset->RefreshBoneMapping(SkeletalMesh);
+		}
+
+		SkeletalMesh->SetSamplingInfo(MeshData->ExistingSamplingInfo);
+
+		//Restore the section change only for the base LOD, other LOD will be restore when setting the LOD.
+		if (MeshData->UseMaterialNameSlotWorkflow)
+		{
+			FSkeletalMeshLODModel &NewSkelMeshLodModel = SkeletalMesh->GetImportedModel()->LODModels[0];
+			//Restore the section changes from the old import data
+			for (int32 SectionIndex = 0; SectionIndex < NewSkelMeshLodModel.Sections.Num(); SectionIndex++)
+			{
+				if (MeshData->LastImportMeshLodSectionMaterialData.Num() < 1 || MeshData->LastImportMeshLodSectionMaterialData[0].Num() <= SectionIndex ||
+					MeshData->ExistingImportMeshLodSectionMaterialData.Num() < 1 || MeshData->ExistingImportMeshLodSectionMaterialData[0].Num() <= SectionIndex)
+				{
+					break;
+				}
+				//Get the current skelmesh section slot import name
+				FName ExistMeshSectionSlotName = MeshData->ExistingImportMeshLodSectionMaterialData[0][SectionIndex].ImportedMaterialSlotName;
+				bool ExistingSectionCastShadow = MeshData->ExistingImportMeshLodSectionMaterialData[0][SectionIndex].bCastShadow;
+				bool ExistingSectionRecomputeTangents = MeshData->ExistingImportMeshLodSectionMaterialData[0][SectionIndex].bRecomputeTangents;
+
+				//Get the new skelmesh section slot import name
+				int32 NewMeshSectionMaterialIndex = NewSkelMeshLodModel.Sections[SectionIndex].MaterialIndex;
+				FName NewMeshSectionSlotName = SkeletalMesh->Materials[NewMeshSectionMaterialIndex].ImportedMaterialSlotName;
+
+				//Get the Last imported skelmesh section slot import name
+				FName OriginalImportMeshSectionSlotName = MeshData->LastImportMeshLodSectionMaterialData[0][SectionIndex];
+
+				if (OriginalImportMeshSectionSlotName == NewMeshSectionSlotName && ExistMeshSectionSlotName != OriginalImportMeshSectionSlotName)
+				{
+					//The last import slot name match the New import slot name, but the Exist slot name is different then the last import slot name.
+					//This mean the user has change the section assign slot and the fbx file did not change it
+					//Override the new section material index to use the one that the user set
+					for (int32 RemapMaterialIndex = 0; RemapMaterialIndex < SkeletalMesh->Materials.Num(); ++RemapMaterialIndex)
+					{
+						const FSkeletalMaterial &NewSectionMaterial = SkeletalMesh->Materials[RemapMaterialIndex];
+						if (NewSectionMaterial.ImportedMaterialSlotName == ExistMeshSectionSlotName)
 						{
-							const FSkeletalMaterial &NewSectionMaterial = SkeletalMesh->Materials[RemapMaterialIndex];
-							if (NewSectionMaterial.ImportedMaterialSlotName == ExistMeshSectionSlotName)
-							{
-								NewSkelMeshLodModel.Sections[SectionIndex].MaterialIndex = RemapMaterialIndex;
-								break;
-							}
+							NewSkelMeshLodModel.Sections[SectionIndex].MaterialIndex = RemapMaterialIndex;
+							break;
 						}
 					}
-					//Restore the cast shadow and the recompute tangents
-					if (NewMeshSectionSlotName == ExistMeshSectionSlotName)
-					{
-						NewSkelMeshLodModel.Sections[SectionIndex].bCastShadow = ExistingSectionCastShadow;
-						NewSkelMeshLodModel.Sections[SectionIndex].bRecomputeTangent = ExistingSectionRecomputeTangents;
-					}
+				}
+				//Restore the cast shadow and the recompute tangents
+				if (NewMeshSectionSlotName == ExistMeshSectionSlotName)
+				{
+					NewSkelMeshLodModel.Sections[SectionIndex].bCastShadow = ExistingSectionCastShadow;
+					NewSkelMeshLodModel.Sections[SectionIndex].bRecomputeTangent = ExistingSectionRecomputeTangents;
 				}
 			}
 		}

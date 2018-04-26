@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SPluginCategoryTree.h"
 #include "Interfaces/IPluginManager.h"
@@ -82,9 +82,14 @@ void SPluginCategoryTree::RebuildAndFilterCategoryTree()
 	TSharedPtr<FPluginCategory> SelectCategory;
 	for(TSharedRef<IPlugin> Plugin: IPluginManager::Get().GetDiscoveredPlugins())
 	{
+		if (Plugin->IsHidden())
+		{
+			continue;
+		}
+
 		// Figure out which base category this plugin belongs in
 		TSharedPtr<FPluginCategory> RootCategory;
-		if (Plugin->GetDescriptor().bIsMod)
+		if (Plugin->GetType() == EPluginType::Mod)
 		{
 			RootCategory = ModCategory;
 		}

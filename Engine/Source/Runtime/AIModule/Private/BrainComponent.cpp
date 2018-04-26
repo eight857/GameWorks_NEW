@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BrainComponent.h"
 #include "UObject/Package.h"
@@ -67,7 +67,7 @@ void FAIMessage::Send(UBrainComponent* BrainComp, const FAIMessage& Message)
 
 void FAIMessage::Broadcast(UObject* WorldContextObject, const FAIMessage& Message)
 {
-	UWorld* MyWorld = GEngine->GetWorldFromContextObject(WorldContextObject);
+	UWorld* MyWorld = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	if (MyWorld)
 	{
 		for (FConstControllerIterator It = MyWorld->GetControllerIterator(); It; ++It)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -42,17 +42,17 @@ struct FProgramCounterSymbolInfo final
 	enum
 	{
 		/** Length of the string used to store the symbol's names, including the trailing character. */
-		MAX_NAME_LENGHT = 1024,
+		MAX_NAME_LENGTH = 1024,
 	};
 
 	/** Module name. */
-	ANSICHAR	ModuleName[MAX_NAME_LENGHT];
+	ANSICHAR	ModuleName[MAX_NAME_LENGTH];
 
 	/** Function name. */
-	ANSICHAR	FunctionName[MAX_NAME_LENGHT];
+	ANSICHAR	FunctionName[MAX_NAME_LENGTH];
 
 	/** Filename. */
-	ANSICHAR	Filename[MAX_NAME_LENGHT];
+	ANSICHAR	Filename[MAX_NAME_LENGTH];
 
 	/** Line number in file. */
 	int32		LineNumber;
@@ -170,7 +170,7 @@ struct CORE_API FGenericPlatformStackWalk
 	 * @param	MaxDepth			Entries in BackTrace array
 	 * @param	Context				Optional thread context information
 	 */
-	static void CaptureStackBackTrace( uint64* BackTrace, uint32 MaxDepth, void* Context = nullptr );
+	static uint32 CaptureStackBackTrace( uint64* BackTrace, uint32 MaxDepth, void* Context = nullptr );
 
 	/**
 	 * Walks the stack and appends the human readable string to the passed in one.

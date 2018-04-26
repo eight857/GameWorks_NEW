@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Particles/Emitter.h"
 #include "UObject/ConstructorHelpers.h"
@@ -116,17 +116,14 @@ void AEmitter::CheckForErrors()
 	Super::CheckForErrors();
 
 	// Emitters placed in a level should have a non-NULL ParticleSystemComponent.
-	UObject* Outer = GetOuter();
-	if (Cast<ULevel>(Outer))
+	if (!ParticleSystemComponent && GetLevel())
 	{
-		if (!ParticleSystemComponent)
-		{
-			FMessageLog("MapCheck").Warning()
-				->AddToken(FUObjectToken::Create(this))
-				->AddToken(FTextToken::Create(LOCTEXT("MapCheck_Message_ParticleSystemComponentNull", "Emitter actor has NULL ParticleSystemComponent property - please delete")))
-				->AddToken(FMapErrorToken::Create(FMapErrors::ParticleSystemComponentNull));
-		}
+		FMessageLog("MapCheck").Warning()
+			->AddToken(FUObjectToken::Create(this))
+			->AddToken(FTextToken::Create(LOCTEXT("MapCheck_Message_ParticleSystemComponentNull", "Emitter actor has NULL ParticleSystemComponent property - please delete")))
+			->AddToken(FMapErrorToken::Create(FMapErrors::ParticleSystemComponentNull));
 	}
+
 }
 #endif
 
@@ -292,15 +289,6 @@ bool AEmitter::GetReferencedContentObjects(TArray<UObject*>& Objects) const
 	}
 	return true;
 }
-#endif
-
-/** Returns ParticleSystemComponent subobject **/
-UParticleSystemComponent* AEmitter::GetParticleSystemComponent() { return ParticleSystemComponent; }
-#if WITH_EDITORONLY_DATA
-/** Returns SpriteComponent subobject **/
-UBillboardComponent* AEmitter::GetSpriteComponent() const { return SpriteComponent; }
-/** Returns ArrowComponent subobject **/
-UArrowComponent* AEmitter::GetArrowComponent() const { return ArrowComponent; }
 #endif
 
 #undef LOCTEXT_NAMESPACE

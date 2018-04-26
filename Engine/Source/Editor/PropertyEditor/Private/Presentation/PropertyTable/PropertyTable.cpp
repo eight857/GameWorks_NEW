@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Presentation/PropertyTable/PropertyTable.h"
 #include "Misc/FeedbackContext.h"
@@ -936,7 +936,7 @@ void FPropertyTable::SelectCellRange( const TSharedRef< class IPropertyTableCell
 	SelectionChanged.Broadcast();
 }
 
-void FPropertyTable::GetSelectedObjects( TArray< TWeakObjectPtr< UObject > >& OutSelectedObjects) const
+void FPropertyTable::GetSelectedTableObjects( TArray< TWeakObjectPtr< UObject > >& OutSelectedObjects) const
 {
 	for( auto RowIter = SelectedRows.CreateConstIterator(); RowIter; ++RowIter )
 	{

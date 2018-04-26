@@ -1,9 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Layout/SSafeZone.h"
 #include "Layout/LayoutUtils.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Misc/CoreDelegates.h"
+
+float SSafeZone::SafeZoneScale = 1.0f;
 
 void SSafeZone::Construct( const FArguments& InArgs )
 {
@@ -30,7 +32,25 @@ void SSafeZone::Construct( const FArguments& InArgs )
 
 	SetTitleSafe(bIsTitleSafe);
 
-	FCoreDelegates::OnSafeFrameChangedEvent.AddSP(this, &SSafeZone::SafeAreaUpdated);
+	OnSafeFrameChangedHandle = FCoreDelegates::OnSafeFrameChangedEvent.AddSP(this, &SSafeZone::SafeAreaUpdated);
+}
+
+SSafeZone::~SSafeZone()
+{
+	FCoreDelegates::OnSafeFrameChangedEvent.Remove(OnSafeFrameChangedHandle);
+}
+
+
+void SSafeZone::SetSafeZoneScale(float InScale)
+{
+	SafeZoneScale = InScale;
+
+	FCoreDelegates::OnSafeFrameChangedEvent.Broadcast();
+}
+
+float SSafeZone::GetSafeZoneScale()
+{
+	return SafeZoneScale;
 }
 
 void SSafeZone::SafeAreaUpdated()
@@ -43,9 +63,18 @@ void SSafeZone::SetTitleSafe( bool InIsTitleSafe )
 	FDisplayMetrics Metrics;
 	FSlateApplication::Get().GetDisplayMetrics( Metrics );
 
-	const FMargin DeviceSafeMargin = bIsTitleSafe ?
+	const FMargin DeviceSafeMargin =
+#if PLATFORM_IOS
+		// Hack: This is a temp solution to support iPhoneX safeArea. TitleSafePaddingSize and ActionSafePaddingSize should be FVector4 and use them separately.
+		bIsTitleSafe
+		? FMargin(Metrics.TitleSafePaddingSize.X, Metrics.TitleSafePaddingSize.Y, Metrics.TitleSafePaddingSize.Z, Metrics.TitleSafePaddingSize.W)
+		: FMargin(Metrics.ActionSafePaddingSize.X, Metrics.ActionSafePaddingSize.Y, Metrics.ActionSafePaddingSize.Z, Metrics.ActionSafePaddingSize.W);
+#else
+		bIsTitleSafe ?
 		FMargin(Metrics.TitleSafePaddingSize.X, Metrics.TitleSafePaddingSize.Y) :
 		FMargin(Metrics.ActionSafePaddingSize.X, Metrics.ActionSafePaddingSize.Y);
+#endif
+
 
 #if WITH_EDITOR
 	if ( OverrideScreenSize.IsSet() )
@@ -61,6 +90,10 @@ void SSafeZone::SetTitleSafe( bool InIsTitleSafe )
 	{
 		SafeMargin = DeviceSafeMargin;
 	}
+
+#if PLATFORM_XBOXONE
+	SafeMargin = SafeMargin * SafeZoneScale;
+#endif
 
 	SafeMargin = FMargin(bPadLeft ? SafeMargin.Left : 0.0f, bPadTop ? SafeMargin.Top : 0.0f, bPadRight ? SafeMargin.Right : 0.0f, bPadBottom ? SafeMargin.Bottom : 0.0f);
 }
@@ -86,6 +119,12 @@ void SSafeZone::SetOverrideScreenInformation(TOptional<FVector2D> InScreenSize, 
 }
 
 #endif
+
+FMargin SSafeZone::GetSafeMargin(float InLayoutScale) const
+{
+	const FMargin SlotPadding = Padding.Get() + (ComputeScaledSafeMargin(InLayoutScale) * SafeAreaScale);
+	return SlotPadding;
+}
 
 void SSafeZone::SetSafeAreaScale(FMargin InSafeAreaScale)
 {
@@ -113,9 +152,9 @@ void SSafeZone::OnArrangeChildren( const FGeometry& AllottedGeometry, FArrangedC
 	const EVisibility& MyCurrentVisibility = this->GetVisibility();
 	if ( ArrangedChildren.Accepts( MyCurrentVisibility ) )
 	{
-		const FMargin SlotPadding               = Padding.Get() + (ComputeScaledSafeMargin(AllottedGeometry.Scale) * SafeAreaScale);
-		AlignmentArrangeResult XAlignmentResult = AlignChild<Orient_Horizontal>( AllottedGeometry.Size.X, ChildSlot, SlotPadding );
-		AlignmentArrangeResult YAlignmentResult = AlignChild<Orient_Vertical>( AllottedGeometry.Size.Y, ChildSlot, SlotPadding );
+		const FMargin SlotPadding               = GetSafeMargin(AllottedGeometry.Scale);
+		AlignmentArrangeResult XAlignmentResult = AlignChild<Orient_Horizontal>( AllottedGeometry.GetLocalSize().X, ChildSlot, SlotPadding );
+		AlignmentArrangeResult YAlignmentResult = AlignChild<Orient_Vertical>( AllottedGeometry.GetLocalSize().Y, ChildSlot, SlotPadding );
 
 		ArrangedChildren.AddWidget(
 			AllottedGeometry.MakeChild(
@@ -133,7 +172,7 @@ FVector2D SSafeZone::ComputeDesiredSize(float LayoutScale) const
 
 	if ( ChildVisibility != EVisibility::Collapsed )
 	{
-		const FMargin SlotPadding = Padding.Get() + (ComputeScaledSafeMargin(LayoutScale) * SafeAreaScale);
+		const FMargin SlotPadding = GetSafeMargin(LayoutScale);
 		FVector2D BaseDesiredSize = SBox::ComputeDesiredSize(LayoutScale);
 
 		return BaseDesiredSize + SlotPadding.GetDesiredSize();

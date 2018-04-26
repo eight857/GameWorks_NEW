@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SNewPluginWizard.h"
 #include "Misc/Paths.h"
@@ -48,6 +48,7 @@
 #include "IDetailsView.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#include "SourceCodeNavigation.h"
 
 DEFINE_LOG_CATEGORY(LogPluginWizard);
 
@@ -64,7 +65,7 @@ SNewPluginWizard::SNewPluginWizard()
 	, bIsPluginNameValid(false)
 	, bIsEnginePlugin(false)
 {
-	AbsoluteGamePluginPath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*FPaths::GamePluginsDir());
+	AbsoluteGamePluginPath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*FPaths::ProjectPluginsDir());
 	FPaths::MakePlatformFilename(AbsoluteGamePluginPath);
 	AbsoluteEnginePluginPath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*FPaths::EnginePluginsDir());
 	FPaths::MakePlatformFilename(AbsoluteEnginePluginPath);
@@ -590,12 +591,10 @@ void SNewPluginWizard::ValidateFullPluginPath()
 		const FString& TestPluginName = GetCurrentPluginName().ToString();
 
 		// Check to see if a a compiled plugin with this name exists (at any path)
-		const TArray< FPluginStatus > Plugins = IPluginManager::Get().QueryStatusForAllPlugins();
-		for (auto PluginIt(Plugins.CreateConstIterator()); PluginIt; ++PluginIt)
+		const TArray<TSharedRef<IPlugin>> Plugins = IPluginManager::Get().GetDiscoveredPlugins();
+		for (const TSharedRef<IPlugin>& Plugin : Plugins)
 		{
-			const auto& PluginStatus = *PluginIt;
-
-			if (PluginStatus.Name == TestPluginName)
+			if (Plugin->GetName() == TestPluginName)
 			{
 				PluginNameError = LOCTEXT("PluginNameExistsErrorText", "A plugin with this name already exists!");
 				bIsNewNameValid = false;
@@ -701,7 +700,6 @@ FReply SNewPluginWizard::OnCreatePluginClicked()
 	{
 		DescriptorParams.bCanContainContent = PluginWizardDefinition->CanContainContent();
 		DescriptorParams.bHasModules = bHasModules;
-		DescriptorParams.bIsMod = PluginWizardDefinition->IsMod();
 		DescriptorParams.ModuleDescriptorType = PluginWizardDefinition->GetPluginModuleDescriptor();
 		DescriptorParams.LoadingPhase = PluginWizardDefinition->GetPluginLoadingPhase();
 	}
@@ -745,7 +743,7 @@ FReply SNewPluginWizard::OnCreatePluginClicked()
 	if (bSucceeded && bHasModules)
 	{
 		FString ProjectFileName = FPaths::GetProjectFilePath();
-		FString Arguments = FString::Printf(TEXT("%sEditor %s %s -EditorRecompile -Module %s -Project=\"%s\" -Plugin \"%s\" -Progress -NoHotReloadFromIDE"), *FPaths::GetBaseFilename(ProjectFileName), FModuleManager::Get().GetUBTConfiguration(), FPlatformMisc::GetUBTPlatform(), *PluginModuleName, *ProjectFileName, *UPluginFilePath);
+		FString Arguments = FString::Printf(TEXT("%sEditor %s %s -EditorRecompile -Module=%s -Project=\"%s\" -Plugin=\"%s\" -Progress -NoHotReloadFromIDE"), *FPaths::GetBaseFilename(ProjectFileName), FModuleManager::Get().GetUBTConfiguration(), FPlatformMisc::GetUBTPlatform(), *PluginModuleName, *ProjectFileName, *UPluginFilePath);
 		if (!FDesktopPlatformModule::Get()->RunUnrealBuildTool(LOCTEXT("Compiling", "Compiling..."), FPaths::RootDir(), Arguments, GWarn))
 		{
 			PopErrorNotification(LOCTEXT("FailedToCompile", "Failed to compile source code."));
@@ -772,12 +770,12 @@ FReply SNewPluginWizard::OnCreatePluginClicked()
 			// If this path isn't in the Engine/Plugins dir and isn't in Project/Plugins dir,
 			// add the directory to the list of ones we additionally scan
 			
-			// There have been issues with GameDir can be relative and BasePluginFolder absolute, causing our
+			// There have been issues with ProjectDir can be relative and BasePluginFolder absolute, causing our
 			// tests to fail below. We now normalize on absolute paths prior to performing the check to ensure
 			// that we don't add the folder to the additional plugin directory unnecessarily (which can result in build failures).
-			FString GameDirFull = FPaths::ConvertRelativePathToFull(FPaths::GameDir());
+			FString ProjectDirFull = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
 			FString BasePluginFolderFull = FPaths::ConvertRelativePathToFull(BasePluginFolder);
-			if (!BasePluginFolderFull.StartsWith(GameDirFull))
+			if (!BasePluginFolderFull.StartsWith(ProjectDirFull))
 			{
 				GameProjectUtils::UpdateAdditionalPluginDirectory(BasePluginFolderFull, true);
 			}
@@ -838,8 +836,7 @@ FReply SNewPluginWizard::OnCreatePluginClicked()
 
 		if (bHasModules)
 		{
-			FText FailReason;
-			GameProjectUtils::OpenCodeIDE(FPaths::GetProjectFilePath(), FailReason);
+			FSourceCodeNavigation::OpenModuleSolution();
 		}
 
 		return FReply::Handled();
@@ -887,14 +884,13 @@ bool SNewPluginWizard::WritePluginDescriptor(const FString& PluginModuleName, co
 	{
 		Descriptor.Modules.Add(FModuleDescriptor(*PluginModuleName, Params.ModuleDescriptorType, Params.LoadingPhase));
 	}
-	Descriptor.bIsMod = Params.bIsMod;
 	Descriptor.bCanContainContent = Params.bCanContainContent;
 
 	// Save the descriptor using JSon
 	FText FailReason;
-	if (!Descriptor.Save(UPluginFilePath, false, FailReason))
+	if (!Descriptor.Save(UPluginFilePath, FailReason))
 	{
-		PopErrorNotification(FText::Format(LOCTEXT("FailedToWriteDescriptor", "Couldn't save plugin descriptor under %s"), FText::AsCultureInvariant(UPluginFilePath)));
+		PopErrorNotification(FText::Format(LOCTEXT("FailedToWriteDescriptor", "Couldn't save plugin descriptor under {0}"), FText::AsCultureInvariant(UPluginFilePath)));
 		return false;
 	}
 

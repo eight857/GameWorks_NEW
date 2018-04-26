@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,7 +18,7 @@ public:
 private:
 	TSharedPtr<SWidget> OnBlutilityGetContextMenu(const TArray<FAssetData>& SelectedAssets);
 
-	static void OnBlutilityDoubleClicked(const class FAssetData& AssetData);
+	static void OnBlutilityDoubleClicked(const struct FAssetData& AssetData);
 	
 	static void ToggleFavoriteStatusOnSelection(TArray<FAssetData> AssetList, bool bIsNewFavorite);
 	static bool GetFavoriteStatusOnSelection(TArray<FAssetData> AssetList);

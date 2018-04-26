@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GraphEditorSettings.h"
 #include "UObject/UnrealType.h"
@@ -10,6 +10,7 @@
 
 UGraphEditorSettings::UGraphEditorSettings( const FObjectInitializer& ObjectInitializer )
 	: Super(ObjectInitializer)
+	, PanningMouseButton(EGraphPanningMouseButton::Right)
 	, PaddingAbovePin(4.0f)
 	, PaddingBelowPin(4.0f)
 	, PaddingRightOfInput(10.0f)
@@ -39,8 +40,8 @@ UGraphEditorSettings::UGraphEditorSettings( const FObjectInitializer& ObjectInit
 	NamePinTypeColor = FLinearColor(0.607717f, 0.224984f, 1.0f, 1.0f);			// lilac
 	DelegatePinTypeColor = FLinearColor(1.0f, 0.04f, 0.04f, 1.0f);				// bright red
 	ObjectPinTypeColor = FLinearColor(0.0f, 0.4f, 0.910000f, 1.0f);				// sharp blue
-	AssetPinTypeColor = FLinearColor(0.3f, 1.0f, 1.0f, 1.0f);					
-	AssetClassPinTypeColor = FLinearColor(1.0f, 0.3f, 1.0f, 1.0f);				
+	SoftObjectPinTypeColor = FLinearColor(0.3f, 1.0f, 1.0f, 1.0f);					
+	SoftClassPinTypeColor = FLinearColor(1.0f, 0.3f, 1.0f, 1.0f);				
 	InterfacePinTypeColor = FLinearColor(0.8784f, 1.0f, 0.4f, 1.0f);			// pale green
 	StringPinTypeColor = FLinearColor(1.0f, 0.0f, 0.660537f, 1.0f);				// bright pink
 	TextPinTypeColor = FLinearColor(0.8f, 0.2f, 0.4f, 1.0f);					// salmon (light pink)
@@ -50,6 +51,9 @@ UGraphEditorSettings::UGraphEditorSettings( const FObjectInitializer& ObjectInit
 	RotatorPinTypeColor = FLinearColor(0.353393f, 0.454175f, 1.0f, 1.0f);		// periwinkle 
 	TransformPinTypeColor = FLinearColor(1.0f, 0.172585f, 0.0f, 1.0f);			// orange
 	IndexPinTypeColor = FLinearColor(0.013575f, 0.770000f, 0.429609f, 1.0f);	// green-blue
+
+	DefaultDataWireThickness = 1.0f;
+	DefaultExecutionWireThickness = 3.0f;
 
 	// graph debugging visuals
 	TraceAttackColor = FLinearColor(1.0f, 0.05f, 0.0f, 1.0f);
@@ -79,6 +83,7 @@ UGraphEditorSettings::UGraphEditorSettings( const FObjectInitializer& ObjectInit
 	ExecSequenceNodeTitleColor = FLinearColor(0.8f, 0.4f, 0.4f, 1.0f);
 	ResultNodeTitleColor = FLinearColor(1.0f, 0.65f, 0.4f, 1.0f);
 	DefaultCommentNodeTitleColor = FLinearColor::White;
+	PreviewNodeTitleColor = FLinearColor(0.0f, 0.0f, 1.0f, 1.0f);
 }
 
 #if WITH_EDITOR

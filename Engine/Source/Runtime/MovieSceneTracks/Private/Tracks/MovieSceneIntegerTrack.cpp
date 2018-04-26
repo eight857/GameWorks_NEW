@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tracks/MovieSceneIntegerTrack.h"
 #include "Sections/MovieSceneIntegerSection.h"
@@ -6,7 +6,9 @@
 
 UMovieSceneIntegerTrack::UMovieSceneIntegerTrack( const FObjectInitializer& ObjectInitializer )
 	: Super( ObjectInitializer )
-{ }
+{
+	SupportedBlendTypes = FMovieSceneBlendTypeField::All();
+}
 
 
 UMovieSceneSection* UMovieSceneIntegerTrack::CreateNewSection()

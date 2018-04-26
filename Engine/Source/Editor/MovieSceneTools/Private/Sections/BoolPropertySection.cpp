@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sections/BoolPropertySection.h"
 #include "Rendering/DrawElements.h"
@@ -78,7 +78,6 @@ int32 FBoolPropertySection::OnPaintSection( FSequencerSectionPainter& Painter ) 
 			LayerId + 1,
 			Painter.SectionGeometry.ToPaintGeometry(StartPos, Size),
 			BoolOverlayBrush,
-			Painter.SectionClippingRect,
 			DrawEffects,
 			Color
 			);

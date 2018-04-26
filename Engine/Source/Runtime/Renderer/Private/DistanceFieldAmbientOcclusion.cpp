@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	DistanceFieldAmbientOcclusion.cpp
@@ -91,6 +91,14 @@ FAutoConsoleVariableRef CVarAOOverwriteSceneColor(
 	ECVF_RenderThreadSafe
 	);
 
+int32 GAOJitterConeDirections = 0;
+FAutoConsoleVariableRef CVarAOJitterConeDirections(
+	TEXT("r.AOJitterConeDirections"),
+	GAOJitterConeDirections,
+	TEXT(""),
+	ECVF_RenderThreadSafe
+	);
+
 int32 GMaxDistanceFieldObjectsPerCullTile = 512;
 FAutoConsoleVariableRef CVarMaxDistanceFieldObjectsPerCullTile(
 	TEXT("r.AOMaxObjectsPerCullTile"),
@@ -107,6 +115,8 @@ int32 GDistanceFieldAOTileSizeY = 16;
 DEFINE_LOG_CATEGORY(LogDistanceField);
 
 IMPLEMENT_UNIFORM_BUFFER_STRUCT(FAOSampleData2,TEXT("AOSamples2"));
+
+DECLARE_GPU_STAT(SkyLightDiffuse);
 
 FDistanceFieldAOParameters::FDistanceFieldAOParameters(float InOcclusionMaxDistance, float InContrast)
 {
@@ -160,7 +170,21 @@ const FVector RelaxedSpacedVectors9[] =
 	FVector(0.032967, -0.435625, 0.899524)
 };
 
-void GetSpacedVectors(TArray<FVector, TInlineAllocator<9> >& OutVectors)
+float TemporalHalton2( int32 Index, int32 Base )
+{
+	float Result = 0.0f;
+	float InvBase = 1.0f / Base;
+	float Fraction = InvBase;
+	while( Index > 0 )
+	{
+		Result += ( Index % Base ) * Fraction;
+		Index /= Base;
+		Fraction *= InvBase;
+	}
+	return Result;
+}
+
+void GetSpacedVectors(uint32 FrameNumber, TArray<FVector, TInlineAllocator<9> >& OutVectors)
 {
 	OutVectors.Empty(ARRAY_COUNT(SpacedVectors9));
 
@@ -176,6 +200,22 @@ void GetSpacedVectors(TArray<FVector, TInlineAllocator<9> >& OutVectors)
 		for (int32 i = 0; i < ARRAY_COUNT(RelaxedSpacedVectors9); i++)
 		{
 			OutVectors.Add(RelaxedSpacedVectors9[i]);
+		}
+	}
+
+	if (GAOJitterConeDirections)
+	{
+		float RandomAngle = TemporalHalton2(FrameNumber & 1023, 2) * 2 * PI;
+		float CosRandomAngle = FMath::Cos(RandomAngle);
+		float SinRandomAngle = FMath::Sin(RandomAngle);
+
+		for (int32 i = 0; i < OutVectors.Num(); i++)
+		{
+			FVector ConeDirection = OutVectors[i];
+			FVector2D ConeDirectionXY(ConeDirection.X, ConeDirection.Y);
+			ConeDirectionXY = FVector2D(FVector2D::DotProduct(ConeDirectionXY, FVector2D(CosRandomAngle, -SinRandomAngle)), FVector2D::DotProduct(ConeDirectionXY, FVector2D(SinRandomAngle, CosRandomAngle)));
+			OutVectors[i].X = ConeDirectionXY.X;
+			OutVectors[i].Y = ConeDirectionXY.Y;
 		}
 	}
 }
@@ -218,12 +258,12 @@ class FComputeDistanceFieldNormalPS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FComputeDistanceFieldNormalPS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldAO(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldAO(Parameters.Platform);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		OutEnvironment.SetDefine(TEXT("DOWNSAMPLE_FACTOR"), GAODownsampleFactor);
 		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZEX"), GDistanceFieldAOTileSizeX);
@@ -264,7 +304,7 @@ private:
 	FAOParameters AOParameters;
 };
 
-IMPLEMENT_SHADER_TYPE(,FComputeDistanceFieldNormalPS,TEXT("DistanceFieldScreenGridLighting"),TEXT("ComputeDistanceFieldNormalPS"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FComputeDistanceFieldNormalPS,TEXT("/Engine/Private/DistanceFieldScreenGridLighting.usf"),TEXT("ComputeDistanceFieldNormalPS"),SF_Pixel);
 
 
 class FComputeDistanceFieldNormalCS : public FGlobalShader
@@ -272,12 +312,12 @@ class FComputeDistanceFieldNormalCS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FComputeDistanceFieldNormalCS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldAO(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldAO(Parameters.Platform);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		OutEnvironment.SetDefine(TEXT("DOWNSAMPLE_FACTOR"), GAODownsampleFactor);
 		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZEX"), GDistanceFieldAOTileSizeX);
@@ -331,7 +371,7 @@ private:
 	FAOParameters AOParameters;
 };
 
-IMPLEMENT_SHADER_TYPE(,FComputeDistanceFieldNormalCS,TEXT("DistanceFieldScreenGridLighting"),TEXT("ComputeDistanceFieldNormalCS"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FComputeDistanceFieldNormalCS,TEXT("/Engine/Private/DistanceFieldScreenGridLighting.usf"),TEXT("ComputeDistanceFieldNormalCS"),SF_Compute);
 
 void ComputeDistanceFieldNormal(FRHICommandListImmediate& RHICmdList, const TArray<FViewInfo>& Views, FSceneRenderTargetItem& DistanceFieldNormal, const FDistanceFieldAOParameters& Parameters)
 {
@@ -360,7 +400,12 @@ void ComputeDistanceFieldNormal(FRHICommandListImmediate& RHICmdList, const TArr
 	}
 	else
 	{
-		SetRenderTarget(RHICmdList, DistanceFieldNormal.TargetableTexture, NULL, true);
+		SetRenderTarget(RHICmdList,
+			DistanceFieldNormal.TargetableTexture,
+			NULL,
+			ESimpleRenderTargetMode::EClearColorExistingDepth,
+			FExclusiveDepthStencil::DepthNop_StencilNop,
+			true);
 		FGraphicsPipelineStateInitializer GraphicsPSOInit;
 		RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
 
@@ -734,6 +779,8 @@ bool FDeferredShadingSceneRenderer::RenderDistanceFieldLighting(
 	bool bVisualizeAmbientOcclusion,
 	bool bVisualizeGlobalIllumination)
 {
+	SCOPED_DRAW_EVENT(RHICmdList, RenderDistanceFieldLighting);
+
 	//@todo - support multiple views
 	const FViewInfo& View = Views[0];
 	FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
@@ -774,6 +821,7 @@ bool FDeferredShadingSceneRenderer::RenderDistanceFieldLighting(
 			{
 				const FIntPoint BufferSize = GetBufferSizeForAO();
 				FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(BufferSize, PF_FloatRGBA, FClearValueBinding::Transparent, TexCreate_None, TexCreate_RenderTargetable | TexCreate_UAV, false));
+				Desc.Flags |= GFastVRamConfig.DistanceFieldNormal;
 				GRenderTargetPool.FindFreeElement(RHICmdList, Desc, DistanceFieldNormal, TEXT("DistanceFieldNormal"));
 			}
 
@@ -808,6 +856,14 @@ bool FDeferredShadingSceneRenderer::RenderDistanceFieldLighting(
 				BentNormalOutput, 
 				IrradianceOutput);
 
+			if ( IsTransientResourceBufferAliasingEnabled() )
+			{
+				GAOCulledObjectBuffers.Buffers.DiscardTransientResource();
+
+				FTileIntersectionResources* TileIntersectionResources = ((FSceneViewState*)View.State)->AOTileIntersectionResources;
+				TileIntersectionResources->DiscardTransientResource();
+			}
+
 			RenderCapsuleShadowsForMovableSkylight(RHICmdList, BentNormalOutput);
 
 			GRenderTargetPool.VisualizeTexture.SetCheckPoint(RHICmdList, BentNormalOutput);
@@ -819,6 +875,7 @@ bool FDeferredShadingSceneRenderer::RenderDistanceFieldLighting(
 			else
 			{
 				FPooledRenderTargetDesc Desc = SceneContext.GetSceneColor()->GetDesc();
+				Desc.Flags &= ~(TexCreate_FastVRAM | TexCreate_Transient);
 				// Make sure we get a signed format
 				Desc.Format = PF_FloatRGBA;
 				GRenderTargetPool.FindFreeElement(RHICmdList, Desc, OutDynamicBentNormalAO, TEXT("DynamicBentNormalAO"));
@@ -879,14 +936,14 @@ class TDynamicSkyLightDiffusePS : public FGlobalShader
 	DECLARE_SHADER_TYPE(TDynamicSkyLightDiffusePS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform,OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters,OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("DOWNSAMPLE_FACTOR"), GAODownsampleFactor);
 		OutEnvironment.SetDefine(TEXT("APPLY_SHADOWING"), bApplyShadowing);
 		OutEnvironment.SetDefine(TEXT("SUPPORT_IRRADIANCE"), bSupportIrradiance);
@@ -971,7 +1028,7 @@ private:
 
 #define IMPLEMENT_SKYLIGHT_PS_TYPE(bApplyShadowing, bSupportIrradiance) \
 	typedef TDynamicSkyLightDiffusePS<bApplyShadowing, bSupportIrradiance> TDynamicSkyLightDiffusePS##bApplyShadowing##bSupportIrradiance; \
-	IMPLEMENT_SHADER_TYPE(template<>,TDynamicSkyLightDiffusePS##bApplyShadowing##bSupportIrradiance,TEXT("SkyLighting"),TEXT("SkyLightDiffusePS"),SF_Pixel);
+	IMPLEMENT_SHADER_TYPE(template<>,TDynamicSkyLightDiffusePS##bApplyShadowing##bSupportIrradiance,TEXT("/Engine/Private/SkyLighting.usf"),TEXT("SkyLightDiffusePS"),SF_Pixel);
 
 IMPLEMENT_SKYLIGHT_PS_TYPE(true, true)
 IMPLEMENT_SKYLIGHT_PS_TYPE(false, true)
@@ -992,6 +1049,7 @@ void FDeferredShadingSceneRenderer::RenderDynamicSkyLighting(FRHICommandListImme
 	if (ShouldRenderDeferredDynamicSkyLight(Scene, ViewFamily))
 	{
 		SCOPED_DRAW_EVENT(RHICmdList, SkyLightDiffuse);
+		SCOPED_GPU_STAT(RHICmdList, SkyLightDiffuse);
 
 		bool bApplyShadowing = false;
 

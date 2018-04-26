@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,7 +9,7 @@
 class IDetailLayoutBuilder;
 class UAnimSequenceFactory;
 class IPropertyHandle;
-class FAssetData;
+struct FAssetData;
 
 class FControlRigSequenceExporterSettingsDetailsCustomization : public IDetailCustomization
 {

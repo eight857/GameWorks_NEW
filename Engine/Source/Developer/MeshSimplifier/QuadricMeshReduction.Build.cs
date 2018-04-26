@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -13,6 +13,11 @@ public class QuadricMeshReduction : ModuleRules
 		PrivateDependencyModuleNames.Add("Engine");
 		PrivateDependencyModuleNames.Add("RenderCore");
 		PrivateDependencyModuleNames.Add("RawMesh");
-		PrivateIncludePathModuleNames.Add("MeshUtilities");
-	}
+
+        PrivateIncludePathModuleNames.AddRange(
+        new string[] {
+                "MeshReductionInterface",
+             }
+        );
+    }
 }

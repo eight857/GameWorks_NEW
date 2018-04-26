@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,7 +10,10 @@
 #include "SNodePanel.h"
 #include "SGraphNodeResizable.h"
 
-class SGraphNodeComment : public SGraphNodeResizable
+class UEdGraphNode_Comment;
+class SCommentBubble;
+
+class GRAPHEDITOR_API SGraphNodeComment : public SGraphNodeResizable
 {
 public:
 	SLATE_BEGIN_ARGS(SGraphNodeComment){}
@@ -42,7 +45,7 @@ public:
 	virtual FSlateColor GetCommentColor() const override { return GetCommentBodyColor(); }
 	//~ End SGraphNode Interface
 
-	void Construct( const FArguments& InArgs, UEdGraphNode* InNode );
+	void Construct( const FArguments& InArgs, UEdGraphNode_Comment* InNode );
 
 	/** return if the node can be selected, by pointing given location */
 	virtual bool CanBeSelected( const FVector2D& MousePositionInNode ) const override;
@@ -89,6 +92,11 @@ private:
 	float GetWrapAt() const;
 
 private:
+	/** The comment bubble widget (used when zoomed out) */
+	TSharedPtr<SCommentBubble> CommentBubble;
+
+	/** Was the bubble desired to be visible last frame? */
+	mutable bool bCachedBubbleVisibility;
 
 	/** The current selection state of the comment */
 	mutable bool bIsSelected;
@@ -101,4 +109,10 @@ private:
 
 	/** cached comment title */
 	int32 CachedWidth;
+
+	/** cached font size */
+	int32 CachedFontSize;
+
+	/** Local copy of the comment style */
+	FInlineEditableTextBlockStyle CommentStyle;
 };

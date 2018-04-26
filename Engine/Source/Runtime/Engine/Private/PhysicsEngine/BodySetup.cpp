@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	BodySetup.cpp
@@ -20,20 +20,76 @@
 #include "DerivedDataCacheInterface.h"
 #include "UObject/UObjectIterator.h"
 #include "UObject/PropertyPortFlags.h"
+#include "Components/SplineMeshComponent.h"
+
+#include "PhysXCookHelper.h"
 
 #if WITH_PHYSX
 	#include "PhysXPublic.h"
 	#include "PhysicsEngine/PhysXSupport.h"
 #endif // WITH_PHYSX
 
-#if WITH_PHYSX && (WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR)
-	#include "IPhysXFormat.h"
+#include "ModuleManager.h"
+#if WITH_PHYSX
+	#include "IPhysXCookingModule.h"
+	#include "IPhysXCooking.h"
 #endif
 
 #include "PhysicsEngine/PhysDerivedData.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "ProfilingDebugging/CookStats.h"
 #include "AnimPhysObjectVersion.h"
+
+/** Helper for enum output... */
+#ifndef CASE_ENUM_TO_TEXT
+#define CASE_ENUM_TO_TEXT(txt) case txt: return TEXT(#txt);
+#endif
+
+namespace Lex
+{
+	const TCHAR* ToString(ECollisionTraceFlag Enum)
+	{
+		switch (Enum)
+		{
+			FOREACH_ENUM_ECOLLISIONTRACEFLAG(CASE_ENUM_TO_TEXT)
+		}
+		return TEXT("<Unknown ECollisionTraceFlag>");
+	}
+
+	const TCHAR* ToString(EPhysicsType Enum)
+	{
+		switch (Enum)
+		{
+			FOREACH_ENUM_EPHYSICSTYPE(CASE_ENUM_TO_TEXT)
+		}
+		return TEXT("<Unknown EPhysicsType>");
+	}
+
+	const TCHAR* ToString(EBodyCollisionResponse::Type Enum)
+	{
+		switch (Enum)
+		{
+			FOREACH_ENUM_EBODYCOLLISIONRESPONSE(CASE_ENUM_TO_TEXT)
+		}
+		return TEXT("<Unknown EBodyCollisionResponse>");
+	}
+}
+
+
+FCookBodySetupInfo::FCookBodySetupInfo() :
+#if WITH_PHYSX
+	TriMeshCookFlags(EPhysXMeshCookFlags::Default) ,
+	ConvexCookFlags(EPhysXMeshCookFlags::Default) ,
+#endif // WITH_PHYSX
+	bCookNonMirroredConvex(false),
+	bCookMirroredConvex(false),
+	bConvexDeformableMesh(false),
+	bCookTriMesh(false),
+	bSupportUVFromHitResults(false),
+	bTriMeshError(false)
+{
+}
+
 
 #if ENABLE_COOK_STATS
 namespace PhysXBodySetupCookStats
@@ -45,6 +101,38 @@ namespace PhysXBodySetupCookStats
 	});
 }
 #endif
+
+DEFINE_STAT(STAT_PhysXCooking);
+
+#if WITH_PHYSX
+IPhysXCookingModule* GetPhysXCookingModule(bool bForceLoad)
+{
+	check(IsInGameThread());
+
+	if (bForceLoad)
+	{
+#if WITH_PHYSX_COOKING
+		return FModuleManager::LoadModulePtr<IPhysXCookingModule>("PhysXCooking");	//in some configurations (for example the editor) we must have physx cooking
+#else
+		return FModuleManager::LoadModulePtr<IPhysXCookingModule>("RuntimePhysXCooking");	//in some configurations (mobile) we can choose to opt in for physx cooking via plugin
+#endif
+	}
+	else
+	{
+#if WITH_PHYSX_COOKING
+		return FModuleManager::GetModulePtr<IPhysXCookingModule>("PhysXCooking");	//in some configurations (for example the editor) we must have physx cooking
+#else
+		return FModuleManager::GetModulePtr<IPhysXCookingModule>("RuntimePhysXCooking");	//in some configurations (mobile) we can choose to opt in for physx cooking via plugin
+#endif
+	}
+}
+
+bool IsRuntimeCookingEnabled()
+{
+	return FModuleManager::LoadModulePtr<IPhysXCookingModule>("RuntimePhysXCooking") != nullptr;
+}
+#endif //WITH_PHYSX
+
 
 #if WITH_PHYSX
 	// Quaternion that converts Sphyls from UE space to PhysX space (negate Y, swap X & Z)
@@ -66,11 +154,6 @@ static TAutoConsoleVariable<float> CVarMaxContactOffset(
 	ECVF_Default);
 
 
-SIZE_T FBodySetupUVInfo::GetResourceSize() const
-{
-	return GetResourceSizeBytes();
-}
-
 void FBodySetupUVInfo::GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize) const
 {
 	CumulativeResourceSize.AddDedicatedSystemMemoryBytes(IndexBuffer.GetAllocatedSize());
@@ -84,14 +167,6 @@ void FBodySetupUVInfo::GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize
 	CumulativeResourceSize.AddDedicatedSystemMemoryBytes(VertUVs.GetAllocatedSize());
 }
 
-SIZE_T FBodySetupUVInfo::GetResourceSizeBytes() const
-{
-	FResourceSizeEx ResSize;
-	GetResourceSizeEx(ResSize);
-	return ResSize.GetTotalMemoryBytes();
-}
-
-
 DEFINE_LOG_CATEGORY(LogPhysics);
 UBodySetup::UBodySetup(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -104,7 +179,9 @@ UBodySetup::UBodySetup(const FObjectInitializer& ObjectInitializer)
 	bGenerateMirroredCollision = true;
 	bGenerateNonMirroredCollision = true;
 	DefaultInstance.SetObjectType(ECC_PhysicsBody);
+#if WITH_EDITORONLY_DATA
 	BuildScale_DEPRECATED = 1.0f;
+#endif
 	BuildScale3D = FVector(1.0f, 1.0f, 1.0f);
 	SetFlags(RF_Transactional);
 	bSharedCookedData = false;
@@ -150,13 +227,180 @@ void UBodySetup::AddCollisionFrom(const FKAggregateGeom& FromAggGeom)
 	}
 }
 
+void UBodySetup::GetCookInfo(FCookBodySetupInfo& OutCookInfo, EPhysXMeshCookFlags InCookFlags) const
+{
+#if WITH_PHYSX
+
+	check(IsInGameThread());
+
+	OutCookInfo.OuterDebugName = GetOuter()->GetPathName();
+	OutCookInfo.bConvexDeformableMesh = false;
+
+	// Cook convex meshes, but only if we are not forcing complex collision to be used as simple collision as well
+	if (GetCollisionTraceFlag() != CTF_UseComplexAsSimple && AggGeom.ConvexElems.Num() > 0)
+	{
+		OutCookInfo.bCookNonMirroredConvex = bGenerateNonMirroredCollision;
+		OutCookInfo.bCookMirroredConvex = bGenerateMirroredCollision;
+		for (int32 ElementIndex = 0; ElementIndex < AggGeom.ConvexElems.Num(); ElementIndex++)
+		{
+			const FKConvexElem& ConvexElem = AggGeom.ConvexElems[ElementIndex];
+			const int32 NumVertices = ConvexElem.VertexData.Num();
+
+			TArray<FVector>* NonMirroredConvexVertices = nullptr;
+			TArray<FVector>* MirroredConvexVertices = nullptr;
+
+			if (bGenerateNonMirroredCollision)
+			{
+				OutCookInfo.NonMirroredConvexVertices.AddDefaulted();
+				NonMirroredConvexVertices = &OutCookInfo.NonMirroredConvexVertices.Last();
+				NonMirroredConvexVertices->AddUninitialized(NumVertices);
+			}
+
+			if (bGenerateMirroredCollision)
+			{
+				OutCookInfo.MirroredConvexVertices.AddDefaulted();
+				MirroredConvexVertices = &OutCookInfo.MirroredConvexVertices.Last();
+				MirroredConvexVertices->AddUninitialized(NumVertices);
+			}
+
+			FTransform ConvexTransform = ConvexElem.GetTransform();
+			if (!ConvexTransform.IsValid())
+			{
+				UE_LOG(LogPhysics, Warning, TEXT("UBodySetup::GetCookInfoConvex: [%s] ConvexElem[%d] has invalid transform"), *GetPathNameSafe(GetOuter()), ElementIndex);
+				ConvexTransform = FTransform::Identity;
+			}
+
+			// Transform verts from element to body space, and mirror if desired
+			for (int32 VertIdx = 0; VertIdx< NumVertices; VertIdx++)
+			{
+				FVector BodySpaceVert = ConvexTransform.TransformPosition(ConvexElem.VertexData[VertIdx]);
+				if (NonMirroredConvexVertices)
+				{
+					(*NonMirroredConvexVertices)[VertIdx] = BodySpaceVert;
+				}
+
+				if (MirroredConvexVertices)
+				{
+					(*MirroredConvexVertices)[VertIdx] = BodySpaceVert * FVector(-1, 1, 1);
+				}
+			}
+
+			// Get cook flags to use
+			OutCookInfo.ConvexCookFlags = InCookFlags;
+			OutCookInfo.bConvexDeformableMesh = GetOuter()->IsA(USplineMeshComponent::StaticClass());
+			if (OutCookInfo.bConvexDeformableMesh)
+			{
+				OutCookInfo.ConvexCookFlags |= EPhysXMeshCookFlags::DeformableMesh;
+			}
+		}
+	}
+	else
+	{
+		OutCookInfo.bCookNonMirroredConvex = false;
+		OutCookInfo.bCookMirroredConvex = false;
+	}
+
+	// Cook trimesh, but only if we do not force simple collision to be used as complex collision as well
+	const bool bUsingAllTriData = bMeshCollideAll;
+	OutCookInfo.bCookTriMesh = false;
+	OutCookInfo.bTriMeshError = false;
+
+	UObject* CDPObj = GetOuter();
+	IInterface_CollisionDataProvider* CDP = Cast<IInterface_CollisionDataProvider>(CDPObj);
+	
+	if (GetCollisionTraceFlag() != CTF_UseSimpleAsComplex && CDP && CDP->ContainsPhysicsTriMeshData(bUsingAllTriData))
+	{
+		OutCookInfo.bCookTriMesh = CDP->GetPhysicsTriMeshData(&OutCookInfo.TriangleMeshDesc, bUsingAllTriData);
+		const FTriMeshCollisionData& TriangleMeshDesc = OutCookInfo.TriangleMeshDesc;
+
+		if (OutCookInfo.bCookTriMesh)
+		{
+			// If any of the below checks gets hit this usually means 
+			// IInterface_CollisionDataProvider::ContainsPhysicsTriMeshData did not work properly.
+			const int32 NumIndices = TriangleMeshDesc.Indices.Num();
+			const int32 NumVerts = TriangleMeshDesc.Vertices.Num();
+			if (NumIndices == 0 || NumVerts == 0 || TriangleMeshDesc.MaterialIndices.Num() > NumIndices)
+			{
+				UE_LOG(LogPhysics, Warning, TEXT("UBodySetup::GetCookInfo: Triangle data from '%s' invalid (%d verts, %d indices)."), *CDPObj->GetPathName(), NumVerts, NumIndices);
+				OutCookInfo.bTriMeshError = true;
+			}
+
+			// Set up cooking flags
+			EPhysXMeshCookFlags CookFlags = InCookFlags;
+
+			if (TriangleMeshDesc.bDeformableMesh)
+			{
+				CookFlags |= EPhysXMeshCookFlags::DeformableMesh;
+			}
+
+			if (TriangleMeshDesc.bFastCook)
+			{
+				CookFlags |= EPhysXMeshCookFlags::FastCook;
+			}
+
+			OutCookInfo.TriMeshCookFlags = CookFlags;
+		}
+		else
+		{
+			UE_LOG(LogPhysics, Warning, TEXT("UBodySetup::GetCookInfo: ContainsPhysicsTriMeshData returned true, but GetPhysicsTriMeshData returned false. This inconsistency should be fixed for asset '%s'"), *CDPObj->GetPathName());
+		}
+	}
+
+	OutCookInfo.bSupportUVFromHitResults = UPhysicsSettings::Get()->bSupportUVFromHitResults;
+
+#endif // WITH_PHYSX
+}
+
+void FBodySetupUVInfo::FillFromTriMesh(const FTriMeshCollisionData& TriangleMeshDesc)
+{
+	// Store index buffer
+	const int32 NumVerts = TriangleMeshDesc.Vertices.Num();
+	const int32 NumTris = TriangleMeshDesc.Indices.Num();
+	IndexBuffer.Empty();
+	IndexBuffer.AddUninitialized(NumTris * 3);
+	for (int32 TriIdx = 0; TriIdx < TriangleMeshDesc.Indices.Num(); TriIdx++)
+	{
+		IndexBuffer[TriIdx * 3 + 0] = TriangleMeshDesc.Indices[TriIdx].v0;
+		IndexBuffer[TriIdx * 3 + 1] = TriangleMeshDesc.Indices[TriIdx].v1;
+		IndexBuffer[TriIdx * 3 + 2] = TriangleMeshDesc.Indices[TriIdx].v2;
+	}
+
+	// Store vertex positions
+	VertPositions.Empty();
+	VertPositions.AddUninitialized(NumVerts);
+	for (int32 VertIdx = 0; VertIdx < TriangleMeshDesc.Vertices.Num(); VertIdx++)
+	{
+		VertPositions[VertIdx] = TriangleMeshDesc.Vertices[VertIdx];
+	}
+
+	// Copy UV channels (checking they are correct size)
+	for (int32 UVIndex = 0; UVIndex < TriangleMeshDesc.UVs.Num(); UVIndex++)
+	{
+		if (TriangleMeshDesc.UVs[UVIndex].Num() == NumVerts)
+		{
+			VertUVs.Add(TriangleMeshDesc.UVs[UVIndex]);
+		}
+		else
+		{
+			break;
+		}
+	}
+}
+
 void UBodySetup::AddCollisionFrom(class UBodySetup* FromSetup)
 {
 	AddCollisionFrom(FromSetup->AggGeom);
 }
 
-DECLARE_CYCLE_STAT(TEXT("Create Physics Meshes"), STAT_CreatePhysicsMeshes, STATGROUP_Physics);
+bool IsRuntime(const UBodySetup* BS)
+{
+			UActorComponent* OwningComp = Cast<UActorComponent>(BS->GetOuter());
+			UWorld* World = OwningComp ? OwningComp->GetWorld() : nullptr;
+			const bool bIsRuntime = World && World->IsGameWorld();
+			return bIsRuntime;
+}
 
+DECLARE_CYCLE_STAT(TEXT("Create Physics Meshes"), STAT_CreatePhysicsMeshes, STATGROUP_Physics);
 
 void UBodySetup::CreatePhysicsMeshes()
 {
@@ -174,11 +418,20 @@ void UBodySetup::CreatePhysicsMeshes()
 	{
 		return;
 	}
+	
+	bool bClearMeshes = true;
 
 	// Find or create cooked physics data
 	static FName PhysicsFormatName(FPlatformProperties::GetPhysicsFormat());
 	FByteBulkData* FormatData = GetCookedData(PhysicsFormatName);
-	if( FormatData )
+
+	// On dedicated servers we may be cooking generic data and sharing it
+	if (FormatData == nullptr && IsRunningDedicatedServer())
+	{
+		FormatData = GetCookedData(FGenericPlatformProperties::GetPhysicsFormat());
+	}
+
+	if (FormatData)
 	{
 		if (FormatData->IsLocked())
 		{
@@ -186,7 +439,7 @@ void UBodySetup::CreatePhysicsMeshes()
 			return;
 		}
 
-		FPhysXFormatDataReader CookedDataReader(*FormatData, &UVInfo);
+		FPhysXCookingDataReader CookedDataReader(*FormatData, &UVInfo);
 
 		if (GetCollisionTraceFlag() != CTF_UseComplexAsSimple)
 		{
@@ -194,56 +447,88 @@ void UBodySetup::CreatePhysicsMeshes()
 			bNeedsCooking = bNeedsCooking || (bGenerateMirroredCollision && CookedDataReader.ConvexMeshesNegX.Num() != AggGeom.ConvexElems.Num());
 			if (bNeedsCooking)	//Because of bugs it's possible to save with out of sync cooked data. In editor we want to fixup this data
 			{
-#if WITH_EDITOR
 				InvalidatePhysicsData();
 				CreatePhysicsMeshes();
 				return;
-#endif
-			}
-		}
-		
-		ClearPhysicsMeshes();
-
-		if (GetCollisionTraceFlag() != CTF_UseComplexAsSimple)
-		{
-
-			ensure(!bGenerateNonMirroredCollision || CookedDataReader.ConvexMeshes.Num() == 0 || CookedDataReader.ConvexMeshes.Num() == AggGeom.ConvexElems.Num());
-			ensure(!bGenerateMirroredCollision || CookedDataReader.ConvexMeshesNegX.Num() == 0 || CookedDataReader.ConvexMeshesNegX.Num() == AggGeom.ConvexElems.Num());
-
-			//If the cooked data no longer has convex meshes, make sure to empty AggGeom.ConvexElems - otherwise we leave NULLS which cause issues, and we also read past the end of CookedDataReader.ConvexMeshes
-			if ((bGenerateNonMirroredCollision && CookedDataReader.ConvexMeshes.Num() == 0) || (bGenerateMirroredCollision && CookedDataReader.ConvexMeshesNegX.Num() == 0))
-			{
-				AggGeom.ConvexElems.Empty();
-			}
-
-			for (int32 ElementIndex = 0; ElementIndex < AggGeom.ConvexElems.Num(); ElementIndex++)
-			{
-				FKConvexElem& ConvexElem = AggGeom.ConvexElems[ElementIndex];
-
-				if (bGenerateNonMirroredCollision)
-				{
-					ConvexElem.SetConvexMesh(CookedDataReader.ConvexMeshes[ElementIndex]);
-					FPhysxSharedData::Get().Add(ConvexElem.GetConvexMesh());
-				}
-
-				if (bGenerateMirroredCollision)
-				{
-					ConvexElem.SetMirroredConvexMesh(CookedDataReader.ConvexMeshesNegX[ElementIndex]);
-					FPhysxSharedData::Get().Add(ConvexElem.GetMirroredConvexMesh());
-				}
 			}
 		}
 
-		for(PxTriangleMesh* TriMesh : CookedDataReader.TriMeshes)
-		{
-			check(TriMesh);
-			TriMeshes.Add(TriMesh);
-			FPhysxSharedData::Get().Add(TriMesh);
-		}
+		FinishCreatingPhysicsMeshes(CookedDataReader.ConvexMeshes, CookedDataReader.ConvexMeshesNegX, CookedDataReader.TriMeshes);
+		bClearMeshes = false;
 	}
 	else
 	{
-		ClearPhysicsMeshes(); // Make sure all are cleared then
+		if (IsRuntime(this))
+		{
+			FPhysXCookHelper CookHelper(GetPhysXCookingModule());
+					
+			GetCookInfo(CookHelper.CookInfo, GetRuntimeOnlyCookOptimizationFlags());
+			if(CookHelper.HasSomethingToCook(CookHelper.CookInfo))
+			{
+				if (!IsRuntimeCookingEnabled())
+				{
+					UE_LOG(LogPhysics, Error, TEXT("Attempting to build physics data for %s at runtime, but runtime cooking is disabled (see the RuntimePhysXCooking plugin)."), *GetPathName());
+				}
+				else
+				{
+					CookHelper.CreatePhysicsMeshes_Concurrent();
+					FinishCreatingPhysicsMeshes(CookHelper.OutNonMirroredConvexMeshes, CookHelper.OutMirroredConvexMeshes, CookHelper.OutTriangleMeshes);
+					bClearMeshes = false;
+				}
+			}
+		}
+	}
+
+	if(bClearMeshes)
+	{
+		ClearPhysicsMeshes();
+	}
+	
+	bCreatedPhysicsMeshes = true;
+#endif //WITH_PHYSX
+}
+
+#if WITH_PHYSX
+void UBodySetup::FinishCreatingPhysicsMeshes(const TArray<PxConvexMesh*>& ConvexMeshes, const TArray<PxConvexMesh*>& ConvexMeshesNegX, const TArray<PxTriangleMesh*>& CookedTriMeshes)
+{
+	check(IsInGameThread());
+	ClearPhysicsMeshes();
+
+	const FString FullName = GetFullName();
+	if (GetCollisionTraceFlag() != CTF_UseComplexAsSimple)
+	{
+		ensure(!bGenerateNonMirroredCollision || ConvexMeshes.Num() == 0 || ConvexMeshes.Num() == AggGeom.ConvexElems.Num());
+		ensure(!bGenerateMirroredCollision || ConvexMeshesNegX.Num() == 0 || ConvexMeshesNegX.Num() == AggGeom.ConvexElems.Num());
+
+		//If the cooked data no longer has convex meshes, make sure to empty AggGeom.ConvexElems - otherwise we leave NULLS which cause issues, and we also read past the end of CookedDataReader.ConvexMeshes
+		if ((bGenerateNonMirroredCollision && ConvexMeshes.Num() == 0) || (bGenerateMirroredCollision && ConvexMeshesNegX.Num() == 0))
+		{
+			AggGeom.ConvexElems.Empty();
+		}
+
+		for (int32 ElementIndex = 0; ElementIndex < AggGeom.ConvexElems.Num(); ElementIndex++)
+		{
+			FKConvexElem& ConvexElem = AggGeom.ConvexElems[ElementIndex];
+
+			if (bGenerateNonMirroredCollision)
+			{
+				ConvexElem.SetConvexMesh(ConvexMeshes[ElementIndex]);
+				FPhysxSharedData::Get().Add(ConvexElem.GetConvexMesh(), FullName);
+			}
+
+			if (bGenerateMirroredCollision)
+			{
+				ConvexElem.SetMirroredConvexMesh(ConvexMeshesNegX[ElementIndex]);
+				FPhysxSharedData::Get().Add(ConvexElem.GetMirroredConvexMesh(), FullName);
+			}
+		}
+	}
+
+	for (PxTriangleMesh* TriMesh : CookedTriMeshes)
+	{
+		check(TriMesh);
+		TriMeshes.Add(TriMesh);
+		FPhysxSharedData::Get().Add(TriMesh, FullName);
 	}
 
 	// Clear the cooked data
@@ -253,9 +538,69 @@ void UBodySetup::CreatePhysicsMeshes()
 	}
 
 	bCreatedPhysicsMeshes = true;
+}
+#endif //WITH_PHYSX
+
+void UBodySetup::CreatePhysicsMeshesAsync(FOnAsyncPhysicsCookFinished OnAsyncPhysicsCookFinished)
+{
+	check(IsInGameThread());
+#if WITH_PHYSX_COOKING
+	UActorComponent* OwningComp = Cast<UActorComponent>(GetOuter());
+	UWorld* World = OwningComp ? OwningComp->GetWorld() : nullptr;
+	const bool bIsRuntime = World && World->IsGameWorld();
+
+	if (bIsRuntime && !IsRuntimeCookingEnabled())
+	{
+		UE_LOG(LogPhysics, Error, TEXT("Attempting to build physics data for %s at runtime, but runtime cooking is disabled (see the RuntimePhysXCooking plugin)."), *GetPathName());
+		FinishCreatePhysicsMeshesAsync(nullptr, OnAsyncPhysicsCookFinished);
+		return;
+	}
 #endif
+
+#if WITH_PHYSX
+	if(IPhysXCookingModule* PhysXCookingModule = GetPhysXCookingModule())
+	{
+		FPhysXCookHelper* AsyncPhysicsCookHelper = new FPhysXCookHelper(PhysXCookingModule);
+		GetCookInfo(AsyncPhysicsCookHelper->CookInfo, GetRuntimeOnlyCookOptimizationFlags());	//TODO: pass in different flags?
+
+		if(AsyncPhysicsCookHelper->HasSomethingToCook(AsyncPhysicsCookHelper->CookInfo))
+		{
+			FSimpleDelegateGraphTask::CreateAndDispatchWhenReady(FSimpleDelegateGraphTask::FDelegate::CreateRaw(AsyncPhysicsCookHelper, &FPhysXCookHelper::CreatePhysicsMeshesAsync_Concurrent,
+				/*FinishDelegate=*/FSimpleDelegateGraphTask::FDelegate::CreateUObject(this, &UBodySetup::FinishCreatePhysicsMeshesAsync, AsyncPhysicsCookHelper, OnAsyncPhysicsCookFinished)),
+				GET_STATID(STAT_PhysXCooking), nullptr, ENamedThreads::AnyThread);
+		}
+		else
+		{
+			delete AsyncPhysicsCookHelper;
+			FinishCreatePhysicsMeshesAsync(nullptr, OnAsyncPhysicsCookFinished);
+		}
+	}
+	else
+	{
+		FinishCreatePhysicsMeshesAsync(nullptr, OnAsyncPhysicsCookFinished);
+	}
+#endif // WITH_PHYSX
 }
 
+#if WITH_PHYSX
+void UBodySetup::FinishCreatePhysicsMeshesAsync(FPhysXCookHelper* AsyncPhysicsCookHelper, FOnAsyncPhysicsCookFinished OnAsyncPhysicsCookFinished)
+{
+	if(AsyncPhysicsCookHelper)
+	{
+		FinishCreatingPhysicsMeshes(AsyncPhysicsCookHelper->OutNonMirroredConvexMeshes, AsyncPhysicsCookHelper->OutMirroredConvexMeshes, AsyncPhysicsCookHelper->OutTriangleMeshes);
+		UVInfo = AsyncPhysicsCookHelper->OutUVInfo;
+		delete AsyncPhysicsCookHelper;
+
+	}
+	else
+	{
+		ClearPhysicsMeshes();
+		bCreatedPhysicsMeshes = true;
+	}
+
+	OnAsyncPhysicsCookFinished.ExecuteIfBound();
+}
+#endif // WITH_PHYSX
 
 void UBodySetup::ClearPhysicsMeshes()
 {
@@ -290,7 +635,7 @@ void UBodySetup::ClearPhysicsMeshes()
 	TriMeshes.Empty();
 
 	bCreatedPhysicsMeshes = false;
-#endif
+#endif // WITH_PHYSX
 
 	// Also clear render info
 	AggGeom.FreeRenderInfo();
@@ -332,6 +677,8 @@ bool CalcMeshNegScaleCompensation(const FVector& InScale3D, PxTransform& POutTra
 	return (InScale3D.X * InScale3D.Y * InScale3D.Z) < 0.f;
 }
 
+#endif // WITH_PHYSX
+
 void SetupNonUniformHelper(FVector Scale3D, float& MinScale, float& MinScaleAbs, FVector& Scale3DAbs)
 {
 	// if almost zero, set min scale
@@ -355,16 +702,18 @@ void SetupNonUniformHelper(FVector Scale3D, float& MinScale, float& MinScaleAbs,
 	}
 }
 
-void GetContactOffsetParams(float& ContactOffsetFactor, float& MinContactOffset, float& MaxContactOffset)
+#if WITH_PHYSX
+
+void FBodySetupShapeIterator::GetContactOffsetParams(float& InOutContactOffsetFactor, float& InOutMinContactOffset, float& InOutMaxContactOffset)
 {
 	// Get contact offset params
-	ContactOffsetFactor = CVarContactOffsetFactor.GetValueOnGameThread();
-	MaxContactOffset = CVarMaxContactOffset.GetValueOnGameThread();
+	InOutContactOffsetFactor = CVarContactOffsetFactor.GetValueOnAnyThread();
+	InOutMaxContactOffset = CVarMaxContactOffset.GetValueOnAnyThread();
 
-	ContactOffsetFactor = ContactOffsetFactor < 0.f ? UPhysicsSettings::Get()->ContactOffsetMultiplier : ContactOffsetFactor;
-	MaxContactOffset = MaxContactOffset < 0.f ? UPhysicsSettings::Get()->MaxContactOffset : MaxContactOffset;
+	InOutContactOffsetFactor = InOutContactOffsetFactor < 0.f ? UPhysicsSettings::Get()->ContactOffsetMultiplier : InOutContactOffsetFactor;
+	InOutMaxContactOffset = InOutMaxContactOffset < 0.f ? UPhysicsSettings::Get()->MaxContactOffset : InOutMaxContactOffset;
 
-	MinContactOffset = UPhysicsSettings::Get()->MinContactOffset;
+	InOutMinContactOffset = UPhysicsSettings::Get()->MinContactOffset;
 }
 
 PxMaterial* GetDefaultPhysMaterial()
@@ -514,11 +863,10 @@ template <> FString FBodySetupShapeIterator::GetDebugName<FKSphylElem>() const
 	return TEXT("Capsule");
 }
 
-
 ////////////////////////////// Convex elements ////////////////////////////
 template <> bool FBodySetupShapeIterator::PopulatePhysXGeometryAndTransform(const FKConvexElem& ConvexElem, PxConvexMeshGeometry& OutGeometry, PxTransform& OutTM) const
 {
-	const bool bUseNegX = CalcMeshNegScaleCompensation(Scale3D, OutTM);
+	const bool bUseNegX = CalcMeshNegScaleCompensation(Scale3D * RelativeTM.GetScale3D(), OutTM);
 
 	PxConvexMesh* UseConvexMesh = bUseNegX ? ConvexElem.GetMirroredConvexMesh() : ConvexElem.GetConvexMesh();
 	if (UseConvexMesh)
@@ -624,10 +972,8 @@ template <> FString FBodySetupShapeIterator::GetDebugName<PxTriangleMesh*>() con
 
 void UBodySetup::AddShapesToRigidActor_AssumesLocked(FBodyInstance* OwningInstance, physx::PxRigidActor* PDestActor, EPhysicsSceneType SceneType, FVector& Scale3D, physx::PxMaterial* SimpleMaterial, TArray<UPhysicalMaterial*>& ComplexMaterials, FShapeData& ShapeData, const FTransform& RelativeTM, TArray<physx::PxShape*>* NewShapes, bool bShapeSharing)
 {
-#if WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR
 	// in editor, there are a lot of things relying on body setup to create physics meshes
 	CreatePhysicsMeshes();
-#endif
 
 	// if almost zero, set min scale
 	// @todo fixme
@@ -715,9 +1061,6 @@ void UBodySetup::AddShapesToRigidActor_AssumesLocked(FBodyInstance* OwningInstan
 
 #endif // WITH_PHYSX
 
-
-#if WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR
-
 void UBodySetup::RemoveSimpleCollision()
 {
 	AggGeom.EmptyElements();
@@ -793,8 +1136,6 @@ void UBodySetup::InvalidatePhysicsData()
 		CookedFormatData.FlushData();
 	}
 }
-#endif // WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR
-
 
 void UBodySetup::BeginDestroy()
 {
@@ -816,7 +1157,6 @@ void UBodySetup::Serialize(FArchive& Ar)
 {
 	Super::Serialize(Ar);
 
-
 	// Load GUID (or create one for older versions)
 	Ar << BodySetupGuid;
 
@@ -833,13 +1173,6 @@ void UBodySetup::Serialize(FArchive& Ar)
 
 	bool bDuplicating = (Ar.GetPortFlags() & PPF_Duplicate) != 0;
 
-#if !WITH_RUNTIME_PHYSICS_COOKING
-	if (FPlatformProperties::RequiresCookedData() && !bCooked && Ar.IsLoading() && !bDuplicating)
-	{
-		UE_LOG(LogPhysics, Fatal, TEXT("This platform requires cooked packages, and physX data was not cooked into %s."), *GetFullName());
-	}
-#endif //!WITH_RUNTIME_PHYSICS_COOKING
-
 	if (bCooked)
 	{
 #if WITH_EDITOR
@@ -854,7 +1187,7 @@ void UBodySetup::Serialize(FArchive& Ar)
 			TArray<FName> ActualFormatsToSave;
 			ActualFormatsToSave.Add(Format);
 
-			Ar << bHasCookedCollisionData;
+			FArchive_Serialize_BitfieldBool(Ar, bHasCookedCollisionData);
 
 			FFormatContainer* UseCookedFormatData = bUseRuntimeOnlyCookedData ? &CookedFormatDataRuntimeOnlyOptimization : &CookedFormatData;
 			UseCookedFormatData->Serialize(Ar, this, &ActualFormatsToSave, !bSharedCookedData);
@@ -864,7 +1197,9 @@ void UBodySetup::Serialize(FArchive& Ar)
 		{
 			if (Ar.UE4Ver() >= VER_UE4_STORE_HASCOOKEDDATA_FOR_BODYSETUP)
 			{
-				Ar << bHasCookedCollisionData;
+				bool bTemp = bHasCookedCollisionData;
+				Ar << bTemp;
+				bHasCookedCollisionData = bTemp;
 			}
 			CookedFormatData.Serialize(Ar, this);
 		}
@@ -887,10 +1222,12 @@ void UBodySetup::PostLoad()
 		Outer->ConditionalPostLoad();
 	}
 
+#if WITH_EDITORONLY_DATA
 	if ( GetLinkerUE4Version() < VER_UE4_BUILD_SCALE_VECTOR )
 	{
 		BuildScale3D = FVector( BuildScale_DEPRECATED );
 	}
+#endif
 
 	DefaultInstance.FixupData(this);
 
@@ -1066,7 +1403,7 @@ void UBodySetup::ClearCachedCookedPlatformData( const ITargetPlatform* TargetPla
 }
 #endif
 
-#if WITH_PHYSX && (WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR)
+#if WITH_PHYSX
 EPhysXMeshCookFlags UBodySetup::GetRuntimeOnlyCookOptimizationFlags() const
 {
 	EPhysXMeshCookFlags RuntimeCookFlags = EPhysXMeshCookFlags::Default;
@@ -1108,7 +1445,6 @@ bool UBodySetup::CalcUVAtLocation(const FVector& BodySpaceLocation, int32 FaceIn
 	return bSuccess;
 }
 
-
 FByteBulkData* UBodySetup::GetCookedData(FName Format, bool bRuntimeOnlyOptimizedVersion)
 {
 	if (IsTemplate())
@@ -1134,56 +1470,45 @@ FByteBulkData* UBodySetup::GetCookedData(FName Format, bool bRuntimeOnlyOptimize
 
 	bool bContainedData = UseCookedData->Contains(Format);
 	FByteBulkData* Result = &UseCookedData->GetFormat(Format);
-#if WITH_PHYSX
+	bool bIsRuntime = IsRuntime(this);
+
+#if WITH_PHYSX && WITH_EDITOR
 	if (!bContainedData)
 	{
-#if !defined(WITH_RUNTIME_PHYSICS_COOKING) || !WITH_RUNTIME_PHYSICS_COOKING
-		if (FPlatformProperties::RequiresCookedData())
-		{
-			UE_LOG(LogPhysics, Error, TEXT("Attempt to build physics data for %s when we are unable to. This platform requires cooked packages."), *GetPathName());
-		}
-#endif
+		SCOPE_CYCLE_COUNTER(STAT_PhysXCooking);
 
 		if (AggGeom.ConvexElems.Num() == 0 && (CDP == NULL || CDP->ContainsPhysicsTriMeshData(bMeshCollideAll) == false))
 		{
-			return NULL;
+			return nullptr;
 		}
 
-#if WITH_EDITOR
 		const bool bEligibleForRuntimeOptimization = UseCookedData == &CookedFormatDataRuntimeOnlyOptimization;
-#else
-		const bool bEligibleForRuntimeOptimization = CookedFormatDataOverride == nullptr;	//We don't support runtime cook optimization for per poly skeletal mesh. This is an edge case we may want to support (only helps memory savings)
-#endif
-
-#if WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR
-		TArray<uint8> OutData;
 
 		const EPhysXMeshCookFlags CookingFlags = bEligibleForRuntimeOptimization ? GetRuntimeOnlyCookOptimizationFlags() : EPhysXMeshCookFlags::Default;
-		FDerivedDataPhysXCooker* DerivedPhysXData = new FDerivedDataPhysXCooker(Format, CookingFlags, this);
+
+		TArray<uint8> OutData;
+		FDerivedDataPhysXCooker* DerivedPhysXData = new FDerivedDataPhysXCooker(Format, CookingFlags, this, bIsRuntime);
+			
 		if (DerivedPhysXData->CanBuild())
 		{
-		#if WITH_EDITOR
 			COOK_STAT(auto Timer = PhysXBodySetupCookStats::UsageStats.TimeSyncWork());
 			bool bDataWasBuilt = false;
 			bool DDCHit = GetDerivedDataCacheRef().GetSynchronous(DerivedPhysXData, OutData, &bDataWasBuilt);
-		#elif WITH_RUNTIME_PHYSICS_COOKING
-			DerivedPhysXData->Build(OutData);
-		#endif
 			COOK_STAT(Timer.AddHitOrMiss(!DDCHit || bDataWasBuilt ? FCookStats::CallStats::EHitOrMiss::Miss : FCookStats::CallStats::EHitOrMiss::Hit, OutData.Num()));
-			if (OutData.Num())
-			{
-				Result->Lock(LOCK_READ_WRITE);
-				FMemory::Memcpy(Result->Realloc(OutData.Num()), OutData.GetData(), OutData.Num());
-				Result->Unlock();
-			}
 		}
-		else
-#endif
+
+		if (OutData.Num())
+		{
+			Result->Lock(LOCK_READ_WRITE);
+			FMemory::Memcpy(Result->Realloc(OutData.Num()), OutData.GetData(), OutData.Num());
+			Result->Unlock();
+		}
+		else if(!bIsRuntime)	//only want to warn if DDC cooking failed - if it's really trying to use runtime and we can't, the runtime cooker code will catch it
 		{
 			UE_LOG(LogPhysics, Warning, TEXT("Attempt to build physics data for %s when we are unable to."), *GetPathName());
 		}
 	}
-#endif // WITH_PHYSX
+#endif // WITH_PHYSX && WITH_EDITOR
 	check(Result);
 	return Result->GetBulkDataSize() > 0 ? Result : NULL; // we don't return empty bulk data...but we save it to avoid thrashing the DDC
 }
@@ -1338,17 +1663,17 @@ float FKAggregateGeom::GetVolume(const FVector& Scale) const
 	return Volume;
 }
 
-int32 FKAggregateGeom::GetElementCount(int32 Type) const
+int32 FKAggregateGeom::GetElementCount(EAggCollisionShape::Type Type) const
 {
 	switch (Type)
 	{
-	case KPT_Box:
+	case EAggCollisionShape::Box:
 		return BoxElems.Num();
-	case KPT_Convex:
+	case EAggCollisionShape::Convex:
 		return ConvexElems.Num();
-	case KPT_Sphyl:
+	case EAggCollisionShape::Sphyl:
 		return SphylElems.Num();
-	case KPT_Sphere:
+	case EAggCollisionShape::Sphere:
 		return SphereElems.Num();
 	default:
 		return 0;
@@ -1626,22 +1951,31 @@ FKSphylElem FKSphylElem::GetFinalScaled(const FVector& Scale3D, const FTransform
 
 	SetupNonUniformHelper(Scale3D * RelativeTM.GetScale3D(), MinScale, MinScaleAbs, Scale3DAbs);
 
-	float ScaleRadius = FMath::Max(Scale3DAbs.X, Scale3DAbs.Y);
-	float ScaleLength = Scale3DAbs.Z;
-	
-	// this is a bit confusing since radius and height is scaled
-	// first apply the scale first 
-	ScaledSphylElem.Radius = FMath::Max(Radius * ScaleRadius, 0.1f);
-	ScaledSphylElem.Length = Length + Radius * 2.f;
-	float HalfLength = FMath::Max(ScaledSphylElem.Length * ScaleLength * 0.5f, 0.1f);
-	ScaledSphylElem.Radius = FMath::Clamp(ScaledSphylElem.Radius, 0.1f, HalfLength);	//radius is capped by half length
-	ScaledSphylElem.Length = FMath::Max(0.1f, (HalfLength - ScaledSphylElem.Radius) * 2.f);
+	ScaledSphylElem.Radius = GetScaledRadius(Scale3DAbs);
+	ScaledSphylElem.Length = GetScaledCylinderLength(Scale3DAbs);
 
 	FVector LocalOrigin = RelativeTM.TransformPosition(Center) * Scale3D;
 	ScaledSphylElem.Center = LocalOrigin;
 	ScaledSphylElem.Rotation = FRotator(RelativeTM.GetRotation() * FQuat(ScaledSphylElem.Rotation));
 
 	return ScaledSphylElem;
+}
+
+float FKSphylElem::GetScaledRadius(const FVector& Scale3D) const
+{
+	const FVector Scale3DAbs = Scale3D.GetAbs();
+	const float RadiusScale = FMath::Max(Scale3DAbs.X, Scale3DAbs.Y);
+	return FMath::Clamp(Radius * RadiusScale, 0.1f, GetScaledHalfLength(Scale3DAbs));
+}
+
+float FKSphylElem::GetScaledCylinderLength(const FVector& Scale3D) const
+{
+	return FMath::Max(0.1f, (GetScaledHalfLength(Scale3D) - GetScaledRadius(Scale3D)) * 2.f);
+}
+
+float FKSphylElem::GetScaledHalfLength(const FVector& Scale3D) const
+{
+	return FMath::Max((Length + Radius * 2.0f) * FMath::Abs(Scale3D.Z) * 0.5f, 0.1f);
 }
 
 float FKSphylElem::GetShortestDistanceToPoint(const FVector& WorldPosition, const FTransform& BoneToWorldTM) const
@@ -1767,8 +2101,17 @@ TEnumAsByte<enum ECollisionTraceFlag> UBodySetup::GetCollisionTraceFlag() const
 	TEnumAsByte<enum ECollisionTraceFlag> DefaultFlag = UPhysicsSettings::Get()->DefaultShapeComplexity;
 	return CollisionTraceFlag == ECollisionTraceFlag::CTF_UseDefault ? DefaultFlag : CollisionTraceFlag;
 }
+
+#if WITH_PHYSX
+
+/// @cond DOXYGEN_WARNINGS
+
 template void FBodySetupShapeIterator::ForEachShape(const TArray<FKSphereElem>&, TFunctionRef<void(const FKSphereElem&, const physx::PxSphereGeometry&, const physx::PxTransform&, float)>) const;
 template void FBodySetupShapeIterator::ForEachShape(const TArray<FKBoxElem>&, TFunctionRef<void(const FKBoxElem&, const physx::PxBoxGeometry&, const physx::PxTransform&, float)>) const;
 template void FBodySetupShapeIterator::ForEachShape(const TArray<FKSphylElem>&, TFunctionRef<void(const FKSphylElem&, const physx::PxCapsuleGeometry&, const physx::PxTransform&, float)>) const;
 template void FBodySetupShapeIterator::ForEachShape(const TArray<FKConvexElem>&, TFunctionRef<void(const FKConvexElem&, const physx::PxConvexMeshGeometry&, const physx::PxTransform&, float)>) const;
 template void FBodySetupShapeIterator::ForEachShape(const TArray<physx::PxTriangleMesh*>&, TFunctionRef<void(physx::PxTriangleMesh* const &, const physx::PxTriangleMeshGeometry&, const physx::PxTransform&, float)>) const;
+
+/// @endcond
+
+#endif //WITH_PHYSX

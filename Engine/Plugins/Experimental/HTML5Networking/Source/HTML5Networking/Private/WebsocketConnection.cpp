@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HTML5NetworkingPrivate.h"
 
@@ -93,7 +93,13 @@ void UWebSocketConnection::LowLevelSend(void* Data, int32 CountBytes, int32 Coun
 		UE_LOG( LogNet, Warning, TEXT( "UWebSocketConnection::LowLevelSend: CountBytes > MaxPacketSize! Count: %i, MaxPacket: %i %s" ), CountBytes, MaxPacket, *Describe() );
 	}
 
-	if (CountBytes > 0)
+	bool bBlockSend = false;
+
+#if !UE_BUILD_SHIPPING
+	LowLevelSendDel.ExecuteIfBound((void*)DataToSend, CountBytes, bBlockSend);
+#endif
+
+	if (!bBlockSend && CountBytes > 0)
 	{
 		WebSocket->Send((uint8*)DataToSend, CountBytes);
 	}
@@ -160,8 +166,24 @@ void UWebSocketConnection::ReceivedRawPacket(void* Data,int32 Count)
 									Driver->ConnectionlessHandler->IncomingConnectionless(LowLevelGetRemoteAddress(true), DataRef, Count);
 	
 			TSharedPtr<StatelessConnectHandlerComponent> StatelessConnect = Driver->StatelessConnectComponent.Pin();
+
 			if (!UnProcessedPacket.bError && StatelessConnect->HasPassedChallenge(LowLevelGetRemoteAddress(true)))
 			{
+				UE_LOG(LogNet, Log, TEXT("Server accepting post-challenge connection from: %s"), *LowLevelGetRemoteAddress(true));
+				// Set the initial packet sequence from the handshake data
+				if (StatelessConnectComponent.IsValid())
+				{
+					int32 ServerSequence = 0;
+					int32 ClientSequence = 0;
+					StatelessConnect->GetChallengeSequence(ServerSequence, ClientSequence);
+					InitSequence(ClientSequence, ServerSequence);
+				}
+
+				if (Handler.IsValid())
+				{
+					Handler->BeginHandshaking();
+				}
+
 				bChallengeHandshake = false; // i.e. bPassedChallenge
 				UE_LOG(LogNet, Warning, TEXT("UWebSocketConnection::bChallengeHandshake: %s"), *LowLevelDescribe());
 				Count = FMath::DivideAndRoundUp(UnProcessedPacket.CountBits, 8);

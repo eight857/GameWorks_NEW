@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Stats/Stats.h"
@@ -100,7 +100,7 @@ bool UPrimitiveComponent::ApplyRigidBodyState(const FRigidBodyState& NewState, c
 		/////// BODY UPDATE ///////
 		BI->SetBodyTransform(FTransform(UpdatedQuat, UpdatedPos), ETeleportType::TeleportPhysics);
 		BI->SetLinearVelocity(NewState.LinVel + FixLinVel, false);
-		BI->SetAngularVelocity(NewState.AngVel + FixAngVel, false);
+		BI->SetAngularVelocityInRadians(FMath::DegreesToRadians(NewState.AngVel + FixAngVel), false);
 
 		// state is restored when no velocity corrections are required
 		bRestoredState = (FixLinVel.SizeSquared() < KINDA_SMALL_NUMBER) && (FixAngVel.SizeSquared() < KINDA_SMALL_NUMBER);
@@ -139,6 +139,10 @@ bool UPrimitiveComponent::ConditionalApplyRigidBodyState(FRigidBodyState& Update
 		}
 
 		bUpdated = true;
+
+		// Need to update the component to match new position.
+		// TODO: Only call this if OutDeltaPos is non-zero? May not capture rotations.
+		SyncComponentToRBPhysics();
 	}
 
 	return bUpdated;
@@ -153,7 +157,7 @@ bool UPrimitiveComponent::GetRigidBodyState(FRigidBodyState& OutState, FName Bon
 		OutState.Position = BodyTM.GetTranslation();
 		OutState.Quaternion = BodyTM.GetRotation();
 		OutState.LinVel = BI->GetUnrealWorldVelocity();
-		OutState.AngVel = BI->GetUnrealWorldAngularVelocity();
+		OutState.AngVel = FMath::RadiansToDegrees(BI->GetUnrealWorldAngularVelocityInRadians());
 		OutState.Flags = (BI->IsInstanceAwake() ? ERigidBodyFlags::None : ERigidBodyFlags::Sleeping);
 		return true;
 	}
@@ -232,12 +236,12 @@ void UPrimitiveComponent::AddImpulse(FVector Impulse, FName BoneName, bool bVelC
 	}
 }
 
-void UPrimitiveComponent::AddAngularImpulse(FVector Impulse, FName BoneName, bool bVelChange)
+void UPrimitiveComponent::AddAngularImpulseInRadians(FVector Impulse, FName BoneName, bool bVelChange)
 {
 	if (FBodyInstance* BI = GetBodyInstance(BoneName))
 	{
 		WarnInvalidPhysicsOperations(LOCTEXT("AddAngularImpulse", "AddAngularImpulse"), BI, BoneName);
-		BI->AddAngularImpulse(Impulse, bVelChange);
+		BI->AddAngularImpulseInRadians(Impulse, bVelChange);
 	}
 }
 
@@ -306,12 +310,12 @@ void UPrimitiveComponent::AddRadialForce(FVector Origin, float Radius, float Str
 	}
 }
 
-void UPrimitiveComponent::AddTorque(FVector Torque, FName BoneName, bool bAccelChange)
+void UPrimitiveComponent::AddTorqueInRadians(FVector Torque, FName BoneName, bool bAccelChange)
 {
 	if (FBodyInstance* BI = GetBodyInstance(BoneName))
 	{
 		WarnInvalidPhysicsOperations(LOCTEXT("AddTorque", "AddTorque"), BI, BoneName);
-		BI->AddTorque(Torque, true, bAccelChange);
+		BI->AddTorqueInRadians(Torque, true, bAccelChange);
 	}
 }
 
@@ -347,35 +351,35 @@ void UPrimitiveComponent::SetAllPhysicsLinearVelocity(FVector NewVel,bool bAddTo
 	SetPhysicsLinearVelocity(NewVel, bAddToCurrent, NAME_None);
 }
 
-void UPrimitiveComponent::SetPhysicsAngularVelocity(FVector NewAngVel, bool bAddToCurrent, FName BoneName)
+void UPrimitiveComponent::SetPhysicsAngularVelocityInRadians(FVector NewAngVel, bool bAddToCurrent, FName BoneName)
 {
 	if (FBodyInstance* BI = GetBodyInstance(BoneName))
 	{
 		WarnInvalidPhysicsOperations(LOCTEXT("SetPhysicsAngularVelocity", "SetPhysicsAngularVelocity"), nullptr, BoneName);
-		BI->SetAngularVelocity(NewAngVel, bAddToCurrent);
+		BI->SetAngularVelocityInRadians(NewAngVel, bAddToCurrent);
 	}
 }
 
-void UPrimitiveComponent::SetPhysicsMaxAngularVelocity(float NewMaxAngVel, bool bAddToCurrent, FName BoneName)
+void UPrimitiveComponent::SetPhysicsMaxAngularVelocityInRadians(float NewMaxAngVel, bool bAddToCurrent, FName BoneName)
 {
 	if (FBodyInstance* BI = GetBodyInstance(BoneName))
 	{
 		WarnInvalidPhysicsOperations(LOCTEXT("SetPhysicsMaxAngularVelocity", "SetPhysicsMaxAngularVelocity"), nullptr, BoneName);
-		BI->SetMaxAngularVelocity(NewMaxAngVel, bAddToCurrent);
+		BI->SetMaxAngularVelocityInRadians(NewMaxAngVel, bAddToCurrent);
 	}
 }
 
-FVector UPrimitiveComponent::GetPhysicsAngularVelocity(FName BoneName)
+FVector UPrimitiveComponent::GetPhysicsAngularVelocityInRadians(FName BoneName)
 {
 	FBodyInstance* const BI = GetBodyInstance(BoneName);
 	if(BI != NULL)
 	{
-		return BI->GetUnrealWorldAngularVelocity();
+		return BI->GetUnrealWorldAngularVelocityInRadians();
 	}
 	return FVector(0,0,0);
 }
 
-FVector UPrimitiveComponent::GetCenterOfMass(FName BoneName)
+FVector UPrimitiveComponent::GetCenterOfMass(FName BoneName) const
 {
 	if (FBodyInstance* ComponentBodyInstance = GetBodyInstance(BoneName))
 	{
@@ -395,9 +399,9 @@ void UPrimitiveComponent::SetCenterOfMass(FVector CenterOfMassOffset, FName Bone
 	}
 }
 
-void UPrimitiveComponent::SetAllPhysicsAngularVelocity(FVector const& NewAngVel, bool bAddToCurrent)
+void UPrimitiveComponent::SetAllPhysicsAngularVelocityInRadians(FVector const& NewAngVel, bool bAddToCurrent)
 {
-	SetPhysicsAngularVelocity(NewAngVel, bAddToCurrent, NAME_None); 
+	SetPhysicsAngularVelocityInRadians(NewAngVel, bAddToCurrent, NAME_None); 
 }
 
 
@@ -552,9 +556,9 @@ FVector UPrimitiveComponent::GetInertiaTensor(FName BoneName /* = NAME_None */) 
 FVector UPrimitiveComponent::ScaleByMomentOfInertia(FVector InputVector, FName BoneName /* = NAME_None */) const
 {
 	const FVector LocalInertiaTensor = GetInertiaTensor(BoneName);
-	const FVector InputVectorLocal = ComponentToWorld.InverseTransformVectorNoScale(InputVector);
+	const FVector InputVectorLocal = GetComponentTransform().InverseTransformVectorNoScale(InputVector);
 	const FVector LocalScaled = InputVectorLocal * LocalInertiaTensor;
-	const FVector WorldScaled = ComponentToWorld.TransformVectorNoScale(LocalScaled);
+	const FVector WorldScaled = GetComponentTransform().TransformVectorNoScale(LocalScaled);
 	return WorldScaled;
 }
 
@@ -576,6 +580,20 @@ float UPrimitiveComponent::CalculateMass(FName)
 	return 0.0f;
 }
 
+void UPrimitiveComponent::SetUseCCD(bool bInUseCCD, FName BoneName)
+{
+	FBodyInstance* BI = GetBodyInstance(BoneName);
+	if (BI)
+	{
+		BI->SetUseCCD(bInUseCCD);
+	}
+}
+
+void UPrimitiveComponent::SetAllUseCCD(bool bInUseCCD)
+{
+	SetUseCCD(bInUseCCD, NAME_None);
+}
+
 void UPrimitiveComponent::PutRigidBodyToSleep(FName BoneName)
 {
 	FBodyInstance* BI = GetBodyInstance(BoneName);
@@ -591,7 +609,7 @@ void UPrimitiveComponent::PutAllRigidBodiesToSleep()
 }
 
 
-bool UPrimitiveComponent::RigidBodyIsAwake(FName BoneName)
+bool UPrimitiveComponent::RigidBodyIsAwake(FName BoneName) const
 {
 	FBodyInstance* BI = GetBodyInstance(BoneName);
 	if(BI)
@@ -658,9 +676,9 @@ void UPrimitiveComponent::SyncComponentToRBPhysics()
 
 	// See if the transform is actually different, and if so, move the component to match physics
 	const FTransform NewTransform = GetComponentTransformFromBodyInstance(UseBI);	
-	if(!NewTransform.EqualsNoScale(ComponentToWorld))
+	if(!NewTransform.EqualsNoScale(GetComponentTransform()))
 	{
-		const FVector MoveBy = NewTransform.GetLocation() - ComponentToWorld.GetLocation();
+		const FVector MoveBy = NewTransform.GetLocation() - GetComponentTransform().GetLocation();
 		const FRotator NewRotation = NewTransform.Rotator();
 
 		//@warning: do not reference BodyInstance again after calling MoveComponent() - events from the move could have made it unusable (destroying the actor, SetPhysics(), etc)
@@ -834,18 +852,14 @@ void UPrimitiveComponent::UnWeldFromParent()
 		{
 			bool bRootIsBeingDeleted = RootComponent->IsPendingKillOrUnreachable();
 			const FBodyInstance* PrevWeldParent = NewRootBI->WeldParent;
-			if (!bRootIsBeingDeleted)
-			{
-				//create new root
-				RootBI->UnWeld(NewRootBI);	//don't bother fixing up shapes if RootComponent is about to be deleted
-			}
-
+			RootBI->UnWeld(NewRootBI);
+			
 			FPlatformAtomics::InterlockedExchangePtr((void**)&NewRootBI->WeldParent, nullptr);
 
 			bool bHasBodySetup = GetBodySetup() != nullptr;
 
 			//if BodyInstance hasn't already been created we need to initialize it
-			if (bHasBodySetup && NewRootBI->IsValidBodyInstance() == false)
+			if (!bRootIsBeingDeleted && bHasBodySetup && NewRootBI->IsValidBodyInstance() == false)
 			{
 				bool bPrevAutoWeld = NewRootBI->bAutoWeld;
 				NewRootBI->bAutoWeld = false;
@@ -880,7 +894,7 @@ void UPrimitiveComponent::UnWeldFromParent()
 			}
 
 			//If the new root body is simulating, we need to apply the weld on the children
-			if(NewRootBI->IsInstanceSimulatingPhysics())
+			if(!bRootIsBeingDeleted && NewRootBI->IsInstanceSimulatingPhysics())
 			{
 				NewRootBI->ApplyWeldOnChildren();
 			}
@@ -1015,7 +1029,7 @@ void UPrimitiveComponent::SetCollisionProfileName(FName InCollisionProfileName)
 	}
 }
 
-FName UPrimitiveComponent::GetCollisionProfileName()
+FName UPrimitiveComponent::GetCollisionProfileName() const
 {
 	return BodyInstance.GetCollisionProfileName();
 }
@@ -1047,8 +1061,7 @@ void UPrimitiveComponent::OnComponentCollisionSettingsChanged()
 
 bool UPrimitiveComponent::K2_LineTraceComponent(FVector TraceStart, FVector TraceEnd, bool bTraceComplex, bool bShowTrace, FVector& HitLocation, FVector& HitNormal, FName& BoneName, FHitResult& OutHit)
 {
-	static FName KismetTraceComponentName(TEXT("KismetTraceComponent"));
-	FCollisionQueryParams LineParams(KismetTraceComponentName, bTraceComplex);
+	FCollisionQueryParams LineParams(SCENE_QUERY_STAT(KismetTraceComponent), bTraceComplex);
 	const bool bDidHit = LineTraceComponent(OutHit, TraceStart, TraceEnd, LineParams);
 
 	if( bDidHit )

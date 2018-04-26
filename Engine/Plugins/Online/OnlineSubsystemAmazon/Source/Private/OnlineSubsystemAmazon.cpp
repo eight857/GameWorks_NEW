@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSubsystemAmazon.h"
 #include "Misc/CommandLine.h"
@@ -21,21 +21,21 @@ public:
 
 	virtual IOnlineSubsystemPtr CreateSubsystem(FName InstanceName)
 	{
-		FOnlineSubsystemAmazonPtr OnlineSub = MakeShareable(new FOnlineSubsystemAmazon(InstanceName));
+		FOnlineSubsystemAmazonPtr OnlineSub = MakeShared<FOnlineSubsystemAmazon, ESPMode::ThreadSafe>(InstanceName);
 		if (OnlineSub->IsEnabled())
 		{
 			if(!OnlineSub->Init())
 			{
 				UE_LOG(LogOnline, Warning, TEXT("Amazon API failed to initialize!"));
 				OnlineSub->Shutdown();
-				OnlineSub = NULL;
+				OnlineSub.Reset();
 			}
 		}
 		else
 		{
 			UE_LOG(LogOnline, Warning, TEXT("Amazon API disabled!"));
 			OnlineSub->Shutdown();
-			OnlineSub = NULL;
+			OnlineSub.Reset();
 		}
 
 		return OnlineSub;
@@ -87,7 +87,7 @@ bool FOnlineSubsystemAmazon::Tick(float DeltaTime)
 
 bool FOnlineSubsystemAmazon::Init()
 {
-	IdentityInterface = MakeShareable(new FOnlineIdentityAmazon());
+	IdentityInterface = MakeShared<FOnlineIdentityAmazon, ESPMode::ThreadSafe>(this);
 	return true;
 }
 
@@ -113,20 +113,19 @@ bool FOnlineSubsystemAmazon::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevi
 	return false;
 }
 
-bool FOnlineSubsystemAmazon::IsEnabled(void)
+FText FOnlineSubsystemAmazon::GetOnlineServiceName() const
+{
+	return NSLOCTEXT("OnlineSubsystemAmazon", "OnlineServiceName", "Amazon");
+}
+
+bool FOnlineSubsystemAmazon::IsEnabled() const
 {
 	// Check the ini for disabling Amazon
-	bool bEnableAmazon = true;
-	if (GConfig->GetBool(TEXT("OnlineSubsystemAmazon"), TEXT("bEnabled"), bEnableAmazon, GEngineIni) && 
-		bEnableAmazon)
+	bool bEnableAmazon = FOnlineSubsystemImpl::IsEnabled();
+	if (bEnableAmazon)
 	{
-		// Check the commandline for disabling Amazon
-		bEnableAmazon = !FParse::Param(FCommandLine::Get(),TEXT("NOAMAZON"));
 #if UE_EDITOR
-		if (bEnableAmazon)
-		{
-			bEnableAmazon = IsRunningDedicatedServer() || IsRunningGame();
-		}
+		bEnableAmazon = IsRunningDedicatedServer() || IsRunningGame();
 #endif
 	}
 	return bEnableAmazon;

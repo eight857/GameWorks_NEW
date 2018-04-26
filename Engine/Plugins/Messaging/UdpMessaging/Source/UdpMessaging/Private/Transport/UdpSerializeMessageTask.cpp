@@ -1,8 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Transport/UdpSerializeMessageTask.h"
+
 #include "Backends/JsonStructSerializerBackend.h"
+#include "HAL/Event.h"
+#include "IMessageContext.h"
 #include "StructSerializer.h"
+
+#include "Transport/UdpSerializedMessage.h"
 
 
 /* FUdpSerializeMessageTask interface
@@ -56,6 +61,14 @@ void FUdpSerializeMessageTask::DoTask(ENamedThreads::Type CurrentThread, const F
 	else
 	{
 		SerializedMessage->UpdateState(EUdpSerializedMessageState::Invalid);
+	}
+
+	// signal task completion
+	TSharedPtr<FEvent, ESPMode::ThreadSafe> CompletionEvent = CompletionEventPtr.Pin();
+
+	if (CompletionEvent.IsValid())
+	{
+		CompletionEvent->Trigger();
 	}
 }
 

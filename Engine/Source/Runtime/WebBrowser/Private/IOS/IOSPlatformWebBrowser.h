@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -33,7 +33,7 @@ class SWebBrowserView;
 @property(copy) NSString* NextContent;
 @property CGRect DesiredFrame;
 
--(void)create:(TSharedPtr<SIOSWebBrowserWidget>)InWebBrowserWidget;
+-(void)create:(TSharedPtr<SIOSWebBrowserWidget>)InWebBrowserWidget useTransparency:(bool)InUseTransparency;
 -(void)close;
 -(void)updateframe:(CGRect)InFrame;
 -(void)loadstring:(NSString*)InString dummyurl:(NSURL*)InURL;
@@ -223,6 +223,9 @@ private:
 
 	/** Optional text to load as a web page. */
 	TOptional<FString> ContentsToLoad;
+	
+	/** Whether to enable background transparency */
+	bool bUseTransparency;
 
 	// TODO: None of these events are actually called
 

@@ -4,46 +4,8 @@ Crumbs:%ROOT%
 Description:These are framework examples, aimed at showing you how to add a certain design tool or game feature.
 Navigation:topic
 Version: 4.9
+topic-image:UnrealStickFigure2D_Featured.png
 
-
-[VAR:Params]
-[PARAM:image]
-	![](UnrealStickFigure2D_Featured.png)
-[/PARAM]
-[PARAM:icon]
-	![](%ROOT%/tutorial_icon.png)(convert:false)
-[/PARAM]
-[PARAM:title]
-	%Resources/Concepts:title%
-[/PARAM]
-[PARAM:description]
-	%Resources/Concepts:description%
-[/PARAM]
-[PARAM:path]
-	[RELATIVE:Resources/Concepts]
-[/PARAM]
-[/VAR]
-
-[VAR:Topic]
-[OBJECT:Topic]
-%params%
-[/OBJECT]
-[/VAR]
-
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-%params%
-[/OBJECT]
-[/VAR]
-
-[VAR:Role]
-[OBJECT:Role]
-%params%
-[PARAMLITERAL:id]
-resources
-[/PARAMLITERAL]
-[/OBJECT]
-[/VAR]
 
 They have been presented here as a way for you to look at our approach to specific challenges when seeking certain visual or scripting styles. Naturally, they do not represent the _only_ way to go about solving a particular problem; you may come up with different approaches of your own that work better for your project.
 
@@ -63,7 +25,7 @@ Feel free to open up and analyze any element of these examples, as well as use t
 	Blueprint Splines Track
 	[/PARAMLITERAL]
 	[PARAMLITERAL:playlistid]
-	PLZlv_N0_O1gYuWkyTSbfcuyPNOQsK_8bu
+	PLZlv_N0_O1ga0aV9jVqJgog0VWz1cLL5f
 	[/PARAMLITERAL]
 	[PARAMLITERAL:videoid]
 	wR0fH6O9jD8
@@ -114,7 +76,7 @@ Feel free to open up and analyze any element of these examples, as well as use t
 	Turn Based Strategy
 	[/PARAMLITERAL]
 	[PARAMLITERAL:playlistid]
-	PLZlv_N0_O1gYuWkyTSbfcuyPNOQsK_8bu
+	PLZlv_N0_O1ga0aV9jVqJgog0VWz1cLL5f
 	[/PARAMLITERAL]
 	[PARAMLITERAL:videoid]
 	mI7eYXMJ5eI

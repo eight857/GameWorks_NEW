@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -9,12 +9,12 @@ public class libstrophe : ModuleRules
 	{
 		Type = ModuleType.External;
 
-		string StrophePackagePath = UEBuildConfiguration.UEThirdPartySourceDirectory + "libstrophe";
+		string StrophePackagePath = Target.UEThirdPartySourceDirectory + "libstrophe";
 
 		if (Target.Platform == UnrealTargetPlatform.XboxOne)
 		{
-			Definitions.Add("WITH_XMPP_STROPHE=1");
-			Definitions.Add("XML_STATIC");
+			PublicDefinitions.Add("WITH_XMPP_STROPHE=1");
+			PublicDefinitions.Add("XML_STATIC");
 
 			string IncludePath = Path.Combine(StrophePackagePath, "libstrophe-0.9.1");
 			PublicSystemIncludePaths.Add(IncludePath);
@@ -28,7 +28,7 @@ public class libstrophe : ModuleRules
 				ToolchainName += VersionName.ToString();
 			}
 
-			string ConfigPath = (Target.Configuration == UnrealTargetConfiguration.Debug && BuildConfiguration.bDebugBuildsActuallyUseDebugCRT) ? "Debug" : "Release";
+			string ConfigPath = (Target.Configuration == UnrealTargetConfiguration.Debug && Target.bDebugBuildsActuallyUseDebugCRT) ? "Debug" : "Release";
 			string LibraryPath = Path.Combine(StrophePackagePath, "libstrophe-0.9.1", "XboxOne", ToolchainName, ConfigPath);
 
 			PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "strophe.lib"));
@@ -37,7 +37,7 @@ public class libstrophe : ModuleRules
 		}
 		else
 		{
-			Definitions.Add("WITH_XMPP_STROPHE=0");
+			PublicDefinitions.Add("WITH_XMPP_STROPHE=0");
 		}
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include "Misc/Guid.h"
 #include "IMessageContext.h"
 #include "IMessageBus.h"
-#include "Helpers/MessageEndpoint.h"
+#include "MessageEndpoint.h"
 #include "ISessionInstanceInfo.h"
 #include "ISessionInfo.h"
 #include "SessionLogMessage.h"
@@ -123,7 +123,7 @@ private:
 	TWeakPtr<IMessageBus, ESPMode::ThreadSafe> MessageBusPtr;
 
 	/** Holds the messaging endpoint. */
-	FMessageEndpointPtr MessageEndpoint;
+	TSharedPtr<FMessageEndpoint, ESPMode::ThreadSafe> MessageEndpoint;
 
 	/** Holds the list of currently selected instances. */
 	TArray<TSharedPtr<ISessionInstanceInfo>> SelectedInstances;

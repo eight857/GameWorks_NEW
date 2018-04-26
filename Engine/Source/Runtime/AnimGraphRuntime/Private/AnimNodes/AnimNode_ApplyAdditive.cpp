@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimNodes/AnimNode_ApplyAdditive.h"
 #include "AnimationRuntime.h"
@@ -6,21 +6,21 @@
 /////////////////////////////////////////////////////
 // FAnimNode_ApplyAdditive
 
-void FAnimNode_ApplyAdditive::Initialize(const FAnimationInitializeContext& Context)
+void FAnimNode_ApplyAdditive::Initialize_AnyThread(const FAnimationInitializeContext& Context)
 {
-	FAnimNode_Base::Initialize(Context);
+	FAnimNode_Base::Initialize_AnyThread(Context);
 
 	Base.Initialize(Context);
 	Additive.Initialize(Context);
 }
 
-void FAnimNode_ApplyAdditive::CacheBones(const FAnimationCacheBonesContext& Context) 
+void FAnimNode_ApplyAdditive::CacheBones_AnyThread(const FAnimationCacheBonesContext& Context) 
 {
 	Base.CacheBones(Context);
 	Additive.CacheBones(Context);
 }
 
-void FAnimNode_ApplyAdditive::Update(const FAnimationUpdateContext& Context)
+void FAnimNode_ApplyAdditive::Update_AnyThread(const FAnimationUpdateContext& Context)
 {
 	Base.Update(Context);
 
@@ -38,15 +38,16 @@ void FAnimNode_ApplyAdditive::Update(const FAnimationUpdateContext& Context)
 	}
 }
 
-void FAnimNode_ApplyAdditive::Evaluate(FPoseContext& Output)
+void FAnimNode_ApplyAdditive::Evaluate_AnyThread(FPoseContext& Output)
 {
 	//@TODO: Could evaluate Base into Output and save a copy
 	if (FAnimWeight::IsRelevant(ActualAlpha))
 	{
-		FPoseContext AdditiveEvalContext(Output);
+		const bool bExpectsAdditivePose = true;
+		FPoseContext AdditiveEvalContext(Output, bExpectsAdditivePose);
 
 		Base.Evaluate(Output);
-		Additive.Evaluate(AdditiveEvalContext,true);
+		Additive.Evaluate(AdditiveEvalContext);
 
 		FAnimationRuntime::AccumulateAdditivePose(Output.Pose, AdditiveEvalContext.Pose, Output.Curve, AdditiveEvalContext.Curve, ActualAlpha, AAT_LocalSpaceBase);
 		Output.Pose.NormalizeRotations();

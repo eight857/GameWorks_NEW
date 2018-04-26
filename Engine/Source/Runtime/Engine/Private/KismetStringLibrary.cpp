@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Kismet/KismetStringLibrary.h"
 
@@ -395,14 +395,14 @@ bool UKismetStringLibrary::MatchesWildcard(const FString& SourceString, const FS
 
 FString UKismetStringLibrary::Trim(const FString& SourceString)
 {
-	FString Trimmed = SourceString;
-	return Trimmed.Trim();
+	FString Trimmed = SourceString.TrimStart();
+	return Trimmed;
 }
 
 FString UKismetStringLibrary::TrimTrailing(const FString& SourceString)
 {
-	FString Trimmed = SourceString;
-	return Trimmed.TrimTrailing();
+	FString Trimmed = SourceString.TrimEnd();
+	return Trimmed;
 }
 
 int32 UKismetStringLibrary::CullArray(const FString& SourceString,TArray<FString>& InArray)
@@ -455,7 +455,7 @@ FString UKismetStringLibrary::RightChop(const FString& SourceString, int32 Count
 
 FString UKismetStringLibrary::Mid(const FString& SourceString, int32 Start, int32 Count = MAX_int32)
 {
-	return SourceString.Mid(Start, Count);
+	return (Count >= 0 ? SourceString.Mid(Start, Count) : FString());
 }
 
 FString UKismetStringLibrary::TimeSecondsToString(float InSeconds)

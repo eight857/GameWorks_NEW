@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/SDataGraph.h"
 #include "Fonts/SlateFontInfo.h"
@@ -12,6 +12,7 @@
 #include "SlateOptMacros.h"
 #include "Framework/Application/MenuStack.h"
 #include "Fonts/FontMeasure.h"
+#include "Styling/CoreStyle.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Text/STextBlock.h"
@@ -291,7 +292,7 @@ void SDataGraph::UpdateState()
 	}
 }
 
-int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
 	static double TotalTime = 0.0f;
 	static uint32 NumCalls = 0;
@@ -307,16 +308,15 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 
 	/** Width of the alloted geometry that is used to draw a data graph. */
 	const float AreaX0 = 0.0f;
-	const float AreaX1 = AllottedGeometry.Size.X;
+	const float AreaX1 = AllottedGeometry.GetLocalSize().X;
 
 	// Draw background.
 	FSlateDrawElement::MakeBox
 	(
 		OutDrawElements,
 		LayerId,
-		AllottedGeometry.ToPaintGeometry( FVector2D(0,0), FVector2D(AreaX1,AllottedGeometry.Size.Y) ),
+		AllottedGeometry.ToPaintGeometry( FVector2D(0,0), FVector2D(AreaX1,AllottedGeometry.GetLocalSize().Y) ),
 		TimelineAreaBrush,
-		MyClippingRect,
 		DrawEffects,
 		TimelineAreaBrush->GetTint( InWidgetStyle ) * InWidgetStyle.GetColorAndOpacityTint()
 	);
@@ -339,7 +339,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 		SCOPE_CYCLE_COUNTER(STAT_DG_OnPaint);
 
 		const FTrackedStat& TrackedStat = *It.Value();
-		const float GraphYScale = AllottedGeometry.Size.Y/ScaleY;
+		const float GraphYScale = AllottedGeometry.GetLocalSize().Y/ScaleY;
 		
 		const float UnitTypeScale = TrackedStat.GraphDataSource->GetSampleType() != EProfilerSampleTypes::Memory ? 1.0f : CounterToTimeScale;
 		const float TimeAccuracyMS = FTimeAccuracy::AsFrameTime( TimeBasedAccuracy );
@@ -382,7 +382,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 					LayerId,
 					AllottedGeometry.ToPaintGeometry(),
 					GraphPoints,
-					MyClippingRect,
+					MyCullingRect,
 					DrawEffects,
 					InWidgetStyle.GetColorAndOpacityTint() * TrackedStat.ColorBackground,
 					false
@@ -396,7 +396,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 					LayerId,
 					AllottedGeometry.ToPaintGeometry(),
 					GraphPoints2,
-					MyClippingRect,
+					MyCullingRect,
 					DrawEffects,
 					InWidgetStyle.GetColorAndOpacityTint() * TrackedStat.ColorExtremes,
 					false
@@ -410,7 +410,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 					LayerId,
 					AllottedGeometry.ToPaintGeometry(),
 					GraphPoints3,
-					MyClippingRect,
+					MyCullingRect,
 					DrawEffects,
 					InWidgetStyle.GetColorAndOpacityTint() * TrackedStat.ColorAverage,
 					false
@@ -430,7 +430,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 				{
 					const float Value = GraphDataSource->GetValueFromTimeRange( GraphStartTimeMS, GraphStartTimeMS + TimeAccuracyMS );
 					const float XPos = DistanceBetweenPoints*GraphPoints.Num();
-					const float YPos = FMath::Clamp( AllottedGeometry.Size.Y - GraphYScale*Value*UnitTypeScale, 0.0f, AllottedGeometry.Size.Y );
+					const float YPos = FMath::Clamp( AllottedGeometry.GetLocalSize().Y - GraphYScale*Value*UnitTypeScale, 0.0f, AllottedGeometry.GetLocalSize().Y );
 					new (GraphPoints)FVector2D( XPos, YPos );
 				}
 
@@ -440,7 +440,6 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 					LayerId,
 					AllottedGeometry.ToPaintGeometry(),
 					GraphPoints,
-					MyClippingRect,
 					DrawEffects,
 					InWidgetStyle.GetColorAndOpacityTint() * TrackedStat.GraphColor,
 					false
@@ -471,7 +470,6 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 					LayerId,
 					AllottedGeometry.ToPaintGeometry(),
 					GraphPoints,
-					MyClippingRect,
 					DrawEffects,
 					InWidgetStyle.GetColorAndOpacityTint() * TrackedStat.GraphColor,
 					false
@@ -484,7 +482,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 	}
 
 
-	FSlateFontInfo SummaryFont( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 8 );
+	FSlateFontInfo SummaryFont = FCoreStyle::GetDefaultFontStyle("Regular", 8);
 	const float MaxFontCharHeight = FontMeasureService->Measure( TEXT("!"), SummaryFont ).Y;
 
 	// Draw graph annotations.
@@ -529,7 +527,6 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 					LayerId,
 					AllottedGeometry.ToPaintGeometry(),
 					LinePoints,
-					MyClippingRect,
 					DrawEffects,
 					GridColor
 				);
@@ -549,9 +546,8 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 					LayerId, 
 					AllottedGeometry.ToOffsetPaintGeometry( FVector2D(MarkerPosX,2.0f) ),
 					AccumulatedFrameNumberStr,
-					SummaryFont, 
-					MyClippingRect, 
-					DrawEffects, 
+					SummaryFont,
+					DrawEffects,
 					FLinearColor::White
 				);
 
@@ -561,10 +557,9 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 				(
 					OutDrawElements, 
 					LayerId, 
-					AllottedGeometry.ToOffsetPaintGeometry( FVector2D(MarkerPosX,AllottedGeometry.Size.Y-2.0f-MaxFontCharHeight) ),
+					AllottedGeometry.ToOffsetPaintGeometry( FVector2D(MarkerPosX,AllottedGeometry.GetLocalSize().Y-2.0f-MaxFontCharHeight) ),
 					ElapseTimeStr,
-					SummaryFont, 
-					MyClippingRect, 
+					SummaryFont,
 					DrawEffects, 
 					FLinearColor::White
 				);
@@ -587,14 +582,13 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 				const int32 AccumulatedFrameCounter = bCanBeDisplayedAsMulti ? FrameIndex : DataProvider->GetAccumulatedFrameCounter(ElapsedFrameTime);
 
 				LinePoints.Add( FVector2D(MarkerPosX, 0.0) );
-				LinePoints.Add( FVector2D(MarkerPosX, AllottedGeometry.Size.Y) );
+				LinePoints.Add( FVector2D(MarkerPosX, AllottedGeometry.GetLocalSize().Y) );
 				FSlateDrawElement::MakeLines
 				(
 					OutDrawElements,
 					LayerId,
 					AllottedGeometry.ToPaintGeometry(),
 					LinePoints,
-					MyClippingRect,
 					DrawEffects,
 					GridColor
 				);
@@ -614,8 +608,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 					LayerId, 
 					AllottedGeometry.ToOffsetPaintGeometry( FVector2D(MarkerPosX,2.0f) ),
 					ElapsedTimeStr,
-					SummaryFont, 
-					MyClippingRect, 
+					SummaryFont,
 					DrawEffects, 
 					FLinearColor::White
 				);
@@ -628,9 +621,8 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 					LayerId, 
 					AllottedGeometry.ToOffsetPaintGeometry( FVector2D(MarkerPosX,AllottedGeometry.Size.Y-2.0f-MaxFontCharHeight) ),
 					AccumulatedFrameNumberStr,
-					SummaryFont, 
-					MyClippingRect, 
-					DrawEffects, 
+					SummaryFont,
+					DrawEffects,
 					FLinearColor::White
 				);
 			}
@@ -640,22 +632,6 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 	}
 
 	//-----------------------------------------------------------------------------
-
-	// Draw horizontal i vertical line, where mouse is located with some tooltips.
-	// Dashed line aka focuses widget.
-// 	FSlateDrawElement::MakeBox
-// 	(
-// 		WindowElementList,
-// 		InLayerId++,
-// 		FPaintGeometry(
-// 		FocusedWidgetGeomertry.Geometry.AbsolutePosition - FocusPath.GetWindow()->GetPositionInScreen(),
-// 		FocusedWidgetGeomertry.Geometry.Size * FocusedWidgetGeomertry.Geometry.Scale,
-// 		FocusedWidgetGeomertry.Geometry.Scale ),
-// 		FEditorStyle::GetBrush("FocusRectangle"),
-// 		FocusPath.GetWindow()->GetClippingRectangleInWindow(),
-// 		ESlateDrawEffect::None,
-// 		FColor(255,255,255,128)
-// 	);
 
 	const int32 MaxGridPixelSpacing = 160.0f;
 
@@ -678,13 +654,13 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 
 	// Time value hints based on the graph height and maximum value the can be displayed on this graph.
 	TArray<float> TimeValueHints = DefaultTimeValueHints;
-	const int SecondaryIndicators = (int)AllottedGeometry.Size.Y/MaxGridPixelSpacing + 1;
+	const int SecondaryIndicators = (int)AllottedGeometry.GetLocalSize().Y/MaxGridPixelSpacing + 1;
 	//const float RealTimeGridSpacing = AllottedGeometry.Size.Y / (float)SecondaryIndicators;
 
 	const float MinTimeValue = 0.0f;
 	const float MaxTimeValue = ScaleY;
 	const float TimeValueGraphScale = MaxTimeValue / SecondaryIndicators;
-	const float TimeValueToGraph = AllottedGeometry.Size.Y/MaxTimeValue;
+	const float TimeValueToGraph = AllottedGeometry.GetLocalSize().Y/MaxTimeValue;
 
 	for( int32 SecondaryIndex = 1; SecondaryIndex <= SecondaryIndicators; SecondaryIndex++ )
 	{
@@ -781,7 +757,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 			continue;
 		}
 
-		const float MarkerPosY = AllottedGeometry.Size.Y - TimeValue*TimeValueToGraph;
+		const float MarkerPosY = AllottedGeometry.GetLocalSize().Y - TimeValue*TimeValueToGraph;
 
 		// Check if this hint should be drawn as the basic hint.
 		const FLinearColor* BasicHintColor = DefaultTimeValueHintColors.Find( TimeValue );
@@ -794,7 +770,6 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 			LayerId,
 			AllottedGeometry.ToPaintGeometry(),
 			LinePoints,
-			MyClippingRect,
 			DrawEffects,
 			BasicHintColor ? *BasicHintColor : GridColor
 		);
@@ -828,7 +803,6 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 			AllottedGeometry.ToOffsetPaintGeometry( FVector2D(2.0f,MarkerPosY+HintOffsetY) ),
 			TimeValueStr,
 			SummaryFont, 
-			MyClippingRect, 
 			DrawEffects, 
 			BasicHintColor ? *BasicHintColor : FLinearColor::White
 		);
@@ -843,7 +817,6 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 			AllottedGeometry.ToOffsetPaintGeometry( FVector2D(AreaX1-RightValueSizeX,MarkerPosY+HintOffsetY) ),
 			CounterValueStr,
 			SummaryFont, 
-			MyClippingRect, 
 			DrawEffects, 
 			FLinearColor::White
 		);
@@ -867,9 +840,8 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 				(
 					OutDrawElements,
 					LayerId,
-					AllottedGeometry.ToPaintGeometry( FVector2D(LocalGraphSelectionX[Nx]-HalfGraphMarkerWidth,0.0f), FVector2D(GraphMarkerWidth, AllottedGeometry.Size.Y) ),
+					AllottedGeometry.ToPaintGeometry( FVector2D(LocalGraphSelectionX[Nx]-HalfGraphMarkerWidth,0.0f), FVector2D(GraphMarkerWidth, AllottedGeometry.GetLocalSize().Y) ),
 					FEditorStyle::GetBrush("ProgressBar.Background"),
-					MyClippingRect,
 					DrawEffects,
 					FColor(64,64,255,128)
 				);
@@ -890,9 +862,8 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 				(
 					OutDrawElements,
 					LayerId,
-					AllottedGeometry.ToPaintGeometry( FVector2D(GraphSelectionX0/*+HalfGraphMarkerWidth*/,0.0f), FVector2D(GraphSelectionW/*-GraphMarkerWidth*/, AllottedGeometry.Size.Y) ),
+					AllottedGeometry.ToPaintGeometry( FVector2D(GraphSelectionX0/*+HalfGraphMarkerWidth*/,0.0f), FVector2D(GraphSelectionW/*-GraphMarkerWidth*/, AllottedGeometry.GetLocalSize().Y) ),
 					FEditorStyle::GetBrush("ProgressBar.Background"),
-					MyClippingRect,
 					DrawEffects,
 					FColor(64,64,255,32)
 				);
@@ -911,9 +882,8 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 		(
 			OutDrawElements,
 			LayerId,
-			AllottedGeometry.ToPaintGeometry( FVector2D(LocalPositionGraphX-HalfGraphMarkerWidth,0.0f), FVector2D(GraphMarkerWidth, AllottedGeometry.Size.Y) ),
+			AllottedGeometry.ToPaintGeometry( FVector2D(LocalPositionGraphX-HalfGraphMarkerWidth,0.0f), FVector2D(GraphMarkerWidth, AllottedGeometry.GetLocalSize().Y) ),
 			FEditorStyle::GetBrush("ProgressBar.Background"),
-			MyClippingRect,
 			DrawEffects,
 			FColor(255,128,128,128)
 		);
@@ -931,7 +901,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 		AllottedGeometry.ToOffsetPaintGeometry( FVector2D(16.0f,GraphDescPosY) ),
 		FString::Printf( TEXT("ScaleY: %f MPos: %s Hovered: %i (%.1f)"), ScaleY, *MousePosition.ToString(), HoveredFrameIndex, HoveredFrameStartTimeMS ),
 		SummaryFont,
-		MyClippingRect,
+		MyCullingRect,
 		DrawEffects,
 		FLinearColor::White
 	);
@@ -945,7 +915,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 		AllottedGeometry.ToOffsetPaintGeometry( FVector2D(16.0f,GraphDescPosY) ),
 		FString::Printf( TEXT("Offset: %4i (%.1f) Num: %4i (%.1f) NumVis: %4i (%.1f)"), GraphOffset, GraphOffsetMS, NumDataPoints, DataTotalTimeMS, NumVisiblePoints, VisibleTimeMS ),
 		SummaryFont,
-		MyClippingRect,
+		MyCullingRect,
 		DrawEffects,
 		FLinearColor::White
 	);
@@ -959,7 +929,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 		AllottedGeometry.ToOffsetPaintGeometry( FVector2D(16.0f,GraphDescPosY) ),
 		FString::Printf( TEXT("SelFr: %i-%i (%.1f-%.1f)"), FrameIndices[0], FrameIndices[1], FrameTimesMS[0], FrameTimesMS[1] ),
 		SummaryFont,
-		MyClippingRect,
+		MyCullingRect,
 		DrawEffects,
 		FLinearColor::White
 	);
@@ -974,7 +944,7 @@ int32 SDataGraph::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeom
 	}
 #endif // DEBUG_PROFILER_PERFORMANCE
 
-	return SCompoundWidget::OnPaint( Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled && IsEnabled() );
+	return SCompoundWidget::OnPaint( Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled && IsEnabled() );
 }
 
 

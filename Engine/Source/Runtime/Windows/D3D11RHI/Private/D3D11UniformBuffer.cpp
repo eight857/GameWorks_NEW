@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D11UniformBuffer.cpp: D3D uniform buffer RHI implementation.
@@ -95,7 +95,7 @@ void UniformBufferBeginFrame()
 
 static bool IsPoolingEnabled()
 {
-	if (GRHIThread && IsInRenderingThread() && GRHICommandList.IsRHIThreadActive())
+	if (IsRunningRHIInSeparateThread() && IsInRenderingThread() && GRHICommandList.IsRHIThreadActive())
 	{
 		return false; // we can't currently use pooling if the RHI thread is active. 
 	}

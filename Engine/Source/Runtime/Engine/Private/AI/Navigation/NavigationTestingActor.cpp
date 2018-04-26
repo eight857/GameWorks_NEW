@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/NavigationTestingActor.h"
 #include "AI/Navigation/NavigationSystem.h"
@@ -459,10 +459,3 @@ FPathFindingQuery ANavigationTestingActor::BuildPathFindingQuery(const ANavigati
 	return FPathFindingQuery();
 }
 
-
-/** Returns CapsuleComponent subobject **/
-UCapsuleComponent* ANavigationTestingActor::GetCapsuleComponent() const { return CapsuleComponent; }
-#if WITH_EDITORONLY_DATA
-/** Returns EdRenderComp subobject **/
-UNavTestRenderingComponent* ANavigationTestingActor::GetEdRenderComp() const { return EdRenderComp; }
-#endif

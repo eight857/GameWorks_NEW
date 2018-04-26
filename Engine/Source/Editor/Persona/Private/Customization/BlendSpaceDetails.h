@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,6 +8,9 @@
 class FBlendSpaceDetails : public IDetailCustomization
 {
 public:
+	FBlendSpaceDetails();
+	~FBlendSpaceDetails();
+
 	static TSharedRef<IDetailCustomization> MakeInstance()
 	{
 		return MakeShareable( new FBlendSpaceDetails() );
@@ -15,4 +18,7 @@ public:
 
 	// IDetailCustomization interface
 	virtual void CustomizeDetails(class IDetailLayoutBuilder& DetailBuilder) override;
+private:
+	class IDetailLayoutBuilder* Builder;
+	class UBlendSpaceBase* BlendSpaceBase;
 };

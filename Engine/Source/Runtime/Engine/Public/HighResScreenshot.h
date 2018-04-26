@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,6 +7,8 @@
 class FSceneViewport;
 class IImageWrapper;
 class UMaterial;
+
+DECLARE_LOG_CATEGORY_EXTERN(LogHighResScreenshot, Log, All);
 
 struct ENGINE_API FHighResScreenshotConfig
 {
@@ -23,6 +25,7 @@ struct ENGINE_API FHighResScreenshotConfig
 	bool bDisplayCaptureRegion;
 	bool bCaptureHDR;
 	bool bForce128BitRendering;
+	FString FilenameOverride;
 
 	// Materials used in the editor to help with the capture of highres screenshots
 	UMaterial* HighResScreenshotMaterial;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/FileManager.h"
@@ -190,6 +190,9 @@ bool FSettingsCheckForPIECommand::Update()
 bool FEditorSettingsKeybindingsTest::RunTest(const FString& Parameters)
 {
 	UE_LOG(LogEditorSettingsTests, Display, TEXT("Exporting Current keybindings and editor settings"));
+
+	// Ensure layers module is loaded
+	FModuleManager::Get().LoadModule("Layers");
 
 	//Export the original keybindings
 	const FString TargetOriginalKeybindFile = FString::Printf(TEXT("%s/BuildPromotion/OriginalKeybindings-%d.ini"), *FPaths::AutomationDir(), FEngineVersion::Current().GetChangelist());

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetTypeActions/AssetTypeActions_DialogueWave.h"
 #include "Misc/PackageName.h"
@@ -70,7 +70,7 @@ bool FAssetTypeActions_DialogueWave::CanExecutePlayCommand(TArray<TWeakObjectPtr
 
 	USoundBase* Sound = nullptr;
 
-	auto DialogueWave = Cast<UDialogueWave>(Objects[0].Get());
+	auto DialogueWave = Objects[0].Get();
 	for (int32 i = 0; i < DialogueWave->ContextMappings.Num(); ++i)
 	{
 		const FDialogueContextMapping& ContextMapping = DialogueWave->ContextMappings[i];

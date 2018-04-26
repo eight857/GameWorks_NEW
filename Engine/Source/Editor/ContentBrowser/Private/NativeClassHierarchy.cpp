@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NativeClassHierarchy.h"
 #include "Modules/ModuleManager.h"
@@ -65,9 +65,41 @@ FNativeClassHierarchy::~FNativeClassHierarchy()
 	}
 }
 
+bool FNativeClassHierarchy::HasClasses(const FName InClassPath, const bool bRecursive) const
+{
+	TArray<TSharedRef<FNativeClassHierarchyNode>, TInlineAllocator<4>> NodesToSearch;
+	GatherMatchingNodesForPaths(TArrayView<const FName>(&InClassPath, 1), NodesToSearch);
+
+	for(const auto& NodeToSearch : NodesToSearch)
+	{
+		if(HasClassesRecursive(NodeToSearch, bRecursive))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool FNativeClassHierarchy::HasFolders(const FName InClassPath, const bool bRecursive) const
+{
+	TArray<TSharedRef<FNativeClassHierarchyNode>, TInlineAllocator<4>> NodesToSearch;
+	GatherMatchingNodesForPaths(TArrayView<const FName>(&InClassPath, 1), NodesToSearch);
+
+	for(const auto& NodeToSearch : NodesToSearch)
+	{
+		if(HasFoldersRecursive(NodeToSearch, bRecursive))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void FNativeClassHierarchy::GetMatchingClasses(const FNativeClassHierarchyFilter& Filter, TArray<UClass*>& OutClasses) const
 {
-	TArray<TSharedRef<FNativeClassHierarchyNode>> NodesToSearch;
+	TArray<TSharedRef<FNativeClassHierarchyNode>, TInlineAllocator<4>> NodesToSearch;
 	GatherMatchingNodesForPaths(Filter.ClassPaths, NodesToSearch);
 
 	for(const auto& NodeToSearch : NodesToSearch)
@@ -78,7 +110,7 @@ void FNativeClassHierarchy::GetMatchingClasses(const FNativeClassHierarchyFilter
 
 void FNativeClassHierarchy::GetMatchingFolders(const FNativeClassHierarchyFilter& Filter, TArray<FString>& OutFolders) const
 {
-	TArray<TSharedRef<FNativeClassHierarchyNode>> NodesToSearch;
+	TArray<TSharedRef<FNativeClassHierarchyNode>, TInlineAllocator<4>> NodesToSearch;
 	GatherMatchingNodesForPaths(Filter.ClassPaths, NodesToSearch);
 
 	for(const auto& NodeToSearch : NodesToSearch)
@@ -97,7 +129,7 @@ void FNativeClassHierarchy::GetClassFolders(TArray<FName>& OutClassRoots, TArray
 		bool bRootNodePassesFilter =
 			(RootNode.Key == GameRootNodeName) ||								// Always include game classes
 			(RootNode.Key == EngineRootNodeName && bIncludeEngineClasses) ||  	// Only include engine classes if we were asked for them
-			(bIncludePluginClasses && RootNode.Value->LoadedFrom == EPluginLoadedFrom::GameProject) || // Only include Game plugin classes if we were asked for them
+			(bIncludePluginClasses && RootNode.Value->LoadedFrom == EPluginLoadedFrom::Project) || // Only include Game plugin classes if we were asked for them
 			(bIncludePluginClasses && bIncludeEngineClasses && RootNode.Value->LoadedFrom == EPluginLoadedFrom::Engine); //  Only include engine plugin classes if we were asked for them
 
 		if(bRootNodePassesFilter)
@@ -106,6 +138,42 @@ void FNativeClassHierarchy::GetClassFolders(TArray<FName>& OutClassRoots, TArray
 			GetFoldersRecursive(RootNode.Value.ToSharedRef(), OutClassFolders);
 		}
 	}
+}
+
+bool FNativeClassHierarchy::HasClassesRecursive(const TSharedRef<FNativeClassHierarchyNode>& HierarchyNode, const bool bRecurse)
+{
+	for(const auto& ChildNode : HierarchyNode->Children)
+	{
+		if(ChildNode.Value->Type == ENativeClassHierarchyNodeType::Class)
+		{
+			return true;
+		}
+
+		if(bRecurse && HasClassesRecursive(ChildNode.Value.ToSharedRef()))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool FNativeClassHierarchy::HasFoldersRecursive(const TSharedRef<FNativeClassHierarchyNode>& HierarchyNode, const bool bRecurse)
+{
+	for(const auto& ChildNode : HierarchyNode->Children)
+	{
+		if(ChildNode.Value->Type == ENativeClassHierarchyNodeType::Folder)
+		{
+			return true;
+		}
+
+		if(bRecurse && HasFoldersRecursive(ChildNode.Value.ToSharedRef()))
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void FNativeClassHierarchy::GetClassesRecursive(const TSharedRef<FNativeClassHierarchyNode>& HierarchyNode, TArray<UClass*>& OutClasses, const bool bRecurse)
@@ -140,7 +208,7 @@ void FNativeClassHierarchy::GetFoldersRecursive(const TSharedRef<FNativeClassHie
 	}
 }
 
-void FNativeClassHierarchy::GatherMatchingNodesForPaths(const TArray<FName>& InClassPaths, TArray<TSharedRef<FNativeClassHierarchyNode>>& OutMatchingNodes) const
+void FNativeClassHierarchy::GatherMatchingNodesForPaths(const TArrayView<const FName>& InClassPaths, TArray<TSharedRef<FNativeClassHierarchyNode>, TInlineAllocator<4>>& OutMatchingNodes) const
 {
 	if(InClassPaths.Num() == 0)
 	{
@@ -464,7 +532,7 @@ FName FNativeClassHierarchy::GetClassPathRootForModule(const FName& InModuleName
 	if(InGameModules.Contains(InModuleName))
 	{
 		RootNodeName = GameRootNodeName;
-		OutWhereLoadedFrom = EPluginLoadedFrom::GameProject;
+		OutWhereLoadedFrom = EPluginLoadedFrom::Project;
 	}
 	else if(InPluginModules.Contains(InModuleName))
 	{
@@ -501,15 +569,15 @@ TMap<FName, FNativeClassHierarchyPluginModuleInfo> FNativeClassHierarchy::GetPlu
 	// Build up a map of plugin modules -> plugin names - used to work out which modules populate a given Classes_PluginName
 	TMap<FName, FNativeClassHierarchyPluginModuleInfo> PluginModules;
 	{
-		TArray<FPluginStatus> Plugins = PluginManager.QueryStatusForAllPlugins();
-		for(const FPluginStatus& Plugin: Plugins)
+		TArray<TSharedRef<IPlugin>> Plugins = PluginManager.GetDiscoveredPlugins();
+		for(const TSharedRef<IPlugin>& Plugin: Plugins)
 		{
-			for(const FModuleDescriptor& PluginModule: Plugin.Descriptor.Modules)
+			for(const FModuleDescriptor& PluginModule: Plugin->GetDescriptor().Modules)
 			{
-				FNativeClassHierarchyPluginModuleInfo info;
-				info.Name = FName(*Plugin.Name);
-				info.LoadedFrom = Plugin.LoadedFrom;
-				PluginModules.Add(PluginModule.Name, info);
+				FNativeClassHierarchyPluginModuleInfo Info;
+				Info.Name = FName(*Plugin->GetName());
+				Info.LoadedFrom = Plugin->GetLoadedFrom();
+				PluginModules.Add(PluginModule.Name, Info);
 			}
 		}
 	}

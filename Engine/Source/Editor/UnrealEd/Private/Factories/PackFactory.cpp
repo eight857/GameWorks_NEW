@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PackFactory.cpp: Factory for importing asset and feature packs
@@ -65,17 +65,13 @@ namespace PackFactoryHelper
 			// If file is encrypted so we need to account for padding
 			int64 SizeToRead = Entry.bEncrypted ? Align(SizeToCopy,FAES::AESBlockSize) : SizeToCopy;
 
-			const ANSICHAR* Key = nullptr;
-			FCoreDelegates::FPakEncryptionKeyDelegate& Delegate = FCoreDelegates::GetPakEncryptionKeyDelegate();
-			if (Delegate.IsBound())
-			{
-				Key = Delegate.Execute();
-			}
-
 			Source.Serialize(Buffer.GetData(),SizeToRead);
 			if (Entry.bEncrypted)
 			{
-				FAES::DecryptData(Buffer.GetData(),SizeToRead, Key);
+				FAES::FAESKey Key;
+				FPakPlatformFile::GetPakEncryptionKey(Key);
+				checkf(Key.IsValid(), TEXT("Trying to copy an encrypted file between pak files, but no decryption key is available"));
+				FAES::DecryptData(Buffer.GetData(), SizeToRead, Key);
 			}
 			DestAr.Serialize(Buffer.GetData(), SizeToCopy);
 			RemainingSizeToCopy -= SizeToRead;
@@ -111,13 +107,9 @@ namespace PackFactoryHelper
 
 			if (Entry.bEncrypted)
 			{
-				const ANSICHAR* Key = nullptr;
-				FCoreDelegates::FPakEncryptionKeyDelegate& Delegate = FCoreDelegates::GetPakEncryptionKeyDelegate();
-				if (Delegate.IsBound())
-				{
-					Key = Delegate.Execute();
-				}
-
+				FAES::FAESKey Key;
+				FPakPlatformFile::GetPakEncryptionKey(Key);
+				checkf(Key.IsValid(), TEXT("Trying to copy an encrypted file between pak files, but no decryption key is available"));
 				FAES::DecryptData(PersistentBuffer.GetData(), SizeToRead, Key);
 			}
 
@@ -358,7 +350,7 @@ UObject* UPackFactory::FactoryCreateBinary
 	if (PakFile.IsValid())
 	{
 		static FString ContentFolder(TEXT("/Content/"));
-		FString ContentDestinationRoot = FPaths::GameContentDir();
+		FString ContentDestinationRoot = FPaths::ProjectContentDir();
 
 		const int32 ChopIndex = PakFile.GetMountPoint().Find(ContentFolder);
 		if (ChopIndex != INDEX_NONE)
@@ -701,8 +693,7 @@ UObject* UPackFactory::FactoryCreateBinary
 						// We can only hot-reload via DoHotReloadFromEditor when we already had code in our project
 						if (!HotReloadSupport.IsCurrentlyCompiling())
 						{
-							const bool bWaitForCompletion = true;
-							HotReloadSupport.DoHotReloadFromEditor(bWaitForCompletion);
+							HotReloadSupport.DoHotReloadFromEditor(EHotReloadFlags::WaitForCompletion);
 						}
 					}
 					else
@@ -710,7 +701,7 @@ UObject* UPackFactory::FactoryCreateBinary
 						const bool bReloadAfterCompiling = true;
 						const bool bForceCodeProject = true;
 						const bool bFailIfGeneratedCodeChanges = false;
-						if (!HotReloadSupport.RecompileModule(FApp::GetGameName(), bReloadAfterCompiling, *GWarn, bFailIfGeneratedCodeChanges, bForceCodeProject))
+						if (!HotReloadSupport.RecompileModule(FApp::GetProjectName(), bReloadAfterCompiling, *GWarn, bFailIfGeneratedCodeChanges, bForceCodeProject))
 						{
 							FMessageDialog::Open(EAppMsgType::Ok, NSLOCTEXT("PackFactory", "FailedToCompileNewGameModule", "Failed to compile newly created game module."));
 						}
@@ -736,7 +727,7 @@ UObject* UPackFactory::FactoryCreateBinary
 				if (Filename.EndsWith(AssetExtension))
 				{
 					FString GameFileName = Filename;
-					if (FPaths::MakePathRelativeTo(GameFileName, *FPaths::GameContentDir()))
+					if (FPaths::MakePathRelativeTo(GameFileName, *FPaths::ProjectContentDir()))
 					{
 						int32 SlashIndex = INDEX_NONE;
 						GameFileName = FString(TEXT("/Game/")) / GameFileName.LeftChop(AssetExtension.Len());

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayTask.h"
 #include "UObject/Package.h"
@@ -143,10 +143,18 @@ void UGameplayTask::TaskOwnerEnded()
 		, TEXT("%s TaskOwnerEnded called, current State: %s")
 		, *GetName(), *GetTaskStateName());
 
-	if (TaskState != EGameplayTaskState::Finished && !IsPendingKill())
+	if (TaskState != EGameplayTaskState::Finished)
 	{
 		bOwnerFinished = true;
-		OnDestroy(true);
+		if (IsPendingKill() == false)
+		{
+			OnDestroy(true);
+		}
+		else
+		{
+			// mark as finished, just to be on the safe side 
+			TaskState = EGameplayTaskState::Finished;
+		}
 	}
 }
 
@@ -156,9 +164,17 @@ void UGameplayTask::EndTask()
 		, TEXT("%s EndTask called, current State: %s")
 		, *GetName(), *GetTaskStateName());
 
-	if (TaskState != EGameplayTaskState::Finished && !IsPendingKill())
+	if (TaskState != EGameplayTaskState::Finished)
 	{
-		OnDestroy(false);
+		if (IsPendingKill() == false)
+		{
+			OnDestroy(false);
+		}
+		else
+		{
+			// mark as finished, just to be on the safe side 
+			TaskState = EGameplayTaskState::Finished;
+		}
 	}
 }
 
@@ -262,7 +278,13 @@ void UGameplayTask::PerformActivation()
 
 	Activate();
 
-	TasksComponent->OnGameplayTaskActivated(*this);
+	// Activate call may result in the task actually "instantly" finishing.
+	// If this happens we don't want to bother the TaskComponent
+	// with information on this task
+	if (IsFinished() == false)
+	{
+		TasksComponent->OnGameplayTaskActivated(*this);
+	}
 }
 
 void UGameplayTask::Activate()

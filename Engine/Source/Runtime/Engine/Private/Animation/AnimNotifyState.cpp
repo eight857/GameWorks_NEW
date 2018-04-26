@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Animation/AnimTypes.h"
@@ -49,6 +49,8 @@ void UAnimNotifyState::BranchingPointNotifyEnd(FBranchingPointNotifyPayload& Bra
 	NotifyEnd(BranchingPointPayload.SkelMeshComponent, BranchingPointPayload.SequenceAsset);
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 FString UAnimNotifyState::GetNotifyName_Implementation() const
 {
 	UObject* ClassGeneratedBy = GetClass()->ClassGeneratedBy;
@@ -69,6 +71,8 @@ FString UAnimNotifyState::GetNotifyName_Implementation() const
 	
 	return NotifyName;
 }
+
+/// @endcond
 
 void UAnimNotifyState::PostLoad()
 {

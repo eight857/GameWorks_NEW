@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,15 +9,10 @@
 class IAnalyticsProvider;
 class IAnalyticsProviderET;
 
-DECLARE_LOG_CATEGORY_EXTERN(LogAnalytics, Display, All);
-
-
-class IAnalyticsProviderET;
-
 /**
  *  Public implementation of EpicGames.MCP.AnalyticsProvider
  */
-class FAnalyticsET : public IAnalyticsProviderModule
+class ANALYTICSET_API FAnalyticsET : public IAnalyticsProviderModule
 {
 	//--------------------------------------------------------------------------
 	// Module functionality

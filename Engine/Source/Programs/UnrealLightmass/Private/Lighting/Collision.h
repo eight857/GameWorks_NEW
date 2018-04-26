@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -172,6 +172,17 @@ public:
 		bool bDirectShadowingRay,
 		class FCoherentRayCache& CoherentRayCache,
 		FLightRayIntersection& Intersection) const = 0;
+
+	virtual void IntersectLightRays4(
+		const FLightRay* LightRays,
+		bool bFindClosestIntersection,
+		bool bCalculateTransmission,
+		bool bDirectShadowingRay,
+		FCoherentRayCache& CoherentRayCache,
+		FLightRayIntersection* ClosestIntersections) const
+	{
+		check(0);
+	}
 
 	FBox GetBounds() const;
 

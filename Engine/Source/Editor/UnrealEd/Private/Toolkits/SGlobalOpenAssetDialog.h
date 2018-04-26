@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -24,6 +24,6 @@ public:
 	// End of SWidget interface
 
 protected:
-	void OnAssetSelectedFromPicker(const class FAssetData& AssetData);
-	void OnPressedEnterOnAssetsInPicker(const TArray<class FAssetData>& SelectedAssets);
+	void OnAssetSelectedFromPicker(const struct FAssetData& AssetData);
+	void OnPressedEnterOnAssetsInPicker(const TArray<struct FAssetData>& SelectedAssets);
 };

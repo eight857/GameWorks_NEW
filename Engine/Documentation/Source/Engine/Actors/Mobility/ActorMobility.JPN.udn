@@ -1,9 +1,13 @@
-﻿INTSourceChangelist:3275202
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title:アクタの可動性
 Crumbs: %ROOT%, Engine, Engine/Actors
 Description:ゲームプレイ中のアクタの移動や変更を制御します。
 version:4.9
+parent:Engine/Actors
+type:overview
+order:4
+
 
 [EXCERPT:Intro]
 ![](TransformMobility.png)
@@ -21,7 +25,8 @@ version:4.9
 
 
 
-<!-----
+[COMMENT:none]
+---
 
 [EXCERPT:Static]
 * Mobility (可動性) が Static (静的) である **Static Mesh アクタ** は、そのシャドウが事前計算されるライトマップ (ライトマスが焼き付けたライティング) に寄与します。これはゲームプレイ中に決して再配置する必要がない建物や装飾用途のメッシュに対して理想的なものです。ただし、そのマテリアルはアニメートが可能です。
@@ -41,4 +46,5 @@ Stationary (固定) は、移動しない **Light アクタ** に使用します
 * 可動性が可動である **Light アクタ** は、動的シャドウのみをキャストできます。このため、こうしたライトにシャドウをキャストさせる場合、そのシャドウイング方法は非常にパフォーマンスに負荷がかかるため配慮が必要です。	ただし、シャドウイング無しの可動ライトは、アンリアル エンジンのディファード レンダリング システムによって非常に低負荷で計算できることを覚えておいてください。
 [/EXCERPT:Movable]
 
--->
+
+[/COMMENT]

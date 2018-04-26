@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/SlowTask.h"
 #include "HAL/PlatformTime.h"
@@ -78,7 +78,7 @@ void FSlowTask::EnterProgressFrame(float ExpectedWorkThisFrame, FText Text)
 
 #if PLATFORM_XBOXONE
 	// Make sure OS events are getting through while the task is being processed
-	FPlatformMisc::PumpMessages(true);
+	FXboxOneMisc::PumpMessages(true);
 #endif
 
 	const float WorkRemaining = TotalAmountOfWork - CompletedWork;

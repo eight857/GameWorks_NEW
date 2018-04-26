@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlackboardEntryDetails.h"
 #include "Widgets/SNullWidget.h"
@@ -34,9 +34,9 @@ void FBlackboardEntryDetails::CustomizeChildren( TSharedRef<class IPropertyHandl
 {
 	if (StructPropertyHandle->IsValidHandle())
 	{
-		StructBuilder.AddChildProperty(MyNameProperty.ToSharedRef());
-		StructBuilder.AddChildProperty(MyDescriptionProperty.ToSharedRef());
-		StructBuilder.AddChildProperty(MyValueProperty.ToSharedRef());
+		StructBuilder.AddProperty(MyNameProperty.ToSharedRef());
+		StructBuilder.AddProperty(MyDescriptionProperty.ToSharedRef());
+		StructBuilder.AddProperty(MyValueProperty.ToSharedRef());
 	}
 }
 

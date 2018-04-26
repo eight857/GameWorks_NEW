@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "Tiles/SWorldTileItem.h"
 #include "Rendering/DrawElements.h"
 #include "Widgets/SBoxPanel.h"
@@ -19,7 +19,7 @@
 //
 //
 //----------------------------------------------------------------
-int32 SWorldTileImage::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SWorldTileImage::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	const FSlateBrush* ImageBrush = Image.Get();
 
@@ -28,11 +28,10 @@ int32 SWorldTileImage::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 		const bool bIsEnabled = EditableTile.Get() && ShouldBeEnabled(bParentEnabled);
 		const ESlateDrawEffect DrawEffects = bIsEnabled ? ESlateDrawEffect::None : ESlateDrawEffect::DisabledEffect;
 		FSlateDrawElement::MakeBox(
-			OutDrawElements, 
-			LayerId, 
-			AllottedGeometry.ToPaintGeometry(), 
-			ImageBrush, 
-			MyClippingRect, 
+			OutDrawElements,
+			LayerId,
+			AllottedGeometry.ToPaintGeometry(),
+			ImageBrush,
 			DrawEffects | ESlateDrawEffect::IgnoreTextureAlpha, 
 			FColor::White);
 	}
@@ -93,119 +92,113 @@ UObject* SWorldTileItem::GetObjectBeingDisplayed() const
 BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 TSharedRef<SToolTip> SWorldTileItem::CreateToolTipWidget()
 {
-	TSharedPtr<SToolTip>		TooltipWidget;
+	TSharedPtr<SToolTip> TooltipWidget;
 	
 	SAssignNew(TooltipWidget, SToolTip)
-	.TextMargin(1)
-	.BorderImage(FEditorStyle::GetBrush("ContentBrowser.TileViewTooltip.ToolTipBorder"))
+	.TextMargin(2)
+	.BorderImage(FEditorStyle::GetBrush("ContentBrowser.TileViewTooltip.NonContentBorder"))
 	[
-		SNew(SBorder)
-		.Padding(6)
-		.BorderImage(FEditorStyle::GetBrush("ContentBrowser.TileViewTooltip.NonContentBorder"))
+		SNew(SVerticalBox)
+
+		// Level name section
+		+SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(0,0,0,4)
 		[
-			SNew(SVerticalBox)
-
-			// Level name section
-			+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0,0,0,4)
+			SNew(SBorder)
+			.Padding(6)
+			.BorderImage(FEditorStyle::GetBrush("ContentBrowser.TileViewTooltip.ContentBorder"))
 			[
-				SNew(SBorder)
-				.Padding(6)
-				.BorderImage(FEditorStyle::GetBrush("ContentBrowser.TileViewTooltip.ContentBorder"))
-				[
-					SNew(SVerticalBox)
+				SNew(SVerticalBox)
 					
-					+SVerticalBox::Slot()
-					.VAlign(VAlign_Center)
-					.AutoHeight()
-					[
-						SNew(SHorizontalBox)
+				+SVerticalBox::Slot()
+				.VAlign(VAlign_Center)
+				.AutoHeight()
+				[
+					SNew(SHorizontalBox)
 
-						// Level name
-						+SHorizontalBox::Slot()
-						.Padding(6,0,0,0)
-						.HAlign(HAlign_Left)
-						.AutoWidth()
-						[
-							SNew(STextBlock)
-							.Text(this, &SWorldTileItem::GetLevelNameText) 
-							.Font(FEditorStyle::GetFontStyle("ContentBrowser.TileViewTooltip.NameFont"))
-						]
+					// Level name
+					+SHorizontalBox::Slot()
+					.Padding(6,0,0,0)
+					.HAlign(HAlign_Left)
+					.AutoWidth()
+					[
+						SNew(STextBlock)
+						.Text(this, &SWorldTileItem::GetLevelNameText) 
+						.Font(FEditorStyle::GetFontStyle("ContentBrowser.TileViewTooltip.NameFont"))
 					]
 				]
 			]
+		]
 			
-			// Tile info section
-			+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0,0,0,4)
+		// Tile info section
+		+SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew(SBorder)
+			.Padding(6)
+			.BorderImage(FEditorStyle::GetBrush("ContentBrowser.TileViewTooltip.ContentBorder"))
 			[
-				SNew(SBorder)
-				.Padding(6)
-				.BorderImage(FEditorStyle::GetBrush("ContentBrowser.TileViewTooltip.ContentBorder"))
+				SNew(SUniformGridPanel)
+
+				// Tile position
+				+SUniformGridPanel::Slot(0, 0)
+				.HAlign(HAlign_Left)
 				[
-					SNew(SUniformGridPanel)
-
-					// Tile position
-					+SUniformGridPanel::Slot(0, 0)
-					.HAlign(HAlign_Left)
-					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("Item_OriginOffset", "Position:")) 
-					]
+					SNew(STextBlock)
+					.Text(LOCTEXT("Item_OriginOffset", "Position:")) 
+				]
 					
-					+SUniformGridPanel::Slot(1, 0)
-					.HAlign(HAlign_Right)
-					[
-						SNew(STextBlock)
-						.Text(this, &SWorldTileItem::GetPositionText) 
-					]
+				+SUniformGridPanel::Slot(1, 0)
+				.HAlign(HAlign_Right)
+				[
+					SNew(STextBlock)
+					.Text(this, &SWorldTileItem::GetPositionText) 
+				]
 
-					// Tile bounds
-					+SUniformGridPanel::Slot(0, 1)
-					.HAlign(HAlign_Left)
-					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("Item_BoundsExtent", "Extent:")) 
-					]
+				// Tile bounds
+				+SUniformGridPanel::Slot(0, 1)
+				.HAlign(HAlign_Left)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("Item_BoundsExtent", "Extent:")) 
+				]
 					
-					+SUniformGridPanel::Slot(1, 1)
-					.HAlign(HAlign_Right)
-					[
-						SNew(STextBlock)
-						.Text(this, &SWorldTileItem::GetBoundsExtentText) 
-					]
+				+SUniformGridPanel::Slot(1, 1)
+				.HAlign(HAlign_Right)
+				[
+					SNew(STextBlock)
+					.Text(this, &SWorldTileItem::GetBoundsExtentText) 
+				]
 
-					// Layer name
-					+SUniformGridPanel::Slot(0, 2)
-					.HAlign(HAlign_Left)
-					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("Item_Name", "Layer Name:")) 
-					]
+				// Layer name
+				+SUniformGridPanel::Slot(0, 2)
+				.HAlign(HAlign_Left)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("Item_Name", "Layer Name:")) 
+				]
 					
-					+SUniformGridPanel::Slot(1, 2)
-					.HAlign(HAlign_Right)
-					[
-						SNew(STextBlock)
-						.Text(this, &SWorldTileItem::GetLevelLayerNameText) 
-					]
+				+SUniformGridPanel::Slot(1, 2)
+				.HAlign(HAlign_Right)
+				[
+					SNew(STextBlock)
+					.Text(this, &SWorldTileItem::GetLevelLayerNameText) 
+				]
 
-					// Streaming distance
-					+SUniformGridPanel::Slot(0, 3)
-					.HAlign(HAlign_Left)
-					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("Item_Distance", "Streaming Distance:")) 
-					]
+				// Streaming distance
+				+SUniformGridPanel::Slot(0, 3)
+				.HAlign(HAlign_Left)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("Item_Distance", "Streaming Distance:")) 
+				]
 					
-					+SUniformGridPanel::Slot(1, 3)
-					.HAlign(HAlign_Right)
-					[
-						SNew(STextBlock)
-						.Text(this, &SWorldTileItem::GetLevelLayerDistanceText) 
-					]
+				+SUniformGridPanel::Slot(1, 3)
+				.HAlign(HAlign_Right)
+				[
+					SNew(STextBlock)
+					.Text(this, &SWorldTileItem::GetLevelLayerDistanceText) 
 				]
 			]
 		]
@@ -276,7 +269,7 @@ FVector2D SWorldTileItem::ComputeDesiredSize( float ) const
 
 int32 SWorldTileItem::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& ClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
-	const bool bIsVisible = FSlateRect::DoRectanglesIntersect(AllottedGeometry.GetClippingRect(), ClippingRect);
+	const bool bIsVisible = FSlateRect::DoRectanglesIntersect(AllottedGeometry.GetLayoutBoundingRect(), ClippingRect);
 	
 	if (bIsVisible)
 	{
@@ -302,20 +295,19 @@ int32 SWorldTileItem::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedG
 			const float Scale = 0.5f; // Scale down image of the borders to make them thinner 
 			FSlateLayoutTransform LayoutTransform(Scale, AllottedGeometry.GetAccumulatedLayoutTransform().GetTranslation() - InflateAmount);
 			FSlateRenderTransform SlateRenderTransform(Scale, AllottedGeometry.GetAccumulatedRenderTransform().GetTranslation() - InflateAmount);
-			FPaintGeometry SelectionGeometry(LayoutTransform, SlateRenderTransform, (AllottedGeometry.GetLocalSize()*AllottedGeometry.Scale + InflateAmount*2)/Scale);
+			FPaintGeometry SelectionGeometry(LayoutTransform, SlateRenderTransform, (AllottedGeometry.GetLocalSize()*AllottedGeometry.Scale + InflateAmount*2)/Scale, !SlateRenderTransform.IsIdentity());
 			FLinearColor HighlightColor = FLinearColor::White;
 			if (PreviewLODIndex)
 			{
 				// Highlight LOD tiles in different color to normal tiles
 				HighlightColor = (*PreviewLODIndex == INDEX_NONE) ? FLinearColor::Green : FLinearColor(0.3f,1.0f,0.3f);
 			}
-													
+			
 			FSlateDrawElement::MakeBox(
 				OutDrawElements,
 				LayerId + 1,
 				SelectionGeometry,
 				GetShadowBrush(bSelected || bHighlighted),
-				ClippingRect,
 				ESlateDrawEffect::None,
 				HighlightColor
 				);
@@ -339,7 +331,19 @@ FText SWorldTileItem::GetLevelNameText() const
 FText SWorldTileItem::GetPositionText() const
 {
 	FIntPoint Position = TileModel->GetRelativeLevelPosition();
-	return FText::Format(LOCTEXT("PositionXYFmt", "{0}, {1}"), FText::AsNumber(Position.X), FText::AsNumber(Position.Y));
+	bool bLocked = WorldModel->IsLockTilesLocationEnabled();
+	
+	FTextFormat TextFormat;
+	if (bLocked)
+	{
+		TextFormat = LOCTEXT("PositionXYFmtLocked", "{0}, {1} (Locked)");
+	}
+	else
+	{
+		TextFormat = LOCTEXT("PositionXYFmt", "{0}, {1}");
+	}
+		
+	return FText::Format(TextFormat, FText::AsNumber(Position.X), FText::AsNumber(Position.Y));
 }
 
 FText SWorldTileItem::GetBoundsExtentText() const

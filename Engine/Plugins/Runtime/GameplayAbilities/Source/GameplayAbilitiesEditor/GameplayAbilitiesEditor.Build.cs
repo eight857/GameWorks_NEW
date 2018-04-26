@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -9,7 +9,7 @@ namespace UnrealBuildTool.Rules
 	{
 		public GameplayAbilitiesEditor(ReadOnlyTargetRules Target) : base(Target)
 		{
-			var EngineDir = Path.GetFullPath(BuildConfiguration.RelativeEnginePath);
+			var EngineDir = Path.GetFullPath(Target.RelativeEnginePath);
 
             // These nodes are not public so are hard to subclass
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -51,6 +51,13 @@ public:
 	 * @param InValue replicated to all components
 	 */
 	explicit FIntVector( int32 InValue );
+
+	/**
+	 * Constructor
+	 *
+	 * @param InVector float vector converted to int
+	 */
+	explicit FIntVector( FVector InVector  );
 
 	/**
 	 * Constructor

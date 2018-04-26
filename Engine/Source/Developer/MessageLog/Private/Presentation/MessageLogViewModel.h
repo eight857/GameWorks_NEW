@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -76,7 +76,7 @@ public:
 	/** Gets the currently selected log listing's name */
 	FName GetCurrentListingName() const;
 
-	/** Gets the currently selectd log listing's label */
+	/** Gets the currently selected log listing's label */
 	FString GetCurrentListingLabel() const;
 
 	/** Get the linearized array of ViewModels */

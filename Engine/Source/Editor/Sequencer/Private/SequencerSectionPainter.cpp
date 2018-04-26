@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SequencerSectionPainter.h"
 #include "MovieSceneTrack.h"
@@ -9,6 +9,11 @@ FSequencerSectionPainter::FSequencerSectionPainter(FSlateWindowElementList& OutD
 	, SectionGeometry(InSectionGeometry)
 	, LayerId(0)
 	, bParentEnabled(true)
+	, bIsHighlighted(false)
+{
+}
+
+FSequencerSectionPainter::~FSequencerSectionPainter()
 {
 }
 

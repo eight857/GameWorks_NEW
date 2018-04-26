@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Text/SlateEditableTextTypes.h"
 #include "Rendering/SlateLayoutTransform.h"
@@ -97,10 +97,10 @@ void FCursorLineHighlighter::SetCursorBrush(const TAttribute<const FSlateBrush*>
 	CursorBrush = InCursorBrush;
 }
 
-int32 FCursorLineHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayout::FLineView& Line, const float OffsetX, const float Width, const FTextBlockStyle& DefaultStyle, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 FCursorLineHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayout::FLineView& Line, const float OffsetX, const float Width, const FTextBlockStyle& DefaultStyle, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	const FVector2D Location(Line.Offset.X + OffsetX, Line.Offset.Y);
-	const FVector2D Size(Width, Line.TextSize.Y);
+	const FVector2D Size(Width, Line.TextHeight);
 
 	FLinearColor CursorColorAndOpacity = InWidgetStyle.GetForegroundColor();
 
@@ -134,7 +134,6 @@ int32 FCursorLineHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayout:
 		LayerId,
 		AllottedGeometry.ToPaintGeometry(TransformVector(InverseScale, FVector2D(FMath::Max(CursorWidth * AllottedGeometry.Scale, 1.0f), Size.Y)), FSlateLayoutTransform(TransformPoint(InverseScale, Location + OptionalWidth))),
 		CursorBrush.Get(),
-		MyClippingRect,
 		bParentEnabled ? ESlateDrawEffect::None : ESlateDrawEffect::DisabledEffect,
 		CursorColorAndOpacity*InWidgetStyle.GetColorAndOpacityTint()
 		);
@@ -157,10 +156,10 @@ void FTextCompositionHighlighter::SetCompositionBrush(const TAttribute<const FSl
 	CompositionBrush = InCompositionBrush;
 }
 
-int32 FTextCompositionHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayout::FLineView& Line, const float OffsetX, const float Width, const FTextBlockStyle& DefaultStyle, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 FTextCompositionHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayout::FLineView& Line, const float OffsetX, const float Width, const FTextBlockStyle& DefaultStyle, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	const FVector2D Location(Line.Offset.X + OffsetX, Line.Offset.Y);
-	const FVector2D Size(Width, Line.TextSize.Y);
+	const FVector2D Size(Width, Line.TextHeight);
 
 	// The block size and offset values are pre-scaled, so we need to account for that when converting the block offsets into paint geometry
 	const float InverseScale = Inverse(AllottedGeometry.Scale);
@@ -175,7 +174,6 @@ int32 FTextCompositionHighlighter::OnPaint(const FPaintArgs& Args, const FTextLa
 			++LayerId,
 			AllottedGeometry.ToPaintGeometry(TransformVector(InverseScale, Size), FSlateLayoutTransform(TransformPoint(InverseScale, Location))),
 			CompositionBrush.Get(),
-			MyClippingRect,
 			bParentEnabled ? ESlateDrawEffect::None : ESlateDrawEffect::DisabledEffect,
 			LineColorAndOpacity * InWidgetStyle.GetColorAndOpacityTint()
 			);
@@ -193,7 +191,7 @@ FTextSelectionHighlighter::FTextSelectionHighlighter()
 {
 }
 
-int32 FTextSelectionHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayout::FLineView& Line, const float OffsetX, const float Width, const FTextBlockStyle& DefaultStyle, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 FTextSelectionHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayout::FLineView& Line, const float OffsetX, const float Width, const FTextBlockStyle& DefaultStyle, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	const FVector2D Location(Line.Offset.X + OffsetX, Line.Offset.Y);
 
@@ -214,9 +212,8 @@ int32 FTextSelectionHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayo
 		FSlateDrawElement::MakeBox(
 			OutDrawElements,
 			++LayerId,
-			AllottedGeometry.ToPaintGeometry(TransformVector(InverseScale, FVector2D(HighlightWidth, FMath::Max(Line.Size.Y, Line.TextSize.Y))), FSlateLayoutTransform(TransformPoint(InverseScale, Location))),
+			AllottedGeometry.ToPaintGeometry(TransformVector(InverseScale, FVector2D(HighlightWidth, FMath::Max(Line.Size.Y, Line.TextHeight))), FSlateLayoutTransform(TransformPoint(InverseScale, Location))),
 			&DefaultStyle.HighlightShape,
-			MyClippingRect,
 			bParentEnabled && bHasKeyboardFocus ? ESlateDrawEffect::None : ESlateDrawEffect::DisabledEffect,
 			SelectionBackgroundColorAndOpacity
 			);
@@ -228,6 +225,42 @@ int32 FTextSelectionHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayo
 TSharedRef<FTextSelectionHighlighter> FTextSelectionHighlighter::Create()
 {
 	return MakeShareable(new FTextSelectionHighlighter());
+}
+
+FTextSearchHighlighter::FTextSearchHighlighter()
+{
+}
+
+int32 FTextSearchHighlighter::OnPaint(const FPaintArgs& Args, const FTextLayout::FLineView& Line, const float OffsetX, const float Width, const FTextBlockStyle& DefaultStyle, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+{
+	const FVector2D Location(Line.Offset.X + OffsetX, Line.Offset.Y);
+
+	// If we've not been set to an explicit color, calculate a suitable one from the linked color
+	FLinearColor SelectionBackgroundColorAndOpacity = DefaultStyle.HighlightColor * InWidgetStyle.GetColorAndOpacityTint();
+	SelectionBackgroundColorAndOpacity.A *= 0.2f;
+
+	// The block size and offset values are pre-scaled, so we need to account for that when converting the block offsets into paint geometry
+	const float InverseScale = Inverse(AllottedGeometry.Scale);
+
+	if (Width > 0.0f)
+	{
+		// Draw the actual highlight rectangle
+		FSlateDrawElement::MakeBox(
+			OutDrawElements,
+			++LayerId,
+			AllottedGeometry.ToPaintGeometry(TransformVector(InverseScale, FVector2D(Width, FMath::Max(Line.Size.Y, Line.TextHeight))), FSlateLayoutTransform(TransformPoint(InverseScale, Location))),
+			&DefaultStyle.HighlightShape,
+			bParentEnabled && bHasKeyboardFocus ? ESlateDrawEffect::None : ESlateDrawEffect::DisabledEffect,
+			SelectionBackgroundColorAndOpacity
+			);
+	}
+
+	return LayerId;
+}
+
+TSharedRef<FTextSearchHighlighter> FTextSearchHighlighter::Create()
+{
+	return MakeShareable(new FTextSearchHighlighter());
 }
 
 } // namespace SlateEditableTextTypes

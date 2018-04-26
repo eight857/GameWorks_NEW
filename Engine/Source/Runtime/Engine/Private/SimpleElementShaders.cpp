@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*==============================================================================
 	SimpleElementShaders.h: Definitions for simple element shaders.
@@ -32,10 +32,10 @@ bool FSimpleElementVS::Serialize(FArchive& Ar)
 	return bShaderHasOutdatedParameters;
 }
 
-void FSimpleElementVS::ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+void FSimpleElementVS::ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 {
-	FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-	OutEnvironment.SetDefine(TEXT("ALLOW_SWITCH_VERTICALAXIS"), (Platform != SP_METAL));
+	FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+	OutEnvironment.SetDefine(TEXT("ALLOW_SWITCH_VERTICALAXIS"), (Parameters.Platform != SP_METAL));
 }
 
 /*------------------------------------------------------------------------------
@@ -49,40 +49,19 @@ FSimpleElementPS::FSimpleElementPS(const ShaderMetaType::CompiledShaderInitializ
 	InTextureSampler.Bind(Initializer.ParameterMap,TEXT("InTextureSampler"));
 	TextureComponentReplicate.Bind(Initializer.ParameterMap,TEXT("TextureComponentReplicate"));
 	TextureComponentReplicateAlpha.Bind(Initializer.ParameterMap,TEXT("TextureComponentReplicateAlpha"));
-	SceneDepthTextureNonMS.Bind(Initializer.ParameterMap,TEXT("SceneDepthTextureNonMS"));
-	EditorCompositeDepthTestParameter.Bind(Initializer.ParameterMap,TEXT("bEnableEditorPrimitiveDepthTest"));
-	ScreenToPixel.Bind(Initializer.ParameterMap,TEXT("ScreenToPixel"));
 }
 
-void FSimpleElementPS::SetEditorCompositingParameters(FRHICommandList& RHICmdList, const FSceneView* View, FTexture2DRHIRef DepthTexture )
+void FSimpleElementPS::SetEditorCompositingParameters(FRHICommandList& RHICmdList, const FSceneView* View)
 {
 	if( View )
 	{
 		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, GetPixelShader(), View->ViewUniformBuffer );
-
-		FIntRect DestRect = View->ViewRect;
-		FIntPoint ViewportOffset = DestRect.Min;
-		FIntPoint ViewportExtent = DestRect.Size();
-
-		FVector4 ScreenPosToPixelValue(
-			ViewportExtent.X * 0.5f,
-			-ViewportExtent.Y * 0.5f, 
-			ViewportExtent.X * 0.5f - 0.5f + ViewportOffset.X,
-			ViewportExtent.Y * 0.5f - 0.5f + ViewportOffset.Y);
-
-		SetShaderValue(RHICmdList, GetPixelShader(), ScreenToPixel, ScreenPosToPixelValue);
-
-		SetShaderValue(RHICmdList, GetPixelShader(),EditorCompositeDepthTestParameter,IsValidRef(DepthTexture) );
 	}
 	else
 	{
 		// Unset the view uniform buffers since we don't have a view
 		SetUniformBufferParameter(RHICmdList, GetPixelShader(), GetUniformBufferParameter<FViewUniformShaderParameters>(), NULL);
-		SetShaderValue(RHICmdList, GetPixelShader(),EditorCompositeDepthTestParameter,false );
 	}
-
-	// Bind the zbuffer as a texture if depth textures are supported
-	SetTextureParameter(RHICmdList, GetPixelShader(), SceneDepthTextureNonMS, IsValidRef(DepthTexture) ? (FTextureRHIRef)DepthTexture : GWhiteTexture->TextureRHI);
 }
 
 void FSimpleElementPS::SetParameters(FRHICommandList& RHICmdList, const FTexture* TextureValue)
@@ -213,7 +192,7 @@ void FSimpleElementDistanceFieldGammaPS::SetParameters(
 	}
 
 	// This shader does not use editor compositing
-	SetEditorCompositingParameters(RHICmdList, NULL, FTexture2DRHIRef() );
+	SetEditorCompositingParameters(RHICmdList, NULL);
 }
 
 /**
@@ -295,17 +274,17 @@ bool FSimpleElementColorChannelMaskPS::Serialize(FArchive& Ar)
 	Shader implementations.
 ------------------------------------------------------------------------------*/
 
-IMPLEMENT_SHADER_TYPE(,FSimpleElementVS,TEXT("SimpleElementVertexShader"),TEXT("Main"),SF_Vertex);
-IMPLEMENT_SHADER_TYPE(,FSimpleElementPS, TEXT("SimpleElementPixelShader"), TEXT("Main"), SF_Pixel);
-IMPLEMENT_SHADER_TYPE(,FSimpleElementAlphaOnlyPS, TEXT("SimpleElementPixelShader"), TEXT("AlphaOnlyMain"), SF_Pixel);
-IMPLEMENT_SHADER_TYPE(template<>, FSimpleElementGammaPS_SRGB, TEXT("SimpleElementPixelShader"), TEXT("GammaMain"), SF_Pixel);
-IMPLEMENT_SHADER_TYPE(template<>, FSimpleElementGammaPS_Linear, TEXT("SimpleElementPixelShader"), TEXT("GammaMain"), SF_Pixel);
-IMPLEMENT_SHADER_TYPE(, FSimpleElementGammaAlphaOnlyPS, TEXT("SimpleElementPixelShader"), TEXT("GammaAlphaOnlyMain"), SF_Pixel);
-IMPLEMENT_SHADER_TYPE(template<>, FSimpleElementMaskedGammaPS_SRGB, TEXT("SimpleElementPixelShader"), TEXT("GammaMaskedMain"), SF_Pixel);
-IMPLEMENT_SHADER_TYPE(template<>, FSimpleElementMaskedGammaPS_Linear, TEXT("SimpleElementPixelShader"), TEXT("GammaMaskedMain"), SF_Pixel);
-IMPLEMENT_SHADER_TYPE(,FSimpleElementDistanceFieldGammaPS,TEXT("SimpleElementPixelShader"),TEXT("GammaDistanceFieldMain"),SF_Pixel);
-IMPLEMENT_SHADER_TYPE(,FSimpleElementHitProxyPS,TEXT("SimpleElementHitProxyPixelShader"),TEXT("Main"),SF_Pixel);
-IMPLEMENT_SHADER_TYPE(,FSimpleElementColorChannelMaskPS,TEXT("SimpleElementColorChannelMaskPixelShader"),TEXT("Main"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FSimpleElementVS,TEXT("/Engine/Private/SimpleElementVertexShader.usf"),TEXT("Main"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(,FSimpleElementPS, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("Main"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FSimpleElementAlphaOnlyPS, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("AlphaOnlyMain"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, FSimpleElementGammaPS_SRGB, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaMain"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, FSimpleElementGammaPS_Linear, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaMain"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(, FSimpleElementGammaAlphaOnlyPS, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaAlphaOnlyMain"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, FSimpleElementMaskedGammaPS_SRGB, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaMaskedMain"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, FSimpleElementMaskedGammaPS_Linear, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaMaskedMain"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FSimpleElementDistanceFieldGammaPS,TEXT("/Engine/Private/SimpleElementPixelShader.usf"),TEXT("GammaDistanceFieldMain"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FSimpleElementHitProxyPS,TEXT("/Engine/Private/SimpleElementHitProxyPixelShader.usf"),TEXT("Main"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FSimpleElementColorChannelMaskPS,TEXT("/Engine/Private/SimpleElementColorChannelMaskPixelShader.usf"),TEXT("Main"),SF_Pixel);
 
 // 32 Bpp HDR Encoded implementations of simple element shaders.
 #define BLEND_VARIATION(SHADERCLASS,VARIATION, SHADERFILENAME, SHADERENTRYFUNC)\
@@ -324,17 +303,18 @@ IMPLEMENT_SHADER_TYPE(,FSimpleElementColorChannelMaskPS,TEXT("SimpleElementColor
 	BLEND_VARIATION(SHADERCLASS, SE_BLEND_AlphaComposite, SHADERFILENAME, SHADERENTRYFUNC) \
 	BLEND_VARIATION(SHADERCLASS, SE_BLEND_TranslucentDistanceFieldShadowed, SHADERFILENAME, SHADERENTRYFUNC) \
 	BLEND_VARIATION(SHADERCLASS, SE_BLEND_AlphaBlend, SHADERFILENAME, SHADERENTRYFUNC) \
-	BLEND_VARIATION(SHADERCLASS, SE_BLEND_TranslucentAlphaOnly, SHADERFILENAME, SHADERENTRYFUNC)
+	BLEND_VARIATION(SHADERCLASS, SE_BLEND_TranslucentAlphaOnly, SHADERFILENAME, SHADERENTRYFUNC) \
+	BLEND_VARIATION(SHADERCLASS, SE_BLEND_TranslucentAlphaOnlyWriteAlpha, SHADERFILENAME, SHADERENTRYFUNC)
 
-IMPLEMENT_ENCODEDSHADERS(FSimpleElementPS, TEXT("SimpleElementPixelShader"), TEXT("Main"));
-IMPLEMENT_ENCODEDSHADERS(FSimpleElementAlphaOnlyPS, TEXT("SimpleElementPixelShader"), TEXT("AlphaOnlyMain"));
-IMPLEMENT_ENCODEDSHADERS(FSimpleElementGammaPS_SRGB, TEXT("SimpleElementPixelShader"), TEXT("GammaMain"));
-IMPLEMENT_ENCODEDSHADERS(FSimpleElementGammaPS_Linear, TEXT("SimpleElementPixelShader"), TEXT("GammaMain"));
-IMPLEMENT_ENCODEDSHADERS(FSimpleElementGammaAlphaOnlyPS, TEXT("SimpleElementPixelShader"), TEXT("GammaAlphaOnlyMain"));
-IMPLEMENT_ENCODEDSHADERS(FSimpleElementMaskedGammaPS_SRGB, TEXT("SimpleElementPixelShader"), TEXT("GammaMaskedMain"));
-IMPLEMENT_ENCODEDSHADERS(FSimpleElementMaskedGammaPS_Linear, TEXT("SimpleElementPixelShader"), TEXT("GammaMaskedMain"));
-IMPLEMENT_ENCODEDSHADERS(FSimpleElementDistanceFieldGammaPS, TEXT("SimpleElementPixelShader"), TEXT("GammaDistanceFieldMain"));
-IMPLEMENT_ENCODEDSHADERS(FSimpleElementColorChannelMaskPS, TEXT("SimpleElementColorChannelMaskPixelShader"), TEXT("Main"));
+IMPLEMENT_ENCODEDSHADERS(FSimpleElementPS, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("Main"));
+IMPLEMENT_ENCODEDSHADERS(FSimpleElementAlphaOnlyPS, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("AlphaOnlyMain"));
+IMPLEMENT_ENCODEDSHADERS(FSimpleElementGammaPS_SRGB, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaMain"));
+IMPLEMENT_ENCODEDSHADERS(FSimpleElementGammaPS_Linear, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaMain"));
+IMPLEMENT_ENCODEDSHADERS(FSimpleElementGammaAlphaOnlyPS, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaAlphaOnlyMain"));
+IMPLEMENT_ENCODEDSHADERS(FSimpleElementMaskedGammaPS_SRGB, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaMaskedMain"));
+IMPLEMENT_ENCODEDSHADERS(FSimpleElementMaskedGammaPS_Linear, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaMaskedMain"));
+IMPLEMENT_ENCODEDSHADERS(FSimpleElementDistanceFieldGammaPS, TEXT("/Engine/Private/SimpleElementPixelShader.usf"), TEXT("GammaDistanceFieldMain"));
+IMPLEMENT_ENCODEDSHADERS(FSimpleElementColorChannelMaskPS, TEXT("/Engine/Private/SimpleElementColorChannelMaskPixelShader.usf"), TEXT("Main"));
 
 #undef IMPLEMENT_ENCODEDSHADERS
 #undef BLEND_VARIATION

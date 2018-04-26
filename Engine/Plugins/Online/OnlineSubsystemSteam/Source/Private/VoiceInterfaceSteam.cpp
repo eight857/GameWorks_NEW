@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VoiceInterfaceSteam.h"
 #include "Misc/ConfigCacheIni.h"
@@ -534,7 +534,7 @@ void FOnlineVoiceSteam::ProcessMuteChangeNotification()
 				if (LP && LP->PlayerController)
 				{
 					// If there is a player controller, we can mute/unmute people
-					if (LocalTalkers[Index].bIsRegistered && LP->PlayerController != NULL)
+					if (LocalTalkers[Index].bIsRegistered)
 					{
 						// Use the common method of checking muting
 						UpdateMuteListForLocalTalker(Index, LP->PlayerController);
@@ -732,12 +732,12 @@ void FOnlineVoiceSteam::ProcessLocalVoicePackets()
 						}
 						else
 						{
-							UE_LOG(LogVoiceEncode, Warning, TEXT("Voice data error in ReadLocalVoiceData"));
+							UE_LOG(LogVoiceEngine, Warning, TEXT("Voice data error in ReadLocalVoiceData"));
 						}
 					}
 					else
 					{
-						UE_LOG(LogVoiceEncode, Warning, TEXT("Dropping voice data due to network layer not processing fast enough"));
+						UE_LOG(LogVoiceEngine, Warning, TEXT("Dropping voice data due to network layer not processing fast enough"));
 						// Buffer overflow, so drop previous data
 						VoiceData.LocalPackets[Index].Length = 0;
 					}
@@ -770,7 +770,7 @@ void FOnlineVoiceSteam::ProcessRemoteVoicePackets()
 				uint32 Result = VoiceEngine->SubmitRemoteVoiceData(*VoicePacket->Sender, VoicePacket->Buffer.GetData(), &VoiceBufferSize);
 				if (Result != S_OK)
 				{
-					UE_LOG(LogVoiceDecode, Log,
+					UE_LOG(LogVoiceEngine, Log,
 						TEXT("SubmitRemoteVoiceData(%s) failed with 0x%08X"),
 						*VoicePacket->Sender->ToDebugString(),
 						Result);

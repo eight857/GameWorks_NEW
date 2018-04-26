@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PhysXSupport.h: PhysX support
@@ -173,9 +173,9 @@ struct FPhysXSupport
 	 *  returns true if the requested actor is non-null
 	 */
 	template <typename LambdaType>
-	static bool ExecuteOnPxRigidActorReadOnly(const FBodyInstance* BI, const LambdaType& Func, int32 SceneType = -1)
+	static bool ExecuteOnPxRigidActorReadOnly(const FBodyInstance* BI, const LambdaType& Func)
 	{
-		if (const PxRigidActor* PRigidActor = BI->GetPxRigidActor_AssumesLocked(SceneType))
+		if (const PxRigidActor* PRigidActor = BI->GetPxRigidActor_AssumesLocked())
 		{
 			const int32 SceneIndex = (PRigidActor == BI->RigidActorSync ? BI->SceneIndexSync : BI->SceneIndexAsync);
 			PxScene* PScene = GetPhysXSceneFromIndex(SceneIndex);
@@ -327,7 +327,7 @@ struct FPhysXSupport
 };
 
 // Utility functions for obtaining locks and executing lambda. This indirection is needed for vs2012 but should be inlined
-template <typename LambdaType> bool ExecuteOnPxRigidActorReadOnly(const FBodyInstance* BI, const LambdaType& Func, int32 SceneType = -1){ return FPhysXSupport<true>::ExecuteOnPxRigidActorReadOnly(BI, Func, SceneType); }
+template <typename LambdaType> bool ExecuteOnPxRigidActorReadOnly(const FBodyInstance* BI, const LambdaType& Func){ return FPhysXSupport<true>::ExecuteOnPxRigidActorReadOnly(BI, Func); }
 template <typename LambdaType> bool ExecuteOnPxRigidBodyReadOnly(const FBodyInstance* BI, const LambdaType& Func) { return FPhysXSupport<true>::ExecuteOnPxRigidBodyReadOnly(BI, Func); }
 template <typename LambdaType> bool ExecuteOnPxRigidBodyReadWrite(const FBodyInstance* BI, const LambdaType& Func){ return FPhysXSupport<true>::ExecuteOnPxRigidBodyReadWrite(BI, Func); }
 template <typename LambdaType> bool ExecuteOnPxRigidDynamicReadOnly(const FBodyInstance* BI, const LambdaType& Func){ return FPhysXSupport<true>::ExecuteOnPxRigidDynamicReadOnly(BI, Func); }
@@ -416,5 +416,21 @@ ENGINE_API FORCEINLINE_DEBUGGABLE FVector4 P2U4BaryCoord(const PxVec3& PVec)
 {
 	return FVector4(PVec.x, PVec.y, 1.f - PVec.x - PVec.y, PVec.z);
 }
+
+
+/** Calculates correct impulse at the body's center of mass and adds the impulse to the body. */
+ENGINE_API void AddRadialImpulseToPxRigidBody_AssumesLocked(PxRigidBody& PRigidBody, const FVector& Origin, float Radius, float Strength, uint8 Falloff, bool bVelChange);
+ENGINE_API void AddRadialForceToPxRigidBody_AssumesLocked(PxRigidBody& PRigidBody, const FVector& Origin, float Radius, float Strength, uint8 Falloff, bool bAccelChange);
+
+namespace nvidia
+{
+	namespace apex
+	{
+		class  PhysX3Interface;
+	}
+}
+
+/** The default interface is nullptr. This can be set by other modules to get custom behavior */
+extern ENGINE_API nvidia::apex::PhysX3Interface* GPhysX3Interface;
 
 #endif

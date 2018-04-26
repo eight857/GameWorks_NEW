@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,19 +10,20 @@ struct FMovieSceneEvaluationGroupParameters
 {
 	FMovieSceneEvaluationGroupParameters()
 		: EvaluationPriority(0xFF)
-		, bRequiresImmediateFlush(false)
 	{
 	}
 
+	FMovieSceneEvaluationGroupParameters(uint16 InPriority)
+		: EvaluationPriority(InPriority)
+	{}
+
+	DEPRECATED(4.17, "Please remove bInRequiresImmediateFlush parameter")
 	FMovieSceneEvaluationGroupParameters(uint16 InPriority, bool bInRequiresImmediateFlush)
 		: EvaluationPriority(InPriority)
-		, bRequiresImmediateFlush(bInRequiresImmediateFlush)
 	{}
 
 	/** Prioirty assigned to this group. Higher priorities are evaluated first */
 	uint16 EvaluationPriority;
-	/** Whether this group requires an immediate of the token stack */
-	bool bRequiresImmediateFlush;
 };
 
 /**
@@ -41,6 +42,11 @@ public:
 	static inline IMovieSceneModule& Get()
 	{
 		return FModuleManager::LoadModuleChecked< IMovieSceneModule >( "MovieScene" );
+	}
+
+	static inline IMovieSceneModule& Get_Concurrent()
+	{
+		return FModuleManager::GetModuleChecked< IMovieSceneModule >("MovieScene");
 	}
 
 	/**
@@ -62,4 +68,10 @@ public:
 	 * Find group parameters for a specific evaluation group
 	 */
 	virtual FMovieSceneEvaluationGroupParameters GetEvaluationGroupParameters(FName GroupName) const = 0;
+
+	/**
+	 * Get this module ptr as a weak ptr.
+	 * @note: resulting weak ptr should not be used to hold persistent strong references
+	 */
+	virtual TWeakPtr<IMovieSceneModule> GetWeakPtr() = 0;
 };

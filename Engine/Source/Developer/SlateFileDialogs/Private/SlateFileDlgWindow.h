@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -182,6 +182,8 @@ private:
 
 	bool GetFilterExtension(FString &OutString);
 	void ParseFilters();
+	/** @return true if the extension filter contains a wildcard or not */
+	bool IsWildcardExtension(const FString& Extension);
 
 	TArray< FDirNode > DirectoryNodesArray;
 	TArray<TSharedPtr<FFileEntry>> FoldersArray;
@@ -202,7 +204,7 @@ private:
 	TSharedPtr<STextBlock> DirErrorMsg;
 
 	TArray<TSharedPtr<FString>> FilterNameArray;
-	TArray<TSharedPtr<FString>> FilterListArray;
+	TArray<FString> FilterListArray;
 
 	int32 FilterIndex;
 
@@ -282,38 +284,20 @@ public:
 			{
 				Icon = StyleSet->GetBrush("SlateFileDialogs.UProject16");
 			}
-
 			else if (Extension.Equals(TEXT("fbx"), ESearchCase::IgnoreCase))
 			{
 				Icon = StyleSet->GetBrush("SlateFileDialogs.Model3D");
 			}
-
-			else if (Extension.Equals(TEXT("cpp"), ESearchCase::IgnoreCase))
+			else if (Extension.Equals(TEXT("cpp"), ESearchCase::IgnoreCase) ||
+					 Extension.Equals(TEXT("h"), ESearchCase::IgnoreCase) ||
+					 Extension.Equals(TEXT("txt"), ESearchCase::IgnoreCase) ||
+					 Extension.Equals(TEXT("log"), ESearchCase::IgnoreCase))
 			{
 				Icon = StyleSet->GetBrush("SlateFileDialogs.TextFile");
 			}
-			else if (Extension.Equals(TEXT("h"), ESearchCase::IgnoreCase))
-			{
-				Icon = StyleSet->GetBrush("SlateFileDialogs.TextFile");
-			}
-			else if (Extension.Equals(TEXT("txt"), ESearchCase::IgnoreCase))
-			{
-				Icon = StyleSet->GetBrush("SlateFileDialogs.TextFile");
-			}
-			else if (Extension.Equals(TEXT("log"), ESearchCase::IgnoreCase))
-			{
-				Icon = StyleSet->GetBrush("SlateFileDialogs.TextFile");
-			}
-
-			else if (Extension.Equals(TEXT("wav"), ESearchCase::IgnoreCase))
-			{
-				Icon = StyleSet->GetBrush("SlateFileDialogs.Audio");
-			}
-			else if (Extension.Equals(TEXT("mp3"), ESearchCase::IgnoreCase))
-			{
-				Icon = StyleSet->GetBrush("SlateFileDialogs.Audio");
-			}
-			else if (Extension.Equals(TEXT("ogg"), ESearchCase::IgnoreCase))
+			else if (Extension.Equals(TEXT("wav"), ESearchCase::IgnoreCase) ||
+					 Extension.Equals(TEXT("mp3"), ESearchCase::IgnoreCase) ||
+					 Extension.Equals(TEXT("ogg"), ESearchCase::IgnoreCase))
 			{
 				Icon = StyleSet->GetBrush("SlateFileDialogs.Audio");
 			}
@@ -321,20 +305,13 @@ public:
 			{
 				Icon = StyleSet->GetBrush("SlateFileDialogs.Video");
 			}
-
-			else if (Extension.Equals(TEXT("png"), ESearchCase::IgnoreCase))
+			else if (Extension.Equals(TEXT("png"), ESearchCase::IgnoreCase) || 
+					 Extension.Equals(TEXT("jpg"), ESearchCase::IgnoreCase) ||
+					 Extension.Equals(TEXT("tga"), ESearchCase::IgnoreCase) ||
+					 Extension.Equals(TEXT("bmp"), ESearchCase::IgnoreCase))
 			{
 				Icon = StyleSet->GetBrush("SlateFileDialogs.Image");
 			}
-			else if (Extension.Equals(TEXT("jpg"), ESearchCase::IgnoreCase))
-			{
-				Icon = StyleSet->GetBrush("SlateFileDialogs.Image");
-			}
-			else if (Extension.Equals(TEXT("bmp"), ESearchCase::IgnoreCase))
-			{
-				Icon = StyleSet->GetBrush("SlateFileDialogs.Image");
-			}
-
 			else
 			{
 				Icon = StyleSet->GetBrush("SlateFileDialogs.PlaceHolder");

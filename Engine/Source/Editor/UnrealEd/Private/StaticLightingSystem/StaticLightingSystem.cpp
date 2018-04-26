@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	StaticLightingSystem.cpp: Bsp light mesh illumination builder code
@@ -23,6 +23,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/LightComponentBase.h"
+#include "Components/ReflectionCaptureComponent.h"
 #include "AI/Navigation/NavigationSystem.h"
 #include "Engine/MapBuildDataRegistry.h"
 #include "Components/LightComponent.h"
@@ -50,12 +51,12 @@
 FSwarmDebugOptions GSwarmDebugOptions;
 
 #include "Lightmass/LightmassCharacterIndirectDetailVolume.h"
+#include "Lightmass/VolumetricLightmapDensityVolume.h"
 #include "StaticLighting.h"
 #include "StaticLightingSystem/StaticLightingPrivate.h"
 #include "ModelLight.h"
 #include "Engine/LevelStreaming.h"
 #include "LevelUtils.h"
-#include "Interfaces/ICrashTrackerModule.h"
 #include "EngineModule.h"
 #include "LightMap.h"
 #include "ShadowMap.h"
@@ -287,7 +288,7 @@ void FStaticLightingManager::CreateStaticLightingSystem(const FLightingBuildOpti
 		for (ULevel* Level : GWorld->GetLevels())
 		{
 			if (Level->bIsLightingScenario && Level->bIsVisible)
-	{
+			{
 				StaticLightingSystems.Emplace(new FStaticLightingSystem(Options, GWorld, Level));
 			}
 		}
@@ -307,19 +308,14 @@ void FStaticLightingManager::CreateStaticLightingSystem(const FLightingBuildOpti
 		}
 		else
 		{
-			DestroyStaticLightingSystems();
+			FStaticLightingManager::Get()->FailLightingBuild();
 		}
 	}
 	else
 	{
 		// Tell the user that they must close their current build first.
-		FNotificationInfo Info( LOCTEXT("LightBuildInProgressWarning", "A lighting build is already in progress! Please cancel it before triggering a new build.") );
-		Info.ExpireDuration = 5.0f;
-		TSharedPtr<SNotificationItem> Notification = FSlateNotificationManager::Get().AddNotification(Info);
-		if (Notification.IsValid())
-		{
-			Notification->SetCompletionState(SNotificationItem::CS_Fail);
-		}
+		FStaticLightingManager::Get()->FailLightingBuild(
+			LOCTEXT("LightBuildInProgressWarning", "A lighting build is already in progress! Please cancel it before triggering a new build."));
 	}
 }
 
@@ -331,7 +327,7 @@ void FStaticLightingManager::UpdateBuildLighting()
 		ActiveStaticLightingSystem->UpdateLightingBuild();
 
 		if (ActiveStaticLightingSystem && ActiveStaticLightingSystem->CurrentBuildStage == FStaticLightingSystem::Finished)
-	{
+		{
 			ActiveStaticLightingSystem = nullptr;
 			StaticLightingSystems.RemoveAt(0);
 
@@ -347,7 +343,7 @@ void FStaticLightingManager::UpdateBuildLighting()
 				}
 				else
 				{
-					DestroyStaticLightingSystems();
+					FStaticLightingManager::Get()->FailLightingBuild();
 				}
 			}
 		}
@@ -404,13 +400,10 @@ void FStaticLightingManager::FinishLightingBuild()
 	if (World->Scene)
 	{
 		// Everything should be built at this point, dump unbuilt interactions for debugging
-		World->Scene->DumpUnbuiltLightIteractions(*GLog);
-
-		// Update reflection captures now that static lighting has changed
-		// Update sky light first because it's considered direct lighting, sky diffuse will be visible in reflection capture indirect specular
-		World->UpdateAllSkyCaptures();
-		World->UpdateAllReflectionCaptures();
+		World->Scene->DumpUnbuiltLightInteractions(*GLog);
 	}
+
+	GEditor->BuildReflectionCaptures(World);
 }
 
 void FStaticLightingManager::DestroyStaticLightingSystems()
@@ -435,7 +428,6 @@ FStaticLightingSystem::FStaticLightingSystem(const FLightingBuildOptions& InOpti
 	, DeterministicIndex(0)
 	, NextVisibilityId(0)
 	, CurrentBuildStage(FStaticLightingSystem::NotRunning)
-	, bCrashTrackerOriginallyEnabled(false)
 	, World(InWorld)
 	, LightingScenario(InLightingScenario)
 	, LightmassProcessor(NULL)
@@ -444,16 +436,6 @@ FStaticLightingSystem::FStaticLightingSystem(const FLightingBuildOptions& InOpti
 
 FStaticLightingSystem::~FStaticLightingSystem()
 {
-	if (bCrashTrackerOriginallyEnabled)
-	{
-		// Re-enable the crash tracker if we ever disabled it
-		ICrashTrackerModule* CrashTracker = FModuleManager::LoadModulePtr<ICrashTrackerModule>("CrashTracker");
-		if (CrashTracker)
-		{
-			CrashTracker->SetCrashTrackingEnabled(true);
-			bCrashTrackerOriginallyEnabled = false;
-		}
-	}
 	if (LightmassProcessor)
 	{
 		delete LightmassProcessor;
@@ -468,6 +450,8 @@ bool FStaticLightingSystem::BeginLightmassProcess()
 
 	bool bRebuildDirtyGeometryForLighting = true;
 	bool bForceNoPrecomputedLighting = false;
+
+	GDebugStaticLightingInfo = FDebugLightingOutput();
 
 	{
 		FLightmassStatistics::FScopedGather StartupStatScope(LightmassStatistics.StartupTime);
@@ -511,22 +495,27 @@ bool FStaticLightingSystem::BeginLightmassProcess()
 
 			if (ShouldOperateOnLevel(Level))
 			{
-			Level->LightmapTotalSize = 0.0f;
-			Level->ShadowmapTotalSize = 0.0f;
-			ULevelStreaming* LevelStreaming = NULL;
-			if ( World->PersistentLevel != Level )
-			{
-				LevelStreaming = FLevelUtils::FindStreamingLevel( Level );
-			}
-			if (!Options.ShouldBuildLightingForLevel(Level))
-			{
-				if (SkippedLevels.Len() > 0)
+				Level->LightmapTotalSize = 0.0f;
+				Level->ShadowmapTotalSize = 0.0f;
+				ULevelStreaming* LevelStreaming = NULL;
+				if ( World->PersistentLevel != Level )
 				{
-					SkippedLevels += FString(TEXT(", "));
+					LevelStreaming = FLevelUtils::FindStreamingLevel( Level );
 				}
-				SkippedLevels += Level->GetName();
+				if (!Options.ShouldBuildLightingForLevel(Level))
+				{
+					if (SkippedLevels.Len() > 0)
+					{
+						SkippedLevels += FString(TEXT(", "));
+					}
+					SkippedLevels += Level->GetName();
+					GatherBuildDataResourcesToKeep(Level);
+				}
 			}
-		}
+			else if (Level && !Level->bIsLightingScenario && !Level->bIsVisible)
+			{
+				GatherBuildDataResourcesToKeep(Level);
+			}
 		}
 
 		for( int32 LevelIndex = 0 ; LevelIndex < World->StreamingLevels.Num() ; ++LevelIndex )
@@ -621,18 +610,19 @@ bool FStaticLightingSystem::BeginLightmassProcess()
 
 					if (bLightIsInWorld && ShouldOperateOnLevel(Light->GetOwner()->GetLevel()))
 					{
-						if (Light->bAffectsWorld
-						&& (Light->HasStaticShadowing() || Light->HasStaticLighting()))
-					{
-						// Make sure the light GUIDs are up-to-date.
-						Light->ValidateLightGUIDs();
+						if (Light->bAffectsWorld 
+							&& Light->IsRegistered()
+							&& (Light->HasStaticShadowing() || Light->HasStaticLighting()))
+						{
+							// Make sure the light GUIDs are up-to-date.
+							Light->ValidateLightGUIDs();
 
-						// Add the light to the system's list of lights in the world.
-						Lights.Add(Light);
+							// Add the light to the system's list of lights in the world.
+							Lights.Add(Light);
+						}
 					}
 				}
 			}
-		}
 		}
 
 		{
@@ -642,7 +632,6 @@ bool FStaticLightingSystem::BeginLightmassProcess()
 			{
 				// Clear reference to the selected lightmap
 				GCurrentSelectedLightmapSample.Lightmap = NULL;
-				GDebugStaticLightingInfo = FDebugLightingOutput();
 			}
 			
 			GatherStaticLightingInfo(bRebuildDirtyGeometryForLighting, bForceNoPrecomputedLighting);
@@ -763,7 +752,7 @@ void FStaticLightingSystem::InvalidateStaticLighting()
 
 				if (Level->MapBuildData)
 				{
-					Level->MapBuildData->InvalidateStaticLighting(World);
+					Level->MapBuildData->InvalidateStaticLighting(World, &BuildDataResourcesToKeep);
 				}
 			}
 			if (Level == World->PersistentLevel)
@@ -1385,6 +1374,7 @@ void FStaticLightingSystem::ReportStatistics()
 		UE_LOG(LogStaticLightingSystem, Log,
 			TEXT("Breakdown of Export Times\n")
 			TEXT("   %8.1fs\tVisibility Data\n")
+			TEXT("   %8.1fs\tVolumetricLightmap Data\n")
 			TEXT("   %8.1fs\tLights\n")
 			TEXT("   %8.1fs\tModels\n")
 			TEXT("   %8.1fs\tStatic Meshes\n")
@@ -1393,6 +1383,7 @@ void FStaticLightingSystem::ReportStatistics()
 			TEXT("   %8.1fs\tLandscape Instances\n")
 			TEXT("   %8.1fs\tMappings\n")
 			, LightmassStatistics.ExportVisibilityDataTime
+			, LightmassStatistics.ExportVolumetricLightmapDataTime
 			, LightmassStatistics.ExportLightsTime
 			, LightmassStatistics.ExportModelsTime
 			, LightmassStatistics.ExportStaticMeshesTime
@@ -1491,13 +1482,13 @@ void FStaticLightingSystem::CompleteDeterministicMappings(class FLightmassProces
 				InLightmassProcessor->ProcessMapping(TextureMapping->GetLightingGuid());
 				ApplyTime += FPlatformTime::Seconds() - ApplyStartTime;
 			}
+		}
 
-			CurrentStep++;
+		CurrentStep++;
 
-			if (CurrentStep % ProgressUpdateFrequency == 0)
-			{
-				GWarn->UpdateProgress(CurrentStep , TotalSteps);
-			}
+		if (CurrentStep % ProgressUpdateFrequency == 0)
+		{
+			GWarn->UpdateProgress(CurrentStep , TotalSteps);
 		}
 	}
 
@@ -1891,7 +1882,13 @@ bool FStaticLightingSystem::CreateLightmassProcessor()
 	if (LightmassProcessor->IsSwarmConnectionIsValid() == false)
 	{
 		UE_LOG(LogStaticLightingSystem, Warning, TEXT("Failed to connect to Swarm."));
-		FMessageDialog::Open( EAppMsgType::Ok, LOCTEXT("FailedToConnectToSwarmDialogMessage", "Failed to connect to Swarm."));
+		FMessageDialog::Open( EAppMsgType::Ok, 
+#if USE_LOCAL_SWARM_INTERFACE
+			LOCTEXT("FailedToConnectToSwarmDialogMessage", "Failed to connect to Swarm. Check that your network interface supports multicast.")
+#else
+			LOCTEXT("FailedToConnectToSwarmDialogMessage", "Failed to connect to Swarm.")
+#endif	
+		);
 		delete LightmassProcessor;
 		LightmassProcessor = NULL;
 		return false;
@@ -1948,6 +1945,15 @@ void FStaticLightingSystem::GatherScene()
 		if (World->ContainsActor(LMDetailVolume) && !LMDetailVolume->IsPendingKill() && ShouldOperateOnLevel(LMDetailVolume->GetLevel()))
 		{
 			LightmassExporter->AddCharacterIndirectDetailVolume(LMDetailVolume);
+		}
+	}
+
+	for (TObjectIterator<AVolumetricLightmapDensityVolume> It; It; ++It)
+	{
+		AVolumetricLightmapDensityVolume* DetailVolume = *It;
+		if (World->ContainsActor(DetailVolume) && !DetailVolume->IsPendingKill() && ShouldOperateOnLevel(DetailVolume->GetLevel()))
+		{
+			LightmassExporter->VolumetricLightmapDensityVolumes.Add(DetailVolume);
 		}
 	}
 
@@ -2053,25 +2059,6 @@ bool FStaticLightingSystem::InitiateLightmassProcessor()
 			LightmassProcessor->InitiateExport();
 			bSuccessful = true;
 			CurrentBuildStage = FStaticLightingSystem::AmortizedExport;
-
-			if (!IsRunningCommandlet())
-			{
-				// Crash tracker interferes with performance during export only.
-				// Disable it only for export, for everything else it shouldn't matter.
-				// This is a very special case, and doing this sort of thing
-				// is almost never recommended, especially without profiling heavily.
-				// The reason it works here is because amortized export flushes the render
-				// commands every tick, which is highly detrimental to the crash tracker's operation.
-				// ALSO NOTE: The reason this is set here rather than be a common API in the crashtracker
-				// module is to discourage people from doing this sort of thing all over the place.
-				ICrashTrackerModule* CrashTracker = FModuleManager::LoadModulePtr<ICrashTrackerModule>("CrashTracker");
-				if (CrashTracker)
-				{
-					bCrashTrackerOriginallyEnabled = CrashTracker->IsCurrentlyCapturing();
-					CrashTracker->SetCrashTrackingEnabled(false);
-				}
-			}
-
 		}
 	}
 	
@@ -2190,16 +2177,6 @@ void FStaticLightingSystem::UpdateLightingBuild()
 
 		if (bCompleted)
 		{
-			if (bCrashTrackerOriginallyEnabled)
-			{
-				// Re-enable the crash tracker if we disabled it
-				ICrashTrackerModule* CrashTracker = FModuleManager::LoadModulePtr<ICrashTrackerModule>("CrashTracker");
-				if (CrashTracker)
-				{
-					CrashTracker->SetCrashTrackingEnabled(true);
-					bCrashTrackerOriginallyEnabled = false;
-				}
-			}
 			CurrentBuildStage = FStaticLightingSystem::SwarmKickoff;
 		}
 	}
@@ -2274,6 +2251,62 @@ void FStaticLightingSystem::UpdateAutomaticImportanceVolumeBounds( const FBox& M
 	AutomaticImportanceVolumeBounds += MeshBounds;
 }
 
+void FStaticLightingSystem::GatherBuildDataResourcesToKeep(const ULevel* InLevel)
+{
+	// This is only required is using a lighting scenario, otherwise the build data is saved within the level itself and follows it's inclusion in the lighting build.
+	if (InLevel && LightingScenario)
+	{
+		BuildDataResourcesToKeep.Add(InLevel->LevelBuildDataId);
+
+		for (const UModelComponent * ModelComponent : InLevel->ModelComponents)
+		{
+			if (!ModelComponent) // Skip null models
+			{
+				continue;
+			}
+			ModelComponent->AddMapBuildDataGUIDs(BuildDataResourcesToKeep);
+		}
+
+		for (const AActor* Actor : InLevel->Actors)
+		{
+			if (!Actor) // Skip null actors
+			{
+				continue;
+			}
+
+			for (const UActorComponent* Component : Actor->GetComponents())
+			{
+				if (!Component) // Skip null components
+				{
+					continue;
+				}
+
+				const UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(Component);
+				if (PrimitiveComponent)
+				{
+					PrimitiveComponent->AddMapBuildDataGUIDs(BuildDataResourcesToKeep);
+					continue;
+				}
+
+				const ULightComponent* LightComponent = Cast<ULightComponent>(Component);
+				if (LightComponent)
+				{
+					BuildDataResourcesToKeep.Add(LightComponent->LightGuid);
+					continue;
+				}
+
+				const UReflectionCaptureComponent* ReflectionCaptureComponent = Cast<UReflectionCaptureComponent>(Component);
+				if (ReflectionCaptureComponent)
+				{
+					BuildDataResourcesToKeep.Add(ReflectionCaptureComponent->MapBuildDataId);
+					continue;
+				}
+			}
+		}
+	}
+}
+
+
 bool FStaticLightingSystem::CanAutoApplyLighting() const
 {
 	const bool bAutoApplyEnabled = GetDefault<ULevelEditorMiscSettings>()->bAutoApplyLightingEnable;
@@ -2282,7 +2315,7 @@ bool FStaticLightingSystem::CanAutoApplyLighting() const
 	const bool bPlayWorldValid = GEditor->PlayWorld != nullptr;
 	const bool bAnyMenusVisible = (FSlateApplication::IsInitialized() && FSlateApplication::Get().AnyMenusVisible());
 	//const bool bIsInteratcting = false;// FSlateApplication::Get().GetMouseCaptor().IsValid() || GEditor->IsUserInteracting();
-	const bool bHasGameOrProjectLoaded = FApp::HasGameName();
+	const bool bHasGameOrProjectLoaded = FApp::HasProjectName();
 
 	return ( bAutoApplyEnabled && !bSlowTask && !bInterpEditMode && !bPlayWorldValid && !bAnyMenusVisible/* && !bIsInteratcting */&& !GIsDemoMode && bHasGameOrProjectLoaded );
 }
@@ -2292,7 +2325,7 @@ bool FStaticLightingSystem::CanAutoApplyLighting() const
  */
 void FStaticLightingSystem::ClearBinaryDumps()
 {
-	IFileManager::Get().DeleteDirectory(*FString::Printf(TEXT("%sLogs/Lighting_%s"), *FPaths::GameDir(), TEXT("Lightmass")), false, true);
+	IFileManager::Get().DeleteDirectory(*FString::Printf(TEXT("%sLogs/Lighting_%s"), *FPaths::ProjectDir(), TEXT("Lightmass")), false, true);
 }
 
 /** Marks all lights used in the calculated lightmap as used in a lightmap, and calls Apply on the texture mapping. */

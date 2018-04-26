@@ -4,49 +4,37 @@ Crumbs:%ROOT%, Engine
 Description:Guide to the Place Mode, which allows for rapid deployment of placeable Actors in your levels.
 Version: 4.9
 SkillLevel:Beginner
-
-[VAR:Topic]
-[OBJECT:Topic]
-	[PARAM:image]
-		![%Engine/UI/LevelEditor/Modes/PlaceMode:title%](topic_PBUI.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/content_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/UI/LevelEditor/Modes/PlaceMode:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/UI/LevelEditor/Modes/PlaceMode:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/UI/LevelEditor/Modes/PlaceMode]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-	[PARAM:image]
-		![%Engine/UI/LevelEditor/Modes/PlaceMode:title%](topic_PBUI.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/content_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/UI/LevelEditor/Modes/PlaceMode:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/UI/LevelEditor/Modes/PlaceMode:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/UI/LevelEditor/Modes/PlaceMode]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
+topic-image:topic_PBUI.png
 
 
 [REGION:fullwidth]
-	![](PlacementBrowser_Title.png)
+[OBJECT:ToggleButtonContent]
+[PARAMLITERAL:category]
+OS
+[/PARAMLITERAL]
+[PARAMLITERAL:id]
+windows
+[/PARAMLITERAL]
+[PARAMLITERAL:active]
+[/PARAMLITERAL]
+[PARAM:content]
+![](PlaceMode_Windows.png)
+[/PARAM]
+[/OBJECT]
+
+[OBJECT:ToggleButtonContent]
+[PARAMLITERAL:category]
+OS
+[/PARAMLITERAL]
+[PARAMLITERAL:id]
+mac
+[/PARAMLITERAL]
+[PARAMLITERAL:active]
+[/PARAMLITERAL]
+[PARAM:content]
+![](PlaceMode_mac.png)
+[/PARAM]
+[/OBJECT]
 [/REGION]
 
 

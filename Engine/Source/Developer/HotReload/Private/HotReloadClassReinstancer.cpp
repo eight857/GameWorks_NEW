@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HotReloadClassReinstancer.h"
 #include "Serialization/MemoryWriter.h"
@@ -161,14 +161,14 @@ void FHotReloadClassReinstancer::SerializeCDOProperties(UObject* InObject, FHotR
 			Ar << UniqueID;
 			return *this;
 		}
-		virtual FArchive& operator<<(FAssetPtr& AssetPtr) override
+		virtual FArchive& operator<<(FSoftObjectPtr& Value) override
 		{
 			FArchive& Ar = *this;
-			FStringAssetReference UniqueID = AssetPtr.GetUniqueID();
+			FSoftObjectPath UniqueID = Value.GetUniqueID();
 			Ar << UniqueID;
 			return Ar;
 		}
-		virtual FArchive& operator<<(FStringAssetReference& Value) override
+		virtual FArchive& operator<<(FSoftObjectPath& Value) override
 		{
 			FArchive& Ar = *this;
 
@@ -400,14 +400,14 @@ void FHotReloadClassReinstancer::UpdateDefaultProperties()
 			Ar << UniqueID;
 			return *this;
 		}
-		virtual FArchive& operator<<(FAssetPtr& AssetPtr) override
+		virtual FArchive& operator<<(FSoftObjectPtr& Value) override
 		{
 			FArchive& Ar = *this;
-			FStringAssetReference UniqueID = AssetPtr.GetUniqueID();
+			FSoftObjectPath UniqueID = Value.GetUniqueID();
 			Ar << UniqueID;
 			return Ar;
 		}
-		virtual FArchive& operator<<(FStringAssetReference& Value) override
+		virtual FArchive& operator<<(FSoftObjectPath& Value) override
 		{
 			FArchive& Ar = *this;
 

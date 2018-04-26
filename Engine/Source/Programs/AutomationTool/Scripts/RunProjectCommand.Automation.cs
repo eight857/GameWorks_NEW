@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -10,6 +10,7 @@ using System.Net.NetworkInformation;
 using System.Collections;
 using AutomationTool;
 using UnrealBuildTool;
+using Tools.DotNETCommon;
 
 /// <summary>
 /// Helper command to run a game.
@@ -130,15 +131,19 @@ public partial class Project : CommandUtils
 			{
 				TargetPlatformDescriptor ServerPlatformDesc = Params.ServerTargetPlatforms[0];
 				ServerProcess = RunDedicatedServer(Params, ServerLogFile, Params.RunCommandline);
-				// With dedicated server, the client connects to local host to load a map.
-				if (ServerPlatformDesc.Type == UnrealTargetPlatform.Linux)
-				{
-					Params.MapToRun = Params.ServerDeviceAddress;
-				}
-				else
-				{
-					Params.MapToRun = "127.0.0.1";
-				}
+
+                // With dedicated server, the client connects to local host to load a map, unless client parameters are already specified
+                if (String.IsNullOrEmpty(Params.ClientCommandline))
+                {
+                    if (!String.IsNullOrEmpty(Params.ServerDeviceAddress))
+                    {
+                        Params.ClientCommandline = Params.ServerDeviceAddress;
+                    }
+                    else
+                    {
+                        Params.ClientCommandline = "127.0.0.1";
+                    }
+                }
 			}
 			else
 			{
@@ -620,17 +625,21 @@ public partial class Project : CommandUtils
 		ClientRunFlags = ERunOptions.AllowSpew | ERunOptions.AppMustExist;
 		ClientApp = "";
 		ClientCmdLine = "";
-		string TempCmdLine = "";
+		string TempCmdLine = SC.ProjectArgForCommandLines + " ";
 		var PlatformName = Params.ClientTargetPlatforms[0].ToString();
 		if (Params.Cook || Params.CookOnTheFly)
 		{
-			List<string> Exes = SC.StageTargetPlatform.GetExecutableNames(SC, true);
-			ClientApp = Exes[0];
-			if (SC.StageTargetPlatform.PlatformType != UnrealTargetPlatform.IOS)
-			{
-				TempCmdLine += SC.ProjectArgForCommandLines + " ";
-			}
-			TempCmdLine += Params.MapToRun + " ";
+			List<FileReference> Exes = SC.StageTargetPlatform.GetExecutableNames(SC);
+			ClientApp = Exes[0].FullName;
+
+            if (!String.IsNullOrEmpty(Params.ClientCommandline))
+            {
+                TempCmdLine += Params.ClientCommandline + " ";
+            }
+            else
+            {
+                TempCmdLine += Params.MapToRun + " ";
+            }
 
 			if (Params.CookOnTheFly || Params.FileServer)
 			{
@@ -798,7 +807,7 @@ public partial class Project : CommandUtils
 			}
 			else if (!Params.Stage)
 			{
-				var SandboxPath = CombinePaths(SC.RuntimeProjectRootDir, "Saved", "Cooked", SC.CookPlatform);
+				var SandboxPath = CombinePaths(SC.RuntimeProjectRootDir.FullName, "Saved", "Cooked", SC.CookPlatform);
 				if (!SC.StageTargetPlatform.LaunchViaUFE)
 				{
 					TempCmdLine += "-sandbox=" + CommandUtils.MakePathSafeToUseWithCommandLine(SandboxPath) + " ";
@@ -812,7 +821,6 @@ public partial class Project : CommandUtils
 		else
 		{
 			ClientApp = CombinePaths(CmdEnv.LocalRoot, "Engine/Binaries", PlatformName, "UE4Editor.exe");
-			TempCmdLine += SC.ProjectArgForCommandLines + " ";
 			if (!Params.EditorTest)
 			{
 				TempCmdLine += "-game " + Params.MapToRun + " ";
@@ -861,13 +869,12 @@ public partial class Project : CommandUtils
 		{
 			TempCmdLine += "-abslog=" + CommandUtils.MakePathSafeToUseWithCommandLine(ClientLogFile) + " ";
 		}
-		if (SC.StageTargetPlatform.PlatformType != UnrealTargetPlatform.IOS && SC.StageTargetPlatform.PlatformType != UnrealTargetPlatform.Linux)
+		if (SC.StageTargetPlatform.PlatformType == UnrealTargetPlatform.Win32 || SC.StageTargetPlatform.PlatformType == UnrealTargetPlatform.Win64)
 		{
-			TempCmdLine += "-Messaging -nomcp -Windowed ";
+			TempCmdLine += "-Messaging -Windowed ";
 		}
 		else
 		{
-			// skip arguments which don't make sense for iOS
 			TempCmdLine += "-Messaging ";
 		}
 		if (Params.NullRHI && SC.StageTargetPlatform.PlatformType != UnrealTargetPlatform.Mac) // all macs have GPUs, and currently the mac dies with nullrhi
@@ -951,8 +958,8 @@ public partial class Project : CommandUtils
 		var ServerApp = CombinePaths(CmdEnv.LocalRoot, "Engine/Binaries/Win64/UE4Editor.exe");
 		if (ServerParams.Cook)
 		{
-			List<string> Exes = SC.StageTargetPlatform.GetExecutableNames(SC);
-			ServerApp = Exes[0];
+			List<FileReference> Exes = SC.StageTargetPlatform.GetExecutableNames(SC);
+			ServerApp = Exes[0].FullName;
 		}
 		var Args = ServerParams.Cook ? "" : (SC.ProjectArgForCommandLines + " ");
 		Console.WriteLine(Params.ServerDeviceAddress);
@@ -986,12 +993,7 @@ public partial class Project : CommandUtils
 			{
 				Args += " -unattended";
 			}
-			// Do not blindly add -nomcp, only do so if the client is using it
-			if (Params.RunCommandline.Contains("-nomcp"))
-			{
-				Args += " -nomcp";
-			}
-
+			
 			if (Params.ServerCommandline.Length > 0)
 			{
 				Args += " " + Params.ServerCommandline;

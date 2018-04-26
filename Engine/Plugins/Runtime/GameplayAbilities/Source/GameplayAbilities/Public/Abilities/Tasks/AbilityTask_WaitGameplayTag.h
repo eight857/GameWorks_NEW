@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -9,8 +9,8 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FWaitGameplayTagDelegate);
 
-UCLASS(MinimalAPI)
-class UAbilityTask_WaitGameplayTagAdded : public UAbilityTask_WaitGameplayTag
+UCLASS()
+class GAMEPLAYABILITIES_API UAbilityTask_WaitGameplayTagAdded : public UAbilityTask_WaitGameplayTag
 {
 	GENERATED_UCLASS_BODY()
 
@@ -29,8 +29,8 @@ class UAbilityTask_WaitGameplayTagAdded : public UAbilityTask_WaitGameplayTag
 	virtual void GameplayTagCallback(const FGameplayTag Tag, int32 NewCount) override;
 };
 
-UCLASS(MinimalAPI)
-class UAbilityTask_WaitGameplayTagRemoved : public UAbilityTask_WaitGameplayTag
+UCLASS()
+class GAMEPLAYABILITIES_API UAbilityTask_WaitGameplayTagRemoved : public UAbilityTask_WaitGameplayTag
 {
 	GENERATED_UCLASS_BODY()
 

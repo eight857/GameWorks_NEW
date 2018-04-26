@@ -1,25 +1,24 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Misc/Guid.h"
 #include "Evaluation/MovieSceneAnimTypeID.h"
-#include "MovieSceneSequenceInstance.h"
 #include "Evaluation/MovieSceneEvaluationKey.h"
 #include "Evaluation/MovieScenePreAnimatedState.h"
 #include "MovieSceneFwd.h"
 #include "MovieSceneSpawnRegister.h"
 #include "Containers/ArrayView.h"
 #include "Evaluation/MovieSceneEvaluationState.h"
-#include "Evaluation/PersistentEvaluationData.h"
-#include "MovieSceneSequence.h"
+#include "Evaluation/MovieSceneEvaluationOperand.h"
 
 
+class UMovieSceneSequence;
 class FViewportClient;
 class IMovieSceneBindingOverridesInterface;
 struct FMovieSceneRootEvaluationTemplateInstance;
-
+class FMovieSceneSequenceInstance;
 
 struct EMovieSceneViewportParams
 {
@@ -53,11 +52,17 @@ struct EMovieSceneViewportParams
 class IMovieScenePlayer
 {
 public:
+	virtual ~IMovieScenePlayer() { }
 
 	/**
 	 * Access the evaluation template that we are playing back
 	 */
 	virtual FMovieSceneRootEvaluationTemplateInstance& GetEvaluationTemplate() = 0;
+
+	/**
+	 * Whether this player can update the camera cut
+	 */
+	virtual bool CanUpdateCameraCut() const { return true; }
 
 	/**
 	 * Updates the perspective viewports with the actor to view through
@@ -96,10 +101,7 @@ public:
 	 * @param InBindingId	The ID relating to the object(s) to resolve
 	 * @param OutObjects	Container to populate with the bound objects
 	 */
-	virtual void ResolveBoundObjects(const FGuid& InBindingId, FMovieSceneSequenceID SequenceID, UMovieSceneSequence& Sequence, UObject* ResolutionContext, TArray<UObject*, TInlineAllocator<1>>& OutObjects) const
-	{
-		Sequence.LocateBoundObjects(InBindingId, ResolutionContext, OutObjects);
-	}
+	MOVIESCENE_API virtual void ResolveBoundObjects(const FGuid& InBindingId, FMovieSceneSequenceID SequenceID, UMovieSceneSequence& Sequence, UObject* ResolutionContext, TArray<UObject*, TInlineAllocator<1>>& OutObjects) const;
 
 	/**
 	 * Access the binding overrides interface for this player.
@@ -113,6 +115,12 @@ public:
 	 */
 	virtual FMovieSceneSpawnRegister& GetSpawnRegister() { return NullRegister; }
 
+	/*
+	 * Called wehn an object is spawned by sequencer
+	 * 
+	 */
+	virtual void OnObjectSpawned(UObject* InObject, const FMovieSceneEvaluationOperand& Operand) {}
+
 	/**
 	 * Called whenever an object binding has been resolved to give the player a chance to interact with the objects before they are animated
 	 * 
@@ -120,12 +128,22 @@ public:
 	 * @param InSequenceID	The ID of the sequence in which the object binding resides
 	 * @param Objects		The array of objects that were resolved
 	 */
-	virtual void NotifyBindingUpdate(const FGuid& InGuid, FMovieSceneSequenceIDRef InSequenceID, TArrayView<TWeakObjectPtr<>> Objects) {}
+	virtual void NotifyBindingUpdate(const FGuid& InGuid, FMovieSceneSequenceIDRef InSequenceID, TArrayView<TWeakObjectPtr<>> Objects) { NotifyBindingsChanged(); }
+
+	/**
+	 * Called whenever any object bindings have changed
+	 */
+	virtual void NotifyBindingsChanged() {}
 
 	/**
 	 * Access the playback context for this movie scene player
 	 */
 	virtual UObject* GetPlaybackContext() const { return nullptr; }
+
+	/**
+	 * Access the global instance data object for this movie scene player
+	 */
+	virtual const UObject* GetInstanceData() const { return nullptr; }
 
 	/**
 	 * Access the event contexts for this movie scene player
@@ -244,7 +262,7 @@ public:
 	void RestorePreAnimatedState()
 	{
 		PreAnimatedState.RestorePreAnimatedState(*this);
-		State.ClearObjectCaches();
+		State.ClearObjectCaches(*this);
 	}
 
 	/**
@@ -285,14 +303,6 @@ public:
 
 	/** Container that stores any per-animated state tokens  */
 	FMovieScenePreAnimatedState PreAnimatedState;
-
-public:
-
-	DEPRECATED(4.15, "Sequence Instances have been deprecated in favor of a template approach (see GetEvaluationTemplate).")
-	MOVIESCENE_API TSharedRef<FMovieSceneSequenceInstance> GetRootMovieSceneSequenceInstance();
-
-	DEPRECATED(4.15, "Please use FindBoundObjects directly.")
-	MOVIESCENE_API void GetRuntimeObjects(TSharedRef<FMovieSceneSequenceInstance> MovieSceneInstance, const FGuid& Guid, TArray<TWeakObjectPtr<>>& OutRuntimeObjects);
 	
 private:
 

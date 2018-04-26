@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PaperFlipbookComponent.h"
 #include "RenderingThread.h"
@@ -313,12 +313,16 @@ void UPaperFlipbookComponent::TickFlipbook(float DeltaTime)
 	}
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 void UPaperFlipbookComponent::GetLifetimeReplicatedProps(TArray< FLifetimeProperty > & OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UPaperFlipbookComponent, SourceFlipbook);
 }
+
+/// @endcond
 
 void UPaperFlipbookComponent::OnRep_SourceFlipbook(class UPaperFlipbook* OldFlipbook)
 {
@@ -402,11 +406,6 @@ bool UPaperFlipbookComponent::SetFlipbook(class UPaperFlipbook* NewFlipbook)
 UPaperFlipbook* UPaperFlipbookComponent::GetFlipbook()
 {
 	return SourceFlipbook;
-}
-
-UMaterialInterface* UPaperFlipbookComponent::GetSpriteMaterial() const
-{
-	return GetMaterial(0);
 }
 
 void UPaperFlipbookComponent::SetSpriteColor(FLinearColor NewColor)
@@ -647,12 +646,12 @@ FTransform UPaperFlipbookComponent::GetSocketTransform(FName InSocketName, ERela
 			switch (TransformSpace)
 			{
 			case RTS_World:
-				return SocketLocalTransform * ComponentToWorld;
+				return SocketLocalTransform * GetComponentTransform();
 
 			case RTS_Actor:
 				if (const AActor* Actor = GetOwner())
 				{
-					const FTransform SocketTransform = SocketLocalTransform * ComponentToWorld;
+					const FTransform SocketTransform = SocketLocalTransform * GetComponentTransform();
 					return SocketTransform.GetRelativeTransform(Actor->GetTransform());
 				}
 				break;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * Base class of all global Blutility editor utilities.
@@ -29,6 +29,9 @@ class BLUTILITY_API UGlobalEditorUtilityBase : public UObject
 
 	UPROPERTY(Transient)
 	bool bDirtiedSelectionSet;
+
+	/** UObject interface */
+	virtual UWorld* GetWorld() const override;
 
 	UFUNCTION(BlueprintCallable, Category="Development|Editor")
 	TArray<AActor*> GetSelectionSet();

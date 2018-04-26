@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -27,7 +27,7 @@ struct ENGINE_API FKAggregateGeom
 	UPROPERTY(EditAnywhere, editfixedsize, Category = "Aggregate Geometry", meta = (DisplayName = "Capsules"))
 	TArray<FKSphylElem> SphylElems;
 
-	UPROPERTY(EditAnywhere, editfixedsize, Category = "Aggregate Geometry", meta = (DisplayName = "Convex Elements"))
+	UPROPERTY(VisibleAnywhere, editfixedsize, Category = "Aggregate Geometry", meta = (DisplayName = "Convex Elements"))
 	TArray<FKConvexElem> ConvexElems;
 
 	class FKConvexGeomRenderInfo* RenderInfo;
@@ -55,7 +55,7 @@ struct ENGINE_API FKAggregateGeom
 		return SphereElems.Num() + SphylElems.Num() + BoxElems.Num() + ConvexElems.Num();
 	}
 
-	int32 GetElementCount(int32 Type) const;
+	int32 GetElementCount(EAggCollisionShape::Type Type) const;
 
 	void EmptyElements()
 	{

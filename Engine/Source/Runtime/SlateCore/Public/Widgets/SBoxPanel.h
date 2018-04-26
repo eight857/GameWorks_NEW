@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -35,21 +35,22 @@ public:
 	public:		
 		/** Horizontal and Vertical Boxes inherit from FSlot */
 		virtual ~FSlot(){}
-		/**
-		 * How much space this slot should occupy along panel's direction.
-		 *   When SizeRule is SizeRule_Auto, the widget's DesiredSize will be used as the space required.
-		 *   When SizeRule is SizeRule_Stretch, the available space will be distributed proportionately between
-		 *   peer Widgets depending on the Value property. Available space is space remaining after all the
-		 *   peers' SizeRule_Auto requirements have been satisfied.
-		 */
-		FSizeParam SizeParam;
 		
 		/** Horizontal positioning of child within the allocated slot */
-		EHorizontalAlignment HAlignment;
+		TEnumAsByte<EHorizontalAlignment> HAlignment;
 		
 		/** Vertical positioning of child within the allocated slot */
-		EVerticalAlignment VAlignment;
-		
+		TEnumAsByte<EVerticalAlignment> VAlignment;
+
+		/**
+		* How much space this slot should occupy along panel's direction.
+		*   When SizeRule is SizeRule_Auto, the widget's DesiredSize will be used as the space required.
+		*   When SizeRule is SizeRule_Stretch, the available space will be distributed proportionately between
+		*   peer Widgets depending on the Value property. Available space is space remaining after all the
+		*   peers' SizeRule_Auto requirements have been satisfied.
+		*/
+		FSizeParam SizeParam;
+
 		/** The padding to add around the child. */
 		TAttribute<FMargin> SlotPadding;
 		
@@ -60,9 +61,9 @@ public:
 		/** Default values for a slot. */
 		FSlot()
 			: TSlotBase<FSlot>()
-			, SizeParam( FStretch(1) )
 			, HAlignment( HAlign_Fill )
 			, VAlignment( VAlign_Fill )
+			, SizeParam( FStretch(1) )
 			, SlotPadding( FMargin(0) )
 			, MaxSize( 0.0f )
 		{ }
@@ -85,16 +86,15 @@ public:
 public:
 
 	// Begin SWidget overrides.
-
-	virtual void OnArrangeChildren( const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren ) const;
-	
-	virtual FVector2D ComputeDesiredSize(float) const;
-
-	virtual FChildren* GetChildren();
-
+	virtual void OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const override;
+	virtual FChildren* GetChildren() override;
 	// End SWidget overrides.
 
 protected:
+	// Begin SWidget overrides.
+	virtual FVector2D ComputeDesiredSize(float) const override;
+	// End SWidget overrides.
+
 	/**
 	 * A Box Panel's orientation cannot be changed once it is constructed..
 	 *
@@ -102,10 +102,11 @@ protected:
 	 */
 	SBoxPanel( EOrientation InOrientation );
 
-	/** The Box Panel's orientation; determined at construct time. */
-	const EOrientation Orientation;
 	/** The Box Panel's children. */
 	TPanelChildren<FSlot> Children;
+
+	/** The Box Panel's orientation; determined at construct time. */
+	const EOrientation Orientation;
 };
 
 
@@ -138,13 +139,6 @@ public:
 			SizeParam = FStretch( StretchCoefficient );
 			return *this;
 		}
-
-		DEPRECATED( 4.5, "AspectRatio() property is no longer supported; it did not behave correctly to begin with and was rarely used." )
-		FSlot& AspectRatio()
-		{
-			return *this;
-		}
-		
 		FSlot& Padding( float Uniform )
 		{
 			SlotPadding = FMargin(Uniform);
@@ -280,12 +274,6 @@ public:
 		FSlot& FillHeight( const TAttribute< float >& StretchCoefficient )
 		{
 			SizeParam = FStretch( StretchCoefficient );
-			return *this;
-		}
-
-		DEPRECATED( 4.5, "AspectRatio() property is no longer supported; it did not behave correctly to begin with and was rarely used." )
-		FSlot& AspectRatio()
-		{
 			return *this;
 		}
 
@@ -483,7 +471,7 @@ public:
 	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
 	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
 
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 
 private:
 	/** @see SDragAndDropVerticalBox's OnCanAcceptDrop event */

@@ -1,6 +1,6 @@
 Availability: Public
 Title: Linux Game Development
-Crumbs:
+Crumbs:%ROOT%
 Description:Developing games for the Linux platform.
 Platform:Linux
 Navigation:platform
@@ -8,7 +8,9 @@ Version: 4.14
 type:landing
 parent:Platforms
 tags:Linux
+tags:Desktop
 related: GettingStarted/RecommendedSpecifications
+Topic-image:LinuxDevelopment_topic.png
 
 Fueling the future of Linux game development is at your fingertips! Now, more than ever, you can harness the power of
 Unreal Engine 4 (UE4) to create and share games with Linux users worldwide. If you're new to Linux game development,
@@ -17,7 +19,8 @@ you'll want to work your way through the Quick Start Guide before moving onto mo
 ## Getting Started
 
 %Platforms/Linux/BeginnerLinuxDeveloper/SettingUpAnUnrealWorkflow:topic%
-%Platforms/Linux/BeginnerLinuxDeveloper/SettingUpAnIDE:topic%
+%Platforms/Linux/BeginnerLinuxDeveloper/SettingUpQtCreator:topic%
+%Platforms/Linux/IntermediateLinuxDeveloper/AndroidOnLinux:topic%
 
 ## Advanced Topics
 

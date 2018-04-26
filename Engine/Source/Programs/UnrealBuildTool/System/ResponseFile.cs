@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
 using System.Text;
 using System.IO;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -31,7 +32,15 @@ namespace UnrealBuildTool
 		/// <param name="Options"></param>
 		public static FileReference Create(FileReference TempFileName, IEnumerable<string> Lines, CreateOptions Options = CreateOptions.None)
 		{
-			FileInfo TempFileInfo = new FileInfo(TempFileName.FullName);
+			FileInfo TempFileInfo;
+			try
+			{
+				TempFileInfo = new FileInfo(TempFileName.FullName);
+			}
+			catch(PathTooLongException)
+			{
+				throw new BuildException("Path for response file is too long ('{0}')", TempFileName);
+			}
 			if (TempFileInfo.Exists)
 			{
 				if ((Options & CreateOptions.WriteEvenIfUnchanged) != CreateOptions.WriteEvenIfUnchanged)

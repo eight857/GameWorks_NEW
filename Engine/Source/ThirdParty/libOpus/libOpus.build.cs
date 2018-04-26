@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -11,13 +11,13 @@ public class libOpus : ModuleRules
 		string OpusVersion = "1.1";
 		Type = ModuleType.External;
 
-		PublicIncludePaths.Add(UEBuildConfiguration.UEThirdPartySourceDirectory + "libOpus/opus-" + OpusVersion + "/include");
-		string LibraryPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "libOpus/opus-" + OpusVersion + "/";
+		PublicIncludePaths.Add(Target.UEThirdPartySourceDirectory + "libOpus/opus-" + OpusVersion + "/include");
+		string LibraryPath = Target.UEThirdPartySourceDirectory + "libOpus/opus-" + OpusVersion + "/";
 
 		if ((Target.Platform == UnrealTargetPlatform.Win64) ||
 			(Target.Platform == UnrealTargetPlatform.Win32))
 		{
-			LibraryPath += "win32/VS2012/";
+			LibraryPath += "Windows/VS2012/";
 			if (Target.Platform == UnrealTargetPlatform.Win64)
 			{
 				LibraryPath += "x64/";
@@ -55,6 +55,18 @@ public class libOpus : ModuleRules
             {
                 PublicAdditionalLibraries.Add(LibraryPath + "Linux/" + Target.Architecture + "/libopus_fPIC.a");
             }
+
+			if (Target.Architecture.StartsWith("x86_64"))
+			{
+				if (Target.LinkType == TargetLinkType.Monolithic)
+				{
+					PublicAdditionalLibraries.Add(LibraryPath + "Linux/" + Target.Architecture + "/libresampler.a");
+				}
+				else
+				{
+					PublicAdditionalLibraries.Add(LibraryPath + "Linux/" + Target.Architecture + "/libresampler_fPIC.a");
+				}
+			}
 		}
 		else if (Target.Platform == UnrealTargetPlatform.Android)
 		{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PhysXLibs.cpp: PhysX library imports
@@ -13,58 +13,48 @@
 #if WITH_PHYSX 
 
 // PhysX library imports
-    
+namespace PhysDLLHelper
+{
 
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 	void* PxFoundationHandle = nullptr;
 	void* PhysX3CommonHandle = nullptr;
 	void* PhysX3Handle = nullptr;
 	void* PxPvdSDKHandle = nullptr;
-	#if WITH_PHYSICS_COOKING || WITH_RUNTIME_PHYSICS_COOKING
-		void* PhysX3CookingHandle = nullptr;
-	#endif
+	void* PhysX3CookingHandle = nullptr;
 	void* nvToolsExtHandle = nullptr;
 	#if WITH_APEX
 		void* APEXFrameworkHandle = nullptr;
-		void* APEX_DestructibleHandle = nullptr;
 		void* APEX_LegacyHandle = nullptr;
 		#if WITH_APEX_CLOTHING
 			void* APEX_ClothingHandle = nullptr;
 		#endif  //WITH_APEX_CLOTHING
 	#endif	//WITH_APEX
 #endif
-
-/**
- *	Load the required modules for PhysX
- */
-ENGINE_API void LoadPhysXModules()
-{
-
-
 #if PLATFORM_WINDOWS
-	FString PhysXBinariesRoot = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX/");
-	FString APEXBinariesRoot = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX/");
-	FString SharedBinariesRoot = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX/");
+	FString PhysXBinariesRoot = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX3/");
+	FString APEXBinariesRoot = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX3/");
+	FString SharedBinariesRoot = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX3/");
 
-	#if _MSC_VER >= 1900
-		FString VSDirectory(TEXT("VS2015/"));
-	#else
-		#error "Unrecognized Visual Studio version."
-	#endif
+#if _MSC_VER >= 1900
+	FString VSDirectory(TEXT("VS2015/"));
+#else
+#error "Unrecognized Visual Studio version."
+#endif
 
-	#if PLATFORM_64BITS
-		FString RootPhysXPath(PhysXBinariesRoot + TEXT("Win64/") + VSDirectory);
-		FString RootAPEXPath(APEXBinariesRoot + TEXT("Win64/") + VSDirectory);
-		FString RootSharedPath(SharedBinariesRoot + TEXT("Win64/") + VSDirectory);
-		FString ArchName(TEXT("_x64"));
-		FString ArchBits(TEXT("64"));
-	#else
-		FString RootPhysXPath(PhysXBinariesRoot + TEXT("Win32/") + VSDirectory);
-		FString RootAPEXPath(APEXBinariesRoot + TEXT("Win32/") + VSDirectory);
-		FString RootSharedPath(SharedBinariesRoot + TEXT("Win32/") + VSDirectory);
-		FString ArchName(TEXT("_x86"));
-		FString ArchBits(TEXT("32"));
-	#endif
+#if PLATFORM_64BITS
+	FString RootPhysXPath(PhysXBinariesRoot + TEXT("Win64/") + VSDirectory);
+	FString RootAPEXPath(APEXBinariesRoot + TEXT("Win64/") + VSDirectory);
+	FString RootSharedPath(SharedBinariesRoot + TEXT("Win64/") + VSDirectory);
+	FString ArchName(TEXT("_x64"));
+	FString ArchBits(TEXT("64"));
+#else
+	FString RootPhysXPath(PhysXBinariesRoot + TEXT("Win32/") + VSDirectory);
+	FString RootAPEXPath(APEXBinariesRoot + TEXT("Win32/") + VSDirectory);
+	FString RootSharedPath(SharedBinariesRoot + TEXT("Win32/") + VSDirectory);
+	FString ArchName(TEXT("_x86"));
+	FString ArchBits(TEXT("32"));
+#endif
 
 #ifdef UE_PHYSX_SUFFIX
 	FString PhysXSuffix(TEXT(PREPROCESSOR_TO_STRING(UE_PHYSX_SUFFIX)) + ArchName + TEXT(".dll"));
@@ -77,53 +67,8 @@ ENGINE_API void LoadPhysXModules()
 #else
 	FString APEXSuffix(ArchName + TEXT(".dll"));
 #endif
-
-	auto LoadPhysicsLibrary([](const FString& Path) -> void*
-	{
-		void* Handle = FPlatformProcess::GetDllHandle(*Path);
-		if (Handle == nullptr)
-		{
-			UE_LOG(LogPhysics, Fatal, TEXT("Failed to load module '%s'."), *Path);
-		}
-		return Handle;
-	});
-
-	PxFoundationHandle = LoadPhysicsLibrary(RootSharedPath + "PxFoundation" + PhysXSuffix);
-	PhysX3CommonHandle = LoadPhysicsLibrary(RootPhysXPath + "PhysX3Common" + PhysXSuffix);
-	const FString nvToolsExtPath = RootPhysXPath + "nvToolsExt" + ArchBits + "_1.dll";
-	if (IFileManager::Get().FileExists(*nvToolsExtPath))
-	{
-		nvToolsExtHandle = LoadPhysicsLibrary(nvToolsExtPath);
-	}
-	PxPvdSDKHandle = LoadPhysicsLibrary(RootSharedPath + "PxPvdSDK" + PhysXSuffix);
-	PhysX3Handle = LoadPhysicsLibrary(RootPhysXPath + "PhysX3" + PhysXSuffix);
-
-	#if WITH_PHYSICS_COOKING || WITH_RUNTIME_PHYSICS_COOKING
-		PhysX3CookingHandle = LoadPhysicsLibrary(RootPhysXPath + "PhysX3Cooking" + PhysXSuffix);
-	#endif
-	#if WITH_APEX
-		APEXFrameworkHandle = LoadPhysicsLibrary(RootAPEXPath + "APEXFramework" + APEXSuffix);
-		APEX_DestructibleHandle = LoadPhysicsLibrary(RootAPEXPath + "APEX_Destructible" + APEXSuffix);
-		#if WITH_APEX_LEGACY
-			APEX_LegacyHandle = LoadPhysicsLibrary(RootAPEXPath + "APEX_Legacy" + APEXSuffix);
-		#endif //WITH_APEX_LEGACY
-		#if WITH_APEX_CLOTHING
-			APEX_ClothingHandle = LoadPhysicsLibrary(RootAPEXPath + "APEX_Clothing" + APEXSuffix);
-		#endif //WITH_APEX_CLOTHING
-	#endif	//WITH_APEX
 #elif PLATFORM_MAC
-	FString PhysXBinariesRoot = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX/Mac/");
-
-	auto LoadPhysicsLibrary([](const FString& Path) -> void*
-	{
-		void* Handle = FPlatformProcess::GetDllHandle(*Path);
-		if (Handle == nullptr)
-		{
-			UE_LOG(LogPhysics, Fatal, TEXT("Failed to load module '%s'."), *Path);
-		}
-		return Handle;
-	});
-
+	FString PhysXBinariesRoot = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX3/Mac/");
 #ifdef UE_PHYSX_SUFFIX
 	FString PhysXSuffix = FString(TEXT(PREPROCESSOR_TO_STRING(UE_PHYSX_SUFFIX))) + TEXT(".dylib");
 #else
@@ -135,7 +80,62 @@ ENGINE_API void LoadPhysXModules()
 #else
 	FString APEXSuffix(TEXT(".dylib"));
 #endif
+#endif
 
+void* LoadPhysicsLibrary(const FString& Path)
+{
+	void* Handle = FPlatformProcess::GetDllHandle(*Path);
+	if (Handle == nullptr)
+	{
+		UE_LOG(LogPhysics, Fatal, TEXT("Failed to load module '%s'."), *Path);
+	}
+	return Handle;
+}
+
+#if WITH_APEX
+ENGINE_API void* LoadAPEXModule(const FString& Path)
+{
+#if PLATFORM_WINDOWS
+	return LoadPhysicsLibrary(RootAPEXPath + Path + APEXSuffix);
+#elif PLATFORM_MAC
+	const FString APEX_HandleLibName = FString::Printf(TEXT("%slib%s%s"), *PhysXBinariesRoot, *Path, *APEXSuffix);
+	return LoadPhysicsLibrary(APEX_HandleLibName);
+#endif
+	return nullptr;
+}
+#endif
+
+/**
+ *	Load the required modules for PhysX
+ */
+ENGINE_API void LoadPhysXModules(bool bLoadCookingModule)
+{
+#if PLATFORM_WINDOWS
+	PxFoundationHandle = LoadPhysicsLibrary(RootSharedPath + "PxFoundation" + PhysXSuffix);
+	PhysX3CommonHandle = LoadPhysicsLibrary(RootPhysXPath + "PhysX3Common" + PhysXSuffix);
+	const FString nvToolsExtPath = RootPhysXPath + "nvToolsExt" + ArchBits + "_1.dll";
+	if (IFileManager::Get().FileExists(*nvToolsExtPath))
+	{
+		nvToolsExtHandle = LoadPhysicsLibrary(nvToolsExtPath);
+	}
+	PxPvdSDKHandle = LoadPhysicsLibrary(RootSharedPath + "PxPvdSDK" + PhysXSuffix);
+	PhysX3Handle = LoadPhysicsLibrary(RootPhysXPath + "PhysX3" + PhysXSuffix);
+
+	if(bLoadCookingModule)
+	{
+		PhysX3CookingHandle = LoadPhysicsLibrary(RootPhysXPath + "PhysX3Cooking" + PhysXSuffix);
+	}
+
+	#if WITH_APEX
+		APEXFrameworkHandle = LoadPhysicsLibrary(RootAPEXPath + "APEXFramework" + APEXSuffix);
+		#if WITH_APEX_LEGACY
+			APEX_LegacyHandle = LoadPhysicsLibrary(RootAPEXPath + "APEX_Legacy" + APEXSuffix);
+		#endif //WITH_APEX_LEGACY
+		#if WITH_APEX_CLOTHING
+			APEX_ClothingHandle = LoadPhysicsLibrary(RootAPEXPath + "APEX_Clothing" + APEXSuffix);
+		#endif //WITH_APEX_CLOTHING
+	#endif	//WITH_APEX
+#elif PLATFORM_MAC
 	const FString PxFoundationLibName = FString::Printf(TEXT("%slibPxFoundation%s"), *PhysXBinariesRoot, *PhysXSuffix);
 	PxFoundationHandle = LoadPhysicsLibrary(PxFoundationLibName);
 
@@ -148,15 +148,15 @@ ENGINE_API void LoadPhysXModules()
 	const FString PhysX3LibName = FString::Printf(TEXT("%slibPhysX3%s"), *PhysXBinariesRoot, *PhysXSuffix);
 	PhysX3Handle = LoadPhysicsLibrary(PhysX3LibName);
 
-	#if WITH_PHYSICS_COOKING || WITH_RUNTIME_PHYSICS_COOKING
+	if(bLoadCookingModule)
+	{
 		const FString PhysX3CookinLibName = FString::Printf(TEXT("%slibPhysX3Cooking%s"), *PhysXBinariesRoot, *PhysXSuffix);
 		PhysX3CookingHandle = LoadPhysicsLibrary(PhysX3CookinLibName);
-	#endif
+	}
+
 	#if WITH_APEX
 		const FString APEXFrameworkLibName = FString::Printf(TEXT("%slibAPEXFramework%s"), *PhysXBinariesRoot, *APEXSuffix);
 		APEXFrameworkHandle = LoadPhysicsLibrary(APEXFrameworkLibName);
-		const FString APEX_DestructibleHandleLibName = FString::Printf(TEXT("%slibAPEX_Destructible%s"), *PhysXBinariesRoot, *APEXSuffix);
-		APEX_DestructibleHandle = LoadPhysicsLibrary(APEX_DestructibleHandleLibName);
 		#if WITH_APEX_LEGACY
 			const FString APEX_LegacyHandleLibName = FString::Printf(TEXT("%slibAPEX_Legacy%s"), *PhysXBinariesRoot, *APEXSuffix);
 			APEX_LegacyHandle = LoadPhysicsLibrary(APEX_LegacyHandleLibName);
@@ -177,14 +177,14 @@ void UnloadPhysXModules()
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 	FPlatformProcess::FreeDllHandle(PxPvdSDKHandle);
 	FPlatformProcess::FreeDllHandle(PhysX3Handle);
-	#if WITH_PHYSICS_COOKING || WITH_RUNTIME_PHYSICS_COOKING
+	if(PhysX3CookingHandle)
+	{
 		FPlatformProcess::FreeDllHandle(PhysX3CookingHandle);
-	#endif
+	}
 	FPlatformProcess::FreeDllHandle(PhysX3CommonHandle);
 	FPlatformProcess::FreeDllHandle(PxFoundationHandle);
 	#if WITH_APEX
 		FPlatformProcess::FreeDllHandle(APEXFrameworkHandle);
-		FPlatformProcess::FreeDllHandle(APEX_DestructibleHandle);
 		FPlatformProcess::FreeDllHandle(APEX_LegacyHandle);
 		#if WITH_APEX_CLOTHING
 			FPlatformProcess::FreeDllHandle(APEX_ClothingHandle);
@@ -193,5 +193,16 @@ void UnloadPhysXModules()
 #endif
 }
 
+#if WITH_APEX
+ENGINE_API void UnloadAPEXModule(void* Handle)
+{
+#if PLATFORM_WINDOWS || PLATFORM_MAC
+	if(Handle)
+	{
+		FPlatformProcess::FreeDllHandle(Handle);
+	}
+#endif
+}
+#endif
+}
 #endif // WITH_PHYSX
-

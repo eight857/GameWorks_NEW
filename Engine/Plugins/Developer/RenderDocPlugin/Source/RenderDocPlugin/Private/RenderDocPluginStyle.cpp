@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #if WITH_EDITOR
 
@@ -29,7 +29,7 @@ void FRenderDocPluginStyle::Initialize()
 
 	StyleSet = MakeShareable(new FSlateStyleSet("RenderDocPluginStyle"));
 
-	FString ProjectResourceDir = FPaths::GamePluginsDir() / TEXT("RenderDocPlugin/Resources");
+	FString ProjectResourceDir = FPaths::ProjectPluginsDir() / TEXT("RenderDocPlugin/Resources");
 	FString EngineResourceDir = FPaths::EnginePluginsDir() / TEXT("RenderDocPlugin/Resources");
 
 	if (IFileManager::Get().DirectoryExists(*ProjectResourceDir)) //Is the plugin in the project? In that case, use those resources

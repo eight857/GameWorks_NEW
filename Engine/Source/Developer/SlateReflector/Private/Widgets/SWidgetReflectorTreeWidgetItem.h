@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,6 +18,14 @@ class SLATEREFLECTOR_API SReflectorTreeWidgetItem
 	: public SMultiColumnTableRow<TSharedRef<FWidgetReflectorNodeBase>>
 {
 public:
+
+	static FName NAME_WidgetName;
+	static FName NAME_WidgetInfo;
+	static FName NAME_Visibility;
+	static FName NAME_Focusable;
+	static FName NAME_Clipping;
+	static FName NAME_ForegroundColor;
+	static FName NAME_Address;
 
 	SLATE_BEGIN_ARGS(SReflectorTreeWidgetItem)
 		: _WidgetInfoToVisualize()
@@ -47,6 +55,8 @@ public:
 		check(WidgetInfo.IsValid());
 		CachedWidgetType = WidgetInfo->GetWidgetType();
 		CachedWidgetVisibility = WidgetInfo->GetWidgetVisibilityText();
+		CachedWidgetClipping = WidgetInfo->GetWidgetClippingText();
+		bCachedWidgetFocusable = WidgetInfo->GetWidgetFocusable();
 		CachedReadableLocation = WidgetInfo->GetWidgetReadableLocation();
 		CachedWidgetFile = WidgetInfo->GetWidgetFile();
 		CachedWidgetLineNumber = WidgetInfo->GetWidgetLineNumber();
@@ -92,6 +102,17 @@ protected:
 	{
 		return CachedWidgetVisibility;
 	}
+	
+	
+	FText GetClippingAsString() const
+	{
+		return CachedWidgetClipping;
+	}
+
+	ECheckBoxState GetFocusableAsCheckBoxState() const
+	{
+		return bCachedWidgetFocusable ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+	}
 
 	/** @return The tint of the reflector node */
 	FSlateColor GetTint() const
@@ -108,6 +129,8 @@ private:
 
 	FText CachedWidgetType;
 	FText CachedWidgetVisibility;
+	FText CachedWidgetClipping;
+	bool bCachedWidgetFocusable;
 	FText CachedReadableLocation;
 	FString CachedWidgetFile;
 	int32 CachedWidgetLineNumber;

@@ -1,10 +1,10 @@
-﻿INTSourceChangelist:3069483
-Availability: Public
+﻿INTSourceChangelist:3388665
+Availability:Public
 Title:4.3 - アニメーション ステート マシーンを追加する
 Crumbs: %ROOT%, Programming, Programming/Tutorials, Programming/Tutorials/FirstPersonShooter, Programming/Tutorials/FirstPersonShooter/4
 Description:FPS キャラクターにアニメーション ステートマシンを追加する方法を学びます。
 SkillLevel:Beginner
-Version:4.11
+Version:4.15
 
 [VAR:Steps]
 [OBJECT:Navigation]
@@ -22,7 +22,7 @@ Version:4.11
 [/OBJECT]
 [/VAR]
 
-%Steps%
+
 
 このステップでは、新規作成した変数を活用するステートマシンをまとめます。
 
@@ -44,4 +44,3 @@ Version:4.11
 
 1.	Arms State Machine ノードをダブルクリックして、編集するためにそのグラフを開きます。
 
-%Steps%

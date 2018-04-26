@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,6 +8,14 @@
 #include "EdGraph/EdGraphPin.h"
 #include "Layout/Margin.h"
 #include "GraphEditorSettings.generated.h"
+
+UENUM()
+enum class EGraphPanningMouseButton : uint8
+{
+	Right	UMETA(DisplayName = "Right"),
+	Middle	UMETA(DisplayName = "Middle"),
+	Both	UMETA(DisplayName = "Right or Middle")
+};
 
 struct FPropertyChangedEvent;
 
@@ -32,6 +40,10 @@ public:
 	/** The visual styling to use for graph editor pins (in Blueprints, materials, etc...) */
 	UPROPERTY(config, EditAnywhere, Category=GeneralStyle)
 	TEnumAsByte<EBlueprintPinStyleType> DataPinStyle;
+
+	/** Switch between using the right and middle mouse button for panning (defaults to right) */
+	UPROPERTY(config, EditAnywhere, Category = GeneralStyle)
+	EGraphPanningMouseButton PanningMouseButton;
 
 	/** The amount of padding above a pin (defaults to 4) */
 	UPROPERTY(config, EditAnywhere, Category=GeneralStyle, AdvancedDisplay)
@@ -146,11 +158,11 @@ public:
 
 	/** Asset pin type color */
 	UPROPERTY(EditAnywhere, config, Category = PinColors)
-	FLinearColor AssetPinTypeColor;
+	FLinearColor SoftObjectPinTypeColor;
 
 	/** Asset Class pin type color */
 	UPROPERTY(EditAnywhere, config, Category = PinColors)
-	FLinearColor AssetClassPinTypeColor;
+	FLinearColor SoftClassPinTypeColor;
 
 	/** Delegate pin type color */
 	UPROPERTY(EditAnywhere, config, Category=PinColors)
@@ -234,8 +246,20 @@ public:
 	UPROPERTY(EditAnywhere, config, Category=NodeTitleColors)
 	FLinearColor DefaultCommentNodeTitleColor;
 
-public:
+	/** Preview node title color */
+	UPROPERTY(EditAnywhere, config, Category = NodeTitleColors)
+	FLinearColor PreviewNodeTitleColor;
 
+public:
+	/** The thickness of a data wire */
+	UPROPERTY(EditAnywhere, config, Category=Tracing)
+	float DefaultDataWireThickness;
+
+	/** The thickness of an execution wire when not debugging */
+	UPROPERTY(EditAnywhere, config, Category=Tracing)
+	float DefaultExecutionWireThickness;
+
+	/** The color to display execution wires that were just executed */
 	UPROPERTY(EditAnywhere, config, Category=Tracing)
 	FLinearColor TraceAttackColor;
 
@@ -263,9 +287,11 @@ public:
 	UPROPERTY()
 	float TraceSustainHoldPeriod;
 
+	/** The color to fade to for execution wires on release */
 	UPROPERTY(EditAnywhere, config, Category=Tracing)
 	FLinearColor TraceReleaseColor;
 
+	/** The thickness to drop down to during release / for unexecuted wires when debugging */
 	UPROPERTY(EditAnywhere, config, Category=Tracing)
 	float TraceReleaseWireThickness;
 

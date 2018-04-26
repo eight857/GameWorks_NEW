@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	HeightfieldLighting.cpp
@@ -250,9 +250,9 @@ class FHeightfieldSubsectionQuadVS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FHeightfieldSubsectionQuadVS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Parameters.Platform);
 	}
 
 	/** Default constructor. */
@@ -286,16 +286,16 @@ private:
 	FSubsectionHeightfieldDescriptionParameters SubsectionHeightfieldParameters;
 };
 
-IMPLEMENT_SHADER_TYPE(,FHeightfieldSubsectionQuadVS,TEXT("HeightfieldLighting"),TEXT("HeightfieldSubsectionQuadVS"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(,FHeightfieldSubsectionQuadVS,TEXT("/Engine/Private/HeightfieldLighting.usf"),TEXT("HeightfieldSubsectionQuadVS"),SF_Vertex);
 
 class FInitializeHeightfieldsPS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FInitializeHeightfieldsPS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Parameters.Platform);
 	}
 
 	/** Default constructor. */
@@ -328,7 +328,7 @@ private:
 	FHeightfieldTextureParameters HeightfieldTextureParameters;
 };
 
-IMPLEMENT_SHADER_TYPE(,FInitializeHeightfieldsPS,TEXT("HeightfieldLighting"),TEXT("InitializeHeightfieldsPS"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FInitializeHeightfieldsPS,TEXT("/Engine/Private/HeightfieldLighting.usf"),TEXT("InitializeHeightfieldsPS"),SF_Pixel);
 
 class FQuadVertexBuffer : public FVertexBuffer
 {
@@ -480,7 +480,7 @@ void FHeightfieldLightingViewInfo::SetupVisibleHeightfields(const FViewInfo& Vie
 					GraphicsPSOInit.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
 					GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 					GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
-					RHICmdList.SetStreamSource(0, GQuadVertexBuffer.VertexBufferRHI, sizeof(FScreenVertex), 0);
+					RHICmdList.SetStreamSource(0, GQuadVertexBuffer.VertexBufferRHI, 0);
 
 					TShaderMapRef<FHeightfieldSubsectionQuadVS> VertexShader(View.ShaderMap);
 					TShaderMapRef<FInitializeHeightfieldsPS> PixelShader(View.ShaderMap);
@@ -685,9 +685,9 @@ class FHeightfieldComponentQuadVS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FHeightfieldComponentQuadVS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Parameters.Platform);
 	}
 
 	/** Default constructor. */
@@ -721,16 +721,16 @@ private:
 	FHeightfieldDescriptionParameters HeightfieldDescriptionParameters;
 };
 
-IMPLEMENT_SHADER_TYPE(,FHeightfieldComponentQuadVS,TEXT("HeightfieldLighting"),TEXT("HeightfieldComponentQuadVS"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(,FHeightfieldComponentQuadVS,TEXT("/Engine/Private/HeightfieldLighting.usf"),TEXT("HeightfieldComponentQuadVS"),SF_Vertex);
 
 class FShadowHeightfieldsPS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FShadowHeightfieldsPS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Parameters.Platform);
 	}
 
 	/** Default constructor. */
@@ -798,7 +798,7 @@ private:
 	FShaderResourceParameter ShadowDepthTextureSampler;
 };
 
-IMPLEMENT_SHADER_TYPE(,FShadowHeightfieldsPS,TEXT("HeightfieldLighting"),TEXT("ShadowHeightfieldsPS"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FShadowHeightfieldsPS,TEXT("/Engine/Private/HeightfieldLighting.usf"),TEXT("ShadowHeightfieldsPS"),SF_Pixel);
 
 void FHeightfieldLightingViewInfo::ClearShadowing(const FViewInfo& View, FRHICommandListImmediate& RHICmdList, const FLightSceneInfo& LightSceneInfo) const
 {
@@ -842,7 +842,7 @@ void FHeightfieldLightingViewInfo::ComputeShadowMapShadowing(const FViewInfo& Vi
 			GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 			// Combine with other shadow types with min (ray traced)
 			GraphicsPSOInit.BlendState = TStaticBlendState<CW_RED, BO_Min, BF_One, BF_One>::GetRHI();
-			RHICmdList.SetStreamSource(0, GQuadVertexBuffer.VertexBufferRHI, sizeof(FScreenVertex), 0);
+			RHICmdList.SetStreamSource(0, GQuadVertexBuffer.VertexBufferRHI, 0);
 
 			TShaderMapRef<FHeightfieldComponentQuadVS> VertexShader(View.ShaderMap);
 			TShaderMapRef<FShadowHeightfieldsPS> PixelShader(View.ShaderMap);
@@ -879,14 +879,14 @@ class FRayTracedShadowHeightfieldsPS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FRayTracedShadowHeightfieldsPS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Parameters.Platform);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FLightTileIntersectionParameters::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FLightTileIntersectionParameters::ModifyCompilationEnvironment(Parameters.Platform, OutEnvironment);
 	}
 
 	/** Default constructor. */
@@ -972,7 +972,7 @@ private:
 	FShaderParameter TwoSidedMeshDistanceBias;
 };
 
-IMPLEMENT_SHADER_TYPE(,FRayTracedShadowHeightfieldsPS,TEXT("HeightfieldLighting"),TEXT("RayTracedShadowHeightfieldsPS"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FRayTracedShadowHeightfieldsPS,TEXT("/Engine/Private/HeightfieldLighting.usf"),TEXT("RayTracedShadowHeightfieldsPS"),SF_Pixel);
 
 
 void FHeightfieldLightingViewInfo::ComputeRayTracedShadowing(
@@ -1008,7 +1008,7 @@ void FHeightfieldLightingViewInfo::ComputeRayTracedShadowing(
 			GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 			// Combine with other shadow types with min (CSM)
 			GraphicsPSOInit.BlendState = TStaticBlendState<CW_RED, BO_Min, BF_One, BF_One>::GetRHI();
-			RHICmdList.SetStreamSource(0, GQuadVertexBuffer.VertexBufferRHI, sizeof(FScreenVertex), 0);
+			RHICmdList.SetStreamSource(0, GQuadVertexBuffer.VertexBufferRHI, 0);
 
 			TShaderMapRef<FHeightfieldComponentQuadVS> VertexShader(View.ShaderMap);
 			TShaderMapRef<FRayTracedShadowHeightfieldsPS> PixelShader(View.ShaderMap);
@@ -1043,7 +1043,7 @@ class FLightHeightfieldsPS : public FMaterialShader
 	DECLARE_SHADER_TYPE(FLightHeightfieldsPS, Material);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform, const FMaterial* Material)
+	static bool ShouldCompilePermutation(EShaderPlatform Platform, const FMaterial* Material)
 	{
 		return Material->IsLightFunction() && IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Platform);
 	}
@@ -1134,7 +1134,7 @@ private:
 	FLightFunctionSharedParameters LightFunctionParameters;
 };
 
-IMPLEMENT_MATERIAL_SHADER_TYPE(,FLightHeightfieldsPS,TEXT("HeightfieldLighting"),TEXT("LightHeightfieldsPS"),SF_Pixel);
+IMPLEMENT_MATERIAL_SHADER_TYPE(,FLightHeightfieldsPS,TEXT("/Engine/Private/HeightfieldLighting.usf"),TEXT("LightHeightfieldsPS"),SF_Pixel);
 
 void FHeightfieldLightingViewInfo::ComputeLighting(const FViewInfo& View, FRHICommandListImmediate& RHICmdList, const FLightSceneInfo& LightSceneInfo) const
 {
@@ -1181,7 +1181,7 @@ void FHeightfieldLightingViewInfo::ComputeLighting(const FViewInfo& View, FRHICo
 			GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
 			GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
 
-			RHICmdList.SetStreamSource(0, GQuadVertexBuffer.VertexBufferRHI, sizeof(FScreenVertex), 0);
+			RHICmdList.SetStreamSource(0, GQuadVertexBuffer.VertexBufferRHI, 0);
 
 			TShaderMapRef<FHeightfieldComponentQuadVS> VertexShader(View.ShaderMap);
 
@@ -1202,8 +1202,7 @@ void FHeightfieldLightingViewInfo::ComputeLighting(const FViewInfo& View, FRHICo
 					GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(PixelShader);
 					GraphicsPSOInit.PrimitiveType = PT_TriangleList;
 
-					FLocalGraphicsPipelineState BaseGraphicsPSO = RHICmdList.BuildLocalGraphicsPipelineState(GraphicsPSOInit);
-					RHICmdList.SetLocalGraphicsPipelineState(BaseGraphicsPSO);
+					SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
 
 					VertexShader->SetParameters(RHICmdList, View, HeightfieldDescriptions.Num());
 					PixelShader->SetParameters(RHICmdList, View, LightSceneInfo, MaterialProxy, HeightfieldDescriptions.Num(), Atlas, SkyLightIndirectScale);
@@ -1222,14 +1221,14 @@ class FCalculateHeightfieldOcclusionScreenGridCS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FCalculateHeightfieldOcclusionScreenGridCS,Global)
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Parameters.Platform);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform,OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters,OutEnvironment);
 
 		OutEnvironment.SetDefine(TEXT("HEIGHTFIELD_OCCLUSION_DISPATCH_SIZEX"), GHeightfieldOcclusionDispatchSize);
 		extern int32 GConeTraceDownsampleFactor;
@@ -1277,7 +1276,7 @@ public:
 		FAOSampleData2 AOSampleData;
 
 		TArray<FVector, TInlineAllocator<9> > SampleDirections;
-		GetSpacedVectors(SampleDirections);
+		GetSpacedVectors(View.Family->FrameNumber, SampleDirections);
 
 		for (int32 SampleIndex = 0; SampleIndex < NumConeSampleDirections; SampleIndex++)
 		{
@@ -1318,7 +1317,7 @@ private:
 	FShaderParameter TanConeHalfAngle;
 };
 
-IMPLEMENT_SHADER_TYPE(,FCalculateHeightfieldOcclusionScreenGridCS,TEXT("HeightfieldLighting"),TEXT("CalculateHeightfieldOcclusionScreenGridCS"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FCalculateHeightfieldOcclusionScreenGridCS,TEXT("/Engine/Private/HeightfieldLighting.usf"),TEXT("CalculateHeightfieldOcclusionScreenGridCS"),SF_Compute);
 
 
 void FHeightfieldLightingViewInfo::ComputeOcclusionForScreenGrid(
@@ -1366,14 +1365,14 @@ class FCalculateHeightfieldIrradianceScreenGridCS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FCalculateHeightfieldIrradianceScreenGridCS,Global)
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportDistanceFieldGI(Parameters.Platform);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform,OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters,OutEnvironment);
 
 		OutEnvironment.SetDefine(TEXT("HEIGHTFIELD_OCCLUSION_DISPATCH_SIZEX"), GHeightfieldOcclusionDispatchSize);
 		extern int32 GConeTraceDownsampleFactor;
@@ -1433,7 +1432,7 @@ public:
 			FAOSampleData2 AOSampleData;
 
 			TArray<FVector, TInlineAllocator<9> > SampleDirections;
-			GetSpacedVectors(SampleDirections);
+			GetSpacedVectors(View.Family->FrameNumber, SampleDirections);
 
 			for (int32 SampleIndex = 0; SampleIndex < NumConeSampleDirections; SampleIndex++)
 			{
@@ -1503,7 +1502,7 @@ private:
 	FShaderResourceParameter RecordConeVisibility;
 };
 
-IMPLEMENT_SHADER_TYPE(,FCalculateHeightfieldIrradianceScreenGridCS,TEXT("HeightfieldLighting"),TEXT("CalculateHeightfieldIrradianceScreenGridCS"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FCalculateHeightfieldIrradianceScreenGridCS,TEXT("/Engine/Private/HeightfieldLighting.usf"),TEXT("CalculateHeightfieldIrradianceScreenGridCS"),SF_Compute);
 
 void FHeightfieldLightingViewInfo::ComputeIrradianceForScreenGrid(
 	const FViewInfo& View, 

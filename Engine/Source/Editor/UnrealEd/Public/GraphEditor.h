@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -259,6 +259,16 @@ public:
 		{
 			Implementation->SetPinVisibility(InVisibility);
 		}
+	}
+
+	/** Register an active timer on the graph editor. */
+	virtual TSharedRef<FActiveTimerHandle> RegisterActiveTimer(float TickPeriod, FWidgetActiveTimerDelegate TickFunction)
+	{
+		if (Implementation.IsValid())
+		{
+			return Implementation->RegisterActiveTimer(TickPeriod, TickFunction);
+		}
+		return TSharedPtr<FActiveTimerHandle>().ToSharedRef();
 	}
 
 	/** @return a reference to the list of selected graph nodes */

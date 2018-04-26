@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -6,6 +6,7 @@ using System.Text;
 using System.IO;
 using System.Linq;
 using System.Diagnostics;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -161,12 +162,14 @@ namespace UnrealBuildTool
 		/// <param name="Target">The target we're building</param>
 		/// <param name="CPPFiles">The C++ files to #include.</param>
 		/// <param name="CompileEnvironment">The environment that is used to compile the C++ files.</param>
+		/// <param name="WorkingSet">Interface to query files which belong to the working set</param>
 		/// <param name="BaseName">Base name to use for the Unity files</param>
 		/// <returns>The "unity" C++ files.</returns>
 		public static List<FileItem> GenerateUnityCPPs(
 			ReadOnlyTargetRules Target,
 			List<FileItem> CPPFiles,
 			CppCompileEnvironment CompileEnvironment,
+			ISourceFileWorkingSet WorkingSet,
 			string BaseName
 			)
 		{
@@ -212,20 +215,17 @@ namespace UnrealBuildTool
 					int WorkingSetSourceFileCount = 0;
 					foreach (FileItem CPPFile in SortedCPPFiles)
 					{
+						++CandidateWorkingSetSourceFileCount;
+
 						// Don't include writable source files into unity blobs
-						if (!CPPFile.Reference.HasExtension(".generated.cpp"))
+						if (WorkingSet.Contains(CPPFile.Reference))
 						{
-							++CandidateWorkingSetSourceFileCount;
+							++WorkingSetSourceFileCount;
 
-							if (UnrealBuildTool.ShouldSourceFileBePartOfWorkingSet(CPPFile.AbsolutePath))
-							{
-								++WorkingSetSourceFileCount;
-
-								// Mark this file as part of the working set.  This will be saved into the UBT Makefile so that
-								// the assembler can automatically invalidate the Makefile when the working set changes (allowing this
-								// code to run again, to build up new unity blobs.)
-								SourceFileWorkingSet.Add(CPPFile);
-							}
+							// Mark this file as part of the working set.  This will be saved into the UBT Makefile so that
+							// the assembler can automatically invalidate the Makefile when the working set changes (allowing this
+							// code to run again, to build up new unity blobs.)
+							SourceFileWorkingSet.Add(CPPFile);
 						}
 					}
 
@@ -294,11 +294,11 @@ namespace UnrealBuildTool
 					{
 						if (Target.bAdaptiveUnityDisablesPCH)
 						{
-							Log.TraceInformation("[Adaptive unity build] Disabling PCH for excluded files due to bAdaptiveUnityDisablesPCH setting.");
+							Log.TraceInformation("[Adaptive unity build] Disabling PCH for excluded files. Set bAdaptiveUnityDisablesPCH to false in BuildConfiguration.xml to change this behavior.");
 						}
 						if (Target.bAdaptiveUnityDisablesOptimizations)
 						{
-							Log.TraceInformation("[Adaptive unity build] Disabling optimizations for excluded files due to bAdaptiveUnityDisablesOptimizations setting.");
+							Log.TraceInformation("[Adaptive unity build] Disabling optimizations for excluded files. Set bAdaptiveUnityDisablesOptimizations to false in BuildConfiguration.xml to change this behavior.");
 						}
 					}
 					Log.TraceInformation(AdaptiveUnityBuildInfoString.ToString());

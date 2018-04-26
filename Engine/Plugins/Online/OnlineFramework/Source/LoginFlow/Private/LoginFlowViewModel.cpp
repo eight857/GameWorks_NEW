@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
-#include "LoginFlowPrivatePCH.h"
 #include "LoginFlowViewModel.h"
 #include "OnlineSubsystem.h"
 #include "OnlinePurchaseInterface.h"
+
+#include "HAL/PlatformProcess.h"
 
 class FLoginFlowViewModelFactory;
 class FLoginFlowViewModelFactoryFactory;
@@ -34,9 +35,12 @@ public:
 
 	virtual bool HandleBrowserUrlChanged(const FText& Url) override
 	{
-		if (OnRedirectURL.IsBound())
+		if (0) // HandleBeforeBrowse seems to do all that is required atm
 		{
-			return OnRedirectURL.Execute(Url.ToString());
+			if (OnRedirectURL.IsBound())
+			{
+				return OnRedirectURL.Execute(Url.ToString());
+			}
 		}
 		return false;
 	}

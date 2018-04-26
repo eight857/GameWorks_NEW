@@ -1,9 +1,16 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "HAL/ThreadSafeCounter.h"
+
+struct FMovieSceneAnimTypeID;
+
+namespace Lex
+{
+	MOVIESCENE_API FString ToString(const FMovieSceneAnimTypeID& AnimTypeID);
+}
 
 /**
  * Animation type ID that uniquely identifies the type of a change made
@@ -28,7 +35,12 @@ struct FMovieSceneAnimTypeID
 
 	MOVIESCENE_API static FMovieSceneAnimTypeID Unique();
 
+	MOVIESCENE_API static FMovieSceneAnimTypeID Combine(FMovieSceneAnimTypeID A, FMovieSceneAnimTypeID B);
+
 protected:
+
+	friend FString Lex::ToString(const FMovieSceneAnimTypeID&);
+
 	FMovieSceneAnimTypeID(uint64* StaticPtr, uint32 Seed = 0)
 		: ID(*StaticPtr ? *StaticPtr : Initialize(StaticPtr, Seed))
 	{}

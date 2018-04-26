@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	VulkanRHI.h: Public Vulkan RHI definitions.
@@ -10,8 +10,8 @@
 #include "VulkanGlobals.h"
 #include "VulkanConfiguration.h"
 #include "VulkanState.h"
-#include "VulkanUtil.h"
 #include "VulkanResources.h"
+#include "VulkanUtil.h"
 #include "VulkanViewport.h"
 #include "VulkanDynamicRHI.h"
 

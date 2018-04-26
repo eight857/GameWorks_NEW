@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
  
 #pragma once
 
@@ -52,6 +52,7 @@ public:
 		, _ClearSelectionOnClick(true)
 		, _ExternalScrollbar()
 		, _ScrollbarVisibility(EVisibility::Visible)
+		, _ScrollbarDragFocusCause(EFocusCause::Mouse)
 		, _AllowOverscroll(EAllowOverscroll::Yes)
 		, _ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible)
 		, _WheelScrollMultiplier(GetGlobalScrollAmount())
@@ -59,9 +60,9 @@ public:
 		, _HandleDirectionalNavigation(true)
 		, _OnItemToString_Debug()
 		, _OnEnteredBadState()
-		, _NavigateOnScrollIntoView(false)
 		, _HandleLeftRightBoundsAsWrap(true)
-		{}
+		{
+		}
 
 		SLATE_EVENT( FOnGenerateRow, OnGenerateTile )
 
@@ -95,6 +96,8 @@ public:
 
 		SLATE_ATTRIBUTE(EVisibility, ScrollbarVisibility)
 
+		SLATE_ARGUMENT(EFocusCause, ScrollbarDragFocusCause)
+
 		SLATE_ARGUMENT( EAllowOverscroll, AllowOverscroll );
 
 		SLATE_ARGUMENT( EConsumeMouseWheel, ConsumeMouseWheel );
@@ -109,8 +112,6 @@ public:
 		SLATE_EVENT(FOnItemToString_Debug, OnItemToString_Debug)
 
 		SLATE_EVENT(FOnTableViewBadState, OnEnteredBadState);
-
-		SLATE_ARGUMENT(bool, NavigateOnScrollIntoView);
 		
 		SLATE_ARGUMENT(bool, HandleLeftRightBoundsAsWrap);
 
@@ -149,8 +150,6 @@ public:
 			: SListView< ItemType >::GetDefaultDebugDelegate();
 		this->OnEnteredBadState = InArgs._OnEnteredBadState;
 
-		this->bNavigateOnScrollIntoView = InArgs._NavigateOnScrollIntoView;
-
 		this->bHandleLeftRightBoundsAsWrap = InArgs._HandleLeftRightBoundsAsWrap;
 
 		// Check for any parameters that the coder forgot to specify.
@@ -184,6 +183,7 @@ public:
 			this->ConstructChildren(InArgs._ItemWidth, InArgs._ItemHeight, InArgs._ItemAlignment, TSharedPtr<SHeaderRow>(), InArgs._ExternalScrollbar, InArgs._OnTileViewScrolled);
 			if (this->ScrollBar.IsValid())
 			{
+				this->ScrollBar->SetDragFocusCause(InArgs._ScrollbarDragFocusCause);
 				this->ScrollBar->SetUserVisibility(InArgs._ScrollbarVisibility);
 			}
 		}
@@ -207,7 +207,6 @@ public:
 			const int32 NumItemsWide = GetNumItemsWide();
 			const int32 CurSelectionIndex = (!TListTypeTraits<ItemType>::IsPtrValid(this->SelectorItem)) ? 0 : ItemsSourceRef.Find(TListTypeTraits<ItemType>::NullableItemTypeConvertToItemType(this->SelectorItem));
 			int32 AttemptSelectIndex = -1;
-			bool bAttempt = false;
 
 			const EUINavigation NavType = InNavigationEvent.GetNavigationType();
 			switch (NavType)
@@ -215,7 +214,6 @@ public:
 			case EUINavigation::Left:
 				if (bHandleLeftRightBoundsAsWrap || (CurSelectionIndex % NumItemsWide) > 0)
 				{
-					bAttempt = true;
 					AttemptSelectIndex = CurSelectionIndex - 1;
 				}
 				break;
@@ -223,7 +221,6 @@ public:
 			case EUINavigation::Right:
 				if (bHandleLeftRightBoundsAsWrap || (CurSelectionIndex % NumItemsWide) < (NumItemsWide - 1))
 				{
-					bAttempt = true;
 					AttemptSelectIndex = CurSelectionIndex + 1;
 				}
 				break;
@@ -232,14 +229,10 @@ public:
 				break;
 			}
 
-			// We are attempting to move to a specific index
 			// If it's valid we'll scroll it into view and return an explicit widget in the FNavigationReply
-			if (bAttempt)
+			if (ItemsSourceRef.IsValidIndex(AttemptSelectIndex))
 			{
-				if (ItemsSourceRef.IsValidIndex(AttemptSelectIndex))
-				{
-					this->NavigationSelect(ItemsSourceRef[AttemptSelectIndex], InNavigationEvent);
-				}
+				this->NavigationSelect(ItemsSourceRef[AttemptSelectIndex], InNavigationEvent);
 				return FNavigationReply::Explicit(nullptr);
 			}
 		}
@@ -327,14 +320,8 @@ public:
 					WidthUsedSoFar = 0;
 					bNewRow = true;
 
-					// Hack: Added "+ ItemHeight". This unfixes a previous bug which caused TileViews to 
-					// work when placed in a SScrollBox.
-					// !!!!!! THIS IS A PORTAL ONLY CHANGE !!!!!! 
-					// If found outside of portal repositories please
-					// Contact: Barnabas.McManners or Justin.Sargent.
-
 					// Stop when we've generated a widget that's partially clipped by the bottom of the list.
-					if ( HeightUsedSoFar >= MyGeometry.Size.Y /*<HACK>*/+ ItemHeight /*</HACK>*/)
+					if ( HeightUsedSoFar >= MyGeometry.Size.Y )
 					{
 						bKeepGenerating = false;
 					}
@@ -381,7 +368,7 @@ protected:
 		if ( InAllowOverscroll == EAllowOverscroll::Yes && S::Overscroll.ShouldApplyOverscroll( S::ScrollOffset == 0, S::bWasAtEndOfList, ScrollByAmountInSlateUnits ) )
 		{
 			const float UnclampedScrollDelta = ScrollByAmountInSlateUnits / GetNumItemsWide();
-			const float ActuallyScrolledBy = S::Overscroll.ScrollBy( UnclampedScrollDelta );
+			const float ActuallyScrolledBy = S::Overscroll.ScrollBy(MyGeometry, UnclampedScrollDelta);
 			if (ActuallyScrolledBy != 0.0f)
 			{
 				this->RequestListRefresh();
@@ -402,7 +389,7 @@ protected:
 	virtual int32 GetNumItemsWide() const override
 	{
 		const float ItemWidth = this->GetItemWidth();
-		const int32 NumItemsWide = ItemWidth > 0 ? FMath::FloorToInt(this->PanelGeometryLastTick.Size.X / ItemWidth) : 1;
+		const int32 NumItemsWide = ItemWidth > 0 ? FMath::FloorToInt(this->PanelGeometryLastTick.GetLocalSize().X / ItemWidth) : 1;
 		return FMath::Max(1, NumItemsWide);
 	}
 
@@ -418,7 +405,7 @@ protected:
 			const int32 IndexOfItem = this->ItemsSource->Find(TListTypeTraits<ItemType>::NullableItemTypeConvertToItemType(this->ItemToScrollIntoView));
 			if (IndexOfItem != INDEX_NONE)
 			{
-				const float NumItemsHigh = ListViewGeometry.Size.Y / this->GetItemHeight();
+				const float NumItemsHigh = ListViewGeometry.GetLocalSize().Y / this->GetItemHeight();
 				float NumLiveWidgets = this->GetNumLiveWidgets();
 				if (NumLiveWidgets == 0 && this->IsPendingRefresh())
 				{
@@ -432,6 +419,8 @@ protected:
 						return SListView<ItemType>::EScrollIntoViewResult::Deferred;
 					}
 				}
+
+				this->EndInertialScrolling();
 
 				// Only scroll the item into view if it's not already in the visible range
 				const int32 NumItemsWide = GetNumItemsWide();

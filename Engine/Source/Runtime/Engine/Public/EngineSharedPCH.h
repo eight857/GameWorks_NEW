@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -34,7 +34,6 @@
 #include "Templates/EnableIf.h"
 #include "Templates/RemoveReference.h"
 #include "Templates/TypeCompatibleBytes.h"
-#include "Templates/AlignOf.h"
 #include "Templates/ChooseClass.h"
 #include "Templates/IntegralConstant.h"
 #include "Templates/IsClass.h"
@@ -163,7 +162,6 @@
 #include "Math/Float16.h"
 #include "Math/Float32.h"
 #include "Math/Vector2DHalf.h"
-#include "Math/AlphaBlendType.h"
 #include "Math/Transform.h"
 #include "Math/ConvexHull2d.h"
 #include "HAL/ThreadSingleton.h"
@@ -296,8 +294,7 @@
 #include "UObject/CoreNetTypes.h"
 #include "UObject/LazyObjectPtr.h"
 #include "UObject/PersistentObjectPtr.h"
-#include "Misc/StringAssetReference.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/ScriptInterface.h"
 #include "UObject/UnrealType.h"
@@ -309,7 +306,6 @@
 #include "UObject/Interface.h"
 #include "Misc/WorldCompositionUtility.h"
 #include "UObject/GCObject.h"
-#include "Misc/StringClassReference.h"
 #include "Serialization/BulkData.h"
 #include "UObject/Package.h"
 #include "UObject/CoreOnline.h"
@@ -462,7 +458,6 @@
 
 // From AssetRegistry:
 #include "AssetData.h"
-#include "SharedMapView.h"
 
 // From PacketHandler:
 #include "PacketHandler.h"
@@ -557,7 +552,6 @@
 #include "Animation/AnimLinkableElement.h"
 #include "BoneContainer.h"
 #include "Animation/PreviewAssetAttachComponent.h"
-#include "SkeletalMeshTypes.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimationAsset.h"
 #include "AnimInterpFilter.h"

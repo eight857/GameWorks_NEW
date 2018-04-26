@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Fonts/CompositeFont.h"
 #include "SlateGlobals.h"
@@ -59,18 +59,6 @@ FFontData::FFontData(FString InFontFilename, const EFontHinting InHinting, const
 #endif // WITH_EDITORONLY_DATA
 {
 	check(InLoadingPolicy != EFontLoadingPolicy::Inline);
-}
-
-FFontData::FFontData(FString InFontFilename, const UFontBulkData* const InBulkData, const EFontHinting InHinting)
-	: FontFilename(MoveTemp(InFontFilename))
-	, Hinting(InHinting)
-	, LoadingPolicy(EFontLoadingPolicy::LazyLoad)
-	, FontFaceAsset(nullptr)
-#if WITH_EDITORONLY_DATA
-	, BulkDataPtr_DEPRECATED(nullptr)
-	, FontData_DEPRECATED()
-#endif // WITH_EDITORONLY_DATA
-{
 }
 
 bool FFontData::HasFont() const

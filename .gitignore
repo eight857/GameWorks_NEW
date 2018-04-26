@@ -35,6 +35,9 @@
 !*.exp
 !*.manifest
 
+# Re-ignore vs host manifest
+*.vshost.exe.manifest
+
 # Java source files
 !*.java
 !*.java.template
@@ -47,6 +50,7 @@
 
 # Shader formats
 !*.usf
+!*.ush
 !*.hlsl
 !*.glsl
 
@@ -143,6 +147,12 @@
 Engine/Binaries/DotNET/UnrealBuildTool.xml
 Engine/Binaries/DotNET/AutomationScripts/BuildGraph.Automation.xml
 
+# Ignore version files in the Engine/Binaries directory created by UBT
+/Engine/Binaries/**/*.version
+
+# Ignore exp files in the the Engine/Binaries directory as they aren't C/C++ source files
+/Engine/Binaries/**/*.exp
+
 # Ignore content folders
 Content/
 
@@ -155,9 +165,17 @@ obj/
 
 # Ignore any saved local files
 Saved/
+/Engine/Programs/MemoryProfiler2/**
 /Engine/Programs/UnrealBuildTool/**
 /LocalBuilds/
+
+# Ignore Swarm local save files
+Engine/Binaries/DotNET/SwarmAgent.DeveloperOptions.xml
+Engine/Binaries/DotNET/SwarmAgent.Options.xml
 
 # Explcitly ignore Mac DS_Store files, regardless of where they are
 .DS_Store
 
+# Ignore VS / VS Code settings directory
+.vs
+.vscode

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSubsystemGameCircle.h"
 #include "Misc/ConfigCacheIni.h"
@@ -170,10 +170,23 @@ bool FOnlineSubsystemGameCircle::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutput
 	return false;
 }
 
-bool FOnlineSubsystemGameCircle::IsEnabled(void)
+FText FOnlineSubsystemGameCircle::GetOnlineServiceName() const
 {
-	bool bEnabled = true;
-	GConfig->GetBool(TEXT("/Script/GameCircleRuntimeSettings.GameCircleRuntimeSettings"), TEXT("bEnableAmazonGameCircleSupport"), bEnabled, GEngineIni);
+	return NSLOCTEXT("OnlineSubsystemGameCircle", "OnlineServiceName", "Amazon GameCircle");
+}
+
+bool FOnlineSubsystemGameCircle::IsEnabled() const
+{
+	bool bEnabled = false;
+
+	// GameCircleRuntimeSettings holds a value for editor ease of use
+	if (!GConfig->GetBool(TEXT("/Script/GameCircleRuntimeSettings.GameCircleRuntimeSettings"), TEXT("bEnableAmazonGameCircleSupport"), bEnabled, GEngineIni))
+	{
+		UE_LOG(LogOnline, Warning, TEXT("The [/Script/GameCircleRuntimeSettings.GameCircleRuntimeSettings]:bEnableAmazonGameCircleSupport flag has not been set"));
+
+		// Fallback to regular OSS location
+		bEnabled = FOnlineSubsystemImpl::IsEnabled();
+	}
 	return bEnabled;
 }
 
@@ -183,7 +196,6 @@ bool FOnlineSubsystemGameCircle::IsInAppPurchasingEnabled()
 	GConfig->GetBool(TEXT("/Script/GameCircleRuntimeSettings.GameCircleRuntimeSettings"), TEXT("bSupportsInAppPurchasing"), bEnabledIAP, GEngineIni);
 	return bEnabledIAP;
 }
-
 
 std::string FOnlineSubsystemGameCircle::ConvertFStringToStdString(const FString& InString)
 {

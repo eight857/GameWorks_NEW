@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PortableObjectPipeline.h"
 #include "Misc/FileHelper.h"
@@ -419,9 +419,9 @@ namespace
 	TMap<FPortableObjectEntryIdentity, TArray<FString>> ExtractPreservedPOComments(const FPortableObjectFormatDOM& InPortableObject)
 	{
 		TMap<FPortableObjectEntryIdentity, TArray<FString>> POEntryToCommentMap;
-		for (auto EntriesIterator = InPortableObject.GetEntriesIterator(); EntriesIterator; ++EntriesIterator)
+		for (auto EntryPairIterator = InPortableObject.GetEntriesIterator(); EntryPairIterator; ++EntryPairIterator)
 		{
-			const TSharedPtr< FPortableObjectEntry >& Entry = *EntriesIterator;
+			const TSharedPtr< FPortableObjectEntry >& Entry = EntryPairIterator->Value;
 
 			// Preserve only non-procedurally generated extracted comments.
 			const TArray<FString> CommentsToPreserve = Entry->ExtractedComments.FilterByPredicate([](const FString& ExtractedComment) -> bool
@@ -471,10 +471,10 @@ namespace
 
 		bool bModifiedArchive = false;
 		{
-			for (auto EntryIter = PortableObject.GetEntriesIterator(); EntryIter; ++EntryIter)
+			for (auto EntryPairIter = PortableObject.GetEntriesIterator(); EntryPairIter; ++EntryPairIter)
 			{
-				auto POEntry = *EntryIter;
-				if (POEntry->MsgId.IsEmpty() || POEntry->MsgStr.Num() == 0 || POEntry->MsgStr[0].Trim().IsEmpty())
+				auto POEntry = EntryPairIter->Value;
+				if (POEntry->MsgId.IsEmpty() || POEntry->MsgStr.Num() == 0 || POEntry->MsgStr[0].TrimStart().IsEmpty())
 				{
 					// We ignore the header entry or entries with no translation.
 					continue;
@@ -739,10 +739,11 @@ bool PortableObjectPipeline::ExportAll(FLocTextHelper& InLocTextHelper, const FS
 		return false;
 	}
 
-	// Warn about the using deprecating 4.14 export mode
+	// The 4.14 export mode was removed in 4.17
 	if (InTextCollapseMode == ELocalizedTextCollapseMode::IdenticalPackageIdTextIdAndSource)
 	{
-		UE_LOG(LogPortableObjectPipeline, Warning, TEXT("The export mode 'ELocalizedTextCollapseMode::IdenticalPackageIdTextIdAndSource' is deprecated, and will be removed in a future version. Please consider using 'ELocalizedTextCollapseMode::IdenticalTextIdAndSource' instead."));
+		UE_LOG(LogPortableObjectPipeline, Error, TEXT("The export mode 'ELocalizedTextCollapseMode::IdenticalPackageIdTextIdAndSource' is no longer supported (it was deprecated in 4.15 and removed in 4.17). Please use 'ELocalizedTextCollapseMode::IdenticalTextIdAndSource' instead."));
+		return false;
 	}
 
 	// Build the collapsed manifest data to export

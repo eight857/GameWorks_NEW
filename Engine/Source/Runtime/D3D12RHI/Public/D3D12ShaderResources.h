@@ -1,10 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D12Resources.h: D3D resource RHI definitions.
 =============================================================================*/
 
 #pragma once
+
+// Key used for determining whether shader code is packed or not.
+const int32 PackedShaderKey = 'XSHA';
 
 struct FD3D12ShaderResourceTable : public FBaseShaderResourceTable
 {

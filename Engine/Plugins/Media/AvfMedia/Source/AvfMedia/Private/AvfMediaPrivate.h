@@ -1,23 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-
-#include "Runtime/Core/Public/CoreMinimal.h"
-#include "Runtime/Core/Public/Modules/ModuleManager.h"
-#include "Runtime/Media/Public/IMediaAudioSink.h"
-#include "Runtime/Media/Public/IMediaModule.h"
-#include "Runtime/Media/Public/IMediaOverlaySink.h"
-#include "Runtime/Media/Public/IMediaPlayerFactory.h"
-#include "Runtime/Media/Public/IMediaTextureSink.h"
-
-#include "../../AvfMediaFactory/Public/AvfMediaSettings.h"
-
-#import <AVFoundation/AVFoundation.h>
-
-#if PLATFORM_MAC
-	#include "CocoaThread.h"
-#endif
+#include "Logging/LogMacros.h"
 
 
 /** Log category for the AvfMedia module. */

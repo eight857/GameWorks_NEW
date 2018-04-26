@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Commandlets/ParticleSystemAuditCommandlet.h"
 #include "HAL/FileManager.h"
@@ -35,7 +35,7 @@ int32 UParticleSystemAuditCommandlet::Main(const FString& Params)
 	if (!FParse::Value(*Params, TEXT("AuditOutputFolder="), AuditOutputFolder))
 	{
 		// No output folder specified. Use the default folder.
-		AuditOutputFolder = FPaths::GameSavedDir() / TEXT("Audit");
+		AuditOutputFolder = FPaths::ProjectSavedDir() / TEXT("Audit");
 	}
 
 	// Add a timestamp to the folder

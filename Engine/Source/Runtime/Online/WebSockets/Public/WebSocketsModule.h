@@ -1,11 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "ModuleManager.h"
 
+#if WITH_WEBSOCKETS
 class IWebSocket;
 class IWebSocketsManager;
+#endif // #if WITH_WEBSOCKETS
 
 /**
  * Module for web socket implementations
@@ -18,7 +20,9 @@ public:
 
 	// FWebSocketModule
 	FWebSocketsModule()
+#if WITH_WEBSOCKETS
 		: WebSocketsManager(nullptr)
+#endif // #if WITH_WEBSOCKETS
 	{
 	}
 
@@ -52,7 +56,6 @@ public:
 #endif // #if WITH_WEBSOCKETS
 
 private:
-
 	static FString BuildUpgradeHeader(const TMap<FString, FString>& Headers);
 
 	// IModuleInterface
@@ -69,8 +72,12 @@ private:
 	 */
 	virtual void ShutdownModule() override;
 
-	/** Keeps track of Http requests while they are being processed */
+#if WITH_WEBSOCKETS
+	/** Manages active web sockets */
 	IWebSocketsManager* WebSocketsManager;
+	friend class FLwsWebSocketsManager;
+	friend class FLwsWebSocket;
+#endif // #if WITH_WEBSOCKETS
 
 	/** singleton for the module while loaded and available */
 	static FWebSocketsModule* Singleton;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -14,7 +14,7 @@
 #include "STrack.h"
 #include "SAnimTrackPanel.h"
 
-class FAssetData;
+struct FAssetData;
 class FMenuBuilder;
 class UAnimSequenceBase;
 struct FAnimSegment;
@@ -88,7 +88,7 @@ public:
 
 	void Construct(const FArguments& InArgs);
 
-	// We support keyboard focus to recieve UI key events
+	// We support keyboard focus to receive UI key events
 	bool SupportsKeyboardFocus() const override {return true;}
 
 	// Key handler

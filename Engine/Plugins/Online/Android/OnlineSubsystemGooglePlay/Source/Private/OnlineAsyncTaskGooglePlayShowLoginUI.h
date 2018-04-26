@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,9 +9,10 @@
 #include "OnlineSubsystemGooglePlayPackage.h"
 #include "AndroidPermissionFunctionLibrary.h"
 
-#include <vector>
-
 THIRD_PARTY_INCLUDES_START
+// begin missing GPG dependencies
+#include <vector>
+// end missing GPG depdencies
 #include "gpg/types.h"
 #include "gpg/player_manager.h"
 THIRD_PARTY_INCLUDES_END

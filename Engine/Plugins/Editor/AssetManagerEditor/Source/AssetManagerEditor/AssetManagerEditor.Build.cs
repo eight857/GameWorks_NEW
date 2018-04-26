@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -6,20 +6,27 @@ public class AssetManagerEditor : ModuleRules
 {
 	public AssetManagerEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
+		PrivateIncludePaths.AddRange(
+			new string[] {
+				"AssetManagerEditor/Private",
+			}
+		);
+
 		PublicDependencyModuleNames.AddRange(
 			new string[] { 
 				"Core",
 				"CoreUObject",
 				"Engine",
-                "TargetPlatform"
-            }
+				"TargetPlatform",
+			}
 		);
 		
 		PrivateDependencyModuleNames.AddRange(
 			new string[] {
 				"Slate",
 				"SlateCore",
-				"InputCore",
+                "ApplicationCore",
+                "InputCore",
 				"UnrealEd",
 				"AssetRegistry",
 				"Json",
@@ -29,9 +36,13 @@ public class AssetManagerEditor : ModuleRules
 				"EditorStyle",
 				"AssetTools",
 				"PropertyEditor",
-                "GraphEditor",
-                "ReferenceViewer",
-                "SandboxFile"
+				"GraphEditor",
+				"BlueprintGraph",
+				"KismetCompiler",
+				"LevelEditor",
+				"SandboxFile",
+				"EditorWidgets",
+				"TreeMap",
 			}
 		);
 	}

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -21,6 +21,11 @@ struct FWindowsPlatformProperties
 	static FORCEINLINE const char* IniPlatformName()
 	{
 		return "Windows";
+	}
+
+	static FORCEINLINE const char* GetPhysicsFormat()
+	{
+		return "PhysXPC";
 	}
 
 	static FORCEINLINE bool IsGameOnly()

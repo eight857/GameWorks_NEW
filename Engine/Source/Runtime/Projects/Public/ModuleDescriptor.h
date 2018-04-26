@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -115,6 +115,12 @@ struct PROJECTS_API FModuleDescriptor
 
 	/** List of disallowed platforms */
 	TArray<FString> BlacklistPlatforms;
+
+	/** List of allowed targets */
+	TArray<FString> WhitelistTargets;
+
+	/** List of disallowed targets */
+	TArray<FString> BlacklistTargets;
 
 	/** List of additional dependencies for building this module. */
 	TArray<FString> AdditionalDependencies;

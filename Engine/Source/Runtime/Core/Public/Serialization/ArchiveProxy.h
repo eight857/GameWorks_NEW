@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -42,7 +42,7 @@ public:
 		return *this;
 	}
 
-	virtual FArchive& operator<<(struct FStringAssetReference& Value) override
+	virtual FArchive& operator<<(struct FSoftObjectPath& Value) override
 	{
 		InnerArchive << Value;
 		return *this;

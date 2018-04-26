@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -18,11 +18,15 @@ DECLARE_DELEGATE_FourParams(FOnRadialMenuGenerated, FMenuBuilder&, TSharedPtr<FU
 * VR Editor user interface manager
 */
 UCLASS()
-class UVRRadialMenuHandler : public UObject
+class UVRRadialMenuHandler: public UObject
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
 
 public:
+
+	/** Default constructor */
+	UVRRadialMenuHandler();
+
 	/** Builds the current radial menu */
 	void BuildRadialMenuCommands(FMenuBuilder& MenuBuilder, TSharedPtr<FUICommandList> CommandList, UVREditorMode* VRMode, float& RadiusOverride);
 
@@ -80,6 +84,8 @@ protected:
 
 	void ModesMenuGenerator(FMenuBuilder& MenuBuilder, TSharedPtr<FUICommandList> CommandList, UVREditorMode* VRMode, float& RadiusOverride);
 
+	void SystemMenuGenerator(FMenuBuilder& MenuBuilder, TSharedPtr<FUICommandList> CommandList, UVREditorMode* VRMode, float& RadiusOverride);
+
 protected:
 
 	FOnRadialMenuGenerated OnRadialMenuGenerated;
@@ -99,6 +105,8 @@ protected:
 	FOnRadialMenuGenerated ModesMenu;
 
 	FOnRadialMenuGenerated ActionsMenu;
+
+	FOnRadialMenuGenerated SystemMenu;
 
 	static FText ActionMenuLabel;
 

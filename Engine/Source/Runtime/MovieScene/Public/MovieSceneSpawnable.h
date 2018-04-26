@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -131,6 +131,16 @@ public:
 	}
 
 	/**
+	 * Set the name of the spawnable object.
+	 *
+	 * @InName The desired spawnable name.
+	 */
+	void SetName(const FString& InName)
+	{
+		Name = InName;
+	}
+
+	/**
 	 * Report the specified GUID as being an inner possessable dependency for this spawnable
 	 *
 	 * @param PossessableGuid The guid pertaining to the inner possessable
@@ -173,6 +183,10 @@ public:
 	{
 		Ownership = InOwnership;
 	}
+
+	/** Optional spawn transform */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Actor)
+	FTransform SpawnTransform;
 
 private:
 

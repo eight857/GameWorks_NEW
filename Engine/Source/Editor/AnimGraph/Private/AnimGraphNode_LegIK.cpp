@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimGraphNode_LegIK.h"
 
 /////////////////////////////////////////////////////
-// UOrionAnimGraphNode_LegIK
+// UAnimGraphNode_LegIK
 
 #define LOCTEXT_NAMESPACE "A3Nodes"
 

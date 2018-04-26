@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -126,6 +126,7 @@ public:
 
 DECLARE_DELEGATE_TwoParams( FOnSetInputViewRange, float, float )
 DECLARE_DELEGATE_TwoParams( FOnSetOutputViewRange, float, float )
+DECLARE_DELEGATE_OneParam( FOnSetAreCurvesVisible, bool )
 
 class SCurveEditor : 
 	public SCompoundWidget,
@@ -191,7 +192,9 @@ public:
 		, _ShowOutputGridNumbers(true)
 		, _ShowCurveSelector(true)
 		, _GridColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.3f))
-		{}
+		{
+			_Clipping = EWidgetClipping::ClipToBounds;
+		}
 
 		SLATE_ATTRIBUTE( float, ViewMinInput )
 		SLATE_ATTRIBUTE( float, ViewMaxInput )
@@ -206,6 +209,7 @@ public:
 		SLATE_ATTRIBUTE( bool, ShowTimeInFrames )
 		SLATE_ATTRIBUTE( float, TimelineLength )
 		SLATE_ATTRIBUTE( FVector2D, DesiredSize )
+		SLATE_ATTRIBUTE( bool, AreCurvesVisible )
 		SLATE_ARGUMENT( bool, DrawCurve )
 		SLATE_ARGUMENT( bool, HideUI )
 		SLATE_ARGUMENT( bool, AllowZoomOutput )
@@ -221,6 +225,7 @@ public:
 		SLATE_ARGUMENT( FLinearColor, GridColor )
 		SLATE_EVENT( FOnSetInputViewRange, OnSetInputViewRange )
 		SLATE_EVENT( FOnSetOutputViewRange, OnSetOutputViewRange )
+		SLATE_EVENT( FOnSetAreCurvesVisible, OnSetAreCurvesVisible )
 		SLATE_EVENT( FSimpleDelegate, OnCreateAsset )
 	SLATE_END_ARGS()
 
@@ -276,6 +281,11 @@ public:
 	UNREALED_API void ZoomToFitHorizontal(const bool bZoomToFitAll = false);
 	UNREALED_API void ZoomToFitVertical(const bool bZoomToFitAll = false);
 	UNREALED_API void ZoomToFit(const bool bZoomToFitAll = false);
+
+	/* Set flag that allows scrolling up/down over the widget from the outside without it handling the scroll wheel event */
+	UNREALED_API void SetRequireFocusToZoom(bool bInRequireFocusToZoom);
+
+	UNREALED_API virtual TOptional<bool> OnQueryShowFocus(const EFocusCause InFocusCause) const override;
 
 private:
 	/** Used to track a key and the curve that owns it */
@@ -448,7 +458,7 @@ private:
 	void OnCreateExternalCurveClicked();
 
 	/** Called when "Show Curves" is selected from the context menu */
-	void OnShowCurveToggled() { bAreCurvesVisible = !bAreCurvesVisible; }
+	void OnShowCurveToggled();
 
 	/** Called when "Show Gradient" is selected from the context menu */
 	void OnShowGradientToggled() { bIsGradientEditorVisible = !bIsGradientEditorVisible; }
@@ -461,20 +471,20 @@ private:
 
 	/** Paint a curve */
 	void PaintCurve(TSharedPtr<FCurveViewModel> CurveViewModel, const FGeometry &AllottedGeometry, FTrackScaleInfo &ScaleInfo, FSlateWindowElementList &OutDrawElements, 
-					int32 LayerId, const FSlateRect& MyClippingRect, ESlateDrawEffect DrawEffects, const FWidgetStyle &InWidgetStyle, bool bAnyCurveViewModelsSelected) const;
+					int32 LayerId, const FSlateRect& MyCullingRect, ESlateDrawEffect DrawEffects, const FWidgetStyle &InWidgetStyle, bool bAnyCurveViewModelsSelected) const;
 
 	/** Paint the keys that make up a curve */
-	void PaintKeys(TSharedPtr<FCurveViewModel> CurveViewModel, FTrackScaleInfo &ScaleInfo, FSlateWindowElementList &OutDrawElements, int32 LayerId, int32 SelectedLayerId, const FGeometry &AllottedGeometry, const FSlateRect& MyClippingRect, ESlateDrawEffect DrawEffects, const FWidgetStyle &InWidgetStyle, bool bAnyCurveViewModelsSelected ) const;
+	void PaintKeys(TSharedPtr<FCurveViewModel> CurveViewModel, FTrackScaleInfo &ScaleInfo, FSlateWindowElementList &OutDrawElements, int32 LayerId, int32 SelectedLayerId, const FGeometry &AllottedGeometry, const FSlateRect& MyCullingRect, ESlateDrawEffect DrawEffects, const FWidgetStyle &InWidgetStyle, bool bAnyCurveViewModelsSelected ) const;
 
 	/** Paint the tangent for a key with cubic curves */
 	void PaintTangent( TSharedPtr<FCurveViewModel> CurveViewModel, FTrackScaleInfo &ScaleInfo, FRichCurve* Curve, FKeyHandle KeyHandle, FVector2D KeyLocation, FSlateWindowElementList &OutDrawElements, int32 LayerId, 
-					   const FGeometry &AllottedGeometry, const FSlateRect& MyClippingRect, ESlateDrawEffect DrawEffects, int32 LayerToUse, const FWidgetStyle &InWidgetStyle, bool bTangentSelected, bool bIsArrivalSelected, bool bIsLeaveSelected, bool bAnyCurveViewModelsSelected ) const;
+					   const FGeometry &AllottedGeometry, const FSlateRect& MyCullingRect, ESlateDrawEffect DrawEffects, int32 LayerToUse, const FWidgetStyle &InWidgetStyle, bool bTangentSelected, bool bIsArrivalSelected, bool bIsLeaveSelected, bool bAnyCurveViewModelsSelected ) const;
 
 	/** Paint Grid lines, these make it easier to visualize relative distance */
-	void PaintGridLines( const FGeometry &AllottedGeometry, FTrackScaleInfo &ScaleInfo, FSlateWindowElementList &OutDrawElements, int32 LayerId, const FSlateRect& MyClippingRect, ESlateDrawEffect DrawEffects )const;
+	void PaintGridLines( const FGeometry &AllottedGeometry, FTrackScaleInfo &ScaleInfo, FSlateWindowElementList &OutDrawElements, int32 LayerId, const FSlateRect& MyCullingRect, ESlateDrawEffect DrawEffects )const;
 
 	/** Paints the marquee for selection */
-	void PaintMarquee(const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId) const;
+	void PaintMarquee(const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId) const;
 
 	/** Gets the delta value for the input value numeric entry box. */
 	float GetInputNumericEntryBoxDelta() const;
@@ -571,7 +581,7 @@ private:
 	UNREALED_API virtual void PostRedo(bool bSuccess) override { PostUndo(bSuccess); }
 	// End of FEditorUndoClient
 
-	bool AreCurvesVisible() const { return bAlwaysDisplayColorCurves || bAreCurvesVisible; }
+	bool AreCurvesVisible() const { return bAlwaysDisplayColorCurves || bAreCurvesVisible.Get(); }
 	bool IsGradientEditorVisible() const { return bIsGradientEditorVisible; }
 	bool IsLinearColorCurve() const;
 
@@ -601,6 +611,8 @@ private:
 
 	void OnObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& PropertyChangedEvent);
 
+	void HandlePackageReloaded(const EPackageReloadPhase InPackageReloadPhase, FPackageReloadedEvent* InPackageReloadedEvent);
+
 protected:
 
 	/** Set Default output values when range is too small **/
@@ -609,7 +621,7 @@ protected:
 	UNREALED_API virtual float GetTimeStep(FTrackScaleInfo &ScaleInfo) const;
 	
 	//~ Begin SWidget Interface
-	UNREALED_API virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, 
+	UNREALED_API virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, 
 		FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
 
 	/** Update view range */
@@ -689,6 +701,9 @@ private:
 	/** Handler for adjust timeline panning viewing */
 	FOnSetOutputViewRange	SetOutputViewRangeHandler;
 
+	/** Handler for setting whether or not curves are being displayed. */
+	FOnSetAreCurvesVisible SetAreCurvesVisibleHandler;
+
 	/** Index for the current transaction if any */
 	int32					TransactionIndex;
 
@@ -698,9 +713,6 @@ private:
 
 	/**Flag to enable/disable track editing*/
 	bool		bCanEditTrack;
-
-	/** True if the curves are being displayed */
-	bool bAreCurvesVisible;
 	
 	/** True if the gradient editor is being displayed */
 	bool bIsGradientEditorVisible;
@@ -713,6 +725,9 @@ private:
 
 	/** Flag to allow auto framing */
 	bool bAllowAutoFrame;
+
+	/** Flag to allow scrolling up/down over the widget from the outside without it handling the scroll wheel event */
+	bool bRequireFocusToZoom;
 
 protected:
 	/** Minimum input of view range  */
@@ -741,6 +756,9 @@ protected:
 
 	/** Show time in frames. */
 	TAttribute<bool> bShowTimeInFrames;
+
+	/** Whether or not curves are being displayed */
+	TAttribute<bool> bAreCurvesVisible;
 
 	/** True if you want the curve editor to fit to zoom **/
 	bool bZoomToFitVertical;

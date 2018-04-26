@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/SecureHash.h"
 #include "HAL/FileManager.h"
@@ -266,6 +266,7 @@ void FMD5::Decode( uint32* output, const uint8* input, int32 len )
 	}
 }
 
+/// @cond DOXYGEN_WARNINGS
 //
 // MD5 initialization.  Begins an MD5 operation, writing a new context.
 //
@@ -457,6 +458,7 @@ void FMD5::Decode( uint32* output, const uint8* input, int32 len )
 // 		output[i] = ((uint32)input[j]) | (((uint32)input[j+1]) << 8) |
 // 		(((uint32)input[j+2]) << 16) | (((uint32)input[j+3]) << 24);
 // }
+/// @endcond
 
 namespace Lex
 {

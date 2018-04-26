@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -229,6 +229,8 @@ typedef TSharedPtr<FOnlineInAppPurchaseRestoreRead, ESPMode::ThreadSafe> FOnline
 class IOnlineStore
 {
 public:
+
+	virtual ~IOnlineStore() { }
 
 	/**
 	 * Search for what purchases are available

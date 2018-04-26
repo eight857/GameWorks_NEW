@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -182,6 +182,16 @@ public:
 	 */
 	virtual void UpdateFullscreenState( const TSharedRef<SWindow> InWindow, uint32 OverrideResX = 0, uint32 OverrideResY = 0 ) = 0;
 
+
+	/**
+	 * Set the resolution cached by the engine
+	 *
+	 * @param	Width			Width of the system resolution
+	 * @param	Height			Height of the system resolution
+	 */
+	virtual void SetSystemResolution(uint32 Width, uint32 Height) = 0;
+	
+	
 	/**
 	 * Restore the given window to the resolution settings currently cached by the engine
 	 * 
@@ -411,16 +421,6 @@ public:
 	 * be needing to draw anything again.
 	 */
 	virtual void ReleaseCachingResourcesFor(const ILayoutCache* Cacher);
-
-	/**
-	 * You must call this before calling CopyWindowsToVirtualScreenBuffer(), to setup the render targets first.
-	 * 
-	 * @param	bPrimaryWorkAreaOnly	True if we should capture only the primary monitor's work area, or false to capture the entire desktop spanning all monitors
-	 * @param	ScreenScaling	How much to downscale the desktop size
-	 * @param	LiveStreamingService	Optional pointer to a live streaming service this buffer needs to work with
-	 * @return	The virtual screen rectangle.  The size of this rectangle will be the size of the render target buffer.
-	 */
-	virtual FIntRect SetupVirtualScreenBuffer( const bool bPrimaryWorkAreaOnly, const float ScreenScaling, class ILiveStreamingService* LiveStreamingService) { return FIntRect(); }
 
 	/**
 	 * Copies all slate windows out to a buffer at half resolution with debug information

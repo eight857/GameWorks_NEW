@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved. 
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved. 
 
 #include "CustomMeshComponent.h"
 #include "RenderingThread.h"
@@ -14,102 +14,28 @@
 #include "DynamicMeshBuilder.h"
 #include "EngineGlobals.h"
 #include "Engine/Engine.h"
-
-/** Vertex Buffer */
-class FCustomMeshVertexBuffer : public FVertexBuffer 
-{
-public:
-	TArray<FDynamicMeshVertex> Vertices;
-
-	virtual void InitRHI() override
-	{
-		FRHIResourceCreateInfo CreateInfo;
-		void* VertexBufferData = nullptr;
-		VertexBufferRHI = RHICreateAndLockVertexBuffer(Vertices.Num() * sizeof(FDynamicMeshVertex), BUF_Static, CreateInfo, VertexBufferData);
-
-		// Copy the vertex data into the vertex buffer.		
-		FMemory::Memcpy(VertexBufferData,Vertices.GetData(),Vertices.Num() * sizeof(FDynamicMeshVertex));
-		RHIUnlockVertexBuffer(VertexBufferRHI);
-	}
-
-};
-
-/** Index Buffer */
-class FCustomMeshIndexBuffer : public FIndexBuffer 
-{
-public:
-	TArray<int32> Indices;
-
-	virtual void InitRHI() override
-	{
-		FRHIResourceCreateInfo CreateInfo;
-		void* Buffer = nullptr;
-		IndexBufferRHI = RHICreateAndLockIndexBuffer(sizeof(int32),Indices.Num() * sizeof(int32),BUF_Static, CreateInfo, Buffer);
-
-		// Write the indices to the index buffer.		
-		FMemory::Memcpy(Buffer,Indices.GetData(),Indices.Num() * sizeof(int32));
-		RHIUnlockIndexBuffer(IndexBufferRHI);
-	}
-};
-
-/** Vertex Factory */
-class FCustomMeshVertexFactory : public FLocalVertexFactory
-{
-public:
-
-	FCustomMeshVertexFactory()
-	{}
-
-	/** Init function that should only be called on render thread. */
-	void Init_RenderThread(const FCustomMeshVertexBuffer* VertexBuffer)
-	{
-		check(IsInRenderingThread());
-
-		FDataType NewData;
-		NewData.PositionComponent = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer, FDynamicMeshVertex, Position, VET_Float3);
-		NewData.TextureCoordinates.Add(
-			FVertexStreamComponent(VertexBuffer, STRUCT_OFFSET(FDynamicMeshVertex, TextureCoordinate), sizeof(FDynamicMeshVertex), VET_Float2)
-			);
-		NewData.TangentBasisComponents[0] = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer, FDynamicMeshVertex, TangentX, VET_PackedNormal);
-		NewData.TangentBasisComponents[1] = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer, FDynamicMeshVertex, TangentZ, VET_PackedNormal);
-		NewData.ColorComponent = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer, FDynamicMeshVertex, Color, VET_Color);
-
-		SetData(NewData);
-	}
-
-	/** Initialization */
-	void Init(const FCustomMeshVertexBuffer* VertexBuffer)
-	{
-		if (IsInRenderingThread())
-		{
-			Init_RenderThread(VertexBuffer);
-		}
-		else
-		{
-			ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
-				InitCustomMeshVertexFactory,
-				FCustomMeshVertexFactory*, VertexFactory, this,
-				const FCustomMeshVertexBuffer*, VertexBuffer, VertexBuffer,
-				{
-				VertexFactory->Init_RenderThread(VertexBuffer);
-			});
-		}	
-	}
-};
+#include "StaticMeshResources.h"
 
 /** Scene proxy */
-class FCustomMeshSceneProxy : public FPrimitiveSceneProxy
+class FCustomMeshSceneProxy final : public FPrimitiveSceneProxy
 {
 public:
+	SIZE_T GetTypeHash() const override
+	{
+		static size_t UniquePointer;
+		return reinterpret_cast<size_t>(&UniquePointer);
+	}
 
 	FCustomMeshSceneProxy(UCustomMeshComponent* Component)
 		: FPrimitiveSceneProxy(Component)
+		, VertexFactory(GetScene().GetFeatureLevel(), "FCustomMeshSceneProxy")
 		, MaterialRelevance(Component->GetMaterialRelevance(GetScene().GetFeatureLevel()))
 	{
 		const FColor VertexColor(255,255,255);
 
+		TArray<FDynamicMeshVertex> Vertices;
 		const int32 NumTris = Component->CustomMeshTris.Num();
-		VertexBuffer.Vertices.AddUninitialized(NumTris * 3);
+		Vertices.AddUninitialized(NumTris * 3);
 		IndexBuffer.Indices.AddUninitialized(NumTris * 3);
 		// Add each triangle to the vertex/index buffer
 		for(int32 TriIdx = 0; TriIdx < NumTris; TriIdx++)
@@ -129,23 +55,24 @@ public:
 			Vert.SetTangents(TangentX, TangentY, TangentZ);
 
 			Vert.Position = Tri.Vertex0;
-			VertexBuffer.Vertices[TriIdx * 3 + 0] = Vert;
+			Vertices[TriIdx * 3 + 0] = Vert;
 			IndexBuffer.Indices[TriIdx * 3 + 0] = TriIdx * 3 + 0;
 
 			Vert.Position = Tri.Vertex1;
-			VertexBuffer.Vertices[TriIdx * 3 + 1] = Vert;
+			Vertices[TriIdx * 3 + 1] = Vert;
 			IndexBuffer.Indices[TriIdx * 3 + 1] = TriIdx * 3 + 1;
 
 			Vert.Position = Tri.Vertex2;
-			VertexBuffer.Vertices[TriIdx * 3 + 2] = Vert;
+			Vertices[TriIdx * 3 + 2] = Vert;
 			IndexBuffer.Indices[TriIdx * 3 + 2] = TriIdx * 3 + 2;
 		}
 
-		// Init vertex factory
-		VertexFactory.Init(&VertexBuffer);
+		VertexBuffers.InitFromDynamicVertex(&VertexFactory, Vertices);
 
 		// Enqueue initialization of render resource
-		BeginInitResource(&VertexBuffer);
+		BeginInitResource(&VertexBuffers.PositionVertexBuffer);
+		BeginInitResource(&VertexBuffers.StaticMeshVertexBuffer);
+		BeginInitResource(&VertexBuffers.ColorVertexBuffer);
 		BeginInitResource(&IndexBuffer);
 		BeginInitResource(&VertexFactory);
 
@@ -159,7 +86,9 @@ public:
 
 	virtual ~FCustomMeshSceneProxy()
 	{
-		VertexBuffer.ReleaseResource();
+		VertexBuffers.PositionVertexBuffer.ReleaseResource();
+		VertexBuffers.StaticMeshVertexBuffer.ReleaseResource();
+		VertexBuffers.ColorVertexBuffer.ReleaseResource();
 		IndexBuffer.ReleaseResource();
 		VertexFactory.ReleaseResource();
 	}
@@ -203,7 +132,7 @@ public:
 				BatchElement.FirstIndex = 0;
 				BatchElement.NumPrimitives = IndexBuffer.Indices.Num() / 3;
 				BatchElement.MinVertexIndex = 0;
-				BatchElement.MaxVertexIndex = VertexBuffer.Vertices.Num() - 1;
+				BatchElement.MaxVertexIndex = VertexBuffers.PositionVertexBuffer.GetNumVertices() - 1;
 				Mesh.ReverseCulling = IsLocalToWorldDeterminantNegative();
 				Mesh.Type = PT_TriangleList;
 				Mesh.DepthPriorityGroup = SDPG_World;
@@ -238,9 +167,9 @@ public:
 private:
 
 	UMaterialInterface* Material;
-	FCustomMeshVertexBuffer VertexBuffer;
-	FCustomMeshIndexBuffer IndexBuffer;
-	FCustomMeshVertexFactory VertexFactory;
+	FStaticMeshVertexBuffers VertexBuffers;
+	FDynamicMeshIndexBuffer32 IndexBuffer;
+	FLocalVertexFactory VertexFactory;
 
 	FMaterialRelevance MaterialRelevance;
 };
@@ -261,6 +190,7 @@ bool UCustomMeshComponent::SetCustomMeshTriangles(const TArray<FCustomMeshTriang
 
 	// Need to recreate scene proxy to send it over
 	MarkRenderStateDirty();
+	UpdateBounds();
 
 	return true;
 }
@@ -271,6 +201,7 @@ void UCustomMeshComponent::AddCustomMeshTriangles(const TArray<FCustomMeshTriang
 
 	// Need to recreate scene proxy to send it over
 	MarkRenderStateDirty();
+	UpdateBounds();
 }
 
 void  UCustomMeshComponent::ClearCustomMeshTriangles()
@@ -279,6 +210,7 @@ void  UCustomMeshComponent::ClearCustomMeshTriangles()
 
 	// Need to recreate scene proxy to send it over
 	MarkRenderStateDirty();
+	UpdateBounds();
 }
 
 
@@ -300,10 +232,21 @@ int32 UCustomMeshComponent::GetNumMaterials() const
 
 FBoxSphereBounds UCustomMeshComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
+	FBox BoundingBox(ForceInit);
+
+	// Bounds are tighter if the box is generated from pre-transformed vertices.
+	for (int32 Index = 0; Index < CustomMeshTris.Num(); ++Index)
+	{
+		BoundingBox += LocalToWorld.TransformPosition(CustomMeshTris[Index].Vertex0);
+		BoundingBox += LocalToWorld.TransformPosition(CustomMeshTris[Index].Vertex1);
+		BoundingBox += LocalToWorld.TransformPosition(CustomMeshTris[Index].Vertex2);
+	}
+
 	FBoxSphereBounds NewBounds;
-	NewBounds.Origin = FVector::ZeroVector;
-	NewBounds.BoxExtent = FVector(HALF_WORLD_MAX,HALF_WORLD_MAX,HALF_WORLD_MAX);
-	NewBounds.SphereRadius = FMath::Sqrt(3.0f * FMath::Square(HALF_WORLD_MAX));
+	NewBounds.BoxExtent = BoundingBox.GetExtent();
+	NewBounds.Origin = BoundingBox.GetCenter();
+	NewBounds.SphereRadius = NewBounds.BoxExtent.Size();
+
 	return NewBounds;
 }
 

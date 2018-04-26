@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -54,6 +54,9 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Progress)
 	bool bIsMarquee;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Progress)
+	FVector2D BorderPadding;
 
 	/** A bindable delegate to allow logic to drive the text of the widget */
 	UPROPERTY()
@@ -111,4 +114,6 @@ protected:
 	//~ Begin UWidget Interface
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	//~ End UWidget Interface
+
+	PROPERTY_BINDING_IMPLEMENTATION(FSlateColor, FillColorAndOpacity);
 };

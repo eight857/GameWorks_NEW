@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  *
@@ -105,7 +105,7 @@ class UInterpTrack : public UObject, public FCurveEdInterface, public FInterpEdI
 	GENERATED_UCLASS_BODY()
 
 	/** A list of subtracks that belong to this track */
-	UPROPERTY()
+	UPROPERTY(BlueprintReadOnly, Category=InterpTrack)
 	TArray<class UInterpTrack*> SubTracks;
 
 #if WITH_EDITORONLY_DATA

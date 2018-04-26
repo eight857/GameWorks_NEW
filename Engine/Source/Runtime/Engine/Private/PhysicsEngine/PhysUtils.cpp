@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // Physics engine integration utilities
 
@@ -59,54 +59,50 @@ static bool ModelToHullsWorker(FKAggregateGeom* outGeom,
 								bool bOutside, 
 								TArray<FPlane> &planes)
 {
-	FBspNode* node = &inModel->Nodes[nodeIx];
-	if(node)
+	FBspNode& node = inModel->Nodes[nodeIx];
+	// BACK
+	if (node.iBack != INDEX_NONE) // If there is a child, recurse into it.
 	{
-		// BACK
-		if(node->iBack != INDEX_NONE) // If there is a child, recurse into it.
+		planes.Add(node.Plane);
+		if (!ModelToHullsWorker(outGeom, inModel, node.iBack, node.ChildOutside(0, bOutside), planes))
 		{
-			planes.Add(node->Plane);
-			if ( !ModelToHullsWorker(outGeom, inModel, node->iBack, node->ChildOutside(0, bOutside), planes) )
-			{
-				return false;
-			}
-			planes.RemoveAt(planes.Num()-1);
+			return false;
 		}
-		else if(!node->ChildOutside(0, bOutside)) // If its a leaf, and solid (inside)
+		planes.RemoveAt(planes.Num() - 1);
+	}
+	else if (!node.ChildOutside(0, bOutside)) // If its a leaf, and solid (inside)
+	{
+		planes.Add(node.Plane);
+		if (!AddConvexPrim(outGeom, planes, inModel))
 		{
-			planes.Add(node->Plane);
-			if ( !AddConvexPrim(outGeom, planes, inModel) )
-			{
-				return false;
-			}
-			planes.RemoveAt(planes.Num()-1);
+			return false;
 		}
+		planes.RemoveAt(planes.Num() - 1);
+	}
 
-		// FRONT
-		if(node->iFront != INDEX_NONE)
+	// FRONT
+	if (node.iFront != INDEX_NONE)
+	{
+		planes.Add(node.Plane.Flip());
+		if (!ModelToHullsWorker(outGeom, inModel, node.iFront, node.ChildOutside(1, bOutside), planes))
 		{
-			planes.Add(node->Plane.Flip());
-			if ( !ModelToHullsWorker(outGeom, inModel, node->iFront, node->ChildOutside(1, bOutside), planes) )
-			{
-				return false;
-			}
-			planes.RemoveAt(planes.Num()-1);
+			return false;
 		}
-		else if(!node->ChildOutside(1, bOutside))
+		planes.RemoveAt(planes.Num() - 1);
+	}
+	else if (!node.ChildOutside(1, bOutside))
+	{
+		planes.Add(node.Plane.Flip());
+		if (!AddConvexPrim(outGeom, planes, inModel))
 		{
-			planes.Add(node->Plane.Flip());
-			if ( !AddConvexPrim(outGeom, planes, inModel) )
-			{
-				return false;
-			}
-			planes.RemoveAt(planes.Num()-1);
+			return false;
 		}
+		planes.RemoveAt(planes.Num() - 1);
 	}
 
 	return true;
 }
 
-#if WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR
 void UBodySetup::CreateFromModel(UModel* InModel, bool bRemoveExisting)
 {
 	if ( bRemoveExisting )
@@ -130,7 +126,6 @@ void UBodySetup::CreateFromModel(UModel* InModel, bool bRemoveExisting)
 	// Create new GUID
 	InvalidatePhysicsData();
 }
-#endif // WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR
 
 //////////////////////////////////////////////////////////////////////////
 // FRigidBodyCollisionInfo
@@ -449,7 +444,7 @@ void PvdConnect(FString Host, bool bVisualization)
 	int32	Port = 5425;         // TCP port to connect to, where PVD is listening
 	uint32	Timeout = 100;          // timeout in milliseconds to wait for PVD to respond, consoles and remote PCs need a higher timeout.
 
-	PxPvdInstrumentationFlags ConnectionFlags = PxPvdInstrumentationFlag::eALL;
+	PxPvdInstrumentationFlags ConnectionFlags = bVisualization ? PxPvdInstrumentationFlag::eALL : PxPvdInstrumentationFlag::ePROFILE;
 
 	PxPvdTransport* transport = PxDefaultPvdSocketTransportCreate(TCHAR_TO_ANSI(*Host), Port, Timeout);
 	GPhysXVisualDebugger->connect(*transport, ConnectionFlags);
@@ -458,6 +453,42 @@ void PvdConnect(FString Host, bool bVisualization)
 	// set on the PxPvdSceneClient in PhysScene.cpp, FPhysScene::InitPhysScene
 }
 #endif
+
+void DumpPhysXInstanceMemoryUsage(FOutputDevice* Ar)
+{
+#if WITH_PHYSX
+	for (auto It = GPhysXSceneMap.CreateIterator(); It; ++It)
+	{
+		PxScene* PScene = nullptr;
+#if WITH_APEX
+		if (apex::Scene* Scene = It.Value())
+		{
+			PScene = Scene->getPhysXScene();
+		}
+#else
+		PScene = It.Value();
+#endif
+
+		if (PScene)
+		{
+			SCOPED_SCENE_READ_LOCK(PScene);
+			const uint32 NumActors = PScene->getNbActors(PxActorTypeFlag::eRIGID_DYNAMIC | PxActorTypeFlag::eRIGID_STATIC);
+			TArray<PxActor*> Actors;
+			Actors.AddZeroed(NumActors);
+			PScene->getActors(PxActorTypeFlag::eRIGID_DYNAMIC | PxActorTypeFlag::eRIGID_STATIC, Actors.GetData(), sizeof(Actors[0]) * NumActors);
+
+			Ar->Logf(TEXT("PhysX Actors: %d"), NumActors);
+			for (const PxActor* PActor : Actors)
+			{
+				if (FBodyInstance* BI = FPhysxUserData::Get<FBodyInstance>(PActor->userData))
+				{
+					Ar->Logf(*BI->GetBodyDebugName());
+				}
+			}
+		}
+	}
+#endif
+}
 
 //// EXEC
 bool ExecPhysCommands(const TCHAR* Cmd, FOutputDevice* Ar, UWorld* InWorld)
@@ -584,6 +615,11 @@ bool ExecPhysCommands(const TCHAR* Cmd, FOutputDevice* Ar, UWorld* InWorld)
 		FPhysxSharedData::Get().DumpSharedMemoryUsage(Ar);
 		return 1;
 	}
+	else if (FParse::Command(&Cmd, TEXT("PHYSXINSTANCES")))
+	{
+		DumpPhysXInstanceMemoryUsage(Ar);
+		return 1;
+	}
 	else if(FParse::Command(&Cmd, TEXT("PHYSXINFO")))
 	{
 		Ar->Logf(TEXT("PhysX Info:"));
@@ -595,11 +631,15 @@ bool ExecPhysCommands(const TCHAR* Cmd, FOutputDevice* Ar, UWorld* InWorld)
 #else
 		Ar->Logf(TEXT("  Configuration: PROFILE"));
 #endif
-#if WITH_PHYSICS_COOKING || WITH_RUNTIME_PHYSICS_COOKING
-		Ar->Logf(TEXT("  Cooking Module: TRUE"));
-#else
-		Ar->Logf(TEXT("  Cooking Module: FALSE"));
-#endif
+		if(GetPhysXCookingModule())
+		{
+			Ar->Logf(TEXT("  Cooking Module: TRUE"));
+		}
+		else
+		{
+			Ar->Logf(TEXT("  Cooking Module: FALSE"));
+		}
+
 		return 1;
 	}
 

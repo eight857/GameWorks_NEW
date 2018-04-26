@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ShowFlags.h: Show Flag Definitions.
@@ -192,6 +192,7 @@ struct FEngineShowFlags
 		SetDistanceFieldAO(false);
 		SetDistanceFieldGI(false);
 		SetVolumetricFog(false);
+		SetVolumetricLightmap(false);
 	}
 
 	void EnableAdvancedFeatures()
@@ -370,6 +371,7 @@ private:
 		SetDistanceCulledPrimitives(InitMode == ESFIM_Editor);
 		SetVisualizeLightCulling(false);
 		SetPrecomputedVisibilityCells(false);
+		SetVisualizeVolumetricLightmap(false);
 		SetVolumeLightingSamples(false);
 		// we enable it manually on the editor view ports
 		SetSnap(false);
@@ -386,6 +388,8 @@ private:
 		SetOutputMaterialTextureScales(false);
 		SetRequiredTextureResolution(false);
 		SetMotionBlur(InitMode != ESFIM_Editor);
+		SetBones(false);
+		SetScreenPercentage(InitMode != ESFIM_Editor);
 	}
 
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -136,6 +136,9 @@ struct FGameplayAbilitySpecDef
 	UPROPERTY(NotReplicated)
 	UObject* SourceObject;
 
+	// SetbyCaller Magnitudes that were passed in to this ability by a GE (GE's that grant abilities). Made available so that 
+	TMap<FGameplayTag, float>	SetByCallerTagMagnitudes;
+
 	/** This handle can be set if the SpecDef is used to create a real FGameplaybilitySpec */
 	UPROPERTY()
 	FGameplayAbilitySpecHandle	AssignedHandle;
@@ -208,7 +211,7 @@ private:
 /** An activatable ability spec, hosted on the ability system component. This defines both what the ability is (what class, what level, input binding etc)
  *  and also holds runtime state that must be kept outside of the ability being instanced/activated.
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct GAMEPLAYABILITIES_API FGameplayAbilitySpec : public FFastArraySerializerItem
 {
 	GENERATED_USTRUCT_BODY()
@@ -279,6 +282,9 @@ struct GAMEPLAYABILITIES_API FGameplayAbilitySpec : public FFastArraySerializerI
 	UPROPERTY(NotReplicated)
 	FActiveGameplayEffectHandle	GameplayEffectHandle;
 
+	/** Passed on SetByCaller magnitudes if this ability was granted by a GE */
+	TMap<FGameplayTag, float> SetByCallerTagMagnitudes;
+
 	/** Returns the primary instance, used for instance once abilities */
 	UGameplayAbility* GetPrimaryInstance() const;
 
@@ -305,7 +311,7 @@ struct GAMEPLAYABILITIES_API FGameplayAbilitySpec : public FFastArraySerializerI
 
 
 /** Fast serializer wrapper for above struct */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct GAMEPLAYABILITIES_API FGameplayAbilitySpecContainer : public FFastArraySerializer
 {
 	GENERATED_USTRUCT_BODY()

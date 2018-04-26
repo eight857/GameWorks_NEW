@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TextureLODSettingsDetails.h"
 #include "Engine/TextureLODSettings.h"
@@ -82,7 +82,7 @@ void FTextureLODGroupLayout::AddToAvailableMipGenSettings(TextureMipGenSettings 
 void FTextureLODGroupLayout::GenerateHeaderRowContent(FDetailWidgetRow& NodeRow)
 {
 	UEnum* TextureGroupEnum = FindObject<UEnum>(NULL, TEXT("/Script/Engine.TextureGroup"));
-	const FString LODGroupName = TextureGroupEnum->GetMetaData(TEXT("DisplayName"), LodGroup->Group);
+	const FString& LODGroupName = TextureGroupEnum->GetMetaData(TEXT("DisplayName"), LodGroup->Group);
 
 	NodeRow.NameContent()
 		[
@@ -98,7 +98,7 @@ void FTextureLODGroupLayout::GenerateChildContent(IDetailChildrenBuilder& Childr
 {
 	// Min and Max LOD properties
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("MinLODSize", "Min LOD Size"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("MinLODSize", "Min LOD Size"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -118,7 +118,7 @@ void FTextureLODGroupLayout::GenerateChildContent(IDetailChildrenBuilder& Childr
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("MaxLODSize", "Max LOD Size"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("MaxLODSize", "Max LOD Size"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -140,7 +140,7 @@ void FTextureLODGroupLayout::GenerateChildContent(IDetailChildrenBuilder& Childr
 
 	// LOD Bias
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("LODBias", "LOD Bias"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("LODBias", "LOD Bias"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -169,7 +169,7 @@ void FTextureLODGroupLayout::GenerateChildContent(IDetailChildrenBuilder& Childr
 	TSharedPtr<FName> NameAnisoPtr = MakeShareable(new FName(NAME_Aniso));
 	FilterComboList.Add(NameAnisoPtr);
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("MinMagFilter", "MinMag Filter"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("MinMagFilter", "MinMag Filter"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -195,7 +195,7 @@ void FTextureLODGroupLayout::GenerateChildContent(IDetailChildrenBuilder& Childr
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("MipFilter", "Mip Filter"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("MipFilter", "Mip Filter"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -223,7 +223,7 @@ void FTextureLODGroupLayout::GenerateChildContent(IDetailChildrenBuilder& Childr
 
 	// Mip Gen Settings
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("MipGenSettings", "Mip Gen Settings"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("MipGenSettings", "Mip Gen Settings"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -367,7 +367,7 @@ FText FTextureLODGroupLayout::GetMipFilterComboBoxContent() const
 TSharedRef<SWidget> FTextureLODGroupLayout::MakeMipGenSettingsComboWidget(TSharedPtr<TextureMipGenSettings> InItem)
 {
 	UEnum* TextureGroupEnum = FindObject<UEnum>(NULL, TEXT("/Script/Engine.TextureMipGenSettings"));
-	const FString MipGenSettingsName = TextureGroupEnum->GetMetaData(TEXT("DisplayName"), *InItem.Get());
+	const FString& MipGenSettingsName = TextureGroupEnum->GetMetaData(TEXT("DisplayName"), *InItem.Get());
 
 	return SNew(STextBlock).Text(FText::FromString(MipGenSettingsName)).Font(IDetailLayoutBuilder::GetDetailFont());
 }
@@ -390,7 +390,7 @@ FText FTextureLODGroupLayout::GetMipGenSettingsComboBoxToolTip() const
 FText FTextureLODGroupLayout::GetMipGenSettingsComboBoxContent() const
 {
 	UEnum* TextureGroupEnum = FindObject<UEnum>(NULL, TEXT("/Script/Engine.TextureMipGenSettings"));
-	const FString MipGenSettingsName = TextureGroupEnum->GetMetaData(TEXT("DisplayName"), LodGroup->MipGenSettings);
+	const FString& MipGenSettingsName = TextureGroupEnum->GetMetaData(TEXT("DisplayName"), LodGroup->MipGenSettings);
 	
 	return FText::FromString(MipGenSettingsName);
 }

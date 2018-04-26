@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Shader.cpp: Shader implementation.
@@ -14,11 +14,19 @@
 #include "Interfaces/ITargetPlatformManagerModule.h"
 #include "ShaderCache.h"
 #include "ShaderCodeLibrary.h"
+#include "ShaderCore.h"
 #include "Misc/ConfigCacheIni.h"
 #include "RenderingObjectVersion.h"
 
 
 DEFINE_LOG_CATEGORY(LogShaders);
+
+SHADERCORE_API bool UsePreExposure(EShaderPlatform Platform)
+{
+	// Mobile platforms are excluded because they use a different pre-exposure logic in MobileBasePassPixelShader.usf
+	static const auto CVarUsePreExposure = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.UsePreExposure"));
+	return CVarUsePreExposure->GetValueOnAnyThread() != 0 && !IsMobilePlatform(Platform) && IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+}
 
 static const ECompressionFlags ShaderCompressionFlag = ECompressionFlags::COMPRESS_ZLIB;
 
@@ -127,6 +135,7 @@ FShaderType::FShaderType(
 	const TCHAR* InSourceFilename,
 	const TCHAR* InFunctionName,
 	uint32 InFrequency,
+	int32 InTotalPermutationCount,
 	ConstructSerializedType InConstructSerializedRef,
 	GetStreamOutElementsType InGetStreamOutElementsRef
 	):
@@ -136,6 +145,7 @@ FShaderType::FShaderType(
 	SourceFilename(InSourceFilename),
 	FunctionName(InFunctionName),
 	Frequency(InFrequency),
+	TotalPermutationCount(InTotalPermutationCount),
 	ConstructSerializedRef(InConstructSerializedRef),
 	GetStreamOutElementsRef(InGetStreamOutElementsRef),
 	GlobalListLink(this)
@@ -151,6 +161,9 @@ FShaderType::FShaderType(
 
 	//make sure the name is shorter than the maximum serializable length
 	check(FCString::Strlen(InName) < NAME_SIZE);
+
+	// Make sure the format of the source file path is right.
+	check(CheckVirtualShaderFilePath(InSourceFilename));
 
 	// register this shader type
 	GlobalListLink.LinkHead(GetTypeList());
@@ -297,6 +310,7 @@ FShader* FShaderType::FindShaderById(const FShaderId& Id)
 {
 	check(IsInGameThread());
 	FShader* Result = ShaderIdMap.FindRef(Id);
+	check(!Result || Result->GetId() == Id);
 	return Result;
 }
 
@@ -373,6 +387,7 @@ TMap<FShaderResourceId, FShaderResource*> FShaderResource::ShaderResourceIdMap;
 
 FShaderResource::FShaderResource()
 	: SpecificType(NULL)
+	, SpecificPermutationId(0)
 	, NumInstructions(0)
 	, NumTextureSamplers(0)
 	, NumRefs(0)
@@ -383,8 +398,9 @@ FShaderResource::FShaderResource()
 }
 
 
-FShaderResource::FShaderResource(const FShaderCompilerOutput& Output, FShaderType* InSpecificType) 
+FShaderResource::FShaderResource(const FShaderCompilerOutput& Output, FShaderType* InSpecificType, int32 InSpecificPermutationId) 
 	: SpecificType(InSpecificType)
+	, SpecificPermutationId(InSpecificPermutationId)
 	, NumInstructions(Output.NumInstructions)
 	, NumTextureSamplers(Output.NumTextureSamplers)
 	, NumRefs(0)
@@ -392,6 +408,8 @@ FShaderResource::FShaderResource(const FShaderCompilerOutput& Output, FShaderTyp
 	, bCodeInSharedLocation(false)
 	
 {
+	check(!(SpecificPermutationId != 0 && SpecificType == nullptr));
+
 	Target = Output.Target;
 	CompressCode(Output.ShaderCode.GetReadAccess());
 
@@ -461,9 +479,15 @@ void FShaderResource::Register()
 
 void FShaderResource::Serialize(FArchive& Ar)
 {
+	check(!(SpecificPermutationId != 0 && SpecificType == nullptr));
+
 	Ar.UsingCustomVersion(FRenderingObjectVersion::GUID);
 
 	Ar << SpecificType;
+	if (Ar.CustomVer(FRenderingObjectVersion::GUID) >= FRenderingObjectVersion::ShaderPermutationId)
+	{
+		Ar << SpecificPermutationId;
+	}
 	Ar << Target;
 
 	if (Ar.CustomVer(FRenderingObjectVersion::GUID) < FRenderingObjectVersion::ShaderResourceCodeSharing)
@@ -488,9 +512,12 @@ void FShaderResource::Serialize(FArchive& Ar)
 	{
 		INC_DWORD_STAT_BY_FName(GetMemoryStatType((EShaderFrequency)Target.Frequency).GetName(), (int64)Code.Num());
 		INC_DWORD_STAT_BY(STAT_Shaders_ShaderResourceMemory, GetSizeBytes());
-		
-		FShaderCache::LogShader((EShaderPlatform)Target.Platform, (EShaderFrequency)Target.Frequency, OutputHash, UncompressedCodeSize, Code);
 
+		if (FShaderCache::GetShaderCache())
+		{
+			FShaderCache::LogShader((EShaderPlatform)Target.Platform, (EShaderFrequency)Target.Frequency, OutputHash, UncompressedCodeSize, Code);
+		}
+		
 		// The shader resource has been serialized in, so this shader resource is now initialized.
 		check(Canary != FShader::ShaderMagic_CleaningUp);
 		Canary = FShader::ShaderMagic_Initialized;
@@ -513,6 +540,11 @@ void FShaderResource::SerializeShaderCode(FArchive& Ar)
 	if (Ar.IsLoading())
 	{
 		bCodeInSharedLocation = bCodeShared;
+
+		if (bCodeInSharedLocation)
+		{
+			FShaderCodeLibrary::RequestShaderCode(OutputHash, &Ar);
+		}
 	}
 
 	if (!bCodeShared)
@@ -542,6 +574,11 @@ void FShaderResource::Release()
 
 		Canary = FShader::ShaderMagic_CleaningUp;
 		BeginCleanup(this);
+
+		if (bCodeInSharedLocation)
+		{
+			FShaderCodeLibrary::ReleaseShaderCode(OutputHash);
+		}
 	}
 }
 
@@ -554,13 +591,13 @@ FShaderResource* FShaderResource::FindShaderResourceById(const FShaderResourceId
 }
 
 
-FShaderResource* FShaderResource::FindOrCreateShaderResource(const FShaderCompilerOutput& Output, FShaderType* SpecificType)
+FShaderResource* FShaderResource::FindOrCreateShaderResource(const FShaderCompilerOutput& Output, FShaderType* SpecificType, int32 SpecificPermutationId)
 {
-	const FShaderResourceId ResourceId(Output, SpecificType ? SpecificType->GetName() : NULL);
+	const FShaderResourceId ResourceId(Output.Target, Output.OutputHash, SpecificType ? SpecificType->GetName() : nullptr, SpecificPermutationId);
 	FShaderResource* Resource = FindShaderResourceById(ResourceId);
 	if (!Resource)
 	{
-		Resource = new FShaderResource(Output, SpecificType);
+		Resource = new FShaderResource(Output, SpecificType, SpecificPermutationId);
 	}
 	else
 	{
@@ -587,19 +624,8 @@ bool FShaderResource::ArePlatformsCompatible(EShaderPlatform CurrentPlatform, ES
 	
 	if (!bFeatureLevelCompatible && IsPCPlatform(CurrentPlatform) && IsPCPlatform(TargetPlatform) )
 	{
-		if (CurrentPlatform == SP_OPENGL_SM4_MAC || TargetPlatform == SP_OPENGL_SM4_MAC)
-		{
-			// prevent SP_OPENGL_SM4 == SP_OPENGL_SM4_MAC, allow SP_OPENGL_SM4_MAC == SP_OPENGL_SM4_MAC,
-			// allow lesser feature levels on SP_OPENGL_SM4_MAC device.
-			// do not allow MAC targets to work on non MAC devices.
-			bFeatureLevelCompatible = CurrentPlatform == SP_OPENGL_SM4_MAC && 
-				GetMaxSupportedFeatureLevel(CurrentPlatform) >= GetMaxSupportedFeatureLevel(TargetPlatform);
-		}
-		else
-		{
-			bFeatureLevelCompatible = GetMaxSupportedFeatureLevel(CurrentPlatform) >= GetMaxSupportedFeatureLevel(TargetPlatform);
-		}
-
+		bFeatureLevelCompatible = GetMaxSupportedFeatureLevel(CurrentPlatform) >= GetMaxSupportedFeatureLevel(TargetPlatform);
+		
 		bool const bIsTargetD3D = TargetPlatform == SP_PCD3D_SM5 ||
 		TargetPlatform == SP_PCD3D_SM4 ||
 		TargetPlatform == SP_PCD3D_ES3_1 ||
@@ -610,13 +636,19 @@ bool FShaderResource::ArePlatformsCompatible(EShaderPlatform CurrentPlatform, ES
 		TargetPlatform == SP_PCD3D_ES3_1 ||
 		CurrentPlatform == SP_PCD3D_ES2;
 		
+		// For Metal in Editor we can switch feature-levels, but not in cooked projects when using Metal shader librariss.
 		bool const bIsCurrentMetal = IsMetalPlatform(CurrentPlatform);
 		bool const bIsTargetMetal = IsMetalPlatform(TargetPlatform);
+		bool const bIsMetalCompatible = (bIsCurrentMetal == bIsTargetMetal) 
+#if !WITH_EDITOR	// Static analysis doesn't like (|| WITH_EDITOR)
+			&& (!IsMetalPlatform(CurrentPlatform) || (CurrentPlatform == TargetPlatform))
+#endif
+			;
 		
 		bool const bIsCurrentOpenGL = IsOpenGLPlatform(CurrentPlatform);
 		bool const bIsTargetOpenGL = IsOpenGLPlatform(TargetPlatform);
 		
-		bFeatureLevelCompatible = bFeatureLevelCompatible && (bIsCurrentPlatformD3D == bIsTargetD3D && bIsCurrentMetal == bIsTargetMetal && bIsCurrentOpenGL == bIsTargetOpenGL);
+		bFeatureLevelCompatible = bFeatureLevelCompatible && (bIsCurrentPlatformD3D == bIsTargetD3D && bIsMetalCompatible && bIsCurrentOpenGL == bIsTargetOpenGL);
 	}
 
 	return bFeatureLevelCompatible;
@@ -636,14 +668,14 @@ void FShaderResource::InitRHI()
 
 	// we can't have this called on the wrong platform's shaders
 	if (!ArePlatformsCompatible(GMaxRHIShaderPlatform, (EShaderPlatform)Target.Platform))
- 	{
- 		if (FPlatformProperties::RequiresCookedData())
- 		{
- 			UE_LOG(LogShaders, Fatal, TEXT("FShaderResource::InitRHI got platform %s but it is not compatible with %s"), 
+	{
+		if (FPlatformProperties::RequiresCookedData())
+		{
+			UE_LOG(LogShaders, Fatal, TEXT("FShaderResource::InitRHI got platform %s but it is not compatible with %s"), 
 				*LegacyShaderPlatformToShaderFormat((EShaderPlatform)Target.Platform).ToString(), *LegacyShaderPlatformToShaderFormat(GMaxRHIShaderPlatform).ToString());
- 		}
- 		return;
- 	}
+		}
+		return;
+	}
 
 	TArray<uint8> UncompressedCode;
 	if (!bCodeInSharedLocation)
@@ -682,7 +714,7 @@ void FShaderResource::InitRHI()
 			TArray<uint32> StreamStrides;
 			int32 RasterizedStream = -1;
 			SpecificType->GetStreamOutElements(ElementList, StreamStrides, RasterizedStream);
-			checkf(ElementList.Num(), *FString::Printf(TEXT("Shader type %s was given GetStreamOutElements implementation that had no elements!"), SpecificType->GetName()));
+			checkf(ElementList.Num(), TEXT("Shader type %s was given GetStreamOutElements implementation that had no elements!"), SpecificType->GetName());
 
 			//@todo - not using the cache
 			GeometryShader = FShaderCodeLibrary::CreateGeometryShaderWithStreamOutput((EShaderPlatform)Target.Platform, OutputHash, UncompressedCode, ElementList, StreamStrides.Num(), StreamStrides.GetData(), RasterizedStream);
@@ -701,7 +733,7 @@ void FShaderResource::InitRHI()
 
 	if (Target.Frequency != SF_Geometry)
 	{
-		checkf(!SpecificType, *FString::Printf(TEXT("Only geometry shaders can use GetStreamOutElements, shader type %s"), SpecificType->GetName()));
+		checkf(!SpecificType, TEXT("Only geometry shaders can use GetStreamOutElements, shader type %s"), SpecificType->GetName());
 	}
 
 	if (!FPlatformProperties::HasEditorOnlyData())
@@ -709,6 +741,12 @@ void FShaderResource::InitRHI()
 		DEC_DWORD_STAT_BY_FName(GetMemoryStatType((EShaderFrequency)Target.Frequency).GetName(), Code.Num());
 		DEC_DWORD_STAT_BY(STAT_Shaders_ShaderResourceMemory, Code.GetAllocatedSize());
 		Code.Empty();
+		
+		if (bCodeInSharedLocation)
+		{
+			FShaderCodeLibrary::ReleaseShaderCode(OutputHash);
+			bCodeInSharedLocation = false;
+		}
 	}
 }
 
@@ -745,17 +783,14 @@ void FShaderResource::InitializeShaderRHI()
 
 FShaderResourceId FShaderResource::GetId() const
 {
-	FShaderResourceId ShaderId;
-	ShaderId.Target = Target;
-	ShaderId.OutputHash = OutputHash;
-	ShaderId.SpecificShaderTypeName = SpecificType ? SpecificType->GetName() : NULL;
-	return ShaderId;
+	return FShaderResourceId(Target, OutputHash, SpecificType ? SpecificType->GetName() : nullptr, SpecificPermutationId);
 }
 
-FShaderId::FShaderId(const FSHAHash& InMaterialShaderMapHash, const FShaderPipelineType* InShaderPipeline, FVertexFactoryType* InVertexFactoryType, FShaderType* InShaderType, FShaderTarget InTarget)
+FShaderId::FShaderId(const FSHAHash& InMaterialShaderMapHash, const FShaderPipelineType* InShaderPipeline, FVertexFactoryType* InVertexFactoryType, FShaderType* InShaderType, int32 InPermutationId, FShaderTarget InTarget)
 	: MaterialShaderMapHash(InMaterialShaderMapHash)
 	, ShaderPipeline(InShaderPipeline)
 	, ShaderType(InShaderType)
+	, PermutationId(InPermutationId)
 	, SourceHash(InShaderType->GetSourceHash())
 	, SerializationHistory(InShaderType->GetSerializationHistory())
 	, Target(InTarget)
@@ -785,6 +820,7 @@ FSelfContainedShaderId::FSelfContainedShaderId(const FShaderId& InShaderId)
 	VFSourceHash = InShaderId.VFSourceHash;
 	VFSerializationHistory = InShaderId.VFSerializationHistory ? *InShaderId.VFSerializationHistory : FSerializationHistory();
 	ShaderTypeName = InShaderId.ShaderType->GetName();
+	PermutationId = InShaderId.PermutationId;
 	SourceHash = InShaderId.SourceHash;
 	SerializationHistory = InShaderId.SerializationHistory;
 	Target = InShaderId.Target;
@@ -809,6 +845,8 @@ bool FSelfContainedShaderId::IsValid()
 
 FArchive& operator<<(FArchive& Ar,class FSelfContainedShaderId& Ref)
 {
+	Ar.UsingCustomVersion(FRenderingObjectVersion::GUID);
+
 	Ar << Ref.MaterialShaderMapHash 
 		<< Ref.VertexFactoryTypeName
 		<< Ref.ShaderPipelineName
@@ -818,6 +856,11 @@ FArchive& operator<<(FArchive& Ar,class FSelfContainedShaderId& Ref)
 		<< Ref.SourceHash
 		<< Ref.SerializationHistory
 		<< Ref.Target;
+
+	if (Ar.CustomVer(FRenderingObjectVersion::GUID) >= FRenderingObjectVersion::ShaderPermutationId)
+	{
+		Ar << Ref.PermutationId;
+	}
 
 	return Ar;
 }
@@ -831,6 +874,7 @@ FShader::FShader() :
 	ShaderPipeline(nullptr),
 	VFType(nullptr),
 	Type(nullptr), 
+	PermutationId(0),
 	NumRefs(0),
 	SetParametersId(0),
 	Canary(ShaderMagic_Uninitialized)
@@ -849,6 +893,7 @@ FShader::FShader(const CompiledShaderInitializerType& Initializer):
 	ShaderPipeline(Initializer.ShaderPipeline),
 	VFType(Initializer.VertexFactoryType),
 	Type(Initializer.Type),
+	PermutationId(Initializer.PermutationId),
 	Target(Initializer.Target),
 	NumRefs(0),
 	SetParametersId(0),
@@ -911,12 +956,18 @@ bool FShader::SerializeBase(FArchive& Ar, bool bShadersInline)
 {
 	Serialize(Ar);
 
+	Ar.UsingCustomVersion(FRenderingObjectVersion::GUID);
+
 	Ar << OutputHash;
 	Ar << MaterialShaderMapHash;
 	Ar << ShaderPipeline;
 	Ar << VFType;
 	Ar << VFSourceHash;
 	Ar << Type;
+	if (Ar.CustomVer(FRenderingObjectVersion::GUID) >= FRenderingObjectVersion::ShaderPermutationId)
+	{
+		Ar << PermutationId;
+	}
 	Ar << SourceHash;
 	Ar << Target;
 
@@ -931,7 +982,8 @@ bool FShader::SerializeBase(FArchive& Ar, bool bShadersInline)
 			Ar << StructName;
 
 			FUniformBufferStruct* Struct = FindUniformBufferStructByName(*StructName);
-			FShaderUniformBufferParameter* Parameter = Struct ? Struct->ConstructTypedParameter() : new FShaderUniformBufferParameter();
+			checkf(Struct, TEXT("Uniform Buffer Struct %s no longer exists, which shader of type %s was compiled with.  Modify ShaderVersion.ush to invalidate old shaders."), *StructName, Type->GetName());
+			FShaderUniformBufferParameter* Parameter = Struct->ConstructTypedParameter();
 
 			Ar << *Parameter;
 
@@ -961,6 +1013,7 @@ bool FShader::SerializeBase(FArchive& Ar, bool bShadersInline)
 		// Save the shader resource if we are inlining shaders
 		if (Ar.IsSaving())
 		{
+			check(Resource->Target == Target);
 			Resource->Serialize(Ar);
 		}
 
@@ -977,10 +1030,7 @@ bool FShader::SerializeBase(FArchive& Ar, bool bShadersInline)
 		if (Ar.IsLoading())
 		{
 			// generate a resource id
-			FShaderResourceId ResourceId;
-			ResourceId.Target = Target;
-			ResourceId.OutputHash = OutputHash;
-			ResourceId.SpecificShaderTypeName = Type->LimitShaderResourceToThisType() ? Type->GetName() : NULL;
+			FShaderResourceId ResourceId(Target, OutputHash, Type->LimitShaderResourceToThisType() ? Type->GetName() : nullptr, Type->LimitShaderResourceToThisType() ? PermutationId : 0);
 
 			// use it to look up in the registered resource map
 			FShaderResource* ExistingResource = FShaderResource::FindShaderResourceById(ResourceId);
@@ -1041,6 +1091,7 @@ FShaderId FShader::GetId() const
 	ShaderId.VFSourceHash = VFSourceHash;
 	ShaderId.VFSerializationHistory = VFType ? VFType->GetSerializationHistory((EShaderFrequency)GetTarget().Frequency) : NULL;
 	ShaderId.ShaderType = Type;
+	ShaderId.PermutationId = PermutationId;
 	ShaderId.SourceHash = SourceHash;
 	ShaderId.Target = Target;
 	return ShaderId;
@@ -1352,7 +1403,7 @@ FShaderPipeline::FShaderPipeline(const FShaderPipelineType* InPipelineType, cons
 				GeometryShader = Shader;
 				break;
 			default:
-				checkf(0, TEXT("Invalid stage %u found!"), Shader->GetType()->GetFrequency());
+				checkf(0, TEXT("Invalid stage %u found!"), (uint32)Shader->GetType()->GetFrequency());
 				break;
 			}
 		}
@@ -1397,7 +1448,7 @@ FShaderPipeline::FShaderPipeline(const FShaderPipelineType* InPipelineType, cons
 				GeometryShader = Shader;
 				break;
 			default:
-				checkf(0, TEXT("Invalid stage %u found!"), Shader->GetType()->GetFrequency());
+				checkf(0, TEXT("Invalid stage %u found!"), (uint32)Shader->GetType()->GetFrequency());
 				break;
 			}
 		}
@@ -1731,10 +1782,10 @@ void ShaderMapAppendKeyString(EShaderPlatform Platform, FString& KeyString)
 		static const auto CVarMobileMultiView = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.MobileMultiView"));
 		static const auto CVarMonoscopicFarField = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.MonoscopicFarField"));
 
-		const bool bIsInstancedStereo = ((Platform == EShaderPlatform::SP_PCD3D_SM5 || Platform == EShaderPlatform::SP_PS4) && (CVarInstancedStereo && CVarInstancedStereo->GetValueOnGameThread() != 0));
-		const bool bIsMultiView = (Platform == EShaderPlatform::SP_PS4 && (CVarMultiView && CVarMultiView->GetValueOnGameThread() != 0));
+		const bool bIsInstancedStereo = (RHISupportsInstancedStereo(Platform) && (CVarInstancedStereo && CVarInstancedStereo->GetValueOnGameThread() != 0));
+		const bool bIsMultiView = (RHISupportsMultiView(Platform) && (CVarMultiView && CVarMultiView->GetValueOnGameThread() != 0));
 
-		const bool bIsAndroidGLES = (Platform == EShaderPlatform::SP_OPENGL_ES3_1_ANDROID || Platform == EShaderPlatform::SP_OPENGL_ES2_ANDROID);
+		const bool bIsAndroidGLES = RHISupportsMobileMultiView(Platform);
 		const bool bIsMobileMultiView = (bIsAndroidGLES && (CVarMobileMultiView && CVarMobileMultiView->GetValueOnGameThread() != 0));
 
 		const bool bIsMonoscopicFarField = CVarMonoscopicFarField && (CVarMonoscopicFarField->GetValueOnGameThread() != 0);
@@ -1769,6 +1820,10 @@ void ShaderMapAppendKeyString(EShaderPlatform Platform, FString& KeyString)
 	}
 
 	{
+		KeyString += UsePreExposure(Platform) ? TEXT("_PreExp") : TEXT("");
+	}
+
+	{
 		static IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.DBuffer"));
 		KeyString += (CVar && CVar->GetInt() != 0) ? TEXT("_DBuf") : TEXT("_NoDBuf");
 	}
@@ -1794,16 +1849,23 @@ void ShaderMapAppendKeyString(EShaderPlatform Platform, FString& KeyString)
 		KeyString += (CVar && CVar->GetInt() == 0) ? TEXT("_NoFastMath") : TEXT("");
 	}
 	
-	if (IsMetalPlatform(Platform))
 	{
-		static const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shaders.ZeroInitialise"));
-		KeyString += (CVar && CVar->GetInt() != 0) ? TEXT("_ZeroInit") : TEXT("");
-	}
-	
-	if (IsMetalPlatform(Platform))
-	{
-		static const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shaders.BoundsChecking"));
-		KeyString += (CVar && CVar->GetInt() != 0) ? TEXT("_BoundsChecking") : TEXT("");
+		static const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shaders.FlowControlMode"));
+		if (CVar)
+		{
+			switch(CVar->GetInt())
+			{
+				case 2:
+					KeyString += TEXT("_AvoidFlow");
+					break;
+				case 1:
+					KeyString += TEXT("_PreferFlow");
+					break;
+				case 0:
+				default:
+					break;
+			}
+		}
 	}
 
 	if (IsD3DPlatform(Platform, false))
@@ -1817,8 +1879,15 @@ void ShaderMapAppendKeyString(EShaderPlatform Platform, FString& KeyString)
 
 	if (IsMobilePlatform(Platform))
 	{
-		static IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Mobile.DisableVertexFog"));
-		KeyString += (CVar && CVar->GetInt() != 0) ? TEXT("_NoVFog") : TEXT("");
+		{
+			static IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Mobile.DisableVertexFog"));
+			KeyString += (CVar && CVar->GetInt() != 0) ? TEXT("_NoVFog") : TEXT("");
+		}
+
+		{
+			static const auto* CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.Shadow.CSM.MaxMobileCascades"));
+			KeyString += (CVar) ? FString::Printf(TEXT("MMC%d"), CVar->GetValueOnAnyThread()) : TEXT("");
+		}		
 	}
 
 	if (Platform == SP_PS4)
@@ -1847,13 +1916,57 @@ void ShaderMapAppendKeyString(EShaderPlatform Platform, FString& KeyString)
 			}
 		}
 	}
-    
-    // Encode the Metal standard into the shader compile options so that they recompile if the settings change.
-    if (IsMetalPlatform(Platform))
-    {
-        uint32 ShaderVersion = RHIGetShaderLanguageVersion(Platform);
-        KeyString += FString::Printf(TEXT("_MTLSTD%u_"), ShaderVersion);
-    }
+	
+	// Encode the Metal standard into the shader compile options so that they recompile if the settings change.
+	if (IsMetalPlatform(Platform))
+	{
+		{
+			static const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shaders.ZeroInitialise"));
+			KeyString += (CVar && CVar->GetInt() != 0) ? TEXT("_ZeroInit") : TEXT("");
+		}
+		{
+			static const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shaders.BoundsChecking"));
+			KeyString += (CVar && CVar->GetInt() != 0) ? TEXT("_BoundsChecking") : TEXT("");
+		}
+		{
+			KeyString += (!IsMobilePlatform(Platform) && (RHIGetShaderLanguageVersion(Platform) >= 2)) ? TEXT("_MVFetch") : TEXT("");
+		}
+		
+		uint32 ShaderVersion = RHIGetShaderLanguageVersion(Platform);
+		KeyString += FString::Printf(TEXT("_MTLSTD%u_"), ShaderVersion);
+		
+		bool bAllowFastIntrinsics = false;
+		bool bEnableMathOptimisations = true;
+		if (IsPCPlatform(Platform))
+		{
+			GConfig->GetBool(TEXT("/Script/MacTargetPlatform.MacTargetSettings"), TEXT("UseFastIntrinsics"), bAllowFastIntrinsics, GEngineIni);
+			GConfig->GetBool(TEXT("/Script/MacTargetPlatform.MacTargetSettings"), TEXT("EnableMathOptimisations"), bEnableMathOptimisations, GEngineIni);
+		}
+		else
+		{
+			GConfig->GetBool(TEXT("/Script/IOSRuntimeSettings.IOSRuntimeSettings"), TEXT("UseFastIntrinsics"), bAllowFastIntrinsics, GEngineIni);
+			GConfig->GetBool(TEXT("/Script/IOSRuntimeSettings.IOSRuntimeSettings"), TEXT("EnableMathOptimisations"), bEnableMathOptimisations, GEngineIni);
+		}
+		
+		if (bAllowFastIntrinsics)
+		{
+			KeyString += TEXT("_MTLSL_FastIntrin");
+		}
+		
+		// Same as console-variable above, but that's global and this is per-platform, per-project
+		if (!bEnableMathOptimisations)
+		{
+			KeyString += TEXT("_NoFastMath");
+		}
+		
+		// Shaders built for archiving - for Metal that requires compiling the code in a different way so that we can strip it later
+		bool bArchive = false;
+		GConfig->GetBool(TEXT("/Script/UnrealEd.ProjectPackagingSettings"), TEXT("bSharedMaterialNativeLibraries"), bArchive, GGameIni);
+		if (bArchive)
+		{
+			KeyString += TEXT("_ARCHIVE");
+		}
+	}
 
 	{
 		static const auto CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.StencilForLODDither"));
@@ -1864,8 +1977,8 @@ void ShaderMapAppendKeyString(EShaderPlatform Platform, FString& KeyString)
 	}
 
 	{
-		static const auto CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.ForwardShading"));
-		if (CVar && CVar->GetValueOnAnyThread() > 0)
+		static const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.ForwardShading"));
+		if (CVar && CVar->GetInt() > 0)
 		{
 			KeyString += TEXT("_FS");
 		}
@@ -1901,16 +2014,13 @@ void ShaderMapAppendKeyString(EShaderPlatform Platform, FString& KeyString)
 		{
 			KeyString += TEXT("_8u");
 		}
-    }
-    
-    if (IsMetalPlatform(Platform))
-    {
-        // Shaders built for archiving - for Metal that requires compiling the code in a different way so that we can strip it later
-        bool bArchive = false;
-        GConfig->GetBool(TEXT("/Script/UnrealEd.ProjectPackagingSettings"), TEXT("bShareMaterialShaderCode"), bArchive, GGameIni);
-        if (bArchive)
-        {
-            KeyString += TEXT("_ARCHIVE");
-        }
-    }
+	}
+	
+	{
+		static const auto CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.GPUSkin.Limit2BoneInfluences"));
+		if (CVar && CVar->GetValueOnAnyThread() != 0)
+		{
+			KeyString += TEXT("_2bi");
+		}
+	}
 }

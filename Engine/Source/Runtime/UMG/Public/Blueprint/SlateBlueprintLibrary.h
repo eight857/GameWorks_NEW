@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,7 +10,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "SlateBlueprintLibrary.generated.h"
 
-UCLASS()
+UCLASS(meta=(ScriptName="SlateLibrary"))
 class UMG_API USlateBlueprintLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_UCLASS_BODY()
@@ -46,6 +46,10 @@ public:
 	/** @return the size of the geometry in local space. */
 	UFUNCTION(BlueprintPure, Category="User Interface|Geometry")
 	static FVector2D GetLocalSize(const FGeometry& Geometry);
+
+	/** @return the size of the geometry in absolute space. */
+	UFUNCTION(BlueprintPure, Category="User Interface|Geometry")
+	static FVector2D GetAbsoluteSize(const FGeometry& Geometry);
 
 	/** @return Whether brushes A and B are identical. */
 	UFUNCTION(BlueprintPure, meta = (DisplayName = "Equal (SlateBrush)", CompactNodeTitle = "=="), Category = "SlateBrush")

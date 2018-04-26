@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Perception/AIPerceptionComponent.h"
 #include "GameFramework/Controller.h"
@@ -244,7 +244,10 @@ void UAIPerceptionComponent::CleanUp()
 
 void UAIPerceptionComponent::BeginDestroy()
 {
-	CleanUp();
+	if (!HasAnyFlags(RF_ClassDefaultObject))
+	{
+		CleanUp();
+	}
 	Super::BeginDestroy();
 }
 
@@ -358,7 +361,7 @@ void UAIPerceptionComponent::GetLocationAndDirection(FVector& Location, FVector&
 	const AActor* OwnerActor = Cast<AActor>(GetOuter());
 	if (OwnerActor != nullptr)
 	{
-		FRotator ViewRotation;
+		FRotator ViewRotation(ForceInitToZero);
 		OwnerActor->GetActorEyesViewPoint(Location, ViewRotation);
 		Direction = ViewRotation.Vector();
 	}
@@ -680,6 +683,15 @@ bool UAIPerceptionComponent::GetActorsPerception(AActor* Actor, FActorPerception
 	}
 
 	return bInfoFound;
+}
+
+void UAIPerceptionComponent::SetSenseEnabled(TSubclassOf<UAISense> SenseClass, const bool bEnable)
+{
+	const FAISenseID SenseID = UAISense::GetSenseID(SenseClass);
+	if (SenseID.IsValid())
+	{
+		UpdatePerceptionWhitelist(SenseID, bEnable);
+	}
 }
 
 //----------------------------------------------------------------------//

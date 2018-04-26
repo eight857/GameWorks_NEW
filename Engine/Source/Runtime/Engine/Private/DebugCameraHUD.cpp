@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
    DebugCameraInput.cpp: Native implementation for the debug camera
@@ -110,7 +110,7 @@ void ADebugCameraHUD::PostRender()
 			bTraceComplex = CVarDebugCameraTraceComplex.GetValueOnGameThread() != 0;
 #endif
 
-			FCollisionQueryParams TraceParams(NAME_None, bTraceComplex, this);
+			FCollisionQueryParams TraceParams(NAME_None, FCollisionQueryParams::GetUnknownStatId(), bTraceComplex, this);
 			FHitResult Hit;
 			bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, CamRot.Vector() * 100000.f + CamLoc, ECC_Pawn, TraceParams);
 

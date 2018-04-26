@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ParticleModules.cpp: Particle module implementation.
@@ -2129,9 +2129,7 @@ void UParticleModuleSubUV::Spawn(FParticleEmitterInstance* Owner, int32 Offset, 
 		return;
 	}
 
-	UParticleModuleTypeDataBase* TypeDataBase = Cast<UParticleModuleTypeDataBase>(LODLevel->TypeDataModule);
-	bool bSpawn = (TypeDataBase == NULL) ? true : TypeDataBase->SupportsSubUV();
-	if (bSpawn == true)
+	if (!LODLevel->TypeDataModule || LODLevel->TypeDataModule->SupportsSubUV())
 	{
 		SPAWN_INIT;
 		{
@@ -2169,9 +2167,7 @@ void UParticleModuleSubUV::Update(FParticleEmitterInstance* Owner, int32 Offset,
 		}
 	}
 
-	UParticleModuleTypeDataBase* TypeDataBase = Cast<UParticleModuleTypeDataBase>(LODLevel->TypeDataModule);
-	bool bUpdate = (TypeDataBase == NULL) ? true : TypeDataBase->SupportsSubUV();
-	if (bUpdate == true)
+	if (!LODLevel->TypeDataModule || LODLevel->TypeDataModule->SupportsSubUV())
 	{
 		BEGIN_UPDATE_LOOP;
 			if (Particle.RelativeTime > 1.0f)
@@ -2336,9 +2332,7 @@ void UParticleModuleSubUVMovie::Spawn(FParticleEmitterInstance* Owner, int32 Off
 		return UParticleModuleSubUV::Spawn(Owner, Offset, SpawnTime, ParticleBase);
 	}
 
-	UParticleModuleTypeDataBase* TypeDataBase = Cast<UParticleModuleTypeDataBase>(LODLevel->TypeDataModule);
-	bool bSpawn = (TypeDataBase == NULL) ? true : TypeDataBase->SupportsSubUV();
-	if (bSpawn == true)
+	if (!LODLevel->TypeDataModule || LODLevel->TypeDataModule->SupportsSubUV())
 	{
 		USubUVAnimation* RESTRICT SubUVAnimation = Owner->SpriteTemplate->SubUVAnimation;
 
@@ -2543,7 +2537,7 @@ void UParticleModuleAccelerationConstant::Spawn(FParticleEmitterInstance* Owner,
 	check(LODLevel);
 	if (bAlwaysInWorldSpace && LODLevel->RequiredModule->bUseLocalSpace)
 	{
-		FVector LocalAcceleration = Owner->Component->ComponentToWorld.InverseTransformVector(Acceleration);
+		FVector LocalAcceleration = Owner->Component->GetComponentTransform().InverseTransformVector(Acceleration);
 		Particle.Velocity		+= LocalAcceleration * SpawnTime;
 		Particle.BaseVelocity	+= LocalAcceleration * SpawnTime;
 	}
@@ -2572,7 +2566,7 @@ void UParticleModuleAccelerationConstant::Update(FParticleEmitterInstance* Owner
 	FPlatformMisc::Prefetch(Owner->ParticleData, (Owner->ParticleIndices[0] * Owner->ParticleStride) + PLATFORM_CACHE_LINE_SIZE);
 	if (bAlwaysInWorldSpace && LODLevel->RequiredModule->bUseLocalSpace)
 	{
-		FTransform Mat = Owner->Component->ComponentToWorld;
+		FTransform Mat = Owner->Component->GetComponentTransform();
 		FVector LocalAcceleration = Mat.InverseTransformVector(Acceleration);
 		BEGIN_UPDATE_LOOP;
 		{
@@ -2866,14 +2860,14 @@ void UParticleModuleAcceleration::Spawn(FParticleEmitterInstance* Owner, int32 O
 	UsedAcceleration = Acceleration.GetValue(Owner->EmitterTime, Owner->Component);
 	if ((bApplyOwnerScale == true) && Owner && Owner->Component)
 	{
-		FVector Scale = Owner->Component->ComponentToWorld.GetScale3D();
+		FVector Scale = Owner->Component->GetComponentTransform().GetScale3D();
 		UsedAcceleration *= Scale;
 	}
 	UParticleLODLevel* LODLevel	= Owner->SpriteTemplate->GetCurrentLODLevel(Owner);
 	check(LODLevel);
 	if (bAlwaysInWorldSpace && LODLevel->RequiredModule->bUseLocalSpace)
 	{
-		FVector TempUsedAcceleration = Owner->Component->ComponentToWorld.InverseTransformVector(UsedAcceleration);
+		FVector TempUsedAcceleration = Owner->Component->GetComponentTransform().InverseTransformVector(UsedAcceleration);
 		Particle.Velocity		+= TempUsedAcceleration * SpawnTime;
 		Particle.BaseVelocity	+= TempUsedAcceleration * SpawnTime;
 	}
@@ -2901,7 +2895,7 @@ void UParticleModuleAcceleration::Update(FParticleEmitterInstance* Owner, int32 
 	FPlatformMisc::Prefetch(Owner->ParticleData, (Owner->ParticleIndices[0] * Owner->ParticleStride) + PLATFORM_CACHE_LINE_SIZE);
 	if (bAlwaysInWorldSpace && LODLevel->RequiredModule->bUseLocalSpace)
 	{
-		FTransform Mat = Owner->Component->ComponentToWorld;
+		FTransform Mat = Owner->Component->GetComponentTransform();
 		BEGIN_UPDATE_LOOP;
 		{
 			FVector& UsedAcceleration = *((FVector*)(ParticleBase + CurrentOffset));																\
@@ -2991,7 +2985,7 @@ void UParticleModuleAccelerationOverLifetime::Update(FParticleEmitterInstance* O
 	check(LODLevel);
 	if (bAlwaysInWorldSpace && LODLevel->RequiredModule->bUseLocalSpace)
 	{
-		FTransform Mat = Owner->Component->ComponentToWorld;
+		FTransform Mat = Owner->Component->GetComponentTransform();
 		BEGIN_UPDATE_LOOP;
 			// Acceleration should always be in world space...
 			FVector Accel = AccelOverLife.GetValue(Particle.RelativeTime, Owner->Component);
@@ -3136,7 +3130,7 @@ uint64 UParticleModuleLight::SpawnHQLight(const FLightParticlePayload& Payload, 
 	}
 
 	// Construct the new component and attach as needed				
-	UPointLightComponent* PointLightComponent = NewObject<UPointLightComponent>(HQLightContainer, NAME_None, RF_NoFlags);
+	UPointLightComponent* PointLightComponent = NewObject<UPointLightComponent>(HQLightContainer, NAME_None, RF_Transient);
 	if (PointLightComponent)
 	{
 		LightId = (uint64)PointLightComponent;
@@ -3156,7 +3150,7 @@ uint64 UParticleModuleLight::SpawnHQLight(const FLightParticlePayload& Payload, 
 		PointLightComponent->bUseInverseSquaredFalloff = bUseInverseSquaredFalloff;
 		PointLightComponent->bAffectTranslucentLighting = bAffectsTranslucency;
 		PointLightComponent->VolumetricScatteringIntensity = VolumetricScatteringIntensity;
-		PointLightComponent->SetCastShadows(bShadowCastingLights);
+		PointLightComponent->SetCastShadows(bShadowCastingLights);		
 
 		PointLightComponent->RegisterComponent();
 		Owner->HighQualityLights.Add(PointLightComponent);
@@ -3183,10 +3177,13 @@ void UParticleModuleLight::UpdateHQLight(UPointLightComponent* PointLightCompone
 	FLinearColor DesiredFinalColor = FVector(Particle.Color) * Particle.Color.A * Payload.ColorScale;
 	if (bUseInverseSquaredFalloff)
 	{
-		//later in light rendering HQ lights are multiplied by 16 in inverse falloff mode to adjust for lumens.  
-		//We want our particle lights to match simple lights as much as possible when toggling so remove that here.
-		const float fLumenAdjust = 1.0f / 16.0f;
-		DesiredFinalColor *= fLumenAdjust;
+		// For compatibility reasons, the default units are ELightUnits::Unitless. If this change, this needs to be updated.
+		ensure(PointLightComponent->IntensityUnits == ELightUnits::Unitless);
+
+		// Non HQ lights are drawn in 0.0001 Candelas units according to the lighting in DeferredLightPixelShaders.usf
+		// the 1/100^2 factor comes from the radial attenuation being computed in cm instead of in meters.
+		static const float ShaderUnitConversion  = UPointLightComponent::GetUnitsConversionFactor(ELightUnits::Candelas, ELightUnits::Unitless) / (100.f * 100.f);
+		DesiredFinalColor *= ShaderUnitConversion;
 	}
 
 	//light color on HQ lights is just a uint32 and our light scalars can be huge.  To preserve the color control and range from the particles we need to normalize
@@ -3338,7 +3335,7 @@ void UParticleModuleLight::Render3DPreview(FParticleEmitterInstance* Owner, cons
 		int32 Offset = 0;
 		UParticleLODLevel* LODLevel	= Owner->SpriteTemplate->GetCurrentLODLevel(Owner);
 		const bool bLocalSpace = LODLevel->RequiredModule->bUseLocalSpace;
-		const FVector Scale = Owner->Component->ComponentToWorld.GetScale3D();
+		const FVector Scale = Owner->Component->GetComponentTransform().GetScale3D();
 		const FMatrix LocalToWorld = Owner->EmitterToSimulation * Owner->SimulationToWorld;
 		check(LODLevel);
 
@@ -3607,11 +3604,11 @@ void UParticleModuleKillBox::Update(FParticleEmitterInstance* Owner, int32 Offse
 
 		if (LODLevel->RequiredModule->bUseLocalSpace)
 		{
-			Position = Owner->Component->ComponentToWorld.TransformVector(Position);
+			Position = Owner->Component->GetComponentTransform().TransformVector(Position);
 		}
 		else if ((bAxisAlignedAndFixedSize == false) && (bAbsolute == false))
 		{
-			Position = Owner->Component->ComponentToWorld.InverseTransformPosition(Position) + Owner->Component->ComponentToWorld.GetLocation();
+			Position = Owner->Component->GetComponentTransform().InverseTransformPosition(Position) + Owner->Component->GetComponentTransform().GetLocation();
 		}
 
 		// Determine if the particle is inside the box
@@ -3656,7 +3653,7 @@ void UParticleModuleKillBox::Render3DPreview(FParticleEmitterInstance* Owner, co
 		{
 			for (int32 i = 0; i < 8; ++i)
 			{
-				KillboxVerts[i] = Owner->Component->ComponentToWorld.TransformPosition(KillboxVerts[i]);
+				KillboxVerts[i] = Owner->Component->GetComponentTransform().TransformPosition(KillboxVerts[i]);
 			}
 		}
 		else
@@ -3736,7 +3733,7 @@ void UParticleModuleKillHeight::Update(FParticleEmitterInstance* Owner, int32 Of
 	float CheckHeight = Height.GetValue(Owner->EmitterTime, Owner->Component);
 	if (bApplyPSysScale == true)
 	{
-		FVector OwnerScale = Owner->Component->ComponentToWorld.GetScale3D();
+		FVector OwnerScale = Owner->Component->GetComponentTransform().GetScale3D();
 		CheckHeight *= OwnerScale.Z;
 	}
 
@@ -3751,7 +3748,7 @@ void UParticleModuleKillHeight::Update(FParticleEmitterInstance* Owner, int32 Of
 
 		if (LODLevel->RequiredModule->bUseLocalSpace)
 		{
-			Position = Owner->Component->ComponentToWorld.TransformVector(Position);
+			Position = Owner->Component->GetComponentTransform().TransformVector(Position);
 		}
 
 		if ((bFloor == true) && (Position.Z < CheckHeight))
@@ -3780,7 +3777,7 @@ void UParticleModuleKillHeight::Render3DPreview(FParticleEmitterInstance* Owner,
 		float ScaleValue = 1.0f;
 		if (bApplyPSysScale == true)
 		{
-			FVector OwnerScale = Owner->Component->ComponentToWorld.GetScale3D();
+			FVector OwnerScale = Owner->Component->GetComponentTransform().GetScale3D();
 			ScaleValue = OwnerScale.Z;
 		}
 		CheckHeight *= ScaleValue;
@@ -4296,11 +4293,11 @@ void UParticleModuleAttractorParticle::Update(FParticleEmitterInstance* Owner, i
 		{
 			if (bSrcUseLocalSpace)
 			{
-				SrcLocation = Owner->Component->ComponentToWorld.TransformVector(SrcLocation);
+				SrcLocation = Owner->Component->GetComponentTransform().TransformVector(SrcLocation);
 			}
 			if (bUseLocalSpace)
 			{
-				ParticleLocation = Owner->Component->ComponentToWorld.TransformVector(Particle.Location);
+				ParticleLocation = Owner->Component->GetComponentTransform().TransformVector(Particle.Location);
 			}
 		}
 
@@ -4416,9 +4413,9 @@ void UParticleModuleAttractorPoint::Update(FParticleEmitterInstance* Owner, int3
 	if ( (LODLevel->RequiredModule->bUseLocalSpace == false) && ( bUseWorldSpacePosition == false ) )
 	{
 		// Transform the attractor into world space
-		AttractorPosition = Component->ComponentToWorld.TransformPosition(AttractorPosition);
+		AttractorPosition = Component->GetComponentTransform().TransformPosition(AttractorPosition);
 
-		Scale *= Component->ComponentToWorld.GetScale3D();
+		Scale *= Component->GetComponentTransform().GetScale3D();
 	}
 	float ScaleSize = Scale.Size();
 

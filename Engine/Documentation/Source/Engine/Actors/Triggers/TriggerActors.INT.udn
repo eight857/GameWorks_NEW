@@ -3,6 +3,9 @@ Title: Trigger Actors
 Crumbs: %ROOT%, Engine, Engine/Actors
 Description:Actor that can be activated and cause events to occur in the level.
 version: 4.9
+Parent:Engine/Actors/Types
+order:7
+type:overview
 
 [TOC(start:2)]
 
@@ -47,5 +50,7 @@ Level Blueprint for the current level:
 The exec pin of the new event node will fire each time the particular event occurs - in the example above, any time an Actor 
 overlaps (or runs through) the Trigger:
 
-<!-- Add GIF/slider showing overlap during play and pin firing in graph -->
+[COMMENT:none]
+ Add GIF/slider showing overlap during play and pin firing in graph 
+[/COMMENT]
 

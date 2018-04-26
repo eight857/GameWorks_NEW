@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Camera/CameraShake.h"
 #include "Camera/PlayerCameraManager.h"
@@ -345,10 +345,14 @@ bool UCameraShake::IsFinished() const
 		);
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 bool UCameraShake::ReceiveIsFinished_Implementation() const
 {
 	return true;
 }
+
+/// @endcond
 
 bool UCameraShake::IsLooping() const
 {

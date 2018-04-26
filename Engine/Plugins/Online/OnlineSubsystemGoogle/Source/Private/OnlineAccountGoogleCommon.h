@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
  
@@ -49,6 +49,14 @@ public:
 	 * @param InJsonStr a json payload from a /me request
 	 */
 	bool Parse(const FAuthTokenGoogle& InAuthToken, const FString& InJsonStr);
+
+	/**
+	 * Parse Json profile request data into the user account
+	 *
+	 * @param InAuthToken previously associated auth token with this Json response
+	 * @param InJsonObject a json payload from a /me request
+	 */
+	bool Parse(const FAuthTokenGoogle& InAuthToken, TSharedPtr<FJsonObject> InJsonObject);
 
 protected:
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AudioMixerDevice.h"
 #include "AudioMixerSource.h"
@@ -13,6 +13,7 @@
 #include "DSP/SinOsc.h"
 #include "UObject/UObjectIterator.h"
 #include "Runtime/HeadMountedDisplay/Public/IHeadMountedDisplayModule.h"
+#include "Misc/App.h"
 
 #if WITH_EDITOR
 #include "AudioEditorModule.h"
@@ -24,8 +25,6 @@ namespace Audio
 
 	FMixerDevice::FMixerDevice(IAudioMixerPlatformInterface* InAudioMixerPlatform)
 		: AudioMixerPlatform(InAudioMixerPlatform)
-		, NumSpatialChannels(0)
-		, OmniPanFactor(0.0f)
 		, AudioClockDelta(0.0)
 		, AudioClock(0.0)
 		, SourceManager(this)
@@ -103,17 +102,26 @@ namespace Audio
 	bool FMixerDevice::InitializeHardware()
 	{
 		AUDIO_MIXER_CHECK_GAME_THREAD(this);
+	
+		// Log that we're inside the audio mixer
+		UE_LOG(LogAudioMixer, Display, TEXT("Initializing audio mixer."));
 
 		if (AudioMixerPlatform && AudioMixerPlatform->InitializeHardware())
 		{
+			// Set whether we're the main audio mixer
+			bIsMainAudioMixer = IsMainAudioDevice();
+
 			AUDIO_MIXER_CHECK(SampleRate != 0.0f);
-			AUDIO_MIXER_CHECK(DeviceOutputBufferLength != 0);
 
 			AudioMixerPlatform->RegisterDeviceChangedListener();
 
-			OpenStreamParams.NumFrames = DeviceOutputBufferLength;
-			OpenStreamParams.OutputDeviceIndex = 0; // Default device
-			OpenStreamParams.SampleRate = AUDIO_SAMPLE_RATE;
+			// Allow platforms to override the platform settings callback buffer frame size (i.e. restrict to particular values, etc)
+			PlatformSettings.CallbackBufferFrameSize = AudioMixerPlatform->GetNumFrames(PlatformSettings.CallbackBufferFrameSize);
+
+			OpenStreamParams.NumBuffers = PlatformSettings.NumBuffers;
+			OpenStreamParams.NumFrames = PlatformSettings.CallbackBufferFrameSize;
+			OpenStreamParams.OutputDeviceIndex = AUDIO_MIXER_DEFAULT_DEVICE_INDEX; // TODO: Support overriding which audio device user wants to open, not necessarily default.
+			OpenStreamParams.SampleRate = SampleRate;
 			OpenStreamParams.AudioMixer = this;
 
 			FString DefaultDeviceName = AudioMixerPlatform->GetDefaultDeviceName();
@@ -163,25 +171,43 @@ namespace Audio
 				AudioClock = 0.0;
 				AudioClockDelta = (double)OpenStreamParams.NumFrames / OpenStreamParams.SampleRate;
 
+				FAudioPluginInitializationParams PluginInitializationParams;
+				PluginInitializationParams.NumSources = MaxChannels;
+				PluginInitializationParams.SampleRate = SampleRate;
+				PluginInitializationParams.BufferLength = OpenStreamParams.NumFrames;
+				PluginInitializationParams.AudioDevicePtr = this;
 
 				// Initialize any plugins if they exist
 				if (SpatializationPluginInterface.IsValid())
 				{
-					SpatializationPluginInterface->Initialize(AUDIO_SAMPLE_RATE, MaxChannels, OpenStreamParams.NumFrames);
+					SpatializationPluginInterface->Initialize(PluginInitializationParams);
+				}
+
+				// Create a new ambisonics mixer.
+				IAudioSpatializationFactory* SpatializationPluginFactory = AudioPluginUtilities::GetDesiredSpatializationPlugin(AudioPluginUtilities::CurrentPlatform);
+				if (SpatializationPluginFactory != nullptr)
+				{
+					AmbisonicsMixer = SpatializationPluginFactory->CreateNewAmbisonicsMixer(this);
+					if (AmbisonicsMixer.IsValid())
+					{
+						AmbisonicsMixer->Initialize(PluginInitializationParams);
+					}
 				}
 
 				if (OcclusionInterface.IsValid())
 				{
-					OcclusionInterface->Initialize(AUDIO_SAMPLE_RATE, MaxChannels);
+					OcclusionInterface->Initialize(PluginInitializationParams);
 				}
 
 				if (ReverbPluginInterface.IsValid())
 				{
-					ReverbPluginInterface->Initialize(AUDIO_SAMPLE_RATE, MaxChannels, OpenStreamParams.NumFrames);
+					ReverbPluginInterface->Initialize(PluginInitializationParams);
 				}
 
 				// Need to set these up before we start the audio stream.
 				InitSoundSubmixes();
+
+				AudioMixerPlatform->PostInitializeHardware();
 
 				// Start streaming audio
 				return AudioMixerPlatform->StartAudioStream();
@@ -190,9 +216,20 @@ namespace Audio
 		return false;
 	}
 
+	void FMixerDevice::FadeIn()
+	{
+		AudioMixerPlatform->FadeIn();
+	}
+
 	void FMixerDevice::FadeOut()
 	{
-		AudioMixerPlatform->FadeOut();
+		// In editor builds, we aren't going to fade out the main audio device.
+#if WITH_EDITOR
+		if (!IsMainAudioDevice())
+#endif
+		{
+			AudioMixerPlatform->FadeOut();
+		}
 	}
 
 	void FMixerDevice::TeardownHardware()
@@ -201,10 +238,15 @@ namespace Audio
 		{
 			SourceManager.Update();
 
-			AudioMixerPlatform->UnRegisterDeviceChangedListener();
+			AudioMixerPlatform->UnregisterDeviceChangedListener();
 			AudioMixerPlatform->StopAudioStream();
 			AudioMixerPlatform->CloseAudioStream();
 			AudioMixerPlatform->TeardownHardware();
+		}
+
+		if (AmbisonicsMixer.IsValid())
+		{
+			AmbisonicsMixer->Shutdown();
 		}
 	}
 
@@ -217,13 +259,24 @@ namespace Audio
 			// Get the platform device info we're using
 			PlatformInfo = AudioMixerPlatform->GetPlatformDeviceInfo();
 
-			SampleRate = AUDIO_SAMPLE_RATE;
-
 			// Initialize some data that depends on speaker configuration, etc.
 			InitializeChannelAzimuthMap(PlatformInfo.NumChannels);
 
+			// Update the channel device count in case it changed
 			SourceManager.UpdateDeviceChannelCount(PlatformInfo.NumChannels);
+
+			// Audio rendering was suspended in CheckAudioDeviceChange if it changed.
+			AudioMixerPlatform->ResumePlaybackOnNewDevice();
 		}
+
+		ListenerTransforms.Reset();
+		for (FListener& Listener : Listeners)
+		{
+			ListenerTransforms.Add(Listener.Transform);
+		}
+
+		// Update listener transforms, some effects use the listener transform data
+		SourceManager.SetListenerTransforms(ListenerTransforms);
 	}
 
 	double FMixerDevice::GetAudioTime() const
@@ -256,13 +309,7 @@ namespace Audio
 
 	bool FMixerDevice::SupportsRealtimeDecompression() const
 	{
-		// TODO: Test and implement realt-time decompression on all other platforms
-#if PLATFORM_WINDOWS
-		return true;
-#else
-		return false;
-#endif
-
+		return AudioMixerPlatform->SupportsRealtimeDecompression();
 	}
 
 	class ICompressedAudioInfo* FMixerDevice::CreateCompressedAudioInfo(USoundWave* InSoundWave)
@@ -299,10 +346,12 @@ namespace Audio
 
 	void FMixerDevice::ResumeContext()
 	{
+        AudioMixerPlatform->ResumeContext();
 	}
 
 	void FMixerDevice::SuspendContext()
 	{
+        AudioMixerPlatform->SuspendContext();
 	}
 
 	void FMixerDevice::EnableDebugAudioOutput()
@@ -310,12 +359,12 @@ namespace Audio
 		bDebugOutputEnabled = true;
 	}
 
-	bool FMixerDevice::OnProcessAudioStream(TArray<float>& Output)
+	bool FMixerDevice::OnProcessAudioStream(AlignedFloatBuffer& Output)
 	{
-	
-// Turn on to only hear PIE audio
-#if 0
-		if (IsMainAudioDevice())
+#if WITH_EDITOR
+		// Turn on to only hear PIE audio
+		bool bBypassMainAudioDevice = FParse::Param(FCommandLine::Get(), TEXT("AudioPIEOnly"));
+		if (bBypassMainAudioDevice && IsMainAudioDevice())
 		{
 			return true;
 		}
@@ -335,7 +384,7 @@ namespace Audio
 			SCOPE_CYCLE_COUNTER(STAT_AudioMixerSubmixes);
 
 			// Process the audio output from the master submix
-			MasterSubmix->ProcessAudio(Output);
+			MasterSubmix->ProcessAudio(ESubmixChannelFormat::Device, Output);
 		}
 
 		// Do any debug output performing
@@ -348,6 +397,17 @@ namespace Audio
 		AudioClock += AudioClockDelta;
 
 		return true;
+	}
+
+	void FMixerDevice::OnAudioStreamShutdown()
+	{
+		// Make sure the source manager pumps any final commands on shutdown. These allow for cleaning up sources, interfacing with plugins, etc.
+		// Because we double buffer our command queues, we call this function twice to ensure all commands are successfully pumped.
+		SourceManager.PumpCommandQueue();
+		SourceManager.PumpCommandQueue();
+
+		// Make sure we force any pending release data to happen on shutdown
+		SourceManager.UpdatePendingReleaseData(true);
 	}
 
 	void FMixerDevice::InitSoundSubmixes()
@@ -383,6 +443,16 @@ namespace Audio
 			USoundSubmix* EQSubmix = NewObject<USoundSubmix>(USoundSubmix::StaticClass(), TEXT("Master EQ Submix"));
 			EQSubmix->AddToRoot();
 			FMixerDevice::MasterSubmixes.Add(EQSubmix);
+
+			// Master ambisonics
+			USoundSubmix* AmbisonicsSubmix = NewObject<USoundSubmix>(USoundSubmix::StaticClass(), TEXT("Master Ambisonics Submix"));
+			AmbisonicsSubmix->AddToRoot();
+			AmbisonicsSubmix->ChannelFormat = ESubmixChannelFormat::Ambisonics;
+			if (AmbisonicsMixer.IsValid())
+			{
+				AmbisonicsSubmix->AmbisonicsPluginSettings = AmbisonicsMixer->GetDefaultSettings();
+			}
+			FMixerDevice::MasterSubmixes.Add(AmbisonicsSubmix);
 		}
 
 		// Register and setup the master submixes so that the rest of the submixes can hook into these core master submixes
@@ -391,13 +461,18 @@ namespace Audio
 		{
 			for (int32 i = 0; i < EMasterSubmixType::Count; ++i)
 			{
-				MasterSubmixInstances.Add(FMixerSubmixPtr(new FMixerSubmix(this)));
+				FMixerSubmixPtr MixerSubmix = FMixerSubmixPtr(new FMixerSubmix(this));
+				MixerSubmix->Init(FMixerDevice::MasterSubmixes[i]);
+
+				MasterSubmixInstances.Add(MixerSubmix);
 			}
 
 			FMixerSubmixPtr MasterSubmixInstance = MasterSubmixInstances[EMasterSubmixType::Master];
+			
 			FSoundEffectSubmixInitData InitData;
 			InitData.SampleRate = GetSampleRate();
 
+	
 			// Setup the master reverb plugin
 			if (ReverbPluginInterface.IsValid())
 			{
@@ -413,23 +488,26 @@ namespace Audio
 				MasterReverbPluginSubmix->SetParentSubmix(MasterSubmixInstance);
 				MasterSubmixInstance->AddChildSubmix(MasterReverbPluginSubmix);
 			}
+			else
+			{
+				// Setup the master reverb only if we don't have a reverb plugin
 
-			// Setup the master reverb
-			USoundSubmix* MasterReverbSubix = FMixerDevice::MasterSubmixes[EMasterSubmixType::Reverb];
-			USubmixEffectReverbPreset* ReverbPreset = NewObject<USubmixEffectReverbPreset>(MasterReverbSubix, TEXT("Master Reverb Effect Preset"));
+				USoundSubmix* MasterReverbSubix = FMixerDevice::MasterSubmixes[EMasterSubmixType::Reverb];
+				USubmixEffectReverbPreset* ReverbPreset = NewObject<USubmixEffectReverbPreset>(MasterReverbSubix, TEXT("Master Reverb Effect Preset"));
 
-			FSoundEffectSubmix* ReverbEffectSubmix = static_cast<FSoundEffectSubmix*>(ReverbPreset->CreateNewEffect());
+				FSoundEffectSubmix* ReverbEffectSubmix = static_cast<FSoundEffectSubmix*>(ReverbPreset->CreateNewEffect());
 
-			ReverbEffectSubmix->Init(InitData);
-			ReverbEffectSubmix->SetPreset(ReverbPreset);
-			ReverbEffectSubmix->SetEnabled(true);
+				ReverbEffectSubmix->Init(InitData);
+				ReverbEffectSubmix->SetPreset(ReverbPreset);
+				ReverbEffectSubmix->SetEnabled(true);
 
-			const uint32 ReverbPresetId = ReverbPreset->GetUniqueID();
+				const uint32 ReverbPresetId = ReverbPreset->GetUniqueID();
 
-			FMixerSubmixPtr MasterReverbSubmix = MasterSubmixInstances[EMasterSubmixType::Reverb];
-			MasterReverbSubmix->AddSoundEffectSubmix(ReverbPresetId, MakeShareable(ReverbEffectSubmix));
-			MasterReverbSubmix->SetParentSubmix(MasterSubmixInstance);
-			MasterSubmixInstance->AddChildSubmix(MasterReverbSubmix);
+				FMixerSubmixPtr MasterReverbSubmix = MasterSubmixInstances[EMasterSubmixType::Reverb];
+				MasterReverbSubmix->AddSoundEffectSubmix(ReverbPresetId, MakeShareable(ReverbEffectSubmix));
+				MasterReverbSubmix->SetParentSubmix(MasterSubmixInstance);
+				MasterSubmixInstance->AddChildSubmix(MasterReverbSubmix);
+			}
 
 			// Setup the master EQ
 			USoundSubmix* MasterEQSoundSubmix = FMixerDevice::MasterSubmixes[EMasterSubmixType::EQ];
@@ -446,13 +524,19 @@ namespace Audio
 			MasterEQSubmix->AddSoundEffectSubmix(EQPresetId, MakeShareable(EQEffectSubmix));
 			MasterEQSubmix->SetParentSubmix(MasterSubmixInstance);
 			MasterSubmixInstance->AddChildSubmix(MasterEQSubmix);
+
+			// Add the ambisonics master submix
+			FMixerSubmixPtr MasterAmbisonicsSubmix = MasterSubmixInstances[EMasterSubmixType::Ambisonics];
+			MasterAmbisonicsSubmix->SetParentSubmix(MasterEQSubmix);
+			MasterEQSubmix->AddChildSubmix(MasterAmbisonicsSubmix);
 		}
 
 		// Now register all the non-core submixes
 
 		// Reset existing submixes if they exist
 		Submixes.Reset();
-		// Make sure all submixs are registered but not initialized
+
+		// Make sure all submixes are registered but not initialized
 		for (TObjectIterator<USoundSubmix> It; It; ++It)
 		{
 			RegisterSoundSubmix(*It, false);
@@ -480,15 +564,78 @@ namespace Audio
 			// Now add all the child submixes to this submix instance
 			for (USoundSubmix* ChildSubmix : SoundSubmix->ChildSubmixes)
 			{
-				FMixerSubmixPtr ChildSubmixInstance = GetSubmixInstance(ChildSubmix);
-				SubmixInstance->ChildSubmixes.Add(ChildSubmixInstance->GetId(), ChildSubmixInstance);
+				// ChildSubmix lists can contain null entries.
+				if (ChildSubmix)
+				{
+					FChildSubmixInfo ChildSubmixInfo;
+					ChildSubmixInfo.SubmixPtr = GetSubmixInstance(ChildSubmix);
+					ChildSubmixInfo.bNeedsAmbisonicsEncoding = true;
+					SubmixInstance->ChildSubmixes.Add(ChildSubmixInfo.SubmixPtr->GetId(), ChildSubmixInfo);
+				}
 			}
 
 			// Perform any other initialization on the submix instance
 			SubmixInstance->Init(SoundSubmix);
 		}
 
+		TArray<EAudioMixerChannel::Type> StereoChannelTypes;
+		StereoChannelTypes.Add(EAudioMixerChannel::FrontLeft);
+		StereoChannelTypes.Add(EAudioMixerChannel::FrontRight);
+		ChannelArrays.Add(ESubmixChannelFormat::Stereo, StereoChannelTypes);
+
+		TArray<EAudioMixerChannel::Type> QuadChannelTypes;
+		QuadChannelTypes.Add(EAudioMixerChannel::FrontLeft);
+		QuadChannelTypes.Add(EAudioMixerChannel::FrontRight);
+		QuadChannelTypes.Add(EAudioMixerChannel::SideLeft);
+		QuadChannelTypes.Add(EAudioMixerChannel::SideRight);
+		ChannelArrays.Add(ESubmixChannelFormat::Quad, QuadChannelTypes);
+
+		TArray<EAudioMixerChannel::Type> FiveDotOneTypes;
+		FiveDotOneTypes.Add(EAudioMixerChannel::FrontLeft);
+		FiveDotOneTypes.Add(EAudioMixerChannel::FrontRight);
+		FiveDotOneTypes.Add(EAudioMixerChannel::FrontCenter);
+		FiveDotOneTypes.Add(EAudioMixerChannel::LowFrequency);
+		FiveDotOneTypes.Add(EAudioMixerChannel::SideLeft);
+		FiveDotOneTypes.Add(EAudioMixerChannel::SideRight);
+		ChannelArrays.Add(ESubmixChannelFormat::FiveDotOne, FiveDotOneTypes);
+
+		TArray<EAudioMixerChannel::Type> SevenDotOneTypes;
+		SevenDotOneTypes.Add(EAudioMixerChannel::FrontLeft);
+		SevenDotOneTypes.Add(EAudioMixerChannel::FrontRight);
+		SevenDotOneTypes.Add(EAudioMixerChannel::FrontCenter);
+		SevenDotOneTypes.Add(EAudioMixerChannel::LowFrequency);
+		SevenDotOneTypes.Add(EAudioMixerChannel::BackLeft);
+		SevenDotOneTypes.Add(EAudioMixerChannel::BackRight);
+		SevenDotOneTypes.Add(EAudioMixerChannel::SideLeft);
+		SevenDotOneTypes.Add(EAudioMixerChannel::SideRight);
+		ChannelArrays.Add(ESubmixChannelFormat::SevenDotOne, SevenDotOneTypes);
+
+		TArray<EAudioMixerChannel::Type> FirstOrderAmbisonicsTypes;
+		FirstOrderAmbisonicsTypes.Add(EAudioMixerChannel::FrontLeft);
+		FirstOrderAmbisonicsTypes.Add(EAudioMixerChannel::FrontRight);
+		FirstOrderAmbisonicsTypes.Add(EAudioMixerChannel::FrontCenter);
+		FirstOrderAmbisonicsTypes.Add(EAudioMixerChannel::LowFrequency);
+		FirstOrderAmbisonicsTypes.Add(EAudioMixerChannel::BackLeft);
+		FirstOrderAmbisonicsTypes.Add(EAudioMixerChannel::BackRight);
+		FirstOrderAmbisonicsTypes.Add(EAudioMixerChannel::SideLeft);
+		FirstOrderAmbisonicsTypes.Add(EAudioMixerChannel::SideRight);
+		ChannelArrays.Add(ESubmixChannelFormat::Ambisonics, FirstOrderAmbisonicsTypes);
 	}
+	
+ 	FAudioPlatformSettings FMixerDevice::GetPlatformSettings() const
+ 	{
+		FAudioPlatformSettings Settings = AudioMixerPlatform->GetPlatformSettings();
+
+		UE_LOG(LogAudioMixer, Display, TEXT("Audio Mixer Platform Settings:"));
+		UE_LOG(LogAudioMixer, Display, TEXT("	Sample Rate:						  %d"), Settings.SampleRate);
+		UE_LOG(LogAudioMixer, Display, TEXT("	Callback Buffer Frame Size Requested: %d"), Settings.CallbackBufferFrameSize);
+		UE_LOG(LogAudioMixer, Display, TEXT("	Callback Buffer Frame Size To Use:	  %d"), AudioMixerPlatform->GetNumFrames(PlatformSettings.CallbackBufferFrameSize));
+		UE_LOG(LogAudioMixer, Display, TEXT("	Number of buffers to queue:			  %d"), Settings.NumBuffers);
+		UE_LOG(LogAudioMixer, Display, TEXT("	Max Channels (voices):				  %d"), Settings.MaxChannels);
+		UE_LOG(LogAudioMixer, Display, TEXT("	Number of Async Source Workers:		  %d"), Settings.NumSourceWorkers);
+
+ 		return Settings;
+ 	}
 
 	FMixerSubmixPtr FMixerDevice::GetMasterSubmix()
 	{
@@ -508,6 +655,11 @@ namespace Audio
 	FMixerSubmixPtr FMixerDevice::GetMasterEQSubmix()
 	{
 		return MasterSubmixInstances[EMasterSubmixType::EQ];
+	}
+
+	FMixerSubmixPtr FMixerDevice::GetMasterAmbisonicsSubmix()
+	{
+		return MasterSubmixInstances[EMasterSubmixType::Ambisonics];
 	}
 
 	void FMixerDevice::AddMasterSubmixEffect(uint32 SubmixEffectId, FSoundEffectSubmix* SoundEffectSubmix)
@@ -686,12 +838,21 @@ namespace Audio
 		return *MixerSubmix;		
 	}
 
-	FMixerSourceVoice* FMixerDevice::GetMixerSourceVoice(const FWaveInstance* InWaveInstance, ISourceBufferQueueListener* InBufferQueueListener, bool bUseHRTFSpatialization)
+	FMixerSourceVoice* FMixerDevice::GetMixerSourceVoice()
 	{
-		// Create a new mixer source voice using our source manager
-		FMixerSourceVoice* NewMixerSourceVoice = new FMixerSourceVoice(this, &SourceManager);
+		FMixerSourceVoice* Voice = nullptr;
+		if (!SourceVoices.Dequeue(Voice))
+		{
+			Voice = new FMixerSourceVoice();
+		}
 
-		return NewMixerSourceVoice;
+		Voice->Reset(this);
+		return Voice;
+	}
+
+	void FMixerDevice::ReleaseMixerSourceVoice(FMixerSourceVoice* InSourceVoice)
+	{
+		SourceVoices.Enqueue(InSourceVoice);
 	}
 
 	int32 FMixerDevice::GetNumSources() const
@@ -704,13 +865,16 @@ namespace Audio
 		return SourceManager.GetNumActiveSources();
 	}
 
-	void FMixerDevice::Get3DChannelMap(const FWaveInstance* InWaveInstance, float EmitterAzimith, float NormalizedOmniRadius, TArray<float>& OutChannelMap)
+	void FMixerDevice::Get3DChannelMap(const ESubmixChannelFormat InSubmixType, const FWaveInstance* InWaveInstance, float EmitterAzimith, float NormalizedOmniRadius, TArray<float>& OutChannelMap)
 	{
 		// If we're center-channel only, then no need for spatial calculations, but need to build a channel map
 		if (InWaveInstance->bCenterChannelOnly)
 		{
-			// If we only have stereo channels
-			if (NumSpatialChannels == 2)
+			int32 NumOutputChannels = GetNumChannelsForSubmixFormat(InSubmixType);
+			const TArray<EAudioMixerChannel::Type>& ChannelArray = GetChannelArrayForSubmixChannelType(InSubmixType);
+
+			// If we are only spatializing to stereo output
+			if (NumOutputChannels == 2)
 			{
 				// Equal volume in left + right channel with equal power panning
 				static const float Pan = 1.0f / FMath::Sqrt(2.0f);
@@ -719,7 +883,7 @@ namespace Audio
 			}
 			else
 			{
-				for (EAudioMixerChannel::Type Channel : PlatformInfo.OutputChannelArray)
+				for (EAudioMixerChannel::Type Channel : ChannelArray)
 				{
 					float Pan = (Channel == EAudioMixerChannel::FrontCenter) ? 1.0f : 0.0f;
 					OutChannelMap.Add(Pan);
@@ -733,6 +897,9 @@ namespace Audio
 
 		const FChannelPositionInfo* PrevChannelInfo = nullptr;
 		const FChannelPositionInfo* NextChannelInfo = nullptr;
+
+		const TArray<FChannelPositionInfo>* CurrentChannelAzimuthPositionsPtr = ChannelAzimuthPositions.Find(InSubmixType);
+		const TArray<FChannelPositionInfo>& CurrentChannelAzimuthPositions = *CurrentChannelAzimuthPositionsPtr;
 
 		for (int32 i = 0; i < CurrentChannelAzimuthPositions.Num(); ++i)
 		{
@@ -797,14 +964,19 @@ namespace Audio
 			OmniAmount = 1.0f - 1.0f / NormalizedOmniRadSquared;
 		}
 
-		// OmniPan is the amount of pan to use if fully omni-directional
-		AUDIO_MIXER_CHECK(NumSpatialChannels > 0);
-
 		// Build the output channel map based on the current platform device output channel array 
 
-		float DefaultEffectivePan = !OmniAmount ? 0.0f : FMath::Lerp(0.0f, OmniPanFactor, OmniAmount);
+		int32 NumSpatialChannels = CurrentChannelAzimuthPositions.Num();
+		if (CurrentChannelAzimuthPositions.Num() > 4)
+		{
+			NumSpatialChannels--;
+		}
+		float OmniPanFactor = 1.0f / FMath::Sqrt(NumSpatialChannels);
 
-		for (EAudioMixerChannel::Type Channel : PlatformInfo.OutputChannelArray)
+		float DefaultEffectivePan = !OmniAmount ? 0.0f : FMath::Lerp(0.0f, OmniPanFactor, OmniAmount);
+		const TArray<EAudioMixerChannel::Type>& ChannelArray = GetChannelArrayForSubmixChannelType(InSubmixType);
+
+		for (EAudioMixerChannel::Type Channel : ChannelArray)
 		{
 			float EffectivePan = DefaultEffectivePan;
 
@@ -829,38 +1001,18 @@ namespace Audio
 
 			AUDIO_MIXER_CHECK(EffectivePan >= 0.0f && EffectivePan <= 1.0f);
 			OutChannelMap.Add(EffectivePan);
-
 		}
 	}
 
-	void FMixerDevice::SetChannelAzimuth(EAudioMixerChannel::Type ChannelType, int32 Azimuth)
+	uint32 FMixerDevice::GetNewUniqueAmbisonicsStreamID()
 	{
-		if (ChannelType >= EAudioMixerChannel::TopCenter)
-		{
-			UE_LOG(LogAudioMixer, Warning, TEXT("Unsupported mixer channel type: %s"), EAudioMixerChannel::ToString(ChannelType));
-			return;
-		}
-
-		if (Azimuth < 0 || Azimuth >= 360)
-		{
-			UE_LOG(LogAudioMixer, Warning, TEXT("Supplied azimuth is out of range: %d [0, 360)"), Azimuth);
-			return;
-		}
-
-		DefaultChannelAzimuthPosition[ChannelType].Azimuth = Azimuth;
+		static uint32 AmbisonicsStreamIDCounter = 0;
+		return ++AmbisonicsStreamIDCounter;
 	}
 
-
-
-	int32 FMixerDevice::GetAzimuthForChannelType(EAudioMixerChannel::Type ChannelType)
+	const TArray<FTransform>* FMixerDevice::GetListenerTransforms()
 	{
-		if (ChannelType >= EAudioMixerChannel::TopCenter)
-		{
-			UE_LOG(LogAudioMixer, Warning, TEXT("Unsupported mixer channel type: %s"), EAudioMixerChannel::ToString(ChannelType));
-			return 0;
-		}
-
-		return DefaultChannelAzimuthPosition[ChannelType].Azimuth;
+		return SourceManager.GetListenerTransforms();
 	}
 
 	int32 FMixerDevice::GetDeviceSampleRate() const
@@ -884,10 +1036,10 @@ namespace Audio
 		return bIsMain;
 	}
 
-	void FMixerDevice::WhiteNoiseTest(TArray<float>& Output)
+	void FMixerDevice::WhiteNoiseTest(AlignedFloatBuffer& Output)
 	{
-		int32 NumFrames = PlatformInfo.NumFrames;
-		int32 NumChannels = PlatformInfo.NumChannels;
+		const int32 NumFrames = OpenStreamParams.NumFrames;
+		const int32 NumChannels = PlatformInfo.NumChannels;
 
 		static FWhiteNoise WhiteNoise(0.2f);
 
@@ -901,10 +1053,10 @@ namespace Audio
 		}
 	}
 
-	void FMixerDevice::SineOscTest(TArray<float>& Output)
+	void FMixerDevice::SineOscTest(AlignedFloatBuffer& Output)
 	{
-		int32 NumFrames = PlatformInfo.NumFrames;
-		int32 NumChannels = PlatformInfo.NumChannels;
+		const int32 NumFrames = OpenStreamParams.NumFrames;
+		const int32 NumChannels = PlatformInfo.NumChannels;
 
 		check(NumChannels > 0);
 

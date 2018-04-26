@@ -1,10 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
-#include "Misc/StringAssetReference.h"
 #include "Misc/PackageName.h"
 #include "InputCoreTypes.h"
 #include "EditorStyleSettings.h"
@@ -12,7 +11,6 @@
 #include "Model.h"
 #include "ISourceControlModule.h"
 #include "Settings/ContentBrowserSettings.h"
-#include "Settings/DestructableMeshEditorSettings.h"
 #include "Settings/LevelEditorPlaySettings.h"
 #include "Settings/LevelEditorViewportSettings.h"
 #include "Settings/EditorProjectSettings.h"
@@ -32,7 +30,9 @@
 #include "AutoReimport/AutoReimportUtilities.h"
 #include "Misc/ConfigCacheIni.h" // for FConfigCacheIni::GetString()
 #include "SourceCodeNavigation.h"
-#include "Developer/BlueprintProfiler/Public/BlueprintProfilerModule.h"
+#include "IProjectManager.h"
+#include "ProjectDescriptor.h"
+#include "Settings/SkeletalMeshEditorSettings.h"
 
 #define LOCTEXT_NAMESPACE "SettingsClasses"
 
@@ -90,10 +90,11 @@ void UClassViewerSettings::PostEditChangeProperty(struct FPropertyChangedEvent& 
 	SettingChangedEvent.Broadcast(Name);
 }
 
-/* UDestructableMeshEditorSettings interface
- *****************************************************************************/
 
-UDestructableMeshEditorSettings::UDestructableMeshEditorSettings( const FObjectInitializer& ObjectInitializer )
+/* USkeletalMeshEditorSettings interface
+*****************************************************************************/
+
+USkeletalMeshEditorSettings::USkeletalMeshEditorSettings(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	AnimPreviewLightingDirection = FRotator(-45.0f, 45.0f, 0);
@@ -104,14 +105,12 @@ UDestructableMeshEditorSettings::UDestructableMeshEditorSettings( const FObjectI
 	AnimPreviewLightBrightness = 1.0f * PI;
 }
 
-
 /* UEditorExperimentalSettings interface
  *****************************************************************************/
 
 UEditorExperimentalSettings::UEditorExperimentalSettings( const FObjectInitializer& ObjectInitializer )
 	: Super(ObjectInitializer)
 	, bEnableLocalizationDashboard(true)
-	, bBlueprintPerformanceAnalysisTools(false)
 	, bUseOpenCLForConvexHullDecomp(false)
 	, bAllowPotentiallyUnsafePropertyEditing(false)
 {
@@ -134,18 +133,6 @@ void UEditorExperimentalSettings::PostEditChangeProperty( struct FPropertyChange
 		if (bEQSEditor)
 		{
 			FModuleManager::Get().LoadModule(TEXT("EnvironmentQueryEditor"));
-		}
-	}
-	else if (Name == FName(TEXT("bBlueprintPerformanceAnalysisTools")))
-	{
-		if (!bBlueprintPerformanceAnalysisTools)
-		{
-			IBlueprintProfilerInterface* ProfilerInterface = FModuleManager::GetModulePtr<IBlueprintProfilerInterface>("BlueprintProfiler");
-			if (ProfilerInterface && ProfilerInterface->IsProfilerEnabled())
-			{
-				// Force Profiler off
-				ProfilerInterface->ToggleProfilingCapture();
-			}
 		}
 	}
 
@@ -243,7 +230,7 @@ bool FAutoReimportDirectoryConfig::ParseSourceDirectoryAndMountPoint(FString& So
 	if (SourceDirectory.StartsWith("../"))
 	{
 		// Normalize. Interpret setting as a relative path from the Game User directory (Named after the Game)
-		SourceDirectory = FPaths::ConvertRelativePathToFull(FPaths::GameUserDir() / SourceDirectory);
+		SourceDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectUserDir() / SourceDirectory);
 	}
 
 	// Check if the source directory is actually a mount point
@@ -260,10 +247,14 @@ bool FAutoReimportDirectoryConfig::ParseSourceDirectoryAndMountPoint(FString& So
 		else
 		{
 			// Starts off with a mount point (not case sensitive)
-			MountPoint = TEXT("/") + SourceDirectoryMountPoint + TEXT("/");
-			FString SourceDirectoryLeftChop = SourceDirectory.Left(MountPoint.Len());
-			FString SourceDirectoryRightChop = SourceDirectory.RightChop(MountPoint.Len());
-
+			FString SourceMountPoint = TEXT("/") + SourceDirectoryMountPoint + TEXT("/");
+			if (MountPoint.IsEmpty() || FPackageName::GetPackageMountPoint(MountPoint).IsNone())
+			{
+				//Set the mountPoint
+				MountPoint = SourceMountPoint;
+			}
+			FString SourceDirectoryLeftChop = SourceDirectory.Left(SourceMountPoint.Len());
+			FString SourceDirectoryRightChop = SourceDirectory.RightChop(SourceMountPoint.Len());
 			// Resolve mount point on file system (possibly case sensitive, so re-use original source path)
 			SourceDirectory = FPaths::ConvertRelativePathToFull(
 				FPackageName::LongPackageNameToFilename(SourceDirectoryLeftChop) / SourceDirectoryRightChop);
@@ -349,6 +340,7 @@ ULevelEditorMiscSettings::ULevelEditorMiscSettings( const FObjectInitializer& Ob
 	bAutoApplyLightingEnable = true;
 	SectionName = TEXT("Misc");
 	CategoryName = TEXT("LevelEditor");
+	EditorScreenshotSaveDirectory.Path = FPaths::ScreenShotDir();
 }
 
 
@@ -382,6 +374,7 @@ ULevelEditorPlaySettings::ULevelEditorPlaySettings( const FObjectInitializer& Ob
 	ClientWindowWidth = 640;
 	ClientWindowHeight = 480;
 	PlayNumberOfClients = 1;
+	ServerPort = 17777;
 	PlayNetDedicated = false;
 	RunUnderOneProcess = true;
 	RouteGamepadToSecondWindow = false;
@@ -419,7 +412,7 @@ ULevelEditorViewportSettings::ULevelEditorViewportSettings( const FObjectInitial
 	MeasuringToolUnits = MeasureUnits_Centimeters;
 
 	// Set a default preview mesh
-	PreviewMeshes.Add(FStringAssetReference("/Engine/EditorMeshes/ColorCalibrator/SM_ColorCalibrator.SM_ColorCalibrator"));
+	PreviewMeshes.Add(FSoftObjectPath("/Engine/EditorMeshes/ColorCalibrator/SM_ColorCalibrator.SM_ColorCalibrator"));
 }
 
 void ULevelEditorViewportSettings::PostInitProperties()
@@ -531,7 +524,6 @@ void ULevelEditorViewportSettings::PostEditChangeProperty( struct FPropertyChang
 UProjectPackagingSettings::UProjectPackagingSettings( const FObjectInitializer& ObjectInitializer )
 	: Super(ObjectInitializer)
 {
-	bWarnIfPackagedWithoutNativizationFlag = true;
 }
 
 
@@ -551,6 +543,9 @@ void UProjectPackagingSettings::PostInitProperties()
 	// Reset deprecated settings to defaults.
 	bNativizeBlueprintAssets_DEPRECATED = false;
 	bNativizeOnlySelectedBlueprints_DEPRECATED = false;
+
+	// Build code projects by default
+	Build = EProjectPackagingBuild::IfProjectHasCode;
 
 	// Cache the current set of Blueprint assets selected for nativization.
 	CachedNativizeBlueprintAssets = NativizeBlueprintAssets;
@@ -584,11 +579,13 @@ void UProjectPackagingSettings::PostEditChangeProperty( FPropertyChangedEvent& P
 		FPaths::MakePathRelativeTo(Path, FPlatformProcess::BaseDir());
 		StagingDirectory.Path = Path;
 	}
-	else if (Name == FName(TEXT("ForDistribution")) || Name == FName(TEXT("BuildConfiguration")))
+	else if (Name == FName(TEXT("ForDistribution")))
 	{
-		if (ForDistribution)
+		if (ForDistribution && BuildConfiguration != EProjectPackagingBuildConfigurations::PPBC_Shipping && BuildConfiguration != EProjectPackagingBuildConfigurations::PPBC_ShippingClient)
 		{
 			BuildConfiguration = EProjectPackagingBuildConfigurations::PPBC_Shipping;
+			// force serialization for "Build COnfiguration"
+			UpdateSinglePropertyInConfigFile(GetClass()->FindPropertyByName(GET_MEMBER_NAME_CHECKED(UProjectPackagingSettings, BuildConfiguration)), GetDefaultConfigFilename());
 		}
 	}
 	else if (Name == FName(TEXT("bGenerateChunks")))
@@ -743,11 +740,7 @@ void UProjectPackagingSettings::PostEditChangeProperty( FPropertyChangedEvent& P
 
 bool UProjectPackagingSettings::CanEditChange( const UProperty* InProperty ) const
 {
-	if (InProperty->GetFName() == FName(TEXT("BuildConfiguration")) && ForDistribution)
-	{
-		return false;
-	}
-	else if (InProperty->GetFName() == FName(TEXT("NativizeBlueprintAssets")))
+	if (InProperty->GetFName() == FName(TEXT("NativizeBlueprintAssets")))
 	{
 		return BlueprintNativizationMethod == EProjectPackagingBlueprintNativizationMethod::Exclusive;
 	}

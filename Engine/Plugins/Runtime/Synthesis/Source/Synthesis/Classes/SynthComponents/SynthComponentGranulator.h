@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -47,10 +47,10 @@ class SYNTHESIS_API UGranularSynth : public USynthComponent
 	~UGranularSynth();
 
 	// Initialize the synth component
-	virtual void Init(const int32 SampleRate) override;
+	virtual bool Init(int32& SampleRate) override;
 
 	// Called to generate more audio
-	virtual void OnGenerateAudio(TArray<float>& OutAudio) override;
+	virtual void OnGenerateAudio(float* OutAudio, int32 NumSamples) override;
 
 	//~ Begin ActorComponent Interface.
 	virtual void OnRegister() override;
@@ -59,9 +59,6 @@ class SYNTHESIS_API UGranularSynth : public USynthComponent
 	//~ End ActorComponent Interface
 
 public:
-
-	UPROPERTY(EditAnywhere, Category = "Synth|Preset")
-	USoundWave* SoundWave;
 
 	// This will override the current sound wave if one is set, stop audio, and reload the new sound wave
 	UFUNCTION(BlueprintCallable, Category = "Synth|Components|Audio")
@@ -126,15 +123,13 @@ public:
 
 protected:
 
-	UPROPERTY(transient)
-	USoundWave* SoundWaveCopy;
-
-	UPROPERTY(transient)
-	USoundWave* PendingSoundWaveSet;
+	TQueue<USoundWave*> PendingStoppingSoundWaves;
 
 	Audio::FGranularSynth GranularSynth;
+	Audio::FSoundWavePCMLoader SoundWaveLoader;
 
-	bool bTransferPendingToSound;
 	bool bIsLoaded;
 	bool bRegistered;
+
+	bool bIsLoading;
 };

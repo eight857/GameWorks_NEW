@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ProceduralFoliageSpawner.h"
 #include "ProceduralFoliageTile.h"
@@ -165,7 +165,7 @@ void UProceduralFoliageSpawner::Simulate(int32 NumSteps)
 	for (int32 FutureIdx = 0; FutureIdx < Futures.Num(); ++FutureIdx)
 	{
 		// Sleep for 100ms if not ready. Needed so cancel is responsive.
-		while (Futures[FutureIdx].WaitFor(FTimespan(0, 0, 0, 0, 100)) == false)
+		while (Futures[FutureIdx].WaitFor(FTimespan::FromMilliseconds(100.0)) == false)
 		{
 			GWarn->StatusUpdate(FutureIdx, TotalTasks, LOCTEXT("SimulateProceduralFoliage", "Simulate ProceduralFoliage..."));
 

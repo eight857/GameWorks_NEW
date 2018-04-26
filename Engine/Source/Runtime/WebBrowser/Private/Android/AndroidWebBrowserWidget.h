@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,16 +8,31 @@
 #include "AndroidWebBrowserWindow.h"
 #include "AndroidWebBrowserDialog.h"
 #include "AndroidJava.h"
+#include "RHI.h"
+#include "RHIResources.h"
+#include "UObject/Class.h"
+#include "UObject/UObjectGlobals.h"
+#include "AndroidJavaWebBrowser.h"
+#include "Engine/Texture2D.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "WebBrowserTexture.h"
+
 #include <jni.h>
+
+class UMaterialExpressionTextureSample;
+class FWebBrowserTextureSamplePool;
 
 class SAndroidWebBrowserWidget : public SLeafWidget
 {
 	SLATE_BEGIN_ARGS(SAndroidWebBrowserWidget)
 		: _InitialURL("about:blank")
+		, _UseTransparency(false)
 	{ }
 
 		SLATE_ARGUMENT(FString, InitialURL);
+		SLATE_ARGUMENT(bool, UseTransparency);
 		SLATE_ARGUMENT(TSharedPtr<FAndroidWebBrowserWindow>, WebBrowserWindow);
+
 	SLATE_END_ARGS()
 
 public:
@@ -25,8 +40,8 @@ public:
 
 	void Construct(const FArguments& Args);
 
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
-
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 	virtual FVector2D ComputeDesiredSize(float) const override;
 
 	void ExecuteJavascript(const FString& Script);
@@ -74,16 +89,27 @@ protected:
 	int HistorySize;
 	int HistoryPosition;
 
-	// mutable to allow calling JWebView_Update from inside OnPaint (which is const)
-	mutable TOptional<FJavaClassObject> JWebView;
-	TOptional<FJavaClassMethod> JWebView_Update;
-	TOptional<FJavaClassMethod> JWebView_ExecuteJavascript;
-	TOptional<FJavaClassMethod> JWebView_LoadURL;
-	TOptional<FJavaClassMethod> JWebView_LoadString;
-	TOptional<FJavaClassMethod> JWebView_StopLoad;
-	TOptional<FJavaClassMethod> JWebView_Reload;
-	TOptional<FJavaClassMethod> JWebView_Close;
-	TOptional<FJavaClassMethod> JWebView_GoBackOrForward;
-
 	TWeakPtr<FAndroidWebBrowserWindow> WebBrowserWindowPtr;
+private:
+
+	/** Enable 3D appearance for Android. */
+	bool IsAndroid3DBrowser;
+
+	/** The Java side webbrowser interface. */
+	TSharedPtr<FJavaAndroidWebBrowser, ESPMode::ThreadSafe> JavaWebBrowser;
+
+	/** The external texture to render the webbrowser output. */
+	UWebBrowserTexture* WebBrowserTexture;
+
+	/** The material for the external texture. */
+	UMaterialInstanceDynamic* WebBrowserMaterial;
+
+	/** The Slate brush that renders the material. */
+	TSharedPtr<FSlateBrush> WebBrowserBrush;
+
+	/** The sample queue. */
+	TSharedPtr<FWebBrowserTextureSampleQueue, ESPMode::ThreadSafe> WebBrowserTextureSamplesQueue;
+
+	/** Texture sample object pool. */
+	FWebBrowserTextureSamplePool* TextureSamplePool;
 };

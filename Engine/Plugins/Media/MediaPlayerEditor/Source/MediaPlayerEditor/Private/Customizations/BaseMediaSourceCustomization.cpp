@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Customizations/BaseMediaSourceCustomization.h"
 
@@ -93,7 +93,7 @@ TSharedRef<SWidget> FBaseMediaSourceCustomization::MakePlatformPlayersMenu(const
 		for (IMediaPlayerFactory* Factory : PlayerFactories)
 		{
 			const bool SupportsPlatform = Factory->GetSupportedPlatforms().Contains(*IniPlatformName);
-			const FName PlayerName = Factory->GetName();
+			const FName PlayerName = Factory->GetPlayerName();
 
 			MenuBuilder.AddMenuEntry(
 				FText::Format(LOCTEXT("PlayerNameFormat", "{0} ({1})"), Factory->GetDisplayName(), FText::FromName(PlayerName)),

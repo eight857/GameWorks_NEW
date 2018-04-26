@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -29,11 +29,12 @@ namespace UnrealBuildTool.Rules
                     "InputCore",
 					"HeadMountedDisplay",
 					"Slate",
-					"SlateCore"
+					"SlateCore",
+					"ProceduralMeshComponent"
 				}
 				);
             
-            if (UEBuildConfiguration.bBuildEditor == true)
+            if (Target.bBuildEditor == true)
             {
                 PrivateDependencyModuleNames.Add("UnrealEd");
             }
@@ -41,9 +42,21 @@ namespace UnrealBuildTool.Rules
             if (Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Win64)
             {
 				AddEngineThirdPartyPrivateStaticDependencies(Target, "OpenVR");
-                PrivateDependencyModuleNames.AddRange(new string[] { "D3D11RHI" });     //@todo steamvr: multiplatform
+                PrivateDependencyModuleNames.Add("D3D11RHI");     //@todo steamvr: multiplatform
+
+                AddEngineThirdPartyPrivateStaticDependencies(Target, "OpenGL");
+                PrivateDependencyModuleNames.Add("OpenGLDrv");
+
+                AddEngineThirdPartyPrivateStaticDependencies(Target, "Vulkan");
+                PrivateDependencyModuleNames.Add("VulkanRHI");
             }
-			else if (Target.Platform == UnrealTargetPlatform.Linux && Target.Architecture.StartsWith("x86_64"))
+            else if (Target.Platform == UnrealTargetPlatform.Mac)
+            {
+				PublicFrameworks.Add("IOSurface");
+                AddEngineThirdPartyPrivateStaticDependencies(Target, "OpenVR");
+                PrivateDependencyModuleNames.AddRange(new string[] { "MetalRHI" });
+            }
+            else if (Target.Platform == UnrealTargetPlatform.Linux && Target.Architecture.StartsWith("x86_64"))
 			{
 				AddEngineThirdPartyPrivateStaticDependencies(Target, "OpenVR");
                 AddEngineThirdPartyPrivateStaticDependencies(Target, "OpenGL");

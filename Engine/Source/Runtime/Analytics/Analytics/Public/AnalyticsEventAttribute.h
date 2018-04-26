@@ -1,9 +1,19 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "AnalyticsConversion.h"
+
+struct FJsonNull
+{
+};
+
+struct FJsonFragment
+{
+	explicit FJsonFragment(FString&& StringRef) : FragmentString(MoveTemp(StringRef)) {}
+	FString FragmentString;
+};
 
 /**
  * Struct to hold key/value pairs that will be sent as attributes along with analytics events.
@@ -12,53 +22,138 @@
  */
 struct FAnalyticsEventAttribute
 {
-	FString AttrName;
-	FString AttrValue;
+	const FString AttrName;
+
+	const FString AttrValueString;
+	const double AttrValueNumber;
+	const bool AttrValueBool;
+
+	enum class AttrTypeEnum
+	{
+		String,
+		Number,
+		Boolean,
+		Null,
+		JsonFragment
+	};
+	const AttrTypeEnum AttrType;
+
 	/** Default ctor since we declare a custom ctor. */
 	FAnalyticsEventAttribute()
+		: AttrName()
+		, AttrValueString()
+		, AttrValueNumber(0)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::String)
 	{}
 
-	#if !PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-	/** copy ctor for platforms that don't implement defaulted functions properly. */
-	FAnalyticsEventAttribute(const FAnalyticsEventAttribute& RHS)
-		: AttrName(RHS.AttrName)
-		, AttrValue(RHS.AttrValue)
-	{}
-	/** move ctor for platforms that don't implement defaulted functions properly. */
-	FAnalyticsEventAttribute(FAnalyticsEventAttribute&& RHS)
-		: AttrName(MoveTemp(RHS.AttrName))
-		, AttrValue(MoveTemp(RHS.AttrValue))
-	{}
-	/** copy assignment ctor for platforms that don't implement defaulted functions properly. */
-	FAnalyticsEventAttribute& operator=(const FAnalyticsEventAttribute& RHS)
+	/** If you need the old AttrValue behavior (i.e. stringify everything), call this function instead. */
+	FString ToString() const
 	{
-		AttrName = RHS.AttrName;
-		AttrValue = RHS.AttrValue;
-		return *this;
+		switch (AttrType)
+		{
+		case AttrTypeEnum::String:
+		case AttrTypeEnum::JsonFragment:
+			return AttrValueString;
+		case AttrTypeEnum::Number:
+			if (AttrValueNumber - FMath::TruncToFloat(AttrValueNumber) == 0.0)
+				return Lex::ToSanitizedString((int64)AttrValueNumber);
+			return Lex::ToSanitizedString(AttrValueNumber);
+		case AttrTypeEnum::Boolean:
+			return Lex::ToString(AttrValueBool);
+		case AttrTypeEnum::Null:
+			return TEXT("null");
+		default:
+			ensure(false);
+			return FString();
+		}
 	}
-	/** move assignment ctor for platforms that don't implement defaulted functions properly. */
-	FAnalyticsEventAttribute& operator=(FAnalyticsEventAttribute&& RHS)
-	{
-		AttrName = MoveTemp(RHS.AttrName);
-		AttrValue = MoveTemp(RHS.AttrValue);
-		return *this;
-	}
-#endif
 
+public: // null
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, FJsonNull)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(0)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Null)
+	{
+	}
+
+public: // numeric types
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, double InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(InValue)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Number)
+	{
+	}
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, float InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(InValue)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Number)
+	{
+	}
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, int32 InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(InValue)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Number)
+	{
+	}
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, uint32 InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(InValue)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::Number)
+	{
+	}
+
+public: // boolean
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, bool InValue)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString()
+		, AttrValueNumber(0)
+		, AttrValueBool(InValue)
+		, AttrType(AttrTypeEnum::Boolean)
+	{
+	}
+
+public: // json fragment
+	template <typename NameType>
+	FAnalyticsEventAttribute(NameType&& InName, FJsonFragment&& Fragment)
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString(MoveTemp(Fragment.FragmentString))
+		, AttrValueNumber(0)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::JsonFragment)
+	{
+	}
+
+public: // string (catch-all)
 	/**
-	 * Helper constructor to make an attribute from a name/value pair.
+	 * Helper constructor to make an attribute from a name/value pair by forwarding through Lex::ToString and AnalyticsConversion::ToString.
 	 * 
-	 * NameType 
-	 * ValueType will be converted to a string via forwarding to ToStringForAnalytics.
-	 *
-	 * @param InName Name of the attribute. Will be forwarded to an FString constructor.
-	 * @param InValue Value of the attribute. Will be forwarded to ToStringForAnalytics to convert to a string. 
-	 * @return 
+	 * @param InName Name of the attribute. Will be converted to a string via forwarding to Lex::ToString
+	 * @param InValue Value of the attribute. Will be converted to a string via forwarding to AnalyticsConversion::ToString (same as Lex but with basic support for arrays and maps)
 	 */
 	template <typename NameType, typename ValueType>
 	FAnalyticsEventAttribute(NameType&& InName, ValueType&& InValue)
-		: AttrName(Forward<NameType>(InName))
-		, AttrValue(AnalyticsConversion::ToString(Forward<ValueType>(InValue)))
+		: AttrName(Lex::ToString(Forward<NameType>(InName)))
+		, AttrValueString(AnalyticsConversion::ToString(Forward<ValueType>(InValue)))
+		, AttrValueNumber(0)
+		, AttrValueBool(false)
+		, AttrType(AttrTypeEnum::String)
 	{}
 };
 
@@ -88,14 +183,23 @@ namespace ImplMakeAnalyticsEventAttributeArray
 	}
 }
 
-/** Helper to create an array of attributes using a single expression. There must be an even number of arguments, one for each key/value pair. */
+/** Helper to create an array of attributes using a single expression. Reserves the necessary space in advance. There must be an even number of arguments, one for each key/value pair. */
 template <typename Allocator = FDefaultAllocator, typename...ArgTypes>
 inline TArray<FAnalyticsEventAttribute, Allocator> MakeAnalyticsEventAttributeArray(ArgTypes&&...Args)
 {
-	static_assert(sizeof...(Args) % 2 == 0, "Must pass an even number of arguments to MakeAnalyticsEventAttributeArray.");
+	static_assert(sizeof...(Args) % 2 == 0, "Must pass an even number of arguments.");
 	TArray<FAnalyticsEventAttribute, Allocator> Attrs;
 	Attrs.Empty(sizeof...(Args) / 2);
 	ImplMakeAnalyticsEventAttributeArray::MakeArray(Attrs, Forward<ArgTypes>(Args)...);
 	return Attrs;
 }
 
+/** Helper to append to an array of attributes using a single expression. Reserves the necessary space in advance. There must be an even number of arguments, one for each key/value pair. */
+template <typename Allocator = FDefaultAllocator, typename...ArgTypes>
+inline TArray<FAnalyticsEventAttribute, Allocator>& AppendAnalyticsEventAttributeArray(TArray<FAnalyticsEventAttribute, Allocator>& Attrs, ArgTypes&&...Args)
+{
+	static_assert(sizeof...(Args) % 2 == 0, "Must pass an even number of arguments.");
+	Attrs.Reserve(Attrs.Num() + (sizeof...(Args) / 2));
+	ImplMakeAnalyticsEventAttributeArray::MakeArray(Attrs, Forward<ArgTypes>(Args)...);
+	return Attrs;
+}

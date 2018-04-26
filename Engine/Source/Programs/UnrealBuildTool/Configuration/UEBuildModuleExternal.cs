@@ -1,8 +1,11 @@
-﻿using System;
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -16,20 +19,22 @@ namespace UnrealBuildTool
 			string InName,
 			DirectoryReference InModuleDirectory,
 			ModuleRules InRules,
-			FileReference InRulesFile
+			FileReference InRulesFile,
+			List<RuntimeDependency> InRuntimeDependencies
 			)
 			: base(
 				InType: InType,
 				InName: InName,
 				InModuleDirectory: InModuleDirectory,
 				InRules: InRules,
-				InRulesFile: InRulesFile
+				InRulesFile: InRulesFile,
+				InRuntimeDependencies: InRuntimeDependencies
 				)
 		{
 		}
 
 		// UEBuildModule interface.
-		public override List<FileItem> Compile(ReadOnlyTargetRules Target, UEToolChain ToolChain, CppCompileEnvironment CompileEnvironment, List<PrecompiledHeaderTemplate> SharedPCHs, ActionGraph ActionGraph)
+		public override List<FileItem> Compile(ReadOnlyTargetRules Target, UEToolChain ToolChain, CppCompileEnvironment CompileEnvironment, List<PrecompiledHeaderTemplate> SharedPCHs, ISourceFileWorkingSet WorkingSet, ActionGraph ActionGraph)
 		{
 			return new List<FileItem>();
 		}

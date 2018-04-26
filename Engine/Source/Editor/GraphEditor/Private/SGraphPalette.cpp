@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SGraphPalette.h"
 #include "Modules/ModuleManager.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Images/SImage.h"
+#include "Styling/CoreStyle.h"
 #include "EditorStyleSet.h"
 #include "GraphEditorDragDropAction.h"
 
@@ -19,7 +20,7 @@
 
 void SGraphPaletteItem::Construct(const FArguments& InArgs, FCreateWidgetForActionData* const InCreateData)
 {
-	FSlateFontInfo NameFont = FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 10);
+	FSlateFontInfo NameFont = FCoreStyle::GetDefaultFontStyle("Regular", 10);
 
 	check(InCreateData->Action.IsValid());
 
@@ -115,7 +116,7 @@ TSharedRef<SWidget> SGraphPaletteItem::CreateIconWidget(const FText& IconToolTip
 		IDocumentation::Get()->CreateToolTip(IconToolTip, NULL, DocLink, DocExcerpt));
 }
 
-TSharedRef<SWidget> SGraphPaletteItem::CreateTextSlotWidget( const FSlateFontInfo& NameFont, FCreateWidgetForActionData* const InCreateData, bool bIsReadOnly )
+TSharedRef<SWidget> SGraphPaletteItem::CreateTextSlotWidget( const FSlateFontInfo& NameFont, FCreateWidgetForActionData* const InCreateData, TAttribute<bool> bIsReadOnly )
 {
 	TSharedPtr< SWidget > DisplayWidget;
 
@@ -142,10 +143,7 @@ TSharedRef<SWidget> SGraphPaletteItem::CreateTextSlotWidget( const FSlateFontInf
 		.IsSelected( InCreateData->IsRowSelectedDelegate )
 		.IsReadOnly( bIsReadOnly );
 
-	if(!bIsReadOnly)
-	{
-		InCreateData->OnRenameRequest->BindSP( InlineRenameWidget.Get(), &SInlineEditableTextBlock::EnterEditingMode );
-	}
+	InCreateData->OnRenameRequest->BindSP( InlineRenameWidget.Get(), &SInlineEditableTextBlock::EnterEditingMode );
 
 	return DisplayWidget.ToSharedRef();
 }

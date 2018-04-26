@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EditorFramework/AssetImportData.h"
 #include "HAL/FileManager.h"
@@ -8,6 +8,11 @@
 #include "Serialization/JsonSerializer.h"
 #include "UObject/Package.h"
 #include "AnimPhysObjectVersion.h"
+
+#if WITH_EDITOR
+#include "Editor/EditorPerProjectUserSettings.h"
+#endif
+
 
 // This whole class is compiled out in non-editor
 UAssetImportData::UAssetImportData(const FObjectInitializer& ObjectInitializer)
@@ -172,13 +177,35 @@ FString UAssetImportData::SanitizeImportFilename(const FString& InPath) const
 		const FString	AbsolutePath = FPaths::ConvertRelativePathToFull(InPath);
 
 		if ((MountPoint == FName("Engine") && AbsolutePath.StartsWith(FPaths::ConvertRelativePathToFull(FPaths::EngineContentDir()))) ||
-			(MountPoint == FName("Game") &&	AbsolutePath.StartsWith(FPaths::ConvertRelativePathToFull(FPaths::GameDir()))))
+			(MountPoint == FName("Game") &&	AbsolutePath.StartsWith(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()))))
 		{
 			FString RelativePath = InPath;
 			FPaths::MakePathRelativeTo(RelativePath, *PackageFilename);
 			return RelativePath;
 		}
 	}
+
+#if WITH_EDITOR
+	FString BaseSourceFolder = GetDefault<UEditorPerProjectUserSettings>()->DataSourceFolder.Path;
+	if (!BaseSourceFolder.IsEmpty() && FPaths::DirectoryExists(BaseSourceFolder))
+	{
+		//Make sure the source folder is clean to do relative operation
+		if (!BaseSourceFolder.EndsWith(TEXT("/")) && !BaseSourceFolder.EndsWith(TEXT("\\")))
+		{
+			BaseSourceFolder += TEXT("/");
+		}
+		//Look if the InPath is relative to the base source path, if yes we will store a relative path to this folder
+		FString RelativePath = InPath;
+		if (FPaths::MakePathRelativeTo(RelativePath, *BaseSourceFolder))
+		{
+			//Make sure the path is under the base source folder
+			if (!RelativePath.StartsWith(TEXT("..")))
+			{
+				return RelativePath;
+			}
+		}
+	}
+#endif
 
 	return IFileManager::Get().ConvertToRelativePath(*InPath);
 }
@@ -202,6 +229,27 @@ FString UAssetImportData::ResolveImportFilename(const FString& InRelativePath, c
 			}
 		}
 	}
+
+#if WITH_EDITOR
+	FString BaseSourceFolder = GetDefault<UEditorPerProjectUserSettings>()->DataSourceFolder.Path;
+	if (!BaseSourceFolder.IsEmpty() && FPaths::DirectoryExists(BaseSourceFolder))
+	{
+		//Make sure the source folder is clean to do relative operation
+		if (!BaseSourceFolder.EndsWith(TEXT("/")) && !BaseSourceFolder.EndsWith(TEXT("\\")))
+		{
+			BaseSourceFolder += TEXT("/");
+		}
+		FString FullPath = FPaths::Combine(BaseSourceFolder, InRelativePath);
+		if (FPaths::FileExists(FullPath))
+		{
+			FString FullConvertPath = FPaths::ConvertRelativePathToFull(FullPath);
+			if (FullConvertPath.Find(TEXT("..")) == INDEX_NONE)
+			{
+				return FullConvertPath;
+			}
+		}
+	}
+#endif
 
 	// Convert relative paths
 	return FPaths::ConvertRelativePathToFull(RelativePath);	

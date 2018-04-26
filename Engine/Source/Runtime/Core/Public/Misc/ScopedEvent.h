@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -30,6 +30,14 @@ public:
 	{
 		Event->Trigger();
 	}
+
+	/**
+	 * Checks if the event has been triggered (used for special early out cases of scope event)
+	 * if this returns true once it will return true forever
+	 *
+	 * @return returns true if the scoped event has been triggered once
+	 */
+	CORE_API bool IsReady();
 
 	/**
 	 * Retrieve the event, usually for passing around.

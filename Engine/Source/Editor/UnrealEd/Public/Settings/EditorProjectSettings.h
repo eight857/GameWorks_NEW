@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -52,10 +52,13 @@ protected:
 	virtual void PostEditChangeProperty( struct FPropertyChangedEvent& PropertyChangedEvent ) override;
 	virtual void PostInitProperties() override;
 
-private:
+public:
 
 	UPROPERTY(EditAnywhere, config, Category=Units, meta=(DisplayName="Display Units on Applicable Properties", Tooltip="Whether to display units on editor properties where the property has units set."))
 	bool bDisplayUnits;
+
+	UPROPERTY(EditAnywhere, config, Category = Units, meta = (EditCondition="bDisplayUnits", DisplayName = "Display Units on Component Transforms", Tooltip = "Whether to display units on component transform properties"))
+	bool bDisplayUnitsOnComponentTransforms;
 
 	UPROPERTY(EditAnywhere, config, Category=Units, AdvancedDisplay, meta=(DisplayName="Distance/Length", Tooltip="Choose a set of units in which to display distance/length values."))
 	TArray<EUnit> DistanceUnits;
@@ -152,5 +155,29 @@ public:
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 	// End of UObject interface
 
+};
+
+
+UCLASS(config=Editor, meta=(DisplayName="Blueprints"), defaultconfig)
+class UNREALED_API UBlueprintEditorProjectSettings : public UDeveloperSettings
+{
+	GENERATED_UCLASS_BODY()
+
+public:
+	/** Flag to disable the new compilation manager for blueprints */
+	UPROPERTY(EditAnywhere, config, Category=Blueprints)
+	uint32 bUseCompilationManager:1;
+	
+	/** Flag to enable faster compiles for individual blueprints if they have no function signature changes */
+	UPROPERTY(EditAnywhere, config, Category=Blueprints)
+	uint32 bSkipUnneededDependencyCompilation:1;
+
+	/** If enabled, the editor will load packages to look for soft references to actors when deleting/renaming them. This can be slow in large projects so disable this to improve performance but increase the chance of breaking blueprints/sequences that use soft actor references */
+	UPROPERTY(EditAnywhere, config, Category=Actors)
+	uint32 bValidateUnloadedSoftActorReferences : 1;
+
+	// UObject interface
+	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
+	// End of UObject interface
 };
 

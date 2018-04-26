@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -27,38 +27,7 @@ struct ENGINE_API FTextureLODGroup
 		, MinMagFilter(NAME_Aniso)
 		, MipFilter(NAME_Point)
 	{
-		MinLODMipCount = FMath::CeilLogTwo(MinLODSize);
-		MaxLODMipCount = FMath::CeilLogTwo(MaxLODSize);
-
-		// Linear filtering
-		if (MinMagFilter == NAME_Linear)
-		{
-			if (MipFilter == NAME_Point)
-			{
-				Filter = ETextureSamplerFilter::Bilinear;
-			}
-			else
-			{
-				Filter = ETextureSamplerFilter::Trilinear;
-			}
-		}
-		// Point. Don't even care about mip filter.
-		else if (MinMagFilter == NAME_Point)
-		{
-			Filter = ETextureSamplerFilter::Point;
-		}
-		// Aniso or unknown.
-		else
-		{
-			if (MipFilter == NAME_Point)
-			{
-				Filter = ETextureSamplerFilter::AnisotropicPoint;
-			}
-			else
-			{
-				Filter = ETextureSamplerFilter::AnisotropicLinear;
-			}
-		}
+		SetupGroup();
 	}
 
 	/** Minimum LOD mip count below which the code won't bias.						*/
@@ -97,6 +66,8 @@ struct ENGINE_API FTextureLODGroup
 
 	UPROPERTY()
 	FName MipFilter;
+
+	void SetupGroup();
 };
 
 /**
@@ -114,11 +85,11 @@ public:
 	/**
 	 * Calculates and returns the LOD bias based on texture LOD group, LOD bias and maximum size.
 	 *
-	 * @param	Texture			Texture object to calculate LOD bias for.
-	 * @param	bIncTextureMips	If true, takes the textures LOD & Cinematic mips into consideration
+	 * @param	Texture				Texture object to calculate LOD bias for.
+	 * @param	bIncCinematicMips	If true, cinematic mips will also be included in consideration
 	 * @return	LOD bias
 	 */
-	int32 CalculateLODBias(const UTexture* Texture, bool bIncTextureMips = true) const;
+	int32 CalculateLODBias(const UTexture* Texture, bool bIncCinematicMips = true) const;
 
 	/**
 	 * Calculates and returns the LOD bias based on the information provided.
@@ -133,12 +104,6 @@ public:
 	 */
 	int32 CalculateLODBias( int32 Width, int32 Height, int32 LODGroup, int32 LODBias, int32 NumCinematicMipLevels, TextureMipGenSettings MipGenSetting ) const;
 
-	/** 
-	* Useful for stats in the editor.
-	*
-	* @param LODBias			Default LOD at which the texture renders. Platform dependent, call UTextureLODSettings::CalculateLODBias(Texture)
-	*/
-	void ComputeInGameMaxResolution(int32 LODBias, UTexture& Texture, uint32& OutSizeX, uint32& OutSizeY) const;
 
 #if WITH_EDITORONLY_DATA
 	void GetMipGenSettings( const UTexture& Texture, TextureMipGenSettings& OutMipGenSettings, float& OutSharpen, uint32& OutKernelSize, bool& bOutDownsampleWithAverage, bool& bOutSharpenWithoutColorShift, bool &bOutBorderColorBlack ) const;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "AnimGraphNode_Base.h"
@@ -12,6 +12,7 @@
 #include "AnimNodeEditModes.h"
 #include "AnimationGraph.h"
 #include "EditorModeManager.h"
+#include "Toolkits/AssetEditorManager.h"
 
 /////////////////////////////////////////////////////
 // UAnimGraphNode_Base
@@ -21,12 +22,23 @@ UAnimGraphNode_Base::UAnimGraphNode_Base(const FObjectInitializer& ObjectInitial
 {
 }
 
+void UAnimGraphNode_Base::PreEditChange(UProperty* PropertyThatWillChange)
+{
+	Super::PreEditChange(PropertyThatWillChange);
+
+	if (PropertyThatWillChange && PropertyThatWillChange->GetFName() == GET_MEMBER_NAME_CHECKED(FOptionalPinFromProperty, bShowPin))
+	{
+		FOptionalPinManager::CacheShownPins(ShowPinForProperties, OldShownPins);
+	}
+}
+
 void UAnimGraphNode_Base::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	FName PropertyName = (PropertyChangedEvent.Property != NULL) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
 
 	if ((PropertyName == GET_MEMBER_NAME_CHECKED(FOptionalPinFromProperty, bShowPin)))
 	{
+		FOptionalPinManager::EvaluateOldShownPins(ShowPinForProperties, OldShownPins, this);
 		GetSchema()->ReconstructNode(*this);
 	}
 
@@ -39,8 +51,7 @@ void UAnimGraphNode_Base::CreateOutputPins()
 {
 	if (!IsSinkNode())
 	{
-		const UAnimationGraphSchema* Schema = GetDefault<UAnimationGraphSchema>();
-		CreatePin(EGPD_Output, Schema->PC_Struct, TEXT(""), FPoseLink::StaticStruct(), /*bIsArray=*/ false, /*bIsReference=*/ false, TEXT("Pose"));
+		CreatePin(EGPD_Output, UAnimationGraphSchema::PC_Struct, FPoseLink::StaticStruct(), TEXT("Pose"));
 	}
 }
 
@@ -54,8 +65,9 @@ void UAnimGraphNode_Base::InternalPinCreation(TArray<UEdGraphPin*>* OldPins)
 	{
 		// Display any currently visible optional pins
 		{
+			UObject* NodeDefaults = GetArchetype();
 			FAnimBlueprintNodeOptionalPinManager OptionalPinManager(this, OldPins);
-			OptionalPinManager.AllocateDefaultPins(NodeStruct->Struct, NodeStruct->ContainerPtrToValuePtr<uint8>(this));
+			OptionalPinManager.AllocateDefaultPins(NodeStruct->Struct, NodeStruct->ContainerPtrToValuePtr<uint8>(this), NodeDefaults ? NodeStruct->ContainerPtrToValuePtr<uint8>(NodeDefaults) : nullptr);
 		}
 
 		// Create the output pin, if needed
@@ -73,6 +85,19 @@ void UAnimGraphNode_Base::ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*
 	InternalPinCreation(&OldPins);
 
 	RestoreSplitPins(OldPins);
+}
+
+bool UAnimGraphNode_Base::CanJumpToDefinition() const
+{
+	return GetJumpTargetForDoubleClick() != nullptr;
+}
+
+void UAnimGraphNode_Base::JumpToDefinition() const
+{
+	if (UObject* HyperlinkTarget = GetJumpTargetForDoubleClick())
+	{
+		FAssetEditorManager::Get().OpenEditorForAsset(HyperlinkTarget);
+	}
 }
 
 FLinearColor UAnimGraphNode_Base::GetNodeTitleColor() const
@@ -158,14 +183,16 @@ void UAnimGraphNode_Base::GetPinAssociatedProperty(const UScriptStruct* NodeType
 	OutIndex = INDEX_NONE;
 
 	//@TODO: Name-based hackery, avoid the roundtrip and better indicate when it's an array pose pin
-	int32 UnderscoreIndex = InputPin->PinName.Find(TEXT("_"), ESearchCase::CaseSensitive);
+	const FString PinNameStr = InputPin->PinName.ToString();
+	const int32 UnderscoreIndex = PinNameStr.Find(TEXT("_"), ESearchCase::CaseSensitive);
 	if (UnderscoreIndex != INDEX_NONE)
 	{
-		FString ArrayName = InputPin->PinName.Left(UnderscoreIndex);
-		int32 ArrayIndex = FCString::Atoi(*(InputPin->PinName.Mid(UnderscoreIndex + 1)));
+		const FString ArrayName = PinNameStr.Left(UnderscoreIndex);
 
 		if (UArrayProperty* ArrayProperty = FindField<UArrayProperty>(NodeType, *ArrayName))
 		{
+			const int32 ArrayIndex = FCString::Atoi(*(PinNameStr.Mid(UnderscoreIndex + 1)));
+
 			OutProperty = ArrayProperty;
 			OutIndex = ArrayIndex;
 		}
@@ -174,7 +201,7 @@ void UAnimGraphNode_Base::GetPinAssociatedProperty(const UScriptStruct* NodeType
 	// If the array check failed or we have no underscores
 	if(OutProperty == nullptr)
 	{
-		if (UProperty* Property = FindField<UProperty>(NodeType, *(InputPin->PinName)))
+		if (UProperty* Property = FindField<UProperty>(NodeType, InputPin->PinName))
 		{
 			OutProperty = Property;
 			OutIndex = INDEX_NONE;
@@ -189,11 +216,11 @@ FPoseLinkMappingRecord UAnimGraphNode_Base::GetLinkIDLocation(const UScriptStruc
 		if (UAnimGraphNode_Base* LinkedNode = Cast<UAnimGraphNode_Base>(FBlueprintEditorUtils::FindFirstCompilerRelevantNode(SourcePin->LinkedTo[0])))
 		{
 			//@TODO: Name-based hackery, avoid the roundtrip and better indicate when it's an array pose pin
-			int32 UnderscoreIndex = SourcePin->PinName.Find(TEXT("_"), ESearchCase::CaseSensitive);
+			const FString SourcePinName = SourcePin->PinName.ToString();
+			const int32 UnderscoreIndex = SourcePinName.Find(TEXT("_"), ESearchCase::CaseSensitive);
 			if (UnderscoreIndex != INDEX_NONE)
 			{
-				FString ArrayName = SourcePin->PinName.Left(UnderscoreIndex);
-				int32 ArrayIndex = FCString::Atoi(*(SourcePin->PinName.Mid(UnderscoreIndex + 1)));
+				const FString ArrayName = SourcePinName.Left(UnderscoreIndex);
 
 				if (UArrayProperty* ArrayProperty = FindField<UArrayProperty>(NodeType, *ArrayName))
 				{
@@ -201,6 +228,7 @@ FPoseLinkMappingRecord UAnimGraphNode_Base::GetLinkIDLocation(const UScriptStruc
 					{
 						if (Property->Struct->IsChildOf(FPoseLinkBase::StaticStruct()))
 						{
+							const int32 ArrayIndex = FCString::Atoi(*(SourcePinName.Mid(UnderscoreIndex + 1)));
 							return FPoseLinkMappingRecord::MakeFromArrayEntry(this, LinkedNode, ArrayProperty, ArrayIndex);
 						}
 					}
@@ -208,7 +236,7 @@ FPoseLinkMappingRecord UAnimGraphNode_Base::GetLinkIDLocation(const UScriptStruc
 			}
 			else
 			{
-				if (UStructProperty* Property = FindField<UStructProperty>(NodeType, *(SourcePin->PinName)))
+				if (UStructProperty* Property = FindField<UStructProperty>(NodeType, SourcePin->PinName))
 				{
 					if (Property->Struct->IsChildOf(FPoseLinkBase::StaticStruct()))
 					{
@@ -224,12 +252,11 @@ FPoseLinkMappingRecord UAnimGraphNode_Base::GetLinkIDLocation(const UScriptStruc
 
 void UAnimGraphNode_Base::CreatePinsForPoseLink(UProperty* PoseProperty, int32 ArrayIndex)
 {
-	const UAnimationGraphSchema* Schema = GetDefault<UAnimationGraphSchema>();
 	UScriptStruct* A2PoseStruct = FA2Pose::StaticStruct();
 
 	// pose input
-	const FString NewPinName = (ArrayIndex == INDEX_NONE) ? PoseProperty->GetName() : FString::Printf(TEXT("%s_%d"), *(PoseProperty->GetName()), ArrayIndex);
-	CreatePin(EGPD_Input, Schema->PC_Struct, TEXT(""), A2PoseStruct, /*bIsArray=*/ false, /*bIsReference=*/ false, NewPinName);
+	const FName NewPinName = (ArrayIndex == INDEX_NONE) ? PoseProperty->GetFName() : *FString::Printf(TEXT("%s_%d"), *(PoseProperty->GetName()), ArrayIndex);
+	CreatePin(EGPD_Input, UAnimationGraphSchema::PC_Struct, A2PoseStruct, NewPinName);
 }
 
 void UAnimGraphNode_Base::PostProcessPinName(const UEdGraphPin* Pin, FString& DisplayName) const
@@ -238,7 +265,7 @@ void UAnimGraphNode_Base::PostProcessPinName(const UEdGraphPin* Pin, FString& Di
 	{
 		if (Pin->PinName == TEXT("Pose"))
 		{
-			DisplayName = TEXT("");
+			DisplayName.Reset();
 		}
 	}
 }
@@ -345,5 +372,14 @@ void UAnimGraphNode_Base::PinDefaultValueChanged(UEdGraphPin* Pin)
 
 	CopyPinDefaultsToNodeData(Pin);
 
-	CastChecked<UAnimationGraph>(GetGraph())->OnPinDefaultValueChanged.Broadcast(Pin);
+	if(UAnimationGraph* AnimationGraph = Cast<UAnimationGraph>(GetGraph()))
+	{
+		AnimationGraph->OnPinDefaultValueChanged.Broadcast(Pin);
+	}
+}
+
+bool UAnimGraphNode_Base::IsPinExposedAndLinked(const FString& InPinName, const EEdGraphPinDirection InDirection) const
+{
+	UEdGraphPin* Pin = FindPin(InPinName, InDirection);
+	return Pin != nullptr && Pin->LinkedTo.Num() > 0 && Pin->LinkedTo[0] != nullptr;
 }

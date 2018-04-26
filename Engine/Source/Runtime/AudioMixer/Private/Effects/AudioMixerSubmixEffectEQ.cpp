@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SubmixEffects/AudioMixerSubmixEffectEQ.h"
@@ -55,7 +55,7 @@ static bool IsEqual(const FSubmixEffectSubmixEQSettings& Left, const FSubmixEffe
 
 
 FSubmixEffectSubmixEQ::FSubmixEffectSubmixEQ()
-	: SampleRate(AUDIO_SAMPLE_RATE)
+	: SampleRate(0)
 	, NumOutputChannels(2)
 {
 	FMemory::Memzero((void*)ScratchInBuffer, sizeof(float) * 2);
@@ -98,8 +98,8 @@ void FSubmixEffectSubmixEQ::OnProcessAudio(const FSoundEffectSubmixInputData& In
 	// Update parameters that may have been set from game thread
 	UpdateParameters(InData.NumChannels);
 
-	TArray<float>& InAudioBuffer = *InData.AudioBuffer;
-	TArray<float>& OutAudioBuffer = *OutData.AudioBuffer;
+	Audio::AlignedFloatBuffer& InAudioBuffer = *InData.AudioBuffer;
+	Audio::AlignedFloatBuffer& OutAudioBuffer = *OutData.AudioBuffer;
 
 	if (bEQSettingsSet && !DisableSubmixEffectEQCvar && RenderThreadEQSettings.EQBands.Num() > 0)
 	{

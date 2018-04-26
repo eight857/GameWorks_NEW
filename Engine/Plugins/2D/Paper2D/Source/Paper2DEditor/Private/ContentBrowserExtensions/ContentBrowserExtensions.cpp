@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ContentBrowserExtensions/ContentBrowserExtensions.h"
 #include "Modules/ModuleManager.h"
@@ -37,7 +37,7 @@ FDelegateHandle ContentBrowserExtenderDelegateHandle;
 struct FContentBrowserSelectedAssetExtensionBase
 {
 public:
-	TArray<class FAssetData> SelectedAssets;
+	TArray<struct FAssetData> SelectedAssets;
 
 public:
 	virtual void Execute() {}

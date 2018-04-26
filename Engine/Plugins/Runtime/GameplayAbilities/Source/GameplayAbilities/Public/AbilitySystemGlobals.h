@@ -1,12 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
-#include "Misc/StringAssetReference.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "GameplayTagContainer.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayAbilitiesModule.h"
@@ -66,6 +65,11 @@ class GAMEPLAYABILITIES_API UAbilitySystemGlobals : public UObject
 	/** Global callback that can handle game-specific code that needs to run before applying a gameplay effect spec */
 	virtual void GlobalPreGameplayEffectSpecApply(FGameplayEffectSpec& Spec, UAbilitySystemComponent* AbilitySystemComponent);
 
+	// Stubs for WIP feature that will come to engine
+	virtual void PushCurrentAppliedGE(const FGameplayEffectSpec* Spec, UAbilitySystemComponent* AbilitySystemComponent) { }
+	virtual void SetCurrentAppliedGE(const FGameplayEffectSpec* Spec) { }
+	virtual void PopCurrentAppliedGE() { }
+
 	/** Returns true if the ability system should try to predict gameplay effects applied to non local targets */
 	bool ShouldPredictTargetGameplayEffects() const
 	{
@@ -109,9 +113,14 @@ class GAMEPLAYABILITIES_API UAbilitySystemGlobals : public UObject
 #endif
 	}
 
+#if WITH_EDITOR
+	// Allows projects to override PostEditChangeProeprty on GEs without having to subclass Gameplayeffect. Intended for validation/auto populating based on changed data.
+	virtual void GameplayEffectPostEditChangeProperty(class UGameplayEffect* GE, FPropertyChangedEvent& PropertyChangedEvent) { }
+#endif
+
 	/** The class to instantiate as the globals object. Defaults to this class but can be overridden */
 	UPROPERTY(config)
-	FStringClassReference AbilitySystemGlobalsClassName;
+	FSoftClassPath AbilitySystemGlobalsClassName;
 
 	void AutomationTestOnly_SetGlobalCurveTable(UCurveTable *InTable)
 	{
@@ -153,6 +162,11 @@ class GAMEPLAYABILITIES_API UAbilitySystemGlobals : public UObject
 	// Global Tags
 
 	UPROPERTY()
+	FGameplayTag ActivateFailIsDeadTag; // TryActivate failed due to being dead
+	UPROPERTY(config)
+	FName ActivateFailIsDeadName;
+
+	UPROPERTY()
 	FGameplayTag ActivateFailCooldownTag; // TryActivate failed due to being on cooldown
 	UPROPERTY(config)
 	FName ActivateFailCooldownName;
@@ -183,6 +197,11 @@ class GAMEPLAYABILITIES_API UAbilitySystemGlobals : public UObject
 
 	virtual void InitGlobalTags()
 	{
+		if (ActivateFailIsDeadName != NAME_None)
+		{
+			ActivateFailIsDeadTag = FGameplayTag::RequestGameplayTag(ActivateFailIsDeadName);
+		}
+
 		if (ActivateFailCooldownName != NAME_None)
 		{
 			ActivateFailCooldownTag = FGameplayTag::RequestGameplayTag(ActivateFailCooldownName);
@@ -266,27 +285,27 @@ protected:
 
 	/** Name of global curve table to use as the default for scalable floats, etc. */
 	UPROPERTY(config)
-	FStringAssetReference GlobalCurveTableName;
+	FSoftObjectPath GlobalCurveTableName;
 
 	/** Holds information about the valid attributes' min and max values and stacking rules */
 	UPROPERTY(config)
-	FStringAssetReference GlobalAttributeMetaDataTableName;
+	FSoftObjectPath GlobalAttributeMetaDataTableName;
 
 	/** Holds default values for attribute sets, keyed off of Name/Levels. NOTE: Preserved for backwards compatibility, should use the array version below now */
 	UPROPERTY(config)
-	FStringAssetReference GlobalAttributeSetDefaultsTableName;
+	FSoftObjectPath GlobalAttributeSetDefaultsTableName;
 
 	/** Array of curve table names to use for default values for attribute sets, keyed off of Name/Levels */
 	UPROPERTY(config)
-	TArray<FStringAssetReference> GlobalAttributeSetDefaultsTableNames;
+	TArray<FSoftObjectPath> GlobalAttributeSetDefaultsTableNames;
 
 	/** Class reference to gameplay cue manager. Use this if you want to just instantiate a class for your gameplay cue manager without having to create an asset. */
 	UPROPERTY(config)
-	FStringAssetReference GlobalGameplayCueManagerClass;
+	FSoftObjectPath GlobalGameplayCueManagerClass;
 
 	/** Object reference to gameplay cue manager (E.g., reference to a specific blueprint of your GameplayCueManager class. This is not necessary unless you want to have data or blueprints in your gameplay cue manager. */
 	UPROPERTY(config)
-	FStringAssetReference GlobalGameplayCueManagerName;
+	FSoftObjectPath GlobalGameplayCueManagerName;
 
 	/** Look in these paths for GameplayCueNotifies. These are your "always loaded" set. */
 	UPROPERTY(config)
@@ -294,7 +313,7 @@ protected:
 
 	/** The class to instantiate as the GameplayTagResponseTable. */
 	UPROPERTY(config)
-	FStringAssetReference GameplayTagResponseTableName;
+	FSoftObjectPath GameplayTagResponseTableName;
 
 	UPROPERTY()
 	UGameplayTagReponseTable* GameplayTagResponseTable;
@@ -342,4 +361,17 @@ public:
 	//...for finding assets directly from the game.
 	void Notify_FindAssetInEditor(FString AssetName, int AssetType);
 	FOnAbilitySystemAssetFoundDelegate AbilityFindAssetInEditorCallbacks;
+};
+
+
+struct FScopeCurrentGameplayEffectBeingApplied
+{
+	FScopeCurrentGameplayEffectBeingApplied(const FGameplayEffectSpec* Spec, UAbilitySystemComponent* AbilitySystemComponent)
+	{
+		UAbilitySystemGlobals::Get().PushCurrentAppliedGE(Spec, AbilitySystemComponent);
+	}
+	~FScopeCurrentGameplayEffectBeingApplied()
+	{
+		UAbilitySystemGlobals::Get().PopCurrentAppliedGE();
+	}
 };

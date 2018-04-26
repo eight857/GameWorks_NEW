@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "Kismet2/DebuggerCommands.h"
@@ -29,7 +29,8 @@
 #include "Interfaces/TargetDeviceId.h"
 #include "Interfaces/ITargetPlatform.h"
 #include "Interfaces/ITargetPlatformManagerModule.h"
-#include "Interfaces/ITargetDeviceServicesModule.h"
+#include "ITargetDeviceProxy.h"
+#include "ITargetDeviceServicesModule.h"
 #include "ISettingsModule.h"
 #include "Interfaces/IMainFrameModule.h"
 
@@ -42,6 +43,7 @@
 #include "PlatformInfo.h"
 
 #include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
 #include "Editor.h"
 
 //@TODO: Remove this dependency
@@ -55,6 +57,7 @@
 #include "Interfaces/IProjectManager.h"
 
 #include "InstalledPlatformInfo.h"
+#include "PIEPreviewDeviceProfileSelectorModule.h"
 
 
 #define LOCTEXT_NAMESPACE "DebuggerCommands"
@@ -111,11 +114,14 @@ public:
 	static bool PlayInViewport_CanExecute();
 	static void PlayInEditorFloating_Clicked();
 	static bool PlayInEditorFloating_CanExecute();
-	static void PlayInNewProcess_Clicked( bool MobilePreview, bool VulkanPreview );
+	static void PlayInNewProcess_Clicked(EPlayModeType PlayModeType);
 	static bool PlayInNewProcess_CanExecute();
 	static void PlayInVR_Clicked();
 	static bool PlayInVR_CanExecute();
-	static bool PlayInModeIsChecked( EPlayModeType PlayMode );
+	static bool PlayInModeIsChecked( EPlayModeType PlayMode);
+
+	static void PlayInNewProcessPreviewDevice_Clicked(FString PIEPreviewDeviceName);
+	static bool PlayInModeAndPreviewDeviceIsChecked(FString PIEPreviewDeviceName);
 
 	static bool PlayInLocation_CanExecute( EPlayModeLocations Location );
 	static void PlayInLocation_Clicked( EPlayModeLocations Location );
@@ -180,14 +186,17 @@ public:
 
 protected:
 
+	static void PlayInNewProcess(EPlayModeType PlayModeType, FString PIEPreviewDeviceName);
+
 	/**
 	 * Adds a message to the message log.
 	 *
 	 * @param Text The main message text.
 	 * @param Detail The detailed description.
 	 * @param TutorialLink A link to an associated tutorial.
+	 * @param DocumentationLink A link to documentation.
 	 */
-	static void AddMessageLog( const FText& Text, const FText& Detail, const FString& TutorialLink );
+	static void AddMessageLog( const FText& Text, const FText& Detail, const FString& TutorialLink, const FString& DocumentationLink);
 
 	/**
 	 * Checks whether the specified platform has a default device that can be launched on.
@@ -301,7 +310,7 @@ void FPlayWorldCommands::RegisterCommands()
 	UI_COMMAND( PlayInViewport, "Selected Viewport", "Play this level in the active level editor viewport", EUserInterfaceActionType::Check, FInputChord() );
 	UI_COMMAND( PlayInEditorFloating, "New Editor Window (PIE)", "Play this level in a new window", EUserInterfaceActionType::Check, FInputChord() );
 	UI_COMMAND( PlayInVR, "VR Preview", "Play this level in VR", EUserInterfaceActionType::Check, FInputChord() );
-	UI_COMMAND( PlayInMobilePreview, "Mobile Preview (PIE)", "Play this level as a mobile device preview (runs in its own process)", EUserInterfaceActionType::Check, FInputChord() );
+	UI_COMMAND( PlayInMobilePreview, "Mobile Preview ES2 (PIE)", "Play this level as a mobile device preview in ES2 mode (runs in its own process)", EUserInterfaceActionType::Check, FInputChord());
 	UI_COMMAND( PlayInVulkanPreview, "Vulkan Mobile Preview (PIE)", "Play this level using mobile Vulkan rendering (runs in its own process)", EUserInterfaceActionType::Check, FInputChord() );
 	UI_COMMAND( PlayInNewProcess, "Standalone Game", "Play this level in a new window that runs in its own process", EUserInterfaceActionType::Check, FInputChord() );
 	UI_COMMAND( PlayInCameraLocation, "Current Camera Location", "Spawn the player at the current camera location", EUserInterfaceActionType::RadioButton, FInputChord() );
@@ -320,16 +329,46 @@ void FPlayWorldCommands::RegisterCommands()
 	UI_COMMAND( TogglePlayPauseOfPlaySession, "Toggle Play/Pause", "Resume playing if paused, or pause if playing", EUserInterfaceActionType::Button, FInputChord( EKeys::Pause ) );
 	UI_COMMAND( PossessEjectPlayer, "Possess or Eject Player", "Possesses or ejects the player from the camera", EUserInterfaceActionType::Button, FInputChord( EKeys::F8 ) );
 	UI_COMMAND( ShowCurrentStatement, "Find Node", "Show the current node", EUserInterfaceActionType::Button, FInputChord() );
-	UI_COMMAND( StepInto, "Step Into", "Step Into the next node to be executed", EUserInterfaceActionType::Button, FInputChord( EKeys::F10) );
-	UI_COMMAND( StepOver, "Step Over", "Step to the next node to be executed in the current graph", EUserInterfaceActionType::Button, FInputChord() );
-	UI_COMMAND( StepOut, "Step Out", "Step Out to the next node to be executed in the parent graph", EUserInterfaceActionType::Button, FInputChord() );
+	UI_COMMAND( StepInto, "Step Into", "Step Into the next node to be executed", EUserInterfaceActionType::Button, FInputChord(EKeys::F11) );
+	UI_COMMAND( StepOver, "Step Over", "Step to the next node to be executed in the current graph", EUserInterfaceActionType::Button, FInputChord(EKeys::F10) );
+	UI_COMMAND( StepOut, "Step Out", "Step Out to the next node to be executed in the parent graph", EUserInterfaceActionType::Button, FInputChord(EModifierKey::Alt|EModifierKey::Shift, EKeys::F11) );
 
 	// Launch
 	UI_COMMAND( RepeatLastLaunch, "Launch", "Launches the game on the device as the last session launched from the dropdown next to the Play on Device button on the level editor toolbar", EUserInterfaceActionType::Button, FInputChord( EKeys::P, EModifierKey::Alt | EModifierKey::Shift ) )
 	UI_COMMAND( OpenProjectLauncher, "Project Launcher...", "Open the Project Launcher for advanced packaging, deploying and launching of your projects", EUserInterfaceActionType::Button, FInputChord());
 	UI_COMMAND( OpenDeviceManager, "Device Manager...", "View and manage connected devices.", EUserInterfaceActionType::Button, FInputChord() );
+
+	// PIE mobile preview devices.
+	AddPIEPreviewDeviceCommands();
 }
 
+void FPlayWorldCommands::AddPIEPreviewDeviceCommands()
+{
+	auto PIEPreviewDeviceModule = FModuleManager::LoadModulePtr<FPIEPreviewDeviceModule>(TEXT("PIEPreviewDeviceProfileSelector"));
+	if (PIEPreviewDeviceModule)
+	{
+		TArray<TSharedPtr<FUICommandInfo>>& TargetedMobilePreviewDeviceCommands = PlayInTargetedMobilePreviewDevices;
+		const TArray<FString>& Devices = PIEPreviewDeviceModule->GetPreviewDeviceContainer().GetDeviceSpecificationsLocalizedName();
+		PlayInTargetedMobilePreviewDevices.SetNum(Devices.Num());
+		for (int32 DeviceIndex = 0; DeviceIndex < Devices.Num(); DeviceIndex++)
+		{
+			FFormatNamedArguments Args;
+			Args.Add(TEXT("Device"), FText::FromString(Devices[DeviceIndex]));
+			const FText CommandLabel = FText::Format(LOCTEXT("DevicePreviewLaunchCommandLabel", "{Device}"), Args);
+			const FText CommandDesc = FText::Format(LOCTEXT("DevicePreviewLaunchCommandDesc", "Launch on this computer using {Device}'s settings."), Args);
+
+			FUICommandInfo::MakeCommandInfo(
+				this->AsShared(),
+				TargetedMobilePreviewDeviceCommands[DeviceIndex],
+				FName(*CommandLabel.ToString()),
+				CommandLabel,
+				CommandDesc,
+				FSlateIcon(FEditorStyle::GetStyleSetName(), "PlayWorld.PlayInMobilePreview"),
+				EUserInterfaceActionType::Check,
+				FInputChord());
+		}
+	}
+}
 
 void FPlayWorldCommands::BindGlobalPlayWorldCommands()
 {
@@ -378,23 +417,23 @@ void FPlayWorldCommands::BindGlobalPlayWorldCommands()
 		);
 
 	ActionList.MapAction( Commands.PlayInMobilePreview,
-		FExecuteAction::CreateStatic( &FInternalPlayWorldCommandCallbacks::PlayInNewProcess_Clicked, true, false ),
+		FExecuteAction::CreateStatic( &FInternalPlayWorldCommandCallbacks::PlayInNewProcess_Clicked, PlayMode_InMobilePreview),
 		FCanExecuteAction::CreateStatic( &FInternalPlayWorldCommandCallbacks::PlayInNewProcess_CanExecute ),
 		FIsActionChecked::CreateStatic( &FInternalPlayWorldCommandCallbacks::PlayInModeIsChecked, PlayMode_InMobilePreview ),
 		FIsActionButtonVisible::CreateStatic( &FInternalPlayWorldCommandCallbacks::CanShowNonPlayWorldOnlyActions )
 		);
 
 	ActionList.MapAction(Commands.PlayInVulkanPreview,
-		FExecuteAction::CreateStatic(&FInternalPlayWorldCommandCallbacks::PlayInNewProcess_Clicked, false, true),
+		FExecuteAction::CreateStatic(&FInternalPlayWorldCommandCallbacks::PlayInNewProcess_Clicked, PlayMode_InVulkanPreview),
 		FCanExecuteAction::CreateStatic(&FInternalPlayWorldCommandCallbacks::PlayInNewProcess_CanExecute),
 		FIsActionChecked::CreateStatic(&FInternalPlayWorldCommandCallbacks::PlayInModeIsChecked, PlayMode_InVulkanPreview),
 		FIsActionButtonVisible::CreateStatic(&FInternalPlayWorldCommandCallbacks::CanShowVulkanNonPlayWorldOnlyActions)
 		);
 
 	ActionList.MapAction(Commands.PlayInNewProcess,
-		FExecuteAction::CreateStatic( &FInternalPlayWorldCommandCallbacks::PlayInNewProcess_Clicked, false, false ),
+		FExecuteAction::CreateStatic( &FInternalPlayWorldCommandCallbacks::PlayInNewProcess_Clicked, PlayMode_InNewProcess),
 		FCanExecuteAction::CreateStatic( &FInternalPlayWorldCommandCallbacks::PlayInNewProcess_CanExecute ),
-		FIsActionChecked::CreateStatic( &FInternalPlayWorldCommandCallbacks::PlayInModeIsChecked, PlayMode_InNewProcess ),
+		FIsActionChecked::CreateStatic( &FInternalPlayWorldCommandCallbacks::PlayInModeIsChecked, PlayMode_InNewProcess),
 		FIsActionButtonVisible::CreateStatic( &FInternalPlayWorldCommandCallbacks::CanShowNonPlayWorldOnlyActions )
 		);
 
@@ -528,8 +567,29 @@ void FPlayWorldCommands::BindGlobalPlayWorldCommands()
 		FCanExecuteAction(),
 		FIsActionChecked::CreateStatic( &FInternalPlayWorldCommandCallbacks::OnIsDedicatedServerPIEEnabled ) 
 		);
+
+	AddPIEPreviewDeviceActions(Commands, ActionList);
 }
 
+void FPlayWorldCommands::AddPIEPreviewDeviceActions(const FPlayWorldCommands &Commands, FUICommandList &ActionList)
+{
+	// PIE preview devices.
+	auto PIEPreviewDeviceModule = FModuleManager::LoadModulePtr<FPIEPreviewDeviceModule>(TEXT("PIEPreviewDeviceProfileSelector"));
+	if (PIEPreviewDeviceModule)
+	{
+		const TArray<TSharedPtr<FUICommandInfo>>& TargetedMobilePreviewDeviceCommands = Commands.PlayInTargetedMobilePreviewDevices;
+		const TArray<FString>& Devices = PIEPreviewDeviceModule->GetPreviewDeviceContainer().GetDeviceSpecifications();
+		for (int32 DeviceIndex = 0; DeviceIndex < Devices.Num(); DeviceIndex++)
+		{
+			ActionList.MapAction(TargetedMobilePreviewDeviceCommands[DeviceIndex],
+				FExecuteAction::CreateStatic(&FInternalPlayWorldCommandCallbacks::PlayInNewProcessPreviewDevice_Clicked, Devices[DeviceIndex]),
+				FCanExecuteAction::CreateStatic(&FInternalPlayWorldCommandCallbacks::PlayInNewProcess_CanExecute),
+				FIsActionChecked::CreateStatic(&FInternalPlayWorldCommandCallbacks::PlayInModeAndPreviewDeviceIsChecked, Devices[DeviceIndex]),
+				FIsActionButtonVisible::CreateStatic(&FInternalPlayWorldCommandCallbacks::CanShowNonPlayWorldOnlyActions)
+			);
+		}
+	}
+}
 
 void FPlayWorldCommands::BuildToolbar( FToolBarBuilder& ToolbarBuilder, bool bIncludeLaunchButtonAndOptions )
 {
@@ -609,6 +669,58 @@ void FPlayWorldCommands::BuildToolbar( FToolBarBuilder& ToolbarBuilder, bool bIn
 	// Single-stepping only buttons
 	ToolbarBuilder.AddToolBarButton(FPlayWorldCommands::Get().ShowCurrentStatement, NAME_None, TAttribute<FText>(), TAttribute<FText>(), TAttribute<FSlateIcon>(), FName(TEXT("ShowCurrentStatement")));
 	ToolbarBuilder.AddToolBarButton(FPlayWorldCommands::Get().StepInto, NAME_None, TAttribute<FText>(), TAttribute<FText>(), TAttribute<FSlateIcon>(), FName(TEXT("StepInto")));
+	ToolbarBuilder.AddToolBarButton(FPlayWorldCommands::Get().StepOver, NAME_None, TAttribute<FText>(), TAttribute<FText>(), TAttribute<FSlateIcon>(), FName(TEXT("StepOver")));
+	ToolbarBuilder.AddToolBarButton(FPlayWorldCommands::Get().StepOut, NAME_None, TAttribute<FText>(), TAttribute<FText>(), TAttribute<FSlateIcon>(), FName(TEXT("StepOut")));
+}
+
+static void MakePreviewDeviceMenu(FMenuBuilder& MenuBuilder )
+{
+	struct FLocal
+	{
+		static void AddDevicePreviewSubCategories(FMenuBuilder& MenuBuilderIn, TSharedPtr<FPIEPreviewDeviceContainerCategory> PreviewDeviceCategory)
+		{
+			const TArray<TSharedPtr<FUICommandInfo>>& TargetedMobilePreviewDeviceCommands = FPlayWorldCommands::Get().PlayInTargetedMobilePreviewDevices;
+			int32 StartIndex = PreviewDeviceCategory->GetDeviceStartIndex();
+			int32 EndIndex = StartIndex + PreviewDeviceCategory->GetDeviceCount();
+			for (int32 Device = StartIndex; Device < EndIndex; Device++)
+			{
+				MenuBuilderIn.AddMenuEntry(TargetedMobilePreviewDeviceCommands[Device]);
+			}
+
+			FText AndroidCategory = FText::FromString(TEXT("Android"));
+			FText IOSCategory = FText::FromString(TEXT("IOS"));
+
+			for (TSharedPtr<FPIEPreviewDeviceContainerCategory> SubCategory : PreviewDeviceCategory->GetSubCategories())
+			{
+				FText CategoryDisplayName = SubCategory->GetCategoryDisplayName();
+				
+				if (CategoryDisplayName.CompareToCaseIgnored(AndroidCategory) == 0) 
+				{
+					CategoryDisplayName = FText(LOCTEXT("Android", "Android"));
+				}
+				else if (CategoryDisplayName.CompareToCaseIgnored(IOSCategory) == 0)
+				{
+					CategoryDisplayName = FText(LOCTEXT("IOS", "iOS"));
+				}
+
+				MenuBuilderIn.AddSubMenu(
+					SubCategory->GetCategoryDisplayName(),
+					SubCategory->GetCategoryToolTip(),
+					FNewMenuDelegate::CreateStatic(&FLocal::AddDevicePreviewSubCategories, SubCategory)
+				);
+			}
+		}
+	};
+
+	const TArray<TSharedPtr<FUICommandInfo>>& TargetedMobilePreviewDeviceCommands = FPlayWorldCommands::Get().PlayInTargetedMobilePreviewDevices;
+	auto PIEPreviewDeviceModule = FModuleManager::LoadModulePtr<FPIEPreviewDeviceModule>(TEXT("PIEPreviewDeviceProfileSelector"));
+	if(PIEPreviewDeviceModule)
+	{
+		const FPIEPreviewDeviceContainer& DeviceContainer = PIEPreviewDeviceModule->GetPreviewDeviceContainer();
+		MenuBuilder.BeginSection("LevelEditorPlayModesPreviewDevice", LOCTEXT("PreviewDevicePlayButtonModesSection", "Preview Devices"));
+		FLocal::AddDevicePreviewSubCategories(MenuBuilder, DeviceContainer.GetRootCategory());
+		MenuBuilder.EndSection();
+	}
 }
 
 TSharedRef< SWidget > FPlayWorldCommands::GeneratePlayMenuContent( TSharedRef<FUICommandList> InCommandList )
@@ -679,6 +791,17 @@ TSharedRef< SWidget > FPlayWorldCommands::GeneratePlayMenuContent( TSharedRef<FU
 	{
 		FLocal::AddPlayModeMenuEntry(MenuBuilder, PlayMode_InViewPort);
 		FLocal::AddPlayModeMenuEntry(MenuBuilder, PlayMode_InMobilePreview);
+
+		if (GetDefault<UEditorExperimentalSettings>()->bMobilePIEPreviewDeviceLaunch)
+		{
+			MenuBuilder.AddSubMenu(
+				LOCTEXT("TargetedMobilePreviewSubMenu", "Mobile Preview (PIE)"),
+				LOCTEXT("TargetedMobilePreviewSubMenu_ToolTip", "Play this level using a specified mobile device preview (runs in its own process)"),
+				FNewMenuDelegate::CreateStatic(&MakePreviewDeviceMenu), true,
+				FSlateIcon(FEditorStyle::GetStyleSetName(), "PlayWorld.PlayInMobilePreview")
+				);
+		}
+
 		FLocal::AddPlayModeMenuEntry(MenuBuilder, PlayMode_InVulkanPreview);
 		FLocal::AddPlayModeMenuEntry(MenuBuilder, PlayMode_InEditorFloating);
 		FLocal::AddPlayModeMenuEntry(MenuBuilder, PlayMode_InVR);
@@ -755,7 +878,7 @@ TSharedRef< SWidget > FPlayWorldCommands::GenerateLaunchMenuContent( TSharedRef<
 	});
 
 	// shared devices section
-	TSharedPtr<ITargetDeviceServicesModule> TargetDeviceServicesModule = StaticCastSharedPtr<ITargetDeviceServicesModule>(FModuleManager::Get().LoadModule(TEXT("TargetDeviceServices")));
+	ITargetDeviceServicesModule* TargetDeviceServicesModule = static_cast<ITargetDeviceServicesModule*>(FModuleManager::Get().LoadModule(TEXT("TargetDeviceServices")));
 	IProjectTargetPlatformEditorModule& ProjectTargetPlatformEditorModule = FModuleManager::LoadModuleChecked<IProjectTargetPlatformEditorModule>("ProjectTargetPlatformEditor");
 
 	TArray<FString> PlatformsToMaybeInstallLinksFor;
@@ -782,7 +905,7 @@ TSharedRef< SWidget > FPlayWorldCommands::GenerateLaunchMenuContent( TSharedRef<
 			if (VanillaPlatform.PlatformInfo->SDKStatus == PlatformInfo::EPlatformSDKStatus::Installed)
 			{
 				// for each platform...
-				TArray<ITargetDeviceProxyPtr> DeviceProxies;
+				TArray<TSharedPtr<ITargetDeviceProxy>> DeviceProxies;
 				TargetDeviceServicesModule->GetDeviceProxyManager()->GetProxies(VanillaPlatform.PlatformInfo->VanillaPlatformName, false, DeviceProxies);
 					
 				// if this platform had no devices, but we want to show an extra option if not installed right
@@ -799,7 +922,7 @@ TSharedRef< SWidget > FPlayWorldCommands::GenerateLaunchMenuContent( TSharedRef<
 					// for each proxy...
 					for (auto DeviceProxyIt = DeviceProxies.CreateIterator(); DeviceProxyIt; ++DeviceProxyIt)
 					{
-						ITargetDeviceProxyPtr DeviceProxy = *DeviceProxyIt;
+						TSharedPtr<ITargetDeviceProxy> DeviceProxy = *DeviceProxyIt;
 
 						// ... create an action...
 						FUIAction LaunchDeviceAction(
@@ -1227,6 +1350,21 @@ const TSharedRef < FUICommandInfo > GetLastPlaySessionCommand()
 		Command = Commands.PlayInMobilePreview.ToSharedRef();
 		break;
 
+	case PlayMode_InTargetedMobilePreview:
+	{
+		// Scan through targeted mobile preview commands to find our match.
+		for (auto PreviewerCommand : Commands.PlayInTargetedMobilePreviewDevices)
+		{
+			FName LastExecutedPIEPreviewDevice = FName(*PlaySettings->LastExecutedPIEPreviewDevice);
+			if (PreviewerCommand->GetCommandName() == LastExecutedPIEPreviewDevice)
+			{
+				Command = PreviewerCommand.ToSharedRef();
+				break;
+			}
+		}
+		break;
+	}
+
 	case PlayMode_InVulkanPreview:
 		Command = Commands.PlayInVulkanPreview.ToSharedRef();
 		break;
@@ -1289,6 +1427,10 @@ void RecordLastExecutedPlayMode()
 			PlayModeString = TEXT("InMobilePreview");
 			break;
 
+		case PlayMode_InTargetedMobilePreview:
+			PlayModeString = TEXT("InTargetedMobilePreview");
+			break;
+
 		case PlayMode_InVulkanPreview:
 			PlayModeString = TEXT("InVulkanPreview");
 			break;
@@ -1334,7 +1476,7 @@ void FInternalPlayWorldCommandCallbacks::RepeatLastPlay_Clicked()
 
 	// Grab the play command and execute it
 	TSharedRef<FUICommandInfo> LastCommand = GetLastPlaySessionCommand();
-	UE_LOG(LogTemp, Log, TEXT("Repeting last play command: %s"), *LastCommand->GetLabel().ToString());
+	UE_LOG(LogTemp, Log, TEXT("Repeating last play command: %s"), *LastCommand->GetLabel().ToString());
 
 	FPlayWorldCommands::GlobalPlayWorldActions->ExecuteAction(LastCommand);
 }
@@ -1414,6 +1556,12 @@ void FInternalPlayWorldCommandCallbacks::PlayInViewport_Clicked( )
 
 bool FInternalPlayWorldCommandCallbacks::PlayInViewport_CanExecute()
 {
+	// Disallow PIE when compiling in the editor
+	if (GEditor->bIsCompiling)
+	{
+		return false;
+	}
+
 	// Allow PIE if we don't already have a play session or the play session is simulate in editor (which we can toggle to PIE)
 	return (!GEditor->bIsPlayWorldQueued && !HasPlayWorld() && !GEditor->IsLightingBuildCurrentlyRunning() ) || GUnrealEd->bIsSimulatingInEditor;
 }
@@ -1501,38 +1649,39 @@ void FInternalPlayWorldCommandCallbacks::PlayInVR_Clicked()
 			}
 		}
 
-		const bool bHMDIsReady = (GEngine && GEngine->HMDDevice.IsValid() && GEngine->HMDDevice->IsHMDConnected());
+		const bool bHMDIsReady = (GEngine && GEngine->XRSystem.IsValid() && GEngine->XRSystem->GetHMDDevice() && GEngine->XRSystem->GetHMDDevice()->IsHMDConnected());
 		// Spawn a new window to play in.
 		GUnrealEd->RequestPlaySession(bAtPlayerStart, NULL, bSimulateInEditor, StartLoc, StartRot, -1, false, bHMDIsReady);
-	}
-	else
-	{
-		// Terminate existing session
-		GUnrealEd->EndPlayMap();
 	}
 }
 
 
 bool FInternalPlayWorldCommandCallbacks::PlayInVR_CanExecute()
 {
-	return (!HasPlayWorld() || !GUnrealEd->bIsSimulatingInEditor) && !GEditor->IsLightingBuildCurrentlyRunning() && GEngine && GEngine->HMDDevice.IsValid();
+	return (!HasPlayWorld() || !GUnrealEd->bIsSimulatingInEditor) && !GEditor->IsLightingBuildCurrentlyRunning() && GEngine && GEngine->XRSystem.IsValid();
 }
 
-
-void FInternalPlayWorldCommandCallbacks::PlayInNewProcess_Clicked( bool MobilePreview, bool VulkanPreview )
+void SetLastExecutedPIEPreviewDevice(FString PIEPreviewDevice)
 {
-	if (MobilePreview)
-	{
-		SetLastExecutedPlayMode(PlayMode_InMobilePreview);
-	}
-	else if (VulkanPreview)
-	{
-		SetLastExecutedPlayMode(PlayMode_InVulkanPreview);
-	}
-	else
-	{
-		SetLastExecutedPlayMode(PlayMode_InNewProcess);
-	}
+	ULevelEditorPlaySettings* PlaySettings = GetMutableDefault<ULevelEditorPlaySettings>();
+	PlaySettings->LastExecutedPIEPreviewDevice = PIEPreviewDevice;
+	FPropertyChangedEvent PropChangeEvent(ULevelEditorPlaySettings::StaticClass()->FindPropertyByName(GET_MEMBER_NAME_CHECKED(ULevelEditorPlaySettings, LastExecutedPIEPreviewDevice)));
+	PlaySettings->PostEditChangeProperty(PropChangeEvent);
+	PlaySettings->SaveConfig();
+}
+
+void FInternalPlayWorldCommandCallbacks::PlayInNewProcessPreviewDevice_Clicked(FString PIEPreviewDeviceName)
+{
+	SetLastExecutedPIEPreviewDevice(PIEPreviewDeviceName);
+	PlayInNewProcess_Clicked(PlayMode_InTargetedMobilePreview);
+}
+
+void FInternalPlayWorldCommandCallbacks::PlayInNewProcess_Clicked(EPlayModeType PlayModeType)
+{
+	check(PlayModeType == PlayMode_InNewProcess || PlayModeType == PlayMode_InMobilePreview 
+		|| PlayModeType == PlayMode_InTargetedMobilePreview || PlayModeType == PlayMode_InVulkanPreview	);
+
+	SetLastExecutedPlayMode(PlayModeType);
 
 	if( !HasPlayWorld() )
 	{
@@ -1555,8 +1704,13 @@ void FInternalPlayWorldCommandCallbacks::PlayInNewProcess_Clicked( bool MobilePr
 			}
 		}
 
+		FString MobilePreviewTargetDevice;
+		if(PlayModeType == PlayMode_InTargetedMobilePreview)
+		{ 
+			MobilePreviewTargetDevice = GetDefault<ULevelEditorPlaySettings>()->LastExecutedPIEPreviewDevice;
+		}
 		// Spawn a new window to play in.
-		GUnrealEd->RequestPlaySession(StartLoc, StartRot, MobilePreview, VulkanPreview);
+		GUnrealEd->RequestPlaySession(StartLoc, StartRot, PlayModeType == PlayMode_InMobilePreview || PlayModeType == PlayMode_InTargetedMobilePreview, PlayModeType == PlayMode_InVulkanPreview, MobilePreviewTargetDevice);
 	}
 	else
 	{
@@ -1571,7 +1725,12 @@ bool FInternalPlayWorldCommandCallbacks::PlayInNewProcess_CanExecute()
 }
 
 
-bool FInternalPlayWorldCommandCallbacks::PlayInModeIsChecked( EPlayModeType PlayMode )
+bool FInternalPlayWorldCommandCallbacks::PlayInModeAndPreviewDeviceIsChecked(FString PIEPreviewDeviceName)
+{
+	return PlayInModeIsChecked(PlayMode_InTargetedMobilePreview) && GetDefault<ULevelEditorPlaySettings>()->LastExecutedPIEPreviewDevice == PIEPreviewDeviceName;
+}
+
+bool FInternalPlayWorldCommandCallbacks::PlayInModeIsChecked(EPlayModeType PlayMode)
 {
 	return (PlayMode == GetDefault<ULevelEditorPlaySettings>()->LastExecutedPlayModeType);
 }
@@ -1733,8 +1892,10 @@ bool FInternalPlayWorldCommandCallbacks::IsReadyToLaunchOnDevice(FString DeviceI
 	if (Platform)
 	{
 		FString NotInstalledTutorialLink;
-		FString ProjectPath = FPaths::IsProjectFilePathSet() ? FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()) : FPaths::RootDir() / FApp::GetGameName() / FApp::GetGameName() + TEXT(".uproject");
-		int32 Result = Platform->CheckRequirements(ProjectPath, bHasCode, NotInstalledTutorialLink);
+		FString DocumentationLink;
+		FText CustomizedLogMessage;
+		FString ProjectPath = FPaths::IsProjectFilePathSet() ? FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()) : FPaths::RootDir() / FApp::GetProjectName() / FApp::GetProjectName() + TEXT(".uproject");
+		int32 Result = Platform->CheckRequirements(ProjectPath, bHasCode, NotInstalledTutorialLink, DocumentationLink, CustomizedLogMessage);
 		
 		// report to analytics
 		FEditorAnalytics::ReportBuildRequirementsFailure(TEXT("Editor.LaunchOn.Failed"), PlatformName, bHasCode, Result);
@@ -1746,8 +1907,21 @@ bool FInternalPlayWorldCommandCallbacks::IsReadyToLaunchOnDevice(FString DeviceI
 		{
 			AddMessageLog(
 				LOCTEXT("SdkNotFoundMessage", "Software Development Kit (SDK) not found."),
-				FText::Format(LOCTEXT("SdkNotFoundMessageDetail", "Please install the SDK for the {0} target platform!"), Platform->DisplayName()),
-				NotInstalledTutorialLink
+				CustomizedLogMessage.IsEmpty() ? FText::Format(LOCTEXT("SdkNotFoundMessageDetail", "Please install the SDK for the {0} target platform!"), Platform->DisplayName()) : CustomizedLogMessage,
+				NotInstalledTutorialLink,
+				DocumentationLink
+			);
+
+			UnrecoverableError = true;
+		}
+
+		if ((Result & ETargetPlatformReadyStatus::LicenseNotAccepted) != 0)
+		{
+			AddMessageLog(
+				LOCTEXT("LicenseNotAcceptedMessage", "License not accepted."),
+				CustomizedLogMessage.IsEmpty() ? LOCTEXT("LicenseNotAcceptedMessageDetail", "License must be accepted in project settings to deploy your app to the device.") : CustomizedLogMessage,
+				NotInstalledTutorialLink,
+				DocumentationLink
 			);
 
 			UnrecoverableError = true;
@@ -1757,8 +1931,9 @@ bool FInternalPlayWorldCommandCallbacks::IsReadyToLaunchOnDevice(FString DeviceI
 		{
 			AddMessageLog(
 				LOCTEXT("ProvisionNotFoundMessage", "Provision not found."),
-				LOCTEXT("ProvisionNotFoundMessageDetail", "A provision is required for deploying your app to the device."),
-				NotInstalledTutorialLink
+				CustomizedLogMessage.IsEmpty() ? LOCTEXT("ProvisionNotFoundMessageDetail", "A provision is required for deploying your app to the device.") : CustomizedLogMessage,
+				NotInstalledTutorialLink,
+				DocumentationLink
 			);
 
 			UnrecoverableError = true;
@@ -1768,8 +1943,9 @@ bool FInternalPlayWorldCommandCallbacks::IsReadyToLaunchOnDevice(FString DeviceI
 		{
 			AddMessageLog(
 				LOCTEXT("SigningKeyNotFoundMessage", "Signing key not found."),
-				LOCTEXT("SigningKeyNotFoundMessageDetail", "The app could not be digitally signed, because the signing key is not configured."),
-				NotInstalledTutorialLink
+				CustomizedLogMessage.IsEmpty() ? LOCTEXT("SigningKeyNotFoundMessageDetail", "The app could not be digitally signed, because the signing key is not configured.") : CustomizedLogMessage,
+				NotInstalledTutorialLink,
+				DocumentationLink
 			);
 
 			UnrecoverableError = true;
@@ -1779,10 +1955,24 @@ bool FInternalPlayWorldCommandCallbacks::IsReadyToLaunchOnDevice(FString DeviceI
 		{
 			AddMessageLog(
 				LOCTEXT("ManifestNotFound", "Manifest not found."),
-				LOCTEXT("ManifestNotFoundMessageDetail", "The generated application manifest could not be found."),
-				NotInstalledTutorialLink
-				);
+				CustomizedLogMessage.IsEmpty() ? LOCTEXT("ManifestNotFoundMessageDetail", "The generated application manifest could not be found.") : CustomizedLogMessage,
+				NotInstalledTutorialLink,
+				DocumentationLink
+			);
 
+			UnrecoverableError = true;
+		}
+
+		if ((Result & ETargetPlatformReadyStatus::RemoveServerNameEmpty) != 0
+				&& (bHasCode || (Result & ETargetPlatformReadyStatus::CodeBuildRequired)
+					|| (!FApp::GetEngineIsPromotedBuild() && !FApp::IsEngineInstalled())))
+		{
+			AddMessageLog(
+				LOCTEXT("RemoveServerNameNotFound", "Remote compiling requires a server name. "),
+				CustomizedLogMessage.IsEmpty() ? LOCTEXT("RemoveServerNameNotFoundDetail", "Please specify one in the Remote Server Name settings field.") : CustomizedLogMessage,
+				NotInstalledTutorialLink,
+				DocumentationLink
+			);
 			UnrecoverableError = true;
 		}
 
@@ -1906,8 +2096,7 @@ FText FInternalPlayWorldCommandCallbacks::GetResumePlaySessionToolTip()
 void FInternalPlayWorldCommandCallbacks::SingleFrameAdvance_Clicked()
 {
 	// We want to function just like Single stepping where we will stop at a breakpoint if one is encountered but we also want to stop after 1 tick if a breakpoint is not encountered.
-	const bool bAllowStepIn = true;
-	FKismetDebugUtilities::RequestSingleStepping(bAllowStepIn);
+	FKismetDebugUtilities::RequestSingleStepIn();
 	if (HasPlayWorld())
 	{
 		GUnrealEd->PlayWorld->bDebugFrameStepExecution = true;
@@ -1946,8 +2135,7 @@ void FInternalPlayWorldCommandCallbacks::ShowCurrentStatement_Clicked()
 
 void FInternalPlayWorldCommandCallbacks::StepInto_Clicked()
 {
-	const bool bAllowStepIn = true;
-	FKismetDebugUtilities::RequestSingleStepping(bAllowStepIn);
+	FKismetDebugUtilities::RequestSingleStepIn();
 	if (HasPlayWorld())
 	{
 		LeaveDebuggingMode();
@@ -1957,8 +2145,7 @@ void FInternalPlayWorldCommandCallbacks::StepInto_Clicked()
 
 void FInternalPlayWorldCommandCallbacks::StepOver_Clicked()
 {
-	const bool bAllowStepIn = false;
-	FKismetDebugUtilities::RequestSingleStepping(bAllowStepIn);
+	FKismetDebugUtilities::RequestStepOver();
 	if (HasPlayWorld())
 	{
 		LeaveDebuggingMode();
@@ -2086,14 +2273,19 @@ bool FInternalPlayWorldCommandCallbacks::CanPossessEjectPlayer()
 }
 
 
-void FInternalPlayWorldCommandCallbacks::AddMessageLog( const FText& Text, const FText& Detail, const FString& TutorialLink )
+void FInternalPlayWorldCommandCallbacks::AddMessageLog( const FText& Text, const FText& Detail, const FString& TutorialLink, const FString& DocumentationLink)
 {
 	TSharedRef<FTokenizedMessage> Message = FTokenizedMessage::Create(EMessageSeverity::Error);
 	Message->AddToken(FTextToken::Create(Text));
 	Message->AddToken(FTextToken::Create(Detail));
-	Message->AddToken(FTutorialToken::Create(TutorialLink));
-	Message->AddToken(FDocumentationToken::Create(TEXT("Platforms/iOS/QuickStart/6")));
-
+	if (!TutorialLink.IsEmpty())
+	{
+		Message->AddToken(FTutorialToken::Create(TutorialLink));
+	}
+	if (!DocumentationLink.IsEmpty())
+	{
+		Message->AddToken(FDocumentationToken::Create(DocumentationLink));
+	}
 	FMessageLog MessageLog("PackagingResults");
 	MessageLog.AddMessage(Message);
 	MessageLog.Open();
@@ -2108,8 +2300,8 @@ bool FInternalPlayWorldCommandCallbacks::CanLaunchOnDevice(const FString& Device
 
 		if (!DeviceProxyManagerPtr.IsValid())
 		{
-			auto TargetDeviceServicesModule = StaticCastSharedPtr<ITargetDeviceServicesModule>(FModuleManager::Get().LoadModule(TEXT("TargetDeviceServices")));		
-			if (TargetDeviceServicesModule.IsValid())
+			ITargetDeviceServicesModule* TargetDeviceServicesModule = FModuleManager::Get().LoadModulePtr<ITargetDeviceServicesModule>(TEXT("TargetDeviceServices"));
+			if (TargetDeviceServicesModule)
 			{
 				DeviceProxyManagerPtr = TargetDeviceServicesModule->GetDeviceProxyManager();
 			}
@@ -2118,7 +2310,7 @@ bool FInternalPlayWorldCommandCallbacks::CanLaunchOnDevice(const FString& Device
 		TSharedPtr<ITargetDeviceProxyManager> DeviceProxyManager = DeviceProxyManagerPtr.Pin();
 		if (DeviceProxyManager.IsValid())
 		{
-			ITargetDeviceProxyPtr DeviceProxy = DeviceProxyManager->FindProxy(DeviceName);
+			TSharedPtr<ITargetDeviceProxy> DeviceProxy = DeviceProxyManager->FindProxy(DeviceName);
 			return (DeviceProxy.IsValid() && DeviceProxy->IsConnected());
 		}
 	}

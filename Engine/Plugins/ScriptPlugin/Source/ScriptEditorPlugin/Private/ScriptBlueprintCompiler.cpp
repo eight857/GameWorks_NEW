@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ScriptBlueprintCompiler.h"
 #include "ScriptBlueprint.h"
@@ -31,8 +31,7 @@ void FScriptBlueprintCompiler::CleanAndSanitizeClass(UBlueprintGeneratedClass* C
 	Super::CleanAndSanitizeClass(ClassToClean, InOldCDO);
 
 	// Make sure our typed pointer is set
-	check(ClassToClean == NewClass);	
-	NewScriptBlueprintClass = CastChecked<UScriptBlueprintGeneratedClass>((UObject*)NewClass);
+	check(ClassToClean == NewClass && NewScriptBlueprintClass == NewClass);	
 	ContextProperty = NULL;
 }
 
@@ -44,39 +43,39 @@ void FScriptBlueprintCompiler::CreateClassVariablesFromBlueprint()
 	UScriptBlueprintGeneratedClass* NewScripClass = CastChecked<UScriptBlueprintGeneratedClass>(NewClass);
 	NewScripClass->ScriptProperties.Empty();
 
-	for (auto& Field : ScriptDefinedFields)
+	for (FScriptField& Field : ScriptDefinedFields)
 	{
 		UClass* InnerType = Field.Class;
 		if (Field.Class->IsChildOf(UProperty::StaticClass()))
 		{
-			FString PinCategory;
+			FName PinCategory;
 			if (Field.Class->IsChildOf(UStrProperty::StaticClass()))
 			{
-				PinCategory = Schema->PC_String;
+				PinCategory = UEdGraphSchema_K2::PC_String;
 			}
 			else if (Field.Class->IsChildOf(UFloatProperty::StaticClass()))
 			{
-				PinCategory = Schema->PC_Float;
+				PinCategory = UEdGraphSchema_K2::PC_Float;
 			}
 			else if (Field.Class->IsChildOf(UIntProperty::StaticClass()))
 			{
-				PinCategory = Schema->PC_Int;
+				PinCategory = UEdGraphSchema_K2::PC_Int;
 			}
 			else if (Field.Class->IsChildOf(UBoolProperty::StaticClass()))
 			{
-				PinCategory = Schema->PC_Boolean;
+				PinCategory = UEdGraphSchema_K2::PC_Boolean;
 			}
 			else if (Field.Class->IsChildOf(UObjectProperty::StaticClass()))
 			{
-				PinCategory = Schema->PC_Object;
+				PinCategory = UEdGraphSchema_K2::PC_Object;
 				// @todo: some scripting extensions (that are strongly typed) can handle this better
 				InnerType = UObject::StaticClass();
 			}
-			if (!PinCategory.IsEmpty())
+			if (!PinCategory.IsNone())
 			{
-				FEdGraphPinType ScriptPinType(PinCategory, TEXT(""), InnerType, false, false, false, false, FEdGraphTerminalType());
+				FEdGraphPinType ScriptPinType(PinCategory, NAME_None, InnerType, EPinContainerType::None, false, FEdGraphTerminalType());
 				UProperty* ScriptProperty = CreateVariable(Field.Name, ScriptPinType);
-				if (ScriptProperty != NULL)
+				if (ScriptProperty)
 				{
 					ScriptProperty->SetMetaData(TEXT("Category"), *ScriptBP->GetName());
 					ScriptProperty->SetPropertyFlags(CPF_BlueprintVisible | CPF_Edit);
@@ -104,7 +103,7 @@ void FScriptBlueprintCompiler::CreateScriptContextProperty()
 
 	if (ContextClass)
 	{
-		FEdGraphPinType ScriptContextPinType(Schema->PC_Object, TEXT(""), ContextClass, false, false, false, false, FEdGraphTerminalType());
+		FEdGraphPinType ScriptContextPinType(UEdGraphSchema_K2::PC_Object, NAME_None, ContextClass, EPinContainerType::None, false, FEdGraphTerminalType());
 		ContextProperty = CastChecked<UObjectProperty>(CreateVariable(TEXT("Generated_ScriptContext"), ScriptContextPinType));
 		ContextProperty->SetPropertyFlags(CPF_ContainsInstancedReference | CPF_InstancedReference);
 	}
@@ -161,7 +160,7 @@ void FScriptBlueprintCompiler::CreateScriptDefinedFunction(FScriptField& Field)
 
 	// Link nodes together
 	UEdGraphPin* ExecPin = Schema->FindExecutionPin(*EntryNode, EGPD_Output);
-	UEdGraphPin* GetVariableOutPin = GetVariableNode->FindPinChecked(ContextProperty->GetName());
+	UEdGraphPin* GetVariableOutPin = GetVariableNode->FindPinChecked(ContextProperty->GetFName());
 	UEdGraphPin* CallFunctionPin = Schema->FindExecutionPin(*CallFunctionNode, EGPD_Input);
 	UEdGraphPin* FunctionTargetPin = CallFunctionNode->FindPinChecked(TEXT("self"));
 	ExecPin->MakeLinkTo(CallFunctionPin);
@@ -229,6 +228,11 @@ void FScriptBlueprintCompiler::SpawnNewClass(const FString& NewClassName)
 		FBlueprintCompileReinstancer::Create(NewScriptBlueprintClass);
 	}
 	NewClass = NewScriptBlueprintClass;
+}
+	
+void FScriptBlueprintCompiler::OnNewClassSet(UBlueprintGeneratedClass* ClassToUse)
+{
+	NewScriptBlueprintClass = CastChecked<UScriptBlueprintGeneratedClass>(ClassToUse);
 }
 
 bool FScriptBlueprintCompiler::ValidateGeneratedClass(UBlueprintGeneratedClass* Class)

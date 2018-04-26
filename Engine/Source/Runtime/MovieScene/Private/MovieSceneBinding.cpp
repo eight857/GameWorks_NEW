@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneBinding.h"
 #include "MovieSceneTrack.h"
@@ -13,7 +13,10 @@ TRange<float> FMovieSceneBinding::GetTimeRange() const
 
 	for (int32 TypeIndex = 0; TypeIndex < Tracks.Num(); ++TypeIndex)
 	{
-		Bounds.Add(Tracks[TypeIndex]->GetSectionBoundaries());
+		if (Tracks[TypeIndex] != nullptr)
+		{
+			Bounds.Add(Tracks[TypeIndex]->GetSectionBoundaries());
+		}
 	}
 
 	return TRange<float>::Hull(Bounds);

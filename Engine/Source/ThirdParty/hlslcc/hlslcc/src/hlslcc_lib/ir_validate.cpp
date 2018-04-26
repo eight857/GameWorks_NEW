@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // This code is modified from that in the Mesa3D Graphics library available at
 // http://mesa3d.org/
@@ -336,17 +336,26 @@ ir_visitor_status ir_validate::visit_leave(ir_expression *ir)
 	case ir_unop_abs:
 	case ir_unop_sign:
 	case ir_unop_rcp:
-	case ir_unop_rsq:
-	case ir_unop_sqrt:
 		ValidateTypes(ir->type, ir->operands[0]->type);
 		break;
 
+	case ir_unop_rsq:
+	case ir_unop_sqrt:
 	case ir_unop_exp:
 	case ir_unop_log:
 	case ir_unop_exp2:
 	case ir_unop_log2:
-		validate_expr(ir->operands[0]->type->is_float());
-		validate_expr(ir->type == ir->operands[0]->type);
+		{
+			validate_expr(ir->operands[0]->type->is_float() || ir->operands[0]->type->is_integer());
+			if (ir->operands[0]->type->is_integer())
+			{
+				validate_expr(ir->type == glsl_type::get_instance(GLSL_TYPE_FLOAT, ir->operands[0]->type->vector_elements, ir->operands[0]->type->matrix_columns));
+			}
+			else
+			{
+				validate_expr(ir->type == ir->operands[0]->type);
+			}
+		}
 		break;
 
 	case ir_unop_f2i:
@@ -460,6 +469,7 @@ ir_visitor_status ir_validate::visit_leave(ir_expression *ir)
 	case ir_unop_normalize:
 	case ir_unop_dFdx:
 	case ir_unop_dFdy:
+	case ir_unop_saturate:
 		validate_expr(ir->operands[0]->type->is_float());
 		ValidateTypes(ir->operands[0]->type, ir->type);
 		break;
@@ -513,10 +523,25 @@ ir_visitor_status ir_validate::visit_leave(ir_expression *ir)
 		break;
 
 	case ir_binop_mul:
+	{
+		bool const bNativeMatrixIntrinsics = state->LanguageSpec->SupportsMatrixIntrinsics();
+		
 		// Matrix-Vector multiplication not handled by ir_binop_mul.
 		validate_expr(!ir->operands[0]->type->is_matrix() || !ir->operands[1]->type->is_vector());
-		validate_expr(!ir->operands[1]->type->is_matrix() || !ir->operands[0]->type->is_vector());
+		
+		if (bNativeMatrixIntrinsics && ir->operands[1]->type->is_matrix() && ir->operands[0]->type->is_vector())
+		{
+			ValidateTypes(ir->operands[1]->type->column_type(), ir->type);
+			ValidateTypes(ir->operands[1]->type->row_type(), ir->operands[0]->type);
+			break;
+		}
+		else
+		{
+			// Vector-Matrix multiplication not handled by ir_binop_mul.
+			validate_expr(!ir->operands[1]->type->is_matrix() || !ir->operands[0]->type->is_vector());
+		}
 		// intentional fallthrough
+	}
 	case ir_binop_add:
 	case ir_binop_sub:
 	case ir_binop_mod:
@@ -706,6 +731,13 @@ ir_visitor_status ir_validate::visit_leave(ir_expression *ir)
 		validate_expr(ir->operands[0]->type == ir->type);
 		validate_expr(ir->operands[1]->type->base_type == ir->type->base_type);
 		validate_expr(ir->operands[2]->type->base_type == ir->type->base_type);
+		break;
+
+	case ir_ternop_fma:
+		validate_expr(ir->type->is_float());
+		validate_expr(ir->operands[0]->type == ir->type);
+		validate_expr(ir->operands[1]->type == ir->type);
+		validate_expr(ir->operands[2]->type == ir->type);
 		break;
 
 	case ir_quadop_vector:
@@ -941,11 +973,17 @@ ir_visitor_status ir_validate::visit_enter(ir_call *ir)
 		const ir_rvalue *actual_param = (const ir_rvalue *) actual_param_node;
 		if (formal_param->type != actual_param->type)
 		{
-			_mesa_glsl_error(state,
-				"internal compiler error: parameter type mismatch in call to '%s'",
-				callee->function_name()
-				);
-			return visit_stop;
+			bool const ShadowSamplerMatch = (formal_param->type->is_sampler() && actual_param->type->is_sampler()
+				&& formal_param->type->sampler_shadow != actual_param->type->sampler_shadow
+				&& state->LanguageSpec && state->LanguageSpec->AllowsAllTextureOperationsOnDepthTextures());
+			if (!ShadowSamplerMatch)
+			{
+				_mesa_glsl_error(state,
+					"internal compiler error: parameter type mismatch in call to '%s'",
+					callee->function_name()
+					);
+				return visit_stop;
+			}
 		}
 		if (formal_param->mode == ir_var_out || formal_param->mode == ir_var_inout)
 		{

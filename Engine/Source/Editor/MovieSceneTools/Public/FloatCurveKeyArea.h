@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -52,7 +52,7 @@ public:
 		: Color(InColor)
 		, Curve(InCurve)
 		, OwningSection(InOwningSection)
-		, ExternalValue(InExternalValue)
+		, ExternalValueAttribute(InExternalValue)
 	{ }
 
 public:
@@ -87,6 +87,8 @@ protected:
 
 	void OnValueChanged(float InValue);
 
+	TOptional<float> GetExternalValue() const;
+
 private:
 
 	/** The key area's color. */
@@ -99,5 +101,5 @@ private:
 	UMovieSceneSection* OwningSection;
 
 	/** The value displayed by this key area supplied externally. */
-	TAttribute<TOptional<float>> ExternalValue;
+	TAttribute<TOptional<float>> ExternalValueAttribute;
 };

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MoviePlayerThreading.h"
 #include "HAL/Runnable.h"
@@ -6,6 +6,7 @@
 #include "Misc/ScopeLock.h"
 #include "Framework/Application/SlateApplication.h"
 #include "DefaultGameMoviePlayer.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 FThreadSafeCounter FSlateLoadingSynchronizationMechanism::LoadingThreadInstanceCounter;
 
@@ -48,6 +49,8 @@ FSlateLoadingSynchronizationMechanism::~FSlateLoadingSynchronizationMechanism()
 
 void FSlateLoadingSynchronizationMechanism::Initialize()
 {
+	check(IsInGameThread());
+
 	ResetSlateDrawPassEnqueued();
 	SetSlateMainLoopRunning();
 
@@ -62,16 +65,23 @@ void FSlateLoadingSynchronizationMechanism::Initialize()
 
 void FSlateLoadingSynchronizationMechanism::DestroySlateThread()
 {
+	check(IsInGameThread());
+
 	if (SlateLoadingThread)
 	{
 		IsRunningSlateMainLoop.Reset();
 
-		MainLoop.BlockUntilUnlocked();
+		while (MainLoop.IsLocked())
+		{
+			FPlatformApplicationMisc::PumpMessages(false);
+
+			FPlatformProcess::Sleep(0.1f);
+		}
 
 		delete SlateLoadingThread;
 		delete SlateRunnableTask;
-		SlateLoadingThread = NULL;
-		SlateRunnableTask = NULL;
+		SlateLoadingThread = nullptr;
+		SlateRunnableTask = nullptr;
 	}
 }
 
@@ -111,8 +121,8 @@ void FSlateLoadingSynchronizationMechanism::SlateThreadRunMainLoop()
 
 	while (IsSlateMainLoopRunning())
 	{
-		const double CurrentTime = FPlatformTime::Seconds();
-		const double DeltaTime = CurrentTime - LastTime;
+		double CurrentTime = FPlatformTime::Seconds();
+		double DeltaTime = CurrentTime - LastTime;
 
 		// 60 fps max
 		const double MaxTickRate = 1.0/60.0f;
@@ -122,11 +132,13 @@ void FSlateLoadingSynchronizationMechanism::SlateThreadRunMainLoop()
 		if( TimeToWait > 0 )
 		{
 			FPlatformProcess::Sleep(TimeToWait);
+			CurrentTime = FPlatformTime::Seconds();
+			DeltaTime = CurrentTime - LastTime;
 		}
 
 		if (FSlateApplication::IsInitialized() && !IsSlateDrawPassEnqueued())
 		{
-			TSharedPtr<FSlateRenderer> MainSlateRenderer = FSlateApplication::Get().GetRenderer();
+			FSlateRenderer* MainSlateRenderer = FSlateApplication::Get().GetRenderer();
 			FScopeLock ScopeLock(MainSlateRenderer->GetResourceCriticalSection());
 
 			WidgetRenderer->DrawWindow(DeltaTime);
@@ -162,7 +174,7 @@ uint32 FSlateLoadingThreadTask::Run()
 	SyncMechanism->SlateThreadRunMainLoop();
 
 	// Tear down the slate loading thread ID
-	GSlateLoadingThreadId = 0;
+	FPlatformAtomics::InterlockedExchange((int32*)&GSlateLoadingThreadId, 0);
 
 	return 0;
 }

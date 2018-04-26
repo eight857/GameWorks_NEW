@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 //This file needs to be here so the "ant" build step doesnt fail when looking for a /src folder.
 
 package com.epicgames.ue4;
@@ -160,9 +160,9 @@ public class GooglePlayStoreHelper implements StoreHelper
 					prices.add(price);
 					Log.debug("[GooglePlayStoreHelper] - price: " + price);
 
-					Float priceRaw = (float) object.getInt("price_amount_micros") / 1000000.0f;
-					pricesRaw.add(priceRaw);
-					Log.debug("[GooglePlayStoreHelper] - price_amount_micros: " + priceRaw.toString());
+					double priceRaw = object.getDouble("price_amount_micros") / 1000000.0;
+					pricesRaw.add((float)priceRaw);
+					Log.debug("[GooglePlayStoreHelper] - price_amount_micros: " + priceRaw);
 
 					String currencyCode = object.getString("price_currency_code");
 					currencyCodes.add(currencyCode);

@@ -1,149 +1,36 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Compilation/MovieSceneEvaluationTemplateGenerator.h"
 #include "MovieSceneSequence.h"
 #include "MovieScene.h"
+#include "Algo/Sort.h"
 #include "UObject/ObjectKey.h"
 #include "IMovieSceneModule.h"
+#include "MovieSceneSubTrack.h"
+#include "MovieSceneSubSection.h"
+#include "MovieSceneSegmentCompiler.h"
 
-namespace 
+FMovieSceneEvaluationTemplateGenerator::FMovieSceneEvaluationTemplateGenerator(UMovieSceneSequence& InSequence, FMovieSceneEvaluationTemplate& OutTemplate)
+	: SourceSequence(InSequence), Template(OutTemplate)
 {
-	void AddPtrsToGroup(FMovieSceneEvaluationGroup& Group, bool bRequiresImmediateFlush, TArray<FMovieSceneEvaluationFieldSegmentPtr>& InitPtrs, TArray<FMovieSceneEvaluationFieldSegmentPtr>& EvalPtrs)
-	{
-		if (!InitPtrs.Num() && !EvalPtrs.Num())
-		{
-			return;
-		}
 
-		FMovieSceneEvaluationGroupLUTIndex Index;
-		
-		Index.bRequiresImmediateFlush = bRequiresImmediateFlush;
-
-		Index.LUTOffset = Group.SegmentPtrLUT.Num();
-		Index.NumInitPtrs = InitPtrs.Num();
-		Index.NumEvalPtrs = EvalPtrs.Num();
-
-		Group.LUTIndices.Add(Index);
-		Group.SegmentPtrLUT.Append(InitPtrs);
-		Group.SegmentPtrLUT.Append(EvalPtrs);
-
-		InitPtrs.Reset();
-		EvalPtrs.Reset();
-	}
-}
-
-FMovieSceneEvaluationTemplateGenerator::FMovieSceneEvaluationTemplateGenerator(UMovieSceneSequence& InSequence, FMovieSceneEvaluationTemplate& OutTemplate, FMovieSceneSequenceTemplateStore& InStore)
-	: SourceSequence(InSequence)
-	, Template(OutTemplate)
-	, TransientArgs(*this, InStore)
-{
-}
-
-void FMovieSceneEvaluationTemplateGenerator::AddLegacyTrack(FMovieSceneEvaluationTrack&& InTrackTemplate, const UMovieSceneTrack& SourceTrack)
-{
-	AddOwnedTrack(MoveTemp(InTrackTemplate), SourceTrack);
-	Template.bHasLegacyTrackInstances = true;
 }
 
 void FMovieSceneEvaluationTemplateGenerator::AddOwnedTrack(FMovieSceneEvaluationTrack&& InTrackTemplate, const UMovieSceneTrack& SourceTrack)
 {
-	// Add the track to the template
-	Template.AddTrack(SourceTrack.GetSignature(), MoveTemp(InTrackTemplate));
 	CompiledSignatures.Add(SourceTrack.GetSignature());
-}
-
-void FMovieSceneEvaluationTemplateGenerator::AddSharedTrack(FMovieSceneEvaluationTrack&& InTrackTemplate, FMovieSceneSharedDataId SharedId, const UMovieSceneTrack& SourceTrack)
-{
-	FSharedPersistentDataKey Key(SharedId, FMovieSceneEvaluationOperand(MovieSceneSequenceID::Root, InTrackTemplate.GetObjectBindingID()));
-
-	if (AddedSharedTracks.Contains(Key))
-	{
-		return;
-	}
-
-	AddedSharedTracks.Add(Key);
-	AddOwnedTrack(MoveTemp(InTrackTemplate), SourceTrack);
-}
-
-void FMovieSceneEvaluationTemplateGenerator::AddExternalSegments(TRange<float> RootRange, TArrayView<const FMovieSceneEvaluationFieldSegmentPtr> SegmentPtrs, ESectionEvaluationFlags Flags)
-{
-	if (RootRange.IsEmpty())
-	{
-		return;
-	}
-
-	SegmentData.Reserve(SegmentData.Num() + SegmentPtrs.Num());
-
-	for (const FMovieSceneEvaluationFieldSegmentPtr& SegmentPtr : SegmentPtrs)
-	{
-		// Add one segment to the external segment map per flag configuration
-		FExternalSegment NewSegment{ -1, Flags };
-		for (auto It = ExternalSegmentLookup.CreateConstKeyIterator(SegmentPtr); It; ++It)
-		{
-			if (It.Value().Flags == Flags)
-			{
-				NewSegment = It.Value();
-				break;
-			}
-		}
-
-		if (NewSegment.Index == -1)
-		{
-			NewSegment.Index = TrackLUT.Num();
-			ExternalSegmentLookup.Add(SegmentPtr, NewSegment);
-			TrackLUT.Add(SegmentPtr);
-		}
-
-		// Flags are irrelevant for the final segment compilation
-		SegmentData.Add(FMovieSceneSectionData(RootRange, FSectionEvaluationData(NewSegment.Index)));
-	}
-}
-
-FMovieSceneSequenceTransform FMovieSceneEvaluationTemplateGenerator::GetSequenceTransform(FMovieSceneSequenceIDRef InSequenceID) const
-{
-	if (InSequenceID == MovieSceneSequenceID::Root)
-	{
-		return FMovieSceneSequenceTransform();
-	}
-
-	const FMovieSceneSubSequenceData* Data = Template.Hierarchy.FindSubData(InSequenceID);
-	return ensure(Data) ? Data->RootToSequenceTransform : FMovieSceneSequenceTransform();
-}
-
-void FMovieSceneEvaluationTemplateGenerator::AddSubSequence(FMovieSceneSubSequenceData SequenceData, FMovieSceneSequenceIDRef ParentID, FMovieSceneSequenceID SequenceID)
-{
-	FMovieSceneSequenceHierarchyNode* ParentNode = Template.Hierarchy.FindNode(ParentID);
-	checkf(ParentNode, TEXT("Cannot generate a sequence ID for a ParentID that doesn't yet exist"));
-
-	check(SequenceID.IsValid());
-	
-#if WITH_EDITORONLY_DATA
-	if (const FMovieSceneSubSequenceData* ParentSubSequenceData = Template.Hierarchy.FindSubData(ParentID))
-	{
-		// Clamp this sequence's valid play range by its parent's valid play range
-		TRange<float> ParentPlayRangeChildSpace = ParentSubSequenceData->ValidPlayRange * (SequenceData.RootToSequenceTransform * ParentSubSequenceData->RootToSequenceTransform.Inverse());
-		SequenceData.ValidPlayRange = TRange<float>::Intersection(ParentPlayRangeChildSpace, SequenceData.ValidPlayRange);
-	}
-#endif
-
-	// Ensure we have a unique ID. This should never happen in reality.
-	while(!ensureMsgf(!Template.Hierarchy.FindNode(SequenceID), TEXT("CRC collision on deterministic hashes. Manually hashing a random new one.")))
-	{
-		SequenceID = SequenceID.AccumulateParentID(SequenceID);
-	}
-
-	Template.Hierarchy.Add(SequenceData, SequenceID, ParentID);
+	Template.AddTrack(SourceTrack.GetSignature(), MoveTemp(InTrackTemplate));
 }
 
 
-void FMovieSceneEvaluationTemplateGenerator::Generate(FMovieSceneTrackCompilationParams InParams)
+void FMovieSceneEvaluationTemplateGenerator::Generate()
 {
-	Template.Hierarchy = FMovieSceneSequenceHierarchy();
+	// We always regenerate this
+	Template.ResetFieldData();
 
-	// Generate templates for each track in the movie scene
+	CompiledSignatures.Reset();
+
 	UMovieScene* MovieScene = SourceSequence.GetMovieScene();
-
-	TransientArgs.Params = InParams;
 
 	if (UMovieSceneTrack* Track = MovieScene->GetCameraCutTrack())
 	{
@@ -163,207 +50,194 @@ void FMovieSceneEvaluationTemplateGenerator::Generate(FMovieSceneTrackCompilatio
 		}
 	}
 
-	// Remove references to old tracks
-	RemoveOldTrackReferences();
+	Template.RemoveStaleData(CompiledSignatures);
 
-	// Add all the tracks in *this* sequence (these exist after any sub section ptrs, not that its important for this algorithm)
-	for (auto& Pair : Template.GetTracks())
-	{
-		TArrayView<const FMovieSceneSegment> Segments = Pair.Value.GetSegments();
-
-		// Add the segment range data to the master collection for overall compilation
-		for (int32 SegmentIndex = 0; SegmentIndex < Segments.Num(); ++SegmentIndex)
-		{
-			SegmentData.Add(FMovieSceneSectionData(Segments[SegmentIndex].Range, FSectionEvaluationData(TrackLUT.Num())));
-			TrackLUT.Add(FMovieSceneEvaluationFieldSegmentPtr(MovieSceneSequenceID::Root, Pair.Key, SegmentIndex));
-		}
-	}
-
-	TMap<FMovieSceneSequenceID, FMovieSceneEvaluationTemplate*> SequenceIdToTemplate;
-	for (auto& Pair : Template.Hierarchy.AllSubSequenceData())
-	{
-		if (UMovieSceneSequence* Sequence = Pair.Value.Sequence)
-		{
-			SequenceIdToTemplate.Add(Pair.Key, &TransientArgs.SubSequenceStore.GetCompiledTemplate(*Sequence, FObjectKey(Pair.Value.SequenceKeyObject)));
-		}
-	}
-
-	// Compile the new evaluation field
-	TArray<FMovieSceneSegment> NewSegments = FMovieSceneSegmentCompiler().Compile(SegmentData);
-	UpdateEvaluationField(NewSegments, TrackLUT, SequenceIdToTemplate);
+	Template.SequenceSignature = SourceSequence.GetSignature();
 }
 
-void FMovieSceneEvaluationTemplateGenerator::ProcessTrack(const UMovieSceneTrack& InTrack, const FGuid& ObjectId)
+void FMovieSceneEvaluationTemplateGenerator::ProcessTrack(const UMovieSceneTrack& Track, const FGuid& ObjectBindingId)
 {
-	FGuid Signature = InTrack.GetSignature();
+	FMovieSceneTrackSegmentBlenderPtr TrackBlender = Track.GetTrackSegmentBlender();
 
-	// See if this track signature already exists in the ledger, if it does, we don't need to regenerate it
-	if (Template.FindTracks(Signature).Num())
+	// Deal with sub tracks specifically
+	if (const UMovieSceneSubTrack* SubTrack = Cast<const UMovieSceneSubTrack>(&Track))
 	{
-		CompiledSignatures.Add(Signature);
-		return;
+		ProcessSubTrack(*SubTrack, ObjectBindingId);
 	}
 
-	TransientArgs.ObjectBindingId = ObjectId;
-
-	// Potentially expensive generation is required
-	InTrack.GenerateTemplate(TransientArgs);
-}
-
-void FMovieSceneEvaluationTemplateGenerator::RemoveOldTrackReferences()
-{
-	TArray<FGuid> SignaturesToRemove;
-
-	// Go through the template ledger, and remove anything that is no longer referenced
-	for (auto& Pair : Template.GetLedger().TrackSignatureToTrackIdentifier)
+	// If the ledger already contains this track, just update the uncompiled track field
+	else if (FMovieSceneTrackIdentifier TrackID = Template.GetLedger().FindTrack(Track.GetSignature()))
 	{
-		if (!CompiledSignatures.Contains(Pair.Key))
-		{
-			SignaturesToRemove.Add(Pair.Key);
-		}
+		CompiledSignatures.Add(Track.GetSignature());
+
+		// Don't invalidate the evaluation field if for this track as this track hasn't changed
+		const bool bInvalidateEvaluationField = false;
+		Template.DefineTrackStructure(TrackID, bInvalidateEvaluationField);
 	}
 
-	// Remove the signatures, updating entries in the evaluation field as we go
-	for (const FGuid& Signature : SignaturesToRemove)
+	// Else the track doesn't exist - we need to generate it from scratch
+	else
 	{
-		Template.RemoveTrack(Signature);
+		FMovieSceneTrackCompilerArgs Args(*this);
+		Args.ObjectBindingId = ObjectBindingId;
+		Args.DefaultCompletionMode = SourceSequence.DefaultCompletionMode;
+		Track.GenerateTemplate(Args);
 	}
 }
 
-void FMovieSceneEvaluationTemplateGenerator::UpdateEvaluationField(const TArray<FMovieSceneSegment>& Segments, const TArray<FMovieSceneEvaluationFieldSegmentPtr>& Ptrs, const TMap<FMovieSceneSequenceID, FMovieSceneEvaluationTemplate*>& Templates)
+
+void FMovieSceneEvaluationTemplateGenerator::ProcessSubTrack(const UMovieSceneSubTrack& SubTrack, const FGuid& ObjectBindingId)
 {
-	IMovieSceneModule& MovieSceneModule = IMovieSceneModule::Get();
+	// Get the segment blender required to blend at the track level for this segment
+	FMovieSceneTrackSegmentBlenderPtr    TrackSegmentBlender = SubTrack.GetTrackSegmentBlender();
+	FMovieSceneTrackRowSegmentBlenderPtr RowSegmentBlender   = SubTrack.GetRowSegmentBlender();
 
-	FMovieSceneEvaluationField& Field = Template.EvaluationField;
+	// If the track has no blenders at all, we can just add all the sub section ranges directly
+	const bool bRequiresSegmentBlending = TrackSegmentBlender.IsValid() || RowSegmentBlender.IsValid();
 
-	Field = FMovieSceneEvaluationField();
+	TMovieSceneEvaluationTree<FSectionEvaluationData> SubSectionBlendTree;
 
-	TArray<FMovieSceneEvaluationFieldSegmentPtr> AllTracksInSegment;
-
-	for (int32 Index = 0; Index < Segments.Num(); ++Index)
+	// Iterate all the sub track's sections, adding them to the template field
+	const TArray<UMovieSceneSection*>& AllSections = SubTrack.GetAllSections();
+	for (int32 SectionIndex = 0; SectionIndex < AllSections.Num(); ++SectionIndex)
 	{
-		const FMovieSceneSegment& Segment = Segments[Index];
-		if (Segment.Impls.Num() == 0)
+		UMovieSceneSubSection* SubSection = CastChecked<UMovieSceneSubSection>(AllSections[SectionIndex]);
+		if (!SubSection || !SubSection->IsActive())
 		{
 			continue;
 		}
 
-		Field.Ranges.Add(Segment.Range);
+		CompiledSignatures.Add(SubSection->GetSignature());
 
-		AllTracksInSegment.Reset();
-		for (const FSectionEvaluationData& LUTData : Segment.Impls)
+		if (bRequiresSegmentBlending)
 		{
-			AllTracksInSegment.Add(Ptrs[LUTData.ImplIndex]);
-		}
+			const TRange<float> SectionRange = SubSection->GetRange();
 
-		// Sort the track ptrs, and define flush ranges
-		AllTracksInSegment.Sort(
-			[&](const FMovieSceneEvaluationFieldSegmentPtr& A, const FMovieSceneEvaluationFieldSegmentPtr& B){
-				return SortPredicate(A, B, Templates, MovieSceneModule);
-			}
-		);
-
-		FMovieSceneEvaluationGroup& Group = Field.Groups[Field.Groups.Emplace()];
-
-		TArray<FMovieSceneEvaluationFieldSegmentPtr> EvalPtrs;
-		TArray<FMovieSceneEvaluationFieldSegmentPtr> InitPtrs;
-
-		// Now iterate the tracks and insert indices for initialization and evaluation
-		FName CurrentEvaluationGroup, LastEvaluationGroup;
-		TOptional<uint32> LastPriority;
-
-		for (const FMovieSceneEvaluationFieldSegmentPtr& Ptr : AllTracksInSegment)
-		{
-			const FMovieSceneEvaluationTrack* Track = LookupTrack(Ptr, Templates);
-			if (!ensure(Track))
+			// Process the actual section range
+			if (bRequiresSegmentBlending)
 			{
-				continue;
+				SubSectionBlendTree.Add(SectionRange, FSectionEvaluationData(SectionIndex, ESectionEvaluationFlags::None));
 			}
-
-			// If we're now in a different flush group, add the ptrs
-			CurrentEvaluationGroup = Track->GetEvaluationGroup();
-			if (CurrentEvaluationGroup != LastEvaluationGroup)
+			else
 			{
-				FMovieSceneEvaluationGroupParameters GroupParams = MovieSceneModule.GetEvaluationGroupParameters(LastEvaluationGroup);
-				AddPtrsToGroup(Group, GroupParams.bRequiresImmediateFlush, InitPtrs, EvalPtrs);
+				Template.AddSubSectionRange(*SubSection, ObjectBindingId, SectionRange, ESectionEvaluationFlags::None);
 			}
-			LastEvaluationGroup = Track->GetEvaluationGroup();
 
-			const bool bRequiresInitialization = Track->GetSegment(Ptr.SegmentIndex).Impls.ContainsByPredicate(
-				[Track](FSectionEvaluationData EvalData)
+			// Process the section preroll range
+			if (!SectionRange.GetLowerBound().IsOpen() && SubSection->GetPreRollTime() > 0)
+			{
+				TRange<float> PreRollRange(SectionRange.GetLowerBoundValue() - SubSection->GetPreRollTime(), TRangeBound<float>::FlipInclusion(SectionRange.GetLowerBoundValue()));
+
+				if (bRequiresSegmentBlending)
 				{
-					return Track->GetChildTemplate(EvalData.ImplIndex).RequiresInitialization();
+					SubSectionBlendTree.Add(PreRollRange, FSectionEvaluationData(SectionIndex, ESectionEvaluationFlags::PreRoll));
 				}
-			);
-
-			if (bRequiresInitialization)
-			{
-				InitPtrs.Add(Ptr);
+				else
+				{
+					Template.AddSubSectionRange(*SubSection, ObjectBindingId, PreRollRange, ESectionEvaluationFlags::PreRoll);
+				}
 			}
 
-			EvalPtrs.Add(Ptr);
+			// Process the section postroll range
+			if (!SectionRange.GetUpperBound().IsOpen() && SubSection->GetPostRollTime() > 0)
+			{
+				TRange<float> PostRollRange(TRangeBound<float>::FlipInclusion(SectionRange.GetUpperBoundValue()), SectionRange.GetUpperBoundValue() + SubSection->GetPostRollTime());
+
+				if (bRequiresSegmentBlending)
+				{
+					SubSectionBlendTree.Add(PostRollRange, FSectionEvaluationData(SectionIndex, ESectionEvaluationFlags::PostRoll));
+				}
+				else
+				{
+					Template.AddSubSectionRange(*SubSection, ObjectBindingId, PostRollRange, ESectionEvaluationFlags::PostRoll);
+				}
+			}
 		}
+	}
 
-		FMovieSceneEvaluationGroupParameters GroupParams = MovieSceneModule.GetEvaluationGroupParameters(LastEvaluationGroup);
-		AddPtrsToGroup(Group, GroupParams.bRequiresImmediateFlush, InitPtrs, EvalPtrs);
+	// Nothing more to do if we don't need to blend the segments
+	if (!bRequiresSegmentBlending)
+	{
+		return;
+	}
 
-		// Copmpute meta data for this segment
-		FMovieSceneEvaluationMetaData& MetaData = Field.MetaData[Field.MetaData.Emplace()];
+	// Keep accumulating similar segments to reduce fragmentation in the field
+	TOptional<FMovieSceneSegment> AccumulateSegment;
 
-		TArray<FMovieSceneSequenceID, TInlineAllocator<16>> ActiveSequenceIDs;
-		for (const FMovieSceneEvaluationFieldSegmentPtr& SegmentPtr : Group.SegmentPtrLUT)
+	TMap<int32, FSegmentBlendData> RowBlendData;
+
+	// Go through each unique range within SubSectionBlendTree, blending any entities present appropriately, then adding them to the tree
+	for (FMovieSceneEvaluationTreeRangeIterator SubSectionIt(SubSectionBlendTree); SubSectionIt; ++SubSectionIt)
+	{
+		TMovieSceneEvaluationTreeDataIterator<FSectionEvaluationData> DataIt = SubSectionBlendTree.GetAllData(SubSectionIt.Node());
+
+		// If there are no sub sections here, continue to the next range
+		if (!DataIt)
 		{
-			ActiveSequenceIDs.AddUnique(SegmentPtr.SequenceID);
+			continue;
 		}
-		MetaData.ActiveSequences = ActiveSequenceIDs;
-		MetaData.ActiveSequences.Sort();
-	}
-}
 
-const FMovieSceneEvaluationTrack* FMovieSceneEvaluationTemplateGenerator::LookupTrack(const FMovieSceneEvaluationFieldTrackPtr& InPtr, const TMap<FMovieSceneSequenceID, FMovieSceneEvaluationTemplate*>& Templates)
-{
-	if (InPtr.SequenceID == MovieSceneSequenceID::Root)
-	{
-		return Template.FindTrack(InPtr.TrackIdentifier);
-	}
-	else if (const FMovieSceneEvaluationTemplate* SubTemplate = Templates.FindRef(InPtr.SequenceID))
-	{
-		return SubTemplate->FindTrack(InPtr.TrackIdentifier);
-	}
-	ensure(false);
-	return nullptr;
-}
+		FSegmentBlendData TrackBlendData;
 
-bool FMovieSceneEvaluationTemplateGenerator::SortPredicate(const FMovieSceneEvaluationFieldTrackPtr& InPtrA, const FMovieSceneEvaluationFieldTrackPtr& InPtrB, const TMap<FMovieSceneSequenceID, FMovieSceneEvaluationTemplate*>& Templates, IMovieSceneModule& MovieSceneModule)
-{
-	const FMovieSceneEvaluationTrack* A = LookupTrack(InPtrA, Templates);
-	const FMovieSceneEvaluationTrack* B = LookupTrack(InPtrB, Templates);
-	if (!ensure(A && B))
-	{
-		return false;
-	}
-
-	FMovieSceneEvaluationGroupParameters GroupA = MovieSceneModule.GetEvaluationGroupParameters(A->GetEvaluationGroup());
-	FMovieSceneEvaluationGroupParameters GroupB = MovieSceneModule.GetEvaluationGroupParameters(B->GetEvaluationGroup());
-
-	const FMovieSceneSubSequenceData* DataA = Template.Hierarchy.FindSubData(InPtrA.SequenceID);
-	const FMovieSceneSubSequenceData* DataB = Template.Hierarchy.FindSubData(InPtrB.SequenceID);
-
-	if (DataA || DataB)
-	{
-		int32 HierarchicalBiasA = DataA ? DataA->HierarchicalBias : 0;
-		int32 HierarchicalBiasB = DataB ? DataB->HierarchicalBias : 0;
-
-		if (HierarchicalBiasA != HierarchicalBiasB)
+		// Compile at the row level first if necessary
+		if (RowSegmentBlender.IsValid())
 		{
-			return HierarchicalBiasA < HierarchicalBiasB;
+			RowBlendData.Reset();
+
+			// Add every FSectionEvaluationData for the current time range to the section data
+			for (const FSectionEvaluationData& EvalData : DataIt)
+			{
+				const UMovieSceneSection* Section = AllSections[EvalData.ImplIndex];
+				check(Section);
+				RowBlendData.FindOrAdd(Section->GetRowIndex()).Add(FMovieSceneSectionData(Section, EvalData.ImplIndex, EvalData.Flags));
+			}
+
+			// Blend and append
+			for (TPair<int32, FSegmentBlendData>& Pair : RowBlendData)
+			{
+				RowSegmentBlender->Blend(Pair.Value);
+				TrackBlendData.Append(Pair.Value);
+			}
+		}
+
+		// Otherwise just add everything to the track blend data
+		else for (const FSectionEvaluationData& EvalData : DataIt)
+		{
+			const UMovieSceneSection* Section = AllSections[EvalData.ImplIndex];
+			check(Section);
+			TrackBlendData.Add(FMovieSceneSectionData(Section, EvalData.ImplIndex, EvalData.Flags));
+		}
+
+		// Compile at the track level
+		if (TrackSegmentBlender.IsValid())
+		{
+			TrackSegmentBlender->Blend(TrackBlendData);
+		}
+
+		FMovieSceneSegment NextSegment(SubSectionIt.Range());
+		TrackBlendData.AddToSegment(NextSegment);
+
+		if (!AccumulateSegment.IsSet())
+		{
+			AccumulateSegment = MoveTemp(NextSegment);
+		}
+		else if (!AccumulateSegment->CombineWith(NextSegment))
+		{
+			// This segment is different from the previous one - add the previous one and start accumulating into this one
+			for (FSectionEvaluationData EvalData : AccumulateSegment->Impls)
+			{
+				Template.AddSubSectionRange(*CastChecked<UMovieSceneSubSection>(AllSections[EvalData.ImplIndex]), ObjectBindingId, AccumulateSegment->Range, EvalData.Flags);
+			}
+			AccumulateSegment = MoveTemp(NextSegment);
 		}
 	}
 
-	if (GroupA.EvaluationPriority != GroupB.EvaluationPriority)
+	// If there is any segment outstanding, add it to the template
+	if (AccumulateSegment.IsSet())
 	{
-		return GroupA.EvaluationPriority > GroupB.EvaluationPriority;
+		for (FSectionEvaluationData EvalData : AccumulateSegment->Impls)
+		{
+			Template.AddSubSectionRange(*CastChecked<UMovieSceneSubSection>(AllSections[EvalData.ImplIndex]), ObjectBindingId, AccumulateSegment->Range, EvalData.Flags);
+		}
 	}
-
-	return A->GetEvaluationPriority() > B->GetEvaluationPriority();
 }

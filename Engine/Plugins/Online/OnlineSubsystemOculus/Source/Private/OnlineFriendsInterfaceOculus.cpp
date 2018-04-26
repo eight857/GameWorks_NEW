@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineFriendsInterfaceOculus.h"
 #include "OnlineSubsystemOculusPrivate.h"
@@ -66,8 +66,9 @@ void FOnlineFriendsOculus::OnQueryFriendsComplete(ovrMessageHandle Message, bool
 		auto FriendDisplayName = ovr_User_GetOculusID(Friend);
 		auto FriendPresenceStatus = ovr_User_GetPresenceStatus(Friend);
 		auto FriendInviteToken = ovr_User_GetInviteToken(Friend);
+		FString FriendInviteTokenString(UTF8_TO_TCHAR((FriendInviteToken != nullptr) ? FriendInviteToken : ""));
 
-		TSharedRef<FOnlineOculusFriend> OnlineFriend(new FOnlineOculusFriend(FriendId, FriendDisplayName, FriendPresenceStatus, FriendInviteToken));
+		TSharedRef<FOnlineOculusFriend> OnlineFriend(new FOnlineOculusFriend(FriendId, FriendDisplayName, FriendPresenceStatus, FriendInviteTokenString));
 
 		OutList.Add(FriendId, OnlineFriend);
 	}

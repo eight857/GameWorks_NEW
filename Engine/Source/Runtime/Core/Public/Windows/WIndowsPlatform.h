@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -51,7 +51,7 @@ typedef FWindowsPlatformTypes FPlatformTypes;
 #else
 	#define PLATFORM_ENABLE_VECTORINTRINSICS				1
 #endif
-//#define PLATFORM_USE_LS_SPEC_FOR_WIDECHAR					1
+#define PLATFORM_USE_LS_SPEC_FOR_WIDECHAR					0
 //#define PLATFORM_USE_SYSTEM_VSWPRINTF						1
 //#define PLATFORM_TCHAR_IS_4_BYTES							0
 #define PLATFORM_HAS_BSD_TIME								0
@@ -61,18 +61,12 @@ typedef FWindowsPlatformTypes FPlatformTypes;
 #define PLATFORM_USES_MICROSOFT_LIBC_FUNCTIONS				1
 #define PLATFORM_SUPPORTS_TBB								1
 #define PLATFORM_SUPPORTS_NAMED_PIPES						1
-#if defined(_MSC_VER) && _MSC_VER < 1900
-	#define PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS		0
-	#define PLATFORM_COMPILER_HAS_AUTO_RETURN_TYPES			0
-#endif
 #define PLATFORM_COMPILER_HAS_TCHAR_WMAIN					1
 
 #define PLATFORM_RHITHREAD_DEFAULT_BYPASS					WITH_EDITOR
 
 #define PLATFORM_SUPPORTS_STACK_SYMBOLS						1
 
-// Intrinsics for 64-bit atomics on Windows platform requires Windows Vista or higher (WINVER>=0x0600)
-#define PLATFORM_HAS_64BIT_ATOMICS							(WINVER >= 0x600)
 // Intrinsics for 128-bit atomics on Windows platform requires Windows 8 or higher (WINVER>=0x0602)
 // http://msdn.microsoft.com/en-us/library/windows/desktop/hh972640.aspx
 #define PLATFORM_HAS_128BIT_ATOMICS							(!HACK_HEADER_GENERATOR && PLATFORM_64BITS && (WINVER >= 0x602))

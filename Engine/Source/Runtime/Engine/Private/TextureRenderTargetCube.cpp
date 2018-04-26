@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	TextureRenderTargetCube.cpp: UTextureRenderTargetCube implementation
@@ -78,7 +78,7 @@ FTextureResource* UTextureRenderTargetCube::CreateResource()
 }
 
 
-EMaterialValueType UTextureRenderTargetCube::GetMaterialType()
+EMaterialValueType UTextureRenderTargetCube::GetMaterialType() const
 {
 	return MCT_TextureCube;
 }

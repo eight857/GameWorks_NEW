@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Widgets/SWidget.h"
 #include "Editor/PropertyEditor/Public/IPropertyTypeCustomization.h"
+#include "SGraphPin.h"
 
 class IPropertyHandle;
 
@@ -22,9 +23,12 @@ public:
 	virtual void CustomizeChildren(TSharedRef<IPropertyHandle> InStructPropertyHandle, class IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& StructCustomizationUtils) override {}
 
 private:
-	bool OnShouldFilterAsset(const class FAssetData& InAssetData, TArray<FPrimaryAssetType> AllowedTypes) const;
-	FString OnGetObjectPath() const;
-	void OnSetObject(const FAssetData& AssetData);
+	void OnIdSelected(FPrimaryAssetId AssetId);
+	void OnBrowseTo();
+	void OnClear();
+	void OnUseSelected();
+	FText GetDisplayText() const;
+	FPrimaryAssetId GetCurrentPrimaryAssetId() const;
 
 	/** Handle to the struct property being customized */
 	TSharedPtr<IPropertyHandle> StructPropertyHandle;
@@ -33,3 +37,27 @@ private:
 	TArray<FPrimaryAssetType> AllowedTypes;
 };
 
+/** Graph pin version of UI */
+class SPrimaryAssetIdGraphPin : public SGraphPin
+{
+public:
+	SLATE_BEGIN_ARGS(SPrimaryAssetIdGraphPin) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UEdGraphPin* InGraphPinObj);
+
+	//~ Begin SGraphPin Interface
+	virtual TSharedRef<SWidget>	GetDefaultValueWidget() override;
+	//~ End SGraphPin Interface
+
+private:
+
+	void OnIdSelected(FPrimaryAssetId AssetId);
+	FText GetDisplayText() const;
+	FSlateColor OnGetWidgetForeground() const;
+	FSlateColor OnGetWidgetBackground() const;
+	FReply OnBrowseTo();
+	FReply OnUseSelected();
+
+	FPrimaryAssetId CurrentId;
+};

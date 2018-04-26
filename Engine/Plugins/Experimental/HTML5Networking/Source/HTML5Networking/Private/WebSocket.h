@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 //
 // libwebsocket client wrapper.
 //
 #pragma  once
 #include "HTML5NetworkingPrivate.h"
-#if !PLATFORM_HTML5_BROWSER
+#if !PLATFORM_HTML5
 #include "Runtime/Sockets/Private/BSDSockets/SocketSubsystemBSD.h"
 #else
 #include <netinet/in.h>
@@ -64,7 +64,7 @@ public:
 	TArray<uint8> RecievedBuffer;
 	TArray<TArray<uint8>> OutgoingBuffer;
 
-#if !PLATFORM_HTML5_BROWSER
+#if !PLATFORM_HTML5
 	/** libwebsocket internal context*/
 	WebSocketInternalContext* Context;
 

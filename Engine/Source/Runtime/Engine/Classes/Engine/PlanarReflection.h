@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * APlanarReflection
@@ -18,7 +18,7 @@ class APlanarReflection : public ASceneCapture
 {
 	GENERATED_UCLASS_BODY()
 
-private_subobject:
+private:
 	/** Planar reflection component. */
 	UPROPERTY(Category = SceneCapture, VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class UPlanarReflectionComponent* PlanarReflectionComponent;

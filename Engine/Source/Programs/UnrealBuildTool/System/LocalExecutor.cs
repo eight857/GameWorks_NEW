@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -234,7 +234,11 @@ namespace UnrealBuildTool
 					}
 					catch (Exception ex)
 					{
-						throw new BuildException(ex, "Failed to start local process for action: {0} {1}\r\n{2}", Action.CommandPath, Action.CommandArguments, ex.ToString());
+						Log.TraceError("Failed to start local process for action: {0} {1}", Action.CommandPath, Action.CommandArguments);
+						ExceptionUtils.PrintExceptionInfo(ex, null);
+						ExitCode = 1;
+						bComplete = true;
+						return;
 					}
 
 					// wait for process to start
@@ -250,8 +254,6 @@ namespace UnrealBuildTool
 							break;
 						}
 
-						Thread.Sleep(100);
-
 						if (!haveConfiguredProcess)
 						{
 							try
@@ -265,9 +267,11 @@ namespace UnrealBuildTool
 							break;
 						}
 
+						Thread.Sleep(10);
+
 						checkIterations++;
-					} while (checkIterations < 10);
-					if (checkIterations == 10)
+					} while (checkIterations < 100);
+					if (checkIterations == 100)
 					{
 						throw new BuildException("Failed to configure local process for action: {0} {1}", Action.CommandPath, Action.CommandArguments);
 					}
@@ -275,10 +279,7 @@ namespace UnrealBuildTool
 					// block until it's complete
 					// @todo iosmerge: UBT had started looking at:	if (Utils.IsValidProcess(Process))
 					//    do we need to check that in the thread model?
-					while (!ActionProcess.HasExited)
-					{
-						Thread.Sleep(10);
-					}
+					ActionProcess.WaitForExit();
 
 					// capture exit code
 					ExitCode = ActionProcess.ExitCode;
@@ -342,20 +343,12 @@ namespace UnrealBuildTool
 			get { return "Local"; }
 		}
 
-		public virtual double AdjustedProcessorCountMultiplier
-		{
-			get { return ProcessorCountMultiplier; }
-		}
-
 		/// <summary>
-		/// Executes the specified actions locally.
+		/// Determines the maximum number of actions to execute in parallel, taking into account the resources available on this machine.
 		/// </summary>
-		/// <returns>True if all the tasks successfully executed, or false if any of them failed.</returns>
-		public override bool ExecuteActions(List<Action> Actions, bool bLogDetailedActionStats)
+		/// <returns>Max number of actions to execute in parallel</returns>
+		public virtual int GetMaxActionsToExecuteInParallel()
 		{
-			// Time to sleep after each iteration of the loop in order to not busy wait.
-			const float LoopSleepTime = 0.1f;
-
 			// Use WMI to figure out physical cores, excluding hyper threading.
 			int NumCores = Utils.GetPhysicalProcessorCount();
 			if (NumCores == -1)
@@ -382,18 +375,33 @@ namespace UnrealBuildTool
 				MaxActionsToExecuteInParallel = NumCores;
 			}
 
+#if !NET_CORE
 			if (Utils.IsRunningOnMono)
 			{
-				// heuristic: give each action at least 1.5GB of RAM (some clang instances will need more, actually)
-				long MinMemoryPerActionMB = 3 * 1024 / 2;
 				long PhysicalRAMAvailableMB = (new PerformanceCounter("Mono Memory", "Total Physical Memory").RawValue) / (1024 * 1024);
+				// heuristic: give each action at least 1.5GB of RAM (some clang instances will need more) if the total RAM is low, or 1GB on 16+GB machines
+				long MinMemoryPerActionMB = (PhysicalRAMAvailableMB < 16384) ? 3 * 1024 / 2 : 1024;
 				int MaxActionsAffordedByMemory = (int)(Math.Max(1, (PhysicalRAMAvailableMB) / MinMemoryPerActionMB));
 
 				MaxActionsToExecuteInParallel = Math.Min(MaxActionsToExecuteInParallel, MaxActionsAffordedByMemory);
 			}
+#endif
 
 			MaxActionsToExecuteInParallel = Math.Max(1, Math.Min(MaxActionsToExecuteInParallel, MaxProcessorCount));
+			return MaxActionsToExecuteInParallel;
+		}
 
+		/// <summary>
+		/// Executes the specified actions locally.
+		/// </summary>
+		/// <returns>True if all the tasks successfully executed, or false if any of them failed.</returns>
+		public override bool ExecuteActions(List<Action> Actions, bool bLogDetailedActionStats)
+		{
+			// Time to sleep after each iteration of the loop in order to not busy wait.
+			const float LoopSleepTime = 0.1f;
+
+			// The number of actions to execute in parallel is trying to keep the CPU busy enough in presence of I/O stalls.
+			int MaxActionsToExecuteInParallel = GetMaxActionsToExecuteInParallel();
 			Log.TraceInformation("Performing {0} actions ({1} in parallel)", Actions.Count, MaxActionsToExecuteInParallel);
 
 			Dictionary<Action, ActionThread> ActionThreadDictionary = new Dictionary<Action, ActionThread>();

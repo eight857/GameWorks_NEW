@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/NavLinkComponent.h"
 #include "AI/NavigationOctree.h"
@@ -38,7 +38,7 @@ FBoxSphereBounds UNavLinkComponent::CalcBounds(const FTransform &LocalToWorld) c
 
 void UNavLinkComponent::GetNavigationData(FNavigationRelevantData& Data) const
 {
-	NavigationHelper::ProcessNavLinkAndAppend(&Data.Modifiers, GetOwner(), Links);
+	NavigationHelper::ProcessNavLinkAndAppend(&Data.Modifiers, NavigationHelper::FNavLinkOwnerData(*this), Links);
 }
 
 bool UNavLinkComponent::IsNavigationRelevant() const

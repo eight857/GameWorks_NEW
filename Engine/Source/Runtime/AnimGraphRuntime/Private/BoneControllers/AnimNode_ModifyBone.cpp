@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BoneControllers/AnimNode_ModifyBone.h"
 #include "AnimationRuntime.h"
@@ -106,7 +106,7 @@ void FAnimNode_ModifyBone::EvaluateSkeletalControl_AnyThread(FComponentSpacePose
 bool FAnimNode_ModifyBone::IsValidToEvaluate(const USkeleton* Skeleton, const FBoneContainer& RequiredBones) 
 {
 	// if both bones are valid
-	return (BoneToModify.IsValid(RequiredBones));
+	return (BoneToModify.IsValidToEvaluate(RequiredBones));
 }
 
 void FAnimNode_ModifyBone::InitializeBoneReferences(const FBoneContainer& RequiredBones) 

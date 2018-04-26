@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayCueManager.h"
 #include "Engine/ObjectLibrary.h"
@@ -21,6 +21,7 @@
 #include "Engine/NetConnection.h"
 #include "Net/UnrealNetwork.h"
 #include "Misc/CoreDelegates.h"
+#include "AbilitySystemReplicationProxyInterface.h"
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -176,9 +177,10 @@ void UGameplayCueManager::RouteGameplayCue(AActor* TargetActor, FGameplayTag Gam
 #if ENABLE_DRAW_DEBUG
 	if (DisplayGameplayCues)
 	{
-		FString DebugStr = FString::Printf(TEXT("%s - %s"), *GameplayCueTag.ToString(), *EGameplayCueEventToString(EventType) );
+		FString DebugStr = FString::Printf(TEXT("[%s] %s - %s"), *GetNameSafe(TargetActor), *GameplayCueTag.ToString(), *EGameplayCueEventToString(EventType) );
 		FColor DebugColor = FColor::Green;
 		DrawDebugString(TargetActor->GetWorld(), FVector(0.f, 0.f, 100.f), DebugStr, TargetActor, DebugColor, DisplayGameplayCueDuration);
+		ABILITY_LOG(Display, TEXT("%s"), *DebugStr);
 	}
 #endif // ENABLE_DRAW_DEBUG
 
@@ -269,14 +271,14 @@ bool UGameplayCueManager::HandleMissingGameplayCue(UGameplayCueSet* OwningSet, s
 	{
 		// Not loaded: start async loading and call when loaded
 		StreamableManager.RequestAsyncLoad(CueData.GameplayCueNotifyObj, FStreamableDelegate::CreateUObject(this, &UGameplayCueManager::OnMissingCueAsyncLoadComplete, 
-			CueData.GameplayCueNotifyObj, TWeakObjectPtr<UGameplayCueSet>(OwningSet), CueData.GameplayCueTag, TWeakObjectPtr<AActor>(TargetActor), EventType, Parameters));
+			CueData.GameplayCueNotifyObj, TWeakObjectPtr<UGameplayCueSet>(OwningSet), CueData.GameplayCueTag, MakeWeakObjectPtr(TargetActor), EventType, Parameters));
 
 		ABILITY_LOG(Display, TEXT("GameplayCueNotify %s was not loaded when GameplayCue was invoked. Starting async loading."), *CueData.GameplayCueNotifyObj.ToString());
 	}
 	return false;
 }
 
-void UGameplayCueManager::OnMissingCueAsyncLoadComplete(FStringAssetReference LoadedObject, TWeakObjectPtr<UGameplayCueSet> OwningSet, FGameplayTag GameplayCueTag, TWeakObjectPtr<AActor> TargetActor, EGameplayCueEvent::Type EventType, FGameplayCueParameters Parameters)
+void UGameplayCueManager::OnMissingCueAsyncLoadComplete(FSoftObjectPath LoadedObject, TWeakObjectPtr<UGameplayCueSet> OwningSet, FGameplayTag GameplayCueTag, TWeakObjectPtr<AActor> TargetActor, EGameplayCueEvent::Type EventType, FGameplayCueParameters Parameters)
 {
 	if (!LoadedObject.ResolveObject())
 	{
@@ -417,15 +419,12 @@ AGameplayCueNotify_Actor* UGameplayCueManager::GetInstancedCueActor(AActor* Targ
 		{
 			FActorSpawnParameters SpawnParams;
 			SpawnParams.Owner = NewOwnerActor;
-			if (SpawnedCue == nullptr)
+			if (LogGameplayCueActorSpawning)
 			{
-				if (LogGameplayCueActorSpawning)
-				{
-					ABILITY_LOG(Warning, TEXT("Spawning GameplaycueActor: %s"), *CueClass->GetName());
-				}
-
-				SpawnedCue = World->SpawnActor<AGameplayCueNotify_Actor>(CueClass, TargetActor->GetActorLocation(), TargetActor->GetActorRotation(), SpawnParams);
+				ABILITY_LOG(Warning, TEXT("Spawning GameplaycueActor: %s"), *CueClass->GetName());
 			}
+
+			SpawnedCue = World->SpawnActor<AGameplayCueNotify_Actor>(CueClass, TargetActor->GetActorLocation(), TargetActor->GetActorRotation(), SpawnParams);
 		}
 
 		// Associate this GameplayCueNotifyActor with this target actor/key
@@ -650,7 +649,7 @@ void UGameplayCueManager::RefreshObjectLibraries()
 	}
 }
 
-static void SearchDynamicClassCues(const FName PropertyName, const TArray<FString>& Paths, TArray<FGameplayCueReferencePair>& CuesToAdd, TArray<FStringAssetReference>& AssetsToLoad)
+static void SearchDynamicClassCues(const FName PropertyName, const TArray<FString>& Paths, TArray<FGameplayCueReferencePair>& CuesToAdd, TArray<FSoftObjectPath>& AssetsToLoad)
 {
 	// Iterate over all Dynamic Classes (nativized Blueprints). Search for ones with GameplayCueName tag.
 
@@ -678,7 +677,7 @@ static void SearchDynamicClassCues(const FName PropertyName, const TArray<FStrin
 			FGameplayTag GameplayCueTag = Manager.RequestGameplayTag(*FoundGameplayTag, false);
 			if (GameplayCueTag.IsValid())
 			{
-				FStringAssetReference StringRef(ClassPath); // TODO: is there any translation needed?
+				FSoftObjectPath StringRef(ClassPath); // TODO: is there any translation needed?
 				ensure(StringRef.IsValid());
 
 				CuesToAdd.Add(FGameplayCueReferencePair(GameplayCueTag, StringRef));
@@ -694,8 +693,10 @@ static void SearchDynamicClassCues(const FName PropertyName, const TArray<FStrin
 	}
 }
 
-void UGameplayCueManager::InitObjectLibrary(FGameplayCueObjectLibrary& Lib)
+TSharedPtr<FStreamableHandle> UGameplayCueManager::InitObjectLibrary(FGameplayCueObjectLibrary& Lib)
 {
+	TSharedPtr<FStreamableHandle> RetVal;
+
 	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Loading Library"), STAT_ObjectLibrary, STATGROUP_LoadTime);
 
 	// Instantiate the UObjectLibraries if they aren't there already
@@ -761,7 +762,7 @@ void UGameplayCueManager::InitObjectLibrary(FGameplayCueObjectLibrary& Lib)
 	Lib.StaticObjectLibrary->GetAssetDataList(StaticAssetDatas);
 
 	TArray<FGameplayCueReferencePair> CuesToAdd;
-	TArray<FStringAssetReference> AssetsToLoad;
+	TArray<FSoftObjectPath> AssetsToLoad;
 
 	// ------------------------------------------------------------------------------------------------------------------
 	// Build Cue lists for loading. Determines what from the obj library needs to be loaded
@@ -789,7 +790,7 @@ void UGameplayCueManager::InitObjectLibrary(FGameplayCueObjectLibrary& Lib)
 	// --------------------------------------------
 	if (Lib.bShouldAsyncLoad)
 	{
-		auto ForwardLambda = [](TArray<FStringAssetReference> AssetList, FOnGameplayCueNotifySetLoaded OnLoadedDelegate)
+		auto ForwardLambda = [](TArray<FSoftObjectPath> AssetList, FOnGameplayCueNotifySetLoaded OnLoadedDelegate)
 		{
 			OnLoadedDelegate.ExecuteIfBound(AssetList);
 		};
@@ -797,6 +798,7 @@ void UGameplayCueManager::InitObjectLibrary(FGameplayCueObjectLibrary& Lib)
 		if (AssetsToLoad.Num() > 0)
 		{
 			GameplayCueAssetHandle = StreamableManager.RequestAsyncLoad(AssetsToLoad, FStreamableDelegate::CreateStatic( ForwardLambda, AssetsToLoad, Lib.OnLoaded), Lib.AsyncPriority);
+			RetVal = GameplayCueAssetHandle;
 		}
 		else
 		{
@@ -807,11 +809,12 @@ void UGameplayCueManager::InitObjectLibrary(FGameplayCueObjectLibrary& Lib)
 
 	// Build Tag Translation table
 	TranslationManager.BuildTagTranslationTable();
+	return RetVal;
 }
 
 static FAutoConsoleVariable CVarGameplyCueAddToGlobalSetDebug(TEXT("GameplayCue.AddToGlobalSet.DebugTag"), TEXT(""), TEXT("Debug Tag adding to global set"), ECVF_Default	);
 
-void UGameplayCueManager::BuildCuesToAddToGlobalSet(const TArray<FAssetData>& AssetDataList, FName TagPropertyName, TArray<FGameplayCueReferencePair>& OutCuesToAdd, TArray<FStringAssetReference>& OutAssetsToLoad, FShouldLoadGCNotifyDelegate ShouldLoad)
+void UGameplayCueManager::BuildCuesToAddToGlobalSet(const TArray<FAssetData>& AssetDataList, FName TagPropertyName, TArray<FGameplayCueReferencePair>& OutCuesToAdd, TArray<FSoftObjectPath>& OutAssetsToLoad, FShouldLoadGCNotifyDelegate ShouldLoad)
 {
 	UGameplayTagsManager& Manager = UGameplayTagsManager::Get();
 
@@ -847,13 +850,13 @@ void UGameplayCueManager::BuildCuesToAddToGlobalSet(const TArray<FAssetData>& As
 				continue;
 			}
 
-			ABILITY_LOG(Log, TEXT("GameplayCueManager Found: %s / %s"), *FoundGameplayTag.ToString(), **GeneratedClassTag);
+			ABILITY_LOG(Log, TEXT("GameplayCueManager Found: %s / %s"), *FoundGameplayTag.ToString(), *GeneratedClassTag);
 
 			FGameplayTag  GameplayCueTag = Manager.RequestGameplayTag(FoundGameplayTag, false);
 			if (GameplayCueTag.IsValid())
 			{
 				// Add a new NotifyData entry to our flat list for this one
-				FStringAssetReference StringRef;
+				FSoftObjectPath StringRef;
 				StringRef.SetPath(FPackageName::ExportTextPathToObjectPath(*GeneratedClassTag));
 
 				OutCuesToAdd.Add(FGameplayCueReferencePair(GameplayCueTag, StringRef));
@@ -923,9 +926,9 @@ void UGameplayCueManager::CheckForTooManyRPCs(FName FuncName, const FGameplayCue
 	}
 }
 
-void UGameplayCueManager::OnGameplayCueNotifyAsyncLoadComplete(TArray<FStringAssetReference> AssetList)
+void UGameplayCueManager::OnGameplayCueNotifyAsyncLoadComplete(TArray<FSoftObjectPath> AssetList)
 {
-	for (FStringAssetReference StringRef : AssetList)
+	for (FSoftObjectPath StringRef : AssetList)
 	{
 		UClass* GCClass = FindObject<UClass>(nullptr, *StringRef.ToString());
 		if (ensure(GCClass))
@@ -980,7 +983,7 @@ void UGameplayCueManager::HandleAssetAdded(UObject *Object)
 		{
 			if (VerifyNotifyAssetIsInValidPath(Blueprint->GetOuter()->GetPathName()))
 			{
-				FStringAssetReference StringRef;
+				FSoftObjectPath StringRef;
 				StringRef.SetPath(Blueprint->GeneratedClass->GetPathName());
 
 				TArray<FGameplayCueReferencePair> CuesToAdd;
@@ -1007,7 +1010,7 @@ void UGameplayCueManager::HandleAssetAdded(UObject *Object)
 /** Handles cleaning up an object library if it matches the passed in object */
 void UGameplayCueManager::HandleAssetDeleted(UObject *Object)
 {
-	FStringAssetReference StringRefToRemove;
+	FSoftObjectPath StringRefToRemove;
 	UBlueprint* Blueprint = Cast<UBlueprint>(Object);
 	if (Blueprint && Blueprint->GeneratedClass)
 	{
@@ -1022,7 +1025,7 @@ void UGameplayCueManager::HandleAssetDeleted(UObject *Object)
 
 	if (StringRefToRemove.IsValid())
 	{
-		TArray<FStringAssetReference> StringRefs;
+		TArray<FSoftObjectPath> StringRefs;
 		StringRefs.Add(StringRefToRemove);
 		
 		
@@ -1191,6 +1194,13 @@ void UGameplayCueManager::InvokeGameplayCueAddedAndWhileActive_FromSpec(UAbility
 		return;
 	}
 
+	IAbilitySystemReplicationProxyInterface* ReplicationInterface = OwningComponent->GetReplicationInterface();
+	if (ReplicationInterface == nullptr)
+	{
+		// No available Replication Interface, we are going to drop these calls. (By design: someone who wants proxy replication should be ok with GC rpcs being dropped when the proxy is null)
+		return;
+	}
+
 	if (AbilitySystemAlwaysConvertGESpecToGCParams)
 	{
 		// Transform the GE Spec into GameplayCue parmameters here (on the server)
@@ -1205,12 +1215,12 @@ void UGameplayCueManager::InvokeGameplayCueAddedAndWhileActive_FromSpec(UAbility
 
 		if (Tags.Num() == 1)
 		{
-			OwningComponent->NetMulticast_InvokeGameplayCueAddedAndWhileActive_WithParams(Tags[0], PredictionKey, Parameters);
+			ReplicationInterface->Call_InvokeGameplayCueAddedAndWhileActive_WithParams(Tags[0], PredictionKey, Parameters);
 			
 		}
 		else if (Tags.Num() > 1)
 		{
-			OwningComponent->NetMulticast_InvokeGameplayCuesAddedAndWhileActive_WithParams(FGameplayTagContainer::CreateFromArray(Tags), PredictionKey, Parameters);
+			ReplicationInterface->Call_InvokeGameplayCuesAddedAndWhileActive_WithParams(FGameplayTagContainer::CreateFromArray(Tags), PredictionKey, Parameters);
 		}
 		else
 		{
@@ -1220,7 +1230,7 @@ void UGameplayCueManager::InvokeGameplayCueAddedAndWhileActive_FromSpec(UAbility
 	}
 	else
 	{
-		OwningComponent->NetMulticast_InvokeGameplayCueAddedAndWhileActive_FromSpec(Spec, PredictionKey);
+		ReplicationInterface->Call_InvokeGameplayCueAddedAndWhileActive_FromSpec(Spec, PredictionKey);
 
 	}
 }
@@ -1336,6 +1346,8 @@ void UGameplayCueManager::EndGameplayCueSendContext()
 
 void UGameplayCueManager::FlushPendingCues()
 {
+	OnFlushPendingCues.Broadcast();
+
 	TArray<FGameplayCuePendingExecute> LocalPendingExecuteCues = PendingExecuteCues;
 	PendingExecuteCues.Empty();
 	for (int32 i = 0; i < LocalPendingExecuteCues.Num(); i++)
@@ -1348,6 +1360,13 @@ void UGameplayCueManager::FlushPendingCues()
 			bool bHasAuthority = PendingCue.OwningComponent->IsOwnerActorAuthoritative();
 			bool bLocalPredictionKey = PendingCue.PredictionKey.IsLocalClientKey();
 
+			IAbilitySystemReplicationProxyInterface* RepInterface = PendingCue.OwningComponent->GetReplicationInterface();
+			if (RepInterface == nullptr)
+			{
+				// If this returns null, it means "we are replicating througha proxy and have no avatar". Which in this case, we should skip
+				continue;
+			}
+
 			// TODO: Could implement non-rpc method for replicating if desired
 			switch (PendingCue.PayloadType)
 			{
@@ -1359,11 +1378,12 @@ void UGameplayCueManager::FlushPendingCues()
 						PendingCue.OwningComponent->ForceReplication();
 						if (PendingCue.GameplayCueTags.Num() > 1)
 						{
-							PendingCue.OwningComponent->NetMulticast_InvokeGameplayCuesExecuted_WithParams(FGameplayTagContainer::CreateFromArray(PendingCue.GameplayCueTags), PendingCue.PredictionKey, PendingCue.CueParameters);
+							RepInterface->Call_InvokeGameplayCuesExecuted_WithParams(FGameplayTagContainer::CreateFromArray(PendingCue.GameplayCueTags), PendingCue.PredictionKey, PendingCue.CueParameters);
 						}
 						else
 						{
-							PendingCue.OwningComponent->NetMulticast_InvokeGameplayCueExecuted_WithParams(PendingCue.GameplayCueTags[0], PendingCue.PredictionKey, PendingCue.CueParameters);
+							RepInterface->Call_InvokeGameplayCueExecuted_WithParams(PendingCue.GameplayCueTags[0], PendingCue.PredictionKey, PendingCue.CueParameters);
+
 							static FName NetMulticast_InvokeGameplayCueExecuted_WithParamsName = TEXT("NetMulticast_InvokeGameplayCueExecuted_WithParams");
 							CheckForTooManyRPCs(NetMulticast_InvokeGameplayCueExecuted_WithParamsName, PendingCue, PendingCue.GameplayCueTags[0].ToString(), nullptr);
 						}
@@ -1385,11 +1405,11 @@ void UGameplayCueManager::FlushPendingCues()
 						PendingCue.OwningComponent->ForceReplication();
 						if (PendingCue.GameplayCueTags.Num() > 1)
 						{
-							PendingCue.OwningComponent->NetMulticast_InvokeGameplayCuesExecuted(FGameplayTagContainer::CreateFromArray(PendingCue.GameplayCueTags), PendingCue.PredictionKey, PendingCue.CueParameters.EffectContext);
+							RepInterface->Call_InvokeGameplayCuesExecuted(FGameplayTagContainer::CreateFromArray(PendingCue.GameplayCueTags), PendingCue.PredictionKey, PendingCue.CueParameters.EffectContext);
 						}
 						else
 						{
-							PendingCue.OwningComponent->NetMulticast_InvokeGameplayCueExecuted(PendingCue.GameplayCueTags[0], PendingCue.PredictionKey, PendingCue.CueParameters.EffectContext);
+							RepInterface->Call_InvokeGameplayCueExecuted(PendingCue.GameplayCueTags[0], PendingCue.PredictionKey, PendingCue.CueParameters.EffectContext);
 							static FName NetMulticast_InvokeGameplayCueExecutedName = TEXT("NetMulticast_InvokeGameplayCueExecuted");
 							CheckForTooManyRPCs(NetMulticast_InvokeGameplayCueExecutedName, PendingCue, PendingCue.GameplayCueTags[0].ToString(), PendingCue.CueParameters.EffectContext.Get());
 						}
@@ -1406,8 +1426,9 @@ void UGameplayCueManager::FlushPendingCues()
 			case EGameplayCuePayloadType::FromSpec:
 				if (bHasAuthority)
 				{
-					PendingCue.OwningComponent->ForceReplication();
-					PendingCue.OwningComponent->NetMulticast_InvokeGameplayCueExecuted_FromSpec(PendingCue.FromSpec, PendingCue.PredictionKey);
+					RepInterface->ForceReplication();
+					RepInterface->Call_InvokeGameplayCueExecuted_FromSpec(PendingCue.FromSpec, PendingCue.PredictionKey);
+
 					static FName NetMulticast_InvokeGameplayCueExecuted_FromSpecName = TEXT("NetMulticast_InvokeGameplayCueExecuted_FromSpec");
 					CheckForTooManyRPCs(NetMulticast_InvokeGameplayCueExecuted_FromSpecName, PendingCue, PendingCue.FromSpec.Def ? PendingCue.FromSpec.ToSimpleString() : TEXT("FromSpecWithNoDef"), PendingCue.FromSpec.EffectContext.Get());
 				}
@@ -1475,16 +1496,16 @@ void UGameplayCueManager::CheckForPreallocation(UClass* GCClass)
 {
 	if (AGameplayCueNotify_Actor* InstancedCue = Cast<AGameplayCueNotify_Actor>(GCClass->ClassDefaultObject))
 	{
-		if (InstancedCue->NumPreallocatedInstances > 0 && GameplayCueClassesForPreallocation.Contains(InstancedCue) == false)
+		if (InstancedCue->NumPreallocatedInstances > 0 && GameplayCueClassesForPreallocation.Contains(GCClass) == false)
 		{
 			// Add this to the global list
-			GameplayCueClassesForPreallocation.Add(InstancedCue);
+			GameplayCueClassesForPreallocation.Add(GCClass);
 
 			// Add it to any world specific lists
 			for (FPreallocationInfo& Info : PreallocationInfoList_Internal)
 			{
-				ensure(Info.ClassesNeedingPreallocation.Contains(InstancedCue)==false);
-				Info.ClassesNeedingPreallocation.Push(InstancedCue);
+				ensure(Info.ClassesNeedingPreallocation.Contains(GCClass)==false);
+				Info.ClassesNeedingPreallocation.Push(GCClass);
 			}
 		}
 	}
@@ -1514,7 +1535,8 @@ void UGameplayCueManager::UpdatePreallocation(UWorld* World)
 
 	if (Info.ClassesNeedingPreallocation.Num() > 0)
 	{
-		AGameplayCueNotify_Actor* CDO = Info.ClassesNeedingPreallocation.Last();
+		TSubclassOf<AGameplayCueNotify_Actor> GCClass = Info.ClassesNeedingPreallocation.Last();
+		AGameplayCueNotify_Actor* CDO = GCClass->GetDefaultObject<AGameplayCueNotify_Actor>();
 		TArray<AGameplayCueNotify_Actor*>& PreallocatedList = Info.PreallocatedInstances.FindOrAdd(CDO->GetClass());
 
 		AGameplayCueNotify_Actor* PrespawnedInstance = Cast<AGameplayCueNotify_Actor>(World->SpawnActor(CDO->GetClass()));
@@ -1568,7 +1590,7 @@ void UGameplayCueManager::OnWorldCleanup(UWorld* World, bool bSessionEnded, bool
 	{
 		if (PreallocationInfoList_Internal[idx].OwningWorldKey == FObjectKey(World))
 		{
-			ABILITY_LOG(Display, TEXT("UGameplayCueManager::OnWorldCleanup Removing PreallocationInfoList_Internal element %d"), idx);
+			ABILITY_LOG(Verbose, TEXT("UGameplayCueManager::OnWorldCleanup Removing PreallocationInfoList_Internal element %d"), idx);
 			PreallocationInfoList_Internal.RemoveAtSwap(idx, 1, false);
 			idx--;
 		}

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Blueprint/UserWidget.h"
 #include "Rendering/DrawElements.h"
@@ -23,6 +23,7 @@
 #include "UMGPrivate.h"
 #include "UObject/UObjectHash.h"
 #include "PropertyPortFlags.h"
+#include "TimerManager.h"
 
 DECLARE_CYCLE_STAT(TEXT("UserWidget Create"), STAT_CreateWidget, STATGROUP_Slate);
 
@@ -38,7 +39,7 @@ static FWidgetStyle NullStyle;
 
 FPaintContext::FPaintContext()
 	: AllottedGeometry(NullGeometry)
-	, MyClippingRect(NullRect)
+	, MyCullingRect(NullRect)
 	, OutDrawElements(NullElementList)
 	, LayerId(0)
 	, WidgetStyle(NullStyle)
@@ -53,11 +54,12 @@ UUserWidget::UUserWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, bCanEverTick(true)
 	, bCanEverPaint(true)
+	, bInitialized(false)
+	, bStoppingAllAnimations(false)
 {
 	ViewportAnchors = FAnchors(0, 0, 1, 1);
 	Visibility = ESlateVisibility::SelfHitTestInvisible;
 
-	bInitialized = false;
 	bSupportsKeyboardFocus_DEPRECATED = true;
 	bIsFocusable = false;
 	ColorAndOpacity = FLinearColor::White;
@@ -81,7 +83,8 @@ UWidgetBlueprintGeneratedClass* UUserWidget::GetWidgetTreeOwningClass()
 		// Force post load on the generated class so all subobjects are done (specifically the widget tree).
 		BGClass->ConditionalPostLoad();
 
-		const bool bNoRootWidget = ( nullptr == BGClass->WidgetTree ) || ( nullptr == BGClass->WidgetTree->RootWidget );
+		const bool bNoRootWidget = !BGClass->HasTemplate() && ( ( nullptr == BGClass->WidgetTree ) || ( nullptr == BGClass->WidgetTree->RootWidget ) );
+
 		if ( bNoRootWidget )
 		{
 			UWidgetBlueprintGeneratedClass* SuperBGClass = Cast<UWidgetBlueprintGeneratedClass>(BGClass->GetSuperClass());
@@ -134,15 +137,18 @@ void UUserWidget::TemplateInitInner()
 	{
 		for ( UWidgetAnimation* Animation : WidgetClass->Animations )
 		{
-			UWidgetAnimation* Anim = DuplicateObject<UWidgetAnimation>(Animation, this);
+			//UWidgetAnimation* DuplicatedAnimation = NewObject<UWidgetAnimation>(this, Animation->GetFName());
+			//DuplicatedAnimation->MovieScene = Animation->MovieScene;
+			//DuplicatedAnimation->AnimationBindings = Animation->AnimationBindings;
+			UWidgetAnimation* DuplicatedAnimation = DuplicateObject<UWidgetAnimation>(Animation, this);
 
-			if ( Anim->GetMovieScene() )
+			if ( DuplicatedAnimation->GetMovieScene() )
 			{
 				// Find property with the same name as the template and assign the new widget to it.
-				UObjectPropertyBase* Prop = FindField<UObjectPropertyBase>(WidgetClass, Anim->GetMovieScene()->GetFName());
+				UObjectPropertyBase* Prop = FindField<UObjectPropertyBase>(WidgetClass, DuplicatedAnimation->GetMovieScene()->GetFName());
 				if ( Prop )
 				{
-					Prop->SetObjectPropertyValue_InContainer(this, Anim);
+					Prop->SetObjectPropertyValue_InContainer(this, DuplicatedAnimation);
 				}
 			}
 		}
@@ -168,7 +174,7 @@ void UUserWidget::TemplateInitInner()
 			// Initialize Navigation Data
 			if ( Widget->Navigation )
 			{
-				Widget->Navigation->ResolveExplictRules(WidgetTree);
+				Widget->Navigation->ResolveRules(this, WidgetTree);
 			}
 
 			if ( UUserWidget* UserWidget = Cast<UUserWidget>(Widget) )
@@ -352,6 +358,17 @@ bool UUserWidget::Initialize()
 			InitializeNamedSlots(bReparentToWidgetTree);
 		}
 
+		// Setup the player context on sub user widgets, if we have a valid context
+		if (PlayerContext.IsValid())
+		{
+			WidgetTree->ForEachWidget([&](UWidget* Widget) {
+				if (UUserWidget* UserWidget = Cast<UUserWidget>(Widget))
+				{
+					UserWidget->SetPlayerContext(PlayerContext);
+				}
+			});
+		}
+
 		return true;
 	}
 
@@ -392,17 +409,19 @@ void UUserWidget::DuplicateAndInitializeFromWidgetTree(UWidgetTree* InWidgetTree
 	{
 		FObjectDuplicationParameters Parameters(InWidgetTree, this);
 
-		// Set to be transient and strip public flags
-		Parameters.ApplyFlags = RF_Transient | RF_DuplicateTransient;
-		Parameters.FlagMask = Parameters.FlagMask & ~( RF_Public | RF_DefaultSubObject );
-
 		WidgetTree = Cast<UWidgetTree>(StaticDuplicateObjectEx(Parameters));
+
+		// Set widget tree to be transient
+		WidgetTree->SetFlags(RF_Transient | RF_DuplicateTransient);
 	}
 }
 
 void UUserWidget::BeginDestroy()
 {
 	Super::BeginDestroy();
+
+	//TODO: Investigate why this would ever be called directly, RemoveFromParent isn't safe to call during GC,
+	// as the widget structure may be in a partially destroyed state.
 
 	// If anyone ever calls BeginDestroy explicitly on a widget we need to immediately remove it from
 	// the the parent as it may be owned currently by a slate widget.  As long as it's the viewport we're
@@ -456,8 +475,8 @@ void UUserWidget::SynchronizeProperties()
 	TSharedPtr<SObjectWidget> SafeGCWidget = MyGCWidget.Pin();
 	if ( SafeGCWidget.IsValid() )
 	{
-		TAttribute<FLinearColor> ColorBinding = OPTIONAL_BINDING(FLinearColor, ColorAndOpacity);
-		TAttribute<FSlateColor> ForegroundColorBinding = OPTIONAL_BINDING(FSlateColor, ForegroundColor);
+		TAttribute<FLinearColor> ColorBinding = PROPERTY_BINDING(FLinearColor, ColorAndOpacity);
+		TAttribute<FSlateColor> ForegroundColorBinding = PROPERTY_BINDING(FSlateColor, ForegroundColor);
 
 		SafeGCWidget->SetColorAndOpacity(ColorBinding);
 		SafeGCWidget->SetForegroundColor(ForegroundColorBinding);
@@ -543,14 +562,20 @@ UWorld* UUserWidget::GetWorld() const
 
 UUMGSequencePlayer* UUserWidget::GetOrAddPlayer(UWidgetAnimation* InAnimation)
 {
-	if (InAnimation)
+	if (InAnimation && !bStoppingAllAnimations)
 	{
 		// @todo UMG sequencer - Restart animations which have had Play called on them?
-		UUMGSequencePlayer** FoundPlayer = ActiveSequencePlayers.FindByPredicate(
-			[&](const UUMGSequencePlayer* Player)
+		UUMGSequencePlayer** FoundPlayer = nullptr;
+		for ( UUMGSequencePlayer* Player : ActiveSequencePlayers )
 		{
-			return Player->GetAnimation() == InAnimation;
-		});
+			// We need to make sure we haven't stopped the animation, otherwise it'll get cancelled on the next frame.
+			if (Player->GetAnimation() == InAnimation
+			 && !StoppedSequencePlayers.Contains(Player))
+			{
+				FoundPlayer = &Player;
+				break;
+			}
+		}
 
 		if (!FoundPlayer)
 		{
@@ -583,7 +608,7 @@ void UUserWidget::Invalidate()
 
 void UUserWidget::PlayAnimation( UWidgetAnimation* InAnimation, float StartAtTime, int32 NumberOfLoops, EUMGSequencePlayMode::Type PlayMode, float PlaybackSpeed)
 {
-	FScopedNamedEvent NamedEvent(FColor::Emerald, "Widget::PlayAnimation");
+	SCOPED_NAMED_EVENT_TEXT("Widget::PlayAnimation", FColor::Emerald);
 
 	UUMGSequencePlayer* Player = GetOrAddPlayer(InAnimation);
 	if (Player)
@@ -600,7 +625,7 @@ void UUserWidget::PlayAnimation( UWidgetAnimation* InAnimation, float StartAtTim
 
 void UUserWidget::PlayAnimationTo(UWidgetAnimation* InAnimation, float StartAtTime, float EndAtTime, int32 NumberOfLoops, EUMGSequencePlayMode::Type PlayMode, float PlaybackSpeed)
 {
-	FScopedNamedEvent NamedEvent(FColor::Emerald, "Widget::PlayAnimationTo");
+	SCOPED_NAMED_EVENT_TEXT("Widget::PlayAnimationTo", FColor::Emerald);
 
 	UUMGSequencePlayer* Player = GetOrAddPlayer(InAnimation);
 	if (Player)
@@ -627,6 +652,16 @@ void UUserWidget::StopAnimation(const UWidgetAnimation* InAnimation)
 			(*FoundPlayer)->Stop();
 		}
 	}
+}
+
+void UUserWidget::StopAllAnimations()
+{
+	bStoppingAllAnimations = true;
+	for (UUMGSequencePlayer* FoundPlayer : ActiveSequencePlayers)
+	{
+		FoundPlayer->Stop();
+	}
+	bStoppingAllAnimations = false;
 }
 
 float UUserWidget::PauseAnimation(const UWidgetAnimation* InAnimation)
@@ -721,6 +756,21 @@ void UUserWidget::ReverseAnimation(const UWidgetAnimation* InAnimation)
 			(*FoundPlayer)->Reverse();
 		}
 	}
+}
+
+bool UUserWidget::IsAnimationPlayingForward(const UWidgetAnimation* InAnimation)
+{
+	if (InAnimation)
+	{
+		UUMGSequencePlayer** FoundPlayer = ActiveSequencePlayers.FindByPredicate([&](const UUMGSequencePlayer* Player) { return Player->GetAnimation() == InAnimation; });
+
+		if (FoundPlayer)
+		{
+			return (*FoundPlayer)->IsPlayingForward();
+		}
+	}
+
+	return true;
 }
 
 void UUserWidget::OnAnimationFinishedPlaying(UUMGSequencePlayer& Player)
@@ -1294,9 +1344,24 @@ void UUserWidget::TickActionsAndAnimation(const FGeometry& MyGeometry, float InD
 	if ( World )
 	{
 		// Update any latent actions we have for this actor
-		FLatentActionManager& LatentActionManager = World->GetLatentActionManager();
-		LatentActionManager.ProcessLatentActions(this, InDeltaTime);
+		World->GetLatentActionManager().ProcessLatentActions(this, InDeltaTime);
 	}
+}
+
+void UUserWidget::CancelLatentActions()
+{
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->GetLatentActionManager().RemoveActionsForObject(this);
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+}
+
+void UUserWidget::StopAnimationsAndLatentActions()
+{
+	StopAllAnimations();
+	CancelLatentActions();
 }
 
 void UUserWidget::ListenForInputAction( FName ActionName, TEnumAsByte< EInputEvent > EventType, bool bConsume, FOnInputAction Callback )
@@ -1460,7 +1525,33 @@ void UUserWidget::NativeOnFocusLost( const FFocusEvent& InFocusEvent )
 
 void UUserWidget::NativeOnFocusChanging(const FWeakWidgetPath& PreviousFocusPath, const FWidgetPath& NewWidgetPath, const FFocusEvent& InFocusEvent)
 {
-	// No Blueprint Support At This Time
+	TSharedPtr<SObjectWidget> SafeGCWidget = MyGCWidget.Pin();
+	if ( SafeGCWidget.IsValid() )
+	{
+		const bool bDecendantNewlyFocused = NewWidgetPath.ContainsWidget(SafeGCWidget.ToSharedRef());
+		if ( bDecendantNewlyFocused )
+		{
+			const bool bDecendantPreviouslyFocused = PreviousFocusPath.ContainsWidget(SafeGCWidget.ToSharedRef());
+			if ( !bDecendantPreviouslyFocused )
+			{
+				NativeOnAddedToFocusPath( InFocusEvent );
+			}
+		}
+		else
+		{
+			NativeOnRemovedFromFocusPath( InFocusEvent );
+		}
+	}
+}
+
+void UUserWidget::NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent)
+{
+	OnAddedToFocusPath(InFocusEvent);
+}
+
+void UUserWidget::NativeOnRemovedFromFocusPath(const FFocusEvent& InFocusEvent)
+{
+	OnRemovedFromFocusPath(InFocusEvent);
 }
 
 FNavigationReply UUserWidget::NativeOnNavigation(const FGeometry& MyGeometry, const FNavigationEvent& InNavigationEvent, const FNavigationReply& InDefaultReply)
@@ -1595,12 +1686,22 @@ FCursorReply UUserWidget::NativeOnCursorQuery( const FGeometry& InGeometry, cons
 	return FCursorReply::Unhandled();
 }
 
+FNavigationReply UUserWidget::NativeOnNavigation(const FGeometry& InGeometry, const FNavigationEvent& InNavigationEvent)
+{
+	return FNavigationReply::Escape();
+}
+	
+void UUserWidget::NativeOnMouseCaptureLost()
+{
+	OnMouseCaptureLost();
+}
+
 bool UUserWidget::ShouldSerializeWidgetTree(const ITargetPlatform* TargetPlatform) const
 {
 	if ( UWidgetBlueprintGeneratedClass* BGClass = Cast<UWidgetBlueprintGeneratedClass>(GetClass()) )
 	{
 		// Non-templateable user widgets can not preserve their hierarchy.
-		if ( !BGClass->CanTemplate() )
+		if ( !BGClass->HasTemplate() )
 		{
 			return false;
 		}
@@ -1674,7 +1775,12 @@ void UUserWidget::PostLoad()
 	Super::PostLoad();
 
 #if WITH_EDITOR
-	// No-Op
+	if (!HasAnyFlags(RF_ClassDefaultObject))
+	{
+		UUserWidget* DefeaultWidget = Cast<UUserWidget>(GetClass()->GetDefaultObject());
+		bCanEverTick = DefeaultWidget->bCanEverTick;
+		bCanEverPaint = DefeaultWidget->bCanEverPaint;
+	}
 #else
 	if ( HasAnyFlags(RF_ArchetypeObject) && !HasAllFlags(RF_ClassDefaultObject) )
 	{
@@ -1723,7 +1829,7 @@ void UUserWidget::Serialize(FArchive& Ar)
 UUserWidget* UUserWidget::NewWidgetObject(UObject* Outer, UClass* UserWidgetClass, FName WidgetName, EObjectFlags Flags)
 {
 	UWidgetBlueprintGeneratedClass* WBGC = Cast<UWidgetBlueprintGeneratedClass>(UserWidgetClass);
-	if ( WBGC && WBGC->CanTemplate() )
+	if ( WBGC && WBGC->HasTemplate() )
 	{
 		if ( UUserWidget* Template = WBGC->GetTemplate() )
 		{
@@ -1736,11 +1842,19 @@ UUserWidget* UUserWidget::NewWidgetObject(UObject* Outer, UClass* UserWidgetClas
 
 			return NewUserWidget;
 		}
-	}
-
+		else
+		{
 #if !WITH_EDITOR && (UE_BUILD_DEBUG || UE_BUILD_DEVELOPMENT)
-	UE_LOG(LogUMG, Warning, TEXT("Widget Class %s - Using Slow CreateWidget Path."), *UserWidgetClass->GetName());
+			UE_LOG(LogUMG, Error, TEXT("Widget Class %s - Using Slow CreateWidget path because no template found."), *UserWidgetClass->GetName());
 #endif
+		}
+	}
+	else
+	{
+#if !WITH_EDITOR && (UE_BUILD_DEBUG || UE_BUILD_DEVELOPMENT)
+		UE_LOG(LogUMG, Warning, TEXT("Widget Class %s - Using Slow CreateWidget path because this class could not be templated."), *UserWidgetClass->GetName());
+#endif
+	}
 
 	return NewObject<UUserWidget>(Outer, UserWidgetClass, WidgetName, Flags);
 }
@@ -1759,6 +1873,7 @@ UUserWidget* UUserWidget::CreateWidgetOfClass(UClass* UserWidgetClass, UGameInst
 
 	UObject* Outer = nullptr;
 	ULocalPlayer* PlayerContext = nullptr;
+	UWorld* World = InWorld;
 
 	if ( InOwningPlayer )
 	{
@@ -1781,7 +1896,7 @@ UUserWidget* UUserWidget::CreateWidgetOfClass(UClass* UserWidgetClass, UGameInst
 		}
 
 		// Assign the outer to the game instance if it exists, otherwise use the player controller's world
-		UWorld* World = InOwningPlayer->GetWorld();
+		World = InOwningPlayer->GetWorld();
 
 		Outer = World->GetGameInstance() ? StaticCast<UObject*>(World->GetGameInstance()) : StaticCast<UObject*>(World);
 		PlayerContext = CastChecked<ULocalPlayer>(InOwningPlayer->Player);
@@ -1808,7 +1923,7 @@ UUserWidget* UUserWidget::CreateWidgetOfClass(UClass* UserWidgetClass, UGameInst
 
 	if ( PlayerContext )
 	{
-		NewWidget->SetPlayerContext(FLocalPlayerContext(PlayerContext));
+		NewWidget->SetPlayerContext(FLocalPlayerContext(PlayerContext, World));
 	}
 
 	NewWidget->Initialize();

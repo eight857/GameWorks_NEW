@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -46,6 +46,10 @@ struct FMovieSceneVectorKeyStructBase
 
 	FRichCurveKey* Keys[4];
 	FRichCurve* Curves[4];
+
+	/** The key's time. */
+	UPROPERTY(EditAnywhere, Category=Key)
+	float Time;
 
 	virtual void PropagateChanges(const FPropertyChangedEvent& ChangeEvent) override;
 

@@ -5,10 +5,16 @@
 
 #include "OVR_Platform_Defs.h"
 #include "OVR_Types.h"
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct ovrMicrophone *ovrMicrophoneHandle;
+
+/// Returns the minimum number of samples available to be read. This function
+/// is inherently racy, it is possible that more samples may be returned by the
+/// next call to getPCM. This function is only implemented on Android. Windows
+/// will always return 0.
+OVRP_PUBLIC_FUNCTION(size_t) ovr_Microphone_GetNumSamplesAvailable(const ovrMicrophoneHandle obj);
 
 /// Returns the size of the internal ringbuffer used by the microhone in
 /// elements. This size is the maximum number of elements that can ever be

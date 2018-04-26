@@ -1,23 +1,28 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Net/UnitTestPackageMap.h"
+
 #include "GameFramework/Actor.h"
 
-#include "Net/UnitTestNetConnection.h"
+#include "MinimalClient.h"
+#include "NUTUtilDebug.h"
+#include "UnitLogging.h"
 
 
 /**
- * Default constructor
+ * UUnitTestPackageMap
  */
+
 UUnitTestPackageMap::UUnitTestPackageMap(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, bWithinSerializeNewActor(false)
 	, bPendingArchetypeSpawn(false)
 	, ReplaceObjects()
+	, OnSerializeName()
 {
 }
 
-bool UUnitTestPackageMap::SerializeObject(FArchive& Ar, UClass* InClass, UObject*& Obj, FNetworkGUID* OutNetGUID/*=NULL */)
+bool UUnitTestPackageMap::SerializeObject(FArchive& Ar, UClass* InClass, UObject*& Obj, FNetworkGUID* OutNetGUID/*=nullptr*/)
 {
 	bool bReturnVal = false;
 
@@ -47,23 +52,21 @@ bool UUnitTestPackageMap::SerializeObject(FArchive& Ar, UClass* InClass, UObject
 		// This indicates that SerializeObject has failed to find an existing instance when trying to serialize an actor,
 		// so it will be spawned clientside later on (after the archetype is serialized) instead.
 		// These spawns count as undesired clientside code execution, so filter them through NotifyAllowNetActor.
-		if (InClass == AActor::StaticClass() && Obj == NULL)
+		if (InClass == AActor::StaticClass() && Obj == nullptr)
 		{
 			bPendingArchetypeSpawn = true;
 		}
 		// This indicates that a new actor archetype has just been serialized (which may or may not be during actor channel init);
 		// this is the first place we know the type of a replicated actor (in an actor channel or otherwise), but BEFORE it is spawned
-		else if ((GIsInitializingActorChan || bPendingArchetypeSpawn) && InClass == UObject::StaticClass() && Obj != NULL)
+		else if ((GIsInitializingActorChan || bPendingArchetypeSpawn) && InClass == UObject::StaticClass() && Obj != nullptr)
 		{
-			UUnitTestNetConnection* UnitConn = Cast<UUnitTestNetConnection>(GActiveReceiveUnitConnection);
-			bool bAllowActor = false;
+			bool bBlockActor = true;
 
-			if (UnitConn != NULL && UnitConn->ReplicatedActorSpawnDel.IsBound())
-			{
-				bAllowActor = UnitConn->ReplicatedActorSpawnDel.Execute(Obj->GetClass(), GIsInitializingActorChan);
-			}
+			check(MinClient != nullptr);
 
-			if (!bAllowActor)
+			MinClient->RepActorSpawnDel.ExecuteIfBound(Obj->GetClass(), GIsInitializingActorChan, bBlockActor);
+
+			if (bBlockActor)
 			{
 				UE_LOG(LogUnitTest, Log,
 						TEXT("Blocking replication/spawning of actor on client (add to NotifyAllowNetActor if required)."));
@@ -72,15 +75,29 @@ bool UUnitTestPackageMap::SerializeObject(FArchive& Ar, UClass* InClass, UObject
 						(GIsInitializingActorChan ? TEXT("true") : TEXT("false")), *Obj->GetClass()->GetFullName(),
 						*Obj->GetFullName());
 
-				Obj = NULL;
-
-				// NULL the control channel, to break code that would disconnect the client (control chan is recovered, in ReceivedBunch)
-				Connection->Channels[0] = NULL;
+				Obj = nullptr;
 			}
 		}
 	}
 
 	return bReturnVal;
+}
+
+bool UUnitTestPackageMap::SerializeName(FArchive& Ar, FName& InName)
+{
+	bool bSerialized = false;
+	FName SaveName = InName;
+
+	OnSerializeName.Broadcast(true, bSerialized, Ar, (Ar.IsSaving() ? SaveName : InName));
+
+	if (!bSerialized)
+	{
+		Super::SerializeName(Ar, (Ar.IsSaving() ? SaveName : InName));
+	}
+
+	OnSerializeName.Broadcast(false, bSerialized, Ar, (Ar.IsSaving() ? SaveName : InName));
+
+	return true;
 }
 
 bool UUnitTestPackageMap::SerializeNewActor(FArchive& Ar, class UActorChannel* Channel, class AActor*& Actor)
@@ -90,7 +107,12 @@ bool UUnitTestPackageMap::SerializeNewActor(FArchive& Ar, class UActorChannel* C
 	bWithinSerializeNewActor = true;
 	bPendingArchetypeSpawn = false;
 
-	bReturnVal = Super::SerializeNewActor(Ar, Channel, Actor);
+	{
+		// Disable PackageMap error logs during this call, since we may be deliberately causing an error to block serialization
+		FScopedLogSuppress Suppress(TEXT("LogNetPackageMap"));
+
+		bReturnVal = Super::SerializeNewActor(Ar, Channel, Actor);
+	}
 
 	bPendingArchetypeSpawn = false;
 	bWithinSerializeNewActor = false;

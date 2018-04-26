@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 #include "ModuleManager.h"
 #include "ILoginFlowManager.h"
 
 class IOnlineSubsystem;
+class ISlateStyle;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogLoginFlow, Log, All);
 

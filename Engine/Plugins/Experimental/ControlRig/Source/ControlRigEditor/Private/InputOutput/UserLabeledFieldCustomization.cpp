@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UserLabeledFieldCustomization.h"
 #include "K2Node_ControlRig.h"
@@ -88,7 +88,7 @@ void FUserLabeledFieldCustomization::CustomizeChildren(TSharedRef<IPropertyHandl
 				}
 			}
 
-			ChildBuilder.AddChildContent(LOCTEXT("Node", "Node"))
+			ChildBuilder.AddCustomRow(LOCTEXT("Node", "Node"))
 			.NameContent()
 			[
 				SNew(SHorizontalBox)

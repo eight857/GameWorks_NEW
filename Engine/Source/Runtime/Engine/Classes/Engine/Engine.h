@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,8 +10,7 @@
 #include "Templates/SubclassOf.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/EngineBaseTypes.h"
-#include "Misc/StringAssetReference.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "Engine/World.h"
 #include "Misc/BufferedOutputDevice.h"
 #include "Engine.generated.h"
@@ -32,7 +31,7 @@ class IMessageRpcClient;
 class IPerformanceDataConsumer;
 class IPortalRpcLocator;
 class IPortalServiceLocator;
-class ISceneViewExtension;
+class FSceneViewExtensions;
 class IStereoRendering;
 class SViewport;
 class UEditorEngine;
@@ -44,6 +43,19 @@ class UNetDriver;
 #if ALLOW_DEBUG_FILES
 class FFineGrainedPerformanceTracker;
 #endif
+
+// The kind of failure handling that GetWorldFromContextObject uses 
+enum class EGetWorldErrorMode
+{
+	// Silently returns nullptr, the calling code is expected to handle this gracefully
+	ReturnNull,
+
+	// Raises a runtime error but still returns nullptr, the calling code is expected to handle this gracefully
+	LogAndReturnNull,
+
+	// Asserts, the calling code is not expecting to handle a failure gracefully
+	Assert
+};
 
 /**
  * Enumerates types of fully loaded packages.
@@ -88,6 +100,20 @@ enum EConsoleType
 	CONSOLE_Any,
 	CONSOLE_Mobile,
 	CONSOLE_MAX,
+};
+
+/** Status of dynamic resolution that depends on project setting cvar, game user settings, and pause */
+enum class EDynamicResolutionStatus
+{
+	// Dynamic resolution is disabled by project setting cvar r.DynamicRes.OperationMode=0 or disabled by game user
+	// settings with r.DynamicRes.OperationMode=1.
+	Disabled,
+
+	// Dynamic resolution has been paused by game thread.
+	Paused,
+
+	// Dynamic resolution is currently enabled.
+	Enabled
 };
 
 
@@ -304,12 +330,13 @@ struct FWorldContext
 	UPROPERTY(transient)
 	TArray<FNamedNetDriver> ActiveNetDrivers;
 
+	/** The PIE instance of this world, -1 is default */
 	int32	PIEInstance;
 
+	/** The Prefix in front of PIE level names, empty is default */
 	FString	PIEPrefix;
 
-	FString PIERemapPrefix;
-
+	/** Is this running as a dedicated server */
 	bool	RunAsDedicated;
 
 	/** Is this world context waiting for an online login to complete (for PIE) */
@@ -554,12 +581,18 @@ struct FPluginRedirect
 };
 
 
+/** Game thread events for dynamic resolution state. */
+enum class EDynamicResolutionStateEvent : uint8;
+
+
 class IAnalyticsProvider;
 
 DECLARE_DELEGATE_OneParam(FBeginStreamingPauseDelegate, FViewport*);
 DECLARE_DELEGATE(FEndStreamingPauseDelegate);
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FEngineHitchDetectedDelegate, float /*HitchDurationInSeconds*/);
+enum class EFrameHitchType: uint8;
+
+DECLARE_MULTICAST_DELEGATE_TwoParams(FEngineHitchDetectedDelegate, EFrameHitchType /*HitchType*/, float /*HitchDurationInSeconds*/);
 
 
 /**
@@ -573,7 +606,7 @@ class ENGINE_API UEngine
 {
 	GENERATED_UCLASS_BODY()
 
-	// Called after GEngine->Init has been called
+	DEPRECATED(4.17, "UEngine::OnPostEngineInit is deprecated, bind to FCoreDelegates::OnPostEngineInit instead, which will also be called for commandlets")
 	static FSimpleMulticastDelegate OnPostEngineInit;
 
 private:
@@ -584,7 +617,7 @@ private:
 public:
 	/** @todo document */
 	UPROPERTY(globalconfig, EditAnywhere, Category=Fonts, meta=(AllowedClasses="Font", DisplayName="Tiny Font"))
-	FStringAssetReference TinyFontName;
+	FSoftObjectPath TinyFontName;
 
 private:
 	/** @todo document */
@@ -594,7 +627,7 @@ private:
 public:
 	/** @todo document */
 	UPROPERTY(globalconfig, EditAnywhere, Category=Fonts, meta=(AllowedClasses="Font", DisplayName="Small Font"))
-	FStringAssetReference SmallFontName;
+	FSoftObjectPath SmallFontName;
 
 private:
 	/** @todo document */
@@ -604,7 +637,7 @@ private:
 public:
 	/** @todo document */
 	UPROPERTY(globalconfig, EditAnywhere, Category=Fonts, meta=(AllowedClasses="Font", DisplayName="Medium Font"))
-	FStringAssetReference MediumFontName;
+	FSoftObjectPath MediumFontName;
 
 private:
 	/** @todo document */
@@ -614,7 +647,7 @@ private:
 public:
 	/** @todo document */
 	UPROPERTY(globalconfig, EditAnywhere, Category=Fonts, meta=(AllowedClasses="Font", DisplayName="Large Font"))
-	FStringAssetReference LargeFontName;
+	FSoftObjectPath LargeFontName;
 
 private:
 	/** @todo document */
@@ -624,7 +657,7 @@ private:
 public:
 	/** @todo document */
 	UPROPERTY(globalconfig, EditAnywhere, Category=Fonts, meta=(AllowedClasses="Font", DisplayName="Subtitle Font"), AdvancedDisplay)
-	FStringAssetReference SubtitleFontName;
+	FSoftObjectPath SubtitleFontName;
 
 private:
 	/** Any additional fonts that script may use without hard-referencing the font. */
@@ -645,7 +678,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig, noclear, EditAnywhere, Category=DefaultClasses, meta=(MetaClass="Console", DisplayName="Console Class"))
-	FStringClassReference ConsoleClassName;
+	FSoftClassPath ConsoleClassName;
 
 	/** The class to use for the game viewport client. */
 	UPROPERTY()
@@ -653,7 +686,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig, noclear, EditAnywhere, Category=DefaultClasses, meta=(MetaClass="GameViewportClient", DisplayName="Game Viewport Client Class"))
-	FStringClassReference GameViewportClientClassName;
+	FSoftClassPath GameViewportClientClassName;
 
 	/** The class to use for local players. */
 	UPROPERTY()
@@ -661,7 +694,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig, noclear, EditAnywhere, Category=DefaultClasses, meta=(MetaClass="LocalPlayer", DisplayName="Local Player Class"))
-	FStringClassReference LocalPlayerClassName;
+	FSoftClassPath LocalPlayerClassName;
 
 	/** The class for WorldSettings **/
 	UPROPERTY()
@@ -669,11 +702,11 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig, noclear, EditAnywhere, Category=DefaultClasses, meta=(MetaClass="WorldSettings", DisplayName="World Settings Class"))
-	FStringClassReference WorldSettingsClassName;
+	FSoftClassPath WorldSettingsClassName;
 
 	/** @todo document */
 	UPROPERTY(globalconfig, noclear, meta=(MetaClass="NavigationSystem", DisplayName="Navigation System Class"))
-	FStringClassReference NavigationSystemClassName;
+	FSoftClassPath NavigationSystemClassName;
 
 	/** The class for NavigationSystem **/
 	UPROPERTY()
@@ -681,7 +714,7 @@ public:
 	
 	/** Name of behavior tree manager class */
 	UPROPERTY(globalconfig, noclear, meta=(MetaClass="AvoidanceManager", DisplayName="Avoidance Manager Class"))
-	FStringClassReference AvoidanceManagerClassName;
+	FSoftClassPath AvoidanceManagerClassName;
 	
 	/** The class for behavior tree manager **/
 	UPROPERTY()
@@ -693,17 +726,17 @@ public:
 
 	/** Name of PhysicsCollisionHandler class we should use by default. */
 	UPROPERTY(globalconfig, noclear, EditAnywhere, Category=DefaultClasses, meta=(MetaClass="PhysicsCollisionHandler", DisplayName="Physics Collision Handler Class"), AdvancedDisplay)
-	FStringClassReference PhysicsCollisionHandlerClassName;
+	FSoftClassPath PhysicsCollisionHandlerClassName;
 
 	UPROPERTY(globalconfig, noclear, meta=(MetaClass="GameUserSettings", DisplayName="Game User Settings Class"))
-	FStringClassReference GameUserSettingsClassName;
+	FSoftClassPath GameUserSettingsClassName;
 
 	UPROPERTY()
 	TSubclassOf<class UGameUserSettings> GameUserSettingsClass;
 
 	/** name of Controller class to be used as default AIController class for pawns */
 	UPROPERTY(globalconfig, noclear, meta = (MetaClass = "AI", DisplayName = "Default AIController class for all Pawns"))
-	FStringClassReference AIControllerClassName;
+	FSoftClassPath AIControllerClassName;
 
 	/** Global instance of the user game settings */
 	UPROPERTY()
@@ -715,15 +748,15 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig, noclear, EditAnywhere, Category=DefaultClasses, meta=(MetaClass="LevelScriptActor", DisplayName="Level Script Actor Class"))
-	FStringClassReference LevelScriptActorClassName;
+	FSoftClassPath LevelScriptActorClassName;
 	
 	/** Name of the base class to use for new blueprints, configurable on a per-game basis */
 	UPROPERTY(globalconfig, noclear, EditAnywhere, Category=DefaultClasses, meta=(MetaClass="Object", DisplayName="Default Blueprint Base Class", AllowAbstract, BlueprintBaseOnly), AdvancedDisplay)
-	FStringClassReference DefaultBlueprintBaseClassName;
+	FSoftClassPath DefaultBlueprintBaseClassName;
 
 	/** Name of a singleton class to create at startup time, configurable per game */
 	UPROPERTY(globalconfig, noclear, EditAnywhere, Category=DefaultClasses, meta=(MetaClass="Object", DisplayName="Game Singleton Class"), AdvancedDisplay)
-	FStringClassReference GameSingletonClassName;
+	FSoftClassPath GameSingletonClassName;
 
 	/** A UObject spawned at initialization time to handle game-specific data */
 	UPROPERTY()
@@ -731,15 +764,11 @@ public:
 
 	/** Name of a singleton class to spawn as the AssetManager, configurable per game. If empty, it will not spawn one */
 	UPROPERTY(globalconfig, noclear, EditAnywhere, Category=DefaultClasses, meta=(MetaClass="Object", DisplayName="Asset Manager Class"), AdvancedDisplay)
-	FStringClassReference AssetManagerClassName;
+	FSoftClassPath AssetManagerClassName;
 
 	/** A UObject spawned at initialization time to handle game-specific data */
 	UPROPERTY()
 	class UAssetManager *AssetManager;
-
-	/** Path that levels for play on console will be saved to (relative to FPaths::GameSavedDir()) */
-	UPROPERTY(config)
-	FString PlayOnConsoleSaveDir;
 
 	/** A global default texture. */
 	UPROPERTY()
@@ -747,7 +776,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference DefaultTextureName;
+	FSoftObjectPath DefaultTextureName;
 
 	/** A global default diffuse texture.*/
 	UPROPERTY()
@@ -755,7 +784,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference DefaultDiffuseTextureName;
+	FSoftObjectPath DefaultDiffuseTextureName;
 
 	/** @todo document */
 	UPROPERTY()
@@ -763,7 +792,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference DefaultBSPVertexTextureName;
+	FSoftObjectPath DefaultBSPVertexTextureName;
 
 	/** Texture used to get random image grain values for post processing */
 	UPROPERTY()
@@ -771,7 +800,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference HighFrequencyNoiseTextureName;
+	FSoftObjectPath HighFrequencyNoiseTextureName;
 
 	/** Texture used to blur out of focus content, mimics the Bokeh shape of actual cameras */
 	UPROPERTY()
@@ -779,7 +808,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference DefaultBokehTextureName;
+	FSoftObjectPath DefaultBokehTextureName;
 
 	/** Texture used to bloom when using FFT, mimics characteristic bloom produced in a camera from a signle bright source */
 	UPROPERTY()
@@ -787,7 +816,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference DefaultBloomKernelTextureName;
+	FSoftObjectPath DefaultBloomKernelTextureName;
 
 	/** The material used to render wireframe meshes. */
 	UPROPERTY()
@@ -804,7 +833,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference GeomMaterialName;
+	FSoftObjectPath GeomMaterialName;
 #endif
 
 	/** A material used to render debug meshes. */
@@ -813,7 +842,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference DebugMeshMaterialName;
+	FSoftObjectPath DebugMeshMaterialName;
 
 	/** Material used for visualizing level membership in lit view port modes. */
 	UPROPERTY()
@@ -861,7 +890,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference RemoveSurfaceMaterialName;
+	FSoftObjectPath RemoveSurfaceMaterialName;
 
 	/** Material that renders vertex color as emmissive. */
 	UPROPERTY()
@@ -918,16 +947,34 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference BoneWeightMaterialName;
+	FSoftObjectPath BoneWeightMaterialName;
 
-	/** Material used to render cloth properties on skeletal meshes */
+	/** Materials used to render cloth properties on skeletal meshes */
 	UPROPERTY()
 	class UMaterial* ClothPaintMaterial;
+	UPROPERTY()
+	class UMaterial* ClothPaintMaterialWireframe;
+	UPROPERTY()
+	class UMaterialInstanceDynamic* ClothPaintMaterialInstance;
+	UPROPERTY()
+	class UMaterialInstanceDynamic* ClothPaintMaterialWireframeInstance;
 
-	/** @todo document */
+	/** Name of the material used to render cloth in the clothing tools */
 	UPROPERTY(globalconfig)
-	FStringAssetReference ClothPaintMaterialName;
+	FSoftObjectPath ClothPaintMaterialName;
+
+	/** Name of the material used to render cloth wireframe in the clothing tools */
+	UPROPERTY(globalconfig)
+	FSoftObjectPath ClothPaintMaterialWireframeName;
+
+	/** A material used to render debug meshes. */
+	UPROPERTY()
+	class UMaterial* DebugEditorMaterial;
 #endif
+
+	/** A material used to render debug opaque material. Used in various animation editor viewport features. */
+	UPROPERTY(globalconfig)
+	FSoftObjectPath DebugEditorMaterialName;
 
 	/** Material used to render constraint limits */
 	UPROPERTY()
@@ -958,7 +1005,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference InvalidLightmapSettingsMaterialName;
+	FSoftObjectPath InvalidLightmapSettingsMaterialName;
 
 	/** Material that renders a message about preview shadows being used. */
 	UPROPERTY()
@@ -966,7 +1013,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig, EditAnywhere, Category=DefaultMaterials, meta=(AllowedClasses="Material", DisplayName="Preview Shadows Indicator Material"))
-	FStringAssetReference PreviewShadowsIndicatorMaterialName;
+	FSoftObjectPath PreviewShadowsIndicatorMaterialName;
 
 	/** Material that 'fakes' lighting, used for arrows, widgets. */
 	UPROPERTY()
@@ -974,7 +1021,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference ArrowMaterialName;
+	FSoftObjectPath ArrowMaterialName;
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
@@ -1062,7 +1109,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference EditorBrushMaterialName;
+	FSoftObjectPath EditorBrushMaterialName;
 #endif
 
 	/** PhysicalMaterial to use if none is defined for a particular object. */
@@ -1071,7 +1118,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference DefaultPhysMaterialName;
+	FSoftObjectPath DefaultPhysMaterialName;
 
 	UPROPERTY(config)
 	TArray<FGameNameRedirect> ActiveGameNameRedirects;
@@ -1091,7 +1138,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference PreIntegratedSkinBRDFTextureName;
+	FSoftObjectPath PreIntegratedSkinBRDFTextureName;
 
 	/** Texture used to do font rendering in shaders */
 	UPROPERTY()
@@ -1099,7 +1146,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference MiniFontTextureName;
+	FSoftObjectPath MiniFontTextureName;
 
 	/** Texture used as a placeholder for terrain weight-maps to give the material the correct texture format. */
 	UPROPERTY()
@@ -1107,7 +1154,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference WeightMapPlaceholderTextureName;
+	FSoftObjectPath WeightMapPlaceholderTextureName;
 
 	/** Texture used to display LightMapDensity */
 	UPROPERTY()
@@ -1115,7 +1162,7 @@ public:
 
 	/** @todo document */
 	UPROPERTY(globalconfig)
-	FStringAssetReference LightMapDensityTextureName;
+	FSoftObjectPath LightMapDensityTextureName;
 
 	// Variables.
 
@@ -1282,6 +1329,10 @@ public:
 	/** Fudge factor for tweaking the distance based miplevel determination */
 	UPROPERTY(EditAnywhere, Category=LevelStreaming, AdvancedDisplay)
 	float StreamingDistanceFactor;
+
+	/** The save directory for newly created screenshots */
+	UPROPERTY(config, EditAnywhere, Category = Screenshots)
+	FDirectoryPath GameScreenshotSaveDirectory;
 
 	/** The current transition type. */
 	UPROPERTY()
@@ -1479,6 +1530,22 @@ public:
 	// for IsInitialized()
 	bool bIsInitialized;
 
+private:
+
+	/** The last frame GC was run from ConditionalCollectGarbage to avoid multiple GCs in one frame */
+	uint64 LastGCFrame;
+
+	/** Time in seconds (game time so we respect time dilation) since the last time we purged references to pending kill objects */
+	float TimeSinceLastPendingKillPurge;
+
+	/** Whether a full purge has been triggered, so that the next GarbageCollect will do a full purge no matter what. */
+	bool bFullPurgeTriggered;
+
+	/** Whether we should delay GC for one frame to finish some pending operation */
+	bool bShouldDelayGarbageCollect; 
+
+public:
+
 	/**
 	 * Get the color to use for object selection
 	 */
@@ -1514,6 +1581,85 @@ public:
 	 */
 	void RestoreSelectedMaterialColor();
 
+	/** Returns the current status of dynamic resolution. */
+	EDynamicResolutionStatus GetDynamicResolutionStatus() const;
+
+	/** Pause dynamic resolution for this frame. */
+	void PauseDynamicResolution();
+
+	/** Resume dynamic resolution for this frame. */
+	FORCEINLINE void ResumeDynamicResolution()
+	{
+		#if !UE_SERVER
+			bIsDynamicResolutionPaused = false;
+			UpdateDynamicResolutionStatus();
+		#endif // !UE_SERVER
+	}
+
+	/** Emit an event for dynamic resolution if not already done. */
+	void EmitDynamicResolutionEvent(EDynamicResolutionStateEvent Event);
+
+	/** Get's global dynamic resolution state */
+	FORCEINLINE class IDynamicResolutionState* GetDynamicResolutionState()
+	{
+		#if UE_SERVER
+			return nullptr;
+		#else
+			// Returns next's frame dynamic resolution state to keep game thread consistency after a ChangeDynamicResolutionStateAtNextFrame().
+			check(NextDynamicResolutionState.IsValid() || IsRunningCommandlet() || IsRunningDedicatedServer());
+			return NextDynamicResolutionState.Get();
+		#endif
+	}
+
+	/** Override dynamic resolution state for next frame.
+	 * Old dynamic resolution state will be disabled, and the new one will be enabled automatically at next frame.
+	 */
+	void ChangeDynamicResolutionStateAtNextFrame(TSharedPtr< class IDynamicResolutionState > NewState);
+
+	/** Get the user setting for dynamic resolution. */
+	FORCEINLINE bool GetDynamicResolutionUserSetting() const
+	{
+		#if UE_SERVER
+			return false;
+		#else
+			return bDynamicResolutionEnableUserSetting;
+		#endif
+	}
+
+	/** Set the user setting for dynamic resolution. */
+	FORCEINLINE void SetDynamicResolutionUserSetting(bool Enable)
+	{
+		#if !UE_SERVER
+			bDynamicResolutionEnableUserSetting = Enable;
+			UpdateDynamicResolutionStatus();
+		#endif
+	}
+
+
+	#if !UE_SERVER
+private:
+		/** Last dynamic resolution event. */
+		EDynamicResolutionStateEvent LastDynamicResolutionEvent;
+
+		/** Global state for dynamic resolution's heuristic. */
+		TSharedPtr< class IDynamicResolutionState > DynamicResolutionState;
+
+		/** Next frame's Global state for dynamic resolution's heuristic. */
+		TSharedPtr< class IDynamicResolutionState > NextDynamicResolutionState;
+
+		/** Whether dynamic resolution is paused or not. */
+		bool bIsDynamicResolutionPaused;
+
+		/** Game user setting for dynamic resolution that has been committed. */
+		bool bDynamicResolutionEnableUserSetting;
+
+		/** Returns whether should be enabled or not. */
+		bool ShouldEnableDynamicResolutionState() const;
+
+		/** Enable/Disable dynamic resolution state according to ShouldEnableDynamicResolutionState(). */
+		void UpdateDynamicResolutionStatus();
+	#endif
+
 protected:
 
 	/** The audio device manager */
@@ -1527,14 +1673,14 @@ public:
 	/** A collection of messages to display on-screen. */
 	TMap<int32, FScreenMessageString> ScreenMessages;
 
-	/** Reference to the stereoscopic rendering interace, if any */
+	/** Reference to the stereoscopic rendering interface, if any */
 	TSharedPtr< class IStereoRendering, ESPMode::ThreadSafe > StereoRenderingDevice;
 
-	/** Reference to the HMD device that is attached, if any */
-	TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > HMDDevice;
+	/** Reference to the VR/AR/MR tracking system that is attached, if any */
+	TSharedPtr< class IXRTrackingSystem, ESPMode::ThreadSafe > XRSystem;
 
 	/** Extensions that can modify view parameters on the render thread. */
-	TArray<TSharedPtr<class ISceneViewExtension, ESPMode::ThreadSafe> > ViewExtensions;
+	TSharedPtr<FSceneViewExtensions> ViewExtensions;
 
 	/** Triggered when a world is added. */	
 	DECLARE_EVENT_OneParam( UEngine, FWorldAddedEvent , UWorld* );
@@ -2006,6 +2152,37 @@ public:
 	static void PreGarbageCollect();
 
 	/**
+	 *  Collect garbage once per frame driven by World ticks
+	 */
+	void ConditionalCollectGarbage();
+
+	/**
+	 *  Interface to allow WorldSettings to request immediate garbage collection
+	 */
+	void PerformGarbageCollectionAndCleanupActors();
+
+	/** Updates the timer between garbage collection such that at the next opportunity garbage collection will be run. */
+	void ForceGarbageCollection(bool bFullPurge = false);
+
+	/**
+	 *  Requests a one frame delay of Garbage Collection
+	 */
+	void DelayGarbageCollection();
+
+	/**
+	 * Updates the timer (as a one-off) that is used to trigger garbage collection; this should only be used for things
+	 * like performance tests, using it recklessly can dramatically increase memory usage and cost of the eventual GC.
+	 *
+	 * Note: Things that force a GC will still force a GC after using this method (and they will also reset the timer)
+	 */
+	void SetTimeUntilNextGarbageCollection(float MinTimeUntilNextPass);
+
+	/**
+	 * Returns the current desired time between garbage collection passes (not the time remaining)
+	 */
+	float GetTimeBetweenGarbageCollectionPasses() const;
+
+	/**
 	 * Returns whether we are running on a console platform or on the PC.
 	 * @param ConsoleType - if specified, only returns true if we're running on the specified platform
 	 *
@@ -2052,6 +2229,11 @@ public:
 	 */
 	virtual void StopFPSChart(const FString& MapName);
 
+	/**
+	* Attempts to reclaim any idle memory by performing a garbage collection and broadcasting FCoreDelegates::OnMemoryTrim. Pending rendering commands are first flushed. This is called
+	* between level loads and may be called at other times, but is expensive and should be used sparingly. Do
+	*/
+	static void TrimMemory();
 
 	/**
 	 * Calculates information about the previous frame and passes it to all active performance data consumers.
@@ -2121,10 +2303,6 @@ public:
 	/** @return the currently active audio device */
 	class FAudioDevice* GetActiveAudioDevice();
 
-	DEPRECATED(4.8, "GetAudioDevice is deprecated UEngine::GetMainAudioDevice instead.")
-	/** @return the main audio device. */
-	class FAudioDevice* GetAudioDevice();
-
 	/** @return whether we're currently running in split screen (more than one local player) */
 	bool IsSplitScreen(UWorld *InWorld);
 
@@ -2146,12 +2324,31 @@ public:
 	 * Obtain a world object pointer from an object with has a world context.
 	 *
 	 * @param Object		Object whose owning world we require.
-	 * @param bChecked      Allows calling function to specify not to do ensure check and that a nullptr return value is acceptable
-	 *						This flag is only used when called by main game thread. 
-	 * returns				The world to which the object belongs.
+	 * @param ErrorMode		Controls what happens if the Object cannot be found
+	 * @return				The world to which the object belongs or nullptr if it cannot be found.
 	 */
-	UWorld* GetWorldFromContextObject(const UObject* Object, bool bChecked = true) const;
+	UWorld* GetWorldFromContextObject(const UObject* Object, EGetWorldErrorMode ErrorMode) const;
 
+	/** 
+	 * Obtain a world object pointer from an object with has a world context.
+	 *
+	 * @param Object		Object whose owning world we require.
+	 * @return				The world to which the object belongs; asserts if the world cannot be found!
+	 */
+	UWorld* GetWorldFromContextObjectChecked(const UObject* Object) const
+	{
+		return GetWorldFromContextObject(Object, EGetWorldErrorMode::Assert);
+	}
+
+	/** 
+	 * This function is deprecated
+	 */
+	DEPRECATED(4.17, "GetWorldFromContextObject(Object) and GetWorldFromContextObject(Object, boolean) are replaced by GetWorldFromContextObject(Object, Enum) or GetWorldFromContextObjectChecked(Object)")
+	UWorld* GetWorldFromContextObject(const UObject* Object, bool bChecked = true) const
+	{
+		// Note: The behavior in 4.16 and before was similar to Assert if bChecked was true, but almost no callers actually wanted to pass in bChecked=true
+		return GetWorldFromContextObject(Object, bChecked ? EGetWorldErrorMode::LogAndReturnNull : EGetWorldErrorMode::ReturnNull);
+	}
 
 	/** 
 	 * mostly done to check if PIE is being set up, go GWorld is going to change, and it's not really _the_G_World_
@@ -2192,6 +2389,8 @@ public:
 	float GetDisplayGamma() const { return DisplayGamma; }
 
 	virtual void FocusNextPIEWorld(UWorld *CurrentPieWorld, bool previous=false) { }
+
+	virtual void ResetPIEAudioSetting(UWorld *CurrentPieWorld) {}
 
 	virtual class UGameViewportClient* GetNextPIEViewport(UGameViewportClient * CurrentViewport) { return nullptr; }
 
@@ -2288,6 +2487,7 @@ public:
 		/** Skips copying properties with BlueprintCompilerGeneratedDefaults metadata */
 		bool bSkipCompilerGeneratedDefaults;
 		bool bNotifyObjectReplacement;
+		bool bClearReferences;
 
 		FCopyPropertiesForUnrelatedObjectsParams()
 			: bAggressiveDefaultSubobjectReplacement(false)
@@ -2297,6 +2497,7 @@ public:
 			, bPreserveRootComponent(true)
 			, bSkipCompilerGeneratedDefaults(false)
 			, bNotifyObjectReplacement(true)
+			, bClearReferences(true)
 		{}
 	};
 	static void CopyPropertiesForUnrelatedObjects(UObject* OldObject, UObject* NewObject, FCopyPropertiesForUnrelatedObjectsParams Params = FCopyPropertiesForUnrelatedObjectsParams());//bool bAggressiveDefaultSubobjectReplacement = false, bool bDoDelta = true);
@@ -2510,8 +2711,8 @@ public:
 	void DestroyNamedNetDriver(UWorld *InWorld, FName NetDriverName);
 	void DestroyNamedNetDriver(UPendingNetGame *PendingNetGame, FName NetDriverName);
 
-	virtual bool NetworkRemapPath( UNetDriver* Driver, FString &Str, bool reading=true) { return false; }
-	virtual bool NetworkRemapPath( UPendingNetGame *PendingNetGame, FString &Str, bool reading=true) { return false; }
+	virtual bool NetworkRemapPath( UNetDriver* Driver, FString &Str, bool bReading=true) { return false; }
+	virtual bool NetworkRemapPath( UPendingNetGame *PendingNetGame, FString &Str, bool bReading=true) { return false; }
 
 	virtual bool HandleOpenCommand( const TCHAR* Cmd, FOutputDevice& Ar, UWorld * InWorld );
 

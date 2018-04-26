@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -49,17 +49,20 @@ enum class EUnit : uint8
 	/** Time units */
 	Milliseconds, Seconds, Minutes, Hours, Days, Months, Years,
 
-	/** Arbitrary multiplier */
-	Multiplier,
+	/** Pixel density units */
+	PixelsPerInch,
 
-	/** Symbolic entry, not specifyable on meta data */
+	/** Arbitrary multipliers */
+	Percentage,	Multiplier,
+
+	/** Symbolic entry, not specifiable on meta data */
 	Unspecified
 };
 
 /** Enumeration that specifies particular classes of unit */
 enum class EUnitType
 {
-	Distance, Angle, Speed, Temperature, Mass, Force, Frequency, DataSize, LuminousFlux, Time, Arbitrary,
+	Distance, Angle, Speed, Temperature, Mass, Force, Frequency, DataSize, LuminousFlux, Time, PixelDensity, Multipliers, Arbitrary,
 
 	// Symbolic entry - do not use directly
 	NumberOf,

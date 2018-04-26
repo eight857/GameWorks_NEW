@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ClothMeshAdapter.h"
 
@@ -37,7 +37,8 @@ bool FClothMeshPaintAdapter::Construct(UMeshComponent* InComponent, int32 InPain
 		{
 			ReferencedSkeletalMesh = SkeletalMeshComponent->SkeletalMesh;
 			PaintingClothLODIndex = InPaintingClothLODIndex;
-		
+			PaintingClothMaskIndex = INDEX_NONE;
+
 			const bool bSuccess = Initialize();
 			return bSuccess;
 		}
@@ -112,20 +113,13 @@ void FClothMeshPaintAdapter::ApplyOrRemoveTextureOverride(UTexture* SourceTextur
 
 void FClothMeshPaintAdapter::PreEdit()
 {
+	ReferencedSkeletalMesh->Modify();
 	SelectedAsset->Modify();
 }
 
 void FClothMeshPaintAdapter::PostEdit()
 {
-	FComponentReregisterContext ReregisterContext(SkeletalMeshComponent);
-
-	if (USkeletalMesh* SkelMesh = SkeletalMeshComponent->SkeletalMesh)
-	{
-		for (UClothingAssetBase* AssetBase : SkelMesh->MeshClothingAssets)
-		{
-			AssetBase->InvalidateCachedData();
-		}
-	}
+	
 }
 
 void FClothMeshPaintAdapter::GetVertexColor(int32 VertexIndex, FColor& OutColor, bool bInstance /*= true*/) const
@@ -251,19 +245,26 @@ TArray<FVector> FClothMeshPaintAdapter::SphereIntersectVertices(const float Comp
 	return InRangeVertices;
 }
 
-void FClothMeshPaintAdapter::SetSelectedClothingAsset(const FGuid& InAssetGuid, int32 InAssetLod)
+void FClothMeshPaintAdapter::SetSelectedClothingAsset(const FGuid& InAssetGuid, int32 InAssetLod, int32 InMaskIndex)
 {
 	SelectedAsset = nullptr;
 	if(InAssetGuid.IsValid() && ReferencedSkeletalMesh)
 	{
 		for(UClothingAssetBase* Asset : ReferencedSkeletalMesh->MeshClothingAssets)
 		{
-			if(Asset->GetAssetGuid() == InAssetGuid)
+			UClothingAsset* ConcreteAsset = CastChecked<UClothingAsset>(Asset);
+			if(ConcreteAsset->GetAssetGuid() == InAssetGuid)
 			{
-				if(Asset->IsValidLod(InAssetLod))
+				if(ConcreteAsset->IsValidLod(InAssetLod))
 				{
-					PaintingClothLODIndex = InAssetLod;
-					SelectedAsset = Asset;
+					FClothLODData& LodData = ConcreteAsset->LodData[InAssetLod];
+
+					if(LodData.ParameterMasks.IsValidIndex(InMaskIndex))
+					{
+						PaintingClothLODIndex = InAssetLod;
+						PaintingClothMaskIndex = InMaskIndex;
+						SelectedAsset = Asset;
+					}
 				}
 
 				break;
@@ -275,6 +276,19 @@ void FClothMeshPaintAdapter::SetSelectedClothingAsset(const FGuid& InAssetGuid, 
 	{
 		Initialize();
 	}
+}
+
+const TArray<int32>* FClothMeshPaintAdapter::GetVertexNeighbors(int32 InVertexIndex) const
+{
+	for(const FClothAssetInfo& Info : AssetInfoMap)
+	{
+		if(InVertexIndex >= Info.VertexStart && InVertexIndex < Info.VertexEnd)
+		{
+			return &Info.NeighborMap[InVertexIndex - Info.VertexStart];
+		}
+	}
+
+	return nullptr;
 }
 
 bool FClothMeshPaintAdapter::InitializeVertexData()
@@ -294,7 +308,7 @@ bool FClothMeshPaintAdapter::InitializeVertexData()
 			if(DebugComponent->SkinnedSelectedClothingPositions.Num() > 0)
 			{
 				UClothingAsset* ConcreteAsset = CastChecked<UClothingAsset>(SelectedAsset);
-				const FClothLODData& LODData = ConcreteAsset->LodData[0];
+				const FClothLODData& LODData = ConcreteAsset->LodData[PaintingClothLODIndex];
 				const FClothPhysicalMeshData& MeshData = LODData.PhysicalMeshData;
 
 				MeshVertices.Append(DebugComponent->SkinnedSelectedClothingPositions);
@@ -316,6 +330,33 @@ bool FClothMeshPaintAdapter::InitializeVertexData()
 				Info.VertexEnd = VertexOffset;
 				Info.Asset = ConcreteAsset;
 
+				// Set up the edge map / neighbor map
+
+				// Pre fill the map, 1 per index
+				Info.NeighborMap.AddDefaulted(Info.VertexEnd - Info.VertexStart);
+
+				// Fill in neighbors defined by triangles
+				const int32 NumTris = MeshIndices.Num() / 3;
+				for(int32 TriIndex = 0; TriIndex < NumTris; ++TriIndex)
+				{
+					const int32 I0 = MeshIndices[TriIndex * 3];
+					const int32 I1 = MeshIndices[TriIndex * 3 + 1];
+					const int32 I2 = MeshIndices[TriIndex * 3 + 2];
+
+					TArray<int32>& I0Neighbors = Info.NeighborMap[I0];
+					TArray<int32>& I1Neighbors = Info.NeighborMap[I1];
+					TArray<int32>& I2Neighbors = Info.NeighborMap[I2];
+
+					I0Neighbors.AddUnique(I1);
+					I0Neighbors.AddUnique(I2);
+
+					I1Neighbors.AddUnique(I0);
+					I1Neighbors.AddUnique(I2);
+
+					I2Neighbors.AddUnique(I0);
+					I2Neighbors.AddUnique(I1);
+				}
+
 				AssetInfoMap.Add(Info);
 			}
 		}
@@ -324,3 +365,31 @@ bool FClothMeshPaintAdapter::InitializeVertexData()
 	return true;
 }
 
+FClothParameterMask_PhysMesh* FClothMeshPaintAdapter::GetCurrentMask() const
+{
+	if(HasValidSelection())
+	{
+		UClothingAsset* ConcreteAsset = CastChecked<UClothingAsset>(SelectedAsset);
+
+		return &ConcreteAsset->LodData[PaintingClothLODIndex].ParameterMasks[PaintingClothMaskIndex];
+	}
+
+	return nullptr;
+}
+
+bool FClothMeshPaintAdapter::HasValidSelection() const
+{
+	if(SelectedAsset)
+	{
+		UClothingAsset* ConcreteAsset = Cast<UClothingAsset>(SelectedAsset);
+
+		// Only valid selection if we have a valid asset, asset LOD and a mask
+		if(ConcreteAsset->LodData.IsValidIndex(PaintingClothLODIndex) &&
+			ConcreteAsset->LodData[PaintingClothLODIndex].ParameterMasks.IsValidIndex(PaintingClothMaskIndex))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}

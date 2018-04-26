@@ -6,6 +6,7 @@
 
 #include "ISteamAudioEditorModule.h"
 #include "Framework/MultiBox/MultiBoxExtender.h"
+#include "PhononScene.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogSteamAudioEditor, Log, All);
 
@@ -14,6 +15,8 @@ class FSlateStyleSet;
 
 namespace SteamAudio
 {
+	class FBakeIndirectWindow;
+
 	class FSteamAudioEditorModule : public ISteamAudioEditorModule
 	{
 	public:
@@ -23,17 +26,18 @@ namespace SteamAudio
 		TSharedRef<FExtender> OnExtendLevelEditorBuildMenu(const TSharedRef<FUICommandList> CommandList);
 		void CreateBuildMenu(FMenuBuilder& Builder);
 
-		void ExportScene();
-		bool IsReadyToExportScene() const;
-
-		void BakeReverb();
-		void CancelBakeReverb();
-		bool IsReadyToBakeReverb() const;
+		void BakeIndirect();
+		bool IsReadyToBakeIndirect() const;
 
 		void RegisterComponentVisualizer(const FName ComponentClassName, TSharedPtr<FComponentVisualizer> Visualizer);
 
+		void SetCurrentPhononSceneInfo(const FPhononSceneInfo& PhononSceneInfo) { CurrentPhononSceneInfo = PhononSceneInfo; }
+		const FPhononSceneInfo& GetCurrentPhononSceneInfo() const { return CurrentPhononSceneInfo; }
+
 	private:
 		TSharedPtr<FSlateStyleSet> SteamAudioStyleSet;
+		TSharedPtr<FBakeIndirectWindow> BakeIndirectWindow;
 		TArray<FName> RegisteredComponentClassNames;
+		FPhononSceneInfo CurrentPhononSceneInfo;
 	};
 }

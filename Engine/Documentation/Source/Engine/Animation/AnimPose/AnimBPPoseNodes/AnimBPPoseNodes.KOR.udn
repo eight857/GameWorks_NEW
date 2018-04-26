@@ -1,18 +1,28 @@
-﻿INTSourceChangelist:3273300
-Availability:Public
-Title: 애님그래프 포즈 노드
+﻿INTSourceChangelist:3782314
+Availability: Docs
 Crumbs: %ROOT%, Engine, Engine/Animation
+Title: 애님그래프 포즈 노드
 Description:포즈 애셋, 애니메이션 블루프린트, 포즈 노드를 사용하여 실행시간에 커브로 구동되는 애니메이션을 재생하는 방법에 대한 설명입니다.
+Type: Reference
+Version: 4.16
+Parent: Engine/Animation/AnimPose
+Order: 1
+topic-image:PoseNodeTopic.png
 Related: Engine\Animation\AnimHowTo\CreatePoseAsset
 Related: Engine\Animation\Persona\AnimCurves
 Related: Engine\Animation\Sequences\Curves
 Related: Engine\Animation\AnimBlueprints
 Related: Engine\Animation\NodeReference\SkeletalControls
-version: 4.14
+Tags:Animation
+Tags:Animation Blueprint
+Tags:Animation Blending
 
-[포즈 애셋](Engine\Animation\AnimPose) 을 실행시간에 **애니메이션 블루프린트** 로 구동시킬 수 있습니다. **애님 그래프** 가 몇 가지 다양한 포즈 노드를 지원하기 때문입니다.
+[COMMENT:none]
+ Page refactored and split off into two pages, no longer needed
 
 [TOC (start:2 end:2)]
+
+[포즈 애셋](Engine\Animation\AnimPose) 을 실행시간에 **애니메이션 블루프린트** 로 구동시킬 수 있습니다. **애님 그래프** 가 몇 가지 다양한 포즈 노드를 지원하기 때문입니다.
 
 ## Pose by Name / Pose Blender 노드
 
@@ -24,16 +34,23 @@ version: 4.14
 아래 예제는, 플레이어가 가까이 있을 때 미소짓고 멀리 있을 때 찡그리도록 만든 **포즈 애셋** 을 사용한 얼굴입니다.
 
 [OBJECT:EmbeddedVideo]
-[PARAMLITERAL:width]
-640
-[/PARAMLITERAL]
-[PARAMLITERAL:height]
-360
-[/PARAMLITERAL]
-[PARAMLITERAL:videoid]
-d3oGXxq2ekw
-[/PARAMLITERAL]
+	[PARAMLITERAL:videoid]
+	d3oGXxq2ekw
+	[/PARAMLITERAL]
+	[PARAMLITERAL:width]
+	100
+	[/PARAMLITERAL]
+	[PARAMLITERAL:height]
+	56.25
+	[/PARAMLITERAL]
+	[PARAMLITERAL:units]
+	%
+	[/PARAMLITERAL]
+	[PARAMLITERAL:type]
+	simple
+	[/PARAMLITERAL]
 [/OBJECT]
+
 
 애니메이션 블루프린트 내 스테이트 머신은 세 가지 스테이트로 구성되어 있습니다: 
 
@@ -77,15 +94,21 @@ Pose Blender 노드는 **포즈 애셋** 을 그래프에 끌어놓을 때 자�
 예를 들어 아래 영상에서, 쇄골 본 포즈를 사용하여 팔 본의 운동에 따라 어깨를 움직이도록 하고 있습니다.
 
 [OBJECT:EmbeddedVideo]
-[PARAMLITERAL:width]
-640
-[/PARAMLITERAL]
-[PARAMLITERAL:height]
-360
-[/PARAMLITERAL]
-[PARAMLITERAL:videoid]
-tJSYgPmzoKc
-[/PARAMLITERAL]
+	[PARAMLITERAL:videoid]
+	tJSYgPmzoKc
+	[/PARAMLITERAL]
+	[PARAMLITERAL:width]
+	100
+	[/PARAMLITERAL]
+	[PARAMLITERAL:height]
+	56.25
+	[/PARAMLITERAL]
+	[PARAMLITERAL:units]
+	%
+	[/PARAMLITERAL]
+	[PARAMLITERAL:type]
+	simple
+	[/PARAMLITERAL]
 [/OBJECT]
 
 이 효과를 내기 위해서는 **RBF (Radial Basis Function)** 가 타겟 본의 방향에 따라 구동된 값을 보간합니다.
@@ -104,7 +127,8 @@ tJSYgPmzoKc
 | **Type** | 유형 - [INCLUDE:Engine\Animation\AnimPose\AnimBPPoseNodes\#typetable] |
 | **Twist Axis** | 트위스트 축 - **Type** 이 **SwingOnly** 로 설정되었을 때 사용할 축입니다 (X, Y, 또는 Z) |
 
-<!--
+[COMMENT]
+
 [EXCERPT:typetable]
 | 옵션 | 설명 |
 | ----------- |------|
@@ -112,21 +136,33 @@ tJSYgPmzoKc
 | **Swing Only** | 보간에 스윙만 고려합니다. |
 | **Translation** | 부모 기준 이동을 고려합니다. |
 [/EXCERPT:typetable]
--->
+
+[/COMMENT]
 
 자세한 정보는 언리얼 엔진 라이브 스트림 방송 중 애니메이션 관련 부분에서 **Pose Driver** 예제 부분을 참고하시기 바랍니다:
- 
+
 [OBJECT:EmbeddedVideo]
-[PARAMLITERAL:width]
-640
-[/PARAMLITERAL]
-[PARAMLITERAL:height]
-360
-[/PARAMLITERAL]
-[PARAMLITERAL:videoid]
-h2egrj1pXzw
-[/PARAMLITERAL]
+	[PARAMLITERAL:videoid]
+	h2egrj1pXzw
+	[/PARAMLITERAL]
+	[PARAMLITERAL:width]
+	100
+	[/PARAMLITERAL]
+	[PARAMLITERAL:height]
+	56.25
+	[/PARAMLITERAL]
+	[PARAMLITERAL:units]
+	%
+	[/PARAMLITERAL]
+	[PARAMLITERAL:type]
+	simple
+	[/PARAMLITERAL]
 [/OBJECT]
+ 
+
+ 
+[/COMMENT]
+
 
 
 

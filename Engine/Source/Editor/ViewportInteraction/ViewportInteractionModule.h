@@ -1,10 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "IViewportInteractionModule.h"
-#include "Editor/ViewportInteraction/ViewportWorldInteractionManager.h"
 
 class FViewportInteractionModule : public IViewportInteractionModule
 {
@@ -21,11 +20,14 @@ public:
 	{
 		return true;
 	}
-	virtual FViewportWorldInteractionManager& GetWorldInteractionManager() override;
+	
+	static void ToggleMode();
+
+	void EnabledViewportWorldInteractionFromCommand(const bool bEnabled);
+	bool EnabledViewportWorldInteractionFromCommand();
 
 private:
 
-	/** Manager that owns the current ViewportWorldInteraction */
-	FViewportWorldInteractionManager WorldInteractionManager;
-	
+	/** If we started the ViewportWorldInteraction from Toggle command. */
+	bool bEnabledViewportWorldInteractionFromCommand;
 };

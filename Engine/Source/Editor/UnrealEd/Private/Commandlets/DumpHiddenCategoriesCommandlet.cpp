@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Commandlets/DumpHiddenCategoriesCommandlet.h"
 #include "HAL/FileManager.h"
@@ -182,7 +182,7 @@ int32 UDumpHiddenCategoriesCommandlet::Main(FString const& Params)
 
 	bool const bShowHiddenLibraryFuncs = Switches.Contains(TEXT("IncludeFuncLibs"));
 	
-	FString CommandletSaveDir = FPaths::GameSavedDir() + TEXT("Commandlets/");
+	FString CommandletSaveDir = FPaths::ProjectSavedDir() + TEXT("Commandlets/");
 	IFileManager::Get().MakeDirectory(*CommandletSaveDir);
 
 	FString Filename = FString::Printf(TEXT("HiddenCategoryDump_%s.json"), FPlatformTime::StrTimestamp());

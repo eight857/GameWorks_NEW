@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AndroidOpenGL.h: Public OpenGL ES definitions for Android-specific functionality
@@ -87,6 +87,8 @@ typedef void (GL_APIENTRYP PFNGLTEXSTORAGE2DPROC) (GLenum target, GLsizei levels
 typedef void (GL_APIENTRYP PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
 typedef void (GL_APIENTRYP PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLsizei samples, GLint baseViewIndex, GLsizei numViews);
 
+typedef void (GL_APIENTRYP PFNGLCOPYIMAGESUBDATAPROC) (GLuint srcName, GLenum srcTarget, GLint srcLevel, GLint srcX, GLint srcY, GLint srcZ, GLuint dstName, GLenum dstTarget, GLint dstLevel, GLint dstX, GLint dstY, GLint dstZ, GLsizei width, GLsizei height, GLsizei depth);
+
 extern PFNGLGENQUERIESEXTPROC 			glGenQueriesEXT;
 extern PFNGLDELETEQUERIESEXTPROC 		glDeleteQueriesEXT;
 extern PFNGLISQUERYEXTPROC 				glIsQueryEXT ;
@@ -134,6 +136,7 @@ extern PFNGLTEXSUBIMAGE3DPROC			glTexSubImage3D;
 extern PFNGLCOMPRESSEDTEXIMAGE3DPROC    glCompressedTexImage3D;
 extern PFNGLCOMPRESSEDTEXSUBIMAGE3DPROC	glCompressedTexSubImage3D;
 extern PFNGLCOPYTEXSUBIMAGE3DPROC		glCopyTexSubImage3D;
+extern PFNGLCOPYIMAGESUBDATAPROC		glCopyImageSubData;
 
 extern PFNGLGETPROGRAMBINARYOESPROC     glGetProgramBinary;
 extern PFNGLPROGRAMBINARYOESPROC        glProgramBinary;
@@ -163,7 +166,13 @@ struct FAndroidOpenGL : public FOpenGLES2
 	static FORCEINLINE bool IsES31Usable()
 	{
 		check(CurrentFeatureLevelSupport != EFeatureLevelSupport::Invalid);
-		return CurrentFeatureLevelSupport == EFeatureLevelSupport::ES31;
+		return CurrentFeatureLevelSupport >= EFeatureLevelSupport::ES31;
+	}
+
+	static FORCEINLINE bool IsES32Usable()
+	{
+		check(CurrentFeatureLevelSupport != EFeatureLevelSupport::Invalid);
+		return CurrentFeatureLevelSupport == EFeatureLevelSupport::ES32;
 	}
 
 	static FORCEINLINE EShaderPlatform GetShaderPlatform()
@@ -271,16 +280,38 @@ struct FAndroidOpenGL : public FOpenGLES2
 
 	static FORCEINLINE bool TexStorage2D(GLenum Target, GLint Levels, GLint InternalFormat, GLsizei Width, GLsizei Height, GLenum Format, GLenum Type, uint32 Flags)
 	{
-		if( bUseHalfFloatTexStorage && Type == GetTextureHalfFloatPixelType() && (Flags & TexCreate_RenderTargetable) != 0 )
+		// glTexStorage2D accepts only sized internal formats and thus we reject base formats
+		// also GL_BGRA8_EXT seems to be unsupported
+		bool bValidFormat = true;
+		switch (InternalFormat)
+		{
+			case GL_DEPTH_COMPONENT:
+			case GL_DEPTH_STENCIL:
+			case GL_RED:
+			case GL_RG:
+			case GL_RGB:
+			case GL_RGBA:
+			case GL_BGRA_EXT:
+			case GL_BGRA8_EXT:
+			case GL_LUMINANCE:
+			case GL_LUMINANCE_ALPHA:
+			case GL_ALPHA:
+			case GL_RED_INTEGER:
+			case GL_RG_INTEGER:
+			case GL_RGB_INTEGER:
+			case GL_RGBA_INTEGER:
+				bValidFormat = false;
+			break;
+		}
+
+		if (bES30Support && (bValidFormat || (bUseHalfFloatTexStorage && Type == GetTextureHalfFloatPixelType() && (Flags & TexCreate_RenderTargetable) != 0)))
 		{
 			glTexStorage2D(Target, Levels, InternalFormat, Width, Height);
 			VERIFY_GL(glTexStorage2D)
 			return true;
 		}
-		else
-		{
-			return false;
-		}
+
+		return false;
 	}
 
 	static FORCEINLINE void DrawArraysInstanced(GLenum Mode, GLint First, GLsizei Count, GLsizei InstanceCount)
@@ -344,7 +375,14 @@ struct FAndroidOpenGL : public FOpenGLES2
 	{
 		glCopyTexSubImage3D(Target, Level, XOffset, YOffset, ZOffset, X, Y, Width, Height);
 	}
-	
+
+	static FORCEINLINE void CopyImageSubData(GLuint SrcName, GLenum SrcTarget, GLint SrcLevel, GLint SrcX, GLint SrcY, GLint SrcZ, GLuint DstName, GLenum DstTarget, GLint DstLevel, GLint DstX, GLint DstY, GLint DstZ, GLsizei Width, GLsizei Height, GLsizei Depth)
+	{
+		check(bSupportsCopyImage);
+
+		glCopyImageSubData(SrcName, SrcTarget, SrcLevel, SrcX, SrcY, SrcZ, DstName, DstTarget, DstLevel, DstX, DstY, DstZ, Width, Height, Depth);
+	}
+
 	static FORCEINLINE void ClearBufferfv(GLenum Buffer, GLint DrawBufferIndex, const GLfloat* Value)
 	{
 		glClearBufferfv(Buffer, DrawBufferIndex, Value);
@@ -445,13 +483,15 @@ struct FAndroidOpenGL : public FOpenGLES2
 
 	static FORCEINLINE GLenum GetTextureHalfFloatInternalFormat()		
 	{ 
-		return bES30Support ? GL_RGBA16F : GL_RGBA;
+		return bES30Support ? GL_RGBA16F : GL_RGBA8;
 	}
 
 	// Android ES2 shaders have code that allows compile selection of
 	// 32 bpp HDR encoding mode via 'intrinsic_GetHDR32bppEncodeModeES2()'.
 	static FORCEINLINE bool SupportsHDR32bppEncodeModeIntrinsic()		{ return true; }
 
+	static FORCEINLINE bool SupportsSRGB()								{ return IsES31Usable(); }		// only with enabled EFeatureLevelSupport::ES31
+	static FORCEINLINE bool SupportsTextureSwizzle()					{ return bES30Support; }
 	static FORCEINLINE bool SupportsInstancing()						{ return bSupportsInstancing; }
 	static FORCEINLINE bool SupportsDrawBuffers()						{ return bES30Support; }
 	static FORCEINLINE bool SupportsMultipleRenderTargets()				{ return bES30Support; }
@@ -459,14 +499,27 @@ struct FAndroidOpenGL : public FOpenGLES2
 	static FORCEINLINE bool SupportsResourceView()						{ return bSupportsTextureBuffer; }
 	static FORCEINLINE bool SupportsTexture3D()							{ return bES30Support; }
 	static FORCEINLINE bool SupportsMobileMultiView()					{ return bSupportsMobileMultiView; }
+	static FORCEINLINE bool SupportsImageExternal()						{ return bSupportsImageExternal; }
 	static FORCEINLINE bool UseES30ShadingLanguage()
 	{
 		return bUseES30ShadingLanguage;
 	}
+
+	enum class EImageExternalType : uint8
+	{
+		None,
+		ImageExternal100,
+		ImageExternal300,
+		ImageExternalESSL300
+	};
+
+	static FORCEINLINE EImageExternalType GetImageExternalType() { return ImageExternalType; }
+
 	static FORCEINLINE bool SupportsTextureMaxLevel()					{ return bES31Support; }
 	static FORCEINLINE GLenum GetVertexHalfFloatFormat() { return bES31Support ? GL_HALF_FLOAT : GL_HALF_FLOAT_OES; }
 
 	static FORCEINLINE GLenum GetDepthFormat() { return GL_DEPTH_COMPONENT24; }
+	static FORCEINLINE GLenum GetShadowDepthFormat() { return GL_DEPTH_COMPONENT24; }
 
 	static FORCEINLINE GLint GetMaxMSAASamplesTileMem() { return MaxMSAASamplesTileMem; }
 
@@ -496,6 +549,12 @@ struct FAndroidOpenGL : public FOpenGLES2
 	/** Whether device supports mobile multi-view */
 	static bool bSupportsMobileMultiView;
 
+	/** Whether device supports image external */
+	static bool bSupportsImageExternal;
+
+	/** Type of image external supported */
+	static EImageExternalType ImageExternalType;
+
 	/** Maximum number of MSAA samples supported on chip in tile memory, or 1 if not available */
 	static GLint MaxMSAASamplesTileMem;
 
@@ -504,10 +563,15 @@ struct FAndroidOpenGL : public FOpenGLES2
 		Invalid,	// no feature level has yet been determined
 		ES2,
 		ES31,
+		ES32
 	};
 
 	/** Describes which feature level is currently being supported */
 	static EFeatureLevelSupport CurrentFeatureLevelSupport;
+
+	/** supported OpenGL ES version queried from the system */
+	static int32 GLMajorVerion;
+	static int32 GLMinorVersion;
 };
 
 typedef FAndroidOpenGL FOpenGL;

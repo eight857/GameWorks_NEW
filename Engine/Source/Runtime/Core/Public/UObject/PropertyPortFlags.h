@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PropertyPortFlags.h: Property import/export flags.
@@ -11,11 +11,10 @@
 // Property exporting flags.
 enum EPropertyPortFlags
 {
-	/** No special property exporint flags */
+	/** No special property exporting flags */
 	PPF_None						= 0x00000000,
 
-	/** Indicates that property data should be treated as text */
-	PPF_Localized					= 0x00000001,
+	//								= 0x00000001,
 
 	/** Indicates that property data should be wrapped in quotes (for some types of properties) */
 	PPF_Delimited					= 0x00000002,
@@ -27,10 +26,12 @@ enum EPropertyPortFlags
 	
 	PPF_AttemptNonQualifiedSearch	= 0x00000010,
 	
-	/** Indicates that importing values for config or localized properties is disallowed */
+	/** Indicates that importing values for config properties is disallowed */
 	PPF_RestrictImportTypes			= 0x00000020,
 
-	//								= 0x00000040,
+	/** Indicates that this is a blueprint pin or something else that is saved to disk as import text */
+	PPF_SerializedAsImportText		= 0x00000040,
+
 	//								= 0x00000080,
 
 	/** only include properties which are marked CPF_InstancedReference */
@@ -67,13 +68,12 @@ enum EPropertyPortFlags
 	/** indicates that non-categorized transient properties should be exported (by default, they would not be) */
 	PPF_IncludeTransient			= 0x00020000,
 
-	/** modifies behavior of UProperty::Identical - indicates that the comparison is between an object and its archetype */
-	PPF_DeltaComparison				= 0x00040000,
+	//								= 0x00040000,
 
 	/** indicates that we're exporting properties for display in the property window. - used to hide EditHide items in collapsed structs */
 	PPF_PropertyWindow				= 0x00080000,
 
-	PPF_NoInternalArcheType			= 0x00100000,
+	//								= 0x00100000,
 
 	/** Force fully qualified object names (for debug dumping) */
 	PPF_DebugDump					= 0x00200000,

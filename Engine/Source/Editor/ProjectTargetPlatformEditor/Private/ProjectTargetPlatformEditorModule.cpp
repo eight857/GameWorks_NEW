@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
@@ -107,8 +107,8 @@ public:
 				.VAlign(VAlign_Bottom)
 				[
 					SNew(SBox)
-					.WidthOverride(MultiBoxConstants::MenuIconSize * 0.9f)
-					.HeightOverride(MultiBoxConstants::MenuIconSize * 0.9f)
+					.WidthOverride(MultiBoxConstants::MenuIconSize)
+					.HeightOverride(MultiBoxConstants::MenuIconSize)
 					[
 						SNew(SImage)
 						.Visibility(TAttribute<EVisibility>::Create(TAttribute<EVisibility>::FGetter::CreateStatic(&Local::IsUnsupportedPlatformWarningVisible, PlatformInfo.VanillaPlatformName)))

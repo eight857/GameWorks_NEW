@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ShaderFormatVectorVM.h"
 #include "CoreMinimal.h"
@@ -20,12 +20,11 @@ PRAGMA_POP
 #include "ir.h"
 
 #include "VectorVM.h"
-#include "INiagaraCompiler.h"
 
 
 
 /** finds any group of ops than can be merged into a single compound operation. Mad for example. */
-class ir_merge_op_visitor : ir_hierarchical_visitor
+class ir_merge_op_visitor final : ir_hierarchical_visitor
 {
 	_mesa_glsl_parse_state* state;
 	bool assign_has_expressions;
@@ -46,6 +45,10 @@ public:
 		progress = false;
 		assign_array_to_add = NULL;
 		expr_depth = 0;
+	}
+
+	virtual ~ir_merge_op_visitor()
+	{
 	}
 
 	virtual ir_visitor_status visit_enter(ir_expression* expr)
@@ -93,11 +96,9 @@ public:
 					ir_assignment* assign = mul_assignments[mul_idx];
 					if (assign->lhs->type->is_float())
 					{
-						ir_rvalue* mul_operand = assign->rhs->clone(ralloc_parent(expr), NULL);
+						ir_rvalue* mul_operand = assign->rhs->clone(state, NULL);
 						ir_rvalue* add_operand = equiv_operand == 0 ? expr->operands[1] : expr->operands[0];
 
-						expr->operands[0]->replace_with(mul_operand);
-						expr->operands[1]->replace_with(add_operand);
 						expr->operands[0] = mul_operand;
 						expr->operands[1] = add_operand;
 
@@ -143,12 +144,10 @@ public:
 						inner_val = neg_expr->operands[0];
 						check(inner_val);
 
-						ir_rvalue* neg_operand = inner_val->clone(ralloc_parent(expr), NULL);
+						ir_rvalue* neg_operand = inner_val->clone(state, NULL);
 						ir_rvalue* add_operand = equiv_operand == 0 ? expr->operands[1] : expr->operands[0];
 
 						expr->operation = ir_binop_sub;
-						expr->operands[0]->replace_with(add_operand);
-						expr->operands[1]->replace_with(neg_operand);
 						expr->operands[0] = add_operand;
 						expr->operands[1] = neg_operand;
 

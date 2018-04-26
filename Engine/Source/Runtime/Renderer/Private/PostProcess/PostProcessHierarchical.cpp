@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessHierarchical.cpp: Post processing Screen Space Reflections implementation.
@@ -17,14 +17,14 @@ class TPostProcessBuildHCBPS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(TPostProcessBuildHCBPS, Global);
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine( TEXT("STAGE"), Stage );
 		OutEnvironment.SetRenderTargetOutputFormat(0, PF_FloatRGBA);
 	}
@@ -50,12 +50,13 @@ public:
 		ColorMipSampler.Bind( Initializer.ParameterMap, TEXT("ColorMipSampler") );
 	}
 
-	void SetParameters(const FRenderingCompositePassContext& Context)
+	template <typename TRHICmdList>
+	void SetParameters(TRHICmdList& RHICmdList, const FRenderingCompositePassContext& Context)
 	{
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 		const FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(Context.RHICmdList);
 
-		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
 		
 		const FIntPoint GBufferSize = SceneContext.GetBufferSizeXY();
 		const FVector InvSizeValue( 1.0f / float(GBufferSize.X), 1.0f / float(GBufferSize.Y), 0.0 );
@@ -71,11 +72,11 @@ public:
 			float(Context.View.ViewRect.Max.X) / float(GBufferSize.X) - 0.5f * InvSizeValue.X,
 			float(Context.View.ViewRect.Max.Y) / float(GBufferSize.Y) - 0.5f * InvSizeValue.Y
 			);
-		SetShaderValue(Context.RHICmdList, ShaderRHI, InvSize, InvSizeValue );
-		SetShaderValue(Context.RHICmdList, ShaderRHI, InputUvFactorAndOffset, InputUvFactorAndOffsetValue );
-		SetShaderValue(Context.RHICmdList, ShaderRHI, InputUvBundaries, InputUvBundariesValue );
+		SetShaderValue(RHICmdList, ShaderRHI, InvSize, InvSizeValue );
+		SetShaderValue(RHICmdList, ShaderRHI, InputUvFactorAndOffset, InputUvFactorAndOffsetValue );
+		SetShaderValue(RHICmdList, ShaderRHI, InputUvBundaries, InputUvBundariesValue );
 		
-		PostprocessParameter.SetPS(ShaderRHI, Context, TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
+		PostprocessParameter.SetPS(RHICmdList, ShaderRHI, Context, TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
 	}
 
 	void SetParameters(FRHICommandList& RHICmdList, const FViewInfo& View, const FIntPoint& Size, FShaderResourceViewRHIParamRef ShaderResourceView )
@@ -111,8 +112,8 @@ public:
 	}
 };
 
-IMPLEMENT_SHADER_TYPE(template<>,TPostProcessBuildHCBPS<0>,TEXT("PostProcessHierarchical"),TEXT("BuildHCB"),SF_Pixel);
-IMPLEMENT_SHADER_TYPE(template<>,TPostProcessBuildHCBPS<1>,TEXT("PostProcessHierarchical"),TEXT("BuildHCB"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>,TPostProcessBuildHCBPS<0>,TEXT("/Engine/Private/PostProcessHierarchical.usf"),TEXT("BuildHCB"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>,TPostProcessBuildHCBPS<1>,TEXT("/Engine/Private/PostProcessHierarchical.usf"),TEXT("BuildHCB"),SF_Pixel);
 
 static void HierarchycalSizeAndMips(const FIntPoint& BufferSize, uint32 Mip0Downsample, uint32& OutNumMips, FIntPoint& OutHierachicalSize)
 {
@@ -163,7 +164,7 @@ void FRCPassPostProcessBuildHCB::Process(FRenderingCompositePassContext& Context
 		SetGraphicsPipelineState(Context.RHICmdList, GraphicsPSOInit);
 		
 		VertexShader->SetParameters(Context);
-		PixelShader->SetParameters(Context);
+		PixelShader->SetParameters(Context.RHICmdList, Context);
 			
 			
 #if 0

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -25,6 +25,7 @@
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SButton.h"
+#include "DriverMetaData.h"
 
 namespace SWindowTitleBarDefs
 {
@@ -143,8 +144,6 @@ public:
 		return EWindowZone::TitleBar;
 	}
 
-public:
-
 	//~ Begin IWindowTitleBar Interface
 
 	void Flash( ) override
@@ -179,7 +178,7 @@ protected:
 	 * This is an advanced method, only for fancy windows that want to
 	 * override the look of the title area by arranging those widgets itself.
 	 */
-	void MakeTitleBarContentWidgets( TSharedPtr< SWidget >& OutLeftContent, TSharedPtr< SWidget >& OutRightContent )
+	virtual void MakeTitleBarContentWidgets( TSharedPtr< SWidget >& OutLeftContent, TSharedPtr< SWidget >& OutRightContent )
 	{
 		TSharedPtr<SWindow> OwnerWindow = OwnerWindowPtr.Pin();
 
@@ -199,6 +198,7 @@ protected:
 					.OnClicked(this, &SWindowTitleBar::MinimizeButton_OnClicked)
 					.Cursor(EMouseCursor::Default)
 					.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+					.AddMetaData(FDriverMetaData::Id("launcher-minimizeWindowButton"))
 					[
 						SNew(SImage)
 							.Image(this, &SWindowTitleBar::GetMinimizeImage)
@@ -213,6 +213,7 @@ protected:
 					.OnClicked(this, &SWindowTitleBar::MaximizeRestoreButton_OnClicked)
 					.Cursor(EMouseCursor::Default)
 					.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+					.AddMetaData(FDriverMetaData::Id("launcher-maximizeRestoreWindowButton"))
 					[
 						SNew(SImage)
 							.Image(this, &SWindowTitleBar::GetMaximizeRestoreImage)
@@ -227,6 +228,7 @@ protected:
 					.OnClicked(this, &SWindowTitleBar::CloseButton_OnClicked)
 					.Cursor(EMouseCursor::Default)
 					.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+					.AddMetaData(FDriverMetaData::Id("launcher-closeWindowButton"))
 					[
 						SNew(SImage)
 							.Image(this, &SWindowTitleBar::GetCloseImage)
@@ -410,6 +412,15 @@ protected:
 							]
 					]
 			];
+	}
+
+
+	FSlateColor GetWindowTitleContentColor( ) const
+	{	
+		// Color of the title area contents - modulates the icon and buttons
+		float Flash = GetFlashValue();
+
+		return FMath::Lerp(FLinearColor::White, FLinearColor::Black, Flash);
 	}
 
 private:
@@ -609,14 +620,6 @@ private:
 
 		return Color;
 	}
-	
-	FSlateColor GetWindowTitleContentColor( ) const
-	{	
-		// Color of the title area contents - modulates the icon and buttons
-		float Flash = GetFlashValue();
-
-		return FMath::Lerp(FLinearColor::White, FLinearColor::Black, Flash);
-	}
 
 	FText HandleWindowTitleText( ) const
 	{
@@ -630,10 +633,12 @@ private:
 		return OwnerWindow->GetTitle();
 	}
 
-private:
+protected:
 
 	// Holds a weak pointer to the owner window.
 	TWeakPtr<SWindow> OwnerWindowPtr;
+
+private:
 
 	// Holds the window style to use (for buttons, text, etc.).
 	const FWindowStyle* Style;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -84,8 +84,8 @@ public:
 			bDragging = false;
 
 			FIntPoint NewMousePos(
-				(MyGeometry.AbsolutePosition.X + MyGeometry.Size.X / 2) * MyGeometry.Scale,
-				(MyGeometry.AbsolutePosition.Y + MyGeometry.Size.Y / 2) * MyGeometry.Scale
+				(MyGeometry.AbsolutePosition.X + MyGeometry.GetLocalSize().X / 2) * MyGeometry.Scale,
+				(MyGeometry.AbsolutePosition.Y + MyGeometry.GetLocalSize().Y / 2) * MyGeometry.Scale
 				);
 
 			return FReply::Handled().ReleaseMouseCapture().SetMousePos(NewMousePos);

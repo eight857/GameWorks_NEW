@@ -1,7 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LayoutUV.h"
 #include "DisjointSet.h"
+
+#include "Algo/IntroSort.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogLayoutUV, Warning, All);
 
@@ -18,9 +20,10 @@ FLayoutUV::FLayoutUV( FRawMesh* InMesh, uint32 InSrcChannel, uint32 InDstChannel
 	, BestChartRaster( TextureResolution, TextureResolution )
 	, ChartShader( &ChartRaster )
 	, LayoutVersion( ELightmapUVVersion::Latest )
+	, NextMeshChartId( 0 )
 {}
 
-void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
+int32 FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 {
 	double Begin = FPlatformTime::Seconds();
 
@@ -80,7 +83,7 @@ void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 							FVector2D EdgeUVj = TexCoords[je] - TexCoords[j];
 							
 							// Would these edges match if the charts were translated
-							bool bTranslatedUVMatch = ( EdgeUVi - EdgeUVj ).IsNearlyZero( THRESH_UVS_ARE_SAME );
+							bool bTranslatedUVMatch = ( EdgeUVi - EdgeUVj ).IsNearlyZero(UVLAYOUT_THRESH_UVS_ARE_SAME);
 							if( bTranslatedUVMatch )
 							{
 								// Note: may be mirrored
@@ -147,7 +150,8 @@ void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 			return (*DisjointSet)[A] < (*DisjointSet)[B];
 		}
 	};
-	SortedTris.Sort( FCompareTris( &DisjointSet ) );
+
+	Algo::IntroSort( SortedTris, FCompareTris( &DisjointSet ) );
 
 	TMap< uint32, int32 > DisjointSetToChartMap;
 
@@ -156,7 +160,8 @@ void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 	{
 		int32 i = Charts.AddUninitialized();
 		FMeshChart& Chart = Charts[i];
-		
+		Chart.Id = NextMeshChartId++;
+
 		Chart.MinUV = FVector2D( FLT_MAX, FLT_MAX );
 		Chart.MaxUV = FVector2D( -FLT_MAX, -FLT_MAX );
 		Chart.UVArea = 0.0f;
@@ -205,16 +210,21 @@ void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 		Chart.LastTri = Tri;
 
 #if !CHART_JOINING
-		if( Chart.UVArea > 1e-4f )
+		if (LayoutVersion >= ELightmapUVVersion::SmallChartPacking)
 		{
-			Chart.WorldScale /= Chart.UVArea;
+			Chart.WorldScale /= FMath::Max(Chart.UVArea, 1e-8f);
 		}
 		else
 		{
-			Chart.WorldScale = FVector2D::ZeroVector;
-		}
-
-		//Chart.WorldScale.Set(1,1);
+			if (Chart.UVArea > 1e-4f)
+			{
+				Chart.WorldScale /= Chart.UVArea;
+			}
+			else
+			{
+				Chart.WorldScale = FVector2D::ZeroVector;
+			}
+		}		
 
 		TotalUVArea += Chart.UVArea * Chart.WorldScale.X * Chart.WorldScale.Y;
 #endif
@@ -265,7 +275,7 @@ void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 					
 					FVector2D EdgeOffset0 = UV0i - UV1j;
 					FVector2D EdgeOffset1 = UV1i - UV0j;
-					checkSlow( ( EdgeOffset0 - EdgeOffset1 ).IsNearlyZero( THRESH_UVS_ARE_SAME ) );
+					checkSlow( ( EdgeOffset0 - EdgeOffset1 ).IsNearlyZero(UVLAYOUT_THRESH_UVS_ARE_SAME) );
 
 					FVector2D Translation = EdgeOffset0;
 
@@ -290,9 +300,9 @@ void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 						uint32 Sign = Side & 1;
 						uint32 Axis = Side >> 1;
 
-						bool bAxisAligned = FMath::Abs( EdgeUVi[ Axis ] ) < THRESH_UVS_ARE_SAME;
-						bool bBorderA = FMath::Abs( UV0i[ Axis ] - ( Sign ^ 0 ? Chart.MaxUV[ Axis ] : Chart.MinUV[ Axis ] ) ) < THRESH_UVS_ARE_SAME;
-						bool bBorderB = FMath::Abs( UV0j[ Axis ] - ( Sign ^ 1 ? Chart.MaxUV[ Axis ] : Chart.MinUV[ Axis ] ) ) < THRESH_UVS_ARE_SAME;
+						bool bAxisAligned = FMath::Abs( EdgeUVi[ Axis ] ) < UVLAYOUT_THRESH_UVS_ARE_SAME;
+						bool bBorderA = FMath::Abs( UV0i[ Axis ] - ( Sign ^ 0 ? Chart.MaxUV[ Axis ] : Chart.MinUV[ Axis ] ) ) < UVLAYOUT_THRESH_UVS_ARE_SAME;
+						bool bBorderB = FMath::Abs( UV0j[ Axis ] - ( Sign ^ 1 ? Chart.MaxUV[ Axis ] : Chart.MinUV[ Axis ] ) ) < UVLAYOUT_THRESH_UVS_ARE_SAME;
 
 						// FIXME mirrored
 						if( !bAxisAligned || !bBorderA || !bBorderB )
@@ -314,9 +324,9 @@ void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 						FVector2D ExtentDiff = ExtentA - ExtentB;
 						FVector2D Separation = ExtentA + ExtentB + CenterDiff * ( Sign ? 1.0f : -1.0f );
 
-						bool bCenterMatch = FMath::Abs( CenterDiff[ Axis ^ 1 ] ) < THRESH_UVS_ARE_SAME;
-						bool bExtentMatch = FMath::Abs( ExtentDiff[ Axis ^ 1 ] ) < THRESH_UVS_ARE_SAME;
-						bool bSeparate    = FMath::Abs( Separation[ Axis ^ 0 ] ) < THRESH_UVS_ARE_SAME;
+						bool bCenterMatch = FMath::Abs( CenterDiff[ Axis ^ 1 ] ) < UVLAYOUT_THRESH_UVS_ARE_SAME;
+						bool bExtentMatch = FMath::Abs( ExtentDiff[ Axis ^ 1 ] ) < UVLAYOUT_THRESH_UVS_ARE_SAME;
+						bool bSeparate    = FMath::Abs( Separation[ Axis ^ 0 ] ) < UVLAYOUT_THRESH_UVS_ARE_SAME;
 	
 						if( !bCenterMatch || !bExtentMatch || !bSeparate )
 						{
@@ -519,13 +529,20 @@ void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 	{
 		FMeshChart& Chart = Charts[i];
 
-		if( Chart.UVArea > 1e-4f )
+		if (LayoutVersion >= ELightmapUVVersion::SmallChartPacking)
 		{
-			Chart.WorldScale /= Chart.UVArea;
+			Chart.WorldScale /= FMath::Max(Chart.UVArea, 1e-8f);
 		}
 		else
 		{
-			Chart.WorldScale = FVector2D::ZeroVector;
+			if (Chart.UVArea > 1e-4f)
+			{
+				Chart.WorldScale /= Chart.UVArea;
+			}
+			else
+			{
+				Chart.WorldScale = FVector2D::ZeroVector;
+			}
 		}
 
 		TotalUVArea += Chart.UVArea * Chart.WorldScale.X * Chart.WorldScale.Y;
@@ -535,6 +552,8 @@ void FLayoutUV::FindCharts( const TMultiMap<int32,int32>& OverlappingCorners )
 	double End = FPlatformTime::Seconds();
 
 	UE_LOG(LogLayoutUV, Display, TEXT("FindCharts: %s"), *FPlatformTime::PrettyTime(End - Begin) );
+
+	return Charts.Num();
 }
 
 bool FLayoutUV::FindBestPacking()
@@ -599,6 +618,15 @@ void FLayoutUV::ScaleCharts( float UVScale )
 		Chart.UVScale = Chart.WorldScale * UVScale;
 	}
 	
+	if ( LayoutVersion >= ELightmapUVVersion::ScaleChartsOrderingFix )
+	{
+		// Unsort the charts to make sure ScaleCharts always return the same ordering
+		Algo::IntroSort( Charts, []( const FMeshChart& A, const FMeshChart& B )
+		{
+			return A.Id < B.Id;
+		});
+	}
+
 	// Scale charts such that they all fit and roughly total the same area as before
 #if 1
 	float UniformScale = 1.0f;
@@ -724,7 +752,7 @@ void FLayoutUV::ScaleCharts( float UVScale )
 			return ChartRectA.X * ChartRectA.Y > ChartRectB.X * ChartRectB.Y;
 		}
 	};
-	Charts.Sort( FCompareCharts() );
+	Algo::IntroSort( Charts, FCompareCharts() );
 }
 
 bool FLayoutUV::PackCharts()
@@ -784,11 +812,11 @@ bool FLayoutUV::PackCharts()
 			}
 			else
 			{
-				if ( LayoutVersion == ELightmapUVVersion::Segments && Orientation % 4 == 1 )
+				if ( LayoutVersion >= ELightmapUVVersion::Segments && Orientation % 4 == 1 )
 				{
 					ChartRaster.FlipX( Rect );
 				}
-				else if ( LayoutVersion == ELightmapUVVersion::Segments && Orientation % 4 == 3 )
+				else if ( LayoutVersion >= ELightmapUVVersion::Segments && Orientation % 4 == 3 )
 				{
 					ChartRaster.FlipY( Rect );
 				}
@@ -806,7 +834,7 @@ bool FLayoutUV::PackCharts()
 				{
 					bFound = LayoutRaster.FindBitByBit( Rect, ChartRaster );
 				}
-				else if ( LayoutVersion == ELightmapUVVersion::Segments )
+				else if ( LayoutVersion >= ELightmapUVVersion::Segments )
 				{
 					bFound = LayoutRaster.FindWithSegments( Rect, BestRect, ChartRaster );
 				}
@@ -1019,7 +1047,7 @@ void FLayoutUV::RasterizeChart( const FMeshChart& Chart, uint32 RectW, uint32 Re
 		RasterizeTriangle< FAllocator2DShader, 16 >( ChartShader, Points, RectW, RectH );
 	}
 
-	if ( LayoutVersion == ELightmapUVVersion::Segments )
+	if ( LayoutVersion >= ELightmapUVVersion::Segments )
 	{
 		ChartRaster.CreateUsedSegments();
 	}

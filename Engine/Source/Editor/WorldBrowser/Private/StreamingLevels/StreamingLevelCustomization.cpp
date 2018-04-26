@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "StreamingLevels/StreamingLevelCustomization.h"
 #include "Misc/MessageDialog.h"
 #include "Widgets/Input/SButton.h"
@@ -134,7 +134,7 @@ void FStreamingLevelCustomization::CustomizeDetails(IDetailLayoutBuilder& Detail
 
 void FStreamingLevelCustomization::OnGenerateElementForEditorStreamingVolume(TSharedRef<IPropertyHandle> ElementProperty, int32 ElementIndex, IDetailChildrenBuilder& ChildrenBuilder)
 {
-	IDetailPropertyRow& PropertyRow = ChildrenBuilder.AddChildProperty(ElementProperty);
+	IDetailPropertyRow& PropertyRow = ChildrenBuilder.AddProperty(ElementProperty);
 	TSharedPtr<SWidget> NameWidget;
 	TSharedPtr<SWidget> ValueWidget;
 	FDetailWidgetRow Row;

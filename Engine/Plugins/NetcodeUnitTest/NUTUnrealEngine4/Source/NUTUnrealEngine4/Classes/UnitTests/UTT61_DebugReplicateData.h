@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -43,13 +43,10 @@ private:
 	/** Once the GameplayDebuggingReplicator is received, cache it */
 	TWeakObjectPtr<AActor> Replicator;
 
-	/** Log message that is sent to the server, so that it will be triggered if the assert is not hit */
-	const TCHAR* ExploitFailLog;
-
 public:
 	virtual void InitializeEnvironmentSettings() override;
 
-	virtual bool NotifyAllowNetActor(UClass* ActorClass, bool bActorChannel);
+	virtual void NotifyAllowNetActor(UClass* ActorClass, bool bActorChannel, bool& bBlockActor);
 
 	virtual void NotifyNetActor(UActorChannel* ActorChannel, AActor* Actor);
 

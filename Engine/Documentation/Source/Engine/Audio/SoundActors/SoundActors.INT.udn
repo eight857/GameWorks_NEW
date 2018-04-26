@@ -3,10 +3,12 @@ Title:Ambient Sound Actor User Guide
 Crumbs: %ROOT%, Engine, Engine/Audio
 Description:Guide to using the Ambient Sound Actor for creating ambient and localized sounds in-game.
 version: 4.9
+parent:Engine/Audio
+type:overview
+order:2
+
+
 [TOC(start:2 end:2)]
-
-
-
 
 Unreal Engine 4 streamlines the process by which you can produce or modify ambient sounds through the use of the **Ambient Sound Actor**. When a **Sound Wave** or **Sound Cue** asset is placed in a level, an Ambient Sound Actor with that sound asset is created. The Ambient Sound Actor has several properties which are covered on this page that will allow you to modify how players receive the sound.
 
@@ -15,15 +17,9 @@ For more information on importing files as [Sound Waves](Engine/Audio/WAV) or mo
 
 ## Ambient Sound Actor
 
-
-[OBJECT:topiclistnotitle]
-	[PARAM:icon]
-		![](ambientActors.png)
-	[/PARAM]
-	[PARAM:description]
-	
-	[/PARAM]
-[/OBJECT]
+[REGION:raw]
+![](ambientActors.png)
+[/REGION]
 
 The Ambient Sound Actor (icons pictured at left) can be used for many purposes such as ambient looping sounds as well as non-looping sounds. 
 Generally, the Ambient Sound Actor conforms to the real world where the closer you are to a sound, the louder it will appear. By comparison, a sound that is normally loud, may appear soft if it is further away. 
@@ -98,7 +94,7 @@ When **Override Attenuation** is checked, the ability to set additional Attenuat
 | **Spatialize** | Enable the source to be positioned in 3D.  |
 | **Distance Algorithm** | The type of volume versus distance algorithm to use for the attenuation model. |
 | **Attenuation Shape** | The shape of the attenuation volume. |
-| **Radius** | The overall size of the volume. <BR> By default, the volume shape is set to **Sphere**. This option will change based on the Attenuation Shape selected. |
+| **Radius** | The overall size of the volume. By default, the volume shape is set to **Sphere**. This option will change based on the Attenuation Shape selected. |
 | **Falloff Distance** | The distance over which falloff occurs. |
 | **Non-Spatialized Radius** | At what distance to start treating the sound source as spatialized. |
 | **Attenuate with LPF** | Enables attenuation via Low Pass Filter. |

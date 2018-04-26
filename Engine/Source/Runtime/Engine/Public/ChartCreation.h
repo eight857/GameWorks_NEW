@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /** 
  * ChartCreation
@@ -9,6 +9,7 @@
 
 #include "CoreMinimal.h"
 #include "ProfilingDebugging/Histogram.h"
+#include "Scalability.h"
 
 //////////////////////////////////////////////////////////////////////
 
@@ -49,13 +50,20 @@ public:
 		// Time elapsed since the last time the performance tracking system ran
 		double TrueDeltaSeconds;
 
-		// How long did we burn idling until this frame (e.g., when running faster than a frame rate target on a dedicated server)
+		// How long did we burn idling until this frame (FApp::GetIdleTime) (e.g., when running faster than a frame rate target on a dedicated server)
 		double IdleSeconds;
+
+		// How long did we burn idling beyond what we requested this frame (FApp::GetIdleTimeOvershoot). WaitTime we requested for the frame = IdleSeconds - IdleOvershootSeconds.
+		double IdleOvershootSeconds;
 
 		// Duration of each of the major functional units (GPU time is frequently inferred rather than actual)
 		double GameThreadTimeSeconds;
 		double RenderThreadTimeSeconds;
 		double GPUTimeSeconds;
+		/** Duration of the primary networking portion of the frame (that is, communication between server and clients). Currently happens on the game thread on both client and server. */
+		double GameDriverTickFlushTimeSeconds;
+		/** Duration of the replay networking portion of the frame. Can happen in a separate thread (not on servers). */
+		double DemoDriverTickFlushTimeSeconds;
 
 		// Should this frame be considered for histogram generation (controlled by t.FPSChart.MaxFrameDeltaSecsBeforeDiscarding)
 		bool bBinThisFrame;
@@ -75,9 +83,12 @@ public:
 			: DeltaSeconds(0.0)
 			, TrueDeltaSeconds(0.0)
 			, IdleSeconds(0.0)
+			, IdleOvershootSeconds(0.0)
 			, GameThreadTimeSeconds(0.0)
 			, RenderThreadTimeSeconds(0.0)
 			, GPUTimeSeconds(0.0)
+			, GameDriverTickFlushTimeSeconds(0.0)
+			, DemoDriverTickFlushTimeSeconds(0.0)
 			, bBinThisFrame(false)
 			, bGameThreadBound(false)
 			, bRenderThreadBound(false)
@@ -138,6 +149,18 @@ public:
 public:
 	FPerformanceTrackingChart(const FDateTime& InStartTime, const FString& InChartLabel);
 
+	double GetAverageFramerate() const
+	{
+		return FramerateHistogram.GetNumMeasurements() / FramerateHistogram.GetSumOfAllMeasures();
+	}
+
+	double GetPercentMissedVSync(int32 TargetFPS) const
+	{
+		const int64 TotalTargetFrames = TargetFPS * FramerateHistogram.GetSumOfAllMeasures();
+		const int64 MissedFrames = FMath::Max<int64>(TotalTargetFrames - FramerateHistogram.GetNumMeasurements(), 0);
+		return ((MissedFrames * 100.0) / (double)TotalTargetFrames);
+	}
+
 	double GetAvgHitchesPerMinute() const
 	{
 		const double TotalTime = FramerateHistogram.GetSumOfAllMeasures();
@@ -154,6 +177,11 @@ public:
 		return (TotalTime > 0.0) ? (TotalHitchFrameTime / TotalTime) : 0.0;
 	}
 
+	int64 GetNumFrames() const
+	{
+		return FramerateHistogram.GetNumMeasurements();
+	}
+
 	void ChangeLabel(const FString& NewLabel)
 	{
 		ChartLabel = NewLabel;
@@ -162,7 +190,7 @@ public:
 	void DumpFPSChart(const FString& InMapName);
 
 	// Dumps the FPS chart information to an analytic event param array.
-	void DumpChartToAnalyticsParams(const FString& InMapName, TArray<struct FAnalyticsEventAttribute>& InParamArray, bool bIncludeClientHWInfo);
+	void DumpChartToAnalyticsParams(const FString& InMapName, TArray<struct FAnalyticsEventAttribute>& InParamArray, bool bIncludeClientHWInfo, bool bIncludeHistograms = true) const;
 
 
 	// Dumps the FPS chart information to the log.
@@ -278,4 +306,63 @@ private:
 
 	/** Keep track of the last time we saw a hitch (used to suppress knock on hitches for a short period) */
 	double LastHitchTime;
+};
+
+//////////////////////////////////////////////////////////////////////
+
+// Prints the FPS chart summary to an endpoint
+struct ENGINE_API FDumpFPSChartToEndpoint
+{
+protected:
+	const FPerformanceTrackingChart& Chart;
+
+public:
+	/**
+	* Dumps a chart, allowing subclasses to format the data in their own way via various protected virtuals to be overridden
+	*/
+	void DumpChart(double InWallClockTimeFromStartOfCharting, const FString& InMapName);
+
+	FDumpFPSChartToEndpoint(const FPerformanceTrackingChart& InChart)
+		: Chart(InChart)
+	{
+	}
+
+	virtual ~FDumpFPSChartToEndpoint() { }
+
+protected:
+	double TotalTime;
+	double WallClockTimeFromStartOfCharting; // This can be much larger than TotalTime if the chart was paused or long frames were omitted
+	int32 NumFrames;
+	FString MapName;
+
+	float AvgFPS;
+	float TimeDisregarded;
+	float AvgGPUFrameTime;
+
+	float BoundGameThreadPct;
+	float BoundRenderThreadPct;
+	float BoundGPUPct;
+
+	Scalability::FQualityLevels ScalabilityQuality;
+	FString OSMajor;
+	FString OSMinor;
+
+	FString CPUVendor;
+	FString CPUBrand;
+
+	// The primary GPU for the desktop (may not be the one we ended up using, e.g., in an optimus laptop)
+	FString DesktopGPUBrand;
+
+	// The actual GPU adapter we initialized
+	FString ActualGPUBrand;
+
+protected:
+	virtual void PrintToEndpoint(const FString& Text) = 0;
+
+	virtual void FillOutMemberStats();
+	virtual void HandleFPSBucket(float BucketTimePercentage, float BucketFramePercentage, double StartFPS, double EndFPS);
+	virtual void HandleHitchBucket(const FHistogram& HitchHistogram, int32 BucketIndex);
+	virtual void HandleHitchSummary(int32 TotalHitchCount, double TotalTimeSpentInHitchBuckets);
+	virtual void HandleFPSThreshold(int32 TargetFPS, int32 NumFramesBelow, float PctTimeAbove, float PctMissedFrames);
+	virtual void HandleBasicStats();
 };

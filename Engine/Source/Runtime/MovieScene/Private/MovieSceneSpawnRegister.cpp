@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneSpawnRegister.h"
 #include "MovieScene.h"
@@ -40,7 +40,7 @@ UObject* FMovieSceneSpawnRegister::SpawnObject(const FGuid& BindingId, UMovieSce
 	return SpawnedActor;
 };
 
-void FMovieSceneSpawnRegister::DestroySpawnedObject(const FGuid& BindingId, FMovieSceneSequenceIDRef TemplateID, IMovieScenePlayer& Player)
+bool FMovieSceneSpawnRegister::DestroySpawnedObject(const FGuid& BindingId, FMovieSceneSequenceIDRef TemplateID, IMovieScenePlayer& Player)
 {
 	FMovieSceneSpawnRegisterKey Key(TemplateID, BindingId);
 	
@@ -55,6 +55,8 @@ void FMovieSceneSpawnRegister::DestroySpawnedObject(const FGuid& BindingId, FMov
 	Register.Remove(Key);
 
 	Player.State.Invalidate(BindingId, TemplateID);
+
+	return SpawnedObject != nullptr;
 }
 
 void FMovieSceneSpawnRegister::DestroyObjectsByPredicate(IMovieScenePlayer& Player, const TFunctionRef<bool(const FGuid&, ESpawnOwnership, FMovieSceneSequenceIDRef)>& Predicate)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SGraphPinDataTableRowName.h"
 
@@ -23,7 +23,7 @@ void SGraphPinDataTableRowName::PreChange(const UDataTable* Changed, FDataTableE
 
 void SGraphPinDataTableRowName::PostChange(const UDataTable* Changed, FDataTableEditorUtils::EDataTableChangeInfo Info)
 {
-	//FStringAssetReference::InvalidateTag(); // Should be removed after UE-5615 is fixed
+	//FSoftObjectPath::InvalidateTag(); // Should be removed after UE-5615 is fixed
 	if (Changed && (Changed == DataTable.Get()) && (FDataTableEditorUtils::EDataTableChangeInfo::RowList == Info))
 	{
 		RefreshNameList();

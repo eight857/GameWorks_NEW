@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SGraphNodeSoundBase.h"
 #include "Widgets/SBoxPanel.h"
@@ -8,7 +8,7 @@
 
 void SGraphNodeSoundBase::Construct(const FArguments& InArgs, class USoundCueGraphNode* InNode)
 {
-	this->GraphNode = Cast<UEdGraphNode>(InNode);
+	this->GraphNode = InNode;
 	this->SoundNode = InNode;
 
 	this->SetCursor(EMouseCursor::CardinalCross);

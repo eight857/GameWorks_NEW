@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,14 +8,18 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "JsonObjectWrapper.h"
 
 /** Class that handles converting Json objects to and from UStructs */
 class JSONUTILITIES_API FJsonObjectConverter
 {
 public:
-	
+
 	/** FName case insensitivity can make the casing of UPROPERTIES unpredictable. Attempt to standardize output. */
 	static FString StandardizeCase(const FString &StringIn);
+
+	/** Parse an FText from a json object (assumed to be of the form where keys are culture codes and values are strings) */
+	static bool GetTextFromObject(const TSharedRef<FJsonObject>& Obj, FText& TextOut);
 
 public: // UStruct -> JSON
 
@@ -28,7 +32,7 @@ public: // UStruct -> JSON
 
 	/**
 	 * Templated version of UStructToJsonObject to try and make most of the params. Also serves as an example use case
-	 * 
+	 *
 	 * @param InStruct The UStruct instance to read from
 	 * @param ExportCb Optional callback for types we don't understand. This is called right before falling back to the generic ToString()
 	 * @param CheckFlags Only convert properties that match at least one of these flags. If 0 check all properties.
@@ -134,7 +138,7 @@ public: // UStruct -> JSON
 	 * @return False if any properties failed to write
 	 */
 	static bool UStructToJsonAttributes(const UStruct* StructDefinition, const void* Struct, TMap< FString, TSharedPtr<FJsonValue> >& OutJsonAttributes, int64 CheckFlags, int64 SkipFlags, const CustomExportCallback* ExportCb = nullptr);
-	
+
 	/* * Converts from a UProperty to a Json Value using exportText
 	 *
 	 * @param Property			The property to export
@@ -160,8 +164,8 @@ public: // JSON -> UStruct
 	 *
 	 * @return False if any properties matched but failed to deserialize
 	 */
-	static bool JsonObjectToUStruct(const TSharedRef<FJsonObject>& JsonObject, const UStruct* StructDefinition, void* OutStruct, int64 CheckFlags, int64 SkipFlags);
-	
+	static bool JsonObjectToUStruct(const TSharedRef<FJsonObject>& JsonObject, const UStruct* StructDefinition, void* OutStruct, int64 CheckFlags = 0, int64 SkipFlags = 0);
+
 	/**
 	 * Templated version of JsonObjectToUStruct
 	 *
@@ -173,7 +177,7 @@ public: // JSON -> UStruct
 	 * @return False if any properties matched but failed to deserialize
 	 */
 	template<typename OutStructType>
-	static bool JsonObjectToUStruct(const TSharedRef<FJsonObject>& JsonObject, OutStructType* OutStruct, int64 CheckFlags, int64 SkipFlags)
+	static bool JsonObjectToUStruct(const TSharedRef<FJsonObject>& JsonObject, OutStructType* OutStruct, int64 CheckFlags = 0, int64 SkipFlags = 0)
 	{
 		return JsonObjectToUStruct(JsonObject, OutStructType::StaticStruct(), OutStruct, CheckFlags, SkipFlags);
 	}
@@ -193,7 +197,7 @@ public: // JSON -> UStruct
 
 	/**
 	 * Converts a single JsonValue to the corresponding UProperty (this may recurse if the property is a UStruct for instance).
-	 * 
+	 *
 	 * @param JsonValue The value to assign to this property
 	 * @param Property The UProperty definition of the property we're setting.
 	 * @param OutValue Pointer to the property instance to be modified.
@@ -290,4 +294,10 @@ public: // JSON -> UStruct
 		}
 		return true;
 	}
+
+	/*
+	* Parses text arguments from Json into a map
+	* @param JsonObject Object to parse arguments from
+	*/
+	static FFormatNamedArguments ParseTextArgumentsFromJson(const TSharedPtr<const FJsonObject>& JsonObject);
 };

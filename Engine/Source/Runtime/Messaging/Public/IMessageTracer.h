@@ -1,13 +1,19 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "CoreTypes.h"
+#include "Containers/Array.h"
+#include "Containers/Map.h"
+#include "Delegates/Delegate.h"
+#include "Templates/SharedPointer.h"
+
 #include "IMessageContext.h"
 
 struct FMessageTracerEndpointInfo;
 struct FMessageTracerMessageInfo;
 struct FMessageTracerTypeInfo;
+
 
 /**
  * Enumerates tracer breakpoint states.
@@ -151,7 +157,7 @@ struct FMessageTracerInterceptorInfo
 struct FMessageTracerMessageInfo
 {
 	/** Holds a pointer to the message context. */
-	IMessageContextPtr Context;
+	TSharedPtr<IMessageContext, ESPMode::ThreadSafe> Context;
 
 	/** Holds the message's dispatch states per endpoint. */
 	TMap<TSharedPtr<FMessageTracerEndpointInfo>, TSharedPtr<FMessageTracerDispatchState>> DispatchStates;

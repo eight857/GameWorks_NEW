@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	OpenGL.h: Public OpenGL base definitions for non-common functionality
@@ -84,7 +84,7 @@ public:
 	static FORCEINLINE bool SupportsUniformBuffers()					{ return true; }
 	static FORCEINLINE bool SupportsStructuredBuffers()					{ return true; }
 	static FORCEINLINE bool SupportsTimestampQueries()					{ return true; }
-	static FORCEINLINE bool SupportsDisjointTimeQueries()				{ return false; } // @todo: if enabled, causes crash on PC and massive slowdown on Mac
+	static FORCEINLINE bool SupportsDisjointTimeQueries()				{ return false; } // @todo: if enabled, causes crash on PC
 	static FORCEINLINE bool SupportsOcclusionQueries()					{ return true; }
 	static FORCEINLINE bool SupportsExactOcclusionQueries()				{ return true; }
 	static FORCEINLINE bool SupportsBlitFramebuffer()					{ return true; }
@@ -98,6 +98,7 @@ public:
 	static FORCEINLINE bool SupportsSamplerObjects()					{ return true; }
 	static FORCEINLINE bool SupportsTexture3D()							{ return true; }
 	static FORCEINLINE bool SupportsMobileMultiView()					{ return false; }
+	static FORCEINLINE bool SupportsImageExternal()						{ return false; }
 	static FORCEINLINE bool SupportsTextureLODBias()					{ return true; }
 	static FORCEINLINE bool SupportsTextureCompare()					{ return true; }
 	static FORCEINLINE bool SupportsTextureBaseLevel()					{ return true; }
@@ -183,6 +184,8 @@ public:
 	static FORCEINLINE GLint GetMaxComputeTextureImageUnits()	{ return 0; }
 	static FORCEINLINE GLint GetMaxCombinedTextureImageUnits()	{ check(MaxCombinedTextureImageUnits != -1); return MaxCombinedTextureImageUnits; }
 
+
+	// Indices per unit are set in this order [Pixel, Vertex, Geometry, Hull, Domain]
 	static FORCEINLINE GLint GetFirstPixelTextureUnit()			{ return 0; }
 	static FORCEINLINE GLint GetFirstVertexTextureUnit()		{ return GetFirstPixelTextureUnit() + GetMaxTextureImageUnits(); }
 	static FORCEINLINE GLint GetFirstGeometryTextureUnit()		{ return GetFirstVertexTextureUnit() + GetMaxVertexTextureImageUnits(); }

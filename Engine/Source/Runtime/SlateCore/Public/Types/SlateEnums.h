@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
+#include "EnumRange.h"
 #include "SlateEnums.generated.h"
 
 
@@ -106,6 +107,8 @@ enum class EUINavigation : uint8
 	/** Denotes an invalid navigation, more important used to denote no specified navigation*/
 	Invalid UMETA(Hidden),
 };
+
+ENUM_RANGE_BY_COUNT(EUINavigation, EUINavigation::Num);
 
 /**
  * Enumerates the source of the navigation
@@ -217,6 +220,9 @@ enum EMenuPlacement
 
 	/** Place the menu's vertical center on the left side at the menu anchor's vertical center on the right side */
 	MenuPlacement_RightLeftCenter UMETA(DisplayName = "Right Center, Left Center"),
+	
+	/** Place the menu's bottom left corner directly on top of the menu anchor's bottom left corner */
+	MenuPlacement_MatchBottomLeft UMETA(DisplayName = "Match Bottom Left Corner"),
 };
 
 

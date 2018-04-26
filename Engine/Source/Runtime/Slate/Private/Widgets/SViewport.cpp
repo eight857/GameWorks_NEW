@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/SViewport.h"
 #include "Rendering/DrawElements.h"
@@ -6,7 +6,9 @@
 #include "Application/SlateApplicationBase.h"
 #include "Framework/Application/SlateApplication.h"
 
-DECLARE_CYCLE_STAT(TEXT("Game UI Tick/Paint"), STAT_ViewportUpdateTime, STATGROUP_Slate);
+DECLARE_CYCLE_STAT(TEXT("Game UI Tick"), STAT_ViewportTickTime, STATGROUP_Slate);
+DECLARE_CYCLE_STAT(TEXT("Game UI Paint"), STAT_ViewportPaintTime, STATGROUP_Slate);
+
 
 /* SViewport constructors
  *****************************************************************************/
@@ -58,9 +60,10 @@ EActiveTimerReturnType SViewport::EnsureTick(double InCurrentTime, float InDelta
 	return EActiveTimerReturnType::Continue;
 }
 
-int32 SViewport::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 SViewport::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
-	SCOPE_CYCLE_COUNTER(STAT_ViewportUpdateTime);
+	SCOPED_NAMED_EVENT(SViewport_OnPaint, FColor::Purple);
+	SCOPE_CYCLE_COUNTER(STAT_ViewportPaintTime);
 
 	bool bEnabled = ShouldBeEnabled( bParentEnabled );
 	bool bShowDisabledEffect = ShowDisabledEffect.Get();
@@ -104,7 +107,7 @@ int32 SViewport::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 	// Tell the interface that we are drawing.
 	if (ViewportInterfacePin.IsValid())
 	{
-		ViewportInterfacePin->OnDrawViewport( AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled );
+		ViewportInterfacePin->OnDrawViewport( AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled );
 	}
 
 	// Only draw a quad if not rendering directly to the backbuffer
@@ -112,17 +115,17 @@ int32 SViewport::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 	{
 		if( ViewportInterfacePin.IsValid() && ViewportInterfacePin->GetViewportRenderTargetTexture() != nullptr )
 		{
-			FSlateDrawElement::MakeViewport( OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), ViewportInterfacePin, MyClippingRect, DrawEffects, InWidgetStyle.GetColorAndOpacityTint() );
+			FSlateDrawElement::MakeViewport( OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), ViewportInterfacePin, DrawEffects, InWidgetStyle.GetColorAndOpacityTint() );
 		}
 		else
 		{
 			// Viewport isn't ready yet, so just draw a black box
 			static FSlateColorBrush BlackBrush( FColor::Black );
-			FSlateDrawElement::MakeBox( OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), &BlackBrush, MyClippingRect, DrawEffects, BlackBrush.GetTint( InWidgetStyle ) );
+			FSlateDrawElement::MakeBox( OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), &BlackBrush, DrawEffects, BlackBrush.GetTint( InWidgetStyle ) );
 		}
 	}
 
-	int32 Layer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bEnabled );
+	int32 Layer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bEnabled );
 
 	if( ViewportInterfacePin.IsValid() && ViewportInterfacePin->IsSoftwareCursorVisible() )
 	{
@@ -152,8 +155,7 @@ int32 SViewport::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 			OutDrawElements,
 			LayerId,
 			AllottedGeometry.ToPaintGeometry( CursorPositionLocalSpace - ( Brush->ImageSize / 2 ), Brush->ImageSize ),
-			Brush,
-			MyClippingRect
+			Brush
 		);
 	}
 
@@ -168,7 +170,7 @@ int32 SViewport::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 
 void SViewport::Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime )
 {
-	SCOPE_CYCLE_COUNTER(STAT_ViewportUpdateTime);
+	SCOPE_CYCLE_COUNTER(STAT_ViewportTickTime);
 
 	if ( ViewportInterface.IsValid() )
 	{

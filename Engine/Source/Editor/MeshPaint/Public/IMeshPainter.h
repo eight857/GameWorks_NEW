@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -28,6 +28,7 @@ class MESHPAINT_API IMeshPainter
 {
 public:
 	IMeshPainter();
+	virtual ~IMeshPainter();
 
 	/** Renders ray widgets for the active viewport interactors */
 	virtual void Render(const FSceneView* View, FViewport* Viewport, FPrimitiveDrawInterface* PDI) = 0;
@@ -106,7 +107,6 @@ protected:
 
 	float WidgetLineThickness;
 	FLinearColor WidgetLineColor;
-	float VertexPointSize;
 	FLinearColor VertexPointColor;
 	FLinearColor HoverVertexPointColor;
 protected:

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,6 +9,7 @@
 #include "UObject/ScriptMacros.h"
 #include "GameplayTagContainer.h"
 #include "Engine/DataTable.h"
+
 #include "GameplayTagsManager.generated.h"
 
 class UGameplayTagsList;
@@ -88,6 +89,14 @@ struct FGameplayTagSource
 		static FName DefaultName = FName(TEXT("DefaultGameplayTags.ini"));
 		return DefaultName;
 	}
+
+#if WITH_EDITOR
+	static FName GetTransientEditorName()
+	{
+		static FName TransientEditorName = FName(TEXT("TransientEditor"));
+		return TransientEditorName;
+	}
+#endif
 };
 
 /** Simple tree node for gameplay tags, this stores metadata about specific tags */
@@ -208,17 +217,29 @@ class GAMEPLAYTAGS_API UGameplayTagsManager : public UObject
 	FGameplayTag RequestGameplayTag(FName TagName, bool ErrorIfNotFound=true) const;
 
 	/**
+	 *	Searches for a gameplay tag given a partial string. This is slow and intended mainly for console commands/utilities to make
+	 *	developer life's easier. This will attempt to match as best as it can. If you pass "A.b" it will match on "A.b." before it matches "a.b.c".
+	 */
+	FGameplayTag FindGameplayTagFromPartialString_Slow(FString PartialString) const;
+
+	/**
 	 * Registers the given name as a gameplay tag, and tracks that it is being directly referenced from code
 	 * This can only be called during engine initialization, the table needs to be locked down before replication
 	 *
 	 * @param TagName The Name of the tag to add
+	 * @param TagDevComment The developer comment clarifying the usage of the tag
 	 * 
 	 * @return Will return the corresponding FGameplayTag
 	 */
-	FGameplayTag AddNativeGameplayTag(FName TagName);
+	FGameplayTag AddNativeGameplayTag(FName TagName, const FString& TagDevComment = TEXT("(Native)"));
 
 	/** Call to flush the list of native tags, once called it is unsafe to add more */
 	void DoneAddingNativeTags();
+
+	static FSimpleMulticastDelegate& OnLastChanceToAddNativeTags();
+
+
+	void CallOrRegister_OnDoneAddingNativeTagsDelegate(FSimpleMulticastDelegate::FDelegate Delegate);
 
 	/**
 	 * Gets a Tag Container containing the supplied tag and all of it's parents as explicit tags
@@ -358,6 +379,9 @@ class GAMEPLAYTAGS_API UGameplayTagsManager : public UObject
 	/** Handles redirectors for a single tag, will also error on invalid tag. This is only called for when individual tags are serialized on their own */
 	void RedirectSingleGameplayTag(FGameplayTag& Tag, UProperty* SerializingProperty) const;
 
+	/** Handles establishing a single tag from an imported tag name (accounts for redirects too). Called when tags are imported via text. */
+	bool ImportSingleGameplayTag(FGameplayTag& Tag, FName ImportedTagName) const;
+
 	/** Gets a tag name from net index and vice versa, used for replication efficiency */
 	FName GetTagNameFromNetIndex(FGameplayTagNetIndex Index) const;
 	FGameplayTagNetIndex GetNetIndexFromTag(const FGameplayTag &InTag) const;
@@ -376,9 +400,16 @@ class GAMEPLAYTAGS_API UGameplayTagsManager : public UObject
 
 	const TArray<TSharedPtr<FGameplayTagNode>>& GetNetworkGameplayTagNodeIndex() const { return NetworkGameplayTagNodeIndex; }
 
+	bool IsNativelyAddedTag(FGameplayTag Tag) const;
+
 #if WITH_EDITOR
 	/** Gets a Filtered copy of the GameplayRootTags Array based on the comma delimited filter string passed in */
 	void GetFilteredGameplayRootTags(const FString& InFilterString, TArray< TSharedPtr<FGameplayTagNode> >& OutTagArray) const;
+
+	/** Returns "Categories" meta property from given handle, used for filtering by tag wiodget */
+	FString GetCategoriesMetaFromPropertyHandle(TSharedPtr<class IPropertyHandle> PropertyHandle) const;
+
+	FString GetCategoriesMetaFromFunction(UFunction* Func) const;
 
 	/** Gets a list of all gameplay tag nodes added by the specific source */
 	void GetAllTagsFromSource(FName TagSource, TArray< TSharedPtr<FGameplayTagNode> >& OutTagArray) const;
@@ -394,6 +425,25 @@ class GAMEPLAYTAGS_API UGameplayTagsManager : public UObject
 
 	/** Gets a Tag Container containing the all tags in the hierarchy that are children of this tag, and were explicitly added to the dictionary */
 	FGameplayTagContainer RequestGameplayTagChildrenInDictionary(const FGameplayTag& GameplayTag) const;
+
+	/** This is called when EditorRefreshGameplayTagTree. Useful if you need to do anything editor related when tags are added or removed */
+	static FSimpleMulticastDelegate OnEditorRefreshGameplayTagTree;
+
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnGameplayTagDoubleClickedEditor, FGameplayTag, FSimpleMulticastDelegate& /* OUT */)
+	FOnGameplayTagDoubleClickedEditor OnGatherGameplayTagDoubleClickedEditor;
+
+	/** Chance to dynamically change filter string based on a property handle */
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnGetCategoriesMetaFromPropertyHandle, TSharedPtr<IPropertyHandle>, FString& /* OUT */)
+	FOnGetCategoriesMetaFromPropertyHandle OnGetCategoriesMetaFromPropertyHandle;
+
+	/** Allows dynamic hiding of gameplay tags in SGameplayTagWidget. Allows higher order structs to dynamically change which tags are visible based on its own data */
+	DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnFilterGameplayTagChildren, const FString&  /** FilterString */, TSharedPtr<FGameplayTagNode>& /* TagNode */, bool& /* OUT OutShouldHide */)
+	FOnFilterGameplayTagChildren OnFilterGameplayTagChildren;
+	
+	void NotifyGameplayTagDoubleClickedEditor(FString TagName);
+	
+	bool ShowGameplayTagAsHyperLinkEditor(FString TagName);
+
 
 #endif //WITH_EDITOR
 
@@ -419,6 +469,8 @@ class GAMEPLAYTAGS_API UGameplayTagsManager : public UObject
 		return bResult;
 	}
 
+	void PrintReplicationIndices();
+
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 	/** Mechanism for tracking what tags are frequently replicated */
 
@@ -434,6 +486,9 @@ private:
 
 	/** Initializes the manager */
 	static void InitializeManager();
+
+	/** finished loading/adding native tags */
+	static FSimpleMulticastDelegate& OnDoneAddingNativeTagsDelegate();
 
 	/** The Tag Manager singleton */
 	static UGameplayTagsManager* SingletonManager;
@@ -504,9 +559,12 @@ private:
 	bool bDoneAddingNativeTags;
 
 #if WITH_EDITOR
-	// This critical section is to handle and editor-only issue where tag requests come from another thread when async loading from a background thread in FGameplayTagContainer::Serialize.
+	// This critical section is to handle an editor-only issue where tag requests come from another thread when async loading from a background thread in FGameplayTagContainer::Serialize.
 	// This class is not generically threadsafe.
 	mutable FCriticalSection GameplayTagMapCritical;
+
+	// Transient editor-only tags to support quick-iteration PIE workflows
+	TSet<FName> TransientEditorTags;
 #endif
 
 	/** Sorted list of nodes, used for network replication */

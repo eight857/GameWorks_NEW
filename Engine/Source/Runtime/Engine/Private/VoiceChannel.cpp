@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	VoiceChannel.cpp: Unreal voice traffic implementation.
@@ -31,7 +31,7 @@ void UVoiceChannel::ReceivedBunch(FInBunch& Bunch)
 		while (!Bunch.AtEnd())
 		{
 			// Give the data to the local voice processing
-			TSharedPtr<FVoicePacket> VoicePacket = UOnlineEngineInterface::Get()->SerializeRemotePacket(Connection->Driver->World, Bunch);
+			TSharedPtr<FVoicePacket> VoicePacket = UOnlineEngineInterface::Get()->SerializeRemotePacket(Connection->Driver->World, Connection, Bunch);
 			if (VoicePacket.IsValid())
 			{
 				if (Connection->Driver->ServerConnection == NULL)
@@ -60,9 +60,10 @@ void UVoiceChannel::ReceivedBunch(FInBunch& Bunch)
  */
 void UVoiceChannel::Tick()
 {
+	const bool bHandshakeCompleted = Connection->PlayerController && Connection->PlayerController->MuteList.bHasVoiceHandshakeCompleted;
+
 	// If the handshaking hasn't completed throw away all unreliable voice data
-	if (Connection->PlayerController &&
-		Connection->PlayerController->MuteList.bHasVoiceHandshakeCompleted)
+	if (bHandshakeCompleted)
 	{
 		// Try to append each packet in turn
 		int32 Index;
@@ -104,12 +105,12 @@ void UVoiceChannel::Tick()
 			}
 		}
 
-		if(Index >= VoicePackets.Num())
+		if (Index >= VoicePackets.Num())
 		{
 			// all sent, can throw everything away
 			VoicePackets.Empty();
 		}
-		else if(Index > 0)
+		else if (Index > 0)
 		{
 			// didn't send everything, just remove all packets actually sent
 			VoicePackets.RemoveAt(0,Index);
@@ -118,18 +119,18 @@ void UVoiceChannel::Tick()
 
 	// make sure we keep any reliable messages to try again next time
 	// but ditch any unreliable messages we've not managed to send
-	int PacketLoss = 0;
-	for(int i=VoicePackets.Num() - 1; i >= 0; i--)
+	int32 PacketLoss = 0;
+	for (int32 i = VoicePackets.Num() - 1; i >= 0; i--)
 	{
-		if(!VoicePackets[i]->IsReliable())
+		if (!VoicePackets[i]->IsReliable())
 		{
 			VoicePackets.RemoveAt(i,1,false);
 			PacketLoss++;
 		}
 	}
-	if(PacketLoss > 0)
+	if (bHandshakeCompleted && PacketLoss > 0)
 	{
-		UE_LOG(LogNet, Warning, TEXT("Dropped %d packets due to congestion in the voicechannel"), PacketLoss);
+		UE_LOG(LogNet, Log, TEXT("Dropped %d packets due to congestion in the voicechannel"), PacketLoss);
 	}
 }
 

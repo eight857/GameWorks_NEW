@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -31,9 +31,9 @@ protected:
 	void CreateTransitionEventPropertyWidgets(IDetailCategoryBuilder& TransitionCategory, FString TransitionName);
 
 	FReply OnClickEditBlendGraph();
-	EVisibility GetBlendGraphButtonVisibility() const;
+	EVisibility GetBlendGraphButtonVisibility(bool bMultiSelect) const;
 
-	TSharedRef<SWidget> GetWidgetForInlineShareMenu(FString TypeName, FString SharedName, bool bIsCurrentlyShared, FOnClicked PromoteClick, FOnClicked DemoteClick, FOnGetContent GetContentMenu);
+	TSharedRef<SWidget> GetWidgetForInlineShareMenu(const TAttribute<FText>& InSharedNameText, const TAttribute<bool>& bInIsCurrentlyShared, FOnClicked PromoteClick, FOnClicked DemoteClick, FOnGetContent GetContentMenu);
 
 	FReply OnPromoteToSharedClick(bool RuleShare);
 	void PromoteToShared(const FText& NewTransitionName, ETextCommit::Type CommitInfo, bool bRuleShare);

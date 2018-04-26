@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Images/SSpinningImage.h"
 #include "Rendering/DrawElements.h"
@@ -15,7 +15,7 @@ void SSpinningImage::Construct(const FArguments& InArgs)
 }
 
 // Override SImage's OnPaint to draw rotated
-int32 SSpinningImage::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 SSpinningImage::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
 	const FSlateBrush* ImageBrush = Image.Get();
 
@@ -33,7 +33,6 @@ int32 SSpinningImage::OnPaint( const FPaintArgs& Args, const FGeometry& Allotted
 			LayerId,
 			AllottedGeometry.ToPaintGeometry(),
 			ImageBrush,
-			MyClippingRect,
 			DrawEffects,
 			Angle,
 			TOptional<FVector2D>(), // Will auto rotate about center

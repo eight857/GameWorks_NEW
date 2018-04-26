@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	EditorObject.cpp: Unreal Editor object manipulation code.
@@ -496,13 +496,6 @@ static const TCHAR* ImportProperties(
 				}
 				else // handle the non-template case (subobjects and non-template components)
 				{
-					// don't allow Actor-derived subobjects
-					if ( TemplateClass->IsChildOf(AActor::StaticClass()) )
-					{
-						Warn->Logf(ELogVerbosity::Error,TEXT("Cannot create subobjects from Actor-derived classes: %s"), *StrLine);
-						return NULL;
-					}
-
 					ComponentTemplate = FindObject<UObject>(SubobjectOuter, *TemplateName.ToString());
 					if (ComponentTemplate != NULL)
 					{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Stats/SlateStats.h"
 #include "HAL/FileManager.h"
@@ -85,7 +85,7 @@ void FSlateStatCycleCounter::EndFrame(double CurrentTime)
 	if (FSlateStatHierarchy::Get().GetStatEntries().Num() > 0)
 	{
 		// Place in the <UE4>\<GAME>\Saved\<InFolderName> folder
-		FString Filename = FString::Printf(TEXT("%sSlateHierachyStats-%s.csv"), *FPaths::GameSavedDir(), *FDateTime::Now().ToString());
+		FString Filename = FString::Printf(TEXT("%sSlateHierachyStats-%s.csv"), *FPaths::ProjectSavedDir(), *FDateTime::Now().ToString());
 		UE_LOG(LogSlate, Log, TEXT("Dumping Slate Hierarchy Stats to %s..."), *Filename);
 		FArchive* OutputStream = IFileManager::Get().CreateFileWriter(*Filename, EFileWrite::FILEWRITE_NoReplaceExisting);
 

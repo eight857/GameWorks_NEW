@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CollisionProfileNameCustomization.h"
 #include "Engine/CollisionProfile.h"
@@ -39,7 +39,7 @@ void FCollisionProfileNameCustomization::CustomizeChildren(TSharedRef<class IPro
 		SetPropertyWithName(*InitialSelectedName.Get());
 	}
 
-	IDetailGroup& CollisionGroup = StructBuilder.AddChildGroup(TEXT("Collision"), LOCTEXT("CollisionPresetName", "Collision Preset"));
+	IDetailGroup& CollisionGroup = StructBuilder.AddGroup(TEXT("Collision"), LOCTEXT("CollisionPresetName", "Collision Preset"));
 	CollisionGroup.HeaderRow()
 	.NameContent()
 	[

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSessionInterfaceNull.h"
 #include "Misc/Guid.h"
@@ -308,6 +308,7 @@ bool FOnlineSessionNull::IsSessionJoinable(const FNamedOnlineSession& Session) c
 	// LAN matches don't care about presence information.
 	return bIsAdvertised && bJoinableFromProgress && bAreSpacesAvailable;
 }
+
 
 uint32 FOnlineSessionNull::UpdateLANStatus()
 {
@@ -744,12 +745,12 @@ bool FOnlineSessionNull::GetResolvedConnectString(FName SessionName, FString& Co
 	if (Session != NULL)
 	{
 		TSharedPtr<FOnlineSessionInfoNull> SessionInfo = StaticCastSharedPtr<FOnlineSessionInfoNull>(Session->SessionInfo);
-		if (PortType == BeaconPort)
+		if (PortType == NAME_BeaconPort)
 		{
 			int32 BeaconListenPort = GetBeaconPortFromSessionSettings(Session->SessionSettings);
 			bSuccess = GetConnectStringFromSessionInfo(SessionInfo, ConnectInfo, BeaconListenPort);
 		}
-		else if (PortType == GamePort)
+		else if (PortType == NAME_GamePort)
 		{
 			bSuccess = GetConnectStringFromSessionInfo(SessionInfo, ConnectInfo);
 		}
@@ -776,13 +777,13 @@ bool FOnlineSessionNull::GetResolvedConnectString(const FOnlineSessionSearchResu
 	{
 		TSharedPtr<FOnlineSessionInfoNull> SessionInfo = StaticCastSharedPtr<FOnlineSessionInfoNull>(SearchResult.Session.SessionInfo);
 
-		if (PortType == BeaconPort)
+		if (PortType == NAME_BeaconPort)
 		{
 			int32 BeaconListenPort = GetBeaconPortFromSessionSettings(SearchResult.Session.SessionSettings);
 			bSuccess = GetConnectStringFromSessionInfo(SessionInfo, ConnectInfo, BeaconListenPort);
 
 		}
-		else if (PortType == GamePort)
+		else if (PortType == NAME_GamePort)
 		{
 			bSuccess = GetConnectStringFromSessionInfo(SessionInfo, ConnectInfo);
 		}
@@ -1040,7 +1041,7 @@ void FOnlineSessionNull::OnValidQueryPacketReceived(uint8* PacketData, int32 Pac
 	for (int32 SessionIndex = 0; SessionIndex < Sessions.Num(); SessionIndex++)
 	{
 		FNamedOnlineSession* Session = &Sessions[SessionIndex];
-							
+
 		// Don't respond to query if the session is not a joinable LAN match.
 		if (Session && IsSessionJoinable(*Session))
 		{

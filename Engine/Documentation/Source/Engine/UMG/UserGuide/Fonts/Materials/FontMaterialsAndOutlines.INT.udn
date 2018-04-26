@@ -7,9 +7,13 @@ Related: Engine/UMG/UserGuide/Fonts
 Related: Engine/UMG/UserGuide/Styling
 Version: 4.14
 Parent: Engine/UMG/UserGuide/Fonts
-order: 1
+type: Overview
+Skilllevel:Beginner
+order: 2
 tags: User Interface
 tags:UMG UI Designer
+tags: Fonts
+Topic-image:FontMaterials_Topic.png
 
 [TOC]
 
@@ -51,7 +55,8 @@ Materials used as font materials must be in the **User Interface** domain.
 
 ![](UI.png)
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:BaseColorGraph]
 [REGION:lightbox]
 [![](BaseColorMatGraph.png)(w:400)](BaseColorMatGraph.png)
@@ -63,7 +68,8 @@ Materials used as font materials must be in the **User Interface** domain.
 [![](VertexColorMatGraph.png)(w:400)](VertexColorMatGraph.png)
 [/REGION]
 [/EXCERPT]
--->
+
+[/COMMENT]
 ## Font Outlines
 
 You can specify a different **Outline Color** as well as a different Material to use for a font outline. 

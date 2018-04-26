@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -9,8 +9,8 @@
 
 class UAbilitySystemComponent;
 
-UCLASS(MinimalAPI)
-class UAbilityTask_WaitGameplayTag : public UAbilityTask
+UCLASS()
+class GAMEPLAYABILITIES_API UAbilityTask_WaitGameplayTag : public UAbilityTask
 {
 	GENERATED_UCLASS_BODY()
 

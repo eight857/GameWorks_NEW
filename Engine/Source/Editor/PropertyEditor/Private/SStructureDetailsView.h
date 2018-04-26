@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -14,7 +14,6 @@ class AActor;
 class FDetailLayoutBuilderImpl;
 class IDetailRootObjectCustomization;
 
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
 class SStructureDetailsView : public SDetailsViewBase, public IStructureDetailsView
 {
 
@@ -54,9 +53,9 @@ public:
 
 	// IStructureDetailsView interface
 
-	virtual IDetailsView& GetDetailsView() override
+	virtual IDetailsView* GetDetailsView() override
 	{
-		return *this;
+		return this;
 	}
 
 	virtual TSharedPtr<SWidget> GetWidget() override
@@ -72,29 +71,8 @@ public:
 	}
 
 public:
-
-	// IDetailsView interface
-
-	/** This method is deprecated.  When it is removed, also remove the PRAGMA_DISABLE_DEPRECATION_WARNINGS/PRAGMA_ENABLE_DEPRECATION_WARNINGS at the top and bottom of this file */
-	virtual const UClass* GetBaseClass() const override
-	{
-		return NULL;
-	}
-
-	/** This method is deprecated.  When it is removed, also remove the PRAGMA_DISABLE_DEPRECATION_WARNINGS/PRAGMA_ENABLE_DEPRECATION_WARNINGS at the top and bottom of this file */
-	virtual UClass* GetBaseClass() override
-	{
-		return NULL;
-	}
-
-	virtual bool IsCategoryHiddenByClass(const TSharedPtr<FComplexPropertyNode>& InRootNode, FName CategoryName) const override
-	{
-		return false;
-	}
-
 	virtual void ForceRefresh() override;
 	virtual void MoveScrollOffset(int32 DeltaOffset) override {}
-	virtual void AddExternalRootPropertyNode(TSharedRef<FPropertyNode> ExternalRootNode) override;
 	virtual void ClearSearch() override;
 public:
 
@@ -109,8 +87,6 @@ public:
 	}
 
 	virtual void SetOnObjectArrayChanged(FOnObjectArrayChanged OnObjectArrayChangedDelegate) override {}
-	virtual void RegisterInstancedCustomPropertyLayout(UStruct* Class, FOnGetDetailCustomizationInstance DetailLayoutDelegate) override;
-	virtual void UnregisterInstancedCustomPropertyLayout(UStruct* Class) override;
 	virtual void SetObjects(const TArray<UObject*>& InObjects, bool bForceRefresh = false, bool bOverrideLock = false) override {}
 	virtual void SetObjects(const TArray< TWeakObjectPtr< UObject > >& InObjects, bool bForceRefresh = false, bool bOverrideLock = false) override {}
 	virtual void SetObject(UObject* InObject, bool bForceRefresh = false) override{}
@@ -135,4 +111,3 @@ private:
 	FRootPropertyNodeList RootNodes;
 	FText CustomName;
 };
-PRAGMA_ENABLE_DEPRECATION_WARNINGS

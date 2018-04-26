@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/App.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Runtime/Launch/Resources/Version.h"
+#include "HAL/LowLevelMemTracker.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogApp, Log, All);
 
@@ -25,6 +26,7 @@ double FApp::CurrentTime = 0.0;
 double FApp::LastTime = 0.0;
 double FApp::DeltaTime = 1 / 30.0;
 double FApp::IdleTime = 0.0;
+double FApp::IdleTimeOvershoot = 0.0;
 float FApp::VolumeMultiplier = 1.0f;
 float FApp::UnfocusedVolumeMultiplier = 0.0f;
 bool FApp::bUseVRFocus = false;
@@ -225,7 +227,11 @@ bool FApp::IsUnattended() // @todo clang: Workaround for missing symbol export
 #if HAVE_RUNTIME_THREADING_SWITCHES
 bool FApp::ShouldUseThreadingForPerformance()
 {
-	static bool OnlyOneThread = FParse::Param(FCommandLine::Get(), TEXT("ONETHREAD")) || IsRunningDedicatedServer() || !FPlatformProcess::SupportsMultithreading() || FPlatformMisc::NumberOfCores() < 2;
+	static bool OnlyOneThread = 
+		FParse::Param(FCommandLine::Get(), TEXT("ONETHREAD")) ||
+		IsRunningDedicatedServer() ||
+		!FPlatformProcess::SupportsMultithreading() ||
+		FPlatformMisc::NumberOfCores() < 2;
 	return !OnlyOneThread;
 }
 #endif // HAVE_RUNTIME_THREADING_SWITCHES

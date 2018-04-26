@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Profiles/LauncherProfileManager.h"
 #include "HAL/FileManager.h"
@@ -239,8 +239,6 @@ ILauncherProfilePtr FLauncherProfileManager::LoadProfile( FArchive& Archive )
 
 ILauncherProfilePtr FLauncherProfileManager::LoadJSONProfile(FString ProfileFile)
 {
-	FLauncherProfile* Profile = new FLauncherProfile(AsShared());
-
 	FString FileContents;
 	if (!FFileHelper::LoadFileToString(FileContents, *ProfileFile))
 	{
@@ -253,6 +251,8 @@ ILauncherProfilePtr FLauncherProfileManager::LoadJSONProfile(FString ProfileFile
 	{
 		return nullptr;
 	}
+
+	FLauncherProfile* Profile = new FLauncherProfile(AsShared());
 
 	if (Profile->Load(*(Object.Get())))
 	{

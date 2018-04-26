@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -49,6 +49,9 @@ public:
 	UPROPERTY()
 	TSet<int32> TestSet;
 
+	UPROPERTY()
+	UObject* const ConstPointerProperty;
+
 	UFUNCTION()
 	void CodeGenTestForEnumClasses(ECppEnum Val);
 
@@ -85,6 +88,11 @@ public:
 	{
 		return FString("Hello").Len();
 	}
+#endif
+
+#if WITH_EDITOR
+	UFUNCTION(BlueprintCallable, Category = "MyEditorOnlyFunction")
+	void MyEditorOnlyFunction();
 #endif
 
 	UFUNCTION(BlueprintNativeEvent, Category="Game")

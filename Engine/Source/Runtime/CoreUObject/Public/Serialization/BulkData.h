@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/SortedMap.h"
 #include "UObject/WeakObjectPtr.h"
 #include "Async/Future.h"
 
@@ -305,7 +306,7 @@ public:
 	 *
 	 * @return Filename where this bulkdata can be loaded from
 	 **/
-	const FString GetFilename() const { return Filename; }
+	const FString& GetFilename() const { return Filename; }
 
 	/*-----------------------------------------------------------------------------
 		Data retrieval and manipulation.
@@ -353,6 +354,12 @@ public:
 	 * Clears/ removes the bulk data and resets element count to 0.
 	 */
 	void RemoveBulkData();
+
+	/**
+	 * Load the bulk data using a file reader. Works even when no archive is attached to the bulk data..
+  	 * @return Whether the operation succeeded.
+	 */
+	bool LoadBulkDataWithFileReader();
 
 	/**
 	 * Forces the bulk data to be resident in memory and detaches the archive.
@@ -460,6 +467,9 @@ private:
 	 * @param Dest Memory to serialize data into
 	 */
 	void LoadDataIntoMemory( void* Dest );
+
+	/** Create the async load task */
+	void AsyncLoadBulkData();
 
 	/** Starts serializing bulk data asynchronously */
 	void StartSerializingBulkData(FArchive& Ar, UObject* Owner, int32 Idx, bool bPayloadInline);
@@ -609,7 +619,7 @@ struct COREUOBJECT_API FFloatBulkData : public FUntypedBulkData
 
 class FFormatContainer
 {
-	TMap<FName, FByteBulkData*> Formats;
+	TSortedMap<FName, FByteBulkData*> Formats;
 	uint32 Alignment;
 public:
 	~FFormatContainer()
@@ -632,12 +642,12 @@ public:
 	}
 	void FlushData()
 	{
-		for (TMap<FName, FByteBulkData*>:: TIterator It(Formats); It; ++It)
+		for (const TPair<FName, FByteBulkData*>& Format : Formats)
 		{
-			delete It.Value();
+			delete Format.Value;
 		}
 		Formats.Empty();
 	}
-	COREUOBJECT_API void Serialize(FArchive& Ar, UObject* Owner, const TArray<FName>* FormatsToSave = NULL, bool bSingleUse = true, uint32 InAlignment = DEFAULT_ALIGNMENT);
+	COREUOBJECT_API void Serialize(FArchive& Ar, UObject* Owner, const TArray<FName>* FormatsToSave = nullptr, bool bSingleUse = true, uint32 InAlignment = DEFAULT_ALIGNMENT);
 };
 

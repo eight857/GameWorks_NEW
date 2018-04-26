@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EpicSynth1.h"
 #include "SynthesisModule.h"
@@ -408,8 +408,8 @@ namespace Audio
 
 	bool FEpicSynth1Voice::CreatePatch(const FPatchId PatchId, const ESynth1PatchSource PatchSource, const TArray<FSynth1PatchCable>& PatchCables, const bool bEnableByDefault)
 	{
-		FModulationMatrix* ModMatrix = &ParentSynth->ModMatrix;
-		if (DynamicPatches.Contains(PatchId.Id) || !ModMatrix)
+		FModulationMatrix& ModMatrix = ParentSynth->ModMatrix;
+		if (DynamicPatches.Contains(PatchId.Id))
 		{
 			return false;
 		}
@@ -431,7 +431,7 @@ namespace Audio
 		}
 		DynamicPatches.Add(PatchId.Id, NewPatch);
 
-		ModMatrix->AddPatch(VoiceId, NewPatch.Get());
+		ModMatrix.AddPatch(VoiceId, NewPatch.Get());
 
 		return true;
 	}
@@ -482,13 +482,16 @@ namespace Audio
 		{
 			Amp.Reset();
 
-			// Only apply the gain due to the velocity of the note if it's not already playing
 			Amp.SetVelocity(InVelocity);
 
 			for (int32 i = 0; i < NumOscillators; ++i)
 			{
 				Oscil[i].Start();
 			}
+		}
+		else if (GainEnv.IsRetrigger())
+		{
+			Amp.SetVelocity(InVelocity);
 		}
 
 		// Start the LFOs

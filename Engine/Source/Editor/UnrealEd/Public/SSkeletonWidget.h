@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -398,7 +398,7 @@ private:
 	void OnShowOnlyCompatibleSkeletonsCheckChanged(ECheckBoxState InNewRadioState);
 
 	/** should filter asset */
-	bool OnShouldFilterAsset(const class FAssetData& AssetData);
+	bool OnShouldFilterAsset(const struct FAssetData& AssetData);
 
 	/**
 	 * return true if it can apply 

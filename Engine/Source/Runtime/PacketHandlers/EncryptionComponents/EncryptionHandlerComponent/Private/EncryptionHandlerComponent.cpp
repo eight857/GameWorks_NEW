@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EncryptionHandlerComponent.h"
 #include "BlockEncryptionHandlerComponent.h"
@@ -7,7 +7,9 @@
 IMPLEMENT_MODULE(FEncryptionHandlerComponentModuleInterface, EncryptionHandlerComponent);
 
 // ENCRYPTION PROCESSOR
-EncryptionHandlerComponent::EncryptionHandlerComponent(HandlerComponent* InSymmetricHandlerComponent, HandlerComponent* InAsymmetricHandlerComponent)
+EncryptionHandlerComponent::EncryptionHandlerComponent(HandlerComponent* InSymmetricHandlerComponent,
+														HandlerComponent* InAsymmetricHandlerComponent)
+	: State(EEncryptionHandler::State::UnInitialized)
 {
 	if (InSymmetricHandlerComponent != nullptr)
 	{

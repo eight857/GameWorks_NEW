@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreTypes.h"
@@ -6,6 +6,7 @@
 #include "UObject/NameTypes.h"
 #include "Logging/LogMacros.h"
 #include "HAL/PlatformTLS.h"
+#include "Templates/Atomic.h"
 
 class Error;
 class FConfigCacheIni;
@@ -89,14 +90,13 @@ extern CORE_API bool GCompilingBlueprint;
 /** True if we're reconstructing blueprint instances. Should never be true on cooked builds */
 extern CORE_API bool GIsReconstructingBlueprintInstances;
 
-/** Force blueprints to not compile on load */
-extern CORE_API bool GForceDisableBlueprintCompileOnLoad;
-
 /** True if actors and objects are being re-instanced. */
 extern CORE_API bool GIsReinstancing;
 
 /** Helper function to flush resource streaming. */
 extern CORE_API void(*GFlushStreamingFunc)(void);
+
+extern CORE_API bool GIsRunningUnattendedScript;
 
 #if WITH_ENGINE
 extern CORE_API bool PRIVATE_GIsRunningCommandlet;
@@ -181,7 +181,7 @@ extern CORE_API bool GEdSelectionLock;
 extern CORE_API bool GIsClient;
 extern CORE_API bool GIsServer;
 extern CORE_API bool GIsCriticalError;
-extern CORE_API bool GIsRunning;
+extern CORE_API TSAN_ATOMIC(bool) GIsRunning;
 extern CORE_API bool GIsDuplicatingClassForReinstancing;
 
 /**
@@ -244,7 +244,7 @@ extern CORE_API FString GGameUserSettingsIni;
 extern CORE_API float GNearClippingPlane;
 
 extern CORE_API bool GExitPurge;
-extern CORE_API TCHAR GInternalGameName[64];
+extern CORE_API TCHAR GInternalProjectName[64];
 extern CORE_API const TCHAR* GForeignEngineDir;
 
 /** Exec handler for game debugging tool, allowing commands like "editactor" */
@@ -261,6 +261,12 @@ extern CORE_API void (*ResumeAsyncLoading)();
 
 /** Returns true if async loading is using the async loading thread */
 extern CORE_API bool(*IsAsyncLoadingMultithreaded)();
+
+/** Suspends texture updates caused by completed async IOs. */
+extern CORE_API void (*SuspendTextureStreamingRenderTasks)();
+
+/** Resume texture updates caused by completed async IOs. */
+extern CORE_API void (*ResumeTextureStreamingRenderTasks)();
 
 /** Whether the editor is currently loading a package or not */
 extern CORE_API bool GIsEditorLoadingPackage;
@@ -298,7 +304,7 @@ extern CORE_API bool GPakCache_AcceptPrecacheRequests;
 extern CORE_API bool GIsRetrievingVTablePtr;
 
 /** Steadily increasing frame counter. */
-extern CORE_API uint64 GFrameCounter;
+extern CORE_API TSAN_ATOMIC(uint64) GFrameCounter;
 
 /** GFrameCounter the last time GC was run. */
 extern CORE_API uint64 GLastGCFrame;
@@ -341,9 +347,6 @@ extern CORE_API uint32 GAudioThreadId;
 /** Has GGameThreadId been set yet? */
 extern CORE_API bool GIsGameThreadIdInitialized;
 
-/** Whether to emit begin/ end draw events. */
-extern CORE_API bool GEmitDrawEvents;
-
 /** Whether we want the rendering thread to be suspended, used e.g. for tracing. */
 extern CORE_API bool GShouldSuspendRenderingThread;
 
@@ -355,6 +358,11 @@ extern CORE_API ELogTimes::Type GPrintLogTimes;
 
 /** How to print the category in log output. */
 extern CORE_API bool GPrintLogCategory;
+
+#if USE_HITCH_DETECTION
+/** Used by the lightweight stats and FGameThreadHitchHeartBeat to print a stat stack for hitches in shipping builds. */
+extern CORE_API bool GHitchDetected;
+#endif
 
 /** Whether stats should emit named events for e.g. PIX. */
 extern CORE_API int32 GCycleStatsShouldEmitNamedEvents;
@@ -370,9 +378,6 @@ extern CORE_API FName GLongCoreUObjectPackageName;
 
 /** Whether or not a unit test is currently being run. */
 extern CORE_API bool GIsAutomationTesting;
-
-/** Constrain bandwidth if wanted. Value is in MByte/ sec. */
-extern CORE_API float GAsyncIOBandwidthLimit;
 
 /** Whether or not messages are being pumped outside of main loop */
 extern CORE_API bool GPumpingMessagesOutsideOfMainLoop;
@@ -427,13 +432,51 @@ extern CORE_API bool (*IsInAsyncLoadingThread)();
 extern CORE_API FRunnableThread* GRenderingThread;
 
 /** Whether the rendering thread is suspended (not even processing the tickables) */
-extern CORE_API int32 GIsRenderingThreadSuspended;
+extern CORE_API TAtomic<int32> GIsRenderingThreadSuspended;
 
 /** @return True if called from the RHI thread, or if called from ANY thread during single threaded rendering */
 extern CORE_API bool IsInRHIThread();
 
 /** Thread used for RHI */
-extern CORE_API FRunnableThread* GRHIThread;
+extern CORE_API FRunnableThread* GRHIThread_InternalUseOnly;
+
+/** Thread ID of the the thread we are executing RHI commands on. This could either be a constant dedicated thread or changing every task if we run the rhi thread on tasks. */
+extern CORE_API uint32 GRHIThreadId;
+
+/** Boot loading timers */
+#if !UE_BUILD_SHIPPING
+CORE_API void NotifyLoadingStateChanged(bool bState, const TCHAR *Message);
+struct FScopedLoadingState
+{
+	FString Message;
+	FScopedLoadingState(const TCHAR* InMessage)
+		: Message(InMessage)
+	{
+		NotifyLoadingStateChanged(true, *Message);
+	}
+	~FScopedLoadingState()
+	{
+		NotifyLoadingStateChanged(false, *Message);
+	}
+};
+#else
+FORCEINLINE void NotifyLoadingStateChanged(bool bState, const TCHAR *Message)
+{
+}
+struct FScopedLoadingState
+{
+	FORCEINLINE FScopedLoadingState(const TCHAR* InMessage)
+	{
+	}
+};
+#endif
+
+
+bool CORE_API GetEmitDrawEvents();
+
+void CORE_API SetEmitDrawEvents(bool EmitDrawEvents);
+
+void CORE_API EnableEmitDrawEventsOnlyOnCommandlist();
 
 /** Array to help visualize weak pointers in the debugger */
 class FFixedUObjectArray;

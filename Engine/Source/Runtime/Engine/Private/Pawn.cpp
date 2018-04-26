@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Pawn.cpp: APawn AI implementation
@@ -27,6 +27,7 @@
 #include "Interfaces/NetworkPredictionInterface.h"
 #include "GameFramework/PlayerState.h"
 #include "Components/PawnNoiseEmitterComponent.h"
+#include "GameFramework/GameNetworkManager.h"
 
 DEFINE_LOG_CATEGORY(LogDamage);
 DEFINE_LOG_CATEGORY_STATIC(LogPawn, Warning, All);
@@ -41,7 +42,7 @@ APawn::APawn(const FObjectInitializer& ObjectInitializer)
 
 	if (HasAnyFlags(RF_ClassDefaultObject) && GetClass() == APawn::StaticClass())
 	{
-		AIControllerClass = LoadClass<AController>(NULL, *((UEngine*)(UEngine::StaticClass()->GetDefaultObject()))->AIControllerClassName.ToString(), NULL, LOAD_None, NULL);
+		AIControllerClass = LoadClass<AController>(nullptr, *((UEngine*)(UEngine::StaticClass()->GetDefaultObject()))->AIControllerClassName.ToString(), nullptr, LOAD_None, nullptr);
 	}
 	else
 	{
@@ -105,17 +106,19 @@ void APawn::PostInitializeComponents()
 		GetWorld()->AddPawn( this );
 
 		// Automatically add Controller to AI Pawns if we are allowed to.
-		if (AutoPossessPlayer == EAutoReceiveInput::Disabled)
+		if (AutoPossessPlayer == EAutoReceiveInput::Disabled
+			&& AutoPossessAI != EAutoPossessAI::Disabled && Controller == nullptr && GetNetMode() != NM_Client
+#if WITH_EDITOR
+			&& (GIsEditor == false || GetWorld()->IsGameWorld())
+#endif // WITH_EDITOR
+			)
 		{
-			if (AutoPossessAI != EAutoPossessAI::Disabled && Controller == NULL && GetNetMode() != NM_Client)
+			const bool bPlacedInWorld = (GetWorld()->bStartup);
+			if ((AutoPossessAI == EAutoPossessAI::PlacedInWorldOrSpawned) ||
+				(AutoPossessAI == EAutoPossessAI::PlacedInWorld && bPlacedInWorld) ||
+				(AutoPossessAI == EAutoPossessAI::Spawned && !bPlacedInWorld))
 			{
-				const bool bPlacedInWorld = (GetWorld()->bStartup);
-				if ((AutoPossessAI == EAutoPossessAI::PlacedInWorldOrSpawned) ||
-					(AutoPossessAI == EAutoPossessAI::PlacedInWorld && bPlacedInWorld) ||
-					(AutoPossessAI == EAutoPossessAI::Spawned && !bPlacedInWorld))
-				{
-					SpawnDefaultController();
-				}
+				SpawnDefaultController();
 			}
 		}
 
@@ -148,7 +151,7 @@ void APawn::UpdateNavAgent()
 {
 	UPawnMovementComponent* MovementComponent = GetMovementComponent();
 	//// Update Nav Agent props with collision component's setup if it's not set yet
-	if (RootComponent != NULL && MovementComponent != NULL && MovementComponent->ShouldUpdateNavAgentWithOwnersCollision())
+	if (RootComponent != nullptr && MovementComponent != nullptr && MovementComponent->ShouldUpdateNavAgentWithOwnersCollision())
 	{
 		RootComponent->UpdateBounds();
 		MovementComponent->UpdateNavAgent(*this);
@@ -173,12 +176,12 @@ void APawn::PawnStartFire(uint8 FireModeNum) {}
 
 AActor* APawn::GetMovementBaseActor(const APawn* Pawn)
 {
-	if (Pawn != NULL && Pawn->GetMovementBase())
+	if (Pawn != nullptr && Pawn->GetMovementBase())
 	{
 		return Pawn->GetMovementBase()->GetOwner();
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 bool APawn::CanBeBaseForCharacter(class APawn* APawn) const
@@ -274,7 +277,7 @@ FVector APawn::GetPawnViewLocation() const
 
 FRotator APawn::GetViewRotation() const
 {
-	if (Controller != NULL)
+	if (Controller != nullptr)
 	{
 		return Controller->GetControlRotation();
 	}
@@ -296,11 +299,11 @@ FRotator APawn::GetViewRotation() const
 
 void APawn::SpawnDefaultController()
 {
-	if ( Controller != NULL || GetNetMode() == NM_Client)
+	if ( Controller != nullptr || GetNetMode() == NM_Client)
 	{
 		return;
 	}
-	if ( AIControllerClass != NULL )
+	if ( AIControllerClass != nullptr )
 	{
 		FActorSpawnParameters SpawnInfo;
 		SpawnInfo.Instigator = Instigator;
@@ -308,7 +311,7 @@ void APawn::SpawnDefaultController()
 		SpawnInfo.OverrideLevel = GetLevel();
 		SpawnInfo.ObjectFlags |= RF_Transient;	// We never want to save AI controllers into a map
 		AController* NewController = GetWorld()->SpawnActor<AController>(AIControllerClass, GetActorLocation(), GetActorRotation(), SpawnInfo);
-		if (NewController != NULL)
+		if (NewController != nullptr)
 		{
 			// if successful will result in setting this->Controller 
 			// as part of possession mechanics
@@ -361,7 +364,7 @@ void APawn::PawnClientRestart()
 		}
 
 		// Set up player input component, if there isn't one already.
-		if (InputComponent == NULL)
+		if (InputComponent == nullptr)
 		{
 			InputComponent = CreatePlayerInputComponent();
 			if (InputComponent)
@@ -433,7 +436,7 @@ float APawn::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AControll
 bool APawn::IsControlled() const
 {
 	APlayerController* const PC = Cast<APlayerController>(Controller);
-	return(PC != NULL);
+	return(PC != nullptr);
 }
 
 FRotator APawn::GetControlRotation() const
@@ -443,9 +446,9 @@ FRotator APawn::GetControlRotation() const
 
 void APawn::OnRep_Controller()
 {
-	if ( (Controller != NULL) && (Controller->GetPawn() == NULL) )
+	if ( (Controller != nullptr) && (Controller->GetPawn() == nullptr) )
 	{
-		// This ensures that APawn::OnRep_Pawn is called. Since we cant ensure replication order of APawn::Controller and AController::Pawn,
+		// This ensures that AController::OnRep_Pawn is called. Since we cant ensure replication order of APawn::Controller and AController::Pawn,
 		// if APawn::Controller is repped first, it will set AController::Pawn locally. When AController::Pawn is repped, the rep value will not
 		// be different from the just set local value, and OnRep_Pawn will not be called. This can cause problems if OnRep_Pawn does anything important.
 		//
@@ -454,7 +457,7 @@ void APawn::OnRep_Controller()
 		Controller->SetPawnFromRep(this); 
 
 		APlayerController* const PC = Cast<APlayerController>(Controller);
-		if ( (PC != NULL) && PC->bAutoManageActiveCameraTarget && (PC->PlayerCameraManager->ViewTarget.Target == Controller) )
+		if ( (PC != nullptr) && PC->bAutoManageActiveCameraTarget && (PC->PlayerCameraManager->ViewTarget.Target == Controller) )
 		{
 			PC->AutoManageActiveCameraTarget(this);
 		}
@@ -470,7 +473,7 @@ void APawn::PossessedBy(AController* NewController)
 	Controller = NewController;
 	ForceNetUpdate();
 
-	if (Controller->PlayerState != NULL)
+	if (Controller->PlayerState != nullptr)
 	{
 		PlayerState = Controller->PlayerState;
 	}
@@ -501,9 +504,9 @@ void APawn::UnPossessed()
 
 	ForceNetUpdate();
 
-	PlayerState = NULL;
-	SetOwner(NULL);
-	Controller = NULL;
+	PlayerState = nullptr;
+	SetOwner(nullptr);
+	Controller = nullptr;
 
 	// Unregister input component if we created one
 	DestroyPlayerInputComponent();
@@ -540,7 +543,7 @@ class UPlayer* APawn::GetNetOwningPlayer()
 		if (Controller)
 		{
 			APlayerController* PC = Cast<APlayerController>(Controller);
-			return PC ? PC->Player : NULL;
+			return PC ? PC->Player : nullptr;
 		}
 	}
 
@@ -559,7 +562,7 @@ void APawn::DestroyPlayerInputComponent()
 	if (InputComponent)
 	{
 		InputComponent->DestroyComponent();
-		InputComponent = NULL;
+		InputComponent = nullptr;
 	}
 }
 
@@ -596,17 +599,10 @@ FVector APawn::GetLastMovementInputVector() const
 }
 
 // TODO: deprecated, remove
-FVector APawn::GetMovementInputVector() const
-{
-	return GetPendingMovementInputVector();
-}
-
-// TODO: deprecated, remove
 FVector APawn::K2_GetMovementInputVector() const
 {
 	return GetPendingMovementInputVector();
 }
-
 
 FVector APawn::ConsumeMovementInputVector()
 {
@@ -703,7 +699,7 @@ void APawn::RecalculateBaseEyeHeight()
 
 void APawn::Reset()
 {
-	if ( (Controller == NULL) || (Controller->PlayerState != NULL) )
+	if ( (Controller == nullptr) || (Controller->PlayerState != nullptr) )
 	{
 		DetachFromControllerPendingDestroy();
 		Destroy();
@@ -716,7 +712,7 @@ void APawn::Reset()
 
 FString APawn::GetHumanReadableName() const
 {
-	return PlayerState ? PlayerState->PlayerName : Super::GetHumanReadableName();
+	return PlayerState ? PlayerState->GetPlayerName() : Super::GetHumanReadableName();
 }
 
 
@@ -726,7 +722,7 @@ void APawn::DisplayDebug(class UCanvas* Canvas, const FDebugDisplayInfo& DebugDi
 // 	{
 // 		UPrimitiveComponent* const MyComp = It.Key().Get();
 // 		UPrimitiveComponent* const OtherComp = It.Value().Get();
-// 		AActor* OtherActor = OtherComp ? OtherComp->GetOwner() : NULL;
+// 		AActor* OtherActor = OtherComp ? OtherComp->GetOwner() : nullptr;
 // 
 // 		YL = HUD->Canvas->DrawText(FString::Printf(TEXT("TOUCHING my %s to %s's %s"), *GetNameSafe(MyComp), *GetNameSafe(OtherActor), *GetNameSafe(OtherComp)));
 // 		YPos += YL;
@@ -734,7 +730,7 @@ void APawn::DisplayDebug(class UCanvas* Canvas, const FDebugDisplayInfo& DebugDi
 // 	}
 
 	FDisplayDebugManager& DisplayDebugManager = Canvas->DisplayDebugManager;
-	if ( PlayerState == NULL )
+	if ( PlayerState == nullptr )
 	{
 		DisplayDebugManager.DrawString(TEXT("NO PlayerState"));
 	}
@@ -753,7 +749,7 @@ void APawn::DisplayDebug(class UCanvas* Canvas, const FDebugDisplayInfo& DebugDi
 	}
 
 	// Controller
-	if ( Controller == NULL )
+	if ( Controller == nullptr )
 	{
 		DisplayDebugManager.SetDrawColor(FColor(255, 0, 0));
 		DisplayDebugManager.DrawString(TEXT("NO Controller"));
@@ -778,7 +774,7 @@ FRotator APawn::GetBaseAimRotation() const
 	// that is by default Controller.Rotation for AI, and camera (crosshair) rotation for human players.
 	FVector POVLoc;
 	FRotator POVRot;
-	if( Controller != NULL && !InFreeCam() )
+	if( Controller != nullptr && !InFreeCam() )
 	{
 		Controller->GetPlayerViewPoint(POVLoc, POVRot);
 		return POVRot;
@@ -802,7 +798,7 @@ bool APawn::InFreeCam() const
 	const APlayerController* PC = Cast<const APlayerController>(Controller);
 	static FName NAME_FreeCam =  FName(TEXT("FreeCam"));
 	static FName NAME_FreeCamDefault = FName(TEXT("FreeCam_Default"));
-	return (PC != NULL && PC->PlayerCameraManager != NULL && (PC->PlayerCameraManager->CameraStyle == NAME_FreeCam || PC->PlayerCameraManager->CameraStyle == NAME_FreeCamDefault) );
+	return (PC != nullptr && PC->PlayerCameraManager != nullptr && (PC->PlayerCameraManager->CameraStyle == NAME_FreeCam || PC->PlayerCameraManager->CameraStyle == NAME_FreeCamDefault) );
 }
 
 void APawn::OutsideWorldBounds()
@@ -811,7 +807,7 @@ void APawn::OutsideWorldBounds()
 	{
 		bProcessingOutsideWorldBounds = true;
 		// AI pawns on the server just destroy
-		if (Role == ROLE_Authority && Cast<APlayerController>(Controller) == NULL)
+		if (Role == ROLE_Authority && Cast<APlayerController>(Controller) == nullptr)
 		{
 			Destroy();
 		}
@@ -823,14 +819,6 @@ void APawn::OutsideWorldBounds()
 			SetLifeSpan( FMath::Clamp(InitialLifeSpan, 0.1f, 1.0f) );
 		}
 		bProcessingOutsideWorldBounds = false;
-	}
-}
-
-void APawn::ClientSetRotation( FRotator NewRotation )
-{
-	if ( Controller != NULL )
-	{
-		Controller->ClientSetRotation(NewRotation);
 	}
 }
 
@@ -869,24 +857,24 @@ void APawn::FaceRotation(FRotator NewControlRotation, float DeltaTime)
 
 void APawn::DetachFromControllerPendingDestroy()
 {
-	if ( Controller != NULL && Controller->GetPawn() == this )
+	if ( Controller != nullptr && Controller->GetPawn() == this )
 	{
 		Controller->PawnPendingDestroy(this);
-		if (Controller != NULL)
+		if (Controller != nullptr)
 		{
 			Controller->UnPossess();
-			Controller = NULL;
+			Controller = nullptr;
 		}
 	}
 }
 
 AController* APawn::GetDamageInstigator(AController* InstigatedBy, const UDamageType& DamageType) const
 {
-	if ( (InstigatedBy != NULL) && (InstigatedBy != Controller) )
+	if ( (InstigatedBy != nullptr) && (InstigatedBy != Controller) )
 	{
 		return InstigatedBy;
 	}
-	else if ( DamageType.bCausedByWorld && (LastHitBy != NULL) )
+	else if ( DamageType.bCausedByWorld && (LastHitBy != nullptr) )
 	{
 		return LastHitBy;
 	}
@@ -921,7 +909,7 @@ void APawn::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChanged
 
 void APawn::EnableInput(class APlayerController* PlayerController)
 {
-	if (PlayerController == Controller || PlayerController == NULL)
+	if (PlayerController == Controller || PlayerController == nullptr)
 	{
 		bInputEnabled = true;
 	}
@@ -933,7 +921,7 @@ void APawn::EnableInput(class APlayerController* PlayerController)
 
 void APawn::DisableInput(class APlayerController* PlayerController)
 {
-	if (PlayerController == Controller || PlayerController == NULL)
+	if (PlayerController == Controller || PlayerController == nullptr)
 	{
 		bInputEnabled = false;
 	}
@@ -1017,7 +1005,7 @@ void APawn::PostNetReceiveLocationAndRotation()
 bool APawn::IsBasedOnActor(const AActor* Other) const
 {
 	UPrimitiveComponent * MovementBase = GetMovementBase();
-	AActor* MovementBaseActor = MovementBase ? MovementBase->GetOwner() : NULL;
+	AActor* MovementBaseActor = MovementBase ? MovementBase->GetOwner() : nullptr;
 
 	if (MovementBaseActor && MovementBaseActor == Other)
 	{
@@ -1043,14 +1031,15 @@ bool APawn::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget,
 	else
 	{
 		UPrimitiveComponent* MovementBase = GetMovementBase();
-		AActor* BaseActor = MovementBase ? MovementBase->GetOwner() : NULL;
+		AActor* BaseActor = MovementBase ? MovementBase->GetOwner() : nullptr;
 		if ( MovementBase && BaseActor && GetMovementComponent() && ((Cast<const USkeletalMeshComponent>(MovementBase)) || (BaseActor == GetOwner())) )
 		{
 			return BaseActor->IsNetRelevantFor(RealViewer, ViewTarget, SrcLocation);
 		}
 	}
 
-	return ((SrcLocation - GetActorLocation()).SizeSquared() < NetCullDistanceSquared);
+	return !GetDefault<AGameNetworkManager>()->bUseDistanceBasedRelevancy ||
+			IsWithinNetRelevancyDistance(SrcLocation);
 }
 
 void APawn::GetLifetimeReplicatedProps( TArray< FLifetimeProperty > & OutLifetimeProps ) const
@@ -1093,7 +1082,7 @@ void APawn::MoveIgnoreActorRemove(AActor* ActorToIgnore)
 
 void APawn::PawnMakeNoise(float Loudness, FVector NoiseLocation, bool bUseNoiseMakerLocation, AActor* NoiseMaker)
 {
-	if (NoiseMaker == NULL)
+	if (NoiseMaker == nullptr)
 	{
 		NoiseMaker = this;
 	}

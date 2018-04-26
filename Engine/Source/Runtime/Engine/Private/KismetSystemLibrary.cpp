@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Kismet/KismetSystemLibrary.h"
 #include "HAL/IConsoleManager.h"
@@ -6,6 +6,8 @@
 #include "Misc/CommandLine.h"
 #include "Misc/App.h"
 #include "Misc/EngineVersion.h"
+#include "Misc/Paths.h"
+#include "Misc/RuntimeErrors.h"
 #include "UObject/GCObject.h"
 #include "EngineGlobals.h"
 #include "Components/ActorComponent.h"
@@ -31,6 +33,8 @@
 #include "Net/OnlineEngineInterface.h"
 #include "UserActivityTracking.h"
 #include "KismetTraceUtils.h"
+#include "Engine/AssetManager.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 //////////////////////////////////////////////////////////////////////////
 // UKismetSystemLibrary
@@ -85,7 +89,22 @@ FString UKismetSystemLibrary::GetEngineVersion()
 
 FString UKismetSystemLibrary::GetGameName()
 {
-	return FString(FApp::GetGameName());
+	return FString(FApp::GetProjectName());
+}
+
+FString UKismetSystemLibrary::GetProjectDirectory()
+{
+	return FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+}
+
+FString UKismetSystemLibrary::GetProjectContentDirectory()
+{
+	return FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir());
+}
+
+FString UKismetSystemLibrary::GetProjectSavedDirectory()
+{
+	return FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir());
 }
 
 FString UKismetSystemLibrary::GetGameBundleId()
@@ -111,19 +130,19 @@ bool UKismetSystemLibrary::DoesImplementInterface(UObject* TestObject, TSubclass
 
 float UKismetSystemLibrary::GetGameTimeInSeconds(UObject* WorldContextObject)
 {
-	UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	return World ? World->GetTimeSeconds() : 0.f;
 }
 
 bool UKismetSystemLibrary::IsServer(UObject* WorldContextObject)
 {
-	UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	return World ? (World->GetNetMode() != NM_Client) : false;
 }
 
 bool UKismetSystemLibrary::IsDedicatedServer(UObject* WorldContextObject)
 {
-	UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	if (World)
 	{
 		return (World->GetNetMode() == NM_DedicatedServer);
@@ -133,7 +152,7 @@ bool UKismetSystemLibrary::IsDedicatedServer(UObject* WorldContextObject)
 
 bool UKismetSystemLibrary::IsStandalone(UObject* WorldContextObject)
 {
-	UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	return World ? (World->GetNetMode() == NM_Standalone) : false;
 }
 
@@ -163,7 +182,7 @@ void UKismetSystemLibrary::PrintString(UObject* WorldContextObject, const FStrin
 {
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST) // Do not Print in Shipping or Test
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, false);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull);
 	FString Prefix;
 	if (World)
 	{
@@ -266,6 +285,41 @@ void UKismetSystemLibrary::ExecuteConsoleCommand(UObject* WorldContextObject, co
 	}
 }
 
+float UKismetSystemLibrary::GetConsoleVariableFloatValue(UObject* WorldContextObject, const FString& VariableName)
+{
+	float Value = 0.0f;
+
+	TConsoleVariableData<float>* Variable = IConsoleManager::Get().FindTConsoleVariableDataFloat(*VariableName);
+	if (Variable)
+	{
+		Value = Variable->GetValueOnGameThread();
+	}
+	else
+	{
+		UE_LOG(LogBlueprintUserMessages, Warning, TEXT("Failed to find console variable '%s'."), *VariableName);
+	}
+
+	return Value;
+}
+
+int32 UKismetSystemLibrary::GetConsoleVariableIntValue(UObject* WorldContextObject, const FString& VariableName)
+{
+	int32 Value = 0;
+
+	TConsoleVariableData<int32>* Variable = IConsoleManager::Get().FindTConsoleVariableDataInt(*VariableName);
+	if (Variable)
+	{
+		Value = Variable->GetValueOnGameThread();
+	}
+	else
+	{
+		UE_LOG(LogBlueprintUserMessages, Warning, TEXT("Failed to find console variable '%s'."), *VariableName);
+	}
+
+	return Value;
+}
+
+
 void UKismetSystemLibrary::QuitGame(UObject* WorldContextObject, class APlayerController* SpecificPlayer, TEnumAsByte<EQuitPreference::Type> QuitPreference)
 {
 	APlayerController* TargetPC = SpecificPlayer ? SpecificPlayer : UGameplayStatics::GetPlayerController(WorldContextObject, 0);
@@ -320,7 +374,7 @@ FTimerHandle UKismetSystemLibrary::K2_SetTimerDelegate(FTimerDynamicDelegate Del
 	FTimerHandle Handle;
 	if (Delegate.IsBound())
 	{
-		const UWorld* const World = GEngine->GetWorldFromContextObject(Delegate.GetUObject());
+		const UWorld* const World = GEngine->GetWorldFromContextObject(Delegate.GetUObject(), EGetWorldErrorMode::LogAndReturnNull);
 		if(World)
 		{
 			FTimerManager& TimerManager = World->GetTimerManager();
@@ -350,7 +404,7 @@ void UKismetSystemLibrary::K2_ClearTimerDelegate(FTimerDynamicDelegate Delegate)
 {
 	if (Delegate.IsBound())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject());
+		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject(), EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			FTimerManager& TimerManager = World->GetTimerManager();
@@ -370,7 +424,7 @@ void UKismetSystemLibrary::K2_ClearTimerHandle(UObject* WorldContextObject, FTim
 {
 	if (Handle.IsValid())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			World->GetTimerManager().ClearTimer(Handle);
@@ -382,7 +436,7 @@ void UKismetSystemLibrary::K2_ClearAndInvalidateTimerHandle(UObject* WorldContex
 {
 	if (Handle.IsValid())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
+		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			World->GetTimerManager().ClearTimer(Handle);
@@ -402,7 +456,7 @@ void UKismetSystemLibrary::K2_PauseTimerDelegate(FTimerDynamicDelegate Delegate)
 {
 	if (Delegate.IsBound())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject());
+		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject(), EGetWorldErrorMode::LogAndReturnNull);
 		if(World)
 		{
 			FTimerManager& TimerManager = World->GetTimerManager();
@@ -422,7 +476,7 @@ void UKismetSystemLibrary::K2_PauseTimerHandle(UObject* WorldContextObject, FTim
 {
 	if (Handle.IsValid())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			World->GetTimerManager().PauseTimer(Handle);
@@ -442,7 +496,7 @@ void UKismetSystemLibrary::K2_UnPauseTimerDelegate(FTimerDynamicDelegate Delegat
 {
 	if (Delegate.IsBound())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject());
+		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject(), EGetWorldErrorMode::LogAndReturnNull);
 		if(World)
 		{
 			FTimerManager& TimerManager = World->GetTimerManager();
@@ -462,7 +516,7 @@ void UKismetSystemLibrary::K2_UnPauseTimerHandle(UObject* WorldContextObject, FT
 {
 	if (Handle.IsValid())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			World->GetTimerManager().UnPauseTimer(Handle);
@@ -483,7 +537,7 @@ bool UKismetSystemLibrary::K2_IsTimerActiveDelegate(FTimerDynamicDelegate Delega
 	bool bIsActive = false;
 	if (Delegate.IsBound())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject());
+		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject(), EGetWorldErrorMode::LogAndReturnNull);
 		if(World)
 		{
 			FTimerManager& TimerManager = World->GetTimerManager();
@@ -506,7 +560,7 @@ bool UKismetSystemLibrary::K2_IsTimerActiveHandle(UObject* WorldContextObject, F
 	bool bIsActive = false;
 	if (Handle.IsValid())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			bIsActive = World->GetTimerManager().IsTimerActive(Handle);
@@ -529,7 +583,7 @@ bool UKismetSystemLibrary::K2_IsTimerPausedDelegate(FTimerDynamicDelegate Delega
 	bool bIsPaused = false;
 	if (Delegate.IsBound())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject());
+		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject(), EGetWorldErrorMode::LogAndReturnNull);
 		if(World)
 		{
 			FTimerManager& TimerManager = World->GetTimerManager();
@@ -551,7 +605,7 @@ bool UKismetSystemLibrary::K2_IsTimerPausedHandle(UObject* WorldContextObject, F
 	bool bIsPaused = false;
 	if (Handle.IsValid())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			bIsPaused = World->GetTimerManager().IsTimerPaused(Handle);
@@ -574,7 +628,7 @@ bool UKismetSystemLibrary::K2_TimerExistsDelegate(FTimerDynamicDelegate Delegate
 	bool bTimerExists = false;
 	if (Delegate.IsBound())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject());
+		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject(), EGetWorldErrorMode::LogAndReturnNull);
 		if(World)
 		{
 			FTimerManager& TimerManager = World->GetTimerManager();
@@ -596,7 +650,7 @@ bool UKismetSystemLibrary::K2_TimerExistsHandle(UObject* WorldContextObject, FTi
 	bool bTimerExists = false;
 	if (Handle.IsValid())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			bTimerExists = World->GetTimerManager().TimerExists(Handle);
@@ -619,7 +673,7 @@ float UKismetSystemLibrary::K2_GetTimerElapsedTimeDelegate(FTimerDynamicDelegate
 	float ElapsedTime = 0.f;
 	if (Delegate.IsBound())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject());
+		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject(), EGetWorldErrorMode::LogAndReturnNull);
 		if(World)
 		{
 			FTimerManager& TimerManager = World->GetTimerManager();
@@ -641,7 +695,7 @@ float UKismetSystemLibrary::K2_GetTimerElapsedTimeHandle(UObject* WorldContextOb
 	float ElapsedTime = 0.f;
 	if (Handle.IsValid())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			ElapsedTime = World->GetTimerManager().GetTimerElapsed(Handle);
@@ -664,7 +718,7 @@ float UKismetSystemLibrary::K2_GetTimerRemainingTimeDelegate(FTimerDynamicDelega
 	float RemainingTime = 0.f;
 	if (Delegate.IsBound())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject());
+		UWorld* World = GEngine->GetWorldFromContextObject(Delegate.GetUObject(), EGetWorldErrorMode::LogAndReturnNull);
 		if(World)
 		{
 			FTimerManager& TimerManager = World->GetTimerManager();
@@ -686,7 +740,7 @@ float UKismetSystemLibrary::K2_GetTimerRemainingTimeHandle(UObject* WorldContext
 	float RemainingTime = 0.f;
 	if (Handle.IsValid())
 	{
-		UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+		UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			RemainingTime = World->GetTimerManager().GetTimerRemaining(Handle);
@@ -809,34 +863,102 @@ void UKismetSystemLibrary::SetNamePropertyByName(UObject* Object, FName Property
 	}
 }
 
-void UKismetSystemLibrary::SetAssetPropertyByName(UObject* Object, FName PropertyName, const TAssetPtr<UObject>& Value)
+void UKismetSystemLibrary::SetSoftObjectPropertyByName(UObject* Object, FName PropertyName, const TSoftObjectPtr<UObject>& Value)
 {
 	if (Object != NULL)
 	{
-		UAssetObjectProperty* ObjectProp = FindField<UAssetObjectProperty>(Object->GetClass(), PropertyName);
-		const FAssetPtr* AssetPtr = (const FAssetPtr*)(&Value);
-		ObjectProp->SetPropertyValue_InContainer(Object, *AssetPtr);
+		USoftObjectProperty* ObjectProp = FindField<USoftObjectProperty>(Object->GetClass(), PropertyName);
+		const FSoftObjectPtr* SoftObjectPtr = (const FSoftObjectPtr*)(&Value);
+		ObjectProp->SetPropertyValue_InContainer(Object, *SoftObjectPtr);
 	}
 }
 
-void UKismetSystemLibrary::SetAssetClassPropertyByName(UObject* Object, FName PropertyName, const TAssetSubclassOf<UObject>& Value)
+void UKismetSystemLibrary::SetSoftClassPropertyByName(UObject* Object, FName PropertyName, const TSoftClassPtr<UObject>& Value)
 {
 	if (Object != NULL)
 	{
-		UAssetClassProperty* ObjectProp = FindField<UAssetClassProperty>(Object->GetClass(), PropertyName);
-		const FAssetPtr* AssetPtr = (const FAssetPtr*)(&Value);
-		ObjectProp->SetPropertyValue_InContainer(Object, *AssetPtr);
+		USoftClassProperty* ObjectProp = FindField<USoftClassProperty>(Object->GetClass(), PropertyName);
+		const FSoftObjectPtr* SoftObjectPtr = (const FSoftObjectPtr*)(&Value);
+		ObjectProp->SetPropertyValue_InContainer(Object, *SoftObjectPtr);
 	}
 }
 
-UObject* UKismetSystemLibrary::Conv_AssetToObject(const TAssetPtr<UObject>& Asset)
+FSoftObjectPath UKismetSystemLibrary::MakeSoftObjectPath(const FString& PathString)
 {
-	return ((const FAssetPtr*)&Asset)->Get();
+	FSoftObjectPath SoftObjectPath(PathString);
+	if (!PathString.IsEmpty() && !SoftObjectPath.IsValid())
+	{
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("PathString"), FText::AsCultureInvariant(PathString));
+		LogRuntimeError(FText::Format(NSLOCTEXT("KismetSystemLibrary", "PathStringInvalid", "Object path {PathString} not valid for MakeSoftObjectPath."), Args));
+	}
+
+	return SoftObjectPath;
 }
 
-TSubclassOf<UObject> UKismetSystemLibrary::Conv_AssetClassToClass(const TAssetSubclassOf<UObject>& AssetClass)
+void UKismetSystemLibrary::BreakSoftObjectPath(FSoftObjectPath InSoftObjectPath, FString& PathString)
 {
-	return Cast<UClass>(((const FAssetPtr*)&AssetClass)->Get());
+	PathString = InSoftObjectPath.ToString();
+}
+
+bool UKismetSystemLibrary::IsValidSoftObjectReference(const TSoftObjectPtr<UObject>& SoftObjectReference)
+{
+	return !SoftObjectReference.IsNull();
+}
+
+FString UKismetSystemLibrary::Conv_SoftObjectReferenceToString(const TSoftObjectPtr<UObject>& SoftObjectReference)
+{
+	return SoftObjectReference.ToString();
+}
+
+bool UKismetSystemLibrary::EqualEqual_SoftObjectReference(const TSoftObjectPtr<UObject>& A, const TSoftObjectPtr<UObject>& B)
+{
+	return A == B;
+}
+
+bool UKismetSystemLibrary::NotEqual_SoftObjectReference(const TSoftObjectPtr<UObject>& A, const TSoftObjectPtr<UObject>& B)
+{
+	return A != B;
+}
+
+bool UKismetSystemLibrary::IsValidSoftClassReference(const TSoftClassPtr<UObject>& SoftClassReference)
+{
+	return !SoftClassReference.IsNull();
+}
+
+FString UKismetSystemLibrary::Conv_SoftClassReferenceToString(const TSoftClassPtr<UObject>& SoftClassReference)
+{
+	return SoftClassReference.ToString();
+}
+
+bool UKismetSystemLibrary::EqualEqual_SoftClassReference(const TSoftClassPtr<UObject>& A, const TSoftClassPtr<UObject>& B)
+{
+	return A == B;
+}
+
+bool UKismetSystemLibrary::NotEqual_SoftClassReference(const TSoftClassPtr<UObject>& A, const TSoftClassPtr<UObject>& B)
+{
+	return A != B;
+}
+
+UObject* UKismetSystemLibrary::Conv_SoftObjectReferenceToObject(const TSoftObjectPtr<UObject>& SoftObject)
+{
+	return SoftObject.Get();
+}
+
+TSubclassOf<UObject> UKismetSystemLibrary::Conv_SoftClassReferenceToClass(const TSoftClassPtr<UObject>& SoftClass)
+{
+	return SoftClass.Get();
+}
+
+TSoftObjectPtr<UObject> UKismetSystemLibrary::Conv_ObjectToSoftObjectReference(UObject *Object)
+{
+	return TSoftObjectPtr<UObject>(Object);
+}
+
+TSoftClassPtr<UObject> UKismetSystemLibrary::Conv_ClassToSoftClassReference(const TSubclassOf<UObject>& Class)
+{
+	return TSoftClassPtr<UObject>(*Class);
 }
 
 void UKismetSystemLibrary::SetTextPropertyByName(UObject* Object, FName PropertyName, const FText& Value)
@@ -962,8 +1084,7 @@ bool UKismetSystemLibrary::SphereOverlapComponents(UObject* WorldContextObject, 
 {
 	OutComponents.Empty();
 
-	static FName SphereOverlapComponentsName(TEXT("SphereOverlapComponents"));
-	FCollisionQueryParams Params(SphereOverlapComponentsName, false);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(SphereOverlapComponents), false);
 	Params.AddIgnoredActors(ActorsToIgnore);
 	Params.bTraceAsyncScene = true;
 	TArray<FOverlapResult> Overlaps;
@@ -976,7 +1097,7 @@ bool UKismetSystemLibrary::SphereOverlapComponents(UObject* WorldContextObject, 
 	}
 
 
-	UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	if(World != nullptr)
 	{
 		World->OverlapMultiByObjectType(Overlaps, SpherePos, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(SphereRadius), Params);
@@ -1017,8 +1138,7 @@ bool UKismetSystemLibrary::BoxOverlapComponents(UObject* WorldContextObject, con
 {
 	OutComponents.Empty();
 
-	static FName BoxOverlapComponentsName(TEXT("BoxOverlapComponents"));
-	FCollisionQueryParams Params(BoxOverlapComponentsName, false);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BoxOverlapComponents), false);
 	Params.bTraceAsyncScene = true;
 	Params.AddIgnoredActors(ActorsToIgnore);
 
@@ -1031,7 +1151,7 @@ bool UKismetSystemLibrary::BoxOverlapComponents(UObject* WorldContextObject, con
 		ObjectParams.AddObjectTypesToQuery(Channel);
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	if (World != nullptr)
 	{
 		World->OverlapMultiByObjectType(Overlaps, BoxPos, FQuat::Identity, ObjectParams, FCollisionShape::MakeBox(BoxExtent), Params);
@@ -1071,8 +1191,7 @@ bool UKismetSystemLibrary::CapsuleOverlapComponents(UObject* WorldContextObject,
 {
 	OutComponents.Empty();
 
-	static FName CapsuleOverlapComponentsName(TEXT("CapsuleOverlapComponents"));
-	FCollisionQueryParams Params(CapsuleOverlapComponentsName, false);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(CapsuleOverlapComponents), false);
 	Params.bTraceAsyncScene = true;
 	Params.AddIgnoredActors(ActorsToIgnore);
 
@@ -1085,7 +1204,7 @@ bool UKismetSystemLibrary::CapsuleOverlapComponents(UObject* WorldContextObject,
 		ObjectParams.AddObjectTypesToQuery(Channel);
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );	
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	if (World != nullptr)
 	{
 		World->OverlapMultiByObjectType(Overlaps, CapsulePos, FQuat::Identity, ObjectParams, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params);
@@ -1127,8 +1246,7 @@ bool UKismetSystemLibrary::ComponentOverlapComponents(UPrimitiveComponent* Compo
 
 	if(Component != nullptr)
 	{
-		static FName ComponentOverlapComponentsName(TEXT("ComponentOverlapComponents"));
-		FComponentQueryParams Params(ComponentOverlapComponentsName);	
+		FComponentQueryParams Params(SCENE_QUERY_STAT(ComponentOverlapComponents));
 		Params.bTraceAsyncScene = true;
 		Params.AddIgnoredActors(ActorsToIgnore);
 
@@ -1168,8 +1286,8 @@ bool UKismetSystemLibrary::LineTraceSingle(UObject* WorldContextObject, const FV
 	static const FName LineTraceSingleName(TEXT("LineTraceSingle"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(LineTraceSingleName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->LineTraceSingleByChannel(OutHit, Start, End, CollisionChannel, Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->LineTraceSingleByChannel(OutHit, Start, End, CollisionChannel, Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugLineTraceSingle(World, Start, End, DrawDebugType, bHit, OutHit, TraceColor, TraceHitColor, DrawTime);
@@ -1185,8 +1303,8 @@ bool UKismetSystemLibrary::LineTraceMulti(UObject* WorldContextObject, const FVe
 	static const FName LineTraceMultiName(TEXT("LineTraceMulti"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(LineTraceMultiName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->LineTraceMultiByChannel(OutHits, Start, End, CollisionChannel, Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->LineTraceMultiByChannel(OutHits, Start, End, CollisionChannel, Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugLineTraceMulti(World, Start, End, DrawDebugType, bHit, OutHits, TraceColor, TraceHitColor, DrawTime);
@@ -1200,7 +1318,7 @@ bool UKismetSystemLibrary::BoxTraceSingle(UObject* WorldContextObject, const FVe
 	static const FName BoxTraceSingleName(TEXT("BoxTraceSingle"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(BoxTraceSingleName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	bool const bHit = World ? World->SweepSingleByChannel(OutHit, Start, End, Orientation.Quaternion(), UEngineTypes::ConvertToCollisionChannel(TraceChannel), FCollisionShape::MakeBox(HalfSize), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
@@ -1215,7 +1333,7 @@ bool UKismetSystemLibrary::BoxTraceMulti(UObject* WorldContextObject, const FVec
 	static const FName BoxTraceMultiName(TEXT("BoxTraceMulti"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(BoxTraceMultiName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	bool const bHit = World ? World->SweepMultiByChannel(OutHits, Start, End, Orientation.Quaternion(), UEngineTypes::ConvertToCollisionChannel(TraceChannel), FCollisionShape::MakeBox(HalfSize), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
@@ -1232,8 +1350,8 @@ bool UKismetSystemLibrary::SphereTraceSingle(UObject* WorldContextObject, const 
 	static const FName SphereTraceSingleName(TEXT("SphereTraceSingle"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(SphereTraceSingleName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, CollisionChannel, FCollisionShape::MakeSphere(Radius), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, CollisionChannel, FCollisionShape::MakeSphere(Radius), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugSphereTraceSingle(World, Start, End, Radius, DrawDebugType, bHit, OutHit, TraceColor, TraceHitColor, DrawTime);
@@ -1249,8 +1367,8 @@ bool UKismetSystemLibrary::SphereTraceMulti(UObject* WorldContextObject, const F
 	static const FName SphereTraceMultiName(TEXT("SphereTraceMulti"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(SphereTraceMultiName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepMultiByChannel(OutHits, Start, End, FQuat::Identity, CollisionChannel, FCollisionShape::MakeSphere(Radius), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepMultiByChannel(OutHits, Start, End, FQuat::Identity, CollisionChannel, FCollisionShape::MakeSphere(Radius), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugSphereTraceMulti(World, Start, End, Radius, DrawDebugType, bHit, OutHits, TraceColor, TraceHitColor, DrawTime);
@@ -1266,8 +1384,8 @@ bool UKismetSystemLibrary::CapsuleTraceSingle(UObject* WorldContextObject, const
 	static const FName CapsuleTraceSingleName(TEXT("CapsuleTraceSingle"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(CapsuleTraceSingleName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, CollisionChannel, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, CollisionChannel, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugCapsuleTraceSingle(World, Start, End, Radius, HalfHeight, DrawDebugType, bHit, OutHit, TraceColor, TraceHitColor, DrawTime);
@@ -1284,8 +1402,8 @@ bool UKismetSystemLibrary::CapsuleTraceMulti(UObject* WorldContextObject, const 
 	static const FName CapsuleTraceMultiName(TEXT("CapsuleTraceMulti"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(CapsuleTraceMultiName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepMultiByChannel(OutHits, Start, End, FQuat::Identity, CollisionChannel, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepMultiByChannel(OutHits, Start, End, FQuat::Identity, CollisionChannel, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugCapsuleTraceMulti(World, Start, End, Radius, HalfHeight, DrawDebugType, bHit, OutHits, TraceColor, TraceHitColor, DrawTime);
@@ -1307,8 +1425,8 @@ bool UKismetSystemLibrary::LineTraceSingleForObjects(UObject* WorldContextObject
 		return false;
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->LineTraceSingleByObjectType(OutHit, Start, End, ObjectParams, Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->LineTraceSingleByObjectType(OutHit, Start, End, ObjectParams, Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugLineTraceSingle(World, Start, End, DrawDebugType, bHit, OutHit, TraceColor, TraceHitColor, DrawTime);
@@ -1329,8 +1447,8 @@ bool UKismetSystemLibrary::LineTraceMultiForObjects(UObject* WorldContextObject,
 		return false;
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->LineTraceMultiByObjectType(OutHits, Start, End, ObjectParams, Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->LineTraceMultiByObjectType(OutHits, Start, End, ObjectParams, Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugLineTraceMulti(World, Start, End, DrawDebugType, bHit, OutHits, TraceColor, TraceHitColor, DrawTime);
@@ -1351,8 +1469,8 @@ bool UKismetSystemLibrary::SphereTraceSingleForObjects(UObject* WorldContextObje
 		return false;
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepSingleByObjectType(OutHit, Start, End, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(Radius), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepSingleByObjectType(OutHit, Start, End, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(Radius), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugSphereTraceSingle(World, Start, End, Radius, DrawDebugType, bHit, OutHit, TraceColor, TraceHitColor, DrawTime);
@@ -1373,8 +1491,8 @@ bool UKismetSystemLibrary::SphereTraceMultiForObjects(UObject* WorldContextObjec
 		return false;
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepMultiByObjectType(OutHits, Start, End, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(Radius), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepMultiByObjectType(OutHits, Start, End, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(Radius), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugSphereTraceMulti(World, Start, End, Radius, DrawDebugType, bHit, OutHits, TraceColor, TraceHitColor, DrawTime);
@@ -1398,7 +1516,7 @@ bool UKismetSystemLibrary::BoxTraceSingleForObjects(UObject* WorldContextObject,
 		return false;
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	bool const bHit = World ? World->SweepSingleByObjectType(OutHit, Start, End, Orientation.Quaternion(), ObjectParams, FCollisionShape::MakeBox(HalfSize), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
@@ -1420,7 +1538,7 @@ bool UKismetSystemLibrary::BoxTraceMultiForObjects(UObject* WorldContextObject, 
 		return false;
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	bool const bHit = World ? World->SweepMultiByObjectType(OutHits, Start, End, Orientation.Quaternion(), ObjectParams, FCollisionShape::MakeBox(HalfSize), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
@@ -1442,8 +1560,8 @@ bool UKismetSystemLibrary::CapsuleTraceSingleForObjects(UObject* WorldContextObj
 		return false;
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepSingleByObjectType(OutHit, Start, End, FQuat::Identity, ObjectParams, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepSingleByObjectType(OutHit, Start, End, FQuat::Identity, ObjectParams, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugCapsuleTraceSingle(World, Start, End, Radius, HalfHeight, DrawDebugType, bHit, OutHit, TraceColor, TraceHitColor, DrawTime);
@@ -1464,8 +1582,8 @@ bool UKismetSystemLibrary::CapsuleTraceMultiForObjects(UObject* WorldContextObje
 		return false;
 	}
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepMultiByObjectType(OutHits, Start, End, FQuat::Identity, ObjectParams, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepMultiByObjectType(OutHits, Start, End, FQuat::Identity, ObjectParams, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugCapsuleTraceMulti(World, Start, End, Radius, HalfHeight, DrawDebugType, bHit, OutHits, TraceColor, TraceHitColor, DrawTime);
@@ -1480,8 +1598,8 @@ bool UKismetSystemLibrary::LineTraceSingleByProfile(UObject* WorldContextObject,
 	static const FName LineTraceSingleName(TEXT("LineTraceSingleByProfile"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(LineTraceSingleName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->LineTraceSingleByProfile(OutHit, Start, End, ProfileName, Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->LineTraceSingleByProfile(OutHit, Start, End, ProfileName, Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugLineTraceSingle(World, Start, End, DrawDebugType, bHit, OutHit, TraceColor, TraceHitColor, DrawTime);
@@ -1495,8 +1613,8 @@ bool UKismetSystemLibrary::LineTraceMultiByProfile(UObject* WorldContextObject, 
 	static const FName LineTraceMultiName(TEXT("LineTraceMultiByProfile"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(LineTraceMultiName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->LineTraceMultiByProfile(OutHits, Start, End, ProfileName, Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->LineTraceMultiByProfile(OutHits, Start, End, ProfileName, Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugLineTraceMulti(World, Start, End, DrawDebugType, bHit, OutHits, TraceColor, TraceHitColor, DrawTime);
@@ -1510,7 +1628,8 @@ bool UKismetSystemLibrary::BoxTraceSingleByProfile(UObject* WorldContextObject, 
 	static const FName BoxTraceSingleName(TEXT("BoxTraceSingleByProfile"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(BoxTraceSingleName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+
 	bool const bHit = World ? World->SweepSingleByProfile(OutHit, Start, End, Orientation.Quaternion(), ProfileName, FCollisionShape::MakeBox(HalfSize), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
@@ -1525,7 +1644,7 @@ bool UKismetSystemLibrary::BoxTraceMultiByProfile(UObject* WorldContextObject, c
 	static const FName BoxTraceMultiName(TEXT("BoxTraceMultiByProfile"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(BoxTraceMultiName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	bool const bHit = World ? World->SweepMultiByProfile(OutHits, Start, End, Orientation.Quaternion(), ProfileName, FCollisionShape::MakeBox(HalfSize), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
@@ -1540,8 +1659,8 @@ bool UKismetSystemLibrary::SphereTraceSingleByProfile(UObject* WorldContextObjec
 	static const FName SphereTraceSingleName(TEXT("SphereTraceSingleByProfile"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(SphereTraceSingleName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepSingleByProfile(OutHit, Start, End, FQuat::Identity, ProfileName, FCollisionShape::MakeSphere(Radius), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepSingleByProfile(OutHit, Start, End, FQuat::Identity, ProfileName, FCollisionShape::MakeSphere(Radius), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugSphereTraceSingle(World, Start, End, Radius, DrawDebugType, bHit, OutHit, TraceColor, TraceHitColor, DrawTime);
@@ -1555,8 +1674,8 @@ bool UKismetSystemLibrary::SphereTraceMultiByProfile(UObject* WorldContextObject
 	static const FName SphereTraceMultiName(TEXT("SphereTraceMultiByProfile"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(SphereTraceMultiName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepMultiByProfile(OutHits, Start, End, FQuat::Identity, ProfileName, FCollisionShape::MakeSphere(Radius), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepMultiByProfile(OutHits, Start, End, FQuat::Identity, ProfileName, FCollisionShape::MakeSphere(Radius), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugSphereTraceMulti(World, Start, End, Radius, DrawDebugType, bHit, OutHits, TraceColor, TraceHitColor, DrawTime);
@@ -1570,8 +1689,8 @@ bool UKismetSystemLibrary::CapsuleTraceSingleByProfile(UObject* WorldContextObje
 	static const FName CapsuleTraceSingleName(TEXT("CapsuleTraceSingleByProfile"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(CapsuleTraceSingleName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepSingleByProfile(OutHit, Start, End, FQuat::Identity, ProfileName, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepSingleByProfile(OutHit, Start, End, FQuat::Identity, ProfileName, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugCapsuleTraceSingle(World, Start, End, Radius, HalfHeight, DrawDebugType, bHit, OutHit, TraceColor, TraceHitColor, DrawTime);
@@ -1586,8 +1705,8 @@ bool UKismetSystemLibrary::CapsuleTraceMultiByProfile(UObject* WorldContextObjec
 	static const FName CapsuleTraceMultiName(TEXT("CapsuleTraceMultiByProfile"));
 	FCollisionQueryParams Params = ConfigureCollisionParams(CapsuleTraceMultiName, bTraceComplex, ActorsToIgnore, bIgnoreSelf, WorldContextObject);
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	bool const bHit = World->SweepMultiByProfile(OutHits, Start, End, FQuat::Identity, ProfileName, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	bool const bHit = World ? World->SweepMultiByProfile(OutHits, Start, End, FQuat::Identity, ProfileName, FCollisionShape::MakeCapsule(Radius, HalfHeight), Params) : false;
 
 #if ENABLE_DRAW_DEBUG
 	DrawDebugCapsuleTraceMulti(World, Start, End, Radius, HalfHeight, DrawDebugType, bHit, OutHits, TraceColor, TraceHitColor, DrawTime);
@@ -1601,8 +1720,7 @@ bool UKismetSystemLibrary::CapsuleTraceMultiByProfile(UObject* WorldContextObjec
 void UKismetSystemLibrary::DrawDebugLine(UObject* WorldContextObject, FVector const LineStart, FVector const LineEnd, FLinearColor Color, float LifeTime, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if(World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugLine(World, LineStart, LineEnd, Color.ToFColor(true), false, LifeTime, SDPG_World, Thickness);
 	}
@@ -1613,7 +1731,10 @@ void UKismetSystemLibrary::DrawDebugLine(UObject* WorldContextObject, FVector co
 void UKismetSystemLibrary::DrawDebugCircle(UObject* WorldContextObject,FVector Center, float Radius, int32 NumSegments, FLinearColor LineColor, float LifeTime, float Thickness, FVector YAxis, FVector ZAxis, bool bDrawAxis)
 { 
 #if ENABLE_DRAW_DEBUG
-	::DrawDebugCircle(GEngine->GetWorldFromContextObject(WorldContextObject),Center, Radius, NumSegments, LineColor.ToFColor(true), false, LifeTime, SDPG_World, Thickness, YAxis, ZAxis, bDrawAxis);
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
+	{
+		::DrawDebugCircle(World, Center, Radius, NumSegments, LineColor.ToFColor(true), false, LifeTime, SDPG_World, Thickness, YAxis, ZAxis, bDrawAxis);
+	}
 #endif
 }
 
@@ -1621,8 +1742,7 @@ void UKismetSystemLibrary::DrawDebugCircle(UObject* WorldContextObject,FVector C
 void UKismetSystemLibrary::DrawDebugPoint(UObject* WorldContextObject, FVector const Position, float Size, FLinearColor PointColor, float LifeTime)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugPoint(World, Position, Size, PointColor.ToFColor(true), false, LifeTime, SDPG_World);
 	}
@@ -1633,7 +1753,7 @@ void UKismetSystemLibrary::DrawDebugPoint(UObject* WorldContextObject, FVector c
 void UKismetSystemLibrary::DrawDebugArrow(UObject* WorldContextObject, FVector const LineStart, FVector const LineEnd, float ArrowSize, FLinearColor Color, float LifeTime, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	if (World != nullptr)
 	{
 		::DrawDebugDirectionalArrow(World, LineStart, LineEnd, ArrowSize, Color.ToFColor(true), false, LifeTime, SDPG_World, Thickness);
@@ -1645,8 +1765,7 @@ void UKismetSystemLibrary::DrawDebugArrow(UObject* WorldContextObject, FVector c
 void UKismetSystemLibrary::DrawDebugBox(UObject* WorldContextObject, FVector const Center, FVector Extent, FLinearColor Color, const FRotator Rotation, float LifeTime, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if(World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		if (Rotation == FRotator::ZeroRotator)
 		{
@@ -1664,8 +1783,7 @@ void UKismetSystemLibrary::DrawDebugBox(UObject* WorldContextObject, FVector con
 void UKismetSystemLibrary::DrawDebugCoordinateSystem(UObject* WorldContextObject, FVector const AxisLoc, FRotator const AxisRot, float Scale, float LifeTime, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugCoordinateSystem(World, AxisLoc, AxisRot, Scale, false, LifeTime, SDPG_World, Thickness);
 	}
@@ -1676,8 +1794,7 @@ void UKismetSystemLibrary::DrawDebugCoordinateSystem(UObject* WorldContextObject
 void UKismetSystemLibrary::DrawDebugSphere(UObject* WorldContextObject, FVector const Center, float Radius, int32 Segments, FLinearColor Color, float LifeTime, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugSphere(World, Center, Radius, Segments, Color.ToFColor(true), false, LifeTime, SDPG_World, Thickness);
 	}
@@ -1688,8 +1805,7 @@ void UKismetSystemLibrary::DrawDebugSphere(UObject* WorldContextObject, FVector 
 void UKismetSystemLibrary::DrawDebugCylinder(UObject* WorldContextObject, FVector const Start, FVector const End, float Radius, int32 Segments, FLinearColor Color, float LifeTime, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugCylinder(World, Start, End, Radius, Segments, Color.ToFColor(true), false, LifeTime, SDPG_World, Thickness);
 	}
@@ -1700,8 +1816,7 @@ void UKismetSystemLibrary::DrawDebugCylinder(UObject* WorldContextObject, FVecto
 void UKismetSystemLibrary::DrawDebugCone(UObject* WorldContextObject, FVector const Origin, FVector const Direction, float Length, float AngleWidth, float AngleHeight, int32 NumSides, FLinearColor Color, float Duration, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugCone(World, Origin, Direction, Length, AngleWidth, AngleHeight, NumSides, Color.ToFColor(true), false, Duration, SDPG_World, Thickness);
 	}
@@ -1711,8 +1826,7 @@ void UKismetSystemLibrary::DrawDebugCone(UObject* WorldContextObject, FVector co
 void UKismetSystemLibrary::DrawDebugConeInDegrees(UObject* WorldContextObject, FVector const Origin, FVector const Direction, float Length, float AngleWidth, float AngleHeight, int32 NumSides, FLinearColor Color, float LifeTime, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugCone(World, Origin, Direction, Length, FMath::DegreesToRadians(AngleWidth), FMath::DegreesToRadians(AngleHeight), NumSides, Color.ToFColor(true), false, LifeTime, SDPG_World, Thickness);
 	}
@@ -1723,8 +1837,7 @@ void UKismetSystemLibrary::DrawDebugConeInDegrees(UObject* WorldContextObject, F
 void UKismetSystemLibrary::DrawDebugCapsule(UObject* WorldContextObject, FVector const Center, float HalfHeight, float Radius, const FRotator Rotation, FLinearColor Color, float LifeTime, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugCapsule(World, Center, HalfHeight, Radius, Rotation.Quaternion(), Color.ToFColor(true), false, LifeTime, SDPG_World, Thickness);
 	}
@@ -1735,8 +1848,7 @@ void UKismetSystemLibrary::DrawDebugCapsule(UObject* WorldContextObject, FVector
 void UKismetSystemLibrary::DrawDebugString(UObject* WorldContextObject, FVector const TextLocation, const FString& Text, class AActor* TestBaseActor, FLinearColor TextColor, float Duration)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugString(World, TextLocation, Text, TestBaseActor, TextColor.ToFColor(true), Duration);
 	}
@@ -1747,8 +1859,7 @@ void UKismetSystemLibrary::DrawDebugString(UObject* WorldContextObject, FVector 
 void UKismetSystemLibrary::FlushDebugStrings( UObject* WorldContextObject )
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
-	if(World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::FlushDebugStrings( World );
 	}
@@ -1759,8 +1870,7 @@ void UKismetSystemLibrary::FlushDebugStrings( UObject* WorldContextObject )
 void UKismetSystemLibrary::DrawDebugPlane(UObject* WorldContextObject, FPlane const& P, FVector const Loc, float Size, FLinearColor Color, float LifeTime)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugSolidPlane(World, P, Loc, Size, Color.ToFColor(true), false, LifeTime, SDPG_World);
 	}
@@ -1771,8 +1881,7 @@ void UKismetSystemLibrary::DrawDebugPlane(UObject* WorldContextObject, FPlane co
 void UKismetSystemLibrary::FlushPersistentDebugLines(UObject* WorldContextObject)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject( WorldContextObject );
-	if(World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::FlushPersistentDebugLines( World );
 	}
@@ -1783,8 +1892,8 @@ void UKismetSystemLibrary::FlushPersistentDebugLines(UObject* WorldContextObject
 void UKismetSystemLibrary::DrawDebugFrustum(UObject* WorldContextObject, const FTransform& FrustumTransform, FLinearColor FrustumColor, float Duration, float Thickness)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if( World != nullptr && FrustumTransform.IsRotationNormalized() )
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	if (World != nullptr && FrustumTransform.IsRotationNormalized())
 	{
 		FMatrix FrustumToWorld =  FrustumTransform.ToMatrixWithScale();
 		::DrawDebugFrustum(World, FrustumToWorld, FrustumColor.ToFColor(true), false, Duration, SDPG_World, Thickness);
@@ -1808,8 +1917,7 @@ void UKismetSystemLibrary::DrawDebugCamera(const ACameraActor* CameraActor, FLin
 void UKismetSystemLibrary::DrawDebugFloatHistoryTransform(UObject* WorldContextObject, const FDebugFloatHistory& FloatHistory, const FTransform& DrawTransform, FVector2D DrawSize, FLinearColor DrawColor, float LifeTime)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld * World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugFloatHistory(*World, FloatHistory, DrawTransform, DrawSize, DrawColor.ToFColor(true), false, LifeTime);
 	}
@@ -1819,8 +1927,7 @@ void UKismetSystemLibrary::DrawDebugFloatHistoryTransform(UObject* WorldContextO
 void UKismetSystemLibrary::DrawDebugFloatHistoryLocation(UObject* WorldContextObject, const FDebugFloatHistory& FloatHistory, FVector DrawLocation, FVector2D DrawSize, FLinearColor DrawColor, float LifeTime)
 {
 #if ENABLE_DRAW_DEBUG
-	UWorld * World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		::DrawDebugFloatHistory(*World, FloatHistory, DrawLocation, DrawSize, DrawColor.ToFColor(true), false, LifeTime);
 	}
@@ -1880,7 +1987,7 @@ void UKismetSystemLibrary::GetActorBounds(const AActor* Actor, FVector& Origin, 
 
 void UKismetSystemLibrary::Delay(UObject* WorldContextObject, float Duration, FLatentActionInfo LatentInfo )
 {
-	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject))
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		FLatentActionManager& LatentActionManager = World->GetLatentActionManager();
 		if (LatentActionManager.FindExistingAction<FDelayAction>(LatentInfo.CallbackTarget, LatentInfo.UUID) == NULL)
@@ -1893,7 +2000,7 @@ void UKismetSystemLibrary::Delay(UObject* WorldContextObject, float Duration, FL
 // Delay execution by Duration seconds; Calling again before the delay has expired will reset the countdown to Duration.
 void UKismetSystemLibrary::RetriggerableDelay(UObject* WorldContextObject, float Duration, FLatentActionInfo LatentInfo)
 {
-	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject))
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		FLatentActionManager& LatentActionManager = World->GetLatentActionManager();
 		FDelayAction* Action = LatentActionManager.FindExistingAction<FDelayAction>(LatentInfo.CallbackTarget, LatentInfo.UUID);
@@ -1911,7 +2018,7 @@ void UKismetSystemLibrary::RetriggerableDelay(UObject* WorldContextObject, float
 
 void UKismetSystemLibrary::MoveComponentTo(USceneComponent* Component, FVector TargetRelativeLocation, FRotator TargetRelativeRotation, bool bEaseOut, bool bEaseIn, float OverTime, bool bForceShortestRotationPath, TEnumAsByte<EMoveComponentAction::Type> MoveAction, FLatentActionInfo LatentInfo)
 {
-	if (UWorld* World = ((Component != NULL) ? Component->GetWorld() : NULL))
+	if (UWorld* World = GEngine->GetWorldFromContextObject(Component, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		FLatentActionManager& LatentActionManager = World->GetLatentActionManager();
 		FInterpolateComponentToAction* Action = LatentActionManager.FindExistingAction<FInterpolateComponentToAction>(LatentInfo.CallbackTarget, LatentInfo.UUID);
@@ -2046,6 +2153,7 @@ bool UKismetSystemLibrary::GetConvenientWindowedResolutions(TArray<FIntPoint>& R
 		FDisplayMetrics::GetDisplayMetrics(DisplayMetrics);
 	}
 
+	extern void GenerateConvenientWindowedResolutions(const struct FDisplayMetrics& InDisplayMetrics, TArray<FIntPoint>& OutResolutions);
 	GenerateConvenientWindowedResolutions(DisplayMetrics, Resolutions);
 
 	return true;
@@ -2096,9 +2204,10 @@ bool UKismetSystemLibrary::CanLaunchURL(const FString& URL)
 
 	return false;
 }
+
 void UKismetSystemLibrary::CollectGarbage()
 {
-	GEngine->DeferredCommands.Add(TEXT("obj gc"));
+	GEngine->ForceGarbageCollection(true);
 }
 
 void UKismetSystemLibrary::ShowAdBanner(int32 AdIdIndex, bool bShowOnBottomOfScreen)
@@ -2219,7 +2328,7 @@ void UKismetSystemLibrary::SetStructurePropertyByName(UObject* Object, FName Pro
 
 void UKismetSystemLibrary::ControlScreensaver(bool bAllowScreenSaver)
 {
-	FPlatformMisc::ControlScreensaver(bAllowScreenSaver ? FPlatformMisc::EScreenSaverAction::Enable : FPlatformMisc::EScreenSaverAction::Disable);
+	FPlatformApplicationMisc::ControlScreensaver(bAllowScreenSaver ? FPlatformApplicationMisc::EScreenSaverAction::Enable : FPlatformApplicationMisc::EScreenSaverAction::Disable);
 }
 
 void UKismetSystemLibrary::SetVolumeButtonsHandledBySystem(bool bEnabled)
@@ -2234,22 +2343,22 @@ bool UKismetSystemLibrary::GetVolumeButtonsHandledBySystem()
 
 void UKismetSystemLibrary::ResetGamepadAssignments()
 {
-	FPlatformMisc::ResetGamepadAssignments();
+	FPlatformApplicationMisc::ResetGamepadAssignments();
 }
 
 void UKismetSystemLibrary::ResetGamepadAssignmentToController(int32 ControllerId)
 {
-	FPlatformMisc::ResetGamepadAssignmentToController(ControllerId);
+	FPlatformApplicationMisc::ResetGamepadAssignmentToController(ControllerId);
 }
 
 bool UKismetSystemLibrary::IsControllerAssignedToGamepad(int32 ControllerId)
 {
-	return FPlatformMisc::IsControllerAssignedToGamepad(ControllerId);
+	return FPlatformApplicationMisc::IsControllerAssignedToGamepad(ControllerId);
 }
 
 void UKismetSystemLibrary::SetSuppressViewportTransitionMessage(UObject* WorldContextObject, bool bState)
 {
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 	if (World && World->GetFirstLocalPlayerFromController() != nullptr && World->GetFirstLocalPlayerFromController()->ViewportClient != nullptr )
 	{
 		World->GetFirstLocalPlayerFromController()->ViewportClient->SetSuppressTransitionMessage(bState);
@@ -2259,6 +2368,11 @@ void UKismetSystemLibrary::SetSuppressViewportTransitionMessage(UObject* WorldCo
 TArray<FString> UKismetSystemLibrary::GetPreferredLanguages()
 {
 	return FPlatformMisc::GetPreferredLanguages();
+}
+
+FString UKismetSystemLibrary::GetDefaultLanguage()
+{
+	return FPlatformMisc::GetDefaultLanguage();
 }
 
 FString UKismetSystemLibrary::GetDefaultLocale()
@@ -2281,7 +2395,7 @@ struct FLoadAssetActionBase : public FPendingLatentAction
 	// @TODO: it would be good to have static/global manager? 
 
 public:
-	FStringAssetReference AssetReference;
+	FSoftObjectPath SoftObjectPath;
 	FStreamableManager StreamableManager;
 	TSharedPtr<FStreamableHandle> Handle;
 	FName ExecutionFunction;
@@ -2290,13 +2404,13 @@ public:
 
 	virtual void OnLoaded() PURE_VIRTUAL(FLoadAssetActionBase::OnLoaded, );
 
-	FLoadAssetActionBase(const FStringAssetReference& InAssetReference, const FLatentActionInfo& InLatentInfo)
-		: AssetReference(InAssetReference)
+	FLoadAssetActionBase(const FSoftObjectPath& InSoftObjectPath, const FLatentActionInfo& InLatentInfo)
+		: SoftObjectPath(InSoftObjectPath)
 		, ExecutionFunction(InLatentInfo.ExecutionFunction)
 		, OutputLink(InLatentInfo.Linkage)
 		, CallbackTarget(InLatentInfo.CallbackTarget)
 	{
-		Handle = StreamableManager.RequestAsyncLoad(AssetReference);
+		Handle = StreamableManager.RequestAsyncLoad(SoftObjectPath);
 	}
 
 	virtual ~FLoadAssetActionBase()
@@ -2320,76 +2434,77 @@ public:
 #if WITH_EDITOR
 	virtual FString GetDescription() const override
 	{
-		return FString::Printf(TEXT("Load Asset Action Base: %s"), *AssetReference.ToString());
+		return FString::Printf(TEXT("Load Asset Action Base: %s"), *SoftObjectPath.ToString());
 	}
 #endif
 };
 
-void UKismetSystemLibrary::LoadAsset(UObject* WorldContextObject, const TAssetPtr<UObject>& Asset, UKismetSystemLibrary::FOnAssetLoaded OnLoaded, FLatentActionInfo LatentInfo)
+void UKismetSystemLibrary::LoadAsset(UObject* WorldContextObject, TSoftObjectPtr<UObject> Asset, UKismetSystemLibrary::FOnAssetLoaded OnLoaded, FLatentActionInfo LatentInfo)
 {
 	struct FLoadAssetAction : public FLoadAssetActionBase
 	{
 	public:
 		UKismetSystemLibrary::FOnAssetLoaded OnLoadedCallback;
 
-		FLoadAssetAction(const FStringAssetReference& InAssetReference, UKismetSystemLibrary::FOnAssetLoaded InOnLoadedCallback, const FLatentActionInfo& InLatentInfo)
-			: FLoadAssetActionBase(InAssetReference, InLatentInfo)
+		FLoadAssetAction(const FSoftObjectPath& InSoftObjectPath, UKismetSystemLibrary::FOnAssetLoaded InOnLoadedCallback, const FLatentActionInfo& InLatentInfo)
+			: FLoadAssetActionBase(InSoftObjectPath, InLatentInfo)
 			, OnLoadedCallback(InOnLoadedCallback)
 		{}
 
 		virtual void OnLoaded() override
 		{
-			UObject* LoadedObject = AssetReference.ResolveObject();
+			UObject* LoadedObject = SoftObjectPath.ResolveObject();
 			OnLoadedCallback.ExecuteIfBound(LoadedObject);
 		}
 	};
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		FLatentActionManager& LatentManager = World->GetLatentActionManager();
-		if (LatentManager.FindExistingAction<FLoadAssetAction>(LatentInfo.CallbackTarget, LatentInfo.UUID) == nullptr)
-		{
-			FLoadAssetAction* NewAction = new FLoadAssetAction(Asset.ToStringReference(), OnLoaded, LatentInfo);
-			LatentManager.AddNewAction(LatentInfo.CallbackTarget, LatentInfo.UUID, NewAction);
-		}
+
+		// We always spawn a new load even if this node already queued one, the outside node handles this case
+		FLoadAssetAction* NewAction = new FLoadAssetAction(Asset.ToSoftObjectPath(), OnLoaded, LatentInfo);
+		LatentManager.AddNewAction(LatentInfo.CallbackTarget, LatentInfo.UUID, NewAction);
 	}
 }
 
-void UKismetSystemLibrary::LoadAssetClass(UObject* WorldContextObject, const TAssetSubclassOf<UObject>& AssetClass, UKismetSystemLibrary::FOnAssetClassLoaded OnLoaded, FLatentActionInfo LatentInfo)
+void UKismetSystemLibrary::LoadAssetClass(UObject* WorldContextObject, TSoftClassPtr<UObject> AssetClass, UKismetSystemLibrary::FOnAssetClassLoaded OnLoaded, FLatentActionInfo LatentInfo)
 {
 	struct FLoadAssetClassAction : public FLoadAssetActionBase
 	{
 	public:
 		UKismetSystemLibrary::FOnAssetClassLoaded OnLoadedCallback;
 
-		FLoadAssetClassAction(const FStringAssetReference& InAssetReference, UKismetSystemLibrary::FOnAssetClassLoaded InOnLoadedCallback, const FLatentActionInfo& InLatentInfo)
-			: FLoadAssetActionBase(InAssetReference, InLatentInfo)
+		FLoadAssetClassAction(const FSoftObjectPath& InSoftObjectPath, UKismetSystemLibrary::FOnAssetClassLoaded InOnLoadedCallback, const FLatentActionInfo& InLatentInfo)
+			: FLoadAssetActionBase(InSoftObjectPath, InLatentInfo)
 			, OnLoadedCallback(InOnLoadedCallback)
 		{}
 
 		virtual void OnLoaded() override
 		{
-			UClass* LoadedObject = Cast<UClass>(AssetReference.ResolveObject());
+			UClass* LoadedObject = Cast<UClass>(SoftObjectPath.ResolveObject());
 			OnLoadedCallback.ExecuteIfBound(LoadedObject);
 		}
 	};
 
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject);
-	if (World != nullptr)
+	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
 		FLatentActionManager& LatentManager = World->GetLatentActionManager();
-		if (LatentManager.FindExistingAction<FLoadAssetClassAction>(LatentInfo.CallbackTarget, LatentInfo.UUID) == nullptr)
-		{
-			FLoadAssetClassAction* NewAction = new FLoadAssetClassAction(AssetClass.ToStringReference(), OnLoaded, LatentInfo);
-			LatentManager.AddNewAction(LatentInfo.CallbackTarget, LatentInfo.UUID, NewAction);
-		}
+
+		// We always spawn a new load even if this node already queued one, the outside node handles this case
+		FLoadAssetClassAction* NewAction = new FLoadAssetClassAction(AssetClass.ToSoftObjectPath(), OnLoaded, LatentInfo);
+		LatentManager.AddNewAction(LatentInfo.CallbackTarget, LatentInfo.UUID, NewAction);
 	}
 }
 
 void UKismetSystemLibrary::RegisterForRemoteNotifications()
 {
 	FPlatformMisc::RegisterForRemoteNotifications();
+}
+
+void UKismetSystemLibrary::UnregisterForRemoteNotifications()
+{
+	FPlatformMisc::UnregisterForRemoteNotifications();
 }
 
 void UKismetSystemLibrary::SetUserActivity(const FUserActivity& UserActivity)
@@ -2400,4 +2515,182 @@ void UKismetSystemLibrary::SetUserActivity(const FUserActivity& UserActivity)
 FString UKismetSystemLibrary::GetCommandLine()
 {
 	return FString(FCommandLine::Get());
+}
+
+UObject* UKismetSystemLibrary::GetObjectFromPrimaryAssetId(FPrimaryAssetId PrimaryAssetId)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		FPrimaryAssetTypeInfo Info;
+		if (Manager->GetPrimaryAssetTypeInfo(PrimaryAssetId.PrimaryAssetType, Info) && !Info.bHasBlueprintClasses)
+		{
+			return Manager->GetPrimaryAssetObject(PrimaryAssetId);
+		}
+	}
+	return nullptr;
+}
+
+TSubclassOf<UObject> UKismetSystemLibrary::GetClassFromPrimaryAssetId(FPrimaryAssetId PrimaryAssetId)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		FPrimaryAssetTypeInfo Info;
+		if (Manager->GetPrimaryAssetTypeInfo(PrimaryAssetId.PrimaryAssetType, Info) && Info.bHasBlueprintClasses)
+		{
+			return Manager->GetPrimaryAssetObjectClass<UObject>(PrimaryAssetId);
+		}
+	}
+	return nullptr;
+}
+
+TSoftObjectPtr<UObject> UKismetSystemLibrary::GetSoftObjectReferenceFromPrimaryAssetId(FPrimaryAssetId PrimaryAssetId)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		FPrimaryAssetTypeInfo Info;
+		if (Manager->GetPrimaryAssetTypeInfo(PrimaryAssetId.PrimaryAssetType, Info) && !Info.bHasBlueprintClasses)
+		{
+			return TSoftObjectPtr<UObject>(Manager->GetPrimaryAssetPath(PrimaryAssetId));
+		}
+	}
+	return nullptr;
+}
+
+TSoftClassPtr<UObject> UKismetSystemLibrary::GetSoftClassReferenceFromPrimaryAssetId(FPrimaryAssetId PrimaryAssetId)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		FPrimaryAssetTypeInfo Info;
+		if (Manager->GetPrimaryAssetTypeInfo(PrimaryAssetId.PrimaryAssetType, Info) && Info.bHasBlueprintClasses)
+		{
+			return TSoftClassPtr<UObject>(Manager->GetPrimaryAssetPath(PrimaryAssetId));
+		}
+	}
+	return nullptr;
+}
+
+FPrimaryAssetId UKismetSystemLibrary::GetPrimaryAssetIdFromObject(UObject* Object)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		if (Object)
+		{
+			return Manager->GetPrimaryAssetIdForObject(Object);
+		}
+	}
+	return FPrimaryAssetId();
+}
+
+FPrimaryAssetId UKismetSystemLibrary::GetPrimaryAssetIdFromClass(TSubclassOf<UObject> Class)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		if (Class)
+		{
+			return Manager->GetPrimaryAssetIdForObject(*Class);
+		}
+	}
+	return FPrimaryAssetId();
+}
+
+FPrimaryAssetId UKismetSystemLibrary::GetPrimaryAssetIdFromSoftObjectReference(TSoftObjectPtr<UObject> SoftObjectReference)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		return Manager->GetPrimaryAssetIdForPath(SoftObjectReference.ToSoftObjectPath());
+	}
+	return FPrimaryAssetId();
+}
+
+FPrimaryAssetId UKismetSystemLibrary::GetPrimaryAssetIdFromSoftClassReference(TSoftClassPtr<UObject> SoftClassReference)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		return Manager->GetPrimaryAssetIdForPath(SoftClassReference.ToSoftObjectPath());
+	}
+	return FPrimaryAssetId();
+}
+
+void UKismetSystemLibrary::GetPrimaryAssetIdList(FPrimaryAssetType PrimaryAssetType, TArray<FPrimaryAssetId>& OutPrimaryAssetIdList)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		Manager->GetPrimaryAssetIdList(PrimaryAssetType, OutPrimaryAssetIdList);
+	}
+}
+
+bool UKismetSystemLibrary::IsValidPrimaryAssetId(FPrimaryAssetId PrimaryAssetId)
+{
+	return PrimaryAssetId.IsValid();
+}
+
+FString UKismetSystemLibrary::Conv_PrimaryAssetIdToString(FPrimaryAssetId PrimaryAssetId)
+{
+	return PrimaryAssetId.ToString();
+}
+
+bool UKismetSystemLibrary::EqualEqual_PrimaryAssetId(FPrimaryAssetId A, FPrimaryAssetId B)
+{
+	return A == B;
+}
+
+bool UKismetSystemLibrary::NotEqual_PrimaryAssetId(FPrimaryAssetId A, FPrimaryAssetId B)
+{
+	return A != B;
+}
+
+bool UKismetSystemLibrary::IsValidPrimaryAssetType(FPrimaryAssetType PrimaryAssetType)
+{
+	return PrimaryAssetType.IsValid();
+}
+
+FString UKismetSystemLibrary::Conv_PrimaryAssetTypeToString(FPrimaryAssetType PrimaryAssetType)
+{
+	return PrimaryAssetType.ToString();
+}
+
+bool UKismetSystemLibrary::EqualEqual_PrimaryAssetType(FPrimaryAssetType A, FPrimaryAssetType B)
+{
+	return A == B;
+}
+
+bool UKismetSystemLibrary::NotEqual_PrimaryAssetType(FPrimaryAssetType A, FPrimaryAssetType B)
+{
+	return A != B;
+}
+
+void UKismetSystemLibrary::UnloadPrimaryAsset(FPrimaryAssetId PrimaryAssetId)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		Manager->UnloadPrimaryAsset(PrimaryAssetId);
+	}
+}
+
+void UKismetSystemLibrary::UnloadPrimaryAssetList(const TArray<FPrimaryAssetId>& PrimaryAssetIdList)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		Manager->UnloadPrimaryAssets(PrimaryAssetIdList);
+	}
+}
+
+bool UKismetSystemLibrary::GetCurrentBundleState(FPrimaryAssetId PrimaryAssetId, bool bForceCurrentState, TArray<FName>& OutBundles)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		if (Manager->GetPrimaryAssetHandle(PrimaryAssetId, bForceCurrentState, &OutBundles).IsValid())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void UKismetSystemLibrary::GetPrimaryAssetsWithBundleState(const TArray<FName>& RequiredBundles, const TArray<FName>& ExcludedBundles, const TArray<FPrimaryAssetType>& ValidTypes, bool bForceCurrentState, TArray<FPrimaryAssetId>& OutPrimaryAssetIdList)
+{
+	if (UAssetManager* Manager = UAssetManager::GetIfValid())
+	{
+		Manager->GetPrimaryAssetsWithBundleState(OutPrimaryAssetIdList, ValidTypes, RequiredBundles, ExcludedBundles, bForceCurrentState);
+	}
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sound/SoundBase.h"
 #include "Sound/SoundSubmix.h"
@@ -9,11 +9,10 @@ USoundConcurrency* USoundBase::DefaultSoundConcurrencyObject = nullptr;
 
 USoundBase::USoundBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, bIgnoreFocus(false)
+	, bIgnoreFocus_DEPRECATED(false)
 	, Priority(1.0f)
 {
 	MaxConcurrentPlayCount_DEPRECATED = 16;
-	DefaultMasterReverbSendAmount = 0.2f;
 }
 
 void USoundBase::PostInitProperties()
@@ -22,7 +21,7 @@ void USoundBase::PostInitProperties()
 
 	if (USoundBase::DefaultSoundClassObject == nullptr)
 	{
-		const FStringAssetReference DefaultSoundClassName = GetDefault<UAudioSettings>()->DefaultSoundClassName;
+		const FSoftObjectPath DefaultSoundClassName = GetDefault<UAudioSettings>()->DefaultSoundClassName;
 		if (DefaultSoundClassName.IsValid())
 		{
 			USoundBase::DefaultSoundClassObject = LoadObject<USoundClass>(nullptr, *DefaultSoundClassName.ToString());
@@ -32,7 +31,7 @@ void USoundBase::PostInitProperties()
 
 	if (USoundBase::DefaultSoundConcurrencyObject == nullptr)
 	{
-		const FStringAssetReference DefaultSoundConcurrencyName = GetDefault<UAudioSettings>()->DefaultSoundConcurrencyName;
+		const FSoftObjectPath DefaultSoundConcurrencyName = GetDefault<UAudioSettings>()->DefaultSoundConcurrencyName;
 		if (DefaultSoundConcurrencyName.IsValid())
 		{
 			USoundBase::DefaultSoundConcurrencyObject = LoadObject<USoundConcurrency>(nullptr, *DefaultSoundConcurrencyName.ToString());
@@ -43,6 +42,16 @@ void USoundBase::PostInitProperties()
 }
 
 bool USoundBase::IsPlayable() const
+{
+	return false;
+}
+
+bool USoundBase::IsAllowedVirtual() const
+{ 
+	return false; 
+}
+
+bool USoundBase::HasAttenuationNode() const
 {
 	return false;
 }
@@ -81,7 +90,7 @@ bool USoundBase::IsLooping()
 	return (GetDuration() >= INDEFINITELY_LOOPING_DURATION); 
 }
 
-bool USoundBase::ShouldApplyInteriorVolumes() const
+bool USoundBase::ShouldApplyInteriorVolumes()
 {
 	return (SoundClassObject && SoundClassObject->Properties.bApplyAmbientVolumes);
 }
@@ -99,6 +108,18 @@ USoundSubmix* USoundBase::GetSoundSubmix() const
 void USoundBase::GetSoundSubmixSends(TArray<FSoundSubmixSendInfo>& OutSends) const
 {
 	OutSends = SoundSubmixSends;
+}
+
+void USoundBase::GetSoundSourceBusSends(EBusSendType BusSendType, TArray<FSoundSourceBusSendInfo>& OutSends) const
+{
+	if (BusSendType == EBusSendType::PreEffect)
+	{
+		OutSends = PreEffectBusSends;
+	}
+	else
+	{
+		OutSends = BusSends;
+	}
 }
 
 const FSoundConcurrencySettings* USoundBase::GetSoundConcurrencySettingsToApply()

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,6 @@ class FArrangedWidget;
 class FWidgetPath;
 struct EVisibility;
 
-// FWidgetPath functions that depend on classes defined after WidgetPath.h is included in Slate.h
 
 /**
  * Utility function to search recursively through a widget hierarchy for a specific widget

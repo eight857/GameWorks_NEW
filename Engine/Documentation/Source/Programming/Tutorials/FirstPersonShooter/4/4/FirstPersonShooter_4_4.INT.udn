@@ -3,7 +3,7 @@ Title: 4.4 - Adding Animation Transition States
 Crumbs: %ROOT%, Programming, Programming/Tutorials, Programming/Tutorials/FirstPersonShooter, Programming/Tutorials/FirstPersonShooter/4
 Description: How to add animation transition states to your First Person Shooter project.
 SkillLevel: Beginner
-Version: 4.11
+Version: 4.15
 
 [VAR:Steps]
 [OBJECT:Navigation]
@@ -21,7 +21,7 @@ Version: 4.11
 [/OBJECT]
 [/VAR]
 
-%Steps%
+
 
 During this step, we're going to add five states to the state graph, namely:
 
@@ -73,4 +73,3 @@ During this step, we're going to add five states to the state graph, namely:
 
 	![](ConnectEntrytoIdle.png)
 
-%Steps%

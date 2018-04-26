@@ -1,10 +1,62 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "K2Node_EditablePinBase.h"
 #include "UObject/UnrealType.h"
+#include "UObject/FrameworkObjectVersion.h"
 #include "Misc/FeedbackContext.h"
 #include "EdGraphSchema_K2.h"
 #include "Kismet2/KismetDebugUtilities.h"
+
+FArchive& operator<<(FArchive& Ar, FUserPinInfo& Info)
+{
+	Ar.UsingCustomVersion(FFrameworkObjectVersion::GUID);
+
+	if (Ar.CustomVer(FFrameworkObjectVersion::GUID) >= FFrameworkObjectVersion::PinsStoreFName)
+	{
+	Ar << Info.PinName;
+	}
+	else
+	{
+		FString PinNameStr;
+		Ar << PinNameStr;
+		Info.PinName = *PinNameStr;
+	}
+
+	if (Ar.UE4Ver() >= VER_UE4_SERIALIZE_PINTYPE_CONST)
+	{
+		Info.PinType.Serialize(Ar);
+		Ar << Info.DesiredPinDirection;
+	}
+	else
+	{
+		check(Ar.IsLoading());
+
+		bool bIsArray = (Info.PinType.ContainerType == EPinContainerType::Array);
+		Ar << bIsArray;
+
+		bool bIsReference = Info.PinType.bIsReference;
+		Ar << bIsReference;
+
+			Info.PinType.ContainerType = (bIsArray ? EPinContainerType::Array : EPinContainerType::None);
+			Info.PinType.bIsReference = bIsReference;
+
+		FString PinCategoryStr;
+		FString PinSubCategoryStr;
+		
+		Ar << PinCategoryStr;
+		Ar << PinSubCategoryStr;
+
+		Info.PinType.PinCategory = *PinCategoryStr;
+		Info.PinType.PinSubCategory = *PinSubCategoryStr;
+
+		Ar << Info.PinType.PinSubCategoryObject;
+	}
+
+	Ar << Info.PinDefaultValue;
+
+	return Ar;
+}
+
 
 UK2Node_EditablePinBase::UK2Node_EditablePinBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -26,10 +78,10 @@ void UK2Node_EditablePinBase::AllocateDefaultPins()
 	}
 }
 
-UEdGraphPin* UK2Node_EditablePinBase::CreateUserDefinedPin(const FString& InPinName, const FEdGraphPinType& InPinType, EEdGraphPinDirection InDesiredDirection, bool bUseUniqueName)
+UEdGraphPin* UK2Node_EditablePinBase::CreateUserDefinedPin(const FName InPinName, const FEdGraphPinType& InPinType, EEdGraphPinDirection InDesiredDirection, bool bUseUniqueName)
 {
 	// Sanitize the name, if needed
-	const FString NewPinName = bUseUniqueName ? CreateUniquePinName(InPinName) : InPinName;
+	const FName NewPinName = bUseUniqueName ? CreateUniquePinName(InPinName) : InPinName;
 
 	// First, add this pin to the user-defined pins
 	TSharedPtr<FUserPinInfo> NewPinInfo = MakeShareable( new FUserPinInfo() );
@@ -46,32 +98,13 @@ UEdGraphPin* UK2Node_EditablePinBase::CreateUserDefinedPin(const FString& InPinN
 
 void UK2Node_EditablePinBase::RemoveUserDefinedPin(TSharedPtr<FUserPinInfo> PinToRemove)
 {
-	// Try to find the pin with the same name and params as the specified description, if any
-	const FString PinName = PinToRemove->PinName;
-	for(int32 i = 0; i < Pins.Num(); i++)
-	{
-		UEdGraphPin* Pin = Pins[i];
-		if( Pin->PinName == PinName )
-		{
-			Pins.Remove(Pin);
-			Pin->MarkPendingKill();
-
-			if (UBlueprint* Blueprint = GetBlueprint())
-			{
-				FKismetDebugUtilities::RemovePinWatch(Blueprint, Pin);
-			}
-		}
-	}
-
-	// Remove the description from the user-defined pins array
-	UserDefinedPins.Remove(PinToRemove);
+	RemoveUserDefinedPinByName(PinToRemove->PinName);
 }
 
-void UK2Node_EditablePinBase::RemoveUserDefinedPinByName(const FString& PinName)
+void UK2Node_EditablePinBase::RemoveUserDefinedPinByName(const FName PinName)
 {
-	for (int32 i = 0; i < Pins.Num(); i++)
+	for (UEdGraphPin* Pin : Pins)
 	{
-		UEdGraphPin* Pin = Pins[i];
 		if (Pin->PinName == PinName)
 		{
 			Pin->Modify();
@@ -99,45 +132,16 @@ void UK2Node_EditablePinBase::ExportCustomProperties(FOutputDevice& Out, uint32 
 {
 	Super::ExportCustomProperties(Out, Indent);
 
+	const FUserPinInfo DefaultPinInfo;
+
 	for (int32 PinIndex = 0; PinIndex < UserDefinedPins.Num(); ++PinIndex)
 	{
 		const FUserPinInfo& PinInfo = *UserDefinedPins[PinIndex].Get();
-
-		Out.Logf( TEXT("%sCustomProperties UserDefinedPin "), FCString::Spc(Indent));
-		Out.Logf( TEXT("Name=\"%s\" "), *PinInfo.PinName);
-		Out.Logf( TEXT("IsArray=%s "), (PinInfo.PinType.bIsArray ? TEXT("1") : TEXT("0")));
-		Out.Logf( TEXT("IsReference=%s "), (PinInfo.PinType.bIsReference ? TEXT("1") : TEXT("0")));
-
-		if (UEnum* PinDirEnum = FindObject<UEnum>(ANY_PACKAGE, TEXT("EEdGraphPinDirection")))
-		{ 
-			FString ValueName = PinDirEnum->GetNameStringByValue(PinInfo.DesiredPinDirection);
-			if (!ValueName.IsEmpty())
-			{
-				Out.Logf(TEXT("PinDir=\"%s\" "), *ValueName);
-			}
-		}
 		
-		if (PinInfo.PinType.PinCategory.Len() > 0)
-		{
-			Out.Logf( TEXT("Category=%s "), *PinInfo.PinType.PinCategory);
-		}
+		FString PinInfoStr;
+		FUserPinInfo::StaticStruct()->ExportText(PinInfoStr, &PinInfo, &DefaultPinInfo, this, 0, nullptr, false);
 
-		if (PinInfo.PinType.PinSubCategory.Len() > 0)
-		{
-			Out.Logf( TEXT("SubCategory=%s "), *PinInfo.PinType.PinSubCategory);
-		}
-
-		if (PinInfo.PinType.PinSubCategoryObject.IsValid())
-		{
-			Out.Logf( TEXT("SubCategoryObject=%s "), *PinInfo.PinType.PinSubCategoryObject.Get()->GetPathName());
-		}
-
-		if (PinInfo.PinDefaultValue.Len() > 0)
-		{
-			Out.Logf( TEXT("DefaultValue=%s "), *PinInfo.PinDefaultValue);
-		}
-
-		Out.Logf( TEXT("\r\n"));
+		Out.Logf( TEXT("%sCustomProperties UserDefinedPin %s\r\n"), FCString::Spc(Indent), *PinInfoStr);
 	}
 }
 
@@ -145,55 +149,12 @@ void UK2Node_EditablePinBase::ImportCustomProperties(const TCHAR* SourceText, FF
 {
 	if (FParse::Command(&SourceText, TEXT("UserDefinedPin")))
 	{
-		TSharedPtr<FUserPinInfo> PinInfo = MakeShareable( new FUserPinInfo() );
+		TSharedPtr<FUserPinInfo> SharedPinInfo = MakeShareable(new FUserPinInfo());
+		FUserPinInfo* PinInfo = SharedPinInfo.Get();
 
-		if (!FParse::Value(SourceText, TEXT("Name="), PinInfo->PinName))
-		{
-			Warn->Logf( *NSLOCTEXT( "Core", "SyntaxError", "Syntax Error" ).ToString() );
-			return;
-		}
+		FUserPinInfo::StaticStruct()->ImportText(SourceText, PinInfo, this, 0, Warn, TEXT("PinInfo"), false);
 
-		int32 BoolAsInt = 0;
-		if (FParse::Value(SourceText, TEXT("IsArray="), BoolAsInt))
-		{
-			PinInfo->PinType.bIsArray = (BoolAsInt != 0);
-		}
-
-		if (FParse::Value(SourceText, TEXT("IsReference="), BoolAsInt))
-		{
-			PinInfo->PinType.bIsReference = (BoolAsInt != 0);
-		}
-
-		if (UEnum* PinDirEnum = FindObject<UEnum>(ANY_PACKAGE, TEXT("EEdGraphPinDirection")))
-		{
-			FString DesiredDirection;
-			if (FParse::Value(SourceText, TEXT("PinDir="), DesiredDirection))
-			{
-				int32 DesiredDirectionVal = PinDirEnum->GetValueByName(*DesiredDirection);
-				if (DesiredDirectionVal != INDEX_NONE)
-				{
-					PinInfo->DesiredPinDirection = (EEdGraphPinDirection)DesiredDirectionVal;
-				}
-			}
-		}
-
-		FParse::Value(SourceText, TEXT("Category="), PinInfo->PinType.PinCategory);
-		FParse::Value(SourceText, TEXT("SubCategory="), PinInfo->PinType.PinSubCategory);
-
-		FString ObjectPathName;
-		if (FParse::Value(SourceText, TEXT("SubCategoryObject="), ObjectPathName))
-		{
-			PinInfo->PinType.PinSubCategoryObject = FindObject<UObject>(ANY_PACKAGE, *ObjectPathName);
-			if (!PinInfo->PinType.PinSubCategoryObject.IsValid())
-			{
-				Warn->Logf( *NSLOCTEXT( "Core", "UnableToFindObject", "Unable to find object" ).ToString() );
-				return;
-			}
-		}
-
-		FParse::Value(SourceText, TEXT("DefaultValue="), PinInfo->PinDefaultValue);
-
-		UserDefinedPins.Add(PinInfo);
+		UserDefinedPins.Add(SharedPinInfo);
 	}
 	else
 	{
@@ -234,7 +195,7 @@ void UK2Node_EditablePinBase::Serialize(FArchive& Ar)
 			UserDefinedPins.Add(PinInfo);
 		}
 	}
-	else
+	else if(Ar.IsSaving())
 	{
 		SerializedItems.Empty(UserDefinedPins.Num());
 
@@ -244,14 +205,14 @@ void UK2Node_EditablePinBase::Serialize(FArchive& Ar)
 		}
 
 		Ar << SerializedItems;
-
-		if (Ar.IsModifyingWeakAndStrongReferences())
+	}
+	else
+	{
+		// We want to avoid destroying and recreating FUserPinInfo, because that will invalidate 
+		// any WeakPtrs to those entries:
+		for(TSharedPtr<FUserPinInfo>& PinInfo : UserDefinedPins )
 		{
-			UserDefinedPins.Empty(SerializedItems.Num());
-			for (int32 Index = 0; Index < SerializedItems.Num(); ++Index)
-			{
-				UserDefinedPins.Add(MakeShareable(new FUserPinInfo(SerializedItems[Index])));
-			}
+			Ar << *PinInfo;
 		}
 	}
 }
@@ -268,24 +229,53 @@ void UK2Node_EditablePinBase::AddReferencedObjects(UObject* InThis, FReferenceCo
 	Super::AddReferencedObjects( This, Collector );
 }
 
+void UK2Node_EditablePinBase::PinDefaultValueChanged(UEdGraphPin* Pin)
+{
+	static bool bRecursivelyChangingDefaultValue = false;
+
+	// Only do this if we're editable and not already calling this code
+	if (!bIsEditable || bRecursivelyChangingDefaultValue)
+	{
+		return;
+	}
+
+	// See if this is a user defined pin
+	for (int32 Index = 0; Index < UserDefinedPins.Num(); ++Index)
+	{
+		TSharedPtr<FUserPinInfo> PinInfo = UserDefinedPins[Index];
+		if (Pin->PinName == PinInfo->PinName && Pin->Direction == PinInfo->DesiredPinDirection)
+		{
+			FString DefaultsString = Pin->GetDefaultAsString();
+
+			if (DefaultsString != PinInfo->PinDefaultValue)
+			{
+				// Make sure this doesn't get called recursively
+				TGuardValue<bool> CircularGuard(bRecursivelyChangingDefaultValue, true);
+				ModifyUserDefinedPinDefaultValue(PinInfo, Pin->GetDefaultAsString());
+			}
+		}
+	}
+}
+
 bool UK2Node_EditablePinBase::ModifyUserDefinedPinDefaultValue(TSharedPtr<FUserPinInfo> PinInfo, const FString& InDefaultValue)
 {
+	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 	FString NewDefaultValue = InDefaultValue;
 
 	// Find and modify the current pin
 	if (UEdGraphPin* OldPin = FindPin(PinInfo->PinName))
 	{
 		FString SavedDefaultValue = OldPin->DefaultValue;
-		OldPin->DefaultValue = OldPin->AutogeneratedDefaultValue = NewDefaultValue;
+		
+		K2Schema->SetPinAutogeneratedDefaultValue(OldPin, NewDefaultValue);
 
 		// Validate the new default value
-		const UEdGraphSchema* Schema = GetSchema();
-		FString ErrorString = Schema->IsCurrentPinDefaultValid(OldPin);
+		FString ErrorString = K2Schema->IsCurrentPinDefaultValid(OldPin);
 
 		if (!ErrorString.IsEmpty())
 		{
 			NewDefaultValue = SavedDefaultValue;
-			OldPin->DefaultValue = OldPin->AutogeneratedDefaultValue = SavedDefaultValue;
+			K2Schema->SetPinAutogeneratedDefaultValue(OldPin, SavedDefaultValue);
 
 			return false;
 		}
@@ -314,7 +304,7 @@ bool UK2Node_EditablePinBase::CreateUserDefinedPinsForFunctionEntryExit(const UF
 			FEdGraphPinType PinType;
 			K2Schema->ConvertPropertyToPinType(Param, /*out*/ PinType);
 
-			const bool bPinGood = CreateUserDefinedPin(Param->GetName(), PinType, Direction) != NULL;
+			const bool bPinGood = (CreateUserDefinedPin(Param->GetFName(), PinType, Direction) != nullptr);
 
 			bAllPinsGood = bAllPinsGood && bPinGood;
 		}

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SStatsViewer.h"
 #include "HAL/FileManager.h"
@@ -240,7 +240,7 @@ SStatsViewer::~SStatsViewer()
 }
 
 /** Helper function to get the string of a cell as it is being presented to the user */
-static FString GetCellString( const TSharedPtr<IPropertyTableCell> Cell )
+static FString GetCellString( const TSharedPtr<IPropertyTableCell> Cell, bool bGetRawValue = false )
 {
 	FString String = TEXT("");
 
@@ -262,7 +262,7 @@ static FString GetCellString( const TSharedPtr<IPropertyTableCell> Cell )
 	// not an object, but maybe supported
 	if( FStatsCustomColumn::SupportsProperty(PropertyHandle->GetProperty()) )
 	{
-		String = FStatsCustomColumn::GetPropertyAsText(PropertyHandle).ToString();
+		String = FStatsCustomColumn::GetPropertyAsText(PropertyHandle, bGetRawValue).ToString();
 	}
 
 	// still no name? will have to default to the 'value as string'
@@ -338,11 +338,11 @@ void SStatsViewer::Tick( const FGeometry& AllottedGeometry, const double InCurre
 				{
 					TSharedPtr< FPropertyPath > PropertyPath = Column->GetDataSource()->AsPropertyPath();
 					const FPropertyInfo& PropertyInfo = PropertyPath->GetRootProperty();
-					const FString ColumnWidthString = PropertyInfo.Property->GetMetaData(StatsViewerMetadata::ColumnWidth);
+					const FString& ColumnWidthString = PropertyInfo.Property->GetMetaData(StatsViewerMetadata::ColumnWidth);
 					const float ColumnWidth = ColumnWidthString.Len() > 0 ? FCString::Atof( *ColumnWidthString ) : 100.0f;
 					Column->SetWidth( ColumnWidth );
 
-					const FString SortModeString = PropertyInfo.Property->GetMetaData(StatsViewerMetadata::SortMode);
+					const FString& SortModeString = PropertyInfo.Property->GetMetaData(StatsViewerMetadata::SortMode);
 					if( SortModeString.Len() > 0 )
 					{
 						EColumnSortMode::Type SortType = SortModeString == TEXT( "Ascending" ) ? EColumnSortMode::Ascending : EColumnSortMode::Descending;
@@ -431,12 +431,12 @@ FReply SStatsViewer::OnExportClicked()
 	bool bSuccessful = false;
 
 	// CSV: Human-readable spreadsheet format.
-	FString CSVFilename = FPaths::GameLogDir();
+	FString CSVFilename = FPaths::ProjectLogDir();
 	CSVFilename /= CurrentStats->GetName().ToString();
 	CSVFilename /= GWorld->GetOutermost()->GetName();
 	CSVFilename /= FString::Printf(
 		TEXT("%s-%i-%s.csv"),
-		FApp::GetGameName(),
+		FApp::GetProjectName(),
 		FEngineVersion::Current().GetChangelist(),
 		*FDateTime::Now().ToString() );
 
@@ -476,7 +476,7 @@ FReply SStatsViewer::OnExportClicked()
 				TSharedRef< IPropertyTableRow > Row = Rows[RowIndex];
 				for( TSharedPtr< IPropertyTableCell > Cell = PropertyTable->GetFirstCellInRow(Row); Cell.IsValid(); Cell = PropertyTable->GetNextCellInRow(Cell.ToSharedRef()) )
 				{
-					FString CellData = GetCellString( Cell );
+					FString CellData = GetCellString( Cell , true );
 					CellData.ReplaceInline( *Delimiter, TEXT(" ") );
 					Data += CellData + Delimiter;
 				}
@@ -496,7 +496,7 @@ FReply SStatsViewer::OnExportClicked()
 				{
 					TSharedPtr< FPropertyPath > PropertyPath = Column->GetDataSource()->AsPropertyPath();
 					const FPropertyInfo& PropertyInfo = PropertyPath->GetRootProperty();
-					FString ShowTotal = PropertyInfo.Property->GetMetaData(TEXT("ShowTotal"));
+					const FString& ShowTotal = PropertyInfo.Property->GetMetaData(TEXT("ShowTotal"));
 					if( ShowTotal.Len() > 0 )
 					{
 						FText* TotalText = CustomColumn->TotalsMap.Find( PropertyInfo.Property->GetNameCPP() );

@@ -1,4 +1,5 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
+// .
 
 #pragma once
 
@@ -7,7 +8,7 @@
 #include "LanguageSpec.h"
 #include "VectorVM.h"
 
-struct FNiagaraCompilationOutput;
+struct FVectorVMCompilationOutput;
 
 class FVectorVMLanguageSpec : public ILanguageSpec
 {
@@ -35,7 +36,7 @@ class ir_variable;
 // Generates VectorVM compliant code from IR tokens
 struct FVectorVMCodeBackend : public FCodeBackend
 {
-	FVectorVMCodeBackend(unsigned int InHlslCompileFlags, EHlslCompileTarget InTarget, FNiagaraCompilationOutput& InCompilerOutput) :
+	FVectorVMCodeBackend(unsigned int InHlslCompileFlags, EHlslCompileTarget InTarget, FVectorVMCompilationOutput& InCompilerOutput) :
 		FCodeBackend(InHlslCompileFlags, InTarget), CompilationOutput(InCompilerOutput)
 	{
 	}
@@ -52,7 +53,7 @@ struct FVectorVMCodeBackend : public FCodeBackend
 	//TODO: Do we need to generate a main()?
 	//virtual bool GenerateMain(EHlslShaderFrequency Frequency, const char* EntryPoint, exec_list* Instructions, _mesa_glsl_parse_state* ParseState) override;
 
-	FNiagaraCompilationOutput& CompilationOutput;
+	FVectorVMCompilationOutput& CompilationOutput;
 };
 
 class ir_call;
@@ -71,20 +72,22 @@ ECallScalarizeMode get_scalarize_mode(ir_function_signature* in_sig);
 EVectorVMOp get_special_vm_opcode(ir_function_signature* signature);
 
 void vm_matrices_to_vectors(exec_list* instructions, _mesa_glsl_parse_state *state);
-bool do_vec_op_to_scalar(exec_list *instructions);
+bool do_vec_op_to_scalar(exec_list *instructions, _mesa_glsl_parse_state* parse_state);
 bool vm_flatten_branches_to_selects(exec_list *instructions, _mesa_glsl_parse_state *state);
 void vm_to_single_op(exec_list *ir, _mesa_glsl_parse_state *state);
 void vm_merge_ops(exec_list *ir, _mesa_glsl_parse_state *state);
 void vm_scalarize_ops(exec_list* ir, _mesa_glsl_parse_state* state);
 void vm_propagate_non_expressions_visitor(exec_list* ir, _mesa_glsl_parse_state* state);
-void vm_gen_bytecode(exec_list *ir, _mesa_glsl_parse_state *state, FNiagaraCompilationOutput& InCompOutput);
+void vm_gen_bytecode(exec_list *ir, _mesa_glsl_parse_state *state, FVectorVMCompilationOutput& InCompOutput);
 
+
+void DebugDumpIR(struct exec_list* ir, struct _mesa_glsl_parse_state* State);
 
 //////////////////////////////////////////////////////////////////////////
 //Enable verbose debug dumps.
 #define VM_VERBOSE_LOGGING 0
 #if VM_VERBOSE_LOGGING == 2
-#define vm_debug_dump(ir, state) IRDump(ir, state)
+#define vm_debug_dump(ir, state) DebugDumpIR(ir, state)
 #define vm_debug_print dprintf
 #elif VM_VERBOSE_LOGGING == 1
 #define vm_debug_dump(ir, state) 

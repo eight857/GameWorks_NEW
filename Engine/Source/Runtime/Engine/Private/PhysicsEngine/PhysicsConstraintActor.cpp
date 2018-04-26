@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PhysicsEngine/PhysicsConstraintActor.h"
 #include "UObject/ConstructorHelpers.h"
@@ -67,5 +67,3 @@ void APhysicsConstraintActor::LoadedFromAnotherClass( const FName& OldClassName 
 }
 #endif // WITH_EDITOR
 
-/** Returns ConstraintComp subobject **/
-UPhysicsConstraintComponent* APhysicsConstraintActor::GetConstraintComp() const { return ConstraintComp; }

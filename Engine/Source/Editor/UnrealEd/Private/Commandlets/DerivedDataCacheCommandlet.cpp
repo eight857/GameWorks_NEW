@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 DerivedDataCacheCommandlet.cpp: Commandlet for DDC maintenence
@@ -201,8 +201,7 @@ int32 UDerivedDataCacheCommandlet::Main( const FString& Params )
 				}
 				if (bDoSubset)
 				{
-					const FString& SubPackageName = FPackageName::PackageFromPath(*Filename);
-					if (FCrc::StrCrc_DEPRECATED(*SubPackageName.ToUpper()) % SubsetMod != SubsetTarget)
+					if (FCrc::StrCrc_DEPRECATED(*PackageName.ToUpper()) % SubsetMod != SubsetTarget)
 					{
 						continue;
 					}
@@ -223,7 +222,7 @@ int32 UDerivedDataCacheCommandlet::Main( const FString& Params )
 			}
 
 			// even if the load failed this could be the first time through the loop so it might have all the startup packages to resolve
-			GRedirectCollector.ResolveStringAssetReference();
+			GRedirectCollector.ResolveAllSoftObjectPaths();
 
 			// cache all the resources for this platform
 			for (TObjectIterator<UObject> It; It; ++It)

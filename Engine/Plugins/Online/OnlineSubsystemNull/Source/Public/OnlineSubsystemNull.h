@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -62,24 +62,19 @@ public:
 	virtual IOnlineMessagePtr GetMessageInterface() const override;
 	virtual IOnlinePresencePtr GetPresenceInterface() const override;
 	virtual IOnlineChatPtr GetChatInterface() const override;
-    virtual IOnlineTurnBasedPtr GetTurnBasedInterface() const override;
+	virtual IOnlineTurnBasedPtr GetTurnBasedInterface() const override;
 	
 	virtual bool Init() override;
 	virtual bool Shutdown() override;
 	virtual FString GetAppId() const override;
 	virtual bool Exec(class UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar) override;
+	virtual FText GetOnlineServiceName() const override;
 
 	// FTickerObjectBase
 	
 	virtual bool Tick(float DeltaTime) override;
 
 	// FOnlineSubsystemNull
-
-	/**
-	 * Is the Null API available for use
-	 * @return true if Null functionality is available, false otherwise
-	 */
-	bool IsEnabled();
 
 PACKAGE_SCOPE:
 

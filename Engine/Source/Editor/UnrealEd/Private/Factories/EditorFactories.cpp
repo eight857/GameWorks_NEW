@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	EditorFactories.cpp: Editor class factories.
@@ -47,6 +47,9 @@
 #include "MaterialExpressionIO.h"
 #include "Materials/MaterialExpression.h"
 #include "Materials/MaterialFunction.h"
+#include "Materials/MaterialFunctionMaterialLayer.h"
+#include "Materials/MaterialFunctionMaterialLayerBlend.h"
+#include "Materials/MaterialFunctionInstance.h"
 #include "Materials/Material.h"
 #include "Animation/AnimSequence.h"
 #include "Curves/CurveBase.h"
@@ -70,8 +73,6 @@
 #include "Factories/CurveImportFactory.h"
 #include "Factories/DataAssetFactory.h"
 #include "Factories/DataTableFactory.h"
-#include "Factories/DestructibleMeshFactory.h"
-#include "Factories/ReimportDestructibleMeshFactory.h"
 #include "Factories/DialogueVoiceFactory.h"
 #include "Factories/DialogueWaveFactory.h"
 #include "Factories/EnumFactory.h"
@@ -88,6 +89,9 @@
 #include "Factories/LevelFactory.h"
 #include "Factories/MaterialFactoryNew.h"
 #include "Factories/MaterialFunctionFactoryNew.h"
+#include "Factories/MaterialFunctionMaterialLayerFactory.h"
+#include "Factories/MaterialFunctionMaterialLayerBlendFactory.h"
+#include "Factories/MaterialFunctionInstanceFactory.h"
 #include "Factories/MaterialInstanceConstantFactoryNew.h"
 #include "Factories/MaterialParameterCollectionFactoryNew.h"
 #include "Factories/ModelFactory.h"
@@ -188,7 +192,8 @@
 #include "DDSLoader.h"
 #include "Factories/HDRLoader.h"
 #include "Factories/IESLoader.h"
-#include "Interfaces/IImageWrapperModule.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
 
 #include "FbxImporter.h"
 #include "FbxErrors.h"
@@ -205,23 +210,18 @@
 
 #include "InstancedFoliageActor.h"
 
-
-#include "Engine/DestructibleMesh.h"
-#if WITH_APEX
-#include "ApexDestructibleAssetImport.h"
-#endif // WITH_APEX
-
 #if PLATFORM_WINDOWS
-// Needed for DDS support.
-#include "WindowsHWrapper.h"
-#include "AllowWindowsPlatformTypes.h"
-	#include <ddraw.h>
-#include "HideWindowsPlatformTypes.h"
+	// Needed for DDS support.
+	#include "WindowsHWrapper.h"
+	#include "AllowWindowsPlatformTypes.h"
+		#include <ddraw.h>
+	#include "HideWindowsPlatformTypes.h"
 #endif
 
 #if WITH_EDITOR
-#include "CubemapUnwrapUtils.h"
+	#include "CubemapUnwrapUtils.h"
 #endif
+
 #include "Components/BrushComponent.h"
 #include "EngineUtils.h"
 #include "Engine/AssetUserData.h"
@@ -237,7 +237,7 @@
 #include "Haptics/HapticFeedbackEffect_Buffer.h"
 #include "Haptics/HapticFeedbackEffect_SoundWave.h"
 #include "DataTableEditorUtils.h"
-#include "Editor/KismetCompiler/Public/KismetCompilerModule.h"
+#include "KismetCompilerModule.h"
 #include "Factories/SubUVAnimationFactory.h"
 #include "Particles/SubUVAnimation.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -247,8 +247,13 @@
 #include "Factories/PreviewMeshCollectionFactory.h"
 #include "Factories/ForceFeedbackAttenuationFactory.h"
 #include "FileHelper.h"
+#include "ActorGroupingUtils.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogEditorFactories, Log, All);
+#include "Editor/EditorPerProjectUserSettings.h"
+#include "JsonObjectConverter.h"
+#include "MaterialEditorModule.h"
+
+DEFINE_LOG_CATEGORY(LogEditorFactories);
 
 #define LOCTEXT_NAMESPACE "EditorFactories"
 
@@ -260,14 +265,14 @@ class FAssetClassParentFilter : public IClassViewerFilter
 {
 public:
 	FAssetClassParentFilter()
-		: DisallowedClassFlags(0), bDisallowBlueprintBase(false)
+		: DisallowedClassFlags(CLASS_None), bDisallowBlueprintBase(false)
 	{}
 
 	/** All children of these classes will be included unless filtered out by another setting. */
 	TSet< const UClass* > AllowedChildrenOfClasses;
 
 	/** Disallowed class flags. */
-	uint32 DisallowedClassFlags;
+	EClassFlags DisallowedClassFlags;
 
 	/** Disallow blueprint base classes. */
 	bool bDisallowBlueprintBase;
@@ -430,7 +435,6 @@ UObject* UMaterialFactoryNew::FactoryCreateNew(UClass* Class,UObject* InParent,F
 UMaterialFunctionFactoryNew::UMaterialFunctionFactoryNew(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-
 	SupportedClass = UMaterialFunction::StaticClass();
 	bCreateNew = true;
 	bEditAfterNew = true;
@@ -441,6 +445,129 @@ UObject* UMaterialFunctionFactoryNew::FactoryCreateNew(UClass* Class,UObject* In
 	return NewObject<UObject>(InParent, Class, Name, Flags);
 }
 
+/*------------------------------------------------------------------------------
+	UMaterialFunctionMaterialLayerFactory implementation.
+------------------------------------------------------------------------------*/
+UMaterialFunctionMaterialLayerFactory::UMaterialFunctionMaterialLayerFactory(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SupportedClass = UMaterialFunctionMaterialLayer::StaticClass();
+	bCreateNew = true;
+	bEditAfterNew = true;
+}
+
+bool UMaterialFunctionMaterialLayerFactory::CanCreateNew() const
+{
+	IMaterialEditorModule& MaterialEditorModule = FModuleManager::LoadModuleChecked<IMaterialEditorModule>( "MaterialEditor" );
+	return MaterialEditorModule.MaterialLayersEnabled();
+}
+
+UObject* UMaterialFunctionMaterialLayerFactory::FactoryCreateNew(UClass* Class,UObject* InParent,FName Name,EObjectFlags Flags,UObject* Context,FFeedbackContext* Warn)
+{
+	UMaterialFunctionMaterialLayer* Function = NewObject<UMaterialFunctionMaterialLayer>(InParent, UMaterialFunctionMaterialLayer::StaticClass(), Name, Flags);
+	if (Function)
+	{
+		Function->SetMaterialFunctionUsage(EMaterialFunctionUsage::MaterialLayer);
+	}
+	return Function;
+}
+
+/*------------------------------------------------------------------------------
+	UMaterialFunctionMaterialLayerBlendFactory implementation.
+------------------------------------------------------------------------------*/
+UMaterialFunctionMaterialLayerBlendFactory::UMaterialFunctionMaterialLayerBlendFactory(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SupportedClass = UMaterialFunctionMaterialLayerBlend::StaticClass();
+	bCreateNew = true;
+	bEditAfterNew = true;
+}
+
+bool UMaterialFunctionMaterialLayerBlendFactory::CanCreateNew() const
+{
+	IMaterialEditorModule& MaterialEditorModule = FModuleManager::LoadModuleChecked<IMaterialEditorModule>( "MaterialEditor" );
+	return MaterialEditorModule.MaterialLayersEnabled();
+}
+
+UObject* UMaterialFunctionMaterialLayerBlendFactory::FactoryCreateNew(UClass* Class,UObject* InParent,FName Name,EObjectFlags Flags,UObject* Context,FFeedbackContext* Warn)
+{
+	UMaterialFunctionMaterialLayerBlend* Function = NewObject<UMaterialFunctionMaterialLayerBlend>(InParent, UMaterialFunctionMaterialLayerBlend::StaticClass(), Name, Flags);
+	if (Function)
+	{
+		Function->SetMaterialFunctionUsage(EMaterialFunctionUsage::MaterialLayerBlend);
+	}
+	return Function;
+}
+
+
+/*------------------------------------------------------------------------------
+	UMaterialFunctionInstanceFactory implementation.
+------------------------------------------------------------------------------*/
+UMaterialFunctionInstanceFactory::UMaterialFunctionInstanceFactory(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SupportedClass = UMaterialFunctionInstance::StaticClass();
+	bCreateNew = true;
+	bEditAfterNew = true;
+}
+
+UObject* UMaterialFunctionInstanceFactory::FactoryCreateNew(UClass* Class,UObject* InParent,FName Name,EObjectFlags Flags,UObject* Context,FFeedbackContext* Warn)
+{
+	auto MFI = NewObject<UMaterialFunctionInstance>(InParent, Class, Name, Flags);
+
+	if (MFI)
+	{
+		MFI->SetParent(InitialParent);
+	}
+
+	return MFI;
+}
+
+/*------------------------------------------------------------------------------
+UMaterialFunctionMaterialLayerInstanceFactory implementation.
+------------------------------------------------------------------------------*/
+UMaterialFunctionMaterialLayerInstanceFactory::UMaterialFunctionMaterialLayerInstanceFactory(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SupportedClass = UMaterialFunctionMaterialLayerInstance::StaticClass();
+	bCreateNew = true;
+	bEditAfterNew = true;
+}
+
+UObject* UMaterialFunctionMaterialLayerInstanceFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
+{
+	auto MFI = NewObject<UMaterialFunctionMaterialLayerInstance>(InParent, Class, Name, Flags);
+
+	if (MFI)
+	{
+		MFI->SetParent(InitialParent);
+	}
+
+	return MFI;
+}
+
+/*------------------------------------------------------------------------------
+UMaterialFunctionMaterialLayerBlendInstanceFactory implementation.
+------------------------------------------------------------------------------*/
+UMaterialFunctionMaterialLayerBlendInstanceFactory::UMaterialFunctionMaterialLayerBlendInstanceFactory(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SupportedClass = UMaterialFunctionMaterialLayerBlendInstance::StaticClass();
+	bCreateNew = true;
+	bEditAfterNew = true;
+}
+
+UObject* UMaterialFunctionMaterialLayerBlendInstanceFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
+{
+	auto MFI = NewObject<UMaterialFunctionMaterialLayerBlendInstance>(InParent, Class, Name, Flags);
+
+	if (MFI)
+	{
+		MFI->SetParent(InitialParent);
+	}
+
+	return MFI;
+}
 
 /*------------------------------------------------------------------------------
 	UMaterialParameterCollectionFactoryNew implementation.
@@ -758,7 +885,7 @@ UObject* ULevelFactory::FactoryCreateText
 						
 						if( NewActor )
 						{
-							if( GEditor->bGroupingActive && !Cast<AGroupActor>(NewActor) )
+							if( UActorGroupingUtils::IsGroupingActive() && !Cast<AGroupActor>(NewActor) )
 							{
 								bool bGrouped = false;
 
@@ -989,26 +1116,18 @@ UObject* ULevelFactory::FactoryCreateText
 
 		// Import properties if the new actor is 
 		bool		bActorChanged = false;
-		FString*	PropText = &(ActorMapElement.Value); 
-		if( PropText )
+		FString&	PropText = ActorMapElement.Value;
+		if ( Actor->ShouldImport(&PropText, bIsMoveToStreamingLevel) )
 		{
-			if ( Actor->ShouldImport(PropText, bIsMoveToStreamingLevel) )
-			{
-				Actor->PreEditChange(nullptr);
-				ImportObjectProperties( (uint8*)Actor, **PropText, Actor->GetClass(), Actor, Actor, Warn, 0, INDEX_NONE, NULL, &ExistingToNewMap );
-				bActorChanged = true;
+			Actor->PreEditChange(nullptr);
+			ImportObjectProperties( (uint8*)Actor, *PropText, Actor->GetClass(), Actor, Actor, Warn, 0, INDEX_NONE, NULL, &ExistingToNewMap );
+			bActorChanged = true;
 
-				GEditor->SelectActor( Actor, true, false, true );
-			}
-			else // This actor is new, but rejected to import its properties, so just delete...
-			{
-				Actor->Destroy();
-			}
+			GEditor->SelectActor( Actor, true, false, true );
 		}
-		else
-		if( !Actor->IsA(AInstancedFoliageActor::StaticClass()) )
+		else // This actor is new, but rejected to import its properties, so just delete...
 		{
-			// This actor is old
+			Actor->Destroy();
 		}
 
 		// If this is a newly imported brush, validate it.  If it's a newly imported dynamic brush, rebuild it first.
@@ -2625,6 +2744,19 @@ UTextureFactory::UTextureFactory(const FObjectInitializer& ObjectInitializer)
 	bEditorImport = true;
 }
 
+bool UTextureFactory::FactoryCanImport(const FString& Filename)
+{
+	FString Extension = FPaths::GetExtension(Filename);
+
+	return (Formats.ContainsByPredicate(
+		[&Extension](const FString& Format)
+		{
+			return Format.StartsWith(Extension);
+		}));
+}
+
+
+
 void UTextureFactory::PostInitProperties()
 {
 	Super::PostInitProperties();
@@ -2820,7 +2952,7 @@ UTexture* UTextureFactory::ImportTexture(UClass* Class, UObject* InParent, FName
 	//
 	// PNG
 	//
-	IImageWrapperPtr PngImageWrapper = ImageWrapperModule.CreateImageWrapper( EImageFormat::PNG );
+	TSharedPtr<IImageWrapper> PngImageWrapper = ImageWrapperModule.CreateImageWrapper( EImageFormat::PNG );
 	if ( PngImageWrapper.IsValid() && PngImageWrapper->SetCompressed( Buffer, Length ) )
 	{
 		if ( !IsImportResolutionValid( PngImageWrapper->GetWidth(), PngImageWrapper->GetHeight(), bAllowNonPowerOfTwo, Warn ) )
@@ -2831,7 +2963,8 @@ UTexture* UTextureFactory::ImportTexture(UClass* Class, UObject* InParent, FName
 		// Select the texture's source format
 		ETextureSourceFormat TextureFormat = TSF_Invalid;
 		int32 BitDepth = PngImageWrapper->GetBitDepth();
-		ERGBFormat::Type Format = PngImageWrapper->GetFormat();
+		ERGBFormat Format = PngImageWrapper->GetFormat();
+
 		if (Format == ERGBFormat::Gray)
 		{
 			if (BitDepth <= 8)
@@ -2887,8 +3020,14 @@ UTexture* UTextureFactory::ImportTexture(UClass* Class, UObject* InParent, FName
 				uint8* MipData = Texture->Source.LockMip(0);
 				FMemory::Memcpy( MipData, RawPNG->GetData(), RawPNG->Num() );
 
-				// Replace the pixels with 0.0 alpha with a color value from the nearest neighboring color which has a non-zero alpha
-				FillZeroAlphaPNGData( Texture->Source, MipData );
+				bool bFillPNGZeroAlpha = true;
+				GConfig->GetBool(TEXT("TextureImporter"), TEXT("FillPNGZeroAlpha"), bFillPNGZeroAlpha, GEditorIni);
+
+				if (bFillPNGZeroAlpha) 
+				{
+					// Replace the pixels with 0.0 alpha with a color value from the nearest neighboring color which has a non-zero alpha
+					FillZeroAlphaPNGData(Texture->Source, MipData);
+				}
 			}
 			else
 			{
@@ -2905,7 +3044,7 @@ UTexture* UTextureFactory::ImportTexture(UClass* Class, UObject* InParent, FName
 	//
 	// JPEG
 	//
-	IImageWrapperPtr JpegImageWrapper = ImageWrapperModule.CreateImageWrapper( EImageFormat::JPEG );
+	TSharedPtr<IImageWrapper> JpegImageWrapper = ImageWrapperModule.CreateImageWrapper( EImageFormat::JPEG );
 	if ( JpegImageWrapper.IsValid() && JpegImageWrapper->SetCompressed( Buffer, Length ) )
 	{
 		if ( !IsImportResolutionValid( JpegImageWrapper->GetWidth(), JpegImageWrapper->GetHeight(), bAllowNonPowerOfTwo, Warn ) )
@@ -2916,7 +3055,7 @@ UTexture* UTextureFactory::ImportTexture(UClass* Class, UObject* InParent, FName
 		// Select the texture's source format
 		ETextureSourceFormat TextureFormat = TSF_Invalid;
 		int32 BitDepth = JpegImageWrapper->GetBitDepth();
-		ERGBFormat::Type Format = JpegImageWrapper->GetFormat();
+		ERGBFormat Format = JpegImageWrapper->GetFormat();
 
 		if ( Format == ERGBFormat::Gray )
 		{
@@ -2976,7 +3115,7 @@ UTexture* UTextureFactory::ImportTexture(UClass* Class, UObject* InParent, FName
 	//
 	// EXR
 	//
-	IImageWrapperPtr ExrImageWrapper = ImageWrapperModule.CreateImageWrapper( EImageFormat::EXR );
+	TSharedPtr<IImageWrapper> ExrImageWrapper = ImageWrapperModule.CreateImageWrapper( EImageFormat::EXR );
 	if ( ExrImageWrapper.IsValid() && ExrImageWrapper->SetCompressed( Buffer, Length ) )
 	{
 		int32 Width = ExrImageWrapper->GetWidth();
@@ -2990,7 +3129,7 @@ UTexture* UTextureFactory::ImportTexture(UClass* Class, UObject* InParent, FName
 		// Select the texture's source format
 		ETextureSourceFormat TextureFormat = TSF_Invalid;
 		int32 BitDepth = ExrImageWrapper->GetBitDepth();
-		ERGBFormat::Type Format = ExrImageWrapper->GetFormat();
+		ERGBFormat Format = ExrImageWrapper->GetFormat();
 
 		if ( Format == ERGBFormat::RGBA && BitDepth == 16 )
 		{
@@ -3038,7 +3177,7 @@ UTexture* UTextureFactory::ImportTexture(UClass* Class, UObject* InParent, FName
 	//
 	// BMP
 	//
-	IImageWrapperPtr BmpImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::BMP);
+	TSharedPtr<IImageWrapper> BmpImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::BMP);
 	if (BmpImageWrapper.IsValid() && BmpImageWrapper->SetCompressed(Buffer, Length))
 	{
 		// Check the resolution of the imported texture to ensure validity
@@ -3742,6 +3881,13 @@ UObject* UTextureFactory::FactoryCreateBinary
 	// Automatically detect if the texture is a normal map and configure its properties accordingly
 	NormalMapIdentification::HandleAssetPostImport(this, Texture);
 
+	if(IsAutomatedImport())
+	{
+		// Apply Auto import settings 
+		// Should be applied before post edit change
+		ApplyAutoImportSettings(Texture);
+	}
+
 	FEditorDelegates::OnAssetPostImport.Broadcast(this, Texture);
 
 	// Invalidate any materials using the newly imported texture. (occurs if you import over an existing texture)
@@ -3867,6 +4013,13 @@ UObject* UTextureFactory::FactoryCreateBinary
 	return Texture;
 }
 
+void UTextureFactory::ApplyAutoImportSettings(UTexture* Texture)
+{
+	if ( AutomatedImportSettings.IsValid() )
+	{
+		FJsonObjectConverter::JsonObjectToUStruct(AutomatedImportSettings.ToSharedRef(), Texture->GetClass(), Texture, 0, CPF_InstancedReference);
+	}
+}
 
 bool UTextureFactory::IsImportResolutionValid(int32 Width, int32 Height, bool bAllowNonPowerOfTwo, FFeedbackContext* Warn)
 {
@@ -3898,6 +4051,19 @@ bool UTextureFactory::IsImportResolutionValid(int32 Width, int32 Height, bool bA
 	return bValid;
 }
 
+IImportSettingsParser* UTextureFactory::GetImportSettingsParser()
+{
+	return this;
+}
+
+void UTextureFactory::ParseFromJson(TSharedRef<class FJsonObject> ImportSettingsJson)
+{
+	// Store these settings to be applied to the texture later
+	AutomatedImportSettings = ImportSettingsJson;
+
+	// Try to apply any import time options now 
+	FJsonObjectConverter::JsonObjectToUStruct(ImportSettingsJson, GetClass(), this, 0, CPF_InstancedReference);
+}
 
 /*------------------------------------------------------------------------------
 	UTextureExporterPCX implementation.
@@ -4851,6 +5017,16 @@ EReimportResult::Type UReimportTextureFactory::Reimport( UObject* Obj )
 	bDeferCompression     = pTex->DeferCompression;
 	MipGenSettings		  = pTex->MipGenSettings;
 
+	float Brightness = 0.f;
+	float TextureMultiplier = 1.f;
+
+	UTextureLightProfile* pTexLightProfile = Cast<UTextureLightProfile>(Obj);
+	if ( pTexLightProfile )
+	{
+		Brightness = pTexLightProfile->Brightness;
+		TextureMultiplier = pTexLightProfile->TextureMultiplier;
+	}
+
 	// Suppress the import overwrite dialog because we know that for explicitly re-importing we want to preserve existing settings
 	UTextureFactory::SuppressImportOverwriteDialog();
 
@@ -4858,6 +5034,15 @@ EReimportResult::Type UReimportTextureFactory::Reimport( UObject* Obj )
 
 	if (ImportObject(pTex->GetClass(), pTex->GetOuter(), *pTex->GetName(), RF_Public | RF_Standalone, ResolvedSourceFilePath, nullptr, OutCanceled) != nullptr)
 	{
+		if ( pTexLightProfile )
+		{
+			// We don't update the Brightness and TextureMultiplier during reimport.
+			// The reason is that the IESLoader has changed and calculates these values differently.
+			// Since existing lights have been calibrated, we don't want to screw with those values.
+			pTexLightProfile->Brightness = Brightness;
+			pTexLightProfile->TextureMultiplier = TextureMultiplier;
+		}
+
 		UE_LOG(LogEditorFactories, Log, TEXT("-- imported successfully") );
 
 		pTex->AssetImportData->Update(ResolvedSourceFilePath);
@@ -4926,7 +5111,10 @@ bool UReimportFbxStaticMeshFactory::CanReimport( UObject* Obj, TArray<FString>& 
 				//This mesh was import with a scene import, we cannot reimport it
 				return false;
 			}
-
+			else if (!FbxAssetImportData)
+			{
+				return false;
+			}
 			OutFilenames.Add(Mesh->AssetImportData->GetFirstFilename());
 		}
 		else
@@ -4970,25 +5158,30 @@ EReimportResult::Type UReimportFbxStaticMeshFactory::Reimport( UObject* Obj )
 	
 	UFbxImportUI* ReimportUI = NewObject<UFbxImportUI>();
 	ReimportUI->MeshTypeToImport = FBXIT_StaticMesh;
-	ReimportUI->bOverrideFullName = false;
 	ReimportUI->StaticMeshImportData->bCombineMeshes = true;
 
 	if (!ImportUI)
 	{
 		ImportUI = NewObject<UFbxImportUI>(this, NAME_None, RF_Public);
 	}
+	const bool ShowImportDialogAtReimport = GetDefault<UEditorPerProjectUserSettings>()->bShowImportDialogAtReimport && !GIsAutomationTesting;
 
-	if( ImportData )
+	if( ImportData  && !ShowImportDialogAtReimport)
 	{
 		// Import data already exists, apply it to the fbx import options
 		ReimportUI->StaticMeshImportData = ImportData;
+		ReimportUI->bResetMaterialSlots = false;
 		ApplyImportUIToImportOptions(ReimportUI, *ImportOptions);
 	}
 	else
 	{
-		// An existing import data object was not found, make one here and show the options dialog
-		ImportData = UFbxStaticMeshImportData::GetImportDataForStaticMesh(Mesh, ImportUI->StaticMeshImportData);
-		Mesh->AssetImportData = ImportData;
+		if (ImportData == nullptr)
+		{
+			// An existing import data object was not found, make one here and show the options dialog
+			ImportData = UFbxStaticMeshImportData::GetImportDataForStaticMesh(Mesh, ImportUI->StaticMeshImportData);
+			Mesh->AssetImportData = ImportData;
+		}
+		ReimportUI->bIsReimport = true;
 		ReimportUI->StaticMeshImportData = ImportData;
 		
 		bool bImportOperationCanceled = false;
@@ -4997,7 +5190,7 @@ EReimportResult::Type UReimportFbxStaticMeshFactory::Reimport( UObject* Obj )
 		bool bOutImportAll = false;
 		bool bIsObjFormat = false;
 		bool bIsAutomated = false;
-		GetImportOptions( FFbxImporter, ReimportUI, bShowOptionDialog, bIsAutomated, Obj->GetPathName(), bOperationCanceled, bOutImportAll, bIsObjFormat, bForceImportType, FBXIT_StaticMesh );
+		GetImportOptions( FFbxImporter, ReimportUI, bShowOptionDialog, bIsAutomated, Obj->GetPathName(), bOperationCanceled, bOutImportAll, bIsObjFormat, bForceImportType, FBXIT_StaticMesh, Mesh);
 	}
 
 	//We do not touch bAutoComputeLodDistances when we re-import, setting it to true will make sure we do not change anything.
@@ -5034,7 +5227,7 @@ EReimportResult::Type UReimportFbxStaticMeshFactory::Reimport( UObject* Obj )
 		}
 
 		CurrentFilename = Filename;
-
+		bool bImportSucceed = true;
 		if ( FFbxImporter->ImportFromFile( *Filename, FPaths::GetExtension( Filename ), true ) )
 		{
 			FFbxImporter->ApplyTransformSettingsToFbxNode(FFbxImporter->Scene->GetRootNode(), ImportData);
@@ -5098,19 +5291,22 @@ EReimportResult::Type UReimportFbxStaticMeshFactory::Reimport( UObject* Obj )
 			else
 			{
 				UE_LOG(LogEditorFactories, Warning, TEXT("-- import failed") );
+				bImportSucceed = false;
 			}
 		}
 		else
 		{
 			UE_LOG(LogEditorFactories, Warning, TEXT("-- import failed") );
+			bImportSucceed = false;
 		}
 
 		FFbxImporter->ReleaseScene(); 
 
-		return EReimportResult::Succeeded;
+		return bImportSucceed ? EReimportResult::Succeeded : EReimportResult::Failed;
 	}
 	else
 	{
+		FFbxImporter->ReleaseScene();
 		return EReimportResult::Cancelled;
 	}
 }
@@ -5145,7 +5341,7 @@ bool UReimportFbxSkeletalMeshFactory::FactoryCanImport(const FString& Filename)
 bool UReimportFbxSkeletalMeshFactory::CanReimport( UObject* Obj, TArray<FString>& OutFilenames )
 {
 	USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(Obj);
-	if (SkeletalMesh && !Obj->IsA(UDestructibleMesh::StaticClass()))
+	if (SkeletalMesh && !SkeletalMesh->HasCustomActorReimportFactory())
 	{
 		if (SkeletalMesh->AssetImportData)
 		{
@@ -5155,7 +5351,7 @@ bool UReimportFbxSkeletalMeshFactory::CanReimport( UObject* Obj, TArray<FString>
 				//This skeletal mesh was import with a scene import, we cannot reimport it here
 				return false;
 			}
-			else if (SkeletalMesh->AssetImportData != nullptr && (FPaths::GetExtension(SkeletalMesh->AssetImportData->GetFirstFilename()).ToLower() == "abc"))
+			else if (FPaths::GetExtension(SkeletalMesh->AssetImportData->GetFirstFilename()) == TEXT("abc"))
 			{
 				return false;
 			}
@@ -5182,13 +5378,18 @@ void UReimportFbxSkeletalMeshFactory::SetReimportPaths( UObject* Obj, const TArr
 
 EReimportResult::Type UReimportFbxSkeletalMeshFactory::Reimport( UObject* Obj )
 {
-	// Only handle valid skeletal meshes that aren't destructible meshes
-	if( !Obj || !Obj->IsA( USkeletalMesh::StaticClass() ) || Obj->IsA( UDestructibleMesh::StaticClass() ) )
+	// Only handle valid skeletal meshes
+	if( !Obj || !Obj->IsA( USkeletalMesh::StaticClass() ))
 	{
 		return EReimportResult::Failed;
 	}
 
 	USkeletalMesh* SkeletalMesh = CastChecked<USkeletalMesh>( Obj );
+
+	if(SkeletalMesh->HasCustomActorReimportFactory())
+	{
+		return EReimportResult::Failed;
+	}
 
 	UnFbx::FFbxImporter* FFbxImporter = UnFbx::FFbxImporter::GetInstance();
 	UnFbx::FBXImportOptions* ImportOptions = FFbxImporter->GetImportOptions();
@@ -5204,7 +5405,6 @@ EReimportResult::Type UReimportFbxSkeletalMeshFactory::Reimport( UObject* Obj )
 	// Prepare the import options
 	UFbxImportUI* ReimportUI = NewObject<UFbxImportUI>();
 	ReimportUI->MeshTypeToImport = FBXIT_SkeletalMesh;
-	ReimportUI->bOverrideFullName = false;
 	ReimportUI->Skeleton = SkeletalMesh->Skeleton;
 	ReimportUI->bCreatePhysicsAsset = false;
 	ReimportUI->PhysicsAsset = SkeletalMesh->PhysicsAsset;
@@ -5219,21 +5419,26 @@ EReimportResult::Type UReimportFbxSkeletalMeshFactory::Reimport( UObject* Obj )
 
 	bool bSuccess = false;
 
-	if( ImportData )
+	const bool ShowImportDialogAtReimport = GetDefault<UEditorPerProjectUserSettings>()->bShowImportDialogAtReimport && !GIsAutomationTesting;
+	if( ImportData && !ShowImportDialogAtReimport)
 	{
 		// Import data already exists, apply it to the fbx import options
 		ReimportUI->SkeletalMeshImportData = ImportData;
 		//Some options not supported with skeletal mesh
 		ReimportUI->SkeletalMeshImportData->bBakePivotInVertex = false;
 		ReimportUI->SkeletalMeshImportData->bTransformVertexToAbsolute = true;
-
+		ReimportUI->bResetMaterialSlots = false;
 		ApplyImportUIToImportOptions(ReimportUI, *ImportOptions);
 	}
 	else
 	{
-		// An existing import data object was not found, make one here and show the options dialog
-		ImportData = UFbxSkeletalMeshImportData::GetImportDataForSkeletalMesh(SkeletalMesh, ImportUI->SkeletalMeshImportData);
-		SkeletalMesh->AssetImportData = ImportData;
+		if (ImportData == nullptr)
+		{
+			// An existing import data object was not found, make one here and show the options dialog
+			ImportData = UFbxSkeletalMeshImportData::GetImportDataForSkeletalMesh(SkeletalMesh, ImportUI->SkeletalMeshImportData);
+			SkeletalMesh->AssetImportData = ImportData;
+		}
+		ReimportUI->bIsReimport = true;
 		ReimportUI->SkeletalMeshImportData = ImportData;
 
 		bool bImportOperationCanceled = false;
@@ -5247,7 +5452,7 @@ EReimportResult::Type UReimportFbxSkeletalMeshFactory::Reimport( UObject* Obj )
 		ImportOptions->bCreatePhysicsAsset = false;
 		ImportOptions->PhysicsAsset = SkeletalMesh->PhysicsAsset;
 
-		ImportOptions = GetImportOptions( FFbxImporter, ReimportUI, bShowOptionDialog, bIsAutomated, Obj->GetPathName(), bOperationCanceled, bOutImportAll, bIsObjFormat, bForceImportType, FBXIT_SkeletalMesh );
+		ImportOptions = GetImportOptions( FFbxImporter, ReimportUI, bShowOptionDialog, bIsAutomated, Obj->GetPathName(), bOperationCanceled, bOutImportAll, bIsObjFormat, bForceImportType, FBXIT_SkeletalMesh, Obj );
 	}
 
 	if( !bOperationCanceled && ensure(ImportData) )
@@ -5306,6 +5511,7 @@ EReimportResult::Type UReimportFbxSkeletalMeshFactory::Reimport( UObject* Obj )
 	}
 	else
 	{
+		FFbxImporter->ReleaseScene();
 		return EReimportResult::Cancelled;
 	}
 }
@@ -5365,6 +5571,10 @@ bool UReimportFbxAnimSequenceFactory::CanReimport( UObject* Obj, TArray<FString>
 				//This mesh was import with a scene import, we cannot reimport it
 				return false;
 			}
+			else if (FPaths::GetExtension(AnimSequence->AssetImportData->GetFirstFilename()) == TEXT("abc"))
+			{
+				return false;
+			}
 		}
 		else
 		{
@@ -5388,7 +5598,7 @@ void UReimportFbxAnimSequenceFactory::SetReimportPaths( UObject* Obj, const TArr
 
 EReimportResult::Type UReimportFbxAnimSequenceFactory::Reimport( UObject* Obj )
 {
-	// Only handle valid skeletal meshes that aren't destructible meshes
+	// Only handle valid skeletal meshes
 	if( !Obj || !Obj->IsA( UAnimSequence::StaticClass() ) )
 	{
 		return EReimportResult::Failed;
@@ -5445,6 +5655,7 @@ EReimportResult::Type UReimportFbxAnimSequenceFactory::Reimport( UObject* Obj )
 			// has still technically "handled" the reimport, so return true instead of false
 			UE_LOG(LogEditorFactories, Warning, TEXT("-- import failed") );
 			Importer->AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Error, LOCTEXT("Error_CouldNotFindSkeleton", "Cannot re-import animation with no skeleton.\nImport failed.")), FFbxErrors::SkeletalMesh_NoBoneFound);
+			Importer->ReleaseScene();
 			return EReimportResult::Succeeded;
 		}
 	}
@@ -6050,7 +6261,7 @@ bool UDataAssetFactory::ConfigureProperties()
 	TSharedPtr<FAssetClassParentFilter> Filter = MakeShareable(new FAssetClassParentFilter);
 	Options.ClassFilter = Filter;
 
-	Filter->DisallowedClassFlags = CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists;
+	Filter->DisallowedClassFlags = CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_HideDropDown;
 	Filter->AllowedChildrenOfClasses.Add(UDataAsset::StaticClass());
 
 	const FText TitleText = LOCTEXT("CreateDataAssetOptions", "Pick Data Asset Class");
@@ -6078,250 +6289,6 @@ UObject* UDataAssetFactory::FactoryCreateNew(UClass* Class, UObject* InParent, F
 		return NewObject<UDataAsset>(InParent, Class, Name, Flags);
 	}
 }
-
-#include "EditorPhysXSupport.h"
-#if WITH_APEX_CLOTHING
-#include "PhysicsPublic.h"
-#include "ApexClothingUtils.h"
-#endif // #if WITH_APEX_CLOTHING
-/*------------------------------------------------------------------------------
-	UDestructibleMeshFactory implementation.
-------------------------------------------------------------------------------*/
-namespace DestructibleFactoryConstants
-{
-	static const FString DestructibleAssetClass("DestructibleAssetParameters");
-}
-
-UDestructibleMeshFactory::UDestructibleMeshFactory(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-{
-
-	bEditorImport = true;
-	SupportedClass = UDestructibleMesh::StaticClass();
-	bCreateNew = false;
-	Formats.Add(TEXT("apx;APEX XML Asset"));
-	Formats.Add(TEXT("apb;APEX Binary Asset"));
-}
-
-FText UDestructibleMeshFactory::GetDisplayName() const
-{
-	return LOCTEXT("APEXDestructibleFactoryDescription", "APEX Destructible Asset");
-}
-
-#if WITH_APEX
-
-bool UDestructibleMeshFactory::FactoryCanImport(const FString& Filename)
-{
-	// Need to read in the file and try to create an asset to get it's type
-	TArray<uint8> FileBuffer; 
-	if(FFileHelper::LoadFileToArray(FileBuffer, *Filename, FILEREAD_Silent))
-	{
-		physx::PxFileBuf* Stream = GApexSDK->createMemoryReadStream(FileBuffer.GetData(), FileBuffer.Num());
-			if(Stream)
-			{
-				NvParameterized::Serializer::SerializeType SerializeType = GApexSDK->getSerializeType(*Stream);
-				if(NvParameterized::Serializer* Serializer = GApexSDK->createSerializer(SerializeType))
-				{
-					NvParameterized::Serializer::DeserializedData DeserializedData;
-					Serializer->deserialize(*Stream, DeserializedData);
-
-					if(DeserializedData.size() > 0)
-					{
-						NvParameterized::Interface* AssetInterface = DeserializedData[0];
-
-						int32 StringLength = StringCast<TCHAR>(AssetInterface->className()).Length();
-						FString ClassName(StringLength, StringCast<TCHAR>(AssetInterface->className()).Get());
-
-						if(ClassName == DestructibleFactoryConstants::DestructibleAssetClass)
-						{
-							return true;
-						}
-					}
-				}
-
-				GApexSDK->releaseMemoryReadStream(*Stream);
-			}
-	}
-	return false;
-}
-
-UObject* UDestructibleMeshFactory::FactoryCreateBinary
-(
-	UClass*				Class,
-	UObject*			InParent,
-	FName				Name,
-	EObjectFlags		Flags,
-	UObject*			Context,
-	const TCHAR*		FileType,
-	const uint8*&		Buffer,
-	const uint8*			BufferEnd,
-	FFeedbackContext*	Warn
-)
-{
-	FEditorDelegates::OnAssetPreImport.Broadcast(this, Class, InParent, Name, FileType);
-
-	// The return value
-	UDestructibleMesh* DestructibleMesh = nullptr;
-
-	// Create an Apex NxDestructibleAsset from the binary blob
-	apex::DestructibleAsset* ApexDestructibleAsset = CreateApexDestructibleAssetFromBuffer(Buffer, (int32)(BufferEnd-Buffer));
-	if( ApexDestructibleAsset != nullptr )
-	{
-		// Succesfully created the NxDestructibleAsset, now create a UDestructibleMesh
-		DestructibleMesh = ImportDestructibleMeshFromApexDestructibleAsset(InParent, *ApexDestructibleAsset, Name, Flags, nullptr);
-		if( DestructibleMesh != nullptr )
-		{
-			FEditorDelegates::OnAssetPostImport.Broadcast(this, DestructibleMesh);
-
-			// Success
-			DestructibleMesh->PostEditChange();
-		}
-	}
-#if WITH_APEX_CLOTHING
-	else
-	{
-		// verify whether this is an Apex Clothing asset or not 
-		apex::ClothingAsset* ApexClothingAsset = ApexClothingUtils::CreateApexClothingAssetFromBuffer(Buffer, (int32)(BufferEnd-Buffer));
-		
-		if(ApexClothingAsset)
-		{
-			FMessageDialog::Open( EAppMsgType::Ok, LOCTEXT("ApexClothingWrongImport", "The file you tried to import is an APEX clothing asset file. You need to use Persona to import this asset and associate it with a skeletal mesh.\n\n 1. Import a skeletal mesh from an FBX file, or choose an existing skeletal asset and open it up in Persona.\n 2. Choose \"Add APEX clothing file\" and choose this APEX clothing asset file." ));
-
-			// This asset is used only for showing a message how to import an Apex Clothing asset properly
-			GPhysCommandHandler->DeferredRelease(ApexClothingAsset);
-		}
-	}
-#endif // #if WITH_APEX_CLOTHING
-
-	return DestructibleMesh;
-}
-
-#endif // WITH_APEX
-
-/*-----------------------------------------------------------------------------
-	UReimportDestructibleMeshFactory implementation.
------------------------------------------------------------------------------*/
-UReimportDestructibleMeshFactory::UReimportDestructibleMeshFactory(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-{
-
-	SupportedClass = UDestructibleMesh::StaticClass();
-	bCreateNew = false;
-	bText = false;
-	Formats.Add(TEXT("apx;APEX XML Asset"));
-	Formats.Add(TEXT("apb;APEX Binary Asset"));
-
-}
-
-FText UReimportDestructibleMeshFactory::GetDisplayName() const
-{
-	return LOCTEXT("APEXReimportDestructibleAssetFactoryDescription", "APEX Reimport Destructible Asset");
-}
-
-#if WITH_APEX
-
-bool UReimportDestructibleMeshFactory::CanReimport( UObject* Obj, TArray<FString>& OutFilenames )
-{	
-	UDestructibleMesh* DestructibleMesh = Cast<UDestructibleMesh>(Obj);
-	if(DestructibleMesh)
-	{
-		if ( DestructibleMesh->AssetImportData )
-		{
-			DestructibleMesh->AssetImportData->ExtractFilenames(OutFilenames);
-		}
-		else
-		{
-			OutFilenames.Add(TEXT(""));
-		}
-		return true;
-	}
-	return false;
-}
-
-void UReimportDestructibleMeshFactory::SetReimportPaths( UObject* Obj, const TArray<FString>& NewReimportPaths )
-{	
-	UDestructibleMesh* DestructibleMesh = Cast<UDestructibleMesh>(Obj);
-	if(DestructibleMesh && ensure(NewReimportPaths.Num() == 1))
-	{
-		DestructibleMesh->AssetImportData->UpdateFilenameOnly(NewReimportPaths[0]);
-	}
-}
-
-EReimportResult::Type UReimportDestructibleMeshFactory::Reimport( UObject* Obj )
-{
-	// Only handle valid skeletal meshes
-	if( !Obj || !Obj->IsA( UDestructibleMesh::StaticClass() ) )
-	{
-		return EReimportResult::Failed;
-	}
-
-	UDestructibleMesh* DestructibleMesh = Cast<UDestructibleMesh>( Obj );
-
-	const FString Filename = DestructibleMesh->AssetImportData->GetFirstFilename();
-
-	// If there is no file path provided, can't reimport from source
-	if ( !Filename.Len() )
-	{
-		// Since this is a new system most skeletal meshes don't have paths, so logging has been commented out
-		//UE_LOG(LogEditorFactories, Warning, TEXT("-- cannot reimport: skeletal mesh resource does not have path stored."));
-		return EReimportResult::Failed;
-	}
-
-	UE_LOG(LogEditorFactories, Log, TEXT("Performing atomic reimport of [%s]"), *Filename);
-
-	// Ensure that the file provided by the path exists
-	if (IFileManager::Get().FileSize(*Filename) == INDEX_NONE)
-	{
-		UE_LOG(LogEditorFactories, Warning, TEXT("-- cannot reimport: source file cannot be found.") );
-		return EReimportResult::Failed;
-	}
-
-	CurrentFilename = Filename;
-
-	// Create an Apex NxDestructibleAsset from the binary blob
-	apex::DestructibleAsset* ApexDestructibleAsset = CreateApexDestructibleAssetFromFile(Filename);
-	if( ApexDestructibleAsset != nullptr )
-	{
-		// Succesfully created the NxDestructibleAsset, now create a UDestructibleMesh
-		UDestructibleMesh* ReimportedDestructibleMesh = ImportDestructibleMeshFromApexDestructibleAsset(DestructibleMesh->GetOuter(), *ApexDestructibleAsset, DestructibleMesh->GetFName(), DestructibleMesh->GetFlags(), nullptr,
-																										EDestructibleImportOptions::PreserveSettings);
-		if( ReimportedDestructibleMesh != nullptr )
-		{
-			check( ReimportedDestructibleMesh == DestructibleMesh );
-
-			UE_LOG(LogEditorFactories, Log, TEXT("-- imported successfully") );
-
-			// Try to find the outer package so we can dirty it up
-			if (DestructibleMesh->GetOuter())
-			{
-				DestructibleMesh->GetOuter()->MarkPackageDirty();
-			}
-			else
-			{
-				DestructibleMesh->MarkPackageDirty();
-			}
-		}
-		else
-		{
-			FMessageDialog::Open( EAppMsgType::Ok, NSLOCTEXT("UnrealEd", "ImportFailed_Destructible", "Reimport Failed" ));
-			UE_LOG(LogEditorFactories, Warning, TEXT("-- import failed") );
-		}
-	}
-	else
-	{
-		FMessageDialog::Open( EAppMsgType::Ok, NSLOCTEXT("UnrealEd", "ImportFailed_Destructible", "Reimport Failed" ));
-		UE_LOG(LogEditorFactories, Warning, TEXT("-- import failed") );
-	}
-
-	return EReimportResult::Succeeded;
-}
-
-int32 UReimportDestructibleMeshFactory::GetPriority() const
-{
-	return ImportPriority;
-}
-
-#endif // #if WITH_APEX
 
 /*------------------------------------------------------------------------------
 	UBlendSpaceFactoryNew.

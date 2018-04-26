@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -46,6 +46,16 @@ public:
 	virtual bool SameType(const UProperty* Other) const override;
 	virtual bool ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8* Data, UStruct* DefaultsStruct, bool& bOutAdvanceProperty) override;
 	// End of UProperty interface
+
+	/**
+	 * Set the UEnum of this property.
+	 * @note May only be called once to lazily initialize the property when using the default constructor.
+	 */
+	FORCEINLINE void SetEnum(UEnum* InEnum)
+	{
+		checkf(!Enum, TEXT("UEnumProperty enum may only be set once"));
+		Enum = InEnum;
+	}
 
 	/**
 	 * Returns a pointer to the UEnum of this property.

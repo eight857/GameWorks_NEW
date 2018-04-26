@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayTasksComponent.h"
 #include "UObject/Package.h"
@@ -60,6 +60,7 @@ void UGameplayTasksComponent::OnGameplayTaskActivated(UGameplayTask& Task)
 {
 	// process events after finishing all operations
 	FEventLock ScopeEventLock(this);
+	KnownTasks.Add(&Task);
 
 	if (Task.IsTickingTask())
 	{
@@ -72,10 +73,12 @@ void UGameplayTasksComponent::OnGameplayTaskActivated(UGameplayTask& Task)
 			UpdateShouldTick();
 		}
 	}
+	
 	if (Task.IsSimulatedTask())
 	{
 		check(SimulatedTasks.Contains(&Task) == false);
 		SimulatedTasks.Add(&Task);
+		bIsNetDirty = true;
 	}
 
 	IGameplayTaskOwnerInterface* TaskOwner = Task.GetTaskOwner();
@@ -109,9 +112,18 @@ void UGameplayTasksComponent::OnGameplayTaskDeactivated(UGameplayTask& Task)
 		TickingTasks.RemoveSingleSwap(&Task);
 	}
 
+	if (bIsFinished)
+	{
+		// using RemoveSwap rather than RemoveSingleSwap since a Task can be added
+		// to KnownTasks both when activating as well as unpausing
+		// while removal happens only once. It's cheaper to handle it here.
+		KnownTasks.RemoveSwap(&Task);
+	}
+
 	if (Task.IsSimulatedTask())
 	{
 		SimulatedTasks.RemoveSingleSwap(&Task);
+		bIsNetDirty = true;
 	}
 
 	// Resource-using task
@@ -322,17 +334,9 @@ UGameplayTask* UGameplayTasksComponent::FindResourceConsumingTaskByName(const FN
 
 bool UGameplayTasksComponent::HasActiveTasks(UClass* TaskClass) const
 {
-	for (int32 Idx = 0; Idx < TaskPriorityQueue.Num(); Idx++)
+	for (int32 Idx = 0; Idx < KnownTasks.Num(); Idx++)
 	{
-		if (TaskPriorityQueue[Idx] && TaskPriorityQueue[Idx]->IsA(TaskClass))
-		{
-			return true;
-		}
-	}
-
-	for (int32 Idx = 0; Idx < TickingTasks.Num(); Idx++)
-	{
-		if (TickingTasks[Idx] && TickingTasks[Idx]->IsA(TaskClass))
+		if (KnownTasks[Idx] && KnownTasks[Idx]->IsA(TaskClass))
 		{
 			return true;
 		}
@@ -482,7 +486,9 @@ void UGameplayTasksComponent::UpdateTaskActivations()
 		for (int32 Idx = 0; Idx < ActivationList.Num(); Idx++)
 		{
 			// check if task wasn't already finished as a result of activating previous elements of this list
-			if (ActivationList[Idx] && !ActivationList[Idx]->IsFinished())
+			if (ActivationList[Idx] != nullptr
+				&& ActivationList[Idx]->IsFinished() == false
+				&& ActivationList[Idx]->IsPendingKill() == false)
 			{
 				ActivationList[Idx]->ActivateInTaskQueue();
 			}
@@ -530,6 +536,23 @@ FString UGameplayTasksComponent::GetTickingTasksDescription() const
 	return TasksDescription;
 }
 
+FString UGameplayTasksComponent::GetKnownTasksDescription() const
+{
+	FString TasksDescription;
+	for (auto& Task : KnownTasks)
+	{
+		if (Task)
+		{
+			TasksDescription += FString::Printf(TEXT("\n%s %s"), *GetTaskStateName(Task->GetState()), *Task->GetDebugDescription());
+		}
+		else
+		{
+			TasksDescription += TEXT("\nNULL");
+		}
+	}
+	return TasksDescription;
+}
+
 FString UGameplayTasksComponent::GetTasksPriorityQueueDescription() const
 {
 	FString TasksDescription;
@@ -560,6 +583,11 @@ FConstGameplayTaskIterator UGameplayTasksComponent::GetTickingTaskIterator() con
 	return TickingTasks.CreateConstIterator();
 }
 
+FConstGameplayTaskIterator UGameplayTasksComponent::GetKnownTaskIterator() const
+{
+	return KnownTasks.CreateConstIterator();
+}
+
 FConstGameplayTaskIterator UGameplayTasksComponent::GetPriorityQueueIterator() const
 {
 	return TaskPriorityQueue.CreateConstIterator();
@@ -569,17 +597,35 @@ FConstGameplayTaskIterator UGameplayTasksComponent::GetPriorityQueueIterator() c
 void UGameplayTasksComponent::DescribeSelfToVisLog(FVisualLogEntry* Snapshot) const
 {
 	static const FString CategoryName = TEXT("GameplayTasks");
-	static const FString TickingTasksName = TEXT("Ticking tasks");
 	static const FString PriorityQueueName = TEXT("Priority Queue");
+	static const FString OtherTasksName = TEXT("Other tasks");
 
 	if (IsPendingKill())
 	{
 		return;
 	}
 
-	FVisualLogStatusCategory StatusCategory(CategoryName);
+	FString NotInQueueDesc;
+	for (auto& Task : KnownTasks)
+	{
+		if (Task)
+		{
+			if (!Task->RequiresPriorityOrResourceManagement())
+			{
+				NotInQueueDesc += FString::Printf(TEXT("\n%s %s %s %s"),
+					*GetTaskStateName(Task->GetState()), *Task->GetDebugDescription(),
+					Task->IsTickingTask() ? TEXT("[TICK]") : TEXT(""),
+					Task->IsSimulatedTask() ? TEXT("[REP]") : TEXT(""));
+			}
+		}
+		else
+		{
+			NotInQueueDesc += TEXT("\nNULL");
+		}
+	}
 
-	StatusCategory.Add(TickingTasksName, GetTickingTasksDescription());
+	FVisualLogStatusCategory StatusCategory(CategoryName);
+	StatusCategory.Add(OtherTasksName, NotInQueueDesc);
 	StatusCategory.Add(PriorityQueueName, GetTasksPriorityQueueDescription());
 
 	Snapshot->Status.Add(StatusCategory);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/MessageDialog.h"
@@ -446,7 +446,7 @@ public:
 					if (FMessageDialog::Open(EAppMsgType::OkCancel,
 						FText::Format(
 						NSLOCTEXT("UnrealEd", "LandscapeMoveToStreamingLevel_SharedResources", "The following items must be moved out of the persistent level and into a package that can be shared between multiple levels:\n\n{0}"),
-						FText::FromString(MsgBoxList))))
+						FText::FromString(MsgBoxList))) == EAppReturnType::Type::Ok)
 					{
 						FString Path = Landscape->GetOutermost()->GetName() + TEXT("_sharedassets/");
 						bool bSucceed = ObjectTools::RenameObjects(RenameObjects, false, TEXT(""), Path);
@@ -1646,10 +1646,10 @@ public:
 
 								switch (EdMode->UISettings->PasteMode)
 								{
-								case ELandscapeToolNoiseMode::Add:
+								case ELandscapeToolPasteMode::Raise:
 									PaintAmount = OriginalValue < DestValue ? PaintAmount : 0.0f;
 									break;
-								case ELandscapeToolNoiseMode::Sub:
+								case ELandscapeToolPasteMode::Lower:
 									PaintAmount = OriginalValue > DestValue ? PaintAmount : 0.0f;
 									break;
 								default:

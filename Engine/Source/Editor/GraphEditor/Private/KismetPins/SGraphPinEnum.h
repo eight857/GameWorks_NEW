@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,7 +8,7 @@
 #include "SGraphPin.h"
 #include "SGraphPinComboBox.h"
 
-class SGraphPinEnum : public SGraphPin
+class GRAPHEDITOR_API SGraphPinEnum : public SGraphPin
 {
 public:
 	SLATE_BEGIN_ARGS(SGraphPinEnum) {}

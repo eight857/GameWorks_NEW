@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,6 +10,8 @@
 class ISectionLayoutBuilder
 {
 public:
+	virtual ~ISectionLayoutBuilder() { }
+
 	/** 
 	 * Pushes a new category onto the layout.  If there is a current category, this category will appear as a child of the current category
 	 *

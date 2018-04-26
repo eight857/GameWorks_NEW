@@ -1,9 +1,9 @@
-﻿INTSourceChangelist:3351873
-Availability: Docs
+﻿INTSourceChangelist:0
+Availability: Public
 Title: 6 - On Your Own!
-Crumbs:
+Crumbs:%ROOT%
 Description:Do some exercises on your own.
-Version: 4.14
+Version: 4.17
 type:quick start
 parent:Platforms/Linux/IntermediateLinuxDeveloper/AndroidOnLinux
 order: 6

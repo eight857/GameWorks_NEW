@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -59,10 +59,6 @@ public:
 	UPROPERTY(EditAnywhere, config, Category=Blueprints, meta=(DisplayName="Blueprint Break on Exceptions"))
 	bool bBreakOnExceptions;
 
-	/** Enable experimental blueprint performance analysis tools. */
-	UPROPERTY(EditAnywhere, config, Category=Blueprints, meta=(DisplayName="Blueprint Performance Analysis Tools"))
-	bool bBlueprintPerformanceAnalysisTools;
-
 	/** Enables "Find and Replace All" tool in the MyBlueprint window for variables */
 	UPROPERTY(EditAnywhere, config, Category = Blueprints, meta = (DisplayName = "Find and Replace All References Tool"))
 	bool bEnableFindAndReplaceReferences;
@@ -70,10 +66,6 @@ public:
 	/** Should arrows indicating data/execution flow be drawn halfway along wires? */
 	UPROPERTY(/*EditAnywhere - deprecated (moved into UBlueprintEditorSettings), */config/*, Category=Blueprints, meta=(DisplayName="Draw midpoint arrows in Blueprints")*/)
 	bool bDrawMidpointArrowsInBlueprints;
-
-	/** Whether to show Audio Streaming options for SoundWaves (disabling will not stop all audio streaming) */
-	UPROPERTY(EditAnywhere, config, Category=Audio)
-	bool bShowAudioStreamingOptions;
 
 	/** Allows ChunkIDs to be assigned to assets to via the content browser context menu. */
 	UPROPERTY(EditAnywhere,config,Category=UserInterface,meta=(DisplayName="Allow ChunkID Assignments"))
@@ -83,16 +75,15 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = Cooking, meta = (DisplayName = "Disable Cook In The Editor feature (cooks from launch on will be run in a separate process if disabled)", ConfigRestartRequired=true))
 	bool bDisableCookInEditor;
 
+	UPROPERTY(EditAnywhere, config, Category = Cooking, meta = (DisplayName = "Use shared cooked builds in launch on", ConfigRestartRequired = true))
+	bool bSharedCookedBuilds;
+
 	UPROPERTY(EditAnywhere, config, Category = Cooking, meta = (DisplayName = "Use multiple processes when cooking (only affects File -> Package)"))
 	int32 MultiProcessCooking;
 
 	/** Enables Environment Queries editor */
 	UPROPERTY(EditAnywhere, config, Category = AI, meta = (DisplayName = "Environment Querying System"))
 	bool bEQSEditor;
-
-	/** This feature allows you to broadcast to a live streaming service directly from the editor.  This requires you to have a live streaming plugin installed. */
-	UPROPERTY(EditAnywhere, config, Category=Tools)
-	bool bLiveStreamingFromEditor;
 
 	/** Enable late joining in PIE */
 	UPROPERTY(EditAnywhere, config, Category = PIE, meta = (DisplayName = "Allow late joining"))
@@ -122,10 +113,22 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = Tools, meta = (ConfigRestartRequired = true))
 	bool bFacialAnimationImporter;
 
-	/** Enable experimental clothing tools (parameter painting and simulation configuration) found in the skeletal mesh editor */
-	UPROPERTY(EditAnywhere, config, Category = Tools, meta = (ConfigRestartRequired = true))
-	bool bClothingTools;
+	/** Allow animation blueprints to be recompiled while a PIE session is running */
+	UPROPERTY(EditAnywhere, config, Category = Tools)
+	bool bEnableLiveRecompilationOfAnimationBlueprints;
 
+	/** Enable experimental PIE preview device launch */
+	UPROPERTY(EditAnywhere, config, Category = PIE, meta = (DisplayName = "Enable mobile PIE with preview device launch options."))
+	bool bMobilePIEPreviewDeviceLaunch;
+
+	/** Enables in-editor support for text asset formats */
+	//UPROPERTY(EditAnywhere, config, Category = Core)
+	bool bTextAssetFormatSupport;
+
+	/** When creating new Material Layers and Material Layer Blends, set up example graphs. */
+	UPROPERTY(EditAnywhere, config, Category = Materials)
+	bool bExampleLayersAndBlends;
+	
 	/**
 	 * Returns an event delegate that is executed when a setting has changed.
 	 *

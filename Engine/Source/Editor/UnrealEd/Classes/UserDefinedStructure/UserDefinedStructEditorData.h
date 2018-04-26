@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,9 +6,11 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
 #include "Misc/Guid.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "EdGraph/EdGraphPin.h"
 #include "UObject/StructOnScope.h"
+#include "EditorUndoClient.h"
+#include "StructureEditorUtils.h"
 #include "UserDefinedStructEditorData.generated.h"
 
 class ITransactionObjectAnnotation;
@@ -32,53 +34,63 @@ struct FStructVariableDescription
 
 	// TYPE DATA
 	UPROPERTY()
-	FString Category;
+	FName Category;
 
 	UPROPERTY()
-	FString SubCategory;
+	FName SubCategory;
 
 	UPROPERTY()
-	TAssetPtr<UObject> SubCategoryObject;
+	TSoftObjectPtr<UObject> SubCategoryObject;
 
 	UPROPERTY()
 	FEdGraphTerminalType PinValueType;
 
 	UPROPERTY()
-	bool bIsArray;
+	EPinContainerType ContainerType;
 
+	// DEPRECATED(4.17)
 	UPROPERTY()
-	bool bIsSet;
+	uint8 bIsArray_DEPRECATED:1;
 
+	// DEPRECATED(4.17)
 	UPROPERTY()
-	bool bIsMap;
+	uint8 bIsSet_DEPRECATED:1;
+
+	// DEPRECATED(4.17)
+	UPROPERTY()
+	uint8 bIsMap_DEPRECATED:1;
 
 	UPROPERTY(Transient)
-	bool bInvalidMember;
+	uint8 bInvalidMember:1;
+
+	UPROPERTY()
+	uint8 bDontEditoOnInstance:1;
+
+	UPROPERTY()
+	uint8 bEnableMultiLineText:1;
+
+	UPROPERTY()
+	uint8 bEnable3dWidget:1;
 
 	// CurrentDefaultValue stores the actual default value, after the DefaultValue was changed, and before the struct was recompiled
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString CurrentDefaultValue;
 
 	UPROPERTY()
 	FString ToolTip;
 
-	UPROPERTY()
-	bool bDontEditoOnInstance;
-
-	UPROPERTY()
-	bool bEnableMultiLineText;
-
-	UPROPERTY()
-	bool bEnable3dWidget;
-
 	UNREALED_API bool SetPinType(const struct FEdGraphPinType& VarType);
 
 	UNREALED_API FEdGraphPinType ToPinType() const;
 
+	// DEPRECATED(4.17)
+	void PostSerialize(const FArchive& Ar);
+
 	FStructVariableDescription()
-		: bIsArray(false)
-		, bIsSet(false)
-		, bIsMap(false)
+		: ContainerType(EPinContainerType::None)
+		, bIsArray_DEPRECATED(false)
+		, bIsSet_DEPRECATED(false)
+		, bIsMap_DEPRECATED(false)
 		, bInvalidMember(false)
 		, bDontEditoOnInstance(false)
 		, bEnableMultiLineText(false)
@@ -86,21 +98,17 @@ struct FStructVariableDescription
 	{ }
 };
 
-class FStructOnScopeMember : public FStructOnScope
+template<>
+struct TStructOpsTypeTraits< FStructVariableDescription > : public TStructOpsTypeTraitsBase2< FStructVariableDescription >
 {
-public:
-	FStructOnScopeMember() : FStructOnScope() {}
-
-	void Recreate(const UStruct* InScriptStruct)
+	enum 
 	{
-		Destroy();
-		ScriptStruct = InScriptStruct;
-		Initialize();
-	}
+		WithPostSerialize = true,
+	};
 };
 
 UCLASS()
-class UNREALED_API UUserDefinedStructEditorData : public UObject
+class UNREALED_API UUserDefinedStructEditorData : public UObject, public FEditorUndoClient
 {
 	GENERATED_UCLASS_BODY()
 
@@ -116,16 +124,7 @@ public:
 	UPROPERTY()
 	FString ToolTip;
 
-	// optional super struct
-	UPROPERTY()
-	UScriptStruct* NativeBase;
-
-protected:
-	FStructOnScopeMember DefaultStructInstance;
-
 public:
-	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
-
 	// UObject interface.
 	virtual TSharedPtr<ITransactionObjectAnnotation> GetTransactionAnnotation() const override;
 	virtual void PostEditUndo() override;
@@ -133,10 +132,25 @@ public:
 	virtual void PostLoadSubobjects(struct FObjectInstancingGraph* OuterInstanceGraph) override;
 	// End of UObject interface.
 
+	// FEditorUndoClient interface
+	virtual void PostUndo(bool bSuccess) override;
+	virtual void PostRedo(bool bSuccess) override { PostUndo(bSuccess); }
+	// End of FEditorUndoClient interface.
+
+
 	uint32 GenerateUniqueNameIdForMemberVariable();
 	class UUserDefinedStruct* GetOwnerStruct() const;
 
 	const uint8* GetDefaultInstance() const;
 	void RecreateDefaultInstance(FString* OutLog = nullptr);
 	void CleanDefaultInstance();
+
+private:
+
+	// Track the structure change that PostEditUndo undid to pass to FUserDefinedStructureCompilerUtils::CompileStruct
+	FStructureEditorUtils::EStructureEditorChangeInfo CachedStructureChange;
+
+	// Utility function for both PostEditUndo to route through
+	void ConsolidatedPostEditUndo(FStructureEditorUtils::EStructureEditorChangeInfo ActiveChange);
+
 };

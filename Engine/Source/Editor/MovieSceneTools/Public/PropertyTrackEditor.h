@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -97,7 +97,12 @@ public:
 
 public:
 
-	// ISequencerTrackEditor interface
+	//~ ISequencerTrackEditor interface
+
+    virtual bool SupportsSequence(UMovieSceneSequence* InSequence) const override
+    {
+        return true;
+    }
 
 	virtual bool SupportsType( TSubclassOf<UMovieSceneTrack> Type ) const override
 	{
@@ -234,8 +239,10 @@ private:
 	}
 
 	/** Adds a key based on a property change. */
-	bool OnKeyProperty( float KeyTime, FPropertyChangedParams PropertyChangedParams )
+	FKeyPropertyResult OnKeyProperty( float KeyTime, FPropertyChangedParams PropertyChangedParams )
 	{
+		FKeyPropertyResult KeyPropertyResult;
+
 		TArray<KeyDataType> NewKeysForPropertyChange;
 		TArray<KeyDataType> DefaultKeysForPropertyChange;
 		GenerateKeysFromPropertyChanged( PropertyChangedParams, NewKeysForPropertyChange, DefaultKeysForPropertyChange );
@@ -243,7 +250,7 @@ private:
 		UProperty* Property = PropertyChangedParams.PropertyPath.GetLeafMostProperty().Property.Get();
 		if (!Property)
 		{
-			return false;
+			return KeyPropertyResult;
 		}
 
 		TSubclassOf<UMovieSceneTrack> CustomizedClass = GetCustomizedTrackClass( Property );
@@ -277,7 +284,7 @@ private:
 		}
 		else
 		{
-			return false;
+			return KeyPropertyResult;
 		}
 	}
 

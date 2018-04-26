@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,7 +7,7 @@
 #include "Abilities/Tasks/AbilityTask.h"
 #include "AbilityTask_WaitGameplayEffectRemoved.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FWaitGameplayEffectRemovedDelegate);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWaitGameplayEffectRemovedDelegate, const FGameplayEffectRemovalInfo &, GameplayEffectRemovalInfo);
 
 class AActor;
 class UPrimitiveComponent;
@@ -15,8 +15,8 @@ class UPrimitiveComponent;
 /**
  *	Waits for the actor to activate another ability
  */
-UCLASS(MinimalAPI)
-class UAbilityTask_WaitGameplayEffectRemoved : public UAbilityTask
+UCLASS()
+class GAMEPLAYABILITIES_API UAbilityTask_WaitGameplayEffectRemoved : public UAbilityTask
 {
 	GENERATED_UCLASS_BODY()
 
@@ -29,7 +29,7 @@ class UAbilityTask_WaitGameplayEffectRemoved : public UAbilityTask
 	virtual void Activate() override;
 
 	UFUNCTION()
-	void OnGameplayEffectRemoved();
+	void OnGameplayEffectRemoved(const FGameplayEffectRemovalInfo& InGameplayEffectRemovalInfo);
 
 	/** Wait until the specified gameplay effect is removed. */
 	UFUNCTION(BlueprintCallable, Category="Ability|Tasks", meta = (HidePin = "OwningAbility", DefaultToSelf = "OwningAbility", BlueprintInternalUseOnly = "TRUE"))
@@ -43,4 +43,5 @@ protected:
 	bool Registered;
 
 	FDelegateHandle OnGameplayEffectRemovedDelegateHandle;
+	FDelegateHandle OnGameplayEffectRemovedDelegateHandle_Deprecated;
 };

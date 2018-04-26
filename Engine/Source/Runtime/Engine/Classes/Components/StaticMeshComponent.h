@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,6 +14,7 @@
 #include "PackedNormal.h"
 #include "RawIndexBuffer.h"
 #include "UniquePtr.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "StaticMeshComponent.generated.h"
 
 class FColorVertexBuffer;
@@ -162,10 +163,6 @@ class ENGINE_API UStaticMeshComponent : public UMeshComponent
 	UPROPERTY()
 	int32 PreviousLODLevel;
 
-	/** Whether to override the MinLOD setting of the static mesh asset with the MinLOD of this component. */
-	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=LOD)
-	bool bOverrideMinLOD;
-
 	/** 
 	 * Specifies the smallest LOD that will be used for this component.  
 	 * This is ignored if ForcedLodModel is enabled.
@@ -173,17 +170,22 @@ class ENGINE_API UStaticMeshComponent : public UMeshComponent
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=LOD, meta=(editcondition = "bOverrideMinLOD"))
 	int32 MinLOD;
 
+	/** Subdivision step size for static vertex lighting.				*/
+	UPROPERTY()
+	int32 SubDivisionStepSize;
+
 	/** The static mesh that this component uses to render */
-	DEPRECATED(4.14, "Direct access to StaticMesh member is deprecated and will be made private soon. Please use SetStaticMesh and GetStaticMesh.")
+private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=StaticMesh, ReplicatedUsing=OnRep_StaticMesh, meta=(AllowPrivateAccess="true"))
 	class UStaticMesh* StaticMesh;
 
+public:
+
+	/** Helper function to get the FName of the private static mesh member */
+	static const FName GetMemberNameChecked_StaticMesh() { return GET_MEMBER_NAME_CHECKED(UStaticMeshComponent, StaticMesh); }
+
 	UFUNCTION()
 	void OnRep_StaticMesh(class UStaticMesh *OldStaticMesh);
-
-	/** If true, WireframeColorOverride will be used. If false, color is determined based on mobility and physics simulation settings */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Rendering, meta=(InlineEditConditionToggle))
-	bool bOverrideWireframeColor;
 
 	/** Wireframe color to use if bOverrideWireframeColor is true */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Rendering, meta=(editcondition = "bOverrideWireframeColor"))
@@ -217,23 +219,31 @@ class ENGINE_API UStaticMeshComponent : public UMeshComponent
 	int32 StaticMeshImportVersion;
 #endif
 
+	/** If true, WireframeColorOverride will be used. If false, color is determined based on mobility and physics simulation settings */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Rendering, meta=(InlineEditConditionToggle))
+	uint8 bOverrideWireframeColor:1;
+
+	/** Whether to override the MinLOD setting of the static mesh asset with the MinLOD of this component. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=LOD)
+	uint8 bOverrideMinLOD:1;
+
 	/** If true, bForceNavigationObstacle flag will take priority over navigation data stored in StaticMesh */
 	UPROPERTY(transient)
-	uint32 bOverrideNavigationExport : 1;
+	uint8 bOverrideNavigationExport : 1;
 
 	/** Allows overriding navigation export behavior per component: full collisions or dynamic obstacle */
 	UPROPERTY(transient)
-	uint32 bForceNavigationObstacle : 1;
+	uint8 bForceNavigationObstacle : 1;
 
 	/** If true, mesh painting is disallowed on this instance. Set if vertex colors are overridden in a construction script. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadWrite, Category=Rendering)
-	uint32 bDisallowMeshPaintPerInstance : 1;
+	uint8 bDisallowMeshPaintPerInstance : 1;
 
 #if !(UE_BUILD_SHIPPING)
 	/** Draw mesh collision if used for complex collision */
-	uint32 bDrawMeshCollisionIfComplex : 1;
+	uint8 bDrawMeshCollisionIfComplex : 1;
 	/** Draw mesh collision if used for simple collision */
-	uint32 bDrawMeshCollisionIfSimple : 1;
+	uint8 bDrawMeshCollisionIfSimple : 1;
 #endif
 
 	/**
@@ -242,15 +252,11 @@ class ENGINE_API UStaticMeshComponent : public UMeshComponent
 	 *	to avoid them using distance-based streaming.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadWrite, Category=TextureStreaming)
-	uint32 bIgnoreInstanceForTextureStreaming:1;
+	uint8 bIgnoreInstanceForTextureStreaming:1;
 
 	/** Whether to override the lightmap resolution defined in the static mesh. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lighting, meta=(InlineEditConditionToggle))
-	uint32 bOverrideLightMapRes:1;
-
-	/** Light map resolution to use on this component, used if bOverrideLightMapRes is true and there is a valid StaticMesh. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lighting, meta=(ClampMax = 4096, editcondition="bOverrideLightMapRes") )
-	int32 OverriddenLightMapRes;
+	uint8 bOverrideLightMapRes:1;
 
 	/** 
 	 * Whether to use the mesh distance field representation (when present) for shadowing indirect lighting (from lightmaps or skylight) on Movable components.
@@ -258,13 +264,42 @@ class ENGINE_API UStaticMeshComponent : public UMeshComponent
 	 * The StaticMesh must have 'Generate Mesh Distance Field' enabled, or the project must have 'Generate Mesh Distance Fields' enabled for this feature to work.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting, meta=(DisplayName = "Distance Field Indirect Shadow"))
-	uint32 bCastDistanceFieldIndirectShadow:1;
+	uint8 bCastDistanceFieldIndirectShadow:1;
+
+	/** Whether to override the DistanceFieldSelfShadowBias setting of the static mesh asset with the DistanceFieldSelfShadowBias of this component. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting)
+	uint8 bOverrideDistanceFieldSelfShadowBias:1;
+
+	/** Whether to use subdivisions or just the triangle's vertices.	*/
+	UPROPERTY()
+	uint8 bUseSubDivisions:1;
+
+	/** Use the collision profile specified in the StaticMesh asset.*/
+	UPROPERTY(EditAnywhere, Category = Collision)
+	uint8 bUseDefaultCollision:1;
+
+#if WITH_EDITORONLY_DATA
+	/** The component has some custom painting on LODs or not. */
+	UPROPERTY()
+	uint8 bCustomOverrideVertexColorPerLOD:1;
+
+	UPROPERTY(transient)
+	uint8 bDisplayVertexColors:1;
+#endif
+
+	/** Light map resolution to use on this component, used if bOverrideLightMapRes is true and there is a valid StaticMesh. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lighting, meta=(ClampMax = 4096, editcondition="bOverrideLightMapRes") )
+	int32 OverriddenLightMapRes;
 
 	/** 
 	 * Controls how dark the dynamic indirect shadow can be.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting, meta=(UIMin = "0", UIMax = "1", DisplayName = "Distance Field Indirect Shadow Min Visibility"))
 	float DistanceFieldIndirectShadowMinVisibility;
+
+	/** Useful for reducing self shadowing from distance field methods when using world position offset to animate the mesh's vertices. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting)
+	float DistanceFieldSelfShadowBias;
 
 	/**
 	 * Allows adjusting the desired streaming distance of streaming textures that uses UV 0.
@@ -275,16 +310,10 @@ class ENGINE_API UStaticMeshComponent : public UMeshComponent
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadWrite, Category=TextureStreaming, meta=(ClampMin = 0, ToolTip="Allows adjusting the desired resolution of streaming textures that uses UV 0.  1.0 is the default, whereas a higher value increases the streamed-in resolution."))
 	float StreamingDistanceMultiplier;
 
-	/** Subdivision step size for static vertex lighting.				*/
-	UPROPERTY()
-	int32 SubDivisionStepSize;
-
-	/** Whether to use subdivisions or just the triangle's vertices.	*/
-	UPROPERTY()
-	uint32 bUseSubDivisions:1;
-
+#if WITH_EDITORONLY_DATA
 	UPROPERTY()
 	TArray<FGuid> IrrelevantLights_DEPRECATED;
+#endif
 
 	/** Static mesh LOD data.  Contains static lighting data along with instanced mesh vertex colors. */
 	UPROPERTY(transient)
@@ -294,10 +323,6 @@ class ENGINE_API UStaticMeshComponent : public UMeshComponent
 	UPROPERTY(NonTransactional)
 	TArray<FStreamingTextureBuildInfo> StreamingTextureData;
 
-	/** Use the collision profile specified in the StaticMesh asset.*/
-	UPROPERTY(EditAnywhere, Category = Collision)
-	bool bUseDefaultCollision;
-
 #if WITH_EDITORONLY_DATA
 	/** Derived data key of the static mesh, used to determine if an update from the source static mesh is required. */
 	UPROPERTY()
@@ -306,14 +331,10 @@ class ENGINE_API UStaticMeshComponent : public UMeshComponent
 	/** Material Bounds used for texture streaming. */
 	UPROPERTY(NonTransactional)
 	TArray<uint32> MaterialStreamingRelativeBoxes;
-
-	/** The component has some custom painting on LODs or not. */
-	UPROPERTY()
-	bool bCustomOverrideVertexColorPerLOD;
 #endif
 
 	/** The Lightmass settings for this object. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Lighting)
+	UPROPERTY(EditAnywhere, Category=Lighting)
 	struct FLightmassPrimitiveSettings LightmassSettings;
 
 	virtual ~UStaticMeshComponent();
@@ -325,13 +346,15 @@ class ENGINE_API UStaticMeshComponent : public UMeshComponent
 	/** Get the StaticMesh used by this instance. */
 	UStaticMesh* GetStaticMesh() const 
 	{ 
-		PRAGMA_DISABLE_DEPRECATION_WARNINGS
 		return StaticMesh; 
-		PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	}
 
 	UFUNCTION(BlueprintCallable, Category="Rendering|LOD")
 	void SetForcedLodModel(int32 NewForcedLodModel);
+
+	/** Sets the component's DistanceFieldSelfShadowBias.  bOverrideDistanceFieldSelfShadowBias must be enabled for this to have an effect. */
+	UFUNCTION(BlueprintCallable, Category="Rendering|Lighting")
+	void SetDistanceFieldSelfShadowBias(float NewValue);
 
 	/** 
 	 * Get Local bounds
@@ -349,6 +372,7 @@ public:
 	virtual void ImportCustomProperties(const TCHAR* SourceText, FFeedbackContext* Warn) override;	
 	virtual void Serialize(FArchive& Ar) override;
 	virtual void PostInitProperties() override;
+	virtual void NotifyObjectReferenceEliminated() const override;
 #if WITH_EDITOR
 	virtual void PostEditUndo() override;
 	virtual void PreEditUndo() override;
@@ -374,7 +398,12 @@ public:
 		// return IsCollisionEnabled() && (StaticMesh != NULL);
 		return false;
 	}
+#if WITH_EDITOR
+	virtual bool ShouldRenderSelected() const override;
+#endif
 	//~ End USceneComponent Interface
+
+
 
 	//~ Begin UActorComponent Interface.
 protected: 
@@ -395,6 +424,7 @@ public:
 	virtual int32 GetNumMaterials() const override;
 #if WITH_EDITOR
 	virtual void GetStaticLightingInfo(FStaticLightingPrimitiveInfo& OutPrimitiveInfo,const TArray<ULightComponent*>& InRelevantLights,const FLightingBuildOptions& Options) override;
+	virtual void AddMapBuildDataGUIDs(TSet<FGuid>& InGUIDs) const override;
 #endif
 	virtual float GetEmissiveBoost(int32 ElementIndex) const override;
 	virtual float GetDiffuseBoost(int32 ElementIndex) const override;
@@ -428,7 +458,7 @@ public:
 	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials = false) const override;
 	virtual UMaterialInterface* GetMaterial(int32 MaterialIndex) const override;
 	virtual int32 GetMaterialIndex(FName MaterialSlotName) const override;
-	virtual UMaterialInterface* GetMaterialFromCollisionFaceIndex(int32 FaceIndex) const override;
+	virtual UMaterialInterface* GetMaterialFromCollisionFaceIndex(int32 FaceIndex, int32& SectionIndex) const override;
 	virtual TArray<FName> GetMaterialSlotNames() const override;
 	virtual bool IsMaterialSlotNameValid(FName MaterialSlotName) const override;
 
@@ -607,15 +637,10 @@ public:
 
 	void ApplyComponentInstanceData(class FStaticMeshComponentInstanceData* ComponentInstanceData);
 
-	/** Register this component's render data with the scene for SpeedTree wind */
-	void AddSpeedTreeWind();
-
-	/** Unregister this component's render data with the scene for SpeedTree wind */
-	void RemoveSpeedTreeWind();
-
 	virtual void PropagateLightingScenarioChange() override;
 
 	const FMeshMapBuildData* GetMeshMapBuildData(const FStaticMeshComponentLODInfo& LODInfo) const;
+
 
 #if WITH_EDITOR
 	/** Called when the static mesh changes  */

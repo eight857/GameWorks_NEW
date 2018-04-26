@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,6 +11,11 @@ namespace FMovieSceneEvaluationCustomVersion
 	enum Type
 	{
 		Initial = 0,
+		// Changed EvalOptions.bEvaluateNearestSection to be false by default
+		ChangeEvaluateNearestSectionDefault,
+
+		// Added support for blending
+		AddBlendingSupport,
 
 		// -----<new versions can be added above this line>-------------------------------------------------
 		VersionPlusOne,

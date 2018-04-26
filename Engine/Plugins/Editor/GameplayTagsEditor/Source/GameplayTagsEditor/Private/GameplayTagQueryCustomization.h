@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -48,7 +48,7 @@ private:
 
 	FText GetQueryDescText() const;
 
-	void CloseWidgetWindow();
+	void CloseWidgetWindow(bool WasCancelled);
 
 	/** Build List of Editable Queries */
 	void BuildEditableQueryList();
@@ -63,5 +63,7 @@ private:
 	TSharedPtr<SWindow> GameplayTagQueryWidgetWindow;
 
 	FString QueryDescription;
+
+	TSharedPtr<IPropertyUtilities> PropertyUtilities;
 };
 

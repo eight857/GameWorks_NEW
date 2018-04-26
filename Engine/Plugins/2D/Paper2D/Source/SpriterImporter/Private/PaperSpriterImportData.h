@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,15 +18,15 @@ public:
 
 // 	// Should be a TMap...
 // 	TArray<FString> FileToTextureList;
-// 	TAssetPtr<class UTexture2D> ImportedTextureList;
-// 	TAssetPtr<class UPaperSprite> ImportedSpriteList;
+// 	TSoftObjectPtr<class UTexture2D> ImportedTextureList;
+// 	TSoftObjectPtr<class UPaperSprite> ImportedSpriteList;
 
 // 	// The names of sprites during import
 // 	UPROPERTY(VisibleAnywhere, Category=Data)
 // 	TArray<FString> SpriteNames;
 // 
 // 	UPROPERTY(VisibleAnywhere, Category = Data)
-// 	TArray< TAssetPtr<class UPaperSprite> > Sprites;
+// 	TArray< TSoftObjectPtr<class UPaperSprite> > Sprites;
 // 
 // 	// The name of the texture during import
 // 	UPROPERTY(VisibleAnywhere, Category = Data)

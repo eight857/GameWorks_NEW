@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ControlRigSequencerAnimInstanceProxy.h"
 #include "ControlRigSequencerAnimInstance.h"
@@ -18,8 +18,8 @@ void FControlRigSequencerAnimInstanceProxy::Initialize(UAnimInstance* InAnimInst
 	AdditiveLayeredBoneBlendNode.BasePose.SetLinkNode(OldAdditiveLinkedNode);
 
 	FAnimationInitializeContext Context(this);
-	LayeredBoneBlendNode.Initialize(Context);
-	AdditiveLayeredBoneBlendNode.Initialize(Context);
+	LayeredBoneBlendNode.Initialize_AnyThread(Context);
+	AdditiveLayeredBoneBlendNode.Initialize_AnyThread(Context);
 }
 
 void FControlRigSequencerAnimInstanceProxy::Update(float DeltaSeconds)
@@ -48,7 +48,7 @@ void FControlRigSequencerAnimInstanceProxy::CacheBones()
 
 		CachedBonesCounter.Increment();
 		FAnimationCacheBonesContext Context(this);
-		SequencerRootNode.CacheBones(Context);
+		SequencerRootNode.CacheBones_AnyThread(Context);
 	}
 }
 
@@ -56,8 +56,8 @@ void FControlRigSequencerAnimInstanceProxy::ResetNodes()
 {
 	FAnimSequencerInstanceProxy::ResetNodes();
 
-	FMemory::Memzero(LayeredBoneBlendNode.BlendWeights.GetData(), AdditiveLayeredBoneBlendNode.BlendWeights.GetAllocatedSize());
-	FMemory::Memzero(LayeredBoneBlendNode.BlendWeights.GetData(), AdditiveLayeredBoneBlendNode.BlendWeights.GetAllocatedSize());
+	FMemory::Memzero(LayeredBoneBlendNode.BlendWeights.GetData(), LayeredBoneBlendNode.BlendWeights.GetAllocatedSize());
+	FMemory::Memzero(AdditiveLayeredBoneBlendNode.BlendWeights.GetData(), AdditiveLayeredBoneBlendNode.BlendWeights.GetAllocatedSize());
 }
 
 void FControlRigSequencerAnimInstanceProxy::InitControlRigTrack(UControlRig* InControlRig, bool bAdditive, bool bApplyBoneFilter, const FInputBlendPose& BoneFilter, uint32 SequenceId)
@@ -127,8 +127,8 @@ void FControlRigSequencerAnimInstanceProxy::InitControlRigTrack(UControlRig* InC
 		PlayerState->bAdditive = bAdditive;
 
 		// initialize player
-		PlayerState->ControlRigNode.RootInitialize(this);
-		PlayerState->ControlRigNode.Initialize(FAnimationInitializeContext(this));
+		PlayerState->ControlRigNode.OnInitializeAnimInstance(this, CastChecked<UAnimInstance>(GetAnimInstanceObject()));
+		PlayerState->ControlRigNode.Initialize_AnyThread(FAnimationInitializeContext(this));
 	}
 }
 

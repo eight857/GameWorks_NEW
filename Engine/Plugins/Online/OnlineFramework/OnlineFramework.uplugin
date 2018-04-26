@@ -30,12 +30,26 @@
         {
             "Name": "Rejoin",
             "Type": "Runtime"
-        }
+        },
+		{
+			"Name": "LoginFlow",
+			"Type":  "Runtime"
+		}
     ],
     "LocalizationTargets": [
         {
             "Name": "OnlineFramework",
             "LoadingPolicy": "Always"
         }
-    ]
+    ],
+	"Plugins": [
+		{
+			"Name": "OnlineSubsystem",
+			"Enabled": true
+		},
+		{
+			"Name": "OnlineSubsystemUtils",
+			"Enabled": true
+		}
+	]
 }

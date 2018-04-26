@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 
-class FAssetData;
+struct FAssetData;
 
 /**
  * The bridge between the asset registry and the collections manager - used to update collections as certain asset events happen

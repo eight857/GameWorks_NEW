@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -25,6 +25,8 @@ DECLARE_LOG_CATEGORY_EXTERN( LogDemo, Log, All );
 
 DECLARE_MULTICAST_DELEGATE(FOnGotoTimeMCDelegate);
 DECLARE_DELEGATE_OneParam(FOnGotoTimeDelegate, const bool /* bWasSuccessful */);
+
+DECLARE_MULTICAST_DELEGATE(FOnDemoFinishPlaybackDelegate);
 
 class UDemoNetDriver;
 class UDemoNetConnection;
@@ -290,6 +292,9 @@ class ENGINE_API UDemoNetDriver : public UNetDriver
 	/** Public delegate for external systems to be notified when scrubbing is complete. Only called for successful scrub. */
 	FOnGotoTimeMCDelegate OnGotoTimeDelegate;
 
+	/** Delegate for external systems to be notified when demo playback ends */
+	FOnDemoFinishPlaybackDelegate OnDemoFinishPlaybackDelegate;
+
 	bool		IsLoadingCheckpoint() const { return bIsLoadingCheckpoint; }
 
 	/** ExternalDataToObjectMap is used to map a FNetworkGUID to the proper FReplayExternalDataArray */
@@ -344,6 +349,7 @@ private:
 	 * Maximum time allowed each frame to spend on saving a checkpoint. If 0, it will save the checkpoint in a single frame, regardless of how long it takes.
 	 * See also demo.CheckpointSaveMaxMSPerFrameOverride.
 	 */
+	UPROPERTY(Config)
 	float CheckpointSaveMaxMSPerFrame;
 
 	/** A player controller that this driver should consider its viewpoint for actor prioritization purposes. */

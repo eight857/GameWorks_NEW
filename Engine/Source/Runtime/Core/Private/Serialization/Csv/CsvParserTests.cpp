@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreTypes.h"
 #include "Containers/UnrealString.h"
@@ -147,7 +147,27 @@ bool FEndOfStringTest::RunTest(const FString& Parameters)
 	}
 
 	{
+		const FCsvParser Parser(TEXT("\"\",\"\",\"\",\"\""));
+
+		const FString Expected[][4] = {
+			{ "", "", "", "" },
+		};
+
+		bSuccess &= CsvParser_Tests::CheckRows(Parser.GetRows(), Expected, this);
+	}
+
+	{
 		const FCsvParser Parser(TEXT(",,,\n"));
+
+		const FString Expected[][4] = {
+			{ "", "", "", "" },
+		};
+
+		bSuccess &= CsvParser_Tests::CheckRows(Parser.GetRows(), Expected, this);
+	}
+
+	{
+		const FCsvParser Parser(TEXT("\"\",\"\",\"\",\"\"\n"));
 
 		const FString Expected[][4] = {
 			{ "", "", "", "" },

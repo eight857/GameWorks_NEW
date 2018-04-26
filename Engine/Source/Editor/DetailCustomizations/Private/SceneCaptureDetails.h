@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,6 +6,7 @@
 #include "UObject/WeakObjectPtr.h"
 #include "IDetailCustomization.h"
 
+class IPropertyHandle;
 class IDetailLayoutBuilder;
 class USceneCaptureComponent;
 enum class ECheckBoxState : uint8;
@@ -20,8 +21,8 @@ private:
 	virtual void CustomizeDetails( IDetailLayoutBuilder& DetailLayout ) override;
 
 private:
-	/** The selected reflection capture */
-	TWeakObjectPtr<USceneCaptureComponent> SceneCaptureComponent;
+	/** The show flags property on the SceneCaptureComponent */
+	TSharedPtr<IPropertyHandle> ShowFlagSettingsProperty;
 
 	/**
 	* Gets the display state to send to a display filter check box

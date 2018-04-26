@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/EngineVersion.h"
 #include "Misc/Guid.h"
@@ -204,6 +204,11 @@ const FEngineVersion& FEngineVersion::Current()
 const FEngineVersion& FEngineVersion::CompatibleWith()
 {
 	return CompatibleWithVersion;
+}
+
+const FString& FEngineVersion::GetBranchDescriptor() const
+{
+	return Branch;
 }
 
 bool FEngineVersion::OverrideCurrentVersionChangelist(int32 NewChangelist, int32 NewCompatibleChangelist)

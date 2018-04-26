@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SpotLightComponentVisualizer.h"
 #include "SceneManagement.h"
@@ -13,11 +13,11 @@ void FSpotLightComponentVisualizer::DrawVisualization( const UActorComponent* Co
 		const USpotLightComponent* SpotLightComp = Cast<const USpotLightComponent>(Component);
 		if(SpotLightComp != NULL)
 		{
-			FTransform TransformNoScale = SpotLightComp->ComponentToWorld;
+			FTransform TransformNoScale = SpotLightComp->GetComponentTransform();
 			TransformNoScale.RemoveScaling();
 
 			// Draw point light source shape
-			DrawWireCapsule(PDI, TransformNoScale.GetTranslation(), -TransformNoScale.GetUnitAxis( EAxis::Z ), TransformNoScale.GetUnitAxis( EAxis::Y ), TransformNoScale.GetUnitAxis( EAxis::X ),
+			DrawWireCapsule(PDI, TransformNoScale.GetTranslation(), TransformNoScale.GetUnitAxis( EAxis::X ), TransformNoScale.GetUnitAxis( EAxis::Y ), TransformNoScale.GetUnitAxis( EAxis::Z ),
 							FColor(231, 239, 0, 255), SpotLightComp->SourceRadius, 0.5f * SpotLightComp->SourceLength + SpotLightComp->SourceRadius, 25, SDPG_World);
 
 			// Draw outer light cone

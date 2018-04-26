@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved. 
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved. 
 
 #include "ProceduralMeshComponent.h"
 #include "PrimitiveViewRelevance.h"
@@ -17,6 +17,7 @@
 #include "ProceduralMeshComponentPluginPrivate.h"
 #include "DynamicMeshBuilder.h"
 #include "PhysicsEngine/PhysicsSettings.h"
+#include "StaticMeshResources.h"
 
 DECLARE_CYCLE_STAT(TEXT("Create ProcMesh Proxy"), STAT_ProcMesh_CreateSceneProxy, STATGROUP_ProceduralMesh);
 DECLARE_CYCLE_STAT(TEXT("Create Mesh Section"), STAT_ProcMesh_CreateMeshSection, STATGROUP_ProceduralMesh);
@@ -48,86 +49,6 @@ private:
 	uint32 Size;
 };
 
-/** Vertex Buffer */
-class FProcMeshVertexBuffer : public FVertexBuffer
-{
-public:
-	TArray<FDynamicMeshVertex> Vertices;
-
-	virtual void InitRHI() override
-	{
-		const uint32 SizeInBytes = Vertices.Num() * sizeof(FDynamicMeshVertex);
-
-		FProcMeshVertexResourceArray ResourceArray(Vertices.GetData(), SizeInBytes);
-		FRHIResourceCreateInfo CreateInfo(&ResourceArray);
-		VertexBufferRHI = RHICreateVertexBuffer(SizeInBytes, BUF_Static, CreateInfo);
-	}
-
-};
-
-/** Index Buffer */
-class FProcMeshIndexBuffer : public FIndexBuffer
-{
-public:
-	TArray<int32> Indices;
-
-	virtual void InitRHI() override
-	{
-		FRHIResourceCreateInfo CreateInfo;
-		void* Buffer = nullptr;
-		IndexBufferRHI = RHICreateAndLockIndexBuffer(sizeof(int32), Indices.Num() * sizeof(int32), BUF_Static, CreateInfo, Buffer);
-
-		// Write the indices to the index buffer.		
-		FMemory::Memcpy(Buffer, Indices.GetData(), Indices.Num() * sizeof(int32));
-		RHIUnlockIndexBuffer(IndexBufferRHI);
-	}
-};
-
-/** Vertex Factory */
-class FProcMeshVertexFactory : public FLocalVertexFactory
-{
-public:
-
-	FProcMeshVertexFactory()
-	{}
-
-	/** Init function that should only be called on render thread. */
-	void Init_RenderThread(const FProcMeshVertexBuffer* VertexBuffer)
-	{
-		check(IsInRenderingThread());
-
-		// Initialize the vertex factory's stream components.
-		FDataType NewData;
-		NewData.PositionComponent = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer, FDynamicMeshVertex, Position, VET_Float3);
-		NewData.TextureCoordinates.Add(
-			FVertexStreamComponent(VertexBuffer, STRUCT_OFFSET(FDynamicMeshVertex, TextureCoordinate), sizeof(FDynamicMeshVertex), VET_Float2)
-			);
-		NewData.TangentBasisComponents[0] = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer, FDynamicMeshVertex, TangentX, VET_PackedNormal);
-		NewData.TangentBasisComponents[1] = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer, FDynamicMeshVertex, TangentZ, VET_PackedNormal);
-		NewData.ColorComponent = STRUCTMEMBER_VERTEXSTREAMCOMPONENT(VertexBuffer, FDynamicMeshVertex, Color, VET_Color);
-		SetData(NewData);
-	}
-
-	/** Init function that can be called on any thread, and will do the right thing (enqueue command if called on main thread) */
-	void Init(const FProcMeshVertexBuffer* VertexBuffer)
-	{
-		if (IsInRenderingThread())
-		{
-			Init_RenderThread(VertexBuffer);
-		}
-		else
-		{
-			ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
-				InitProcMeshVertexFactory,
-				FProcMeshVertexFactory*, VertexFactory, this,
-				const FProcMeshVertexBuffer*, VertexBuffer, VertexBuffer,
-				{
-				VertexFactory->Init_RenderThread(VertexBuffer);
-			});
-		}
-	}
-};
-
 /** Class representing a single section of the proc mesh */
 class FProcMeshProxySection
 {
@@ -135,16 +56,17 @@ public:
 	/** Material applied to this section */
 	UMaterialInterface* Material;
 	/** Vertex buffer for this section */
-	FProcMeshVertexBuffer VertexBuffer;
+	FStaticMeshVertexBuffers VertexBuffers;
 	/** Index buffer for this section */
-	FProcMeshIndexBuffer IndexBuffer;
+	FDynamicMeshIndexBuffer32 IndexBuffer;
 	/** Vertex factory for this section */
-	FProcMeshVertexFactory VertexFactory;
+	FLocalVertexFactory VertexFactory;
 	/** Whether this section is currently visible */
 	bool bSectionVisible;
 
-	FProcMeshProxySection()
+	FProcMeshProxySection(ERHIFeatureLevel::Type InFeatureLevel)
 	: Material(NULL)
+	, VertexFactory(InFeatureLevel, "FProcMeshProxySection")
 	, bSectionVisible(true)
 	{}
 };
@@ -166,16 +88,21 @@ static void ConvertProcMeshToDynMeshVertex(FDynamicMeshVertex& Vert, const FProc
 {
 	Vert.Position = ProcVert.Position;
 	Vert.Color = ProcVert.Color;
-	Vert.TextureCoordinate = ProcVert.UV0;
+	Vert.TextureCoordinate[0] = ProcVert.UV0;
 	Vert.TangentX = ProcVert.Tangent.TangentX;
 	Vert.TangentZ = ProcVert.Normal;
 	Vert.TangentZ.Vector.W = ProcVert.Tangent.bFlipTangentY ? 0 : 255;
 }
 
 /** Procedural mesh scene proxy */
-class FProceduralMeshSceneProxy : public FPrimitiveSceneProxy
+class FProceduralMeshSceneProxy final : public FPrimitiveSceneProxy
 {
 public:
+	SIZE_T GetTypeHash() const override
+	{
+		static size_t UniquePointer;
+		return reinterpret_cast<size_t>(&UniquePointer);
+	}
 
 	FProceduralMeshSceneProxy(UProceduralMeshComponent* Component)
 		: FPrimitiveSceneProxy(Component)
@@ -190,29 +117,32 @@ public:
 			FProcMeshSection& SrcSection = Component->ProcMeshSections[SectionIdx];
 			if (SrcSection.ProcIndexBuffer.Num() > 0 && SrcSection.ProcVertexBuffer.Num() > 0)
 			{
-				FProcMeshProxySection* NewSection = new FProcMeshProxySection();
+				FProcMeshProxySection* NewSection = new FProcMeshProxySection(GetScene().GetFeatureLevel());
 
 				// Copy data from vertex buffer
 				const int32 NumVerts = SrcSection.ProcVertexBuffer.Num();
 
 				// Allocate verts
-				NewSection->VertexBuffer.Vertices.SetNumUninitialized(NumVerts);
+
+				TArray<FDynamicMeshVertex> Vertices;
+				Vertices.SetNumUninitialized(NumVerts);
 				// Copy verts
 				for (int VertIdx = 0; VertIdx < NumVerts; VertIdx++)
 				{
 					const FProcMeshVertex& ProcVert = SrcSection.ProcVertexBuffer[VertIdx];
-					FDynamicMeshVertex& Vert = NewSection->VertexBuffer.Vertices[VertIdx];
+					FDynamicMeshVertex& Vert = Vertices[VertIdx];
 					ConvertProcMeshToDynMeshVertex(Vert, ProcVert);
 				}
 
 				// Copy index buffer
 				NewSection->IndexBuffer.Indices = SrcSection.ProcIndexBuffer;
 
-				// Init vertex factory
-				NewSection->VertexFactory.Init(&NewSection->VertexBuffer);
+				NewSection->VertexBuffers.InitFromDynamicVertex(&NewSection->VertexFactory, Vertices);
 
 				// Enqueue initialization of render resource
-				BeginInitResource(&NewSection->VertexBuffer);
+				BeginInitResource(&NewSection->VertexBuffers.PositionVertexBuffer);
+				BeginInitResource(&NewSection->VertexBuffers.StaticMeshVertexBuffer);
+				BeginInitResource(&NewSection->VertexBuffers.ColorVertexBuffer);
 				BeginInitResource(&NewSection->IndexBuffer);
 				BeginInitResource(&NewSection->VertexFactory);
 
@@ -238,7 +168,9 @@ public:
 		{
 			if (Section != nullptr)
 			{
-				Section->VertexBuffer.ReleaseResource();
+				Section->VertexBuffers.PositionVertexBuffer.ReleaseResource();
+				Section->VertexBuffers.StaticMeshVertexBuffer.ReleaseResource();
+				Section->VertexBuffers.ColorVertexBuffer.ReleaseResource();
 				Section->IndexBuffer.ReleaseResource();
 				Section->VertexFactory.ReleaseResource();
 				delete Section;
@@ -264,18 +196,47 @@ public:
 
 				// Lock vertex buffer
 				const int32 NumVerts = SectionData->NewVertexBuffer.Num();
-				FDynamicMeshVertex* VertexBufferData = (FDynamicMeshVertex*)RHILockVertexBuffer(Section->VertexBuffer.VertexBufferRHI, 0, NumVerts * sizeof(FDynamicMeshVertex), RLM_WriteOnly);
 			
 				// Iterate through vertex data, copying in new info
-				for(int32 VertIdx=0; VertIdx<NumVerts; VertIdx++)
+				for(int32 i=0; i<NumVerts; i++)
 				{
-					const FProcMeshVertex& ProcVert = SectionData->NewVertexBuffer[VertIdx];
-					FDynamicMeshVertex& Vert = VertexBufferData[VertIdx];
-					ConvertProcMeshToDynMeshVertex(Vert, ProcVert);
+					const FProcMeshVertex& ProcVert = SectionData->NewVertexBuffer[i];
+					FDynamicMeshVertex Vertex;
+					ConvertProcMeshToDynMeshVertex(Vertex, ProcVert);
+
+					Section->VertexBuffers.PositionVertexBuffer.VertexPosition(i) = Vertex.Position;
+					Section->VertexBuffers.StaticMeshVertexBuffer.SetVertexTangents(i, Vertex.TangentX, Vertex.GetTangentY(), Vertex.TangentZ);
+					Section->VertexBuffers.StaticMeshVertexBuffer.SetVertexUV(i, 0, Vertex.TextureCoordinate[0]);
+					Section->VertexBuffers.ColorVertexBuffer.VertexColor(i) = Vertex.Color;
 				}
 
-				// Unlock vertex buffer
-				RHIUnlockVertexBuffer(Section->VertexBuffer.VertexBufferRHI);
+				{
+					auto& VertexBuffer = Section->VertexBuffers.PositionVertexBuffer;
+					void* VertexBufferData = RHILockVertexBuffer(VertexBuffer.VertexBufferRHI, 0, VertexBuffer.GetNumVertices() * VertexBuffer.GetStride(), RLM_WriteOnly);
+					FMemory::Memcpy(VertexBufferData, VertexBuffer.GetVertexData(), VertexBuffer.GetNumVertices() * VertexBuffer.GetStride());
+					RHIUnlockVertexBuffer(VertexBuffer.VertexBufferRHI);
+				}
+
+				{
+					auto& VertexBuffer = Section->VertexBuffers.ColorVertexBuffer;
+					void* VertexBufferData = RHILockVertexBuffer(VertexBuffer.VertexBufferRHI, 0, VertexBuffer.GetNumVertices() * VertexBuffer.GetStride(), RLM_WriteOnly);
+					FMemory::Memcpy(VertexBufferData, VertexBuffer.GetVertexData(), VertexBuffer.GetNumVertices() * VertexBuffer.GetStride());
+					RHIUnlockVertexBuffer(VertexBuffer.VertexBufferRHI);
+				}
+
+				{
+					auto& VertexBuffer = Section->VertexBuffers.StaticMeshVertexBuffer;
+					void* VertexBufferData = RHILockVertexBuffer(VertexBuffer.TangentsVertexBuffer.VertexBufferRHI, 0, VertexBuffer.GetTangentSize(), RLM_WriteOnly);
+					FMemory::Memcpy(VertexBufferData, VertexBuffer.GetTangentData(), VertexBuffer.GetTangentSize());
+					RHIUnlockVertexBuffer(VertexBuffer.TangentsVertexBuffer.VertexBufferRHI);
+				}
+
+				{
+					auto& VertexBuffer = Section->VertexBuffers.StaticMeshVertexBuffer;
+					void* VertexBufferData = RHILockVertexBuffer(VertexBuffer.TexCoordVertexBuffer.VertexBufferRHI, 0, VertexBuffer.GetTexCoordSize(), RLM_WriteOnly);
+					FMemory::Memcpy(VertexBufferData, VertexBuffer.GetTexCoordData(), VertexBuffer.GetTexCoordSize());
+					RHIUnlockVertexBuffer(VertexBuffer.TexCoordVertexBuffer.VertexBufferRHI);
+				}
 			}
 
 			// Free data sent from game thread
@@ -337,7 +298,7 @@ public:
 						BatchElement.FirstIndex = 0;
 						BatchElement.NumPrimitives = Section->IndexBuffer.Indices.Num() / 3;
 						BatchElement.MinVertexIndex = 0;
-						BatchElement.MaxVertexIndex = Section->VertexBuffer.Vertices.Num() - 1;
+						BatchElement.MaxVertexIndex = Section->VertexBuffers.PositionVertexBuffer.GetNumVertices() - 1;
 						Mesh.ReverseCulling = IsLocalToWorldDeterminantNegative();
 						Mesh.Type = PT_TriangleList;
 						Mesh.DepthPriorityGroup = SDPG_World;
@@ -844,17 +805,24 @@ bool UProceduralMeshComponent::ContainsPhysicsTriMeshData(bool InUseAllTriData) 
 	return false;
 }
 
+UBodySetup* UProceduralMeshComponent::CreateBodySetupHelper()
+{
+	// The body setup in a template needs to be public since the property is Tnstanced and thus is the archetype of the instance meaning there is a direct reference
+	UBodySetup* NewBodySetup = NewObject<UBodySetup>(this, NAME_None, (IsTemplate() ? RF_Public : RF_NoFlags));
+	NewBodySetup->BodySetupGuid = FGuid::NewGuid();
+
+	NewBodySetup->bGenerateMirroredCollision = false;
+	NewBodySetup->bDoubleSidedGeometry = true;
+	NewBodySetup->CollisionTraceFlag = bUseComplexAsSimpleCollision ? CTF_UseComplexAsSimple : CTF_UseDefault;
+
+	return NewBodySetup;
+}
+
 void UProceduralMeshComponent::CreateProcMeshBodySetup()
 {
-	if (ProcMeshBodySetup == NULL)
+	if (ProcMeshBodySetup == nullptr)
 	{
-		// The body setup in a template needs to be public since the property is Tnstanced and thus is the archetype of the instance meaning there is a direct reference
-		ProcMeshBodySetup = NewObject<UBodySetup>(this, NAME_None, (IsTemplate() ? RF_Public : RF_NoFlags));
-		ProcMeshBodySetup->BodySetupGuid = FGuid::NewGuid();
-
-		ProcMeshBodySetup->bGenerateMirroredCollision = false;
-		ProcMeshBodySetup->bDoubleSidedGeometry = true;
-		ProcMeshBodySetup->CollisionTraceFlag = bUseComplexAsSimpleCollision ? CTF_UseComplexAsSimple : CTF_UseDefault;
+		ProcMeshBodySetup = CreateBodySetupHelper();
 	}
 }
 
@@ -862,40 +830,62 @@ void UProceduralMeshComponent::UpdateCollision()
 {
 	SCOPE_CYCLE_COUNTER(STAT_ProcMesh_UpdateCollision);
 
-	bool bCreatePhysState = false; // Should we create physics state at the end of this function?
+	UWorld* World = GetWorld();
+	const bool bUseAsyncCook = World && World->IsGameWorld() && bUseAsyncCooking;
 
-	// If its created, shut it down now
-	if (bPhysicsStateCreated)
+	if(bUseAsyncCook)
 	{
-		DestroyPhysicsState();
-		bCreatePhysState = true;
+		AsyncBodySetupQueue.Add(CreateBodySetupHelper());
 	}
-
-	// Ensure we have a BodySetup
-	CreateProcMeshBodySetup();
+	else
+	{
+		AsyncBodySetupQueue.Empty();	//If for some reason we modified the async at runtime, just clear any pending async body setups
+		CreateProcMeshBodySetup();
+	}
+	
+	UBodySetup* UseBodySetup = bUseAsyncCook ? AsyncBodySetupQueue.Last() : ProcMeshBodySetup;
 
 	// Fill in simple collision convex elements
-	ProcMeshBodySetup->AggGeom.ConvexElems = CollisionConvexElems;
+	UseBodySetup->AggGeom.ConvexElems = CollisionConvexElems;
 
 	// Set trace flag
-	ProcMeshBodySetup->CollisionTraceFlag = bUseComplexAsSimpleCollision ? CTF_UseComplexAsSimple : CTF_UseDefault;
+	UseBodySetup->CollisionTraceFlag = bUseComplexAsSimpleCollision ? CTF_UseComplexAsSimple : CTF_UseDefault;
 
-	// New GUID as collision has changed
-	ProcMeshBodySetup->BodySetupGuid = FGuid::NewGuid();
-	// Also we want cooked data for this
-	ProcMeshBodySetup->bHasCookedCollisionData = true;
-
-#if WITH_PHYSX && (WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR)
-	// Clear current mesh data
-	ProcMeshBodySetup->InvalidatePhysicsData();
-	// Create new mesh data
-	ProcMeshBodySetup->CreatePhysicsMeshes();
-#endif // WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR
-
-	// Create new instance state if desired
-	if (bCreatePhysState)
+	if(bUseAsyncCook)
 	{
-		CreatePhysicsState();
+		UseBodySetup->CreatePhysicsMeshesAsync(FOnAsyncPhysicsCookFinished::CreateUObject(this, &UProceduralMeshComponent::FinishPhysicsAsyncCook, UseBodySetup));
+	}
+	else
+	{
+		// New GUID as collision has changed
+		UseBodySetup->BodySetupGuid = FGuid::NewGuid();
+		// Also we want cooked data for this
+		UseBodySetup->bHasCookedCollisionData = true;
+		UseBodySetup->InvalidatePhysicsData();
+		UseBodySetup->CreatePhysicsMeshes();
+		RecreatePhysicsState();
+	}
+}
+
+void UProceduralMeshComponent::FinishPhysicsAsyncCook(UBodySetup* FinishedBodySetup)
+{
+	TArray<UBodySetup*> NewQueue;
+	NewQueue.Reserve(AsyncBodySetupQueue.Num());
+
+	int32 FoundIdx;
+	if(AsyncBodySetupQueue.Find(FinishedBodySetup, FoundIdx))
+	{
+		//The new body was found in the array meaning it's newer so use it
+		ProcMeshBodySetup = FinishedBodySetup;
+		RecreatePhysicsState();
+
+		//remove any async body setups that were requested before this one
+		for(int32 AsyncIdx = FoundIdx+1; AsyncIdx < AsyncBodySetupQueue.Num(); ++AsyncIdx)
+		{
+			NewQueue.Add(AsyncBodySetupQueue[AsyncIdx]);
+		}
+
+		AsyncBodySetupQueue = NewQueue;
 	}
 }
 
@@ -905,23 +895,28 @@ UBodySetup* UProceduralMeshComponent::GetBodySetup()
 	return ProcMeshBodySetup;
 }
 
-UMaterialInterface* UProceduralMeshComponent::GetMaterialFromCollisionFaceIndex(int32 FaceIndex) const
+UMaterialInterface* UProceduralMeshComponent::GetMaterialFromCollisionFaceIndex(int32 FaceIndex, int32& SectionIndex) const
 {
 	UMaterialInterface* Result = nullptr;
+	SectionIndex = 0;
 
-	// Look for element that corresponds to the supplied face
-	int32 TotalFaceCount = 0;
-	for (int32 SectionIdx = 0; SectionIdx < ProcMeshSections.Num(); SectionIdx++)
+	if (FaceIndex >= 0)
 	{
-		const FProcMeshSection& Section = ProcMeshSections[SectionIdx];
-		int32 NumFaces = Section.ProcIndexBuffer.Num()/3;
-		TotalFaceCount += NumFaces;
-
-		if (FaceIndex < TotalFaceCount)
+		// Look for element that corresponds to the supplied face
+		int32 TotalFaceCount = 0;
+		for (int32 SectionIdx = 0; SectionIdx < ProcMeshSections.Num(); SectionIdx++)
 		{
-			// Grab the material
-			Result = GetMaterial(SectionIdx);
-			break;
+			const FProcMeshSection& Section = ProcMeshSections[SectionIdx];
+			int32 NumFaces = Section.ProcIndexBuffer.Num() / 3;
+			TotalFaceCount += NumFaces;
+
+			if (FaceIndex < TotalFaceCount)
+			{
+				// Grab the material
+				Result = GetMaterial(SectionIdx);
+				SectionIndex = SectionIdx;
+				break;
+			}
 		}
 	}
 

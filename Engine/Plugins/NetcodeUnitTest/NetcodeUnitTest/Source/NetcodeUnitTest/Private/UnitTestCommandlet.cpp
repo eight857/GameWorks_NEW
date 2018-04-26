@@ -1,6 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnitTestCommandlet.h"
+
+#include "Containers/Ticker.h"
 #include "Misc/FeedbackContext.h"
 #include "Misc/App.h"
 #include "Modules/ModuleManager.h"
@@ -79,17 +81,6 @@ int32 UUnitTestCommandlet::Main(const FString& Params)
 	FModuleManager::Get().LoadModule(TEXT("OnlineSubsystemUtils"));
 
 
-	// @todo #JohnBLowPri: Steam detection doesn't seem to work this early on, but does work further down the line;
-	//				try to find a way, to detect it as early as possible
-
-	// NetcodeUnitTest is not compatible with Steam; if Steam is running/detected, abort immediately
-	// @todo #JohnBLowPri: Add support for Steam
-	if (NUTNet::IsSteamNetDriverAvailable())
-	{
-		UE_LOG(LogUnitTest, Log, TEXT("NetcodeUnitTest does not currently support Steam. Close Steam before running."));
-		GIsRequestingExit = true;
-	}
-
 	UE_LOG(LogUnitTest, Log, TEXT("NetcodeUnitTest built to target mainline CL '%i'."), TARGET_UE4_CL);
 
 	if (!GIsRequestingExit)
@@ -102,11 +93,10 @@ int32 UUnitTestCommandlet::Main(const FString& Params)
 		{
 			UGameEngine* GameEngine = Cast<UGameEngine>(GEngine);
 
-			// GameInstace = GameEngine->GameInstance;
-			UGameInstance* GameInstance = GET_PRIVATE(UGameEngine, GameEngine, GameInstance);
-
 			if (GameEngine != NULL)
 			{
+				// GameInstace = GameEngine->GameInstance;
+				UGameInstance* GameInstance = GET_PRIVATE(UGameEngine, GameEngine, GameInstance);
 				UGameViewportClient* NewViewport = NewObject<UGameViewportClient>(GameEngine);
 				FWorldContext* CurContext = GameInstance->GetWorldContext();
 
@@ -161,6 +151,11 @@ int32 UUnitTestCommandlet::Main(const FString& Params)
 				FSlateApplication::Get().PumpMessages();
 				FSlateApplication::Get().Tick();
 			}
+
+			// Required for FTimerManager to function - as it blocks ticks, if the frame counter doesn't change
+			GFrameCounter++;
+
+			FTicker::GetCoreTicker().Tick(FApp::GetDeltaTime());
 
 
 			// Execute deferred commands

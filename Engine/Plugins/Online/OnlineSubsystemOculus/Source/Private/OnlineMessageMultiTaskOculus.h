@@ -1,9 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
-#include "OnlineSubsystemOculusPackage.h"
 #include "OnlineSubsystemOculusPrivate.h"
 #include "OnlineDelegateMacros.h"
 #include "OnlineMessageTaskManagerOculus.h"

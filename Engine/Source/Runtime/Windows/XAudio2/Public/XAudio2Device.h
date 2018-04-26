@@ -1,10 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	XAudio2Device.h: Unreal XAudio2 audio interface object.
 =============================================================================*/
 
 #pragma once
+
+#ifndef WITH_XMA2
+#define WITH_XMA2 0
+#endif
 
 /*------------------------------------------------------------------------------------
 	XAudio2 system headers
@@ -83,6 +87,16 @@ class FSpatializationHelper;
  */
 class FXAudio2Device : public FAudioDevice
 {
+public:
+	FXAudio2Device() : FAudioDevice()
+	{
+		CachedAudioClockStartTime = 0.0;
+#if WITH_XMA2 
+		bDisableAudioCaching = true;	// Do not allow DTYPE_Native buffers, only DTYPE_RealTime or DTYPE_Streaming since on the fly decompression is so cheap, it saves memory, and requires fewer code paths
+#endif
+	}
+
+private:
 	virtual void GetAudioDeviceList(TArray<FString>& OutAudioDeviceNames) const override;
 
 	/** Starts up any platform specific hardware/APIs */
@@ -113,7 +127,22 @@ class FXAudio2Device : public FAudioDevice
 		}
 #if WITH_OGGVORBIS
 		static FName NAME_OGG(TEXT("OGG"));
+		static FName NAME_XMA(TEXT("XMA"));
+
+#if WITH_XMA2
+		if (SoundWave->NumChannels > 2)
+		{
+			// Use OGG for surround wave sources, until we can sort out the channel assignments properly
+			return NAME_OGG;
+		}
+		else
+		{
+			return NAME_XMA;
+		}
+#else
 		return NAME_OGG;
+#endif
+
 #else //WITH_OGGVORBIS
 		static FName NAME_XMA(TEXT("XMA"));
 		return NAME_XMA;
@@ -178,6 +207,9 @@ private:
 
 	/** Whether or not audio hardware changed. */
 	bool bHardwareChanged;
+
+	/** Cached audio clock time for when devices are removed/swapped. */
+	double CachedAudioClockStartTime;
 
 #if PLATFORM_WINDOWS
 	// We need to keep track whether com was successfully initialized so we can clean 

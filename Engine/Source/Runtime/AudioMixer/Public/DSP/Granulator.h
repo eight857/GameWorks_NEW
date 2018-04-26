@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -173,17 +173,11 @@ namespace Audio
 		FGranularSynth();
 		~FGranularSynth();
 
-		void Init(FAudioDevice* InAudioDevice, const int32 NumInitialFreeGrains);
+		void Init(const int32 InSampleRate, const int32 InNumInitialGrains);
 		
 		// Loads a sound wave to use for granular synth mode
-		void LoadSoundWave(USoundWave* InSoundWave, const bool bLoadAsync = true);
+		void LoadSampleBuffer(const FSampleBuffer& InSampleBuffer);
 
-		// Updates the loading state
-		void UpdateSoundWaveLoading();
-
-		// Queries if the sound wave has finished loading
-		bool IsSoundWaveLoaded() const;
-	
 		// Plays a granular synthesis "Note"
 		void NoteOn(const uint32 InMidiNote, const float InVelocity, const float InDurationSec = INDEX_NONE);
 
@@ -263,7 +257,7 @@ namespace Audio
 		float GetSampleDuration() const;
 
 		// Generate the next audio buffer
-		void Generate(TArray<float>& OutAudiobuffer, const int32 NumFrames);
+		void Generate(float* OutAudiobuffer, const int32 NumFrames);
 
 	protected:
 		// Spawns grains
@@ -295,8 +289,6 @@ namespace Audio
 				, Base(0.0f)
 			{}
 		};
-
-		FAudioDevice* AudioDevice;
 
 		int32 SampleRate;
 		int32 NumChannels;
@@ -348,7 +340,6 @@ namespace Audio
 
 		// The buffer which holds the sample to be granulated
 		FSampleBuffer SampleBuffer;
-		float SampleDuration;
 
 		// The current playhead frame
 		float CurrentPlayHeadFrame;

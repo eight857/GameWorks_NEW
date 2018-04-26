@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BehaviorTreeGraphNode.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -44,8 +44,8 @@ UBehaviorTreeGraphNode::UBehaviorTreeGraphNode(const FObjectInitializer& ObjectI
 
 void UBehaviorTreeGraphNode::AllocateDefaultPins()
 {
-	CreatePin(EGPD_Input, UBehaviorTreeEditorTypes::PinCategory_MultipleNodes, TEXT(""), NULL, false, false, TEXT("In"));
-	CreatePin(EGPD_Output, UBehaviorTreeEditorTypes::PinCategory_MultipleNodes, TEXT(""), NULL, false, false, TEXT("Out"));
+	CreatePin(EGPD_Input, UBehaviorTreeEditorTypes::PinCategory_MultipleNodes, TEXT("In"));
+	CreatePin(EGPD_Output, UBehaviorTreeEditorTypes::PinCategory_MultipleNodes, TEXT("Out"));
 }
 
 void UBehaviorTreeGraphNode::InitializeInstance()
@@ -56,6 +56,7 @@ void UBehaviorTreeGraphNode::InitializeInstance()
 	{
 		BTNode->InitializeFromAsset(*BTAsset);
 		BTNode->InitializeNode(NULL, MAX_uint16, 0, 0);
+		BTNode->OnNodeCreated();
 	}
 }
 

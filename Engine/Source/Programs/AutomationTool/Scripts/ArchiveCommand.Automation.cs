@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -6,6 +6,7 @@ using System.Threading;
 using System.Reflection;
 using AutomationTool;
 using UnrealBuildTool;
+using Tools.DotNETCommon;
 
 public partial class Project : CommandUtils
 {
@@ -27,7 +28,7 @@ public partial class Project : CommandUtils
 		if (Params.ArchiveMetaData)
 		{
 			// archive the build.version file for extra info for testing, etc
-			string BuildVersionFile = CombinePaths(SC.LocalRoot, "Engine", "Build", "Build.version");
+			string BuildVersionFile = CombinePaths(SC.LocalRoot.FullName, "Engine", "Build", "Build.version");
 			SC.ArchiveFiles(Path.GetDirectoryName(BuildVersionFile), Path.GetFileName(BuildVersionFile));
 		}
 	}
@@ -38,8 +39,8 @@ public partial class Project : CommandUtils
 		{
 			foreach (var Pair in SC.ArchivedFiles)
 			{
-				string Src = Pair.Key;
-				string Dest = CombinePaths(SC.ArchiveDirectory, Pair.Value);
+				FileReference Src = new FileReference(Pair.Key);
+				FileReference Dest = FileReference.Combine(SC.ArchiveDirectory, Pair.Value);
 				CopyFileIncremental(Src, Dest);
 			}
 		}

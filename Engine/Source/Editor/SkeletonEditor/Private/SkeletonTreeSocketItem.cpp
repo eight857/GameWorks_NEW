@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SkeletonTreeSocketItem.h"
 #include "Widgets/Text/STextBlock.h"
@@ -7,6 +7,7 @@
 #include "Widgets/SOverlay.h"
 #include "Animation/DebugSkelMeshComponent.h"
 #include "Widgets/Images/SImage.h"
+#include "Styling/CoreStyle.h"
 #include "EditorStyleSet.h"
 #include "SocketDragDropOp.h"
 #include "IPersonaPreviewScene.h"
@@ -15,15 +16,6 @@
 #include "Modules/ModuleManager.h"
 
 #define LOCTEXT_NAMESPACE "FSkeletonTreeSocketItem"
-
-TSharedRef<ITableRow> FSkeletonTreeSocketItem::MakeTreeRowWidget(const TSharedRef<STableViewBase>& InOwnerTable, const TAttribute<FText>& InFilterText )
-{
-	return
-		SNew( SSkeletonTreeRow, InOwnerTable )
-		.Item( SharedThis(this) )
-		.FilterText( InFilterText )
-		.OnDraggingItem( this, &FSkeletonTreeSocketItem::OnDragDetected );
-}
 
 void FSkeletonTreeSocketItem::GenerateWidgetForNameColumn( TSharedPtr< SHorizontalBox > Box, const TAttribute<FText>& FilterText, FIsSelected InIsSelected )
 {
@@ -40,7 +32,7 @@ void FSkeletonTreeSocketItem::GenerateWidgetForNameColumn( TSharedPtr< SHorizont
 		.Image( SocketIcon )
 	];
 
-	const FSlateFontInfo TextFont( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf" ), 10 );
+	const FSlateFontInfo TextFont = FCoreStyle::GetDefaultFontStyle("Regular", 10);
 
 	FText ToolTip = GetSocketToolTip();
 

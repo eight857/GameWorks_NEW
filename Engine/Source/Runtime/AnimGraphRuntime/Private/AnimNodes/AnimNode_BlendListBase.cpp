@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimNodes/AnimNode_BlendListBase.h"
 #include "AnimationRuntime.h"
@@ -7,18 +7,23 @@
 /////////////////////////////////////////////////////
 // FAnimNode_BlendListBase
 
-void FAnimNode_BlendListBase::Initialize(const FAnimationInitializeContext& Context)
+void FAnimNode_BlendListBase::Initialize_AnyThread(const FAnimationInitializeContext& Context)
 {
-	FAnimNode_Base::Initialize(Context);
+	FAnimNode_Base::Initialize_AnyThread(Context);
 
 	const int NumPoses = BlendPose.Num();
 	checkSlow(BlendTime.Num() == NumPoses);
 
-	BlendWeights.Empty(NumPoses);
+	BlendWeights.Reset(NumPoses);
+	PosesToEvaluate.Reset(NumPoses);
 	if (NumPoses > 0)
 	{
+		// If we have at least 1 pose we initialize to full weight on
+		// the first pose
 		BlendWeights.AddZeroed(NumPoses);
 		BlendWeights[0] = 1.0f;
+
+		PosesToEvaluate.Add(0);
 
 		for (int32 ChildIndex = 0; ChildIndex < NumPoses; ++ChildIndex)
 		{
@@ -58,7 +63,7 @@ void FAnimNode_BlendListBase::Initialize(const FAnimationInitializeContext& Cont
 	}
 }
 
-void FAnimNode_BlendListBase::CacheBones(const FAnimationCacheBonesContext& Context) 
+void FAnimNode_BlendListBase::CacheBones_AnyThread(const FAnimationCacheBonesContext& Context) 
 {
 	for(int32 ChildIndex=0; ChildIndex<BlendPose.Num(); ChildIndex++)
 	{
@@ -66,7 +71,7 @@ void FAnimNode_BlendListBase::CacheBones(const FAnimationCacheBonesContext& Cont
 	}
 }
 
-void FAnimNode_BlendListBase::Update(const FAnimationUpdateContext& Context)
+void FAnimNode_BlendListBase::Update_AnyThread(const FAnimationUpdateContext& Context)
 {
 	EvaluateGraphExposedInputs.Execute(Context);
 
@@ -196,7 +201,7 @@ void FAnimNode_BlendListBase::Update(const FAnimationUpdateContext& Context)
 	}
 }
 
-void FAnimNode_BlendListBase::Evaluate(FPoseContext& Output)
+void FAnimNode_BlendListBase::Evaluate_AnyThread(FPoseContext& Output)
 {
 	ANIM_MT_SCOPE_CYCLE_COUNTER(BlendPosesInGraph, !IsInGameThread());
 

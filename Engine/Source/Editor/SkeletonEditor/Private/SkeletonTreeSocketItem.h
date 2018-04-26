@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -31,7 +31,6 @@ public:
 	{}
 
 	/** ISkeletonTreeItem interface */
-	virtual TSharedRef<ITableRow> MakeTreeRowWidget(const TSharedRef<STableViewBase>& InOwnerTable, const TAttribute<FText>& InFilterText) override;
 	virtual void GenerateWidgetForNameColumn(TSharedPtr< SHorizontalBox > Box, const TAttribute<FText>& FilterText, FIsSelected InIsSelected) override;
 	virtual TSharedRef< SWidget > GenerateWidgetForDataColumn(const FName& DataColumnName) override;
 	virtual TSharedRef< SWidget > GenerateInlineEditWidget(const TAttribute<FText>& FilterText, FIsSelected InIsSelected) override;
@@ -39,8 +38,11 @@ public:
 	virtual void ToggleInlineEditorExpansion() override { bInlineEditorExpanded = !bInlineEditorExpanded; }
 	virtual bool IsInlineEditorExpanded() const override { return bInlineEditorExpanded; }
 	virtual FName GetRowItemName() const override { return Socket->SocketName; }
+	virtual bool CanRenameItem() const override { return true; }
 	virtual void RequestRename() override;
 	virtual void OnItemDoubleClicked() override;
+	virtual FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual UObject* GetObject() const override { return Socket; }
 
 	/** Get the parent type */
 	ESocketParentType GetParentType() const { return ParentType; }
@@ -65,10 +67,7 @@ private:
 	FText GetSocketToolTip();
 
 	/** Get the color to display for the socket name */
-	FSlateColor GetTextColor() const;
-
-	/** Handle dragging a socket */
-	FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent);
+	FSlateColor GetTextColor() const;	
 
 	/** Return socket name as FText for display in skeleton tree */
 	FText GetSocketNameAsText() const { return FText::FromName(Socket->SocketName); }

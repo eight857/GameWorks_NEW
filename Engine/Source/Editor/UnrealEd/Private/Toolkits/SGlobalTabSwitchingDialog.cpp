@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Toolkits/SGlobalTabSwitchingDialog.h"
 #include "Modules/ModuleManager.h"
@@ -150,7 +150,12 @@ public:
 	virtual TSharedPtr<FTabManager> GetAssociatedTabManager() override
 	{
 		IAssetEditorInstance* Instance = FAssetEditorManager::Get().FindEditorForAsset(MyAsset, /*bFocusIfOpen=*/ false);
-		return Instance->GetAssociatedTabManager();
+		if (Instance)
+		{
+			return Instance->GetAssociatedTabManager();
+		}
+
+		return nullptr;
 	}
 
 protected:

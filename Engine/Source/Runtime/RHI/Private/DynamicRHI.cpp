@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	DynamicRHI.cpp: Dynamically bound Render Hardware Interface implementation.
@@ -12,6 +12,7 @@
 #include "RHI.h"
 #include "Modules/ModuleManager.h"
 #include "GenericPlatform/GenericPlatformDriver.h"
+#include "PipelineStateCache.h"
 
 #ifndef PLATFORM_ALLOW_NULL_RHI
 	#define PLATFORM_ALLOW_NULL_RHI		0
@@ -174,12 +175,24 @@ void RHIInit(bool bHasEditorToken)
 		}
 		else
 		{
+			LLM_SCOPE(ELLMTag::RHIMisc);
+
 			GDynamicRHI = PlatformCreateDynamicRHI();
 			if (GDynamicRHI)
 			{
 				GDynamicRHI->Init();
 				GRHICommandList.GetImmediateCommandList().SetContext(GDynamicRHI->RHIGetDefaultContext());
 				GRHICommandList.GetImmediateAsyncComputeCommandList().SetComputeContext(GDynamicRHI->RHIGetDefaultAsyncComputeContext());
+
+				if (bHasEditorToken && GMaxRHIFeatureLevel < ERHIFeatureLevel::SM5)
+				{
+					FString FeatureLevelString;
+					GetFeatureLevelName(GMaxRHIFeatureLevel, FeatureLevelString);
+					FString ShaderPlatformString = LegacyShaderPlatformToShaderFormat(GetFeatureLevelShaderPlatform(GMaxRHIFeatureLevel)).ToString();
+					FString Error = FString::Printf(TEXT("A Feature Level 5 video card is required to run the editor.\nAvailableFeatureLevel = %s, ShaderPlatform = %s"), *FeatureLevelString, *ShaderPlatformString);
+					FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Error));
+					FPlatformMisc::RequestExit(1);
+				}
 			}
 #if PLATFORM_ALLOW_NULL_RHI
 			else
@@ -198,9 +211,10 @@ void RHIInit(bool bHasEditorToken)
 #endif
 }
 
-void RHIPostInit()
+void RHIPostInit(const TArray<uint32>& InPixelFormatByteWidth)
 {
 	check(GDynamicRHI);
+	GDynamicRHI->InitPixelFormatInfo(InPixelFormatByteWidth);
 	GDynamicRHI->PostInit();
 }
 
@@ -208,6 +222,9 @@ void RHIExit()
 {
 	if ( !GUsingNullRHI && GDynamicRHI != NULL )
 	{
+		// Clean up all cached pipelines
+		PipelineStateCache::Shutdown();
+
 		// Destruct the dynamic RHI.
 		GDynamicRHI->Shutdown();
 		delete GDynamicRHI;
@@ -249,21 +266,21 @@ void FDynamicRHI::EnableIdealGPUCaptureOptions(bool bEnabled)
 	const bool bShouldEnableRHIThread = !bEnabled;
 	const bool bShouldRHICmdBypass = bEnabled;	
 
-	const bool bDrawEvents = GEmitDrawEvents != 0;
+	const bool bDrawEvents = GetEmitDrawEvents() != 0;
 	const bool bMaterialDrawEvents = ShowMaterialDrawEventVar ? ShowMaterialDrawEventVar->GetInt() != 0 : false;
-	const bool bRHIThread = GRHIThread != nullptr;	
+	const bool bRHIThread = IsRunningRHIInSeparateThread();
 	const bool bRHIBypass = RHICmdBypassVar ? RHICmdBypassVar->GetInt() != 0 : false;
 
 	UE_LOG(LogRHI, Display, TEXT("Setting GPU Capture Options: %i"), bEnabled ? 1 : 0);
 	if (bShouldEnableDrawEvents != bDrawEvents)
 	{
 		UE_LOG(LogRHI, Display, TEXT("Toggling draw events: %i"), bShouldEnableDrawEvents ? 1 : 0);
-		GEmitDrawEvents = bShouldEnableDrawEvents;
+		SetEmitDrawEvents(bShouldEnableDrawEvents);
 	}
-	if (bShouldEnableMaterialDrawEvents != bMaterialDrawEvents)
+	if (bShouldEnableMaterialDrawEvents != bMaterialDrawEvents && ShowMaterialDrawEventVar)
 	{
 		UE_LOG(LogRHI, Display, TEXT("Toggling showmaterialdrawevents: %i"), bShouldEnableDrawEvents ? 1 : 0);
-		ShowMaterialDrawEventVar->Set(bShouldEnableDrawEvents ? 1 : 0);		
+		ShowMaterialDrawEventVar->Set(bShouldEnableDrawEvents ? -1 : 0);		
 	}
 	if (bRHIThread != bShouldEnableRHIThread && RHIThreadEnableCommand)
 	{

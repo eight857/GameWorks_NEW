@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -42,6 +42,7 @@ public:
 
 	//~ Begin UEdGraphNode Interface
 	virtual void AllocateDefaultPins() override;
+	virtual void PreloadRequiredAssets() override;
 	virtual FText GetTooltipText() const override;
 	virtual FText GetKeywords() const override;
 	virtual void PostPasteNode() override;
@@ -54,6 +55,7 @@ public:
 	virtual FString GetDocumentationExcerptName() const override;
 	virtual FSlateIcon GetIconAndTint(FLinearColor& OutColor) const override;
 	virtual bool CanPasteHere(const UEdGraph* TargetGraph) const override;
+	virtual UObject* GetJumpTargetForDoubleClick() const override { return GetMacroGraph(); }
 	//~ End UEdGraphNode Interface
 
 	//~ Begin UK2Node Interface
@@ -61,7 +63,6 @@ public:
 	virtual bool DrawNodeAsEntry() const override { return false; }
 	virtual void NotifyPinConnectionListChanged(UEdGraphPin* Pin) override;
 	virtual void PostReconstructNode() override;
-	virtual FText GetActiveBreakpointToolTipText() const override;
 	virtual bool HasExternalDependencies(TArray<class UStruct*>* OptionalOutput) const override;
 	virtual void GetNodeAttributes( TArray<TKeyValuePair<FString, FString>>& OutNodeAttributes ) const override;
 	virtual FText GetMenuCategory() const override;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sections/LevelVisibilitySection.h"
 #include "Sections/MovieSceneLevelVisibilitySection.h"
@@ -47,19 +47,6 @@ TSharedRef<SWidget> FLevelVisibilitySection::GenerateSectionWidget()
 int32 FLevelVisibilitySection::OnPaintSection( FSequencerSectionPainter& InPainter ) const
 {
 	return InPainter.PaintSectionBackground();
-}
-
-
-FText FLevelVisibilitySection::GetDisplayName() const
-{
-	return FText();
-}
-
-
-FText FLevelVisibilitySection::GetSectionTitle() const
-{
-
-	return FText();
 }
 
 

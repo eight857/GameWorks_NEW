@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,10 +8,50 @@
 #include "Containers/IndirectArray.h"
 
 
+namespace UE4ChunkedArray_Private
+{
+	template <typename ChunkType, typename ElementType, uint32 NumElementsPerChunk>
+	struct TChunkedArrayIterator
+	{
+		TChunkedArrayIterator(ChunkType** InChunk, ChunkType** InLastChunk, ElementType* InElem)
+			: Elem (InElem)
+			, Chunk(InChunk)
+			, LastChunk(InLastChunk)
+		{
+		}
+
+		ElementType* Elem;
+		ChunkType**  Chunk;
+		ChunkType**  LastChunk;
+
+		ElementType& operator*() const
+		{
+			return *Elem;
+		}
+
+		void operator++()
+		{
+			++Elem;
+			if (Chunk != LastChunk && Elem == (*Chunk)->Elements + NumElementsPerChunk)
+			{
+				++Chunk;
+				Elem = (*Chunk)->Elements;
+			}
+		}
+
+		friend bool operator!=(const TChunkedArrayIterator& Lhs, const TChunkedArrayIterator& Rhs)
+		{
+			return Lhs.Elem != Rhs.Elem;
+		}
+	};
+}
+
 /** An array that uses multiple allocations to avoid allocation failure due to fragmentation. */
-template<typename ElementType, uint32 TargetBytesPerChunk = 16384 >
+template<typename InElementType, uint32 TargetBytesPerChunk = 16384 >
 class TChunkedArray
 {
+	using ElementType = InElementType;
+
 public:
 
 	/** Initialization constructor. */
@@ -60,28 +100,8 @@ public:
 		return *this;
 	}
 
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-
 	TChunkedArray(const TChunkedArray&) = default;
 	TChunkedArray& operator=(const TChunkedArray&) = default;
-
-#else
-
-	FORCEINLINE TChunkedArray(const TChunkedArray& Other)
-		: Chunks     (Other.Chunks)
-		, NumElements(Other.NumElements)
-	{
-	}
-
-	FORCEINLINE TChunkedArray& operator=(const TChunkedArray& Other)
-	{
-		Chunks      = Other.Chunks;
-		NumElements = Other.NumElements;
-
-		return *this;
-	}
-
-#endif
 
 	// Accessors.
 	ElementType& operator()(int32 ElementIndex)
@@ -235,6 +255,44 @@ protected:
 
 	/** The number of elements in the array. */
 	int32 NumElements;
+
+private:
+	typedef UE4ChunkedArray_Private::TChunkedArrayIterator<      FChunk,       ElementType, NumElementsPerChunk> FIterType;
+	typedef UE4ChunkedArray_Private::TChunkedArrayIterator<const FChunk, const ElementType, NumElementsPerChunk> FConstIterType;
+
+	friend FIterType begin(TChunkedArray& Array)
+	{
+		int32 Num = Array.NumElements;
+		FChunk** ChunkPtr = Array.Chunks.GetData();
+		FChunk** LastChunkPtr = Array.Chunks.GetData() + (Num ? Num - 1 : 0) / NumElementsPerChunk;
+		return FIterType(ChunkPtr, LastChunkPtr, ChunkPtr ? (*ChunkPtr)->Elements : nullptr);
+	}
+
+	friend FConstIterType begin(const TChunkedArray& Array)
+	{
+		int32 Num = Array.NumElements;
+		const FChunk** ChunkPtr = Array.Chunks.GetData();
+		const FChunk** LastChunkPtr = Array.Chunks.GetData() + (Num ? Num - 1 : 0) / NumElementsPerChunk;
+		return FConstIterType(ChunkPtr, LastChunkPtr, ChunkPtr ? (*ChunkPtr)->Elements : nullptr);
+	}
+
+	friend FIterType end(TChunkedArray& Array)
+	{
+		int32 Num = Array.NumElements;
+		bool bBeyondLastChunk = Num && (Num % NumElementsPerChunk) == 0;
+		FChunk** ChunkPtr = Array.Chunks.GetData() + (Num / NumElementsPerChunk) + (bBeyondLastChunk ? -1 : 0); // do not read off the end of the chunk array!
+		FChunk** LastChunkPtr = Array.Chunks.GetData() + (Num ? Num - 1 : 0) / NumElementsPerChunk;
+		return FIterType(ChunkPtr, LastChunkPtr, ChunkPtr ? (*ChunkPtr)->Elements + (bBeyondLastChunk ? NumElementsPerChunk : (Num % NumElementsPerChunk))  : nullptr);
+	}
+
+	friend FConstIterType end(const TChunkedArray& Array)
+	{
+		int32 Num = Array.NumElements;
+		bool bBeyondLastChunk = Num && Num % NumElementsPerChunk == 0;
+		const FChunk** ChunkPtr = Array.Chunks.GetData() + (Num / NumElementsPerChunk) + (bBeyondLastChunk ? -1 : 0); // do not read off the end of the chunk array!
+		const FChunk** LastChunkPtr = Array.Chunks.GetData() + (Num ? Num - 1 : 0) / NumElementsPerChunk;
+		return FConstIterType(ChunkPtr, LastChunkPtr, ChunkPtr ? (*ChunkPtr)->Elements + (bBeyondLastChunk ? NumElementsPerChunk : (Num % NumElementsPerChunk)) : nullptr);
+	}
 };
 
 

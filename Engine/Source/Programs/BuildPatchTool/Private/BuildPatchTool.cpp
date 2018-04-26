@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BuildPatchTool.h"
 #include "UObject/Object.h"
@@ -70,7 +70,7 @@ const TCHAR* HandleLegacyCommandline(const TCHAR* CommandLine)
 EReturnCode RunBuildPatchTool()
 {
 	// Load the BuildPatchServices Module
-	TSharedRef<IBuildPatchServicesModule> BuildPatchServicesModule = StaticCastSharedPtr<IBuildPatchServicesModule>(FModuleManager::Get().LoadModule(TEXT("BuildPatchServices"))).ToSharedRef();
+	IBuildPatchServicesModule& BuildPatchServicesModule = FModuleManager::LoadModuleChecked<IBuildPatchServicesModule>(TEXT("BuildPatchServices"));
 
 	// Initialise the UObject system and process our uobject classes
 	FModuleManager::Get().LoadModule(TEXT("CoreUObject"));
@@ -99,6 +99,10 @@ EReturnCode BuildPatchToolMain(const TCHAR* CommandLine)
 
 	// Run the application
 	EReturnCode ReturnCode = RunBuildPatchTool();
+	if (ReturnCode != EReturnCode::OK)
+	{
+		UE_LOG(LogBuildPatchTool, Error, TEXT("Tool exited with: %d"), (int32)ReturnCode);
+	}
 
 	// Shutdown
 	FCoreDelegates::OnExit.Broadcast();
@@ -108,7 +112,7 @@ EReturnCode BuildPatchToolMain(const TCHAR* CommandLine)
 
 const TCHAR* ProcessApplicationCommandline(int32 ArgC, TCHAR* ArgV[])
 {
-	static FString CommandLine = TEXT("-usehyperthreading");
+	static FString CommandLine = TEXT("-usehyperthreading -UNATTENDED");
 	for (int32 Option = 1; Option < ArgC; Option++)
 	{
 		CommandLine += TEXT(" ");

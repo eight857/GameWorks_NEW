@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	OpenGL3.h: Public OpenGL 3.2 definitions for non-common functionality
@@ -736,16 +736,13 @@ struct FOpenGL3 : public FOpenGLBase
 
 	static FORCEINLINE ERHIFeatureLevel::Type GetFeatureLevel()
 	{
-		static bool bForceES2 = FParse::Param(FCommandLine::Get(), TEXT("FeatureLevelES2"));
-		static bool bForceES3_1 = FParse::Param(FCommandLine::Get(), TEXT("FeatureLevelES31")) || FParse::Param(FCommandLine::Get(), TEXT("FeatureLevelES3_1"));
-		if (bForceES2 && !GIsEditor)
+		ERHIFeatureLevel::Type PreviewFeatureLevel;
+		if (RHIGetPreviewFeatureLevel(PreviewFeatureLevel))
 		{
-			return ERHIFeatureLevel::ES2;
+			check(PreviewFeatureLevel == ERHIFeatureLevel::ES2 || PreviewFeatureLevel == ERHIFeatureLevel::ES3_1);
+			return PreviewFeatureLevel;
 		}
-		else if (bForceES3_1 && !GIsEditor)
-		{
-			return ERHIFeatureLevel::ES3_1;
-		}
+
 		// Shader platform & RHI feature level
 		switch(GetMajorVersion())
 		{
@@ -762,16 +759,18 @@ struct FOpenGL3 : public FOpenGLBase
 
 	static FORCEINLINE EShaderPlatform GetShaderPlatform()
 	{
-		static bool bForceFeatureLevelES2 = FParse::Param(FCommandLine::Get(), TEXT("FeatureLevelES2")) && !GIsEditor;
-		if (bForceFeatureLevelES2)
+		ERHIFeatureLevel::Type PreviewFeatureLevel;
+		if (RHIGetPreviewFeatureLevel(PreviewFeatureLevel))
 		{
-			return SP_OPENGL_PCES2;
-		}
-
-		static bool bForceFeatureLevelES3_1 = (FParse::Param(FCommandLine::Get(), TEXT("FeatureLevelES31")) || FParse::Param(FCommandLine::Get(), TEXT("FeatureLevelES3_1"))) && !GIsEditor;
-		if (bForceFeatureLevelES3_1)
-		{
-			return SP_OPENGL_PCES3_1;
+			check(PreviewFeatureLevel == ERHIFeatureLevel::ES2 || PreviewFeatureLevel == ERHIFeatureLevel::ES3_1);
+			if (PreviewFeatureLevel == ERHIFeatureLevel::ES2)
+			{
+				return SP_OPENGL_PCES2;
+			}
+			else if (PreviewFeatureLevel == ERHIFeatureLevel::ES3_1)
+			{
+				return bAndroidGLESCompatibilityMode ? SP_OPENGL_ES3_1_ANDROID : SP_OPENGL_PCES3_1;
+			}
 		}
 
 		// Shader platform
@@ -799,6 +798,8 @@ struct FOpenGL3 : public FOpenGLBase
 	
 	static FORCEINLINE int32 GetReadHalfFloatPixelsEnum() { return GL_HALF_FLOAT; }
 
+	static FORCEINLINE bool IsAndroidGLESCompatibilityModeEnabled() { return bAndroidGLESCompatibilityMode; }
+
 protected:
 	static GLsizei NextTextureName;
 	static GLuint TextureNamesCache[OPENGL_NAME_CACHE_SIZE];
@@ -812,4 +813,5 @@ protected:
 	static bool bDebugContext;
 	static bool bSupportsTessellation;
 	static bool bSupportsSeparateShaderObjects;
+	static bool bAndroidGLESCompatibilityMode;
 };

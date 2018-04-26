@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LandscapeEditorDetailCustomization_AlphaBrush.h"
 #include "UnrealClient.h"
@@ -114,7 +114,7 @@ public:
 		return Texture2D ? FText::FromString(Texture2D->GetOutermost()->GetName()) : FText();
 	}
 
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 	{
 		if (Texture.IsBound() || TextureChannel.IsBound())
 		{
@@ -130,7 +130,7 @@ public:
 			}
 		}
 
-		return SCompoundWidget::OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+		return SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 	}
 
 private:
@@ -158,12 +158,8 @@ void FTextureMaskThumbnailViewportClient::Draw(FViewport* Viewport, FCanvas* Can
 	Canvas->Clear( FLinearColor::Black);
 
 	// Fully stream in the texture before drawing it.
-	UTexture2D* Texture2D = Cast<UTexture2D>(Texture);
-	if (Texture2D)
-	{
-		Texture2D->SetForceMipLevelsToBeResident(30.0f);
-		Texture2D->WaitForStreaming();
-	}
+	Texture->SetForceMipLevelsToBeResident(30.0f);
+	Texture->WaitForStreaming();
 
 	//Draw the selected texture, uses ColourChannelBlend mode parameter to filter colour channels and apply grayscale
 	FCanvasTileItem TileItem( FVector2D( 0.0f, 0.0f ), Texture->Resource, Viewport->GetSizeXY(), FLinearColor::White );

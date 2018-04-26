@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEffectApplied.h"
 #include "AbilitySystemGlobals.h"
@@ -35,6 +35,22 @@ void UAbilityTask_WaitGameplayEffectApplied::OnApplyGameplayEffectCallback(UAbil
 	if (!TargetTagRequirements.RequirementsMet(*SpecApplied.CapturedTargetTags.GetAggregatedTags()))
 	{
 		return;
+	}
+
+	if (SourceTagQuery.IsEmpty() == false)
+	{
+		if (!SourceTagQuery.Matches(*SpecApplied.CapturedSourceTags.GetAggregatedTags()))
+		{
+			return;
+		}
+	}
+
+	if (TargetTagQuery.IsEmpty() == false)
+	{
+		if (!TargetTagQuery.Matches(*SpecApplied.CapturedTargetTags.GetAggregatedTags()))
+		{
+			return;
+		}
 	}
 
 	if (Locked)

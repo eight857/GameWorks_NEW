@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,9 +13,12 @@
 UCLASS()
 class VIEWPORTINTERACTION_API UMouseCursorInteractor : public UViewportInteractor
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
 
 public:
+
+	/** Default constructor. */
+	UMouseCursorInteractor();
 
 	/** Initialize default values */
 	void Init();

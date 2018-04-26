@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AbilitySystemDebugHUD.h"
 #include "GameFramework/PlayerController.h"
@@ -45,7 +45,7 @@ void AAbilitySystemDebugHUD::DrawWithBackground(UFont* InFont, const FString& Te
 	OffsetY += 25;
 }
 
-void AAbilitySystemDebugHUD::DrawDebugHUD(UCanvas* InCanvas, APlayerController* PC)
+void AAbilitySystemDebugHUD::DrawDebugHUD(UCanvas* InCanvas, APlayerController*)
 {
 	Canvas = InCanvas;
 	if (!Canvas)
@@ -59,7 +59,7 @@ void AAbilitySystemDebugHUD::DrawDebugHUD(UCanvas* InCanvas, APlayerController* 
 		return;
 	}
 
-	PC = LocalPlayer->PlayerController;	
+	APlayerController *PC = LocalPlayer->PlayerController;
 	if (!PC)
 	{
 		return;

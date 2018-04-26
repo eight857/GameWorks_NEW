@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -22,7 +22,7 @@ struct FGenericPlatformProperties
 	 */
 	static FORCEINLINE const char* GetPhysicsFormat()
 	{
-		return "PhysXPC";
+		return "PhysXGeneric";
 	}
 
 	/**
@@ -230,17 +230,6 @@ struct FGenericPlatformProperties
 	static FORCEINLINE bool HasFixedResolution()
 	{
 		return true;
-	}
-
-	/**
-	 *	Gets whether this platform supports Fast VRAM memory 
-	 *		Ie, whether TexCreate_FastVRAM flags actually mean something or not
-	 *	
-	 *	@return	bool		true if supported, false if not
-	 */
-	static FORCEINLINE bool SupportsFastVRAMMemory()
-	{
-		return false;
 	}
 
 	static FORCEINLINE bool SupportsMinimize()

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 MaterialTexCoordScalesRendering.cpp: Contains definitions for rendering the viewmode.
@@ -10,7 +10,7 @@ MaterialTexCoordScalesRendering.cpp: Contains definitions for rendering the view
 #include "MeshBatch.h"
 #include "Engine/Engine.h"
 
-IMPLEMENT_MATERIAL_SHADER_TYPE(,FMaterialTexCoordScalePS,TEXT("MaterialTexCoordScalesPixelShader"),TEXT("Main"),SF_Pixel);
+IMPLEMENT_MATERIAL_SHADER_TYPE(,FMaterialTexCoordScalePS,TEXT("/Engine/Private/MaterialTexCoordScalesPixelShader.usf"),TEXT("Main"),SF_Pixel);
 
 void FMaterialTexCoordScalePS::SetParameters(
 	FRHICommandList& RHICmdList, 

@@ -1,7 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimSequenceBase.h"
+#include "UObject/Package.h"
 
 /////////////////////////////////////////////////////
 // UAnimNotify
@@ -36,6 +38,8 @@ class UWorld* UAnimNotify::GetWorld() const
 	return (MeshContext ? MeshContext->GetWorld() : NULL);
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 FString UAnimNotify::GetNotifyName_Implementation() const
 {
 	UObject* ClassGeneratedBy = GetClass()->ClassGeneratedBy;
@@ -57,11 +61,34 @@ FString UAnimNotify::GetNotifyName_Implementation() const
 	return NotifyName;
 }
 
+/// @endcond
+
 void UAnimNotify::PostLoad()
 {
 	Super::PostLoad();
 #if WITH_EDITOR
 	// Ensure that all loaded notifies are transactional
 	SetFlags(GetFlags() | RF_Transactional);
+
+	// Make sure the asset isn't bogus (e.g., a looping particle system in a one-shot notify)
+	ValidateAssociatedAssets();
 #endif
+}
+
+void UAnimNotify::PreSave(const class ITargetPlatform* TargetPlatform)
+{
+#if WITH_EDITOR
+	ValidateAssociatedAssets();
+#endif
+	Super::PreSave(TargetPlatform);
+}
+
+UObject* UAnimNotify::GetContainingAsset() const
+{
+	UObject* ContainingAsset = GetTypedOuter<UAnimSequenceBase>();
+	if (ContainingAsset == nullptr)
+	{
+		ContainingAsset = GetOutermost();
+	}
+	return ContainingAsset;
 }

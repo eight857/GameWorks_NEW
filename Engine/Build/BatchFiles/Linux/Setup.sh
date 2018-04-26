@@ -1,6 +1,42 @@
 #!/bin/bash
 
 SCRIPT_DIR=$(cd "$(dirname "$BASH_SOURCE")" ; pwd)
+TOP_DIR=$(cd "$SCRIPT_DIR/../../.." ; pwd)
+
+AddGDBPrettyPrinters()
+{
+	echo -ne "Attempting to set up UE4 pretty printers for gdb (existing UE4Printers.py, if any, will be overwritten)...\n\t"
+
+	# Copy the pretty printer into the appropriate folder.
+	mkdir -p ~/.config/Epic/GDBPrinters/
+	if [ -e ~/.config/Epic/GDBPrinters/UE4Printers.py ]; then
+		chmod 644 ~/.config/Epic/GDBPrinters/UE4Printers.py 	# set R/W so we can overwrite it
+	fi
+	cp "$TOP_DIR/Extras/GDBPrinters/UE4Printers.py" ~/.config/Epic/GDBPrinters/
+	echo -ne "updated UE4Printers.py\n\t"
+	chmod 644 ~/.config/Epic/GDBPrinters/UE4Printers.py 	# set R/W again (it can be read-only if copied from Perforce)
+
+	# Check if .gdbinit exists. If not create else add needed parts.
+	if [ ! -f ~/.gdbinit ]; then
+		echo "no ~/.gdbinit file found - creating a new one."
+		echo -e "python \nimport sys\n\nsys.path.append('$HOME/.config/Epic/GDBPrinters/')\n\nfrom UE4Printers import register_ue4_printers\nregister_ue4_printers(None)\nprint(\"Registered pretty printers for UE4 classes\")\n\nend" >> ~/.gdbinit
+	else
+		if grep -q "register_ue4_printers" ~/.gdbinit; then
+			echo "found necessary entries in ~/.gdbinit file, not changing it."
+		else
+			echo -e "cannot modify .gdbinit. Please add the below lines manually:\n\n"
+			echo -e "python"
+			echo -e "\timport sys"
+			echo -e "\tsys.path.append('$HOME/.config/Epic/GDBPrinters/')"
+			echo -e "\tfrom UE4Printers import register_ue4_printers"
+			echo -e "\tregister_ue4_printers(None)"
+			echo -e "\tprint(\"Registered pretty printers for UE4 classes\")"
+			echo -e "\tend"
+			echo -e "\n\n"
+		fi
+	fi
+}
+
 
 # args: wrong filename, correct filename
 # expects to be run in Engine folder
@@ -43,6 +79,16 @@ if [ -e /etc/os-release ]; then
   if [[ "$ID" == "ubuntu" ]] || [[ "$ID_LIKE" == "ubuntu" ]] || [[ "$ID" == "debian" ]] || [[ "$ID_LIKE" == "debian" ]] || [[ "$ID" == "tanglu" ]] || [[ "$ID_LIKE" == "tanglu" ]]; then
     # Install the necessary dependencies (require clang-3.8 on 16.04, although 3.3 and 3.5 through 3.7 should work too for this release)
      # mono-devel is needed for making the installed build (particularly installing resgen2 tool)
+
+    # Adjust the VERSION_ID for elementary OS since elementary doesn't follow Debian versioning, but is Ubuntu-based.
+    if [[ "$ID" == "elementary" ]]; then
+      if [[ "$VERSION_ID" == 0.4 ]] || ([[ "$VERSION_ID" > 0.4 ]] && [[ "$VERSION_ID" < 0.5 ]]); then
+        VERSION_ID=16.04 # The 0.4 branch is based on 16.04
+      elif [[ "$VERSION_ID" == 0.5 ]] || [[ "$VERSION_ID" > 0.5 ]]; then
+        VERSION_ID=17 # Assumes that 0.5 won't be 16.04 based
+      fi
+    fi
+
     if [ -n "$VERSION_ID" ] && [[ "$VERSION_ID" < 16.04 ]]; then
      DEPS="mono-xbuild \
        mono-dmcs \
@@ -74,6 +120,25 @@ if [ -e /etc/os-release ]; then
        libmono-system-runtime4.0-cil
        mono-devel
        clang-3.8
+       llvm
+       build-essential
+       "
+    elif [ -n "$VERSION_ID" ] && [[ "$VERSION_ID" < 17.10 ]]; then
+     DEPS="mono-xbuild \
+       mono-dmcs \
+       libmono-microsoft-build-tasks-v4.0-4.0-cil \
+       libmono-system-data-datasetextensions4.0-cil
+       libmono-system-web-extensions4.0-cil
+       libmono-system-management4.0-cil
+       libmono-system-xml-linq4.0-cil
+       libmono-corlib4.5-cil
+       libmono-windowsbase4.0-cil
+       libmono-system-io-compression4.0-cil
+       libmono-system-io-compression-filesystem4.0-cil
+       libmono-system-runtime4.0-cil
+       mono-devel
+       clang-3.9
+       llvm
        build-essential
        "
     elif [[ $PRETTY_NAME == *sid ]] || [[ $PRETTY_NAME == *stretch ]]; then
@@ -92,7 +157,7 @@ if [ -e /etc/os-release ]; then
        mono-devel
        clang-3.8
        "
-    else # assume the latest Ubuntu, this is going to be a moving target
+    else # assume the latest Ubuntu, this is going to be a moving target (17.10 as of now)
      DEPS="mono-xbuild \
        mono-dmcs \
        libmono-microsoft-build-tasks-v4.0-4.0-cil \
@@ -106,7 +171,9 @@ if [ -e /etc/os-release ]; then
        libmono-system-io-compression-filesystem4.0-cil
        libmono-system-runtime4.0-cil
        mono-devel
-       clang-3.9
+       clang-5.0
+       lld-5.0
+       llvm
        build-essential
        "
     fi
@@ -213,11 +280,11 @@ echo Fixing inconsistent case in filenames.
 for BASE in Content/Editor/Slate Content/Slate Documentation/Source/Shared/Icons; do
   find $BASE -name "*.PNG" | while read PNG_UPPER; do
     png_lower="$(echo "$PNG_UPPER" | sed 's/.PNG$/.png/')"
-    if [ ! -f $png_lower ]; then
-      PNG_UPPER=$(basename $PNG_UPPER)
+    if [ ! -f "$png_lower" ]; then
+      PNG_UPPER=$(basename "$PNG_UPPER")
       echo "$png_lower -> $PNG_UPPER"
       # link, and not move, to make it usable with Perforce workspaces
-      ln -sf `basename "$PNG_UPPER"` "$png_lower"
+      ln -sf "`basename "$PNG_UPPER"`" "$png_lower"
     fi
   done
 done
@@ -225,7 +292,7 @@ done
 CreateLinkIfNoneExists ../../engine/shaders/Fxaa3_11.usf  ../Engine/Shaders/Fxaa3_11.usf
 CreateLinkIfNoneExists ../../Engine/shaders/Fxaa3_11.usf  ../Engine/Shaders/Fxaa3_11.usf
 
-# We have to build libhlslcc locally due to apparent mismatch between system STL and cross-toolchain one
+# Provide the hooks for locally building third party libs if needed
 echo
 pushd Build/BatchFiles/Linux > /dev/null
 ./BuildThirdParty.sh
@@ -267,6 +334,9 @@ MimeType=application/uproject;" > ~/.local/share/applications/UE4Editor.desktop
     fi
   fi
 fi
+
+# Add GDB scripts for common Unreal types.
+AddGDBPrettyPrinters
 
 echo "Setup successful."
 touch Build/OneTimeSetupPerformed

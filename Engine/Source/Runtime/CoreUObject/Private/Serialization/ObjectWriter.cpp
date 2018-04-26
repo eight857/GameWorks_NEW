@@ -1,9 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Serialization/ObjectWriter.h"
 #include "UObject/LazyObjectPtr.h"
-#include "Misc/StringAssetReference.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 
 ///////////////////////////////////////////////////////
 // FObjectWriter
@@ -25,34 +24,25 @@ FArchive& FObjectWriter::operator<<( class UObject*& Res )
 	return *this;
 }
 
-FArchive& FObjectWriter::operator<<( class FLazyObjectPtr& LazyObjectPtr )
+FArchive& FObjectWriter::operator<<(FLazyObjectPtr& Value)
 {
-	FUniqueObjectGuid ID = LazyObjectPtr.GetUniqueID();
+	FUniqueObjectGuid ID = Value.GetUniqueID();
 	return *this << ID;
 }
 
-FArchive& FObjectWriter::operator<<( class FAssetPtr& AssetPtr )
+FArchive& FObjectWriter::operator<<(FSoftObjectPtr& Value)
 {
-	FStringAssetReference ID = AssetPtr.GetUniqueID();
-	ID.Serialize(*this);
+	Value.ResetWeakPtr();
+	return *this << Value.GetUniqueID();
+}
+
+FArchive& FObjectWriter::operator<<(FSoftObjectPath& Value)
+{
+	Value.SerializePath(*this);
 	return *this;
 }
 
-FArchive& FObjectWriter::operator<<(FStringAssetReference& Value)
-{
-	FString Path = Value.ToString();
-
-	*this << Path;
-
-	if (IsLoading())
-	{
-		Value.SetPath(MoveTemp(Path));
-	}
-
-	return *this;
-}
-
-FArchive& FObjectWriter::operator<< (struct FWeakObjectPtr& Value)
+FArchive& FObjectWriter::operator<<(FWeakObjectPtr& Value)
 {
 	Value.Serialize(*this);
 	return *this;

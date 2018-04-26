@@ -1,10 +1,10 @@
-﻿INTSourceChangelist:3069483
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title:2.1- キャラクターを新規作成する
 Crumbs: %ROOT%, Programming, Programming/Tutorials/FirstPersonShooter, Programming/Tutorials/FirstPersonShooter/2
 Description:FPS プロジェクト用にキャラクターを新規作成する方法を学びます。
 SkillLevel:Beginner
-Version:4.11
+Version:4.15
 
 [VAR:Steps]
 [OBJECT:Navigation]
@@ -21,7 +21,7 @@ Version:4.11
 [/OBJECT]
 [/VAR]
 
-%Steps%
+
 
 このステップでは、アンリアル エンジンの Character 基本クラスを使用して新規キャラクターを作成します。Character クラス (Pawn クラスから派生) は、歩く、走る、ジャンプするなどの二足方向の動きのためのビルトイン機能です。
 
@@ -67,15 +67,16 @@ Version:4.11
 
 		#include "FPSProject.h"
 		#include "FPSCharacter.h"
-				// Sets default values (デフォルト値を設定) 
 
+				// Sets default values (デフォルト値を設定) 
 		AFPSCharacter::AFPSCharacter()
 		{
-		 	//Set this character to call Tick() every frame. (このポーンがフレーム毎に Tick() を呼び出すように設定します) You can turn this off to improve performance if you don't need it. (必要がなければパフォーマンスを向上させるためにオフにすることができます) 
+		 	// Set this character to call Tick() every frame. (このキャラクターがフレーム毎に Tick() を呼び出すように設定します) You can turn this off to improve performance if you don't need it. (必要がなければパフォーマンスを向上させるためにオフにすることができます) 
 			PrimaryActorTick.bCanEverTick = true;
+
 		}
 
-		// Called when the game starts or when spawned (ゲーム開始時またはスポーン時に呼ばれます)
+		// Called when the game starts or when spawned (ゲーム開始時またはスポーン時に呼び出される)
 
 		void AFPSCharacter::BeginPlay()
 		{
@@ -87,18 +88,18 @@ Version:4.11
 				GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("We are using FPSCharacter."));
 			}
 		}
-
-		// Called every frame (フレームごとに呼ばれます) 
+		// Called every frame (フレームごとに呼び出される)
 		void AFPSCharacter::Tick( float DeltaTime )
 		{
 			Super::Tick( DeltaTime );
 
 		}
 
-		// Called to bind functionality to input (機能と入力をバインドするために呼ばれます) 
-		void AFPSCharacter::SetupPlayerInputComponent(class UInputComponent* InputComponent)
+		// Called to bind functionality to input (機能と入力をバインドするために呼ばれます)
+
+		void AFPSCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent)
 		{
-			Super::SetupPlayerInputComponent(InputComponent);
+			Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 		}
 
@@ -151,7 +152,7 @@ CPP FPS Character クラスをブループリントに拡張します。C++ ク�
 
 1.	**[Project Settings]** メニューを閉じます。
 
-1.	レベル エディタのツールバーで、**[Play (再生)]** ボタンをクリックします。ビューポートの左上隅に "Hello World, this is FPSGameMode!" と表示される黄色のテキストの下に "We are using FPSCharacter." が赤色のテキストで 5 秒間表示されるようになります。
+1.	レベル エディタのツールバー で、**[Play (プレイ)]** ボタンをクリックします。ビューポートの左上隅に "Hello World, this is FPSGameMode!" と表示される黄色のテキストの下に "We are using FPSCharacter." が赤色のテキストで 5 秒間表示されるようになります。
 
 	![](VerifyingFPSCharacterResult.png)
 
@@ -159,4 +160,3 @@ CPP FPS Character クラスをブループリントに拡張します。C++ ク�
 
 1.	次のステップに進む前に、[PIE (Play In Editor)] モードを終了するには、レベル エディタで Escape キーを押すか、**[Stop]** ボタンをクリックします。
 
-%Steps%

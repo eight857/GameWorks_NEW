@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BackgroundBlur.h"
 #include "HAL/IConsoleManager.h"
@@ -48,7 +48,7 @@ TSharedRef<SWidget> UBackgroundBlur::RebuildWidget()
 		Cast<UBackgroundBlurSlot>(GetContentSlot())->BuildSlot(MyBackgroundBlur.ToSharedRef());
 	}
 	
-	return BuildDesignTimeWidget(MyBackgroundBlur.ToSharedRef());
+	return MyBackgroundBlur.ToSharedRef();
 }
 
 void UBackgroundBlur::SynchronizeProperties()

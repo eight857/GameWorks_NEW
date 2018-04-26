@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Widgets/SWidget.h"
 #include "Editor/PropertyEditor/Public/IPropertyTypeCustomization.h"
+#include "SGraphPin.h"
 
 class IPropertyHandle;
 
@@ -31,3 +32,23 @@ private:
 
 };
 
+/** Graph pin version of UI */
+class SPrimaryAssetTypeGraphPin : public SGraphPin
+{
+public:
+	SLATE_BEGIN_ARGS(SPrimaryAssetTypeGraphPin) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UEdGraphPin* InGraphPinObj);
+
+	//~ Begin SGraphPin Interface
+	virtual TSharedRef<SWidget>	GetDefaultValueWidget() override;
+	//~ End SGraphPin Interface
+
+private:
+
+	void OnTypeSelected(FPrimaryAssetType AssetType);
+	FText GetDisplayText() const;
+
+	FPrimaryAssetType CurrentType;
+};

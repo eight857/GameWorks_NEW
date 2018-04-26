@@ -1,6 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SStaticMeshEditorViewport.h"
+#include "SStaticMeshEditorViewportToolBar.h"
+#include "StaticMeshViewportLODCommands.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 #include "UObject/Package.h"
@@ -16,61 +18,11 @@
 #include "EngineAnalytics.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Engine/StaticMeshSocket.h"
+#include "Editor/UnrealEd/Public/SEditorViewportToolBarMenu.h"
 
 #define HITPROXY_SOCKET	1
 
-///////////////////////////////////////////////////////////
-// SStaticMeshEditorViewportToolbar
-
-// In-viewport toolbar widget used in the static mesh editor
-class SStaticMeshEditorViewportToolbar : public SCommonEditorViewportToolbarBase
-{
-public:
-	SLATE_BEGIN_ARGS(SStaticMeshEditorViewportToolbar) {}
-	SLATE_END_ARGS()
-
-	void Construct(const FArguments& InArgs, TSharedPtr<class ICommonEditorViewportToolbarInfoProvider> InInfoProvider)
-	{
-		SCommonEditorViewportToolbarBase::Construct(SCommonEditorViewportToolbarBase::FArguments(), InInfoProvider);
-	}
-
-	// SCommonEditorViewportToolbarBase interface
-	virtual TSharedRef<SWidget> GenerateShowMenu() const override
-	{
-		GetInfoProvider().OnFloatingButtonClicked();
-
-		TSharedRef<SEditorViewport> ViewportRef = GetInfoProvider().GetViewportWidget();
-
-		const bool bInShouldCloseWindowAfterMenuSelection = true;
-		FMenuBuilder ShowMenuBuilder(bInShouldCloseWindowAfterMenuSelection, ViewportRef->GetCommandList());
-		{
-			auto Commands = FStaticMeshEditorCommands::Get();
-
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowSockets);
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowPivot);
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowVertices);
-
-			ShowMenuBuilder.AddMenuSeparator();
-
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowGrid);
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowBounds);
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowSimpleCollision);
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowComplexCollision);
-
-			ShowMenuBuilder.AddMenuSeparator();
-
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowNormals);
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowTangents);
-			ShowMenuBuilder.AddMenuEntry(Commands.SetShowBinormals);
-
-			//ShowMenuBuilder.AddMenuSeparator();
-			//ShowMenuBuilder.AddMenuEntry(Commands.SetShowMeshEdges);
-		}
-
-		return ShowMenuBuilder.MakeWidget();
-	}
-	// End of SCommonEditorViewportToolbarBase
-};
+#define LOCTEXT_NAMESPACE "StaticMeshEditorViewport"
 
 ///////////////////////////////////////////////////////////
 // SStaticMeshEditorViewport
@@ -86,6 +38,8 @@ void SStaticMeshEditorViewport::Construct(const FArguments& InArgs)
 	StaticMesh = InArgs._ObjectToEdit;
 
 	CurrentViewMode = VMI_Lit;
+
+	FStaticMeshViewportLODCommands::Register();
 
 	SEditorViewport::Construct( SEditorViewport::FArguments() );
 
@@ -223,7 +177,7 @@ void SStaticMeshEditorViewport::UpdatePreviewSocketMeshes()
 					SocketPreviewMeshComponent = NewObject<UStaticMeshComponent>();
 					PreviewScene->AddComponent(SocketPreviewMeshComponent, FTransform::Identity);
 					SocketPreviewMeshComponents.Add(SocketPreviewMeshComponent);
-					SocketPreviewMeshComponent->SnapTo(PreviewMeshComponent, Socket->SocketName);
+					SocketPreviewMeshComponent->AttachToComponent(PreviewMeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket->SocketName);
 				}
 				else
 				{
@@ -232,7 +186,7 @@ void SStaticMeshEditorViewport::UpdatePreviewSocketMeshes()
 					// In case of a socket rename, ensure our preview component is still snapping to the proper socket
 					if (!SocketPreviewMeshComponent->GetAttachSocketName().IsEqual(Socket->SocketName))
 					{
-						SocketPreviewMeshComponent->SnapTo(PreviewMeshComponent, Socket->SocketName);
+						SocketPreviewMeshComponent->AttachToComponent(PreviewMeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket->SocketName);
 					}
 
 					// Force component to world update to take into account the new socket position.
@@ -295,7 +249,7 @@ void SStaticMeshEditorViewport::UpdatePreviewMesh(UStaticMesh* InStaticMesh, boo
 		{
 			SocketPreviewMeshComponent = NewObject<UStaticMeshComponent>();
 			SocketPreviewMeshComponent->SetStaticMesh(Socket->PreviewStaticMesh);
-			SocketPreviewMeshComponent->SnapTo(PreviewMeshComponent, Socket->SocketName);
+			SocketPreviewMeshComponent->AttachToComponent(PreviewMeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket->SocketName);
 			SocketPreviewMeshComponents.Add(SocketPreviewMeshComponent);
 			PreviewScene->AddComponent(SocketPreviewMeshComponent, FTransform::Identity);
 		}
@@ -347,6 +301,8 @@ void SStaticMeshEditorViewport::SetViewModeVertexColor()
 		EditorViewportClient->EngineShowFlags.SetIndirectLightingCache(false);
 		EditorViewportClient->EngineShowFlags.SetPostProcessing(false);
 		EditorViewportClient->SetFloorAndEnvironmentVisibility(false);
+		StaticMeshEditorPtr.Pin()->GetStaticMeshComponent()->bDisplayVertexColors = true;
+		StaticMeshEditorPtr.Pin()->GetStaticMeshComponent()->MarkRenderStateDirty();
 	}
 	else
 	{
@@ -355,10 +311,12 @@ void SStaticMeshEditorViewport::SetViewModeVertexColor()
 		EditorViewportClient->EngineShowFlags.SetIndirectLightingCache(true);
 		EditorViewportClient->EngineShowFlags.SetPostProcessing(true);
 		EditorViewportClient->SetFloorAndEnvironmentVisibility(true);
+		StaticMeshEditorPtr.Pin()->GetStaticMeshComponent()->bDisplayVertexColors = false;
+		StaticMeshEditorPtr.Pin()->GetStaticMeshComponent()->MarkRenderStateDirty();
 	}
 	if (FEngineAnalytics::IsAvailable())
 	{
-		FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.StaticMesh.Toolbar"), FAnalyticsEventAttribute(TEXT("VertexColors"), AnalyticsConversion::ToString(EditorViewportClient->EngineShowFlags.VertexColors)));
+		FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.StaticMesh.Toolbar"), FAnalyticsEventAttribute(TEXT("VertexColors"), static_cast<int>(EditorViewportClient->EngineShowFlags.VertexColors)));
 	}
 	SceneViewport->Invalidate();
 }
@@ -371,8 +329,55 @@ bool SStaticMeshEditorViewport::IsInViewModeVertexColorChecked() const
 void SStaticMeshEditorViewport::ForceLODLevel(int32 InForcedLOD)
 {
 	PreviewMeshComponent->ForcedLodModel = InForcedLOD;
+	LODSelection = InForcedLOD;
 	{FComponentReregisterContext ReregisterContext(PreviewMeshComponent);}
 	SceneViewport->Invalidate();
+}
+
+int32 SStaticMeshEditorViewport::GetLODSelection() const
+{
+	if (PreviewMeshComponent)
+	{
+		return PreviewMeshComponent->ForcedLodModel;
+	}
+	return 0;
+}
+
+bool SStaticMeshEditorViewport::IsLODModelSelected(int32 InLODSelection) const
+{
+	if (PreviewMeshComponent)
+	{
+		return (PreviewMeshComponent->ForcedLodModel == InLODSelection) ? true : false;
+	}
+	return false;
+}
+
+void SStaticMeshEditorViewport::OnSetLODModel(int32 InLODSelection)
+{
+	if (PreviewMeshComponent)
+	{
+		LODSelection = InLODSelection;
+		PreviewMeshComponent->SetForcedLodModel(LODSelection);
+		//PopulateUVChoices();
+		StaticMeshEditorPtr.Pin()->BroadcastOnSelectedLODChanged();
+	}
+}
+
+void SStaticMeshEditorViewport::OnLODModelChanged()
+{
+	if (PreviewMeshComponent && LODSelection != PreviewMeshComponent->ForcedLodModel)
+	{
+		//PopulateUVChoices();
+	}
+}
+
+int32 SStaticMeshEditorViewport::GetLODModelCount() const
+{
+	if (PreviewMeshComponent && PreviewMeshComponent->GetStaticMesh())
+	{
+		return PreviewMeshComponent->GetStaticMesh()->GetNumLODs();
+	}
+	return 0;
 }
 
 TSet< int32 >& SStaticMeshEditorViewport::GetSelectedEdges()
@@ -434,9 +439,9 @@ void SStaticMeshEditorViewport::BindCommands()
 
 	CommandList->MapAction(
 		Commands.SetDrawUVs,
-		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetDrawUVOverlay ),
+		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleDrawUVOverlay ),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetDrawUVOverlayChecked ) );
+		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsDrawUVOverlayChecked ) );
 
 	CommandList->MapAction(
 		Commands.SetShowGrid,
@@ -452,58 +457,80 @@ void SStaticMeshEditorViewport::BindCommands()
 
 	CommandList->MapAction(
 		Commands.SetShowSimpleCollision,
-		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetShowSimpleCollision ),
+		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleShowSimpleCollision ),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetShowSimpleCollisionChecked ) );
+		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsShowSimpleCollisionChecked ) );
 
 	CommandList->MapAction(
 		Commands.SetShowComplexCollision,
-		FExecuteAction::CreateSP(EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetShowComplexCollision),
+		FExecuteAction::CreateSP(EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleShowComplexCollision),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP(EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetShowComplexCollisionChecked));
+		FIsActionChecked::CreateSP(EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsShowComplexCollisionChecked));
 
 	CommandList->MapAction(
 		Commands.SetShowSockets,
-		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetShowSockets ),
+		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleShowSockets ),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetShowSocketsChecked ) );
+		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsShowSocketsChecked ) );
 
 	// Menu
 	CommandList->MapAction(
 		Commands.SetShowNormals,
-		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetShowNormals ),
+		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleShowNormals ),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetShowNormalsChecked ) );
+		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsShowNormalsChecked ) );
 
 	CommandList->MapAction(
 		Commands.SetShowTangents,
-		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetShowTangents ),
+		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleShowTangents ),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetShowTangentsChecked ) );
+		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsShowTangentsChecked ) );
 
 	CommandList->MapAction(
 		Commands.SetShowBinormals,
-		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetShowBinormals ),
+		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleShowBinormals ),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetShowBinormalsChecked ) );
+		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsShowBinormalsChecked ) );
 
 	CommandList->MapAction(
 		Commands.SetShowPivot,
-		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetShowPivot ),
+		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleShowPivot ),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetShowPivotChecked ) );
+		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsShowPivotChecked ) );
 
 	CommandList->MapAction(
 		Commands.SetDrawAdditionalData,
-		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetDrawAdditionalData ),
+		FExecuteAction::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleDrawAdditionalData ),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetDrawAdditionalData ) );
+		FIsActionChecked::CreateSP( EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsDrawAdditionalDataChecked ) );
 
 	CommandList->MapAction(
 		Commands.SetShowVertices,
-		FExecuteAction::CreateSP(EditorViewportClientRef, &FStaticMeshEditorViewportClient::SetDrawVertices ),
+		FExecuteAction::CreateSP(EditorViewportClientRef, &FStaticMeshEditorViewportClient::ToggleDrawVertices ),
 		FCanExecuteAction(),
-		FIsActionChecked::CreateSP(EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsSetDrawVerticesChecked ) );
+		FIsActionChecked::CreateSP(EditorViewportClientRef, &FStaticMeshEditorViewportClient::IsDrawVerticesChecked ) );
+
+	// LOD
+	StaticMeshEditorPtr.Pin()->RegisterOnSelectedLODChanged(FOnSelectedLODChanged::CreateSP(this, &SStaticMeshEditorViewport::OnLODModelChanged), false);
+	//Bind LOD preview menu commands
+
+	const FStaticMeshViewportLODCommands& ViewportLODMenuCommands = FStaticMeshViewportLODCommands::Get();
+	
+	//LOD Auto
+	CommandList->MapAction(
+		ViewportLODMenuCommands.LODAuto,
+		FExecuteAction::CreateSP(this, &SStaticMeshEditorViewport::OnSetLODModel, 0),
+		FCanExecuteAction(),
+		FIsActionChecked::CreateSP(this, &SStaticMeshEditorViewport::IsLODModelSelected, 0));
+
+	// LOD 0
+	CommandList->MapAction(
+		ViewportLODMenuCommands.LOD0,
+		FExecuteAction::CreateSP(this, &SStaticMeshEditorViewport::OnSetLODModel, 1),
+		FCanExecuteAction(),
+		FIsActionChecked::CreateSP(this, &SStaticMeshEditorViewport::IsLODModelSelected, 1));
+	// all other LODs will be added dynamically
+
 }
 
 void SStaticMeshEditorViewport::OnFocusViewportToSelection()
@@ -540,3 +567,5 @@ void SStaticMeshEditorViewport::OnFocusViewportToSelection()
 		return;
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Interfaces/OnlinePartyInterface.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
@@ -115,8 +115,6 @@ bool FPartyConfiguration::operator==(const FPartyConfiguration& Other) const
 {
 	return JoinRequestAction == Other.JoinRequestAction &&
 		PresencePermissions == Other.PresencePermissions && 
-		JoinRequestAction == Other.JoinRequestAction &&
-		PresencePermissions == Other.PresencePermissions &&
 		InvitePermissions == Other.InvitePermissions &&
 		bChatEnabled == Other.bChatEnabled &&
 		bIsAcceptingMembers == Other.bIsAcceptingMembers &&

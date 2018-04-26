@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,12 +8,12 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "IDetailCustomization.h"
 
-class FAssetData;
+struct FAssetData;
 class IDetailLayoutBuilder;
 class IPropertyHandle;
 class SComboButton;
 
-class FSkeletalMeshComponentDetails : public IDetailCustomization
+class DETAILCUSTOMIZATIONS_API FSkeletalMeshComponentDetails : public IDetailCustomization
 {
 public:
 	FSkeletalMeshComponentDetails();
@@ -25,14 +25,17 @@ public:
 	/** IDetailCustomization interface */
 	virtual void CustomizeDetails( IDetailLayoutBuilder& DetailBuilder ) override;
 
+	static TSharedRef<SWidget> CreateAsyncSceneValueWidgetWithWarning(const TSharedPtr<IPropertyHandle>& AsyncScenePropertyHandle);
+
 private:
-	void UpdateAnimationCategory( IDetailLayoutBuilder& DetailBuilder );
+	void UpdateAnimationCategory(IDetailLayoutBuilder& DetailBuilder);
+	void UpdatePhysicsCategory(IDetailLayoutBuilder& DetailBuilder);
 
 	/** Function that returns whether the specified animation mode should be visible */
 	EVisibility VisibilityForAnimationMode(EAnimationMode::Type AnimationMode) const;
 
 	/** Helper wrapper functions for VisibilityForAnimationMode */
-	EVisibility VisibilityForBlueprintMode() const {return VisibilityForAnimationMode(EAnimationMode::AnimationBlueprint);}
+	EVisibility VisibilityForBlueprintMode() const { return VisibilityForAnimationMode(EAnimationMode::AnimationBlueprint); }
 	EVisibility VisibilityForSingleAnimMode() const { return VisibilityForAnimationMode(EAnimationMode::AnimationSingleNode); }
 	bool AnimPickerIsEnabled() const;
 
@@ -43,9 +46,16 @@ private:
 	USkeletalMeshComponent::FOnSkeletalMeshPropertyChanged OnSkeletalMeshPropertyChanged;
 	
 	/** Register/Unregister the mesh changed delegate to TargetComponent */
+	void PerformInitialRegistrationOfSkeletalMeshes(IDetailLayoutBuilder& DetailBuilder);
 	void RegisterSkeletalMeshPropertyChanged(TWeakObjectPtr<USkeletalMeshComponent> Mesh);
 	void UnregisterSkeletalMeshPropertyChanged(TWeakObjectPtr<USkeletalMeshComponent> Mesh);
 	void UnregisterAllMeshPropertyChangedCallers();
+
+	/**
+	* Iterates over registered meshes and returns a pointer to the common skeleton used by all of them.
+	* If the meshes use more than one different skeleton, NULL is returned.
+	*/
+	USkeleton* GetValidSkeletonFromRegisteredMeshes() const;
 
 	/** Bound to the delegate used to detect changes in skeletal mesh properties */
 	void SkeletalMeshPropertyChanged();
@@ -65,6 +75,9 @@ private:
 	/** Callback from the details panel to use the currently selected asset in the content browser */
 	void UseSelectedAnimBlueprint();
 
+	/** Called when a skeletal mesh property changes. */
+	void UpdateSkeletonNameAndPickerVisibility();
+
 	/** Cached layout builder for use after customization */
 	IDetailLayoutBuilder* CurrentDetailBuilder;
 
@@ -79,6 +92,9 @@ private:
 
 	/** Caches the AnimationBlueprintGeneratedClass Handle so we can look up its value after customization has finished */
 	TSharedPtr<IPropertyHandle> AnimationBlueprintHandle;
+
+	/** Caches the AsyncScene handle so we can look up its value after customization has finished. */
+	TSharedPtr<IPropertyHandle> AsyncSceneHandle;
 
 	/** Full name of the currently selected skeleton to use for filtering animation assets */
 	FString SelectedSkeletonName;

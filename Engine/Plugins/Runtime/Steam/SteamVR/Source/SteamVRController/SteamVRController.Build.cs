@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -16,8 +16,10 @@ public class SteamVRController : ModuleRules
         {
 			"Core",
 			"CoreUObject",
+			"ApplicationCore",
 			"Engine",
 			"InputDevice",
+            "InputCore",
 			"HeadMountedDisplay",
             "SteamVR"
 		});
@@ -29,7 +31,7 @@ public class SteamVRController : ModuleRules
 
 		AddEngineThirdPartyPrivateStaticDependencies(Target, "OpenVR");
 
-        if (Target.Platform == UnrealTargetPlatform.Linux && Target.Architecture.StartsWith("x86_64"))
+        if ( Target.Platform == UnrealTargetPlatform.Win64 || Target.Platform == UnrealTargetPlatform.Win32 || (Target.Platform == UnrealTargetPlatform.Linux && Target.Architecture.StartsWith("x86_64")) )
         {
             AddEngineThirdPartyPrivateStaticDependencies(Target, "OpenGL");
             PrivateDependencyModuleNames.Add("OpenGLDrv");

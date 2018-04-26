@@ -1,17 +1,4 @@
-/* Copyright 2016 Google Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2017 Google Inc.
 
 #include "GoogleVRSplash.h"
 #include "PipelineStateCache.h"
@@ -83,7 +70,8 @@ void FGoogleVRSplash::AllocateSplashScreenRenderTarget()
 {
 	if (!GVRCustomPresent->TextureSet.IsValid())
 	{
-		GVRCustomPresent->AllocateRenderTargetTexture(0, GVRHMD->GVRRenderTargetSize.X, GVRHMD->GVRRenderTargetSize.Y, PF_B8G8R8A8, 1, TexCreate_None, TexCreate_RenderTargetable);
+		const uint32 NumLayers = (GVRHMD->IsMobileMultiViewDirect()) ? 2 : 1;
+		GVRCustomPresent->AllocateRenderTargetTexture(0, GVRHMD->GVRRenderTargetSize.X, GVRHMD->GVRRenderTargetSize.Y, PF_B8G8R8A8, NumLayers, 1, TexCreate_None, TexCreate_RenderTargetable);
 	}
 }
 
@@ -165,7 +153,14 @@ void FGoogleVRSplash::Tick(float DeltaTime)
 {
 	check(IsInRenderingThread());
 
-	GVRHMD->UpdateHeadPose();
+	if (!bSplashScreenRendered)
+	{
+		RenderStereoSplashScreen(FRHICommandListExecutor::GetImmediateCommandList(), GVRCustomPresent->TextureSet->GetTexture2D());
+		bSplashScreenRendered = true;
+	}
+
+	/*
+	GVRHMD->UpdatePoses();
 	FRotator CurrentHeadOrientation = FRotator(GVRHMD->CachedFinalHeadRotation);
 	// Use the user defined angle to hide the splash screen.
 	// Note that if we do not hide the splash screen at all, users will see a flipped splash screen
@@ -183,6 +178,7 @@ void FGoogleVRSplash::Tick(float DeltaTime)
 		SubmitBlackFrame();
 		bSplashScreenRendered = false;
 	}
+	*/
 }
 
 bool FGoogleVRSplash::IsTickable() const
@@ -210,7 +206,7 @@ void FGoogleVRSplash::RenderStereoSplashScreen(FRHICommandListImmediate& RHICmdL
 	const auto FeatureLevel = GMaxRHIFeatureLevel;
 	// Should really be SetRT and Clear
 	SetRenderTarget(RHICmdList, DstTexture, FTextureRHIRef());
-	DrawClearQuad(RHICmdList, FeatureLevel, FLinearColor(0.0f, 0.0f, 0.0f, 0.0f));
+	DrawClearQuad(RHICmdList, FLinearColor(0.0f, 0.0f, 0.0f, 0.0f));
 
 	// If the texture is not avaliable, we just clear the DstTexture with black.
 	if (SplashTexture && SplashTexture->IsValidLowLevel())
@@ -304,7 +300,7 @@ void FGoogleVRSplash::SubmitBlackFrame()
 	GVRCustomPresent->BeginRendering(GVRHMD->CachedHeadPose);
 
 	SetRenderTarget(RHICmdList, DstTexture, FTextureRHIRef());
-	DrawClearQuad(RHICmdList, GMaxRHIFeatureLevel, FLinearColor(0.0f, 0.0f, 0.0f, 0.0f));
+	DrawClearQuad(RHICmdList, FLinearColor(0.0f, 0.0f, 0.0f, 0.0f));
 
 	GVRCustomPresent->FinishRendering();
 }
@@ -345,6 +341,7 @@ bool FGoogleVRSplash::LoadTexture()
 	{
 		SplashTexture->AddToRoot();
 		UE_LOG(LogHMD, Log, TEXT("Splash Texture load successful!"));
+		SplashTexture->AddToRoot();
 		SplashTexture->UpdateResource();
 		FlushRenderingCommands();
 	}

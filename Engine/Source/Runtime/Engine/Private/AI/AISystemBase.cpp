@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/AISystemBase.h"
 #include "Templates/Casts.h"
@@ -14,10 +14,10 @@ FName UAISystemBase::GetAISystemModuleName()
 	return AISystemDefaultObject != NULL ? AISystemDefaultObject->AISystemModuleName : TEXT("");
 }
 
-FStringClassReference UAISystemBase::GetAISystemClassName()
+FSoftClassPath UAISystemBase::GetAISystemClassName()
 {
 	UAISystemBase* AISystemDefaultObject = Cast<UAISystemBase>(StaticClass()->GetDefaultObject());
-	return AISystemDefaultObject != NULL ? AISystemDefaultObject->AISystemClassName : FStringClassReference();
+	return AISystemDefaultObject != NULL ? AISystemDefaultObject->AISystemClassName : FSoftClassPath();
 }
 
 void UAISystemBase::StartPlay()

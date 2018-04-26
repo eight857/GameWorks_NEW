@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tracks/MovieSceneSpawnTrack.h"
 #include "MovieSceneCommonHelpers.h"
@@ -35,6 +35,7 @@ void UMovieSceneSpawnTrack::PostLoad()
 		UMovieSceneBoolSection* BoolSection = ExactCast<UMovieSceneBoolSection>(Sections[Index]);
 		if (BoolSection)
 		{
+			BoolSection->ConditionalPostLoad();
 			Bytes.Reset();
 
 			FObjectWriter(BoolSection, Bytes);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -102,7 +102,3 @@ public:
 protected:
 	friend class FPaperSpriteSceneProxy;
 };
-
-// Allow the old name to continue to work for one release
-DEPRECATED(4.3, "UPaperRenderComponent has been renamed to UPaperSpriteComponent")
-typedef UPaperSpriteComponent UPaperRenderComponent;

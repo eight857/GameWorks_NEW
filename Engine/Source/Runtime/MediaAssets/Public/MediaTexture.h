@@ -1,36 +1,49 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "CoreTypes.h"
+#include "Containers/EnumAsByte.h"
+#include "Engine/Texture.h"
+#include "Math/Color.h"
+#include "Math/IntPoint.h"
+#include "MediaSampleQueue.h"
+#include "Misc/Timespan.h"
+#include "Templates/SharedPointer.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/ScriptMacros.h"
-#include "Engine/Texture.h"
-#include "IMediaTextureSink.h"
+
 #include "MediaTexture.generated.h"
 
-class FTextureResource;
+class FMediaPlayerFacade;
+class FMediaTextureClockSink;
+class IMediaTextureSample;
+class UMediaPlayer;
+
 
 /**
  * Implements a texture asset for rendering video tracks from UMediaPlayer assets.
  */
-UCLASS(hidecategories=(Compression, LevelOfDetail, Object, Texture))
+UCLASS(hidecategories=(Adjustments, Compositing, LevelOfDetail, Object))
 class MEDIAASSETS_API UMediaTexture
 	: public UTexture
-	, public IMediaTextureSink
 {
 	GENERATED_UCLASS_BODY()
 
 	/** The addressing mode to use for the X axis. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Media|MediaTexture", AssetRegistrySearchable)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MediaTexture", meta=(DisplayName="X-axis Tiling Method"), AssetRegistrySearchable, AdvancedDisplay)
 	TEnumAsByte<TextureAddress> AddressX;
 
 	/** The addressing mode to use for the Y axis. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Media|MediaTexture", AssetRegistrySearchable)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MediaTexture", meta=(DisplayName="Y-axis Tiling Method"), AssetRegistrySearchable, AdvancedDisplay)
 	TEnumAsByte<TextureAddress> AddressY;
 
-	/** The color used to clear the texture if CloseAction is set to Clear (default = black). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Media|MediaTexture", AdvancedDisplay)
+	/** Whether to clear the texture when no media is being played (default = enabled). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MediaTexture")
+	bool AutoClear;
+
+	/** The color used to clear the texture if AutoClear is enabled (default = black). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MediaTexture")
 	FLinearColor ClearColor;
 
 public:
@@ -54,6 +67,15 @@ public:
 	int32 GetHeight() const;
 
 	/**
+	 * Get the media player that provides the video samples.
+	 *
+	 * @return The texture's media player, or nullptr if not set.
+	 * @see SetMediaPlayer
+	 */
+	UFUNCTION(BlueprintCallable, Category="Media|MediaTexture")
+	UMediaPlayer* GetMediaPlayer() const;
+
+	/**
 	 * Gets the current width of the texture.
 	 *
 	 * @return Texture width (in pixels).
@@ -62,88 +84,103 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Media|MediaTexture")
 	int32 GetWidth() const;
 
-public:
+	/**
+	 * Set the media player that provides the video samples.
+	 *
+	 * @param NewMediaPlayer The player to set.
+	 * @see GetMediaPlayer
+	 */
+	UFUNCTION(BlueprintCallable, Category="Media|MediaTexture")
+	void SetMediaPlayer(UMediaPlayer* NewMediaPlayer);
+
+#if WITH_EDITOR
 
 	/**
-	 * Get the event delegate that is invoked when this asset is being destroyed.
+	 * Set the texture's default media player property.
 	 *
-	 * @return The delegate.
+	 * @param NewMediaPlayer The player to set.
+	 * @see SetMediaPlayer
 	 */
-	DECLARE_EVENT_OneParam(UMediaTexture, FOnBeginDestroy, UMediaTexture& /*DestroyedMediaTexture*/)
-	FOnBeginDestroy& OnBeginDestroy()
-	{
-		return BeginDestroyEvent;
-	}
+	void SetDefaultMediaPlayer(UMediaPlayer* NewMediaPlayer);
+
+#endif
 
 public:
 
 	//~ UTexture interface.
 
+	virtual void BeginDestroy() override;
 	virtual FTextureResource* CreateResource() override;
-	virtual EMaterialValueType GetMaterialType() override;
+	virtual EMaterialValueType GetMaterialType() const override;
 	virtual float GetSurfaceWidth() const override;
 	virtual float GetSurfaceHeight() const override;
-	virtual void UpdateResource() override;
+	virtual FGuid GetExternalTextureGuid() const override;
 
 public:
 
 	//~ UObject interface.
 
-	virtual void BeginDestroy() override;
 	virtual FString GetDesc() override;
 	virtual void GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize) override;
+	virtual void PostLoad() override;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-	virtual void PreEditChange(UProperty* PropertyAboutToChange) override;
 #endif
-
-public:
-
-	//~ IMediaTextureSink interface
-
-	virtual void* AcquireTextureSinkBuffer() override;
-	virtual void DisplayTextureSinkBuffer(FTimespan Time) override;
-	virtual FIntPoint GetTextureSinkDimensions() const override;
-	virtual EMediaTextureSinkFormat GetTextureSinkFormat() const override;
-	virtual EMediaTextureSinkMode GetTextureSinkMode() const override;
-	virtual FRHITexture* GetTextureSinkTexture() override;
-	virtual bool InitializeTextureSink(FIntPoint OutputDim, FIntPoint BufferDim, EMediaTextureSinkFormat Format, EMediaTextureSinkMode Mode) override;
-	virtual void ReleaseTextureSinkBuffer() override;
-	virtual void ShutdownTextureSink() override;
-	virtual bool SupportsTextureSinkFormat(EMediaTextureSinkFormat Format) const override;
-	virtual void UpdateTextureSinkBuffer(const uint8* Data, uint32 Pitch = 0) override;
-	virtual void UpdateTextureSinkResource(FRHITexture* RenderTarget, FRHITexture* ShaderResource) override;
 
 protected:
 
-	//~ Deprecated members
+	/**
+	 * Tick the texture resource.
+	 *
+	 * @param Timecode The current timecode.
+	 */
+	void TickResource(FTimespan Timecode);
 
-	DEPRECATED_FORGAME(4.13, "The MediaPlayer property is no longer used. Please upgrade your content to Media Framework 2.0")
-	UPROPERTY(BlueprintReadWrite, Category=MediaPlayer)
-	class UMediaPlayer* MediaPlayer;
-	
-	DEPRECATED_FORGAME(4.13, "The VideoTrackIndex property is no longer used. Please upgrade your content to Media Framework 2.0")
-	UPROPERTY(BlueprintReadWrite, Category=MediaPlayer)
-	int32 VideoTrackIndex;
+	/** Update the video sample queue, if necessary. */
+	void UpdateQueue();
+
+protected:
+
+	/**
+	 * The media player asset associated with this texture.
+	 *
+	 * This property is meant for design-time convenience. To change the
+	 * associated media player at run-time, use the SetMediaPlayer method.
+	 *
+	 * @see SetMediaPlayer
+	 */
+	UPROPERTY(EditAnywhere, Category="Media")
+	UMediaPlayer* MediaPlayer;
 
 private:
 
-	/** An event delegate that is invoked when this asset is being destroyed. */
-	FOnBeginDestroy BeginDestroyEvent;
+	friend class FMediaTextureClockSink;
 
-	/** Critical section for synchronizing access to texture resource object. */
-	mutable FCriticalSection CriticalSection;
+	/** The texture's media clock sink. */
+	TSharedPtr<FMediaTextureClockSink, ESPMode::ThreadSafe> ClockSink;
 
-	/** Width and height of the sink buffers (in pixels). */
-	FIntPoint SinkBufferDim;
+	/** The default external texture GUID if no media player is assigned. */
+	/*TAtomic<*/FGuid/*>*/ CurrentGuid;
 
-	/** Width and height of the video output (in pixels). */
-	FIntPoint SinkOutputDim;
+	/** The player that is currently associated with this texture. */
+	TWeakObjectPtr<UMediaPlayer> CurrentPlayer;
 
-	/** The render target's pixel format. */
-	EMediaTextureSinkFormat SinkFormat;
+	/** The default external texture GUID if no media player is assigned. */
+	const FGuid DefaultGuid;
 
-	/** The mode that this sink is currently operating in. */
-	EMediaTextureSinkMode SinkMode;
+	/** Current width and height of the resource (in pixels). */
+	FIntPoint Dimensions;
+
+	/** The previously clear color. */
+	FLinearColor LastClearColor;
+
+	/** The previously used sRGB flag. */
+	bool LastSrgb;
+
+	/** Texture sample queue. */
+	TSharedPtr<FMediaTextureSampleQueue, ESPMode::ThreadSafe> SampleQueue;
+
+	/** Current size of the resource (in bytes).*/
+	SIZE_T Size;
 };

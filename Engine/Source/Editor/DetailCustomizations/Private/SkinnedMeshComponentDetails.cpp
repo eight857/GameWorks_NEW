@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SkinnedMeshComponentDetails.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -72,8 +72,8 @@ bool FSkinnedMeshComponentDetails::FindUniqueUsedPhysicsAsset(IDetailLayoutBuild
 {
 	int UsedPhysicsAssetCount = 0;
 	OutFoundPhysicsAsset = NULL;
-	TArray< TWeakObjectPtr<UObject> > SelectedObjectsList = DetailBuilder->GetDetailsView().GetSelectedObjects();
-	for (auto SelectionIt = SelectedObjectsList.CreateIterator(); SelectionIt; ++SelectionIt)
+	const TArray< TWeakObjectPtr<UObject> >& SelectedObjectsList = DetailBuilder->GetSelectedObjects();
+	for (auto SelectionIt = SelectedObjectsList.CreateConstIterator(); SelectionIt; ++SelectionIt)
 	{
 		if (AActor* Actor = Cast<AActor>(SelectionIt->Get()))
 		{

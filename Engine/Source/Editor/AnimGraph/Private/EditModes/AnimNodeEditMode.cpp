@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimNodeEditMode.h"
 #include "EditorViewportClient.h"
@@ -364,7 +364,7 @@ void FAnimNodeEditMode::ConvertToComponentSpaceTransform(const USkeletalMeshComp
 	case BCS_WorldSpace:
 	{
 		OutCSTransform = InTransform;
-		OutCSTransform.SetToRelativeTransform(SkelComp->ComponentToWorld);
+		OutCSTransform.SetToRelativeTransform(SkelComp->GetComponentTransform());
 	}
 	break;
 
@@ -433,7 +433,7 @@ void FAnimNodeEditMode::ConvertToBoneSpaceTransform(const USkeletalMeshComponent
 	{
 		case BCS_WorldSpace:
 		{
-			OutBSTransform = InCSTransform * SkelComp->ComponentToWorld;
+			OutBSTransform = InCSTransform * SkelComp->GetComponentTransform();
 			break;
 		}
 		
@@ -490,6 +490,46 @@ void FAnimNodeEditMode::ConvertToBoneSpaceTransform(const USkeletalMeshComponent
 			break;
 		}
 	}
+}
+
+FVector FAnimNodeEditMode::ConvertCSVectorToBoneSpace(const USkeletalMeshComponent* SkelComp, FVector& InCSVector, FCSPose<FCompactHeapPose>& MeshBases, const FBoneSocketTarget& InTarget, const EBoneControlSpace Space)
+{
+	FVector OutVector = FVector::ZeroVector;
+
+	if (MeshBases.GetPose().IsValid())
+	{
+		const FCompactPoseBoneIndex BoneIndex = InTarget.GetCompactPoseBoneIndex();
+
+		switch (Space)
+		{
+			// World Space, no change in preview window
+		case BCS_WorldSpace:
+		case BCS_ComponentSpace:
+			// Component Space, no change.
+			OutVector = InCSVector;
+			break;
+
+		case BCS_ParentBoneSpace:
+		{
+			const FCompactPoseBoneIndex ParentIndex = MeshBases.GetPose().GetParentBoneIndex(BoneIndex);
+			if (ParentIndex != INDEX_NONE)
+			{
+				const FTransform& ParentTM = MeshBases.GetComponentSpaceTransform(ParentIndex);
+				OutVector = ParentTM.InverseTransformVector(InCSVector);
+			}
+		}
+		break;
+
+		case BCS_BoneSpace:
+		{
+			FTransform BoneTransform = InTarget.GetTargetTransform(FVector::ZeroVector, MeshBases, SkelComp->GetComponentToWorld());
+			OutVector = BoneTransform.InverseTransformVector(InCSVector);
+		}
+		break;
+		}
+	}
+
+	return OutVector;
 }
 
 FVector FAnimNodeEditMode::ConvertCSVectorToBoneSpace(const USkeletalMeshComponent* SkelComp, FVector& InCSVector, FCSPose<FCompactHeapPose>& MeshBases, const FName& BoneName, const EBoneControlSpace Space)
@@ -591,6 +631,46 @@ FQuat FAnimNodeEditMode::ConvertCSRotationToBoneSpace(const USkeletalMeshCompone
 	return OutQuat;
 }
 
+FVector FAnimNodeEditMode::ConvertWidgetLocation(const USkeletalMeshComponent* InSkelComp, FCSPose<FCompactHeapPose>& InMeshBases, const FBoneSocketTarget& Target, const FVector& InLocation, const EBoneControlSpace Space)
+{
+	FVector WidgetLoc = FVector::ZeroVector;
+
+	switch (Space)
+	{
+		// GetComponentTransform() must be Identity in preview window so same as ComponentSpace
+	case BCS_WorldSpace:
+	case BCS_ComponentSpace:
+	{
+		// Component Space, no change.
+		WidgetLoc = InLocation;
+	}
+	break;
+
+	case BCS_ParentBoneSpace:
+	{
+		const FCompactPoseBoneIndex CompactBoneIndex = Target.GetCompactPoseBoneIndex();
+		if (CompactBoneIndex != INDEX_NONE)
+		{
+			const FCompactPoseBoneIndex CompactParentIndex = InMeshBases.GetPose().GetParentBoneIndex(CompactBoneIndex);
+			if (CompactParentIndex != INDEX_NONE)
+			{
+				const FTransform& ParentTM = InMeshBases.GetComponentSpaceTransform(CompactParentIndex);
+				WidgetLoc = ParentTM.TransformPosition(InLocation);
+			}
+		}
+	}
+	break;
+
+	case BCS_BoneSpace:
+	{
+		FTransform BoneTM = Target.GetTargetTransform(FVector::ZeroVector, InMeshBases, InSkelComp->GetComponentToWorld());
+		WidgetLoc = BoneTM.TransformPosition(InLocation);
+	}
+	break;
+	}
+
+	return WidgetLoc;
+}
 FVector FAnimNodeEditMode::ConvertWidgetLocation(const USkeletalMeshComponent* SkelComp, FCSPose<FCompactHeapPose>& MeshBases, const FName& BoneName, const FVector& Location, const EBoneControlSpace Space)
 {
 	FVector WidgetLoc = FVector::ZeroVector;
@@ -609,7 +689,7 @@ FVector FAnimNodeEditMode::ConvertWidgetLocation(const USkeletalMeshComponent* S
 
 	switch (Space)
 	{
-		// ComponentToWorld must be Identity in preview window so same as ComponentSpace
+		// GetComponentTransform() must be Identity in preview window so same as ComponentSpace
 	case BCS_WorldSpace:
 	case BCS_ComponentSpace:
 	{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -36,6 +36,15 @@ struct FLoginFlowResult
 		const bool bSuccess = Error.bSucceeded && !Token.IsEmpty();
 		const bool bError = !Error.bSucceeded && Error.NumericErrorCode;
 		return bSuccess || bError;
+	}
+
+	FString ToDebugString() const
+	{
+#if UE_BUILD_SHIPPING
+		return FString::Printf(TEXT("Token: [REDACTED] Error: %s"), Error.ToLogString());
+#else
+		return FString::Printf(TEXT("Token: %s Error: %s"), *Token, Error.ToLogString());
+#endif
 	}
 };
 
@@ -157,10 +166,15 @@ struct FShowWebUrlParams
 	{}
 };
 
+typedef FString FUniqueOfferId;
+
 struct FShowStoreParams
 {
 	/** Category filter for products to browse */
 	FString Category;
+
+	/** Product to show directly instead of the whole store */
+	FUniqueOfferId ProductId;
 
 	/**
 	 * Constructor
@@ -197,7 +211,8 @@ struct FShowSendMessageParams
 enum class EPlatformMessageType
 {
 	EmptyStore,
-	ChatRestricted
+	ChatRestricted,
+	UGCRestricted
 };
 
 /** 
@@ -243,7 +258,7 @@ public:
 	 *
 	 * @return true if it was able to show the UI, false if it failed
 	 */
-	virtual bool ShowInviteUI(int32 LocalUserNum, FName SessionName = GameSessionName) = 0;
+	virtual bool ShowInviteUI(int32 LocalUserNum, FName SessionName = NAME_GameSession) = 0;
 
 	/**
 	 *	Displays the UI that shows a user's list of achievements

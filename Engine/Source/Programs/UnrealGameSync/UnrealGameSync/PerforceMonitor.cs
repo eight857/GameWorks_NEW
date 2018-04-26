@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Concurrent;
@@ -31,6 +31,7 @@ namespace UnrealGameSync
 		PerforceConnection Perforce;
 		readonly string BranchClientPath;
 		readonly string SelectedClientFileName;
+		readonly string SelectedLocalFileName;
 		readonly string SelectedProjectIdentifier;
 		Thread WorkerThread;
 		int PendingMaxChangesValue;
@@ -48,11 +49,12 @@ namespace UnrealGameSync
 		public event Action OnUpdateMetadata;
 		public event Action OnStreamChange;
 
-		public PerforceMonitor(PerforceConnection InPerforce, string InBranchClientPath, string InSelectedClientFileName, string InSelectedProjectIdentifier, string InLogPath)
+		public PerforceMonitor(PerforceConnection InPerforce, string InBranchClientPath, string InSelectedClientFileName, string InSelectedLocalFilename, string InSelectedProjectIdentifier, string InLogPath)
 		{
 			Perforce = InPerforce;
 			BranchClientPath = InBranchClientPath;
 			SelectedClientFileName = InSelectedClientFileName;
+			SelectedLocalFileName = InSelectedLocalFilename;
 			SelectedProjectIdentifier = InSelectedProjectIdentifier;
 			PendingMaxChangesValue = 100;
 			LastChangeByCurrentUser = -1;
@@ -60,7 +62,10 @@ namespace UnrealGameSync
 			OtherStreamNames = new List<string>();
 
 			LogWriter = new BoundedLogWriter(InLogPath);
+		}
 
+		public void Start()
+		{
 			WorkerThread = new Thread(() => PollForUpdates());
 			WorkerThread.Start();
 		}
@@ -160,7 +165,7 @@ namespace UnrealGameSync
 				}
 
 				// Wait for another request, or scan for new builds after a timeout
-				RefreshEvent.WaitOne(30 * 1000);
+				RefreshEvent.WaitOne(60 * 1000);
 			}
 		}
 
@@ -195,6 +200,10 @@ namespace UnrealGameSync
 				DepotPaths.Add(String.Format("{0}/*", BranchClientPath));
 				DepotPaths.Add(String.Format("{0}/Engine/...", BranchClientPath));
 				DepotPaths.Add(String.Format("{0}/...", PerforceUtils.GetClientOrDepotDirectoryName(SelectedClientFileName)));
+				if (Utility.IsEnterpriseProject(SelectedLocalFileName))
+				{
+					DepotPaths.Add(String.Format("{0}/Enterprise/...", BranchClientPath));
+				}
 			}
 
 			// Read any new changes
@@ -286,35 +295,45 @@ namespace UnrealGameSync
 
 		public bool UpdateChangeTypes()
 		{
-			// Get the minimum change we need to query
-			bool bRequiresUpdate;
+			// Find the changes we need to query
+			List<int> QueryChangeNumbers = new List<int>();
 			lock(this)
 			{
-				bRequiresUpdate = Changes.Any(x => !ChangeTypes.ContainsKey(x.Number));
+				foreach(PerforceChangeSummary Change in Changes)
+				{
+					if(!ChangeTypes.ContainsKey(Change.Number))
+					{
+						QueryChangeNumbers.Add(Change.Number);
+					}
+				}
 			}
 
-			// If there's something to check for, find all the content changes after this changelist
-			if(bRequiresUpdate)
+			// Update them in batches
+			foreach(int QueryChangeNumber in QueryChangeNumbers)
 			{
-				string[] CodeExtensions = { ".cs", ".h", ".cpp", ".usf" };
+				string[] CodeExtensions = { ".cs", ".h", ".cpp", ".usf", ".ush", ".uproject", ".uplugin" };
 
-				// Find all the content changes in this range. Include a few extra changes in case there have been more changes submitted since the last query (it seems -m is much faster than specifying a changelist range)
-				List<PerforceChangeSummary> CodeChanges;
-				if(!Perforce.FindChanges(CodeExtensions.Select(Extension => String.Format("{0}/...{1}", BranchClientPath, Extension)), CurrentMaxChanges + 10, out CodeChanges, LogWriter))
+				// If there's something to check for, find all the content changes after this changelist
+				PerforceDescribeRecord DescribeRecord;
+				if(Perforce.Describe(QueryChangeNumber, out DescribeRecord, LogWriter))
 				{
-					return false;
-				}
-
-				// Update the change types
-				HashSet<int> CodeChangeNumbers = new HashSet<int>(CodeChanges.Select(x => x.Number));
-				lock(this)
-				{
-					foreach(PerforceChangeSummary Change in Changes)
+					// Check whether the files are code or content
+					PerforceChangeType Type;
+					if(CodeExtensions.Any(Extension => DescribeRecord.Files.Any(File => File.DepotFile.EndsWith(Extension, StringComparison.InvariantCultureIgnoreCase))))
 					{
-						if(!ChangeTypes.ContainsKey(Change.Number))
+						Type = PerforceChangeType.Code;
+					}
+					else
+					{
+						Type = PerforceChangeType.Content;
+					}
+
+					// Update the type of this change
+					lock(this)
+					{
+						if(!ChangeTypes.ContainsKey(QueryChangeNumber))
 						{
-							PerforceChangeType Type = CodeChangeNumbers.Contains(Change.Number)? PerforceChangeType.Code : PerforceChangeType.Content;
-							ChangeTypes.Add(Change.Number, Type);
+							ChangeTypes.Add(QueryChangeNumber, Type);
 						}
 					}
 				}

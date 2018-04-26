@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 TextureStreamingManager.h: Definitions of classes used for texture streaming.
@@ -136,6 +136,9 @@ struct FStreamingManagerTexture : public ITextureStreamingManager
 	/** Removes a ULevel from the streaming manager. */
 	virtual void RemoveLevel( class ULevel* Level ) override;
 
+	/* Notifies manager that level primitives were shifted */
+	virtual void NotifyLevelOffset(ULevel* Level, const FVector& Offset) override;
+	
 	/** Called when an actor is spawned. */
 	virtual void NotifyActorSpawned( AActor* Actor ) override;
 
@@ -163,14 +166,6 @@ struct FStreamingManagerTexture : public ITextureStreamingManager
 	/** Returns the corresponding FStreamingTexture for a UTexture2D. */
 	FStreamingTexture* GetStreamingTexture( const UTexture2D* Texture2D );
 
-	/**
-	 * Cancels the current streaming request for the specified texture.
-	 *
-	 * @param StreamingTexture		Texture to cancel streaming for
-	 * @return						true if a streaming request was canceled
-	 */
-	bool CancelStreamingRequest( FStreamingTexture& StreamingTexture );
-
 	/** Set current pause state for texture streaming */
 	virtual void PauseTextureStreaming(bool bInShouldPause) override
 	{
@@ -179,6 +174,9 @@ struct FStreamingManagerTexture : public ITextureStreamingManager
 
 	/** Return all bounds related to the ref object */
 	virtual void GetObjectReferenceBounds(const UObject* RefObject, TArray<FBox>& AssetBoxes) override;
+
+	/** Propagates a change to the active lighting scenario. */
+	void PropagateLightingScenarioChange() override;
 
 protected:
 //BEGIN: Thread-safe functions and data
@@ -194,14 +192,14 @@ protected:
 		 * @param StageIndex		Current stage index
 		 * @param NumUpdateStages	Number of texture update stages
 		 */
-		void UpdateStreamingTextures( int32 StageIndex, int32 NumStages );
+		void UpdateStreamingTextures( int32 StageIndex, int32 NumStages, bool bWaitForMipFading );
 
 		void ProcessRemovedTextures();
 		void ProcessAddedTextures();
 		void ConditionalUpdateStaticData();
 
 		/** Adds new textures and level data on the gamethread (while the worker thread isn't active). */
-		void UpdateThreadData( bool bProcessEverything );
+		void PrepareAsyncTask( bool bProcessEverything );
 
 		/** Checks for updates in the user settings (CVars, etc). */
 		void CheckUserSettings();
@@ -243,7 +241,21 @@ protected:
 	void	UpdateStats();
 	void	LogViewLocationChange();
 
-	void	IncrementalUpdate( float Percentage, bool bUpdateDynamicComponents = true );
+	void	IncrementalUpdate( float Percentage, bool bUpdateDynamicComponents);
+
+	/**
+	 * Update all pending states.
+	 *
+	 * @param bUpdateDynamicComponents		Whether dynamic component state should also be updated.
+	 */
+	void	UpdatePendingStates(bool bUpdateDynamicComponents);
+
+	/**
+	 * Complete all pending async work and complete all pending state updates.
+	 *
+	 * @param bCompleteFullUpdateCycle		Whether to complete the full update cycle usually spread accross several frames.
+	 */
+	void	SyncStates(bool bCompleteFullUpdateCycle);
 
 	/** Next sync, dump texture group stats. */
 	bool	bTriggerDumpTextureGroupStats;
@@ -299,13 +311,6 @@ protected:
 	int64 MemoryOverBudget;
 	int64 MaxEverRequired;
 
-	/** Unmodified texture pool size, in bytes, as specified in the .ini file. */
-	int64 OriginalTexturePoolSize;
-	/** Timestamp when we last shrunk the pool size because of memory usage. */
-	double PreviousPoolSizeTimestamp;
-	/** PoolSize CVar setting the last time we adjusted the pool size. */
-	int32 PreviousPoolSizeSetting;
-
 	/** Whether texture streaming is paused or not. When paused, it won't stream any textures in or out. */
 	bool bPauseTextureStreaming;
 
@@ -322,7 +327,6 @@ protected:
 	uint64 MaxOptimalTextureSize;
 	int64 MaxStreamingOverBudget;
 	uint64 MaxTexturePoolAllocatedSize;
-	uint64 MinLargestHoleSize;
 	uint32 MaxNumWantingTextures;
 #endif
 	

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlueprintPaletteFavorites.h"
 #include "UObject/UnrealType.h"
@@ -71,7 +71,7 @@ static FBlueprintNodeSignature BlueprintPaletteFavoritesImpl::ConstructLegacySig
 		FEdGraphSchemaAction_K2Delegate* DelegateAction = (FEdGraphSchemaAction_K2Delegate*)InPaletteAction.Get();
 
 		SignatureNodeClass = UK2Node_BaseMCDelegate::StaticClass();
-		SignatureSubObject = DelegateAction->GetDelegatePoperty();
+		SignatureSubObject = DelegateAction->GetDelegateProperty();
 	}
 	// if we can pull out a node associated with this action
 	else if (UK2Node const* NodeTemplate = FBlueprintActionMenuUtils::ExtractNodeTemplateFromAction(InPaletteAction))

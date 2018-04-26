@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineMessageTaskManagerOculus.h"
 #include "OnlineSubsystemOculusPrivate.h"
@@ -28,7 +28,7 @@ void FOnlineMessageTaskManagerOculus::OnReceiveMessage(ovrMessageHandle Message)
 		}
 		else
 		{
-			UE_LOG_ONLINE(Verbose, TEXT("Unhandled request id: %llu"), RequestId);
+			UE_LOG_ONLINE(Verbose, TEXT("Unhandled request id: %llu type: %#010x"), RequestId, static_cast<int32>(MessageType));
 		}
 	}
 	ovr_FreeMessage(Message);
@@ -59,6 +59,10 @@ bool FOnlineMessageTaskManagerOculus::Tick(float DeltaTime)
 			break;
 		}
 		OnReceiveMessage(Message);
+	}
+	if (DeltaTime > 4.0f) 
+	{
+		UE_LOG_ONLINE(Warning, TEXT("DeltaTime was %f seconds.  Time sensitive oculus notifications may time out."), DeltaTime);
 	}
 	return true;
 }

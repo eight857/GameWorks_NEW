@@ -1,27 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
+#include "Engine/EngineTypes.h"
 #include "EditorPerProjectUserSettings.generated.h"
 
-// Fbx export compatibility
-UENUM()
-enum class EFbxExportCompatibility : uint8
-{
-	FBX_2010,
-	FBX_2011,
-	FBX_2012,
-	FBX_2013,
-	FBX_2014,
-	FBX_2016
-};
-
-UCLASS(minimalapi, autoexpandcategories=(ViewportControls, ViewportLookAndFeel, LevelEditing, SourceControl, Content, Startup),
-	   hidecategories=(Object, Options, Grid, RotationGrid),
-	   config=EditorPerProjectUserSettings)
+UCLASS(minimalapi, autoexpandcategories=(ViewportControls, ViewportLookAndFeel, LevelEditing, SourceControl, Content, Startup), hidecategories=(Object, Options, Grid, RotationGrid), config=EditorPerProjectUserSettings)
 class UEditorPerProjectUserSettings : public UObject
 {
 	GENERATED_UCLASS_BODY()
@@ -75,18 +62,6 @@ class UEditorPerProjectUserSettings : public UObject
 	/** Folder in which Simplygon Swarm will store intermediate texture and mesh data that is uploaded to the Swarm */
 	UPROPERTY(EditAnywhere, config, Category = SimplygonSwarm, meta = (DisplayName = "Simplygon Swarm Intermediate Folder", ConfigRestartRequired = true, editcondition = "bUseSimplygonSwarm"))
 	FString SwarmIntermediateFolder;
-	
-	/** When enabled, the application frame rate, memory and Unreal object count will be displayed in the main editor UI */
-	UPROPERTY(EditAnywhere, config, Category=Performance)
-	uint32 bShowFrameRateAndMemory:1;
-
-	/** Lowers CPU usage when the editor is in the background and not the active application */
-	UPROPERTY(EditAnywhere, config, Category=Performance, meta=(DisplayName="Use Less CPU when in Background") )
-	uint32 bThrottleCPUWhenNotForeground:1;
-
-	/** When turned on, the editor will constantly monitor performance and adjust scalability settings for you when performance drops (disabled in debug) */
-	UPROPERTY(EditAnywhere, config, Category=Performance)
-	uint32 bMonitorEditorPerformance:1;
 
 	/** If enabled, any newly added classes will be automatically compiled and trigger a hot-reload of the module they were added to */
 	UPROPERTY(EditAnywhere, config, Category=HotReload, meta=(DisplayName="Automatically Compile Newly Added C++ Classes"))
@@ -96,25 +71,17 @@ class UEditorPerProjectUserSettings : public UObject
 	UPROPERTY(EditAnywhere, config, Category=HotReload)
 	uint32 bShowCompilerLogOnCompileError : 1;
 
+	/** If enabled, the fbx option dialog will show when user re-import a fbx */
+	UPROPERTY(EditAnywhere, config, Category = Import)
+	uint32 bShowImportDialogAtReimport : 1;
+
+	/** Specify a project data source folder to store relative source file path to ease the re-import process*/
+	UPROPERTY(EditAnywhere, config, Category = Import)
+	FDirectoryPath DataSourceFolder;
+
 	/** If enabled, export level with attachment hierarchy set */
 	UPROPERTY(EditAnywhere, config, Category=Export)
 	uint32 bKeepAttachHierarchy:1;
-
-	/** Map skeletal actor motion to the root bone of the skeleton. */
-	UPROPERTY(EditAnywhere, config, category=Export)
-	bool bMapSkeletalMotionToRoot;
-
-	/** This will set the fbx sdk compatibility when exporting to fbx file. The default value is 2013 */
-	UPROPERTY(EditAnywhere, config, Category = Export)
-	EFbxExportCompatibility FbxExportCompatibility;
-
-	/** If enabled, FBX export level will export collision mesh with UCX_ as a name suffix. */
-	UPROPERTY(EditAnywhere, config, Category = Export)
-	uint32 bFbxExportCollisionMesh : 1;
-
-	/** If enabled, export with X axis as the front axis instead of default -Y */
-	UPROPERTY(EditAnywhere, config, Category = Export)
-	uint32 bForceFrontXAxis : 1;
 
 	/** If enabled, will compare an animation's sequence length and curves against the old data and inform the user if something changed */
 	UPROPERTY(EditAnywhere, config, Category = Import)
@@ -185,7 +152,9 @@ public:
 	FUserSettingChangedEvent& OnUserSettingChanged() { return UserSettingChangedEvent; }
 
 	//~ Begin UObject Interface
-	virtual void PostEditChangeProperty( struct FPropertyChangedEvent& PropertyChangedEvent ) override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty( FPropertyChangedEvent& PropertyChangedEvent ) override;
+#endif
 	virtual void PostInitProperties() override;
 	//~ End UObject Interface
 

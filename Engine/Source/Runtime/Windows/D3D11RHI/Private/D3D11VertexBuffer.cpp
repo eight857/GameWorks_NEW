@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D11VertexBuffer.cpp: D3D vertex buffer RHI implementation.
@@ -17,8 +17,8 @@ FVertexBufferRHIRef FD3D11DynamicRHI::RHICreateVertexBuffer(uint32 Size,uint32 I
 	Desc.Usage = (InUsage & BUF_AnyDynamic) ? D3D11_USAGE_DYNAMIC : D3D11_USAGE_DEFAULT;
 	Desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	Desc.CPUAccessFlags = (InUsage & BUF_AnyDynamic) ? D3D11_CPU_ACCESS_WRITE : 0;
-	Desc.MiscFlags = 0;
-	Desc.StructureByteStride = 0;
+	//Desc.MiscFlags = 0;
+	//Desc.StructureByteStride = 0;
 
 	if (InUsage & BUF_UnorderedAccess)
 	{
@@ -51,7 +51,7 @@ FVertexBufferRHIRef FD3D11DynamicRHI::RHICreateVertexBuffer(uint32 Size,uint32 I
 		Desc.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
 	}
 
-	if (FPlatformProperties::SupportsFastVRAMMemory())
+	if (FPlatformMemory::SupportsFastVRAMMemory())
 	{
 		if (InUsage & BUF_FastVRAM)
 		{
@@ -64,7 +64,11 @@ FVertexBufferRHIRef FD3D11DynamicRHI::RHICreateVertexBuffer(uint32 Size,uint32 I
 	D3D11_SUBRESOURCE_DATA* pInitData = NULL;
 	if(CreateInfo.ResourceArray)
 	{
-		check(Size == CreateInfo.ResourceArray->GetResourceDataSize());
+		checkf(Size == CreateInfo.ResourceArray->GetResourceDataSize(),
+			TEXT("DebugName: %s, GPU Size: %d, CPU Size: %d, Is Dynamic: %s"),
+			CreateInfo.DebugName, Size, CreateInfo.ResourceArray->GetResourceDataSize(),
+			InUsage & BUF_AnyDynamic ? TEXT("Yes") : TEXT("No"));
+
 		InitData.pSysMem = CreateInfo.ResourceArray->GetResourceData();
 		InitData.SysMemPitch = Size;
 		InitData.SysMemSlicePitch = 0;
@@ -72,7 +76,12 @@ FVertexBufferRHIRef FD3D11DynamicRHI::RHICreateVertexBuffer(uint32 Size,uint32 I
 	}
 
 	TRefCountPtr<ID3D11Buffer> VertexBufferResource;
-	VERIFYD3D11RESULT_EX(Direct3DDevice->CreateBuffer(&Desc,pInitData,VertexBufferResource.GetInitReference()), Direct3DDevice);
+	HRESULT Result = Direct3DDevice->CreateBuffer(&Desc, pInitData, VertexBufferResource.GetInitReference());
+	if (FAILED(Result))
+	{
+		UE_LOG(LogD3D11RHI, Error, TEXT("D3DDevice failed CreateBuffer VB with ByteWidth=%d, BindFlags=0x%x Usage=%d, CPUAccess=0x%x, MiscFlags=0x%x"), Desc.ByteWidth, (uint32)Desc.BindFlags, (uint32)Desc.Usage, Desc.CPUAccessFlags, Desc.MiscFlags);
+		VERIFYD3D11RESULT_EX(Result, Direct3DDevice);
+	}
 
 	UpdateBufferStats(VertexBufferResource, true);
 

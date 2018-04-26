@@ -1,7 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HeadMountedDisplayTypes.h"
 #include "RendererInterface.h"
+
+DEFINE_LOG_CATEGORY(LogHMD);
+DEFINE_LOG_CATEGORY(LogLoadingSplash);
 
 FHMDViewMesh::FHMDViewMesh() :
 	pVertices(nullptr),

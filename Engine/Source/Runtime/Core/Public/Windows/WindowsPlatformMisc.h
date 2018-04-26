@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,13 +6,19 @@
 #include "HAL/PlatformMemory.h"
 #include "GenericPlatform/GenericPlatformMisc.h"
 
+#if UE_BUILD_SHIPPING
+#define UE_DEBUG_BREAK() ((void)0)
+#else
+#define UE_DEBUG_BREAK() ((void)(FWindowsPlatformMisc::IsDebuggerPresent() && (__debugbreak(), 1)))
+#endif
+
 class GenericApplication;
 struct FGuid;
 struct FVector2D;
 class IPlatformChunkInstall;
 
 /** Helper struct used to get the string version of the Windows version. */
-struct FWindowsOSVersionHelper
+struct CORE_API FWindowsOSVersionHelper
 {
 	enum ErrorCodes
 	{
@@ -34,10 +40,8 @@ struct FWindowsOSVersionHelper
 struct CORE_API FWindowsPlatformMisc
 	: public FGenericPlatformMisc
 {
-	static void SetHighDPIMode();
 	static void PlatformPreInit();
 	static void PlatformInit();
-	static class GenericApplication* CreateApplication();
 	static void SetGracefulTerminationHandler();
 	static void GetEnvironmentVariable(const TCHAR* VariableName, TCHAR* Result, int32 ResultLength);
 	static void SetEnvironmentVar(const TCHAR* VariableName, const TCHAR* Value);
@@ -47,29 +51,27 @@ struct CORE_API FWindowsPlatformMisc
 
 #if !UE_BUILD_SHIPPING
 	static bool IsDebuggerPresent();
+
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreak is deprecated. Use the UE_DEBUG_BREAK() macro instead.")
 	FORCEINLINE static void DebugBreak()
 	{
-		if (IsDebuggerPresent())
-		{
-			// Prefer __debugbreak() instead of ::DebugBreak() on Windows platform, so the code pointer isn't left
-			// inside the DebugBreak() Windows system library (which we usually won't have symbols for), and avoids
-			// us having to "step out" to get back to Unreal code.
-			__debugbreak();
-		}
+		UE_DEBUG_BREAK();
 	}
 #endif
 
 
 	/** Break into debugger. Returning false allows this function to be used in conditionals. */
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreakReturningFalse is deprecated. Use the (UE_DEBUG_BREAK(), false) expression instead.")
 	FORCEINLINE static bool DebugBreakReturningFalse()
 	{
 #if !UE_BUILD_SHIPPING
-		DebugBreak();
+		UE_DEBUG_BREAK();
 #endif
 		return false;
 	}
 
 	/** Prompts for remote debugging if debugger is not attached. Regardless of result, breaks into debugger afterwards. Returns false for use in conditionals. */
+	DEPRECATED(4.19, "FPlatformMisc::DebugBreakAndPromptForRemoteReturningFalse() is deprecated.")
 	static FORCEINLINE bool DebugBreakAndPromptForRemoteReturningFalse(bool bIsEnsure = false)
 	{
 #if !UE_BUILD_SHIPPING
@@ -78,32 +80,28 @@ struct CORE_API FWindowsPlatformMisc
 			PromptForRemoteDebugging(bIsEnsure);
 		}
 
-		DebugBreak();
+		UE_DEBUG_BREAK();
 #endif
 
 		return false;
 	}
 
-	static void PumpMessages(bool bFromMainLoop);
-	static uint32 GetKeyMap( uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings );
-	static uint32 GetCharKeyMap(uint32* KeyCodes, FString* KeyNames, uint32 MaxMappings);
+	FORCEINLINE static void MemoryBarrier() { _mm_sfence(); }
+
+	static bool IsRemoteSession();
+
 	static void SetUTF8Output();
 	static void LocalPrint(const TCHAR *Message);
 	static void RequestExit(bool Force);
-	static void RequestMinimize();
 	static const TCHAR* GetSystemErrorMessage(TCHAR* OutBuffer, int32 BufferCount, int32 Error);
-	static void ClipboardCopy(const TCHAR* Str);
-	static void ClipboardPaste(class FString& Dest);
 	static void CreateGuid(struct FGuid& Result);
 	static EAppReturnType::Type MessageBoxExt( EAppMsgType::Type MsgType, const TCHAR* Text, const TCHAR* Caption );
-	static void PreventScreenSaver();
 	static bool CommandLineCommands();
 	static bool Is64bitOperatingSystem();
 	static bool IsValidAbsolutePathFormat(const FString& Path);
 	static int32 NumberOfCores();
 	static int32 NumberOfCoresIncludingHyperthreads();
-	static void LoadPreInitModules();
-	static void LoadStartupModules();
+	static int32 NumberOfWorkerThreadsToSpawn();
 
 	static FString GetDefaultLanguage();
 	static FString GetDefaultLocale();
@@ -139,20 +137,6 @@ struct CORE_API FWindowsPlatformMisc
 	 */
 	static Windows::HWND GetTopLevelWindowHandle(uint32 ProcessId);
 
-	/**
-	 * Searches for a window that matches the window name or the title starts with a particular text. When
-	 * found, it returns the title text for that window
-	 *
-	 * @param TitleStartsWith searches for a window that has partial information about the title
-	 * @param OutTitle the string the data is copied into
-	 *
-	 * @return whether the window was found and the text copied or not
-	 */
-	static bool GetWindowTitleMatchingText(const TCHAR* TitleStartsWith, FString& OutTitle);
-
-	//////// Platform specific
-	static int32	GetAppIcon();
-
 	/** 
 	 * Determines if we are running on the Windows version or newer
 	 *
@@ -162,16 +146,6 @@ struct CORE_API FWindowsPlatformMisc
 	 * @return	Returns true if the current Windows version if equal or newer than MajorVersion
 	 */
 	static bool VerifyWindowsVersion(uint32 MajorVersion, uint32 MinorVersion);
-
-	/**
-	 * Sample the displayed pixel color from anywhere on the screen using the OS
-	 *
-	 * @param	InScreenPos		The screen coordinates to sample for current pixel color
-	 * @param	InGamma			Optional gamma correction to apply to the screen color
-	 *
-	 * @return					The color of the pixel displayed at the chosen location
-	 */
-	static struct FLinearColor GetScreenPixelColor(const FVector2D& InScreenPos, float InGamma = 1.0f);
 
 #if !UE_BUILD_SHIPPING
 	static void PromptForRemoteDebugging(bool bIsEnsure);
@@ -224,6 +198,11 @@ struct CORE_API FWindowsPlatformMisc
 	 */
 	static uint32 GetCPUInfo();
 
+	/** @return whether this cpu supports certain required instructions or not */
+	static bool HasNonoptionalCPUFeatures();
+	/** @return whether to check for specific CPU compatibility or not */
+	static bool NeedsNonoptionalCPUFeaturesCheck();
+
 	/** 
 	 * Provides a simpler interface for fetching and cleanup of registry value queries
 	 *
@@ -262,6 +241,15 @@ struct CORE_API FWindowsPlatformMisc
 	static FText GetFileManagerName();
 
 	/**
+	* Returns whether WiFi connection is currently active
+	*/
+	static bool HasActiveWiFiConnection()
+	{
+		// for now return true
+		return true;
+	}
+
+	/**
 	 * Returns whether the platform is running on battery power or not.
 	 */
 	static bool IsRunningOnBattery();
@@ -274,8 +262,6 @@ struct CORE_API FWindowsPlatformMisc
 	static EConvertibleLaptopMode GetConvertibleLaptopMode();
 
 	static IPlatformChunkInstall* GetPlatformChunkInstall();
-
-	static float GetDPIScaleFactorAtPoint(float X, float Y);
 };
 
 

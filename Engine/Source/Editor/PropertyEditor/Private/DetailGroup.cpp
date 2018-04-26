@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DetailGroup.h"
 #include "Widgets/Input/SButton.h"
@@ -233,7 +233,7 @@ TSharedRef<SWidget> FDetailGroup::MakeNameWidget()
 	return
 		SNew( SButton )
 		.ButtonStyle( FEditorStyle::Get(), "NoBorder" )
-		.ContentPadding(2)
+		.ContentPadding(FMargin(0,2,2,2))
 		.OnClicked( this, &FDetailGroup::OnNameClicked )				
 		.ForegroundColor( FSlateColor::UseForeground() )
 		.Content()

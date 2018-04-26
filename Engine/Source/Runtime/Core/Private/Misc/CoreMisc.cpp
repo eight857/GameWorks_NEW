@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // Core includes.
 #include "Misc/CoreMisc.h"
@@ -6,8 +6,9 @@
 #include "Misc/CommandLine.h"
 #include "Containers/Ticker.h"
 #include "HAL/IConsoleManager.h"
-#include "GenericPlatform/GenericApplication.h"
+#include "HAL/PlatformTime.h"
 #include "Misc/App.h"
+#include "Misc/ScopeLock.h"
 
 /** For FConfigFile in appInit							*/
 #include "Misc/ConfigCacheIni.h"
@@ -182,7 +183,7 @@ int32 CORE_API StaticDedicatedServerCheck()
 	static int32 HasServerSwitch = -1;
 	if (HasServerSwitch == -1)
 	{
-		const FString CmdLine = FString(FCommandLine::Get()).Trim();
+		const FString CmdLine = FString(FCommandLine::Get()).TrimStart();
 		const TCHAR* TCmdLine = *CmdLine;
 
 		TArray<FString> Tokens;
@@ -200,7 +201,7 @@ int32 CORE_API StaticGameCheck()
 	static int32 HasGameSwitch = -1;
 	if (HasGameSwitch == -1)
 	{
-		const FString CmdLine = FString(FCommandLine::Get()).Trim();
+		const FString CmdLine = FString(FCommandLine::Get()).TrimStart();
 		const TCHAR* TCmdLine = *CmdLine;
 
 		TArray<FString> Tokens;
@@ -225,7 +226,7 @@ int32 CORE_API StaticClientOnlyCheck()
 	static int32 HasClientSwitch = -1;
 	if (HasClientSwitch == -1)
 	{
-		const FString CmdLine = FString(FCommandLine::Get()).Trim();
+		const FString CmdLine = FString(FCommandLine::Get()).TrimStart();
 		const TCHAR* TCmdLine = *CmdLine;
 
 		TArray<FString> Tokens;
@@ -278,62 +279,6 @@ bool CORE_API StringHasBadDashes(const TCHAR* Str)
 	return false;
 }
 
-void GenerateConvenientWindowedResolutions(const FDisplayMetrics& InDisplayMetrics, TArray<FIntPoint>& OutResolutions)
-{
-	bool bInPortraitMode = InDisplayMetrics.PrimaryDisplayWidth < InDisplayMetrics.PrimaryDisplayHeight;
-
-	// Generate windowed resolutions as scaled versions of primary monitor size
-	static const float Scales[] = { 3.0f / 6.0f, 4.0f / 6.0f, 4.5f / 6.0f, 5.0f / 6.0f };
-	static const float Ratios[] = { 9.0f, 10.0f, 12.0f };
-	static const float MinWidth = 1280.0f;
-	static const float MinHeight = 720.0f; // UI layout doesn't work well below this, as the accept/cancel buttons go off the bottom of the screen
-
-	static const uint32 NumScales = sizeof(Scales) / sizeof(float);
-	static const uint32 NumRatios = sizeof(Ratios) / sizeof(float);
-
-	for (uint32 ScaleIndex = 0; ScaleIndex < NumScales; ++ScaleIndex)
-	{
-		for (uint32 AspectIndex = 0; AspectIndex < NumRatios; ++AspectIndex)
-		{
-			float TargetWidth, TargetHeight;
-			float Aspect = Ratios[AspectIndex] / 16.0f;
-
-			if (bInPortraitMode)
-			{
-				TargetHeight = FMath::RoundToFloat(InDisplayMetrics.PrimaryDisplayHeight * Scales[ScaleIndex]);
-				TargetWidth = TargetHeight * Aspect;
-			}
-			else
-			{
-				TargetWidth = FMath::RoundToFloat(InDisplayMetrics.PrimaryDisplayWidth * Scales[ScaleIndex]);
-				TargetHeight = TargetWidth * Aspect;
-			}
-
-			if (TargetWidth < InDisplayMetrics.PrimaryDisplayWidth && TargetHeight < InDisplayMetrics.PrimaryDisplayHeight && TargetWidth >= MinWidth && TargetHeight >= MinHeight)
-			{
-				OutResolutions.Add(FIntPoint(TargetWidth, TargetHeight));
-			}
-		}
-	}
-	
-	// if no convenient resolutions have been found, add a minimum one
-	if (OutResolutions.Num() == 0)
-	{
-		if (InDisplayMetrics.PrimaryDisplayHeight > MinHeight && InDisplayMetrics.PrimaryDisplayWidth > MinWidth)
-		{
-			//Add the minimum size if it fit
-			OutResolutions.Add(FIntPoint(MinWidth, MinHeight));
-		}
-		else
-		{
-			//Force a resolution even if its smaller then the minimum height and width to avoid a bigger window then the desktop
-			float TargetWidth = FMath::RoundToFloat(InDisplayMetrics.PrimaryDisplayWidth) * Scales[NumScales - 1];
-			float TargetHeight = FMath::RoundToFloat(InDisplayMetrics.PrimaryDisplayHeight) * Scales[NumScales - 1];
-			OutResolutions.Add(FIntPoint(TargetWidth, TargetHeight));
-		}
-	}
-}
-
 /*----------------------------------------------------------------------------
 FBoolConfigValueHelper
 ----------------------------------------------------------------------------*/
@@ -366,6 +311,64 @@ void EnsureRetrievingVTablePtrDuringCtor(const TCHAR* CtorSignature)
 {
 	UE_CLOG(!GIsRetrievingVTablePtr, LogCore, Fatal, TEXT("The %s constructor is for internal usage only for hot-reload purposes. Please do NOT use it."), CtorSignature);
 }
+
+/*----------------------------------------------------------------------------
+Boot timing
+----------------------------------------------------------------------------*/
+
+#if !UE_BUILD_SHIPPING
+
+void NotifyLoadingStateChanged(bool bState, const TCHAR *Message)
+{
+	static bool bEnabled = FParse::Param(FCommandLine::Get(), TEXT("TrackBootLoading"));
+	if (!bEnabled)
+	{
+		return;
+	}
+
+	static FCriticalSection Crit;
+	FScopeLock Lock(&Crit);
+	static double GLastTimeForNotifyAsyncLoadingStateHasMaybeChanged = FPlatformTime::Seconds();
+
+	static double TotalActiveTime = 0.0;
+	static double TotalInactiveTime = 0.0;
+	static int32 LoadCount = 0;
+	static int32 RecursiveCount = 0;
+
+	double Now = FPlatformTime::Seconds();
+	double Diff = Now - GLastTimeForNotifyAsyncLoadingStateHasMaybeChanged;
+
+	if (bState)
+	{
+		RecursiveCount++;
+		UE_LOG(LogStreaming, Display, TEXT("Loading Interval Starting %s"), Message);
+	}
+	else
+	{
+		RecursiveCount--;
+		check(RecursiveCount >= 0);
+		UE_LOG(LogStreaming, Display, TEXT("Loading Interval Ending   %s"), Message);
+	}
+
+	if (RecursiveCount == 1 && bState)
+	{
+		TotalInactiveTime += Diff;
+	}
+	else
+	{
+		TotalActiveTime += Diff;
+	}
+
+	if (!RecursiveCount)
+	{
+		LoadCount++;
+		UE_LOG(LogStreaming, Display, TEXT("Loading Interval  %5d loading time intervals   %7.2fs spent loading    %7.2fs spent not loading"), LoadCount, TotalActiveTime, TotalInactiveTime);
+	}
+	GLastTimeForNotifyAsyncLoadingStateHasMaybeChanged = Now;
+}
+
+#endif
+
 
 /*----------------------------------------------------------------------------
 NAN Diagnostic Failure

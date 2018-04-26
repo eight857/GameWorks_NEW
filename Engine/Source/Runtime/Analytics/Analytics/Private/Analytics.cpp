@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Analytics.h"
 #include "Misc/CommandLine.h"
 #include "Interfaces/IAnalyticsProviderModule.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogAnalytics, Display, All);
+DEFINE_LOG_CATEGORY(LogAnalytics);
 
 IMPLEMENT_MODULE( FAnalytics, Analytics );
 

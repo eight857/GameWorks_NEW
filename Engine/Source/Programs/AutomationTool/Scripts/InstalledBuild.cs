@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Tools.DotNETCommon;
 using UnrealBuildTool;
 
 namespace AutomationTool
@@ -109,12 +110,12 @@ namespace AutomationTool
 					{
 						// Need to check for development receipt as we use that for the Engine code in DebugGame
 						UnrealTargetConfiguration EngineConfiguration = (CodeTargetConfiguration == UnrealTargetConfiguration.DebugGame) ? UnrealTargetConfiguration.Development : CodeTargetConfiguration;
-						string ReceiptFileName = TargetReceipt.GetDefaultPath(OutputEnginePath, "UE4Game", CodeTargetPlatform, EngineConfiguration, Architecture);
+						FileReference ReceiptFileName = TargetReceipt.GetDefaultPath(new DirectoryReference(OutputEnginePath), "UE4Game", CodeTargetPlatform, EngineConfiguration, Architecture);
 
-						if (File.Exists(ReceiptFileName))
+						if (FileReference.Exists(ReceiptFileName))
 						{
 							// Strip the output folder so that this can be used on any machine
-							ReceiptFileName = new FileReference(ReceiptFileName).MakeRelativeTo(new DirectoryReference(OutputDir));
+							string RelativeReceiptFileName = ReceiptFileName.MakeRelativeTo(new DirectoryReference(OutputDir));
 
 							// If we have pre-compiled architectures for this platform then add an entry for each of these -
 							// there isn't a receipt for each architecture like some other platforms
@@ -122,12 +123,12 @@ namespace AutomationTool
 							{
 								foreach (string Arch in AllArchNames)
 								{
-									InstalledConfigs.Add(new InstalledPlatformInfo.InstalledPlatformConfiguration(CodeTargetConfiguration, CodeTargetPlatform, TargetType.Game, Arch, ReceiptFileName, ProjectType, bCanBeDisplayed));
+									InstalledConfigs.Add(new InstalledPlatformInfo.InstalledPlatformConfiguration(CodeTargetConfiguration, CodeTargetPlatform, TargetType.Game, Arch, RelativeReceiptFileName, ProjectType, bCanBeDisplayed));
 								}
 							}
 							else
 							{
-								InstalledConfigs.Add(new InstalledPlatformInfo.InstalledPlatformConfiguration(CodeTargetConfiguration, CodeTargetPlatform, TargetType.Game, Architecture, ReceiptFileName, ProjectType, bCanBeDisplayed));
+								InstalledConfigs.Add(new InstalledPlatformInfo.InstalledPlatformConfiguration(CodeTargetConfiguration, CodeTargetPlatform, TargetType.Game, Architecture, RelativeReceiptFileName, ProjectType, bCanBeDisplayed));
 							}
 						}
 					}

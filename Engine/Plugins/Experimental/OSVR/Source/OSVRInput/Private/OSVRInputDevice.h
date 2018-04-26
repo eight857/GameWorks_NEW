@@ -21,7 +21,7 @@
 #include "OSVRInputPrivate.h"
 #include "IForceFeedbackSystem.h"
 #include "IInputDevice.h"
-#include "IMotionController.h"
+#include "XRMotionControllerBase.h"
 #include "IOSVR.h"
 #include "OSVRTypes.h"
 
@@ -44,15 +44,21 @@ class OSVRButton;
 /**
 *
 */
-class FOSVRInputDevice : public IInputDevice, public IMotionController
+class FOSVRInputDevice : public IInputDevice, public FXRMotionControllerBase
 {
 public:
-    FOSVRInputDevice(const TSharedRef< FGenericApplicationMessageHandler >& MessageHandler,
-        TSharedPtr<OSVREntryPoint, ESPMode::ThreadSafe> osvrEntryPoint, TSharedPtr<FOSVRHMD, ESPMode::ThreadSafe> osvrHMD);
-    virtual ~FOSVRInputDevice();
-    static void RegisterNewKeys();
+	FOSVRInputDevice(const TSharedRef< FGenericApplicationMessageHandler >& MessageHandler,
+		TSharedPtr<OSVREntryPoint, ESPMode::ThreadSafe> osvrEntryPoint, TSharedPtr<FOSVRHMD, ESPMode::ThreadSafe> osvrHMD);
+	virtual ~FOSVRInputDevice();
+	static void RegisterNewKeys();
 
-    /* IMotionController interface*/
+	/* IMotionController interface*/
+
+	virtual FName GetMotionControllerDeviceTypeName() const override 
+	{
+		const static FName DefaultName(TEXT("OSVRInputDevice"));
+		return DefaultName;
+	}
 
     /**
     * Returns the calibration-space orientation of the requested controller's hand.

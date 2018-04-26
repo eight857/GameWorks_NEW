@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	OpenGLUtil.h: OpenGL RHI utility definitions.
@@ -10,7 +10,7 @@
 #define ENABLE_OPENGL_FRAMEDUMP 0
 
 /** Set to 1 to enable the VERIFY_GL macros which call glGetError */
-#define ENABLE_VERIFY_GL (0 & !PLATFORM_MAC & UE_BUILD_DEBUG)
+#define ENABLE_VERIFY_GL (0 & UE_BUILD_DEBUG)
 #define ENABLE_VERIFY_GL_TRACE 0
 
 /** Set to 1 to verify that the the engine side uniform buffer layout matches the driver side of the GLSL shader*/

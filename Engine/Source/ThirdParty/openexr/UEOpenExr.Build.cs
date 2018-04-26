@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -7,23 +7,27 @@ public class UEOpenExr : ModuleRules
     public UEOpenExr(ReadOnlyTargetRules Target) : base(Target)
     {
         Type = ModuleType.External;
-        if (Target.Platform == UnrealTargetPlatform.Win64 || Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Mac)
+        if (Target.Platform == UnrealTargetPlatform.Win64 || Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Mac || Target.Platform == UnrealTargetPlatform.Linux)
         {
-            bool bDebug = (Target.Configuration == UnrealTargetConfiguration.Debug && BuildConfiguration.bDebugBuildsActuallyUseDebugCRT);
-            string LibDir = UEBuildConfiguration.UEThirdPartySourceDirectory + "openexr/Deploy/lib/";
+            bool bDebug = (Target.Configuration == UnrealTargetConfiguration.Debug && Target.bDebugBuildsActuallyUseDebugCRT);
+            string LibDir = Target.UEThirdPartySourceDirectory + "openexr/Deploy/lib/";
             string Platform;
             switch (Target.Platform)
             {
                 case UnrealTargetPlatform.Win64:
                     Platform = "x64";
-                    LibDir += "VS" + WindowsPlatform.GetVisualStudioCompilerVersionName() + "/";
+                    LibDir += "VS" + Target.WindowsPlatform.GetVisualStudioCompilerVersionName() + "/";
                     break;
                 case UnrealTargetPlatform.Win32:
                     Platform = "Win32";
-                    LibDir += "VS" + WindowsPlatform.GetVisualStudioCompilerVersionName() + "/";
+                    LibDir += "VS" + Target.WindowsPlatform.GetVisualStudioCompilerVersionName() + "/";
                     break;
                 case UnrealTargetPlatform.Mac:
                     Platform = "Mac";
+                    bDebug = false;
+                    break;
+                case UnrealTargetPlatform.Linux:
+                    Platform = "Linux";
                     bDebug = false;
                     break;
                 default:
@@ -57,10 +61,23 @@ public class UEOpenExr : ModuleRules
 					}
 				);
 			}
+			else if (Target.Platform == UnrealTargetPlatform.Linux)
+			{
+				string LibArchDir = LibDir + "/" + Target.Architecture;
+				PublicAdditionalLibraries.AddRange(
+					new string[] {
+						LibArchDir + "/libHalf.a",
+						LibArchDir + "/libIex.a",
+						LibArchDir + "/libIlmImf.a",
+						LibArchDir + "/libIlmThread.a",
+						LibArchDir + "/libImath.a",
+					}
+				);
+			}
 
             PublicSystemIncludePaths.AddRange(
                 new string[] {
-                    UEBuildConfiguration.UEThirdPartySourceDirectory + "openexr/Deploy/include",
+                    Target.UEThirdPartySourceDirectory + "openexr/Deploy/include",
 			    }
             );
         }

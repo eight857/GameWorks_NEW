@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -11,18 +11,16 @@ public class MessagingDebugger : ModuleRules
 			{
 				"Core",
 				"CoreUObject",
-                "InputCore",
+				"InputCore",
 				"Serialization",
 				"Slate",
 				"SlateCore",
-			}
-		);
+			});
 
 		PrivateIncludePathModuleNames.AddRange(
 			new string[] {
 				"Messaging",
-			}
-		);
+			});
 
 		PrivateIncludePaths.AddRange(
 			new string[] {
@@ -36,21 +34,19 @@ public class MessagingDebugger : ModuleRules
 				"MessagingDebugger/Private/Widgets/Graph",
 				"MessagingDebugger/Private/Widgets/History",
 				"MessagingDebugger/Private/Widgets/Interceptors",
-                "MessagingDebugger/Private/Widgets/MessageData",
+				"MessagingDebugger/Private/Widgets/MessageData",
 				"MessagingDebugger/Private/Widgets/MessageDetails",
 				"MessagingDebugger/Private/Widgets/Types",
 				"MessagingDebugger/Private/Widgets/Toolbar",
-			}
-		);
+			});
 
-        if (UEBuildConfiguration.bBuildEditor)
-        {
-            PrivateDependencyModuleNames.AddRange(
-                new string[] {
-                    "PropertyEditor",
-                    "WorkspaceMenuStructure",
-                }
-            );
-        }
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(
+				new string[] {
+					"PropertyEditor",
+					"WorkspaceMenuStructure",
+				});
+		}
 	}
 }

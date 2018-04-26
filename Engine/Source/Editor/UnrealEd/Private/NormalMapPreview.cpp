@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*==============================================================================
 	NormalMapPreview.h: Implementation for previewing normal maps.
@@ -24,9 +24,9 @@ class FSimpleElementNormalMapPS : public FGlobalShader
 public:
 
 	/** Should the shader be cached? Always. */
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return !IsConsolePlatform(Platform);
+		return !IsConsolePlatform(Parameters.Platform);
 	}
 
 	/** Default constructor. */
@@ -70,7 +70,7 @@ private:
 	FShaderResourceParameter Texture;
 	FShaderResourceParameter TextureSampler;
 };
-IMPLEMENT_SHADER_TYPE(,FSimpleElementNormalMapPS,TEXT("SimpleElementNormalMapPixelShader"),TEXT("Main"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FSimpleElementNormalMapPS,TEXT("/Engine/Private/SimpleElementNormalMapPixelShader.usf"),TEXT("Main"),SF_Pixel);
 
 /** Binds vertex and pixel shaders for this element */
 void FNormalMapBatchedElementParameters::BindShaders(

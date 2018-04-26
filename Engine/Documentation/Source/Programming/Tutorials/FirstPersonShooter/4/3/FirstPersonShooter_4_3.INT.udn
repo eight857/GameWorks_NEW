@@ -3,7 +3,7 @@ Title: 4.3 - Adding an Animation State Machine
 Crumbs: %ROOT%, Programming, Programming/Tutorials, Programming/Tutorials/FirstPersonShooter, Programming/Tutorials/FirstPersonShooter/4
 Description: Learn how to add an animation state machine for your First Person character.
 SkillLevel: Beginner
-Version: 4.11
+Version: 4.15
 
 [VAR:Steps]
 [OBJECT:Navigation]
@@ -21,7 +21,7 @@ Version: 4.11
 [/OBJECT]
 [/VAR]
 
-%Steps%
+
 
 During this step, we're going to put together a state machine that will take advantage of our newly made variables.
 
@@ -43,4 +43,3 @@ During this step, we're going to put together a state machine that will take adv
 
 1.	Double-click the "Arms State Machine" node to open its graph for editing.
 
-%Steps%

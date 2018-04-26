@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
@@ -37,6 +37,7 @@
 #include "TrackEditors/CameraShakeTrackEditor.h"
 #include "TrackEditors/MaterialParameterCollectionTrackEditor.h"
 
+#include "MovieSceneBuiltInEasingFunctionCustomization.h"
 #include "MovieSceneObjectBindingIDCustomization.h"
 #include "SequencerClipboardReconciler.h"
 #include "ClipboardTypes.h"
@@ -110,6 +111,7 @@ public:
 		// register details customization
 		FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.RegisterCustomClassLayout("MovieSceneToolsProjectSettings", FOnGetDetailCustomizationInstance::CreateStatic(&FMovieSceneToolsProjectSettingsCustomization::MakeInstance));
+		PropertyModule.RegisterCustomClassLayout("MovieSceneBuiltInEasingFunction", FOnGetDetailCustomizationInstance::CreateLambda(&MakeShared<FMovieSceneBuiltInEasingFunctionCustomization>));
 		PropertyModule.RegisterCustomPropertyTypeLayout("MovieSceneObjectBindingID", FOnGetPropertyTypeCustomizationInstance::CreateLambda(&MakeShared<FMovieSceneObjectBindingIDCustomization>));
 	}
 
@@ -134,6 +136,7 @@ public:
 		SequencerModule.UnRegisterTrackEditor( FloatPropertyTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( IntegerPropertyTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( VectorPropertyTrackCreateEditorHandle );
+		SequencerModule.UnRegisterTrackEditor( TransformPropertyTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( VisibilityPropertyTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( ActorReferencePropertyTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( StringPropertyTrackCreateEditorHandle );
@@ -154,6 +157,7 @@ public:
 		SequencerModule.UnRegisterTrackEditor( ComponentMaterialTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( FadeTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( SpawnTrackCreateEditorHandle );
+		SequencerModule.UnRegisterTrackEditor( LevelVisibilityTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( CameraAnimTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( CameraShakeTrackCreateEditorHandle );
 		SequencerModule.UnRegisterTrackEditor( MPCTrackCreateEditorHandle );
@@ -162,6 +166,7 @@ public:
 		{	
 			FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 			PropertyModule.UnregisterCustomClassLayout("MovieSceneToolsProjectSettings");
+			PropertyModule.UnregisterCustomClassLayout("MovieSceneBuiltInEasingFunction");
 			PropertyModule.UnregisterCustomPropertyTypeLayout("MovieSceneObjectBindingID");
 		}
 	}

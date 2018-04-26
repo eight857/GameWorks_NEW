@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -108,7 +108,7 @@ public:
 	/**
 	 * Constructor
 	 */
-	FOnlineMessageHeader(FUniqueNetId* InFromUserId, FUniqueNetId* InMessageId)
+	FOnlineMessageHeader(const TSharedRef<const FUniqueNetId>& InFromUserId, const TSharedRef<FUniqueMessageId>& InMessageId)
 		: FromUserId(InFromUserId)
 		, MessageId(InMessageId)
 	{
@@ -198,6 +198,8 @@ class IOnlineMessage
 {
 
 public:
+
+	virtual ~IOnlineMessage() { }
 
 	/**
 	 * Enumerate list of available message headers from user's inbox

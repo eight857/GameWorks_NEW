@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayEffectExecutionScopedModifierInfoDetails.h"
 #include "Widgets/Layout/SBorder.h"
@@ -197,7 +197,7 @@ void FGameplayEffectExecutionScopedModifierInfoDetails::CustomizeChildren(TShare
 		{
 			TSharedPtr< SComboBox< TSharedPtr<FGameplayEffectAttributeCaptureDefinition> > > BackingComboBox;
 
-			StructBuilder.AddChildContent(NSLOCTEXT("ScopedModifierDetails", "CaptureDefLabel", "Backing Capture Definition"))
+			StructBuilder.AddCustomRow(NSLOCTEXT("ScopedModifierDetails", "CaptureDefLabel", "Backing Capture Definition"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -238,7 +238,7 @@ void FGameplayEffectExecutionScopedModifierInfoDetails::CustomizeChildren(TShare
 
 		if (!bIsExecutionDefAttribute || (ChildPropName != GET_MEMBER_NAME_CHECKED(FGameplayEffectExecutionScopedModifierInfo, CapturedAttribute)))
 		{
-			StructBuilder.AddChildProperty(ChildHandle);
+			StructBuilder.AddProperty(ChildHandle);
 		}
 	}
 }

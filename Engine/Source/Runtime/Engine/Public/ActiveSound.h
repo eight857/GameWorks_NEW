@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,12 +11,15 @@
 #include "Components/AudioComponent.h"
 #include "Sound/AudioVolume.h"
 #include "Sound/SoundSubmix.h"
+#include "Sound/SoundSourceBus.h"
 #include "AudioDevice.h"
 
 class FAudioDevice;
 class USoundBase;
 class USoundSubmix;
+class USoundSourceBus;
 struct FSoundSubmixSendInfo;
+struct FSoundSourceBusSendInfo;
 class USoundWave;
 struct FListener;
 
@@ -40,11 +43,20 @@ struct FSoundParseParameters
 	// The volume product of the sound
 	float Volume;
 
+	// The attenuation of the sound due to distance attenuation
+	float DistanceAttenuation;
+
 	// A volume scalse on the sound specified by user
 	float VolumeMultiplier;
 	
 	// Volume due to application-level volume scaling (tabbing, master volume)
 	float VolumeApp;
+
+	// Attack time of the source envelope follower
+	int32 EnvelopeFollowerAttackTime;
+
+	// Release time of the source envelope follower
+	int32 EnvelopeFollowerReleaseTime;
 
 	// The multiplier to apply if the sound class desires
 	float InteriorVolumeMultiplier;
@@ -76,18 +88,21 @@ struct FSoundParseParameters
 	// The submix sends to use
 	TArray<FSoundSubmixSendInfo> SoundSubmixSends;
 
+	// The source bus sends to use
+	TArray<FSoundSourceBusSendInfo> SoundSourceBusSends[(int32)EBusSendType::Count];
+
 	// Reverb wet-level parameters
-	float ReverbWetLevelMin;
-	float ReverbWetLevelMax;
-	float ReverbDistanceMin;
-	float ReverbDistanceMax;
-	float DefaultMasterReverbSendAmount;
+	EReverbSendMethod ReverbSendMethod;
+	FVector2D ReverbSendLevelRange;
+	FVector2D ReverbSendLevelDistanceRange;
+	float ManualReverbSendLevel;
+	FRuntimeFloatCurve CustomReverbSendCurve;
 
 	// The distance between left and right channels when spatializing stereo assets
 	float StereoSpread;
 
 	// Which spatialization algorithm to use
-	ESoundSpatializationAlgorithm SpatializationAlgorithm;
+	ESoundSpatializationAlgorithm SpatializationMethod;
 
 	// What occlusion plugin source settings to use
 	USpatializationPluginSourceSettingsBase* SpatializationPluginSettings;
@@ -105,13 +120,19 @@ struct FSoundParseParameters
 	float LowPassFilterFrequency;
 
 	// The lowpass filter frequency to apply due to distance attenuation
-	float AttenuationFilterFrequency;
+	float AttenuationLowpassFilterFrequency;
+
+	// The highpass filter frequency to apply due to distance attenuation
+	float AttenuationHighpassFilterFrequency;
 
 	// The lowpass filter to apply if the sound is occluded
 	float OcclusionFilterFrequency;
 
 	// The lowpass filter to apply if the sound is inside an ambient zone
 	float AmbientZoneFilterFrequency;
+
+	// Whether or not to ouput this audio to buses only
+	uint32 bOutputToBusOnly:1;
 
 	// Whether the sound should be spatialized
 	uint32 bUseSpatialization:1;
@@ -128,12 +149,18 @@ struct FSoundParseParameters
 	// Whether or not this sound is manually paused (i.e. not by application-wide pause)
 	uint32 bIsPaused:1;
 
+	// Whether or not to apply a =6 dB attenuation to stereo spatialization sounds
+	uint32 bApplyNormalizationToStereoSounds:1;
+
 	FSoundParseParameters()
 		: SoundClass(nullptr)
 		, Velocity(ForceInit)
 		, Volume(1.f)
+		, DistanceAttenuation(1.f)
 		, VolumeMultiplier(1.f)
 		, VolumeApp(1.f)
+		, EnvelopeFollowerAttackTime(10)
+		, EnvelopeFollowerReleaseTime(100)
 		, InteriorVolumeMultiplier(1.f)
 		, Pitch(1.f)
 		, StartTime(-1.f)
@@ -142,26 +169,28 @@ struct FSoundParseParameters
 		, ListenerToSoundDistance(0.0f)
 		, AbsoluteAzimuth(0.0f)
 		, SoundSubmix(nullptr)
-		, ReverbWetLevelMin(0.0f)
-		, ReverbWetLevelMax(0.0f)
-		, ReverbDistanceMin(0.0f)
-		, ReverbDistanceMax(0.0f)
-		, DefaultMasterReverbSendAmount(0.0f)
+		, ReverbSendMethod(EReverbSendMethod::Linear)
+		, ReverbSendLevelRange(0.0f, 0.0f)
+		, ReverbSendLevelDistanceRange(0.0f, 0.0f)
+		, ManualReverbSendLevel(0.2f)
 		, StereoSpread(0.0f)
-		, SpatializationAlgorithm(SPATIALIZATION_Default)
+		, SpatializationMethod(ESoundSpatializationAlgorithm::SPATIALIZATION_Default)
 		, SpatializationPluginSettings(nullptr)
 		, OcclusionPluginSettings(nullptr)
 		, ReverbPluginSettings(nullptr)
 		, SourceEffectChain(nullptr)
 		, LowPassFilterFrequency(MAX_FILTER_FREQUENCY)
-		, AttenuationFilterFrequency(MAX_FILTER_FREQUENCY)
+		, AttenuationLowpassFilterFrequency(MAX_FILTER_FREQUENCY)
+		, AttenuationHighpassFilterFrequency(MIN_FILTER_FREQUENCY)
 		, OcclusionFilterFrequency(MAX_FILTER_FREQUENCY)
 		, AmbientZoneFilterFrequency(MAX_FILTER_FREQUENCY)
+		, bOutputToBusOnly(false)
 		, bUseSpatialization(false)
 		, bLooping(false)
 		, bEnableLowPassFilter(false)
 		, bIsOccluded(false)
 		, bIsPaused(false)
+		, bApplyNormalizationToStereoSounds(false)
 	{
 	}
 };
@@ -191,6 +220,7 @@ public:
 	uint64 GetAudioComponentID() const { return AudioComponentID; }
 	FName GetAudioComponentUserID() const { return AudioComponentUserID; }
 	void SetAudioComponent(UAudioComponent* Component);
+	void SetOwner(AActor* Owner);
 	FString GetAudioComponentName() const;
 	FString GetOwnerName() const;
 
@@ -237,6 +267,9 @@ private:
 	/** Optional override the submix sends for the sound. */
 	TArray<FSoundSubmixSendInfo> SoundSubmixSendsOverride;
 
+	/** Optional override for the source bus sends for the sound. */
+	TArray<FSoundSourceBusSendInfo> SoundSourceBusSendsOverride[(int32)EBusSendType::Count];
+
 public:
 	/** Whether or not the sound has checked if it was occluded already. Used to initialize a sound as occluded and bypassing occlusion interpolation. */
 	uint8 bHasCheckedOcclusion:1;
@@ -270,6 +303,9 @@ public:
 
 	/** If true, the AudioComponent will be notified when a Wave is started to handle subtitles */
 	uint8 bHandleSubtitles:1;
+
+	/** If true, subtitles are being provided for the sound externally, so it still needs to make sure the sound plays to trigger the subtitles. */
+	uint8 bHasExternalSubtitles:1;
 
 	/** Whether the Location of the component is well defined */
 	uint8 bLocationDefined:1;
@@ -314,6 +350,12 @@ public:
 
 	/** Whether or not this active sound will update play percentage. Based on set delegates on audio component. */
 	uint8 bUpdatePlayPercentage:1;
+
+	/** Whether or not this active sound will update the envelope value of every wave instance that plays a sound source. Based on set delegates on audio component. */
+	uint8 bUpdateSingleEnvelopeValue:1;
+
+	/** Whether or not this active sound will update the average envelope value of every wave instance that plays a sound source. Based on set delegates on audio component. */
+	uint8 bUpdateMultiEnvelopeValue:1;
 
 public:
 	uint8 UserIndex;
@@ -396,6 +438,10 @@ public:
 	float SourceInteriorLPF;
 	float CurrentInteriorVolume;
 	float CurrentInteriorLPF;
+
+	// Envelope follower attack and release time parameters
+	int32 EnvelopeFollowerAttackTime;
+	int32 EnvelopeFollowerReleaseTime;
 
 	TMap<UPTRINT, struct FWaveInstance*> WaveInstances;
 
@@ -482,6 +528,9 @@ public:
 	/** Gets the sound submix sends to use for this sound instance. */
 	void GetSoundSubmixSends(TArray<FSoundSubmixSendInfo>& OutSends) const;
 
+	/** Gets the sound source bus sends to use for this sound instance. */
+	void GetSoundSourceBusSends(EBusSendType BusSendType, TArray<FSoundSourceBusSendInfo>& OutSends) const;
+
 	/* Determines which listener is the closest to the sound */
 	int32 FindClosestListener( const TArray<struct FListener>& InListeners ) const;
 	
@@ -505,6 +554,9 @@ public:
 
 	/** Sets the amount of audio from this active sound to send to the submix. */
 	void SetSubmixSend(const FSoundSubmixSendInfo& SubmixSendInfo);
+
+	/** Sets the amount of audio from this active sound to send to the source bus. */
+	void SetSourceBusSend(EBusSendType BusSendTyoe, const FSoundSourceBusSendInfo& SourceBusSendInfo);
 
 private:
 	
@@ -541,4 +593,9 @@ private:
 	/** Apply the interior settings to the ambient sound as appropriate */
 	void HandleInteriorVolumes( const FListener& Listener, struct FSoundParseParameters& ParseParams );
 
+	/** Helper function which retrieves attenuation frequency value for HPF and LPF distance-based filtering. */
+	float GetAttenuationFrequency(const FSoundAttenuationSettings* InSettings, const FAttenuationListenerData& ListenerData, const FVector2D& FrequencyRange, const FRuntimeFloatCurve& CustomCurve);
+
+	/** Internal Focus Factor value used to allow smooth interpolation in/out of Focus */
+	float InternalFocusFactor;
 };

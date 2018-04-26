@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Misc/Guid.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "PaperSprite.h"
 #include "PaperSpriteAtlas.h"
 #include "Modules/ModuleManager.h"
@@ -16,7 +16,7 @@ static void LoadAllReferencedSprites(UPaperSpriteAtlas* AtlasGroup, TArray<UPape
 {
 	for (FPaperSpriteAtlasSlot& Slot : AtlasGroup->AtlasSlots)
 	{
-		FStringAssetReference SpriteStringRef = Slot.SpriteRef.ToStringReference();
+		FSoftObjectPath SpriteStringRef = Slot.SpriteRef.ToSoftObjectPath();
 		if (!SpriteStringRef.ToString().IsEmpty())
 		{
 			UPaperSprite* Sprite = Cast<UPaperSprite>(StaticLoadObject(UPaperSprite::StaticClass(), nullptr, *SpriteStringRef.ToString(), nullptr, LOAD_None, nullptr));
@@ -136,7 +136,7 @@ static const FPaperSpriteAtlasSlot& FindBestSlotForTexture(TArray<FPaperSpriteAt
 	bOutSpriteChanged = false;
 
 	// Asset pointer for the sprite we're currently trying to pack
-	TAssetPtr<UPaperSprite> SpriteAssetRef = Sprite;
+	TSoftObjectPtr<UPaperSprite> SpriteAssetRef = Sprite;
 
 	// 1. Find matching texture and see if we can fit it in the existing slot
 	for (int32 SlotIndex = 0; SlotIndex < AtlasSlots.Num(); ++SlotIndex)

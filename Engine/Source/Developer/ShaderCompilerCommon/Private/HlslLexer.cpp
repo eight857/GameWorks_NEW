@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	HlslLexer.cpp - Implementation for scanning & tokenizing hlsl
@@ -593,6 +593,25 @@ namespace CrossCompiler
 			return false;
 		}
 
+		inline bool IsSwizzleDigit(TCHAR Char)
+		{
+			switch (Char)
+			{
+			case 'r':
+			case 'g':
+			case 'b':
+			case 'a':
+			case 'x':
+			case 'y':
+			case 'z':
+			case 'w':
+				return true;
+
+			default:
+				return false;
+			}
+		}
+
 		bool MatchFloatNumber(float& OutNum)
 		{
 			auto* Original = Current;
@@ -609,12 +628,25 @@ namespace CrossCompiler
 			}
 
 			bool bExpOptional = false;
+
+			// Differentiate between 1. and 1.rr for example
+			if (Char == '.' && IsSwizzleDigit(Peek(1)))
+			{
+				goto NotFloat;
+			}
+
 			if (Match('.') && MatchAndSkipDigits())
 			{
 				bExpOptional = true;
 			}
 			else if (MatchAndSkipDigits())
 			{
+				// Differentiate between 1. and 1.rr for example
+				if (Peek() == '.' && IsSwizzleDigit(Peek(1)))
+				{
+					goto NotFloat;
+				}
+
 				if (Match('.'))
 				{
 					bExpOptional = true;
@@ -1118,6 +1150,31 @@ namespace CrossCompiler
 		{
 			FString Pragma = TEXT("#pragma") + Tokenizer.ReadToEndOfLine();
 			Scanner.AddToken(FHlslToken(EHlslToken::Pragma, Pragma), Tokenizer);
+		}
+		else if (Tokenizer.MatchString(MATCH_TARGET(TEXT("#if 0"))))
+		{
+			if (Tokenizer.Peek() == ' ' || Tokenizer.Peek() == '\n')
+			{
+				Tokenizer.SkipToNextLine();
+				while (Tokenizer.HasCharsAvailable() && Tokenizer.Peek() != '#')
+				{
+					Tokenizer.SkipToNextLine();
+				}
+
+				if (Tokenizer.MatchString(MATCH_TARGET(TEXT("#endif"))))
+				{
+					Tokenizer.SkipToNextLine();
+				}
+				else
+				{
+					CompilerMessages.SourceWarning(*FString::Printf(TEXT("Expected #endif preprocessor directive; HlslParser requires preprocessed input!")));
+				}
+			}
+			else
+			{
+				FString Directive = TEXT("#if 0") + Tokenizer.ReadToEndOfLine();
+				CompilerMessages.SourceWarning(*FString::Printf(TEXT("Unhandled preprocessor directive (%s); HlslParser requires preprocessed input!"), Tokenizer.Current));
+			}
 		}
 		else
 		{

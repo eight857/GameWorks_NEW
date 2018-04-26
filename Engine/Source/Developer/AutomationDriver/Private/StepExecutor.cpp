@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "StepExecutor.h"
 #include "IStepExecutor.h"
@@ -133,7 +133,7 @@ private:
 		}
 
 		CurrentStepIndex = StepIndex;
-		float Milliseconds = Result.NextWait.GetTicks() / ETimespan::TicksPerMillisecond;
+		float Milliseconds = (float)(Result.NextWait.GetTicks()) / ETimespan::TicksPerMillisecond;
 		float Delay = FMath::Max(SMALL_NUMBER, (Milliseconds / 1000) * Configuration->ExecutionSpeedMultiplier);
 		
 		if (LastDelay < KINDA_SMALL_NUMBER)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "Tiles/WorldTileDetailsCustomization.h"
 #include "Misc/PackageName.h"
 #include "Widgets/Layout/SBox.h"
@@ -29,7 +29,7 @@ static FString GetWorldRoot(TWeakPtr<FWorldTileCollectionModel> WorldModel)
 	}
 	else
 	{
-		return FPackageName::FilenameToLongPackageName(FPaths::GameContentDir());
+		return FPackageName::FilenameToLongPackageName(FPaths::ProjectContentDir());
 	}
 }
 
@@ -198,9 +198,9 @@ void FStreamingLevelDetailsCustomization::CustomizeChildren(TSharedRef<IProperty
 	TSharedPtr<IPropertyHandle> StreamingModeProperty = StructPropertyHandle->GetChildHandle(TEXT("StreamingMode"));
 	TSharedPtr<IPropertyHandle> PackageNameProperty = StructPropertyHandle->GetChildHandle(TEXT("PackageName"));
 
-	ChildBuilder.AddChildProperty(StreamingModeProperty.ToSharedRef());
+	ChildBuilder.AddProperty(StreamingModeProperty.ToSharedRef());
 	
-	ChildBuilder.AddChildProperty(PackageNameProperty.ToSharedRef())
+	ChildBuilder.AddProperty(PackageNameProperty.ToSharedRef())
 		.CustomWidget()
 				.NameContent()
 				[
@@ -277,13 +277,13 @@ void FTileLODEntryDetailsCustomization::CustomizeChildren(TSharedRef<IPropertyHa
 		GET_MEMBER_NAME_CHECKED(FTileLODEntryDetails, SimplificationDetails)
 		);
 
-	ChildBuilder.AddChildProperty(LODIndexHandle.ToSharedRef())
+	ChildBuilder.AddProperty(LODIndexHandle.ToSharedRef())
 		.Visibility(EVisibility::Hidden);
 
-	ChildBuilder.AddChildProperty(DistanceProperty.ToSharedRef())
+	ChildBuilder.AddProperty(DistanceProperty.ToSharedRef())
 		.IsEnabled(TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateSP(this, &FTileLODEntryDetailsCustomization::IsLODDistanceEnabled)));
 	
-	ChildBuilder.AddChildProperty(SimplificationDetails.ToSharedRef())
+	ChildBuilder.AddProperty(SimplificationDetails.ToSharedRef())
 		.IsEnabled(TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateSP(this, &FTileLODEntryDetailsCustomization::IsGenerateTileEnabled)));
 }
 

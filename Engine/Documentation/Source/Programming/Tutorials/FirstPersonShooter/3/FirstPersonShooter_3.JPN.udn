@@ -1,15 +1,15 @@
-﻿INTSourceChangelist:3069483
-Availability: Public
+﻿INTSourceChangelist:3108692
+Availability:Public
 Title:3 - 発射物を実装する
 Crumbs: %ROOT%, Programming, Programming/Tutorials, Programming/Tutorials/FirstPersonShooter
 Description:First Person Shooter ゲームに発射物を実装する方法を学びます。
-Prereq:Programming/Tutorials/FirstPersonShooter/2
+prereq:Programming/Tutorials/FirstPersonShooter/2
 Related:Programming/Tutorials/FirstPersonShooter
-SkillLevel: Beginner
+SkillLevel:Beginner
 Version:4.9
 
 ![](CrosshairsInGame.png)
-_このセクションの最後まで終了すると、この画面のようになります。_
+_このセクションの最後まで終了すると、上の画面のようになります。_
 
 ## 目標
 
@@ -25,20 +25,14 @@ _このセクションの最後まで終了すると、この画面のように�
 * 発射物がワールドと相互作用するようにする
 * ビューポートにクロスヘア (照準) を追加
 
-[OBJECT:TopicButtonList]
-	[PARAM:icon]
-		![](%ROOT%/build_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		ステップ
-	[/PARAM]
-	[PARAM:description]
-	[/PARAM]
-	[PARAM:links]
+## ステップ
+
+[REGION:buttonlist]
+
 	* [](Programming/Tutorials/FirstPersonShooter/3/1 "%Programming/Tutorials/FirstPersonShooter/3/1:description%")
 	* [](Programming/Tutorials/FirstPersonShooter/3/2 "%Programming/Tutorials/FirstPersonShooter/3/2:description%")
 	* [](Programming/Tutorials/FirstPersonShooter/3/3 "%Programming/Tutorials/FirstPersonShooter/3/3:description%")
 	* [](Programming/Tutorials/FirstPersonShooter/3/4 "%Programming/Tutorials/FirstPersonShooter/3/4:description%")
 	* [](Programming/Tutorials/FirstPersonShooter/3/5 "%Programming/Tutorials/FirstPersonShooter/3/5:description%")
-	[/PARAM]
-[/OBJECT]
+	
+[/REGION]

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/Pawn.h"
@@ -10,7 +10,6 @@
 //////////////////////////////////////////////////////////////////////////
 // USpringArmComponent
 
-static void SetDeprecatedControllerViewRotation(USpringArmComponent& Component, bool bValue);
 const FName USpringArmComponent::SocketName(TEXT("SpringEndpoint"));
 
 USpringArmComponent::USpringArmComponent(const FObjectInitializer& ObjectInitializer)
@@ -39,19 +38,30 @@ USpringArmComponent::USpringArmComponent(const FObjectInitializer& ObjectInitial
 	CameraRotationLagSpeed = 10.f;
 	CameraLagMaxTimeStep = 1.f / 60.f;
 	CameraLagMaxDistance = 0.f;
-	
-	// Init deprecated var, for old code that may refer to it.
-	SetDeprecatedControllerViewRotation(*this, bUsePawnControlRotation);
+
+ 	UnfixedCameraPosition = FVector::ZeroVector;
 }
 
-void USpringArmComponent::UpdateDesiredArmLocation(bool bDoTrace, bool bDoLocationLag, bool bDoRotationLag, float DeltaTime)
+FRotator USpringArmComponent::GetTargetRotation() const
 {
 	FRotator DesiredRot = GetComponentRotation();
 
-	// If inheriting rotation, check options for which components to inherit
-	if(!bAbsoluteRotation)
+	if (bUsePawnControlRotation)
 	{
-		if(!bInheritPitch)
+		if (APawn* OwningPawn = Cast<APawn>(GetOwner()))
+		{
+			const FRotator PawnViewRotation = OwningPawn->GetViewRotation();
+			if (DesiredRot != PawnViewRotation)
+			{
+				DesiredRot = PawnViewRotation;
+			}
+		}
+	}
+
+	// If inheriting rotation, check options for which components to inherit
+	if (!bAbsoluteRotation)
+	{
+		if (!bInheritPitch)
 		{
 			DesiredRot.Pitch = RelativeRotation.Pitch;
 		}
@@ -66,6 +76,13 @@ void USpringArmComponent::UpdateDesiredArmLocation(bool bDoTrace, bool bDoLocati
 			DesiredRot.Roll = RelativeRotation.Roll;
 		}
 	}
+
+	return DesiredRot;
+}
+
+void USpringArmComponent::UpdateDesiredArmLocation(bool bDoTrace, bool bDoLocationLag, bool bDoRotationLag, float DeltaTime)
+{
+	FRotator DesiredRot = GetTargetRotation();
 
 	const float InverseCameraLagMaxTimeStep = (1.f / CameraLagMaxTimeStep);
 
@@ -157,23 +174,32 @@ void USpringArmComponent::UpdateDesiredArmLocation(bool bDoTrace, bool bDoLocati
 	FVector ResultLoc;
 	if (bDoTrace && (TargetArmLength != 0.0f))
 	{
-		static FName TraceTagName(TEXT("SpringArm"));
-		FCollisionQueryParams QueryParams(TraceTagName, false, GetOwner());
+		bIsCameraFixed = true;
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(SpringArm), false, GetOwner());
 
 		FHitResult Result;
 		GetWorld()->SweepSingleByChannel(Result, ArmOrigin, DesiredLoc, FQuat::Identity, ProbeChannel, FCollisionShape::MakeSphere(ProbeSize), QueryParams);
+		
+		UnfixedCameraPosition = DesiredLoc;
 
 		ResultLoc = BlendLocations(DesiredLoc, Result.Location, Result.bBlockingHit, DeltaTime);
+
+		if (ResultLoc == DesiredLoc) 
+		{	
+			bIsCameraFixed = false;
+		}
 	}
 	else
 	{
 		ResultLoc = DesiredLoc;
+		bIsCameraFixed = false;
+		UnfixedCameraPosition = ResultLoc;
 	}
 
 	// Form a transform for new world transform for camera
 	FTransform WorldCamTM(DesiredRot, ResultLoc);
 	// Convert to relative to component
-	FTransform RelCamTM = WorldCamTM.GetRelativeTransform(ComponentToWorld);
+	FTransform RelCamTM = WorldCamTM.GetRelativeTransform(GetComponentTransform());
 
 	// Update socket location/rotation
 	RelativeSocketLocation = RelCamTM.GetLocation();
@@ -187,6 +213,13 @@ FVector USpringArmComponent::BlendLocations(const FVector& DesiredArmLocation, c
 	return bHitSomething ? TraceHitLocation : DesiredArmLocation;
 }
 
+void USpringArmComponent::ApplyWorldOffset(const FVector & InOffset, bool bWorldShift)
+{
+	Super::ApplyWorldOffset(InOffset, bWorldShift);
+	PreviousDesiredLoc += InOffset;
+	PreviousArmOrigin += InOffset;
+}
+
 void USpringArmComponent::OnRegister()
 {
 	Super::OnRegister();
@@ -197,35 +230,16 @@ void USpringArmComponent::OnRegister()
 
 	// Set initial location (without lag).
 	UpdateDesiredArmLocation(false, false, false, 0.f);
-
-	// Init deprecated var, for old code that may refer to it.
-	SetDeprecatedControllerViewRotation(*this, bUsePawnControlRotation);
 }
 
 void USpringArmComponent::PostLoad()
 {
 	Super::PostLoad();
-
-	// Init deprecated var, for old code that may refer to it.
-	SetDeprecatedControllerViewRotation(*this, bUsePawnControlRotation);
 }
 
 void USpringArmComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	if (bUsePawnControlRotation)
-	{
-		if (APawn* OwningPawn = Cast<APawn>(GetOwner()))
-		{
-			const FRotator PawnViewRotation = OwningPawn->GetViewRotation();
-			if (PawnViewRotation != GetComponentRotation())
-			{
-				SetWorldRotation(PawnViewRotation);
-			}
-		}
-	}
-
 	UpdateDesiredArmLocation(bDoCollisionTest, bEnableCameraLag, bEnableCameraRotationLag, DeltaTime);
 }
 
@@ -237,14 +251,14 @@ FTransform USpringArmComponent::GetSocketTransform(FName InSocketName, ERelative
 	{
 		case RTS_World:
 		{
-			return RelativeTransform * ComponentToWorld;
+			return RelativeTransform * GetComponentTransform();
 			break;
 		}
 		case RTS_Actor:
 		{
 			if( const AActor* Actor = GetOwner() )
 			{
-				FTransform SocketTransform = RelativeTransform * ComponentToWorld;
+				FTransform SocketTransform = RelativeTransform * GetComponentTransform();
 				return SocketTransform.GetRelativeTransform(Actor->GetTransform());
 			}
 			break;
@@ -267,10 +281,12 @@ void USpringArmComponent::QuerySupportedSockets(TArray<FComponentSocketDescripti
 	new (OutSockets) FComponentSocketDescription(SocketName, EComponentSocketType::Socket);
 }
 
-
-void SetDeprecatedControllerViewRotation(USpringArmComponent& Component, bool bValue)
+FVector USpringArmComponent::GetUnfixedCameraPosition() const
 {
-	PRAGMA_DISABLE_DEPRECATION_WARNINGS
-	Component.bUseControllerViewRotation = bValue;
-	PRAGMA_ENABLE_DEPRECATION_WARNINGS
+	return UnfixedCameraPosition;
+}
+
+bool USpringArmComponent::IsCollisionFixApplied() const
+{
+	return bIsCameraFixed;
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -41,7 +41,7 @@ public:
 
 
 	SLATE_BEGIN_ARGS( SPropertyEditorLevelPackage )
-		: _RootPath(FPackageName::FilenameToLongPackageName(FPaths::GameContentDir())) 
+		: _RootPath(FPackageName::FilenameToLongPackageName(FPaths::ProjectContentDir())) 
 		, _SortAlphabetically(false)
 		{}
 		/** Root folder path for gathering level packages */	

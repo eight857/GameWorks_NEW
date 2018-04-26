@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -24,7 +24,7 @@ class UVREditorWidgetComponent : public UWidgetComponent
 
 public:
 	/** Default constructor that sets up CDO properties */
-	UVREditorWidgetComponent(const FObjectInitializer& ObjectInitializer);
+	UVREditorWidgetComponent();
 
 	void SetDrawingPolicy(EVREditorWidgetDrawingPolicy Value) { DrawingPolicy = Value; }
 	EVREditorWidgetDrawingPolicy GetDrawingPolicy() const { return DrawingPolicy; }

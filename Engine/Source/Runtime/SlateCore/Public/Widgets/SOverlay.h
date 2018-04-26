@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -42,10 +42,10 @@ public:
 	public:
 		FOverlaySlot()
 			: TSlotBase<FOverlaySlot>()
+			, ZOrder(0)
 			, HAlignment(HAlign_Fill)
 			, VAlignment(VAlign_Fill)
 			, SlotPadding(0.0f)
-			, ZOrder(0)
 		{ }
 
 		FOverlaySlot& HAlign( EHorizontalAlignment InHAlignment )
@@ -84,16 +84,15 @@ public:
 			return *this;
 		}
 
-
-		/** The child widget contained in this slot. */
-		EHorizontalAlignment HAlignment;
-		EVerticalAlignment VAlignment;
-		TAttribute< FMargin > SlotPadding;
-
 		/** Slots with larger ZOrder values will draw above slots with smaller ZOrder values.  Slots
-			with the same ZOrder will simply draw in the order they were added.  Currently this only
-			works for overlay slots that are added dynamically with AddWidget() and RemoveWidget() */
+		with the same ZOrder will simply draw in the order they were added.  Currently this only
+		works for overlay slots that are added dynamically with AddWidget() and RemoveWidget() */
 		int32 ZOrder;
+
+		TEnumAsByte<EHorizontalAlignment> HAlignment;
+		TEnumAsByte<EVerticalAlignment> VAlignment;
+
+		TAttribute< FMargin > SlotPadding;
 	};
 
 
@@ -142,10 +141,14 @@ public:
 
 	// SWidget interface
 	virtual void OnArrangeChildren( const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren ) const override;
-	virtual FVector2D ComputeDesiredSize(float) const override;
 	virtual FChildren* GetChildren() override;
-	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
+	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
 	// End of SWidget interface
+
+protected:
+	// Begin SWidget overrides.
+	virtual FVector2D ComputeDesiredSize(float) const override;
+	// End SWidget overrides.
 
 protected:
 	/** The SOverlay's slots; each slot contains a child widget. */

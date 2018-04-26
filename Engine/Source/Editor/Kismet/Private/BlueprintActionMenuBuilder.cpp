@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlueprintActionMenuBuilder.h"
 #include "UObject/UnrealType.h"
@@ -359,7 +359,7 @@ void FBlueprintActionMenuBuilderImpl::FMenuSectionDefinition::AddBoundMenuItems(
 		if (DatabaseAction->IsBindingCompatible(BindingObj))
 		{
 			// add bindings before filtering (in case tests accept/reject based off of this)
-			CompatibleBindings.Add(BindingObj);
+			CompatibleBindings.Add(MakeWeakObjectPtr(const_cast<UObject*>(BindingObj)));
 		}
 
 		// if BoundAction is now "full" (meaning it can take any more 
@@ -385,7 +385,7 @@ void FBlueprintActionMenuBuilderImpl::FMenuSectionDefinition::AddBoundMenuItems(
 
 					if (Flags & FBlueprintActionMenuBuilder::FlattenCategoryHierarcy)
 					{
-						LastMadeMenuItem->UpdateCategory( ItemFactory.RootCategory );
+						LastMadeMenuItem->CosmeticUpdateCategory( ItemFactory.RootCategory );
 					}
 				}
 				else
@@ -450,7 +450,7 @@ FBlueprintActionMenuBuilderImpl::MenuItemList FBlueprintActionMenuBuilderImpl::F
 		UnBoundMenuEntry = ItemFactory.MakeActionMenuItem(EditorContext, DatabaseAction);
 		if (Flags & FBlueprintActionMenuBuilder::FlattenCategoryHierarcy)
 		{
-			UnBoundMenuEntry->UpdateCategory( ItemFactory.RootCategory );
+			UnBoundMenuEntry->CosmeticUpdateCategory( ItemFactory.RootCategory );
 		}
 	}
 
@@ -518,22 +518,31 @@ void FBlueprintActionMenuBuilder::RebuildActionList()
 		MenuSection->Empty();
 	}
 	
-	FBlueprintActionDatabase::FActionRegistry const& ActionDatabase = FBlueprintActionDatabase::Get().GetAllActions();
-	for (auto const& ActionEntry : ActionDatabase)
+	FBlueprintActionDatabase& ActionDatabase = FBlueprintActionDatabase::Get();
+	FBlueprintActionDatabase::FActionRegistry const& ActionRegistry = ActionDatabase.GetAllActions();
+	for (auto const& ActionEntry : ActionRegistry)
 	{
-		for (UBlueprintNodeSpawner const* NodeSpawner : ActionEntry.Value)
+		if (UObject *ActionObject = ActionEntry.Key.ResolveObjectPtr())
 		{
-			FBlueprintActionInfo BlueprintAction(ActionEntry.Key, NodeSpawner);
-
-			// @TODO: could probably have a super filter that spreads across 
-			//        all MenuSctions (to pair down on performance?)
-			for (TSharedRef<FMenuSectionDefinition> const& MenuSection : MenuSections)
+			for (UBlueprintNodeSpawner const* NodeSpawner : ActionEntry.Value)
 			{
-				for (TSharedPtr<FEdGraphSchemaAction> MenuEntry : MenuSection->MakeMenuItems(BlueprintEditorPtr, BlueprintAction))
+				FBlueprintActionInfo BlueprintAction(ActionObject, NodeSpawner);
+
+				// @TODO: could probably have a super filter that spreads across 
+				//        all MenuSctions (to pair down on performance?)
+				for (TSharedRef<FMenuSectionDefinition> const& MenuSection : MenuSections)
 				{
-					AddAction(MenuEntry);
+					for (TSharedPtr<FEdGraphSchemaAction> MenuEntry : MenuSection->MakeMenuItems(BlueprintEditorPtr, BlueprintAction))
+					{
+						AddAction(MenuEntry);
+					}
 				}
 			}
+		}
+		else
+		{
+			// Remove this (invalid) entry on the next tick.
+			ActionDatabase.DeferredRemoveEntry(ActionEntry.Key);
 		}
 	}	
 }

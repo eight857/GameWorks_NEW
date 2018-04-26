@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,6 +9,7 @@
 #include "CommonMovieSceneTools.h"
 
 class FSequencer;
+class FSequencerDisplayNode;
 class SSequencerTreeView;
 
 /** Structure used for handling the virtual space of the track area */

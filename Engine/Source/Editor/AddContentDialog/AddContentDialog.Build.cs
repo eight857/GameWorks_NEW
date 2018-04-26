@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -9,14 +9,14 @@ public class AddContentDialog : ModuleRules
 		PrivateIncludePathModuleNames.AddRange(
 			new string[] {
 				"AssetTools",
-				"ContentBrowser",
-				"SuperSearch"
+				"ContentBrowser"
 			}
 		);
 
 		PrivateDependencyModuleNames.AddRange(
 			new string[] {
 				"Core",
+				"ApplicationCore",
 				"Slate",
 				"SlateCore",
 				"InputCore",
@@ -30,17 +30,6 @@ public class AddContentDialog : ModuleRules
 				"CoreUObject",				
 				"WidgetCarousel",				
 			
-			}
-		);
-
-		DynamicallyLoadedModuleNames.AddRange(
-			new string[] {
-				"SuperSearch",
-			}
-		);
-		
-		PublicIncludePathModuleNames.AddRange(
-			new string[] {
 			}
 		);
 

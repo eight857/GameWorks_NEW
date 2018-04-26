@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	GenericPlatformFile.cpp: Generic implementations of platform file I/O functions
@@ -46,6 +46,14 @@ IPlatformFile* FPlatformFileManager::FindPlatformFile(const TCHAR* Name)
 		}
 	}
 	return NULL;
+}
+
+void FPlatformFileManager::TickActivePlatformFile()
+{
+	for ( IPlatformFile* ChainElement = TopmostPlatformFile; ChainElement; ChainElement = ChainElement->GetLowerLevel() )
+	{
+		ChainElement->Tick();
+	}
 }
 
 IPlatformFile* FPlatformFileManager::GetPlatformFile(const TCHAR* Name)

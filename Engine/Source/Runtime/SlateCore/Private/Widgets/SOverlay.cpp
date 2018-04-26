@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
  #include "Widgets/SOverlay.h"
  #include "Types/PaintArgs.h"
@@ -31,12 +31,12 @@ void SOverlay::OnArrangeChildren( const FGeometry& AllottedGeometry, FArrangedCh
 		if ( ArrangedChildren.Accepts(ChildVisibility) )
 		{
 			const FMargin SlotPadding(CurChild.SlotPadding.Get());
-			AlignmentArrangeResult XResult = AlignChild<Orient_Horizontal>(AllottedGeometry.Size.X, CurChild, SlotPadding);
-			AlignmentArrangeResult YResult = AlignChild<Orient_Vertical>(AllottedGeometry.Size.Y, CurChild, SlotPadding);
+			AlignmentArrangeResult XResult = AlignChild<Orient_Horizontal>(AllottedGeometry.GetLocalSize().X, CurChild, SlotPadding);
+			AlignmentArrangeResult YResult = AlignChild<Orient_Vertical>(AllottedGeometry.GetLocalSize().Y, CurChild, SlotPadding);
 
 			ArrangedChildren.AddWidget( ChildVisibility, AllottedGeometry.MakeChild(
 				CurChild.GetWidget(),
-				FVector2D(XResult.Offset,YResult.Offset),
+				FVector2D(XResult.Offset, YResult.Offset),
 				FVector2D(XResult.Size, YResult.Size)
 			) );
 		}
@@ -66,7 +66,7 @@ FChildren* SOverlay::GetChildren()
 	return &Children;
 }
 
-int32 SOverlay::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 SOverlay::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
 	FArrangedChildren ArrangedChildren(EVisibility::Visible);
 	{
@@ -84,23 +84,17 @@ int32 SOverlay::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeomet
 	{
 		FArrangedWidget& CurWidget = ArrangedChildren[ChildIndex];
 
-		bool bWereOverlapping;
-		FSlateRect ChildClipRect = MyClippingRect.IntersectionWith( CurWidget.Geometry.GetClippingRect(), bWereOverlapping );
+		const int32 CurWidgetsMaxLayerId =
+			CurWidget.Widget->Paint(
+				NewArgs,
+				CurWidget.Geometry,
+				MyCullingRect,
+				OutDrawElements,
+				MaxLayerId + 1,
+				InWidgetStyle,
+				ShouldBeEnabled(bParentEnabled));
 
-		if ( bWereOverlapping )
-		{
-			const int32 CurWidgetsMaxLayerId = 
-				CurWidget.Widget->Paint(
-					NewArgs,
-					CurWidget.Geometry,
-					ChildClipRect,
-					OutDrawElements,
-					MaxLayerId + 1,
-					InWidgetStyle,
-					ShouldBeEnabled(bParentEnabled));
-
-			MaxLayerId = FMath::Max(MaxLayerId, CurWidgetsMaxLayerId);
-		}
+		MaxLayerId = FMath::Max(MaxLayerId, CurWidgetsMaxLayerId);
 	}
 
 	return MaxLayerId;
@@ -139,6 +133,8 @@ SOverlay::FOverlaySlot& SOverlay::AddSlot( int32 ZOrder )
 		this->Children.Insert( &NewSlot, CurSlotIndex );
 	}
 
+	Invalidate(EInvalidateWidget::Layout);
+
 	NewSlot.ZOrder = ZOrder;
 	return NewSlot;
 }
@@ -152,6 +148,7 @@ void SOverlay::RemoveSlot( int32 ZOrder )
 			if ( Children[ChildIndex].ZOrder == ZOrder )
 			{
 				Children.RemoveAt( ChildIndex );
+				Invalidate(EInvalidateWidget::Layout);
 				return;
 			}
 		}
@@ -161,6 +158,7 @@ void SOverlay::RemoveSlot( int32 ZOrder )
 	else if (Children.Num() > 0)
 	{
 		Children.RemoveAt( Children.Num() - 1 );
+		Invalidate(EInvalidateWidget::Layout);
 	}
 	else
 	{
@@ -171,6 +169,7 @@ void SOverlay::RemoveSlot( int32 ZOrder )
 void SOverlay::ClearChildren()
 {
 	Children.Empty();
+	Invalidate(EInvalidateWidget::Layout);
 }
 
 int32 SOverlay::GetNumWidgets() const
@@ -187,6 +186,7 @@ bool SOverlay::RemoveSlot( TSharedRef< SWidget > Widget )
 		if( CurSlot.GetWidget() == Widget )
 		{
 			Children.RemoveAt( CurSlotIndex );
+			Invalidate(EInvalidateWidget::Layout);
 			return true;
 		}
 	}

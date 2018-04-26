@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -19,6 +19,7 @@ class UK2Node_GetClassDefaults : public UK2Node
 
 	//~ Begin UObject Interface
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void PreEditChange(UProperty* PropertyAboutToChange) override;
 	//~ End UObject Interface
 
 	//~ Begin UEdGraphNode Interface
@@ -83,7 +84,7 @@ protected:
 
 private:
 	/** Class pin name */
-	static FString ClassPinName;
+	static FName ClassPinName;
 
 	/** Blueprint that we subscribed OnBlueprintChangedDelegate and OnBlueprintCompiledDelegate to */
 	UPROPERTY()
@@ -98,6 +99,8 @@ private:
 	/** Output pin visibility control */
 	UPROPERTY(EditAnywhere, Category=PinOptions, EditFixedSize)
 	TArray<FOptionalPinFromProperty> ShowPinForProperties;
+
+	TArray<FName> OldShownPins;
 
 	/** Whether or not to exclude object container properties */
 	UPROPERTY()

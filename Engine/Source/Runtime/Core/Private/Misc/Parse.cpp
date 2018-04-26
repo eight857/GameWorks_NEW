@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/Parse.h"
 #include "Misc/DateTime.h"
@@ -12,7 +12,6 @@
 #include "Misc/Guid.h"
 #include "Misc/OutputDeviceNull.h"
 #include "HAL/IConsoleManager.h"
-#include "GenericPlatform/GenericWindow.h"
 #include "Containers/LazyPrintf.h"
 
 #if !UE_BUILD_SHIPPING 
@@ -195,8 +194,8 @@ void ConsoleCommandLibrary_DumpLibraryHTML(UWorld* InWorld, FExec& SubSystem, co
 
 			LazyPrintf.PushParam(*AllData);
 
-			auto AnsiHelp = StringCast<ANSICHAR>(*LazyPrintf.GetResultString());
-			File->Serialize((ANSICHAR*)AnsiHelp.Get(), AnsiHelp.Length());
+			FTCHARToUTF8 UTF8Help(*LazyPrintf.GetResultString());
+			File->Serialize((ANSICHAR*)UTF8Help.Get(), UTF8Help.Length());
 
 			delete File;
 			File = 0;
@@ -225,65 +224,56 @@ bool FParse::Value(
 	bool			bShouldStopOnSeparator
 )
 {
-	const TCHAR* Found = FCString::Strifind(Stream,Match);
+	bool bSuccess = false;
+	int32 MatchLen = FCString::Strlen(Match);
 
-	if (!Found)
+	for (const TCHAR* Found = FCString::Strifind(Stream, Match, true); Found != nullptr; Found = FCString::Strifind(Found + MatchLen, Match, true))
 	{
-		return false;
-	}
+		const TCHAR* Start = Found + MatchLen;
 
-	const TCHAR* Start = Found + FCString::Strlen(Match);
+		// Check for quoted arguments' string with spaces
+		// -Option="Value1 Value2"
+		//         ^~~~Start
+		bool bArgumentsQuoted = *Start == '"';
 
-	// Check for quoted arguments' string with spaces
-	// -Option="Value1 Value2"
-	//         ^~~~Start
-	bool bArgumentsQuoted = *Start == '"';
-
-	// Number of characters we can look back from found looking for first parenthesis.
-	uint32 AllowedBacktraceCharactersCount = Found - Stream;
-
-	// Check for fully quoted string with spaces
-	bool bFullyQuoted = 
-		// "Option=Value1 Value2"
-		//  ^~~~Found
-		(AllowedBacktraceCharactersCount > 0 && (*(Found - 1) == '"'))
-		// "-Option=Value1 Value2"
-		//   ^~~~Found
-		|| (AllowedBacktraceCharactersCount > 1 && ((*(Found - 1) == '-') && (*(Found - 2) == '"')));
-
-	if (bArgumentsQuoted || bFullyQuoted)
-	{
-		// Skip quote character if only params were quoted.
-		int32 QuoteCharactersToSkip = bArgumentsQuoted ? 1 : 0;
-		FCString::Strncpy(Value, Start + QuoteCharactersToSkip, MaxLen);
-
-		Value[MaxLen-1]=0;
-		TCHAR* Temp = FCString::Strstr( Value, TEXT("\x22") );
-		if (Temp != nullptr)
+		if (bArgumentsQuoted)
 		{
-			*Temp = 0;
-		}
-	}
-	else
-	{
-		// Skip initial whitespace
-		Start += FCString::Strspn(Start, TEXT(" \r\n\t"));
+			// Skip quote character if only params were quoted.
+			int32 QuoteCharactersToSkip = 1;
+			FCString::Strncpy(Value, Start + QuoteCharactersToSkip, MaxLen);
 
-		// Non-quoted string without spaces.
-		FCString::Strncpy( Value, Start, MaxLen );
-		Value[MaxLen-1]=0;
-		TCHAR* Temp;
-		Temp = FCString::Strstr( Value, TEXT(" ")  ); if( Temp ) *Temp=0;
-		Temp = FCString::Strstr( Value, TEXT("\r") ); if( Temp ) *Temp=0;
-		Temp = FCString::Strstr( Value, TEXT("\n") ); if( Temp ) *Temp=0;
-		Temp = FCString::Strstr( Value, TEXT("\t") ); if( Temp ) *Temp=0;
-		if (bShouldStopOnSeparator)
-		{
-			Temp = FCString::Strstr( Value, TEXT(",")  ); if( Temp ) *Temp=0;
-			Temp = FCString::Strstr( Value, TEXT(")")  ); if( Temp ) *Temp=0;
+			Value[MaxLen-1]=0;
+			TCHAR* Temp = FCString::Strstr( Value, TEXT("\x22") );
+			if (Temp != nullptr)
+			{
+				*Temp = 0;
+			}
 		}
+		else
+		{
+			// Skip initial whitespace
+			Start += FCString::Strspn(Start, TEXT(" \r\n\t"));
+
+			// Non-quoted string without spaces.
+			FCString::Strncpy( Value, Start, MaxLen );
+			Value[MaxLen-1]=0;
+			TCHAR* Temp;
+			Temp = FCString::Strstr( Value, TEXT(" ")  ); if( Temp ) *Temp=0;
+			Temp = FCString::Strstr( Value, TEXT("\r") ); if( Temp ) *Temp=0;
+			Temp = FCString::Strstr( Value, TEXT("\n") ); if( Temp ) *Temp=0;
+			Temp = FCString::Strstr( Value, TEXT("\t") ); if( Temp ) *Temp=0;
+			if (bShouldStopOnSeparator)
+			{
+				Temp = FCString::Strstr( Value, TEXT(",")  ); if( Temp ) *Temp=0;
+				Temp = FCString::Strstr( Value, TEXT(")")  ); if( Temp ) *Temp=0;
+			}
+		}
+
+		bSuccess = true;
+		break;
 	}
-	return true;
+
+	return bSuccess;
 }
 
 //
@@ -294,9 +284,10 @@ bool FParse::Param( const TCHAR* Stream, const TCHAR* Param )
 	const TCHAR* Start = Stream;
 	if( *Stream )
 	{
-		while( (Start=FCString::Strifind(Start+1,Param)) != NULL )
+		while( (Start=FCString::Strifind(Start,Param,true)) != NULL )
 		{
-			if( Start>Stream && (Start[-1]=='-' || Start[-1]=='/') )
+			if( Start>Stream && (Start[-1]=='-' || Start[-1]=='/') && 
+				(Stream > (Start - 2) || FChar::IsWhitespace(Start[-2]))) // Reject if the character before '-' or '/' is not a whitespace
 			{
 				const TCHAR* End = Start + FCString::Strlen(Param);
 				if ( End == NULL || *End == 0 || FChar::IsWhitespace(*End) )
@@ -304,6 +295,8 @@ bool FParse::Param( const TCHAR* Stream, const TCHAR* Param )
 					return true;
 				}
 			}
+
+			Start++;
 		}
 	}
 	return false;
@@ -341,7 +334,12 @@ bool FParse::QuotedString( const TCHAR* Buffer, FString& Value, int32* OutNumCha
 		return false;
 	}
 
-	while (*Buffer && *Buffer != TCHAR('"') && *Buffer != TCHAR('\n') && *Buffer != TCHAR('\r'))
+	auto ShouldParse = [](const TCHAR Ch)
+	{
+		return Ch != 0 && Ch != TCHAR('"') && Ch != TCHAR('\n') && Ch != TCHAR('\r');
+	};
+
+	while (ShouldParse(*Buffer))
 	{
 		if (*Buffer != TCHAR('\\')) // unescaped character
 		{
@@ -352,7 +350,7 @@ bool FParse::QuotedString( const TCHAR* Buffer, FString& Value, int32* OutNumCha
 			Value += TEXT("\\");
 			++Buffer;
 		}
-		else if (*Buffer == TCHAR('\"')) // escaped double quote "\""
+		else if (*Buffer == TCHAR('"')) // escaped double quote "\""
 		{
 			Value += TCHAR('"');
 			++Buffer;
@@ -377,10 +375,68 @@ bool FParse::QuotedString( const TCHAR* Buffer, FString& Value, int32* OutNumCha
 			Value += TCHAR('\t');
 			++Buffer;
 		}
-		else // some other escape sequence, assume it's a hex character value
+		else if (FChar::IsOctDigit(*Buffer)) // octal sequence (\012)
 		{
-			Value += FString::Printf(TEXT("%c"), (HexDigit(Buffer[0]) * 16) + HexDigit(Buffer[1]));
-			Buffer += 2;
+			FString OctSequence;
+			while (ShouldParse(*Buffer) && FChar::IsOctDigit(*Buffer) && OctSequence.Len() < 3) // Octal sequences can only be up-to 3 digits long
+			{
+				OctSequence += *Buffer++;
+			}
+
+			Value += (TCHAR)FCString::Strtoi(*OctSequence, nullptr, 8);
+		}
+		else if (*Buffer == TCHAR('x')) // hex sequence (\xBEEF)
+		{
+			++Buffer;
+
+			FString HexSequence;
+			while (ShouldParse(*Buffer) && FChar::IsHexDigit(*Buffer))
+			{
+				HexSequence += *Buffer++;
+			}
+
+			Value += (TCHAR)FCString::Strtoi(*HexSequence, nullptr, 16);
+		}
+		else if (*Buffer == TCHAR('u')) // UTF-16 sequence (\u1234)
+		{
+			++Buffer;
+
+			FString UnicodeSequence;
+			while (ShouldParse(*Buffer) && FChar::IsHexDigit(*Buffer) && UnicodeSequence.Len() < 4) // UTF-16 sequences can only be up-to 4 digits long
+			{
+				UnicodeSequence += *Buffer++;
+			}
+
+			const uint32 UnicodeCodepoint = (uint32)FCString::Strtoi(*UnicodeSequence, nullptr, 16);
+
+			FString UnicodeString;
+			if (FUnicodeChar::CodepointToString(UnicodeCodepoint, UnicodeString))
+			{
+				Value += MoveTemp(UnicodeString);
+			}
+		}
+		else if (*Buffer == TCHAR('U')) // UTF-32 sequence (\U12345678)
+		{
+			++Buffer;
+
+			FString UnicodeSequence;
+			while (ShouldParse(*Buffer) && FChar::IsHexDigit(*Buffer) && UnicodeSequence.Len() < 8) // UTF-32 sequences can only be up-to 8 digits long
+			{
+				UnicodeSequence += *Buffer++;
+			}
+
+			const uint32 UnicodeCodepoint = (uint32)FCString::Strtoi(*UnicodeSequence, nullptr, 16);
+
+			FString UnicodeString;
+			if (FUnicodeChar::CodepointToString(UnicodeCodepoint, UnicodeString))
+			{
+				Value += MoveTemp(UnicodeString);
+			}
+		}
+		else // unhandled escape sequence
+		{
+			Value += TEXT("\\");
+			Value += *Buffer++;
 		}
 	}
 
@@ -1075,7 +1131,7 @@ bool FParse::LineExtended(const TCHAR** Stream, FString& Result, int32& LinesCon
 	return **Stream!=0 || GotStream;
 }
 
-uint32 FParse::HexNumber (const TCHAR* HexString)
+uint32 FParse::HexNumber(const TCHAR* HexString)
 {
 	uint32 Ret = 0;
 
@@ -1088,78 +1144,17 @@ uint32 FParse::HexNumber (const TCHAR* HexString)
 	return Ret;
 }
 
-bool FParse::Resolution(const TCHAR* InResolution, uint32& OutX, uint32& OutY, int32& OutWindowMode)
+uint64 FParse::HexNumber64(const TCHAR* HexString)
 {
-	if(*InResolution)
+	uint64 Ret = 0;
+
+	while (*HexString)
 	{
-		FString CmdString(InResolution);
-		CmdString = CmdString.Trim().TrimTrailing().ToLower();
-
-		//Retrieve the X dimensional value
-		const uint32 X = FMath::Max(FCString::Atof(*CmdString), 0.0f);
-
-		// Determine whether the user has entered a resolution and extract the Y dimension.
-		FString YString;
-
-		// Find separator between values (Example of expected format: 1280x768)
-		const TCHAR* YValue = NULL;
-		if(FCString::Strchr(*CmdString,'x'))
-		{
-			YValue = const_cast<TCHAR*> (FCString::Strchr(*CmdString,'x')+1);
-			YString = YValue;
-			// Remove any whitespace from the end of the string
-			YString = YString.Trim().TrimTrailing();
-		}
-
-		// If the Y dimensional value exists then setup to use the specified resolution.
-		uint32 Y = 0;
-		if ( YValue && YString.Len() > 0 )
-		{
-			// See if there is a fullscreen flag on the end
-			FString FullScreenChar = YString.Mid(YString.Len() - 1);
-			FString WindowFullScreenChars = YString.Mid(YString.Len() - 2);
-			int32 WindowMode = OutWindowMode;
-			if (!FullScreenChar.IsNumeric())
-			{
-				int StringTripLen = 0;
-
-				if (WindowFullScreenChars == TEXT("wf"))
-				{
-					WindowMode = EWindowMode::WindowedFullscreen;
-					StringTripLen = 2;
-				}
-				else if (FullScreenChar == TEXT("f"))
-				{
-					WindowMode = EWindowMode::Fullscreen;
-					StringTripLen = 1;
-				}
-				else if (FullScreenChar == TEXT("w"))
-				{
-					WindowMode = EWindowMode::Windowed;
-					StringTripLen = 1;
-				}
-
-				YString = YString.Left(YString.Len() - StringTripLen).Trim().TrimTrailing();
-			}
-
-			if (YString.IsNumeric())
-			{
-				Y = FMath::Max(FCString::Atof(YValue), 0.0f);
-				OutX = X;
-				OutY = Y;
-				OutWindowMode = WindowMode;
-				return true;
-			}
-		}
+		Ret *= 16;
+		Ret += FParse::HexDigit(*HexString++);
 	}
 
-	return false;
-}
-
-bool FParse::Resolution( const TCHAR* InResolution, uint32& OutX, uint32& OutY )
-{
-	int32 WindowModeDummy;
-	return Resolution(InResolution, OutX, OutY, WindowModeDummy);
+	return Ret;
 }
 
 bool FParse::SchemeNameFromURI(const TCHAR* URI, FString& OutSchemeName)

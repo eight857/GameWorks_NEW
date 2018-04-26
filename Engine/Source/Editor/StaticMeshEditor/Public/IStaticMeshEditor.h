@@ -1,15 +1,20 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/EngineBaseTypes.h"
 #include "Toolkits/AssetEditorToolkit.h"
-#include "PhysicsPublic.h"
+#include "PhysicsEngine/ShapeElem.h"
 
 class UStaticMesh;
 class UStaticMeshComponent;
 class UStaticMeshSocket;
+
+
+DECLARE_MULTICAST_DELEGATE(FOnSelectedLODChangedMulticaster);
+
+typedef FOnSelectedLODChangedMulticaster::FDelegate FOnSelectedLODChanged;
 
 /**
  * Public interface to Static Mesh Editor
@@ -22,10 +27,10 @@ public:
 	 */
 	struct FPrimData
 	{
-		EKCollisionPrimitiveType		PrimType;
+		EAggCollisionShape::Type		PrimType;
 		int32							PrimIndex;
 
-		FPrimData(EKCollisionPrimitiveType InPrimType, int32 InPrimIndex) :
+		FPrimData(EAggCollisionShape::Type InPrimType, int32 InPrimIndex) :
 			PrimType(InPrimType),
 			PrimIndex(InPrimIndex) {}
 
@@ -201,13 +206,15 @@ public:
 	/** Refreshes everything in the Static Mesh Editor. */
 	virtual void RefreshTool() = 0;
 
-	/** 
-	 *	This is called when Apply is pressed in the dialog. Does the actual processing.
-	 *
-	 *	@param	InMaxHullCount			The max hull count allowed. 
-	 *	@param	InMaxHullVerts			The max number of verts per hull allowed. 
-	 */
-	virtual void DoDecomp(float InAccuracy, int32 InMaxHullVerts) = 0;
+	/**
+	*    This is called when Apply is pressed in the dialog. Does the actual processing.
+	*
+	*    @param    InHullCount               The max number of convex hulls allowed
+	*    @param    InMaxHullVerts            The max number of verts per hull allowed.
+	*    @param    InHullPrecision           The voxel precision to use for V-HACD
+	*/
+	virtual void DoDecomp(uint32 InHullCount, int32 InMaxHullVerts, uint32 InHullPrecision) = 0;
+
 
 	/** Retrieves the selected edge set. */
 	virtual TSet< int32 >& GetSelectedEdges() = 0;
@@ -220,6 +227,14 @@ public:
 
 	/** Get the active view mode */
 	virtual EViewModeIndex GetViewMode() const = 0;
+
+	/* Register callback to be able to be notify when the select LOD is change */
+	virtual void RegisterOnSelectedLODChanged(const FOnSelectedLODChanged &Delegate, bool UnregisterOnRefresh) = 0;
+	/* Unregister callback to free up the ressources */
+	virtual void UnRegisterOnSelectedLODChanged(void* Thing) = 0;
+
+	/* Broadcast when selected LOD changes */
+	virtual void BroadcastOnSelectedLODChanged() = 0;
 };
 
 

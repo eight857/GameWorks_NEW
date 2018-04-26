@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnrealWatchdog.h"
 #include "ExceptionHandling.h"
 #include "MacPlatformCrashContext.h"
 #include "CocoaThread.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 /**
 * Because crash reporters can crash, too - only used for Sandboxed applications
@@ -71,7 +72,7 @@ static FString GSavedCommandLine;
 	NSAppleEventManager* appleEventManager = [NSAppleEventManager sharedAppleEventManager];
 	[appleEventManager setEventHandler : self andSelector : @selector(handleQuitEvent : withReplyEvent : ) forEventClass:kCoreEventClass andEventID : kAEQuitApplication];
 
-	FPlatformMisc::ActivateApplication();
+	FPlatformApplicationMisc::ActivateApplication();
 	RunGameThread(self, @selector(runGameThread:));
 }
 

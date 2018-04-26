@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	CapturePin.h: CapturePin definition
@@ -23,6 +23,7 @@ typedef TCHAR* PTCHAR;
 	#pragma warning(push)
 	#pragma warning(disable : 4263) // 'function' : member function does not override any base class virtual member function
 	#pragma warning(disable : 4264) // 'virtual_function' : no override available for virtual member function from base 
+	#pragma warning(disable : 4265) // 'class' : class has virtual functions, but destructor is not virtual
 	#if USING_CODE_ANALYSIS
 		#pragma warning(disable:6509)  // Invalid annotation: 'return' cannot be referenced in some contexts
 		#pragma warning(disable:6101)  // Returning uninitialized memory '*lpdwExitCode'.  A successful path through the function does not set the named _Out_ parameter.

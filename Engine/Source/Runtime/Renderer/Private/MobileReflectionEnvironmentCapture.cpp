@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
  
@@ -23,9 +23,9 @@ class FMobileDownsamplePS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FMobileDownsamplePS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsMobilePlatform(Platform);
+		return IsMobilePlatform(Parameters.Platform);
 	}
 
 	FMobileDownsamplePS(const ShaderMetaType::CompiledShaderInitializerType& Initializer) :
@@ -69,7 +69,7 @@ private:
 	FShaderResourceParameter SourceTextureSampler;
 };
 
-IMPLEMENT_SHADER_TYPE(, FMobileDownsamplePS, TEXT("ReflectionEnvironmentShaders"), TEXT("DownsamplePS_Mobile"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(, FMobileDownsamplePS, TEXT("/Engine/Private/ReflectionEnvironmentShaders.usf"), TEXT("DownsamplePS_Mobile"), SF_Pixel);
 namespace MobileReflectionEnvironmentCapture
 {
 	/** Encapsulates render target picking logic for cubemap mip generation. */

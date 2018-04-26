@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Misc/Attribute.h"
 #include "Layout/Visibility.h"
+#include "Layout/Clipping.h"
 #include "Rendering/SlateRenderTransform.h"
 #include "GenericPlatform/ICursor.h"
 #include "Types/ISlateMetaData.h"
@@ -768,9 +769,11 @@ struct TSlateBaseNamedArgs
 	, _Cursor( TOptional<EMouseCursor::Type>() )
 	, _IsEnabled( true )
 	, _Visibility( EVisibility::Visible )
+	, _RenderOpacity(1.0f)
 	, _RenderTransform( )
 	, _RenderTransformPivot( FVector2D::ZeroVector )
 	, _ForceVolatile( false )
+	, _Clipping( EWidgetClipping::Inherit )
 	{
 	}
 
@@ -808,10 +811,12 @@ struct TSlateBaseNamedArgs
 	SLATE_ATTRIBUTE( TOptional<EMouseCursor::Type>, Cursor )
 	SLATE_ATTRIBUTE( bool, IsEnabled )
 	SLATE_ATTRIBUTE( EVisibility, Visibility )
+	SLATE_ARGUMENT( float, RenderOpacity )
 	SLATE_ATTRIBUTE( TOptional<FSlateRenderTransform>, RenderTransform )
 	SLATE_ATTRIBUTE( FVector2D, RenderTransformPivot )
 	SLATE_ARGUMENT( FName, Tag )
 	SLATE_ARGUMENT( bool, ForceVolatile )
+	SLATE_ARGUMENT( EWidgetClipping, Clipping )
 
 	TArray<TSharedRef<ISlateMetaData>> MetaData;
 };
@@ -1074,14 +1079,16 @@ struct TDecl
 		//@todo UMG: This should be removed in favor of all widgets calling their superclass construct.
 		_Widget->SWidgetConstruct(
 			InArgs._ToolTipText,
-			InArgs._ToolTip ,
-			InArgs._Cursor ,
-			InArgs._IsEnabled ,
+			InArgs._ToolTip,
+			InArgs._Cursor,
+			InArgs._IsEnabled,
 			InArgs._Visibility,
+			InArgs._RenderOpacity,
 			InArgs._RenderTransform,
 			InArgs._RenderTransformPivot,
 			InArgs._Tag,
 			InArgs._ForceVolatile,
+			InArgs._Clipping,
 			InArgs.MetaData );
 
 		_RequiredArgs.CallConstruct(_Widget, InArgs);

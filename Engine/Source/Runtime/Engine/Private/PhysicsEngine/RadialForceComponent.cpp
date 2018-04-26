@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PhysicsEngine/RadialForceComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -9,7 +9,7 @@
 #include "Engine/Texture2D.h"
 #include "GameFramework/MovementComponent.h"
 #include "PhysicsEngine/RadialForceActor.h"
-#include "Components/DestructibleComponent.h"
+#include "DestructibleInterface.h"
 
 //////////////////////////////////////////////////////////////////////////
 // RADIALFORCECOMPONENT
@@ -42,10 +42,9 @@ void URadialForceComponent::TickComponent(float DeltaTime, enum ELevelTick TickT
 		const FVector Origin = GetComponentLocation();
 
 		// Find objects within the sphere
-		static FName AddForceOverlapName = FName(TEXT("AddForceOverlap"));
 		TArray<FOverlapResult> Overlaps;
 
-		FCollisionQueryParams Params(AddForceOverlapName, false);
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(AddForceOverlap), false);
 		Params.bTraceAsyncScene = true; // want to hurt stuff in async scene
 
 		// Ignore owner actor if desired
@@ -112,10 +111,9 @@ void URadialForceComponent::FireImpulse()
 	const FVector Origin = GetComponentLocation();
 
 	// Find objects within the sphere
-	static FName FireImpulseOverlapName = FName(TEXT("FireImpulseOverlap"));
 	TArray<FOverlapResult> Overlaps;
 
-	FCollisionQueryParams Params(FireImpulseOverlapName, false);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(FireImpulseOverlap),  false);
 	Params.bTraceAsyncScene = true; // want to hurt stuff in async scene
 
 	// Ignore owner actor if desired
@@ -144,9 +142,9 @@ void URadialForceComponent::FireImpulse()
 	{
 		if(DestructibleDamage > SMALL_NUMBER)
 		{
-			if(UDestructibleComponent* DestructibleComponent = Cast<UDestructibleComponent>(PrimitiveComponent))
+			if(IDestructibleInterface* DestructibleInstance = Cast<IDestructibleInterface>(PrimitiveComponent))
 			{
-				DestructibleComponent->ApplyRadiusDamage(DestructibleDamage, Origin, Radius, ImpulseStrength, Falloff == RIF_Constant);
+				DestructibleInstance->ApplyRadiusDamage(DestructibleDamage, Origin, Radius, ImpulseStrength, Falloff == RIF_Constant);
 			}
 		}
 
@@ -308,11 +306,3 @@ void ARadialForceActor::ToggleForce()
 		ForceComponent->ToggleActive();
 	}
 }
-
-
-/** Returns ForceComponent subobject **/
-URadialForceComponent* ARadialForceActor::GetForceComponent() const { return ForceComponent; }
-#if WITH_EDITORONLY_DATA
-/** Returns SpriteComponent subobject **/
-UBillboardComponent* ARadialForceActor::GetSpriteComponent() const { return SpriteComponent; }
-#endif

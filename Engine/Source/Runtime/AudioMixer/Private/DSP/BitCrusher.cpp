@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DSP/BitCrusher.h"
 #include "Audio.h"
@@ -6,7 +6,7 @@
 namespace Audio
 {
 	FBitCrusher::FBitCrusher()
-		: SampleRate(AUDIO_SAMPLE_RATE)
+		: SampleRate(0)
 		, BitDepth(16.0f)
 		, BitDelta(0.0f)
 		, Phase(1.0f)

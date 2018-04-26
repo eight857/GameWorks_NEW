@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "UObject/CoreNet.h"
@@ -27,24 +27,8 @@ static bool		SavedbHidden;
 static AActor*	SavedOwner;
 static bool		SavedbRepPhysics;
 
-#define DEPRECATED_NET_PRIORITY -17.0f // Pick an arbitrary invalid priority, check for that
-
-float AActor::GetNetPriority(const FVector& ViewPos, const FVector& ViewDir, APlayerController* Viewer, UActorChannel* InChannel, float Time, bool bLowBandwidth)
-{
-	return DEPRECATED_NET_PRIORITY;
-}
-
 float AActor::GetNetPriority(const FVector& ViewPos, const FVector& ViewDir, AActor* Viewer, AActor* ViewTarget, UActorChannel* InChannel, float Time, bool bLowBandwidth)
 {
-	PRAGMA_DISABLE_DEPRECATION_WARNINGS
-	// Call the deprecated version so subclasses will still work for a version
-	float DeprecatedValue = AActor::GetNetPriority(ViewPos, ViewDir, Cast<APlayerController>(Viewer), InChannel, Time, bLowBandwidth);
-	PRAGMA_ENABLE_DEPRECATION_WARNINGS
-	if (DeprecatedValue != DEPRECATED_NET_PRIORITY)
-	{
-		return DeprecatedValue;
-	}
-
 	if (bNetUseOwnerRelevancy && Owner)
 	{
 		// If we should use our owner's priority, pass it through
@@ -133,11 +117,6 @@ bool AActor::GetNetDormancy(const FVector& ViewPos, const FVector& ViewDir, AAct
 {
 	// For now, per peer dormancy is not supported
 	return false;
-}
-
-bool AActor::GetNetDormancy(const FVector& ViewPos, const FVector& ViewDir, APlayerController* Viewer, AActor* ViewTarget, UActorChannel* InChannel, float Time, bool bLowBandwidth)
-{
-	return GetNetDormancy(ViewPos, ViewDir, Cast<AActor>(Viewer), ViewTarget, InChannel, Time, bLowBandwidth);
 }
 
 void AActor::PreNetReceive()
@@ -256,9 +235,9 @@ void AActor::SyncReplicatedPhysicsSimulation()
 	}
 }
 
-bool AActor::IsNetRelevantFor(const APlayerController* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const
+bool AActor::IsWithinNetRelevancyDistance(const FVector& SrcLocation) const
 {
-	return IsNetRelevantFor(Cast<AActor>(RealViewer), ViewTarget, SrcLocation);
+	return FVector::DistSquared(SrcLocation, GetActorLocation()) < NetCullDistanceSquared;
 }
 
 bool AActor::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const
@@ -289,44 +268,14 @@ bool AActor::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget
 		UE_LOG(LogNet, Warning, TEXT("Actor %s / %s has no root component in AActor::IsNetRelevantFor. (Make bAlwaysRelevant=true?)"), *GetClass()->GetName(), *GetName() );
 		return false;
 	}
-	if (GetDefault<AGameNetworkManager>()->bUseDistanceBasedRelevancy)
-	{
-		return ((SrcLocation - GetActorLocation()).SizeSquared() < NetCullDistanceSquared);
-	}
 
-	return true;
+	return !GetDefault<AGameNetworkManager>()->bUseDistanceBasedRelevancy ||
+			IsWithinNetRelevancyDistance(SrcLocation);
 }
 
-bool AActor::IsReplayRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation, const float CullDistanceSquared) const
+bool AActor::IsReplayRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation, const float CullDistanceOverrideSq) const
 {
-	if (bAlwaysRelevant || IsOwnedBy(ViewTarget) || IsOwnedBy(RealViewer) || this == ViewTarget || ViewTarget == Instigator)
-	{
-		return true;
-	}
-	else if ( bNetUseOwnerRelevancy && Owner)
-	{
-		return Owner->IsReplayRelevantFor(RealViewer, ViewTarget, SrcLocation, CullDistanceSquared > 0.0f ? CullDistanceSquared : Owner->NetCullDistanceSquared);
-	}
-	else if ( bOnlyRelevantToOwner )
-	{
-		return false;
-	}
-	else if ( RootComponent && RootComponent->GetAttachParent() && RootComponent->GetAttachParent()->GetOwner() && (Cast<USkeletalMeshComponent>(RootComponent->GetAttachParent()) || (RootComponent->GetAttachParent()->GetOwner() == Owner)) )
-	{
-		const AActor* RootComponentOwner = RootComponent->GetAttachParent()->GetOwner();
-		return RootComponentOwner->IsReplayRelevantFor(RealViewer, ViewTarget, SrcLocation, CullDistanceSquared > 0.0f ? CullDistanceSquared : RootComponentOwner->NetCullDistanceSquared);
-	}
-	else if( bHidden && (!RootComponent || !RootComponent->IsCollisionEnabled()) )
-	{
-		return false;
-	}
-
-	if (CullDistanceSquared > 0.0f)
-	{
-		return ((SrcLocation - GetActorLocation()).SizeSquared() < CullDistanceSquared);
-	}
-
-	return true;
+	return IsNetRelevantFor(RealViewer, ViewTarget, SrcLocation);
 }
 
 void AActor::GatherCurrentMovement()

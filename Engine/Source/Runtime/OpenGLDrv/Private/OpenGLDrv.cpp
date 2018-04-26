@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	OpenGLDrv.cpp: Unreal OpenGL RHI library implementation.
@@ -23,6 +23,7 @@ IMPLEMENT_MODULE(FOpenGLDynamicRHIModule, OpenGLDrv);
 /** OpenGL Logging. */
 DEFINE_LOG_CATEGORY(LogOpenGL);
 
+#define LOCTEXT_NAMESPACE "OpenGLDrv"
 
 ERHIFeatureLevel::Type GRequestedFeatureLevel = ERHIFeatureLevel::Num;
 
@@ -77,18 +78,11 @@ void FOpenGLGPUProfiler::BeginFrame(FOpenGLDynamicRHI* InRHI)
 	{
 		bLatchedGProfilingGPU = false; // we do NOT permit an ordinary GPU profile during hitch profiles
 	}
-
-	if (bLatchedGProfilingGPU)
-	{
-		// Issue a bunch of GPU work at the beginning of the frame, to make sure that we are GPU bound
-		// We can't isolate idle time from GPU timestamps
-		InRHI->IssueLongGPUTask();
-	}
-
+	
 	// if we are starting a hitch profile or this frame is a gpu profile, then save off the state of the draw events
 	if (bLatchedGProfilingGPU || (!bPreviousLatchedGProfilingGPUHitches && bLatchedGProfilingGPUHitches))
 	{
-		bOriginalGEmitDrawEvents = GEmitDrawEvents;
+		bOriginalGEmitDrawEvents = GetEmitDrawEvents();
 	}
 
 	if (bLatchedGProfilingGPU || bLatchedGProfilingGPUHitches)
@@ -101,7 +95,7 @@ void FOpenGLGPUProfiler::BeginFrame(FOpenGLDynamicRHI* InRHI)
 		}
 		else
 		{
-			GEmitDrawEvents = true;  // thwart an attempt to turn this off on the game side
+			SetEmitDrawEvents(true);  // thwart an attempt to turn this off on the game side
 			bTrackingEvents = true;
 			CurrentEventNodeFrame = new FOpenGLEventNodeFrame(InRHI);
 			CurrentEventNodeFrame->StartFrame();
@@ -111,7 +105,7 @@ void FOpenGLGPUProfiler::BeginFrame(FOpenGLDynamicRHI* InRHI)
 	{
 		// hitch profiler is turning off, clear history and restore draw events
 		GPUHitchEventNodeFrames.Empty();
-		GEmitDrawEvents = bOriginalGEmitDrawEvents;
+		SetEmitDrawEvents(bOriginalGEmitDrawEvents);
 	}
 	bPreviousLatchedGProfilingGPUHitches = bLatchedGProfilingGPUHitches;
 
@@ -129,7 +123,7 @@ void FOpenGLGPUProfiler::BeginFrame(FOpenGLDynamicRHI* InRHI)
 		}
 	}
 
-	if (GEmitDrawEvents)
+	if (GetEmitDrawEvents())
 	{
 		PushEvent(TEXT("FRAME"), FColor(0, 255, 0, 255));
 	}
@@ -143,7 +137,7 @@ void FOpenGLGPUProfiler::EndFrame()
 		return;
 	}
 
-	if (GEmitDrawEvents)
+	if (GetEmitDrawEvents())
 	{
 		PopEvent();
 	}
@@ -203,7 +197,7 @@ void FOpenGLGPUProfiler::EndFrame()
 	{
 		if (bTrackingEvents)
 		{
-			GEmitDrawEvents = bOriginalGEmitDrawEvents;
+			SetEmitDrawEvents(bOriginalGEmitDrawEvents);
 			UE_LOG(LogRHI, Warning, TEXT(""));
 			UE_LOG(LogRHI, Warning, TEXT(""));
 			CurrentEventNodeFrame->DumpEventTree();
@@ -383,61 +377,6 @@ float FOpenGLEventNode::GetTiming()
 	return Result;
 }
 
-void FOpenGLDynamicRHI::IssueLongGPUTask()
-{
-	int32 LargestViewportIndex = INDEX_NONE;
-	int32 LargestViewportPixels = 0;
-
-	for (int32 ViewportIndex = 0; ViewportIndex < Viewports.Num(); ViewportIndex++)
-	{
-		FOpenGLViewport* Viewport = Viewports[ViewportIndex];
-
-		if (Viewport->GetSizeXY().X * Viewport->GetSizeXY().Y > LargestViewportPixels)
-		{
-			LargestViewportPixels = Viewport->GetSizeXY().X * Viewport->GetSizeXY().Y;
-			LargestViewportIndex = ViewportIndex;
-		}
-	}
-
-	if (LargestViewportIndex >= 0)
-	{
-		FOpenGLViewport* Viewport = Viewports[LargestViewportIndex];
-
-		const auto FeatureLevel = GMaxRHIFeatureLevel;
-
-		FRHICommandList_RecursiveHazardous RHICmdList(this);
-		FGraphicsPipelineStateInitializer GraphicsPSOInit;
-		SetRenderTarget(RHICmdList, Viewport->GetBackBuffer(), FTextureRHIRef());
-		RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
-
-		GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGBA, BO_Add, BF_One, BF_One>::GetRHI();
-		GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
-		GraphicsPSOInit.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
-
-		auto ShaderMap = GetGlobalShaderMap(FeatureLevel);
-		TShaderMapRef<TOneColorVS<true> > VertexShader(ShaderMap);
-		TShaderMapRef<FLongGPUTaskPS> PixelShader(ShaderMap);
-
-		GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GOpenGLVector4VertexDeclaration.VertexDeclarationRHI;
-		GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
-		GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
-		GraphicsPSOInit.PrimitiveType = PT_TriangleStrip;
-
-		SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
-		RHICmdList.SetBlendFactor(FLinearColor::Black);
-
-		// Draw a fullscreen quad
-		FVector4 Vertices[4];
-		Vertices[0].Set( -1.0f,  1.0f, 0, 1.0f );
-		Vertices[1].Set(  1.0f,  1.0f, 0, 1.0f );
-		Vertices[2].Set( -1.0f, -1.0f, 0, 1.0f );
-		Vertices[3].Set(  1.0f, -1.0f, 0, 1.0f );
-		DrawPrimitiveUP(RHICmdList, PT_TriangleStrip, 2, Vertices, sizeof(Vertices[0]));
-
-		// RHICmdList flushes on destruction
-	}
-}
-
 void FOpenGLDynamicRHI::InitializeStateResources()
 {
 	SharedContextState.InitializeResources(FOpenGL::GetMaxCombinedTextureImageUnits(), OGL_MAX_COMPUTE_STAGE_UAV_UNITS);
@@ -493,12 +432,15 @@ void FOpenGLBase::ProcessExtensions( const FString& ExtensionsString )
 	else
 	{
 		// clamp things to the levels that the other path is going, but allow additional units for tessellation
-		MaxTextureImageUnits = MaxTextureImageUnits > 16 ? 16 : MaxTextureImageUnits;
-		MaxVertexTextureImageUnits = MaxVertexTextureImageUnits > 8 ? 8 : MaxVertexTextureImageUnits;
-		MaxGeometryTextureImageUnits = MaxGeometryTextureImageUnits > 8 ? 8 : MaxGeometryTextureImageUnits;
-		MaxHullTextureImageUnits = MaxHullTextureImageUnits > 8 ? 8 : MaxHullTextureImageUnits;
-		MaxDomainTextureImageUnits = MaxDomainTextureImageUnits > 8 ? 8 : MaxDomainTextureImageUnits;
-		MaxCombinedTextureImageUnits = MaxCombinedTextureImageUnits > 48 ? 48 : MaxCombinedTextureImageUnits;
+		if (IsMobilePlatform(GMaxRHIShaderPlatform))
+		{
+			MaxTextureImageUnits = MaxTextureImageUnits > 16 ? 16 : MaxTextureImageUnits;
+			MaxVertexTextureImageUnits = MaxVertexTextureImageUnits > 8 ? 8 : MaxVertexTextureImageUnits;
+			MaxGeometryTextureImageUnits = MaxGeometryTextureImageUnits > 8 ? 8 : MaxGeometryTextureImageUnits;
+			MaxHullTextureImageUnits = MaxHullTextureImageUnits > 8 ? 8 : MaxHullTextureImageUnits;
+			MaxDomainTextureImageUnits = MaxDomainTextureImageUnits > 8 ? 8 : MaxDomainTextureImageUnits;
+			MaxCombinedTextureImageUnits = MaxCombinedTextureImageUnits > 48 ? 48 : MaxCombinedTextureImageUnits;
+		}
 	}
 
 	// Check for support for advanced texture compression (desktop and mobile)
@@ -555,21 +497,48 @@ void FOpenGLBase::ProcessExtensions( const FString& ExtensionsString )
 		GRHIVendorId = 0x5143;
 	}
 
+#if PLATFORM_LINUX
 	if (GRHIVendorId == 0x0)
 	{
-		// Fix for Mesa Radeon
+		// Try harder for Mesa
 		const ANSICHAR* AnsiVersion = (const ANSICHAR*)glGetString(GL_VERSION);
 		const ANSICHAR* AnsiRenderer = (const ANSICHAR*)glGetString(GL_RENDERER);
 		if (AnsiVersion && AnsiRenderer)
 		{
-			if (FCStringAnsi::Strstr(AnsiVersion, "Mesa") &&
-				(FCStringAnsi::Strstr(AnsiRenderer, "AMD") || FCStringAnsi::Strstr(AnsiRenderer, "ATI")))
+			if (FCStringAnsi::Strstr(AnsiVersion, "Mesa"))
 			{
-				// Radeon
-				GRHIVendorId = 0x1002;
+				if (FCStringAnsi::Strstr(AnsiRenderer, "AMD") || FCStringAnsi::Strstr(AnsiRenderer, "ATI"))
+				{
+					// Radeon
+					GRHIVendorId = 0x1002;
+					bAmdWorkaround = true;
+				}
+				else if (FCStringAnsi::Strstr(AnsiRenderer, "Intel"))
+				{
+					GRHIVendorId = 0x8086;
+					bAmdWorkaround = true;
+				}
 			}
 		}
+
+		// If still not detected, show a message box to the user (editor build only) and
+		// set GRHIVendorId to something to avoid crashing in check()s later
+		if (GRHIVendorId == 0x0)
+		{
+			if (WITH_EDITOR != 0 && !IsRunningCommandlet() && !FApp::IsUnattended())
+			{
+				FString GlRenderer(ANSI_TO_TCHAR(AnsiRenderer));
+				FText ErrorMessage = FText::Format(LOCTEXT("CannotDetermineGraphicsDriversVendor", "Unknown graphics drivers '{0}' by '{1}' are installed on this system. You may experience visual artifacts and other problems."),
+					FText::FromString(GlRenderer), FText::FromString(VendorName));
+				FPlatformMisc::MessageBoxExt(EAppMsgType::Ok, *ErrorMessage.ToString(),
+					*LOCTEXT("CannotDetermineGraphicsDriversVendorTitle", "Cannot determine driver vendor.").ToString());
+			}
+
+			GRHIVendorId = 0xFFFF;
+			bAmdWorkaround = true;	// be conservative here as well.
+		}
 	}
+#endif // PLATFORM_LINUX
 
 #if PLATFORM_WINDOWS
 	auto* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("OpenGL.UseStagingBuffer"));
@@ -578,7 +547,7 @@ void FOpenGLBase::ProcessExtensions( const FString& ExtensionsString )
 		CVar->Set(false);
 	}
 #endif
-#endif
+#endif // !PLATFORM_IOS
 
 	// Setup CVars that require the RHI initialized
 
@@ -655,10 +624,12 @@ void InitDefaultGLContextState(void)
 	}
 
 #if PLATFORM_WINDOWS || PLATFORM_LINUX
-	if (OpenGLConsoleVariables::bUseGlClipControlIfAvailable && ExtensionsString.Contains(TEXT("GL_ARB_clip_control")))
+	if (OpenGLConsoleVariables::bUseGlClipControlIfAvailable && ExtensionsString.Contains(TEXT("GL_ARB_clip_control")) && !FOpenGL::IsAndroidGLESCompatibilityModeEnabled())
 	{
 		FOpenGL::EnableSupportsClipControl();
 		glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE);
 	}
 #endif
 }
+
+#undef LOCTEXT_NAMESPACE

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayTagQueryCustomization.h"
 #include "UObject/UnrealType.h"
@@ -13,16 +13,22 @@
 #include "Editor.h"
 #include "PropertyHandle.h"
 #include "DetailWidgetRow.h"
+#include "IPropertyTypeCustomization.h"
+#include "IPropertyUtilities.h"
+#include "NotifyHook.h"
 
 #define LOCTEXT_NAMESPACE "GameplayTagQueryCustomization"
 
 void FGameplayTagQueryCustomization::CustomizeHeader(TSharedRef<class IPropertyHandle> InStructPropertyHandle, class FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& StructCustomizationUtils)
 {
 	StructPropertyHandle = InStructPropertyHandle;
+	check(StructPropertyHandle.IsValid());
 
-	RefreshQueryDescription();
+	PropertyUtilities = StructCustomizationUtils.GetPropertyUtilities();
+	
+	RefreshQueryDescription(); // will call BuildEditableQueryList();
 
-	bool const bReadOnly = StructPropertyHandle->GetProperty() ? StructPropertyHandle->GetProperty()->HasAnyPropertyFlags(CPF_EditConst) : false;
+	bool const bReadOnly = StructPropertyHandle->IsEditConst();
 
 	HeaderRow
 	.NameContent()
@@ -79,10 +85,9 @@ FText FGameplayTagQueryCustomization::GetQueryDescText() const
 
 FText FGameplayTagQueryCustomization::GetEditButtonText() const
 {
-	UProperty const* const Prop = StructPropertyHandle.IsValid() ? StructPropertyHandle->GetProperty() : nullptr;
-	if (Prop)
+	if (StructPropertyHandle.IsValid())
 	{
-		bool const bReadOnly = Prop->HasAnyPropertyFlags(CPF_EditConst);
+		bool const bReadOnly = StructPropertyHandle->IsEditConst();
 		return
 			bReadOnly
 			? LOCTEXT("GameplayTagQueryCustomization_View", "View...")
@@ -156,44 +161,47 @@ FReply FGameplayTagQueryCustomization::OnEditButtonClicked()
 	}
 	else
 	{
-		TArray<UObject*> OuterObjects;
-		StructPropertyHandle->GetOuterObjects(OuterObjects);
-
-		bool const bReadOnly = StructPropertyHandle->GetProperty() ? StructPropertyHandle->GetProperty()->HasAnyPropertyFlags(CPF_EditConst) : false;
-
-		FText Title;
-		if (OuterObjects.Num() > 1)
+		if (StructPropertyHandle.IsValid())
 		{
-			FText const AssetName = FText::Format(LOCTEXT("GameplayTagDetailsBase_MultipleAssets", "{0} Assets"), FText::AsNumber(OuterObjects.Num()));
-			FText const PropertyName = StructPropertyHandle->GetPropertyDisplayName();
-			Title = FText::Format(LOCTEXT("GameplayTagQueryCustomization_BaseWidgetTitle", "Tag Editor: {0} {1}"), PropertyName, AssetName);
-		}
-		else if (OuterObjects.Num() > 0 && OuterObjects[0])
-		{
-			FText const AssetName = FText::FromString(OuterObjects[0]->GetName());
-			FText const PropertyName = StructPropertyHandle->GetPropertyDisplayName();
-			Title = FText::Format(LOCTEXT("GameplayTagQueryCustomization_BaseWidgetTitle", "Tag Editor: {0} {1}"), PropertyName, AssetName);
-		}
+			TArray<UObject*> OuterObjects;
+			StructPropertyHandle->GetOuterObjects(OuterObjects);
 
+			bool bReadOnly = StructPropertyHandle->IsEditConst();
 
-		GameplayTagQueryWidgetWindow = SNew(SWindow)
-			.Title(Title)
-			.HasCloseButton(false)
-			.ClientSize(FVector2D(600, 400))
-			[
-				SNew(SGameplayTagQueryWidget, EditableQueries)
-				.OnSaveAndClose(this, &FGameplayTagQueryCustomization::CloseWidgetWindow)
-				.OnCancel(this, &FGameplayTagQueryCustomization::CloseWidgetWindow)
-				.ReadOnly(bReadOnly)
-			];
+			FText Title;
+			if (OuterObjects.Num() > 1)
+			{
+				FText const AssetName = FText::Format(LOCTEXT("GameplayTagDetailsBase_MultipleAssets", "{0} Assets"), FText::AsNumber(OuterObjects.Num()));
+				FText const PropertyName = StructPropertyHandle->GetPropertyDisplayName();
+				Title = FText::Format(LOCTEXT("GameplayTagQueryCustomization_BaseWidgetTitle", "Tag Editor: {0} {1}"), PropertyName, AssetName);
+			}
+			else if (OuterObjects.Num() > 0 && OuterObjects[0])
+			{
+				FText const AssetName = FText::FromString(OuterObjects[0]->GetName());
+				FText const PropertyName = StructPropertyHandle->GetPropertyDisplayName();
+				Title = FText::Format(LOCTEXT("GameplayTagQueryCustomization_BaseWidgetTitle", "Tag Editor: {0} {1}"), PropertyName, AssetName);
+			}
 
-		if (FGlobalTabmanager::Get()->GetRootWindow().IsValid())
-		{
-			FSlateApplication::Get().AddWindowAsNativeChild(GameplayTagQueryWidgetWindow.ToSharedRef(), FGlobalTabmanager::Get()->GetRootWindow().ToSharedRef());
-		}
-		else
-		{
-			FSlateApplication::Get().AddWindow(GameplayTagQueryWidgetWindow.ToSharedRef());
+			GameplayTagQueryWidgetWindow = SNew(SWindow)
+				.Title(Title)
+				.HasCloseButton(false)
+				.ClientSize(FVector2D(600, 400))
+				[
+					SNew(SGameplayTagQueryWidget, EditableQueries)
+					.OnSaveAndClose(this, &FGameplayTagQueryCustomization::CloseWidgetWindow, false)
+					.OnCancel(this, &FGameplayTagQueryCustomization::CloseWidgetWindow, true)
+					.ReadOnly(bReadOnly)
+				];
+
+			// NOTE: FGlobalTabmanager::Get()-> is actually dereferencing a SharedReference, not a SharedPtr, so it cannot be null.
+			if (FGlobalTabmanager::Get()->GetRootWindow().IsValid())
+			{
+				FSlateApplication::Get().AddWindowAsNativeChild(GameplayTagQueryWidgetWindow.ToSharedRef(), FGlobalTabmanager::Get()->GetRootWindow().ToSharedRef());
+			}
+			else
+			{
+				FSlateApplication::Get().AddWindow(GameplayTagQueryWidgetWindow.ToSharedRef());
+			}
 		}
 	}
 
@@ -202,7 +210,7 @@ FReply FGameplayTagQueryCustomization::OnEditButtonClicked()
 
 FGameplayTagQueryCustomization::~FGameplayTagQueryCustomization()
 {
-	if( GameplayTagQueryWidgetWindow.IsValid() )
+	if (GameplayTagQueryWidgetWindow.IsValid())
 	{
 		GameplayTagQueryWidgetWindow->RequestDestroyWindow();
 	}
@@ -213,24 +221,47 @@ void FGameplayTagQueryCustomization::BuildEditableQueryList()
 {	
 	EditableQueries.Empty();
 
-	if( StructPropertyHandle.IsValid() )
+	if (StructPropertyHandle.IsValid())
 	{
 		TArray<void*> RawStructData;
 		StructPropertyHandle->AccessRawData(RawStructData);
 
 		TArray<UObject*> OuterObjects;
 		StructPropertyHandle->GetOuterObjects(OuterObjects);
-
+		
 		for (int32 Idx = 0; Idx < RawStructData.Num(); ++Idx)
 		{
-			EditableQueries.Add(SGameplayTagQueryWidget::FEditableGameplayTagQueryDatum(OuterObjects.IsValidIndex(Idx) ? OuterObjects[Idx] : nullptr, (FGameplayTagQuery*)RawStructData[Idx]));
+			// Null outer objects may mean that we are inside a UDataTable. This is ok though. We can still dirty the data table via FNotify Hook. (see ::CloseWidgetWindow). However undo will not work.
+			UObject* Obj = OuterObjects.IsValidIndex(Idx) ? OuterObjects[Idx] : nullptr;
+
+			EditableQueries.Add(SGameplayTagQueryWidget::FEditableGameplayTagQueryDatum(Obj, (FGameplayTagQuery*)RawStructData[Idx]));
 		}
 	}	
 }
 
-void FGameplayTagQueryCustomization::CloseWidgetWindow()
+void FGameplayTagQueryCustomization::CloseWidgetWindow(bool WasCancelled)
 {
- 	if( GameplayTagQueryWidgetWindow.IsValid() )
+	// Notify change. This is required for these to work inside of UDataTables
+	if (!WasCancelled && PropertyUtilities.IsValid())
+	{
+		if (StructPropertyHandle.IsValid())
+		{
+			UProperty* TheProperty = StructPropertyHandle->GetProperty();
+
+			FEditPropertyChain PropertyChain;
+			PropertyChain.AddHead(TheProperty);
+			PropertyChain.SetActivePropertyNode(TheProperty);
+
+			FPropertyChangedEvent ChangeEvent(StructPropertyHandle->GetProperty(), EPropertyChangeType::ValueSet, nullptr);
+			FNotifyHook* NotifyHook = PropertyUtilities->GetNotifyHook();
+			if (NotifyHook != nullptr)
+			{
+				NotifyHook->NotifyPostChange(ChangeEvent, &PropertyChain);
+			}
+		}
+	}
+
+ 	if (GameplayTagQueryWidgetWindow.IsValid())
  	{
  		GameplayTagQueryWidgetWindow->RequestDestroyWindow();
 		GameplayTagQueryWidgetWindow = nullptr;

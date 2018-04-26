@@ -1,4 +1,4 @@
-﻿INTSourceChangelist:3244370
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title: 기본 스크립팅
 Crumbs: %ROOT%, Engine, Engine/Blueprints
@@ -6,45 +6,10 @@ Description: 블루프린트 비주얼 스크립팅 시스템의 실행 흐름�
 version: 4.12
 parent:Engine/Blueprints
 tags:Blueprints
+type:landing
+topic-image:Engine/Blueprints/UserGuide/using_interface_topic.png
 
-[VAR:Topic]
-[OBJECT:Topic]
-	[PARAM:image]
-		![%Engine/Blueprints/Scripting:title%](Engine\Blueprints\UserGuide\using_interface_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/reference_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Blueprints/Scripting:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Blueprints/Scripting:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Blueprints/Scripting]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-	[PARAM:image]
-		![%Engine/Blueprints/Scripting:title%](BasicScripting.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/reference_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Blueprints/Scripting:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Blueprints/Scripting:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Blueprints/Scripting]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
+
 
 블루프린트는 비주얼 방식의 스크립팅 언어입니다. 그렇기에, 이 시스템에는 데이터 유형 변수, 배열, 구조체 등 표준 스크립팅 언어의 미묘한 차이점을 공유하는 부분이 다수 있습니다.
 실행 흐름 역시, 블루프린트는 각 노드의 명시적 순차 실행이 필수이지만, 전형적인 스크립트 언어와 비슷한 방식으로 작동합니다. 
@@ -74,7 +39,16 @@ tags:Blueprints
 
 [DIR(output:"listbutton" parent:"Engine/Blueprints/Scripting" tags:"Arrays and Structures")]
 
-<!--
-구조체
--->
+## 고급 컨테이너
 
+언리얼 엔진 4.15 버전 이후 블루프린트 Set (세트)와 Map (맵)이 블루프린트 어플리케이션 프로그래밍 인터페이스(API)에 추가되었습니다. 이 컨테이너를 통해 개발자들은 창의적인 데이터 저장 및 접근 방식을 구현할 수 있어 흥미롭기는 하지만, 
+이 컨테이너는 블루프린트 전문가 수준의 고급 사용자를 대상으로 합니다. 보통 컨테이너로는 블루프린트 배열만 가지고도 충분하지만, (맵이나 세트같은) 결합 컨테이너를 통해 게임 내 데이터에 흥미로운 작업을 하는 데 더 좋은 경우가 
+있을 수 있습니다.
+
+### 블루프린트 맵
+
+[DIR(output:"listbutton" parent:"Engine/Blueprints/Scripting" tags:"Blueprint Map")]
+
+### 블루프린트 세트
+
+[DIR(output:"listbutton" parent:"Engine/Blueprints/Scripting" tags:"Blueprint Set")]

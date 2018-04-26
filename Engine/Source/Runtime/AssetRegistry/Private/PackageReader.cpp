@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PackageReader.h"
 #include "HAL/FileManager.h"
@@ -85,7 +85,7 @@ bool FPackageReader::OpenPackageFile(EOpenPackageResult* OutErrorCode)
 
 	// Check serialized custom versions against latest custom versions.
 	const FCustomVersionContainer& LatestCustomVersions  = FCustomVersionContainer::GetRegistered();
-	const FCustomVersionSet&  PackageCustomVersions = PackageFileSummary.GetCustomVersionContainer().GetAllVersions();
+	const FCustomVersionArray&  PackageCustomVersions = PackageFileSummary.GetCustomVersionContainer().GetAllVersions();
 	for (const FCustomVersion& SerializedCustomVersion : PackageCustomVersions)
 	{
 		auto* LatestVersion = LatestCustomVersions.GetVersion(SerializedCustomVersion.Key);
@@ -139,31 +139,24 @@ bool FPackageReader::ReadAssetRegistryData (TArray<FAssetData*>& AssetDataList)
 
 	const bool bIsMapPackage = (PackageFileSummary.PackageFlags & PKG_ContainsMap) != 0;
 
-	// Assets do not show up in map packages unless we launch with -WorldAssets
-	static const bool bUsingWorldAssets = FAssetRegistry::IsUsingWorldAssets();
-	if ( bIsMapPackage && !bUsingWorldAssets )
-	{
-		return true;
-	}
-
 	// Load the object count
 	int32 ObjectCount = 0;
 	*this << ObjectCount;
 
 	// Worlds that were saved before they were marked public do not have asset data so we will synthesize it here to make sure we see all legacy umaps
 	// We will also do this for maps saved after they were marked public but no asset data was saved for some reason. A bug caused this to happen for some maps.
-	if (bUsingWorldAssets && bIsMapPackage)
+	if (bIsMapPackage)
 	{
 		const bool bLegacyPackage = PackageFileSummary.GetFileVersionUE4() < VER_UE4_PUBLIC_WORLDS;
 		const bool bNoMapAsset = (ObjectCount == 0);
 		if (bLegacyPackage || bNoMapAsset)
 		{
 			FString AssetName = FPackageName::GetLongPackageAssetName(PackageName);
-			AssetDataList.Add(new FAssetData(FName(*PackageName), FName(*PackagePath), FName(), MoveTemp(FName(*AssetName)), FName(TEXT("World")), TMap<FName, FString>(), PackageFileSummary.ChunkIDs, PackageFileSummary.PackageFlags));
+			AssetDataList.Add(new FAssetData(FName(*PackageName), FName(*PackagePath), FName(*AssetName), FName(TEXT("World")), FAssetDataTagMap(), PackageFileSummary.ChunkIDs, PackageFileSummary.PackageFlags));
 		}
 	}
 
-	// UAsset files only have one object, but legacy or map packages may have more.
+	// UAsset files usually only have one asset, maps and redirectors have multiple
 	for(int32 ObjectIdx = 0; ObjectIdx < ObjectCount; ++ObjectIdx)
 	{
 		FString ObjectPath;
@@ -173,7 +166,7 @@ bool FPackageReader::ReadAssetRegistryData (TArray<FAssetData*>& AssetDataList)
 		*this << ObjectClassName;
 		*this << TagCount;
 
-		TMap<FName, FString> TagsAndValues;
+		FAssetDataTagMap TagsAndValues;
 		TagsAndValues.Reserve(TagCount);
 
 		for(int32 TagIdx = 0; TagIdx < TagCount; ++TagIdx)
@@ -183,20 +176,25 @@ bool FPackageReader::ReadAssetRegistryData (TArray<FAssetData*>& AssetDataList)
 			*this << Key;
 			*this << Value;
 
-			TagsAndValues.Add(FName(*Key), Value);
+			if (!Key.IsEmpty() && !Value.IsEmpty())
+			{
+				TagsAndValues.Add(FName(*Key), Value);
+			}
 		}
 
-		FString GroupNames;
-		FString AssetName;
+		if (ObjectPath.StartsWith(TEXT("/"), ESearchCase::CaseSensitive))
+		{
+			// This should never happen, it means that package A has an export with an outer of package B
+			UE_ASSET_LOG(LogAssetRegistry, Warning, *PackageName, TEXT("Package has invalid export %s, resave source package!"), *ObjectPath);
+			continue;
+		}
 
-		if ( ObjectPath.Contains(TEXT("."), ESearchCase::CaseSensitive))
+		if (!ensureMsgf(!ObjectPath.Contains(TEXT("."), ESearchCase::CaseSensitive), TEXT("Cannot make FAssetData for sub object %s!"), *ObjectPath))
 		{
-			ObjectPath.Split(TEXT("."), &GroupNames, &AssetName, ESearchCase::CaseSensitive, ESearchDir::FromEnd);
+			continue;
 		}
-		else
-		{
-			AssetName = ObjectPath;
-		}
+
+		FString AssetName = ObjectPath;
 
 		// Before world were RF_Public, other non-public assets were added to the asset data table in map packages.
 		// Here we simply skip over them
@@ -209,7 +207,7 @@ bool FPackageReader::ReadAssetRegistryData (TArray<FAssetData*>& AssetDataList)
 		}
 
 		// Create a new FAssetData for this asset and update it with the gathered data
-		AssetDataList.Add(new FAssetData(FName(*PackageName), FName(*PackagePath), MoveTemp(FName(*GroupNames)), MoveTemp(FName(*AssetName)), MoveTemp(FName(*ObjectClassName)), MoveTemp(TagsAndValues), PackageFileSummary.ChunkIDs, PackageFileSummary.PackageFlags));
+		AssetDataList.Add(new FAssetData(FName(*PackageName), FName(*PackagePath), FName(*AssetName), FName(*ObjectClassName), MoveTemp(TagsAndValues), PackageFileSummary.ChunkIDs, PackageFileSummary.PackageFlags));
 	}
 
 	return true;
@@ -254,17 +252,13 @@ bool FPackageReader::ReadAssetDataFromThumbnailCache(TArray<FAssetData*>& AssetD
 		FString GroupNames;
 		FString AssetName;
 
-		if ( ObjectPathWithoutPackageName.Contains(TEXT("."), ESearchCase::CaseSensitive) )
+		if (!ensureMsgf(!ObjectPathWithoutPackageName.Contains(TEXT("."), ESearchCase::CaseSensitive), TEXT("Cannot make FAssetData for sub object %s!"), *ObjectPathWithoutPackageName))
 		{
-			ObjectPathWithoutPackageName.Split(TEXT("."), &GroupNames, &AssetName, ESearchCase::CaseSensitive, ESearchDir::FromEnd);
-		}
-		else
-		{
-			AssetName = ObjectPathWithoutPackageName;
+			continue;
 		}
 
 		// Create a new FAssetData for this asset and update it with the gathered data
-		AssetDataList.Add(new FAssetData(FName(*PackageName), FName(*PackagePath), MoveTemp(FName(*GroupNames)), MoveTemp(FName(*AssetName)), MoveTemp(FName(*AssetClassName)), TMap<FName, FString>(), PackageFileSummary.ChunkIDs, PackageFileSummary.PackageFlags));
+		AssetDataList.Add(new FAssetData(FName(*PackageName), FName(*PackagePath), FName(*ObjectPathWithoutPackageName), FName(*AssetClassName), FAssetDataTagMap(), PackageFileSummary.ChunkIDs, PackageFileSummary.PackageFlags));
 	}
 
 	return true;
@@ -295,10 +289,6 @@ bool FPackageReader::ReadAssetRegistryDataIfCookedPackage(TArray<FAssetData*>& A
 			{
 				if (Export.bIsAsset)
 				{
-					FString GroupNames; // Not used for anything
-					TMap<FName, FString> Tags; // Not used for anything
-					TArray<int32> ChunkIDs; // Not used for anything
-
 					// We need to get the class name from the import/export maps
 					FName ObjectClassName;
 					if (Export.ClassIndex.IsNull())
@@ -316,7 +306,7 @@ bool FPackageReader::ReadAssetRegistryDataIfCookedPackage(TArray<FAssetData*>& A
 						ObjectClassName = ClassImport.ObjectName;
 					}
 
-					AssetDataList.Add(new FAssetData(FName(*PackageName), FName(*PackagePath), FName(*GroupNames), Export.ObjectName, ObjectClassName, Tags, ChunkIDs, GetPackageFlags()));
+					AssetDataList.Add(new FAssetData(FName(*PackageName), FName(*PackagePath), Export.ObjectName, ObjectClassName, FAssetDataTagMap(), TArray<int32>(), GetPackageFlags()));
 					bFoundAtLeastOneAsset = true;
 				}
 			}
@@ -339,7 +329,7 @@ bool FPackageReader::ReadDependencyData(FPackageDependencyData& OutDependencyDat
 
 	SerializeNameMap();
 	SerializeImportMap(OutDependencyData.ImportMap);
-	SerializeStringAssetReferencesMap(OutDependencyData.StringAssetReferencesMap);
+	SerializeSoftPackageReferenceList(OutDependencyData.SoftPackageReferenceList);
 	SerializeSearchableNamesMap(OutDependencyData);
 
 	return true;
@@ -388,44 +378,38 @@ void FPackageReader::SerializeExportMap(TArray<FObjectExport>& OutExportMap)
 	}
 }
 
-void FPackageReader::SerializeStringAssetReferencesMap(TArray<FString>& OutStringAssetReferencesMap)
+void FPackageReader::SerializeSoftPackageReferenceList(TArray<FName>& OutSoftPackageReferenceList)
 {
-	if (UE4Ver() >= VER_UE4_ADD_STRING_ASSET_REFERENCES_MAP && PackageFileSummary.StringAssetReferencesOffset > 0 && PackageFileSummary.StringAssetReferencesCount > 0)
+	if (UE4Ver() >= VER_UE4_ADD_STRING_ASSET_REFERENCES_MAP && PackageFileSummary.SoftPackageReferencesOffset > 0 && PackageFileSummary.SoftPackageReferencesCount > 0)
 	{
-		Seek(PackageFileSummary.StringAssetReferencesOffset);
+		Seek(PackageFileSummary.SoftPackageReferencesOffset);
 
-		if (UE4Ver() < VER_UE4_KEEP_ONLY_PACKAGE_NAMES_IN_STRING_ASSET_REFERENCES_MAP)
+		if (UE4Ver() < VER_UE4_ADDED_SOFT_OBJECT_PATH)
 		{
-			for (int32 ReferenceIdx = 0; ReferenceIdx < PackageFileSummary.StringAssetReferencesCount; ++ReferenceIdx)
+			for (int32 ReferenceIdx = 0; ReferenceIdx < PackageFileSummary.SoftPackageReferencesCount; ++ReferenceIdx)
 			{
-				FString Buf;
-				*this << Buf;
+				FString PackageName;
+				*this << PackageName;
 
-				if (GetIniFilenameFromObjectsReference(Buf) != nullptr)
+				if (UE4Ver() < VER_UE4_KEEP_ONLY_PACKAGE_NAMES_IN_STRING_ASSET_REFERENCES_MAP)
 				{
-					OutStringAssetReferencesMap.AddUnique(MoveTemp(Buf));
-				}
-				else
-				{
-					FString NormalizedPath = FPackageName::GetNormalizedObjectPath(MoveTemp(Buf));
-					if (!NormalizedPath.IsEmpty())
+					PackageName = FPackageName::GetNormalizedObjectPath(PackageName);
+					if (!PackageName.IsEmpty())
 					{
-						OutStringAssetReferencesMap.AddUnique(
-							FPackageName::ObjectPathToPackageName(
-								NormalizedPath
-							)
-						);
+						PackageName = FPackageName::ObjectPathToPackageName(PackageName);
 					}
 				}
+
+				OutSoftPackageReferenceList.Add(FName(*PackageName));
 			}
 		}
 		else
 		{
-			for (int32 ReferenceIdx = 0; ReferenceIdx < PackageFileSummary.StringAssetReferencesCount; ++ReferenceIdx)
+			for (int32 ReferenceIdx = 0; ReferenceIdx < PackageFileSummary.SoftPackageReferencesCount; ++ReferenceIdx)
 			{
-				FString Buf;
-				*this << Buf;
-				OutStringAssetReferencesMap.Add(MoveTemp(Buf));
+				FName PackageName;
+				*this << PackageName;
+				OutSoftPackageReferenceList.Add(PackageName);
 			}
 		}
 	}

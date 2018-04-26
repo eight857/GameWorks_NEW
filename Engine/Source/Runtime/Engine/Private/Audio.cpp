@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Audio.cpp: Unreal base audio.
@@ -57,28 +57,66 @@ DEFINE_STAT(STAT_AudioGatherWaveInstances);
 DEFINE_STAT(STAT_AudioFindNearestLocation);
 
 
-bool IsAudioPluginEnabled(EAudioPlugin::Type PluginType)
-{
-	TArray<IAudioPlugin *> AudioPlugin = IModularFeatures::Get().GetModularFeatureImplementations<IAudioPlugin>(IAudioPlugin::GetModularFeatureName());
-	if (AudioPlugin.Num() > 0)
-	{
-		if (PluginType == EAudioPlugin::SPATIALIZATION)
-		{
-			return AudioPlugin[0]->ImplementsSpatialization();
-		}
-		else if (PluginType == EAudioPlugin::REVERB)
-		{
-			return AudioPlugin[0]->ImplementsReverb();
-		}
-		else if (PluginType == EAudioPlugin::OCCLUSION)
-		{
-			return AudioPlugin[0]->ImplementsOcclusion();
-		}
-	}
 
-	return false;
+bool IsAudioPluginEnabled(EAudioPlugin PluginType)
+{
+	switch (PluginType)
+	{
+	case EAudioPlugin::SPATIALIZATION:
+		return AudioPluginUtilities::GetDesiredSpatializationPlugin(AudioPluginUtilities::CurrentPlatform) != nullptr;
+		break;
+	case EAudioPlugin::REVERB:
+		return AudioPluginUtilities::GetDesiredReverbPlugin(AudioPluginUtilities::CurrentPlatform) != nullptr;
+		break;
+	case EAudioPlugin::OCCLUSION:
+		return AudioPluginUtilities::GetDesiredOcclusionPlugin(AudioPluginUtilities::CurrentPlatform) != nullptr;
+		break;
+	default:
+		return false;
+		break;
+	}
 }
 
+UClass* GetAudioPluginCustomSettingsClass(EAudioPlugin PluginType)
+{
+	switch (PluginType)
+	{
+		case EAudioPlugin::SPATIALIZATION:
+		{
+			IAudioSpatializationFactory* Factory = AudioPluginUtilities::GetDesiredSpatializationPlugin(AudioPluginUtilities::CurrentPlatform);
+			if (Factory)
+			{
+				return Factory->GetCustomSpatializationSettingsClass();
+			}
+		}
+		break;
+
+		case EAudioPlugin::REVERB:
+		{
+			IAudioReverbFactory* Factory = AudioPluginUtilities::GetDesiredReverbPlugin(AudioPluginUtilities::CurrentPlatform);
+			if (Factory)
+			{
+				return Factory->GetCustomReverbSettingsClass();
+			}
+		}
+		break;
+
+		case EAudioPlugin::OCCLUSION:
+		{
+			IAudioOcclusionFactory* Factory = AudioPluginUtilities::GetDesiredOcclusionPlugin(AudioPluginUtilities::CurrentPlatform);
+			if (Factory)
+			{
+				return Factory->GetCustomOcclusionSettingsClass();
+			}
+		}
+		break;
+
+		default:
+		break;
+	}
+
+	return nullptr;
+}
 
 /*-----------------------------------------------------------------------------
 	FSoundBuffer implementation.
@@ -192,9 +230,12 @@ FString FSoundSource::Describe(bool bUseLongName)
 
 void FSoundSource::Stop()
 {
-	IStreamingManager::Get().GetAudioStreamingManager().RemoveStreamingSoundSource(this);
 	if (WaveInstance)
 	{
+		// The sound is stopping, so set the envelope value to 0.0f
+		WaveInstance->SetEnvelopeValue(0.0f);
+		NotifyPlaybackData();
+
 		check(AudioDevice);
 		AudioDevice->WaveInstanceSourceMap.Remove(WaveInstance);
 		WaveInstance->NotifyFinished(true);
@@ -310,10 +351,13 @@ void FSoundSource::SetFilterFrequency()
 			LPFFrequency = WaveInstance->AmbientZoneFilterFrequency;
 		}
 
-		if (WaveInstance->AttenuationFilterFrequency < LPFFrequency)
+		if (WaveInstance->AttenuationLowpassFilterFrequency < LPFFrequency)
 		{
-			LPFFrequency = WaveInstance->AttenuationFilterFrequency;
+			LPFFrequency = WaveInstance->AttenuationLowpassFilterFrequency;
 		}
+
+		// This is only used in audio mixer, and only one thing is setting HPF
+		HPFFrequency = WaveInstance->AttenuationHighpassFilterFrequency;
 	}
 }
 
@@ -516,9 +560,19 @@ FSpatializationParams FSoundSource::GetSpatializationParams()
 	}
 	Params.EmitterWorldPosition = WaveInstance->Location;
 
-	// We are currently always computing spatialization for XAudio2 relative to the listener!
-	Params.ListenerOrientation = FVector::UpVector;
-	Params.ListenerPosition = FVector::ZeroVector;
+	if (WaveInstance->ActiveSound != nullptr) 
+	{
+		Params.EmitterWorldRotation = WaveInstance->ActiveSound->Transform.GetRotation();
+	}
+	else
+	{
+		Params.EmitterWorldRotation = FQuat::Identity;
+	}
+
+	// Pass the actual listener orientation and position
+	const FTransform& ListenerTransform = AudioDevice->GetListeners()[0].Transform;
+	Params.ListenerOrientation = ListenerTransform.GetRotation();
+	Params.ListenerPosition = ListenerTransform.GetLocation();
 
 	return Params;
 }
@@ -568,15 +622,16 @@ float FSoundSource::GetPlaybackPercent() const
 
 }
 
-void FSoundSource::NotifyPlaybackPercent()
+void FSoundSource::NotifyPlaybackData()
 {
-	if (WaveInstance->ActiveSound->bUpdatePlayPercentage)
+	const uint64 AudioComponentID = WaveInstance->ActiveSound->GetAudioComponentID();
+	if (AudioComponentID > 0)
 	{
-		const uint64 AudioComponentID = WaveInstance->ActiveSound->GetAudioComponentID();
-		if (AudioComponentID > 0)
+		const USoundWave* SoundWave = WaveInstance->WaveData;
+
+		if (WaveInstance->ActiveSound->bUpdatePlayPercentage)
 		{
 			const float PlaybackPercent = GetPlaybackPercent();
-			const USoundWave* SoundWave = WaveInstance->WaveData;
 			FAudioThread::RunCommandOnGameThread([AudioComponentID, SoundWave, PlaybackPercent]()
 			{
 				if (UAudioComponent* AudioComponent = UAudioComponent::GetAudioComponentFromID(AudioComponentID))
@@ -592,6 +647,33 @@ void FSoundSource::NotifyPlaybackPercent()
 					}
 				}
 			});
+		}
+
+		if (WaveInstance->ActiveSound->bUpdateSingleEnvelopeValue)
+		{
+			const float EnvelopeValue = GetEnvelopeValue();
+			FAudioThread::RunCommandOnGameThread([AudioComponentID, SoundWave, EnvelopeValue]()
+			{
+				if (UAudioComponent* AudioComponent = UAudioComponent::GetAudioComponentFromID(AudioComponentID))
+				{
+					if (AudioComponent->OnAudioSingleEnvelopeValue.IsBound())
+					{
+						AudioComponent->OnAudioSingleEnvelopeValue.Broadcast(SoundWave, EnvelopeValue);
+					}
+
+					if (AudioComponent->OnAudioSingleEnvelopeValueNative.IsBound())
+					{
+						AudioComponent->OnAudioSingleEnvelopeValueNative.Broadcast(AudioComponent, SoundWave, EnvelopeValue);
+					}
+				}
+			});
+		}
+
+		// We do a broadcast from the active sound in this case, just update the envelope value of the wave instance here
+		if (WaveInstance->ActiveSound->bUpdateMultiEnvelopeValue)
+		{
+			const float EnvelopeValue = GetEnvelopeValue();
+			WaveInstance->SetEnvelopeValue(EnvelopeValue);
 		}
 	}
 }
@@ -670,10 +752,15 @@ uint32 FWaveInstance::TypeHashCounter = 0;
 FWaveInstance::FWaveInstance( FActiveSound* InActiveSound )
 	: WaveData(nullptr)
 	, SoundClass(nullptr)
+	, SoundSubmix(nullptr)
 	, ActiveSound(InActiveSound)
 	, Volume(0.0f)
+	, DistanceAttenuation(1.0f)
 	, VolumeMultiplier(1.0f)
 	, VolumeApp(1.0f)
+	, EnvelopValue(0.0f)
+	, EnvelopeFollowerAttackTime(10)
+	, EnvelopeFollowerReleaseTime(100)
 	, Priority(1.0f)
 	, VoiceCenterChannelVolume(0.0f)
 	, RadioFilterVolume(0.0f)
@@ -682,6 +769,7 @@ FWaveInstance::FWaveInstance( FActiveSound* InActiveSound )
 	, LFEBleed(0.0f)
 	, LoopingMode(LOOP_Never)
 	, StartTime(-1.f)
+	, bOutputToBusOnly(false)
 	, bApplyRadioFilter(false)
 	, bIsStarted(false)
 	, bIsFinished(false)
@@ -695,25 +783,24 @@ FWaveInstance::FWaveInstance( FActiveSound* InActiveSound )
 	, bReverb(true)
 	, bCenterChannelOnly(false)
 	, bReportedSpatializationWarning(false)
-	, SpatializationAlgorithm(SPATIALIZATION_Default)
+	, bIsAmbisonics(false)
+	, SpatializationMethod(ESoundSpatializationAlgorithm::SPATIALIZATION_Default)
 	, OcclusionPluginSettings(nullptr)
 	, OutputTarget(EAudioOutputTarget::Speaker)
 	, LowPassFilterFrequency(MAX_FILTER_FREQUENCY)
 	, OcclusionFilterFrequency(MAX_FILTER_FREQUENCY)
 	, AmbientZoneFilterFrequency(MAX_FILTER_FREQUENCY)
-	, AttenuationFilterFrequency(MAX_FILTER_FREQUENCY)
+	, AttenuationLowpassFilterFrequency(MAX_FILTER_FREQUENCY)
+	, AttenuationHighpassFilterFrequency(MIN_FILTER_FREQUENCY)
 	, Pitch(0.0f)
-	, Velocity(FVector::ZeroVector)
 	, Location(FVector::ZeroVector)
 	, OmniRadius(0.0f)
 	, StereoSpread(0.0f)
 	, AttenuationDistance(0.0f)
 	, ListenerToSoundDistance(0.0f)
 	, AbsoluteAzimuth(0.0f)
-	, ReverbWetLevelMin(0.0f)
-	, ReverbWetLevelMax(0.0f)
-	, ReverbDistanceMin(0.0f)
-	, ReverbDistanceMax(0.0f)
+	, ReverbSendLevelRange(0.0f, 0.0f)
+	, ReverbSendLevelDistanceRange(0.0f, 0.0f)
 	, UserIndex(0)
 {
 	TypeHash = ++TypeHashCounter;
@@ -782,12 +869,23 @@ void FWaveInstance::AddReferencedObjects( FReferenceCollector& Collector )
 float FWaveInstance::GetActualVolume() const
 {
 	// Include all volumes 
-	return GetVolume() * VolumeApp;
+	return GetVolume() * VolumeApp * DistanceAttenuation;
+}
+
+float FWaveInstance::GetDistanceAttenuation() const
+{
+	// Only includes volume attenuation due do distance
+	return DistanceAttenuation;
+}
+
+float FWaveInstance::GetVolumeWithDistanceAttenuation() const
+{
+	return GetVolume() * DistanceAttenuation;
 }
 
 float FWaveInstance::GetVolume() const
 {
-	// Include all volumes 
+	// Only includes non-attenuation and non-app volumes
 	return Volume * VolumeMultiplier;
 }
 
@@ -799,7 +897,7 @@ bool FWaveInstance::ShouldStopDueToMaxConcurrency() const
 float FWaveInstance::GetVolumeWeightedPriority() const
 {
 	// This will result in zero-volume sounds still able to be sorted due to priority but give non-zero volumes higher priority than 0 volumes
-	float ActualVolume = GetVolume();
+	float ActualVolume = GetVolumeWithDistanceAttenuation();
 	if (ActualVolume > 0.0f)
 	{
 		return ActualVolume * Priority;
@@ -1193,3 +1291,111 @@ void FWaveModInfo::ReportImportFailure() const
 		FEngineAnalytics::GetProvider().RecordEvent(FString("Editor.Usage.WaveImportFailure"), WaveImportFailureAttributes);
 	}
 }
+
+static void WriteUInt32ToByteArrayLE(TArray<uint8>& InByteArray, int32& Index, const uint32 Value)
+{
+	InByteArray[Index++] = (uint8)(Value >> 0);
+	InByteArray[Index++] = (uint8)(Value >> 8);
+	InByteArray[Index++] = (uint8)(Value >> 16);
+	InByteArray[Index++] = (uint8)(Value >> 24);
+}
+
+static void WriteUInt16ToByteArrayLE(TArray<uint8>& InByteArray, int32& Index, const uint16 Value)
+{
+	InByteArray[Index++] = (uint8)(Value >> 0);
+	InByteArray[Index++] = (uint8)(Value >> 8);
+}
+
+void SerializeWaveFile(TArray<uint8>& OutWaveFileData, const uint8* InPCMData, const int32 NumBytes, const int32 NumChannels, const int32 SampleRate)
+{
+	// Reserve space for the raw wave data
+	OutWaveFileData.Empty(NumBytes + 44);
+	OutWaveFileData.AddZeroed(NumBytes + 44);
+
+	int32 WaveDataByteIndex = 0;
+
+	// Wave Format Serialization ----------
+
+	// FieldName: ChunkID
+	// FieldSize: 4 bytes
+	// FieldValue: RIFF (FourCC value, big-endian)
+	OutWaveFileData[WaveDataByteIndex++] = 'R';
+	OutWaveFileData[WaveDataByteIndex++] = 'I';
+	OutWaveFileData[WaveDataByteIndex++] = 'F';
+	OutWaveFileData[WaveDataByteIndex++] = 'F';
+
+	// ChunkName: ChunkSize: 4 bytes 
+	// Value: NumBytes + 36. Size of the rest of the chunk following this number. Size of entire file minus 8 bytes.
+	WriteUInt32ToByteArrayLE(OutWaveFileData, WaveDataByteIndex, NumBytes + 36);
+
+	// FieldName: Format 
+	// FieldSize: 4 bytes
+	// FieldValue: "WAVE"  (big-endian)
+	OutWaveFileData[WaveDataByteIndex++] = 'W';
+	OutWaveFileData[WaveDataByteIndex++] = 'A';
+	OutWaveFileData[WaveDataByteIndex++] = 'V';
+	OutWaveFileData[WaveDataByteIndex++] = 'E';
+
+	// FieldName: Subchunk1ID
+	// FieldSize: 4 bytes
+	// FieldValue: "fmt "
+	OutWaveFileData[WaveDataByteIndex++] = 'f';
+	OutWaveFileData[WaveDataByteIndex++] = 'm';
+	OutWaveFileData[WaveDataByteIndex++] = 't';
+	OutWaveFileData[WaveDataByteIndex++] = ' ';
+
+	// FieldName: Subchunk1Size
+	// FieldSize: 4 bytes
+	// FieldValue: 16 for PCM
+	WriteUInt32ToByteArrayLE(OutWaveFileData, WaveDataByteIndex, 16);
+
+	// FieldName: AudioFormat
+	// FieldSize: 2 bytes
+	// FieldValue: 1 for PCM
+	WriteUInt16ToByteArrayLE(OutWaveFileData, WaveDataByteIndex, 1);
+
+	// FieldName: NumChannels
+	// FieldSize: 2 bytes
+	// FieldValue: 1 for for mono
+	WriteUInt16ToByteArrayLE(OutWaveFileData, WaveDataByteIndex, NumChannels);
+
+	// FieldName: SampleRate
+	// FieldSize: 4 bytes
+	// FieldValue: Passed in sample rate
+	WriteUInt32ToByteArrayLE(OutWaveFileData, WaveDataByteIndex, SampleRate);
+
+	// FieldName: ByteRate
+	// FieldSize: 4 bytes
+	// FieldValue: SampleRate * NumChannels * BitsPerSample/8
+	int32 ByteRate = SampleRate * NumChannels * 2;
+	WriteUInt32ToByteArrayLE(OutWaveFileData, WaveDataByteIndex, ByteRate);
+
+	// FieldName: BlockAlign
+	// FieldSize: 2 bytes
+	// FieldValue: NumChannels * BitsPerSample/8
+	int32 BlockAlign = 2;
+	WriteUInt16ToByteArrayLE(OutWaveFileData, WaveDataByteIndex, BlockAlign);
+
+	// FieldName: BitsPerSample
+	// FieldSize: 2 bytes
+	// FieldValue: 16 (16 bits per sample)
+	WriteUInt16ToByteArrayLE(OutWaveFileData, WaveDataByteIndex, 16);
+
+	// FieldName: Subchunk2ID
+	// FieldSize: 4 bytes
+	// FieldValue: "data" (big endian)
+
+	OutWaveFileData[WaveDataByteIndex++] = 'd';
+	OutWaveFileData[WaveDataByteIndex++] = 'a';
+	OutWaveFileData[WaveDataByteIndex++] = 't';
+	OutWaveFileData[WaveDataByteIndex++] = 'a';
+
+	// FieldName: Subchunk2Size
+	// FieldSize: 4 bytes
+	// FieldValue: number of bytes of the data
+	WriteUInt32ToByteArrayLE(OutWaveFileData, WaveDataByteIndex, NumBytes);
+
+	// Copy the raw PCM data to the audio file
+	FMemory::Memcpy(&OutWaveFileData[WaveDataByteIndex], InPCMData, NumBytes);
+}
+

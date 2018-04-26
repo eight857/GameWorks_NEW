@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UserInterface/SMessageLogListing.h"
 #include "Widgets/Images/SImage.h"
@@ -13,6 +13,7 @@
 #include "EditorStyleSet.h"
 #include "UserInterface/SMessageLogMessageListRow.h"
 #include "Framework/Commands/GenericCommands.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 
 #define LOCTEXT_NAMESPACE "Developer.MessageLog"
@@ -327,7 +328,7 @@ FText SMessageLogListing::CopyText( bool bSelected, bool bClipboard ) const
 	if( bClipboard )
 	{
 		// Pass that to the clipboard.
-		FPlatformMisc::ClipboardCopy( *CombinedString.ToString() );
+		FPlatformApplicationMisc::ClipboardCopy( *CombinedString.ToString() );
 	}
 
 	return CombinedString;
@@ -370,7 +371,7 @@ TSharedRef<ITableRow> SMessageLogListing::MakeShowWidget(TSharedRef<FMessageFilt
 				+SHorizontalBox::Slot().AutoWidth()
 				[
 					SNew(SImage)
-					.Image(Selection->GetIcon())
+					.Image(Selection->GetIcon().GetIcon())
 				]
 				+SHorizontalBox::Slot().AutoWidth()
 				[

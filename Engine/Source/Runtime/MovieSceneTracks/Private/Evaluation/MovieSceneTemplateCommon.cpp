@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Evaluation/MovieSceneTemplateCommon.h"
 #include "Components/SceneComponent.h"
@@ -59,8 +59,6 @@ void F3DTransformTrackToken::Apply(USceneComponent& SceneComponent, float DeltaT
 		FVector CurrentPosition = SceneComponent.GetComponentLocation();
 		FVector ComponentVelocity = (CurrentPosition - PreviousPosition) / DeltaTime;
 		SceneComponent.ComponentVelocity = ComponentVelocity;
-
-		//TODO: Set Component Velocity for attached objects
 	}
 };
 

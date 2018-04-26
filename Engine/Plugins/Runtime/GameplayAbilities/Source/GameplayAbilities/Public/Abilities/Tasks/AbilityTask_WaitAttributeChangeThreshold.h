@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -15,8 +15,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWaitAttributeChangeThresholdDelega
 /**
  *	Waits for an attribute to match a threshold
  */
-UCLASS(MinimalAPI)
-class UAbilityTask_WaitAttributeChangeThreshold : public UAbilityTask
+UCLASS()
+class GAMEPLAYABILITIES_API UAbilityTask_WaitAttributeChangeThreshold : public UAbilityTask
 {
 	GENERATED_UCLASS_BODY()
 
@@ -25,11 +25,11 @@ class UAbilityTask_WaitAttributeChangeThreshold : public UAbilityTask
 
 	virtual void Activate() override;
 
-	void OnAttributeChange(float NewValue, const FGameplayEffectModCallbackData* Data);
+	void OnAttributeChange(const FOnAttributeChangeData& CallbackData);
 
 	/** Wait on attribute change meeting a comparison threshold. */
 	UFUNCTION(BlueprintCallable, Category="Ability|Tasks", meta = (HidePin = "OwningAbility", DefaultToSelf = "OwningAbility", BlueprintInternalUseOnly = "TRUE"))
-	static UAbilityTask_WaitAttributeChangeThreshold* WaitForAttributeChangeThreshold(UGameplayAbility* OwningAbility, FGameplayAttribute Attribute, TEnumAsByte<EWaitAttributeChangeComparison::Type> ComparisonType, float ComparisonValue, bool bTriggerOnce);
+	static UAbilityTask_WaitAttributeChangeThreshold* WaitForAttributeChangeThreshold(UGameplayAbility* OwningAbility, FGameplayAttribute Attribute, TEnumAsByte<EWaitAttributeChangeComparison::Type> ComparisonType, float ComparisonValue, bool bTriggerOnce, AActor* OptionalExternalOwner = nullptr);
 
 	FGameplayAttribute Attribute;
 	TEnumAsByte<EWaitAttributeChangeComparison::Type> ComparisonType;
@@ -40,6 +40,11 @@ class UAbilityTask_WaitAttributeChangeThreshold : public UAbilityTask
 protected:
 
 	bool bMatchedComparisonLastAttributeChange;
+
+	UPROPERTY()
+	UAbilitySystemComponent* ExternalOwner;
+
+	UAbilitySystemComponent* GetFocusedASC();
 
 	virtual void OnDestroy(bool AbilityEnded) override;
 

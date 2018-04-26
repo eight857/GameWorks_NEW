@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -585,6 +585,7 @@ public:
 	}
 
 	virtual bool Initialize(IPlatformFile* Inner, const TCHAR* CommandLineParam) override;
+	using IPlatformFile::Tick;
 	bool Tick(float Delta);
 	virtual IPlatformFile* GetLowerLevel() override
 	{

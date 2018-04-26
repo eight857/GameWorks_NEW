@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,7 +18,7 @@
 #include "EditorComponents.h"
 #include "Framework/Commands/Commands.h"
 
-class FAssetData;
+struct FAssetData;
 class FCachedJoystickState;
 class FCameraControllerConfig;
 class FCameraControllerUserImpulseData;
@@ -126,6 +126,7 @@ struct FViewportCursorLocation
 {
 public:
 	UNREALED_API FViewportCursorLocation( const FSceneView* View, FEditorViewportClient* InViewportClient, int32 X, int32 Y );
+	UNREALED_API virtual ~FViewportCursorLocation();
 
 	const FVector&		GetOrigin()			const	{ return Origin; }
 	const FVector&		GetDirection()		const	{ return Direction; }
@@ -144,6 +145,7 @@ struct FViewportClick : public FViewportCursorLocation
 {
 public:
 	UNREALED_API FViewportClick( const FSceneView* View, FEditorViewportClient* ViewportClient, FKey InKey, EInputEvent InEvent, int32 X, int32 Y );
+	UNREALED_API virtual ~FViewportClick();
 
 	/** @return The 2D screenspace cursor position of the mouse when it was clicked. */
 	const FIntPoint&	GetClickPos()	const	{ return GetCursorPos(); }
@@ -454,7 +456,7 @@ public:
 	virtual void RequestInvalidateHitProxy(FViewport* Viewport) override;
 	virtual bool InputKey(FViewport* Viewport, int32 ControllerId, FKey Key, EInputEvent Event, float AmountDepressed = 1.f, bool bGamepad=false) override;
 	virtual bool InputAxis(FViewport* Viewport, int32 ControllerId, FKey Key, float Delta, float DeltaTime, int32 NumSamples=1, bool bGamepad=false) override;
-	virtual bool InputGesture(FViewport* Viewport, EGestureEvent::Type GestureType, const FVector2D& GestureDelta, bool bIsDirectionInvertedFromDevice) override;
+	virtual bool InputGesture(FViewport* Viewport, EGestureEvent GestureType, const FVector2D& GestureDelta, bool bIsDirectionInvertedFromDevice) override;
 	virtual void ReceivedFocus(FViewport* Viewport) override;
 	virtual void MouseEnter(FViewport* Viewport,int32 x, int32 y) override;
 	virtual void MouseMove(FViewport* Viewport,int32 x, int32 y) override;
@@ -710,26 +712,11 @@ public:
 	 */
 	virtual bool DropObjectsAtCoordinates(int32 MouseX, int32 MouseY, const TArray<UObject*>& DroppedObjects, TArray<AActor*>& OutNewActors, bool bOnlyDropOnTarget = false, bool bCreateDropPreview = false, bool bSelectActors = true, UActorFactory* FactoryToUse = NULL ) { return false; }
 
-	/** Returns true if the viewport is allowed to be possessed by Matinee for previewing sequences */
-	DEPRECATED(4.9, "AllowMatineePreview is deprecated.  Use AllowsCinematicPreview instead")
-	bool AllowMatineePreview() const { return AllowsCinematicPreview(); }
-
-	
-	DEPRECATED(4.9, "SetAllowMatineePreview is deprecated.  Use SetAllowCinematicPreview instead")
-	void SetAllowMatineePreview(const bool bInAllowCinematicPreview)
-	{
-		SetAllowCinematicPreview( bInAllowCinematicPreview );
-	}
-
 	/** Returns true if the viewport is allowed to be possessed for previewing cinematic sequences or keyframe animations*/
 	bool AllowsCinematicPreview() const { return bAllowCinematicPreview; }
 
 	/** Sets whether or not this viewport is allowed to be possessed by cinematic/scrubbing tools */
 	void SetAllowCinematicPreview( bool bInAllowCinematicPreview ) { bAllowCinematicPreview = bInAllowCinematicPreview; }
-protected:
-
-	/** true if this window is allowed to be possessed by cinematic tools for previewing sequences in real-time */
-	bool bAllowCinematicPreview;
 
 public:
 	/** True if the window is maximized or floating */
@@ -969,6 +956,12 @@ public:
 	/** Get the camera speed setting for this viewport */
 	virtual int32 GetCameraSpeedSetting() const;
 
+	/** Get the camera speed scalar for this viewport */
+	virtual float GetCameraSpeedScalar() const;
+
+	/** Set the camera speed scalar for this viewport */
+	virtual void SetCameraSpeedScalar(float SpeedScalar);
+
 	/** Editor mode tool manager being used for this viewport client */
 	FEditorModeTools* GetModeTools() const
 	{
@@ -978,10 +971,21 @@ public:
 	/** Get the editor viewport widget */
 	TSharedPtr<SEditorViewport> GetEditorViewportWidget() const { return EditorViewportWidget.Pin(); }
 
+	/**
+	 * Computes a matrix to use for viewport location and rotation
+	 */
+	virtual FMatrix CalcViewRotationMatrix(const FRotator& InViewRotation) const;
+
 protected:
+
+	/** true if this window is allowed to be possessed by cinematic tools for previewing sequences in real-time */
+	bool bAllowCinematicPreview;
 
 	/** Camera speed setting */
 	int32 CameraSpeedSetting;
+
+	/** Camera speed scalar */
+	float CameraSpeedScalar;
 
 public:
 
@@ -1052,6 +1056,55 @@ public:
 	/** Returns the map allowing to convert from the viewmode param to a name. */
 	TMap<int32, FName>& GetViewModeParamNameMap() { return ViewModeParamNameMap; }
 
+	/** Show or hide the widget. */
+	void ShowWidget(const bool bShow);
+
+	/**
+	 * Returns whether or not the flight camera is active
+	 *
+	 * @return true if the flight camera is active
+	 */
+	bool IsFlightCameraActive() const;
+
+	/** Delegate handler fired when a show flag is toggled */
+	virtual void HandleToggleShowFlag(FEngineShowFlags::EShowFlag EngineShowFlagIndex);
+
+	/** Delegate handler fired to determine the state of a show flag */
+	virtual bool HandleIsShowFlagEnabled(FEngineShowFlags::EShowFlag EngineShowFlagIndex) const;
+
+	/**
+	 * Changes the buffer visualization mode for this viewport
+	 *
+	 * @param InName	The ID of the required visualization mode
+	 */
+	void ChangeBufferVisualizationMode( FName InName );
+
+	/**
+	 * Checks if a buffer visualization mode is selected
+	 * 
+	 * @param InName	The ID of the required visualization mode
+	 * @return	true if the supplied buffer visualization mode is checked
+	 */
+	bool IsBufferVisualizationModeSelected( FName InName ) const;
+	
+	/** @return True if PreviewResolutionFraction is supported. */
+	bool SupportsPreviewResolutionFraction() const;
+
+	/** @return preview screen percentage for UI. */
+	int32 GetPreviewScreenPercentage() const;
+
+	/** Set preview screen percentage on UI behalf. */
+	void SetPreviewScreenPercentage(int32 PreviewScreenPercentage);
+
+	/** @return True if DPI preview is supported. */
+	bool SupportsLowDPIPreview() const;
+
+	/** @return whether previewing for low DPI. */
+	bool IsLowDPIPreview();
+
+	/** Set whether previewing for low DPI. */
+	void SetLowDPIPreview(bool LowDPIPreview);
+	
 protected:
 	/** Invalidates the viewport widget (if valid) to register its active timer */
 	void InvalidateViewportWidget();
@@ -1072,6 +1125,9 @@ protected:
 	/** Invalidates this and other linked viewports (anything viewing the same scene) */
 	virtual void RedrawAllViewportsIntoThisScene();
 
+	/** FCommonViewportClient interface */
+	virtual float UpdateViewportClientWindowDPIScale() const override;
+
 	/**
 	 * Used to store the required cursor visibility states and override cursor appearance
 	 */
@@ -1080,7 +1136,7 @@ protected:
 		/** Should the software cursor be visible */
 		bool	bSoftwareCursorVisible;
 
-		/** Should the hardware be visible */
+		/** Should the hardware cursor be visible */
 		bool	bHardwareCursorVisible;
 
 		/** Should the software cursor position be reset to pre-drag */
@@ -1101,6 +1157,9 @@ protected:
 	/** Setup the cursor visibility state we require and store in RequiredCursorVisibiltyAndAppearance struct */
 	void UpdateRequiredCursorVisibility();
 	
+	/** Sets the required hardware and software cursor. */
+	void SetRequiredCursor(const bool bHardwareCursorVisible, const bool bSoftwareCursorVisible);
+
 	/** 
 	 * Apply the required cursor visibility states from the RequiredCursorVisibiltyAndAppearance struct 
 	 * @param	View				True - Set the position of the software cursor if being made visible. This defaults to FALSE.
@@ -1175,13 +1234,6 @@ protected:
 	 */
 	void OnChangeCameraSpeed( const struct FInputEventState& InputState );
 	
-	/**
-	 * Returns whether or not the flight camera is active
-	 *
-	 * @return true if the flight camera is active
-	 */
-	bool IsFlightCameraActive() const;
-
 	/**
 	 * Stops any mouse tracking
 	 */
@@ -1268,6 +1320,9 @@ private:
 	/** Delegate handler for when all stats are disabled in a viewport */
 	void HandleViewportStatDisableAll(const bool bInAnyViewport);
 
+	/** Delegate handler for when a window DPI changes and we might need to adjust the scenes resolution */
+	void HandleWindowDPIScaleChanged(TSharedRef<SWindow> InWindow);
+
 	/** Handle the camera about to be moved or stopped **/
 	virtual void BeginCameraMovement(bool bHasMovement) {}
 	virtual void EndCameraMovement() {}
@@ -1296,7 +1351,7 @@ public:
 	FSceneViewStateReference ViewState;
 
 	/** Viewport view state when stereo rendering is enabled */
-	FSceneViewStateReference StereoViewState;
+	TArray<FSceneViewStateReference> StereoViewStates;
 
 	/** A set of flags that determines visibility for various scene elements. */
 	FEngineShowFlags		EngineShowFlags;
@@ -1367,6 +1422,9 @@ protected:
 	FEditorModeTools*		ModeTools;
 
 	FWidget*				Widget;
+
+	/** Whether the widget should be drawn. */
+	bool bShowWidget;
 
 	FMouseDeltaTracker*		MouseDeltaTracker;
 		
@@ -1505,6 +1563,23 @@ protected:
 	TArray<FString> EnabledStats;
 
 private:
+	/** Controles resolution fraction for previewing in editor viewport at different screen percentage. */
+	float PreviewResolutionFraction;
+
+	// DPI mode for scene rendering.
+	enum class ESceneDPIMode
+	{
+		// Uses Editor.OverrideDPIBasedEditorViewportScaling.
+		EditorDefault,
+
+		// Force emulating low DPI.
+		EmulateLowDPI,
+
+		// Force using high dpi.
+		HighDPI
+	};
+	ESceneDPIMode SceneDPIMode;
+
 	/* View mode to set when this viewport is of type LVT_Perspective */
 	EViewModeIndex PerspViewModeIndex;
 

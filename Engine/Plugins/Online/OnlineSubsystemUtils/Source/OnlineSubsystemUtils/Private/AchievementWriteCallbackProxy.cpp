@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AchievementWriteCallbackProxy.h"
 #include "EngineGlobals.h"
@@ -34,7 +34,7 @@ UAchievementWriteCallbackProxy* UAchievementWriteCallbackProxy::WriteAchievement
 
 void UAchievementWriteCallbackProxy::Activate()
 {
-	FOnlineSubsystemBPCallHelper Helper(TEXT("WriteAchievementObject"), GEngine->GetWorldFromContextObject(WorldContextObject));
+	FOnlineSubsystemBPCallHelper Helper(TEXT("WriteAchievementObject"), WorldContextObject);
 	Helper.QueryIDFromPlayerController(PlayerControllerWeakPtr.Get());
 
 	if (Helper.IsValid())

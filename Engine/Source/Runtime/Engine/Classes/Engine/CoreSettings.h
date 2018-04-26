@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,7 +11,7 @@
 struct FPropertyChangedEvent;
 
 /**
- * Rendering settings.
+ * Streaming settings.
  */
 UCLASS(config=Engine, defaultconfig, meta=(DisplayName="Streaming"))
 class ENGINE_API UStreamingSettings : public UDeveloperSettings
@@ -48,11 +48,6 @@ protected:
 		ConsoleVariable = "s.MinBulkDataSizeForAsyncLoading", DisplayName = "Minimum Bulk Data Size For Async Loading",
 		ToolTip = "Minimum time the time limit exceeded warning will be triggered by."))
 	int32 MinBulkDataSizeForAsyncLoading;
-
-	UPROPERTY(config, EditAnywhere, Category = IO, meta = (
-		ConsoleVariable = "s.AsyncIOBandwidthLimit", DisplayName = "Asynchronous IO Bandwidth Limit",
-		ToolTip = "Constrain bandwidth if wanted. Value is in MByte/ sec."))
-	float AsyncIOBandwidthLimit;
 
 	UPROPERTY(EditAnywhere, config, Category = LevelStreaming, meta = (
 		ConsoleVariable = "s.UseBackgroundLevelStreaming", DisplayName = "Use Background Level Streaming",
@@ -129,6 +124,13 @@ extern ENGINE_API int32 GLevelStreamingComponentsRegistrationGranularity;
 extern ENGINE_API int32 GLevelStreamingComponentsUnregistrationGranularity;
 /** Maximum allowed time to spend for actor unregistration steps during level streaming (ms per frame). If this is 0.0 then we don't timeslice.*/
 extern ENGINE_API float GLevelStreamingUnregisterComponentsTimeLimit;
+/** Whether to force a GC after levels are streamed out to instantly reclaim the memory at the expensive of a hitch. */
+extern ENGINE_API int32 GLevelStreamingForceGCAfterLevelStreamedOut;
+/** Whether to repeatedly kick off incremental GC when there are levels still waiting to be purged. */
+extern ENGINE_API int32 GLevelStreamingContinuouslyIncrementalGCWhileLevelsPendingPurge;
+/** Enables level streaming requests while async loading (of anything) while the match is already in progress and no loading screen is up. */
+extern ENGINE_API int32 GLevelStreamingAllowLevelRequestsWhileAsyncLoadingInMatch;
+
 
 /**
 * Implements the settings for garbage collection.
@@ -178,6 +180,11 @@ protected:
 		ConsoleVariable = "gc.BlueprintClusteringEnabled", DisplayName = "Blueprint Clustering Enabled",
 		ToolTip = "Whether to allow Blueprint classes to create GC clusters."))
 	uint32 BlueprintClusteringEnabled : 1;
+
+	UPROPERTY(EditAnywhere, config, Category = Optimization, meta = (
+		ConsoleVariable = "gc.UseDisregardForGCOnDedicatedServers", DisplayName = "Use DisregardForGC On Dedicated Servers",
+		ToolTip = "If false, DisregardForGC will be disabled for dedicated servers."))
+	uint32 UseDisregardForGCOnDedicatedServers : 1;
 
 	UPROPERTY(EditAnywhere, config, Category = General, meta = (
 		ConsoleVariable = "gc.NumRetriesBeforeForcingGC", DisplayName = "Number Of Retries Before Forcing GC",

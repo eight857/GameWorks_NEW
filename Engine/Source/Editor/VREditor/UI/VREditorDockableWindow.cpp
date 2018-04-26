@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VREditorDockableWindow.h"
 #include "UObject/ConstructorHelpers.h"
@@ -103,18 +103,6 @@ AVREditorDockableWindow::AVREditorDockableWindow() :
 	DragOperationComponent->SetDragOperationClass( UDockableWindowDragOperation::StaticClass() );
 }
 
-
-AVREditorDockableWindow::~AVREditorDockableWindow()
-{
-	SelectionBarMeshComponent = nullptr;
-	CloseButtonMeshComponent = nullptr;
-	SelectionBarMID = nullptr;
-	SelectionBarTranslucentMID = nullptr;
-	CloseButtonMID = nullptr;
-	CloseButtonTranslucentMID = nullptr;
-	DragOperationComponent = nullptr;
-}
-
 void AVREditorDockableWindow::SetupWidgetComponent()
 {
 	Super::SetupWidgetComponent();
@@ -188,17 +176,6 @@ void AVREditorDockableWindow::TickManually( float DeltaTime )
 
 		EasedAimingAtMeFadeAlpha = FMath::Max( 0.001f, EasedAimingAtMeFadeAlpha );
 
-		// Update the window border mesh
-		{
-			const float WindowMeshSize = 100.0f;	// Size of imported mesh, we need to inverse compensate for
-
-			const FVector WindowMeshScale = FVector(
-				VREd::DockWindowThickness->GetFloat(),
-				Size.X / WindowMeshSize,
-				Size.Y / WindowMeshSize ) * AnimatedScale * WorldScaleFactor;
-			WindowMeshComponent->SetRelativeScale3D( WindowMeshScale );			
-		}
-
 		// Update the selection bar
 		{
 			if( bIsHoveringOverSelectionBar )
@@ -255,9 +232,6 @@ void AVREditorDockableWindow::TickManually( float DeltaTime )
 
 			SetCloseButtonColor( GetOwner().GetOwner().GetColor( bIsHoveringOverCloseButton ? UVREditorMode::EColors::UICloseButtonHoverColor : UVREditorMode::EColors::UICloseButtonColor ) );
 		}
-
-		const FVector NewScale(GetScale() * AnimatedScale * VRMode->GetWorldScaleFactor());
-		SetWidgetComponentScale(NewScale);
 	}
 } 
 

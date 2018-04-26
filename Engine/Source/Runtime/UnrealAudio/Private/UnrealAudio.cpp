@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/RunnableThread.h"
 #include "UnrealAudioTypes.h"
 #include "Modules/ModuleManager.h"
 #include "UnrealAudioPrivate.h"
+#include "HAL/LowLevelMemTracker.h"
 
 #if ENABLE_UNREAL_AUDIO
 
@@ -147,6 +148,8 @@ namespace UAudio
 
 	bool FUnrealAudioModule::InitializeAudioDevice()
 	{
+		LLM_SCOPE(ELLMTag::Audio);
+
 		UnrealAudioDevice = FModuleManager::LoadModulePtr<IUnrealAudioDeviceModule>(ModuleName);
 		if (UnrealAudioDevice)
 		{
@@ -290,6 +293,8 @@ namespace UAudio
 
 	uint32 FUnrealAudioModule::Run()
 	{
+		LLM_SCOPE(ELLMTag::Audio);
+
 		AudioThreadChecker.CheckThread();
 
 		// Initialize the audio system time to 0.0. This is a time

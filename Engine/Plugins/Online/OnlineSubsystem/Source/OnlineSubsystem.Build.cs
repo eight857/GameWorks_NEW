@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
 public class OnlineSubsystem : ModuleRules
 {
 	public OnlineSubsystem(ReadOnlyTargetRules Target) : base(Target)
-	{
+    {
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 		
 		PublicDependencyModuleNames.AddRange(
@@ -18,8 +18,8 @@ public class OnlineSubsystem : ModuleRules
 
         PrivateIncludePaths.Add("OnlineSubsystem/Private");
 
-        Definitions.Add("ONLINESUBSYSTEM_PACKAGE=1");
-		Definitions.Add("DEBUG_LAN_BEACON=0");
+        PublicDefinitions.Add("ONLINESUBSYSTEM_PACKAGE=1");
+		PublicDefinitions.Add("DEBUG_LAN_BEACON=0");
 
 		PrivateDependencyModuleNames.AddRange(
 			new string[] { 

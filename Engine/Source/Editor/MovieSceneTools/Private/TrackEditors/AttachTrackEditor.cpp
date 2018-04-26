@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TrackEditors/AttachTrackEditor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
@@ -8,6 +8,8 @@
 #include "Tracks/MovieScene3DAttachTrack.h"
 #include "Sections/MovieScene3DAttachSection.h"
 #include "ActorEditorUtils.h"
+#include "MovieSceneObjectBindingIDPicker.h"
+#include "MovieSceneToolHelpers.h"
 
 
 #define LOCTEXT_NAMESPACE "F3DAttachTrackEditor"
@@ -31,11 +33,6 @@ public:
 		return &Section;
 	}
 
-	virtual FText GetDisplayName() const override
-	{ 
-		return LOCTEXT("SectionDisplayName", "Attach");
-	}
-	
 	virtual FText GetSectionTitle() const override 
 	{ 
 		UMovieScene3DAttachSection* AttachSection = Cast<UMovieScene3DAttachSection>(&Section);
@@ -44,7 +41,7 @@ public:
 			TSharedPtr<ISequencer> Sequencer = AttachTrackEditor->GetSequencer();
 			if (Sequencer.IsValid())
 			{
-				TArrayView<TWeakObjectPtr<UObject>> RuntimeObjects = Sequencer->FindBoundObjects(AttachSection->GetConstraintId(), Sequencer->GetFocusedTemplateID());
+				TArrayView<TWeakObjectPtr<UObject>> RuntimeObjects = Sequencer->FindBoundObjects(AttachSection->GetConstraintBindingID().GetGuid(), AttachSection->GetConstraintBindingID().GetSequenceID());
 				if (RuntimeObjects.Num() == 1 && RuntimeObjects[0].IsValid())
 				{
 					if (AActor* Actor = Cast<AActor>(RuntimeObjects[0].Get()))
@@ -172,21 +169,33 @@ bool F3DAttachTrackEditor::IsActorPickable(const AActor* const ParentActor, FGui
 }
 
 
-void F3DAttachTrackEditor::ActorSocketPicked(const FName SocketName, USceneComponent* Component, AActor* ParentActor, FGuid ObjectGuid, UMovieSceneSection* Section)
+void F3DAttachTrackEditor::ActorSocketPicked(const FName SocketName, USceneComponent* Component, FActorPickerID ActorPickerID, FGuid ObjectGuid, UMovieSceneSection* Section)
 {
 	if (Section != nullptr)
 	{
 		const FScopedTransaction Transaction(LOCTEXT("UndoSetAttach", "Set Attach"));
 
 		UMovieScene3DAttachSection* AttachSection = (UMovieScene3DAttachSection*)(Section);
-		FGuid ActorId = FindOrCreateHandleToObject(ParentActor).Handle;
 
-		if (ActorId.IsValid())
+		FMovieSceneObjectBindingID ConstraintBindingID;
+
+		if (ActorPickerID.ExistingBindingID.IsValid())
 		{
-			AttachSection->SetConstraintId(ActorId);
-			AttachSection->AttachSocketName = SocketName;
-			AttachSection->AttachComponentName = Component ? Component->GetFName() : NAME_None;
+			ConstraintBindingID = ActorPickerID.ExistingBindingID;
 		}
+		else if (ActorPickerID.ActorPicked.IsValid())
+		{
+			FGuid ParentActorId = FindOrCreateHandleToObject(ActorPickerID.ActorPicked.Get()).Handle;
+			ConstraintBindingID = FMovieSceneObjectBindingID(ParentActorId, MovieSceneSequenceID::Root);
+		}
+
+		if (ConstraintBindingID.IsValid())
+		{
+			AttachSection->SetConstraintBindingID(ConstraintBindingID);
+		}
+
+		AttachSection->AttachSocketName = SocketName;			
+		AttachSection->AttachComponentName = Component ? Component->GetFName() : NAME_None;
 	}
 	else if (ObjectGuid.IsValid())
 	{
@@ -196,28 +205,31 @@ void F3DAttachTrackEditor::ActorSocketPicked(const FName SocketName, USceneCompo
 			OutObjects.Add(Object);
 		}
 
-		AnimatablePropertyChanged( FOnKeyProperty::CreateRaw( this, &F3DAttachTrackEditor::AddKeyInternal, OutObjects, SocketName, Component ? Component->GetFName() : NAME_None, ParentActor) );
+		AnimatablePropertyChanged( FOnKeyProperty::CreateRaw( this, &F3DAttachTrackEditor::AddKeyInternal, OutObjects, SocketName, Component ? Component->GetFName() : NAME_None, ActorPickerID) );
 	}
 }
 
-bool F3DAttachTrackEditor::AddKeyInternal( float KeyTime, const TArray<TWeakObjectPtr<UObject>> Objects, const FName SocketName, const FName ComponentName, AActor* ParentActor)
+FKeyPropertyResult F3DAttachTrackEditor::AddKeyInternal( float KeyTime, const TArray<TWeakObjectPtr<UObject>> Objects, const FName SocketName, const FName ComponentName, FActorPickerID ActorPickerID)
 {
-	bool bHandleCreated = false;
-	bool bTrackCreated = false;
-	bool bTrackModified = false;
+	FKeyPropertyResult KeyPropertyResult;
 
-	FGuid ParentActorId;
+	FMovieSceneObjectBindingID ConstraintBindingID;
 
-	if (ParentActor != nullptr)
+	if (ActorPickerID.ExistingBindingID.IsValid())
 	{
-		FFindOrCreateHandleResult HandleResult = FindOrCreateHandleToObject(ParentActor);
-		ParentActorId = HandleResult.Handle;
-		bHandleCreated |= HandleResult.bWasCreated;
+		ConstraintBindingID = ActorPickerID.ExistingBindingID;
+	}
+	else if (ActorPickerID.ActorPicked.IsValid())
+	{
+		FFindOrCreateHandleResult HandleResult = FindOrCreateHandleToObject(ActorPickerID.ActorPicked.Get());
+		FGuid ParentActorId = HandleResult.Handle;
+		KeyPropertyResult.bHandleCreated |= HandleResult.bWasCreated;
+		ConstraintBindingID = FMovieSceneObjectBindingID(ParentActorId, MovieSceneSequenceID::Root);
 	}
 
-	if (!ParentActorId.IsValid())
+	if (!ConstraintBindingID.IsValid())
 	{
-		return false;
+		return KeyPropertyResult;
 	}
 
 	for( int32 ObjectIndex = 0; ObjectIndex < Objects.Num(); ++ObjectIndex )
@@ -226,12 +238,12 @@ bool F3DAttachTrackEditor::AddKeyInternal( float KeyTime, const TArray<TWeakObje
 
 		FFindOrCreateHandleResult HandleResult = FindOrCreateHandleToObject( Object );
 		FGuid ObjectHandle = HandleResult.Handle;
-		bHandleCreated |= HandleResult.bWasCreated;
+		KeyPropertyResult.bHandleCreated |= HandleResult.bWasCreated;
 		if (ObjectHandle.IsValid())
 		{
 			FFindOrCreateTrackResult TrackResult = FindOrCreateTrackForObject( ObjectHandle, UMovieScene3DAttachTrack::StaticClass());
 			UMovieSceneTrack* Track = TrackResult.Track;
-			bTrackCreated |= TrackResult.bWasCreated;
+			KeyPropertyResult.bTrackCreated |= TrackResult.bWasCreated;
 
 			if (ensure(Track))
 			{
@@ -251,14 +263,13 @@ bool F3DAttachTrackEditor::AddKeyInternal( float KeyTime, const TArray<TWeakObje
 					}
 				}
 
-				Cast<UMovieScene3DAttachTrack>(Track)->AddConstraint( KeyTime, AttachEndTime, SocketName, ComponentName, ParentActorId );
-				bTrackModified = true;
+				Cast<UMovieScene3DAttachTrack>(Track)->AddConstraint( KeyTime, AttachEndTime, SocketName, ComponentName, ConstraintBindingID);
+				KeyPropertyResult.bTrackModified = true;
 			}
 		}
 	}
 
-	return bHandleCreated || bTrackCreated || bTrackModified;
+	return KeyPropertyResult;
 }
-
 
 #undef LOCTEXT_NAMESPACE

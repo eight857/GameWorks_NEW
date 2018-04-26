@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "NodeMappingProviderInterface.h"
 #include "NodeMappingContainer.generated.h"
 
@@ -37,7 +37,7 @@ private:
 	TMap<FName, FNodeMap>	NodeMapping;
 
 	UPROPERTY(EditAnywhere, Category = Mapping)
-	TAssetPtr<UBlueprint>	SourceAsset; 
+	TSoftObjectPtr<UBlueprint>	SourceAsset; 
 
 public:
 #if WITH_EDITOR

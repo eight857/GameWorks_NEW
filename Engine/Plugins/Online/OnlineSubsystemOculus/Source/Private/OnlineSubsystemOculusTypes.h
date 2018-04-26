@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -66,7 +66,8 @@ public:
 
 	virtual bool IsValid() const override
 	{
-		return ID != 0;
+		// Not completely accurate, but safe to assume numbers below this is invalid
+		return ID > 100000;
 	}
 
 	ovrID GetID() const

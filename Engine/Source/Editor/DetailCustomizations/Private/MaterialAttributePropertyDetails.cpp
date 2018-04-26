@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MaterialAttributePropertyDetails.h"
 #include "Widgets/Text/STextBlock.h"
@@ -55,7 +55,7 @@ void FMaterialAttributePropertyDetails::CustomizeDetails(IDetailLayoutBuilder& D
 void FMaterialAttributePropertyDetails::OnBuildChild(TSharedRef<IPropertyHandle> ChildHandle, int32 ElementIndex, IDetailChildrenBuilder& ChildrenBuilder)
 {
 	// Add an overridden combo box
-	IDetailPropertyRow& PropertyArrayRow = ChildrenBuilder.AddChildProperty(ChildHandle);
+	IDetailPropertyRow& PropertyArrayRow = ChildrenBuilder.AddProperty(ChildHandle);
 
 	PropertyArrayRow.CustomWidget()
 	.NameContent()

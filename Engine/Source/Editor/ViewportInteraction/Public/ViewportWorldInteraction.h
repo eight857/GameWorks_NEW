@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -33,6 +33,7 @@ namespace ViewportWorldActionTypes
 // Forward declare the GizmoHandleTypes
 enum class EGizmoHandleTypes : uint8;
 class IViewportInteractableInterface;
+class UViewportInteractionAssetContainer;
 class UViewportInteractor;
 
 UCLASS()
@@ -204,7 +205,7 @@ public:
 	void StopDragging( class UViewportInteractor* Interactor );
 
 	/** Starts dragging selected objects around.  Called when clicking and dragging on actors/gizmos in the world, or when placing new objects. */
-	void StartDragging( UViewportInteractor* Interactor, UActorComponent* ClickedTransformGizmoComponent, const FVector& HitLocation, const bool bIsPlacingNewObjects, const bool bAllowInterpolationWhenPlacing, const bool bStartTransaction, const bool bWithGrabberSphere );
+	void StartDragging( UViewportInteractor* Interactor, UActorComponent* ClickedTransformGizmoComponent, const FVector& HitLocation, const bool bIsPlacingNewObjects, const bool bAllowInterpolationWhenPlacing, const bool bShouldUseLaserImpactDrag, const bool bStartTransaction, const bool bWithGrabberSphere );
 
 	DECLARE_EVENT_OneParam( UViewportWorldInteraction, FOnWorldScaleChanged, const float /* NewWorldToMetersScale */);
 	virtual FOnWorldScaleChanged& OnWorldScaleChanged() { return OnWorldScaleChangedEvent; };
@@ -261,7 +262,7 @@ public:
 	void SetLastDragGizmoStartTransform( const FTransform NewLastDragGizmoStartTransform );
 
 	/** Gets all the interactors */
-	TArray<UViewportInteractor*>& GetInteractors();
+	const TArray<UViewportInteractor*>& GetInteractors() const;
 
 	/** Given a world space velocity vector, applies inertial damping to it to slow it down */
 	void ApplyVelocityDamping( FVector& Velocity, const bool bVelocitySensitive );
@@ -300,7 +301,7 @@ public:
 	}
 
 	/** The ability to move and scale the world */
-	void AllowWorldMovement(bool bDisable);
+	void AllowWorldMovement(bool bAllow);
 
 	/** For other systems to check if the Viewport World Interaction system is currently aligning transformables to actors*/
 	bool AreAligningToActors();
@@ -308,9 +309,6 @@ public:
 	bool HasCandidatesSelected();
 	/** If there are no currently selected candidates, use the currently selected actors as candidates. Otherwise, reset the candidates */
 	void SetSelectionAsCandidates();
-
-	/** When RotateOnAngle we intersect on a plane to rotate the transform gizmo. This is the local point from the transform gizmo location of that intersect */
-	FVector GetLocalIntersectPointOnRotationGizmo() const;
 
 	/** Gets the current delta time, so functions that don't get the delta time passed can still get it */
 	float GetCurrentDeltaTime() const;
@@ -322,11 +320,15 @@ public:
 		bShouldSuppressCursor = bInShouldSuppressCursor;
 	};
 
+	/** Getters and setters for whether or not to show the cursor on the viewport */
+	bool ShouldForceCursor() const;
+	void SetForceCursor(const bool bInShouldForceCursor);
+
 	/** Gets the container for all the assets of ViewportInteraction. */
-	const class UViewportInteractionAssetContainer& GetAssetContainer() const;
+	const UViewportInteractionAssetContainer& GetAssetContainer() const;
 
 	/** Static function to load the asset container */
-	static const class UViewportInteractionAssetContainer& LoadAssetContainer();
+	static const UViewportInteractionAssetContainer& LoadAssetContainer();
 
 	/** Plays sound at location. */
 	void PlaySound(USoundBase* SoundBase, const FVector& InWorldLocation, const float InVolume = 1.0f);
@@ -336,6 +338,8 @@ public:
 
 	/** Get if this world interaction is in VR. */
 	bool IsInVR() const;
+
+	FVector SnapLocation(const bool bLocalSpaceSnapping, const FVector& DesiredGizmoLocation, const FTransform &GizmoStartTransform, const FVector SnapGridBase, const bool bShouldConstrainMovement, const FVector AlignAxes);
 
 protected:
 
@@ -356,24 +360,25 @@ private:
 	
 	/** Called by the world interaction system when one of our components is dragged by the user.  If null is
 	    passed in then we'll treat it as dragging the whole object (rather than a specific axis/handle) */
-	void UpdateDragging( 
+	void UpdateDragging(
 		const float DeltaTime,
-		bool& bIsFirstDragUpdate, 
-		const EViewportInteractionDraggingMode DraggingMode, 
-		const ETransformGizmoInteractionType InteractionType, 
-		const bool bWithTwoHands, 
-		const TOptional<FTransformGizmoHandlePlacement> OptionalHandlePlacement, 
-		const FVector& DragDelta, 
-		const FVector& OtherHandDragDelta, 
-		const FVector& DraggedTo, 
-		const FVector& OtherHandDraggedTo, 
-		const FVector& DragDeltaFromStart, 
-		const FVector& OtherHandDragDeltaFromStart, 
-		const FVector& LaserPointerStart, 
-		const FVector& LaserPointerDirection, 
+		bool& bIsFirstDragUpdate,
+		UViewportInteractor* Interactor,
+		const EViewportInteractionDraggingMode DraggingMode,
+		class UViewportDragOperation* DragOperation,
+		const bool bWithTwoHands,
+		const TOptional<FTransformGizmoHandlePlacement> OptionalHandlePlacement,
+		const FVector& DragDelta,
+		const FVector& OtherHandDragDelta,
+		const FVector& DraggedTo,
+		const FVector& OtherHandDraggedTo,
+		const FVector& DragDeltaFromStart,
+		const FVector& OtherHandDragDeltaFromStart,
+		const FVector& LaserPointerStart,
+		const FVector& LaserPointerDirection,
 		const float LaserPointerMaxLength,
-		const bool bIsLaserPointerValid, 
-		const FTransform& GizmoStartTransform, 
+		const bool bIsLaserPointerValid,
+		const FTransform& GizmoStartTransform,
 		FTransform& GizmoLastTransform,
 		FTransform& GizmoTargetTransform,
 		FTransform& GizmoUnsnappedTargetTransform,
@@ -382,24 +387,24 @@ private:
 		const USceneComponent* const DraggingTransformGizmoComponent,
 		FVector& GizmoSpaceFirstDragUpdateOffsetAlongAxis,
 		FVector& DragDeltaFromStartOffset,
+		ELockedWorldDragMode& LockedWorldDragMode,
+		float& GizmoScaleSinceDragStarted,
+		float& GizmoRotationRadiansSinceDragStarted,
 		bool& bIsDrivingVelocityOfSimulatedTransformables,
 		FVector& OutUnsnappedDraggedTo);
 
-	FVector SnapLocation(const bool bLocalSpaceSnapping, const FVector& DesiredGizmoLocation, const FTransform &GizmoStartTransform, const FVector SnapGridBase, const bool bShouldConstrainMovement, const FVector AlignAxes);
-
-
 	/** Given a drag delta from a starting point, contrains that delta based on a gizmo handle axis */
-	FVector ComputeConstrainedDragDeltaFromStart( 
-		const bool bIsFirstDragUpdate, 
-		const ETransformGizmoInteractionType InteractionType, 
-		const TOptional<FTransformGizmoHandlePlacement> OptionalHandlePlacement, 
-		const FVector& DragDeltaFromStart, 
-		const FVector& LaserPointerStart, 
-		const FVector& LaserPointerDirection, 
-		const bool bIsLaserPointerValid, 
-		const FTransform& GizmoStartTransform, 
-		const float LaserPointerMaxLength, 
-		FVector& GizmoSpaceFirstDragUpdateOffsetAlongAxis, 
+	FVector ComputeConstrainedDragDeltaFromStart(
+		const bool bIsFirstDragUpdate,
+		const bool bOnPlane,
+		const TOptional<FTransformGizmoHandlePlacement> OptionalHandlePlacement,
+		const FVector& DragDeltaFromStart,
+		const FVector& LaserPointerStart,
+		const FVector& LaserPointerDirection,
+		const bool bIsLaserPointerValid,
+		const FTransform& GizmoStartTransform,
+		const float LaserPointerMaxLength,
+		FVector& GizmoSpaceFirstDragUpdateOffsetAlongAxis,
 		FVector& DragDeltaFromStartOffset,
 		FVector& OutClosestPointOnLaser) const;
 
@@ -454,6 +459,9 @@ private:
 	/** If there is a transformable with velocity in simulate */
 	bool HasTransformableWithVelocityInSimulate() const;
 
+	/** Get mode tools from the viewport client. */
+	class FEditorModeTools& GetModeTools() const;
+
 	//
 	// Colors
 	//
@@ -472,10 +480,10 @@ public:
 	/** Gets the color from color type */
 	FLinearColor GetColor(const EColors Color, const float Multiplier = 1.f) const;
 
-	/** The path of the asset container */
-	static const FString AssetContainerPath;
-
 private:
+
+	/** The path of the asset container */
+	static const TCHAR* AssetContainerPath;
 
 	// All the colors for this mode
 	TArray<FLinearColor> Colors;
@@ -583,14 +591,6 @@ private:
 
 	/** Current gizmo bounds in local space.  Updated every frame.  This is not the same as the gizmo actor's bounds. */
 	FBox GizmoLocalBounds;
-
-	/** Starting angle when rotating an object with  ETransformGizmoInteractionType::RotateOnAngle */
-	TOptional<float> StartDragAngleOnRotation;
-
-	FVector LocalIntersectPointOnRotationGizmo;
-
-	/** The direction of where the rotation handle is facing when starting rotation */
-	TOptional<FVector> DraggingRotationHandleDirection;
 
 	/** Whether the gizmo should be visible or not */
 	bool bShouldTransformGizmoBeVisible;
@@ -706,13 +706,19 @@ private:
 	/** Whether or not to show the cursor on the viewport */
 	bool bShouldSuppressCursor;
 
+	/** Whether or not to force the cursor on the viewport */
+	bool bShouldForceCursor;
+
 	/** The current tick number */
 	uint32 CurrentTickNumber;
 
 	/** Container of assets */
 	UPROPERTY()
-	class UViewportInteractionAssetContainer* AssetContainer;
+	const UViewportInteractionAssetContainer* AssetContainer;
 
 	/** If we want to skip playing the sound when refreshing the transform gizmo next time */
 	bool bPlayNextRefreshTransformGizmoSound;
+
+	/** Slate Input Processor */
+	TSharedPtr<class FViewportInteractionInputProcessor> InputProcessor;
 };

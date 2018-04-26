@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GitSourceControlUtils.h"
 #include "GitSourceControlCommand.h"
@@ -26,7 +26,7 @@ namespace GitSourceControlConstants
 
 FGitScopedTempFile::FGitScopedTempFile(const FText& InText)
 {
-	Filename = FPaths::CreateTempFilename(*FPaths::GameLogDir(), TEXT("Git-Temp"), TEXT(".txt"));
+	Filename = FPaths::CreateTempFilename(*FPaths::ProjectLogDir(), TEXT("Git-Temp"), TEXT(".txt"));
 	if(!FFileHelper::SaveStringToFile(InText.ToString(), *Filename, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 	{
 		UE_LOG(LogSourceControl, Error, TEXT("Failed to write to temp file: %s"), *Filename);
@@ -108,10 +108,26 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 	FPlatformProcess::ExecProcess(*InPathToGitBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
 	
 #if UE_BUILD_DEBUG
-	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw(%s): OutResults=\n%s"), *InCommand, *OutResults)
+
+	if (OutResults.IsEmpty())
+	{
+		UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw: 'OutResults=n/a'"));
+	}
+	else
+	{
+		UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw(%s): OutResults=\n%s"), *InCommand, *OutResults);
+	}
+
 	if(ReturnCode != 0)
 	{
-		UE_LOG(LogSourceControl, Warning, TEXT("RunCommandInternalRaw(%s): OutErrors=\n%s"), *InCommand, *OutErrors);
+		if (OutErrors.IsEmpty())
+		{
+			UE_LOG(LogSourceControl, Warning, TEXT("RunCommandInternalRaw: 'OutErrors=n/a'"));
+		}
+		else
+		{
+			UE_LOG(LogSourceControl, Warning, TEXT("RunCommandInternalRaw(%s): OutErrors=\n%s"), *InCommand, *OutErrors);
+		}
 	}
 #endif
 
@@ -231,11 +247,9 @@ FString FindGitBinaryPath()
 
 bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion *OutVersion)
 {
-	bool bGitAvailable = false;
-
 	FString InfoMessages;
 	FString ErrorMessages;
-	bGitAvailable = RunCommandInternalRaw(TEXT("version"), InPathToGitBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
+	bool bGitAvailable = RunCommandInternalRaw(TEXT("version"), InPathToGitBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
 	if(bGitAvailable)
 	{
 		if(!InfoMessages.Contains("git"))
@@ -246,6 +260,7 @@ bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion *OutVers
 		{
 			ParseGitVersion(InfoMessages, OutVersion);
 			FindGitCapabilities(InPathToGitBinary, OutVersion);
+			FindGitLfsCapabilities(InPathToGitBinary, OutVersion);
 		}
 	}
 
@@ -276,7 +291,7 @@ void ParseGitVersion(const FString& InVersionString, FGitVersion *OutVersion)
 	}
 }
 
-void FindGitCapabilities(const FString& InPathToGitBinary, FGitVersion *OutVersion) 
+void FindGitCapabilities(const FString& InPathToGitBinary, FGitVersion *OutVersion)
 {
 	FString InfoMessages;
 	FString ErrorMessages;
@@ -284,6 +299,22 @@ void FindGitCapabilities(const FString& InPathToGitBinary, FGitVersion *OutVersi
 	if (InfoMessages.Contains("--filters"))
 	{
 		OutVersion->bHasCatFileWithFilters = true;
+	}
+}
+
+void FindGitLfsCapabilities(const FString& InPathToGitBinary, FGitVersion *OutVersion)
+{
+	FString InfoMessages;
+	FString ErrorMessages;
+	bool bGitLfsAvailable = RunCommandInternalRaw(TEXT("lfs version"), InPathToGitBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
+	if(bGitLfsAvailable)
+	{
+		OutVersion->bHasGitLfs = true;
+
+		if(0 <= InfoMessages.Compare(TEXT("git-lfs/2.0.0")))
+		{
+			OutVersion->bHasGitLfsLocking = true; // Git LFS File Locking workflow introduced in "git-lfs/2.0.0"
+		}
 	}
 }
 
@@ -355,7 +386,7 @@ void GetUserConfig(const FString& InPathToGitBinary, const FString& InRepository
 	}
 }
 
-void GetBranchName(const FString& InPathToGitBinary, const FString& InRepositoryRoot, FString& OutBranchName)
+bool GetBranchName(const FString& InPathToGitBinary, const FString& InRepositoryRoot, FString& OutBranchName)
 {
 	bool bResults;
 	TArray<FString> InfoMessages;
@@ -363,7 +394,7 @@ void GetBranchName(const FString& InPathToGitBinary, const FString& InRepository
 	TArray<FString> Parameters;
 	Parameters.Add(TEXT("--short"));
 	Parameters.Add(TEXT("--quiet"));		// no error message while in detached HEAD
-	Parameters.Add(TEXT("HEAD"));	
+	Parameters.Add(TEXT("HEAD"));
 	bResults = RunCommandInternal(TEXT("symbolic-ref"), InPathToGitBinary, InRepositoryRoot, Parameters, TArray<FString>(), InfoMessages, ErrorMessages);
 	if(bResults && InfoMessages.Num() > 0)
 	{
@@ -380,7 +411,13 @@ void GetBranchName(const FString& InPathToGitBinary, const FString& InRepository
 			OutBranchName = "HEAD detached at ";
 			OutBranchName += InfoMessages[0];
 		}
+		else
+		{
+			bResults = false;
+		}
 	}
+
+	return bResults;
 }
 
 bool RunCommand(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
@@ -432,7 +469,7 @@ bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot
 			// First batch is a simple "git commit" command with only the first files
 			bResult &= RunCommandInternal(TEXT("commit"), InPathToGitBinary, InRepositoryRoot, InParameters, FilesInBatch, OutResults, OutErrorMessages);
 		}
-		
+
 		TArray<FString> Parameters;
 		for(const auto& Parameter : InParameters)
 		{
@@ -602,7 +639,7 @@ public:
 		CommonAncestorFileId = FirstResult.Mid(7, 40);
 	}
 
-	FString CommonAncestorFileId;	/// SHA1 Id of the file (warning: not the commit Id)
+	FString CommonAncestorFileId;	///< SHA1 Id of the file (warning: not the commit Id)
 };
 
 /** Execute a command to get the details of a conflict */
@@ -623,6 +660,15 @@ static void RunGetConflictStatus(const FString& InPathToGitBinary, const FString
 	}
 }
 
+/// Convert filename relative to the repository root to absolute path (inplace)
+void AbsoluteFilenames(const FString& InRepositoryRoot, TArray<FString>& InFileNames)
+{
+	for(auto& FileName : InFileNames)
+	{
+		FileName = FPaths::ConvertRelativePathToFull(InRepositoryRoot, FileName);
+	}
+}
+
 /** Run a 'git ls-files' command to get all files tracked by Git recursively in a directory.
  *
  * Called in case of a "directory status" (no file listed in the command) when using the "Submit to Source Control" menu.
@@ -632,7 +678,9 @@ static bool ListFilesInDirectoryRecurse(const FString& InPathToGitBinary, const 
 	TArray<FString> ErrorMessages;
 	TArray<FString> Directory;
 	Directory.Add(InDirectory);
-	return RunCommandInternal(TEXT("ls-files"), InPathToGitBinary, InRepositoryRoot, TArray<FString>(), Directory, OutFiles, ErrorMessages);
+	const bool bResult = RunCommandInternal(TEXT("ls-files"), InPathToGitBinary, InRepositoryRoot, TArray<FString>(), Directory, OutFiles, ErrorMessages);
+	AbsoluteFilenames(InRepositoryRoot, OutFiles);
+	return bResult;
 }
 
 /** Parse the array of strings results of a 'git status' command for a provided list of files all in a common directory
@@ -685,6 +733,32 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
 	}
 }
 
+/** Parse the array of strings results of a 'git status' command for a directory
+ *
+ *  Called in case of a "directory status" (no file listed in the command) ONLY to detect Deleted/Missing/Untracked files
+ * since those files are not listed by the 'git ls-files' command.
+ *
+ * @see #ParseFileStatusResult() above for an example of a 'git status' results
+*/
+static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
+{
+	// Iterate on each line of result of the status command
+	for(const FString& Result : InResults)
+	{
+		const FString RelativeFilename = FilenameFromGitStatus(Result);
+		const FString File = FPaths::ConvertRelativePathToFull(InRepositoryRoot, RelativeFilename);
+
+		FGitSourceControlState FileState(File);
+		FGitStatusParser StatusParser(Result);
+		if((EWorkingCopyState::Deleted == StatusParser.State) || (EWorkingCopyState::Missing == StatusParser.State) || (EWorkingCopyState::NotControlled == StatusParser.State))
+		{
+			FileState.WorkingCopyState = StatusParser.State;
+			FileState.TimeStamp.Now();
+			OutStates.Add(MoveTemp(FileState));
+		}
+	}
+}
+
 /**
  * @brief Detects how to parse the result of a "status" command to get workspace file states
  *
@@ -699,17 +773,20 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
  */
 static void ParseStatusResults(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
 {
-	if (1 == InFiles.Num() && FPaths::DirectoryExists(InFiles[0]))
+	if(1 == InFiles.Num() && FPaths::DirectoryExists(InFiles[0]))
 	{
 		// 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
 		//   (this is triggered by the "Submit to Source Control" menu)
 		TArray<FString> Files;
 		const FString& Directory = InFiles[0];
 		const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files);
-		if (bResult)
+		if(bResult)
 		{
 			ParseFileStatusResult(InPathToGitBinary, InRepositoryRoot, Files, InResults, OutStates);
 		}
+		// The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
+		// => so we also parse the status results to explicitly look for Deleted/Missing assets
+		ParseDirectoryStatusResult(InPathToGitBinary, InRepositoryRoot, InResults, OutStates);
 	}
 	else
 	{
@@ -749,16 +826,25 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 	// 2) then we can batch git status operation by subdirectory
 	for(const auto& Files : GroupOfFiles)
 	{
+		// "git status" can only detect renamed and deleted files when it operate on a folder, so use one folder path for all files in a directory
+		const FString Path = FPaths::GetPath(*Files.Value[0]);
+		TArray<FString> OnePath;
+		// Only one file: optim very useful for the .uproject file at the root to avoid parsing the whole repository
+		// (works only if the file exists)
+		if((1 == Files.Value.Num()) && (FPaths::FileExists(Files.Value[0])))
+		{
+			OnePath.Add(Files.Value[0]);
+		}
+		else
+		{
+			OnePath.Add(Path);
+		}
 		TArray<FString> ErrorMessages;
-		bool bResult = RunCommand(TEXT("status"), InPathToGitBinary, InRepositoryRoot, Parameters, Files.Value, Results, ErrorMessages);
+		const bool bResult = RunCommand(TEXT("status"), InPathToGitBinary, InRepositoryRoot, Parameters, OnePath, Results, ErrorMessages);
 		OutErrorMessages.Append(ErrorMessages);
 		if(bResult)
 		{
 			ParseStatusResults(InPathToGitBinary, InRepositoryRoot, Files.Value, Results, OutStates);
-		}
-		else
-		{
-			bResults = false;
 		}
 	}
 
@@ -848,6 +934,8 @@ bool RunDumpToFile(const FString& InPathToGitBinary, const FString& InRepository
 		{
 			UE_LOG(LogSourceControl, Error, TEXT("DumpToFile: ReturnCode=%d"), ReturnCode);
 		}
+
+		FPlatformProcess::CloseProc(ProcessHandle);
 	}
 	else
 	{
@@ -861,18 +949,21 @@ bool RunDumpToFile(const FString& InPathToGitBinary, const FString& InRepository
 
 
 /**
-* Extract and interpret the file state from the given Git log --name-status.
-* @see https://www.kernel.org/pub/software/scm/git/docs/git-log.html
-* ' ' = unmodified
-* 'M' = modified
-* 'A' = added
-* 'D' = deleted
-* 'R' = renamed
-* 'C' = copied
-* 'T' = type changed
-* 'U' = updated but unmerged
-* 'X' = unknown
-* 'B' = broken pairing
+ * Translate file actions from the given Git log --name-status command to keywords used by the Editor UI.
+ *
+ * @see https://www.kernel.org/pub/software/scm/git/docs/git-log.html
+ * ' ' = unmodified
+ * 'M' = modified
+ * 'A' = added
+ * 'D' = deleted
+ * 'R' = renamed
+ * 'C' = copied
+ * 'T' = type changed
+ * 'U' = updated but unmerged
+ * 'X' = unknown
+ * 'B' = broken pairing
+ *
+ * @see SHistoryRevisionListRowContent::GenerateWidgetForColumn(): "add", "edit", "delete", "branch" and "integrate" (everything else is taken like "edit")
 */
 static FString LogStatusToString(TCHAR InStatus)
 {
@@ -882,14 +973,14 @@ static FString LogStatusToString(TCHAR InStatus)
 		return FString("unmodified");
 	case TEXT('M'):
 		return FString("modified");
-	case TEXT('A'):
-		return FString("added");
-	case TEXT('D'):
-		return FString("deleted");
-	case TEXT('R'):
-		return FString("renamed");
-	case TEXT('C'):
-		return FString("copied");
+	case TEXT('A'): // added: keyword "add" to display a specific icon instead of the default "edit" action one
+		return FString("add");
+	case TEXT('D'): // deleted: keyword "delete" to display a specific icon instead of the default "edit" action one
+		return FString("delete");
+	case TEXT('R'): // renamed keyword "branch" to display a specific icon instead of the default "edit" action one
+		return FString("branch");
+	case TEXT('C'): // copied keyword "branch" to display a specific icon instead of the default "edit" action one
+		return FString("branch");
 	case TEXT('T'):
 		return FString("type changed");
 	case TEXT('U'):
@@ -987,11 +1078,17 @@ static void ParseLogResults(const TArray<FString>& InResults, TGitSourceControlH
 		OutHistory.Add(MoveTemp(SourceControlRevision));
 	}
 
-	// Then set the Index number of each Revision
-	int32 RevisionIndex = OutHistory.Num();
-	for(const auto& SourceControlRevisionItem : OutHistory)
+	// Then set the revision number of each Revision based on its index (reverse order since the log starts with the most recent change)
+	for(int32 RevisionIndex = 0; RevisionIndex < OutHistory.Num(); RevisionIndex++)
 	{
-		SourceControlRevisionItem->RevisionNumber = RevisionIndex--;
+		const auto& SourceControlRevisionItem = OutHistory[RevisionIndex];
+		SourceControlRevisionItem->RevisionNumber = OutHistory.Num() - RevisionIndex;
+
+		// Special case of a move ("branch" in Perforce term): point to the previous change (so the next one in the order of the log)
+		if((SourceControlRevisionItem->Action == "branch") && (RevisionIndex < OutHistory.Num() - 1))
+		{
+			SourceControlRevisionItem->BranchSource = OutHistory[RevisionIndex + 1];
+		}
 	}
 }
 
@@ -1017,8 +1114,8 @@ public:
 		}
 	}
 
-	FString FileHash;	/// SHA1 Id of the file (warning: not the commit Id)
-	int32	FileSize;	/// Size of the file (in bytes)
+	FString FileHash;	///< SHA1 Id of the file (warning: not the commit Id)
+	int32	FileSize;	///< Size of the file (in bytes)
 };
 
 // Run a Git "log" command and parse it.

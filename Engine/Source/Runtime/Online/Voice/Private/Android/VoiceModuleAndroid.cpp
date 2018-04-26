@@ -1,4 +1,4 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*
 opensl_io.c:
@@ -154,7 +154,7 @@ int write_circular_buffer_bytes(circular_buffer *p, const char *in, int bytes)
 		}
 	}
 	p->wp = wp;
-	
+
 	return byteswrite;
 }
 
@@ -167,12 +167,17 @@ void free_circular_buffer (circular_buffer *p)
 	free(p->buffer);
 	free(p);
 }
+// END code snippet from https://audioprograming.wordpress.com
 
 
 #if ANDROIDVOICE_SUPPORTED_PLATFORMS
+/** All outstanding voice capture objects */
+TArray<IVoiceCapture*> ActiveVoiceCaptures;
+
 void OpenSLRecordBufferQueueCallback(SLAndroidSimpleBufferQueueItf bq, void *context);
+void FreeVoiceCaptureObject(IVoiceCapture* VoiceCaptureObj);
+void FreeAllVoiceCaptureObjects();
 #endif
-// END code snippet from https://audioprograming.wordpress.com
 
 
 /**
@@ -194,8 +199,16 @@ public:
 	
 	FVoiceCaptureOpenSLES()
 		: VoiceCaptureState(EVoiceCaptureState::UnInitialized)
-		, InputLatency(0)
-		, ReadableBytes(0)	
+		, inrb(NULL)
+		, recBuffer(NULL)
+		, inputBuffer(NULL)
+		, inBufSamples(0)
+#if ANDROIDVOICE_SUPPORTED_PLATFORMS
+		, SL_RecorderBufferQueue(NULL)
+		, SL_EngineObject(NULL)
+		, SL_RecorderObject(NULL)
+		, SL_EngineEngine(NULL)
+#endif
 	{
 		
 	}
@@ -239,9 +252,8 @@ public:
 	
 	
 	// IVoiceCapture
-	virtual bool Init(int32 InSampleRate, int32 InNumChannels) override
+	virtual bool Init(const FString& DeviceName, int32 InSampleRate, int32 InNumChannels) override
 	{		
-
 #if ANDROIDVOICE_SUPPORTED_PLATFORMS
 		UE_LOG(LogVoiceCapture, Warning, TEXT("VoiceModuleAndroid Init"));
 		check(VoiceCaptureState == EVoiceCaptureState::UnInitialized);
@@ -258,14 +270,15 @@ public:
 			return false;
 		}
 		
-		if((inBufSamples = BUFFERFRAMES*InNumChannels) != 0){
+		if ((inBufSamples = BUFFERFRAMES*InNumChannels) != 0)
+		{
 			if((inputBuffer = (short *) calloc(inBufSamples, sizeof(short))) == NULL)
 			{
 				return false;
 			}
 		}
 				
-		if((inrb = create_circular_buffer(inBufSamples*sizeof(short)*4)) == NULL) 
+		if ((inrb = create_circular_buffer(inBufSamples*sizeof(short)*4)) == NULL) 
 		{
 			return false;
 		}
@@ -307,15 +320,33 @@ public:
 														 &(SL_RecorderObject), &audioSrc,
 														 &audioSnk, 1, id, req);
 		
+		if (result != SL_RESULT_SUCCESS)
+		{
+			UE_LOG(LogVoiceCapture, Warning, TEXT("FAILED OPENSL Create AudioRecorder 0x%x "), result);
+			return false;
+		}
+
 		result = (*SL_RecorderObject)->Realize(SL_RecorderObject,
 											   SL_BOOLEAN_FALSE);
-        
+		
+		if (result != SL_RESULT_SUCCESS)
+		{
+			UE_LOG(LogVoiceCapture, Warning, TEXT("FAILED OPENSL AudioRecorder Realize 0x%x "), result);
+			return false;
+		}
+
 		result = (*SL_RecorderObject)->GetInterface(SL_RecorderObject,
 													SL_IID_RECORD, &(SL_RecorderRecord));
 		
+		if (result != SL_RESULT_SUCCESS)
+		{
+			UE_LOG(LogVoiceCapture, Warning, TEXT("FAILED OPENSL RECORD GetInterface 0x%x "), result);
+			return false;
+		}
+
 		result = (*SL_RecorderObject)->GetInterface(SL_RecorderObject,
 													SL_IID_ANDROIDSIMPLEBUFFERQUEUE, &(SL_RecorderBufferQueue));
-        
+		
 		if(result != SL_RESULT_SUCCESS) 
 		{
 			UE_LOG( LogVoiceCapture, Warning,TEXT("FAILED OPENSL BUFFER QUEUE GetInterface 0x%x "), result); 
@@ -355,7 +386,6 @@ public:
 	
 	virtual void Shutdown() override
 	{
-		UE_LOG(LogVoiceCapture, Warning, TEXT("Shutdown"));
 		switch (VoiceCaptureState)
 		{
 			case EVoiceCaptureState::Ok:
@@ -374,21 +404,60 @@ public:
 				check(false);
 				break;
 		}
+
+		free_circular_buffer(inrb);
+
+		if (inputBuffer != NULL)
+		{
+			free(inputBuffer);
+			inputBuffer = NULL;
+		}
+
+		if (recBuffer != NULL)
+		{
+			free(recBuffer);
+			recBuffer = NULL;
+		}
+
+#if ANDROIDVOICE_SUPPORTED_PLATFORMS
+		if (SL_RecorderBufferQueue != NULL) {
+			(*SL_RecorderBufferQueue)->Clear(SL_RecorderBufferQueue);
+			SL_RecorderBufferQueue = NULL;
+		}
+
+		if (SL_EngineObject != NULL) {
+			(*SL_EngineObject)->Destroy(SL_EngineObject);
+			SL_EngineObject = NULL;
+		}
+
+		if (SL_RecorderObject != NULL) {
+			(*SL_RecorderObject)->Destroy(SL_RecorderObject);
+			SL_RecorderObject = NULL;
+		}
+
+		SL_EngineEngine = NULL;
+		
+		FreeVoiceCaptureObject(this);
+#endif
 	}
 
 	virtual bool Start() override
 	{
-		UE_LOG(LogVoiceCapture, Warning, TEXT("Start"));
-		ReadableBytes = 0;
 		VoiceCaptureState = EVoiceCaptureState::Ok;
 
 		return true;
 	}
+
 	virtual void Stop() override
 	{
-		UE_LOG(LogVoiceCapture, Warning, TEXT("Stop"));
 		VoiceCaptureState = EVoiceCaptureState::NotCapturing;
 		return;
+	}
+
+	virtual bool ChangeDevice(const FString& DeviceName, int32 SampleRate, int32 NumChannels)
+	{
+		/** NYI */
+		return false;
 	}
 	
 	virtual bool IsCapturing() override
@@ -431,9 +500,11 @@ public:
 			{
 				if(InVoiceBufferSize>2048)
 				{ // Workaround for dealing with noise after stand-by
-					while(bytes<InVoiceBufferSize)
+					int32 RemainingBytes = InVoiceBufferSize - bytes;
+					if (RemainingBytes > 0)
 					{
-						OutVoiceBuffer[bytes++]=0;
+						memset(OutVoiceBuffer + bytes, 0, RemainingBytes);
+						bytes = InVoiceBufferSize;
 					}
 					inrb->wp = 0;
 					inrb->rp = 0;
@@ -455,7 +526,19 @@ public:
 		}
 		return State;
 	}
-	
+
+	virtual int32 GetBufferSize() const
+	{
+		//max raw data size
+		return (inBufSamples * sizeof(short) * 4);
+	}
+
+	virtual void DumpState() const
+	{
+		/** NYI */
+		UE_LOG(LogVoiceCapture, Display, TEXT("NYI"));
+	}
+
 private:
 
 #if ANDROIDVOICE_SUPPORTED_PLATFORMS
@@ -466,11 +549,6 @@ private:
 	SLEngineItf	SL_EngineEngine;
 
 #endif
-	
-	/** Input device latency */
-	uint32 InputLatency;
-	/** Current readable bytes */
-	int32 ReadableBytes;
 
 };
 
@@ -482,29 +560,32 @@ bool InitVoiceCapture()
 
 void ShutdownVoiceCapture()
 {
+#if ANDROIDVOICE_SUPPORTED_PLATFORMS
+	FreeAllVoiceCaptureObjects();
+#endif
 }
 
-IVoiceCapture* CreateVoiceCaptureObject()
+IVoiceCapture* CreateVoiceCaptureObject(const FString& DeviceName, int32 SampleRate, int32 NumChannels)
 {
 #if ANDROIDVOICE_SUPPORTED_PLATFORMS
 	IVoiceCapture* Capture = new FVoiceCaptureOpenSLES;
-	if (!Capture || !Capture->Init(VOICE_SAMPLE_RATE, NUM_VOICE_CHANNELS))
+	if (!Capture || !Capture->Init(DeviceName, SampleRate, NumChannels))
 	{
 		delete Capture;
 		Capture = nullptr;
 	}
+	ActiveVoiceCaptures.Add(Capture);
 	return Capture;
 #else
 	return nullptr;
 #endif 
 }
 
-IVoiceEncoder* CreateVoiceEncoderObject()
+IVoiceEncoder* CreateVoiceEncoderObject(int32 SampleRate, int32 NumChannels, EAudioEncodeHint EncodeHint)
 {
-
 #if ANDROIDVOICE_SUPPORTED_PLATFORMS
 	FVoiceEncoderOpus* NewEncoder = new FVoiceEncoderOpus;
-	if (!NewEncoder->Init(VOICE_SAMPLE_RATE, NUM_VOICE_CHANNELS))
+	if (!NewEncoder->Init(SampleRate, NumChannels, EncodeHint))
 	{
 		delete NewEncoder;
 		NewEncoder = nullptr;
@@ -516,11 +597,11 @@ IVoiceEncoder* CreateVoiceEncoderObject()
 #endif
 }
 
-IVoiceDecoder* CreateVoiceDecoderObject()
+IVoiceDecoder* CreateVoiceDecoderObject(int32 SampleRate, int32 NumChannels)
 {
 #if ANDROIDVOICE_SUPPORTED_PLATFORMS
 	FVoiceDecoderOpus* NewDecoder = new FVoiceDecoderOpus;
-	if (!NewDecoder->Init(VOICE_SAMPLE_RATE, NUM_VOICE_CHANNELS))
+	if (!NewDecoder->Init(SampleRate, NumChannels))
 	{
 		delete NewDecoder;
 		NewDecoder = nullptr;
@@ -540,5 +621,35 @@ void OpenSLRecordBufferQueueCallback(SLAndroidSimpleBufferQueueItf bq, void *con
 	write_circular_buffer_bytes(p->inrb, (char *) p->recBuffer,bytes);
 	SLresult result = (*p->SL_RecorderBufferQueue)->Enqueue(p->SL_RecorderBufferQueue,p->recBuffer,bytes);
 }
+
+void FreeVoiceCaptureObject(IVoiceCapture* VoiceCaptureObj)
+{
+	if (VoiceCaptureObj != nullptr)
+	{
+		int32 RemoveIdx = ActiveVoiceCaptures.Find(VoiceCaptureObj);
+		if (RemoveIdx != INDEX_NONE)
+		{
+			ActiveVoiceCaptures.RemoveAtSwap(RemoveIdx);
+		}
+		else
+		{
+			UE_LOG(LogVoiceCapture, Warning, TEXT("Trying to free unknown voice object"));
+		}
+	}
+}
+
+void FreeAllVoiceCaptureObjects()
+{
+	// Close any active captures
+	UE_LOG(LogVoiceCapture, Warning, TEXT("FreeAllVoiceCaptureObjects"));
+	for (int32 CaptureIdx = 0; CaptureIdx < ActiveVoiceCaptures.Num(); CaptureIdx++)
+	{
+		IVoiceCapture* VoiceCapture = ActiveVoiceCaptures[CaptureIdx];
+		VoiceCapture->Shutdown();
+	}
+
+	ActiveVoiceCaptures.Empty();
+}
+
 #endif
 // END code snippet from https://audioprograming.wordpress.com

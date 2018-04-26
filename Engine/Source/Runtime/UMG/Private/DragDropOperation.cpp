@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Blueprint/DragDropOperation.h"
 
@@ -10,6 +10,8 @@ UDragDropOperation::UDragDropOperation(const FObjectInitializer& ObjectInitializ
 {
 	Pivot = EDragPivot::CenterCenter;
 }
+
+/// @cond DOXYGEN_WARNINGS
 
 void UDragDropOperation::Drop_Implementation(const FPointerEvent& PointerEvent)
 {
@@ -25,3 +27,5 @@ void UDragDropOperation::Dragged_Implementation(const FPointerEvent& PointerEven
 {
 	OnDragged.Broadcast(this);
 }
+
+/// @endcond

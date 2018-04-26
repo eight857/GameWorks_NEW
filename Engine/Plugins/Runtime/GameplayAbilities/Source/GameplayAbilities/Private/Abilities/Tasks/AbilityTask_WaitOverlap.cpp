@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_WaitOverlap.h"
 
@@ -36,7 +36,7 @@ void UAbilityTask_WaitOverlap::OnHitCallback(UPrimitiveComponent* HitComp, AActo
 
 UAbilityTask_WaitOverlap* UAbilityTask_WaitOverlap::WaitForOverlap(UGameplayAbility* OwningAbility)
 {
-	auto MyObj = NewAbilityTask<UAbilityTask_WaitOverlap>(OwningAbility);
+	UAbilityTask_WaitOverlap* MyObj = NewAbilityTask<UAbilityTask_WaitOverlap>(OwningAbility);
 	return MyObj;
 }
 

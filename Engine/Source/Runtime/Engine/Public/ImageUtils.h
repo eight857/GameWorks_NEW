@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 ImageUtils.h: Image utility functions.
@@ -112,15 +112,24 @@ public:
 	ENGINE_API static UTexture2D* CreateCheckerboardTexture(FColor ColorOne = FColor(64, 64, 64), FColor ColorTwo = FColor(128, 128, 128), int32 CheckerSize = 32);
 
 	/**
-	* Exports a UTextureRenderTarget2D as an HDR image on the disk.
-	*
-	* @param TexRT		The render target to export
-	* @param Ar			Archive to fill with data.
-	* @return			Export operation success or failure.
-	*
-	*/
+	 * Exports a UTextureRenderTarget2D as an HDR image on the disk.
+	 *
+	 * @param TexRT		The render target to export
+	 * @param Ar			Archive to fill with data.
+	 * @return			Export operation success or failure.
+	 *
+	 */
 	ENGINE_API static bool ExportRenderTarget2DAsHDR(UTextureRenderTarget2D* TexRT, FArchive& Ar);
 
+	/**
+	 * Exports a UTextureRenderTarget2D as an HDR image on the disk.
+	 *
+	 * @param TexRT		The render target to export
+	 * @param Ar			Archive to fill with data.
+	 * @return			Export operation success or failure.
+	 *
+	 */
+	ENGINE_API static bool ExportRenderTarget2DAsPNG(UTextureRenderTarget2D* TexRT, FArchive& Ar);
 	/**
 	* Exports a UTexture2D as an HDR image on the disk.
 	*

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SequencerSettings.h"
 #include "KeyParams.h"
@@ -7,7 +7,8 @@
 USequencerSettings::USequencerSettings( const FObjectInitializer& ObjectInitializer )
 	: Super( ObjectInitializer )
 {
-	AutoKeyMode = EAutoKeyMode::KeyNone;
+	AutoChangeMode = EAutoChangeMode::None;
+	AllowEditsMode = EAllowEditsMode::AllEdits;
 	bKeyAllEnabled = false;
 	bKeyInterpPropertiesOnly = false;
 	KeyInterpolation = EMovieSceneKeyInterpolation::Auto;
@@ -30,12 +31,14 @@ USequencerSettings::USequencerSettings( const FObjectInitializer& ObjectInitiali
 	CurveValueSnapInterval = 10.0f;
 	bSnapCurveValueToInterval = true;
 	bLabelBrowserVisible = false;
+	bShowSelectedNodesOnly = false;
 	bRewindOnRecord = true;
 	ZoomPosition = ESequencerZoomPosition::SZP_CurrentTime;
 	bAutoScrollEnabled = false;
 	bShowCurveEditorCurveToolTips = true;
 	bLinkCurveEditorTimeRange = false;
 	LoopMode = ESequencerLoopMode::SLM_NoLoop;
+	bKeepCursorInPlayRangeWhileScrubbing = false;
 	bKeepCursorInPlayRange = true;
 	bKeepPlayRangeInSectionBounds = true;
 	ZeroPadFrames = 0;
@@ -45,8 +48,11 @@ USequencerSettings::USequencerSettings( const FObjectInitializer& ObjectInitiali
 	bShowViewportTransportControls = true;
 	bLockPlaybackToAudioClock = false;
 	bAllowPossessionOfPIEViewports = false;
+	bActivateRealtimeViewports = true;
 	bEvaluateSubSequencesInIsolation = false;
+	bRerunConstructionScripts = false;
 	bVisualizePreAndPostRoll = true;
+	TrajectoryPathCap = 250;
 }
 
 void USequencerSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
@@ -60,17 +66,33 @@ void USequencerSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 }
 
-EAutoKeyMode USequencerSettings::GetAutoKeyMode() const
+EAutoChangeMode USequencerSettings::GetAutoChangeMode() const
 {
-	return AutoKeyMode;
+	return AutoChangeMode;
 }
 
-void USequencerSettings::SetAutoKeyMode(EAutoKeyMode InAutoKeyMode)
+void USequencerSettings::SetAutoChangeMode(EAutoChangeMode InAutoChangeMode)
 {
-	if ( AutoKeyMode != InAutoKeyMode )
+	if ( AutoChangeMode != InAutoChangeMode )
 	{
-		AutoKeyMode = InAutoKeyMode;
+		AutoChangeMode = InAutoChangeMode;
 		SaveConfig();
+	}
+}
+
+EAllowEditsMode USequencerSettings::GetAllowEditsMode() const
+{
+	return AllowEditsMode;
+}
+
+void USequencerSettings::SetAllowEditsMode(EAllowEditsMode InAllowEditsMode)
+{
+	if ( AllowEditsMode != InAllowEditsMode )
+	{
+		AllowEditsMode = InAllowEditsMode;
+		SaveConfig();
+
+		OnAllowEditsModeChangedEvent.Broadcast(InAllowEditsMode);
 	}
 }
 
@@ -396,6 +418,22 @@ void USequencerSettings::SetLabelBrowserVisible(bool Visible)
 	}
 }
 
+bool USequencerSettings::GetShowSelectedNodesOnly() const
+{
+	return bShowSelectedNodesOnly;
+}
+
+void USequencerSettings::SetShowSelectedNodesOnly(bool Visible)
+{
+	if (bShowSelectedNodesOnly != Visible)
+	{
+		bShowSelectedNodesOnly = Visible;
+		SaveConfig();
+
+		OnShowSelectedNodesOnlyChangedEvent.Broadcast();
+	}
+}
+
 bool USequencerSettings::ShouldRewindOnRecord() const
 {
 	return bRewindOnRecord;
@@ -448,6 +486,20 @@ void USequencerSettings::SetLoopMode(ESequencerLoopMode InLoopMode)
 	if (LoopMode != InLoopMode)
 	{
 		LoopMode = InLoopMode;
+		SaveConfig();
+	}
+}
+
+bool USequencerSettings::ShouldKeepCursorInPlayRangeWhileScrubbing() const
+{
+	return bKeepCursorInPlayRangeWhileScrubbing;
+}
+
+void USequencerSettings::SetKeepCursorInPlayRangeWhileScrubbing(bool bInKeepCursorInPlayRangeWhileScrubbing)
+{
+	if (bKeepCursorInPlayRangeWhileScrubbing != bInKeepCursorInPlayRangeWhileScrubbing)
+	{
+		bKeepCursorInPlayRangeWhileScrubbing = bInKeepCursorInPlayRangeWhileScrubbing;
 		SaveConfig();
 	}
 }
@@ -597,6 +649,20 @@ void USequencerSettings::SetAllowPossessionOfPIEViewports(bool bInAllowPossessio
 	}
 }
 
+bool USequencerSettings::ShouldActivateRealtimeViewports() const
+{
+	return bActivateRealtimeViewports;
+}
+
+void USequencerSettings::SetActivateRealtimeViewports(bool bInActivateRealtimeViewports)
+{
+	if (bInActivateRealtimeViewports != bActivateRealtimeViewports)
+	{
+		bActivateRealtimeViewports = bInActivateRealtimeViewports;
+		SaveConfig();
+	}
+}
+
 bool USequencerSettings::ShouldLockPlaybackToAudioClock() const
 {
 	return bLockPlaybackToAudioClock;
@@ -653,6 +719,20 @@ void USequencerSettings::SetEvaluateSubSequencesInIsolation(bool bInEvaluateSubS
 		SaveConfig();
 
 		OnEvaluateSubSequencesInIsolationChangedEvent.Broadcast();
+	}
+}
+
+bool USequencerSettings::ShouldRerunConstructionScripts() const
+{
+	return bRerunConstructionScripts;
+}
+
+void USequencerSettings::SetRerunConstructionScripts(bool bInRerunConstructionScripts)
+{
+	if (bRerunConstructionScripts != bInRerunConstructionScripts)
+	{
+		bRerunConstructionScripts = bInRerunConstructionScripts;
+		SaveConfig();
 	}
 }
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,6 +6,7 @@ using System.Text;
 using System.IO;
 using AutomationTool;
 using UnrealBuildTool;
+using Tools.DotNETCommon;
 
 public class MacPlatform : Platform
 {
@@ -39,26 +40,15 @@ public class MacPlatform : Platform
 		return "Mac";
 	}
 
-	private void StageAppBundle(DeploymentContext SC, StagedFileType InStageFileType, string InPath, string NewName)
+	private void StageAppBundle(DeploymentContext SC, DirectoryReference InPath, StagedDirectoryReference NewName)
 	{
-		if (InStageFileType != StagedFileType.DebugNonUFS)
+		// Files with DebugFileExtensions should always be DebugNonUFS
+		List<string> DebugExtensions = GetDebugFileExtensions();
+		foreach(FileReference InputFile in DirectoryReference.EnumerateFiles(InPath, "*", SearchOption.AllDirectories))
 		{
-			// Files with DebugFileExtensions should always be DebugNonUFS
-			List<string> DebugExtentionWildCards = new List<string>();
-			foreach(string DebugExtention in GetDebugFileExtentions())
-			{
-				string ExtensionWildcard = "*" + DebugExtention;
-				DebugExtentionWildCards.Add(ExtensionWildcard);
-				SC.StageFiles(StagedFileType.DebugNonUFS, InPath, ExtensionWildcard, true, null, NewName, true, true, null);
-			}
-
-			// Also stage the non-debug files, excluding the debug ones staged above
-			SC.StageFiles(InStageFileType, InPath, "*", true, DebugExtentionWildCards.ToArray(), NewName, false, true, null);
-		}
-		else
-		{
-			// We are already DebugNonUFS, no need to do any special-casing
-			SC.StageFiles(InStageFileType, InPath, "*", true, null, NewName, false, true, null);
+			StagedFileReference OutputFile = StagedFileReference.Combine(NewName, InputFile.MakeRelativeTo(InPath));
+			StagedFileType FileType = DebugExtensions.Any(x => InputFile.HasExtension(x))? StagedFileType.DebugNonUFS : StagedFileType.NonUFS;
+			SC.StageFile(FileType, InputFile, OutputFile);
 		}
 	}
 
@@ -72,33 +62,41 @@ public class MacPlatform : Platform
 
 		if (SC.bStageCrashReporter)
 		{
-			string CrashReportClientPath = CombinePaths("Engine/Binaries", SC.PlatformDir, "CrashReportClient.app");
-			StageAppBundle(SC, StagedFileType.NonUFS, CombinePaths(SC.LocalRoot, "Engine/Binaries", SC.PlatformDir, "CrashReportClient.app"), CrashReportClientPath);
+			StagedDirectoryReference CrashReportClientPath = StagedDirectoryReference.Combine("Engine/Binaries", SC.PlatformDir, "CrashReportClient.app");
+			StageAppBundle(SC, DirectoryReference.Combine(SC.LocalRoot, "Engine/Binaries", SC.PlatformDir, "CrashReportClient.app"), CrashReportClientPath);
 		}
 
 		// Find the app bundle path
-		List<string> Exes = GetExecutableNames(SC);
+		List<FileReference> Exes = GetExecutableNames(SC);
 		foreach (var Exe in Exes)
 		{
-			string AppBundlePath = "";
-			if (Exe.StartsWith(CombinePaths(SC.RuntimeProjectRootDir, "Binaries", SC.PlatformDir)))
+			StagedDirectoryReference AppBundlePath = null;
+			if (Exe.IsUnderDirectory(DirectoryReference.Combine(SC.RuntimeProjectRootDir, "Binaries", SC.PlatformDir)))
 			{
-				AppBundlePath = CombinePaths(SC.ShortProjectName, "Binaries", SC.PlatformDir, Path.GetFileNameWithoutExtension(Exe) + ".app");
+				AppBundlePath = StagedDirectoryReference.Combine(SC.ShortProjectName, "Binaries", SC.PlatformDir, Path.GetFileNameWithoutExtension(Exe.FullName) + ".app");
 			}
-			else if (Exe.StartsWith(CombinePaths(SC.RuntimeRootDir, "Engine/Binaries", SC.PlatformDir)))
+			else if (Exe.IsUnderDirectory(DirectoryReference.Combine(SC.RuntimeRootDir, "Engine/Binaries", SC.PlatformDir)))
 			{
-				AppBundlePath = CombinePaths("Engine/Binaries", SC.PlatformDir, Path.GetFileNameWithoutExtension(Exe) + ".app");
+				AppBundlePath = StagedDirectoryReference.Combine("Engine/Binaries", SC.PlatformDir, Path.GetFileNameWithoutExtension(Exe.FullName) + ".app");
 			}
 
 			// Copy the custom icon and Steam dylib, if needed
-			if (!string.IsNullOrEmpty(AppBundlePath))
+			if (AppBundlePath != null)
 			{
-				SC.StageFiles(StagedFileType.NonUFS, CombinePaths(SC.ProjectRoot, "Build/Mac"), "Application.icns", false, null, CombinePaths(AppBundlePath, "Contents/Resources"), true);
+				FileReference AppIconsFile = FileReference.Combine(SC.ProjectRoot, "Build", "Mac", "Application.icns");
+				if(FileReference.Exists(AppIconsFile))
+				{
+					SC.StageFile(StagedFileType.NonUFS, AppIconsFile, StagedFileReference.Combine(AppBundlePath, "Contents", "Resources", "Application.icns"));
+				}
 			}
 		}
 
 		// Copy the splash screen, Mac specific
-		SC.StageFiles(StagedFileType.NonUFS, CombinePaths(SC.ProjectRoot, "Content/Splash"), "Splash.bmp", false, null, null, true);
+		FileReference SplashImage = FileReference.Combine(SC.ProjectRoot, "Content", "Splash", "Splash.bmp");
+		if(FileReference.Exists(SplashImage))
+		{
+			SC.StageFile(StagedFileType.NonUFS, SplashImage);
+		}
 
 		// Stage the bootstrap executable
 		if (!Params.NoBootstrapExe)
@@ -109,7 +107,8 @@ public class MacPlatform : Platform
 				if (Executable != null)
 				{
 					// only create bootstraps for executables
-					if (SC.NonUFSStagingFiles.ContainsKey(Executable.Path) && Executable.Path.Replace("\\", "/").Contains("/" + TargetPlatformType.ToString() + "/"))
+					List<StagedFileReference> StagedFiles = SC.FilesToStage.NonUFSFiles.Where(x => x.Value == Executable.Path).Select(x => x.Key).ToList();
+					if (StagedFiles.Count > 0 && Executable.Path.FullName.Replace("\\", "/").Contains("/" + TargetPlatformType.ToString() + "/"))
 					{
 						string BootstrapArguments = "";
 						if (!ShouldStageCommandLine(Params, SC))
@@ -127,7 +126,7 @@ public class MacPlatform : Platform
 						string BootstrapExeName;
 						if (SC.StageTargetConfigurations.Count > 1)
 						{
-							BootstrapExeName = Path.GetFileName(Executable.Path) + ".app";
+							BootstrapExeName = Path.GetFileName(Executable.Path.FullName) + ".app";
 						}
 						else if (Params.IsCodeBasedProject)
 						{
@@ -138,11 +137,10 @@ public class MacPlatform : Platform
 							BootstrapExeName = SC.ShortProjectName + ".app";
 						}
 
-						string AppPath = Executable.Path.Substring(0, Executable.Path.LastIndexOf(".app/") + 4);
-						object Dest = SC.NonUFSStagingFiles[Executable.Path];
-						foreach (var DestPath in SC.NonUFSStagingFiles[Executable.Path])
+						string AppPath = Executable.Path.FullName.Substring(0, Executable.Path.FullName.LastIndexOf(".app/") + 4);
+						foreach (var DestPath in StagedFiles)
 						{
-							string AppRelativePath = DestPath.Substring(0, DestPath.LastIndexOf(".app/") + 4);
+							string AppRelativePath = DestPath.Name.Substring(0, DestPath.Name.LastIndexOf(".app/") + 4);
 							StageBootstrapExecutable(SC, BootstrapExeName, AppPath, AppRelativePath, BootstrapArguments);
 						}
 					}
@@ -151,8 +149,43 @@ public class MacPlatform : Platform
 		}
 
 		// Copy the ShaderCache files, if they exist
-		SC.StageFiles(StagedFileType.UFS, CombinePaths(SC.ProjectRoot, "Content"), "DrawCache.ushadercache", false, null, null, true);
-		SC.StageFiles(StagedFileType.UFS, CombinePaths(SC.ProjectRoot, "Content"), "ByteCodeCache.ushadercode", false, null, null, true);
+		FileReference DrawCacheFile = FileReference.Combine(SC.ProjectRoot, "Content", "DrawCache.ushadercache");
+		if(FileReference.Exists(DrawCacheFile))
+		{
+			SC.StageFile(StagedFileType.UFS, DrawCacheFile);
+		}
+
+		FileReference ByteCodeCacheFile = FileReference.Combine(SC.ProjectRoot, "Content", "ByteCodeCache.ushadercode");
+		if(FileReference.Exists(ByteCodeCacheFile))
+		{
+			SC.StageFile(StagedFileType.UFS, ByteCodeCacheFile);
+		}
+
+		{
+			// Stage any *.metallib files as NonUFS.
+			// Get the final output directory for cooked data
+			DirectoryReference CookOutputDir;
+			if(!String.IsNullOrEmpty(Params.CookOutputDir))
+			{
+				CookOutputDir = DirectoryReference.Combine(new DirectoryReference(Params.CookOutputDir), SC.CookPlatform);
+			}
+			else if(Params.CookInEditor)
+			{
+				CookOutputDir = DirectoryReference.Combine(SC.ProjectRoot, "Saved", "EditorCooked", SC.CookPlatform);
+			}
+			else
+			{
+				CookOutputDir = DirectoryReference.Combine(SC.ProjectRoot, "Saved", "Cooked", SC.CookPlatform);
+			}
+			if(DirectoryReference.Exists(CookOutputDir))
+			{
+				List<FileReference> CookedFiles = DirectoryReference.EnumerateFiles(CookOutputDir, "*.metallib", SearchOption.AllDirectories).ToList();
+				foreach(FileReference CookedFile in CookedFiles)
+				{
+					SC.StageFile(StagedFileType.NonUFS, CookedFile, new StagedFileReference(CookedFile.MakeRelativeTo(CookOutputDir)));
+				}
+			}
+		}
 	}
 
 	string GetValueFromInfoPlist(string InfoPlist, string Key, string DefaultValue = "")
@@ -174,23 +207,23 @@ public class MacPlatform : Platform
 
 	void StageBootstrapExecutable(DeploymentContext SC, string ExeName, string TargetFile, string StagedRelativeTargetPath, string StagedArguments)
 	{
-		string InputApp = CombinePaths(SC.LocalRoot, "Engine", "Binaries", SC.PlatformDir, "BootstrapPackagedGame.app");
-		if (InternalUtils.SafeDirectoryExists(InputApp))
+		DirectoryReference InputApp = DirectoryReference.Combine(SC.LocalRoot, "Engine", "Binaries", SC.PlatformDir, "BootstrapPackagedGame.app");
+		if (InternalUtils.SafeDirectoryExists(InputApp.FullName))
 		{
 			// Create the new bootstrap program
-			string IntermediateDir = CombinePaths(SC.ProjectRoot, "Intermediate", "Staging");
-			InternalUtils.SafeCreateDirectory(IntermediateDir);
+			DirectoryReference IntermediateDir = DirectoryReference.Combine(SC.ProjectRoot, "Intermediate", "Staging");
+			InternalUtils.SafeCreateDirectory(IntermediateDir.FullName);
 
-			string IntermediateApp = CombinePaths(IntermediateDir, ExeName);
-			if (Directory.Exists(IntermediateApp))
+			DirectoryReference IntermediateApp = DirectoryReference.Combine(IntermediateDir, ExeName);
+			if (DirectoryReference.Exists(IntermediateApp))
 			{
-				Directory.Delete(IntermediateApp, true);
+				DirectoryReference.Delete(IntermediateApp, true);
 			}
-			CloneDirectory(InputApp, IntermediateApp);
+			CloneDirectory(InputApp.FullName, IntermediateApp.FullName);
 
 			// Rename the executable
 			string GameName = Path.GetFileNameWithoutExtension(ExeName);
-			File.Move(CombinePaths(IntermediateApp, "Contents", "MacOS", "BootstrapPackagedGame"), CombinePaths(IntermediateApp, "Contents", "MacOS", GameName));
+			FileReference.Move(FileReference.Combine(IntermediateApp, "Contents", "MacOS", "BootstrapPackagedGame"), FileReference.Combine(IntermediateApp, "Contents", "MacOS", GameName));
 
 			// Copy the icon
 			string SrcInfoPlistPath = CombinePaths(TargetFile, "Contents", "Info.plist");
@@ -200,12 +233,12 @@ public class MacPlatform : Platform
 			if (!string.IsNullOrEmpty(IconName))
 			{
 				string IconPath = CombinePaths(TargetFile, "Contents", "Resources", IconName + ".icns");
-				InternalUtils.SafeCreateDirectory(CombinePaths(IntermediateApp, "Contents", "Resources"));
-				File.Copy(IconPath, CombinePaths(IntermediateApp, "Contents", "Resources", IconName + ".icns"));
+				InternalUtils.SafeCreateDirectory(CombinePaths(IntermediateApp.FullName, "Contents", "Resources"));
+				File.Copy(IconPath, CombinePaths(IntermediateApp.FullName, "Contents", "Resources", IconName + ".icns"));
 			}
 
 			// Update Info.plist contents
-			string DestInfoPlistPath = CombinePaths(IntermediateApp, "Contents", "Info.plist");
+			string DestInfoPlistPath = CombinePaths(IntermediateApp.FullName, "Contents", "Info.plist");
 			string DestInfoPlist = File.ReadAllText(DestInfoPlistPath);
 
 			string AppIdentifier = GetValueFromInfoPlist(SrcInfoPlist, "CFBundleIdentifier");
@@ -229,7 +262,7 @@ public class MacPlatform : Platform
 
 			File.WriteAllText(DestInfoPlistPath, DestInfoPlist);
 
-			StageAppBundle(SC, StagedFileType.NonUFS, IntermediateApp, ExeName);
+			StageAppBundle(SC, IntermediateApp, new StagedDirectoryReference(ExeName));
 		}
 	}
 
@@ -244,12 +277,12 @@ public class MacPlatform : Platform
 		if (Params.CreateAppBundle)
 		{
 			string ExeName = SC.StageExecutables[0];
-			string BundlePath = CombinePaths(SC.ArchiveDirectory, SC.ShortProjectName + ".app");
+			string BundlePath = CombinePaths(SC.ArchiveDirectory.FullName, SC.ShortProjectName + ".app");
 
 			if (SC.bIsCombiningMultiplePlatforms)
 			{
 				// when combining multiple platforms, don't merge the content into the .app, use the one in the Binaries directory
-				BundlePath = CombinePaths(SC.ArchiveDirectory, SC.ShortProjectName, "Binaries", "Mac", ExeName + ".app");
+				BundlePath = CombinePaths(SC.ArchiveDirectory.FullName, SC.ShortProjectName, "Binaries", "Mac", ExeName + ".app");
 				if (!Directory.Exists(BundlePath))
 				{
 					// if the .app wasn't there, just skip out (we don't require executables when combining)
@@ -265,13 +298,13 @@ public class MacPlatform : Platform
 					Directory.Delete(BundlePath, true);
 				}
 
-				string SourceBundlePath = CombinePaths(SC.ArchiveDirectory, SC.ShortProjectName, "Binaries", "Mac", ExeName + ".app");
+				string SourceBundlePath = CombinePaths(SC.ArchiveDirectory.FullName, SC.ShortProjectName, "Binaries", "Mac", ExeName + ".app");
 				if (!Directory.Exists(SourceBundlePath))
 				{
-					SourceBundlePath = CombinePaths(SC.ArchiveDirectory, "Engine", "Binaries", "Mac", ExeName + ".app");
+					SourceBundlePath = CombinePaths(SC.ArchiveDirectory.FullName, "Engine", "Binaries", "Mac", ExeName + ".app");
 					if (!Directory.Exists(SourceBundlePath))
 					{
-						SourceBundlePath = CombinePaths(SC.ArchiveDirectory, "Engine", "Binaries", "Mac", "UE4.app");
+						SourceBundlePath = CombinePaths(SC.ArchiveDirectory.FullName, "Engine", "Binaries", "Mac", "UE4.app");
 					}
 				}
 				Directory.Move(SourceBundlePath, BundlePath);
@@ -282,7 +315,7 @@ public class MacPlatform : Platform
 				}
 
 				// First, move all files and folders inside he app bundle
-				string[] StagedFiles = Directory.GetFiles(SC.ArchiveDirectory, "*", SearchOption.TopDirectoryOnly);
+				string[] StagedFiles = Directory.GetFiles(SC.ArchiveDirectory.FullName, "*", SearchOption.TopDirectoryOnly);
 				foreach (string FilePath in StagedFiles)
 				{
 					string TargetFilePath = CombinePaths(TargetPath, Path.GetFileName(FilePath));
@@ -290,7 +323,7 @@ public class MacPlatform : Platform
 					File.Move(FilePath, TargetFilePath);
 				}
 
-				string[] StagedDirectories = Directory.GetDirectories(SC.ArchiveDirectory, "*", SearchOption.TopDirectoryOnly);
+				string[] StagedDirectories = Directory.GetDirectories(SC.ArchiveDirectory.FullName, "*", SearchOption.TopDirectoryOnly);
 				foreach (string DirPath in StagedDirectories)
 				{
 					string DirName = Path.GetFileName(DirPath);
@@ -383,7 +416,7 @@ public class MacPlatform : Platform
 		bool bUseManifest = !bIsBuildingRemotely || AddArgs.IndexOf("-CopyAppBundleBackToDevice", StringComparison.InvariantCultureIgnoreCase) > 0;
 		return bUseManifest;
 	}
-	public override List<string> GetDebugFileExtentions()
+	public override List<string> GetDebugFileExtensions()
 	{
 		return new List<string> { ".dSYM" };
 	}
@@ -406,21 +439,21 @@ public class MacPlatform : Platform
 		if (UnrealBuildTool.BuildHostPlatform.Current.Platform == UnrealTargetPlatform.Mac)
 		{
 			// Sign everything we built
-			List<string> FilesToSign = GetExecutableNames(SC);
+			List<FileReference> FilesToSign = GetExecutableNames(SC);
 			Log("RuntimeProjectRootDir: " + SC.RuntimeProjectRootDir);
 			foreach (var Exe in FilesToSign)
 			{
 				Log("Signing: " + Exe);
 				string AppBundlePath = "";
-				if (Exe.StartsWith(CombinePaths(SC.RuntimeProjectRootDir, "Binaries", SC.PlatformDir)))
+				if (Exe.IsUnderDirectory(DirectoryReference.Combine(SC.RuntimeProjectRootDir, "Binaries", SC.PlatformDir)))
 				{
 					Log("Starts with Binaries");
-					AppBundlePath = CombinePaths(SC.RuntimeProjectRootDir, "Binaries", SC.PlatformDir, Path.GetFileNameWithoutExtension(Exe) + ".app");
+					AppBundlePath = CombinePaths(SC.RuntimeProjectRootDir.FullName, "Binaries", SC.PlatformDir, Path.GetFileNameWithoutExtension(Exe.FullName) + ".app");
 				}
-				else if (Exe.StartsWith(CombinePaths(SC.RuntimeRootDir, "Engine/Binaries", SC.PlatformDir)))
+				else if (Exe.IsUnderDirectory(DirectoryReference.Combine(SC.RuntimeRootDir, "Engine/Binaries", SC.PlatformDir)))
 				{
 					Log("Starts with Engine/Binaries");
-					AppBundlePath = CombinePaths("Engine/Binaries", SC.PlatformDir, Path.GetFileNameWithoutExtension(Exe) + ".app");
+					AppBundlePath = CombinePaths("Engine/Binaries", SC.PlatformDir, Path.GetFileNameWithoutExtension(Exe.FullName) + ".app");
 				}
 				Log("Signing: " + AppBundlePath);
 				CodeSign.SignMacFileOrFolder(AppBundlePath);

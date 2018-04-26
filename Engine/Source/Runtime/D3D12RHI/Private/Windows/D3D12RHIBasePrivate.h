@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D12BaseRHIPrivate.h: Private D3D RHI definitions for Windows.
@@ -34,6 +34,7 @@
 #pragma warning(pop)
 
 #define D3D12RHI_RESOURCE_FLAG_ALLOW_INDIRECT_BUFFER D3D12_RESOURCE_FLAG_NONE
+#define D3D12RHI_HEAP_FLAG_ALLOW_INDIRECT_BUFFERS		D3D12_HEAP_FLAG_NONE
 
 #include "../Public/D3D12Util.h"
 #include "WindowsD3D12DiskCache.h"

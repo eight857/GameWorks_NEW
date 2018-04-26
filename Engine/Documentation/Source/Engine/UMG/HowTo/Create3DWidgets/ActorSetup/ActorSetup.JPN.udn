@@ -1,8 +1,8 @@
-﻿INTSourceChangelist:3343833
-Availability:Docs
+﻿Availability:Docs
 Title:2.Actor ブループリントをセットアップする
 Crumbs: %ROOT%, Engine, Engine/UMG, Engine/UMG/HowTo, Engine\UMG\HowTo\Create3DWidgets
 Description:Actor ブループリントを Widget コンポーネントと合わせて使用して、Widget ブループリントを 3D ワールド空間で表示します。 
+Parent:Engine/UMG/HowTo/Create3DWidgets
 Related:Engine/UMG
 Related:Engine/UMG/UserGuide
 Related:Engine/Blueprints
@@ -10,6 +10,7 @@ Version:4.10
 SkillLevel:Intermediate
 checkpoint: umg_create_3d_howto
 tags:UMG UI Designer
+Order:2
 
 [VAR:Steps]
 [OBJECT:Navigation]
@@ -26,7 +27,7 @@ tags:UMG UI Designer
 [/OBJECT]
 [/VAR]
 
-%Steps%
+
 
 Widget ブループリントを作成したので表示します。どのブループリント内でも **Widget コンポーネント** を作成して、そのブループリントをレベルに配置してゲームワールドで表示することができます。 
 Widget コンポーネントには、そのウィジェットをワールドまたはスクリーン空間で表示するかを決める設定もあります (デフォルト設定はワールド)。 
@@ -129,7 +130,7 @@ zrYjngjYrEI
 エディタで再生すると、UMG で作成した UI ウィジェットが 3D ワールド空間で見えます。メニュー アイテム上でマウスを動かして、ハイライトされているものを変更することもできます。このサンプルではインタラクティブな 3D メニューのセットアップ方法を示しましたが、同じプロセスを使って、ヘルス メーター、キーパッド、その他のインタラクティブな UI エレメントなどゲームワールドで表示させる他の形態の 3D ウィジェットを作成することもできます。 
 
 
-%Steps%
+
 
 
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -32,6 +32,9 @@ public:
 	virtual void SetTimeStamp(const TCHAR* Filename, const FDateTime DateTime) override;
 	virtual FDateTime GetAccessTimeStamp(const TCHAR* Filename) override;
 	virtual FString GetFilenameOnDisk(const TCHAR* Filename) override;
+    
+    virtual FString ConvertToAbsolutePathForExternalAppForRead( const TCHAR* Filename ) override;
+    virtual FString ConvertToAbsolutePathForExternalAppForWrite( const TCHAR* Filename ) override;
 
 	virtual FFileStatData GetStatData(const TCHAR* FilenameOrDirectory) override;
 

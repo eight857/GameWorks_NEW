@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,7 @@
 #include "IPropertyTypeCustomization.h"
 #include "Widgets/Input/SComboBox.h"
 
-class FAssetData;
+struct FAssetData;
 class IPropertyHandle;
 
 /** Customize the appearance of an FSlateFontInfo */

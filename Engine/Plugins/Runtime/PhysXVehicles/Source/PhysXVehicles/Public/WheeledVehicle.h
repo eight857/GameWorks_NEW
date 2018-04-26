@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,7 +12,7 @@ class FDebugDisplayInfo;
 /**
  * WheeledVehicle is the base wheeled vehicle pawn actor.
  * By default it uses UWheeledVehicleMovementComponent4W for its simulation, but this can be overridden by inheriting from the class and modifying its constructor like so:
- * Super(ObjectInitializer.SetDefautSubobjectClass<UMyMovement>(VehicleMovementComponentName))
+ * Super(ObjectInitializer.SetDefaultSubobjectClass<UMyMovement>(VehicleMovementComponentName))
  * Where UMyMovement is the new movement type that inherits from UWheeledVehicleMovementComponent
  * 
  * @see https://docs.unrealengine.com/latest/INT/Engine/Physics/Vehicles/VehicleUserGuide/
@@ -24,14 +24,12 @@ class PHYSXVEHICLES_API AWheeledVehicle : public APawn
 {
 	GENERATED_UCLASS_BODY()
 
-private_subobject:
+private:
 	/**  The main skeletal mesh associated with this Vehicle */
-	DEPRECATED_FORGAME(4.6, "Mesh should not be accessed directly, please use GetMesh() function instead. Mesh will soon be private and your code will not compile.")
 	UPROPERTY(Category = Vehicle, VisibleDefaultsOnly, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class USkeletalMeshComponent* Mesh;
 
 	/** vehicle simulation component */
-	DEPRECATED_FORGAME(4.6, "VehicleMovement should not be accessed directly, please use GetVehicleMovement() function instead. VehicleMovement will soon be private and your code will not compile.")
 	UPROPERTY(Category = Vehicle, VisibleDefaultsOnly, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	class UWheeledVehicleMovementComponent* VehicleMovement;
 public:
@@ -50,7 +48,7 @@ public:
 	//~ End Actor Interface
 
 	/** Returns Mesh subobject **/
-	class USkeletalMeshComponent* GetMesh() const;
+	class USkeletalMeshComponent* GetMesh() const { return Mesh; }
 	/** Returns VehicleMovement subobject **/
-	class UWheeledVehicleMovementComponent* GetVehicleMovement() const;
+	class UWheeledVehicleMovementComponent* GetVehicleMovement() const { return VehicleMovement; }
 };

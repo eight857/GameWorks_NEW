@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -232,7 +232,7 @@ private:
 	bool bPassedFiltersAndWasExecuted;
 };
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FGameplayModifierEvaluatedData
 {
 	GENERATED_USTRUCT_BODY()
@@ -278,7 +278,7 @@ struct FGameplayModifierEvaluatedData
 };
 
 /** Struct defining gameplay attribute capture options for gameplay effects */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct GAMEPLAYABILITIES_API FGameplayEffectAttributeCaptureDefinition
 {
 	GENERATED_USTRUCT_BODY()
@@ -341,12 +341,14 @@ struct GAMEPLAYABILITIES_API FGameplayEffectContext
 	FGameplayEffectContext()
 	: AbilityLevel(1)
 	, bHasWorldOrigin(false)
+	, bReplicateSourceObject(false)
 	{
 	}
 
 	FGameplayEffectContext(AActor* InInstigator, AActor* InEffectCauser)
 	: AbilityLevel(1)
 	, bHasWorldOrigin(false)
+	, bReplicateSourceObject(false)
 	{
 		AddInstigator(InInstigator, InEffectCauser);
 	}
@@ -372,6 +374,8 @@ struct GAMEPLAYABILITIES_API FGameplayEffectContext
 
 	/** returns the CDO of the ability used to instigate this context */
 	const UGameplayAbility* GetAbility() const;
+
+	const UGameplayAbility* GetAbilityInstance_NotReplicated() const;
 
 	int32 GetAbilityLevel() const
 	{
@@ -410,7 +414,8 @@ struct GAMEPLAYABILITIES_API FGameplayEffectContext
 	/** Sets the object this effect was created from. */
 	virtual void AddSourceObject(const UObject* NewSourceObject)
 	{
-		SourceObject = NewSourceObject;
+		SourceObject = MakeWeakObjectPtr(const_cast<UObject*>(NewSourceObject));
+		bReplicateSourceObject = NewSourceObject && NewSourceObject->IsSupportedForNetworking();
 	}
 
 	/** Returns the object this effect was created from. */
@@ -430,11 +435,12 @@ struct GAMEPLAYABILITIES_API FGameplayEffectContext
 
 	virtual const FHitResult* GetHitResult() const
 	{
-		if (HitResult.IsValid())
-		{
-			return HitResult.Get();
-		}
-		return NULL;
+		return const_cast<FGameplayEffectContext*>(this)->GetHitResult();
+	}
+
+	virtual FHitResult* GetHitResult()
+	{
+		return HitResult.Get();
 	}
 
 	virtual void AddOrigin(FVector InOrigin);
@@ -490,9 +496,13 @@ protected:
 	UPROPERTY()
 	TWeakObjectPtr<AActor> EffectCauser;
 
-	/** the ability that is responsible for this effect context */
+	/** the ability CDO that is responsible for this effect context (replicated) */
 	UPROPERTY()
 	TWeakObjectPtr<UGameplayAbility> AbilityCDO;
+
+	/** the ability instance that is responsible for this effect context (NOT replicated) */
+	UPROPERTY(NotReplicated)
+	TWeakObjectPtr<UGameplayAbility> AbilityInstanceNotReplicated;
 
 	UPROPERTY()
 	int32 AbilityLevel;
@@ -515,7 +525,11 @@ protected:
 	FVector	WorldOrigin;
 
 	UPROPERTY()
-	bool bHasWorldOrigin;
+	uint8 bHasWorldOrigin:1;
+
+	/** True if the SourceObject can be replicated. This bool is not replicated itself. */
+	UPROPERTY()
+	uint8 bReplicateSourceObject:1;
 };
 
 template<>
@@ -618,6 +632,16 @@ struct FGameplayEffectContextHandle
 		if (IsValid())
 		{
 			return Data->GetAbility();
+		}
+		return nullptr;
+	}
+
+	/** Returns the Ability Instance (never replicated) */
+	const UGameplayAbility* GetAbilityInstance_NotReplicated() const
+	{
+		if (IsValid())
+		{
+			return Data->GetAbilityInstance_NotReplicated();
 		}
 		return nullptr;
 	}
@@ -822,6 +846,28 @@ struct TStructOpsTypeTraits<FGameplayEffectContextHandle> : public TStructOpsTyp
 	};
 };
 
+
+/**
+ * FGameplayEffectRemovalInfo
+ *	Data struct for containing information pertinent to GameplayEffects as they are removed.
+ */
+USTRUCT(BlueprintType)
+struct FGameplayEffectRemovalInfo
+{
+	GENERATED_USTRUCT_BODY()
+
+	/** True when the gameplay effect's duration has not expired, meaning the gameplay effect is being forcefully removed.  */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Removal")
+	bool bPrematureRemoval;
+
+	/** Number of Stacks this gameplay effect had before it was removed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Removal")
+	int32 StackCount;
+
+	/** Actor this gameplay effect was targeting. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Removal")
+	FGameplayEffectContextHandle EffectContext;
+};
 // -----------------------------------------------------------
 
 
@@ -944,17 +990,36 @@ namespace EGameplayCueEvent
 DECLARE_DELEGATE_OneParam(FOnGameplayAttributeEffectExecuted, struct FGameplayModifierEvaluatedData&);
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnGameplayEffectTagCountChanged, const FGameplayTag, int32);
-
-DECLARE_MULTICAST_DELEGATE(FOnActiveGameplayEffectRemoved);
-
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnGivenActiveGameplayEffectRemoved, const FActiveGameplayEffect&);
 
-DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnActiveGameplayEffectStackChange, FActiveGameplayEffectHandle, int32, int32);
+DECLARE_MULTICAST_DELEGATE(FOnActiveGameplayEffectRemoved);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnActiveGameplayEffectRemoved_Info, const FGameplayEffectRemovalInfo&);
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnActiveGameplayEffectStackChange, FActiveGameplayEffectHandle, int32 /*NewStackCount*/, int32 /*PreviousStackCount*/);
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnActiveGameplayEffectTimeChange, FActiveGameplayEffectHandle, float /*NewStartTime*/, float /*NewDuration*/);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnActiveGameplayEffectInhibitionChanged, FActiveGameplayEffectHandle, bool /*bIsInhibited*/);
 
-/** FActiveGameplayEffectHandle that is being effect, the start time, duration of the effect */
-DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnActiveGameplayEffectTimeChange, FActiveGameplayEffectHandle, float, float);
+struct FActiveGameplayEffectEvents
+{
+	FOnActiveGameplayEffectRemoved DEPRECATED_OnEffectRemoved;
+	FOnActiveGameplayEffectRemoved_Info OnEffectRemoved;
+	FOnActiveGameplayEffectStackChange OnStackChanged;
+	FOnActiveGameplayEffectTimeChange OnTimeChanged;
+	FOnActiveGameplayEffectInhibitionChanged OnInhibitionChanged;
+};
 
+// This is deprecated, use FOnGameplayAttributeValueChange
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnGameplayAttributeChange, float, const FGameplayEffectModCallbackData*);
+
+struct FOnAttributeChangeData
+{
+	FGameplayAttribute Attribute;
+
+	float	NewValue;
+	float	OldValue;
+	const FGameplayEffectModCallbackData* GEModData;
+};
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnGameplayAttributeValueChange, const FOnAttributeChangeData&);
 
 DECLARE_DELEGATE_RetVal(FGameplayTagContainer, FGetGameplayTags);
 

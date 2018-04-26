@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ShaderCompilerCommon.h"
 #include "hlslcc.h"
@@ -166,7 +166,7 @@ bool FHlslCrossCompilerContext::Init(
 		InLanguageSpec,
 		VersionTable[CompileTarget]
 		);
-	ParseState->base_source_file = InSourceFilename;
+	ParseState->base_source_file = ralloc_strdup(MemContext, InSourceFilename);
 	ParseState->error = 0;
 	ParseState->adjust_clip_space_dx11_to_opengl = (Flags & HLSLCC_DX11ClipSpace) != 0;
 	ParseState->bFlattenUniformBuffers = bFlattenUniformBuffers;
@@ -177,20 +177,91 @@ bool FHlslCrossCompilerContext::Init(
 	return true;
 }
 
+
+static bool TrySimplePreprocessor(_mesa_glsl_parse_state* ParseState, const char** InOutShaderSource)
+{
+	const char* Source = *InOutShaderSource;
+	char* Dest = ralloc_strdup(ParseState, Source);
+	char* Ptr = Dest;
+	while (*Ptr)
+	{
+		if (*Ptr == '#')
+		{
+			if (Ptr[1] == 'l' && Ptr[2] == 'i' && Ptr[3] == 'n' && Ptr[4] == 'e')
+			{
+				// Skip to EOL
+				while (Ptr && *Ptr != '\n')
+				{
+					++Ptr;
+				}
+			}
+			else
+			{
+				// Directive not supported
+				return false;
+			}
+		}
+		else if (*Ptr == '/')
+		{
+			if (Ptr[1] == '*')
+			{
+				while (*Ptr)
+				{
+					if (*Ptr == '\n')
+					{
+						++Ptr;
+					}
+					else if (Ptr[0] == '*' && Ptr[1] == '/')
+					{
+						Ptr[0] = ' ';
+						Ptr[1] = ' ';
+						break;
+					}
+					else
+					{
+						*Ptr = ' ';
+						++Ptr;
+					}
+				}
+			}
+			else if (Ptr[1] == '/')
+			{
+				Ptr[0] = ' ';
+				Ptr[1] = ' ';
+				Ptr += 2;
+				// Skip to EOL
+				while (Ptr && *Ptr != '\n')
+				{
+					*Ptr = ' ';
+					++Ptr;
+				}
+			}
+		}
+
+		++Ptr;
+	}
+
+	*InOutShaderSource = Dest;
+	return true;
+}
+
 bool FHlslCrossCompilerContext::RunFrontend(const char** InOutShaderSource)
 {
-	const bool bPreprocess = (Flags & HLSLCC_NoPreprocess) == 0;
-	if (bPreprocess)
+	if (!TrySimplePreprocessor(ParseState, InOutShaderSource))
 	{
-		ParseState->error = preprocess(ParseState, InOutShaderSource, &ParseState->info_log);
-		//TIMER(preprocess);
-		if (ParseState->error != 0)
+		const bool bPreprocess = (Flags & HLSLCC_NoPreprocess) == 0;
+		if (bPreprocess)
 		{
-			return false;
+			ParseState->error = preprocess(ParseState, InOutShaderSource, &ParseState->info_log);
+			//TIMER(preprocess);
+			if (ParseState->error != 0)
+			{
+				return false;
+			}
 		}
 	}
 
-	// Enable to debug the parser state machine (Flex & Bison)
+	// Enable to debug the parser state machine (Flex & Bison), enable #define YYDEBUG 1 on hlsl_parser.yy
 	//_mesa_hlsl_debug = 1;
 
 	_mesa_hlsl_lexer_ctor(ParseState, *InOutShaderSource);
@@ -323,8 +394,9 @@ bool FHlslCrossCompilerContext::RunBackend(
 	if (bPackUniforms)
 	{
 		const bool bPackGlobalArraysIntoUniformBuffers = ((Flags & HLSLCC_PackUniformsIntoUniformBuffers) == HLSLCC_PackUniformsIntoUniformBuffers);
+		const bool bKeepNames = (Flags & HLSLCC_KeepSamplerAndImageNames) == HLSLCC_KeepSamplerAndImageNames;
 		TVarVarMap UniformMap;
-		PackUniforms(ir, ParseState, bFlattenUBStructures, bGroupFlattenedUBs, bPackGlobalArraysIntoUniformBuffers, UniformMap);
+		PackUniforms(ir, ParseState, bFlattenUBStructures, bGroupFlattenedUBs, bPackGlobalArraysIntoUniformBuffers, bKeepNames, UniformMap);
 		//TIMER(pack_uniforms);
 
 		RemovePackedUniformBufferReferences(ir, ParseState, UniformMap);

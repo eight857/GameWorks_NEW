@@ -1,12 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnalyticsET.h"
 #include "IAnalyticsProviderET.h"
 
 #include "HttpModule.h"
+#include "Analytics.h"
 
 IMPLEMENT_MODULE( FAnalyticsET, AnalyticsET );
-DEFINE_LOG_CATEGORY(LogAnalytics);
 
 void FAnalyticsET::StartupModule()
 {

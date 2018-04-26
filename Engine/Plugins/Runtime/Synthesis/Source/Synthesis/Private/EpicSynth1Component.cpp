@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SynthComponents/EpicSynth1Component.h"
 
@@ -570,7 +570,7 @@ UModularSynthComponent::UModularSynthComponent(const FObjectInitializer& ObjectI
 	VoiceCount = 8;
 }
 
-void UModularSynthComponent::Init(const int32 SampleRate)
+bool UModularSynthComponent::Init(int32& SampleRate)
 {
 	NumChannels = 2;
 
@@ -601,11 +601,13 @@ void UModularSynthComponent::Init(const int32 SampleRate)
 	SetStereoDelayFeedback(0.7f);
 	SetStereoDelayWetlevel(0.3f);
 	SetChorusEnabled(false);
+
+	return true;
 }
 
-void UModularSynthComponent::OnGenerateAudio(TArray<float>& OutAudio)
+void UModularSynthComponent::OnGenerateAudio(float* OutAudio, int32 NumSamples)
 {
-	const int32 NumFrames = OutAudio.Num() / NumChannels;
+	const int32 NumFrames = NumSamples / NumChannels;
 
 	float LeftSample = 0.0f;
 	float RightSample = 0.0f;

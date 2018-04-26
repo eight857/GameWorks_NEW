@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AudioSettingsDetails.h"
 #include "Misc/Guid.h"
@@ -22,11 +22,6 @@ TSharedRef<IDetailCustomization> FAudioSettingsDetails::MakeInstance()
 
 void FAudioSettingsDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 {
-	if (!GetDefault<UEditorExperimentalSettings>()->bShowAudioStreamingOptions)
-	{
-		DetailBuilder.HideProperty(GET_MEMBER_NAME_CHECKED(UAudioSettings, MaximumConcurrentStreams));
-	}
-
 	DialogueFilenameFormatProperty = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioSettings, DialogueFilenameFormat));
 	DialogueFilenameFormatProperty->MarkHiddenByCustomization();
 

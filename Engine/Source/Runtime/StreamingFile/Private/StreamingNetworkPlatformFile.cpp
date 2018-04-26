@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "StreamingNetworkPlatformFile.h"
 #include "Templates/ScopedPointer.h"
@@ -325,7 +325,7 @@ bool FStreamingNetworkPlatformFile::InitializeInternal(IPlatformFile* Inner, con
 
 	// Send the filenames and timestamps to the server.
 	FNetworkFileArchive Payload(NFS_Messages::GetFileList);
-	FillGetFileList(Payload, true);
+	FillGetFileList(Payload);
 
 	// Send the directories over, and wait for a response.
 	FArrayReader Response;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/GCObject.h"
 #include "TickableEditorObject.h"
-#include "Kismet/HeadMountedDisplayFunctionLibrary.h"
+#include "HeadMountedDisplayTypes.h"
 
 class UVREditorMode;
 enum class EMapChangeType : uint8;
@@ -67,16 +67,9 @@ private:
 	UPROPERTY()
 	UVREditorMode* CurrentVREditorMode;
 
-	/** The previous mode, nullptr if none */
-	UPROPERTY()
-	UVREditorMode* PreviousVREditorMode;
-
 	/** If the VR Editor mode needs to be enabled next tick */
 	bool bEnableVRRequest;
 
 	/** True when we detect that the user is wearing the HMD */
 	EHMDWornState::Type HMDWornState;
-
-	/** Timer for checking if the user is wearing the HMD */
-	float TimeSinceHMDChecked;
 };

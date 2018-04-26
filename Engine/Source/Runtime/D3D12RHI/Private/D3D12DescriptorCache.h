@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 D3D12DescriptorCache.h: D3D12 State application functionality
@@ -314,6 +314,7 @@ class FD3D12OnlineHeap : public FD3D12DeviceChild, public FD3D12SingleNodeGPUObj
 {
 public:
 	FD3D12OnlineHeap(FD3D12Device* Device, GPUNodeMask Node, bool CanLoopAround, FD3D12DescriptorCache* _Parent = nullptr);
+	virtual ~FD3D12OnlineHeap() { }
 
 	FORCEINLINE D3D12_CPU_DESCRIPTOR_HANDLE GetCPUSlotHandle(uint32 Slot) const { return{ CPUBase.ptr + Slot * DescriptorSize }; }
 	FORCEINLINE D3D12_GPU_DESCRIPTOR_HANDLE GetGPUSlotHandle(uint32 Slot) const { return{ GPUBase.ptr + Slot * DescriptorSize }; }
@@ -489,7 +490,7 @@ private:
 		TRefCountPtr<ID3D12DescriptorHeap> Heap;
 		FD3D12CLSyncPoint SyncPoint;
 
-		PoolEntry()
+		PoolEntry() 
 		{}
 
 		PoolEntry(const PoolEntry& InPoolEntry) : Heap(InPoolEntry.Heap), SyncPoint(InPoolEntry.SyncPoint)
@@ -499,7 +500,6 @@ private:
 		{
 			Heap = InPoolEntry.Heap;
 			SyncPoint = InPoolEntry.SyncPoint;
-
 			return *this;
 		}
 	};
@@ -551,9 +551,11 @@ public:
 	// end Descriptor Slot Reservation stuff
 
 	// null views
-	TRefCountPtr<FD3D12ShaderResourceView> pNullSRV;
-	TRefCountPtr<FD3D12UnorderedAccessView> pNullUAV;
-	TRefCountPtr<FD3D12RenderTargetView> pNullRTV;
+
+	FD3D12DescriptorHandleSRV* pNullSRV;
+	FD3D12DescriptorHandleRTV* pNullRTV;
+	FD3D12DescriptorHandleUAV* pNullUAV;
+
 #if USE_STATIC_ROOT_SIGNATURE
 	FD3D12ConstantBufferView* pNullCBV;
 #endif
@@ -583,13 +585,13 @@ public:
 
 	bool HeapRolledOver(D3D12_DESCRIPTOR_HEAP_TYPE Type);
 	void HeapLoopedAround(D3D12_DESCRIPTOR_HEAP_TYPE Type);
-	void Init(FD3D12Device* InParent, FD3D12CommandContext* InCmdContext, uint32 InNumViewDescriptors, uint32 InNumSamplerDescriptors, FD3D12SubAllocatedOnlineHeap::SubAllocationDesc& SubHeapDesc);
+	void Init(FD3D12Device* InParent, FD3D12CommandContext* InCmdContext, uint32 InNumLocalViewDescriptors, uint32 InNumSamplerDescriptors, FD3D12SubAllocatedOnlineHeap::SubAllocationDesc& SubHeapDesc);
 	void Clear();
 	void BeginFrame();
 	void EndFrame();
 	void GatherUniqueSamplerTables();
 
-	bool SwitchToContextLocalViewHeap();
+	bool SwitchToContextLocalViewHeap(const FD3D12CommandListHandle& CommandListHandle);
 	bool SwitchToContextLocalSamplerHeap();
 	bool SwitchToGlobalSamplerHeap();
 

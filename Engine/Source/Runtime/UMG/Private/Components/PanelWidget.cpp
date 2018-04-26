@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/PanelWidget.h"
 
@@ -36,12 +36,18 @@ int32 UPanelWidget::GetChildrenCount() const
 
 UWidget* UPanelWidget::GetChildAt(int32 Index) const
 {
-	if ( Index < 0 || Index >= Slots.Num() )
+	
+	if (Slots.IsValidIndex(Index))
 	{
-		return nullptr;
+		// This occasionally is null during garbage collection passes during begin destroy, when we're
+		// removing objects.  Consider not removing from parents during GC.
+		if (UPanelSlot* ChildSlot = Slots[Index])
+		{
+			return ChildSlot->Content;
+		}
 	}
 
-	return Slots[Index]->Content;
+	return nullptr;
 }
 
 int32 UPanelWidget::GetChildIndex(UWidget* Content) const
@@ -54,8 +60,7 @@ int32 UPanelWidget::GetChildIndex(UWidget* Content) const
 			return ChildIndex;
 		}
 	}
-
-	return -1;
+	return INDEX_NONE;
 }
 
 bool UPanelWidget::HasChild(UWidget* Content) const
@@ -123,10 +128,7 @@ UPanelSlot* UPanelWidget::AddChild(UWidget* Content)
 	PanelSlot->Content = Content;
 	PanelSlot->Parent = this;
 
-	if ( Content )
-	{
-		Content->Slot = PanelSlot;
-	}
+	Content->Slot = PanelSlot;
 
 	Slots.Add(PanelSlot);
 
@@ -225,6 +227,15 @@ void UPanelWidget::ClearChildren()
 		RemoveChildAt(0);
 	}
 }
+
+#if WITH_EDITOR
+
+TSharedRef<SWidget> UPanelWidget::RebuildDesignWidget(TSharedRef<SWidget> Content)
+{
+	return CreateDesignerOutline(Content);
+}
+
+#endif
 
 void UPanelWidget::PostLoad()
 {

@@ -5,46 +5,7 @@ Description:Landscape system for creating terrain for large, open, outdoor envir
 version: 4.9
 parent:Engine
 order:10
-
-[VAR:Topic]
-[OBJECT:Topic]
-	[PARAM:image]
-		![%Engine/Landscape:title%](Engine/Landscape/landscape_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/landscape_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Landscape:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Landscape:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Landscape]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
-
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-	[PARAM:image]
-		![%Engine/Landscape:title%](Engine/Landscape/landscape_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/landscape_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Landscape:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Landscape:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Landscape]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
+topic-image:landscape_topic.png
 
 [REGION:banner]
 ![Landscape](landscape_landing_banner.png)
@@ -52,7 +13,7 @@ order:10
 
 [EXCERPT:landscape002]
 
-[DIR(output:"topiccompact" parent:"Engine/Landscape")]
+[DIR(output:"topiccompact" parent:"Engine/Landscape" org:"hierarchy" end:"1")]
 
 [/EXCERPT:landscape002]
 
@@ -75,9 +36,9 @@ The Landscape tool has three modes, accessible by their icons at the top of the 
 [EXCERPT:LandscapeToolModes2] 
 | Icon | Mode | Description |
 | ---- | ---- | ----------- |
-| ![](Engine/Landscape\Editing\Landscape_ManageMode.png) | **Manage mode** | Enables you to create new Landscapes, and to modify Landscape components. Manage mode is also where you work with [Landscape Gizmos](Engine/Landscape\Editing\Gizmos) to copy, paste, import, and export parts of your Landscape. <br/>For more information about Manage mode, see [](Engine/Landscape\Editing\ManageMode). |
-| ![](Engine/Landscape\Editing\Landscape_SculptMode.png)| **Sculpt mode** | Enables you to modify the shape of your Landscape, by selecting and using specific tools. <br/>For more information about Sculpt mode, see [](Engine/Landscape\Editing\SculptMode).|
-| ![](Engine/Landscape\Editing\Landscape_PaintMode.png)| **Paint mode** | Enables you to modify the appearance of parts of your Landscape by painting textures on it, based on the layers defined in the Landscape's Material. <br/>For more information about Paint mode, see [](Engine/Landscape\Editing\PaintMode).|
+| ![](Engine/Landscape\Editing\Landscape_ManageMode.png) | **Manage mode** | Enables you to create new Landscapes, and to modify Landscape components. Manage mode is also where you work with [Landscape Gizmos](Engine/Landscape\Editing\Gizmos) to copy, paste, import, and export parts of your Landscape. For more information about Manage mode, see [](Engine/Landscape\Editing\ManageMode). |
+| ![](Engine/Landscape\Editing\Landscape_SculptMode.png)| **Sculpt mode** | Enables you to modify the shape of your Landscape, by selecting and using specific tools. For more information about Sculpt mode, see [](Engine/Landscape\Editing\SculptMode).|
+| ![](Engine/Landscape\Editing\Landscape_PaintMode.png)| **Paint mode** | Enables you to modify the appearance of parts of your Landscape by painting textures on it, based on the layers defined in the Landscape's Material. For more information about Paint mode, see [](Engine/Landscape\Editing\PaintMode).|
 [/EXCERPT:LandscapeToolModes2]
 
 [REGION:tip]

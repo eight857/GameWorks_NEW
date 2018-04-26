@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Framework/Docking/SDockingTabStack.h"
 #include "Framework/Commands/UIAction.h"
@@ -182,9 +182,10 @@ void SDockingTabStack::Construct( const FArguments& InArgs, const TSharedRef<FTa
 				SAssignNew(ContentSlot, SBorder)
 				.BorderImage(this, &SDockingTabStack::GetContentAreaBrush)
 				.Padding(this, &SDockingTabStack::GetContentPadding)
+				.Clipping(EWidgetClipping::ClipToBounds)
 				[
 					SNew(STextBlock)
-						.Text(LOCTEXT("EmptyTabMessage", "Empty Tab!"))
+					.Text(LOCTEXT("EmptyTabMessage", "Empty Tab!"))
 				]
 			]
 
@@ -853,7 +854,13 @@ FReply SDockingTabStack::UnhideTabWell()
 
 bool SDockingTabStack::CanHideTabWell() const
 {
-	return GetNumTabs() == 1 && FGlobalTabmanager::Get()->CanSetAsActiveTab(GetTabs()[0]);
+	TSharedPtr<SDockingSplitter> ParentNode = ParentNodePtr.Pin();
+	// Is target tab located at the upper and left most among tabs in the parent window(as first child). Unreal icon will overlap golden triangle(unhide button) when the tab is the first child of the window.
+	const bool bIsUpperLeftmostTab = (FGlobalTabmanager::Get()->GetActiveTab() == ParentNode->GetAllChildTabs()[0]);
+	// Is target tab in the Floating Window. Unreal icon will overlap when the tab is in the floating window(without menu)
+	const bool bIsInFloatingWindow = ParentNode->GetDockArea()->GetParentWindow().IsValid();
+
+	return GetNumTabs() == 1 && FGlobalTabmanager::Get()->CanSetAsActiveTab(GetTabs()[0]) && !(bIsUpperLeftmostTab && bIsInFloatingWindow);
 }
 
 bool SDockingTabStack::CanCloseForegroundTab() const

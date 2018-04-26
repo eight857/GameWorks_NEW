@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "TutorialStateSettings.generated.h"
 
 class UEditorTutorial;
@@ -22,7 +22,7 @@ struct FTutorialProgress
 	}
 
 	UPROPERTY()
-	FStringClassReference Tutorial;
+	FSoftClassPath Tutorial;
 
 	UPROPERTY()
 	int32 CurrentStage;

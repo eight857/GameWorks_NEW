@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -18,6 +18,14 @@ UCLASS(Blueprintable, ClassGroup=(Lights,Common), hidecategories=(Object, LightS
 class ENGINE_API UPointLightComponent : public ULightComponent
 {
 	GENERATED_UCLASS_BODY()
+
+	/** 
+	 * Units used for the intensity. 
+	 * The peak luminous intensity is measured in candelas,
+	 * while the luminous power is measured in lumens.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Light, meta=(DisplayName="Intensity Units", EditCondition="bUseInverseSquaredFalloff"))
+	ELightUnits IntensityUnits;
 
 	UPROPERTY()
 	float Radius_DEPRECATED;
@@ -53,6 +61,13 @@ class ENGINE_API UPointLightComponent : public ULightComponent
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Light)
 	float SourceRadius;
 
+	/**
+	* Soft radius of light source shape.
+	* Note that light sources shapes which intersect shadow casting geometry can cause shadowing artifacts.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Light)
+	float SoftSourceRadius;
+
 	/** 
 	 * Length of light source shape.
 	 * Note that light sources shapes which intersect shadow casting geometry can cause shadowing artifacts.
@@ -61,7 +76,7 @@ class ENGINE_API UPointLightComponent : public ULightComponent
 	float SourceLength;
 
 	/** The Lightmass settings for this object. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Light, meta=(ShowOnlyInnerProperties))
+	UPROPERTY(EditAnywhere, Category=Light, meta=(ShowOnlyInnerProperties))
 	struct FLightmassPointLightSettings LightmassSettings;
 
 	UFUNCTION(BlueprintCallable, Category="Rendering|Lighting")
@@ -73,8 +88,14 @@ class ENGINE_API UPointLightComponent : public ULightComponent
 	UFUNCTION(BlueprintCallable, Category="Rendering|Lighting")
 	void SetSourceRadius(float bNewValue);
 
+	UFUNCTION(BlueprintCallable, Category = "Rendering|Lighting")
+	void SetSoftSourceRadius(float bNewValue);
+
 	UFUNCTION(BlueprintCallable, Category="Rendering|Lighting")
 	void SetSourceLength(float NewValue);
+
+	UFUNCTION(BlueprintPure, Category="Rendering|Lighting")
+	static float GetUnitsConversionFactor(ELightUnits SrcUnits, ELightUnits TargetUnits, float CosHalfConeAngle = -1);
 
 protected:
 	//~ Begin UActorComponent Interface
@@ -82,6 +103,8 @@ protected:
 	//~ End UActorComponent Interface
 
 public:
+
+	virtual float ComputeLightBrightness() const override;
 
 	//~ Begin ULightComponent Interface.
 	virtual bool AffectsBounds(const FBoxSphereBounds& InBounds) const override;

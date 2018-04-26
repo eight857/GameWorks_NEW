@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PartyGameState.h"
 #include "Engine/LocalPlayer.h"
@@ -78,9 +78,7 @@ void UPartyGameState::OnShutdown()
 	UPartyGameState* This = CastChecked<UPartyGameState>(InThis);
 	check(This);
 
-	TArray<UPartyMemberState*> PartyMembers;
-	This->PartyMembersState.GenerateValueArray(PartyMembers);
-	Collector.AddReferencedObjects(PartyMembers);
+	Collector.AddReferencedObjects(This->PartyMembersState);
 }
 
 void UPartyGameState::RegisterFrontendDelegates()
@@ -910,9 +908,16 @@ void UPartyGameState::SetPartyMaxSize(int32 NewSize)
 	{
 		if (CurrentConfig.MaxMembers != NewSize)
 		{
-			UParty* Party = GetPartyOuter();
-			CurrentConfig.MaxMembers = FMath::Clamp(NewSize, 1, Party->GetDefaultPartyMaxSize());
-			UpdatePartyConfig();
+			if (IsLocalPartyLeader())
+			{
+				UParty* Party = GetPartyOuter();
+				CurrentConfig.MaxMembers = FMath::Clamp(NewSize, 1, Party->GetDefaultPartyMaxSize());
+				UpdatePartyConfig();
+			}
+			else
+			{
+				UE_LOG(LogParty, Warning, TEXT("Non party leader trying to change max size!"));
+			}
 		}
 	}
 	else
@@ -1016,6 +1021,28 @@ void UPartyGameState::SetAcceptingMembers(bool bIsAcceptingMembers, EJoinPartyDe
 	}
 }
 
+bool UPartyGameState::IsAcceptingMembers(EJoinPartyDenialReason* const DenialReason /*= nullptr*/) const
+{
+	if (CurrentConfig.bIsAcceptingMembers)
+	{
+		// Accepting members
+		if (DenialReason != nullptr)
+		{
+			*DenialReason = EJoinPartyDenialReason::NoReason;
+		}
+		return true;
+	}
+	else
+	{
+		// Not accepting members
+		if (DenialReason != nullptr)
+		{
+			*DenialReason = static_cast<EJoinPartyDenialReason>(CurrentConfig.NotAcceptingMembersReason);
+		}
+		return false;
+	}
+}
+
 bool UPartyGameState::IsInJoinableGameState() const
 {
 	bool bInGame = false;
@@ -1030,7 +1057,7 @@ bool UPartyGameState::IsInJoinableGameState() const
 		bool bGameInviteOnly = false;
 		bool bGameAllowInvites = false;
 
-		FNamedOnlineSession* GameSession = SessionInt->GetNamedSession(GameSessionName);
+		FNamedOnlineSession* GameSession = SessionInt->GetNamedSession(NAME_GameSession);
 		if (GameSession != NULL &&
 			GameSession->GetJoinability(bGamePublicJoinable, bGameFriendJoinable, bGameInviteOnly, bGameAllowInvites))
 		{
@@ -1095,6 +1122,8 @@ void UPartyGameState::OnUpdatePartyConfigComplete(const FUniqueNetId& LocalUserI
 	{
 		CurrentConfig = *OssParty->Config;
 		bDebugAcceptingMembers = CurrentConfig.bIsAcceptingMembers;
+
+		OnPartyConfigurationChanged().Broadcast(CurrentConfig);
 	}
 }
 
@@ -1384,7 +1413,7 @@ void UPartyGameState::GetSessionInfo(FName SessionName, FString& URL, FString& S
 	IOnlineSessionPtr SessionInt = Online::GetSessionInterface(World);
 	if (ensure(SessionInt.IsValid()))
 	{
-		ensure(SessionInt->GetResolvedConnectString(SessionName, URL, BeaconPort));
+		ensure(SessionInt->GetResolvedConnectString(SessionName, URL, NAME_BeaconPort));
 
 		FNamedOnlineSession* Session = SessionInt->GetNamedSession(SessionName);
 		if (Session)
@@ -1497,6 +1526,7 @@ void UPartyGameState::OnReservationBeaconUpdateResponseReceived(EPartyReservatio
 		ReservationResponse == EPartyReservationResult::ReservationDuplicate)
 	{
 		UWorld* World = GetWorld();
+		check(World);
 
 		IOnlinePartyPtr PartyInt = Online::GetPartyInterface(World);
 		TSharedPtr<const FOnlinePartyId> PartyId = GetPartyId();
@@ -1515,14 +1545,12 @@ void UPartyGameState::OnReservationBeaconUpdateResponseReceived(EPartyReservatio
 		}
 
 		// Check if there are any more while we are connected
-		if (PendingApprovals.Dequeue(PendingApproval))
+		FPendingMemberApproval NextApproval;
+		if (PendingApprovals.Peek(NextApproval))
 		{
 			if (ensure(ReservationBeaconClient))
 			{
 				FUniqueNetIdRepl PartyLeader(GetPartyLeader());
-
-				FPendingMemberApproval NextApproval;
-				PendingApprovals.Peek(NextApproval);
 
 				FPlayerReservation NewPlayerRes;
 				NewPlayerRes.UniqueId = NextApproval.SenderId;
@@ -1531,6 +1559,11 @@ void UPartyGameState::OnReservationBeaconUpdateResponseReceived(EPartyReservatio
 				PlayersToAdd.Add(NewPlayerRes);
 
 				ReservationBeaconClient->RequestReservationUpdate(PartyLeader, PlayersToAdd);
+			}
+			else
+			{
+				UE_LOG(LogParty, Warning, TEXT("UPartyGameState::OnReservationBeaconUpdateResponseReceived: ReservationBeaconClient is null while trying to process more requests"));
+				RejectAllPendingJoinRequests();
 			}
 		}
 		else

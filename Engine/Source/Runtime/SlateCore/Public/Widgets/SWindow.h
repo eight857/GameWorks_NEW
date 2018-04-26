@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CoreDelegates.h"
 #include "Misc/Attribute.h"
 #include "Layout/Margin.h"
 #include "Styling/SlateColor.h"
@@ -85,12 +86,18 @@ enum class ESizingRule : uint8
 	UserSized,
 };
 
+namespace SWindowDefs
+{
+	/** Height of a Slate window title bar, in pixels */
+	static const float DefaultTitleBarSize = 24.0f;
+
+	/** Size of the corner rounding radius.  Used for regular, non-maximized windows only (not tool-tips or decorators.) */
+	static const int32 CornerRadius = 6;
+}
+
 /** Proxy structure to handle deprecated construction from bool */
 struct FWindowTransparency
 {
-	DEPRECATED(4.8, "Please specify an EWindowTransparency value instead.")
-	FWindowTransparency(bool bSupportsTransparency) : Value(bSupportsTransparency ? EWindowTransparency::PerWindow : EWindowTransparency::None) {}
-
 	FWindowTransparency(EWindowTransparency In) : Value(In) {}
 	
 	EWindowTransparency Value;
@@ -128,6 +135,7 @@ public:
 		, _AutoCenter( EAutoCenter::PreferredWorkArea )
 		, _ScreenPosition( FVector2D::ZeroVector )
 		, _ClientSize( FVector2D::ZeroVector )
+		, _AdjustInitialSizeAndPositionForDPIScale(true)
 		, _SupportsTransparency( EWindowTransparency::None )
 		, _InitialOpacity( 1.0f )
 		, _IsInitiallyMaximized( false )
@@ -146,7 +154,9 @@ public:
 		, _SaneWindowPlacement( true )
 		, _LayoutBorder(FMargin(5, 5, 5, 5))
 		, _UserResizeBorder(FMargin(5, 5, 5, 5))
-	{ }
+
+	{
+	}
 
 		/** Type of this window */
 		SLATE_ARGUMENT( EWindowType, Type )
@@ -169,6 +179,9 @@ public:
 
 		/** What the initial size of the window should be. */
 		SLATE_ARGUMENT( FVector2D, ClientSize )
+
+		/** If the initial ClientSize and ScreenPosition arguments should be automatically adjusted to account for DPI scale */
+		SLATE_ARGUMENT( bool, AdjustInitialSizeAndPositionForDPIScale )
 
 		/** Should this window support transparency */
 		SLATE_ARGUMENT( FWindowTransparency, SupportsTransparency )
@@ -322,7 +335,7 @@ public:
 	}
 
 	/** Paint the window and all of its contents. Not the same as Paint(). */
-	int32 PaintWindow( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const;
+	int32 PaintWindow( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const;
 
 	/**
 	 * Returns the size of the title bar as a Slate size parameter.  Does not take into account application scale!
@@ -376,6 +389,9 @@ public:
 	/** Returns the margins used for the window border. This varies based on whether it's maximized or not. */
 	FMargin GetWindowBorderSize( bool bIncTitleBar = false ) const;
 
+	/** Returns the margins used for the window border if it's not maximized */
+	FMargin GetNonMaximizedWindowBorderSize() const;
+
 	/** Relocate the window to a screenspace position specified by NewPosition */
 	void MoveWindowTo( FVector2D NewPosition );
 	/** Relocate the window to a screenspace position specified by NewPosition and resize it to NewSize */
@@ -427,6 +443,9 @@ public:
 
 	TSharedPtr<FGenericWindow> GetNativeWindow();
 	TSharedPtr<const FGenericWindow> GetNativeWindow() const ;
+
+	/** Returns the DPI scale factor of the native window */
+	float GetDPIScaleFactor() const;
 
 	/** 
 	 * Returns whether or not this window is a descendant of the specfied parent window
@@ -525,16 +544,8 @@ public:
 	/** @return should this window show up in the taskbar */
 	bool AppearsInTaskbar() const;
 
-	/** Sets the delegate to execute when the window is activated */
-	DEPRECATED(4.9, "SetOnWindowActivated() is deprecated. Use GetOnWindowActivatedEvent() and subscribe to the multicast event.")
-	void SetOnWindowActivated( const FOnWindowActivated& InDelegate );
-
 	/** Gets the multicast delegate executed when the window is deactivated */
 	FOnWindowActivatedEvent& GetOnWindowActivatedEvent() { return WindowActivatedEvent; }
-
-	/** Sets the delegate to execute when the window is deactivated */
-	DEPRECATED(4.9, "SetOnWindowDeactivated() is deprecated. Use GetOnWindowDeactivatedEvent() and subscribe to the multicast event.")
-	void SetOnWindowDeactivated( const FOnWindowDeactivated& InDelegate );
 
 	/** Gets the multicast delegate executed when the window is deactivated */
 	FOnWindowDeactivatedEvent& GetOnWindowDeactivatedEvent() { return WindowDeactivatedEvent; }
@@ -748,7 +759,7 @@ private:
 	virtual FReply OnMouseButtonUp( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
 	virtual FReply OnMouseMove( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
 
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 
 	/** The window's desired size takes into account the ratio between the slate units and the pixel size */
 	virtual FVector2D ComputeDesiredSize(float) const override;
@@ -867,8 +878,14 @@ public:
 
 	virtual void Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime ) override;
 
-protected:
+	/** Windows that are not hittestable should not show up in the hittest grid. */
+	EVisibility GetWindowVisibility() const;
 
+protected:
+	/**Returns swindow title bar widgets. */
+	virtual TSharedRef<SWidget> MakeWindowTitleBar(const TSharedRef<SWindow>& Window, const TSharedPtr<SWidget>& CenterContent, EHorizontalAlignment CenterContentAlignment);
+	/**Returns the alignment type for the titlebar's title text. */
+	virtual EHorizontalAlignment GetTitleAlignment();
 	/** Get the desired color of titlebar items. These change during flashing. */
 	FSlateColor GetWindowTitleContentColor() const;
 
@@ -886,9 +903,6 @@ protected:
 
 	/** Get the color used to tint the window outline */
 	FSlateColor GetWindowOutlineColor() const;
-
-	/** Windows that are not hittestable should not show up in the hittest grid. */
-	EVisibility GetWindowVisibility() const;
 
 protected:
 

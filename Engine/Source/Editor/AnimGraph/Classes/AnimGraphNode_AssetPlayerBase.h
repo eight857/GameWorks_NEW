@@ -1,10 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "Misc/StringAssetReference.h"
 #include "Animation/AnimationAsset.h"
 #include "AnimGraphNode_Base.h"
 #include "AnimGraphNode_AssetPlayerBase.generated.h"
@@ -30,15 +29,4 @@ public:
 	ANIMGRAPH_API virtual void PinDefaultValueChanged(UEdGraphPin* Pin) override;
 
 	virtual void SetAnimationAsset(UAnimationAsset* Asset) { check(false); /*Base function called*/ }
-
-	/** Store off a string asset reference for later restoration */
-	void SetAssetReferenceForPinRestoration(UObject* InAsset);
-
-	/** Find an asset reference when restoring pins */
-	UObject* GetAssetReferenceForPinRestoration();
-
-private:
-	/** Non-concrete reference to asset that was being used, now potentially coming from a pin */
-	UPROPERTY()
-	FStringAssetReference AssetReferenceForPinRestoration;
 };

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 RequiredTextureResolutionRendering.cpp: Contains definitions for rendering the viewmode.
@@ -8,7 +8,7 @@ RequiredTextureResolutionRendering.cpp: Contains definitions for rendering the v
 #include "RendererPrivate.h"
 #include "ScenePrivate.h"
 
-IMPLEMENT_MATERIAL_SHADER_TYPE(,FRequiredTextureResolutionPS,TEXT("RequiredTextureResolutionPixelShader"),TEXT("Main"),SF_Pixel);
+IMPLEMENT_MATERIAL_SHADER_TYPE(,FRequiredTextureResolutionPS,TEXT("/Engine/Private/RequiredTextureResolutionPixelShader.usf"),TEXT("Main"),SF_Pixel);
 
 void FRequiredTextureResolutionPS::SetParameters(
 	FRHICommandList& RHICmdList, 

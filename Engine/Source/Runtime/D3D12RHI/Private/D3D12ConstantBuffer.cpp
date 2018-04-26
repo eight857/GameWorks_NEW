@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 D3D12ConstantBuffer.cpp: D3D Constant buffer RHI implementation.
@@ -40,7 +40,7 @@ bool FD3D12ConstantBuffer::Version(FD3D12ResourceLocation& BufferOut, bool bDisc
 		return false;
 	}
 
-	SCOPE_CYCLE_COUNTER(STAT_D3D12GlobalConstantBufferUpdateTime);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12GlobalConstantBufferUpdateTime);
 
 	if (bDiscardSharedConstants)
 	{

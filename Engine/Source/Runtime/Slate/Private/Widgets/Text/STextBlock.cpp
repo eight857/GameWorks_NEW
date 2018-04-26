@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Text/STextBlock.h"
 #include "SlateGlobals.h"
 #include "Framework/Text/PlainTextLayoutMarshaller.h"
-#include "Widgets/Text/TextBlockLayout.h"
+#include "Widgets/Text/SlateTextBlockLayout.h"
 #include "Types/ReflectionMetadata.h"
 
 DECLARE_CYCLE_STAT(TEXT("STextBlock::SetText Time"), Stat_SlateTextBlockSetText, STATGROUP_SlateVerbose)
@@ -19,7 +19,7 @@ STextBlock::STextBlock()
 
 STextBlock::~STextBlock()
 {
-	// Needed to avoid "deletion of pointer to incomplete type 'FTextBlockLayout'; no destructor called" error when using TUniquePtr
+	// Needed to avoid "deletion of pointer to incomplete type 'FSlateTextBlockLayout'; no destructor called" error when using TUniquePtr
 }
 
 void STextBlock::Construct( const FArguments& InArgs )
@@ -47,7 +47,7 @@ void STextBlock::Construct( const FArguments& InArgs )
 	BoundText = InArgs._Text;
 
 	// We use a dummy style here (as it may not be safe to call the delegates used to compute the style), but the correct style is set by ComputeDesiredSize
-	TextLayoutCache = MakeUnique<FTextBlockLayout>(FTextBlockStyle::GetDefault(), InArgs._TextShapingMethod, InArgs._TextFlowDirection, FCreateSlateTextLayout(), FPlainTextLayoutMarshaller::Create(), InArgs._LineBreakPolicy);
+	TextLayoutCache = MakeUnique<FSlateTextBlockLayout>(FTextBlockStyle::GetDefault(), InArgs._TextShapingMethod, InArgs._TextFlowDirection, FCreateSlateTextLayout(), FPlainTextLayoutMarshaller::Create(), InArgs._LineBreakPolicy);
 	TextLayoutCache->SetDebugSourceInfo(TAttribute<FString>::Create(TAttribute<FString>::FGetter::CreateLambda([this]{ return FReflectionMetaData::GetWidgetDebugInfo(this); })));
 }
 
@@ -83,6 +83,12 @@ const FSlateBrush* STextBlock::GetHighlightShape() const
 
 void STextBlock::SetText( const TAttribute< FString >& InText )
 {
+	if (InText.IsSet() && !InText.IsBound())
+	{
+		SetText(InText.Get());
+		return;
+	}
+
 	SCOPE_CYCLE_COUNTER(Stat_SlateTextBlockSetText);
 	struct Local
 	{
@@ -99,13 +105,17 @@ void STextBlock::SetText( const TAttribute< FString >& InText )
 
 void STextBlock::SetText( const FString& InText )
 {
-	SCOPE_CYCLE_COUNTER(Stat_SlateTextBlockSetText);
-	BoundText = FText::FromString( InText );
-	Invalidate(EInvalidateWidget::LayoutAndVolatility);
+	SetText(FText::FromString(InText));
 }
 
 void STextBlock::SetText( const TAttribute< FText >& InText )
 {
+	if (InText.IsSet() && !InText.IsBound())
+	{
+		SetText(InText.Get());
+		return;
+	}
+
 	SCOPE_CYCLE_COUNTER(Stat_SlateTextBlockSetText);
 	BoundText = InText;
 	Invalidate(EInvalidateWidget::LayoutAndVolatility);
@@ -118,14 +128,13 @@ void STextBlock::SetText( const FText& InText )
 	if ( !BoundText.IsBound() )
 	{
 		const FString& OldString = BoundText.Get().ToString();
-		const FString& NewString = InText.ToString();
 		const int32 OldLength = OldString.Len();
-		const int32 NewLength = NewString.Len();
 
 		// Only compare reasonably sized strings, it's not worth checking this
 		// for large blocks of text.
 		if ( OldLength <= 20 )
 		{
+			const FString& NewString = InText.ToString();
 			if ( OldString.Compare(NewString, ESearchCase::CaseSensitive) == 0 )
 			{
 				return;
@@ -142,16 +151,13 @@ void STextBlock::SetHighlightText(TAttribute<FText> InText)
 	HighlightText = InText;
 }
 
-int32 STextBlock::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 STextBlock::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
 	SCOPE_CYCLE_COUNTER(Stat_SlateTextBlockOnPaint);
-
-	//FPlatformMisc::BeginNamedEvent(FColor::Orange, "STextBlock");
+	//SCOPED_NAMED_EVENT_TEXT("STextBlock", FColor::Orange);
 
 	// OnPaint will also update the text layout cache if required
-	LayerId = TextLayoutCache->OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, ShouldBeEnabled(bParentEnabled));
-
-	//FPlatformMisc::EndNamedEvent();
+	LayerId = TextLayoutCache->OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, ShouldBeEnabled(bParentEnabled));
 
 	return LayerId;
 }
@@ -175,7 +181,7 @@ FVector2D STextBlock::ComputeDesiredSize(float LayoutScaleMultiplier) const
 
 	// ComputeDesiredSize will also update the text layout cache if required
 	const FVector2D TextSize = TextLayoutCache->ComputeDesiredSize(
-		FTextBlockLayout::FWidgetArgs(BoundText, HighlightText, WrapTextAt, AutoWrapText, WrappingPolicy, Margin, LineHeightPercentage, Justification),
+		FSlateTextBlockLayout::FWidgetArgs(BoundText, HighlightText, WrapTextAt, AutoWrapText, WrappingPolicy, Margin, LineHeightPercentage, Justification),
 		LayoutScaleMultiplier, GetComputedTextStyle()
 		);
 

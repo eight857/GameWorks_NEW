@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*================================================================================
 	LinuxPlatform.h: Setup for the linux platform
@@ -46,8 +46,11 @@ typedef FLinuxPlatformTypes FPlatformTypes;
 #define PLATFORM_MAX_FILEPATH_LENGTH				MAX_PATH /* @todo linux: avoid using PATH_MAX as it is known to be broken */
 #define PLATFORM_HAS_NO_EPROCLIM					1
 #define PLATFORM_HAS_BSD_SOCKET_FEATURE_IOCTL		1
+#define PLATFORM_HAS_BSD_SOCKET_FEATURE_MSG_DONTWAIT	1
 #define PLATFORM_HAS_BSD_IPV6_SOCKETS				1
 #define PLATFORM_SUPPORTS_STACK_SYMBOLS				1
+
+#define PLATFORM_ENABLE_POPCNT_INTRINSIC 1
 
 // SOCK_CLOEXEC is available on Linux since 2.6.27
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SCompositeFontEditor.h"
 #include "Fonts/FontCache.h"
@@ -133,6 +133,9 @@ void SCompositeFontEditor::Construct(const FArguments& InArgs)
 {
 	FontEditorPtr = InArgs._FontEditor;
 
+	// Flush the cached font on a culture change to make sure the preview updates correctly
+	FInternationalization::Get().OnCultureChanged().AddSP(this, &SCompositeFontEditor::FlushCachedFont);
+
 	ChildSlot
 	[
 		SNew(SScrollBox)
@@ -148,6 +151,61 @@ void SCompositeFontEditor::Construct(const FArguments& InArgs)
 				.CompositeFontEditor(this)
 				.Typeface(this, &SCompositeFontEditor::GetDefaultTypeface)
 				.TypefaceDisplayName(LOCTEXT("DefaultFontFamilyName", "Default Font Family"))
+				.TypefaceDisplayNameToolTip(LOCTEXT("DefaultFontFamilyToolTip", "The font family that will be used as the primary font source, all sub-font families should match the size and style of this one"))
+			]
+
+			+SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SAssignNew(FallbackTypefaceEditor, STypefaceEditor)
+				.CompositeFontEditor(this)
+				.Typeface(this, &SCompositeFontEditor::GetFallbackTypeface)
+				.TypefaceDisplayName(LOCTEXT("FallbackFontFamilyName", "Fallback Font Family"))
+				.TypefaceDisplayNameToolTip(LOCTEXT("FallbackFontFamilyToolTip", "The font family that will be used as a catch-all fallback when neither the default font family or any sub-font families support a character"))
+				.HeaderContent()
+				[
+					SNew(SBox)
+					.VAlign(VAlign_Center)
+					[
+						SNew(SHorizontalBox)
+
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(FMargin(4.0f, 0.0f))
+						[
+							SNew(SFontScalingFactorEditor)
+							.CompositeFontEditor(this)
+							.FallbackFont(this, &SCompositeFontEditor::GetFallbackFont)
+						]
+
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(SFontOverrideSelector)
+							.CompositeFontEditor(this)
+							.TypefaceEditor_Lambda([this] { return FallbackTypefaceEditor.Get(); })
+							.Typeface(this, &SCompositeFontEditor::GetFallbackTypeface)
+							.ParentTypeface(this, &SCompositeFontEditor::GetConstDefaultTypeface)
+						]
+
+						// Hidden button using the same image as the sub-fonts to act as an alignment padding
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(FMargin(8.0f, 0.0f, 0.0f, 0.0f))
+						[
+							SNew(SButton)
+							.Visibility(EVisibility::Hidden)
+							.ButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
+							[
+								SNew(SImage)
+								.Image(FEditorStyle::Get().GetBrush("FontEditor.Button_Delete"))
+							]
+						]
+					]
+				]
 			]
 
 			+SVerticalBox::Slot()
@@ -169,6 +227,7 @@ void SCompositeFontEditor::Refresh()
 	FlushCachedFont();
 
 	DefaultTypefaceEditor->Refresh();
+	FallbackTypefaceEditor->Refresh();
 	UpdateSubTypefaceList();
 }
 
@@ -209,6 +268,23 @@ FTypeface* SCompositeFontEditor::GetDefaultTypeface() const
 const FTypeface* SCompositeFontEditor::GetConstDefaultTypeface() const
 {
 	return GetDefaultTypeface();
+}
+
+FTypeface* SCompositeFontEditor::GetFallbackTypeface() const
+{
+	UFont* const FontObject = GetFontObject();
+	return (FontObject) ? &FontObject->CompositeFont.FallbackTypeface.Typeface : nullptr;
+}
+
+const FTypeface* SCompositeFontEditor::GetConstFallbackTypeface() const
+{
+	return GetFallbackTypeface();
+}
+
+FCompositeFallbackFont* SCompositeFontEditor::GetFallbackFont() const
+{
+	UFont* const FontObject = GetFontObject();
+	return (FontObject) ? &FontObject->CompositeFont.FallbackTypeface : nullptr;
 }
 
 void SCompositeFontEditor::UpdateSubTypefaceList()
@@ -264,14 +340,12 @@ TSharedRef<ITableRow> SCompositeFontEditor::MakeSubTypefaceEntryWidget(FSubTypef
 				]
 
 				+SHorizontalBox::Slot()
-				.AutoWidth()
 				.VAlign(VAlign_Center)
 				[
 					SNew(STextBlock)
 					.AutoWrapText(true)
 					.Text(LOCTEXT("AddSubFontFamily", "Add Sub-Font Family"))
 					.Font(FEditorStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
-					.Justification(ETextJustify::Center)
 				]
 			]
 		];
@@ -356,7 +430,7 @@ void STypefaceEditor::Construct(const FArguments& InArgs)
 				[
 					SAssignNew(NameEditableTextBox, SInlineEditableTextBlock)
 					.Text(InArgs._TypefaceDisplayName)
-					.ToolTipText((InArgs._OnDisplayNameCommitted.IsBound()) ? LOCTEXT("FontFamilyNameTooltip", "The name of this font family (click to edit)") : FText::GetEmpty())
+					.ToolTipText(InArgs._TypefaceDisplayNameToolTip)
 					.Font(FEditorStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
 					.OnTextCommitted(InArgs._OnDisplayNameCommitted)
 					.IsReadOnly(!InArgs._OnDisplayNameCommitted.IsBound())
@@ -902,7 +976,7 @@ UFontFace* STypefaceEntryEditor::SaveFontFaceAsAsset(const UFontFace* InFontFace
 		NewPackageName = FPackageName::ObjectPathToPackageName(NewPackageName);
 
 		FText OutError;
-		bFilenameValid = FEditorFileUtils::IsFilenameValidForSaving(NewPackageName, OutError);
+		bFilenameValid = FFileHelper::IsFilenameValidForSaving(NewPackageName, OutError);
 	}
 
 	if (bFilenameValid)
@@ -950,6 +1024,7 @@ void SSubTypefaceEditor::Construct(const FArguments& InArgs)
 		.Typeface(this, &SSubTypefaceEditor::GetTypeface)
 		.TypefaceDisplayName(this, &SSubTypefaceEditor::GetDisplayName)
 		.OnDisplayNameCommitted(this, &SSubTypefaceEditor::OnDisplayNameCommitted)
+		.TypefaceDisplayNameToolTip(LOCTEXT("FontFamilyNameTooltip", "The name of this font family (click to edit)"))
 		.HeaderContent()
 		[
 			SNew(SBox)
@@ -960,36 +1035,48 @@ void SSubTypefaceEditor::Construct(const FArguments& InArgs)
 				+SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(FMargin(4.0f, 0.0f))
 				[
-					SNew(SNumericEntryBox<float>)
-					.ToolTipText(LOCTEXT("ScalingFactorTooltip", "The scaling factor will adjust the size of the rendered glyphs so that you can tweak their size to match that of the default font family"))
-					.Value(this, &SSubTypefaceEditor::GetScalingFactorAsOptional)
-					.OnValueCommitted(this, &SSubTypefaceEditor::OnScalingFactorCommittedAsNumeric)
-					.LabelVAlign(VAlign_Center)
-					.Label()
+					SNew(SHorizontalBox)
+
+					+SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(FMargin(0.0f, 0.0f, 2.0f, 0.0f))
 					[
 						SNew(STextBlock)
-						.Text(LOCTEXT("ScalingFactorLabel", "Scaling Factor"))
+						.Text(LOCTEXT("CulturesLabel", "Cultures:"))
+					]
+
+					+SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						SNew(SEditableTextBox)
+						.MinDesiredWidth(20.0f)
+						.ToolTipText(LOCTEXT("CulturesTooltip", "An optional semi-colon separated list of cultures that this sub-font should be used with (if specified, this sub-font will be favored by those cultures and ignored by others)"))
+						.Text(this, &SSubTypefaceEditor::GetCultures)
+						.OnTextCommitted(this, &SSubTypefaceEditor::OnCulturesCommitted)
 					]
 				]
 
 				+SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
+				.Padding(FMargin(4.0f, 0.0f))
 				[
-					SAssignNew(FontOverrideCombo, SComboBox<TSharedPtr<FName>>)
-					.OptionsSource(&FontOverrideComboData)
-					.ContentPadding(FMargin(4.0, 2.0))
-					.Visibility(this, &SSubTypefaceEditor::GetAddFontOverrideVisibility)
-					.OnComboBoxOpening(this, &SSubTypefaceEditor::OnAddFontOverrideComboOpening)
-					.OnSelectionChanged(this, &SSubTypefaceEditor::OnAddFontOverrideSelectionChanged)
-					.OnGenerateWidget(this, &SSubTypefaceEditor::MakeAddFontOverrideWidget)
-					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("AddFontOverride", "Add Font Override"))
-						.ToolTipText(LOCTEXT("AddFontOverrideTooltip", "Override a font from the default font family to ensure it will be used when drawing a glyph in the range of this sub-font family"))
-					]
+					SNew(SFontScalingFactorEditor)
+					.CompositeFontEditor(CompositeFontEditorPtr)
+					.FallbackFont_Lambda([this] { return (SubTypeface.IsValid()) ? SubTypeface->GetSubTypefaceEntry() : nullptr; })
+				]
+
+				+SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(SFontOverrideSelector)
+					.CompositeFontEditor(CompositeFontEditorPtr)
+					.TypefaceEditor_Lambda([this] { return TypefaceEditor.Get(); })
+					.Typeface_Lambda([this] { return (SubTypeface.IsValid() && SubTypeface->GetSubTypefaceEntry()) ? &SubTypeface->GetSubTypefaceEntry()->Typeface : nullptr; })
+					.ParentTypeface(ParentTypeface)
 				]
 
 				+SHorizontalBox::Slot()
@@ -1017,7 +1104,7 @@ void SSubTypefaceEditor::Construct(const FArguments& InArgs)
 				.ListItemsSource(&CharacterRangeEntries)
 				.SelectionMode(ESelectionMode::None)
 				.ItemWidth(160)
-				.ItemHeight(120)
+				.ItemHeight(144)
 				.ItemAlignment(EListItemAlignment::LeftAligned)
 				.OnGenerateTile(this, &SSubTypefaceEditor::MakeCharacterRangesEntryWidget)
 			]
@@ -1075,62 +1162,6 @@ void SSubTypefaceEditor::OnDisplayNameCommitted(const FText& InNewName, ETextCom
 			SubTypefaceEntryPtr->EditorName = *InNewName.ToString();
 		}
 	}
-}
-
-EVisibility SSubTypefaceEditor::GetAddFontOverrideVisibility() const
-{
-	return (ParentTypeface.Get(nullptr)) ? EVisibility::Visible : EVisibility::Collapsed;
-}
-
-void SSubTypefaceEditor::OnAddFontOverrideComboOpening()
-{
-	FontOverrideComboData.Empty();
-	
-	FCompositeSubFont* const SubTypefaceEntryPtr = SubTypeface->GetSubTypefaceEntry();
-	const FTypeface* const ParentTypefacePtr = ParentTypeface.Get(nullptr);
-
-	if(SubTypefaceEntryPtr && ParentTypefacePtr)
-	{
-		TSet<FName> LocalFontNames;
-		for(const FTypefaceEntry& LocalTypefaceEntry : SubTypefaceEntryPtr->Typeface.Fonts)
-		{
-			LocalFontNames.Add(LocalTypefaceEntry.Name);
-		}
-
-		// Add every font from our parent font that hasn't already got a local entry
-		for(const FTypefaceEntry& ParentTypefaceEntry : ParentTypefacePtr->Fonts)
-		{
-			if(!LocalFontNames.Contains(ParentTypefaceEntry.Name))
-			{
-				FontOverrideComboData.Add(MakeShareable(new FName(ParentTypefaceEntry.Name)));
-			}
-		}
-	}
-
-	FontOverrideCombo->RefreshOptions();
-}
-
-void SSubTypefaceEditor::OnAddFontOverrideSelectionChanged(TSharedPtr<FName> InNewSelection, ESelectInfo::Type)
-{
-	FCompositeSubFont* const SubTypefaceEntryPtr = SubTypeface->GetSubTypefaceEntry();
-
-	if(SubTypefaceEntryPtr && InNewSelection.IsValid() && !InNewSelection->IsNone())
-	{
-		const FScopedTransaction Transaction(LOCTEXT("AddFontOverride", "Add Font Override"));
-		CompositeFontEditorPtr->GetFontObject()->Modify();
-
-		SubTypefaceEntryPtr->Typeface.Fonts.Add(FTypefaceEntry(*InNewSelection));
-		TypefaceEditor->Refresh();
-
-		CompositeFontEditorPtr->FlushCachedFont();
-	}
-}
-
-TSharedRef<SWidget> SSubTypefaceEditor::MakeAddFontOverrideWidget(TSharedPtr<FName> InFontEntry)
-{
-	return
-		SNew(STextBlock)
-		.Text(FText::FromName(*InFontEntry));
 }
 
 FReply SSubTypefaceEditor::OnDeleteSubFontFamilyClicked()
@@ -1216,7 +1247,6 @@ TSharedRef<ITableRow> SSubTypefaceEditor::MakeCharacterRangesEntryWidget(FCharac
 
 			+SVerticalBox::Slot()
 			.VAlign(VAlign_Center)
-			.HAlign(HAlign_Center)
 			[
 				SNew(SCharacterRangeEditor)
 				.CompositeFontEditor(CompositeFontEditorPtr)
@@ -1288,28 +1318,25 @@ FReply SSubTypefaceEditor::OnDeleteCharacterRangeClicked(FCharacterRangeTileView
 	return FReply::Handled();
 }
 
-TOptional<float> SSubTypefaceEditor::GetScalingFactorAsOptional() const
-{
-	const FCompositeSubFont* const SubTypefaceEntryPtr = SubTypeface->GetSubTypefaceEntry();
-
-	if(SubTypefaceEntryPtr)
-	{
-		return SubTypefaceEntryPtr->ScalingFactor;
-	}
-
-	return TOptional<float>();
-}
-
-void SSubTypefaceEditor::OnScalingFactorCommittedAsNumeric(float InNewValue, ETextCommit::Type InCommitType)
+FText SSubTypefaceEditor::GetCultures() const
 {
 	FCompositeSubFont* const SubTypefaceEntryPtr = SubTypeface->GetSubTypefaceEntry();
 
-	if(SubTypefaceEntryPtr)
+	if (SubTypefaceEntryPtr)
 	{
-		const FScopedTransaction Transaction(LOCTEXT("SetScalingFactor", "Set Scaling Factor"));
-		CompositeFontEditorPtr->GetFontObject()->Modify();
+		return FText::FromString(SubTypefaceEntryPtr->Cultures);
+	}
 
-		SubTypefaceEntryPtr->ScalingFactor = InNewValue;
+	return FText::GetEmpty();
+}
+
+void SSubTypefaceEditor::OnCulturesCommitted(const FText& InCultures, ETextCommit::Type InCommitType)
+{
+	FCompositeSubFont* const SubTypefaceEntryPtr = SubTypeface->GetSubTypefaceEntry();
+
+	if (SubTypefaceEntryPtr)
+	{
+		SubTypefaceEntryPtr->Cultures = InCultures.ToString();
 
 		CompositeFontEditorPtr->FlushCachedFont();
 	}
@@ -1324,74 +1351,128 @@ void SCharacterRangeEditor::Construct(const FArguments& InArgs)
 	CompositeFontEditorPtr = InArgs._CompositeFontEditor;
 	CharacterRange = InArgs._CharacterRange;
 
+	CacheCurrentRangeSelection();
+
+	// Copy the data so we can sort it by display name (it's usually ordered by ascending block range, and the sort happens when opening the combo)
+	TSharedPtr<FUnicodeBlockRange> CurrentRangeSelectionItem;
+	{
+		TArrayView<const FUnicodeBlockRange> UnicodeBlockRanges = FUnicodeBlockRange::GetUnicodeBlockRanges();
+		RangeSelectionComboData.Reserve(UnicodeBlockRanges.Num());
+		for(const FUnicodeBlockRange& UnicodeBlockRange : UnicodeBlockRanges)
+		{
+			RangeSelectionComboData.Emplace(MakeShared<FUnicodeBlockRange>(UnicodeBlockRange));
+
+			if(CurrentRangeSelection.IsSet() && CurrentRangeSelection->Range == UnicodeBlockRange.Range)
+			{
+				CurrentRangeSelectionItem = RangeSelectionComboData.Last();
+			}
+		}
+	}
+
 	ChildSlot
 	[
-		SNew(SGridPanel)
+		SNew(SVerticalBox)
 
-		// Minimum column
-		+SGridPanel::Slot(0, 0)
-		.Padding(2.0f)
+		// Block selector
+		+SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(0.0f, 2.0f))
 		[
-			SNew(SEditableTextBox)
-			.Text(this, &SCharacterRangeEditor::GetRangeComponentAsTCHAR, 0)
-			.OnTextCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsTCHAR, 0)
-			.ToolTipText(LOCTEXT("MinCharacterRangeEditCharTooltip", "Specifies the lower inclusive boundary of this character range as a literal unicode character.\nExample: If you wanted to use the range 'A-Z', this would be set to 'A'."))
+			SAssignNew(RangeSelectionCombo, SComboBox<TSharedPtr<FUnicodeBlockRange>>)
+			.OptionsSource(&RangeSelectionComboData)
+			.InitiallySelectedItem(CurrentRangeSelectionItem)
+			.ContentPadding(FMargin(4.0, 2.0))
+			.OnComboBoxOpening(this, &SCharacterRangeEditor::OnRangeSelectionComboOpening)
+			.OnSelectionChanged(this, &SCharacterRangeEditor::OnRangeSelectionChanged)
+			.OnGenerateWidget(this, &SCharacterRangeEditor::MakeRangeSelectionWidget)
+			[
+				SNew(STextBlock)
+				.Text(this, &SCharacterRangeEditor::GetCurrentRangeSelectionDisplayName)
+				.ToolTipText(this, &SCharacterRangeEditor::GetCurrentRangeSelectionDisplayName)
+			]
 		]
 
-		+SGridPanel::Slot(0, 1)
-		.Padding(2.0f)
+		+SVerticalBox::Slot()
 		[
-			SNew(SEditableTextBox)
-			.Text(this, &SCharacterRangeEditor::GetRangeComponentAsHexString, 0)
-			.OnTextCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsHexString, 0)
-			.ToolTipText(LOCTEXT("MinCharacterRangeEditHexTooltip", "Specifies the lower inclusive boundary of this character range as the hexadecimal value of a unicode character.\nExample: If you wanted to use the range '0x41-0x5A' (A-Z), this would be set to '0x41'."))
-		]
+			SNew(SHorizontalBox)
 
-		+SGridPanel::Slot(0, 2)
-		.Padding(2.0f)
-		[
-			SNew(SNumericEntryBox<int32>)
-			.Value(this, &SCharacterRangeEditor::GetRangeComponentAsOptional, 0)
-			.OnValueCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsNumeric, 0)
-			.ToolTipText(LOCTEXT("MinCharacterRangeEditDecTooltip", "Specifies the lower inclusive boundary of this character range as the decimal value of a unicode character.\nExample: If you wanted to use the range '65-90' (A-Z), this would be set to '65'."))
-		]
+			// Minimum column
+			+SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SVerticalBox)
 
-		// Separator
-		+SGridPanel::Slot(1, 0)
-		.RowSpan(3)
-		.VAlign(VAlign_Center)
-		[
-			SNew(STextBlock)
-			.Text(FText::FromString(TEXT(" - ")))
-			.Font(FEditorStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
-		]
+				+SVerticalBox::Slot()
+				.Padding(2.0f)
+				[
+					SNew(SEditableTextBox)
+					.Text(this, &SCharacterRangeEditor::GetRangeComponentAsTCHAR, 0)
+					.OnTextCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsTCHAR, 0)
+					.ToolTipText(LOCTEXT("MinCharacterRangeEditCharTooltip", "Specifies the lower inclusive boundary of this character range as a literal unicode character.\nExample: If you wanted to use the range 'A-Z', this would be set to 'A'."))
+				]
 
-		// Maximum column
-		+SGridPanel::Slot(2, 0)
-		.Padding(2.0f)
-		[
-			SNew(SEditableTextBox)
-			.Text(this, &SCharacterRangeEditor::GetRangeComponentAsTCHAR, 1)
-			.OnTextCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsTCHAR, 1)
-			.ToolTipText(LOCTEXT("MaxCharacterRangeEditCharTooltip", "Specifies the upper inclusive boundary of this character range as a literal unicode character.\nExample: If you wanted to use the range 'A-Z', this would be set to 'Z'."))
-		]
+				+SVerticalBox::Slot()
+				.Padding(2.0f)
+				[
+					SNew(SEditableTextBox)
+					.Text(this, &SCharacterRangeEditor::GetRangeComponentAsHexString, 0)
+					.OnTextCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsHexString, 0)
+					.ToolTipText(LOCTEXT("MinCharacterRangeEditHexTooltip", "Specifies the lower inclusive boundary of this character range as the hexadecimal value of a unicode character.\nExample: If you wanted to use the range '0x41-0x5A' (A-Z), this would be set to '0x41'."))
+				]
 
-		+SGridPanel::Slot(2, 1)
-		.Padding(2.0f)
-		[
-			SNew(SEditableTextBox)
-			.Text(this, &SCharacterRangeEditor::GetRangeComponentAsHexString, 1)
-			.OnTextCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsHexString, 1)
-			.ToolTipText(LOCTEXT("MaxCharacterRangeEditHexTooltip", "Specifies the upper inclusive boundary of this character range as the hexadecimal value of a unicode character.\nExample: If you wanted to use the range '0x41-0x5A' (A-Z), this would be set to '0x5A'."))
-		]
+				+SVerticalBox::Slot()
+				.Padding(2.0f)
+				[
+					SNew(SNumericEntryBox<int32>)
+					.Value(this, &SCharacterRangeEditor::GetRangeComponentAsOptional, 0)
+					.OnValueCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsNumeric, 0)
+					.ToolTipText(LOCTEXT("MinCharacterRangeEditDecTooltip", "Specifies the lower inclusive boundary of this character range as the decimal value of a unicode character.\nExample: If you wanted to use the range '65-90' (A-Z), this would be set to '65'."))
+				]
+			]
 
-		+SGridPanel::Slot(2, 2)
-		.Padding(2.0f)
-		[
-			SNew(SNumericEntryBox<int32>)
-			.Value(this, &SCharacterRangeEditor::GetRangeComponentAsOptional, 1)
-			.OnValueCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsNumeric, 1)
-			.ToolTipText(LOCTEXT("MaxCharacterRangeEditDecTooltip", "Specifies the upper inclusive boundary of this character range as the decimal value of a unicode character.\nExample: If you wanted to use the range '65-90' (A-Z), this would be set to '90'."))
+			// Separator
+			+SHorizontalBox::Slot()
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Center)
+			[
+				SNew(STextBlock)
+				.Text(FText::AsCultureInvariant(TEXT(" - ")))
+				.Font(FEditorStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
+			]
+
+			// Maximum column
+			+SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SVerticalBox)
+
+				+SVerticalBox::Slot()
+				.Padding(2.0f)
+				[
+					SNew(SEditableTextBox)
+					.Text(this, &SCharacterRangeEditor::GetRangeComponentAsTCHAR, 1)
+					.OnTextCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsTCHAR, 1)
+					.ToolTipText(LOCTEXT("MaxCharacterRangeEditCharTooltip", "Specifies the upper inclusive boundary of this character range as a literal unicode character.\nExample: If you wanted to use the range 'A-Z', this would be set to 'Z'."))
+				]
+
+				+SVerticalBox::Slot()
+				.Padding(2.0f)
+				[
+					SNew(SEditableTextBox)
+					.Text(this, &SCharacterRangeEditor::GetRangeComponentAsHexString, 1)
+					.OnTextCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsHexString, 1)
+					.ToolTipText(LOCTEXT("MaxCharacterRangeEditHexTooltip", "Specifies the upper inclusive boundary of this character range as the hexadecimal value of a unicode character.\nExample: If you wanted to use the range '0x41-0x5A' (A-Z), this would be set to '0x5A'."))
+				]
+
+				+SVerticalBox::Slot()
+				.Padding(2.0f)
+				[
+					SNew(SNumericEntryBox<int32>)
+					.Value(this, &SCharacterRangeEditor::GetRangeComponentAsOptional, 1)
+					.OnValueCommitted(this, &SCharacterRangeEditor::OnRangeComponentCommittedAsNumeric, 1)
+					.ToolTipText(LOCTEXT("MaxCharacterRangeEditDecTooltip", "Specifies the upper inclusive boundary of this character range as the decimal value of a unicode character.\nExample: If you wanted to use the range '65-90' (A-Z), this would be set to '90'."))
+				]
+			]
 		]
 	];
 }
@@ -1400,13 +1481,13 @@ FText SCharacterRangeEditor::GetRangeComponentAsTCHAR(int32 InComponentIndex) co
 {
 	const int32 RangeComponent = GetRangeComponent(InComponentIndex);
 	const TCHAR RangeComponentStr[] = { static_cast<TCHAR>(RangeComponent), 0 };
-	return FText::FromString(RangeComponentStr);
+	return FText::AsCultureInvariant(RangeComponentStr);
 }
 
 FText SCharacterRangeEditor::GetRangeComponentAsHexString(int32 InComponentIndex) const
 {
 	const int32 RangeComponent = GetRangeComponent(InComponentIndex);
-	return FText::FromString(FString::Printf(TEXT("0x%04x"), RangeComponent));
+	return FText::AsCultureInvariant(FString::Printf(TEXT("0x%04x"), RangeComponent));
 }
 
 TOptional<int32> SCharacterRangeEditor::GetRangeComponentAsOptional(int32 InComponentIndex) const
@@ -1473,8 +1554,213 @@ void SCharacterRangeEditor::SetRangeComponent(const int32 InNewValue, const int3
 			? FInt32Range(FInt32Range::BoundsType::Inclusive(InNewValue), FInt32Range::BoundsType::Inclusive(CharacterRangePtr->GetUpperBoundValue())) 
 			: FInt32Range(FInt32Range::BoundsType::Inclusive(CharacterRangePtr->GetLowerBoundValue()), FInt32Range::BoundsType::Inclusive(InNewValue));
 
+		CacheCurrentRangeSelection();
+
 		CompositeFontEditorPtr->FlushCachedFont();
 	}
+}
+
+void SCharacterRangeEditor::CacheCurrentRangeSelection()
+{
+	CurrentRangeSelection.Reset();
+
+	TArrayView<const FUnicodeBlockRange> UnicodeBlockRanges = FUnicodeBlockRange::GetUnicodeBlockRanges();
+
+	// todo: could binary search on the lower bound since they're sorted in ascending order; need the Algo for it to come back from Main
+	FInt32Range* const CharacterRangePtr = CharacterRange->GetRange();
+	if(CharacterRangePtr)
+	{
+		for(const FUnicodeBlockRange& UnicodeBlockRange : UnicodeBlockRanges)
+		{
+			if(UnicodeBlockRange.Range == *CharacterRangePtr)
+			{
+				CurrentRangeSelection = UnicodeBlockRange;
+			}
+		}
+	}
+}
+
+FText SCharacterRangeEditor::GetCurrentRangeSelectionDisplayName() const
+{
+	return CurrentRangeSelection.IsSet() ? CurrentRangeSelection->DisplayName : LOCTEXT("UnicodeBlock_CustomSelection", "Custom");
+}
+
+void SCharacterRangeEditor::OnRangeSelectionComboOpening()
+{
+	RangeSelectionComboData.Sort([](const TSharedPtr<FUnicodeBlockRange>& One, const TSharedPtr<FUnicodeBlockRange>& Two)
+	{
+		return One->DisplayName.CompareTo(Two->DisplayName) < 0;
+	});
+
+	if(RangeSelectionCombo.IsValid())
+	{
+		RangeSelectionCombo->RefreshOptions();
+	}
+}
+
+void SCharacterRangeEditor::OnRangeSelectionChanged(TSharedPtr<FUnicodeBlockRange> InNewRangeSelection, ESelectInfo::Type)
+{
+	if(InNewRangeSelection.IsValid())
+	{
+		FInt32Range* const CharacterRangePtr = CharacterRange->GetRange();
+		if(CharacterRangePtr)
+		{
+			const FScopedTransaction Transaction(LOCTEXT("UpdateCharacterRange", "Update Character Range"));
+			CompositeFontEditorPtr->GetFontObject()->Modify();
+
+			*CharacterRangePtr = InNewRangeSelection->Range;
+			CurrentRangeSelection = *InNewRangeSelection;
+
+			CompositeFontEditorPtr->FlushCachedFont();
+		}
+	}
+}
+
+TSharedRef<SWidget> SCharacterRangeEditor::MakeRangeSelectionWidget(TSharedPtr<FUnicodeBlockRange> InRangeSelection)
+{
+	return SNew(STextBlock)
+		.Text(InRangeSelection->DisplayName)
+		.ToolTipText(FText::Format(LOCTEXT("RangeSelectionTooltipFmt", "{0} ({1} - {2})"), InRangeSelection->DisplayName, FText::AsCultureInvariant(FString::Printf(TEXT("0x%04x"), InRangeSelection->Range.GetLowerBoundValue())), FText::AsCultureInvariant(FString::Printf(TEXT("0x%04x"), InRangeSelection->Range.GetUpperBoundValue()))));
+}
+
+void SFontScalingFactorEditor::Construct(const FArguments& InArgs)
+{
+	CompositeFontEditorPtr = InArgs._CompositeFontEditor;
+	FallbackFont = InArgs._FallbackFont;
+
+	ChildSlot
+	[
+		SNew(SHorizontalBox)
+
+		+SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(FMargin(0.0f, 0.0f, 2.0f, 0.0f))
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("ScalingFactorLabel", "Scaling Factor:"))
+		]
+
+		+SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SNumericEntryBox<float>)
+			.ToolTipText(LOCTEXT("ScalingFactorTooltip", "The scaling factor will adjust the size of the rendered glyphs so that you can tweak their size to match that of the default font family"))
+			.Value(this, &SFontScalingFactorEditor::GetScalingFactorAsOptional)
+			.OnValueCommitted(this, &SFontScalingFactorEditor::OnScalingFactorCommittedAsNumeric)
+		]
+	];
+}
+
+TOptional<float> SFontScalingFactorEditor::GetScalingFactorAsOptional() const
+{
+	const FCompositeFallbackFont* const FallbackFontPtr = FallbackFont.Get(nullptr);
+
+	if(FallbackFontPtr)
+	{
+		return FallbackFontPtr->ScalingFactor;
+	}
+
+	return TOptional<float>();
+}
+
+void SFontScalingFactorEditor::OnScalingFactorCommittedAsNumeric(float InNewValue, ETextCommit::Type InCommitType)
+{
+	FCompositeFallbackFont* const FallbackFontPtr = FallbackFont.Get(nullptr);
+
+	if(FallbackFontPtr)
+	{
+		const FScopedTransaction Transaction(LOCTEXT("SetScalingFactor", "Set Scaling Factor"));
+		CompositeFontEditorPtr->GetFontObject()->Modify();
+
+		FallbackFontPtr->ScalingFactor = InNewValue;
+
+		CompositeFontEditorPtr->FlushCachedFont();
+	}
+}
+
+void SFontOverrideSelector::Construct(const FArguments& InArgs)
+{
+	CompositeFontEditorPtr = InArgs._CompositeFontEditor;
+	TypefaceEditor = InArgs._TypefaceEditor;
+	Typeface = InArgs._Typeface;
+	ParentTypeface = InArgs._ParentTypeface;
+
+	ChildSlot
+	[
+		SAssignNew(FontOverrideCombo, SComboBox<TSharedPtr<FName>>)
+		.OptionsSource(&FontOverrideComboData)
+		.ContentPadding(FMargin(4.0, 2.0))
+		.Visibility(this, &SFontOverrideSelector::GetAddFontOverrideVisibility)
+		.OnComboBoxOpening(this, &SFontOverrideSelector::OnAddFontOverrideComboOpening)
+		.OnSelectionChanged(this, &SFontOverrideSelector::OnAddFontOverrideSelectionChanged)
+		.OnGenerateWidget(this, &SFontOverrideSelector::MakeAddFontOverrideWidget)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("AddFontOverride", "Add Font Override"))
+			.ToolTipText(LOCTEXT("AddFontOverrideTooltip", "Override a font from the default font family to ensure it will be used when drawing a glyph in the range of this sub-font family"))
+		]
+	];
+}
+
+EVisibility SFontOverrideSelector::GetAddFontOverrideVisibility() const
+{
+	return (ParentTypeface.Get(nullptr)) ? EVisibility::Visible : EVisibility::Collapsed;
+}
+
+void SFontOverrideSelector::OnAddFontOverrideComboOpening()
+{
+	FontOverrideComboData.Reset();
+
+	FTypeface* const TypefacePtr = Typeface.Get(nullptr);
+	const FTypeface* const ParentTypefacePtr = ParentTypeface.Get(nullptr);
+
+	if(TypefacePtr && ParentTypefacePtr)
+	{
+		TSet<FName> LocalFontNames;
+		for(const FTypefaceEntry& LocalTypefaceEntry : TypefacePtr->Fonts)
+		{
+			LocalFontNames.Add(LocalTypefaceEntry.Name);
+		}
+
+		// Add every font from our parent font that hasn't already got a local entry
+		for(const FTypefaceEntry& ParentTypefaceEntry : ParentTypefacePtr->Fonts)
+		{
+			if(!LocalFontNames.Contains(ParentTypefaceEntry.Name))
+			{
+				FontOverrideComboData.Add(MakeShareable(new FName(ParentTypefaceEntry.Name)));
+			}
+		}
+	}
+
+	FontOverrideCombo->RefreshOptions();
+}
+
+void SFontOverrideSelector::OnAddFontOverrideSelectionChanged(TSharedPtr<FName> InNewSelection, ESelectInfo::Type)
+{
+	FTypeface* const TypefacePtr = Typeface.Get(nullptr);
+
+	if(TypefacePtr && InNewSelection.IsValid() && !InNewSelection->IsNone())
+	{
+		const FScopedTransaction Transaction(LOCTEXT("AddFontOverride", "Add Font Override"));
+		CompositeFontEditorPtr->GetFontObject()->Modify();
+
+		TypefacePtr->Fonts.Add(FTypefaceEntry(*InNewSelection));
+
+		if(STypefaceEditor* TypefaceEditorPtr = TypefaceEditor.Get(nullptr))
+		{
+			TypefaceEditorPtr->Refresh();
+		}
+
+		CompositeFontEditorPtr->FlushCachedFont();
+	}
+}
+
+TSharedRef<SWidget> SFontOverrideSelector::MakeAddFontOverrideWidget(TSharedPtr<FName> InFontEntry)
+{
+	return
+		SNew(STextBlock)
+		.Text(FText::FromName(*InFontEntry));
 }
 
 #undef LOCTEXT_NAMESPACE

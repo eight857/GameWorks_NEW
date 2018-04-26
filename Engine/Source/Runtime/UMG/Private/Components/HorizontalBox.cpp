@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -14,7 +14,7 @@ UHorizontalBox::UHorizontalBox(const FObjectInitializer& ObjectInitializer)
 	bIsVariable = false;
 
 	SHorizontalBox::FArguments Defaults;
-	Visiblity_DEPRECATED = Visibility = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
+	Visibility = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
 }
 
 void UHorizontalBox::ReleaseSlateResources(bool bReleaseChildren)
@@ -69,7 +69,7 @@ TSharedRef<SWidget> UHorizontalBox::RebuildWidget()
 		}
 	}
 
-	return BuildDesignTimeWidget( MyHorizontalBox.ToSharedRef() );
+	return MyHorizontalBox.ToSharedRef();
 }
 
 #if WITH_EDITOR

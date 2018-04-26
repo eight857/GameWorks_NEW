@@ -35,12 +35,12 @@ public:
 	{
 	}
 
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )				
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)				
 	{ 
 		OutEnvironment.SetDefine( TEXT("LPV_MULTIPLE_BOUNCES"), (uint32)LPV_MULTIPLE_BOUNCES );
 		OutEnvironment.SetDefine( TEXT("LPV_GV_SH_ORDER"),		(uint32)LPV_GV_SH_ORDER );
 
-		FGlobalShader::ModifyCompilationEnvironment( Platform, OutEnvironment ); 
+		FGlobalShader::ModifyCompilationEnvironment( Parameters, OutEnvironment ); 
 	}
 };
 
@@ -54,11 +54,10 @@ public:
 	explicit FLpvVisualiseGS( const ShaderMetaType::CompiledShaderInitializerType& Initializer ) : FLpvVisualiseBase(Initializer)	{}
 	virtual bool Serialize( FArchive& Ar ) override																					{ return FLpvVisualiseBase::Serialize( Ar ); }
 
-	static bool ShouldCache( EShaderPlatform Platform )
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && RHISupportsGeometryShaders(Platform) && IsLPVSupported(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && RHISupportsGeometryShaders(Parameters.Platform) && IsLPVSupported(Parameters.Platform);
 	}
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )				{ FLpvVisualiseBase::ModifyCompilationEnvironment( Platform, OutEnvironment ); }
 
 	void SetParameters(
 		FRHICommandList& RHICmdList, 
@@ -78,8 +77,7 @@ public:
 	explicit FLpvVisualiseVS( const ShaderMetaType::CompiledShaderInitializerType& Initializer ) : FLpvVisualiseBase(Initializer) {}
 	virtual bool Serialize( FArchive& Ar ) override																					{ return FLpvVisualiseBase::Serialize( Ar ); }
 
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )				{ FLpvVisualiseBase::ModifyCompilationEnvironment( Platform, OutEnvironment ); }
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	void SetParameters(
 		FRHICommandList& RHICmdList, 
@@ -110,8 +108,7 @@ public:
 		}
 	}
 
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )				{ FLpvVisualiseBase::ModifyCompilationEnvironment( Platform, OutEnvironment ); }
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	void SetParameters(
 		FRHICommandList& RHICmdList, 
@@ -192,9 +189,9 @@ public:
 };
 
 
-IMPLEMENT_SHADER_TYPE(,FLpvVisualiseGS,TEXT("LPVVisualise"),TEXT("GShader"),SF_Geometry);
-IMPLEMENT_SHADER_TYPE(,FLpvVisualiseVS,TEXT("LPVVisualise"),TEXT("VShader"),SF_Vertex);
-IMPLEMENT_SHADER_TYPE(,FLpvVisualisePS,TEXT("LPVVisualise"),TEXT("PShader"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FLpvVisualiseGS,TEXT("/Engine/Private/LPVVisualise.usf"),TEXT("GShader"),SF_Geometry);
+IMPLEMENT_SHADER_TYPE(,FLpvVisualiseVS,TEXT("/Engine/Private/LPVVisualise.usf"),TEXT("VShader"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(,FLpvVisualisePS,TEXT("/Engine/Private/LPVVisualise.usf"),TEXT("PShader"),SF_Pixel);
 
 
 void FLightPropagationVolume::Visualise(FRHICommandList& RHICmdList, const FViewInfo& View) const
@@ -225,7 +222,7 @@ void FLightPropagationVolume::Visualise(FRHICommandList& RHICmdList, const FView
 	GeometryShader->SetParameters(RHICmdList, View);
 	PixelShader->SetParameters(RHICmdList, this, View);
 
-	RHICmdList.SetStreamSource(0, NULL, 0, 0);
+	RHICmdList.SetStreamSource(0, NULL, 0);
 	RHICmdList.DrawPrimitive(PT_PointList, 0, 1, 32 * 3);
 
 	PixelShader->UnbindBuffers(RHICmdList);

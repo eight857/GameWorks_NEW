@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SSkeletonWidget.h"
 #include "Modules/ModuleManager.h"
@@ -11,7 +11,6 @@
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimationAsset.h"
 #include "Animation/DebugSkelMeshComponent.h"
-#include "Settings/DestructableMeshEditorSettings.h"
 #include "Animation/AnimBlueprint.h"
 #include "Editor.h"
 #include "Animation/AnimSet.h"
@@ -23,6 +22,8 @@
 #include "AnimPreviewInstance.h"
 #include "AssetRegistryModule.h"
 #include "AnimationRuntime.h"
+#include "Settings/SkeletalMeshEditorSettings.h"
+#include "Styling/CoreStyle.h"
 
 #define LOCTEXT_NAMESPACE "SkeletonWidget"
 
@@ -154,7 +155,7 @@ void SSkeletonCompareWidget::Construct(const FArguments& InArgs)
 					[
 						SNew(STextBlock)
 						.Text(LOCTEXT("CurrentlySelectedSkeletonLabel_SelectSkeleton", "Select Skeleton"))
-						.Font(FSlateFontInfo(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 16))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 16))
 						.ToolTip(SkeletonTooltip)
 					]
 					+SHorizontalBox::Slot()
@@ -346,7 +347,7 @@ void SSkeletonSelectorWindow::ConstructWindow()
 
 TSharedPtr<SWindow> SAnimationRemapSkeleton::DialogWindow;
 
-bool SAnimationRemapSkeleton::OnShouldFilterAsset(const class FAssetData& AssetData)
+bool SAnimationRemapSkeleton::OnShouldFilterAsset(const struct FAssetData& AssetData)
 {
 	USkeleton* AssetSkeleton = nullptr;
 	if (AssetData.IsAssetLoaded())
@@ -683,7 +684,7 @@ void SAnimationRemapSkeleton::Construct( const FArguments& InArgs )
 					[
 						SNew(STextBlock)
 						.Text(LOCTEXT("CurrentlySelectedSkeletonLabel_SelectSkeleton", "Select Skeleton"))
-						.Font(FSlateFontInfo(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 16))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 16))
 						.ToolTip(SkeletonTooltip)
 					]
 					+SHorizontalBox::Slot()
@@ -1176,7 +1177,7 @@ void SSkeletonBoneRemoval::Construct( const FArguments& InArgs )
 			[
 				SNew(STextBlock)
 				.Text(LOCTEXT("BoneRemovalLabel", "Bone Removal"))
-				.Font(FSlateFontInfo(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 16))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 16))
 			]
 		]
 
@@ -1195,7 +1196,7 @@ void SSkeletonBoneRemoval::Construct( const FArguments& InArgs )
 		[
 			SNew(STextBlock)
 			.WrapTextAt(400.f)
-			.Font( FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 10 ) )
+			.Font( FCoreStyle::GetDefaultFontStyle("Regular", 10) )
 			.Text( InArgs._WarningMessage )
 		]
 
@@ -1357,7 +1358,7 @@ public:
 
 	void UpdateLighting()
 	{
-		const UDestructableMeshEditorSettings* Options = GetDefault<UDestructableMeshEditorSettings>();
+		const USkeletalMeshEditorSettings* Options = GetDefault<USkeletalMeshEditorSettings>();
 
 		PreviewScene->SetLightDirection(Options->AnimPreviewLightingDirection);
 		PreviewScene->SetLightColor(Options->AnimPreviewDirectionalColor);
@@ -1398,10 +1399,7 @@ void SBasePoseViewport::SetSkeleton(USkeleton* Skeleton)
 				//Place the camera at a good viewer position
 				FVector NewPosition = Client->GetViewLocation();
 				NewPosition.Normalize();
-				if(PreviewSkeletalMesh)
-				{
-					NewPosition *= (PreviewSkeletalMesh->GetImportedBounds().SphereRadius*1.5f);
-				}
+				NewPosition *= (PreviewSkeletalMesh->GetImportedBounds().SphereRadius*1.5f);
 				Client->SetViewLocation(NewPosition);
 			}
 			else
@@ -1491,7 +1489,7 @@ void SSelectFolderDlg::Construct(const FArguments& InArgs)
 					[
 						SNew(STextBlock)
 						.Text(LOCTEXT("SelectPath", "Select Path"))
-						.Font(FSlateFontInfo(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 14))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
 					]
 
 					+SVerticalBox::Slot()

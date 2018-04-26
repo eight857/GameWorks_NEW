@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 D3D12CommandList.h: Implementation of D3D12 Command List functions
@@ -64,7 +64,6 @@ private:
 			if (!IsClosed)
 			{
 				FlushResourceBarriers();
-
 				VERIFYD3D12RESULT(CommandList->Close());
 
 				D3DX12Residency::Close(ResidencySet);
@@ -512,6 +511,8 @@ public:
 	// Adds a UAV barrier to the barrier batch
 	void AddUAVBarrier();
 
+	void AddAliasingBarrier(FD3D12Resource* pResource);
+
 	// Flushes the batched resource barriers to the current command list
 	void FlushResourceBarriers()
 	{
@@ -565,6 +566,11 @@ public:
 	bool operator!() const
 	{
 		return CommandList == 0;
+	}
+
+	bool IsValid() const
+	{
+		return CommandList != nullptr;
 	}
 
 	bool IsOpen() const

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Framework/Commands/UICommandList.h"
 #include "Framework/Application/SlateApplication.h"
@@ -202,7 +202,7 @@ bool FUICommandList::ConditionalProcessCommandBindings( const FKey Key, bool bCt
 				// Check to see if there is any command in the context activated by the chord
 				TSharedPtr<FUICommandInfo> Command = FInputBindingManager::Get().FindCommandInContext( Context, CheckChord, bCheckDefault );
 
-				if( Command.IsValid() && ensure( *Command->GetActiveChord() == CheckChord ) )
+				if( Command.IsValid() && Command->HasActiveChord(CheckChord)  )
 				{
 					// Find the bound action for this command
 					const FUIAction* Action = GetActionForCommand(Command);

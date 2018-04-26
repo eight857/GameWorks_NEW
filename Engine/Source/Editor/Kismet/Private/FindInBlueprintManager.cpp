@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "FindInBlueprintManager.h"
 #include "Misc/MessageDialog.h"
@@ -26,9 +26,16 @@
 #include "EdGraph/EdGraphSchema.h"
 #include "ISourceControlModule.h"
 #include "Editor.h"
+#include "Misc/FileHelper.h"
 #include "FileHelpers.h"
 #include "EdGraphSchema_K2.h"
 #include "K2Node_FunctionEntry.h"
+#include "EditorStyleSet.h"
+#include "BlueprintEditorSettings.h"
+#include "Framework/Docking/TabManager.h"
+#include "Widgets/Docking/SDockTab.h"
+#include "WorkspaceMenuStructure.h"
+#include "WorkspaceMenuStructureModule.h"
 
 #include "Engine/SimpleConstructionScript.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -621,21 +628,21 @@ namespace BlueprintSearchMetaDataHelpers
 	{
 		// Only save strings that are not empty
 
-		if(!InPinType.PinCategory.IsEmpty())
+		if(!InPinType.PinCategory.IsNone())
 		{
-			InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_PinCategory, InPinType.PinCategory);
+			InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_PinCategory, InPinType.PinCategory.ToString());
 		}
 
-		if(!InPinType.PinSubCategory.IsEmpty())
+		if(!InPinType.PinSubCategory.IsNone())
 		{
-			InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_PinSubCategory, InPinType.PinSubCategory);
+			InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_PinSubCategory, InPinType.PinSubCategory.ToString());
 		}
 
 		if(InPinType.PinSubCategoryObject.IsValid())
 		{
 			InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_ObjectClass, FText::FromString(InPinType.PinSubCategoryObject->GetName()));
 		}
-		InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_IsArray, InPinType.bIsArray);
+		InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_IsArray, InPinType.IsArray());
 		InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_IsReference, InPinType.bIsReference);
 	}
 
@@ -972,7 +979,7 @@ namespace BlueprintSearchMetaDataHelpers
 								InWriter->WriteObjectStart();
 								{
 									InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_Name, Pin->GetSchema()->GetPinDisplayName(Pin));
-									InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_DefaultValue, FText::FromString(Pin->GetDefaultAsString()));
+									InWriter->WriteValue(FFindInBlueprintSearchTags::FiB_DefaultValue, Pin->GetDefaultAsText());
 								}
 								SavePinTypeToJson(InWriter, Pin->PinType);
 								InWriter->WriteObjectEnd();
@@ -1165,7 +1172,6 @@ public:
 	/** Enables the caching process */
 	void Start() { bIsStarted = true; }
 
-	/** FTickableEditorObject interface */
 	EActiveTimerReturnType Tick(double InCurrentTime, float InDeltaTime)
 	{
 		// Protect against Slate recursion if a modal dialog appears from loading/resaving an asset
@@ -1199,7 +1205,7 @@ public:
 				FinalPackageFilename += bIsWorldAsset ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension();
 			}
 			FText ErrorMessage;
-			bool bValidFilename = FEditorFileUtils::IsFilenameValidForSaving( FinalPackageFilename, ErrorMessage );
+			bool bValidFilename = FFileHelper::IsFilenameValidForSaving( FinalPackageFilename, ErrorMessage );
 			if ( bValidFilename )
 			{
 				bValidFilename = bIsWorldAsset ? FEditorFileUtils::IsValidMapFilename( FinalPackageFilename, ErrorMessage ) : FPackageName::IsValidLongPackageName( FinalPackageFilename, false, &ErrorMessage );
@@ -1338,6 +1344,11 @@ FFindInBlueprintSearchManager::FFindInBlueprintSearchManager()
 	, AssetRegistryModule(nullptr)
 	, CachingObject(nullptr)
 {
+	for (int32 TabIdx = 0; TabIdx < ARRAY_COUNT(GlobalFindResultsTabIDs); TabIdx++)
+	{
+		const FName TabID = FName(*FString::Printf(TEXT("GlobalFindResults_%02d"), TabIdx + 1));
+		GlobalFindResultsTabIDs[TabIdx] = TabID;
+	}
 }
 
 FFindInBlueprintSearchManager::~FFindInBlueprintSearchManager()
@@ -1349,8 +1360,8 @@ FFindInBlueprintSearchManager::~FFindInBlueprintSearchManager()
 		AssetRegistryModule->Get().OnAssetRenamed().RemoveAll(this);
 	}
 	FKismetEditorUtilities::OnBlueprintUnloaded.RemoveAll(this);
-	FCoreUObjectDelegates::PreGarbageCollect.RemoveAll(this);
-	FCoreUObjectDelegates::PostGarbageCollect.RemoveAll(this);
+	FCoreUObjectDelegates::GetPreGarbageCollectDelegate().RemoveAll(this);
+	FCoreUObjectDelegates::GetPostGarbageCollect().RemoveAll(this);
 	FCoreUObjectDelegates::OnAssetLoaded.RemoveAll(this);
 
 	if(FModuleManager::Get().IsModuleLoaded("HotReload"))
@@ -1358,6 +1369,9 @@ FFindInBlueprintSearchManager::~FFindInBlueprintSearchManager()
 		IHotReloadInterface& HotReloadSupport = FModuleManager::GetModuleChecked<IHotReloadInterface>("HotReload");
 		HotReloadSupport.OnHotReload().RemoveAll(this);
 	}
+
+	// Shut down the global find results tab feature.
+	EnableGlobalFindResults(false);
 }
 
 void FFindInBlueprintSearchManager::Initialize()
@@ -1383,8 +1397,8 @@ void FFindInBlueprintSearchManager::Initialize()
 
 	FKismetEditorUtilities::OnBlueprintUnloaded.AddRaw(this, &FFindInBlueprintSearchManager::OnBlueprintUnloaded);
 
-	FCoreUObjectDelegates::PreGarbageCollect.AddRaw(this, &FFindInBlueprintSearchManager::PauseFindInBlueprintSearch);
-	FCoreUObjectDelegates::PostGarbageCollect.AddRaw(this, &FFindInBlueprintSearchManager::UnpauseFindInBlueprintSearch);
+	FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddRaw(this, &FFindInBlueprintSearchManager::PauseFindInBlueprintSearch);
+	FCoreUObjectDelegates::GetPostGarbageCollect().AddRaw(this, &FFindInBlueprintSearchManager::UnpauseFindInBlueprintSearch);
 	FCoreUObjectDelegates::OnAssetLoaded.AddRaw(this, &FFindInBlueprintSearchManager::OnAssetLoaded);
 	
 	// Register to be notified of hot reloads
@@ -1395,6 +1409,12 @@ void FFindInBlueprintSearchManager::Initialize()
 	{
 		// Do an immediate load of the cache to catch any Blueprints that were discovered by the asset registry before we initialized.
 		BuildCache();
+	}
+
+	// Register global find results tabs if the feature is enabled.
+	if (GetDefault<UBlueprintEditorSettings>()->bHostFindInBlueprintsInGlobalTab)
+	{
+		EnableGlobalFindResults(true);
 	}
 }
 
@@ -1417,7 +1437,10 @@ void FFindInBlueprintSearchManager::OnAssetAdded(const FAssetData& InAssetData)
 		}
 	}
 
-	if(AssetClass && (AssetClass->IsChildOf(UBlueprint::StaticClass()) || AssetClass->IsChildOf(UWorld::StaticClass())))
+	bool bIsLevel = AssetClass && AssetClass->IsChildOf(UWorld::StaticClass());
+	bool bIsBlueprint = AssetClass && AssetClass->IsChildOf(UBlueprint::StaticClass());
+
+	if(bIsLevel || bIsBlueprint)
 	{
 		// Confirm that the Blueprint has not been added already, this can occur during duplication of Blueprints.
 		int32* IndexPtr = SearchMap.Find(InAssetData.ObjectPath);
@@ -1425,7 +1448,7 @@ void FFindInBlueprintSearchManager::OnAssetAdded(const FAssetData& InAssetData)
 		{
 			if(InAssetData.IsAssetLoaded())
 			{
-				if(AssetClass->IsChildOf(UBlueprint::StaticClass()))
+				if(bIsBlueprint)
 				{
 					if(UBlueprint* BlueprintAsset = Cast<UBlueprint>(InAssetData.GetAsset()))
 					{
@@ -1433,7 +1456,7 @@ void FFindInBlueprintSearchManager::OnAssetAdded(const FAssetData& InAssetData)
 						AddOrUpdateBlueprintSearchMetadata(BlueprintAsset);
 					}
 				}
-				else if(AssetClass->IsChildOf(UWorld::StaticClass()))
+				else if(bIsLevel)
 				{
 					UWorld* WorldAsset = Cast<UWorld>(InAssetData.GetAsset());
 					if(WorldAsset->PersistentLevel)
@@ -1458,8 +1481,10 @@ void FFindInBlueprintSearchManager::OnAssetAdded(const FAssetData& InAssetData)
 			{
 				if (FiBVersionedSearchData->Len() == 0)
 				{
-					// agrant TODO: Can we patch this up? Is it dangerous not to?
-					UncachedBlueprints.Add(InAssetData.ObjectPath);
+					if (bIsBlueprint)
+					{
+						UncachedBlueprints.Add(InAssetData.ObjectPath);
+					}
 				}
 				else
 				{
@@ -1469,7 +1494,11 @@ void FFindInBlueprintSearchManager::OnAssetAdded(const FAssetData& InAssetData)
 			else
 			{
 				// The asset is uncached, we will want to inform the user that this is the case
-				UncachedBlueprints.Add(InAssetData.ObjectPath);
+				// Maps may have no data because they have no blueprints, assume they are empty instead of uncached
+				if (bIsBlueprint)
+				{
+					UncachedBlueprints.Add(InAssetData.ObjectPath);
+				}
 			}
 		}
 	}
@@ -1538,7 +1567,7 @@ void FFindInBlueprintSearchManager::RemoveBlueprintByPath(FName InPath)
 		SearchArray[*SearchIdx].bMarkedForDeletion = true;
 	}
 }
-void FFindInBlueprintSearchManager::OnAssetRemoved(const class FAssetData& InAssetData)
+void FFindInBlueprintSearchManager::OnAssetRemoved(const struct FAssetData& InAssetData)
 {
 	if(InAssetData.IsAssetLoaded())
 	{
@@ -1546,7 +1575,7 @@ void FFindInBlueprintSearchManager::OnAssetRemoved(const class FAssetData& InAss
 	}
 }
 
-void FFindInBlueprintSearchManager::OnAssetRenamed(const class FAssetData& InAssetData, const FString& InOldName)
+void FFindInBlueprintSearchManager::OnAssetRenamed(const struct FAssetData& InAssetData, const FString& InOldName)
 {
 	// Renaming removes the item from the manager, it will be re-added in the OnAssetAdded event under the new name.
 	if(InAssetData.IsAssetLoaded())
@@ -2048,21 +2077,25 @@ void FFindInBlueprintSearchManager::OnCacheAllUncachedBlueprints(bool bInSourceC
 	// Multiple threads can be adding to this at the same time
 	FScopeLock ScopeLock(&SafeModifyCacheCriticalSection);
 
-	if(bInSourceControlActive && bInCheckoutAndSave)
+	// We need to check validity first in case the user has closed the initiating FiB tab before responding to the source control login dialog (which is modeless).
+	if (CachingObject)
 	{
-		TArray<FString> UncachedBlueprintStrings;
-		const TArray<FName>& TotalUncachedBlueprints = CachingObject->GetUncachedBlueprintList();
-		
-		UncachedBlueprintStrings.Reserve(TotalUncachedBlueprints.Num());
-		for (const FName& UncachedBlueprint : TotalUncachedBlueprints)
+		if(bInSourceControlActive && bInCheckoutAndSave)
 		{
-			UncachedBlueprintStrings.Add(UncachedBlueprint.ToString());
+			TArray<FString> UncachedBlueprintStrings;
+			const TArray<FName>& TotalUncachedBlueprints = CachingObject->GetUncachedBlueprintList();
+		
+			UncachedBlueprintStrings.Reserve(TotalUncachedBlueprints.Num());
+			for (const FName& UncachedBlueprint : TotalUncachedBlueprints)
+			{
+				UncachedBlueprintStrings.Add(UncachedBlueprint.ToString());
+			}
+			FEditorFileUtils::CheckoutPackages(UncachedBlueprintStrings);
 		}
-		FEditorFileUtils::CheckoutPackages(UncachedBlueprintStrings);
-	}
 
-	// Start the cache process.
-	CachingObject->Start();
+		// Start the cache process.
+		CachingObject->Start();
+	}
 }
 
 void FFindInBlueprintSearchManager::CacheAllUncachedBlueprints(TWeakPtr< SFindInBlueprints > InSourceWidget, FWidgetActiveTimerDelegate& InOutActiveTimerDelegate, FSimpleDelegate InOnFinished/* = FSimpleDelegate()*/, EFiBVersion InMinimiumVersionRequirement/* = EFiBVersion::FIB_VER_LATEST*/)
@@ -2250,6 +2283,200 @@ TSharedPtr< FJsonObject > FFindInBlueprintSearchManager::ConvertJsonStringToObje
 	FJsonSerializer::Deserialize( Reader, JsonObject );
 
 	return JsonObject;
+}
+
+void FFindInBlueprintSearchManager::GlobalFindResultsClosed(const TSharedRef<SFindInBlueprints>& FindResults)
+{
+	for (TWeakPtr<SFindInBlueprints> FindResultsPtr : GlobalFindResults)
+	{
+		if (FindResultsPtr.Pin() == FindResults)
+		{
+			GlobalFindResults.Remove(FindResultsPtr);
+			break;
+		}
+	}
+}
+
+FText FFindInBlueprintSearchManager::GetGlobalFindResultsTabLabel(int32 TabIdx)
+{
+	int32 NumOpenGlobalFindResultsTabs = 0;
+	for (int32 i = GlobalFindResults.Num() - 1; i >= 0; --i)
+	{
+		if (GlobalFindResults[i].IsValid())
+		{
+			++NumOpenGlobalFindResultsTabs;
+		}
+		else
+		{
+			GlobalFindResults.RemoveAt(i);
+		}
+	}
+
+	if (NumOpenGlobalFindResultsTabs > 1 || TabIdx > 0)
+	{
+		return FText::Format(LOCTEXT("GlobalFindResultsTabNameWithIndex", "Find in Blueprints {0}"), FText::AsNumber(TabIdx + 1));
+	}
+	else
+	{
+		return LOCTEXT("GlobalFindResultsTabName", "Find in Blueprints");
+	}
+}
+
+TSharedRef<SDockTab> FFindInBlueprintSearchManager::SpawnGlobalFindResultsTab(const FSpawnTabArgs& SpawnTabArgs, int32 TabIdx)
+{
+	TAttribute<FText> Label = TAttribute<FText>::Create(TAttribute<FText>::FGetter::CreateRaw(this, &FFindInBlueprintSearchManager::GetGlobalFindResultsTabLabel, TabIdx));
+
+	TSharedRef<SDockTab> NewTab = SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		.Label(Label)
+		.ToolTipText(LOCTEXT("GlobalFindResultsTabTooltip", "Search for a string in all Blueprint assets."));
+
+	TSharedRef<SFindInBlueprints> FindResults = SNew(SFindInBlueprints)
+		.bIsSearchWindow(false)
+		.ContainingTab(NewTab);
+
+	GlobalFindResults.Add(FindResults);
+
+	NewTab->SetContent(FindResults);
+
+	return NewTab;
+}
+
+TSharedPtr<SFindInBlueprints> FFindInBlueprintSearchManager::OpenGlobalFindResultsTab()
+{
+	TSet<FName> OpenGlobalTabIDs;
+
+	for (TWeakPtr<SFindInBlueprints> FindResultsPtr : GlobalFindResults)
+	{
+		TSharedPtr<SFindInBlueprints> FindResults = FindResultsPtr.Pin();
+		if (FindResults.IsValid())
+		{
+			OpenGlobalTabIDs.Add(FindResults->GetHostTabId());
+		}
+	}
+
+	for (int32 Idx = 0; Idx < ARRAY_COUNT(GlobalFindResultsTabIDs); ++Idx)
+	{
+		const FName GlobalTabId = GlobalFindResultsTabIDs[Idx];
+		if (!OpenGlobalTabIDs.Contains(GlobalTabId))
+		{
+			TSharedRef<SDockTab> NewTab = FGlobalTabmanager::Get()->InvokeTab(GlobalTabId);
+			return StaticCastSharedRef<SFindInBlueprints>(NewTab->GetContent());
+		}
+	}
+
+	return TSharedPtr<SFindInBlueprints>();
+}
+
+TSharedPtr<SFindInBlueprints> FFindInBlueprintSearchManager::GetGlobalFindResults()
+{
+	TSharedPtr<SFindInBlueprints> FindResultsToUse;
+
+	for (TWeakPtr<SFindInBlueprints> FindResultsPtr : GlobalFindResults)
+	{
+		TSharedPtr<SFindInBlueprints> FindResults = FindResultsPtr.Pin();
+		if (FindResults.IsValid() && !FindResults->IsLocked())
+		{
+			FindResultsToUse = FindResults;
+			break;
+		}
+	}
+
+	if (FindResultsToUse.IsValid())
+	{
+		FGlobalTabmanager::Get()->InvokeTab(FindResultsToUse->GetHostTabId());
+	}
+	else
+	{
+		FindResultsToUse = OpenGlobalFindResultsTab();
+	}
+
+	return FindResultsToUse;
+}
+
+void FFindInBlueprintSearchManager::EnableGlobalFindResults(bool bEnable)
+{
+	const TSharedRef<FGlobalTabmanager>& GlobalTabManager = FGlobalTabmanager::Get();
+
+	if (bEnable)
+	{
+		// Register the spawners for all global Find Results tabs
+		const FSlateIcon GlobalFindResultsIcon(FEditorStyle::GetStyleSetName(), "Kismet.Tabs.FindResults");
+		GlobalFindResultsMenuItem = WorkspaceMenu::GetMenuStructure().GetToolsCategory()->AddGroup(
+			LOCTEXT("WorkspaceMenu_GlobalFindResultsCategory", "Find in Blueprints"),
+			LOCTEXT("GlobalFindResultsMenuTooltipText", "Find references to functions, events and variables in all Blueprints."),
+			GlobalFindResultsIcon,
+			true);
+
+		for (int32 TabIdx = 0; TabIdx < ARRAY_COUNT(GlobalFindResultsTabIDs); TabIdx++)
+		{
+			const FName TabID = GlobalFindResultsTabIDs[TabIdx];
+			if (!GlobalTabManager->CanSpawnTab(TabID))
+			{
+				const FText DisplayName = FText::Format(LOCTEXT("GlobalFindResultsDisplayName", "Find in Blueprints {0}"), FText::AsNumber(TabIdx + 1));
+
+				GlobalTabManager->RegisterNomadTabSpawner(TabID, FOnSpawnTab::CreateRaw(this, &FFindInBlueprintSearchManager::SpawnGlobalFindResultsTab, TabIdx))
+					.SetDisplayName(DisplayName)
+					.SetIcon(GlobalFindResultsIcon)
+					.SetGroup(GlobalFindResultsMenuItem.ToSharedRef());
+			}
+		}
+	}
+	else
+	{
+		// Close all Global Find Results tabs when turning the feature off, since these may not get closed along with the Blueprint Editor contexts above.
+		TSet<TSharedPtr<SFindInBlueprints>> FindResultsToClose;
+
+		for (TWeakPtr<SFindInBlueprints> FindResultsPtr : GlobalFindResults)
+		{
+			TSharedPtr<SFindInBlueprints> FindResults = FindResultsPtr.Pin();
+			if (FindResults.IsValid())
+			{
+				FindResultsToClose.Add(FindResults);
+			}
+		}
+
+		for (TSharedPtr<SFindInBlueprints> FindResults : FindResultsToClose)
+		{
+			FindResults->CloseHostTab();
+		}
+
+		GlobalFindResults.Empty();
+
+		for (int32 TabIdx = 0; TabIdx < ARRAY_COUNT(GlobalFindResultsTabIDs); TabIdx++)
+		{
+			const FName TabID = GlobalFindResultsTabIDs[TabIdx];
+			if (GlobalTabManager->CanSpawnTab(TabID))
+			{
+				GlobalTabManager->UnregisterNomadTabSpawner(TabID);
+			}
+		}
+
+		if (GlobalFindResultsMenuItem.IsValid())
+		{
+			WorkspaceMenu::GetMenuStructure().GetToolsCategory()->RemoveItem(GlobalFindResultsMenuItem.ToSharedRef());
+			GlobalFindResultsMenuItem.Reset();
+		}
+	}
+}
+
+void FFindInBlueprintSearchManager::CloseOrphanedGlobalFindResultsTabs(TSharedPtr<class FTabManager> TabManager)
+{
+	if (TabManager.IsValid())
+	{
+		for (int32 TabIdx = 0; TabIdx < ARRAY_COUNT(GlobalFindResultsTabIDs); TabIdx++)
+		{
+			const FName TabID = GlobalFindResultsTabIDs[TabIdx];
+			if (!FGlobalTabmanager::Get()->CanSpawnTab(TabID))
+			{
+				TSharedPtr<SDockTab> OrphanedTab = TabManager->FindExistingLiveTab(FTabId(TabID));
+				if (OrphanedTab.IsValid())
+				{
+					OrphanedTab->RequestCloseTab();
+				}
+			}
+		}
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

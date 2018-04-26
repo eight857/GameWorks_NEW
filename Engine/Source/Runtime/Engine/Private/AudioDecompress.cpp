@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "AudioDecompress.h"
 #include "AudioDevice.h"
 #include "Interfaces/IAudioFormat.h"
 #include "ContentStreaming.h"
+#include "HAL/LowLevelMemTracker.h"
 
 IStreamedCompressedInfo::IStreamedCompressedInfo()
 	: SrcBufferData(nullptr)
@@ -69,65 +70,52 @@ bool IStreamedCompressedInfo::ReadCompressedData(uint8* Destination, bool bLoopi
 
 	SCOPE_CYCLE_COUNTER(STAT_AudioStreamedDecompressTime);
 
-	// Write out any PCM data that was decoded during the last request
-	uint32 RawPCMOffset = WriteFromDecodedPCM(Destination, BufferSize);
+	bool bFinished = false;
+	uint32 TotalBytesDecoded = 0;
 
-	bool bLooped = false;
-
-	if (bStoringEndOfFile && LastPCMByteSize > 0)
+	while (TotalBytesDecoded < BufferSize)
 	{
-		// delayed returning looped because we hadn't read the entire buffer
-		bLooped = true;
-		bStoringEndOfFile = false;
-	}
+		const uint8* EncodedSrcPtr = SrcBufferData + SrcBufferOffset;
+		const uint32 RemainingEncodedSrcSize = SrcBufferDataSize - SrcBufferOffset;
 
-	while (RawPCMOffset < BufferSize)
-	{
-		uint16 FrameSize = GetFrameSize();
-		int32 DecodedSamples = DecompressToPCMBuffer(FrameSize);
-		if (DecodedSamples < 0)
+		const FDecodeResult DecodeResult = Decode(EncodedSrcPtr, RemainingEncodedSrcSize, Destination, BufferSize - TotalBytesDecoded);
+		if (!DecodeResult.NumPcmBytesProduced)
 		{
-			LastPCMByteSize = 0;
-			ZeroBuffer(Destination + RawPCMOffset, BufferSize - RawPCMOffset);
-			return false;
-		}
-		else
-		{
-			LastPCMByteSize = IncrementCurrentSampleCount(DecodedSamples) * SampleStride;
-			RawPCMOffset += WriteFromDecodedPCM(Destination + RawPCMOffset, BufferSize - RawPCMOffset);
+			bFinished = true;
 
-			if (SrcBufferOffset >= SrcBufferDataSize)
+			if (bLooping)
 			{
-				// check whether all decoded PCM was written
-				if (LastPCMByteSize == 0)
-				{
-					bLooped = true;
-				}
-				else
-				{
-					bStoringEndOfFile = true;
-				}
-				if (bLooping)
-				{
-					SrcBufferOffset = AudioDataOffset;
-					CurrentSampleCount = 0;
-				}
-				else
-				{
-					RawPCMOffset += ZeroBuffer(Destination + RawPCMOffset, BufferSize - RawPCMOffset);
-				}
+				SrcBufferOffset = AudioDataOffset;
+				CurrentSampleCount = 0;
+
+				PrepareToLoop();
+			}
+			else
+			{
+				// Zero the remainder of the buffer
+				FMemory::Memzero(Destination, BufferSize - TotalBytesDecoded);
+				break;
 			}
 		}
+		else if (DecodeResult.NumPcmBytesProduced < 0)
+		{
+			// Zero the remainder of the buffer
+			FMemory::Memzero(Destination, BufferSize - TotalBytesDecoded);
+			return true;
+		}
+
+		TotalBytesDecoded += DecodeResult.NumPcmBytesProduced;
+		SrcBufferOffset += DecodeResult.NumCompressedBytesConsumed;
+		Destination += DecodeResult.NumPcmBytesProduced;
 	}
 
-	return bLooped;
+	return bFinished;
 }
 
 void IStreamedCompressedInfo::ExpandFile(uint8* DstBuffer, struct FSoundQualityInfo* QualityInfo)
 {
 	check(DstBuffer);
 	check(QualityInfo);
-	check(QualityInfo->SampleDataSize <= SrcBufferDataSize);
 
 	// Ensure we're at the start of the audio data
 	SrcBufferOffset = AudioDataOffset;
@@ -136,8 +124,7 @@ void IStreamedCompressedInfo::ExpandFile(uint8* DstBuffer, struct FSoundQualityI
 
 	while (RawPCMOffset < QualityInfo->SampleDataSize)
 	{
-		uint16 FrameSize = 0;
-		Read(&FrameSize, sizeof(uint16));
+		uint16 FrameSize = GetFrameSize();
 		int32 DecodedSamples = DecompressToPCMBuffer(FrameSize);
 
 		if (DecodedSamples < 0)
@@ -162,7 +149,7 @@ bool IStreamedCompressedInfo::StreamCompressedInfo(USoundWave* Wave, struct FSou
 
 	if (FirstChunk)
 	{
-		return ReadCompressedInfo(FirstChunk, Wave->RunningPlatformData->Chunks[0].DataSize, QualityInfo);
+		return ReadCompressedInfo(FirstChunk, Wave->RunningPlatformData->Chunks[0].AudioDataSize, QualityInfo);
 	}
 
 	return false;
@@ -171,6 +158,7 @@ bool IStreamedCompressedInfo::StreamCompressedInfo(USoundWave* Wave, struct FSou
 bool IStreamedCompressedInfo::StreamCompressedData(uint8* Destination, bool bLooping, uint32 BufferSize)
 {
 	check(Destination);
+	SCOPED_NAMED_EVENT(IStreamedCompressedInfo_StreamCompressedData, FColor::Blue);
 
 	SCOPE_CYCLE_COUNTER(STAT_AudioStreamedDecompressTime);
 
@@ -186,7 +174,7 @@ bool IStreamedCompressedInfo::StreamCompressedData(uint8* Destination, bool bLoo
 		if (SrcBufferData)
 		{
 			bPrintChunkFailMessage = true;
-			SrcBufferDataSize = StreamingSoundWave->RunningPlatformData->Chunks[CurrentChunkIndex].DataSize;
+			SrcBufferDataSize = StreamingSoundWave->RunningPlatformData->Chunks[CurrentChunkIndex].AudioDataSize;
 			SrcBufferOffset = CurrentChunkIndex == 0 ? AudioDataOffset : 0;
 		}
 		else
@@ -271,7 +259,7 @@ bool IStreamedCompressedInfo::StreamCompressedData(uint8* Destination, bool bLoo
 				if (SrcBufferData)
 				{
 					UE_LOG(LogAudio, Log, TEXT("Incremented current chunk from SoundWave'%s' - Chunk %d, Offset %d"), *StreamingSoundWave->GetName(), CurrentChunkIndex, SrcBufferOffset);
-					SrcBufferDataSize = StreamingSoundWave->RunningPlatformData->Chunks[CurrentChunkIndex].DataSize;
+					SrcBufferDataSize = StreamingSoundWave->RunningPlatformData->Chunks[CurrentChunkIndex].AudioDataSize;
 				}
 				else
 				{
@@ -297,8 +285,8 @@ int32 IStreamedCompressedInfo::DecompressToPCMBuffer(uint16 FrameSize)
 	SrcBufferOffset += FrameSize;
 	LastPCMOffset = 0;
 	
-	const int32 SamplesDecoded = Decode(SrcPtr, FrameSize, (int16*)LastDecodedPCM.GetData(), MaxFrameSizeSamples);
-	return SamplesDecoded;
+	const FDecodeResult DecodeResult = Decode(SrcPtr, FrameSize, LastDecodedPCM.GetData(), LastDecodedPCM.Num());
+	return DecodeResult.NumAudioFramesProduced;
 }
 
 uint32 IStreamedCompressedInfo::IncrementCurrentSampleCount(uint32 NewSamples)
@@ -630,6 +618,8 @@ FAsyncAudioDecompressWorker::FAsyncAudioDecompressWorker(USoundWave* InWave)
 
 void FAsyncAudioDecompressWorker::DoWork()
 {
+	LLM_SCOPE(ELLMTag::Audio);
+
 	if (AudioInfo)
 	{
 		FSoundQualityInfo QualityInfo = { 0 };
@@ -664,9 +654,22 @@ void FAsyncAudioDecompressWorker::DoWork()
 			{
 #if PLATFORM_NUM_AUDIODECOMPRESSION_PRECACHE_BUFFERS > 0
 				const uint32 PCMBufferSize = MONO_PCM_BUFFER_SIZE * Wave->NumChannels * PLATFORM_NUM_AUDIODECOMPRESSION_PRECACHE_BUFFERS;
-				check(Wave->CachedRealtimeFirstBuffer == nullptr);
-				Wave->CachedRealtimeFirstBuffer = (uint8*)FMemory::Malloc(PCMBufferSize);
-				AudioInfo->ReadCompressedData(Wave->CachedRealtimeFirstBuffer, false, PCMBufferSize);
+				if (Wave->CachedRealtimeFirstBuffer == nullptr)
+				{
+					Wave->CachedRealtimeFirstBuffer = (uint8*)FMemory::Malloc(PCMBufferSize);
+					AudioInfo->ReadCompressedData(Wave->CachedRealtimeFirstBuffer, Wave->bLooping, PCMBufferSize);
+				}
+				else
+				{
+					if (Wave->bIsPrecacheDone)
+					{
+						UE_LOG(LogAudio, Warning, TEXT("Attempted to precache decoded audio multiple times."));
+					}
+					else
+					{
+						UE_LOG(LogAudio, Warning, TEXT("CachedRealtimeFirstBuffer potentially contains invalid data."));
+					}
+				}
 #endif
 			}
 			else
@@ -702,7 +705,21 @@ void FAsyncAudioDecompressWorker::DoWork()
 		}
 
 		delete AudioInfo;
+
+		// Flag that we've finished this precache decompress task.
+		Wave->bIsPrecacheDone = true;
 	}
 }
+
+static TAutoConsoleVariable<int32> CVarShouldUseBackgroundPoolFor_FAsyncRealtimeAudioTask(
+	TEXT("AudioThread.UseBackgroundThreadPool"),
+	1,
+	TEXT("If true, use the background thread pool for realtime audio decompression."));
+
+bool ShouldUseBackgroundPoolFor_FAsyncRealtimeAudioTask()
+{
+	return !!CVarShouldUseBackgroundPoolFor_FAsyncRealtimeAudioTask.GetValueOnAnyThread();
+}
+
 
 // end

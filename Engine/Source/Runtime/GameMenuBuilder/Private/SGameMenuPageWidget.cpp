@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SGameMenuPageWidget.h"
 #include "Widgets/SBoxPanel.h"
@@ -939,9 +939,9 @@ FReply SGameMenuPageWidget::OnKeyDown(const FGeometry& MyGeometry, const FKeyEve
 {
 	FReply Result = FReply::Unhandled();
 	
-	if ((CurrentMenu.IsValid() == true) && (!bControlsLocked))
+	if ((CurrentMenu.IsValid() == true) && !bControlsLocked)
 	{
-		bool bNavigationLocked = bControlsLocked || PendingMainMenu.IsValid() || PendingSubMenu.IsValid();
+		bool bNavigationLocked = PendingMainMenu.IsValid() || PendingSubMenu.IsValid();
 		const FKey Key = InKeyEvent.GetKey();
 
 		if (bNavigationLocked == false)
@@ -1060,7 +1060,10 @@ void SGameMenuPageWidget::ResetMenu()
 		MenuInfo->RemoveAllItems();
 	}
 	MainPanel->ClearChildren();
-	SubPanel->ClearChildren();
+	if (SubPanel.IsValid())
+	{
+		SubPanel->ClearChildren();
+	}
 	PendingSubMenu.Reset();
 	PendingMainMenu.Reset();
 	CurrentMenu.Reset();

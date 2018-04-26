@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Skeleton.cpp: Skeleton features
@@ -35,7 +35,7 @@
 const FName USkeleton::AnimNotifyTag = FName(TEXT("AnimNotifyList"));
 const FString USkeleton::AnimNotifyTagDelimiter = TEXT(";");
 
-const FName USkeleton::CurveTag = FName(TEXT("CurveUIDList"));
+const FName USkeleton::CurveNameTag = FName(TEXT("CurveNameList"));
 const FString USkeleton::CurveTagDelimiter = TEXT(";");
 
 const FName USkeleton::RigTag = FName(TEXT("Rig"));
@@ -50,13 +50,24 @@ const FName FAnimSlotGroup::DefaultSlotName = FName(TEXT("DefaultSlot"));
 
 FArchive& operator<<(FArchive& Ar, FReferencePose & P)
 {
+	Ar.UsingCustomVersion(FAnimPhysObjectVersion::GUID);
+
 	Ar << P.PoseName;
 	Ar << P.ReferencePose;
 #if WITH_EDITORONLY_DATA
 	//TODO: we should use strip flags but we need to rev the serialization version
 	if (!Ar.IsCooking())
 	{
-		Ar << P.ReferenceMesh;
+		if (Ar.IsLoading() && Ar.CustomVer(FAnimPhysObjectVersion::GUID) < FAnimPhysObjectVersion::ChangeRetargetSourceReferenceToSoftObjectPtr)
+		{
+			USkeletalMesh* SourceMesh = nullptr;
+			Ar << SourceMesh;
+			P.SourceReferenceMesh = SourceMesh;
+		}
+		else
+		{
+			Ar << P.SourceReferenceMesh;
+		}
 	}
 #endif
 	return Ar;
@@ -116,11 +127,12 @@ void USkeleton::PostLoad()
 	// Cache smart name uids for animation curve names
 	IncreaseAnimCurveUidVersion();
 
-	const bool bRebuildNameMap = false;
-	ReferenceSkeleton.RebuildRefSkeleton(this, bRebuildNameMap);
-
 	// refresh linked bone indices
-	SmartNames.InitializeCurveMetaData(this);
+	FSmartNameMapping* CurveMappingTable = SmartNames.GetContainerInternal(USkeleton::AnimCurveMappingName);
+	if (CurveMappingTable)
+	{
+		CurveMappingTable->InitializeCurveMetaData(this);
+	}
 }
 
 void USkeleton::PostDuplicate(bool bDuplicateForPIE)
@@ -218,33 +230,27 @@ void USkeleton::Serialize( FArchive& Ar )
 		PreviewAttachedAssetContainer.SaveAttachedObjectsFromDeprecatedProperties();
 	}
 #endif
+
+	const bool bRebuildNameMap = false;
+	ReferenceSkeleton.RebuildRefSkeleton(this, bRebuildNameMap);
 }
 
 #if WITH_EDITOR
+void USkeleton::PreEditUndo()
+{
+	// Undoing so clear cached data as it will now be stale
+	ClearCacheData();
+}
+
 void USkeleton::PostEditUndo()
 {
 	Super::PostEditUndo();
 
-	//if we were undoing virtual bone changes then we need to handle stale cache data
-	SkelMesh2LinkupCache.Empty();
-	LinkupCache.Empty();
+	//If we were undoing virtual bone changes then we need to handle stale cache data
+	// Cached data is cleared in PreEditUndo to make sure it is done before any object hits their PostEditUndo
 	HandleVirtualBoneChanges();
 }
 #endif // WITH_EDITOR
-
-void USkeleton::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
-{
-	USkeleton* This = CastChecked<USkeleton>(InThis);
-
-#if WITH_EDITORONLY_DATA
-	for (auto Iter = This->AnimRetargetSources.CreateIterator(); Iter; ++Iter)
-	{		
-		Collector.AddReferencedObject(Iter.Value().ReferenceMesh, This);
-	}
-#endif
-
-	Super::AddReferencedObjects( This, Collector );
-}
 
 /** Remove this function when VER_UE4_REFERENCE_SKELETON_REFACTOR is removed. */
 void USkeleton::ConvertToFReferenceSkeleton()
@@ -341,7 +347,7 @@ bool USkeleton::IsCompatibleMesh(const USkeletalMesh* InSkelMesh) const
 			// follow the parent chain to verify the chain is same
 			if(!DoesParentChainMatch(SkeletonBoneIndex, InSkelMesh))
 			{
-				UE_LOG(LogAnimation, Warning, TEXT("%s : Hierarchy does not match."), *MeshBoneName.ToString());
+				UE_LOG(LogAnimation, Verbose, TEXT("%s : Hierarchy does not match."), *MeshBoneName.ToString());
 				return false;
 			}
 		}
@@ -374,14 +380,14 @@ bool USkeleton::IsCompatibleMesh(const USkeletalMesh* InSkelMesh) const
 			// still no match, return false, no parent to look for
 			if( SkeletonBoneIndex == INDEX_NONE )
 			{
-				UE_LOG(LogAnimation, Warning, TEXT("%s : Missing joint on skeleton.  Make sure to assign to the skeleton."), *MeshBoneName.ToString());
+				UE_LOG(LogAnimation, Verbose, TEXT("%s : Missing joint on skeleton.  Make sure to assign to the skeleton."), *MeshBoneName.ToString());
 				return false;
 			}
 
 			// second follow the parent chain to verify the chain is same
 			if( !DoesParentChainMatch(SkeletonBoneIndex, InSkelMesh) )
 			{
-				UE_LOG(LogAnimation, Warning, TEXT("%s : Hierarchy does not match."), *MeshBoneName.ToString());
+				UE_LOG(LogAnimation, Verbose, TEXT("%s : Hierarchy does not match."), *MeshBoneName.ToString());
 				return false;
 			}
 		}
@@ -401,7 +407,7 @@ void USkeleton::ClearCacheData()
 
 int32 USkeleton::GetMeshLinkupIndex(const USkeletalMesh* InSkelMesh)
 {
-	const int32* IndexPtr = SkelMesh2LinkupCache.Find(InSkelMesh);
+	const int32* IndexPtr = SkelMesh2LinkupCache.Find(MakeWeakObjectPtr(const_cast<USkeletalMesh*>(InSkelMesh)));
 	int32 LinkupIndex = INDEX_NONE;
 
 	if ( IndexPtr == NULL )
@@ -421,7 +427,7 @@ int32 USkeleton::GetMeshLinkupIndex(const USkeletalMesh* InSkelMesh)
 
 void USkeleton::RemoveLinkup(const USkeletalMesh* InSkelMesh)
 {
-	SkelMesh2LinkupCache.Remove(InSkelMesh);
+	SkelMesh2LinkupCache.Remove(MakeWeakObjectPtr(const_cast<USkeletalMesh*>(InSkelMesh)));
 }
 
 int32 USkeleton::BuildLinkup(const USkeletalMesh* InSkelMesh)
@@ -457,7 +463,7 @@ int32 USkeleton::BuildLinkup(const USkeletalMesh* InSkelMesh)
 		// not currently supported in-game.
 		if (SkeletonBoneIndex == INDEX_NONE)
 		{
-			if(!bDismissedMessage)
+			if(!bDismissedMessage && !IsRunningCommandlet())
 			{
 				FMessageDialog::Open(EAppMsgType::Ok, FText::Format(LOCTEXT("SkeletonBuildLinkupMissingBones", "The Skeleton {0}, is missing bones that SkeletalMesh {1} needs. They will be added now. Please save the Skeleton!"), FText::FromString(GetNameSafe(this)), FText::FromString(GetNameSafe(InSkelMesh))));
 				bDismissedMessage = true;
@@ -497,7 +503,7 @@ int32 USkeleton::BuildLinkup(const USkeletalMesh* InSkelMesh)
 
 	int32 NewIndex = LinkupCache.Add(NewMeshLinkup);
 	check (NewIndex != INDEX_NONE);
-	SkelMesh2LinkupCache.Add(InSkelMesh, NewIndex);
+	SkelMesh2LinkupCache.Add(MakeWeakObjectPtr(const_cast<USkeletalMesh*>(InSkelMesh)), NewIndex);
 
 	return NewIndex;
 }
@@ -738,35 +744,25 @@ void USkeleton::UpdateRetargetSource( const FName Name )
 
 	if (PoseFound)
 	{
-		USkeletalMesh * ReferenceMesh = PoseFound->ReferenceMesh;
+		USkeletalMesh* ReferenceMesh;
 		
-		// reference mesh can be deleted after base pose is created, don't update it if it's not there. 
-		if(ReferenceMesh)
+		if (PoseFound->SourceReferenceMesh.IsValid())
 		{
-			const TArray<FTransform>& MeshRefPose = ReferenceMesh->RefSkeleton.GetRefBonePose();
-			const TArray<FTransform>& SkeletonRefPose = GetReferenceSkeleton().GetRefBonePose();
-			const TArray<FMeshBoneInfo> & SkeletonBoneInfo = GetReferenceSkeleton().GetRefBoneInfo();
-
-			PoseFound->ReferencePose.Empty(SkeletonRefPose.Num());
-			PoseFound->ReferencePose.AddUninitialized(SkeletonRefPose.Num());
-
-			for (int32 SkeletonBoneIndex=0; SkeletonBoneIndex<SkeletonRefPose.Num(); ++SkeletonBoneIndex)
-			{
-				FName SkeletonBoneName = SkeletonBoneInfo[SkeletonBoneIndex].Name;
-				int32 MeshBoneIndex = ReferenceMesh->RefSkeleton.FindBoneIndex(SkeletonBoneName);
-				if (MeshBoneIndex != INDEX_NONE)
-				{
-					PoseFound->ReferencePose[SkeletonBoneIndex] = MeshRefPose[MeshBoneIndex];
-				}
-				else
-				{
-					PoseFound->ReferencePose[SkeletonBoneIndex] = FTransform::Identity;
-				}
-			}
+			ReferenceMesh = PoseFound->SourceReferenceMesh.Get();
 		}
 		else
 		{
-			UE_LOG(LogAnimation, Warning, TEXT("Reference Mesh for Retarget Source %s has been removed."), *Name.ToString());
+			PoseFound->SourceReferenceMesh.LoadSynchronous();
+			ReferenceMesh = PoseFound->SourceReferenceMesh.Get();
+		}
+
+		if (ReferenceMesh)
+		{
+			FAnimationRuntime::MakeSkeletonRefPoseFromMesh(ReferenceMesh, this, PoseFound->ReferencePose);
+		}
+		else
+		{
+			UE_LOG(LogAnimation, Warning, TEXT("Reference Mesh for Retarget Source %s has been removed."), *GetName());
 		}
 	}
 }
@@ -860,17 +856,7 @@ USkeletalMesh* USkeleton::FindCompatibleMesh() const
 
 USkeletalMesh* USkeleton::GetPreviewMesh(bool bFindIfNotSet)
 {
-	USkeletalMesh* PreviewMesh = PreviewSkeletalMesh.Get();
-	if(!PreviewMesh)
-	{
-		// if preview mesh isn't loaded, see if we have set
-		FStringAssetReference PreviewMeshStringRef = PreviewSkeletalMesh.ToStringReference();
-		// load it since now is the time to load
-		if (!PreviewMeshStringRef.ToString().IsEmpty())
-		{
-			PreviewMesh = Cast<USkeletalMesh>(StaticLoadObject(USkeletalMesh::StaticClass(), NULL, *PreviewMeshStringRef.ToString(), NULL, LOAD_None, NULL));
-		}
-	}
+	USkeletalMesh* PreviewMesh = PreviewSkeletalMesh.LoadSynchronous();
 
 	if(PreviewMesh && PreviewMesh->Skeleton != this) // fix mismatched skeleton
 	{
@@ -936,16 +922,16 @@ void USkeleton::LoadAdditionalPreviewSkeletalMeshes()
 	AdditionalPreviewSkeletalMeshes.LoadSynchronous();
 }
 
-UPreviewMeshCollection* USkeleton::GetAdditionalPreviewSkeletalMeshes() const
+UDataAsset* USkeleton::GetAdditionalPreviewSkeletalMeshes() const
 {
 	return AdditionalPreviewSkeletalMeshes.Get();
 }
 
-void USkeleton::SetAdditionalPreviewSkeletalMeshes(UPreviewMeshCollection* PreviewMeshCollection)
+void USkeleton::SetAdditionalPreviewSkeletalMeshes(UDataAsset* InPreviewCollectionAsset)
 {
 	Modify();
 
-	AdditionalPreviewSkeletalMeshes = PreviewMeshCollection;
+	AdditionalPreviewSkeletalMeshes = InPreviewCollectionAsset;
 }
 
 int32 USkeleton::ValidatePreviewAttachedObjects()
@@ -1197,19 +1183,17 @@ void USkeleton::RenameSlotName(const FName& OldName, const FName& NewName)
 
 bool USkeleton::AddSmartNameAndModify(FName ContainerName, FName NewDisplayName, FSmartName& NewName)
 {
-	bool Successful = false;
-	FSmartNameMapping* RequestedMapping = GetOrAddSmartNameContainer(ContainerName);
-	if (RequestedMapping)
+	NewName.DisplayName = NewDisplayName;
+	const bool bAdded = VerifySmartNameInternal(ContainerName, NewName);
+
+	if(bAdded)
 	{
-		if (RequestedMapping->FindOrAddSmartName(NewDisplayName, NewName))
-		{
-			Modify(true);
-			Successful = true;
-			IncreaseAnimCurveUidVersion();
-		}
+		IncreaseAnimCurveUidVersion();
 	}
-	return Successful;
+
+	return bAdded;
 }
+
 bool USkeleton::RenameSmartnameAndModify(FName ContainerName, SmartName::UID_Type Uid, FName NewName)
 {
 	bool Successful = false;
@@ -1241,24 +1225,27 @@ void USkeleton::RemoveSmartnameAndModify(FName ContainerName, SmartName::UID_Typ
 	}
 }
 
-void USkeleton::RemoveSmartnamesAndModify(FName ContainerName, const TArray<SmartName::UID_Type>& Uids)
+void USkeleton::RemoveSmartnamesAndModify(FName ContainerName, const TArray<FName>& Names)
 {
 	FSmartNameMapping* RequestedMapping = SmartNames.GetContainerInternal(ContainerName);
 	if (RequestedMapping)
 	{
 		bool bModified = false;
-		for (const SmartName::UID_Type& UID : Uids)
+		for (const FName CurveName : Names)
 		{
-			if (RequestedMapping->Exists(UID))
+			if (RequestedMapping->Exists(CurveName))
 			{
-				RequestedMapping->Remove(UID);
+				if (!bModified)
+				{
+					Modify();
+				}
+				RequestedMapping->Remove(CurveName);
 				bModified = true;
 			}
 		}
 
 		if (bModified)
 		{
-			Modify();
 			IncreaseAnimCurveUidVersion();
 		}
 	}
@@ -1292,13 +1279,7 @@ SmartName::UID_Type USkeleton::GetUIDByName(const FName& ContainerName, const FN
 	const FSmartNameMapping* RequestedMapping = SmartNames.GetContainerInternal(ContainerName);
 	if (RequestedMapping)
 	{
-		if (const SmartName::UID_Type* UID = RequestedMapping->FindUID(Name))
-		{
-			if (UID)
-			{
-				return *UID;
-			}
-		}
+		return RequestedMapping->FindUID(Name);
 	}
 
 	return SmartName::MaxUID;
@@ -1324,75 +1305,27 @@ bool USkeleton::FillSmartNameByDisplayName(FSmartNameMapping* Mapping, const FNa
 	{
 		OutSmartName.DisplayName = DisplayName;
 
-#if WITH_EDITORONLY_DATA
-		// if same guid, this is same
-		if (SkeletonName.Guid == OutSmartName.Guid)
-		{
-			OutSmartName.UID = SkeletonName.UID;
-			return true;
-		}
-		// else, take Skeleton Guid, we don't allow same name with different Guid
-		else
-		{
-			OutSmartName.Guid = SkeletonName.Guid;
-			OutSmartName.UID = SkeletonName.UID;
-			return true;
-		}
-#else
 		// if not editor, we assume name is always correct
 		OutSmartName.UID = SkeletonName.UID;
 		return true;
-#endif // WITH_EDITORONLY_DATA
 	}
 
 	return false;
 }
-//@todo: this does prioritize name over UID since UID doesn't work well
-// until we have GUID, we'll prioritize name over UID
+
 bool USkeleton::VerifySmartNameInternal(const FName&  ContainerName, FSmartName& InOutSmartName)
 {
 	FSmartNameMapping* Mapping = GetOrAddSmartNameContainer(ContainerName);
 	if (Mapping != nullptr)
 	{
-		// make a copy just in case we change by accident
-		FName DisplayName = InOutSmartName.DisplayName;
-
+		if (!Mapping->FindSmartName(InOutSmartName.DisplayName, InOutSmartName))
+		{
 #if WITH_EDITOR
-		// if I find the name, fill up the data
-		// look for same guid, the name might have been changed
-		if (Mapping->GetNameByGuid(InOutSmartName.Guid, DisplayName))
-		{
-			ensureAlways(FillSmartNameByDisplayName(Mapping, DisplayName, InOutSmartName));
+			Modify();
+#endif
+			InOutSmartName = Mapping->AddName(InOutSmartName.DisplayName);
+			return true;
 		}
-		else if (FillSmartNameByDisplayName(Mapping, DisplayName, InOutSmartName) == false)
-		{
-			// look for same guid, the name might have been changed
-			if (Mapping->GetNameByGuid(InOutSmartName.Guid, DisplayName))
-			{
-				ensureAlways(FillSmartNameByDisplayName(Mapping, DisplayName, InOutSmartName));
-			}
-			else if (InOutSmartName.IsValid())
-			{
-				// this is only case where we add new one
-				Modify();
-				ensureAlways(Mapping->AddSmartName(InOutSmartName));
-				return true;
-			}
-			else
-			{
-				// this is only case where we add new one
-				Modify();
-				Mapping->FindOrAddSmartName(InOutSmartName.DisplayName, InOutSmartName);
-				return true;
-			}
-		}
-#else
-		// if cooking didn't save the skeleton package properly
-		// meaning it can be loaded by animations but not saved together
-		// then later on, it gets loaded, and it's saved with empty array
-		// so it can fail to load the name, so we'll have to add it manually
-		Mapping->FindOrAddSmartName(DisplayName, InOutSmartName.UID);
-#endif // WITH_EDITOR
 	}
 
 	return false;
@@ -1442,20 +1375,6 @@ void USkeleton::RegenerateVirtualBoneGuid()
 {
 	VirtualBoneGuid = FGuid::NewGuid();
 	check(VirtualBoneGuid.IsValid());
-}
-
-bool USkeleton::RenameSmartName(FName ContainerName, const SmartName::UID_Type& Uid, FName NewName)
-{
-	FSmartNameMapping* Mapping = SmartNames.GetContainerInternal(ContainerName);
-	if (Mapping->Exists(Uid))
-	{
-		Modify();
-		IncreaseAnimCurveUidVersion();
-		Mapping->Rename(Uid, NewName);
-		return true;
-	}
-
-	return false;
 }
 
 void USkeleton::IncreaseAnimCurveUidVersion()

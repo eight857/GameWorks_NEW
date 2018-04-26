@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/NavLinkCustomComponent.h"
 #include "TimerManager.h"
@@ -265,8 +265,7 @@ void UNavLinkCustomComponent::CollectNearbyAgents(TArray<UPathFollowingComponent
 		return;
 	}
 
-	static FName SmartLinkBroadcastTrace(TEXT("SmartLinkBroadcastTrace"));
-	FCollisionQueryParams Params(SmartLinkBroadcastTrace, false, MyOwner);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(SmartLinkBroadcastTrace), false, MyOwner);
 	TArray<FOverlapResult> OverlapsL, OverlapsR;
 
 	const FVector LocationL = GetStartPoint();

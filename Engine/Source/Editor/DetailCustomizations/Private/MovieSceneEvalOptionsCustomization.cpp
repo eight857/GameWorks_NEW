@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneEvalOptionsCustomization.h"
 #include "PropertyHandle.h"
@@ -26,10 +26,10 @@ void FMovieSceneTrackEvalOptionsCustomization::CustomizeChildren(TSharedRef<IPro
 		}
 	);
 
-	TSharedPtr<IPropertyHandle> bEvaluateNearestSectionHandle = PropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FMovieSceneTrackEvalOptions, bEvaluateNearestSection));
-	if (bCanEvaluateNearestSection && bEvaluateNearestSectionHandle.IsValid())
+	TSharedPtr<IPropertyHandle> bEvalNearestSectionHandle = PropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FMovieSceneTrackEvalOptions, bEvalNearestSection));
+	if (bCanEvaluateNearestSection && bEvalNearestSectionHandle.IsValid())
 	{
-		ChildBuilder.AddChildProperty(bEvaluateNearestSectionHandle.ToSharedRef());
+		ChildBuilder.AddProperty(bEvalNearestSectionHandle.ToSharedRef());
 	}
 }
 
@@ -56,6 +56,6 @@ void FMovieSceneSectionEvalOptionsCustomization::CustomizeChildren(TSharedRef<IP
 	TSharedPtr<IPropertyHandle> CompletionModeHandle = PropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FMovieSceneSectionEvalOptions, CompletionMode));
 	if (bCanEditCompletionMode && CompletionModeHandle.IsValid())
 	{
-		ChildBuilder.AddChildProperty(CompletionModeHandle.ToSharedRef());
+		ChildBuilder.AddProperty(CompletionModeHandle.ToSharedRef());
 	}
 }

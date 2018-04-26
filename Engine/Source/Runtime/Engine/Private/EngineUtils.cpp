@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 =============================================================================*/
@@ -123,7 +123,7 @@ bool FContentComparisonHelper::CompareClasses(const FString& InBaseClassName, co
 								int32 NewIndex = AssetList->AddZeroed();
 								FContentComparisonAssetInfo& Info = (*AssetList)[NewIndex];
 								Info.AssetName = Object->GetFullName();
-								Info.ResourceSize = Object->GetResourceSizeBytes(EResourceSizeMode::Inclusive);
+								Info.ResourceSize = Object->GetResourceSizeBytes(EResourceSizeMode::EstimatedTotal);
 							}
 						}
 					}
@@ -415,8 +415,7 @@ TArray<FSubLevelStatus> GetSubLevelsStatus( UWorld* World )
 			FHitResult Hit(1.f);
 
 			// this will not work for flying around :-(
-			static FName NAME_FindLevel = FName(TEXT("FindLevel"), true);			
-			PlayerController->GetWorld()->LineTraceSingleByObjectType(Hit,PlayerController->GetPawn()->GetActorLocation(), (PlayerController->GetPawn()->GetActorLocation()-FVector(0.f, 0.f, 256.f)), FCollisionObjectQueryParams(ECC_WorldStatic), FCollisionQueryParams(NAME_FindLevel, true, PlayerController->GetPawn()));
+			PlayerController->GetWorld()->LineTraceSingleByObjectType(Hit,PlayerController->GetPawn()->GetActorLocation(), (PlayerController->GetPawn()->GetActorLocation()-FVector(0.f, 0.f, 256.f)), FCollisionObjectQueryParams(ECC_WorldStatic), FCollisionQueryParams(SCENE_QUERY_STAT(FindLevel), true, PlayerController->GetPawn()));
 
 			ULevel* LevelPlayerIsIn = NULL;
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,7 +12,7 @@
 #include "K2Node.h"
 #include "AnimGraphNode_Base.generated.h"
 
-class FAnimBlueprintCompiler;
+class FAnimBlueprintCompilerContext;
 class FAnimGraphNodeDetails;
 class FBlueprintActionDatabaseRegistrar;
 class FCanvas;
@@ -124,7 +124,7 @@ class ANIMGRAPH_API UAnimGraphNode_Base : public UK2Node
 {
 	GENERATED_UCLASS_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=PinOptions, EditFixedSize)
+	UPROPERTY(EditAnywhere, Category=PinOptions, EditFixedSize)
 	TArray<FOptionalPinFromProperty> ShowPinForProperties;
 
 	UPROPERTY(Transient)
@@ -132,6 +132,7 @@ class ANIMGRAPH_API UAnimGraphNode_Base : public UK2Node
 
 	// UObject interface
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void PreEditChange(UProperty* PropertyAboutToChange) override;
 	// End of UObject interface
 
 	// UEdGraphNode interface
@@ -155,6 +156,8 @@ class ANIMGRAPH_API UAnimGraphNode_Base : public UK2Node
 
 	// By default return any animation assets we have
 	virtual UObject* GetJumpTargetForDoubleClick() const override { return GetAnimationAsset(); }
+	virtual bool CanJumpToDefinition() const override;
+	virtual void JumpToDefinition() const override;
 	// End of UK2Node interface
 
 	// UAnimGraphNode_Base interface
@@ -179,9 +182,6 @@ class ANIMGRAPH_API UAnimGraphNode_Base : public UK2Node
 
 	// Gives each visual node a chance to update the node template before it is inserted in the compiled class
 	virtual void BakeDataDuringCompilation(FCompilerResultsLog& MessageLog) {}
-
-	// preload asset required for this node in this function
-	virtual void PreloadRequiredAssets() {}
 
 	// Give the node a chance to change the display name of a pin
 	virtual void PostProcessPinName(const UEdGraphPin* Pin, FString& DisplayName) const;
@@ -275,8 +275,16 @@ class ANIMGRAPH_API UAnimGraphNode_Base : public UK2Node
 	DECLARE_EVENT_OneParam(UAnimGraphNode_Base, FOnNodePropertyChangedEvent, FPropertyChangedEvent&);
 	FOnNodePropertyChangedEvent& OnNodePropertyChanged() { return PropertyChangeEvent;	}
 
+	/**
+	 * Helper function to check whether a pin is valid and linked to something else in the graph
+	 * @param	InPinName		The name of the pin @see UEdGraphNode::FindPin
+	 * @param	InPinDirection	The direction of the pin we are looking for. If this is EGPD_MAX, all directions are considered
+	 * @return true if the pin is present and connected
+	 */
+	bool IsPinExposedAndLinked(const FString& InPinName, const EEdGraphPinDirection Direction = EGPD_MAX) const;
+
 protected:
-	friend FAnimBlueprintCompiler;
+	friend FAnimBlueprintCompilerContext;
 	friend FAnimGraphNodeDetails;
 
 	// Gets the animation FNode type represented by this ed graph node
@@ -300,6 +308,9 @@ protected:
 	void InternalPinCreation(TArray<UEdGraphPin*>* OldPins);
 
 	FOnNodePropertyChangedEvent PropertyChangeEvent;
+
+private:
+	TArray<FName> OldShownPins;
 };
 
 template<class AssetType>

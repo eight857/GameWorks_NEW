@@ -1,11 +1,16 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
-#include "IMessageInterceptor.h"
+#include "CoreTypes.h"
+#include "Templates/SharedPointer.h"
 
+class FName;
+class IMessageInterceptor;
 class IMessageReceiver;
+
+struct FMessageAddress;
+
 
 /**
  * Interface for classes that authorize message subscriptions.

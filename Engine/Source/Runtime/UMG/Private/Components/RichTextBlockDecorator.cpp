@@ -1,7 +1,7 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/RichTextBlockDecorator.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPtr.h"
 #include "Rendering/DrawElements.h"
 #include "Framework/Text/SlateTextRun.h"
 
@@ -34,7 +34,7 @@ public:
 		{
 			const TArray< FTextLayout::FLineView >& Views = TextLayout->GetLineViews();
 
-			int32 AbsoluteBeginIndex = Line.Range.BeginIndex;
+			int32 AbsoluteBeginIndex = 0;
 			for ( int32 i = 0; i < Views.Num(); i++ )
 			{
 				if ( Views[i].ModelIndex == Line.ModelIndex )
@@ -42,7 +42,7 @@ public:
 					break;
 				}
 
-				AbsoluteBeginIndex = Views[i].Range.Len();
+				AbsoluteBeginIndex += Views[i].Range.Len();
 			}
 
 			if ( AbsoluteBeginIndex < RichBlock->RevealedIndex )
@@ -67,7 +67,6 @@ public:
 					BlockRange.BeginIndex,
 					EndIndex,
 					Style.Font,
-					ClippingRect,
 					DrawEffects,
 					TextColor
 					);
@@ -150,7 +149,7 @@ void FDefaultRichTextDecorator::ExplodeRunInfo(const FRunInfo& InRunInfo, FSlate
 
 	if ( FontFamilyString )
 	{
-		FStringAssetReference Font(**FontFamilyString);
+		FSoftObjectPath Font(**FontFamilyString);
 		if ( UObject* FontAsset = Font.TryLoad() )
 		{
 			OutFont.FontObject = FontAsset;

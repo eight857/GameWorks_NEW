@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CameraRig_Crane.h"
 #include "UObject/ConstructorHelpers.h"
@@ -38,8 +38,8 @@ ACameraRig_Crane::ACameraRig_Crane(const FObjectInitializer& ObjectInitializer)
 	CraneCameraMount->SetupAttachment(CranePitchControl);
 	CraneCameraMount->RelativeLocation = FVector(CraneArmLength, 0.f, -15.f);			// negative z == underslung mount
 
-	// create preview meshes
 #if WITH_EDITORONLY_DATA
+	// create preview meshes
 	if (!IsRunningDedicatedServer())
 	{
 		static ConstructorHelpers::FObjectFinder<UStaticMesh> CraneBaseMesh(TEXT("/Engine/EditorMeshes/Camera/SM_CraneRig_Base.SM_CraneRig_Base"));
@@ -193,12 +193,12 @@ void ACameraRig_Crane::PostEditUndo()
 
 	UpdateCraneComponents();
 }
+#endif // WITH_EDITOR
 
 USceneComponent* ACameraRig_Crane::GetDefaultAttachComponent() const
 {
 	return CraneCameraMount;
 }
-#endif // WITH_EDITOR
 
 bool ACameraRig_Crane::ShouldTickIfViewportsOnly() const
 {

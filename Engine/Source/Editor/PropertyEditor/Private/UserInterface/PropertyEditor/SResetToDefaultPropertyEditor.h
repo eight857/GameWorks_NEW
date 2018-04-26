@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -25,9 +25,9 @@ public:
 		SLATE_ARGUMENT(TOptional<FResetToDefaultOverride>, CustomResetToDefault)
 	SLATE_END_ARGS()
 
-	void Construct( const FArguments& InArgs, const TSharedRef< class FPropertyEditor>& InPropertyEditor );
+	~SResetToDefaultPropertyEditor();
 
-
+	void Construct( const FArguments& InArgs, const TSharedPtr< class IPropertyHandle>& InPropertyHandle );
 private:
 	FText GetResetToolTip() const;
 
@@ -35,14 +35,13 @@ private:
 
 	void Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime );
 
-	FReply OnDefaultResetClicked();
-	FReply OnCustomResetClicked();
+	FReply OnResetClicked();
 
 	void UpdateDiffersFromDefaultState();
 private:
 	TOptional<FResetToDefaultOverride> OptionalCustomResetToDefault;
 
-	TSharedPtr< class FPropertyEditor > PropertyEditor;
+	TSharedPtr< class IPropertyHandle > PropertyHandle;
 
 	EVisibility NonVisibleState;
 

@@ -1,13 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "GameFramework/Actor.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "LevelSequencePlayer.h"
 #include "MovieSceneBindingOwnerInterface.h"
 #include "MovieSceneBindingOverrides.h"
@@ -38,7 +38,7 @@ public:
 	bool bUseBurnIn;
 
 	UPROPERTY(EditAnywhere, Category="General", meta=(EditCondition=bUseBurnIn, MetaClass="LevelSequenceBurnIn"))
-	FStringClassReference BurnInClass;
+	FSoftClassPath BurnInClass;
 
 	UPROPERTY(Instanced, EditAnywhere, Category="General", meta=(EditCondition=bUseBurnIn))
 	ULevelSequenceBurnInInitSettings* Settings;
@@ -53,7 +53,7 @@ protected:
 /**
  * Actor responsible for controlling a specific level sequence in the world.
  */
-UCLASS(hideCategories=(Rendering, Physics, LOD, Activation))
+UCLASS(hideCategories=(Rendering, Physics, LOD, Activation, Input))
 class LEVELSEQUENCE_API ALevelSequenceActor
 	: public AActor
 	, public IMovieSceneBindingOwnerInterface
@@ -77,29 +77,37 @@ public:
 	ULevelSequencePlayer* SequencePlayer;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="General", meta=(AllowedClasses="LevelSequence"))
-	FStringAssetReference LevelSequence;
+	FSoftObjectPath LevelSequence;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, AdvancedDisplay, Category="General")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="General")
 	TArray<AActor*> AdditionalEventReceivers;
 
-	UPROPERTY(Instanced, VisibleAnywhere, AdvancedDisplay, BlueprintReadOnly, Category="General")
+	UPROPERTY(Instanced, BlueprintReadOnly, Category="General")
 	ULevelSequenceBurnInOptions* BurnInOptions;
 
 	/** Mapping of actors to override the sequence bindings with */
-	UPROPERTY(Instanced, VisibleAnywhere, AdvancedDisplay, BlueprintReadOnly, Category="General")
+	UPROPERTY(Instanced, BlueprintReadOnly, Category="General")
 	UMovieSceneBindingOverrides* BindingOverrides;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="General")
+	bool bOverrideInstanceData;
+
+	/** Instance data that can be used to dynamically control sequence evaluation at runtime */
+	UPROPERTY(Instanced, BlueprintReadWrite, Category="General")
+	UObject* DefaultInstanceData;
 
 public:
 
 	/**
 	 * Get the level sequence being played by this actor.
 	 *
-	 * @param Whether to load the sequence object if it is not already in memory.
+	 * @param bLoad Whether to load the sequence object if it is not already in memory.
+	 * @param bInitializePlayer Whether to initialize the player when the sequence has been loaded.
 	 * @return Level sequence, or nullptr if not assigned or if it cannot be loaded.
 	 * @see SetSequence
 	 */
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
-	ULevelSequence* GetSequence(bool Load = false) const;
+	ULevelSequence* GetSequence(bool bLoad = false, bool bInitializePlayer = false) const;
 
 	/**
 	 * Set the level sequence being played by this actor.
@@ -138,7 +146,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic|Bindings")
 	void AddBinding(FMovieSceneObjectBindingID Binding, AActor* Actor, bool bAllowBindingsFromAsset = false)
 	{
-		BindingOverrides->AddBinding(Binding, Actor);
+		BindingOverrides->AddBinding(Binding, Actor, bAllowBindingsFromAsset);
 		if (SequencePlayer)
 		{
 			SequencePlayer->State.Invalidate(Binding.GetGuid(), Binding.GetSequenceID());
@@ -174,7 +182,7 @@ public:
 		BindingOverrides->ResetBindings();
 		if (SequencePlayer)
 		{
-			SequencePlayer->State.ClearObjectCaches();
+			SequencePlayer->State.ClearObjectCaches(*SequencePlayer);
 		}
 	}
 
@@ -194,6 +202,8 @@ public:
 #endif //WITH_EDITOR
 
 	void InitializePlayer();
+
+	void OnSequenceLoaded(const FName& PackageName, UPackage* Package, EAsyncLoadingResult::Type Result, bool bInitializePlayer);
 
 #if WITH_EDITOR
 	virtual TSharedPtr<FStructOnScope> GetObjectPickerProxy(TSharedPtr<IPropertyHandle> PropertyHandle) override;

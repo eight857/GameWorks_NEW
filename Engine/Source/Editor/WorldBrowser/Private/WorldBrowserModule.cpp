@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "WorldBrowserModule.h"
 #include "Widgets/SWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -6,6 +6,7 @@
 #include "EditorModeRegistry.h"
 #include "EditorModes.h"
 #include "LevelCollectionCommands.h"
+#include "LevelFolders.h"
 
 #include "Engine/WorldComposition.h"
 #include "StreamingLevels/StreamingLevelEdMode.h"
@@ -36,10 +37,14 @@ void FWorldBrowserModule::StartupModule()
 	}
 
 	UWorldComposition::WorldCompositionChangedEvent.AddRaw(this, &FWorldBrowserModule::OnWorldCompositionChanged);
+
+	FLevelFolders::Init();
 }
 
 void FWorldBrowserModule::ShutdownModule()
 {
+	FLevelFolders::Cleanup();
+
 	if (GEngine)
 	{
 		GEngine->OnWorldAdded().RemoveAll(this);

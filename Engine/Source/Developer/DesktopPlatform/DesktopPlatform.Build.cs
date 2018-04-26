@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -11,6 +11,7 @@ public class DesktopPlatform : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[] {
 				"Core",
+				"ApplicationCore",
 				"Json",
 			}
 		);
@@ -30,7 +31,6 @@ public class DesktopPlatform : ModuleRules
 			);
 
 			AddEngineThirdPartyPrivateStaticDependencies(Target, "SDL2");
-			//AddEngineThirdPartyPrivateStaticDependencies(Target, "LinuxNativeDialogs");
 		}
 	}
 }

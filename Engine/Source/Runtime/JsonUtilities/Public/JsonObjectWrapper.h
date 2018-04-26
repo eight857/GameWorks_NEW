@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,20 +12,25 @@
 class FJsonObject;
 
 /** UStruct that holds a JsonObject, can be used by structs passed to JsonObjectConverter to pass through JsonObjects directly */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct JSONUTILITIES_API FJsonObjectWrapper
 {
 	GENERATED_USTRUCT_BODY()
 public:
 
-	UPROPERTY(VisibleAnywhere, Category = "JSON")
+	UPROPERTY(EditAnywhere, Category = "JSON")
 	FString JsonString;
+
+	TSharedPtr<FJsonObject> JsonObject;
 
 	bool ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* Parent, FOutputDevice* ErrorText);
 	bool ExportTextItem(FString& ValueStr, FJsonObjectWrapper const& DefaultValue, UObject* Parent, int32 PortFlags, UObject* ExportRootScope) const;
 	void PostSerialize(const FArchive& Ar);
 
-	TSharedPtr<FJsonObject> JsonObject;
+	explicit operator bool() const
+	{
+		return JsonObject.IsValid();
+	}
 };
 
 template<>

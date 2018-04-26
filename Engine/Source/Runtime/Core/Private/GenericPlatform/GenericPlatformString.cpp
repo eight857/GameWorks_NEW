@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GenericPlatform/GenericPlatformString.h"
 #include "HAL/UnrealMemory.h"
@@ -23,7 +23,7 @@ namespace
 {
 	void TrimStringAndLogBogusCharsError(FString& SrcStr, const TCHAR* SourceCharName, const TCHAR* DestCharName)
 	{
-		SrcStr.Trim();
+		SrcStr.TrimStartInline();
 		// @todo: Put this back in once GLog becomes a #define, or is replaced with GLog::GetLog()
 		//UE_LOG(LogGenericPlatformString, Warning, TEXT("Bad chars found when trying to convert \"%s\" from %s to %s"), *SrcStr, SourceCharName, DestCharName);
 	}

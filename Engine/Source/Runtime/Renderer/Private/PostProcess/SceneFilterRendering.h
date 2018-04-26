@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SceneFilterRendering.h: Filter rendering definitions.
@@ -13,6 +13,13 @@
 #include "Shader.h"
 #include "PostProcess/SceneRenderTargets.h"
 #include "ShaderParameterUtils.h"
+
+/** Uniform buffer for computing the vertex positional and UV adjustments in the vertex shader. */
+BEGIN_UNIFORM_BUFFER_STRUCT( FDrawRectangleParameters,)
+	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER( FVector4, PosScaleBias )
+	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER( FVector4, UVScaleBias )
+	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER( FVector4, InvTargetSizeAndTextureSize )
+END_UNIFORM_BUFFER_STRUCT( FDrawRectangleParameters )
 
 /**
  * Draws a quad with the given vertex positions and UVs in denormalized pixel/texel coordinates.
@@ -49,19 +56,19 @@ extern void DrawRectangle(
 
 extern void DrawTransformedRectangle(
 	FRHICommandListImmediate& RHICmdList,
-    float X,
-    float Y,
-    float SizeX,
-    float SizeY,
-    const FMatrix& PosTransform,
-    float U,
-    float V,
-    float SizeU,
-    float SizeV,
-    const FMatrix& TexTransform,
-    FIntPoint TargetSize,
-    FIntPoint TextureSize
-    );
+	float X,
+	float Y,
+	float SizeX,
+	float SizeY,
+	const FMatrix& PosTransform,
+	float U,
+	float V,
+	float SizeU,
+	float SizeV,
+	const FMatrix& TexTransform,
+	FIntPoint TargetSize,
+	FIntPoint TextureSize
+	);
 
 extern void DrawHmdMesh(
 	FRHICommandList& RHICmdList,
@@ -139,7 +146,7 @@ public:
 		ColorScaleAndInverse.W = InvDisplayGamma;
 
 		SetShaderValue(
-			RHICmdList, 
+			RHICmdList,
 			PixelShader->GetPixelShader(),
 			GammaColorScaleAndInverse,
 			ColorScaleAndInverse
@@ -151,11 +158,11 @@ public:
 
 		OverlayColor.X = ColorOverlay.R * ColorOverlay.A;
 		OverlayColor.Y = ColorOverlay.G * ColorOverlay.A;
-		OverlayColor.Z = ColorOverlay.B * ColorOverlay.A; 
+		OverlayColor.Z = ColorOverlay.B * ColorOverlay.A;
 		OverlayColor.W = 0.f; // Unused
 
 		SetShaderValue(
-			RHICmdList, 
+			RHICmdList,
 			PixelShader->GetPixelShader(),
 			GammaOverlayColor,
 			OverlayColor
@@ -170,9 +177,9 @@ public:
 		const FVector4 vRenderTargetExtent(BufferSizeX, BufferSizeY,  InvBufferSizeX, InvBufferSizeY);
 
 		SetShaderValue(
-			RHICmdList, 
+			RHICmdList,
 			PixelShader->GetPixelShader(),
-			RenderTargetExtent, 
+			RenderTargetExtent,
 			vRenderTargetExtent);
 	}
 

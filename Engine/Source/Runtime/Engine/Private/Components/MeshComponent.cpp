@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/MeshComponent.h"
 #include "Materials/Material.h"
@@ -47,11 +47,11 @@ void UMeshComponent::SetMaterial(int32 ElementIndex, UMaterialInterface* Materia
 				OverrideMaterials.AddZeroed(ElementIndex + 1 - OverrideMaterials.Num());
 			}
 			
-			// Check if we are setting a dynamic instance of the original material (if not we should dirty the material parameter name cache)
-			if (Material != nullptr && OverrideMaterials[ElementIndex] != nullptr)
+			// Check if we are setting a dynamic instance of the original material, or replacing a nullptr material  (if not we should dirty the material parameter name cache)
+			if (Material != nullptr)
 			{
 				UMaterialInstanceDynamic* DynamicMaterial = Cast<UMaterialInstanceDynamic>(Material);
-				if ( DynamicMaterial != nullptr && DynamicMaterial->Parent != OverrideMaterials[ElementIndex])
+				if ( (DynamicMaterial != nullptr && DynamicMaterial->Parent != OverrideMaterials[ElementIndex]) || OverrideMaterials[ElementIndex] == nullptr)
 				{
 					// Mark cached material parameter names dirty
 					MarkCachedMaterialParameterNameIndicesDirty();
@@ -63,7 +63,7 @@ void UMeshComponent::SetMaterial(int32 ElementIndex, UMaterialInterface* Materia
 			MarkRenderStateDirty();			
 			if (Material)
 			{
-				Material->AddToCluster(this);
+				Material->AddToCluster(this, true);
 			}
 
 			FBodyInstance* BodyInst = GetBodyInstance();
@@ -121,30 +121,32 @@ void UMeshComponent::PostEditChangeChainProperty(FPropertyChangedChainEvent& Pro
 
 void UMeshComponent::CleanUpOverrideMaterials()
 {
+	bool bUpdated = false;
+
 	//We have to remove material override Ids that are bigger then the material list
 	if (GetNumOverrideMaterials() > GetNumMaterials())
 	{
 		//Remove the override material id that are superior to the static mesh materials number
 		int32 RemoveCount = GetNumOverrideMaterials() - GetNumMaterials();
 		OverrideMaterials.RemoveAt(GetNumMaterials(), RemoveCount);
+		bUpdated = true;
 	}
-	//Remove override at the end of the array until there is a valid material
-	for (int32 i = GetNumOverrideMaterials() - 1; i >= 0; --i)
+
+	if (bUpdated)
 	{
-		UMaterialInterface *OverrideMaterial = OverrideMaterials[i];
-		if (OverrideMaterial == nullptr)
-		{
-			OverrideMaterials.RemoveAt(i);
-			continue;
-		}
-		break;
+		MarkRenderStateDirty();
 	}
-}
-void UMeshComponent::EmptyOverrideMaterials()
-{
-	OverrideMaterials.Reset();
 }
 #endif
+
+void UMeshComponent::EmptyOverrideMaterials()
+{
+	if (OverrideMaterials.Num())
+	{
+		OverrideMaterials.Reset();
+		MarkRenderStateDirty();
+	}
+}
 
 int32 UMeshComponent::GetNumMaterials() const
 {
@@ -244,10 +246,9 @@ void UMeshComponent::SetScalarParameterValueOnMaterials(const FName ParameterNam
 	}
 
 	// Look up material index array according to ParameterName
-	TArray<int32>* MaterialIndicesPtr = ScalarParameterMaterialIndices.Find(ParameterName);
-	if (MaterialIndicesPtr != nullptr)
+	if (FMaterialParameterCache* ParameterCache = MaterialParameterCache.Find(ParameterName))
 	{
-		const TArray<int32>& MaterialIndices = *MaterialIndicesPtr;
+		const TArray<int32>& MaterialIndices = ParameterCache->ScalarParameterMaterialIndices;
 		// Loop over all the material indices and update set the parameter value on the corresponding materials		
 		for ( int32 MaterialIndex : MaterialIndices)
 		{
@@ -267,9 +268,6 @@ void UMeshComponent::SetScalarParameterValueOnMaterials(const FName ParameterNam
 	{
 		UE_LOG(LogMaterialParameter, Log, TEXT("%s material parameter hasn't found on the component %s"), *ParameterName.ToString(), *GetPathName());
 	}
-
-	// CreateAndSetMaterialInstanceDynamic should not flag the cached data as dirty, since only the type of material changes not the contents (UMaterialInstanceDynamic)
-	check(bCachedMaterialParameterIndicesAreDirty == false);
 }
 
 void UMeshComponent::SetVectorParameterValueOnMaterials(const FName ParameterName, const FVector ParameterValue)
@@ -280,10 +278,9 @@ void UMeshComponent::SetVectorParameterValueOnMaterials(const FName ParameterNam
 	}
 
 	// Look up material index array according to ParameterName
-	TArray<int32>* MaterialIndicesPtr = VectorParameterMaterialIndices.Find(ParameterName);
-	if (MaterialIndicesPtr != nullptr)
+	if (FMaterialParameterCache* ParameterCache = MaterialParameterCache.Find(ParameterName))
 	{
-		const TArray<int32>& MaterialIndices = *MaterialIndicesPtr;
+		const TArray<int32>& MaterialIndices = ParameterCache->VectorParameterMaterialIndices;
 		// Loop over all the material indices and update set the parameter value on the corresponding materials		
 		for ( int32 MaterialIndex : MaterialIndices )
 		{
@@ -299,9 +296,6 @@ void UMeshComponent::SetVectorParameterValueOnMaterials(const FName ParameterNam
 			}
 		}
 	}
-
-	// CreateAndSetMaterialInstanceDynamic should not flag the cached data as dirty, since only the type of material changes not the contents (UMaterialInstanceDynamic)
-	check(bCachedMaterialParameterIndicesAreDirty == false);
 }
 
 void UMeshComponent::MarkCachedMaterialParameterNameIndicesDirty()
@@ -313,57 +307,52 @@ void UMeshComponent::MarkCachedMaterialParameterNameIndicesDirty()
 void UMeshComponent::CacheMaterialParameterNameIndices()
 {
 	// Clean up possible previous data
-	ScalarParameterMaterialIndices.Reset();
-	VectorParameterMaterialIndices.Reset();
+	MaterialParameterCache.Reset();
 
 	// not sure if this is the best way to do this
 	const UWorld* World = GetWorld();
 	// to set the default value for scalar params, we use a FMaterialResource, which means the world has to be rendering
 	const bool bHasMaterialResource = (World && World->WorldType != EWorldType::Inactive);
-	const ERHIFeatureLevel::Type FeatureLevel = bHasMaterialResource ? World->FeatureLevel : ERHIFeatureLevel::Num;
 	
 	// Retrieve all used materials
 	TArray<UMaterialInterface*> MaterialInterfaces = GetMaterials();
 	int32 MaterialIndex = 0;
 	for (UMaterialInterface* MaterialInterface : MaterialInterfaces)
 	{
-		// If available retrieve material instance
-		UMaterial* Material = (MaterialInterface != nullptr) ? MaterialInterface->GetMaterial() : nullptr;
-		if (Material)
+		if (MaterialInterface)
 		{
-			TArray<FName> OutParameterNames;
+			TArray<FMaterialParameterInfo> OutParameterInfo;
 			TArray<FGuid> OutParameterIds;
 
 			// Retrieve all scalar parameter names from the material
-			Material->GetAllScalarParameterNames(OutParameterNames, OutParameterIds);
-			for (FName& ParameterName : OutParameterNames)
+			MaterialInterface->GetAllScalarParameterInfo(OutParameterInfo, OutParameterIds);
+			for (FMaterialParameterInfo& ParameterInfo : OutParameterInfo)
 			{
-				// Add or retrieve TMap entry for this scalar parameter name
-				TArray<int32>& MaterialIndices = ScalarParameterMaterialIndices.FindOrAdd(ParameterName);
+				// Add or retrieve entry for this parameter name
+				FMaterialParameterCache& ParameterCache = MaterialParameterCache.FindOrAdd(ParameterInfo.Name);
 				// Add the corresponding material index
-				MaterialIndices.Add(MaterialIndex);
+				ParameterCache.ScalarParameterMaterialIndices.Add(MaterialIndex);
 				
 				// GetScalarParameterDefault() expects to use a FMaterialResource, which means the world has to be rendering
 				if (bHasMaterialResource)
 				{
-					// set default value to it
-					float& DefaultValue = ScalarParameterDefaultValues.FindOrAdd(ParameterName);
-					DefaultValue = Material->GetScalarParameterDefault(ParameterName, FeatureLevel);
+					// store the default value
+					 MaterialInterface->GetScalarParameterDefaultValue(ParameterInfo, ParameterCache.ScalarParameterDefaultValue);
 				}
 			}
 
 			// Empty parameter names and ids
-			OutParameterNames.Reset();
+			OutParameterInfo.Reset();
 			OutParameterIds.Reset();
 
 			// Retrieve all vector parameter names from the material
-			Material->GetAllVectorParameterNames(OutParameterNames, OutParameterIds);
-			for (FName& ParameterName : OutParameterNames)
+			MaterialInterface->GetAllVectorParameterInfo(OutParameterInfo, OutParameterIds);
+			for (FMaterialParameterInfo& ParameterInfo : OutParameterInfo)
 			{
-				// Add or retrieve TMap entry for this vector parameter name
-				TArray<int32>& MaterialIndices = VectorParameterMaterialIndices.FindOrAdd(ParameterName);
+				// Add or retrieve entry for this parameter name
+				FMaterialParameterCache& ParameterCache = MaterialParameterCache.FindOrAdd(ParameterInfo.Name);
 				// Add the corresponding material index
-				MaterialIndices.Add(MaterialIndex);
+				ParameterCache.VectorParameterMaterialIndices.Add(MaterialIndex);
 			}
 		}
 		++MaterialIndex;

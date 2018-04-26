@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PropertySection.h"
 #include "SequencerSectionPainter.h"
@@ -26,11 +26,6 @@ UMovieSceneSection* FPropertySection::GetSectionObject()
 	return &SectionObject;
 }
 
-FText FPropertySection::GetDisplayName() const
-{
-	return DisplayName;
-}
-	
 FText FPropertySection::GetSectionTitle() const
 {
 	return FText::GetEmpty();

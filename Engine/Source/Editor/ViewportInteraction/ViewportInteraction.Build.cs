@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -17,14 +17,15 @@ namespace UnrealBuildTool.Rules
                     "UnrealEd",
                     "Slate",
                     "SlateCore",
+                    "RHI"
                 }
             );
 
-            PrivateIncludePathModuleNames.AddRange(
+            PrivateDependencyModuleNames.AddRange(
                 new string[] {
-					"LevelEditor"
+                    "LevelEditor"
                 }
             );
-		}
-	}
+        }
+    }
 }

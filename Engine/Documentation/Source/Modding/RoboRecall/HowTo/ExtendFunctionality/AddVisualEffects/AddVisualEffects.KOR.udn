@@ -1,4 +1,4 @@
-﻿INTSourceChangelist:3339965
+﻿INTSourceChangelist:3782314
 Availability: Public
 Title:6. 비주얼 이펙트 추가
 Crumbs:%ROOT%
@@ -12,11 +12,15 @@ topic-image:Modding/RoboRecall/RoboRecall_Topic.png
 social-image:Modding/RoboRecall/RoboRecall_Social.png
 checkpoint:mod_extend
 
-<!-- Location: Modding/RoboRecall/Quickstarts/WeaponMod/6 -->
+[COMMENT:none]
+ Location: Modding/RoboRecall/Quickstarts/WeaponMod/6 
+[/COMMENT]
 
 [NAV]
 
-<!-- Title Image if Needed Here -->
+[COMMENT:none]
+ Title Image if Needed Here 
+[/COMMENT]
 
 이번 단계에서는 파티클 시스템, 사운드, 래디얼 포스를 추가하고 최종적으로 폭발 후 총을 청소하는 것으로 GrenadeGunPistol 블루프린트 마무리 작업을 하겠습니다.
 
@@ -52,7 +56,7 @@ checkpoint:mod_extend
 
 8. 그 노드의 출력 실행 핀에서 **Spawn Sound at Location** 노드를 추가합니다.
 
-9. 그 **Sound** 를 `GrendaeExplosion_C_Cue` 로 설정합니다.
+9. 그 **Sound** 를 `GrenadeExplosion_C_Cue` 로 설정합니다.
 
 	![image alt text](image_7.png)(w:662 h:242 convert:false)
 
@@ -103,7 +107,8 @@ GrenadeGunPistol 이 완성되었습니다. 마지막 단계에서는 총 테스
 
 [NAV]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:snippet]
 	Begin Object Class=K2Node_Self Name="K2Node_Self_16"
 
@@ -349,5 +354,6 @@ GrenadeGunPistol 이 완성되었습니다. 마지막 단계에서는 총 테스
 
 	End Object
 [/EXCERPT:snippet]
--->
+
+[/COMMENT]
 

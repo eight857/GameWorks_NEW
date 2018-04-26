@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PaperTerrainComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -14,6 +14,7 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "PaperTerrainSplineComponent.h"
 #include "PaperTerrainMaterial.h"
+#include "Paper2DPrivate.h"
 
 #define PAPER_USE_MATERIAL_SLOPES 1
 #define PAPER_TERRAIN_DRAW_DEBUG 0
@@ -60,9 +61,15 @@ void FTerrainSegment::RepositionStampsToFillSpace()
 //////////////////////////////////////////////////////////////////////////
 // FPaperTerrainSceneProxy
 
-class FPaperTerrainSceneProxy : public FPaperRenderSceneProxy
+class FPaperTerrainSceneProxy final : public FPaperRenderSceneProxy
 {
 public:
+	SIZE_T GetTypeHash() const override
+	{
+		static size_t UniquePointer;
+		return reinterpret_cast<size_t>(&UniquePointer);
+	}
+
 	FPaperTerrainSceneProxy(const UPaperTerrainComponent* InComponent, const TArray<FPaperTerrainSpriteGeometry>& InDrawingData);
 
 protected:
@@ -127,6 +134,12 @@ void UPaperTerrainComponent::Serialize(FArchive& Ar)
 	Super::Serialize(Ar);
 
 	Ar.UsingCustomVersion(FPaperCustomVersion::GUID);
+
+	if (SpriteCollisionDomain == ESpriteCollisionMode::Use2DPhysics)
+	{
+		UE_LOG(LogPaper2D, Warning, TEXT("PaperTerrainComponent '%s' was using 2D physics which has been removed, it has been switched to 3D physics."), *GetPathName());
+		SpriteCollisionDomain = ESpriteCollisionMode::Use3DPhysics;
+	}
 }
 
 void UPaperTerrainComponent::PostLoad()
@@ -261,18 +274,18 @@ FTransform UPaperTerrainComponent::GetTransformAtDistance(float InDistance) cons
 	LocalTransform = FTransform(FRotator(0.0f, 180.0f, 0.0f), FVector::ZeroVector) * LocalTransform;
 
 #if PAPER_TERRAIN_DRAW_DEBUG
-	FTransform WorldTransform = LocalTransform * ComponentToWorld;
+	FTransform WorldTransform = LocalTransform * GetComponentToWorld();
 
 	const float Time = 2.5f;
 
 	DrawDebugCoordinateSystem(GetWorld(), WorldTransform.GetLocation(), FRotator(WorldTransform.GetRotation()), 15.0f, true, Time, SDPG_Foreground);
-// 	FVector WorldPos = ComponentToWorld.TransformPosition(Position3D);
+// 	FVector WorldPos = GetComponentTransform().TransformPosition(Position3D);
 // 	WorldPos.Y -= 0.01;
 // 
-// 	//DrawDebugLine(GetWorld(), WorldPos, WorldPos + ComponentToWorld.TransformVector(Tangent) * 10.0f, FColor::Red, true, Time);
-// 	// 		DrawDebugLine(GetWorld(), WorldPos, WorldPos + ComponentToWorld.TransformVector(NormalEst) * 10.0f, FColor::Green, true, Time);
-// 	// 		DrawDebugLine(GetWorld(), WorldPos, WorldPos + ComponentToWorld.TransformVector(Bitangent) * 10.0f, FColor::Blue, true, Time);
-// 	//DrawDebugLine(GetWorld(), WorldPos, WorldPos + ComponentToWorld.TransformVector(Floop) * 10.0f, FColor::Yellow, true, Time);
+// 	//DrawDebugLine(GetWorld(), WorldPos, WorldPos + GetComponentTransform().TransformVector(Tangent) * 10.0f, FColor::Red, true, Time);
+// 	// 		DrawDebugLine(GetWorld(), WorldPos, WorldPos + GetComponentTransform().TransformVector(NormalEst) * 10.0f, FColor::Green, true, Time);
+// 	// 		DrawDebugLine(GetWorld(), WorldPos, WorldPos + GetComponentTransform().TransformVector(Bitangent) * 10.0f, FColor::Blue, true, Time);
+// 	//DrawDebugLine(GetWorld(), WorldPos, WorldPos + GetComponentTransform().TransformVector(Floop) * 10.0f, FColor::Yellow, true, Time);
 // 	// 		DrawDebugPoint(GetWorld(), WorldPos, 4.0f, FColor::White, true, 1.0f);
 #endif
 
@@ -706,11 +719,11 @@ void UPaperTerrainComponent::OnSplineEdited()
 		{
 			const float Time = 5.0f;
 			{
-				FTransform WorldTransform = GetTransformAtDistance(0.0f) * ComponentToWorld;
+				FTransform WorldTransform = GetTransformAtDistance(0.0f) * GetComponentTransform();
 				DrawDebugCoordinateSystem(GetWorld(), WorldTransform.GetLocation(), FRotator(WorldTransform.GetRotation()), 30.0f, true, Time, SDPG_Foreground);
 			}
 			{
-				FTransform WorldTransform = GetTransformAtDistance(SplineLength) * ComponentToWorld;
+				FTransform WorldTransform = GetTransformAtDistance(SplineLength) * GetComponentTransform();
 				DrawDebugCoordinateSystem(GetWorld(), WorldTransform.GetLocation(), FRotator(WorldTransform.GetRotation()), 30.0f, true, Time, SDPG_Foreground);
 			}
 		}
@@ -720,10 +733,8 @@ void UPaperTerrainComponent::OnSplineEdited()
 	if (CachedBodySetup != nullptr)
 	{
 		// Finalize the BodySetup
-#if WITH_PHYSX && (WITH_RUNTIME_PHYSICS_COOKING || WITH_EDITOR)
 		CachedBodySetup->InvalidatePhysicsData();
 		CachedBodySetup->CreatePhysicsMeshes();
-#endif
 	}
 
 	RecreateRenderState_Concurrent();

@@ -1,9 +1,9 @@
-﻿INTSourceChangelist:3298293
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title: 안드로이드 개발 참고서
 Crumbs:%ROOT%, Platforms, Platforms/Android
 Description:다양한 안드로이드 SDK 설치, 환경 변수 설정, 텍스처 포맷 작업 방법 설명입니다.
-Version: 4.12
+Version: 4.16
 SkillLevel: Intermediate
 Parent:Platforms/Android
 tags:Mobile
@@ -20,11 +20,12 @@ UE4 안드로이드 프로젝트 개발용 컴퓨터에 설치하고 구성해�
 ## 안드로이드 SDK 사양
 현재 UE4 에서 안드로이드 게임 개발을 하는 데 필요한 사양은 다음과 같습니다:
 
-| 컴포넌트 | 환경 변수 |
-| ---------- | --------------------- |
+ | 컴포넌트 | 환경 변수 |
+ | ---------- | --------------------- |
  |   [INCLUDE:#codecomponents] |  [INCLUDE:#codeenvvar] |
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:BPComponents]
 * Android SDK
 * Java Development Kit
@@ -46,13 +47,14 @@ UE4 안드로이드 프로젝트 개발용 컴퓨터에 설치하고 구성해�
 [INCLUDE:#bpenvvar]
 * NDKROOT
 [/EXCERPT:CodeEnvVar]
--->
+
+[/COMMENT]
 
 ## 컴포넌트 설치
 
 컴포넌트를 구하는 방법은 여러가지 있습니다. 이미 이들 중 한가지를 설치한 경우, 추가 요소에 대한 부분을 참고해 주세요:
 
-### CodeWorks for Android 1R4
+### CodeWorks for Android 1R6u1
 [OBJECT:ToggleButtonContent]
 	[PARAMLITERAL:category]
 	OS
@@ -82,23 +84,26 @@ UE4 안드로이드 프로젝트 개발용 컴퓨터에 설치하고 구성해�
 	[/PARAM]
 [/OBJECT]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:TADPWindowsSetup]
 
-(NVIDIA 의) CodeWorks for Android 1R4 는 안드로이드 개발용 원스톱 센터입니다. CodeWorks for Android 1R4 만 설치하면 필요한 모든 것이 설치됩니다.
+(NVIDIA 의) CodeWorks for Android 1R6u1 는 안드로이드 개발용 원스톱 센터입니다. CodeWorks for Android 1R6u1 만 설치하면 필요한 모든 것이 설치됩니다.
 
-CodeWorks for Android 1R4 인스톨러는 윈도우용 언리얼 엔진 4 에 포함되어 있습니다. 위치는 다음과 같습니다:
+CodeWorks for Android 1R6u1 인스톨러는 윈도우용 언리얼 엔진 4 에 포함되어 있습니다. 위치는 다음과 같습니다:
 
-	[엔진 설치 위치]\Engine\Extras\Android\CodeWorksforAndroid-1R4-windows.exe
+	[엔진 설치 위치]\Engine\Extras\Android\CodeWorksforAndroid-1R6u1-windows.exe
 
 중요한 부분은:
 
 * Android SDK (기본, 플랫폼 툴, 빌드 툴)
 * Android 4.4.2 (API 19) - SDK 플랫폼
 * Android 5.0.1 (API 21) - SDK 플랫폼
+* Android 6.0.0 (API 23) - SDK 플랫폼
+* Android N     (API 24) - SDK 플랫폼
 * Android SDK Support Library
 * Android Toolchain 
-	* Android NDK 11c
+	* Android NDK 12b
 	* Java SDK
 	* Apache Ant
 	* USB 드라이버
@@ -110,7 +115,7 @@ CodeWorks for Android 1R4 인스톨러는 윈도우용 언리얼 엔진 4 에 �
 	
 기본 설치 세트를 사용하면, 딱 최소한의 컴포넌트 세트만 설치됩니다. 사용자 구성 설치를 하는 경우, (프로파일러와 같은) 다른 항목을 추가할 수 있습니다. 참고로 설치 도중,
 하위 인스톨러 하나 둘 정도에 응답이 없는 것으로 보일 수도 있으나, 결국은 정상 완료됩니다. 설치 소요 시간은 30 분에서 45 분 정도 걸립니다. 코드 작성 계획이 전혀 없는 경우, 
-**Customize** (사용자 지정)을 선택한 다음, (NDK 와 Nsight 디버거는 생략하고) SDK, Ant, Java 만 설치하면 빠른 설치가 가능합니다. CodeWorks for Android 1R4 의 Nsight 부분은 디바이스에서 안드로이드 게임 디버깅에 사용됩니다.
+**Customize** (사용자 지정)을 선택한 다음, (NDK 와 Nsight 디버거는 생략하고) SDK, Ant, Java 만 설치하면 빠른 설치가 가능합니다. CodeWorks for Android 1R6u1 의 Nsight 부분은 디바이스에서 안드로이드 게임 디버깅에 사용됩니다.
 C++ 코드 컴파일에 필수는 아닙니다.
 
 ![](TADPSetup.png)
@@ -118,20 +123,22 @@ C++ 코드 컴파일에 필수는 아닙니다.
 [/EXCERPT:TADPWindowsSetup]
 
 [EXCERPT:TADPMacOSSetup]
-(NVIDIA 의) CodeWorks for Android 1R4 는 안드로이드 개발용 원스톱 센터입니다. CodeWorks for Android 1R4 만 설치하면 필요한 모든 것이 설치됩니다.
+(NVIDIA 의) CodeWorks for Android 1R6u1 는 안드로이드 개발용 원스톱 센터입니다. CodeWorks for Android 1R6u1 만 설치하면 필요한 모든 것이 설치됩니다.
 
-CodeWorks for Android 1R4 인스톨러는 맥용 언리얼 엔진 4 에 포함되어 있으며, 다음 위치에서 찾을 수 있습니다:
+CodeWorks for Android 1R6u1 인스톨러는 맥용 언리얼 엔진 4 에 포함되어 있으며, 다음 위치에서 찾을 수 있습니다:
 
-	[엔진 설치 위치]/Engine/Extras/Android/AndroidWorks-1R1-osx.dmg
+	[엔진 설치 위치]/Engine/Extras/Android/AndroidWorks-1R6u1-osx.dmg
 
 중요한 부분은:
 
 * Android SDK (기본, 플랫폼 툴, 빌드 툴)
 * Android 4.4.2 (API 19) - SDK 플랫폼
 * Android 5.0.1 (API 21) - SDK 플랫폼
+* Android 6.0.0 (API 23) - SDK 플랫폼
+* Android N     (API 24) - SDK 플랫폼
 * Android SDK Support Library
 * Android Toolchain 
-	* Android NDK 11c
+	* Android NDK 12b
 	* Java SDK
 	* Apache Ant
 	* USB 드라이버
@@ -143,13 +150,14 @@ CodeWorks for Android 1R4 인스톨러는 맥용 언리얼 엔진 4 에 포함�
 
 기본 설치 세트를 사용하면, 정말이지 최소한의 컴포넌트 세트만 설치됩니다.
 설치를 수정한다면, (프로파일러 등의) 아이템을 추가할 수 있습니다. 참고로 설치 도중 추가로 뜨는 인스톨러가 하나 둘 멈춘 것처럼 보일 수가 있지만, 놔두면 알아서 완료될 것입니다. 인스톨 시간은 컴퓨터에 따라 30 분에서 45 분 정도 소요될 수 있습니다.
-코드 작성 계획이 없는 경우, **Customize** 를 선택한 다음 SDK, Ant, Java 만 선택하여 (NDK 나 Nsight 디버거를 생략하여) 빠르게 설치할 수 있습니다. CodeWorks for Android 1R4 의 Nsight 부분은 디바이스에서 안드로이드 게임을 디버깅할 때 쓰이는 것이므로, C++ 코드 컴파일에 필수는 아닙니다.
+코드 작성 계획이 없는 경우, **Customize** 를 선택한 다음 SDK, Ant, Java 만 선택하여 (NDK 나 Nsight 디버거를 생략하여) 빠르게 설치할 수 있습니다. CodeWorks for Android 1R6u1 의 Nsight 부분은 디바이스에서 안드로이드 게임을 디버깅할 때 쓰이는 것이므로, C++ 코드 컴파일에 필수는 아닙니다.
 
 ![](TADP_Mac_OS.png)
 
 [/EXCERPT:TADPMacOSSetup]
 
--->
+
+[/COMMENT]
 
 
 ## 환경 변수
@@ -185,13 +193,14 @@ CodeWorks for Android 1R4 인스톨러는 맥용 언리얼 엔진 4 에 포함�
 
 
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:ENVWindowsSetup]
 
-제공된 인스톨러에서 CodeWorks for Android 1R4 를 설치한 것이 아니라면, 일부 환경 변수가 제대로 설정되었는지 확인해 줘야 합니다.
+제공된 인스톨러에서 CodeWorks for Android 1R6u1 를 설치한 것이 아니라면, 일부 환경 변수가 제대로 설정되었는지 확인해 줘야 합니다.
 
 [REGION:note]
-(시스템 제어판의 환경 변수 설정을 통해서든, CodeWorks for Android 1R4 설치를 통해서든) 설치가 완료되면, 에디터와 런처 어플리케이션을 재시작해 줘야 합니다.
+(시스템 제어판의 환경 변수 설정을 통해서든, CodeWorks for Android 1R6u1 설치를 통해서든) 설치가 완료되면, 에디터와 런처 어플리케이션을 재시작해 줘야 합니다.
 윈도우 어플리케이션이 환경 변수를 저장하고, 시작시키는 어플리케이션에 예전 버전을 전달하는 방식때문입니다.
 
 안드로이드 SDK 가 제대로 설치되지 않았다는 메시지가 계속해서 뜨면, 컴퓨터 리부팅을 추천합니다.
@@ -217,7 +226,7 @@ CodeWorks for Android 1R4 인스톨러는 맥용 언리얼 엔진 4 에 포함�
 * `platform-tools` 라는 디렉토리를 포함해야 합니다.
 
 **JAVA_HOME**
-* JDK 가 설치된 디렉토리로 설정합니다. `jdk1.6.0_24` 식의 이름일 것입니다.
+* JDK 가 설치된 디렉토리로 설정합니다. `jdk1.8.0_121` 식의 이름일 것입니다.
 * `javac.exe` 가 들어있는 `bin` 디렉토리가 들어있어야 합니다.
 
 **ANT_HOME**
@@ -231,11 +240,11 @@ CodeWorks for Android 1R4 인스톨러는 맥용 언리얼 엔진 4 에 포함�
 [/EXCERPT:ENVWindowsSetup]
 
 [EXCERPT:ENVMacOSSetup]
-CodeWorks for Android 1R4 를 설치한 것이 아니라면, 일부 환경 변수가 제대로 설정되었는지 확인해 줘야 합니다.
+CodeWorks for Android 1R6u1 를 설치한 것이 아니라면, 일부 환경 변수가 제대로 설정되었는지 확인해 줘야 합니다.
 
-[region:note]
-(.bash_profile 파일을 편집해서든, CodeWorks for Android 1R4 를 설치해서든) 설치가 완료되었으면, 에디터와 런처 어플리케이션 둘 다 재시작해 줘야 합니다.
-[/region]
+[REGION:note]
+(.bash_profile 파일을 편집해서든, CodeWorks for Android 1R6u1 를 설치해서든) 설치가 완료되었으면, 에디터와 런처 어플리케이션 둘 다 재시작해 줘야 합니다.
+[/REGION]
 
 환경 변수 설정을 위해서는 홈 디렉토리의 **.bash_profile** 파일을 편집해야 합니다.
 파일은 Finder 에 숨겨져 있으므로, Terminal 을 사용해서 열어야 편집할 수 있습니다.
@@ -247,7 +256,7 @@ CodeWorks for Android 1R4 를 설치한 것이 아니라면, 일부 환경 변�
 1. 다음 줄을 복사하여 파일에 붙여넣고 (경로는 설치된 SDK 와 툴로 수정한 다음) 저장합니다:
 
 	* export ANDROID_HOME="/Users/epicgames/Devel/NVPACK/android-sdk-macosx"
-	* export NDKROOT="/Users/epicgames/Devel/NVPACK/android-ndk-r11c"
+	* export NDKROOT="/Users/epicgames/Devel/NVPACK/android-ndk-r12b"
 	* export ANT_HOME="/Users/epicgames/Devel/NVPACK/apache-ant-1.8.2"
 
 종속 변수 이름 및 그 변수가 가리키는 대상은 다음과 같습니다:
@@ -259,12 +268,13 @@ CodeWorks for Android 1R4 를 설치한 것이 아니라면, 일부 환경 변�
 	* Ant 압축을 푼 디렉토리로 설정합니다.
 	* ANT 라는 파일이 들어있는 bin 디렉토리가 들어있어야 합니다.
 * **NDKROOT**
-	* NDK 압축을 푼 디렉토리로 설정합니다. **android-ndk-r11c** 식의 이름일 것입니다.
+	* NDK 압축을 푼 디렉토리로 설정합니다. **android-ndk-r12b** 식의 이름일 것입니다.
 	* **ndk-build** 라는 파일이 들어있어야 합니다.
 
 [/EXCERPT:ENVMacOSSetup]
 
--->
+
+[/COMMENT]
 
 ## 안드로이드 팁
 
@@ -298,7 +308,8 @@ CodeWorks for Android 1R4 를 설치한 것이 아니라면, 일부 환경 변�
 	[/PARAM]
 [/OBJECT]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:ATTWindowsSetup]
 **실행* 메뉴에 디바이스가 나열되지 않는 경우 해 볼 수 있는 작업은 다음과 같습니다:
 - 몇 초 기다린 다음 다시 살펴봅니다. 연결된 디바이스의 백그라운드 탐색 작업에 시간이 약간 걸릴 수 있기 때문입니다.
@@ -336,7 +347,8 @@ CodeWorks for Android 1R4 를 설치한 것이 아니라면, 일부 환경 변�
 
 [/EXCERPT:ATTMacOSSetup]
 
--->
+
+[/COMMENT]
 
 ## 안드로이드 텍스처 포맷
 모든 안드로이드 디바이스가 똑같지는 않습니다. 특히 렌더링 하드웨어는 4 종류나 됩니다. 각각 각기 다른 압축 텍스처 포맷을 지원합니다.
@@ -359,11 +371,11 @@ CodeWorks for Android 1R4 를 설치한 것이 아니라면, 일부 환경 변�
 첫 번째(Android)는 모든 포맷을 쿠킹된 패키지에 담아 넣습니다. 시간도 오래 걸리고 패키지 크기도 커 지지만, 실행시간에 최적의 포맷을 선택하므로 최소의 메모리 사용량이 보장됩니다.
 (**Andoird (ETC1)** 과 마찬가지로) 모든 디바이스에서 작동할 것입니다.
 
-[region:note]
+[REGION:note]
 언리얼 엔진 4.8 이상은 Tegra K1 디바이스에서 **ES31** 및 **AEP** 렌더링 사용을 지원합니다.
 참고로 현재 ES31 과 AEP  렌더링을 지원하는 디바이스 수가 제한되어 있어서 현재 퍼포먼스 및 호환성 테스트가 거의 진척되지 않은 상태입니다.
 이 디바이스 중 하나를 사용하는 프로젝트 개발을 목표로 하시는 경우, 프로젝트가 그 디바이스에서 의도한 대로 실행되는지 확인하기 위한 퍼포먼스 및 호환성 테스트를 철저히 하실 것을 강력 추천하는 바입니다.
-[/region]
+[/REGION]
 
 ### 포맷 선택
 대부분 디바이스에 최적의 포맷을 선택하는 것이 좋을 것입니다. 디바이스에 어떤 GPU 유형이 탑재되어 있는지 알고 있다면, 위의 표를 참고하여 포맷을 선택하면 됩니다. 하지만 알지 못하는 경우, **Android** 또는 **Android (ETC1)** 을 선택하면 됩니다. 게임을 실행할 때 화면을 네 손가락으로 한 번에 터치하면 대화창이 뜰 것입니다. 이 대화창은 보통 (`stat fps` 같은) 콘솔 명령을 입력하는 데 사용되지만, 디바이스에서 지원하는 포맷을 표시하는 데도 사용됩니다. 목록을 확인한 후 거기서 디플로이/패키지 작업에 보다 적합한 유형을 선택하면 됩니다. 디바이스에서 지원하지 않는 포맷을 선택하는 경우, 로드에 실패하게 됩니다.

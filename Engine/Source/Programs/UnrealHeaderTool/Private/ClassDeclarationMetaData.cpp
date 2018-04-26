@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ClassDeclarationMetaData.h"
 #include "UnrealHeaderTool.h"
@@ -28,14 +28,14 @@ namespace
 }
 
 FClassDeclarationMetaData::FClassDeclarationMetaData()
-	: ClassFlags(0)
+	: ClassFlags(CLASS_None)
 	, WantsToBePlaceable(false)
 {
 }
 
 void FClassDeclarationMetaData::ParseClassProperties(const TArray<FPropertySpecifier>& InClassSpecifiers, const FString& InRequiredAPIMacroIfPresent)
 {
-	ClassFlags = 0;
+	ClassFlags = CLASS_None;
 	// Record that this class is RequiredAPI if the CORE_API style macro was present
 	if (!InRequiredAPIMacroIfPresent.IsEmpty())
 	{

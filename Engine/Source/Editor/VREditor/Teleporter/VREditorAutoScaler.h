@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,9 +15,12 @@ class UVREditorMode;
 UCLASS()
 class UVREditorAutoScaler: public UObject
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
 
 public:
+
+	/** Default constructor */
+	UVREditorAutoScaler();
 
 	/** Initializes the automatic scaler */
 	void Init( class UVREditorMode* InVRMode );
@@ -37,8 +40,4 @@ private:
 	/** Owning mode */
 	UPROPERTY()
 	UVREditorMode* VRMode;
-
-	/** Teleport sound */
-	UPROPERTY()
-	class USoundCue* ScaleSound;
 };

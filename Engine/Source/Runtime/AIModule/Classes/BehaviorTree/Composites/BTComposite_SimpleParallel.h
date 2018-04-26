@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -50,13 +50,13 @@ struct FBTParallelMemory : public FBTCompositeMemory
  * Simple Parallel composite node.
  * Allows for running two children: one which must be a single task node (with optional decorators), and the other of which can be a complete subtree.
  */
-UCLASS()
+UCLASS(HideCategories=(Composite))
 class AIMODULE_API UBTComposite_SimpleParallel : public UBTCompositeNode
 {
 	GENERATED_UCLASS_BODY()
 
 	/** how background tree should be handled when main task finishes execution */
-	UPROPERTY(EditInstanceOnly, Category=Parallel)
+	UPROPERTY(EditInstanceOnly, Category = Parallel)
 	TEnumAsByte<EBTParallelMode::Type> FinishMode;
 
 	/** handle child updates */
@@ -64,6 +64,7 @@ class AIMODULE_API UBTComposite_SimpleParallel : public UBTCompositeNode
 
 	virtual void NotifyChildExecution(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, int32 ChildIdx, EBTNodeResult::Type& NodeResult) const override;
 	virtual void NotifyNodeDeactivation(FBehaviorTreeSearchData& SearchData, EBTNodeResult::Type& NodeResult) const override;
+	virtual bool CanNotifyDecoratorsOnDeactivation(FBehaviorTreeSearchData& SearchData, int32 ChildIdx, EBTNodeResult::Type& NodeResult) const override;
 	virtual bool CanPushSubtree(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, int32 ChildIdx) const override;
 	virtual void SetChildOverride(FBehaviorTreeSearchData& SearchData, int8 Index) const override;
 	virtual uint16 GetInstanceMemorySize() const override;

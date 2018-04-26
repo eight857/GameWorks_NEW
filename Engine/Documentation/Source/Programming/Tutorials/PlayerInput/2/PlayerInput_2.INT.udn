@@ -20,12 +20,14 @@ version:4.9
 [/OBJECT]
 [/VAR]
 
-%Steps%
+
 
 There are two types of input mappings: Action and Axis.
-<br>**Action Mappings** are useful to think of as "yes or no" inputs, like the buttons on a mouse or joystick. They report when they are pressed, released, double-clicked, or held down for a short time. Discrete actions like jumping, shooting, or interacting with objects are good candidates for this type of mapping.
-<br>**Axis Mappings** are continuous - think of them as "how much" inputs, like the stick on a joystick, or the position of a mouse cursor. They report their value every frame, even if they're not moving. Things with magnitude or direction, such as walking, looking around, and steering a vehicle are usually handled this way.
-<br>While input mappings can be defined directly in code, the usual method is to define them in the **Unreal Engine** editor, so that's how we'll do it in this tutorial.
+
+* **Action Mappings** are useful to think of as "yes or no" inputs, like the buttons on a mouse or joystick. They report when they are pressed, released, double-clicked, or held down for a short time. Discrete actions like jumping, shooting, or interacting with objects are good candidates for this type of mapping.
+* **Axis Mappings** are continuous - think of them as "how much" inputs, like the stick on a joystick, or the position of a mouse cursor. They report their value every frame, even if they're not moving. Things with magnitude or direction, such as walking, looking around, and steering a vehicle are usually handled this way.
+
+While input mappings can be defined directly in code, the usual method is to define them in the **Unreal Engine** editor, so that's how we'll do it in this tutorial.
 
 1. In the **Unreal Engine** editor, under the **Edit** dropdown menu, we'll click the **Project Settings** option.
 
@@ -65,95 +67,88 @@ There are two types of input mappings: Action and Axis.
 
 We're now ready to finish coding our MyPawn class in **Visual Studio**.
 
-[OBJECT:Section]
-    [PARAMLITERAL:id]
-    code
-    [/PARAMLITERAL]
-    [PARAM:heading]
-    Work-In-Progress Code
-    [/PARAM]
-    [PARAM:content]
-		**MyPawn.h**
-			// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+## Work-In-Progress Code
 
-			#pragma once
+**MyPawn.h**
 
-			#include "GameFramework/Pawn.h"
-			#include "MyPawn.generated.h"
+	// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
-			UCLASS()
-			class HOWTO_PLAYERINPUT_API AMyPawn : public APawn
-			{
-				GENERATED_BODY()
+	#pragma once
 
-			public:
-				// Sets default values
-				AMyPawn();
+	#include "GameFramework/Pawn.h"
+	#include "MyPawn.generated.h"
 
-			protected:
-				// Called when the game starts or when spawned
-				virtual void BeginPlay() override;
+	UCLASS()
+	class HOWTO_PLAYERINPUT_API AMyPawn : public APawn
+	{
+		GENERATED_BODY()
+
+	public:
+		// Sets default values
+		AMyPawn();
+
+	protected:
+		// Called when the game starts or when spawned
+		virtual void BeginPlay() override;
 			
-			public:
-				// Called every frame
-				virtual void Tick( float DeltaSeconds ) override;
+	public:
+		// Called every frame
+		virtual void Tick( float DeltaSeconds ) override;
 
-				// Called to bind functionality to input
-				virtual void SetupPlayerInputComponent(class UInputComponent* InputComponent) override;
+		// Called to bind functionality to input
+		virtual void SetupPlayerInputComponent(class UInputComponent* InputComponent) override;
 
-				UPROPERTY(EditAnywhere)
-				USceneComponent* OurVisibleComponent;
-			};
+		UPROPERTY(EditAnywhere)
+		USceneComponent* OurVisibleComponent;
+	};
 
-		**MyPawn.cpp**
-			// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+**MyPawn.cpp**
 
-			#include "HowTo_PlayerInput.h"
-			#include "MyPawn.h"
+	// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
-			// Sets default values
-			AMyPawn::AMyPawn()
-			{
- 				// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-				PrimaryActorTick.bCanEverTick = true;
+	#include "HowTo_PlayerInput.h"
+	#include "MyPawn.h"
 
-				// Set this pawn to be controlled by the lowest-numbered player
-				AutoPossessPlayer = EAutoReceiveInput::Player0;
+	// Sets default values
+	AMyPawn::AMyPawn()
+	{
+ 		// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+		PrimaryActorTick.bCanEverTick = true;
 
-				// Create a dummy root component we can attach things to.
-				RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
-				// Create a camera and a visible object
-				UCameraComponent* OurCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("OurCamera"));
-				OurVisibleComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OurVisibleComponent"));
-				// Attach our camera and visible object to our root component. Offset and rotate the camera.
-				OurCamera->SetupAttachment(RootComponent);
-				OurCamera->SetRelativeLocation(FVector(-250.0f, 0.0f, 250.0f));
-				OurCamera->SetRelativeRotation(FRotator(-45.0f, 0.0f, 0.0f));
-				OurVisibleComponent->SetupAttachment(RootComponent);
-			}
+		// Set this pawn to be controlled by the lowest-numbered player
+		AutoPossessPlayer = EAutoReceiveInput::Player0;
 
-			// Called when the game starts or when spawned
-			void AMyPawn::BeginPlay()
-			{
-				Super::BeginPlay();
+		// Create a dummy root component we can attach things to.
+		RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
+		// Create a camera and a visible object
+		UCameraComponent* OurCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("OurCamera"));
+		OurVisibleComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OurVisibleComponent"));
+		// Attach our camera and visible object to our root component. Offset and rotate the camera.
+		OurCamera->SetupAttachment(RootComponent);
+		OurCamera->SetRelativeLocation(FVector(-250.0f, 0.0f, 250.0f));
+		OurCamera->SetRelativeRotation(FRotator(-45.0f, 0.0f, 0.0f));
+		OurVisibleComponent->SetupAttachment(RootComponent);
+	}
 
-			}
+	// Called when the game starts or when spawned
+	void AMyPawn::BeginPlay()
+	{
+		Super::BeginPlay();
 
-			// Called every frame
-			void AMyPawn::Tick( float DeltaTime )
-			{
-				Super::Tick( DeltaTime );
+	}
 
-			}
+	// Called every frame
+	void AMyPawn::Tick( float DeltaTime )
+	{
+		Super::Tick( DeltaTime );
 
-			// Called to bind functionality to input
-			void AMyPawn::SetupPlayerInputComponent(class UInputComponent* InputComponent)
-			{
-				Super::SetupPlayerInputComponent(InputComponent);
+	}
 
-			}
+	// Called to bind functionality to input
+	void AMyPawn::SetupPlayerInputComponent(class UInputComponent* InputComponent)
+	{
+		Super::SetupPlayerInputComponent(InputComponent);
 
-    [/PARAM]
-[/OBJECT]
+	}
 
-%Steps%
+

@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma  once
 
 #include "CoreMinimal.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "Engine/Blueprint.h"
 
 class UBlueprintGeneratedClass;
@@ -29,7 +29,7 @@ public:
 	TSet<UField*> DeclareInHeader;
 	TSet<UField*> IncludeInBody;
 
-	TSet<TAssetPtr<UPackage>> RequiredModuleNames;
+	TSet<TSoftObjectPtr<UPackage>> RequiredModuleNames;
 
 	FCompilerNativizationOptions NativizationOptions;
 
@@ -43,7 +43,7 @@ public:
 
 	UClass* FindOriginalClass(const UClass* InClass) const;
 
-	UClass* GetFirstNativeOrConvertedClass(UClass* InClass, bool bExcludeBPDataOnly = false) const;
+	UClass* GetFirstNativeOrConvertedClass(UClass* InClass) const;
 
 	TSet<const UObject*> AllDependencies() const;
 

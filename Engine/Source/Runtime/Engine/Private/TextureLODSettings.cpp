@@ -1,7 +1,43 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/TextureLODSettings.h"
 #include "Engine/Texture2D.h"
+
+void FTextureLODGroup::SetupGroup()
+{
+	MinLODMipCount = FMath::CeilLogTwo(MinLODSize);
+	MaxLODMipCount = FMath::CeilLogTwo(MaxLODSize);
+
+	// Linear filtering
+	if (MinMagFilter == NAME_Linear)
+	{
+		if (MipFilter == NAME_Point)
+		{
+			Filter = ETextureSamplerFilter::Bilinear;
+		}
+		else
+		{
+			Filter = ETextureSamplerFilter::Trilinear;
+		}
+	}
+	// Point. Don't even care about mip filter.
+	else if (MinMagFilter == NAME_Point)
+	{
+		Filter = ETextureSamplerFilter::Point;
+	}
+	// Aniso or unknown.
+	else
+	{
+		if (MipFilter == NAME_Point)
+		{
+			Filter = ETextureSamplerFilter::AnisotropicPoint;
+		}
+		else
+		{
+			Filter = ETextureSamplerFilter::AnisotropicLinear;
+		}
+	}
+}
 
 UTextureLODSettings::UTextureLODSettings(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -26,51 +62,17 @@ TArray<FString> UTextureLODSettings::GetTextureGroupNames()
 
 void UTextureLODSettings::SetupLODGroup(int32 GroupId)
 {
-	TextureLODGroups[GroupId].MinLODMipCount = FMath::CeilLogTwo(TextureLODGroups[GroupId].MinLODSize);
-	TextureLODGroups[GroupId].MaxLODMipCount = FMath::CeilLogTwo(TextureLODGroups[GroupId].MaxLODSize);
-
-	// Convert into single filter enum. The code is layed out such that invalid input will 
-	// map to the default state of highest quality filtering.
-
-	// Linear filtering
-	if (TextureLODGroups[GroupId].MinMagFilter == NAME_Linear)
-	{
-		if (TextureLODGroups[GroupId].MipFilter == NAME_Point)
-		{
-			TextureLODGroups[GroupId].Filter = ETextureSamplerFilter::Bilinear;
-		}
-		else
-		{
-			TextureLODGroups[GroupId].Filter = ETextureSamplerFilter::Trilinear;
-		}
-	}
-	// Point. Don't even care about mip filter.
-	else if (TextureLODGroups[GroupId].MinMagFilter == NAME_Point)
-	{
-		TextureLODGroups[GroupId].Filter = ETextureSamplerFilter::Point;
-	}
-	// Aniso or unknown.
-	else
-	{
-		if (TextureLODGroups[GroupId].MipFilter == NAME_Point)
-		{
-			TextureLODGroups[GroupId].Filter = ETextureSamplerFilter::AnisotropicPoint;
-		}
-		else
-		{
-			TextureLODGroups[GroupId].Filter = ETextureSamplerFilter::AnisotropicLinear;
-		}
-	}
+	TextureLODGroups[GroupId].SetupGroup();
 }
 
-int32 UTextureLODSettings::CalculateLODBias(const UTexture* Texture, bool bIncTextureMips) const
+int32 UTextureLODSettings::CalculateLODBias(const UTexture* Texture, bool bIncCinematicMips) const
 {	
 	check( Texture );
 	TextureMipGenSettings MipGenSetting = TMGS_MAX;
 #if WITH_EDITORONLY_DATA
 	MipGenSetting = Texture->MipGenSettings;
 #endif // #if WITH_EDITORONLY_DATA
-	return CalculateLODBias(Texture->GetSurfaceWidth(), Texture->GetSurfaceHeight(), Texture->LODGroup, (bIncTextureMips ? Texture->LODBias : 0), (bIncTextureMips ? Texture->NumCinematicMipLevels : 0), MipGenSetting);
+	return CalculateLODBias(Texture->GetSurfaceWidth(), Texture->GetSurfaceHeight(), Texture->LODGroup, Texture->LODBias, bIncCinematicMips ? Texture->NumCinematicMipLevels : 0, MipGenSetting);
 }
 
 int32 UTextureLODSettings::CalculateLODBias(int32 Width, int32 Height, int32 LODGroup, int32 LODBias, int32 NumCinematicMipLevels, TextureMipGenSettings InMipGenSetting) const
@@ -104,27 +106,6 @@ int32 UTextureLODSettings::CalculateLODBias(int32 Width, int32 Height, int32 LOD
 	UsedLODBias			= TextureMaxLOD - WantedMaxLOD;
 
 	return UsedLODBias;
-}
-
-/** 
-* Useful for stats in the editor.
-*/
-void UTextureLODSettings::ComputeInGameMaxResolution(int32 LODBias, UTexture &Texture, uint32 &OutSizeX, uint32 &OutSizeY) const
-{
-	uint32 ImportedSizeX = FMath::TruncToInt(Texture.GetSurfaceWidth());
-	uint32 ImportedSizeY = FMath::TruncToInt(Texture.GetSurfaceHeight());
-	
-	const FTextureLODGroup& LODGroup = GetTextureLODGroup((TextureGroup)Texture.LODGroup);
-
-	uint32 SourceLOD = FMath::Max(FMath::CeilLogTwo(ImportedSizeX), FMath::CeilLogTwo(ImportedSizeY));
-	uint32 MinLOD = FMath::Max(uint32(UTexture2D::GetMinTextureResidentMipCount() - 1), (uint32)LODGroup.MinLODMipCount);
-	uint32 MaxLOD = FMath::Min(uint32(GMaxTextureMipCount - 1), (uint32)LODGroup.MaxLODMipCount);
-	uint32 GameLOD = FMath::Min(SourceLOD, FMath::Clamp(SourceLOD - LODBias, MinLOD, MaxLOD));
-
-	uint32 DeltaLOD = SourceLOD - GameLOD;
-
-	OutSizeX = ImportedSizeX >> DeltaLOD;
-	OutSizeY = ImportedSizeY >> DeltaLOD;
 }
 
 /**

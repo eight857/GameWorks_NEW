@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * Proxy class for display skeleton notifies in the details panel
@@ -13,19 +13,6 @@
 class UAnimSequenceBase;
 
 DECLARE_DELEGATE_TwoParams( FOnAnimObjectChange, class UObject*, bool)
-
-USTRUCT()
-struct FSkeletonNotifyDependentAnimations
-{
-	GENERATED_USTRUCT_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SkeletonNotifies)
-	TArray<UAnimSequenceBase*> Animations;
-
-	FSkeletonNotifyDependentAnimations()
-	{
-	}
-};
 
 UCLASS(MinimalAPI)
 class UEditorSkeletonNotifyObj : public UObject

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 //
 #include "CoreMinimal.h"
 #include "SteamVRPrivate.h"
@@ -12,10 +12,13 @@
 #include "PostProcess/PostProcessHMD.h"
 #include "PipelineStateCache.h"
 #include "ClearQuad.h"
-
-#if PLATFORM_LINUX
-#include "VulkanRHIPrivate.h"
+#include "DefaultSpectatorScreenController.h"
 #include "ScreenRendering.h"
+
+#if PLATFORM_MAC
+#include <Metal/Metal.h>
+#else
+#include "VulkanRHIPrivate.h"
 #include "VulkanPendingState.h"
 #include "VulkanContext.h"
 #endif
@@ -27,82 +30,19 @@ void FSteamVRHMD::DrawDistortionMesh_RenderThread(struct FRenderingCompositePass
 	check(0);
 }
 
-void FSteamVRHMD::RenderTexture_RenderThread(FRHICommandListImmediate& RHICmdList, FTexture2DRHIParamRef BackBuffer, FTexture2DRHIParamRef SrcTexture) const
+void FSteamVRHMD::RenderTexture_RenderThread(FRHICommandListImmediate& RHICmdList, FTexture2DRHIParamRef BackBuffer, FTexture2DRHIParamRef SrcTexture, FVector2D WindowSize) const
 {
 	check(IsInRenderingThread());
-	const_cast<FSteamVRHMD*>(this)->UpdateLayerTextures();
+	const_cast<FSteamVRHMD*>(this)->UpdateStereoLayers_RenderThread();
 
 	if (bSplashIsShown)
 	{
 		SetRenderTarget(RHICmdList, SrcTexture, FTextureRHIRef());
-		DrawClearQuad(RHICmdList, GMaxRHIFeatureLevel, FLinearColor(0, 0, 0, 0));
+		DrawClearQuad(RHICmdList, FLinearColor(0, 0, 0, 0));
 	}
 
-	static const auto CVarMirrorMode = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.MirrorMode"));
-	int WindowMirrorMode = FMath::Clamp(CVarMirrorMode->GetValueOnRenderThread(), 0 ,2);
-
-	if (WindowMirrorMode != 0)
-	{
-		const uint32 ViewportWidth = BackBuffer->GetSizeX();
-		const uint32 ViewportHeight = BackBuffer->GetSizeY();
-
-		SetRenderTarget(RHICmdList, BackBuffer, FTextureRHIRef());
-		RHICmdList.SetViewport(0, 0, 0, ViewportWidth, ViewportHeight, 1.0f);
-
-		if (WindowMirrorMode == 1)
-		{
-			// need to clear when rendering only one eye since the borders won't be touched by the DrawRect below
-			DrawClearQuad(RHICmdList, GMaxRHIFeatureLevel, FLinearColor::Black);
-		}
-
-		FGraphicsPipelineStateInitializer GraphicsPSOInit;
-		RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
-		GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
-		GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
-		GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
-		GraphicsPSOInit.PrimitiveType = PT_TriangleList;
-
-		const auto FeatureLevel = GMaxRHIFeatureLevel;
-		auto ShaderMap = GetGlobalShaderMap(FeatureLevel);
-
-		TShaderMapRef<FScreenVS> VertexShader(ShaderMap);
-		TShaderMapRef<FScreenPS> PixelShader(ShaderMap);
-
-		GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = RendererModule->GetFilterVertexDeclaration().VertexDeclarationRHI;
-		GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
-		GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
-
-		SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
-
-		PixelShader->SetParameters(RHICmdList, TStaticSamplerState<SF_Bilinear>::GetRHI(), SrcTexture);
-
-		if (WindowMirrorMode == 1)
-		{
-			RendererModule->DrawRectangle(
-				RHICmdList,
-				ViewportWidth / 4, 0,
-				ViewportWidth / 2, ViewportHeight,
-				0.1f, 0.2f,
-				0.3f, 0.6f,
-				FIntPoint(ViewportWidth, ViewportHeight),
-				FIntPoint(1, 1),
-				*VertexShader,
-				EDRF_Default);
-		}
-		else if (WindowMirrorMode == 2)
-		{
-			RendererModule->DrawRectangle(
-				RHICmdList,
-				0, 0,
-				ViewportWidth, ViewportHeight,
-				0.0f, 0.0f,
-				1.0f, 1.0f,
-				FIntPoint(ViewportWidth, ViewportHeight),
-				FIntPoint(1, 1),
-				*VertexShader,
-				EDRF_Default);
-		}
-	}
+	check(SpectatorScreenController);
+	SpectatorScreenController->RenderSpectatorScreen_RenderThread(RHICmdList, BackBuffer, SrcTexture, WindowSize);
 }
 
 static void DrawOcclusionMesh(FRHICommandList& RHICmdList, EStereoscopicPass StereoPass, const FHMDViewMesh MeshAssets[])
@@ -137,6 +77,16 @@ void FSteamVRHMD::DrawVisibleAreaMesh_RenderThread(FRHICommandList& RHICmdList, 
 	DrawOcclusionMesh(RHICmdList, StereoPass, VisibleAreaMeshes);
 }
 
+bool FSteamVRHMD::BridgeBaseImpl::NeedsNativePresent()
+{
+    if (Plugin->VRCompositor == nullptr)
+    {
+        return false;
+    }
+    
+    return true;
+}
+
 #if PLATFORM_WINDOWS
 
 FSteamVRHMD::D3D11Bridge::D3D11Bridge(FSteamVRHMD* plugin):
@@ -158,27 +108,28 @@ void FSteamVRHMD::D3D11Bridge::BeginRendering()
 
 void FSteamVRHMD::D3D11Bridge::FinishRendering()
 {
-	vr::VRTextureBounds_t LeftBounds;
-	LeftBounds.uMin = 0.0f;
-	LeftBounds.uMax = 0.5f;
-	LeftBounds.vMin = 0.0f;
-	LeftBounds.vMax = 1.0f;
-
 	vr::Texture_t Texture;
 	Texture.handle = RenderTargetTexture;
 	Texture.eType = vr::TextureType_DirectX;
 	Texture.eColorSpace = vr::ColorSpace_Auto;
-	vr::EVRCompositorError Error = Plugin->VRCompositor->Submit(vr::Eye_Left, &Texture, &LeftBounds);
+
+	vr::VRTextureBounds_t LeftBounds;
+    LeftBounds.uMin = 0.0f;
+	LeftBounds.uMax = 0.5f;
+    LeftBounds.vMin = 0.0f;
+    LeftBounds.vMax = 1.0f;
+	
+    vr::EVRCompositorError Error = Plugin->VRCompositor->Submit(vr::Eye_Left, &Texture, &LeftBounds);
 
 	vr::VRTextureBounds_t RightBounds;
 	RightBounds.uMin = 0.5f;
-	RightBounds.uMax = 1.0f;
-	RightBounds.vMin = 0.0f;
-	RightBounds.vMax = 1.0f;
-
+    RightBounds.uMax = 1.0f;
+    RightBounds.vMin = 0.0f;
+    RightBounds.vMax = 1.0f;
+	   
 	Texture.handle = RenderTargetTexture;
 	Error = Plugin->VRCompositor->Submit(vr::Eye_Right, &Texture, &RightBounds);
-	if (Error != vr::VRCompositorError_None)
+    if (Error != vr::VRCompositorError_None)
 	{
 		UE_LOG(LogHMD, Log, TEXT("Warning:  SteamVR Compositor had an error on present (%d)"), (int32)Error);
 	}
@@ -233,9 +184,9 @@ void FSteamVRHMD::D3D11Bridge::PostPresent()
 		Plugin->VRCompositor->PostPresentHandoff();
 	}
 }
+#endif // PLATFORM_WINDOWS
 
-#elif PLATFORM_LINUX
-#if STEAMVR_USE_VULKAN_RHI
+#if !PLATFORM_MAC
 FSteamVRHMD::VulkanBridge::VulkanBridge(FSteamVRHMD* plugin):
 	BridgeBaseImpl(plugin),
 	RenderTargetTexture(0)
@@ -258,7 +209,8 @@ void FSteamVRHMD::VulkanBridge::FinishRendering()
 		FVulkanCommandListContext& ImmediateContext = vlkRHI->GetDevice()->GetImmediateContext();
 		const VkImageLayout* CurrentLayout = ImmediateContext.GetTransitionState().CurrentLayout.Find(Texture2D->Surface.Image);
 		FVulkanCmdBuffer* CmdBuffer = ImmediateContext.GetCommandBufferManager()->GetUploadCmdBuffer();
-		VulkanSetImageLayoutSimple(CmdBuffer->GetHandle(), Texture2D->Surface.Image, CurrentLayout ? *CurrentLayout : VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+		VkImageSubresourceRange SubresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+		vlkRHI->VulkanSetImageLayout( CmdBuffer->GetHandle(), Texture2D->Surface.Image, CurrentLayout ? *CurrentLayout : VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, SubresourceRange );
 
 		vr::VRTextureBounds_t LeftBounds;
 		LeftBounds.uMin = 0.0f;
@@ -330,7 +282,7 @@ void FSteamVRHMD::VulkanBridge::PostPresent()
 		Plugin->VRCompositor->PostPresentHandoff();
 	}
 }
-#else
+
 FSteamVRHMD::OpenGLBridge::OpenGLBridge(FSteamVRHMD* plugin):
 	BridgeBaseImpl(plugin),
 	RenderTargetTexture(0)
@@ -368,7 +320,7 @@ void FSteamVRHMD::OpenGLBridge::FinishRendering()
 	RightBounds.vMax = 0.0f;
 
 	vr::Texture_t Texture;
-	Texture.handle = reinterpret_cast<void*>(RenderTargetTexture);
+	Texture.handle = reinterpret_cast<void*>(static_cast<size_t>(RenderTargetTexture));
 	Texture.eType = vr::TextureType_OpenGL;
 	Texture.eColorSpace = vr::ColorSpace_Auto;
 
@@ -419,8 +371,111 @@ void FSteamVRHMD::OpenGLBridge::PostPresent()
 		Plugin->VRCompositor->PostPresentHandoff();
 	}
 }
-#endif
 
-#endif // PLATFORM_WINDOWS
+#elif PLATFORM_MAC
+
+FSteamVRHMD::MetalBridge::MetalBridge(FSteamVRHMD* plugin):
+	BridgeBaseImpl(plugin)
+{}
+
+void FSteamVRHMD::MetalBridge::BeginRendering()
+{
+	check(IsInRenderingThread());
+
+	static bool Inited = false;
+	if (!Inited)
+	{
+		Inited = true;
+	}
+}
+
+void FSteamVRHMD::MetalBridge::FinishRendering()
+{
+	check(TextureSet.IsValid());
+
+	vr::VRTextureBounds_t LeftBounds;
+	LeftBounds.uMin = 0.0f;
+	LeftBounds.uMax = 0.5f;
+	LeftBounds.vMin = 0.0f;
+	LeftBounds.vMax = 1.0f;
+	
+	id<MTLTexture> TextureHandle = (id<MTLTexture>)TextureSet->GetNativeResource();
+	
+	vr::Texture_t Texture;
+	Texture.handle = (void*)TextureHandle.iosurface;
+	Texture.eType = vr::TextureType_IOSurface;
+	Texture.eColorSpace = vr::ColorSpace_Auto;
+	vr::EVRCompositorError Error = Plugin->VRCompositor->Submit(vr::Eye_Left, &Texture, &LeftBounds);
+
+	vr::VRTextureBounds_t RightBounds;
+	RightBounds.uMin = 0.5f;
+	RightBounds.uMax = 1.0f;
+	RightBounds.vMin = 0.0f;
+	RightBounds.vMax = 1.0f;
+	
+	Error = Plugin->VRCompositor->Submit(vr::Eye_Right, &Texture, &RightBounds);
+	if (Error != vr::VRCompositorError_None)
+	{
+		UE_LOG(LogHMD, Log, TEXT("Warning:  SteamVR Compositor had an error on present (%d)"), (int32)Error);
+	}
+
+	static_cast<FRHITextureSet2D*>(TextureSet.GetReference())->Advance();
+}
+
+void FSteamVRHMD::MetalBridge::Reset()
+{
+}
+
+void FSteamVRHMD::MetalBridge::UpdateViewport(const FViewport& Viewport, FRHIViewport* InViewportRHI)
+{
+	check(IsInGameThread());
+	check(InViewportRHI);
+	InViewportRHI->SetCustomPresent(this);
+}
+
+void FSteamVRHMD::MetalBridge::OnBackBufferResize()
+{
+}
+
+bool FSteamVRHMD::MetalBridge::Present(int& SyncInterval)
+{
+	// Editor appears to be in rt, game appears to be in rhi?
+	//check(IsInRenderingThread());
+	//check(IsInRHIThread());
+
+	if (Plugin->VRCompositor == nullptr)
+	{
+		return false;
+	}
+
+	FinishRendering();
+
+	return true;
+}
+
+void FSteamVRHMD::MetalBridge::PostPresent()
+{
+	if (CUsePostPresentHandoff.GetValueOnRenderThread() == 1)
+	{
+		Plugin->VRCompositor->PostPresentHandoff();
+	}
+}
+
+IOSurfaceRef FSteamVRHMD::MetalBridge::GetSurface(const uint32 SizeX, const uint32 SizeY)
+{
+	// @todo: Get our man in MacVR to switch to a modern & secure method of IOSurface sharing...
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+	const NSDictionary* SurfaceDefinition = @{
+											(id)kIOSurfaceWidth: @(SizeX),
+											(id)kIOSurfaceHeight: @(SizeY),
+											(id)kIOSurfaceBytesPerElement: @(4), // sizeof(PF_B8G8R8A8)..
+											(id)kIOSurfaceIsGlobal: @YES
+											};
+	
+	return IOSurfaceCreate((CFDictionaryRef)SurfaceDefinition);
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
+}
+
+#endif // PLATFORM_MAC
 
 #endif // STEAMVR_SUPPORTED_PLATFORMS

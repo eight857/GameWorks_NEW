@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,7 +12,7 @@
 #include "EnvQueryGenerator_ActorsOfClass.generated.h"
 
 UCLASS(meta = (DisplayName = "Actors Of Class"))
-class UEnvQueryGenerator_ActorsOfClass : public UEnvQueryGenerator
+class AIMODULE_API UEnvQueryGenerator_ActorsOfClass : public UEnvQueryGenerator
 {
 	GENERATED_UCLASS_BODY()
 
@@ -34,6 +34,7 @@ class UEnvQueryGenerator_ActorsOfClass : public UEnvQueryGenerator
 	TSubclassOf<UEnvQueryContext> SearchCenter;
 
 	virtual void GenerateItems(FEnvQueryInstance& QueryInstance) const override;
+	virtual void ProcessItems(FEnvQueryInstance& QueryInstance, TArray<AActor*>& MatchingActors) const {}
 
 	virtual FText GetDescriptionTitle() const override;
 	virtual FText GetDescriptionDetails() const override;

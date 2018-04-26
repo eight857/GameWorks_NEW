@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Commandlets/AudioTestCommandlet.h"
 #include "Modules/ModuleManager.h"
@@ -16,15 +16,20 @@ static UAudio::IUnrealAudioModule* UnrealAudioModule = nullptr;
 static bool UnrealAudioLoad(const FString* DeviceApi = nullptr)
 {
 	UnrealAudioModule = FModuleManager::LoadModulePtr<UAudio::IUnrealAudioModule>(FName("UnrealAudio"));
-	if (DeviceApi)
+	if (UnrealAudioModule != nullptr)
 	{
-		UnrealAudioModule->Initialize(*DeviceApi);
+		if (DeviceApi)
+		{
+			UnrealAudioModule->Initialize(*DeviceApi);
+			return true;
+		}
+		else
+		{
+			UnrealAudioModule->Initialize();
+			return true;
+		}
 	}
-	else
-	{
-		UnrealAudioModule->Initialize();
-	}
-	return UnrealAudioModule != nullptr;
+	return false;
 }
 
 static bool UnrealAudioUnload()

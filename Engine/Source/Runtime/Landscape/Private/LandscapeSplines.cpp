@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	LandscapeSpline.cpp
@@ -51,9 +51,15 @@ IMPLEMENT_HIT_PROXY(HLandscapeSplineProxy_Tangent, HLandscapeSplineProxy);
 
 /** Represents a ULandscapeSplinesComponent to the scene manager. */
 #if WITH_EDITOR
-class FLandscapeSplinesSceneProxy : public FPrimitiveSceneProxy
+class FLandscapeSplinesSceneProxy final : public FPrimitiveSceneProxy
 {
 private:
+	SIZE_T GetTypeHash() const override
+	{
+		static size_t UniquePointer;
+		return reinterpret_cast<size_t>(&UniquePointer);
+	}
+
 	const FLinearColor	SplineColor;
 
 	const UTexture2D*	ControlPointSprite;
@@ -155,6 +161,9 @@ public:
 				for (const FSegmentProxy& Segment : Segments)
 				{
 					const FLinearColor SegmentColor = Segment.bSelected ? SelectedSplineColor : SplineColor;
+
+					if (Segment.Points.Num() == 0 || !Segment.Points.IsValidIndex(0)) // for some reason the segment do not have valid points, prevent possible crash, by simply not rendering this segment
+						continue;
 
 					FLandscapeSplineInterpPoint OldPoint = Segment.Points[0];
 					OldPoint.Center       = MyLocalToWorld.TransformPosition(OldPoint.Center);
@@ -562,7 +571,7 @@ void ULandscapeSplinesComponent::AutoFixMeshComponentErrors(UWorld* OtherWorld)
 {
 	UWorld* ThisOuterWorld = GetTypedOuter<UWorld>();
 
-	TAssetPtr<UWorld> OtherWorldAssetPtr = OtherWorld;
+	TSoftObjectPtr<UWorld> OtherWorldSoftPtr = OtherWorld;
 	ULandscapeSplinesComponent* StreamingSplinesComponent = GetStreamingSplinesComponentForLevel(OtherWorld->PersistentLevel);
 	auto* ForeignWorldSplineData = StreamingSplinesComponent ? StreamingSplinesComponent->ForeignWorldSplineDataMap.Find(ThisOuterWorld) : nullptr;
 
@@ -604,7 +613,7 @@ void ULandscapeSplinesComponent::CheckForErrors()
 	Super::CheckForErrors();
 
 	UWorld* ThisOuterWorld = GetTypedOuter<UWorld>();
-	check(ThisOuterWorld->WorldType == EWorldType::Editor);
+	check(IsRunningCommandlet() || ThisOuterWorld->WorldType == EWorldType::Editor);
 
 	TSet<UWorld*> OutdatedWorlds;
 	TMap<UWorld*, FForeignWorldSplineData*> ForeignWorldSplineDataMapCache;
@@ -634,9 +643,9 @@ void ULandscapeSplinesComponent::CheckForErrors()
 	// Check spline segment meshes
 	for (ULandscapeSplineSegment* Segment : Segments)
 	{
-		for (auto& ForeignWorldAssetPtr : Segment->GetForeignWorlds())
+		for (auto& ForeignWorldSoftPtr : Segment->GetForeignWorlds())
 		{
-			UWorld* ForeignWorld = ForeignWorldAssetPtr.Get();
+			UWorld* ForeignWorld = ForeignWorldSoftPtr.Get();
 
 			if (ForeignWorld && !OutdatedWorlds.Contains(ForeignWorld))
 			{
@@ -674,16 +683,16 @@ void ULandscapeSplinesComponent::CheckForErrors()
 	// check for orphaned components
 	for (auto& ForeignWorldSplineDataPair : ForeignWorldSplineDataMap)
 	{
-		auto& ForeignWorldAssetPtr = ForeignWorldSplineDataPair.Key;
+		auto& ForeignWorldSoftPtr = ForeignWorldSplineDataPair.Key;
 		auto& ForeignWorldSplineData = ForeignWorldSplineDataPair.Value;
 
 		// World is not loaded
-		if (ForeignWorldAssetPtr.IsPending())
+		if (ForeignWorldSoftPtr.IsPending())
 		{
 			continue;
 		}
 
-		UWorld* ForeignWorld = ForeignWorldAssetPtr.Get();
+		UWorld* ForeignWorld = ForeignWorldSoftPtr.Get();
 		for (auto& ForeignSplineSegmentData : ForeignWorldSplineData.ForeignSplineSegmentData)
 		{
 			const ULandscapeSplineSegment* ForeignSplineSegment = ForeignSplineSegmentData.Identifier.Get();
@@ -835,7 +844,7 @@ ULandscapeSplinesComponent* ULandscapeSplinesComponent::GetStreamingSplinesCompo
 		// this is fine, we won't have any cross-level meshes in this case anyway
 		OuterLandscape->GetLandscapeGuid().IsValid())
 	{
-		FVector LandscapeLocalLocation = ComponentToWorld.GetRelativeTransform(OuterLandscape->LandscapeActorToWorld()).TransformPosition(LocalLocation);
+		FVector LandscapeLocalLocation = GetComponentTransform().GetRelativeTransform(OuterLandscape->LandscapeActorToWorld()).TransformPosition(LocalLocation);
 		const int32 ComponentIndexX = (LandscapeLocalLocation.X >= 0.0f) ? FMath::FloorToInt(LandscapeLocalLocation.X / OuterLandscape->ComponentSizeQuads) : FMath::CeilToInt(LandscapeLocalLocation.X / OuterLandscape->ComponentSizeQuads);
 		const int32 ComponentIndexY = (LandscapeLocalLocation.Y >= 0.0f) ? FMath::FloorToInt(LandscapeLocalLocation.Y / OuterLandscape->ComponentSizeQuads) : FMath::CeilToInt(LandscapeLocalLocation.Y / OuterLandscape->ComponentSizeQuads);
 		ULandscapeComponent* LandscapeComponent = OuterLandscape->GetLandscapeInfo()->XYtoComponentMap.FindRef(FIntPoint(ComponentIndexX, ComponentIndexY));
@@ -998,10 +1007,7 @@ void ULandscapeSplinesComponent::RemoveForeignMeshComponent(ULandscapeSplineSegm
 		verifySlow(SegmentData->MeshComponents.RemoveSingle(Component) == 1);
 		if (SegmentData->MeshComponents.Num() == 0)
 		{
-			if (SegmentData != nullptr)
-			{
-				verifySlow(ForeignWorldSplineData->ForeignSplineSegmentData.RemoveSingle(*SegmentData) == 1);
-			}
+			verifySlow(ForeignWorldSplineData->ForeignSplineSegmentData.RemoveSingle(*SegmentData) == 1);
 
 			if (ForeignWorldSplineData->IsEmpty())
 			{
@@ -1522,7 +1528,7 @@ void ULandscapeSplineControlPoint::UpdateSplinePoints(bool bUpdateCollision, boo
 		FRotator MeshRotation = Rotation;
 		if (MeshComponentOuterSplines != OuterSplines)
 		{
-			const FTransform RelativeTransform = OuterSplines->ComponentToWorld.GetRelativeTransform(MeshComponentOuterSplines->ComponentToWorld);
+			const FTransform RelativeTransform = OuterSplines->GetComponentTransform().GetRelativeTransform(MeshComponentOuterSplines->GetComponentTransform());
 			MeshLocation = RelativeTransform.TransformPosition(MeshLocation);
 		}
 
@@ -2384,7 +2390,7 @@ void ULandscapeSplineSegment::UpdateSplinePoints(bool bUpdateCollision)
 			auto* const MeshComponentOuterSplines = MeshComponent->GetAttachParent();
 			if (MeshComponentOuterSplines != nullptr && MeshComponentOuterSplines != OuterSplines)
 			{
-				const FTransform RelativeTransform = OuterSplines->ComponentToWorld.GetRelativeTransform(MeshComponentOuterSplines->ComponentToWorld);
+				const FTransform RelativeTransform = OuterSplines->GetComponentTransform().GetRelativeTransform(MeshComponentOuterSplines->GetComponentTransform());
 				MeshComponent->SplineParams.StartPos = RelativeTransform.TransformPosition(MeshComponent->SplineParams.StartPos);
 				MeshComponent->SplineParams.EndPos   = RelativeTransform.TransformPosition(MeshComponent->SplineParams.EndPos);
 			}

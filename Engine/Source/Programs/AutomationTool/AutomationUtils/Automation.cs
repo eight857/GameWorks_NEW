@@ -1,4 +1,4 @@
-ï»¿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+ï»¿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,7 +7,6 @@ using System.IO;
 using System.Reflection;
 using System.Diagnostics;
 using UnrealBuildTool;
-using Tools.DotNETCommon.CaselessDictionary;
 
 namespace AutomationTool
 {
@@ -94,13 +93,12 @@ namespace AutomationTool
 		/// <summary>
 		/// List of all registered command line parameters (global, not command-specific)
 		/// </summary>
-		public static CaselessDictionary<CommandLineArg> RegisteredArgs = new CaselessDictionary<CommandLineArg>();
+		public static Dictionary<string, CommandLineArg> RegisteredArgs = new Dictionary<string, CommandLineArg>(StringComparer.InvariantCultureIgnoreCase);
 
 		public static CommandLineArg CompileOnly = new CommandLineArg("-CompileOnly");
 		public static CommandLineArg Verbose = new CommandLineArg("-Verbose");
 		public static CommandLineArg Submit = new CommandLineArg("-Submit");
 		public static CommandLineArg NoSubmit = new CommandLineArg("-NoSubmit");
-		public static CommandLineArg ForceLocal = new CommandLineArg("-ForceLocal");
 		public static CommandLineArg NoP4 = new CommandLineArg("-NoP4");
 		public static CommandLineArg P4 = new CommandLineArg("-P4");
         public static CommandLineArg Preprocess = new CommandLineArg("-Preprocess");
@@ -113,7 +111,6 @@ namespace AutomationTool
         /// </summary>
         public static CommandLineArg NoCompileLegacyDontUse = new CommandLineArg("-NoCompile");
         public static CommandLineArg NoCompileEditor = new CommandLineArg("-NoCompileEditor");
-        public static CommandLineArg IncrementalBuildUBT = new CommandLineArg("-IncrementalBuildUBT");
 		public static CommandLineArg Help = new CommandLineArg("-Help");
 		public static CommandLineArg List = new CommandLineArg("-List");
 		public static CommandLineArg VS2015 = new CommandLineArg("-2015");
@@ -151,7 +148,6 @@ AutomationTool.exe [-verbose] [-compileonly] [-p4] Command0 [-Arg0 -Arg1 -Arg2 â
 	[Help("p4", "Enables Perforce functionality (default if run on a build machine)")]
 	[Help("compileonly", "Does not run any commands, only compiles them")]
     [Help("compile", "Dynamically compiles all commands (otherwise assumes they are already built)")]
-    [Help("forcelocal", "Forces local execution")]
 	[Help("help", "Displays help")]
 	[Help("list", "Lists all available commands")]
 	[Help("submit", "Allows UAT command to submit changes")]
@@ -443,9 +439,7 @@ AutomationTool.exe [-verbose] [-compileonly] [-p4] Command0 [-Arg0 -Arg1 -Arg2 â
 
 			// Get the path to the telemetry file, if present
 			string TelemetryFile = CommandUtils.ParseParamValue(Arguments, "-Telemetry");
-
-			// Check for build machine override (force local)
-			IsBuildMachine = GlobalCommandLine.ForceLocal ? false : IsBuildMachine;
+			
 			Log.TraceVerbose("IsBuildMachine={0}", IsBuildMachine);
 			Environment.SetEnvironmentVariable("IsBuildMachine", IsBuildMachine ? "1" : "0");
 
@@ -488,9 +482,6 @@ AutomationTool.exe [-verbose] [-compileonly] [-p4] Command0 [-Arg0 -Arg1 -Arg2 â
 				Log.TraceInformation("Failed to initialize UBT");
 				return ExitCode.Error_Unknown;
 			}
-
-			// Change CWD to UE4 root.
-			Environment.CurrentDirectory = CommandUtils.CmdEnv.LocalRoot;
 
 			// Fill in the project info
 			UnrealBuildTool.UProjectInfo.FillProjectInfo();
@@ -547,7 +538,7 @@ AutomationTool.exe [-verbose] [-compileonly] [-p4] Command0 [-Arg0 -Arg1 -Arg2 â
 		/// </summary>
 		/// <param name="CommandsToExecute"></param>
 		/// <param name="Commands"></param>
-		private static ExitCode Execute(List<CommandInfo> CommandsToExecute, CaselessDictionary<Type> Commands)
+		private static ExitCode Execute(List<CommandInfo> CommandsToExecute, Dictionary<string, Type> Commands)
 		{
 			for (int CommandIndex = 0; CommandIndex < CommandsToExecute.Count; ++CommandIndex)
 			{
@@ -595,7 +586,7 @@ AutomationTool.exe [-verbose] [-compileonly] [-p4] Command0 [-Arg0 -Arg1 -Arg2 â
 		/// </summary>
 		/// <param name="CommandsToExecute">List of commands specified in the command line.</param>
 		/// <param name="Commands">All discovered command objects.</param>
-		private static void DisplayHelp(List<CommandInfo> CommandsToExecute, CaselessDictionary<Type> Commands)
+		private static void DisplayHelp(List<CommandInfo> CommandsToExecute, Dictionary<string, Type> Commands)
 		{
 			for (int CommandIndex = 0; CommandIndex < CommandsToExecute.Count; ++CommandIndex)
 			{
@@ -624,7 +615,7 @@ AutomationTool.exe [-verbose] [-compileonly] [-p4] Command0 [-Arg0 -Arg1 -Arg2 â
 		/// List all available commands.
 		/// </summary>
 		/// <param name="Commands">All vailable commands.</param>
-		private static void ListAvailableCommands(CaselessDictionary<Type> Commands)
+		private static void ListAvailableCommands(Dictionary<string, Type> Commands)
 		{
 			string Message = Environment.NewLine;
 			Message += "Available commands:" + Environment.NewLine;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AndroidMemory.h"
 #include "MallocBinned.h"
@@ -143,7 +143,7 @@ FPlatformMemoryStats FAndroidPlatformMemory::GetStats()
 	if (FILE* FileGlobalMemStats = fopen("/proc/meminfo", "r"))
 	{
 		int FieldsSetSuccessfully = 0;
-		SIZE_T MemFree = 0, Cached = 0;
+		uint64 MemFree = 0, Cached = 0;
 		do
 		{
 			char LineBuffer[256] = { 0 };

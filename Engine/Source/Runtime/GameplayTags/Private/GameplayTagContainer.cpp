@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayTagContainer.h"
 #include "HAL/IConsoleManager.h"
@@ -595,8 +595,12 @@ void FGameplayTagContainer::FillParentTags()
 	}
 }
 
+DECLARE_CYCLE_STAT(TEXT("FGameplayTagContainer::GetGameplayTagParents"), STAT_FGameplayTagContainer_GetGameplayTagParents, STATGROUP_GameplayTags);
+
 FGameplayTagContainer FGameplayTagContainer::GetGameplayTagParents() const
 {
+	SCOPE_CYCLE_COUNTER(STAT_FGameplayTagContainer_GetGameplayTagParents);
+
 	FGameplayTagContainer ResultContainer;
 	ResultContainer.GameplayTags = GameplayTags;
 
@@ -919,6 +923,11 @@ bool FGameplayTagContainer::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags
 		FillParentTags();	
 	}
 	return true;
+}
+
+void FGameplayTagContainer::PostScriptConstruct()
+{
+	FillParentTags();
 }
 
 FString FGameplayTagContainer::ToStringSimple(bool bQuoted) const
@@ -1319,24 +1328,21 @@ bool FGameplayTag::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject
 		return false;
 	}
 
-	FName ImportedTagName = FName(*ImportedTag);
-	if (UGameplayTagsManager::Get().ValidateTagCreation(ImportedTagName))
-	{
-		// We found the tag. Assign it here.
-		TagName = ImportedTagName;
-		return true;
-	}
-
-	// Let normal ImportText try.
-	return false;
+	return UGameplayTagsManager::Get().ImportSingleGameplayTag(*this, FName(*ImportedTag));
 }
 
-void FGameplayTag::FromExportString(FString ExportString)
+void FGameplayTag::FromExportString(const FString& ExportString)
 {
 	TagName = NAME_None;
 
 	FOutputDeviceNull NullOut;
 	FGameplayTag::StaticStruct()->ImportText(*ExportString, this, nullptr, 0, &NullOut, TEXT("FGameplayTag"), true);
+}
+
+FGameplayTagNativeAdder::FGameplayTagNativeAdder()
+{
+	UE_LOG(LogGameplayTags, Display, TEXT("FGameplayTagNativeAdder::FGameplayTagNativeAdder"));
+	UGameplayTagsManager::OnLastChanceToAddNativeTags().AddRaw(this, &FGameplayTagNativeAdder::AddTags);
 }
 
 FGameplayTagQuery::FGameplayTagQuery()
@@ -1894,6 +1900,16 @@ FAutoConsoleCommand GameplayTagPrintReplicationMapCmd(
 	FConsoleCommandDelegate::CreateStatic(GameplayTagPrintReplicationMap)
 );
 
+static void GameplayTagPrintReplicationIndices()
+{
+	UGameplayTagsManager::Get().PrintReplicationIndices();
+}
+
+FAutoConsoleCommand GameplayTagPrintReplicationIndicesCmd(
+	TEXT("GameplayTags.PrintNetIndices"), 
+	TEXT( "Prints net indices for all known tags" ), 
+	FConsoleCommandDelegate::CreateStatic(GameplayTagPrintReplicationIndices)
+);
 
 static void TagPackingTest()
 {

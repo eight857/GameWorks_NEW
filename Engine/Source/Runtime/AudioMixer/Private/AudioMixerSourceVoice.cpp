@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AudioMixerSourceVoice.h"
 #include "AudioMixerSource.h"
@@ -12,24 +12,42 @@ namespace Audio
 	* FMixerSourceVoice Implementation
 	*/
 
-	FMixerSourceVoice::FMixerSourceVoice(FMixerDevice* InMixerDevice, FMixerSourceManager* InSourceManager)
-		: SourceManager(InSourceManager)
-		, MixerDevice(InMixerDevice)
-		, NumBuffersQueued(0)
-		, Pitch(-1.0f)
-		, Volume(-1.0f)
-		, Distance(-1.0f)
-		, LPFFrequency(-1.0f)
-		, SourceId(INDEX_NONE)
-		, bIsPlaying(false)
-		, bIsPaused(false)
-		, bIsActive(false)
+	FMixerSourceVoice::FMixerSourceVoice()
 	{
-		AUDIO_MIXER_CHECK(SourceManager != nullptr);
+		Reset(nullptr);
 	}
 
 	FMixerSourceVoice::~FMixerSourceVoice()
 	{
+	}
+
+	void FMixerSourceVoice::Reset(FMixerDevice* InMixerDevice)
+	{
+		if (InMixerDevice)
+		{
+			MixerDevice = InMixerDevice;
+			SourceManager = MixerDevice->GetSourceManager();
+		}
+		else
+		{
+			MixerDevice = nullptr;
+			SourceManager = nullptr;
+		}
+
+		NumBuffersQueued.Reset();
+		Pitch = -1.0f;
+		Volume = -1.0f;
+		DistanceAttenuation = -1.0f;
+		Distance = -1.0f;
+		LPFFrequency = -1.0f;
+		HPFFrequency = -1.0f;
+		SourceId = INDEX_NONE;
+		bIsPlaying = false;
+		bIsPaused = false;
+		bIsActive = false;
+		bIsBus = false;
+		bOutputToBusOnly = false;
+		SubmixSends.Reset();
 	}
 
 	bool FMixerSourceVoice::Init(const FMixerSourceVoiceInitParams& InitParams)
@@ -40,6 +58,9 @@ namespace Audio
 		{
 			AUDIO_MIXER_CHECK(InitParams.BufferQueueListener != nullptr);
 			AUDIO_MIXER_CHECK(InitParams.NumInputChannels > 0);
+
+			bOutputToBusOnly = InitParams.bOutputToBusOnly;
+			bIsBus = InitParams.BusId != INDEX_NONE;
 
 			for (int32 i = 0; i < InitParams.SubmixSends.Num(); ++i)
 			{
@@ -92,6 +113,17 @@ namespace Audio
 		}
 	}
 
+	void FMixerSourceVoice::SetDistanceAttenuation(const float InDistanceAttenuation)
+	{
+		AUDIO_MIXER_CHECK_GAME_THREAD(MixerDevice);
+
+		if (DistanceAttenuation != InDistanceAttenuation)
+		{
+			DistanceAttenuation = InDistanceAttenuation;
+			SourceManager->SetDistanceAttenuation(SourceId, InDistanceAttenuation);
+		}
+	}
+
 	void FMixerSourceVoice::SetLPFFrequency(const float InLPFFrequency)
 	{
 		AUDIO_MIXER_CHECK_GAME_THREAD(MixerDevice);
@@ -103,12 +135,22 @@ namespace Audio
 		}
 	}
 
-	void FMixerSourceVoice::SetChannelMap(TArray<float>& InChannelMap, const bool bInIs3D, const bool bInIsCenterChannelOnly)
+	void FMixerSourceVoice::SetHPFFrequency(const float InHPFFrequency)
 	{
 		AUDIO_MIXER_CHECK_GAME_THREAD(MixerDevice);
 
-		ChannelMap = InChannelMap;
-		SourceManager->SetChannelMap(SourceId, InChannelMap, bInIs3D, bInIsCenterChannelOnly);
+		if (HPFFrequency != InHPFFrequency)
+		{
+			HPFFrequency = InHPFFrequency;
+			SourceManager->SetHPFFrequency(SourceId, HPFFrequency);
+		}
+	}
+
+	void FMixerSourceVoice::SetChannelMap(ESubmixChannelFormat InChannelType, TArray<float>& InChannelMap, const bool bInIs3D, const bool bInIsCenterChannelOnly)
+	{
+		AUDIO_MIXER_CHECK_GAME_THREAD(MixerDevice);
+
+		SourceManager->SetChannelMap(SourceId, InChannelType, InChannelMap, bInIs3D, bInIsCenterChannelOnly);
 	}
 
 	void FMixerSourceVoice::SetSpatializationParams(const FSpatializationParams& InParams)
@@ -196,42 +238,53 @@ namespace Audio
 		return SourceManager->GetNumFramesPlayed(SourceId);
 	}
 
-	void FMixerSourceVoice::MixOutputBuffers(TArray<float>& OutWetBuffer, const float SendLevel) const
+	float FMixerSourceVoice::GetEnvelopeValue() const
+	{
+		AUDIO_MIXER_CHECK_GAME_THREAD(MixerDevice);
+
+		return SourceManager->GetEnvelopeValue(SourceId);
+	}
+
+	void FMixerSourceVoice::MixOutputBuffers(const ESubmixChannelFormat InSubmixChannelType, const float SendLevel, AlignedFloatBuffer& OutWetBuffer) const
 	{
 		AUDIO_MIXER_CHECK_AUDIO_PLAT_THREAD(MixerDevice);
 
-		return SourceManager->MixOutputBuffers(SourceId, OutWetBuffer, SendLevel);
+		check(!bOutputToBusOnly);
+
+		return SourceManager->MixOutputBuffers(SourceId, InSubmixChannelType, SendLevel, OutWetBuffer);
 	}
 
 	void FMixerSourceVoice::SetSubmixSendInfo(FMixerSubmixPtr Submix, const float SendLevel)
 	{
 		AUDIO_MIXER_CHECK_GAME_THREAD(MixerDevice);
 
-		FMixerSourceSubmixSend* SubmixSend = SubmixSends.Find(Submix->GetId());
-		bool bChanged = false;
-		if (!SubmixSend)
+		if (!bOutputToBusOnly)
 		{
-			FMixerSourceSubmixSend NewSubmixSend;
-			NewSubmixSend.Submix = Submix;
-			NewSubmixSend.SendLevel = SendLevel;
-			NewSubmixSend.bIsMainSend = false;
-			SubmixSends.Add(Submix->GetId(), NewSubmixSend);
-			bChanged = true;
-		}
-		else
-		{
-			if (!FMath::IsNearlyEqual(SubmixSend->SendLevel, SendLevel))
+			FMixerSourceSubmixSend* SubmixSend = SubmixSends.Find(Submix->GetId());
+			if (!SubmixSend)
+			{
+				FMixerSourceSubmixSend NewSubmixSend;
+				NewSubmixSend.Submix = Submix;
+				NewSubmixSend.SendLevel = SendLevel;
+				NewSubmixSend.bIsMainSend = false;
+				SubmixSends.Add(Submix->GetId(), NewSubmixSend);
+				SourceManager->SetSubmixSendInfo(SourceId, NewSubmixSend);
+			}
+			else if (!FMath::IsNearlyEqual(SubmixSend->SendLevel, SendLevel))
 			{
 				SubmixSend->SendLevel = SendLevel;
-				bChanged = true;
+				SourceManager->SetSubmixSendInfo(SourceId, *SubmixSend);
 			}
-		}
-
-		if (bChanged)
-		{
-			SourceManager->SetSubmixSendInfo(SourceId, Submix, SendLevel);
 		}
 	}
 
+	void FMixerSourceVoice::OnMixBus(FMixerSourceBufferPtr OutMixerSourceBuffer)
+	{
+		AUDIO_MIXER_CHECK_AUDIO_PLAT_THREAD(MixerDevice);
 
+		for (uint32 i = 0; i < OutMixerSourceBuffer->Samples; ++i)
+		{
+			OutMixerSourceBuffer->AudioData[i] = 0.0f;
+		}
+	}
 }

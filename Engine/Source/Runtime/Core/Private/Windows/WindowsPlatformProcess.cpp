@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Windows/WindowsPlatformProcess.h"
 #include "HAL/PlatformMisc.h"
@@ -12,6 +12,7 @@
 #include "Misc/Parse.h"
 #include "Containers/StringConv.h"
 #include "Containers/UnrealString.h"
+#include "Containers/Set.h"
 #include "Misc/SingleThreadEvent.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
@@ -42,10 +43,6 @@
 
 #pragma comment(lib, "psapi.lib")
 
-static bool ReadLibraryImportsFromMemory(const IMAGE_DOS_HEADER *Header, TArray<FString> &ImportNames);
-static const void *MapRvaToPointer(const IMAGE_DOS_HEADER *Header, const IMAGE_NT_HEADERS *NtHeader, size_t Rva);
-
-
 // static variables
 TArray<FString> FWindowsPlatformProcess::DllDirectoryStack;
 TArray<FString> FWindowsPlatformProcess::DllDirectories;
@@ -53,7 +50,7 @@ TArray<FString> FWindowsPlatformProcess::DllDirectories;
 
 void FWindowsPlatformProcess::AddDllDirectory(const TCHAR* Directory)
 {
-	FString NormalizedDirectory = Directory;
+	FString NormalizedDirectory = FPaths::ConvertRelativePathToFull(Directory);
 	FPaths::NormalizeDirectoryName(NormalizedDirectory);
 	FPaths::MakePlatformFilename(NormalizedDirectory);
 	DllDirectories.AddUnique(NormalizedDirectory);
@@ -76,11 +73,26 @@ void* FWindowsPlatformProcess::GetDllHandle( const TCHAR* FileName )
 	}
 
 	// Load the DLL, avoiding windows dialog boxes if missing
-	int32 PrevErrorMode = ::SetErrorMode(SEM_NOOPENFILEERRORBOX);
+	DWORD ErrorMode = 0;
+	if(!FParse::Param(::GetCommandLineW(), TEXT("dllerrors")))
+	{
+		ErrorMode |= SEM_NOOPENFILEERRORBOX;
+		if(FParse::Param(::GetCommandLineW(), TEXT("unattended")))
+		{
+			ErrorMode |= SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX;
+		}
+	}
 
+	DWORD PrevErrorMode = 0;
+	BOOL bHavePrevErrorMode = ::SetThreadErrorMode(ErrorMode, &PrevErrorMode);
+
+	// Load the DLL, avoiding windows dialog boxes if missing
 	void* Handle = LoadLibraryWithSearchPaths(FileName, SearchPaths);
-
-	::SetErrorMode(PrevErrorMode);
+	
+	if(bHavePrevErrorMode)
+	{
+		::SetThreadErrorMode(PrevErrorMode, NULL);
+	}
 
 	return Handle;
 }
@@ -275,6 +287,11 @@ static void LaunchDefaultHandlerForURL( const TCHAR* URL, FString* Error )
 	}
 }
 
+bool FWindowsPlatformProcess::CanLaunchURL(const TCHAR* URL)
+{
+	return URL != nullptr;
+}
+
 void FWindowsPlatformProcess::LaunchURL( const TCHAR* URL, const TCHAR* Parms, FString* Error )
 {
 	check(URL);
@@ -293,7 +310,7 @@ void FWindowsPlatformProcess::LaunchURL( const TCHAR* URL, const TCHAR* Parms, F
 	}
 	else
 	{
-		FString URLParams = FString::Printf(TEXT("%s %s"), URL, Parms ? Parms : TEXT("")).TrimTrailing();
+		FString URLParams = FString::Printf(TEXT("%s %s"), URL, Parms ? Parms : TEXT("")).TrimEnd();
 		LaunchWebURL( URLParams, Error );
 	}
 
@@ -366,7 +383,19 @@ FProcHandle FWindowsPlatformProcess::CreateProc( const TCHAR* URL, const TCHAR* 
 
 	if (!CreateProcess(NULL, CommandLine.GetCharArray().GetData(), &Attr, &Attr, true, (::DWORD)CreateFlags, NULL, OptionalWorkingDirectory, &StartupInfo, &ProcInfo))
 	{
-		UE_LOG(LogWindows, Warning, TEXT("CreateProc failed (%u) %s %s"), ::GetLastError(), URL, Parms);
+		DWORD ErrorCode = GetLastError();
+
+		TCHAR ErrorMessage[512];
+		FWindowsPlatformMisc::GetSystemErrorMessage(ErrorMessage, 512, ErrorCode);
+
+		UE_LOG(LogWindows, Warning, TEXT("CreateProc failed: %s (0x%08x)"), ErrorMessage, ErrorCode);
+		if (ErrorCode == ERROR_NOT_ENOUGH_MEMORY || ErrorCode == ERROR_OUTOFMEMORY)
+		{
+			// These errors are common enough that we want some available memory information
+			FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
+			UE_LOG(LogWindows, Warning, TEXT("Mem used: %.2f MB, OS Free %.2f MB"), Stats.UsedPhysical / 1048576.0f, Stats.AvailablePhysical / 1048576.0f);
+		}
+		UE_LOG(LogWindows, Warning, TEXT("URL: %s %s"), URL, Parms);
 		if (OutProcessID != nullptr)
 		{
 			*OutProcessID = 0;
@@ -531,7 +560,7 @@ bool FWindowsPlatformProcess::IsApplicationRunning( const TCHAR* ProcName )
 		{
 			do
 			{
-				if( FCString::Strcmp( *ProcNameWithExtension, Entry.szExeFile ) == 0 )
+				if( FCString::Stricmp( *ProcNameWithExtension, Entry.szExeFile ) == 0 )
 				{
 					::CloseHandle( SnapShot );
 					return true;
@@ -566,14 +595,6 @@ FString FWindowsPlatformProcess::GetApplicationName( uint32 ProcessId )
 	}
 
 	return Output;
-}
-
-
-bool FWindowsPlatformProcess::IsThisApplicationForeground()
-{
-	uint32 ForegroundProcess;
-	::GetWindowThreadProcessId(GetForegroundWindow(), (::DWORD *)&ForegroundProcess);
-	return (ForegroundProcess == GetCurrentProcessId());
 }
 
 void FWindowsPlatformProcess::ReadFromPipes(FString* OutStrings[], HANDLE InPipes[], int32 PipeCount)
@@ -656,10 +677,12 @@ bool FWindowsPlatformProcess::ExecProcess( const TCHAR* URL, const TCHAR* Params
 	}
 	else
 	{
+		DWORD ErrorCode = GetLastError();
+
 		// if CreateProcess failed, we should return a useful error code, which GetLastError will have
 		if (OutReturnCode)
 		{
-			*OutReturnCode = GetLastError();
+			*OutReturnCode = ErrorCode;
 		}
 		if (bRedirectOutput)
 		{
@@ -668,6 +691,18 @@ bool FWindowsPlatformProcess::ExecProcess( const TCHAR* URL, const TCHAR* Params
 				verify(::CloseHandle(WritablePipes[PipeIndex]));
 			}
 		}
+
+		TCHAR ErrorMessage[512];
+		FWindowsPlatformMisc::GetSystemErrorMessage(ErrorMessage, 512, ErrorCode);
+
+		UE_LOG(LogWindows, Warning, TEXT("CreateProc failed: %s (0x%08x)"), ErrorMessage, ErrorCode);
+		if (ErrorCode == ERROR_NOT_ENOUGH_MEMORY || ErrorCode == ERROR_OUTOFMEMORY)
+		{
+			// These errors are common enough that we want some available memory information
+			FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
+			UE_LOG(LogWindows, Warning, TEXT("Mem used: %.2f MB, OS Free %.2f MB"), Stats.UsedPhysical / 1048576.0f, Stats.AvailablePhysical / 1048576.0f);
+		}
+		UE_LOG(LogWindows, Warning, TEXT("URL: %s %s"), URL, Params);
 	}
 
 	if (bRedirectOutput)
@@ -718,14 +753,17 @@ void FWindowsPlatformProcess::CleanFileCache()
 	if (bShouldCleanShaderWorkingDirectory && !FParse::Param( FCommandLine::Get(), TEXT("Multiprocess")))
 	{
 		// get shader path, and convert it to the userdirectory
-		FString ShaderDir = FString(FPlatformProcess::BaseDir()) / FPlatformProcess::ShaderDir();
-		FString UserShaderDir = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*ShaderDir);
-		FPaths::CollapseRelativeDirectories(ShaderDir);
-
-		// make sure we don't delete from the source directory
-		if (ShaderDir != UserShaderDir)
+		for (const auto& SHaderSourceDirectoryEntry : FPlatformProcess::AllShaderSourceDirectoryMappings())
 		{
-			IFileManager::Get().DeleteDirectory(*UserShaderDir, false, true);
+			FString ShaderDir = FString(FPlatformProcess::BaseDir()) / SHaderSourceDirectoryEntry.Value;
+			FString UserShaderDir = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*ShaderDir);
+			FPaths::CollapseRelativeDirectories(ShaderDir);
+
+			// make sure we don't delete from the source directory
+			if (ShaderDir != UserShaderDir)
+			{
+				IFileManager::Get().DeleteDirectory(*UserShaderDir, false, true);
+			}
 		}
 
 		FPlatformProcess::CleanShaderWorkingDir();
@@ -774,6 +812,10 @@ const TCHAR* FWindowsPlatformProcess::BaseDir()
 			TempResult = TempResult.Replace(TEXT("\\"), TEXT("/"));
 			FCString::Strcpy(Result, *TempResult);
 			int32 StringLength = FCString::Strlen(Result);
+			int32 NumSubDirectories = 0;
+#ifdef ENGINE_BASE_DIR_ADJUST
+			NumSubDirectories = ENGINE_BASE_DIR_ADJUST;
+#endif
 			if (StringLength > 0)
 			{
 				--StringLength;
@@ -781,7 +823,10 @@ const TCHAR* FWindowsPlatformProcess::BaseDir()
 				{
 					if (Result[StringLength - 1] == TEXT('/') || Result[StringLength - 1] == TEXT('\\'))
 					{
-						break;
+						if(--NumSubDirectories < 0)
+						{
+							break;
+						}
 					}
 				}
 			}
@@ -856,7 +901,7 @@ const TCHAR* FWindowsPlatformProcess::ApplicationSettingsDir()
 
 		// make the base user dir path
 		// @todo rocket this folder should be based on your company name, not just be hard coded to /Epic/
-		WindowsApplicationSettingsDir = FString(ApplictionSettingsPath) + TEXT("/Epic/");
+		WindowsApplicationSettingsDir = FString(ApplictionSettingsPath).Replace(TEXT("\\"), TEXT("/")) + TEXT("/Epic/");
 	}
 	return *WindowsApplicationSettingsDir;
 }
@@ -1259,6 +1304,28 @@ bool FWindowsPlatformProcess::WritePipe(void* WritePipe, const FString& Message,
 		*OutWritten = FUTF8ToTCHAR((const ANSICHAR*)Buffer).Get();
 	}
 
+	delete[] Buffer;
+	return bIsWritten;
+}
+
+bool FWindowsPlatformProcess::WritePipe(void* WritePipe, const uint8* Data, const int32 DataLength, int32* OutDataLength)
+{
+	// if there is not a message or WritePipe is null
+	if ((DataLength == 0) || (WritePipe == nullptr))
+	{
+		return false;
+	}
+
+	// write to pipe
+	uint32 BytesWritten = 0;
+	bool bIsWritten = !!WriteFile(WritePipe, Data, DataLength, (::DWORD*)&BytesWritten, nullptr);
+
+	// Get written Data Length
+	if (OutDataLength)
+	{
+		*OutDataLength = (int32)BytesWritten;
+	}
+
 	return bIsWritten;
 }
 
@@ -1390,104 +1457,36 @@ bool FWindowsPlatformProcess::Daemonize()
 	return true;
 }
 
-void *FWindowsPlatformProcess::LoadLibraryWithSearchPaths(const FString& FileName, const TArray<FString>& SearchPaths)
+/**
+ * Maps a relative virtual address (RVA) to an address in memory.
+ *
+ * @param Header Pointer to the executable base
+ * @param NtHeader Pointer to the NT header information in the image
+ * @param Rva The RVA to to map
+ *
+ * @return Pointer to the data at this RVA
+ */
+static const void *MapRvaToPointer(const IMAGE_DOS_HEADER *Header, const IMAGE_NT_HEADERS *NtHeader, size_t Rva)
 {
-	// Make sure the initial module exists. If we can't find it from the path we're given, it's probably a system dll.
-	FString FullFileName = FileName;
-	if (FPaths::FileExists(*FullFileName))
+	const IMAGE_SECTION_HEADER *SectionHeaders = (const IMAGE_SECTION_HEADER*)(NtHeader + 1);
+	for(size_t SectionIdx = 0; SectionIdx < NtHeader->FileHeader.NumberOfSections; SectionIdx++)
 	{
-		// Convert it to a full path, since LoadLibrary will try to resolve it against the executable directory (which may not be the same as the working dir)
-		FullFileName = FPaths::ConvertRelativePathToFull(FullFileName);
-
-		// Create a list of files which we've already checked for imports. Don't add the initial file to this list to improve the resolution of dependencies for direct circular dependencies of this
-		// module; by allowing the module to be visited twice, any mutually depended on DLLs will be visited first.
-		TArray<FString> VisitedImportNames;
-
-		// Find a list of all the DLLs that need to be loaded
-		TArray<FString> ImportFileNames;
-		ResolveImportsRecursive(*FullFileName, SearchPaths, ImportFileNames, VisitedImportNames);
-
-		// Load all the missing dependencies first
-		for (int32 Idx = 0; Idx < ImportFileNames.Num(); Idx++)
+		const IMAGE_SECTION_HEADER *SectionHeader = SectionHeaders + SectionIdx;
+		if(Rva >= SectionHeader->VirtualAddress && Rva < SectionHeader->VirtualAddress + SectionHeader->SizeOfRawData)
 		{
-			if (GetModuleHandle(*ImportFileNames[Idx]) == nullptr)
-			{
-				LoadLibrary(*ImportFileNames[Idx]);
-			}
+			return (const BYTE*)Header + SectionHeader->PointerToRawData + (Rva - SectionHeader->VirtualAddress);
 		}
 	}
-	return LoadLibrary(*FullFileName);
+	return NULL;
 }
 
-void FWindowsPlatformProcess::ResolveImportsRecursive(const FString& FileName, const TArray<FString>& SearchPaths, TArray<FString>& ImportFileNames, TArray<FString>& VisitedImportNames)
-{
-	// Read the imports for this library
-	TArray<FString> ImportNames;
-	if(ReadLibraryImports(*FileName, ImportNames))
-	{
-		// Find all the imports that haven't already been resolved
-		for(int Idx = 0; Idx < ImportNames.Num(); Idx++)
-		{
-			const FString &ImportName = ImportNames[Idx];
-			if(!VisitedImportNames.Contains(ImportName))
-			{
-				// Prevent checking this import again
-				VisitedImportNames.Add(ImportName);
-
-				// Try to resolve this import
-				FString ImportFileName;
-				if(ResolveImport(*ImportName, SearchPaths, ImportFileName))
-				{
-					ResolveImportsRecursive(ImportFileName, SearchPaths, ImportFileNames, VisitedImportNames);
-					ImportFileNames.Add(ImportFileName);
-				}
-			}
-		}
-	}
-}
-
-bool FWindowsPlatformProcess::ResolveImport(const FString& Name, const TArray<FString>& SearchPaths, FString& OutFileName)
-{
-	// Look for the named DLL on any of the search paths
-	for(int Idx = 0; Idx < SearchPaths.Num(); Idx++)
-	{
-		FString FileName = SearchPaths[Idx] / Name;
-		if(FPaths::FileExists(FileName))
-		{
-			OutFileName = FPaths::ConvertRelativePathToFull(FileName);
-			return true;
-		}
-	}
-	return false;
-}
-
-bool FWindowsPlatformProcess::ReadLibraryImports(const TCHAR* FileName, TArray<FString>& ImportNames)
-{
-	bool bResult = false;
-
-	// Open the DLL using a file mapping, so we don't need to map any more than is necessary
-	HANDLE NewFileHandle = CreateFile(FileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	if(NewFileHandle != INVALID_HANDLE_VALUE)
-	{
-		HANDLE NewFileMappingHandle = CreateFileMapping(NewFileHandle, NULL, PAGE_READONLY, 0, 0, NULL);
-		if(NewFileMappingHandle != NULL)
-		{
-			void* NewData = MapViewOfFile(NewFileMappingHandle, FILE_MAP_READ, 0, 0, 0);
-			if(NewData != NULL)
-			{
-				const IMAGE_DOS_HEADER* Header = (const IMAGE_DOS_HEADER*)NewData;
-				bResult = ReadLibraryImportsFromMemory(Header, ImportNames);
-				UnmapViewOfFile(NewData);
-			}
-			CloseHandle(NewFileMappingHandle);
-		}
-		CloseHandle(NewFileHandle);
-	}
-
-	return bResult;
-}
-
-bool ReadLibraryImportsFromMemory(const IMAGE_DOS_HEADER *Header, TArray<FString> &ImportNames)
+/**
+ * Reads a list of import names from a portable executable file in memory.
+ *
+ * @param Header Pointer to the executable base
+ * @param ImportNames Array to receive the list of imported PE file names
+ */
+static bool ReadLibraryImportsFromMemory(const IMAGE_DOS_HEADER *Header, TArray<FString> &ImportNames)
 {
 	bool bResult = false;
 	if(Header->e_magic == IMAGE_DOS_SIGNATURE)
@@ -1516,18 +1515,183 @@ bool ReadLibraryImportsFromMemory(const IMAGE_DOS_HEADER *Header, TArray<FString
 	return bResult;
 }
 
-const void *MapRvaToPointer(const IMAGE_DOS_HEADER *Header, const IMAGE_NT_HEADERS *NtHeader, size_t Rva)
+/**
+ * Reads a list of import names from a portable executable file.
+ *
+ * @param FileName Path to the library
+ * @param ImportNames Array to receive the list of imported PE file names
+ */
+static bool ReadLibraryImports(const TCHAR* FileName, TArray<FString>& ImportNames)
 {
-	const IMAGE_SECTION_HEADER *SectionHeaders = (const IMAGE_SECTION_HEADER*)(NtHeader + 1);
-	for(size_t SectionIdx = 0; SectionIdx < NtHeader->FileHeader.NumberOfSections; SectionIdx++)
+	bool bResult = false;
+
+	// Open the DLL using a file mapping, so we don't need to map any more than is necessary
+	HANDLE NewFileHandle = CreateFile(FileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if(NewFileHandle != INVALID_HANDLE_VALUE)
 	{
-		const IMAGE_SECTION_HEADER *SectionHeader = SectionHeaders + SectionIdx;
-		if(Rva >= SectionHeader->VirtualAddress && Rva < SectionHeader->VirtualAddress + SectionHeader->SizeOfRawData)
+		HANDLE NewFileMappingHandle = CreateFileMapping(NewFileHandle, NULL, PAGE_READONLY, 0, 0, NULL);
+		if(NewFileMappingHandle != NULL)
 		{
-			return (const BYTE*)Header + SectionHeader->PointerToRawData + (Rva - SectionHeader->VirtualAddress);
+			void* NewData = MapViewOfFile(NewFileMappingHandle, FILE_MAP_READ, 0, 0, 0);
+			if(NewData != NULL)
+			{
+				const IMAGE_DOS_HEADER* Header = (const IMAGE_DOS_HEADER*)NewData;
+				bResult = ReadLibraryImportsFromMemory(Header, ImportNames);
+				UnmapViewOfFile(NewData);
+			}
+			CloseHandle(NewFileMappingHandle);
+		}
+		CloseHandle(NewFileHandle);
+	}
+
+	return bResult;
+}
+
+/**
+ * Resolve an individual import.
+ *
+ * @param ImportName Name of the imported module
+ * @param SearchPaths Search directories to scan for imports
+ * @param OutFileName On success, receives the path to the imported file
+ * @return true if an import was found.
+ */
+static bool ResolveImport(const FString& Name, const TArray<FString>& SearchPaths, FString& OutFileName)
+{
+	// Look for the named DLL on any of the search paths
+	for(int Idx = 0; Idx < SearchPaths.Num(); Idx++)
+	{
+		FString FileName = SearchPaths[Idx] / Name;
+		if(FPaths::FileExists(FileName))
+		{
+			OutFileName = FPaths::ConvertRelativePathToFull(FileName);
+			return true;
 		}
 	}
-	return NULL;
+	return false;
+}
+
+/**
+ * Resolve all the imports for the given library, searching through a set of directories.
+ *
+ * @param FileName Path to the library to load
+ * @param SearchPaths Search directories to scan for imports
+ * @param ImportFileNames Array which is filled with a list of the resolved imports found in the given search directories
+ * @param VisitedImportNames Array which stores a list of imports which have been checked
+ */
+static void ResolveMissingImportsRecursive(const FString& FileName, const TArray<FString>& SearchPaths, TArray<FString>& ImportFileNames, TSet<FString>& VisitedImportNames)
+{
+	// Read the imports for this library
+	TArray<FString> ImportNames;
+	if(ReadLibraryImports(*FileName, ImportNames))
+	{
+		// Find all the imports that haven't already been resolved
+		for(int Idx = 0; Idx < ImportNames.Num(); Idx++)
+		{
+			const FString &ImportName = ImportNames[Idx];
+			if(!VisitedImportNames.Contains(ImportName))
+			{
+				// Prevent checking this import again
+				VisitedImportNames.Add(ImportName);
+
+				// Try to resolve this import
+				if(GetModuleHandle(*ImportName) == NULL)
+				{
+					FString ImportFileName;
+					if(ResolveImport(*ImportName, SearchPaths, ImportFileName))
+					{
+						ResolveMissingImportsRecursive(ImportFileName, SearchPaths, ImportFileNames, VisitedImportNames);
+						ImportFileNames.Add(ImportFileName);
+					}
+				}
+			}
+		}
+	}
+}
+
+/**
+ * Log diagnostic messages showing missing imports for module.
+ *
+ * @param FileName Path to the library to load
+ * @param SearchPaths Search directories to scan for imports
+ */
+static void LogImportDiagnostics(const FString& FileName, const TArray<FString>& SearchPaths)
+{
+	TArray<FString> ImportNames;
+	if(ReadLibraryImports(*FileName, ImportNames))
+	{
+		bool bIncludeSearchPaths = false;
+		for(const FString& ImportName : ImportNames)
+		{
+			if(GetModuleHandle(*ImportName) == nullptr)
+			{
+				UE_LOG(LogWindows, Log, TEXT("  Missing import: %s"), *ImportName);
+				bIncludeSearchPaths = true;
+			}
+		}
+		if(bIncludeSearchPaths)
+		{
+			for (const FString& SearchPath : SearchPaths)
+			{
+				UE_LOG(LogWindows, Log, TEXT("  Looked in: %s"), *SearchPath);
+			}
+		}
+	}
+}
+
+void *FWindowsPlatformProcess::LoadLibraryWithSearchPaths(const FString& FileName, const TArray<FString>& SearchPaths)
+{
+	// Make sure the initial module exists. If we can't find it from the path we're given, it's probably a system dll.
+	FString FullFileName = FileName;
+	if (FPaths::FileExists(*FullFileName))
+	{
+		// Convert it to a full path, since LoadLibrary will try to resolve it against the executable directory (which may not be the same as the working dir)
+		FullFileName = FPaths::ConvertRelativePathToFull(FullFileName);
+
+		// Create a list of files which we've already checked for imports. Don't add the initial file to this list to improve the resolution of dependencies for direct circular dependencies of this
+		// module; by allowing the module to be visited twice, any mutually depended on DLLs will be visited first.
+		TSet<FString> VisitedImportNames;
+
+		// Find a list of all the DLLs that need to be loaded
+		TArray<FString> ImportFileNames;
+		ResolveMissingImportsRecursive(*FullFileName, SearchPaths, ImportFileNames, VisitedImportNames);
+
+		// Load all the missing dependencies first
+		for (int32 Idx = 0; Idx < ImportFileNames.Num(); Idx++)
+		{
+			if (GetModuleHandle(*ImportFileNames[Idx]) == nullptr)
+			{
+				if(LoadLibrary(*ImportFileNames[Idx]))
+				{
+					UE_LOG(LogWindows, Verbose, TEXT("Preloaded '%s'"), *ImportFileNames[Idx]);
+				}
+				else
+				{
+					UE_LOG(LogWindows, Log, TEXT("Failed to preload '%s' (GetLastError=%d)"), *ImportFileNames[Idx], GetLastError());
+					LogImportDiagnostics(ImportFileNames[Idx], SearchPaths);
+				}
+			}
+		}
+	}
+
+	// Try to load the actual library
+	void* Handle = LoadLibrary(*FullFileName);
+	if(Handle)
+	{
+		UE_LOG(LogWindows, Verbose, TEXT("Loaded %s"), *FullFileName);
+	}
+	else
+	{
+		UE_LOG(LogWindows, Log, TEXT("Failed to load '%s' (GetLastError=%d)"), *FileName, ::GetLastError());
+		if(IFileManager::Get().FileExists(*FileName))
+		{
+			LogImportDiagnostics(FileName, SearchPaths);
+		}
+		else
+		{
+			UE_LOG(LogWindows, Log, TEXT("File '%s' does not exist"), *FileName);
+		}
+	}
+	return Handle;
 }
 
 FWindowsPlatformProcess::FProcEnumerator::FProcEnumerator()

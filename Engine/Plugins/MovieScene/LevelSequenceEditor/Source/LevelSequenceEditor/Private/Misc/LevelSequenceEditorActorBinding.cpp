@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LevelSequenceEditorActorBinding.h"
 #include "ISequencer.h"
@@ -39,16 +39,17 @@ bool FLevelSequenceEditorActorBinding::SupportsSequence(UMovieSceneSequence* InS
 
 void FLevelSequenceEditorActorBinding::AddPossessActorMenuExtensions(FMenuBuilder& MenuBuilder)
 {
-	auto IsActorValidForPossession = [=](const AActor* InActor, TSharedRef<ISequencer> InSequencer)
+	auto IsActorValidForPossession = [=](const AActor* InActor, TWeakPtr<ISequencer> InWeakSequencer)
 	{
+		TSharedPtr<ISequencer> SequencerPtr = InWeakSequencer.Pin();
 		bool bCreateHandleIfMissing = false;
-		return !InSequencer->GetHandleToObject((UObject*)InActor, bCreateHandleIfMissing).IsValid();
+		return SequencerPtr.IsValid() && !SequencerPtr->GetHandleToObject((UObject*)InActor, bCreateHandleIfMissing).IsValid();
 	};
 
 	// Set up a menu entry to add the selected actor(s) to the sequencer
 	TArray<AActor*> ActorsValidForPossession;
 	GEditor->GetSelectedActors()->GetSelectedObjects(ActorsValidForPossession);
-	ActorsValidForPossession.RemoveAll([&](AActor* In){ return !IsActorValidForPossession(In, Sequencer.Pin().ToSharedRef()); });
+	ActorsValidForPossession.RemoveAll([&](AActor* In){ return !IsActorValidForPossession(In, Sequencer); });
 
 	FText SelectedLabel;
 	FSlateIcon ActorIcon = FSlateIconFinder::FindIconForClass(AActor::StaticClass());
@@ -84,11 +85,13 @@ void FLevelSequenceEditorActorBinding::AddPossessActorMenuExtensions(FMenuBuilde
 		InitOptions.bShowHeaderRow = false;
 		InitOptions.bShowSearchBox = true;
 		InitOptions.bShowCreateNewFolder = false;
+		InitOptions.bFocusSearchBoxWhenOpened = true;
+
 		// Only want the actor label column
 		InitOptions.ColumnMap.Add(FBuiltInColumnTypes::Label(), FColumnInfo(EColumnVisibility::Visible, 0));
 
 		// Only display actors that are not possessed already
-		InitOptions.Filters->AddFilterPredicate(FActorFilterPredicate::CreateLambda(IsActorValidForPossession, Sequencer.Pin().ToSharedRef()));
+		InitOptions.Filters->AddFilterPredicate(FActorFilterPredicate::CreateLambda(IsActorValidForPossession, Sequencer));
 	}
 
 	// actor selector to allow the user to choose an actor

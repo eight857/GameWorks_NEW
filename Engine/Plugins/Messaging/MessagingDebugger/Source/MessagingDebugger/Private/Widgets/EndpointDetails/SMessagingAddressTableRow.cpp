@@ -1,6 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/EndpointDetails/SMessagingAddressTableRow.h"
+
+#include "IMessageTracer.h"
+#include "SlateOptMacros.h"
+
+#include "Models/MessagingDebuggerModel.h"
 
 
 namespace MessagingAddressTableRow

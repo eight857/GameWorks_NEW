@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VREditorBaseActor.h"
 #include "VREditorMode.h"
@@ -14,6 +14,7 @@ namespace VREd
 AVREditorBaseActor::AVREditorBaseActor() 
 	: Super(),
 	Scale( 1.0f ),
+	VRMode(nullptr),
 	LocalRotation( FRotator( 90.0f, 180.0f, 0.0f ) ),
 	RelativeOffset( FVector::ZeroVector ),
 	DockedTo( EDockedTo::Nothing ),

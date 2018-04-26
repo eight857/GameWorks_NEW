@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -6,7 +6,7 @@ public class PlacementMode : ModuleRules
 {
     public PlacementMode(ReadOnlyTargetRules Target) : base(Target)
     {
-        PrivateIncludePathModuleNames.Add("AssetTools");
+		PrivateIncludePathModuleNames.Add("AssetTools");
 
         PrivateDependencyModuleNames.AddRange( 
             new string[] { 

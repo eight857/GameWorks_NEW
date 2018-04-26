@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -27,7 +27,7 @@ class UInterpData : public UObject
 	float PathBuildTime;
 
 	/** Actual interpolation data. Groups of InterpTracks. */
-	UPROPERTY(export)
+	UPROPERTY(export, BlueprintReadOnly, Category=InterpData)
 	TArray<class UInterpGroup*> InterpGroups;
 
 	/** Used for curve editor to remember curve-editing setup. Only loaded in editor. */

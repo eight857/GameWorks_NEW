@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
  
@@ -14,7 +14,7 @@ enum class EFacebookLoginResponse : uint8
 {
 	/** Facebook SDK ok response */
 	RESPONSE_OK = 0,
-	/** Facebook SDK user cancelation */
+	/** Facebook SDK user cancellation */
 	RESPONSE_CANCELED = 1,
 	/** Facebook SDK error */
 	RESPONSE_ERROR = 2,

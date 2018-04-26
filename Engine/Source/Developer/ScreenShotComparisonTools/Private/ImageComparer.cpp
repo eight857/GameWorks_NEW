@@ -1,12 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ImageComparer.h"
+
+#include "Async/ParallelFor.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 
-#include "Interfaces/IImageWrapperModule.h"
-#include "Async/ParallelFor.h"
 
 #define LOCTEXT_NAMESPACE "ImageComparer"
 
@@ -14,6 +16,7 @@ const FImageTolerance FImageTolerance::DefaultIgnoreNothing(0, 0, 0, 0, 0, 255, 
 const FImageTolerance FImageTolerance::DefaultIgnoreLess(16, 16, 16, 16, 16, 240, false, false, 0.02f, 0.02f);
 const FImageTolerance FImageTolerance::DefaultIgnoreAntiAliasing(32, 32, 32, 32, 64, 96, true, false, 0.02f, 0.02f);
 const FImageTolerance FImageTolerance::DefaultIgnoreColors(16, 16, 16, 16, 16, 240, false, true, 0.02f, 0.02f);
+
 
 class FImageDelta
 {
@@ -83,7 +86,7 @@ public:
 		FString TempDeltaFile = FPaths::CreateTempFilename(*TempDir, TEXT("ImageCompare-"), TEXT(".png"));
 
 		IImageWrapperModule& ImageWrapperModule = FModuleManager::GetModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-		IImageWrapperPtr ImageWriter = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
+		TSharedPtr<IImageWrapper> ImageWriter = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
 
 		if ( ImageWriter.IsValid() )
 		{
@@ -232,7 +235,7 @@ void FComparableImage::Process()
 TSharedPtr<FComparableImage> FImageComparer::Open(const FString& ImagePath, FText& OutError)
 {
 	IImageWrapperModule& ImageWrapperModule = FModuleManager::GetModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-	IImageWrapperPtr ImageReader = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
+	TSharedPtr<IImageWrapper> ImageReader = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
 
 	if ( !ImageReader.IsValid() )
 	{
@@ -274,8 +277,8 @@ TSharedPtr<FComparableImage> FImageComparer::Open(const FString& ImagePath, FTex
 	return Image;
 }
 
-FImageComparer::FImageComparer()
-	: DeltaDirectory(FPlatformProcess::UserTempDir())
+FImageComparer::FImageComparer(const FString& Directory)
+	: DeltaDirectory(Directory.IsEmpty() ? FPlatformProcess::UserTempDir() : Directory)
 {
 }
 
@@ -303,20 +306,16 @@ FImageComparisonResult FImageComparer::Compare(const FString& ImagePathA, const 
 		return Results;
 	}
 
-	if ( ImageA->Width != ImageB->Width || ImageA->Height != ImageB->Height )
-	{
-		//Results.ErrorMessage = LOCTEXT("DifferentSizesUnsupported", "We can not compare images of different sizes at this time.");
-		Results.Tolerance = Tolerance;
-		Results.MaxLocalDifference = 1.0f;
-		Results.GlobalDifference = 1.0f;
-		return Results;
-	}
-
 	ImageA->Process();
 	ImageB->Process();
 
-	const int32 CompareWidth = ImageA->Width;
-	const int32 CompareHeight = ImageA->Height;
+	// Compare the smallest shared dimensions, this will be a forced failure
+	// but still offer a delta for context to the result reviewer
+	const int32 MinWidth = FMath::Min(ImageA->Width, ImageB->Width);
+	const int32 MinHeight = FMath::Min(ImageA->Height, ImageB->Height);
+
+	const int32 CompareWidth = FMath::Max(ImageA->Width, ImageB->Width);
+	const int32 CompareHeight = FMath::Max(ImageA->Height, ImageB->Height);
 
 	FImageDelta ImageDelta(CompareWidth, CompareHeight);
 
@@ -333,6 +332,16 @@ FImageComparisonResult FImageComparer::Compare(const FString& ImagePathA, const 
 	{
 		for ( int Y = 0; Y < CompareHeight; Y++ )
 		{
+			// If different sizes, fail comparisons outside the bounds of the smaller image
+			if ( ColumnIndex >= MinWidth || Y >= MinHeight )
+			{
+				ImageDelta.SetErrorPixel(ColumnIndex, Y, FColor(255, 0, 0, 255));
+				FPlatformAtomics::InterlockedIncrement(&MismatchCount);
+				int32 SpacialHash = ( ( Y / BlockSizeY ) * 10 + ( ColumnIndex / BlockSizeX ) );
+				FPlatformAtomics::InterlockedIncrement(&LocalMismatches[SpacialHash]);
+				continue;
+			}
+
 			FColor PixelA = ImageA->GetPixel(ColumnIndex, Y);
 			FColor PixelB = ImageB->GetPixel(ColumnIndex, Y);
 
@@ -398,6 +407,18 @@ FImageComparisonResult FImageComparer::Compare(const FString& ImagePathA, const 
 	Results.GlobalDifference = MismatchCount / (double)( CompareHeight * CompareWidth );
 	Results.ComparisonFile = ImageDelta.ComparisonFile;
 
+	// In the case of differently sized images we force a failure
+	if ( ImageA->Width != ImageB->Width || ImageA->Height != ImageB->Height )
+	{
+		Results.ErrorMessage = FText::FormatNamed(LOCTEXT("DifferentImageSizes", "Image comparison failed as sizes do not match, {WidthA}x{HeightA} vs {WidthB}x{HeightB}"),
+			TEXT("WidthA"), ImageA->Width, TEXT("HeightA"), ImageA->Height,
+			TEXT("WidthB"), ImageB->Width, TEXT("HeightB"), ImageB->Height);
+
+		Results.Tolerance = Tolerance;
+		Results.MaxLocalDifference = 1.0f;
+		Results.GlobalDifference = 1.0f;
+	}
+
 	return Results;
 }
 
@@ -448,6 +469,8 @@ double FImageComparer::CompareStructuralSimilarity(const FString& ImagePathA, co
 
 	int32 TotalWindows = 0;
 	double TotalSSIM = 0;
+	
+	FImageDelta ImageDelta(ImageWidth, ImageHeight);
 
 	for ( int32 X = 0; X < ImageWidth; X += MaxWindowSize )
 	{
@@ -534,11 +557,18 @@ double FImageComparer::CompareStructuralSimilarity(const FString& ImagePathA, co
 			double Contrast = ( 2 * CovarianceAB + C2) / ( VarianceA + VarianceB + C2 );
 
 			double WindowSSIM = Luminance * Contrast;
+			double WindowDSIM = (1 - FMath::Clamp(WindowSSIM, 0.0, 1.0)) / 2;
+			auto Color = FColor(WindowDSIM, WindowDSIM, WindowDSIM);
+			for (int i = 0; i < MaxWindowSize; ++i) for (int j = 0; j < MaxWindowSize; ++j) {
+				ImageDelta.SetErrorPixel(X + i, Y + j, Color);
+			}
 
 			TotalSSIM += WindowSSIM;
 			TotalWindows++;
 		}
 	}
+
+	ImageDelta.Save(DeltaDirectory);
 
 	double SSIM = TotalSSIM / TotalWindows;
 	

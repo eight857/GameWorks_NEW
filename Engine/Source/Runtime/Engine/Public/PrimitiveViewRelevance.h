@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -26,10 +26,12 @@ struct FPrimitiveViewRelevance
 	uint32 bDistortionRelevance : 1;
 	/** The primitive has one or more elements that have SeparateTranslucency. */
 	uint32 bSeparateTranslucencyRelevance : 1;
-	/** The primitive has one or more elements that have MobileSeparateTranslucency. */
-	uint32 bMobileSeparateTranslucencyRelevance : 1;
 	/** The primitive has one or more elements that have normal translucency. */
 	uint32 bNormalTranslucencyRelevance : 1;
+	/** For translucent primitives reading the scene color. */
+	uint32 bUsesSceneColorCopy : 1;
+	/** For primitive that can't render in offscreen buffers (blend modulate). */
+	uint32 bDisableOffscreenRendering : 1;
 	/** */
 	uint32 bUsesGlobalDistanceField : 1;
 
@@ -67,6 +69,8 @@ struct FPrimitiveViewRelevance
 	uint32 bTranslucentSurfaceLighting : 1;
 	/** Whether the primitive has materials that read the scene depth. */
 	uint32 bUsesSceneDepth : 1;
+	/** Whether the view use custom data. */
+	uint32 bUseCustomViewData : 1;
 
 	/** 
 	 * Whether this primitive view relevance has been initialized this frame.  
@@ -77,7 +81,7 @@ struct FPrimitiveViewRelevance
 
 	bool HasTranslucency() const 
 	{
-		return bSeparateTranslucencyRelevance || bNormalTranslucencyRelevance || bMobileSeparateTranslucencyRelevance;
+		return bSeparateTranslucencyRelevance || bNormalTranslucencyRelevance;
 	}
 
 	/** Default constructor */

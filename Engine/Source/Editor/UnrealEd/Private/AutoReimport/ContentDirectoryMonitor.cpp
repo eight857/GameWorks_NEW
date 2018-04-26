@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AutoReimport/ContentDirectoryMonitor.h"
 #include "HAL/FileManager.h"
@@ -6,6 +6,7 @@
 #include "EditorReimportHandler.h"
 #include "Settings/EditorLoadingSavingSettings.h"
 #include "Factories/Factory.h"
+#include "Factories/SceneImportFactory.h"
 #include "EditorFramework/AssetImportData.h"
 #include "Editor.h"
 
@@ -34,7 +35,7 @@ DirectoryWatcher::FFileCacheConfig GenerateFileCacheConfig(const FString& InPath
 
 	const FString& HashString = InMountedContentPath.IsEmpty() ? Directory : InMountedContentPath;
 	const uint32 CRC = FCrc::MemCrc32(*HashString, HashString.Len()*sizeof(TCHAR));	
-	FString CacheFilename = FPaths::ConvertRelativePathToFull(FPaths::GameIntermediateDir()) / TEXT("ReimportCache") / FString::Printf(TEXT("%u.bin"), CRC);
+	FString CacheFilename = FPaths::ConvertRelativePathToFull(FPaths::ProjectIntermediateDir()) / TEXT("ReimportCache") / FString::Printf(TEXT("%u.bin"), CRC);
 
 	DirectoryWatcher::FFileCacheConfig Config(Directory, MoveTemp(CacheFilename));
 	Config.Rules = InMatchRules;
@@ -59,7 +60,7 @@ DirectoryWatcher::FFileCacheConfig GenerateFileCacheConfig(const FString& InPath
 		// We need to consider this as a changed file if the hash doesn't match any asset imported from that file
 		for (FAssetData& Asset : Assets)
 		{
-			TOptional<FAssetImportInfo> Info = FAssetSourceFilenameCache::ExtractAssetImportInfo(Asset.TagsAndValues);
+			TOptional<FAssetImportInfo> Info = FAssetSourceFilenameCache::ExtractAssetImportInfo(Asset);
 
 			// Check if the source file that this asset last imported was the same as the one we're going to reimport.
 			// If it is, there's no reason to auto-reimport it
@@ -122,7 +123,7 @@ void FContentDirectoryMonitor::Tick()
 	Cache.Tick();
 
 	// Immediately resolve any changes that we should not consider
-	const FDateTime Threshold = FDateTime::UtcNow() - FTimespan(0, 0, GetDefault<UEditorLoadingSavingSettings>()->AutoReimportThreshold);
+	const FDateTime Threshold = FDateTime::UtcNow() - FTimespan::FromSeconds(GetDefault<UEditorLoadingSavingSettings>()->AutoReimportThreshold);
 
 	TArray<DirectoryWatcher::FUpdateCacheTransaction> InsignificantTransactions = Cache.FilterOutstandingChanges([=](const DirectoryWatcher::FUpdateCacheTransaction& Transaction, const FDateTime& TimeOfChange){
 		return TimeOfChange <= Threshold && !ShouldConsiderChange(Transaction);
@@ -153,7 +154,7 @@ bool FContentDirectoryMonitor::ShouldConsiderChange(const DirectoryWatcher::FUpd
 
 int32 FContentDirectoryMonitor::GetNumUnprocessedChanges() const
 {
-	const FDateTime Threshold = FDateTime::UtcNow() - FTimespan(0, 0, GetDefault<UEditorLoadingSavingSettings>()->AutoReimportThreshold);
+	const FDateTime Threshold = FDateTime::UtcNow() - FTimespan::FromSeconds(GetDefault<UEditorLoadingSavingSettings>()->AutoReimportThreshold);
 
 	int32 Total = 0;
 
@@ -178,7 +179,7 @@ int32 FContentDirectoryMonitor::StartProcessing()
 {
 	// We only process things that haven't changed for a given threshold
 	auto& FileManager = IFileManager::Get();
-	const FDateTime Threshold = FDateTime::UtcNow() - FTimespan(0, 0, GetDefault<UEditorLoadingSavingSettings>()->AutoReimportThreshold);
+	const FDateTime Threshold = FDateTime::UtcNow() - FTimespan::FromSeconds(GetDefault<UEditorLoadingSavingSettings>()->AutoReimportThreshold);
 
 	// Get all the changes that have happend beyond our import threshold
 	auto OutstandingChanges = Cache.FilterOutstandingChanges([=](const DirectoryWatcher::FUpdateCacheTransaction& Transaction, const FDateTime& TimeOfChange){
@@ -321,14 +322,32 @@ void FContentDirectoryMonitor::ProcessAdditions(const DirectoryWatcher::FTimeLim
 				auto* Factories = InFactoriesByExtension.Find(Ext);
 				if (Factories && Factories->Num() != 0)
 				{
+					//Make sure all the scene factory are put at the end of the array. We give priority to asset factory before scene factory
+					TArray<UFactory*> SortFactories;
+					TArray<UFactory*> SceneFactories;
+					for (UFactory *Factory : *Factories)
+					{
+						if (Factory->IsA(USceneImportFactory::StaticClass()))
+						{
+							SceneFactories.Add(Factory);
+						}
+						else
+						{
+							SortFactories.Add(Factory);
+						}
+					}
+					if (SceneFactories.Num() > 0)
+					{
+						SortFactories.Append(SceneFactories);
+					}
 					// Prefer a factory if it explicitly can import. UFactory::FactoryCanImport returns false by default, even if the factory supports the extension, so we can't use it directly.
-					UFactory* const * PreferredFactory = Factories->FindByPredicate([&](UFactory* F){ return F->FactoryCanImport(FullFilename); });
+					UFactory* const * PreferredFactory = SortFactories.FindByPredicate([&](UFactory* F){ return F->FactoryCanImport(FullFilename); });
 					if (PreferredFactory)
 					{
 						NewAsset = AttemptImport((*PreferredFactory)->GetClass(), NewPackage, *NewAssetName, bCancelled, FullFilename);
 					}
 					// If there was no preferred factory, just try them all until one succeeds
-					else for (UFactory* Factory : *Factories)
+					else for (UFactory* Factory : SortFactories)
 					{
 						NewAsset = AttemptImport(Factory->GetClass(), NewPackage, *NewAssetName, bCancelled, FullFilename);
 
@@ -436,7 +455,7 @@ void FContentDirectoryMonitor::ProcessModifications(const DirectoryWatcher::FTim
 
 						Context.AddMessage(EMessageSeverity::Info, FText::Format(LOCTEXT("Success_MovedAsset", "Moving asset {0} to {1}."),	SrcPathText, DstPathText));
 
-						FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get().RenameAssets(RenameData);
+						FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get().RenameAssetsWithDialog(RenameData);
 
 						TArray<FString> Filenames;
 						Filenames.Add(FullFilename);

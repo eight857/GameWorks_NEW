@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 Level.cpp: Level-related functions
@@ -8,6 +8,7 @@ Level.cpp: Level-related functions
 #include "Misc/ScopedSlowTask.h"
 #include "UObject/RenderingObjectVersion.h"
 #include "Templates/ScopedPointer.h"
+#include "Templates/UnrealTemplate.h"
 #include "UObject/Package.h"
 #include "Serialization/AsyncLoading.h"
 #include "EngineStats.h"
@@ -20,6 +21,7 @@ Level.cpp: Level-related functions
 #include "SceneInterface.h"
 #include "AI/Navigation/NavigationData.h"
 #include "PrecomputedLightVolume.h"
+#include "PrecomputedVolumetricLightmap.h"
 #include "Engine/MapBuildDataRegistry.h"
 #include "Components/LightComponent.h"
 #include "Model.h"
@@ -228,62 +230,7 @@ bool FLevelSimplificationDetails::operator == (const FLevelSimplificationDetails
 void FLevelSimplificationDetails::PostLoadDeprecated()
 {
 	FLevelSimplificationDetails DefaultObject;
-	if (bGenerateMeshNormalMap_DEPRECATED != DefaultObject.bGenerateMeshNormalMap_DEPRECATED)
-	{
-		StaticMeshMaterial_DEPRECATED.bNormalMap = bGenerateMeshNormalMap_DEPRECATED;
-	}
-	if (bGenerateMeshMetallicMap_DEPRECATED != DefaultObject.bGenerateMeshMetallicMap_DEPRECATED)
-	{
-		StaticMeshMaterial_DEPRECATED.bMetallicMap = bGenerateMeshMetallicMap_DEPRECATED;
-	}
-	if (bGenerateMeshRoughnessMap_DEPRECATED != DefaultObject.bGenerateMeshRoughnessMap_DEPRECATED)
-	{
-		StaticMeshMaterial_DEPRECATED.bRoughnessMap = bGenerateMeshRoughnessMap_DEPRECATED;
-	}
-	if (bGenerateMeshSpecularMap_DEPRECATED != DefaultObject.bGenerateMeshSpecularMap_DEPRECATED)
-	{
-		StaticMeshMaterial_DEPRECATED.bSpecularMap = bGenerateMeshSpecularMap_DEPRECATED;
-	}
-	if (bGenerateLandscapeNormalMap_DEPRECATED != DefaultObject.bGenerateLandscapeNormalMap_DEPRECATED)
-	{
-		LandscapeMaterial_DEPRECATED.bNormalMap = bGenerateLandscapeNormalMap_DEPRECATED;
-	}
-	if (bGenerateLandscapeMetallicMap_DEPRECATED != DefaultObject.bGenerateLandscapeMetallicMap_DEPRECATED)
-	{
-		LandscapeMaterial_DEPRECATED.bMetallicMap = bGenerateLandscapeMetallicMap_DEPRECATED;
-	}
-	if (bGenerateLandscapeRoughnessMap_DEPRECATED != DefaultObject.bGenerateLandscapeRoughnessMap_DEPRECATED)
-	{
-		LandscapeMaterial_DEPRECATED.bRoughnessMap = bGenerateLandscapeRoughnessMap_DEPRECATED;
-	}
-	if (bGenerateLandscapeSpecularMap_DEPRECATED != DefaultObject.bGenerateLandscapeSpecularMap_DEPRECATED)
-	{
-		LandscapeMaterial_DEPRECATED.bSpecularMap = bGenerateLandscapeSpecularMap_DEPRECATED;
-	}
 
-	if (!(LandscapeMaterial_DEPRECATED == DefaultObject.LandscapeMaterial_DEPRECATED))
-	{
-		LandscapeMaterialSettings.TextureSize = LandscapeMaterial_DEPRECATED.BaseColorMapSize;
-		LandscapeMaterialSettings.bNormalMap = LandscapeMaterial_DEPRECATED.bNormalMap;
-		LandscapeMaterialSettings.bMetallicMap = LandscapeMaterial_DEPRECATED.bMetallicMap;
-		LandscapeMaterialSettings.bRoughnessMap = LandscapeMaterial_DEPRECATED.bRoughnessMap;
-		LandscapeMaterialSettings.bSpecularMap = LandscapeMaterial_DEPRECATED.bSpecularMap;
-		LandscapeMaterialSettings.RoughnessConstant = LandscapeMaterial_DEPRECATED.RoughnessConstant;
-		LandscapeMaterialSettings.MetallicConstant = LandscapeMaterial_DEPRECATED.MetallicConstant;
-		LandscapeMaterialSettings.SpecularConstant = LandscapeMaterial_DEPRECATED.SpecularConstant;
-	}
-
-	if (!(StaticMeshMaterial_DEPRECATED == DefaultObject.StaticMeshMaterial_DEPRECATED))
-	{
-		StaticMeshMaterialSettings.TextureSize = StaticMeshMaterial_DEPRECATED.BaseColorMapSize;
-		StaticMeshMaterialSettings.bNormalMap = StaticMeshMaterial_DEPRECATED.bNormalMap;
-		StaticMeshMaterialSettings.bMetallicMap = StaticMeshMaterial_DEPRECATED.bMetallicMap;
-		StaticMeshMaterialSettings.bRoughnessMap = StaticMeshMaterial_DEPRECATED.bRoughnessMap;
-		StaticMeshMaterialSettings.bSpecularMap = StaticMeshMaterial_DEPRECATED.bSpecularMap;
-		StaticMeshMaterialSettings.RoughnessConstant = StaticMeshMaterial_DEPRECATED.RoughnessConstant;
-		StaticMeshMaterialSettings.MetallicConstant = StaticMeshMaterial_DEPRECATED.MetallicConstant;
-		StaticMeshMaterialSettings.SpecularConstant = StaticMeshMaterial_DEPRECATED.SpecularConstant;
-	}
 }
 
 TMap<FName, TWeakObjectPtr<UWorld> > ULevel::StreamedLevelsOwningWorld;
@@ -294,6 +241,7 @@ ULevel::ULevel( const FObjectInitializer& ObjectInitializer )
 	,	OwningWorld(NULL)
 	,	TickTaskLevel(FTickTaskManagerInterface::Get().AllocateTickTaskLevel())
 	,	PrecomputedLightVolume(new FPrecomputedLightVolume())
+	,	PrecomputedVolumetricLightmap(new FPrecomputedVolumetricLightmap())
 {
 #if WITH_EDITORONLY_DATA
 	LevelColor = FLinearColor::White;
@@ -546,7 +494,7 @@ void ULevel::PreSave(const class ITargetPlatform* TargetPlatform)
 #if WITH_EDITOR
 	if( !IsTemplate() )
 	{
-		UPackage* Package = CastChecked<UPackage>(GetOutermost());
+		UPackage* Package = GetOutermost();
 
 		ValidateLightGUIDs();
 
@@ -766,6 +714,9 @@ void ULevel::FinishDestroy()
 {
 	delete PrecomputedLightVolume;
 	PrecomputedLightVolume = NULL;
+
+	delete PrecomputedVolumetricLightmap;
+	PrecomputedVolumetricLightmap = NULL;
 
 	Super::FinishDestroy();
 }
@@ -1083,13 +1034,17 @@ void ULevel::CreateModelComponents()
 
 	SlowTask.EnterProgressFrame(4);
 
-	// Update the model vertices and edges.
-	Model->UpdateVertices();
+	Model->InvalidSurfaces = false;
+	
+	// It is possible that the BSP model has existing buffers from an undo/redo operation
+	if (Model->MaterialIndexBuffers.Num())
+	{
+		// Make sure model resources are released which only happens on the rendering thread
+		FlushRenderingCommands();
 
-	Model->InvalidSurfaces = 0;
-
-	// Clear the model index buffers.
-	Model->MaterialIndexBuffers.Empty();
+		// Clear the model index buffers.
+		Model->MaterialIndexBuffers.Empty();
+	}
 
 	struct FNodeIndices
 	{
@@ -1367,12 +1322,6 @@ void ULevel::UpdateModelComponents()
 		BeginInitResource(IndexBufferIt->Value.Get());
 	}
 
-	// Can now release the model's vertex buffer, will have been used for collision
-	if(!IsRunningCommandlet())
-	{
-		Model->ReleaseVertices();
-	}
-
 	Model->bInvalidForStaticLighting = true;
 }
 
@@ -1455,6 +1404,22 @@ void ULevel::PostEditUndo()
 
 	MarkLevelBoundsDirty();
 }
+
+void ULevel::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	UProperty* PropertyThatChanged = PropertyChangedEvent.MemberProperty;
+	const FString PropertyName = PropertyThatChanged ? PropertyThatChanged->GetName() : TEXT("");
+
+	if (PropertyName == GET_MEMBER_NAME_STRING_CHECKED(ULevel, MapBuildData))
+	{
+		// MapBuildData is not editable but can be modified by the editor's Force Delete
+		ReleaseRenderingResources();
+		InitializeRenderingResources();
+	}
+} 
+
 #endif // WITH_EDITOR
 
 void ULevel::MarkLevelBoundsDirty()
@@ -1613,11 +1578,6 @@ void ULevel::BuildStreamingData(UWorld* World, ULevel* TargetLevel/*=NULL*/, UTe
 #endif
 }
 
-ABrush* ULevel::GetBrush() const
-{
-	return GetDefaultBrush();
-}
-
 ABrush* ULevel::GetDefaultBrush() const
 {
 	ABrush* DefaultBrush = nullptr;
@@ -1628,8 +1588,8 @@ ABrush* ULevel::GetDefaultBrush() const
 		// If the second actor is not a brush then it certainly cannot be the builder brush.
 		if (DefaultBrush != nullptr)
 		{
-			checkf(DefaultBrush->GetBrushComponent(), *GetPathName());
-			checkf(DefaultBrush->Brush != nullptr, *GetPathName());
+			checkf(DefaultBrush->GetBrushComponent(), TEXT("%s"), *GetPathName());
+			checkf(DefaultBrush->Brush != nullptr, TEXT("%s"), *GetPathName());
 		}
 	}
 	return DefaultBrush;
@@ -1640,7 +1600,7 @@ AWorldSettings* ULevel::GetWorldSettings(bool bChecked) const
 {
 	if (bChecked)
 	{
-		checkf( WorldSettings != nullptr, *GetPathName() );
+		checkf( WorldSettings != nullptr, TEXT("%s"), *GetPathName() );
 	}
 	return WorldSettings;
 }
@@ -1735,19 +1695,24 @@ void ULevel::InitializeRenderingResources()
 {
 	// OwningWorld can be NULL when InitializeRenderingResources is called during undo, where a transient ULevel is created to allow undoing level move operations
 	// At the point at which Pre/PostEditChange is called on that transient ULevel, it is not part of any world and therefore should not have its rendering resources initialized
-	if (OwningWorld)
+	if (OwningWorld && bIsVisible)
 	{
-		if( !PrecomputedLightVolume->IsAddedToScene() )
+		ULevel* ActiveLightingScenario = OwningWorld->GetActiveLightingScenario();
+		UMapBuildDataRegistry* EffectiveMapBuildData = MapBuildData;
+
+		if (ActiveLightingScenario && ActiveLightingScenario->MapBuildData)
 		{
-			ULevel* ActiveLightingScenario = OwningWorld->GetActiveLightingScenario();
-			UMapBuildDataRegistry* EffectiveMapBuildData = MapBuildData;
+			EffectiveMapBuildData = ActiveLightingScenario->MapBuildData;
+		}
 
-			if (ActiveLightingScenario && ActiveLightingScenario->MapBuildData)
-			{
-				EffectiveMapBuildData = ActiveLightingScenario->MapBuildData;
-			}
-
+		if (!PrecomputedLightVolume->IsAddedToScene())
+		{
 			PrecomputedLightVolume->AddToScene(OwningWorld->Scene, EffectiveMapBuildData, LevelBuildDataId);
+		}
+
+		if (!PrecomputedVolumetricLightmap->IsAddedToScene())
+		{
+			PrecomputedVolumetricLightmap->AddToScene(OwningWorld->Scene, EffectiveMapBuildData, LevelBuildDataId);
 		}
 	}
 }
@@ -1757,6 +1722,11 @@ void ULevel::ReleaseRenderingResources()
 	if (OwningWorld && PrecomputedLightVolume)
 	{
 		PrecomputedLightVolume->RemoveFromScene(OwningWorld->Scene);
+	}
+
+	if (OwningWorld && PrecomputedVolumetricLightmap)
+	{
+		PrecomputedVolumetricLightmap->RemoveFromScene(OwningWorld->Scene);
 	}
 }
 
@@ -1832,6 +1802,9 @@ UMapBuildDataRegistry* ULevel::GetOrCreateMapBuildData()
 	{
 		if (MapBuildData)
 		{
+			// Release rendering data depending on MapBuildData, before we destroy MapBuildData
+			MapBuildData->InvalidateStaticLighting(GetWorld(), nullptr);
+
 			// Allow the legacy registry to be GC'ed
 			MapBuildData->ClearFlags(RF_Standalone);
 		}
@@ -1954,15 +1927,15 @@ void ULevel::OnLevelScriptBlueprintChanged(ULevelScriptBlueprint* InBlueprint)
 {
 	if( !InBlueprint->bIsRegeneratingOnLoad && 
 		// Make sure this is OUR level scripting blueprint
-		ensureMsgf(InBlueprint == LevelScriptBlueprint, TEXT("Level ('%s') recieved OnLevelScriptBlueprintChanged notification for the wrong Blueprint ('%s')."), LevelScriptBlueprint ? *LevelScriptBlueprint->GetPathName() : TEXT("NULL"), *InBlueprint->GetPathName()) )
+		ensureMsgf(InBlueprint == LevelScriptBlueprint, TEXT("Level ('%s') received OnLevelScriptBlueprintChanged notification for the wrong Blueprint ('%s')."), LevelScriptBlueprint ? *LevelScriptBlueprint->GetPathName() : TEXT("NULL"), *InBlueprint->GetPathName()) )
 	{
 		UClass* SpawnClass = (LevelScriptBlueprint->GeneratedClass) ? LevelScriptBlueprint->GeneratedClass : LevelScriptBlueprint->SkeletonGeneratedClass;
 
 		// Get rid of the old LevelScriptActor
 		if( LevelScriptActor )
 		{
-			LevelScriptActor->Destroy();
-			LevelScriptActor = NULL;
+			LevelScriptActor->MarkPendingKill();
+			LevelScriptActor = nullptr;
 		}
 
 		check( OwningWorld );
@@ -1992,6 +1965,35 @@ void ULevel::BeginCacheForCookedPlatformData(const ITargetPlatform *TargetPlatfo
 	}
 }
 
+void ULevel::FixupForPIE(int32 PIEInstanceID)
+{
+	TGuardValue<int32> SetPlayInEditorID(GPlayInEditorID, PIEInstanceID);
+
+	struct FSoftPathPIEFixupSerializer : public FArchiveUObject
+	{
+		FSoftPathPIEFixupSerializer() 
+		{
+			ArIsSaving = true;
+		}
+
+		FArchive& operator<<(FSoftObjectPath& Value)
+		{
+			Value.FixupForPIE();
+			return *this;
+		}
+	};
+
+	FSoftPathPIEFixupSerializer FixupSerializer;
+
+	TArray<UObject*> SubObjects;
+	GetObjectsWithOuter(this, SubObjects);
+
+	for (UObject* Object : SubObjects)
+	{
+		Object->Serialize(FixupSerializer);
+	}
+}
+
 #endif	//WITH_EDITOR
 
 bool ULevel::IsPersistentLevel() const
@@ -2018,15 +2020,6 @@ void ULevel::ApplyWorldOffset(const FVector& InWorldOffset, bool bWorldShift)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_ULevel_ApplyWorldOffset);
 
-	if (!InWorldOffset.IsZero())
-	{
-		// Re-add level data to a manager, in case level is visible it this point
-		if (bIsVisible)
-		{
-			IStreamingManager::Get().AddLevel( this );
-		}
-	}
-
 	// Move precomputed light samples
 	if (PrecomputedLightVolume && !InWorldOffset.IsZero())
 	{
@@ -2051,6 +2044,33 @@ void ULevel::ApplyWorldOffset(const FVector& InWorldOffset, bool bWorldShift)
  				FVector, InWorldOffset, InWorldOffset,
  			{
 				InPrecomputedLightVolume->ApplyWorldOffset(InWorldOffset);
+ 			});
+		}
+	}
+
+	if (PrecomputedVolumetricLightmap && !InWorldOffset.IsZero())
+	{
+		QUICK_SCOPE_CYCLE_COUNTER(STAT_ULevel_ApplyWorldOffset_PrecomputedLightVolume);
+		
+		if (!PrecomputedVolumetricLightmap->IsAddedToScene())
+		{
+			// When we add level to world, move precomputed lighting data taking into account position of level at time when lighting was built  
+			if (bIsAssociatingLevel)
+			{
+				FVector PrecomputedVolumetricLightmapOffset = InWorldOffset - FVector(LightBuildLevelOffset);
+				PrecomputedVolumetricLightmap->ApplyWorldOffset(PrecomputedVolumetricLightmapOffset);
+			}
+		}
+		// At world origin rebasing all registered volumes will be moved during FScene shifting
+		// Otherwise we need to send a command to move just this volume
+		else if (!bWorldShift) 
+		{
+			ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
+ 				ApplyWorldOffset_PLV,
+ 				FPrecomputedVolumetricLightmap*, InPrecomputedVolumetricLightmap, PrecomputedVolumetricLightmap,
+ 				FVector, InWorldOffset, InWorldOffset,
+ 			{
+				InPrecomputedVolumetricLightmap->ApplyWorldOffset(InWorldOffset);
  			});
 		}
 	}
@@ -2083,6 +2103,12 @@ void ULevel::ApplyWorldOffset(const FVector& InWorldOffset, bool bWorldShift)
 		}
 	}
 
+	if (!InWorldOffset.IsZero()) 
+	{
+		// Notify streaming managers that level primitives were shifted
+		IStreamingManager::Get().NotifyLevelOffset(this, InWorldOffset);		
+	}
+	
 	FWorldDelegates::PostApplyLevelOffset.Broadcast(this, OwningWorld, InWorldOffset, bWorldShift);
 }
 

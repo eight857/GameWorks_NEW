@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreTypes.h"
 #include "Templates/UnrealTemplate.h"
@@ -8,6 +8,7 @@
 #include "CoreGlobals.h"
 #include "Internationalization/Text.h"
 #include "Internationalization/Culture.h"
+#include "Internationalization/FastDecimalFormat.h"
 #include "Internationalization/Internationalization.h"
 #include "Serialization/MemoryWriter.h"
 #include "Serialization/MemoryReader.h"
@@ -64,14 +65,9 @@ namespace
 bool FTextTest::RunTest (const FString& Parameters)
 {
 	FInternationalization& I18N = FInternationalization::Get();
-	const bool OriginalEnableErrorCheckingValue = FText::GetEnableErrorCheckingResults();
-	const bool OriginalSuppressWarningsValue = FText::GetSuppressWarnings();
 	
 	FInternationalization::FCultureStateSnapshot OriginalCultureState;
 	I18N.BackupCultureState(OriginalCultureState);
-
-	FText::SetEnableErrorCheckingResults(true);
-	FText::SetSuppressWarnings(true);
 
 	FText ArgText0 = FText::FromString(TEXT("Arg0"));
 	FText ArgText1 = FText::FromString(TEXT("Arg1"));
@@ -146,9 +142,6 @@ bool FTextTest::RunTest (const FString& Parameters)
 	TEST( TestText.ToString(), FText::Format(TestText, ArgText0, ArgText1, ArgText2), INVTEXT("Arg0 Arg2"));
 	TestText = INVTEXT("{1}");
 	TEST( TestText.ToString(), FText::Format(TestText, ArgText0, ArgText1, ArgText2), INVTEXT("Arg1"));
-
-	FText::SetEnableErrorCheckingResults(false);
-	FText::SetSuppressWarnings(true);
 
 	TestText = INVTEXT("Starting text: {0} {1}");
 	TEST( TestText.ToString(), FText::Format(TestText, ArgText0, ArgText1), INVTEXT("Starting text: Arg0 Arg1"));
@@ -286,9 +279,6 @@ bool FTextTest::RunTest (const FString& Parameters)
 #undef TEST
 
 #undef INVTEXT
-
-	FText::SetEnableErrorCheckingResults(true);
-	FText::SetSuppressWarnings(true);
 
 #if UE_ENABLE_ICU
 	if (I18N.SetCurrentCulture("en-US"))
@@ -598,9 +588,6 @@ bool FTextTest::RunTest (const FString& Parameters)
 	AddWarning("ICU is disabled thus locale-aware formatting needed in rebuilding source text from history is disabled.");
 #endif
 
-	FText::SetEnableErrorCheckingResults(OriginalEnableErrorCheckingValue);
-	FText::SetSuppressWarnings(OriginalSuppressWarningsValue);
-
 	//**********************************
 	// FromString Test
 	//**********************************
@@ -863,6 +850,100 @@ bool FTextPaddingTest::RunTest (const FString& Parameters)
 }
 
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTextParsingTest, "System.Core.Misc.TextParsing", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+struct FTextParsingTestUtil
+{
+	template <typename T>
+	static void DoSingleTest(FTextParsingTest* InTest, const TCHAR* InStr, const int32 InStrLen, const FDecimalNumberFormattingRules& InFormattingRules, const T InExpectedValue, const bool bExpectedToParse, const TCHAR* InDescription)
+	{
+		T Value;
+		const bool bDidParse = FastDecimalFormat::StringToNumber(InStr, InStrLen, InFormattingRules, FNumberParsingOptions::DefaultWithGrouping(), Value);
+
+		if (bDidParse != bExpectedToParse)
+		{
+			InTest->AddError(FString::Printf(TEXT("Text parsing failure: source '%s' - expected to parse '%s' - result '%s'. %s."), InStr, bExpectedToParse ? TEXT("true") : TEXT("false"), bDidParse ? TEXT("true") : TEXT("false"), InDescription));
+			return;
+		}
+
+		if (bDidParse && Value != InExpectedValue)
+		{
+			InTest->AddError(FString::Printf(TEXT("Text parsing failure: source '%s' - expected value '%f' - result '%f'. %s."), InStr, (double)InExpectedValue, (double)Value, InDescription));
+			return;
+		}
+	}
+
+	template <typename T>
+	static void DoSingleTest(FTextParsingTest* InTest, const TCHAR* InStr, const FDecimalNumberFormattingRules& InFormattingRules, const T InExpectedValue, const bool bExpectedToParse, const TCHAR* InDescription)
+	{
+		DoSingleTest(InTest, InStr, FCString::Strlen(InStr), InFormattingRules, InExpectedValue, bExpectedToParse, InDescription);
+	}
+};
+
+bool FTextParsingTest::RunTest(const FString& Parameters)
+{
+	FInternationalization& I18N = FInternationalization::Get();
+
+	auto DoTests = [this](const FString& InCulture)
+	{
+		FCulturePtr Culture = FInternationalization::Get().GetCulture(InCulture);
+		if (Culture.IsValid())
+		{
+			const FDecimalNumberFormattingRules& FormattingRules = Culture->GetDecimalNumberFormattingRules();
+
+			auto BuildDescription = [&InCulture](const TCHAR* InTestStr, const TCHAR* InTypeStr) -> FString
+			{
+				return FString::Printf(TEXT("[%s] Parsing '%s' as '%s'"), *InCulture, InTestStr, InTypeStr);
+			};
+
+			const FString UnsignedString = FString::Printf(TEXT("123%c456"), FormattingRules.DecimalSeparatorCharacter);
+			const FString PositiveString = FString::Printf(TEXT("%s123%c456"), *FormattingRules.PlusString, FormattingRules.DecimalSeparatorCharacter);
+			const FString NegativeString = FString::Printf(TEXT("%s123%c456"), *FormattingRules.MinusString, FormattingRules.DecimalSeparatorCharacter);
+			const FString PositiveASCIIString = FString::Printf(TEXT("+123%c456"), FormattingRules.DecimalSeparatorCharacter);
+			const FString NegativeASCIIString = FString::Printf(TEXT("-123%c456"), FormattingRules.DecimalSeparatorCharacter);
+			const FString GroupSeparatedString = FString::Printf(TEXT("1%c234"), FormattingRules.GroupingSeparatorCharacter);
+
+			FTextParsingTestUtil::DoSingleTest<int32>(this, *UnsignedString, FormattingRules, 123, true, *BuildDescription(*UnsignedString, TEXT("int32")));
+			FTextParsingTestUtil::DoSingleTest<uint32>(this, *UnsignedString, FormattingRules, 123, true, *BuildDescription(*UnsignedString, TEXT("uint32")));
+			FTextParsingTestUtil::DoSingleTest<float>(this, *UnsignedString, FormattingRules, 123.456f, true, *BuildDescription(*UnsignedString, TEXT("float")));
+			FTextParsingTestUtil::DoSingleTest<double>(this, *UnsignedString, FormattingRules, 123.456, true, *BuildDescription(*UnsignedString, TEXT("double")));
+
+			FTextParsingTestUtil::DoSingleTest<int32>(this, *PositiveString, FormattingRules, 123, true, *BuildDescription(*PositiveString, TEXT("int32")));
+			FTextParsingTestUtil::DoSingleTest<uint32>(this, *PositiveString, FormattingRules, 123, true, *BuildDescription(*PositiveString, TEXT("uint32")));
+			FTextParsingTestUtil::DoSingleTest<float>(this, *PositiveString, FormattingRules, 123.456f, true, *BuildDescription(*PositiveString, TEXT("float")));
+			FTextParsingTestUtil::DoSingleTest<double>(this, *PositiveString, FormattingRules, 123.456, true, *BuildDescription(*PositiveString, TEXT("double")));
+
+			FTextParsingTestUtil::DoSingleTest<int32>(this, *NegativeString, FormattingRules, -123, true, *BuildDescription(*NegativeString, TEXT("int32")));
+			FTextParsingTestUtil::DoSingleTest<uint32>(this, *NegativeString, FormattingRules, -123, true, *BuildDescription(*NegativeString, TEXT("uint32")));
+			FTextParsingTestUtil::DoSingleTest<float>(this, *NegativeString, FormattingRules, -123.456f, true, *BuildDescription(*NegativeString, TEXT("float")));
+			FTextParsingTestUtil::DoSingleTest<double>(this, *NegativeString, FormattingRules, -123.456, true, *BuildDescription(*NegativeString, TEXT("double")));
+
+			FTextParsingTestUtil::DoSingleTest<int32>(this, *PositiveASCIIString, FormattingRules, 123, true, *BuildDescription(*PositiveASCIIString, TEXT("int32")));
+			FTextParsingTestUtil::DoSingleTest<int32>(this, *NegativeASCIIString, FormattingRules, -123, true, *BuildDescription(*NegativeASCIIString, TEXT("int32")));
+
+			FTextParsingTestUtil::DoSingleTest<int32>(this, *GroupSeparatedString, FormattingRules, 1234, true, *BuildDescription(*GroupSeparatedString, TEXT("int32")));
+			FTextParsingTestUtil::DoSingleTest<uint32>(this, *GroupSeparatedString, FormattingRules, 1234, true, *BuildDescription(*GroupSeparatedString, TEXT("uint32")));
+		}
+	};
+	
+	DoTests(TEXT("en"));
+	DoTests(TEXT("fr"));
+	DoTests(TEXT("ar"));
+
+	{
+		const FDecimalNumberFormattingRules& AgnosticFormattingRules = FastDecimalFormat::GetCultureAgnosticFormattingRules();
+
+		FTextParsingTestUtil::DoSingleTest<int32>(this, TEXT("10a"), AgnosticFormattingRules, 0, false, TEXT("Parsing '10a' as 'int32'"));
+		FTextParsingTestUtil::DoSingleTest<uint32>(this, TEXT("10a"), AgnosticFormattingRules, 0, false, TEXT("Parsing '10a' as 'uint32'"));
+
+		FTextParsingTestUtil::DoSingleTest<int32>(this, TEXT("10a"), 2, AgnosticFormattingRules, 10, true, TEXT("Parsing '10a' (len 2) as 'int32'"));
+		FTextParsingTestUtil::DoSingleTest<uint32>(this, TEXT("10a"), 2, AgnosticFormattingRules, 10, true, TEXT("Parsing '10a' (len 2) as 'uint32'"));
+	}
+
+	return true;
+}
+
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTextFormatArgModifierTest, "System.Core.Misc.TextFormatArgModifiers", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
 
 bool FTextFormatArgModifierTest::RunTest(const FString& Parameters)
@@ -978,6 +1059,72 @@ bool FTextFormatArgModifierTest::RunTest(const FString& Parameters)
 }
 
 #if UE_ENABLE_ICU
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FICUSanitizationTest, "System.Core.Misc.ICUSanitization", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+
+bool FICUSanitizationTest::RunTest(const FString& Parameters)
+{
+	// Validate culture code sanitization
+	{
+		auto TestCultureCodeSanitization = [this](const FString& InCode, const FString& InExpectedCode)
+		{
+			const FString SanitizedCode = ICUUtilities::SanitizeCultureCode(InCode);
+			if (SanitizedCode != InExpectedCode)
+			{
+				AddError(FString::Printf(TEXT("SanitizeCultureCode did not produce the expected result (got '%s', expected '%s')"), *SanitizedCode, *InExpectedCode));
+			}
+		};
+
+		TestCultureCodeSanitization(TEXT("en-US"), TEXT("en-US"));
+		TestCultureCodeSanitization(TEXT("en_US_POSIX"), TEXT("en_US_POSIX"));
+		TestCultureCodeSanitization(TEXT("en-US{}%"), TEXT("en-US"));
+		TestCultureCodeSanitization(TEXT("en{}%-US"), TEXT("en-US"));
+	}
+
+	// Validate timezone code sanitization
+	{
+		auto TestTimezoneCodeSanitization = [this](const FString& InCode, const FString& InExpectedCode)
+		{
+			const FString SanitizedCode = ICUUtilities::SanitizeTimezoneCode(InCode);
+			if (SanitizedCode != InExpectedCode)
+			{
+				AddError(FString::Printf(TEXT("SanitizeTimezoneCode did not produce the expected result (got '%s', expected '%s')"), *SanitizedCode, *InExpectedCode));
+			}
+		};
+
+		TestTimezoneCodeSanitization(TEXT("Etc/Unknown"), TEXT("Etc/Unknown"));
+		TestTimezoneCodeSanitization(TEXT("America/Sao_Paulo"), TEXT("America/Sao_Paulo"));
+		TestTimezoneCodeSanitization(TEXT("America/Sao_Paulo{}%"), TEXT("America/Sao_Paulo"));
+		TestTimezoneCodeSanitization(TEXT("America/Sao{}%_Paulo"), TEXT("America/Sao_Paulo"));
+		TestTimezoneCodeSanitization(TEXT("Antarctica/DumontDUrville"), TEXT("Antarctica/DumontDUrville"));
+		TestTimezoneCodeSanitization(TEXT("Antarctica/DumontDUrville{}%"), TEXT("Antarctica/DumontDUrville"));
+		TestTimezoneCodeSanitization(TEXT("Antarctica/Dumont{}%DUrville"), TEXT("Antarctica/DumontDUrville"));
+		TestTimezoneCodeSanitization(TEXT("Antarctica/DumontD'Urville"), TEXT("Antarctica/DumontDUrville"));
+		TestTimezoneCodeSanitization(TEXT("Antarctica/DumontDUrville_Dumont"), TEXT("Antarctica/DumontDUrville"));
+		TestTimezoneCodeSanitization(TEXT("GMT-8:00"), TEXT("GMT-8:00"));
+		TestTimezoneCodeSanitization(TEXT("GMT-8:00{}%"), TEXT("GMT-8:00"));
+		TestTimezoneCodeSanitization(TEXT("GMT-{}%8:00"), TEXT("GMT-8:00"));
+	}
+
+	// Validate currency code sanitization
+	{
+		auto TestCurrencyCodeSanitization = [this](const FString& InCode, const FString& InExpectedCode)
+		{
+			const FString SanitizedCode = ICUUtilities::SanitizeCurrencyCode(InCode);
+			if (SanitizedCode != InExpectedCode)
+			{
+				AddError(FString::Printf(TEXT("SanitizeCurrencyCode did not produce the expected result (got '%s', expected '%s')"), *SanitizedCode, *InExpectedCode));
+			}
+		};
+
+		TestCurrencyCodeSanitization(TEXT("USD"), TEXT("USD"));
+		TestCurrencyCodeSanitization(TEXT("USD{}%"), TEXT("USD"));
+		TestCurrencyCodeSanitization(TEXT("U{}%SD"), TEXT("USD"));
+		TestCurrencyCodeSanitization(TEXT("USDUSD"), TEXT("USD"));
+	}
+
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FICUTextTest, "System.Core.Misc.ICUText", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
 

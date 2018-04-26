@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,7 +10,7 @@
 #include "Containers/Ticker.h"
 #include "IProfilerServiceManager.h"
 #include "IMessageBus.h"
-#include "Helpers/MessageEndpoint.h"
+#include "MessageEndpoint.h"
 #include "Stats/StatsFile.h"
 
 class FNewStatsReader;
@@ -20,6 +20,7 @@ struct FProfilerServiceData2;
 struct FProfilerServiceFileChunk;
 struct FProfilerServicePing;
 struct FProfilerServicePreviewAck;
+
 
 /**
  * Helper struct containing all of the data and operations associated with a service connection.
@@ -235,7 +236,7 @@ private:
 	TSet<FString> FailedTransfer;
 
 	/** Holds the messaging endpoint. */
-	FMessageEndpointPtr MessageEndpoint;
+	TSharedPtr<FMessageEndpoint, ESPMode::ThreadSafe> MessageEndpoint;
 
 	/** Holds a pointer to the message bus. */
 	TSharedPtr<IMessageBus, ESPMode::ThreadSafe> MessageBus;

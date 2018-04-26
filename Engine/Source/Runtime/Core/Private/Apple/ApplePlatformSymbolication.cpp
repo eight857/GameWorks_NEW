@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ApplePlatformSymbolication.cpp: Apple platform implementation of symbolication
@@ -91,6 +91,7 @@ static CSSourceInfoGetSymbolPtr CSSourceInfoGetSymbol = nullptr;
 
 FApplePlatformSymbolDatabase::FApplePlatformSymbolDatabase()
 {
+    GenericDB = MakeShareable( new FGenericPlatformSymbolDatabase() );
 	AppleDB.Buffer0 = nullptr;
 	AppleDB.Buffer1 = nullptr;
 }
@@ -108,6 +109,7 @@ FApplePlatformSymbolDatabase::~FApplePlatformSymbolDatabase()
 	}
 	AppleDB.Buffer0 = nullptr;
 	AppleDB.Buffer1 = nullptr;
+    GenericDB = nullptr;
 }
 
 FApplePlatformSymbolDatabase& FApplePlatformSymbolDatabase::operator=(FApplePlatformSymbolDatabase const& Other)
@@ -116,7 +118,10 @@ FApplePlatformSymbolDatabase& FApplePlatformSymbolDatabase::operator=(FApplePlat
 	{
 		GenericDB = Other.GenericDB;
 		AppleDB = Other.AppleDB;
-		CSRetain(AppleDB);
+        if (AppleDB.Buffer0 != nullptr && AppleDB.Buffer1 != nullptr)
+        {
+            CSRetain(AppleDB);
+        }
 	}
 	return *this;
 }
@@ -234,7 +239,7 @@ void FApplePlatformSymbolication::EnableCoreSymbolication(bool const bEnable)
 
 bool FApplePlatformSymbolication::LoadSymbolDatabaseForBinary(FString SourceFolder, FString BinaryPath, FString BinarySignature, FApplePlatformSymbolDatabase& OutDatabase)
 {
-	bool bOK = FGenericPlatformSymbolication::LoadSymbolDatabaseForBinary(SourceFolder, BinaryPath, BinarySignature, OutDatabase.GenericDB);
+	bool bOK = FGenericPlatformSymbolication::LoadSymbolDatabaseForBinary(SourceFolder, BinaryPath, BinarySignature, *OutDatabase.GenericDB);
 	if(!bOK && GAllowApplePlatformSymbolication && (IFileManager::Get().FileSize(*BinaryPath) > 0))
 	{
 		CSSymbolicatorRef Symbolicator = OutDatabase.AppleDB;
@@ -242,6 +247,10 @@ bool FApplePlatformSymbolication::LoadSymbolDatabaseForBinary(FString SourceFold
 		{
 			Symbolicator = CSSymbolicatorCreateWithPathAndArchitecture(TCHAR_TO_UTF8(*BinaryPath), CPU_TYPE_X86_64);
 		}
+        if (CSIsNull(Symbolicator))
+        {
+            Symbolicator = CSSymbolicatorCreateWithPathAndArchitecture(TCHAR_TO_UTF8(*BinaryPath), CPU_TYPE_ARM64);
+        }
 		if( !CSIsNull(Symbolicator) )
 		{
 			if(BinarySignature.Len())
@@ -251,7 +260,7 @@ bool FApplePlatformSymbolication::LoadSymbolDatabaseForBinary(FString SourceFold
 				
 				CSSymbolOwnerRef SymbolOwner = CSSymbolicatorGetSymbolOwnerWithUUIDAtTime(Symbolicator, UUID, kCSNow);
 				bOK = (!CSIsNull(SymbolOwner));
-				OutDatabase.GenericDB.Signature = BinarySignature;
+				OutDatabase.GenericDB->Signature = BinarySignature;
 			}
 			else
 			{
@@ -261,7 +270,7 @@ bool FApplePlatformSymbolication::LoadSymbolDatabaseForBinary(FString SourceFold
 					CFUUIDRef OwnerUUID = CSSymbolOwnerGetUUID(SymbolOwner);
 					CFStringRef String = CFUUIDCreateString(kCFAllocatorDefault, OwnerUUID);
 					check(String);
-					OutDatabase.GenericDB.Signature = FString((NSString*)String);
+					OutDatabase.GenericDB->Signature = FString((NSString*)String);
 					CFRelease(String);
 					bOK = true;
 				}
@@ -276,7 +285,7 @@ bool FApplePlatformSymbolication::LoadSymbolDatabaseForBinary(FString SourceFold
 	return bOK;
 }
 
-bool FApplePlatformSymbolication::SaveSymbolDatabaseForBinary(FString TargetFolder, FString InName, FApplePlatformSymbolDatabase& Database)
+bool FApplePlatformSymbolication::SaveSymbolDatabaseForBinary(FString TargetFolder, FString InName, FString BinarySignature, FApplePlatformSymbolDatabase& Database)
 {
 	__block bool bOK = true;
 	if(GAllowApplePlatformSymbolication)
@@ -291,14 +300,23 @@ bool FApplePlatformSymbolication::SaveSymbolDatabaseForBinary(FString TargetFold
 			const char* OwnerName = CSSymbolOwnerGetName(SymbolOwner);
 			vm_address_t BaseAddress = CSSymbolOwnerGetBaseAddress(SymbolOwner);
 			
-			Database.GenericDB.Name = OwnerName;
-			Database.GenericDB.StringTable.Reset();
-			Database.GenericDB.Symbols.Reset();
+			Database.GenericDB->Name = OwnerName;
+			Database.GenericDB->StringTable.Reset();
+			Database.GenericDB->Symbols.Reset();
 			
-			CFStringRef String = CFUUIDCreateString(kCFAllocatorDefault, OwnerUUID);
-			check(String);
-			Database.GenericDB.Signature = FString((NSString*)String);
-			CFRelease(String);
+            if(BinarySignature.Len())
+            {
+                CFUUIDRef UUID = CFUUIDCreateFromString(kCFAllocatorDefault, (CFStringRef)BinarySignature.GetNSString());
+                check(UUID);
+                Database.GenericDB->Signature = BinarySignature;
+            }
+            else
+            {
+                    CFStringRef String = CFUUIDCreateString(kCFAllocatorDefault, OwnerUUID);
+                    check(String);
+                    Database.GenericDB->Signature = FString((NSString*)String);
+                    CFRelease(String);
+            }
 			
 			CSSymbolicatorForeachSymbolAtTime(Symbolicator, kCSNow, ^(CSSymbolRef Symbol){
 				CSSymbolOwnerRef Owner = CSSymbolGetSymbolOwner(Symbol);
@@ -316,9 +334,9 @@ bool FApplePlatformSymbolication::SaveSymbolDatabaseForBinary(FString TargetFold
 					}
 					else
 					{
-						SymbolData.NameIdx = Database.GenericDB.StringTable.Num();
+						SymbolData.NameIdx = Database.GenericDB->StringTable.Num();
 						StringLookup.Add(Name, SymbolData.NameIdx);
-						Database.GenericDB.StringTable.Push(Name);
+						Database.GenericDB->StringTable.Push(Name);
 					}
 					
 					CSSymbolForeachSourceInfo(Symbol, ^(CSSourceInfoRef SourceInfo){
@@ -338,9 +356,9 @@ bool FApplePlatformSymbolication::SaveSymbolDatabaseForBinary(FString TargetFold
 						}
 						else
 						{
-							Info.PathIdx = Database.GenericDB.StringTable.Num();
+							Info.PathIdx = Database.GenericDB->StringTable.Num();
 							StringLookup.Add(Path, Info.PathIdx);
-							Database.GenericDB.StringTable.Push(Path);
+							Database.GenericDB->StringTable.Push(Path);
 						}
 						
 						SymbolData.SymbolInfo.Add(Info);
@@ -348,7 +366,7 @@ bool FApplePlatformSymbolication::SaveSymbolDatabaseForBinary(FString TargetFold
 						return 0;
 					});
 					
-					Database.GenericDB.Symbols.Add(SymbolData);
+					Database.GenericDB->Symbols.Add(SymbolData);
 				}
 				else
 				{
@@ -358,13 +376,13 @@ bool FApplePlatformSymbolication::SaveSymbolDatabaseForBinary(FString TargetFold
 				}
 				return 0;
 			});
-			bOK &= (Database.GenericDB.Symbols.Num() >= 1);
+			bOK &= (Database.GenericDB->Symbols.Num() >= 1);
 		}
 	}
 	
 	if(bOK)
 	{
-		bOK = FGenericPlatformSymbolication::SaveSymbolDatabaseForBinary(TargetFolder, InName, Database.GenericDB);
+		bOK = FGenericPlatformSymbolication::SaveSymbolDatabaseForBinary(TargetFolder, InName, *Database.GenericDB);
 	}
 	
 	return bOK;
@@ -372,7 +390,7 @@ bool FApplePlatformSymbolication::SaveSymbolDatabaseForBinary(FString TargetFold
 
 bool FApplePlatformSymbolication::SymbolInfoForStrippedSymbol(FApplePlatformSymbolDatabase const& Database, uint64 ProgramCounter, uint64 ModuleOffset, FString ModuleSignature, FProgramCounterSymbolInfo& Info)
 {
-	bool bOK = FGenericPlatformSymbolication::SymbolInfoForStrippedSymbol(Database.GenericDB, ProgramCounter, ModuleOffset, ModuleSignature, Info);
+	bool bOK = FGenericPlatformSymbolication::SymbolInfoForStrippedSymbol(*Database.GenericDB, ProgramCounter, ModuleOffset, ModuleSignature, Info);
 	if(!bOK && GAllowApplePlatformSymbolication && !CSIsNull(Database.AppleDB) && (ModuleSignature.Len()))
 	{
 		CSSymbolicatorRef Symbolicator = Database.AppleDB;
@@ -395,7 +413,7 @@ bool FApplePlatformSymbolication::SymbolInfoForStrippedSymbol(FApplePlatformSymb
 				ANSICHAR const* FunctionName = CSSymbolGetName(Symbol);
 				if(FunctionName)
 				{
-					FCStringAnsi::Sprintf(Info.FunctionName, FunctionName);
+					FCStringAnsi::Strcpy(Info.FunctionName, ARRAY_COUNT(Info.FunctionName), FunctionName);
 				}
 				
 				CSRange Range = CSSymbolGetRange(Symbol);
@@ -411,7 +429,7 @@ bool FApplePlatformSymbolication::SymbolInfoForStrippedSymbol(FApplePlatformSymb
 					ANSICHAR const* FileName = CSSourceInfoGetPath(SymbolInfo);
 					if(FileName)
 					{
-						FCStringAnsi::Sprintf(Info.Filename, FileName);
+						FCStringAnsi::Strcpy(Info.Filename, ARRAY_COUNT(Info.FunctionName), FileName);
 					}
 				}
 				
@@ -436,8 +454,8 @@ bool FApplePlatformSymbolication::SymbolInfoForAddress(uint64 ProgramCounter, FP
 			if(!CSIsNull(Symbol))
 			{
 				out_SymbolInfo.LineNumber = CSSourceInfoGetLineNumber(Symbol);
-				FCStringAnsi::Sprintf(out_SymbolInfo.Filename, CSSourceInfoGetPath(Symbol));
-				FCStringAnsi::Sprintf(out_SymbolInfo.FunctionName, CSSymbolGetName(CSSourceInfoGetSymbol(Symbol)));
+				FCStringAnsi::Strcpy(out_SymbolInfo.Filename, ARRAY_COUNT(out_SymbolInfo.Filename), CSSourceInfoGetPath(Symbol));
+				FCStringAnsi::Strcpy(out_SymbolInfo.FunctionName, ARRAY_COUNT(out_SymbolInfo.FunctionName), CSSymbolGetName(CSSourceInfoGetSymbol(Symbol)));
 				CSRange CodeRange = CSSourceInfoGetRange(Symbol);
 				out_SymbolInfo.SymbolDisplacement = (ProgramCounter - CodeRange.Location);
 				
@@ -445,7 +463,7 @@ bool FApplePlatformSymbolication::SymbolInfoForAddress(uint64 ProgramCounter, FP
 				if(!CSIsNull(Owner))
 				{
 					ANSICHAR const* DylibName = CSSymbolOwnerGetName(Owner);
-					FCStringAnsi::Strcpy(out_SymbolInfo.ModuleName, DylibName);
+					FCStringAnsi::Strcpy(out_SymbolInfo.ModuleName, ARRAY_COUNT(out_SymbolInfo.ModuleName), DylibName);
 					
 					bOK = out_SymbolInfo.LineNumber != 0;
 				}

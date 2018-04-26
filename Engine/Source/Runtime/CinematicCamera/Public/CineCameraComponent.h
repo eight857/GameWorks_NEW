@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,22 +14,28 @@ class UStaticMesh;
 class UStaticMeshComponent;
 
 /** #note, this struct has a details customization in CameraFilmbackSettingsCustomization.cpp/h */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FCameraFilmbackSettings
 {
 	GENERATED_USTRUCT_BODY()
 
 	/** Horizontal size of filmback or digital sensor, in mm. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Filmback", meta = (ClampMin = "0.001", ForceUnits = mm))
+	UPROPERTY(Interp, EditAnywhere, BlueprintReadWrite, Category = "Filmback", meta = (ClampMin = "0.001", ForceUnits = mm))
 	float SensorWidth;
 
 	/** Vertical size of filmback or digital sensor, in mm. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Filmback", meta = (ClampMin = "0.001", ForceUnits = mm))
+	UPROPERTY(Interp, EditAnywhere, BlueprintReadWrite, Category = "Filmback", meta = (ClampMin = "0.001", ForceUnits = mm))
 	float SensorHeight;
 
 	/** Read-only. Computed from Sensor dimensions. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Filmback")
+	UPROPERTY(Interp, VisibleAnywhere, BlueprintReadOnly, Category = "Filmback")
 	float SensorAspectRatio;
+
+	bool operator==(const FCameraFilmbackSettings& Other) const
+	{
+		return (SensorWidth == Other.SensorWidth)
+			&& (SensorHeight == Other.SensorHeight);
+	}
 };
 
 /** A named bundle of filmback settings used to implement filmback presets */
@@ -49,7 +55,7 @@ struct FNamedFilmbackPreset
 /** 
  * #note, this struct has a details customization in CameraLensSettingsCustomization.cpp/h
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FCameraLensSettings
 {
 	GENERATED_USTRUCT_BODY()
@@ -102,13 +108,18 @@ struct FNamedLensPreset
 UENUM()
 enum class ECameraFocusMethod : uint8
 {
-	None,					/** Disables DoF entirely. */
-	Manual,					/** Allows for specifying or animating exact focus distances. */
-	Tracking,				/** Locks focus to specific object. */
+	/** Disables DoF entirely. */
+	None,
+
+	/** Allows for specifying or animating exact focus distances. */
+	Manual,
+
+	/** Locks focus to specific object. */
+	Tracking,
 };
 
 /** Settings to control tracking-focus mode. */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FCameraTrackingFocusSettings
 {
 	GENERATED_USTRUCT_BODY()
@@ -132,7 +143,7 @@ struct FCameraTrackingFocusSettings
 };
 
 /** Settings to control camera focus */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FCameraFocusSettings
 {
 	GENERATED_USTRUCT_BODY()
@@ -149,8 +160,8 @@ struct FCameraFocusSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tracking Focus Settings")
 	FCameraTrackingFocusSettings TrackingFocusSettings;
 
-// TODO: Make this editor only again once UE-43122 has been completed.
-//#if WITH_EDITORONLY_DATA
+//~ TODO: Make this editor only again once UE-43122 has been completed.
+//~	#if WITH_EDITORONLY_DATA
 	/** True to draw a translucent plane at the current focus depth, for easy tweaking. */
 	UPROPERTY(Transient, EditAnywhere, Category = "Focus Settings")
 	uint8 bDrawDebugFocusPlane : 1;
@@ -158,7 +169,7 @@ struct FCameraFocusSettings
 	/** For customizing the focus plane color, in case the default doesn't show up well in your scene. */
 	UPROPERTY(EditAnywhere, Category = "Focus Settings", meta = (EditCondition = "bDrawDebugFocusPlane"))
 	FColor DebugFocusPlaneColor;
-//#endif 
+//~	#endif 
 
 	/** True to use interpolation to smooth out changes in focus distance, false for focus distance changes to be instantaneous. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Focus Settings")
@@ -188,14 +199,7 @@ struct FCameraFocusSettings
 /**
  * A specialized version of a camera component, geared toward cinematic usage.
  */
-UCLASS(
-	HideCategories = (CameraSettings), 
-	HideFunctions = (SetFieldOfView, SetAspectRatio, SetConstraintAspectRatio), 
-	Blueprintable, 
-	ClassGroup = Camera, 
-	meta = (BlueprintSpawnableComponent), 
-	Config = Engine
-	)
+UCLASS(HideCategories = (CameraSettings), HideFunctions = (SetFieldOfView, SetAspectRatio, SetConstraintAspectRatio), Blueprintable, ClassGroup = Camera, meta = (BlueprintSpawnableComponent), Config = Engine)
 class CINEMATICCAMERA_API UCineCameraComponent : public UCameraComponent
 {
 	GENERATED_BODY()
@@ -207,7 +211,7 @@ public:
 	virtual void GetCameraView(float DeltaTime, FMinimalViewInfo& DesiredView) override;
 
 	/** Controls the filmback of the camera. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Current Camera Settings")
+	UPROPERTY(Interp, EditAnywhere, BlueprintReadWrite, Category = "Current Camera Settings")
 	FCameraFilmbackSettings FilmbackSettings;
 
 	/** Controls the camera's lens. */
@@ -244,6 +248,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cine Camera")
 	float GetVerticalFieldOfView() const;
 
+	/** Returns the filmback name of the camera with the current settings. */
+	UFUNCTION(BlueprintCallable, Category = "Cine Camera")
+	FString GetFilmbackPresetName() const;
+
+	/** Set the current preset settings by preset name. */
+	UFUNCTION(BlueprintCallable, Category = "Cine Camera")
+	void SetFilmbackPresetByName(const FString& InPresetName);
+
+	/** Returns the lens name of the camera with the current settings. */
+	UFUNCTION(BlueprintCallable, Category = "Cine Camera")
+	FString GetLensPresetName() const;
+
+	/** Set the current lens settings by preset name. */
+	UFUNCTION(BlueprintCallable, Category = "Cine Camera")
+	void SetLensPresetByName(const FString& InPresetName);
+
 	/** Returns a list of available filmback presets. */
 	static TArray<FNamedFilmbackPreset> const& GetFilmbackPresets();
 	
@@ -261,7 +281,12 @@ protected:
 	/** Set to true to skip any interpolations on the next update. Resets to false automatically. */
 	uint8 bResetInterpolation : 1;
 
+	/// @cond DOXYGEN_WARNINGS
+	
 	virtual void PostLoad() override;
+	
+	/// @endcond
+	
 	virtual void PostInitProperties() override;
 	virtual void OnRegister() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;

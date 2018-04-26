@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -12,8 +12,6 @@ public class LevelEditor : ModuleRules
 				"ClassViewer",
 				"MainFrame",
                 "PlacementMode",
-				"ReferenceViewer",
-				"SizeMap",
 				"SlateReflector",
                 "IntroTutorials",
                 "AppFramework",
@@ -24,10 +22,10 @@ public class LevelEditor : ModuleRules
 		PublicIncludePathModuleNames.AddRange(
 			new string[] {
 				"Settings",
-				"UserFeedback",
 				"IntroTutorials",
 				"HeadMountedDisplay",
-				"VREditor"
+				"VREditor",
+				"CommonMenuExtensions"
 			}
 		);
 
@@ -37,37 +35,38 @@ public class LevelEditor : ModuleRules
 				"Analytics",
 				"Core",
 				"CoreUObject",
-				"DesktopPlatform",
-                "InputCore",
+				"LauncherPlatform",
+				"InputCore",
 				"Slate",
 				"SlateCore",
-                "EditorStyle",
+				"EditorStyle",
 				"Engine",
 				"MessageLog",
-                "SourceControl",
-                "SourceControlWindows",
-                "StatsViewer",
+				"SourceControl",
+				"SourceControlWindows",
+				"StatsViewer",
 				"UnrealEd", 
 				"RenderCore",
 				"DeviceProfileServices",
 				"ContentBrowser",
-                "SceneOutliner",
-                "ActorPickerMode",
-                "RHI",
+				"SceneOutliner",
+				"ActorPickerMode",
+				"RHI",
 				"Projects",
 				"TargetPlatform",
 				"EngineSettings",
 				"PropertyEditor",
-                "Persona",
-                "Kismet",
+				"Persona",
+				"Kismet",
 				"KismetWidgets",
 				"Sequencer",
-                "Foliage",
-                "HierarchicalLODOutliner",
-                "HierarchicalLODUtilities",
+				"Foliage",
+				"HierarchicalLODOutliner",
+				"HierarchicalLODUtilities",
 				"MaterialShaderQualitySettings",
-                "PixelInspectorModule",
-                "FunctionalTesting"
+				"PixelInspectorModule",
+				"FunctionalTesting",
+				"CommonMenuExtensions"
 			}
 		);
 
@@ -88,9 +87,6 @@ public class LevelEditor : ModuleRules
 				"NewLevelDialog",
 				"DeviceProfileEditor",
                 "PlacementMode",
-				"UserFeedback",
-				"ReferenceViewer",
-				"SizeMap",
                 "IntroTutorials",
 				"HeadMountedDisplay",
 				"VREditor"

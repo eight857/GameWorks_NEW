@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Input/SEditableText.h"
 #include "Framework/Text/TextEditHelper.h"
@@ -32,6 +32,9 @@ void SEditableText::Construct( const FArguments& InArgs )
 	MinDesiredWidth = InArgs._MinDesiredWidth;
 	bSelectAllTextOnCommit = InArgs._SelectAllTextOnCommit;
 	VirtualKeyboardType = InArgs._VirtualKeyboardType;
+	VirtualKeyboardTrigger = InArgs._VirtualKeyboardTrigger;
+	VirtualKeyboardDismissAction = InArgs._VirtualKeyboardDismissAction;
+	OnKeyCharHandler = InArgs._OnKeyCharHandler;
 	OnKeyDownHandler = InArgs._OnKeyDownHandler;
 
 	Font = InArgs._Font;
@@ -54,9 +57,11 @@ void SEditableText::Construct( const FArguments& InArgs )
 
 	EditableTextLayout = MakeUnique<FSlateEditableTextLayout>(*this, InArgs._Text, TextStyle, InArgs._TextShapingMethod, InArgs._TextFlowDirection, FCreateSlateTextLayout(), PlainTextMarshaller.ToSharedRef(), HintTextMarshaller);
 	EditableTextLayout->SetHintText(InArgs._HintText);
+	EditableTextLayout->SetSearchText(InArgs._SearchText);
 	EditableTextLayout->SetCursorBrush(InArgs._CaretImage.IsSet() ? InArgs._CaretImage : &InArgs._Style->CaretImage);
 	EditableTextLayout->SetCompositionBrush(InArgs._BackgroundImageComposing.IsSet() ? InArgs._BackgroundImageComposing : &InArgs._Style->BackgroundImageComposing);
 	EditableTextLayout->SetDebugSourceInfo(TAttribute<FString>::Create(TAttribute<FString>::FGetter::CreateLambda([this]{ return FReflectionMetaData::GetWidgetDebugInfo(this); })));
+	EditableTextLayout->SetJustification(InArgs._Justification);
 
 	// build context menu extender
 	MenuExtender = MakeShareable(new FExtender());
@@ -83,7 +88,7 @@ void SEditableText::Tick( const FGeometry& AllottedGeometry, const double InCurr
 	EditableTextLayout->Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
 }
 
-int32 SEditableText::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 SEditableText::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
 	const FTextBlockStyle& EditableTextStyle = EditableTextLayout->GetTextStyle();
 	const FLinearColor ForegroundColor = EditableTextStyle.ColorAndOpacity.GetColor(InWidgetStyle);
@@ -91,7 +96,7 @@ int32 SEditableText::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedG
 	FWidgetStyle TextWidgetStyle = FWidgetStyle(InWidgetStyle)
 		.SetForegroundColor(ForegroundColor);
 
-	LayerId = EditableTextLayout->OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, TextWidgetStyle, ShouldBeEnabled(bParentEnabled));
+	LayerId = EditableTextLayout->OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, TextWidgetStyle, ShouldBeEnabled(bParentEnabled));
 
 	return LayerId;
 }
@@ -167,7 +172,20 @@ void SEditableText::OnFocusLost( const FFocusEvent& InFocusEvent )
 
 FReply SEditableText::OnKeyChar( const FGeometry& MyGeometry, const FCharacterEvent& InCharacterEvent )
 {
-	return EditableTextLayout->HandleKeyChar(InCharacterEvent);
+	FReply Reply = FReply::Unhandled();
+
+	// First call the user defined key handler, there might be overrides to normal functionality
+	if (OnKeyCharHandler.IsBound())
+	{
+		Reply = OnKeyCharHandler.Execute(MyGeometry, InCharacterEvent);
+	}
+
+	if (!Reply.IsEventHandled())
+	{
+		Reply = EditableTextLayout->HandleKeyChar(InCharacterEvent);
+	}
+
+	return Reply;
 }
 
 FReply SEditableText::OnKeyDown( const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent )
@@ -256,6 +274,16 @@ FText SEditableText::GetHintText() const
 	return EditableTextLayout->GetHintText();
 }
 
+void SEditableText::SetSearchText(const TAttribute<FText>& InSearchText)
+{
+	EditableTextLayout->SetSearchText(InSearchText);
+}
+
+FText SEditableText::GetSearchText() const
+{
+	return EditableTextLayout->GetSearchText();
+}
+
 void SEditableText::SetIsReadOnly( TAttribute< bool > InIsReadOnly )
 {
 	bIsReadOnly = InIsReadOnly;
@@ -302,9 +330,19 @@ void SEditableText::SetSelectAllTextOnCommit(const TAttribute<bool>& InSelectAll
 	bSelectAllTextOnCommit = InSelectAllTextOnCommit;
 }
 
+void SEditableText::SetJustification(const TAttribute<ETextJustify::Type>& InJustification)
+{
+	EditableTextLayout->SetJustification(InJustification);
+}
+
 void SEditableText::SetAllowContextMenu(const TAttribute< bool >& InAllowContextMenu)
 {
 	bAllowContextMenu = InAllowContextMenu;
+}
+
+void SEditableText::SetVirtualKeyboardDismissAction(TAttribute< EVirtualKeyboardDismissAction > InVirtualKeyboardDismissAction)
+{
+	VirtualKeyboardDismissAction = InVirtualKeyboardDismissAction;
 }
 
 void SEditableText::SetTextShapingMethod(const TOptional<ETextShapingMethod>& InTextShapingMethod)
@@ -335,6 +373,31 @@ void SEditableText::ClearSelection()
 FText SEditableText::GetSelectedText() const
 {
 	return EditableTextLayout->GetSelectedText();
+}
+
+void SEditableText::GoTo(const FTextLocation& NewLocation)
+{
+	EditableTextLayout->GoTo(NewLocation);
+}
+
+void SEditableText::GoTo(ETextLocation GoToLocation)
+{
+	EditableTextLayout->GoTo(GoToLocation);
+}
+
+void SEditableText::ScrollTo(const FTextLocation& NewLocation)
+{
+	EditableTextLayout->ScrollTo(NewLocation);
+}
+
+void SEditableText::BeginSearch(const FText& InSearchText, const ESearchCase::Type InSearchCase, const bool InReverse)
+{
+	EditableTextLayout->BeginSearch(InSearchText, InSearchCase, InReverse);
+}
+
+void SEditableText::AdvanceSearch(const bool InReverse)
+{
+	EditableTextLayout->AdvanceSearch(InReverse);
 }
 
 void SEditableText::SynchronizeTextStyle()
@@ -435,7 +498,12 @@ bool SEditableText::CanInsertCarriageReturn() const
 
 bool SEditableText::CanTypeCharacter(const TCHAR InChar) const
 {
-	return !OnIsTypedCharValid.IsBound() || OnIsTypedCharValid.Execute(InChar);
+	if (OnIsTypedCharValid.IsBound())
+	{
+		return OnIsTypedCharValid.Execute(InChar);
+	}
+
+	return InChar != TEXT('\t');
 }
 
 void SEditableText::EnsureActiveTick()
@@ -460,6 +528,16 @@ void SEditableText::EnsureActiveTick()
 EKeyboardType SEditableText::GetVirtualKeyboardType() const
 {
 	return VirtualKeyboardType.Get();
+}
+
+EVirtualKeyboardTrigger SEditableText::GetVirtualKeyboardTrigger() const
+{
+	return VirtualKeyboardTrigger.Get();
+}
+
+EVirtualKeyboardDismissAction SEditableText::GetVirtualKeyboardDismissAction() const
+{
+	return VirtualKeyboardDismissAction.Get();
 }
 
 TSharedRef<SWidget> SEditableText::GetSlateWidget()

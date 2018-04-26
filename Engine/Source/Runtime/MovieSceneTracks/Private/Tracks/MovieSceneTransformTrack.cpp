@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tracks/MovieSceneTransformTrack.h"
 #include "MovieSceneCommonHelpers.h"
@@ -15,7 +15,9 @@ UMovieSceneTransformTrack::UMovieSceneTransformTrack(const FObjectInitializer& O
 	TrackTint = FColor(65, 173, 164, 65);
 #endif
 
-	EvalOptions.bEvaluateNearestSection = EvalOptions.bCanEvaluateNearestSection = true;
+	SupportedBlendTypes = FMovieSceneBlendTypeField::All();
+
+	EvalOptions.bEvaluateNearestSection_DEPRECATED = EvalOptions.bCanEvaluateNearestSection = true;
 }
 
 UMovieSceneSection* UMovieSceneTransformTrack::CreateNewSection()

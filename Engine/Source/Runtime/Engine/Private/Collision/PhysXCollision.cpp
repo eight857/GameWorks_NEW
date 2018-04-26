@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Collision/PhysXCollision.h"
 #include "Engine/World.h"
@@ -10,470 +10,13 @@
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "PhysicsEngine/PhysXSupport.h"
 
-#if WITH_BOX2D
-#include "../PhysicsEngine2D/Box2DIntegration.h"
-#include "CollisionConversions.h"
-
-class FRaycastHelperBox2D_Base : public b2RayCastCallback, public b2QueryCallback
-{
-public:
-	enum EResponse
-	{
-		ResponseNone = 0,
-		ResponseTouch = 1,
-		ResponseBlock = 2,
-	};
-
-	FRaycastHelperBox2D_Base(ECollisionChannel InTraceChannel, const struct FCollisionQueryParams& InParams, const FCollisionResponseContainer& InCollisionResponseContainer, const FCollisionObjectQueryParams& InObjectParam, bool bInMultitrace)
-		: TraceChannel(InTraceChannel)
-		, Params(InParams)
-		, CollisionResponseContainer(InCollisionResponseContainer)
-		, ObjectParam(InObjectParam)
-		, QueryBlockingChannels(0)
-		, QueryTouchingChannels(0)
-		, bMultitrace(bInMultitrace)
-	{
-		// Box2D is not thread safe
-		check(IsInGameThread());
-
-		if (!ObjectParam.IsValid())
-		{
-			for (int32 i = 0; i < ARRAY_COUNT(CollisionResponseContainer.EnumArray); i++)
-			{
-				if (CollisionResponseContainer.EnumArray[i] == ECR_Block)
-				{
-					QueryBlockingChannels |= CRC_TO_BITFIELD(i);
-				}
-				else if (CollisionResponseContainer.EnumArray[i] == ECR_Overlap)
-				{
-					QueryTouchingChannels |= CRC_TO_BITFIELD(i);
-				}
-			}
-		}
-	}
-
-protected:
-	const ECollisionChannel TraceChannel;
-	const struct FCollisionQueryParams& Params;
-	const FCollisionResponseContainer& CollisionResponseContainer;
-	const FCollisionObjectQueryParams& ObjectParam;
-	uint32 QueryBlockingChannels;
-	uint32 QueryTouchingChannels;
-	bool bMultitrace;
-
-protected:
-	// Determines how the query and the fixture interact (either no interaction or touching/blocking each other)
-	EResponse CalcQueryHitType(b2Fixture* Fixture) const;
-
-	// Converts the query results to a hit result
-	void ConvertToHitResult_Internal(FHitResult& OutResult, const FVector& Start, const FVector& End, const float InHitTime, b2Fixture* InFixture, const FVector& InNormal, const EResponse InHitType)
-	{
-		//@TODO: BOX2D: How to deal with initial penetration (PxU32)(PHit.hadInitialOverlap());
-#if 0
-		if ((InFixture != nullptr) && PHit.hadInitialOverlap())
-		{
-			ConvertOverlappedShapeToImpactHit(PHit, StartLoc, EndLoc, OutResult, *InFixture, QueryTM, QueryFilter, Params.bReturnPhysicalMaterial);
-			return;
-		}
-#endif
-		OutResult.bStartPenetrating = false;
-
-		check(InFixture);
-		FBodyInstance* OwningBodyInstance = static_cast<FBodyInstance*>(InFixture->GetBody()->GetUserData());
-		UPrimitiveComponent* OwningComponent = OwningBodyInstance->OwnerComponent.Get();
-
-		/** Set info in the HitResult (Actor, Component, PhysMaterial, BoneName, Item) based on the supplied shape and face index */
-		OutResult.PhysMaterial = NULL;
-
-		// Grab actor/component
-		if (OwningComponent)
-		{
-			OutResult.Actor = OwningComponent->GetOwner();
-			OutResult.Component = OwningComponent;
-
-			if (Params.bReturnPhysicalMaterial)
-			{
-				OutResult.PhysMaterial = OwningBodyInstance->GetSimplePhysicalMaterial();
-			}
-		}
-
-		// Body index / bone name
-		OutResult.Item = OwningBodyInstance->InstanceBodyIndex;
-		if (OwningBodyInstance->BodySetup.IsValid())
-		{
-			OutResult.BoneName = OwningBodyInstance->BodySetup->BoneName;
-		}
-
-		OutResult.FaceIndex = INDEX_NONE;
-
-		// figure out where the the "safe" location for this shape is by moving from the startLoc toward the ImpactPoint
-		const FVector TraceDir = End - Start;
-		const FVector SafeLocationToFitShape = Start + (InHitTime * TraceDir);
-
-		// Other info
-		OutResult.Location = SafeLocationToFitShape;
-		OutResult.ImpactPoint = SafeLocationToFitShape;
-		OutResult.Normal = InNormal;
-		OutResult.ImpactNormal = OutResult.Normal;
-
-		OutResult.TraceStart = Start;
-		OutResult.TraceEnd = End;
-		OutResult.Time = InHitTime;
-
-		// See if this is a 'blocking' hit
-		OutResult.bBlockingHit = (InHitType == ResponseBlock);
-	}
-};
-
-FRaycastHelperBox2D_Base::EResponse FRaycastHelperBox2D_Base::CalcQueryHitType(b2Fixture* Fixture) const
-{
-	const b2Filter& FixtureFilterData = Fixture->GetFilterData();
-	const ECollisionChannel ShapeChannel = GetCollisionChannel(FixtureFilterData.ObjectTypeAndFlags);
-	const uint32 ShapeBit = ECC_TO_BITFIELD(ShapeChannel);
-
-	EResponse Result = ResponseNone;
-
-	if (ObjectParam.IsValid())
-	{
-		// do I belong to one of objects of interest?
-		if ((ShapeBit & ObjectParam.GetQueryBitfield()) != 0)
-		{
-			Result = bMultitrace ? ResponseTouch : ResponseBlock;
-		}
-	}
-	else
-	{
-		// Then see if the channel wants to be blocked
-		const uint32 TraceBit = ECC_TO_BITFIELD(TraceChannel);
-
-		// check if the fixture has a hit or touch
-		EResponse TraceHitType = ResponseNone;
-		if ((TraceBit & FixtureFilterData.BlockingChannels) != 0)
-		{
-			TraceHitType = ResponseBlock;
-		}
-		else if ((TraceBit & FixtureFilterData.TouchingChannels) != 0)
-		{
-			TraceHitType = ResponseTouch;
-		}
-
-		// Check if the shape has a hit or touch
-		EResponse ShapeHitType = ResponseNone;
-		if ((ShapeBit & QueryBlockingChannels) != 0)
-		{
-			ShapeHitType = ResponseBlock;
-		}
-		else if ((ShapeBit & QueryTouchingChannels) != 0)
-		{
-			ShapeHitType = ResponseTouch;
-		}
-
-		// return minimum agreed-upon interaction
-		Result = FMath::Min(TraceHitType, ShapeHitType);
-	}
-
-	// Single traces should ignore touches
-	if (!bMultitrace && (Result == ResponseTouch))
-	{
-		Result = ResponseNone;
-	}
-
-	// Check to see if the component ultimately owning the fixture should be ignored
-	if (Result != ResponseNone)
-	{
-		FBodyInstance* OwnerBodyInstance = static_cast<FBodyInstance*>(Fixture->GetBody()->GetUserData());
-		UPrimitiveComponent* OwnerComponent = OwnerBodyInstance->OwnerComponent.Get();
-		
-		if ((OwnerComponent != nullptr) && Params.GetIgnoredComponents().Contains(OwnerComponent->GetUniqueID()))
-		{
-			Result = ResponseNone;
-		}
-	}
-
-	return Result;
-}
-
-class FRaycastHelperBox2D_RayCastBase : public FRaycastHelperBox2D_Base
-{
-public:
-	FRaycastHelperBox2D_RayCastBase(ECollisionChannel InTraceChannel, const struct FCollisionQueryParams& InParams, const FCollisionResponseContainer& InCollisionResponseContainer, const FCollisionObjectQueryParams& InObjectParam, bool bInMultitrace)
-		: FRaycastHelperBox2D_Base(InTraceChannel, InParams, InCollisionResponseContainer, InObjectParam, bInMultitrace)
-	{
-	}
-
-	// b2RayCastCallback interface
-	virtual float32 ReportFixture(b2Fixture* Fixture, const b2Vec2& Point, const b2Vec2& Normal, float32 Fraction) override
-	{
-		const EResponse ResponseMode = CalcQueryHitType(Fixture);
-
-		if (ResponseMode != ResponseNone)
-		{
-			ProcessHit(Fixture, Fraction, FPhysicsIntegration2D::ConvertBoxVectorToUnreal(Normal).GetSafeNormal(), ResponseMode);
-		}
-
-		switch (ResponseMode)
-		{
-		case ResponseBlock:
-			return Fraction;
-		case ResponseTouch:
-			return 1.0f;
-		default:
-		case ResponseNone:
-			return -1.0f;
-		}
-	}
-	// End of b2RayCastCallback interface
-
-	// b2QueryCallback interface
-	virtual bool ReportFixture(b2Fixture* Fixture) override
-	{
-		const EResponse ResponseMode = CalcQueryHitType(Fixture);
-
-		bool bReportHit = (ResponseMode == ResponseBlock);
-
-		if (bReportHit)
-		{
-			// Figure out 'when' the ray hit the fixture
-			FBodyInstance* OwningBodyInstance = static_cast<FBodyInstance*>(Fixture->GetBody()->GetUserData());
-			UPrimitiveComponent* OwningComponent = OwningBodyInstance->OwnerComponent.Get();
-			const float IntersectTime = (OwningComponent != nullptr) ? FPhysicsIntegration2D::ConvertUnrealVectorToPerpendicularDistance(OwningComponent->GetComponentLocation()) : PointQueryStartTime;
-			const float Fraction = (IntersectTime - PointQueryStartTime) * PointQueryScaleFactor;
-
-			ProcessHit(Fixture, Fraction, PointQueryNormal, ResponseMode);
-		}
-
-		switch (ResponseMode)
-		{
-		case ResponseBlock:
-			return true;
-		case ResponseTouch:
-			return false;
-		default:
-		case ResponseNone:
-			return false;
-		}
-	}
-	// End of b2QueryCallback interface
-
-protected:
-	// Only initialized / used for point queries
-	float PointQueryStartTime;
-	float PointQueryScaleFactor;
-	FVector PointQueryNormal;
-
-protected:
-	virtual void ProcessHit(b2Fixture* Fixture, const float HitTime, const FVector& Normal, const EResponse ResponseMode) = 0;
-
-	void RayCastInternal(const b2World* BoxWorld, const FVector& Start, const FVector& End)
-	{
-		const b2Vec2 BoxStart(FPhysicsIntegration2D::ConvertUnrealVectorToBox(Start));
-		const b2Vec2 BoxEnd(FPhysicsIntegration2D::ConvertUnrealVectorToBox(End));
-
-		// Now check the length of the 2D query, we may end up having to do an AABB test instead if it's a ray cast along the 'Z' axis of the 2D scene
-		const b2Vec2 BoxDelta = BoxEnd - BoxStart;
-		if (BoxDelta.LengthSquared() < SMALL_NUMBER)
-		{
-			// Tracing directly into the scene, so do a point query instead
-			PointQueryStartTime = FPhysicsIntegration2D::ConvertUnrealVectorToPerpendicularDistance(Start);
-			const float PointQueryEndTime = FPhysicsIntegration2D::ConvertUnrealVectorToPerpendicularDistance(End);
-			PointQueryScaleFactor = 1.0f / (PointQueryEndTime - PointQueryStartTime);
-			PointQueryNormal = (Start - End).GetSafeNormal();
-
-			// Run the query
-			b2AABB QueryBox;
-			QueryBox.lowerBound = BoxStart;
-			QueryBox.upperBound = BoxStart;
-			BoxWorld->QueryAABB(this, QueryBox);
-		}
-		else
-		{
-			// Cast the ray
-			BoxWorld->RayCast(this, BoxStart, BoxEnd);
-		}
-	}
-};
-
-class FRaycastHelperBox2D_RayCastSingle : public FRaycastHelperBox2D_RayCastBase
-{
-public:
-	FRaycastHelperBox2D_RayCastSingle(ECollisionChannel InTraceChannel, const struct FCollisionQueryParams& InParams, const FCollisionResponseContainer& InCollisionResponseContainer, const FCollisionObjectQueryParams& InObjectParam)
-		: FRaycastHelperBox2D_RayCastBase(InTraceChannel, InParams, InCollisionResponseContainer, InObjectParam, /*bInMultitrace=*/ false)
-		, BestHitTime(MAX_FLT)
-		, BestFixture(nullptr)
-		, bHasBlockingHit(false)
-	{
-	}
-
-	bool RayCastSingle(const b2World* BoxWorld, const FVector& Start, const FVector& End, bool bAlreadyHadHit, FHitResult& InOutResult)
-	{
-		RayCastInternal(BoxWorld, Start, End);
-
-		// Accept or merge the result
-		if (bHasBlockingHit)
-		{
-			if (!bAlreadyHadHit || (BestHitTime < InOutResult.Time))
-			{
-				ConvertToHitResult_Internal(InOutResult, Start, End, BestHitTime, BestFixture, BestNormal, BestHitType);
-			}
-		}
-
-		return bAlreadyHadHit || bHasBlockingHit;
-	}
-
-protected:
-	// FRaycastHelperBox2D_RayCastBase interface
-	virtual void ProcessHit(b2Fixture* Fixture, const float HitTime, const FVector& Normal, const EResponse ResponseMode) override
-	{
-		if (ResponseMode == ResponseBlock)
-		{
-			if (HitTime < BestHitTime)
-			{
-				BestFixture = Fixture;
-				BestHitTime = HitTime;
-				BestNormal = Normal;
-				BestHitType = ResponseMode;
-				bHasBlockingHit = true;
-			}
-		}
-	}
-	// End of FRaycastHelperBox2D_RayCastBase interface
-
-protected:
-	FVector BestNormal;
-	float BestHitTime;
-	b2Fixture* BestFixture;
-	EResponse BestHitType;
-
-	bool bHasBlockingHit;
-};
-
-
-class FRaycastHelperBox2D_RayCastMultiple : public FRaycastHelperBox2D_RayCastBase
-{
-public:
-	FRaycastHelperBox2D_RayCastMultiple(ECollisionChannel InTraceChannel, const struct FCollisionQueryParams& InParams, const FCollisionResponseContainer& InCollisionResponseContainer, const FCollisionObjectQueryParams& InObjectParam, TArray<struct FHitResult>& InHitsArray, const FVector& InStart, const FVector& InEnd)
-		: FRaycastHelperBox2D_RayCastBase(InTraceChannel, InParams, InCollisionResponseContainer, InObjectParam, /*bInMultitrace=*/ true)
-		, HitsArray(InHitsArray)
-		, Start(InStart)
-		, End(InEnd)
-	{
-	}
-
-	bool RayCastMultiple(const b2World* BoxWorld)
-	{
-		const int32 PreCount = HitsArray.Num();
-
-		RayCastInternal(BoxWorld, Start, End);
-
-		if (PreCount != HitsArray.Num())
-		{
-			// Sort the newly added results from first to last hit
-			HitsArray.Sort(FCompareFHitResultTime());
-		}
-
-		return HitsArray.Num() > 0;
-	}
-
-protected:
-	TArray<struct FHitResult>& HitsArray;
-	const FVector& Start;
-	const FVector& End;
-
-protected:
-	// FRaycastHelperBox2D_RayCastBase interface
-	virtual void ProcessHit(b2Fixture* Fixture, const float HitTime, const FVector& Normal, const EResponse ResponseMode) override
-	{
-		if (ResponseMode == ResponseBlock)
-		{
-			FHitResult& NewResult = *new (HitsArray) FHitResult();
-			ConvertToHitResult_Internal(NewResult, Start, End, HitTime, Fixture, Normal, ResponseMode);
-		}
-	}
-	// End of FRaycastHelperBox2D_RayCastBase interface
-};
-
-
-class FRaycastHelperBox2D_RayTest : public FRaycastHelperBox2D_Base
-{
-public:
-	FRaycastHelperBox2D_RayTest(ECollisionChannel InTraceChannel, const struct FCollisionQueryParams& InParams, const FCollisionResponseContainer& InCollisionResponseContainer, const FCollisionObjectQueryParams& InObjectParam)
-		: FRaycastHelperBox2D_Base(InTraceChannel, InParams, InCollisionResponseContainer, InObjectParam, /*bInMultitrace=*/ false)
-		, bHasBlockingHit(false)
-	{
-	}
-
-	bool RayTest(const b2World* BoxWorld, const FVector& Start, const FVector& End)
-	{
-		const b2Vec2 BoxStart(FPhysicsIntegration2D::ConvertUnrealVectorToBox(Start));
-		const b2Vec2 BoxEnd(FPhysicsIntegration2D::ConvertUnrealVectorToBox(End));
-
-		// Now check the length of the 2D query, we may end up having to do an AABB test instead if it's a ray cast along the 'Z' axis of the 2D scene
-		const b2Vec2 BoxDelta = BoxEnd - BoxStart;
-		if (BoxDelta.LengthSquared() < SMALL_NUMBER)
-		{
-			// Trace into the scene, do a point query instead
-			b2AABB QueryBox;
-			QueryBox.lowerBound = BoxStart;
-			QueryBox.upperBound = BoxStart;
-			BoxWorld->QueryAABB(this, QueryBox);
-		}
-		else
-		{
-			// Cast the ray
-			BoxWorld->RayCast(this, BoxStart, BoxEnd);
-		}
-
-		return bHasBlockingHit;
-	}
-
-	// b2RayCastCallback interface
-	virtual float32 ReportFixture(b2Fixture* Fixture, const b2Vec2& Point, const b2Vec2& Normal, float32 Fraction) override
-	{
-		const EResponse ResponseMode = CalcQueryHitType(Fixture);
-
-		switch (ResponseMode)
-		{
-		case ResponseBlock:
-			bHasBlockingHit = true;
-			return 0.0f;
-		case ResponseTouch:
-			return 1.0f;
-		default:
-		case ResponseNone:
-			return -1.0f;
-		}
-	}
-	// End of b2RayCastCallback interface
-
-	// b2QueryCallback interface
-	virtual bool ReportFixture(b2Fixture* Fixture) override
-	{
-		const EResponse ResponseMode = CalcQueryHitType(Fixture);
-
-		if (ResponseMode == ResponseBlock)
-		{
-			bHasBlockingHit = true;
-			return true;
-		}
-		else
-		{
-			return false;
-		}
-	}
-	// End of b2QueryCallback interface
-
-private:
-	bool bHasBlockingHit;
-};
-
-#endif	//WITH_BOX2D
+float DebugLineLifetime = 2.f;
 
 #if WITH_PHYSX
 
 #include "Collision/CollisionDebugDrawing.h"
 #include "Collision/CollisionConversions.h"
-
-float DebugLineLifetime = 2.f;
+#include "ScopedTimers.h"
 
 /**
  * Helper to lock/unlock multiple scenes that also makes sure to unlock everything when it goes out of scope.
@@ -615,11 +158,193 @@ PxQueryHitType::Enum FPxQueryFilterCallback::CalcQueryHitType(const PxFilterData
 	return PxQueryHitType::eNONE;
 }
 
+#if DETECT_SQ_HITCHES
+int GSQHitchDetection = 0;
+FAutoConsoleVariableRef CVarSQHitchDetection(TEXT("p.SQHitchDetection"), GSQHitchDetection,
+	TEXT("Whether to detect scene query hitches. 0 is off. 1 repeats a slow scene query once and prints extra information. 2+ repeat slow query n times without recording (useful when profiling)")
+);
+
+int GSQHitchDetectionForceNames = 0;
+FAutoConsoleVariableRef CVarSQHitchDetectionForceNames(TEXT("p.SQHitchDetectionForceNames"), GSQHitchDetectionForceNames,
+	TEXT("Whether name resolution is forced off the game thread. This is not 100% safe, but can be useful when looking at hitches off GT")
+);
+
+float GSQHitchDetectionThreshold = 0.05f;
+FAutoConsoleVariableRef CVarSQHitchDetectionThreshold(TEXT("p.SQHitchDetectionThreshold"), GSQHitchDetectionThreshold,
+	TEXT("Determines the threshold in milliseconds for a scene query hitch.")
+);
+#endif
+
+#if WITH_PHYSX
+/** Various info we want to capture for hitch detection reporting */
+struct FHitchDetectionInfo
+{
+#if DETECT_SQ_HITCHES
+	FVector Start;
+	FVector End;
+	PxTransform Pose;
+	ECollisionChannel TraceChannel;
+	const FCollisionQueryParams& Params;
+	bool bInTM;
+
+	FHitchDetectionInfo(const FVector& InStart, const FVector& InEnd, ECollisionChannel InTraceChannel, const FCollisionQueryParams& InParams)
+		: Start(InStart)
+		, End(InEnd)
+		, TraceChannel(InTraceChannel)
+		, Params(InParams)
+		, bInTM(false)
+	{
+	}
+
+	FHitchDetectionInfo(const PxTransform& InPose, ECollisionChannel InTraceChannel, const FCollisionQueryParams& InParams)
+		: Pose(InPose)
+		, TraceChannel(InTraceChannel)
+		, Params(InParams)
+		, bInTM(true)
+	{
+	}
+
+	FString ToString() const
+	{
+		if (bInTM)
+		{
+			return FString::Printf(TEXT("Pose:%s TraceChannel:%d Params:%s"), *P2UTransform(Pose).ToString(), (int32)TraceChannel, *Params.ToString());
+		}
+		else
+		{
+			return FString::Printf(TEXT("Start:%s End:%s TraceChannel:%d Params:%s"), *Start.ToString(), *End.ToString(), (int32)TraceChannel, *Params.ToString());
+		}
+	};
+#else
+	FHitchDetectionInfo(const FVector&, const FVector&, ECollisionChannel, const FCollisionQueryParams&) {}
+	FHitchDetectionInfo(const PxTransform& InPose, ECollisionChannel InTraceChannel, const FCollisionQueryParams& InParams) {}
+	FString ToString() const { return FString(); }
+#endif
+};
+
+template <typename BufferType>
+struct FScopedSQHitchRepeater
+{
+#if DETECT_SQ_HITCHES
+	double HitchDuration;
+	FDurationTimer HitchTimer;
+	int32 LoopCounter;
+	BufferType& UserBuffer;	//The buffer the user would normally use when no repeating happens
+	BufferType* OriginalBuffer;	//The buffer as it was before the query, this is needed to maintain the same buffer properties for each loop
+	BufferType* RepeatBuffer;			//Dummy buffer for loops
+	FPxQueryFilterCallback& QueryCallback;
+	FHitchDetectionInfo HitchDetectionInfo;
+
+	bool RepeatOnHitch()
+	{
+		if(GSQHitchDetection)
+		{
+			if (LoopCounter == 0)
+			{
+				HitchTimer.Stop();
+			}
+
+			const bool bLoop = (LoopCounter < GSQHitchDetection) && (HitchDuration * 1000.0) >= GSQHitchDetectionThreshold;
+			++LoopCounter;
+			
+			QueryCallback.bRecordHitches = QueryCallback.bRecordHitches ? true : bLoop && GSQHitchDetection == 1;
+			if (bLoop)
+			{
+				if (!RepeatBuffer)
+				{
+					RepeatBuffer = new BufferType(*OriginalBuffer);
+				}
+				else
+				{
+					*RepeatBuffer = *OriginalBuffer;	//make a copy to make sure we have the same behavior every iteration
+				}
+			}
+			return bLoop;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	FScopedSQHitchRepeater(BufferType& OutBuffer, FPxQueryFilterCallback& PQueryCallback, const FHitchDetectionInfo& InHitchDetectionInfo)
+		: HitchDuration(0.0)
+		, HitchTimer(HitchDuration)
+		, LoopCounter(0)
+		, UserBuffer(OutBuffer)
+		, OriginalBuffer(nullptr)
+		, RepeatBuffer(nullptr)
+		, QueryCallback(PQueryCallback)
+		, HitchDetectionInfo(InHitchDetectionInfo)
+	{
+		if (GSQHitchDetection)
+		{
+			OriginalBuffer = new BufferType(UserBuffer);
+			HitchTimer.Start();
+		}
+	}
+
+	BufferType& GetBuffer()
+	{
+		return LoopCounter == 0 ? UserBuffer : *RepeatBuffer;
+	}
+
+	~FScopedSQHitchRepeater()
+	{
+		if (QueryCallback.bRecordHitches)
+		{
+			const double DurationInMS = HitchDuration * 1000.0;
+			UE_LOG(LogCollision, Warning, TEXT("SceneQueryHitch: took %.3fms with %d calls to PreFilter"), DurationInMS, QueryCallback.PreFilterHitchInfo.Num());
+			UE_LOG(LogCollision, Warning, TEXT("\t%s"), *HitchDetectionInfo.ToString());
+			for (const FPxQueryFilterCallback::FPreFilterRecord& Record : QueryCallback.PreFilterHitchInfo)
+			{
+				UE_LOG(LogCollision, Warning, TEXT("\tPreFilter:%s, result=%d"), *Record.OwnerComponentReadableName, (int32)Record.Result);
+			}
+			QueryCallback.PreFilterHitchInfo.Empty();
+		}
+
+		QueryCallback.bRecordHitches = false;
+		delete RepeatBuffer;
+		delete OriginalBuffer;
+	}
+#else
+	FScopedSQHitchRepeater(BufferType& OutBuffer, FPxQueryFilterCallback& PQueryCallback, const FHitchDetectionInfo& InHitchDetectionInfo) 
+		: UserBuffer(OutBuffer)
+	{
+	}
+
+	BufferType& UserBuffer;	//The buffer the user would normally use when no repeating happens
+
+	BufferType& GetBuffer() const { return UserBuffer; }
+	bool RepeatOnHitch() const { return false; }
+#endif
+};
+#endif // WITH_PHYSX
+
 PxQueryHitType::Enum FPxQueryFilterCallback::preFilter(const PxFilterData& filterData, const PxShape* shape, const PxRigidActor* actor, PxHitFlags& queryFlags)
 {
 	SCOPE_CYCLE_COUNTER(STAT_Collision_PreFilter);
 
 	ensureMsgf(shape, TEXT("Invalid shape encountered in FPxQueryFilterCallback::preFilter, actor: %p, filterData: %x %x %x %x"), actor, filterData.word0, filterData.word1, filterData.word2, filterData.word3);
+
+#if DETECT_SQ_HITCHES
+	FPreFilterRecord* PreFilterRecord = nullptr;
+	if (bRecordHitches && (IsInGameThread() || GSQHitchDetectionForceNames))
+	{
+		PreFilterHitchInfo.AddZeroed();
+		PreFilterRecord = &PreFilterHitchInfo[PreFilterHitchInfo.Num() - 1];
+		if (actor)
+		{
+			if (FBodyInstance* OwnerBI = FPhysxUserData::Get<FBodyInstance>(actor->userData))
+			{
+				if (UPrimitiveComponent* OwnerComp = OwnerBI->OwnerComponent.Get())
+				{
+					PreFilterRecord->OwnerComponentReadableName = OwnerComp->GetReadableName();
+				}
+			}
+		}
+	}
+#endif
 
 	if(!shape)
 	{
@@ -628,8 +353,8 @@ PxQueryHitType::Enum FPxQueryFilterCallback::preFilter(const PxFilterData& filte
 	}
 
 	// Check if the shape is the right complexity for the trace 
-	PxFilterData ShapeFilter = shape->getQueryFilterData();
-	PxFilterData ShapeSimFilter = shape->getSimulationFilterData();	//This is a bit of a hack. We do this because word2 has our component ID
+	const PxFilterData ShapeFilter = shape->getQueryFilterData();
+
 #define ENABLE_PREFILTER_LOGGING 0
 #if ENABLE_PREFILTER_LOGGING
 	static bool bLoggingEnabled=false;
@@ -675,10 +400,17 @@ PxQueryHitType::Enum FPxQueryFilterCallback::preFilter(const PxFilterData& filte
 	// If not already rejected, check ignore actor and component list.
 	if (Result != PxQueryHitType::eNONE)
 	{
-		// See if we are ignoring the actor this shape belongs to (word0 of shape filterdata is actorID) or the component (word2 of shape sim filter data is componentID)
-		if (IgnoreActors.Contains(ShapeFilter.word0) || IgnoreComponents.Contains(ShapeSimFilter.word2))
+		// See if we are ignoring the actor this shape belongs to (word0 of shape filterdata is actorID)
+		if (IgnoreActors.Contains(ShapeFilter.word0))
 		{
 			//UE_LOG(LogTemp, Log, TEXT("Ignoring Actor: %d"), ShapeFilter.word0);
+			Result = PxQueryHitType::eNONE;
+		}
+
+		// We usually don't have ignore components so we try to avoid the virtual getSimulationFilterData() call below. 'word2' of shape sim filter data is componentID.
+		if (IgnoreComponents.Num() > 0 && IgnoreComponents.Contains(shape->getSimulationFilterData().word2))
+		{
+			//UE_LOG(LogTemp, Log, TEXT("Ignoring Component: %d"), shape->getSimulationFilterData().word2);
 			Result = PxQueryHitType::eNONE;
 		}
 	}
@@ -702,6 +434,13 @@ PxQueryHitType::Enum FPxQueryFilterCallback::preFilter(const PxFilterData& filte
 	{
 		Result = PxQueryHitType::eTOUCH;	//In the case of overlaps, physx only understands touches. We do this at the end to ensure all filtering logic based on block vs overlap is correct
 	}
+
+#if DETECT_SQ_HITCHES
+	if (PreFilterRecord)
+	{
+		PreFilterRecord->Result = Result;
+	}
+#endif
 
 	return  (PrefilterReturnValue = Result);
 }
@@ -896,24 +635,24 @@ PxQueryFlags StaticDynamicQueryFlags(const FCollisionQueryParams& Params)
 //////////////////////////////////////////////////////////////////////////
 // RAYCAST
 
-#if UE_WITH_PHYSICS
-
 bool RaycastTest(const UWorld* World, const FVector Start, const FVector End, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
 	if ((World == NULL) || (World->GetPhysicsScene() == NULL))
 	{
 		return false;
 	}
+	SCOPE_CYCLE_COUNTER(STAT_Collision_SceneQueryTotal);
 	SCOPE_CYCLE_COUNTER(STAT_Collision_RaycastAny);
+	FScopeCycleCounter Counter(Params.StatId);
 	STARTQUERYTIMER();
 
 	bool bHaveBlockingHit = false; // Track if we get any 'blocking' hits
 
+#if WITH_PHYSX
 	FVector Delta = End - Start;
 	float DeltaMag = Delta.Size();
 	if (DeltaMag > KINDA_SMALL_NUMBER)
 	{
-#if WITH_PHYSX
 		{
 			const PxVec3 PDir = U2PVector(Delta / DeltaMag);
 			PxRaycastBuffer PRaycastBuffer;
@@ -930,7 +669,11 @@ bool RaycastTest(const UWorld* World, const FVector Start, const FVector End, EC
 				// Enable scene locks, in case they are required
 				PxScene* SyncScene = PhysScene->GetPhysXScene(PST_Sync);
 				SCOPED_SCENE_READ_LOCK(SyncScene);
-				SyncScene->raycast(U2PVector(Start), PDir, DeltaMag, PRaycastBuffer, POutputFlags, PQueryFilterData, &PQueryCallback);
+				FScopedSQHitchRepeater<decltype(PRaycastBuffer)> HitchRepeater(PRaycastBuffer, PQueryCallback, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+				do
+				{
+					SyncScene->raycast(U2PVector(Start), PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallback);
+				} while (HitchRepeater.RepeatOnHitch());
 				bHaveBlockingHit = PRaycastBuffer.hasBlock;
 			}
 
@@ -939,39 +682,34 @@ bool RaycastTest(const UWorld* World, const FVector Start, const FVector End, EC
 			{
 				PxScene* AsyncScene = PhysScene->GetPhysXScene(PST_Async);
 				SCOPED_SCENE_READ_LOCK(AsyncScene);
-				AsyncScene->raycast(U2PVector(Start), PDir, DeltaMag, PRaycastBuffer, POutputFlags, PQueryFilterData, &PQueryCallback);
+				FScopedSQHitchRepeater<decltype(PRaycastBuffer)> HitchRepeater(PRaycastBuffer, PQueryCallback, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+				do
+				{
+					AsyncScene->raycast(U2PVector(Start), PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallback);
+				} while (HitchRepeater.RepeatOnHitch());
 				bHaveBlockingHit = PRaycastBuffer.hasBlock;
 			}
 		}
-#endif // WITH_PHYSX
-
-#if WITH_BOX2D
-		if (!bHaveBlockingHit && GetDefault<UPhysicsSettings>()->bEnable2DPhysics)
-		{
-			if (const b2World* BoxWorld = FPhysicsIntegration2D::FindAssociatedWorld(const_cast<UWorld*>(World)))
-			{
-				FRaycastHelperBox2D_RayTest BoxQuery(TraceChannel, Params, ResponseParams.CollisionResponse, ObjectParams);
-				bHaveBlockingHit = BoxQuery.RayTest(BoxWorld, Start, End);
-			}
-		}
-#endif // WITH_BOX2D
 	}
 
 	TArray<FHitResult> Hits;
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	if ((World->DebugDrawTraceTag != NAME_None) && (World->DebugDrawTraceTag == Params.TraceTag) && IsInGameThread())
+	if(World->DebugDrawSceneQueries(Params.TraceTag))
 	{
 		DrawLineTraces(World, Start, End, Hits, DebugLineLifetime);
 	}
 #endif //!(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 	CAPTURERAYCAST(World, Start, End, ECAQueryMode::Test, TraceChannel, Params, ResponseParams, ObjectParams, Hits);
 
+#endif // WITH_PHYSX 
 	return bHaveBlockingHit;
 }
 
 bool RaycastSingle(const UWorld* World, struct FHitResult& OutHit, const FVector Start, const FVector End, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
+	SCOPE_CYCLE_COUNTER(STAT_Collision_SceneQueryTotal);
 	SCOPE_CYCLE_COUNTER(STAT_Collision_RaycastSingle);
+	FScopeCycleCounter Counter(Params.StatId);
 	STARTQUERYTIMER();
 
 	OutHit = FHitResult();
@@ -984,12 +722,12 @@ bool RaycastSingle(const UWorld* World, struct FHitResult& OutHit, const FVector
 	}
 
 	bool bHaveBlockingHit = false; // Track if we get any 'blocking' hits
+#if WITH_PHYSX
 
 	FVector Delta = End - Start;
 	float DeltaMag = Delta.Size();
 	if (DeltaMag > KINDA_SMALL_NUMBER)
 	{
-#if WITH_PHYSX
 		{
 			FScopedMultiSceneReadLock SceneLocks;
 
@@ -1010,7 +748,13 @@ bool RaycastSingle(const UWorld* World, struct FHitResult& OutHit, const FVector
 			SceneLocks.LockRead(World, SyncScene, PST_Sync);
 
 			PxRaycastBuffer PRaycastBuffer;
-			SyncScene->raycast(U2PVector(Start), PDir, DeltaMag, PRaycastBuffer, POutputFlags, PQueryFilterData, &PQueryCallback);
+			{
+				FScopedSQHitchRepeater<decltype(PRaycastBuffer)> HitchRepeater(PRaycastBuffer, PQueryCallback, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+				do
+				{
+					SyncScene->raycast(U2PVector(Start), PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallback);
+				} while (HitchRepeater.RepeatOnHitch());
+			}
 			bHaveBlockingHit = PRaycastBuffer.hasBlock;
 			if (!bHaveBlockingHit)
 			{
@@ -1024,7 +768,11 @@ bool RaycastSingle(const UWorld* World, struct FHitResult& OutHit, const FVector
 				PxScene* AsyncScene = PhysScene->GetPhysXScene(PST_Async);
 				SceneLocks.LockRead(World, AsyncScene, PST_Async);
 				PxRaycastBuffer PRaycastBufferAsync;
-				AsyncScene->raycast(U2PVector(Start), PDir, DeltaMag, PRaycastBufferAsync, POutputFlags, PQueryFilterData, &PQueryCallback);
+				FScopedSQHitchRepeater<decltype(PRaycastBufferAsync)> HitchRepeater(PRaycastBufferAsync, PQueryCallback, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+				do
+				{
+					AsyncScene->raycast(U2PVector(Start), PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallback);
+				} while (HitchRepeater.RepeatOnHitch());
 				const bool bHaveBlockingHitAsync = PRaycastBufferAsync.hasBlock;
 
 				// If we have a blocking hit in the async scene and there was no sync blocking hit, or if the async blocking hit came first,
@@ -1057,24 +805,12 @@ bool RaycastSingle(const UWorld* World, struct FHitResult& OutHit, const FVector
 				}
 			}
 		}
-#endif //WITH_PHYSX
 
-#if WITH_BOX2D
-		if (GetDefault<UPhysicsSettings>()->bEnable2DPhysics)
-		{
-			if (const b2World* BoxWorld = FPhysicsIntegration2D::FindAssociatedWorld(const_cast<UWorld*>(World)))
-			{
-				FRaycastHelperBox2D_RayCastSingle BoxQuery(TraceChannel, Params, ResponseParams.CollisionResponse, ObjectParams);
-
-				bHaveBlockingHit = BoxQuery.RayCastSingle(BoxWorld, Start, End, bHaveBlockingHit, OutHit);
-			}
-		}
-#endif // WITH_BOX2D
 	}
 
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	if ((World->DebugDrawTraceTag != NAME_None) && (World->DebugDrawTraceTag == Params.TraceTag) && IsInGameThread())
+	if (World->DebugDrawSceneQueries(Params.TraceTag))
 	{
 		TArray<FHitResult> Hits;
 		if (bHaveBlockingHit)
@@ -1096,28 +832,30 @@ bool RaycastSingle(const UWorld* World, struct FHitResult& OutHit, const FVector
 		CAPTURERAYCAST(World, Start, End, ECAQueryMode::Single, TraceChannel, Params, ResponseParams, ObjectParams, Hits);
 	}
 #endif
+#endif // WITH_PHYSX
 
 	return bHaveBlockingHit;
 }
 
+#if WITH_PHYSX
 template<typename HitType>
 class FDynamicHitBuffer : public PxHitCallback<HitType>
 {
 private:
 	/** Hit buffer used to provide hits via processTouches */
-	HitType HitBuffer[HIT_BUFFER_SIZE];
+	TTypeCompatibleBytes<HitType> HitBuffer[HIT_BUFFER_SIZE];
 
 	/** Hits encountered. Can be larger than HIT_BUFFER_SIZE */
-	TArray<HitType, TInlineAllocator<HIT_BUFFER_SIZE>> Hits;
+	TArray<TTypeCompatibleBytes<HitType>, TInlineAllocator<HIT_BUFFER_SIZE>> Hits;
 
 public:
 	FDynamicHitBuffer()
-		: PxHitCallback<HitType>(HitBuffer, HIT_BUFFER_SIZE)
+		: PxHitCallback<HitType>((HitType*)HitBuffer, HIT_BUFFER_SIZE)
 	{}
 
 	virtual PxAgain processTouches(const HitType* buffer, PxU32 nbHits) override
 	{
-		Hits.Append(buffer, nbHits);
+		Hits.Append((TTypeCompatibleBytes<HitType>*)buffer, nbHits);
 		return true;
 	}
 
@@ -1137,13 +875,16 @@ public:
 
 	FORCEINLINE HitType* GetHits()
 	{
-		return Hits.GetData();
+		return (HitType*)Hits.GetData();
 	}
 };
+#endif // WITH_PHYSX
 
 bool RaycastMulti(const UWorld* World, TArray<struct FHitResult>& OutHits, const FVector& Start, const FVector& End, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
+	SCOPE_CYCLE_COUNTER(STAT_Collision_SceneQueryTotal);
 	SCOPE_CYCLE_COUNTER(STAT_Collision_RaycastMultiple);
+	FScopeCycleCounter Counter(Params.StatId);
 	STARTQUERYTIMER();
 
 	OutHits.Reset();
@@ -1156,11 +897,11 @@ bool RaycastMulti(const UWorld* World, TArray<struct FHitResult>& OutHits, const
 	// Track if we get any 'blocking' hits
 	bool bHaveBlockingHit = false;
 
+#if WITH_PHYSX
 	FVector Delta = End - Start;
 	float DeltaMag = Delta.Size();
 	if (DeltaMag > KINDA_SMALL_NUMBER)
 	{
-#if WITH_PHYSX
 		// Create filter data used to filter collisions
 		PxFilterData PFilter = CreateQueryFilterData(TraceChannel, Params.bTraceComplex, ResponseParams.CollisionResponse, Params, ObjectParams, true);
 		PxQueryFilterData PQueryFilterData(PFilter, StaticDynamicQueryFlags(Params) | PxQueryFlag::ePREFILTER);
@@ -1177,8 +918,14 @@ bool RaycastMulti(const UWorld* World, TArray<struct FHitResult>& OutHits, const
 
 		FScopedMultiSceneReadLock SceneLocks;
 		SceneLocks.LockRead(World, SyncScene, PST_Sync);
+		{
+			FScopedSQHitchRepeater<decltype(PRaycastBuffer)> HitchRepeater(PRaycastBuffer, PQueryCallback, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+			do
+			{
+				SyncScene->raycast(U2PVector(Start), PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallback);
+			} while (HitchRepeater.RepeatOnHitch());
+		}
 
-		SyncScene->raycast(U2PVector(Start), PDir, DeltaMag, PRaycastBuffer, POutputFlags, PQueryFilterData, &PQueryCallback);
 		PxI32 NumHits = PRaycastBuffer.GetNumHits();
 
 		if (NumHits == 0)
@@ -1202,7 +949,12 @@ bool RaycastMulti(const UWorld* World, TArray<struct FHitResult>& OutHits, const
 			PxI32 NumAsyncHits = 0;
 			if(RayLength > SMALL_NUMBER) // don't bother doing the trace if the sync scene trace gave a hit time of zero
 			{
-				AsyncScene->raycast(U2PVector(Start), PDir, DeltaMag, PRaycastBuffer, POutputFlags, PQueryFilterData, &PQueryCallback);
+				FScopedSQHitchRepeater<decltype(PRaycastBuffer)> HitchRepeater(PRaycastBuffer, PQueryCallback, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+				do 
+				{
+					AsyncScene->raycast(U2PVector(Start), PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallback);
+				} while (HitchRepeater.RepeatOnHitch());
+
 				NumAsyncHits = PRaycastBuffer.GetNumHits() - NumHits;
 			}
 
@@ -1266,26 +1018,11 @@ bool RaycastMulti(const UWorld* World, TArray<struct FHitResult>& OutHits, const
 		}
 
 		bHaveBlockingHit = bBlockingHit;
-#endif // WITH_PHYSX
 
-#if WITH_BOX2D && 0
-		if (GetDefault<UPhysicsSettings>()->bEnable2DPhysics)
-		{
-			if (const b2World* BoxWorld = FPhysicsIntegration2D::FindAssociatedWorld(const_cast<UWorld*>(World)))
-			{
-				FRaycastHelperBox2D_RayCastMultiple BoxQuery(TraceChannel, Params, ResponseParams.CollisionResponse, ObjectParams, OutHits, Start, End);
-
-				if (BoxQuery.RayCastMultiple(BoxWorld))
-				{
-					bHaveBlockingHit = true;
-				}
-			}
-		}
-#endif // WITH_BOX2D
 	}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	if((World->DebugDrawTraceTag != NAME_None) && (World->DebugDrawTraceTag == Params.TraceTag))
+	if(World->DebugDrawSceneQueries(Params.TraceTag))
 	{
 		DrawLineTraces(World, Start, End, OutHits, DebugLineLifetime);
 	}
@@ -1293,6 +1030,7 @@ bool RaycastMulti(const UWorld* World, TArray<struct FHitResult>& OutHits, const
 
 	CAPTURERAYCAST(World, Start, End, ECAQueryMode::Multi, TraceChannel, Params, ResponseParams, ObjectParams, OutHits);
 
+#endif // WITH_PHYSX
 	return bHaveBlockingHit;
 }
 
@@ -1306,6 +1044,10 @@ PxU32 FindFaceIndex(const PxSweepHit& PHit, const PxVec3& unitDir)
 	PxConvexMeshGeometry convexGeom;
 	if(PHit.shape->getConvexMeshGeometry(convexGeom))
 	{
+		//PhysX has given us the most correct face. However, we actually want the most useful face which is the one with the most opposed normal within some radius.
+		//So for example, if we are sweeping against a corner we should take the plane that is most opposing, even if it's not the exact one we hit.
+		static const float FindFaceInRadius = 1.f; // tolerance to determine how far from the actual contact point we want to search.
+
 		const PxTransform pose = PHit.actor->getGlobalPose() * PHit.shape->getLocalPose();
 		const PxVec3 impactPos(PHit.position);
 		{
@@ -1336,7 +1078,6 @@ PxU32 FindFaceIndex(const PxSweepHit& PHit, const PxVec3& unitDir)
 			PxReal maxD = -PX_MAX_REAL;
 			PxU32 maxDIndex = 0;
 			PxReal minNormalDot = PX_MAX_REAL;
-			static const float onSurfaceEpsilon = 0.2f; // tolerance to determine that an impact point is 'on' a face
 
 			for (PxU32 j = 0; j < nbPolys; j++)
 			{
@@ -1358,8 +1099,9 @@ PxU32 FindFaceIndex(const PxSweepHit& PHit, const PxVec3& unitDir)
 					maxD = d;
 				}
 
-				// If impact point is 'behind' this plane, we are not interested
-				if (d<-onSurfaceEpsilon)
+				//Because we are searching against a convex hull, we will never get multiple faces that are both in front of the contact point _and_ have an opposing normal (except the face we hit).
+				//However, we may have just missed a plane which is now "behind" the contact point while still being inside the radius
+				if (d<-FindFaceInRadius)
 					continue;
 
 				// Calculate direction dot plane normal
@@ -1396,7 +1138,9 @@ bool GeomSweepTest(const UWorld* World, const struct FCollisionShape& CollisionS
 	{
 		return false;
 	}
+	SCOPE_CYCLE_COUNTER(STAT_Collision_SceneQueryTotal);
 	SCOPE_CYCLE_COUNTER(STAT_Collision_GeomSweepAny);
+	FScopeCycleCounter Counter(Params.StatId);
 	STARTQUERYTIMER();
 
 	bool bHaveBlockingHit = false; // Track if we get any 'blocking' hits
@@ -1427,7 +1171,12 @@ bool GeomSweepTest(const UWorld* World, const struct FCollisionShape& CollisionS
 			PxScene* SyncScene = PhysScene->GetPhysXScene(PST_Sync);
 			SCOPED_SCENE_READ_LOCK(SyncScene);
 			PxSweepBuffer PSweepBuffer;
-			SyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, PSweepBuffer, POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+			FScopedSQHitchRepeater<decltype(PSweepBuffer)> HitchRepeater(PSweepBuffer, PQueryCallbackSweep, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+			do
+			{
+				SyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+			} while (HitchRepeater.RepeatOnHitch());
+
 			bHaveBlockingHit = PSweepBuffer.hasBlock;
 		}
 
@@ -1437,13 +1186,17 @@ bool GeomSweepTest(const UWorld* World, const struct FCollisionShape& CollisionS
 			PxScene* AsyncScene = PhysScene->GetPhysXScene(PST_Async);
 			SCOPED_SCENE_READ_LOCK(AsyncScene);
 			PxSweepBuffer PSweepBuffer;
-			AsyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, PSweepBuffer, POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+			FScopedSQHitchRepeater<decltype(PSweepBuffer)> HitchRepeater(PSweepBuffer, PQueryCallbackSweep, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+			do
+			{
+				AsyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+			} while (HitchRepeater.RepeatOnHitch());
 			bHaveBlockingHit = PSweepBuffer.hasBlock;
 		}
 	}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	if((World->DebugDrawTraceTag != NAME_None) && (World->DebugDrawTraceTag == Params.TraceTag))
+	if(World->DebugDrawSceneQueries(Params.TraceTag))
 	{
 		TArray<FHitResult> Hits;
 		DrawGeomSweeps(World, Start, End, PGeom, PGeomRot, Hits, DebugLineLifetime);
@@ -1467,7 +1220,9 @@ bool GeomSweepTest(const UWorld* World, const struct FCollisionShape& CollisionS
 
 bool GeomSweepSingle(const UWorld* World, const struct FCollisionShape& CollisionShape, const FQuat& Rot, FHitResult& OutHit, FVector Start, FVector End, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
+	SCOPE_CYCLE_COUNTER(STAT_Collision_SceneQueryTotal);
 	SCOPE_CYCLE_COUNTER(STAT_Collision_GeomSweepSingle);
+	FScopeCycleCounter Counter(Params.StatId);
 	STARTQUERYTIMER();
 
 	OutHit = FHitResult();
@@ -1510,7 +1265,14 @@ bool GeomSweepSingle(const UWorld* World, const struct FCollisionShape& Collisio
 		SceneLocks.LockRead(World, SyncScene, PST_Sync);
 
 		PxSweepBuffer PSweepBuffer;
-		SyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, PSweepBuffer, POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+		{
+			FScopedSQHitchRepeater<decltype(PSweepBuffer)> HitchRepeater(PSweepBuffer, PQueryCallbackSweep, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+			do
+			{
+				SyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+
+			} while (HitchRepeater.RepeatOnHitch());
+		}
 		bHaveBlockingHit = PSweepBuffer.hasBlock;
 		PxSweepHit PHit = PSweepBuffer.block;
 
@@ -1528,7 +1290,12 @@ bool GeomSweepSingle(const UWorld* World, const struct FCollisionShape& Collisio
 
 			bool bHaveBlockingHitAsync;
 			PxSweepBuffer PSweepBufferAsync;
-			AsyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, PSweepBufferAsync, POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+			FScopedSQHitchRepeater<decltype(PSweepBuffer)> HitchRepeater(PSweepBuffer, PQueryCallbackSweep, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+			do
+			{
+				AsyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+
+			} while (HitchRepeater.RepeatOnHitch());
 			bHaveBlockingHitAsync = PSweepBufferAsync.hasBlock;
 			PxSweepHit PHitAsync = PSweepBufferAsync.block;
 
@@ -1564,7 +1331,7 @@ bool GeomSweepSingle(const UWorld* World, const struct FCollisionShape& Collisio
 	}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	if((World->DebugDrawTraceTag != NAME_None) && (World->DebugDrawTraceTag == Params.TraceTag))
+	if (World->DebugDrawSceneQueries(Params.TraceTag))
 	{
 		TArray<FHitResult> Hits;
 		if (bHaveBlockingHit)
@@ -1594,9 +1361,12 @@ bool GeomSweepSingle(const UWorld* World, const struct FCollisionShape& Collisio
 	return bHaveBlockingHit;
 }
 
+#if WITH_PHYSX
 bool GeomSweepMulti_PhysX(const UWorld* World, const PxGeometry& PGeom, const PxQuat& PGeomRot, TArray<FHitResult>& OutHits, FVector Start, FVector End, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
+	SCOPE_CYCLE_COUNTER(STAT_Collision_SceneQueryTotal);
 	SCOPE_CYCLE_COUNTER(STAT_Collision_GeomSweepMultiple);
+	FScopeCycleCounter Counter(Params.StatId);
 	STARTQUERYTIMER();
 	bool bBlockingHit = false;
 
@@ -1626,8 +1396,14 @@ bool GeomSweepMulti_PhysX(const UWorld* World, const PxGeometry& PGeom, const Px
 		float MinBlockDistance = DeltaMag;
 
 		FDynamicHitBuffer<PxSweepHit> PSweepBuffer;
-
-		SyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, PSweepBuffer, POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+		{
+			FScopedSQHitchRepeater<decltype(PSweepBuffer)> HitchRepeater(PSweepBuffer, PQueryCallbackSweep, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+			do
+			{
+				SyncScene->sweep(PGeom, PStartTM, PDir, DeltaMag, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+			} while (HitchRepeater.RepeatOnHitch());
+		}
+				
 		bool bBlockingHitSync = PSweepBuffer.hasBlock;
 		PxI32 NumHits = PSweepBuffer.GetNumHits();
 
@@ -1648,7 +1424,14 @@ bool GeomSweepMulti_PhysX(const UWorld* World, const PxGeometry& PGeom, const Px
 			PxScene* AsyncScene = PhysScene->GetPhysXScene(PST_Async);
 			SceneLocks.LockRead(World, AsyncScene, PST_Async);
 
-			AsyncScene->sweep(PGeom, PStartTM, PDir, MinBlockDistance, PSweepBuffer, POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+			{
+				FScopedSQHitchRepeater<decltype(PSweepBuffer)> HitchRepeater(PSweepBuffer, PQueryCallbackSweep, FHitchDetectionInfo(Start, End, TraceChannel, Params));
+				do
+				{
+					AsyncScene->sweep(PGeom, PStartTM, PDir, MinBlockDistance, HitchRepeater.GetBuffer(), POutputFlags, PQueryFilterData, &PQueryCallbackSweep);
+				} while (HitchRepeater.RepeatOnHitch());
+			}
+
 			bool bBlockingHitAsync = PSweepBuffer.hasBlock;
 			PxI32 NumAsyncHits = PSweepBuffer.GetNumHits() - NumHits;
 			if (NumAsyncHits == 0)
@@ -1684,7 +1467,7 @@ bool GeomSweepMulti_PhysX(const UWorld* World, const PxGeometry& PGeom, const Px
 	}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	if ((World->DebugDrawTraceTag != NAME_None) && (World->DebugDrawTraceTag == Params.TraceTag) && IsInGameThread())
+	if (World->DebugDrawSceneQueries(Params.TraceTag))
 	{
 		TArray<FHitResult> OnlyMyHits(OutHits);
 		OnlyMyHits.RemoveAt(0, InitialHitCount, false); // Remove whatever was there initially.
@@ -1703,12 +1486,11 @@ bool GeomSweepMulti_PhysX(const UWorld* World, const PxGeometry& PGeom, const Px
 
 	return bBlockingHit;
 }
+#endif // WITH_PHYSX 
 
 
 bool GeomSweepMulti(const UWorld* World, const struct FCollisionShape& CollisionShape, const FQuat& Rot, TArray<FHitResult>& OutHits, FVector Start, FVector End, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
-	SCOPE_CYCLE_COUNTER(STAT_Collision_GeomSweepMultiple);
-
 	OutHits.Reset();
 
 	if ((World == NULL) || (World->GetPhysicsScene() == NULL))
@@ -1735,8 +1517,6 @@ bool GeomSweepMulti(const UWorld* World, const struct FCollisionShape& Collision
 //////////////////////////////////////////////////////////////////////////
 // GEOM OVERLAP
 
-#if WITH_PHYSX
-
 namespace EQueryInfo
 {
 	//This is used for templatizing code based on the info we're trying to get out.
@@ -1748,10 +1528,14 @@ namespace EQueryInfo
 	};
 }
 
+#if WITH_PHYSX
+
 template <EQueryInfo::Type InfoType>
 bool GeomOverlapMultiImp_PhysX(const UWorld* World, const PxGeometry& PGeom, const PxTransform& PGeomPose, TArray<FOverlapResult>& OutOverlaps, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
+	SCOPE_CYCLE_COUNTER(STAT_Collision_SceneQueryTotal);
 	SCOPE_CYCLE_COUNTER(STAT_Collision_GeomOverlapMultiple);
+	FScopeCycleCounter Counter(Params.StatId);
 	STARTQUERYTIMER();
 
 	bool bHaveBlockingHit = false;
@@ -1780,7 +1564,12 @@ bool GeomOverlapMultiImp_PhysX(const UWorld* World, const PxGeometry& PGeom, con
 		
 		if ((InfoType == EQueryInfo::IsAnything) || (InfoType == EQueryInfo::IsBlocking))
 		{
-			SyncScene->overlap(PGeom, PGeomPose, POverlapBuffer, PQueryFilterDataAny, &PQueryCallback);
+			FScopedSQHitchRepeater<decltype(POverlapBuffer)> HitchRepeater(POverlapBuffer, PQueryCallback, FHitchDetectionInfo(PGeomPose, TraceChannel, Params));
+			do
+			{
+				SyncScene->overlap(PGeom, PGeomPose, HitchRepeater.GetBuffer(), PQueryFilterDataAny, &PQueryCallback);
+			} while (HitchRepeater.RepeatOnHitch());
+
 			if (POverlapBuffer.hasBlock)
 			{
 				return true;
@@ -1789,7 +1578,13 @@ bool GeomOverlapMultiImp_PhysX(const UWorld* World, const PxGeometry& PGeom, con
 		else
 		{
 			checkSlow(InfoType == EQueryInfo::GatherAll);
-			SyncScene->overlap(PGeom, PGeomPose, POverlapBuffer, PQueryFilterData, &PQueryCallback);
+			
+			FScopedSQHitchRepeater<decltype(POverlapBuffer)> HitchRepeater(POverlapBuffer, PQueryCallback, FHitchDetectionInfo(PGeomPose, TraceChannel, Params));
+			do
+			{
+				SyncScene->overlap(PGeom, PGeomPose, HitchRepeater.GetBuffer(), PQueryFilterData, &PQueryCallback);
+			} while (HitchRepeater.RepeatOnHitch());
+
 			NumHits = POverlapBuffer.GetNumHits();
 			if (NumHits == 0)
 			{
@@ -1808,7 +1603,12 @@ bool GeomOverlapMultiImp_PhysX(const UWorld* World, const PxGeometry& PGeom, con
 		
 			if ((InfoType == EQueryInfo::IsAnything) || (InfoType == EQueryInfo::IsBlocking))
 			{
-				AsyncScene->overlap(PGeom, PGeomPose, POverlapBuffer, PQueryFilterDataAny, &PQueryCallback);
+				FScopedSQHitchRepeater<decltype(POverlapBuffer)> HitchRepeater(POverlapBuffer, PQueryCallback, FHitchDetectionInfo(PGeomPose, TraceChannel, Params));
+				do
+				{
+					AsyncScene->overlap(PGeom, PGeomPose, HitchRepeater.GetBuffer(), PQueryFilterDataAny, &PQueryCallback);
+				} while (HitchRepeater.RepeatOnHitch());
+				
 				if (POverlapBuffer.hasBlock)
 				{
 					return true;
@@ -1817,7 +1617,13 @@ bool GeomOverlapMultiImp_PhysX(const UWorld* World, const PxGeometry& PGeom, con
 			else
 			{
 				checkSlow(InfoType == EQueryInfo::GatherAll);
-				AsyncScene->overlap(PGeom, PGeomPose, POverlapBuffer, PQueryFilterData, &PQueryCallback);
+
+				FScopedSQHitchRepeater<decltype(POverlapBuffer)> HitchRepeater(POverlapBuffer, PQueryCallback, FHitchDetectionInfo(PGeomPose, TraceChannel, Params));
+				do
+				{
+					AsyncScene->overlap(PGeom, PGeomPose, HitchRepeater.GetBuffer(), PQueryFilterData, &PQueryCallback);
+				} while (HitchRepeater.RepeatOnHitch());
+
 				PxI32 NumAsyncHits = POverlapBuffer.GetNumHits() - NumHits;
 				if (NumAsyncHits == 0)
 				{
@@ -1837,7 +1643,7 @@ bool GeomOverlapMultiImp_PhysX(const UWorld* World, const PxGeometry& PGeom, con
 			}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-			if ((World->DebugDrawTraceTag != NAME_None) && (World->DebugDrawTraceTag == Params.TraceTag) && IsInGameThread())
+			if (World->DebugDrawSceneQueries(Params.TraceTag))
 			{
 				DrawGeomOverlaps(World, PGeom, PGeomPose, OutOverlaps, DebugLineLifetime);
 			}
@@ -1895,22 +1701,33 @@ bool GeomOverlapMultiImp(const UWorld* World, const struct FCollisionShape& Coll
 
 bool GeomOverlapMulti(const UWorld* World, const struct FCollisionShape& CollisionShape, const FVector& Pos, const FQuat& Rot, TArray<FOverlapResult>& OutOverlaps, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
+#if WITH_PHYSX
 	OutOverlaps.Reset();
 	return GeomOverlapMultiImp<EQueryInfo::GatherAll>(World, CollisionShape, Pos, Rot, OutOverlaps, TraceChannel, Params, ResponseParams, ObjectParams);
+#else
+	return false;
+#endif // WITH_PHYSX
 }
 
 bool GeomOverlapBlockingTest(const UWorld* World, const struct FCollisionShape& CollisionShape, const FVector& Pos, const FQuat& Rot, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
+#if WITH_PHYSX
 	TArray<FOverlapResult> Overlaps;	//needed only for template shared code
 	return GeomOverlapMultiImp<EQueryInfo::IsBlocking>(World, CollisionShape, Pos, Rot, Overlaps, TraceChannel, Params, ResponseParams, ObjectParams);
+#else
+	return false;
+#endif // WITH_PHYSX
 }
 
 bool GeomOverlapAnyTest(const UWorld* World, const struct FCollisionShape& CollisionShape, const FVector& Pos, const FQuat& Rot, ECollisionChannel TraceChannel, const struct FCollisionQueryParams& Params, const struct FCollisionResponseParams& ResponseParams, const struct FCollisionObjectQueryParams& ObjectParams)
 {
+#if WITH_PHYSX
 	TArray<FOverlapResult> Overlaps;	//needed only for template shared code
 	return GeomOverlapMultiImp<EQueryInfo::IsAnything>(World, CollisionShape, Pos, Rot, Overlaps, TraceChannel, Params, ResponseParams, ObjectParams);
+#else
+	return false;
+#endif // WITH_PHYSX
 }
-#endif //UE_WITH_PHYSICS
 
 //////////////////////////////////////////////////////////////////////////
 

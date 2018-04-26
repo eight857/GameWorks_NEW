@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "FileCache.h"
 #include "GenericPlatform/GenericPlatformFile.h"
@@ -10,6 +10,8 @@
 #include "Serialization/CustomVersion.h"
 #include "DirectoryWatcherModule.h"
 #include "Modules/ModuleManager.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogFileCache, Log, All);
 
 namespace DirectoryWatcher
 {

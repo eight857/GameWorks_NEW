@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	UAnimSingleNodeInstance.cpp: Single Node Tree Instance 
@@ -48,7 +48,7 @@ void UAnimSingleNodeInstance::SetAnimationAsset(class UAnimationAsset* NewAsset,
 		else if (CurrentAsset != nullptr)
 		{
 			// if we have an asset, make sure their skeleton matches, otherwise, null it
-			if (MeshComponent->SkeletalMesh == nullptr || MeshComponent->SkeletalMesh->Skeleton != CurrentAsset->GetSkeleton())
+			if (MeshComponent->SkeletalMesh->Skeleton != CurrentAsset->GetSkeleton())
 			{
 				// clear asset since we do not have matching skeleton
 				CurrentAsset = nullptr;
@@ -87,6 +87,11 @@ void UAnimSingleNodeInstance::SetAnimationAsset(class UAnimationAsset* NewAsset,
 		// otherwise stop all montages
 		StopAllMontages(0.25f);
 	}
+}
+
+UAnimationAsset* UAnimSingleNodeInstance::GetAnimationAsset() const
+{
+	return CurrentAsset;
 }
 
 void UAnimSingleNodeInstance::SetPreviewCurveOverride(const FName& PoseName, float Value, bool bRemoveIfZero)
@@ -341,7 +346,7 @@ void UAnimSingleNodeInstance::SetPositionWithPreviousTime(float InPosition, floa
 		{
 			NotifyQueue.Reset(GetSkelMeshComponent());
 
-			TArray<const FAnimNotifyEvent*> Notifies;
+			TArray<FAnimNotifyEventReference> Notifies;
 			SequenceBase->GetAnimNotifiesFromDeltaPositions(InPreviousTime, Proxy.GetCurrentTime(), Notifies);
 			if ( Notifies.Num() > 0 )
 			{

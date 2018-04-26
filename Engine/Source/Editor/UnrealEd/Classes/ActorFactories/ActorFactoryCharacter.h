@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -8,7 +8,7 @@
 #include "ActorFactories/ActorFactory.h"
 #include "ActorFactoryCharacter.generated.h"
 
-class FAssetData;
+struct FAssetData;
 
 UCLASS(MinimalAPI,config=Editor)
 class UActorFactoryCharacter : public UActorFactory

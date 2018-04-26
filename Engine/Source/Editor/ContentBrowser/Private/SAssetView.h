@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -20,6 +20,7 @@
 #include "Widgets/Views/STableRow.h"
 #include "Editor/ContentBrowser/Private/AssetViewSortManager.h"
 #include "AssetViewTypes.h"
+#include "HistoryManager.h"
 
 class FMenuBuilder;
 class FWeakWidgetPath;
@@ -29,8 +30,10 @@ class SAssetListView;
 class SAssetTileView;
 class SComboButton;
 class UFactory;
-struct FHistoryData;
 struct FPropertyChangedEvent;
+
+/** Delegate called when selection changed. Provides more context than FOnAssetSelected */
+DECLARE_DELEGATE_TwoParams(FOnAssetSelectionChanged, const FAssetData& /*InAssetData*/, ESelectInfo::Type /*InSelectInfo*/);
 
 /**
  * A widget to display a list of filtered assets
@@ -52,6 +55,7 @@ public:
 		, _CanShowRealTimeThumbnails(false)
 		, _CanShowDevelopersFolder(false)
 		, _CanShowCollections(false)
+		, _CanShowFavorites(false)
 		, _PreloadAssetsForContextMenu(true)
 		, _SelectionMode( ESelectionMode::Multi )
 		, _AllowDragging(true)
@@ -67,6 +71,9 @@ public:
 
 		/** Called to when an asset is selected */
 		SLATE_EVENT( FOnAssetSelected, OnAssetSelected )
+
+		/** Called to when an asset is selected. Provides more context OnAssetSelected */
+		SLATE_EVENT( FOnAssetSelectionChanged, OnAssetSelectionChanged )
 
 		/** Called when the user double clicks, presses enter, or presses space on an asset */
 		SLATE_EVENT( FOnAssetsActivated, OnAssetsActivated )
@@ -85,6 +92,9 @@ public:
 
 		/** Called when the user has committed a rename of one or more assets */
 		SLATE_EVENT( FOnAssetRenameCommitted, OnAssetRenameCommitted )
+
+		/** Delegate to call (if bound) to check if it is valid to get a custom tooltip for this asset item */
+		SLATE_EVENT(FOnIsAssetValidForCustomToolTip, OnIsAssetValidForCustomToolTip)
 
 		/** Called to get a custom asset item tool tip (if necessary) */
 		SLATE_EVENT( FOnGetCustomAssetToolTip, OnGetCustomAssetToolTip )
@@ -152,6 +162,9 @@ public:
 		/** Indicates if the 'Show Collections' option should be enabled or disabled */
 		SLATE_ARGUMENT( bool, CanShowCollections )
 
+		/** Indicates if the 'Show Favorites' option should be enabled or disabled */
+		SLATE_ARGUMENT(bool, CanShowFavorites)
+
 		/** Indicates if the context menu is going to load the assets, and if so to preload before the context menu is shown, and warn about the pending load. */
 		SLATE_ARGUMENT( bool, PreloadAssetsForContextMenu )
 
@@ -182,11 +195,14 @@ public:
 		/** Called when a folder is entered */
 		SLATE_EVENT( FOnPathSelected, OnPathSelected )
 
+		/** Called to add extra asset data to the asset view, to display virtual assets. These get treated similar to Class assets */
+		SLATE_EVENT( FOnGetCustomSourceAssets, OnGetCustomSourceAssets )
+
 		/** Columns to hide by default */
 		SLATE_ARGUMENT( TArray<FString>, HiddenColumnNames )
 
 		/** Custom columns that can be use specific */
-		SLATE_ARGUMENT(TArray<FAssetViewCustomColumn>, CustomColumns)
+		SLATE_ARGUMENT( TArray<FAssetViewCustomColumn>, CustomColumns )
 
 	SLATE_END_ARGS()
 
@@ -222,8 +238,14 @@ public:
 	/** Selects the paths containing the specified assets. */
 	void SyncToAssets( const TArray<FAssetData>& AssetDataList, const bool bFocusOnSync = true );
 
+	/** Selects the specified paths. */
+	void SyncToFolders( const TArray<FString>& FolderList, const bool bFocusOnSync = true );
+
+	/** Selects the paths containing the specified items. */
+	void SyncTo( const FContentBrowserSelection& ItemSelection, const bool bFocusOnSync = true );
+
 	/** Sets the state of the asset view to the one described by the history data */
-	void ApplyHistoryData ( const FHistoryData& History );
+	void ApplyHistoryData( const FHistoryData& History );
 
 	/** Returns all the items currently selected in the view */
 	TArray<TSharedPtr<FAssetViewItem>> GetSelectedItems() const;
@@ -295,6 +317,9 @@ public:
 	/** Called when a folder is removed from the asset registry */
 	void OnAssetRegistryPathRemoved(const FString& Path);
 
+	/** Handles updating the content browser when a path is populated with an asset for the first time */
+	void OnFolderPopulated(const FString& Path);
+
 	/**
 	 * Forces the plugin content folder to be shown.
 	 *
@@ -303,6 +328,9 @@ public:
 	void ForceShowPluginFolder( bool bEnginePlugin );
 
 private:
+
+	/** Sets the pending selection to the current selection (used when changing views or refreshing the view). */
+	void SyncToSelection( const bool bFocusOnSync = true );
 
 	/** @return the thumbnail scale setting path to use when looking up the setting in an ini. */
 	FString GetThumbnailScaleSettingPath(const FString& SettingsString) const;
@@ -415,14 +443,23 @@ private:
 	/** @return true when we are showing folders */
 	bool IsShowingFolders() const;
 
-	/** Toggle whether folders should be shown or not */
-	void ToggleShowL10NFolder();
+	/** Toggle whether empty folders should be shown or not */
+	void ToggleShowEmptyFolders();
 
-	/** Whether or not it's possible to show folders */
-	bool IsToggleShowL10NFolderAllowed() const;
+	/** Whether or not it's possible to show empty folders */
+	bool IsToggleShowEmptyFoldersAllowed() const;
+
+	/** @return true when we are showing empty folders */
+	bool IsShowingEmptyFolders() const;
+
+	/** Toggle whether localized content should be shown or not */
+	void ToggleShowLocalizedContent();
+
+	/** Whether or not it's possible to show localized content */
+	bool IsToggleShowLocalizedContentAllowed() const;
 
 	/** @return true when we are showing folders */
-	bool IsShowingL10NFolder() const;
+	bool IsShowingLocalizedContent() const;
 
 	/** Toggle whether to show real-time thumbnails */
 	void ToggleRealTimeThumbnails();
@@ -433,26 +470,26 @@ private:
 	/** @return true if we are showing real-time thumbnails */
 	bool IsShowingRealTimeThumbnails() const;
 
-	/** Toggle whether plugin content folders should be shown or not */
-	void ToggleShowPluginFolders();
+	/** Toggle whether plugin content should be shown or not */
+	void ToggleShowPluginContent();
 
-	/** @return true when we are showing plugin content folders */
-	bool IsShowingPluginFolders() const;
+	/** @return true when we are showing plugin content */
+	bool IsShowingPluginContent() const;
 
-	/** Toggle whether the engine folder should be shown or not */
-	void ToggleShowEngineFolder();
+	/** Toggle whether engine content should be shown or not */
+	void ToggleShowEngineContent();
 
-	/** @return true when we are showing the engine folder */
-	bool IsShowingEngineFolder() const;
+	/** @return true when we are showing engine content */
+	bool IsShowingEngineContent() const;
 
-	/** Toggle whether the developers folder should be shown or not */
-	void ToggleShowDevelopersFolder();
+	/** Toggle whether developers content should be shown or not */
+	void ToggleShowDevelopersContent();
 
-	/** Whether or not it's possible to toggle the developers folder */
-	bool IsToggleShowDevelopersFolderAllowed() const;
+	/** Whether or not it's possible to toggle developers content */
+	bool IsToggleShowDevelopersContentAllowed() const;
 
-	/** @return true when we are showing the developers folder */
-	bool IsShowingDevelopersFolder() const;
+	/** @return true when we are showing the developers content */
+	bool IsShowingDevelopersContent() const;
 
 	/** Toggle whether collections should be shown or not */
 	void ToggleShowCollections();
@@ -463,11 +500,23 @@ private:
 	/** @return true when we are showing collections */
 	bool IsShowingCollections() const;
 
-	/** Toggle whether C++ content folders should be shown or not */
-	void ToggleShowCppFolders();
+	/** Toggle whether favorites should be shown or not */
+	void ToggleShowFavorites();
 
-	/** @return true when we are showing c++ content folders */
-	bool IsShowingCppFolders() const;
+	/** Whether or not it's possible to toggle favorites */
+	bool IsToggleShowFavoritesAllowed() const;
+
+	/** @return true when we are showing favorites */
+	bool IsShowingFavorites() const;
+
+	/** Toggle whether C++ content should be shown or not */
+	void ToggleShowCppContent();
+
+	/** Whether or not it's possible to show C++ content */
+	bool IsToggleShowCppContentAllowed() const;
+
+	/** @return true when we are showing C++ content */
+	bool IsShowingCppContent() const;
 
 	/** Sets the view type and updates lists accordingly */
 	void SetCurrentViewType(EAssetViewType::Type NewType);
@@ -626,26 +675,17 @@ private:
 	/** Whether we have a single source collection selected */
 	bool HasSingleCollectionSource() const;
 
-	/** Delegate for when assets are dragged onto a folder */
-	void OnAssetsDragDropped(const TArray<FAssetData>& AssetList, const FString& DestinationPath);
-
-	/** Delegate for when folder(s) are dragged onto a folder */
-	void OnPathsDragDropped(const TArray<FString>& PathNames, const FString& DestinationPath);
+	/** Delegate for when assets or asset paths are dragged onto a folder */
+	void OnAssetsOrPathsDragDropped(const TArray<FAssetData>& AssetList, const TArray<FString>& AssetPaths, const FString& DestinationPath);
 
 	/** Delegate for when external assets are dragged onto a folder */
 	void OnFilesDragDropped(const TArray<FString>& AssetList, const FString& DestinationPath);
 
-	/** Delegate to respond to drop of assets onto a folder */
-	void ExecuteDropCopy(TArray<FAssetData> AssetList, FString DestinationPath);
+	/** Delegate to respond to drop of assets or asset paths onto a folder */
+	void ExecuteDropCopy(TArray<FAssetData> AssetList, TArray<FString> AssetPaths, FString DestinationPath);
 
-	/** Delegate to respond to drop of assets onto a folder */
-	void ExecuteDropMove(TArray<FAssetData> AssetList, FString DestinationPath);
-
-	/** Delegate to respond to drop of folder(s) onto a folder */
-	void ExecuteDropCopyFolder(TArray<FString> PathNames, FString DestinationPath);
-
-	/** Delegate to respond to drop of folder(s) onto a folder */
-	void ExecuteDropMoveFolder(TArray<FString> PathNames, FString DestinationPath);
+	/** Delegate to respond to drop of assets or asset paths onto a folder */
+	void ExecuteDropMove(TArray<FAssetData> AssetList, TArray<FString> AssetPaths, FString DestinationPath);
 
 	/** Creates a new asset from deferred data */
 	void DeferredCreateNewAsset();
@@ -688,6 +728,9 @@ private:
 	/** Resets the column filtering state to make them all visible */
 	void ResetColumns();
 
+	/** Export columns to CSV */
+	void ExportColumns();
+
 	/** Toggle the column at ColumnIndex */
 	void ToggleColumn(const FString ColumnName);
 	/** Sets the column visibility by removing/inserting the column*/
@@ -703,6 +746,10 @@ private:
 	TSharedRef<SWidget> CreateRowHeaderMenuContent(const FString ColumnName);
 	/** Will compute the max row size from all its children for the specified column id*/
 	FVector2D GetMaxRowSizeForColumn(const FName& ColumnId);
+
+public:
+	/** Delegate that handles if any folder paths changed as a result of a move, rename, etc. in the asset view*/
+	FOnFolderPathChanged OnFolderPathChanged;
 
 private:
 
@@ -743,8 +790,8 @@ private:
 	/** If true, the frontend items will be refreshed next frame. Much faster. */
 	bool bQuickFrontendListRefreshRequested;
 
-	/** The list of assets to sync next frame */
-	TSet<FName> PendingSyncAssets;
+	/** The list of items to sync next frame */
+	FSelectionData PendingSyncItems;
 
 	/** Should we take focus when the PendingSyncAssets are processed? */
 	bool bPendingFocusOnSync;
@@ -757,6 +804,9 @@ private:
 
 	/** Called when an asset was selected in the list */
 	FOnAssetSelected OnAssetSelected;
+
+	/** Called when an asset was selected in the list. Provides more context than OnAssetSelected. */
+	FOnAssetSelectionChanged OnAssetSelectionChanged;
 
 	/** Called when the user double clicks, presses enter, or presses space on an asset */
 	FOnAssetsActivated OnAssetsActivated;
@@ -779,6 +829,9 @@ private:
 	/** Called to check if an asset tag should be display in details view. */
 	FOnShouldDisplayAssetTag OnAssetTagWantsToBeDisplayed;
 
+	/** Called to see if it is valid to get a custom asset tool tip */
+	FOnIsAssetValidForCustomToolTip OnIsAssetValidForCustomToolTip;
+
 	/** Called to get a custom asset item tooltip (If necessary) */
 	FOnGetCustomAssetToolTip OnGetCustomAssetToolTip;
 
@@ -787,6 +840,9 @@ private:
 
 	/** Called when a custom asset item's tooltip is closing */
 	FOnAssetToolTipClosing OnAssetToolTipClosing;
+
+	/** Called to add extra asset data to the asset view, to display virtual assets. These get treated similar to Class assets */
+	FOnGetCustomSourceAssets OnGetCustomSourceAssets;
 
 	/** When true, filtered list items will be sorted next tick. Provided another sort hasn't happened recently or we are renaming an asset */
 	bool bPendingSortFilteredItems;
@@ -872,6 +928,9 @@ private:
 
 	/** Indicates if the 'Show Collections' option should be enabled or disabled */
 	bool bCanShowCollections;
+
+	/** Indicates if the 'Show Favorites' option should be enabled or disabled */
+	bool bCanShowFavorites;
 
 	/** Indicates if the context menu is going to load the assets, and if so to preload before the context menu is shown, and warn about the pending load. */
 	bool bPreloadAssetsForContextMenu;

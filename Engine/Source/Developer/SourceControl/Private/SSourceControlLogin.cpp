@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SSourceControlLogin.h"
 #include "SourceControlModule.h"
@@ -179,7 +179,7 @@ FReply SSourceControlLogin::OnAcceptSettings()
 	}
 
 	FSourceControlModule& SourceControlModule = FSourceControlModule::Get();
-	if(!SourceControlModule.GetProvider().Login(FString(), EConcurrency::Asynchronous, FSourceControlOperationComplete::CreateSP(this, &SSourceControlLogin::SourceControlOperationComplete)))
+	if(SourceControlModule.GetProvider().Login(FString(), EConcurrency::Asynchronous, FSourceControlOperationComplete::CreateSP(this, &SSourceControlLogin::SourceControlOperationComplete)) == ECommandResult::Type::Failed)
 	{
 		DisplayConnectionError();
 		ConnectionState = ELoginConnectionState::Disconnected;

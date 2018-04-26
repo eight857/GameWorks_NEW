@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SkeletalMeshEdit.cpp: Unreal editor skeletal mesh/anim support
@@ -27,6 +27,10 @@
 #include "FbxImporter.h"
 #include "Misc/FbxErrors.h"
 #include "Editor/EditorPerProjectUserSettings.h"
+#include "UObjectIterator.h"
+#include "ComponentReregisterContext.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "FbxAnimUtils.h"
 
 #define LOCTEXT_NAMESPACE "SkeletalMeshEdit"
 
@@ -114,16 +118,50 @@ bool UEditorEngine::ReimportFbxAnimation( USkeleton* Skeleton, UAnimSequence* An
 	
 	const bool bPrevImportMorph = (AnimSequence->RawCurveData.FloatCurves.Num() > 0) ;
 
-	if ( ImportData )
+	UFbxImportUI* ReimportUI = NewObject<UFbxImportUI>();
+	ReimportUI->MeshTypeToImport = FBXIT_Animation;
+	ReimportUI->bOverrideFullName = false;
+	ReimportUI->bImportAnimations = true;
+
+	const bool ShowImportDialogAtReimport = GetDefault<UEditorPerProjectUserSettings>()->bShowImportDialogAtReimport && !GIsAutomationTesting;
+	if (ImportData && !ShowImportDialogAtReimport)
 	{
 		// Prepare the import options
-		UFbxImportUI* ReimportUI = NewObject<UFbxImportUI>();
-		ReimportUI->MeshTypeToImport = FBXIT_Animation;
-		ReimportUI->bOverrideFullName = false;
 		ReimportUI->AnimSequenceImportData = ImportData;
 		ReimportUI->SkeletalMeshImportData->bImportMeshesInBoneHierarchy = ImportData->bImportMeshesInBoneHierarchy;
 		
 		ApplyImportUIToImportOptions(ReimportUI, *FbxImporter->ImportOptions);
+	}
+	else if(ShowImportDialogAtReimport)
+	{
+		if (ImportData == nullptr)
+		{
+			// An existing import data object was not found, make one here and show the options dialog
+			ImportData = UFbxAnimSequenceImportData::GetImportDataForAnimSequence(AnimSequence, ReimportUI->AnimSequenceImportData);
+			AnimSequence->AssetImportData = ImportData;
+		}
+		ReimportUI->bIsReimport = true;
+		ReimportUI->AnimSequenceImportData = ImportData;
+
+		bool bImportOperationCanceled = false;
+		bool bShowOptionDialog = true;
+		bool bForceImportType = true;
+		bool bOutImportAll = false;
+		bool bIsObjFormat = false;
+		bool bIsAutomated = false;
+
+		// @hack to make sure skeleton is set before opening the dialog
+		FbxImporter->ImportOptions->SkeletonForAnimation = Skeleton;
+
+		GetImportOptions(FbxImporter, ReimportUI, bShowOptionDialog, bIsAutomated, AnimSequence->GetPathName(), bImportOperationCanceled, bOutImportAll, bIsObjFormat, bForceImportType, FBXIT_Animation, AnimSequence);
+
+		if (bImportOperationCanceled)
+		{
+			//User cancel the re-import
+			bResult = false;
+			GWarn->EndSlowTask();
+			return bResult;
+		}
 	}
 	else
 	{
@@ -556,7 +594,7 @@ UAnimSequence * UnFbx::FFbxImporter::ImportAnimations(USkeleton* Skeleton, UObje
 		}
 		else
 		{
-			DestSeq->RecycleAnimSequence();
+			DestSeq->CleanAnimSequenceForImport();
 		}
 
 		DestSeq->SetSkeleton(Skeleton);
@@ -574,66 +612,31 @@ UAnimSequence * UnFbx::FFbxImporter::ImportAnimations(USkeleton* Skeleton, UObje
 	return LastCreatedAnim;
 }
 
-// Use the Euclidean method to find the GCD
-int32 GreatestCommonDivisor(int32 a, int32 b)
+//Get the smallest sample rate(integer) representing the DeltaTime(time between 0.0f and 1.0f).
+//@DeltaTime: the time to find the rate between 0.0f and 1.0f
+//@MaxReferenceRate: the maximum rate we can find
+int32 GetTimeSampleRate(const float DeltaTime, const float MaxReferenceRate)
 {
-	while (b != 0)
+	float OriginalSampleRateDivider = 1.0f / DeltaTime;
+	float SampleRateDivider = OriginalSampleRateDivider;
+	float SampleRemainder = FPlatformMath::Fractional(SampleRateDivider);
+	float Multiplier = 2.0f;
+	float IntegerPrecision = FMath::Min(FMath::Max(KINDA_SMALL_NUMBER*SampleRateDivider, KINDA_SMALL_NUMBER), 0.1f); //The precision is limit between KINDA_SMALL_NUMBER and 0.1f
+	while (!FMath::IsNearlyZero(SampleRemainder, IntegerPrecision) && !FMath::IsNearlyEqual(SampleRemainder, 1.0f, IntegerPrecision))
 	{
-		int32 t = b;
-		b = a % b;
-		a = t;
-	}
-    return a;
-}
-
-// LCM = a/gcd * b
-// a and b are the number we want to find the lcm
-int32 LeastCommonMultiplier(int32 a, int32 b)
-{
-	int32 CurrentGcd = GreatestCommonDivisor(a, b);
-	return CurrentGcd == 0 ? FPlatformMath::RoundToInt(DEFAULT_SAMPLERATE) : (a / CurrentGcd) * b;
-}
-
-void AddTimeSampleRate(float KeyTime, TArray<int32> &KeyFrameSampleRates)
-{
-	int32 DefaultSampleRateInteger = FPlatformMath::RoundToInt(DEFAULT_SAMPLERATE);
-	//Find the position of the key time relative to the DEFAULT_SAMPLERATE, range from 0 to DEFAULT_SAMPLERATE-1
-	int32 KeyFramePos = FPlatformMath::RoundToInt(KeyTime / (1.0f / DEFAULT_SAMPLERATE)) % DefaultSampleRateInteger;
-	
-	static TArray<int32> SampleRatePerFrameArray;
-	//Build the static possible sample rate array for frame 0 to DefaultSampleRateInteger
-	if (SampleRatePerFrameArray.Num() == 0)
-	{
-		//Add the frame 0 manually, the answer is 1 for frame 0
-		SampleRatePerFrameArray.Add(1);
-		for (int32 FramePos = 1; FramePos < DefaultSampleRateInteger; ++FramePos)
+		SampleRateDivider = OriginalSampleRateDivider * Multiplier;
+		SampleRemainder = FPlatformMath::Fractional(SampleRateDivider);
+		if (SampleRateDivider > MaxReferenceRate)
 		{
-			//Find the sample rate impose by the key position
-			// We just divide DEFAULT_SAMPLERATE by the key position, then
-			// until there is no remainder, we multiply the division result by (2 + iteration)
-			//This give us the best sample rate for this key
-			float SampleRateDividerOriginal = DEFAULT_SAMPLERATE / (float)FramePos;
-			float SampleRateDivider = SampleRateDividerOriginal;
-			float SampleRemainder = FPlatformMath::Fractional(SampleRateDivider);
-			float Multiplier = 2.0f;
-			while (!FMath::IsNearlyZero(SampleRemainder))
-			{
-				SampleRateDivider = SampleRateDividerOriginal * Multiplier;
-				SampleRemainder = FPlatformMath::Fractional(SampleRateDivider);
-				if (SampleRateDivider >= DEFAULT_SAMPLERATE)
-				{
-					SampleRateDivider = DEFAULT_SAMPLERATE;
-					break;
-				}
-				Multiplier += 1.0f;
-			}
-			SampleRatePerFrameArray.Add(FPlatformMath::RoundToInt(SampleRateDivider));
+			SampleRateDivider = DEFAULT_SAMPLERATE;
+			break;
 		}
+		Multiplier += 1.0f;
 	}
-	KeyFrameSampleRates.AddUnique(SampleRatePerFrameArray.IsValidIndex(KeyFramePos) ? SampleRatePerFrameArray[KeyFramePos] : DefaultSampleRateInteger);
+	return FMath::Min(FPlatformMath::RoundToInt(SampleRateDivider), FPlatformMath::RoundToInt(MaxReferenceRate));
 }
 
-int32 GetAnimationCurveRate(FbxAnimCurve* CurrentCurve)
+int32 GetAnimationCurveRate(FbxAnimCurve* CurrentCurve, float MaxReferenceRate)
 {
 	if (CurrentCurve == nullptr)
 		return 0;
@@ -642,47 +645,52 @@ int32 GetAnimationCurveRate(FbxAnimCurve* CurrentCurve)
 	
 	FbxTimeSpan TimeInterval(FBXSDK_TIME_INFINITE, FBXSDK_TIME_MINUS_INFINITE);
 	bool bValidTimeInterval = CurrentCurve->GetTimeInterval(TimeInterval);
-
 	if (KeyCount > 1 && bValidTimeInterval)
 	{
 		double KeyAnimLength = TimeInterval.GetDuration().GetSecondDouble();
 		if (KeyAnimLength != 0.0)
 		{
+			//////////////////////////////////////////////////////////////////////////
+			// 1. Look if we have high frequency keys(resampling).
+
+			//Basic sample rate is compute by dividing the KeyCount by the anim length. This is valid only if
+			//all keys are time equidistant. But if we find a rate over DEFAULT_SAMPLERATE, we can estimate that
+			//there is a constant frame rate between the key and simply return the rate.
 			int32 SampleRate = FPlatformMath::RoundToInt((KeyCount - 1) / KeyAnimLength);
 			if (SampleRate >= DEFAULT_SAMPLERATE)
 			{
 				//We import a curve with more then 30 keys per frame
 				return SampleRate;
 			}
-			SampleRate = 1;
+			
+			//////////////////////////////////////////////////////////////////////////
+			// 2. Compute the sample rate of every keys with there time. Use the
+			//    least common multiplier to get a sample rate that go through all keys.
 
-			//Find the least sample rate we can use to have at least on key to every fbx key position
-			TArray<int32> KeyFrameSampleRates;
-			//Find all the unique sample rate base on "frame position relative to DEFAULT_SAMPLERATE" used by the current fbx curve keys
+			SampleRate = 1;
+			float OldKeyTime = 0.0f;
+			TSet<int32> DeltaComputed;
+			//Reserve some space
+			DeltaComputed.Reserve(30);
+			const float KeyMultiplier = (1.0f / KINDA_SMALL_NUMBER);
+			//Find also the smallest delta time between keys
 			for (int32 KeyIndex = 0; KeyIndex < KeyCount; ++KeyIndex)
 			{
 				float KeyTime = (float)(CurrentCurve->KeyGet(KeyIndex).GetTime().GetSecondDouble());
-				AddTimeSampleRate(KeyTime, KeyFrameSampleRates);
-			}
-			//The sample rate have to handle the end of the animation like a key to ensure the sample rate match the animation length
-			AddTimeSampleRate(KeyAnimLength, KeyFrameSampleRates);
-
-			int32 LastSampleRate = SampleRate;
-			//Find the sample rate that will pass by all the unique keys sample rate we found
-			// we want to find the Least common multiplier for all sample rate we found
-			for (int32 KeyFrameSampleRate : KeyFrameSampleRates)
-			{
-				LastSampleRate = LeastCommonMultiplier(LastSampleRate, KeyFrameSampleRate);
-				if (LastSampleRate >= DEFAULT_SAMPLERATE)
+				//Collect the smallest delta time, there is no delta in case the first animation key time is negative
+				float Delta = (KeyTime < 0 && KeyIndex == 0) ? 0.0f : KeyTime - OldKeyTime;
+				//use the fractional part of the delta to have the delta between 0.0f and 1.0f
+				Delta = FPlatformMath::Fractional(Delta);
+				int32 DeltaKey = FPlatformMath::RoundToInt(Delta*KeyMultiplier);
+				if (!FMath::IsNearlyZero(Delta, KINDA_SMALL_NUMBER) && !DeltaComputed.Contains(DeltaKey))
 				{
-					LastSampleRate = DEFAULT_SAMPLERATE;
-					break;
+					int32 ComputeSampleRate = GetTimeSampleRate(Delta, MaxReferenceRate);
+					DeltaComputed.Add(DeltaKey);
+					//Use the least common multiplier with the new delta entry
+					int32 LeastCommonMultiplier = FMath::Min(FMath::LeastCommonMultiplier(SampleRate, ComputeSampleRate), FPlatformMath::RoundToInt(MaxReferenceRate));
+					SampleRate = LeastCommonMultiplier != 0 ? LeastCommonMultiplier : FMath::Max3(FPlatformMath::RoundToInt(DEFAULT_SAMPLERATE), SampleRate, ComputeSampleRate);
 				}
-			}
-
-			if (LastSampleRate > SampleRate)
-			{
-				SampleRate = LastSampleRate;
+				OldKeyTime = KeyTime;
 			}
 			return SampleRate;
 		}
@@ -693,6 +701,9 @@ int32 GetAnimationCurveRate(FbxAnimCurve* CurrentCurve)
 
 int32 UnFbx::FFbxImporter::GetMaxSampleRate(TArray<FbxNode*>& SortedLinks, TArray<FbxNode*>& NodeArray)
 {
+	//The max reference rate is use to cap the maximum rate we support.
+	//It must be base on DEFAULT_SAMPLERATE*2ExpX where X is a integer with range [1 to 6] because we use KINDA_SMALL_NUMBER(0.0001) we do not want to pass 1920Hz 1/1920 = 0.0005
+	float MaxReferenceRate = 1920.0f;
 	int32 MaxStackResampleRate = 0;
 	TArray<int32> CurveAnimSampleRates;
 	const FBXImportOptions* ImportOption = GetImportOptions();
@@ -733,7 +744,7 @@ int32 UnFbx::FFbxImporter::GetMaxSampleRate(TArray<FbxNode*>& SortedLinks, TArra
 				FbxAnimCurve* CurrentCurve = Curves[CurveIndex];
 				if(CurrentCurve)
 				{
-					int32 CurveAnimRate = GetAnimationCurveRate(CurrentCurve);
+					int32 CurveAnimRate = GetAnimationCurveRate(CurrentCurve, MaxReferenceRate);
 					if (CurveAnimRate != 0)
 					{
 						CurveAnimSampleRates.AddUnique(CurveAnimRate);
@@ -766,7 +777,7 @@ int32 UnFbx::FFbxImporter::GetMaxSampleRate(TArray<FbxNode*>& SortedLinks, TArra
 								FbxAnimCurve* CurrentCurve = Geometry->GetShapeChannel(BlendShapeIndex, ChannelIndex, AnimLayer);
 								if (CurrentCurve)
 								{
-									int32 CurveAnimRate = GetAnimationCurveRate(CurrentCurve);
+									int32 CurveAnimRate = GetAnimationCurveRate(CurrentCurve, MaxReferenceRate);
 									if (CurveAnimRate != 0)
 									{
 										CurveAnimSampleRates.AddUnique(CurveAnimRate);
@@ -784,16 +795,17 @@ int32 UnFbx::FFbxImporter::GetMaxSampleRate(TArray<FbxNode*>& SortedLinks, TArra
 	//Find the lowest sample rate that will pass by all the keys from all curves
 	for (int32 CurveSampleRate : CurveAnimSampleRates)
 	{
-		if (CurveSampleRate >= DEFAULT_SAMPLERATE && MaxStackResampleRate < CurveSampleRate)
+		if (CurveSampleRate >= MaxReferenceRate && MaxStackResampleRate < CurveSampleRate)
 		{
 			MaxStackResampleRate = CurveSampleRate;
 		}
-		else if (MaxStackResampleRate < DEFAULT_SAMPLERATE)
+		else if (MaxStackResampleRate < MaxReferenceRate)
 		{
-			MaxStackResampleRate = LeastCommonMultiplier(MaxStackResampleRate, CurveSampleRate);
-			if (MaxStackResampleRate >= DEFAULT_SAMPLERATE)
+			int32 LeastCommonMultiplier = FMath::LeastCommonMultiplier(MaxStackResampleRate, CurveSampleRate);
+			MaxStackResampleRate = LeastCommonMultiplier != 0 ? LeastCommonMultiplier : FMath::Max3(FPlatformMath::RoundToInt(DEFAULT_SAMPLERATE), MaxStackResampleRate, CurveSampleRate);
+			if (MaxStackResampleRate >= MaxReferenceRate)
 			{
-				MaxStackResampleRate = DEFAULT_SAMPLERATE;
+				MaxStackResampleRate = MaxReferenceRate;
 			}
 		}
 	}
@@ -801,6 +813,11 @@ int32 UnFbx::FFbxImporter::GetMaxSampleRate(TArray<FbxNode*>& SortedLinks, TArra
 	// Make sure we're not hitting 0 for samplerate
 	if ( MaxStackResampleRate != 0 )
 	{
+		//Make sure the resample rate is positive
+		if (!ensure(MaxStackResampleRate >= 0))
+		{
+			MaxStackResampleRate *= -1;
+		}
 		return MaxStackResampleRate;
 	}
 
@@ -1090,31 +1107,6 @@ namespace AnimationTransformDebug
 	}
 }
 
-/**
- * We only support float values, so these are the numbers we can take
- */
-bool IsSupportedCurveDataType(EFbxType DatatType)
-{
-
-	switch (DatatType)
-	{
-	case eFbxShort:		//!< 16 bit signed integer.
-	case eFbxUShort:		//!< 16 bit unsigned integer.
-	case eFbxUInt:		//!< 32 bit unsigned integer.
-	case eFbxHalfFloat:	//!< 16 bit floating point.
-	case eFbxInt:		//!< 32 bit signed integer.
-	case eFbxFloat:		//!< Floating point value.
-	case eFbxDouble:		//!< Double width floating point value.
-	case eFbxDouble2:	//!< Vector of two double values.
-	case eFbxDouble3:	//!< Vector of three double values.
-	case eFbxDouble4:	//!< Vector of four double values.
-	case eFbxDouble4x4:	//!< Four vectors of four double values.
-		return true;
-	}
-
-	return false;
-}
-
 bool UnFbx::FFbxImporter::ImportCurveToAnimSequence(class UAnimSequence * TargetSequence, const FString& CurveName, const FbxAnimCurve* FbxCurve, int32 CurveFlags,const FbxTimeSpan AnimTimeSpan, const float ValueScale/*=1.f*/) const
 {
 	if (TargetSequence && FbxCurve)
@@ -1197,6 +1189,9 @@ bool ShouldImportCurve(FbxAnimCurve* Curve, bool bDoNotImportWithZeroValues)
 
 bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * DestSeq, const FString& FileName, TArray<FbxNode*>& SortedLinks, TArray<FbxNode*>& NodeArray, FbxAnimStack* CurAnimStack, const int32 ResampleRate, const FbxTimeSpan AnimTimeSpan)
 {
+	//This destroy all previously imported animation raw data
+	DestSeq->CleanAnimSequenceForImport();
+
 	// @todo : the length might need to change w.r.t. sampling keys
 	FbxTime SequenceLength = AnimTimeSpan.GetDuration();
 	float PreviousSequenceLength = DestSeq->SequenceLength;
@@ -1255,6 +1250,7 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 	}
 
 	FbxNode *SkeletalMeshRootNode = NodeArray.Num() > 0 ? NodeArray[0] : nullptr;
+	
 	//
 	// import blend shape curves
 	//
@@ -1275,6 +1271,9 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 
 					FString BlendShapeName = UTF8_TO_TCHAR(MakeName(BlendShape->GetName()));
 
+					// see below where this is used for explanation...
+					const bool bMightBeBadMAXFile = (BlendShapeName == FString("Morpher"));
+
 					for(int32 ChannelIndex = 0; ChannelIndex<BlendShapeChannelCount; ++ChannelIndex)
 					{
 						FbxBlendShapeChannel* Channel = BlendShape->GetBlendShapeChannel(ChannelIndex);
@@ -1282,15 +1281,25 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 						if(Channel)
 						{
 							FString ChannelName = UTF8_TO_TCHAR(MakeName(Channel->GetName()));
-
-							// Maya adds the name of the blendshape and an underscore to the front of the channel name, so remove it
-							if(ChannelName.StartsWith(BlendShapeName))
+							// Maya adds the name of the blendshape and an underscore or point to the front of the channel name, so remove it
+							// Also avoid to endup with a empty name, we prefer having the Blendshapename instead of nothing
+							if(ChannelName.StartsWith(BlendShapeName) && ChannelName.Len() > BlendShapeName.Len())
 							{
 								ChannelName = ChannelName.Right(ChannelName.Len() - (BlendShapeName.Len()+1));
 							}
+							
+							if (bMightBeBadMAXFile)
+							{
+								FbxShape *TargetShape = Channel->GetTargetShapeCount() > 0 ? Channel->GetTargetShape(0) : nullptr;
+								if (TargetShape)
+								{
+									FString TargetShapeName = UTF8_TO_TCHAR(MakeName(TargetShape->GetName()));
+									ChannelName = TargetShapeName.IsEmpty() ? ChannelName : TargetShapeName;
+								}
+							}
 
 							FbxAnimCurve* Curve = Geometry->GetShapeChannel(BlendShapeIndex, ChannelIndex, (FbxAnimLayer*)CurAnimStack->GetMember(0));
-							if (ShouldImportCurve(Curve, ImportOptions->bDoNotImportCurveWithZero))
+							if (FbxAnimUtils::ShouldImportCurve(Curve, ImportOptions->bDoNotImportCurveWithZero))
 							{
 								FFormatNamedArguments Args;
 								Args.Add(TEXT("BlendShape"), FText::FromString(ChannelName));
@@ -1327,75 +1336,52 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 		int32 CurLinkIndex=0;
 		for(auto Node: SortedLinks)
 		{
-			FbxProperty Property = Node->GetFirstProperty();
-			while (Property.IsValid())
+			FbxAnimUtils::ExtractAttributeCurves(Node, ImportOptions->bDoNotImportCurveWithZero, 
+			[this, &CurLinkIndex, &TotalLinks, &DestSeq, &AnimTimeSpan, &ExistingCurveNames](FbxAnimCurve* InCurve, const FString& InCurveName, const FString& InChannelName, int32 InChannelIndex, int32 InNumChannels)
 			{
-				FbxAnimCurveNode* CurveNode = Property.GetCurveNode();
-				// do this if user defined and animated and leaf node
-				if( CurveNode && Property.GetFlag(FbxPropertyFlags::eUserDefined) &&
-					CurveNode->IsAnimated() && IsSupportedCurveDataType(Property.GetPropertyDataType().GetType()) )
+				FString FinalCurveName;
+				if (InNumChannels == 1)
 				{
-					FString CurveName = UTF8_TO_TCHAR(CurveNode->GetName());
-					UE_LOG(LogFbx, Log, TEXT("CurveName : %s"), *CurveName );
-
-					int32 TotalCount = CurveNode->GetChannelsCount();
-					for (int32 ChannelIndex=0; ChannelIndex<TotalCount; ++ChannelIndex)
-					{
-						FbxAnimCurve * AnimCurve = CurveNode->GetCurve(ChannelIndex);
-						FString ChannelName = CurveNode->GetChannelName(ChannelIndex).Buffer();
-
-						if (ShouldImportCurve(AnimCurve, ImportOptions->bDoNotImportCurveWithZero))
-						{
-							FString FinalCurveName;
-							if (TotalCount == 1)
-							{
-								FinalCurveName = CurveName;
-							}
-							else
-							{
-								FinalCurveName = CurveName + "_" + ChannelName;
-							}
-
-							FFormatNamedArguments Args;
-							Args.Add(TEXT("CurveName"), FText::FromString(FinalCurveName));
-							const FText StatusUpate = FText::Format(LOCTEXT("ImportingCustomAttributeCurvesDetail", "Importing Custom Attribute [{CurveName}]"), Args);
-							GWarn->StatusUpdate(CurLinkIndex + 1, TotalLinks, StatusUpate);
-
-							int32 CurveFlags = AACF_DefaultCurve;
-							if (ImportCurveToAnimSequence(DestSeq, FinalCurveName, AnimCurve, CurveFlags, AnimTimeSpan))
-							{
-								// first let them override material curve if required
-								if (ImportOptions->bSetMaterialDriveParameterOnCustomAttribute)
-								{
-									// now mark this curve as morphtarget
-									MySkeleton->AccumulateCurveMetaData(FName(*FinalCurveName), true, false);
-								}
-								else
-								{
-									// if not material set by default, apply naming convention for material
-									for (const auto& Suffix : ImportOptions->MaterialCurveSuffixes)
-									{
-										int32 TotalSuffix = Suffix.Len();
-										if (CurveName.Right(TotalSuffix) == Suffix)
-										{
-											MySkeleton->AccumulateCurveMetaData(FName(*FinalCurveName), true, false);
-											break;
-										}
-									}
-								}
-
-								ExistingCurveNames.Remove(FinalCurveName);
-							}
-						}
-						else
-						{
-							UE_LOG(LogFbx, Log, TEXT("CurveName(%s) is skipped because it only contains invalid values."), *CurveName);
-						}
-					}
+					FinalCurveName = InCurveName;
+				}
+				else
+				{
+					FinalCurveName = InCurveName + "_" + InChannelName;
 				}
 
-				Property = Node->GetNextProperty(Property); 
-			}
+				FFormatNamedArguments Args;
+				Args.Add(TEXT("CurveName"), FText::FromString(InChannelName));
+				const FText StatusUpate = FText::Format(LOCTEXT("ImportingCustomAttributeCurvesDetail", "Importing Custom Attribute [{CurveName}]"), Args);
+				GWarn->StatusUpdate(CurLinkIndex + 1, TotalLinks, StatusUpate);
+
+				int32 CurveFlags = AACF_DefaultCurve;
+				if (ImportCurveToAnimSequence(DestSeq, InChannelName, InCurve, CurveFlags, AnimTimeSpan))
+				{
+					USkeleton* SeqSkeleton = DestSeq->GetSkeleton();
+
+					// first let them override material curve if required
+					if (ImportOptions->bSetMaterialDriveParameterOnCustomAttribute)
+					{
+						// now mark this curve as morphtarget
+						SeqSkeleton->AccumulateCurveMetaData(FName(*InChannelName), true, false);
+					}
+					else
+					{
+						// if not material set by default, apply naming convention for material
+						for (const auto& Suffix : ImportOptions->MaterialCurveSuffixes)
+						{
+							int32 TotalSuffix = Suffix.Len();
+							if (InChannelName.Right(TotalSuffix) == Suffix)
+							{
+								SeqSkeleton->AccumulateCurveMetaData(FName(*InChannelName), true, false);
+								break;
+							}
+						}
+					}
+
+					ExistingCurveNames.Remove(InChannelName);
+				}	
+			});
 
 			CurLinkIndex++;
 		}
@@ -1412,17 +1398,14 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 	}
 
 	// importing custom attribute END
-	
-	const bool bSourceDataExists = DestSeq->HasSourceRawData();
 	TArray<AnimationTransformDebug::FAnimationTransformDebugData> TransformDebugData;
 	int32 TotalNumKeys = 0;
 	const FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
 
 	// import animation
+	if (ImportOptions->bImportBoneTracks)
 	{
 		GWarn->BeginSlowTask( LOCTEXT("BeginImportAnimation", "Importing Animation"), true);
-
-		DestSeq->RecycleAnimSequence();
 
 		TArray<FName> FbxRawBoneNames;
 		FillAndVerifyBoneNames(Skeleton, SortedLinks, FbxRawBoneNames, FileName);
@@ -1451,9 +1434,15 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 			}
 		}
 
+		const int32 NumSamplingFrame = FMath::RoundToInt((AnimTimeSpan.GetDuration().GetSecondDouble() * ResampleRate));
+		//Set the time increment from the re-sample rate
+		FbxTime TimeIncrement = 0;
+		TimeIncrement.SetSecondDouble(1.0 / ((double)(ResampleRate)));
 
-		const int32 NumSamplingKeys = FMath::FloorToInt(AnimTimeSpan.GetDuration().GetSecondDouble() * ResampleRate);
-		const FbxTime TimeIncrement = AnimTimeSpan.GetDuration() / FMath::Max(NumSamplingKeys, 1);
+		//Add a threshold when we compare if we have reach the end of the animation
+		const FbxTime TimeComparisonThreshold = (KINDA_SMALL_NUMBER*FBXSDK_TC_SECOND);
+		
+		
 		for(int32 SourceTrackIdx = 0; SourceTrackIdx < FbxRawBoneNames.Num(); ++SourceTrackIdx)
 		{
 			int32 NumKeysForTrack = 0;
@@ -1465,7 +1454,7 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 			// update status
 			FFormatNamedArguments Args;
 			Args.Add(TEXT("TrackName"), FText::FromName(BoneName));
-			Args.Add(TEXT("TotalKey"), FText::AsNumber(NumSamplingKeys));
+			Args.Add(TEXT("TotalKey"), FText::AsNumber(NumSamplingFrame+1)); //Key number is Frame + 1
 			Args.Add(TEXT("TrackIndex"), FText::AsNumber(SourceTrackIdx+1));
 			Args.Add(TEXT("TotalTracks"), FText::AsNumber(FbxRawBoneNames.Num()));
 			const FText StatusUpate = FText::Format(LOCTEXT("ImportingAnimTrackDetail", "Importing Animation Track [{TrackName}] ({TrackIndex}/{TotalTracks}) - TotalKey {TotalKey}"), Args);
@@ -1484,7 +1473,7 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 
 				FbxNode* Link = SortedLinks[SourceTrackIdx];
 				FbxNode * LinkParent = Link->GetParent();
-				for(FbxTime CurTime = AnimTimeSpan.GetStart(); CurTime <= AnimTimeSpan.GetStop(); CurTime += TimeIncrement)
+				for(FbxTime CurTime = AnimTimeSpan.GetStart(); CurTime < (AnimTimeSpan.GetStop()+TimeComparisonThreshold); CurTime += TimeIncrement)
 				{
 					// save global trasnform
 					FbxAMatrix GlobalMatrix = Link->EvaluateGlobalTransform(CurTime) * FFbxDataConverter::GetJointPostConversionMatrix();
@@ -1592,13 +1581,17 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 
 		GWarn->EndSlowTask();
 	}
+	else
+	{
+		DestSeq->RecycleAnimSequence();
+	}
 
 	// compress animation
 	{
 		GWarn->BeginSlowTask( LOCTEXT("BeginCompressAnimation", "Compress Animation"), true);
 		GWarn->StatusForceUpdate(1, 1, LOCTEXT("CompressAnimation", "Compressing Animation"));
 		// if source data exists, you should bake it to Raw to apply
-		if(bSourceDataExists)
+		if(DestSeq->DoesContainTransformCurves())
 		{
 			DestSeq->BakeTrackCurvesToRawAnimation();
 		}
@@ -1611,6 +1604,12 @@ bool UnFbx::FFbxImporter::ImportAnimation(USkeleton* Skeleton, UAnimSequence * D
 		// run debug mode
 		AnimationTransformDebug::OutputAnimationTransformDebugData(TransformDebugData, TotalNumKeys, RefSkeleton);
 		GWarn->EndSlowTask();
+	}
+
+	// Reregister skeletal mesh components so they reflect the updated animation
+	for (TObjectIterator<USkeletalMeshComponent> Iter; Iter; ++Iter)
+	{
+		FComponentReregisterContext ReregisterContext(*Iter);
 	}
 
 	return true;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -367,6 +367,14 @@ public:
 	virtual bool		IterateDirectoryStatRecursively(const TCHAR* Directory, IPlatformFile::FDirectoryStatVisitor& Visitor) override
 	{
 		return LowerLevel->IterateDirectoryStatRecursively(Directory, Visitor);
+	}
+	virtual void		FindFiles(TArray<FString>& FoundFiles, const TCHAR* Directory, const TCHAR* FileExtension)
+	{
+		return LowerLevel->FindFiles(FoundFiles, Directory, FileExtension);
+	}
+	virtual void		FindFilesRecursively(TArray<FString>& FoundFiles, const TCHAR* Directory, const TCHAR* FileExtension)
+	{
+		return LowerLevel->FindFilesRecursively(FoundFiles, Directory, FileExtension);
 	}
 	virtual bool		DeleteDirectoryRecursively(const TCHAR* Directory) override
 	{

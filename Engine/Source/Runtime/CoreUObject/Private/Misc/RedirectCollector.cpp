@@ -1,7 +1,5 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
-
-// Core includes.
 #include "Misc/RedirectCollector.h"
 #include "Misc/CoreDelegates.h"
 #include "UObject/UObjectGlobals.h"
@@ -13,147 +11,87 @@
 #include "Misc/PackageName.h"
 #include "UObject/LinkerLoad.h"
 #include "UObject/UObjectThreadContext.h"
-//#include "CookStats.h"
+#include "UObject/SoftObjectPath.h"
+
+#if WITH_EDITOR
+
 DEFINE_LOG_CATEGORY_STATIC(LogRedirectors, Log, All);
 
-static TArray<FString> StringAssetRefFilenameStack;
-
-void FRedirectCollector::OnRedirectorFollowed(const FString& InString, UObject* InObject)
+void FRedirectCollector::OnSoftObjectPathLoaded(const FSoftObjectPath& InPath)
 {
-	check(InObject);
-
-	// the object had better be a redir
-	UObjectRedirector& Redirector = dynamic_cast<UObjectRedirector&>(*InObject);
-
-	// save the info if it matches the parameters we need to match on:
-	// if the string matches the package we were loading
-	// AND
-	// we aren't matching a particular package || the string matches the package
-	if (!FileToFixup.Len() || FileToFixup == FPackageName::FilenameToLongPackageName(Redirector.GetLinker()->Filename))
+	if (InPath.IsNull() || !GIsEditor)
 	{
-		FRedirection Redir;
-		Redir.PackageFilename = InString;
-		Redir.RedirectorName = Redirector.GetFullName();
-		Redir.RedirectorPackageFilename = Redirector.GetLinker()->Filename;
-		Redir.DestinationObjectName = Redirector.DestinationObject->GetFullName();
-		// we only want one of each redirection reported
-		Redirections.AddUnique(Redir);
-
-		// and add a fake reference caused by a string redirectors
-		if (StringAssetRefFilenameStack.Num())
-		{
-			Redir.PackageFilename = StringAssetRefFilenameStack[StringAssetRefFilenameStack.Num() - 1];
-			UE_LOG(LogRedirectors, Verbose, TEXT("String Asset Reference fake redir %s(%s) -> %s"), *Redir.RedirectorName, *Redir.PackageFilename, *Redir.DestinationObjectName);
-			if (!Redir.PackageFilename.IsEmpty())
-			{
-				Redirections.AddUnique(Redir);
-			}
-		}
+		// No need to track empty strings, or in standalone builds
+		return;
 	}
+
+	FPackagePropertyPair ContainingPackageAndProperty;
+	FSoftObjectPathThreadContext& ThreadContext = FSoftObjectPathThreadContext::Get();
+
+	FName PackageName, PropertyName;
+	ESoftObjectPathCollectType CollectType = ESoftObjectPathCollectType::AlwaysCollect;
+	ESoftObjectPathSerializeType SerializeType = ESoftObjectPathSerializeType::AlwaysSerialize;
+
+	ThreadContext.GetSerializationOptions(PackageName, PropertyName, CollectType, SerializeType);
+
+	if (CollectType == ESoftObjectPathCollectType::NeverCollect)
+	{
+		// Do not track
+		return;
+	}
+
+	if (PackageName != NAME_None)
+	{
+		ContainingPackageAndProperty.SetPackage(PackageName);
+		if (PropertyName != NAME_None)
+		{
+			ContainingPackageAndProperty.SetProperty(PropertyName);
+		}
+		ContainingPackageAndProperty.SetReferencedByEditorOnlyProperty(CollectType == ESoftObjectPathCollectType::EditorOnlyCollect);
+	}
+
+	FScopeLock ScopeLock(&CriticalSection);
+
+	SoftObjectPathMap.AddUnique(InPath.GetAssetPathName(), ContainingPackageAndProperty);
 }
 
 void FRedirectCollector::OnStringAssetReferenceLoaded(const FString& InString)
 {
-	FUObjectThreadContext& ThreadContext = FUObjectThreadContext::Get();
-	FPackagePropertyPair ContainingPackageAndProperty;
-
-	if (InString.IsEmpty())
-	{
-		// No need to track empty strings
-		return;
-	}
-
-	if (ThreadContext.SerializedObject)
-	{
-		FLinkerLoad* Linker = ThreadContext.SerializedObject->GetLinker();
-		if (Linker)
-		{
-			ContainingPackageAndProperty.SetPackage(FName(*FPackageName::FilenameToLongPackageName(Linker->Filename)));
-			if (Linker->GetSerializedProperty())
-			{
-				ContainingPackageAndProperty.SetProperty( FName(*FString::Printf(TEXT("%s:%s"), *ThreadContext.SerializedObject->GetPathName(), *Linker->GetSerializedProperty()->GetName())));
-			}
-#if WITH_EDITORONLY_DATA
-			ContainingPackageAndProperty.SetReferencedByEditorOnlyProperty( Linker->IsEditorOnlyPropertyOnTheStack() );
-#endif
-		}
-	}
-	StringAssetReferences.AddUnique(FName(*InString), ContainingPackageAndProperty);
+	FSoftObjectPath Path(InString);
+	OnSoftObjectPathLoaded(Path);
 }
 
 FString FRedirectCollector::OnStringAssetReferenceSaved(const FString& InString)
 {
-	FString* Found = StringAssetRemap.Find(InString);
-	if (Found)
+	FScopeLock ScopeLock(&CriticalSection);
+
+	FName Found = GetAssetPathRedirection(FName(*InString));
+
+	if (Found != NAME_None)
 	{
-		return *Found;
+		return Found.ToString();
 	}
 	return InString;
 }
 
+void FRedirectCollector::ResolveAllSoftObjectPaths(FName FilterPackage)
+{	
+	FScopeLock ScopeLock(&CriticalSection);
 
-#define REDIRECT_TIMERS 1
-#if REDIRECT_TIMERS
-struct FRedirectScopeTimer
-{
-	double& Time;
-	double StartTime;
-	FRedirectScopeTimer(double& InTime) : Time(InTime)
-	{
-		StartTime = FPlatformTime::Seconds();
-	}
-	~FRedirectScopeTimer()
-	{
-		Time += FPlatformTime::Seconds() - StartTime;
-	}
-};
-
-double ResolveTimeTotal;
-double ResolveTimeLoad;
-double ResolveTimeDelegate;
-
-#define SCOPE_REDIRECT_TIMER(TimerName) FRedirectScopeTimer Timer##TimerName(TimerName);
-
-#define LOG_REDIRECT_TIMER( TimerName) UE_LOG(LogRedirectors, Display, TEXT("Timer %ls %f"), TEXT(#TimerName), TimerName);
-
-#define LOG_REDIRECT_TIMERS() \
-	LOG_REDIRECT_TIMER(ResolveTimeLoad); \
-	LOG_REDIRECT_TIMER(ResolveTimeDelegate);\
-	LOG_REDIRECT_TIMER(ResolveTimeTotal);\
-
-	
-
-
-#else
-#define SCOPE_REDIRECT_TIMER(TimerName)
-#define LOG_REDIRECT_TIMERS()
-#endif
-
-
-void FRedirectCollector::LogTimers() const
-{
-	LOG_REDIRECT_TIMERS();
-}
-
-void FRedirectCollector::ResolveStringAssetReference(FName FilterPackageFName, bool bProcessAlreadyResolvedPackages)
-{
-	SCOPE_REDIRECT_TIMER(ResolveTimeTotal);
-	
 	TMultiMap<FName, FPackagePropertyPair> SkippedReferences;
-	SkippedReferences.Empty(StringAssetReferences.Num());
-	while ( StringAssetReferences.Num())
+	SkippedReferences.Empty(SoftObjectPathMap.Num());
+	while (SoftObjectPathMap.Num())
 	{
-
 		TMultiMap<FName, FPackagePropertyPair> CurrentReferences;
-		Swap(StringAssetReferences, CurrentReferences);
+		Swap(SoftObjectPathMap, CurrentReferences);
 
-		for (const auto& CurrentReference : CurrentReferences)
+		for (const TPair<FName, FPackagePropertyPair>& CurrentReference : CurrentReferences)
 		{
 			const FName& ToLoadFName = CurrentReference.Key;
 			const FPackagePropertyPair& RefFilenameAndProperty = CurrentReference.Value;
 
-			if ((FilterPackageFName != NAME_None) && // not using a filter
-				(FilterPackageFName != RefFilenameAndProperty.GetCachedPackageName()) && // this is the package we are looking for
+			if ((FilterPackage != NAME_None) && // not using a filter
+				(FilterPackage != RefFilenameAndProperty.GetCachedPackageName()) && // this is the package we are looking for
 				(RefFilenameAndProperty.GetCachedPackageName() != NAME_None) // if we have an empty package name then process it straight away
 				)
 			{
@@ -164,35 +102,10 @@ void FRedirectCollector::ResolveStringAssetReference(FName FilterPackageFName, b
 
 			const FString ToLoad = ToLoadFName.ToString();
 
-			if (FCoreDelegates::LoadStringAssetReferenceInCook.IsBound())
-			{
-				SCOPE_REDIRECT_TIMER(ResolveTimeDelegate);
-				if (FCoreDelegates::LoadStringAssetReferenceInCook.Execute(ToLoad) == false)
-				{
-					// Skip this reference
-					continue;
-				}
-			}
-#if WITH_EDITOR
-			if ( (bProcessAlreadyResolvedPackages == false) && 
-				AlreadyRemapped.Contains(ToLoadFName) )
-			{
-				// don't load this package again because we already did it once before
-				// once is enough for somethings.
-				continue;
-			}
-#endif
 			if (ToLoad.Len() > 0 )
 			{
-				SCOPE_REDIRECT_TIMER(ResolveTimeLoad);
-
 				UE_LOG(LogRedirectors, Verbose, TEXT("String Asset Reference '%s'"), *ToLoad);
 				UE_CLOG(RefFilenameAndProperty.GetProperty().ToString().Len(), LogRedirectors, Verbose, TEXT("    Referenced by '%s'"), *RefFilenameAndProperty.GetProperty().ToString());
-
-				StringAssetRefFilenameStack.Push(RefFilenameAndProperty.GetPackage().ToString());
-
-				// LoadObject will mark any failed loads as "KnownMissing", so since we want to print out the referencer if it was missing and not-known-missing
-				// then check here before attempting to load (TODO: Can we just not even do the load? Seems like we should be able to...)
 
 				int32 DotIndex = ToLoad.Find(TEXT("."));
 				FString PackageName = DotIndex != INDEX_NONE ? ToLoad.Left(DotIndex) : ToLoad;
@@ -204,36 +117,15 @@ void FRedirectCollector::ResolveStringAssetReference(FName FilterPackageFName, b
 				}
 
 				UObject *Loaded = LoadObject<UObject>(NULL, *ToLoad, NULL, RefFilenameAndProperty.GetReferencedByEditorOnlyProperty() ? LOAD_EditorOnly | LOAD_NoWarn : LOAD_NoWarn, NULL);
-				StringAssetRefFilenameStack.Pop();
 
-				UObjectRedirector* Redirector = dynamic_cast<UObjectRedirector*>(Loaded);
-				if (Redirector)
-				{
-					UE_LOG(LogRedirectors, Verbose, TEXT("    Found redir '%s'"), *Redirector->GetFullName());
-					FRedirection Redir;
-					Redir.PackageFilename = RefFilenameAndProperty.GetPackage().ToString();
-					Redir.RedirectorName = Redirector->GetFullName();
-					Redir.RedirectorPackageFilename = Redirector->GetLinker()->Filename;
-					CA_SUPPRESS(28182)
-						Redir.DestinationObjectName = Redirector->DestinationObject->GetFullName();
-					Redirections.AddUnique(Redir);
-					Loaded = Redirector->DestinationObject;
-				}
 				if (Loaded)
 				{
-					if (FCoreUObjectDelegates::PackageLoadedFromStringAssetReference.IsBound())
-					{
-						FCoreUObjectDelegates::PackageLoadedFromStringAssetReference.Broadcast(Loaded->GetOutermost()->GetFName());
-					}
 					FString Dest = Loaded->GetPathName();
 					UE_LOG(LogRedirectors, Verbose, TEXT("    Resolved to '%s'"), *Dest);
 					if (Dest != ToLoad)
 					{
-						StringAssetRemap.Add(ToLoad, Dest);
+						AssetPathRedirectionMap.Add(ToLoadFName, FName(*Dest));
 					}
-#if WITH_EDITOR
-					AlreadyRemapped.Add(ToLoadFName);
-#endif
 				}
 				else
 				{
@@ -241,48 +133,67 @@ void FRedirectCollector::ResolveStringAssetReference(FName FilterPackageFName, b
 					UE_LOG(LogRedirectors, Warning, TEXT("String Asset Reference '%s' was not found! (Referencer '%s')"), *ToLoad, *Referencer);
 				}
 			}
-
 		}
 	}
 
-	check(StringAssetReferences.Num() == 0);
+	check(SoftObjectPathMap.Num() == 0);
 	// Add any skipped references back into the map for the next time this is called
-	Swap(StringAssetReferences, SkippedReferences);
+	Swap(SoftObjectPathMap, SkippedReferences);
 	// we shouldn't have any references left if we decided to resolve them all
-	check((StringAssetReferences.Num() == 0) || (FilterPackageFName != NAME_None));
+	check((SoftObjectPathMap.Num() == 0) || (FilterPackage != NAME_None));
 }
 
-void FRedirectCollector::GetStringAssetReferencePackageList(FName FilterPackage, TSet<FName>& ReferencedPackages)
+void FRedirectCollector::ProcessSoftObjectPathPackageList(FName FilterPackage, bool bGetEditorOnly, TSet<FName>& OutReferencedPackages)
 {
-	for (const auto& CurrentReference : StringAssetReferences)
+	FScopeLock ScopeLock(&CriticalSection);
+
+	// Iterate map, remove all matching and potentially add to OutReferencedPackages
+	for (auto It = SoftObjectPathMap.CreateIterator(); It; ++It)
 	{
-		const FName& ToLoadFName = CurrentReference.Key;
-		const FPackagePropertyPair& RefFilenameAndProperty = CurrentReference.Value;
+		const FName& ToLoadFName = It->Key;
+		const FPackagePropertyPair& RefFilenameAndProperty = It->Value;
 
 		// Package name may be null, if so return the set of things not associated with a package
 		if (FilterPackage == RefFilenameAndProperty.GetCachedPackageName())
 		{
-			FString PackageNameString = FPackageName::ObjectPathToPackageName(ToLoadFName.ToString());
+			if (!RefFilenameAndProperty.GetReferencedByEditorOnlyProperty() || bGetEditorOnly)
+			{
+				FString PackageNameString = FPackageName::ObjectPathToPackageName(ToLoadFName.ToString());
+				OutReferencedPackages.Add(FName(*PackageNameString));
+			}
 
-			ReferencedPackages.Add(FName(*PackageNameString));
+			It.RemoveCurrent();
 		}
 	}
 }
 
-void FRedirectCollector::AddStringAssetReferenceRedirection(const FString& OriginalPath, const FString& RedirectedPath)
+void FRedirectCollector::AddAssetPathRedirection(FName OriginalPath, FName RedirectedPath)
 {
-	FString* Found = StringAssetRemap.Find(OriginalPath);
+	FScopeLock ScopeLock(&CriticalSection);
 
-	if (Found)
+	// This replaces an existing mapping, can happen in the editor if things are renamed twice
+	AssetPathRedirectionMap.Add(OriginalPath, RedirectedPath);
+}
+
+void FRedirectCollector::RemoveAssetPathRedirection(FName OriginalPath)
+{
+	FScopeLock ScopeLock(&CriticalSection);
+
+	FName* Found = AssetPathRedirectionMap.Find(OriginalPath);
+
+	if (ensureMsgf(Found, TEXT("Cannot remove redirection from %s, it was not registered"), *OriginalPath.ToString()))
 	{
-		ensureMsgf(*Found == RedirectedPath, TEXT("Cannot remap %s to %s, it is already mapped to %s!"), *OriginalPath, *RedirectedPath, **Found);
+		AssetPathRedirectionMap.Remove(OriginalPath);
 	}
-	else
-	{
-		StringAssetRemap.Add(OriginalPath, RedirectedPath);
-	}
+}
+
+FName FRedirectCollector::GetAssetPathRedirection(FName OriginalPath)
+{
+	FScopeLock ScopeLock(&CriticalSection);
+
+	return AssetPathRedirectionMap.FindRef(OriginalPath);
 }
 
 FRedirectCollector GRedirectCollector;
 
-
+#endif // WITH_EDITOR

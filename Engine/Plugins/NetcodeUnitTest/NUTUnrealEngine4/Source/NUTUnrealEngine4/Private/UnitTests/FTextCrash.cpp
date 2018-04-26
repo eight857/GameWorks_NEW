@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnitTests/FTextCrash.h"
 
 
+#include "MinimalClient.h"
 #include "NUTActor.h"
 
 #include "UnitTestEnvironment.h"
@@ -15,7 +16,6 @@
 
 UFTextCrash::UFTextCrash(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, ExploitFailLog(TEXT("Blank exploit fail log message"))
 {
 	UnitTestName = TEXT("FTextCrash");
 	UnitTestType = TEXT("Exploit");
@@ -31,13 +31,14 @@ UFTextCrash::UFTextCrash(const FObjectInitializer& ObjectInitializer)
 	ExpectedResult.Add(TEXT("QAGame"),				EUnitTestVerification::VerifiedFixed);
 	ExpectedResult.Add(TEXT("UnrealTournament"),	EUnitTestVerification::VerifiedFixed);
 	ExpectedResult.Add(TEXT("FortniteGame"),		EUnitTestVerification::VerifiedFixed);
+	ExpectedResult.Add(TEXT("OrionGame"),			EUnitTestVerification::VerifiedFixed);
 
 	UnitTestTimeout = 60;
 
 
-	UnitTestFlags |= (EUnitTestFlags::LaunchServer | EUnitTestFlags::AcceptActors | EUnitTestFlags::AcceptPlayerController |
-						EUnitTestFlags::SendRPCs | EUnitTestFlags::NotifyNetActors | EUnitTestFlags::RequireNUTActor |
-						EUnitTestFlags::ExpectServerCrash);
+	SetFlags<EUnitTestFlags::LaunchServer | EUnitTestFlags::AcceptPlayerController | EUnitTestFlags::RequireNUTActor |
+				EUnitTestFlags::ExpectServerCrash | EUnitTestFlags::ExpectDisconnect,
+				EMinClientFlags::AcceptActors | EMinClientFlags::SendRPCs | EMinClientFlags::NotifyNetActors>();
 }
 
 void UFTextCrash::InitializeEnvironmentSettings()
@@ -60,17 +61,7 @@ void UFTextCrash::ExecuteClientUnitTest()
 		// If the exploit was a failure, the next log message will IMMEDIATELY be the 'ExploitFailLog' message,
 		// as that message is triggered within the same code chain as the RPC above
 		// (and should be blocked, if the above succeeds).
-		FOutBunch* ControlChanBunch = NUTNet::CreateChannelBunch(ControlBunchSequence, UnitConn, CHTYPE_Control, 0);
-
-		uint8 ControlMsg = NMT_NUTControl;
-		uint8 ControlCmd = ENUTControlCommand::Command_NoResult;
-		FString Cmd = ExploitFailLog;
-
-		*ControlChanBunch << ControlMsg;
-		*ControlChanBunch << ControlCmd;
-		*ControlChanBunch << Cmd;
-
-		NUTNet::SendControlBunch(UnitConn, *ControlChanBunch);
+		SendGenericExploitFailLog();
 	}
 }
 
@@ -90,7 +81,7 @@ void UFTextCrash::NotifyProcessLog(TWeakPtr<FUnitTestProcess> InProcess, const T
 				VerificationState = EUnitTestVerification::VerifiedNotFixed;
 				break;
 			}
-			else if (CurLine.Contains(ExploitFailLog))
+			else if (CurLine.Contains(GetGenericExploitFailLog()))
 			{
 				VerificationState = EUnitTestVerification::VerifiedFixed;
 				break;

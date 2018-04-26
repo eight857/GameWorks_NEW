@@ -1,18 +1,15 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreTypes.h"
 #include "Misc/AssertionMacros.h"
 #include "GenericPlatform/GenericPlatformMath.h"
 #include "Math/UnrealMathUtility.h"
-#include "Templates/AlignOf.h"
 #include "Templates/UnrealTemplate.h"
 #include "Containers/UnrealString.h"
 #include "UObject/NameTypes.h"
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
-
-float TheCompilerDoesntKnowThisIsAlwaysZero = 0.0f;
 
 struct TestA
 {
@@ -41,7 +38,6 @@ struct TestC : public TestA, TestB
 	int i;
 };
 
-
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlatformVerificationTest, "System.Core.HAL.Platform Verification", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::SmokeFilter)
 
 bool FPlatformVerificationTest::RunTest (const FString& Parameters)
@@ -56,25 +52,6 @@ bool FPlatformVerificationTest::RunTest (const FString& Parameters)
 #else
 	check(*(uint8*)&Test == 0x12);
 #endif
-	check(FMath::IsNaN(sqrtf(-1.0f)));
-	check(!FMath::IsFinite(sqrtf(-1.0f)));
-	check(!FMath::IsFinite(-1.0f/TheCompilerDoesntKnowThisIsAlwaysZero));
-	check(!FMath::IsFinite(1.0f/TheCompilerDoesntKnowThisIsAlwaysZero));
-	check(!FMath::IsNaN(-1.0f/TheCompilerDoesntKnowThisIsAlwaysZero));
-	check(!FMath::IsNaN(1.0f/TheCompilerDoesntKnowThisIsAlwaysZero));
-	check(!FMath::IsNaN(MAX_FLT));
-	check(FMath::IsFinite(MAX_FLT));
-	check(!FMath::IsNaN(0.0f));
-	check(FMath::IsFinite(0.0f));
-	check(!FMath::IsNaN(1.0f));
-	check(FMath::IsFinite(1.0f));
-	check(!FMath::IsNaN(-1.e37f));
-	check(FMath::IsFinite(-1.e37f));
-	check(FMath::FloorLog2(0) == 0);
-	check(FMath::FloorLog2(1) == 0);
-	check(FMath::FloorLog2(2) == 1);
-	check(FMath::FloorLog2(12) == 3);
-	check(FMath::FloorLog2(16) == 4);
 
 	FGenericPlatformMath::AutoTest();
 
@@ -95,14 +72,14 @@ bool FPlatformVerificationTest::RunTest (const FString& Parameters)
 
 	check(FString(FPlatformProperties::PlatformName()).Len() > 0); 
 
-	static_assert(ALIGNOF(int32) == 4, "Align of int32 is not 4."); //Hmmm, this would be very strange, ok maybe, but strange
+	static_assert(alignof(int32) == 4, "Align of int32 is not 4."); //Hmmm, this would be very strange, ok maybe, but strange
 
 	MS_ALIGN(16) struct FTestAlign
 	{
 		uint8 Test;
 	} GCC_ALIGN(16);
 
-	static_assert(ALIGNOF(FTestAlign) == 16, "Align of FTestAlign is not 16.");
+	static_assert(alignof(FTestAlign) == 16, "Align of FTestAlign is not 16.");
 
 	FName::AutoTest();
 

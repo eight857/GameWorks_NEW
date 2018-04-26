@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSubsystemOculus.h"
 #include "OnlineSubsystemOculusPrivate.h"
@@ -167,19 +167,19 @@ bool FOnlineSubsystemOculus::Tick(float DeltaTime)
 	return true;
 }
 
-void FOnlineSubsystemOculus::AddRequestDelegate(ovrRequest RequestId, FOculusMessageOnCompleteDelegate&& Delegate)
+void FOnlineSubsystemOculus::AddRequestDelegate(ovrRequest RequestId, FOculusMessageOnCompleteDelegate&& Delegate) const
 {
 	check(MessageTaskManager);
 	MessageTaskManager->AddRequestDelegate(RequestId, MoveTemp(Delegate));
 }
 
-FOculusMulticastMessageOnCompleteDelegate& FOnlineSubsystemOculus::GetNotifDelegate(ovrMessageType MessageType)
+FOculusMulticastMessageOnCompleteDelegate& FOnlineSubsystemOculus::GetNotifDelegate(ovrMessageType MessageType) const
 {
 	check(MessageTaskManager);
 	return MessageTaskManager->GetNotifDelegate(MessageType);
 }
 
-void FOnlineSubsystemOculus::RemoveNotifDelegate(ovrMessageType MessageType, const FDelegateHandle& Delegate)
+void FOnlineSubsystemOculus::RemoveNotifDelegate(ovrMessageType MessageType, const FDelegateHandle& Delegate) const
 {
 	check(MessageTaskManager);
 	return MessageTaskManager->RemoveNotifDelegate(MessageType, Delegate);
@@ -238,7 +238,7 @@ bool FOnlineSubsystemOculus::Init()
 }
 
 #if PLATFORM_WINDOWS
-bool FOnlineSubsystemOculus::InitWithWindowsPlatform()
+bool FOnlineSubsystemOculus::InitWithWindowsPlatform() const
 {
 	UE_LOG_ONLINE(Display, TEXT("FOnlineSubsystemOculus::InitWithWindowsPlatform()"));
 	auto OculusAppId = GetAppId();
@@ -251,7 +251,7 @@ bool FOnlineSubsystemOculus::InitWithWindowsPlatform()
 	auto InitResult = ovr_PlatformInitializeWindows(TCHAR_TO_ANSI(*OculusAppId));
 	if (InitResult != ovrPlatformInitialize_Success)
 	{
-		UE_LOG_ONLINE(Warning, TEXT("Failed to initialize the Oculus Platform SDK! Failure code: %d"), (int)InitResult);
+		UE_LOG_ONLINE(Warning, TEXT("Failed to initialize the Oculus Platform SDK! Failure code: %d"), static_cast<int>(InitResult));
 		return false;
 	}
 	return true;
@@ -318,6 +318,20 @@ bool FOnlineSubsystemOculus::Shutdown()
 
 FString FOnlineSubsystemOculus::GetAppId() const
 {
+	// Try to get the platform specific field before the generic one
+#if PLATFORM_WINDOWS
+	auto AppId = GConfig->GetStr(TEXT("OnlineSubsystemOculus"), TEXT("RiftAppId"), GEngineIni);
+#elif PLATFORM_ANDROID
+	auto AppId = GConfig->GetStr(TEXT("OnlineSubsystemOculus"), TEXT("GearVRAppId"), GEngineIni);
+#endif
+	if (!AppId.IsEmpty()) {
+		return AppId;
+	}
+#if PLATFORM_WINDOWS
+	UE_LOG_ONLINE(Warning, TEXT("Could not find 'RiftAppId' key in engine config.  Trying 'OculusAppId'.  Move your oculus app id to 'RiftAppId' to use in your rift app and make this warning go away."));
+#elif PLATFORM_ANDROID
+	UE_LOG_ONLINE(Warning, TEXT("Could not find 'GearVRAppId' key in engine config.  Trying 'OculusAppId'.  Move your oculus app id to 'GearVRAppId' to use in your gearvr app make this warning go away."));
+#endif
 	return GConfig->GetStr(TEXT("OnlineSubsystemOculus"), TEXT("OculusAppId"), GEngineIni);
 }
 
@@ -326,14 +340,12 @@ bool FOnlineSubsystemOculus::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevi
 	return false;
 }
 
-bool FOnlineSubsystemOculus::IsEnabled()
+FText FOnlineSubsystemOculus::GetOnlineServiceName() const
 {
-	bool bEnableOculus = true;
-	GConfig->GetBool(TEXT("OnlineSubsystemOculus"), TEXT("bEnabled"), bEnableOculus, GEngineIni);
-	return bEnableOculus;
+	return NSLOCTEXT("OnlineSubsystemOculus", "OnlineServiceName", "Oculus Platform");
 }
 
-bool FOnlineSubsystemOculus::IsInitialized()
+bool FOnlineSubsystemOculus::IsInitialized() const
 {
 	return bOculusInit;
 }

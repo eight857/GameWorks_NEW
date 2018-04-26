@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -56,6 +56,9 @@ public:
 	 * Shutdown all registered subsystems
 	 */
 	static void ShutdownAllSystems();
+
+
+	virtual ~ISocketSubsystem() { }
 
 	/**
 	 * Does per platform initialization of the sockets library

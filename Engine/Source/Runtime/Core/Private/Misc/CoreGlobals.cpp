@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreGlobals.h"
 #include "Internationalization/Text.h"
@@ -96,14 +96,18 @@ bool GCompilingBlueprint = false;
 /** True if we're reconstructing blueprint instances. Should never be true on cooked builds */
 bool GIsReconstructingBlueprintInstances = false;
 
-/** Force blueprints to not compile on load */
-bool GForceDisableBlueprintCompileOnLoad = false;
-
 /** True if actors and objects are being re-instanced. */
 bool GIsReinstancing = false;
 
+/**
+ * If true, we are running an editor script that should not prompt any dialog modal. The default value of any model will be used.
+ * This is used when running a Blutility or script like Python and we don't want an OK dialog to pop while the script is running.
+ * Could be set for commandlet with -RUNNINGUNATTENDEDSCRIPT
+ */
+bool GIsRunningUnattendedScript = false;
+
 #if WITH_ENGINE
-bool					PRIVATE_GIsRunningCommandlet			= false;				/* Whether this executable is running a commandlet (custom command-line processing code) */
+bool					PRIVATE_GIsRunningCommandlet		= false;				/** Whether this executable is running a commandlet (custom command-line processing code) */
 bool					PRIVATE_GAllowCommandletRendering	= false;				/** If true, initialise RHI and set up scene for rendering even when running a commandlet. */
 bool					PRIVATE_GAllowCommandletAudio 		= false;				/** If true, allow audio even when running a commandlet. */
 #endif	// WITH_ENGINE
@@ -128,7 +132,7 @@ bool					GIsClient						= false;					/* Whether engine was launched as a client 
 bool					GIsServer						= false;					/* Whether engine was launched as a server, true if GIsClient */
 bool					GIsCriticalError				= false;					/* An appError() has occured */
 bool					GIsGuarded						= false;					/* Whether execution is happening within main()/WinMain()'s try/catch handler */
-bool					GIsRunning						= false;					/* Whether execution is happening within MainLoop() */
+TSAN_ATOMIC(bool)		GIsRunning(false);											/* Whether execution is happening within MainLoop() */
 bool					GIsDuplicatingClassForReinstancing = false;					/* Whether we are currently using SDO on a UClass or CDO for live reinstancing */
 /** This specifies whether the engine was launched as a build machine process								*/
 bool					GIsBuildMachine					= false;
@@ -175,10 +179,10 @@ FFixedUObjectArray* GCoreObjectArrayForDebugVisualizers = nullptr;
 /** Game name, used for base game directory and ini among other things										*/
 #if (!IS_MONOLITHIC && !IS_PROGRAM)
 // In modular game builds, the game name will be set when the application launches
-TCHAR					GInternalGameName[64]					= TEXT("None");
+TCHAR					GInternalProjectName[64]					= TEXT("None");
 #elif !IS_MONOLITHIC && IS_PROGRAM
 // In non-monolithic programs builds, the game name will be set by the module, but not just yet, so we need to NOT initialize it!
-TCHAR					GInternalGameName[64];
+TCHAR					GInternalProjectName[64];
 #else
 // For monolithic builds, the game name variable definition will be set by the IMPLEMENT_GAME_MODULE
 // macro for the game's main game module.
@@ -206,6 +210,8 @@ bool (*IsAsyncLoading)() = &IsAsyncLoadingCoreInternal;
 void (*SuspendAsyncLoading)() = &appNoop;
 void (*ResumeAsyncLoading)() = &appNoop;
 bool (*IsAsyncLoadingMultithreaded)() = &IsAsyncLoadingCoreInternal;
+void (*SuspendTextureStreamingRenderTasks)() = &appNoop;
+void (*ResumeTextureStreamingRenderTasks)() = &appNoop;
 
 /** Whether the editor is currently loading a package or not												*/
 bool					GIsEditorLoadingPackage				= false;
@@ -231,7 +237,7 @@ bool					GEventDrivenLoaderEnabled = false;
 bool					GPakCache_AcceptPrecacheRequests = true;
 
 /** Steadily increasing frame counter.																		*/
-uint64					GFrameCounter					= 0;
+TSAN_ATOMIC(uint64)		GFrameCounter(0);
 uint64					GLastGCFrame					= 0;
 /** Incremented once per frame before the scene is being rendered. In split screen mode this is incremented once for all views (not for each view). */
 uint32					GFrameNumber					= 1;
@@ -260,6 +266,8 @@ bool					GIsGameThreadIdInitialized		= false;
 void					(*GFlushStreamingFunc)(void)	  = &appNoop;
 /** Whether to emit begin/ end draw events.																	*/
 bool					GEmitDrawEvents					= false;
+/** Whether forward DrawEvents to the RHI or keep them only on the Commandlist. */
+bool					GCommandListOnlyDrawEvents		= false;
 /** Whether we want the rendering thread to be suspended, used e.g. for tracing.							*/
 bool					GShouldSuspendRenderingThread	= false;
 /** Determines what kind of trace should occur, NAME_None for none.											*/
@@ -268,6 +276,12 @@ FName					GCurrentTraceName				= NAME_None;
 ELogTimes::Type			GPrintLogTimes					= ELogTimes::None;
 /** How to print the category in log output. */
 bool					GPrintLogCategory = true;
+
+
+#if USE_HITCH_DETECTION
+bool				GHitchDetected = false;
+#endif
+
 /** Whether stats should emit named events for e.g. PIX.													*/
 int32					GCycleStatsShouldEmitNamedEvents = 0;
 /** Disables some warnings and minor features that would interrupt a demo presentation						*/
@@ -280,16 +294,36 @@ bool					GPumpingMessagesOutsideOfMainLoop = false;
 /** Enables various editor and HMD hacks that allow the experimental VR editor feature to work, perhaps at the expense of other systems */
 bool					GEnableVREditorHacks = false;
 
-CORE_API bool			GIsGPUCrashed = false;
+bool CORE_API			GIsGPUCrashed = false;
 
-// Constrain bandwidth if wanted. Value is in MByte/ sec.
-float GAsyncIOBandwidthLimit = 0.0f;
-static FAutoConsoleVariableRef CVarAsyncIOBandwidthLimit(
-	TEXT("s.AsyncIOBandwidthLimit"),
-	GAsyncIOBandwidthLimit,
-	TEXT("Constrain bandwidth if wanted. Value is in MByte/ sec."),
-	ECVF_Default
-	);
+bool GetEmitDrawEvents()
+{
+	return GEmitDrawEvents;
+}
+
+void CORE_API SetEmitDrawEvents(bool EmitDrawEvents)
+{
+	GEmitDrawEvents = EmitDrawEvents;
+	GCommandListOnlyDrawEvents = !GEmitDrawEvents;
+}
+
+void CORE_API EnableEmitDrawEventsOnlyOnCommandlist()
+{
+	GCommandListOnlyDrawEvents = !GEmitDrawEvents;
+	GEmitDrawEvents = true;
+}
+
+void ToggleGDebugPUCrashedFlag(const TArray<FString>& Args)
+{
+	GIsGPUCrashed = !GIsGPUCrashed;
+	UE_LOG(LogCore, Log, TEXT("Gpu crashed flag forcibly set to: %i"), GIsGPUCrashed ? 1 : 0);
+}
+
+FAutoConsoleCommand ToggleDebugGPUCrashedCmd(
+	TEXT("c.ToggleGPUCrashedFlagDbg"),
+	TEXT("Forcibly toggles the 'GPU Crashed' flag for testing crash analytics."),
+	FConsoleCommandWithArgsDelegate::CreateStatic(&ToggleGDebugPUCrashedFlag),
+	ECVF_Cheat);
 
 
 DEFINE_STAT(STAT_AudioMemory);
@@ -297,9 +331,7 @@ DEFINE_STAT(STAT_TextureMemory);
 DEFINE_STAT(STAT_MemoryPhysXTotalAllocationSize);
 DEFINE_STAT(STAT_MemoryICUTotalAllocationSize);
 DEFINE_STAT(STAT_MemoryICUDataFileAllocationSize);
-DEFINE_STAT(STAT_AnimationMemory);
 DEFINE_STAT(STAT_PrecomputedVisibilityMemory);
-DEFINE_STAT(STAT_PrecomputedLightVolumeMemory);
 DEFINE_STAT(STAT_SkeletalMeshVertexMemory);
 DEFINE_STAT(STAT_SkeletalMeshIndexMemory);
 DEFINE_STAT(STAT_SkeletalMeshMotionBlurSkinningMemory);

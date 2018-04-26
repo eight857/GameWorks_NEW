@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -24,16 +24,17 @@ public:
 	 */
 	FName GetImportPackageName(int32 ImportIndex);
 
-	/** Operator for serialization */
-	friend FArchive& operator<<(FArchive& Ar, FPackageDependencyData& DependencyData)
+	/**
+	 * Serialize as part of the registry cache. This is not meant to be serialized as part of a package so  it does not handle versions normally
+	 * To version this data change FAssetRegistryVersion or CacheSerializationVersion
+	 */
+	void SerializeForCache(FArchive& Ar)
 	{
-		// serialize out the asset info, this is tied to CacheSerializationVersion
-		Ar << DependencyData.PackageName;
-		Ar << DependencyData.PackageData;
-		Ar << DependencyData.ImportMap;
-		Ar << DependencyData.StringAssetReferencesMap;
-		Ar << DependencyData.SearchableNamesMap;
+		Ar << PackageName;
+		Ar << ImportMap;
+		Ar << SoftPackageReferenceList;
+		Ar << SearchableNamesMap;
 		
-		return Ar;
+		PackageData.SerializeForCache(Ar);
 	}
 };

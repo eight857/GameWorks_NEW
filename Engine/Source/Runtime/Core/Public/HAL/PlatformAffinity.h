@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,6 +10,8 @@
 #include "PS4/PS4Affinity.h"
 #elif PLATFORM_IOS
 #include "IOS/IOSPlatformAffinity.h"
+#elif PLATFORM_MAC
+#include "Mac/MacPlatformAffinity.h"
 #elif PLATFORM_ANDROID
 #include "Android/AndroidAffinity.h"
 #elif PLATFORM_SWITCH

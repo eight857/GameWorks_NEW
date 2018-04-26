@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,6 +16,7 @@ class IMenu
 public:
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnMenuDismissed, TSharedRef<IMenu> /*DismissedMenu*/);
 
+	virtual ~IMenu() { }
 	virtual EPopupMethod GetPopupMethod() const = 0;
 	virtual TSharedPtr<SWindow> GetParentWindow() const = 0;
 	virtual TSharedPtr<SWindow> GetOwnedWindow() const = 0;

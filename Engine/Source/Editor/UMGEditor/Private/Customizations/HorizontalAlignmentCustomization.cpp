@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Customizations/HorizontalAlignmentCustomization.h"
 #include "Widgets/Images/SImage.h"
@@ -100,7 +100,7 @@ void FHorizontalAlignmentCustomization::HandleCheckStateChanged(ECheckBoxState I
 ECheckBoxState FHorizontalAlignmentCustomization::GetCheckState(TSharedRef<IPropertyHandle> PropertyHandle, EHorizontalAlignment ForAlignment) const
 {
 	uint8 Value;
-	if ( PropertyHandle->GetValue(Value) )
+	if ( PropertyHandle->GetValue(Value) == FPropertyAccess::Result::Success )
 	{
 		return Value == ForAlignment ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	}

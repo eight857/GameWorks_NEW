@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NativeCodeGenerationTool.h"
 #include "Input/Reply.h"
@@ -50,7 +50,7 @@ struct FGeneratedCodeData
 		ClassName = GeneratedClassName.ToString();
 
 		IBlueprintCompilerCppBackendModule& CodeGenBackend = (IBlueprintCompilerCppBackendModule&)IBlueprintCompilerCppBackendModule::Get();
-		BaseFilename = CodeGenBackend.ConstructBaseFilename(&InBlueprint);
+		BaseFilename = CodeGenBackend.ConstructBaseFilename(&InBlueprint, FCompilerNativizationOptions{});
 
 		GatherUserDefinedDependencies(InBlueprint);
 	}
@@ -113,13 +113,13 @@ struct FGeneratedCodeData
 
 	static FString DefaultHeaderDir()
 	{
-		auto DefaultSourceDir = FPaths::ConvertRelativePathToFull(FPaths::GameIntermediateDir());
+		auto DefaultSourceDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectIntermediateDir());
 		return FPaths::Combine(*DefaultSourceDir, TEXT("NativizationTest"), TEXT("Public"));
 	}
 
 	static FString DefaultSourceDir()
 	{
-		auto DefaultSourceDir = FPaths::ConvertRelativePathToFull(FPaths::GameIntermediateDir());
+		auto DefaultSourceDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectIntermediateDir());
 		return FPaths::Combine(*DefaultSourceDir, TEXT("NativizationTest"), TEXT("Private"));
 	}
 
@@ -159,13 +159,13 @@ struct FGeneratedCodeData
 			FBlueprintNativeCodeGenUtils::GenerateCppCode(Obj, HeaderSource, CppSource, NativizationSummary, FCompilerNativizationOptions{});
 			SlowTask.EnterProgressFrame();
 
-			const FString BackendBaseFilename = CodeGenBackend.ConstructBaseFilename(Obj);
+			const FString BackendBaseFilename = CodeGenBackend.ConstructBaseFilename(Obj, FCompilerNativizationOptions{});
 
 			const FString FullHeaderFilename = FPaths::Combine(*HeaderDirPath, *(BackendBaseFilename + TEXT(".h")));
 			const bool bHeaderSaved = FFileHelper::SaveStringToFile(*HeaderSource, *FullHeaderFilename);
 			if (!bHeaderSaved)
 			{
-				ErrorString += FString::Printf(*LOCTEXT("HeaderNotSaved", "Header file wasn't saved. Check log for details. %s\n").ToString(), *Obj->GetPathName());
+				ErrorString += FText::Format(LOCTEXT("HeaderNotSavedFmt", "Header file wasn't saved. Check log for details. {0}\n"), FText::FromString(Obj->GetPathName())).ToString();
 			}
 			else
 			{
@@ -179,7 +179,7 @@ struct FGeneratedCodeData
 				const bool bCppSaved = FFileHelper::SaveStringToFile(*CppSource, *NewCppFilename);
 				if (!bCppSaved)
 				{
-					ErrorString += FString::Printf(*LOCTEXT("CppNotSaved", "Cpp file wasn't saved. Check log for details. %s\n").ToString(), *Obj->GetPathName());
+					ErrorString += FText::Format(LOCTEXT("CppNotSavedFmt", "Cpp file wasn't saved. Check log for details. {0}\n"), FText::FromString(Obj->GetPathName())).ToString();
 				}
 				else
 				{

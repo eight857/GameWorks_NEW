@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Internationalization/PackageLocalizationCache.h"
 #include "HAL/PlatformTime.h"
@@ -310,13 +310,13 @@ void FPackageLocalizationCache::ConditionalUpdatePackageNameToAssetGroupCache_No
 		return;
 	}
 
-	bPackageNameToAssetGroupDirty = false;
-
 	PackageNameToAssetGroup.Reset();
 	for (const auto& AssetClassGroupPair : AssetClassesToAssetGroups)
 	{
 		FindAssetGroupPackages(AssetClassGroupPair.Value, AssetClassGroupPair.Key);
 	}
+
+	bPackageNameToAssetGroupDirty = false;
 }
 
 void FPackageLocalizationCache::HandleContentPathMounted(const FString& InAssetPath, const FString& InFilesystemPath)

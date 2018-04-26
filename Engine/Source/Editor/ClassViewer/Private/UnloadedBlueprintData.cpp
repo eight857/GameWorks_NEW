@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnloadedBlueprintData.h"
 #include "Engine/BlueprintGeneratedClass.h"
@@ -75,6 +75,8 @@ const UClass* FUnloadedBlueprintData::GetClassWithin() const
 		{
 			return CurrentNode->Class->ClassWithin;
 		}
+
+		CurrentNode = CurrentNode->ParentNode.Pin();
 	}
 
 	return nullptr;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CinematicViewport/SCinematicTransportRange.h"
 #include "Rendering/DrawElements.h"
@@ -8,6 +8,7 @@
 #include "Styles/LevelSequenceEditorStyle.h"
 #include "MovieScene.h"
 #include "ISequencer.h"
+#include "CommonMovieSceneTools.h"
 
 #define LOCTEXT_NAMESPACE "SCinematicTransportRange"
 
@@ -76,7 +77,7 @@ void SCinematicTransportRange::SetTime(const FGeometry& MyGeometry, const FPoint
 	ISequencer* Sequencer = GetSequencer();
 	if (Sequencer)
 	{
-		float Lerp = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X / MyGeometry.Size.X;
+		float Lerp = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X / MyGeometry.GetLocalSize().X;
 		Lerp = FMath::Clamp(Lerp, 0.f, 1.f);
 		
 		const TRange<float> WorkingRange = Sequencer->GetFocusedMovieSceneSequence()->GetMovieScene()->GetEditorData().WorkingRange;
@@ -95,11 +96,17 @@ void SCinematicTransportRange::Tick(const FGeometry& AllottedGeometry, const dou
 	ISequencer* Sequencer = GetSequencer();
 	if (Sequencer)
 	{
-		Sequencer->GetKeysFromSelection(ActiveKeyCollection);
+		TRange<float> WorkingRange = Sequencer->GetFocusedMovieSceneSequence()->GetMovieScene()->GetEditorData().WorkingRange;
+
+		// Anything within 3 pixel's worth of time is a duplicate as far as we're concerned
+		FTimeToPixel TimeToPixelConverter(AllottedGeometry, WorkingRange);
+		const float DuplicateThreshold = (TimeToPixelConverter.PixelToTime(3.f) - TimeToPixelConverter.PixelToTime(0.f));
+
+		Sequencer->GetKeysFromSelection(ActiveKeyCollection, DuplicateThreshold);
 	}
 }
 
-int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	ISequencer* Sequencer = GetSequencer();
 
@@ -110,12 +117,12 @@ int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry&
 	}
 
 	static const float TrackOffsetY = 6.f;
-	const float TrackHeight = AllottedGeometry.Size.Y - TrackOffsetY;
+	const float TrackHeight = AllottedGeometry.GetLocalSize().Y - TrackOffsetY;
 
 	TRange<float> WorkingRange = Sequencer->GetFocusedMovieSceneSequence()->GetMovieScene()->GetEditorData().WorkingRange;
 	TRange<float> PlaybackRange = Sequencer->GetFocusedMovieSceneSequence()->GetMovieScene()->GetPlaybackRange();
 
-	const float TimePerPixel = WorkingRange.Size<float>() / AllottedGeometry.Size.X;
+	const float TimePerPixel = WorkingRange.Size<float>() / AllottedGeometry.GetLocalSize().X;
 
 	FColor DarkGray(40, 40, 40);
 	FColor MidGray(80, 80, 80);
@@ -125,9 +132,8 @@ int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry&
 	FSlateDrawElement::MakeBox(
 		OutDrawElements,
 		LayerId,
-		AllottedGeometry.ToPaintGeometry( FVector2D(0.f, TrackOffsetY),  FVector2D(AllottedGeometry.Size.X, TrackHeight)),
+		AllottedGeometry.ToPaintGeometry( FVector2D(0.f, TrackOffsetY),  FVector2D(AllottedGeometry.GetLocalSize().X, TrackHeight)),
 		FEditorStyle::GetBrush("WhiteBrush"),
-		MyClippingRect,
 		DrawEffects,
 		FLinearColor(DarkGray)
 	);
@@ -141,9 +147,8 @@ int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry&
 	FSlateDrawElement::MakeBox(
 		OutDrawElements,
 		++LayerId,
-		AllottedGeometry.ToPaintGeometry( FVector2D(AllottedGeometry.Size.X*PlaybackStartLerp, TrackOffsetY),  FVector2D(AllottedGeometry.Size.X*(PlaybackEndLerp - PlaybackStartLerp), TrackHeight)),
+		AllottedGeometry.ToPaintGeometry( FVector2D(AllottedGeometry.GetLocalSize().X*PlaybackStartLerp, TrackOffsetY),  FVector2D(AllottedGeometry.GetLocalSize().X*(PlaybackEndLerp - PlaybackStartLerp), TrackHeight)),
 		FEditorStyle::GetBrush("WhiteBrush"),
-		MyClippingRect,
 		DrawEffects,
 		FLinearColor(MidGray)
 	);
@@ -158,9 +163,8 @@ int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry&
 		FSlateDrawElement::MakeBox(
 			OutDrawElements,
 			++LayerId,
-			AllottedGeometry.ToPaintGeometry( FVector2D(AllottedGeometry.Size.X*PlaybackStartLerp, TrackOffsetY), FVector2D(AllottedGeometry.Size.X * (ClampedProgressLerp - PlaybackStartLerp), TrackHeight) ),
+			AllottedGeometry.ToPaintGeometry( FVector2D(AllottedGeometry.GetLocalSize().X*PlaybackStartLerp, TrackOffsetY), FVector2D(AllottedGeometry.GetLocalSize().X * (ClampedProgressLerp - PlaybackStartLerp), TrackHeight) ),
 			FEditorStyle::GetBrush("WhiteBrush"),
-			MyClippingRect,
 			DrawEffects,
 			FLinearColor(LightGray)
 		);
@@ -199,10 +203,9 @@ int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry&
 					LayerId+2,
 					AllottedGeometry.ToPaintGeometry(
 						FVector2D(BrushWidth, BrushHeight),
-						FSlateLayoutTransform(FVector2D(AllottedGeometry.Size.X*Lerp - BrushWidth*.5f, BrushOffsetY))
+						FSlateLayoutTransform(FVector2D(AllottedGeometry.GetLocalSize().X*Lerp - BrushWidth*.5f, BrushOffsetY))
 					),
 					KeyBrush,
-					MyClippingRect,
 					DrawEffects,
 					KeyFrameColor
 				);
@@ -216,14 +219,13 @@ int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry&
 	// Draw the play marker
 	{
 		static const float BrushWidth = 11.f, BrushHeight = 6.f;
-		const float PositionX = AllottedGeometry.Size.X * ProgressLerp;
+		const float PositionX = AllottedGeometry.GetLocalSize().X * ProgressLerp;
 
 		FSlateDrawElement::MakeBox(
 			OutDrawElements,
 			++LayerId,
 			AllottedGeometry.ToPaintGeometry(FVector2D(PositionX - FMath::CeilToFloat(BrushWidth/2), 0.f), FVector2D(BrushWidth, BrushHeight)),
 			FLevelSequenceEditorStyle::Get()->GetBrush("LevelSequenceEditor.CinematicViewportPlayMarker"),
-			MyClippingRect,
 			DrawEffects,
 			bPlayMarkerOnKey ? KeyFrameColor : LightGray
 		);
@@ -232,14 +234,13 @@ int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry&
 		{
 			TArray<FVector2D> LinePoints;
 			LinePoints.Add(FVector2D(PositionX, BrushHeight));
-			LinePoints.Add(FVector2D(PositionX, AllottedGeometry.Size.Y));
+			LinePoints.Add(FVector2D(PositionX, AllottedGeometry.GetLocalSize().Y));
 
 			FSlateDrawElement::MakeLines(
 				OutDrawElements,
 				LayerId,
 				AllottedGeometry.ToPaintGeometry(),
 				LinePoints,
-				MyClippingRect,
 				DrawEffects,
 				LightGray,
 				false
@@ -254,9 +255,8 @@ int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry&
 		FSlateDrawElement::MakeBox(
 			OutDrawElements,
 			LayerId+1,
-			AllottedGeometry.ToPaintGeometry(FVector2D(AllottedGeometry.Size.X*PlaybackStartLerp, TrackOffsetY), FVector2D(BrushWidth, TrackHeight)),
+			AllottedGeometry.ToPaintGeometry(FVector2D(AllottedGeometry.GetLocalSize().X*PlaybackStartLerp, TrackOffsetY), FVector2D(BrushWidth, TrackHeight)),
 			FLevelSequenceEditorStyle::Get()->GetBrush("LevelSequenceEditor.CinematicViewportRangeStart"),
-			MyClippingRect,
 			DrawEffects,
 			FColor(32, 128, 32)	// 120, 75, 50 (HSV)
 		);
@@ -264,9 +264,8 @@ int32 SCinematicTransportRange::OnPaint(const FPaintArgs& Args, const FGeometry&
 		FSlateDrawElement::MakeBox(
 			OutDrawElements,
 			LayerId+1,
-			AllottedGeometry.ToPaintGeometry(FVector2D(AllottedGeometry.Size.X*PlaybackEndLerp - BrushWidth, TrackOffsetY), FVector2D(BrushWidth, TrackHeight)),
+			AllottedGeometry.ToPaintGeometry(FVector2D(AllottedGeometry.GetLocalSize().X*PlaybackEndLerp - BrushWidth, TrackOffsetY), FVector2D(BrushWidth, TrackHeight)),
 			FLevelSequenceEditorStyle::Get()->GetBrush("LevelSequenceEditor.CinematicViewportRangeEnd"),
-			MyClippingRect,
 			DrawEffects,
 			FColor(128, 32, 32)	// 0, 75, 50 (HSV)
 		);

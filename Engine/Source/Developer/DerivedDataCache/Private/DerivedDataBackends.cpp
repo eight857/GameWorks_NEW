@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/PlatformFilemanager.h"
@@ -47,6 +47,7 @@ public:
 		, AsyncPutWrapper(NULL)
 		, KeyLengthWrapper(NULL)
 		, HierarchicalWrapper(NULL)
+		, bUsingSharedDDC(false)
 		, MountPakCommand(
 		TEXT( "DDC.MountPak" ),
 		*LOCTEXT("CommandText_DDCMountPak", "Mounts read-only pak file").ToString(),
@@ -134,7 +135,7 @@ public:
 		if( GConfig->GetString( IniSection, NodeName, Entry, IniFilename ) )
 		{
 			// Trim whitespace at the beginning.
-			Entry = Entry.Trim();
+			Entry.TrimStartInline();
 			// Remove brackets.
 			Entry.RemoveFromStart(TEXT("("));
 			Entry.RemoveFromEnd(TEXT(")"));
@@ -296,7 +297,7 @@ public:
 		FDerivedDataBackendInterface* VerifyNode = NULL;
 		if( InnerNode )
 		{
-			IFileManager::Get().DeleteDirectory(*(FPaths::GameSavedDir() / TEXT("VerifyDDC/")), false, true);
+			IFileManager::Get().DeleteDirectory(*(FPaths::ProjectSavedDir() / TEXT("VerifyDDC/")), false, true);
 
 			const bool bFix = GetParsedBool( Entry, TEXT("Fix=") );
 			VerifyNode = new FDerivedDataBackendVerifyWrapper( InnerNode, bFix );
@@ -506,6 +507,25 @@ public:
 			Path = TEXT("");
 		}
 
+		// Allow the user to override it from the editor
+		FString EditorOverrideSetting;
+		if(FParse::Value(Entry, TEXT("EditorOverrideSetting="), EditorOverrideSetting))
+		{
+			FString Setting = GConfig->GetStr(TEXT("/Script/UnrealEd.EditorSettings"), *EditorOverrideSetting, GEditorSettingsIni);
+			if(Setting.Len() > 0)
+			{
+				FString SettingPath;
+				if(FParse::Value(*Setting, TEXT("Path="), SettingPath))
+				{
+					SettingPath = SettingPath.TrimQuotes();
+					if(SettingPath.Len() > 0)
+					{
+						Path = SettingPath;
+					}
+				}
+			}
+		}
+
 		if( !Path.Len() )
 		{
 			UE_LOG( LogDerivedDataCache, Log, TEXT("%s data cache path not found in *engine.ini, will not use an %s cache."), NodeName, NodeName );
@@ -541,15 +561,18 @@ public:
 			}
 
 			FDerivedDataBackendInterface* InnerFileSystem = NULL;
-
+			
 			// Don't create the file system if shared data cache directory is not mounted
-			if( FCString::Strcmp(NodeName, TEXT("Shared")) != 0 || IFileManager::Get().DirectoryExists(*Path) )
+			bool bShared = FCString::Stricmp(NodeName, TEXT("Shared")) == 0;
+			if( !bShared || IFileManager::Get().DirectoryExists(*Path) )
 			{
 				InnerFileSystem = CreateFileSystemDerivedDataBackend( *Path, bReadOnly, bTouch, bPurgeTransient, bDeleteUnused, UnusedFileAge, MaxFoldersToClean, MaxFileChecksPerSec);
 			}
 
 			if( InnerFileSystem )
 			{
+				bUsingSharedDDC = bUsingSharedDDC ? bUsingSharedDDC : bShared;
+
 				DataCache = new FDerivedDataBackendCorruptionWrapper( InnerFileSystem );
 				UE_LOG( LogDerivedDataCache, Log, TEXT("Using %s data cache path %s: %s"), NodeName, *Path, bReadOnly ? TEXT("ReadOnly") : TEXT("Writable") );
 				Directories.AddUnique(Path);
@@ -569,11 +592,14 @@ public:
 	 * @param NodeName Node name.
 	 * @param Entry Node definition.
 	 * @param OutFilename filename specified for the cache
-	 * @return Boot data cache backend interface instance or NULL if unsuccessfull
+	 * @return Boot data cache backend interface instance or NULL if unsuccessful
 	 */
 	FMemoryDerivedDataBackend* ParseBootCache( const TCHAR* NodeName, const TCHAR* Entry, FString& OutFilename )
 	{
 		FMemoryDerivedDataBackend* Cache = NULL;
+
+		// Only allow boot cache with the editor. We don't want other tools and utilities (eg. SCW) writing to the same file.
+#if WITH_EDITOR
 		FString Filename;
 		int64 MaxCacheSize = -1; // in MB
 		const int64 MaxSupportedCacheSize = 2048; // 2GB
@@ -616,6 +642,7 @@ public:
 				}
 			}
 		}
+#endif
 		return Cache;
 	}
 
@@ -648,7 +675,7 @@ public:
 		return Cache;
 	}
 
-	~FDerivedDataBackendGraph()
+	virtual ~FDerivedDataBackendGraph()
 	{
 		RootCache = NULL;
 		DestroyCreatedBackends();
@@ -737,6 +764,12 @@ public:
 				}
 			}
 		}
+	}
+
+	/** Get whether a shared cache is in use */
+	virtual bool GetUsingSharedDDC() const override
+	{
+		return bUsingSharedDDC;
 	}
 
 	virtual void AddToAsyncCompletionCounter(int32 Addend) override
@@ -874,6 +907,9 @@ private:
 
 	/** List of directories used by the DDC */
 	TArray<FString> Directories;
+
+	/** Whether a shared cache is in use */
+	bool bUsingSharedDDC;
 
 	/** MountPak console command */
 	FAutoConsoleCommand MountPakCommand;

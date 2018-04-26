@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -8,8 +8,8 @@
 #include "Distributions/DistributionVector.h"
 #include "DistributionVectorUniform.generated.h"
 
-UCLASS(collapsecategories, hidecategories=Object, editinlinenew, MinimalAPI)
-class UDistributionVectorUniform : public UDistributionVector
+UCLASS(collapsecategories, hidecategories=Object, editinlinenew)
+class ENGINE_API UDistributionVectorUniform : public UDistributionVector
 {
 	GENERATED_UCLASS_BODY()
 

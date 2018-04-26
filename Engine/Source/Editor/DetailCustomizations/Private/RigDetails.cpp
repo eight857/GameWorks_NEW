@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "RigDetails.h"
 #include "Widgets/Input/SEditableTextBox.h"
@@ -107,7 +107,7 @@ void FRigDetails::GenerateNodeArrayElementWidget(TSharedRef<IPropertyHandle> Pro
 	check (ParentNameProp->GetValueAsDisplayText(ParentNodeName) != FPropertyAccess::Fail);
 	check (DisplayNameProp->GetValueAsDisplayText(DisplayString) != FPropertyAccess::Fail);
 
-	ChildrenBuilder.AddChildContent(FText::GetEmpty())
+	ChildrenBuilder.AddCustomRow(FText::GetEmpty())
 	[
 		SNew(SHorizontalBox)
 
@@ -328,7 +328,7 @@ void FRigDetails::GenerateTransformBaseArrayElementWidget(TSharedRef<IPropertyHa
 		NodeIndex++;
 	}
 
-	ChildrenBuilder.AddChildContent(FText::GetEmpty())
+	ChildrenBuilder.AddCustomRow(FText::GetEmpty())
 	[
 		SNew(SHorizontalBox)
 

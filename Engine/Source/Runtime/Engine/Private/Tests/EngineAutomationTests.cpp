@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -55,7 +55,7 @@ namespace
 		FEditorFileUtils::FindAllPackageFiles(FileList);
 #else
 		// Look directly on disk. Very slow!
-		FPackageName::FindPackagesInDirectory(FileList, *FPaths::GameContentDir());
+		FPackageName::FindPackagesInDirectory(FileList, *FPaths::ProjectContentDir());
 #endif
 
 		// Iterate over all files, adding the ones with the map extension..
@@ -76,6 +76,8 @@ namespace
 	}
 }
 
+#if PLATFORM_DESKTOP
+
 /**
  * SetRes Verification - Verify changing resolution works
  */
@@ -89,6 +91,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSetResTest, "System.Windows.Set Resolution", E
  */
 bool FSetResTest::RunTest(const FString& Parameters)
 {
+
 	//Gets the default map that the game uses.
 	const UGameMapsSettings* GameMapsSettings = GetDefault<UGameMapsSettings>();
 	const FString& MapName = GameMapsSettings->GetGameDefaultMap();
@@ -106,9 +109,10 @@ bool FSetResTest::RunTest(const FString& Parameters)
 	ADD_LATENT_AUTOMATION_COMMAND(FExecStringLatentCommand(TEXT("setres 640x480")));
 	ADD_LATENT_AUTOMATION_COMMAND(FEngineWaitLatentCommand(2.0f));
 	ADD_LATENT_AUTOMATION_COMMAND(FExecStringLatentCommand(RestoreResolutionString));
-
 	return true;
 }
+
+#endif
 
 /**
  * Stats verification - Toggle various "stats" commands
@@ -547,9 +551,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 		Test->TestTrue(FString::Printf(TEXT("Child world rotation was incorrect after attachment (was %s, should be %s)"), *ChildActor->GetActorQuat().ToString(), *LegacyExpectedChildTransforms[LocationInteger][0].GetRotation().ToString()), ChildActor->GetActorQuat().Equals(LegacyExpectedChildTransforms[LocationInteger][0].GetRotation(), KINDA_SMALL_NUMBER));
 		Test->TestTrue(FString::Printf(TEXT("Child world scale was incorrect after attachment (was %s, should be %s)"), *ChildActor->GetActorScale3D().ToString(), *LegacyExpectedChildTransforms[LocationInteger][0].GetScale3D().ToString()), ChildActor->GetActorScale3D().Equals(LegacyExpectedChildTransforms[LocationInteger][0].GetScale3D(), KINDA_SMALL_NUMBER));
 
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
-		ChildActor->DetachRootComponentFromParent(true);
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
+		ChildActor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
 		// check we have expected values after detachment
 		Test->TestEqual<FVector>(TEXT("Parent location was affected by detachment"), ParentActor->GetActorLocation(), AttachTestConstants::ParentLocation);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ManifestUpdateHelper.h"
 #include "Framework/Notifications/NotificationManager.h"
@@ -19,7 +19,7 @@ FManifestUpdateHelper::FManifestUpdateHelper(const FString& InFilename)
 	}
 }
 
-bool FManifestUpdateHelper::Finalize(const FString& TargetFilename, bool bShowNotifyOnFailure, FFileHelper::EEncodingOptions::Type EncodingOption)
+bool FManifestUpdateHelper::Finalize(const FString& TargetFilename, bool bShowNotifyOnFailure, FFileHelper::EEncodingOptions EncodingOption)
 {
 	if (bManifestDirty)
 	{

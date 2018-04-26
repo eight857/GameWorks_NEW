@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
  
 #pragma once
 
@@ -105,6 +105,7 @@ public:
 		, _SelectionMode(ESelectionMode::Multi)
 		, _ClearSelectionOnClick(true)
 		, _ExternalScrollbar()
+		, _ScrollbarDragFocusCause(EFocusCause::Mouse)
 		, _ConsumeMouseWheel( EConsumeMouseWheel::WhenScrollingPossible )
 		, _AllowOverscroll(EAllowOverscroll::Yes)
 		, _WheelScrollMultiplier(GetGlobalScrollAmount())
@@ -112,8 +113,10 @@ public:
 		, _OnEnteredBadState()
 		, _HandleGamepadEvents(true)
 		, _HandleDirectionalNavigation(true)
-		, _NavigateOnScrollIntoView(false)
-		{}
+		, _AllowInvisibleItemSelection(false)
+		{
+			//_Clipping = EWidgetClipping::ClipToBounds;
+		}
 
 		SLATE_EVENT( FOnGenerateRow, OnGenerateRow )
 
@@ -149,6 +152,8 @@ public:
 
 		SLATE_ARGUMENT( TSharedPtr<SScrollBar>, ExternalScrollbar )
 
+		SLATE_ARGUMENT( EFocusCause, ScrollbarDragFocusCause )
+
 		SLATE_ARGUMENT( EConsumeMouseWheel, ConsumeMouseWheel );
 		
 		SLATE_ARGUMENT( EAllowOverscroll, AllowOverscroll );
@@ -164,7 +169,8 @@ public:
 
 		SLATE_ARGUMENT(bool, HandleDirectionalNavigation);
 
-		SLATE_ARGUMENT(bool, NavigateOnScrollIntoView);
+		SLATE_ARGUMENT(bool, AllowInvisibleItemSelection);
+
 
 	SLATE_END_ARGS()
 
@@ -203,7 +209,7 @@ public:
 
 		this->bHandleGamepadEvents = InArgs._HandleGamepadEvents;
 		this->bHandleDirectionalNavigation = InArgs._HandleDirectionalNavigation;
-		this->bNavigateOnScrollIntoView = InArgs._NavigateOnScrollIntoView;
+		this->bAllowInvisibleItemSelection = InArgs._AllowInvisibleItemSelection;
 
 		// Check for any parameters that the coder forgot to specify.
 		FString ErrorString;
@@ -239,6 +245,10 @@ public:
 		{
 			// Make the TableView
 			this->ConstructChildren( 0, InArgs._ItemHeight, EListItemAlignment::LeftAligned, InArgs._HeaderRow, InArgs._ExternalScrollbar, InArgs._OnTreeViewScrolled );
+			if (this->ScrollBar.IsValid())
+			{
+				this->ScrollBar->SetDragFocusCause(InArgs._ScrollbarDragFocusCause);
+			}
 		}
 	}
 
@@ -425,9 +435,10 @@ public:
 					LinearizedItems.Empty();
 					PopulateLinearizedItems( *TreeItemsSource, LinearizedItems, TempDenseItemInfos, 0, TempSelectedItemsMap, TempSparseItemInfo, true );
 
-					if(	this->SelectedItems.Num() != TempSelectedItemsMap.Num() || 
+					if( !bAllowInvisibleItemSelection &&
+						(this->SelectedItems.Num() != TempSelectedItemsMap.Num() ||
 						this->SelectedItems.Difference(TempSelectedItemsMap).Num() > 0 || 
-						TempSelectedItemsMap.Difference(this->SelectedItems).Num() > 0 )
+						TempSelectedItemsMap.Difference(this->SelectedItems).Num() > 0 ))
 					{
 						this->SelectedItems = TempSelectedItemsMap;
 
@@ -681,4 +692,7 @@ private:
 
 	/** true when the LinearizedItems need to be regenerated. */
 	bool bTreeItemsAreDirty;
+
+	/** true if we allow invisible items to stay selected. */
+	bool bAllowInvisibleItemSelection;
 };

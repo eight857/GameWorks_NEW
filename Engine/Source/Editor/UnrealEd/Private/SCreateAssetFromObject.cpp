@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SCreateAssetFromObject.h"
 #include "Modules/ModuleManager.h"
@@ -11,7 +11,7 @@
 #include "AssetData.h"
 #include "Engine/Selection.h"
 #include "Editor.h"
-#include "FileHelpers.h"
+#include "Misc/FileHelper.h"
 #include "IAssetTools.h"
 #include "IContentBrowserSingleton.h"
 #include "ContentBrowserModule.h"
@@ -34,7 +34,7 @@ void SCreateAssetFromObject::Construct(const FArguments& InArgs, TSharedPtr<SWin
 	PathPickerConfig.DefaultPath = AssetPath;
 	PathPickerConfig.OnPathSelected = FOnPathSelected::CreateRaw(this, &SCreateAssetFromObject::OnSelectAssetPath);
 
-	USelection::SelectionChangedEvent.AddRaw(this, &SCreateAssetFromObject::OnLevelSelectionChanged);
+	SelectionDelegateHandle = USelection::SelectionChangedEvent.AddSP(this, &SCreateAssetFromObject::OnLevelSelectionChanged);
 
 	// Set up PathPickerConfig.
 	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
@@ -134,16 +134,26 @@ void SCreateAssetFromObject::Construct(const FArguments& InArgs, TSharedPtr<SWin
 	OnFilenameChanged(FText::FromString(AssetName));
 }
 
+void SCreateAssetFromObject::RequestDestroyParentWindow()
+{
+	USelection::SelectionChangedEvent.Remove(SelectionDelegateHandle);
+
+	if (ParentWindow.IsValid())
+	{
+		ParentWindow.Pin()->RequestDestroyWindow();
+	}
+}
+
 FReply SCreateAssetFromObject::OnCreateAssetFromActorClicked()
 {
-	ParentWindow->RequestDestroyWindow();
+	RequestDestroyParentWindow();
 	OnCreateAssetAction.ExecuteIfBound(AssetPath / FileNameWidget->GetText().ToString());
 	return FReply::Handled();
 }
 
 FReply SCreateAssetFromObject::OnCancelCreateAssetFromActor()
 {
-	ParentWindow->RequestDestroyWindow();
+	RequestDestroyParentWindow();
 	return FReply::Handled();
 }
 
@@ -156,7 +166,7 @@ void SCreateAssetFromObject::OnSelectAssetPath(const FString& Path)
 void SCreateAssetFromObject::OnLevelSelectionChanged(UObject* InObjectSelected)
 {
 	// When actor selection changes, this window should be destroyed.
-	ParentWindow->RequestDestroyWindow();
+	RequestDestroyParentWindow();
 }
 
 void SCreateAssetFromObject::OnFilenameChanged(const FText& InNewName)
@@ -166,7 +176,7 @@ void SCreateAssetFromObject::OnFilenameChanged(const FText& InNewName)
 	AssetRegistryModule.Get().GetAssetsByPath(FName(*AssetPath), AssetData);
 
 	FText ErrorText;
-	if (!FEditorFileUtils::IsFilenameValidForSaving(InNewName.ToString(), ErrorText) || !FName(*InNewName.ToString()).IsValidObjectName(ErrorText))
+	if (!FFileHelper::IsFilenameValidForSaving(InNewName.ToString(), ErrorText) || !FName(*InNewName.ToString()).IsValidObjectName(ErrorText))
 	{
 		FileNameWidget->SetError(ErrorText);
 		bIsReportingError = true;

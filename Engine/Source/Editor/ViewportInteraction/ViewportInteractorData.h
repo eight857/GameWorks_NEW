@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/WidgetComponent.h"
 #include "ViewportInteractionTypes.h"
 
 /** Represents a single virtual hand */
@@ -31,7 +32,7 @@ struct FViewportInteractorData
 	//
 
 	/** The widget component we last hovered over.  This is used to detect when the laser pointer moves over or leaves a widget, and is not reset every frame */
-	class UWidgetComponent* LastHoveredWidgetComponent; //@todo: ViewportInteraction: UI should not be in this module
+	TWeakObjectPtr<UWidgetComponent> LastHoveredWidgetComponent; //@todo: ViewportInteraction: UI should not be in this module
 		
 	/** Position the laser pointer impacted an interactive object at (UI, meshes, etc.) */
 	TOptional<FVector> HoverLocation;
@@ -118,6 +119,10 @@ struct FViewportInteractorData
 	/** Our gizmo bounds at the start of the interaction, in actor local space. */
 	FBox GizmoStartLocalBounds;
 
+	ELockedWorldDragMode LockedWorldDragMode;
+	float GizmoScaleSinceDragStarted;
+	float GizmoRotationRadiansSinceDragStarted;
+
 	/** For a single axis drag, this is the cached local offset where the laser pointer ray intersected the axis line on the first frame of the drag */
 	FVector GizmoSpaceFirstDragUpdateOffsetAlongAxis;
 
@@ -126,7 +131,10 @@ struct FViewportInteractorData
 	FVector GizmoSpaceDragDeltaFromStartOffset;
 
 	/** The gizmo interaction we're doing with this hand */
-	ETransformGizmoInteractionType TransformGizmoInteractionType;
+	TWeakObjectPtr<class UViewportDragOperationComponent> DragOperationComponent;
+	
+	/** The last drag operation. */
+	class UViewportDragOperation* LastDragOperation;
 
 	/** Which handle on the gizmo we're interacting with, if any */
 	TOptional<FTransformGizmoHandlePlacement> OptionalHandlePlacement;
@@ -176,7 +184,11 @@ struct FViewportInteractorData
 		GizmoLastTransform = GizmoTargetTransform = GizmoUnsnappedTargetTransform = GizmoInterpolationSnapshotTransform = GizmoStartTransform;
 		GizmoSpaceFirstDragUpdateOffsetAlongAxis = FVector::ZeroVector;
 		GizmoSpaceDragDeltaFromStartOffset = FVector::ZeroVector;
-		TransformGizmoInteractionType = ETransformGizmoInteractionType::None;
+		DragOperationComponent.Reset();
+		LastDragOperation = nullptr;
+		LockedWorldDragMode = ELockedWorldDragMode::Unlocked;
+		GizmoScaleSinceDragStarted = 0.0f;
+		GizmoRotationRadiansSinceDragStarted = 0.0f;
 		OptionalHandlePlacement.Reset();
 		DraggingTransformGizmoComponent = nullptr;
 		HoveringOverTransformGizmoComponent = nullptr;

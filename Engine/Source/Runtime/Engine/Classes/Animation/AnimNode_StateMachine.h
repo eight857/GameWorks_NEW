@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -130,6 +130,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = Settings)
 	bool bSkipFirstUpdateTransition;
 
+	// Reinitialize the state machine if we have become relevant to the graph
+	// after not being ticked on the previous frame(s)
+	UPROPERTY(EditAnywhere, Category = Settings)
+	bool bReinitializeOnBecomingRelevant;
+
 public:
 
 	int32 GetCurrentState() const
@@ -190,6 +195,7 @@ public:
 	FAnimNode_StateMachine()
 		: MaxTransitionsPerFrame(3)
 		, bSkipFirstUpdateTransition(true)
+		, bReinitializeOnBecomingRelevant(true)
 		, PRIVATE_MachineDescription(NULL)
 		, CurrentState(INDEX_NONE)
 		, bFirstUpdate(true)
@@ -197,10 +203,10 @@ public:
 	}
 
 	// FAnimNode_Base interface
-	virtual void Initialize(const FAnimationInitializeContext& Context) override;
-	virtual void CacheBones(const FAnimationCacheBonesContext& Context) override;
-	virtual void Update(const FAnimationUpdateContext& Context) override;
-	virtual void Evaluate(FPoseContext& Output) override;
+	virtual void Initialize_AnyThread(const FAnimationInitializeContext& Context) override;
+	virtual void CacheBones_AnyThread(const FAnimationCacheBonesContext& Context) override;
+	virtual void Update_AnyThread(const FAnimationUpdateContext& Context) override;
+	virtual void Evaluate_AnyThread(FPoseContext& Output) override;
 	virtual void GatherDebugData(FNodeDebugData& DebugData) override;
 	// End of FAnimNode_Base interface
 

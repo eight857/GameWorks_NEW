@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/SkeletalMeshActor.h"
 #include "Net/UnrealNetwork.h"
@@ -297,10 +297,5 @@ void ASkeletalMeshActor::LoadedFromAnotherClass(const FName& OldClassName)
 	}
 }
 #endif
-
-USkeletalMeshComponent* ASkeletalMeshActor::GetSkeletalMeshComponent() 
-{ 
-	return SkeletalMeshComponent; 
-}
 
 #undef LOCTEXT_NAMESPACE

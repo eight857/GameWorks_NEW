@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -107,6 +107,11 @@ namespace AutomationTool
 
 		public override bool IsScriptModuleSupported(string ModuleName)
 		{
+			// @todo: add more unsupported modules here
+			if (ModuleName.StartsWith("Gauntlet", StringComparison.OrdinalIgnoreCase))
+			{
+				return false;
+			}
 			return true;
 		}
 

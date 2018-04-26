@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NetworkPlatformFile.h"
 #include "Templates/ScopedPointer.h"
@@ -23,11 +23,7 @@
 #include "HAL/IPlatformFileModule.h"
 #include "UniquePtr.h"
 
-#if WITH_UNREAL_DEVELOPER_TOOLS
-	#include "Developer/PackageDependencyInfo/Public/PackageDependencyInfo.h"
-#endif	//WITH_UNREAL_DEVELOPER_TOOLS
-
-
+#include "Object.h"
 
 DEFINE_LOG_CATEGORY(LogNetworkPlatformFile);
 
@@ -40,10 +36,27 @@ FNetworkPlatformFile::FNetworkPlatformFile()
 	: bHasLoadedDDCDirectories(false)
 	, InnerPlatformFile(NULL)
 	, bIsUsable(false)
+	, FileServerPort(0)
+	, ConnectionFlags(EConnectionFlags::None)
+	, HeartbeatFrequency(5.0f)
 	, FinishedAsyncNetworkReadUnsolicitedFiles(NULL)
 	, FinishedAsyncWriteUnsolicitedFiles(NULL)
 	, Transport(NULL)
 {
+
+
+	
+	TotalWriteTime = 0.0; // total non async time spent writing to disk
+	TotalNetworkSyncTime = 0.0; // total non async time spent syncing to network
+	TotalTimeSpentInUnsolicitedPackages = 0.0; // total time async processing unsolicited packages
+	TotalWaitForAsyncUnsolicitedPackages = 0.0; // total time spent waiting for unsolicited packages
+	TotalFilesSynced = 0; // total number files synced from network
+	TotalFilesFoundLocally = 0;
+	TotalUnsolicitedPackages = 0; // total number unsolicited files synced  
+	UnsolicitedPackagesHits = 0; // total number of hits from waiting on unsolicited packages
+	UnsolicitedPackageWaits = 0; // total number of waits on unsolicited packages
+	
+
 }
 
 bool FNetworkPlatformFile::ShouldBeUsed(IPlatformFile* Inner, const TCHAR* CmdLine) const
@@ -61,7 +74,7 @@ ITransport *CreateTransportForHostAddress(const FString &HostIp )
 
 	if ( HostIp.StartsWith(TEXT("http://")))
 	{
-#if ENABLE_HTTP_FOR_NFS
+#if ENABLE_HTTP_FOR_NF
 		return new FHTTPTransport();
 #endif
 	}
@@ -123,12 +136,12 @@ bool FNetworkPlatformFile::InitializeInternal(IPlatformFile* Inner, const TCHAR*
 	// Save and Intermediate directories are always local
 	LocalDirectories.Add(FPaths::EngineDir() / TEXT("Binaries"));
 	LocalDirectories.Add(FPaths::EngineIntermediateDir());
-	LocalDirectories.Add(FPaths::GameDir() / TEXT("Binaries"));
-	LocalDirectories.Add(FPaths::GameIntermediateDir());
-	LocalDirectories.Add(FPaths::GameSavedDir() / TEXT("Backup"));
-	LocalDirectories.Add(FPaths::GameSavedDir() / TEXT("Config"));
-	LocalDirectories.Add(FPaths::GameSavedDir() / TEXT("Logs"));
-	LocalDirectories.Add(FPaths::GameSavedDir() / TEXT("Sandboxes"));
+	LocalDirectories.Add(FPaths::ProjectDir() / TEXT("Binaries"));
+	LocalDirectories.Add(FPaths::ProjectIntermediateDir());
+	LocalDirectories.Add(FPaths::ProjectSavedDir() / TEXT("Backup"));
+	LocalDirectories.Add(FPaths::ProjectSavedDir() / TEXT("Config"));
+	LocalDirectories.Add(FPaths::ProjectSavedDir() / TEXT("Logs"));
+	LocalDirectories.Add(FPaths::ProjectSavedDir() / TEXT("Sandboxes"));
 
 	if (InnerPlatformFile->GetLowerLevel())
 	{
@@ -157,10 +170,13 @@ bool FNetworkPlatformFile::InitializeInternal(IPlatformFile* Inner, const TCHAR*
 
 bool FNetworkPlatformFile::SendPayloadAndReceiveResponse(TArray<uint8>& In, TArray<uint8>& Out)
 {
-	if ( FinishedAsyncNetworkReadUnsolicitedFiles )
 	{
-		delete FinishedAsyncNetworkReadUnsolicitedFiles;
-		FinishedAsyncNetworkReadUnsolicitedFiles = NULL;
+		FScopeLock ScopeLock(&SynchronizationObject);
+		if ( FinishedAsyncNetworkReadUnsolicitedFiles )
+		{
+			delete FinishedAsyncNetworkReadUnsolicitedFiles;
+			FinishedAsyncNetworkReadUnsolicitedFiles = NULL;
+		}
 	}
 	
 	return Transport->SendPayloadAndReceiveResponse( In, Out );
@@ -180,7 +196,7 @@ void FNetworkPlatformFile::InitializeAfterSetActive()
 
 		// send the filenames and timestamps to the server
 		FNetworkFileArchive Payload(NFS_Messages::GetFileList);
-		FillGetFileList(Payload, false);
+		FillGetFileList(Payload);
 
 		// send the directories over, and wait for a response
 		FArrayReader Response;
@@ -195,147 +211,7 @@ void FNetworkPlatformFile::InitializeAfterSetActive()
 			int32 ServerPackageVersion = 0;
 			int32 ServerPackageLicenseeVersion = 0;
 			ProcessServerInitialResponse(Response, ServerPackageVersion, ServerPackageLicenseeVersion);
-
-
-			/* The server root content directories */
-			TArray<FString> ServerRootContentDirectories;
-			Response << ServerRootContentDirectories;
-
-			// receive a list of the cache files and their timestamps
-			TMap<FString, FDateTime> ServerCachedFiles;
-			Response << ServerCachedFiles;
-
-			bool bDeleteAllFiles = true;
-			// Check the stored cooked version
-			FString CookedVersionFile = FPaths::GeneratedConfigDir() / TEXT("CookedVersion.txt");
-
-			if (InnerPlatformFile->FileExists(*CookedVersionFile) == true)
-			{
-				IFileHandle* FileHandle = InnerPlatformFile->OpenRead(*CookedVersionFile);
-				if (FileHandle != NULL)
-				{
-					int32 StoredPackageCookedVersion;
-					int32 StoredPackageCookedLicenseeVersion;
-					if (FileHandle->Read((uint8*)&StoredPackageCookedVersion, sizeof(int32)) == true)
-					{
-						if (FileHandle->Read((uint8*)&StoredPackageCookedLicenseeVersion, sizeof(int32)) == true)
-						{
-							if ((ServerPackageVersion == StoredPackageCookedVersion) &&
-								(ServerPackageLicenseeVersion == StoredPackageCookedLicenseeVersion))
-							{
-								bDeleteAllFiles = false;
-							}
-							else
-							{
-								UE_LOG(LogNetworkPlatformFile, Display, 
-									TEXT("Engine version mismatch: Server %d.%d, Stored %d.%d\n"), 
-									ServerPackageVersion, ServerPackageLicenseeVersion,
-									StoredPackageCookedVersion, StoredPackageCookedLicenseeVersion);
-							}
-						}
-					}
-
-					delete FileHandle;
-				}
-			}
-			else
-			{
-				UE_LOG(LogNetworkPlatformFile, Display, TEXT("Cooked version file missing: %s\n"), *CookedVersionFile);
-			}
-
-			if (bDeleteAllFiles == true)
-			{
-				// Make sure the config file exists...
-				InnerPlatformFile->CreateDirectoryTree(*(FPaths::GeneratedConfigDir()));
-				// Update the cooked version file
-				IFileHandle* FileHandle = InnerPlatformFile->OpenWrite(*CookedVersionFile);
-				if (FileHandle != NULL)
-				{
-					FileHandle->Write((const uint8*)&ServerPackageVersion, sizeof(int32));
-					FileHandle->Write((const uint8*)&ServerPackageLicenseeVersion, sizeof(int32));
-					delete FileHandle;
-				}
-			}
-
-			// list of directories to skip
-			TArray<FString> DirectoriesToSkip;
-			TArray<FString> DirectoriesToNotRecurse;
-			// use the timestamp grabbing visitor to get all the content times
-			FLocalTimestampDirectoryVisitor Visitor(*InnerPlatformFile, DirectoriesToSkip, DirectoriesToNotRecurse, false);
-
-			/*TArray<FString> RootContentPaths;
-			FPackageName::QueryRootContentPaths(RootContentPaths); */
-			for (TArray<FString>::TConstIterator RootPathIt(ServerRootContentDirectories); RootPathIt; ++RootPathIt)
-			{
-				/*const FString& RootPath = *RootPathIt;
-				const FString& ContentFolder = FPackageName::LongPackageNameToFilename(RootPath);*/
-				const FString& ContentFolder = *RootPathIt;
-				InnerPlatformFile->IterateDirectory( *ContentFolder, Visitor);
-			}
-
-			// delete out of date files using the server cached files
-			for (TMap<FString, FDateTime>::TIterator It(ServerCachedFiles); It; ++It)
-			{
-				bool bDeleteFile = bDeleteAllFiles;
-				FString ServerFile = It.Key();
-
-				// Convert the filename to the client version
-				ConvertServerFilenameToClientFilename(ServerFile);
-
-				// Set it in the visitor file times list
-				// If there is any pathing difference (relative path, or whatever) between the server's filelist and the results
-				// of platform directory iteration then this will Add a new entry rather than override the existing one.  This causes local file deletes
-				// and longer loads as we will never see the benefits of local device caching.
-				Visitor.FileTimes.Add(ServerFile, FDateTime::MinValue());
-
-				if (bDeleteFile == false)
-				{
-					// Check the time stamps...
-					// get local time
-					FDateTime LocalTime = InnerPlatformFile->GetTimeStamp(*ServerFile);
-					// If local time == MinValue than the file does not exist in the cache.
-					if (LocalTime != FDateTime::MinValue())
-					{
-						FDateTime ServerTime = It.Value();
-						// delete if out of date
-						// We will use 1.0 second as the tolerance to cover any platform differences in resolution
-						FTimespan TimeDiff = LocalTime - ServerTime;
-						double TimeDiffInSeconds = TimeDiff.GetTotalSeconds();
-						bDeleteFile = (TimeDiffInSeconds > 1.0) || (TimeDiffInSeconds < -1.0);
-						if (bDeleteFile == true)
-						{
-							if (InnerPlatformFile->FileExists(*ServerFile) == true)
-							{
-								UE_LOG(LogNetworkPlatformFile, Display, TEXT("Deleting cached file: TimeDiff %5.3f, %s"), TimeDiffInSeconds, *It.Key());
-							}
-							else
-							{
-								// It's a directory
-								bDeleteFile = false;
-							}
-						}
-						else
-						{
-							UE_LOG(LogNetworkPlatformFile, Display, TEXT("Keeping cached file: %s, TimeDiff worked out ok"), *ServerFile);
-						}
-					}
-				}
-				if (bDeleteFile == true)
-				{
-					InnerPlatformFile->DeleteFile(*ServerFile);
-				}
-			}
-
-			// Any content files we have locally that were not cached, delete them
-			for (TMap<FString, FDateTime>::TIterator It(Visitor.FileTimes); It; ++It)
-			{
-				if (It.Value() != FDateTime::MinValue())
-				{
-					// This was *not* found in the server file list... delete it
-					UE_LOG(LogNetworkPlatformFile, Display, TEXT("Deleting cached file: %s"), *It.Key());
-					InnerPlatformFile->DeleteFile(*It.Key());
-				}
-			}
+			ProcessServerCachedFilesResponse(Response, ServerPackageVersion, ServerPackageLicenseeVersion);
 
 			// make sure we can sync a file
 			FString TestSyncFile = FPaths::Combine(*(FPaths::EngineDir()), TEXT("Config/BaseEngine.ini"));
@@ -360,10 +236,160 @@ void FNetworkPlatformFile::InitializeAfterSetActive()
 
 }
 
+void FNetworkPlatformFile::ProcessServerCachedFilesResponse(FArrayReader& Response, const int32 ServerPackageVersion, const int32 ServerPackageLicenseeVersion)
+{
+	/* The server root content directories */
+	TArray<FString> ServerRootContentDirectories;
+	Response << ServerRootContentDirectories;
+
+	// receive a list of the cache files and their timestamps
+	TMap<FString, FDateTime> ServerCachedFiles;
+	Response << ServerCachedFiles;
+
+	bool bDeleteAllFiles = true;
+	// Check the stored cooked version
+	FString CookedVersionFile = FPaths::GeneratedConfigDir() / TEXT("CookedVersion.txt");
+
+	if (InnerPlatformFile->FileExists(*CookedVersionFile) == true)
+	{
+		IFileHandle* FileHandle = InnerPlatformFile->OpenRead(*CookedVersionFile);
+		if (FileHandle != NULL)
+		{
+			int32 StoredPackageCookedVersion;
+			int32 StoredPackageCookedLicenseeVersion;
+			if (FileHandle->Read((uint8*)&StoredPackageCookedVersion, sizeof(int32)) == true)
+			{
+				if (FileHandle->Read((uint8*)&StoredPackageCookedLicenseeVersion, sizeof(int32)) == true)
+				{
+					if ((ServerPackageVersion == StoredPackageCookedVersion) &&
+						(ServerPackageLicenseeVersion == StoredPackageCookedLicenseeVersion))
+					{
+						bDeleteAllFiles = false;
+					}
+					else
+					{
+						UE_LOG(LogNetworkPlatformFile, Display,
+							TEXT("Engine version mismatch: Server %d.%d, Stored %d.%d\n"),
+							ServerPackageVersion, ServerPackageLicenseeVersion,
+							StoredPackageCookedVersion, StoredPackageCookedLicenseeVersion);
+					}
+				}
+			}
+
+			delete FileHandle;
+		}
+	}
+	else
+	{
+		UE_LOG(LogNetworkPlatformFile, Display, TEXT("Cooked version file missing: %s\n"), *CookedVersionFile);
+	}
+
+	if (bDeleteAllFiles == true)
+	{
+		// Make sure the config file exists...
+		InnerPlatformFile->CreateDirectoryTree(*(FPaths::GeneratedConfigDir()));
+		// Update the cooked version file
+		IFileHandle* FileHandle = InnerPlatformFile->OpenWrite(*CookedVersionFile);
+		if (FileHandle != NULL)
+		{
+			FileHandle->Write((const uint8*)&ServerPackageVersion, sizeof(int32));
+			FileHandle->Write((const uint8*)&ServerPackageLicenseeVersion, sizeof(int32));
+			delete FileHandle;
+		}
+	}
+
+	// list of directories to skip
+	TArray<FString> DirectoriesToSkip;
+	TArray<FString> DirectoriesToNotRecurse;
+	// use the timestamp grabbing visitor to get all the content times
+	FLocalTimestampDirectoryVisitor Visitor(*InnerPlatformFile, DirectoriesToSkip, DirectoriesToNotRecurse, false);
+
+	/*TArray<FString> RootContentPaths;
+	FPackageName::QueryRootContentPaths(RootContentPaths); */
+	for (TArray<FString>::TConstIterator RootPathIt(ServerRootContentDirectories); RootPathIt; ++RootPathIt)
+	{
+		/*const FString& RootPath = *RootPathIt;
+		const FString& ContentFolder = FPackageName::LongPackageNameToFilename(RootPath);*/
+		const FString& ContentFolder = *RootPathIt;
+		InnerPlatformFile->IterateDirectory(*ContentFolder, Visitor);
+	}
+
+	// delete out of date files using the server cached files
+	for (TMap<FString, FDateTime>::TIterator It(ServerCachedFiles); It; ++It)
+	{
+		bool bDeleteFile = bDeleteAllFiles;
+		FString ServerFile = It.Key();
+
+		// Convert the filename to the client version
+		ConvertServerFilenameToClientFilename(ServerFile);
+
+		// Set it in the visitor file times list
+		// If there is any pathing difference (relative path, or whatever) between the server's filelist and the results
+		// of platform directory iteration then this will Add a new entry rather than override the existing one.  This causes local file deletes
+		// and longer loads as we will never see the benefits of local device caching.
+		Visitor.FileTimes.Add(ServerFile, FDateTime::MinValue());
+
+		if (bDeleteFile == false)
+		{
+			// Check the time stamps...
+			// get local time
+			FDateTime LocalTime = InnerPlatformFile->GetTimeStamp(*ServerFile);
+			// If local time == MinValue than the file does not exist in the cache.
+			if (LocalTime != FDateTime::MinValue())
+			{
+				FDateTime ServerTime = It.Value();
+				// delete if out of date
+				// We will use 1.0 second as the tolerance to cover any platform differences in resolution
+				FTimespan TimeDiff = LocalTime - ServerTime;
+				double TimeDiffInSeconds = TimeDiff.GetTotalSeconds();
+				bDeleteFile = (TimeDiffInSeconds > 1.0) || (TimeDiffInSeconds < -1.0);
+				if (bDeleteFile == true)
+				{
+					if (InnerPlatformFile->FileExists(*ServerFile) == true)
+					{
+						UE_LOG(LogNetworkPlatformFile, Display, TEXT("Deleting cached file: TimeDiff %5.3f, %s"), TimeDiffInSeconds, *It.Key());
+					}
+					else
+					{
+						// It's a directory
+						bDeleteFile = false;
+					}
+				}
+				else
+				{
+					UE_LOG(LogNetworkPlatformFile, Display, TEXT("Keeping cached file: %s, TimeDiff worked out ok"), *ServerFile);
+				}
+			}
+		}
+		if (bDeleteFile == true)
+		{
+			UE_LOG(LogNetworkPlatformFile, Display, TEXT("Deleting cached file: %s"), *ServerFile);
+			InnerPlatformFile->DeleteFile(*ServerFile);
+		}
+	}
+
+	// Any content files we have locally that were not cached, delete them
+	for (TMap<FString, FDateTime>::TIterator It(Visitor.FileTimes); It; ++It)
+	{
+		if ( FCString::Stricmp( *FPaths::GetExtension( It.Key() ), TEXT("pak")) == 0 )
+		{
+			// ignore pak files they won't be mounted anyway 
+			continue;
+		}
+		if (It.Value() != FDateTime::MinValue())
+		{
+			// This was *not* found in the server file list... delete it
+			UE_LOG(LogNetworkPlatformFile, Display, TEXT("Deleting cached file: %s"), *It.Key());
+			InnerPlatformFile->DeleteFile(*It.Key());
+		}
+	}
+}
+
 FNetworkPlatformFile::~FNetworkPlatformFile()
 {
 	if (!GIsRequestingExit) // the socket subsystem is probably already gone, so it will crash if we clean up
 	{
+		FScopeLock ScopeLock(&SynchronizationObject);
 		if ( FinishedAsyncNetworkReadUnsolicitedFiles )
 		{
 			delete FinishedAsyncNetworkReadUnsolicitedFiles; // wait here for any async unsolicited files to finish reading being read from the network 
@@ -749,14 +775,14 @@ void FNetworkPlatformFile::GetFileInfo(const TCHAR* Filename, FFileInfo& Info)
 
 void FNetworkPlatformFile::ConvertServerFilenameToClientFilename(FString& FilenameToConvert)
 {
-	FNetworkPlatformFile::ConvertServerFilenameToClientFilename(FilenameToConvert, ServerEngineDir, ServerGameDir);
+	FNetworkPlatformFile::ConvertServerFilenameToClientFilename(FilenameToConvert, ServerEngineDir, ServerProjectDir);
 }
 
-void FNetworkPlatformFile::FillGetFileList(FNetworkFileArchive& Payload, bool bInStreamingFileRequest)
+void FNetworkPlatformFile::FillGetFileList(FNetworkFileArchive& Payload)
 {
 	TArray<FString> TargetPlatformNames;
 	FPlatformMisc::GetValidTargetPlatforms(TargetPlatformNames);
-	FString GameName = FApp::GetGameName();
+	FString GameName = FApp::GetProjectName();
 	if (FPaths::IsProjectFilePathSet())
 	{
 		GameName = FPaths::GetProjectFilePath();
@@ -764,8 +790,8 @@ void FNetworkPlatformFile::FillGetFileList(FNetworkFileArchive& Payload, bool bI
 
 	FString EngineRelPath = FPaths::EngineDir();
 	FString EngineRelPluginPath = FPaths::EnginePluginsDir();
-	FString GameRelPath = FPaths::GameDir();
-	FString GameRelPluginPath = FPaths::GamePluginsDir();
+	FString GameRelPath = FPaths::ProjectDir();
+	FString GameRelPluginPath = FPaths::ProjectPluginsDir();
 
 	TArray<FString> Directories;
 	Directories.Add(EngineRelPath);
@@ -778,10 +804,13 @@ void FNetworkPlatformFile::FillGetFileList(FNetworkFileArchive& Payload, bool bI
 	Payload << EngineRelPath;
 	Payload << GameRelPath;
 	Payload << Directories;
-	Payload << bInStreamingFileRequest;
+	Payload << ConnectionFlags;
+
+	FString VersionInfo = GetVersionInfo();
+	Payload << VersionInfo;
 }
 
-void FNetworkPlatformFile::ProcessServerInitialResponse(FArrayReader& InResponse, int32 OutServerPackageVersion, int32 OutServerPackageLicenseeVersion)
+void FNetworkPlatformFile::ProcessServerInitialResponse(FArrayReader& InResponse, int32& OutServerPackageVersion, int32& OutServerPackageLicenseeVersion)
 {
 	// Receive the cooked version information.
 	InResponse << OutServerPackageVersion;
@@ -789,12 +818,12 @@ void FNetworkPlatformFile::ProcessServerInitialResponse(FArrayReader& InResponse
 
 	// receive the server engine and game dir
 	InResponse << ServerEngineDir;
-	InResponse << ServerGameDir;
+	InResponse << ServerProjectDir;
 
 	UE_LOG(LogNetworkPlatformFile, Display, TEXT("    Server EngineDir = %s"), *ServerEngineDir);
 	UE_LOG(LogNetworkPlatformFile, Display, TEXT("     Local EngineDir = %s"), *FPaths::EngineDir());
-	UE_LOG(LogNetworkPlatformFile, Display, TEXT("    Server GameDir   = %s"), *ServerGameDir);
-	UE_LOG(LogNetworkPlatformFile, Display, TEXT("     Local GameDir   = %s"), *FPaths::GameDir());
+	UE_LOG(LogNetworkPlatformFile, Display, TEXT("    Server ProjectDir   = %s"), *ServerProjectDir);
+	UE_LOG(LogNetworkPlatformFile, Display, TEXT("     Local ProjectDir   = %s"), *FPaths::ProjectDir());
 
 	// Receive a list of files and their timestamps.
 	TMap<FString, FDateTime> ServerFileMap;
@@ -805,6 +834,12 @@ void FNetworkPlatformFile::ProcessServerInitialResponse(FArrayReader& InResponse
 		ConvertServerFilenameToClientFilename(ServerFile);
 		ServerFiles.AddFileOrDirectory(ServerFile, It.Value());
 	}
+}
+
+
+FString FNetworkPlatformFile::GetVersionInfo() const
+{
+	return FString("");
 }
 
 bool FNetworkPlatformFile::SendReadMessage(uint8* Destination, int64 BytesToRead)
@@ -834,9 +869,12 @@ bool FNetworkPlatformFile::SendMessageToServer(const TCHAR* Message, IPlatformFi
 		Handler->FillPayload(Payload);
 
 		FArrayReader Response;
-		if (!SendPayloadAndReceiveResponse(Payload, Response))
 		{
-			return false;
+			FScopeLock ScopeLock(&SynchronizationObject);
+			if (!SendPayloadAndReceiveResponse(Payload, Response))
+			{
+				return false;
+			}
 		}
 
 		// locally delete any files that were modified on the server, so that any read will recache the file
@@ -987,7 +1025,7 @@ void AsyncWriteFile(FArchive* Archive, const FString& Filename, FDateTime Server
 	(new FAutoDeleteAsyncTask<FAsyncNetworkWriteWorker>(*Filename, Archive, ServerTimeStamp, &InnerPlatformFile, Event))->StartBackgroundTask();
 }
 
-void AsyncReadUnsolicitedFiles(int32 InNumUnsolictedFiles, FNetworkPlatformFile& InNetworkFile, IPlatformFile& InInnerPlatformFile, FString& InServerEngineDir, FString& InServerGameDir, FScopedEvent *InNetworkDoneEvent, FScopedEvent *InWritingDoneEvent)
+void AsyncReadUnsolicitedFiles(int32 InNumUnsolictedFiles, FNetworkPlatformFile& InNetworkFile, IPlatformFile& InInnerPlatformFile, FString& InServerEngineDir, FString& InServerProjectDir, FScopedEvent *InNetworkDoneEvent, FScopedEvent *InWritingDoneEvent)
 {
 	class FAsyncReadUnsolicitedFile : public FNonAbandonableTask
 	{
@@ -996,16 +1034,16 @@ void AsyncReadUnsolicitedFiles(int32 InNumUnsolictedFiles, FNetworkPlatformFile&
 		FNetworkPlatformFile& NetworkFile;
 		IPlatformFile& InnerPlatformFile;
 		FString ServerEngineDir;
-		FString ServerGameDir;
+		FString ServerProjectDir;
 		FScopedEvent* NetworkDoneEvent; // finished using the network
 		FScopedEvent* WritingDoneEvent; // finished writing the files to disk
 
-		FAsyncReadUnsolicitedFile(int32 In_NumUnsolictedFiles, FNetworkPlatformFile* In_NetworkFile, IPlatformFile* In_InnerPlatformFile, FString& In_ServerEngineDir, FString& In_ServerGameDir, FScopedEvent *In_NetworkDoneEvent, FScopedEvent *In_WritingDoneEvent )
+		FAsyncReadUnsolicitedFile(int32 In_NumUnsolictedFiles, FNetworkPlatformFile* In_NetworkFile, IPlatformFile* In_InnerPlatformFile, FString& In_ServerEngineDir, FString& In_ServerProjectDir, FScopedEvent *In_NetworkDoneEvent, FScopedEvent *In_WritingDoneEvent )
 			: NumUnsolictedFiles(In_NumUnsolictedFiles)
 			, NetworkFile(*In_NetworkFile)
 			, InnerPlatformFile(*In_InnerPlatformFile)
 			, ServerEngineDir(In_ServerEngineDir)
-			, ServerGameDir(In_ServerGameDir)
+			, ServerProjectDir(In_ServerProjectDir)
 			, NetworkDoneEvent(In_NetworkDoneEvent)
 			, WritingDoneEvent(In_WritingDoneEvent)
 		{
@@ -1028,7 +1066,7 @@ void AsyncReadUnsolicitedFiles(int32 InNumUnsolictedFiles, FNetworkPlatformFile&
 
 				if (!UnsolictedReplyFile.IsEmpty())
 				{
-					FNetworkPlatformFile::ConvertServerFilenameToClientFilename(UnsolictedReplyFile, ServerEngineDir, ServerGameDir);
+					FNetworkPlatformFile::ConvertServerFilenameToClientFilename(UnsolictedReplyFile, ServerEngineDir, ServerProjectDir);
 					// get the server file timestamp
 					FDateTime UnsolictedServerTimeStamp;
 					*UnsolictedResponse << UnsolictedServerTimeStamp;
@@ -1046,7 +1084,7 @@ void AsyncReadUnsolicitedFiles(int32 InNumUnsolictedFiles, FNetworkPlatformFile&
 		}
 	};
 
-	(new FAutoDeleteAsyncTask<FAsyncReadUnsolicitedFile>(InNumUnsolictedFiles, &InNetworkFile, &InInnerPlatformFile, InServerEngineDir, InServerGameDir, InNetworkDoneEvent, InWritingDoneEvent))->StartSynchronousTask();
+	(new FAutoDeleteAsyncTask<FAsyncReadUnsolicitedFile>(InNumUnsolictedFiles, &InNetworkFile, &InInnerPlatformFile, InServerEngineDir, InServerProjectDir, InNetworkDoneEvent, InWritingDoneEvent))->StartSynchronousTask();
 }
 
 bool FNetworkPlatformFile::IsMediaExtension(const TCHAR* Ext)
@@ -1083,6 +1121,8 @@ void FNetworkPlatformFile::EnsureFileIsLocal(const FString& Filename)
 	float ThisTime;
 	StartTime = FPlatformTime::Seconds();
 
+	UE_LOG(LogNetworkPlatformFile, Verbose, TEXT("Searching for %s locally "), *Filename);
+
 	{
 		FScopeLock ScopeLock(&SynchronizationObject);
 		// have we already cached this file? 
@@ -1092,41 +1132,56 @@ void FNetworkPlatformFile::EnsureFileIsLocal(const FString& Filename)
 		}
 	}
 
-	if ( FinishedAsyncNetworkReadUnsolicitedFiles )
+	bool bIncrimentedPackageWaits = false;
+	if (FinishedAsyncNetworkReadUnsolicitedFiles)
 	{
+		if (FinishedAsyncNetworkReadUnsolicitedFiles->Get() == 0)
+		{
+			++UnsolicitedPackageWaits;
+			bIncrimentedPackageWaits = true;
+		}
 		delete FinishedAsyncNetworkReadUnsolicitedFiles; // wait here for any async unsolicited files to finish reading being read from the network 
 		FinishedAsyncNetworkReadUnsolicitedFiles = NULL;
 	}
-	if( FinishedAsyncWriteUnsolicitedFiles)
+	if (FinishedAsyncWriteUnsolicitedFiles)
 	{
+		if (bIncrimentedPackageWaits == false && FinishedAsyncNetworkReadUnsolicitedFiles->Get() == 0)
+		{
+			++UnsolicitedPackageWaits;
+		}
 		delete FinishedAsyncWriteUnsolicitedFiles; // wait here for any async unsolicited files to finish writing to disk
 		FinishedAsyncWriteUnsolicitedFiles = NULL;
 	}
-	
-
-
 
 	FScopeLock ScopeLock(&SynchronizationObject);
-
 	ThisTime = 1000.0f * float(FPlatformTime::Seconds() - StartTime);
+	TotalWaitForAsyncUnsolicitedPackages += ThisTime;
 	//UE_LOG(LogNetworkPlatformFile, Display, TEXT("Lock and wait for old async writes %6.2fms"), ThisTime);
 
-	// have we already cached this file? (test again, since some other thread might have done this between waits)
 	if (CachedLocalFiles.Find(Filename) != NULL)
 	{
+		++UnsolicitedPackagesHits;
 		return;
 	}
+
+	UE_LOG(LogNetworkPlatformFile, Verbose, TEXT("Attempting to get %s from server"), *Filename);
+
 	// even if an error occurs later, we still want to remember not to try again
 	CachedLocalFiles.Add(Filename);
-
 	StartTime = FPlatformTime::Seconds();
 
 	// no need to read it if it already exists 
 	// @todo: Handshake with server to delete files that are out of date
 	if (InnerPlatformFile->FileExists(*Filename))
 	{
+		++TotalFilesFoundLocally;
+		UE_LOG(LogNetworkPlatformFile, Verbose, TEXT("File %s exists locally but wasn't in cache"), *Filename);
 		return;
 	}
+
+	++TotalFilesSynced;
+
+	
 
 	ThisTime = 1000.0f * float(FPlatformTime::Seconds() - StartTime);
 	//UE_LOG(LogNetworkPlatformFile, Display, TEXT("Check for local file %6.2fms - %s"), ThisTime, *Filename);
@@ -1141,6 +1196,9 @@ void FNetworkPlatformFile::EnsureFileIsLocal(const FString& Filename)
 	{
 		// Uncomment this to have the server file list dumped
 		// the first time a file requested is not found.
+
+		UE_LOG(LogNetworkPlatformFile, Verbose, TEXT("Didn't find %s in server files list"), *Filename);
+
 #if 0
 		static bool sb_DumpedServer = false;
 		if (sb_DumpedServer == false)
@@ -1164,6 +1222,8 @@ void FNetworkPlatformFile::EnsureFileIsLocal(const FString& Filename)
 	FNetworkFileArchive Payload(NFS_Messages::SyncFile);
 	Payload << (FString&)Filename;
 
+	UE_LOG(LogNetworkPlatformFile, Log, TEXT("Requesting file %s"), *Filename);
+
 	StartTime = FPlatformTime::Seconds();
 
 	// allocate array reader on the heap, because the SyncWriteFile function will delete it
@@ -1174,6 +1234,7 @@ void FNetworkPlatformFile::EnsureFileIsLocal(const FString& Filename)
 		return;
 	}
 	ThisTime = 1000.0f * float(FPlatformTime::Seconds() - StartTime);
+	TotalNetworkSyncTime += ThisTime;
 	//UE_LOG(LogNetworkPlatformFile, Display, TEXT("Send and receive %6.2fms"), ThisTime);
 
 	StartTime = FPlatformTime::Seconds();
@@ -1187,6 +1248,15 @@ void FNetworkPlatformFile::EnsureFileIsLocal(const FString& Filename)
 	FDateTime ServerTimeStamp;
 	Response << ServerTimeStamp;
 
+	if (ServerTimeStamp != FDateTime::MinValue())  // if the file didn't actually exist on the server, don't create a zero byte file
+	{
+		UE_LOG(LogNetworkPlatformFile, Verbose, TEXT("Succeeded in getting %s from server"), *Filename);
+	}
+	else
+	{
+		UE_LOG(LogNetworkPlatformFile, Verbose, TEXT("File not found %s from server"), *Filename);
+	}
+
 	// write the file in chunks, synchronously
 	SyncWriteFile(&Response, ReplyFile, ServerTimeStamp, *InnerPlatformFile);
 
@@ -1195,14 +1265,16 @@ void FNetworkPlatformFile::EnsureFileIsLocal(const FString& Filename)
 
 	if (NumUnsolictedFiles)
 	{
+		TotalUnsolicitedPackages += NumUnsolictedFiles;
 		check( FinishedAsyncNetworkReadUnsolicitedFiles == NULL );
 		check( FinishedAsyncWriteUnsolicitedFiles == NULL );
 		FinishedAsyncNetworkReadUnsolicitedFiles = new FScopedEvent;
 		FinishedAsyncWriteUnsolicitedFiles = new FScopedEvent;
-		AsyncReadUnsolicitedFiles(NumUnsolictedFiles, *this, *InnerPlatformFile, ServerEngineDir, ServerGameDir, FinishedAsyncNetworkReadUnsolicitedFiles, FinishedAsyncWriteUnsolicitedFiles);
+		AsyncReadUnsolicitedFiles(NumUnsolictedFiles, *this, *InnerPlatformFile, ServerEngineDir, ServerProjectDir, FinishedAsyncNetworkReadUnsolicitedFiles, FinishedAsyncWriteUnsolicitedFiles);
 	}
 	
 	ThisTime = 1000.0f * float(FPlatformTime::Seconds() - StartTime);
+	TotalWriteTime += ThisTime;
 	//UE_LOG(LogNetworkPlatformFile, Display, TEXT("Write file to local %6.2fms"), ThisTime);
 }
 
@@ -1268,11 +1340,16 @@ void FNetworkPlatformFile::PerformHeartbeat()
 	// send the filename over (cast away const here because we know this << will not modify the string)
 	FNetworkFileArchive Payload(NFS_Messages::Heartbeat);
 
+	
+
 	// send the filename over
 	FArrayReader Response;
-	if (!SendPayloadAndReceiveResponse(Payload, Response))
 	{
-		return;
+		FScopeLock ScopeLock(&SynchronizationObject);
+		if (!SendPayloadAndReceiveResponse(Payload, Response))
+		{
+			return;
+		}
 	}
 
 	// get any files that have been modified on the server - 
@@ -1282,28 +1359,131 @@ void FNetworkPlatformFile::PerformHeartbeat()
 	// delete any outdated files from the client
 	// @todo: This may need a critical section around all calls to LowLevel in the other functions
 	// because we don't want to delete files while other threads are using them!
+
+	TArray<FString> PackageNames;
 	for (int32 FileIndex = 0; FileIndex < UpdatedFiles.Num(); FileIndex++)
 	{
-		UE_LOG(LogNetworkPlatformFile, Log, TEXT("Server updated file '%s', deleting local copy"), *UpdatedFiles[FileIndex]);
-		if (InnerPlatformFile->DeleteFile(*UpdatedFiles[FileIndex]) == false)
+		// clean up the linkers for this package
+		FString LocalFileName = UpdatedFiles[FileIndex];
+		ConvertServerFilenameToClientFilename( LocalFileName );
+
+		UE_LOG(LogNetworkPlatformFile, Log, TEXT("Server updated file '%s', deleting local copy %s"), *UpdatedFiles[FileIndex], *LocalFileName);
+
+		FString PackageName;
+		if (FPackageName::TryConvertFilenameToLongPackageName(LocalFileName, PackageName))
 		{
-			UE_LOG(LogNetworkPlatformFile, Error, TEXT("Failed to delete %s, someone is probably accessing without FNetworkPlatformFile, or we need better thread protection"), *UpdatedFiles[FileIndex]);
+			PackageNames.Add(PackageName);
 		}
+		else
+		{
+			UE_LOG(LogNetworkPlatformFile, Log, TEXT("Unable to convert filename to package name %s"), *LocalFileName);
+		}
+
+		OnFileUpdated(LocalFileName);
+	}
+
+	if ( PackageNames.Num() > 0 )
+	{
+		FCoreUObjectDelegates::NetworkFileRequestPackageReload.ExecuteIfBound(PackageNames);
 	}
 }
 
+void FNetworkPlatformFile::OnFileUpdated(const FString& LocalFileName)
+{
+	if (InnerPlatformFile->FileExists(*LocalFileName) && InnerPlatformFile->DeleteFile(*LocalFileName) == false)
+	{
+		UE_LOG(LogNetworkPlatformFile, Error, TEXT("Failed to delete %s, someone is probably accessing without FNetworkPlatformFile, or we need better thread protection"), *LocalFileName);
+	}
+	CachedLocalFiles.Remove(LocalFileName);
+	ServerFiles.AddFileOrDirectory(LocalFileName, FDateTime::UtcNow());
+}
 
-
-void FNetworkPlatformFile::ConvertServerFilenameToClientFilename(FString& FilenameToConvert, const FString& InServerEngineDir, const FString& InServerGameDir)
+void FNetworkPlatformFile::ConvertServerFilenameToClientFilename(FString& FilenameToConvert, const FString& InServerEngineDir, const FString& InServerProjectDir)
 {
 	if (FilenameToConvert.StartsWith(InServerEngineDir))
 	{
 		FilenameToConvert = FilenameToConvert.Replace(*InServerEngineDir, *(FPaths::EngineDir()));
 	}
-	else if (FilenameToConvert.StartsWith(InServerGameDir))
+	else if (FilenameToConvert.StartsWith(InServerProjectDir))
 	{
-		FilenameToConvert = FilenameToConvert.Replace(*InServerGameDir, *(FPaths::GameDir()));
+		FilenameToConvert = FilenameToConvert.Replace(*InServerProjectDir, *(FPaths::ProjectDir()));
 	}
+}
+
+void FNetworkPlatformFile::Tick() 
+{
+	// try send a heart beat every 5 seconds as long as we are not async loading
+	static double StartTime = FPlatformTime::Seconds();
+
+	bool bShouldPerformHeartbeat = true;
+	if ((FPlatformTime::Seconds() - StartTime) > HeartbeatFrequency && HeartbeatFrequency >= 0 )
+	{
+
+
+		if (IsAsyncLoading() && bShouldPerformHeartbeat)
+		{
+			bShouldPerformHeartbeat = false;
+		}
+
+		{
+			FScopeLock S(&SynchronizationObject);
+			if (FinishedAsyncNetworkReadUnsolicitedFiles && bShouldPerformHeartbeat)
+			{
+				if ( FinishedAsyncNetworkReadUnsolicitedFiles->IsReady() )
+				{
+					delete FinishedAsyncNetworkReadUnsolicitedFiles;
+					FinishedAsyncNetworkReadUnsolicitedFiles = nullptr;
+				}
+				else
+				{
+					bShouldPerformHeartbeat = false;
+				}
+			}
+		}
+
+		if ( bShouldPerformHeartbeat )
+		{
+			StartTime = FPlatformTime::Seconds();
+
+			//DeleteLoaders();
+			PerformHeartbeat();
+		}
+	}
+}
+
+bool FNetworkPlatformFile::Exec(class UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar )
+{
+	if (FParse::Command(&Cmd, TEXT("networkfile")))
+	{
+		if ( FParse::Command(&Cmd, TEXT("stats")))
+		{
+
+			Ar.Logf(TEXT("Network platform file %s stats\n"
+				"TotalWriteTime \t%fms \n"
+				"TotalNetworkSyncTime \t%fms \n"
+				"TotalTimeSpentInUnsolicitedPackages \t%fms \n"
+				"TotalWaitForAsyncUnsolicitedPackages \t%fms \n"
+				"TotalFilesSynced \t%d \n"
+				"TotalFilesFoundLocally \t%d\n"
+				"TotalUnsolicitedPackages \t%d \n"
+				"UnsolicitedPackagesHits \t%d \n"
+				"UnsolicitedPackageWaits \t%d \n"),
+				GetTypeName(),
+				TotalWriteTime,
+				TotalNetworkSyncTime,
+				TotalTimeSpentInUnsolicitedPackages,
+				TotalWaitForAsyncUnsolicitedPackages,
+				TotalFilesSynced,
+				TotalFilesFoundLocally,
+				TotalUnsolicitedPackages, 
+				UnsolicitedPackagesHits,
+				UnsolicitedPackageWaits);
+
+			// there could be multiple network platform files so let them all report their stats
+			return false;
+		}
+	}
+	return false;
 }
 
 /**

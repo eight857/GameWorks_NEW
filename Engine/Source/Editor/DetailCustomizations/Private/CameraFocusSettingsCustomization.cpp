@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CameraFocusSettingsCustomization.h"
 #include "Misc/Attribute.h"
@@ -60,7 +60,7 @@ void FCameraFocusSettingsCustomization::CustomizeChildren(TSharedRef<IPropertyHa
 	for (auto Iter(PropertyHandles.CreateConstIterator()); Iter; ++Iter)
 	{
 		// make the widget
-		IDetailPropertyRow& PropertyRow = ChildBuilder.AddChildProperty(Iter.Value().ToSharedRef());
+		IDetailPropertyRow& PropertyRow = ChildBuilder.AddProperty(Iter.Value().ToSharedRef());
 
 		// set up delegate to know if we need to hide it
 		FString const& Category = Iter.Value()->GetMetaData(NAME_Category);

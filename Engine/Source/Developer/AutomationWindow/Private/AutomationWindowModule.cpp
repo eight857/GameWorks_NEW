@@ -1,11 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
-#include "Interfaces/IAutomationWindowModule.h"
 #include "ISessionManager.h"
 #include "SAutomationWindow.h"
+
+#include "IAutomationWindowModule.h"
+
 
 /**
  * Implements the AutomationWindow module.

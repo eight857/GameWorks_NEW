@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,6 +9,7 @@
 #include "Logging/LogMacros.h"
 #include "Delegates/IDelegateInstance.h"
 #include "Delegates/Delegate.h"
+#include "Features/IModularFeature.h"
 
 #define TRACK_CONSOLE_FIND_COUNT !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 
@@ -195,18 +196,23 @@ public:
 		return 0; 
 	}
 
+	virtual bool IsVariableInt() const { return false; }
+
 	virtual class TConsoleVariableData<int32>* AsVariableInt()
 	{
+		ensureMsgf(false, TEXT("Attempted to access variable data of a console variable type that doesn't support it.  For example FindTConsoleVariableData* on a FAutoConsoleVariableRef."));
 		return 0; 
 	}
 
 	virtual class TConsoleVariableData<float>* AsVariableFloat()
 	{
+		ensureMsgf(false, TEXT("Attempted to access variable data of a console variable type that doesn't support it.  For example FindTConsoleVariableData* on a FAutoConsoleVariableRef."));
 		return 0; 
 	}
 
 	virtual class TConsoleVariableData<FString>* AsVariableString()
 	{
+		ensureMsgf(false, TEXT("Attempted to access variable data of a console variable type that doesn't support it.  For example FindTConsoleVariableData* on a FAutoConsoleVariableRef."));
 		return 0;
 	}
 
@@ -359,6 +365,70 @@ public:
 
 private:
 	FDelegateHandle Handle;
+};
+
+
+/**
+ * Handles executing console commands
+ */
+class IConsoleCommandExecutor : public IModularFeature
+{
+public:
+	/**
+	 * Get the name identifying this modular feature set.
+	 */
+	static FName ModularFeatureName()
+	{
+		static const FName Name = TEXT("ConsoleCommandExecutor");
+		return Name;
+	}
+
+	/**
+	 * Get the name of this executor.
+	 */
+	virtual FName GetName() const = 0;
+
+	/**
+	 * Get the display name of this executor.
+	 */
+	virtual FText GetDisplayName() const = 0;
+
+	/**
+	 * Get the description of this executor.
+	 */
+	virtual FText GetDescription() const = 0;
+
+	/**
+	 * Get the hint text of this executor.
+	 */
+	virtual FText GetHintText() const = 0;
+
+	/**
+	 * Get the list of auto-complete suggestions for the given command.
+	 */
+	virtual void GetAutoCompleteSuggestions(const TCHAR* Input, TArray<FString>& Out) = 0;
+
+	/**
+	 * Get the list of commands that this executor has recently processed.
+	 */
+	virtual void GetExecHistory(TArray<FString>& Out) = 0;
+
+	/**
+	 * Execute the given command using this executor.
+	 * @return true if the command was recognized.
+	 */
+	virtual bool Exec(const TCHAR* Input) = 0;
+
+	/**
+	 * True if we allow the console to be closed using the "open console" hot-key.
+	 * @note Some scripting languages use the default "open console" hot-key (~) in their code, so these should return false.
+	 */
+	virtual bool AllowHotKeyClose() const = 0;
+
+	/**
+	 * True if we allow the console to create multi-line commands.
+	 */
+	virtual bool AllowMultiLine() const = 0;
 };
 
 
@@ -593,11 +663,11 @@ struct CORE_API IConsoleManager
 	/**
 	 * @param Input - must not be 0
 	 */
-	virtual void AddConsoleHistoryEntry(const TCHAR* Input) = 0;
+	virtual void AddConsoleHistoryEntry(const TCHAR* Key, const TCHAR* Input) = 0;
 	
 	/**
 	 */
-	virtual void GetConsoleHistory(TArray<FString>& Out) = 0; 
+	virtual void GetConsoleHistory(const TCHAR* Key, TArray<FString>& Out) = 0; 
 
 	/**
 	 * Check if a name (command or variable) has been registered with the console manager
@@ -619,6 +689,9 @@ struct CORE_API IConsoleManager
 		}
 		return *Singleton;
 	}
+
+protected:
+	virtual ~IConsoleManager() { }
 
 private:
 	/** Singleton for the console manager **/

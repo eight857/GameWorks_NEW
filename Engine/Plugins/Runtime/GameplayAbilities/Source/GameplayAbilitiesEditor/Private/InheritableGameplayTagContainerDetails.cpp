@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "InheritableGameplayTagContainerDetails.h"
 #include "PropertyHandle.h"
@@ -33,9 +33,9 @@ void FInheritableGameplayTagContainerDetails::CustomizeChildren(TSharedRef<IProp
 	AddedTagContainerPropertyHandle->SetOnPropertyValueChanged(OnTagValueChangedDelegate);
 	RemovedTagContainerPropertyHandle->SetOnPropertyValueChanged(OnTagValueChangedDelegate);
 
-	StructBuilder.AddChildProperty(CombinedTagContainerPropertyHandle.ToSharedRef());
-	StructBuilder.AddChildProperty(AddedTagContainerPropertyHandle.ToSharedRef());
-	StructBuilder.AddChildProperty(RemovedTagContainerPropertyHandle.ToSharedRef());
+	StructBuilder.AddProperty(CombinedTagContainerPropertyHandle.ToSharedRef());
+	StructBuilder.AddProperty(AddedTagContainerPropertyHandle.ToSharedRef());
+	StructBuilder.AddProperty(RemovedTagContainerPropertyHandle.ToSharedRef());
 }
 
 void FInheritableGameplayTagContainerDetails::OnTagsChanged()

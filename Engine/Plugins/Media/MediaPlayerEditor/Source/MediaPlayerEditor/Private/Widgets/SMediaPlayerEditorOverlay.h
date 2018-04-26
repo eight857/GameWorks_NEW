@@ -1,16 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "Templates/SharedPointer.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
-#include "Widgets/Layout/SConstraintCanvas.h"
 
 class SConstraintCanvas;
-class SRichTextBlock;
 class UMediaPlayer;
-enum class EMediaOverlayType;
+
 
 /**
  * Draws text overlays for the UMediaPlayer asset editor.
@@ -39,15 +37,6 @@ public:
 
 	void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
-protected:
-
-	/**
-	 * Add the media player's text overlays of the specified type.
-	 *
-	 * @param Type The type of overlays to add.
-	 */
-	void AddOverlays(EMediaOverlayType Type, float LayoutScale, int32& InOutSlotIndex);
-
 private:
 
 	/** The canvas to draw into. */
@@ -55,8 +44,4 @@ private:
 
 	/** The media player whose video texture is shown in this widget. */
 	UMediaPlayer* MediaPlayer;
-
-	SConstraintCanvas::FSlot* Slots[10];
-
-	TSharedPtr<SRichTextBlock> TextBlocks[10];
 };

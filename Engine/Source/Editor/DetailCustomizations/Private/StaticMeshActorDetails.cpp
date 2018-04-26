@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "StaticMeshActorDetails.h"
 #include "Modules/ModuleManager.h"
@@ -13,6 +13,13 @@
 #include "DetailCategoryBuilder.h"
 #include "LevelEditor.h"
 #include "LevelEditorActions.h"
+
+#include "MeshUtilities.h"
+#include "Engine/StaticMeshActor.h"
+#include "Public/Widgets/Input/SButton.h"
+#include "IMeshMergeUtilities.h"
+#include "MeshMergeModule.h"
+#include "Settings/EditorExperimentalSettings.h"
 
 #define LOCTEXT_NAMESPACE "StaticMeshActorDetails"
 
@@ -76,6 +83,48 @@ void FStaticMeshActorDetails::CustomizeDetails( IDetailLayoutBuilder& DetailBuil
 			BlockingVolumeBuilder.MakeWidget()
 		]
 	];
+
+	// This allows baking out the materials for the given instance data	
+	TArray<TWeakObjectPtr<UObject>> Objects;
+	DetailBuilder.GetObjectsBeingCustomized(Objects);
+	IDetailCategoryBuilder& MaterialsCategory = DetailBuilder.EditCategory("Materials");
+	FDetailWidgetRow& ButtonRow = MaterialsCategory.AddCustomRow(LOCTEXT("RowLabel", "BakeMaterials"), true);
+	ButtonRow.ValueWidget
+	[
+		SNew(SHorizontalBox)
+		+SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("BakeLabel", "Bake Materials"))
+			.OnClicked_Lambda([Objects]() -> FReply
+			{
+				const IMeshMergeUtilities& MeshMergeUtilities = FModuleManager::Get().LoadModuleChecked<IMeshMergeModule>("MeshMergeUtilities").GetUtilities();
+
+				// Retrieve all currently selected static mesh components
+				TArray<UStaticMeshComponent*> StaticMeshComponents;
+				for (TWeakObjectPtr<UObject> WeakObject : Objects)
+				{
+					if (WeakObject.IsValid())
+					{
+						UObject* Object = WeakObject.Get();
+						if (AStaticMeshActor* Actor = Cast<AStaticMeshActor>(Object))
+						{
+							StaticMeshComponents.Add(Actor->GetStaticMeshComponent());
+						}
+					}
+				}
+
+				for (UStaticMeshComponent* Component : StaticMeshComponents)
+				{
+					MeshMergeUtilities.BakeMaterialsForComponent(Component);
+				}
+				
+				return FReply::Handled();
+			})
+		]
+	];		
+	
 }
 
 #undef LOCTEXT_NAMESPACE

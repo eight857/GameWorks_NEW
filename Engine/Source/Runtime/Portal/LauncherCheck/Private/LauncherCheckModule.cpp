@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Templates/UnrealTemplate.h"
@@ -8,18 +8,21 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
-#include "Interfaces/ILauncherCheckModule.h"
+#include "HAL/PlatformProcess.h"
+#include "ILauncherCheckModule.h"
 
 #if defined(WITH_LAUNCHERCHECK) && WITH_LAUNCHERCHECK
 
 #include "GenericPlatformHttp.h"
-#include "IDesktopPlatform.h"
-#include "DesktopPlatformModule.h"
+#include "ILauncherPlatform.h"
+#include "LauncherPlatformModule.h"
+
 
 /**
  * Log categories for LauncherCheck module
  */
 DEFINE_LOG_CATEGORY(LogLauncherCheck);
+
 
 /**
  * Implements the Launcher Check module.
@@ -35,10 +38,12 @@ public:
 	*/
 	bool IsEnabled() const
 	{
-		return FParse::Param(FCommandLine::Get(), TEXT("NoEpicPortal")) == false;
+		return FParse::Param(FCommandLine::Get(), TEXT("NoEpicPortal")) == false && FParse::Param(FCommandLine::Get(), TEXT("q")) == false;
 	}
 
-	// ILauncherCheckModule interface
+public:
+
+	//~ ILauncherCheckModule interface
 
 	virtual bool WasRanFromLauncher() const override
 	{
@@ -49,8 +54,8 @@ public:
 
 	virtual bool RunLauncher(ELauncherAction Action, FString Payload = FString()) const override
 	{
-		IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
-		if (DesktopPlatform != nullptr)
+		ILauncherPlatform* LauncherPlatform = FLauncherPlatformModule::Get();
+		if (LauncherPlatform != nullptr)
 		{
 			// Construct a url to tell the launcher of this app and what we want to do with it
 			FOpenLauncherOptions LauncherOptions;
@@ -74,27 +79,22 @@ public:
 			{
 				LauncherOptions.LauncherRelativeUrl.Append(MoveTemp(Payload));
 			}
-			return DesktopPlatform->OpenLauncher(LauncherOptions);
+			return LauncherPlatform->OpenLauncher(LauncherOptions);
 		}
 		return false;
 	}
 
 public:
 
-	// IModuleInterface interface
+	//~ IModuleInterface interface
 
-	virtual void StartupModule() override
-	{
-	}
-
-	virtual void ShutdownModule() override
-	{
-	}
+	virtual void StartupModule() override { }
+	virtual void ShutdownModule() override { }
 
 private:
 
 	/**
-	 * Return url encoded full path of currently running exe
+	 * Return url encoded full path of currently running executable.
 	 */
 	FString GetEncodedExePath() const
 	{
@@ -125,22 +125,26 @@ private:
 };
 
 
-#else
+#else //WITH_LAUNCHERCHECK
+
 
 class FLauncherCheckModule
 	: public ILauncherCheckModule
 {
 public:
 
-	virtual bool WasRanFromLauncher() const override { return true; }
+	virtual bool WasRanFromLauncher() const override
+	{
+		return true;
+	}
 
-	virtual bool RunLauncher(ELauncherAction Action, FString Payload = FString()) const override { return false; }
-
+	virtual bool RunLauncher(ELauncherAction Action, FString Payload = FString()) const override
+	{
+		return false;
+	}
 };
 
-
-#endif // WITH_LAUNCHERCHECK
-
-IMPLEMENT_MODULE(FLauncherCheckModule, LauncherCheck );
+#endif //WITH_LAUNCHERCHECK
 
 
+IMPLEMENT_MODULE(FLauncherCheckModule, LauncherCheck);

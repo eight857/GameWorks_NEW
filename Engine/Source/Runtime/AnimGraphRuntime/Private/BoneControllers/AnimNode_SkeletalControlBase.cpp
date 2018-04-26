@@ -1,19 +1,61 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BoneControllers/AnimNode_SkeletalControlBase.h"
 #include "Animation/AnimInstanceProxy.h"
+#include "Engine/SkeletalMeshSocket.h"
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Socket Reference 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void FSocketReference::InitializeSocketInfo(const FAnimInstanceProxy* InAnimInstanceProxy)
+{
+	CachedSocketMeshBoneIndex = INDEX_NONE;
+	CachedSocketCompactBoneIndex = FCompactPoseBoneIndex(INDEX_NONE);
+
+	if (SocketName != NAME_None)
+	{
+		const USkeletalMeshComponent* OwnerMeshComponent = InAnimInstanceProxy->GetSkelMeshComponent();
+		if (OwnerMeshComponent && OwnerMeshComponent->DoesSocketExist(SocketName))
+		{
+			USkeletalMeshSocket const* const Socket = OwnerMeshComponent->GetSocketByName(SocketName);
+			if (Socket)
+			{
+				CachedSocketLocalTransform = Socket->GetSocketLocalTransform();
+				// cache mesh bone index, so that we know this is valid information to follow
+				CachedSocketMeshBoneIndex = OwnerMeshComponent->GetBoneIndex(Socket->BoneName);
+
+				ensureMsgf(CachedSocketMeshBoneIndex != INDEX_NONE, TEXT("%s : socket has invalid bone."), *SocketName.ToString());
+			}
+		}
+		else
+		{
+			// @todo : move to graph node warning
+			UE_LOG(LogAnimation, Warning, TEXT("%s: socket doesn't exist"), *SocketName.ToString());
+		}
+	}
+}
+
+void FSocketReference::InitialzeCompactBoneIndex(const FBoneContainer& RequiredBones)
+{
+	if (CachedSocketMeshBoneIndex != INDEX_NONE)
+	{
+		const int32 SocketBoneSkeletonIndex = RequiredBones.GetPoseToSkeletonBoneIndexArray()[CachedSocketMeshBoneIndex];
+		CachedSocketCompactBoneIndex = RequiredBones.GetCompactPoseIndexFromSkeletonIndex(SocketBoneSkeletonIndex);
+	}
+}
 
 /////////////////////////////////////////////////////
 // FAnimNode_SkeletalControlBase
 
-void FAnimNode_SkeletalControlBase::Initialize(const FAnimationInitializeContext& Context)
+void FAnimNode_SkeletalControlBase::Initialize_AnyThread(const FAnimationInitializeContext& Context)
 {
-	FAnimNode_Base::Initialize(Context);
+	FAnimNode_Base::Initialize_AnyThread(Context);
 
 	ComponentPose.Initialize(Context);
 }
 
-void FAnimNode_SkeletalControlBase::CacheBones(const FAnimationCacheBonesContext& Context) 
+void FAnimNode_SkeletalControlBase::CacheBones_AnyThread(const FAnimationCacheBonesContext& Context) 
 {
 	InitializeBoneReferences(Context.AnimInstanceProxy->GetRequiredBones());
 	ComponentPose.CacheBones(Context);
@@ -23,9 +65,14 @@ void FAnimNode_SkeletalControlBase::UpdateInternal(const FAnimationUpdateContext
 {
 }
 
-void FAnimNode_SkeletalControlBase::Update(const FAnimationUpdateContext& Context)
+void FAnimNode_SkeletalControlBase::UpdateComponentPose_AnyThread(const FAnimationUpdateContext& Context)
 {
 	ComponentPose.Update(Context);
+}
+
+void FAnimNode_SkeletalControlBase::Update_AnyThread(const FAnimationUpdateContext& Context)
+{
+	UpdateComponentPose_AnyThread(Context);
 
 	ActualAlpha = 0.f;
 	if (IsLODEnabled(Context.AnimInstanceProxy, LODThreshold))
@@ -54,37 +101,42 @@ bool ContainsNaN(const TArray<FBoneTransform> & BoneTransforms)
 	return false;
 }
 
+void FAnimNode_SkeletalControlBase::EvaluateComponentPose_AnyThread(FComponentSpacePoseContext& Output)
+{
+	// Evaluate the input
+	ComponentPose.EvaluateComponentSpace(Output);
+}
+
 void FAnimNode_SkeletalControlBase::EvaluateComponentSpaceInternal(FComponentSpacePoseContext& Context)
 {
 }
 
-void FAnimNode_SkeletalControlBase::EvaluateComponentSpace(FComponentSpacePoseContext& Output)
+void FAnimNode_SkeletalControlBase::EvaluateComponentSpace_AnyThread(FComponentSpacePoseContext& Output)
 {
-	// Evaluate the input
-	ComponentPose.EvaluateComponentSpace(Output);
+	EvaluateComponentPose_AnyThread(Output);
+
+#if WITH_EDITORONLY_DATA
+	// save current pose before applying skeletal control to compute the exact gizmo location in AnimGraphNode
+	ForwardedPose.CopyPose(Output.Pose);
+#endif // #if WITH_EDITORONLY_DATA
+	// this is to ensure Source data does not contain NaN
+	ensure(Output.ContainsNaN() == false);
 
 	// Apply the skeletal control if it's valid
 	if (FAnimWeight::IsRelevant(ActualAlpha) && IsValidToEvaluate(Output.AnimInstanceProxy->GetSkeleton(), Output.AnimInstanceProxy->GetRequiredBones()))
 	{
 		EvaluateComponentSpaceInternal(Output);
 
-#if WITH_EDITORONLY_DATA
-		// save current pose before applying skeletal control to compute the exact gizmo location in AnimGraphNode
-		ForwardedPose.CopyPose(Output.Pose);
-#endif // #if WITH_EDITORONLY_DATA
-
-		USkeletalMeshComponent* Component = Output.AnimInstanceProxy->GetSkelMeshComponent();
-
 		BoneTransforms.Reset(BoneTransforms.Num());
 		EvaluateSkeletalControl_AnyThread(Output, BoneTransforms);
-
-		checkSlow(!ContainsNaN(BoneTransforms));
 
 		if (BoneTransforms.Num() > 0)
 		{
 			const float BlendWeight = FMath::Clamp<float>(ActualAlpha, 0.f, 1.f);
 			Output.Pose.LocalBlendCSBoneTransforms(BoneTransforms, BlendWeight);
 		}
+
+		// we check NaN when you get out of this function in void FComponentSpacePoseLink::EvaluateComponentSpace(FComponentSpacePoseContext& Output)
 	}
 }
 
@@ -100,3 +152,4 @@ void FAnimNode_SkeletalControlBase::EvaluateSkeletalControl_AnyThread(FComponent
 	EvaluateBoneTransforms(Output.AnimInstanceProxy->GetSkelMeshComponent(), Output.Pose, OutBoneTransforms);
 	PRAGMA_ENABLE_DEPRECATION_WARNINGS
 }
+

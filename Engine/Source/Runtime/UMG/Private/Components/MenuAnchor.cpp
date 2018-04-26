@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/MenuAnchor.h"
 #include "Widgets/SNullWidget.h"
@@ -40,7 +40,7 @@ TSharedRef<SWidget> UMenuAnchor::RebuildWidget()
 		MyMenuAnchor->SetContent(GetContentSlot()->Content ? GetContentSlot()->Content->TakeWidget() : SNullWidget::NullWidget);
 	}
 	
-	return BuildDesignTimeWidget( MyMenuAnchor.ToSharedRef() );
+	return MyMenuAnchor.ToSharedRef();
 }
 
 void UMenuAnchor::OnSlotAdded(UPanelSlot* InSlot)

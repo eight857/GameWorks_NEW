@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,6 +18,11 @@ public:
 
 	/** Recursively gathers all child paths from the specified base path relative to this node */
 	bool GetSubPaths(FName BasePath, TSet<FName>& OutPaths, bool bRecurse = true) const;
+
+	uint32 GetAllocatedSize(void) const
+	{
+		return ParentPathToChildPaths.GetAllocatedSize() + ChildPathToParentPath.GetAllocatedSize();
+	}
 
 private:
 	/** A one-to-many mapping between a parent path and its child paths. */

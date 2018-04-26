@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	GPUBenchmark.cpp: GPUBenchmark to compute performance index to set video options automatically
@@ -25,22 +25,20 @@ static const uint32 GBenchmarkResolution = 512;
 static const uint32 GBenchmarkPrimitives = 200000;
 static const uint32 GBenchmarkVertices = GBenchmarkPrimitives * 3;
 
-DEFINE_LOG_CATEGORY_STATIC(LogSynthBenchmark, Log, All);
-
 /** Encapsulates the post processing down sample pixel shader. */
 template <uint32 PsMethod>
 class FPostProcessBenchmarkPS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FPostProcessBenchmarkPS, Global);
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("PS_METHOD"), PsMethod);
 	}
 
@@ -78,7 +76,7 @@ public:
 
 	static const TCHAR* GetSourceFilename()
 	{
-		return TEXT("GPUBenchmark");
+		return TEXT("/Engine/Private/GPUBenchmark.usf");
 	}
 
 	static const TCHAR* GetFunctionName()
@@ -102,14 +100,14 @@ class FPostProcessBenchmarkVS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FPostProcessBenchmarkVS,Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		return true;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("VS_METHOD"), VsMethod);
 	}
 
@@ -142,9 +140,9 @@ typedef FPostProcessBenchmarkVS<0> FPostProcessBenchmarkVS0;
 typedef FPostProcessBenchmarkVS<1> FPostProcessBenchmarkVS1;
 typedef FPostProcessBenchmarkVS<2> FPostProcessBenchmarkVS2;
 
-IMPLEMENT_SHADER_TYPE(template<>,FPostProcessBenchmarkVS0,TEXT("GPUBenchmark"),TEXT("MainBenchmarkVS"),SF_Vertex);
-IMPLEMENT_SHADER_TYPE(template<>,FPostProcessBenchmarkVS1,TEXT("GPUBenchmark"),TEXT("MainBenchmarkVS"),SF_Vertex);
-IMPLEMENT_SHADER_TYPE(template<>,FPostProcessBenchmarkVS2,TEXT("GPUBenchmark"),TEXT("MainBenchmarkVS"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(template<>,FPostProcessBenchmarkVS0,TEXT("/Engine/Private/GPUBenchmark.usf"),TEXT("MainBenchmarkVS"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(template<>,FPostProcessBenchmarkVS1,TEXT("/Engine/Private/GPUBenchmark.usf"),TEXT("MainBenchmarkVS"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(template<>,FPostProcessBenchmarkVS2,TEXT("/Engine/Private/GPUBenchmark.usf"),TEXT("MainBenchmarkVS"),SF_Vertex);
 
 struct FBenchmarkVertex
 {
@@ -230,7 +228,7 @@ void RunBenchmarkShader(FRHICommandList& RHICmdList, FVertexBufferRHIParamRef Ve
 			uint32 VerticesThisPass = FMath::Min(TotalNumVertices, GBenchmarkVertices);
 			uint32 PrimitivesThisPass = VerticesThisPass / 3;
 
-			RHICmdList.SetStreamSource(0, VertexThroughputBuffer, VertexThroughputBuffer ? sizeof(FBenchmarkVertex) : 0, 0);
+			RHICmdList.SetStreamSource(0, VertexThroughputBuffer, 0);
 
 			RHICmdList.DrawPrimitive(PT_TriangleList, 0, PrimitivesThisPass, 1);
 
@@ -506,10 +504,11 @@ void RendererGPUBenchmark(FRHICommandListImmediate& RHICmdList, FSynthBenchmarkR
 		const bool bSupportsTimerQueries = (TimerQueries[0] != NULL);
 		if(!bSupportsTimerQueries)
 		{
+#if !PLATFORM_MAC
 			UE_LOG(LogSynthBenchmark, Warning, TEXT("GPU driver does not support timer queries."));
 
+#else
 			// Workaround for Metal not having a timing API and some drivers not properly supporting command-buffer completion handler based implementation...
-#if PLATFORM_MAC
 			FTextureMemoryStats MemStats;
 			RHIGetTextureMemoryStats(MemStats);
 			

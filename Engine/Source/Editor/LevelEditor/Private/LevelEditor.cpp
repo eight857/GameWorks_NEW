@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LevelEditor.h"
 #include "Widgets/Text/STextBlock.h"
@@ -26,13 +26,14 @@
 #include "EditorViewportCommands.h"
 #include "LevelViewportActions.h"
 #include "Toolkits/GlobalEditorCommonCommands.h"
-#include "IUserFeedbackModule.h"
 #include "ISlateReflectorModule.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "IIntroTutorials.h"
 #include "Interfaces/IProjectManager.h"
 #include "LevelViewportLayoutEntity.h"
 #include "PixelInspectorModule.h"
+#include "CommonMenuExtensionsModule.h"
+#include "ProjectDescriptor.h"
 
 // @todo Editor: remove this circular dependency
 #include "Interfaces/IMainFrameModule.h"
@@ -45,6 +46,7 @@ IMPLEMENT_MODULE( FLevelEditorModule, LevelEditor );
 
 const FName LevelEditorApp = FName(TEXT("LevelEditorApp"));
 const FName MainFrame("MainFrame");
+const FName CommonMenuExtensionsName(TEXT("CommonMenuExtensions"));
 
 FLevelEditorModule::FLevelEditorModule()
 	: ToggleImmersiveConsoleCommand(
@@ -78,7 +80,7 @@ public:
 
 		Args.Add(TEXT("ProjectNameWatermarkPrefix"), FText::FromString(ProjectNameWatermarkPrefix));
 		Args.Add(TEXT("Branch"), FEngineBuildSettings::IsPerforceBuild() ? FText::FromString(FApp::GetBranchName()) : FText::GetEmpty());
-		Args.Add(TEXT("GameName"), FText::FromString(FString(FApp::GetGameName())));
+		Args.Add(TEXT("GameName"), FText::FromString(FString(FApp::GetProjectName())));
 		Args.Add(TEXT("EngineVersion"), (GetDefault<UEditorPerProjectUserSettings>()->bDisplayEngineVersionInBadge) ? FText::FromString("(" + EngineVersionString + ")") : FText());
 
 		FText RightContentText;
@@ -97,7 +99,12 @@ public:
 
 		// Create the tooltip showing more detailed information
 		FFormatNamedArguments TooltipArgs;
-		TooltipArgs.Add(TEXT("Version"), FText::FromString(EngineVersionString));
+		FString TooltipVersionStr = EngineVersionString;
+		if (IProjectManager::Get().GetCurrentProject() && IProjectManager::Get().GetCurrentProject()->bIsEnterpriseProject)
+		{
+			TooltipVersionStr += TEXT(" Unreal Studio");
+		}
+		TooltipArgs.Add(TEXT("Version"), FText::FromString(TooltipVersionStr));
 		TooltipArgs.Add(TEXT("Branch"), FText::FromString(FApp::GetBranchName()));
 		TooltipArgs.Add(TEXT("BuildConfiguration"), EBuildConfigurations::ToText(BuildConfig));
 		TooltipArgs.Add(TEXT("BuildDate"), FText::FromString(FApp::GetBuildDate()));
@@ -175,9 +182,6 @@ TSharedRef<SDockTab> FLevelEditorModule::SpawnLevelEditor( const FSpawnTabArgs& 
 
 	}
 
-	IUserFeedbackModule& UserFeedback = FModuleManager::LoadModuleChecked<IUserFeedbackModule>(TEXT("UserFeedback"));
-	TSharedRef<SWidget> UserFeedbackWidget = UserFeedback.CreateFeedbackWidget(NSLOCTEXT("UserFeedback", "LevelEditing", "Level Editing"));
-
 	IIntroTutorials& IntroTutorials = FModuleManager::LoadModuleChecked<IIntroTutorials>(TEXT("IntroTutorials"));
 	TSharedRef<SWidget> TutorialWidget = IntroTutorials.CreateTutorialsWidget(TEXT("LevelEditor"), OwnerWindow);
 
@@ -197,14 +201,7 @@ TSharedRef<SDockTab> FLevelEditorModule::SpawnLevelEditor( const FSpawnTabArgs& 
 			LevelEditorTab->GetRightContent()
 		]
 #endif
-		
-		+SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(8.0f, 0.0f, 0.0f, 0.0f)
-		.VAlign(VAlign_Center)
-		[
-			UserFeedbackWidget
-		]
+
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(BadgeSizeGetter)
@@ -231,6 +228,8 @@ void FLevelEditorModule::StartupModule()
 {
 	// Our command context bindings depend on having the mainframe loaded
 	FModuleManager::LoadModuleChecked<IMainFrameModule>(MainFrame);
+
+	FModuleManager::LoadModuleChecked<FCommonMenuExtensionsModule>(CommonMenuExtensionsName);
 
 	MenuExtensibilityManager = MakeShareable(new FExtensibilityManager);
 	
@@ -602,6 +601,11 @@ void FLevelEditorModule::BindGlobalLevelEditorCommands()
 		ActionList.MapAction( Commands.OpenRecentFileCommands[ CurRecentIndex ], FExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::OpenRecentFile, CurRecentIndex ), DefaultExecuteAction );
 	}
 
+	for (int32 CurFavoriteIndex = 0; CurFavoriteIndex < FLevelEditorCommands::MaxFavoriteFiles; ++CurFavoriteIndex)
+	{
+		ActionList.MapAction(Commands.OpenFavoriteFileCommands[CurFavoriteIndex], FExecuteAction::CreateStatic(&FLevelEditorActionCallbacks::OpenFavoriteFile, CurFavoriteIndex), DefaultExecuteAction);
+	}
+
 	ActionList.MapAction( 
 		Commands.ToggleVR, 
 		FExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::ToggleVR ), 
@@ -652,18 +656,6 @@ void FLevelEditorModule::BindGlobalLevelEditorCommands()
 	ActionList.MapAction( 
 		FGlobalEditorCommonCommands::Get().FindInContentBrowser, 
 		FExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::FindInContentBrowser_Clicked )
-		);
-
-	ActionList.MapAction( 
-		FGlobalEditorCommonCommands::Get().ViewReferences, 
-		FExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::ViewReferences_Execute ),
-		FCanExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::CanViewReferences )
-		);
-
-	ActionList.MapAction( 
-		FGlobalEditorCommonCommands::Get().ViewSizeMap, 
-		FExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::ViewSizeMap_Execute ),
-		FCanExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::CanViewSizeMap )
 		);
 
 	const FVector* NullVector = nullptr;
@@ -1402,7 +1394,8 @@ void FLevelEditorModule::BindGlobalLevelEditorCommands()
 		FCanExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::BuildLighting_CanExecute ) );
 
 	ActionList.MapAction( Commands.BuildReflectionCapturesOnly,
-		FExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::BuildReflectionCapturesOnly_Execute ) );
+		FExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::BuildReflectionCapturesOnly_Execute ),
+		FCanExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::BuildReflectionCapturesOnly_CanExecute )  );
 
 	ActionList.MapAction( Commands.BuildLightingOnly_VisibilityOnly,
 		FExecuteAction::CreateStatic( &FLevelEditorActionCallbacks::BuildLightingOnly_VisibilityOnly_Execute ) );
@@ -1713,11 +1706,6 @@ void FLevelEditorModule::BindGlobalLevelEditorCommands()
 		FExecuteAction::CreateStatic(&FLevelEditorActionCallbacks::SetPreviewPlatform, LegacyShaderPlatformToShaderFormat(SP_OPENGL_ES2_ANDROID), ERHIFeatureLevel::ES2),
 		FCanExecuteAction(),
 		FIsActionChecked::CreateStatic(&FLevelEditorActionCallbacks::IsPreviewPlatformChecked, LegacyShaderPlatformToShaderFormat(SP_OPENGL_ES2_ANDROID), ERHIFeatureLevel::ES2));
-	ActionList.MapAction(
-		Commands.PreviewPlatformOverride_IOSGLES2,
-		FExecuteAction::CreateStatic(&FLevelEditorActionCallbacks::SetPreviewPlatform, LegacyShaderPlatformToShaderFormat(SP_OPENGL_ES2_IOS), ERHIFeatureLevel::ES2),
-		FCanExecuteAction(),
-		FIsActionChecked::CreateStatic(&FLevelEditorActionCallbacks::IsPreviewPlatformChecked,LegacyShaderPlatformToShaderFormat(SP_OPENGL_ES2_IOS), ERHIFeatureLevel::ES2));
 
 	ActionList.MapAction(
 		Commands.PreviewPlatformOverride_DefaultES31,
@@ -1750,7 +1738,7 @@ void FLevelEditorModule::BindGlobalLevelEditorCommands()
 		ActionList.MapAction(
 			Commands.FeatureLevelPreview[i],
 			FExecuteAction::CreateStatic(&FLevelEditorActionCallbacks::SetFeatureLevelPreview, (ERHIFeatureLevel::Type)i),
-			FCanExecuteAction(),
+			FCanExecuteAction::CreateStatic(&FLevelEditorActionCallbacks::IsFeatureLevelPreviewAvailable, (ERHIFeatureLevel::Type)i),
 			FIsActionChecked::CreateStatic(&FLevelEditorActionCallbacks::IsFeatureLevelPreviewChecked, (ERHIFeatureLevel::Type)i));
 	}
 }

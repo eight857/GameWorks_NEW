@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Skeletal mesh creation from FBX data.
@@ -17,7 +17,6 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
 #include "Misc/PackageName.h"
-#include "SkeletalMeshTypes.h"
 #include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/SkinnedMeshComponent.h"
@@ -27,6 +26,7 @@
 #include "Factories/FbxSkeletalMeshImportData.h"
 #include "Animation/MorphTarget.h"
 #include "PhysicsAssetUtils.h"
+#include "Rendering/SkeletalMeshModel.h"
 
 #include "SkelImport.h"
 #include "Logging/TokenizedMessage.h"
@@ -57,9 +57,6 @@
 
 using namespace UnFbx;
 
-struct ExistingSkelMeshData;
-extern ExistingSkelMeshData* SaveExistingSkelMeshData(USkeletalMesh* ExistingSkelMesh, bool bSaveMaterials, int32 ReimportLODIndex);
-extern void RestoreExistingSkelMeshData(ExistingSkelMeshData* MeshData, USkeletalMesh* SkeletalMesh, int32 ReimportLODIndex);
 
 // Get the geometry deformation local to a node. It is never inherited by the
 // children.
@@ -317,9 +314,6 @@ void FFbxImporter::SkinControlPointsToPose(FSkeletalMeshImportData& ImportData, 
 // and a handfull of other minor stuff needed by these 
 // Fully taken from SkeletalMeshImport.cpp
 
-extern void ProcessImportMeshInfluences(FSkeletalMeshImportData& ImportData);
-extern void ProcessImportMeshMaterials( TArray<FSkeletalMaterial>& Materials, FSkeletalMeshImportData& ImportData );
-extern bool ProcessImportMeshSkeleton(const USkeleton* SkeletonAsset, FReferenceSkeleton& RefSkeleton, int32& SkeletalDepth, FSkeletalMeshImportData& ImportData);
 
 struct tFaceRecord
 {
@@ -1129,14 +1123,13 @@ bool UnFbx::FFbxImporter::FillSkeletalMeshImportData(TArray<FbxNode*>& NodeArray
 	FSkeletalMeshImportData* SkelMeshImportDataPtr = OutData;
 
 
-	bool bDiffPose;
 	TArray<FbxNode*> SortedLinkArray;
 	FbxArray<FbxAMatrix> GlobalsPerLink;
 
-	bool bUseTime0AsRefPose = ImportOptions->bUseT0AsRefPose;
+	SkelMeshImportDataPtr->bUseT0AsRefPose = ImportOptions->bUseT0AsRefPose;
 	// Note: importing morph data causes additional passes through this function, so disable the warning dialogs
 	// from popping up again on each additional pass.  
-	if (!ImportBone(NodeArray, *SkelMeshImportDataPtr, TemplateImportData, SortedLinkArray, bDiffPose, (FbxShapeArray != nullptr), bUseTime0AsRefPose, Node))
+	if (!ImportBone(NodeArray, *SkelMeshImportDataPtr, TemplateImportData, SortedLinkArray, SkelMeshImportDataPtr->bDiffPose, (FbxShapeArray != nullptr), SkelMeshImportDataPtr->bUseT0AsRefPose, Node))
 	{
 		AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Error, LOCTEXT("FbxSkeletaLMeshimport_MultipleRootFound", "Multiple roots found")), FFbxErrors::SkeletalMesh_MultipleRoots);
 		return false;
@@ -1191,7 +1184,7 @@ bool UnFbx::FFbxImporter::FillSkeletalMeshImportData(TArray<FbxNode*>& NodeArray
 			return false;
 		}
 
-		if (bUseTime0AsRefPose && bDiffPose && !ImportOptions->bImportScene)
+		if (SkelMeshImportDataPtr->bUseT0AsRefPose && SkelMeshImportDataPtr->bDiffPose && !ImportOptions->bImportScene)
 		{
 			// deform skin vertex to the frame 0 from bind pose
 			SkinControlPointsToPose(*SkelMeshImportDataPtr, FbxMesh, FbxShape, true);
@@ -1222,6 +1215,101 @@ bool UnFbx::FFbxImporter::FillSkeletalMeshImportData(TArray<FbxNode*>& NodeArray
 		{
 			SkelMeshImportDataPtr->PointToRawMap[PointIdx] = PointIdx;
 		}
+	}
+
+	return true;
+}
+
+bool UnFbx::FFbxImporter::FillSkeletalMeshImportPoints(FSkeletalMeshImportData* OutData, FbxNode* RootNode, FbxNode* Node, FbxShape* FbxShape)
+{
+	FbxMesh* FbxMesh = Node->GetMesh();
+
+	const int32 ControlPointsCount = FbxMesh->GetControlPointsCount();
+	const int32 ExistPointNum = OutData->Points.Num();
+	OutData->Points.AddUninitialized(ControlPointsCount);
+
+	// Construct the matrices for the conversion from right handed to left handed system
+	FbxAMatrix TotalMatrix = ComputeSkeletalMeshTotalMatrix(Node, RootNode);
+
+	int32 ControlPointsIndex;
+	bool bInvalidPositionFound = false;
+	for( ControlPointsIndex = 0 ; ControlPointsIndex < ControlPointsCount ;ControlPointsIndex++ )
+	{
+		FbxVector4 Position;
+		if (FbxShape)
+		{
+			Position = FbxShape->GetControlPoints()[ControlPointsIndex];
+		}
+		else
+		{
+			Position = FbxMesh->GetControlPoints()[ControlPointsIndex];
+		}																	 
+
+		FbxVector4 FinalPosition;
+		FinalPosition = TotalMatrix.MultT(Position);
+		FVector ConvertedPosition = Converter.ConvertPos(FinalPosition);
+
+		// ensure user when this happens if attached to debugger
+		if (!ensure(ConvertedPosition.ContainsNaN() == false))
+		{
+			if (!bInvalidPositionFound)
+			{
+				bInvalidPositionFound = true;
+			}
+
+			ConvertedPosition = FVector::ZeroVector;
+		}
+
+		OutData->Points[ ControlPointsIndex + ExistPointNum ] = ConvertedPosition;
+	}
+
+	if (bInvalidPositionFound)
+	{
+		AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Warning,
+			FText::Format(LOCTEXT("FbxSkeletaLMeshimport_InvalidPosition", "Invalid position (NaN or Inf) found from source position for mesh '{0}'. Please verify if the source asset contains valid position. "),
+				FText::FromString(FbxMesh->GetName()))), FFbxErrors::SkeletalMesh_InvalidPosition);
+	}
+
+	return true;
+}
+
+bool UnFbx::FFbxImporter::GatherPointsForMorphTarget(FSkeletalMeshImportData* OutData, TArray<FbxNode*>& NodeArray, TArray< FbxShape* >* FbxShapeArray, TSet<uint32>& ModifiedPoints)
+{
+	FSkeletalMeshImportData NewImportData = *OutData;
+	NewImportData.Points.Empty();
+
+	FbxNode* const RootNode = NodeArray[0];
+
+	for ( int32 NodeIndex = 0; NodeIndex < NodeArray.Num(); ++NodeIndex )
+	{
+		FbxNode* Node = NodeArray[NodeIndex];
+		FbxMesh* FbxMesh = Node->GetMesh();
+
+		FbxShape* FbxShape = nullptr;
+		if (FbxShapeArray)
+		{
+			FbxShape = (*FbxShapeArray)[NodeIndex];
+		}
+
+		FillSkeletalMeshImportPoints( &NewImportData, RootNode, Node, FbxShape );
+
+		if (OutData->bUseT0AsRefPose && OutData->bDiffPose && !ImportOptions->bImportScene)
+		{
+			// deform skin vertex to the frame 0 from bind pose
+			SkinControlPointsToPose(NewImportData, FbxMesh, FbxShape, true);
+		}
+	}
+
+	for ( int32 PointIdx = 0; PointIdx < OutData->Points.Num(); ++PointIdx )
+	{
+		int32 OriginalPointIdx = OutData->PointToRawMap[ PointIdx ];
+
+		if ( ( NewImportData.Points[ OriginalPointIdx ] - OutData->Points[ PointIdx ] ).SizeSquared() > FMath::Square( THRESH_VECTORS_ARE_NEAR ) ) // THRESH_POINTS_ARE_NEAR is too big, we might not be recomputing some normals that can have changed significantly
+		{
+			ModifiedPoints.Add( PointIdx );
+		}
+
+		OutData->Points[ PointIdx ] = NewImportData.Points[ OriginalPointIdx ];
 	}
 
 	return true;
@@ -1342,7 +1430,10 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 	}
 	
 	TArray<FName> LastImportedMaterialNames;
-	FillLastImportMaterialNames(LastImportedMaterialNames, ExistingSkelMesh, ImportSkeletalMeshArgs.OrderedMaterialNames);
+	if (!ImportOptions->bResetMaterialSlots)
+	{
+		FillLastImportMaterialNames(LastImportedMaterialNames, ExistingSkelMesh, ImportSkeletalMeshArgs.OrderedMaterialNames);
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// We must do a maximum of fail test before backing up the data since the backup is destructive on the existing skeletal mesh.
@@ -1354,7 +1445,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 		if (SkeletalMesh)
 		{
 			SkeletalMesh->ClearFlags(RF_Standalone);
-			SkeletalMesh->Rename(NULL, GetTransientPackage());
+			SkeletalMesh->Rename(NULL, GetTransientPackage(), REN_DontCreateRedirectors);
 		}
 		return nullptr;
 	}
@@ -1378,7 +1469,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 		if (SkeletalMesh)
 		{
 			SkeletalMesh->ClearFlags(RF_Standalone);
-			SkeletalMesh->Rename(NULL, GetTransientPackage());
+			SkeletalMesh->Rename(NULL, GetTransientPackage(), REN_DontCreateRedirectors);
 		}
 		return nullptr;
 	}
@@ -1428,10 +1519,10 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 	// process bone influences from import data
 	ProcessImportMeshInfluences(*SkelMeshImportDataPtr);
 
-	FSkeletalMeshResource* ImportedResource = SkeletalMesh->GetImportedResource();
+	FSkeletalMeshModel *ImportedResource = SkeletalMesh->GetImportedModel();
 	check(ImportedResource->LODModels.Num() == 0);
 	ImportedResource->LODModels.Empty();
-	new(ImportedResource->LODModels)FStaticLODModel();
+	new(ImportedResource->LODModels)FSkeletalMeshLODModel();
 
 	SkeletalMesh->LODInfo.Empty();
 	SkeletalMesh->LODInfo.AddZeroed();
@@ -1445,7 +1536,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 	// Store whether or not this mesh has vertex colors
 	SkeletalMesh->bHasVertexColors = SkelMeshImportDataPtr->bHasVertexColors;
 
-	FStaticLODModel& LODModel = ImportedResource->LODModels[0];
+	FSkeletalMeshLODModel& LODModel = ImportedResource->LODModels[0];
 	
 	// Pass the number of texture coordinate sets to the LODModel.  Ensure there is at least one UV coord
 	LODModel.NumTexCoords = FMath::Max<uint32>(1, SkelMeshImportDataPtr->NumTexCoords);
@@ -1464,7 +1555,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 		SkelMeshImportDataPtr->CopyLODImportData(LODPoints,LODWedges,LODFaces,LODInfluences,LODPointToRawMap);
 
 		IMeshUtilities::MeshBuildOptions BuildOptions;
-		BuildOptions.bKeepOverlappingVertices = ImportOptions->bKeepOverlappingVertices;
+		BuildOptions.OverlappingThresholds = ImportOptions->OverlappingThresholds;
 		BuildOptions.bComputeNormals = !ImportOptions->ShouldImportNormals() || !SkelMeshImportDataPtr->bHasNormals;
 		BuildOptions.bComputeTangents = !ImportOptions->ShouldImportTangents() || !SkelMeshImportDataPtr->bHasTangents;
 		BuildOptions.bUseMikkTSpace = (ImportOptions->NormalGenerationMethod == EFBXNormalGenerationMethod::MikkTSpace) && (!ImportOptions->ShouldImportNormals() || !ImportOptions->ShouldImportTangents());
@@ -1496,10 +1587,6 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 
 		// Presize the per-section shadow casting array with the number of sections in the imported LOD.
 		const int32 NumSections = LODModel.Sections.Num();
-		for ( int32 SectionIndex = 0 ; SectionIndex < NumSections ; ++SectionIndex )
-		{
-			SkeletalMesh->LODInfo[0].TriangleSortSettings.AddZeroed();
-		}
 
 		//Get the last fbx file data need for reimport
 		if (ImportSkeletalMeshArgs.ImportMaterialOriginalNameData)
@@ -1535,7 +1622,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 
 		if (ExistSkelMeshDataPtr)
 		{
-			RestoreExistingSkelMeshData(ExistSkelMeshDataPtr, SkeletalMesh, ImportSkeletalMeshArgs.LodIndex);
+			RestoreExistingSkelMeshData(ExistSkelMeshDataPtr, SkeletalMesh, ImportSkeletalMeshArgs.LodIndex, ImportOptions->bResetMaterialSlots, ImportOptions->bIsReimportPreview);
 		}
 
 		SkeletalMesh->CalculateInvRefMatrices();
@@ -1584,10 +1671,17 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 			bool bToastSaveMessage = false;
 			if(bFirstMesh || (LastMergeBonesChoice != EAppReturnType::NoAll && LastMergeBonesChoice != EAppReturnType::YesAll))
 			{
+				if (!ImportOptions->bIsReimportPreview)
+				{
 				LastMergeBonesChoice = FMessageDialog::Open(EAppMsgType::YesNoYesAllNoAllCancel,
 					LOCTEXT("SkeletonFailed_BoneMerge", "FAILED TO MERGE BONES:\n\n This could happen if significant hierarchical changes have been made\n"
 						"e.g. inserting a bone between nodes.\nWould you like to regenerate the Skeleton from this mesh?\n\n"
 						"***WARNING: THIS MAY INVALIDATE OR REQUIRE RECOMPRESSION OF ANIMATION DATA.***\n"));
+				}
+				else
+				{
+					LastMergeBonesChoice = EAppReturnType::NoAll;
+				}
 				bToastSaveMessage = true;
 			}
 			
@@ -1675,7 +1769,6 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 				else
 				{
 					FPhysAssetCreateParams NewBodyData;
-					NewBodyData.Initialize();
 					FText CreationErrorMessage;
 					bool bSuccess = FPhysicsAssetUtils::CreateFromSkeletalMesh(NewPhysicsAsset, SkeletalMesh, NewBodyData, CreationErrorMessage);
 					if (!bSuccess)
@@ -1697,7 +1790,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ImportSkeletalMesh(FImportSkeletalMeshArgs &
 	}
 
 	// Reapply any clothing assets we had before the import
-	FSkeletalMeshResource* NewMeshResource = SkeletalMesh->GetImportedResource();
+	FSkeletalMeshModel* NewMeshResource = SkeletalMesh->GetImportedModel();
 	if(NewMeshResource)
 	{
 		for(ClothingAssetUtils::FClothingAssetMeshBinding& Binding : ClothingBindings)
@@ -1796,12 +1889,12 @@ void UnFbx::FFbxImporter::UpdateSkeletalMeshImportData(USkeletalMesh *SkeletalMe
 			{
 				ImportData->ImportMaterialOriginalNameData.Add(Material.ImportedMaterialSlotName);
 			}
-			FSkeletalMeshResource* ImportedResource = SkeletalMesh->GetImportedResource();
+			FSkeletalMeshModel* ImportedResource = SkeletalMesh->GetImportedModel();
 			for (int32 LODResoureceIndex = 0; LODResoureceIndex < ImportedResource->LODModels.Num(); ++LODResoureceIndex)
 			{
 				ImportData->ImportMeshLodData.AddZeroed();
 				const FSkeletalMeshLODInfo& LODInfo = SkeletalMesh->LODInfo[LODResoureceIndex];
-				const FStaticLODModel& LODModel = ImportedResource->LODModels[LODResoureceIndex];
+				const FSkeletalMeshLODModel& LODModel = ImportedResource->LODModels[LODResoureceIndex];
 				int32 NumSections = LODModel.Sections.Num();
 				for (int32 SectionIndex = 0; SectionIndex < NumSections; ++SectionIndex)
 				{
@@ -1880,14 +1973,22 @@ void UnFbx::FFbxImporter::SetupAnimationDataFromMesh(USkeletalMesh* SkeletalMesh
 			TArray<FbxNode*> FBXMeshNodeArray;
 			FbxNode* SkeletonRoot = FindFBXMeshesByBone(SkeletalMesh->Skeleton->GetReferenceSkeleton().GetBoneName(0), true, FBXMeshNodeArray);
 
-			TArray<FbxNode*> SortedLinks;
-			RecursiveBuildSkeleton(SkeletonRoot, SortedLinks);
+			if (SkeletonRoot != nullptr)
+			{
+				TArray<FbxNode*> SortedLinks;
+				RecursiveBuildSkeleton(SkeletonRoot, SortedLinks);
 
-			// when importing animation from SkeletalMesh, add new Group Anim, a lot of times they're same name
-			UPackage * OuterPackage = InParent->GetOutermost();
-			FString AnimName = (ImportOptions->AnimationName!="")? ImportOptions->AnimationName : Name+TEXT("_Anim");
-			// give animouter as outer
-			ImportAnimations(Skeleton, OuterPackage, SortedLinks, AnimName, TemplateImportData, NodeArray);
+				// when importing animation from SkeletalMesh, add new Group Anim, a lot of times they're same name
+				UPackage * OuterPackage = InParent->GetOutermost();
+				FString AnimName = (ImportOptions->AnimationName != "") ? ImportOptions->AnimationName : Name + TEXT("_Anim");
+				// give animouter as outer
+				ImportAnimations(Skeleton, OuterPackage, SortedLinks, AnimName, TemplateImportData, NodeArray);
+			}
+			else
+			{
+				//Cannot import animations if the skeleton do not match
+				AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Error, FText::Format(LOCTEXT("FbxSkeletaLMeshimport_SkeletonNotMatching_no_anim_import", "Specified Skeleton '{0}' do not match fbx imported skeleton. Cannot import animations with this skeleton."), FText::FromName(Skeleton->GetFName()) )), FFbxErrors::Animation_InvalidData);
+			}
 		}
 	}
 }
@@ -1992,6 +2093,12 @@ USkeletalMesh* UnFbx::FFbxImporter::ReimportSkeletalMesh(USkeletalMesh* Mesh, UF
 
 	if (FbxNodes)
 	{
+		//Empty the morph target before re-importing, it will prevent to have old data that can point on random vertex
+		if (Mesh->MorphTargets.Num() > 0)
+		{
+			Mesh->UnregisterAllMorphTarget();
+		}
+
 		// set import options, how about others?
 		if (!ImportOptions->bImportScene)
 		{
@@ -2049,7 +2156,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ReimportSkeletalMesh(USkeletalMesh* Mesh, UF
 					SkelMeshNodeArray.Add(Node);
 				}
 			}
-
+			FSkeletalMeshImportData OutData;
 			if (LODIndex == 0)
 			{
 				ImportMeshLodData.AddZeroed();
@@ -2062,6 +2169,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ReimportSkeletalMesh(USkeletalMesh* Mesh, UF
 				ImportSkeletalMeshArgs.LodIndex = LODIndex;
 				ImportSkeletalMeshArgs.ImportMaterialOriginalNameData = &ImportMaterialOriginalNameData;
 				ImportSkeletalMeshArgs.ImportMeshSectionsData = &ImportMeshLodData[0];
+				ImportSkeletalMeshArgs.OutData = &OutData;
 
 				NewMesh = ImportSkeletalMesh( ImportSkeletalMeshArgs );
 			}
@@ -2069,7 +2177,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ReimportSkeletalMesh(USkeletalMesh* Mesh, UF
 			{
 				TArray<FName> ImportMaterialOriginalNameDataLOD;
 				ImportMeshLodData.AddZeroed();
-				USkeletalMesh* BaseSkeletalMesh = Cast<USkeletalMesh>(NewMesh);
+				USkeletalMesh* BaseSkeletalMesh = NewMesh;
 				
 				UnFbx::FFbxImporter::FImportSkeletalMeshArgs ImportSkeletalMeshArgs;
 				ImportSkeletalMeshArgs.InParent = NewMesh->GetOutermost();
@@ -2080,6 +2188,7 @@ USkeletalMesh* UnFbx::FFbxImporter::ReimportSkeletalMesh(USkeletalMesh* Mesh, UF
 				ImportSkeletalMeshArgs.LodIndex = LODIndex;
 				ImportSkeletalMeshArgs.ImportMaterialOriginalNameData = &ImportMaterialOriginalNameDataLOD;
 				ImportSkeletalMeshArgs.ImportMeshSectionsData = &ImportMeshLodData[LODIndex];
+				ImportSkeletalMeshArgs.OutData = &OutData;
 
 				UObject *LODObject = ImportSkeletalMesh( ImportSkeletalMeshArgs );
 				ImportSkeletalMeshLOD( Cast<USkeletalMesh>(LODObject), BaseSkeletalMesh, LODIndex, true, nullptr, TemplateImportData);
@@ -2101,30 +2210,30 @@ USkeletalMesh* UnFbx::FFbxImporter::ReimportSkeletalMesh(USkeletalMesh* Mesh, UF
 						ImportMaterialOriginalNameData.Add(MaterialImportNameLOD);
 					}
 				}
-
-				// Set LOD Model's DisplayFactor
-				// if this LOD is newly added, then set DisplayFactor
-				// Don't override DispalyFactor of existing LODs
-				if(LODIndex >= NumPrevLODs)
-				{
-					BaseSkeletalMesh->LODInfo[LODIndex].ScreenSize = 1.0f / (MaxLODLevel * LODIndex);
-				}
 			}
 
 			// import morph target
 			if ((ImportOptions->bImportSkeletalMeshLODs || LODIndex == 0) &&
 				NewMesh &&
-				NewMesh->GetImportedResource() &&
-				NewMesh->GetImportedResource()->LODModels.IsValidIndex(LODIndex))
+				ImportOptions->bImportMorph &&
+				NewMesh->GetImportedModel() &&
+				NewMesh->GetImportedModel()->LODModels.IsValidIndex(LODIndex))
 			{
 				// @fixme: @question : where do they import this morph? where to? What morph target sets?
-				ImportFbxMorphTarget(SkelMeshNodeArray, NewMesh, NewMesh->GetOutermost(), LODIndex);
+				ImportFbxMorphTarget(SkelMeshNodeArray, NewMesh, NewMesh->GetOutermost(), LODIndex, OutData);
 			}
 		}
 		if (NewMesh)
 		{
 			//Update the import data so we can re-import correctly
 			UpdateSkeletalMeshImportData(NewMesh, TemplateImportData, INDEX_NONE, &ImportMaterialOriginalNameData, &ImportMeshLodData);
+			//If we have import some morph target we have to rebuild the render resources since morph target are now using GPU
+			if (NewMesh->MorphTargets.Num() > 0)
+			{
+				NewMesh->ReleaseResources();
+				//Rebuild the resources with a post edit change since we have added some morph targets
+				NewMesh->PostEditChange();
+			}
 		}
 	}
 	else
@@ -2799,7 +2908,7 @@ bool UnFbx::FFbxImporter::FillSkelMeshImporterFromFbx( FSkeletalMeshImportData& 
 	//
 	int32 ControlPointsCount = Mesh->GetControlPointsCount();
 	int32 ExistPointNum = ImportData.Points.Num();
-	ImportData.Points.AddUninitialized(ControlPointsCount);
+	FillSkeletalMeshImportPoints( &ImportData, RootNode, Node, FbxShape );
 
 	// Construct the matrices for the conversion from right handed to left handed system
 	FbxAMatrix TotalMatrix;
@@ -2807,43 +2916,6 @@ bool UnFbx::FFbxImporter::FillSkelMeshImporterFromFbx( FSkeletalMeshImportData& 
 	TotalMatrix = ComputeSkeletalMeshTotalMatrix(Node, RootNode);
 	TotalMatrixForNormal = TotalMatrix.Inverse();
 	TotalMatrixForNormal = TotalMatrixForNormal.Transpose();
-
-	int32 ControlPointsIndex;
-	bool bInvalidPositionFound = false;
-	for( ControlPointsIndex = 0 ; ControlPointsIndex < ControlPointsCount ;ControlPointsIndex++ )
-	{
-		FbxVector4 Position;
-		if (FbxShape)
-		{
-			Position = FbxShape->GetControlPoints()[ControlPointsIndex];
-		}
-		else
-		{
-			Position = Mesh->GetControlPoints()[ControlPointsIndex];
-		}																	 
-
-		FbxVector4 FinalPosition;
-		FinalPosition = TotalMatrix.MultT(Position);
-		FVector ConvertedPosition = Converter.ConvertPos(FinalPosition);
-
-		// ensure user when this happens if attached to debugger
-		if (!ensure(ConvertedPosition.ContainsNaN() == false))
-		{
-			if (!bInvalidPositionFound)
-			{
-				bInvalidPositionFound = true;
-			}
-
-			ConvertedPosition = FVector::ZeroVector;
-		}
-
-		ImportData.Points[ControlPointsIndex+ExistPointNum] = ConvertedPosition;
-	}
-
-	if (bInvalidPositionFound)
-	{
-		AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Warning, FText::Format(LOCTEXT("FbxSkeletaLMeshimport_InvalidPosition", "Invalid position (NaN or Inf) found from source position for mesh '{0}'. Please verify if the source asset contains valid position. "), FText::FromString(Mesh->GetName()))), FFbxErrors::SkeletalMesh_InvalidPosition);
-	}
 
 	bool OddNegativeScale = IsOddNegativeScale(TotalMatrix);
 	
@@ -3170,10 +3242,10 @@ bool UnFbx::FFbxImporter::FillSkelMeshImporterFromFbx( FSkeletalMeshImportData& 
 
 void UnFbx::FFbxImporter::InsertNewLODToBaseSkeletalMesh(USkeletalMesh* InSkeletalMesh, USkeletalMesh* BaseSkeletalMesh, int32 DesiredLOD, UFbxSkeletalMeshImportData* TemplateImportData)
 {
-	FSkeletalMeshResource* ImportedResource = InSkeletalMesh->GetImportedResource();
-	FSkeletalMeshResource* DestImportedResource = BaseSkeletalMesh->GetImportedResource();
+	FSkeletalMeshModel* ImportedResource = InSkeletalMesh->GetImportedModel();
+	FSkeletalMeshModel* DestImportedResource = BaseSkeletalMesh->GetImportedModel();
 
-	FStaticLODModel& NewLODModel = ImportedResource->LODModels[0];
+	FSkeletalMeshLODModel& NewLODModel = ImportedResource->LODModels[0];
 
 
 	//Fill the data we need to recover the user section material slot assignation
@@ -3209,45 +3281,16 @@ void UnFbx::FFbxImporter::InsertNewLODToBaseSkeletalMesh(USkeletalMesh* InSkelet
 	// If we want to add this as a new LOD to this mesh - add to LODModels/LODInfo array.
 	if (DesiredLOD == DestImportedResource->LODModels.Num())
 	{
-		new(DestImportedResource->LODModels)FStaticLODModel();
+		new(DestImportedResource->LODModels)FSkeletalMeshLODModel();
 
 		// Add element to LODInfo array.
 		BaseSkeletalMesh->LODInfo.AddZeroed();
 		check(BaseSkeletalMesh->LODInfo.Num() == DestImportedResource->LODModels.Num());
 		BaseSkeletalMesh->LODInfo[DesiredLOD] = InSkeletalMesh->LODInfo[0];
-	}
-	else
-	{
-		// if it's overwriting existing LOD, need to update section information
-		// update to the right # of sections 
-		// Set up LODMaterialMap to number of materials in new mesh.
-		// ImportedResource->LOD 0 is the newly imported mesh
-		FSkeletalMeshLODInfo& LODInfo = BaseSkeletalMesh->LODInfo[DesiredLOD];
-		// if section # has been changed
-		if (LODInfo.TriangleSortSettings.Num() != NewLODModel.Sections.Num())
-		{
-			// Save old information so that I can copy it over
-			TArray<FTriangleSortSettings> OldTriangleSortSettings;
 
-			OldTriangleSortSettings = LODInfo.TriangleSortSettings;
-
-			// resize to the correct number
-			LODInfo.TriangleSortSettings.Empty(NewLODModel.Sections.Num());
-			// fill up data
-			for (int32 SectionIndex = 0; SectionIndex < NewLODModel.Sections.Num(); ++SectionIndex)
-			{
-				// if found from previous data, copy over
-				if (SectionIndex < OldTriangleSortSettings.Num())
-				{
-					LODInfo.TriangleSortSettings.Add(OldTriangleSortSettings[SectionIndex]);
-				}
-				else
-				{
-					// if not add default data
-					LODInfo.TriangleSortSettings.AddZeroed();
-				}
-			}
-		}
+		// Set LOD Model's DisplayFactor
+		// if this LOD is newly added, then set DisplayFactor
+		BaseSkeletalMesh->LODInfo[DesiredLOD].ScreenSize = 1.0f / (DestImportedResource->LODModels.Num() * DesiredLOD);
 	}
 
 	// Set up LODMaterialMap to number of materials in new mesh.
@@ -3296,16 +3339,8 @@ void UnFbx::FFbxImporter::InsertNewLODToBaseSkeletalMesh(USkeletalMesh* InSkelet
 	// Release all resources before replacing the model
 	BaseSkeletalMesh->PreEditChange(NULL);
 
-	// Index buffer will be destroyed when we copy the LOD model so we must copy the index buffer and reinitialize it after the copy
-	FMultiSizeIndexContainerData Data;
-	NewLODModel.MultiSizeIndexContainer.GetIndexBufferData(Data);
-	FMultiSizeIndexContainerData AdjacencyData;
-	NewLODModel.AdjacencyMultiSizeIndexContainer.GetIndexBufferData(AdjacencyData);
-
-	// Assign new FStaticLODModel to desired slot in selected skeletal mesh.
+	// Assign new FSkeletalMeshLODModel to desired slot in selected skeletal mesh.
 	DestImportedResource->LODModels[DesiredLOD] = NewLODModel;
-
-	DestImportedResource->LODModels[DesiredLOD].RebuildIndexBuffer(&Data, &AdjacencyData);
 
 	// If this LOD had been generated previously by automatic mesh reduction, clear that flag.
 	LODInfo.bHasBeenSimplified = false;
@@ -3356,10 +3391,10 @@ bool UnFbx::FFbxImporter::ImportSkeletalMeshLOD(USkeletalMesh* InSkeletalMesh, U
 	check(InSkeletalMesh);
 	check(BaseSkeletalMesh);
 
-	FSkeletalMeshResource* ImportedResource = InSkeletalMesh->GetImportedResource();
-	FSkeletalMeshResource* DestImportedResource = BaseSkeletalMesh->GetImportedResource();
+	FSkeletalMeshModel* ImportedResource = InSkeletalMesh->GetImportedModel();
+	FSkeletalMeshModel* DestImportedResource = BaseSkeletalMesh->GetImportedModel();
 
-	// Now we copy the base FStaticLODModel from the imported skeletal mesh as the new LOD in the selected mesh.
+	// Now we copy the base FSkeletalMeshLODModel from the imported skeletal mesh as the new LOD in the selected mesh.
 	check(ImportedResource->LODModels.Num() == 1);
 
 	// Names of root bones must match.
@@ -3406,7 +3441,7 @@ bool UnFbx::FFbxImporter::ImportSkeletalMeshLOD(USkeletalMesh* InSkeletalMesh, U
 		}
 	}
 
-	FStaticLODModel& NewLODModel = ImportedResource->LODModels[0];
+	FSkeletalMeshLODModel& NewLODModel = ImportedResource->LODModels[0];
 
 	// Enforce LODs having only single-influence vertices.
 	bool bCheckSingleInfluence;
@@ -3484,8 +3519,8 @@ bool UnFbx::FFbxImporter::ImportSkeletalMeshLOD(USkeletalMesh* InSkeletalMesh, U
 	}
 
 	// Also sort the RequiredBones array to be strictly increasing.
-	NewLODModel.RequiredBones.Sort();
-	InSkeletalMesh->RefSkeleton.EnsureParentExists(NewLODModel.ActiveBoneIndices);
+	NewLODModel.RequiredBones.Sort();	
+	BaseSkeletalMesh->RefSkeleton.EnsureParentsExistAndSort(NewLODModel.ActiveBoneIndices);
 
 	// To be extra-nice, we apply the difference between the root transform of the meshes to the verts.
 	FMatrix LODToBaseTransform = InSkeletalMesh->GetRefPoseMatrix(0).InverseFast() * BaseSkeletalMesh->GetRefPoseMatrix(0);
@@ -3534,38 +3569,220 @@ bool UnFbx::FFbxImporter::ImportSkeletalMeshLOD(USkeletalMesh* InSkeletalMesh, U
 	return true;
 }
 
+struct FMeshDataBundle
+{
+	TArray< FVector > Vertices;
+	TArray< uint32 > Indices;
+	TArray< FVector2D > UVs;
+	TArray< uint32 > SmoothingGroups;
+	TArray<VTriangle> Faces;
+};
+
+static void ConvertImportDataToMeshData(const FSkeletalMeshImportData& ImportData, FMeshDataBundle& MeshDataBundle)
+{
+	for ( const VTriangle& Face : ImportData.Faces )
+	{
+		VTriangle FaceTriangle;
+		FaceTriangle = Face;
+		for ( int32 i = 0; i < 3; ++i )
+		{
+			const VVertex& Wedge = ImportData.Wedges[ Face.WedgeIndex[i] ];
+			int32 FaceWedgeIndex = MeshDataBundle.Indices.Add(Wedge.VertexIndex);
+			MeshDataBundle.UVs.Add(Wedge.UVs[0]);
+			FaceTriangle.WedgeIndex[i] = FaceWedgeIndex;
+		}
+		MeshDataBundle.Faces.Add(FaceTriangle);
+		MeshDataBundle.SmoothingGroups.Add(Face.SmoothingGroups);
+	}
+
+	MeshDataBundle.Vertices = ImportData.Points;
+}
+
 /**
- * A class encapsulating morph target processing that occurs during import on a separate thread
- */
+* A class encapsulating morph target processing that occurs during import on a separate thread
+*/
 class FAsyncImportMorphTargetWork : public FNonAbandonableTask
 {
 public:
-	FAsyncImportMorphTargetWork(FStaticLODModel* InLODModel, const FReferenceSkeleton& InRefSkeleton, FSkeletalMeshImportData& InImportData, bool bInKeepOverlappingVertices)
+	FAsyncImportMorphTargetWork(FSkeletalMeshLODModel* InLODModel, const FReferenceSkeleton& InRefSkeleton, const FSkeletalMeshImportData& InBaseImportData, TArray<FVector>&& InMorphLODPoints,
+		FBXImportOptions* InImportOptions, TArray< FMorphTargetDelta >& InMorphDeltas, TArray<uint32>& InBaseIndexData, TArray< uint32 >& InBaseWedgePointIndices,
+		TMap<uint32,uint32>& InWedgePointToVertexIndexMap, const TMultiMap<int32, int32>& InOverlappingCorners,
+		const TSet<uint32> InModifiedPoints, const TMultiMap< int32, int32 >& InWedgeToFaces, const FMeshDataBundle& InMeshDataBundle, const TArray<FVector>& InTangentZ)
 		: LODModel(InLODModel)
 		, RefSkeleton(InRefSkeleton)
-		, ImportData(InImportData)
-		, bKeepOverlappingVertices(bInKeepOverlappingVertices)
+		, BaseImportData(InBaseImportData)
+		, MorphLODPoints(InMorphLODPoints)
+		, ImportOptions(InImportOptions)
+		, MorphTargetDeltas(InMorphDeltas)
+		, BaseIndexData (InBaseIndexData)
+		, BaseWedgePointIndices(InBaseWedgePointIndices)
+		, WedgePointToVertexIndexMap(InWedgePointToVertexIndexMap)
+		, OverlappingCorners(InOverlappingCorners)
+		, ModifiedPoints(InModifiedPoints)
+		, WedgeToFaces(InWedgeToFaces)
+		, MeshDataBundle(InMeshDataBundle)
+		, BaseTangentZ(InTangentZ)
+		, TangentZ(InTangentZ)
 	{
 		MeshUtilities = &FModuleManager::Get().LoadModuleChecked<IMeshUtilities>("MeshUtilities");
 	}
 
+	void PrepareTangents()
+	{
+		TArray<bool> WasProcessed;
+		WasProcessed.Empty(MeshDataBundle.Indices.Num());
+		WasProcessed.AddZeroed(MeshDataBundle.Indices.Num());
+
+		TArray< int32 > OverlappingWedges;
+		TArray< int32 > WedgeFaces;
+
+		// For each ModifiedPoints, reset the tangents for the affected wedges
+		for (int32 WedgeIdx = 0; WedgeIdx < MeshDataBundle.Indices.Num(); ++WedgeIdx)
+		{
+			int32 PointIdx = MeshDataBundle.Indices[WedgeIdx];
+
+			if ( ModifiedPoints.Find( PointIdx ) != nullptr )
+			{
+				TangentZ[ WedgeIdx ] = FVector::ZeroVector;
+
+				OverlappingWedges.Reset();
+				OverlappingCorners.MultiFind( WedgeIdx, OverlappingWedges );
+				OverlappingWedges.Add( WedgeIdx );
+
+				for ( const int32 OverlappingWedgeIndex : OverlappingWedges )
+				{
+					if ( WasProcessed[ OverlappingWedgeIndex ] )
+					{
+						continue;
+					}
+
+					WasProcessed[ OverlappingWedgeIndex ] = true;
+
+					WedgeFaces.Reset();
+					WedgeToFaces.MultiFind( OverlappingWedgeIndex, WedgeFaces );
+
+					for ( const int32 FaceIndex : WedgeFaces )
+					{
+						for ( int32 CornerIndex = 0; CornerIndex < 3; ++CornerIndex )
+						{
+							int32 WedgeIndex = MeshDataBundle.Faces[FaceIndex].WedgeIndex[CornerIndex];
+
+							TangentZ[ WedgeIndex ] = FVector::ZeroVector;
+
+							TArray< int32 > OtherOverlappingWedges;
+							OverlappingCorners.MultiFind( WedgeIndex, OtherOverlappingWedges );
+							OtherOverlappingWedges.Add( WedgeIndex );
+
+							for ( const int32 OtherDupVert : OtherOverlappingWedges )
+							{
+								TArray< int32 > OtherWedgeFaces;
+								WedgeToFaces.MultiFind( OtherDupVert, OtherWedgeFaces );
+
+								for ( const int32 OtherFaceIndex : OtherWedgeFaces )
+								{
+									for ( int32 OtherCornerIndex = 0; OtherCornerIndex < 3; ++OtherCornerIndex )
+									{
+										int32 OtherWedgeIndex = MeshDataBundle.Faces[OtherFaceIndex].WedgeIndex[OtherCornerIndex];
+
+										TangentZ[ OtherWedgeIndex ] = FVector::ZeroVector;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	void ComputeTangents()
+	{
+		bool bComputeNormals = !ImportOptions->ShouldImportNormals() || !BaseImportData.bHasNormals;
+		bool bComputeTangents = !ImportOptions->ShouldImportTangents() || !BaseImportData.bHasTangents;
+		bool bUseMikkTSpace = (ImportOptions->NormalGenerationMethod == EFBXNormalGenerationMethod::MikkTSpace) && (!ImportOptions->ShouldImportNormals() || !ImportOptions->ShouldImportTangents());
+
+		check(MorphLODPoints.Num() == MeshDataBundle.Vertices.Num());
+
+		ETangentOptions::Type TangentOptions = ETangentOptions::BlendOverlappingNormals;
+
+		// MikkTSpace should be use only when the user want to recompute the normals or tangents otherwise should always fallback on builtin
+		if ( bUseMikkTSpace && ( bComputeNormals || bComputeTangents ) )
+		{
+			TangentOptions = (ETangentOptions::Type)(TangentOptions | ETangentOptions::UseMikkTSpace);
+		}
+
+		MeshUtilities->CalculateNormals( MorphLODPoints, MeshDataBundle.Indices, MeshDataBundle.UVs, MeshDataBundle.SmoothingGroups, TangentOptions, TangentZ );
+	}
+
+	void ComputeMorphDeltas()
+	{
+		TArray<bool> WasProcessed;
+		WasProcessed.Empty(LODModel->NumVertices );
+		WasProcessed.AddZeroed(LODModel->NumVertices);
+
+		for ( int32 Idx = 0; Idx < BaseIndexData.Num(); ++Idx )
+		{
+			uint32 BaseVertIdx = BaseIndexData[Idx];
+			// check for duplicate processing
+			if( !WasProcessed[BaseVertIdx] )
+			{
+				// mark this base vertex as already processed
+				WasProcessed[BaseVertIdx] = true;
+
+				// clothing can add extra verts, and we won't have source point, so we ignore those
+				if ( BaseWedgePointIndices.IsValidIndex(BaseVertIdx) )
+				{
+					// get the base mesh's original wedge point index
+					uint32 BasePointIdx = BaseWedgePointIndices[ BaseVertIdx ];
+					if (MeshDataBundle.Vertices.IsValidIndex(BasePointIdx) && MorphLODPoints.IsValidIndex(BasePointIdx))
+					{
+						FVector BasePosition = MeshDataBundle.Vertices[BasePointIdx];
+						FVector TargetPosition = MorphLODPoints[BasePointIdx];
+
+					FVector PositionDelta = TargetPosition - BasePosition;
+
+						uint32* VertexIdx = WedgePointToVertexIndexMap.Find(BasePointIdx);
+
+					FVector NormalDeltaZ = FVector::ZeroVector;
+
+						if (VertexIdx != nullptr)
+					{
+							FVector BaseNormal = BaseTangentZ[*VertexIdx];
+							FVector TargetNormal = TangentZ[*VertexIdx];
+
+						NormalDeltaZ = TargetNormal - BaseNormal;
+					}
+
+					// check if position actually changed much
+						if (PositionDelta.SizeSquared() > FMath::Square(THRESH_POINTS_ARE_NEAR) ||
+						// since we can't get imported morphtarget normal from FBX
+						// we can't compare normal unless it's calculated
+						// this is special flag to ignore normal diff
+							((ImportOptions->ShouldImportNormals() == false) && NormalDeltaZ.SizeSquared() > 0.01f))
+					{
+						// create a new entry
+						FMorphTargetDelta NewVertex;
+						// position delta
+						NewVertex.PositionDelta = PositionDelta;
+						// normal delta
+						NewVertex.TangentZDelta = NormalDeltaZ;
+						// index of base mesh vert this entry is to modify
+						NewVertex.SourceIdx = BaseVertIdx;
+
+						// add it to the list of changed verts
+							MorphTargetDeltas.Add(NewVertex);
+						}
+					}
+				}
+			}
+		}
+	}
+
 	void DoWork()
 	{
-		TArray<FVector> LODPoints;
-		TArray<FMeshWedge> LODWedges;
-		TArray<FMeshFace> LODFaces;
-		TArray<FVertInfluence> LODInfluences;
-		TArray<int32> LODPointToRawMap;
-		ImportData.CopyLODImportData(LODPoints,LODWedges,LODFaces,LODInfluences,LODPointToRawMap);
-
-		check(LODModel);
-
-		IMeshUtilities::MeshBuildOptions BuildOptions;
-		BuildOptions.bKeepOverlappingVertices = bKeepOverlappingVertices;
-
-		// @why we have to empty here? @todo: possibly we save this and reuse?
-		ImportData.Empty();
-		MeshUtilities->BuildSkeletalMesh( *LODModel, RefSkeleton, LODInfluences, LODWedges, LODFaces, LODPoints, LODPointToRawMap, BuildOptions);
+		PrepareTangents();
+		ComputeTangents();
+		ComputeMorphDeltas();
 	}
 
 	FORCEINLINE TStatId GetStatId() const
@@ -3574,21 +3791,36 @@ public:
 	}
 
 private:
-	FStaticLODModel* LODModel;
+	FSkeletalMeshLODModel* LODModel;
 	// @todo not thread safe
 	const FReferenceSkeleton& RefSkeleton;
-	FSkeletalMeshImportData ImportData;
+	const FSkeletalMeshImportData& BaseImportData;
+	const TArray<FVector> MorphLODPoints;
+
 	IMeshUtilities* MeshUtilities;
-	bool bKeepOverlappingVertices;
+	FBXImportOptions* ImportOptions;
+
+	TArray< FMorphTargetDelta >& MorphTargetDeltas;
+	TArray< uint32 >& BaseIndexData;
+	TArray< uint32 >& BaseWedgePointIndices;
+	TMap<uint32,uint32>& WedgePointToVertexIndexMap;
+
+	const TMultiMap<int32, int32>& OverlappingCorners;
+	const TSet<uint32> ModifiedPoints;
+	const TMultiMap< int32, int32 >& WedgeToFaces;
+	const FMeshDataBundle& MeshDataBundle;
+
+	const TArray<FVector>& BaseTangentZ;
+	TArray<FVector> TangentZ;
 };
 
-void UnFbx::FFbxImporter::ImportMorphTargetsInternal( TArray<FbxNode*>& SkelMeshNodeArray, USkeletalMesh* BaseSkelMesh, UObject* InParent, int32 LODIndex )
+void UnFbx::FFbxImporter::ImportMorphTargetsInternal( TArray<FbxNode*>& SkelMeshNodeArray, USkeletalMesh* BaseSkelMesh, UObject* InParent, int32 LODIndex, const FSkeletalMeshImportData &BaseImportData)
 {
 	FbxString ShapeNodeName;
 	TMap<FString, TArray<FbxShape*>> ShapeNameToShapeArray;
 
 	// Temp arrays to keep track of data being used by threads
-	TArray<FStaticLODModel*> LODModels;
+	TArray< TArray< FMorphTargetDelta >* > Results;
 	TArray<UMorphTarget*> MorphTargets;
 
 	// Array of pending tasks that are not complete
@@ -3636,7 +3868,7 @@ void UnFbx::FFbxImporter::ImportMorphTargetsInternal( TArray<FbxNode*>& SkelMesh
 						for(int32 ShapeIndex = 0; ShapeIndex<CurrentChannelShapeCount; ++ShapeIndex)
 						{
 							FbxShape* Shape = Channel->GetTargetShape(ShapeIndex);
-			
+
 							FString ShapeName;
 							if( CurrentChannelShapeCount > 1 )
 							{
@@ -3669,32 +3901,105 @@ void UnFbx::FFbxImporter::ImportMorphTargetsInternal( TArray<FbxNode*>& SkelMesh
 		}
 	} // for NodeIndex
 
+	// Prepare base data
+	FSkeletalMeshLODModel& BaseLODModel = BaseSkelMesh->GetImportedModel()->LODModels[ LODIndex ];
+
+	// Calculate overlapping corners and tangents
+	bool bComputeNormals = !ImportOptions->ShouldImportNormals() || !BaseImportData.bHasNormals;
+	bool bComputeTangents = !ImportOptions->ShouldImportTangents() || !BaseImportData.bHasTangents;
+	bool bUseMikkTSpace = (ImportOptions->NormalGenerationMethod == EFBXNormalGenerationMethod::MikkTSpace) && (!ImportOptions->ShouldImportNormals() || !ImportOptions->ShouldImportTangents());
+
+	FMeshDataBundle MeshDataBundle;
+	ConvertImportDataToMeshData( BaseImportData, MeshDataBundle);
+
+	IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>("MeshUtilities");
+
+	ETangentOptions::Type TangentOptions = ETangentOptions::BlendOverlappingNormals;
+
+	// MikkTSpace should be use only when the user want to recompute the normals or tangents otherwise should always fallback on builtin
+	if ( bUseMikkTSpace && ( bComputeNormals || bComputeTangents ) )
+	{
+		TangentOptions = (ETangentOptions::Type)(TangentOptions | ETangentOptions::UseMikkTSpace);
+	}
+
+	TMultiMap<int32, int32> OverlappingVertices;
+	MeshUtilities.CalculateOverlappingCorners(MeshDataBundle.Vertices, MeshDataBundle.Indices, false, OverlappingVertices );
+
+	TArray<FVector> TangentZ;
+	MeshUtilities.CalculateNormals(MeshDataBundle.Vertices, MeshDataBundle.Indices, MeshDataBundle.UVs, MeshDataBundle.SmoothingGroups, TangentOptions, TangentZ );
+
+	TArray< uint32 > BaseWedgePointIndices;
+	if (BaseLODModel.RawPointIndices.GetBulkDataSize())
+	{
+		BaseWedgePointIndices.Empty(BaseLODModel.RawPointIndices.GetElementCount());
+		BaseWedgePointIndices.AddUninitialized(BaseLODModel.RawPointIndices.GetElementCount());
+		FMemory::Memcpy(BaseWedgePointIndices.GetData(), BaseLODModel.RawPointIndices.Lock(LOCK_READ_ONLY), BaseLODModel.RawPointIndices.GetBulkDataSize());
+		BaseLODModel.RawPointIndices.Unlock();
+	}
+
+	TArray<uint32> BaseIndexData = BaseLODModel.IndexBuffer;
+
+	TMap<uint32,uint32> WedgePointToVertexIndexMap;
+	// Build a mapping of wedge point indices to vertex indices for fast lookup later.
+	for( int32 Idx = 0; Idx < MeshDataBundle.Indices.Num(); ++Idx )
+	{
+		WedgePointToVertexIndexMap.Add(MeshDataBundle.Indices[Idx], Idx);
+	}
+
+	// Create a map from wedge indices to faces
+	TMultiMap< int32, int32 > WedgeToFaces;
+	for (int32 FaceIndex = 0; FaceIndex < MeshDataBundle.Faces.Num(); FaceIndex++)
+	{
+		const VTriangle& Face = MeshDataBundle.Faces[FaceIndex];
+		for (int32 CornerIndex = 0; CornerIndex < 3; ++CornerIndex)
+		{
+			WedgeToFaces.AddUnique(Face.WedgeIndex[CornerIndex], FaceIndex);
+		}
+	}
+
+	int32 NumCompleted = 0;
+	int32 NumTasks = 0;
+	int32 MaxShapeInProcess = FPlatformMisc::NumberOfCoresIncludingHyperthreads();
+
 	int32 ShapeIndex = 0;
 	int32 TotalShapeCount = ShapeNameToShapeArray.Num();
 	// iterate through shapename, and create morphtarget
 	for (auto Iter = ShapeNameToShapeArray.CreateIterator(); Iter; ++Iter)
 	{
+		int32 CurrentNumTasks = PendingWork.Num();
+		while (CurrentNumTasks >= MaxShapeInProcess)
+		{
+			//Wait until the first slot is available
+			PendingWork[0].EnsureCompletion();
+			for (int32 TaskIndex = PendingWork.Num()-1; TaskIndex >= 0; --TaskIndex)
+			{
+				if (PendingWork[TaskIndex].IsDone())
+				{
+					PendingWork.RemoveAt(TaskIndex);
+					++NumCompleted;
+					FFormatNamedArguments Args;
+					Args.Add(TEXT("NumCompleted"), NumCompleted);
+					Args.Add(TEXT("NumTasks"), TotalShapeCount);
+					GWarn->StatusUpdate(NumCompleted, TotalShapeCount, FText::Format(LOCTEXT("ImportingMorphTargetStatus", "Importing Morph Target: {NumCompleted} of {NumTasks}"), Args));
+				}
+			}
+			CurrentNumTasks = PendingWork.Num();
+		}
 		FString ShapeName = Iter.Key();
-		TArray<FbxShape*> & ShapeArray = Iter.Value();
+		TArray< FbxShape* >& ShapeArray = Iter.Value();
+		FSkeletalMeshImportData ShapeImportData = BaseImportData;
 
-		FFormatNamedArguments Args;
-		Args.Add(TEXT("ShapeName"), FText::FromString(ShapeName));
-		Args.Add(TEXT("CurrentShapeIndex"), ShapeIndex + 1);
-		Args.Add(TEXT("TotalShapes"), TotalShapeCount);
-		const FText StatusUpate = FText::Format(NSLOCTEXT("FbxImporter", "GeneratingMorphTargetMeshStatus", "Generating morph target mesh {ShapeName} ({CurrentShapeIndex} of {TotalShapes})"), Args);
-
-		GWarn->StatusUpdate(ShapeIndex + 1, TotalShapeCount, StatusUpate);
-
-		FSkeletalMeshImportData ImportData;
+		TSet<uint32> ModifiedPoints;
+		GatherPointsForMorphTarget( &ShapeImportData, SkelMeshNodeArray, &ShapeArray, ModifiedPoints );
 
 		// See if this morph target already exists.
-		UMorphTarget * Result = FindObject<UMorphTarget>(BaseSkelMesh, *ShapeName);
+		UMorphTarget * MorphTarget = FindObject<UMorphTarget>(BaseSkelMesh, *ShapeName);
 		// we only create new one for LOD0, otherwise don't create new one
-		if (!Result)
+		if (!MorphTarget)
 		{
 			if (LODIndex == 0)
 			{
-				Result = NewObject<UMorphTarget>(BaseSkelMesh, FName(*ShapeName));
+				MorphTarget = NewObject<UMorphTarget>(BaseSkelMesh, FName(*ShapeName));
 			}
 			else
 			{
@@ -3704,49 +4009,36 @@ void UnFbx::FFbxImporter::ImportMorphTargetsInternal( TArray<FbxNode*>& SkelMesh
 			}
 		}
 
-		if (Result)
+		if (MorphTarget)
 		{
-			TArray<FName> LastImportedMaterialNames;
-			FillLastImportMaterialNames(LastImportedMaterialNames, BaseSkelMesh, nullptr);
-			// now we get a shape for whole mesh, import to unreal as a morph target
-			// @todo AssetImportData do we need import data for this temp mesh?
-			UFbxSkeletalMeshImportData* TmpMeshImportData = NULL;
-			FillSkeletalMeshImportData(SkelMeshNodeArray, TmpMeshImportData, &ShapeArray, &ImportData, LastImportedMaterialNames);
-			FStaticLODModel* NewLODModel = new FStaticLODModel;
-			LODModels.Add(NewLODModel);
-			MorphTargets.Add(Result);
+			MorphTargets.Add( MorphTarget );
+			int32 NewMorphDeltasIdx = Results.Add( new TArray< FMorphTargetDelta >() );
 
-			// Process the skeletal mesh on a separate thread
-			FAsyncTask<FAsyncImportMorphTargetWork>* NewWork = new (PendingWork)FAsyncTask<FAsyncImportMorphTargetWork>(NewLODModel, BaseSkelMesh->RefSkeleton, ImportData, ImportOptions->bKeepOverlappingVertices);
-			NewWork->StartBackgroundTask();
-			++ShapeIndex;
+			TArray< FMorphTargetDelta >* Deltas = Results[ NewMorphDeltasIdx ];
+
+			FAsyncTask<FAsyncImportMorphTargetWork>* NewWork = new (PendingWork)FAsyncTask<FAsyncImportMorphTargetWork>( &BaseLODModel, BaseSkelMesh->RefSkeleton, BaseImportData,
+				MoveTemp( ShapeImportData.Points ), ImportOptions, *Deltas, BaseIndexData, BaseWedgePointIndices, WedgePointToVertexIndexMap, OverlappingVertices, MoveTemp( ModifiedPoints ), WedgeToFaces, MeshDataBundle, TangentZ);
+
+			NewWork->StartBackgroundTask(GLargeThreadPool);
+			CurrentNumTasks++;
+			NumTasks++;
 		}
+
+		++ShapeIndex;
 	}
 
 	// Wait for all importing tasks to complete
-	int32 NumCompleted = 0;
-	int32 NumTasks = PendingWork.Num();
-	do
+	for ( int32 TaskIndex = 0; TaskIndex < PendingWork.Num(); ++TaskIndex )
 	{
-		// Check for completed async compression tasks.
-		int32 NumNowCompleted = 0;
-		for ( int32 TaskIndex=0; TaskIndex < PendingWork.Num(); ++TaskIndex )
-		{
-			if ( PendingWork[TaskIndex].IsDone() )
-			{
-				NumNowCompleted++;
-			}
-		}
-		if (NumNowCompleted > NumCompleted)
-		{
-			NumCompleted = NumNowCompleted;
-			FFormatNamedArguments Args;
-			Args.Add( TEXT("NumCompleted"), NumCompleted );
-			Args.Add( TEXT("NumTasks"), NumTasks );
-			GWarn->StatusUpdate( NumCompleted, NumTasks, FText::Format( LOCTEXT("ImportingMorphTargetStatus", "Importing Morph Target: {NumCompleted} of {NumTasks}"), Args ) );
-		}
-		FPlatformProcess::Sleep(0.1f);
-	} while ( NumCompleted < NumTasks );
+		PendingWork[TaskIndex].EnsureCompletion();
+
+		++NumCompleted;
+
+		FFormatNamedArguments Args;
+		Args.Add( TEXT("NumCompleted"), NumCompleted );
+		Args.Add( TEXT("NumTasks"), TotalShapeCount );
+		GWarn->StatusUpdate( NumCompleted, NumTasks, FText::Format( LOCTEXT("ImportingMorphTargetStatus", "Importing Morph Target: {NumCompleted} of {NumTasks}"), Args ) );
+	}
 
 	// Create morph streams for each morph target we are importing.
 	// This has to happen on a single thread since the skeletal meshes' bulk data is locked and cant be accessed by multiple threads simultaneously
@@ -3758,21 +4050,23 @@ void UnFbx::FFbxImporter::ImportMorphTargetsInternal( TArray<FbxNode*>& SkelMesh
 		GWarn->StatusUpdate(Index + 1, MorphTargets.Num(), FText::Format(LOCTEXT("BuildingMorphTargetRenderDataStatus", "Building Morph Target Render Data: {NumCompleted} of {NumTasks}"), Args));
 
 		UMorphTarget* MorphTarget = MorphTargets[Index];
+		MorphTarget->PopulateDeltas(*Results[Index], LODIndex, BaseLODModel.Sections, ImportOptions->ShouldImportNormals() == false);
 
-		FMorphMeshRawSource TargetMeshRawData(*LODModels[Index]);
-		FMorphMeshRawSource BaseMeshRawData( BaseSkelMesh, LODIndex );
+		// register does mark package as dirty
+		if (MorphTarget->HasValidData())
+		{
+			BaseSkelMesh->RegisterMorphTarget(MorphTarget);
+		}
 
-		MorphTarget->PostProcess( BaseSkelMesh, BaseMeshRawData, TargetMeshRawData, LODIndex, ImportOptions->ShouldImportNormals() == false );
-
-		delete LODModels[Index];
-		LODModels[Index] = nullptr;
+		delete Results[Index];
+		Results[Index] = nullptr;
 	}
 
 	GWarn->EndSlowTask();
-}	
+}
 
 // Import Morph target
-void UnFbx::FFbxImporter::ImportFbxMorphTarget(TArray<FbxNode*> &SkelMeshNodeArray, USkeletalMesh* BaseSkelMesh, UObject* InParent, int32 LODIndex)
+void UnFbx::FFbxImporter::ImportFbxMorphTarget(TArray<FbxNode*> &SkelMeshNodeArray, USkeletalMesh* BaseSkelMesh, UObject* InParent, int32 LODIndex, const FSkeletalMeshImportData &BaseSkeletalMeshImportData)
 {
 	bool bHasMorph = false;
 	int32 NodeIndex;
@@ -3792,7 +4086,7 @@ void UnFbx::FFbxImporter::ImportFbxMorphTarget(TArray<FbxNode*> &SkelMeshNodeArr
 	
 	if (bHasMorph)
 	{
-		ImportMorphTargetsInternal( SkelMeshNodeArray, BaseSkelMesh, InParent, LODIndex );
+		ImportMorphTargetsInternal( SkelMeshNodeArray, BaseSkelMesh, InParent, LODIndex, BaseSkeletalMeshImportData );
 	}
 }
 

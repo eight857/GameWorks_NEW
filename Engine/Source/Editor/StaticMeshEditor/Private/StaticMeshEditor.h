@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,6 +9,16 @@
 #include "EditorUndoClient.h"
 #include "IStaticMeshEditor.h"
 #include "ISocketManager.h"
+#include "TickableEditorObject.h"
+
+// Set USE_ASYNC_DECOMP to zero to go back to the fully synchronous; blocking version of V-HACD
+#ifndef USE_ASYNC_DECOMP
+#define USE_ASYNC_DECOMP 1
+#endif
+
+#if USE_ASYNC_DECOMP
+class IDecomposeMeshToHullsAsync;
+#endif
 
 class FStaticMeshDetails;
 class IDetailsView;
@@ -24,14 +34,14 @@ struct FPropertyChangedEvent;
 /**
  * StaticMesh Editor class
  */
-class FStaticMeshEditor : public IStaticMeshEditor, public FGCObject, public FEditorUndoClient, public FNotifyHook
+class FStaticMeshEditor : public IStaticMeshEditor, public FGCObject, public FEditorUndoClient, public FNotifyHook, public FTickableEditorObject
 {
 public:
 	FStaticMeshEditor()
-		: StaticMesh( NULL )
-		, NumLODLevels(0)
+		: StaticMesh(NULL)
 		, MinPrimSize(0.5f)
 		, OverlapNudge(10.0f)
+		, CurrentViewedUVChannel(0)
 	{}
 
 	~FStaticMeshEditor();
@@ -46,13 +56,13 @@ public:
 	 * @param	InitToolkitHost			When Mode is WorldCentric, this is the level editor instance to spawn this editor within
 	 * @param	ObjectToEdit			The static mesh to edit
 	 */
-	void InitStaticMeshEditor( const EToolkitMode::Type Mode, const TSharedPtr< class IToolkitHost >& InitToolkitHost, UStaticMesh* ObjectToEdit );
+	void InitStaticMeshEditor(const EToolkitMode::Type Mode, const TSharedPtr< class IToolkitHost >& InitToolkitHost, UStaticMesh* ObjectToEdit);
 
 	/** Creates details for a static mesh */
 	TSharedRef<class IDetailCustomization> MakeStaticMeshDetails();
 
 	//~ Begin FGCObject Interface
-	virtual void AddReferencedObjects( FReferenceCollector& Collector ) override;
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
 	//~ End FGCObject Interface
 
 	/** IToolkit interface */
@@ -73,7 +83,7 @@ public:
 	virtual UStaticMesh* GetStaticMesh() override { return StaticMesh; }
 	virtual UStaticMeshComponent* GetStaticMeshComponent() const override;
 
-	virtual UStaticMeshSocket* GetSelectedSocket() const override ;
+	virtual UStaticMeshSocket* GetSelectedSocket() const override;
 	virtual void SetSelectedSocket(UStaticMeshSocket* InSelectedSocket) override;
 	virtual void DuplicateSelectedSocket() override;
 	virtual void RequestRenameSelectedSocket() override;
@@ -95,9 +105,9 @@ public:
 	void SetPrimTransform(const FPrimData& InPrimData, const FTransform& InPrimTransform) const override;
 	bool OverlapsExistingPrim(const FPrimData& InPrimData) const;
 
-	virtual int32 GetNumTriangles( int32 LODLevel = 0 ) const override;
-	virtual int32 GetNumVertices( int32 LODLevel = 0 ) const override;
-	virtual int32 GetNumUVChannels( int32 LODLevel = 0 ) const override;
+	virtual int32 GetNumTriangles(int32 LODLevel = 0) const override;
+	virtual int32 GetNumVertices(int32 LODLevel = 0) const override;
+	virtual int32 GetNumUVChannels(int32 LODLevel = 0) const override;
 
 	virtual int32 GetCurrentUVChannel() override;
 	virtual int32 GetCurrentLODLevel() override;
@@ -105,29 +115,76 @@ public:
 
 	virtual void RefreshTool() override;
 	virtual void RefreshViewport() override;
-	virtual void DoDecomp(float InAccuracy, int32 InMaxHullVerts) override;
+	virtual void DoDecomp(uint32 InHullCount, int32 InMaxHullVerts, uint32 InHullPrecision) override;
 
 	virtual TSet< int32 >& GetSelectedEdges() override;
 	// End of IStaticMeshEditor
-	
+
 	/** Extends the toolbar menu to include static mesh editor options */
 	void ExtendMenu();
 
 	/** Registers a delegate to be called after an Undo operation */
-	virtual void RegisterOnPostUndo( const FOnPostUndo& Delegate ) override;
+	virtual void RegisterOnPostUndo(const FOnPostUndo& Delegate) override;
 
 	/** Unregisters a delegate to be called after an Undo operation */
-	virtual void UnregisterOnPostUndo( SWidget* Widget ) override;
-	
+	virtual void UnregisterOnPostUndo(SWidget* Widget) override;
+
 	/** From FNotifyHook */
-	virtual void NotifyPostChange( const FPropertyChangedEvent& PropertyChangedEvent, UProperty* PropertyThatChanged ) override;
-	
-	/** Get the names of the LOD for menus */
-	TArray< TSharedPtr< FString > >& GetLODLevels() { return LODLevels; }
-	const TArray< TSharedPtr< FString > >& GetLODLevels() const { return LODLevels; }
+	virtual void NotifyPostChange(const FPropertyChangedEvent& PropertyChangedEvent, UProperty* PropertyThatChanged) override;
 
 	/** Get the active view mode */
 	virtual EViewModeIndex GetViewMode() const override;
+
+	virtual void RegisterOnSelectedLODChanged(const FOnSelectedLODChanged &Delegate, bool UnregisterOnRefresh) override
+	{
+		if (!UnregisterOnRefresh)
+		{
+			OnSelectedLODChanged.Add(Delegate);
+		}
+		else
+		{
+			OnSelectedLODChangedResetOnRefresh.Add(Delegate);
+		}
+	}
+
+	virtual void UnRegisterOnSelectedLODChanged(void* Thing) override
+	{
+		OnSelectedLODChanged.RemoveAll(Thing);
+		OnSelectedLODChangedResetOnRefresh.RemoveAll(Thing);
+	}
+
+	virtual void BroadcastOnSelectedLODChanged() override
+	{
+		if (OnSelectedLODChanged.IsBound())
+		{
+			OnSelectedLODChanged.Broadcast();
+		}
+	}
+
+	class FStaticMeshEditorViewportClient& GetViewportClient();
+	const class FStaticMeshEditorViewportClient& GetViewportClient() const;
+
+	/** For asynchronous convex decomposition support, this class is tickable in the editor to be able to confirm
+	that the process is completed */
+	virtual bool IsTickableInEditor() const final
+	{
+		return true;
+	}
+
+	/** This is a tickable class */
+	virtual ETickableTickType GetTickableTickType() const final
+	{
+		return ETickableTickType::Always;
+	}
+
+	/** Performs the main 'tick' operation on this class.  The 'tick' step checks to see if there is currently
+	an active asynchronous convex decomopsition task running and, if so, checks to see if it is completed and,
+	if so, gathers the results and releases the interface */
+	virtual void Tick(float DeltaTime) final;
+
+	/** Returns the stat ID for this tickable class */
+	virtual TStatId GetStatId() const final;
+
 
 private:
 	TSharedRef<SDockTab> SpawnTab_Viewport(const FSpawnTabArgs& Args);
@@ -139,30 +196,27 @@ private:
 private:
 	/** Binds commands associated with the Static Mesh Editor. */
 	void BindCommands();
-	
+
 	/** Builds the Static Mesh Editor toolbar. */
 	void ExtendToolBar();
 
 	/** Builds the sub-tools that are a part of the static mesh editor. */
 	void BuildSubTools();
 
-	/** 
-	* Updates NumTriangles, NumVertices and NumUVChannels for the given LOD 
+	/**
+	* Updates NumTriangles, NumVertices and NumUVChannels for the given LOD
 	*/
 	void UpdateLODStats(int32 CurrentLOD);
-	
-	/** A general callback for the combo boxes in the Static Mesh Editor to force a viewport refresh when a selection changes. */
-	void ComboBoxSelectionChanged( TSharedPtr<FString> NewSelection, ESelectInfo::Type SelectInfo );
 
-	/** A callback for when the LOD is selected, forces an update to retrieve UV channels, triangles, vertices among other things. Refreshes the viewport. */
-	void LODLevelsSelectionChanged( TSharedPtr<FString> NewSelection, ESelectInfo::Type SelectInfo );
+	/** A general callback for the combo boxes in the Static Mesh Editor to force a viewport refresh when a selection changes. */
+	void ComboBoxSelectionChanged(TSharedPtr<FString> NewSelection, ESelectInfo::Type SelectInfo);
 
 	/**
 	 *	Sets the editor's current mesh and refreshes various settings to correspond with the new data.
 	 *
 	 *	@param	InStaticMesh		The static mesh to use for the editor.
 	 */
-	void SetEditorMesh(UStaticMesh* InStaticMesh, bool bResetCamera=true);
+	void SetEditorMesh(UStaticMesh* InStaticMesh, bool bResetCamera = true);
 
 	/** Helper function for generating K-DOP collision geometry. */
 	void GenerateKDop(const FVector* Directions, uint32 NumDirections);
@@ -212,11 +266,8 @@ private:
 	/** Replace the generated LODs in the original source mesh with the reduced versions.*/
 	void OnSaveGeneratedLODs();
 
-	/** Rebuilds the LOD combo list and sets it to "auto", a safe LOD level. */
-	void RegenerateLODComboList();
-
 	/** Rebuilds the UV Channel combo list and attempts to set it to the same channel. */
-	void RegenerateUVChannelComboList();
+	TSharedRef<SWidget> GenerateUVChannelComboList();
 
 	/** Delete whats currently selected */
 	void DeleteSelected();
@@ -256,8 +307,8 @@ private:
 	//~ End FAssetEditorToolkit Interface.
 
 	//~ Begin FEditorUndoClient Interface
-	virtual void PostUndo( bool bSuccess ) override;
-	virtual void PostRedo( bool bSuccess ) override;
+	virtual void PostUndo(bool bSuccess) override;
+	virtual void PostRedo(bool bSuccess) override;
 	// End of FEditorUndoClient
 
 	/** Undo Action**/
@@ -271,6 +322,10 @@ private:
 
 	/** Callback when an object has been reimported, and whether it worked */
 	void OnPostReimport(UObject* InObject, bool bSuccess);
+
+	void SetCurrentViewedUVChannel(int32 InNewUVChannel);
+
+	ECheckBoxState GetUVChannelCheckState(int32 TestUVChannel) const;
 
 private:
 	/** List of open tool panels; used to ensure only one exists at any one time */
@@ -288,20 +343,8 @@ private:
 	/** Convex Decomposition widget */
 	TSharedPtr< class SConvexDecomposition> ConvexDecomposition;
 
-	/** Widget for displaying the available UV Channels. */
-	TSharedPtr< class STextComboBox > UVChannelCombo;
-
-	/** List of available UV Channels. */
-	TArray< TSharedPtr< FString > > UVChannels;
-
-	/** Widget for displaying the available LOD. */
-	TSharedPtr< class STextComboBox > LODLevelCombo;
-
 	/** Static mesh editor detail customization */
 	TWeakPtr<class FStaticMeshDetails> StaticMeshDetails;
-
-	/** Named list of LODs for use in menus */
-	TArray< TSharedPtr< FString > > LODLevels;
 
 	/** The currently viewed Static Mesh. */
 	UStaticMesh* StaticMesh;
@@ -315,9 +358,6 @@ private:
 	/** The number of used UV channels. */
 	TArray<int32> NumUVChannels;
 
-	/** The number of LOD levels. */
-	int32 NumLODLevels;
-
 	/** Delegates called after an undo operation for child widgets to refresh */
 	FOnPostUndoMulticaster OnPostUndo;	
 
@@ -330,6 +370,18 @@ private:
 	/** Misc consts */
 	const float MinPrimSize;
 	const FVector OverlapNudge;
+
+	/** The current UV Channel we are viewing */
+	int32 CurrentViewedUVChannel;
+
+	/** Selected LOD changed delegates */
+	FOnSelectedLODChangedMulticaster OnSelectedLODChanged;
+	FOnSelectedLODChangedMulticaster OnSelectedLODChangedResetOnRefresh;
+
+#if USE_ASYNC_DECOMP
+	/** Instance of the active asynchronous convex decomposition interface. */
+	IDecomposeMeshToHullsAsync        *DecomposeMeshToHullsAsync{ nullptr };
+#endif
 
 	/**	The tab ids for all the tabs used */
 	static const FName ViewportTabId;

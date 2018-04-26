@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -64,12 +64,13 @@ class AIMODULE_API AEQSTestingPawn : public ACharacter, public IEQSQueryResultSo
 
 	UPROPERTY(Category=EQS, EditAnywhere)
 	TEnumAsByte<EEnvQueryRunMode::Type> QueryingMode;
-	
+
+	UPROPERTY(Category = EQS, EditAnywhere)
+	FNavAgentProperties NavAgentProperties;
 
 #if WITH_EDITORONLY_DATA
-private_subobject:
+private:
 	/** Editor Preview */
-	DEPRECATED_FORGAME(4.6, "EdRenderComp should not be accessed directly, please use GetEdRenderComp() function instead. EdRenderComp will soon be private and your code will not compile.")
 	UPROPERTY(Transient)
 	UEQSRenderingComponent* EdRenderComp;
 #endif // WITH_EDITORONLY_DATA
@@ -98,6 +99,10 @@ public:
 	virtual float GetHighlightRangePct() const override;
 	// IEQSQueryResultSourceInterface end
 
+	// INavAgentInterface begin
+	virtual const FNavAgentProperties& GetNavAgentPropertiesRef() const override;
+	// INavAgentInterface end
+
 	void RunEQSQuery();
 
 protected:	
@@ -111,6 +116,6 @@ protected:
 public:
 #if WITH_EDITORONLY_DATA
 	/** Returns EdRenderComp subobject **/
-	UEQSRenderingComponent* GetEdRenderComp();
+	UEQSRenderingComponent* GetEdRenderComp() { return EdRenderComp; }
 #endif
 };

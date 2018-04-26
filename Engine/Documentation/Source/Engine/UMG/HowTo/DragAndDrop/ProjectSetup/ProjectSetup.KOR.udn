@@ -1,10 +1,19 @@
-﻿INTSourceChangelist:3355771
-Availability: Docs
+﻿INTSourceChangelist:3782314
+Availability: Public
 Title:1. 프로젝트 셋업
 Crumbs: %ROOT%, Engine, Engine/UMG, Engine/UMG/HowTo
 Description:필수 애셋과 DragAndDropOperation 클래스를 만듭니다.
 SkillLevel: Intermediate
+Version: 4.15
+parent:Engine/UMG/HowTo/DragAndDrop
+order:1
+checkpoint: editorqs
+Related: Engine/UMG
+Related: Engine/UMG/UserGuide
 tags:UMG UI Designer
+tags:UI
+type:how-to
+
 
 [VAR:Steps]
 [OBJECT:Navigation]
@@ -21,7 +30,7 @@ tags:UMG UI Designer
 [/OBJECT]
 [/VAR]
 
-%Steps%
+
 
 시작하기에 앞서, 프로젝트 셋업의 일부로 만들어야 하는 애셋이 몇 개 있습니다.
 
@@ -59,4 +68,3 @@ tags:UMG UI Designer
 
 프로젝트 셋업이 완료되었으니, 다음에는 드래그 가능하도록 하려는 UI 조각인 HealthBar 위젯 블루프린트 작업을 시작하겠습니다.
 
-%Steps%

@@ -6,46 +6,10 @@ Related: Engine/UI/LevelEditor
 Related: Engine/UI/LevelEditor/Modes
 Related: Engine/Actors/Volumes
 version: 4.9
-
-
-[VAR:Topic]
-[OBJECT:Topic]
-	[PARAM:image]
-		![%Engine/Actors/Brushes:title%](Brushes_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/content_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Actors/Brushes:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Actors/Brushes:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Actors/Brushes]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-	[PARAM:image]
-		![%Engine/Actors/Brushes:title%](Brushes_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/content_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Actors/Brushes:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Actors/Brushes:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Actors/Brushes]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
+Parent:Engine/Actors/Types
+order:1
+type:overview
+topic-image:Brushes_topic.png
 
 
 [TOC (end:2)]
@@ -131,7 +95,8 @@ Brushes are created using the **Geometry** tab in the **Place Mode** panel:
 |![](BSP_Sphere.png)|Creates a Geometry Brush Actor in a Sphere shape that can then be customized within the **Details** panel. Options include:[INCLUDE:#SphereBuilder]|
 
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:BoxBuilder]
 [REGION:simpletable]
 |Box Builder Settings||
@@ -224,7 +189,8 @@ Brushes are created using the **Geometry** tab in the **Place Mode** panel:
 [/REGION]
 [/EXCERPT:SphereBuilder]
 
---->
+-
+[/COMMENT]
 
 
 ## Modifying Brushes

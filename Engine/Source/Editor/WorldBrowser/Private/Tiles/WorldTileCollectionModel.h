@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -36,7 +36,8 @@ public:
 	virtual void UnloadLevels(const FLevelModelList& InLevelList) override;
 	virtual void TranslateLevels(const FLevelModelList& InList, FVector2D InAbsoluteDelta, bool bSnapDelta = true)  override;
 	virtual FVector2D SnapTranslationDelta(const FLevelModelList& InList, FVector2D InTranslationDelta, bool bBoundsSnapping, float InSnappingValue) override;
-	virtual TSharedPtr<FLevelDragDropOp> CreateDragDropOp() const override;
+	virtual TSharedPtr<WorldHierarchy::FWorldBrowserDragDropOp> CreateDragDropOp() const override;
+	virtual TSharedPtr<WorldHierarchy::FWorldBrowserDragDropOp> CreateDragDropOp(const FLevelModelList& InLevels) const override;
 	virtual bool PassesAllFilters(const FLevelModel& InLevelModel) const override;
 	virtual void BuildHierarchyMenu(FMenuBuilder& InMenuBuilder) const override;
 	virtual void CustomizeFileMainMenu(FMenuBuilder& InMenuBuilder) const override;
@@ -235,6 +236,11 @@ private:
 
 	/**  */	
 	void ReimportTiledLandscape_Executed(FName TargetLayer);
+
+	/** Tiles location locking */	
+	void OnToggleLockTilesLocation();
+public:
+	bool IsLockTilesLocationEnabled();
 
 public:
 	/** Whether Editor has support for generating static mesh proxies */	

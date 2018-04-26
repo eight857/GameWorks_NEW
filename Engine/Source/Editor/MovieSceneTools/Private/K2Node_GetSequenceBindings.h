@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,7 +9,7 @@
 #include "K2Node_GetSequenceBindings.generated.h"
 
 
-class FAssetData;
+struct FAssetData;
 class UEdGraphPin;
 class UMovieSceneSequence;
 
@@ -20,7 +20,7 @@ struct FGetSequenceBindingGuidMapping
 	GENERATED_BODY()
 
 	UPROPERTY()
-	FString PinName;
+	FName PinName;
 
 	UPROPERTY()
 	FGuid Guid;

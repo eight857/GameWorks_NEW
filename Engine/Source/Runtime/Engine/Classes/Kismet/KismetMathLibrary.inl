@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -782,6 +782,12 @@ KISMET_MATH_FORCEINLINE
 float UKismetMathLibrary::VSize(FVector A)
 {
 	return A.Size();
+}
+
+KISMET_MATH_FORCEINLINE
+float UKismetMathLibrary::VSizeXY(FVector A)
+{
+	return A.Size2D();
 }	
 
 KISMET_MATH_FORCEINLINE
@@ -853,9 +859,9 @@ FVector UKismetMathLibrary::RandomPointInBoundingBox(const FVector& Origin, cons
 }
 
 KISMET_MATH_FORCEINLINE
-FVector UKismetMathLibrary::RandomUnitVectorInCone(FVector ConeDir, float ConeHalfAngle)
+FVector UKismetMathLibrary::RandomUnitVectorInConeInRadians(FVector ConeDir, float ConeHalfAngleInRadians)
 {
-	return FMath::VRandCone(ConeDir, ConeHalfAngle);
+	return FMath::VRandCone(ConeDir, ConeHalfAngleInRadians);
 }
 
 KISMET_MATH_FORCEINLINE
@@ -1093,6 +1099,19 @@ FVector2D UKismetMathLibrary::Divide_Vector2DFloat(FVector2D A, float B)
 
 	return A / B;
 }
+
+KISMET_MATH_FORCEINLINE
+FVector2D UKismetMathLibrary::Divide_Vector2DVector2D(FVector2D A, FVector2D B)
+{
+	if (B.X == 0.f || B.Y == 0.f)
+	{
+		ReportError_Divide_Vector2DVector2D();
+		return FVector2D::ZeroVector;
+	}
+
+	return A / B;
+}
+
 
 KISMET_MATH_FORCEINLINE
 FVector2D UKismetMathLibrary::Add_Vector2DFloat(FVector2D A, float B)
@@ -1377,6 +1396,12 @@ FTimespan UKismetMathLibrary::Multiply_TimespanFloat( FTimespan A, float Scalar 
 }
 
 KISMET_MATH_FORCEINLINE
+FTimespan UKismetMathLibrary::Divide_TimespanFloat(FTimespan A, float Scalar)
+{
+	return A / Scalar;
+}
+
+KISMET_MATH_FORCEINLINE
 bool UKismetMathLibrary::EqualEqual_TimespanTimespan( FTimespan A, FTimespan B )
 {
 	return A == B;
@@ -1433,7 +1458,7 @@ int32 UKismetMathLibrary::GetHours( FTimespan A )
 KISMET_MATH_FORCEINLINE
 int32 UKismetMathLibrary::GetMilliseconds( FTimespan A )
 {
-	return A.GetMilliseconds();
+	return A.GetFractionMilli();
 }
 
 KISMET_MATH_FORCEINLINE
@@ -1479,36 +1504,6 @@ float UKismetMathLibrary::GetTotalSeconds( FTimespan A )
 }
 
 KISMET_MATH_FORCEINLINE
-FTimespan UKismetMathLibrary::FromDays( float Days )
-{
-	return FTimespan::FromDays(Days);
-}
-
-KISMET_MATH_FORCEINLINE
-FTimespan UKismetMathLibrary::FromHours( float Hours )
-{
-	return FTimespan::FromHours(Hours);
-}
-
-KISMET_MATH_FORCEINLINE
-FTimespan UKismetMathLibrary::FromMilliseconds( float Milliseconds )
-{
-	return FTimespan::FromMilliseconds(Milliseconds);
-}
-
-KISMET_MATH_FORCEINLINE
-FTimespan UKismetMathLibrary::FromMinutes( float Minutes )
-{
-	return FTimespan::FromMinutes(Minutes);
-}
-
-KISMET_MATH_FORCEINLINE
-FTimespan UKismetMathLibrary::FromSeconds( float Seconds )
-{
-	return FTimespan::FromSeconds(Seconds);
-}
-
-KISMET_MATH_FORCEINLINE
 FTimespan UKismetMathLibrary::TimespanMaxValue( )
 {
 	return FTimespan::MaxValue();
@@ -1523,12 +1518,7 @@ FTimespan UKismetMathLibrary::TimespanMinValue( )
 KISMET_MATH_INLINE
 float UKismetMathLibrary::TimespanRatio( FTimespan A, FTimespan B )
 {
-	if (B != FTimespan::Zero())
-	{
-		return (float)A.GetTicks() / (float)B.GetTicks();
-	}
-
-	return 0.0;
+	return FTimespan::Ratio(A, B);
 }
 
 KISMET_MATH_FORCEINLINE

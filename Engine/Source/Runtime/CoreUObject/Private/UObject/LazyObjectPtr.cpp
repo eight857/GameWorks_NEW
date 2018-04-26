@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	LazyObjectPtr.cpp: Guid-based lazy pointer to UObject
@@ -41,9 +41,10 @@ FUniqueObjectGuid FUniqueObjectGuid::FixupForPIE(int32 PlayInEditorID) const
 	return Temp;
 }
 
-UObject *FUniqueObjectGuid::ResolveObject() const
+UObject* FUniqueObjectGuid::ResolveObject() const
 {
-	return GuidAnnotation.Find(*this);
+	UObject* Result = GuidAnnotation.Find(*this);
+	return Result;
 }
 
 FString FUniqueObjectGuid::ToString() const

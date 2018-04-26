@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SceneRenderTargets.h: Scene render target definitions.
@@ -173,17 +173,14 @@ public:
 	/** Destruct all snapshots */
 	void DestroyAllSnapshots();
 
-	static TAutoConsoleVariable<int32> CVarSetSeperateTranslucencyEnabled;
-
 protected:
 	/** Constructor */
 	FSceneRenderTargets(): 
 		bScreenSpaceAOIsValid(false),
 		bCustomDepthIsValid(false),
 		GBufferRefCount(0),
-		LargestDesiredSizeThisFrame( 0, 0 ),
-		LargestDesiredSizeLastFrame( 0, 0 ),
 		ThisFrameNumber( 0 ),
+		CurrentDesiredSizeIndex ( 0 ),
 		bVelocityPass(false),
 		bSeparateTranslucencyPass(false),
 		BufferSize(0, 0),
@@ -194,6 +191,7 @@ protected:
 		bUseDownsizedOcclusionQueries(true),
 		CurrentGBufferFormat(0),
 		CurrentSceneColorFormat(0),
+		CurrentMobileSceneColorFormat(EPixelFormat::PF_Unknown),
 		bAllowStaticLighting(true),
 		CurrentMaxShadowResolution(0),
 		CurrentRSMResolution(0),
@@ -207,8 +205,10 @@ protected:
 		bSnapshot(false),
 		DefaultColorClear(FClearValueBinding::Black),
 		DefaultDepthClear(FClearValueBinding::DepthFar),
-		QuadOverdrawIndex(INDEX_NONE)
+		QuadOverdrawIndex(INDEX_NONE),
+		bHMDAllocatedDepthTarget(false)
 		{
+			FMemory::Memset(LargestDesiredSizes, 0);
 		}
 	/** Constructor that creates snapshot */
 	FSceneRenderTargets(const FViewInfo& InView, const FSceneRenderTargets& SnapshotSource);
@@ -218,7 +218,7 @@ public:
 	 * Checks that scene render targets are ready for rendering a view family of the given dimensions.
 	 * If the allocated render targets are too small, they are reallocated.
 	 */
-	void Allocate(FRHICommandList& RHICmdList, const FSceneViewFamily& ViewFamily);
+	void Allocate(FRHICommandListImmediate& RHICmdList, const FSceneRenderer* SceneRenderer);
 
 	/**
 	 *
@@ -246,24 +246,26 @@ public:
 	/** Binds the appropriate shadow depth cube map for rendering. */
 	void BeginRenderingCubeShadowDepth(FRHICommandList& RHICmdList, int32 ShadowResolution);
 
+	/** Begin rendering translucency in the scene color. */
 	void BeginRenderingTranslucency(FRHICommandList& RHICmdList, const class FViewInfo& View, bool bFirstTimeThisFrame = true);
-
+	/** Begin rendering translucency in a separate (offscreen) buffer. This can be any translucency pass. */
 	void BeginRenderingSeparateTranslucency(FRHICommandList& RHICmdList, const FViewInfo& View, bool bFirstTimeThisFrame);
-	void FinishRenderingSeparateTranslucency(FRHICommandList& RHICmdList);
+	void FinishRenderingSeparateTranslucency(FRHICommandList& RHICmdList, const FViewInfo& View);
+
 	void FreeSeparateTranslucency()
 	{
 		SeparateTranslucencyRT.SafeRelease();
 		check(!SeparateTranslucencyRT);
 	}
 
-	void FreeSeparateTranslucencyDepth()
+	void FreeDownsampledTranslucencyDepth()
 	{
-		if (SeparateTranslucencyDepthRT.GetReference())
+		if (DownsampledTranslucencyDepthRT.GetReference())
 		{
-			SeparateTranslucencyDepthRT.SafeRelease();
+			DownsampledTranslucencyDepthRT.SafeRelease();
 		}
 	}
-
+	
 	void ResolveSceneDepthTexture(FRHICommandList& RHICmdList, const FResolveRect& ResolveRect);
 	void ResolveSceneDepthToAuxiliaryTexture(FRHICommandList& RHICmdList);
 
@@ -286,24 +288,30 @@ public:
 		DefaultDepthClear = DepthClear;
 	}
 
-	void GetSeparateTranslucencyDimensions(FIntPoint& OutScaledSize, float& OutScale)
+	FClearValueBinding GetDefaultDepthClear()
+	{
+		return DefaultDepthClear;
+	}
+
+	FORCEINLINE void GetSeparateTranslucencyDimensions(FIntPoint& OutScaledSize, float& OutScale) const
 	{
 		OutScaledSize = SeparateTranslucencyBufferSize;
 		OutScale = SeparateTranslucencyScale;
 	}
 
+	/** Separate translucency buffer can be downsampled or not (as it is used to store the AfterDOF translucency) */
 	TRefCountPtr<IPooledRenderTarget>& GetSeparateTranslucency(FRHICommandList& RHICmdList, FIntPoint Size);
 
-	bool IsSeparateTranslucencyDepthValid()
+	bool IsDownsampledTranslucencyDepthValid()
 	{
-		return SeparateTranslucencyDepthRT != nullptr;
+		return DownsampledTranslucencyDepthRT != nullptr;
 	}
 
-	TRefCountPtr<IPooledRenderTarget>& GetSeparateTranslucencyDepth(FRHICommandList& RHICmdList, FIntPoint Size);
+	TRefCountPtr<IPooledRenderTarget>& GetDownsampledTranslucencyDepth(FRHICommandList& RHICmdList, FIntPoint Size);
 
-	const FTexture2DRHIRef& GetSeparateTranslucencyDepthSurface()
+	const FTexture2DRHIRef& GetDownsampledTranslucencyDepthSurface()
 	{
-		return (const FTexture2DRHIRef&)SeparateTranslucencyDepthRT->GetRenderTargetItem().TargetableTexture;
+		return (const FTexture2DRHIRef&)DownsampledTranslucencyDepthRT->GetRenderTargetItem().TargetableTexture;
 	}
 
 	/**
@@ -421,11 +429,21 @@ public:
 
 	// ---
 
+	template<int32 NumRenderTargets>
+	static void ClearVolumeTextures(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIParamRef* RenderTargets, const FLinearColor* ClearColors);	
+
+	void ClearTranslucentVolumeLighting(FRHICommandListImmediate& RHICmdList);
+
 	/** Get the current translucent ambient lighting volume texture. Can vary depending on whether volume filtering is enabled */
 	IPooledRenderTarget* GetTranslucencyVolumeAmbient(ETranslucencyVolumeCascade Cascade) { return TranslucencyLightingVolumeAmbient[SelectTranslucencyVolumeTarget(Cascade)].GetReference(); }
 
 	/** Get the current translucent directional lighting volume texture. Can vary depending on whether volume filtering is enabled */
 	IPooledRenderTarget* GetTranslucencyVolumeDirectional(ETranslucencyVolumeCascade Cascade) { return TranslucencyLightingVolumeDirectional[SelectTranslucencyVolumeTarget(Cascade)].GetReference(); }
+
+	bool IsValidGBufferResourcesUniformBuffer() const
+	{
+		return IsValidRef(GBufferResourcesUniformBuffer);
+	}
 
 	// ---
 	/** Get the uniform buffer containing GBuffer resources. */
@@ -460,7 +478,7 @@ public:
 	int32 GetTranslucentShadowDownsampleFactor() const { return 2; }
 
 	/** Returns the size of the RSM buffer, taking into account platform limitations and game specific resolution limits. */
-	int32 GetReflectiveShadowMapResolution() const;
+	inline int32 GetReflectiveShadowMapResolution() const { return CurrentRSMResolution; }
 
 	int32 GetNumGBufferTargets() const;
 
@@ -476,6 +494,9 @@ public:
 	TRefCountPtr<IPooledRenderTarget>& GetSceneColor();
 
 	EPixelFormat GetSceneColorFormat() const;
+	EPixelFormat GetDesiredMobileSceneColorFormat() const;
+	EPixelFormat GetMobileSceneColorFormat() const;
+
 
 	// changes depending at which part of the frame this is called
 	bool IsSceneColorAllocated() const;
@@ -504,7 +525,7 @@ public:
 
 	void AllocLightAttenuation(FRHICommandList& RHICmdList);
 
-	void AllocSceneMonoRenderTargets(FRHICommandList& RHICmdList, const FSceneView& MonoView);
+	void AllocSceneMonoRenderTargets(FRHICommandList& RHICmdList, const FViewInfo& MonoView);
 
 	void AllocateReflectionTargets(FRHICommandList& RHICmdList, int32 TargetSize);
 
@@ -514,13 +535,7 @@ public:
 
 	TRefCountPtr<IPooledRenderTarget>& GetReflectionBrightnessTarget();
 
-
-	bool IsSeparateTranslucencyActive(const FViewInfo& View) const;
-
-	bool IsSeparateTranslucencyPass()
-	{
-		return bSeparateTranslucencyPass;
-	}
+	FORCEINLINE bool IsSeparateTranslucencyPass() const { return bSeparateTranslucencyPass; }
 	
 	// Can be called when the Scene Color content is no longer needed. As we create SceneColor on demand we can make sure it is created with the right format.
 	// (as a call to SetSceneColor() can override it with a different format)
@@ -608,7 +623,8 @@ public:
 
 	/** ONLY for snapshots!!! this is a copy of the SeparateTranslucencyRT from the view state. */
 	TRefCountPtr<IPooledRenderTarget> SeparateTranslucencyRT;
-	TRefCountPtr<IPooledRenderTarget> SeparateTranslucencyDepthRT;
+	/** Downsampled depth used when rendering translucency in smaller resolution. */
+	TRefCountPtr<IPooledRenderTarget> DownsampledTranslucencyDepthRT;
 
 	// todo: free ScreenSpaceAO so pool can reuse
 	bool bScreenSpaceAOIsValid;
@@ -621,10 +637,12 @@ private:
 	int32 GBufferRefCount;
 
 	/** as we might get multiple BufferSize requests each frame for SceneCaptures and we want to avoid reallocations we can only go as low as the largest request */
-	FIntPoint LargestDesiredSizeThisFrame;
-	FIntPoint LargestDesiredSizeLastFrame;
+	static const uint32 FrameSizeHistoryCount = 3;
+	FIntPoint LargestDesiredSizes[FrameSizeHistoryCount];
+	
 	/** to detect when LargestDesiredSizeThisFrame is outdated */
 	uint32 ThisFrameNumber;
+	uint32 CurrentDesiredSizeIndex;
 
 	bool bVelocityPass;
 	bool bSeparateTranslucencyPass;
@@ -646,11 +664,11 @@ private:
 public:
 	/** Allocates render targets for use with the deferred shading path. */
 	// Temporarily Public to call from DefferedShaderRenderer to attempt recovery from a crash until cause is found.
-	void AllocateDeferredShadingPathRenderTargets(FRHICommandList& RHICmdList);
+	void AllocateDeferredShadingPathRenderTargets(FRHICommandListImmediate& RHICmdList);
 private:
 
 	/** Allocates render targets for use with the current shading path. */
-	void AllocateRenderTargets(FRHICommandList& RHICmdList);
+	void AllocateRenderTargets(FRHICommandListImmediate& RHICmdList);
 
 	/** Allocates common depth render targets that are used by both mobile and deferred rendering paths */
 	void AllocateCommonDepthTargets(FRHICommandList& RHICmdList);
@@ -661,10 +679,10 @@ private:
 	void AllocSceneColor(FRHICommandList& RHICmdList);
 
 	/** Allocates the mobile multi-view scene color texture array render target. */
-	void AllocMobileMultiViewSceneColor(FRHICommandList& RHICmdList);
+	void AllocMobileMultiViewSceneColor(FRHICommandList& RHICmdList, const int32 ScaleFactor);
 
 	/** Allocates the mobile multi-view depth (no stencil) texture array render target. */
-	void AllocMobileMultiViewDepth(FRHICommandList& RHICmdList);
+	void AllocMobileMultiViewDepth(FRHICommandList& RHICmdList, const int32 ScaleFactor);
 
 	// internal method, used by AdjustGBufferRefCount()
 	void ReleaseGBufferTargets();
@@ -699,7 +717,7 @@ private:
 		{
 			return ESceneColorFormatType::Mobile;
 		}
-		else if (CurrentShadingPath == EShadingPath::Deferred && (bRequireSceneColorAlpha || CurrentSceneColorFormat == PF_FloatRGBA))
+		else if (CurrentShadingPath == EShadingPath::Deferred && (bRequireSceneColorAlpha || GetSceneColorFormat() == PF_FloatRGBA))
 		{
 			return ESceneColorFormatType::HighEndWithAlpha;
 		}
@@ -712,11 +730,16 @@ private:
 		return ESceneColorFormatType::Num;
 	}
 
+	static FResolveRect GetDefaultRect(const FResolveRect& Rect, uint32 DefaultWidth, uint32 DefaultHeight);
+	static void ResolveDepthTexture(FRHICommandList& RHICmdList, const FTexture2DRHIRef& SourceTexture, const FTexture2DRHIRef& DestTexture, const FResolveParams& ResolveParams);
+
 	/** Uniform buffer containing GBuffer resources. */
 	FUniformBufferRHIRef GBufferResourcesUniformBuffer;
 	FUniformBufferRHIRef GBufferDummyResourcesUniformBuffer;
 	/** size of the back buffer, in editor this has to be >= than the biggest view port */
 	FIntPoint BufferSize;
+	/* Size of the first view, used for multiview rendertargets */
+	FIntPoint View0Size;
 	FIntPoint SeparateTranslucencyBufferSize;
 	float SeparateTranslucencyScale;
 	/** e.g. 2 */
@@ -729,6 +752,8 @@ private:
 	int32 CurrentGBufferFormat;
 	/** To detect a change of the CVar r.SceneColorFormat */
 	int32 CurrentSceneColorFormat;
+	/** To detect a change of the mobile scene color format */
+	EPixelFormat CurrentMobileSceneColorFormat;
 	/** Whether render targets were allocated with static lighting allowed. */
 	bool bAllowStaticLighting;
 	/** To detect a change of the CVar r.Shadow.MaxResolution */
@@ -776,7 +801,18 @@ private:
 	/** All outstanding snapshots */
 	TArray<FSceneRenderTargets*> Snapshots;
 
+	/** True if the depth target is allocated by an HMD plugin. This is a temporary fix to deal with HMD depth target swap chains not tracking the stencil SRV. */
+	bool bHMDAllocatedDepthTarget;
+
 	/** CAUTION: When adding new data, make sure you copy it in the snapshot constructor! **/
 
 };
 
+extern template void FSceneRenderTargets::ClearVolumeTextures<0>(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIParamRef* RenderTargets, const FLinearColor* ClearColors);
+extern template void FSceneRenderTargets::ClearVolumeTextures<1>(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIParamRef* RenderTargets, const FLinearColor* ClearColors);
+extern template void FSceneRenderTargets::ClearVolumeTextures<2>(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIParamRef* RenderTargets, const FLinearColor* ClearColors);
+extern template void FSceneRenderTargets::ClearVolumeTextures<3>(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIParamRef* RenderTargets, const FLinearColor* ClearColors);
+extern template void FSceneRenderTargets::ClearVolumeTextures<4>(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIParamRef* RenderTargets, const FLinearColor* ClearColors);
+extern template void FSceneRenderTargets::ClearVolumeTextures<5>(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIParamRef* RenderTargets, const FLinearColor* ClearColors);
+extern template void FSceneRenderTargets::ClearVolumeTextures<6>(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIParamRef* RenderTargets, const FLinearColor* ClearColors);
+extern template void FSceneRenderTargets::ClearVolumeTextures<7>(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type FeatureLevel, FTextureRHIParamRef* RenderTargets, const FLinearColor* ClearColors);

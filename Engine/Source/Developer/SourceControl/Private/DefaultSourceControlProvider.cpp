@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DefaultSourceControlProvider.h"
 #include "Logging/MessageLog.h"
@@ -80,6 +80,11 @@ bool FDefaultSourceControlProvider::UsesLocalReadOnlyState() const
 }
 
 bool FDefaultSourceControlProvider::UsesChangelists() const
+{
+	return false;
+}
+
+bool FDefaultSourceControlProvider::UsesCheckout() const
 {
 	return false;
 }

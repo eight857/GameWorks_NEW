@@ -1,6 +1,7 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tracks/MovieSceneSkeletalAnimationTrack.h"
+#include "MovieSceneEvaluationCustomVersion.h"
 #include "Sections/MovieSceneSkeletalAnimationSection.h"
 #include "Compilation/MovieSceneCompilerRules.h"
 #include "Evaluation/MovieSceneEvaluationTrack.h"
@@ -15,12 +16,15 @@
 
 UMovieSceneSkeletalAnimationTrack::UMovieSceneSkeletalAnimationTrack(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, bUseLegacySectionIndexBlend(false)
 {
 #if WITH_EDITORONLY_DATA
 	TrackTint = FColor(124, 15, 124, 65);
 #endif
 
-	EvalOptions.bEvaluateNearestSection = EvalOptions.bCanEvaluateNearestSection = true;
+	SupportedBlendTypes.Add(EMovieSceneBlendType::Absolute);
+
+	EvalOptions.bEvaluateNearestSection_DEPRECATED = EvalOptions.bCanEvaluateNearestSection = true;
 }
 
 
@@ -57,6 +61,15 @@ TArray<UMovieSceneSection*> UMovieSceneSkeletalAnimationTrack::GetAnimSectionsAt
 /* UMovieSceneTrack interface
  *****************************************************************************/
 
+void UMovieSceneSkeletalAnimationTrack::PostLoad()
+{
+	Super::PostLoad();
+
+	if (GetLinkerCustomVersion(FMovieSceneEvaluationCustomVersion::GUID) < FMovieSceneEvaluationCustomVersion::AddBlendingSupport)
+	{
+		bUseLegacySectionIndexBlend = true;
+	}
+}
 
 const TArray<UMovieSceneSection*>& UMovieSceneSkeletalAnimationTrack::GetAllSections() const
 {
@@ -127,31 +140,27 @@ FText UMovieSceneSkeletalAnimationTrack::GetDefaultDisplayName() const
 
 #endif
 
-TInlineValue<FMovieSceneSegmentCompilerRules> UMovieSceneSkeletalAnimationTrack::GetRowCompilerRules() const
+FMovieSceneTrackRowSegmentBlenderPtr UMovieSceneSkeletalAnimationTrack::GetRowSegmentBlender() const
 {
 	// Apply an upper bound exclusive blend
-	struct FSkeletalAnimationRowCompilerRules : FMovieSceneSegmentCompilerRules
+	struct FSkeletalAnimationRowCompilerRules : FMovieSceneTrackRowSegmentBlender
 	{
-		virtual void BlendSegment(FMovieSceneSegment& Segment, const TArrayView<const FMovieSceneSectionData>& SourceData) const
-		{	
-			// Run the default high pass filter for overlap priority
-			MovieSceneSegmentCompiler::BlendSegmentHighPass(Segment, SourceData);
+		bool bUseLegacySectionIndexBlend;
+		FSkeletalAnimationRowCompilerRules(bool bInUseLegacySectionIndexBlend) : bUseLegacySectionIndexBlend(bInUseLegacySectionIndexBlend) {}
 
-			// Weed out based on array index (legacy behaviour)
-			MovieSceneSegmentCompiler::BlendSegmentLegacySectionOrder(Segment, SourceData);
+		virtual void Blend(FSegmentBlendData& BlendData) const override
+		{
+			// Run the default high pass filter for overlap priority
+			MovieSceneSegmentCompiler::FilterOutUnderlappingSections(BlendData);
+
+			if (bUseLegacySectionIndexBlend)
+			{
+				// Weed out based on array index (legacy behaviour)
+				MovieSceneSegmentCompiler::BlendSegmentLegacySectionOrder(BlendData);
+			}
 		}
 	};
-	return FSkeletalAnimationRowCompilerRules();
-}
-
-void UMovieSceneSkeletalAnimationTrack::PostCompile(FMovieSceneEvaluationTrack& OutTrack, const FMovieSceneTrackCompilerArgs& Args) const
-{
-	FMovieSceneSharedDataId UniqueId = FMovieSceneSkeletalAnimationSharedTrack::GetSharedDataKey().UniqueId;
-
-	FMovieSceneEvaluationTrack ActuatorTemplate(Args.ObjectBindingId);
-	ActuatorTemplate.DefineAsSingleTemplate(FMovieSceneSkeletalAnimationSharedTrack());
-	ActuatorTemplate.SetEvaluationPriority(ActuatorTemplate.GetEvaluationPriority() - 1);
-	Args.Generator.AddSharedTrack(MoveTemp(ActuatorTemplate), UniqueId, *this);
+	return FSkeletalAnimationRowCompilerRules(bUseLegacySectionIndexBlend);
 }
 
 #undef LOCTEXT_NAMESPACE

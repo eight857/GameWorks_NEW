@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -37,7 +37,7 @@ private:
 	/** OnReadFileComplete delegate handle */
 	FDelegateHandle OnReadFileCompleteDelegateHandle;
 
-	void OnEnumerateFilesComplete(bool bSuccess);
+	void OnEnumerateFilesComplete(bool bSuccess, const FString& ErrorStr);
 
 	void OnReadFileComplete(bool bSuccess, const FString& Filename);
 

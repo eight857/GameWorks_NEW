@@ -1,16 +1,16 @@
-// Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OculusFindSessionsCallbackProxy.h"
 #include "OnlineSubsystemOculusPrivate.h"
-#include "CoreOnline.h"
 #include "Online.h"
 #include "OnlineSessionInterfaceOculus.h"
 #include "OnlineSubsystemOculusPrivate.h"
 
 UOculusFindSessionsCallbackProxy::UOculusFindSessionsCallbackProxy(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, Delegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnCompleted))
-	, bSearchModeratedRoomsOnly(false)
+	  , Delegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnCompleted))
+	  , MaxResults(0)
+	  , bSearchModeratedRoomsOnly(false)
 {
 }
 

@@ -1,10 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/AssetManagerTypes.h"
 #include "Engine/AssetManager.h"
+#include "Engine/AssetManagerSettings.h"
 
 bool FPrimaryAssetTypeInfo::FillRuntimeData()
 {
+	// Hot reload may have messed up asset pointer
+	AssetBaseClass.ResetWeakPtr();
 	AssetBaseClassLoaded = AssetBaseClass.LoadSynchronous();
 
 	if (!ensureMsgf(AssetBaseClassLoaded, TEXT("Failed to load Primary Asset Type class %s!"), *AssetBaseClass.ToString()))
@@ -12,14 +15,32 @@ bool FPrimaryAssetTypeInfo::FillRuntimeData()
 		return false;
 	}
 
-	for (const FStringAssetReference& AssetRef : SpecificAssets)
+	for (const FSoftObjectPath& AssetRef : SpecificAssets)
 	{
-		AssetScanPaths.AddUnique(AssetRef.ToString());
+		if (!AssetRef.IsNull())
+		{
+			AssetScanPaths.AddUnique(AssetRef.ToString());
+		}
 	}
 
 	for (const FDirectoryPath& PathRef : Directories)
 	{
-		AssetScanPaths.AddUnique(PathRef.Path);
+		if (!PathRef.Path.IsEmpty())
+		{
+			AssetScanPaths.AddUnique(PathRef.Path);
+		}
+	}
+
+	if (AssetScanPaths.Num() == 0)
+	{
+		// No scan locations picked out
+		return false;
+	}
+
+	if (PrimaryAssetType == NAME_None)
+	{
+		// Invalid type
+		return false;
 	}
 
 	return true;
@@ -69,3 +90,14 @@ void FPrimaryAssetRules::PropagateCookRules(const FPrimaryAssetRules& ParentRule
 		CookRule = ParentRules.CookRule;
 	}
 }
+
+#if WITH_EDITOR
+void UAssetManagerSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	if (PropertyChangedEvent.Property && UAssetManager::IsValid())
+	{
+		UAssetManager::Get().ReinitializeFromConfig();
+	}
+}
+#endif

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MacPlatformProcess.mm: Mac implementations of Process functions
@@ -8,8 +8,10 @@
 #include "ApplePlatformRunnableThread.h"
 #include "Misc/App.h"
 #include "Misc/Paths.h"
-#include "MacApplication.h"
+#include "HAL/FileManager.h"
 #include <mach-o/dyld.h>
+#include <mach/thread_act.h>
+#include <mach/thread_policy.h>
 #include <libproc.h>
 
 void* FMacPlatformProcess::GetDllHandle( const TCHAR* Filename )
@@ -169,36 +171,43 @@ int32 FMacPlatformProcess::GetDllApiVersion( const TCHAR* Filename )
 		
 	CFRelease(CFStr);
 		
-	if(File > -1)
+	if(File <= -1)
 	{
-		struct mach_header_64 Header;
-		ssize_t Bytes = read( File, &Header, sizeof( Header ) );
-		if( Bytes == sizeof( Header ) && Header.filetype == MH_DYLIB )
-		{
-			struct load_command* Commands = ( struct load_command* )FMemory::Malloc( Header.sizeofcmds );
-			Bytes = read( File, Commands, Header.sizeofcmds );
-				
-			if( Bytes == Header.sizeofcmds )
-			{
-				struct load_command* Command = Commands;
-				for( int32 Index = 0; Index < Header.ncmds; Index++ )
-				{
-					if( Command->cmd == LC_ID_DYLIB )
-					{
-						CurrentVersion = ( ( struct dylib_command* )Command )->dylib.current_version;
-						break;
-					}
-						
-					Command = ( struct load_command* )( ( uint8* )Command + Command->cmdsize );
-				}
-			}
-				
-			FMemory::Free( Commands );
-		}
-		close(File);
+		return -1;
 	}
 
+	struct mach_header_64 Header;
+	ssize_t Bytes = read( File, &Header, sizeof( Header ) );
+	if( Bytes == sizeof( Header ) && Header.filetype == MH_DYLIB )
+	{
+		struct load_command* Commands = ( struct load_command* )FMemory::Malloc( Header.sizeofcmds );
+		Bytes = read( File, Commands, Header.sizeofcmds );
+
+		if( Bytes == Header.sizeofcmds )
+		{
+			struct load_command* Command = Commands;
+			for( int32 Index = 0; Index < Header.ncmds; Index++ )
+			{
+				if( Command->cmd == LC_ID_DYLIB )
+				{
+					CurrentVersion = ( ( struct dylib_command* )Command )->dylib.current_version;
+					break;
+				}
+
+				Command = ( struct load_command* )( ( uint8* )Command + Command->cmdsize );
+			}
+		}
+
+		FMemory::Free( Commands );
+	}
+	close(File);
+
 	return ((CurrentVersion & 0xff) + ((CurrentVersion >> 8) & 0xff) * 100 + ((CurrentVersion >> 16) & 0xffff) * 10000);
+}
+
+bool FMacPlatformProcess::CanLaunchURL(const TCHAR* URL)
+{
+	return URL != nullptr;
 }
 
 void FMacPlatformProcess::LaunchURL( const TCHAR* URL, const TCHAR* Parms, FString* Error )
@@ -709,14 +718,11 @@ FString FMacPlatformProcess::GetApplicationName( uint32 ProcessId )
 	return Output;
 }
 
-bool FMacPlatformProcess::IsThisApplicationForeground()
-{
-	SCOPED_AUTORELEASE_POOL;
-	return [NSApp isActive] && MacApplication && MacApplication->IsWorkspaceSessionActive();
-}
-
 bool FMacPlatformProcess::IsSandboxedApplication()
 {
+	// Temporarily disabled as it can take 15 seconds or more to execute this function in Fortnite on a low spec Macs.
+	return false;
+#if 0
 	SCOPED_AUTORELEASE_POOL;
 	
 	bool bIsSandboxedApplication = false;
@@ -744,6 +750,7 @@ bool FMacPlatformProcess::IsSandboxedApplication()
 	}
 	
 	return bIsSandboxedApplication;
+#endif
 }
 
 void FMacPlatformProcess::CleanFileCache()
@@ -755,10 +762,24 @@ void FMacPlatformProcess::CleanFileCache()
 	bShouldCleanShaderWorkingDirectory = GIsFirstInstance;
 #endif
 
-	if (bShouldCleanShaderWorkingDirectory && !FParse::Param( FCommandLine::Get(), TEXT("Multiprocess")))
-	{
-		FPlatformProcess::CleanShaderWorkingDir();
-	}
+    if (bShouldCleanShaderWorkingDirectory && !FParse::Param( FCommandLine::Get(), TEXT("Multiprocess")))
+    {
+        // get shader path, and convert it to the userdirectory
+		for (const auto& ShaderSourceDirectoryEntry : FPlatformProcess::AllShaderSourceDirectoryMappings())
+		{
+			FString ShaderDir = FString(FPlatformProcess::BaseDir()) / ShaderSourceDirectoryEntry.Value;
+            FString UserShaderDir = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*ShaderDir);
+            FPaths::CollapseRelativeDirectories(ShaderDir);
+            
+            // make sure we don't delete from the source directory
+            if (ShaderDir != UserShaderDir)
+            {
+                IFileManager::Get().DeleteDirectory(*UserShaderDir, false, true);
+            }
+        }
+        
+        FPlatformProcess::CleanShaderWorkingDir();
+    }
 }
 
 const TCHAR* FMacPlatformProcess::BaseDir()
@@ -773,9 +794,9 @@ const TCHAR* FMacPlatformProcess::BaseDir()
 		if ([[BasePath pathExtension] isEqual: @"app"])
 		{
 			NSString* BundledBinariesPath = NULL;
-			if (!FApp::IsGameNameEmpty())
+			if (!FApp::IsProjectNameEmpty())
 			{
-				BundledBinariesPath = [BasePath stringByAppendingPathComponent : [NSString stringWithFormat : @"Contents/UE4/%s/Binaries/Mac", TCHAR_TO_UTF8(FApp::GetGameName())]];
+				BundledBinariesPath = [BasePath stringByAppendingPathComponent : [NSString stringWithFormat : @"Contents/UE4/%s/Binaries/Mac", TCHAR_TO_UTF8(FApp::GetProjectName())]];
 			}
 			if (!BundledBinariesPath || ![FileManager fileExistsAtPath:BundledBinariesPath])
 			{
@@ -829,7 +850,7 @@ static TCHAR* UserLibrarySubDirectory()
 	static TCHAR Result[MAX_PATH] = TEXT("");
 	if (!Result[0])
 	{
-		FString SubDirectory = IsRunningGame() ? FString(FApp::GetGameName()) : FString(TEXT("Unreal Engine")) / FApp::GetGameName();
+		FString SubDirectory = IsRunningGame() ? FString(FApp::GetProjectName()) : FString(TEXT("Unreal Engine")) / FApp::GetProjectName();
 		if (IsRunningDedicatedServer())
 		{
 			SubDirectory += TEXT("Server");
@@ -1128,7 +1149,28 @@ bool FMacPlatformProcess::WritePipe(void* WritePipe, const FString& Message, FSt
 		*OutWritten = FUTF8ToTCHAR((const ANSICHAR*)Buffer).Get();
 	}
 
+	delete[] Buffer;
 	return (BytesWritten == BytesAvailable);
+}
+
+bool FMacPlatformProcess::WritePipe(void* WritePipe, const uint8* Data, const int32 DataLength, int32* OutDataLength)
+{
+	// if there is not a message or WritePipe is null
+	if ((DataLength == 0) || (WritePipe == nullptr))
+	{
+		return false;
+	}
+
+	// write to pipe
+	uint32 BytesWritten = write([(NSFileHandle*)WritePipe fileDescriptor], Data, DataLength);
+
+	// Get written Data Length
+	if (OutDataLength)
+	{
+		*OutDataLength = (int32)BytesWritten;
+	}
+
+	return (BytesWritten == DataLength);
 }
 
 bool FMacPlatformProcess::IsApplicationRunning(const TCHAR* ProcName)
@@ -1223,9 +1265,17 @@ FString FMacPlatformProcess::FProcEnumInfo::GetName() const
 	return FPaths::GetCleanFilename(GetFullPath());
 }
 
-#include "MacPlatformRunnableThread.h"
-
 FRunnableThread* FMacPlatformProcess::CreateRunnableThread()
 {
-	return new FRunnableThreadMac();
+	return new FRunnableThreadApple();
+}
+
+void FMacPlatformProcess::SetThreadAffinityMask(uint64 AffinityMask)
+{
+	if( AffinityMask != FPlatformAffinity::GetNoAffinityMask() )
+	{
+		thread_affinity_policy AP;
+		AP.affinity_tag = AffinityMask;
+		thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_AFFINITY_POLICY, (integer_t*)&AP, THREAD_AFFINITY_POLICY_COUNT);
+	}
 }

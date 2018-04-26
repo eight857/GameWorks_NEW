@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -63,7 +63,7 @@ public:
 	}
 
 	/* Not legal to destroy the request until it is complete. */
-	virtual ~IAsyncReadRequest()
+	virtual ~IAsyncReadRequest() TSAN_SAFE
 	{
 		check(bCompleteAndCallbackCalled && (bSizeRequest || !Memory)); // must be complete, and if it was a read request, the memory should be gone
 		DEC_DWORD_STAT(STAT_AsyncFileRequests);
@@ -73,7 +73,7 @@ public:
 	* Nonblocking poll of the state of completion.
 	* @return true if the request is complete
 	**/
-	FORCEINLINE bool PollCompletion()
+	FORCEINLINE bool PollCompletion() TSAN_SAFE
 	{
 		return bCompleteAndCallbackCalled;
 	}
@@ -96,12 +96,15 @@ public:
 	/** Cancel the request. This is a non-blocking async call and so does not ensure completion! **/
 	FORCEINLINE void Cancel()
 	{
-		bCanceled = true;
-		bDataIsReady = true;
-		FPlatformMisc::MemoryBarrier();
-		if (!PollCompletion())
+		if (!bCanceled)
 		{
-			return CancelImpl();
+			bCanceled = true;
+			bDataIsReady = true;
+			FPlatformMisc::MemoryBarrier();
+			if (!PollCompletion())
+			{
+				return CancelImpl();
+			}
 		}
 	}
 
@@ -119,7 +122,7 @@ public:
 	* Return the bytes of a completed read request. Not legal to call unless the request is complete.
 	* @return Returned memory block which if non-null contains the bytes read. Caller owns the memory block and must call FMemory::Free on it when done. Can be null if the file was not found or could not be read or the request was cancelled, or the request priority was AIOP_Precache.
 	**/
-	FORCEINLINE uint8* GetReadResults()
+	FORCEINLINE uint8* GetReadResults() TSAN_SAFE
 	{
 		check(bDataIsReady && !bSizeRequest);
 		uint8* Result = Memory;
@@ -145,7 +148,7 @@ protected:
 	/** Cancel the request. This is a non-blocking async call and so does not ensure completion! **/
 	virtual void CancelImpl() = 0;
 
-	void SetDataComplete()
+	void SetDataComplete() TSAN_SAFE
 	{
 		bDataIsReady = true;
 		FPlatformMisc::MemoryBarrier();
@@ -156,13 +159,13 @@ protected:
 		FPlatformMisc::MemoryBarrier();
 	}
 
-	void SetAllComplete()
+	void SetAllComplete() TSAN_SAFE
 	{
 		bCompleteAndCallbackCalled = true;
 		FPlatformMisc::MemoryBarrier();
 	}
 
-	void SetComplete()
+	void SetComplete() TSAN_SAFE
 	{
 		SetDataComplete();
 		SetAllComplete();
@@ -198,4 +201,8 @@ public:
 	* @return A request for the read. This is owned by the caller and must be deleted by the caller.
 	**/
 	virtual IAsyncReadRequest* ReadRequest(int64 Offset, int64 BytesToRead, EAsyncIOPriority Priority = AIOP_Normal, FAsyncFileCallBack* CompleteCallback = nullptr, uint8* UserSuppliedMemory = nullptr) = 0;
+
+	// Non-copyable
+	IAsyncReadFileHandle(const IAsyncReadFileHandle&) = delete;
+	IAsyncReadFileHandle& operator=(const IAsyncReadFileHandle&) = delete;
 };

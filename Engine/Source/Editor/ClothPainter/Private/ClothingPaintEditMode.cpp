@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ClothingPaintEditMode.h"
 #include "IPersonaPreviewScene.h"
@@ -12,10 +12,23 @@
 #include "ClothingAssetInterface.h"
 #include "ComponentRecreateRenderStateContext.h"
 #include "IPersonaToolkit.h"
+#include "ClothingAsset.h"
+#include "EditorViewportClient.h"
+#include "AssetViewerSettings.h"
+#include "Editor/EditorPerProjectUserSettings.h"
 
 FClothingPaintEditMode::FClothingPaintEditMode()
 {
 	
+}
+
+FClothingPaintEditMode::~FClothingPaintEditMode()
+{
+	if(ClothPainter.IsValid())
+	{
+		// Drop the reference
+		ClothPainter = nullptr;
+	}
 }
 
 class IPersonaPreviewScene* FClothingPaintEditMode::GetAnimPreviewScene() const
@@ -25,7 +38,10 @@ class IPersonaPreviewScene* FClothingPaintEditMode::GetAnimPreviewScene() const
 
 void FClothingPaintEditMode::Initialize()
 {
-	MeshPainter = ClothPainter = new FClothPainter();
+	ClothPainter = MakeShared<FClothPainter>();
+	MeshPainter = ClothPainter.Get();
+
+	ClothPainter->Init();
 }
 
 TSharedPtr<class FModeToolkit> FClothingPaintEditMode::GetToolkit()
@@ -41,12 +57,25 @@ void FClothingPaintEditMode::SetPersonaToolKit(class TSharedPtr<IPersonaToolkit>
 void FClothingPaintEditMode::Enter()
 {
 	IMeshPaintEdMode::Enter();
+
+	for (int32 ViewIndex = 0; ViewIndex < GEditor->AllViewportClients.Num(); ++ViewIndex)
+	{
+		FEditorViewportClient* ViewportClient = GEditor->AllViewportClients[ViewIndex];
+		if (!ViewportClient || ViewportClient->GetModeTools() != GetModeManager() )
+		{
+			continue;
+		}
+
+		ViewportClient->EngineShowFlags.DisableAdvancedFeatures();
+	}
+
 	IPersonaPreviewScene* Scene = GetAnimPreviewScene();
 	if (Scene)
 	{
 		ClothPainter->SetSkeletalMeshComponent(Scene->GetPreviewMeshComponent());
 	}
 	
+	ClothPainter->EnterPaintMode();
 }
 
 void FClothingPaintEditMode::Exit()
@@ -64,19 +93,22 @@ void FClothingPaintEditMode::Exit()
 			{
 				for(UClothingAssetBase* AssetBase : SkelMesh->MeshClothingAssets)
 				{
-					AssetBase->InvalidateCachedData();
+					UClothingAsset* ConcreteAsset = CastChecked<UClothingAsset>(AssetBase);
+					ConcreteAsset->ApplyParameterMasks();
 				}
 			}
 
 			MeshComponent->RebuildClothingSectionsFixedVerts();
 			MeshComponent->ResetMeshSectionVisibility();
 			MeshComponent->SelectedClothingGuidForPainting = FGuid();
+			MeshComponent->SelectedClothingLodForPainting = INDEX_NONE;
+			MeshComponent->SelectedClothingLodMaskForPainting = INDEX_NONE;
 		}
 	}
 
 	if(PersonaToolkit.IsValid())
 	{
-		if(USkeletalMesh* SkelMesh = PersonaToolkit->GetPreviewMesh())
+		if(USkeletalMesh* SkelMesh = PersonaToolkit.Pin()->GetPreviewMesh())
 		{
 			for(TObjectIterator<USkeletalMeshComponent> It; It; ++It)
 			{
@@ -89,7 +121,27 @@ void FClothingPaintEditMode::Exit()
 		}
 	}
 
+	for (int32 ViewIndex = 0; ViewIndex < GEditor->AllViewportClients.Num(); ++ViewIndex)
+	{
+		FEditorViewportClient* ViewportClient = GEditor->AllViewportClients[ViewIndex];
+		if (!ViewportClient || ViewportClient->GetModeTools() != GetModeManager() )
+		{
+			continue;
+		}
 
+		const bool bEnablePostProcessing = UAssetViewerSettings::Get()->Profiles[GetMutableDefault<UEditorPerProjectUserSettings>()->AssetViewerProfileIndex].bPostProcessingEnabled;
+
+		if ( bEnablePostProcessing )
+		{
+			ViewportClient->EngineShowFlags.EnableAdvancedFeatures();
+		}
+		else
+		{
+			ViewportClient->EngineShowFlags.DisableAdvancedFeatures();
+		}
+	}
+
+	ClothPainter->ExitPaintMode();
 
 	IMeshPaintEdMode::Exit();
 }

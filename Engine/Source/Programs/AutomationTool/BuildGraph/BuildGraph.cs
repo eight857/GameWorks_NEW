@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -11,6 +11,7 @@ using System.Reflection;
 using System.Collections;
 using System.IO;
 using System.Xml;
+using Tools.DotNETCommon;
 
 namespace AutomationTool
 {
@@ -115,23 +116,24 @@ namespace AutomationTool
 
 			// Set up the standard properties which build scripts might need
 			Dictionary<string, string> DefaultProperties = new Dictionary<string,string>(StringComparer.InvariantCultureIgnoreCase);
-			DefaultProperties["Branch"] = P4Enabled ? P4Env.BuildRootP4 : "Unknown";
-			DefaultProperties["EscapedBranch"] = P4Enabled ? P4Env.BuildRootEscaped : "Unknown";
+			DefaultProperties["Branch"] = P4Enabled ? P4Env.Branch : "Unknown";
+			DefaultProperties["EscapedBranch"] = P4Enabled ? CommandUtils.EscapePath(P4Env.Branch) : "Unknown";
 			DefaultProperties["Change"] = P4Enabled ? P4Env.Changelist.ToString() : "0";
 			DefaultProperties["CodeChange"] = P4Enabled ? P4Env.CodeChangelist.ToString() : "0";
 			DefaultProperties["RootDir"] = CommandUtils.RootDirectory.FullName;
 			DefaultProperties["IsBuildMachine"] = IsBuildMachine ? "true" : "false";
 			DefaultProperties["HostPlatform"] = HostPlatform.Current.HostEditorPlatform.ToString();
-			DefaultProperties["RestrictedFolderNames"] = String.Join(";", PlatformExports.RestrictedFolderNames);
-			DefaultProperties["RestrictedFolderFilter"] = String.Join(";", PlatformExports.RestrictedFolderNames.Select(x => String.Format(".../{0}/...", x)));
+			DefaultProperties["RestrictedFolderNames"] = String.Join(";", PlatformExports.RestrictedFolderNames.Select(x => x.DisplayName));
+			DefaultProperties["RestrictedFolderFilter"] = String.Join(";", PlatformExports.RestrictedFolderNames.Select(x => String.Format(".../{0}/...", x.DisplayName)));
 
 			// Attempt to read existing Build Version information
 			BuildVersion Version;
-			if (BuildVersion.TryRead(FileReference.Combine(CommandUtils.RootDirectory, "Engine", "Build", "Build.version").FullName, out Version))
+			if (BuildVersion.TryRead(BuildVersion.GetDefaultFileName(), out Version))
 			{
 				DefaultProperties["EngineMajorVersion"] = Version.MajorVersion.ToString();
 				DefaultProperties["EngineMinorVersion"] = Version.MinorVersion.ToString();
 				DefaultProperties["EnginePatchVersion"] = Version.PatchVersion.ToString();
+				DefaultProperties["EngineCompatibleChange"] = Version.CompatibleChangelist.ToString();
 			}
 
 			// Add any additional custom arguments from the command line (of the form -Set:X=Y)
@@ -359,10 +361,10 @@ namespace AutomationTool
 			// Find the triggers which we are explicitly running.
 			ManualTrigger Trigger = null;
 			if(TriggerName != null && !Graph.NameToTrigger.TryGetValue(TriggerName, out Trigger))
-				{
-					LogError("Couldn't find trigger '{0}'", TriggerName);
-					return ExitCode.Error_Unknown;
-				}
+			{
+				LogError("Couldn't find trigger '{0}'", TriggerName);
+				return ExitCode.Error_Unknown;
+			}
 
 			// If we're just building a single node, find it 
 			Node SingleNode = null;
@@ -493,7 +495,14 @@ namespace AutomationTool
 			}
 
 			// Make sure the directory exists
-			DirectoryReference.CreateDirectory(Location.Directory);
+			try
+			{
+				DirectoryReference.CreateDirectory(Location.Directory);
+			}
+			catch (Exception Ex)
+			{
+				throw new AutomationException(Ex, "Unable to create '{0}'", Location.Directory);
+			}
 
 			// Create a temp file containing the owner name
 			string TempFileName;
@@ -685,14 +694,18 @@ namespace AutomationTool
 			}
 
 			// Check that none of the inputs have been clobbered
-			List<TempStorageFile> ModifiedFiles = InputManifests.Values.SelectMany(x => x.Files).Where(x => !x.CompareSilent(CommandUtils.RootDirectory)).ToList();
+			Dictionary<string, string> ModifiedFiles = new Dictionary<string, string>(StringComparer.InvariantCultureIgnoreCase);
+			foreach(TempStorageFile File in InputManifests.Values.SelectMany(x => x.Files))
+			{
+				string Message;
+				if(!ModifiedFiles.ContainsKey(File.RelativePath) && !File.Compare(CommandUtils.RootDirectory, out Message))
+				{
+					ModifiedFiles.Add(File.RelativePath, Message);
+				}
+			}
 			if(ModifiedFiles.Count > 0)
 			{
-				foreach(TempStorageFile ModifiedFile in ModifiedFiles)
-				{
-					CommandUtils.LogError("Build product from a previous step has been modified: {0}", ModifiedFile.RelativePath);
-				}
-				return false;
+				throw new AutomationException("Build {0} from a previous step have been modified:\n{1}", (ModifiedFiles.Count == 1)? "product" : "products", String.Join("\n", ModifiedFiles.Select(x => x.Value)));
 			}
 
 			// Determine all the output files which are required to be copied to temp storage (because they're referenced by nodes in another agent)
@@ -828,7 +841,7 @@ namespace AutomationTool
 
 			// Parse the engine version
 			BuildVersion Version;
-			if(!BuildVersion.TryRead(out Version))
+			if(!BuildVersion.TryRead(BuildVersion.GetDefaultFileName(), out Version))
 			{
 				throw new AutomationException("Couldn't read Build.version");
 			}

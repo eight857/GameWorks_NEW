@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -47,11 +47,11 @@ public:
 	{ }
 
 	/** Construct a Margin with uniform space on all sides */
-	FMargin( float UnifromMargin )
-		: Left(UnifromMargin)
-		, Top(UnifromMargin)
-		, Right(UnifromMargin)
-		, Bottom(UnifromMargin)
+	FMargin( float UniformMargin )
+		: Left(UniformMargin)
+		, Top(UniformMargin)
+		, Right(UniformMargin)
+		, Bottom(UniformMargin)
 	{ }
 	
 	/** Construct a Margin where Horizontal describes Left and Right spacing while Vertical describes Top and Bottom spacing */

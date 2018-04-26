@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RenderTargetPool.h: Scene render target pool manager.
@@ -17,11 +17,13 @@ class FViewInfo;
 /** The reference to a pooled render target, use like this: TRefCountPtr<IPooledRenderTarget> */
 struct FPooledRenderTarget : public IPooledRenderTarget
 {
-	FPooledRenderTarget(const FPooledRenderTargetDesc& InDesc) 
+	FPooledRenderTarget(const FPooledRenderTargetDesc& InDesc, class FRenderTargetPool* InRenderTargetPool) 
 		: NumRefs(0)
 		, UnusedForNFrames(0)
 		, Desc(InDesc)
 		, bSnapshot(false)
+		, RenderTargetPool(InRenderTargetPool)
+		, FrameNumberLastDiscard(-1)
 	{
 	}
 	/* Constructor that makes a snapshot */
@@ -30,6 +32,8 @@ struct FPooledRenderTarget : public IPooledRenderTarget
 		, UnusedForNFrames(0)
 		, Desc(SnaphotSource.Desc)
 		, bSnapshot(true)
+		, RenderTargetPool(SnaphotSource.RenderTargetPool)
+		, FrameNumberLastDiscard(-1)
 	{
 		check(IsInRenderingThread());
 		RenderTargetItem = SnaphotSource.RenderTargetItem;
@@ -55,9 +59,17 @@ struct FPooledRenderTarget : public IPooledRenderTarget
 	// interface IPooledRenderTarget --------------
 
 	virtual uint32 AddRef() const override final;
-	virtual uint32 Release() const override final;
+	virtual uint32 Release() override final;
 	virtual uint32 GetRefCount() const override final;
 	virtual bool IsFree() const override final;
+	virtual uint32 HasBeenDiscardedThisFrame() const
+	{
+		return GFrameNumberRenderThread == FrameNumberLastDiscard;
+	}
+	bool IsTransient() const
+	{
+		return !!(Desc.Flags & TexCreate_Transient);
+	}
 	virtual void SetDebugName(const TCHAR *InName);
 	virtual const FPooledRenderTargetDesc& GetDesc() const;
 	virtual uint32 ComputeMemorySize() const;
@@ -75,6 +87,12 @@ private:
 	FPooledRenderTargetDesc Desc;
 	/** Snapshots are sortof fake pooled render targets, they don't own anything and can outlive the things that created them. These are for threaded rendering. */
 	bool bSnapshot;
+
+	/** Pointer back to the pool for render targets which are actually pooled, otherwise NULL. */
+	FRenderTargetPool* RenderTargetPool;
+
+	/** Keeps track of the last frame we unmapped physical memory for this resource. We can't map again in the same frame if we did that */
+	uint32 FrameNumberLastDiscard;
 
 	/** @return true:release this one, false otherwise */
 	bool OnFrameStart();
@@ -184,7 +202,11 @@ private:
 };
 
 
-
+enum class ERenderTargetTransience : uint8
+{
+	NonTransient,
+	Transient,
+};
 
 /**
  * Encapsulates the render targets pools that allows easy sharing (mostly used on the render thread side)
@@ -203,7 +225,7 @@ public:
 	 * call from RenderThread only
 	 * @return true if the old element was still valid, false if a new one was assigned
 	 */
-	bool FindFreeElement(FRHICommandList& RHICmdList, const FPooledRenderTargetDesc& Desc, TRefCountPtr<IPooledRenderTarget>& Out, const TCHAR* InDebugName, bool bDoWritableBarrier = true);
+	bool FindFreeElement(FRHICommandList& RHICmdList, const FPooledRenderTargetDesc& Desc, TRefCountPtr<IPooledRenderTarget>& Out, const TCHAR* InDebugName, bool bDoWritableBarrier = true, ERenderTargetTransience TransienceHint = ERenderTargetTransience::Transient );
 
 	void CreateUntrackedElement(const FPooledRenderTargetDesc& Desc, TRefCountPtr<IPooledRenderTarget>& Out, const FSceneRenderTargetItem& Item);
 
@@ -213,7 +235,7 @@ public:
 	/** Destruct all snapshots, this must be done after all outstanding async tasks are done. It is important because they hold ref counted texture pointers etc **/
 	void DestructSnapshots();
 
-
+	void OnRenderTargetUnreferenced(IPooledRenderTarget* RenderTarget);
 
 	/** Only to get statistics on usage and free elements. Normally only called in renderthread or if FlushRenderingCommands was called() */
 	void GetStats(uint32& OutWholeCount, uint32& OutWholePoolInKB, uint32& OutUsedInKB) const;
@@ -263,7 +285,11 @@ public:
 
 	FVisualizeTexture VisualizeTexture;
 
+	void UpdateElementSize(const TRefCountPtr<IPooledRenderTarget>& Element, const uint32 OldSize);
+
 private:
+
+	bool DoesTargetNeedTransienceOverride(const FPooledRenderTargetDesc& InputDesc, ERenderTargetTransience TransienceHint) const;
 
 	friend void RenderTargetPoolEvents(const TArray<FString>& Args);
 
@@ -272,7 +298,7 @@ private:
 	TArray< TRefCountPtr<FPooledRenderTarget> > DeferredDeleteArray;
 	TArray< FTextureRHIParamRef > TransitionTargets;	
 
-	/** These are snapshots, have odd life times, live in the scene allocator, and don't contibute to any accounting or other management. */
+	/** These are snapshots, have odd life times, live in the scene allocator, and don't contribute to any accounting or other management. */
 	TArray<FPooledRenderTarget*> PooledRenderTargetSnapshots;
 
 	// redundant, can always be computed with GetStats(), to debug "out of memory" situations and used for r.RenderTargetPoolMin
@@ -298,15 +324,14 @@ private:
 		SMemoryStats()
 			: DisplayedUsageInBytes(0)
 			, TotalUsageInBytes(0)
-			, TotalColumnSize(0)
 		{
 		}
 		// for statistics
 		uint64 DisplayedUsageInBytes;
 		// for statistics
 		uint64 TotalUsageInBytes;
-		// for display purpose, to normalize the view width
-		uint64 TotalColumnSize;
+		// for display purposes, to normalize the view width (Initialize to 1 to avoid a division by zero when compiled out)
+		uint64 TotalColumnSize = 1;
 	};
 
 	// if next frame we want to run with bEventRecording=true

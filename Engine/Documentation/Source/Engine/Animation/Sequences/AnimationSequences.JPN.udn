@@ -1,8 +1,8 @@
-﻿INTSourceChangelist:3219745
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title:アニメーション シーケンス
 Crumbs: %ROOT%, Engine, Engine/Animation
-Description:単一のアニメーションを構成するすべての変形データを含む個々のアセット
+Description:単一のアニメーションを構成するすべてのトランスフォーム データを含む個々のアセット
 Related:Engine/Content/FBX/Animations
 Related:Engine/Content/Types/SkeletalMeshes
 Related:Engine/Animation/PhysicallyDrivenAnimation
@@ -10,26 +10,9 @@ Related:Engine/Animation/StateMachines
 Related:Gameplay/AI
 Related:Engine/Content/Tools/MayaRiggingTool
 version:4.14
+tags:Assets
+topic-image:Engine/Animation/Overview/AnimationSeqTopic.png
 
-[VAR:Topic]
-[OBJECT:Topic]
-	[PARAM:image]
-		![%Engine/Animation/Sequences:title%](Engine/Animation/animation_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/content_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Animation/Sequences:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Animation/Sequences:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Animation/Sequences]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
 
 [TOC(start:2 end:2)]
 
@@ -119,7 +102,8 @@ Animation Sequence アセットを、**アニメーション エディタ** で�
 
 ![](AnimAssetDetails.png)
 
-<!-- This was moved with the 4.14 Animation Edtior Revamp
+[COMMENT]
+ This was moved with the 4.14 Animation Edtior Revamp
 ### 線形キーの削除
 
 |---|---|
@@ -132,7 +116,8 @@ Animation Sequence アセットを、**アニメーション エディタ** で�
 |**Parent Key Scale**| 親も同一の時間位置にキーを持つ場合、ボーンがキーを保持する可能性を増すスケール値です。値が高いほど、圧縮は犠牲になりますが、アニメーションから振動によるアーティファクトを取り除くことができます。 |
 |**Retarget**| true の場合、アニメーションが圧縮されるため、アニメートしたノードを調整して圧縮誤差を補正します。false の場合は、アニメートしたノードを調整しないでください。 |
 |**Actually Filter Linear Keys**| 最終的なフィルタリング段階に入るかどうかを制御します。または、ビット単位の圧縮後のリターゲットのみが行われます。このプロパティと **Retarget** が両方とも false の場合は、線形圧縮機能は基本的なビット単位圧縮機能と同じくらい性能が低く、極めて低速となります。|
--->
+
+[/COMMENT]
 
 ### アニメーション
 

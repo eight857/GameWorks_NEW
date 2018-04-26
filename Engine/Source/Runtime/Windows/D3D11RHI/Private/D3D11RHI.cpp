@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D11RHI.cpp: Unreal D3D RHI library implementation.
@@ -132,7 +132,7 @@ void GetMipAndSliceInfoFromSRV(ID3D11ShaderResourceView* SRV, int32& MipLevel, i
 void FD3D11DynamicRHI::CheckIfSRVIsResolved(ID3D11ShaderResourceView* SRV)
 {
 #if CHECK_SRV_TRANSITIONS
-	if (GRHIThread || !SRV)
+	if (IsRunningRHIInSeparateThread() || !SRV)
 	{
 		return;
 	}
@@ -280,69 +280,18 @@ void FD3D11DynamicRHI::ClearAllShaderResources()
 	ClearAllShaderResourcesForFrequency<SF_Compute>();
 }
 
-void FD3D11DynamicRHI::IssueLongGPUTask()
-{
-	if (GMaxRHIFeatureLevel >= ERHIFeatureLevel::SM4)
-	{
-		int32 LargestViewportIndex = INDEX_NONE;
-		int32 LargestViewportPixels = 0;
-
-		for (int32 ViewportIndex = 0; ViewportIndex < Viewports.Num(); ViewportIndex++)
-		{
-			FD3D11Viewport* Viewport = Viewports[ViewportIndex];
-
-			if (Viewport->GetSizeXY().X * Viewport->GetSizeXY().Y > LargestViewportPixels)
-			{
-				LargestViewportPixels = Viewport->GetSizeXY().X * Viewport->GetSizeXY().Y;
-				LargestViewportIndex = ViewportIndex;
-			}
-		}
-
-		if (LargestViewportIndex >= 0)
-		{
-			FD3D11Viewport* Viewport = Viewports[LargestViewportIndex];
-
-			FRHICommandList_RecursiveHazardous RHICmdList(this);
-
-			FGraphicsPipelineStateInitializer GraphicsPSOInit;
-			SetRenderTarget(RHICmdList, Viewport->GetBackBuffer(), FTextureRHIRef());
-			RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
-
-			GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGBA, BO_Add, BF_One, BF_One>::GetRHI();
-			GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
-			GraphicsPSOInit.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
-
-			auto ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
-			TShaderMapRef<TOneColorVS<true> > VertexShader(ShaderMap);
-			TShaderMapRef<FLongGPUTaskPS> PixelShader(ShaderMap);
-
-			GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GD3D11Vector4VertexDeclaration.VertexDeclarationRHI;
-			GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
-			GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
-			GraphicsPSOInit.PrimitiveType = PT_TriangleStrip;
-
-			FLocalGraphicsPipelineState BaseGraphicsPSO = RHICmdList.BuildLocalGraphicsPipelineState(GraphicsPSOInit);
-			RHICmdList.SetLocalGraphicsPipelineState(BaseGraphicsPSO);
-			RHICmdList.SetBlendFactor(FLinearColor::Black);
-
-			// Draw a fullscreen quad
-			FVector4 Vertices[4];
-			Vertices[0].Set( -1.0f,  1.0f, 0, 1.0f );
-			Vertices[1].Set(  1.0f,  1.0f, 0, 1.0f );
-			Vertices[2].Set( -1.0f, -1.0f, 0, 1.0f );
-			Vertices[3].Set(  1.0f, -1.0f, 0, 1.0f );
-			DrawPrimitiveUP(RHICmdList, PT_TriangleStrip, 2, Vertices, sizeof(Vertices[0]));
-			// Implicit flush. Always call flush when using a command list in RHI implementations before doing anything else. This is super hazardous.
-		}
-	}
-}
-
 void FD3DGPUProfiler::BeginFrame(FD3D11DynamicRHI* InRHI)
 {
 	CurrentEventNode = NULL;
 	check(!bTrackingEvents);
 	check(!CurrentEventNodeFrame); // this should have already been cleaned up and the end of the previous frame
 
+	static auto* CrashCollectionEnableCvar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.gpucrash.collectionenable"));
+	static auto* CrashCollectionDataDepth = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.gpucrash.datadepth"));
+
+	bTrackingGPUCrashData = CrashCollectionEnableCvar ? CrashCollectionEnableCvar->GetValueOnRenderThread() != 0 : false;
+	GPUCrashDataDepth = CrashCollectionDataDepth ? CrashCollectionDataDepth->GetValueOnRenderThread() : -1;
+	
 	// latch the bools from the game thread into our private copy
 	bLatchedGProfilingGPU = GTriggerGPUProfile;
 	bLatchedGProfilingGPUHitches = GTriggerGPUHitchProfile;
@@ -351,17 +300,10 @@ void FD3DGPUProfiler::BeginFrame(FD3D11DynamicRHI* InRHI)
 		bLatchedGProfilingGPU = false; // we do NOT permit an ordinary GPU profile during hitch profiles
 	}
 
-	if (bLatchedGProfilingGPU)
-	{
-		// Issue a bunch of GPU work at the beginning of the frame, to make sure that we are GPU bound
-		// We can't isolate idle time from GPU timestamps
-		InRHI->IssueLongGPUTask();
-	}
-
 	// if we are starting a hitch profile or this frame is a gpu profile, then save off the state of the draw events
 	if (bLatchedGProfilingGPU || (!bPreviousLatchedGProfilingGPUHitches && bLatchedGProfilingGPUHitches))
 	{
-		bOriginalGEmitDrawEvents = GEmitDrawEvents;
+		bOriginalGEmitDrawEvents = GetEmitDrawEvents();
 	}
 
 	if (bLatchedGProfilingGPU || bLatchedGProfilingGPUHitches)
@@ -374,7 +316,7 @@ void FD3DGPUProfiler::BeginFrame(FD3D11DynamicRHI* InRHI)
 		}
 		else
 		{
-			GEmitDrawEvents = true;  // thwart an attempt to turn this off on the game side
+			SetEmitDrawEvents(true);  // thwart an attempt to turn this off on the game side
 			bTrackingEvents = true;
 			CurrentEventNodeFrame = new FD3D11EventNodeFrame(InRHI);
 			CurrentEventNodeFrame->StartFrame();
@@ -384,7 +326,7 @@ void FD3DGPUProfiler::BeginFrame(FD3D11DynamicRHI* InRHI)
 	{
 		// hitch profiler is turning off, clear history and restore draw events
 		GPUHitchEventNodeFrames.Empty();
-		GEmitDrawEvents = bOriginalGEmitDrawEvents;
+		SetEmitDrawEvents(bOriginalGEmitDrawEvents);
 	}
 	bPreviousLatchedGProfilingGPUHitches = bLatchedGProfilingGPUHitches;
 
@@ -394,7 +336,7 @@ void FD3DGPUProfiler::BeginFrame(FD3D11DynamicRHI* InRHI)
 		FrameTiming.StartTiming();
 	}
 
-	if (GEmitDrawEvents)
+	if (GetEmitDrawEvents())
 	{
 		PushEvent(TEXT("FRAME"), FColor(0, 255, 0, 255));
 	}
@@ -408,7 +350,7 @@ void FD3D11DynamicRHI::RHIEndFrame()
 
 void FD3DGPUProfiler::EndFrame()
 {
-	if (GEmitDrawEvents)
+	if (GetEmitDrawEvents())
 	{
 		PopEvent();
 	}
@@ -444,7 +386,7 @@ void FD3DGPUProfiler::EndFrame()
 	{
 		if (bTrackingEvents)
 		{
-			GEmitDrawEvents = bOriginalGEmitDrawEvents;
+			SetEmitDrawEvents(bOriginalGEmitDrawEvents);
 			UE_LOG(LogD3D11RHI, Warning, TEXT(""));
 			UE_LOG(LogD3D11RHI, Warning, TEXT(""));
 			CurrentEventNodeFrame->DumpEventTree();
@@ -516,6 +458,7 @@ void FD3DGPUProfiler::EndFrame()
 		LastTime = Now;
 	}
 	bTrackingEvents = false;
+	bTrackingGPUCrashData = false;
 	delete CurrentEventNodeFrame;
 	CurrentEventNodeFrame = NULL;
 }
@@ -558,26 +501,49 @@ void FD3D11DynamicRHI::RHIEndScene()
 	ResourceTableFrameCounter = INDEX_NONE;
 }
 
+static FString EventDeepString(TEXT("EventTooDeep"));
+static const uint32 EventDeepCRC = FCrc::StrCrc32<TCHAR>(*EventDeepString);
+
+FD3DGPUProfiler::FD3DGPUProfiler(class FD3D11DynamicRHI* InD3DRHI) :
+	FGPUProfiler(),
+	FrameTiming(InD3DRHI, 4),
+	D3D11RHI(InD3DRHI)
+{
+	// Initialize Buffered timestamp queries 
+	FrameTiming.InitResource();
+	CachedStrings.Emplace(EventDeepCRC, EventDeepString);
+}
+
 void FD3DGPUProfiler::PushEvent(const TCHAR* Name, FColor Color)
 {
 #if NV_AFTERMATH
-	if(GDX11NVAfterMathEnabled)
+	if(GDX11NVAfterMathEnabled && bTrackingGPUCrashData)
 	{
-		uint32 CRC = FCrc::StrCrc32<TCHAR>(Name);	
-		
+		uint32 CRC = 0;
+		if (GPUCrashDataDepth < 0 || PushPopStack.Num() < GPUCrashDataDepth)
+		{
+			CRC = FCrc::StrCrc32<TCHAR>(Name);
+
 		if (CachedStrings.Num() > 10000)
 		{
 			CachedStrings.Empty(10000);
+				CachedStrings.Emplace(EventDeepCRC, EventDeepString);
 		}
 
 		if (CachedStrings.Find(CRC) == nullptr)
 		{
 			CachedStrings.Emplace(CRC, FString(Name));
 		}
+				
+		}
+		else
+		{
+			CRC = EventDeepCRC;				
+		}
 		PushPopStack.Push(CRC);
 
-		auto* DeviceContext = D3D11RHI->GetDeviceContext();
-		GFSDK_Aftermath_DX11_SetEventMarker(DeviceContext, &PushPopStack[0], PushPopStack.Num() * sizeof(uint32));
+		auto AftermathContext = D3D11RHI->GetNVAftermathContext();
+		GFSDK_Aftermath_SetEventMarker(AftermathContext, &PushPopStack[0], PushPopStack.Num() * sizeof(uint32));
 	}
 #endif
 
@@ -591,7 +557,7 @@ void FD3DGPUProfiler::PushEvent(const TCHAR* Name, FColor Color)
 void FD3DGPUProfiler::PopEvent()
 {
 #if NV_AFTERMATH
-	if (GDX11NVAfterMathEnabled)
+	if (GDX11NVAfterMathEnabled && bTrackingGPUCrashData)
 	{
 		PushPopStack.Pop(false);
 	}
@@ -610,18 +576,22 @@ bool FD3DGPUProfiler::CheckGpuHeartbeat() const
 #if NV_AFTERMATH
 	if (GDX11NVAfterMathEnabled)
 	{
-		auto* DeviceContext = D3D11RHI->GetDeviceContext();
-		GFSDK_Aftermath_Status Status;
-		GFSDK_Aftermath_ContextData ContextDataOut;
-		auto Result = GFSDK_Aftermath_DX11_GetData(1, &DeviceContext, &ContextDataOut, &Status);
+		auto AftermathContext = D3D11RHI->GetNVAftermathContext();
+		GFSDK_Aftermath_Device_Status Status;
+		auto Result = GFSDK_Aftermath_GetDeviceStatus(&Status);
 		if (Result == GFSDK_Aftermath_Result_Success)
 		{
-			if (Status != GFSDK_Aftermath_Status_Active)
+			if (Status != GFSDK_Aftermath_Device_Status_Active)
 			{
 				GIsGPUCrashed = true;
 				const TCHAR* AftermathReason[] = { TEXT("Active"), TEXT("Timeout"), TEXT("OutOfMemory"), TEXT("PageFault"), TEXT("Unknown") };
 				check(Status < 5);
 				UE_LOG(LogRHI, Error, TEXT("[Aftermath] Status: %s"), AftermathReason[Status]);
+
+				GFSDK_Aftermath_ContextData ContextDataOut;
+				Result = GFSDK_Aftermath_GetData(1, &AftermathContext, &ContextDataOut);
+				if (Result == GFSDK_Aftermath_Result_Success)
+				{
 				UE_LOG(LogRHI, Error, TEXT("[Aftermath] GPU Stack Dump"));
 				uint32 NumCRCs = ContextDataOut.markerSize / sizeof(uint32);
 				uint32* Data = (uint32*)ContextDataOut.markerData;
@@ -634,6 +604,7 @@ bool FD3DGPUProfiler::CheckGpuHeartbeat() const
 					}
 				}
 				UE_LOG(LogRHI, Error, TEXT("[Aftermath] GPU Stack Dump"));
+				}
 				return false;
 			}
 		}
@@ -706,6 +677,14 @@ void UpdateBufferStats(TRefCountPtr<ID3D11Buffer> Buffer, bool bAllocating)
 		{
 			INC_MEMORY_STAT_BY(STAT_StructuredBufferMemory,Desc.ByteWidth);
 		}
+
+#if PLATFORM_WINDOWS
+		// this is a work-around on Windows. Due to the fact that there is no way
+		// to hook the actual d3d allocations we can't track the memory in the normal way.
+		// Instead we simply tell LLM the size of these resources.
+		LLM_SCOPED_PAUSE_TRACKING_WITH_ENUM_AND_AMOUNT(ELLMTag::Meshes, Desc.ByteWidth, ELLMTracker::Default, ELLMAllocType::None);
+		LLM_SCOPED_PAUSE_TRACKING_WITH_ENUM_AND_AMOUNT(ELLMTag::GraphicsPlatform, Desc.ByteWidth, ELLMTracker::Platform, ELLMAllocType::None);
+#endif
 	}
 	else
 	{ //-V523
@@ -725,6 +704,14 @@ void UpdateBufferStats(TRefCountPtr<ID3D11Buffer> Buffer, bool bAllocating)
 		{
 			DEC_MEMORY_STAT_BY(STAT_StructuredBufferMemory,Desc.ByteWidth);
 		}
+
+#if PLATFORM_WINDOWS
+		// this is a work-around on Windows. Due to the fact that there is no way
+		// to hook the actual d3d allocations we can't track the memory in the normal way.
+		// Instead we simply tell LLM the size of these resources.
+		LLM_SCOPED_PAUSE_TRACKING_WITH_ENUM_AND_AMOUNT(ELLMTag::Meshes, -(int64)Desc.ByteWidth, ELLMTracker::Default, ELLMAllocType::None);
+		LLM_SCOPED_PAUSE_TRACKING_WITH_ENUM_AND_AMOUNT(ELLMTag::GraphicsPlatform, -(int64)Desc.ByteWidth, ELLMTracker::Platform, ELLMAllocType::None);
+#endif
 	}
 }
 

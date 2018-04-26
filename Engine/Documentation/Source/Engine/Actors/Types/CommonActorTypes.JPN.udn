@@ -1,8 +1,11 @@
-﻿INTSourceChangelist:3275202
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title:一般的なアクタの種類
 Crumbs: %ROOT%, Engine, Engine/Actors
 Description:レベルで使用する一般的なアクタの種類のリストおよび説明
+parent:Engine/Actors
+type:overview
+order:0
 
 以下は、アンリアル エンジンを用いてゲーム開発をする場合に一般的に使用するアクタを簡単に分類したものです。 
 この分類は、どのようなアクタか、なぜ使用するかについて慣れ親しんでいただくためのものです。
@@ -28,7 +31,8 @@ Description:レベルで使用する一般的なアクタの種類のリスト�
 | **AmbientSound**  | ![](Shared/Icons/Source/icon_class_AmbientSound_40px.png)(convert:false) | **Ambient Sound アクタ** はサウンドキュー形式で、ワールド内で音楽の再生に使用します。サウンドはループさせたり非ループにすることが可能で、サウンド空間化や音量減衰の設定もできますが、全ての設定は SoundCue で行わなければなりません。Ambient Sound アクタ自体には公開しません。 |
 [/REGION]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:Trigger]
 [REGION:imagetable]
 | ![](Engine/Actors/Triggers/box_trigger.png)(w:180) | ![](Engine/Actors/Triggers/capsule_trigger.png)(w:180) | ![](Engine/Actors/Triggers/sphere_trigger.png)(w:180) |
@@ -36,4 +40,5 @@ Description:レベルで使用する一般的なアクタの種類のリスト�
 | ボックス トリガー | カプセル トリガー | 球体トリガー |
 [/REGION]
 [/EXCERPT:Trigger]
--->
+
+[/COMMENT]

@@ -1,29 +1,21 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
-#include "UObject/AssetPtr.h"
+#include "UObjectGlobals.h"
+#include "Package.h"
+#include "UObject/SoftObjectPtr.h"
+#include "SubclassOf.h"
+#include "PersonaPreviewSceneController.h"
 #include "PersonaPreviewSceneDescription.generated.h"
 
-class UAnimationAsset;
 class UPreviewMeshCollection;
 class USkeletalMesh;
-
-UENUM()
-enum class EPreviewAnimationMode : uint8
-{
-	/** Animate the preview based on the current editor (e.g. Skeleton = Reference Pose, Animation = Animation, Animation Blueprint = Animation Blueprint) */
-	Default,
-
-	/** Use the reference pose from the skeleton */
-	ReferencePose,
-
-	/** Use a specified animation */
-	UseSpecificAnimation,
-};
+class UDataAsset;
+class UPreviewMeshCollection;
 
 UCLASS()
 class UPersonaPreviewSceneDescription : public UObject
@@ -31,21 +23,59 @@ class UPersonaPreviewSceneDescription : public UObject
 public:
 	GENERATED_BODY()
 
-	/** The method by which the preview is animated */
-	UPROPERTY(EditAnywhere, Category = "Animation")
-	EPreviewAnimationMode AnimationMode;
+	// The method by which the preview is animated
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, NoClear, Category = "Animation")
+	class TSubclassOf<UPersonaPreviewSceneController> PreviewController;
 
-	/** The preview animation to use */
-	UPROPERTY(EditAnywhere, Category = "Animation", meta=(DisplayThumbnail=true))
-	TAssetPtr<UAnimationAsset> Animation;
+	UPROPERTY()
+	UPersonaPreviewSceneController* PreviewControllerInstance;
+
+	UPROPERTY()
+	TArray<UPersonaPreviewSceneController*> PreviewControllerInstances;
 
 	/** The preview mesh to use */
 	UPROPERTY(EditAnywhere, Category = "Mesh", meta=(DisplayThumbnail=true))
-	TAssetPtr<USkeletalMesh> PreviewMesh;
+	TSoftObjectPtr<USkeletalMesh> PreviewMesh;
 
 	UPROPERTY(EditAnywhere, Category = "Additional Meshes")
-	TAssetPtr<UPreviewMeshCollection> AdditionalMeshes;
+	TSoftObjectPtr<UDataAsset> AdditionalMeshes;
 
 	UPROPERTY()
 	UPreviewMeshCollection* DefaultAdditionalMeshes;
+
+	// Sets the current preview controller for the scene (handles uninitializing and initializing controllers)
+	bool SetPreviewController(UClass* PreviewControllerClass, class IPersonaPreviewScene* PreviewScene)
+	{
+		if (!PreviewControllerClass->HasAnyClassFlags(CLASS_Abstract) &&
+			PreviewControllerClass->IsChildOf(UPersonaPreviewSceneController::StaticClass()) &&
+			(!PreviewControllerInstance || PreviewControllerClass != PreviewControllerInstance->GetClass()))
+		{
+			PreviewController = PreviewControllerClass;
+			if (PreviewControllerInstance)
+			{
+				PreviewControllerInstance->UninitializeView(this, PreviewScene);
+			}
+			PreviewControllerInstance = GetControllerForClass(PreviewControllerClass);
+			PreviewControllerInstance->InitializeView(this, PreviewScene);
+			return true;
+		}
+		return false;
+	}
+
+private:
+	// Gets created controller for the requested class (or creates one if none exists)
+	UPersonaPreviewSceneController* GetControllerForClass(UClass* PreviewControllerClass)
+	{
+		for (UPersonaPreviewSceneController* Controller : PreviewControllerInstances)
+		{
+			if (Controller->GetClass() == PreviewControllerClass)
+			{
+				return Controller;
+			}
+		}
+
+		UPersonaPreviewSceneController* NewController = NewObject<UPersonaPreviewSceneController>(GetTransientPackage(), PreviewControllerClass);
+		PreviewControllerInstances.Add(NewController);
+		return NewController;
+	}
 };

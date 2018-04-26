@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "IOSPlatformFile.h"
 #include "HAL/PlatformTLS.h"
@@ -31,9 +31,9 @@ namespace
 		}
 
 		return FFileStatData(
-			IOSEpoch + FTimespan(0, 0, FileInfo.st_ctime), 
-			IOSEpoch + FTimespan(0, 0, FileInfo.st_atime), 
-			IOSEpoch + FTimespan(0, 0, FileInfo.st_mtime), 
+			IOSEpoch + FTimespan::FromSeconds(FileInfo.st_ctime), 
+			IOSEpoch + FTimespan::FromSeconds(FileInfo.st_atime), 
+			IOSEpoch + FTimespan::FromSeconds(FileInfo.st_mtime), 
 			FileSize,
 			bIsDirectory,
 			!!(FileInfo.st_mode & S_IWUSR)
@@ -390,6 +390,27 @@ FString FIOSPlatformFile::NormalizeDirectory(const TCHAR* Directory)
 	return Result;
 }
 
+
+FString FIOSPlatformFile::ConvertToAbsolutePathForExternalAppForRead( const TCHAR* Filename )
+{
+    struct stat FileInfo;
+    FString NormalizedFilename = NormalizeFilename(Filename);
+    if (stat(TCHAR_TO_UTF8(*ConvertToIOSPath(NormalizedFilename, false)), &FileInfo) == -1)
+    {
+        return ConvertToAbsolutePathForExternalAppForWrite(Filename);
+    }
+    else
+    {
+        return ConvertToIOSPath(NormalizedFilename, false);
+    }
+}
+
+FString FIOSPlatformFile::ConvertToAbsolutePathForExternalAppForWrite( const TCHAR* Filename )
+{
+    FString NormalizedFilename = NormalizeFilename(Filename);
+    return ConvertToIOSPath(NormalizedFilename, true);
+}
+
 bool FIOSPlatformFile::FileExists(const TCHAR* Filename)
 {
 	struct stat FileInfo;
@@ -602,7 +623,7 @@ IFileHandle* FIOSPlatformFile::OpenWrite(const TCHAR* Filename, bool bAppend, bo
 		Flags |= O_WRONLY;
 	}
 	FString IOSFilename = ConvertToIOSPath(NormalizeFilename(Filename), true);
-	int32 Handle = open(TCHAR_TO_UTF8(*IOSFilename), Flags, S_IRUSR | S_IWUSR);
+	int32 Handle = open(TCHAR_TO_UTF8(*IOSFilename), Flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 	if (Handle != -1)
 	{
 		FIOSFileHandle* FileHandleIOS = new FIOSFileHandle(Handle, IOSFilename, false);
@@ -739,7 +760,7 @@ FString FIOSPlatformFile::ConvertToIOSPath(const FString& Filename, bool bForWri
 
 	if(bForWrite)
 	{
-		static FString WritePathBase = FString([NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) objectAtIndex:0]) + TEXT("/");
+		static FString WritePathBase = FString([NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) objectAtIndex:0]) + TEXT("/");
 		return WritePathBase + Result;
 	}
 	else
@@ -761,8 +782,9 @@ FString FIOSPlatformFile::ConvertToIOSPath(const FString& Filename, bool bForWri
 		}
 		else
 		{
-			static FString ReadPathBase = FString([[NSBundle mainBundle] bundlePath]) + TEXT("/cookeddata/");
-			return ReadPathBase + Result.ToLower();
+			FString ReadPathBase = FString([[NSBundle mainBundle] bundlePath]) + TEXT("/cookeddata/");
+            FString OutString = ReadPathBase + Result.ToLower();
+            return OutString;
 		}
 	}
 

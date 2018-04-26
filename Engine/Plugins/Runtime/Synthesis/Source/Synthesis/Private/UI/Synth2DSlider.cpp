@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Synth2DSlider.h"
 #include "UI/SSynth2DSlider.h"
@@ -36,8 +36,8 @@ void USynth2DSlider::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
 
-	TAttribute<float> ValueXBinding = OPTIONAL_BINDING(float, ValueX);
-	TAttribute<float> ValueYBinding = OPTIONAL_BINDING(float, ValueY);
+	TAttribute<float> ValueXBinding = PROPERTY_BINDING(float, ValueX);
+	TAttribute<float> ValueYBinding = PROPERTY_BINDING(float, ValueY);
 
 	MySlider->SetSliderHandleColor(SliderHandleColor);
 	MySlider->SetValueX(ValueXBinding);

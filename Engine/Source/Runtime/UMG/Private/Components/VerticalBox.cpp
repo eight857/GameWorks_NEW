@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -14,7 +14,7 @@ UVerticalBox::UVerticalBox(const FObjectInitializer& ObjectInitializer)
 	bIsVariable = false;
 
 	SVerticalBox::FArguments Defaults;
-	Visiblity_DEPRECATED = Visibility = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
+	Visibility = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
 }
 
 void UVerticalBox::ReleaseSlateResources(bool bReleaseChildren)
@@ -69,7 +69,7 @@ TSharedRef<SWidget> UVerticalBox::RebuildWidget()
 		}
 	}
 
-	return BuildDesignTimeWidget( MyVerticalBox.ToSharedRef() );
+	return MyVerticalBox.ToSharedRef();
 }
 
 #if WITH_EDITOR

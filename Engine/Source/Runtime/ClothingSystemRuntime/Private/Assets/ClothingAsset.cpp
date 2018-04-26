@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Assets/ClothingAsset.h"
 #include "PhysXPublic.h"
@@ -16,6 +16,11 @@
 #include "SNotificationList.h"
 #include "NotificationManager.h"
 #include "ComponentReregisterContext.h"
+#include "AnimPhysObjectVersion.h"
+#include "ClothingMeshUtils.h"
+#include "Rendering/SkeletalMeshModel.h"
+#include "Rendering/SkeletalMeshRenderData.h"
+#include "ClothingSimulationInteractor.h"
 
 DEFINE_LOG_CATEGORY(LogClothingAsset)
 
@@ -29,6 +34,27 @@ UClothingAsset::UClothingAsset(const FObjectInitializer& ObjectInitializer)
 
 }
 
+void UClothingAsset::RefreshBoneMapping(USkeletalMesh* InSkelMesh)
+{
+	// No mesh, can't remap
+	if(!InSkelMesh)
+	{
+		return;
+	}
+
+	if(UsedBoneNames.Num() != UsedBoneIndices.Num())
+	{
+		UsedBoneIndices.Reset();
+		UsedBoneIndices.AddDefaulted(UsedBoneNames.Num());
+	}
+
+	// Repopulate the used indices.
+	for(int32 BoneNameIndex = 0; BoneNameIndex < UsedBoneNames.Num(); ++BoneNameIndex)
+	{
+		UsedBoneIndices[BoneNameIndex] = InSkelMesh->RefSkeleton.FindBoneIndex(UsedBoneNames[BoneNameIndex]);
+	}
+}
+
 #if WITH_EDITOR
 
 void LogAndToastClothingInfo(const FText& Error)
@@ -40,7 +66,7 @@ void LogAndToastClothingInfo(const FText& Error)
 	UE_LOG(LogClothingAsset, Warning, TEXT("%s"), *Error.ToString());
 }
 
-bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshLodIndex, int32 InSectionIndex, int32 InAssetLodIndex)
+bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshLodIndex, int32 InSectionIndex, int32 InAssetLodIndex, bool bCallPostEditChange)
 {
 	// If we've been added to the wrong mesh
 	if(InSkelMesh != GetOuter())
@@ -70,7 +96,7 @@ bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshL
 	}
 
 	// If the mesh LOD index is invalid
-	if(!InSkelMesh->GetImportedResource()->LODModels.IsValidIndex(InMeshLodIndex))
+	if(!InSkelMesh->GetImportedModel()->LODModels.IsValidIndex(InMeshLodIndex))
 	{
 		FText Error = FText::Format(LOCTEXT("Error_InvalidMeshLOD", "Failed to bind clothing asset {0} as mesh LOD{1} does not exist."), FText::FromString(GetName()), FText::AsNumber(InMeshLodIndex));
 		LogAndToastClothingInfo(Error);
@@ -103,10 +129,9 @@ bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshL
 
 	// Grab the clothing and skel lod data
 	FClothLODData& ClothLodData = LodData[InAssetLodIndex];
-	FStaticLODModel& SkelLod = InSkelMesh->GetImportedResource()->LODModels[InMeshLodIndex];
+	FSkeletalMeshLODModel& SkelLod = InSkelMesh->GetImportedModel()->LODModels[InMeshLodIndex];
 
-	FSkelMeshSection* OriginalSection = &SkelLod.Sections[InSectionIndex];
-	FSkelMeshSection NewClothSection;
+	FSkelMeshSection& OriginalSection = SkelLod.Sections[InSectionIndex];
 
 	// Data for mesh to mesh binding
 	TArray<FMeshToMeshVertData> MeshToMeshData;
@@ -114,25 +139,25 @@ bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshL
 	TArray<FVector> RenderNormals;
 	TArray<FVector> RenderTangents;
 
-	RenderPositions.Reserve(OriginalSection->SoftVertices.Num());
-	RenderNormals.Reserve(OriginalSection->SoftVertices.Num());
-	RenderTangents.Reserve(OriginalSection->SoftVertices.Num());
+	RenderPositions.Reserve(OriginalSection.SoftVertices.Num());
+	RenderNormals.Reserve(OriginalSection.SoftVertices.Num());
+	RenderTangents.Reserve(OriginalSection.SoftVertices.Num());
 
 	// Original data to weight to the clothing simulation mesh
-	for(FSoftSkinVertex& UnrealVert : OriginalSection->SoftVertices)
+	for(FSoftSkinVertex& UnrealVert : OriginalSection.SoftVertices)
 	{
 		RenderPositions.Add(UnrealVert.Position);
 		RenderNormals.Add(UnrealVert.TangentZ);
 		RenderTangents.Add(UnrealVert.TangentX);
 	}
 
-	ClothingAssetUtils::GenerateMeshToMeshSkinningData(MeshToMeshData,
-													  RenderPositions,
-													  RenderNormals,
-													  RenderTangents,
-													  ClothLodData.PhysicalMeshData.Vertices,
-													  ClothLodData.PhysicalMeshData.Normals,
-													  ClothLodData.PhysicalMeshData.Indices);
+	TArrayView<uint32> IndexView(SkelLod.IndexBuffer);
+	IndexView.Slice(OriginalSection.BaseIndex, OriginalSection.NumTriangles * 3);
+
+	ClothingMeshUtils::ClothMeshDesc TargetMesh(RenderPositions, RenderNormals, IndexView);
+	ClothingMeshUtils::ClothMeshDesc SourceMesh(ClothLodData.PhysicalMeshData.Vertices, ClothLodData.PhysicalMeshData.Normals, ClothLodData.PhysicalMeshData.Indices);
+
+	ClothingMeshUtils::GenerateMeshToMeshSkinningData(MeshToMeshData, TargetMesh, &RenderTangents, SourceMesh);
 
 	if(MeshToMeshData.Num() == 0)
 	{
@@ -155,18 +180,13 @@ bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshL
 		}
 	}
 
-	NewClothSection.SoftVertices = OriginalSection->SoftVertices;
-	NewClothSection.NumVertices = NewClothSection.SoftVertices.Num();
-	NewClothSection.BoneMap = OriginalSection->BoneMap;
-	NewClothSection.MaxBoneInfluences = OriginalSection->MaxBoneInfluences;
-
 	for(FName& BoneName : UsedBoneNames)
 	{
 		const int32 BoneIndex = InSkelMesh->RefSkeleton.FindBoneIndex(BoneName);
 
 		if(BoneIndex != INDEX_NONE)
 		{
-			NewClothSection.BoneMap.AddUnique(BoneIndex);
+			OriginalSection.BoneMap.AddUnique(BoneIndex);
 		}
 	}
 
@@ -191,93 +211,18 @@ bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshL
 		NumLodVertices += CurSection.GetNumVertices();
 	}
 
-	int32 NewSectionIdx = SkelLod.Sections.AddDefaulted();
-
-	SkelLod.Sections[NewSectionIdx] = SkelLod.Sections[InSectionIndex];
-
-	// Re set original here, may have just realloced
-	OriginalSection = &SkelLod.Sections[InSectionIndex];
-	FSkelMeshSection& ClothSection = SkelLod.Sections[NewSectionIdx];
-	
-	ClothSection.bDisabled = false;
-	ClothSection.CorrespondClothSectionIndex = InSectionIndex;
-
-	OriginalSection->bDisabled = true;
-	OriginalSection->CorrespondClothSectionIndex = NewSectionIdx;
-
-	// Geo properties
-	ClothSection.SoftVertices = NewClothSection.SoftVertices;
-	ClothSection.NumVertices = NewClothSection.NumVertices;
-	ClothSection.BoneMap = NewClothSection.BoneMap;
-	ClothSection.MaxBoneInfluences = NewClothSection.MaxBoneInfluences;
-
 	// Set the asset index, used during rendering to pick the correct sim mesh buffer
 	int32 AssetIndex = INDEX_NONE;
 	check(InSkelMesh->MeshClothingAssets.Find(this, AssetIndex));
-	ClothSection.CorrespondClothAssetIndex = AssetIndex;
-	
-	ClothSection.BaseVertexIndex = NumLodVertices;
-
-	// Material properties
-	ClothSection.MaterialIndex = OriginalSection->MaterialIndex;
-	ClothSection.TriangleSorting = OriginalSection->TriangleSorting;
-	ClothSection.bSelected = OriginalSection->bSelected;
-	ClothSection.bCastShadow = OriginalSection->bCastShadow;
-	ClothSection.bRecomputeTangent = OriginalSection->bRecomputeTangent;
-	ClothSection.bEnableClothLOD_DEPRECATED = OriginalSection->bEnableClothLOD_DEPRECATED;
+	OriginalSection.CorrespondClothAssetIndex = AssetIndex;
 
 	// sim properties
-	ClothSection.ClothMappingData = MeshToMeshData;
-	ClothSection.PhysicalMeshVertices = ClothLodData.PhysicalMeshData.Vertices;
-	ClothSection.PhysicalMeshNormals = ClothLodData.PhysicalMeshData.Normals;
-
-	// Set asset links on both sections
-	ClothSection.ClothingData.AssetLodIndex = InAssetLodIndex;
-	ClothSection.ClothingData.AssetGuid = AssetGuid;
-
-	OriginalSection->ClothingData.AssetGuid = AssetGuid;
-	OriginalSection->ClothingData.AssetLodIndex = InAssetLodIndex;
-
-	// Copy original indices over
-	const int32 BaseIndexToCopy = OriginalSection->BaseIndex;
-	const int32 NumIndicesToCopy = OriginalSection->NumTriangles * 3;
-	const int32 BaseVertexOffset = ClothSection.BaseVertexIndex - OriginalSection->BaseVertexIndex;
-
-	FMultiSizeIndexContainerData NewIndexData;
-	SkelLod.MultiSizeIndexContainer.GetIndexBuffer(NewIndexData.Indices);
-
-	ClothSection.BaseIndex = NewIndexData.Indices.Num();
-	ClothSection.NumTriangles = OriginalSection->NumTriangles;
-
-	for(int32 CurrIdx = 0; CurrIdx < NumIndicesToCopy; ++CurrIdx)
-	{
-		int32 SourceIndex = NewIndexData.Indices[BaseIndexToCopy + CurrIdx];
-		NewIndexData.Indices.Add(SourceIndex + BaseVertexOffset);
-	}
-
-	SkelLod.NumVertices += ClothSection.GetNumVertices();
-
-	if(SkelLod.NumVertices > MAX_uint16)
-	{
-		NewIndexData.DataTypeSize = sizeof(uint32);
-	}
-	else
-	{
-		NewIndexData.DataTypeSize = sizeof(uint16);
-	}
-
-	SkelLod.MultiSizeIndexContainer.RebuildIndexBuffer(NewIndexData);
-	
-	// Build adjacency info (Only need soft verts for cloth)
-	TArray<FSoftSkinVertex> TempVerts;
-	FMultiSizeIndexContainerData AdjacencyData;
-	SkelLod.GetVertices(TempVerts);
-	IMeshUtilities& MeshUtils = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>("MeshUtilities");
-	MeshUtils.BuildSkeletalAdjacencyIndexBuffer(TempVerts, SkelLod.NumTexCoords, NewIndexData.Indices, AdjacencyData.Indices);
-	SkelLod.AdjacencyMultiSizeIndexContainer.RebuildIndexBuffer(AdjacencyData);
+	OriginalSection.ClothMappingData = MeshToMeshData;
+	OriginalSection.ClothingData.AssetGuid = AssetGuid;
+	OriginalSection.ClothingData.AssetLodIndex = InAssetLodIndex;
 
 	bool bRequireBoneChange = false;
-	for(FBoneIndexType& BoneIndex : ClothSection.BoneMap)
+	for(FBoneIndexType& BoneIndex : OriginalSection.BoneMap)
 	{
 		if(!SkelLod.RequiredBones.Contains(BoneIndex))
 		{
@@ -293,7 +238,7 @@ bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshL
 	if(bRequireBoneChange)
 	{
 		SkelLod.RequiredBones.Sort();
-		InSkelMesh->RefSkeleton.EnsureParentExists(SkelLod.ActiveBoneIndices);
+		InSkelMesh->RefSkeleton.EnsureParentsExistAndSort(SkelLod.ActiveBoneIndices);		
 	}
 
 	if(CustomData)
@@ -310,7 +255,10 @@ bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshL
 
 	LodMap[InMeshLodIndex] = InAssetLodIndex;
 
+	if (bCallPostEditChange)
+	{
 	InSkelMesh->PostEditChange();
+	}
 
 	return true;
 
@@ -319,7 +267,7 @@ bool UClothingAsset::BindToSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InMeshL
 
 void UClothingAsset::UnbindFromSkeletalMesh(USkeletalMesh* InSkelMesh)
 {
-	if(FSkeletalMeshResource* Mesh = InSkelMesh->GetImportedResource())
+	if(FSkeletalMeshModel* Mesh = InSkelMesh->GetImportedModel())
 	{
 		const int32 NumLods = Mesh->LODModels.Num();
 
@@ -335,7 +283,7 @@ void UClothingAsset::UnbindFromSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InM
 	bool bChangedMesh = false;
 
 	// Find the chunk(s) we created
-	if(FSkeletalMeshResource* Mesh = InSkelMesh->GetImportedResource())
+	if(FSkeletalMeshModel* Mesh = InSkelMesh->GetImportedModel())
 	{
 		if(!Mesh->LODModels.IsValidIndex(InMeshLodIndex))
 		{
@@ -345,116 +293,28 @@ void UClothingAsset::UnbindFromSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InM
 			return;
 		}
 
-		FStaticLODModel& LodModel = Mesh->LODModels[InMeshLodIndex];
+		FSkeletalMeshLODModel& LodModel = Mesh->LODModels[InMeshLodIndex];
 
+		for (int32 SectionIdx = LodModel.Sections.Num() - 1; SectionIdx >= 0; --SectionIdx)
 		{
-			for(int32 SectionIdx = LodModel.Sections.Num() - 1; SectionIdx >= 0; --SectionIdx)
+			FSkelMeshSection& Section = LodModel.Sections[SectionIdx];
+
+			if(Section.HasClothingData() && Section.ClothingData.AssetGuid == AssetGuid)
 			{
-				FSkelMeshSection& ClothSection = LodModel.Sections[SectionIdx];
-
-				if(ClothSection.ClothingData.IsValid() && ClothSection.ClothingData.AssetGuid == AssetGuid)
+				if(!bChangedMesh)
 				{
-					// We made this one.
-					int32 OriginalSectionIdx = INDEX_NONE;
-
-					// Find the original section
-					for(int32 SearchIdx = 0; SearchIdx < LodModel.Sections.Num(); ++SearchIdx)
-					{
-						FSkelMeshSection& PossibleOriginalSection = LodModel.Sections[SearchIdx];
-
-						if(PossibleOriginalSection.CorrespondClothSectionIndex == SectionIdx)
-						{
-							OriginalSectionIdx = SearchIdx;
-							break;
-						}
-					}
-
-					check(OriginalSectionIdx != INDEX_NONE);
-
 					InSkelMesh->PreEditChange(nullptr);
-
-					FSkelMeshSection& OriginalSection = LodModel.Sections[OriginalSectionIdx];
-
-					FMultiSizeIndexContainerData NewIndexData;
-					LodModel.MultiSizeIndexContainer.GetIndexBuffer(NewIndexData.Indices);
-
-					uint32 NumIndicesToRemove = ClothSection.NumTriangles * 3;
-					uint32 BaseIndexToRemove = ClothSection.BaseIndex;
-
-					uint32 NumVertsToRemove = ClothSection.GetNumVertices();
-					uint32 BaseVertToRemove = ClothSection.BaseVertexIndex;
-
-					// Remove from index buffer
-					NewIndexData.Indices.RemoveAt(BaseIndexToRemove, NumIndicesToRemove);
-
-					// Fix up remaining indices (can this start at baseindextoremove?)
-					for(uint32& Index : NewIndexData.Indices)
-					{
-						if(Index >= BaseVertToRemove)
-						{
-							Index -= NumVertsToRemove;
-						}
-					}
-
-					// Count resulting vertices
-					int32 NumVertsAfter = 0;
-					for(int32 ResultSectionsIndex = 0; ResultSectionsIndex < SectionIdx; ++ResultSectionsIndex)
-					{
-						NumVertsAfter += LodModel.Sections[ResultSectionsIndex].NumVertices;
-					}
-
-					if(NumVertsAfter > MAX_uint16)
-					{
-						NewIndexData.DataTypeSize = sizeof(uint16);
-					}
-					else
-					{
-						NewIndexData.DataTypeSize = sizeof(uint32);
-					}
-
-					// Push back to buffer
-					LodModel.MultiSizeIndexContainer.RebuildIndexBuffer(NewIndexData);
-
-					LodModel.Sections.RemoveAt(SectionIdx);
-
-					LodModel.NumVertices -= NumVertsToRemove;
-
-					// Fix up other data
-					for(FSkelMeshSection& Section : LodModel.Sections)
-					{
-						if(Section.CorrespondClothSectionIndex > OriginalSection.CorrespondClothSectionIndex)
-						{
-							// We removed one here, so knock back
-							Section.CorrespondClothSectionIndex -= 1;
-						}
-
-						if(Section.BaseIndex > BaseIndexToRemove)
-						{
-							Section.BaseIndex -= NumIndicesToRemove;
-						}
-
-						if(Section.BaseVertexIndex > BaseVertToRemove)
-						{
-							Section.BaseVertexIndex -= NumVertsToRemove;
-						}
-					}
-
-					// Enable rendering for section
-					OriginalSection.bDisabled = false;
-
-					// Clear cloth link data
-					OriginalSection.CorrespondClothSectionIndex = INDEX_NONE;
-					OriginalSection.ClothingData.AssetLodIndex = INDEX_NONE;
-					OriginalSection.ClothingData.AssetGuid = FGuid();
-
-					// Track the mesh change so we can re-register later
-					bChangedMesh = true;
-
-					// Set the LOD map so nothing is mapped for this asset
-					LodMap[InMeshLodIndex] = INDEX_NONE;
-
-					InSkelMesh->PostEditChange();
 				}
+
+				ClothingAssetUtils::ClearSectionClothingData(Section);
+
+				// Clear the LOD map entry for this asset
+				if(LodMap.IsValidIndex(InMeshLodIndex))
+				{
+					LodMap[InMeshLodIndex] = INDEX_NONE;
+				}
+
+				bChangedMesh = true;
 			}
 		}
 	}
@@ -462,6 +322,8 @@ void UClothingAsset::UnbindFromSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InM
 	// If the mesh changed we need to re-register any components that use it to reflect the changes
 	if(bChangedMesh)
 	{
+		InSkelMesh->PostEditChange();
+
 		for(TObjectIterator<USkeletalMeshComponent> It; It; ++It)
 		{
 			USkeletalMeshComponent* MeshComponent = *It;
@@ -472,27 +334,6 @@ void UClothingAsset::UnbindFromSkeletalMesh(USkeletalMesh* InSkelMesh, int32 InM
 				MeshComponent->ReregisterComponent();
 			}
 		}
-	}
-}
-
-void UClothingAsset::RefreshBoneMapping(USkeletalMesh* InSkelMesh)
-{
-	// No mesh, can't remap
-	if(!InSkelMesh)
-	{
-		return;
-	}
-
-	if(UsedBoneNames.Num() != UsedBoneIndices.Num())
-	{
-		UsedBoneIndices.Reset();
-		UsedBoneIndices.AddDefaulted(UsedBoneNames.Num());
-	}
-
-	// Repopulate the used indices.
-	for(int32 BoneNameIndex = 0; BoneNameIndex < UsedBoneNames.Num(); ++BoneNameIndex)
-	{
-		UsedBoneIndices[BoneNameIndex] = InSkelMesh->RefSkeleton.FindBoneIndex(UsedBoneNames[BoneNameIndex]);
 	}
 }
 
@@ -526,39 +367,77 @@ void UClothingAsset::InvalidateCachedData()
 			InvMasses[Index2] += TriArea;
 		}
 
+		bool bHasMaxDistance = PhysMesh.MaxDistances.Num() > 0;
 		PhysMesh.NumFixedVerts = 0;
-		float MassSum = 0.0f;
-		for(int32 CurrVertIndex = 0; CurrVertIndex < NumVerts; ++CurrVertIndex)
+		
+		if(bHasMaxDistance)
 		{
-			float& InvMass = InvMasses[CurrVertIndex];
-			const float& MaxDistance = PhysMesh.MaxDistances[CurrVertIndex];
+			float MassSum = 0.0f;
+			for(int32 CurrVertIndex = 0; CurrVertIndex < NumVerts; ++CurrVertIndex)
+			{
+				float& InvMass = InvMasses[CurrVertIndex];
+				const float& MaxDistance = PhysMesh.MaxDistances[CurrVertIndex];
 
-			if(MaxDistance < SMALL_NUMBER)
-			{
-				InvMass = 0.0f;
-				++PhysMesh.NumFixedVerts;
+				if(MaxDistance < SMALL_NUMBER)
+				{
+					InvMass = 0.0f;
+					++PhysMesh.NumFixedVerts;
+				}
+				else
+				{
+					MassSum += InvMass;
+				}
 			}
-			else
+
+			if(MassSum > 0.0f)
 			{
-				MassSum += InvMass;
+				const float MassScale = (float)(NumVerts - PhysMesh.NumFixedVerts) / MassSum;
+
+				for(float& InvMass : InvMasses)
+				{
+					if(InvMass != 0.0f)
+					{
+						InvMass *= MassScale;
+						InvMass = 1.0f / InvMass;
+					}
+				}
 			}
 		}
-
-		const float MassScale = (float)(NumVerts - PhysMesh.NumFixedVerts) / MassSum;
-
-		for(float& InvMass : InvMasses)
+		else
 		{
-			InvMass *= MassScale;
-			InvMass = 1.0f / InvMass;
+			for(int32 CurrVertIndex = 0; CurrVertIndex < NumVerts; ++CurrVertIndex)
+			{
+				InvMasses[CurrVertIndex] = 0.0f;
+			}
+
+			PhysMesh.NumFixedVerts = NumVerts;
+		}
+
+		// Calculate number of influences per vertex
+		for(int32 VertIndex = 0; VertIndex < NumVerts; ++VertIndex)
+		{
+			FClothVertBoneData& BoneData = PhysMesh.BoneData[VertIndex];
+			const uint16* BoneIndices = BoneData.BoneIndices;
+			const float* BoneWeights = BoneData.BoneWeights;
+
+			BoneData.NumInfluences = MAX_TOTAL_INFLUENCES;
+
+			int32 NumInfluences = 0;
+			for(int32 InfluenceIndex = 0; InfluenceIndex < MAX_TOTAL_INFLUENCES; ++InfluenceIndex)
+			{
+				if(BoneWeights[InfluenceIndex] == 0.0f || BoneIndices[InfluenceIndex] == INDEX_NONE)
+				{
+					BoneData.NumInfluences = NumInfluences;
+					break;
+				}
+				++NumInfluences;
+			}
 		}
 	}
 }
 
 void UClothingAsset::BuildLodTransitionData()
 {
-	// Temporary until mesh to mesh is refactored to allow not having all inputs available
-	TArray<FVector> DummyTangentArray;
-
 	const int32 NumLods = LodData.Num();
 	for(int32 LodIndex = 0; LodIndex < NumLods; ++LodIndex)
 	{
@@ -573,8 +452,7 @@ void UClothingAsset::BuildLodTransitionData()
 
 		const int32 CurrentLodNumVerts = CurrentPhysMesh.Vertices.Num();
 
-		DummyTangentArray.Empty(CurrentLodNumVerts);
-		DummyTangentArray.AddDefaulted(CurrentLodNumVerts);
+		ClothingMeshUtils::ClothMeshDesc CurrentMeshDesc(CurrentPhysMesh.Vertices, CurrentPhysMesh.Normals, CurrentPhysMesh.Indices);
 
 		if(PrevLod)
 		{
@@ -582,7 +460,9 @@ void UClothingAsset::BuildLodTransitionData()
 
 			CurrentLod.TransitionUpSkinData.Empty(CurrentLodNumVerts);
 
-			ClothingAssetUtils::GenerateMeshToMeshSkinningData(CurrentLod.TransitionUpSkinData, CurrentPhysMesh.Vertices, CurrentPhysMesh.Normals, DummyTangentArray, PrevPhysMesh.Vertices, PrevPhysMesh.Normals, PrevPhysMesh.Indices);
+			ClothingMeshUtils::ClothMeshDesc PrevMeshDesc(PrevPhysMesh.Vertices, PrevPhysMesh.Normals, PrevPhysMesh.Indices);
+
+			ClothingMeshUtils::GenerateMeshToMeshSkinningData(CurrentLod.TransitionUpSkinData, CurrentMeshDesc, nullptr, PrevMeshDesc);
 		}
 
 		if(NextLod)
@@ -591,9 +471,56 @@ void UClothingAsset::BuildLodTransitionData()
 
 			CurrentLod.TransitionDownSkinData.Empty(CurrentLodNumVerts);
 
-			ClothingAssetUtils::GenerateMeshToMeshSkinningData(CurrentLod.TransitionDownSkinData, CurrentPhysMesh.Vertices, CurrentPhysMesh.Normals, DummyTangentArray, NextPhysMesh.Vertices, NextPhysMesh.Normals, NextPhysMesh.Indices);
+			ClothingMeshUtils::ClothMeshDesc NextMeshDesc(NextPhysMesh.Vertices, NextPhysMesh.Normals, NextPhysMesh.Indices);
+
+			ClothingMeshUtils::GenerateMeshToMeshSkinningData(CurrentLod.TransitionDownSkinData, CurrentMeshDesc, nullptr, NextMeshDesc);
 		}
 	}
+}
+
+void UClothingAsset::ApplyParameterMasks()
+{
+	for(FClothLODData& Lod : LodData)
+	{
+		// First zero out the parameters, otherwise disabled masks might hang around
+		Lod.PhysicalMeshData.ClearParticleParameters();
+
+		for(FClothParameterMask_PhysMesh& Mask : Lod.ParameterMasks)
+		{
+			// Only apply enabled masks
+			if(!Mask.bEnabled)
+			{
+				continue;
+			}
+
+			TArray<float>* TargetArray = nullptr;
+
+			switch(Mask.CurrentTarget)
+			{
+				case MaskTarget_PhysMesh::BackstopDistance:
+					TargetArray = &Lod.PhysicalMeshData.BackstopDistances;
+					break;
+				case MaskTarget_PhysMesh::BackstopRadius:
+					TargetArray = &Lod.PhysicalMeshData.BackstopRadiuses;
+					break;
+				case MaskTarget_PhysMesh::MaxDistance:
+					TargetArray = &Lod.PhysicalMeshData.MaxDistances;
+					break;
+				case MaskTarget_PhysMesh::AnimDriveMultiplier:
+					TargetArray = &Lod.PhysicalMeshData.AnimDriveMultipliers;
+					break;
+				default:
+					break;
+			}
+
+			if(TargetArray)
+			{
+				*TargetArray = Mask.GetValueArray();
+			}
+		}
+	}
+
+	InvalidateCachedData();
 }
 
 bool UClothingAsset::IsValidLod(int32 InLodIndex)
@@ -616,7 +543,7 @@ void UClothingAsset::BuildSelfCollisionData()
 		return;
 	}
 
-	// Scale by the asset cull scale.
+	// can't pass through the network of other spheres.
 	const float SCRadius = ClothConfig.SelfCollisionRadius * ClothConfig.SelfCollisionCullScale;
 	const float SCRadiusSq = SCRadius * SCRadius;
 
@@ -692,6 +619,59 @@ void UClothingAsset::PostLoad()
 #if WITH_EDITORONLY_DATA
 	CalculateReferenceBoneIndex();
 #endif
+
+	int32 CustomVersion = GetLinkerCustomVersion(FAnimPhysObjectVersion::GUID);
+
+	if(CustomVersion < FAnimPhysObjectVersion::AddedClothingMaskWorkflow)
+	{
+#if WITH_EDITORONLY_DATA
+		// Convert current parameters to masks
+		for(FClothLODData& Lod : LodData)
+		{
+			FClothPhysicalMeshData& PhysMesh = Lod.PhysicalMeshData;
+
+			// Didn't do anything previously - clear out incase there's something in there
+			// so we can use it correctly now.
+			Lod.ParameterMasks.Reset(3);
+
+			// Max distances (Always present)
+			Lod.ParameterMasks.AddDefaulted();
+			FClothParameterMask_PhysMesh& MaxDistanceMask = Lod.ParameterMasks.Last();
+			MaxDistanceMask.CopyFromPhysMesh(PhysMesh, MaskTarget_PhysMesh::MaxDistance);
+			MaxDistanceMask.bEnabled = true;
+
+			// Following params are only added if necessary, if we don't have any backstop
+			// radii then there's no backstops.
+			if(PhysMesh.BackstopRadiuses.FindByPredicate([](const float& A) {return A != 0.0f; }))
+			{
+				// Backstop radii
+				Lod.ParameterMasks.AddDefaulted();
+				FClothParameterMask_PhysMesh& BackstopRadiusMask = Lod.ParameterMasks.Last();
+				BackstopRadiusMask.CopyFromPhysMesh(PhysMesh, MaskTarget_PhysMesh::BackstopRadius);
+				BackstopRadiusMask.bEnabled = true;
+
+				// Backstop distances
+				Lod.ParameterMasks.AddDefaulted();
+				FClothParameterMask_PhysMesh& BackstopDistanceMask = Lod.ParameterMasks.Last();
+				BackstopDistanceMask.CopyFromPhysMesh(PhysMesh, MaskTarget_PhysMesh::BackstopDistance);
+				BackstopDistanceMask.bEnabled = true;
+			}
+			
+		}
+#endif
+
+		// Make sure we're transactional
+		SetFlags(RF_Transactional);
+	}
+
+#if WITH_EDITOR
+	if(CustomVersion < FAnimPhysObjectVersion::CacheClothMeshInfluences)
+	{
+		// Rebuild data cache
+		InvalidateCachedData();
+	}
+#endif
+
 }
 
 void UClothingAsset::CalculateReferenceBoneIndex()
@@ -802,6 +782,89 @@ void UClothingAsset::CalculateReferenceBoneIndex()
 	}
 }
 
+#if WITH_EDITOR
+
+void UClothingAsset::PostEditChangeChainProperty(FPropertyChangedChainEvent& InEvent)
+{
+	bool bReregisterComponents = false;
+
+	if(InEvent.ChangeType != EPropertyChangeType::Interactive)
+	{
+		if(InEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(FClothConfig, SelfCollisionRadius) ||
+			InEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(FClothConfig, SelfCollisionCullScale))
+		{
+			BuildSelfCollisionData();
+			bReregisterComponents = true;
+		}
+		else if(InEvent.Property->GetFName() == GET_MEMBER_NAME_CHECKED(UClothingAsset, PhysicsAsset))
+		{
+			bReregisterComponents = true;
+		}
+		else
+		{
+			// Other properties just require a config refresh
+			ForEachInteractorUsingClothing([](UClothingSimulationInteractor* InInteractor)
+			{
+				if(InInteractor)
+				{
+					InInteractor->ClothConfigUpdated();
+				}
+			});
+		}
+	}
+
+	if(bReregisterComponents)
+	{
+		ReregisterComponentsUsingClothing();
+	}
+}
+
+void UClothingAsset::ReregisterComponentsUsingClothing()
+{
+	if(USkeletalMesh* OwnerMesh = Cast<USkeletalMesh>(GetOuter()))
+	{
+		for(TObjectIterator<USkeletalMeshComponent> It; It; ++It)
+		{
+			if(USkeletalMeshComponent* Component = *It)
+			{
+				if(Component->SkeletalMesh == OwnerMesh)
+				{
+					FComponentReregisterContext Context(Component);
+				}
+			}
+		}
+	}
+}
+
+void UClothingAsset::ForEachInteractorUsingClothing(TFunction<void(UClothingSimulationInteractor*)> Func)
+{
+	if(USkeletalMesh* OwnerMesh = Cast<USkeletalMesh>(GetOuter()))
+	{
+		for(TObjectIterator<USkeletalMeshComponent> It; It; ++It)
+		{
+			if(USkeletalMeshComponent* Component = *It)
+			{
+				if(Component->SkeletalMesh == OwnerMesh)
+				{
+					UClothingSimulationInteractor* CurInteractor = Component->GetClothingSimulationInteractor();
+
+					if(CurInteractor)
+					{
+						Func(CurInteractor);
+					}
+				}
+			}
+		}
+	}
+}
+
+#endif
+
+void UClothingAsset::Serialize(FArchive& Ar)
+{
+	Super::Serialize(Ar);
+	Ar.UsingCustomVersion(FAnimPhysObjectVersion::GUID);
+}
 
 void ClothingAssetUtils::GetMeshClothingAssetBindings(USkeletalMesh* InSkelMesh, TArray<FClothingAssetMeshBinding>& OutBindings)
 {
@@ -812,9 +875,9 @@ void ClothingAssetUtils::GetMeshClothingAssetBindings(USkeletalMesh* InSkelMesh,
 		return;
 	}
 
-	if(FSkeletalMeshResource* Resource = InSkelMesh->GetImportedResource())
+	if(FSkeletalMeshRenderData* Resource = InSkelMesh->GetResourceForRendering())
 	{
-		const int32 NumLods = Resource->LODModels.Num();
+		const int32 NumLods = Resource->LODRenderData.Num();
 
 		for(int32 LodIndex = 0; LodIndex < NumLods; ++LodIndex)
 		{
@@ -835,19 +898,19 @@ void ClothingAssetUtils::GetMeshClothingAssetBindings(USkeletalMesh* InSkelMesh,
 		return;
 	}
 
-	if(FSkeletalMeshResource* Resource = InSkelMesh->GetImportedResource())
+	if(FSkeletalMeshRenderData* Resource = InSkelMesh->GetResourceForRendering())
 	{
-		if(Resource->LODModels.IsValidIndex(InLodIndex))
+		if(Resource->LODRenderData.IsValidIndex(InLodIndex))
 		{
-			FStaticLODModel& LodModel = Resource->LODModels[InLodIndex];
+			FSkeletalMeshLODRenderData& LodData = Resource->LODRenderData[InLodIndex];
 
-			const int32 NumSections = LodModel.Sections.Num();
+			const int32 NumSections = LodData.RenderSections.Num();
 
 			for(int32 SectionIndex = 0; SectionIndex < NumSections; ++SectionIndex)
 			{
-				FSkelMeshSection& Section = LodModel.Sections[SectionIndex];
+				FSkelMeshRenderSection& Section = LodData.RenderSections[SectionIndex];
 
-				if(Section.bDisabled && Section.CorrespondClothSectionIndex != INDEX_NONE)
+				if(Section.HasClothingData())
 				{
 					UClothingAsset* SectionAsset = Cast<UClothingAsset>(InSkelMesh->GetSectionClothingAsset(InLodIndex, SectionIndex));
 
@@ -868,122 +931,16 @@ void ClothingAssetUtils::GetMeshClothingAssetBindings(USkeletalMesh* InSkelMesh,
 	}
 }
 
-void ClothingAssetUtils::GenerateMeshToMeshSkinningData(TArray<FMeshToMeshVertData>& OutSkinningData, const TArray<FVector>& Mesh0Verts, const TArray<FVector>& Mesh0Normals, const TArray<FVector>& Mesh0Tangents, const TArray<FVector>& Mesh1Verts, const TArray<FVector>& Mesh1Normals, const TArray<uint32>& Mesh1Indices)
-{
-	const int32 NumMesh0Verts = Mesh0Verts.Num();
-	const int32 NumMesh0Normals = Mesh0Normals.Num();
-	const int32 NumMesh0Tangents = Mesh0Tangents.Num();
-
-	const int32 NumMesh1Verts = Mesh1Verts.Num();
-	const int32 NumMesh1Normals = Mesh1Normals.Num();
-	const int32 NumMesh1Indices = Mesh1Indices.Num();
-
-	// Check we have properly formed triangles
-	check(NumMesh1Indices % 3 == 0);
-
-	const int32 NumMesh1Triangles = NumMesh1Indices / 3;
-
-	// Check mesh data to make sure we have the same number of each element
-	if((NumMesh0Verts + NumMesh0Normals) / NumMesh0Tangents != 2)
-	{
-		UE_LOG(LogClothingAsset, Warning, TEXT("Can't generate mesh to mesh skinning data, Mesh0 data is missing verts."));
-		return;
-	}
-
-	if(NumMesh1Verts != NumMesh1Normals)
-	{
-		UE_LOG(LogClothingAsset, Warning, TEXT("Can't generate mesh to mesh skinning data, Mesh1 data is missing verts."));
-		return;
-	}
-
-	OutSkinningData.Reserve(NumMesh0Verts);
-
-	// For all mesh0 verts
-	for(int32 VertIdx0 = 0; VertIdx0 < NumMesh0Verts; ++VertIdx0)
-	{
-		OutSkinningData.AddZeroed();
-		FMeshToMeshVertData& SkinningData = OutSkinningData.Last();
-
-		const FVector& VertPosition = Mesh0Verts[VertIdx0];
-		const FVector& VertNormal = Mesh0Normals[VertIdx0];
-		const FVector& VertTangent = Mesh0Tangents[VertIdx0];
-
-		float MinimumDistanceSq = MAX_flt;
-		int32 ClosestTriangleBaseIdx = INDEX_NONE;
-		// For all mesh1 triangles
-		for(int32 Mesh1TriangleIdx = 0; Mesh1TriangleIdx < NumMesh1Triangles; ++Mesh1TriangleIdx)
-		{
-			int32 TriangleBaseIdx = Mesh1TriangleIdx * 3;
-			const FVector& A = Mesh1Verts[Mesh1Indices[TriangleBaseIdx]];
-			const FVector& B = Mesh1Verts[Mesh1Indices[TriangleBaseIdx + 1]];
-			const FVector& C = Mesh1Verts[Mesh1Indices[TriangleBaseIdx + 2]];
-
-			FVector PointOnTri = FMath::ClosestPointOnTriangleToPoint(VertPosition, A, B, C);
-			float DistSq = (PointOnTri - VertPosition).SizeSquared();
-
-			if(DistSq < MinimumDistanceSq)
-			{
-				MinimumDistanceSq = DistSq;
-				ClosestTriangleBaseIdx = TriangleBaseIdx;
-			}
-		}
-
-		// Should have found at least one triangle
-		check(ClosestTriangleBaseIdx != INDEX_NONE);
-
-		const FVector& A = Mesh1Verts[Mesh1Indices[ClosestTriangleBaseIdx]];
-		const FVector& B = Mesh1Verts[Mesh1Indices[ClosestTriangleBaseIdx + 1]];
-		const FVector& C = Mesh1Verts[Mesh1Indices[ClosestTriangleBaseIdx + 2]];
-
-		const FVector& NA = Mesh1Normals[Mesh1Indices[ClosestTriangleBaseIdx]];
-		const FVector& NB = Mesh1Normals[Mesh1Indices[ClosestTriangleBaseIdx + 1]];
-		const FVector& NC = Mesh1Normals[Mesh1Indices[ClosestTriangleBaseIdx + 2]];
-
-		// Before generating the skinning data we need to check for a degenerate triangle.
-		// If we find _any_ degenerate triangles we will notify and fail to generate the skinning data
-		const FVector TriNormal = FVector::CrossProduct(B - A, C - A);
-		if(TriNormal.SizeSquared() < SMALL_NUMBER)
-		{
-			// Failed, we have 2 identical vertices
-			OutSkinningData.Reset();
-
-			// Log and toast
-			FText Error = FText::Format(LOCTEXT("DegenerateTriangleError", "Failed to generate skinning data, found conincident vertices in triangle A={0} B={1} C={2}"), FText::FromString(A.ToString()), FText::FromString(B.ToString()), FText::FromString(C.ToString()));
-
-			UE_LOG(LogClothingAsset, Warning, TEXT("%s"), *Error.ToString());
-
 #if WITH_EDITOR
-			FNotificationInfo Info(Error);
-			Info.ExpireDuration = 5.0f;
-			FSlateNotificationManager::Get().AddNotification(Info);
-#endif
-			return;
-		}
-
-		SkinningData.PositionBaryCoordsAndDist = GetPointBaryAndDist(A, B, C, NA, NB, NC, VertPosition);
-		SkinningData.NormalBaryCoordsAndDist = GetPointBaryAndDist(A, B, C, NA, NB, NC, VertPosition + VertNormal);
-		SkinningData.TangentBaryCoordsAndDist = GetPointBaryAndDist(A, B, C, NA, NB, NC, VertPosition + VertTangent);
-		SkinningData.SourceMeshVertIndices[0] = Mesh1Indices[ClosestTriangleBaseIdx];
-		SkinningData.SourceMeshVertIndices[1] = Mesh1Indices[ClosestTriangleBaseIdx + 1];
-		SkinningData.SourceMeshVertIndices[2] = Mesh1Indices[ClosestTriangleBaseIdx + 2];
-		SkinningData.SourceMeshVertIndices[3] = 0;
-	}
-}
-
-FVector4 ClothingAssetUtils::GetPointBaryAndDist(const FVector& A, const FVector& B, const FVector& C, const FVector& NA, const FVector& NB, const FVector& NC, const FVector& Point)
+void ClothingAssetUtils::ClearSectionClothingData(FSkelMeshSection& InSection)
 {
-	FPlane TrianglePlane(A, B, C);
-	const FVector PointOnTriPlane = FVector::PointPlaneProject(Point, TrianglePlane);
-	const FVector BaryCoords = FMath::ComputeBaryCentric2D(PointOnTriPlane, A, B, C);
-	const FVector NormalAtPoint = TrianglePlane;
-	FVector TriPointToVert = Point - PointOnTriPlane;
-	TriPointToVert = TriPointToVert.ProjectOnTo(NormalAtPoint);
-	float Dist = TriPointToVert.Size();
+	InSection.ClothingData.AssetGuid = FGuid();
+	InSection.ClothingData.AssetLodIndex = INDEX_NONE;
+	InSection.CorrespondClothAssetIndex = INDEX_NONE;
 
-	float Sign = TrianglePlane.PlaneDot(Point) < 0.0f ? -1.0f : 1.0f;
-
-	return FVector4(BaryCoords, TrianglePlane.PlaneDot(Point));
+	InSection.ClothMappingData.Empty();
 }
+#endif
 
 bool FClothConfig::HasSelfCollision() const
 {
@@ -1043,6 +1000,30 @@ void FClothPhysicalMeshData::Reset(const int32 InNumVerts)
 	NumFixedVerts = 0;
 }
 
+void FClothPhysicalMeshData::ClearParticleParameters()
+{
+	// Max distances must be present, so fill to zero on clear so we still have valid mesh data.
+	const int32 NumVerts = Vertices.Num();
+	MaxDistances.Reset(NumVerts);
+	MaxDistances.AddZeroed(NumVerts);
+
+	// Just clear optional properties
+	BackstopDistances.Empty();
+	BackstopRadiuses.Empty();
+	AnimDriveMultipliers.Empty();
+}
+
+bool FClothPhysicalMeshData::HasBackStops() const
+{
+	const int32 NumBackStopDistances = BackstopDistances.Num();
+	return NumBackStopDistances > 0 && NumBackStopDistances == BackstopRadiuses.Num();
+}
+
+bool FClothPhysicalMeshData::HasAnimDrive() const
+{
+	return AnimDriveMultipliers.Num() > 0;
+}
+
 void FClothParameterMask_PhysMesh::Initialize(const FClothPhysicalMeshData& InMeshData)
 {
 	const int32 NumVerts = InMeshData.Vertices.Num();
@@ -1050,6 +1031,38 @@ void FClothParameterMask_PhysMesh::Initialize(const FClothPhysicalMeshData& InMe
 	// Set up value array
 	Values.Reset(NumVerts);
 	Values.AddZeroed(NumVerts);
+
+	bEnabled = false;
+}
+
+void FClothParameterMask_PhysMesh::CopyFromPhysMesh(const FClothPhysicalMeshData& InMeshData, MaskTarget_PhysMesh InTarget)
+{
+	// Presize value arrays
+	Initialize(InMeshData);
+
+	// Set our target
+	CurrentTarget = InTarget;
+
+	// Copy the actual parameter data
+	switch(InTarget)
+	{
+		case MaskTarget_PhysMesh::BackstopDistance:
+			Values = InMeshData.BackstopDistances;
+			break;
+		case MaskTarget_PhysMesh::BackstopRadius:
+			Values = InMeshData.BackstopRadiuses;
+			break;
+		case MaskTarget_PhysMesh::MaxDistance:
+			Values = InMeshData.MaxDistances;
+			break;
+		case MaskTarget_PhysMesh::AnimDriveMultiplier:
+			Values = InMeshData.AnimDriveMultipliers;
+			break;
+		default:
+			break;
+	}
+
+	CalcRanges();
 }
 
 void FClothParameterMask_PhysMesh::SetValue(int32 InVertexIndex, float InValue)
@@ -1058,13 +1071,7 @@ void FClothParameterMask_PhysMesh::SetValue(int32 InVertexIndex, float InValue)
 	{
 		Values[InVertexIndex] = InValue;
 
-		float TempMax = 0.0f;
-		for(const float& Value : Values)
-		{
-			TempMax = FMath::Max(TempMax, Value);
-		}
-
-		MaxValue = TempMax;
+		CalcRanges();
 	}
 }
 
@@ -1073,7 +1080,10 @@ float FClothParameterMask_PhysMesh::GetValue(int32 InVertexIndex) const
 	return InVertexIndex < Values.Num() ? Values[InVertexIndex] : 0.0f;
 }
 
-#if WITH_EDITOR
+const TArray<float>& FClothParameterMask_PhysMesh::GetValueArray() const
+{
+	return Values;
+}
 
 void FClothParameterMask_PhysMesh::CalcRanges()
 {
@@ -1083,13 +1093,11 @@ void FClothParameterMask_PhysMesh::CalcRanges()
 	for(const float& Value : Values)
 	{
 		MaxValue = FMath::Max(Value, MaxValue);
-
-		if(Value > 0.0f)
-		{
-			MinValue = FMath::Min(Value, MinValue);
-		}
+		MinValue = FMath::Min(Value, MinValue);
 	}
 }
+
+#if WITH_EDITOR
 
 FColor FClothParameterMask_PhysMesh::GetValueAsColor(int32 InVertexIndex) const
 {
@@ -1135,6 +1143,9 @@ void FClothParameterMask_PhysMesh::Apply(FClothPhysicalMeshData& InTargetMesh)
 			case MaskTarget_PhysMesh::BackstopRadius:
 				TargetArray = &InTargetMesh.BackstopRadiuses;
 				break;
+			case MaskTarget_PhysMesh::AnimDriveMultiplier:
+				TargetArray = &InTargetMesh.AnimDriveMultipliers;
+				break;
 			default:
 				break;
 		}
@@ -1156,5 +1167,20 @@ void FClothParameterMask_PhysMesh::Apply(FClothPhysicalMeshData& InTargetMesh)
 		UE_LOG(LogClothingAsset, Warning, TEXT("Aborted applying mask to physical mesh at %p, value mismatch (NumValues: %d, NumVerts: %d)."), &InTargetMesh, NumValues, NumTargetMeshVerts);
 	}
 }
+
+#if WITH_EDITORONLY_DATA
+
+void FClothLODData::GetParameterMasksForTarget(const MaskTarget_PhysMesh& InTarget, TArray<FClothParameterMask_PhysMesh*>& OutMasks)
+{
+	for(FClothParameterMask_PhysMesh& Mask : ParameterMasks)
+	{
+		if(Mask.CurrentTarget == InTarget)
+		{
+			OutMasks.Add(&Mask);
+		}
+	}
+}
+
+#endif
 
 #undef LOCTEXT_NAMESPACE

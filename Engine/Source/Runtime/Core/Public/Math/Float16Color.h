@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -37,6 +37,8 @@ public:
 	 * @return true if the two colors are identical, otherwise false.
 	 */
 	bool operator==(const FFloat16Color& Src);
+
+	bool operator==(const FFloat16Color& Src) const;
 };
 
 
@@ -71,6 +73,16 @@ FORCEINLINE FFloat16Color& FFloat16Color::operator=(const FFloat16Color& Src)
 
 
 FORCEINLINE bool FFloat16Color::operator==(const FFloat16Color& Src)
+{
+	return (
+		(R == Src.R) &&
+		(G == Src.G) &&
+		(B == Src.B) &&
+		(A == Src.A)
+		);
+}
+
+FORCEINLINE bool FFloat16Color::operator==(const FFloat16Color& Src) const
 {
 	return (
 		(R == Src.R) &&

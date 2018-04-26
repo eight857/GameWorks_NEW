@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayEffectTypes.h"
 #include "GameFramework/Pawn.h"
@@ -126,6 +126,7 @@ void FGameplayEffectContext::SetAbility(const UGameplayAbility* InGameplayAbilit
 {
 	if (InGameplayAbility)
 	{
+		AbilityInstanceNotReplicated = MakeWeakObjectPtr(const_cast<UGameplayAbility*>(InGameplayAbility));
 		AbilityCDO = InGameplayAbility->GetClass()->GetDefaultObject<UGameplayAbility>();
 		AbilityLevel = InGameplayAbility->GetAbilityLevel();
 	}
@@ -135,6 +136,12 @@ const UGameplayAbility* FGameplayEffectContext::GetAbility() const
 {
 	return AbilityCDO.Get();
 }
+
+const UGameplayAbility* FGameplayEffectContext::GetAbilityInstance_NotReplicated() const
+{
+	return AbilityInstanceNotReplicated.Get();
+}
+
 
 void FGameplayEffectContext::AddActors(const TArray<TWeakObjectPtr<AActor>>& InActors, bool bReset)
 {
@@ -179,7 +186,7 @@ bool FGameplayEffectContext::NetSerialize(FArchive& Ar, class UPackageMap* Map, 
 		{
 			RepBits |= 1 << 2;
 		}
-		if (SourceObject.IsValid())
+		if (bReplicateSourceObject && SourceObject.IsValid())
 		{
 			RepBits |= 1 << 3;
 		}
@@ -609,7 +616,7 @@ FGameplayCueParameters::FGameplayCueParameters(const struct FGameplayEffectConte
 
 bool FGameplayCueParameters::NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
 {
-	static const uint8 NUM_LEVEL_BITS = 4;
+	static const uint8 NUM_LEVEL_BITS = 5; // need to bump this up to support 20 levels for AbilityLevel
 	static const uint8 MAX_LEVEL = (1 << NUM_LEVEL_BITS) - 1;
 
 	enum RepFlag

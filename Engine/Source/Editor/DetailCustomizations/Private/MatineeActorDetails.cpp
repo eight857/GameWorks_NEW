@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MatineeActorDetails.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -22,7 +22,7 @@ TSharedRef<IDetailCustomization> FMatineeActorDetails::MakeInstance()
 
 void FMatineeActorDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLayout )
 {
-	const TArray< TWeakObjectPtr<UObject> >& SelectedObjects = DetailLayout.GetDetailsView().GetSelectedObjects();
+	const TArray< TWeakObjectPtr<UObject> >& SelectedObjects = DetailLayout.GetSelectedObjects();
 
 	for( int32 ObjectIndex = 0; ObjectIndex < SelectedObjects.Num(); ++ObjectIndex )
 	{

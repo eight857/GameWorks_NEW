@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Navigation/CrowdFollowingComponent.h"
 #include "AI/Navigation/NavigationSystem.h"
@@ -12,6 +12,7 @@
 #include "AIConfig.h"
 #include "Navigation/MetaNavMeshPath.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Engine/World.h"
 
 
 DEFINE_LOG_CATEGORY(LogCrowdFollowing);
@@ -26,6 +27,7 @@ UCrowdFollowingComponent::UCrowdFollowingComponent(const FObjectInitializer& Obj
 	bEnableSimulationReplanOnResume = true;
 	bRegisteredWithCrowdSimulation = false;
 	bCanCheckMovingTooFar = true;
+	bCanUpdatePathPartInTick = true;
 
 	bEnableAnticipateTurns = false;
 	bEnableObstacleAvoidance = true;
@@ -332,7 +334,8 @@ void UCrowdFollowingComponent::UpdateCachedDirections(const FVector& NewVelocity
 	}
 
 	// CrowdAgentMoveDirection either direction on path or aligned with current velocity
-	if (CharacterMovement->MovementMode != MOVE_Falling)
+	const bool bIsNotFalling = (CharacterMovement == nullptr || CharacterMovement->MovementMode != MOVE_Falling);
+	if (bIsNotFalling)
 	{
 		if (bUpdateDirectMoveVelocity)
 		{
@@ -382,7 +385,8 @@ void UCrowdFollowingComponent::ApplyCrowdAgentVelocity(const FVector& NewVelocit
 	bCanCheckMovingTooFar = !bTraversingLink && bIsNearEndOfPath;
 	if (IsCrowdSimulationEnabled() && Status == EPathFollowingStatus::Moving && MovementComp)
 	{
-		if (bAffectFallingVelocity || CharacterMovement == NULL || CharacterMovement->MovementMode != MOVE_Falling)
+		const bool bIsNotFalling = (CharacterMovement == nullptr || CharacterMovement->MovementMode != MOVE_Falling);
+		if (bAffectFallingVelocity || bIsNotFalling)
 		{
 			UpdateCachedDirections(NewVelocity, DestPathCorner, bTraversingLink);
 
@@ -916,9 +920,16 @@ void UCrowdFollowingComponent::UpdatePathSegment()
 	{
 		if (!Path->IsWaitingForRepath())
 		{
+			UE_VLOG(this, LogPathFollowing, Log, TEXT("Aborting move due to path being invalid and not waiting for repath"));
 			OnPathFinished(FPathFollowingResult(EPathFollowingResult::Aborted, FPathFollowingResultFlags::InvalidPath));
+			return;
 		}
-		return;
+		else
+		{
+			// continue with execution, if navigation is being rebuild constantly AI will get stuck with current waypoint
+			// path updates should be still coming in, even though they get invalidated right away
+			UE_VLOG(this, LogPathFollowing, Log, TEXT("Updating path points in invalid & pending path!"));
+		}
 	}
 
 	// if agent has control over its movement, check finish conditions
@@ -963,7 +974,7 @@ void UCrowdFollowingComponent::UpdatePathSegment()
 				OnPathFinished(FPathFollowingResult(EPathFollowingResult::Success, FPathFollowingResultFlags::None));
 			}
 		}
-		else
+		else if (bCanUpdatePathPartInTick)
 		{
 			// override radius multiplier and switch to next path part when closer than 4x agent radius
 			const float NextPartMultiplier = 4.0f;

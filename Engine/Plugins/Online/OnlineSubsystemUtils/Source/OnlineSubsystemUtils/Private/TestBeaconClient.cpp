@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TestBeaconClient.h"
 
@@ -14,6 +14,8 @@ void ATestBeaconClient::OnFailure()
 #endif
 	Super::OnFailure();
 }
+
+/// @cond DOXYGEN_WARNINGS
 
 void ATestBeaconClient::ClientPing_Implementation()
 {
@@ -39,3 +41,5 @@ void ATestBeaconClient::ServerPong_Implementation()
 	ClientPing();
 #endif
 }
+
+/// @endcond

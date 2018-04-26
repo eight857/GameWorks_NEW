@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -46,23 +46,41 @@ class ENGINE_API UAssetManagerSettings : public UDeveloperSettings
 	GENERATED_BODY()
 
 public:
-	UAssetManagerSettings() : bOnlyCookProductionAssets(false) {}
+	UAssetManagerSettings() : bOnlyCookProductionAssets(false), bShouldGuessTypeAndNameInEditor(true), bShouldAcquireMissingChunksOnLoad(false) {}
 
 	/** List of asset types to scan at startup */
 	UPROPERTY(config, EditAnywhere, Category = "Asset Manager")
 	TArray<FPrimaryAssetTypeInfo> PrimaryAssetTypesToScan;
 
 	/** List of directories to exclude from scanning for Primary Assets, useful to exclude test assets */
-	UPROPERTY(config, EditAnywhere, Category = "Asset Manager", meta = (RelativeToGameContentDir))
+	UPROPERTY(config, EditAnywhere, Category = "Asset Manager", meta = (RelativeToGameContentDir, LongPackageName))
 	TArray<FDirectoryPath> DirectoriesToExclude;
 
 	/** List of specific asset rule overrides */
 	UPROPERTY(config, EditAnywhere, Category = "Asset Manager")
 	TArray<FPrimaryAssetRulesOverride> PrimaryAssetRules;
 
-	/** If true, DevelopmentCook assets will error when they are cooked */
+	/** If true, DevelopmentCook assets will error when they are cooked, you should enable this on production branches */
 	UPROPERTY(config, EditAnywhere, Category = "Asset Manager")
 	bool bOnlyCookProductionAssets;
+
+	/**
+	 * If true, the asset manager will determine the type and name for Primary Assets that do not implement GetPrimaryAssetId, by calling DeterminePrimaryAssetIdForObject and using the ini settings.
+	 * This works in both cooked and uncooked builds but is slower than directly implementing GetPrimaryAssetId on the native asset
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Asset Manager")
+	bool bShouldManagerDetermineTypeAndName;
+
+	/**
+	 * If true, PrimaryAsset Type/Name will be implied for assets in the editor even if bShouldManagerDetermineTypeAndName is false.
+	 * This guesses the correct id for content that hasn't been resaved after GetPrimaryAssetId was implemented
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Asset Manager")
+	bool bShouldGuessTypeAndNameInEditor;
+
+	/** If true, this will query the platform chunk install interface to request missing chunks for any requested primary asset loads */
+	UPROPERTY(config, EditAnywhere, Category = "Asset Manager")
+	bool bShouldAcquireMissingChunksOnLoad;
 
 	/** Redirect from Type:Name to Type:NameNew */
 	UPROPERTY(config, EditAnywhere, Category = "Redirects")
@@ -75,4 +93,7 @@ public:
 	/** Redirect from /game/assetpath to /game/assetpathnew */
 	UPROPERTY(config, EditAnywhere, Category = "Redirects")
 	TArray<FAssetManagerRedirect> AssetPathRedirects;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 };

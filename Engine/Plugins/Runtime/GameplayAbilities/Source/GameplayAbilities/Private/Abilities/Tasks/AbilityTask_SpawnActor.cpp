@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_SpawnActor.h"
 #include "EngineGlobals.h"
@@ -25,7 +25,7 @@ bool UAbilityTask_SpawnActor::BeginSpawningActor(UGameplayAbility* OwningAbility
 {
 	if (Ability && Ability->GetCurrentActorInfo()->IsNetAuthority() && ShouldBroadcastAbilityTaskDelegates())
 	{
-		UWorld* const World = GEngine->GetWorldFromContextObject(OwningAbility);
+		UWorld* const World = GEngine->GetWorldFromContextObject(OwningAbility, EGetWorldErrorMode::LogAndReturnNull);
 		if (World)
 		{
 			SpawnedActor = World->SpawnActorDeferred<AActor>(InClass, FTransform::Identity, NULL, NULL, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);

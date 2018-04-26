@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -26,13 +26,16 @@ struct VIEWPORTINTERACTION_API FViewportActionKeyInput
 	{}
 
 	/** The name of this action */
+	UPROPERTY()
 	FName ActionType;
 
 	/** Input event */
-	EInputEvent Event;
+	UPROPERTY()
+	TEnumAsByte<EInputEvent> Event;
 
 	/** True if this action owned by an interactor is "captured" for each possible action type, meaning that only the active captor should 
 	handle input events until it is no longer captured.  It's the captors responsibility to set this using OnVRAction(), or clear it when finished with capturing. */
+	UPROPERTY()
 	bool bIsInputCaptured;
 };
 
@@ -66,38 +69,6 @@ enum class EViewportInteractionDraggingMode : uint8
 	Material
 };
 
-/**
-* Things the transform gizmo can do to objects
-*/
-UENUM()
-enum class ETransformGizmoInteractionType : uint8
-{
-	/** No interaction */
-	None,
-
-	/** Translate the object(s), either in any direction or confined to one axis.  No rotation. */
-	Translate,
-
-	/** Translate the object, constrained to a plane.  No rotation. */
-	TranslateOnPlane,
-
-	/** Stretch the object non-uniformly while simultaneously repositioning it so account for it's new size */
-	StretchAndReposition,
-
-	/** Scaling the object non-uniformly while	 */
-	Scale,
-
-	/** Rotate the object(s) around a specific axis relative to the gizmo's pivot, translating as needed */
-	Rotate,
-
-	/** Rotate the object(s) around the pivot based on start angle */
-	RotateOnAngle,
-
-	/** Uniform scale the object(s) */
-	UniformScale,
-};
-
-
 /* Directions that a transform handle can face along any given axis */
 enum class ETransformGizmoHandleDirection
 {
@@ -123,4 +94,12 @@ struct VIEWPORTINTERACTION_API FTransformGizmoHandlePlacement
 	The center axis index is valid for edges, and defines the axis perpendicular to that edge direction,
 	or INDEX_NONE if it's not an edge */
 	void GetCenterHandleCountAndFacingAxisIndex( int32& OutCenterHandleCount, int32& OutFacingAxisIndex, int32& OutCenterAxisIndex ) const;
+};
+
+
+enum class ELockedWorldDragMode
+{
+	Unlocked,
+	OnlyRotating,
+	OnlyScaling,
 };

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HLODOutliner.h"
 #include "GameFramework/Actor.h"
@@ -33,12 +33,13 @@
 #include "LODLevelItem.h"
 #include "StaticMeshActorItem.h"
 #include "HLODTreeWidgetItem.h"
-#include "HLODSelectionActor.h"
 
 #include "Logging/MessageLog.h"
 
 #include "IHierarchicalLODUtilities.h"
 #include "HierarchicalLODUtilitiesModule.h"
+#include "SImage.h"
+#include "DrawDebugHelpers.h"
 
 #define LOCTEXT_NAMESPACE "HLODOutliner"
 
@@ -65,7 +66,7 @@ namespace HLODOutliner
 		HLODTreeRoot.Empty();
 		SelectedNodes.Empty();		
 		AllNodes.Empty();
-		SelectionActors.Empty();
+		SelectedLODActors.Empty();
 		LODLevelBuildFlags.Empty();
 		LODLevelActors.Empty();
 		PendingActions.Empty();
@@ -133,6 +134,8 @@ namespace HLODOutliner
 		// Disable panel if system is not enabled
 		MainContentPanel->SetEnabled(TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateSP(this, &SHLODOutliner::OutlinerEnabled)));
 
+		SettingsView->SetEnabled(TAttribute<bool>::Create(TAttribute<bool>::FGetter::CreateLambda([]() -> bool { return !GetDefault<UHierarchicalLODSettings>()->bForceSettingsInAllMaps; })));
+
 		MainContentPanel->AddSlot()
 			.AutoHeight()
 			.Padding(0.0f, 0.0f, 0.0f, 4.0f)
@@ -161,7 +164,43 @@ namespace HLODOutliner
 				+ SSplitter::Slot()
 				.Value(0.5)
 				[
-					SettingsView.ToSharedRef()										
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(SBorder)
+						.BorderImage(FEditorStyle::GetBrush("SettingsEditor.CheckoutWarningBorder"))
+						.BorderBackgroundColor(FColor(166,137,0))							
+						[
+							SNew(SHorizontalBox)
+							.Visibility_Lambda([this]() -> EVisibility 
+							{
+								return GetDefault<UHierarchicalLODSettings>()->bForceSettingsInAllMaps ? EVisibility::Visible : EVisibility::Collapsed;
+							})
+
+							+ SHorizontalBox::Slot()
+							.VAlign(VAlign_Center)
+							.AutoWidth()
+							.Padding(4.0f, 0.0f, 4.0f, 0.0f)
+							[
+								SNew(SImage)
+								.Image(FEditorStyle::GetBrush("SettingsEditor.WarningIcon"))
+							]
+
+							+SHorizontalBox::Slot()
+							.VAlign(VAlign_Center)
+							.AutoWidth()
+							.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("HLODForcedGlobally", "Project level HLOD Settings forced, changing the HLOD settings is disabled"))
+							]
+						]
+					]
+					+ SVerticalBox::Slot()			
+					[
+						SettingsView.ToSharedRef()
+					]
 				]		
 			];
 		
@@ -239,7 +278,7 @@ namespace HLODOutliner
 				.DefaultTooltip(LOCTEXT("ReducedTriangleCountToolTip", "Reduced Number of Triangles in a LOD Mesh"))
 				.FillWidth(0.2f)
 				+ SHeaderRow::Column("ReductionPercentage")
-				.DefaultLabel(LOCTEXT("ReductionPercentage", "% Reduction"))
+				.DefaultLabel(LOCTEXT("ReductionPercentage", "% Retained"))
 				.DefaultTooltip(LOCTEXT("ReductionPercentageToolTip", "Percentage of Triangle Reduction in a LOD Mesh"))
 				.FillWidth(0.1f)
 				+ SHeaderRow::Column("Level")
@@ -292,7 +331,7 @@ namespace HLODOutliner
 			/*InNotifyHook=*/ NotifyHook,
 			/*InSearchInitialKeyFocus=*/ false,
 			/*InViewIdentifier=*/ NAME_None);
-		DetailsViewArgs.DefaultsOnlyVisibility = FDetailsViewArgs::EEditDefaultsOnlyNodeVisibility::Automatic;
+		DetailsViewArgs.DefaultsOnlyVisibility = EEditDefaultsOnlyNodeVisibility::Automatic;
 		DetailsViewArgs.bShowOptions = false;
 
 		SettingsView = EditModule.CreateDetailView(DetailsViewArgs);
@@ -345,6 +384,15 @@ namespace HLODOutliner
 		if (bNeedsRefresh)
 		{
 			Populate();
+		}
+		
+		// Draw currently selected HLOD clusters in the treeview as spheres in the level
+		for (AActor* Actor : SelectedLODActors)
+		{
+			const FBox BoundingBox = Actor->GetComponentsBoundingBox(true);		
+			DrawCircle(CurrentWorld, BoundingBox.GetCenter(), FVector(1, 0, 0), FVector(0, 1, 0), FColor::Red, BoundingBox.GetExtent().Size(), 32);
+			DrawCircle(CurrentWorld, BoundingBox.GetCenter(), FVector(1, 0, 0), FVector(0, 0, 1), FColor::Red, BoundingBox.GetExtent().Size(), 32);
+			DrawCircle(CurrentWorld, BoundingBox.GetCenter(), FVector(0, 1, 0), FVector(0, 0, 1), FColor::Red, BoundingBox.GetExtent().Size(), 32);
 		}
 
 		bool bChangeMade = false;
@@ -458,7 +506,7 @@ namespace HLODOutliner
 		}
 		
 		ResetLODLevelForcing();
-
+		SelectedLODActors.Empty();
 
 		FullRefresh();
 		return FReply::Handled();
@@ -492,7 +540,7 @@ namespace HLODOutliner
 		if (CurrentWorld)
 		{
 			DestroySelectionActors();
-			CurrentWorld->HierarchicalLODBuilder->BuildMeshesForLODActors();
+			CurrentWorld->HierarchicalLODBuilder->BuildMeshesForLODActors(false);
 			SetForcedLODLevel(ForcedLODLevel);
 		}
 
@@ -522,8 +570,6 @@ namespace HLODOutliner
 		GEngine->OnLevelActorDeleted().AddSP(this, &SHLODOutliner::OnLevelActorsRemoved);
 		GEngine->OnActorMoved().AddSP(this, &SHLODOutliner::OnActorMovedEvent);
 
-		// Register to be notified when properties are edited
-		FCoreDelegates::OnActorLabelChanged.AddRaw(this, &SHLODOutliner::OnActorLabelChanged);
 
 		// Selection change
 		USelection::SelectionChangedEvent.AddRaw(this, &SHLODOutliner::OnLevelSelectionChanged);
@@ -549,7 +595,6 @@ namespace HLODOutliner
 
 		FWorldDelegates::LevelAddedToWorld.RemoveAll(this);
 		FWorldDelegates::LevelRemovedFromWorld.RemoveAll(this);
-		FCoreDelegates::OnActorLabelChanged.RemoveAll(this);
 		USelection::SelectionChangedEvent.RemoveAll(this);
 		USelection::SelectObjectEvent.RemoveAll(this);
 
@@ -561,7 +606,7 @@ namespace HLODOutliner
 			GEngine->OnActorMoved().RemoveAll(this);
 		}	
 		
-		if (GEditor)
+		if (GEditor && UObjectInitialized())
 		{
 			GEditor->OnHLODActorMoved().RemoveAll(this);
 			GEditor->OnHLODActorAdded().RemoveAll(this);
@@ -736,7 +781,10 @@ namespace HLODOutliner
 					if (Type == ITreeItem::HierarchicalLODLevel)
 					{
 						FLODLevelItem* LevelItem = (FLODLevelItem*)(Parent.Get());
-						CurrentWorld->HierarchicalLODBuilder->BuildMeshForLODActor(ActorItem->LODActor.Get(), LevelItem->LODLevelIndex);
+						if (ActorItem->LODActor->IsDirty())
+						{
+							CurrentWorld->HierarchicalLODBuilder->BuildMeshForLODActor(ActorItem->LODActor.Get(), LevelItem->LODLevelIndex);
+						}
 					}
 				}
 			}
@@ -816,12 +864,14 @@ namespace HLODOutliner
 	{
 		// This call came from a context menu
 		auto SelectedItems = TreeView->GetSelectedItems();
-
 		// Loop over all selected items (context menu can't be called with multiple items selected that aren't of the same types)
 		for (auto SelectedItem : SelectedItems)
 		{
 			FLODActorItem* ActorItem = (FLODActorItem*)(SelectedItem.Get());
 			ALODActor* LODActor = ActorItem->LODActor.Get();			
+						
+			SelectedLODActors.RemoveAll([LODActor](const AActor* Actor) { return Actor == LODActor; });
+
 			HierarchicalLODUtilities->DestroyLODActor(LODActor);
 		}
 
@@ -847,7 +897,7 @@ namespace HLODOutliner
 				ITreeItem::TreeItemType Type = Parent->GetTreeItemType();
 				if (Type == ITreeItem::HierarchicalLODActor)
 				{
-					AActor* Actor = Cast<AActor>(ActorItem->StaticMeshActor.Get());
+					AActor* Actor = ActorItem->StaticMeshActor.Get();
 					
 					if (HierarchicalLODUtilities->RemoveActorFromCluster(Actor))
 					{
@@ -887,7 +937,7 @@ namespace HLODOutliner
 				ITreeItem::TreeItemType Type = Parent->GetTreeItemType();
 				if (Type == ITreeItem::HierarchicalLODActor)
 				{
-					AActor* Actor = Cast<AActor>(ActorItem->LODActor.Get());
+					AActor* Actor = ActorItem->LODActor.Get();
 					checkf(Actor != nullptr, TEXT("Invalid actor in tree view"));
 					
 					if (HierarchicalLODUtilities->RemoveActorFromCluster(Actor))
@@ -897,6 +947,11 @@ namespace HLODOutliner
 				}
 			}
 		}
+	}
+
+	void SHLODOutliner::CreateClusterFromActors(const TArray<AActor*>& Actors, uint32 LODLevelIndex)
+	{
+		HierarchicalLODUtilities->CreateNewClusterFromActors(CurrentWorld, CurrentWorldSettings, Actors, LODLevelIndex);
 	}
 
 	void SHLODOutliner::SelectContainedActors()
@@ -985,22 +1040,23 @@ namespace HLODOutliner
 		}
 
 		TArray<FTreeItemPtr> NewSelectedNodes = TreeView->GetSelectedItems();
-
-		EmptySelection();
-		//TreeView->ClearSelection();
-
-		// Loop over previously retrieve lsit of selected nodes
-		StartSelection();
-
-		bool bChanged = false;
-
-		for (FTreeItemPtr SelectedItem : NewSelectedNodes)
+		// Make sure that we do not actually change selection when the users selects a HLOD level node
+		if (NewSelectedNodes.ContainsByPredicate([](FTreeItemPtr Item) -> bool { return Item.IsValid() && Item->GetTreeItemType() != ITreeItem::HierarchicalLODLevel;  }))
 		{
-			if (SelectedItem.IsValid())
+			EmptySelection();
+
+			// Loop over previously retrieve lsit of selected nodes
+			StartSelection();
+
+			bool bChanged = false;
+
+			for (FTreeItemPtr SelectedItem : NewSelectedNodes)
 			{
-				ITreeItem::TreeItemType Type = SelectedItem->GetTreeItemType();
-				switch (Type)
+				if (SelectedItem.IsValid())
 				{
+					ITreeItem::TreeItemType Type = SelectedItem->GetTreeItemType();
+					switch (Type)
+					{
 					case ITreeItem::HierarchicalLODLevel:
 					{
 						// No functionality for select HLOD level items
@@ -1025,10 +1081,11 @@ namespace HLODOutliner
 						bChanged = true;
 						break;
 					}
+					}
 				}
 			}
-		}
-		EndSelection(bChanged);
+			EndSelection(bChanged);
+		}		
 
 		SelectedNodes = TreeView->GetSelectedItems();
 	}
@@ -1097,8 +1154,7 @@ namespace HLODOutliner
 			}
 		}
 
-		// Currently no context menu actions for ITreeItem::HierarchicalLODLevel type
-		if (SelectedItems.Num() && bSameType && Type != ITreeItem::HierarchicalLODLevel)
+		if (SelectedItems.Num() && bSameType)
 		{
 			TreeView->GetSelectedItems()[0]->GenerateContextMenu(MenuBuilder, *this);
 			return MenuBuilder.MakeWidget();
@@ -1134,18 +1190,8 @@ namespace HLODOutliner
 	}
 
 	void SHLODOutliner::DestroySelectionActors()
-	{
-		if (CurrentWorld)
-		{
-			for (AHLODSelectionActor* BoundsActor : SelectionActors)
-			{
-				if (BoundsActor && BoundsActor->IsValidLowLevel())
-				{
-					CurrentWorld->DestroyActor(BoundsActor);
-				}
-			}
-		}
-		SelectionActors.Empty();
+	{		
+		SelectedLODActors.Empty();
 	}
 
 	void SHLODOutliner::SelectActorInViewport(AActor* Actor, const uint32 SelectionDepth)
@@ -1154,7 +1200,7 @@ namespace HLODOutliner
 
 		if (Actor->IsA<ALODActor>() && SelectionDepth == 0)
 		{
-			CreateBoundingSphereForActor(Actor);
+			AddLODActorForBoundsDrawing(Actor);
 		}
 	}
 
@@ -1180,30 +1226,9 @@ namespace HLODOutliner
 		}
 	}
 
-	UDrawSphereComponent* SHLODOutliner::CreateBoundingSphereForActor(AActor* Actor)
+	void SHLODOutliner::AddLODActorForBoundsDrawing(AActor* Actor)
 	{
-		if (CurrentWorld)
-		{
-			AHLODSelectionActor* SelectionActor = CurrentWorld->SpawnActorDeferred<AHLODSelectionActor>(AHLODSelectionActor::StaticClass(), FTransform());
-			SelectionActor->ClearFlags(RF_Public | RF_Standalone);
-			SelectionActor->SetFlags(RF_Transient);			
-
-			UDrawSphereComponent* BoundSphereSpawned = SelectionActor->GetDrawSphereComponent();
-			BoundSphereSpawned->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
-			BoundSphereSpawned->RegisterComponent();
-
-			FVector Origin, Extent;
-			FBox BoundingBox = Actor->GetComponentsBoundingBox(true);
-			BoundSphereSpawned->SetWorldLocation(BoundingBox.GetCenter());
-			BoundSphereSpawned->SetSphereRadius(BoundingBox.GetExtent().GetAbsMax());
-			BoundSphereSpawned->ShapeColor = FColor::Red;		
-
-			SelectionActors.Add(SelectionActor);
-
-			return BoundSphereSpawned;
-		}
-
-		return nullptr;
+		SelectedLODActors.AddUnique(Actor);
 	}
 
 	void SHLODOutliner::EndSelection(const bool bChange)
@@ -1223,6 +1248,7 @@ namespace HLODOutliner
 		USelection* Selection = Cast<USelection>(Obj);
 		AActor* SelectedActor = Cast<AActor>(Obj);
 		TreeView->ClearSelection();
+		DestroySelectionActors();
 		if (Selection)
 		{
 			int32 NumSelected = Selection->Num();
@@ -1236,18 +1262,13 @@ namespace HLODOutliner
 					if (Item)
 					{
 						SelectItemInTree(*Item);
-
-						if (Item->Get()->GetTreeItemType() == ITreeItem::StaticMeshActor)
-						{
-							DestroySelectionActors();
-						}
-
 						TreeView->RequestScrollIntoView(*Item);
 					}
-					else
+
+					if (Actor->IsA<ALODActor>())
 					{
-						DestroySelectionActors();
-					}
+						AddLODActorForBoundsDrawing(Actor);
+					}					
 				}
 			}			
 		}
@@ -1258,16 +1279,12 @@ namespace HLODOutliner
 			{
 				SelectItemInTree(*Item);
 
-				if (Item->Get()->GetTreeItemType() == ITreeItem::StaticMeshActor)
-				{
-					DestroySelectionActors();
-				}
-
 				TreeView->RequestScrollIntoView(*Item);
 			}	
-			else
+
+			if (SelectedActor->IsA<ALODActor>())
 			{
-				DestroySelectionActors();
+				AddLODActorForBoundsDrawing(SelectedActor);
 			}
 		}
 	}
@@ -1286,7 +1303,7 @@ namespace HLODOutliner
 
 	void SHLODOutliner::OnLevelActorsAdded(AActor* InActor)
 	{
-		if (InActor->GetWorld() == CurrentWorld && !InActor->IsA<AHLODSelectionActor>() && !InActor->IsA<AWorldSettings>())
+		if (InActor->GetWorld() == CurrentWorld && !InActor->IsA<AWorldSettings>())
 		{
 			FullRefresh();
 		}	
@@ -1294,7 +1311,7 @@ namespace HLODOutliner
 
 	void SHLODOutliner::OnLevelActorsRemoved(AActor* InActor)
 	{
-		if (!InActor->IsA<AHLODSelectionActor>() && !InActor->IsA<AWorldSettings>())
+		if (!InActor->IsA<AWorldSettings>())
 		{			
 			// Remove InActor from LOD actor which contains it
 			for (TArray<ALODActor*>& ActorArray : LODLevelActors)
@@ -1320,14 +1337,6 @@ namespace HLODOutliner
 		} 
 	}
 	
-	void SHLODOutliner::OnActorLabelChanged(AActor* ChangedActor)
-	{
-		if (!ChangedActor->IsA<AHLODSelectionActor>())
-		{
-			FullRefresh();
-		}	
-	}
-
 	void SHLODOutliner::OnMapChange(uint32 MapFlags)
 	{
 		ResetCachedData();
@@ -1420,10 +1429,10 @@ namespace HLODOutliner
 			else
 			{
 				// Add child item for the new static mesh actor
-				FTreeItemRef ChildItem = MakeShareable(new FStaticMeshActorItem(InActor));
+				FTreeItemRef ChildItem = MakeShared<FStaticMeshActorItem>(const_cast<AActor*>(InActor));
 				AllNodes.Add(ChildItem->AsShared());
 				PendingActions.Emplace(FOutlinerAction::AddItem, ChildItem, *ParentItem);
-			}			
+			}
 
 			// Set build flags according to whether or not this LOD actor is dirty 
 			LODLevelBuildFlags[ParentLODActor->LODLevel - 1] &= !ParentLODActor->IsDirty();
@@ -1438,13 +1447,14 @@ namespace HLODOutliner
 	void SHLODOutliner::OnHLODTransitionScreenSizeChangedEvent()
 	{
 		if (CurrentWorld)
-		{			
-			int32 MaxLODLevel = FMath::Min(CurrentWorldSettings->HierarchicalLODSetup.Num(), LODLevelTransitionScreenSizes.Num());
+		{	
+			const TArray<struct FHierarchicalSimplification>& HierarchicalLODSetups = CurrentWorldSettings->GetHierarchicalLODSetup();
+			int32 MaxLODLevel = FMath::Min(HierarchicalLODSetups.Num(), LODLevelTransitionScreenSizes.Num());			
 			for (int32 LODLevelIndex = 0; LODLevelIndex < MaxLODLevel; ++LODLevelIndex)
 			{
-				if (LODLevelTransitionScreenSizes[LODLevelIndex] != CurrentWorldSettings->HierarchicalLODSetup[LODLevelIndex].TransitionScreenSize)
+				if (LODLevelTransitionScreenSizes[LODLevelIndex] != HierarchicalLODSetups[LODLevelIndex].TransitionScreenSize)
 				{
-					LODLevelTransitionScreenSizes[LODLevelIndex] = CurrentWorldSettings->HierarchicalLODSetup[LODLevelIndex].TransitionScreenSize;
+					LODLevelTransitionScreenSizes[LODLevelIndex] = HierarchicalLODSetups[LODLevelIndex].TransitionScreenSize;
 					UpdateDrawDistancesForLODLevel(LODLevelIndex);
 				}
 			}
@@ -1496,7 +1506,7 @@ namespace HLODOutliner
 		{
 			// Retrieve current world settings
 			CurrentWorldSettings = CurrentWorld->GetWorldSettings();
-			checkf(CurrentWorldSettings != nullptr, TEXT("CurrentWorld (%s) does not contain a valid WorldSettings actor"), *CurrentWorld->GetName());
+			ensureMsgf(CurrentWorldSettings != nullptr, TEXT("CurrentWorld (%s) does not contain a valid WorldSettings actor"), *CurrentWorld->GetName());
 						
 			// Update settings view
 			SettingsView->SetObject(CurrentWorldSettings);
@@ -1516,27 +1526,41 @@ namespace HLODOutliner
 		if (CurrentWorldSettings)
 		{
 			// Iterate over all LOD levels (Number retrieved from world settings) and add Treeview items for them
-			const uint32 LODLevels = CurrentWorldSettings->HierarchicalLODSetup.Num();			
-			for (uint32 LODLevelIndex = 0; LODLevelIndex < LODLevels; ++LODLevelIndex)
+			const TArray<struct FHierarchicalSimplification>& HierarchicalLODSetups = CurrentWorldSettings->GetHierarchicalLODSetup();
+			const uint32 LODLevels = HierarchicalLODSetups.Num();			
+			auto AddHLODLevelItem = [&](const int32 HLODLevelIndex)
 			{
-				FTreeItemRef LevelItem = MakeShareable(new FLODLevelItem(LODLevelIndex));
+				FTreeItemRef LevelItem = MakeShareable(new FLODLevelItem(HLODLevelIndex));
 
 				PendingActions.Emplace(FOutlinerAction::AddItem, LevelItem);
-
-				// Add new HLOD level item to maps and arrays holding cached items
-				LevelNodes.Add(LevelItem->AsShared());
 				HLODTreeRoot.Add(LevelItem->AsShared());
 				AllNodes.Add(LevelItem->AsShared());
 
-				// Initialize lod level actors/screen size and build flag
-				LODLevelBuildFlags.Add(true);
-				LODLevelActors.AddDefaulted();					
-				LODLevelTransitionScreenSizes.Add(CurrentWorldSettings->HierarchicalLODSetup[LODLevelIndex].TransitionScreenSize);
+				const int32 RequiredLevelEntries = HLODLevelIndex + 1;
+				if (LODLevelActors.Num() < RequiredLevelEntries)
+				{
+					// Add new HLOD level item to maps and arrays holding cached items
+					LODLevelActors.SetNum(RequiredLevelEntries);
+					LevelNodes.SetNumZeroed(RequiredLevelEntries);
+					LODLevelBuildFlags.SetNum(RequiredLevelEntries);
+					LODLevelTransitionScreenSizes.SetNum(RequiredLevelEntries);
+
+					LevelNodes[HLODLevelIndex] = LevelItem->AsShared();
+					// Initialize lod level actors/screen size and build flag
+					LODLevelBuildFlags[HLODLevelIndex] = true;
+					LODLevelTransitionScreenSizes[HLODLevelIndex] = (HierarchicalLODSetups.IsValidIndex(HLODLevelIndex) ? HierarchicalLODSetups[HLODLevelIndex].TransitionScreenSize : 1.0f);
+				}
 
 				TreeItemsMap.Add(LevelItem->GetID(), LevelItem);
 
 				// Expand level items by default
 				LevelItem->bIsExpanded = true;
+			};
+
+			// Add 'known' HLOD level entries
+			for (uint32 LODLevelIndex = 0; LODLevelIndex < LODLevels; ++LODLevelIndex)
+			{
+				AddHLODLevelItem(LODLevelIndex);
 			}
 
 			// Loop over all the levels in the current world
@@ -1554,8 +1578,12 @@ namespace HLODOutliner
 							// Add LOD Actor item to the treeview
 							if (LODActor)
 							{
-								checkf((LODActor->LODLevel - 1) < LevelNodes.Num(), TEXT("LODActor (%s) found with LODLevel (%i) that is out of current WorldSettings range (%i)"), *LODActor->GetName(), LODActor->LODLevel - 1, LevelNodes.Num());
-								
+								// Ad-hoc adding of HLOD level entry
+								if (!LODLevelActors.IsValidIndex(LODActor->LODLevel - 1))
+								{
+									AddHLODLevelItem(LODActor->LODLevel - 1);
+								}
+
 								// This is to prevent issues with the sub actor array due to deleted scene actors while the HLOD outliner was closed
 								LODActor->CleanSubActorArray();
 
@@ -1605,8 +1633,8 @@ namespace HLODOutliner
 		}
 
 		// Request treeview UI item to refresh
-		TreeView->RequestTreeRefresh();
-		
+		TreeView->RequestTreeRefresh();		
+
 		// Just finished refreshing
 		bNeedsRefresh = false;
 	}
@@ -1735,7 +1763,7 @@ namespace HLODOutliner
 				bHLODEnabled = CurrentWorldSettings->bEnableHierarchicalLODSystem;
 			}
 
-			if (CurrentWorld != nullptr)
+			if (bHLODEnabled && CurrentWorld != nullptr)
 			{
 				bHLODEnabled = !HierarchicalLODUtilities->IsWorldUsedForStreaming(CurrentWorld);
 			}

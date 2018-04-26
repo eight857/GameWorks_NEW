@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,10 +11,15 @@
 #include "Containers/ContainerAllocationPolicies.h"
 #include "Serialization/Archive.h"
 
+#include "Algo/Heapify.h"
+#include "Algo/HeapSort.h"
+#include "Algo/IsHeap.h"
+#include "Algo/Impl/BinaryHeap.h"
+#include "Templates/IdentityFunctor.h"
 #include "Templates/Less.h"
+#include "Templates/ChooseClass.h"
 #include "Templates/Sorting.h"
 
-#define DEBUG_HEAP 0
 
 #if UE_BUILD_SHIPPING || UE_BUILD_TEST
 	#define TARRAY_RANGED_FOR_CHECKS 0
@@ -22,14 +27,13 @@
 	#define TARRAY_RANGED_FOR_CHECKS 1
 #endif
 
-#define AGRESSIVE_ARRAY_FORCEINLINE
-
 /**
  * Generic iterator which can operate on types that expose the following:
  * - A type called ElementType representing the contained type.
  * - A method IndexType Num() const that returns the number of items in the container.
  * - A method bool IsValidIndex(IndexType index) which returns whether a given index is valid in the container.
  * - A method T& operator\[\](IndexType index) which returns a reference to a contained object by index.
+ * - A method void RemoveAt(IndexType index) which removes the element at index
  */
 template< typename ContainerType, typename ElementType, typename IndexType>
 class TIndexedContainerIterator
@@ -91,28 +95,20 @@ public:
 		return Tmp -= Offset;
 	}
 
-	/** @name Element access */
-	//@{
 	ElementType& operator* () const
 	{
 		return Container[ Index ];
 	}
 
-	ElementType* operator-> () const
+	ElementType* operator->() const
 	{
 		return &Container[ Index ];
 	}
-	//@}
 
 	/** conversion to "bool" returning true if the iterator has not reached the last element. */
 	FORCEINLINE explicit operator bool() const
 	{
 		return Container.IsValidIndex(Index);
-	}
-	/** inverse of the "bool" operator */
-	FORCEINLINE bool operator !() const 
-	{
-		return !(bool)*this;
 	}
 
 	/** Returns an index to the current element. */
@@ -125,6 +121,19 @@ public:
 	void Reset()
 	{
 		Index = 0;
+	}
+
+	/** Sets iterator to the last element. */
+	void SetToEnd()
+	{
+		Index = Container.Num();
+	}
+	
+	/** Removes current element in array. This invalidates the current iterator value and it must be incremented */
+	void RemoveCurrent()
+	{
+		Container.RemoveAt(Index);
+		Index--;
 	}
 
 	FORCEINLINE friend bool operator==(const TIndexedContainerIterator& Lhs, const TIndexedContainerIterator& Rhs) { return &Lhs.Container == &Rhs.Container && Lhs.Index == Rhs.Index; }
@@ -229,52 +238,6 @@ private:
 	}
 };
 
-
-/**
- * TReversePredicateWrapper class used by implicit heaps. 
- * This is similar to TDereferenceWrapper from Sorting.h except it reverses the comparison at the same time
- */
-template <typename ElementType, typename PREDICATE_CLASS>
-class TReversePredicateWrapper
-{
-	const PREDICATE_CLASS& Predicate;
-public:
-	TReversePredicateWrapper( const PREDICATE_CLASS& InPredicate )
-		: Predicate( InPredicate )
-	{}
-
-	FORCEINLINE bool operator()( ElementType& A, ElementType& B ) const { return Predicate( B, A ); }
-	FORCEINLINE bool operator()( const ElementType& A, const ElementType& B ) const { return Predicate( B, A ); }
-};
-
-
-/**
- * Partially specialized version of the above.
- */
-template <typename ElementType, typename PREDICATE_CLASS>
-class TReversePredicateWrapper<ElementType*, PREDICATE_CLASS>
-{
-	const PREDICATE_CLASS& Predicate;
-public:
-	TReversePredicateWrapper( const PREDICATE_CLASS& InPredicate )
-		: Predicate( InPredicate )
-	{}
-
-	FORCEINLINE bool operator()( ElementType* A, ElementType* B ) const 
-	{
-		check( A != nullptr );
-		check( B != nullptr );
-		return Predicate( *B, *A ); 
-	}
-	FORCEINLINE bool operator()( const ElementType* A, const ElementType* B ) const 
-	{
-		check( A != nullptr );
-		check( B != nullptr );
-		return Predicate( *B, *A ); 
-	}
-};
-
-
 namespace UE4Array_Private
 {
 	template <typename FromArrayType, typename ToArrayType>
@@ -330,6 +293,20 @@ public:
 	{}
 
 	/**
+	 * Constructor from a raw array of elements.
+	 *
+	 * @param Ptr   A pointer to an array of elements to copy.
+	 * @param Count The number of elements to copy from Ptr.
+	 * @see Append
+	 */
+	FORCEINLINE TArray(const ElementType* Ptr, int32 Count)
+	{
+		check(Ptr != nullptr || Count == 0);
+
+		CopyToEmpty(Ptr, Count, 0, 0);
+	}
+
+	/**
 	 * Initializer list constructor
 	 */
 	TArray(std::initializer_list<InElementType> InitList)
@@ -379,7 +356,7 @@ public:
 	 *
 	 * @param InitList The initializer_list to copy from.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE TArray& operator=(std::initializer_list<InElementType> InitList)
+	TArray& operator=(std::initializer_list<InElementType> InitList)
 	{
 		DestructItems(GetData(), ArrayNum);
 		// This is not strictly legal, as std::initializer_list's iterators are not guaranteed to be pointers, but
@@ -398,7 +375,7 @@ public:
 	 * @param Other The source array to assign from.
 	 */
 	template<typename OtherAllocator>
-	AGRESSIVE_ARRAY_FORCEINLINE TArray& operator=(const TArray<ElementType, OtherAllocator>& Other)
+	TArray& operator=(const TArray<ElementType, OtherAllocator>& Other)
 	{
 		DestructItems(GetData(), ArrayNum);
 		CopyToEmpty(Other.GetData(), Other.Num(), ArrayMax, 0);
@@ -411,7 +388,7 @@ public:
 	 *
 	 * @param Other The source array to assign from.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE TArray& operator=(const TArray& Other)
+	TArray& operator=(const TArray& Other)
 	{
 		if (this != &Other)
 		{
@@ -522,7 +499,7 @@ public:
 	 *                   at the end of the array in the number of elements.
 	 */
 	template <typename OtherElementType>
-	AGRESSIVE_ARRAY_FORCEINLINE TArray(TArray<OtherElementType, Allocator>&& Other, int32 ExtraSlack)
+	TArray(TArray<OtherElementType, Allocator>&& Other, int32 ExtraSlack)
 	{
 		// We don't implement move semantics for general OtherAllocators, as there's no way
 		// to tell if they're compatible with the current one.  Probably going to be a pretty
@@ -536,7 +513,7 @@ public:
 	 *
 	 * @param Other Array to assign and move from.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE TArray& operator=(TArray&& Other)
+	TArray& operator=(TArray&& Other)
 	{
 		if (this != &Other)
 		{
@@ -547,7 +524,7 @@ public:
 	}
 
 	/** Destructor. */
-	AGRESSIVE_ARRAY_FORCEINLINE ~TArray()
+	~TArray()
 	{
 		DestructItems(GetData(), ArrayNum);
 
@@ -700,7 +677,7 @@ public:
 	FORCEINLINE ElementType Pop(bool bAllowShrinking = true)
 	{
 		RangeCheck(0);
-		ElementType Result = MoveTemp(GetData()[ArrayNum - 1]);
+		ElementType Result = MoveTempIfPossible(GetData()[ArrayNum - 1]);
 		RemoveAt(ArrayNum - 1, 1, bAllowShrinking);
 		return Result;
 	}
@@ -712,7 +689,7 @@ public:
 	 */
 	FORCEINLINE void Push(ElementType&& Item)
 	{
-		Add(MoveTemp(Item));
+		Add(MoveTempIfPossible(Item));
 	}
 
 	/**
@@ -813,7 +790,7 @@ public:
 	 * @returns Index of the found element. INDEX_NONE otherwise.
 	 * @see FindLast, FindLastByPredicate
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE int32 Find(const ElementType& Item) const
+	int32 Find(const ElementType& Item) const
 	{
 		const ElementType* RESTRICT Start = GetData();
 		for (const ElementType* RESTRICT Data = Start, *RESTRICT DataEnd = Data + ArrayNum; Data != DataEnd; ++Data)
@@ -901,7 +878,7 @@ public:
 	 * @returns Index to the first matching element, or INDEX_NONE if none is found.
 	 */
 	template <typename KeyType>
-	AGRESSIVE_ARRAY_FORCEINLINE int32 IndexOfByKey(const KeyType& Key) const
+	int32 IndexOfByKey(const KeyType& Key) const
 	{
 		const ElementType* RESTRICT Start = GetData();
 		for (const ElementType* RESTRICT Data = Start, *RESTRICT DataEnd = Start + ArrayNum; Data != DataEnd; ++Data)
@@ -921,7 +898,7 @@ public:
 	 * @returns Index to the first matching element, or INDEX_NONE if none is found.
 	 */
 	template <typename Predicate>
-	AGRESSIVE_ARRAY_FORCEINLINE int32 IndexOfByPredicate(Predicate Pred) const
+	int32 IndexOfByPredicate(Predicate Pred) const
 	{
 		const ElementType* RESTRICT Start = GetData();
 		for (const ElementType* RESTRICT Data = Start, *RESTRICT DataEnd = Start + ArrayNum; Data != DataEnd; ++Data)
@@ -957,7 +934,7 @@ public:
 	 * @see Find
 	 */
 	template <typename KeyType>
-	AGRESSIVE_ARRAY_FORCEINLINE ElementType* FindByKey(const KeyType& Key)
+	ElementType* FindByKey(const KeyType& Key)
 	{
 		for (ElementType* RESTRICT Data = GetData(), *RESTRICT DataEnd = Data + ArrayNum; Data != DataEnd; ++Data)
 		{
@@ -990,7 +967,7 @@ public:
 	 * @see FilterByPredicate, ContainsByPredicate
 	 */
 	template <typename Predicate>
-	AGRESSIVE_ARRAY_FORCEINLINE ElementType* FindByPredicate(Predicate Pred)
+	ElementType* FindByPredicate(Predicate Pred)
 	{
 		for (ElementType* RESTRICT Data = GetData(), *RESTRICT DataEnd = Data + ArrayNum; Data != DataEnd; ++Data)
 		{
@@ -1032,7 +1009,7 @@ public:
 	 * @see ContainsByPredicate, FilterByPredicate, FindByPredicate
 	 */
 	template <typename ComparisonType>
-	AGRESSIVE_ARRAY_FORCEINLINE bool Contains(const ComparisonType& Item) const
+	bool Contains(const ComparisonType& Item) const
 	{
 		for (const ElementType* RESTRICT Data = GetData(), *RESTRICT DataEnd = Data + ArrayNum; Data != DataEnd; ++Data)
 		{
@@ -1063,7 +1040,7 @@ public:
 	 * @param OtherArray Array to compare.
 	 * @returns True if this array is the same as OtherArray. False otherwise.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE bool operator==(const TArray& OtherArray) const
+	bool operator==(const TArray& OtherArray) const
 	{
 		int32 Count = Num();
 
@@ -1091,37 +1068,54 @@ public:
 	friend FArchive& operator<<(FArchive& Ar, TArray& A)
 	{
 		A.CountBytes(Ar);
-		if (sizeof(ElementType) == 1)
+
+		// For net archives, limit serialization to 16MB, to protect against excessive allocation
+		const int32 MaxNetArraySerialize = (16 * 1024 * 1024) / sizeof(ElementType);
+		int32 SerializeNum = (Ar.IsLoading() ? 0 : A.ArrayNum);
+
+		Ar << SerializeNum;
+
+		check(SerializeNum >= 0);
+
+		if (!Ar.IsError() && SerializeNum >= 0 && ensure(!Ar.IsNetArchive() || SerializeNum <= MaxNetArraySerialize))
 		{
-			// Serialize simple bytes which require no construction or destruction.
-			Ar << A.ArrayNum;
-			check(A.ArrayNum >= 0);
-			if ((A.ArrayNum || A.ArrayMax) && Ar.IsLoading())
+			if (sizeof(ElementType) == 1)
 			{
-				A.ResizeForCopy(A.ArrayNum, A.ArrayMax);
+				A.ArrayNum = SerializeNum;
+
+				// Serialize simple bytes which require no construction or destruction.
+				if ((A.ArrayNum || A.ArrayMax) && Ar.IsLoading())
+				{
+					A.ResizeForCopy(A.ArrayNum, A.ArrayMax);
+				}
+
+				Ar.Serialize(A.GetData(), A.Num());
 			}
-			Ar.Serialize(A.GetData(), A.Num());
-		}
-		else if (Ar.IsLoading())
-		{
-			// Load array.
-			int32 NewNum = 0;
-			Ar << NewNum;
-			A.Empty(NewNum);
-			for (int32 i = 0; i < NewNum; i++)
+			else if (Ar.IsLoading())
 			{
-				Ar << *::new(A)ElementType;
+				// Required for resetting ArrayNum
+				A.Empty(SerializeNum);
+
+				for (int32 i=0; i<SerializeNum; i++)
+				{
+					Ar << *::new(A) ElementType;
+				}
+			}
+			else
+			{
+				A.ArrayNum = SerializeNum;
+
+				for (int32 i=0; i<A.ArrayNum; i++)
+				{
+					Ar << A[i];
+				}
 			}
 		}
 		else
 		{
-			// Save array.
-			Ar << A.ArrayNum;
-			for (int32 i = 0; i < A.ArrayNum; i++)
-			{
-				Ar << A[i];
-			}
+			Ar.SetError();
 		}
+
 		return Ar;
 	}
 
@@ -1264,7 +1258,26 @@ public:
 	void InsertZeroed(int32 Index, int32 Count = 1)
 	{
 		InsertUninitialized(Index, Count);
-		FMemory::Memzero((uint8*)AllocatorInstance.GetAllocation() + Index * sizeof(ElementType), Count * sizeof(ElementType));
+		FMemory::Memzero(GetData() + Index, Count * sizeof(ElementType));
+	}
+
+	/**
+	 * Inserts a zeroed element into the array at given location.
+	 *
+	 * Caution, InsertZeroed_GetRef() will create an element without calling the
+	 * constructor and this is not appropriate for element types that require
+	 * a constructor to function properly.
+	 *
+	 * @param Index Tells where to insert the new element.
+	 * @return A reference to the newly-inserted element.
+	 * @see Insert_GetRef, InsertDefaulted_GetRef
+	 */
+	ElementType& InsertZeroed_GetRef(int32 Index)
+	{
+		InsertUninitialized(Index, 1);
+		ElementType* Ptr = GetData() + Index;
+		FMemory::Memzero(Ptr, sizeof(ElementType));
+		return *Ptr;
 	}
 
 	/**
@@ -1278,7 +1291,23 @@ public:
 	void InsertDefaulted(int32 Index, int32 Count = 1)
 	{
 		InsertUninitialized(Index, Count);
-		DefaultConstructItems<ElementType>((uint8*)AllocatorInstance.GetAllocation() + Index * sizeof(ElementType), Count);
+		DefaultConstructItems<ElementType>(GetData() + Index, Count);
+	}
+
+	/**
+	 * Inserts a default-constructed element into the array at a given
+	 * location.
+	 *
+	 * @param Index Tells where to insert the new element.
+	 * @return A reference to the newly-inserted element.
+	 * @see Insert_GetRef, InsertZeroed_GetRef
+	 */
+	ElementType& InsertDefaulted_GetRef(int32 Index)
+	{
+		InsertUninitialized(Index, 1);
+		ElementType* Ptr = GetData() + Index;
+		DefaultConstructItems<ElementType>(Ptr, 1);
+		return *Ptr;
 	}
 
 	/**
@@ -1290,15 +1319,11 @@ public:
 	 */
 	int32 Insert(std::initializer_list<ElementType> InitList, const int32 InIndex)
 	{
-		InsertUninitialized(InIndex, (int32)InitList.size());
+		int32 NumNewElements = (int32)InitList.size();
 
-		ElementType* Data = (ElementType*)AllocatorInstance.GetAllocation();
+		InsertUninitialized(InIndex, NumNewElements);
+		ConstructItems<ElementType>(GetData() + InIndex, InitList.begin(), NumNewElements);
 
-		int32 Index = InIndex;
-		for (const ElementType& Element : InitList)
-		{
-			new (Data + Index++) ElementType(Element);
-		}
 		return InIndex;
 	}
 
@@ -1309,19 +1334,37 @@ public:
 	 * @param InIndex Tells where to insert the new elements.
 	 * @returns Location at which the item was inserted.
 	 */
-	int32 Insert(const TArray<ElementType>& Items, const int32 InIndex)
+	template <typename OtherAllocator>
+	int32 Insert(const TArray<ElementType, OtherAllocator>& Items, const int32 InIndex)
 	{
-		check(this != &Items);
+		check((const void*)this != (const void*)&Items);
 
-		InsertUninitialized(InIndex, Items.Num());
+		int32 NumNewElements = Items.Num();
 
-		ElementType* Data = (ElementType*)AllocatorInstance.GetAllocation();
+		InsertUninitialized(InIndex, NumNewElements);
+		ConstructItems<ElementType>(GetData() + InIndex, Items.GetData(), NumNewElements);
 
-		int32 Index = InIndex;
-		for (auto It = Items.CreateConstIterator(); It; ++It)
-		{
-			new (Data + Index++) ElementType(MoveTemp(*It));
-		}
+		return InIndex;
+	}
+
+	/**
+	 * Inserts given elements into the array at given location.
+	 *
+	 * @param Items Array of elements to insert.
+	 * @param InIndex Tells where to insert the new elements.
+	 * @returns Location at which the item was inserted.
+	 */
+	template <typename OtherAllocator>
+	int32 Insert(TArray<ElementType, OtherAllocator>&& Items, const int32 InIndex)
+	{
+		check((const void*)this != (const void*)&Items);
+
+		int32 NumNewElements = Items.Num();
+
+		InsertUninitialized(InIndex, NumNewElements);
+		RelocateConstructItems<ElementType>(GetData() + InIndex, Items.GetData(), NumNewElements);
+		Items.ArrayNum = 0;
+
 		return InIndex;
 	}
 
@@ -1373,7 +1416,7 @@ public:
 		// construct a copy in place at Index (this new operator will insert at 
 		// Index, then construct that memory with Item)
 		InsertUninitialized(Index, 1);
-		new(GetData() + Index) ElementType(MoveTemp(Item));
+		new(GetData() + Index) ElementType(MoveTempIfPossible(Item));
 		return Index;
 	}
 
@@ -1394,6 +1437,47 @@ public:
 		InsertUninitialized(Index, 1);
 		new(GetData() + Index) ElementType(Item);
 		return Index;
+	}
+
+	/**
+	 * Inserts a given element into the array at given location. Move semantics
+	 * version.
+	 *
+	 * @param Item The element to insert.
+	 * @param Index Tells where to insert the new element.
+	 * @return A reference to the newly-inserted element.
+	 * @see Add, Remove
+	 */
+	ElementType& Insert_GetRef(ElementType&& Item, int32 Index)
+	{
+		CheckAddress(&Item);
+
+		// construct a copy in place at Index (this new operator will insert at 
+		// Index, then construct that memory with Item)
+		InsertUninitialized(Index, 1);
+		ElementType* Ptr = GetData() + Index;
+		new(Ptr) ElementType(MoveTempIfPossible(Item));
+		return *Ptr;
+	}
+
+	/**
+	 * Inserts a given element into the array at given location.
+	 *
+	 * @param Item The element to insert.
+	 * @param Index Tells where to insert the new element.
+	 * @return A reference to the newly-inserted element.
+	 * @see Add, Remove
+	 */
+	ElementType& Insert_GetRef(const ElementType& Item, int32 Index)
+	{
+		CheckAddress(&Item);
+
+		// construct a copy in place at Index (this new operator will insert at 
+		// Index, then construct that memory with Item)
+		InsertUninitialized(Index, 1);
+		ElementType* Ptr = GetData() + Index;
+		new(Ptr) ElementType(Item);
+		return *Ptr;
 	}
 
 private:
@@ -1456,7 +1540,7 @@ public:
 	}
 
 private:
-	AGRESSIVE_ARRAY_FORCEINLINE void RemoveAtSwapImpl(int32 Index, int32 Count = 1, bool bAllowShrinking = true)
+	void RemoveAtSwapImpl(int32 Index, int32 Count = 1, bool bAllowShrinking = true)
 	{
 		if (Count)
 		{
@@ -1529,7 +1613,7 @@ public:
 	 *
 	 * @param NewSize The expected usage size after calling this function.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE void Reset(int32 NewSize = 0)
+	void Reset(int32 NewSize = 0)
 	{
 		// If we have space to hold the excepted size, then don't reallocate
 		if (NewSize <= ArrayMax)
@@ -1548,7 +1632,7 @@ public:
 	 *
 	 * @param Slack (Optional) The expected usage size after empty operation. Default is 0.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE void Empty(int32 Slack = 0)
+	void Empty(int32 Slack = 0)
 	{
 		DestructItems(GetData(), ArrayNum);
 
@@ -1603,7 +1687,7 @@ public:
 	 *
 	 * @param NewNum New size of the array.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE void SetNumUninitialized(int32 NewNum, bool bAllowShrinking = true)
+	void SetNumUninitialized(int32 NewNum, bool bAllowShrinking = true)
 	{
 		if (NewNum > Num())
 		{
@@ -1634,7 +1718,7 @@ public:
 	 * @see Add, Insert
 	 */
 	template <typename OtherElementType, typename OtherAllocator>
-	AGRESSIVE_ARRAY_FORCEINLINE void Append(const TArray<OtherElementType, OtherAllocator>& Source)
+	void Append(const TArray<OtherElementType, OtherAllocator>& Source)
 	{
 		check((void*)this != (void*)&Source);
 
@@ -1660,7 +1744,7 @@ public:
 	 * @see Add, Insert
 	 */
 	template <typename OtherElementType, typename OtherAllocator>
-	AGRESSIVE_ARRAY_FORCEINLINE void Append(TArray<OtherElementType, OtherAllocator>&& Source)
+	void Append(TArray<OtherElementType, OtherAllocator>&& Source)
 	{
 		check((void*)this != (void*)&Source);
 
@@ -1687,9 +1771,9 @@ public:
 	 * @param Count The number of elements to insert from Ptr.
 	 * @see Add, Insert
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE void Append(const ElementType* Ptr, int32 Count)
+	void Append(const ElementType* Ptr, int32 Count)
 	{
-		check(Ptr != nullptr);
+		check(Ptr != nullptr || Count == 0);
 
 		int32 Pos = AddUninitialized(Count);
 		ConstructItems<ElementType>(GetData() + Pos, Ptr, Count);
@@ -1717,7 +1801,7 @@ public:
 	 *
 	 * @param Other The array to append.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE TArray& operator+=(TArray&& Other)
+	TArray& operator+=(TArray&& Other)
 	{
 		Append(MoveTemp(Other));
 		return *this;
@@ -1729,7 +1813,7 @@ public:
 	 *
 	 * @param Other The array to append.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE TArray& operator+=(const TArray& Other)
+	TArray& operator+=(const TArray& Other)
 	{
 		Append(Other);
 		return *this;
@@ -1740,7 +1824,7 @@ public:
 	 *
 	 * @param InitList The initializer list to append.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE TArray& operator+=(std::initializer_list<ElementType> InitList)
+	TArray& operator+=(std::initializer_list<ElementType> InitList)
 	{
 		Append(InitList);
 		return *this;
@@ -1761,6 +1845,21 @@ public:
 	}
 
 	/**
+	 * Constructs a new item at the end of the array, possibly reallocating the whole array to fit.
+	 *
+	 * @param Args	The arguments to forward to the constructor of the new item.
+	 * @return A reference to the newly-inserted element.
+	 */
+	template <typename... ArgsType>
+	FORCEINLINE ElementType& Emplace_GetRef(ArgsType&&... Args)
+	{
+		const int32 Index = AddUninitialized(1);
+		ElementType* Ptr = GetData() + Index;
+		new(Ptr) ElementType(Forward<ArgsType>(Args)...);
+		return *Ptr;
+	}
+
+	/**
 	 * Constructs a new item at a specified index, possibly reallocating the whole array to fit.
 	 *
 	 * @param Index	The index to add the item at.
@@ -1774,6 +1873,22 @@ public:
 	}
 
 	/**
+	 * Constructs a new item at a specified index, possibly reallocating the whole array to fit.
+	 *
+	 * @param Index	The index to add the item at.
+	 * @param Args	The arguments to forward to the constructor of the new item.
+	 * @return A reference to the newly-inserted element.
+	 */
+	template <typename... ArgsType>
+	FORCEINLINE ElementType& EmplaceAt_GetRef(int32 Index, ArgsType&&... Args)
+	{
+		InsertUninitialized(Index, 1);
+		ElementType* Ptr = GetData() + Index;
+		new(Ptr) ElementType(Forward<ArgsType>(Args)...);
+		return *Ptr;
+	}
+
+	/**
 	 * Adds a new item to the end of the array, possibly reallocating the whole array to fit.
 	 *
 	 * Move semantics version.
@@ -1782,7 +1897,11 @@ public:
 	 * @return Index to the new item
 	 * @see AddDefaulted, AddUnique, AddZeroed, Append, Insert
 	 */
-	FORCEINLINE int32 Add(ElementType&& Item) { CheckAddress(&Item); return Emplace(MoveTemp(Item)); }
+	FORCEINLINE int32 Add(ElementType&& Item)
+	{
+		CheckAddress(&Item);
+		return Emplace(MoveTempIfPossible(Item));
+	}
 
 	/**
 	 * Adds a new item to the end of the array, possibly reallocating the whole array to fit.
@@ -1791,7 +1910,39 @@ public:
 	 * @return Index to the new item
 	 * @see AddDefaulted, AddUnique, AddZeroed, Append, Insert
 	 */
-	FORCEINLINE int32 Add(const ElementType& Item) { CheckAddress(&Item); return Emplace(Item); }
+	FORCEINLINE int32 Add(const ElementType& Item)
+	{
+		CheckAddress(&Item);
+		return Emplace(Item);
+	}
+
+	/**
+	 * Adds a new item to the end of the array, possibly reallocating the whole array to fit.
+	 *
+	 * Move semantics version.
+	 *
+	 * @param Item The item to add
+	 * @return A reference to the newly-inserted element.
+	 * @see AddDefaulted_GetRef, AddUnique_GetRef, AddZeroed_GetRef, Insert_GetRef
+	 */
+	FORCEINLINE ElementType& Add_GetRef(ElementType&& Item)
+	{
+		CheckAddress(&Item);
+		return Emplace_GetRef(MoveTempIfPossible(Item));
+	}
+
+	/**
+	 * Adds a new item to the end of the array, possibly reallocating the whole array to fit.
+	 *
+	 * @param Item The item to add
+	 * @return A reference to the newly-inserted element.
+	 * @see AddDefaulted_GetRef, AddUnique_GetRef, AddZeroed_GetRef, Insert_GetRef
+	 */
+	FORCEINLINE ElementType& Add_GetRef(const ElementType& Item)
+	{
+		CheckAddress(&Item);
+		return Emplace_GetRef(Item);
+	}
 
 	/**
 	 * Adds new items to the end of the array, possibly reallocating the whole
@@ -1805,11 +1956,30 @@ public:
 	 * @return Index to the first of the new items.
 	 * @see Add, AddDefaulted, AddUnique, Append, Insert
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE int32 AddZeroed(int32 Count = 1)
+	int32 AddZeroed(int32 Count = 1)
 	{
 		const int32 Index = AddUninitialized(Count);
 		FMemory::Memzero((uint8*)AllocatorInstance.GetAllocation() + Index*sizeof(ElementType), Count*sizeof(ElementType));
 		return Index;
+	}
+
+	/**
+	 * Adds a new item to the end of the array, possibly reallocating the whole
+	 * array to fit. The new item will be zeroed.
+	 *
+	 * Caution, AddZeroed_GetRef() will create elements without calling the
+	 * constructor and this is not appropriate for element types that require
+	 * a constructor to function properly.
+	 *
+	 * @return A reference to the newly-inserted element.
+	 * @see Add_GetRef, AddDefaulted_GetRef, AddUnique_GetRef, Insert_GetRef
+	 */
+	ElementType& AddZeroed_GetRef()
+	{
+		const int32 Index = AddUninitialized(1);
+		ElementType* Ptr = GetData() + Index;
+		FMemory::Memzero(Ptr, sizeof(ElementType));
+		return *Ptr;
 	}
 
 	/**
@@ -1820,11 +1990,26 @@ public:
 	 * @return Index to the first of the new items.
 	 * @see Add, AddZeroed, AddUnique, Append, Insert
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE int32 AddDefaulted(int32 Count = 1)
+	int32 AddDefaulted(int32 Count = 1)
 	{
 		const int32 Index = AddUninitialized(Count);
 		DefaultConstructItems<ElementType>((uint8*)AllocatorInstance.GetAllocation() + Index * sizeof(ElementType), Count);
 		return Index;
+	}
+
+	/**
+	 * Add a new item to the end of the array, possibly reallocating the whole
+	 * array to fit. The new item will be default-constructed.
+	 *
+	 * @return A reference to the newly-inserted element.
+	 * @see Add_GetRef, AddZeroed_GetRef, AddUnique_GetRef, Insert_GetRef
+	 */
+	ElementType& AddDefaulted_GetRef()
+	{
+		const int32 Index = AddUninitialized(1);
+		ElementType* Ptr = GetData() + Index;
+		DefaultConstructItems<ElementType>(Ptr, 1);
+		return *Ptr;
 	}
 
 private:
@@ -1836,7 +2021,7 @@ private:
 	 * @returns Index of the element in the array.
 	 */
 	template <typename ArgsType>
-	AGRESSIVE_ARRAY_FORCEINLINE int32 AddUniqueImpl(ArgsType&& Args)
+	int32 AddUniqueImpl(ArgsType&& Args)
 	{
 		int32 Index;
 		if (Find(Args, Index))
@@ -1858,7 +2043,7 @@ public:
 	 * @returns Index of the element in the array.
 	 * @see Add, AddDefaulted, AddZeroed, Append, Insert
 	 */
-	FORCEINLINE int32 AddUnique(ElementType&& Item) { return AddUniqueImpl(MoveTemp(Item)); }
+	FORCEINLINE int32 AddUnique(ElementType&& Item) { return AddUniqueImpl(MoveTempIfPossible(Item)); }
 
 	/**
 	 * Adds unique element to array if it doesn't exist.
@@ -1889,7 +2074,7 @@ public:
 	 * @param Element The element to fill array with.
 	 * @param Number The number of elements that the array should be able to contain after allocation.
 	 */
-	AGRESSIVE_ARRAY_FORCEINLINE void Init(const ElementType& Element, int32 Number)
+	void Init(const ElementType& Element, int32 Number)
 	{
 		Empty(Number);
 		for (int32 Index = 0; Index < Number; ++Index)
@@ -2313,7 +2498,7 @@ private:
 	 *                   default.
 	 */
 	template <typename OtherElementType>
-	AGRESSIVE_ARRAY_FORCEINLINE void CopyToEmpty(const OtherElementType* OtherData, int32 OtherNum, int32 PrevMax, int32 ExtraSlack)
+	void CopyToEmpty(const OtherElementType* OtherData, int32 OtherNum, int32 PrevMax, int32 ExtraSlack)
 	{
 		checkSlow(ExtraSlack >= 0);
 		ArrayNum = OtherNum;
@@ -2358,7 +2543,8 @@ public:
 	template <class PREDICATE_CLASS>
 	FORCEINLINE void Heapify(const PREDICATE_CLASS& Predicate)
 	{
-		HeapifyInternal(TDereferenceWrapper<ElementType, PREDICATE_CLASS>(Predicate));
+		TDereferenceWrapper<ElementType, PREDICATE_CLASS> PredicateWrapper(Predicate);
+		Algo::Heapify(*this, PredicateWrapper);
 	}
 
 	/**
@@ -2389,13 +2575,9 @@ public:
 	int32 HeapPush(ElementType&& InItem, const PREDICATE_CLASS& Predicate)
 	{
 		// Add at the end, then sift up
-		Add(MoveTemp(InItem));
+		Add(MoveTempIfPossible(InItem));
 		TDereferenceWrapper<ElementType, PREDICATE_CLASS> PredicateWrapper(Predicate);
-		int32 Result = SiftUp(0, Num() - 1, PredicateWrapper);
-
-#if DEBUG_HEAP
-		VerifyHeap(PredicateWrapper);
-#endif
+		int32 Result = AlgoImpl::HeapSiftUp(GetData(), 0, Num() - 1, FIdentityFunctor(), PredicateWrapper);
 
 		return Result;
 	}
@@ -2417,11 +2599,7 @@ public:
 		// Add at the end, then sift up
 		Add(InItem);
 		TDereferenceWrapper<ElementType, PREDICATE_CLASS> PredicateWrapper(Predicate);
-		int32 Result = SiftUp(0, Num() - 1, PredicateWrapper);
-
-#if DEBUG_HEAP
-		VerifyHeap(PredicateWrapper);
-#endif
+		int32 Result = AlgoImpl::HeapSiftUp(GetData(), 0, Num() - 1, FIdentityFunctor(), PredicateWrapper);
 
 		return Result;
 	}
@@ -2439,7 +2617,7 @@ public:
 	 */
 	int32 HeapPush(ElementType&& InItem)
 	{
-		return HeapPush(MoveTemp(InItem), TLess<ElementType>());
+		return HeapPush(MoveTempIfPossible(InItem), TLess<ElementType>());
 	}
 
 	/** 
@@ -2475,11 +2653,7 @@ public:
 		RemoveAtSwap(0, 1, bAllowShrinking);
 
 		TDereferenceWrapper< ElementType, PREDICATE_CLASS> PredicateWrapper(Predicate);
-		SiftDown(0, Num(), PredicateWrapper);
-
-#if DEBUG_HEAP
-		VerifyHeap(PredicateWrapper);
-#endif
+		AlgoImpl::HeapSiftDown(GetData(), 0, Num(), FIdentityFunctor(), PredicateWrapper);
 	}
 
 	/** 
@@ -2502,24 +2676,11 @@ public:
 	 * Verifies the heap.
 	 *
 	 * @param Predicate Predicate class instance.
-	 *
-	 * @note: If your array contains raw pointers, they will be automatically dereferenced during heap verification.
-	 *        Therefore, your predicate will be passed references rather than pointers.
-	 *        The auto-dereferencing behavior does not occur with smart pointers.
 	 */
 	template <class PREDICATE_CLASS>
 	void VerifyHeap(const PREDICATE_CLASS& Predicate)
 	{
-		// Verify Predicate
-		ElementType* Heap = GetData();
-		for (int32 Index = 1; Index < Num(); Index++)
-		{
-			int32 ParentIndex = HeapGetParentIndex(Index);
-			if (Predicate(Heap[Index], Heap[ParentIndex]))
-			{
-				check(false);
-			}
-		}
+		check(Algo::IsHeap(*this, Predicate));
 	}
 
 	/** 
@@ -2537,11 +2698,7 @@ public:
 	{
 		RemoveAtSwap(0, 1, bAllowShrinking);
 		TDereferenceWrapper< ElementType, PREDICATE_CLASS> PredicateWrapper(Predicate);
-		SiftDown(0, Num(), PredicateWrapper);
-
-#if DEBUG_HEAP
-		VerifyHeap(PredicateWrapper);
-#endif
+		AlgoImpl::HeapSiftDown(GetData(), 0, Num(), FIdentityFunctor(), PredicateWrapper);
 	}
 
 	/** 
@@ -2599,12 +2756,8 @@ public:
 		RemoveAtSwap(Index, 1, bAllowShrinking);
 
 		TDereferenceWrapper< ElementType, PREDICATE_CLASS> PredicateWrapper(Predicate);
-		SiftDown(Index, Num(), PredicateWrapper);
-		SiftUp(0, FPlatformMath::Min(Index, Num() - 1), PredicateWrapper);
-
-#if DEBUG_HEAP
-		VerifyHeap(PredicateWrapper);
-#endif
+		AlgoImpl::HeapSiftDown(GetData(), Index, Num(), FIdentityFunctor(), PredicateWrapper);
+		AlgoImpl::HeapSiftUp(GetData(), 0, FPlatformMath::Min(Index, Num() - 1), FIdentityFunctor(), PredicateWrapper);
 	}
 
 	/**
@@ -2635,31 +2788,8 @@ public:
 	template <class PREDICATE_CLASS>
 	void HeapSort(const PREDICATE_CLASS& Predicate)
 	{
-		TReversePredicateWrapper<ElementType, PREDICATE_CLASS> ReversePredicateWrapper(Predicate);
-		HeapifyInternal(ReversePredicateWrapper);
-
-		ElementType* Heap = GetData();
-		for(int32 Index=Num()-1; Index>0; Index--)
-		{
-			Exchange(Heap[0], Heap[Index]);
-			SiftDown(0, Index, ReversePredicateWrapper);
-		}
-
-#if DEBUG_HEAP
 		TDereferenceWrapper<ElementType, PREDICATE_CLASS> PredicateWrapper(Predicate);
-
-		// Verify Heap Property
-		VerifyHeap(PredicateWrapper);
-
-		// Also verify Array is properly sorted
-		for(int32 Index=1; Index<Num(); Index++)
-		{
-			if (PredicateWrapper(Heap[Index], Heap[Index - 1]))
-			{
-				check(false);
-			}
-		}
-#endif
+		Algo::HeapSort(*this, PredicateWrapper);
 	}
 
 	/**
@@ -2674,115 +2804,6 @@ public:
 	{
 		HeapSort(TLess<ElementType>());
 	}
-
-private:
-
-	/**
-	 * Gets the index of the left child of node at Index.
-	 *
-	 * @param Index Node for which the left child index is to be returned.
-	 * @returns Index of the left child.
-	 */
-	FORCEINLINE int32 HeapGetLeftChildIndex(int32 Index) const
-	{
-		return Index * 2 + 1;
-	}
-
-	/** 
-	 * Checks if node located at Index is a leaf or not.
-	 *
-	 * @param Index Node index.
-	 * @returns true if node is a leaf, false otherwise.
-	 */
-	FORCEINLINE bool HeapIsLeaf(int32 Index, int32 Count) const
-	{
-		return HeapGetLeftChildIndex(Index) >= Count;
-	}
-
-	/**
-	 * Gets the parent index for node at Index.
-	 *
-	 * @param Index node index.
-	 * @returns Parent index.
-	 */
-	FORCEINLINE int32 HeapGetParentIndex(int32 Index) const
-	{
-		return (Index - 1) / 2;
-	}
-
-private:
-	template <class PREDICATE_CLASS>
-	void HeapifyInternal(const PREDICATE_CLASS& Predicate)
-	{
-		for (int32 Index = HeapGetParentIndex(Num() - 1); Index >= 0; Index--)
-		{
-			SiftDown(Index, Num(), Predicate);
-		}
-
-#if DEBUG_HEAP
-		VerifyHeap(Predicate);
-#endif
-	}
-
-	/**
-	 * Fixes a possible violation of order property between node at Index and a child.
-	 *
-	 * @param Index Node index.
-	 * @param Count Size of the heap (to avoid using Num()).
-	 * @param Predicate Predicate class instance.
-	 */
-	template <class PREDICATE_CLASS>
-	FORCEINLINE void SiftDown(int32 Index, const int32 Count, const PREDICATE_CLASS& Predicate)
-	{
-		ElementType* Heap = GetData();
-		while (!HeapIsLeaf(Index, Count))
-		{
-			const int32 LeftChildIndex = HeapGetLeftChildIndex(Index);
-			const int32 RightChildIndex = LeftChildIndex + 1;
-
-			int32 MinChildIndex = LeftChildIndex;
-			if (RightChildIndex < Count)
-			{
-				MinChildIndex = Predicate(Heap[LeftChildIndex], Heap[RightChildIndex]) ? LeftChildIndex : RightChildIndex;
-			}
-
-			if (!Predicate(Heap[MinChildIndex], Heap[Index]))
-			{
-				break;
-			}
-
-			Exchange(Heap[Index], Heap[MinChildIndex]);
-			Index = MinChildIndex;
-		}
-	}
-
-	/**
-	 * Fixes a possible violation of order property between node at NodeIndex and a parent.
-	 *
-	 * @param RootIndex How far to go up?
-	 * @param NodeIndex Node index.
-	 * @param Predicate Predicate class instance.
-	 *
-	 * @return The new index of the node that was at NodeIndex
-	 */
-	template <class PREDICATE_CLASS>
-	FORCEINLINE int32 SiftUp(int32 RootIndex, int32 NodeIndex, const PREDICATE_CLASS& Predicate)
-	{
-		ElementType* Heap = GetData();
-		while (NodeIndex > RootIndex)
-		{
-			int32 ParentIndex = HeapGetParentIndex(NodeIndex);
-			if (!Predicate(Heap[NodeIndex], Heap[ParentIndex]))
-			{
-				break;
-			}
-
-			Exchange(Heap[NodeIndex], Heap[ParentIndex]);
-			NodeIndex = ParentIndex;
-		}
-
-		return NodeIndex;
-	}
 };
 
 
@@ -2795,6 +2816,7 @@ struct TIsZeroConstructType<TArray<InElementType, Allocator>>
 template <typename InElementType, typename Allocator>
 struct TContainerTraits<TArray<InElementType, Allocator> > : public TContainerTraitsBase<TArray<InElementType, Allocator> >
 {
+	static_assert(TAllocatorTraits<Allocator>::SupportsMove, "TArray no longer supports move-unaware allocators");
 	enum { MoveWillEmptyContainer = TAllocatorTraits<Allocator>::SupportsMove };
 };
 

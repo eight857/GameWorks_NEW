@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  *
@@ -50,7 +50,7 @@ struct FEmitterDynamicParameter
 	GENERATED_USTRUCT_BODY()
 
 	/** The parameter name - from the material DynamicParameter expression. READ-ONLY */
-	UPROPERTY(Category=EmitterDynamicParameter, VisibleAnywhere, BlueprintReadWrite)
+	UPROPERTY(Category=EmitterDynamicParameter, VisibleAnywhere)
 	FName ParamName;
 
 	/** If true, use the EmitterTime to retrieve the value, otherwise use Particle RelativeTime. */

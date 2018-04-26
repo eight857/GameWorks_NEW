@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ActorEditorUtils.h"
 #include "Components/ActorComponent.h"
@@ -9,6 +9,9 @@
 #if WITH_EDITOR
 #include "Kismet2/ComponentEditorUtils.h"
 #endif
+
+
+#define LOCTEXT_NAMESPACE "ActorEditorUtils"
 
 namespace FActorEditorUtils
 {
@@ -110,6 +113,36 @@ namespace FActorEditorUtils
 
 		return !bIncludeThisActor || InPredicate(InActor);
 	}
+
+	bool ValidateActorName(const FText& InName, FText& OutErrorMessage)
+	{
+		FText TrimmedLabel = FText::TrimPrecedingAndTrailing(InName);
+
+		if (TrimmedLabel.IsEmpty())
+		{
+			OutErrorMessage = LOCTEXT("RenameFailed_LeftBlank", "Names cannot be left blank");
+			return false;
+		}
+
+		if (TrimmedLabel.ToString().Len() >= NAME_SIZE)
+		{
+			FFormatNamedArguments Arguments;
+			Arguments.Add(TEXT("CharCount"), NAME_SIZE);
+			OutErrorMessage = FText::Format(LOCTEXT("RenameFailed_TooLong", "Names must be less than {CharCount} characters long."), Arguments);
+			return false;
+		}
+
+		if (FName(*TrimmedLabel.ToString()) == NAME_None)
+		{
+			OutErrorMessage = LOCTEXT("RenameFailed_ReservedNameNone", "\"None\" is a reserved term and cannot be used for actor names");
+			return false;
+		}
+
+		return true;
+	}
+
 }
+
+#undef LOCTEXT_NAMESPACE
 
 

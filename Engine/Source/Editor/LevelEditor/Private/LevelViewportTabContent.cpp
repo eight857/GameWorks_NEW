@@ -1,8 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LevelViewportTabContent.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Framework/Docking/LayoutService.h"
+#include "Modules/ModuleManager.h"
+#include "LevelEditor.h"
 #include "LevelViewportLayout2x2.h"
 #include "LevelViewportLayoutOnePane.h"
 #include "LevelViewportLayoutTwoPanes.h"
@@ -166,4 +168,6 @@ void FLevelViewportTabContent::UpdateViewportTabWidget()
 			PreviouslyFocusedViewport = TOptional<FName>();
 		}
 	}
+	FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
+	LevelEditorModule.OnTabContentChanged().Broadcast();
 }

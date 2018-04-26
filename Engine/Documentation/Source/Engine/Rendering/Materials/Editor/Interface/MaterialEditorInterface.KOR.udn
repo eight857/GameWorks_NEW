@@ -1,4 +1,4 @@
-﻿INTSourceChangelist:3242329
+﻿INTSourceChangelist:3481084
 Availability: Public
 Title:머티리얼 에디터 UI
 Crumbs: %ROOT%, Engine, Engine/Rendering/Materials, Engine/Rendering/Materials/Editor
@@ -13,7 +13,33 @@ tags:Materials
 
 머티리얼 에디터 UI 는 메뉴바, 툴바, 그리고 기본적으로 네 개의 열린 패널로 구성됩니다.
 
-![](UpdatedUI.jpg)
+[OBJECT:ToggleButtonContent]
+[PARAMLITERAL:category]
+OS
+[/PARAMLITERAL]
+[PARAMLITERAL:id]
+windows
+[/PARAMLITERAL]
+[PARAMLITERAL:active]
+[/PARAMLITERAL]
+[PARAM:content]
+![](MaterialEditor_Windows.png)
+[/PARAM]
+[/OBJECT]
+
+[OBJECT:ToggleButtonContent]
+[PARAMLITERAL:category]
+OS
+[/PARAMLITERAL]
+[PARAMLITERAL:id]
+mac
+[/PARAMLITERAL]
+[PARAMLITERAL:active]
+[/PARAMLITERAL]
+[PARAM:content]
+![](MaterialEditor_Mac.png)
+[/PARAM]
+[/OBJECT]
 
 1. [메뉴 바](#메뉴바) - 현재 머티리얼에 대한 메뉴 옵션이 나열됩니다.
 1. [툴바](#툴바) - 머티리얼 작업시 사용할 수 있는 툴이 들어있습니다.
@@ -74,7 +100,7 @@ HLSL 코드 패널도 있으나, 기본적으로는 표시되지 않습니다. �
 | ![toolbar_home.png](toolbar_home.png)| 그래프 패널 가운데에 베이스 머티리얼 노드를 놓습니다. |
 | ![toolbar_clean.png](toolbar_clean.png)| 머티리얼에 연결되지 않는 머티리얼 노드를 삭제합니다. |
 | ![toolbar_show.png](toolbar_show.png)| 아무것에도 연결되지 않은 머티리얼 노드를 표시 또는 숨깁니다. |
-| ![toolbar_live_nodes.png](Engine/Rendering/Materials/Editor/toolbar_live_nodes.png)| 켜면 각 머티리얼 노드의 머티리얼을 실시간 업데이트합니다. 머티리얼 에디터 퍼포먼스 향상을 위해서는 이 옵션을 끄세요. [라이브 노드와 라이브 업데이트](Engine/Rendering/Materials/Editor/#라이브노드와라이브업데이트) 부분 참고.|
+| ![toolbar_live_nodes.png](Engine/Rendering/Materials/Editor/toolbar_live_nodes.png)| 켜면 각 머티리얼 노드의 머티리얼을 실시간 업데이트합니다. 머티리얼 에디터 퍼포먼스 향상을 위해서는 이 옵션을 끄세요. [라이브 노드와 라이브 업데이트](Engine/Rendering/Materials/Editor) 부분 참고.|
 | ![toolbar_live_update.png](Engine/Rendering/Materials/Editor/toolbar_live_update.png)|켜면, 노드가 추가, 삭제, 연결, 연결해제되거나, 노드의 프로퍼티 값이 변할 때마다 모든 하위 표현식의 셰이더를 컴파일합니다. 머티리얼 에디터 퍼포먼스 향상을 위해서는 이 옵션을 끄세요. |
 | ![toolbar_stats.png](Engine/Rendering/Materials/Editor/toolbar_stats.png)| 그래프 패널의 머티리얼 통계를 표시 또는 숨깁니다. |
 | ![toobar_release_stats](Material_Toolbar_Button_Release_Stats.png)| 통계 보고에 릴리즈 또는 디벨롭먼트 셰이더 사용을 토글합니다. |

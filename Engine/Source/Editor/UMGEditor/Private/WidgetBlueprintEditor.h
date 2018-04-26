@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -169,6 +169,9 @@ public:
 	bool GetShowDashedOutlines() const;
 	void SetShowDashedOutlines(bool Value);
 
+	bool GetIsRespectingLocks() const;
+	void SetIsRespectingLocks(bool Value);
+
 public:
 	/** Fires whenever a new widget is being hovered over */
 	FOnHoveredWidgetSet OnHoveredWidgetSet;
@@ -231,6 +234,9 @@ private:
 	/** Populates the sequencer add menu. */
 	void OnGetAnimationAddMenuContent(FMenuBuilder& MenuBuilder, TSharedRef<ISequencer> Sequencer);
 
+	/** Populates the sequencer add submenu for the big list of widgets. */
+	void OnGetAnimationAddMenuContentAllWidgets(FMenuBuilder& MenuBuilder);
+
 	/** Adds the supplied UObject to the current animation. */
 	void AddObjectToAnimation(UObject* ObjectToAnimate);
 
@@ -255,7 +261,10 @@ private:
 	void AddMaterialTrack( UWidget* Widget, TArray<UProperty*> MaterialPropertyPath, FText MaterialPropertyDisplayName );
 
 	/** Handler which is called whenever sequencer movie scene data changes. */
-	void OnMovieSceneDataChanged();
+	void OnMovieSceneDataChanged(EMovieSceneDataChangeType DataChangeType);
+
+	/** Handler which is called whenever sequencer binding is pasted. */
+	void OnMovieSceneBindingsPasted(const TArray<FMovieSceneBinding>& BindingsPasted);
 
 	/** Fire off when sequencer selection changed */
 	void SyncSelectedWidgetsWithSequencerSelection(TArray<FGuid> ObjectGuids);
@@ -323,6 +332,9 @@ private:
 
 	/** Should the designer show outlines when it creates widgets? */
 	bool bShowDashedOutlines;
+
+	/**  */
+	bool bRespectLocks;
 
 	TArray< TFunction<void()> > QueuedDesignerActions;
 

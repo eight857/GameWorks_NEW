@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SequencerContextMenus.h"
 #include "Modules/ModuleManager.h"
@@ -25,8 +25,16 @@
 #include "Sections/MovieSceneCinematicShotSection.h"
 #include "Curves/IntegralCurve.h"
 #include "Editor.h"
+#include "SequencerUtilities.h"
 #include "NotifyHook.h"
 #include "EditorUndoClient.h"
+#include "ClassViewerModule.h"
+#include "MovieSceneEasingFunction.h"
+#include "ClassViewerFilter.h"
+#include "SNumericEntryBox.h"
+#include "SCheckBox.h"
+#include "SBoxPanel.h"
+#include "SBox.h"
 
 #define LOCTEXT_NAMESPACE "SequencerContextMenus"
 
@@ -280,7 +288,8 @@ public:
 			.CreateStructureDetailView(DetailsViewArgs, StructureViewArgs, nullptr, LOCTEXT("MessageData", "Message Data"));
 
 		// register details customizations for this instance
-		StructureDetailsView->GetDetailsView().RegisterInstancedCustomPropertyLayout(FIntegralKey::StaticStruct(), FOnGetDetailCustomizationInstance::CreateStatic(&FIntegralKeyDetailsCustomization::MakeInstance, TWeakObjectPtr<const UMovieSceneSection>(WeakSection)));
+		TWeakObjectPtr<const UMovieSceneSection> ConstWeakSection = WeakSection;
+		StructureDetailsView->GetDetailsView()->RegisterInstancedCustomPropertyLayout(FIntegralKey::StaticStruct(), FOnGetDetailCustomizationInstance::CreateStatic(&FIntegralKeyDetailsCustomization::MakeInstance, ConstWeakSection));
 
 		StructureDetailsView->SetStructureData(SelectedKeyStruct);
 		StructureDetailsView->GetOnFinishedChangingPropertiesDelegate().AddSP(this, &SInlineDetailsView::OnFinishedChangingProperties, SelectedKeyStruct);
@@ -447,6 +456,14 @@ void FSectionContextMenu::PopulateMenu(FMenuBuilder& MenuBuilder)
 			LOCTEXT("OrderSectionTooltip", "Order section"),
 			FNewMenuDelegate::CreateLambda([=](FMenuBuilder& SubMenuBuilder){ Shared->AddOrderMenu(SubMenuBuilder); }));			
 
+		if (GetSupportedBlendTypes().Num() > 1)
+		{
+			MenuBuilder.AddSubMenu(
+				LOCTEXT("BlendTypeSection", "Blend Type"),
+				LOCTEXT("BlendTypeSectionTooltip", "Change the way in which this section blends with other sections of the same type"),
+				FNewMenuDelegate::CreateLambda([=](FMenuBuilder& SubMenuBuilder){ Shared->AddBlendTypeMenu(SubMenuBuilder); }));
+		}
+
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("ToggleSectionActive", "Active"),
 			LOCTEXT("ToggleSectionActiveTooltip", "Toggle section active/inactive"),
@@ -598,6 +615,24 @@ void FSectionContextMenu::AddExtrapolationMenu(FMenuBuilder& MenuBuilder, bool b
 	);
 }
 
+FMovieSceneBlendTypeField FSectionContextMenu::GetSupportedBlendTypes() const
+{
+	FMovieSceneBlendTypeField BlendTypes = FMovieSceneBlendTypeField::All();
+
+	TArray<FSectionHandle> SelectedSections = StaticCastSharedRef<SSequencer>(Sequencer->GetSequencerWidget())->GetSectionHandles(Sequencer->GetSelection().GetSelectedSections());
+	for (const FSectionHandle& Handle : SelectedSections)
+	{
+		UMovieSceneSection* Section = Handle.GetSectionObject();
+		if (Section)
+		{
+			// Remove unsupported blend types
+			BlendTypes.Remove(Section->GetSupportedBlendTypes().Invert());
+		}
+	}
+
+	return BlendTypes;
+}
+
 
 /** A widget which wraps the section details view which is an FNotifyHook which is used to forward
 	changes to the section to sequencer. */
@@ -658,9 +693,8 @@ void FSectionContextMenu::AddPropertiesMenu(FMenuBuilder& MenuBuilder)
 	}
 
 	TSharedRef<IDetailsView> DetailsView = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor").CreateDetailView(DetailsViewArgs);
-	{
-		DetailsView->SetObjects(Sections);
-	}
+	Sequencer->OnInitializeDetailsPanel().Broadcast(DetailsView, Sequencer);
+	DetailsView->SetObjects(Sections);
 
 	DetailsNotifyWrapper->SetDetailsAndSequencer(DetailsView, Sequencer);
 	MenuBuilder.AddWidget(DetailsNotifyWrapper, FText::GetEmpty(), true);
@@ -685,6 +719,23 @@ void FSectionContextMenu::AddOrderMenu(FMenuBuilder& MenuBuilder)
 		FUIAction(FExecuteAction::CreateLambda([=]{ return Shared->SendBackward(); })));
 }
 
+void FSectionContextMenu::AddBlendTypeMenu(FMenuBuilder& MenuBuilder)
+{
+	TArray<TWeakObjectPtr<UMovieSceneSection>> Sections;
+
+	TArray<FSectionHandle> SelectedSections = StaticCastSharedRef<SSequencer>(Sequencer->GetSequencerWidget())->GetSectionHandles(Sequencer->GetSelection().GetSelectedSections());
+	for (const FSectionHandle& Handle : SelectedSections)
+	{
+		UMovieSceneSection* Section = Handle.GetSectionObject();
+		if (Section)
+		{
+			Sections.Add(Section);
+		}
+	}
+
+	TWeakPtr<FSequencer> WeakSequencer = Sequencer;
+	FSequencerUtilities::PopulateMenu_SetBlendType(MenuBuilder, Sections, WeakSequencer);
+}
 
 void FSectionContextMenu::SelectAllKeys()
 {
@@ -1350,7 +1401,7 @@ TSharedRef<FPasteContextMenu> FPasteContextMenu::CreateMenu(FSequencer& InSequen
 
 TArray<TSharedRef<FSequencerSectionKeyAreaNode>> KeyAreaNodesBuffer;
 
-void FPasteContextMenu::GatherPasteDestinationsForNode(FSequencerDisplayNode& InNode, int32 SectionIndex, const FName& CurrentScope, TMap<FName, FSequencerClipboardReconciler>& Map)
+void FPasteContextMenu::GatherPasteDestinationsForNode(FSequencerDisplayNode& InNode, UMovieSceneSection* InSection, const FName& CurrentScope, TMap<FName, FSequencerClipboardReconciler>& Map)
 {
 	KeyAreaNodesBuffer.Reset();
 	if (InNode.GetType() == ESequencerNode::KeyArea)
@@ -1388,13 +1439,17 @@ void FPasteContextMenu::GatherPasteDestinationsForNode(FSequencerDisplayNode& In
 	FSequencerClipboardPasteGroup Group = Reconciler->AddDestinationGroup();
 	for (const TSharedRef<FSequencerSectionKeyAreaNode>& KeyAreaNode : KeyAreaNodesBuffer)
 	{
-		Group.Add(KeyAreaNode->GetKeyArea(SectionIndex).Get());
+		TSharedPtr<IKeyArea> KeyArea = KeyAreaNode->GetKeyArea(InSection);
+		if (KeyArea.IsValid())
+		{
+			Group.Add(*KeyArea.Get());
+		}
 	}
 
 	// Add children
 	for (const TSharedPtr<FSequencerDisplayNode>& Child : InNode.GetChildNodes())
 	{
-		GatherPasteDestinationsForNode(*Child, SectionIndex, ThisScope, Map);
+		GatherPasteDestinationsForNode(*Child, InSection, ThisScope, Map);
 	}
 }
 
@@ -1524,7 +1579,7 @@ void FPasteContextMenu::Setup()
 
 		for (const FSectionHandle& Section : Pair.Value)
 		{
-			GatherPasteDestinationsForNode(*Section.TrackNode, Section.SectionIndex, NAME_None, Destination.Reconcilers);
+			GatherPasteDestinationsForNode(*Section.TrackNode, Section.GetSectionObject(), NAME_None, Destination.Reconcilers);
 		}
 
 		// Reconcile and remove invalid pastes
@@ -1701,6 +1756,339 @@ void FPasteFromHistoryContextMenu::PopulateMenu(FMenuBuilder& MenuBuilder)
 	}
 
 	MenuBuilder.EndSection();
+}
+
+void FEasingContextMenu::BuildMenu(FMenuBuilder& MenuBuilder, const TArray<FEasingAreaHandle>& InEasings, FSequencer& Sequencer, float InMouseDownTime)
+{
+	TSharedRef<FEasingContextMenu> EasingMenu = MakeShareable(new FEasingContextMenu(InEasings));
+	EasingMenu->PopulateMenu(MenuBuilder);
+
+	MenuBuilder.AddMenuSeparator();
+
+	FSectionContextMenu::BuildMenu(MenuBuilder, Sequencer, InMouseDownTime);
+}
+
+void FEasingContextMenu::PopulateMenu(FMenuBuilder& MenuBuilder)
+{
+	FText SectionText = Easings.Num() == 1 ? LOCTEXT("EasingCurve", "Easing Curve") : FText::Format(LOCTEXT("EasingCurvesFormat", "Easing Curves ({0} curves)"), FText::AsNumber(Easings.Num()));
+	MenuBuilder.BeginSection("SequencerEasingEdit", SectionText);
+	{
+		// Copy a reference to the context menu by value into each lambda handler to ensure the type stays alive until the menu is closed
+		TSharedRef<FEasingContextMenu> Shared = AsShared();
+
+		auto OnBeginSliderMovement = [=]
+		{
+			GEditor->BeginTransaction(LOCTEXT("SetEasingTimeText", "Set Easing Length"));
+		};
+		auto OnEndSliderMovement = [=](float NewLength)
+		{
+			if (GEditor->IsTransactionActive())
+			{
+				GEditor->EndTransaction();
+			}
+		};
+		auto OnValueCommitted = [=](float NewLength, ETextCommit::Type CommitInfo)
+		{
+			if (CommitInfo == ETextCommit::OnEnter || CommitInfo == ETextCommit::OnUserMovedFocus)
+			{
+				FScopedTransaction Transaction(LOCTEXT("SetEasingTimeText", "Set Easing Length"));
+				Shared->OnUpdateLength(NewLength);
+			}
+		};
+
+		TSharedRef<SWidget> SpinBox = SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.Padding(FMargin(5.f,0.f))
+			[
+				SNew(SBox)
+				.HAlign(HAlign_Right)
+				[
+					SNew(SNumericEntryBox<float>)
+					.SpinBoxStyle(&FEditorStyle::GetWidgetStyle<FSpinBoxStyle>("Sequencer.HyperlinkSpinBox"))
+					.EditableTextBoxStyle(&FEditorStyle::GetWidgetStyle<FEditableTextBoxStyle>("Sequencer.HyperlinkTextBox"))
+					// Don't update the value when undetermined text changes
+					.OnUndeterminedValueChanged_Lambda([](FText){})
+					.AllowSpin(true)
+					.MinValue(0.f)
+					.MaxValue(TOptional<float>())
+					.MaxSliderValue(TOptional<float>())
+					.MinSliderValue(0.f)
+					.Delta(0.001f)
+					.Value_Lambda([=]{ return Shared->GetCurrentLength(); })
+					.OnValueChanged_Lambda([=](float NewLength){ Shared->OnUpdateLength(NewLength); })
+					.OnValueCommitted_Lambda(OnValueCommitted)
+					.OnBeginSliderMovement_Lambda(OnBeginSliderMovement)
+					.OnEndSliderMovement_Lambda(OnEndSliderMovement)
+					.BorderForegroundColor(FEditorStyle::GetSlateColor("DefaultForeground"))
+				]
+			]
+
+			+ SHorizontalBox::Slot()
+			.HAlign(HAlign_Right)
+			.AutoWidth()
+			[
+				SNew(SCheckBox)
+				.IsChecked_Lambda([=]{ return Shared->GetAutoEasingCheckState(); })
+				.OnCheckStateChanged_Lambda([=](ECheckBoxState CheckState){ return Shared->SetAutoEasing(CheckState == ECheckBoxState::Checked); })
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("AutomaticEasingText", "Auto?"))
+				]
+			];
+		MenuBuilder.AddWidget(SpinBox, LOCTEXT("EasingAmountLabel", "Easing Length"));
+
+		MenuBuilder.AddSubMenu(
+			TAttribute<FText>::Create(TAttribute<FText>::FGetter::CreateLambda([=]{ return Shared->GetEasingTypeText(); })),
+			LOCTEXT("EasingTypeToolTip", "Change the type of curve used for the easing"),
+			FNewMenuDelegate::CreateLambda([=](FMenuBuilder& SubMenuBuilder){ Shared->EasingTypeMenu(SubMenuBuilder); })
+		);
+
+		MenuBuilder.AddSubMenu(
+			LOCTEXT("EasingOptions", "Options"),
+			LOCTEXT("EasingOptionsToolTip", "Edit easing settings for this curve"),
+			FNewMenuDelegate::CreateLambda([=](FMenuBuilder& SubMenuBuilder){ Shared->EasingOptionsMenu(SubMenuBuilder); })
+		);
+	}
+	MenuBuilder.EndSection();
+}
+
+TOptional<float> FEasingContextMenu::GetCurrentLength() const
+{
+	TOptional<float> Value;
+
+	for (const FEasingAreaHandle& Handle : Easings)
+	{
+		UMovieSceneSection* Section = Handle.Section.GetSectionObject();
+		if (Section)
+		{
+			if (Handle.EasingType == ESequencerEasingType::In && Section->Easing.GetEaseInTime() == Value.Get(Section->Easing.GetEaseInTime()))
+			{
+				Value = Section->Easing.GetEaseInTime();
+			}
+			else if (Handle.EasingType == ESequencerEasingType::Out && Section->Easing.GetEaseOutTime() == Value.Get(Section->Easing.GetEaseOutTime()))
+			{
+				Value = Section->Easing.GetEaseOutTime();
+			}
+			else
+			{
+				return TOptional<float>();
+			}
+		}
+	}
+
+	return Value;
+}
+
+void FEasingContextMenu::OnUpdateLength(float NewLength)
+{
+	for (const FEasingAreaHandle& Handle : Easings)
+	{
+		if (UMovieSceneSection* Section = Handle.Section.GetSectionObject())
+		{
+			Section->Modify();
+			if (Handle.EasingType == ESequencerEasingType::In)
+			{
+				Section->Easing.bManualEaseIn = true;
+				Section->Easing.ManualEaseInTime = FMath::Min(Section->GetRange().Size<float>(), NewLength);
+			}
+			else
+			{
+				Section->Easing.bManualEaseOut = true;
+				Section->Easing.ManualEaseOutTime = FMath::Min(Section->GetRange().Size<float>(), NewLength);
+			}
+		}
+	}
+}
+
+ECheckBoxState FEasingContextMenu::GetAutoEasingCheckState() const
+{
+	TOptional<bool> IsChecked;
+	for (const FEasingAreaHandle& Handle : Easings)
+	{
+		if (UMovieSceneSection* Section = Handle.Section.GetSectionObject())
+		{
+			if (Handle.EasingType == ESequencerEasingType::In)
+			{
+				if (IsChecked.IsSet() && IsChecked.GetValue() != !Section->Easing.bManualEaseIn)
+				{
+					return ECheckBoxState::Undetermined;
+				}
+				IsChecked = !Section->Easing.bManualEaseIn;
+			}
+			else
+			{
+				if (IsChecked.IsSet() && IsChecked.GetValue() != !Section->Easing.bManualEaseOut)
+				{
+					return ECheckBoxState::Undetermined;
+				}
+				IsChecked = !Section->Easing.bManualEaseOut;
+			}
+		}
+	}
+	return IsChecked.IsSet() ? IsChecked.GetValue() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked : ECheckBoxState::Undetermined;
+}
+
+void FEasingContextMenu::SetAutoEasing(bool bAutoEasing)
+{
+	FScopedTransaction Transaction(LOCTEXT("SetAutoEasingText", "Set Automatic Easing"));
+
+	TArray<UMovieSceneTrack*> AllTracks;
+
+	for (const FEasingAreaHandle& Handle : Easings)
+	{
+		if (UMovieSceneSection* Section = Handle.Section.GetSectionObject())
+		{
+			AllTracks.AddUnique(Section->GetTypedOuter<UMovieSceneTrack>());
+
+			Section->Modify();
+			if (Handle.EasingType == ESequencerEasingType::In)
+			{
+				Section->Easing.bManualEaseIn = !bAutoEasing;
+			}
+			else
+			{
+				Section->Easing.bManualEaseOut = !bAutoEasing;
+			}
+		}
+	}
+
+	for (UMovieSceneTrack* Track : AllTracks)
+	{
+		Track->UpdateEasing();
+	}
+}
+
+FText FEasingContextMenu::GetEasingTypeText() const
+{
+	FText CurrentText;
+	UClass* ClassType = nullptr;
+	for (const FEasingAreaHandle& Handle : Easings)
+	{
+		if (UMovieSceneSection* Section = Handle.Section.GetSectionObject())
+		{
+			UObject* Object = Handle.EasingType == ESequencerEasingType::In ? Section->Easing.EaseIn.GetObject() : Section->Easing.EaseOut.GetObject();
+			if (Object)
+			{
+				if (!ClassType)
+				{
+					ClassType = Object->GetClass();
+				}
+				else if (Object->GetClass() != ClassType)
+				{
+					CurrentText = LOCTEXT("MultipleEasingTypesText", "<Multiple>");
+					break;
+				}
+			}
+		}
+	}
+	if (CurrentText.IsEmpty())
+	{
+		CurrentText = ClassType ? ClassType->GetDisplayNameText() : LOCTEXT("NoneEasingText", "None");
+	}
+
+	return FText::Format(LOCTEXT("EasingTypeTextFormat", "Method ({0})"), CurrentText);
+}
+
+void FEasingContextMenu::EasingTypeMenu(FMenuBuilder& MenuBuilder)
+{
+	struct FFilter : IClassViewerFilter
+	{
+		virtual bool IsClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const UClass* InClass, TSharedRef<FClassViewerFilterFuncs> InFilterFuncs) override
+		{
+			bool bIsCorrectInterface = InClass->ImplementsInterface(UMovieSceneEasingFunction::StaticClass());
+			bool bMatchesFlags = !InClass->HasAnyClassFlags(CLASS_Hidden | CLASS_HideDropDown | CLASS_Deprecated | CLASS_Abstract);
+			return bIsCorrectInterface && bMatchesFlags;
+		}
+
+		virtual bool IsUnloadedClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const TSharedRef<const IUnloadedBlueprintData> InUnloadedClassData, TSharedRef<FClassViewerFilterFuncs> InFilterFuncs) override
+		{
+			bool bIsCorrectInterface = InUnloadedClassData->ImplementsInterface(UMovieSceneEasingFunction::StaticClass());
+			bool bMatchesFlags = !InUnloadedClassData->HasAnyClassFlags(CLASS_Hidden | CLASS_HideDropDown | CLASS_Deprecated | CLASS_Abstract);
+			return bIsCorrectInterface && bMatchesFlags;
+		}
+	};
+
+	FClassViewerModule& ClassViewer = FModuleManager::LoadModuleChecked<FClassViewerModule>("ClassViewer");
+
+	FClassViewerInitializationOptions InitOptions;
+	InitOptions.bShowDisplayNames = true;
+	InitOptions.ClassFilter = MakeShared<FFilter>();
+
+	// Copy a reference to the context menu by value into each lambda handler to ensure the type stays alive until the menu is closed
+	TSharedRef<FEasingContextMenu> Shared = AsShared();
+
+	TSharedRef<SWidget> ClassViewerWidget = ClassViewer.CreateClassViewer(InitOptions, FOnClassPicked::CreateLambda([=](UClass* NewClass) { Shared->OnEasingTypeChanged(NewClass); }));
+
+	MenuBuilder.AddWidget(ClassViewerWidget, FText(), true, false);
+}
+
+void FEasingContextMenu::OnEasingTypeChanged(UClass* NewClass)
+{
+	FScopedTransaction Transaction(LOCTEXT("SetEasingType", "Set Easing Method"));
+
+	for (const FEasingAreaHandle& Handle : Easings)
+	{
+		UMovieSceneSection* Section = Handle.Section.GetSectionObject();
+		if (!Section)
+		{
+			continue;
+		}
+
+		Section->Modify();
+
+		TScriptInterface<IMovieSceneEasingFunction>& EaseObject = Handle.EasingType == ESequencerEasingType::In ? Section->Easing.EaseIn : Section->Easing.EaseOut;
+		if (!EaseObject.GetObject() || EaseObject.GetObject()->GetClass() != NewClass)
+		{
+			UObject* NewEasingFunction = NewObject<UObject>(Section, NewClass);
+
+			EaseObject.SetObject(NewEasingFunction);
+			EaseObject.SetInterface(Cast<IMovieSceneEasingFunction>(NewEasingFunction));
+		}
+	}
+}
+
+void FEasingContextMenu::EasingOptionsMenu(FMenuBuilder& MenuBuilder)
+{
+	FPropertyEditorModule& EditModule = FModuleManager::Get().GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
+
+	FDetailsViewArgs DetailsViewArgs(
+		/*bUpdateFromSelection=*/ false,
+		/*bLockable=*/ false,
+		/*bAllowSearch=*/ false,
+		FDetailsViewArgs::HideNameArea,
+		/*bHideSelectionTip=*/ true,
+		/*InNotifyHook=*/ nullptr,
+		/*InSearchInitialKeyFocus=*/ false,
+		/*InViewIdentifier=*/ NAME_None);
+	DetailsViewArgs.bShowOptions = false;
+	DetailsViewArgs.bShowScrollBar = false;
+
+	TSharedRef<IDetailsView> DetailsView = EditModule.CreateDetailView(DetailsViewArgs);
+	
+	TArray<UObject*> Objects;
+	for (const FEasingAreaHandle& Handle : Easings)
+	{
+		if (UMovieSceneSection* Section = Handle.Section.GetSectionObject())
+		{
+			if (Handle.EasingType == ESequencerEasingType::In)
+			{
+				UObject* EaseInObject = Section->Easing.EaseIn.GetObject();
+				EaseInObject->SetFlags(RF_Transactional);
+				Objects.AddUnique(EaseInObject);
+			}
+			else
+			{
+				UObject* EaseOutObject = Section->Easing.EaseOut.GetObject();
+				EaseOutObject->SetFlags(RF_Transactional);
+				Objects.AddUnique(EaseOutObject);
+			}
+		}
+	}
+
+	DetailsView->SetObjects(Objects, true);
+
+	MenuBuilder.AddWidget(DetailsView, FText(), true, false);
 }
 
 

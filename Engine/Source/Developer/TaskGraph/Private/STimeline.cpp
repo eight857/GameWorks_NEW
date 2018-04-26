@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "STimeline.h"
 #include "Misc/Paths.h"
 #include "Fonts/SlateFontInfo.h"
 #include "Fonts/FontMeasure.h"
+#include "Styling/CoreStyle.h"
 #include "Rendering/DrawElements.h"
 #include "Framework/Application/SlateApplication.h"
 #include "TaskGraphStyle.h"
@@ -20,7 +21,7 @@ void STimeline::Construct( const FArguments& InArgs )
 	Offset = 0.0f;
 }
 
-int32 STimeline::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 STimeline::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
 	// Used to track the layer ID we will return.
 	int32 RetLayerId = LayerId;
@@ -34,23 +35,12 @@ int32 STimeline::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 
 	// Paint inside the border only. 
 	const FVector2D BorderPadding = FTaskGraphStyle::Get()->GetVector("TaskGraph.ProgressBar.BorderPadding");
-	const FSlateRect ForegroundClippingRect = AllottedGeometry.GetClippingRect().InsetBy(FMargin(BorderPadding.X, BorderPadding.Y)).IntersectionWith(MyClippingRect);
-
+	
 	const float OffsetX = DrawingOffsetX; // BorderPadding.X
 	const float Width = DrawingGeometry.Size.X; // AllottedGeometry.Size.X - - 2.0f * BorderPadding.X
 
-	FSlateFontInfo MyFont( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 10 );
+	FSlateFontInfo MyFont = FCoreStyle::GetDefaultFontStyle("Regular", 10);
 
-	//FSlateDrawElement::MakeBox(
-	//  OutDrawElements,
-	//	RetLayerId++,
-	//	AllottedGeometry.ToPaintGeometry(),
-	//	BackgroundImage,
-	//	MyClippingRect,
-	//	DrawEffects,
-	//	ColorAndOpacitySRGB
-	//);	
-	
 	// Create line points
 	const float RoundedMax = FMath::CeilToInt( MaxValue );
 	const float RoundedMin = FMath::FloorToInt( MinValue );
@@ -70,7 +60,6 @@ int32 STimeline::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 			RetLayerId++,
 			AllottedGeometry.ToPaintGeometry(),
 			LinePoints,
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FLinearColor::White
 			);
@@ -98,7 +87,6 @@ int32 STimeline::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 			RetLayerId++,
 			AllottedGeometry.ToPaintGeometry(),
 			LinePoints,
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FLinearColor::White
 			);
@@ -122,7 +110,6 @@ int32 STimeline::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 			AllottedGeometry.ToOffsetPaintGeometry( TextPos ),
 			ValueText,
 			MyFont,
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FLinearColor::White
 			);
@@ -139,7 +126,6 @@ int32 STimeline::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 			RetLayerId++,
 			AllottedGeometry.ToPaintGeometry(),
 			LinePoints,
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FLinearColor::White
 			);
@@ -155,7 +141,6 @@ int32 STimeline::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeome
 			RetLayerId++,
 			AllottedGeometry.ToPaintGeometry(),
 			LinePoints,
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FLinearColor::White
 			);

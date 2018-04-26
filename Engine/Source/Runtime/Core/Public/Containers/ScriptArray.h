@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -62,7 +62,7 @@ public:
 			                                               (OldNum-Index)*NumBytesPerElement
 		);
 	}
-	AGRESSIVE_ARRAY_FORCEINLINE int32 Add( int32 Count, int32 NumBytesPerElement )
+	int32 Add( int32 Count, int32 NumBytesPerElement )
 	{
 		check(Count>=0);
 		checkSlow(ArrayNum>=0);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -96,7 +96,7 @@ public:
 					}
 					ContainerPtr = ParentArrayHelper.GetRawPtr(ArrayIndex);
 				}
-				else
+				else if (ArrayIndex >= 0 && ArrayIndex < Property->ArrayDim)
 				{
 					ContainerPtr = Property->ContainerPtrToValuePtr<ValueType>(ContainerPtr, ArrayIndex);
 				}

@@ -1,5 +1,5 @@
 ﻿/**
- * Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+ * Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
  */
 
 using System;
@@ -279,7 +279,7 @@ namespace DeploymentServer
 						DeviceId = PotentialDevice.DeviceId;
 					}
 
-					if (!Runs.ContainsKey(DeviceId))
+					if (!Runs.ContainsKey(DeviceId) && PotentialDevice.IsConnected)
                     {
                         // New device, do the work on it
 						Runs.Add(DeviceId, PerDeviceWork(PotentialDevice));

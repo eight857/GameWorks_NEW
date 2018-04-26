@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Customization/BlendSampleDetails.h"
 
@@ -6,7 +6,6 @@
 #include "UObject/Class.h"
 #include "IDetailsView.h"
 #include "EditorStyleSet.h"
-#include "Misc/StringAssetReference.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "PropertyHandle.h"
 #include "DetailLayoutBuilder.h"
@@ -20,6 +19,10 @@
 #include "Animation/BlendSpace1D.h"
 #include "SAnimationBlendSpaceGridWidget.h"
 #include "PropertyCustomizationHelpers.h"
+
+#include "PackageTools.h"
+#include "IDetailGroup.h"
+#include "Editor.h"
 
 #define LOCTEXT_NAMESPACE "BlendSampleDetails"
 
@@ -53,46 +56,187 @@ void FBlendSampleDetails::CustomizeDetails(class IDetailLayoutBuilder& DetailBui
 	{
 		Property->MarkHiddenByCustomization();		
 	}
+	
+	TArray < TSharedPtr<FStructOnScope>> Structs;
+	DetailBuilder.GetStructsBeingCustomized(Structs);
 
-	// For each Blend parameter generate a numeric entry box (similar to 
+	TArray<UPackage*> Packages;
+	for ( TSharedPtr<FStructOnScope>& Struct : Structs)
+	{	
+		Packages.Add(Struct->GetPackage());
+	}
+	
+	TArray<UObject*> Objects;
+	PackageTools::GetObjectsInPackages(&Packages, Objects);
+
+	UBlendSpaceBase* BlendSpaceBase = nullptr;
+	// Find blendspace in found objects
+	for ( UObject* Object : Objects )
+	{
+		BlendSpaceBase = Cast<UBlendSpaceBase>(Object);
+		if (BlendSpaceBase)
+		{
+			break;
+		}
+	}
+
+	FBlendSampleDetails::GenerateBlendSampleWidget([&CategoryBuilder]() -> FDetailWidgetRow& { return CategoryBuilder.AddCustomRow(FText::FromString(TEXT("SampleValue"))); }, GridWidget->OnSampleMoved, (BlendSpaceBase != nullptr) ? BlendSpaceBase : BlendSpace, GridWidget->GetSelectedSampleIndex(), false );
+
+	TSharedPtr<IPropertyHandle> AnimationProperty = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(FBlendSample, Animation), (UClass*)(FBlendSample::StaticStruct()));
+	FDetailWidgetRow& AnimationRow = CategoryBuilder.AddCustomRow(FText::FromString(TEXT("Animation")));
+	FBlendSampleDetails::GenerateAnimationWidget(AnimationRow, BlendSpaceBase != nullptr ? BlendSpaceBase : BlendSpace, AnimationProperty);
+
+	TSharedPtr<IPropertyHandle> RateScaleProperty = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(FBlendSample, RateScale), (UClass*)(FBlendSample::StaticStruct()));
+	CategoryBuilder.AddProperty(RateScaleProperty);
+}
+
+void FBlendSampleDetails::GenerateBlendSampleWidget(TFunction<FDetailWidgetRow& (void)> InFunctor, FOnSampleMoved OnSampleMoved, const UBlendSpaceBase* BlendSpace, const int32 SampleIndex, bool bShowLabel)
+{
 	const int32 NumParameters = BlendSpace->IsA<UBlendSpace1D>() ? 1 : 2;
 	for (int32 ParameterIndex = 0; ParameterIndex < NumParameters; ++ParameterIndex)
 	{
-		const FBlendParameter& BlendParameter = BlendSpace->GetBlendParameter(ParameterIndex);
-		FDetailWidgetRow& ParameterRow = CategoryBuilder.AddCustomRow(FText::FromString(BlendParameter.DisplayName));
+		auto ValueChangedLambda = [BlendSpace, SampleIndex, ParameterIndex, OnSampleMoved](const float NewValue, bool bIsInteractive)
+		{
+			const FBlendParameter& BlendParameter = BlendSpace->GetBlendParameter(ParameterIndex);
+			const FBlendSample& Sample = BlendSpace->GetBlendSample(SampleIndex);
+			FVector SampleValue = Sample.SampleValue;
+
+			const float DeltaStep = (BlendParameter.Max - BlendParameter.Min) / BlendParameter.GridNum;
+			// Calculate snapped value
+			const float MinOffset = NewValue - BlendParameter.Min;
+			float GridSteps = MinOffset / DeltaStep;
+			int32 FlooredSteps = FMath::FloorToInt(GridSteps);
+			GridSteps -= FlooredSteps;
+			FlooredSteps = (GridSteps > .5f) ? FlooredSteps + 1 : FlooredSteps;
+
+			// Temporary snap this value to closest point on grid (since the spin box delta does not provide the desired functionality)
+			SampleValue[ParameterIndex] = BlendParameter.Min + (FlooredSteps * DeltaStep);
+
+			OnSampleMoved.ExecuteIfBound(SampleIndex, SampleValue, bIsInteractive);
+		
+		};
+		
+		FDetailWidgetRow& ParameterRow = InFunctor();
+
 		ParameterRow.NameContent()
 		[
 			SNew(STextBlock)
 			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-			.Text(FText::FromString(BlendParameter.DisplayName))
+			.Text_Lambda([BlendSpace, ParameterIndex]() { return FText::FromString(BlendSpace->GetBlendParameter(ParameterIndex).DisplayName); })
 		];
 
 		ParameterRow.ValueContent()
 		[
-			GridWidget->CreateGridEntryBox(ParameterIndex, false).ToSharedRef()
-		];	
+			SNew(SNumericEntryBox<float>)
+			.Font(FEditorStyle::GetFontStyle("CurveEd.InfoFont"))
+			.Value_Lambda(
+			[BlendSpace, SampleIndex, ParameterIndex]() -> float
+			{
+				if (BlendSpace)
+				{
+					return BlendSpace->IsValidBlendSampleIndex(SampleIndex) ? BlendSpace->GetBlendSample(SampleIndex).SampleValue[ParameterIndex] : 0.0f;
+				}
+
+				return 0.0f;
+			})
+			.UndeterminedString(LOCTEXT("MultipleValues", "Multiple Values"))
+			.OnBeginSliderMovement_Lambda([]()
+			{
+				GEditor->BeginTransaction(LOCTEXT("MoveSample", "Moving Blend Grid Sample"));
+			})
+			.OnEndSliderMovement_Lambda([](const float NewValue)
+			{
+				GEditor->EndTransaction();
+			})
+			.OnValueCommitted_Lambda([ValueChangedLambda](const float NewValue, ETextCommit::Type CommitType)
+			{
+				ValueChangedLambda(NewValue, false);
+			})
+			.OnValueChanged_Lambda([ValueChangedLambda](const float NewValue)
+			{
+				ValueChangedLambda(NewValue, true);
+			})
+			.LabelVAlign(VAlign_Center)
+			.AllowSpin(true)
+			.MinValue_Lambda([BlendSpace, ParameterIndex]() -> float { return BlendSpace->GetBlendParameter(ParameterIndex).Min; })
+			.MaxValue_Lambda([BlendSpace, ParameterIndex]() -> float { return BlendSpace->GetBlendParameter(ParameterIndex).Max; })
+			.MinSliderValue_Lambda([BlendSpace, ParameterIndex]() -> float { return BlendSpace->GetBlendParameter(ParameterIndex).Min; })
+			.MaxSliderValue_Lambda([BlendSpace, ParameterIndex]() -> float { return BlendSpace->GetBlendParameter(ParameterIndex).Max; })
+			.MinDesiredValueWidth(60.0f)
+			.Label()
+			[
+				SNew(STextBlock)
+				.Visibility(bShowLabel ? EVisibility::Visible : EVisibility::Collapsed)
+				.Text_Lambda([BlendSpace, ParameterIndex]() { return FText::FromString(BlendSpace->GetBlendParameter(ParameterIndex).DisplayName); })
+			]
+		];
+	}
+}
+
+void FBlendSampleDetails::GenerateAnimationWidget(FDetailWidgetRow& Row, const UBlendSpaceBase* BlendSpace, TSharedPtr<IPropertyHandle> AnimationProperty)
+{
+	Row.NameContent()
+		[
+			SNew(STextBlock)
+			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			.Text(AnimationProperty->GetPropertyDisplayName())
+		];
+
+	Row.ValueContent()
+		.MinDesiredWidth(250.f)
+		[
+			SNew(SObjectPropertyEntryBox)
+			.AllowedClass(UAnimSequence::StaticClass())
+			.OnShouldFilterAsset(FOnShouldFilterAsset::CreateStatic(&FBlendSampleDetails::ShouldFilterAssetStatic, BlendSpace))
+			.PropertyHandle(AnimationProperty)
+		];
+}
+
+bool FBlendSampleDetails::ShouldFilterAssetStatic(const FAssetData& AssetData, const UBlendSpaceBase* BlendSpaceBase)
+{
+	/** Cached flags to check whether or not an additive animation type is compatible with the blend space*/
+	TMap<FString, bool> bValidAdditiveTypes;
+	// Retrieve the additive animation type enum
+	const UEnum* AdditiveTypeEnum = FindObject<UEnum>(ANY_PACKAGE, TEXT("EAdditiveAnimationType"), true);
+	// For each type check whether or not the blend space is compatible with it and cache the result
+	for (int32 TypeValue = 0; TypeValue < (int32)EAdditiveAnimationType::AAT_MAX; ++TypeValue)
+	{
+		EAdditiveAnimationType Type = (EAdditiveAnimationType)TypeValue;
+		// In case of non additive type make sure the blendspace is made up out of non additive samples only
+		const bool bAdditiveFlag = (Type == EAdditiveAnimationType::AAT_None) ? !BlendSpaceBase->IsValidAdditive() : BlendSpaceBase->IsValidAdditive() && BlendSpaceBase->IsValidAdditiveType(Type);
+		bValidAdditiveTypes.Add(AdditiveTypeEnum->GetNameByValue(TypeValue).ToString(), bAdditiveFlag);
 	}
 
-	TSharedPtr<IPropertyHandle> AnimationProperty = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(FBlendSample, Animation), (UClass*)(FBlendSample::StaticStruct()));
-	FDetailWidgetRow& AnimationRow = CategoryBuilder.AddCustomRow(FText::FromString(TEXT("Animation")));
-	AnimationRow.NameContent()
-	[
-		SNew(STextBlock)
-		.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-		.Text(AnimationProperty->GetPropertyDisplayName())		
-	];
-	
-	AnimationRow.ValueContent()
-	.MinDesiredWidth(250.f)
-	[
-		SNew(SObjectPropertyEntryBox)
-		.AllowedClass(UAnimSequence::StaticClass())
-		.OnShouldFilterAsset(this, &FBlendSampleDetails::ShouldFilterAsset)
-		.PropertyHandle(AnimationProperty)
-	];
+	bool bShouldFilter = true;
 
-	TSharedPtr<IPropertyHandle> RateScaleProperty = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(FBlendSample, RateScale), (UClass*)(FBlendSample::StaticStruct()));
-	CategoryBuilder.AddProperty(RateScaleProperty);
+	// Skeleton is a private member so cannot use GET_MEMBER_NAME_CHECKED and friend class seemed unjustified to add
+	const FName SkeletonTagName = "Skeleton";
+	FString SkeletonName;
+	if (AssetData.GetTagValue(SkeletonTagName, SkeletonName))
+	{
+		// Check whether or not the skeletons match
+		if (SkeletonName.Contains(BlendSpaceBase->GetSkeleton()->GetPathName()))
+		{
+			// If so check if the additive animation tpye is compatible with the blend space
+			const FName AdditiveTypeTagName = GET_MEMBER_NAME_CHECKED(UAnimSequence, AdditiveAnimType);
+			FString AnimationTypeName;
+			if (AssetData.GetTagValue(AdditiveTypeTagName, AnimationTypeName))
+			{
+				bShouldFilter = !bValidAdditiveTypes.FindChecked(AnimationTypeName);
+			}
+			else
+			{
+				// If the asset does not contain the required tag value retrieve the asset and validate it
+				const UAnimSequence* AnimSequence = Cast<UAnimSequence>(AssetData.GetAsset());
+				if (AnimSequence)
+				{
+					bShouldFilter = !(AnimSequence && BlendSpaceBase->ValidateAnimationSequence(AnimSequence));
+				}
+			}
+		}
+	}
+
+	return bShouldFilter;
 }
 
 bool FBlendSampleDetails::ShouldFilterAsset(const FAssetData& AssetData) const
@@ -104,9 +248,8 @@ bool FBlendSampleDetails::ShouldFilterAsset(const FAssetData& AssetData) const
 	FString SkeletonName;
 	if (AssetData.GetTagValue(SkeletonTagName, SkeletonName))
 	{
-		FStringAssetReference StringAssetReference(SkeletonName);
 		// Check whether or not the skeletons match
-		if (StringAssetReference.ToString() == BlendSpace->GetSkeleton()->GetPathName())
+		if (SkeletonName == BlendSpace->GetSkeleton()->GetPathName())
 		{
 			// If so check if the additive animation tpye is compatible with the blend space
 			const FName AdditiveTypeTagName = GET_MEMBER_NAME_CHECKED(UAnimSequence, AdditiveAnimType);
@@ -117,7 +260,7 @@ bool FBlendSampleDetails::ShouldFilterAsset(const FAssetData& AssetData) const
 			}
 			else
 			{
-				// If the asset does not contain the requried tag value retrieve the asset and validate it
+				// If the asset does not contain the required tag value retrieve the asset and validate it
 				const UAnimSequence* AnimSequence = Cast<UAnimSequence>(AssetData.GetAsset());
 				if (AnimSequence)
 				{

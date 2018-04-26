@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreTypes.h"
 #include "Templates/UnrealTypeTraits.h"
@@ -75,7 +75,9 @@ DECLARE_DELEGATE_RetVal_TwoParams(TSharedRef<ISmoothie<>>, FSmoothieFactoryDeleg
 Expose_TNameOf(IBerry)
 Expose_TNameOf(IFruit)
 Expose_TNameOf(ISmoothie<>)
+#if !FORCE_THREADSAFE_SHAREDPTRS
 Expose_TNameOf(ISmoothie<ESPMode::ThreadSafe>)
+#endif
 
 
 /* Tests

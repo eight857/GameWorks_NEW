@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -30,7 +30,7 @@ enum class EFontFallback : uint8
 /**
  * Settings for applying an outline to a font
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct SLATECORE_API FFontOutlineSettings
 {
 	GENERATED_USTRUCT_BODY()
@@ -71,6 +71,8 @@ struct SLATECORE_API FFontOutlineSettings
 	bool operator==(const FFontOutlineSettings& Other) const
 	{
 		return OutlineSize == Other.OutlineSize
+			&& OutlineMaterial == Other.OutlineMaterial
+			&& OutlineColor == Other.OutlineColor
 			&& bSeparateFillAlpha == Other.bSeparateFillAlpha;
 	}
 
@@ -78,6 +80,8 @@ struct SLATECORE_API FFontOutlineSettings
 	{
 		uint32 Hash = 0;
 		Hash = HashCombine(Hash, GetTypeHash(OutlineSettings.OutlineSize));
+		Hash = HashCombine(Hash, GetTypeHash(OutlineSettings.OutlineMaterial));
+		Hash = HashCombine(Hash, GetTypeHash(OutlineSettings.OutlineColor));
 		Hash = HashCombine(Hash, GetTypeHash(OutlineSettings.bSeparateFillAlpha));
 		return Hash;
 	}
@@ -109,7 +113,7 @@ struct SLATECORE_API FSlateFontInfo
 	TSharedPtr<const FCompositeFont> CompositeFont;
 
 	/** The name of the font to use from the default typeface (None will use the first entry) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SlateStyleRules, meta=(DisplayName="Font"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SlateStyleRules, meta=(DisplayName="Typeface"))
 	FName TypefaceFontName;
 
 	/**
@@ -117,9 +121,13 @@ struct SLATECORE_API FSlateFontInfo
 	 * you're using a tool like Photoshop to prototype layouts and UI mock ups, be sure to change the default dpi 
 	 * measurements from 72 dpi to 96 dpi.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SlateStyleRules, meta=(UIMin=1, UIMax=1000, ClampMin=1, ClampMax=1000))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SlateStyleRules, meta=(ClampMin=1, ClampMax=1000))
 	int32 Size;
 
+	/** The font fallback level. Runtime only, don't set on shared FSlateFontInfo, as it may change the font elsewhere (make a copy). */
+	EFontFallback FontFallback;
+
+#if WITH_EDITORONLY_DATA
 private:
 
 	/** The name of the font */
@@ -129,11 +137,7 @@ private:
 	/** The hinting algorithm to use with the font */
 	UPROPERTY()
 	EFontHinting Hinting_DEPRECATED;
-
-public:
-
-	/** The font fallback level. Runtime only, don't set on shared FSlateFontInfo, as it may change the font elsewhere (make a copy). */
-	EFontFallback FontFallback;
+#endif
 
 public:
 
@@ -255,19 +259,22 @@ public:
 		return Hash;
 	}
 
+#if WITH_EDITORONLY_DATA
 	/**
 	 * Used to upgrade legacy font into so that it uses composite fonts
 	 */
 	void PostSerialize(const FArchive& Ar);
+#endif
 
 private:
 
 	/**
 	 * Used to upgrade legacy font into so that it uses composite fonts
 	 */
-	void UpgradeLegacyFontInfo();
+	void UpgradeLegacyFontInfo(FName LegacyFontName, EFontHinting LegacyHinting);
 };
 
+#if WITH_EDITORONLY_DATA
 template<>
 struct TStructOpsTypeTraits<FSlateFontInfo>
 	: public TStructOpsTypeTraitsBase2<FSlateFontInfo>
@@ -277,3 +284,4 @@ struct TStructOpsTypeTraits<FSlateFontInfo>
 		WithPostSerialize = true,
 	};
 };
+#endif

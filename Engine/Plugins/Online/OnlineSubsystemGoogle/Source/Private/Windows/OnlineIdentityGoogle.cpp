@@ -1,16 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineIdentityGoogle.h"
 #include "OnlineSubsystemGooglePrivate.h"
 #include "OnlineExternalUIInterfaceGoogle.h"
 #include "Misc/ConfigCacheIni.h"
-// Google scope fields
-// email profile
-// https://www.googleapis.com/auth/plus.login
-// https://www.googleapis.com/auth/plus.me 
-// https://www.googleapis.com/auth/userinfo.email
-// https://www.googleapis.com/auth/userinfo.profile
-#define GOOGLE_PERM_PUBLIC_PROFILE "https://www.googleapis.com/auth/plus.login"
 
 FOnlineIdentityGoogle::FOnlineIdentityGoogle(FOnlineSubsystemGoogle* InSubsystem)
 	: FOnlineIdentityGoogleCommon(InSubsystem)
@@ -24,6 +17,8 @@ FOnlineIdentityGoogle::FOnlineIdentityGoogle(FOnlineSubsystemGoogle* InSubsystem
 	{
 		UE_LOG(LogOnline, Warning, TEXT("Missing RedirectPort= in [OnlineSubsystemGoogle.OnlineIdentityGoogle] of DefaultEngine.ini"));
 	}
+
+	GConfig->GetArray(TEXT("OnlineSubsystemGoogle.OnlineIdentityGoogle"), TEXT("LoginDomains"), LoginDomains, GEngineIni);
 
 	LoginURLDetails.ClientId = InSubsystem->GetAppId();
 
@@ -285,8 +280,15 @@ void FOnlineIdentityGoogle::ExchangeRequest_HttpRequestComplete(FHttpRequestPtr 
 		}
 		else
 		{
-			//FErrorGoogle Error;
-			//Error.FromJson(ResponseStr);
+			FErrorGoogle Error;
+			if (Error.FromJson(ResponseStr) && !Error.Error_Description.IsEmpty())
+			{
+				ErrorStr = Error.Error_Description;
+			}
+			else
+			{
+				ErrorStr = FString::Printf(TEXT("Failed to parse Google error %s"), *ResponseStr);
+			}
 		}
 	}
 	else
@@ -380,8 +382,15 @@ void FOnlineIdentityGoogle::RefreshAuthRequest_HttpRequestComplete(FHttpRequestP
 		}
 		else
 		{
-			//FErrorGoogle Error;
-			//Error.FromJson(ResponseStr);
+			FErrorGoogle Error;
+			if (Error.FromJson(ResponseStr) && !Error.Error_Description.IsEmpty())
+			{
+				ErrorStr = Error.Error_Description;
+			}
+			else
+			{
+				ErrorStr = FString::Printf(TEXT("Failed to parse Google error %s"), *ResponseStr);
+			}
 		}
 	}
 	else
@@ -409,8 +418,12 @@ bool FOnlineIdentityGoogle::Logout(int32 LocalUserNum)
 		UserIds.Remove(LocalUserNum);
 		// reset scope permissions
 		GConfig->GetArray(TEXT("OnlineSubsystemGoogle.OnlineIdentityGoogle"), TEXT("ScopeFields"), LoginURLDetails.ScopeFields, GEngineIni);
+
+		TriggerOnLoginFlowLogoutDelegates(LoginDomains);
+
 		// not async but should call completion delegate anyway
-		GoogleSubsystem->ExecuteNextTick([this, LocalUserNum, UserId]() {
+		GoogleSubsystem->ExecuteNextTick([this, LocalUserNum, UserId]() 
+		{
 			TriggerOnLogoutCompleteDelegates(LocalUserNum, true);
 			TriggerOnLoginStatusChangedDelegates(LocalUserNum, ELoginStatus::LoggedIn, ELoginStatus::NotLoggedIn, *UserId);
 		});
@@ -419,9 +432,9 @@ bool FOnlineIdentityGoogle::Logout(int32 LocalUserNum)
 	}
 	else
 	{
-		UE_LOG(LogOnline, Warning, TEXT("No logged in user found for LocalUserNum=%d."),
-			LocalUserNum);
-		GoogleSubsystem->ExecuteNextTick([this, LocalUserNum]() {
+		UE_LOG(LogOnline, Warning, TEXT("No logged in user found for LocalUserNum=%d."), LocalUserNum);
+		GoogleSubsystem->ExecuteNextTick([this, LocalUserNum]() 
+		{
 			TriggerOnLogoutCompleteDelegates(LocalUserNum, false);
 		});
 	}

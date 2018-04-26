@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -10,7 +10,7 @@
 #include "UnrealWidget.h"
 #include "EditorViewportClient.h"
 
-class FAssetData;
+struct FAssetData;
 class FCanvas;
 class FDragTool;
 class HModel;
@@ -97,10 +97,14 @@ struct UNREALED_API FTrackingTransaction
 	bool IsActive() const { return TrackingTransactionState == ETransactionState::Active; }
 
 	bool IsPending() const { return TrackingTransactionState == ETransactionState::Pending; }
-
+	
 	int32 TransCount;
 
 private:
+
+	/** Editor selection changed delegate handler */	
+	void OnEditorSelectionChanged(UObject* NewSelection);
+
 	/** The current transaction. */
 	class FScopedTransaction*	ScopedTransaction;
 
@@ -109,6 +113,10 @@ private:
 
 	/** The description to use if a pending transaction turns into a real transaction */
 	FText PendingDescription;
+
+	/** Initial package dirty states for the Actors within the transaction */
+	TMap<UPackage*, bool> InitialPackageDirtyStates;
+	
 };
 
 
@@ -163,6 +171,8 @@ public:
 	virtual FLinearColor GetBackgroundColor() const override;
 	virtual int32 GetCameraSpeedSetting() const override;
 	virtual void SetCameraSpeedSetting(int32 SpeedSetting) override;
+	virtual float GetCameraSpeedScalar() const override;
+	virtual void SetCameraSpeedScalar(float SpeedScalar) override;
 	virtual void ReceivedFocus(FViewport* Viewport) override;
 	virtual void ProcessClick(FSceneView& View, HHitProxy* HitProxy, FKey Key, EInputEvent Event, uint32 HitX, uint32 HitY) override;
 	virtual UWorld* GetWorld() const override;
@@ -245,7 +255,7 @@ public:
 	/**
 	 * Check to see if this actor is locked by the viewport
 	 */
-	bool IsActorLocked(const TWeakObjectPtr<AActor> InActor) const;
+	bool IsActorLocked(const TWeakObjectPtr<const AActor> InActor) const;
 
 	/**
 	 * Check to see if any actor is locked by the viewport
@@ -436,41 +446,10 @@ public:
 	}
 	
 	/**
-	 * Find the camera component to use for a locked actor
-	 * note this should return the same component as SLevelViewport::GetCameraInformationFromActor uses 
+	 * Find a view component to use for the specified actor. Prioritizes selected 
+	 * components first, followed by camera components (then falls through to the first component that implements GetEditorPreviewInfo)
 	 */
-	UCameraComponent* GetCameraComponentForLockedActor(AActor const* Actor) const
-	{
-		if (Actor)
-		{
-			// see if actor has a camera component
-			TArray<UCameraComponent*> CamComps;
-			Actor->GetComponents<UCameraComponent>(CamComps);
-			for (UCameraComponent* Comp : CamComps)
-			{
-				if (Comp->bIsActive)
-				{
-					return Comp;
-				}
-			}
-
-			// now see if any actors are attached to us, directly or indirectly, that have an active camera component we might want to use
-			// we will just return the first one.
-			// #note: assumption here that attachment cannot be circular
-			TArray<AActor*> AttachedActors;
-			Actor->GetAttachedActors(AttachedActors);
-			for (AActor* AttachedActor : AttachedActors)
-			{
-				UCameraComponent* const Comp = GetCameraComponentForLockedActor(AttachedActor);
-				if (Comp)
-				{
-					return Comp;
-				}
-			}
-		}
-
-		return nullptr;
-	}
+	static USceneComponent* FindViewComponentForActor(AActor const* Actor);
 
 	/** 
 	 * Find the camera component that is driving this viewport, in the following order of preference:
@@ -488,7 +467,7 @@ public:
 			LockedActor = ActorLockedToCamera.Get();
 		}
 
-		return GetCameraComponentForLockedActor(LockedActor);
+		return Cast<UCameraComponent>(FindViewComponentForActor(LockedActor));
 	}
 
 	/** 
@@ -555,6 +534,14 @@ public:
 	 */
 	static TArray<AActor*> TryPlacingActorFromObject( ULevel* InLevel, UObject* ObjToUse, bool bSelectActors, EObjectFlags ObjectFlags, UActorFactory* FactoryToUse, const FName Name = NAME_None );
 
+	/** 
+	 * Returns true if creating a preview actor in the viewport. 
+	 */
+	static bool IsDroppingPreviewActor()
+	{
+		return bIsDroppingPreviewActor;
+	}
+
 	/**
 	 * Static: Given a texture, returns a material for that texture, creating a new asset if necessary.  This is used
 	 * for dragging and dropping assets into the scene
@@ -564,6 +551,9 @@ public:
 	 * @return	The material that uses this texture, or null if we couldn't find or create one
 	 */
 	static UObject* GetOrCreateMaterialFromTexture( UTexture* UnrealTexture );
+
+	/** Whether transport controls can be attached */
+	virtual bool CanAttachTransportControls() const { return true; }
 
 protected:
 	/** 
@@ -759,6 +749,9 @@ public:
 private:
 	/** The actors that are currently being placed in the viewport via dragging */
 	static TArray< TWeakObjectPtr< AActor > > DropPreviewActors;
+
+	/** If currently creating a preview actor. */
+	static bool bIsDroppingPreviewActor;
 
 	/** A map of actor locations before a drag operation */
 	mutable TMap<TWeakObjectPtr<AActor>, FTransform> PreDragActorTransforms;

@@ -1,11 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreTypes.h"
 #include "Misc/AssertionMacros.h"
 #include "HAL/UnrealMemory.h"
-#include "Templates/AlignOf.h"
 #include "Containers/ContainerAllocationPolicies.h"
 #include "Math/UnrealMathUtility.h"
 #include "Templates/AlignmentTemplates.h"
@@ -286,6 +285,20 @@ public:
 			Data(nullptr)
 		{}
 
+		/**
+		 * Moves the state of another allocator into this one.
+		 * Assumes that the allocator is currently empty, i.e. memory may be allocated but any existing elements have already been destructed (if necessary).
+		 * @param Other - The allocator to move the state from.  This allocator should be left in a valid empty state.
+		 */
+		FORCEINLINE void MoveToEmpty(ForElementType& Other)
+		{
+			checkSlow(this != &Other);
+			check(!Data);
+
+			Data       = Other.Data;
+			Other.Data = nullptr;
+		}
+
 		// FContainerAllocatorInterface
 		FORCEINLINE ElementType* GetAllocation() const
 		{
@@ -299,7 +312,7 @@ public:
 				// Allocate memory from the stack.
 				Data = (ElementType*)FMemStack::Get().PushBytes(
 					NumElements * NumBytesPerElement,
-					FMath::Max(Alignment,(uint32)ALIGNOF(ElementType))
+					FMath::Max(Alignment,(uint32)alignof(ElementType))
 					);
 
 				// If the container previously held elements, copy them into the new allocation.
@@ -340,6 +353,13 @@ public:
 	};
 	
 	typedef ForElementType<FScriptContainerElement> ForAnyElementType;
+};
+
+template <uint32 Alignment>
+struct TAllocatorTraits<TMemStackAllocator<Alignment>> : TAllocatorTraitsBase<TMemStackAllocator<Alignment>>
+{
+	enum { SupportsMove    = true };
+	enum { IsZeroConstruct = true };
 };
 
 

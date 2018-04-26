@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "STimingTrack.h"
 #include "Layout/ArrangedChildren.h"
@@ -83,8 +83,7 @@ void STimingTrack::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrange
 		{
 			NodeData& CurrentNode = SortedNodeData[NodeIdx];
 			// Island generation
-			NodeIsland* CurrentIsland = nullptr;
-			CurrentIsland = &Islands[Islands.AddZeroed()];
+			NodeIsland* CurrentIsland = &Islands[Islands.AddZeroed()];
 
 			int32 Direction = -1;
 			int32 Next = NodeIdx + 1;

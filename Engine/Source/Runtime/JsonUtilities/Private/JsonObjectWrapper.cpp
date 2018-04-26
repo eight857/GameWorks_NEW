@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "JsonObjectWrapper.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
@@ -68,7 +68,7 @@ bool FJsonObjectWrapper::ExportTextItem(FString& ValueStr, FJsonObjectWrapper co
 
 void FJsonObjectWrapper::PostSerialize(const FArchive& Ar)
 {
-	if (Ar.IsLoading())
+	if (!JsonString.IsEmpty())
 	{
 		// try to parse JsonString
 		TSharedRef<TJsonReader<> > JsonReader = TJsonReaderFactory<>::Create(JsonString);

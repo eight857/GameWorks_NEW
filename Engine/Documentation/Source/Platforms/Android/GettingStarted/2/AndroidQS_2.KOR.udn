@@ -1,9 +1,9 @@
-﻿INTSourceChangelist:3298293
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title:2. 안드로이드 디바이스 셋업
 Crumbs:%ROOT%, Platforms, Platforms/Android, Platforms/Android/GettingStarted
 Description:안드로이드 디바이스 개발용으로 셋업하기 입니다.
-Version:4.12
+Version:4.17
 Skilllevel:Intermediate
 tags:Android
 tags:Mobile
@@ -63,7 +63,8 @@ Android Works 가 설치되었으니 안드로이드 디바이스를 개발에 �
 	[/PARAM]
 [/OBJECT]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:WindowsSetup]
 
 1.	USB 를 통해 개발 PC 에 안드로이드 디바이스를 연결합니다.
@@ -86,7 +87,7 @@ Android Works 가 설치되었으니 안드로이드 디바이스를 개발에 �
 
 1.	Build Number 를 7 회 탭하여 개발자 모드를 활성화시킵니다.
 
-	![](Enable_Dev_Mode.png)
+	![](Enable_Dev_Mode.png)(w:350)
 
 1. 처음 몇 번 탭하고 나면 You are now **# steps** away from becoming a developer. 메시지가 뜰 것입니다.
 
@@ -96,26 +97,26 @@ Android Works 가 설치되었으니 안드로이드 디바이스를 개발에 �
 
 1.	Settings 메뉴로 되돌아가 사용가능해진 Developer Options 를 선택합니다.
 
-	![](Dev_Options_Enabled.png)
+	![](Dev_Options_Enabled.png)(w:350)
 
 1.	Developer Options 메뉴에서 USB 디버깅을 탭하여 켭니다.
 
-	![](Enable_USB_Debugging.png)
+	![](Enable_USB_Debugging.png)(w:350)
 
 1. 묻는 창이 뜨면 OK 를 선택하여 USB 디버깅을 켭니다.
 
-	![](Enable_USB_Debugging_Warning.png)
+	![](Enable_USB_Debugging_Warning.png)(w:350)
 
 1. USB 디버깅 활성화 여부는 그 옆의 체크박스에 초록색 체크표시가 있는 것을 보고 알 수 있습니다.
 
-	![](USB_Debugging_Enabled.png)
+	![](USB_Debugging_Enabled.png)(w:350)
 
-1. USB 에서 안드로이드 디바이스를 뽑은 다음 바로 다시 꽂습니다.
-	디바이스를 PC 에서 인식한 이후 안드로이드 디바이스에 이 PC 와의 통신을 허용하겠냐는 메시지가 뜹니다.
-	**이 컴퓨터 항상 허용** 이라는 체크박스를 누른 다음 **OK** 버튼을 누릅니다.
+1. USB 에서 안드로이드 디바이스를 뽑은 다음 바로 다시 꽂습니다. 디바이스를 PC 에서 인식한 이후 안드로이드 디바이스에 
+이 PC 와의 통신을 허용하겠냐는 메시지가 뜹니다. 메시지 박스에서 USB 연결에 무엇을 사용하겠느냐고 물어옵니다. **이 컴퓨터 항상 허용** 이라는 체크박스를 누른 다음 
+**OK** 버튼을 누릅니다.
 	
-	![](PC_RSA_Fingerprint.png)
-
+	![](PC_RSA_Fingerprint.png)(w:350)
+	
 1.	디바이스 셋업이 제대로 되었는지 확인하기 위해, 윈도우+R 키를 눌러 실행 창에 cmd 라 입력합니다.
 
 	![](Windows_Run_Command.png)
@@ -158,36 +159,35 @@ Android Works 가 설치되었으니 안드로이드 디바이스를 개발에 �
 
 1. Build Number 를 7 회 탭합니다. 
 
-	![](Enable_Dev_Mode.png)
+	![](Enable_Dev_Mode.png)(w:350)
 
 1. 처음 몇 번 탭하고 나면 **You are now # steps away from becoming a developer.** 메시지가 뜰 것입니다.
 
 1. Developer Mode 가 활성화되면 아래와 같은 성공 메시지가 화면에 뜰 것입니다.
 
-	![](Dev_Mode_Active.png)
+	![](Dev_Mode_Active.png)(w:350)
 
 1. Settings 메뉴로 되돌아가 사용가능해진 Developer Options 를 선택합니다.
 
-	![](Dev_Options_Enabled.png)
+	![](Dev_Options_Enabled.png)(w:350)
 
 1. Developer Options 메뉴에서 USB 디버깅을 켭니다.
 
-	![](Enable_USB_Debugging.png)
+	![](Enable_USB_Debugging.png)(w:350)
 
 1. 묻는 창이 뜨면 OK 를 선택하여 USB 디버깅을 켭니다.
 
-	![](Enable_USB_Debugging_Warning.png)
+	![](Enable_USB_Debugging_Warning.png)(w:350)
 
 1. USB 디버깅 활성화 여부는 그 옆의 체크박스에 초록색 체크표시가 있는 것을 보고 알 수 있습니다.
 
-	![](USB_Debugging_Enabled.png)
+	![](USB_Debugging_Enabled.png)(w:350)
 
 1. USB 에서 안드로이드 디바이스를 뽑은 다음 바로 다시 꽂습니다.
-	디바이스를 PC 에서 인식한 이후 안드로이드 디바이스에 이 PC 와의 통신을 허용하겠냐는 메시지가 뜹니다.
-	**이 컴퓨터 항상 허용** 이라는 체크박스를 누른 다음 **OK** 버튼을 누릅니다.
+이 PC 와의 통신을 허용하겠냐는 메시지가 뜹니다. 메시지 박스에서 USB 연결에 무엇을 사용하겠느냐고 물어옵니다. **이 컴퓨터 항상 허용** 이라는 체크박스를 누른 다음 
+**OK** 버튼을 누릅니다.
 	
-	![](PC_RSA_Fingerprint.png)
-
+	![](PC_RSA_Fingerprint.png)(w:350)
 1. 디바이스 셋업이 제대로 되었는지 확인하기 위해, /Applications/Utilties 에서 **Terminal app** 을 엽니다.
 
 	![](MAC_Terminal_Activate.png)
@@ -209,11 +209,10 @@ Android Works 가 설치되었으니 안드로이드 디바이스를 개발에 �
 [/EXCERPT:MacOSSetup]
 
 [EXCERPT:LinuxSetup]
-이 문서는 현재 작업중입니다. 현재 공개된 문서를 확인하려면 [New and Updated Resources](https://docs.unrealengine.com/latest/INT/Updates/index.html) 페이지를 
-참고해 주세요.
-<!--[INCLUDE:Platforms/Linux/IntermediateLinuxDeveloper/AndroidOnLinux/2#AndroidLinux_2]-->
+[INCLUDE:Platforms/Linux/IntermediateLinuxDeveloper/AndroidOnLinux/2#AndroidLinux_2]
 [/EXCERPT:LinuxSetup]
--->
+
+[/COMMENT]
 
 ## 최종 결과
 완료되면 이제 UE4 프로젝트를 설치하여 실행시킬 수 있는 안드로이드 기반 스마트폰이 보일 것입니다.

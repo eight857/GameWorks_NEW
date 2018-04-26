@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 //=============================================================================
 // Scene - script exposed scene enums
@@ -12,6 +12,10 @@
 #include "UObject/ScriptInterface.h"
 #include "Engine/BlendableInterface.h"
 #include "Scene.generated.h"
+
+
+struct FPostProcessSettings;
+
 
 /** Used by FPostProcessSettings Depth of Fields */
 UENUM()
@@ -44,6 +48,8 @@ enum EAutoExposureMethod
 	AEM_Histogram  UMETA(DisplayName = "Auto Exposure Histogram"),
 	/** Not supported on mobile, faster method that computes single value by downsampling */
 	AEM_Basic      UMETA(DisplayName = "Auto Exposure Basic"),
+	/** Uses camera settings. */
+	AEM_Manual   UMETA(DisplayName = "Manual"),
 	AEM_MAX,
 };
 
@@ -57,7 +63,472 @@ enum EBloomMethod
 	BM_MAX,
 };
 
-USTRUCT()
+UENUM()
+enum class ELightUnits : uint8
+{
+	Unitless,
+	Candelas,
+	Lumens,
+};
+
+
+USTRUCT(BlueprintType)
+struct FColorGradePerRangeSettings
+{
+	GENERATED_USTRUCT_BODY()
+
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading", meta = (UIMin = "0.0", UIMax = "2.0", Delta = "0.01", ColorGradingMode = "saturation", ShiftMouseMovePixelPerDelta = "10", SupportDynamicSliderMaxValue = "true", DisplayName = "Saturation"))
+	FVector4 Saturation;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading", meta = (UIMin = "0.0", UIMax = "2.0", Delta = "0.01", ColorGradingMode = "contrast", ShiftMouseMovePixelPerDelta = "10", SupportDynamicSliderMaxValue = "true", DisplayName = "Contrast"))
+	FVector4 Contrast;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading", meta = (UIMin = "0.0", UIMax = "2.0", Delta = "0.01", ColorGradingMode = "gamma", ShiftMouseMovePixelPerDelta = "10", SupportDynamicSliderMaxValue = "true", DisplayName = "Gamma"))
+	FVector4 Gamma;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading", meta = (UIMin = "0.0", UIMax = "2.0", Delta = "0.01", ColorGradingMode = "gain", ShiftMouseMovePixelPerDelta = "10", SupportDynamicSliderMaxValue = "true", DisplayName = "Gain"))
+	FVector4 Gain;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading", meta = (UIMin = "-1.0", UIMax = "1.0", Delta = "0.001", ColorGradingMode = "offset", ShiftMouseMovePixelPerDelta = "20", SupportDynamicSliderMaxValue = "true", SupportDynamicSliderMinValue = "true", DisplayName = "Offset"))
+	FVector4 Offset;
+
+
+	FColorGradePerRangeSettings()
+	{
+		Saturation = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+		Contrast = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+		Gamma = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+		Gain = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+		Offset = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
+	}
+};
+
+USTRUCT(BlueprintType)
+struct FColorGradingSettings
+{
+	GENERATED_USTRUCT_BODY()
+
+
+	UPROPERTY(Interp,BlueprintReadWrite, Category = "Color Grading")
+	FColorGradePerRangeSettings Global;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading")
+	FColorGradePerRangeSettings Shadows;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading")
+	FColorGradePerRangeSettings Midtones;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading")
+	FColorGradePerRangeSettings Highlights;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading", meta = (UIMin = "-1.0", UIMax = "1.0", DisplayName = "ShadowsMax"))
+	float ShadowsMax;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Color Grading", meta = (UIMin = "-1.0", UIMax = "1.0", DisplayName = "HighlightsMin"))
+	float HighlightsMin;
+
+
+	FColorGradingSettings()
+	{
+		ShadowsMax = 0.09f;
+		HighlightsMin = 0.5f;
+	}
+
+	/* Exports to post process settings with overrides. */
+	ENGINE_API void ExportToPostProcessSettings(FPostProcessSettings* OutPostProcessSettings) const;
+};
+
+USTRUCT(BlueprintType)
+struct FFilmStockSettings
+{
+	GENERATED_USTRUCT_BODY()
+
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Film Stock", meta = (UIMin = "0.0", UIMax = "1.0", DisplayName = "Slope"))
+	float Slope;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Film Stock", meta = (UIMin = "0.0", UIMax = "1.0", DisplayName = "Toe"))
+	float Toe;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Film Stock", meta = (UIMin = "0.0", UIMax = "1.0", DisplayName = "Shoulder"))
+	float Shoulder;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Film Stock", meta = (UIMin = "0.0", UIMax = "1.0", DisplayName = "Black clip"))
+	float BlackClip;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Film Stock", meta = (UIMin = "0.0", UIMax = "1.0", DisplayName = "White clip"))
+	float WhiteClip;
+
+
+	FFilmStockSettings()
+	{
+		Slope = 0.88f;
+		Toe = 0.55f;
+		Shoulder = 0.26f;
+		BlackClip = 0.0f;
+		WhiteClip = 0.04f;
+	}
+
+	/* Exports to post process settings with overrides. */
+	ENGINE_API void ExportToPostProcessSettings(FPostProcessSettings* OutPostProcessSettings) const;
+};
+
+USTRUCT(BlueprintType)
+struct FGaussianSumBloomSettings
+{
+	GENERATED_USTRUCT_BODY()
+
+
+	/** Multiplier for all bloom contributions >=0: off, 1(default), >1 brighter */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", meta=(ClampMin = "0.0", UIMax = "8.0", DisplayName = "Intensity"))
+	float Intensity;
+
+	/**
+	 * minimum brightness the bloom starts having effect
+	 * -1:all pixels affect bloom equally (physically correct, faster as a threshold pass is omitted), 0:all pixels affect bloom brights more, 1(default), >1 brighter
+	 */
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Bloom", meta=(ClampMin = "-1.0", UIMax = "8.0", DisplayName = "Threshold"))
+	float Threshold;
+
+	/**
+	 * Scale for all bloom sizes
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(ClampMin = "0.0", UIMax = "64.0", DisplayName = "Size scale"))
+	float SizeScale;
+
+	/**
+	 * Diameter size for the Bloom1 in percent of the screen width
+	 * (is done in 1/2 resolution, larger values cost more performance, good for high frequency details)
+	 * >=0: can be clamped because of shader limitations
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(ClampMin = "0.0", UIMax = "4.0", DisplayName = "#1 Size"))
+	float Filter1Size;
+
+	/**
+	 * Diameter size for Bloom2 in percent of the screen width
+	 * (is done in 1/4 resolution, larger values cost more performance)
+	 * >=0: can be clamped because of shader limitations
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(ClampMin = "0.0", UIMax = "8.0", DisplayName = "#2 Size"))
+	float Filter2Size;
+
+	/**
+	 * Diameter size for Bloom3 in percent of the screen width
+	 * (is done in 1/8 resolution, larger values cost more performance)
+	 * >=0: can be clamped because of shader limitations
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(ClampMin = "0.0", UIMax = "16.0", DisplayName = "#3 Size"))
+	float Filter3Size;
+
+	/**
+	 * Diameter size for Bloom4 in percent of the screen width
+	 * (is done in 1/16 resolution, larger values cost more performance, best for wide contributions)
+	 * >=0: can be clamped because of shader limitations
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(ClampMin = "0.0", UIMax = "32.0", DisplayName = "#4 Size"))
+	float Filter4Size;
+
+	/**
+	 * Diameter size for Bloom5 in percent of the screen width
+	 * (is done in 1/32 resolution, larger values cost more performance, best for wide contributions)
+	 * >=0: can be clamped because of shader limitations
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(ClampMin = "0.0", UIMax = "64.0", DisplayName = "#5 Size"))
+	float Filter5Size;
+
+	/**
+	 * Diameter size for Bloom6 in percent of the screen width
+	 * (is done in 1/64 resolution, larger values cost more performance, best for wide contributions)
+	 * >=0: can be clamped because of shader limitations
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(ClampMin = "0.0", UIMax = "128.0", DisplayName = "#6 Size"))
+	float Filter6Size;
+
+	/** Bloom1 tint color */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(DisplayName = "#1 Tint", HideAlphaChannel))
+	FLinearColor Filter1Tint;
+
+	/** Bloom2 tint color */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(DisplayName = "#2 Tint", HideAlphaChannel))
+	FLinearColor Filter2Tint;
+
+	/** Bloom3 tint color */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(DisplayName = "#3 Tint", HideAlphaChannel))
+	FLinearColor Filter3Tint;
+
+	/** Bloom4 tint color */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(DisplayName = "#4 Tint", HideAlphaChannel))
+	FLinearColor Filter4Tint;
+
+	/** Bloom5 tint color */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(DisplayName = "#5 Tint", HideAlphaChannel))
+	FLinearColor Filter5Tint;
+
+	/** Bloom6 tint color */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Bloom", AdvancedDisplay, meta=(DisplayName = "#6 Tint", HideAlphaChannel))
+	FLinearColor Filter6Tint;
+
+
+	FGaussianSumBloomSettings()
+	{
+		Intensity = 0.675f;
+		Threshold = -1.0f;
+		// default is 4 to maintain old settings after fixing something that caused a factor of 4
+		SizeScale = 4.0;
+		Filter1Tint = FLinearColor(0.3465f, 0.3465f, 0.3465f);
+		Filter1Size = 0.3f;
+		Filter2Tint = FLinearColor(0.138f, 0.138f, 0.138f);
+		Filter2Size = 1.0f;
+		Filter3Tint = FLinearColor(0.1176f, 0.1176f, 0.1176f);
+		Filter3Size = 2.0f;
+		Filter4Tint = FLinearColor(0.066f, 0.066f, 0.066f);
+		Filter4Size = 10.0f;
+		Filter5Tint = FLinearColor(0.066f, 0.066f, 0.066f);
+		Filter5Size = 30.0f;
+		Filter6Tint = FLinearColor(0.061f, 0.061f, 0.061f);
+		Filter6Size = 64.0f;
+	}
+
+	/* Exports to post process settings with overrides. */
+	ENGINE_API void ExportToPostProcessSettings(FPostProcessSettings* OutPostProcessSettings) const;
+};
+
+USTRUCT(BlueprintType)
+struct FConvolutionBloomSettings
+{
+	GENERATED_USTRUCT_BODY()
+
+
+	/** Texture to replace default convolution bloom kernel */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lens|Bloom", meta = (DisplayName = "Convolution Kernel"))
+	class UTexture2D* Texture;
+
+	/** Relative size of the convolution kernel image compared to the minor axis of the viewport  */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (ClampMin = "0.0", UIMax = "1.0", DisplayName = "Convolution Scale"))
+	float Size;
+
+	/** The UV location of the center of the kernel.  Should be very close to (.5,.5) */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (DisplayName = "Convolution Center"))
+	FVector2D CenterUV;
+
+	/** Boost intensity of select pixels  prior to computing bloom convolution (Min, Max, Multiplier).  Max < Min disables */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (DisplayName = "Convolution Boost Min"))
+	float PreFilterMin;
+
+	/** Boost intensity of select pixels  prior to computing bloom convolution (Min, Max, Multiplier).  Max < Min disables */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (DisplayName = "Convolution Boost Max"))
+	float PreFilterMax;
+
+	/** Boost intensity of select pixels  prior to computing bloom convolution (Min, Max, Multiplier).  Max < Min disables */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (DisplayName = "Convolution Boost Mult"))
+	float PreFilterMult;
+
+	/** Implicit buffer region as a fraction of the screen size to insure the bloom does not wrap across the screen.  Larger sizes have perf impact.*/
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (ClampMin = "0.0", UIMax = "1.0", DisplayName = "Convolution Buffer"))
+	float BufferScale;
+
+
+	FConvolutionBloomSettings()
+	{
+		Texture = nullptr;
+		Size = 1.f;
+		CenterUV = FVector2D(0.5f, 0.5f);
+		PreFilterMin = 7.f;
+		PreFilterMax = 15000.f;
+		PreFilterMult = 15.f;
+		BufferScale = 0.133f;
+	}
+
+	/* Exports to post process settings with overrides. */
+	ENGINE_API void ExportToPostProcessSettings(FPostProcessSettings* OutPostProcessSettings) const;
+};
+
+USTRUCT(BlueprintType)
+struct FLensBloomSettings
+{
+	GENERATED_USTRUCT_BODY()
+
+	/** Bloom gaussian sum method specific settings. */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Gaussian Sum Method")
+	FGaussianSumBloomSettings GaussianSum;
+
+	/** Bloom convolution method specific settings. */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Convolution Method")
+	FConvolutionBloomSettings Convolution;
+
+	/** Bloom algorithm */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lens|Bloom")
+	TEnumAsByte<enum EBloomMethod> Method;
+
+
+	FLensBloomSettings()
+	{
+		Method = BM_SOG;
+	}
+
+	/* Exports to post process settings with overrides. */
+	ENGINE_API void ExportToPostProcessSettings(FPostProcessSettings* OutPostProcessSettings) const;
+};
+
+USTRUCT(BlueprintType)
+struct FLensImperfectionSettings
+{
+	GENERATED_USTRUCT_BODY()
+	
+	/**
+	 * Texture that defines the dirt on the camera lens where the light of very bright objects is scattered.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lens|Dirt Mask", meta=(DisplayName = "Dirt Mask Texture"))
+	class UTexture* DirtMask;	
+	
+	/** BloomDirtMask intensity */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Dirt Mask", meta=(ClampMin = "0.0", UIMax = "8.0", DisplayName = "Dirt Mask Intensity"))
+	float DirtMaskIntensity;
+
+	/** BloomDirtMask tint color */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Lens|Dirt Mask", meta=(DisplayName = "Dirt Mask Tint", HideAlphaChannel))
+	FLinearColor DirtMaskTint;
+
+
+	FLensImperfectionSettings()
+	{
+		DirtMask = nullptr;
+		DirtMaskIntensity = 0.0f;
+		DirtMaskTint = FLinearColor(0.5f, 0.5f, 0.5f);
+	}
+
+	/* Exports to post process settings with overrides. */
+	ENGINE_API void ExportToPostProcessSettings(FPostProcessSettings* OutPostProcessSettings) const;
+};
+
+USTRUCT(BlueprintType)
+struct FLensSettings
+{
+	GENERATED_USTRUCT_BODY()
+
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Lens")
+	FLensBloomSettings Bloom;
+
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Lens")
+	FLensImperfectionSettings Imperfections;
+
+	/** in percent, Scene chromatic aberration / color fringe (camera imperfection) to simulate an artifact that happens in real-world lens, mostly visible in the image corners. */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Lens", meta = (UIMin = "0.0", UIMax = "5.0"))
+	float ChromaticAberration;
+
+
+	FLensSettings()
+	{
+		ChromaticAberration = 0.0f;
+	}
+
+	/* Exports to post process settings with overrides. */
+	ENGINE_API void ExportToPostProcessSettings(FPostProcessSettings* OutPostProcessSettings) const;
+};
+
+USTRUCT(BlueprintType)
+struct FCameraExposureSettings
+{
+	GENERATED_USTRUCT_BODY()
+
+
+	/** Luminance computation method */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exposure", meta=(DisplayName = "Method"))
+    TEnumAsByte<enum EAutoExposureMethod> Method;
+
+	/**
+	 * The eye adaptation will adapt to a value extracted from the luminance histogram of the scene color.
+	 * The value is defined as having x percent below this brightness. Higher values give bright spots on the screen more priority
+	 * but can lead to less stable results. Lower values give the medium and darker values more priority but might cause burn out of
+	 * bright spots.
+	 * >0, <100, good values are in the range 70 .. 80
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Exposure", AdvancedDisplay, meta=(ClampMin = "0.0", ClampMax = "100.0", DisplayName = "Low Percent"))
+	float LowPercent;
+
+	/**
+	 * The eye adaptation will adapt to a value extracted from the luminance histogram of the scene color.
+	 * The value is defined as having x percent below this brightness. Higher values give bright spots on the screen more priority
+	 * but can lead to less stable results. Lower values give the medium and darker values more priority but might cause burn out of
+	 * bright spots.
+	 * >0, <100, good values are in the range 80 .. 95
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Exposure", AdvancedDisplay, meta=(ClampMin = "0.0", ClampMax = "100.0", DisplayName = "High Percent"))
+	float HighPercent;
+
+	/**
+	 * A good value should be positive near 0. This is the minimum brightness the auto exposure can adapt to.
+	 * It should be tweaked in a dark lighting situation (too small: image appears too bright, too large: image appears too dark).
+	 * Note: Tweaking emissive materials and lights or tweaking auto exposure can look the same. Tweaking auto exposure has global
+	 * effect and defined the HDR range - you don't want to change that late in the project development.
+	 * Eye Adaptation is disabled if MinBrightness = MaxBrightness
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Exposure", meta=(ClampMin = "0.0", UIMax = "10.0", DisplayName = "Min Brightness"))
+	float MinBrightness;
+
+	/**
+	 * A good value should be positive (2 is a good value). This is the maximum brightness the auto exposure can adapt to.
+	 * It should be tweaked in a bright lighting situation (too small: image appears too bright, too large: image appears too dark).
+	 * Note: Tweaking emissive materials and lights or tweaking auto exposure can look the same. Tweaking auto exposure has global
+	 * effect and defined the HDR range - you don't want to change that late in the project development.
+	 * Eye Adaptation is disabled if MinBrightness = MaxBrightness
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Exposure", meta=(ClampMin = "0.0", UIMax = "10.0", DisplayName = "Max Brightness"))
+	float MaxBrightness;
+
+	/** >0 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Exposure", meta=(ClampMin = "0.02", UIMax = "20.0", DisplayName = "Speed Up"))
+	float SpeedUp;
+
+	/** >0 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Exposure", meta=(ClampMin = "0.02", UIMax = "20.0", DisplayName = "Speed Down"))
+	float SpeedDown;
+
+	/**
+	 * Logarithmic adjustment for the exposure. Only used if a tonemapper is specified.
+	 * 0: no adjustment, -1:2x darker, -2:4x darker, 1:2x brighter, 2:4x brighter, ...
+	 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Exposure", meta = (UIMin = "-8.0", UIMax = "8.0", DisplayName = "Exposure Bias"))
+	float Bias;
+
+	/** temporary exposed until we found good values, -8: 1/256, -10: 1/1024 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Exposure", AdvancedDisplay, meta=(UIMin = "-16", UIMax = "0.0"))
+	float HistogramLogMin;
+
+	/** temporary exposed until we found good values 4: 16, 8: 256 */
+	UPROPERTY(Interp, BlueprintReadWrite, Category="Exposure", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "16.0"))
+	float HistogramLogMax;
+
+	/** Calibration constant for 18% albedo. */
+	UPROPERTY(Interp, BlueprintReadWrite, Category = "Exposure", AdvancedDisplay, meta=(UIMin = "0", UIMax = "100.0", DisplayName = "Calibration Constant"))
+	float CalibrationConstant;
+
+
+	FCameraExposureSettings()
+	{
+		// next value might get overwritten by r.DefaultFeature.AutoExposure.Method
+		Method = AEM_Histogram;
+		LowPercent = 80.0f;
+		HighPercent = 98.3f;
+		// next value might get overwritten by r.DefaultFeature.AutoExposure
+		MinBrightness = 0.03f;
+		// next value might get overwritten by r.DefaultFeature.AutoExposure
+		MaxBrightness = 2.0f;
+		SpeedUp = 3.0f;
+		SpeedDown = 1.0f;
+		Bias = 0.0f;
+		HistogramLogMin = -8.0f;
+		HistogramLogMax = 4.0f;
+		CalibrationConstant	= 16.0;
+	}
+
+	/* Exports to post process settings with overrides. */
+	ENGINE_API void ExportToPostProcessSettings(FPostProcessSettings* OutPostProcessSettings) const;
+};
+
+USTRUCT(BlueprintType)
 struct FWeightedBlendable
 {
 	GENERATED_USTRUCT_BODY()
@@ -87,7 +558,7 @@ struct FWeightedBlendable
 };
 
 // for easier detail customization, needed?
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FWeightedBlendables
 {
 	GENERATED_USTRUCT_BODY()
@@ -163,6 +634,11 @@ struct FPostProcessSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_ColorCorrectionHighlightsMin : 1;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
+	uint32 bOverride_BlueCorrection : 1;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
+	uint32 bOverride_ExpandGamut : 1;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_FilmWhitePoint:1;
 
@@ -215,6 +691,8 @@ struct FPostProcessSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_SceneFringeIntensity:1;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
+	uint32 bOverride_ChromaticAberrationStartOffset:1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_AmbientCubemapTint:1;
@@ -270,7 +748,7 @@ struct FPostProcessSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_BloomSizeScale:1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_BloomConvolutionTexture : 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
@@ -279,8 +757,17 @@ struct FPostProcessSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_BloomConvolutionCenterUV : 1;
 
+	UPROPERTY()
+	uint32 bOverride_BloomConvolutionPreFilter_DEPRECATED : 1;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
-	uint32 bOverride_BloomConvolutionPreFilter : 1;
+	uint32 bOverride_BloomConvolutionPreFilterMin : 1;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
+	uint32 bOverride_BloomConvolutionPreFilterMax : 1;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
+	uint32 bOverride_BloomConvolutionPreFilterMult : 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_BloomConvolutionBufferScale : 1;
@@ -293,6 +780,12 @@ struct FPostProcessSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_BloomDirtMask:1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
+    uint32 bOverride_CameraShutterSpeed:1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
+    uint32 bOverride_CameraISO:1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
     uint32 bOverride_AutoExposureMethod:1;
@@ -308,6 +801,9 @@ struct FPostProcessSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_AutoExposureMaxBrightness:1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
+	uint32 bOverride_AutoExposureCalibrationConstant:1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_AutoExposureSpeedUp:1;
@@ -429,7 +925,7 @@ struct FPostProcessSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_LPVEmissiveInjectionIntensity:1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta=(PinHiddenByDefault, InlineEditConditionToggle))
 	uint32 bOverride_LPVFadeRange : 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Overrides, meta = (PinHiddenByDefault, InlineEditConditionToggle))
@@ -587,52 +1083,62 @@ struct FPostProcessSettings
 	UPROPERTY(interp, BlueprintReadWrite, Category = "Color Grading|Highlights", meta = (UIMin = "-1.0", UIMax = "1.0", editcondition = "bOverride_ColorCorrectionHighlightsMin", DisplayName = "HighlightsMin"))
 	float ColorCorrectionHighlightsMin;
 
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmSlope", DisplayName = "Slope"))
+	/** Correct for artifacts with "electric" blues due to the ACEScg color space. Bright blue desaturates instead of going to violet. */
+	UPROPERTY(interp, BlueprintReadWrite, Category = "Color Grading|Misc", meta = (ClampMin = "0.0", ClampMax = "1.0", editcondition = "bOverride_BlueCorrection"))
+	float BlueCorrection;
+	/** Expand bright saturated colors outside the sRGB gamut to fake wide gamut rendering. */
+	UPROPERTY(interp, BlueprintReadWrite, Category = "Color Grading|Misc", meta = (ClampMin = "0.0", UIMax = "1.0", editcondition = "bOverride_ExpandGamut"))
+	float ExpandGamut;
+
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmSlope", DisplayName = "Slope"))
 	float FilmSlope;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmToe", DisplayName = "Toe"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmToe", DisplayName = "Toe"))
 	float FilmToe;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmShoulder", DisplayName = "Shoulder"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmShoulder", DisplayName = "Shoulder"))
 	float FilmShoulder;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmBlackClip", DisplayName = "Black clip"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmBlackClip", DisplayName = "Black clip"))
 	float FilmBlackClip;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmWhiteClip", DisplayName = "White clip"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmWhiteClip", DisplayName = "White clip"))
 	float FilmWhiteClip;
 
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", meta=(editcondition = "bOverride_FilmWhitePoint", DisplayName = "Tint", HideAlphaChannel, LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", meta=(editcondition = "bOverride_FilmWhitePoint", DisplayName = "Tint", HideAlphaChannel, LegacyTonemapper))
 	FLinearColor FilmWhitePoint;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", AdvancedDisplay, meta=(editcondition = "bOverride_FilmShadowTint", DisplayName = "Tint Shadow", HideAlphaChannel, LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", AdvancedDisplay, meta=(editcondition = "bOverride_FilmShadowTint", DisplayName = "Tint Shadow", HideAlphaChannel, LegacyTonemapper))
 	FLinearColor FilmShadowTint;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmShadowTintBlend", DisplayName = "Tint Shadow Blend", LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmShadowTintBlend", DisplayName = "Tint Shadow Blend", LegacyTonemapper))
 	float FilmShadowTintBlend;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmShadowTintAmount", DisplayName = "Tint Shadow Amount", LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmShadowTintAmount", DisplayName = "Tint Shadow Amount", LegacyTonemapper))
 	float FilmShadowTintAmount;
 
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", meta=(UIMin = "0.0", UIMax = "2.0", editcondition = "bOverride_FilmSaturation", DisplayName = "Saturation", LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", meta=(UIMin = "0.0", UIMax = "2.0", editcondition = "bOverride_FilmSaturation", DisplayName = "Saturation", LegacyTonemapper))
 	float FilmSaturation;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", AdvancedDisplay, meta=(editcondition = "bOverride_FilmChannelMixerRed", DisplayName = "Channel Mixer Red", HideAlphaChannel, LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", AdvancedDisplay, meta=(editcondition = "bOverride_FilmChannelMixerRed", DisplayName = "Channel Mixer Red", HideAlphaChannel, LegacyTonemapper))
 	FLinearColor FilmChannelMixerRed;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", AdvancedDisplay, meta=(editcondition = "bOverride_FilmChannelMixerGreen", DisplayName = "Channel Mixer Green", HideAlphaChannel, LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", AdvancedDisplay, meta=(editcondition = "bOverride_FilmChannelMixerGreen", DisplayName = "Channel Mixer Green", HideAlphaChannel, LegacyTonemapper))
 	FLinearColor FilmChannelMixerGreen;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", AdvancedDisplay, meta=(editcondition = "bOverride_FilmChannelMixerBlue", DisplayName = " Channel Mixer Blue", HideAlphaChannel, LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", AdvancedDisplay, meta=(editcondition = "bOverride_FilmChannelMixerBlue", DisplayName = " Channel Mixer Blue", HideAlphaChannel, LegacyTonemapper))
 	FLinearColor FilmChannelMixerBlue;
 
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmContrast", DisplayName = "Contrast", LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmContrast", DisplayName = "Contrast", LegacyTonemapper))
 	float FilmContrast;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmToeAmount", DisplayName = "Crush Shadows", LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmToeAmount", DisplayName = "Crush Shadows", LegacyTonemapper))
 	float FilmToeAmount;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmHealAmount", DisplayName = "Crush Highlights", LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_FilmHealAmount", DisplayName = "Crush Highlights", LegacyTonemapper))
 	float FilmHealAmount;
-	UPROPERTY(interp, BlueprintReadWrite, Category="Tonemapper", AdvancedDisplay, meta=(UIMin = "1.0", UIMax = "4.0", editcondition = "bOverride_FilmDynamicRange", DisplayName = "Dynamic Range", LegacyTonemapper))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Film", AdvancedDisplay, meta=(UIMin = "1.0", UIMax = "4.0", editcondition = "bOverride_FilmDynamicRange", DisplayName = "Dynamic Range", LegacyTonemapper))
 	float FilmDynamicRange;
 
 	/** Scene tint color */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Color Grading|Global", meta=(editcondition = "bOverride_SceneColorTint", HideAlphaChannel))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Color Grading|Misc", meta=(editcondition = "bOverride_SceneColorTint", HideAlphaChannel))
 	FLinearColor SceneColorTint;
 	
 	/** in percent, Scene chromatic aberration / color fringe (camera imperfection) to simulate an artifact that happens in real-world lens, mostly visible in the image corners. */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Image Effects", meta=(UIMin = "0.0", UIMax = "5.0", editcondition = "bOverride_SceneFringeIntensity", DisplayName = "Chromatic Aberation"))
+	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Chromatic Aberration", meta = (UIMin = "0.0", UIMax = "5.0", editcondition = "bOverride_SceneFringeIntensity", DisplayName = "Intensity"))
 	float SceneFringeIntensity;
 
+	/** A normalized distance to the center of the framebuffer where the effect takes place. */
+	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Chromatic Aberration", meta = (UIMin = "0.0", UIMax = "1.0", editcondition = "bOverride_ChromaticAberrationStartOffset", DisplayName = "Start Offset"))
+	float ChromaticAberrationStartOffset;
 
 	/** Bloom algorithm */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lens|Bloom", meta = (editcondition = "bOverride_BloomMethod", DisplayName = "Method"))
@@ -729,9 +1235,20 @@ struct FPostProcessSettings
 	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (editcondition = "bOverride_BloomConvolutionCenterUV", DisplayName = "Convolution Center"))
 	FVector2D BloomConvolutionCenterUV;
 
+	UPROPERTY()
+	FVector BloomConvolutionPreFilter_DEPRECATED;
+	
 	/** Boost intensity of select pixels  prior to computing bloom convolution (Min, Max, Multiplier).  Max < Min disables */
-	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (editcondition = "bOverride_BloomConvolutionPreFilter", DisplayName = "Convolution Boost"))
-	FVector BloomConvolutionPreFilter;
+	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (editcondition = "bOverride_BloomConvolutionPreFilterMin", DisplayName = "Convolution Boost Min"))
+	float BloomConvolutionPreFilterMin;
+
+	/** Boost intensity of select pixels  prior to computing bloom convolution (Min, Max, Multiplier).  Max < Min disables */
+	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (editcondition = "bOverride_BloomConvolutionPreFilterMax", DisplayName = "Convolution Boost Max"))
+	float BloomConvolutionPreFilterMax;
+
+	/** Boost intensity of select pixels  prior to computing bloom convolution (Min, Max, Multiplier).  Max < Min disables */
+	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (editcondition = "bOverride_BloomConvolutionPreFilterMult", DisplayName = "Convolution Boost Mult"))
+	float BloomConvolutionPreFilterMult;
 
 	/** Implicit buffer region as a fraction of the screen size to insure the bloom does not wrap across the screen.  Larger sizes have perf impact.*/
 	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Bloom", AdvancedDisplay, meta = (ClampMin = "0.0", UIMax = "1.0", editcondition = "bOverride_BloomConvolutionBufferScale", DisplayName = "Convolution Buffer"))
@@ -744,11 +1261,11 @@ struct FPostProcessSettings
 	class UTexture* BloomDirtMask;	
 	
 	/** BloomDirtMask intensity */
-	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Dirt Mask", meta = (ClampMin = "0.0", UIMax = "8.0", editcondition = "bOverride_BloomDirtMaskIntensity", DisplayName = "Dirt Mask Intensity"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Dirt Mask", meta=(ClampMin = "0.0", UIMax = "8.0", editcondition = "bOverride_BloomDirtMaskIntensity", DisplayName = "Dirt Mask Intensity"))
 	float BloomDirtMaskIntensity;
 
 	/** BloomDirtMask tint color */
-	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Dirt Mask", meta = (editcondition = "bOverride_BloomDirtMaskTint", DisplayName = "Dirt Mask Tint", HideAlphaChannel))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Dirt Mask", meta=(editcondition = "bOverride_BloomDirtMaskTint", DisplayName = "Dirt Mask Tint", HideAlphaChannel))
 	FLinearColor BloomDirtMaskTint;
 
 	/** AmbientCubemap tint color */
@@ -766,8 +1283,27 @@ struct FPostProcessSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Rendering Features|Ambient Cubemap", meta=(DisplayName = "Cubemap Texture"))
 	class UTextureCube* AmbientCubemap;
 
+	/** The camera shutter in seconds.*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lens|Camera", meta=(ClampMin = "1.0", ClampMax = "2000.0", editcondition = "bOverride_CameraShutterSpeed", DisplayName = "Shutter Speed (1/s)"))
+    float CameraShutterSpeed;
+
+	/** The camera sensor sensitivity in ISO.*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lens|Camera", meta=(ClampMin = "1.0", tooltip = "The camera sensor sensitivity", editcondition = "bOverride_CameraISO", DisplayName = "ISO"))
+    float CameraISO;
+
+	/** Defines the opening of the camera lens, Aperture is 1/fstop, typical lens go down to f/1.2 (large opening), larger numbers reduce the DOF effect */
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Camera", meta=(ClampMin = "1.0", ClampMax = "32.0", editcondition = "bOverride_DepthOfFieldFstop", DisplayName = "Aperture (F-stop)"))
+	float DepthOfFieldFstop;
+
+	/**
+	 * Logarithmic adjustment for the exposure. Only used if a tonemapper is specified.
+	 * 0: no adjustment, -1:2x darker, -2:4x darker, 1:2x brighter, 2:4x brighter, ...
+	 */
+	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Camera", meta = (UIMin = "-8.0", UIMax = "8.0", editcondition = "bOverride_AutoExposureBias", DisplayName = "Exposure Compensation "))
+	float AutoExposureBias;
+
 	/** Luminance computation method */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lens|Auto Exposure", meta=(editcondition = "bOverride_AutoExposureMethod", DisplayName = "Method"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lens|Exposure", meta=(editcondition = "bOverride_AutoExposureMethod", DisplayName = "Metering Mode"))
     TEnumAsByte<enum EAutoExposureMethod> AutoExposureMethod;
 
 	/**
@@ -777,7 +1313,7 @@ struct FPostProcessSettings
 	 * bright spots.
 	 * >0, <100, good values are in the range 70 .. 80
 	 */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Auto Exposure", AdvancedDisplay, meta=(ClampMin = "0.0", ClampMax = "100.0", editcondition = "bOverride_AutoExposureLowPercent", DisplayName = "Low Percent"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Exposure", AdvancedDisplay, meta=(ClampMin = "0.0", ClampMax = "100.0", editcondition = "bOverride_AutoExposureLowPercent", DisplayName = "Low Percent"))
 	float AutoExposureLowPercent;
 
 	/**
@@ -787,7 +1323,7 @@ struct FPostProcessSettings
 	 * bright spots.
 	 * >0, <100, good values are in the range 80 .. 95
 	 */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Auto Exposure", AdvancedDisplay, meta=(ClampMin = "0.0", ClampMax = "100.0", editcondition = "bOverride_AutoExposureHighPercent", DisplayName = "High Percent"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Exposure", AdvancedDisplay, meta=(ClampMin = "0.0", ClampMax = "100.0", editcondition = "bOverride_AutoExposureHighPercent", DisplayName = "High Percent"))
 	float AutoExposureHighPercent;
 
 	/**
@@ -797,7 +1333,7 @@ struct FPostProcessSettings
 	 * effect and defined the HDR range - you don't want to change that late in the project development.
 	 * Eye Adaptation is disabled if MinBrightness = MaxBrightness
 	 */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Auto Exposure", meta=(ClampMin = "0.0", UIMax = "10.0", editcondition = "bOverride_AutoExposureMinBrightness", DisplayName = "Min Brightness"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Exposure", meta=(ClampMin = "-10.0", UIMax = "20.0", editcondition = "bOverride_AutoExposureMinBrightness", DisplayName = "Min Brightness"))
 	float AutoExposureMinBrightness;
 
 	/**
@@ -807,31 +1343,28 @@ struct FPostProcessSettings
 	 * effect and defined the HDR range - you don't want to change that late in the project development.
 	 * Eye Adaptation is disabled if MinBrightness = MaxBrightness
 	 */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Auto Exposure", meta=(ClampMin = "0.0", UIMax = "10.0", editcondition = "bOverride_AutoExposureMaxBrightness", DisplayName = "Max Brightness"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Exposure", meta=(ClampMin = "-10.0", UIMax = "20.0", editcondition = "bOverride_AutoExposureMaxBrightness", DisplayName = "Max Brightness"))
 	float AutoExposureMaxBrightness;
 
 	/** >0 */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Auto Exposure", meta=(ClampMin = "0.02", UIMax = "20.0", editcondition = "bOverride_AutoExposureSpeedUp", DisplayName = "Speed Up"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Exposure", meta=(ClampMin = "0.02", UIMax = "20.0", editcondition = "bOverride_AutoExposureSpeedUp", DisplayName = "Speed Up"))
 	float AutoExposureSpeedUp;
 
 	/** >0 */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Auto Exposure", meta=(ClampMin = "0.02", UIMax = "20.0", editcondition = "bOverride_AutoExposureSpeedDown", DisplayName = "Speed Down"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Exposure", meta=(ClampMin = "0.02", UIMax = "20.0", editcondition = "bOverride_AutoExposureSpeedDown", DisplayName = "Speed Down"))
 	float AutoExposureSpeedDown;
 
-	/**
-	 * Logarithmic adjustment for the exposure. Only used if a tonemapper is specified.
-	 * 0: no adjustment, -1:2x darker, -2:4x darker, 1:2x brighter, 2:4x brighter, ...
-	 */
-	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Auto Exposure", meta = (UIMin = "-8.0", UIMax = "8.0", editcondition = "bOverride_AutoExposureBias", DisplayName = "Exposure Bias"))
-	float AutoExposureBias;
-
 	/** temporary exposed until we found good values, -8: 1/256, -10: 1/1024 */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Auto Exposure", AdvancedDisplay, meta=(UIMin = "-16", UIMax = "0.0", editcondition = "bOverride_HistogramLogMin"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Exposure", AdvancedDisplay, meta=(UIMin = "-16", UIMax = "0.0", editcondition = "bOverride_HistogramLogMin"))
 	float HistogramLogMin;
 
 	/** temporary exposed until we found good values 4: 16, 8: 256 */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Auto Exposure", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "16.0", editcondition = "bOverride_HistogramLogMax"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Exposure", AdvancedDisplay, meta=(UIMin = "0.0", UIMax = "16.0", editcondition = "bOverride_HistogramLogMax"))
 	float HistogramLogMax;
+
+	/** Calibration constant for 18% albedo. */
+	UPROPERTY(interp, BlueprintReadWrite, Category = "Lens|Exposure", AdvancedDisplay, meta=(UIMin = "0", UIMax = "100.0", editcondition = "bOverride_AutoExposureCalibrationConstant", DisplayName = "Calibration Constant"))
+	float AutoExposureCalibrationConstant;
 
 	/** Brightness scale of the image cased lens flares (linear) */
 	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Lens Flares", meta=(UIMin = "0.0", UIMax = "16.0", editcondition = "bOverride_LensFlareIntensity", DisplayName = "Intensity"))
@@ -930,11 +1463,11 @@ struct FPostProcessSettings
 	float IndirectLightingIntensity;
 
 	/** Color grading lookup table intensity. 0 = no intensity, 1=full intensity */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Color Grading|Global", meta=(ClampMin = "0", ClampMax = "1.0", editcondition = "bOverride_ColorGradingIntensity", DisplayName = "Color Grading LUT Intensity"))
+	UPROPERTY(interp, BlueprintReadWrite, Category="Color Grading|Misc", meta=(ClampMin = "0", ClampMax = "1.0", editcondition = "bOverride_ColorGradingIntensity", DisplayName = "Color Grading LUT Intensity"))
 	float ColorGradingIntensity;
 
 	/** Look up table texture to use or none of not used*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Color Grading|Global", meta=(editcondition = "bOverride_ColorGradingLUT", DisplayName = "Color Grading LUT"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Color Grading|Misc", meta=(editcondition = "bOverride_ColorGradingLUT", DisplayName = "Color Grading LUT"))
 	class UTexture* ColorGradingLUT;
 
 	/** BokehDOF, Simple gaussian, ... Mobile supports Gaussian only. */
@@ -944,10 +1477,6 @@ struct FPostProcessSettings
 	/** Enable HQ Gaussian on high end mobile platforms. (ES3_1) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lens|Depth of Field", meta = (editcondition = "bOverride_MobileHQGaussian", DisplayName = "High Quality Gaussian DoF on Mobile"))
 	uint32 bMobileHQGaussian : 1;
-
-	/** CircleDOF only: Defines the opening of the camera lens, Aperture is 1/fstop, typical lens go down to f/1.2 (large opening), larger numbers reduce the DOF effect */
-	UPROPERTY(interp, BlueprintReadWrite, Category="Lens|Depth of Field", meta=(ClampMin = "1.0", ClampMax = "32.0", editcondition = "bOverride_DepthOfFieldFstop", DisplayName = "Aperture F-stop"))
-	float DepthOfFieldFstop;
 
 	/** Width of the camera sensor to assume, in mm. */
 	UPROPERTY(BlueprintReadWrite, Category="Lens|Depth of Field", meta=(ForceUnits=mm, ClampMin = "0.1", UIMin="0.1", UIMax= "1000.0", editcondition = "bOverride_DepthOfFieldSensorWidth", DisplayName = "Sensor Width (mm)"))
@@ -1118,7 +1647,7 @@ struct FPostProcessSettings
 	 * Allows custom post process materials to be defined, using a MaterialInstance with the same Material as its parent to allow blending.
 	 * For materials this needs to be the "PostProcess" domain type. This can be used for any UObject object implementing the IBlendableInterface (e.g. could be used to fade weather settings).
 	 */
-	UPROPERTY(EditAnywhere, Category="Rendering Features", meta=( Keywords="PostProcess", DisplayName = "Post Process Materials" ))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Rendering Features", meta=( Keywords="PostProcess", DisplayName = "Post Process Materials" ))
 	FWeightedBlendables WeightedBlendables;
 
 	// for backwards compatibility
@@ -1137,6 +1666,19 @@ struct FPostProcessSettings
 			}
 		}
 		Blendables_DEPRECATED.Empty();
+
+		if (bOverride_BloomConvolutionPreFilter_DEPRECATED)
+		{
+			bOverride_BloomConvolutionPreFilterMin  = bOverride_BloomConvolutionPreFilter_DEPRECATED;
+			bOverride_BloomConvolutionPreFilterMax  = bOverride_BloomConvolutionPreFilter_DEPRECATED;
+			bOverride_BloomConvolutionPreFilterMult = bOverride_BloomConvolutionPreFilter_DEPRECATED;
+		}
+		if (BloomConvolutionPreFilter_DEPRECATED.X > -1.f)
+		{
+			BloomConvolutionPreFilterMin = BloomConvolutionPreFilter_DEPRECATED.X;
+			BloomConvolutionPreFilterMax = BloomConvolutionPreFilter_DEPRECATED.Y;
+			BloomConvolutionPreFilterMult = BloomConvolutionPreFilter_DEPRECATED.Z;
+		}
 	}
 
 	// Adds an Blendable (implements IBlendableInterface) to the array of Blendables (if it doesn't exist) and update the weight
@@ -1181,181 +1723,7 @@ struct FPostProcessSettings
 	}
 
 	// good start values for a new volume, by default no value is overriding
-	FPostProcessSettings()
-	{
-		// to set all bOverride_.. by default to false
-		FMemory::Memzero(this, sizeof(FPostProcessSettings));
-
-		WhiteTemp = 6500.0f;
-		WhiteTint = 0.0f;
-
-		// Color Correction controls
-		ColorSaturation = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorContrast = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorGamma = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorGain = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorOffset = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
-
-		ColorSaturationShadows = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorContrastShadows = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorGammaShadows = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorGainShadows = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorOffsetShadows = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
-
-		ColorSaturationMidtones = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorContrastMidtones = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorGammaMidtones = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorGainMidtones = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorOffsetMidtones = FVector4(0.f, 0.0f, 0.0f, 0.0f);
-
-		ColorSaturationHighlights = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorContrastHighlights = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorGammaHighlights = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorGainHighlights = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-		ColorOffsetHighlights = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
-
-		ColorCorrectionShadowsMax = 0.09f;
-		ColorCorrectionHighlightsMin = 0.5f;
-
-		// default values:
-		FilmWhitePoint = FLinearColor(1.0f,1.0f,1.0f);
-		FilmSaturation = 1.0f;
-		FilmChannelMixerRed = FLinearColor(1.0f,0.0f,0.0f);
-		FilmChannelMixerGreen = FLinearColor(0.0f,1.0f,0.0f);
-		FilmChannelMixerBlue = FLinearColor(0.0f,0.0f,1.0f);
-		FilmContrast = 0.03f;
-		FilmDynamicRange = 4.0f;
-		FilmHealAmount = 1.0f;
-		FilmToeAmount = 1.0f;
-		FilmShadowTint = FLinearColor(1.0f,1.0f,1.0f);
-		FilmShadowTintBlend = 0.5;
-		FilmShadowTintAmount = 0.0;
-
-		// ACES settings
-		FilmSlope = 0.88f;
-		FilmToe = 0.55f;
-		FilmShoulder = 0.26f;
-		FilmBlackClip = 0.0f;
-		FilmWhiteClip = 0.04f;
-
-		SceneColorTint = FLinearColor(1, 1, 1);
-		SceneFringeIntensity = 0.0f;
-		BloomMethod = BM_SOG;
-		// next value might get overwritten by r.DefaultFeature.Bloom
-		BloomIntensity = 0.675f;
-		BloomThreshold = -1.0f;	
-		// default is 4 to maintain old settings after fixing something that caused a factor of 4
-		BloomSizeScale = 4.0;
-		Bloom1Tint = FLinearColor(0.3465f, 0.3465f, 0.3465f);
-		Bloom1Size = 0.3f;
-		Bloom2Tint = FLinearColor(0.138f, 0.138f, 0.138f);
-		Bloom2Size = 1.0f;
-		Bloom3Tint = FLinearColor(0.1176f, 0.1176f, 0.1176f);
-		Bloom3Size = 2.0f;
-		Bloom4Tint = FLinearColor(0.066f, 0.066f, 0.066f);
-		Bloom4Size = 10.0f;
-		Bloom5Tint = FLinearColor(0.066f, 0.066f, 0.066f);
-		Bloom5Size = 30.0f;
-		Bloom6Tint = FLinearColor(0.061f, 0.061f, 0.061f);
-		Bloom6Size = 64.0f;
-		BloomConvolutionSize = 1.f;
-		BloomConvolutionCenterUV = FVector2D(0.5f, 0.5f);
-		BloomConvolutionPreFilter = FVector(7.f, 15000.f, 15.f);
-		BloomConvolutionBufferScale = 0.133f;
-		BloomDirtMaskIntensity = 0.0f;
-		BloomDirtMaskTint = FLinearColor(0.5f, 0.5f, 0.5f);
-		AmbientCubemapIntensity = 1.0f;
-		AmbientCubemapTint = FLinearColor(1, 1, 1);
-		LPVIntensity = 1.0f;
-		LPVSize = 5312.0f;
-		LPVSecondaryOcclusionIntensity = 0.0f;
-		LPVSecondaryBounceIntensity = 0.0f;
-		LPVVplInjectionBias = 0.64f;
-		LPVGeometryVolumeBias = 0.384f;
-		LPVEmissiveInjectionIntensity = 1.0f;
-		// next value might get overwritten by r.DefaultFeature.AutoExposure.Method
-		AutoExposureMethod = AEM_Histogram;
-		AutoExposureLowPercent = 80.0f;
-		AutoExposureHighPercent = 98.3f;
-		// next value might get overwritten by r.DefaultFeature.AutoExposure
-		AutoExposureMinBrightness = 0.03f;
-		// next value might get overwritten by r.DefaultFeature.AutoExposure
-		AutoExposureMaxBrightness = 2.0f;
-		AutoExposureBias = 0.0f;
-		AutoExposureSpeedUp = 3.0f;
-		AutoExposureSpeedDown = 1.0f;
-		LPVDirectionalOcclusionIntensity = 0.0f;
-		LPVDirectionalOcclusionRadius = 8.0f;
-		LPVDiffuseOcclusionExponent = 1.0f;
-		LPVSpecularOcclusionExponent = 7.0f;
-		LPVDiffuseOcclusionIntensity = 1.0f;
-		LPVSpecularOcclusionIntensity = 1.0f;
-		LPVFadeRange = 0.0f;
-		LPVDirectionalOcclusionFadeRange = 0.0f;
-		HistogramLogMin = -8.0f;
-		HistogramLogMax = 4.0f;
-		// next value might get overwritten by r.DefaultFeature.LensFlare
-		LensFlareIntensity = 1.0f;
-		LensFlareTint = FLinearColor(1.0f, 1.0f, 1.0f);
-		LensFlareBokehSize = 3.0f;
-		LensFlareThreshold = 8.0f;
-		VignetteIntensity = 0.4f;
-		GrainIntensity = 0.0f;
-		GrainJitter = 0.0f;
-		// next value might get overwritten by r.DefaultFeature.AmbientOcclusion
-		AmbientOcclusionIntensity = .5f;
-		// next value might get overwritten by r.DefaultFeature.AmbientOcclusionStaticFraction
-		AmbientOcclusionStaticFraction = 1.0f;
-		AmbientOcclusionRadius = 200.0f;
-		AmbientOcclusionDistance_DEPRECATED = 80.0f;
-		AmbientOcclusionFadeDistance = 8000.0f;
-		AmbientOcclusionFadeRadius = 5000.0f;
-		AmbientOcclusionPower = 2.0f;
-		AmbientOcclusionBias = 3.0f;
-		AmbientOcclusionQuality = 50.0f;
-		AmbientOcclusionMipBlend = 0.6f;
-		AmbientOcclusionMipScale = 1.7f;
-		AmbientOcclusionMipThreshold = 0.01f;
-		AmbientOcclusionRadiusInWS = false;
-		IndirectLightingColor = FLinearColor(1.0f, 1.0f, 1.0f);
-		IndirectLightingIntensity = 1.0f;
-		ColorGradingIntensity = 1.0f;
-		DepthOfFieldFocalDistance = 1000.0f;
-		DepthOfFieldFstop = 4.0f;
-		DepthOfFieldSensorWidth = 24.576f;			// APS-C
-		DepthOfFieldDepthBlurAmount = 1.0f;
-		DepthOfFieldDepthBlurRadius = 0.0f;
-		DepthOfFieldFocalRegion = 0.0f;
-		DepthOfFieldNearTransitionRegion = 300.0f;
-		DepthOfFieldFarTransitionRegion = 500.0f;
-		DepthOfFieldScale = 0.0f;
-		DepthOfFieldMaxBokehSize = 15.0f;
-		DepthOfFieldNearBlurSize = 15.0f;
-		DepthOfFieldFarBlurSize = 15.0f;
-		DepthOfFieldOcclusion = 0.4f;
-		DepthOfFieldColorThreshold = 1.0f;
-		DepthOfFieldSizeThreshold = 0.08f;
-		DepthOfFieldSkyFocusDistance = 0.0f;
-		// 200 should be enough even for extreme aspect ratios to give the default no effect
-		DepthOfFieldVignetteSize = 200.0f;
-		LensFlareTints[0] = FLinearColor(1.0f, 0.8f, 0.4f, 0.6f);
-		LensFlareTints[1] = FLinearColor(1.0f, 1.0f, 0.6f, 0.53f);
-		LensFlareTints[2] = FLinearColor(0.8f, 0.8f, 1.0f, 0.46f);
-		LensFlareTints[3] = FLinearColor(0.5f, 1.0f, 0.4f, 0.39f);
-		LensFlareTints[4] = FLinearColor(0.5f, 0.8f, 1.0f, 0.31f);
-		LensFlareTints[5] = FLinearColor(0.9f, 1.0f, 0.8f, 0.27f);
-		LensFlareTints[6] = FLinearColor(1.0f, 0.8f, 0.4f, 0.22f);
-		LensFlareTints[7] = FLinearColor(0.9f, 0.7f, 0.7f, 0.15f);
-		// next value might get overwritten by r.DefaultFeature.MotionBlur
-		MotionBlurAmount = 0.5f;
-		MotionBlurMax = 5.0f;
-		MotionBlurPerObjectSize = 0.5f;
-		ScreenPercentage = 100.0f;
-		ScreenSpaceReflectionIntensity = 100.0f;
-		ScreenSpaceReflectionQuality = 50.0f;
-		ScreenSpaceReflectionMaxRoughness = 0.6f;
-		bMobileHQGaussian = false;
-	}
+	ENGINE_API FPostProcessSettings();
 
 	/**
 		* Used to define the values before any override happens.

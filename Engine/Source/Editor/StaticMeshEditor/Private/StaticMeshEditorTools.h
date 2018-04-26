@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -17,7 +17,7 @@
 #include "Widgets/Input/SSpinBox.h"
 #include "IDetailCustomNodeBuilder.h"
 
-class FAssetData;
+struct FAssetData;
 class FAssetThumbnailPool;
 class FDetailWidgetRow;
 class FLevelOfDetailSettingsLayout;
@@ -92,13 +92,22 @@ private:
 	FReply OnDefaults();
 
 	/** Assigns the accuracy of hulls based on the spinbox's value. */
-	void OnHullAccuracyCommitted(float InNewValue, ETextCommit::Type CommitInfo);
+	void OnHullCountCommitted(uint32 InNewValue, ETextCommit::Type CommitInfo);
 
 	/** Assigns the accuracy of hulls based on the spinbox's value. */
-	void OnHullAccuracyChanged(float InNewValue);
+	void OnHullCountChanged(uint32 InNewValue);
+
+	/** Retrieves the precision of hulls created. */
+	uint32 GetHullPrecision() const;
+
+	/** Assigns the precision of hulls based on the spinbox's value. */
+	void OnHullPrecisionCommitted(uint32 InNewValue, ETextCommit::Type CommitInfo);
+
+	/** Assigns the precision of hulls based on the spinbox's value. */
+	void OnHullPrecisionChanged(uint32 InNewValue);
 
 	/** Retrieves the accuracy of hulls created. */
-	float GetHullAccuracy() const;
+	uint32 GetHullCount() const;
 
 	/** Assigns the max number of hulls based on the spinbox's value. */
 	void OnVertsPerHullCountCommitted(int32 InNewValue, ETextCommit::Type CommitInfo);
@@ -118,10 +127,16 @@ private:
 	TWeakPtr<IStaticMeshEditor> StaticMeshEditorPtr;
 
 	/** Spinbox for the max number of hulls allowed. */
-	TSharedPtr< SSpinBox<float> > HullAccuracy;
+	TSharedPtr< SSpinBox<uint32> > HullCount;
+
+	/** Spinbox for the convex decomposition precision allowed. */
+	TSharedPtr< SSpinBox<uint32> > HullPrecision;
 
 	/** The current number of max number of hulls selected. */
-	float CurrentHullAccuracy;
+	uint32 CurrentHullCount;
+
+	/** The current precision level for convex decomposition */
+	uint32 CurrentHullPrecision;
 
 	/** Spinbox for the max number of verts per hulls allowed. */
 	TSharedPtr< SSpinBox<int32> > MaxVertsPerHull;
@@ -252,14 +267,18 @@ private:
 class FMeshSectionSettingsLayout : public TSharedFromThis<FMeshSectionSettingsLayout>
 {
 public:
-	FMeshSectionSettingsLayout( IStaticMeshEditor& InStaticMeshEditor, int32 InLODIndex )
+	FMeshSectionSettingsLayout( IStaticMeshEditor& InStaticMeshEditor, int32 InLODIndex, TArray<class IDetailCategoryBuilder*> &InLodCategories, bool *InCustomLODEditModePtr)
 		: StaticMeshEditor( InStaticMeshEditor )
 		, LODIndex( InLODIndex )
+		, LodCategoriesPtr(&InLodCategories)
+		, CustomLODEditModePtr(InCustomLODEditModePtr)
 	{}
 
 	virtual ~FMeshSectionSettingsLayout();
 
 	void AddToCategory( IDetailCategoryBuilder& CategoryBuilder );
+
+	void SetCurrentLOD(int32 NewLodIndex);
 
 private:
 	
@@ -319,9 +338,13 @@ private:
 	void OnSectionIsolatedChanged(ECheckBoxState NewState, int32 SectionIndex);
 
 	void CallPostEditChange(UProperty* PropertyChanged=nullptr);
-	
+	void UpdateLODCategoryVisibility();
+
 	IStaticMeshEditor& StaticMeshEditor;
 	int32 LODIndex;
+
+	TArray<class IDetailCategoryBuilder*> *LodCategoriesPtr;
+	bool *CustomLODEditModePtr;
 };
 
 struct FSectionLocalizer
@@ -376,7 +399,6 @@ private:
 	FText GetOriginalImportMaterialNameText(int32 MaterialIndex) const;
 	FText GetMaterialNameText(int32 MaterialIndex) const;
 	void OnMaterialNameCommitted(const FText& InValue, ETextCommit::Type CommitType, int32 MaterialIndex);
-	void OnMaterialNameChanged(const FText& InValue, int32 MaterialIndex);
 	bool CanDeleteMaterialSlot(int32 MaterialIndex) const;
 	void OnDeleteMaterialSlot(int32 MaterialIndex);
 	TSharedRef<SWidget> OnGetMaterialSlotUsedByMenuContent(int32 MaterialIndex);
@@ -442,6 +464,8 @@ private:
 	void OnLODCountCommitted(int32 InValue, ETextCommit::Type CommitInfo);
 	int32 GetLODCount() const;
 
+	void OnSelectedLODChanged(int32 NewLodIndex);
+
 	void OnMinLODChanged(int32 NewValue);
 	void OnMinLODCommitted(int32 InValue, ETextCommit::Type CommitInfo);
 	int32 GetMinLOD() const;
@@ -466,6 +490,18 @@ private:
 	void UpdateLODNames();
 	FText GetLODCountTooltip() const;
 	FText GetMinLODTooltip() const;
+
+	FText GetLODCustomModeNameContent(int32 LODIndex) const;
+	ECheckBoxState IsLODCustomModeCheck(int32 LODIndex) const;
+	void SetLODCustomModeCheck(ECheckBoxState NewState, int32 LODIndex);
+	bool IsLODCustomModeEnable(int32 LODIndex) const;
+
+	TSharedRef<SWidget> OnGenerateLodComboBoxForLodPicker();
+	EVisibility LodComboBoxVisibilityForLodPicker() const;
+	bool IsLodComboBoxEnabledForLodPicker() const;
+	TSharedRef<SWidget> OnGenerateLodMenuForLodPicker();
+	FText GetCurrentLodName() const;
+	FText GetCurrentLodTooltip() const;
 
 private:
 
@@ -503,4 +539,10 @@ private:
 	bool bBuildSettingsExpanded[MAX_STATIC_MESH_LODS];
 	bool bReductionSettingsExpanded[MAX_STATIC_MESH_LODS];
 	bool bSectionSettingsExpanded[MAX_STATIC_MESH_LODS];
+
+	TArray<class IDetailCategoryBuilder*> LodCategories;
+	IDetailCategoryBuilder* LodCustomCategory;
+
+	bool CustomLODEditMode;
+	bool DetailDisplayLODs[MAX_STATIC_MESH_LODS];
 };

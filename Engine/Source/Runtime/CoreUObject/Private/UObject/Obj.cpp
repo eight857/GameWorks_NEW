@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	UnObj.cpp: Unreal object manager.
@@ -28,7 +28,7 @@
 #include "UObject/MetaData.h"
 #include "Templates/Casts.h"
 #include "UObject/LazyObjectPtr.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPtr.h"
 #include "UObject/PropertyPortFlags.h"
 #include "UObject/UnrealType.h"
 #include "UObject/ObjectRedirector.h"
@@ -50,6 +50,7 @@
 #include "Misc/ExclusiveLoadPackageTimeTracker.h"
 #include "Serialization/DeferredMessageLog.h"
 #include "UObject/CoreRedirects.h"
+#include "HAL/LowLevelMemTracker.h"
 
 DEFINE_LOG_CATEGORY(LogObj);
 
@@ -496,19 +497,14 @@ void UObject::PropagatePostEditChange( TArray<UObject*>& AffectedObjects, FPrope
 		}
 	}
 
+	check(PropertyChangedEvent.PropertyChain.GetActiveMemberNode() != nullptr);
+
 	for ( int32 i = 0; i < Instances.Num(); i++ )
 	{
 		UObject* Obj = Instances[i];
 
-		// check for and set up the active member node
-		FPropertyChangedEvent PropertyEvent(PropertyChangedEvent.PropertyChain.GetActiveNode()->GetValue(), PropertyChangedEvent.ChangeType);
-		if ( PropertyChangedEvent.PropertyChain.GetActiveMemberNode() )
-		{
-			PropertyEvent.SetActiveMemberProperty(PropertyChangedEvent.PropertyChain.GetActiveMemberNode()->GetValue());
-		}
-
 		// notify the object that all changes are complete
-		Obj->PostEditChangeProperty(PropertyEvent);
+		Obj->PostEditChangeChainProperty(PropertyChangedEvent);
 
 		// now recurse into this object, loading its instances
 		Obj->PropagatePostEditChange(AffectedObjects, PropertyChangedEvent);
@@ -533,6 +529,12 @@ void UObject::PostEditUndo(TSharedPtr<ITransactionObjectAnnotation> TransactionA
 	UObject::PostEditUndo();
 }
 
+
+bool UObject::IsSelectedInEditor() const
+{
+	return !IsPendingKill() && GSelectedObjectAnnotation.Get(this);
+}
+
 #endif // WITH_EDITOR
 
 
@@ -550,6 +552,7 @@ struct FClassExclusionData
 	{
 		FName OriginalClassName = InClass->GetFName();
 
+		FScopeLock ScopeLock(&ExclusionListCrit);
 		if (CachedExcludeList.Contains(OriginalClassName))
 		{
 			return true;
@@ -589,6 +592,8 @@ struct FClassExclusionData
 
 	void UpdateExclusionList(const TArray<FString>& InClassNames, const TArray<FString>& InPackageShortNames)
 	{
+		FScopeLock ScopeLock(&ExclusionListCrit);
+
 		ExcludedClassNames.Empty(InClassNames.Num());
 		ExcludedPackageShortNames.Empty(InPackageShortNames.Num());
 		CachedIncludeList.Empty();
@@ -604,6 +609,9 @@ struct FClassExclusionData
 			ExcludedPackageShortNames.Add(FName(*PkgName));
 		}
 	}
+
+private:
+	FCriticalSection ExclusionListCrit;
 };
 
 FClassExclusionData GDedicatedServerExclusionList;
@@ -755,22 +763,43 @@ FString UObject::GetDetailedInfo() const
 }
 
 #if WITH_ENGINE
+
+#if DO_CHECK
+// Used to check to see if a derived class actually implemented GetWorld() or not, but only on the game thread
 bool bGetWorldOverridden = false;
+#endif
 
 class UWorld* UObject::GetWorld() const
 {
-	bGetWorldOverridden = false;
-	return NULL;
+	if (UObject* Outer = GetOuter())
+	{
+		return Outer->GetWorld();
+	}
+
+#if DO_CHECK
+	if (IsInGameThread())
+	{
+		bGetWorldOverridden = false;
+	}
+#endif
+	return nullptr;
 }
 
 class UWorld* UObject::GetWorldChecked(bool& bSupported) const
 {
-	bGetWorldOverridden = true;
+#if DO_CHECK
+	const bool bGameThread = IsInGameThread();
+	if (bGameThread)
+	{
+		bGetWorldOverridden = true;
+	}
+#endif
+
 	UWorld* World = GetWorld();
 
-	if (!bGetWorldOverridden)
-	{
 #if DO_CHECK
+	if (bGameThread && !bGetWorldOverridden)
+	{
 		static TSet<UClass*> ReportedClasses;
 
 		UClass* UnsupportedClass = GetClass();
@@ -784,23 +813,33 @@ class UWorld* UObject::GetWorldChecked(bool& bSupported) const
 				ParentHierarchy += FString::Printf(TEXT(", %s"), *SuperClass->GetName());
 			}
 
-			ensureMsgf(false, TEXT("Unsupported context object of class %s (SuperClass(es) - %s). You must add a way to retrieve a UWorld context for this class."), *UnsupportedClass->GetName(), *ParentHierarchy);
+			ensureAlwaysMsgf(false, TEXT("Unsupported context object of class %s (SuperClass(es) - %s). You must add a way to retrieve a UWorld context for this class."), *UnsupportedClass->GetName(), *ParentHierarchy);
 
 			ReportedClasses.Add(UnsupportedClass);
 		}
-#endif
 	}
 
-	bSupported = bGetWorldOverridden;
+	bSupported = bGameThread ? bGetWorldOverridden : (World != nullptr);
+	check(World && bSupported);
+#else
+	bSupported = World != nullptr;
+#endif
+
 	return World;
 }
 
 bool UObject::ImplementsGetWorld() const
 {
+#if DO_CHECK
+	check(IsInGameThread());
 	bGetWorldOverridden = true;
 	GetWorld();
 	return bGetWorldOverridden;
+#else
+	return true;
+#endif	
 }
+
 #endif
 
 #define PROFILE_ConditionalBeginDestroy (0)
@@ -857,14 +896,14 @@ bool UObject::ConditionalBeginDestroy()
 		TotalTime += ThisTime;
 		if ((++TotalCnt) % 1000 == 0)
 		{
-			UE_LOG(LogTemp, Log, TEXT("ConditionalBeginDestroy %d cnt %fus"), TotalCnt, 1000.0f * 1000.0f * TotalTime / float(TotalCnt));
+			UE_LOG(LogObj, Log, TEXT("ConditionalBeginDestroy %d cnt %fus"), TotalCnt, 1000.0f * 1000.0f * TotalTime / float(TotalCnt));
 
 			MyProfile.ValueSort(TLess<FTimeCnt>());
 
 			int32 NumPrint = 0;
 			for (auto& Item : MyProfile)
 			{
-				UE_LOG(LogTemp, Log, TEXT("    %6d cnt %6.2fus per   %6.2fms total  %s"), Item.Value.Count, 1000.0f * 1000.0f * Item.Value.TotalTime / float(Item.Value.Count), 1000.0f * Item.Value.TotalTime, *Item.Key.ToString());
+				UE_LOG(LogObj, Log, TEXT("    %6d cnt %6.2fus per   %6.2fms total  %s"), Item.Value.Count, 1000.0f * 1000.0f * Item.Value.TotalTime / float(Item.Value.Count), 1000.0f * Item.Value.TotalTime, *Item.Key.ToString());
 				if (NumPrint++ > 30)
 				{
 					break;
@@ -949,7 +988,12 @@ void UObject::ConditionalPostLoad()
 			}
 			else
 			{
+				LLM_SCOPED_TAG_WITH_OBJECT_IN_SET(GetOutermost(), ELLMTagSet::Assets);
+				LLM_SCOPED_TAG_WITH_OBJECT_IN_SET(GetClass()->IsChildOf(UDynamicClass::StaticClass()) ? UDynamicClass::StaticClass() : GetClass(), ELLMTagSet::AssetClasses);
+
 				PostLoad();
+
+				LLM_PUSH_STATS_FOR_ASSET_TAGS();
 			}
 		}
 
@@ -1049,7 +1093,7 @@ void UObject::PreSave(const class ITargetPlatform* TargetPlatform)
 
 bool UObject::CanModify() const
 {
-	return (!HasAnyFlags(RF_NeedInitialization) && !IsGarbageCollecting());
+	return (!HasAnyFlags(RF_NeedInitialization) && !IsGarbageCollecting() && !GExitPurge && !IsUnreachable());
 }
 
 bool UObject::Modify( bool bAlwaysMarkDirty/*=true*/ )
@@ -1084,7 +1128,11 @@ bool UObject::Modify( bool bAlwaysMarkDirty/*=true*/ )
 
 bool UObject::IsSelected() const
 {
-	return !IsPendingKill() && GSelectedAnnotation.Get(this);
+#if WITH_EDITOR
+	return IsSelectedInEditor();
+#else
+	return false;
+#endif
 }
 
 void UObject::GetPreloadDependencies(TArray<UObject*>& OutDeps)
@@ -1197,7 +1245,7 @@ void UObject::Serialize( FArchive& Ar )
 	// Invalidate asset pointer caches when loading a new object
 	if (Ar.IsLoading() )
 	{
-		FStringAssetReference::InvalidateTag();
+		FSoftObjectPath::InvalidateTag();
 	}
 
 	// Memory counting (with proper alignment to match C++)
@@ -1297,7 +1345,7 @@ void UObject::BuildSubobjectMapping(UObject* OtherObject, TMap<UObject*, UObject
 }
 
 
-void UObject::CollectDefaultSubobjects( TArray<UObject*>& OutSubobjectArray, bool bIncludeNestedSubobjects/*=false*/ )
+void UObject::CollectDefaultSubobjects( TArray<UObject*>& OutSubobjectArray, bool bIncludeNestedSubobjects/*=false*/ ) const
 {
 	OutSubobjectArray.Empty();
 	GetObjectsWithOuter(this, OutSubobjectArray, bIncludeNestedSubobjects);
@@ -1327,7 +1375,7 @@ public:
 	 * @param InSubobjectArray	Array to add subobject references to
 	 * @param	InObject	Referencing object.
 	 */
-	FSubobjectReferenceFinder(TArray<const UObject*>& InSubobjectArray, UObject* InObject)
+	FSubobjectReferenceFinder(TArray<const UObject*>& InSubobjectArray, const UObject* InObject)
 		:	ObjectArray(InSubobjectArray)
 		, ReferencingObject(InObject)
 	{
@@ -1342,10 +1390,12 @@ public:
 	{
 		if( !ReferencingObject->GetClass()->IsChildOf(UClass::StaticClass()) )
 		{
-			FSimpleObjectReferenceCollectorArchive CollectorArchive( ReferencingObject, *this );
-			ReferencingObject->SerializeScriptProperties( CollectorArchive );
+			FVerySlowReferenceCollectorArchiveScope CollectorScope(GetVerySlowReferenceCollectorArchive(), ReferencingObject);
+			ReferencingObject->SerializeScriptProperties(CollectorScope.GetArchive());
 		}
-		ReferencingObject->CallAddReferencedObjects(*this);
+		// CallAddReferencedObjects doesn't modify the object with FSubobjectReferenceFinder passed in as parameter but may modify when called by GC
+		UObject* MutableReferencingObject = const_cast<UObject*>(ReferencingObject);
+		MutableReferencingObject->CallAddReferencedObjects(*this);
 	}
 
 	// Begin FReferenceCollector interface.
@@ -1371,7 +1421,7 @@ protected:
 	/** Stored reference to array of objects we add object references to. */
 	TArray<const UObject*>&	ObjectArray;
 	/** Object to check the references of. */
-	UObject* ReferencingObject;
+	const UObject* ReferencingObject;
 };
 
 
@@ -1383,11 +1433,11 @@ DEFINE_LOG_CATEGORY_STATIC(LogCheckSubobjects, Fatal, All);
 	if (!(Pred)) \
 	{ \
 		Result = false; \
-		FPlatformMisc::DebugBreak(); \
+		UE_DEBUG_BREAK(); \
 		UE_LOG(LogCheckSubobjects, Log, TEXT("CompCheck %s failed."), TEXT(#Pred)); \
 	} 
 
-bool UObject::CanCheckDefaultSubObjects(bool bForceCheck, bool& bResult)
+bool UObject::CanCheckDefaultSubObjects(bool bForceCheck, bool& bResult) const
 {
 	bool bCanCheck = true;
 	bResult = true;
@@ -1406,7 +1456,7 @@ bool UObject::CanCheckDefaultSubObjects(bool bForceCheck, bool& bResult)
 	return bCanCheck;
 }
 
-bool UObject::CheckDefaultSubobjects(bool bForceCheck /*= false*/)
+bool UObject::CheckDefaultSubobjects(bool bForceCheck /*= false*/) const
 {
 	bool Result = true;
 	if (CanCheckDefaultSubObjects(bForceCheck, Result))
@@ -1416,7 +1466,7 @@ bool UObject::CheckDefaultSubobjects(bool bForceCheck /*= false*/)
 	return Result;
 }
 
-bool UObject::CheckDefaultSubobjectsInternal()
+bool UObject::CheckDefaultSubobjectsInternal() const
 {
 	bool Result = true;	
 
@@ -1558,9 +1608,10 @@ void UObject::FAssetRegistryTag::GetAssetRegistryTagsFromSearchableProperties(co
 				// enums are alphabetical
 				TagType = FAssetRegistryTag::TT_Alphabetical;
 			}
-			else if ( Class->IsChildOf(UArrayProperty::StaticClass()) )
+			else if (Class->IsChildOf(UArrayProperty::StaticClass()) || Class->IsChildOf(UMapProperty::StaticClass()) || Class->IsChildOf(USetProperty::StaticClass())
+				|| Class->IsChildOf(UStructProperty::StaticClass()) || Class->IsChildOf(UObjectPropertyBase::StaticClass()))
 			{
-				// arrays are hidden, it is often too much information to display and sort
+				// Arrays/maps/sets/structs/objects are hidden, it is often too much information to display and sort
 				TagType = FAssetRegistryTag::TT_Hidden;
 			}
 			else
@@ -1600,13 +1651,6 @@ const FName FPrimaryAssetId::PrimaryAssetNameTag(TEXT("PrimaryAssetName"));
 
 void UObject::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const
 {
-	// Add ResourceSize if non-zero. GetResourceSize is not const because many override implementations end up calling Serialize on this pointers.
-	const SIZE_T ResourceSize = const_cast<UObject*>(this)->GetResourceSizeBytes(EResourceSizeMode::Exclusive);
-	if ( ResourceSize > 0 || ( !GetClass()->HasAnyClassFlags(CLASS_CompiledFromBlueprint) && HasAnyFlags(RF_ClassDefaultObject) ) )
-	{
-		OutTags.Add( FAssetRegistryTag("ResourceSize", FString::Printf(TEXT("%d"), (ResourceSize + 512) / 1024), FAssetRegistryTag::TT_Numerical) );
-	}
-
 	// Add primary asset info if valid
 	FPrimaryAssetId PrimaryAssetId = GetPrimaryAssetId();
 	if (PrimaryAssetId.IsValid())
@@ -1627,19 +1671,42 @@ const FName& UObject::SourceFileTagName()
 #if WITH_EDITOR
 void UObject::GetAssetRegistryTagMetadata(TMap<FName, FAssetRegistryTagMetadata>& OutMetadata) const
 {
-	OutMetadata.Add("ResourceSize",
+	OutMetadata.Add(FPrimaryAssetId::PrimaryAssetTypeTag,
 		FAssetRegistryTagMetadata()
-			.SetDisplayName(NSLOCTEXT("UObject", "Size", "Size"))
-			.SetSuffix(NSLOCTEXT("UObject", "KilobytesSuffix", "Kb"))
-			.SetTooltip(NSLOCTEXT("UObject", "SizeTooltip", "The size of the asset in kilobytes"))
-		);
+		.SetDisplayName(NSLOCTEXT("UObject", "PrimaryAssetType", "Primary Asset Type"))
+		.SetTooltip(NSLOCTEXT("UObject", "PrimaryAssetTypeTooltip", "Type registered with the Asset Manager system"))
+	);
+
+	OutMetadata.Add(FPrimaryAssetId::PrimaryAssetNameTag,
+		FAssetRegistryTagMetadata()
+		.SetDisplayName(NSLOCTEXT("UObject", "PrimaryAssetName", "Primary Asset Name"))
+		.SetTooltip(NSLOCTEXT("UObject", "PrimaryAssetNameTooltip", "Logical name registered with the Asset Manager system"))
+	);
 }
 #endif
+
+void UObject::GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize)
+{
+	if (CumulativeResourceSize.GetResourceSizeMode() == EResourceSizeMode::EstimatedTotal)
+	{
+		// Include this object's serialize size, and recursively call on direct subobjects
+		FArchiveCountMem MemoryCount(this);
+		CumulativeResourceSize.AddDedicatedSystemMemoryBytes(MemoryCount.GetMax());
+
+		TArray<UObject*> SubObjects;
+		GetObjectsWithOuter(this, SubObjects, false);
+
+		for (UObject* SubObject : SubObjects)
+		{
+			SubObject->GetResourceSizeEx(CumulativeResourceSize);
+		}
+	}
+}
 
 bool UObject::IsAsset() const
 {
 	// Assets are not transient or CDOs. They must be public.
-	const bool bHasValidObjectFlags = !HasAnyFlags(RF_Transient | RF_ClassDefaultObject) && HasAnyFlags(RF_Public);
+	const bool bHasValidObjectFlags = !HasAnyFlags(RF_Transient | RF_ClassDefaultObject) && HasAnyFlags(RF_Public) && !IsPendingKill();
 
 	if ( bHasValidObjectFlags )
 	{
@@ -1656,7 +1723,10 @@ bool UObject::IsAsset() const
 
 FPrimaryAssetId UObject::GetPrimaryAssetId() const
 {
-	if (FCoreUObjectDelegates::GetPrimaryAssetIdForObject.IsBound() && IsAsset())
+	// Check if we are an asset or a blueprint CDO
+	if (FCoreUObjectDelegates::GetPrimaryAssetIdForObject.IsBound() &&
+		(IsAsset() || (HasAnyFlags(RF_ClassDefaultObject) && !GetClass()->HasAnyClassFlags(CLASS_Native)))
+		)
 	{
 		// Call global callback if bound
 		return FCoreUObjectDelegates::GetPrimaryAssetIdForObject.Execute(this);
@@ -1966,7 +2036,7 @@ void UObject::LoadConfig( UClass* ConfigClass/*=NULL*/, const TCHAR* InFilename/
 
 #if WITH_EDITOR
 		static FName ConsoleVariableFName(TEXT("ConsoleVariable"));
-		FString CVarName = Property->GetMetaData(ConsoleVariableFName);
+		const FString& CVarName = Property->GetMetaData(ConsoleVariableFName);
 		if (!CVarName.IsEmpty())
 		{
 			Key = CVarName;
@@ -2163,7 +2233,7 @@ void UObject::SaveConfig( uint64 Flags, const TCHAR* InFilename, FConfigCacheIni
 
 #if WITH_EDITOR
 			static FName ConsoleVariableFName(TEXT("ConsoleVariable"));
-			FString CVarName = Property->GetMetaData(ConsoleVariableFName);
+			const FString& CVarName = Property->GetMetaData(ConsoleVariableFName);
 			if (!CVarName.IsEmpty())
 			{
 				Key = CVarName;
@@ -2222,14 +2292,14 @@ void UObject::SaveConfig( uint64 Flags, const TCHAR* InFilename, FConfigCacheIni
 				TCHAR TempKey[MAX_SPRINTF]=TEXT("");
 				for( int32 Index=0; Index<Property->ArrayDim; Index++ )
 				{
+					if( Property->ArrayDim!=1 )
+					{
+						FCString::Sprintf( TempKey, TEXT("%s[%i]"), *Property->GetName(), Index );
+						Key = TempKey;
+					}
+
 					if ( !bShouldCheckIfIdenticalBeforeAdding || !Property->Identical_InContainer(this, SuperClassDefaultObject, Index) )
 					{
-						if( Property->ArrayDim!=1 )
-						{
-							FCString::Sprintf( TempKey, TEXT("%s[%i]"), *Property->GetName(), Index );
-							Key = TempKey;
-						}
-
 						FString	Value;
 						Property->ExportText_InContainer( Index, Value, this, this, this, PortFlags );
 						Config->SetString( *Section, *Key, *Value, *PropFileName );
@@ -2352,7 +2422,7 @@ void UObject::UpdateSinglePropertyInConfigFile(const UProperty* InProperty, cons
 		
 #if WITH_EDITOR
 		static FName ConsoleVariableFName(TEXT("ConsoleVariable"));
-		FString CVarName = InProperty->GetMetaData(ConsoleVariableFName);
+		const FString& CVarName = InProperty->GetMetaData(ConsoleVariableFName);
 		if (!CVarName.IsEmpty())
 		{
 			PropertyKey = CVarName;
@@ -2887,7 +2957,7 @@ TArray<const TCHAR*> ParsePropertyFlags(uint64 Flags)
 {
 	TArray<const TCHAR*> Results;
 
-	const TCHAR* PropertyFlags[] =
+	static const TCHAR* PropertyFlags[] =
 	{
 		TEXT("CPF_Edit"),
 		TEXT("CPF_ConstParm"),
@@ -2939,6 +3009,12 @@ TArray<const TCHAR*> ParsePropertyFlags(uint64 Flags)
 		TEXT("CPF_NonPIEDuplicateTransient"),
 		TEXT("CPF_ExposeOnSpawn"),
 		TEXT("CPF_PersistentInstance"),
+		TEXT("CPF_UObjectWrapper"),
+		TEXT("CPF_HasGetValueTypeHash"),
+		TEXT("CPF_NativeAccessSpecifierPublic"),
+		TEXT("CPF_NativeAccessSpecifierProtected"),
+		TEXT("CPF_NativeAccessSpecifierPrivate"),
+		TEXT("CPF_SkipSerialization"),
 	};
 
 	for (const TCHAR* FlagName : PropertyFlags)
@@ -3083,19 +3159,19 @@ bool StaticExec( UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar )
 					if (bResult)
 					{
 						FString ExtraInfo;
-						if (UStructProperty* StructProperty = dynamic_cast<UStructProperty*>(It->GetClass()))
+						if (UStructProperty* StructProperty = dynamic_cast<UStructProperty*>(*It))
 						{
 							ExtraInfo = *StructProperty->Struct->GetName();
 						}
-						else if (UClassProperty* ClassProperty = dynamic_cast<UClassProperty*>(It->GetClass()))
+						else if (UClassProperty* ClassProperty = dynamic_cast<UClassProperty*>(*It))
 						{
-							ExtraInfo = FString::Printf(TEXT("class<%s>"), *ClassProperty->MetaClass->GetName());
+							ExtraInfo = FString::Printf(TEXT("SubclassOf<%s>"), *ClassProperty->MetaClass->GetName());
 						}
-						else if (UAssetClassProperty* AssetClassProperty = dynamic_cast<UAssetClassProperty*>(It->GetClass()))
+						else if (USoftClassProperty* SoftClassProperty = dynamic_cast<USoftClassProperty*>(*It))
 						{
-							ExtraInfo = FString::Printf(TEXT("AssetSubclassOf<%s>"), *AssetClassProperty->MetaClass->GetName());
+							ExtraInfo = FString::Printf(TEXT("SoftClassPtr<%s>"), *SoftClassProperty->MetaClass->GetName());
 						}
-						else if (UObjectPropertyBase* ObjectPropertyBase = dynamic_cast<UObjectPropertyBase*>(It->GetClass()))
+						else if (UObjectPropertyBase* ObjectPropertyBase = dynamic_cast<UObjectPropertyBase*>(*It))
 						{
 							ExtraInfo = *ObjectPropertyBase->PropertyClass->GetName();
 						}
@@ -3303,7 +3379,7 @@ bool StaticExec( UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar )
 
 			if (Class != NULL)
 			{
-				Ar.Logf(TEXT("Listing functions introduced in class %s (class flags = %d)"), ClassName, Class->GetClassFlags());
+				Ar.Logf(TEXT("Listing functions introduced in class %s (class flags = 0x%08X)"), ClassName, (uint32)Class->GetClassFlags());
 				for (TFieldIterator<UFunction> It(Class); It; ++It)
 				{
 					UFunction* Function = *It;
@@ -3690,7 +3766,7 @@ bool StaticExec( UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar )
 								FArchiveCountMem Count(Object);
 
 								// Get the 'old-style' resource size and the truer resource size
-								const SIZE_T ResourceSize = It->GetResourceSizeBytes(EResourceSizeMode::Inclusive);
+								const SIZE_T ResourceSize = It->GetResourceSizeBytes(EResourceSizeMode::EstimatedTotal);
 								const SIZE_T TrueResourceSize = It->GetResourceSizeBytes(EResourceSizeMode::Exclusive);
 								
 								if (bListClass)
@@ -4031,17 +4107,11 @@ void InitUObject()
 	
 
 
-#if WITH_EDITORONLY_DATA
-	const FString CommandLine = FCommandLine::Get();
-
-	// this is a hack to give fixup redirects insight into the startup packages
-	if (CommandLine.Contains(TEXT("fixupredirects")) )
-	{
-		FCoreUObjectDelegates::RedirectorFollowed.AddRaw(&GRedirectCollector, &FRedirectCollector::OnRedirectorFollowed);
-	}
-
+#if WITH_EDITOR
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	FCoreUObjectDelegates::StringAssetReferenceLoaded.BindRaw(&GRedirectCollector, &FRedirectCollector::OnStringAssetReferenceLoaded);
 	FCoreUObjectDelegates::StringAssetReferenceSaving.BindRaw(&GRedirectCollector, &FRedirectCollector::OnStringAssetReferenceSaved);
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #endif
 
 	// Object initialization.
@@ -4219,6 +4289,17 @@ void UObject::PreDestroyFromReplication()
 
 }
 
+#if WITH_EDITOR
+/*-----------------------------------------------------------------------------
+	Data Validation.
+-----------------------------------------------------------------------------*/
+
+EDataValidationResult UObject::IsDataValid(TArray<FText>& ValidationErrors)
+{
+	return EDataValidationResult::NotValidated;
+}
+
+#endif // WITH_EDITOR
 /** IsNameStableForNetworking means an object can be referred to its path name (relative to outer) over the network */
 bool UObject::IsNameStableForNetworking() const
 {

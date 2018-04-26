@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AutomatedApplication.h"
 #include "PassThroughMessageHandler.h"
@@ -355,9 +355,9 @@ public:
 		return RealApplication->GetWorkArea(CurrentWindow);
 	}
 
-	virtual bool TryCalculatePopupWindowPosition(const FPlatformRect& Anchor, const FVector2D& Size, const EPopUpOrientation::Type Orientation, FVector2D* const OutCalculatedPopUpPosition) const override
+	virtual bool TryCalculatePopupWindowPosition(const FPlatformRect& Anchor, const FVector2D& Size, const FVector2D& ProposedPlacement, const EPopUpOrientation::Type Orientation, FVector2D* const OutCalculatedPopUpPosition) const override
 	{
-		return RealApplication->TryCalculatePopupWindowPosition(Anchor, Size, Orientation, OutCalculatedPopUpPosition);
+		return RealApplication->TryCalculatePopupWindowPosition(Anchor, Size, ProposedPlacement, Orientation, OutCalculatedPopUpPosition);
 	}
 
 	virtual void GetInitialDisplayMetrics(FDisplayMetrics& OutDisplayMetrics) const override

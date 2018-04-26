@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -28,6 +28,7 @@ public class Persona : ModuleRules
                 "ContentBrowser",
                 "AssetTools",
                 "AnimationEditor",
+                "MeshReductionInterface"
             }
         );
 
@@ -36,6 +37,7 @@ public class Persona : ModuleRules
                 "AppFramework",
                 "Core", 
                 "CoreUObject", 
+				"ApplicationCore",
                 "Slate", 
                 "SlateCore",
                 "EditorStyle",
@@ -55,6 +57,10 @@ public class Persona : ModuleRules
                 "ClothingSystemRuntime",
                 "ClothingSystemEditorInterface",
                 "ClothingSystemRuntimeInterface",
+                "AnimGraphRuntime",
+                "UnrealEd",
+                "CommonMenuExtensions",
+                "PinnedCommandList",
             }
         );
 
@@ -67,6 +73,7 @@ public class Persona : ModuleRules
                 "SkeletonEditor",
                 "AssetTools",
                 "AnimationEditor",
+                "MeshReductionInterface"
             }
         );
     }

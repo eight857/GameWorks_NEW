@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -27,6 +27,7 @@ public class Kismet : ModuleRules
                 "AppFramework",
 				"Core",
 				"CoreUObject",
+				"ApplicationCore",
 				"Slate",
 				"SlateCore",
                 "EditorStyle",
@@ -52,10 +53,10 @@ public class Kismet : ModuleRules
 				"DesktopPlatform",
 				"HotReload",
                 "BlueprintNativeCodeGen",
-                "BlueprintProfiler",
                 "UMGEditor",
-                "UMG" // for SBlueprintDiff
-			}
+                "UMG", // for SBlueprintDiff
+                "WorkspaceMenuStructure"
+            }
 			);
 
         DynamicallyLoadedModuleNames.AddRange(

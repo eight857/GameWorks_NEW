@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
@@ -61,17 +61,14 @@ void UStructProperty::LinkInternal(FArchive& Ar)
 		GetLinker()->Preload(this);
 	}
 
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-	if (Struct == NULL)
+	if (Struct)
+	{
+		// Preload is required here in order to load the value of Struct->PropertiesSize
+		Ar.Preload(Struct);
+	}
+	else
 	{
 		UE_LOG(LogProperty, Error, TEXT("Struct type unknown for property '%s'; perhaps the USTRUCT() was renamed or deleted?"), *GetFullName());
-	}
-#endif
-
-	// Preload is required here in order to load the value of Struct->PropertiesSize
-	Ar.Preload(Struct);
-	if ( !ensure(Struct) )
-	{
 		Struct = GetFallbackStruct();
 	}
 	PreloadInnerStructMembers(this);

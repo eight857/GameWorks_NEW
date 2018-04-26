@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Property.cpp: UProperty implementation
@@ -15,7 +15,7 @@
 #include "UObject/UnrealType.h"
 #include "UObject/PropertyHelper.h"
 #include "UObject/CoreRedirects.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "Math/Box2D.h"
 
 DEFINE_LOG_CATEGORY(LogProperty);
@@ -250,6 +250,7 @@ struct TStructOpsTypeTraits<FDateTime> : public TStructOpsTypeTraitsBase2<FDateT
 		WithExportTextItem = true,
 		WithImportTextItem = true,
 		WithSerializer = true,
+		WithNetSerializer = true,
 		WithZeroConstructor = true,
 		WithIdenticalViaEquality = true,
 	};
@@ -263,7 +264,7 @@ struct TStructOpsTypeTraits<FTimespan> : public TStructOpsTypeTraitsBase2<FTimes
 	{
 		WithCopy = true,
 		WithExportTextItem = true,
-		WithImportTextItem = false, // @todo gmp: implement FTimespan::ImportTextItem
+		WithImportTextItem = true,
 		WithSerializer = true,
 		WithZeroConstructor = true,
 		WithIdenticalViaEquality = true,
@@ -271,9 +272,8 @@ struct TStructOpsTypeTraits<FTimespan> : public TStructOpsTypeTraitsBase2<FTimes
 };
 IMPLEMENT_STRUCT(Timespan);
 
-
 template<>
-struct TStructOpsTypeTraits<FStringAssetReference> : public TStructOpsTypeTraitsBase2<FStringAssetReference>
+struct TStructOpsTypeTraits<FSoftObjectPath> : public TStructOpsTypeTraitsBase2<FSoftObjectPath>
 {
 	enum
 	{
@@ -286,10 +286,10 @@ struct TStructOpsTypeTraits<FStringAssetReference> : public TStructOpsTypeTraits
 		WithSerializeFromMismatchedTag = true,
 	};
 };
-IMPLEMENT_STRUCT(StringAssetReference);
+IMPLEMENT_STRUCT(SoftObjectPath);
 
 template<>
-struct TStructOpsTypeTraits<FStringClassReference> : public TStructOpsTypeTraitsBase2<FStringClassReference>
+struct TStructOpsTypeTraits<FSoftClassPath> : public TStructOpsTypeTraitsBase2<FSoftClassPath>
 {
 	enum
 	{
@@ -302,7 +302,7 @@ struct TStructOpsTypeTraits<FStringClassReference> : public TStructOpsTypeTraits
 		WithSerializeFromMismatchedTag = true,
 	};
 };
-IMPLEMENT_STRUCT(StringClassReference);
+IMPLEMENT_STRUCT(SoftClassPath);
 
 template<>
 struct TStructOpsTypeTraits<FPrimaryAssetType> : public TStructOpsTypeTraitsBase2<FPrimaryAssetType>
@@ -493,9 +493,7 @@ bool UProperty::ValidateImportFlags( uint32 PortFlags, FOutputDevice* ErrorHandl
 	// we should not allow config/localized properties to be imported here
 	if ((PortFlags & PPF_RestrictImportTypes) && (PropertyFlags & CPF_Config))
 	{
-		FString PropertyType = (PropertyFlags & CPF_Config) ? TEXT("config") : TEXT("localized");
-
-		FString ErrorMsg = FString::Printf(TEXT("Import failed for '%s': property is %s (Check to see if the property is listed in the DefaultProperties.  It should only be listed in the specific .ini/.int file)"), *GetName(), *PropertyType);
+		FString ErrorMsg = FString::Printf(TEXT("Import failed for '%s': property is config (Check to see if the property is listed in the DefaultProperties.  It should only be listed in the specific .ini file)"), *GetName());
 
 		if (ErrorHandler)
 		{
@@ -1264,7 +1262,7 @@ const TCHAR* UProperty::ImportSingleProperty( const TCHAR* Str, void* DestData, 
 							Warn->Logf(ELogVerbosity::Warning, TEXT("%s"), *ImportErrors[ErrorIndex]);
 						}
 					}
-					else if ((Result == NULL && ArrayProperty == nullptr) || Result == Str)
+					else if (Result == Str)
 					{
 						Warn->Logf(ELogVerbosity::Warning, TEXT("Invalid property value in defaults: %s"), Start);
 					}
@@ -1298,7 +1296,7 @@ const TCHAR* UProperty::ImportSingleProperty( const TCHAR* Str, void* DestData, 
 					}
 					else if ((Result == NULL && ArrayProperty == nullptr) || Result == Str)
 					{
-						Warn->Logf(ELogVerbosity::Warning, TEXT("Invalid property value in defaults: %s"), Start);
+						UE_SUPPRESS(LogExec, Verbose, Warn->Logf(TEXT("Unknown property in %s: %s "), *ObjectStruct->GetName(), Start));
 					}
 					// in the failure case, don't return NULL so the caller can potentially skip less and get values further in the string
 					if (Result != NULL)

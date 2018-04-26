@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	CaptureSource.h: CaptureSource definition
@@ -25,7 +25,9 @@ typedef TCHAR* PTCHAR;
 #endif
 #include "WindowsHWrapper.h"
 #include "AllowWindowsPlatformTypes.h"
+THIRD_PARTY_INCLUDES_START
 #include <streams.h>
+THIRD_PARTY_INCLUDES_END
 #include "HideWindowsPlatformTypes.h"
 #pragma warning(pop)
 class FCapturePin;

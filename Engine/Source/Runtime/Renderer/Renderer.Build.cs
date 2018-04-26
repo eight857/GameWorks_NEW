@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -10,8 +10,8 @@ public class Renderer : ModuleRules
 			new string[] {
 				"Runtime/Renderer/Private",
 				"Runtime/Renderer/Private/CompositionLighting",
-				"Runtime/Renderer/Private/PostProcess",
-			}
+				"Runtime/Renderer/Private/PostProcess"
+            }
 		);
 
 		PublicDependencyModuleNames.Add("Core");
@@ -27,6 +27,7 @@ public class Renderer : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[] {
 				"CoreUObject", 
+				"ApplicationCore",
 				"RenderCore", 
 				"RHI", 
 				"ShaderCore",
@@ -34,7 +35,7 @@ public class Renderer : ModuleRules
 			}
             );
 
-        PrivateIncludePathModuleNames.AddRange(new string[] { "HeadMountedDisplay", "LightPropagationVolumeRuntime" });
+        PrivateIncludePathModuleNames.AddRange(new string[] { "HeadMountedDisplay" });
         DynamicallyLoadedModuleNames.AddRange(new string[] { "HeadMountedDisplay" });
 	}
 }

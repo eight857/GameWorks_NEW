@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,7 +8,6 @@
 class FUnrealSourceFile;
 class UPackage;
 class UProperty;
-class FUHTMakefile;
 class UFunction;
 class UStruct;
 class UField;
@@ -64,6 +63,18 @@ enum class EExportCallbackType
 	Class
 };
 
+struct FPropertyNamePointerPair
+{
+	FPropertyNamePointerPair(FString InName, UProperty* InProp)
+		: Name(MoveTemp(InName))
+		, Prop(InProp)
+	{
+	}
+
+	FString Name;
+	UProperty* Prop;
+};
+
 struct FNativeClassHeaderGenerator
 {
 private:
@@ -80,7 +91,7 @@ private:
 	const UPackage* Package;
 
 	/** Set of already exported cross-module references, to prevent duplicates */
-	TSet<FString> UniqueCrossModuleReferences;
+	TSet<FString>* UniqueCrossModuleReferences;
 
 	/** the existing disk version of the header for this package's names */
 	FString OriginalNamesHeader;
@@ -100,9 +111,6 @@ private:
 	/** Forward declarations that we need. */
 	TSet<FString> ForwardDeclarations;
 
-	/** Makefile to save parsing data to. */
-	FUHTMakefile& UHTMakefile;
-
 	/**
 	 * Exports the struct's C++ properties to the HeaderText output device and adds special
 	 * compiler directives for GCC to pack as we expect.
@@ -114,19 +122,30 @@ private:
 	static void ExportProperties(FOutputDevice& Out, UStruct* Struct, int32 TextIndent);
 
 	/** Return the name of the singleton function that returns the UObject for Item */
+	FString GetPackageSingletonName(const UPackage* Item);
+
+	/** Return the name of the singleton function that returns the UObject for Item */
 	FString GetSingletonName(UField* Item, bool bRequiresValidObject=true);
-	
-	/** 
+
+	/** Return the address of the singleton function - handles nullptr */
+	FString GetSingletonNameFuncAddr(UField* Item, bool bRequiresValidObject=true);
+
+	/**
 	 * Returns the name (overridden if marked up) with TEXT("") or "" wrappers for use in a string literal.
 	 */
 	static FString GetOverriddenNameForLiteral(const UField* Item);
 
-	/** 
+	/**
+	 * Returns the name (overridden if marked up) or "" wrappers for use in a string literal.
+	 */
+	static FString GetUTF8OverriddenNameForLiteral(const UField* Item);
+
+	/**
 	 * Export functions used to find and call C++ or script implementation of a script function in the interface 
 	 */
 	void ExportInterfaceCallFunctions(FOutputDevice& OutCpp, FUHTStringBuilder& Out, const TArray<UFunction*>& CallbackFunctions, const TCHAR* ClassName);
 
-	/** 
+	/**
 	 * Export UInterface boilerplate.
 	 *
 	 * @param UInterfaceBoilerplate Device to export to.
@@ -177,7 +196,7 @@ private:
 	 * @param	OutputGetter	The function to call to get the output.
 	 * @param	Enum			the enum to export
 	 */
-	void ExportGeneratedEnumInitCode(FOutputDevice& Out, FOutputDevice& OutDeclarations, const FUnrealSourceFile& SourceFile, UEnum* Enum);
+	void ExportGeneratedEnumInitCode(FOutputDevice& Out, const FUnrealSourceFile& SourceFile, UEnum* Enum);
 
 	/**
 	 * Exports the macro declarations for GENERATED_BODY() for each Foo in the struct specified
@@ -185,7 +204,7 @@ private:
 	 * @param	Out				output device
 	 * @param	Struct			The struct to export
 	 */
-	void ExportGeneratedStructBodyMacros(FOutputDevice& OutGeneratedHeaderText, FOutputDevice& Out, FOutputDevice& OutDeclarations, const FUnrealSourceFile& SourceFile, UScriptStruct* Struct);
+	void ExportGeneratedStructBodyMacros(FOutputDevice& OutGeneratedHeaderText, FOutputDevice& Out, const FUnrealSourceFile& SourceFile, UScriptStruct* Struct);
 
 	/**
 	 * Exports a local mirror of the specified struct; used to get offsets
@@ -211,7 +230,7 @@ private:
 	 * @param	SourceFile			Source file of the delegate.
 	 * @param	DelegateFunctions	the functions that have parameters which need to be exported
 	 */
-	void ExportDelegateDeclaration(FOutputDevice& Out, FOutputDevice& OutDeclarations, const FUnrealSourceFile& SourceFile, UFunction* Function);
+	void ExportDelegateDeclaration(FOutputDevice& Out, const FUnrealSourceFile& SourceFile, UFunction* Function);
 
 	/**
 	 * Exports C++ type definitions for delegates
@@ -242,7 +261,7 @@ private:
 	/**
 	 * Exports the generated cpp file for all functions/events/delegates in package.
 	 */
-	void ExportGeneratedCPP(FOutputDevice& Out, const TCHAR* EmptyLinkFunctionPostfix, const TCHAR* Declarations, const TCHAR* Body, const TCHAR* OtherIncludes);
+	static void ExportGeneratedCPP(FOutputDevice& Out, const TSet<FString>& InCrossModuleReferences, const TCHAR* EmptyLinkFunctionPostfix, const TCHAR* Body, const TCHAR* OtherIncludes);
 
 	/**
 	 * Get the intrinsic null value for this property
@@ -253,7 +272,7 @@ private:
 	 *
 	 * @return	the intrinsic null value for the property (0 for ints, TEXT("") for strings, etc.)
 	 */
-	static FString GetNullParameterValue( UProperty* Prop, bool bMacroContext, bool bInitializer = false );
+	static FString GetNullParameterValue( UProperty* Prop, bool bInitializer = false );
 
 	/**
 	 * Exports a native function prototype
@@ -302,9 +321,8 @@ private:
 	 * @param FunctionData function data for the current function
 	 * @param Parameters list of parameters in the function
 	 * @param Return return parameter for the function
-	 * @param DeprecationWarningOutputDevice Device to output deprecation warnings for _Validate and _Implementation functions.
 	 */
-	void ExportFunctionThunk(FUHTStringBuilder& RPCWrappers, UFunction* Function, const FFuncInfo& FunctionData, const TArray<UProperty*>& Parameters, UProperty* Return, FUHTStringBuilder& DeprecationWarningOutputDevice);
+	void ExportFunctionThunk(FUHTStringBuilder& RPCWrappers, UFunction* Function, const FFuncInfo& FunctionData, const TArray<UProperty*>& Parameters, UProperty* Return);
 
 	/** Exports the native function registration code for the given class. */
 	static void ExportNatives(FOutputDevice& Out, FClass* Class);
@@ -334,7 +352,7 @@ private:
 	 * @param	Out			The destination to write to.
 	 * @param	Package		Package to export code for.
 	**/
-	void ExportGeneratedPackageInitCode(FOutputDevice& Out, FUHTStringBuilder& OutDeclarations, const UPackage* Package, uint32 CRC);
+	void ExportGeneratedPackageInitCode(FOutputDevice& Out, const TCHAR* InDeclarations, const UPackage* Package, uint32 CRC);
 
 	/**
 	 * Function to output the C++ code necessary to set up the given array of properties
@@ -344,7 +362,7 @@ private:
 	 * @param	Properties		Array of properties to export
 	 * @param	Spaces			String of spaces to use as an indent
 	 */
-	void OutputProperties(FString& Meta, FOutputDevice& OutputDevice, const FString& OuterString, const TArray<UProperty*>& Properties, const TCHAR* Spaces);
+	void OutputProperties(FOutputDevice& OutputDevice, FString& OutPropertyRange, const TArray<UProperty*>& Properties, const TCHAR* Spaces);
 
 	/**
 	 * Function to output the C++ code necessary to set up a property
@@ -354,20 +372,19 @@ private:
 	 * @param	Prop			Property to export
 	 * @param	Spaces			String of spaces to use as an indent
 	**/
-	void OutputProperty(FString& Meta, FOutputDevice& OutputDevice, const FString& OuterString, UProperty* Prop, const TCHAR* Spaces);
+	void OutputProperty(FOutputDevice& OutputDevice, TArray<FPropertyNamePointerPair>& PropertyNamesAndPointers, UProperty* Prop, const TCHAR* Spaces);
 
 	/**
 	 * Function to output the C++ code necessary to set up a property, including an array property and its inner, array dimensions, etc.
-	 * 
-	 * @param	Meta			Returned string of meta data generator code
+	 *
+	 * @param	Out				The destination to write to.
 	 * @param	Prop			Property to export
-	 * @param	OuterString		String that specifies the outer to add the properties to
-	 * @param	PropMacro		String specifying the macro to call to get the property offset
+	 * @param	OffsetStr		String specifying the property offset
 	 * @param	Name			Name for the generated variable
 	 * @param	Spaces			String of spaces to use as an indent
 	 * @param	SourceStruct	Structure that the property offset is relative to
 	**/
-	FString PropertyNew(FString& Meta, UProperty* Prop, const FString& OuterString, const FString& PropMacro, const TCHAR* Name, const TCHAR* Spaces, const TCHAR* SourceStruct = NULL);
+	void PropertyNew(FOutputDevice& Out, UProperty* Prop, const TCHAR* OffsetStr, const TCHAR* Name, const TCHAR* Spaces, const TCHAR* SourceStruct = NULL);
 
 	/**
 	 * Exports the proxy definitions for the list of enums specified
@@ -381,7 +398,6 @@ private:
 		const TArray<UFunction*>& CallbackFunctions,
 		const TCHAR*              CallbackWrappersMacroName,
 		EExportCallbackType       ExportCallbackType,
-		const TCHAR*              API,
 		const TCHAR*              APIString
 	);
 
@@ -445,8 +461,7 @@ public:
 		const UPackage* InPackage,
 		const TArray<FUnrealSourceFile*>& SourceFiles,
 		FClasses& AllClasses,
-		bool InAllowSaveExportedHeaders,
-		FUHTMakefile& UHTMakefile
+		bool InAllowSaveExportedHeaders
 	);
 
 	/**

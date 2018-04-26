@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "DataTableEditor.h"
 #include "Dom/JsonObject.h"
@@ -20,6 +20,8 @@
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Views/SListView.h"
 #include "SRowEditor.h"
+#include "IDocumentation.h"
+#include "SToolTip.h"
  
 #define LOCTEXT_NAMESPACE "DataTableEditor"
 
@@ -69,9 +71,14 @@ void FDataTableEditor::RegisterTabSpawners(const TSharedRef<class FTabManager>& 
 {
 	WorkspaceMenuCategory = InTabManager->AddLocalWorkspaceMenuCategory(LOCTEXT("WorkspaceMenu_Data Table Editor", "Data Table Editor"));
 
-	InTabManager->RegisterTabSpawner( DataTableTabId, FOnSpawnTab::CreateSP(this, &FDataTableEditor::SpawnTab_DataTable) )
-		.SetDisplayName( LOCTEXT("DataTableTab", "Data Table") )
-		.SetGroup( WorkspaceMenuCategory.ToSharedRef() );
+	DataTableTabWidget = CreateContentBox();
+	RowEditorTabWidget = CreateRowEditorBox();
+
+	FAssetEditorToolkit::RegisterTabSpawners(InTabManager);
+
+	InTabManager->RegisterTabSpawner(DataTableTabId, FOnSpawnTab::CreateSP(this, &FDataTableEditor::SpawnTab_DataTable))
+		.SetDisplayName(LOCTEXT("DataTableTab", "Data Table"))
+		.SetGroup(WorkspaceMenuCategory.ToSharedRef());
 
 	InTabManager->RegisterTabSpawner(RowEditorTabId, FOnSpawnTab::CreateSP(this, &FDataTableEditor::SpawnTab_RowEditor))
 		.SetDisplayName(LOCTEXT("RowEditorTab", "Row Editor"))
@@ -80,8 +87,13 @@ void FDataTableEditor::RegisterTabSpawners(const TSharedRef<class FTabManager>& 
 
 void FDataTableEditor::UnregisterTabSpawners(const TSharedRef<class FTabManager>& InTabManager)
 {
-	InTabManager->UnregisterTabSpawner( DataTableTabId );
+	FAssetEditorToolkit::UnregisterTabSpawners(InTabManager);
+
+	InTabManager->UnregisterTabSpawner(DataTableTabId);
 	InTabManager->UnregisterTabSpawner(RowEditorTabId);
+
+	DataTableTabWidget.Reset();
+	RowEditorTabWidget.Reset();
 }
 
 FDataTableEditor::FDataTableEditor()
@@ -132,6 +144,21 @@ void FDataTableEditor::PostChange(const class UUserDefinedStruct* Struct, FStruc
 	}
 }
 
+void FDataTableEditor::SelectionChange(const UDataTable* Changed, FName RowName)
+{
+	const UDataTable* Table = GetDataTable();
+	if (Changed == Table)
+	{
+		const bool bSelectionChanged = HighlightedRowName != RowName;
+		SetHighlightedRow(RowName);
+
+		if (bSelectionChanged)
+		{
+			CallbackOnRowHighlighted.ExecuteIfBound(HighlightedRowName);
+		}
+	}
+}
+
 void FDataTableEditor::PreChange(const UDataTable* Changed, FDataTableEditorUtils::EDataTableChangeInfo Info)
 {
 }
@@ -160,14 +187,21 @@ void FDataTableEditor::HandlePostChange()
 
 void FDataTableEditor::InitDataTableEditor( const EToolkitMode::Type Mode, const TSharedPtr< class IToolkitHost >& InitToolkitHost, UDataTable* Table )
 {
-	TSharedRef<FTabManager::FLayout> StandaloneDefaultLayout = FTabManager::NewLayout( "Standalone_DataTableEditor_Layout" )
+	TSharedRef<FTabManager::FLayout> StandaloneDefaultLayout = FTabManager::NewLayout( "Standalone_DataTableEditor_Layout_v2" )
 	->AddArea
 	(
 		FTabManager::NewPrimaryArea()->SetOrientation(Orient_Vertical)
 		->Split
 		(
 			FTabManager::NewStack()
-			->AddTab( DataTableTabId, ETabState::OpenedTab )
+			->SetSizeCoefficient(0.1f)
+			->SetHideTabWell(true)
+			->AddTab(GetToolbarTabId(), ETabState::OpenedTab)
+		)
+		->Split
+		(
+			FTabManager::NewStack()
+			->AddTab(DataTableTabId, ETabState::OpenedTab)
 		)
 		->Split
 		(
@@ -177,7 +211,7 @@ void FDataTableEditor::InitDataTableEditor( const EToolkitMode::Type Mode, const
 	);
 
 	const bool bCreateDefaultStandaloneMenu = true;
-	const bool bCreateDefaultToolbar = false;
+	const bool bCreateDefaultToolbar = true;
 	FAssetEditorToolkit::InitAssetEditor( Mode, InitToolkitHost, FDataTableEditorModule::DataTableEditorAppIdentifier, StandaloneDefaultLayout, bCreateDefaultStandaloneMenu, bCreateDefaultToolbar, Table );
 	
 	FDataTableEditorModule& DataTableEditorModule = FModuleManager::LoadModuleChecked<FDataTableEditorModule>( "DataTableEditor" );
@@ -309,7 +343,7 @@ void FDataTableEditor::LoadLayoutData()
 		return;
 	}
 
-	const FString LayoutDataFilename = FPaths::GameSavedDir() / TEXT("AssetData") / TEXT("DataTableEditorLayout") / Table->GetName() + TEXT(".json");
+	const FString LayoutDataFilename = FPaths::ProjectSavedDir() / TEXT("AssetData") / TEXT("DataTableEditorLayout") / Table->GetName() + TEXT(".json");
 
 	FString JsonText;
 	if (FFileHelper::LoadFileToString(JsonText, *LayoutDataFilename))
@@ -327,7 +361,7 @@ void FDataTableEditor::SaveLayoutData()
 		return;
 	}
 
-	const FString LayoutDataFilename = FPaths::GameSavedDir() / TEXT("AssetData") / TEXT("DataTableEditorLayout") / Table->GetName() + TEXT(".json");
+	const FString LayoutDataFilename = FPaths::ProjectSavedDir() / TEXT("AssetData") / TEXT("DataTableEditorLayout") / Table->GetName() + TEXT(".json");
 
 	FString JsonText;
 	TSharedRef< TJsonWriter< TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > JsonWriter = TJsonWriterFactory< TCHAR, TPrettyJsonPrintPolicy<TCHAR> >::Create(&JsonText);
@@ -495,6 +529,17 @@ void FDataTableEditor::RefreshCachedDataTable(const FName InCachedSelection, con
 				.DefaultLabel(ColumnData->DisplayName)
 				.ManualWidth(TAttribute<float>::Create(TAttribute<float>::FGetter::CreateSP(this, &FDataTableEditor::GetColumnWidth, ColumnIndex)))
 				.OnWidthChanged(this, &FDataTableEditor::OnColumnResized, ColumnIndex)
+				[
+					SNew(SBox)
+					.Padding(FMargin(0, 4, 0, 4))
+					.VAlign(VAlign_Fill)
+					.ToolTip(IDocumentation::Get()->CreateToolTip(FDataTableEditorUtils::GetRowTypeInfoTooltipText(ColumnData), nullptr, *FDataTableEditorUtils::VariableTypesTooltipDocLink, FDataTableEditorUtils::GetRowTypeTooltipDocExcerptName(ColumnData)))
+					[
+						SNew(STextBlock)
+						.Justification(ETextJustify::Center)
+						.Text(ColumnData->DisplayName)
+					]
+				]
 			);
 		}
 	}
@@ -705,7 +750,7 @@ TSharedRef<SDockTab> FDataTableEditor::SpawnTab_RowEditor(const FSpawnTabArgs& A
 			.HAlign(HAlign_Fill)
 			.BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder"))
 			[
-				CreateRowEditorBox()
+				RowEditorTabWidget.ToSharedRef()
 			]
 		];
 }
@@ -734,7 +779,7 @@ TSharedRef<SDockTab> FDataTableEditor::SpawnTab_DataTable( const FSpawnTabArgs& 
 			.Padding(2)
 			.BorderImage( FEditorStyle::GetBrush( "ToolPanel.GroupBorder" ) )
 			[
-				CreateContentBox()
+				DataTableTabWidget.ToSharedRef()
 			]
 		];
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Styling/SlateStyleRegistry.h"
 #include "Styling/ISlateStyle.h"
@@ -22,9 +22,12 @@ void FSlateStyleRegistry::RegisterSlateStyle( const ISlateStyle& InSlateStyle )
 
 	SlateStyleRepository.Add( SlateStyleName, &InSlateStyle );
 
-	if ( FSlateApplicationBase::IsInitialized() && FSlateApplicationBase::Get().GetRenderer().IsValid() )
+	if ( FSlateApplicationBase::IsInitialized() )
 	{
-		FSlateApplicationBase::Get().GetRenderer()->LoadStyleResources( InSlateStyle );
+		if (FSlateRenderer* Renderer = FSlateApplicationBase::Get().GetRenderer())
+		{
+			Renderer->LoadStyleResources(InSlateStyle);
+		}
 	}
 }
 

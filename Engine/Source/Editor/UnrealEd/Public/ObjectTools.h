@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ObjectTools.h: Object-related utilities
@@ -402,6 +402,11 @@ namespace ObjectTools
 
 	/** Converts all invalid object name characters to _ */
 	UNREALED_API FString SanitizeObjectName(const FString& InObjectName);
+	/** Converts all invalid object path characters to _ */
+	UNREALED_API FString SanitizeObjectPath(const FString& InObjectPath);
+	/** Converts all specified invalid characters to _ */
+	UNREALED_API FString SanitizeInvalidChars(const FString& InObjectName, const FString& InvalidChars);
+
 
 	/**
 	 * Populates two strings with all of the file types and extensions the provided factory supports.
@@ -446,6 +451,7 @@ namespace ObjectTools
 	 * @param	ExportPath						receives the value of the path the user chose for exporting.
 	 * @param	bUseProvidedExportPath			If true and out_ExportPath is specified, use the value in out_ExportPath as the export path w/o prompting for a directory when applicable
 	 */
+	DEPRECATED(4.17, "ObjectTools::ExportObjects is deprecated.  Use AssetTools::ExportObjects instead")
 	UNREALED_API void ExportObjects( const TArray<UObject*>& ObjectsToExport, bool bPromptIndividualFilenames, FString* ExportPath = NULL, bool bUseProvidedExportPath = false );
 
 
@@ -598,4 +604,10 @@ namespace ThumbnailTools
 	UNREALED_API bool ConditionallyLoadThumbnailsForObjects( const TArray< FName >& InObjectFullNames, FThumbnailMap& InOutThumbnails );
 	/** Standard thumbnail height setting used by generation */
 	const int32 DefaultThumbnailSize=256;
+
+	/** Returns true if the given asset has a custom thumbnail cached or on the disk. */
+	UNREALED_API bool AssetHasCustomThumbnail(const FString& InAssetDataFullName);
+	UNREALED_API bool AssetHasCustomThumbnail(const FString& InAssetDataFullName, FObjectThumbnail& OutThumbnail);
+	/** Returns true if the given asset has a custom thumbnail cached or on the disk and if the thumbnail was captured from a viewport. */
+	UNREALED_API bool AssetHasCustomCreatedThumbnail(const FString& InAssetDataFullName);
 }

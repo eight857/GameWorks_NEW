@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	DataChannel.cpp: Unreal datachannel implementation.
@@ -29,9 +29,9 @@ DEFINE_LOG_CATEGORY(LogNetFastTArray);
 DEFINE_LOG_CATEGORY(LogSecurity);
 DEFINE_LOG_CATEGORY_STATIC(LogNetPartialBunch, Warning, All);
 
-DECLARE_CYCLE_STAT(TEXT("ActorChan_ReceivedBunch"), Stat_ActorChanReceivedBunch, STATGROUP_Net);
 DECLARE_CYCLE_STAT(TEXT("ActorChan_CleanUp"), Stat_ActorChanCleanUp, STATGROUP_Net);
 DECLARE_CYCLE_STAT(TEXT("ActorChan_PostNetInit"), Stat_PostNetInit, STATGROUP_Net);
+DECLARE_CYCLE_STAT(TEXT("Channel ReceivedRawBunch"), Stat_ChannelReceivedRawBunch, STATGROUP_Net);
 
 extern FAutoConsoleVariable CVarDoReplicationContextString;
 
@@ -108,16 +108,21 @@ void UChannel::Close()
 		UE_LOG(LogNetDormancy, Verbose, TEXT("UChannel::Close: Sending CloseBunch. Dormant: %d, %s"), Dormant, *Describe());
 
 		// Send a close notify, and wait for ack.
-		FOutBunch CloseBunch( this, 1 );
+		PacketHandler* Handler = Connection->Handler.Get();
+
+		if ((Handler == nullptr || Handler->IsFullyInitialized()) && Connection->HasReceivedClientPacket())
+		{
+			FOutBunch CloseBunch( this, 1 );
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-		CloseBunch.DebugString = FString::Printf(TEXT("%.2f Close: %s"), Connection->Driver->Time, *Describe());
+			CloseBunch.DebugString = FString::Printf(TEXT("%.2f Close: %s"), Connection->Driver->Time, *Describe());
 #endif
-		check(!CloseBunch.IsError());
-		check(CloseBunch.bClose);
-		CloseBunch.bReliable = 1;
-		CloseBunch.bDormant = Dormant;
-		SendBunch( &CloseBunch, 0 );
+			check(!CloseBunch.IsError());
+			check(CloseBunch.bClose);
+			CloseBunch.bReliable = 1;
+			CloseBunch.bDormant = Dormant;
+			SendBunch( &CloseBunch, 0 );
+		}
 	}
 }
 
@@ -280,6 +285,7 @@ void UChannel::AssertInSequenced()
 
 bool UChannel::ReceivedSequencedBunch( FInBunch& Bunch )
 {
+	SCOPED_NAMED_EVENT(UChannel_ReceivedSequencedBunch, FColor::Green);
 	// Handle a regular bunch.
 	if ( !Closing )
 	{
@@ -312,6 +318,9 @@ bool UChannel::ReceivedSequencedBunch( FInBunch& Bunch )
 
 void UChannel::ReceivedRawBunch( FInBunch & Bunch, bool & bOutSkipAck )
 {
+	SCOPE_CYCLE_COUNTER(Stat_ChannelReceivedRawBunch);
+
+	SCOPED_NAMED_EVENT(UChannel_ReceivedRawBunch, FColor::Green);
 	// Immediately consume the NetGUID portion of this bunch, regardless if it is partial or reliable.
 	// NOTE - For replays, we do this even earlier, to try and load this as soon as possible, in case there is an issue creating the channel
 	// If a replay fails to create a channel, we want to salvage as much as possible
@@ -603,7 +612,9 @@ bool UChannel::ReceivedNextBunch( FInBunch & Bunch, bool & bOutSkipAck )
 		{
 			if ( ChType != CHTYPE_Voice )	// Voice channels can open from both side simultaneously, so ignore this logic until we resolve this
 			{
-				check( !OpenedLocally );					// If we opened the channel, we shouldn't be receiving bOpen commands from the other side
+				// If we opened the channel, we shouldn't be receiving bOpen commands from the other side
+				checkf(!OpenedLocally, TEXT("Received channel open command for channel that was already opened locally. %s"), *Describe());
+
 				check( OpenPacketId.First == INDEX_NONE );	// This should be the first and only assignment of the packet range (we should only receive one bOpen bunch)
 				check( OpenPacketId.Last == INDEX_NONE );	// This should be the first and only assignment of the packet range (we should only receive one bOpen bunch)
 			}
@@ -746,8 +757,14 @@ void UActorChannel::AppendMustBeMappedGuids( FOutBunch* Bunch )
 
 FPacketIdRange UChannel::SendBunch( FOutBunch* Bunch, bool Merge )
 {
+	if (!ensure(ChIndex != -1))
+	{
+		// Client "closing" but still processing bunches. Client->Server RPCs should avoid calling this, but perhaps more code needs to check this condition.
+		return FPacketIdRange(INDEX_NONE);
+	}
+
 	check(!Closing);
-	check(Connection->Channels[ChIndex]==this);
+	checkf(Connection->Channels[ChIndex]==this, TEXT("This: %s, Connection->Channels[ChIndex]: %s"), *Describe(), Connection->Channels[ChIndex] ? *Connection->Channels[ChIndex]->Describe() : TEXT("Null"));
 	check(!Bunch->IsError());
 	check( !Bunch->bHasPackageMapExports );
 
@@ -770,7 +787,8 @@ FPacketIdRange UChannel::SendBunch( FOutBunch* Bunch, bool Merge )
 	// Max bits will put in a partial bunch (byte aligned, we dont want to deal with partial bytes in the partial bunches)
 	const int64 MAX_PARTIAL_BUNCH_SIZE_BITS = MAX_SINGLE_BUNCH_SIZE_BYTES * 8;
 
-	TArray<FOutBunch *> OutgoingBunches;
+	static TArray<FOutBunch *> OutgoingBunches;
+	OutgoingBunches.Reset();
 
 	// Add any export bunches
 	AppendExportBunches( OutgoingBunches );
@@ -860,9 +878,9 @@ FPacketIdRange UChannel::SendBunch( FOutBunch* Bunch, bool Merge )
 	//-----------------------------------------------------
 	FPacketIdRange PacketIdRange;
 
-	bool bOverflowsReliable = (NumOutRec + OutgoingBunches.Num() >= RELIABLE_BUFFER + Bunch->bClose);
+	const bool bOverflowsReliable = (NumOutRec + OutgoingBunches.Num() >= RELIABLE_BUFFER + Bunch->bClose);
 
-	if (OutgoingBunches.Num() >= CVarNetPartialBunchReliableThreshold->GetInt() && CVarNetPartialBunchReliableThreshold->GetInt() > 0)
+	if (OutgoingBunches.Num() >= CVarNetPartialBunchReliableThreshold->GetInt() && CVarNetPartialBunchReliableThreshold->GetInt() > 0 && !Connection->InternalAck)
 	{
 		if (!bOverflowsReliable)
 		{
@@ -1064,13 +1082,6 @@ int32 UChannel::IsNetReady( bool Saturate )
 	return Connection->IsNetReady( Saturate );
 }
 
-
-bool UChannel::IsKnownChannelType( int32 Type )
-{
-	return Type>=0 && Type<CHTYPE_MAX && ChannelClasses[Type];
-}
-
-
 void UChannel::ReceivedNak( int32 NakPacketId )
 {
 	for( FOutBunch* Out=OutRec; Out; Out=Out->Next )
@@ -1095,9 +1106,6 @@ void UChannel::PrintReliableBunchBuffer()
 	UE_LOG(LogNetTraffic, Warning, TEXT("-------------------------\n"));
 #endif
 }
-
-
-UClass* UChannel::ChannelClasses[CHTYPE_MAX]={0,0,0,0,0,0,0,0};
 
 /*-----------------------------------------------------------------------------
 	UControlChannel implementation.
@@ -1125,6 +1133,7 @@ IMPLEMENT_CONTROL_CHANNEL_MESSAGE(BeaconWelcome);
 IMPLEMENT_CONTROL_CHANNEL_MESSAGE(BeaconJoin);
 IMPLEMENT_CONTROL_CHANNEL_MESSAGE(BeaconAssignGUID);
 IMPLEMENT_CONTROL_CHANNEL_MESSAGE(BeaconNetGUIDAck);
+IMPLEMENT_CONTROL_CHANNEL_MESSAGE(EncryptionAck);
 
 void UControlChannel::Init( UNetConnection* InConnection, int32 InChannelIndex, bool InOpenedLocally )
 {
@@ -1216,50 +1225,52 @@ void UControlChannel::ReceivedBunch( FInBunch& Bunch )
 		{
 			if (Connection->Driver->ServerConnection == NULL)
 			{
-				UE_LOG(LogNet, Log, TEXT("Server connection received: %s"), FNetControlMessageInfo::GetName(MessageType));
 				int32 ChannelIndex;
-				FNetControlMessage<NMT_ActorChannelFailure>::Receive(Bunch, ChannelIndex);
 
-				// Check if Channel index provided by client is valid and within range of channel on server
-				if (ChannelIndex >= 0 && ChannelIndex < ARRAY_COUNT(Connection->Channels))
+				if (FNetControlMessage<NMT_ActorChannelFailure>::Receive(Bunch, ChannelIndex))
 				{
-					// Get the actor channel that the client provided as having failed
-					UActorChannel* ActorChan = Cast<UActorChannel>(Connection->Channels[ChannelIndex]);
+					UE_LOG(LogNet, Log, TEXT("Server connection received: %s"), FNetControlMessageInfo::GetName(MessageType));
 
-					// The channel and the actor attached to the channel exists on the server
-					if (ActorChan != nullptr && ActorChan->Actor != nullptr)
+					// Check if Channel index provided by client is valid and within range of channel on server
+					if (ChannelIndex >= 0 && ChannelIndex < ARRAY_COUNT(Connection->Channels))
 					{
-						// The channel that failed is the player controller thus the connection is broken
-						if (ActorChan->Actor == Connection->PlayerController)
-						{
-							UE_LOG(LogNet, Warning, TEXT("UControlChannel::ReceivedBunch: NetConnection::Close() [%s] [%s] [%s] from failed to initialize the PlayerController channel. Closing connection."), 
-								Connection->Driver ? *Connection->Driver->NetDriverName.ToString() : TEXT("NULL"),
-								Connection->PlayerController ? *Connection->PlayerController->GetName() : TEXT("NoPC"),
-								Connection->OwningActor ? *Connection->OwningActor->GetName() : TEXT("No Owner"));
+						// Get the actor channel that the client provided as having failed
+						UActorChannel* ActorChan = Cast<UActorChannel>(Connection->Channels[ChannelIndex]);
 
-							Connection->Close();
-						}
-						// The client has a PlayerController connection, report the actor failure to PlayerController
-						else if (Connection->PlayerController != nullptr)
+						// The channel and the actor attached to the channel exists on the server
+						if (ActorChan != nullptr && ActorChan->Actor != nullptr)
 						{
-							Connection->PlayerController->NotifyActorChannelFailure(ActorChan);
-						}
-						// The PlayerController connection doesn't exist for the client
-						// but the client is reporting an actor channel failure that isn't the PlayerController
-						else
-						{
-							//UE_LOG(LogNet, Warning, TEXT("UControlChannel::RecievedBunch: PlayerController doesn't exist for the client, but the client is reporting an actor channel failure that isn't the PlayerController."));
+							// The channel that failed is the player controller thus the connection is broken
+							if (ActorChan->Actor == Connection->PlayerController)
+							{
+								UE_LOG(LogNet, Warning, TEXT("UControlChannel::ReceivedBunch: NetConnection::Close() [%s] [%s] [%s] from failed to initialize the PlayerController channel. Closing connection."),
+									Connection->Driver ? *Connection->Driver->NetDriverName.ToString() : TEXT("NULL"),
+									Connection->PlayerController ? *Connection->PlayerController->GetName() : TEXT("NoPC"),
+									Connection->OwningActor ? *Connection->OwningActor->GetName() : TEXT("No Owner"));
+
+								Connection->Close();
+							}
+							// The client has a PlayerController connection, report the actor failure to PlayerController
+							else if (Connection->PlayerController != nullptr)
+							{
+								Connection->PlayerController->NotifyActorChannelFailure(ActorChan);
+							}
+							// The PlayerController connection doesn't exist for the client
+							// but the client is reporting an actor channel failure that isn't the PlayerController
+							else
+							{
+								//UE_LOG(LogNet, Warning, TEXT("UControlChannel::RecievedBunch: PlayerController doesn't exist for the client, but the client is reporting an actor channel failure that isn't the PlayerController."));
+							}
 						}
 					}
+					// The client is sending an actor channel failure message with an invalid
+					// actor channel index
+					// @PotentialDOSAttackDetection
+					else
+					{
+						UE_LOG(LogNet, Warning, TEXT("UControlChannel::RecievedBunch: The client is sending an actor channel failure message with an invalid actor channel index."));
+					}
 				}
-				// The client is sending an actor channel failure message with an invalid
-				// actor channel index
-				// @PotentialDOSAttackDetection
-				else
-				{
-					UE_LOG(LogNet, Warning, TEXT("UControlChannel::RecievedBunch: The client is sending an actor channel failure message with an invalid actor channel index."));
-				}
-
 			}
 		}
 		else if (MessageType == NMT_GameSpecific)
@@ -1267,26 +1278,32 @@ void UControlChannel::ReceivedBunch( FInBunch& Bunch )
 			// the most common Notify handlers do not support subclasses by default and so we redirect the game specific messaging to the GameInstance instead
 			uint8 MessageByte;
 			FString MessageStr;
-			FNetControlMessage<NMT_GameSpecific>::Receive(Bunch, MessageByte, MessageStr);
-			if (Connection->Driver->World != NULL && Connection->Driver->World->GetGameInstance() != NULL)
+
+			if (FNetControlMessage<NMT_GameSpecific>::Receive(Bunch, MessageByte, MessageStr))
 			{
-				Connection->Driver->World->GetGameInstance()->HandleGameNetControlMessage(Connection, MessageByte, MessageStr);
-			}
-			else
-			{
-				FWorldContext* Context = GEngine->GetWorldContextFromPendingNetGameNetDriver(Connection->Driver);
-				if (Context != NULL && Context->OwningGameInstance != NULL)
+				if (Connection->Driver->World != NULL && Connection->Driver->World->GetGameInstance() != NULL)
 				{
-					Context->OwningGameInstance->HandleGameNetControlMessage(Connection, MessageByte, MessageStr);
+					Connection->Driver->World->GetGameInstance()->HandleGameNetControlMessage(Connection, MessageByte, MessageStr);
+				}
+				else
+				{
+					FWorldContext* Context = GEngine->GetWorldContextFromPendingNetGameNetDriver(Connection->Driver);
+					if (Context != NULL && Context->OwningGameInstance != NULL)
+					{
+						Context->OwningGameInstance->HandleGameNetControlMessage(Connection, MessageByte, MessageStr);
+					}
 				}
 			}
 		}
 		else if(MessageType == NMT_SecurityViolation)
 		{
 			FString DebugMessage;
-			FNetControlMessage<NMT_SecurityViolation>::Receive(Bunch, DebugMessage);
-			UE_SECURITY_LOG(Connection, ESecurityEvent::Closed, TEXT("%s"), *DebugMessage);
-			break;
+
+			if (FNetControlMessage<NMT_SecurityViolation>::Receive(Bunch, DebugMessage))
+			{
+				UE_SECURITY_LOG(Connection, ESecurityEvent::Closed, TEXT("%s"), *DebugMessage);
+				break;
+			}
 		}
 		else
 		{
@@ -1343,6 +1360,10 @@ void UControlChannel::ReceivedBunch( FInBunch& Bunch )
 					break;
 				case NMT_NetGUIDAssign:
 					FNetControlMessage<NMT_NetGUIDAssign>::Discard(Bunch);
+					break;
+				case NMT_EncryptionAck:
+					//FNetControlMessage<NMT_EncryptionAck>::Discard(Bunch);
+					break;
 				case NMT_BeaconWelcome:
 					//FNetControlMessage<NMT_BeaconWelcome>::Discard(Bunch);
 					break;
@@ -1606,7 +1627,7 @@ void UActorChannel::MoveMappedObjectToUnmapped( const UObject* Object )
 
 	// Find all replicators that are referencing this object, and make sure to mark the references as unmapped
 	// This is so when/if this object is instantiated again (using same network guid), we can re-establish the old references
-	FNetworkGUID NetGuid = Driver->GuidCache->NetGUIDLookup.FindRef( Object );
+	FNetworkGUID NetGuid = Driver->GuidCache->NetGUIDLookup.FindRef( MakeWeakObjectPtr( const_cast<UObject*>( Object ) ) );
 
 	if ( NetGuid.IsValid() )
 	{
@@ -1634,9 +1655,8 @@ void UActorChannel::DestroyActorAndComponents()
 	// Destroy any sub-objects we created
 	for ( int32 i = 0; i < CreateSubObjects.Num(); i++ )
 	{
-		if ( CreateSubObjects[i].IsValid() )
+		if ( UObject *SubObject = CreateSubObjects[i] )
 		{
-			UObject *SubObject = CreateSubObjects[i].Get();
 
 			// Unmap this object so we can remap it if it becomes relevant again in the future
 			MoveMappedObjectToUnmapped( SubObject );
@@ -1646,7 +1666,7 @@ void UActorChannel::DestroyActorAndComponents()
 				Connection->Driver->RepChangedPropertyTrackerMap.Remove( SubObject );
 			}
 
-			Actor->OnSubobjectDestroyFromReplication(SubObject);
+			Actor->OnSubobjectDestroyFromReplication(SubObject); //-V595
 			SubObject->PreDestroyFromReplication();
 			SubObject->MarkPendingKill();
 		}
@@ -1887,6 +1907,11 @@ void UActorChannel::SetChannelActor( AActor* InActor )
 	Connection->Driver->GetNetworkObjectList().ClearRecentlyDormantConnection(Actor, Connection, Connection->Driver->NetDriverName);
 }
 
+void UActorChannel::NotifyActorChannelOpen(AActor* InActor, FInBunch& InBunch)
+{
+	Actor->OnActorChannelOpen(InBunch, Connection);
+}
+
 void UActorChannel::SetChannelActorForDestroy( FActorDestructionInfo *DestructInfo )
 {
 	check(Connection->Channels[ChIndex]==this);
@@ -2017,8 +2042,6 @@ bool UActorChannel::ProcessQueuedBunches()
 
 void UActorChannel::ReceivedBunch( FInBunch & Bunch )
 {
-	SCOPE_CYCLE_COUNTER(Stat_ActorChanReceivedBunch);
-
 	check( !Closing );
 
 	if ( Broken || bTornOff )
@@ -2154,9 +2177,21 @@ void UActorChannel::ProcessBunch( FInBunch & Bunch )
 		if (NewChannelActor == NULL || NewChannelActor->IsPendingKill())
 		{
 			check( !bSpawnedNewActor );
-			UE_LOG(LogNet, Warning, TEXT("UActorChannel::ProcessBunch: SerializeNewActor failed to find/spawn actor. Actor: %s, Channel: %i"), NewChannelActor ? *NewChannelActor->GetFullName() : TEXT( "NULL" ), ChIndex);
+
+#if !UE_BUILD_SHIPPING
+			if (!bBlockChannelFailure)
+#endif
+			{
+				UE_LOG(LogNet, Warning, TEXT("UActorChannel::ProcessBunch: SerializeNewActor failed to find/spawn actor. Actor: %s, Channel: %i"), NewChannelActor ? *NewChannelActor->GetFullName() : TEXT( "NULL" ), ChIndex);
+			}
+
 			Broken = 1;
-			if ( !Connection->InternalAck )
+
+			if (!Connection->InternalAck
+#if !UE_BUILD_SHIPPING
+				&& !bBlockChannelFailure
+#endif
+				)
 			{
 				FNetControlMessage<NMT_ActorChannelFailure>::Send(Connection, ChIndex);
 			}
@@ -2166,7 +2201,7 @@ void UActorChannel::ProcessBunch( FInBunch & Bunch )
 		UE_LOG(LogNetTraffic, Log, TEXT("      Channel Actor %s:"), *NewChannelActor->GetFullName() );
 		SetChannelActor( NewChannelActor );
 
-		Actor->OnActorChannelOpen(Bunch, Connection);
+		NotifyActorChannelOpen(Actor, Bunch);
 
 		RepFlags.bNetInitial = true;
 
@@ -2277,10 +2312,7 @@ void UActorChannel::ProcessBunch( FInBunch & Bunch )
 
 	for (auto RepComp = ReplicationMap.CreateIterator(); RepComp; ++RepComp)
 	{
-		if ( RepComp.Key().IsValid() )
-		{
-			RepComp.Value()->PostReceivedBunch();
-		}
+		RepComp.Value()->PostReceivedBunch();
 	}
 
 	// After all properties have been initialized, call PostNetInit. This should call BeginPlay() so initialization can be done with proper starting values.
@@ -2328,7 +2360,7 @@ private:
 
 bool UActorChannel::ReplicateActor()
 {
-	SCOPE_CYCLE_COUNTER(STAT_NetReplicateActorsTime);
+	SCOPE_CYCLE_COUNTER(STAT_NetReplicateActorTime);
 
 	check(Actor);
 	check(!Closing);
@@ -2347,25 +2379,34 @@ bool UActorChannel::ReplicateActor()
 		UE_LOG(LogNet, Log, TEXT( "ReplicateActor: bPausedUntilReliableACK is ending now that reliables have been ACK'd. %s"), *Describe());
 	}
 
-
+	const TArray<FNetViewer>& NetViewers = ActorWorld->GetWorldSettings()->ReplicationViewers;
 	bool bIsNewlyReplicationPaused = false;
 	bool bIsNewlyReplicationUnpaused = false;
-	if (OpenPacketId.First != INDEX_NONE)
+	
+	if (OpenPacketId.First != INDEX_NONE && NetViewers.Num() > 0)
 	{
-		const TArray<FNetViewer>& NetViewers = ActorWorld->GetWorldSettings()->ReplicationViewers;
+		bool bNewPaused = true;
 
-		for (int32 viewerIdx = 0; viewerIdx < NetViewers.Num(); viewerIdx++)
+		for (const FNetViewer& NetViewer : NetViewers)
 		{
-			bool bIsReplicationPausedForConnection = Actor->IsReplicationPausedForConnection(NetViewers[viewerIdx]);
-			bool bOldIsReplicationPaused = IsReplicationPaused();
-			bIsNewlyReplicationPaused = bIsReplicationPausedForConnection && !bOldIsReplicationPaused;
-			bIsNewlyReplicationUnpaused = !bIsReplicationPausedForConnection && bOldIsReplicationPaused;
-			SetReplicationPaused(bIsReplicationPausedForConnection);
-			if (bIsReplicationPausedForConnection && bOldIsReplicationPaused)
+			if (!Actor->IsReplicationPausedForConnection(NetViewer))
 			{
-				return false;
+				bNewPaused = false;
+				break;
 			}
 		}
+
+		const bool bOldPaused = IsReplicationPaused();
+
+		// We were paused and still are, don't do anything.
+		if (bOldPaused && bNewPaused)
+		{
+			return false;
+		}
+
+		bIsNewlyReplicationUnpaused = bOldPaused && !bNewPaused;
+		bIsNewlyReplicationPaused = !bOldPaused && bNewPaused;
+		SetReplicationPaused(bNewPaused);
 	}
 
 	// The package map shouldn't have any carry over guids
@@ -2375,7 +2416,7 @@ bool UActorChannel::ReplicateActor()
 	}
 
 	// Time how long it takes to replicate this particular actor
-	STAT( FScopeCycleCounterUObject FunctionScope(Actor) );
+	SCOPE_CYCLE_UOBJECT(Actor, Actor);
 
 	bool WroteSomethingImportant = bIsNewlyReplicationUnpaused || bIsNewlyReplicationPaused;
 
@@ -2462,7 +2503,7 @@ bool UActorChannel::ReplicateActor()
 	RepFlags.bNetSimulated	= ( Actor->GetRemoteRole() == ROLE_SimulatedProxy );
 	RepFlags.bRepPhysics	= Actor->ReplicatedMovement.bRepPhysics;
 	RepFlags.bReplay		= ActorWorld && (ActorWorld->DemoNetDriver == Connection->GetDriver());
-	RepFlags.bNetInitial	= RepFlags.bNetInitial;
+	//RepFlags.bNetInitial	= RepFlags.bNetInitial;
 
 	UE_LOG(LogNetTraffic, Log, TEXT("Replicate %s, bNetInitial: %d, bNetOwner: %d"), *Actor->GetName(), RepFlags.bNetInitial, RepFlags.bNetOwner );
 
@@ -2630,13 +2671,8 @@ void UActorChannel::BecomeDormant()
 
 bool UActorChannel::ReadyForDormancy(bool suppressLogs)
 {
-	for ( auto MapIt = ReplicationMap.CreateIterator(); MapIt; ++MapIt )
+	for (auto MapIt = ReplicationMap.CreateIterator(); MapIt; ++MapIt)
 	{
-		if ( !MapIt.Key().IsValid() )
-		{
-			continue;
-		}
-
 		if (!MapIt.Value()->ReadyForDormancy(suppressLogs))
 		{
 			return false;
@@ -2962,7 +2998,7 @@ UObject* UActorChannel::ReadContentBlockHeader( FInBunch & Bunch, bool& bObjectD
 		Connection->Driver->GuidCache->RegisterNetGUID_Client( NetGUID, SubObj );
 
 		// Track which sub-object guids we are creating
-		CreateSubObjects.AddUnique( SubObj );
+		CreateSubObjects.Add( SubObj );
 
 		// Add this sub-object to the ImportedNetGuids list so we can possibly map this object if needed
 		Connection->Driver->GuidCache->ImportedNetGuids.Add( NetGUID );
@@ -3227,13 +3263,14 @@ FNetFieldExportGroup* UActorChannel::GetNetFieldExportGroupForClassNetCache( con
 
 FObjectReplicator & UActorChannel::GetActorReplicationData()
 {
-	return ReplicationMap.FindChecked(Actor).Get();
+	check(ActorReplicator != nullptr);
+	return *ActorReplicator;
 }
 
-TSharedRef< FObjectReplicator > & UActorChannel::FindOrCreateReplicator( UObject* Obj )
+TSharedRef< FObjectReplicator > & UActorChannel::FindOrCreateReplicator( const TWeakObjectPtr<UObject>& Obj )
 {
 	// First, try to find it on the channel replication map
-	TSharedRef<FObjectReplicator> * ReplicatorRefPtr = ReplicationMap.Find( Obj );
+	TSharedRef<FObjectReplicator>* ReplicatorRefPtr = ReplicationMap.Find( Obj );
 
 	if ( ReplicatorRefPtr == NULL )
 	{
@@ -3247,7 +3284,7 @@ TSharedRef< FObjectReplicator > & UActorChannel::FindOrCreateReplicator( UObject
 			// Still didn't find one, need to create
 			UE_LOG( LogNetTraffic, Log, TEXT( "Creating Replicator for %s" ), *Obj->GetName() );
 
-			NewReplicator = Connection->CreateReplicatorForNewActorChannel(Obj);
+			NewReplicator = Connection->CreateReplicatorForNewActorChannel(Obj.Get());
 		}
 		else
 		{
@@ -3270,7 +3307,7 @@ TSharedRef< FObjectReplicator > & UActorChannel::FindOrCreateReplicator( UObject
 	return *ReplicatorRefPtr;
 }
 
-bool UActorChannel::ObjectHasReplicator(UObject *Obj)
+bool UActorChannel::ObjectHasReplicator(const TWeakObjectPtr<UObject>& Obj)
 {
 	return ReplicationMap.Contains(Obj);
 }
@@ -3298,7 +3335,10 @@ bool UActorChannel::ReplicateSubobject(UObject *Obj, FOutBunch &Bunch, const FRe
 	}
 
 	bool NewSubobject = false;
-	if (!ObjectHasReplicator(Obj))
+
+	TWeakObjectPtr<UObject> WeakObj(Obj);
+
+	if (!ObjectHasReplicator(WeakObj))
 	{
 		// This is the first time replicating this subobject
 		// This bunch should be reliable and we should always return true
@@ -3308,7 +3348,7 @@ bool UActorChannel::ReplicateSubobject(UObject *Obj, FOutBunch &Bunch, const FRe
 		Bunch.bReliable = true;
 		NewSubobject = true;
 	}
-	bool WroteSomething = FindOrCreateReplicator(Obj).Get().ReplicateProperties(Bunch, RepFlags);
+	bool WroteSomething = FindOrCreateReplicator(WeakObj).Get().ReplicateProperties(Bunch, RepFlags);
 	if (NewSubobject && !WroteSomething)
 	{
 		// Write empty payload to force object creation

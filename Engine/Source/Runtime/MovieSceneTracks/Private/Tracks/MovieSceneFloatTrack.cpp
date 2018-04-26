@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tracks/MovieSceneFloatTrack.h"
 #include "MovieSceneCommonHelpers.h"
@@ -8,7 +8,9 @@
 
 UMovieSceneFloatTrack::UMovieSceneFloatTrack( const FObjectInitializer& ObjectInitializer )
 	: Super( ObjectInitializer )
-{ }
+{
+	SupportedBlendTypes = FMovieSceneBlendTypeField::All();
+}
 
 
 UMovieSceneSection* UMovieSceneFloatTrack::CreateNewSection()

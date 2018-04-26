@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/CoreDelegates.h"
@@ -231,7 +231,7 @@ void AActor::DebugShowOneComponentHierarchy( USceneComponent* SceneComp, int32& 
 	FString PosString;
 	if( bShowPosition )
 	{
-		FVector Posn = SceneComp->ComponentToWorld.GetLocation();
+		FVector Posn = SceneComp->GetComponentTransform().GetLocation();
 		//PosString = FString::Printf( TEXT("{R:%f,%f,%f- W:%f,%f,%f}"), SceneComp->RelativeLocation.X, SceneComp->RelativeLocation.Y, SceneComp->RelativeLocation.Z, Posn.X, Posn.Y, Posn.Z );
 		PosString = FString::Printf( TEXT("{R:%f- W:%f}"), SceneComp->RelativeLocation.Z, Posn.Z );
 	}
@@ -252,7 +252,7 @@ void AActor::DebugShowOneComponentHierarchy( USceneComponent* SceneComp, int32& 
 	{
 		if( bShowPosition )
 		{
-			FVector Posn = SceneComp->ComponentToWorld.GetLocation();
+			FVector Posn = SceneComp->GetComponentTransform().GetLocation();
 			//PosString = FString::Printf( TEXT("{R:%f,%f,%f- W:%f,%f,%f}"), SceneComp->RelativeLocation.X, SceneComp->RelativeLocation.Y, SceneComp->RelativeLocation.Z, Posn.X, Posn.Y, Posn.Z );
 			PosString = FString::Printf( TEXT("{R:%f- W:%f}"), SceneComp->RelativeLocation.Z, Posn.Z );
 		}
@@ -287,8 +287,9 @@ AActor::FActorTransactionAnnotation::FActorTransactionAnnotation(const AActor* A
 	if (bCacheRootComponentData && ActorRootComponent && ActorRootComponent->IsCreatedByConstructionScript())
 	{
 		bRootComponentDataCached = true;
-		RootComponentData.Transform = ActorRootComponent->ComponentToWorld;
+		RootComponentData.Transform = ActorRootComponent->GetComponentTransform();
 		RootComponentData.Transform.SetTranslation(ActorRootComponent->GetComponentLocation()); // take into account any custom location
+		RootComponentData.TransformRotationCache = ActorRootComponent->GetRelativeRotationCache();
 
 		if (ActorRootComponent->GetAttachParent())
 		{
@@ -376,7 +377,7 @@ void AActor::PreEditUndo()
 	Super::PreEditUndo();
 }
 
-void AActor::PostEditUndo()
+bool AActor::InternalPostEditUndo()
 {
 	// Check if this Actor needs to be re-instanced
 	UClass* OldClass = GetClass();
@@ -389,52 +390,16 @@ void AActor::PostEditUndo()
 		};
 
 		// Early exit, letting anything more occur would be invalid due to the REINST_ class
-		return;
+		return false;
 	}
 
 	// Notify LevelBounds actor that level bounding box might be changed
 	if (!IsTemplate())
 	{
-		GetLevel()->MarkLevelBoundsDirty();
-	}
-
-	// Restore OwnedComponents array
-	if (!IsPendingKill())
-	{
-		ResetOwnedComponents();
-		// notify navigation system
-		UNavigationSystem::UpdateActorAndComponentsInNavOctree(*this);
-	}
-	else
-	{
-		UNavigationSystem::ClearNavOctreeAll(this);
-	}
-
-	Super::PostEditUndo();
-}
-
-void AActor::PostEditUndo(TSharedPtr<ITransactionObjectAnnotation> TransactionAnnotation)
-{
-	CurrentTransactionAnnotation = StaticCastSharedPtr<FActorTransactionAnnotation>(TransactionAnnotation);
-
-	// Check if this Actor needs to be re-instanced
-	UClass* OldClass = GetClass();
-	if (OldClass->HasAnyClassFlags(CLASS_NewerVersionExists))
-	{
-		UClass* NewClass = OldClass->GetAuthoritativeClass();
-		if (!ensure(NewClass != OldClass))
+		if (ULevel* Level = GetLevel())
 		{
-			UE_LOG(LogActor, Warning, TEXT("WARNING: %s is out of date and is the same as its AuthoritativeClass during PostEditUndo!"), *OldClass->GetName());
-		};
-
-		// Early exit, letting anything more occur would be invalid due to the REINST_ class
-		return;
-	}
-
-	// Notify LevelBounds actor that level bounding box might be changed
-	if (!IsTemplate())
-	{
-		GetLevel()->MarkLevelBoundsDirty();
+			Level->MarkLevelBoundsDirty();
+		}
 	}
 
 	// Restore OwnedComponents array
@@ -453,7 +418,26 @@ void AActor::PostEditUndo(TSharedPtr<ITransactionObjectAnnotation> TransactionAn
 		UNavigationSystem::ClearNavOctreeAll(this);
 	}
 
-	Super::PostEditUndo(TransactionAnnotation);
+	// This is a normal undo, so call super
+	return true;
+}
+
+void AActor::PostEditUndo()
+{
+	if (InternalPostEditUndo())
+	{
+		Super::PostEditUndo();
+	}
+}
+
+void AActor::PostEditUndo(TSharedPtr<ITransactionObjectAnnotation> TransactionAnnotation)
+{
+	CurrentTransactionAnnotation = StaticCastSharedPtr<FActorTransactionAnnotation>(TransactionAnnotation);
+
+	if (InternalPostEditUndo())
+	{
+		Super::PostEditUndo(TransactionAnnotation);
+	}
 }
 
 // @todo: Remove this hack once we have decided on the scaling method to use.
@@ -676,8 +660,7 @@ void AActor::SetActorLabelInternal( const FString& NewActorLabelDirty, bool bMak
 {
 	// Clean up the incoming string a bit
 	FString NewActorLabel = NewActorLabelDirty;
-	NewActorLabel.Trim();
-	NewActorLabel.TrimTrailing();
+	NewActorLabel.TrimStartAndEndInline();
 
 
 	// First, update the actor label
@@ -785,8 +768,8 @@ void AActor::CheckForDeprecated()
 			->AddToken(FTextToken::Create(FText::Format(LOCTEXT( "MapCheck_Message_ActorIsObselete_Deprecated", "{ActorName} : Obsolete and must be removed! (Class is deprecated)" ), Arguments) ))
 			->AddToken(FMapErrorToken::Create(FMapErrors::ActorIsObselete));
 	}
-
-	if ( GetClass()->HasAnyClassFlags(CLASS_Abstract) )
+	// don't check to see if this is an abstract class if this is the CDO
+	if ( !(GetFlags() & RF_ClassDefaultObject) && GetClass()->HasAnyClassFlags(CLASS_Abstract) )
 	{
 		FFormatNamedArguments Arguments;
 		Arguments.Add(TEXT("ActorName"), FText::FromString(GetName()));
@@ -799,24 +782,10 @@ void AActor::CheckForDeprecated()
 
 void AActor::CheckForErrors()
 {
-	if ( GetClass()->HasAnyClassFlags(CLASS_Deprecated) )
+	int32 OldNumWarnings = FMessageLog("MapCheck").NumMessages(EMessageSeverity::Warning);
+	CheckForDeprecated();
+	if (OldNumWarnings < FMessageLog("MapCheck").NumMessages(EMessageSeverity::Warning))
 	{
-		FFormatNamedArguments Arguments;
-		Arguments.Add(TEXT("ActorName"), FText::FromString(GetName()));
-		FMessageLog("MapCheck").Warning()
-			->AddToken(FUObjectToken::Create(this))
-			->AddToken(FTextToken::Create(FText::Format(LOCTEXT( "MapCheck_Message_ActorIsObselete_Deprecated", "{ActorName} : Obsolete and must be removed! (Class is deprecated)" ), Arguments) ))
-			->AddToken(FMapErrorToken::Create(FMapErrors::ActorIsObselete));
-		return;
-	}
-	if ( GetClass()->HasAnyClassFlags(CLASS_Abstract) )
-	{
-		FFormatNamedArguments Arguments;
-		Arguments.Add(TEXT("ActorName"), FText::FromString(GetName()));
-		FMessageLog("MapCheck").Warning()
-			->AddToken(FUObjectToken::Create(this))
-			->AddToken(FTextToken::Create(FText::Format(LOCTEXT( "MapCheck_Message_ActorIsObselete_Abstract", "{ActorName} : Obsolete and must be removed! (Class is abstract)" ), Arguments) ))
-			->AddToken(FMapErrorToken::Create(FMapErrors::ActorIsObselete));
 		return;
 	}
 
@@ -876,11 +845,30 @@ void AActor::SetLODParent(UPrimitiveComponent* InLODParent, float InParentDrawDi
 	TArray<UPrimitiveComponent*> ComponentsToBeReplaced;
 	GetComponents(ComponentsToBeReplaced);
 
-	for(auto& Component : ComponentsToBeReplaced)
+	for(UPrimitiveComponent* Component : ComponentsToBeReplaced)
 	{
 		// parent primitive will be null if no LOD parent is selected
 		Component->SetLODParentPrimitive(InLODParent);
 	}
+}
+
+EDataValidationResult AActor::IsDataValid(TArray<FText>& ValidationErrors)
+{
+	bool bSuccess = CheckDefaultSubobjectsInternal();
+
+	int32 OldNumMapWarningsAndErrors = FMessageLog("MapCheck").NumMessages(EMessageSeverity::Warning);
+	CheckForErrors();
+	int32 NewNumMapWarningsAndErrors = FMessageLog("MapCheck").NumMessages(EMessageSeverity::Warning);
+	if (NewNumMapWarningsAndErrors != OldNumMapWarningsAndErrors)
+	{
+		FFormatNamedArguments Arguments;
+		Arguments.Add(TEXT("ActorName"), FText::FromString(GetName()));
+		FText ErrorMsg = FText::Format(LOCTEXT("IsDataValid_Failed_CheckForErrors", "{ActorName} is not valid. See the MapCheck log messages for details."), Arguments);
+		ValidationErrors.Add(ErrorMsg);
+		bSuccess = false;
+	}
+
+	return bSuccess ? EDataValidationResult::Valid : EDataValidationResult::Invalid;
 }
 #undef LOCTEXT_NAMESPACE
 

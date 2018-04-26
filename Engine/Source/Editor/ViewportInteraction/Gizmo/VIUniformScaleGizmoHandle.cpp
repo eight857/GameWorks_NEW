@@ -1,30 +1,36 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VIUniformScaleGizmoHandle.h"
 #include "UObject/ConstructorHelpers.h"
-#include "Components/StaticMeshComponent.h"
+#include "VIGizmoHandleMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "VIBaseTransformGizmo.h"
 #include "ViewportWorldInteraction.h"
+#include "ViewportInteractionDragOperations.h"
+#include "ViewportInteractionAssetContainer.h"
 
 UUniformScaleGizmoHandleGroup::UUniformScaleGizmoHandleGroup()
 	: Super(),
 	bUsePivotAsLocation( true )
 {
-	// Setup uniform scaling
-	UStaticMesh* UniformScaleMesh = nullptr;
+	if (HasAnyFlags(RF_ClassDefaultObject))
 	{
-		static ConstructorHelpers::FObjectFinder<UStaticMesh> ObjectFinder( TEXT( "/Engine/VREditor/TransformGizmo/UniformScaleHandle" ) );
-		UniformScaleMesh = ObjectFinder.Object;
-		check( UniformScaleMesh != nullptr );
+		return;
 	}
 
-	UStaticMeshComponent* UniformScaleHandle = CreateMeshHandle( UniformScaleMesh, FString( "UniformScaleHandle" ) );
+	// Setup uniform scaling
+	const UViewportInteractionAssetContainer& AssetContainer = UViewportWorldInteraction::LoadAssetContainer(); 
+	UStaticMesh* UniformScaleMesh = AssetContainer.UniformScaleHandleMesh;
+	check( UniformScaleMesh != nullptr );
+
+	UGizmoHandleMeshComponent* UniformScaleHandle = CreateMeshHandle( UniformScaleMesh, FString( "UniformScaleHandle" ) );
 	check( UniformScaleHandle != nullptr );
 
 	FGizmoHandle& NewHandle = *new( Handles ) FGizmoHandle();
 	NewHandle.HandleMesh = UniformScaleHandle;
+
+	DragOperationComponent->SetDragOperationClass(UUniformScaleDragOperation::StaticClass());
 }
 
 void UUniformScaleGizmoHandleGroup::UpdateGizmoHandleGroup( const FTransform& LocalToWorld, const FBox& LocalBounds, const FVector ViewLocation, const bool bAllHandlesVisible, class UActorComponent* DraggingHandle, const TArray< UActorComponent* >& HoveringOverHandles, 
@@ -88,11 +94,6 @@ void UUniformScaleGizmoHandleGroup::UpdateGizmoHandleGroup( const FTransform& Lo
 			}
 		}
 	}
-}
-
-ETransformGizmoInteractionType UUniformScaleGizmoHandleGroup::GetInteractionType() const
-{
-	return ETransformGizmoInteractionType::UniformScale;
 }
 
 EGizmoHandleTypes UUniformScaleGizmoHandleGroup::GetHandleType() const

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "GameFramework/DefaultPawn.h"
@@ -203,7 +203,3 @@ UPawnMovementComponent* ADefaultPawn::GetMovementComponent() const
 	return MovementComponent;
 }
 
-/** Returns CollisionComponent subobject **/
-USphereComponent* ADefaultPawn::GetCollisionComponent() const { return CollisionComponent; }
-/** Returns MeshComponent subobject **/
-UStaticMeshComponent* ADefaultPawn::GetMeshComponent() const { return MeshComponent; }

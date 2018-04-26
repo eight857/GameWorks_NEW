@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ParticleModules_Color.cpp: 
@@ -79,8 +79,10 @@ void UParticleModuleColor::CompileModule( FParticleEmitterBuildInfo& EmitterInfo
 	FVector InitialColor;
 	float InitialAlpha;
 
-	InitialColor = StartColor.GetValue();
-	InitialAlpha = StartAlpha.GetValue();
+	// Use a self-contained random number stream for compiling the module, so it doesn't differ between cooks.
+	FRandomStream RandomStream(GetTypeHash(GetName()));
+	InitialColor = StartColor.GetValue(0.0f, nullptr, 0, &RandomStream);
+	InitialAlpha = StartAlpha.GetValue(0.0f, nullptr, &RandomStream);
 
 	EmitterInfo.ColorScale.InitializeWithConstant( InitialColor );
 	EmitterInfo.AlphaScale.InitializeWithConstant( InitialAlpha );

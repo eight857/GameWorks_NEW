@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -25,9 +25,6 @@ public:
 	/** Default constructor that sets up CDO properties */
 	AVREditorTeleporter();
 
-	/** Deconstructor */
-	virtual ~AVREditorTeleporter();
-
 	/** Initializes the teleporter */
 	void Init(class UVREditorMode* InMode);
 
@@ -36,6 +33,9 @@ public:
 
 	/** Whether we are currently aiming to teleport. */
 	bool IsAiming() const;
+
+	bool IsTeleporting() const;
+
 
 private:
 

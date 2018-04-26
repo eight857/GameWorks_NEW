@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SceneOutlinerModule.h"
 #include "Modules/ModuleManager.h"
@@ -10,6 +10,7 @@
 #include "SceneOutlinerActorInfoColumn.h"
 #include "SceneOutlinerGutter.h"
 #include "SceneOutlinerItemLabelColumn.h"
+#include "SceneOutlinerPublicTypes.h"
 
 /* FSceneOutlinerModule interface
  *****************************************************************************/
@@ -33,9 +34,9 @@ namespace SceneOutliner
 
 void FSceneOutlinerModule::StartupModule()
 {
-	RegisterColumnType< SceneOutliner::FSceneOutlinerGutter >();
-	RegisterColumnType< SceneOutliner::FItemLabelColumn >();
-	RegisterColumnType< SceneOutliner::FActorInfoColumn >();
+	RegisterDefaultColumnType< SceneOutliner::FSceneOutlinerGutter >(SceneOutliner::FDefaultColumnInfo(SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 0), ESceneOutlinerMode::ActorBrowsing));
+	RegisterDefaultColumnType< SceneOutliner::FItemLabelColumn >(SceneOutliner::FDefaultColumnInfo(SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 10)));
+	RegisterDefaultColumnType< SceneOutliner::FActorInfoColumn >(SceneOutliner::FDefaultColumnInfo(SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 20)));
 }
 
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	DiagnosticTable.h: Diagnostic table implementation
@@ -111,7 +111,7 @@ public:
 	/** Creates the viewer with a uniquely named temporary file. */
 	static FString GetUniqueTemporaryFilePath(const TCHAR* BaseName)
 	{
-		return FString::Printf(TEXT("%sLogs/%s-%s.csv"), *FPaths::GameDir(), BaseName, *FDateTime::Now().ToString());
+		return FString::Printf(TEXT("%sLogs/%s-%s.csv"), *FPaths::ProjectDir(), BaseName, *FDateTime::Now().ToString());
 	}
 
 	/** Initialization constructor. */

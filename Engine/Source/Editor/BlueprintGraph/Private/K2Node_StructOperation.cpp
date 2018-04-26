@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "K2Node_StructOperation.h"
 #include "Engine/UserDefinedStruct.h"
@@ -14,6 +14,13 @@ UK2Node_StructOperation::UK2Node_StructOperation(const FObjectInitializer& Objec
 	: Super(ObjectInitializer)
 {
 }
+
+void UK2Node_StructOperation::ValidateNodeDuringCompilation(class FCompilerResultsLog& MessageLog) const
+{
+	// Skip UK2Node_Variable's validation because it doesn't need a property (see CL# 1756451)
+	Super::Super::ValidateNodeDuringCompilation(MessageLog);
+}
+
 bool UK2Node_StructOperation::HasExternalDependencies(TArray<class UStruct*>* OptionalOutput) const
 {
 	const bool bResult = nullptr != StructType;
@@ -32,10 +39,10 @@ void UK2Node_StructOperation::FStructOperationOptionalPinManager::CustomizePinDa
 
 	if (Pin && Property)
 	{
-		const auto UDStructure = Cast<const UUserDefinedStruct>(Property->GetOwnerStruct());
+		const UUserDefinedStruct* UDStructure = Cast<const UUserDefinedStruct>(Property->GetOwnerStruct());
 		if (UDStructure)
 		{
-			const auto VarDesc = FStructureEditorUtils::GetVarDesc(UDStructure).FindByPredicate(
+			const FStructVariableDescription* VarDesc = FStructureEditorUtils::GetVarDesc(UDStructure).FindByPredicate(
 				FStructureEditorUtils::FFindByNameHelper<FStructVariableDescription>(Property->GetFName()));
 			if (VarDesc)
 			{
@@ -45,47 +52,48 @@ void UK2Node_StructOperation::FStructOperationOptionalPinManager::CustomizePinDa
 	}
 }
 
-bool UK2Node_StructOperation::DoRenamedPinsMatch(const UEdGraphPin* NewPin, const UEdGraphPin* OldPin, bool bStructInVaraiablesOut)
+bool UK2Node_StructOperation::DoRenamedPinsMatch(const UEdGraphPin* NewPin, const UEdGraphPin* OldPin, bool bStructInVariablesOut) const
 {
-	bool bResult = false;
 	if (NewPin && OldPin && (OldPin->Direction == NewPin->Direction))
 	{
-		const EEdGraphPinDirection StructDirection = bStructInVaraiablesOut ? EGPD_Input : EGPD_Output;
-		const EEdGraphPinDirection VariablesDirection = bStructInVaraiablesOut ? EGPD_Output : EGPD_Input;
+		const EEdGraphPinDirection StructDirection = bStructInVariablesOut ? EGPD_Input : EGPD_Output;
+		const EEdGraphPinDirection VariablesDirection = bStructInVariablesOut ? EGPD_Output : EGPD_Input;
 		const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>(); 
 		const bool bCompatible = K2Schema && K2Schema->ArePinTypesCompatible(NewPin->PinType, OldPin->PinType);
 
 		if (bCompatible && (StructDirection == OldPin->Direction))
 		{
-			// Struct name was changed
-			bResult = true;
+			// Struct name was changed, which is fine
+			return true;
 		}
 		else if (bCompatible && (VariablesDirection == OldPin->Direction))
 		{
-			// name of a member variable was changed
+			// Name of a member variable was changed, check guids and redirects
 			if ((NewPin->PersistentGuid == OldPin->PersistentGuid) && OldPin->PersistentGuid.IsValid())
 			{
-				bResult = true;
+				return true;
+			}
+
+			if (DoesRenamedVariableMatch(OldPin->PinName, NewPin->PinName, StructType))
+			{
+				return true;
 			}
 		}
 	}
-	return bResult;
+	return false;
 }
 
-FString UK2Node_StructOperation::GetPinMetaData(FString InPinName, FName InKey)
+FString UK2Node_StructOperation::GetPinMetaData(FName InPinName, FName InKey)
 {
-	FString ReturnValue;
-
 	for (TFieldIterator<UProperty> It(StructType); It; ++It)
 	{
 		const UProperty* Property = *It;
-		if(Property && Property->GetName() == InPinName)
+		if(Property && Property->GetFName() == InPinName)
 		{
-			ReturnValue = Property->GetMetaData(InKey);
-			break;
+			return Property->GetMetaData(InKey);
 		}
 	}
-	return ReturnValue;
+	return Super::GetPinMetaData(InPinName, InKey);
 }
 
 FString UK2Node_StructOperation::GetFindReferenceSearchString() const
@@ -96,15 +104,22 @@ FString UK2Node_StructOperation::GetFindReferenceSearchString() const
 bool UK2Node_StructOperation::IsActionFilteredOut(const FBlueprintActionFilter& Filter)
 {
 	bool bIsFiltered = false;
-	if (StructType && !StructType->GetBoolMetaData(FBlueprintMetadata::MD_AllowableBlueprintVariableType))
+	if (StructType)
 	{
-		bIsFiltered = true;
-		for (UEdGraphPin* ContextPin : Filter.Context.Pins)
+		if (StructType->GetBoolMetaData(FBlueprintMetadata::MD_BlueprintInternalUseOnly))
 		{
-			if (ContextPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct && ContextPin->PinType.PinSubCategoryObject == StructType)
+			bIsFiltered = true;
+		}
+		else if (!StructType->GetBoolMetaData(FBlueprintMetadata::MD_AllowableBlueprintVariableType))
+		{
+			bIsFiltered = true;
+			for (UEdGraphPin* ContextPin : Filter.Context.Pins)
 			{
-				bIsFiltered = false;
-				break;
+				if (ContextPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct && ContextPin->PinType.PinSubCategoryObject == StructType)
+				{
+					bIsFiltered = false;
+					break;
+				}
 			}
 		}
 	}

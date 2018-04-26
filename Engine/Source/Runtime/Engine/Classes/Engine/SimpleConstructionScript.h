@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -39,9 +39,10 @@ class USimpleConstructionScript : public UObject
 	 * @param Actor					The actor instance to execute the script on.
 	 * @param NativeSceneComponents	The set of native scene components from the actor that SCS nodes can parent to when instanced.
 	 * @param RootTransform			The transform to apply to the root scene component of the actor instance if defined in this script.
+	 * @param RootRelativeRotationCache Optional rotation cache to use when applying the transform to the root component.
 	 * @param bIsDefaultTransform	Indicates whether or not the given transform is a "default" transform, in which case it can be overridden by template defaults.
 	 */
-	void ExecuteScriptOnActor(AActor* Actor, const TInlineComponentArray<USceneComponent*>& NativeSceneComponents, const FTransform& RootTransform, bool bIsDefaultTransform);
+	void ExecuteScriptOnActor(AActor* Actor, const TInlineComponentArray<USceneComponent*>& NativeSceneComponents, const FTransform& RootTransform, const FRotationConversionCache* RootRelativeRotationCache, bool bIsDefaultTransform);
 
 	/** Create the map from names to SCS_Nodes to improve FindSCSNode performance during construction script execution */
 	void CreateNameToSCSNodeMap();
@@ -132,7 +133,7 @@ private:
 
 #if WITH_EDITOR
 	/** Helper function for generating list of currently used names */
-	void GenerateListOfExistingNames(TArray<FName>& CurrentNames) const;
+	void GenerateListOfExistingNames(TSet<FName>& CurrentNames) const;
 
 	/** Helper function for generating a name for a new node, DesiredName can be used to optionally request a name, ComponentClass is mandatory */
 	FName GenerateNewComponentName(const UClass* ComponentClass, FName DesiredName = NAME_None) const;

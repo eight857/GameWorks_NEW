@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -13,6 +13,7 @@ public class DetailCustomizations : ModuleRules
                 "AppFramework",
 				"Core",
 				"CoreUObject",
+				"ApplicationCore",
 				"DesktopWidgets",
 				"Engine",
 				"Landscape",
@@ -30,6 +31,7 @@ public class DetailCustomizations : ModuleRules
 				"SharedSettingsWidgets",
                 "ContentBrowser",
 				"BlueprintGraph",
+                "GraphEditor",
 				"AnimGraph",
                 "PropertyEditor",
                 "LevelEditor",
@@ -44,7 +46,6 @@ public class DetailCustomizations : ModuleRules
 				"RHI",
                 "HardwareTargeting",
                 "AIModule", 
-                "MeshUtilities",
 				"ConfigEditor",
                 "Persona",
                 "CinematicCamera",
@@ -52,6 +53,8 @@ public class DetailCustomizations : ModuleRules
                 "SkeletonEditor",
                 "LevelSequence",
                 "AdvancedPreviewScene",
+                "AudioSettingsEditor",
+				"HeadMountedDisplay",
             }
 		);
 
@@ -64,15 +67,19 @@ public class DetailCustomizations : ModuleRules
 				"PropertyEditor",
 				"GameProjectGeneration",
                 "ComponentVisualizers",
-				"GraphEditor"
-			}
+				"GraphEditor",
+                "MeshMergeUtilities",
+                "MeshReductionInterface",
+            }
 		);
 
 		DynamicallyLoadedModuleNames.AddRange(
 			new string[] {
 				"Layers",
 				"GameProjectGeneration",
-			}
+                "MeshMergeUtilities",
+                "MeshReductionInterface",
+            }
 		);
 	}
 }

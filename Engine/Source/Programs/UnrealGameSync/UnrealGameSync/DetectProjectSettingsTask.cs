@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -42,6 +42,23 @@ namespace UnrealGameSync
 		public bool Run(out string ErrorMessage)
 		{
 			PerforceConnection Perforce = new PerforceConnection(null, null, null);
+
+			// Get the P4PORT setting in this folder, so we can respect the contents of any P4CONFIG file
+			string PrevDirectory = Directory.GetCurrentDirectory();
+			try
+			{
+				Directory.SetCurrentDirectory(Path.GetDirectoryName(NewSelectedFileName));
+
+				string ServerAndPort;
+				if (Perforce.GetSetting("P4PORT", out ServerAndPort, Log))
+				{
+					Perforce = new PerforceConnection(null, null, ServerAndPort);
+				}
+			}
+			finally
+			{
+				Directory.SetCurrentDirectory(PrevDirectory);
+			}
 
 			// Get the Perforce server info
 			PerforceInfoRecord PerforceInfo;

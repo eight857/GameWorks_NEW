@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SMontageEditor.h"
@@ -39,11 +39,8 @@ void SMontageEditor::Construct(const FArguments& InArgs, const FMontageEditorReq
 	OnSectionsChanged = InArgs._OnSectionsChanged;
 	MontageObj->RegisterOnMontageChanged(UAnimMontage::FOnMontageChanged::CreateSP(this, &SMontageEditor::RebuildMontagePanel, false));
 		
-	if (MontageObj)
-	{
-		EnsureStartingSection();
-		EnsureSlotNode();
-	}
+	EnsureStartingSection();
+	EnsureSlotNode();
 
 	// set child montage if montage has parent
 	bChildAnimMontage = MontageObj->HasParentAsset();
@@ -430,6 +427,21 @@ void SMontageEditor::OnEditSectionTimeFinish( int32 SectionIndex )
 	OnSectionsChanged.ExecuteIfBound();
 }
 
+void SMontageEditor::SetSectionTime(int32 SectionIndex, float NewTime)
+{
+	if(MontageObj && MontageObj->CompositeSections.IsValidIndex(SectionIndex))
+	{
+		const FScopedTransaction Transaction(LOCTEXT("EditSection", "Edit Section Start Time"));
+		MontageObj->Modify();
+	
+		FCompositeSection& Section = MontageObj->CompositeSections[SectionIndex];
+		Section.SetTime(NewTime);
+		Section.LinkMontage(MontageObj, NewTime);
+
+		OnEditSectionTimeFinish(SectionIndex);
+	}
+}
+
 void SMontageEditor::PreAnimUpdate()
 {
 	MontageObj->Modify();
@@ -642,7 +654,7 @@ void SMontageEditor::EnsureSlotNode()
 {
 	if (MontageObj && MontageObj->SlotAnimTracks.Num()==0)
 	{
-		AddNewMontageSlot(FAnimSlotGroup::DefaultSlotName.ToString());
+		AddNewMontageSlot(FAnimSlotGroup::DefaultSlotName);
 		OnMontageModified();
 	}
 }
@@ -736,16 +748,15 @@ void SMontageEditor::RenameSlotNode(int32 SlotIndex, FString NewSlotName)
 	}
 }
 
-void SMontageEditor::AddNewMontageSlot( FString NewSlotName )
+void SMontageEditor::AddNewMontageSlot( FName NewSlotName )
 {
 	if ( MontageObj != nullptr )
 	{
 		const FScopedTransaction Transaction( LOCTEXT("AddSlot", "Add Slot") );
 		MontageObj->Modify();
 
-		FSlotAnimationTrack NewTrack;
-		NewTrack.SlotName = FName(*NewSlotName);
-		MontageObj->SlotAnimTracks.Add( NewTrack );
+		MontageObj->AddSlot(NewSlotName);
+
 		OnMontageModified();
 
 		if (AnimMontagePanel.IsValid())
@@ -789,6 +800,11 @@ void SMontageEditor::RemoveMontageSlot(int32 AnimSlotIndex)
 	}
 }
 
+bool SMontageEditor::CanRemoveMontageSlot(int32 AnimSlotIndex)
+{
+	return (MontageObj != nullptr) && (MontageObj->SlotAnimTracks.Num()) > 1;
+}
+
 void SMontageEditor::DuplicateMontageSlot(int32 AnimSlotIndex)
 {
 	if (MontageObj != nullptr && MontageObj->SlotAnimTracks.IsValidIndex(AnimSlotIndex))
@@ -796,12 +812,9 @@ void SMontageEditor::DuplicateMontageSlot(int32 AnimSlotIndex)
 		const FScopedTransaction Transaction(LOCTEXT("DuplicateSlot", "Duplicate Slot"));
 		MontageObj->Modify();
 
-		FSlotAnimationTrack NewTrack; 
-		NewTrack.SlotName = FAnimSlotGroup::DefaultSlotName;
-
+		FSlotAnimationTrack& NewTrack = MontageObj->AddSlot(FAnimSlotGroup::DefaultSlotName); 
 		NewTrack.AnimTrack = MontageObj->SlotAnimTracks[AnimSlotIndex].AnimTrack;
 
-		MontageObj->SlotAnimTracks.Add(NewTrack);
 		OnMontageModified();
 
 		AnimMontagePanel->Update();
@@ -820,28 +833,34 @@ void SMontageEditor::ShowSectionInDetailsView(int32 SectionIndex)
 
 void SMontageEditor::RestartPreview()
 {
-	UAnimPreviewInstance * Preview = Cast<UAnimPreviewInstance>(GetPreviewScene()->GetPreviewMeshComponent() ? GetPreviewScene()->GetPreviewMeshComponent()->PreviewInstance:NULL);
-	if (Preview)
+	if (UDebugSkelMeshComponent* MeshComponent = GetPreviewScene()->GetPreviewMeshComponent())
 	{
-		Preview->MontagePreview_PreviewNormal(INDEX_NONE, Preview->IsPlaying());
+		if (UAnimPreviewInstance* Preview = MeshComponent->PreviewInstance)
+		{
+			Preview->MontagePreview_PreviewNormal(INDEX_NONE, Preview->IsPlaying());
+		}
 	}
 }
 
 void SMontageEditor::RestartPreviewFromSection(int32 FromSectionIdx)
 {
-	UAnimPreviewInstance * Preview = Cast<UAnimPreviewInstance>(GetPreviewScene()->GetPreviewMeshComponent() ? GetPreviewScene()->GetPreviewMeshComponent()->PreviewInstance:NULL);
-	if(Preview)
+	if (UDebugSkelMeshComponent* MeshComponent = GetPreviewScene()->GetPreviewMeshComponent())
 	{
-		Preview->MontagePreview_PreviewNormal(FromSectionIdx, Preview->IsPlaying());
+		if (UAnimPreviewInstance* Preview = MeshComponent->PreviewInstance)
+		{
+			Preview->MontagePreview_PreviewNormal(FromSectionIdx, Preview->IsPlaying());
+		}
 	}
 }
 
 void SMontageEditor::RestartPreviewPlayAllSections()
 {
-	UAnimPreviewInstance * Preview = Cast<UAnimPreviewInstance>(GetPreviewScene()->GetPreviewMeshComponent() ? GetPreviewScene()->GetPreviewMeshComponent()->PreviewInstance:NULL);
-	if(Preview)
+	if (UDebugSkelMeshComponent* MeshComponent = GetPreviewScene()->GetPreviewMeshComponent())
 	{
-		Preview->MontagePreview_PreviewAllSections(Preview->IsPlaying());
+		if (UAnimPreviewInstance* Preview = MeshComponent->PreviewInstance)
+		{
+			Preview->MontagePreview_PreviewAllSections(Preview->IsPlaying());
+		}
 	}
 }
 

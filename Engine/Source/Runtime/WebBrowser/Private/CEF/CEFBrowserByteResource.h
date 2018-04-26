@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -34,16 +34,8 @@ class FCEFBrowserByteResource
 public:
 	/**
 	 */
-	FCEFBrowserByteResource(const void* InBuffer, int32 InSize) : Position(0), Size(InSize)
-	{
-		Buffer = new unsigned char[Size];
-		FMemory::Memcpy(Buffer, InBuffer, Size);
-	}
-	
-	~FCEFBrowserByteResource()
-	{
-		delete[] Buffer;
-	}
+	FCEFBrowserByteResource(const CefRefPtr<CefPostDataElement>& PostData, const FString& InMimeType);
+	~FCEFBrowserByteResource();
 	
 	// CefResourceHandler interface
 	virtual void Cancel() override;
@@ -55,6 +47,7 @@ private:
 	int32 Position;
 	int32 Size;
 	unsigned char* Buffer;
+	FString MimeType;
 	
 	// Include the default reference counting implementation.
 	IMPLEMENT_REFCOUNTING(FCEFBrowserByteResource);

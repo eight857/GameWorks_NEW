@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "Animation/AnimCompressionDerivedData.h"
 #include "Stats/Stats.h"
 #include "Animation/AnimSequence.h"
@@ -53,9 +53,10 @@ FString FDerivedDataAnimationCompression::GetPluginSpecificCacheKeySuffix() cons
 	char AdditiveType = bCanBakeAdditive ? NibbleToTChar(OriginalAnimSequence->AdditiveAnimType) : '0';
 	char RefType = bCanBakeAdditive ? NibbleToTChar(OriginalAnimSequence->RefPoseType) : '0';
 
-	FString Ret = FString::Printf(TEXT("%i_%i_%s%s%s_%c%c%i_%s_%s"),
+	FString Ret = FString::Printf(TEXT("%i_%i_%i_%s%s%s_%c%c%i_%s_%s"),
 		(int32)UE_ANIMCOMPRESSION_DERIVEDDATA_VER,
 		(int32)CURRENT_ANIMATION_ENCODING_PACKAGE_VERSION,
+		OriginalAnimSequence->CompressCommandletVersion,
 		*OriginalAnimSequence->GetRawDataGuid().ToString(),
 		*OriginalAnimSequence->GetSkeleton()->GetGuid().ToString(),
 		*OriginalAnimSequence->GetSkeleton()->GetVirtualBoneGuid().ToString(),
@@ -67,7 +68,6 @@ FString FDerivedDataAnimationCompression::GetPluginSpecificCacheKeySuffix() cons
 		);
 
 	return Ret;
-
 }
 
 bool FDerivedDataAnimationCompression::Build( TArray<uint8>& OutData )
@@ -118,7 +118,7 @@ bool FDerivedDataAnimationCompression::Build( TArray<uint8>& OutData )
 			Curve.FloatCurve.RemoveRedundantKeys(MaxCurveError);
 		}
 
-#ifdef DO_CHECK
+#if DO_CHECK
 		FString CompressionName = AnimToOperateOn->CompressionScheme->GetFullName();
 		const TCHAR* AAC = CompressContext.Get()->bAllowAlternateCompressor ? TEXT("true") : TEXT("false");
 		const TCHAR* OutputStr = CompressContext.Get()->bOutput ? TEXT("true") : TEXT("false");
@@ -136,6 +136,8 @@ bool FDerivedDataAnimationCompression::Build( TArray<uint8>& OutData )
 											CompressContext.Get()->MaxAnimations,
 											AAC,
 											OutputStr);
+
+		AnimToOperateOn->CompressedRawDataSize = AnimToOperateOn->GetApproxRawSize();
 	}
 
 	//Our compression scheme may change so copy the new one back

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PostProcessMorpheus.cpp: Post processing for Sony Morpheus HMD device.
@@ -11,6 +11,7 @@
 #include "SceneRendering.h"
 #include "PostProcess/SceneFilterRendering.h"
 #include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Engine/Engine.h"
 #include "EngineGlobals.h"
@@ -25,7 +26,7 @@ class FPostProcessMorpheusPS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FPostProcessMorpheusPS, Global);
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		// we must use a run time check for this because the builds the build machines create will have Morpheus defined,
 		// but a user will not necessarily have the Morpheus files
@@ -37,9 +38,9 @@ class FPostProcessMorpheusPS : public FGlobalShader
 		return false;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("NEW_MORPHEUS_DISTORTION"), TEXT("1"));
 	}
 
@@ -87,43 +88,46 @@ public:
 	}
 
 
-	void SetPS(const FRenderingCompositePassContext& Context, FIntRect SrcRect, FIntPoint SrcBufferSize, EStereoscopicPass StereoPass, FMatrix& QuadTexTransform)
+	template <typename TRHICmdList>
+	void SetPS(TRHICmdList& RHICmdList, const FRenderingCompositePassContext& Context, FIntRect SrcRect, FIntPoint SrcBufferSize, EStereoscopicPass StereoPass, FMatrix& QuadTexTransform)
 	{
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 		
-		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
 
-		PostprocessParameter.SetPS(ShaderRHI, Context, TStaticSamplerState<SF_Bilinear, AM_Border, AM_Border, AM_Border>::GetRHI());
-		DeferredParameters.Set(Context.RHICmdList, ShaderRHI, Context.View, MD_PostProcess);
+		PostprocessParameter.SetPS(RHICmdList, ShaderRHI, Context, TStaticSamplerState<SF_Bilinear, AM_Border, AM_Border, AM_Border>::GetRHI());
+		DeferredParameters.Set(RHICmdList, ShaderRHI, Context.View, MD_PostProcess);
 
 		{
-			check(GEngine->HMDDevice.IsValid());
-			TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > HMDDevice = GEngine->HMDDevice;
+			static FName MorpheusName(TEXT("PSVR"));
+			check(GEngine->XRSystem.IsValid());
+			check(GEngine->XRSystem->GetSystemName() == MorpheusName);
 
-			check(HMDDevice->GetHMDDeviceType() == EHMDDeviceType::DT_Morpheus);
+			IHeadMountedDisplay* HMDDevice = GEngine->XRSystem->GetHMDDevice();
+			check(HMDDevice);
 
 			auto RCoefs = HMDDevice->GetRedDistortionParameters();
 			auto GCoefs = HMDDevice->GetGreenDistortionParameters();
 			auto BCoefs = HMDDevice->GetBlueDistortionParameters();
 			for (uint32 i = 0; i < 5; ++i)
 			{
-				SetShaderValue(Context.RHICmdList, ShaderRHI, RCoefficients, RCoefs[i], i);
-				SetShaderValue(Context.RHICmdList, ShaderRHI, GCoefficients, GCoefs[i], i);
-				SetShaderValue(Context.RHICmdList, ShaderRHI, BCoefficients, BCoefs[i], i);
+				SetShaderValue(RHICmdList, ShaderRHI, RCoefficients, RCoefs[i], i);
+				SetShaderValue(RHICmdList, ShaderRHI, GCoefficients, GCoefs[i], i);
+				SetShaderValue(RHICmdList, ShaderRHI, BCoefficients, BCoefs[i], i);
 			}
 
 			check (StereoPass != eSSP_FULL);
 			if (StereoPass == eSSP_LEFT_EYE)
 			{
-				SetShaderValue(Context.RHICmdList, ShaderRHI, TextureScale, HMDDevice->GetTextureScaleLeft());
-				SetShaderValue(Context.RHICmdList, ShaderRHI, TextureOffset, HMDDevice->GetTextureOffsetLeft());
-				SetShaderValue(Context.RHICmdList, ShaderRHI, TextureUVOffset, 0.0f);
+				SetShaderValue(RHICmdList, ShaderRHI, TextureScale, HMDDevice->GetTextureScaleLeft());
+				SetShaderValue(RHICmdList, ShaderRHI, TextureOffset, HMDDevice->GetTextureOffsetLeft());
+				SetShaderValue(RHICmdList, ShaderRHI, TextureUVOffset, 0.0f);
 			}
 			else
 			{
-				SetShaderValue(Context.RHICmdList, ShaderRHI, TextureScale, HMDDevice->GetTextureScaleRight());
-				SetShaderValue(Context.RHICmdList, ShaderRHI, TextureOffset, HMDDevice->GetTextureOffsetRight());
-				SetShaderValue(Context.RHICmdList, ShaderRHI, TextureUVOffset, -0.5f);
+				SetShaderValue(RHICmdList, ShaderRHI, TextureScale, HMDDevice->GetTextureScaleRight());
+				SetShaderValue(RHICmdList, ShaderRHI, TextureOffset, HMDDevice->GetTextureOffsetRight());
+				SetShaderValue(RHICmdList, ShaderRHI, TextureUVOffset, -0.5f);
 			}				
 				  
 			QuadTexTransform = FMatrix::Identity;            
@@ -144,7 +148,7 @@ class FPostProcessMorpheusVS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FPostProcessMorpheusVS,Global);
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		// we must use a run time check for this because the builds the build machines create will have Morpheus defined,
 		// but a user will not necessarily have the Morpheus files
@@ -156,9 +160,9 @@ class FPostProcessMorpheusVS : public FGlobalShader
 		return false;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("NEW_MORPHEUS_DISTORTION"), TEXT("1"));
 	}
 
@@ -185,8 +189,8 @@ public:
 	}
 };
 
-IMPLEMENT_SHADER_TYPE(, FPostProcessMorpheusVS, TEXT("MorpheusInclude"), TEXT("MainVS"), SF_Vertex);
-IMPLEMENT_SHADER_TYPE(, FPostProcessMorpheusPS,TEXT("MorpheusInclude"),TEXT("MainPS"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(, FPostProcessMorpheusVS, TEXT("/Engine/Private/PostProcessHMDMorpheus.usf"), TEXT("MainVS"), SF_Vertex);
+IMPLEMENT_SHADER_TYPE(, FPostProcessMorpheusPS, TEXT("/Engine/Private/PostProcessHMDMorpheus.usf"), TEXT("MainPS"), SF_Pixel);
 
 void FRCPassPostProcessMorpheus::Process(FRenderingCompositePassContext& Context)
 {
@@ -199,7 +203,7 @@ void FRCPassPostProcessMorpheus::Process(FRenderingCompositePassContext& Context
 		return;
 	}
 
-	const FSceneView& View = Context.View;
+	const FViewInfo& View = Context.View;
 	const FSceneViewFamily& ViewFamily = *(View.Family);
 	
 	FIntRect SrcRect = View.ViewRect;
@@ -236,7 +240,7 @@ void FRCPassPostProcessMorpheus::Process(FRenderingCompositePassContext& Context
 	FMatrix QuadTexTransform;
 	FMatrix QuadPosTransform = FMatrix::Identity;
 
-	PixelShader->SetPS(Context, SrcRect, SrcSize, View.StereoPass, QuadTexTransform);
+	PixelShader->SetPS(Context.RHICmdList, Context, SrcRect, SrcSize, View.StereoPass, QuadTexTransform);
 
 	// Draw a quad mapping scene color to the view's render target
 	DrawTransformedRectangle(

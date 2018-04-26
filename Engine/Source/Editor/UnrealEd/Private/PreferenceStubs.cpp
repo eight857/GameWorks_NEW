@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -6,7 +6,7 @@
 #include "Preferences/CurveEdOptions.h"
 #include "Preferences/MaterialEditorOptions.h"
 #include "Preferences/PersonaOptions.h"
-#include "Preferences/PhATSimOptions.h"
+#include "Preferences/PhysicsAssetEditorOptions.h"
 
 // @todo find a better place for all of this, preferably in the appropriate modules
 // though this would require the classes to be relocated as well
@@ -20,16 +20,36 @@ UCascadeOptions::UCascadeOptions(const FObjectInitializer& ObjectInitializer)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////// UPhATSimOptions ////////////////////////////////////////////////////////////////
+////////////////// UPhysicsAssetEditorOptions /////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-UPhATSimOptions::UPhATSimOptions(const FObjectInitializer& ObjectInitializer)
+UPhysicsAssetEditorOptions::UPhysicsAssetEditorOptions(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	PhysicsBlend = 1.0f;
 	bUpdateJointsFromAnimation = false;
-	//bImmediatePhysics = false;
 	MaxFPS = -1;
-	TimeDilation = 1.f;
+
+	// These should duplicate defaults from UPhysicsHandleComponent
+	HandleLinearDamping = 200.0f;
+	HandleLinearStiffness = 750.0f;
+	HandleAngularDamping = 500.0f;
+	HandleAngularStiffness = 1500.0f;
+	InterpolationSpeed = 50.f;
+
+	bShowConstraintsAsPoints = false;
+	ConstraintDrawSize = 1.0f;
+
+	// view options
+	MeshViewMode = EPhysicsAssetEditorRenderMode::Solid;
+	CollisionViewMode = EPhysicsAssetEditorRenderMode::Solid;
+	ConstraintViewMode = EPhysicsAssetEditorConstraintViewMode::AllLimits;
+	SimulationMeshViewMode = EPhysicsAssetEditorRenderMode::Solid;
+	SimulationCollisionViewMode = EPhysicsAssetEditorRenderMode::Solid;
+	SimulationConstraintViewMode = EPhysicsAssetEditorConstraintViewMode::None;
+
+	CollisionOpacity = 0.3f;
+	bSolidRenderingForSelectedOnly = false;
+	bResetClothWhenSimulating = false;
 }
 
 UMaterialEditorOptions::UMaterialEditorOptions(const FObjectInitializer& ObjectInitializer)
@@ -47,20 +67,34 @@ UPersonaOptions::UPersonaOptions(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, DefaultLocalAxesSelection(2)
 	, DefaultBoneDrawSelection(1)
+	, bAllowPreviewMeshCollectionsToSelectFromDifferentSkeletons(true)
 {
-	ViewModeIndex = VMI_Lit;
+	AssetEditorOptions.AddUnique(FAssetEditorOptions(TEXT("SkeletonEditor")));
+	AssetEditorOptions.AddUnique(FAssetEditorOptions(TEXT("SkeletalMeshEditor")));
+	AssetEditorOptions.AddUnique(FAssetEditorOptions(TEXT("AnimationEditor")));
+	AssetEditorOptions.AddUnique(FAssetEditorOptions(TEXT("AnimationBlueprintEditor")));
+	AssetEditorOptions.AddUnique(FAssetEditorOptions(TEXT("PhysicsAssetEditor")));
+
+	for(FAssetEditorOptions& EditorOptions : AssetEditorOptions)
+	{
+		for(FViewportConfigOptions& ViewportConfig : EditorOptions.ViewportConfigs)
+		{
+			ViewportConfig.ViewModeIndex = VMI_Lit;
+			ViewportConfig.ViewFOV = 53.43f;
+			ViewportConfig.CameraFollowMode = EAnimationViewportCameraFollowMode::None;
+			ViewportConfig.CameraFollowBoneName = NAME_None;
+		}
+	}
 
 	SectionTimingNodeColor = FLinearColor(0.0f, 1.0f, 0.0f);
 	NotifyTimingNodeColor = FLinearColor(1.0f, 0.0f, 0.0f);
 	BranchingPointTimingNodeColor = FLinearColor(0.5f, 1.0f, 1.0f);
 
 	bAutoAlignFloorToMesh = true;
-}
 
-void UPersonaOptions::SetViewportBackgroundColor( const FLinearColor& InViewportBackgroundColor)
-{
-	ViewportBackgroundColor = InViewportBackgroundColor;
-	SaveConfig();
+	NumFolderFiltersInAssetBrowser = 2;
+
+	bUseAudioAttenuation = true;
 }
 
 void UPersonaOptions::SetShowGrid( bool bInShowGrid )
@@ -75,21 +109,12 @@ void UPersonaOptions::SetHighlightOrigin( bool bInHighlightOrigin )
 	SaveConfig();
 }
 
-void UPersonaOptions::SetGridSize( int32 InGridSize )
+void UPersonaOptions::SetViewModeIndex( FName InContext, EViewModeIndex InViewModeIndex, int32 InViewportIndex )
 {
-	GridSize = InGridSize;
-	SaveConfig();
-}
+	check(InViewportIndex >= 0 && InViewportIndex < 4);
 
-void UPersonaOptions::SetViewModeIndex( EViewModeIndex InViewModeIndex )
-{
-	ViewModeIndex = InViewModeIndex;
-	SaveConfig();
-}
-
-void UPersonaOptions::SetShowFloor( bool bInShowFloor )
-{
-	bShowFloor = bInShowFloor;
+	FAssetEditorOptions& Options = GetAssetEditorOptions(InContext);
+	Options.ViewportConfigs[InViewportIndex].ViewModeIndex = InViewModeIndex;
 	SaveConfig();
 }
 
@@ -99,21 +124,34 @@ void UPersonaOptions::SetAutoAlignFloorToMesh(bool bInAutoAlignFloorToMesh)
 	SaveConfig();
 }
 
-void UPersonaOptions::SetShowSky( bool bInShowSky )
-{
-	bShowSky = bInShowSky;
-	SaveConfig();
-}
-
 void UPersonaOptions::SetMuteAudio( bool bInMuteAudio )
 {
 	bMuteAudio = bInMuteAudio;
 	SaveConfig();
 }
 
-void UPersonaOptions::SetViewFOV( float InViewFOV )
+void UPersonaOptions::SetUseAudioAttenuation( bool bInUseAudioAttenuation )
 {
-	ViewFOV = InViewFOV;
+	bUseAudioAttenuation = bInUseAudioAttenuation;
+	SaveConfig();
+}
+
+void UPersonaOptions::SetViewFOV( FName InContext, float InViewFOV, int32 InViewportIndex )
+{
+	check(InViewportIndex >= 0 && InViewportIndex < 4);
+
+	FAssetEditorOptions& Options = GetAssetEditorOptions(InContext);
+	Options.ViewportConfigs[InViewportIndex].ViewFOV = InViewFOV;
+	SaveConfig();
+}
+
+void UPersonaOptions::SetViewCameraFollow( FName InContext, EAnimationViewportCameraFollowMode InCameraFollowMode, FName InCameraFollowBoneName, int32 InViewportIndex )
+{
+	check(InViewportIndex >= 0 && InViewportIndex < 4);
+
+	FAssetEditorOptions& Options = GetAssetEditorOptions(InContext);
+	Options.ViewportConfigs[InViewportIndex].CameraFollowMode = InCameraFollowMode;
+	Options.ViewportConfigs[InViewportIndex].CameraFollowBoneName = InCameraFollowBoneName;
 	SaveConfig();
 }
 
@@ -152,4 +190,22 @@ void UPersonaOptions::SetBranchingPointTimingNodeColor(const FLinearColor& InCol
 {
 	BranchingPointTimingNodeColor = InColor;
 	SaveConfig();
+}
+
+FAssetEditorOptions& UPersonaOptions::GetAssetEditorOptions(const FName& InContext)
+{
+	FAssetEditorOptions* FoundOptions = AssetEditorOptions.FindByPredicate([InContext](const FAssetEditorOptions& InOptions)
+	{
+		return InOptions.Context == InContext;
+	});
+
+	if(!FoundOptions)
+	{
+		AssetEditorOptions.Add(FAssetEditorOptions(InContext));
+		return AssetEditorOptions.Last();
+	}
+	else
+	{
+		return *FoundOptions;
+	}
 }

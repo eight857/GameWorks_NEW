@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CrashDebugHelperModule.h"
 #include "Logging/LogMacros.h"
@@ -16,6 +16,9 @@ DEFINE_LOG_CATEGORY(LogCrashDebugHelper);
 
 #elif PLATFORM_MAC
 	#include "CrashDebugHelperMac.h"
+
+#elif PLATFORM_IOS
+	#include "CrashDebugHelperIOS.h"
 
 #else
 	#error "Unknown platform"

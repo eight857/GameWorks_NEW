@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -47,6 +47,8 @@ class UNavigationSystem;
 class UPrimitiveComponent;
 class URecastNavMeshDataChunk;
 struct FRecastAreaNavModifierElement;
+class dtNavMesh;
+class dtQueryFilter;
 
 UENUM()
 namespace ERecastPartitioning
@@ -239,15 +241,17 @@ struct FRecastDebugPathfindingNode
 	float Cost;
 	float TotalCost;
 	float Length;
-	uint32 bOpenSet : 1;
-	uint32 bOffMeshLink : 1;
-	uint32 bModified : 1;
 
 	FVector NodePos;
-	TArray<FVector> Verts;
+	TArray<FVector, TInlineAllocator<6> > Verts;
+	uint8 NumVerts;
 
-	FRecastDebugPathfindingNode() : PolyRef(0), ParentRef(0) {}
-	FRecastDebugPathfindingNode(NavNodeRef InPolyRef) : PolyRef(InPolyRef), ParentRef(0) {}
+	uint8 bOpenSet : 1;
+	uint8 bOffMeshLink : 1;
+	uint8 bModified : 1;
+
+	FRecastDebugPathfindingNode() : PolyRef(0), ParentRef(0), NumVerts(0) {}
+	FRecastDebugPathfindingNode(NavNodeRef InPolyRef) : PolyRef(InPolyRef), ParentRef(0), NumVerts(0) {}
 
 	FORCEINLINE bool operator==(const NavNodeRef& OtherPolyRef) const { return PolyRef == OtherPolyRef; }
 	FORCEINLINE bool operator==(const FRecastDebugPathfindingNode& Other) const { return PolyRef == Other.PolyRef; }
@@ -610,9 +614,17 @@ class ENGINE_API ARecastNavMesh : public ANavigationData
 	UPROPERTY(EditAnywhere, Category=Generation, config, AdvancedDisplay)
 	uint32 bPerformVoxelFiltering:1;
 
-	/** mark areas with insufficient free height above instead of cutting them out  */
+	/** mark areas with insufficient free height above instead of cutting them out (accessible only for area modifiers using replace mode) */
 	UPROPERTY(EditAnywhere, Category = Generation, config, AdvancedDisplay)
 	uint32 bMarkLowHeightAreas : 1;
+
+	/** if set, only single low height span will be allowed under valid one */
+	UPROPERTY(EditAnywhere, Category = Generation, config, AdvancedDisplay)
+	uint32 bFilterLowSpanSequences : 1;
+
+	/** if set, only low height spans with corresponding area modifier will be stored in tile cache (reduces memory, can't modify without full tile rebuild) */
+	UPROPERTY(EditAnywhere, Category = Generation, config, AdvancedDisplay)
+	uint32 bFilterLowSpanFromTileCache : 1;
 
 	UPROPERTY(EditAnywhere, Category = Generation, config, AdvancedDisplay)
 	uint32 bDoFullyAsyncNavDataGathering : 1;
@@ -757,6 +769,9 @@ public:
 	virtual void OnStreamingLevelRemoved(ULevel* InLevel, UWorld* InWorld) override;
 	//~ End ANavigationData Interface
 
+	virtual void AttachNavMeshDataChunk(URecastNavMeshDataChunk& NavDataChunk);
+	virtual void DetachNavMeshDataChunk(URecastNavMeshDataChunk& NavDataChunk);
+
 protected:
 	/** Serialization helper. */
 	void SerializeRecastNavMesh(FArchive& Ar, FPImplRecastNavMesh*& NavMesh, int32 NavMeshVersion);
@@ -893,6 +908,15 @@ public:
 	//----------------------------------------------------------------------//
 	// Querying                                                                
 	//----------------------------------------------------------------------//
+	
+	/** dtNavMesh getter */
+	dtNavMesh* GetRecastMesh();
+
+	/** dtNavMesh getter */
+	const dtNavMesh* GetRecastMesh() const;
+
+	/** Retrieves LinkUserID associated with indicated PolyID */
+	uint32 GetLinkUserId(NavNodeRef LinkPolyID) const;
 
 	FColor GetAreaIDColor(uint8 AreaID) const;
 
@@ -1030,7 +1054,6 @@ protected:
 private:
 	friend class FRecastNavMeshGenerator;
 	friend class FPImplRecastNavMesh;
-	friend class UCrowdManager;
 	// destroys FPImplRecastNavMesh instance if it has been created 
 	void DestroyRecastPImpl();
 	// @todo docuement

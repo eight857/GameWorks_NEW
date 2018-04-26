@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "K2Node_CallArrayFunction.h"
 #include "EdGraphSchema_K2.h"
@@ -6,6 +6,7 @@
 #include "K2Node_GetArrayItem.h"
 #include "BlueprintsObjectVersion.h"
 #include "Kismet/KismetArrayLibrary.h" // for Array_Get()
+#include "Algo/Transform.h"
 
 UK2Node_CallArrayFunction::UK2Node_CallArrayFunction(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -16,16 +17,14 @@ void UK2Node_CallArrayFunction::AllocateDefaultPins()
 {
 	Super::AllocateDefaultPins();
 
-	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
-
 	UEdGraphPin* TargetArrayPin = GetTargetArrayPin();
 	if (ensure(TargetArrayPin))
 	{
-		TargetArrayPin->PinType.bIsArray = true;
+		TargetArrayPin->PinType.ContainerType = EPinContainerType::Array;
 		TargetArrayPin->PinType.bIsReference = true;
-		TargetArrayPin->PinType.PinCategory = Schema->PC_Wildcard;
-		TargetArrayPin->PinType.PinSubCategory = TEXT("");
-		TargetArrayPin->PinType.PinSubCategoryObject = NULL;
+		TargetArrayPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+		TargetArrayPin->PinType.PinSubCategory = NAME_None;
+		TargetArrayPin->PinType.PinSubCategoryObject = nullptr;
 	}
 
 	TArray< FArrayPropertyPinCombo > ArrayPins;
@@ -79,16 +78,15 @@ void UK2Node_CallArrayFunction::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
 
 	if (PinsToCheck.Contains(Pin))
 	{
-		const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
 		bool bNeedToPropagate = false;
 
 		if( Pin->LinkedTo.Num() > 0 )
 		{
-			if (Pin->PinType.PinCategory == Schema->PC_Wildcard)
+			if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
 			{
 				UEdGraphPin* LinkedTo = Pin->LinkedTo[0];
 				check(LinkedTo);
-				check(Pin->PinType.bIsArray == LinkedTo->PinType.bIsArray);
+				check(Pin->PinType.ContainerType == LinkedTo->PinType.ContainerType);
 
 				Pin->PinType.PinCategory = LinkedTo->PinType.PinCategory;
 				Pin->PinType.PinSubCategory = LinkedTo->PinType.PinSubCategory;
@@ -112,15 +110,16 @@ void UK2Node_CallArrayFunction::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
 
 			if (bNeedToPropagate)
 			{
-				Pin->PinType.PinCategory = Schema->PC_Wildcard;
-				Pin->PinType.PinSubCategory = TEXT("");
-				Pin->PinType.PinSubCategoryObject = NULL;
+				Pin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+				Pin->PinType.PinSubCategory = NAME_None;
+				Pin->PinType.PinSubCategoryObject = nullptr;
 			}
 		}
 
 		if (bNeedToPropagate)
 		{
 			PropagateArrayTypeInfo(Pin);
+			GetGraph()->NotifyGraphChanged();
 		}
 	}
 }
@@ -148,7 +147,7 @@ void UK2Node_CallArrayFunction::ConvertDeprecatedNode(UEdGraph* Graph, bool bOnl
 			const UEdGraphSchema_K2* K2Schema = Cast<UEdGraphSchema_K2>(Graph->GetSchema());
 			if (K2Schema && GetItemNode)
 			{
-				TMap<FString, FString> OldToNewPinMap;
+				TMap<FName, FName> OldToNewPinMap;
 				for (UEdGraphPin* Pin : Pins)
 				{
 					if (Pin->ParentPin != nullptr)
@@ -159,9 +158,9 @@ void UK2Node_CallArrayFunction::ConvertDeprecatedNode(UEdGraph* Graph, bool bOnl
 					else if (Pin->PinName == UEdGraphSchema_K2::PN_Self)
 					{
 						// there's no analogous pin, signal that we're expecting this
-						OldToNewPinMap.Add(Pin->PinName, TEXT(""));
+						OldToNewPinMap.Add(Pin->PinName, NAME_None);
 					}
-					else if (Pin->PinType.bIsArray)
+					else if (Pin->PinType.IsArray())
 					{
 						OldToNewPinMap.Add(Pin->PinName, GetItemNode->GetTargetArrayPin()->PinName);
 					}
@@ -200,7 +199,7 @@ void UK2Node_CallArrayFunction::GetArrayPins(TArray< FArrayPropertyPinCombo >& O
 	UFunction* TargetFunction = GetTargetFunction();
 	if (ensure(TargetFunction))
 	{
-		FString ArrayPointerMetaData = TargetFunction->GetMetaData(FBlueprintMetadata::MD_ArrayParam);
+		const FString& ArrayPointerMetaData = TargetFunction->GetMetaData(FBlueprintMetadata::MD_ArrayParam);
 		TArray<FString> ArrayPinComboNames;
 		ArrayPointerMetaData.ParseIntoArray(ArrayPinComboNames, TEXT(","), true);
 
@@ -256,9 +255,12 @@ void UK2Node_CallArrayFunction::GetArrayTypeDependentPins(TArray<UEdGraphPin*>& 
 	UFunction* TargetFunction = GetTargetFunction();
 	if (ensure(TargetFunction))
 	{
-		const FString DependentPinMetaData = TargetFunction->GetMetaData(FBlueprintMetadata::MD_ArrayDependentParam);
-		TArray<FString> TypeDependentPinNames;
-		DependentPinMetaData.ParseIntoArray(TypeDependentPinNames, TEXT(","), true);
+		const FString& DependentPinMetaData = TargetFunction->GetMetaData(FBlueprintMetadata::MD_ArrayDependentParam);
+		TArray<FString> TypeDependentPinNameStrs;
+		DependentPinMetaData.ParseIntoArray(TypeDependentPinNameStrs, TEXT(","), true);
+
+		TArray<FName> TypeDependentPinNames;
+		Algo::Transform(TypeDependentPinNameStrs, TypeDependentPinNames, [](const FString& PinNameStr) { return FName(*PinNameStr); });
 
 		for (TArray<UEdGraphPin*>::TConstIterator it(Pins); it; ++it)
 		{
@@ -312,7 +314,7 @@ void UK2Node_CallArrayFunction::PropagateArrayTypeInfo(const UEdGraphPin* Source
 				// Reset default values
 				if (!Schema->IsPinDefaultValid(CurrentPin, CurrentPin->DefaultValue, CurrentPin->DefaultObject, CurrentPin->DefaultTextValue).IsEmpty())
 				{
-					CurrentPin->ResetDefaultValue();
+					Schema->ResetPinToAutogeneratedDefaultValue(CurrentPin);
 				}
 			}
 		}

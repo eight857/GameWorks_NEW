@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 MonoscopicFarFieldRendering.cpp: Monoscopic far field rendering implementation.
@@ -16,7 +16,7 @@ class FCompositeMonoscopicFarFieldViewVS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FCompositeMonoscopicFarFieldViewVS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform) { return true; }
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) { return true; }
 
 	FCompositeMonoscopicFarFieldViewVS(const ShaderMetaType::CompiledShaderInitializerType& Initializer) :
 		FGlobalShader(Initializer)
@@ -32,10 +32,10 @@ public:
 		SetShaderValue(RHICmdList, GetVertexShader(), LateralOffsetNDCParameter, LateralOffset);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-		const bool bIsAndroidGLES = (Platform == EShaderPlatform::SP_OPENGL_ES3_1_ANDROID || Platform == EShaderPlatform::SP_OPENGL_ES2_ANDROID);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		const bool bIsAndroidGLES = RHISupportsMobileMultiView(Parameters.Platform);
 		OutEnvironment.SetDefine(TEXT("MOBILE_MULTI_VIEW"), (bMobileMultiView && bIsAndroidGLES) ? 1u : 0u);
 	}
 
@@ -49,8 +49,8 @@ public:
 	FShaderParameter LateralOffsetNDCParameter;
 };
 
-IMPLEMENT_SHADER_TYPE(template<>, FCompositeMonoscopicFarFieldViewVS<true>, TEXT("MonoscopicFarFieldRenderingVertexShader"), TEXT("CompositeMonoscopicFarFieldView"), SF_Vertex);
-IMPLEMENT_SHADER_TYPE(template<>, FCompositeMonoscopicFarFieldViewVS<false>, TEXT("MonoscopicFarFieldRenderingVertexShader"), TEXT("CompositeMonoscopicFarFieldView"), SF_Vertex);
+IMPLEMENT_SHADER_TYPE(template<>, FCompositeMonoscopicFarFieldViewVS<true>, TEXT("/Engine/Private/MonoscopicFarFieldRenderingVertexShader.usf"), TEXT("CompositeMonoscopicFarFieldView"), SF_Vertex);
+IMPLEMENT_SHADER_TYPE(template<>, FCompositeMonoscopicFarFieldViewVS<false>, TEXT("/Engine/Private/MonoscopicFarFieldRenderingVertexShader.usf"), TEXT("CompositeMonoscopicFarFieldView"), SF_Vertex);
 
 /** Pixel shader to composite the monoscopic view into the stereo views. */
 template<bool bMobileMultiView>
@@ -60,7 +60,7 @@ class FCompositeMonoscopicFarFieldViewPS : public FGlobalShader
 
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		return true;
 	}
@@ -93,10 +93,10 @@ public:
 		return bShaderHasOutdatedParameters;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-		const bool bIsAndroidGLES = (Platform == EShaderPlatform::SP_OPENGL_ES3_1_ANDROID || Platform == EShaderPlatform::SP_OPENGL_ES2_ANDROID);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		const bool bIsAndroidGLES = RHISupportsMobileMultiView(Parameters.Platform);
 		OutEnvironment.SetDefine(TEXT("MOBILE_MULTI_VIEW"), (bMobileMultiView && bIsAndroidGLES) ? 1u : 0u);
 	}
 
@@ -105,8 +105,8 @@ public:
 	FSceneTextureShaderParameters SceneTextureParameters;
 };
 
-IMPLEMENT_SHADER_TYPE(template<>, FCompositeMonoscopicFarFieldViewPS<true>, TEXT("MonoscopicFarFieldRenderingPixelShader"), TEXT("CompositeMonoscopicFarFieldView"), SF_Pixel);
-IMPLEMENT_SHADER_TYPE(template<>, FCompositeMonoscopicFarFieldViewPS<false>, TEXT("MonoscopicFarFieldRenderingPixelShader"), TEXT("CompositeMonoscopicFarFieldView"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, FCompositeMonoscopicFarFieldViewPS<true>, TEXT("/Engine/Private/MonoscopicFarFieldRenderingPixelShader.usf"), TEXT("CompositeMonoscopicFarFieldView"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, FCompositeMonoscopicFarFieldViewPS<false>, TEXT("/Engine/Private/MonoscopicFarFieldRenderingPixelShader.usf"), TEXT("CompositeMonoscopicFarFieldView"), SF_Pixel);
 
 /**
 Pixel Shader to mask the monoscopic far field view's depth buffer where pixels were rendered into the stereo views.
@@ -119,7 +119,7 @@ class FMonoscopicFarFieldMaskPS : public FGlobalShader
 
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		return true;
 	}
@@ -162,10 +162,10 @@ public:
 		return bShaderHasOutdatedParameters;
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
-		const bool bIsAndroidGLES = (Platform == EShaderPlatform::SP_OPENGL_ES3_1_ANDROID || Platform == EShaderPlatform::SP_OPENGL_ES2_ANDROID);
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		const bool bIsAndroidGLES = RHISupportsMobileMultiView(Parameters.Platform);
 		OutEnvironment.SetDefine(TEXT("MOBILE_MULTI_VIEW"), (bMobileMultiView && bIsAndroidGLES) ? 1u : 0u);
 	}
 
@@ -177,8 +177,8 @@ public:
 	FShaderParameter LateralOffsetNDCParameter;
 };
 
-IMPLEMENT_SHADER_TYPE(template<>, FMonoscopicFarFieldMaskPS<true>, TEXT("MonoscopicFarFieldRenderingPixelShader"), TEXT("MonoscopicFarFieldMask"), SF_Pixel);
-IMPLEMENT_SHADER_TYPE(template<>, FMonoscopicFarFieldMaskPS<false>, TEXT("MonoscopicFarFieldRenderingPixelShader"), TEXT("MonoscopicFarFieldMask"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, FMonoscopicFarFieldMaskPS<true>, TEXT("/Engine/Private/MonoscopicFarFieldRenderingPixelShader.usf"), TEXT("MonoscopicFarFieldMask"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, FMonoscopicFarFieldMaskPS<false>, TEXT("/Engine/Private/MonoscopicFarFieldRenderingPixelShader.usf"), TEXT("MonoscopicFarFieldMask"), SF_Pixel);
 
 void FSceneRenderer::RenderMonoscopicFarFieldMask(FRHICommandListImmediate& RHICmdList)
 {

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,6 +10,7 @@
 #include "Animation/AnimSingleNodeInstanceProxy.h"
 #include "AnimNodes/AnimNode_CurveSource.h"
 #include "AnimNodes/AnimNode_PoseBlendNode.h"
+#include "AnimNodes/AnimNode_CopyPoseFromMesh.h"
 #include "AnimPreviewInstance.generated.h"
 
 /** Enum to know how montage is being played */
@@ -26,7 +27,7 @@ enum EMontagePreviewType
 
 /** Proxy override for this UAnimInstance-derived class */
 USTRUCT()
-struct FAnimPreviewInstanceProxy : public FAnimSingleNodeInstanceProxy
+struct ANIMGRAPH_API FAnimPreviewInstanceProxy : public FAnimSingleNodeInstanceProxy
 {
 	GENERATED_BODY()
 
@@ -52,6 +53,7 @@ public:
 	virtual void Update(float DeltaSeconds) override;
 	virtual bool Evaluate(FPoseContext& Output) override;
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
+	virtual void SetAnimationAsset(UAnimationAsset* NewAsset, USkeletalMeshComponent* MeshComponent, bool bIsLooping, float InPlayRate) override;
 
 	void ResetModifiedBone(bool bCurveController = false);
 
@@ -115,6 +117,12 @@ public:
 		return CurveBoneControllers;
 	}
 
+	/** Sets an external debug skeletal mesh component to use to debug */
+	void SetDebugSkeletalMeshComponent(USkeletalMeshComponent* InSkeletalMeshComponent);
+
+	/** Gets the external debug skeletal mesh component we are debugging */
+	USkeletalMeshComponent* GetDebugSkeletalMeshComponent() const;
+
 private:
 	void UpdateCurveController();
 
@@ -136,6 +144,9 @@ private:
 
 	/** Pose blend node for evaluating pose assets (for previewing curve sources) */
 	FAnimNode_PoseBlendNode PoseBlendNode;
+
+	/** Allows us to copy a pose from the mesh being debugged */
+	FAnimNode_CopyPoseFromMesh CopyPoseNode;
 
 	/**
 	 * Delegate to call after Key is set
@@ -185,8 +196,12 @@ class ANIMGRAPH_API UAnimPreviewInstance : public UAnimSingleNodeInstance
 	//~ Begin UAnimInstance Interface
 	virtual void NativeInitializeAnimation() override;
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
+	virtual bool CanRunParallelWork() const { return false; }
+protected:
+	virtual void Montage_Advance(float DeltaTime) override;
 	//~ End UAnimInstance Interface
 
+public:
 	/** Set SkeletalControl Alpha**/
 	void SetSkeletalControlAlpha(float SkeletalControlAlpha);
 
@@ -284,6 +299,12 @@ class ANIMGRAPH_API UAnimPreviewInstance : public UAnimSingleNodeInstance
 	 * This is used by when editing, when controller has to be disabled
 	 */
 	void EnableControllers(bool bEnable);
+
+	/** Sets an external debug skeletal mesh component to use to debug */
+	void SetDebugSkeletalMeshComponent(USkeletalMeshComponent* InSkeletalMeshComponent);
+
+	/** Gets the external debug skeletal mesh component we are debugging */
+	USkeletalMeshComponent* GetDebugSkeletalMeshComponent() const;
 };
 
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SSequencerLabelEditor.h"
 #include "Widgets/Text/STextBlock.h"
@@ -147,7 +147,7 @@ FReply SSequencerLabelEditor::HandleCreateNewLabelButtonClicked()
 bool SSequencerLabelEditor::HandleCreateNewLabelButtonIsEnabled() const
 {
 	FString FilterString = FilterBox->GetText().ToString();
-	FilterString.Trim();
+	FilterString.TrimStartInline();
 
 	return !FilterString.IsEmpty() && !FilterString.Contains(TEXT(" ")) && !Sequencer->GetLabelManager().LabelExists(FilterString);
 }

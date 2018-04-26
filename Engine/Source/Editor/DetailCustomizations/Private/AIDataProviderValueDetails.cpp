@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AIDataProviderValueDetails.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -70,9 +70,9 @@ void FAIDataProviderValueDetails::CustomizeChildren(TSharedRef<class IPropertyHa
 {
 	if (StructPropertyHandle->IsValidHandle())
 	{
-		StructBuilder.AddChildProperty(DataBindingProperty.ToSharedRef());
+		StructBuilder.AddProperty(DataBindingProperty.ToSharedRef());
 
-		StructBuilder.AddChildContent(LOCTEXT("PropertyField", "Property"))
+		StructBuilder.AddCustomRow(LOCTEXT("PropertyField", "Property"))
 		.Visibility(TAttribute<EVisibility>::Create(TAttribute<EVisibility>::FGetter::CreateSP(this, &FAIDataProviderValueDetails::GetDataFieldVisibility)))
 		.NameContent()
 		[

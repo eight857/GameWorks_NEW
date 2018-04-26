@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VectorField/VectorFieldVolume.h"
 #include "UObject/ConstructorHelpers.h"
@@ -43,10 +43,3 @@ AVectorFieldVolume::AVectorFieldVolume(const FObjectInitializer& ObjectInitializ
 #endif // WITH_EDITORONLY_DATA
 }
 
-
-/** Returns VectorFieldComponent subobject **/
-UVectorFieldComponent* AVectorFieldVolume::GetVectorFieldComponent() const { return VectorFieldComponent; }
-#if WITH_EDITORONLY_DATA
-/** Returns SpriteComponent subobject **/
-UBillboardComponent* AVectorFieldVolume::GetSpriteComponent() const { return SpriteComponent; }
-#endif

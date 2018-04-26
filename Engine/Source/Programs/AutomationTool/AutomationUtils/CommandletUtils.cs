@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,7 +6,7 @@ using System.Text;
 using System.IO;
 using System.Threading;
 using UnrealBuildTool;
-
+using Tools.DotNETCommon;
 
 namespace AutomationTool
 {
@@ -43,24 +43,6 @@ namespace AutomationTool
 	public partial class CommandUtils
 	{
 		#region Commandlets
-
-		/// <summary>
-		/// Runs Cook commandlet.
-		/// </summary>
-		[Obsolete("CookCommandlet now takes a FileReference for project argument")]
-		public static void CookCommandlet(string ProjectName)
-		{
-			FileReference ProjectFile;
-			if(ProjectName.Contains('/') || ProjectName.Contains('\\'))
-			{
-				ProjectFile = new FileReference(ProjectName);
-			}
-			else if(!UProjectInfo.TryGetProjectFileName(ProjectName, out ProjectFile))
-			{
-				throw new AutomationException("Cannot determine project path for {0}", ProjectName);
-			}
-			CookCommandlet(ProjectFile);
-		}
 
 		/// <summary>
 		/// Runs Cook commandlet.
@@ -146,7 +128,7 @@ namespace AutomationTool
 				MapsToRebuildLighting = "-Map=" + CombineCommandletParams(Maps).Trim();
 			}
 
-			RunCommandlet(ProjectName, UE4Exe, "ResavePackages", String.Format("-buildlighting -MapsOnly -ProjectOnly -AllowCommandletRendering -SkipSkinVerify {0} {1}", MapsToRebuildLighting, Parameters));
+			RunCommandlet(ProjectName, UE4Exe, "ResavePackages", String.Format("-buildtexturestreaming -buildlighting -MapsOnly -ProjectOnly -AllowCommandletRendering -SkipSkinVerify {0} {1}", MapsToRebuildLighting, Parameters));
 		}
 
         /// <summary>
@@ -188,7 +170,7 @@ namespace AutomationTool
             {
                 throw new AutomationException("GenerateDistillFileSets should have a full path and file for {0}.", ManifestFile);
             }
-            CreateDirectory_NoExceptions(Dir);
+            CreateDirectory(Dir);
             if (FileExists_NoExceptions(ManifestFile))
             {
                 DeleteFile(ManifestFile);
@@ -239,24 +221,6 @@ namespace AutomationTool
 		/// <summary>
 		/// Runs a commandlet using Engine/Binaries/Win64/UE4Editor-Cmd.exe.
 		/// </summary>
-		/// <param name="ProjectName">Project name.</param>
-		/// <param name="UE4Exe">The name of the UE4 Editor executable to use.</param>
-		/// <param name="Commandlet">Commandlet name.</param>
-		/// <param name="Parameters">Command line parameters (without -run=)</param>
-		[Obsolete("RunCommandlet now takes a uproject path as first argument")]
-		public static void RunCommandlet(string ProjectName, string UE4Exe, string Commandlet, string Parameters = null)
-		{
-			FileReference ProjectFile;
-			if(!UProjectInfo.TryGetProjectFileName(ProjectName, out ProjectFile))
-			{
-				throw new AutomationException("Cannot determine project file for {0}", ProjectName);
-			}
-			RunCommandlet(ProjectFile, UE4Exe, Commandlet, Parameters);
-		}
-
-		/// <summary>
-		/// Runs a commandlet using Engine/Binaries/Win64/UE4Editor-Cmd.exe.
-		/// </summary>
 		/// <param name="ProjectFile">Project name.</param>
 		/// <param name="UE4Exe">The name of the UE4 Editor executable to use.</param>
 		/// <param name="Commandlet">Commandlet name.</param>
@@ -299,19 +263,6 @@ namespace AutomationTool
 			var RunResult = Run(EditorExe, Args, Options: Opts, Identifier: Commandlet);
 			PopDir();
 
-			// Draw attention to signal exit codes on Posix systems, rather than just printing the exit code
-			if(RunResult.ExitCode > 128 && RunResult.ExitCode < 128 + 32)
-			{
-				if(RunResult.ExitCode == 139)
-				{
-					CommandUtils.LogError("Editor terminated abnormally due to a segmentation fault");
-				}
-				else
-				{
-					CommandUtils.LogError("Editor terminated abnormally with signal {0}", RunResult.ExitCode - 128);
-				}
-			}
-
 			// If we're running on a Mac, dump all the *.crash files that were generated while the editor was running.
 			if(HostPlatform.Current.HostEditorPlatform == UnrealTargetPlatform.Mac)
 			{
@@ -351,11 +302,12 @@ namespace AutomationTool
 						// Not all account types can access /Library/Logs/DiagnosticReports
 					}
 				}
-
-				// Dump all those that we recognize to the log
+				
+				// Dump them all to the log
 				foreach(FileInfo CrashFileInfo in CrashFileInfos)
 				{
-					if(CrashFileInfo.Name.StartsWith("Unreal", StringComparison.InvariantCultureIgnoreCase) || CrashFileInfo.Name.StartsWith("UE4", StringComparison.InvariantCultureIgnoreCase) || CrashFileInfo.Name.StartsWith("ShaderCompileWorker", StringComparison.InvariantCultureIgnoreCase))
+					// snmpd seems to often crash (suspect due to it being starved of CPU cycles during cooks)
+					if(!CrashFileInfo.Name.StartsWith("snmpd_"))
 					{
 						CommandUtils.Log("Found crash log - {0}", CrashFileInfo.FullName);
 						try
@@ -400,9 +352,22 @@ namespace AutomationTool
 			// Whether it was copied correctly or not, delete the local log as it was only a temporary file. 
 			CommandUtils.DeleteFile_NoExceptions(LocalLogFile);
 
+			// Throw an exception if the execution failed. Draw attention to signal exit codes on Posix systems, rather than just printing the exit code
 			if (RunResult.ExitCode != 0)
 			{
-				throw new CommandletException(DestLogFile, RunResult.ExitCode, "BUILD FAILED: Failed while running {0} for {1}; see log {2}", Commandlet, ProjectName, DestLogFile);
+				string ExitCodeDesc = "";
+				if(RunResult.ExitCode > 128 && RunResult.ExitCode < 128 + 32)
+				{
+					if(RunResult.ExitCode == 139)
+					{
+						ExitCodeDesc = " (segmentation fault)";
+					}
+					else
+					{
+						ExitCodeDesc = String.Format(" (signal {0})", RunResult.ExitCode - 128);
+					}
+				}
+				throw new CommandletException(DestLogFile, RunResult.ExitCode, "Editor terminated with exit code {0}{1} while running {2}{3}; see log {4}", RunResult.ExitCode, ExitCodeDesc, Commandlet, (ProjectName == null)? "" : String.Format(" for {0}", ProjectName), DestLogFile);
 			}
 		}
 		
@@ -448,6 +413,44 @@ namespace AutomationTool
 			{
 				return String.Empty;
 			}
+		}
+
+		/// <summary>
+		/// Converts project name to FileReference used by other commandlet functions
+		/// </summary>
+		/// <param name="ProjectName">Project name.</param>
+		/// <returns>FileReference to project location</returns>
+		public static FileReference GetCommandletProjectFile(string ProjectName)
+		{
+			FileReference ProjectFullPath = null;
+			var OriginalProjectName = ProjectName;
+			ProjectName = ProjectName.Trim(new char[] { '\"' });
+			if (ProjectName.IndexOfAny(new char[] { '\\', '/' }) < 0)
+			{
+				ProjectName = CombinePaths(CmdEnv.LocalRoot, ProjectName, ProjectName + ".uproject");
+			}
+			else if (!FileExists_NoExceptions(ProjectName))
+			{
+				ProjectName = CombinePaths(CmdEnv.LocalRoot, ProjectName);
+			}
+			if (FileExists_NoExceptions(ProjectName))
+			{
+				ProjectFullPath = new FileReference(ProjectName);
+			}
+			else
+			{
+				var Branch = new BranchInfo(new List<UnrealTargetPlatform> { UnrealBuildTool.BuildHostPlatform.Current.Platform });
+				var GameProj = Branch.FindGame(OriginalProjectName);
+				if (GameProj != null)
+				{
+					ProjectFullPath = GameProj.FilePath;
+				}
+				if (!FileExists_NoExceptions(ProjectFullPath.FullName))
+				{
+					throw new AutomationException("Could not find a project file {0}.", ProjectName);
+				}
+			}
+			return ProjectFullPath;
 		}
 
 		#endregion

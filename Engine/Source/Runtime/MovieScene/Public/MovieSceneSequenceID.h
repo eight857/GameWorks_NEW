@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -35,6 +35,11 @@ struct FMovieSceneSequenceID
 		return LHS.Value < RHS.Value;
 	}
 
+	FORCEINLINE friend bool operator>(FMovieSceneSequenceID LHS, FMovieSceneSequenceID RHS)
+	{
+		return LHS.Value > RHS.Value;
+	}
+
 	FORCEINLINE friend uint32 GetTypeHash(FMovieSceneSequenceID In)
 	{
 		return GetTypeHash(In.Value);
@@ -51,7 +56,7 @@ struct FMovieSceneSequenceID
 		return true;
 	}
 
-	FORCEINLINE friend FArchive& operator<<(FArchive& Ar, FMovieSceneSequenceID SequenceID)
+	FORCEINLINE friend FArchive& operator<<(FArchive& Ar, FMovieSceneSequenceID& SequenceID)
 	{
 		SequenceID.Serialize(Ar);
 		return Ar;

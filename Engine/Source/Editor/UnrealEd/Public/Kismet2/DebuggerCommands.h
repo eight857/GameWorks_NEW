@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -92,6 +92,8 @@ public:
 	TSharedPtr<FUICommandInfo> PlayInNetworkSettings;
 	TSharedPtr<FUICommandInfo> PlayInNetworkDedicatedServer;
 
+	TArray< TSharedPtr< FUICommandInfo > > PlayInTargetedMobilePreviewDevices;
+
 	/** SIE & PIE controls */
 	TSharedPtr<FUICommandInfo> ResumePlaySession;
 	TSharedPtr<FUICommandInfo> PausePlaySession;
@@ -128,7 +130,13 @@ protected:
 	 *
 	 * @return	Menu content widget
 	 */
-	static TSharedRef< SWidget > GenerateLaunchMenuContent( TSharedRef<FUICommandList> InCommandList );	
+	static TSharedRef< SWidget > GenerateLaunchMenuContent( TSharedRef<FUICommandList> InCommandList );
+
+	// Add mobile PIE preview device commands
+	void AddPIEPreviewDeviceCommands();
+
+	// Add mobile PIE preview device actions
+	static void AddPIEPreviewDeviceActions(const FPlayWorldCommands &Commands, FUICommandList &ActionList);
 };
 
 

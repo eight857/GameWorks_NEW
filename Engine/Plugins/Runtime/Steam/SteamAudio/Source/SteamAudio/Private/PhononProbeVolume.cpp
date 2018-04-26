@@ -8,19 +8,32 @@
 #include "PhononScene.h"
 #include "PhononCommon.h"
 
+#include "Components/PrimitiveComponent.h"
+#include "PlatformFileManager.h"
+#include "GenericPlatformFile.h"
+#include "Paths.h"
+#include "Engine/World.h"
+
 #if WITH_EDITOR
+
 #include "Editor.h"
 #include "LevelEditorViewport.h"
+
 #endif
 
 #include <algorithm>
 
 APhononProbeVolume::APhononProbeVolume(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, PlacementStrategy(EPhononProbePlacementStrategy::UNIFORM_FLOOR)
 	, HorizontalSpacing(400.0f)
 	, HeightAboveFloor(150.0f)
 	, NumProbes(0)
 {
+	auto RootPrimitiveComponent = Cast<UPrimitiveComponent>(this->GetRootComponent());
+	RootPrimitiveComponent->BodyInstance.SetCollisionProfileName("NoCollision");
+	RootPrimitiveComponent->bGenerateOverlapEvents = false;
+
 	FRotator DefaultRotation(0, 0, 0);
 	PhononProbeComponent = CreateDefaultSubobject<UPhononProbeComponent>(TEXT("PhononProbeComponent0"));
 	PhononProbeComponent->SetWorldLocation(this->GetActorLocation());
@@ -29,34 +42,23 @@ APhononProbeVolume::APhononProbeVolume(const FObjectInitializer& ObjectInitializ
 }
 
 #if WITH_EDITOR
+
+//==================================================================================================================================================
+// Probe placement
+//==================================================================================================================================================
+
 void APhononProbeVolume::PlaceProbes(IPLhandle PhononScene, IPLProbePlacementProgressCallback ProbePlacementCallback, 
 	TArray<IPLSphere>& ProbeSpheres)
 {
-	// Clear out old data
-	ProbeBoxData.Empty();
-	ProbeBatchData.Empty();
+	// TODO: delete probe batch data from disk if it exists
 
-	// Compute bounding box in Phonon coords
 	IPLhandle ProbeBox = nullptr;
-	FVector BoxCenter, BoxExtents;
-	this->Brush->Bounds.GetBox().GetCenterAndExtents(BoxCenter, BoxExtents);
-	BoxExtents *= this->GetTransform().GetScale3D();
-	FVector Center = this->GetTransform().GetLocation();
-	IPLVector3 MinExtent = SteamAudio::UnrealToPhononIPLVector3(Center - BoxExtents);
-	IPLVector3 MaxExtent = SteamAudio::UnrealToPhononIPLVector3(Center + BoxExtents);
-	
-	if (MinExtent.x > MaxExtent.x)
-		std::swap(MinExtent.x, MaxExtent.x);
 
-	if (MinExtent.y > MaxExtent.y)
-		std::swap(MinExtent.y, MaxExtent.y);
-
-	if (MinExtent.z > MaxExtent.z)
-		std::swap(MinExtent.z, MaxExtent.z);
-
-	IPLBox ProbeBoxExtents;
-	ProbeBoxExtents.minCoordinates = MinExtent;
-	ProbeBoxExtents.maxCoordinates = MaxExtent;
+	// Compute box transform
+	float ProbeBoxTransformMatrix[16];
+	auto VolumeTransform = this->GetTransform();
+	VolumeTransform.MultiplyScale3D(FVector(200));
+	SteamAudio::GetMatrixForTransform(VolumeTransform, ProbeBoxTransformMatrix);
 
 	// Configure placement parameters
 	IPLProbePlacementParams ProbePlacementParameters;
@@ -67,36 +69,106 @@ void APhononProbeVolume::PlaceProbes(IPLhandle PhononScene, IPLProbePlacementPro
 	ProbePlacementParameters.maxOctreeTriangles = 0;
 
 	// Create probe box, generate probes
-	iplCreateProbeBox(PhononScene, ProbeBoxExtents, ProbePlacementParameters, ProbePlacementCallback, &ProbeBox);
+	iplCreateProbeBox(PhononScene, ProbeBoxTransformMatrix, ProbePlacementParameters, ProbePlacementCallback, &ProbeBox);
+
+	ProbeDataSize = SaveProbeBoxToDisk(ProbeBox);
 
 	// Get probe locations/radii
 	NumProbes = iplGetProbeSpheres(ProbeBox, nullptr);
 	ProbeSpheres.SetNumUninitialized(NumProbes);
 	iplGetProbeSpheres(ProbeBox, ProbeSpheres.GetData());
 
-	IPLhandle ProbeBatch = nullptr;
-	iplCreateProbeBatch(&ProbeBatch);
+	// Clean up
+	iplDestroyProbeBox(&ProbeBox);
 
-	for (IPLint32 i = 0; i < NumProbes; ++i)
-	{ 
-		iplAddProbeToBatch(ProbeBatch, ProbeBox, i);
-	}
+	MarkPackageDirty();
+}
 
-	// Save probe box data
-	ProbeBoxDataSize = iplSaveProbeBox(ProbeBox, nullptr);
-	ProbeBoxData.SetNumUninitialized(ProbeBoxDataSize);
-	iplSaveProbeBox(ProbeBox, ProbeBoxData.GetData());
+//==================================================================================================================================================
+// Probe box and probe batch serialization
+//==================================================================================================================================================
 
+int32 APhononProbeVolume::SaveProbeBatchToDisk(IPLhandle ProbeBatch)
+{
 	// Save probe batch data
-	iplFinalizeProbeBatch(ProbeBatch);
-	IPLint32 ProbeBatchDataSize = iplSaveProbeBatch(ProbeBatch, nullptr);
+	TArray<uint8> ProbeBatchData;
+	int32 ProbeBatchDataSize = iplSaveProbeBatch(ProbeBatch, nullptr);
 	ProbeBatchData.SetNumUninitialized(ProbeBatchDataSize);
 	iplSaveProbeBatch(ProbeBatch, ProbeBatchData.GetData());
 
-	// Clean up
-	iplDestroyProbeBox(&ProbeBox);
-	iplDestroyProbeBatch(&ProbeBatch);
+	// Write data to disk
+	ProbeBatchFileName = ProbeBatchFileName.IsEmpty() ? GetProbeBatchFileName() : ProbeBatchFileName;
+	FString ProbeBatchPath = SteamAudio::RuntimePath + ProbeBatchFileName;
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	IFileHandle* ProbeBatchFileHandle = PlatformFile.OpenWrite(*ProbeBatchPath);
+	if (ProbeBatchFileHandle)
+	{
+		ProbeBatchFileHandle->Write(ProbeBatchData.GetData(), ProbeBatchDataSize);
+		delete ProbeBatchFileHandle;
+		return ProbeBatchDataSize;
+	}
+	else
+	{
+		UE_LOG(LogSteamAudio, Warning, TEXT("Unable to save probe batch to disk."));
+		return 0;
+	}
 }
+
+int32 APhononProbeVolume::SaveProbeBoxToDisk(IPLhandle ProbeBox)
+{
+	// Save probe box data
+	TArray<uint8> ProbeBoxData;
+	int32 ProbeBoxDataSize = iplSaveProbeBox(ProbeBox, nullptr);
+	ProbeBoxData.SetNumUninitialized(ProbeBoxDataSize);
+	iplSaveProbeBox(ProbeBox, ProbeBoxData.GetData());
+
+	// Write data to disk
+	ProbeBoxFileName = ProbeBoxFileName.IsEmpty() ? GetProbeBoxFileName() : ProbeBoxFileName;
+	FString ProbeBoxPath = SteamAudio::EditorOnlyPath + ProbeBoxFileName;
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	IFileHandle* ProbeBoxFileHandle = PlatformFile.OpenWrite(*ProbeBoxPath);
+	if (ProbeBoxFileHandle)
+	{
+		ProbeBoxFileHandle->Write(ProbeBoxData.GetData(), ProbeBoxDataSize);
+		delete ProbeBoxFileHandle;
+		return ProbeBoxDataSize;
+	}
+	else
+	{
+		UE_LOG(LogSteamAudio, Warning, TEXT("Unable to save probe box to disk."));
+		return 0;
+	}
+}
+
+//==================================================================================================================================================
+// Updating box/batch data.
+//==================================================================================================================================================
+
+void APhononProbeVolume::UpdateProbeData(IPLhandle ProbeBox)
+{
+	// Update probe box serialized data
+	SaveProbeBoxToDisk(ProbeBox);
+
+	// Update probe batch serialized data
+	IPLhandle ProbeBatch = nullptr;
+	iplCreateProbeBatch(&ProbeBatch);
+
+	NumProbes = iplGetProbeSpheres(ProbeBox, nullptr);
+	for (int32 i = 0; i < NumProbes; ++i)
+	{
+		iplAddProbeToBatch(ProbeBatch, ProbeBox, i);
+	}
+
+	iplFinalizeProbeBatch(ProbeBatch);
+	ProbeDataSize = SaveProbeBatchToDisk(ProbeBatch);
+	iplDestroyProbeBatch(&ProbeBatch);
+
+	MarkPackageDirty();
+}
+
+//==================================================================================================================================================
+// UI editability rules
+//==================================================================================================================================================
 
 bool APhononProbeVolume::CanEditChange(const UProperty* InProperty) const
 {
@@ -110,48 +182,134 @@ bool APhononProbeVolume::CanEditChange(const UProperty* InProperty) const
 
 	return ParentVal;
 }
+
 #endif
 
-void APhononProbeVolume::UpdateProbeBoxData(IPLhandle ProbeBox)
+//==================================================================================================================================================
+// Probe box and probe batch deserialization
+//==================================================================================================================================================
+
+bool APhononProbeVolume::LoadProbeBoxFromDisk(IPLhandle* ProbeBox) const
 {
-	// Update probe box serialized data
-	ProbeBoxDataSize = iplSaveProbeBox(ProbeBox, nullptr);
-	ProbeBoxData.SetNumUninitialized(ProbeBoxDataSize);
-	iplSaveProbeBox(ProbeBox, ProbeBoxData.GetData());
+	TArray<uint8> ProbeBoxData;
 
-	// Update probe batch serialized data
-	IPLhandle ProbeBatch = nullptr;
-	iplCreateProbeBatch(&ProbeBatch);
-
-	NumProbes = iplGetProbeSpheres(ProbeBox, nullptr);
-	for (auto i = 0; i < NumProbes; ++i)
+	if (ProbeBoxFileName.IsEmpty())
 	{
-		iplAddProbeToBatch(ProbeBatch, ProbeBox, i);
+		return false;
 	}
 
-	iplFinalizeProbeBatch(ProbeBatch);
-	auto ProbeBatchDataSize = iplSaveProbeBatch(ProbeBatch, nullptr);
-	ProbeBatchData.SetNumUninitialized(ProbeBatchDataSize);
-	iplSaveProbeBatch(ProbeBatch, ProbeBatchData.GetData());
-	iplDestroyProbeBatch(&ProbeBatch);
+	FString ProbeBoxPath = SteamAudio::EditorOnlyPath + ProbeBoxFileName;
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	IFileHandle* ProbeBoxFileHandle = PlatformFile.OpenRead(*ProbeBoxPath);
+	if (ProbeBoxFileHandle)
+	{
+		ProbeBoxData.SetNum(ProbeBoxFileHandle->Size());
+		ProbeBoxFileHandle->Read(ProbeBoxData.GetData(), ProbeBoxData.Num());
+		iplLoadProbeBox(ProbeBoxData.GetData(), ProbeBoxData.Num(), ProbeBox);
+		delete ProbeBoxFileHandle;
+	}
+	else
+	{
+		UE_LOG(LogSteamAudio, Warning, TEXT("Unable to load probe box from disk %s."), *ProbeBoxPath);
+		return false;
+	}
+
+	return true;
 }
 
-uint8* APhononProbeVolume::GetProbeBoxData()
+bool APhononProbeVolume::LoadProbeBatchFromDisk(IPLhandle* ProbeBatch) const
 {
-	return ProbeBoxData.GetData();
+	TArray<uint8> ProbeBatchData;
+
+	if (ProbeBatchFileName.IsEmpty())
+	{
+		return false;
+	}
+
+	FString ProbeBatchPath = SteamAudio::RuntimePath + ProbeBatchFileName;
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	IFileHandle* ProbeBatchFileHandle = PlatformFile.OpenRead(*ProbeBatchPath);
+	if (ProbeBatchFileHandle)
+	{
+		ProbeBatchData.SetNum(ProbeBatchFileHandle->Size());
+		ProbeBatchFileHandle->Read(ProbeBatchData.GetData(), ProbeBatchData.Num());
+		iplLoadProbeBatch(ProbeBatchData.GetData(), ProbeBatchData.Num(), ProbeBatch);
+		delete ProbeBatchFileHandle;
+	}
+	else
+	{
+		UE_LOG(LogSteamAudio, Warning, TEXT("Unable to load probe batch from disk %s."), *ProbeBatchPath);
+		return false;
+	}
+
+	return true;
 }
 
-const int32 APhononProbeVolume::GetProbeBoxDataSize() const
+//==================================================================================================================================================
+// Data size queries
+//==================================================================================================================================================
+
+int32 APhononProbeVolume::GetProbeBoxDataSize() const
 {
-	return ProbeBoxData.Num();
+	int32 ProbeBoxDataSize = 0;
+	
+	if (!ProbeBoxFileName.IsEmpty())
+	{
+		FString ProbeBoxPath = SteamAudio::EditorOnlyPath + ProbeBoxFileName;
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		IFileHandle* ProbeBoxFileHandle = PlatformFile.OpenRead(*ProbeBoxPath);
+		if (ProbeBoxFileHandle)
+		{
+			ProbeBoxDataSize = ProbeBoxFileHandle->Size();
+			delete ProbeBoxFileHandle;
+		}
+	}
+	
+	return ProbeBoxDataSize;
 }
 
-uint8* APhononProbeVolume::GetProbeBatchData()
+int32 APhononProbeVolume::GetProbeBatchDataSize() const
 {
-	return ProbeBatchData.GetData();
+	int32 ProbeBatchDataSize = 0;
+	
+	if (!ProbeBatchFileName.IsEmpty())
+	{
+		FString ProbeBatchPath = SteamAudio::RuntimePath + ProbeBatchFileName;
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		IFileHandle* ProbeBatchFileHandle = PlatformFile.OpenRead(*ProbeBatchPath);
+		if (ProbeBatchFileHandle)
+		{
+			ProbeBatchDataSize = ProbeBatchFileHandle->Size();
+			delete ProbeBatchFileHandle;
+		}
+	}
+
+	return ProbeBatchDataSize;
 }
 
-const int32 APhononProbeVolume::GetProbeBatchDataSize() const
+int32 APhononProbeVolume::GetDataSizeForSource(const FName& UniqueIdentifier) const
 {
-	return ProbeBatchData.Num();
+	int32 SourceDataSize = 0;
+	for (const auto& BakedSourceInfo : BakedDataInfo)
+	{
+		if (BakedSourceInfo.Name == UniqueIdentifier)
+		{
+			SourceDataSize += BakedSourceInfo.Size;
+		}
+	}
+	return SourceDataSize;
+}
+
+//==================================================================================================================================================
+// Filename generation
+//==================================================================================================================================================
+
+FString APhononProbeVolume::GetProbeBoxFileName() const
+{
+	return SteamAudio::StrippedMapName(GetWorld()->GetMapName()) + "_" + GetName() + ".probebox";
+}
+
+FString APhononProbeVolume::GetProbeBatchFileName() const
+{
+	return SteamAudio::StrippedMapName(GetWorld()->GetMapName()) + "_" + GetName() + ".probebatch";
 }

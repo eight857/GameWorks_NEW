@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -109,13 +109,16 @@ namespace UnrealGameSync
 		{
 			if(!bAbortScan)
 			{
-				foreach(DirectoryInfo SubDirectory in Folder.Directory.EnumerateDirectories())
+				if((Folder.Directory.Attributes & FileAttributes.ReparsePoint) == 0)
 				{
-					FolderToClean SubFolder = new FolderToClean(SubDirectory);
-					Folder.SubFolders.Add(SubFolder);
-					QueueFolderToPopulate(SubFolder);
+					foreach(DirectoryInfo SubDirectory in Folder.Directory.EnumerateDirectories())
+					{
+						FolderToClean SubFolder = new FolderToClean(SubDirectory);
+						Folder.SubFolders.Add(SubFolder);
+						QueueFolderToPopulate(SubFolder);
+					}
+					Folder.FilesToClean = Folder.Directory.EnumerateFiles().ToList();
 				}
-				Folder.FilesToClean = Folder.Directory.EnumerateFiles().ToList();
 				Folder.bEmptyLeaf = Folder.SubFolders.Count == 0 && Folder.FilesToClean.Count == 0;
 			}
 

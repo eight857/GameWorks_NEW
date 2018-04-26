@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BehaviorTree/Composites/BTComposite_SimpleParallel.h"
 #include "GameFramework/Actor.h"
@@ -11,6 +11,8 @@ UBTComposite_SimpleParallel::UBTComposite_SimpleParallel(const FObjectInitialize
 	NodeName = "Simple Parallel";
 	bUseChildExecutionNotify = true;
 	bUseNodeDeactivationNotify = true;
+	bUseDecoratorsDeactivationCheck = true;
+	bApplyDecoratorScope = true;
 	OnNextChild.BindUObject(this, &UBTComposite_SimpleParallel::GetNextChildHandler);
 }
 
@@ -73,6 +75,10 @@ void UBTComposite_SimpleParallel::NotifyChildExecution(UBehaviorTreeComponent& O
 		else if (MyMemory->bMainTaskIsActive)
 		{
 			MyMemory->bMainTaskIsActive = false;
+			
+			// notify decorators on main task, ignore observers updates in FakeSearchData - they are not allowed by parallel composite
+			FBehaviorTreeSearchData FakeSearchData(OwnerComp);
+			NotifyDecoratorsOnDeactivation(FakeSearchData, ChildIdx, NodeResult);
 
 			const int32 MyInstanceIdx = OwnerComp.FindInstanceContainingNode(this);
 
@@ -116,30 +122,22 @@ void UBTComposite_SimpleParallel::NotifyNodeDeactivation(FBehaviorTreeSearchData
 	{
 		SearchData.AddUniqueUpdate(FBehaviorTreeSearchUpdate(Children[EBTParallelChild::MainTask].ChildTask, ActiveInstanceIdx, EBTNodeUpdateMode::Remove));
 	}
+}
 
-	// remove all active nodes from background tree
-	const FBTNodeIndex FirstBackgroundIndex(ActiveInstanceIdx, GetChildExecutionIndex(EBTParallelChild::BackgroundTree, EBTChildIndex::FirstNode));
-	const FBTNodeIndex LastBackgroundIndex(ActiveInstanceIdx, GetLastExecutionIndex());
-	SearchData.OwnerComp.UnregisterAuxNodesUpTo(FirstBackgroundIndex);
-
-	// remove all pending updates "Add" from background tree 
-	// it doesn't make sense for decorators to reactivate themselves there
-	for (int32 Idx = SearchData.PendingUpdates.Num() - 1; Idx >= 0; Idx--)
+bool UBTComposite_SimpleParallel::CanNotifyDecoratorsOnDeactivation(FBehaviorTreeSearchData& SearchData, int32 ChildIdx, EBTNodeResult::Type& NodeResult) const
+{
+	// don't pass deactivation to decorators when parallel is just switching to background tree
+	// decorators on running main task will be notified when their task finishes execution
+	if (ChildIdx == EBTParallelChild::MainTask)
 	{
-		const FBehaviorTreeSearchUpdate& UpdateInfo = SearchData.PendingUpdates[Idx];
-		if (UpdateInfo.Mode == EBTNodeUpdateMode::Add)
+		FBTParallelMemory* MyMemory = GetNodeMemory<FBTParallelMemory>(SearchData);
+		if (MyMemory->bMainTaskIsActive)
 		{
-			const uint16 UpdateNodeIdx = UpdateInfo.AuxNode ? UpdateInfo.AuxNode->GetExecutionIndex() : UpdateInfo.TaskNode->GetExecutionIndex();
-			const FBTNodeIndex UpdateIdx(UpdateInfo.InstanceIndex, UpdateNodeIdx);
-			if (FirstBackgroundIndex.TakesPriorityOver(UpdateIdx) && UpdateIdx.TakesPriorityOver(LastBackgroundIndex))
-			{
-				UE_VLOG(SearchData.OwnerComp.GetOwner(), LogBehaviorTree, Verbose, TEXT("Search node update[canceled]: %s"),
-					*UBehaviorTreeTypes::DescribeNodeHelper(UpdateInfo.AuxNode ? (UBTNode*)UpdateInfo.AuxNode : (UBTNode*)UpdateInfo.TaskNode));
-
-				SearchData.PendingUpdates.RemoveAt(Idx);
-			}
+			return false;
 		}
 	}
+
+	return true;
 }
 
 uint16 UBTComposite_SimpleParallel::GetInstanceMemorySize() const

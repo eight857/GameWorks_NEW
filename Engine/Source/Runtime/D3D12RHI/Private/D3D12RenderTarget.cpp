@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D12RenderTarget.cpp: D3D render target implementation.
@@ -206,10 +206,7 @@ void FD3D12CommandContext::ResolveTextureUsingShader(
 	DrawPrimitiveUP(RHICmdList, PT_TriangleStrip, 2, Vertices, sizeof(Vertices[0]));
 	RHICmdList.Flush(); // always call flush when using a command list in RHI implementations before doing anything else. This is super hazardous.
 
-	if (SourceTexture)
-	{
-		ConditionalClearShaderResource(&SourceTexture->ResourceLocation);
-	}
+	ConditionalClearShaderResource(&SourceTexture->ResourceLocation);
 
 	// Reset saved render targets
 	CommitRenderTargetsAndUAVs();
@@ -608,6 +605,9 @@ static uint32 ComputeBytesPerPixel(DXGI_FORMAT Format)
 	case DXGI_FORMAT_R10G10B10A2_UNORM:
 	case DXGI_FORMAT_R11G11B10_FLOAT:
 	case DXGI_FORMAT_R16G16_UNORM:
+	case DXGI_FORMAT_R32_UINT:
+	case DXGI_FORMAT_R32_TYPELESS:
+	case DXGI_FORMAT_R32_FLOAT:
 		BytesPerPixel = 4;
 		break;
 	case DXGI_FORMAT_R16G16B16A16_FLOAT:
@@ -1197,7 +1197,7 @@ void FD3D12DynamicRHI::ReadSurfaceDataMSAARaw(FRHICommandList_RecursiveHazardous
 
 	RTVDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 	RTVDesc.Texture2D.MipSlice = 0;
-	NonMSAARTV = new FD3D12RenderTargetView(Device, &RTVDesc, &ResourceLocation);
+	NonMSAARTV = new FD3D12RenderTargetView(Device, RTVDesc, ResourceLocation);
 
 	// Create a CPU-accessible staging texture to copy the resolved sample data to.
 	TRefCountPtr<FD3D12Resource> StagingTexture2D;

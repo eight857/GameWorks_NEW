@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnitTest.h"
 #include "LMkDOP.h"
@@ -160,7 +160,7 @@ void TestLightmass()
 
 	FString TestString = FString::Printf(TEXT("Copy has %d, Vector is [%.2f, %.2f, %.2f, %.2f]\n"), ArrayCopy[0], TestVector.X, TestVector.Y, TestVector.Z, TestVector.W);
 
-	wprintf(*TestString);
+	wprintf(TEXT("%s"), *TestString);
 
 	FMemory::Free(Buf);
 

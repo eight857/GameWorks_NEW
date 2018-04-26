@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -57,6 +57,7 @@ namespace UMWidget
  * Helper macro for binding to a delegate or using the constant value when constructing the underlying SWidget
  */
 #define OPTIONAL_BINDING(ReturnType, MemberName)				\
+	DEPRECATED_MACRO(4.17, "OPTIONAL_BINDING macro is deprecated.  Please use PROPERTY_BINDING in place and you'll need to define a PROPERTY_BINDING_IMPLEMENTATION in your header instead.") \
 	( MemberName ## Delegate.IsBound() && !IsDesignTime() )		\
 	?															\
 		TAttribute< ReturnType >::Create(MemberName ## Delegate.GetUObject(), MemberName ## Delegate.GetFunctionName()) \
@@ -65,14 +66,25 @@ namespace UMWidget
 
 #if WITH_EDITOR
 
-#define GAME_SAFE_OPTIONAL_BINDING(ReturnType, MemberName)			\
+/**
+ * Helper macro for binding to a delegate or using the constant value when constructing the underlying SWidget.
+ * These macros create a binding that has a layer of indirection that allows blueprint debugging to work more effectively.
+ */
+#define PROPERTY_BINDING(ReturnType, MemberName)					\
 	( MemberName ## Delegate.IsBound() && !IsDesignTime() )			\
 	?																\
 		BIND_UOBJECT_ATTRIBUTE(ReturnType, K2_Gate_ ## MemberName)	\
 	:																\
 		TAttribute< ReturnType >(MemberName)
 
-#define GAME_SAFE_BINDING_IMPLEMENTATION(ReturnType, MemberName)		\
+#define BITFIELD_PROPERTY_BINDING(MemberName)						\
+	( MemberName ## Delegate.IsBound() && !IsDesignTime() )			\
+	?																\
+		BIND_UOBJECT_ATTRIBUTE(bool, K2_Gate_ ## MemberName)		\
+	:																\
+		TAttribute< bool >(MemberName != 0)
+
+#define PROPERTY_BINDING_IMPLEMENTATION(ReturnType, MemberName)			\
 	ReturnType K2_Cache_ ## MemberName;									\
 	ReturnType K2_Gate_ ## MemberName()									\
 	{																	\
@@ -86,16 +98,26 @@ namespace UMWidget
 
 #else
 
-#define GAME_SAFE_OPTIONAL_BINDING(ReturnType, MemberName)		\
+#define PROPERTY_BINDING(ReturnType, MemberName)				\
 	( MemberName ## Delegate.IsBound() && !IsDesignTime() )		\
 	?															\
 		TAttribute< ReturnType >::Create(MemberName ## Delegate.GetUObject(), MemberName ## Delegate.GetFunctionName()) \
 	:															\
 		TAttribute< ReturnType >(MemberName)
 
-#define GAME_SAFE_BINDING_IMPLEMENTATION(Type, MemberName)
+#define BITFIELD_PROPERTY_BINDING(MemberName)					\
+	( MemberName ## Delegate.IsBound() && !IsDesignTime() )		\
+	?															\
+		TAttribute< bool >::Create(MemberName ## Delegate.GetUObject(), MemberName ## Delegate.GetFunctionName()) \
+	:															\
+		TAttribute< bool >(MemberName != 0)
+
+#define PROPERTY_BINDING_IMPLEMENTATION(Type, MemberName) 
 
 #endif
+
+#define GAME_SAFE_OPTIONAL_BINDING(ReturnType, MemberName) PROPERTY_BINDING(ReturnType, MemberName)
+#define GAME_SAFE_BINDING_IMPLEMENTATION(ReturnType, MemberName) PROPERTY_BINDING_IMPLEMENTATION(ReturnType, MemberName)
 
 /**
  * Helper macro for binding to a delegate or using the constant value when constructing the underlying SWidget,
@@ -188,25 +210,10 @@ public:
 	typedef TFunctionRef<TSharedPtr<SObjectWidget>( UUserWidget*, TSharedRef<SWidget> )> ConstructMethodType;
 
 	/**
-	 * Allows controls to be exposed as variables in a blueprint.  Not all controls need to be exposed
-	 * as variables, so this allows only the most useful ones to end up being exposed.
-	 */
-	UPROPERTY()
-	bool bIsVariable;
-
-	/** Flag if the Widget was created from a blueprint */
-	UPROPERTY(Transient)
-	bool bCreatedByConstructionScript;
-
-	/**
 	 * The parent slot of the UWidget.  Allows us to easily inline edit the layout controlling this widget.
 	 */
 	UPROPERTY(Instanced, EditAnywhere, BlueprintReadOnly, Category=Layout, meta=(ShowOnlyInnerProperties))
 	UPanelSlot* Slot;
-
-	/** Sets whether this widget can be modified interactively by the user */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Behavior")
-	bool bIsEnabled;
 
 	/** A bindable delegate for bIsEnabled */
 	UPROPERTY()
@@ -221,47 +228,21 @@ public:
 	FGetText ToolTipTextDelegate;
 
 	/** Tooltip widget to show when the user hovers over the widget with the mouse */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Behavior", AdvancedDisplay)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Behavior", AdvancedDisplay)
 	UWidget* ToolTipWidget;
 
 	/** A bindable delegate for ToolTipWidget */
 	UPROPERTY()
 	FGetWidget ToolTipWidgetDelegate;
 
-	/** The visibility of the widget */
-	UPROPERTY()
-	ESlateVisibility Visiblity_DEPRECATED;
-
-	/** The visibility of the widget */
-	UPROPERTY(EditAnywhere, Category="Behavior")
-	ESlateVisibility Visibility;
 
 	/** A bindable delegate for Visibility */
 	UPROPERTY()
 	FGetSlateVisibility VisibilityDelegate;
 
-	/**  */
-	UPROPERTY(EditAnywhere, Category="Behavior", meta=(InlineEditConditionToggle))
-	uint32 bOverride_Cursor : 1;
-
-	/** The cursor to show when the mouse is over the widget */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Behavior", AdvancedDisplay, meta=( editcondition="bOverride_Cursor" ))
-	TEnumAsByte<EMouseCursor::Type> Cursor;
-
 	/** A bindable delegate for Cursor */
 	//UPROPERTY()
 	//FGetMouseCursor CursorDelegate;
-
-protected:
-
-	/**
-	 * If true prevents the widget or its child's geometry or layout information from being cached.  If this widget
-	 * changes every frame, but you want it to still be in an invalidation panel you should make it as volatile
-	 * instead of invalidating it every frame, which would prevent the invalidation panel from actually
-	 * ever caching anything.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Performance")
-	bool bIsVolatile;
 
 public:
 
@@ -277,6 +258,75 @@ public:
 	FVector2D RenderTransformPivot;
 
 	/**
+	 * Allows controls to be exposed as variables in a blueprint.  Not all controls need to be exposed
+	 * as variables, so this allows only the most useful ones to end up being exposed.
+	 */
+	UPROPERTY()
+	uint8 bIsVariable:1;
+
+	/** Flag if the Widget was created from a blueprint */
+	UPROPERTY(Transient)
+	uint8 bCreatedByConstructionScript:1;
+
+	/** Sets whether this widget can be modified interactively by the user */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Behavior")
+	uint8 bIsEnabled:1;
+
+	/**  */
+	UPROPERTY(EditAnywhere, Category="Behavior", meta=(InlineEditConditionToggle))
+	uint8 bOverride_Cursor : 1;
+
+protected:
+
+	/**
+	 * If true prevents the widget or its child's geometry or layout information from being cached.  If this widget
+	 * changes every frame, but you want it to still be in an invalidation panel you should make it as volatile
+	 * instead of invalidating it every frame, which would prevent the invalidation panel from actually
+	 * ever caching anything.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Performance")
+	uint8 bIsVolatile:1;
+
+public:
+#if WITH_EDITORONLY_DATA
+	/** Stores the design time flag setting if the widget is hidden inside the designer */
+	UPROPERTY()
+	uint8 bHiddenInDesigner:1;
+
+	/** Stores the design time flag setting if the widget is expanded inside the designer */
+	UPROPERTY()
+	uint8 bExpandedInDesigner:1;
+
+	/** Stores the design time flag setting if the widget is locked inside the designer */
+	UPROPERTY()
+	uint8 bLockedInDesigner:1;
+#endif
+
+	/** The cursor to show when the mouse is over the widget */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Behavior", AdvancedDisplay, meta=( editcondition="bOverride_Cursor" ))
+	TEnumAsByte<EMouseCursor::Type> Cursor;
+
+	/**
+	 * Controls how the clipping behavior of this widget.  Normally content that overflows the
+	 * bounds of the widget continues rendering.  Enabling clipping prevents that overflowing content
+	 * from being seen.
+	 *
+	 * NOTE: Elements in different clipping spaces can not be batched together, and so there is a
+	 * performance cost to clipping.  Do not enable clipping unless a panel actually needs to prevent
+	 * content from showing up outside its bounds.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Clipping")
+	EWidgetClipping Clipping;
+
+	/** The visibility of the widget */
+	UPROPERTY(EditAnywhere, Category="Behavior")
+	ESlateVisibility Visibility;
+
+	/** The opacity of the widget */
+	UPROPERTY(EditAnywhere, Category="Behavior")
+	float RenderOpacity;
+
+	/**
 	 * The navigation object for this widget is optionally created if the user has configured custom
 	 * navigation rules for this widget in the widget designer.  Those rules determine how navigation transitions
 	 * can occur between widgets.
@@ -286,16 +336,26 @@ public:
 
 #if WITH_EDITORONLY_DATA
 
-	/** Stores the design time flag setting if the widget is hidden inside the designer */
-	UPROPERTY()
-	bool bHiddenInDesigner;
-
-	/** Stores the design time flag setting if the widget is expanded inside the designer */
-	UPROPERTY()
-	bool bExpandedInDesigner;
-
 	/** Stores a reference to the asset responsible for this widgets construction. */
 	TWeakObjectPtr<UObject> WidgetGeneratedBy;
+	
+#endif
+
+public:
+
+#if WITH_EDITOR
+
+	/** @return is this widget locked */
+	bool IsLockedInDesigner() const
+	{
+		return bLockedInDesigner;
+	}
+
+	/** @param bLockedInDesigner should this widget be locked */
+	virtual void SetLockedInDesigner(bool NewLockedInDesigner)
+	{
+		bLockedInDesigner = NewLockedInDesigner;
+	}
 
 #endif
 
@@ -363,6 +423,22 @@ public:
 	/** Sets the visibility of the widget. */
 	UFUNCTION(BlueprintCallable, Category="Widget")
 	virtual void SetVisibility(ESlateVisibility InVisibility);
+
+	/** Gets the current visibility of the widget. */
+	UFUNCTION(BlueprintCallable, Category="Widget")
+	float GetRenderOpacity() const;
+
+	/** Sets the visibility of the widget. */
+	UFUNCTION(BlueprintCallable, Category="Widget")
+	void SetRenderOpacity(float InOpacity);
+
+	/** Gets the clipping state of this widget. */
+	UFUNCTION(BlueprintCallable, Category = "Widget")
+	EWidgetClipping GetClipping() const;
+
+	/** Sets the clipping state of this widget. */
+	UFUNCTION(BlueprintCallable, Category = "Widget")
+	void SetClipping(EWidgetClipping InClipping);
 
 	/** Sets the forced volatility of the widget. */
 	UFUNCTION(BlueprintCallable, Category="Widget")
@@ -453,7 +529,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Widget")
 	void SetNavigationRule(EUINavigation Direction, EUINavigationRule Rule, FName WidgetToFocus);
 
-	
 	/** Gets the parent widget */
 	UFUNCTION(BlueprintCallable, Category="Widget")
 	class UPanelWidget* GetParent() const;
@@ -591,7 +666,6 @@ public:
 
 	// Begin UObject
 	virtual UWorld* GetWorld() const override;
-	virtual void PostLoad() override;
 	// End UObject
 
 #if WITH_EDITOR
@@ -613,6 +687,9 @@ public:
 
 	/** Gets the label to display to the user for this widget. */
 	FText GetLabelText() const;
+
+	/** Gets the label to display to the user for this widget, including any extra metadata like the text string for text. */
+	FText GetLabelTextWithMetadata() const;
 
 	/** Gets the palette category of the widget */
 	virtual const FText GetPaletteCategory();
@@ -663,6 +740,8 @@ public:
 
 	static UWidget* FindChildContainingDescendant(UWidget* Root, UWidget* Descendant);
 
+	static FString GetDefaultFontName();
+
 protected:
 	virtual void OnBindingChanged(const FName& Property);
 
@@ -675,10 +754,18 @@ protected:
 	
 #if WITH_EDITOR
 	/** Utility method for building a design time wrapper widget. */
-	TSharedRef<SWidget> BuildDesignTimeWidget(TSharedRef<SWidget> WrapWidget);
+	DEPRECATED(4.17, "Don't call this function in RebuildWidget any more.  Override RebuildDesignWidget, and build the wrapper there; widgets that derive from Panel already do this.  If you need to recreate the dashed outline you can use CreateDesignerOutline inside RebuildDesignWidget.")
+	TSharedRef<SWidget> BuildDesignTimeWidget(TSharedRef<SWidget> WrapWidget) { return CreateDesignerOutline(WrapWidget); }
 #else
 	/** Just returns the incoming widget in non-editor builds. */
+	DEPRECATED(4.17, "Don't call this function in RebuildWidget any more.  Override RebuildDesignWidget, and build the wrapper there; widgets that derive from Panel already do this.  If you need to recreate the dashed outline you can use CreateDesignerOutline inside RebuildDesignWidget.")
 	FORCEINLINE TSharedRef<SWidget> BuildDesignTimeWidget(TSharedRef<SWidget> WrapWidget) { return WrapWidget; }
+#endif
+
+#if WITH_EDITOR
+	virtual TSharedRef<SWidget> RebuildDesignWidget(TSharedRef<SWidget> Content);
+
+	TSharedRef<SWidget> CreateDesignerOutline(TSharedRef<SWidget> Content) const;
 #endif
 
 	void UpdateRenderTransform();
@@ -730,6 +817,9 @@ private:
 	/** The friendly name for this widget displayed in the designer and BP graph. */
 	UPROPERTY()
 	FString DisplayLabel;
+
+	/** The underlying SWidget for the design time wrapper widget. */
+	TWeakPtr<SWidget> DesignWrapperWidget;
 #endif
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
@@ -744,7 +834,6 @@ private:
 #endif
 
 private:
-	GAME_SAFE_BINDING_IMPLEMENTATION(FText, ToolTipText)
-	GAME_SAFE_BINDING_IMPLEMENTATION(bool, bIsEnabled)
-	//GAME_SAFE_BINDING_IMPLEMENTATION(EMouseCursor::Type, Cursor)
+	PROPERTY_BINDING_IMPLEMENTATION(FText, ToolTipText);
+	PROPERTY_BINDING_IMPLEMENTATION(bool, bIsEnabled);
 };

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -84,6 +84,12 @@ private:
 	TMap<FTextDisplayStringRef, uint16> LocalTextRevisions;
 	uint16 TextRevisionCounter;
 
+#if WITH_EDITOR
+	uint8 GameLocalizationPreviewAutoEnableCount;
+	bool bIsGameLocalizationPreviewEnabled;
+	bool bIsLocalizationLocked;
+#endif
+
 private:
 	FTextLocalizationManager() 
 		: bIsInitialized(false)
@@ -147,6 +153,65 @@ public:
 	 *	If the revision does not match, cached information may be invalid and should be recached. */
 	uint16 GetTextRevision() const { return TextRevisionCounter; }
 
+#if WITH_EDITOR
+	/**
+	 * Enable the game localization preview using the current "preview language" setting, or the native culture if no "preview language" is set.
+	 * @note This is the same as calling EnableGameLocalizationPreview with the current "preview language" setting.
+	 */
+	void EnableGameLocalizationPreview();
+
+	/**
+	 * Enable the game localization preview using the given language, or the native language if the culture name is empty.
+	 * @note This will also lockdown localization editing if the given language is a non-native game language (to avoid accidentally baking out translations as source data in assets).
+	 */
+	void EnableGameLocalizationPreview(const FString& CultureName);
+
+	/**
+	 * Disable the game localization preview.
+	 * @note This is the same as calling EnableGameLocalizationPreview with the native game language (or an empty string).
+	 */
+	void DisableGameLocalizationPreview();
+
+	/**
+	 * Is the game localization preview enabled for a non-native language?
+	 */
+	bool IsGameLocalizationPreviewEnabled() const;
+
+	/**
+	 * Notify that the game localization preview should automatically enable itself under certain circumstances 
+	 * (such as changing the preview language via the UI) due to a state change (such as PIE starting).
+	 * @note This must be paired with a call to PopAutoEnableGameLocalizationPreview.
+	 */
+	void PushAutoEnableGameLocalizationPreview();
+
+	/**
+	 * Notify that the game localization preview should no longer automatically enable itself under certain circumstances 
+	 * (such as changing the preview language via the UI) due to a state change (such as PIE ending).
+	 * @note This must be paired with a call to PushAutoEnableGameLocalizationPreview.
+	 */
+	void PopAutoEnableGameLocalizationPreview();
+
+	/**
+	 * Should the game localization preview automatically enable itself under certain circumstances?
+	 */
+	bool ShouldGameLocalizationPreviewAutoEnable() const;
+
+	/**
+	 * Configure the "preview language" setting used for the game localization preview.
+	 */
+	void ConfigureGameLocalizationPreviewLanguage(const FString& CultureName);
+
+	/**
+	 * Get the configured "preview language" setting used for the game localization preview (if any).
+	 */
+	FString GetConfiguredGameLocalizationPreviewLanguage() const;
+
+	/**
+	 * Is the localization of this game currently locked? (ie, can it be edited in the UI?).
+	 */
+	bool IsLocalizationLocked() const;
+#endif
+
 	/** Event type for immediately reacting to changes in display strings for text. */
 	DECLARE_EVENT(FTextLocalizationManager, FTextRevisionChangedEvent)
 	FTextRevisionChangedEvent OnTextRevisionChangedEvent;
@@ -160,7 +225,7 @@ private:
 	void OnCultureChanged();
 
 	/** Loads localization resources for the specified culture, optionally loading localization resources that are editor-specific or game-specific. */
-	void LoadLocalizationResourcesForCulture(const FString& CultureName, const bool ShouldLoadEditor, const bool ShouldLoadGame);
+	void LoadLocalizationResourcesForCulture(const FString& CultureName, const bool ShouldLoadEditor, const bool ShouldLoadGame, const bool ShouldLoadNative);
 
 	/** Updates display string entries and adds new display string entries based on provided native text. */
 	void UpdateFromNative(const TArray<FTextLocalizationResource>& TextLocalizationResources);

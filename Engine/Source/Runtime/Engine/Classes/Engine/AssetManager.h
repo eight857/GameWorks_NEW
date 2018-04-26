@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,11 +8,15 @@
 #include "StreamableManager.h"
 #include "AssetBundleData.h"
 #include "AssetRegistryModule.h"
+#include "GenericPlatform/GenericPlatformChunkInstall.h"
 #include "AssetManager.generated.h"
 
 /** Defined in C++ file */
 struct FPrimaryAssetTypeData;
 struct FPrimaryAssetData;
+
+/** Delegate called when acquiring resources/chunks for assets, parameter will be true if all resources were acquired, false if any failed */
+DECLARE_DELEGATE_OneParam(FAssetManagerAcquireResourceDelegate, bool);
 
 /** 
  * A singleton UObject that is responsible for loading and unloading PrimaryAssets, and maintaining game-specific asset references
@@ -33,6 +37,9 @@ public:
 	/** Returns the current AssetManager object */
 	static UAssetManager& Get();
 
+	/** Returns the current AssetManager object if it exists, null otherwise */
+	static UAssetManager* GetIfValid();
+
 	/** Accesses the StreamableManager used by this Asset Manager. Static for easy access */
 	static FStreamableManager& GetStreamableManager() { return Get().StreamableManager; }
 
@@ -41,6 +48,15 @@ public:
 
 	/** Asset Type of Label used to tag other assets */
 	static const FPrimaryAssetType PrimaryAssetLabelType;
+
+	/** Type representing a packaging chunk, this is a virtual type that is never loaded off disk */
+	static const FPrimaryAssetType PackageChunkType;
+
+	/** Creates a PrimaryAssetId from a chunk id */
+	static FPrimaryAssetId CreatePrimaryAssetIdFromChunkId(int32 ChunkId);
+
+	/** Extracts a chunk id from a primary asset id, returns INDEX_NONE if it is not PackageChunkType */
+	static int32 ExtractChunkIdFromPrimaryAssetId(const FPrimaryAssetId& PrimaryAssetId);
 
 	// BUILDING ASSET DIRECTORY
 
@@ -73,10 +89,10 @@ public:
 	 * @param BundleData		List of Name->asset paths that represent the possible bundle states for this asset
 	 * @return					True if added
 	 */
-	virtual bool AddDynamicAsset(const FPrimaryAssetId& PrimaryAssetId, const FStringAssetReference& AssetPath, const FAssetBundleData& BundleData);
+	virtual bool AddDynamicAsset(const FPrimaryAssetId& PrimaryAssetId, const FSoftObjectPath& AssetPath, const FAssetBundleData& BundleData);
 
 	/** This will expand out references in the passed in AssetBundleData that are pointing to other primary assets with bundles. This is useful to preload entire webs of assets */
-	virtual void RecursivelyExpandBundleData(FAssetBundleData& BundleData);
+	virtual void RecursivelyExpandBundleData(FAssetBundleData& BundleData) const;
 
 	// ACCESSING ASSET DIRECTORY
 
@@ -108,21 +124,24 @@ public:
 	/** Gets list of all loaded objects for a primary asset type, returns true if any were found. Will return blueprint class for blueprint assets. This works even if the asset wasn't loaded explicitly */
 	virtual bool GetPrimaryAssetObjectList(FPrimaryAssetType PrimaryAssetType, TArray<UObject*>& ObjectList) const;
 
-	/** Gets the FStringAssetReference for a primary asset type and name, returns invalid if not found */
-	virtual FStringAssetReference GetPrimaryAssetPath(const FPrimaryAssetId& PrimaryAssetId) const;
+	/** Gets the FSoftObjectPath for a primary asset type and name, returns invalid if not found */
+	virtual FSoftObjectPath GetPrimaryAssetPath(const FPrimaryAssetId& PrimaryAssetId) const;
 
-	/** Gets the list of all FStringAssetReferences for a given type, returns true if any found */
-	virtual bool GetPrimaryAssetPathList(FPrimaryAssetType PrimaryAssetType, TArray<FStringAssetReference>& AssetPathList) const;
+	/** Gets the list of all FSoftObjectPaths for a given type, returns true if any found */
+	virtual bool GetPrimaryAssetPathList(FPrimaryAssetType PrimaryAssetType, TArray<FSoftObjectPath>& AssetPathList) const;
+
+	/** Sees if the passed in object is a registered primary asset, if so return it. Returns invalid Identifier if not found */
+	virtual FPrimaryAssetId GetPrimaryAssetIdForObject(UObject* Object) const;
 
 	/** Sees if the passed in object path is a registered primary asset, if so return it. Returns invalid Identifier if not found */
-	virtual FPrimaryAssetId GetPrimaryAssetIdForPath(const FStringAssetReference& ObjectPath) const;
+	virtual FPrimaryAssetId GetPrimaryAssetIdForPath(const FSoftObjectPath& ObjectPath) const;
 	virtual FPrimaryAssetId GetPrimaryAssetIdForPath(FName ObjectPath) const;
 
 	/** Sees if the package has a primary asset, useful if only the package name is available */
 	virtual FPrimaryAssetId GetPrimaryAssetIdForPackage(FName PackagePath) const;
 
-	/** Parses AssetData to extract the primary type/name from it. This works even if it isn't in the directory yet */
-	virtual FPrimaryAssetId GetPrimaryAssetIdFromData(const FAssetData& AssetData, FPrimaryAssetType SuggestedType = NAME_None) const;
+	/** Returns the primary asset Id for the given FAssetData, only works if in directory */
+	virtual FPrimaryAssetId GetPrimaryAssetIdForData(const FAssetData& AssetData) const;
 
 	/** Gets list of all FPrimaryAssetId for a primary asset type, returns true if any were found */
 	virtual bool GetPrimaryAssetIdList(FPrimaryAssetType PrimaryAssetType, TArray<FPrimaryAssetId>& PrimaryAssetIdList) const;
@@ -145,7 +164,7 @@ public:
 	 * @param LoadBundles		List of bundles to load for those assets
 	 * @param DelegateToCall	Delegate that will be called on completion, may be called before function returns if assets are already loaded
 	 * @param Priority			Async loading priority for this request
-	 * @return					Streamable Handle that can be used to poll or wait
+	 * @return					Streamable Handle that can be used to poll or wait. You do not need to keep this handle to stop the assets from being unloaded
 	 */
 	virtual TSharedPtr<FStreamableHandle> LoadPrimaryAssets(const TArray<FPrimaryAssetId>& AssetsToLoad, const TArray<FName>& LoadBundles = TArray<FName>(), FStreamableDelegate DelegateToCall = FStreamableDelegate(), TAsyncLoadPriority Priority = FStreamableManager::DefaultAsyncLoadPriority);
 
@@ -156,7 +175,8 @@ public:
 	virtual TSharedPtr<FStreamableHandle> LoadPrimaryAssetsWithType(FPrimaryAssetType PrimaryAssetType, const TArray<FName>& LoadBundles = TArray<FName>(), FStreamableDelegate DelegateToCall = FStreamableDelegate(), TAsyncLoadPriority Priority = FStreamableManager::DefaultAsyncLoadPriority);
 
 	/** 
-	 * Unloads a list of Primary Assets. This will drop hard references to these assets, but they may be in memory due to other references or GC delay
+	 * Unloads a list of Primary Assets that were previously Loaded.
+	 * If the only thing keeping these assets in memory was a prior Load call, they will be freed.
 	 *
 	 * @param AssetsToUnload	List of primary assets to load
 	 * @return					Number of assets unloaded
@@ -180,9 +200,22 @@ public:
 	 * @param RemoveAllBundles	If true, remove all existing bundles even if not in remove list
 	 * @param DelegateToCall	Delegate that will be called on completion, may be called before function returns if assets are already loaded
 	 * @param Priority			Async loading priority for this request
-	 * @return					Streamable Handle that can be used to poll or wait
+	 * @return					Streamable Handle that can be used to poll or wait. You do not need to keep this handle to stop the assets from being unloaded
 	 */
 	virtual TSharedPtr<FStreamableHandle> ChangeBundleStateForPrimaryAssets(const TArray<FPrimaryAssetId>& AssetsToChange, const TArray<FName>& AddBundles, const TArray<FName>& RemoveBundles, bool bRemoveAllBundles = false, FStreamableDelegate DelegateToCall = FStreamableDelegate(), TAsyncLoadPriority Priority = FStreamableManager::DefaultAsyncLoadPriority);
+
+	/** 
+	 * Changes the bundle state of all loaded primary assets. Only assets matching OldBundles will be modified
+	 * You can wait on the returned streamable request or poll as needed.
+	 * If there is no work to do, returned handle will be null and delegate will get called before function returns.
+	 *
+	 * @param NewBundles		New bundle state for the assets that are changed
+	 * @param OldBundles		Old bundle state, it will remove these bundles and replace with NewBundles
+	 * @param DelegateToCall	Delegate that will be called on completion, may be called before function returns if assets are already loaded
+	 * @param Priority			Async loading priority for this request
+	 * @return					Streamable Handle that can be used to poll or wait. You do not need to keep this handle to stop the assets from being unloaded
+	 */
+	virtual TSharedPtr<FStreamableHandle> ChangeBundleStateForMatchingPrimaryAssets(const TArray<FName>& NewBundles, const TArray<FName>& OldBundles, FStreamableDelegate DelegateToCall = FStreamableDelegate(), TAsyncLoadPriority Priority = FStreamableManager::DefaultAsyncLoadPriority);
 
 	/** 
 	 * Returns the loading handle associated with the primary asset, it can then be checked for progress or waited on
@@ -192,7 +225,7 @@ public:
 	 * @param Bundles			If not null, will fill in with a list of the requested bundle state
 	 * @return					Streamable Handle that can be used to poll or wait
 	 */
-	TSharedPtr<FStreamableHandle> GetPrimaryAssetHandle(const FPrimaryAssetId& PrimaryAssetId, bool bForceCurrent = false, TArray<FName>* Bundles = nullptr);
+	TSharedPtr<FStreamableHandle> GetPrimaryAssetHandle(const FPrimaryAssetId& PrimaryAssetId, bool bForceCurrent = false, TArray<FName>* Bundles = nullptr) const ;
 
 	/** 
 	 * Returns a list of primary assets that are in the given bundle state. Only assets that are loaded or being loaded are valid
@@ -204,13 +237,37 @@ public:
 	 * @param bForceCurrent		If true, only use the current state. If false, use the current or pending
 	 * @return					True if any found
 	 */
-	bool GetPrimaryAssetsWithBundleState(TArray<FPrimaryAssetId>& PrimaryAssetList, const TArray<FName>& ValidTypes, const TArray<FName>& RequiredBundles, const TArray<FName>& ExcludedBundles = TArray<FName>(), bool bForceCurrent = false);
+	bool GetPrimaryAssetsWithBundleState(TArray<FPrimaryAssetId>& PrimaryAssetList, const TArray<FPrimaryAssetType>& ValidTypes, const TArray<FName>& RequiredBundles, const TArray<FName>& ExcludedBundles = TArray<FName>(), bool bForceCurrent = false) const;
 
 	/** Fills in a TMap with the pending/active loading state of every asset */
-	void GetPrimaryAssetBundleStateMap(TMap<FPrimaryAssetId, TArray<FName>>& BundleStateMap, bool bForceCurrent = false);
+	void GetPrimaryAssetBundleStateMap(TMap<FPrimaryAssetId, TArray<FName>>& BundleStateMap, bool bForceCurrent = false) const;
+
+	/**
+	 * Fills in a set of object paths with the assets that need to be loaded, for a given Primary Asset and bundle list
+	 *
+	 * @param OutAssetLoadSet	Set that will have asset paths added to it
+	 * @param PrimaryAssetId	Asset that would be loaded
+	 * @param LoadBundles		List of bundles to load for those assets
+	 * @param bLoadRecursive	If true, this will call RecursivelyExpandBundleData and recurse into sub bundles of other primary assets loaded by a bundle reference
+	 * @return					True if primary asset id was found
+	 */
+	bool GetPrimaryAssetLoadSet(TSet<FSoftObjectPath>& OutAssetLoadSet, const FPrimaryAssetId& PrimaryAssetId, const TArray<FName>& LoadBundles, bool bLoadRecursive) const;
+
+	/**
+	 * Preloads data for a set of assets in a specific bundle state, and returns a handle you must keep active.
+	 * These assets are not officially Loaded, so Unload/ChangeBundleState will not affect them and if you release the handle without otherwise loading the assets they will be freed.
+	 *
+	 * @param AssetsToLoad		List of primary assets to load
+	 * @param LoadBundles		List of bundles to load for those assets
+	 * @param bLoadRecursive	If true, this will call RecursivelyExpandBundleData and recurse into sub bundles of other primary assets loaded by a bundle reference
+	 * @param DelegateToCall	Delegate that will be called on completion, may be called before function returns if assets are already loaded
+	 * @param Priority			Async loading priority for this request
+	 * @return					Streamable Handle that must be stored to keep the preloaded assets from being freed
+	 */
+	virtual TSharedPtr<FStreamableHandle> PreloadPrimaryAssets(const TArray<FPrimaryAssetId>& AssetsToLoad, const TArray<FName>& LoadBundles, bool bLoadRecursive, FStreamableDelegate DelegateToCall = FStreamableDelegate(), TAsyncLoadPriority Priority = FStreamableManager::DefaultAsyncLoadPriority);
 
 	/** Quick wrapper to async load some non primary assets with the primary streamable manager. This will not auto release the handle, release it if needed */
-	virtual TSharedPtr<FStreamableHandle> LoadAssetList(const TArray<FStringAssetReference>& AssetList);
+	virtual TSharedPtr<FStreamableHandle> LoadAssetList(const TArray<FSoftObjectPath>& AssetList, FStreamableDelegate DelegateToCall = FStreamableDelegate(), TAsyncLoadPriority Priority = FStreamableManager::DefaultAsyncLoadPriority, const FString& DebugName = TEXT("LoadAssetList"));
 
 	/** Returns a single AssetBundleInfo, matching Scope and Name */
 	virtual FAssetBundleEntry GetAssetBundleEntry(const FPrimaryAssetId& BundleScope, FName BundleName) const;
@@ -218,7 +275,36 @@ public:
 	/** Appends all AssetBundleInfos inside a given scope */
 	virtual bool GetAssetBundleEntries(const FPrimaryAssetId& BundleScope, TArray<FAssetBundleEntry>& OutEntries) const;
 
+	/** 
+	 * Returns the list of Chunks that are not currently mounted, and are required to load the referenced assets. Returns true if any chunks are missing
+	 *
+	 * @param AssetList				Asset Paths to check chunks for
+	 * @param OutMissingChunkList	Chunks that are known about but not yet installed
+	 * @param OutErrorChunkList		Chunks that do not exist at all and are not installable
+	 */
+	virtual bool FindMissingChunkList(const TArray<FSoftObjectPath>& AssetList, TArray<int32>& OutMissingChunkList, TArray<int32>& OutErrorChunkList) const;
+
+	/** 
+	 * Acquires a set of chunks using the platform chunk layer, then calls the passed in callback
+	 *
+	 * @param AssetList				Asset Paths to get resources for
+	 * @param CompleteDelegate		Delegate called when chunks have been acquired or failed. If any chunks fail the entire operation is considered a failure
+	 * @param Priority				Priority to use when acquiring chunks
+	 */
+	virtual void AcquireResourcesForAssetList(const TArray<FSoftObjectPath>& AssetList, FAssetManagerAcquireResourceDelegate CompleteDelegate, EChunkPriority::Type Priority = EChunkPriority::Immediate);
+
+	/** 
+	 * Acquires a set of chunks using the platform chunk layer, then calls the passed in callback. This will download all bundles of a primary asset
+	 *
+	 * @param PrimaryAssetList		Primary assets to get chunks for
+	 * @param CompleteDelegate		Delegate called when chunks have been acquired or failed. If any chunks fail the entire operation is considered a failure
+	 * @param Priority				Priority to use when acquiring chunks
+	 */
+	virtual void AcquireResourcesForPrimaryAssetList(const TArray<FPrimaryAssetId>& PrimaryAssetList, FAssetManagerAcquireResourceDelegate CompleteDelegate, EChunkPriority::Type Priority = EChunkPriority::Immediate);
 	
+	/** Returns the chunk download/install progress. AcquiredCount is the number of chunks that were requested and have already been insatlled, Requested includes both installed and pending */
+	virtual bool GetResourceAcquireProgress(int32& OutAcquiredCount, int32& OutRequestedCount) const;
+
 	// FUNCTIONS FOR MANAGEMENT/COOK RULES
 
 	/** Changes the default management rules for a specified type */
@@ -234,16 +320,22 @@ public:
 	virtual bool GetManagedPackageList(FPrimaryAssetId PrimaryAssetId, TArray<FName>& AssetPackageList) const;
 
 	/** Returns list of PrimaryAssetIds that manage a package. Will optionally recurse up the management chain */
-	virtual bool GetPackageManagerList(FName PackageName, bool bRecurseToParents, TArray<FPrimaryAssetId>& ManagerList) const;
+	virtual bool GetPackageManagers(FName PackageName, bool bRecurseToParents, TSet<FPrimaryAssetId>& ManagerSet) const;
 
 
 	// GENERAL ASSET UTILITY FUNCTIONS
 
-	/** Gets the FAssetData at a specific path, handles redirectors and blueprint classes correctly. Returns true if it found a valid data */
-	virtual bool GetAssetDataForPath(const FStringAssetReference& ObjectPath, FAssetData& AssetData) const;
+	/** Parses AssetData to extract the primary type/name from it. This works even if it isn't in the directory */
+	virtual FPrimaryAssetId ExtractPrimaryAssetIdFromData(const FAssetData& AssetData, FPrimaryAssetType SuggestedType = NAME_None) const;
 
-	/** Turns an FAssetData into FStringAssetReference, handles adding _C as necessary */
-	virtual FStringAssetReference GetAssetPathForData(const FAssetData& AssetData) const;
+	/** Gets the FAssetData at a specific path, handles redirectors and blueprint classes correctly. Returns true if it found a valid data */
+	virtual bool GetAssetDataForPath(const FSoftObjectPath& ObjectPath, FAssetData& AssetData) const;
+
+	/** Checks to see if the given asset data is a blueprint with a base class in the ClassNameSet. This checks the parent asset tag */
+	virtual bool IsAssetDataBlueprintOfClassSet(const FAssetData& AssetData, const TSet<FName>& ClassNameSet);
+
+	/** Turns an FAssetData into FSoftObjectPath, handles adding _C as necessary */
+	virtual FSoftObjectPath GetAssetPathForData(const FAssetData& AssetData) const;
 
 	/** Tries to redirect a Primary Asset Id, using list in AssetManagerSettings */
 	virtual FPrimaryAssetId GetRedirectedPrimaryAssetId(const FPrimaryAssetId& OldId) const;
@@ -251,18 +343,24 @@ public:
 	/** Reads redirector list and gets a list of the redirected previous names for a Primary Asset Id */
 	virtual void GetPreviousPrimaryAssetIds(const FPrimaryAssetId& NewId, TArray<FPrimaryAssetId>& OutOldIds) const;
 
+	/** If bShouldManagerDetermineTypeAndName is true in settings, this function is used to determine the primary asset id for any object that does not have it's own implementation. Games can override the behavior here or call it from other places */
+	virtual FPrimaryAssetId DeterminePrimaryAssetIdForObject(const UObject* Object);
+
 	/** Reads AssetManagerSettings for specifically redirected asset paths. This is useful if you need to convert older saved data */
 	virtual FName GetRedirectedAssetPath(FName OldPath) const;
-	virtual FStringAssetReference GetRedirectedAssetPath(const FStringAssetReference& OldPath) const;
+	virtual FSoftObjectPath GetRedirectedAssetPath(const FSoftObjectPath& OldPath) const;
 
-	/** Extracts all FStringAssetReferences from a Class/Struct */
-	virtual void ExtractStringAssetReferences(const UStruct* Struct, const void* StructValue, TArray<FStringAssetReference>& FoundAssetReferences, const TArray<FName>& PropertiesToSkip = TArray<FName>()) const;
+	/** Extracts all FSoftObjectPaths from a Class/Struct */
+	virtual void ExtractSoftObjectPaths(const UStruct* Struct, const void* StructValue, TArray<FSoftObjectPath>& FoundAssetReferences, const TArray<FName>& PropertiesToSkip = TArray<FName>()) const;
 
 	/** Dumps out summary of managed types to log */
 	static void DumpAssetTypeSummary();
 
 	/** Dumps out list of loaded asset bundles to log */
 	static void DumpLoadedAssetState();
+
+	/** Dumps information about the Asset Registry to log */
+	static void DumpAssetRegistryInfo();
 
 	/** Dumps out list of primary asset -> managed assets to log */
 	static void DumpReferencersForPackage(const TArray< FString >& PackageNames);
@@ -285,8 +383,8 @@ public:
 #if WITH_EDITOR
 	// EDITOR ONLY FUNCTIONALITY
 
-	/** Gets package names to add to the cook. Do this instead of loading assets so RAM can be properly managed on build machines */
-	virtual void ModifyCook(TArray<FName>& PackageNames);
+	/** Gets package names to add to the cook, and packages to never cook even if in startup set memory or referenced */
+	virtual void ModifyCook(TArray<FName>& PackagesToCook, TArray<FName>& PackagesToNeverCook);
 
 	/** Returns cook rule for a package name using Management rules, games should override this to take into account their individual workflows */
 	virtual EPrimaryAssetCookRule GetPackageCookRule(FName PackageName) const;
@@ -294,17 +392,30 @@ public:
 	/** Returns true if the specified asset package can be cooked, will error and return false if it is disallowed */
 	virtual bool VerifyCanCookPackage(FName PackageName, bool bLogError = true) const;
 
-	/** For a given package and platform, return what Chunks it should be assigned to, games can override this as needed. Returns false if no information found */
-	virtual bool GetPackageChunkIds(FName PackageName, const class ITargetPlatform* TargetPlatform, const TArray<int32>& ExistingChunkList, TArray<int32>& OutChunkList) const;
+	/** 
+	 * For a given package and platform, return what Chunks it should be assigned to, games can override this as needed. Returns false if no information found 
+	 * @param PackageName Package to check chunks for
+	 * @param TargetPlatform Can be used to do platform-specific chunking, this is null when previewing in the editor
+	 * @param ExistingChunkList List of chunks that the asset was previously assigned to, may be empty
+	 * @param OutChunkList List of chunks to actually assign this to
+	 * @param OutOverrideChunkList List of chunks that were added due to override rules, not just normal primary asset rules. Tools use this for dependency checking
+	 */
+	virtual bool GetPackageChunkIds(FName PackageName, const class ITargetPlatform* TargetPlatform, const TArray<int32>& ExistingChunkList, TArray<int32>& OutChunkList, TArray<int32>* OutOverrideChunkList = nullptr) const;
 
-	/** Runs game-specific code to update the source hash on a package at cook time. This is added to the base package guid check */
-	virtual void UpdatePackageSourceHash(FName PackageName, FMD5& PackageSourceHash) const;
+	/** Returns the list of chunks assigned to the list of primary assets, which is usually a manager list. This is called by GetPackageChunkIds */
+	virtual bool GetPrimaryAssetSetChunkIds(const TSet<FPrimaryAssetId>& PrimaryAssetSet, const class ITargetPlatform* TargetPlatform, const TArray<int32>& ExistingChunkList, TArray<int32>& OutChunkList) const;
 
 	/** Refresh the entire set of asset data, can call from editor when things have changed dramatically */
 	virtual void RefreshPrimaryAssetDirectory();
 
+	/** Resets all asset manager data, called in the editor to reinitialize the config */
+	virtual void ReinitializeFromConfig();
+
 	/** Updates the asset management database if needed */
 	virtual void UpdateManagementDatabase(bool bForceRefresh = false);
+
+	/** Returns the chunk information map computed during UpdateManagementDatabase */
+	const TMap<int32, FAssetManagerChunkInfo>& GetChunkManagementMap() const;
 
 	/** Handles applying Asset Labels and should be overridden to do any game-specific labelling */
 	virtual void ApplyPrimaryAssetLabels();
@@ -316,7 +427,7 @@ public:
 	 * Initializes asset bundle data from a passed in struct or class, this will read the AssetBundles metadata off the UProperties. As an example this property definition:
 	 *
 	 * UPROPERTY(EditDefaultsOnly, Category=Data, meta = (AssetBundles = "Client,Server"))
-	 * TAssetPtr<class UCurveTable> CurveTableReference;
+	 * TSoftObjectPtr<class UCurveTable> CurveTableReference;
 	 *
 	 * Would add the value of CurveTableReference to both the Client and Server asset bundles
 	 *
@@ -359,8 +470,8 @@ protected:
 	/** Helper function to write out asset reports */
 	virtual bool WriteCustomReport(FString FileName, TArray<FString>& FileLines) const;
 
-	/** Function used during creating Management references to decide when to recurse and set references */
-	virtual EAssetSetManagerResult::Type ShouldSetManager(const FAssetIdentifier& Manager, const FAssetIdentifier& Source, const FAssetIdentifier& Target, EAssetRegistryDependencyType::Type DependencyType, EAssetSetManagerFlags::Type Flags) const;
+	/** Returns true if the specified TypeInfo should be scanned. Can be implemented by the game. */
+	virtual bool ShouldScanPrimaryAssetType(FPrimaryAssetTypeInfo& TypeInfo) const;
 
 	/** Scans all asset types specified in DefaultGame */
 	virtual void ScanPrimaryAssetTypesFromConfig();
@@ -371,7 +482,16 @@ protected:
 	/** Returns true if path should be excluded from primary asset scans */
 	virtual bool IsPathExcludedFromScan(const FString& Path) const;
 
+	/** Call to start acquiring a list of chunks */
+	virtual void AcquireChunkList(const TArray<int32>& ChunkList, FAssetManagerAcquireResourceDelegate CompleteDelegate, EChunkPriority::Type Priority, TSharedPtr<FStreamableHandle> StalledHandle);
+
+	/** Called when a new chunk has been downloaded */
+	virtual void OnChunkDownloaded(uint32 ChunkId, bool bSuccess);
+
 #if WITH_EDITOR
+	/** Function used during creating Management references to decide when to recurse and set references */
+	virtual EAssetSetManagerResult::Type ShouldSetManager(const FAssetIdentifier& Manager, const FAssetIdentifier& Source, const FAssetIdentifier& Target, EAssetRegistryDependencyType::Type DependencyType, EAssetSetManagerFlags::Type Flags) const;
+
 	/** Helper function which requests the asset register scan a list of directories/assets */
 	virtual void ScanPathsSynchronous(const TArray<FString>& PathsToScan) const;
 
@@ -383,6 +503,9 @@ protected:
 
 	/** Handles updating manager if deleted object is relevant*/
 	virtual void OnInMemoryAssetDeleted(UObject *Object);
+
+	/** Called when object is saved */
+	virtual void OnObjectPreSave(UObject* Object);
 
 	/** When asset is renamed */
 	virtual void OnAssetRenamed(const FAssetData& NewData, const FString& OldPath);
@@ -398,10 +521,10 @@ protected:
 
 	/** Copy of the asset state before PIE was entered, return to that when PIE completes */
 	TMap<FPrimaryAssetId, TArray<FName>> PrimaryAssetStateBeforePIE;
-#endif // WITH_EDITOR
 
-	/** Per-type asset information */
-	TMap<FName, TSharedRef<FPrimaryAssetTypeData>> AssetTypeMap;
+	/** Cached map of chunk ids to lists of assets in that chunk */
+	TMap<int32, FAssetManagerChunkInfo> CachedChunkMap;
+#endif // WITH_EDITOR
 
 	/** Map from object path to Primary Asset Id */
 	TMap<FName, FPrimaryAssetId> AssetPathMap;
@@ -421,6 +544,25 @@ protected:
 	/** The streamable manager used for all primary asset loading */
 	FStreamableManager StreamableManager;
 
+	/** Defines a set of chunk installs that are waiting */
+	struct FPendingChunkInstall
+	{
+		/** Chunks we originally requested */
+		TArray<int32> RequestedChunks;
+
+		/** Chunks we are still waiting for */
+		TArray<int32> PendingChunks;
+
+		/** Stalled streamable handle waiting for this install, may be null */
+		TSharedPtr<FStreamableHandle> StalledStreamableHandle;
+
+		/** Delegate to call on completion, may be empty */
+		FAssetManagerAcquireResourceDelegate ManualCallback;
+	};
+
+	/** List of chunk installs that are being waited for */
+	TArray<FPendingChunkInstall> PendingChunkInstalls;
+
 	/** List of UObjects that are being kept from being GCd, derived from the asset type map. Arrays are currently more efficient than Sets */
 	UPROPERTY()
 	TArray<UObject*> ObjectReferenceList;
@@ -429,10 +571,6 @@ protected:
 	UPROPERTY()
 	bool bIsGlobalAsyncScanEnvironment;
 
-	/** True if we should keep hard references to loaded assets, to stop them from garbage collecting */
-	UPROPERTY()
-	bool bShouldKeepHardRefs;
-
 	/** True if PrimaryAssetType/Name will be implied for loading assets that don't have it saved on disk. Won't work for all projects */
 	UPROPERTY()
 	bool bShouldGuessTypeAndName;
@@ -440,6 +578,18 @@ protected:
 	/** True if we should always use synchronous loads, this speeds up cooking */
 	UPROPERTY()
 	bool bShouldUseSynchronousLoad;
+
+	/** True if we are loading from pak files */
+	UPROPERTY()
+	bool bIsLoadingFromPakFiles;
+
+	/** True if the chunk install interface should be queries before loading assets */
+	UPROPERTY()
+	bool bShouldAcquireMissingChunksOnLoad;
+
+	/** If true, DevelopmentCook assets will error when they are cooked */
+	UPROPERTY()
+	bool bOnlyCookProductionAssets;
 
 	/** True if we are currently in bulk scanning mode */
 	UPROPERTY()
@@ -453,12 +603,26 @@ protected:
 	UPROPERTY()
 	bool bUpdateManagementDatabaseAfterScan;
 
+	/** True if only on-disk assets should be searched by the asset registry */
+	UPROPERTY()
+	bool bIncludeOnlyOnDiskAssets;
+
+	/** Number of notifications seen in this update */
+	UPROPERTY()
+	int32 NumberOfSpawnedNotifications;
+
 	/** Redirector maps loaded out of AssetMigrations.ini */
 	TMap<FName, FName> PrimaryAssetTypeRedirects;
 	TMap<FString, FString> PrimaryAssetIdRedirects;
 	TMap<FName, FName> AssetPathRedirects;
 
+	/** Delegate bound to chunk install */
+	FDelegateHandle ChunkInstallDelegateHandle;
+
 private:
+	/** Per-type asset information, cannot be accessed by children as it is defined in CPP file */
+	TMap<FName, TSharedRef<FPrimaryAssetTypeData>> AssetTypeMap;
+
 	mutable class IAssetRegistry* CachedAssetRegistry;
 	mutable const class UAssetManagerSettings* CachedSettings;
 };

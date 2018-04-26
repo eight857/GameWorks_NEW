@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/FileManager.h"
@@ -21,9 +21,11 @@
 #include "Interfaces/ITextureFormatModule.h"
 #include "PlatformInfo.h"
 #include "DesktopPlatformModule.h"
-#include "IPhysXFormat.h"
-#include "IPhysXFormatModule.h"
 
+#if WITH_PHYSX
+#include "IPhysXCooking.h"
+#include "IPhysXCookingModule.h"
+#endif // WITH_PHYSX
 
 DEFINE_LOG_CATEGORY_STATIC(LogTargetPlatformManager, Log, All);
 
@@ -479,10 +481,10 @@ public:
 		return nullptr;
 	}
 
-	virtual uint16 ShaderFormatVersion(FName Name) override
+	virtual uint32 ShaderFormatVersion(FName Name) override
 	{
-		static TMap<FName, uint16> AlreadyFound;
-		uint16* Result = AlreadyFound.Find(Name);
+		static TMap<FName, uint32> AlreadyFound;
+		uint32* Result = AlreadyFound.Find(Name);
 
 		if (!Result)
 		{
@@ -499,18 +501,19 @@ public:
 		return *Result;
 	}
 
-	virtual const TArray<const IPhysXFormat*>& GetPhysXFormats() override
+	virtual const TArray<const IPhysXCooking*>& GetPhysXCooking() override
 	{
 		static bool bInitialized = false;
-		static TArray<const IPhysXFormat*> Results;
+		static TArray<const IPhysXCooking*> Results;
 
+#if WITH_PHYSX
 		if (!bInitialized || bForceCacheUpdate)
 		{
 			bInitialized = true;
 			Results.Empty(Results.Num());
 			
 			TArray<FName> Modules;
-			FModuleManager::Get().FindModules(TEXT("PhysXFormat*"), Modules);
+			FModuleManager::Get().FindModules(TEXT("PhysXCooking*"), Modules);
 			
 			if (!Modules.Num())
 			{
@@ -519,10 +522,10 @@ public:
 
 			for (int32 Index = 0; Index < Modules.Num(); Index++)
 			{
-				IPhysXFormatModule* Module = FModuleManager::LoadModulePtr<IPhysXFormatModule>(Modules[Index]);
+				IPhysXCookingModule* Module = FModuleManager::LoadModulePtr<IPhysXCookingModule>(Modules[Index]);
 				if (Module)
 				{
-					IPhysXFormat* Format = Module->GetPhysXFormat();
+					IPhysXCooking* Format = Module->GetPhysXCooking();
 					if (Format != nullptr)
 					{
 						Results.Add(Format);
@@ -530,28 +533,31 @@ public:
 				}
 			}
 		}
+#endif // WITH_PHYSX
 
 		return Results;
 	}
 
-	virtual const IPhysXFormat* FindPhysXFormat(FName Name) override
+	virtual const IPhysXCooking* FindPhysXCooking(FName Name) override
 	{
-		const TArray<const IPhysXFormat*>& PhysXFormats = GetPhysXFormats();
+#if WITH_PHYSX
+		const TArray<const IPhysXCooking*>& PhysXCooking = GetPhysXCooking();
 
-		for (int32 Index = 0; Index < PhysXFormats.Num(); Index++)
+		for (int32 Index = 0; Index < PhysXCooking.Num(); Index++)
 		{
 			TArray<FName> Formats;
 
-			PhysXFormats[Index]->GetSupportedFormats(Formats);
+			PhysXCooking[Index]->GetSupportedFormats(Formats);
 		
 			for (int32 FormatIndex = 0; FormatIndex < Formats.Num(); FormatIndex++)
 			{
 				if (Formats[FormatIndex] == Name)
 				{
-					return PhysXFormats[Index];
+					return PhysXCooking[Index];
 				}
 			}
 		}
+#endif // WITH_PHYSX
 
 		return nullptr;
 	}
@@ -559,7 +565,7 @@ public:
 protected:
 
 	/**
-	 * Checks whether the AutoDesk software development kit (SDK) is enabled.
+	 * Checks whether AutoSDK is enabled.
 	 *
 	 * @return true if the SDK is enabled, false otherwise.
 	 */
@@ -799,8 +805,8 @@ RETRY_SETUPANDVALIDATE:
 				else
 				{
 					// convenience for setup.bat writers.  Trim any accidental whitespace from var names/values.
-					EnvVarNames.Add(Left.Trim().TrimTrailing());
-					EnvVarValues.Add(Right.Trim().TrimTrailing());
+					EnvVarNames.Add(Left.TrimStartAndEnd());
+					EnvVarValues.Add(Right.TrimStartAndEnd());
 				}
 			}
 
@@ -900,7 +906,7 @@ RETRY_SETUPANDVALIDATE:
 		}
 		else if (PLATFORM_WINDOWS)
 		{
-			CmdExe = FPaths::ConvertRelativePathToFull(FPaths::EngineDir() / TEXT("Binaries/DotNet/UnrealBuildTool.exe"));
+			CmdExe = FPaths::ConvertRelativePathToFull(FPaths::EngineDir() / TEXT("Binaries/DotNET/UnrealBuildTool.exe"));
 			CommandLine = TEXT("-validateplatform");
 		}
 		else if (PLATFORM_LINUX)

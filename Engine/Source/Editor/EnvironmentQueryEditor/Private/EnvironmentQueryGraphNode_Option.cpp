@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EnvironmentQueryGraphNode_Option.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -21,7 +21,7 @@ UEnvironmentQueryGraphNode_Option::UEnvironmentQueryGraphNode_Option(const FObje
 
 void UEnvironmentQueryGraphNode_Option::AllocateDefaultPins()
 {
-	UEdGraphPin* Inputs = CreatePin(EGPD_Input, TEXT("Transition"), TEXT(""), NULL, false, false, TEXT("Out"));
+	UEdGraphPin* Inputs = CreatePin(EGPD_Input, TEXT("Transition"), TEXT("Out"));
 }
 
 void UEnvironmentQueryGraphNode_Option::PostPlacedNewNode()
@@ -55,6 +55,7 @@ void UEnvironmentQueryGraphNode_Option::ResetNodeOwner()
 	{
 		UObject* GraphOwner = GetGraph() ? GetGraph()->GetOuter() : nullptr;
 		OptionInstance->Generator->Rename(NULL, GraphOwner, REN_DontCreateRedirectors | REN_DoNotDirty);
+		OptionInstance->Generator->ClearFlags(RF_Transient);
 	}
 }
 
@@ -161,7 +162,7 @@ void UEnvironmentQueryGraphNode_Option::UpdateNodeData()
 	{
 		CompositeGenerator->VerifyItemTypes();
 
-		ErrorMessage = CompositeGenerator->bHasMatchingItemType ? TEXT("") : LOCTEXT("NestedGeneratorMismatch", "Nested generators must work on exactly the same item types!").ToString();
+		ErrorMessage = CompositeGenerator->bHasMatchingItemType ? FString() : LOCTEXT("NestedGeneratorMismatch", "Nested generators must work on exactly the same item types!").ToString();
 	}
 }
 

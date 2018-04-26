@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Internationalization/PackageLocalizationCache.h"
 
-class FAssetData;
+struct FAssetData;
 
 /** Implementation of a package localization cache that takes advantage of the asset registry. */
 class ENGINE_API FEnginePackageLocalizationCache : public FPackageLocalizationCache

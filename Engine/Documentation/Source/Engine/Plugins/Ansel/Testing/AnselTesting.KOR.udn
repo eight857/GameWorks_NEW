@@ -1,7 +1,7 @@
-﻿INTSourceChangelist:3206329
+﻿INTSourceChangelist:3579346
 Availability:Public
 TItle:Ansel 캡처 테스팅
-Description:게임에서 향상된 이미지를 캡처하고 공유할 수 있도록 해주는 Nvidia Ansel 인게임 포토그라피 툴의 언리얼 엔진 4 통합에 대한 개요입니다.
+Description:게임에서 향상된 이미지를 캡처하고 공유할 수 있도록 해주는 NVIDIA Ansel 인게임 포토그라피 툴의 언리얼 엔진 4 통합에 대한 개요입니다.
 Crumbs:
 Parent:Engine/Plugins/Ansel
 Order:1
@@ -11,7 +11,7 @@ tags:Ansel
 version:4.14
 topic-image:Ansel_Testing_Topic.png
 
-**게임에 Nvidia Ansel Photography 플러그인을 테스트하는 방법은 다음과 같습니다:**
+**게임에 NVIDIA Ansel Photography 플러그인을 테스트하는 방법은 다음과 같습니다:**
 
 1. NvCameraConfiguration.exe 어플리케이션을 실행시키고 **NvCamera Status** 가 _Enable_ (기본값) 설정되어 있는지 확인합니다.
 
@@ -52,12 +52,12 @@ topic-image:Ansel_Testing_Topic.png
 | W | 왼쪽 아날로그 스틱 위 | 카메라를 앞으로 이동합니다. |
 | A | 왼쪽 조이스틱 왼쪽 | 카메라를 왼쪽으로 이동합니다. |
 | S | 왼쪽 조이스틱 아래 | 카메라를 뒤로 이동합니다. |
-| D | 왼쪽 조이스틱 오른쪽 - 카메라를 오른쪽으로 이동합니다 |
+| D | 왼쪽 조이스틱 오른쪽 | 카메라를 오른쪽으로 이동합니다 |
 | X | 왼쪽 트리거 | 카메라를 위로 이동합니다. |
 | Y | 오른쪽 트리거 | 카메라를 아래로 이동합니다. |
 | Shift (유지) | 오른쪽 아날로그 스틱 (누름) | 카메라 이동 속도를 가속합니다. |
 | [REGION:tablesection]카메라 이동[/REGION] |||
-| 좌클릭 + 마우스 이동 | 오른쪽 아날로그 스틱 - 카메라를 회전시킵니다 (yaw, pitch) |
+| 좌클릭 + 마우스 이동 | 오른쪽 아날로그 스틱 | 카메라를 회전시킵니다 (yaw, pitch) |
 
 
 

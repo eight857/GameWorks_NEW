@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OodleHandlerComponent.h"
 #include "Misc/CoreMisc.h"
@@ -11,6 +11,7 @@
 #include "Misc/EngineVersion.h"
 
 #include "OodleTrainerCommandlet.h"
+#include "OodleAnalytics.h"
 
 #if !UE_BUILD_SHIPPING
 #include "EngineGlobals.h"
@@ -265,7 +266,8 @@ FOodleDictionary::~FOodleDictionary()
  */
 
 OodleHandlerComponent::OodleHandlerComponent()
-	: bEnableOodle(false)
+	: HandlerComponent(FName(TEXT("OodleHandlerComponent")))
+	, bEnableOodle(false)
 #if !UE_BUILD_SHIPPING || OODLE_DEV_SHIPPING
 	, InPacketLog(nullptr)
 	, OutPacketLog(nullptr)
@@ -275,16 +277,40 @@ OodleHandlerComponent::OodleHandlerComponent()
 	, OodleReservedPacketBits(0)
 	, ServerDictionary()
 	, ClientDictionary()
+	, TotalInCompressedLength(0)
+	, TotalInDecompressedLength(0)
+	, TotalOutCompressedLength(0)
+	, TotalOutUncompressedLength(0)
 {
 	SetActive(true);
 
 #if !UE_BUILD_SHIPPING || OODLE_DEV_SHIPPING
 	OodleComponentList.Add(this);
 #endif
+
+	Analytics = FOodleAnalyticsFactory::Create();
 }
 
 OodleHandlerComponent::~OodleHandlerComponent()
 {
+	float InTotalSavings = 0.0f;
+	float OutTotalSavings = 0.0f;
+
+	if (TotalInCompressedLength > 0)
+	{
+		InTotalSavings = (1.0 - ((double)TotalInCompressedLength / (double)TotalInDecompressedLength)) * 100.0;
+	}
+
+	if (TotalOutCompressedLength > 0)
+	{
+		OutTotalSavings = (1.0 - ((double)TotalOutCompressedLength / (double)TotalOutUncompressedLength)) * 100.0;
+	}
+
+	if (Analytics.IsValid())
+	{
+		Analytics->FireEvent_OodleAnalytics(InTotalSavings, OutTotalSavings);
+	}
+
 #if !UE_BUILD_SHIPPING || OODLE_DEV_SHIPPING
 	OodleComponentList.Remove(this);
 
@@ -547,8 +573,8 @@ bool OodleHandlerComponent::GetDictionaryPaths(FString& OutServerDictionary, FSt
 	if (bSuccess)
 	{
 		// Path must be within game directory, e.g: "Content/Oodle/Output.udic" becomes "ShooterGam/Content/Oodle/Output.udic"
-		ServerDictionaryPath = FPaths::Combine(*FPaths::GameDir(), *ServerDictionaryPath);
-		ClientDictionaryPath = FPaths::Combine(*FPaths::GameDir(), *ClientDictionaryPath);
+		ServerDictionaryPath = FPaths::Combine(*FPaths::ProjectDir(), *ServerDictionaryPath);
+		ClientDictionaryPath = FPaths::Combine(*FPaths::ProjectDir(), *ClientDictionaryPath);
 
 		FPaths::CollapseRelativeDirectories(ServerDictionaryPath);
 		FPaths::CollapseRelativeDirectories(ClientDictionaryPath);
@@ -557,7 +583,7 @@ bool OodleHandlerComponent::GetDictionaryPaths(FString& OutServerDictionary, FSt
 		FPaths::NormalizeDirectoryName(ClientDictionaryPath);
 
 		// Don't allow directory traversal to escape the game directory
-		if (!ServerDictionaryPath.StartsWith(FPaths::GameDir()) || !ClientDictionaryPath.StartsWith(FPaths::GameDir()))
+		if (!ServerDictionaryPath.StartsWith(FPaths::ProjectDir()) || !ClientDictionaryPath.StartsWith(FPaths::ProjectDir()))
 		{
 			const TCHAR* Msg = TEXT("DictionaryFile not allowed to use ../ paths to escape game directory.");
 
@@ -619,7 +645,7 @@ bool OodleHandlerComponent::FindFallbackDictionaries(FString& OutServerDictionar
 	{
 		TArray<FString> DictionaryList;
 		
-		FileMan.FindFilesRecursive(DictionaryList, *FPaths::GameDir(), TEXT("*.udic"), true, false);
+		FileMan.FindFilesRecursive(DictionaryList, *FPaths::ProjectDir(), TEXT("*.udic"), true, false);
 
 		if (DictionaryList.Num() > 0)
 		{
@@ -807,7 +833,7 @@ void OodleHandlerComponent::Incoming(FBitReader& Packet)
 					if (bSuccess)
 					{
 						{
-#if STATS && !UE_BUILD_SHIPPING
+#if !UE_BUILD_SHIPPING
 							SCOPE_CYCLE_COUNTER(STAT_Oodle_InDecompressTime);
 #endif
 
@@ -852,6 +878,8 @@ void OodleHandlerComponent::Incoming(FBitReader& Packet)
 #if STATS
 						GOodleNetStats.IncomingStats(CompressedLength, DecompressedLength);
 #endif
+						TotalInCompressedLength += CompressedLength;
+						TotalInDecompressedLength += DecompressedLength;
 					}
 					else
 					{
@@ -971,6 +999,9 @@ void OodleHandlerComponent::Outgoing(FBitWriter& Packet)
 #if STATS
 						GOodleNetStats.OutgoingStats(CompressedBytes, UncompressedBytes);
 #endif
+						TotalOutCompressedLength += CompressedBytes;
+						TotalOutUncompressedLength += UncompressedBytes;
+
 					}
 					else
 					{
@@ -978,22 +1009,28 @@ void OodleHandlerComponent::Outgoing(FBitWriter& Packet)
 						//					at the start of the bit writer
 						Packet.SerializeBits(UncompressedData, UncompressedBits);
 
-#if STATS
+
 						if (!bWithinBitBounds)
 						{
+#if STATS
 							INC_DWORD_STAT(STAT_Oodle_CompressFailSize);
+#endif
 						}
 						else if (CompressedBytes >= UncompressedBytes)
 						{
+#if STATS
 							GOodleNetStats.OutgoingStats(UncompressedBytes, UncompressedBytes);
 
 							INC_DWORD_STAT(STAT_Oodle_CompressFailSavings);
+#endif
+
+							TotalOutCompressedLength += CompressedBytes;
+							TotalOutUncompressedLength += UncompressedBytes;
 						}
 						else
 						{
 							// @todo #JohnB
 						}
-#endif
 					}
 				}
 				else
@@ -1076,6 +1113,13 @@ int32 OodleHandlerComponent::GetReservedPacketBits()
 	return ReturnVal;
 }
 
+void OodleHandlerComponent::SetAnalyticsProvider(TSharedPtr<class IAnalyticsProvider> Provider)
+{
+	if (Analytics.IsValid())
+	{
+		Analytics->SetProvider(Provider);
+	}
+}
 
 #if !UE_BUILD_SHIPPING
 /**
@@ -1361,14 +1405,14 @@ void FOodleComponentModuleInterface::StartupModule()
 
 
 	// Use an absolute path for this, as we want all relative paths, to be relative to this folder
-	GOodleSaveDir = FPaths::ConvertRelativePathToFull(FPaths::Combine(*FPaths::GameSavedDir(), TEXT("Oodle")));
-	GOodleContentDir = FPaths::ConvertRelativePathToFull(FPaths::Combine(*FPaths::GameContentDir(), TEXT("Oodle")));
+	GOodleSaveDir = FPaths::ConvertRelativePathToFull(FPaths::Combine(*FPaths::ProjectSavedDir(), TEXT("Oodle")));
+	GOodleContentDir = FPaths::ConvertRelativePathToFull(FPaths::Combine(*FPaths::ProjectContentDir(), TEXT("Oodle")));
 
 #if PLATFORM_WINDOWS
 	{
 		// Load the Oodle library (NOTE: Path and fallback path mirrored in Oodle.Build.cs)
-		FString OodleBinaryPath = FPaths::GameDir() / TEXT( "Binaries/ThirdParty/Oodle/" );
-		FString OodleBinaryFile = TEXT( "oo2core_1" );
+		FString OodleBinaryPath = FPaths::ProjectDir() / TEXT( "Binaries/ThirdParty/Oodle/" );
+		FString OodleBinaryFile = TEXT( "oo2core_5" );
 
 	#if PLATFORM_64BITS
 		OodleBinaryPath += TEXT("Win64/");

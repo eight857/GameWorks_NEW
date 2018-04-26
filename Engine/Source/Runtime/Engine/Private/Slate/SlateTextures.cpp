@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "Slate/SlateTextures.h"
@@ -73,7 +73,10 @@ void FSlateTexture2DRHIRef::InitDynamicRHI()
 			}
 			else
 			{
-				checkf(GPixelFormats[PixelFormat].BlockSizeX == GPixelFormats[PixelFormat].BlockSizeY == GPixelFormats[PixelFormat].BlockSizeZ == 1, TEXT("Tried to use compressed format?"));
+				checkf(GPixelFormats[PixelFormat].BlockSizeX == 1 
+					&& GPixelFormats[PixelFormat].BlockSizeY == 1 
+					&& GPixelFormats[PixelFormat].BlockSizeZ == 1,
+					TEXT("Tried to use compressed format?"));
 				for (uint32 i = 0; i < Height; i++)
 				{
 					FMemory::Memcpy(DestTextureData, SourceTextureData, DataStride);

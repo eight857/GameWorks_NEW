@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GenericPlatform/GenericPlatformFile.h"
 #include "HAL/FileManager.h"
@@ -9,6 +9,7 @@
 #include "Async/AsyncWork.h"
 #include "UniquePtr.h"
 #include "ScopeLock.h"
+#include "HAL/LowLevelMemTracker.h"
 
 #include "AsyncFileHandle.h"
 
@@ -69,7 +70,7 @@ public:
 
 	virtual void PerformRequest() = 0;
 
-	virtual void WaitCompletionImpl(float TimeLimitSeconds) override
+	virtual void WaitCompletionImpl(float TimeLimitSeconds) override TSAN_SAFE
 	{
 		if (Task)
 		{
@@ -156,7 +157,7 @@ public:
 	uint8* GetContainedSubblock(uint8* UserSuppliedMemory, int64 InOffset, int64 InBytesToRead)
 	{
 		if (InOffset >= Offset && InOffset + InBytesToRead <= Offset + BytesToRead &&
-			this->PollCompletion())
+			this->PollCompletion() && Memory)
 		{
 			check(Memory);
 			if (!UserSuppliedMemory)
@@ -273,9 +274,9 @@ public:
 		if (bDisableHandleCaching)
 		{
 #if DISABLE_BUFFERING_ON_GENERIC_ASYNC_FILE_HANDLE
-			return LowerLevel->OpenRead(*Filename);
-#else
 			return LowerLevel->OpenReadNoBuffering(*Filename);
+#else
+			return LowerLevel->OpenRead(*Filename);
 #endif
 		}
 		IFileHandle* Result = nullptr;
@@ -286,9 +287,9 @@ public:
 			if (!HandleCache[0] && !bOpenFailed)
 			{
 #if DISABLE_BUFFERING_ON_GENERIC_ASYNC_FILE_HANDLE
-				HandleCache[0] = LowerLevel->OpenRead(*Filename);
-#else
 				HandleCache[0] = LowerLevel->OpenReadNoBuffering(*Filename);
+#else
+				HandleCache[0] = LowerLevel->OpenRead(*Filename);
 #endif
 				bOpenFailed = (HandleCache[0] == nullptr);
 			}
@@ -313,9 +314,9 @@ public:
 			if (!Result && !bOpenFailed)
 			{
 #if DISABLE_BUFFERING_ON_GENERIC_ASYNC_FILE_HANDLE
-				Result = LowerLevel->OpenRead(*Filename);
-#else
 				Result = LowerLevel->OpenReadNoBuffering(*Filename);
+#else
+				Result = LowerLevel->OpenRead(*Filename);
 #endif
 				bOpenFailed = (Result == nullptr);
 			}
@@ -373,6 +374,8 @@ FGenericReadRequest::~FGenericReadRequest()
 
 void FGenericReadRequest::PerformRequest()
 {
+	LLM_SCOPE(ELLMTag::FileSystem);
+
 	if (!bCanceled)
 	{
 		bool bMemoryHasBeenAcquired = bUserSuppliedMemory;
@@ -529,6 +532,52 @@ bool IPlatformFile::IterateDirectoryStatRecursively(const TCHAR* Directory, FDir
 	};
 	FStatRecurse Recurse(*this, Visitor);
 	return IterateDirectoryStat(Directory, Recurse);
+}
+
+class FFindFilesVisitor : public IPlatformFile::FDirectoryVisitor
+{
+public:
+	IPlatformFile&		PlatformFile;
+	TArray<FString>&	FoundFiles;
+	const TCHAR*		FileExtension;
+	int32				FileExtensionLen;
+	FFindFilesVisitor(IPlatformFile& InPlatformFile, TArray<FString>& InFoundFiles, const TCHAR* InFileExtension)
+		: PlatformFile(InPlatformFile)
+		, FoundFiles(InFoundFiles)
+		, FileExtension(InFileExtension)
+		, FileExtensionLen(InFileExtension ? FCString::Strlen(InFileExtension) : 0)
+	{
+	}
+	virtual bool Visit(const TCHAR* FilenameOrDirectory, bool bIsDirectory) override
+	{
+		if (!bIsDirectory)
+		{
+			if (FileExtensionLen > 0)
+			{
+				int32 FileNameLen = FCString::Strlen(FilenameOrDirectory);
+				if (FileNameLen < FileExtensionLen || 
+					FCString::Strcmp(&FilenameOrDirectory[FileNameLen - FileExtensionLen], FileExtension) != 0)
+				{
+					return true;
+				}
+			}
+				
+			FoundFiles.Emplace(FString(FilenameOrDirectory));
+		}
+		return true;
+	}
+};
+
+void IPlatformFile::FindFiles(TArray<FString>& FoundFiles, const TCHAR* Directory, const TCHAR* FileExtension)
+{
+	FFindFilesVisitor FindFilesVisitor(*this, FoundFiles, FileExtension);
+	IterateDirectory(Directory, FindFilesVisitor);
+}
+
+void IPlatformFile::FindFilesRecursively(TArray<FString>& FoundFiles, const TCHAR* Directory, const TCHAR* FileExtension)
+{
+	FFindFilesVisitor FindFilesVisitor(*this, FoundFiles, FileExtension);
+	IterateDirectoryRecursively(Directory, FindFilesVisitor);
 }
 
 bool IPlatformFile::DeleteDirectoryRecursively(const TCHAR* Directory)

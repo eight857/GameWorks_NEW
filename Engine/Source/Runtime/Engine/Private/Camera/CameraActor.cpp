@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Camera/CameraActor.h"
 #include "Engine/World.h"
@@ -68,8 +68,11 @@ void ACameraActor::PostLoadSubobjects(FObjectInstancingGraph* OuterInstanceGraph
 	if (GetLinkerUE4Version() < VER_UE4_CAMERA_COMPONENT_ATTACH_TO_ROOT)
 	{
 		RootComponent = SceneComponent;
-		CameraComponent->SetupAttachment(RootComponent);
-		RootComponent->SetupAttachment(OldAttachParent, OldSocketName);
+		if (OldAttachParent != SceneComponent)
+		{
+			CameraComponent->SetupAttachment(RootComponent);
+			RootComponent->SetupAttachment(OldAttachParent, OldSocketName);
+		}
 	}
 }
 
@@ -128,5 +131,3 @@ void ACameraActor::BeginPlay()
 
 #undef LOCTEXT_NAMESPACE
 
-/** Returns CameraComponent subobject **/
-UCameraComponent* ACameraActor::GetCameraComponent() const { return CameraComponent; }

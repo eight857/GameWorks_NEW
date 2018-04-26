@@ -1,13 +1,13 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VREditorWidgetComponent.h"
 
-UVREditorWidgetComponent::UVREditorWidgetComponent(const FObjectInitializer& ObjectInitializer)
-	: Super( ObjectInitializer )
+UVREditorWidgetComponent::UVREditorWidgetComponent()
+	: Super(),
+	DrawingPolicy(EVREditorWidgetDrawingPolicy::Always),
+	bIsHovering(false),
+	bHasEverDrawn(false)
 {
-	bIsHovering = false;
-	DrawingPolicy = EVREditorWidgetDrawingPolicy::Always;
-	bHasEverDrawn = false;
 	bSelectable = false;
 }
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -456,8 +456,8 @@ public:
 	/** Update shown layer list */	
 	void UpdateShownLayerList();
 	bool ShouldShowLayer(TSharedRef<FLandscapeTargetListInfo> Target) const;
-	void UpdateLayerUsageInformation();
-
+	void UpdateLayerUsageInformation(TWeakObjectPtr<ULandscapeLayerInfoObject>* LayerInfoObjectThatChanged = nullptr);
+	void OnLandscapeMaterialChangedDelegate();
 	void RefreshDetailPanel();
 
 	DECLARE_EVENT(FEdModeLandscape, FTargetsListUpdated);

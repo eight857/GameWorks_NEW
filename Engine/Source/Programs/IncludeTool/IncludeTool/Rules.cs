@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using IncludeTool.Support;
 using System;
@@ -260,9 +260,13 @@ namespace IncludeTool
 			"/Engine/Plugins/Online/OnlineSubsystem/Source/Public/OnlineSubsystemPackage.h",
 			"/Engine/Plugins/Online/OnlineSubsystemNull/Source/Public/OnlineSubsystemNullPackage.h",
 			"/Engine/Plugins/Online/NotForLicensees/OnlineSubsystemMcp/Source/Public/OnlineSubsystemMcpPackage.h",
+			"/Engine/Plugins/Online/NotForLicensees/OnlineSubsystemTencent/Source/Public/OnlineSubsystemTencentPackage.h",
 			"/Engine/Plugins/Online/OnlineSubsystemSteam/Source/Public/OnlineSubsystemSteamPackage.h",
 			"/Engine/Plugins/Online/OnlineSubsystemAmazon/Source/Public/OnlineSubsystemAmazonPackage.h",
 			"/Engine/Plugins/Online/OnlineSubsystemUtils/Source/OnlineSubsystemUtils/Public/OnlineSubsystemUtilsPackage.h",
+			"/Engine/Plugins/Online/OnlineSubsystemTwitch/Source/Public/OnlineSubsystemTwitchPackage.h",
+			"/Engine/Plugins/Online/PS4/OnlineSubsystemPS4Server/Source/Public/OnlineSubsystemPS4ServerPackage.h",
+			"/Engine/Plugins/Online/XboxOne/OnlineSubsystemLiveServer/Source/Public/OnlineSubsystemLiveServerPackage.h",
 			"/Engine/Source/Runtime/Online/OnlineSubsystemAmazon/Public/OnlineSubsystemAmazonPackage.h",
 			"/Engine/Source/Runtime/Online/OnlineSubsystemFacebook/Public/OnlineSubsystemFacebookPackage.h",
 			"/Engine/Source/Runtime/Online/OnlineSubsystemSteam/Public/OnlineSubsystemSteamPackage.h",
@@ -592,7 +596,7 @@ namespace IncludeTool
         /// <returns></returns>
         public static bool AllowSymbol(string Name)
         {
-            if(Name == "FNode" || Name == "FFunctionExpression" || Name == "ITextData")
+            if(Name == "FNode" || Name == "FFunctionExpression" || Name == "ITextData" || Name == "Rect")
             {
                 return false;
             }

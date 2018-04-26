@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -118,6 +118,18 @@ enum ETextureSourceFormat
 	TSF_MAX
 };
 
+UENUM()
+enum ETextureCompressionQuality
+{
+	TCQ_Default = 0		UMETA(DisplayName="Default"),
+	TCQ_Lowest = 1		UMETA(DisplayName="Lowest"),
+	TCQ_Low = 2			UMETA(DisplayName="Low"),
+	TCQ_Medium = 3		UMETA(DisplayName="Medium"),
+	TCQ_High= 4			UMETA(DisplayName="High"),
+	TCQ_Highest = 5		UMETA(DisplayName="Highest"),
+	TCQ_MAX,
+};
+
 /**
  * Texture source data management.
  */
@@ -185,7 +197,7 @@ struct FTextureSource
 	ENGINE_API void UnlockMip(int32 MipIndex);
 
 	/** Retrieve a copy of the data for a particular mip. */
-	ENGINE_API bool GetMipData(TArray<uint8>& OutMipData, int32 MipIndex);
+	ENGINE_API bool GetMipData(TArray<uint8>& OutMipData, int32 MipIndex, class IImageWrapperModule* ImageWrapperModule = nullptr);
 
 	/** Computes the size of a single mip. */
 	ENGINE_API int32 CalcMipSize(int32 MipIndex) const;
@@ -212,6 +224,8 @@ struct FTextureSource
 	FORCEINLINE bool IsPNGCompressed() const { return bPNGCompressed; }
 	FORCEINLINE int32 GetSizeOnDisk() const { return BulkData.GetBulkDataSize(); }
 	FORCEINLINE bool IsBulkDataLoaded() const { return BulkData.IsBulkDataLoaded(); }
+	FORCEINLINE bool LoadBulkDataWithFileReader() { return BulkData.LoadBulkDataWithFileReader(); }
+	FORCEINLINE void RemoveBulkData() { BulkData.RemoveBulkData(); }
 	
 	/** Sets the GUID to use, and whether that GUID is actually a hash of some data. */
 	void SetId(const FGuid& InId, bool bInGuidIsHash);
@@ -428,6 +442,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Compression, meta=(DisplayName="Maximum Texture Size", ClampMin = "0.0"), AdvancedDisplay)
 	int32 MaxTextureSize;
 
+	/** The compression quality for generated textures. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Compression, meta = (DisplayName = "Compression Quality"), AdvancedDisplay)
+	TEnumAsByte<enum ETextureCompressionQuality> CompressionQuality;
+
 	/** When true, the alpha channel of mip-maps and the base image are dithered for smooth LOD transitions. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Texture, AdvancedDisplay)
 	uint32 bDitherMipMapAlpha:1;
@@ -505,44 +523,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LevelOfDetail, AdvancedDisplay)
 	int32 NumCinematicMipLevels;
 
-	/** This should be unchecked if using alpha channels individually as masks. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Texture, meta=(DisplayName="sRGB"), AssetRegistrySearchable)
-	uint32 SRGB:1;
-
-#if WITH_EDITORONLY_DATA
-
-	/** A flag for using the simplified legacy gamma space e.g pow(color,1/2.2) for converting from FColor to FLinearColor, if we're doing sRGB. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Texture, AdvancedDisplay)
-	uint32 bUseLegacyGamma:1;
-
-#endif // WITH_EDITORONLY_DATA
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Texture, AssetRegistrySearchable, AdvancedDisplay)
-	uint32 NeverStream:1;
-
-	/** If true, the RHI texture will be created using TexCreate_NoTiling */
-	UPROPERTY()
-	uint32 bNoTiling:1;
-
-	/** Whether to use the extra cinematic quality mip-levels, when we're forcing mip-levels to be resident. */
-	UPROPERTY(transient)
-	uint32 bUseCinematicMipLevels:1;
-
-protected:
-	/** Array of user data stored with the asset */
-	UPROPERTY(EditAnywhere, AdvancedDisplay, Instanced, Category = Texture)
-	TArray<UAssetUserData*> AssetUserData;
-
-private:
-	/** Cached combined group and texture LOD bias to use.	*/
-	UPROPERTY(transient)
-	int32 CachedCombinedLODBias;
-
-	/** Whether the async resource release process has already been kicked off or not */
-	UPROPERTY(transient)
-	uint32 bAsyncResourceReleaseHasBeenStarted:1;
-
-public:
 	/** Compression settings to use when building the texture. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Compression, AssetRegistrySearchable)
 	TEnumAsByte<enum TextureCompressionSettings> CompressionSettings;
@@ -554,6 +534,43 @@ public:
 	/** Texture group this texture belongs to */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LevelOfDetail, meta=(DisplayName="Texture Group"), AssetRegistrySearchable)
 	TEnumAsByte<enum TextureGroup> LODGroup;
+
+	/** This should be unchecked if using alpha channels individually as masks. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Texture, meta=(DisplayName="sRGB"), AssetRegistrySearchable)
+	uint8 SRGB:1;
+
+#if WITH_EDITORONLY_DATA
+
+	/** A flag for using the simplified legacy gamma space e.g pow(color,1/2.2) for converting from FColor to FLinearColor, if we're doing sRGB. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Texture, AdvancedDisplay)
+	uint8 bUseLegacyGamma:1;
+
+#endif // WITH_EDITORONLY_DATA
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Texture, AssetRegistrySearchable, AdvancedDisplay)
+	uint8 NeverStream:1;
+
+	/** If true, the RHI texture will be created using TexCreate_NoTiling */
+	UPROPERTY()
+	uint8 bNoTiling:1;
+
+	/** Whether to use the extra cinematic quality mip-levels, when we're forcing mip-levels to be resident. */
+	UPROPERTY(transient)
+	uint8 bUseCinematicMipLevels:1;
+
+private:
+	/** Whether the async resource release process has already been kicked off or not */
+	UPROPERTY(transient)
+	uint8 bAsyncResourceReleaseHasBeenStarted : 1;
+
+	/** Cached combined group and texture LOD bias to use.	*/
+	UPROPERTY(transient)
+	int32 CachedCombinedLODBias;
+
+protected:
+	/** Array of user data stored with the asset */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Instanced, Category = Texture)
+	TArray<UAssetUserData*> AssetUserData;
 
 public:
 	/** The texture's resource, can be NULL */
@@ -592,15 +609,13 @@ public:
 	 */
 	ENGINE_API int32 GetCachedLODBias() const;
 
-	/**
-	 * Cache the combined LOD bias based on texture LOD group and LOD bias.
-	 */
-	ENGINE_API void UpdateCachedLODBias( bool bIncTextureMips = true );
+	/** Cache the combined LOD bias based on texture LOD group and LOD bias. */
+	ENGINE_API void UpdateCachedLODBias();
 
 	/**
 	 * @return The material value type of this texture.
 	 */
-	virtual EMaterialValueType GetMaterialType() PURE_VIRTUAL(UTexture::GetMaterialType,return MCT_Texture;);
+	virtual EMaterialValueType GetMaterialType() const PURE_VIRTUAL(UTexture::GetMaterialType,return MCT_Texture;);
 
 	/**
 	 * Waits until all streaming requests for this texture has been fully processed.
@@ -647,9 +662,11 @@ public:
 	 * Caches platform data for the texture.
 	 * 
 	 * @param bAsyncCache spawn a thread to cache the platform data 
-	 * @param bAllowAsyncBuild allow the building of the texture to happen on another thread !!!load BulkData and cache the Source mip data on the main thread before checking DDC!!!
+	 * @param bAllowAsyncBuild allow building the DDC file in the thread if missing.
+	 * @param bAllowAsyncLoading allow loading source data in the thread if missing (the data won't be reusable for later use though)
+	 * @param Compressor optional compressor as the texture compressor can not be get from an async thread.
 	 */
-	void CachePlatformData(bool bAsyncCache = false, bool bAllowAsyncBuild = false, class ITextureCompressorModule* Compressor = nullptr);
+	void CachePlatformData(bool bAsyncCache = false, bool bAllowAsyncBuild = false, bool bAllowAsyncLoading = false, class ITextureCompressorModule* Compressor = nullptr);
 
 	/**
 	 * Begins caching platform data in the background for the platform requested
@@ -715,6 +732,14 @@ public:
 
 	/** @return the height of the surface represented by the texture. */
 	virtual float GetSurfaceHeight() const PURE_VIRTUAL(UTexture::GetSurfaceHeight,return 0;);
+
+	/**
+	 * Access the GUID which defines this texture's resources externally through FExternalTextureRegistry
+	 */
+	virtual FGuid GetExternalTextureGuid() const
+	{
+		return FGuid();
+	}
 
 	//~ Begin UObject Interface.
 #if WITH_EDITOR
@@ -816,6 +841,14 @@ public:
 	 */
 	ENGINE_API static class UEnum* GetPixelFormatEnum();
 
+protected:
+
+#if WITH_EDITOR
+
+	/** Notify any loaded material instances that the texture has changed. */
+	ENGINE_API void NotifyMaterials();
+
+#endif //WITH_EDOTIR
 };
 
 /** 

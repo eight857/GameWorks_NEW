@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Styling/SlateBrush.h"
 
@@ -8,16 +8,16 @@
 
 FSlateBrush::FSlateBrush( ESlateBrushDrawType::Type InDrawType, const FName InResourceName, const FMargin& InMargin, ESlateBrushTileType::Type InTiling, ESlateBrushImageType::Type InImageType, const FVector2D& InImageSize, const FLinearColor& InTint, UObject* InObjectResource, bool bInDynamicallyLoaded )
 	: ImageSize( InImageSize )
-	, DrawAs( InDrawType )
 	, Margin( InMargin )
 	, TintColor( InTint )
+	, ResourceObject( InObjectResource )
+	, ResourceName( InResourceName )
+	, UVRegion( ForceInit )
+	, DrawAs( InDrawType )
 	, Tiling( InTiling )
 	, Mirroring( ESlateBrushMirrorType::NoMirror )
 	, ImageType( InImageType )
-	, ResourceObject( InObjectResource )
-	, ResourceName( InResourceName )
 	, bIsDynamicallyLoaded( bInDynamicallyLoaded )
-	, UVRegion( ForceInit )
 {
 	bHasUObject_DEPRECATED = (InObjectResource != nullptr) || InResourceName.ToString().StartsWith(FSlateBrush::UTextureIdentifier());
 
@@ -31,16 +31,16 @@ FSlateBrush::FSlateBrush( ESlateBrushDrawType::Type InDrawType, const FName InRe
 
 FSlateBrush::FSlateBrush( ESlateBrushDrawType::Type InDrawType, const FName InResourceName, const FMargin& InMargin, ESlateBrushTileType::Type InTiling, ESlateBrushImageType::Type InImageType, const FVector2D& InImageSize, const TSharedRef< FLinearColor >& InTint, UObject* InObjectResource, bool bInDynamicallyLoaded )
 	: ImageSize( InImageSize )
-	, DrawAs( InDrawType )
 	, Margin( InMargin )
 	, TintColor( InTint )
+	, ResourceObject( InObjectResource )
+	, ResourceName( InResourceName )
+	, UVRegion( ForceInit )
+	, DrawAs( InDrawType )
 	, Tiling( InTiling )
 	, Mirroring( ESlateBrushMirrorType::NoMirror )
 	, ImageType( InImageType )
-	, ResourceObject( InObjectResource )
-	, ResourceName( InResourceName )
 	, bIsDynamicallyLoaded( bInDynamicallyLoaded )
-	, UVRegion( ForceInit )
 {
 	bHasUObject_DEPRECATED = (InObjectResource != nullptr) || InResourceName.ToString().StartsWith(FSlateBrush::UTextureIdentifier());
 
@@ -54,16 +54,16 @@ FSlateBrush::FSlateBrush( ESlateBrushDrawType::Type InDrawType, const FName InRe
 
 FSlateBrush::FSlateBrush( ESlateBrushDrawType::Type InDrawType, const FName InResourceName, const FMargin& InMargin, ESlateBrushTileType::Type InTiling, ESlateBrushImageType::Type InImageType, const FVector2D& InImageSize, const FSlateColor& InTint, UObject* InObjectResource, bool bInDynamicallyLoaded )
 	: ImageSize(InImageSize)
-	, DrawAs(InDrawType)
 	, Margin(InMargin)
 	, TintColor(InTint)
+	, ResourceObject(InObjectResource)
+	, ResourceName(InResourceName)
+	, UVRegion(ForceInit)
+	, DrawAs(InDrawType)
 	, Tiling(InTiling)
 	, Mirroring( ESlateBrushMirrorType::NoMirror )
 	, ImageType(InImageType)
-	, ResourceObject(InObjectResource)
-	, ResourceName(InResourceName)
 	, bIsDynamicallyLoaded(bInDynamicallyLoaded)
-	, UVRegion(ForceInit)
 {
 	bHasUObject_DEPRECATED = (InObjectResource != nullptr) || InResourceName.ToString().StartsWith(FSlateBrush::UTextureIdentifier());
 

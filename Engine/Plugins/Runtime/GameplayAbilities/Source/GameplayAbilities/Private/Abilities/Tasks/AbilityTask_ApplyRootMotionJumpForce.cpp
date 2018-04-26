@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionJumpForce.h"
 #include "GameFramework/RootMotionSource.h"
@@ -21,7 +21,7 @@ UAbilityTask_ApplyRootMotionJumpForce* UAbilityTask_ApplyRootMotionJumpForce::Ap
 {
 	UAbilitySystemGlobals::NonShipping_ApplyGlobalAbilityScaler_Duration(Duration);
 
-	auto MyTask = NewAbilityTask<UAbilityTask_ApplyRootMotionJumpForce>(OwningAbility, TaskInstanceName);
+	UAbilityTask_ApplyRootMotionJumpForce* MyTask = NewAbilityTask<UAbilityTask_ApplyRootMotionJumpForce>(OwningAbility, TaskInstanceName);
 
 	MyTask->ForceName = TaskInstanceName;
 	MyTask->Rotation = Rotation;

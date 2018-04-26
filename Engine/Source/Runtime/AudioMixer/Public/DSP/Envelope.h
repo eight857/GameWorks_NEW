@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,7 +13,7 @@ namespace Audio
 	{
 	public:
 		FEnvelope();
-		~FEnvelope();
+		virtual ~FEnvelope();
 
 		// Initialize the envelope with the given sample rate
 		void Init(const float InSampleRate, const int32 InVoiceId = 0, FModulationMatrix* InModMatrix = nullptr, const bool bInSimulateAnalog = true);
@@ -26,6 +26,7 @@ namespace Audio
 
 		// Sets whether or not the envelope is zero'd when reset
 		void SetRetrigger(const bool bInRetrigger) { bIsRetriggerMode = bInRetrigger; }
+		bool IsRetrigger() const { return bIsRetriggerMode; }
 
 		// Start the envelope, puts envelope in attack state
 		virtual void Start();

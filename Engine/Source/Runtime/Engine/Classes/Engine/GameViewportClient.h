@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,6 +16,8 @@
 #include "Engine/TitleSafeZone.h"
 #include "Engine/GameViewportDelegates.h"
 #include "Engine/DebugDisplayProperty.h"
+#include "UObject/SoftObjectPath.h"
+#include "StereoRendering.h"
 
 #include "GameViewportClient.generated.h"
 
@@ -29,19 +31,8 @@ class UCanvas;
 class UGameInstance;
 class ULocalPlayer;
 class UNetDriver;
-struct FStringClassReference;
 class FHardwareCursor;
 
-/**
- * Stereoscopic rendering passes.  FULL implies stereoscopic rendering isn't enabled for this pass
- */
-enum EStereoscopicPass
-{
-	eSSP_FULL,
-	eSSP_LEFT_EYE,
-	eSSP_RIGHT_EYE,
-	eSSP_MONOSCOPIC_EYE
-};
 
 /** Delegate for overriding the behavior when a navigation action is taken, Not to be confused with FNavigationDelegate which allows a specific widget to override behavior for itself */
 DECLARE_DELEGATE_RetVal_TwoParams(bool, FCustomNavigationHandler, const uint32, TSharedPtr<SWidget>);
@@ -130,11 +121,15 @@ public:
 	UFUNCTION(exec)
 	virtual void SetConsoleTarget(int32 PlayerIndex);
 
+	/** Sets the widget to use fore the cursor. */
+	void AddCursorWidget(EMouseCursor::Type Cursor, class UUserWidget* CursorWidget);
+
 	/** Returns a relative world context for this viewport.	 */
 	virtual UWorld* GetWorld() const override;
 
 	/* Returns the game viewport */
 	FSceneViewport* GetGameViewport();
+	const FSceneViewport* GetGameViewport() const;
 
 	/* Returns the widget for this viewport */
 	TSharedPtr<SViewport> GetGameViewportWidget();
@@ -175,6 +170,7 @@ public:
 	virtual void MouseEnter(FViewport* Viewport, int32 x, int32 y) override;
 	virtual void MouseLeave(FViewport* Viewport) override;
 	virtual void SetIsSimulateInEditorViewport(bool bInIsSimulateInEditorViewport) override;
+
 	//~ End FViewportClient Interface.
 
 	/** make any adjustments to the views after they've been completely set up */
@@ -250,6 +246,11 @@ public:
 	 * This function removes all widgets from the viewport overlay
 	 */
 	void RemoveAllViewportWidgets();
+
+	/**
+	 * Recreates cursor widgets from UISettings class.
+	 */
+	void RebuildCursors();
 
 	/**
 	 * Cleans up all rooted or referenced objects created or managed by the GameViewportClient.  This method is called
@@ -334,10 +335,6 @@ public:
 	bool IsFullScreenViewport() const;
 
 	/** @return mouse position in game viewport coordinates (does not account for splitscreen) */
-	DEPRECATED(4.5, "Use GetMousePosition that returns a boolean if mouse is in window instead.")
-	FVector2D GetMousePosition() const;
-
-	/** @return mouse position in game viewport coordinates (does not account for splitscreen) */
 	bool GetMousePosition(FVector2D& MousePosition) const;
 
 	/**
@@ -353,12 +350,6 @@ public:
 	 * @return False if an error occurred, true if the viewport was initialized successfully.
 	 */
 	virtual ULocalPlayer* SetupInitialLocalPlayer(FString& OutError);
-
-	DEPRECATED(4.4, "CreatePlayer is deprecated UGameInstance::CreateLocalPlayer instead.")
-	virtual ULocalPlayer* CreatePlayer(int32 ControllerId, FString& OutError, bool bSpawnActor);
-
-	DEPRECATED(4.4, "RemovePlayer is deprecated UGameInstance::RemoveLocalPlayer instead.")
-	virtual bool RemovePlayer(class ULocalPlayer* ExPlayer);
 
 	/** @return Returns the splitscreen type that is currently being used */
 	FORCEINLINE ESplitScreenType::Type GetCurrentSplitscreenConfiguration() const
@@ -561,6 +552,17 @@ public:
 
 	bool SetHardwareCursor(EMouseCursor::Type CursorShape, FName GameContentPath, FVector2D HotSpot);
 
+	/** 
+	 * @return @true if this viewport is currently being used for simulate in editors
+	 */
+	bool IsSimulateInEditorViewport() const;
+
+	/** FViewport interface */
+	virtual bool ShouldDPIScaleSceneCanvas() const override { return false; }
+protected:
+	/** FCommonViewportClient interface */
+	virtual float UpdateViewportClientWindowDPIScale() const override;
+
 public:
 	/** The show flags used by the viewport's players. */
 	FEngineShowFlags EngineShowFlags;
@@ -760,6 +762,8 @@ public:
 		return ToggleFullscreenDelegate;
 	}
 
+	void SetVirtualCursorWidget(EMouseCursor::Type Cursor, class UUserWidget* Widget);
+
 private:
 	/** Resets the platform type shape to nullptr, to restore it to the OS default. */
 	void ResetHardwareCursorStates();
@@ -805,9 +809,12 @@ private:
 
 	/** Delegate handler for when all stats are disabled in a viewport */
 	void HandleViewportStatDisableAll(const bool bInAnyViewport);
-	
+
+	/** Delegate handler for when a window DPI changes and we might need to adjust the scenes resolution */
+	void HandleWindowDPIScaleChanged(TSharedRef<SWindow> InWindow);
+
 	/** Adds a cursor to the set based on the enum and the class reference to it. */
-	void AddSoftwareCursor(EMouseCursor::Type Cursor, const FStringClassReference& CursorClass);
+	void AddSoftwareCursor(EMouseCursor::Type Cursor, const FSoftClassPath& CursorClass);
 
 private:
 	/** Slate window associated with this viewport client.  The same window may host more than one viewport client. */

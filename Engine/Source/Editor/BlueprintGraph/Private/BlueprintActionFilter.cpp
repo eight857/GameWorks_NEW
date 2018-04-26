@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlueprintActionFilter.h"
 #include "UObject/Interface.h"
@@ -30,6 +30,7 @@
 #include "BlueprintEventNodeSpawner.h"
 #include "BlueprintBoundEventNodeSpawner.h"
 #include "BlueprintBoundNodeSpawner.h"
+#include "Algo/Transform.h"
 // "impure" node types (utilized in BlueprintActionFilterImpl::IsImpure)
 #include "K2Node_MultiGate.h"
 #include "K2Node_Message.h"
@@ -171,6 +172,16 @@ namespace BlueprintActionFilterImpl
 	 */
 	static bool IsDeprecated(FBlueprintActionFilter const& Filter, FBlueprintActionInfo& BlueprintAction);
 	
+	/**
+	* Rejection test that checks to see if the supplied node-spawner would 
+	* produce a node (or comes from an associated class) that is deprecated.
+	* 
+	* @param  Filter			Filter context (unused) for this test.
+	* @param  BlueprintAction	The action you wish to query.
+	* @return True if the action would spawn a node that is deprecated.
+	*/
+	static bool IsPropertyAccessorNode(FBlueprintActionFilter const& Filter, FBlueprintActionInfo& BlueprintAction);
+
 	/**
 	 * Rejection test that checks to see if the supplied node-spawner would 
 	 * produce an impure node, incompatible with the specified graphs.
@@ -798,8 +809,8 @@ static bool BlueprintActionFilterImpl::IsPermissionNotGranted(FBlueprintActionFi
 		UClass const* const NodeClass = BlueprintAction.GetNodeClass();
 		for (UBlueprint const* Blueprint : FilterContext.Blueprints)
 		{
-			bool const bIsReadOnly = FBlueprintEditorUtils::IsPropertyReadOnlyInCurrentBlueprint(Blueprint, Property);
-			if (bIsReadOnly && NodeClass && NodeClass->IsChildOf<UK2Node_VariableSet>())
+			bool const bIsWritable = (FBlueprintEditorUtils::IsPropertyWritableInBlueprint(Blueprint, Property) == FBlueprintEditorUtils::EPropertyWritableState::Writable);
+			if (!bIsWritable && NodeClass && NodeClass->IsChildOf<UK2Node_VariableSet>())
 			{
 				bIsFilteredOut = true;
 			}
@@ -944,6 +955,19 @@ static bool BlueprintActionFilterImpl::IsActionHiddenByConfig(FBlueprintActionFi
 	}
 
 	return bIsFilteredOut;
+}
+
+//------------------------------------------------------------------------------
+static bool BlueprintActionFilterImpl::IsPropertyAccessorNode(FBlueprintActionFilter const& Filter, FBlueprintActionInfo& BlueprintAction)
+{
+	bool bIsAccessor = false;
+
+	if (UFunction const* Function = BlueprintAction.GetAssociatedFunction())
+	{
+		bIsAccessor = (Function->HasMetaData(FBlueprintMetadata::MD_PropertySetFunction) || Function->HasMetaData(FBlueprintMetadata::MD_PropertyGetFunction));
+	}
+
+	return bIsAccessor;
 }
 
 //------------------------------------------------------------------------------
@@ -1260,7 +1284,7 @@ static bool BlueprintActionFilterImpl::IsPinCompatibleWithTargetSelf(UEdGraphPin
 			if (IsClassOfType(PinObjClass, TargetClass))
 			{
 				bIsCompatible = true;
-				if (PinType.bIsArray)
+				if (PinType.IsArray())
 				{
 					if (UFunction const* Function = BlueprintAction.GetAssociatedFunction())
 					{
@@ -1276,7 +1300,7 @@ static bool BlueprintActionFilterImpl::IsPinCompatibleWithTargetSelf(UEdGraphPin
 					}
 				}
 			}
-			else if (!PinType.bIsArray && (BlueprintAction.GetNodeClass() == UK2Node_CallFunction::StaticClass()))
+			else if (!PinType.IsArray() && (BlueprintAction.GetNodeClass() == UK2Node_CallFunction::StaticClass()))
 			{
 				// if this is a bound CallFunction action, then we make the 
 				// assumption that it will be turned into a UK2Node_CallFunctionOnMember
@@ -1355,23 +1379,24 @@ static bool BlueprintActionFilterImpl::ArrayFunctionHasParamOfType(const UFuncti
 {
 	UEdGraphSchema_K2 const* K2Schema = GetDefault<UEdGraphSchema_K2>();
 
-	TSet<FString> HiddenPins;
+	TSet<FName> HiddenPins;
 	FBlueprintEditorUtils::GetHiddenPinsForFunction(InGraph, ArrayFunction, HiddenPins);
 
 	FName ParamTag = FBlueprintMetadata::MD_ArrayDependentParam;
-	if (DesiredPinType.bIsArray)
+	if (DesiredPinType.IsArray())
 	{
 		ParamTag = FBlueprintMetadata::MD_ArrayParam;
 	}
-	const FString FlaggedParamMetaData = ArrayFunction->GetMetaData(ParamTag);
+	const FString& FlaggedParamMetaData = ArrayFunction->GetMetaData(ParamTag);
 
-	TArray<FString> WildcardPinNames;
-	FlaggedParamMetaData.ParseIntoArray(WildcardPinNames, TEXT(","), /*CullEmpty =*/true);
+	TArray<FString> WildcardPinNameStrs;
+	TArray<FName> WildcardPinNames;
+	FlaggedParamMetaData.ParseIntoArray(WildcardPinNameStrs, TEXT(","), /*CullEmpty =*/true);
+	Algo::Transform(WildcardPinNameStrs, WildcardPinNames, [](const FString& NameStr) { return FName(*NameStr); });
 
 	for (TFieldIterator<UProperty> PropIt(ArrayFunction); PropIt && (PropIt->PropertyFlags & CPF_Parm); ++PropIt)
 	{
 		UProperty* FuncParam = *PropIt;
-		const FString ParamName = FuncParam->GetName();
 
 		const bool bIsFunctionInput = !FuncParam->HasAnyPropertyFlags(CPF_OutParm) || FuncParam->HasAnyPropertyFlags(CPF_ReferenceParm);
 		if (bWantOutput == bIsFunctionInput)
@@ -1379,7 +1404,9 @@ static bool BlueprintActionFilterImpl::ArrayFunctionHasParamOfType(const UFuncti
 			continue;
 		}
 
-		if (!WildcardPinNames.Contains(ParamName) || HiddenPins.Contains(ParamName))
+		const FName ParamName = FuncParam->GetFName();
+
+		if (HiddenPins.Contains(ParamName) || !WildcardPinNames.Contains(ParamName))
 		{
 			continue;
 		}
@@ -1397,7 +1424,6 @@ static bool BlueprintActionFilterImpl::ArrayFunctionHasParamOfType(const UFuncti
 				return true;
 			}
 		}
-
 	}
 
 	return false;
@@ -1416,7 +1442,6 @@ static bool BlueprintActionFilterImpl::IsMissmatchedPropertyType(FBlueprintActio
 			bool const bIsGetter   = BlueprintAction.GetNodeClass()->IsChildOf<UK2Node_VariableGet>();
 			bool const bIsSetter   = BlueprintAction.GetNodeClass()->IsChildOf<UK2Node_VariableSet>();
 
-			//K2Schema->ConvertPropertyToPinType(VariableProperty, /*out*/ VariablePin->PinType);
 			for (int32 PinIndex = 0; !bIsFilteredOut && PinIndex < ContextPins.Num(); ++PinIndex)
 			{
 				UEdGraphPin const* ContextPin = ContextPins[PinIndex];
@@ -1434,7 +1459,7 @@ static bool BlueprintActionFilterImpl::IsMissmatchedPropertyType(FBlueprintActio
 					// just iterate over all the pins
 					bIsFilteredOut = !HasMatchingPin(BlueprintAction, ContextPin);
 				}
-				else if (ContextPinType.PinCategory == K2Schema->PC_Exec)
+				else if (ContextPinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
 				{
 					// setters are impure, and therefore should have exec pins
 					bIsFilteredOut = bIsGetter;
@@ -1761,7 +1786,7 @@ FBlueprintActionInfo::FBlueprintActionInfo(FBlueprintActionInfo const& Rhs, IBlu
 //------------------------------------------------------------------------------
 UObject const* FBlueprintActionInfo::GetActionOwner()
 {
-	return ActionOwner;
+	return ActionOwner.Get();
 }
 
 //------------------------------------------------------------------------------
@@ -1775,24 +1800,27 @@ UClass const* FBlueprintActionInfo::GetOwnerClass()
 {
 	if ((CacheFlags & EBlueprintActionInfoFlags::CachedClass) == 0)
 	{
-		CachedOwnerClass = Cast<UClass>(ActionOwner);
+		CachedOwnerClass = Cast<UClass>(ActionOwner.Get());
 		if (CachedOwnerClass == GetNodeClass())
 		{
 			CachedOwnerClass = nullptr;
 		}
-		else if (const UBlueprint* AsBlueprint = Cast<UBlueprint>(ActionOwner))
+		else if (const UBlueprint* AsBlueprint = Cast<UBlueprint>(ActionOwner.Get()))
 		{
-			CachedOwnerClass = AsBlueprint->SkeletonGeneratedClass;
+			CachedOwnerClass = AsBlueprint->SkeletonGeneratedClass.Get();
 		}
 
 		if (CachedOwnerClass == nullptr)
 		{
-			CachedOwnerClass = GetAssociatedMemberField()->GetOwnerClass();
+			if (UField const* AssociatedMemberField = GetAssociatedMemberField())
+			{
+				CachedOwnerClass = AssociatedMemberField->GetOwnerClass();
+			}
 		}
 
 		CacheFlags |= EBlueprintActionInfoFlags::CachedClass;
 	}
-	return CachedOwnerClass;
+	return CachedOwnerClass.Get();
 }
 
 //------------------------------------------------------------------------------
@@ -1889,6 +1917,7 @@ FBlueprintActionFilter::FBlueprintActionFilter(uint32 Flags/*= 0x00*/)
 	AddRejectionTest(FRejectionTestDelegate::CreateStatic(IsFunctionMissingPinParam));
 	AddRejectionTest(FRejectionTestDelegate::CreateStatic(IsIncompatibleLatentNode));
 	AddRejectionTest(FRejectionTestDelegate::CreateStatic(IsIncompatibleImpureNode));
+	AddRejectionTest(FRejectionTestDelegate::CreateStatic(IsPropertyAccessorNode));
 	
 	AddRejectionTest(FRejectionTestDelegate::CreateStatic(IsActionHiddenByConfig));
 	AddRejectionTest(FRejectionTestDelegate::CreateStatic(IsFieldCategoryHidden));

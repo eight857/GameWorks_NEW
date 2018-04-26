@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TileMapEditing/STileLayerList.h"
 #include "PaperTileLayer.h"
@@ -12,6 +12,7 @@
 #include "PaperTileMapComponent.h"
 #include "TileMapEditing/STileLayerItem.h"
 #include "PaperStyle.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #include "ScopedTransaction.h"
 
@@ -538,7 +539,7 @@ void STileLayerList::CopyLayer()
 		const FExportObjectInnerContext Context;
 		UExporter::ExportToOutputDevice(&Context, SelectedLayer, nullptr, ExportArchive, TEXT("copy"), 0, PPF_Copy, false, nullptr);
 
-		FPlatformMisc::ClipboardCopy(*ExportArchive);
+		FPlatformApplicationMisc::ClipboardCopy(*ExportArchive);
 	}
 }
 
@@ -547,7 +548,7 @@ void STileLayerList::PasteLayerAbove()
 	if (UPaperTileMap* TileMap = TileMapPtr.Get())
 	{
 		FString ClipboardContent;
-		FPlatformMisc::ClipboardPaste(ClipboardContent);
+		FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
 
 		if (!ClipboardContent.IsEmpty())
 		{
@@ -574,7 +575,7 @@ void STileLayerList::PasteLayerAbove()
 bool STileLayerList::CanPasteLayer() const
 {
 	FString ClipboardContent;
-	FPlatformMisc::ClipboardPaste(ClipboardContent);
+	FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
 
 	return !ClipboardContent.IsEmpty();
 }

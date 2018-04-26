@@ -5,13 +5,14 @@ Description:Building a set of contexts, each with its own speaker and listener
 version: 4.13
 parent:Engine/Audio/Dialogue
 order:3
-type:quick start
+type:how-to
 checkpoint:dialogueqs
 prereq: Engine/Blueprints/QuickStart
 related:Engine/Audio
 related:Engine/Audio/Overview
 related:Engine/Audio/SoundCues/Editor
 related:Engine/Audio/SoundCues/NodeReference
+skilllevel:Intermediate
 
 [NAV]
 
@@ -58,7 +59,8 @@ conversation logic herself.
 [NAV]
 
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:graph]
 [OBJECT:Snippet]
 [PARAMLITERAL:id]
@@ -181,4 +183,5 @@ conversation logic herself.
 [/PARAM]
 [/OBJECT]
 [/EXCERPT]
--->
+
+[/COMMENT]

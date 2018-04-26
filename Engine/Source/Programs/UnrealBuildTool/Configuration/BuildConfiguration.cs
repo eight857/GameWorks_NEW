@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Xml;
 using System.Reflection;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -132,15 +133,6 @@ namespace UnrealBuildTool
 		[CommandLine("-NoUBTMakefiles", Value = "false")]
 		public bool bUseUBTMakefiles = true;
 
-        /// <summary>
-        /// Enables support for fast UHT parsing by caching results of previous UHT runs. If a module or *.uhtmanifest
-        /// gets changed, all modules up to first changed one get loaded from makefile and the rest is parsed regularly.
-		/// This feature is new and can have issues that weren't discovered in isolated testing so disabling by default.
-        /// </summary>
-        [XmlConfigFile]
-		[CommandLine("-UHTMakefiles")]
-		public bool bUseUHTMakefiles = false;
-
 		/// <summary>
 		/// Whether DMUCS/Distcc may be used.
 		/// Distcc requires some setup - so by default disable it so we don't break local or remote building
@@ -210,11 +202,6 @@ namespace UnrealBuildTool
 		/// </summary>
 		[XmlConfigFile(Category = "UEBuildConfiguration")]
 		public static bool bForceDebugUnrealHeaderTool = false;
-
-		/// <summary>
-		/// True if performing hot-reload from IDE
-		/// </summary>
-		public bool bHotReloadFromIDE = false;
 
 		/// <summary>
 		/// When true, the targets won't execute their link actions if there was nothing to compile

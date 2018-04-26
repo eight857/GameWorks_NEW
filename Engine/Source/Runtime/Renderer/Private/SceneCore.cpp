@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SceneCore.cpp: Core scene implementation.
@@ -18,6 +18,14 @@
 #include "RendererModule.h"
 #include "ScenePrivate.h"
 #include "Containers/AllocatorFixedSizeFreeList.h"
+
+int32 GUnbuiltPreviewShadowsInGame = 1;
+FAutoConsoleVariableRef CVarUnbuiltPreviewShadowsInGame(
+	TEXT("r.Shadow.UnbuiltPreviewInGame"),
+	GUnbuiltPreviewShadowsInGame,
+	TEXT("Whether to render unbuilt preview shadows in game.  When enabled and lighting is not built, expensive preview shadows will be rendered in game.  When disabled, lighting in game and editor won't match which can appear to be a bug."),
+	ECVF_Scalability | ECVF_RenderThreadSafe
+	);
 
 /**
  * Fixed Size pool allocator for FLightPrimitiveInteractions
@@ -130,7 +138,7 @@ void FLightPrimitiveInteraction::Create(FLightSceneInfo* LightSceneInfo,FPrimiti
 		{
 			// Create the light interaction.
 			FLightPrimitiveInteraction* Interaction = new FLightPrimitiveInteraction(LightSceneInfo, PrimitiveSceneInfo, bDynamic, bIsLightMapped, bShadowMapped, bTranslucentObjectShadow, bInsetObjectShadow);
-		}
+		} //-V773
 	}
 }
 
@@ -185,11 +193,16 @@ FLightPrimitiveInteraction::FLightPrimitiveInteraction(
 		if (PrimitiveSceneInfo->Proxy->HasStaticLighting()
 			&& PrimitiveSceneInfo->Proxy->CastsStaticShadow()
 			// Don't mark unbuilt for movable primitives which were built with lightmaps but moved into a new light's influence
-			&& !PrimitiveSceneInfo->Proxy->LightAsIfStatic()
+			&& PrimitiveSceneInfo->Proxy->GetLightmapType() != ELightmapType::ForceSurface
 			&& (LightSceneInfo->Proxy->HasStaticLighting() || (LightSceneInfo->Proxy->HasStaticShadowing() && !bInIsShadowMapped)))
 		{
 			// Update the game thread's counter of number of uncached static lighting interactions.
 			bUncachedStaticLighting = true;
+
+			if (!GUnbuiltPreviewShadowsInGame && !InLightSceneInfo->Scene->IsEditorScene())
+			{
+				bCastShadow = false;
+			}
 	#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 			LightSceneInfo->NumUnbuiltInteractions++;
 	#endif
@@ -381,7 +394,7 @@ void FStaticMesh::RemoveFromDrawLists()
 	// Remove the mesh from all draw lists.
 	while(DrawListLinks.Num())
 	{
-		FStaticMesh::FDrawListElementLink* Link = DrawListLinks[0];
+		TRefCountPtr<FStaticMesh::FDrawListElementLink> Link = DrawListLinks[0];
 		const int32 OriginalNumLinks = DrawListLinks.Num();
 		// This will call UnlinkDrawList.
 		Link->Remove(true);
@@ -410,6 +423,11 @@ FStaticMesh::~FStaticMesh()
 {
 	// Remove this static mesh from the scene's list.
 	PrimitiveSceneInfo->Scene->StaticMeshes.RemoveAt(Id);
+
+	if (BatchVisibilityId != INDEX_NONE)
+	{
+		PrimitiveSceneInfo->Scene->StaticMeshBatchVisibility.RemoveAt(BatchVisibilityId);
+	}
 
 	// This is cheaper than calling RemoveFromDrawLists, since it 
 	// doesn't unlink meshes which are about to be destroyed
@@ -453,5 +471,6 @@ FExponentialHeightFogSceneInfo::FExponentialHeightFogSceneInfo(const UExponentia
 	VolumetricFogEmissive.B = FMath::Max(VolumetricFogEmissive.B * UnitScale, 0.0f);
 	VolumetricFogExtinctionScale = FMath::Max(InComponent->VolumetricFogExtinctionScale, 0.0f);
 	VolumetricFogDistance = FMath::Max(InComponent->VolumetricFogDistance, 0.0f);
+	VolumetricFogStaticLightingScatteringIntensity = FMath::Max(InComponent->VolumetricFogStaticLightingScatteringIntensity, 0.0f);
 	bOverrideLightColorsWithFogInscatteringColors = InComponent->bOverrideLightColorsWithFogInscatteringColors;
 }

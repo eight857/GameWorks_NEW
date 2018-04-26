@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -72,5 +72,7 @@ private:
 
 	/** The TagList, kept as a member so we can update it later */
 	TSharedPtr<SListView<TSharedPtr<FString>>> TagListView;
+
+	void OnTagDoubleClicked(FString TagName);
 };
 

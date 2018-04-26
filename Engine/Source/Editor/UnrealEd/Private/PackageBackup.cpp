@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PackageBackup.cpp: Utility class for backing up a package.
@@ -277,7 +277,7 @@ int32 FAutoPackageBackup::GetBackupInterval()
  */
 FString FAutoPackageBackup::GetBackupDirectory()
 {
-	FString Directory = FPaths::GameSavedDir() / TEXT("Backup");
+	FString Directory = FPaths::ProjectSavedDir() / TEXT("Backup");
 	return Directory;
 }
 

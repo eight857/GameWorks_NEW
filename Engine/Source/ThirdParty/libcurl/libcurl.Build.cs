@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -8,13 +8,22 @@ public class libcurl : ModuleRules
 	{
 		Type = ModuleType.External;
 
-		Definitions.Add("WITH_LIBCURL=1");
+		PublicDefinitions.Add("WITH_LIBCURL=1");
 
-		string NewLibCurlPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "libcurl/7_48_0/";
-		string LibCurlPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "libcurl/curl-7.47.1/";
+		string NewLibCurlPath = Target.UEThirdPartySourceDirectory;
+		if (Target.Architecture == "x86_64-unknown-linux-gnu")
+		{
+			NewLibCurlPath += "libcurl/7_57_0/";
+		}
+		else
+		{
+			NewLibCurlPath += "libcurl/7_48_0/";
+		}
+
+		string LibCurlPath = Target.UEThirdPartySourceDirectory + "libcurl/curl-7.47.1/";
 
 		// TODO: latest recompile for consoles and mobile platforms
-		string OldLibCurlPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "libcurl/";
+		string OldLibCurlPath = Target.UEThirdPartySourceDirectory + "libcurl/";
 
 		if (Target.Platform == UnrealTargetPlatform.Linux)
 		{
@@ -42,10 +51,11 @@ public class libcurl : ModuleRules
             PublicLibraryPaths.Add(OldLibCurlPath + "lib/Android/x64");
 
 			PublicAdditionalLibraries.Add("curl");
-//            PublicAdditionalLibraries.Add("crypto");
-//            PublicAdditionalLibraries.Add("ssl");
-//            PublicAdditionalLibraries.Add("dl");
+//			PublicAdditionalLibraries.Add("crypto");
+//			PublicAdditionalLibraries.Add("ssl");
+//			PublicAdditionalLibraries.Add("dl");
         }
+
    		else if (Target.Platform == UnrealTargetPlatform.Mac)
 		{
 			string PlatformSubdir = "/Mac/";
@@ -53,16 +63,14 @@ public class libcurl : ModuleRules
 			// OSX needs full path
 			PublicAdditionalLibraries.Add(LibCurlPath + "lib" + PlatformSubdir + "libcurl.a");
 		}
-		else if (Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Win64 ||
-				(Target.Platform == UnrealTargetPlatform.HTML5 && Target.Architecture == "-win32"))
+
+		else if (Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Win64)
 		{
-			string PlatformSubdir = (Target.Platform == UnrealTargetPlatform.HTML5) ? "Win32" : Target.Platform.ToString();
-			
-			PublicIncludePaths.Add(LibCurlPath + "/include/" + PlatformSubdir +  "/VS" + WindowsPlatform.GetVisualStudioCompilerVersionName());
-			PublicLibraryPaths.Add(LibCurlPath + "/lib/" + PlatformSubdir +  "/VS" + WindowsPlatform.GetVisualStudioCompilerVersionName());
+			PublicIncludePaths.Add(LibCurlPath + "include/" + Target.Platform.ToString() +  "/VS" + Target.WindowsPlatform.GetVisualStudioCompilerVersionName());
+			PublicLibraryPaths.Add(LibCurlPath + "lib/" + Target.Platform.ToString() +  "/VS" + Target.WindowsPlatform.GetVisualStudioCompilerVersionName());
 
 			PublicAdditionalLibraries.Add("libcurl_a.lib");
-			Definitions.Add("CURL_STATICLIB=1");
+			PublicDefinitions.Add("CURL_STATICLIB=1");
 		}
 	}
 }

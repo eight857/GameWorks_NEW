@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/Image.h"
 #include "Slate/SlateBrushAsset.h"
@@ -20,6 +20,7 @@ UImage::UImage(const FObjectInitializer& ObjectInitializer)
 {
 }
 
+#if WITH_EDITORONLY_DATA
 void UImage::PostLoad()
 {
 	Super::PostLoad();
@@ -30,6 +31,7 @@ void UImage::PostLoad()
 		Image_DEPRECATED = nullptr;
 	}
 }
+#endif
 
 void UImage::ReleaseSlateResources(bool bReleaseChildren)
 {
@@ -48,7 +50,7 @@ void UImage::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
 
-	TAttribute<FSlateColor> ColorAndOpacityBinding = OPTIONAL_BINDING(FSlateColor, ColorAndOpacity);
+	TAttribute<FSlateColor> ColorAndOpacityBinding = PROPERTY_BINDING(FSlateColor, ColorAndOpacity);
 	TAttribute<const FSlateBrush*> ImageBinding = OPTIONAL_BINDING_CONVERT(FSlateBrush, Brush, const FSlateBrush*, ConvertImage);
 
 	if (MyImage.IsValid())
@@ -92,6 +94,7 @@ void UImage::SetBrush(const FSlateBrush& InBrush)
 	if ( MyImage.IsValid() )
 	{
 		MyImage->SetImage(&Brush);
+		MyImage->Invalidate(EInvalidateWidget::LayoutAndVolatility);
 	}
 }
 
@@ -102,6 +105,7 @@ void UImage::SetBrushFromAsset(USlateBrushAsset* Asset)
 	if ( MyImage.IsValid() )
 	{
 		MyImage->SetImage(&Brush);
+		MyImage->Invalidate(EInvalidateWidget::LayoutAndVolatility);
 	}
 }
 
@@ -114,15 +118,23 @@ void UImage::SetBrushFromTexture(UTexture2D* Texture, bool bMatchSize)
 		Texture->bIgnoreStreamingMipBias = true;
 	}
 
-	if (bMatchSize && Texture)
+	if (bMatchSize)
 	{
-		Brush.ImageSize.X = Texture->GetSizeX();
-		Brush.ImageSize.Y = Texture->GetSizeY();
+		if (Texture)
+		{
+			Brush.ImageSize.X = Texture->GetSizeX();
+			Brush.ImageSize.Y = Texture->GetSizeY();
+		}
+		else
+		{
+			Brush.ImageSize = FVector2D(0, 0);
+		}
 	}
 
 	if ( MyImage.IsValid() )
 	{
 		MyImage->SetImage(&Brush);
+		MyImage->Invalidate(EInvalidateWidget::LayoutAndVolatility);
 	}
 }
 
@@ -139,6 +151,7 @@ void UImage::SetBrushFromTextureDynamic(UTexture2DDynamic* Texture, bool bMatchS
 	if (MyImage.IsValid())
 	{
 		MyImage->SetImage(&Brush);
+		MyImage->Invalidate(EInvalidateWidget::LayoutAndVolatility);
 	}
 }
 
@@ -151,6 +164,7 @@ void UImage::SetBrushFromMaterial(UMaterialInterface* Material)
 	if ( MyImage.IsValid() )
 	{
 		MyImage->SetImage(&Brush);
+		MyImage->Invalidate(EInvalidateWidget::LayoutAndVolatility);
 	}
 }
 

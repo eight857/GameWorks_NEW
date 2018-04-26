@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetBundleData.h"
 #include "AssetData.h"
@@ -7,6 +7,9 @@
 bool FAssetBundleData::SetFromAssetData(const FAssetData& AssetData)
 {
 	FString TagValue;
+
+	// Register that we're reading string assets for a specific package
+	FSoftObjectPathSerializationScope SerializationScope(AssetData.PackageName, FAssetBundleData::StaticStruct()->GetFName(), ESoftObjectPathCollectType::AlwaysCollect, ESoftObjectPathSerializeType::AlwaysSerialize);
 
 	if (AssetData.GetTagValue(FAssetBundleData::StaticStruct()->GetFName(), TagValue))
 	{
@@ -41,7 +44,7 @@ FAssetBundleEntry* FAssetBundleData::FindEntry(const FPrimaryAssetId& SearchScop
 	return nullptr;
 }
 
-void FAssetBundleData::AddBundleAsset(FName BundleName, const FStringAssetReference& AssetPath)
+void FAssetBundleData::AddBundleAsset(FName BundleName, const FSoftObjectPath& AssetPath)
 {
 	if (!AssetPath.IsValid())
 	{
@@ -58,11 +61,11 @@ void FAssetBundleData::AddBundleAsset(FName BundleName, const FStringAssetRefere
 	FoundEntry->BundleAssets.AddUnique(AssetPath);
 }
 
-void FAssetBundleData::AddBundleAssets(FName BundleName, const TArray<FStringAssetReference>& AssetPaths)
+void FAssetBundleData::AddBundleAssets(FName BundleName, const TArray<FSoftObjectPath>& AssetPaths)
 {
 	FAssetBundleEntry* FoundEntry = FindEntry(FPrimaryAssetId(), BundleName);
 
-	for (const FStringAssetReference& Path : AssetPaths)
+	for (const FSoftObjectPath& Path : AssetPaths)
 	{
 		if (Path.IsValid())
 		{
@@ -77,7 +80,41 @@ void FAssetBundleData::AddBundleAssets(FName BundleName, const TArray<FStringAss
 	}
 }
 
+void FAssetBundleData::SetBundleAssets(FName BundleName, TArray<FSoftObjectPath>&& AssetPaths)
+{
+	FAssetBundleEntry* FoundEntry = FindEntry(FPrimaryAssetId(), BundleName);
+
+	if (!FoundEntry)
+	{
+		FoundEntry = new(Bundles) FAssetBundleEntry(FPrimaryAssetId(), BundleName);
+	}
+
+	FoundEntry->BundleAssets = AssetPaths;
+}
+
 void FAssetBundleData::Reset()
 {
 	Bundles.Reset();
+}
+
+bool FAssetBundleData::ExportTextItem(FString& ValueStr, FAssetBundleData const& DefaultValue, UObject* Parent, int32 PortFlags, UObject* ExportRootScope) const
+{
+	if (Bundles.Num() == 0)
+	{
+		// Empty, don't write anything to avoid it cluttering the asset registry tags
+		return true;
+	}
+	// Not empty, do normal export
+	return false;
+}
+
+bool FAssetBundleData::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* Parent, FOutputDevice* ErrorText)
+{
+	if (*Buffer != TEXT('('))
+	{
+		// Empty, don't read/write anything
+		return true;
+	}
+	// Full structure, do normal parse
+	return false;
 }

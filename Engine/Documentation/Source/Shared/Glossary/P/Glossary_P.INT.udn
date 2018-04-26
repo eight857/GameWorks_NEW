@@ -169,13 +169,42 @@ project
 
 [EXCERPT:Glossary_project]
 A **Project** is a self-contained unit that holds all the content and code that make up an individual game and coincides with a set of directories on your disk. For example, in the image below the Hierarchy Tree of the **Content Browser** contains the same directory structure found inside your Project folder on your disk. 
+
+[OBJECT:ToggleButtonContent]
+[PARAMLITERAL:category]
+OS
+[/PARAMLITERAL]
+[PARAMLITERAL:id]
+windows
+[/PARAMLITERAL]
+[PARAMLITERAL:active]
+[/PARAMLITERAL]
+[PARAM:content]
 [REGION:lightbox]
-[![](ProjectHierarchy.png)(w:440)](ProjectHierarchy.png)
-[/REGION:lightbox]
+[![](ProjectHierarchy_Windows.png)(w:480)](ProjectHierarchy_Windows.png)
+[/REGION]
+[/PARAM]
+[/OBJECT]
+
+[OBJECT:ToggleButtonContent]
+[PARAMLITERAL:category]
+OS
+[/PARAMLITERAL]
+[PARAMLITERAL:id]
+mac
+[/PARAMLITERAL]
+[PARAMLITERAL:active]
+[/PARAMLITERAL]
+[PARAM:content]
+[REGION:lightbox]
+[![](ProjectHierarchy_Mac.png)](ProjectHierarchy_Mac.png)
+[/REGION]
+[/PARAM]
+[/OBJECT]
 
 _Click image for full view._
 
- Although a Project is often referenced by the .uproject file associated with it, they are two separate files that exist alongside each other. The .uproject is a reference file used to create, open, or save a file, whereas the Project contains all of the files and folders associated with it.
+ Although a Project is often referenced by the `.uproject` file associated with it, they are two separate files that exist alongside each other. The `.uproject` is a reference file used to create, open, or save a file, whereas the Project contains all of the files and folders associated with it.
 
 You can create any number of different Projects which can all be maintained and developed in parallel. Both the Engine (and Editor) can easily switch between them which will allow you to work on multiple games at once or have several test projects in addition to your main game Project.
 [/EXCERPT:Glossary_project]

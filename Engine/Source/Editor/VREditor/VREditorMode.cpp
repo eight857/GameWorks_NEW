@@ -1,16 +1,20 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VREditorMode.h"
 #include "Modules/ModuleManager.h"
 #include "Framework/Application/SlateApplication.h"
+#include "UObject/ConstructorHelpers.h"
 #include "SDockTab.h"
 #include "Engine/EngineTypes.h"
 #include "Components/SceneComponent.h"
+#include "Misc/ConfigCacheIni.h"
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
 #include "Components/SpotLightComponent.h"
 #include "GameFramework/WorldSettings.h"
 #include "DrawDebugHelpers.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/Material.h"
 #include "VREditorUISystem.h"
 #include "VIBaseTransformGizmo.h"
 #include "ViewportWorldInteraction.h"
@@ -30,12 +34,12 @@
 #include "MotionControllerComponent.h"
 #include "EngineAnalytics.h"
 #include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
 #include "Interfaces/IAnalyticsProvider.h"
 
 #include "IViewportInteractionModule.h"
 #include "VREditorMotionControllerInteractor.h"
 
-#include "ViewportWorldInteractionManager.h"
 #include "EditorWorldExtension.h"
 #include "SequencerSettings.h"
 #include "Kismet/GameplayStatics.h"
@@ -44,13 +48,17 @@
 #include "VREditorActions.h"
 #include "EditorModes.h"
 #include "VRModeSettings.h"
-
+#include "IVREditorModule.h"
+#include "Engine/StaticMeshActor.h"
+#include "EngineUtils.h"
+#include "Kismet/GameplayStatics.h"
+#include "XRMotionControllerBase.h" // for FXRMotionControllerBase::Left/RightHandSourceId
 
 #define LOCTEXT_NAMESPACE "VREditorMode"
 
 namespace VREd
 {
-	static FAutoConsoleVariable DefaultVRNearClipPlane(TEXT("VREd.DefaultVRNearClipPlane"), 1.0f, TEXT("The near clip plane to use for VR"));
+	static FAutoConsoleVariable DefaultVRNearClipPlane(TEXT("VREd.DefaultVRNearClipPlane"), 5.0f, TEXT("The near clip plane to use for VR"));
 	static FAutoConsoleVariable SlateDragDistanceOverride( TEXT( "VREd.SlateDragDistanceOverride" ), 40.0f, TEXT( "How many pixels you need to drag before a drag and drop operation starts in VR" ) );
 	static FAutoConsoleVariable DefaultWorldToMeters(TEXT("VREd.DefaultWorldToMeters"), 100.0f, TEXT("Default world to meters scale"));
 
@@ -65,11 +73,14 @@ namespace VREd
 	static FAutoConsoleVariable HeadLocationVelocityOffset( TEXT( "VREd.HeadLocationVelocityOffset" ), TEXT( "X=20, Y=0, Z=5" ), TEXT( "Offset relative to head for location velocity debug indicator" ) );
 	static FAutoConsoleVariable HeadRotationVelocityOffset( TEXT( "VREd.HeadRotationVelocityOffset" ), TEXT( "X=20, Y=0, Z=-5" ), TEXT( "Offset relative to head for rotation velocity debug indicator" ) );
 	static FAutoConsoleVariable SFXMultiplier(TEXT("VREd.SFXMultiplier"), 1.5f, TEXT("Default Sound Effect Volume Multiplier"));
+
+	static FAutoConsoleCommand ToggleDebugMode(TEXT("VREd.ToggleDebugMode"), TEXT("Toggles debug mode of the VR Mode"), FConsoleCommandDelegate::CreateStatic(&UVREditorMode::ToggleDebugMode));
 }
 
 const FString UVREditorMode::AssetContainerPath = FString("/Engine/VREditor/VREditorAssetContainerData");
+bool UVREditorMode::bDebugModeEnabled = false;
 
-UVREditorMode::UVREditorMode() : 
+UVREditorMode::UVREditorMode() :
 	Super(),
 	bWantsToExitMode( false ),
 	bIsFullyInitialized( false ),
@@ -85,19 +96,12 @@ UVREditorMode::UVREditorMode() :
 	LeftHandInteractor( nullptr ),
 	RightHandInteractor( nullptr ),
 	bFirstTick( true ),
-	SavedWorldToMetersScaleForPIE(0.0f),
-	bStartedPlayFromVREditor(false),
-	bStartedPlayFromVREditorSimulate(false),
-	AssetContainer(nullptr)
+	SavedWorldToMetersScaleForPIE( 100.f ),
+	bStartedPlayFromVREditor( false ),
+	bStartedPlayFromVREditorSimulate( false ),
+	AssetContainer( nullptr )
 {
 }
-
-
-UVREditorMode::~UVREditorMode()
-{
-	Shutdown();
-}
-
 
 void UVREditorMode::Init()
 {
@@ -229,7 +233,7 @@ void UVREditorMode::Enter()
 			if (FEngineAnalytics::IsAvailable())
 			{
 				TArray< FAnalyticsEventAttribute > Attributes;
-				FString HMDName = GEditor->HMDDevice->GetDeviceName().ToString();
+				FString HMDName = GEditor->XRSystem->GetSystemName().ToString();
 				Attributes.Add(FAnalyticsEventAttribute(TEXT("HMDDevice"), HMDName));
 				FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.EnterVRMode"), Attributes);
 			}
@@ -269,12 +273,12 @@ void UVREditorMode::Enter()
 		// Motion controllers
 		{
 			LeftHandInteractor = NewObject<UVREditorMotionControllerInteractor>();
-			LeftHandInteractor->SetControllerHandSide( EControllerHand::Left );
+			LeftHandInteractor->SetControllerHandSide( FXRMotionControllerBase::LeftHandSourceId );
 			LeftHandInteractor->Init( this );
 			WorldInteraction->AddInteractor( LeftHandInteractor );
 
 			RightHandInteractor = NewObject<UVREditorMotionControllerInteractor>();
-			RightHandInteractor->SetControllerHandSide( EControllerHand::Right );
+			RightHandInteractor->SetControllerHandSide( FXRMotionControllerBase::RightHandSourceId );
 			RightHandInteractor->Init( this );
 			WorldInteraction->AddInteractor( RightHandInteractor );
 
@@ -320,8 +324,11 @@ void UVREditorMode::Enter()
 void UVREditorMode::Exit(const bool bShouldDisableStereo)
 {
 	{
+		GetLevelViewportPossessedForVR().RemoveAllPreviews();
+		GEditor->SelectNone(true, true, false);
+		GEditor->NoteSelectionChange();
 		FVREditorActionCallbacks::ChangeEditorModes(FBuiltinEditorModes::EM_Placement);
-
+		
 		//Destroy the avatar
 		{
 			DestroyTransientActor(AvatarActor);
@@ -399,11 +406,9 @@ void UVREditorMode::Exit(const bool bShouldDisableStereo)
 
 		WorldInteraction->RemoveInteractor( LeftHandInteractor );
 		LeftHandInteractor->MarkPendingKill();
-		LeftHandInteractor->Shutdown();
 		LeftHandInteractor = nullptr;
 
 		WorldInteraction->RemoveInteractor( RightHandInteractor );
-		RightHandInteractor->Shutdown();
 		RightHandInteractor->MarkPendingKill();
 		RightHandInteractor = nullptr;
 		
@@ -413,14 +418,14 @@ void UVREditorMode::Exit(const bool bShouldDisableStereo)
 			WorldInteraction->AddMouseCursorInteractor();
 			WorldInteraction->SetInVR(false);
 		}
-
-		WorldInteraction->SetDefaultOptionalViewportClient( nullptr );
 	}
 
 	if( bActuallyUsingVR )
 	{
 		FSlateNotificationManager::Get().SetAllowNotifications( true);
 	}
+
+	AssetContainer = nullptr;
 
 	FEditorDelegates::PostPIEStarted.RemoveAll( this );
 	FEditorDelegates::PrePIEEnded.RemoveAll( this );
@@ -429,6 +434,11 @@ void UVREditorMode::Exit(const bool bShouldDisableStereo)
 	FEditorDelegates::OnSwitchBeginPIEAndSIE.RemoveAll(this);
 
 	GEditor->OnEditorClose().RemoveAll( this );
+
+	if (GEditor->bIsSimulatingInEditor)
+	{
+		GEditor->RequestEndPlayMap();
+	}
 
 	bWantsToExitMode = false;
 	SetActive(false);
@@ -498,6 +508,8 @@ void UVREditorMode::PostTick( float DeltaTime )
 		// Move our avatar mesh along with the room.  We need our hand components to remain the same coordinate space as the 
 		AvatarActor->SetActorTransform( GetRoomTransform() );
 		AvatarActor->TickManually( DeltaTime );
+
+
 	}
 
 	// Updating the scale and intensity of the flashlight according to the world scale
@@ -673,9 +685,9 @@ void UVREditorMode::CycleTransformGizmoHandleType()
 	WorldInteraction->SetGizmoHandleType( NewGizmoType );
 }
 
-EHMDDeviceType::Type UVREditorMode::GetHMDDeviceType() const
+FName UVREditorMode::GetHMDDeviceType() const
 {
-	return GEngine->HMDDevice.IsValid() ? GEngine->HMDDevice->GetHMDDeviceType() : EHMDDeviceType::DT_SteamVR;
+	return GEngine->XRSystem.IsValid() ? GEngine->XRSystem->GetSystemName() : FName();
 }
 
 FLinearColor UVREditorMode::GetColor( const EColors Color ) const
@@ -692,9 +704,17 @@ void UVREditorMode::RefreshVREditorSequencer(class ISequencer* InCurrentSequence
 {
 	CurrentSequencer = InCurrentSequencer;
 	// Tell the VR Editor UI system to refresh the Sequencer UI
-	if (bActuallyUsingVR && InCurrentSequencer != nullptr)
+	if (bActuallyUsingVR && UISystem != nullptr)
 	{
 		GetUISystem().UpdateSequencerUI();
+	}
+}
+
+void UVREditorMode::RefreshActorPreviewWidget(TSharedRef<SWidget> InWidget)
+{
+	if (bActuallyUsingVR && UISystem != nullptr)
+	{
+		GetUISystem().UpdateActorPreviewUI(InWidget);
 	}
 }
 
@@ -792,10 +812,10 @@ const UVREditorMode::FSavedEditorState& UVREditorMode::GetSavedEditorState() con
 	return SavedEditorState;
 }
 
-void UVREditorMode::SaveSequencerSettings(bool bInKeyAllEnabled, EAutoKeyMode InAutoKeyMode, const class USequencerSettings& InSequencerSettings)
+void UVREditorMode::SaveSequencerSettings(bool bInKeyAllEnabled, EAutoChangeMode InAutoChangeMode, const class USequencerSettings& InSequencerSettings)
 {
 	SavedEditorState.bKeyAllEnabled = bInKeyAllEnabled;
-	SavedEditorState.AutoKeyMode = InAutoKeyMode;
+	SavedEditorState.AutoChangeMode = InAutoChangeMode;
 }
 
 void UVREditorMode::ToggleSIEAndVREditor()
@@ -808,7 +828,6 @@ void UVREditorMode::ToggleSIEAndVREditor()
 	}
 	else if (GEditor->PlayWorld != nullptr && GEditor->bIsSimulatingInEditor)
 	{
-		SavedWorldToMetersScaleForPIE = GetWorld()->GetWorldSettings()->WorldToMeters;
 		GEditor->RequestEndPlayMap();
 	}
 }
@@ -820,7 +839,7 @@ void UVREditorMode::TogglePIEAndVREditor()
 	{
 		const FVector* StartLoc = NULL;
 		const FRotator* StartRot = NULL;
-		const bool bHMDIsReady = (GEngine && GEngine->HMDDevice.IsValid() && GEngine->HMDDevice->IsHMDConnected());
+		const bool bHMDIsReady = (GEngine && GEngine->XRSystem.IsValid() && GEngine->XRSystem->GetHMDDevice() && GEngine->XRSystem->GetHMDDevice()->IsHMDConnected());
 		GEditor->RequestPlaySession(true, VREditorLevelViewportWeakPtr.Pin(), false /*bSimulateInEditor*/, StartLoc, StartRot, -1, false, bHMDIsReady);
 		bRequestedPIE = true;
 	}
@@ -871,16 +890,6 @@ void UVREditorMode::TransitionWorld(UWorld* NewWorld)
 	UISystem->TransitionWorld(NewWorld);
 }
 
-void UVREditorMode::LeftSimulateInEditor(UWorld* SimulateWorld)
-{
-	if (SimulateWorld != nullptr)
-	{
-		const float SimulateWorldToMeters = SimulateWorld->GetWorldSettings()->WorldToMeters;
-		GetWorld()->GetWorldSettings()->WorldToMeters = SimulateWorldToMeters;
-		WorldInteraction->SetWorldToMetersScale(SimulateWorldToMeters);
-	}
-}
-
 void UVREditorMode::StartViewport(TSharedPtr<SLevelViewport> Viewport)
 {
 	if (false)
@@ -893,7 +902,7 @@ void UVREditorMode::StartViewport(TSharedPtr<SLevelViewport> Viewport)
 		FVector2D WindowSize;
 		{
 			IHeadMountedDisplay::MonitorInfo HMDMonitorInfo;
-			if (bActuallyUsingVR && GEngine->HMDDevice->GetHMDMonitorInfo(HMDMonitorInfo))
+			if (bActuallyUsingVR && GEngine->XRSystem->GetHMDDevice() && GEngine->XRSystem->GetHMDDevice()->GetHMDMonitorInfo(HMDMonitorInfo))
 			{
 				WindowSize = FVector2D(HMDMonitorInfo.ResolutionX, HMDMonitorInfo.ResolutionY);
 			}
@@ -999,13 +1008,17 @@ void UVREditorMode::StartViewport(TSharedPtr<SLevelViewport> Viewport)
 		GAreScreenMessagesEnabled = false;
 
 		// Save the world to meters scale
-		const float DefaultWorldToMeters = VREd::DefaultWorldToMeters->GetFloat();
-		SavedEditorState.WorldToMetersScale = DefaultWorldToMeters != 0.0f ? DefaultWorldToMeters : VRViewportClient.GetWorld()->GetWorldSettings()->WorldToMeters;
+		{
+			const float DefaultWorldToMeters = VREd::DefaultWorldToMeters->GetFloat();
+			const float SavedWorldToMeters = DefaultWorldToMeters != 0.0f ? DefaultWorldToMeters : VRViewportClient.GetWorld()->GetWorldSettings()->WorldToMeters;
+			SavedEditorState.WorldToMetersScale = SavedWorldToMeters;
+			SavedWorldToMetersScaleForPIE = SavedWorldToMeters;
+		}
 
 		if (bActuallyUsingVR)
 		{
-			SavedEditorState.TrackingOrigin = GEngine->HMDDevice->GetTrackingOrigin();
-			GEngine->HMDDevice->SetTrackingOrigin(EHMDTrackingOrigin::Floor);
+			SavedEditorState.TrackingOrigin = GEngine->XRSystem->GetTrackingOrigin();
+			GEngine->XRSystem->SetTrackingOrigin(EHMDTrackingOrigin::Floor);
 		}
 
 		// Make the new viewport the active level editing viewport right away
@@ -1029,7 +1042,7 @@ void UVREditorMode::StartViewport(TSharedPtr<SLevelViewport> Viewport)
 		Viewport->EnableStereoRendering( bActuallyUsingVR );
 		Viewport->SetRenderDirectlyToWindow( bActuallyUsingVR );
 
-		GEngine->HMDDevice->EnableStereo(true);
+		GEngine->StereoRenderingDevice->EnableStereo(true);
 	}
 
 	if (WorldInteraction != nullptr)
@@ -1041,9 +1054,9 @@ void UVREditorMode::StartViewport(TSharedPtr<SLevelViewport> Viewport)
 
 void UVREditorMode::CloseViewport( const bool bShouldDisableStereo )
 {
-	if (bActuallyUsingVR && GEngine->HMDDevice.IsValid() && bShouldDisableStereo)
+	if (bActuallyUsingVR && GEngine->XRSystem.IsValid() && bShouldDisableStereo)
 	{
-		GEngine->HMDDevice->EnableStereo(false);
+		GEngine->StereoRenderingDevice->EnableStereo(false);
 	}
 
 	TSharedPtr<SLevelViewport> VREditorLevelViewport(VREditorLevelViewportWeakPtr.Pin());
@@ -1086,7 +1099,7 @@ void UVREditorMode::CloseViewport( const bool bShouldDisableStereo )
 
 			if (bActuallyUsingVR)
 			{
-				GEngine->HMDDevice->SetTrackingOrigin(SavedEditorState.TrackingOrigin);
+				GEngine->XRSystem->SetTrackingOrigin(SavedEditorState.TrackingOrigin);
 			}
 
 			RestoreWorldToMeters();
@@ -1105,7 +1118,6 @@ void UVREditorMode::CloseViewport( const bool bShouldDisableStereo )
 void UVREditorMode::RestoreFromPIE()
 {
 	SetActive(true);
-	bStartedPlayFromVREditor = false;
 	bStartedPlayFromVREditorSimulate = false;
 
 	GetWorld()->GetWorldSettings()->WorldToMeters = SavedWorldToMetersScaleForPIE;
@@ -1134,11 +1146,11 @@ void UVREditorMode::RestoreWorldToMeters()
 UStaticMeshComponent* UVREditorMode::CreateMotionControllerMesh( AActor* OwningActor, USceneComponent* AttachmentToComponent )
 {
 	UStaticMesh* ControllerMesh = nullptr;
-	if(GetHMDDeviceType() == EHMDDeviceType::DT_SteamVR)
+	if(GetHMDDeviceType() == FName(TEXT("SteamVR")))
 	{
 		ControllerMesh = AssetContainer->VivePreControllerMesh;
 	}
-	else if(GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift)
+	else if(GetHMDDeviceType() == FName(TEXT("OculusHMD")))
 	{
 		ControllerMesh = AssetContainer->OculusControllerMesh;
 	}
@@ -1216,7 +1228,7 @@ bool UVREditorMode::IsAimingTeleport() const
 
 void UVREditorMode::PostPIEStarted( bool bIsSimulatingInEditor )
 {
-	if (!bIsSimulatingInEditor && bStartedPlayFromVREditor)
+	if (!bIsSimulatingInEditor)
 	{
 		GEnableVREditorHacks = false;
 	}
@@ -1225,17 +1237,28 @@ void UVREditorMode::PostPIEStarted( bool bIsSimulatingInEditor )
 
 void UVREditorMode::PrePIEEnded( bool bWasSimulatingInEditor )
 {
-	if (!bWasSimulatingInEditor && bStartedPlayFromVREditor && !bStartedPlayFromVREditorSimulate)
+	if (!bWasSimulatingInEditor && !bStartedPlayFromVREditorSimulate)
 	{
+		GEnableVREditorHacks = true;
+	}
+	else if (bStartedPlayFromVREditorSimulate)
+	{
+		// Pre PIE to SIE. When exiting play with escape, the delegate toggle PIE and SIE won't be called. We know that we started PIE from simulate. However simulate will also be closed.
 		GEnableVREditorHacks = true;
 	}
 }
 
 void UVREditorMode::OnEndPIE(bool bWasSimulatingInEditor)
 {
-	if (bStartedPlayFromVREditor && !bWasSimulatingInEditor && !bStartedPlayFromVREditorSimulate)
+	if (!bWasSimulatingInEditor && !bStartedPlayFromVREditorSimulate)
 	{
 		RestoreFromPIE();
+	}
+	else if (bStartedPlayFromVREditorSimulate)
+	{
+		// Post PIE to SIE
+		RestoreFromPIE();
+		GetOwningCollection()->ShowAllActors(true);
 	}
 }
 
@@ -1273,6 +1296,23 @@ void UVREditorMode::OnSwitchPIEAndSIE(bool bIsSimulatingInEditor)
 			FSlateApplication::Get().SetAllUserFocusToGameViewport();
 		}
 	}
+}
+
+void UVREditorMode::ToggleDebugMode()
+{
+	UVREditorMode::bDebugModeEnabled = !UVREditorMode::bDebugModeEnabled;
+	IVREditorModule& VREditorModule = IVREditorModule::Get();
+	UVREditorMode* VRMode = VREditorModule.GetVRMode();
+	if (VRMode != nullptr)
+	{
+		VRMode->OnToggleDebugMode().Broadcast(UVREditorMode::bDebugModeEnabled);
+	}
+}
+
+
+bool UVREditorMode::IsDebugModeEnabled()
+{
+	return UVREditorMode::bDebugModeEnabled;
 }
 
 #undef LOCTEXT_NAMESPACE

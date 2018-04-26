@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -167,33 +167,6 @@ namespace ELandscapeToolTargetTypeMask
 			return ELandscapeToolTargetTypeMask::NA;
 		}
 		return (ELandscapeToolTargetTypeMask::Type)(1 << TargetType);
-	}
-}
-
-namespace ELandscapeToolNoiseMode
-{
-	enum Type
-	{
-		Invalid = -1,
-		Both = 0,
-		Add = 1,
-		Sub = 2,
-	};
-
-	inline float Conversion(Type Mode, float NoiseAmount, float OriginalValue)
-	{
-		switch (Mode)
-		{
-		case Add: // always +
-			OriginalValue += NoiseAmount;
-			break;
-		case Sub: // always -
-			OriginalValue -= NoiseAmount;
-			break;
-		case Both:
-			break;
-		}
-		return OriginalValue;
 	}
 }
 

@@ -1,6 +1,7 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CEF/CEFBrowserHandler.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #if WITH_CEF3
 
@@ -19,7 +20,6 @@
 
 
 // Used to force returning custom content instead of performing a request.
-const FString CustomContentHeader(TEXT("X-UE-Content"));
 const FString CustomContentMethod(TEXT("X-GET-CUSTOM-CONTENT"));
 
 FCEFBrowserHandler::FCEFBrowserHandler(bool InUseTransparency)
@@ -158,31 +158,32 @@ bool FCEFBrowserHandler::OnBeforePopup( CefRefPtr<CefBrowser> Browser,
 		return true;
 	}
 	else
-		{
+	{
 		TSharedPtr<FCEFBrowserPopupFeatures> NewBrowserPopupFeatures = MakeShareable(new FCEFBrowserPopupFeatures(PopupFeatures));
-		// Allow overriding transparency setting for child windows
-		bool shouldUseTransparency = bUseTransparency
-								? NewBrowserPopupFeatures->GetAdditionalFeatures().Find(TEXT("Epic_NoTransparency")) == INDEX_NONE
-								: NewBrowserPopupFeatures->GetAdditionalFeatures().Find(TEXT("Epic_UseTransparency")) != INDEX_NONE;
+
+		bool shouldUseTransparency = URL.Contains(TEXT("chrome-devtools")) ? false : bUseTransparency;
+
+		cef_color_t Alpha = shouldUseTransparency ? 0 : CefColorGetA(OutSettings.background_color);
+		cef_color_t R = CefColorGetR(OutSettings.background_color);
+		cef_color_t G = CefColorGetG(OutSettings.background_color);
+		cef_color_t B = CefColorGetB(OutSettings.background_color);
+		OutSettings.background_color = CefColorSetARGB(Alpha, R, G, B);
 
 		CefRefPtr<FCEFBrowserHandler> NewHandler(new FCEFBrowserHandler(shouldUseTransparency));
 		NewHandler->ParentHandler = this;
 		NewHandler->SetPopupFeatures(NewBrowserPopupFeatures);
 		OutClient = NewHandler;
 
-
-					// Always use off screen rendering so we can integrate with our windows
-		OutWindowInfo.SetAsWindowless(
-#if PLATFORM_LINUX  // may be applicable to other platforms, but I cannot test those at the moment
-				kNullWindowHandle,
+		// Always use off screen rendering so we can integrate with our windows
+#if PLATFORM_LINUX
+		OutWindowInfo.SetAsWindowless(kNullWindowHandle, shouldUseTransparency);
 #else
-				nullptr,
-#endif // PLATFORM_LINUX
-				shouldUseTransparency);
+		OutWindowInfo.SetAsWindowless(kNullWindowHandle);
+#endif
 
-					// We need to rely on CEF to create our window so we set the WindowInfo, BrowserSettings, Client, and then return false
+		// We need to rely on CEF to create our window so we set the WindowInfo, BrowserSettings, Client, and then return false
 		return false;
-				}
+	}
 }
 
 bool FCEFBrowserHandler::OnCertificateError(CefRefPtr<CefBrowser> Browser,
@@ -203,11 +204,6 @@ void FCEFBrowserHandler::OnLoadError(CefRefPtr<CefBrowser> Browser,
 	const CefString& ErrorText,
 	const CefString& FailedUrl)
 {
-	if (InErrorCode == ERR_ABORTED)
-	{
-		return;
-	}
-
 	// notify browser window
 	if (Frame->IsMain())
 	{
@@ -215,29 +211,21 @@ void FCEFBrowserHandler::OnLoadError(CefRefPtr<CefBrowser> Browser,
 
 		if (BrowserWindow.IsValid())
 		{
-			// Display a load error message. Note: The user's code will still have a chance to handle this error after this error message is displayed.
-			if (BrowserWindow->IsShowingErrorMessages())
-			{
-				FFormatNamedArguments Args;
-				{
-					Args.Add(TEXT("FailedUrl"), FText::FromString(FailedUrl.ToWString().c_str()));
-					Args.Add(TEXT("ErrorText"), FText::FromString(ErrorText.ToWString().c_str()));
-					Args.Add(TEXT("ErrorCode"), FText::AsNumber(InErrorCode));
-				}
-				FText ErrorMsg = FText::Format(LOCTEXT("WebBrowserLoadError", "Failed to load URL {FailedUrl} with error {ErrorText} ({ErrorCode})."), Args);
-				FString ErrorHTML = TEXT("<html><body bgcolor=\"white\"><h2>") + ErrorMsg.ToString() + TEXT("</h2></body></html>");
-
-				Frame->LoadString(*ErrorHTML, FailedUrl);
-			}
-
-			BrowserWindow->NotifyDocumentError((int)InErrorCode);
+			BrowserWindow->NotifyDocumentError(InErrorCode, ErrorText, FailedUrl);
 		}
 	}
 }
 
+#if PLATFORM_LINUX
 void FCEFBrowserHandler::OnLoadStart(CefRefPtr<CefBrowser> Browser, CefRefPtr<CefFrame> Frame)
 {
 }
+#else
+void FCEFBrowserHandler::OnLoadStart(CefRefPtr<CefBrowser> Browser, CefRefPtr<CefFrame> Frame, TransitionType CefTransitionType)
+{
+}
+#endif
+
 
 void FCEFBrowserHandler::OnLoadingStateChange(CefRefPtr<CefBrowser> Browser, bool bIsLoading, bool bCanGoBack, bool bCanGoForward)
 {
@@ -330,10 +318,25 @@ bool FCEFBrowserHandler::GetScreenInfo(CefRefPtr<CefBrowser> Browser, CefScreenI
 	{
 		FDisplayMetrics DisplayMetrics;
 		FDisplayMetrics::GetDisplayMetrics(DisplayMetrics);
-		ScreenInfo.device_scale_factor = FPlatformMisc::GetDPIScaleFactorAtPoint(DisplayMetrics.PrimaryDisplayWorkAreaRect.Left, DisplayMetrics.PrimaryDisplayWorkAreaRect.Top);
+		ScreenInfo.device_scale_factor = FPlatformApplicationMisc::GetDPIScaleFactorAtPoint(DisplayMetrics.PrimaryDisplayWorkAreaRect.Left, DisplayMetrics.PrimaryDisplayWorkAreaRect.Top);
 	}
 	return true;
 }
+
+
+#if !PLATFORM_LINUX
+void FCEFBrowserHandler::OnImeCompositionRangeChanged(
+	CefRefPtr<CefBrowser> Browser,
+	const CefRange& SelectionRange,
+	const CefRenderHandler::RectList& CharacterBounds)
+{
+	TSharedPtr<FCEFWebBrowserWindow> BrowserWindow = BrowserWindowPtr.Pin();
+	if (BrowserWindow.IsValid())
+	{
+		BrowserWindow->OnImeCompositionRangeChanged(Browser, SelectionRange, CharacterBounds);
+	}
+}
+#endif
 
 CefRequestHandler::ReturnValue FCEFBrowserHandler::OnBeforeResourceLoad(CefRefPtr<CefBrowser> Browser, CefRefPtr<CefFrame> Frame, CefRefPtr<CefRequest> Request, CefRefPtr<CefRequestCallback> Callback)
 {
@@ -361,8 +364,26 @@ CefRequestHandler::ReturnValue FCEFBrowserHandler::OnBeforeResourceLoad(CefRefPt
 			TOptional<FString> Contents = BrowserWindow->GetResourceContent(Frame, Request);
 			if(Contents.IsSet())
 			{
-				// Set a custom request header, so that we can return it wrapped in a custom resource handler in GetResourceHandler later on
-				HeaderMap.insert(std::pair<CefString, CefString>(*CustomContentHeader, *Contents.GetValue()));
+				Contents.GetValue().ReplaceInline(TEXT("\n"), TEXT(""), ESearchCase::CaseSensitive);
+				Contents.GetValue().ReplaceInline(TEXT("\r"), TEXT(""), ESearchCase::CaseSensitive);
+
+				// pass the text we'd like to come back as a response to the request post data
+				CefRefPtr<CefPostData> PostData = CefPostData::Create();
+				CefRefPtr<CefPostDataElement> Element = CefPostDataElement::Create();
+				FTCHARToUTF8 UTF8String(*Contents.GetValue());
+				Element->SetToBytes(UTF8String.Length(), UTF8String.Get());
+				PostData->AddElement(Element);
+				Request->SetPostData(PostData);
+
+				// Set a custom request header, so we know the mime type if it was specified as a hash on the dummy URL
+				std::string Url = Request->GetURL().ToString();
+				std::string::size_type HashPos = Url.find_last_of('#');
+				if (HashPos != std::string::npos)
+				{
+					std::string MimeType = Url.substr(HashPos + 1);
+					HeaderMap.insert(std::pair<CefString, CefString>(TEXT("Content-Type"), MimeType));
+				}
+
 				// Change http method to tell GetResourceHandler to return the content
 				Request->SetMethod(*CustomContentMethod);
 			}
@@ -410,13 +431,22 @@ CefRefPtr<CefResourceHandler> FCEFBrowserHandler::GetResourceHandler( CefRefPtr<
 	if (Request->GetMethod() == *CustomContentMethod)
 	{
 		// Content override header will be set by OnBeforeResourceLoad before passing the request on to this.
-		CefRequest::HeaderMap HeaderMap;
-		Request->GetHeaderMap(HeaderMap);
-		auto ContentOverride = HeaderMap.find(*CustomContentHeader);
-		if (ContentOverride != HeaderMap.end())
+		if (Request->GetPostData() && Request->GetPostData()->GetElementCount() > 0)
 		{
-			std::string Convert = ContentOverride->second.ToString();
-			return new FCEFBrowserByteResource(Convert.c_str(), Convert.length());
+			// get the mime type from Content-Type header (default to text/html to support old behavior)
+			FString MimeType = TEXT("text/html"); // default if not specified
+			CefRequest::HeaderMap HeaderMap;
+			Request->GetHeaderMap(HeaderMap);
+			auto ContentOverride = HeaderMap.find(TEXT("Content-Type"));
+			if (ContentOverride != HeaderMap.end())
+			{
+				MimeType = ContentOverride->second.ToWString().c_str();
+			}
+
+			// reply with the post data
+			CefPostData::ElementVector Elements;
+			Request->GetPostData()->GetElements(Elements);
+			return new FCEFBrowserByteResource(Elements[0], MimeType);
 		}
 	}
 	return nullptr;
@@ -460,15 +490,6 @@ bool FCEFBrowserHandler::ShowDevTools(const CefRefPtr<CefBrowser>& Browser)
 	PopupFeatures.toolBarVisible  = false;
 	PopupFeatures.statusBarVisible  = false;
 	PopupFeatures.resizable = true;
-	PopupFeatures.additionalFeatures = cef_string_list_alloc();
-
-	// Override the parent window setting for transparency, as the Dev Tools require a solid background
-	CefString OverrideTransparencyFeature = "Epic_NoTransparency";
-	cef_string_list_append(PopupFeatures.additionalFeatures, OverrideTransparencyFeature.GetStruct());
-
-	// Add a custom tag used to detect dev tools.
-	CefString DevToolsTag = "Epic_DevTools";
-	cef_string_list_append(PopupFeatures.additionalFeatures, DevToolsTag.GetStruct());
 
 	// Set max framerate to maximum supported.
 	BrowserSettings.windowless_frame_rate = 60;
@@ -554,7 +575,11 @@ bool FCEFBrowserHandler::OnKeyEvent(CefRefPtr<CefBrowser> Browser,
 	return false;
 }
 
+#if PLATFORM_LINUX
 bool FCEFBrowserHandler::OnJSDialog(CefRefPtr<CefBrowser> Browser, const CefString& OriginUrl, const CefString& AcceptLang, JSDialogType DialogType, const CefString& MessageText, const CefString& DefaultPromptText, CefRefPtr<CefJSDialogCallback> Callback, bool& OutSuppressMessage)
+#else
+bool FCEFBrowserHandler::OnJSDialog(CefRefPtr<CefBrowser> Browser, const CefString& OriginUrl, JSDialogType DialogType, const CefString& MessageText, const CefString& DefaultPromptText, CefRefPtr<CefJSDialogCallback> Callback, bool& OutSuppressMessage)
+#endif
 {
 	bool Retval = false;
 	TSharedPtr<FCEFWebBrowserWindow> BrowserWindow = BrowserWindowPtr.Pin();

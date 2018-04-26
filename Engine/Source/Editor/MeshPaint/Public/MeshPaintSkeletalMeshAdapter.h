@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,7 +13,9 @@ class UBodySetup;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class UTexture;
-class FSkeletalMeshResource;
+class FSkeletalMeshRenderData;
+class FSkeletalMeshLODRenderData;
+class FSkeletalMeshLODModel;
 class UMeshComponent;
 
 //////////////////////////////////////////////////////////////////////////
@@ -29,7 +31,7 @@ public:
 	virtual bool Initialize() override;
 	virtual void OnAdded() override;
 	virtual void OnRemoved() override;
-	virtual bool IsValid() const override { return SkeletalMeshComponent && SkeletalMeshComponent->SkeletalMesh == ReferencedSkeletalMesh; }	
+	virtual bool IsValid() const override { return SkeletalMeshComponent && ReferencedSkeletalMesh && SkeletalMeshComponent->SkeletalMesh == ReferencedSkeletalMesh; }
 	virtual bool SupportsTexturePaint() const override { return true; }
 	virtual bool SupportsVertexPaint() const override { return SkeletalMeshComponent != nullptr; }
 	virtual bool LineTraceComponent(struct FHitResult& OutHit, const FVector Start, const FVector End, const struct FCollisionQueryParams& Params) const override;
@@ -50,6 +52,8 @@ public:
 protected:
 	/** Callback for when the skeletal mesh on the component is changed */
 	void OnSkeletalMeshChanged();
+	/** Callback for when skeletal mesh DDC data is rebuild */
+	void OnPostMeshCached(USkeletalMesh* SkeletalMesh);
 
 	/** Delegate called when skeletal mesh is changed on the component */
 	FDelegateHandle SkeletalMeshChangedHandle;	
@@ -59,10 +63,12 @@ protected:
 	/** Skeletal mesh currently set to the Skeletal Mesh Component */
 	USkeletalMesh* ReferencedSkeletalMesh;
 	/** Skeletal Mesh resource retrieved from the Skeletal Mesh */
-	FSkeletalMeshResource* MeshResource;
+	FSkeletalMeshRenderData* MeshResource;
 
-	/** LOD model (at Mesh LOD Index) containing data to change */
-	FStaticLODModel* LODModel;
+	/** LOD render data (at Mesh LOD Index) containing data to change */
+	FSkeletalMeshLODRenderData* LODData;
+	/** LOD model (source) data (at Mesh LOD Index) containing data to change */
+	FSkeletalMeshLODModel* LODModel;
 	/** LOD Index for which data has to be retrieved / altered*/
 	int32 MeshLODIndex;
 protected:

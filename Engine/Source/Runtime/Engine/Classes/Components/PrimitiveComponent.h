@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -205,25 +205,38 @@ public:
 	UPROPERTY()
 	TEnumAsByte<enum ESceneDepthPriorityGroup> ViewOwnerDepthPriorityGroup;
 
+	/** Quality of indirect lighting for Movable primitives.  This has a large effect on Indirect Lighting Cache update time. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting)
+	TEnumAsByte<EIndirectLightingCacheQuality> IndirectLightingCacheQuality;
+
+#if WITH_EDITORONLY_DATA
+	/** If true, and if World setting has bEnableHierarchicalLOD equal to true, then this component will be included when generating a Proxy mesh for the parent Actor */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = HLOD, meta = (DisplayName = "Include Component for HLOD Mesh generation"))
+	uint8 bEnableAutoLODGeneration : 1;
+#endif 
+	/** Controls the type of lightmap used for this component. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting)
+	ELightmapType LightmapType;
+
 public:
 
 	/** Whether this primitive is referenced by a FLevelTextureManager  */
-	mutable uint32 bAttachedToStreamingManagerAsStatic : 1;
+	mutable uint8 bAttachedToStreamingManagerAsStatic : 1;
 	/** Whether this primitive is referenced by a FDynamicTextureInstanceManager */
-	mutable uint32 bAttachedToStreamingManagerAsDynamic : 1;
+	mutable uint8 bAttachedToStreamingManagerAsDynamic : 1;
 	/** Whether this primitive is handled as dynamic, although it could have no references */
-	mutable uint32 bHandledByStreamingManagerAsDynamic : 1;
+	mutable uint8 bHandledByStreamingManagerAsDynamic : 1;
 
 	/** Whether this primitive is referenced by the streaming manager and should sent callbacks when detached or destroyed */
 	FORCEINLINE bool IsAttachedToStreamingManager() const { return !!(bAttachedToStreamingManagerAsStatic | bAttachedToStreamingManagerAsDynamic); }
-	
+
 	/** 
 	 * Indicates if we'd like to create physics state all the time (for collision and simulation). 
 	 * If you set this to false, it still will create physics state if collision or simulation activated. 
 	 * This can help performance if you'd like to avoid overhead of creating physics state when triggers 
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Collision)
-	uint32 bAlwaysCreatePhysicsState:1;
+	uint8 bAlwaysCreatePhysicsState:1;
 
 	/**
 	 * If true, this component will generate overlap events when it is overlapping other components (eg Begin Overlap).
@@ -233,7 +246,7 @@ public:
 	 * @see UpdateOverlaps(), BeginComponentOverlap(), EndComponentOverlap()
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Collision)
-	uint32 bGenerateOverlapEvents:1;
+	uint8 bGenerateOverlapEvents:1;
 
 	/**
 	 * If true, this component will generate individual overlaps for each overlapping physics body if it is a multi-body component. When false, this component will
@@ -241,7 +254,7 @@ public:
 	 * influence on single body components.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadWrite, Category=Collision)
-	uint32 bMultiBodyOverlap:1;
+	uint8 bMultiBodyOverlap:1;
 
 	/**
 	 * If true, this component will look for collisions on both physic scenes during movement.
@@ -249,7 +262,7 @@ public:
 	 * @see MoveComponent()
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadWrite, Category=Collision)
-	uint32 bCheckAsyncSceneOnMove:1;
+	uint8 bCheckAsyncSceneOnMove:1;
 
 	/**
 	 * If true, component sweeps with this component should trace against complex collision during movement (for example, each triangle of a mesh).
@@ -257,54 +270,54 @@ public:
 	 * @see MoveComponent()
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadWrite, Category=Collision)
-	uint32 bTraceComplexOnMove:1;
+	uint8 bTraceComplexOnMove:1;
 
 	/**
 	 * If true, component sweeps will return the material in their hit result.
 	 * @see MoveComponent(), FHitResult
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadWrite, Category=Collision)
-	uint32 bReturnMaterialOnMove:1;
+	uint8 bReturnMaterialOnMove:1;
 
 	/** True if the primitive should be rendered using ViewOwnerDepthPriorityGroup if viewed by its owner. */
 	UPROPERTY()
-	uint32 bUseViewOwnerDepthPriorityGroup:1;
+	uint8 bUseViewOwnerDepthPriorityGroup:1;
 
 	/** Whether to accept cull distance volumes to modify cached cull distance. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=LOD)
-	uint32 bAllowCullDistanceVolume:1;
+	uint8 bAllowCullDistanceVolume:1;
 
 	/** true if the primitive has motion blur velocity meshes */
 	UPROPERTY()
-	uint32 bHasMotionBlurVelocityMeshes:1;
+	uint8 bHasMotionBlurVelocityMeshes:1;
 	
 	/** If true, this component will be visible in reflection captures. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = Rendering)
-	uint32 bVisibleInReflectionCaptures:1;
+	uint8 bVisibleInReflectionCaptures:1;
 
 	/** If true, this component will be rendered in the main pass (z prepass, basepass, transparency) */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = Rendering)
-	uint32 bRenderInMainPass:1;
+	uint8 bRenderInMainPass:1;
 
 	/** If true, this component will be rendered in mono only if an HMD is connected and monoscopic far field rendering is activated. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = Rendering)
-	uint32 bRenderInMono:1;
+	uint8 bRenderInMono:1;
 
 	/** Whether the primitive receives decals. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Rendering)
-	uint32 bReceivesDecals:1;
+	uint8 bReceivesDecals:1;
 
 	/** If this is True, this component won't be visible when the view actor is the component's owner, directly or indirectly. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = Rendering)
-	uint32 bOwnerNoSee:1;
+	uint8 bOwnerNoSee:1;
 
 	/** If this is True, this component will only be visible when the view actor is the component's owner, directly or indirectly. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = Rendering)
-	uint32 bOnlyOwnerSee:1;
+	uint8 bOnlyOwnerSee:1;
 
 	/** Treat this primitive as part of the background for occlusion purposes. This can be used as an optimization to reduce the cost of rendering skyboxes, large ground planes that are part of the vista, etc. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Rendering)
-	uint32 bTreatAsBackgroundForOcclusion:1;
+	uint8 bTreatAsBackgroundForOcclusion:1;
 
 	/** 
 	 * Whether to render the primitive in the depth only pass.  
@@ -312,19 +325,19 @@ public:
 	 * @todo - if any rendering features rely on a complete depth only pass, this variable needs to go away.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Rendering)
-	uint32 bUseAsOccluder:1;
+	uint8 bUseAsOccluder:1;
 
 	/** If this is True, this component can be selected in the editor. */
 	UPROPERTY()
-	uint32 bSelectable:1;
+	uint8 bSelectable:1;
 
 	/** If true, forces mips for textures used by this component to be resident when this component's level is loaded. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=TextureStreaming)
-	uint32 bForceMipStreaming:1;
+	uint8 bForceMipStreaming:1;
 
 	/** If true a hit-proxy will be generated for each instance of instanced static meshes */
 	UPROPERTY()
-	uint32 bHasPerInstanceHitProxies:1;
+	uint8 bHasPerInstanceHitProxies:1;
 
 	// Lighting flags
 	
@@ -334,23 +347,23 @@ public:
 	 * This flag is ignored (no shadows will be generated) if all materials on this component have an Unlit shading model.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lighting)
-	uint32 CastShadow:1;
+	uint8 CastShadow:1;
 
 	/** Controls whether the primitive should inject light into the Light Propagation Volume.  This flag is only used if CastShadow is true. **/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lighting, AdvancedDisplay, meta=(EditCondition="CastShadow"))
-	uint32 bAffectDynamicIndirectLighting:1;
+	uint8 bAffectDynamicIndirectLighting:1;
 
 	/** Controls whether the primitive should affect dynamic distance field lighting methods.  This flag is only used if CastShadow is true. **/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lighting, AdvancedDisplay, meta=(EditCondition="CastShadow"))
-	uint32 bAffectDistanceFieldLighting:1;
+	uint8 bAffectDistanceFieldLighting:1;
 
 	/** Controls whether the primitive should cast shadows in the case of non precomputed shadowing.  This flag is only used if CastShadow is true. **/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lighting, AdvancedDisplay, meta=(EditCondition="CastShadow", DisplayName = "Dynamic Shadow"))
-	uint32 bCastDynamicShadow:1;
+	uint8 bCastDynamicShadow:1;
 
 	/** Whether the object should cast a static shadow from shadow casting lights.  This flag is only used if CastShadow is true. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lighting, AdvancedDisplay, meta=(EditCondition="CastShadow", DisplayName = "Static Shadow"))
-	uint32 bCastStaticShadow:1;
+	uint8 bCastStaticShadow:1;
 
 	/** 
 	 * Whether the object should cast a volumetric translucent shadow.
@@ -358,34 +371,34 @@ public:
 	 * But have artifacts when used on highly opaque surfaces.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting, meta=(EditCondition="CastShadow", DisplayName = "Volumetric Translucent Shadow"))
-	uint32 bCastVolumetricTranslucentShadow:1;
+	uint8 bCastVolumetricTranslucentShadow:1;
 
 	/** 
 	 * When enabled, the component will only cast a shadow on itself and not other components in the world.  
 	 * This is especially useful for first person weapons, and forces bCastInsetShadow to be enabled.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting, meta=(EditCondition="CastShadow"))
-	uint32 bSelfShadowOnly:1;
+	uint8 bSelfShadowOnly:1;
 
 	/** 
 	 * When enabled, the component will be rendering into the far shadow cascades (only for directional lights).
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting, meta=(EditCondition="CastShadow", DisplayName = "Far Shadow"))
-	uint32 bCastFarShadow:1;
+	uint8 bCastFarShadow:1;
 
 	/** 
 	 * Whether this component should create a per-object shadow that gives higher effective shadow resolution. 
 	 * Useful for cinematic character shadowing. Assumed to be enabled if bSelfShadowOnly is enabled.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting, meta=(EditCondition="CastShadow", DisplayName = "Dynamic Inset Shadow"))
-	uint32 bCastInsetShadow:1;
+	uint8 bCastInsetShadow:1;
 
 	/** 
 	 * Whether this component should cast shadows from lights that have bCastShadowsFromCinematicObjectsOnly enabled.
 	 * This is useful for characters in a cinematic with special cinematic lights, where the cost of shadowmap rendering of the environment is undesired.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting, meta=(EditCondition="CastShadow"))
-	uint32 bCastCinematicShadow:1;
+	uint8 bCastCinematicShadow:1;
 
 	/** 
 	 *	If true, the primitive will cast shadows even if bHidden is true.
@@ -393,19 +406,14 @@ public:
 	 *	This flag is only used if CastShadow is true.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting, meta=(EditCondition="CastShadow", DisplayName = "Hidden Shadow"))
-	uint32 bCastHiddenShadow:1;
+	uint8 bCastHiddenShadow:1;
 
 	/** Whether this primitive should cast dynamic shadows as if it were a two sided material. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting, meta=(EditCondition="CastShadow", DisplayName = "Shadow Two Sided"))
-	uint32 bCastShadowAsTwoSided:1;
+	uint8 bCastShadowAsTwoSided:1;
 
-	/** 
-	 * Whether to light this primitive as if it were static, including generating lightmaps.  
-	 * This only has an effect for component types that can bake lighting, like static mesh components.
-	 * This is useful for moving meshes that don't change significantly.
-	 */
-	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting)
-	uint32 bLightAsIfStatic:1;
+	UPROPERTY()
+	uint8 bLightAsIfStatic_DEPRECATED:1;
 
 	/** 
 	 * Whether to light this component and any attachments as a group.  This only has effect on the root component of an attachment tree.
@@ -413,19 +421,14 @@ public:
 	 * This is useful for improving performance when multiple movable components are attached together.
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting)
-	uint32 bLightAttachmentsAsGroup:1;
+	uint8 bLightAttachmentsAsGroup:1;
 
-	/** Quality of indirect lighting for Movable primitives.  This has a large effect on Indirect Lighting Cache update time. */
-	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting)
-	TEnumAsByte<EIndirectLightingCacheQuality> IndirectLightingCacheQuality;
-
-	/** 
-	 * Mobile only:
-	 * If enabled this component can receive combined static and CSM shadows from a stationary light. (Enabling will increase shading cost.) 
-	 * If disabled this component will only receive static shadows from stationary lights.
-	 */
-	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = Mobile, meta=(DisplayName ="Receive Combined Static and CSM Shadows from Stationary Lights"))
-	uint32 bReceiveCombinedCSMAndStaticShadowsFromStationaryLights : 1;
+	/**
+	* Mobile only:
+	* If disabled this component will not receive CSM shadows. (Components that do not receive CSM may have reduced shading cost)
+	*/
+	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = Mobile, meta = (DisplayName = "Receive CSM Shadows"))
+	uint8 bReceiveMobileCSMShadows : 1;
 
 	/** 
 	 * Whether the whole component should be shadowed as one from stationary lights, which makes shadow receiving much cheaper.
@@ -433,7 +436,63 @@ public:
 	 * This is currently only used on stationary directional lights.  
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting)
-	uint32 bSingleSampleShadowFromStationaryLights:1;
+	uint8 bSingleSampleShadowFromStationaryLights:1;
+
+	// Physics
+	
+	/** Will ignore radial impulses applied to this component. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Physics)
+	uint8 bIgnoreRadialImpulse:1;
+
+	/** Will ignore radial forces applied to this component. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Physics)
+	uint8 bIgnoreRadialForce:1;
+
+	/** True for damage to this component to apply physics impulse, false to opt out of these impulses. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Physics)
+	uint8 bApplyImpulseOnDamage : 1;
+
+	// General flags.
+	
+	/** If this is True, this component must always be loaded on clients, even if Hidden and CollisionEnabled is NoCollision. */
+	UPROPERTY()
+	uint8 AlwaysLoadOnClient:1;
+
+	/** If this is True, this component must always be loaded on servers, even if Hidden and CollisionEnabled is NoCollision */
+	UPROPERTY()
+	uint8 AlwaysLoadOnServer:1;
+
+	/** Composite the drawing of this component onto the scene after post processing (only applies to editor drawing) */
+	UPROPERTY()
+	uint8 bUseEditorCompositing:1;
+
+	/** If true, this component will be rendered in the CustomDepth pass (usually used for outlines) */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Rendering, meta=(DisplayName = "Render CustomDepth Pass"))
+	uint8 bRenderCustomDepth:1;
+
+protected:
+	/** Result of last call to AreAllCollideableDescendantsRelative(). */
+	uint8 bCachedAllCollideableDescendantsRelative : 1;
+
+public:
+	/** If true then DoCustomNavigableGeometryExport will be called to collect navigable geometry of this component. */
+	UPROPERTY()
+	TEnumAsByte<EHasCustomNavigableGeometry::Type> bHasCustomNavigableGeometry;
+
+private:
+	UPROPERTY()
+	TEnumAsByte<enum ECanBeCharacterBase> CanBeCharacterBase_DEPRECATED;
+
+	FMaskFilter MoveIgnoreMask;
+
+public:
+	/**
+	 * Determine whether a Character can step up onto this component.
+	 * This controls whether they can try to step up on it when they bump in to it, not whether they can walk on it after landing on it.
+	 * @see FWalkableSlopeOverride
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Collision)
+	TEnumAsByte<enum ECanBeCharacterBase> CanCharacterStepUpOn;
 
 	/** 
 	 * Channels that this component should be in.  Lights with matching channels will affect the component.  
@@ -442,45 +501,13 @@ public:
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Lighting)
 	FLightingChannels LightingChannels;
 
-	// Physics
-	
-	/** Will ignore radial impulses applied to this component. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Physics)
-	uint32 bIgnoreRadialImpulse:1;
-
-	/** Will ignore radial forces applied to this component. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Physics)
-	uint32 bIgnoreRadialForce:1;
-
-	/** True for damage to this component to apply physics impulse, false to opt out of these impulses. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Physics)
-	uint32 bApplyImpulseOnDamage : 1;
-
-	// General flags.
-	
-	/** If this is True, this component must always be loaded on clients, even if Hidden and CollisionEnabled is NoCollision. */
-	UPROPERTY()
-	uint32 AlwaysLoadOnClient:1;
-
-	/** If this is True, this component must always be loaded on servers, even if Hidden and CollisionEnabled is NoCollision */
-	UPROPERTY()
-	uint32 AlwaysLoadOnServer:1;
-
-	/** Composite the drawing of this component onto the scene after post processing (only applies to editor drawing) */
-	UPROPERTY()
-	uint32 bUseEditorCompositing:1;
-
-	/** If true, this component will be rendered in the CustomDepth pass (usually used for outlines) */
-	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Rendering, meta=(DisplayName = "Render CustomDepth Pass"))
-	uint32 bRenderCustomDepth:1;
+	/** Mask used for stencil buffer writes. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = "Rendering", meta = (editcondition = "bRenderCustomDepth"))
+	ERendererStencilMask CustomDepthStencilWriteMask;
 
 	/** Optionally write this 0-255 value to the stencil buffer in CustomDepth pass (Requires project setting or r.CustomDepth == 3) */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Rendering,  meta=(UIMin = "0", UIMax = "255", editcondition = "bRenderCustomDepth", DisplayName = "CustomDepth Stencil Value"))
 	int32 CustomDepthStencilValue;
-
-	/** Mask used for stencil buffer writes. */
-	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = "Rendering", meta = (editcondition = "bRenderCustomDepth"))
-	ERendererStencilMask CustomDepthStencilWriteMask;
 
 	/**
 	 * Translucent objects with a lower sort priority draw behind objects with a higher priority.
@@ -508,11 +535,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, AdvancedDisplay, Category=Rendering, meta=(UIMin = "0.0", UIMax = "3.0"))
 	float LpvBiasMultiplier;
 
-	// Internal physics engine data.
-	
-	/** Physics scene information for this component, holds a single rigid body with multiple shapes. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Collision, meta=(ShowOnlyInnerProperties))
-	FBodyInstance BodyInstance;
+	/**
+	* Incremented by the main thread before being attached to the scene, decremented
+	* by the rendering thread after removal. This counter exists to assert that 
+	* operations are safe in order to help avoid race conditions.
+	*
+	*           *** Runtime logic should NEVER rely on this value. ***
+	*
+	* The only safe assertions to make are:
+	*
+	*     AttachmentCounter == 0: The primitive is not exposed to the rendering
+	*                             thread, it is safe to modify shared members.
+	*                             This assertion is valid ONLY from the main thread.
+	*
+	*     AttachmentCounter >= 1: The primitive IS exposed to the rendering
+	*                             thread and therefore shared members must not
+	*                             be modified. This assertion may be made from
+	*                             any thread. Note that it is valid and expected
+	*                             for AttachmentCounter to be larger than 1, e.g.
+	*                             during reattachment.
+	*/
+	FThreadSafeCounter AttachmentCounter;
 
 	/** Used to detach physics objects before simulation begins. This is needed because at runtime we can't have simulated objects inside the attachment hierarchy */
 	virtual void BeginPlay() override;
@@ -522,15 +565,8 @@ protected:
 	/** Returns true if all descendant components that we can possibly overlap with use relative location and rotation. */
 	virtual bool AreAllCollideableDescendantsRelative(bool bAllowCachedValue = true) const;
 
-	/** Result of last call to AreAllCollideableDescendantsRelative(). */
-	uint32 bCachedAllCollideableDescendantsRelative:1;
-
 	/** Last time we checked AreAllCollideableDescendantsRelative(), so we can throttle those tests since it rarely changes once false. */
 	float LastCheckedAllCollideableDescendantsTime;
-
-	/** If true then DoCustomNavigableGeometryExport will be called to collect navigable geometry of this component. */
-	UPROPERTY()
-	TEnumAsByte<EHasCustomNavigableGeometry::Type> bHasCustomNavigableGeometry;
 
 	/** Next id to be used by a component. */
 	static FThreadSafeCounter NextComponentId;
@@ -559,20 +595,6 @@ public:
 
 	UPROPERTY(transient)
 	float LastRenderTimeOnScreen;
-private:
-	UPROPERTY()
-	TEnumAsByte<enum ECanBeCharacterBase> CanBeCharacterBase_DEPRECATED;
-
-	FMaskFilter MoveIgnoreMask;
-
-public:
-	/**
-	 * Determine whether a Character can step up onto this component.
-	 * This controls whether they can try to step up on it when they bump in to it, not whether they can walk on it after landing on it.
-	 * @see FWalkableSlopeOverride
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Collision)
-	TEnumAsByte<enum ECanBeCharacterBase> CanCharacterStepUpOn;
 
 	/**
 	 * Set of actors to ignore during component sweeps in MoveComponent().
@@ -699,7 +721,7 @@ public:
 	 * @param OtherComp Component to test this component against.
 	 * @return Whether this component is overlapping another component.
 	 */
-	UFUNCTION(BlueprintCallable, Category="Collision", meta=(UnsafeDuringActorConstruction="true"))
+	UFUNCTION(BlueprintPure, Category="Collision", meta=(UnsafeDuringActorConstruction="true"))
 	bool IsOverlappingComponent(const UPrimitiveComponent* OtherComp) const;
 	
 	/** Check whether this component has the specified overlap. */
@@ -710,7 +732,7 @@ public:
 	 * @param Other Actor to test this component against.
 	 * @return Whether this component is overlapping any component of the given Actor.
 	 */
-	UFUNCTION(BlueprintCallable, Category="Collision", meta=(UnsafeDuringActorConstruction="true"))
+	UFUNCTION(BlueprintPure, Category="Collision", meta=(UnsafeDuringActorConstruction="true"))
 	bool IsOverlappingActor(const AActor* Other) const;
 
 	/** Appends list of overlaps with components owned by the given actor to the 'OutOverlaps' array. Returns true if any overlaps were added. */
@@ -721,7 +743,7 @@ public:
 	 * @param OverlappingActors		[out] Returned list of overlapping actors
 	 * @param ClassFilter			[optional] If set, only returns actors of this class or subclasses
 	 */
-	UFUNCTION(BlueprintCallable, Category="Collision", meta=(UnsafeDuringActorConstruction="true"))
+	UFUNCTION(BlueprintPure, Category="Collision", meta=(UnsafeDuringActorConstruction="true"))
 	void GetOverlappingActors(TArray<AActor*>& OverlappingActors, TSubclassOf<AActor> ClassFilter=nullptr) const;
 
 	/** 
@@ -732,11 +754,10 @@ public:
 	void GetOverlappingActors(TSet<AActor*>& OverlappingActors, TSubclassOf<AActor> ClassFilter=nullptr) const;
 
 	/** Returns list of components this component is overlapping. */
-	UFUNCTION(BlueprintCallable, Category="Collision", meta=(UnsafeDuringActorConstruction="true"))
+	UFUNCTION(BlueprintPure, Category="Collision", meta=(UnsafeDuringActorConstruction="true"))
 	void GetOverlappingComponents(TArray<UPrimitiveComponent*>& InOverlappingComponents) const;
 
 	/** Returns list of components this component is overlapping. */
-	UFUNCTION(BlueprintCallable, Category="Collision", meta=(UnsafeDuringActorConstruction="true"))
 	const TArray<FOverlapInfo>& GetOverlapInfos() const;
 
 	/** 
@@ -773,6 +794,12 @@ protected:
 	virtual bool ComponentOverlapMultiImpl(TArray<struct FOverlapResult>& OutOverlaps, const class UWorld* InWorld, const FVector& Pos, const FQuat& Rot, ECollisionChannel TestChannel, const struct FComponentQueryParams& Params, const struct FCollisionObjectQueryParams& ObjectQueryParams = FCollisionObjectQueryParams::DefaultObjectQueryParam) const;
 
 public:
+
+	// Internal physics engine data.
+	
+	/** Physics scene information for this component, holds a single rigid body with multiple shapes. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Collision, meta=(ShowOnlyInnerProperties))
+	FBodyInstance BodyInstance;
 
 	/** 
 	 *	Event called when a component hits (or is hit by) something solid. This could happen due to things like Character movement, using Set Location with 'sweep' enabled, or physics simulation.
@@ -862,7 +889,7 @@ public:
 	 * @param ElementIndex - The element to access the material of.
 	 * @return the material used by the indexed element of this mesh.
 	 */
-	UFUNCTION(BlueprintCallable, Category="Rendering|Material")
+	UFUNCTION(BlueprintPure, Category="Rendering|Material")
 	virtual class UMaterialInterface* GetMaterial(int32 ElementIndex) const;
 
 	/**
@@ -902,12 +929,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Rendering|Material")
 	virtual class UMaterialInstanceDynamic* CreateDynamicMaterialInstance(int32 ElementIndex, class UMaterialInterface* SourceMaterial = NULL);
 
-	/** Try and retrieve the material applied to a particular collision face of mesh. Used with face index returned from collision trace. */
-	UFUNCTION(BlueprintCallable, Category = "Components|Mesh")
-	virtual UMaterialInterface* GetMaterialFromCollisionFaceIndex(int32 FaceIndex) const;
+	/** 
+	 * Try and retrieve the material applied to a particular collision face of mesh. Used with face index returned from collision trace. 
+	 *	@param	FaceIndex		Face index from hit result that was hit by a trace
+	 *	@param	SectionIndex	Section of the mesh that the face belongs to
+	 *	@return					Material applied to section that the hit face belongs to
+	 */
+	UFUNCTION(BlueprintPure, Category = "Components|Mesh")
+	virtual UMaterialInterface* GetMaterialFromCollisionFaceIndex(int32 FaceIndex, int32& SectionIndex) const;
 
 	/** Returns the slope override struct for this component. */
-	UFUNCTION(BlueprintCallable, Category="Physics")
+	UFUNCTION(BlueprintPure, Category="Physics")
 	const struct FWalkableSlopeOverride& GetWalkableSlopeOverride() const;
 
 	/** Sets a new slope override for this component instance. */
@@ -916,6 +948,7 @@ public:
 
 	/** 
 	 *	Sets whether or not a single body should use physics simulation, or should be 'fixed' (kinematic).
+	 *	Note that if this component is currently attached to something, beginning simulation will detach it.
 	 *
 	 *	@param	bSimulate	New simulation state for single body
 	 */
@@ -947,7 +980,7 @@ public:
 	 *
 	 *	@param	Impulse		Magnitude and direction of impulse to apply.
 	 *	@param	BoneName	If a SkeletalMeshComponent, name of body to apply impulse to. 'None' indicates root body.
-	 *	@param	bVelChange	If true, the Strength is taken as a change in velocity instead of an impulse (ie. mass will have no affect).
+	 *	@param	bVelChange	If true, the Strength is taken as a change in velocity instead of an impulse (ie. mass will have no effect).
 	 */
 	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
 	virtual void AddImpulse(FVector Impulse, FName BoneName = NAME_None, bool bVelChange = false);
@@ -957,10 +990,37 @@ public:
 	*
 	*	@param	AngularImpulse	Magnitude and direction of impulse to apply. Direction is axis of rotation.
 	*	@param	BoneName	If a SkeletalMeshComponent, name of body to apply angular impulse to. 'None' indicates root body.
-	*	@param	bVelChange	If true, the Strength is taken as a change in angular velocity instead of an impulse (ie. mass will have no affect).
+	*	@param	bVelChange	If true, the Strength is taken as a change in angular velocity instead of an impulse (ie. mass will have no effect).
+	*/
+	DEPRECATED(4.18, "Use AddAngularImpulseInRadians instead.")
+	UFUNCTION(BlueprintCallable, Category = "Physics", meta=(UnsafeDuringActorConstruction="true", DeprecatedFunction, DeprecationMessage="Use AddAngularImpulseInRadians instead"))
+	virtual void AddAngularImpulse(FVector Impulse, FName BoneName = NAME_None, bool bVelChange = false)
+	{
+		AddAngularImpulseInRadians(Impulse, BoneName, bVelChange);
+	}
+
+	/**
+	*	Add an angular impulse to a single rigid body. Good for one time instant burst.
+	*
+	*	@param	AngularImpulse	Magnitude and direction of impulse to apply. Direction is axis of rotation.
+	*	@param	BoneName	If a SkeletalMeshComponent, name of body to apply angular impulse to. 'None' indicates root body.
+	*	@param	bVelChange	If true, the Strength is taken as a change in angular velocity instead of an impulse (ie. mass will have no effect).
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Physics", meta=(UnsafeDuringActorConstruction="true"))
-	virtual void AddAngularImpulse(FVector Impulse, FName BoneName = NAME_None, bool bVelChange = false);
+	virtual void AddAngularImpulseInRadians(FVector Impulse, FName BoneName = NAME_None, bool bVelChange = false);
+
+	/**
+	*	Add an angular impulse to a single rigid body. Good for one time instant burst.
+	*
+	*	@param	AngularImpulse	Magnitude and direction of impulse to apply. Direction is axis of rotation.
+	*	@param	BoneName	If a SkeletalMeshComponent, name of body to apply angular impulse to. 'None' indicates root body.
+	*	@param	bVelChange	If true, the Strength is taken as a change in angular velocity instead of an impulse (ie. mass will have no effect).
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Physics", meta=(UnsafeDuringActorConstruction="true"))
+	void AddAngularImpulseInDegrees(FVector Impulse, FName BoneName = NAME_None, bool bVelChange = false)
+	{
+		AddAngularImpulseInRadians(FMath::DegreesToRadians(Impulse), BoneName, bVelChange);
+	}
 
 	/**
 	 *	Add an impulse to a single rigid body at a specific location. 
@@ -979,7 +1039,7 @@ public:
 	 * @param Radius		Size of radial impulse. Beyond this distance from Origin, there will be no affect.
 	 * @param Strength		Maximum strength of impulse applied to body.
 	 * @param Falloff		Allows you to control the strength of the impulse as a function of distance from Origin.
-	 * @param bVelChange	If true, the Strength is taken as a change in velocity instead of an impulse (ie. mass will have no affect).
+	 * @param bVelChange	If true, the Strength is taken as a change in velocity instead of an impulse (ie. mass will have no effect).
 	 */
 	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
 	virtual void AddRadialImpulse(FVector Origin, float Radius, float Strength, enum ERadialImpulseFalloff Falloff, bool bVelChange = false);
@@ -990,7 +1050,7 @@ public:
 	 *
 	 *	@param	Force		 Force vector to apply. Magnitude indicates strength of force.
 	 *	@param	BoneName	 If a SkeletalMeshComponent, name of body to apply force to. 'None' indicates root body.
-	 *  @param  bAccelChange If true, Force is taken as a change in acceleration instead of a physical force (i.e. mass will have no affect).
+	 *  @param  bAccelChange If true, Force is taken as a change in acceleration instead of a physical force (i.e. mass will have no effect).
 	 */
 	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
 	virtual void AddForce(FVector Force, FName BoneName = NAME_None, bool bAccelChange = false);
@@ -1024,7 +1084,7 @@ public:
 	 *	@param Radius		Radius within which to apply the force.
 	 *	@param Strength		Strength of force to apply.
 	 *  @param Falloff		Allows you to control the strength of the force as a function of distance from Origin.
-	 *  @param bAccelChange If true, Strength is taken as a change in acceleration instead of a physical force (i.e. mass will have no affect).
+	 *  @param bAccelChange If true, Strength is taken as a change in acceleration instead of a physical force (i.e. mass will have no effect).
 	 */
 	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
 	virtual void AddRadialForce(FVector Origin, float Radius, float Strength, enum ERadialImpulseFalloff Falloff, bool bAccelChange = false);
@@ -1033,10 +1093,35 @@ public:
 	 *	Add a torque to a single rigid body.
 	 *	@param Torque		Torque to apply. Direction is axis of rotation and magnitude is strength of torque.
 	 *	@param BoneName		If a SkeletalMeshComponent, name of body to apply torque to. 'None' indicates root body.
-	 *  @param bAccelChange If true, Torque is taken as a change in angular acceleration instead of a physical torque (i.e. mass will have no affect).
+	 *  @param bAccelChange If true, Torque is taken as a change in angular acceleration instead of a physical torque (i.e. mass will have no effect).
+	 */
+	DEPRECATED(4.18, "Use AddTorqueInRadians instead.")
+	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true", DeprecatedFunction, DeprecationMessage="Use AddTorqueInRadians instead"))
+	void AddTorque(FVector Torque, FName BoneName = NAME_None, bool bAccelChange = false)
+	{
+		AddTorqueInRadians(Torque, BoneName, bAccelChange);
+	}
+
+	/**
+	 *	Add a torque to a single rigid body.
+	 *	@param Torque		Torque to apply. Direction is axis of rotation and magnitude is strength of torque.
+	 *	@param BoneName		If a SkeletalMeshComponent, name of body to apply torque to. 'None' indicates root body.
+	 *  @param bAccelChange If true, Torque is taken as a change in angular acceleration instead of a physical torque (i.e. mass will have no effect).
 	 */
 	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
-	void AddTorque(FVector Torque, FName BoneName = NAME_None, bool bAccelChange = false);
+	void AddTorqueInRadians(FVector Torque, FName BoneName = NAME_None, bool bAccelChange = false);
+
+	/**
+	 *	Add a torque to a single rigid body.
+	 *	@param Torque		Torque to apply. Direction is axis of rotation and magnitude is strength of torque.
+	 *	@param BoneName		If a SkeletalMeshComponent, name of body to apply torque to. 'None' indicates root body.
+	 *	@param bAccelChange If true, Torque is taken as a change in angular acceleration instead of a physical torque (i.e. mass will have no effect).
+	 */
+	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
+	void AddTorqueInDegrees(FVector Torque, FName BoneName = NAME_None, bool bAccelChange = false)
+	{
+		AddTorqueInRadians(FMath::DegreesToRadians(Torque), BoneName, bAccelChange);
+	}
 
 	/**
 	 *	Set the linear velocity of a single body.
@@ -1081,8 +1166,51 @@ public:
 	 *	@param bAddToCurrent	If true, NewAngVel is added to the existing angular velocity of the body.
 	 *	@param BoneName			If a SkeletalMeshComponent, name of body to modify angular velocity of. 'None' indicates root body.
 	 */
+	DEPRECATED(4.18, "Use SetPhysicsAngularVelocityInDegrees instead.")
+	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true", DeprecatedFunction, DeprecationMessage="Use SetPhysicsAngularVelocityInDegrees instead"))
+	void SetPhysicsAngularVelocity(FVector NewAngVel, bool bAddToCurrent = false, FName BoneName = NAME_None)
+	{
+		SetPhysicsAngularVelocityInDegrees(NewAngVel, bAddToCurrent, BoneName);
+	}
+
+	/**
+	 *	Set the angular velocity of a single body.
+	 *	This should be used cautiously - it may be better to use AddTorque or AddImpulse.
+	 *
+	 *	@param NewAngVel		New angular velocity to apply to body, in radians per second.
+	 *	@param bAddToCurrent	If true, NewAngVel is added to the existing angular velocity of the body.
+	 *	@param BoneName			If a SkeletalMeshComponent, name of body to modify angular velocity of. 'None' indicates root body.
+	 */
 	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
-	void SetPhysicsAngularVelocity(FVector NewAngVel, bool bAddToCurrent = false, FName BoneName = NAME_None);
+	void SetPhysicsAngularVelocityInRadians(FVector NewAngVel, bool bAddToCurrent = false, FName BoneName = NAME_None);
+
+	/**
+	 *	Set the angular velocity of a single body.
+	 *	This should be used cautiously - it may be better to use AddTorque or AddImpulse.
+	 *
+	 *	@param NewAngVel		New angular velocity to apply to body, in degrees per second.
+	 *	@param bAddToCurrent	If true, NewAngVel is added to the existing angular velocity of the body.
+	 *	@param BoneName			If a SkeletalMeshComponent, name of body to modify angular velocity of. 'None' indicates root body.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
+	void SetPhysicsAngularVelocityInDegrees(FVector NewAngVel, bool bAddToCurrent = false, FName BoneName = NAME_None)
+	{
+		SetPhysicsAngularVelocityInRadians(FMath::DegreesToRadians(NewAngVel), bAddToCurrent, BoneName);
+	}
+
+	/**
+	*	Set the maximum angular velocity of a single body.
+	*
+	*	@param NewMaxAngVel		New maximum angular velocity to apply to body, in degrees per second.
+	*	@param bAddToCurrent	If true, NewMaxAngVel is added to the existing maximum angular velocity of the body.
+	*	@param BoneName			If a SkeletalMeshComponent, name of body to modify maximum angular velocity of. 'None' indicates root body.
+	*/
+	DEPRECATED(4.18, "Use SetPhysicsMaxAngularVelocityInDegrees instead.")
+	UFUNCTION(BlueprintCallable, Category = "Physics", meta=(UnsafeDuringActorConstruction="true", DeprecatedFunction, DeprecationMessage="Use SetPhysicsMaxAngularVelocityInDegrees instead"))
+	void SetPhysicsMaxAngularVelocity(float NewMaxAngVel, bool bAddToCurrent = false, FName BoneName = NAME_None)
+	{
+		SetPhysicsMaxAngularVelocityInDegrees(NewMaxAngVel, bAddToCurrent, BoneName);
+	}
 
 	/**
 	*	Set the maximum angular velocity of a single body.
@@ -1092,22 +1220,56 @@ public:
 	*	@param BoneName			If a SkeletalMeshComponent, name of body to modify maximum angular velocity of. 'None' indicates root body.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Physics", meta=(UnsafeDuringActorConstruction="true"))
-	void SetPhysicsMaxAngularVelocity(float NewMaxAngVel, bool bAddToCurrent = false, FName BoneName = NAME_None);
+	void SetPhysicsMaxAngularVelocityInDegrees(float NewMaxAngVel, bool bAddToCurrent = false, FName BoneName = NAME_None)
+	{
+		SetPhysicsMaxAngularVelocityInRadians(FMath::DegreesToRadians(NewMaxAngVel), bAddToCurrent, BoneName);
+	}
+
+	/**
+	*	Set the maximum angular velocity of a single body.
+	*
+	*	@param NewMaxAngVel		New maximum angular velocity to apply to body, in radians per second.
+	*	@param bAddToCurrent	If true, NewMaxAngVel is added to the existing maximum angular velocity of the body.
+	*	@param BoneName			If a SkeletalMeshComponent, name of body to modify maximum angular velocity of. 'None' indicates root body.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Physics", meta=(UnsafeDuringActorConstruction="true"))
+	void SetPhysicsMaxAngularVelocityInRadians(float NewMaxAngVel, bool bAddToCurrent = false, FName BoneName = NAME_None);
+
+	/** 
+	 *	Get the angular velocity of a single body, in degrees per second. 
+	 *	@param BoneName			If a SkeletalMeshComponent, name of body to get velocity of. 'None' indicates root body.
+	 */
+	DEPRECATED(4.18, "Use GetPhysicsAngularVelocityInDegrees instead.")
+	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true", DeprecatedFunction, DeprecationMessage="Use GetPhysicsAngularVelocityInDegrees instead"))	
+	FVector GetPhysicsAngularVelocity(FName BoneName = NAME_None)
+	{
+		return GetPhysicsAngularVelocityInDegrees(BoneName);
+	}
 
 	/** 
 	 *	Get the angular velocity of a single body, in degrees per second. 
 	 *	@param BoneName			If a SkeletalMeshComponent, name of body to get velocity of. 'None' indicates root body.
 	 */
 	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))	
-	FVector GetPhysicsAngularVelocity(FName BoneName = NAME_None);
+	FVector GetPhysicsAngularVelocityInDegrees(FName BoneName = NAME_None)
+	{
+		return FMath::RadiansToDegrees(GetPhysicsAngularVelocityInRadians(BoneName));
+	}
+
+	/** 
+	 *	Get the angular velocity of a single body, in radians per second. 
+	 *	@param BoneName			If a SkeletalMeshComponent, name of body to get velocity of. 'None' indicates root body.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))	
+	FVector GetPhysicsAngularVelocityInRadians(FName BoneName = NAME_None);
 
 	/**
 	*	Get the center of mass of a single body. In the case of a welded body this will return the center of mass of the entire welded body (including its parent and children)
 	*   Objects that are not simulated return (0,0,0) as they do not have COM
 	*	@param BoneName			If a SkeletalMeshComponent, name of body to get center of mass of. 'None' indicates root body.
 	*/
-	UFUNCTION(BlueprintCallable, Category = "Physics", meta=(UnsafeDuringActorConstruction="true"))
-	FVector GetCenterOfMass(FName BoneName = NAME_None);
+	UFUNCTION(BlueprintPure, Category = "Physics", meta=(UnsafeDuringActorConstruction="true"))
+	FVector GetCenterOfMass(FName BoneName = NAME_None) const;
 
 	/**
 	*	Set the center of mass of a single body. This will offset the physx-calculated center of mass.
@@ -1150,9 +1312,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Rendering")
 	void SetCastShadow(bool NewCastShadow);
 
+	/** Changes the value of bSingleSampleShadowFromStationaryLights. */
+	UFUNCTION(BlueprintCallable, Category="Rendering")
+	void SetSingleSampleShadowFromStationaryLights(bool bNewSingleSampleShadowFromStationaryLights);
+
 	/** Changes the value of TranslucentSortPriority. */
 	UFUNCTION(BlueprintCallable, Category="Rendering")
 	void SetTranslucentSortPriority(int32 NewTranslucentSortPriority);
+
+	/** Changes the value of bReceivesDecals. */
+	UFUNCTION(BlueprintCallable, Category = "Rendering")
+	void SetReceivesDecals(bool bNewReceivesDecals);
 
 	/** Controls what kind of collision is enabled for this body */
 	UFUNCTION(BlueprintCallable, Category="Collision")
@@ -1169,8 +1339,8 @@ public:
 	virtual void SetCollisionProfileName(FName InCollisionProfileName);
 
 	/** Get the collision profile name */
-	UFUNCTION(BlueprintCallable, Category="Collision")
-	FName GetCollisionProfileName();
+	UFUNCTION(BlueprintPure, Category="Collision")
+	FName GetCollisionProfileName() const;
 
 	/**
 	 *	Changes the collision channel that this object uses when it moves
@@ -1180,7 +1350,7 @@ public:
 	virtual void SetCollisionObjectType(ECollisionChannel Channel);
 
 	/** Perform a line trace against a single component */
-	UFUNCTION(BlueprintCallable, Category="Collision", meta=(DisplayName = "Line Trace Component", bTraceComplex="true", UnsafeDuringActorConstruction="true"))	
+	UFUNCTION(BlueprintCallable, Category="Collision", meta=(DisplayName = "Line Trace Component", ScriptName = "LineTraceComponent", bTraceComplex="true", UnsafeDuringActorConstruction="true"))	
 	bool K2_LineTraceComponent(FVector TraceStart, FVector TraceEnd, bool bTraceComplex, bool bShowTrace, FVector& HitLocation, FVector& HitNormal, FName& BoneName, FHitResult& OutHit);
 
 	/** Sets the bRenderCustomDepth property and marks the render state dirty. */
@@ -1211,28 +1381,6 @@ public:
 	
 	/** A fence to track when the primitive is detached from the scene in the rendering thread. */
 	FRenderCommandFence DetachFence;
-
-	/**
-	 * Incremented by the main thread before being attached to the scene, decremented
-	 * by the rendering thread after removal. This counter exists to assert that 
-	 * operations are safe in order to help avoid race conditions.
-	 *
-	 *           *** Runtime logic should NEVER rely on this value. ***
-	 *
-	 * The only safe assertions to make are:
-	 *
-	 *     AttachmentCounter == 0: The primitive is not exposed to the rendering
-	 *                             thread, it is safe to modify shared members.
-	 *                             This assertion is valid ONLY from the main thread.
-	 *
-	 *     AttachmentCounter >= 1: The primitive IS exposed to the rendering
-	 *                             thread and therefore shared members must not
-	 *                             be modified. This assertion may be made from
-	 *                             any thread. Note that it is valid and expected
-	 *                             for AttachmentCounter to be larger than 1, e.g.
-	 *                             during reattachment.
-	 */
-	FThreadSafeCounter AttachmentCounter;
 
 	// Scene data
 private:
@@ -1313,6 +1461,9 @@ public:
 	 * @param InOptions - The options for the static lighting build.
 	 */
 	virtual void GetStaticLightingInfo(struct FStaticLightingPrimitiveInfo& OutPrimitiveInfo,const TArray<class ULightComponent*>& InRelevantLights,const class FLightingBuildOptions& Options) {}
+
+	/** Add the used GUIDs from UMapBuildDataRegistry::MeshBuildData. Used to preserve hidden level data in lighting scenario. */
+	virtual void AddMapBuildDataGUIDs(TSet<FGuid>& InGUIDs) const {}
 #endif
 	/**
 	 *	Requests whether the component will use texture, vertex or no lightmaps.
@@ -1399,7 +1550,7 @@ public:
 	virtual FMatrix GetRenderMatrix() const;
 
 	/** @return number of material elements in this primitive */
-	UFUNCTION(BlueprintCallable, Category="Rendering|Material")
+	UFUNCTION(BlueprintPure, Category="Rendering|Material")
 	virtual int32 GetNumMaterials() const;
 	
 	/** Get a BodyInstance from this component. The supplied name is used in the SkeletalMeshComponent case. A name of NAME_None in the skeletal case gives the root body instance. */
@@ -1591,7 +1742,7 @@ protected:
 	 * accelerate simulation
 	 *
 	 * @param : UseBI - root body instsance
-	 * @return : New ComponentToWorld to use
+	 * @return : New GetComponentTransform() to use
 	 */
 	virtual FTransform GetComponentTransformFromBodyInstance(FBodyInstance* UseBI);
 public:
@@ -1649,27 +1800,27 @@ public:
 	virtual bool IsWorldGeometry() const override;
 
 	/** Returns the form of collision for this component */
-	UFUNCTION(BlueprintCallable, Category="Collision")
+	UFUNCTION(BlueprintPure, Category="Collision")
 	virtual ECollisionEnabled::Type GetCollisionEnabled() const override;
 
 	/** Utility to see if there is any form of collision (query or physics) enabled on this component. */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName="Is Collision Enabled"), Category="Collision")
+	UFUNCTION(BlueprintPure, meta=(DisplayName="Is Collision Enabled", ScriptName="IsCollisionEnabled"), Category="Collision")
 	bool K2_IsCollisionEnabled() const;
 
 	/** Utility to see if there is any query collision enabled on this component. */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName="Is Query Collision Enabled"), Category="Collision")
+	UFUNCTION(BlueprintPure, meta=(DisplayName="Is Query Collision Enabled", ScriptName="IsQueryCollisionEnabled"), Category="Collision")
 	bool K2_IsQueryCollisionEnabled() const;
 
 	/** Utility to see if there is any physics collision enabled on this component. */
-	UFUNCTION(BlueprintCallable, meta=(DisplayName="Is Physics Collision Enabled"), Category="Collision")
+	UFUNCTION(BlueprintPure, meta=(DisplayName="Is Physics Collision Enabled", ScriptName="IsPhysicsCollisionEnabled"), Category="Collision")
 	bool K2_IsPhysicsCollisionEnabled() const;
 
 	/** Gets the response type given a specific channel */
-	UFUNCTION(BlueprintCallable, Category="Collision")
+	UFUNCTION(BlueprintPure, Category="Collision")
 	virtual ECollisionResponse GetCollisionResponseToChannel(ECollisionChannel Channel) const override;
 
 	/** Gets the collision object type */
-	UFUNCTION(BlueprintCallable, Category="Collision")
+	UFUNCTION(BlueprintPure, Category="Collision")
 	virtual ECollisionChannel GetCollisionObjectType() const override;
 
 	virtual const FCollisionResponseContainer& GetCollisionResponseToChannels() const override;
@@ -1740,8 +1891,33 @@ public:
 	 *	@param NewAngVel		New angular velocity to apply to physics, in degrees per second.
 	 *	@param bAddToCurrent	If true, NewAngVel is added to the existing angular velocity of all bodies.
 	 */
+	DEPRECATED(4.8, "Use SetAllPhysicsAngularVelocityInDegrees instead.")
+	UFUNCTION(BlueprintCallable, Category = "Physics", meta = (UnsafeDuringActorConstruction = "true", DeprecatedFunction, DeprecationMessage="Use SetAllPhysicsAngularVelocityInDegrees instead"))
+	virtual void SetAllPhysicsAngularVelocity(const FVector& NewAngVel, bool bAddToCurrent = false)
+	{
+		SetAllPhysicsAngularVelocityInDegrees(NewAngVel, bAddToCurrent);
+	}
+
+	/**
+	 *	Set the angular velocity of all bodies in this component.
+	 *
+	 *	@param NewAngVel		New angular velocity to apply to physics, in degrees per second.
+	 *	@param bAddToCurrent	If true, NewAngVel is added to the existing angular velocity of all bodies.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Physics", meta = (UnsafeDuringActorConstruction = "true"))
-	virtual void SetAllPhysicsAngularVelocity(const FVector& NewAngVel, bool bAddToCurrent = false);
+	void SetAllPhysicsAngularVelocityInDegrees(const FVector& NewAngVel, bool bAddToCurrent = false)
+	{
+		SetAllPhysicsAngularVelocityInRadians(FMath::DegreesToRadians(NewAngVel), bAddToCurrent);
+	}
+
+	/**
+	 *	Set the angular velocity of all bodies in this component.
+	 *
+	 *	@param NewAngVel		New angular velocity to apply to physics, in radians per second.
+	 *	@param bAddToCurrent	If true, NewAngVel is added to the existing angular velocity of all bodies.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Physics", meta = (UnsafeDuringActorConstruction = "true"))
+	virtual void SetAllPhysicsAngularVelocityInRadians(const FVector& NewAngVel, bool bAddToCurrent = false);
 
 	/**
 	 *	Set the position of all bodies in this component.
@@ -1778,7 +1954,7 @@ public:
 	virtual void SetEnableGravity(bool bGravityEnabled);
 
 	/** Returns whether this component is affected by gravity. Returns always false if the component is not simulated. */
-	UFUNCTION(BlueprintCallable, Category="Physics")
+	UFUNCTION(BlueprintPure, Category="Physics")
 	virtual bool IsGravityEnabled() const;
 
 	/** Sets the linear damping of this component. */
@@ -1786,7 +1962,7 @@ public:
 	virtual void SetLinearDamping(float InDamping);
 
 	/** Returns the linear damping of this component. */
-	UFUNCTION(BlueprintCallable, Category="Physics")
+	UFUNCTION(BlueprintPure, Category="Physics")
 	virtual float GetLinearDamping() const;
 
 	/** Sets the angular damping of this component. */
@@ -1794,7 +1970,7 @@ public:
 	virtual void SetAngularDamping(float InDamping);
 	
 	/** Returns the angular damping of this component. */
-	UFUNCTION(BlueprintCallable, Category="Physics")
+	UFUNCTION(BlueprintPure, Category="Physics")
 	virtual float GetAngularDamping() const;
 
 	/** Change the mass scale used to calculate the mass of a single physics body */
@@ -1802,7 +1978,7 @@ public:
 	virtual void SetMassScale(FName BoneName = NAME_None, float InMassScale = 1.f);
 
 	/** Returns the mass scale used to calculate the mass of a single physics body */
-	UFUNCTION(BlueprintCallable, Category = "Physics")
+	UFUNCTION(BlueprintPure, Category = "Physics")
 	virtual float GetMassScale(FName BoneName = NAME_None) const;
 
 	/** Change the mass scale used fo all bodies in this component */
@@ -1818,19 +1994,27 @@ public:
 	virtual void SetMassOverrideInKg(FName BoneName = NAME_None, float MassInKg = 1.f, bool bOverrideMass = true);
 
 	/** Returns the mass of this component in kg. */
-	UFUNCTION(BlueprintCallable, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
+	UFUNCTION(BlueprintPure, Category="Physics", meta=(UnsafeDuringActorConstruction="true"))
 	virtual float GetMass() const;
 
 	/** Returns the inertia tensor of this component in kg cm^2. The inertia tensor is in local component space.*/
-	UFUNCTION(BlueprintCallable, Category = "Physics", meta =(Keywords = "physics moment of inertia tensor MOI", UnsafeDuringActorConstruction="true"))
+	UFUNCTION(BlueprintPure, Category = "Physics", meta =(Keywords = "physics moment of inertia tensor MOI", UnsafeDuringActorConstruction="true"))
 	virtual FVector GetInertiaTensor(FName BoneName = NAME_None) const;
 
 	/** Scales the given vector by the world space moment of inertia. Useful for computing the torque needed to rotate an object.*/
-	UFUNCTION(BlueprintCallable, Category = "Physics", meta = (Keywords = "physics moment of inertia tensor MOI", UnsafeDuringActorConstruction="true"))
+	UFUNCTION(BlueprintPure, Category = "Physics", meta = (Keywords = "physics moment of inertia tensor MOI", UnsafeDuringActorConstruction="true"))
 	virtual FVector ScaleByMomentOfInertia(FVector InputVector, FName BoneName = NAME_None) const;
 
 	/** Returns the calculated mass in kg. This is not 100% exactly the mass physx will calculate, but it is very close ( difference < 0.1kg ). */
 	virtual float CalculateMass(FName BoneName = NAME_None);
+
+	/** Set whether this component should use Continuous Collision Detection */
+	UFUNCTION(BlueprintCallable, Category = "Physics")
+	virtual void SetUseCCD(bool InUseCCD, FName BoneName = NAME_None);
+
+	/** Set whether all bodies in this component should use Continuous Collision Detection */
+	UFUNCTION(BlueprintCallable, Category = "Physics")
+	virtual void SetAllUseCCD(bool InUseCCD);
 
 	/**
 	 *	Force all bodies in this component to sleep.
@@ -1841,12 +2025,12 @@ public:
 	 *	Returns if a single body is currently awake and simulating.
 	 *	@param	BoneName	If a SkeletalMeshComponent, name of body to return wakeful state from. 'None' indicates root body.
 	 */
-	bool RigidBodyIsAwake(FName BoneName = NAME_None);
+	bool RigidBodyIsAwake(FName BoneName = NAME_None) const;
 
 	/**
 	 *	Returns if any body in this component is currently awake and simulating.
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Physics", meta = (Keywords = "physics asleep sleeping awake simulating", UnsafeDuringActorConstruction="true"))
+	UFUNCTION(BlueprintPure, Category = "Physics", meta = (Keywords = "physics asleep sleeping awake simulating", UnsafeDuringActorConstruction="true"))
 	virtual bool IsAnyRigidBodyAwake();
 	
 	/**
@@ -2017,16 +2201,6 @@ public:
 	 */
 
 	virtual bool ComputePenetration(FMTDResult & OutMTD, const FCollisionShape& CollisionShape, const FVector& Pos, const FQuat& Rot);
-	
-	/**
-	 * Return true if the given Pawn can step up onto this component.
-	 * @param APawn is the pawn that wants to step onto this component.
-	 */
-	DEPRECATED(4.3, "UPrimitiveComponent::CanBeBaseForCharacter() is deprecated, use CanCharacterStepUp() instead.")
-	virtual bool CanBeBaseForCharacter(class APawn* Pawn) const
-	{
-		return CanCharacterStepUp(Pawn);
-	}
 
 	/**
 	 * Return true if the given Pawn can step up onto this component.
@@ -2036,12 +2210,6 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category=Collision)
 	virtual bool CanCharacterStepUp(class APawn* Pawn) const;
-	
-	DEPRECATED(4.5, "UPrimitiveComponent::DisableNavigationRelevance() is deprecated, use SetCanEverAffectNavigation() instead.")
-	void DisableNavigationRelevance()
-	{
-		SetCanEverAffectNavigation(false);
-	}
 
 	//~ Begin INavRelevantInterface Interface
 	virtual FBox GetNavigationBounds() const override;
@@ -2052,10 +2220,6 @@ public:
 
 	void SetCustomNavigableGeometry(const EHasCustomNavigableGeometry::Type InType);
 
-	/** Collects custom navigable geometry of component.
-	 *	@return true if regular navigable geometry exporting should be run as well */
-	DEPRECATED(4.8, "UPrimitiveComponent::DoCustomNavigableGeometryExport(FNavigableGeometryExport* GeomExport) is deprecated, use UPrimitiveComponent::DoCustomNavigableGeometryExport(FNavigableGeometryExport& GeomExport) instead (takes ref instead of a pointer)")
-	virtual bool DoCustomNavigableGeometryExport(FNavigableGeometryExport* GeomExport) const { return DoCustomNavigableGeometryExport(*GeomExport); }
 	/** Collects custom navigable geometry of component.
 	*	@return true if regular navigable geometry exporting should be run as well */
 	virtual bool DoCustomNavigableGeometryExport(FNavigableGeometryExport& GeomExport) const { return true; }
@@ -2085,7 +2249,11 @@ public:
 
 	bool ContainsData() const;
 
+	const FTransform& GetComponentTransform() const { return ComponentTransform; }
+
 private:
+	FTransform ComponentTransform;
+	int32 VisibilityId;
 	UPrimitiveComponent* LODParent;
 };
 

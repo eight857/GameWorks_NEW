@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -23,6 +23,12 @@ public:
 	virtual void AddKeyArea( FName KeyAreaName, const FText& DisplayName, TSharedRef<IKeyArea> KeyArea ) override;
 	virtual void PopCategory() override;
 
+	/** Check whether this section layout builder has been given any layout or not */
+	bool HasAnyLayout() const
+	{
+		return bHasAnyLayout;
+	}
+
 private:
 
 	/** Root node of the tree */
@@ -30,4 +36,7 @@ private:
 
 	/** The current node that other nodes are added to */
 	TSharedRef<FSequencerDisplayNode> CurrentNode;
+
+	/** Boolean indicating whether this section layout builder has been given any layout or not */
+	bool bHasAnyLayout;
 };

@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/CommandLine.h"
 #include "OpenGL/SlateOpenGLExtensions.h"
 #include "StandaloneRendererLog.h"
 #include "OpenGL/SlateOpenGLRenderer.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #if defined(GL_ARB_debug_output) || defined(GL_KHR_debug)
 
@@ -152,7 +153,7 @@ static bool PlatformOpenGLDebugCtx()
 
 static SDL_Window* CreateDummyGLWindow()
 {
-	FPlatformMisc::PlatformInitMultimedia(); //	will not initialize more than once
+	FPlatformApplicationMisc::InitSDL(); //	will not initialize more than once
 
 #if DO_CHECK
 	uint32 InitializedSubsystems = SDL_WasInit(SDL_INIT_EVERYTHING);

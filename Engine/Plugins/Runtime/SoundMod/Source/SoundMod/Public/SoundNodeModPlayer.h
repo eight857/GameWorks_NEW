@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "UObject/AssetPtr.h"
+#include "UObject/SoftObjectPtr.h"
 #include "Sound/SoundNodeAssetReferencer.h"
 #include "SoundNodeModPlayer.generated.h"
 
@@ -26,7 +26,7 @@ class USoundNodeModPlayer : public USoundNodeAssetReferencer
 
 private:
 	UPROPERTY(EditAnywhere, Category=ModPlayer, meta=(DisplayName="Sound Mod"))
-	TAssetPtr<USoundMod> SoundModAssetPtr;
+	TSoftObjectPtr<USoundMod> SoundModAssetPtr;
 
 	UPROPERTY(transient)
 	USoundMod* SoundMod;
@@ -61,6 +61,7 @@ public:
 
 	//~ Begin USoundNodeAssetReferencer Interface
 	virtual void LoadAsset(bool bAddToRoot = false) override;
+	virtual void ClearAssetReferences() override;
 	//~ End USoundNode Interface
 
 };

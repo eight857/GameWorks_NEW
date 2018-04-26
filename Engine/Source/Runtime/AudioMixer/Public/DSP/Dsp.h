@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -29,11 +29,7 @@ namespace Audio
 	// Clamps floats to 0 if they are in sub-normal range
 	static FORCEINLINE float UnderflowClamp(const float InValue)
 	{
-		if (InValue > 0.0f && InValue < FLT_MIN)
-		{
-			return 0.0f;
-		}
-		if (InValue < 0.0f && InValue > -FLT_MIN)
+		if (InValue > -FLT_MIN && InValue < FLT_MIN)
 		{
 			return 0.0f;
 		}
@@ -121,6 +117,18 @@ namespace Audio
 	static FORCEINLINE float GetFrequencyFromMidi(const float InMidiNote)
 	{
 		return 440.0f * FMath::Pow(2.0f, (InMidiNote - 69.0f) / 12.0f);
+	}
+
+	// Returns the log frequency of the input value. Maps linear domain and range values to log output (good for linear slider controlling frequency)
+	static FORCEINLINE float GetLogFrequencyClamped(const float InValue, const FVector2D& Domain, const FVector2D& Range)
+	{
+		const float InValueCopy = FMath::Clamp<float>(InValue, Domain.X, Domain.Y);
+		const FVector2D RangeLog(FMath::Loge(Range.X), FMath::Loge(Range.Y));
+
+		check(Domain.Y != Domain.X);
+		const float Scale = (RangeLog.Y - RangeLog.X) / (Domain.Y - Domain.X);
+
+		return FMath::Exp(RangeLog.X + Scale * (InValueCopy - Domain.X));
 	}
 
 	// Using midi tuning standard, compute midi from frequency in hz
@@ -285,6 +293,7 @@ namespace Audio
 			, DurationTicks(0)
 			, DefaultDurationTicks(0)
 			, CurrentTick(0)
+			, bIsInit(true)
 		{
 		}
 
@@ -300,6 +309,7 @@ namespace Audio
 		void Init(float InSampleRate)
 		{
 			SampleRate = InSampleRate;
+			bIsInit = true;
 		}
 
 		void SetValueRange(const float Start, const float End, const float InTimeSec)
@@ -341,7 +351,15 @@ namespace Audio
 
 		void SetValue(const float InValue, float InTimeSec = 0.0f)
 		{
-			DurationTicks = (int32)(SampleRate * InTimeSec);
+			if (bIsInit)
+			{
+				bIsInit = false;
+				DurationTicks = 0;
+			}
+			else
+			{
+				DurationTicks = (int32)(SampleRate * InTimeSec);
+			}
 			CurrentTick = 0;
 
 			if (DurationTicks == 0)
@@ -363,6 +381,7 @@ namespace Audio
 		int32 DurationTicks;
 		int32 DefaultDurationTicks;
 		int32 CurrentTick;
+		bool bIsInit;
 	};
 
 	// Simple parameter object which uses critical section to write to and read from data

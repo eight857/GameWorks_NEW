@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "CoreMinimal.h"
+#include "Logging/LogMacros.h"
 
 
-
+/** Log category for the AndroidMediaFactory module. */
 DECLARE_LOG_CATEGORY_EXTERN(LogAndroidMediaFactory, Log, All);

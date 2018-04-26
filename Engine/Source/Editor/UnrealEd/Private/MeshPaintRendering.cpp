@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*================================================================================
 	MeshPaintRendering.cpp: Mesh texture paint brush rendering
@@ -27,9 +27,9 @@ namespace MeshPaintRendering
 
 	public:
 
-		static bool ShouldCache( EShaderPlatform Platform )
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4) && !IsConsolePlatform(Platform);
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4) && !IsConsolePlatform(Parameters.Platform);
 		}
 
 		/** Default constructor. */
@@ -60,7 +60,7 @@ namespace MeshPaintRendering
 	};
 
 
-	IMPLEMENT_SHADER_TYPE( , TMeshPaintVertexShader, TEXT( "MeshPaintVertexShader" ), TEXT( "Main" ), SF_Vertex);
+	IMPLEMENT_SHADER_TYPE( , TMeshPaintVertexShader, TEXT( "/Engine/Private/MeshPaintVertexShader.usf" ), TEXT( "Main" ), SF_Vertex);
 
 
 
@@ -71,9 +71,9 @@ namespace MeshPaintRendering
 
 	public:
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4) && !IsConsolePlatform(Platform);
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4) && !IsConsolePlatform(Parameters.Platform);
 		}
 
 		/** Default constructor. */
@@ -180,7 +180,7 @@ namespace MeshPaintRendering
 	};
 
 
-	IMPLEMENT_SHADER_TYPE( , TMeshPaintPixelShader, TEXT( "MeshPaintPixelShader" ), TEXT( "Main" ), SF_Pixel );
+	IMPLEMENT_SHADER_TYPE( , TMeshPaintPixelShader, TEXT( "/Engine/Private/MeshPaintPixelShader.usf" ), TEXT( "Main" ), SF_Pixel );
 
 
 	/** Mesh paint dilate vertex shader */
@@ -190,9 +190,9 @@ namespace MeshPaintRendering
 
 	public:
 
-		static bool ShouldCache( EShaderPlatform Platform )
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4) && !IsConsolePlatform(Platform);
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4) && !IsConsolePlatform(Parameters.Platform);
 		}
 
 		/** Default constructor. */
@@ -223,7 +223,7 @@ namespace MeshPaintRendering
 	};
 
 
-	IMPLEMENT_SHADER_TYPE( , TMeshPaintDilateVertexShader, TEXT( "meshpaintdilatevertexshader" ), TEXT( "Main" ), SF_Vertex );
+	IMPLEMENT_SHADER_TYPE( , TMeshPaintDilateVertexShader, TEXT( "/Engine/Private/meshpaintdilatevertexshader.usf" ), TEXT( "Main" ), SF_Vertex );
 
 
 
@@ -234,9 +234,9 @@ namespace MeshPaintRendering
 
 	public:
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM4) && !IsConsolePlatform(Platform);
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM4) && !IsConsolePlatform(Parameters.Platform);
 		}
 
 		/** Default constructor. */
@@ -332,7 +332,7 @@ namespace MeshPaintRendering
 	};
 
 
-	IMPLEMENT_SHADER_TYPE( , TMeshPaintDilatePixelShader, TEXT( "meshpaintdilatepixelshader" ), TEXT( "Main" ), SF_Pixel );
+	IMPLEMENT_SHADER_TYPE( , TMeshPaintDilatePixelShader, TEXT( "/Engine/Private/meshpaintdilatepixelshader.usf" ), TEXT( "Main" ), SF_Pixel );
 
 
 	/** Mesh paint vertex format */

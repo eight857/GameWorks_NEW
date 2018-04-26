@@ -1,7 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/ScaleBox.h"
 #include "Components/ScaleBoxSlot.h"
+#include "UObject/EditorObjectVersion.h"
 
 #define LOCTEXT_NAMESPACE "UMG"
 
@@ -29,14 +30,15 @@ void UScaleBox::ReleaseSlateResources(bool bReleaseChildren)
 
 TSharedRef<SWidget> UScaleBox::RebuildWidget()
 {
-	MyScaleBox = SNew(SScaleBox);
+	MyScaleBox = SNew(SScaleBox)
+		.SingleLayoutPass(bSingleLayoutPass);
 	
 	if ( GetChildrenCount() > 0 )
 	{
-		Cast<UScaleBoxSlot>(GetContentSlot())->BuildSlot(MyScaleBox.ToSharedRef());
+		CastChecked<UScaleBoxSlot>(GetContentSlot())->BuildSlot(MyScaleBox.ToSharedRef());
 	}
 
-	return BuildDesignTimeWidget( MyScaleBox.ToSharedRef() );
+	return MyScaleBox.ToSharedRef();
 }
 
 void UScaleBox::SetStretch(EStretch::Type InStretch)
@@ -106,6 +108,13 @@ void UScaleBox::OnSlotRemoved(UPanelSlot* InSlot)
 	{
 		MyScaleBox->SetContent(SNullWidget::NullWidget);
 	}
+}
+
+void UScaleBox::Serialize(FArchive& Ar)
+{
+	Super::Serialize(Ar);
+
+	Ar.UsingCustomVersion(FEditorObjectVersion::GUID);
 }
 
 #if WITH_EDITOR

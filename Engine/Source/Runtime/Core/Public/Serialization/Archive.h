@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,15 +7,20 @@
 #include "Misc/AssertionMacros.h"
 #include "Templates/EnableIf.h"
 #include "Templates/IsEnumClass.h"
+#include "Templates/Function.h"
 #include "HAL/PlatformProperties.h"
 #include "Misc/Compression.h"
 #include "Misc/EngineVersionBase.h"
 #include "Internationalization/TextNamespaceFwd.h"
+#include "Templates/IsValidVariadicFunctionArg.h"
+#include "Templates/AndOrNot.h"
+#include "Templates/IsArrayOrRefOfType.h"
 
 class FCustomVersionContainer;
 class ITargetPlatform;
 struct FUntypedBulkData;
 template<class TEnum> class TEnumAsByte;
+typedef TFunction<bool (double RemainingTime)> FExternalReadCallback;
 
 
 // Temporary while we shake out the EDL at boot
@@ -29,6 +34,8 @@ template<class TEnum> class TEnumAsByte;
 
 #define DEVIRTUALIZE_FLinkerLoad_Serialize (!WITH_EDITORONLY_DATA)
 
+// Helper macro to make serializing a bitpacked boolean in an archive easier
+#define FArchive_Serialize_BitfieldBool(ARCHIVE, BITFIELD_BOOL) { bool TEMP_BITFIELD_BOOL = BITFIELD_BOOL; ARCHIVE << TEMP_BITFIELD_BOOL; BITFIELD_BOOL = TEMP_BITFIELD_BOOL; }
 
 /**
  * TCheckedObjPtr
@@ -226,25 +233,25 @@ public:
 	 * @param Value The value to serialize.
 	 * @return This instance.
 	 */
-	virtual FArchive& operator<<(class FLazyObjectPtr& Value);
+	virtual FArchive& operator<<(struct FLazyObjectPtr& Value);
 	
 	/**
 	 * Serializes asset pointer from or into this archive.
 	 *
-	 * Most of the time, FAssetPtrs are serialized as UObject *, but some archives need to override this.
+	 * Most of the time, FSoftObjectPtr are serialized as UObject *, but some archives need to override this.
 	 *
 	 * @param Value The asset pointer to serialize.
 	 * @return This instance.
 	 */
-	virtual FArchive& operator<<(class FAssetPtr& Value);
+	virtual FArchive& operator<<(struct FSoftObjectPtr& Value);
 
 	/**
-	 * Serializes string asset reference from or into this archive.
+	 * Serializes soft object paths from or into this archive.
 	 *
 	 * @param Value String asset reference to serialize.
 	 * @return This instance.
 	 */
-	virtual FArchive& operator<<(struct FStringAssetReference& Value);
+	virtual FArchive& operator<<(struct FSoftObjectPath& Value);
 
 	/**
 	* Serializes FWeakObjectPtr value from or into this archive.
@@ -806,8 +813,19 @@ public:
 
 	virtual void IndicateSerializationMismatch() { }
 
+private:
+	void VARARGS LogfImpl(const TCHAR* Fmt, ...);
+
+public:
 	// Logf implementation for convenience.
-	VARARG_DECL(void, void, {}, Logf, VARARG_NONE, const TCHAR*, VARARG_NONE, VARARG_NONE);
+	template <typename FmtType, typename... Types>
+	void Logf(const FmtType& Fmt, Types... Args)
+	{
+		static_assert(TIsArrayOrRefOfType<FmtType, TCHAR>::Value, "Formatting string must be a TCHAR array.");
+		static_assert(TAnd<TIsValidVariadicFunctionArg<Types>...>::Value, "Invalid argument(s) passed to FArchive::Logf");
+
+		LogfImpl(Fmt, Args...);
+	}
 
 	FORCEINLINE int32 UE4Ver() const
 	{
@@ -870,6 +888,11 @@ public:
 		{
 			return false;
 		}
+	}
+
+	FORCEINLINE bool IsTextFormat() const
+	{
+		return ArIsTextFormat;
 	}
 
 	FORCEINLINE bool WantBinaryPropertySerialization() const
@@ -1163,6 +1186,14 @@ public:
 	}
 
 	/**
+	 * Whether or not this archive is serializing data being sent/received by the netcode
+	 */
+	FORCEINLINE bool IsNetArchive()
+	{
+		return ArIsNetArchive;
+	}
+
+	/**
 	 * Checks whether the archive is used for cooking.
 	 *
 	 * @return true if the archive is used for cooking, false otherwise.
@@ -1222,6 +1253,13 @@ public:
 	{
 		SerializedProperty = InProperty;
 	}
+
+	/** 
+	 * Adds external read dependency 
+	 *
+	 * @return true if dependency has been added, false if Archive does not support them
+	 */
+	virtual bool AttachExternalReadDependency(FExternalReadCallback& ReadCallback) { return false; };
 
 #if WITH_EDITORONLY_DATA
 	/** Pushes editor-only marker to the stack of currently serialized properties */
@@ -1357,6 +1395,9 @@ public:
 	/** Whether archive is transacting. */
 	uint8 ArIsTransacting : 1;
 
+	/** Whether this archive serializes to a text format. Text format archives should use high level constructs from FStructuredArchive for delimiting data rather than manually seeking through the file. */
+	uint8 ArIsTextFormat : 1;
+
 	/** Whether this archive wants properties to be serialized in binary form instead of tagged. */
 	uint8 ArWantBinaryPropertySerialization : 1;
 
@@ -1420,6 +1461,9 @@ public:
 	/** Whether this archive is saving/loading game state */
 	uint8 ArIsSaveGame : 1;
 
+	/** Whether or not this archive is sending/receiving network data */
+	uint8 ArIsNetArchive : 1;
+
 	/** Set TRUE to use the custom property list attribute for serialization. */
 	uint8 ArUseCustomPropertyList : 1;
 
@@ -1454,8 +1498,9 @@ private:
 	/**
 	* All the custom versions stored in the archive.
 	* Stored as a pointer to a heap-allocated object because of a 3-way dependency between TArray, FCustomVersionContainer and FArchive, which is too much work to change right now.
+	* Keeping it as a heap-allocated object also helps with performance in some cases as we don't need to construct it for archives that don't care about custom versions.
 	*/
-	FCustomVersionContainer* CustomVersionContainer;
+	mutable FCustomVersionContainer* CustomVersionContainer;
 
 public:
 

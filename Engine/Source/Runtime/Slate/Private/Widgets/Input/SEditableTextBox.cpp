@@ -1,10 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Notifications/SPopUpErrorText.h"
-
 
 /**
  * Construct this widget
@@ -42,6 +41,7 @@ void SEditableTextBox::Construct( const FArguments& InArgs )
 					SAssignNew( EditableText, SEditableText )
 					.Text( InArgs._Text )
 					.HintText( InArgs._HintText )
+					.SearchText( InArgs._SearchText )
 					.Font( this, &SEditableTextBox::DetermineFont )
 					.IsReadOnly( InArgs._IsReadOnly )
 					.IsPassword( InArgs._IsPassword )
@@ -49,15 +49,19 @@ void SEditableTextBox::Construct( const FArguments& InArgs )
 					.SelectAllTextWhenFocused( InArgs._SelectAllTextWhenFocused )
 					.RevertTextOnEscape( InArgs._RevertTextOnEscape )
 					.ClearKeyboardFocusOnCommit( InArgs._ClearKeyboardFocusOnCommit )
+					.Justification( InArgs._Justification )
 					.AllowContextMenu( InArgs._AllowContextMenu )
 					.OnContextMenuOpening( InArgs._OnContextMenuOpening )
 					.OnTextChanged( InArgs._OnTextChanged )
 					.OnTextCommitted( InArgs._OnTextCommitted )
 					.MinDesiredWidth( InArgs._MinDesiredWidth )
 					.SelectAllTextOnCommit( InArgs._SelectAllTextOnCommit )
+					.OnKeyCharHandler( InArgs._OnKeyCharHandler )			
 					.OnKeyDownHandler( InArgs._OnKeyDownHandler )
 					.VirtualKeyboardType( InArgs._VirtualKeyboardType )
-					.TextShapingMethod( InArgs._TextShapingMethod )
+					.VirtualKeyboardTrigger( InArgs._VirtualKeyboardTrigger )
+					.VirtualKeyboardDismissAction( InArgs._VirtualKeyboardDismissAction )
+					.TextShapingMethod(InArgs._TextShapingMethod)
 					.TextFlowDirection( InArgs._TextFlowDirection )
 				]
 			]
@@ -129,6 +133,12 @@ void SEditableTextBox::SetError( const FString& InError )
 }
 
 
+void SEditableTextBox::SetOnKeyCharHandler(FOnKeyChar InOnKeyCharHandler)
+{
+	EditableText->SetOnKeyCharHandler(InOnKeyCharHandler);
+}
+
+
 void SEditableTextBox::SetOnKeyDownHandler(FOnKeyDown InOnKeyDownHandler)
 {
 	EditableText->SetOnKeyDownHandler(InOnKeyDownHandler);
@@ -168,6 +178,26 @@ void SEditableTextBox::ClearSelection()
 FText SEditableTextBox::GetSelectedText() const
 {
 	return EditableText->GetSelectedText();
+}
+
+void SEditableTextBox::GoTo(const FTextLocation& NewLocation)
+{
+	EditableText->GoTo(NewLocation);
+}
+
+void SEditableTextBox::ScrollTo(const FTextLocation& NewLocation)
+{
+	EditableText->ScrollTo(NewLocation);
+}
+
+void SEditableTextBox::BeginSearch(const FText& InSearchText, const ESearchCase::Type InSearchCase, const bool InReverse)
+{
+	EditableText->BeginSearch(InSearchText, InSearchCase, InReverse);
+}
+
+void SEditableTextBox::AdvanceSearch(const bool InReverse)
+{
+	EditableText->AdvanceSearch(InReverse);
 }
 
 bool SEditableTextBox::HasError() const
@@ -268,6 +298,18 @@ void SEditableTextBox::SetHintText(const TAttribute< FText >& InHintText)
 }
 
 
+void SEditableTextBox::SetSearchText(const TAttribute<FText>& InSearchText)
+{
+	EditableText->SetSearchText(InSearchText);
+}
+
+
+FText SEditableTextBox::GetSearchText() const
+{
+	return EditableText->GetSearchText();
+}
+
+
 void SEditableTextBox::SetIsReadOnly(TAttribute< bool > InIsReadOnly)
 {
 	EditableText->SetIsReadOnly(InIsReadOnly);
@@ -337,7 +379,19 @@ void SEditableTextBox::SetSelectAllTextOnCommit(const TAttribute<bool>& InSelect
 	EditableText->SetSelectAllTextOnCommit(InSelectAllTextOnCommit);
 }
 
+
+void SEditableTextBox::SetJustification(const TAttribute<ETextJustify::Type>& InJustification)
+{
+	EditableText->SetJustification(InJustification);
+}
+
+
 void SEditableTextBox::SetAllowContextMenu(TAttribute<bool> InAllowContextMenu)
 {
 	EditableText->SetAllowContextMenu(InAllowContextMenu);
+}
+
+void SEditableTextBox::SetVirtualKeyboardDismissAction(TAttribute<EVirtualKeyboardDismissAction> InVirtualKeyboardDismissAction)
+{
+	EditableText->SetVirtualKeyboardDismissAction(InVirtualKeyboardDismissAction);
 }

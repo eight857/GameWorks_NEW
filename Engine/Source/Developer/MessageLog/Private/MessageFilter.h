@@ -1,10 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Input/Reply.h"
+#include "SlateIcon.h"
 
-struct FSlateBrush;
 enum class ECheckBoxState : uint8;
 
 /**
@@ -14,9 +14,9 @@ enum class ECheckBoxState : uint8;
 class FMessageFilter : public TSharedFromThis<FMessageFilter>
 {
 public:
-	FMessageFilter(const FText& InName, const FSlateBrush* InImage)
+	FMessageFilter(const FText& InName, const FSlateIcon& InIcon)
 		: Name(InName)
-		, Image(InImage)
+		, Icon(InIcon)
 		, Display(true)
 	{}
 
@@ -43,12 +43,12 @@ public:
 
 
 	const FText& GetName() const {return Name;}
-	const FSlateBrush* GetIcon() const {return Image;}
+	const FSlateIcon& GetIcon() const {return Icon;}
 	const bool GetDisplay() const {return Display;}
 
 private:
 	FText Name;
-	const FSlateBrush* Image;
+	FSlateIcon Icon;
 	bool Display;
 
 	FSimpleMulticastDelegate RefreshCallback;

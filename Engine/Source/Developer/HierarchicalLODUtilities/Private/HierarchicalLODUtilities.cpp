@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "HierarchicalLODUtilities.h"
 #include "GameFramework/Actor.h"
@@ -36,6 +36,8 @@
 #endif // WITH_EDITOR
 
 #include "HierarchicalLODProxyProcessor.h"
+#include "IMeshReductionManagerModule.h"
+#include "MeshMergeModule.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogHierarchicalLODUtilities, Verbose, All);
 
@@ -89,7 +91,7 @@ float FHierarchicalLODUtilities::CalculateDrawDistanceFromScreenSize(const float
 	return ComputeBoundsDrawDistance(ScreenSize, SphereRadius, ProjectionMatrix);
 }
 
-UPackage* FHierarchicalLODUtilities::CreateOrRetrieveLevelHLODPackage(ULevel* InLevel)
+UPackage* FHierarchicalLODUtilities::CreateOrRetrieveLevelHLODPackage(const ULevel* InLevel)
 {
 	checkf(InLevel != nullptr, TEXT("Invalid Level supplied"));
 
@@ -116,11 +118,6 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 {
 	if (AssetsOuter && LODActor)
 	{
-		if (!LODActor->IsDirty())
-		{
-			return false;
-		}
-
 		UE_LOG(LogHierarchicalLODUtilities, Log, TEXT("Building Proxy Mesh for Cluster %s"), *LODActor->GetName());
 		const FScopedTransaction Transaction(LOCTEXT("UndoAction_BuildProxyMesh", "Building Proxy Mesh for Cluster"));
 		LODActor->Modify();		
@@ -128,7 +125,7 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 		// Delete actor assets before generating new ones
 		FHierarchicalLODUtilities::DestroyClusterData(LODActor);	
 		
-		TArray<UStaticMeshComponent*> AllComponents;
+		TArray<UPrimitiveComponent*> AllComponents;
 		{
 			for (auto& Actor : LODActor->SubActors)
 			{
@@ -144,7 +141,10 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 				}
 
 				// TODO: support instanced static meshes
-				Components.RemoveAll([](UStaticMeshComponent* Val){ return Val->IsA(UInstancedStaticMeshComponent::StaticClass()); });
+				Components.RemoveAll([](UStaticMeshComponent* Val)
+				{ 
+					return Val->IsA(UInstancedStaticMeshComponent::StaticClass()) || !Val->ShouldGenerateAutoLOD();
+				});
 
 				AllComponents.Append(Components);
 			}
@@ -162,10 +162,13 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 			UStaticMesh* MainMesh = nullptr;
 
 			// Generate proxy mesh and proxy material assets
-			IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>("MeshUtilities");
+			IMeshReductionManagerModule& MeshReductionModule = FModuleManager::Get().LoadModuleChecked<IMeshReductionManagerModule>("MeshReductionInterface");
+			const bool bHasMeshReductionCapableModule = (MeshReductionModule.GetMeshMergingInterface() != NULL);
+
+			const IMeshMergeUtilities& MeshMergeUtilities = FModuleManager::Get().LoadModuleChecked<IMeshMergeModule>("MeshMergeUtilities").GetUtilities();
 			// should give unique name, so use level + actor name
 			const FString PackageName = FString::Printf(TEXT("LOD_%s"), *FirstActor->GetName());
-			if (MeshUtilities.GetMeshMergingInterface() && LODSetup.bSimplifyMesh)
+			if (bHasMeshReductionCapableModule && LODSetup.bSimplifyMesh)
 			{
 				TArray<AActor*> Actors;
 				ExtractSubActorsFromLODActor(LODActor, Actors);
@@ -192,7 +195,7 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 				}
 
 				FGuid JobID = Processor->AddProxyJob(LODActor, OverrideLODSetup);
-				MeshUtilities.CreateProxyMesh(Actors, ProxySettings, AssetsOuter, PackageName, JobID, Processor->GetCallbackDelegate(), true, OverrideLODSetup.TransitionScreenSize);
+				MeshMergeUtilities.CreateProxyMesh(Actors, ProxySettings, AssetsOuter, PackageName, JobID, Processor->GetCallbackDelegate(), true, OverrideLODSetup.TransitionScreenSize);
 				return true;
 			}
 			else
@@ -203,7 +206,7 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 					MergeSettings.MaterialSettings = LODActor->MaterialSettings;
 				}
 
-				MeshUtilities.MergeStaticMeshComponents(AllComponents, FirstActor->GetWorld(), MergeSettings, AssetsOuter, PackageName, OutAssets, OutProxyLocation, LODSetup.TransitionScreenSize, true);
+				MeshMergeUtilities.MergeComponentsToStaticMesh(AllComponents, FirstActor->GetWorld(), MergeSettings, AssetsOuter, PackageName, OutAssets, OutProxyLocation, LODSetup.TransitionScreenSize, true);
 				
 				// set staticmesh
 				for (auto& Asset : OutAssets)
@@ -245,7 +248,7 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 				static const FMatrix ProjectionMatrix = FPerspectiveMatrix(FOVRad, 1920, 1080, 0.01f);
 				FBoxSphereBounds Bounds = LODActor->GetStaticMeshComponent()->CalcBounds(FTransform());
 				LODActor->LODDrawDistance = CalculateDrawDistanceFromScreenSize(Bounds.SphereRadius, LODSetup.TransitionScreenSize, ProjectionMatrix);
-				LODActor->StaticMeshComponent->MinDrawDistance = LODActor->LODDrawDistance;
+				LODActor->GetStaticMeshComponent()->MinDrawDistance = LODActor->LODDrawDistance;
 				LODActor->UpdateSubActorLODParents();
 
 				// Freshly build so mark not dirty
@@ -258,34 +261,34 @@ bool FHierarchicalLODUtilities::BuildStaticMeshForLODActor(ALODActor* LODActor, 
 	return false;
 }
 
-bool FHierarchicalLODUtilities::ShouldGenerateCluster(AActor* Actor)
+EClusterGenerationError FHierarchicalLODUtilities::ShouldGenerateCluster(AActor* Actor)
 {
 	if (!Actor)
 	{
-		return false;
+		return EClusterGenerationError::InvalidActor;
 	}
 
 	if (Actor->bHidden)
 	{
-		return false;
+		return EClusterGenerationError::ActorHiddenInGame;
 	}
 
 	if (!Actor->bEnableAutoLODGeneration)
 	{
-		return false;
+		return EClusterGenerationError::ExcludedActor;
 	}
 
 	ALODActor* LODActor = Cast<ALODActor>(Actor);
 	if (LODActor)
 	{
-		return false;
+		return EClusterGenerationError::LODActor;
 	}
 
 	FVector Origin, Extent;
 	Actor->GetActorBounds(false, Origin, Extent);
 	if (Extent.SizeSquared() <= 0.1)
 	{
-		return false;
+		return EClusterGenerationError::ActorTooSmall;
 	}
 
 	// for now only consider staticmesh - I don't think skel mesh would work with simplygon merge right now @fixme
@@ -296,30 +299,37 @@ bool FHierarchicalLODUtilities::ShouldGenerateCluster(AActor* Actor)
 
 	int32 ValidComponentCount = 0;
 	// now make sure you check parent primitive, so that we don't build for the actor that already has built. 
+
+	EClusterGenerationError ErrorType = EClusterGenerationError::None;
+
 	if (Components.Num() > 0)
 	{
 		for (auto& ComponentIter : Components)
 		{
 			if (ComponentIter->GetLODParentPrimitive())
 			{
-				return false;
+				return EClusterGenerationError::AlreadyClustered;
 			}
 
 			if (ComponentIter->bHiddenInGame)
 			{
-				return false;
+				return EClusterGenerationError::ComponentHiddenInGame;
 			}
 
 			// see if we should generate it
 			if (ComponentIter->ShouldGenerateAutoLOD())
 			{
 				++ValidComponentCount;
-				break;
+				ErrorType |= EClusterGenerationError::ValidActor;
+			}
+			else
+			{
+				ErrorType |= (ComponentIter->bEnableAutoLODGeneration ? EClusterGenerationError::MoveableComponent: EClusterGenerationError::ExcludedComponent);
 			}
 		}
 	}
 
-	return (ValidComponentCount > 0);
+	return ErrorType;
 }
 
 ALODActor* FHierarchicalLODUtilities::GetParentLODActor(const AActor* InActor)
@@ -346,7 +356,7 @@ ALODActor* FHierarchicalLODUtilities::GetParentLODActor(const AActor* InActor)
 void FHierarchicalLODUtilities::DestroyCluster(ALODActor* InActor)
 {
 	// Find if it has a parent ALODActor
-	AActor* Actor = CastChecked<AActor>(InActor);
+	AActor* Actor = InActor;
 	UWorld* World = Actor->GetWorld();
 	ALODActor* ParentLOD = GetParentLODActor(InActor);
 
@@ -391,8 +401,8 @@ void FHierarchicalLODUtilities::DestroyClusterData(ALODActor* InActor)
 #if WITH_EDITOR
 			// Close possible open editors using this asset	
 			FAssetEditorManager::Get().CloseAllEditorsForAsset(AssetObject);
+			InActor->PreviousSubObjects.Add(AssetObject);
 #endif // WITH_EDITOR
-			AssetObject->ClearFlags(RF_AllFlags);
 		}
 	}
 
@@ -404,14 +414,14 @@ ALODActor* FHierarchicalLODUtilities::CreateNewClusterActor(UWorld* InWorld, con
 {
 	// Check incoming data
 	check(InWorld != nullptr && WorldSettings != nullptr && InLODLevel >= 0);
-	if (!WorldSettings->bEnableHierarchicalLODSystem || WorldSettings->HierarchicalLODSetup.Num() == 0 || WorldSettings->HierarchicalLODSetup.Num() < InLODLevel)
+	const TArray<struct FHierarchicalSimplification>& HierarchicalLODSetups = InWorld->GetWorldSettings()->GetHierarchicalLODSetup();
+	if (!WorldSettings->bEnableHierarchicalLODSystem || HierarchicalLODSetups.Num() == 0 || HierarchicalLODSetups.Num() < InLODLevel)
 	{
 		return nullptr;
 	}
 
 	// Spawn and setup actor
-	ALODActor* NewActor = nullptr;
-	NewActor = InWorld->SpawnActor<ALODActor>(ALODActor::StaticClass(), FTransform());
+	ALODActor* NewActor = InWorld->SpawnActor<ALODActor>(ALODActor::StaticClass(), FTransform());
 	NewActor->LODLevel = InLODLevel + 1;
 	NewActor->LODDrawDistance = 0.0f;
 	NewActor->SetStaticMesh(nullptr);
@@ -505,15 +515,7 @@ const bool FHierarchicalLODUtilities::AddActorToCluster(AActor* InActor, ALODAct
 	InParentActor->AddSubActor(InActor);
 
 #if WITH_EDITOR
-	if (bActorWasClustered)
-	{
-		GEditor->BroadcastHLODActorAdded(InActor, InParentActor);
-	}
-	else
-	{
-		GEditor->BroadcastHLODActorAdded(InActor, InParentActor);
-	}
-
+	GEditor->BroadcastHLODActorAdded(InActor, InParentActor);
 #endif // WITH_EDITOR
 
 	return true;
@@ -787,7 +789,8 @@ bool FHierarchicalLODUtilities::IsWorldUsedForStreaming(const UWorld* InWorld)
 	AssetRegistryModule.Get().GetReferencers(FAssetIdentifier(OuterPackage->GetFName()), ReferenceNames);
 
 	for (const FAssetIdentifier& Identifier : ReferenceNames)
-	{	
+	{
+		// Referncers can include things like primary asset virtual packages, we don't want those
 		if (Identifier.PackageName != NAME_None)
 		{
 			const FString PackageName = Identifier.PackageName.ToString();

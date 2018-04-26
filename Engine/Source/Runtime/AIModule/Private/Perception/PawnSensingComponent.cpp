@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Perception/PawnSensingComponent.h"
 #include "EngineGlobals.h"
@@ -431,8 +431,7 @@ bool UPawnSensingComponent::CanHear(const FVector& NoiseLoc, float Loudness, boo
 	}
 
 	// check if sound is occluded
-	static FName NAME_CanHear = FName(TEXT("CanHear"));
-	return !Owner->GetWorld()->LineTraceTestByChannel(HearingLocation, NoiseLoc, ECC_Visibility, FCollisionQueryParams(NAME_CanHear, true, Owner));
+	return !Owner->GetWorld()->LineTraceTestByChannel(HearingLocation, NoiseLoc, ECC_Visibility, FCollisionQueryParams(SCENE_QUERY_STAT(CanHear), true, Owner));
 }
 
 

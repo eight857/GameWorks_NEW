@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/ObjectLibrary.h"
 #include "Modules/ModuleManager.h"
@@ -493,7 +493,7 @@ int32 UObjectLibrary::LoadAssetsFromAssetData()
 	// Preload the packages with an async call, faster in cooked builds
 	if (bPreloadObjects)
 	{
-		TArray<FStringAssetReference> AssetsToStream;
+		TArray<FSoftObjectPath> AssetsToStream;
 
 		for (int32 AssetIdx = 0; AssetIdx < AssetDataList.Num(); AssetIdx++)
 		{

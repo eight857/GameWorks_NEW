@@ -1,8 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AutoReimport/AutoReimportUtilities.h"
 #include "EditorFramework/AssetImportData.h"
 #include "AutoReimport/AssetSourceFilenameCache.h"
+
+DEFINE_LOG_CATEGORY(LogAutoReimportManager);
 
 namespace Utils
 {

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -19,6 +19,16 @@ public:
 	FORCEINLINE void Lock(void)
 	{
 	}
+	
+	/**
+	 * Attempt to take a lock and returns whether or not a lock was taken.
+	 *
+	 * @return true if a lock was taken, false otherwise.
+	 */
+	FORCEINLINE bool TryLock()
+	{
+		return false;
+	}
 
 	/**
 	 * Releases the lock on the critical seciton
@@ -34,3 +44,4 @@ private:
 
 typedef FHTML5CriticalSection FCriticalSection;
 typedef FSystemWideCriticalSectionNotImplemented FSystemWideCriticalSection;
+typedef TGenericPlatformRWLock<FHTML5CriticalSection> FRWLock;

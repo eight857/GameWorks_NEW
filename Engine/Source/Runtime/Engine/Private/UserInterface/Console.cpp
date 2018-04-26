@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Interaction.cpp: See .UC for for info
@@ -28,6 +28,7 @@
 #include "GameFramework/InputSettings.h"
 #include "Stats/StatsData.h"
 #include "Misc/TextFilter.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 static const uint32 MAX_AUTOCOMPLETION_LINES = 20;
 
@@ -56,12 +57,12 @@ public:
 	// @param CVar must not be 0
 	static void OnConsoleVariable(const TCHAR *Name, IConsoleObject* CVar,TArray<struct FAutoCompleteCommand>& Sink)
 	{
-#if (UE_BUILD_SHIPPING || UE_BUILD_TEST)
+#if DISABLE_CHEAT_CVARS
 		if(CVar->TestFlags(ECVF_Cheat))
 		{
 			return;
 		}
-#endif // (UE_BUILD_SHIPPING || UE_BUILD_TEST)
+#endif // DISABLE_CHEAT_CVARS
 		if(CVar->TestFlags(ECVF_Unregistered))
 		{
 			return;
@@ -70,7 +71,7 @@ public:
 		const UConsoleSettings* ConsoleSettings = GetDefault<UConsoleSettings>();
 
 		// can be optimized
-		int32 NewIdx = Sink.AddZeroed(1);
+		int32 NewIdx = Sink.AddDefaulted();
 		FAutoCompleteCommand& Cmd = Sink[NewIdx];
 		Cmd.Command = Name;
 
@@ -204,7 +205,16 @@ void UConsole::BuildRuntimeAutoCompleteList(bool bForce)
 				FuncName = FString(TEXT("ce ")) + FuncName;
 			}
 
-			const int32 NewIdx = AutoCompleteList.AddDefaulted();
+			int32 Idx = 0;
+			for (; Idx < AutoCompleteList.Num(); ++Idx)
+			{
+				if (AutoCompleteList[Idx].Command.ToLower() == FuncName)
+				{
+					break;
+				}
+			}
+
+			const int32 NewIdx = (Idx < AutoCompleteList.Num()) ? Idx : AutoCompleteList.AddDefaulted();
 			AutoCompleteList[NewIdx].Command = FuncName;
 			AutoCompleteList[NewIdx].Color = ConsoleSettings->AutoCompleteCommandColor;
 
@@ -217,7 +227,7 @@ void UConsole::BuildRuntimeAutoCompleteList(bool bForce)
 				UProperty *Prop = *PropIt;
 				Desc += FString::Printf(TEXT("%s[%s] "),*Prop->GetName(),*Prop->GetCPPType());
 			}
-			AutoCompleteList[NewIdx].Desc = Desc;
+			AutoCompleteList[NewIdx].Desc = Desc + AutoCompleteList[NewIdx].Desc;
 		}
 	}
 
@@ -226,7 +236,7 @@ void UConsole::BuildRuntimeAutoCompleteList(bool bForce)
 		TArray<FString> Packages;
 		for (int32 PathIdx = 0; PathIdx < ConsoleSettings->AutoCompleteMapPaths.Num(); ++PathIdx)
 		{
-			FPackageName::FindPackagesInDirectory(Packages, FString::Printf(TEXT("%s%s"), *FPaths::GameDir(), *ConsoleSettings->AutoCompleteMapPaths[PathIdx]));
+			FPackageName::FindPackagesInDirectory(Packages, FString::Printf(TEXT("%s%s"), *FPaths::ProjectDir(), *ConsoleSettings->AutoCompleteMapPaths[PathIdx]));
 		}
 	
 		// also include maps in this user's developer dir
@@ -279,16 +289,24 @@ void UConsole::BuildRuntimeAutoCompleteList(bool bForce)
 	// stat commands
 	{
 		const TSet<FName>& StatGroupNames = FStatGroupGameThreadNotifier::Get().StatGroupNames;
-
-		int32 NewIdx = AutoCompleteList.AddDefaulted(StatGroupNames.Num());
 		for (const FName& StatGroupName : StatGroupNames)
 		{
 			FString Command = FString(TEXT("Stat "));
 			Command += StatGroupName.ToString().RightChop(sizeof("STATGROUP_") - 1);
+			const FString CommandLower = Command.ToLower();
 
-			AutoCompleteList[NewIdx].Command = Command;
-			AutoCompleteList[NewIdx].Color = ConsoleSettings->AutoCompleteCommandColor;
-			NewIdx++;
+			int32 Idx = 0;
+			for (; Idx < AutoCompleteList.Num(); ++Idx)
+			{
+				if (AutoCompleteList[Idx].Command.ToLower() == CommandLower)
+				{
+					break;
+				}
+			}
+
+			Idx = (Idx < AutoCompleteList.Num()) ? Idx : AutoCompleteList.AddDefaulted();
+			AutoCompleteList[Idx].Command = Command;
+			AutoCompleteList[Idx].Color = ConsoleSettings->AutoCompleteCommandColor;
 		}
 	}
 #endif
@@ -308,7 +326,7 @@ void UConsole::BuildRuntimeAutoCompleteList(bool bForce)
 				FText LocName;
 				FEngineShowFlags::FindShowFlagDisplayName(InName, LocName);
 				
-				int32 NewIdx = AutoCompleteList.AddZeroed(1);
+				int32 NewIdx = AutoCompleteList.AddDefaulted();
 				AutoCompleteList[NewIdx].Command = TEXT("show ") + InName;
 				AutoCompleteList[NewIdx].Desc = FString::Printf(TEXT("(toggles the %s showflag)"),*LocName.ToString());
 				AutoCompleteList[NewIdx].Color = GetDefault<UConsoleSettings>()->AutoCompleteCommandColor;
@@ -322,6 +340,11 @@ void UConsole::BuildRuntimeAutoCompleteList(bool bForce)
 		FIterSink Sink(AutoCompleteList);
 		FEngineShowFlags::IterateAllFlags(Sink);
 	}
+
+	// Add any commands from UConsole subclasses
+	AugmentRuntimeAutoCompleteList(AutoCompleteList);
+
+	AutoCompleteList.Shrink();
 
 	// build the magic tree!
 	for (int32 ListIdx = 0; ListIdx < AutoCompleteList.Num(); ListIdx++)
@@ -357,11 +380,16 @@ void UConsole::BuildRuntimeAutoCompleteList(bool bForce)
 #endif
 }
 
+void UConsole::AugmentRuntimeAutoCompleteList(TArray<FAutoCompleteCommand>& List)
+{
+	// Implement in subclasses as necessary
+}
+
 typedef TTextFilter< const FAutoCompleteCommand& > FCheatTextFilter;
 
 void CommandToStringArray(const FAutoCompleteCommand& Command, OUT TArray< FString >& StringArray)
 {
-	StringArray.Add(Command.Desc);
+	StringArray.Add(Command.Command);
 }
 
 void UConsole::UpdateCompleteIndices()
@@ -375,8 +403,7 @@ void UConsole::UpdateCompleteIndices()
 	static FString Space(" ");
 	static FString QuestionMark("?");
 	FString Left, Right;
-	if ((TypedStr.Split(Space, &Left, &Right) && !Left.Compare(QuestionMark)) ||
-		!TypedStr.Compare(QuestionMark))
+	if (TypedStr.Split(Space, &Left, &Right) ? Left.Equals(QuestionMark) : TypedStr.Equals(QuestionMark))
 	{
 		static FCheatTextFilter Filter(FCheatTextFilter::FItemToStringArray::CreateStatic(&CommandToStringArray));
 		Filter.SetRawFilterText(FText::FromString(Right));
@@ -607,7 +634,11 @@ void UConsole::FlushPlayerInput()
 
 bool UConsole::ProcessControlKey(FKey Key, EInputEvent Event)
 {	
+#if PLATFORM_MAC
+	if (Key == EKeys::LeftCommand || Key == EKeys::RightCommand)
+#else
 	if (Key == EKeys::LeftControl || Key == EKeys::RightControl)
+#endif
 	{
 		if (Event == IE_Released)
 		{
@@ -626,14 +657,14 @@ bool UConsole::ProcessControlKey(FKey Key, EInputEvent Event)
 		{
 			// paste
 			FString ClipboardContent;
-			FPlatformMisc::ClipboardPaste(ClipboardContent);
+			FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
 			AppendInputText(ClipboardContent);
 			return true;
 		}
 		else if (Key == EKeys::C)
 		{
 			// copy
-			FPlatformMisc::ClipboardCopy(*TypedStr);
+			FPlatformApplicationMisc::ClipboardCopy(*TypedStr);
 			return true;
 		}
 		else if (Key == EKeys::X)
@@ -641,7 +672,7 @@ bool UConsole::ProcessControlKey(FKey Key, EInputEvent Event)
 			// cut
 			if (!TypedStr.IsEmpty())
 			{
-				FPlatformMisc::ClipboardCopy(*TypedStr);
+				FPlatformApplicationMisc::ClipboardCopy(*TypedStr);
 				SetInputText(TEXT(""));
 				SetCursorPos(0);
 			}
@@ -1145,7 +1176,6 @@ void UConsole::PostRender_Console_Open(UCanvas* Canvas)
 	// determine the height of the text
 	float xl, yl;
 	Canvas->StrLen(Font, TEXT("M"),xl,yl);
-
 	// Background
 	FLinearColor BackgroundColor = ConsoleDefs::AutocompleteBackgroundColor.ReinterpretAsLinear();
 	BackgroundColor.A = ConsoleSettings->BackgroundOpacityPercentage / 100.0f;
@@ -1163,8 +1193,7 @@ void UConsole::PostRender_Console_Open(UCanvas* Canvas)
 
 	if(Scrollback.Num())
 	{
-		FCanvasTextItem ConsoleText( FVector2D( LeftPos,TopPos+Height-5-yl ), FText::FromString(TEXT("")), GEngine->GetSmallFont(), ConsoleSettings->InputColor );
-
+		FCanvasTextItem ConsoleText( FVector2D( LeftPos,TopPos+Height-5-yl ), FText::FromString(TEXT("")), GEngine->GetLargeFont(), ConsoleSettings->InputColor );
 		// change the text color to white
 		ConsoleText.SetColor( FLinearColor::White );
 
@@ -1308,7 +1337,7 @@ void UConsole::PostRender_InputLine(UCanvas* Canvas, FIntPoint UserInputLinePos)
 
 	// Currently typed string
 	FText Str = FText::FromString( TypedInputText );
-	FCanvasTextItem ConsoleText( FVector2D( UserInputLinePos.X,UserInputLinePos.Y-3-yl ), Str , GEngine->GetSmallFont(), ConsoleSettings->InputColor );
+	FCanvasTextItem ConsoleText( FVector2D( UserInputLinePos.X,UserInputLinePos.Y-3-yl ), Str , GEngine->GetLargeFont(), ConsoleSettings->InputColor );
 	ConsoleText.EnableShadow(FLinearColor::Black);
 	Canvas->DrawItem( ConsoleText );
 
@@ -1330,7 +1359,6 @@ void UConsole::PostRender_InputLine(UCanvas* Canvas, FIntPoint UserInputLinePos)
 		}
 
 		Canvas->StrLen(Font, *ConsoleDefs::LeadingInputText, xl, yl);
-		
 		float y = UserInputLinePos.Y - 6.0f - (yl * 2.0f);
 
 		// Set the background color/texture of the auto-complete section
@@ -1374,7 +1402,7 @@ void UConsole::PostRender_InputLine(UCanvas* Canvas, FIntPoint UserInputLinePos)
 		}
 
 		// background rectangle behind auto completion
-		float MaxWidth = MaxLeftWidth + MaxRightWidth;
+		float MaxWidth = (MaxLeftWidth + MaxRightWidth);
 		float Height = AutoCompleteElements.Num() * yl;
 		int32 Border = 4;
 
@@ -1472,7 +1500,6 @@ void UConsole::PostRender_InputLine(UCanvas* Canvas, FIntPoint UserInputLinePos)
 	// determine the cursor position
 	const FString TypedInputTextUpToCursor = FString::Printf(TEXT("%s%s"), *ConsoleDefs::LeadingInputText, *TypedStr.Left(TypedStrPos));
 	Canvas->StrLen(Font, TypedInputTextUpToCursor,xl,yl);
-
 	// draw the cursor
 	ConsoleText.SetColor( ConsoleDefs::CursorColor );
 	ConsoleText.Text = FText::FromString( FString(TEXT("_")) );

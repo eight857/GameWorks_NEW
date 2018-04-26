@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Designer/STransformHandle.h"
 #include "Widgets/Images/SImage.h"
@@ -34,14 +34,9 @@ void STransformHandle::Construct(const FArguments& InArgs, IUMGDesigner* InDesig
 
 	ChildSlot
 	[
-		SNew(SBox)
-		.WidthOverride(10)
-		.HeightOverride(10)
+		SNew(SImage)
 		.Visibility(this, &STransformHandle::GetHandleVisibility)
-		[
-			SNew(SImage)
-			.Image(FEditorStyle::Get().GetBrush("CurveEd.CurveKey"))
-		]
+		.Image(FEditorStyle::Get().GetBrush("UMGEditor.TransformHandle"))
 	];
 }
 

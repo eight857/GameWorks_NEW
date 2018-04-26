@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Kismet/BlueprintPlatformLibrary.h"
 #include "Misc/ConfigCacheIni.h"
@@ -37,7 +37,7 @@ void UPlatformGameInstance::BeginDestroy()
 	FCoreDelegates::ApplicationRegisteredForUserNotificationsDelegate.RemoveAll(this);
 	FCoreDelegates::ApplicationFailedToRegisterForRemoteNotificationsDelegate.RemoveAll(this);
 	FCoreDelegates::ApplicationReceivedRemoteNotificationDelegate.RemoveAll(this);
-	FCoreDelegates::ApplicationReceivedRemoteNotificationDelegate.RemoveAll(this);
+	FCoreDelegates::ApplicationReceivedLocalNotificationDelegate.RemoveAll(this);
 	FCoreDelegates::ApplicationReceivedScreenOrientationChangedNotificationDelegate.RemoveAll(this);
 
     Super::BeginDestroy();
@@ -48,6 +48,16 @@ void UPlatformGameInstance::ApplicationReceivedScreenOrientationChangedNotificat
 	ApplicationReceivedScreenOrientationChangedNotificationDelegate.Broadcast((EScreenOrientation::Type)inScreenOrientation);
 }
 
+void UPlatformGameInstance::ApplicationReceivedRemoteNotificationDelegate_Handler(FString inFString, int32 inAppState)
+{
+	ApplicationReceivedRemoteNotificationDelegate.Broadcast(inFString, (EApplicationState::Type)inAppState);
+}
+
+void UPlatformGameInstance::ApplicationReceivedLocalNotificationDelegate_Handler(FString inFString, int32 inInt, int32 inAppState)
+{
+	ApplicationReceivedLocalNotificationDelegate.Broadcast(inFString, inInt, (EApplicationState::Type)inAppState);
+}
+
 
 //////////////////////////////////////////////////////////////////////////
 // UBlueprintPlatformLibrary
@@ -55,20 +65,18 @@ void UPlatformGameInstance::ApplicationReceivedScreenOrientationChangedNotificat
 UBlueprintPlatformLibrary::UBlueprintPlatformLibrary(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	platformService = NULL;
-
-	FString ModuleName;
-	GConfig->GetString(TEXT("LocalNotification"), TEXT("DefaultPlatformService"), ModuleName, GEngineIni);
-
-	if (ModuleName.Len() > 0)
+	if (platformService == nullptr)
 	{
-		// load the module by name from the .ini
-		ILocalNotificationModule* module = FModuleManager::LoadModulePtr<ILocalNotificationModule>(*ModuleName);
+		FString ModuleName;
+		GConfig->GetString(TEXT("LocalNotification"), TEXT("DefaultPlatformService"), ModuleName, GEngineIni);
 
-		// did the module exist?
-		if (module != nullptr)
+		if (ModuleName.Len() > 0)
 		{
-			platformService = module->GetLocalNotificationService();
+			// load the module by name from the .ini
+			if (ILocalNotificationModule* Module = FModuleManager::LoadModulePtr<ILocalNotificationModule>(*ModuleName))
+			{
+				platformService = Module->GetLocalNotificationService();
+			}
 		}
 	}
 }
@@ -99,10 +107,31 @@ void UBlueprintPlatformLibrary::ScheduleLocalNotificationAtTime(const FDateTime&
        
 void UBlueprintPlatformLibrary::ScheduleLocalNotificationFromNow(int32 inSecondsFromNow, const FText& Title, const FText& Body, const FText& Action, const FString& ActivationEvent)
 {
-	FDateTime	dateTime = FDateTime::Now();
-	dateTime += FTimespan(0, 0, inSecondsFromNow);
+	FDateTime TargetTime = FDateTime::Now();
+	TargetTime += FTimespan::FromSeconds(inSecondsFromNow);
 
-	ScheduleLocalNotificationAtTime(dateTime, true, Title, Body, Action, ActivationEvent);
+	ScheduleLocalNotificationAtTime(TargetTime, true, Title, Body, Action, ActivationEvent);
+}
+
+void UBlueprintPlatformLibrary::ScheduleLocalNotificationBadgeAtTime(const FDateTime& FireDateTime, bool inLocalTime, const FString& ActivationEvent)
+{
+	if (platformService == nullptr)
+	{
+		UE_LOG(LogBlueprintUserMessages, Warning, TEXT("ScheduleLocalNotificationBadgeAtTime(): No local notification service"));
+		return;
+	}
+
+	UE_LOG(LogBlueprintUserMessages, Log, TEXT("Scheduling notification badge %s at %d/%d/%d %d:%d:%d %s"), *ActivationEvent, FireDateTime.GetMonth(), FireDateTime.GetDay(), FireDateTime.GetYear(), FireDateTime.GetHour(), FireDateTime.GetMinute(), FireDateTime.GetSecond(), inLocalTime ? TEXT("Local") : TEXT("UTC"));
+
+	platformService->ScheduleLocalNotificationBadgeAtTime(FireDateTime, inLocalTime, ActivationEvent);
+}
+
+void UBlueprintPlatformLibrary::ScheduleLocalNotificationBadgeFromNow(int32 inSecondsFromNow, const FString& ActivationEvent)
+{
+	FDateTime TargetTime = FDateTime::Now();
+	TargetTime += FTimespan::FromSeconds(inSecondsFromNow);
+
+	ScheduleLocalNotificationBadgeAtTime(TargetTime, true, ActivationEvent);
 }
 
 UFUNCTION(BlueprintCallable, Category="Platform|LocalNotification")
@@ -130,4 +159,4 @@ void UBlueprintPlatformLibrary::GetLaunchNotification(bool& NotificationLaunched
 	platformService->GetLaunchNotification(NotificationLaunchedApp, ActivationEvent, FireDate);
 }
 
-ILocalNotificationService*	UBlueprintPlatformLibrary::platformService;
+ILocalNotificationService* UBlueprintPlatformLibrary::platformService = nullptr;

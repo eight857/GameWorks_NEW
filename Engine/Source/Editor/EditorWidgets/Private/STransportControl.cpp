@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "STransportControl.h"
 #include "Widgets/SBoxPanel.h"
@@ -110,7 +110,9 @@ void STransportControl::Construct( const STransportControl::FArguments& InArgs )
 {
 	TransportControlArgs = InArgs._TransportArgs;
 	
-	TSharedRef<SHorizontalBox> HorizontalBox = SNew(SHorizontalBox);
+	TSharedRef<SHorizontalBox> HorizontalBox = SNew(SHorizontalBox)
+		.Clipping(EWidgetClipping::ClipToBounds);
+
 	if(TransportControlArgs.WidgetsToCreate.Num() > 0)
 	{
 		for(FTransportControlWidget WidgetDesc : TransportControlArgs.WidgetsToCreate)

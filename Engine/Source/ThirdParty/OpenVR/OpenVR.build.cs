@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.IO;
@@ -9,10 +9,10 @@ public class OpenVR : ModuleRules
 	public OpenVR(ReadOnlyTargetRules Target) : base(Target)
 	{
 		/** Mark the current version of the OpenVR SDK */
-		string OpenVRVersion = "v1_0_6";
+		string OpenVRVersion = "v1_0_10";
 		Type = ModuleType.External;
 
-		string SdkBase = UEBuildConfiguration.UEThirdPartySourceDirectory + "OpenVR/OpenVR" + OpenVRVersion;
+		string SdkBase = Target.UEThirdPartySourceDirectory + "OpenVR/OpenVR" + OpenVRVersion;
 		if (!Directory.Exists(SdkBase))
 		{
 			string Err = string.Format("OpenVR SDK not found in {0}", SdkBase);
@@ -31,7 +31,7 @@ public class OpenVR : ModuleRules
 			PublicDelayLoadDLLs.Add("openvr_api.dll");
 
 			string OpenVRBinariesDir = String.Format("$(EngineDir)/Binaries/ThirdParty/OpenVR/OpenVR{0}/Win32/", OpenVRVersion);
-			RuntimeDependencies.Add(new RuntimeDependency(OpenVRBinariesDir + "openvr_api.dll"));
+			RuntimeDependencies.Add(OpenVRBinariesDir + "openvr_api.dll");
 		}
 		else if(Target.Platform == UnrealTargetPlatform.Win64)
 		{
@@ -40,25 +40,24 @@ public class OpenVR : ModuleRules
 			PublicDelayLoadDLLs.Add("openvr_api.dll");
 
 			string OpenVRBinariesDir = String.Format("$(EngineDir)/Binaries/ThirdParty/OpenVR/OpenVR{0}/Win64/", OpenVRVersion);
-			RuntimeDependencies.Add(new RuntimeDependency(OpenVRBinariesDir + "openvr_api.dll"));
+			RuntimeDependencies.Add(OpenVRBinariesDir + "openvr_api.dll");
 		}
 		else if (Target.Platform == UnrealTargetPlatform.Mac)
 		{
-			string DylibPath = SdkBase + "/bin/osx32/libopenvr_api.dylib";
+			string DylibPath = Target.UEThirdPartyBinariesDirectory + "OpenVR/OpenVR" + OpenVRVersion + "/osx32/libopenvr_api.dylib";
 			PublicDelayLoadDLLs.Add(DylibPath);
 			PublicAdditionalShadowFiles.Add(DylibPath);
-
-			string OpenVRBinariesDir = String.Format("$(EngineDir)/Binaries/ThirdParty/OpenVR/OpenVR{0}/osx32/", OpenVRVersion);
-			RuntimeDependencies.Add(new RuntimeDependency(OpenVRBinariesDir + "libopenvr_api.dylib"));
+			RuntimeDependencies.Add(DylibPath);
+			PublicIncludePaths.Add(SdkBase + "/headers/osx");
 		}
 		else if (Target.Platform == UnrealTargetPlatform.Linux && Target.Architecture.StartsWith("x86_64"))
 		{
 			PublicLibraryPaths.Add(LibraryPath + "linux64");
 			PublicAdditionalLibraries.Add("openvr_api");
 
-			string DylibPath = UEBuildConfiguration.UEThirdPartyBinariesDirectory + "OpenVR/OpenVR" + OpenVRVersion + "/linux64/libopenvr_api.so";
+			string DylibPath = Target.UEThirdPartyBinariesDirectory + "OpenVR/OpenVR" + OpenVRVersion + "/linux64/libopenvr_api.so";
 			PublicDelayLoadDLLs.Add(DylibPath);
-			RuntimeDependencies.Add(new RuntimeDependency(DylibPath));
+			RuntimeDependencies.Add(DylibPath);
 		}
 	}
 }

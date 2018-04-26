@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System.IO;
 
@@ -46,8 +46,8 @@ namespace UnrealBuildTool.Rules
 			// Additional Frameworks and Libraries for Android
 			if (Target.Platform == UnrealTargetPlatform.Android)
 			{
-				string PluginPath = Utils.MakePathRelativeTo(ModuleDirectory, BuildConfiguration.RelativeEnginePath);
-				AdditionalPropertiesForReceipt.Add(new ReceiptProperty("AndroidPlugin", Path.Combine(PluginPath, "LocationServicesAndroidImpl_UPL.xml")));
+				string PluginPath = Utils.MakePathRelativeTo(ModuleDirectory, Target.RelativeEnginePath);
+				AdditionalPropertiesForReceipt.Add("AndroidPlugin", Path.Combine(PluginPath, "LocationServicesAndroidImpl_UPL.xml"));
 			}
         }
 	}

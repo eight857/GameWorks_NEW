@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "GenericPlatform/GenericPlatformSurvey.h"
@@ -9,9 +9,6 @@
 
 float RayIntersectBenchmark();
 float FractalBenchmark();
-
-
-DEFINE_LOG_CATEGORY_STATIC(LogSynthBenchmark, Log, All);
 
 // to prevent compiler optimizations
 static float GGlobalStateObject = 0.0f;

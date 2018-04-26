@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -40,7 +40,7 @@ struct ENGINE_API FAnimCurveParam
 {
 	GENERATED_USTRUCT_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = FAnimCurveParam)
+	UPROPERTY(EditAnywhere, Category = FAnimCurveParam)
 	FName Name;
 
 	// name UID for fast access
@@ -358,12 +358,12 @@ struct FBaseBlendedCurve
 	void Lerp(const FBaseBlendedCurve& A, const FBaseBlendedCurve& B, float Alpha)
 	{
 		check(A.Num() == B.Num());
-		if (FMath::Abs(Alpha) <= ZERO_ANIMWEIGHT_THRESH)
+		if (!FAnimWeight::IsRelevant(FMath::Abs(Alpha)))
 		{
 			// if blend is all the way for child1, then just copy its bone atoms
 			Override(A);
 		}
-		else if (FMath::Abs(Alpha - 1.0f) <= ZERO_ANIMWEIGHT_THRESH)
+		else if (!FAnimWeight::IsRelevant(FMath::Abs(Alpha - 1.0f)))
 		{
 			// if blend is all the way for child2, then just copy its bone atoms
 			Override(B);
@@ -385,11 +385,11 @@ struct FBaseBlendedCurve
 	void LerpTo(const FBaseBlendedCurve& Other, float Alpha)
 	{
 		check(Num() == Other.Num());
-		if (FMath::Abs(Alpha) <= ZERO_ANIMWEIGHT_THRESH)
+		if (!FAnimWeight::IsRelevant(FMath::Abs(Alpha)))
 		{
 			return;
 		}
-		else if (FMath::Abs(Alpha - 1.0f) <= ZERO_ANIMWEIGHT_THRESH)
+		else if (!FAnimWeight::IsRelevant(FMath::Abs(Alpha - 1.0f)))
 		{
 			// if blend is all the way for child2, then just copy its bone atoms
 			Override(Other);
@@ -425,7 +425,7 @@ struct FBaseBlendedCurve
 		check(bInitialized);
 		check(Num() == AdditiveCurve.Num());
 
-		if (Weight > ZERO_ANIMWEIGHT_THRESH)
+		if (FAnimWeight::IsRelevant(Weight))
 		{
 			for (int32 CurveId = 0; CurveId < Elements.Num(); ++CurveId)
 			{
@@ -670,18 +670,6 @@ struct FRawCurveTracks
 #endif
 	}
 
-	void SortFloatCurvesByUID()
-	{
-		struct FCurveSortByUid
-		{
-			FORCEINLINE bool operator()(const FFloatCurve& A, const FFloatCurve& B) const
-			{
-				return (A.Name.UID < B.Name.UID);
-			}
-		};
-
-		FloatCurves.Sort(FCurveSortByUid());
-	}
 private:
 	/** 
 	 * Adding vector curve support - this is all transient data for now. This does not save and all these data will be baked into RawAnimationData

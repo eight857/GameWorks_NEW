@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sections/MovieScene3DTransformSectionRecorder.h"
 #include "Misc/ScopedSlowTask.h"
@@ -40,9 +40,10 @@ bool FMovieScene3DTransformSectionRecorderFactory::CanRecordObject(UObject* InOb
 	}
 }
 
-void FMovieScene3DTransformSectionRecorder::CreateSection(UObject* InObjectToRecord, UMovieScene* InMovieScene, const FGuid& Guid, float Time) 
+void FMovieScene3DTransformSectionRecorder::CreateSection(UObject* InObjectToRecord, UMovieScene* InMovieScene, const FGuid& InGuid, float Time) 
 {
 	ObjectToRecord = InObjectToRecord;
+	Guid = InGuid;
 	bWasAttached = false;
 		
 	MovieScene = InMovieScene;
@@ -55,7 +56,8 @@ void FMovieScene3DTransformSectionRecorder::CreateSection(UObject* InObjectToRec
 
 		const bool bUnwindRotation = false;
 
-		DefaultTransform = GetTransformToRecord();
+		DefaultTransform = FTransform::Identity;
+		GetTransformToRecord(DefaultTransform);
 		FVector EulerRotation = DefaultTransform.GetRotation().Rotator().Euler();
 
 		MovieSceneSection->SetDefault(FTransformKey(EKey3DTransformChannel::Translation, EAxis::X, DefaultTransform.GetTranslation().X, bUnwindRotation));
@@ -186,16 +188,15 @@ void FMovieScene3DTransformSectionRecorder::FinalizeSection()
 	const EMovieSceneKeyInterpolation Interpolation = AnimRecorder.IsValid() ? EMovieSceneKeyInterpolation::Linear : EMovieSceneKeyInterpolation::Auto;
 
 	// add buffered transforms
-	TArray<float> KeyTimes; KeyTimes.SetNum(BufferedTransforms.Num());
-	TArray<float> TranslationXValues; TranslationXValues.SetNum(BufferedTransforms.Num());
-	TArray<float> TranslationYValues; TranslationYValues.SetNum(BufferedTransforms.Num());
-	TArray<float> TranslationZValues; TranslationZValues.SetNum(BufferedTransforms.Num());
-	TArray<float> RotationXValues; RotationXValues.SetNum(BufferedTransforms.Num());
-	TArray<float> RotationYValues; RotationYValues.SetNum(BufferedTransforms.Num());
-	TArray<float> RotationZValues; RotationZValues.SetNum(BufferedTransforms.Num());
-	TArray<float> ScaleXValues; ScaleXValues.SetNum(BufferedTransforms.Num());
-	TArray<float> ScaleYValues; ScaleYValues.SetNum(BufferedTransforms.Num());
-	TArray<float> ScaleZValues; ScaleZValues.SetNum(BufferedTransforms.Num());
+	TArray<FRichCurveKey> TranslationXKeys; TranslationXKeys.SetNum(BufferedTransforms.Num());
+	TArray<FRichCurveKey> TranslationYKeys; TranslationYKeys.SetNum(BufferedTransforms.Num());
+	TArray<FRichCurveKey> TranslationZKeys; TranslationZKeys.SetNum(BufferedTransforms.Num());
+	TArray<FRichCurveKey> RotationXKeys; RotationXKeys.SetNum(BufferedTransforms.Num());
+	TArray<FRichCurveKey> RotationYKeys; RotationYKeys.SetNum(BufferedTransforms.Num());
+	TArray<FRichCurveKey> RotationZKeys; RotationZKeys.SetNum(BufferedTransforms.Num());
+	TArray<FRichCurveKey> ScaleXKeys; ScaleXKeys.SetNum(BufferedTransforms.Num());
+	TArray<FRichCurveKey> ScaleYKeys; ScaleYKeys.SetNum(BufferedTransforms.Num());
+	TArray<FRichCurveKey> ScaleZKeys; ScaleZKeys.SetNum(BufferedTransforms.Num());
 
 	int32 Index = 0;
 	for(const FBufferedTransformKey& BufferedTransform : BufferedTransforms)
@@ -204,32 +205,36 @@ void FMovieScene3DTransformSectionRecorder::FinalizeSection()
 		const FVector Rotation = BufferedTransform.WoundRotation.Euler();
 		const FVector Scale = BufferedTransform.Transform.GetScale3D();
 
-		KeyTimes[Index] = BufferedTransform.KeyTime;
+		TranslationXKeys[Index] = FRichCurveKey(BufferedTransform.KeyTime, Translation.X);
+		TranslationYKeys[Index] = FRichCurveKey(BufferedTransform.KeyTime, Translation.Y);
+		TranslationZKeys[Index] = FRichCurveKey(BufferedTransform.KeyTime, Translation.Z);
 
-		TranslationXValues[Index] = Translation.X;
-		TranslationYValues[Index] = Translation.Y;
-		TranslationZValues[Index] = Translation.Z;
+		RotationXKeys[Index] = FRichCurveKey(BufferedTransform.KeyTime, Rotation.X);
+		RotationYKeys[Index] = FRichCurveKey(BufferedTransform.KeyTime, Rotation.Y);
+		RotationZKeys[Index] = FRichCurveKey(BufferedTransform.KeyTime, Rotation.Z);
 
-		RotationXValues[Index] = Rotation.X;
-		RotationYValues[Index] = Rotation.Y;
-		RotationZValues[Index] = Rotation.Z;
-
-		ScaleXValues[Index] = Scale.X;
-		ScaleYValues[Index] = Scale.Y;
-		ScaleZValues[Index] = Scale.Z;
+		ScaleXKeys[Index] = FRichCurveKey(BufferedTransform.KeyTime, Scale.X);
+		ScaleYKeys[Index] = FRichCurveKey(BufferedTransform.KeyTime, Scale.Y);
+		ScaleZKeys[Index] = FRichCurveKey(BufferedTransform.KeyTime, Scale.Z);
 
 		++Index;
 	}
 	
-	MovieSceneSection->GetTranslationCurve(EAxis::X).SetKeys(KeyTimes, TranslationXValues);
-	MovieSceneSection->GetTranslationCurve(EAxis::Y).SetKeys(KeyTimes, TranslationYValues);
-	MovieSceneSection->GetTranslationCurve(EAxis::Z).SetKeys(KeyTimes, TranslationZValues);
-	MovieSceneSection->GetRotationCurve(EAxis::X).SetKeys(KeyTimes, RotationXValues);
-	MovieSceneSection->GetRotationCurve(EAxis::Y).SetKeys(KeyTimes, RotationYValues);
-	MovieSceneSection->GetRotationCurve(EAxis::Z).SetKeys(KeyTimes, RotationZValues);
-	MovieSceneSection->GetScaleCurve(EAxis::X).SetKeys(KeyTimes, ScaleXValues);
-	MovieSceneSection->GetScaleCurve(EAxis::Y).SetKeys(KeyTimes, ScaleYValues);
-	MovieSceneSection->GetScaleCurve(EAxis::Z).SetKeys(KeyTimes, ScaleZValues);
+	MovieSceneSection->GetTranslationCurve(EAxis::X).SetKeys(TranslationXKeys);
+	MovieSceneSection->GetTranslationCurve(EAxis::Y).SetKeys(TranslationYKeys);
+	MovieSceneSection->GetTranslationCurve(EAxis::Z).SetKeys(TranslationZKeys);
+	MovieSceneSection->GetRotationCurve(EAxis::X).SetKeys(RotationXKeys);
+	MovieSceneSection->GetRotationCurve(EAxis::Y).SetKeys(RotationYKeys);
+	MovieSceneSection->GetRotationCurve(EAxis::Z).SetKeys(RotationZKeys);
+	MovieSceneSection->GetScaleCurve(EAxis::X).SetKeys(ScaleXKeys);
+	MovieSceneSection->GetScaleCurve(EAxis::Y).SetKeys(ScaleYKeys);
+	MovieSceneSection->GetScaleCurve(EAxis::Z).SetKeys(ScaleZKeys);
+
+	FTransform FirstTransform = FTransform::Identity;
+	if (BufferedTransforms.Num())
+	{
+		FirstTransform = BufferedTransforms[0].Transform;
+	}
 
 	BufferedTransforms.Empty();
 
@@ -281,6 +286,16 @@ void FMovieScene3DTransformSectionRecorder::FinalizeSection()
 	}
 
 	SlowTask.EnterProgressFrame();
+
+	// If recording a spawnable, update the spawnable object template to the first keyframe
+	if (MovieScene.IsValid() && Guid.IsValid())
+	{
+		FMovieSceneSpawnable* Spawnable = MovieScene->FindSpawnable(Guid);
+		if (Spawnable)
+		{
+			Spawnable->SpawnTransform = FirstTransform;
+		}
+	}
 }
 
 void FMovieScene3DTransformSectionRecorder::Record(float CurrentTime)
@@ -301,19 +316,24 @@ void FMovieScene3DTransformSectionRecorder::Record(float CurrentTime)
 		if(bRecording)
 		{
 			// don't record from the transform of the component/actor if we are synchronizing with an animation
-			if(!AnimRecorder.IsValid())
+			if (!AnimRecorder.IsValid())
 			{
-				BufferedTransforms.Add(FBufferedTransformKey(GetTransformToRecord(), CurrentTime));
+				FTransform TransformToRecord;
+				if (GetTransformToRecord(TransformToRecord))
+				{
+					BufferedTransforms.Add(FBufferedTransformKey(TransformToRecord, CurrentTime));
+				}
 			}
 		}
 	}
 }
 
-FTransform FMovieScene3DTransformSectionRecorder::GetTransformToRecord()
+bool FMovieScene3DTransformSectionRecorder::GetTransformToRecord(FTransform& TransformToRecord)
 {
 	if(USceneComponent* SceneComponent = Cast<USceneComponent>(ObjectToRecord.Get()))
 	{
-		return SceneComponent->GetRelativeTransform();
+		TransformToRecord = SceneComponent->GetRelativeTransform();
+		return true;
 	}
 	else if(AActor* Actor = Cast<AActor>(ObjectToRecord.Get()))
 	{
@@ -329,8 +349,22 @@ FTransform FMovieScene3DTransformSectionRecorder::GetTransformToRecord()
 			bCaptureWorldSpaceTransform = !FSequenceRecorder::Get().FindRecording(AttachParent->GetOwner());
 		}
 
-		return (bCaptureWorldSpaceTransform || !RootComponent) ? Actor->ActorToWorld() : RootComponent->GetRelativeTransform();
+		if (!RootComponent)
+		{
+			return false;
+		}
+
+		if (bCaptureWorldSpaceTransform)
+		{
+			TransformToRecord = Actor->ActorToWorld();
+			return true;
+		}
+		else
+		{
+			TransformToRecord = RootComponent->GetRelativeTransform();
+			return true;
+		}
 	}
 
-	return FTransform::Identity;
+	return false;
 }

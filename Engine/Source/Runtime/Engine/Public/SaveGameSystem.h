@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -89,6 +89,6 @@ protected:
 	/** Get the path to save game file for the given name, a platform _may_ be able to simply override this and no other functions above */
 	virtual FString GetSaveGamePath(const TCHAR* Name)
 	{
-		return FString::Printf(TEXT("%sSaveGames/%s.sav"), *FPaths::GameSavedDir(), Name);
+		return FString::Printf(TEXT("%sSaveGames/%s.sav"), *FPaths::ProjectSavedDir(), Name);
 	}
 };

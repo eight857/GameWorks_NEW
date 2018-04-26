@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
 using System.Linq;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -142,6 +143,16 @@ namespace UnrealBuildTool
 		public UnrealTargetPlatform[] BlacklistPlatforms;
 
 		/// <summary>
+		/// List of allowed targets
+		/// </summary>
+		public TargetType[] WhitelistTargets;
+
+		/// <summary>
+		/// List of disallowed targets
+		/// </summary>
+		public TargetType[] BlacklistTargets;
+
+		/// <summary>
 		/// List of additional dependencies for building this module.
 		/// </summary>
 		public string[] AdditionalDependencies;
@@ -184,6 +195,18 @@ namespace UnrealBuildTool
 				Module.BlacklistPlatforms = BlacklistPlatforms;
 			}
 
+			TargetType[] WhitelistTargets;
+			if (InObject.TryGetEnumArrayField<TargetType>("WhitelistTargets", out WhitelistTargets))
+			{
+				Module.WhitelistTargets = WhitelistTargets;
+			}
+
+			TargetType[] BlacklistTargets;
+			if (InObject.TryGetEnumArrayField<TargetType>("BlacklistTargets", out BlacklistTargets))
+			{
+				Module.BlacklistTargets = BlacklistTargets;
+			}
+
 			string[] AdditionalDependencies;
 			if (InObject.TryGetStringArrayField("AdditionalDependencies", out AdditionalDependencies))
 			{
@@ -218,6 +241,24 @@ namespace UnrealBuildTool
 				foreach (UnrealTargetPlatform BlacklistPlatform in BlacklistPlatforms)
 				{
 					Writer.WriteValue(BlacklistPlatform.ToString());
+				}
+				Writer.WriteArrayEnd();
+			}
+			if (WhitelistTargets != null && WhitelistTargets.Length > 0)
+			{
+				Writer.WriteArrayStart("WhitelistTargets");
+				foreach (TargetType WhitelistTarget in WhitelistTargets)
+				{
+					Writer.WriteValue(WhitelistTarget.ToString());
+				}
+				Writer.WriteArrayEnd();
+			}
+			if (BlacklistTargets != null && BlacklistTargets.Length > 0)
+			{
+				Writer.WriteArrayStart("BlacklistTargets");
+				foreach (TargetType BlacklistTarget in BlacklistTargets)
+				{
+					Writer.WriteValue(BlacklistTarget.ToString());
 				}
 				Writer.WriteArrayEnd();
 			}
@@ -274,6 +315,18 @@ namespace UnrealBuildTool
 				return false;
 			}
 
+			// Check the target is whitelisted
+			if (WhitelistTargets != null && WhitelistTargets.Length > 0 && !WhitelistTargets.Contains(TargetType))
+			{
+				return false;
+			}
+
+			// Check the target is not blacklisted
+			if (BlacklistTargets != null && BlacklistTargets.Contains(TargetType))
+			{
+				return false;
+			}
+
 			// Check the module is compatible with this target.
 			switch (Type)
 			{
@@ -292,9 +345,9 @@ namespace UnrealBuildTool
 				case ModuleHostType.Program:
 					return TargetType == TargetType.Program;
                 case ModuleHostType.ServerOnly:
-                    return TargetType != TargetType.Client;
+                    return TargetType != TargetType.Program && TargetType != TargetType.Client;
                 case ModuleHostType.ClientOnly:
-                    return TargetType != TargetType.Server;
+                    return TargetType != TargetType.Program && TargetType != TargetType.Server;
             }
 
 			return false;

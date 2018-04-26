@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -23,6 +23,7 @@ class ISimulationEditorExtender : public IModularFeature
 {
 
 public:
+	virtual ~ISimulationEditorExtender() { }
 
 	/**
 	 * Called to identify the type of clothing simulation this editor extender can support.
@@ -45,5 +46,4 @@ public:
 	 * @param PDI - The drawing interface to use
 	 */
 	virtual void DebugDrawSimulation(const IClothingSimulation* InSimulation, USkeletalMeshComponent* InOwnerComponent, FPrimitiveDrawInterface* PDI) = 0;
-
 };

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -6,7 +6,7 @@
 #include "Framework/Commands/UICommandList.h"
 #include "Engine/World.h"
 #include "TickableEditorObject.h"
-#include "DragAndDrop/LevelDragDropOp.h"
+#include "WorldBrowserDragDrop.h"
 #include "Misc/IFilter.h"
 #include "LevelModel.h"
 
@@ -37,9 +37,9 @@ public:
 	virtual ~FLevelCollectionModel();
 
 	/** FTickableEditorObject interface */
-	void Tick( float DeltaTime ) override;
-	bool IsTickable() const override { return true; }
-	TStatId GetStatId() const override;
+	virtual void Tick( float DeltaTime ) override;
+	virtual ETickableTickType GetTickableTickType() const override { return ETickableTickType::Always; }
+	virtual TStatId GetStatId() const override;
 	/** FTickableEditorObject interface */
 	
 	/**	@return	Whether level collection is read only now */
@@ -130,10 +130,13 @@ public:
 	void AssignParent(const FLevelModelList& InLevels, TSharedPtr<FLevelModel> InParent);
 
 	/** Adds all levels in worlds represented by the supplied world list as sublevels */
-	virtual void AddExistingLevelsFromAssetData(const TArray<class FAssetData>& WorldList);
+	virtual void AddExistingLevelsFromAssetData(const TArray<struct FAssetData>& WorldList);
 			
 	/**	Create drag drop operation for a selected level models */
-	virtual TSharedPtr<class FLevelDragDropOp> CreateDragDropOp() const;
+	virtual TSharedPtr<WorldHierarchy::FWorldBrowserDragDropOp> CreateDragDropOp() const;
+
+	/** Create a drag and drop operation for the specified level models */
+	virtual TSharedPtr<WorldHierarchy::FWorldBrowserDragDropOp> CreateDragDropOp(const FLevelModelList& InLevels) const;
 	
 	/**	@return	Whether specified level passes all filters */
 	virtual bool PassesAllFilters(const FLevelModel& InLevelModel) const;
@@ -161,6 +164,9 @@ public:
 
 	/** @return	Whether this level collection model is a tile world */
 	virtual bool IsTileWorld() const { return false; };
+
+	/** Returns true if this collection model will support folders */
+	virtual bool HasFolderSupport() const { return false; }
 
 	/** Rebuilds levels collection */
 	void PopulateLevelsList();
@@ -265,6 +271,14 @@ public:
 	/** Broadcasts whenever items hierarchy has changed */
 	FSimpleEvent HierarchyChanged;
 	void BroadcastHierarchyChanged();
+
+	/** Broadcasts before levels are unloaded */
+	FSimpleEvent PreLevelsUnloaded;
+	void BroadcastPreLevelsUnloaded();
+
+	/** Broadcasts after levels are unloaded */
+	FSimpleEvent PostLevelsUnloaded;
+	void BroadcastPostLevelsUnloaded();
 	
 	/** Editable world axis length  */
 	static float EditableAxisLength();

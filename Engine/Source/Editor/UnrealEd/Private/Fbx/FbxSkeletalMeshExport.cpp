@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	Implementation of Skeletal Mesh export related functionality from FbxExporter
@@ -6,12 +6,12 @@
 
 #include "CoreMinimal.h"
 #include "GPUSkinPublicDefs.h"
-#include "SkeletalMeshTypes.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimSequence.h"
+#include "Rendering/SkeletalMeshModel.h"
 
 #include "FbxExporter.h"
-#include "SkeletalMeshTypes.h"
+#include "Exporters/FbxExportOption.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFbxSkeletalMeshExport, Log, All);
 
@@ -100,13 +100,13 @@ void FFbxExporter::GetSkeleton(FbxNode* RootNode, TArray<FbxNode*>& BoneNodes)
 }
 
 /**
- * Adds an Fbx Mesh to the FBX scene based on the data in the given FStaticLODModel
+ * Adds an Fbx Mesh to the FBX scene based on the data in the given FSkeletalMeshLODModel
  */
 FbxNode* FFbxExporter::CreateMesh(const USkeletalMesh* SkelMesh, const TCHAR* MeshName)
 {
-	const FSkeletalMeshResource* SkelMeshResource = SkelMesh->GetImportedResource();
-	const FStaticLODModel& SourceModel = SkelMeshResource->LODModels[0];
-	const int32 VertexCount = SourceModel.NumVertices;
+	const FSkeletalMeshModel* SkelMeshResource = SkelMesh->GetImportedModel();
+	const FSkeletalMeshLODModel& SourceModel = SkelMeshResource->LODModels[0];
+	const int32 VertexCount = SourceModel.GetNumNonClothingVertices();
 
 	// Verify the integrity of the mesh.
 	if (VertexCount == 0) return NULL;
@@ -114,7 +114,7 @@ FbxNode* FFbxExporter::CreateMesh(const USkeletalMesh* SkelMesh, const TCHAR* Me
 	// Copy all the vertex data from the various chunks to a single buffer.
 	// Makes the rest of the code in this function cleaner and easier to maintain.  
 	TArray<FSoftSkinVertex> Vertices;
-	SourceModel.GetVertices(Vertices);
+	SourceModel.GetNonClothVertices(Vertices);
 	if (Vertices.Num() != VertexCount) return NULL;
 
 	FbxMesh* Mesh = FbxMesh::Create(Scene, TCHAR_TO_UTF8(MeshName));
@@ -198,10 +198,7 @@ FbxNode* FFbxExporter::CreateMesh(const USkeletalMesh* SkelMesh, const TCHAR* Me
 
 
 	// Create the per-material polygons sets.
-	TArray<uint32> Indices;
-	SourceModel.MultiSizeIndexContainer.GetIndexBuffer(Indices);
-
-	int32 SectionCount = SourceModel.Sections.Num();
+	int32 SectionCount = SourceModel.NumNonClothingSections();
 	for (int32 SectionIndex = 0; SectionIndex < SectionCount; ++SectionIndex)
 	{
 		const FSkelMeshSection& Section = SourceModel.Sections[SectionIndex];
@@ -217,23 +214,26 @@ FbxNode* FFbxExporter::CreateMesh(const USkeletalMesh* SkelMesh, const TCHAR* Me
 			Mesh->BeginPolygon(MatIndex);
 			for (int32 PointIndex = 0; PointIndex < 3; PointIndex++)
 			{
-				Mesh->AddPolygon(Indices[Section.BaseIndex + ((TriangleIndex * 3) + PointIndex)]);
+				Mesh->AddPolygon(SourceModel.IndexBuffer[Section.BaseIndex + ((TriangleIndex * 3) + PointIndex)]);
 			}
 			Mesh->EndPolygon();
 		}
 	}
 
-	// Create and fill in the vertex color data source.
-	FbxLayerElementVertexColor* VertexColor = FbxLayerElementVertexColor::Create(Mesh, "");
-	VertexColor->SetMappingMode(FbxLayerElement::eByControlPoint);
-	VertexColor->SetReferenceMode(FbxLayerElement::eDirect);
-	FbxLayerElementArrayTemplate<FbxColor>& VertexColorArray = VertexColor->GetDirectArray();
-	LayerZero->SetVertexColors(VertexColor);
-
-	for (int32 VertIndex = 0; VertIndex < VertexCount; ++VertIndex)
+	if (ExportOptions->VertexColor)
 	{
-		FLinearColor VertColor = Vertices[VertIndex].Color.ReinterpretAsLinear();
-		VertexColorArray.Add( FbxColor(VertColor.R, VertColor.G, VertColor.B, VertColor.A ));
+		// Create and fill in the vertex color data source.
+		FbxLayerElementVertexColor* VertexColor = FbxLayerElementVertexColor::Create(Mesh, "");
+		VertexColor->SetMappingMode(FbxLayerElement::eByControlPoint);
+		VertexColor->SetReferenceMode(FbxLayerElement::eDirect);
+		FbxLayerElementArrayTemplate<FbxColor>& VertexColorArray = VertexColor->GetDirectArray();
+		LayerZero->SetVertexColors(VertexColor);
+
+		for (int32 VertIndex = 0; VertIndex < VertexCount; ++VertIndex)
+		{
+			FLinearColor VertColor = Vertices[VertIndex].Color.ReinterpretAsLinear();
+				VertexColorArray.Add(FbxColor(VertColor.R, VertColor.G, VertColor.B, VertColor.A));
+		}
 	}
 
 	FbxNode* MeshNode = FbxNode::Create(Scene, TCHAR_TO_UTF8(MeshName));
@@ -281,8 +281,8 @@ FbxNode* FFbxExporter::CreateMesh(const USkeletalMesh* SkelMesh, const TCHAR* Me
  */
 void FFbxExporter::BindMeshToSkeleton(const USkeletalMesh* SkelMesh, FbxNode* MeshRootNode, TArray<FbxNode*>& BoneNodes)
 {
-	const FSkeletalMeshResource* SkelMeshResource = SkelMesh->GetImportedResource();
-	const FStaticLODModel& SourceModel = SkelMeshResource->LODModels[0];
+	const FSkeletalMeshModel* SkelMeshResource = SkelMesh->GetImportedModel();
+	const FSkeletalMeshLODModel& SourceModel = SkelMeshResource->LODModels[0];
 	const int32 VertexCount = SourceModel.NumVertices;
 
 	FbxAMatrix MeshMatrix;

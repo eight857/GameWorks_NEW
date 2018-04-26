@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -19,6 +19,7 @@ struct FProjectInformation
 		, TemplateFile(MoveTemp(InTemplateFile))
 		, bShouldGenerateCode(bInGenerateCode)
 		, bCopyStarterContent(bInCopyStarterContent)
+		, bIsEnterpriseProject(false)
 		, TargetedHardware(EHardwareClass::Desktop)
 		, DefaultGraphicsPerformance(EGraphicsPreset::Maximum)
 	{
@@ -29,6 +30,7 @@ struct FProjectInformation
 
 	bool bShouldGenerateCode;
 	bool bCopyStarterContent;
+	bool bIsEnterpriseProject;
 
 	EHardwareClass::Type TargetedHardware;
 	EGraphicsPreset::Type DefaultGraphicsPerformance;

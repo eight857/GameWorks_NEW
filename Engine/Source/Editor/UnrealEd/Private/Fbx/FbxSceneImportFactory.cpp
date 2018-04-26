@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Factories/FbxSceneImportFactory.h"
 #include "Misc/MessageDialog.h"
@@ -38,6 +38,8 @@
 #include "Editor.h"
 #include "FileHelpers.h"
 #include "CineCameraComponent.h"
+#include "SkelImport.h"
+#include "Rendering/SkeletalMeshModel.h"
 
 #include "AssetSelection.h"
 
@@ -52,7 +54,9 @@
 #include "PackageTools.h"
 
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Math/UnitConversion.h"
 
+#include "HAL/FileManager.h"
 
 #define LOCTEXT_NAMESPACE "FBXSceneImportFactory"
 
@@ -366,14 +370,30 @@ void FetchFbxCameraInScene(UnFbx::FFbxImporter *FbxImporter, FbxNode* ParentNode
 			}
 			CameraInfo->UniqueId = CameraAttribute->GetUniqueID();
 
+			float FieldOfView;
+			float FocalLength;
+
+			if (CameraAttribute->GetApertureMode() == FbxCamera::eFocalLength)
+			{
+				FocalLength = CameraAttribute->FocalLength.Get();
+				FieldOfView = CameraAttribute->ComputeFieldOfView(FocalLength);
+			}
+			else
+			{
+				FieldOfView = CameraAttribute->FieldOfView.Get();
+				FocalLength = CameraAttribute->ComputeFocalLength(FieldOfView);
+			}
+
 			CameraInfo->AspectWidth = CameraAttribute->AspectWidth.Get();
 			CameraInfo->AspectHeight = CameraAttribute->AspectHeight.Get();
 			CameraInfo->NearPlane = CameraAttribute->NearPlane.Get();
 			CameraInfo->FarPlane = CameraAttribute->FarPlane.Get();
 			CameraInfo->ProjectionPerspective = CameraAttribute->ProjectionType.Get() == FbxCamera::ePerspective;
 			CameraInfo->OrthoZoom = CameraAttribute->OrthoZoom.Get();
-			CameraInfo->FieldOfView = CameraAttribute->FieldOfView.Get();
-			CameraInfo->FocalLength = CameraAttribute->FocalLength.Get();						
+			CameraInfo->FieldOfView = FieldOfView;
+			CameraInfo->FocalLength = FocalLength;
+			CameraInfo->ApertureWidth = CameraAttribute->GetApertureWidth();
+			CameraInfo->ApertureHeight = CameraAttribute->GetApertureHeight();
 			SceneInfoPtr->CameraInfo.Add(CameraInfo->UniqueId, CameraInfo);
 		}
 	}
@@ -750,13 +770,20 @@ UFbxSceneImportFactory::UFbxSceneImportFactory(const FObjectInitializer& ObjectI
 	ImportWasCancel = false;
 
 	SceneImportOptions = CreateDefaultSubobject<UFbxSceneImportOptions>(TEXT("SceneImportOptions"), true);
+	SceneImportOptions->SetFlags(RF_Transactional);
 	SceneImportOptionsStaticMesh = CreateDefaultSubobject<UFbxSceneImportOptionsStaticMesh>(TEXT("SceneImportOptionsStaticMesh"), true);
+	SceneImportOptionsStaticMesh->SetFlags(RF_Transactional);
 	SceneImportOptionsSkeletalMesh = CreateDefaultSubobject<UFbxSceneImportOptionsSkeletalMesh>(TEXT("SceneImportOptionsSkeletalMesh"), true);
+	SceneImportOptionsSkeletalMesh->SetFlags(RF_Transactional);
 
 	StaticMeshImportData = CreateDefaultSubobject<UFbxStaticMeshImportData>(TEXT("StaticMeshImportData"), true);
+	StaticMeshImportData->SetFlags(RF_Transactional);
 	SkeletalMeshImportData = CreateDefaultSubobject<UFbxSkeletalMeshImportData>(TEXT("SkeletalMeshImportData"), true);
+	SkeletalMeshImportData->SetFlags(RF_Transactional);
 	AnimSequenceImportData = CreateDefaultSubobject<UFbxAnimSequenceImportData>(TEXT("AnimSequenceImportData"), true);
+	AnimSequenceImportData->SetFlags(RF_Transactional);
 	TextureImportData = CreateDefaultSubobject<UFbxTextureImportData>(TEXT("TextureImportData"), true);
+	TextureImportData->SetFlags(RF_Transactional);
 
 	ReimportData = nullptr;
 }
@@ -818,6 +845,23 @@ UFbxSceneImportData* CreateReImportAsset(const FString &PackagePath, const FStri
 	return ReImportAsset;
 }
 
+UObject* UFbxSceneImportFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName InName, EObjectFlags Flags, const FString& Filename, const TCHAR* Parms, FFeedbackContext* Warn, bool& bOutOperationCanceled)
+{
+	// This function performs shortcut to call FactoryCreateBinary without loading a file to array.
+	FString FileExtension = FPaths::GetExtension(Filename);
+	
+	if (!IFileManager::Get().FileExists(*Filename))
+	{
+		UE_LOG(LogFbx, Error, TEXT("Failed to load file '%s'"), *Filename)
+		return nullptr;
+	}
+	
+	ParseParms(Parms);
+	
+	const uint8* Buffer = nullptr;
+	const uint8* BufferEnd = nullptr;
+	return FactoryCreateBinary(InClass, InParent, InName, Flags, nullptr, *FileExtension, Buffer, BufferEnd, Warn, bOutOperationCanceled);
+}
 
 UObject* UFbxSceneImportFactory::FactoryCreateBinary
 (
@@ -1085,9 +1129,7 @@ FFeedbackContext*	Warn
 	AnimSequenceImportData->FbxSceneImportDataReference = ReimportData;
 
 	//Get the scene root node
-	FbxNode* RootNodeToImport = nullptr;
-	RootNodeToImport = FbxImporter->Scene->GetRootNode();
-
+	FbxNode* RootNodeToImport = FbxImporter->Scene->GetRootNode();
 	
 	// For animation and static mesh we assume there is at lease one interesting node by default
 	int32 InterestingNodeCount = 1;
@@ -1228,8 +1270,8 @@ USceneComponent *CreateCameraComponent(AActor *ParentActor, TSharedPtr<FFbxCamer
 	CameraComponent->SetOrthoFarClipPlane(CameraInfo->FarPlane);
 	CameraComponent->SetOrthoWidth(CameraInfo->AspectWidth);
 	CameraComponent->SetFieldOfView(CameraInfo->FieldOfView);
-	CameraComponent->FilmbackSettings.SensorWidth = 2 * CameraInfo->FocalLength * FMath::Tan(FMath::DegreesToRadians(0.5f * CameraInfo->FieldOfView));
-	CameraComponent->FilmbackSettings.SensorHeight = CameraComponent->FilmbackSettings.SensorWidth * CameraInfo->AspectHeight / CameraInfo->AspectWidth;
+	CameraComponent->FilmbackSettings.SensorWidth = FUnitConversion::Convert(CameraInfo->ApertureWidth, EUnit::Inches, EUnit::Millimeters);
+	CameraComponent->FilmbackSettings.SensorHeight = FUnitConversion::Convert(CameraInfo->ApertureHeight, EUnit::Inches, EUnit::Millimeters);
 	CameraComponent->LensSettings.MaxFocalLength = CameraInfo->FocalLength;
 	CameraComponent->LensSettings.MinFocalLength = CameraInfo->FocalLength;
 	CameraComponent->FocusSettings.FocusMethod = ECameraFocusMethod::None;
@@ -1440,7 +1482,7 @@ void UFbxSceneImportFactory::CreateLevelActorHierarchy(TSharedPtr<FFbxSceneInfo>
 			//When importing a scene we don't want to change the actor name even if there is similar label already existing
 			PlacedActor->SetActorLabel(NodeInfo->NodeName);
 
-			USceneComponent* RootComponent = Cast<USceneComponent>(PlacedActor->GetRootComponent());
+			USceneComponent* RootComponent = PlacedActor->GetRootComponent();
 			if (RootComponent)
 			{
 				RootComponent->SetFlags(RF_Transactional);
@@ -1460,7 +1502,7 @@ void UFbxSceneImportFactory::CreateLevelActorHierarchy(TSharedPtr<FFbxSceneInfo>
 					ParentActor = *NewActorNameMap.Find(ParentUniqueId);
 					if (ParentActor != nullptr)
 					{
-						USceneComponent* ParentRootComponent = Cast<USceneComponent>(ParentActor->GetRootComponent());
+						USceneComponent* ParentRootComponent = ParentActor->GetRootComponent();
 						if (ParentRootComponent)
 						{
 							if (GEditor->CanParentActors(ParentActor, PlacedActor))
@@ -1807,6 +1849,7 @@ UObject* UFbxSceneImportFactory::ImportOneSkeletalMesh(void* VoidRootNodeToImpor
 	//TODO support bBakePivotInVertex
 	bool Old_bBakePivotInVertex = GlobalImportSettings->bBakePivotInVertex;
 	GlobalImportSettings->bBakePivotInVertex = false;
+	GlobalImportSettings->bImportBoneTracks = true;
 	//if (GlobalImportSettings->bBakePivotInVertex && RootNodeInfo->AttributeInfo->PivotNodeUid == INVALID_UNIQUE_ID)
 	//{
 		//GlobalImportSettings->bBakePivotInVertex = false;
@@ -1826,7 +1869,7 @@ UObject* UFbxSceneImportFactory::ImportOneSkeletalMesh(void* VoidRootNodeToImpor
 			}
 		}
 	}
-	MaxLODLevel = FMath::Min(MAX_SKELETAL_MESH_LODS, MaxLODLevel);
+
 	int32 LODIndex;
 	for (LODIndex = 0; LODIndex < MaxLODLevel; LODIndex++)
 	{
@@ -1880,7 +1923,7 @@ UObject* UFbxSceneImportFactory::ImportOneSkeletalMesh(void* VoidRootNodeToImpor
 				SkelMeshNodePivotArray.Add(SkelMeshNode);
 			}
 		}
-
+		FSkeletalMeshImportData OutData;
 		if (LODIndex == 0 && SkelMeshNodeArray.Num() != 0)
 		{
 			FName OutputName = FbxImporter->MakeNameForMesh(SkelMeshNodeArray[0]->GetName(), SkelMeshNodeArray[0]);
@@ -1899,6 +1942,7 @@ UObject* UFbxSceneImportFactory::ImportOneSkeletalMesh(void* VoidRootNodeToImpor
 			ImportSkeletalMeshArgs.Flags = Flags;
 			ImportSkeletalMeshArgs.TemplateImportData = SkeletalMeshImportData;
 			ImportSkeletalMeshArgs.LodIndex = LODIndex;
+			ImportSkeletalMeshArgs.OutData = &OutData;
 
 			USkeletalMesh* NewMesh = FbxImporter->ImportSkeletalMesh( ImportSkeletalMeshArgs );
 			NewObject = NewMesh;
@@ -1937,14 +1981,11 @@ UObject* UFbxSceneImportFactory::ImportOneSkeletalMesh(void* VoidRootNodeToImpor
 			ImportSkeletalMeshArgs.Flags = RF_Transient;
 			ImportSkeletalMeshArgs.TemplateImportData = SkeletalMeshImportData;
 			ImportSkeletalMeshArgs.LodIndex = LODIndex;
+			ImportSkeletalMeshArgs.OutData = &OutData;
 
 			USkeletalMesh *LODObject = FbxImporter->ImportSkeletalMesh(ImportSkeletalMeshArgs);
 			bool bImportSucceeded = FbxImporter->ImportSkeletalMeshLOD(LODObject, BaseSkeletalMesh, LODIndex);
-			if (bImportSucceeded)
-			{
-				BaseSkeletalMesh->LODInfo[LODIndex].ScreenSize = 1.0f / (MaxLODLevel * LODIndex);
-			}
-			else
+			if (!bImportSucceeded)
 			{
 				FbxImporter->AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Error, LOCTEXT("FailedToImport_SkeletalMeshLOD", "Failed to import Skeletal mesh LOD.")), FFbxErrors::SkeletalMesh_LOD_FailedToImport);
 			}
@@ -1958,15 +1999,26 @@ UObject* UFbxSceneImportFactory::ImportOneSkeletalMesh(void* VoidRootNodeToImpor
 			
 			USkeletalMesh *NewSkelMesh = Cast<USkeletalMesh>(NewObject);
 			if ((GlobalImportSettings->bImportSkeletalMeshLODs || LODIndex == 0) &&
+				GlobalImportSettings->bImportMorph &&
 				NewSkelMesh &&
-				NewSkelMesh->GetImportedResource() &&
-				NewSkelMesh->GetImportedResource()->LODModels.IsValidIndex(LODIndex))
+				NewSkelMesh->GetImportedModel() &&
+				NewSkelMesh->GetImportedModel()->LODModels.IsValidIndex(LODIndex))
 			{
 				// TODO: Disable material importing when importing morph targets
-				FbxImporter->ImportFbxMorphTarget(SkelMeshNodeArray, NewSkelMesh, Pkg, LODIndex);
+				FbxImporter->ImportFbxMorphTarget(SkelMeshNodeArray, NewSkelMesh, Pkg, LODIndex, OutData);
 			}
 		}
 	}
+	
+	USkeletalMesh* ImportedSkelMesh = Cast<USkeletalMesh>(NewObject);
+	//If we have import some morph target we have to rebuild the render resources since morph target are now using GPU
+	if (ImportedSkelMesh && ImportedSkelMesh->MorphTargets.Num() > 0)
+	{
+		ImportedSkelMesh->ReleaseResources();
+		//Rebuild the resources with a post edit change since we have added some morph targets
+		ImportedSkelMesh->PostEditChange();
+	}
+	
 	//Put back the options
 	GlobalImportSettings->bBakePivotInVertex = Old_bBakePivotInVertex;
 	return NewObject;
@@ -2234,20 +2286,28 @@ UObject* UFbxSceneImportFactory::ImportANode(void* VoidFbxImporter, TArray<void*
 	NewObject = FFbxImporter->ImportStaticMeshAsSingle(Pkg, Nodes, StaticMeshFName, Flags, StaticMeshImportData, Cast<UStaticMesh>(InMesh), LODIndex);
 
 	OutNodeInfo->AttributeInfo->SetOriginalImportPath(PackageName);
-	OutNodeInfo->AttributeInfo->SetOriginalFullImportName(NewObject->GetPathName());
 
 	if (NewObject)
 	{
+		OutNodeInfo->AttributeInfo->SetOriginalFullImportName(NewObject->GetPathName());
+
 		NodeIndex++;
 		FFormatNamedArguments Args;
 		Args.Add(TEXT("NodeIndex"), NodeIndex);
 		Args.Add(TEXT("ArrayLength"), Total);
 		GWarn->StatusUpdate(NodeIndex, Total, FText::Format(NSLOCTEXT("UnrealEd", "Importingf", "Importing ({NodeIndex} of {ArrayLength})"), Args));
 	}
-	else if(Pkg != nullptr)
+	else
 	{
 		Pkg->RemoveFromRoot();
 		Pkg->ConditionalBeginDestroy();
+	}
+
+	// Destroy Fbx mesh to save memory.
+	for (int32 Index = 0; Index < Nodes.Num(); Index++)
+	{
+		FbxMesh* Mesh = Nodes[Index]->GetMesh();
+		Mesh->Destroy(true);
 	}
 
 	GlobalImportSettings->bBakePivotInVertex = Old_bBakePivotInVertex;

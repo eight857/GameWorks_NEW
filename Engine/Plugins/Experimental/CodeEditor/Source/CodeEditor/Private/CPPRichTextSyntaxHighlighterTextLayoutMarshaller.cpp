@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CPPRichTextSyntaxHighlighterTextLayoutMarshaller.h"
 #include "Framework/Text/IRun.h"
@@ -234,7 +234,7 @@ void FCPPRichTextSyntaxHighlighterTextLayoutMarshaller::ParseTokens(const FStrin
 			FRunInfo RunInfo(TEXT("SyntaxHighlight.CPP.Normal"));
 			FTextBlockStyle TextBlockStyle = SyntaxTextStyle.NormalTextStyle;
 
-			const bool bIsWhitespace = FString(TokenText).TrimTrailing().IsEmpty();
+			const bool bIsWhitespace = FString(TokenText).TrimEnd().IsEmpty();
 			if(!bIsWhitespace)
 			{
 				bool bHasMatchedSyntax = false;

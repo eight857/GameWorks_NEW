@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BehaviorTree/BehaviorTreeManager.h"
 #include "UObject/UObjectHash.h"
@@ -508,12 +508,12 @@ void UBehaviorTreeManager::RemoveActiveComponent(UBehaviorTreeComponent& Compone
 UBehaviorTreeManager* UBehaviorTreeManager::GetCurrent(UWorld* World)
 {
 	UAISystem* AISys = UAISystem::GetCurrentSafe(World);
-	return AISys ? AISys->GetBehaviorTreeManager() : NULL;
+	return AISys ? AISys->GetBehaviorTreeManager() : nullptr;
 }
 
 UBehaviorTreeManager* UBehaviorTreeManager::GetCurrent(UObject* WorldContextObject)
 {
-	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, false);
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull);
 	UAISystem* AISys = UAISystem::GetCurrentSafe(World);
-	return AISys ? AISys->GetBehaviorTreeManager() : NULL;
+	return AISys ? AISys->GetBehaviorTreeManager() : nullptr;
 }

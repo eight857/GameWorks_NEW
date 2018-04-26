@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -56,7 +56,8 @@ public:
 	/** Sets up an inline-name for the creation of a new asset using the specified path and the specified class and/or factory */
 	void CreateNewAsset(const FString& DefaultAssetName, const FString& PackagePath, UClass* AssetClass, UFactory* Factory);
 
-	/** Changes sources to show the specified assets and selects them in the asset view
+	/**
+	 * Changes sources to show the specified assets and selects them in the asset view
 	 *
 	 *	@param AssetDataList		- A list of assets to sync the view to
 	 * 
@@ -65,8 +66,28 @@ public:
 	 */
 	void SyncToAssets( const TArray<FAssetData>& AssetDataList, const bool bAllowImplicitSync = false, const bool bDisableFiltersThatHideAssets = true );
 
+	/**
+	 * Changes sources to show the specified folders and selects them in the asset view
+	 *
+	 *	@param FolderList			- A list of folders to sync the view to
+	 * 
+	 *	@param bAllowImplicitSync	- true to allow the view to sync to parent folders if they are already selected,
+	 *								  false to force the view to select the explicit Parent folders of each asset 
+	 */
+	void SyncToFolders( const TArray<FString>& FolderList, const bool bAllowImplicitSync = false );
+
+	/**
+	 * Changes sources to show the specified items and selects them in the asset view
+	 *
+	 *	@param AssetDataList		- A list of assets to sync the view to
+	 * 
+	 *	@param bAllowImplicitSync	- true to allow the view to sync to parent folders if they are already selected,
+	 *								  false to force the view to select the explicit Parent folders of each asset 
+	 */
+	void SyncTo( const FContentBrowserSelection& ItemSelection, const bool bAllowImplicitSync = false, const bool bDisableFiltersThatHideAssets = true );
+
 	/** Sets this content browser as the primary browser. The primary browser is the target for asset syncs and contributes to the global selection set. */
-	void SetIsPrimaryContentBrowser (bool NewIsPrimary);
+	void SetIsPrimaryContentBrowser(bool NewIsPrimary);
 
 	/** Gets the tab manager for the tab containing this browser */
 	TSharedPtr<FTabManager> GetTabManager() const;
@@ -106,6 +127,9 @@ public:
 
 private:
 
+	/** Called prior to syncing the selection in this Content Browser */
+	void PrepareToSync( const TArray<FAssetData>& AssetDataList, const TArray<FString>& FolderPaths, const bool bDisableFiltersThatHideAssets );
+
 	/** Called to retrieve the text that should be highlighted on assets */
 	FText GetHighlightedText() const;
 
@@ -136,6 +160,9 @@ private:
 	/** Handler for when a path has been selected in the path view */
 	void PathSelected(const FString& FolderPath);
 
+	/** Handler for when a path has been selected in the favorite path view */
+	void FavoritePathSelected(const FString& FolderPath);
+
 	/** Gets the current path if one exists, otherwise returns empty string. */
 	FString GetCurrentPath() const;
 
@@ -152,10 +179,10 @@ private:
 	void PathPickerCollectionSelected(const FCollectionNameType& SelectedCollection);
 
 	/** Sets the state of the browser to the one described by the supplied history data */
-	void OnApplyHistoryData (const FHistoryData& History);
+	void OnApplyHistoryData(const FHistoryData& History);
 
 	/** Updates the supplied history data with current information */
-	void OnUpdateHistoryData (FHistoryData& History) const;
+	void OnUpdateHistoryData(FHistoryData& History) const;
 
 	/** Handler for when the path view requests an asset creation */
 	void NewAssetRequested(const FString& SelectedPath, TWeakObjectPtr<UClass> FactoryClass);
@@ -286,7 +313,7 @@ private:
 	void HandleOpenAssetsOrFoldersCommandExecute();
 
 	/** Handler for previewing assets */
-	void HandlePreviewAssetsCommandEecute();
+	void HandlePreviewAssetsCommandExecute();
 
 	/** Handler for creating new folder */
 	void HandleCreateNewFolderCommandExecute();
@@ -325,7 +352,7 @@ private:
 	void OnFilterChanged();
 
 	/** Gets the text for the path label */
-	FString GetPathText() const;
+	FText GetPathText() const;
 
 	/** Returns true if currently filtering by a source */
 	bool IsFilteredBySource() const;
@@ -372,6 +399,9 @@ private:
 	/** Delegate called when generating the context menu for a folder */
 	TSharedPtr<SWidget> GetFolderContextMenu(const TArray<FString>& SelectedPaths, FContentBrowserMenuExtender_SelectedPaths InMenuExtender, FOnCreateNewFolder OnCreateNewFolder, bool bPathView);
 
+	/** Delegate called to get the current selection state */
+	void GetSelectionState(TArray<FAssetData>& SelectedAssets, TArray<FString>& SelectedPaths);
+
 	/** Sets up an inline-name for the creation of a default-named folder the specified path */
 	void CreateNewFolder(FString FolderPath, FOnCreateNewFolder OnCreateNewFolder);
 
@@ -380,6 +410,15 @@ private:
 
 	/** Gets the visibility of the collection view */
 	EVisibility GetCollectionViewVisibility() const;
+
+	/** Gets the visibility of the favorites view */
+	EVisibility GetFavoriteFolderVisibility() const;
+	
+	/** The visibility of the search bar for the base path view*/
+	EVisibility GetAlternateSearchBarVisibility() const;
+
+	/** Toggles the favorite status of an array of folders*/
+	void ToggleFolderFavorite(const TArray<FString>& FolderPaths);
 
 private:
 
@@ -397,6 +436,9 @@ private:
 
 	/** The asset tree widget */
 	TSharedPtr<SPathView> PathViewPtr;
+
+	/** The favorites tree widget */
+	TSharedPtr<class SFavoritePathView> FavoritePathViewPtr;
 
 	/** The collection widget */
 	TSharedPtr<SCollectionView> CollectionViewPtr;

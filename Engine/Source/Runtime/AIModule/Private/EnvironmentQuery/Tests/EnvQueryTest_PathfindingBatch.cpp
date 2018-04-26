@@ -1,12 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EnvironmentQuery/Tests/EnvQueryTest_PathfindingBatch.h"
 #include "Engine/World.h"
 #include "AI/Navigation/RecastNavMesh.h"
-
-#if WITH_RECAST
-#include "AI/Navigation/PImplRecastNavMesh.h"
-#endif
+#include "AI/Navigation/RecastQueryFilter.h"
 
 #define LOCTEXT_NAMESPACE "EnvQueryGenerator"
 

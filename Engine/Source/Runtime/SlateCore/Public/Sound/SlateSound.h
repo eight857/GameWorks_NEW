@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,7 +11,7 @@
 /**
  * An intermediary to make UBaseSound available for Slate to play sounds
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct SLATECORE_API FSlateSound
 {
 	GENERATED_USTRUCT_BODY()

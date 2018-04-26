@@ -1,13 +1,15 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Misc/Guid.h"
 #include "Engine/UserDefinedStruct.h"
 #include "Kismet2/ListenerManager.h"
-#include "UserDefinedStructure/UserDefinedStructEditorData.h"
 
+struct FEdGraphPinType;
+struct FStructVariableDescription;
 class UBlueprint;
+class UUserDefinedStruct;
 
 class UNREALED_API FStructureEditorUtils
 {
@@ -89,6 +91,8 @@ public:
 
 	static FString GetVariableDisplayName(const UUserDefinedStruct* Struct, FGuid VarGuid);
 
+	static UProperty* GetPropertyByDisplayName(const UUserDefinedStruct* Struct, FString DisplayName);
+
 	static FString GetVariableTooltip(const UUserDefinedStruct* Struct, FGuid VarGuid);
 	
 	static bool ChangeVariableTooltip(UUserDefinedStruct* Struct, FGuid VarGuid, const FString& InTooltip);
@@ -125,25 +129,9 @@ public:
 
 	static const TArray<FStructVariableDescription>* GetVarDescPtr(const UUserDefinedStruct* Struct);
 
-	static FStructVariableDescription* GetVarDescByGuid(UUserDefinedStruct* Struct, FGuid VarGuid)
-	{
-		if (Struct)
-		{
-			auto VarDescArray = GetVarDescPtr(Struct);
-			return VarDescArray ? VarDescArray->FindByPredicate(FFindByGuidHelper<FStructVariableDescription>(VarGuid)) : nullptr;
-		}
-		return nullptr;
-	}
+	static FStructVariableDescription* GetVarDescByGuid(UUserDefinedStruct* Struct, FGuid VarGuid);
 
-	static const FStructVariableDescription* GetVarDescByGuid(const UUserDefinedStruct* Struct, FGuid VarGuid)
-	{
-		if (Struct)
-		{
-			auto VarDescArray = GetVarDescPtr(Struct);
-			return VarDescArray ? VarDescArray->FindByPredicate(FFindByGuidHelper<FStructVariableDescription>(VarGuid)) : nullptr;
-		}
-		return nullptr;
-	}
+	static const FStructVariableDescription* GetVarDescByGuid(const UUserDefinedStruct* Struct, FGuid VarGuid);
 
 	static FGuid GetGuidForProperty(const UProperty* Property);
 
@@ -159,17 +147,7 @@ public:
 	static void RemoveInvalidStructureMemberVariableFromBlueprint(UBlueprint* Blueprint);
 
 	//DEFAULT VALUE
-	/*
-	 Default values for member variables in User Defined Structure are stored in meta data "MakeStructureDefaultValue"
-	 The following functions are used to fill an instance of user defined struct with those default values.
-	 */
-	static bool Fill_MakeStructureDefaultValue(const UUserDefinedStruct* Struct, uint8* StructData);
-
-	static bool Fill_MakeStructureDefaultValue(const UProperty* Property, uint8* PropertyData);
-
 	static void RecreateDefaultInstanceInEditorData(UUserDefinedStruct* Struct);
-
-	static bool DiffersFromDefaultValue(const UUserDefinedStruct* Struct, uint8* StructData);
 
 	//VALIDATION
 	static bool CanHaveAMemberVariableOfType(const UUserDefinedStruct* Struct, const FEdGraphPinType& VarType, FString* OutMsg = NULL);

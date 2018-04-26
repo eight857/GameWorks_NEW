@@ -1,3 +1,4 @@
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GPUFastFourierTransform.h"
 #include "SceneUtils.h"
@@ -193,17 +194,18 @@ namespace GPUFFT
 		}
 
 		// Used by IMPLEMENT_SHADER_TYPE2
-		static const TCHAR* GetSourceFilename() { return TEXT("GPUFastFourierTransform"); }
+		static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/GPUFastFourierTransform.usf"); }
 		static const TCHAR* GetFunctionName() { return TEXT("ReorderFFTPassCS"); }
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+			// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 		}
 
-		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+		static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 		{
-			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+			FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 			OutEnvironment.SetDefine(TEXT("INCLUDE_REORDER_FFT_PASS"), 1);
 		}
 
@@ -295,20 +297,21 @@ namespace GPUFFT
 		}
 
 		// Used by IMPLEMENT_SHADER_TYPE2
-		static const TCHAR* GetSourceFilename() { return TEXT("GPUFastFourierTransform"); }
+		static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/GPUFastFourierTransform.usf"); }
 		static const TCHAR* GetFunctionName()   { return TEXT("GroupSharedSubComplexFFTCS"); }
 		
 		static uint32 SubPassLength() { return 2048;}
 		static uint32 Radix() { return 2; }
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+			// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 		}
 
-		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+		static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 		{
-			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+			FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 			OutEnvironment.SetDefine(TEXT("INCLUDE_GROUP_SHARED_SUB_COMPLEX_FFT"), 1);
 			OutEnvironment.SetDefine(TEXT("SCAN_LINE_LENGTH"), FGroupShardSubFFTPassCS::SubPassLength());
 			OutEnvironment.SetDefine(TEXT("RADIX"), FGroupShardSubFFTPassCS::Radix());
@@ -399,17 +402,18 @@ namespace GPUFFT
 		}
 
 		// Used by IMPLEMENT_SHADER_TYPE2
-		static const TCHAR* GetSourceFilename() { return TEXT("GPUFastFourierTransform"); }
+		static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/GPUFastFourierTransform.usf"); }
 		static const TCHAR* GetFunctionName()   { return TEXT("ComplexFFTPassCS"); }
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+			// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 		}
 
-		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+		static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 		{
-			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+			FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 			OutEnvironment.SetDefine(TEXT("INCLUDE_COMPLEX_FFT_PASS"), 1);
 		}
 
@@ -499,17 +503,18 @@ namespace GPUFFT
 		}
 
 		// Used by IMPLEMENT_SHADER_TYPE2
-		static const TCHAR* GetSourceFilename() { return TEXT("GPUFastFourierTransform"); }
+		static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/GPUFastFourierTransform.usf"); }
 		static const TCHAR* GetFunctionName() { return TEXT("PackTwoForOneFFTPassCS"); }
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+			// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 		}
 
-		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+		static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 		{
-			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+			FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 			OutEnvironment.SetDefine(TEXT("INCLUDE_PACK_TWOFORONE_FFT_PASS"), 1);
 		}
 
@@ -581,20 +586,21 @@ namespace GPUFFT
 		}
 
 		// Used by IMPLEMENT_SHADER_TYPE2
-		static const TCHAR* GetSourceFilename() { return TEXT("GPUFastFourierTransform"); }
+		static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/GPUFastFourierTransform.usf"); }
 		static const TCHAR* GetFunctionName()   { return TEXT("CopyWindowCS"); }
 
 		static uint32 XThreadCount() { return 1; }
 		static uint32 YThreadCount() { return 32; }
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+			// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 		}
 
-		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+		static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 		{
-			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+			FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 			OutEnvironment.SetDefine(TEXT("INCLUDE_COPY_WINDOW"), 1);
 			OutEnvironment.SetDefine(TEXT("X_THREAD_COUNT"), XThreadCount());
 			OutEnvironment.SetDefine(TEXT("Y_THREAD_COUNT"), YThreadCount());
@@ -667,18 +673,19 @@ namespace GPUFFT
 		}
 
 		// Used by IMPLEMENT_SHADER_TYPE2
-		static const TCHAR* GetSourceFilename() { return TEXT("GPUFastFourierTransform"); }
+		static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/GPUFastFourierTransform.usf"); }
 		static const TCHAR* GetFunctionName() { return TEXT("ComplexMultiplyImagesCS"); }
 
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+			// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 		}
 
-		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+		static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 		{
-			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+			FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 			OutEnvironment.SetDefine(TEXT("INCLUDE_COMPLEX_MULTIPLY_IMAGES"), 1);
 		}
 
@@ -826,18 +833,19 @@ namespace GPUFFT
 		DECLARE_SHADER_TYPE(TGSComplexTransformCS, Global);
 
 		// Used by IMPLEMENT_SHADER_TYPE2
-		static const TCHAR* GetSourceFilename() { return TEXT("GPUFastFourierTransform"); }
+		static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/GPUFastFourierTransform.usf"); }
 		static const TCHAR* GetFunctionName()   { return TEXT("GroupSharedComplexFFTCS"); }
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+			// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 		}
 
 
-		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+		static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 		{
-			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+			FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 			OutEnvironment.SetDefine(TEXT("INCLUDE_GROUP_SHARED_COMPLEX_FFT"), 1);
 			OutEnvironment.SetDefine(TEXT("SCAN_LINE_LENGTH"), PowRadixSignalLength);
 		}
@@ -862,18 +870,19 @@ namespace GPUFFT
 		DECLARE_SHADER_TYPE(TGSTwoForOneTransformCS, Global);
 
 		// Used by IMPLEMENT_SHADER_TYPE2
-		static const TCHAR* GetSourceFilename() { return TEXT("GPUFastFourierTransform"); }
+		static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/GPUFastFourierTransform.usf"); }
 		static const TCHAR* GetFunctionName()   { return TEXT("GroupSharedTwoForOneFFTCS"); }
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+			// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 		}
 
 
-		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+		static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 		{
-			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+			FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 			OutEnvironment.SetDefine(TEXT("INCLUDE_GROUP_SHARED_TWO_FOR_ONE_FFT"), 1);
 			OutEnvironment.SetDefine(TEXT("SCAN_LINE_LENGTH"), PowRadixSignalLength);
 		}
@@ -991,7 +1000,7 @@ namespace GPUFFT
 		}
 
 		// Used by IMPLEMENT_SHADER_TYPE2
-		static const TCHAR* GetSourceFilename() { return TEXT("GPUFastFourierTransform"); }
+		static const TCHAR* GetSourceFilename() { return TEXT("/Engine/Private/GPUFastFourierTransform.usf"); }
 		static const TCHAR* GetFunctionName()   { return TEXT("GSConvolutionWithTextureCS"); }
 	
 
@@ -1037,15 +1046,16 @@ namespace GPUFFT
 
 
 
-		static bool ShouldCache(EShaderPlatform Platform)
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 		{
-			return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5);
+			// @todo MetalMRT: Metal MRT can't cope with the threadgroup storage requirements for these shaders right now
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && (!IsMetalPlatform(Parameters.Platform) || RHIGetShaderLanguageVersion(Parameters.Platform) >= 2) && (Parameters.Platform != SP_METAL_MRT);
 		}
 
 
-		static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+		static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 		{
-			FGlobalShader::ModifyCompilationEnvironment(Platform, OutEnvironment);
+			FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 			OutEnvironment.SetDefine(TEXT("INCLUDE_GROUP_SHARED_CONVOLUTION_WITH_TEXTURE"), 1);
 			OutEnvironment.SetDefine(TEXT("SCAN_LINE_LENGTH"), PowRadixSignalLength);
 		}

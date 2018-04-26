@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Framework/Text/RichTextLayoutMarshaller.h"
 #include "Styling/ISlateStyle.h"
@@ -85,8 +85,8 @@ void FRichTextLayoutMarshaller::GetText(FString& TargetString, const FTextLayout
 }
 
 FRichTextLayoutMarshaller::FRichTextLayoutMarshaller(TArray< TSharedRef< ITextDecorator > > InDecorators, const ISlateStyle* const InDecoratorStyleSet)
-	: Parser(MoveTemp(FDefaultRichTextMarkupParser::Create()))
-	, Writer(MoveTemp(FDefaultRichTextMarkupWriter::Create()))
+	: Parser(FDefaultRichTextMarkupParser::Create())
+	, Writer(FDefaultRichTextMarkupWriter::Create())
 	, Decorators(MoveTemp(InDecorators))
 	, InlineDecorators()
 	, DecoratorStyleSet(InDecoratorStyleSet)

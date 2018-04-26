@@ -1,14 +1,15 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "K2Node_EditablePinBase.h"
+#include "EdGraph/EdGraphPin.h"
 #include "K2Node_Tunnel.generated.h"
 
-UCLASS(MinimalAPI)
-class UK2Node_Tunnel : public UK2Node_EditablePinBase
+UCLASS()
+class BLUEPRINTGRAPH_API UK2Node_Tunnel : public UK2Node_EditablePinBase
 {
 	GENERATED_UCLASS_BODY()
 
@@ -17,11 +18,11 @@ class UK2Node_Tunnel : public UK2Node_EditablePinBase
 	
 	// The output pins of this tunnel node came from the input pins of OutputSourceNode
 	UPROPERTY()
-	class UK2Node_Tunnel* OutputSourceNode;
+	UK2Node_Tunnel* OutputSourceNode;
 
 	// The input pins of this tunnel go to the output pins of InputSinkNode
 	UPROPERTY()
-	class UK2Node_Tunnel* InputSinkNode;
+	UK2Node_Tunnel* InputSinkNode;
 
 	// Whether this node is allowed to have inputs
 	UPROPERTY()
@@ -42,25 +43,26 @@ class UK2Node_Tunnel : public UK2Node_EditablePinBase
 	virtual FText GetTooltipText() const override;
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
 	virtual bool CanUserDeleteNode() const override;
-	BLUEPRINTGRAPH_API virtual bool CanDuplicateNode() const override;
+	virtual bool CanDuplicateNode() const override;
 	virtual UObject* GetJumpTargetForDoubleClick() const override;
-	virtual FString CreateUniquePinName(FString SourcePinName) const override;
+	virtual FName CreateUniquePinName(FName SourcePinName) const override;
 	virtual void ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins) override;
 	//~ End UEdGraphNode Interface
 
 	//~ Begin UK2Node Interface.
-	BLUEPRINTGRAPH_API virtual bool IsNodeSafeToIgnore() const override;
+	virtual bool IsNodeSafeToIgnore() const override;
 	virtual bool DrawNodeAsEntry() const override;
 	virtual bool DrawNodeAsExit() const override;
 	virtual bool NodeCausesStructuralBlueprintChange() const override { return true; }
 	//~ End UK2Node Interface
 
 	//~ Begin UK2Node_EditablePinBase Interface.
-	BLUEPRINTGRAPH_API virtual UEdGraphPin* CreatePinFromUserDefinition(const TSharedPtr<FUserPinInfo> NewPinInfo) override;
-	BLUEPRINTGRAPH_API virtual bool CanModifyExecutionWires() override;
-	BLUEPRINTGRAPH_API virtual ERenamePinResult RenameUserDefinedPin(const FString& OldName, const FString& NewName, bool bTest = false) override;
+	virtual UEdGraphPin* CreatePinFromUserDefinition(const TSharedPtr<FUserPinInfo> NewPinInfo) override;
+	virtual bool CanModifyExecutionWires() override;
+	virtual ERenamePinResult RenameUserDefinedPin(const FName OldName, const FName NewName, bool bTest = false) override;
 	virtual bool CanUseRefParams() const override { return true; }
 	virtual bool CanCreateUserDefinedPin(const FEdGraphPinType& InPinType, EEdGraphPinDirection InDesiredDirection, FText& OutErrorMessage) override;
+	virtual bool ModifyUserDefinedPinDefaultValue(TSharedPtr<FUserPinInfo> PinInfo, const FString& NewDefaultValue) override;
 	//~ End UK2Node_EditablePinBase Interface
 
 protected:
@@ -70,12 +72,19 @@ protected:
 	* @param bInAllWildcardPinsUnlinked	TRUE if all wildcard pins were unlinked
 	*/
 	virtual void PostFixupAllWildcardPins(bool bInAllWildcardPinsUnlinked) {}
+
+	// Utility function that subclasses must call after allocating their default pins
+	void CacheWildcardPins();
+
+	// Cache of the pins that were created as wildcards
+	TArray<UEdGraphPin*> WildcardPins;
+
 public:
 	// The input pins of this tunnel go to the output pins of InputSinkNode (can be NULL).
-	BLUEPRINTGRAPH_API virtual UK2Node_Tunnel* GetInputSink() const;
+	virtual UK2Node_Tunnel* GetInputSink() const;
 
 	// The output pins of this tunnel node came from the input pins of OutputSourceNode (can be NULL).
-	BLUEPRINTGRAPH_API virtual UK2Node_Tunnel* GetOutputSource() const;
+	virtual UK2Node_Tunnel* GetOutputSource() const;
 };
 
 

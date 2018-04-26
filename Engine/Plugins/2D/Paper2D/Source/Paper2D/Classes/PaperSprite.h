@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,7 +15,7 @@ class UMaterialInterface;
 class UPaperSpriteAtlas;
 
 //@TODO: Should have some nice UI and enforce unique names, etc...
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FPaperSpriteSocket
 {
 	GENERATED_USTRUCT_BODY()
@@ -155,7 +155,7 @@ protected:
 
 	// The previous spritesheet group this belonged to
 	// To make sure we remove ourselves from it if changed or nulled out
-	TAssetPtr<class UPaperSpriteAtlas> PreviousAtlasGroup;
+	TSoftObjectPtr<class UPaperSpriteAtlas> PreviousAtlasGroup;
 
 #endif
 

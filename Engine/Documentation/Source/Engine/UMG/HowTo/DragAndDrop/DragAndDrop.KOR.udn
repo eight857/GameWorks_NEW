@@ -1,11 +1,20 @@
-﻿INTSourceChangelist:3343774
-Availability:Docs
+﻿INTSourceChangelist:3782314
+Availability:Public
 Title:드래그 앤 드롭 UI 제작
 Crumbs: %ROOT%, Engine, Engine/UMG, Engine/UMG/HowTo
 Description:UMG 로 드래그 앤 드롭 가능한 UI 위젯을 만드는 법을 보여드립니다.
 Version: 4.15
 SkillLevel: Intermediate
+parent:Engine/UMG/HowTo
+order:1
+checkpoint: editorqs
+Related: Engine/UMG
+Related: Engine/UMG/UserGuide
 tags:UMG UI Designer
+tags:UI
+type:how-to
+
+
 
 프로젝트에서 플레이어가 UI 엘리먼트를 화면상에서 드래그 앤 드롭으로 상호작용할 수 있도록 했으면 싶은 때가 있습니다.
 인터페이스 레이아웃 커스터마이징 (헬스 바 또는 유닛 프레임 위치 이동) 또는 인벤토리 화면같은 게임플레이 시스템 상호작용 (아이템 추가/제거) 등이 될 수 있습니다.
@@ -14,38 +23,37 @@ UMG 에서 **DragAndDropOperation** 노드로 이러한 상호작용 유형을 �
 이 예제에서는 플레이어가 왼쪽 마우스 버튼으로 화면상의 헬스 바를 끌어 위치를 조정할 수 있도록 만드는 방법을 살펴봅니다.
 
 [OBJECT:EmbeddedVideo]
-[PARAMLITERAL:width]
-640
-[/PARAMLITERAL]
-[PARAMLITERAL:height]
-360
-[/PARAMLITERAL]
-[PARAMLITERAL:videoid]
-kYkhxuJsVs4
-[/PARAMLITERAL]
+	[PARAMLITERAL:videoid]
+	kYkhxuJsVs4
+	[/PARAMLITERAL]
+	[PARAMLITERAL:width]
+	100
+	[/PARAMLITERAL]
+	[PARAMLITERAL:height]
+	56.25
+	[/PARAMLITERAL]
+	[PARAMLITERAL:units]
+	%
+	[/PARAMLITERAL]
+	[PARAMLITERAL:type]
+	simple
+	[/PARAMLITERAL]
 [/OBJECT]
 
 _이 가이드를 마칠 즈음엔 뷰포트 안에서 드래그하여 새 위치에 드롭할 수 있는 UI 위젯이 생길 것입니다._
 
-[OBJECT:TopicButtonList]
-	[PARAM:icon]
-		![](%ROOT%/build_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		단계
-	[/PARAM]
-	[PARAM:description]
-	[/PARAM]
-	[PARAM:links]
-	* [](Engine\UMG\HowTo\DragAndDrop\ProjectSetup)
-	* [](Engine\UMG\HowTo\DragAndDrop\WidgetSetup)
-	* [](Engine\UMG\HowTo\DragAndDrop\OnDragDetected)
-	* [](Engine\UMG\HowTo\DragAndDrop\OnDrop)
-	* [](Engine\UMG\HowTo\DragAndDrop\FinishingUp)
-	[/PARAM]
-[/OBJECT]
+## 단계
+
+[REGION:buttonlist]
+* [](Engine\UMG\HowTo\DragAndDrop\ProjectSetup)
+* [](Engine\UMG\HowTo\DragAndDrop\WidgetSetup)
+* [](Engine\UMG\HowTo\DragAndDrop\OnDragDetected)
+* [](Engine\UMG\HowTo\DragAndDrop\OnDrop)
+* [](Engine\UMG\HowTo\DragAndDrop\FinishingUp)
+[/REGION]
 
 [REGION:call_to_action]
 	[클릭하면 시작합니다.](Engine\UMG\HowTo\DragAndDrop\ProjectSetup "%Engine\UMG\HowTo\DragAndDrop\ProjectSetup:title%")
 [/REGION]
+
 

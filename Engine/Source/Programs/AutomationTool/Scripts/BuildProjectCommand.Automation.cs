@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Linq;
 using AutomationTool;
 using UnrealBuildTool;
+using Tools.DotNETCommon;
 
 [Flags]
 public enum ProjectBuildTargets
@@ -36,39 +37,6 @@ public enum ProjectBuildTargets
 public partial class Project : CommandUtils
 {
 	#region Build Command
-
-    static string GetBlueprintPluginPathArgument(ProjectParams Params, bool Client, UnrealTargetPlatform TargetPlatform)
-    {
-        string ScriptPluginArgs = "";
-
-        // if we're utilizing an auto-generated code plugin/module (a product of 
-        // the cook process), make sure to compile it along with the targets here
-
-        if (Params.RunAssetNativization)
-        {
-            ProjectParams.BlueprintPluginKey PluginKey = new ProjectParams.BlueprintPluginKey();
-            PluginKey.Client = Client;
-            PluginKey.TargetPlatform = TargetPlatform;
-            FileReference CodePlugin = null;
-            if(Params.BlueprintPluginPaths.TryGetValue(PluginKey, out CodePlugin))
-            {
-                if (FileReference.Exists(CodePlugin))
-                {
-                    ScriptPluginArgs += "-PLUGIN \"" + CodePlugin + "\" ";
-                }
-                else
-                {
-                    LogWarning("Failed to find generated plugin for Blueprint nativization [" + CodePlugin.FullName + "]. Nativization has run, but maybe there are no Blueprints which were converted?");
-                }
-            }
-            else
-            {
-                LogWarning("BlueprintPluginPath for " + TargetPlatform + " " + (Client ? "client" : "server") + " was not found");
-            }
-        }
-
-        return ScriptPluginArgs;
-    }
 
 	/// <summary>
 	/// PlatformSupportsCrashReporter
@@ -101,7 +69,7 @@ public partial class Project : CommandUtils
 		var CrashReportPlatforms = new HashSet<UnrealTargetPlatform>();
 
 		// Setup editor targets
-		if (Params.HasEditorTargets && !Automation.IsEngineInstalled() && (TargetMask & ProjectBuildTargets.Editor) == ProjectBuildTargets.Editor)
+		if (Params.HasEditorTargets && (!Params.SkipBuildEditor) && !Automation.IsEngineInstalled() && (TargetMask & ProjectBuildTargets.Editor) == ProjectBuildTargets.Editor)
 		{
 			// @todo Mac: proper platform detection
 			UnrealTargetPlatform EditorPlatform = HostPlatform.Current.HostEditorPlatform;
@@ -127,8 +95,27 @@ public partial class Project : CommandUtils
 			}
 		}
 
+		// Additional compile arguments
+		string AdditionalArgs = "";
+		if (Params.MapFile)
+		{
+			AdditionalArgs += " -mapfile";
+		}
+
+		if (Params.Deploy || Params.Package)
+		{
+			AdditionalArgs += " -skipdeploy"; // skip deploy step in UBT if we going to do it later anyway
+		}
+
+		// Config overrides (-ini)
+		foreach (string ConfigOverrideParam in Params.ConfigOverrideParams)
+		{
+			AdditionalArgs += " -";
+			AdditionalArgs += ConfigOverrideParam;
+		}
+
 		// Setup cooked targets
-		if (Params.HasClientCookedTargets && (TargetMask & ProjectBuildTargets.ClientCooked) == ProjectBuildTargets.ClientCooked)
+		if (Params.HasClientCookedTargets && (!Params.SkipBuildClient) && (TargetMask & ProjectBuildTargets.ClientCooked) == ProjectBuildTargets.ClientCooked)
 		{
             List<UnrealTargetPlatform> UniquePlatformTypes = Params.ClientTargetPlatforms.ConvertAll(x => x.Type).Distinct().ToList();
 
@@ -136,9 +123,8 @@ public partial class Project : CommandUtils
 			{
                 foreach (var ClientPlatformType in UniquePlatformTypes)
 				{
-                    string ScriptPluginArgs = GetBlueprintPluginPathArgument(Params, true, ClientPlatformType);
                     CrashReportPlatforms.Add(ClientPlatformType);
-					Agenda.AddTargets(Params.ClientCookedTargets.ToArray(), ClientPlatformType, BuildConfig, Params.CodeBasedUprojectPath, InAddArgs: ScriptPluginArgs + " -remoteini=\"" + Params.RawProjectPath.Directory.FullName + "\"");
+					Agenda.AddTargets(Params.ClientCookedTargets.ToArray(), ClientPlatformType, BuildConfig, Params.CodeBasedUprojectPath, InAddArgs: " -remoteini=\"" + Params.RawProjectPath.Directory.FullName + "\"" + AdditionalArgs);
 				}
 			}
 		}
@@ -150,9 +136,8 @@ public partial class Project : CommandUtils
 			{
 				foreach (var ServerPlatformType in UniquePlatformTypes)
 				{
-                    string ScriptPluginArgs = GetBlueprintPluginPathArgument(Params, false, ServerPlatformType);
                     CrashReportPlatforms.Add(ServerPlatformType);
-					Agenda.AddTargets(Params.ServerCookedTargets.ToArray(), ServerPlatformType, BuildConfig, Params.CodeBasedUprojectPath, InAddArgs: ScriptPluginArgs + " -remoteini=\"" + Params.RawProjectPath.Directory.FullName + "\"");
+					Agenda.AddTargets(Params.ServerCookedTargets.ToArray(), ServerPlatformType, BuildConfig, Params.CodeBasedUprojectPath, InAddArgs: " -remoteini=\"" + Params.RawProjectPath.Directory.FullName + "\"" + AdditionalArgs);
 				}
 			}
 		}

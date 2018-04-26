@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	CoreRedirects.h: Object/Class/Field redirects read from ini files or registered at startup
@@ -24,7 +24,6 @@ enum class ECoreRedirectFlags : int32
 	Type_Function =			0x00000010, // UFunction
 	Type_Property =			0x00000020, // UProperty
 	Type_Package =			0x00000040, // UPackage
-	Type_Delegate =			0x00000080, // Dynamic delegate, special type of UFunction
 
 	// Option flags, specify rules for this redirect
 	Option_InstanceOnly =	0x00010000, // Only redirect instances of this type, not the type itself
@@ -35,7 +34,7 @@ ENUM_CLASS_FLAGS(ECoreRedirectFlags);
 
 
 /**
- * An object path extracted into component names for matching. TODO merge with FStringAssetReference?
+ * An object path extracted into component names for matching. TODO merge with FSoftObjectPath?
  */
 struct COREUOBJECT_API FCoreRedirectObjectName
 {

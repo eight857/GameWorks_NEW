@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D12Util.h: D3D RHI utility definitions.
@@ -283,7 +283,7 @@ private:
 
 	// Only used if m_AllSubresourcesSame is 0.
 	// The state of each subresources.  Bits are from D3D12_RESOURCE_STATES.
-	TArray<D3D12_RESOURCE_STATES> m_SubresourceState;
+	TArray<D3D12_RESOURCE_STATES, TInlineAllocator<4>> m_SubresourceState;
 };
 
 //==================================================================================================================================

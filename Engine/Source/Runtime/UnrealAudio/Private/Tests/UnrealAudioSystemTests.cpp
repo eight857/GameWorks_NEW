@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/Paths.h"
@@ -137,7 +137,7 @@ namespace UAudio
 					Emitter->SetPosition(GetRandomPosition());
 					TLinkedList<TSharedPtr<IEmitter>>* EmitterLink = new TLinkedList<TSharedPtr<IEmitter>>(Emitter);
 					EmitterLink->LinkHead(EmittersHead);
-				}
+				} //-V773
 			}
 
 			FPlatformProcess::Sleep(0.033f);

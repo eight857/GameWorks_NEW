@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UObject/UnrealNames.h"
 #include "Misc/AssertionMacros.h"
@@ -6,7 +6,6 @@
 #include "Math/NumericLimits.h"
 #include "Math/UnrealMathUtility.h"
 #include "HAL/UnrealMemory.h"
-#include "Templates/AlignOf.h"
 #include "Templates/UnrealTemplate.h"
 #include "Misc/CString.h"
 #include "Misc/Crc.h"
@@ -22,6 +21,7 @@
 #include "Internationalization/Internationalization.h"
 #include "Misc/OutputDeviceRedirector.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/LowLevelMemTracker.h"
 
 
 DEFINE_LOG_CATEGORY_STATIC(LogUnrealNames, Log, All);
@@ -243,6 +243,21 @@ FNameEntrySerialized::FNameEntrySerialized(const FNameEntry& NameEntry)
 	}
 }
 
+/**
+ * @return FString of name portion minus number.
+ */
+FString FNameEntrySerialized::GetPlainNameString() const
+{
+	if( IsWide() )
+	{
+		return FString(WideName);
+	}
+	else
+	{
+		return FString(AnsiName);
+	}
+}
+
 /*-----------------------------------------------------------------------------
 	FName statics.
 -----------------------------------------------------------------------------*/
@@ -401,11 +416,11 @@ FString FName::NameToDisplayString( const FString& InDisplayName, const bool bIs
 
 
 // Static variables.
-FNameEntry*	FName::NameHashHead[FNameDefs::NameHashBucketCount];
-FNameEntry*	FName::NameHashTail[FNameDefs::NameHashBucketCount];
-int32		FName::NameEntryMemorySize;
-int32		FName::NumAnsiNames;
-int32		FName::NumWideNames;
+TAtomic<FNameEntry*> FName::NameHashHead[FNameDefs::NameHashBucketCount];
+TAtomic<FNameEntry*> FName::NameHashTail[FNameDefs::NameHashBucketCount];
+int32                FName::NameEntryMemorySize;
+int32                FName::NumAnsiNames;
+int32                FName::NumWideNames;
 
 
 /*-----------------------------------------------------------------------------
@@ -511,8 +526,13 @@ int32 FName::Compare( const FName& Other ) const
 		const FNameEntry* const ThisEntry = GetComparisonNameEntry();
 		const FNameEntry* const OtherEntry = Other.GetComparisonNameEntry();
 
+		// If one or both entries return an invalid name entry, the comparison fails - fallback to comparing the index
+		if (ThisEntry == nullptr || OtherEntry == nullptr)
+		{
+			return GetComparisonIndexFast() - Other.GetComparisonIndexFast();
+		}
 		// Ansi/Wide mismatch, convert to wide
-		if( ThisEntry->IsWide() != OtherEntry->IsWide() )
+		else if( ThisEntry->IsWide() != OtherEntry->IsWide() )
 		{
 			return FCStringWide::Stricmp(	ThisEntry->IsWide() ? ThisEntry->GetWideName() : StringCast<WIDECHAR>(ThisEntry->GetAnsiName()).Get(),
 								OtherEntry->IsWide() ? OtherEntry->GetWideName() : StringCast<WIDECHAR>(OtherEntry->GetAnsiName()).Get() );
@@ -544,6 +564,8 @@ uint16 FName::GetNonCasePreservingHash(const TCharType* Source)
 
 void FName::Init(const WIDECHAR* InName, int32 InNumber, EFindName FindType, bool bSplitName, int32 HardcodeIndex)
 {
+	LLM_SCOPE(ELLMTag::FName);
+
 	const bool bIsPureAnsi = TCString<WIDECHAR>::IsPureAnsi(InName);
 	// Switch to ANSI if possible to save memory
 	if (bIsPureAnsi)
@@ -787,9 +809,13 @@ bool FName::InitInternal_FindOrAddNameEntry(const TCharType* InName, const EFind
 	if (OutIndex < 0)
 	{
 		// Try to find the name in the hash.
-		for( FNameEntry* Hash=NameHashHead[iHash]; Hash; Hash=Hash->HashNext )
+		FNameEntry* Hash = NameHashHead[iHash].Load(EMemoryOrder::Relaxed);
+		while (Hash)
 		{
-			FPlatformMisc::Prefetch( Hash->HashNext );
+			FNameEntry* NextHash = Hash->HashNext.Load(EMemoryOrder::Relaxed);
+
+			FPlatformMisc::Prefetch( NextHash );
+
 			// Compare the passed in string
 			if( Hash->IsEqual( InName, ComparisonMode ) )
 			{
@@ -813,6 +839,8 @@ bool FName::InitInternal_FindOrAddNameEntry(const TCharType* InName, const EFind
 				check(OutIndex >= 0);
 				return true;
 			}
+
+			Hash = NextHash;
 		}
 
 		// Didn't find name.
@@ -824,10 +852,11 @@ bool FName::InitInternal_FindOrAddNameEntry(const TCharType* InName, const EFind
 	}
 	// acquire the lock
 	FScopeLock ScopeLock(GetCriticalSection());
+	FNameEntry* OldHashHead = NameHashHead[iHash].Load(EMemoryOrder::Relaxed);
 	if (OutIndex < 0)
 	{
 		// Try to find the name in the hash. AGAIN...we might have been adding from a different thread and we just missed it
-		for( FNameEntry* Hash=NameHashHead[iHash]; Hash; Hash=Hash->HashNext )
+		for (FNameEntry* Hash = OldHashHead; Hash; Hash = Hash->HashNext.Load(EMemoryOrder::Relaxed))
 		{
 			// Compare the passed in string
 			if( Hash->IsEqual( InName, ComparisonMode ) )
@@ -839,8 +868,7 @@ bool FName::InitInternal_FindOrAddNameEntry(const TCharType* InName, const EFind
 			}
 		}
 	}
-	FNameEntry* OldHashHead=NameHashHead[iHash];
-	FNameEntry* OldHashTail=NameHashTail[iHash];
+	FNameEntry* OldHashTail = NameHashTail[iHash].Load(EMemoryOrder::Relaxed);
 	TNameEntryArray& Names = GetNames();
 	if (OutIndex < 0)
 	{
@@ -860,23 +888,23 @@ bool FName::InitInternal_FindOrAddNameEntry(const TCharType* InName, const EFind
 		checkSlow(!OldHashTail);
 
 		// atomically assign the new head as other threads may be reading it
-		if (FPlatformAtomics::InterlockedCompareExchangePointer((void**)&NameHashHead[iHash], NewEntry, OldHashHead) != OldHashHead) // we use an atomic operation to check for unexpected concurrency, verify alignment, etc
+		if (!NameHashHead[iHash].CompareExchange(OldHashHead, NewEntry)) // we use an atomic operation to check for unexpected concurrency, verify alignment, etc
 		{
 			check(0); // someone changed this while we were changing it
 		}
-		NameHashTail[iHash] = NewEntry; // We can non-atomically assign the tail since it's only ever read while locked
 	}
 	else
 	{
 		checkSlow(OldHashTail);
 
 		// atomically update the linked list as other threads may be reading it
-		if (FPlatformAtomics::InterlockedCompareExchangePointer((void**)&OldHashTail->HashNext, NewEntry, nullptr) != nullptr) // we use an atomic operation to check for unexpected concurrency, verify alignment, etc
+		FNameEntry* Expected = nullptr;
+		if (!OldHashTail->HashNext.CompareExchange(Expected, NewEntry)) // we use an atomic operation to check for unexpected concurrency, verify alignment, etc
 		{
 			check(0); // someone changed this while we were changing it
 		}
-		NameHashTail[iHash] = NewEntry; // We can non-atomically assign the tail since it's only ever read while locked
 	}
+	NameHashTail[iHash].Store(NewEntry, EMemoryOrder::Relaxed); // We can non-atomically assign the tail since it's only ever read while locked
 	check(OutIndex >= 0);
 	return true;
 }
@@ -897,6 +925,15 @@ const FNameEntry* FName::GetDisplayNameEntry() const
 
 FString FName::ToString() const
 {
+	if (GetNumber() == NAME_NO_NUMBER_INTERNAL)
+	{
+		if (const FNameEntry* const DisplayEntry = GetDisplayNameEntry())
+		{
+			// Avoids some extra allocations in non-number case
+			return DisplayEntry->GetPlainNameString();
+		}
+	}
+	
 	FString Out;	
 	ToString(Out);
 	return Out;
@@ -904,20 +941,44 @@ FString FName::ToString() const
 
 void FName::ToString(FString& Out) const
 {
-	// a version of ToString that saves at least one string copy
+	// A version of ToString that saves at least one string copy
 	const FNameEntry* const NameEntry = GetDisplayNameEntry();
-	Out.Empty( NameEntry->GetNameLength() + 6);
-	AppendString(Out);
+
+	if (NameEntry == nullptr)
+	{
+		Out = TEXT("*INVALID*");
+	}
+	else if (GetNumber() == NAME_NO_NUMBER_INTERNAL)
+	{
+		Out.Empty(NameEntry->GetNameLength());
+		NameEntry->AppendNameToString(Out);
+	}	
+	else
+	{
+		Out.Empty(NameEntry->GetNameLength() + 6);
+		NameEntry->AppendNameToString(Out);
+
+		Out += TEXT("_");
+		Out.AppendInt(NAME_INTERNAL_TO_EXTERNAL(GetNumber()));
+	}
 }
 
 void FName::AppendString(FString& Out) const
 {
 	const FNameEntry* const NameEntry = GetDisplayNameEntry();
-	NameEntry->AppendNameToString( Out );
-	if (GetNumber() != NAME_NO_NUMBER_INTERNAL)
+
+	if (NameEntry == nullptr)
 	{
-		Out += TEXT("_");
-		Out.AppendInt(NAME_INTERNAL_TO_EXTERNAL(GetNumber()));
+		Out += TEXT("*INVALID*");
+	}
+	else
+	{
+		NameEntry->AppendNameToString( Out );
+		if (GetNumber() != NAME_NO_NUMBER_INTERNAL)
+		{
+			Out += TEXT("_");
+			Out.AppendInt(NAME_INTERNAL_TO_EXTERNAL(GetNumber()));
+		}
 	}
 }
 
@@ -936,14 +997,7 @@ void FName::StaticInit()
 
 	check(GetIsInitialized() == false);
 	check((FNameDefs::NameHashBucketCount&(FNameDefs::NameHashBucketCount-1)) == 0);
-	GetIsInitialized() = 1;
-
-	// Init the name hash.
-	for (int32 HashIndex = 0; HashIndex < FNameDefs::NameHashBucketCount; HashIndex++)
-	{
-		NameHashHead[HashIndex] = nullptr;
-		NameHashTail[HashIndex] = nullptr;
-	}
+	GetIsInitialized() = true;
 
 	{
 		FScopeLock ScopeLock(GetCriticalSection());
@@ -963,16 +1017,18 @@ void FName::StaticInit()
 	// Verify no duplicate names.
 	for (int32 HashIndex = 0; HashIndex < FNameDefs::NameHashBucketCount; HashIndex++)
 	{
-		for (FNameEntry* Hash = NameHashHead[HashIndex]; Hash; Hash = Hash->HashNext)
+		FNameEntry* Hash = NameHashHead[HashIndex].Load(EMemoryOrder::Relaxed);
+		while (Hash)
 		{
-			for (FNameEntry* Other = Hash->HashNext; Other; Other = Other->HashNext)
+			FNameEntry* NextHash = Hash->HashNext.Load(EMemoryOrder::Relaxed);
+			for (FNameEntry* Other = NextHash; Other; Other = Other->HashNext.Load(EMemoryOrder::Relaxed))
 			{
 				if (FCString::Stricmp(*Hash->GetPlainNameString(), *Other->GetPlainNameString()) == 0)
 				{
 					// we can't print out here because there may be no log yet if this happens before main starts
 					if (FPlatformMisc::IsDebuggerPresent())
 					{
-						FPlatformMisc::DebugBreak();
+						UE_DEBUG_BREAK();
 					}
 					else
 					{
@@ -982,6 +1038,8 @@ void FName::StaticInit()
 					}
 				}
 			}
+
+			Hash = NextHash;
 		}
 	}
 	// check that the MAX_NETWORKED_HARDCODED_NAME define is correctly set
@@ -989,7 +1047,7 @@ void FName::StaticInit()
 	{
 		if (FPlatformMisc::IsDebuggerPresent())
 		{
-			FPlatformMisc::DebugBreak();
+			UE_DEBUG_BREAK();
 		}
 		else
 		{
@@ -1013,12 +1071,16 @@ void FName::DisplayHash( FOutputDevice& Ar )
 	int32 UsedBins=0, NameCount=0, MemUsed = 0;
 	for( int32 i=0; i<FNameDefs::NameHashBucketCount; i++ )
 	{
-		if( NameHashHead[i] != NULL ) UsedBins++;
-		for( FNameEntry *Hash = NameHashHead[i]; Hash; Hash=Hash->HashNext )
+		if (FNameEntry* Hash = NameHashHead[i].Load(EMemoryOrder::Relaxed))
 		{
-			NameCount++;
-			// Count how much memory this entry is using
-			MemUsed += FNameEntry::GetSize( Hash->GetNameLength(), Hash->IsWide() );
+			++UsedBins;
+
+			for (; Hash; Hash = Hash->HashNext.Load(EMemoryOrder::Relaxed))
+			{
+				NameCount++;
+				// Count how much memory this entry is using
+				MemUsed += FNameEntry::GetSize( Hash->GetNameLength(), Hash->IsWide() );
+			}
 		}
 	}
 	Ar.Logf( TEXT("Hash: %i names, %i/%i hash bins, Mem in bytes %i"), NameCount, UsedBins, FNameDefs::NameHashBucketCount, MemUsed);
@@ -1146,51 +1208,14 @@ void FName::AutoTest()
 	FNameEntry implementation.
 -----------------------------------------------------------------------------*/
 
-FArchive& operator<<( FArchive& Ar, FNameEntry& E )
+void FNameEntry::Write( FArchive& Ar ) const
 {
-	if( Ar.IsLoading() )
-	{
-		// for optimization reasons, we want to keep pure Ansi strings as Ansi for initializing the name entry
-		// (and later the FName) to stop copying in and out of TCHARs
-		int32 StringLen;
-		Ar << StringLen;
+	// This path should be unused - since FNameEntry structs are allocated with a dynamic size, we can only save them. Use FNameEntrySerialized to read them back into an intermediate buffer.
+	checkf(!Ar.IsLoading(), TEXT("FNameEntry does not support reading from an archive. Serialize into a FNameEntrySerialized and construct a FNameEntry from that."));
 
-		// negative stringlen means it's a wide string
-		if (StringLen < 0)
-		{
-			StringLen = -StringLen;
-
-			// mark the name will be wide
-			E.PreSetIsWideForSerialization(true);
-
-			// get the pointer to the wide array 
-			WIDECHAR* WideName = const_cast<WIDECHAR*>(E.GetWideName());
-
-			// read in the UCS2CHAR string and byteswap it, etc
-			auto Sink = StringMemoryPassthru<UCS2CHAR>(WideName, StringLen, StringLen);
-			Ar.Serialize(Sink.Get(), StringLen * sizeof(UCS2CHAR));
-			Sink.Apply();
-
-			INTEL_ORDER_TCHARARRAY(WideName)
-		}
-		else
-		{
-			// mark the name will be ansi
-			E.PreSetIsWideForSerialization(false);
-
-			// ansi strings can go right into the AnsiBuffer
-			ANSICHAR* AnsiName = const_cast<ANSICHAR*>(E.GetAnsiName());
-			Ar.Serialize(AnsiName, StringLen);
-		}
-	}
-	else
-	{
-		// Convert to our serialized type
-		FNameEntrySerialized EntrySerialized(E);
-		Ar << EntrySerialized;
-	}
-
-	return Ar;
+	// Convert to our serialized type
+	FNameEntrySerialized EntrySerialized(*this);
+	Ar << EntrySerialized;
 }
 
 FArchive& operator<<(FArchive& Ar, FNameEntrySerialized& E)
@@ -1277,7 +1302,7 @@ public:
 		check(ThreadGuard.Increment() == 1);
 		// Some platforms need all of the name entries to be aligned to 4 bytes, so by
 		// aligning the size here the next allocation will be aligned to 4
-		Size = Align( Size, ALIGNOF(FNameEntry) );
+		Size = Align( Size, alignof(FNameEntry) );
 
 		// Allocate a new pool if current one is exhausted. We don't worry about a little bit
 		// of waste at the end given the relative size of pool to average and max allocation.
@@ -1339,12 +1364,14 @@ FNameEntryPoolAllocator GNameEntryPoolAllocator;
 template<typename TCharType>
 FNameEntry* AllocateNameEntry(const TCharType* Name, NAME_INDEX Index)
 {
+	LLM_SCOPE(ELLMTag::FName);
+
 	const SIZE_T NameLen  = TCString<TCharType>::Strlen(Name);
 	int32 NameEntrySize	  = FNameInitHelper<TCharType>::GetSize( NameLen );
 	FNameEntry* NameEntry = GNameEntryPoolAllocator.Allocate( NameEntrySize );
 	FName::NameEntryMemorySize += NameEntrySize;
-	NameEntry->Index      = (Index << NAME_INDEX_SHIFT) | (FNameInitHelper<TCharType>::GetIndexShiftValue());
-	NameEntry->HashNext   = nullptr;
+	FPlatformAtomics::InterlockedExchange(&NameEntry->Index, (Index << NAME_INDEX_SHIFT) | (FNameInitHelper<TCharType>::GetIndexShiftValue()));
+	NameEntry->HashNext.Store(nullptr, EMemoryOrder::Relaxed);
 	FNameInitHelper<TCharType>::SetNameString(NameEntry, Name, NameLen);
 	IncrementNameCount<TCharType>();
 	return NameEntry;

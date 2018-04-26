@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SVisualLogger.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
@@ -66,9 +66,9 @@ namespace
 {
 	static UWorld* GetWorldForGivenObject(const UObject* Object)
 	{
-		UWorld* World = Object ? GEngine->GetWorldFromContextObject(Object, false) : nullptr;
+		UWorld* World = GEngine->GetWorldFromContextObject(Object, EGetWorldErrorMode::ReturnNull);
 #if WITH_EDITOR
-		UEditorEngine *EEngine = Cast<UEditorEngine>(GEngine);
+		UEditorEngine* EEngine = Cast<UEditorEngine>(GEngine);
 		if (GIsEditor && EEngine != nullptr && World == nullptr)
 		{
 			// lets use PlayWorld during PIE/Simulate and regular world from editor otherwise, to draw debug information
@@ -564,7 +564,7 @@ void SVisualLogger::HandleLoadCommandExecute()
 	bool bOpened = false;
 	if (DesktopPlatform)
 	{
-		const FString DefaultBrowsePath = FString::Printf(TEXT("%slogs/"), *FPaths::GameSavedDir());
+		const FString DefaultBrowsePath = FString::Printf(TEXT("%slogs/"), *FPaths::ProjectSavedDir());
 
 		bOpened = DesktopPlatform->OpenFileDialog(
 			FSlateApplication::Get().FindBestParentWindowHandleForDialogs(AsShared()),
@@ -639,7 +639,7 @@ void SVisualLogger::HandleSaveCommand(bool bSaveAllData)
 		bool bSaved = false;
 		if (DesktopPlatform)
 		{
-			const FString DefaultBrowsePath = FString::Printf(TEXT("%slogs/"), *FPaths::GameSavedDir());
+			const FString DefaultBrowsePath = FString::Printf(TEXT("%slogs/"), *FPaths::ProjectSavedDir());
 			bSaved = DesktopPlatform->SaveFileDialog(
 				FSlateApplication::Get().FindBestParentWindowHandleForDialogs(AsShared()),
 				LOCTEXT("NewProjectBrowseTitle", "Choose a project location").ToString(),

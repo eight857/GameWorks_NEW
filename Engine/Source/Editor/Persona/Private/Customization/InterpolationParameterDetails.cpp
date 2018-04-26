@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Customization/InterpolationParameterDetails.h"
 #include "IDetailsView.h"
@@ -16,7 +16,7 @@ void FInterpolationParameterDetails::CustomizeChildren(TSharedRef<IPropertyHandl
 	for (uint32 ChildIndex = 0; ChildIndex < NumChildren; ++ChildIndex)
 	{
 		TSharedRef<IPropertyHandle> ChildHandle = StructPropertyHandle->GetChildHandle(ChildIndex).ToSharedRef();
-		IDetailPropertyRow& Property = ChildBuilder.AddChildProperty(ChildHandle);
+		IDetailPropertyRow& Property = ChildBuilder.AddProperty(ChildHandle);
 	}
 }
 

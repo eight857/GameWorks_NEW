@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -154,21 +154,79 @@ struct FGenericPlatformAtomics
 	 * Atomically compares the value to comparand and replaces with the exchange
 	 * value if they are equal and returns the original value
 	 */
+	static FORCEINLINE int8 InterlockedCompareExchange(volatile int8* Dest,int8 Exchange,int8 Comparand)
+	{
+		#error must implement
+	}
+
+	/**
+	 * Atomically compares the value to comparand and replaces with the exchange
+	 * value if they are equal and returns the original value
+	 */
+	static FORCEINLINE int16 InterlockedCompareExchange(volatile int16* Dest,int16 Exchange,int16 Comparand)
+	{
+		#error must implement
+	}
+
+	/**
+	 * Atomically compares the value to comparand and replaces with the exchange
+	 * value if they are equal and returns the original value
+	 */
 	static FORCEINLINE int32 InterlockedCompareExchange(volatile int32* Dest,int32 Exchange,int32 Comparand)
 	{
 		#error must implement
 	}
 
-#if PLATFORM_64BITS		// This function is not possible on 32-bit architectures
 	/**
 	 * Atomically compares the value to comparand and replaces with the exchange
 	 * value if they are equal and returns the original value
+	 * REQUIRED, even on 32 bit architectures. 
 	 */
 	static FORCEINLINE int64 InterlockedCompareExchange (volatile int64* Dest, int64 Exchange, int64 Comparand)
 	{
 		#error must implement
 	}
-#endif
+
+	/**
+	 * Atomic read of 32 bit value with an implicit memory barrier.
+	 */
+	static FORCEINLINE int8 AtomicRead(volatile const int8* Src)
+	{
+		return InterlockedCompareExchange((volatile int8*)Src, 0, 0);
+	}
+
+	/**
+	 * Atomic read of 32 bit value with an implicit memory barrier.
+	 */
+	static FORCEINLINE int16 AtomicRead(volatile const int16* Src)
+	{
+		return InterlockedCompareExchange((volatile int16*)Src, 0, 0);
+	}
+
+	/**
+	 * Atomic read of 32 bit value with an implicit memory barrier.
+	 */
+	static FORCEINLINE int32 AtomicRead(volatile const int32* Src)
+	{
+		return InterlockedCompareExchange((volatile int32*)Src, 0, 0);
+	}
+
+	/**
+	 * Atomic read of 32 bit value with an implicit memory barrier.
+	 */
+	static FORCEINLINE int64 AtomicRead(volatile const int64* Src)
+	{
+		return InterlockedCompareExchange((volatile int64*)Src, 0, 0);
+	}
+
+	/**
+	 * Atomic read of 64 bit value with an implicit memory barrier.
+	 */
+	DEPRECATED(4.19, "AtomicRead64 has been deprecated, please use AtomicRead's overload instead")
+	static FORCEINLINE int64 AtomicRead64(volatile const int64* Src)
+	{
+		return AtomicRead(Src);
+	}
 
 	/**
 	 * Atomically compares the pointer to comparand and replaces with the exchange
@@ -195,6 +253,18 @@ struct FGenericPlatformAtomics
 	static FORCEINLINE bool InterlockedCompareExchange128( volatile FInt128* Dest, const FInt128& Exchange, FInt128* Comparand )
 	{
 		#error Must implement
+	}
+
+	/**
+	* Atomic read of 128 bit value with a memory barrier
+	*/
+	static FORCEINLINE void AtomicRead128(const volatile FInt128* Src, FInt128* OutResult)
+	{
+		FInt128 Zero;
+		Zero.High = 0;
+		Zero.Low = 0;
+		*OutResult = Zero;
+		InterlockedCompareExchange128((volatile FInt128*)Src, Zero, OutResult);
 	}
 #endif // PLATFORM_HAS_128BIT_ATOMICS
 
@@ -223,3 +293,4 @@ protected:
 		return !(PTRINT(Ptr) & (Alignment - 1));
 	}
 };
+

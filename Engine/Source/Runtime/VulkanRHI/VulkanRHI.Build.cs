@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System;
@@ -14,7 +14,7 @@ public class VulkanRHI : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
-            {
+			{
 				"Core", 
 				"CoreUObject", 
 				"Engine", 
@@ -22,6 +22,7 @@ public class VulkanRHI : ModuleRules
 				"RenderCore", 
 				"ShaderCore",
 				"UtilityShaders",
+				"HeadMountedDisplay",
 			}
 		);
 
@@ -107,7 +108,7 @@ public class VulkanRHI : ModuleRules
 				{
 					// Fall back to the Windows Vulkan SDK (the headers are the same)
 					bHaveVulkan = true;
-					PrivateIncludePaths.Add(UEBuildConfiguration.UEThirdPartySourceDirectory + "Vulkan/Windows/Include/vulkan");
+					PrivateIncludePaths.Add(Target.UEThirdPartySourceDirectory + "Vulkan/Windows/Include/vulkan");
 				}
 			}
 			else if (!String.IsNullOrEmpty(VulkanSDKPath))
@@ -135,7 +136,7 @@ public class VulkanRHI : ModuleRules
 					PrivateIncludePathModuleNames.AddRange(
 						new string[]
 						{
-                            "TaskGraph",
+							"TaskGraph",
 						}
 					);
 				}

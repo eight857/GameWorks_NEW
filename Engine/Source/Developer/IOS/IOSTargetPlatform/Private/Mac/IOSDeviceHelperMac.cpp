@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved
 
 #include "IOSTargetPlatform.h"
 
@@ -308,9 +308,33 @@ void FIOSDeviceHelper::DoDeviceConnect(void* deviceHandle)
         TCHAR idBuffer[128];
 		TCHAR nameBuffer[256];
 		TCHAR productBuffer[128];
-		FPlatformString::CFStringToTCHAR(deviceId, idBuffer);
-		FPlatformString::CFStringToTCHAR(deviceName, nameBuffer);
-		FPlatformString::CFStringToTCHAR(productType, productBuffer);
+		if (deviceId != NULL)
+		{
+			FPlatformString::CFStringToTCHAR(deviceId, idBuffer);
+			CFRelease(deviceId);
+		}
+		else
+		{
+			idBuffer[0] = 0;
+		}
+		if (deviceName != NULL)
+		{
+			FPlatformString::CFStringToTCHAR(deviceName, nameBuffer);
+			CFRelease(deviceName);
+		}
+		else
+		{
+			nameBuffer[0] = 0;
+		}
+		if (productType != NULL)
+		{
+			FPlatformString::CFStringToTCHAR(productType, productBuffer);
+			CFRelease(productType);
+		}
+		else
+		{
+			productBuffer[0] = 0;
+		}
 		FIOSLaunchDaemonPong Event;
         Event.DeviceID = FString::Printf(TEXT("%s@%s"), (FString(productBuffer).Contains("AppleTV") ? TEXT("TVOS") : TEXT("IOS")), idBuffer);
 		Event.DeviceName = FString::Printf(TEXT("%s"), nameBuffer);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -37,8 +37,7 @@ class ALandscapeGizmoActor : public AActor
 	UPROPERTY(EditAnywhere, transient, Category=Gizmo)
 	class ULandscapeInfo* TargetLandscapeInfo;
 
-private_subobject:
-	DEPRECATED_FORGAME(4.6, "SpriteComponent should not be accessed directly, please use GetSpriteComponent() function instead. SpriteComponent will soon be private and your code will not compile.")
+private:
 	UPROPERTY()
 	UBillboardComponent* SpriteComponent;
 #endif // WITH_EDITORONLY_DATA

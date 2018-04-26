@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MergeManifestMode.h"
 #include "Interfaces/IBuildPatchServicesModule.h"
@@ -11,7 +11,7 @@ using namespace BuildPatchTool;
 class FMergeManifestToolMode : public IToolMode
 {
 public:
-	FMergeManifestToolMode(const TSharedRef<IBuildPatchServicesModule>& InBpsInterface)
+	FMergeManifestToolMode(IBuildPatchServicesModule& InBpsInterface)
 		: BpsInterface(InBpsInterface)
 	{}
 
@@ -38,7 +38,7 @@ public:
 			UE_LOG(LogBuildPatchTool, Log, TEXT("  -ManifestB=\"\"           Specifies in quotes the file path to the update manifest."));
 			UE_LOG(LogBuildPatchTool, Log, TEXT("  -ManifestC=\"\"           Specifies in quotes the file path to the output manifest."));
 			UE_LOG(LogBuildPatchTool, Log, TEXT("  -BuildVersion=\"\"        Specifies in quotes the new version string for the build being produced."));
-
+			UE_LOG(LogBuildPatchTool, Log, TEXT(""));
 			UE_LOG(LogBuildPatchTool, Log, TEXT("Optional arguments:"));
 			UE_LOG(LogBuildPatchTool, Log, TEXT("  -MergeFileList=\"\"       Specifies in quotes, the path to a text file containing complete list of desired build root relative files followed by \\t character, followed by A or B to select the manifest to pull from. These should be seperated by \\r\\n line endings."));
 			UE_LOG(LogBuildPatchTool, Log, TEXT(""));
@@ -49,7 +49,7 @@ public:
 		}
 
 		// Run the merge manifest routine
-		bool bSuccess = BpsInterface->MergeManifests(ManifestA, ManifestB, ManifestC, BuildVersion, MergeFileList);
+		bool bSuccess = BpsInterface.MergeManifests(ManifestA, ManifestB, ManifestC, BuildVersion, MergeFileList);
 		return bSuccess ? EReturnCode::OK : EReturnCode::ToolFailure;
 	}
 
@@ -89,7 +89,7 @@ private:
 	}
 
 private:
-	TSharedRef<IBuildPatchServicesModule> BpsInterface;
+	IBuildPatchServicesModule& BpsInterface;
 	bool bHelp;
 	FString ManifestA;
 	FString ManifestB;
@@ -98,7 +98,7 @@ private:
 	FString MergeFileList;
 };
 
-BuildPatchTool::IToolModeRef BuildPatchTool::FMergeManifestToolModeFactory::Create(const TSharedRef<IBuildPatchServicesModule>& BpsInterface)
+BuildPatchTool::IToolModeRef BuildPatchTool::FMergeManifestToolModeFactory::Create(IBuildPatchServicesModule& BpsInterface)
 {
 	return MakeShareable(new FMergeManifestToolMode(BpsInterface));
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // Implementation of Device Context State Caching to improve draw
 //	thread performance by removing redundant device context calls.
@@ -8,6 +8,27 @@
 //-----------------------------------------------------------------------------
 #include "D3D12RHIPrivate.h"
 #include <emmintrin.h>
+
+// This value defines how many descriptors will be in the device local view heap which
+// This should be tweaked for each title as heaps require VRAM. The default value of 512k takes up ~16MB
+int32 GLocalViewHeapSize = 500 * 1000;
+static FAutoConsoleVariableRef CVarLocalViewHeapSize(
+	TEXT("D3D12.LocalViewHeapSize"),
+	GLocalViewHeapSize,
+	TEXT("Local view heap size"),
+	ECVF_ReadOnly
+);
+
+// This value defines how many descriptors will be in the device global view heap which
+// is shared across contexts to allow the driver to eliminate redundant descriptor heap sets.
+// This should be tweaked for each title as heaps require VRAM. The default value of 512k takes up ~16MB
+int32 GGlobalViewHeapSize = 500 * 1000;
+static FAutoConsoleVariableRef CVarGlobalViewHeapSize(
+	TEXT("D3D12.GlobalViewHeapSize"),
+	GGlobalViewHeapSize,
+	TEXT("Global view heap size"),
+	ECVF_ReadOnly
+);
 
 extern bool D3D12RHI_ShouldCreateWithD3DDebug();
 
@@ -69,10 +90,12 @@ void FD3D12StateCacheBase::Init(FD3D12Device* InParent, FD3D12CommandContext* In
 	// Init the descriptor heaps
 	const uint32 MaxDescriptorsForTier = (ResourceBindingTier == D3D12_RESOURCE_BINDING_TIER_1) ? NUM_VIEW_DESCRIPTORS_TIER_1 :
 		NUM_VIEW_DESCRIPTORS_TIER_2;
-	check(GLOBAL_VIEW_HEAP_SIZE <= MaxDescriptorsForTier)
+
+	check(GLocalViewHeapSize <= (int32)MaxDescriptorsForTier);
+	check(GGlobalViewHeapSize <= (int32)MaxDescriptorsForTier);
 
 	const uint32 NumSamplerDescriptors = NUM_SAMPLER_DESCRIPTORS;
-	DescriptorCache.Init(InParent, InCmdContext, GLOBAL_VIEW_HEAP_SIZE, NumSamplerDescriptors, SubHeapDesc);
+	DescriptorCache.Init(InParent, InCmdContext, GLocalViewHeapSize, NumSamplerDescriptors, SubHeapDesc);
 
 	if (AncestralState)
 	{
@@ -158,6 +181,7 @@ void FD3D12StateCacheBase::ClearState()
 
 	PipelineState.Graphics.bNeedRebuildPSO = true;
 	PipelineState.Compute.bNeedRebuildPSO = true;
+	PipelineState.Compute.ComputeBudget = EAsyncComputeBudget::EAll_4;
 	PipelineState.Graphics.CurrentPipelineStateObject = nullptr;
 	PipelineState.Compute.CurrentPipelineStateObject = nullptr;
 	PipelineState.Common.CurrentPipelineStateObject = nullptr;
@@ -293,7 +317,7 @@ void FD3D12StateCacheBase::SetScissorRects(uint32 Count, const D3D12_RECT* const
 template <bool IsCompute>
 void FD3D12StateCacheBase::ApplyState()
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12ApplyStateTime);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12ApplyStateTime);
 	const bool bForceState = false;
 	if (bForceState)
 	{
@@ -400,12 +424,18 @@ void FD3D12StateCacheBase::ApplyState()
 
 	SetPipelineState<IsCompute>(Pso);
 
+	// Need to cache compute budget, as we need to reset after PSO changes
+	if (IsCompute && CommandList->GetType() == D3D12_COMMAND_LIST_TYPE_COMPUTE)
+	{
+		CmdContext->SetAsyncComputeBudgetInternal(PipelineState.Compute.ComputeBudget);
+	}
+
 	if (!IsCompute)
 	{
 		// Setup non-heap bindings
 		if (bNeedSetVB)
 		{
-			SCOPE_CYCLE_COUNTER(STAT_D3D12ApplyStateSetVertexBufferTime);
+			//SCOPE_CYCLE_COUNTER(STAT_D3D12ApplyStateSetVertexBufferTime);
 			DescriptorCache.SetVertexBuffers(PipelineState.Graphics.VBCache);
 			bNeedSetVB = false;
 		}
@@ -572,7 +602,7 @@ void FD3D12StateCacheBase::ApplyState()
 
 	// Shader resource views
 	{
-		SCOPE_CYCLE_COUNTER(STAT_D3D12ApplyStateSetSRVTime);
+		//SCOPE_CYCLE_COUNTER(STAT_D3D12ApplyStateSetSRVTime);
 		FD3D12ShaderResourceViewCache& SRVCache = PipelineState.Common.SRVCache;
 
 #define CONDITIONAL_SET_SRVS(Shader) \
@@ -598,7 +628,7 @@ void FD3D12StateCacheBase::ApplyState()
 
 	// Constant buffers
 	{
-		SCOPE_CYCLE_COUNTER(STAT_D3D12ApplyStateSetConstantBufferTime);
+		//SCOPE_CYCLE_COUNTER(STAT_D3D12ApplyStateSetConstantBufferTime);
 		FD3D12ConstantBufferCache& CBVCache = PipelineState.Common.CBVCache;
 
 #if USE_STATIC_ROOT_SIGNATURE
@@ -1118,10 +1148,23 @@ void FD3D12StateCacheBase::InternalSetIndexBuffer(FD3D12ResourceLocation* IndexB
 			PipelineState.Graphics.IBCache.ResidencyHandle = nullptr;
 		}
 	}
+	if (IndexBufferLocation)
+	{
+		FD3D12Resource* const pResource = IndexBufferLocation->GetResource();
+		if (pResource->RequiresResourceStateTracking())
+		{
+			check(pResource->GetSubresourceCount() == 1);
+			FD3D12DynamicRHI::TransitionResource(CmdContext->CommandListHandle, pResource, D3D12_RESOURCE_STATE_INDEX_BUFFER, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		}
+	}
+
 }
 
 void FD3D12StateCacheBase::InternalSetStreamSource(FD3D12ResourceLocation* VertexBufferLocation, uint32 StreamIndex, uint32 Stride, uint32 Offset)
 {
+	// If we have a vertex buffer location, that location should also have an underlying resource.
+	check(VertexBufferLocation == nullptr || VertexBufferLocation->GetResource());
+
 	check(StreamIndex < ARRAYSIZE(PipelineState.Graphics.VBCache.CurrentVertexBufferResources));
 
 	__declspec(align(16)) D3D12_VERTEX_BUFFER_VIEW NewView;
@@ -1163,12 +1206,23 @@ void FD3D12StateCacheBase::InternalSetStreamSource(FD3D12ResourceLocation* Verte
 			PipelineState.Graphics.VBCache.MaxBoundVertexBufferIndex = INDEX_NONE;
 		}
 	}
+
+	if (VertexBufferLocation)
+	{
+		FD3D12Resource* const pResource = VertexBufferLocation->GetResource();
+		if (pResource->RequiresResourceStateTracking())
+		{
+			check(pResource->GetSubresourceCount() == 1);
+			FD3D12DynamicRHI::TransitionResource(CmdContext->CommandListHandle, pResource, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		}
+	}
+
 }
 
 template <EShaderFrequency ShaderFrequency>
 void FD3D12StateCacheBase::SetShaderResourceView(FD3D12ShaderResourceView* SRV, uint32 ResourceIndex)
 {
-	SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderResourceViewTime);
+	//SCOPE_CYCLE_COUNTER(STAT_D3D12SetShaderResourceViewTime);
 
 	check(ResourceIndex < MAX_SRVS);
 	FD3D12ShaderResourceViewCache& Cache = PipelineState.Common.SRVCache;

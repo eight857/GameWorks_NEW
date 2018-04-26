@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CineCameraComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -16,6 +16,8 @@
 
 //////////////////////////////////////////////////////////////////////////
 // UCameraComponent
+
+/// @cond DOXYGEN_WARNINGS
 
 UCineCameraComponent::UCineCameraComponent()
 {
@@ -56,7 +58,6 @@ UCineCameraComponent::UCineCameraComponent()
 	}
 #endif
 }
-
 
 void UCineCameraComponent::PostInitProperties()
 {
@@ -109,6 +110,7 @@ void UCineCameraComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 }
 
 #if WITH_EDITORONLY_DATA
+
 void UCineCameraComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	RecalcDerivedData();
@@ -146,8 +148,8 @@ void UCineCameraComponent::ResetProxyMeshTransform()
 		ProxyMeshComponent->SetRelativeLocation(FVector(-46.f, 0, -24.f));
 	}
 }
-#endif	// WITH_EDITORONLY_DATA
 
+#endif	// WITH_EDITORONLY_DATA
 
 float UCineCameraComponent::GetHorizontalFieldOfView() const
 {
@@ -161,6 +163,66 @@ float UCineCameraComponent::GetVerticalFieldOfView() const
 	return (CurrentFocalLength > 0.f)
 		? FMath::RadiansToDegrees(2.f * FMath::Atan(FilmbackSettings.SensorHeight / (2.f * CurrentFocalLength)))
 		: 0.f;
+}
+
+FString UCineCameraComponent::GetFilmbackPresetName() const
+{
+	TArray<FNamedFilmbackPreset> const& Presets = UCineCameraComponent::GetFilmbackPresets();
+	int32 const NumPresets = Presets.Num();
+	for (int32 PresetIdx = 0; PresetIdx < NumPresets; ++PresetIdx)
+	{
+		FNamedFilmbackPreset const& P = Presets[PresetIdx];
+		if (P.FilmbackSettings == FilmbackSettings)
+		{
+			return P.Name;
+		}
+	}
+
+	return FString();
+}
+
+void UCineCameraComponent::SetFilmbackPresetByName(const FString& InPresetName)
+{
+	TArray<FNamedFilmbackPreset> const& Presets = UCineCameraComponent::GetFilmbackPresets();
+	int32 const NumPresets = Presets.Num();
+	for (int32 PresetIdx = 0; PresetIdx < NumPresets; ++PresetIdx)
+	{
+		FNamedFilmbackPreset const& P = Presets[PresetIdx];
+		if (P.Name == InPresetName)
+		{
+			FilmbackSettings = P.FilmbackSettings;
+		}
+	}
+}
+
+FString UCineCameraComponent::GetLensPresetName() const
+{
+	TArray<FNamedLensPreset> const& Presets = UCineCameraComponent::GetLensPresets();
+	int32 const NumPresets = Presets.Num();
+	for (int32 PresetIdx = 0; PresetIdx < NumPresets; ++PresetIdx)
+	{
+		FNamedLensPreset const& P = Presets[PresetIdx];
+		if (P.LensSettings == LensSettings)
+		{
+			return P.Name;
+		}
+	}
+
+	return FString();
+}
+
+void UCineCameraComponent::SetLensPresetByName(const FString& InPresetName)
+{
+	TArray<FNamedLensPreset> const& Presets = UCineCameraComponent::GetLensPresets();
+	int32 const NumPresets = Presets.Num();
+	for (int32 PresetIdx = 0; PresetIdx < NumPresets; ++PresetIdx)
+	{
+		FNamedLensPreset const& P = Presets[PresetIdx];
+		if (P.Name == InPresetName)
+		{
+			LensSettings = P.LensSettings;
+		}
+	}
 }
 
 float UCineCameraComponent::GetWorldToMetersScale() const
@@ -199,6 +261,8 @@ void UCineCameraComponent::RecalcDerivedData()
 	CurrentHorizontalFOV = FieldOfView;			// informational variable only, for editor users
 #endif
 }
+
+/// @endcond
 
 float UCineCameraComponent::GetDesiredFocusDistance(const FVector& InLocation) const
 {
@@ -251,9 +315,9 @@ void UCineCameraComponent::UpdateDebugFocusPlane()
 #if WITH_EDITORONLY_DATA
 	if (FocusSettings.bDrawDebugFocusPlane && DebugFocusPlaneMesh && DebugFocusPlaneComponent)
 	{
-		FVector const CamLocation = ComponentToWorld.GetLocation();
-		FVector const CamDir = ComponentToWorld.GetRotation().Vector();
-		FVector const FocusPoint = ComponentToWorld.GetLocation() + CamDir * GetDesiredFocusDistance(CamLocation);
+		FVector const CamLocation = GetComponentTransform().GetLocation();
+		FVector const CamDir = GetComponentTransform().GetRotation().Vector();
+		FVector const FocusPoint = GetComponentTransform().GetLocation() + CamDir * GetDesiredFocusDistance(CamLocation);
 		DebugFocusPlaneComponent->SetWorldLocation(FocusPoint);
 	}
 #endif

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Editor/UnrealEdEngine.h"
 #include "HAL/PlatformFilemanager.h"
@@ -43,7 +43,6 @@
 #include "PropertyEditorModule.h"
 #include "LevelEditor.h"
 #include "Interfaces/IMainFrameModule.h"
-#include "Interfaces/ICrashTrackerModule.h"
 #include "Settings/EditorLoadingSavingSettingsCustomization.h"
 #include "Settings/GameMapsSettingsCustomization.h"
 #include "Settings/LevelEditorPlaySettingsCustomization.h"
@@ -51,9 +50,9 @@
 #include "StatsViewerModule.h"
 #include "SnappingUtils.h"
 #include "PackageAutoSaver.h"
+#include "DDCNotifications.h"
 #include "PerformanceMonitor.h"
 #include "BSPOps.h"
-#include "Editor/EditorLiveStreaming/Public/IEditorLiveStreaming.h"
 #include "SourceCodeNavigation.h"
 #include "AutoReimport/AutoReimportManager.h"
 #include "Framework/Notifications/NotificationManager.h"
@@ -75,7 +74,7 @@ void UUnrealEdEngine::Init(IEngineLoop* InEngineLoop)
 	FSourceCodeNavigation::Initialize();
 
 	PackageAutoSaver.Reset(new FPackageAutoSaver);
-	PackageAutoSaver->LoadRestoreFile();
+	PackageAutoSaver->LoadRestoreFile();	
 
 #if !UE_BUILD_DEBUG
 	if( !GEditorSettingsIni.IsEmpty() )
@@ -90,7 +89,7 @@ void UUnrealEdEngine::Init(IEngineLoop* InEngineLoop)
 	
 	// Register to the PostGarbageCollect delegate, as we want to use this to trigger the RefreshAllBroweser delegate from 
 	// here rather then from Core
-	FCoreUObjectDelegates::PostGarbageCollect.AddUObject(this, &UUnrealEdEngine::OnPostGarbageCollect);
+	FCoreUObjectDelegates::GetPostGarbageCollect().AddUObject(this, &UUnrealEdEngine::OnPostGarbageCollect);
 
 	// register to color picker changed event and trigger RedrawAllViewports when that happens */
 	FCoreDelegates::ColorPickerChanged.AddUObject(this, &UUnrealEdEngine::OnColorPickerChanged);
@@ -113,6 +112,8 @@ void UUnrealEdEngine::Init(IEngineLoop* InEngineLoop)
 	// Iterate over all always fully loaded packages and load them.
 	if (!IsRunningCommandlet())
 	{
+		DDCNotifications.Reset(new FDDCNotifications);
+
 		for( int32 PackageNameIndex=0; PackageNameIndex<PackagesToBeFullyLoadedAtStartup.Num(); PackageNameIndex++ )
 		{
 			const FString& PackageName = PackagesToBeFullyLoadedAtStartup[PackageNameIndex];
@@ -158,12 +159,22 @@ void UUnrealEdEngine::Init(IEngineLoop* InEngineLoop)
 		UEditorExperimentalSettings const* ExperimentalSettings = GetDefault<UEditorExperimentalSettings>();
 		UCookerSettings const* CookerSettings = GetDefault<UCookerSettings>();
 		ECookInitializationFlags BaseCookingFlags = ECookInitializationFlags::AutoTick | ECookInitializationFlags::AsyncSave;
-		const ECookInitializationFlags IterativeFlags = ECookInitializationFlags::Iterative | (CookerSettings->bUseAssetRegistryForIteration ? ECookInitializationFlags::IterateOnAssetRegistry : ECookInitializationFlags::IterateOnHash);
-		BaseCookingFlags |= CookerSettings->bIterativeCookingForLaunchOn ? IterativeFlags : ECookInitializationFlags::None;
 		BaseCookingFlags |= CookerSettings->bEnableBuildDDCInBackground ? ECookInitializationFlags::BuildDDCInBackground : ECookInitializationFlags::None;
 
+		if (CookerSettings->bIterativeCookingForLaunchOn)
+		{
+			BaseCookingFlags |= ECookInitializationFlags::Iterative;
+			BaseCookingFlags |= CookerSettings->bIgnoreIniSettingsOutOfDateForIteration ? ECookInitializationFlags::IgnoreIniSettingsOutOfDate : ECookInitializationFlags::None;
+			BaseCookingFlags |= CookerSettings->bIgnoreScriptPackagesOutOfDateForIteration ? ECookInitializationFlags::IgnoreScriptPackagesOutOfDate : ECookInitializationFlags::None;
+		}
+		
 		if (CookerSettings->bEnableCookOnTheSide)
 		{
+			if ( ExperimentalSettings->bSharedCookedBuilds )
+			{
+				BaseCookingFlags |= ECookInitializationFlags::IterateSharedBuild | ECookInitializationFlags::IgnoreIniSettingsOutOfDate;
+			}
+
 			CookServer = NewObject<UCookOnTheFlyServer>();
 			CookServer->Initialize(ECookMode::CookOnTheFlyFromTheEditor, BaseCookingFlags);
 			CookServer->StartNetworkFileServer(false);
@@ -213,32 +224,34 @@ bool CanCookForPlatformInThisProcess( const FString& PlatformName )
 
 bool UUnrealEdEngine::CanCookByTheBookInEditor(const FString& PlatformName) const 
 { 	
-	if ( CanCookForPlatformInThisProcess(PlatformName) == false )
+	if ( !CookServer )
+	{
+		return false;
+	}
+
+	if ( !CanCookForPlatformInThisProcess(PlatformName) )
 	{
 		CookServer->ClearAllCookedData();
 		return false;
 	}
 
-	if ( CookServer )
-	{
-		return CookServer->GetCookMode() == ECookMode::CookByTheBookFromTheEditor; 
-	}
-	return false;
+	return CookServer->GetCookMode() == ECookMode::CookByTheBookFromTheEditor; 
 }
 
 bool UUnrealEdEngine::CanCookOnTheFlyInEditor(const FString& PlatformName) const
 {
-	if ( CanCookForPlatformInThisProcess(PlatformName) == false )
+	if ( !CookServer )
+	{
+		return false;
+	}
+
+	if ( !CanCookForPlatformInThisProcess(PlatformName) )
 	{
 		CookServer->ClearAllCookedData();
 		return false;
 	}
 
-	if ( CookServer )
-	{
-		return CookServer->GetCookMode() == ECookMode::CookOnTheFlyFromTheEditor;
-	}
-	return false;
+	return CookServer->GetCookMode() == ECookMode::CookOnTheFlyFromTheEditor;
 }
 
 void UUnrealEdEngine::StartCookByTheBookInEditor( const TArray<ITargetPlatform*> &TargetPlatforms, const TArray<FString> &CookMaps, const TArray<FString> &CookDirectories, const TArray<FString> &CookCultures, const TArray<FString> &IniMapSections )
@@ -366,13 +379,15 @@ void UUnrealEdEngine::FinishDestroy()
 		PackageAutoSaver.Reset();
 	}
 
+	DDCNotifications.Reset();
+
 	if( PerformanceMonitor )
 	{
 		delete PerformanceMonitor;
 	}
 
 	UPackage::PackageDirtyStateChangedEvent.RemoveAll(this);
-	FCoreUObjectDelegates::PostGarbageCollect.RemoveAll(this);
+	FCoreUObjectDelegates::GetPostGarbageCollect().RemoveAll(this);
 	FCoreDelegates::ColorPickerChanged.RemoveAll(this);
 	Super::FinishDestroy();
 }
@@ -423,26 +438,6 @@ void UUnrealEdEngine::Tick(float DeltaSeconds, bool bIdleMode)
 
 	// Update lightmass
 	UpdateBuildLighting();
-	
-	
-	ICrashTrackerModule* CrashTracker = FModuleManager::LoadModulePtr<ICrashTrackerModule>( FName("CrashTracker") );
-	bool bCrashTrackerEnabled = false;
-	if (CrashTracker)
-	{
-		CrashTracker->Update(DeltaSeconds);
-		bCrashTrackerEnabled = CrashTracker->IsCurrentlyCapturing();
-	}
-
-	// Only allow live streaming if crash tracker is disabled. This is because the SlateRHIRenderer shares the same render targets
-	// for both crash tracker and live editor streaming, and we don't want them to be thrashed every frame.
-	if( !bCrashTrackerEnabled )
-	{
-		// If the editor is configured to broadcast frames, do that now
-		if( IEditorLiveStreaming::Get().IsBroadcastingEditor() )
-		{
-			IEditorLiveStreaming::Get().BroadcastEditorVideoFrame();
-		}
-	}
 }
 
 
@@ -1242,7 +1237,7 @@ void UUnrealEdEngine::FixAnyInvertedBrushes(UWorld* World)
 	for (TActorIterator<ABrush> It(World); It; ++It)
 	{
 		ABrush* Brush = *It;
-		if (Brush->BrushComponent && Brush->BrushComponent->HasInvertedPolys())
+		if (Brush->GetBrushComponent() && Brush->GetBrushComponent()->HasInvertedPolys())
 		{
 			Brushes.Add(Brush);
 		}
@@ -1255,7 +1250,7 @@ void UUnrealEdEngine::FixAnyInvertedBrushes(UWorld* World)
 			UE_LOG(LogUnrealEdEngine, Warning, TEXT("Brush '%s' appears to be inside out - fixing."), *Brush->GetName());
 
 			// Invert the polys of the brush
-			for (FPoly& Poly : Brush->BrushComponent->Brush->Polys->Element)
+			for (FPoly& Poly : Brush->GetBrushComponent()->Brush->Polys->Element)
 			{
 				Poly.Reverse();
 				Poly.CalcNormal();
@@ -1270,7 +1265,7 @@ void UUnrealEdEngine::FixAnyInvertedBrushes(UWorld* World)
 			{
 				// Dynamic brushes can be fixed up here
 				FBSPOps::csgPrepMovingBrush(Brush);
-				Brush->BrushComponent->BuildSimpleBrushCollision();
+				Brush->GetBrushComponent()->BuildSimpleBrushCollision();
 			}
 
 			Brush->MarkPackageDirty();
@@ -1287,9 +1282,11 @@ void UUnrealEdEngine::RegisterComponentVisualizer(FName ComponentClassName, TSha
 	}
 }
 
-
 void UUnrealEdEngine::UnregisterComponentVisualizer(FName ComponentClassName)
 {
+	TSharedPtr<FComponentVisualizer> Visualizer = FindComponentVisualizer(ComponentClassName);
+	VisualizersForSelection.RemoveAll([&Visualizer](const auto& CachedComponentVisualizer) { return CachedComponentVisualizer.Visualizer == Visualizer; });
+
 	ComponentVisualizerMap.Remove(ComponentClassName);
 }
 

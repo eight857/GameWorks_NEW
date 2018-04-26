@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/DocumentationActor.h"
 #include "UObject/ConstructorHelpers.h"
@@ -91,8 +91,3 @@ void ADocumentationActor::UpdateLinkType()
 #endif
 	
 }
-
-#if WITH_EDITORONLY_DATA
-/** Returns Billboard subobject **/
-UMaterialBillboardComponent* ADocumentationActor::GetBillboard() const { return Billboard; }
-#endif

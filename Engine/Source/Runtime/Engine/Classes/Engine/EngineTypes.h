@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -211,6 +211,21 @@ enum EIndirectLightingCacheQuality
 };
 
 UENUM()
+enum class ELightmapType : uint8
+{
+	/** Use the default based on Mobility: Surface Lightmap for Static components, Volumetric Lightmap for Movable components. */
+	Default,
+	/** Force Surface Lightmap, even if the component moves, which should otherwise change the lighting.  This is only supported on components which support surface lightmaps, like static meshes. */
+	ForceSurface,
+	/** 
+	 * Force Volumetric Lightmaps, even if the component is static and could have supported surface lightmaps. 
+	 * Volumetric Lightmaps have better directionality and no Lightmap UV seams, but are much lower resolution than Surface Lightmaps and frequently have self-occlusion and leaking problems.
+	 * Note: Lightmass currently requires valid lightmap UVs and sufficient lightmap resolution to compute bounce lighting, even though the Volumetric Lightmap will be used at runtime.
+	 */
+	ForceVolumetric
+};
+
+UENUM()
 enum EOcclusionCombineMode
 {
 	/** Take the minimum occlusion value.  This is effective for avoiding over-occlusion from multiple methods, but can result in indoors looking too flat. */
@@ -218,7 +233,7 @@ enum EOcclusionCombineMode
 	/** 
 	 * Multiply together occlusion values from Distance Field Ambient Occlusion and Screen Space Ambient Occlusion.  
 	 * This gives a good sense of depth everywhere, but can cause over-occlusion. 
-	 * SSAO should be tweaked to be less strong compard to Minimum.
+	 * SSAO should be tweaked to be less strong compared to Minimum.
 	 */
 	OCM_Multiply,
 	OCM_MAX,
@@ -357,7 +372,7 @@ enum ESceneCaptureCompositeMode
 
 #define NUM_LIGHTING_CHANNELS 3
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FLightingChannels
 {
 	GENERATED_USTRUCT_BODY()
@@ -370,13 +385,13 @@ struct FLightingChannels
 
 	/** Default channel for all primitives and lights. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Channels)
-	bool bChannel0;
+	uint8 bChannel0:1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Channels)
-	bool bChannel1;
+	uint8 bChannel1:1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Channels)
-	bool bChannel2;
+	uint8 bChannel2:1;
 };
 
 inline uint8 GetLightingChannelMaskForStruct(FLightingChannels Value)
@@ -465,7 +480,7 @@ enum EMaterialTessellationMode
 };
 
 
-UENUM()
+UENUM(BlueprintType)
 enum EMaterialSamplerType
 {
 	SAMPLERTYPE_Color UMETA(DisplayName="Color"),
@@ -476,6 +491,7 @@ enum EMaterialSamplerType
 	SAMPLERTYPE_DistanceFieldFont UMETA(DisplayName="Distance Field Font"),
 	SAMPLERTYPE_LinearColor UMETA(DisplayName = "Linear Color"),
 	SAMPLERTYPE_LinearGrayscale UMETA(DisplayName = "Linear Grayscale"),
+	SAMPLERTYPE_External UMETA(DisplayName = "External"),
 	SAMPLERTYPE_MAX,
 };
 
@@ -490,31 +506,6 @@ enum ELightingBuildQuality
 	Quality_Production,
 	Quality_MAX,
 };
-
-
-UENUM()
-enum ETriangleSortOption
-{
-	TRISORT_None,
-	TRISORT_CenterRadialDistance,
-	TRISORT_Random,
-	TRISORT_MergeContiguous,
-	TRISORT_Custom,
-	TRISORT_CustomLeftRight,
-	TRISORT_MAX,
-};
-
-
-/** Enum to specify which axis to use for the forward vector when using TRISORT_CustomLeftRight sort mode. */
-UENUM()
-enum ETriangleSortAxis
-{
-	TSA_X_Axis,
-	TSA_Y_Axis,
-	TSA_Z_Axis,
-	TSA_MAX,
-};
-
 
 /** Movement modes for Characters. */
 UENUM(BlueprintType)
@@ -569,6 +560,9 @@ enum class ENetworkSmoothingMode : uint8
 /** This filter allows us to refine queries (channel, object) with an additional level of ignore by tagging entire classes of objects (e.g. "Red team", "Blue team")
     If(QueryIgnoreMask & ShapeFilter != 0) filter out */
 typedef uint8 FMaskFilter;
+
+// Number of bits used currently from FMaskFilter.
+enum { NumExtraFilterBits = 6 };
 
 // NOTE!!Some of these values are used to index into FCollisionResponseContainers and must be kept in sync.
 // @see FCollisionResponseContainer::SetResponse().
@@ -766,7 +760,7 @@ enum EPhysicsSceneType
 
 
 /** Enum indicating how each type should respond */
-UENUM(BlueprintType)
+UENUM(BlueprintType, meta=(ScriptName="CollisionResponseType"))
 enum ECollisionResponse
 {
 	ECR_Ignore UMETA(DisplayName="Ignore"),
@@ -869,7 +863,7 @@ struct FResponseChannel
 /**
  *	Container for indicating a set of collision channels that this object will collide with.
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct ENGINE_API FCollisionResponseContainer
 {
 	GENERATED_USTRUCT_BODY()
@@ -1315,7 +1309,7 @@ struct FCollisionImpactData
 
 
 /** Struct used to hold effects for destructible damage events */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FFractureEffect
 {
 	GENERATED_USTRUCT_BODY()
@@ -1336,7 +1330,7 @@ struct FFractureEffect
 
 
 /**	Struct for handling positions relative to a base actor, which is potentially moving */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct ENGINE_API FBasedPosition
 {
 	GENERATED_USTRUCT_BODY()
@@ -1465,11 +1459,11 @@ struct FSubtitleCue
 	GENERATED_USTRUCT_BODY()
 
 	/** The text to appear in the subtitle. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SubtitleCue)
+	UPROPERTY(EditAnywhere, Category=SubtitleCue)
 	FText Text;
 
 	/** The time at which the subtitle is to be displayed, in seconds relative to the beginning of the line. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SubtitleCue)
+	UPROPERTY(EditAnywhere, Category=SubtitleCue)
 	float Time;
 
 	FSubtitleCue()
@@ -1522,18 +1516,18 @@ struct FLightmassLightSettings
 	GENERATED_USTRUCT_BODY()
 
 	/** 0 will be completely desaturated, 1 will be unchanged */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Lightmass, meta=(UIMin = "0.0", UIMax = "4.0"))
+	UPROPERTY(EditAnywhere, Category=Lightmass, meta=(UIMin = "0.0", UIMax = "4.0"))
 	float IndirectLightingSaturation;
 
 	/** Controls the falloff of shadow penumbras */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Lightmass, meta=(UIMin = "0.1", UIMax = "4.0"))
+	UPROPERTY(EditAnywhere, Category=Lightmass, meta=(UIMin = "0.1", UIMax = "4.0"))
 	float ShadowExponent;
 
 	/** 
 	 * Whether to use area shadows for stationary light precomputed shadowmaps.  
 	 * Area shadows get softer the further they are from shadow casters, but require higher lightmap resolution to get the same quality where the shadow is sharp.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Lightmass)
+	UPROPERTY(EditAnywhere, Category=Lightmass)
 	bool bUseAreaShadowsForStationaryLight;
 
 	FLightmassLightSettings()
@@ -1559,7 +1553,7 @@ struct FLightmassDirectionalLightSettings : public FLightmassLightSettings
 	GENERATED_USTRUCT_BODY()
 
 	/** Angle that the directional light's emissive surface extends relative to a receiver, affects penumbra sizes. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Lightmass, meta=(UIMin = ".0001", UIMax = "5"))
+	UPROPERTY(EditAnywhere, Category=Lightmass, meta=(UIMin = ".0001", UIMax = "5"))
 	float LightSourceAngle;
 
 	FLightmassDirectionalLightSettings()
@@ -1576,22 +1570,22 @@ struct FLightmassPrimitiveSettings
 	GENERATED_USTRUCT_BODY()
 
 	/** If true, this object will be lit as if it receives light from both sides of its polygons. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lightmass)
+	UPROPERTY(EditAnywhere, Category=Lightmass)
 	uint32 bUseTwoSidedLighting:1;
 
 	/** If true, this object will only shadow indirect lighting.  					*/
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lightmass)
+	UPROPERTY(EditAnywhere, Category=Lightmass)
 	uint32 bShadowIndirectOnly:1;
 
 	/** If true, allow using the emissive for static lighting.						*/
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lightmass)
+	UPROPERTY(EditAnywhere, Category=Lightmass)
 	uint32 bUseEmissiveForStaticLighting:1;
 
 	/** 
 	 * Typically the triangle normal is used for hemisphere gathering which prevents incorrect self-shadowing from artist-tweaked vertex normals. 
 	 * However in the case of foliage whose vertex normal has been setup to match the underlying terrain, gathering in the direction of the vertex normal is desired.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Lightmass)
+	UPROPERTY(EditAnywhere, Category=Lightmass)
 	uint32 bUseVertexNormalForHemisphereGather:1;
 
 	/** Direct lighting falloff exponent for mesh area lights created from emissive areas on this primitive. */
@@ -1607,15 +1601,15 @@ struct FLightmassPrimitiveSettings
 	float EmissiveLightExplicitInfluenceRadius;
 
 	/** Scales the emissive contribution of all materials applied to this object.	*/
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, Category=Lightmass)
 	float EmissiveBoost;
 
 	/** Scales the diffuse contribution of all materials applied to this object.	*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Lightmass)
+	UPROPERTY(EditAnywhere, Category=Lightmass)
 	float DiffuseBoost;
 
 	/** Fraction of samples taken that must be occluded in order to reach full occlusion. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Lightmass)
+	UPROPERTY(EditAnywhere, Category=Lightmass)
 	float FullyOccludedSamplesFraction;
 
 	FLightmassPrimitiveSettings()
@@ -1664,85 +1658,85 @@ struct FLightmassDebugOptions
 	 *	If false, UnrealLightmass.exe is launched automatically (default)
 	 *	If true, it must be launched manually (e.g. through a debugger) with the -debug command line parameter.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bDebugMode:1;
 
 	/**	If true, all participating Lightmass agents will report back detailed stats to the log.	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bStatsEnabled:1;
 
 	/**	If true, BSP surfaces split across model components are joined into 1 mapping	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bGatherBSPSurfacesAcrossComponents:1;
 
 	/**	The tolerance level used when gathering BSP surfaces.	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	float CoplanarTolerance;
 
 	/**
 	 *	If true, Lightmass will import mappings immediately as they complete.
 	 *	It will not process them, however.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bUseImmediateImport:1;
 
 	/**
 	 *	If true, Lightmass will process appropriate mappings as they are imported.
 	 *	NOTE: Requires ImmediateMode be enabled to actually work.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bImmediateProcessMappings:1;
 
 	/**	If true, Lightmass will sort mappings by texel cost. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bSortMappings:1;
 
 	/**	If true, the generate coefficients will be dumped to binary files. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bDumpBinaryFiles:1;
 
 	/**
 	 *	If true, Lightmass will write out BMPs for each generated material property
 	 *	sample to <GAME>\ScreenShots\Materials.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bDebugMaterials:1;
 
 	/**	If true, Lightmass will pad the calculated mappings to reduce/eliminate seams. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bPadMappings:1;
 
 	/**
 	 *	If true, will fill padding of mappings with a color rather than the sampled edges.
 	 *	Means nothing if bPadMappings is not enabled...
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bDebugPaddings:1;
 
 	/**
 	 * If true, only the mapping containing a debug texel will be calculated, all others
 	 * will be set to white
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bOnlyCalcDebugTexelMappings:1;
 
 	/** If true, color lightmaps a random color */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bUseRandomColors:1;
 
 	/** If true, a green border will be placed around the edges of mappings */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bColorBordersGreen:1;
 
 	/**
 	 * If true, Lightmass will overwrite lightmap data with a shade of red relating to
 	 * how long it took to calculate the mapping (Red = Time / ExecutionTimeDivisor)
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	uint32 bColorByExecutionTime:1;
 
 	/** The amount of time that will be count as full red when bColorByExecutionTime is enabled */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LightmassDebugOptions)
+	UPROPERTY(EditAnywhere, Category=LightmassDebugOptions)
 	float ExecutionTimeDivisor;
 
 	ENGINE_API FLightmassDebugOptions();
@@ -1761,14 +1755,14 @@ struct FSwarmDebugOptions
 	 *	If true, Swarm will distribute jobs.
 	 *	If false, only the local machine will execute the jobs.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SwarmDebugOptions)
+	UPROPERTY(EditAnywhere, Category=SwarmDebugOptions)
 	uint32 bDistributionEnabled:1;
 
 	/**
 	 *	If true, Swarm will force content to re-export rather than using the cached version.
 	 *	If false, Swarm will attempt to use the cached version.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=SwarmDebugOptions)
+	UPROPERTY(EditAnywhere, Category=SwarmDebugOptions)
 	uint32 bForceContentExport:1;
 
 	UPROPERTY()
@@ -1851,7 +1845,7 @@ struct ENGINE_API FHitResult
 
 	/** Indicates if this hit was a result of blocking collision. If false, there was no hit or it was an overlap/touch instead. */
 	UPROPERTY()
-	uint32 bBlockingHit:1;
+	uint8 bBlockingHit:1;
 
 	/**
 	 * Whether the trace started in penetration, i.e. with an initial blocking overlap.
@@ -1860,7 +1854,11 @@ struct ENGINE_API FHitResult
 	 * (ie, Normal may not equal ImpactNormal). ImpactPoint will be the same as Location, since there is no single impact point to report.
 	 */
 	UPROPERTY()
-	uint32 bStartPenetrating:1;
+	uint8 bStartPenetrating:1;
+
+	/** Face index we hit (for complex hits with triangle meshes). */
+	UPROPERTY()
+	int32 FaceIndex;
 
 	/**
 	 * 'Time' of impact along trace direction (ranging from 0.0 to 1.0) if there is a hit, indicating time between TraceStart and TraceEnd.
@@ -1869,7 +1867,7 @@ struct ENGINE_API FHitResult
 	UPROPERTY()
 	float Time;
 	 
-	/** The distance from the TraceStart to the ImpactPoint in world space. This value is 0 if there was an initial overlap (trace started inside another colliding object). */
+	/** The distance from the TraceStart to the Location in world space. This value is 0 if there was an initial overlap (trace started inside another colliding object). */
 	UPROPERTY()
 	float Distance; 
 	
@@ -1950,9 +1948,9 @@ struct ENGINE_API FHitResult
 	UPROPERTY()
 	FName BoneName;
 
-	/** Face index we hit (for complex hits with triangle meshes). */
+	/** Name of the _my_ bone which took part in hit event (in case of two skeletal meshes colliding). */
 	UPROPERTY()
-	int32 FaceIndex;
+	FName MyBoneName;
 
 
 	FHitResult()
@@ -2096,7 +2094,7 @@ struct TStructOpsTypeTraits<FHitResult> : public TStructOpsTypeTraitsBase2<FHitR
 
 
 /** Whether to teleport physics body or not */
-enum class ETeleportType
+enum class ETeleportType : uint8
 {
 	/** Do not teleport physics body. This means velocity will reflect the movement between initial and final position, and collisions along the way will occur */
 	None,
@@ -2227,7 +2225,7 @@ struct FAnimUpdateRateParameters
 	GENERATED_USTRUCT_BODY()
 
 public:
-	enum EOptimizeMode
+	enum EOptimizeMode : uint8
 	{
 		TrailMode,
 		LookAheadMode,
@@ -2235,6 +2233,30 @@ public:
 
 	/** Cache which Update Rate Optimization mode we are using */
 	EOptimizeMode OptimizeMode;
+
+	/** The bucket to use when deciding which counter to use to calculate shift values */
+	UPROPERTY()
+	EUpdateRateShiftBucket ShiftBucket;
+
+	/** When skipping a frame, should it be interpolated or frozen? */
+	UPROPERTY()
+	uint8 bInterpolateSkippedFrames : 1;
+
+	/** Whether or not to use the defined LOD/Frameskip map instead of separate distance factor thresholds */
+	UPROPERTY()
+	uint8 bShouldUseLodMap : 1;
+
+	/** If set, LOD/Frameskip map will be queried with mesh's MinLodModel instead of current LOD (PredictedLODLevel) */
+	UPROPERTY()
+	uint8 bShouldUseMinLod : 1;
+
+	/** (This frame) animation update should be skipped. */
+	UPROPERTY()
+	uint8 bSkipUpdate : 1;
+
+	/** (This frame) animation evaluation should be skipped. */
+	UPROPERTY()
+	uint8 bSkipEvaluation : 1;
 
 	/** How often animation will be updated/ticked. 1 = every frame, 2 = every 2 frames, etc. */
 	UPROPERTY()
@@ -2244,22 +2266,6 @@ public:
 	 *  has to be a multiple of UpdateRate. */
 	UPROPERTY()
 	int32 EvaluationRate;
-
-	/** When skipping a frame, should it be interpolated or frozen? */
-	UPROPERTY()
-	bool bInterpolateSkippedFrames;
-
-	/** Whether or not to use the defined LOD/Frameskip map instead of separate distance factor thresholds */
-	UPROPERTY()
-	bool bShouldUseLodMap;
-
-	/** (This frame) animation update should be skipped. */
-	UPROPERTY()
-	bool bSkipUpdate;
-
-	/** (This frame) animation evaluation should be skipped. */
-	UPROPERTY()
-	bool bSkipEvaluation;
 
 	UPROPERTY(Transient)
 	/** Track time we have lost via skipping */
@@ -2276,6 +2282,10 @@ public:
 	 * a value of 4 means evaluated 1 frame, then 3 frames skipped */
 	UPROPERTY()
 	int32 BaseNonRenderedUpdateRate;
+
+	/** Max Evaluation Rate allowed for interpolation to be enabled. Beyond, interpolation will be turned off. */
+	UPROPERTY()
+	int32 MaxEvalRateForInterpolation;
 
 	/** Array of MaxDistanceFactor to use for AnimUpdateRate when mesh is visible (rendered).
 	 * MaxDistanceFactor is size on screen, as used by LODs
@@ -2299,34 +2309,35 @@ public:
 	UPROPERTY()
 	TMap<int32, int32> LODToFrameSkipMap;
 
-	/** Max Evaluation Rate allowed for interpolation to be enabled. Beyond, interpolation will be turned off. */
 	UPROPERTY()
-	int32 MaxEvalRateForInterpolation;
+	int32 SkippedUpdateFrames;
 
-	/** The bucket to use when deciding which counter to use to calculate shift values */
 	UPROPERTY()
-	EUpdateRateShiftBucket ShiftBucket;
+	int32 SkippedEvalFrames;
 
 public:
 
 	/** Default constructor. */
 	FAnimUpdateRateParameters()
 		: OptimizeMode(TrailMode)
-		, UpdateRate(1)
-		, EvaluationRate(1)
+		, ShiftBucket(EUpdateRateShiftBucket::ShiftBucket0)
 		, bInterpolateSkippedFrames(false)
 		, bShouldUseLodMap(false)
+		, bShouldUseMinLod(false)
 		, bSkipUpdate(false)
 		, bSkipEvaluation(false)
+		, UpdateRate(1)
+		, EvaluationRate(1)
 		, TickedPoseOffestTime(0.f)
 		, AdditionalTime(0.f)
 		, ThisTickDelta(0.f)
 		, BaseNonRenderedUpdateRate(4)
 		, MaxEvalRateForInterpolation(4)
-		, ShiftBucket(EUpdateRateShiftBucket::ShiftBucket0)
+		, SkippedUpdateFrames(0)
+		, SkippedEvalFrames(0)
 	{ 
-		BaseVisibleDistanceFactorThesholds.Add(0.12f);
 		BaseVisibleDistanceFactorThesholds.Add(0.24f);
+		BaseVisibleDistanceFactorThesholds.Add(0.12f);
 	}
 
 	/** Set parameters and verify inputs for Trail Mode (original behaviour - skip frames, track skipped time and then catch up afterwards).
@@ -2399,7 +2410,7 @@ public:
 /**
  * Point Of View type.
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FPOV
 {
 	GENERATED_USTRUCT_BODY()
@@ -2443,38 +2454,45 @@ struct FMeshBuildSettings
 
 	/** If true, degenerate triangles will be removed. */
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
-	bool bUseMikkTSpace;
+	uint8 bUseMikkTSpace:1;
 
 	/** If true, normals in the raw mesh are ignored and recomputed. */
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
-	bool bRecomputeNormals;
+	uint8 bRecomputeNormals:1;
 
 	/** If true, tangents in the raw mesh are ignored and recomputed. */
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
-	bool bRecomputeTangents;
+	uint8 bRecomputeTangents:1;
 
 	/** If true, degenerate triangles will be removed. */
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
-	bool bRemoveDegenerates;
+	uint8 bRemoveDegenerates:1;
 	
 	/** Required for PNT tessellation but can be slow. Recommend disabling for larger meshes. */
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
-	bool bBuildAdjacencyBuffer;
+	uint8 bBuildAdjacencyBuffer:1;
 
 	/** Required to optimize mesh in mirrored transform. Double index buffer size. */
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
-	bool bBuildReversedIndexBuffer;
+	uint8 bBuildReversedIndexBuffer:1;
 
 	/** If true, Tangents will be stored at 16 bit vs 8 bit precision. */
 	UPROPERTY(EditAnywhere, Category = BuildSettings)
-	bool bUseHighPrecisionTangentBasis;
+	uint8 bUseHighPrecisionTangentBasis:1;
 
 	/** If true, UVs will be stored at full floating point precision. */
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
-	bool bUseFullPrecisionUVs;
+	uint8 bUseFullPrecisionUVs:1;
 
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
-	bool bGenerateLightmapUVs;
+	uint8 bGenerateLightmapUVs:1;
+
+	/** 
+	 * Whether to generate the distance field treating every triangle hit as a front face.  
+	 * When enabled prevents the distance field from being discarded due to the mesh being open, but also lowers Distance Field AO quality.
+	 */
+	UPROPERTY(EditAnywhere, Category=BuildSettings, meta=(DisplayName="Two-Sided Distance Field Generation"))
+	uint8 bGenerateDistanceFieldAsIfTwoSided:1;
 
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
 	int32 MinLightmapResolution;
@@ -2499,15 +2517,10 @@ struct FMeshBuildSettings
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
 	float DistanceFieldResolutionScale;
 
-	/** 
-	 * Whether to generate the distance field treating every triangle hit as a front face.  
-	 * When enabled prevents the distance field from being discarded due to the mesh being open, but also lowers Distance Field AO quality.
-	 */
-	UPROPERTY(EditAnywhere, Category=BuildSettings, meta=(DisplayName="Two-Sided Distance Field Generation"))
-	bool bGenerateDistanceFieldAsIfTwoSided;
-
-	UPROPERTY()
+#if WITH_EDITORONLY_DATA
+	UPROPERTY(NotReplicated)
 	float DistanceFieldBias_DEPRECATED;
+#endif
 
 	UPROPERTY(EditAnywhere, Category=BuildSettings)
 	class UStaticMesh* DistanceFieldReplacementMesh;
@@ -2523,15 +2536,17 @@ struct FMeshBuildSettings
 		, bUseHighPrecisionTangentBasis(false)
 		, bUseFullPrecisionUVs(false)
 		, bGenerateLightmapUVs(true)
+		, bGenerateDistanceFieldAsIfTwoSided(false)
 		, MinLightmapResolution(64)
 		, SrcLightmapIndex(0)
 		, DstLightmapIndex(1)
 		, BuildScale_DEPRECATED(1.0f)
 		, BuildScale3D(1.0f, 1.0f, 1.0f)
 		, DistanceFieldResolutionScale(1.0f)
-		, bGenerateDistanceFieldAsIfTwoSided(false)
+#if WITH_EDITORONLY_DATA
 		, DistanceFieldBias_DEPRECATED(0.0f)
-		, DistanceFieldReplacementMesh(NULL)
+#endif
+		, DistanceFieldReplacementMesh(nullptr)
 	{ }
 
 	/** Equality operator. */
@@ -2564,7 +2579,7 @@ struct FMeshBuildSettings
 
 
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct ENGINE_API FDamageEvent
 {
 	GENERATED_USTRUCT_BODY()
@@ -2631,27 +2646,27 @@ struct ENGINE_API FPointDamageEvent : public FDamageEvent
 };
 
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct ENGINE_API FRadialDamageParams
 {
 	GENERATED_USTRUCT_BODY()
 
-	UPROPERTY(EditAnywhere, Category=RadialDamageParams)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=RadialDamageParams)
 	float BaseDamage;
 
-	UPROPERTY(EditAnywhere, Category=RadialDamageParams)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=RadialDamageParams)
 	float MinimumDamage;
 	
-	UPROPERTY(EditAnywhere, Category=RadialDamageParams)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=RadialDamageParams)
 	float InnerRadius;
 		
-	UPROPERTY(EditAnywhere, Category=RadialDamageParams)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=RadialDamageParams)
 	float OuterRadius;
 		
-	UPROPERTY(EditAnywhere, Category=RadialDamageParams)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=RadialDamageParams)
 	float DamageFalloff;
 
-// 	UPROPERTY(EditAnywhere, Category=RadiusDamageParams)
+// 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=RadiusDamageParams)
 // 	float BaseImpulseMag;
 
 	FRadialDamageParams()
@@ -2719,16 +2734,17 @@ UENUM()
 enum ENetDormancy
 {
 	/** This actor can never go network dormant. */
-	DORM_Never,
+	DORM_Never UMETA(DisplayName = "Never"),
 	/** This actor can go dormant, but is not currently dormant. Game code will tell it when it go dormant. */
-	DORM_Awake,
+	DORM_Awake UMETA(DisplayName = "Awake"),
 	/** This actor wants to go fully dormant for all connections. */
-	DORM_DormantAll,
+	DORM_DormantAll UMETA(DisplayName = "Dormant All"),
 	/** This actor may want to go dormant for some connections, GetNetDormancy() will be called to find out which. */
-	DORM_DormantPartial,
+	DORM_DormantPartial UMETA(DisplayName = "Dormant Partial"),
 	/** This actor is initially dormant for all connection if it was placed in map. */
-	DORM_Initial,
-	DORN_MAX,
+	DORM_Initial UMETA(DisplayName = "Initial"),
+
+	DORM_MAX UMETA(Hidden),
 };
 
 
@@ -3532,6 +3548,21 @@ struct FDirectoryPath
 
 
 /**
+ * Reference to an editor collection of assets. This allows an editor-only picker UI
+ */
+USTRUCT(BlueprintType)
+struct FCollectionReference
+{
+	GENERATED_USTRUCT_BODY()
+
+	/**
+	 * Name of the collection
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=CollectionReference)
+	FName CollectionName;
+};
+
+/**
 * This is used for redirecting old name to new name
 * We use manually parsing array, but that makes harder to modify from property setting
 * So adding this USTRUCT to support it properly
@@ -3748,7 +3779,7 @@ struct FFontRenderInfo
 
 
 /** Simple 2d triangle with UVs */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FCanvasUVTri
 {
 	GENERATED_USTRUCT_BODY()

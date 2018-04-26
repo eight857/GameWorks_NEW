@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -100,8 +100,6 @@ UCLASS(hidecategories=Object, autoexpandcategories=Font, MinimalAPI, BlueprintTy
 class UFont : public UObject, public IFontProviderInterface
 {
 	GENERATED_UCLASS_BODY()
-
-	~UFont();
 
 	/** What kind of font caching should we use? This controls which options we see */
 	UPROPERTY(EditAnywhere, Category=Font)
@@ -252,6 +250,7 @@ public:
 	//~ Begin UObject Interface
 	virtual void Serialize( FArchive& Ar ) override;
 	virtual void PostLoad() override;
+	virtual void BeginDestroy() override;
 	//~ End UObject interface
 
 	/**

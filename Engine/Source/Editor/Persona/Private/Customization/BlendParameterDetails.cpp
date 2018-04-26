@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Customization/BlendParameterDetails.h"
 
@@ -32,7 +32,7 @@ void FBlendParameterDetails::CustomizeChildren(TSharedRef<IPropertyHandle> Struc
 				RangeProperties[RangeValueIndex] = ChildHandle;
 				bValidRangeValue[RangeValueIndex] = true;
 				
-				ChildBuilder.AddChildContent(ChildHandle->GetPropertyDisplayName())
+				ChildBuilder.AddCustomRow(ChildHandle->GetPropertyDisplayName())
 				.NameWidget
 				[
 					ChildHandle->CreatePropertyNameWidget()
@@ -53,7 +53,7 @@ void FBlendParameterDetails::CustomizeChildren(TSharedRef<IPropertyHandle> Struc
 
 		if (!bHandled)
 		{
-			IDetailPropertyRow& Property = ChildBuilder.AddChildProperty(ChildHandle);
+			IDetailPropertyRow& Property = ChildBuilder.AddProperty(ChildHandle);
 		}
 	}
 }

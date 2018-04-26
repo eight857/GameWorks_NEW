@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PackageUtilities.cpp: Commandlets for viewing information about package files
@@ -38,6 +38,7 @@
 #include "FileHelpers.h"
 
 #include "Animation/AnimCompress_BitwiseCompressOnly.h"
+#include "Animation/AnimCompress_Automatic.h"
 
 
 #include "CollectionManagerTypes.h"
@@ -50,6 +51,7 @@
 #include "Animation/AnimationSettings.h"
 
 #include "EngineUtils.h"
+#include "Materials/Material.h"
 
 DEFINE_LOG_CATEGORY(LogPackageHelperFunctions);
 DEFINE_LOG_CATEGORY_STATIC(LogPackageUtilities, Log, All);
@@ -211,14 +213,37 @@ bool NormalizePackageNames( TArray<FString> PackageNames, TArray<FString>& Packa
 	if ( (PackageFilter&NORMALIZE_ResetExistingLoaders) != 0 )
 	{
 		// reset the loaders for the packages we want to load so that we don't find the wrong version of the file
-		for ( int32 PackageIndex = 0; PackageIndex < PackageNames.Num(); PackageIndex++ )
+		for ( int32 PackageIndex = 0; PackageIndex < PackagePathNames.Num(); PackageIndex++ )
 		{
 			// (otherwise, attempting to run a commandlet on e.g. Engine.xxx will always return results for Engine.u instead)
-			const FString& PackageName = FPackageName::PackageFromPath(*PackageNames[PackageIndex]);
+			FString PackageName;
+			if (!FPackageName::TryConvertFilenameToLongPackageName(PackagePathNames[PackageIndex], PackageName))
+			{
+				PackageName = PackagePathNames[PackageIndex];
+			}
 			UPackage* ExistingPackage = FindObject<UPackage>(NULL, *PackageName, true);
 			if ( ExistingPackage != NULL )
 			{
-				ResetLoaders(ExistingPackage);
+				// skip resetting loaders on default materials since they are expected to be post-loaded at that point
+				bool bContainsDefaultMaterial = false;
+				ForEachObjectWithOuter(ExistingPackage,
+					[&bContainsDefaultMaterial](UObject* Obj)
+					{
+						if (!bContainsDefaultMaterial)
+						{
+							UMaterial* Material = Cast<UMaterial>(Obj);
+							if (Material && Material->IsDefaultMaterial())
+							{
+								bContainsDefaultMaterial = true;
+							}
+						}
+					}
+				);
+
+				if (!bContainsDefaultMaterial)
+				{
+					ResetLoaders(ExistingPackage);
+				}
 			}
 		}
 	}
@@ -244,18 +269,7 @@ bool SavePackageHelper(UPackage* Package, FString Filename, EObjectFlags KeepObj
 {
 	// look for a world object in the package (if there is one, there's a map)
 	UWorld* World = UWorld::FindWorldInPackage(Package);
-	bool bSavedCorrectly;
-	if (World)
-	{
-		bSavedCorrectly = GEditor->SavePackage(Package, World, RF_NoFlags, *Filename, ErrorDevice, LinkerToConformAgainst, false, true, SaveFlags);
-	}
-	else
-	{
-		bSavedCorrectly = GEditor->SavePackage(Package, NULL, KeepObjectFlags, *Filename, ErrorDevice, LinkerToConformAgainst, false, true, SaveFlags);
-	}
-
-	// return success
-	return bSavedCorrectly;
+	return GEditor->SavePackage(Package, World, KeepObjectFlags, *Filename, ErrorDevice, LinkerToConformAgainst, false, true, SaveFlags);
 }
 
 /**
@@ -688,9 +702,27 @@ int32 ULoadPackageCommandlet::Main( const FString& Params )
 	}
 
 	uint8 PackageFilter = NORMALIZE_DefaultFlags;
-	if ( Switches.Contains(TEXT("MAPSONLY")) )
+	if (Switches.Contains(TEXT("SKIPMAPS")))
+	{
+		PackageFilter |= NORMALIZE_ExcludeMapPackages;
+	}
+	else if (Switches.Contains(TEXT("MAPSONLY")))
 	{
 		PackageFilter |= NORMALIZE_ExcludeContentPackages;
+	}
+
+	if (Switches.Contains(TEXT("PROJECTONLY")))
+	{
+		PackageFilter |= NORMALIZE_ExcludeEnginePackages;
+	}
+
+	if (Switches.Contains(TEXT("SkipDeveloperFolders")) || Switches.Contains(TEXT("NODEV")))
+	{
+		PackageFilter |= NORMALIZE_ExcludeDeveloperPackages;
+	}
+	else if (Switches.Contains(TEXT("OnlyDeveloperFolders")))
+	{
+		PackageFilter |= NORMALIZE_ExcludeNonDeveloperPackages;
 	}
 
 	// assume the first token is the map wildcard/pathname
@@ -723,24 +755,27 @@ int32 ULoadPackageCommandlet::Main( const FString& Params )
 
 		UE_LOG(LogPackageUtilities, Warning, TEXT("Loading %s"), *Filename );
 
-		const FString& PackageName = FPackageName::PackageFromPath(*Filename);
-		UPackage* Package = FindObject<UPackage>(NULL, *PackageName, true);
-		if ( Package != NULL && !bLoadAllPackages )
+		FString PackageName;
+		if (FPackageName::TryConvertFilenameToLongPackageName(Filename, PackageName))
 		{
-			ResetLoaders(Package);
+			UPackage* Package = FindObject<UPackage>(nullptr, *PackageName, true);
+			if (Package != NULL && !bLoadAllPackages)
+			{
+				ResetLoaders(Package);
+			}
 		}
 
 		if (bCheckForLegacyPackages)
 		{
 			BeginLoad();
-			auto Linker = GetPackageLinker(NULL,*Filename,LOAD_NoVerify,NULL,NULL);
+			auto Linker = GetPackageLinker(nullptr, *Filename,LOAD_NoVerify,NULL,NULL);
 			EndLoad();
 			MinVersion = FMath::Min<int32>(MinVersion, Linker->Summary.GetFileVersionUE4());
 		}
 		else
 		{
-			Package = LoadPackage( NULL, *Filename, LOAD_None );
-			if( Package == NULL )
+			UPackage* Package = LoadPackage(nullptr, *Filename, LOAD_None );
+			if(Package == nullptr)
 			{
 				UE_LOG(LogPackageUtilities, Error, TEXT("Error loading %s!"), *Filename );
 			}
@@ -915,25 +950,6 @@ void FPkgInfoReporter_Log::GeneratePackageReport( FLinkerLoad* InLinker/*=NULL*/
 	{
 		const FGenerationInfo& generationInfo = Linker->Summary.Generations[ i ];
 		UE_LOG(LogPackageUtilities, Warning,TEXT("\t\t\t%d) ExportCount=%d, NameCount=%d "), i, generationInfo.ExportCount, generationInfo.NameCount );
-	}
-
-
-	if( (InfoFlags&PKGINFO_Chunks) != 0 )
-	{
-		UE_LOG(LogPackageUtilities, Warning, TEXT("--------------------------------------------") );
-		GWarn->Log ( TEXT("Compression Chunks"));
-		GWarn->Log ( TEXT("=========="));
-
-		for ( int32 ChunkIndex = 0; ChunkIndex < Linker->Summary.CompressedChunks.Num(); ChunkIndex++ )
-		{
-			FCompressedChunk& Chunk = Linker->Summary.CompressedChunks[ChunkIndex];
-			GWarn->Log ( TEXT("\t*************************"));
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\tChunk %d:"), ChunkIndex );
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\t\tUncompressedOffset: %d"), Chunk.UncompressedOffset);
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\t\t  UncompressedSize: %d"), Chunk.UncompressedSize);
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\t\t  CompressedOffset: %d"), Chunk.CompressedOffset);
-			UE_LOG(LogPackageUtilities, Warning, TEXT("\t\t    CompressedSize: %d"), Chunk.CompressedSize);
-		}
 	}
 
 	if( (InfoFlags&PKGINFO_Names) != 0 )
@@ -1400,10 +1416,6 @@ int32 UPkgInfoCommandlet::Main( const FString& Params )
 	{
 		InfoFlags |= PKGINFO_Compact;
 	}
-	if ( Switches.Contains(TEXT("chunks")) )
-	{
-		InfoFlags |= PKGINFO_Chunks;
-	}
 	if ( Switches.Contains(TEXT("depends")) )
 	{
 		InfoFlags |= PKGINFO_Depends;
@@ -1496,11 +1508,14 @@ int32 UPkgInfoCommandlet::Main( const FString& Params )
 		{
 			// reset the loaders for the packages we want to load so that we don't find the wrong version of the file
 			// (otherwise, attempting to run pkginfo on e.g. Engine.xxx will always return results for Engine.u instead)
-			const FString& PackageName = FPackageName::PackageFromPath(*Filename);
-			UPackage* ExistingPackage = FindObject<UPackage>(NULL, *PackageName, true);
-			if ( ExistingPackage != NULL )
+			FString PackageName;
+			if (FPackageName::TryConvertFilenameToLongPackageName(Filename, PackageName))
 			{
-				ResetLoaders(ExistingPackage);
+				UPackage* ExistingPackage = FindObject<UPackage>(nullptr, *PackageName, true);
+				if (ExistingPackage != nullptr)
+				{
+					ResetLoaders(ExistingPackage);
+				}
 			}
 		}
 
@@ -1552,6 +1567,25 @@ struct CompressAnimationsFunctor
 	template< typename OBJECTYPE >
 	void DoIt( UCommandlet* Commandlet, UPackage* Package, TArray<FString>& Tokens, TArray<FString>& Switches )
 	{
+		// Count the number of animations to provide some limited progress indication
+		int32 NumAnimationsInPackage = 0;
+		for (TObjectIterator<OBJECTYPE> It; It; ++It)
+		{
+			OBJECTYPE* AnimSeq = *It;
+			if (!AnimSeq->IsIn(Package))
+			{
+				continue;
+			}
+
+			++NumAnimationsInPackage;
+		}
+
+		// Skip packages that contain no Animations.
+		if (NumAnimationsInPackage == 0)
+		{
+			return;
+		}
+
 		// @todoanim: we expect this won't work properly since it won't have any skeletalmesh,
 		// but soon, the compression will changed based on skeleton. 
 		// when that happens, this doesn't have to worry about skeletalmesh not loaded
@@ -1625,24 +1659,16 @@ struct CompressAnimationsFunctor
 		// Get version number. Bump this up every time you want to recompress all animations.
 		const int32 CompressCommandletVersion = UAnimationSettings::Get()->CompressCommandletVersion;
 
-		// Count the number of animations to provide some limited progress indication
-		int32 NumAnimationsInPackage = 0;
-		for (TObjectIterator<OBJECTYPE> It; It; ++It)
-		{
-			++NumAnimationsInPackage;
-		}
-
-
 		int32 ActiveAnimationIndex = 0;
 		for (TObjectIterator<OBJECTYPE> It; It; ++It)
 		{
 			OBJECTYPE* AnimSeq = *It;
-			++ActiveAnimationIndex;
-
 			if (!AnimSeq->IsIn(Package))
 			{
 				continue;
 			}
+
+			++ActiveAnimationIndex;
 
 			// If animation hasn't been compressed, force it.
 			bool bForceCompression = (AnimSeq->CompressedTrackOffsets.Num() == 0);
@@ -1663,6 +1689,10 @@ struct CompressAnimationsFunctor
 
 			USkeleton* Skeleton = AnimSeq->GetSkeleton();
 			check (Skeleton);
+			if (Skeleton->HasAnyFlags(RF_NeedLoad))
+			{
+				Skeleton->GetLinker()->Preload(Skeleton);
+			}
 
 			if( bAnalyze )
 			{
@@ -2066,13 +2096,10 @@ struct CompressAnimationsFunctor
 				}
 			}
 #endif
-			int32 OldSize;
-			int32 NewSize;
+			SIZE_T OldSize;
+			SIZE_T NewSize;
 
-			{
-				FArchiveCountMem CountBytesSize( AnimSeq );
-				OldSize = CountBytesSize.GetNum();
-			}
+			OldSize = AnimSeq->GetResourceSizeBytes(EResourceSizeMode::EstimatedTotal);
 
 			// Clear bDoNotOverrideCompression flag
 			if( bClearNoCompressionOverride && AnimSeq->bDoNotOverrideCompression )
@@ -2095,6 +2122,13 @@ struct CompressAnimationsFunctor
 				// Force an update.
 				AnimSeq->CompressCommandletVersion = 0;
 			}
+			
+			// Do not perform automatic recompression on animations marked as 'bDoNotOverrideCompression'
+			// Unless they have no compression scheme, or they're using automatic compression.
+			if (AnimSeq->bDoNotOverrideCompression && (AnimSeq->CompressionScheme != nullptr) && !AnimSeq->CompressionScheme->IsA(UAnimCompress_Automatic::StaticClass()))
+			{
+				continue;
+			}
 
 			UE_LOG(LogPackageUtilities, Warning, TEXT("Compressing animation '%s' [#%d / %d in package '%s']"),
 				*AnimSeq->GetName(),
@@ -2102,22 +2136,28 @@ struct CompressAnimationsFunctor
 				NumAnimationsInPackage,
 				*PackageFileName);
 
-			// @todoanim: expect this won't work
+			// First set automatic compressor and call it.
+			// This will run through a bunch of compressors and pick the best.
+			// Problem is this is going to create a DDC key with 'Automatic Compressor'
+			UAnimCompress* CompressionAlgorithm = NewObject<UAnimCompress_Automatic>();
+			AnimSeq->CompressionScheme = static_cast<UAnimCompress*>(StaticDuplicateObject(CompressionAlgorithm, AnimSeq));
 			AnimSeq->RequestAnimCompression(false, true, false);
-			{
-				FArchiveCountMem CountBytesSize( AnimSeq );
-				NewSize = CountBytesSize.GetNum();
-			}
 
-			// Set version since we've checked this animation for recompression.
-			if( AnimSeq->CompressCommandletVersion != CompressCommandletVersion )
+			// Automatic compression should have picked a suitable compressor that is not UAnimCompress_Automatic
+			if (ensure(!AnimSeq->CompressionScheme->IsA(UAnimCompress_Automatic::StaticClass())))
 			{
+				// Update CompressCommandletVersion in that case, and create a proper DDC entry
+				// (with actual compressor)
 				AnimSeq->CompressCommandletVersion = CompressCommandletVersion;
+				AnimSeq->RequestAnimCompression(false, false, false);
 				bDirtyPackage = true;
 			}
 
+			NewSize = AnimSeq->GetResourceSizeBytes(EResourceSizeMode::EstimatedTotal);
+
 			// Only save package if size has changed.
-			bDirtyPackage = (bDirtyPackage || bForceCompression || (OldSize != NewSize));
+			const int64 DeltaSize = NewSize - OldSize;
+			bDirtyPackage = (bDirtyPackage || bForceCompression || (DeltaSize != 0));
 
 			// if Dirty, then we need to be able to write to this package. 
 			// If we can't, abort, don't want to waste time!!
@@ -2169,7 +2209,7 @@ struct CompressAnimationsFunctor
 
 		// End of recompression
 		// Does package need to be saved?
-		bDirtyPackage = bDirtyPackage || Package->IsDirty();
+/*		bDirtyPackage = bDirtyPackage || Package->IsDirty();*/
 
 		// If we need to save package, do so.
 		if( bDirtyPackage && !bAnalyze )
@@ -2239,27 +2279,6 @@ int32 UCompressAnimationsCommandlet::Main( const FString& Params )
 	}
 	else
 	{
-		// First scan all Skeletal Meshes
-		UE_LOG(LogPackageUtilities, Warning, TEXT("Scanning for all SkeletalMeshes..."));
-
-		// If we have SKIPREADONLY, then override this, as we need to scan all packages for skeletal meshes.
-		FString SearchAllMeshesParams = ParamsUpperCase;
-		SearchAllMeshesParams += FString(TEXT(" -OVERRIDEREADONLY"));
-		SearchAllMeshesParams += FString(TEXT(" -OVERRIDELOADMAPS"));
-		// Prevent recompression here, we'll do it after we gathered all skeletal meshes
-		GDisableAnimationRecompression = true;
-		DoActionToAllPackages<USkeletalMesh, AddAllSkeletalMeshesToListFunctor>(this, SearchAllMeshesParams);
-		GDisableAnimationRecompression = false;
-
-		int32 Count = 0;
-		for( TObjectIterator<USkeletalMesh> It; It; ++It )
-		{
-			USkeletalMesh* SkelMesh = *It;
-			UE_LOG(LogPackageUtilities, Warning, TEXT("[%i] %s"), Count, *SkelMesh->GetFName().ToString());
-			Count++;
-		}
-		UE_LOG(LogPackageUtilities, Warning, TEXT("%i SkeletalMeshes found!"), Count);
-
 		// Then do the animation recompression
 		UE_LOG(LogPackageUtilities, Warning, TEXT("Recompressing all animations..."));
 		DoActionToAllPackages<UAnimSequence, CompressAnimationsFunctor>(this, ParamsUpperCase);
@@ -2395,7 +2414,7 @@ int32 UReplaceActorCommandlet::Main(const FString& Params)
 		// get the full path name to the file
 		FString FileName = PathPrefix + PackageName;
 
-		const bool bIsAutoSave = FString(*FileName).ToUpper().Contains( TEXT("AUTOSAVES") );
+		const bool bIsAutoSave = FileName.Contains( TEXT("AUTOSAVES") );
 
 		FSourceControlStatePtr SourceControlState = SourceControl.GetProvider().GetState(FileName, EStateCacheUsage::ForceUpdate);
 
@@ -2549,7 +2568,7 @@ int32 UReplaceActorCommandlet::Main(const FString& Params)
 				}
 
 				// collect garbage to delete replaced actors and any objects only referenced by them (components, etc)
-				World->PerformGarbageCollectionAndCleanupActors();
+				GEngine->PerformGarbageCollectionAndCleanupActors();
 
 				// save the world
 				if( ( Package->IsDirty() == true ) && ( bIsDirty == true ) )

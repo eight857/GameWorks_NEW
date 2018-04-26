@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SControlManipulatorPicker.h"
 #include "SCanvas.h"
@@ -290,6 +290,7 @@ void SControlManipulatorPicker::Construct(const FArguments& InArgs)
 		.AutoHeight()
 		[
 			SAssignNew(PickerCanvas, SControlManipulatorPickerCanvas, SharedThis(this))
+			.Visibility(this, &SControlManipulatorPicker::ShowPickerCanvas)
 		]
 
 		+ SVerticalBox::Slot()
@@ -662,5 +663,9 @@ EVisibility SControlManipulatorPicker::ShowButtonEditingUI() const
 	return (bShowButtonEditing) ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
+EVisibility SControlManipulatorPicker::ShowPickerCanvas() const
+{
+	return (GetRig() != nullptr) ? EVisibility::Visible : EVisibility::Collapsed;
+}
 
 #undef LOCTEXT_NAMESPACE

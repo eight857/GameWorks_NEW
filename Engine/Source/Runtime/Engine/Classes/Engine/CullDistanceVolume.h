@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,7 +12,7 @@ class UPrimitiveComponent;
 /**
  * Helper structure containing size and cull distance pair.
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FCullDistanceSizePair
 {
 	GENERATED_USTRUCT_BODY()

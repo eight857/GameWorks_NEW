@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,10 +16,12 @@ class SLATE_API SSubMenuHandler : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS( SSubMenuHandler )
+		: _Placement( EMenuPlacement::MenuPlacement_MenuRight )
 	{}
 		SLATE_DEFAULT_SLOT( FArguments, Content )
 		SLATE_ARGUMENT( TSharedPtr<SMenuAnchor>, MenuAnchor )
 		SLATE_ARGUMENT( TSharedPtr<SWidget>, MenuContent )
+		SLATE_ATTRIBUTE( EMenuPlacement, Placement )
 		SLATE_EVENT( FOnGetContent, OnGetMenuContent )
 	SLATE_END_ARGS()
 

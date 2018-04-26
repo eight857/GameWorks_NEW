@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -19,11 +19,15 @@ struct FGitVersion
 	int Minor;
 
 	uint32 bHasCatFileWithFilters : 1;
+	uint32 bHasGitLfs : 1;
+	uint32 bHasGitLfsLocking : 1;
 
 	FGitVersion() 
 		: Major(0)
 		, Minor(0)
 		, bHasCatFileWithFilters(false)
+		, bHasGitLfs(false)
+		, bHasGitLfsLocking(false)
 	{
 	}
 
@@ -59,6 +63,7 @@ public:
 	virtual void CancelOperation( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation ) override;
 	virtual bool UsesLocalReadOnlyState() const override;
 	virtual bool UsesChangelists() const override;
+	virtual bool UsesCheckout() const override;
 	virtual void Tick() override;
 	virtual TArray< TSharedRef<class ISourceControlLabel> > GetLabels( const FString& InMatchingSpec ) const override;
 #if SOURCE_CONTROL_WITH_SLATE
@@ -66,9 +71,14 @@ public:
 #endif
 
 	/**
-	 * Run a Git "version" command to check the availability of the binary.
+	 * Check configuration, else standard paths, and run a Git "version" command to check the availability of the binary.
 	 */
 	void CheckGitAvailability();
+
+	/**
+	 * Find the .git/ repository and check it's status.
+	 */
+	void CheckRepositoryStatus(const FString& InPathToGitBinary);
 
 	/** Is git binary found and working. */
 	inline bool IsGitAvailable() const
@@ -82,7 +92,7 @@ public:
 		return GitVersion;
 	}
 
-	/** Get the path to the root of the Git repository: can be the GameDir itself, or any parent directory */
+	/** Get the path to the root of the Git repository: can be the ProjectDir itself, or any parent directory */
 	inline const FString& GetPathToRepositoryRoot() const
 	{
 		return PathToRepositoryRoot;
@@ -131,7 +141,7 @@ private:
 	/** Output any messages this command holds */
 	void OutputCommandMessages(const class FGitSourceControlCommand& InCommand) const;
 
-	/** Path to the root of the Git repository: can be the GameDir itself, or any parent directory (found by the "Connect" operation) */
+	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;
 
 	/** Git config user.name (from local repository, else globally) */

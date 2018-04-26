@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AppleMovieStreamer.h"
 
@@ -179,12 +179,15 @@ bool FAVPlayerMovieStreamer::Tick(float DeltaTime)
             break;
         case AVAssetReaderStatusFailed:
             UE_LOG(LogMoviePlayer, Error, TEXT("Movie reader entered Failure status.") );
+			bVideoTracksLoaded = false;
             break;
         case AVAssetReaderStatusCancelled:
             UE_LOG(LogMoviePlayer, Error, TEXT("Movie reader entered Cancelled status.") );
+			bVideoTracksLoaded = false;
             break;
         default:
             UE_LOG(LogMoviePlayer, Error, TEXT("Movie reader encountered unknown error.") );
+			bVideoTracksLoaded = false;
             break;
         }
     }
@@ -193,6 +196,9 @@ bool FAVPlayerMovieStreamer::Tick(float DeltaTime)
         // We aren't active any longer, so stop the player
         if (bWasActive)
         {
+			// Not active - has to try to reload tracks to become active again - keeps 2nd/3rd..etc.. videos same behaviour as 1st
+			bWasActive = false;
+			
             // The previous playback is complete, so shutdown.
             // NOTE: The texture resources are not freed here.
             TeardownPlayback();
@@ -212,12 +218,12 @@ bool FAVPlayerMovieStreamer::Tick(float DeltaTime)
                 return true;
             }
         }
-		// remove this because bVideoTracksLoaded is set when [AVMovie loadValuesAsynchronouslyForKeys:] is completed, so when loadValuesAsynchronouslyForKeys is not completed before next ticking, it returns true even a movie isn't played yet.
-		/*        else
+		else
 		{
-			return MovieQueue.Num() == 0;
+			// No movie object and nothing left in queue - it's done - probably an error case - movie does not exist or failed to load
+			// Otherwise waiting for load operation
+			return AVMovie == nil && MovieQueue.Num() == 0;
 		}
-		 */
     }
 
     // Not completed.
@@ -274,7 +280,7 @@ bool FAVPlayerMovieStreamer::StartNextMovie()
         bVideoTracksLoaded = false;
 
         NSURL* nsURL = nil;
-		FString MoviePath = FPaths::GameContentDir() + TEXT("Movies/") + MovieQueue[0] + TEXT(".") + FString(MOVIE_FILE_EXTENSION);
+		FString MoviePath = FPaths::ProjectContentDir() + TEXT("Movies/") + MovieQueue[0] + TEXT(".") + FString(MOVIE_FILE_EXTENSION);
 		if (FPaths::FileExists(MoviePath))
 		{
 			nsURL = [NSURL fileURLWithPath:ConvertToNativePath(MoviePath, false).GetNSString()];

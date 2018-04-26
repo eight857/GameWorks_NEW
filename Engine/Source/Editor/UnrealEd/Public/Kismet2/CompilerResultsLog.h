@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,13 +7,15 @@
 #include "UObject/Object.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
+#include "ObjectKey.h"
 #if WITH_EDITOR
 #include "Logging/TokenizedMessage.h"
 #include "Misc/CompilationResult.h"
 #include "EdGraphToken.h"
 #endif
 
-class Error;
+class FTokenizedMessage;
+class IMessageLogListing;
 
 #if WITH_EDITOR
 
@@ -25,6 +27,7 @@ protected:
 	TMap<UObject const*, UObject*> SourceBacktrackMap;
 	// Maps from transient pins created during compiling to original 'source pin' object
 	TMap<UEdGraphPin*, UEdGraphPin*> PinSourceBacktrackMap;
+
 public:
 	/** Update the source backtrack map to note that NewObject was most closely generated/caused by the SourceObject */
 	void NotifyIntermediateObjectCreation(UObject* NewObject, UObject* SourceObject);
@@ -78,7 +81,7 @@ class UNREALED_API FCompilerResultsLog
 
 public:
 	// List of all tokenized messages
-	TArray< TSharedRef<class FTokenizedMessage> > Messages;
+	TArray< TSharedRef<FTokenizedMessage> > Messages;
 
 	// Number of error messages
 	int32 NumErrors;
@@ -98,9 +101,6 @@ public:
 	// Should detailed results be appended to the final summary log?
 	bool bLogDetailedResults;
 
-	// Should composite graphs be treated the same as macro graphs/tunnels to generate more accurate debug data.
-	bool bTreatCompositeGraphsAsTunnels;
-
 	// Minimum event time (ms) for inclusion into the final summary log
 	int EventDisplayThresholdMs;
 
@@ -114,20 +114,8 @@ protected:
 	// Name of the source object being compiled
 	FString SourcePath;
 
-	// Backtrack map for intermendiate tunnel/macro nodes
-	FBacktrackMap FinalNodeBackToTunnelSourceMap;
-	
 	// Map to track intermediate tunnel nodes back to the intermediate expansion tunnel instance.
-	TMap<TWeakObjectPtr<UEdGraphNode>, TWeakObjectPtr<UEdGraphNode>> IntermediateTunnelNodeToTunnelInstanceMap;
-
-	// Map to track active nested tunnels for intermediate tunnel instances.
-	TMultiMap<TWeakObjectPtr<UEdGraphNode>, TWeakObjectPtr<UEdGraphNode>> IntermediateTunnelInstanceHierarchyMap;
-
-	// Map to track compile time only expansion nodes.
-	TSet<TWeakObjectPtr<const UEdGraphNode>> ExpansionNodes;
-
-	// Per pin filtering of trace signals for instrumentation.
-	TSet<const UEdGraphPin*> PinTraceFilter;
+	TMap<TWeakObjectPtr<const UEdGraphNode>, TWeakObjectPtr<const UEdGraphNode>> IntermediateTunnelNodeToTunnelInstanceMap;
 
 public:
 	FCompilerResultsLog(bool bIsCompatibleWithEvents = true);
@@ -148,7 +136,10 @@ public:
 		SourcePath = InSourcePath;
 	}
 
-	// Note: @@ will re replaced by FEdGraphToken::Create
+	/**
+	 * Write an error in to the compiler log.
+	 * Note: @@ will be replaced by node or pin links for nodes/pins passed via varargs 
+	 */
 	template<typename... Args>
 	TSharedRef<FTokenizedMessage> Error(const TCHAR* Format, Args... args)
 	{
@@ -158,6 +149,10 @@ public:
 		return Line;
 	}
 
+	/**
+	 * Write a warning in to the compiler log.
+	 * Note: @@ will be replaced by node or pin links for nodes/pins passed via varargs 
+	 */
 	template<typename... Args>
 	TSharedRef<FTokenizedMessage> Warning(const TCHAR* Format, Args... args)
 	{
@@ -167,6 +162,10 @@ public:
 		return Line;
 	}
 
+	/**
+	 * Write a note in to the compiler log.
+	 * Note: @@ will be replaced by node or pin links for nodes/pins passed via varargs 
+	 */
 	template<typename... Args>
 	TSharedRef<FTokenizedMessage> Note(const TCHAR* Format, Args... args)
 	{
@@ -175,42 +174,95 @@ public:
 		return Line;
 	}
 
+	/**
+	 * Store a potential error for a given node in the compiler log. All messages for the node can be committed to the log later by calling CommitPotentialMessages
+	 * Note: @@ will be replaced by node or pin links for nodes/pins passed via varargs 
+	 */
+	template<typename... Args>
+	TSharedRef<FTokenizedMessage> StorePotentialError(const UEdGraphNode* Source, const TCHAR* Format, Args... args)
+	{
+		TSharedRef<FTokenizedMessage> Line = FTokenizedMessage::Create(EMessageSeverity::Error);
+		UEdGraphNode* SourceNode = nullptr;
+		Tokenize(Format, *Line, SourceNode, args...);
+		PotentialMessages.FindOrAdd(Source).Add(Line);
+		return Line;
+	}
+
+	/**
+	 * Store a potential warning for a given node in the compiler log. All messages for the node can be committed to the log later by calling CommitPotentialMessages
+	 * Note: @@ will be replaced by node or pin links for nodes/pins passed via varargs 
+	 */
+	template<typename... Args>
+	TSharedRef<FTokenizedMessage> StorePotentialWarning(const UEdGraphNode* Source, const TCHAR* Format, Args... args)
+	{
+		TSharedRef<FTokenizedMessage> Line = FTokenizedMessage::Create(EMessageSeverity::Warning);
+		UEdGraphNode* SourceNode = nullptr;
+		Tokenize(Format, *Line, SourceNode, args...);
+		PotentialMessages.FindOrAdd(Source).Add(Line);
+		return Line;
+	}
+
+	/**
+	 * Store a potential note for a given node in the compiler log. All messages for the node can be committed to the log later by calling CommitPotentialMessages
+	 * Note: @@ will be replaced by node or pin links for nodes/pins passed via varargs 
+	 */
+	template<typename... Args>
+	TSharedRef<FTokenizedMessage> StorePotentialNote(const UEdGraphNode* Source, const TCHAR* Format, Args... args)
+	{
+		TSharedRef<FTokenizedMessage> Line = FTokenizedMessage::Create(EMessageSeverity::Info);
+		UEdGraphNode* SourceNode = nullptr;
+		Tokenize(Format, *Line, SourceNode, args...);
+		PotentialMessages.FindOrAdd(Source).Add(Line);
+		return Line;
+	}
+
+	/**
+	 * Commit all stored potential messages for a given node. Returns true if any messages were written.
+	 */
+	bool CommitPotentialMessages(UEdGraphNode* Source)
+	{
+		TArray<TSharedRef<FTokenizedMessage>> FoundMessages;
+		if (PotentialMessages.RemoveAndCopyValue(Source, FoundMessages))
+		{
+			for (const TSharedRef<FTokenizedMessage>& Message : FoundMessages)
+			{
+				switch (Message->GetSeverity())
+				{
+				case EMessageSeverity::Error:
+					++NumErrors;
+					break;
+
+				case EMessageSeverity::Warning:
+					++NumWarnings;
+					break;
+
+				default:
+					break;
+				}
+
+				InternalLogMessage(Message, Source);
+			}
+			return true;
+		}
+		return false;
+	}
+
 	/** Update the source backtrack map to note that NewObject was most closely generated/caused by the SourceObject */
 	void NotifyIntermediateObjectCreation(UObject* NewObject, UObject* SourceObject);
 	void NotifyIntermediatePinCreation(UEdGraphPin* NewObject, UEdGraphPin* SourceObject);
 
-	/** Compile time node expansion tracking and testing */
-	void RegisterExpansionNode(UEdGraphNode* ExpansionNode) { ExpansionNodes.Add(ExpansionNode); }
-	bool IsExpansionNode(const UEdGraphNode* Node) const { return ExpansionNodes.Contains(Node); }
-
-	/** Per pin trace signal filtering */
-	void AddPinTraceFilter(UEdGraphPin* PinToFilter) { PinTraceFilter.Add(PinToFilter); }
-	bool IsPinTraceSuppressed(const UEdGraphPin* PotentiallyFilteredPin) const { return PinTraceFilter.Contains(PotentiallyFilteredPin); }
-
-	/** Registers intermediate tunnel nodes, both the node and tunnel instance should be intermediate nodes */
-	void RegisterIntermediateTunnelNode(UEdGraphNode* Node, UEdGraphNode* OwningTunnelInstance);
-
-	/** Registers an intermediate tunnel instance node, the active tunnels should not be intermediate nodes. */
-	void RegisterIntermediateTunnelInstance(UEdGraphNode* IntermediateTunnel, TArray<TWeakObjectPtr<UEdGraphNode>>& ActiveTunnels);
-
-	/** Returns the source tunnel instance or the source tunnel node depending on what created the intermediate node */
-	UEdGraphNode* GetSourceNode(const UEdGraphNode* IntermediateNode);
-
-	/** Returns the intermediate tunnel instance that generated the node */
-	UEdGraphNode* GetIntermediateTunnelInstance(const UEdGraphNode* IntermediateNode);
-
-	/** Returns the source tunnel node for the intermediate node */
-	UEdGraphNode* GetSourceTunnelNode(const UEdGraphNode* IntermediateNode);
-
-	/** Returns the source tunnel instance that generated the intermediate node */
-	UEdGraphNode* GetSourceTunnelInstance(const UEdGraphNode* IntermediateNode);
-
-	/** Returns the active tunnel instances for the intermediate node */
-	void GetTunnelsActiveForNode(const UEdGraphNode* IntermediateNode, TArray<TWeakObjectPtr<UEdGraphNode>>& ActiveTunnelsOut);
+	/** Update the expansion map to note that Node was expanded from OuterTunnelInstance, both the node and tunnel instance should be intermediate nodes */
+	void NotifyIntermediateTunnelNode(const UEdGraphNode* Node, const UEdGraphNode* OuterTunnelInstance);
 
 	/** Returns the true source object for the passed in object */
 	UObject* FindSourceObject(UObject* PossiblyDuplicatedObject);
 	UObject const* FindSourceObject(UObject const* PossiblyDuplicatedObject) const;
+
+	/** Returns the intermediate tunnel instance that generated the node */
+	const UEdGraphNode* GetIntermediateTunnelInstance(const UEdGraphNode* IntermediateNode) const;
+
+	/** Returns a int32 used to uniquely identify an action for the latent action manager */
+	int32 CalculateStableIdentifierForLatentActionManager( const UEdGraphNode* Node );
 
 	/** Returns the true source object for the passed in object; does type checking on the result */
 	template <typename T>
@@ -241,6 +293,9 @@ public:
 	{
 		return CurrentEventTarget;
 	}
+
+	/** Get the message log listing for this blueprint */
+	static TSharedRef<IMessageLogListing> GetBlueprintMessageLog(UBlueprint* InBlueprint);
 
 protected:
 	/** Helper method to add a child event to the given parent event scope */
@@ -294,8 +349,12 @@ protected:
 	void InternalLogEvent(const FCompilerEvent& InEvent, int32 InDepth = 0);
 
 private:
+
+	/** Map of stored potential messages indexed by a node. Can be committed to the results log by calling CommitPotentialMessages for that node. */
+	TMap< FObjectKey, TArray< TSharedRef<FTokenizedMessage> > > PotentialMessages;
+
 	/** Parses a compiler log dump to generate tokenized output */
-	static TArray< TSharedRef<class FTokenizedMessage> > ParseCompilerLogDump(const FString& LogDump);
+	static TArray< TSharedRef<FTokenizedMessage> > ParseCompilerLogDump(const FString& LogDump);
 
 	/** Goes to an error given a Message Token */
 	static void OnGotoError(const class TSharedRef<IMessageToken>& Token);
@@ -336,6 +395,21 @@ public:
 			ResultsLog->EndEvent();
 		}
 	}
+};
+
+/** Scope wrapper for the blueprint message log. Ensures we dont leak logs that we dont need (i.e. those that have no messages) */
+class UNREALED_API FScopedBlueprintMessageLog
+{
+public:
+	FScopedBlueprintMessageLog(UBlueprint* InBlueprint);
+	~FScopedBlueprintMessageLog();
+
+public:
+	/** The listing we wrap */
+	TSharedRef<IMessageLogListing> Log;
+
+	/** The generated name of the log */
+	FName LogName;
 };
 
 #if STATS

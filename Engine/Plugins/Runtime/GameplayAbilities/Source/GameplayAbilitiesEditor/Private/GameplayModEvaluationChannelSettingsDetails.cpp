@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayModEvaluationChannelSettingsDetails.h"
 #include "DetailWidgetRow.h"
@@ -55,7 +55,7 @@ void FGameplayModEvaluationChannelSettingsDetails::CustomizeChildren(TSharedRef<
 		TSharedPtr<IPropertyHandle> ChannelHandle = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FGameplayModEvaluationChannelSettings, Channel));
 		if (ChannelHandle.IsValid() && ChannelHandle->IsValidHandle())
 		{
-			StructBuilder.AddChildProperty(ChannelHandle.ToSharedRef());
+			StructBuilder.AddProperty(ChannelHandle.ToSharedRef());
 		}
 	}
 }

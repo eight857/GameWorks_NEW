@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SLevelViewport.h"
 #include "Materials/MaterialInterface.h"
@@ -26,6 +26,7 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Views/SHeaderRow.h"
 #include "Framework/Docking/LayoutService.h"
+#include "Styling/CoreStyle.h"
 #include "EditorStyleSet.h"
 #include "Editor/UnrealEdEngine.h"
 #include "Exporters/ExportTextContainer.h"
@@ -64,6 +65,9 @@
 #include "Engine/LocalPlayer.h"
 #include "Slate/SGameLayerManager.h"
 #include "FoliageType.h"
+#include "IVREditorModule.h"
+#include "ShowFlagMenuCommands.h"
+#include "BufferVisualizationMenuCommands.h"
 
 static const FName LevelEditorName("LevelEditor");
 
@@ -119,9 +123,13 @@ SLevelViewport::~SLevelViewport()
 	LevelEditor.OnTakeHighResScreenShots().RemoveAll( this );
 	LevelEditor.OnActorSelectionChanged().RemoveAll( this );
 	LevelEditor.OnMapChanged().RemoveAll( this );
-	GEngine->OnLevelActorDeleted().RemoveAll( this );
 
-	GetMutableDefault<ULevelEditorViewportSettings>()->OnSettingChanged().RemoveAll( this );
+	if(UObjectInitialized())
+	{
+		GEngine->OnLevelActorDeleted().RemoveAll(this);
+
+		GetMutableDefault<ULevelEditorViewportSettings>()->OnSettingChanged().RemoveAll(this);
+	}
 
 	// If this viewport has a high res screenshot window attached to it, close it
 	if (HighResScreenshotDialog.IsValid())
@@ -244,6 +252,35 @@ void SLevelViewport::ConstructViewportOverlayContent()
 		.Padding(2.0f, 1.0f, 2.0f, 1.0f)
 		[
 			SNew(SHorizontalBox)
+			.Visibility(this, &SLevelViewport::GetCurrentScreenPercentageVisibility)
+			// Current screen percentage label
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f, 1.0f, 2.0f, 1.0f)
+			[
+				SNew(STextBlock)
+				.Text(this, &SLevelViewport::GetCurrentScreenPercentageText, true)
+				.Font(FEditorStyle::GetFontStyle(TEXT("MenuItem.Font")))
+				.ShadowOffset(FVector2D(1, 1))
+			]
+
+			// Current screen percentage
+			+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(4.0f, 1.0f, 2.0f, 1.0f)
+				[
+					SNew(STextBlock)
+					.Text(this, &SLevelViewport::GetCurrentScreenPercentageText, false)
+					.Font(FEditorStyle::GetFontStyle(TEXT("MenuItem.Font")))
+					.ColorAndOpacity(FLinearColor(0.4f, 1.0f, 1.0f))
+					.ShadowOffset(FVector2D(1, 1))
+				]
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(2.0f, 1.0f, 2.0f, 1.0f)
+		[
+			SNew(SHorizontalBox)
 			.Visibility(this, &SLevelViewport::GetCurrentFeatureLevelPreviewTextVisibility)
 			// Current level label
 			+ SHorizontalBox::Slot()
@@ -349,6 +386,12 @@ void SLevelViewport::ConstructLevelEditorViewportClient( const FArguments& InArg
 		if(!GetBufferVisualizationData().GetMaterial(ViewportInstanceSettings.BufferVisualizationMode))
 		{
 			ViewportInstanceSettings.BufferVisualizationMode = NAME_None;
+		}
+
+		// Disable realtime viewports by default for remote sessions
+		if (FPlatformMisc::IsRemoteSession())
+		{
+			ViewportInstanceSettings.bIsRealtime = false;
 		}
 	}
 
@@ -558,7 +601,7 @@ bool SLevelViewport::HandleDragObjects(const FGeometry& MyGeometry, const FDragD
 		LevelViewportClient->GetViewportDimensions(ViewportOrigin, ViewportSize);
 
 		// Save off the local mouse position from the drop point for potential use later (with Drag Drop context menu)
-		CachedOnDropLocalMousePos = MyGeometry.AbsoluteToLocal( DragDropEvent.GetScreenSpacePosition() );
+		CachedOnDropLocalMousePos = MyGeometry.AbsoluteToLocal( DragDropEvent.GetScreenSpacePosition() ) * MyGeometry.Scale;
 		CachedOnDropLocalMousePos.X -= ViewportOrigin.X;
 		CachedOnDropLocalMousePos.Y -= ViewportOrigin.Y;
 	}
@@ -722,13 +765,11 @@ bool SLevelViewport::HandlePlaceDraggedObjects(const FGeometry& MyGeometry, cons
 
 		TSharedPtr<FAssetDragDropOp> DragDropOp = StaticCastSharedPtr<FAssetDragDropOp>( Operation );
 
-		ActorFactory = DragDropOp->ActorFactory.Get();
+		ActorFactory = DragDropOp->GetActorFactory();
 
 		bAllAssetWereLoaded = true;
-		for (int32 AssetIdx = 0; AssetIdx < DragDropOp->AssetData.Num(); ++AssetIdx)
+		for (const FAssetData& AssetData : DragDropOp->GetAssets())
 		{
-			const FAssetData& AssetData = DragDropOp->AssetData[AssetIdx];
-
 			UObject* Asset = AssetData.GetAsset();
 			if ( Asset != NULL )
 			{
@@ -1341,62 +1382,41 @@ void SLevelViewport::BindViewCommands( FUICommandList& OutCommandList )
 	FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>(TEXT("LevelEditor"));
 	LevelEditorModule.IterateViewportTypes(ProcessViewportTypeActions);
 
-	// Map Buffer visualization mode actions
-	for (FLevelViewportCommands::TBufferVisualizationModeCommandMap::TConstIterator It = ViewportActions.BufferVisualizationModeCommands.CreateConstIterator(); It; ++It)
-	{
-		const FLevelViewportCommands::FBufferVisualizationRecord& Record = It.Value();
-		OutCommandList.MapAction(
-			Record.Command,
-			FExecuteAction::CreateSP( this, &SLevelViewport::ChangeBufferVisualizationMode, Record.Name ),
-			FCanExecuteAction(),
-			FIsActionChecked::CreateSP( this, &SLevelViewport::IsBufferVisualizationModeSelected, Record.Name ) );
-	}
+	FBufferVisualizationMenuCommands::Get().BindCommands(OutCommandList, Client);
 }
 
 
 void SLevelViewport::BindShowCommands( FUICommandList& OutCommandList )
 {
+	FLevelViewportCommands& LevelViewportCommands = FLevelViewportCommands::Get();
+
 	OutCommandList.MapAction( 
-		FLevelViewportCommands::Get().UseDefaultShowFlags,
+		LevelViewportCommands.UseDefaultShowFlags,
 		FExecuteAction::CreateSP( this, &SLevelViewport::OnUseDefaultShowFlags, false ) );
 
-	const TArray<FShowFlagData>& ShowFlagData = GetShowFlagMenuItems();
-
-	// Bind each show flag to the same delegate.  We use the delegate payload system to figure out what show flag we are dealing with
-	for( int32 ShowFlag = 0; ShowFlag < ShowFlagData.Num(); ++ShowFlag )
-	{
-		const FShowFlagData& SFData = ShowFlagData[ShowFlag];
-
-		// NOTE: There should be one command per show flag so using ShowFlag as the index to ShowFlagCommands is acceptable
-		OutCommandList.MapAction(
-			FLevelViewportCommands::Get().ShowFlagCommands[ ShowFlag ].ShowMenuItem,
-			FExecuteAction::CreateSP( this, &SLevelViewport::ToggleShowFlag, SFData.EngineShowFlagIndex ),
-			FCanExecuteAction(),
-			FIsActionChecked::CreateSP( this, &SLevelViewport::IsShowFlagEnabled, SFData.EngineShowFlagIndex ) );
-	}
+	FShowFlagMenuCommands::Get().BindCommands(OutCommandList, Client);
 
 	// Show Volumes
 	{
 		// Map 'Show All' and 'Hide All' commands
 		OutCommandList.MapAction(
-			FLevelViewportCommands::Get().ShowAllVolumes,
+			LevelViewportCommands.ShowAllVolumes,
 			FExecuteAction::CreateSP( this, &SLevelViewport::OnToggleAllVolumeActors, true ) );
 
 		OutCommandList.MapAction(
-			FLevelViewportCommands::Get().HideAllVolumes,
+			LevelViewportCommands.HideAllVolumes,
 			FExecuteAction::CreateSP( this, &SLevelViewport::OnToggleAllVolumeActors, false ) );
+		
 
-		// Get all known volume classes
-		TArray< UClass* > VolumeClasses;
-		UUnrealEdEngine::GetSortedVolumeClasses(&VolumeClasses);
-
-		for( int32 VolumeClassIndex = 0; VolumeClassIndex < VolumeClasses.Num(); ++VolumeClassIndex )
+		LevelViewportCommands.RegisterShowVolumeCommands();
+		const TArray<FLevelViewportCommands::FShowMenuCommand>& ShowVolumeCommands = LevelViewportCommands.ShowVolumeCommands;
+		for (int32 VolumeCommandIndex = 0; VolumeCommandIndex < ShowVolumeCommands.Num(); ++VolumeCommandIndex)
 		{
 			OutCommandList.MapAction(
-				FLevelViewportCommands::Get().ShowVolumeCommands[ VolumeClassIndex ].ShowMenuItem,
-				FExecuteAction::CreateSP( this, &SLevelViewport::ToggleShowVolumeClass, VolumeClassIndex ),
+				ShowVolumeCommands[ VolumeCommandIndex ].ShowMenuItem,
+				FExecuteAction::CreateSP( this, &SLevelViewport::ToggleShowVolumeClass, VolumeCommandIndex ),
 				FCanExecuteAction(),
-				FIsActionChecked::CreateSP( this, &SLevelViewport::IsVolumeVisible, VolumeClassIndex ) );
+				FIsActionChecked::CreateSP( this, &SLevelViewport::IsVolumeVisible, VolumeCommandIndex ) );
 		}
 	}
 
@@ -1404,11 +1424,11 @@ void SLevelViewport::BindShowCommands( FUICommandList& OutCommandList )
 	{
 		// Map 'Show All' and 'Hide All' commands
 		OutCommandList.MapAction(
-			FLevelViewportCommands::Get().ShowAllLayers,
+			LevelViewportCommands.ShowAllLayers,
 			FExecuteAction::CreateSP( this, &SLevelViewport::OnToggleAllLayers, true ) );
 
 		OutCommandList.MapAction(
-			FLevelViewportCommands::Get().HideAllLayers,
+			LevelViewportCommands.HideAllLayers,
 			FExecuteAction::CreateSP( this, &SLevelViewport::OnToggleAllLayers, false ) );
 	}
 
@@ -1416,21 +1436,23 @@ void SLevelViewport::BindShowCommands( FUICommandList& OutCommandList )
 	{
 		// Map 'Show All' and 'Hide All' commands
 		OutCommandList.MapAction(
-			FLevelViewportCommands::Get().ShowAllSprites,
+			LevelViewportCommands.ShowAllSprites,
 			FExecuteAction::CreateSP( this, &SLevelViewport::OnToggleAllSpriteCategories, true ) );
 
 		OutCommandList.MapAction(
-			FLevelViewportCommands::Get().HideAllSprites,
+			LevelViewportCommands.HideAllSprites,
 			FExecuteAction::CreateSP( this, &SLevelViewport::OnToggleAllSpriteCategories, false ) );
 
 		// Bind each show flag to the same delegate.  We use the delegate payload system to figure out what show flag we are dealing with
-		for( int32 CategoryIndex = 0; CategoryIndex < GUnrealEd->SpriteIDToIndexMap.Num(); ++CategoryIndex )
+		LevelViewportCommands.RegisterShowSpriteCommands();
+		const TArray<FLevelViewportCommands::FShowMenuCommand>& ShowSpriteCommands = LevelViewportCommands.ShowSpriteCommands;
+		for (int32 SpriteCommandIndex = 0; SpriteCommandIndex < ShowSpriteCommands.Num(); ++SpriteCommandIndex)
 		{
 			OutCommandList.MapAction(
-				FLevelViewportCommands::Get().ShowSpriteCommands[ CategoryIndex ].ShowMenuItem,
-				FExecuteAction::CreateSP( this, &SLevelViewport::ToggleSpriteCategory, CategoryIndex ),
+				ShowSpriteCommands[SpriteCommandIndex].ShowMenuItem,
+				FExecuteAction::CreateSP(this, &SLevelViewport::ToggleSpriteCategory, SpriteCommandIndex),
 				FCanExecuteAction(),
-				FIsActionChecked::CreateSP( this, &SLevelViewport::IsSpriteCategoryVisible, CategoryIndex ) );
+				FIsActionChecked::CreateSP(this, &SLevelViewport::IsSpriteCategoryVisible, SpriteCommandIndex));
 		}
 	}
 
@@ -1438,10 +1460,10 @@ void SLevelViewport::BindShowCommands( FUICommandList& OutCommandList )
 	{
 		// Map 'Hide All' command
 		OutCommandList.MapAction(
-			FLevelViewportCommands::Get().HideAllStats,
+			LevelViewportCommands.HideAllStats,
 			FExecuteAction::CreateSP(this, &SLevelViewport::OnToggleAllStatCommands, false));
 
-		for (auto StatCatIt = FLevelViewportCommands::Get().ShowStatCatCommands.CreateConstIterator(); StatCatIt; ++StatCatIt)
+		for (auto StatCatIt = LevelViewportCommands.ShowStatCatCommands.CreateConstIterator(); StatCatIt; ++StatCatIt)
 		{
 			const TArray< FLevelViewportCommands::FShowMenuCommand >& ShowStatCommands = StatCatIt.Value();
 			for (int32 StatIndex = 0; StatIndex < ShowStatCommands.Num(); ++StatIndex)
@@ -1714,7 +1736,7 @@ void SLevelViewport::OnCreateCameraActor()
 	ACameraActor* pNewCamera = ViewportClient->GetWorld()->SpawnActor<ACameraActor>();
 	pNewCamera->SetActorLocation( ViewportClient->GetViewLocation(), false );
 	pNewCamera->SetActorRotation( ViewportClient->GetViewRotation() );
-	pNewCamera->CameraComponent->FieldOfView = ViewportClient->ViewFOV;
+	pNewCamera->GetCameraComponent()->FieldOfView = ViewportClient->ViewFOV;
 
 	// Deselect any currently selected actors
 	GUnrealEd->SelectNone( true, true );
@@ -1770,18 +1792,6 @@ bool SLevelViewport::CanToggleGameView() const
 bool SLevelViewport::IsInGameView() const
 {
 	return LevelViewportClient->IsInGameView();
-}
-
-
-void SLevelViewport::ChangeBufferVisualizationMode( FName InName )
-{
-	LevelViewportClient->SetViewMode(VMI_VisualizeBuffer);
-	LevelViewportClient->CurrentBufferVisualizationMode = InName;
-}
-
-bool SLevelViewport::IsBufferVisualizationModeSelected( FName InName ) const
-{
-	return LevelViewportClient->IsViewModeEnabled( VMI_VisualizeBuffer ) && LevelViewportClient->CurrentBufferVisualizationMode == InName;	
 }
 
 void SLevelViewport::OnToggleAllVolumeActors( bool bVisible )
@@ -2029,6 +2039,10 @@ void SLevelViewport::SaveConfig(const FString& ConfigName) const
 		FEngineShowFlags& GameShowFlagsToSave = LevelViewportClient->IsInGameView() ? LevelViewportClient->EngineShowFlags : LevelViewportClient->LastEngineShowFlags;
 
 		FLevelEditorViewportInstanceSettings ViewportInstanceSettings;
+		if (const FLevelEditorViewportInstanceSettings* CurrentViewportInstanceSettingsPtr = GetDefault<ULevelEditorViewportSettings>()->GetViewportInstanceSettings(ConfigName))
+		{
+			ViewportInstanceSettings = *CurrentViewportInstanceSettingsPtr;
+		}
 		ViewportInstanceSettings.ViewportType = LevelViewportClient->ViewportType;
 		ViewportInstanceSettings.PerspViewModeIndex = LevelViewportClient->GetPerspViewMode();
 		ViewportInstanceSettings.OrthoViewModeIndex = LevelViewportClient->GetOrthoViewMode();
@@ -2037,7 +2051,11 @@ void SLevelViewport::SaveConfig(const FString& ConfigName) const
 		ViewportInstanceSettings.BufferVisualizationMode = LevelViewportClient->CurrentBufferVisualizationMode;
 		ViewportInstanceSettings.ExposureSettings = LevelViewportClient->ExposureSettings;
 		ViewportInstanceSettings.FOVAngle = LevelViewportClient->FOVAngle;
-		ViewportInstanceSettings.bIsRealtime = LevelViewportClient->IsRealtime();
+		if (!FPlatformMisc::IsRemoteSession())
+		{
+			// Only save this when we're not a remote session, as remote sessions force realtime to be disabled
+			ViewportInstanceSettings.bIsRealtime = LevelViewportClient->IsRealtime();
+		}
 		ViewportInstanceSettings.bShowOnScreenStats = LevelViewportClient->ShouldShowStats();
 		ViewportInstanceSettings.FarViewPlane = LevelViewportClient->GetFarClipPlaneOverride();
 		ViewportInstanceSettings.bShowFullToolbar = bShowFullToolbar;
@@ -2134,6 +2152,12 @@ FLevelEditorViewportInstanceSettings SLevelViewport::LoadLegacyConfigFromIni(con
 	GConfig->GetBool(*IniSection, *(InConfigKey + TEXT(".bWantStats")), ViewportInstanceSettings.bShowOnScreenStats, GEditorPerProjectIni);
 	GConfig->GetBool(*IniSection, *(InConfigKey + TEXT(".bWantFPS")), ViewportInstanceSettings.bShowFPS_DEPRECATED, GEditorPerProjectIni);
 	GConfig->GetFloat(*IniSection, *(InConfigKey + TEXT(".FOVAngle")), ViewportInstanceSettings.FOVAngle, GEditorPerProjectIni);
+
+	// Disable realtime viewports by default for remote sessions
+	if (FPlatformMisc::IsRemoteSession())
+	{
+		ViewportInstanceSettings.bIsRealtime = false;
+	}
 
 	return ViewportInstanceSettings;
 }
@@ -2720,7 +2744,7 @@ void SActorPreview::Construct( const FArguments& InArgs )
 									[
 										SNew( STextBlock )
 											.Text( this, &SActorPreview::OnReadText )
-											.Font( FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 10 ) )
+											.Font( FCoreStyle::GetDefaultFontStyle("Bold", 10) )
 											.ShadowOffset( FVector2D::UnitVector )
 											.WrapTextAt( this, &SActorPreview::OnReadTextWidth )
 									]
@@ -3120,7 +3144,7 @@ void SLevelViewport::PreviewActors( const TArray< AActor* >& ActorsToPreview )
 				// Push actor transform to view.  From here on out, this will happen automatically in FLevelEditorViewportClient::Tick.
 				// The reason we allow the viewport client to update this is to avoid off-by-one-frame issues when dragging actors around.
 				ActorPreviewLevelViewportClient->SetActorLock( CurActor );
-				ActorPreviewLevelViewportClient->UpdateViewForLockedActor();
+				ActorPreviewLevelViewportClient->UpdateViewForLockedActor();			
 			}
 
 			TSharedPtr< SActorPreview > ActorPreviewWidget = SNew(SActorPreview)
@@ -3129,7 +3153,7 @@ void SLevelViewport::PreviewActors( const TArray< AActor* >& ActorsToPreview )
 
 			auto ActorPreviewViewportWidget = ActorPreviewWidget->GetViewportWidget();
 
-			TSharedPtr< FSceneViewport > ActorPreviewSceneViewport = MakeShareable( new FSceneViewport( ActorPreviewLevelViewportClient.Get(), ViewportWidget ) );
+			TSharedPtr< FSceneViewport > ActorPreviewSceneViewport = MakeShareable( new FSceneViewport( ActorPreviewLevelViewportClient.Get(), ActorPreviewViewportWidget) );
 			{
 				ActorPreviewLevelViewportClient->Viewport = ActorPreviewSceneViewport.Get();
 				ActorPreviewViewportWidget->SetViewportInterface( ActorPreviewSceneViewport.ToSharedRef() );
@@ -3144,11 +3168,20 @@ void SLevelViewport::PreviewActors( const TArray< AActor* >& ActorsToPreview )
 
 			// Add our new widget to our viewport's overlay
 			// @todo camerapip: Consider using a canvas instead of an overlay widget -- our viewports get SQUASHED when the view shrinks!
-			ActorPreviewHorizontalBox->AddSlot()
-			.AutoWidth()
-			[
-				ActorPreviewWidget.ToSharedRef()
-			];
+			IVREditorModule& VREditorModule = IVREditorModule::Get();
+			if (VREditorModule.IsVREditorEnabled())
+			{
+				NewActorPreview.SceneViewport->SetGammaOverride(1.0f);
+				VREditorModule.UpdateActorPreview( NewActorPreview.PreviewWidget.ToSharedRef());
+			}
+			else
+			{
+				ActorPreviewHorizontalBox->AddSlot()
+				.AutoWidth()
+				[
+					ActorPreviewWidget.ToSharedRef()
+				];
+			}
 		}
 
 		// OK, at least one new preview viewport was added, so update settings for all views immediately.
@@ -3254,6 +3287,16 @@ FString SLevelViewport::GetDeviceProfileString( ) const
 	return DeviceProfile;
 }
 
+FText SLevelViewport::GetCurrentScreenPercentageText(bool bDrawOnlyLabel) const
+{
+	if (bDrawOnlyLabel)
+	{
+		return LOCTEXT("ScreenPercentageLabel", "Screen Percentage:");
+	}
+
+	return FText::FromString(FString::Printf(TEXT("%3d%%"), int32(GetLevelViewportClient().GetPreviewScreenPercentage())));
+}
+
 FText SLevelViewport::GetCurrentFeatureLevelPreviewText( bool bDrawOnlyLabel ) const
 {
 	FText LabelName;
@@ -3348,6 +3391,15 @@ EVisibility SLevelViewport::GetCurrentFeatureLevelPreviewTextVisibility() const
 	{
 		return EVisibility::Collapsed;
 	}
+}
+
+EVisibility SLevelViewport::GetCurrentScreenPercentageVisibility() const
+{
+	bool Visible = !IsPlayInEditorViewportActive() &&
+		GetLevelViewportClient().SupportsPreviewResolutionFraction() &&
+		GetLevelViewportClient().GetPreviewScreenPercentage() > 100;
+
+	return Visible ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 EVisibility SLevelViewport::GetViewportControlsVisibility() const
@@ -3548,10 +3600,10 @@ FText SLevelViewport::GetMouseCaptureLabelText() const
 		// Default Shift+F1 if a valid chord is not found
 		static FInputChord Chord(EKeys::F1, EModifierKey::Shift);
 		TSharedPtr<FUICommandInfo> UICommand = FInputBindingManager::Get().FindCommandInContext(TEXT("PlayWorld"), TEXT("GetMouseControl"));
-		if (UICommand.IsValid())
+		if (UICommand.IsValid() && UICommand->GetFirstValidChord()->IsValidChord())
 		{
-			TSharedRef<const FInputChord> ActiveChord = UICommand->GetActiveChord();
-			Chord = ActiveChord.Get();
+			// Just pick the first key bind that is valid for a text suggestion
+			Chord = UICommand->GetFirstValidChord().Get();
 		}
 		FFormatNamedArguments Args;
 		Args.Add(TEXT("InputText"), Chord.GetInputText());
@@ -3621,7 +3673,7 @@ void SLevelViewport::ShowMouseCaptureLabel(ELabelAnchorMode AnchorMode)
 				[
 					SNew(STextBlock)
 					.Text(this, &SLevelViewport::GetMouseCaptureLabelText)
-					.Font( FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 9 ) )
+					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 					.ColorAndOpacity(FLinearColor::White)
 				]
 			]
@@ -3846,9 +3898,16 @@ UWorld* SLevelViewport::GetWorld() const
 
 void SLevelViewport::RemoveActorPreview( int32 PreviewIndex )
 {
-	// Remove widget from viewport overlay
-	ActorPreviewHorizontalBox->RemoveSlot( ActorPreviews[PreviewIndex].PreviewWidget.ToSharedRef() );
-
+	IVREditorModule& VREditorModule = IVREditorModule::Get();
+	if (VREditorModule.IsVREditorEnabled())
+	{
+		VREditorModule.UpdateActorPreview(SNullWidget::NullWidget);
+	}
+	else
+	{
+		// Remove widget from viewport overlay
+		ActorPreviewHorizontalBox->RemoveSlot(ActorPreviews[PreviewIndex].PreviewWidget.ToSharedRef());
+	}
 	// Clean up our level viewport client
 	if( ActorPreviews[PreviewIndex].LevelViewportClient.IsValid() )
 	{
@@ -3902,34 +3961,16 @@ void SLevelViewport::LockActorInternal(AActor* NewActorToLock)
 
 bool SLevelViewport::GetCameraInformationFromActor(AActor* Actor, FMinimalViewInfo& out_CameraInfo)
 {
-	// @todo camerapip: Could support actors other than cameras too!  (Character views?)
+	//
 	//@TODO: CAMERA: Support richer camera interactions in SIE; this may shake out naturally if everything uses camera components though
-	TArray<UCameraComponent*> CamComps;
-	Actor->GetComponents<UCameraComponent>(CamComps);
-	for (UCameraComponent* CamComp : CamComps)
-	{
-		if (CamComp->bIsActive)
-		{
-			// first active camera, use it and be done
-			CamComp->GetCameraView(0.0f, out_CameraInfo);
-			return true;
-		}
-	}
 
-	// see if any actors are attached to us, directly or indirectly, that have an active camera component we might want to use
-	// #note: assumption here that attachment cannot be circular
-	TArray<AActor*> AttachedActors;
-	Actor->GetAttachedActors(AttachedActors);
-	for (AActor* AttachedActor : AttachedActors)
+	bool bFoundCamInfo = false;
+	if (USceneComponent* ViewComponent = FLevelEditorViewportClient::FindViewComponentForActor(Actor))
 	{
-		if (GetCameraInformationFromActor(AttachedActor, out_CameraInfo))
-		{
-			return true;
-		}
+		bFoundCamInfo = ViewComponent->GetEditorPreviewInfo(/*DeltaTime =*/0.0f, out_CameraInfo);
+		ensure(bFoundCamInfo);
 	}
-
-	// no active cameras
-	return false;
+	return bFoundCamInfo;
 }
 
 bool SLevelViewport::CanGetCameraInformationFromActor(AActor* Actor)
@@ -3951,6 +3992,16 @@ void SLevelViewport::OnFloatingButtonClicked()
 {
 	// if one of the viewports floating buttons has been clicked, update the global viewport ptr
 	LevelViewportClient->SetLastKeyViewport();
+}
+
+void SLevelViewport::RemoveAllPreviews()
+{
+	// Clean up any actor preview viewports
+	for (FViewportActorPreview& ActorPreview : ActorPreviews)
+	{
+		ActorPreview.bIsPinned = false;
+	}
+	PreviewActors(TArray< AActor* >());
 }
 
 #undef LOCTEXT_NAMESPACE

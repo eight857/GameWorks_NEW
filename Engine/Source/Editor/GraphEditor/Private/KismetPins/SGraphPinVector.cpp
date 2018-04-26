@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "KismetPins/SGraphPinVector.h"
@@ -193,8 +193,8 @@ FString SGraphPinVector::GetValue( ETextBoxIndex Index ) const
 	TArray<FString> ResultString;
 
 	//Parse string to split its contents separated by ','
-	DefaultString.Trim();
-	DefaultString.TrimTrailing();
+	DefaultString.TrimStartInline();
+	DefaultString.TrimEndInline();
 	DefaultString.ParseIntoArray(ResultString, TEXT(","), true);
 
 	if(Index < ResultString.Num())

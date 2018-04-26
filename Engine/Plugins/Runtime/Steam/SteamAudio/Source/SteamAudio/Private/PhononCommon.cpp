@@ -8,6 +8,7 @@
 #include "FileManager.h"
 #include "IPluginManager.h"
 #include "HAL/PlatformProcess.h"
+#include "Regex.h"
 
 DEFINE_LOG_CATEGORY(LogSteamAudio);
 
@@ -72,6 +73,10 @@ namespace SteamAudio
 	TMap<EQualitySettings, FSimulationQualitySettings> RealtimeSimulationQualityPresets = GetRealtimeQualityPresets();
 	TMap<EQualitySettings, FSimulationQualitySettings> BakedSimulationQualityPresets = GetBakedQualityPresets();
 
+	FString BasePath;
+	FString RuntimePath;
+	FString EditorOnlyPath;
+
 	static void* UnrealAlloc(const size_t size, const size_t alignment)
 	{
 		return FMemory::Malloc(size, alignment);
@@ -109,7 +114,7 @@ namespace SteamAudio
 		IPLVector3 PhononCoords;
 		PhononCoords.x = UnrealCoords.Y;
 		PhononCoords.y = UnrealCoords.Z;
-		PhononCoords.z = -UnrealCoords.X; 
+		PhononCoords.z = -UnrealCoords.X;
 		
 		if (bScale)
 		{
@@ -165,6 +170,83 @@ namespace SteamAudio
 		return Vector;
 	}
 
+	/**
+	 * Given a Unreal transform, convert it to a 4x4 column-major transformation matrix. OutMatrix is assumed to be a contiguous array of
+	 * 16 floats.
+	 */
+	void GetMatrixForTransform(const FTransform& Transform, float* OutMatrix)
+	{
+		check(OutMatrix);
+
+		auto PhononTranslation = SteamAudio::UnrealToPhononFVector(Transform.GetTranslation());
+		auto PhononScale = SteamAudio::UnrealToPhononFVector(Transform.GetScale3D());
+
+		FQuat RotationQuatConverted;
+		RotationQuatConverted.X = -Transform.GetRotation().Y;
+		RotationQuatConverted.Y = -Transform.GetRotation().Z;
+		RotationQuatConverted.Z = Transform.GetRotation().X;
+		RotationQuatConverted.W = Transform.GetRotation().W;
+
+		FQuatRotationTranslationMatrix RotationTranslationMatrix(RotationQuatConverted, PhononTranslation);
+		FScaleMatrix ScaleMatrix(PhononScale);
+		auto ConvertedMatrix = (ScaleMatrix * RotationTranslationMatrix).GetTransposed();
+		
+		// Convert row-major to column-major
+		for (int32 i = 0; i < 4; ++i)
+		{
+			for (int32 j = 0; j < 4; ++j)
+			{
+				OutMatrix[j * 4 + i] = ConvertedMatrix.M[i][j];
+			}
+		}
+	}
+
+	// https://www.mbeckler.org/blog/?p=114
+	FText PrettyPrintedByte(const int32 NumBytes)
+	{
+		FString suffixes[7];
+		suffixes[0] = "B";
+		suffixes[1] = "KB";
+		suffixes[2] = "MB";
+		suffixes[3] = "GB";
+		suffixes[4] = "TB";
+		suffixes[5] = "PB";
+		suffixes[6] = "EB";
+		uint32 s = 0; // which suffix to use
+		double count = NumBytes;
+		while (count >= 1024 && s < 7)
+		{
+			s++;
+			count /= 1024;
+		}
+		
+		FFormatNamedArguments Arguments;
+		FNumberFormattingOptions NumberFormat;
+		NumberFormat.MinimumIntegralDigits = 1;
+		NumberFormat.MaximumIntegralDigits = 10000;
+		NumberFormat.MinimumFractionalDigits = 1;
+		NumberFormat.MaximumFractionalDigits = 1;
+		Arguments.Add(TEXT("Count"), FText::AsNumber(count, &NumberFormat));
+		Arguments.Add(TEXT("Suffix"), FText::FromString(suffixes[s]));
+		return FText::Format(NSLOCTEXT("ByteText", "ByteText", "{Count} {Suffix}"), Arguments);
+	}
+
+	FString StrippedMapName(const FString& MapName)
+	{
+		const FRegexPattern PieMapPattern(TEXT("UEDPIE_\\d_"));
+		FRegexMatcher Matcher(PieMapPattern, MapName);
+		FString StrippedMapName = MapName;
+
+		if (Matcher.FindNext())
+		{
+			int32 Beginning = Matcher.GetMatchBeginning();
+			int32 Ending = Matcher.GetMatchEnding();
+			StrippedMapName = MapName.Mid(Ending, MapName.Len());
+		}
+
+		return StrippedMapName;
+	}
+
 	void* LoadDll(const FString& DllFile)
 	{
 		UE_LOG(LogSteamAudio, Log, TEXT("Attempting to load %s"), *DllFile);
@@ -218,5 +300,69 @@ namespace SteamAudio
 		default:
 			return FString(TEXT("Unknown error."));
 		}
+	}
+
+	void ClosestHit(const IPLfloat32* Origin, const IPLfloat32* Direction, const IPLfloat32 MinDistance, const IPLfloat32 MaxDistance,
+		IPLfloat32* HitDistance, IPLfloat32* HitNormal, IPLint32* HitMaterialIndex, IPLvoid* UserData)
+	{
+		UWorld* World = (UWorld*)UserData;
+
+		// PhysX doesn't handle infinity properly, leads to NaNs
+		float AdjustedMax = MaxDistance;
+
+		if (MaxDistance > 999999.0f)
+			AdjustedMax = 999999.0f;
+		else if (MaxDistance < -999999.0f)
+			AdjustedMax = -999999.0f;
+
+		FVector PhononOrigin(Origin[0], Origin[1], Origin[2]);
+		FVector PhononDirection(Direction[0], Direction[1], Direction[2]);
+		FVector PhononStart = PhononOrigin + PhononDirection * MinDistance;
+		FVector PhononEnd = PhononOrigin + PhononDirection * AdjustedMax;
+
+		FVector Start = PhononToUnrealFVector(PhononStart);
+		FVector End = PhononToUnrealFVector(PhononEnd);
+		FCollisionQueryParams TraceParams;
+		TraceParams.bTraceComplex = true;
+
+		FHitResult Result;
+		bool HitStatic = World->LineTraceSingleByObjectType(Result, Start, End, FCollisionObjectQueryParams(ECC_WorldStatic), TraceParams);
+
+		*HitDistance = Result.Distance * SCALEFACTOR;
+
+		FVector PhononNormal = UnrealToPhononFVector(Result.Normal, false);
+		HitNormal[0] = PhononNormal.X;
+		HitNormal[1] = PhononNormal.Y;
+		HitNormal[2] = PhononNormal.Z;
+		*HitMaterialIndex = 0;
+	}
+
+	void AnyHit(const IPLfloat32* Origin, const IPLfloat32* Direction, const IPLfloat32 MinDistance, const IPLfloat32 MaxDistance,
+		IPLint32* HitExists, IPLvoid* UserData)
+	{
+		UWorld* World = (UWorld*)UserData;
+
+		// PhysX doesn't handle infinity properly, leads to NaNs
+		float AdjustedMax = MaxDistance;
+
+		if (MaxDistance > 999999.0f)
+			AdjustedMax = 999999.0f;
+		else if (MaxDistance < -999999.0f)
+			AdjustedMax = -999999.0f;
+
+		FVector PhononOrigin(Origin[0], Origin[1], Origin[2]);
+		FVector PhononDirection(Direction[0], Direction[1], Direction[2]);
+		FVector PhononStart = PhononOrigin + PhononDirection * MinDistance;
+		FVector PhononEnd = PhononOrigin + PhononDirection * AdjustedMax;
+
+		FVector Start = PhononToUnrealFVector(PhononStart);
+		FVector End = PhononToUnrealFVector(PhononEnd);
+		FCollisionQueryParams TraceParams;
+		TraceParams.bTraceComplex = true;
+
+		FHitResult Result;
+		bool HitStatic = World->LineTraceSingleByObjectType(Result, Start, End, FCollisionObjectQueryParams(ECC_WorldStatic), TraceParams);
+
+		*HitExists = (int)HitStatic;
 	}
 }

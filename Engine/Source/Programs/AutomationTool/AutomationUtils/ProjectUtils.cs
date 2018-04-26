@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -7,7 +7,6 @@ using System.Text;
 using System.IO;
 using UnrealBuildTool;
 using System.Diagnostics;
-using Tools.DotNETCommon.CaselessDictionary;
 using Tools.DotNETCommon;
 using System.Reflection;
 
@@ -69,7 +68,7 @@ namespace AutomationTool
 	/// </summary>
 	public class ProjectUtils
 	{
-		private static CaselessDictionary<ProjectProperties> PropertiesCache = new CaselessDictionary<ProjectProperties>();
+		private static Dictionary<string, ProjectProperties> PropertiesCache = new Dictionary<string, ProjectProperties>(StringComparer.InvariantCultureIgnoreCase);
 
 		/// <summary>
 		/// Gets a short project name (QAGame, Elemental, etc)
@@ -119,11 +118,11 @@ namespace AutomationTool
 		/// <param name="RawProjectPath">Full project path.</param>
 		/// <param name="Platform">Platform type.</param>
 		/// <returns>Path to the binaries folder.</returns>
-		public static string GetProjectClientBinariesFolder(string ProjectClientBinariesPath, UnrealTargetPlatform Platform = UnrealTargetPlatform.Unknown)
+		public static DirectoryReference GetProjectClientBinariesFolder(DirectoryReference ProjectClientBinariesPath, UnrealTargetPlatform Platform = UnrealTargetPlatform.Unknown)
 		{
 			if (Platform != UnrealTargetPlatform.Unknown)
 			{
-				ProjectClientBinariesPath = CommandUtils.CombinePaths(ProjectClientBinariesPath, Platform.ToString());
+				ProjectClientBinariesPath = DirectoryReference.Combine(ProjectClientBinariesPath, Platform.ToString());
 			}
 			return ProjectClientBinariesPath;
 		}
@@ -162,10 +161,8 @@ namespace AutomationTool
 			{
 				foreach (UnrealTargetPlatform ClientPlatform in ClientTargetPlatforms)
 				{
-					String EncryptionKey;
-					String[] SigningKeys;
-					EncryptionAndSigning.ParseEncryptionIni(RawProjectPath.Directory, ClientPlatform, out SigningKeys, out EncryptionKey);
-					if (SigningKeys != null || !string.IsNullOrEmpty(EncryptionKey))
+					EncryptionAndSigning.CryptoSettings Settings = EncryptionAndSigning.ParseCryptoSettings(RawProjectPath.Directory, ClientPlatform);
+					if (Settings.IsAnyEncryptionEnabled() || Settings.bEnablePakSigning)
 					{
 						return true;
 					}
@@ -199,7 +196,7 @@ namespace AutomationTool
 				Directory.SetCurrentDirectory(EngineSourceDirectory.FullName);
 
 				// Read the project descriptor, and find all the plugins available to this project
-				ProjectDescriptor Project = ProjectDescriptor.FromFile(RawProjectPath.FullName);
+				ProjectDescriptor Project = ProjectDescriptor.FromFile(RawProjectPath);
 				List<PluginInfo> AvailablePlugins = Plugins.ReadAvailablePlugins(CommandUtils.EngineDirectory, RawProjectPath, Project.AdditionalPluginDirectories);
 
 				// check the target platforms for any differences in build settings or additional plugins
@@ -215,8 +212,8 @@ namespace AutomationTool
 					// find if there are any plugins enabled or disabled which differ from the default
 					foreach(PluginInfo Plugin in AvailablePlugins)
 					{
-						bool bPluginEnabledForProject = UProjectInfo.IsPluginEnabledForProject(Plugin, Project, TargetPlatformType, TargetType.Game);
-						if ((bPluginEnabledForProject && !Plugin.Descriptor.bEnabledByDefault) || (bPluginEnabledForProject && Plugin.Descriptor.bInstalled))
+						bool bPluginEnabledForProject = Plugins.IsPluginEnabledForProject(Plugin, Project, TargetPlatformType, TargetType.Game);
+						if ((bPluginEnabledForProject != Plugin.EnabledByDefault) || (bPluginEnabledForProject && Plugin.Descriptor.bInstalled))
 						{
 							// NOTE: this code was only marking plugins that compiled for the platform to upgrade to code project, however
 							// this doesn't work in practice, because the runtime code will look for the plugin, without a .uplugin file,
@@ -362,23 +359,23 @@ namespace AutomationTool
 		/// <param name="TargetType">Target type.</param>
 		/// <param name="bIsUProjectFile">True if uproject file.</param>
 		/// <returns>Binaries path.</returns>
-		public static string GetClientProjectBinariesRootPath(FileReference RawProjectPath, TargetType TargetType, bool bIsCodeBasedProject)
+		public static DirectoryReference GetClientProjectBinariesRootPath(FileReference RawProjectPath, TargetType TargetType, bool bIsCodeBasedProject)
 		{
-			var BinPath = String.Empty;
+			DirectoryReference BinPath = null;
 			switch (TargetType)
 			{
 				case TargetType.Program:
-					BinPath = CommandUtils.CombinePaths(CommandUtils.CmdEnv.LocalRoot, "Engine", "Binaries");
+					BinPath = DirectoryReference.Combine(CommandUtils.RootDirectory, "Engine", "Binaries");
 					break;
 				case TargetType.Client:
 				case TargetType.Game:
 					if (!bIsCodeBasedProject)
 					{
-						BinPath = CommandUtils.CombinePaths(CommandUtils.CmdEnv.LocalRoot, "Engine", "Binaries");
+						BinPath = DirectoryReference.Combine(CommandUtils.RootDirectory, "Engine", "Binaries");
 					}
 					else
 					{
-						BinPath = CommandUtils.CombinePaths(CommandUtils.GetDirectoryName(RawProjectPath.FullName), "Binaries");
+						BinPath = DirectoryReference.Combine(RawProjectPath.Directory, "Binaries");
 					}
 					break;
 			}
@@ -439,7 +436,7 @@ namespace AutomationTool
 				DirPushed = true;
 			}
 			var ExtraSearchDirectories = (ExtraSearchPaths == null)? null : ExtraSearchPaths.Select(x => new DirectoryReference(x)).ToList();
-			var TargetScripts = RulesCompiler.FindAllRulesSourceFiles(RulesCompiler.RulesFileType.Target, GameFolders: GameFolders, ForeignPlugins: null, AdditionalSearchPaths: ExtraSearchDirectories);
+			var TargetScripts = RulesCompiler.FindAllRulesSourceFiles(RulesCompiler.RulesFileType.Target, GameFolders: GameFolders, ForeignPlugins: null, AdditionalSearchPaths: ExtraSearchDirectories, bIncludeEnterprise: false);
 			if (DirPushed)
 			{
 				CommandUtils.PopDir();
@@ -505,23 +502,22 @@ namespace AutomationTool
 						"System.Xml.dll", 
 						typeof(UnrealBuildTool.PlatformExports).Assembly.Location
 					};
-			var TargetsDLL = DynamicCompilation.CompileAndLoadAssembly(TargetsDllFilename, TargetScripts, ReferencedAssemblies, null, DoNotCompile);
+			List<string> PreprocessorDefinitions = RulesAssembly.GetPreprocessorDefinitions();
+			var TargetsDLL = DynamicCompilation.CompileAndLoadAssembly(TargetsDllFilename, TargetScripts, ReferencedAssemblies, PreprocessorDefinitions, DoNotCompile);
 			var AllCompiledTypes = TargetsDLL.GetTypes();
 			foreach (Type TargetType in AllCompiledTypes)
 			{
 				// Find TargetRules but skip all "UE4Editor", "UE4Game" targets.
-				if (typeof(TargetRules).IsAssignableFrom(TargetType))
+				if (typeof(TargetRules).IsAssignableFrom(TargetType) && !TargetType.IsAbstract)
 				{
 					string TargetName = GetTargetName(TargetType);
 
-					FileReference ProjectFile;
-					UProjectInfo.TryGetProjectForTarget(TargetName, out ProjectFile);
-
-					var DummyTargetInfo = new TargetInfo(TargetName, BuildHostPlatform.Current.Platform, UnrealTargetConfiguration.Development, "", ProjectFile);
+					ReadOnlyBuildVersion Version = new ReadOnlyBuildVersion(BuildVersion.ReadDefault());
+					TargetInfo DummyTargetInfo = new TargetInfo(TargetName, BuildHostPlatform.Current.Platform, UnrealTargetConfiguration.Development, "", Properties.RawProjectPath, Version);
 
 					// Create an instance of this type
 					CommandUtils.LogVerbose("Creating target rules object: {0}", TargetType.Name);
-					var Rules = Activator.CreateInstance(TargetType, DummyTargetInfo) as TargetRules;
+					TargetRules Rules = Activator.CreateInstance(TargetType, DummyTargetInfo) as TargetRules;
 					CommandUtils.LogVerbose("Adding target: {0} ({1})", TargetType.Name, Rules.Type);
 
 					SingleTargetProperties TargetData;
@@ -615,16 +611,16 @@ namespace AutomationTool
             public FileReference FilePath;
             public ProjectProperties Properties;
 
-            public BranchUProject(UnrealBuildTool.UProjectInfo InfoEntry)
+            public BranchUProject(FileReference ProjectFile)
             {
-                GameName = InfoEntry.GameName;
+                GameName = ProjectFile.GetFileNameWithoutExtension();
 
                 //not sure what the heck this path is relative to
-                FilePath = InfoEntry.FilePath;
+                FilePath = ProjectFile;
 
                 if (!CommandUtils.FileExists_NoExceptions(FilePath.FullName))
                 {
-                    throw new AutomationException("Could not resolve relative path corrctly {0} -> {1} which doesn't exist.", InfoEntry.FilePath, FilePath);
+                    throw new AutomationException("Could not resolve relative path corrctly {0} -> {1} which doesn't exist.", ProjectFile, FilePath);
                 }
 
                 Properties = ProjectUtils.GetProjectProperties(FilePath);
@@ -679,7 +675,7 @@ namespace AutomationTool
         {
             BaseEngineProject = new BranchUProject();
 
-            var AllProjects = UnrealBuildTool.UProjectInfo.FilterGameProjects(false, null);
+            var AllProjects = UnrealBuildTool.UProjectInfo.AllProjectFiles;
 			using(TelemetryStopwatch SortProjectsStopwatch = new TelemetryStopwatch("SortProjects"))
 			{
 				foreach (var InfoEntry in AllProjects)

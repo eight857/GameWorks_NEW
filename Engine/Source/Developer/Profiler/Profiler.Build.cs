@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -18,6 +18,7 @@ public class Profiler : ModuleRules
 		(
 			new string[] {
 				"Core",
+				"ApplicationCore",
                 "InputCore",
 				"RHI",
 				"RenderCore",
@@ -28,7 +29,7 @@ public class Profiler : ModuleRules
 			}
 		);
 
-        if (UEBuildConfiguration.bBuildEditor)
+        if (Target.bBuildEditor)
         {
             PrivateDependencyModuleNames.AddRange(
                 new string[] {

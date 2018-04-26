@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "K2Node_StructMemberSet.h"
 #include "EdGraphSchema_K2.h"
@@ -14,12 +14,23 @@ UK2Node_StructMemberSet::UK2Node_StructMemberSet(const FObjectInitializer& Objec
 {
 }
 
-void UK2Node_StructMemberSet::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+void UK2Node_StructMemberSet::PreEditChange(UProperty* PropertyThatWillChange)
 {
-	FName PropertyName = (PropertyChangedEvent.Property != NULL) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
+	Super::PreEditChange(PropertyThatWillChange);
 
-	if ((PropertyName == TEXT("bShowPin")))
+	if (PropertyThatWillChange && PropertyThatWillChange->GetFName() == GET_MEMBER_NAME_CHECKED(FOptionalPinFromProperty, bShowPin))
 	{
+		FOptionalPinManager::CacheShownPins(ShowPinForProperties, OldShownPins);
+	}
+}
+
+void UK2Node_StructMemberSet::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	const FName PropertyName = (PropertyChangedEvent.Property ? PropertyChangedEvent.Property->GetFName() : NAME_None);
+
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(FOptionalPinFromProperty, bShowPin))
+	{
+		FOptionalPinManager::EvaluateOldShownPins(ShowPinForProperties, OldShownPins, this);
 		GetSchema()->ReconstructNode(*this);
 	}
 
@@ -28,11 +39,9 @@ void UK2Node_StructMemberSet::PostEditChangeProperty(struct FPropertyChangedEven
 
 void UK2Node_StructMemberSet::AllocateDefaultPins()
 {
-	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
-
 	// Add the execution sequencing pin
-	CreatePin(EGPD_Input, Schema->PC_Exec, TEXT(""), NULL, false, false, Schema->PN_Execute);
-	CreatePin(EGPD_Output, Schema->PC_Exec, TEXT(""), NULL, false, false, Schema->PN_Then);
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
 
 	// Display any currently visible optional pins
 	{

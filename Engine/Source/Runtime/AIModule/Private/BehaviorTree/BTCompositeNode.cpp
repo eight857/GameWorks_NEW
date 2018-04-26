@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BehaviorTree/BTCompositeNode.h"
 #include "GameFramework/Actor.h"
@@ -10,9 +10,13 @@
 UBTCompositeNode::UBTCompositeNode(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	NodeName = "UnknownComposite";
+	bApplyDecoratorScope = false;
 	bUseChildExecutionNotify = false;
 	bUseNodeActivationNotify = false;
 	bUseNodeDeactivationNotify = false;
+	bUseDecoratorsActivationCheck = false;
+	bUseDecoratorsDeactivationCheck = false;
+	bUseDecoratorsFailedActivationCheck = false;
 }
 
 void UBTCompositeNode::InitializeComposite(uint16 InLastExecutionIndex)
@@ -40,7 +44,12 @@ int32 UBTCompositeNode::FindChildToExecute(FBehaviorTreeSearchData& SearchData, 
 			else
 			{
 				LastResult = EBTNodeResult::Failed;
-				NotifyDecoratorsOnFailedActivation(SearchData, ChildIdx, LastResult);
+
+				const bool bCanNotify = !bUseDecoratorsFailedActivationCheck || CanNotifyDecoratorsOnFailedActivation(SearchData, ChildIdx, LastResult);
+				if (bCanNotify)
+				{
+					NotifyDecoratorsOnFailedActivation(SearchData, ChildIdx, LastResult);
+				}
 			}
 
 			ChildIdx = GetNextChild(SearchData, ChildIdx, LastResult);
@@ -87,7 +96,11 @@ void UBTCompositeNode::OnChildActivation(FBehaviorTreeSearchData& SearchData, in
 
 	// pass to decorators before changing current child in node memory
 	// so they can access previously executed one if needed
-	NotifyDecoratorsOnActivation(SearchData, ChildIndex);
+	const bool bCanNotify = !bUseDecoratorsActivationCheck || CanNotifyDecoratorsOnActivation(SearchData, ChildIndex);
+	if (bCanNotify)
+	{
+		NotifyDecoratorsOnActivation(SearchData, ChildIndex);
+	}
 
 	// don't activate task services here, it's applied BEFORE aborting (e.g. abort lower pri decorator)
 	// use UBehaviorTreeComponent::ExecuteTask instead
@@ -127,7 +140,11 @@ void UBTCompositeNode::OnChildDeactivation(FBehaviorTreeSearchData& SearchData, 
 
 	// pass to decorators after composite is updated (so far only simple parallel uses it)
 	// to have them working on correct result + they must be able to modify it if requested (e.g. force success)
-	NotifyDecoratorsOnDeactivation(SearchData, ChildIndex, NodeResult);
+	const bool bCanNotify = !bUseDecoratorsDeactivationCheck || CanNotifyDecoratorsOnDeactivation(SearchData, ChildIndex, NodeResult);
+	if (bCanNotify)
+	{
+		NotifyDecoratorsOnDeactivation(SearchData, ChildIndex, NodeResult);
+	}
 }
 
 void UBTCompositeNode::OnNodeActivation(FBehaviorTreeSearchData& SearchData) const
@@ -160,6 +177,35 @@ void UBTCompositeNode::OnNodeDeactivation(FBehaviorTreeSearchData& SearchData, E
 	for (int32 ServiceIndex = 0; ServiceIndex < Services.Num(); ServiceIndex++)
 	{
 		SearchData.AddUniqueUpdate(FBehaviorTreeSearchUpdate(Services[ServiceIndex], SearchData.OwnerComp.GetActiveInstanceIdx(), EBTNodeUpdateMode::Remove));
+	}
+
+	// optional: remove all decorators if execution flow leaves this composite
+	if (bApplyDecoratorScope)
+	{
+		const uint16 InstanceIdx = SearchData.OwnerComp.GetActiveInstanceIdx();
+		const FBTNodeIndex FromIndex(InstanceIdx, GetExecutionIndex());
+		const FBTNodeIndex ToIndex(InstanceIdx, GetLastExecutionIndex());
+
+		SearchData.OwnerComp.UnregisterAuxNodesInRange(FromIndex, ToIndex);
+
+		// remove all pending updates "Add"
+		for (int32 Idx = SearchData.PendingUpdates.Num() - 1; Idx >= 0; Idx--)
+		{
+			const FBehaviorTreeSearchUpdate& UpdateInfo = SearchData.PendingUpdates[Idx];
+			if (UpdateInfo.Mode == EBTNodeUpdateMode::Add)
+			{
+				const uint16 UpdateNodeIdx = UpdateInfo.AuxNode ? UpdateInfo.AuxNode->GetExecutionIndex() : UpdateInfo.TaskNode->GetExecutionIndex();
+				const FBTNodeIndex UpdateIdx(UpdateInfo.InstanceIndex, UpdateNodeIdx);
+
+				if (FromIndex.TakesPriorityOver(UpdateIdx) && UpdateIdx.TakesPriorityOver(ToIndex))
+				{
+					UE_VLOG(SearchData.OwnerComp.GetOwner(), LogBehaviorTree, Verbose, TEXT("Search node update[canceled]: %s"),
+						*UBehaviorTreeTypes::DescribeNodeHelper(UpdateInfo.AuxNode ? (UBTNode*)UpdateInfo.AuxNode : (UBTNode*)UpdateInfo.TaskNode));
+
+					SearchData.PendingUpdates.RemoveAt(Idx);
+				}
+			}
+		}
 	}
 }
 
@@ -576,6 +622,21 @@ uint16 UBTCompositeNode::GetChildExecutionIndex(int32 Index, EBTChildIndex Child
 }
 
 bool UBTCompositeNode::CanPushSubtree(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, int32 ChildIdx) const
+{
+	return true;
+}
+
+bool UBTCompositeNode::CanNotifyDecoratorsOnActivation(FBehaviorTreeSearchData& SearchData, int32 ChildIdx) const
+{
+	return true;
+}
+
+bool UBTCompositeNode::CanNotifyDecoratorsOnDeactivation(FBehaviorTreeSearchData& SearchData, int32 ChildIdx, EBTNodeResult::Type& NodeResult) const
+{
+	return true;
+}
+
+bool UBTCompositeNode::CanNotifyDecoratorsOnFailedActivation(FBehaviorTreeSearchData& SearchData, int32 ChildIdx, EBTNodeResult::Type& NodeResult) const
 {
 	return true;
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -37,7 +37,7 @@ namespace ContentBrowserUtils
 	bool OpenEditorForAsset(const TArray<UObject*>& Assets);
 
 	/**
-	  * Makes sure the specified assets are loaded into memory.6666
+	  * Makes sure the specified assets are loaded into memory.
 	  * 
 	  * @param ObjectPaths The paths to the objects to load.
 	  * @param LoadedObjects The returned list of objects that were already loaded or loaded by this method.
@@ -155,8 +155,13 @@ namespace ContentBrowserUtils
 	/** Returns true if the passed-in path is a developers folder */
 	bool IsDevelopersFolder( const FString& InPath );
 
-	/** Returns true if the passed-in path is a plugin folder matching the specified "where from" filter.*/
-	bool IsPluginFolder( const FString& InPath, EPluginLoadedFrom WhereFromFilter);
+	/** Returns true if the passed-in path is a plugin folder, optionally reporting where the plugin was loaded from */
+	bool IsPluginFolder(const FString& InPath, EPluginLoadedFrom* OutPluginSource = nullptr);
+
+	/** Returns true if the passed-in path is a plugin folder, optionally reporting where the plugin was loaded from.
+	 *  Pass in a prefiltered list of plugins to consider -- more efficient when called many times.
+	 */
+	bool IsPluginFolder(const FString& InPath, const TArray<TSharedRef<IPlugin>>& InPlugins, EPluginLoadedFrom* OutPluginSource = nullptr);
 
 	/** Returns true if the passed-in path is a C++ classes folder */
 	bool IsClassesFolder( const FString& InPath );
@@ -172,6 +177,12 @@ namespace ContentBrowserUtils
 
 	/** Returns true if the path specified exists as a folder in the asset registry */
 	bool DoesFolderExist(const FString& FolderPath);
+
+	/**
+	 * @return true if the path specified is an empty folder (contains no assets or classes).
+	 * @note Does *not* test whether the folder is empty on disk, so do not use it to validate filesystem deletion!
+	 */
+	bool IsEmptyFolder(const FString& FolderPath, const bool bRecursive = false);
 
 	/** Check to see whether the given path is a root directory (either for asset or classes) */
 	bool IsRootDir(const FString& FolderPath);
@@ -261,8 +272,18 @@ namespace ContentBrowserUtils
 	bool CanDeleteFromPathView(const TArray<FString>& SelectedPaths);
 	bool CanRenameFromPathView(const TArray<FString>& SelectedPaths);
 
+	/** Returns if this folder has been marked as a favorite folder */
+	bool IsFavoriteFolder(const FString& FolderPath);
+
+	void AddFavoriteFolder(const FString& FolderPath, bool bFlushConfig = true);
+
+	void RemoveFavoriteFolder(const FString& FolderPath, bool bFlushConfig = true);
+
+	const TArray<FString>& GetFavoriteFolders();
+
 	// We assume the game name is 20 characters (the maximum allowed) to make sure that content can be ported between projects
 	// 260 characters is the limit on Windows, which is the shortest max path of any platforms that support cooking
 	static const int32 MaxGameNameLen = 20;
 	static const int32 MaxCookPathLen = 260;
 }
+

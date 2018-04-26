@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ActorTransformer.h"
 #include "ActorViewportTransformable.h"
@@ -75,7 +75,7 @@ void UActorTransformer::UpdateTransformables()
 		if( SelectedActor != nullptr )
 		{
 			// We only are able to move objects that have a root scene component
-			if( SelectedActor->GetRootComponent() != nullptr && Cast<USceneComponent>( SelectedActor->GetRootComponent() ) != nullptr )
+			if( SelectedActor->GetRootComponent() != nullptr )
 			{
 				FActorViewportTransformable* Transformable = new FActorViewportTransformable();
 

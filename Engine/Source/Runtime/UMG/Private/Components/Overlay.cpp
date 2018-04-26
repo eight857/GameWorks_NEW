@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
@@ -14,7 +14,7 @@ UOverlay::UOverlay(const FObjectInitializer& ObjectInitializer)
 	bIsVariable = false;
 
 	SOverlay::FArguments Defaults;
-	Visiblity_DEPRECATED = Visibility = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
+	Visibility = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
 }
 
 void UOverlay::ReleaseSlateResources(bool bReleaseChildren)
@@ -69,7 +69,7 @@ TSharedRef<SWidget> UOverlay::RebuildWidget()
 		}
 	}
 
-	return BuildDesignTimeWidget( MyOverlay.ToSharedRef() );
+	return MyOverlay.ToSharedRef();
 }
 
 #if WITH_EDITOR

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Camera/CameraComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -16,11 +16,10 @@
 #include "Misc/MapErrors.h"
 #include "Components/DrawFrustumComponent.h"
 #include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
+#include "IXRCamera.h"
 
 #define LOCTEXT_NAMESPACE "CameraComponent"
-
-static void SetDeprecatedControllerViewRotation(UCameraComponent& Component, bool bValue);
-
 
 //////////////////////////////////////////////////////////////////////////
 // UCameraComponent
@@ -48,9 +47,6 @@ UCameraComponent::UCameraComponent(const FObjectInitializer& ObjectInitializer)
 	bUsePawnControlRotation = false;
 	bAutoActivate = true;
 	bLockToHmd = true;
-
-	// Init deprecated var, for old code that may refer to it.
-	SetDeprecatedControllerViewRotation(*this, bUsePawnControlRotation);
 }
 
 void UCameraComponent::OnUpdateTransform(EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport)
@@ -121,9 +117,6 @@ void UCameraComponent::OnRegister()
 #endif
 
 	Super::OnRegister();
-
-	// Init deprecated var, for old code that may refer to it.
-	SetDeprecatedControllerViewRotation(*this, bUsePawnControlRotation);
 }
 
 void UCameraComponent::PostLoad()
@@ -136,9 +129,6 @@ void UCameraComponent::PostLoad()
 	{
 		bUsePawnControlRotation = bUseControllerViewRotation_DEPRECATED;
 	}
-
-	// Init deprecated var, for old code that may refer to it.
-	SetDeprecatedControllerViewRotation(*this, bUsePawnControlRotation);
 }
 
 #if WITH_EDITORONLY_DATA
@@ -246,20 +236,29 @@ void UCameraComponent::Serialize(FArchive& Ar)
 
 void UCameraComponent::GetCameraView(float DeltaTime, FMinimalViewInfo& DesiredView)
 {
-	if (bLockToHmd && GEngine->HMDDevice.IsValid() && GEngine->HMDDevice->IsHeadTrackingAllowed())
+	if (bLockToHmd && GEngine && GEngine->XRSystem.IsValid() && GetWorld() && GetWorld()->WorldType != EWorldType::Editor )
 	{
-		const FTransform ParentWorld = CalcNewComponentToWorld(FTransform());
-		GEngine->HMDDevice->SetupLateUpdate(ParentWorld, this);
+		IXRTrackingSystem* XRSystem = GEngine->XRSystem.Get();
 
-		FQuat Orientation;
-		FVector Position;
-		if (GEngine->HMDDevice->UpdatePlayerCamera(Orientation, Position))
+		auto XRCamera = XRSystem->GetXRCamera();
+		if (XRSystem->IsHeadTrackingAllowed() && XRCamera.IsValid())
 		{
-			SetRelativeTransform(FTransform(Orientation, Position));
-		}
-		else
-		{
-			ResetRelativeTransform();
+			const FTransform ParentWorld = CalcNewComponentToWorld(FTransform());
+
+			XRCamera->SetupLateUpdate(ParentWorld, this);
+
+			FQuat Orientation;
+			FVector Position;
+			if (XRCamera->UpdatePlayerCamera(Orientation, Position))
+			{
+				SetRelativeTransform(FTransform(Orientation, Position));
+			}
+			else
+			{
+				ResetRelativeTransform();
+			}
+			
+			XRCamera->OverrideFOV(this->FieldOfView);
 		}
 	}
 
@@ -322,15 +321,16 @@ void UCameraComponent::CheckForErrors()
 			->AddToken(FMapErrorToken::Create(FMapErrors::CameraAspectRatioIsZero));
 	}
 }
-#endif	// WITH_EDITOR
 
-
-void SetDeprecatedControllerViewRotation(UCameraComponent& Component, bool bValue)
+bool UCameraComponent::GetEditorPreviewInfo(float DeltaTime, FMinimalViewInfo& ViewOut)
 {
-	PRAGMA_DISABLE_DEPRECATION_WARNINGS
-	Component.bUseControllerViewRotation = bValue;
-	PRAGMA_ENABLE_DEPRECATION_WARNINGS
+	if (bIsActive)
+	{
+		GetCameraView(DeltaTime, ViewOut);
+	}
+	return bIsActive;
 }
+#endif	// WITH_EDITOR
 
 void UCameraComponent::NotifyCameraCut()
 {
@@ -367,6 +367,11 @@ void UCameraComponent::ClearAdditiveOffset()
 #endif
 }
 
+void UCameraComponent::GetAdditiveOffset(FTransform& OutAdditiveOffset, float& OutAdditiveFOVOffset) const
+{
+	OutAdditiveOffset = AdditiveOffset;
+	OutAdditiveFOVOffset = AdditiveFOVOffset;
+}
 
 void UCameraComponent::AddExtraPostProcessBlend(FPostProcessSettings const& PPSettings, float PPBlendWeight)
 {

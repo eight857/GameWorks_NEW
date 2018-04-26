@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 /*=============================================================================================
@@ -15,6 +15,24 @@
  */
 struct FPlatformMemoryStats : public FGenericPlatformMemoryStats
 {};
+
+/**
+ *	Struct for more detailed stats that are slower to gather. Useful when using ForkAndWait().
+ */
+struct FExtendedPlatformMemoryStats
+{
+	/** */
+	SIZE_T Shared_Clean;
+
+	/** Shared memory used */
+	SIZE_T Shared_Dirty;
+
+	/** */
+	SIZE_T Private_Clean;
+
+	/** Private memory used */
+	SIZE_T Private_Dirty;
+};
 
 /**
 * Linux implementation of the memory OS functions
@@ -51,6 +69,7 @@ struct CORE_API FLinuxPlatformMemory : public FGenericPlatformMemory
 	static void Init();
 	static class FMalloc* BaseAllocator();
 	static FPlatformMemoryStats GetStats();
+	static FExtendedPlatformMemoryStats GetExtendedStats();
 	static const FPlatformMemoryConstants& GetConstants();
 	static bool PageProtect(void* const Ptr, const SIZE_T Size, const bool bCanRead, const bool bCanWrite);
 	static void* BinnedAllocFromOS(SIZE_T Size);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -67,7 +67,7 @@ struct FPreallocationInfo
 	TMap<UClass*, TArray<AGameplayCueNotify_Actor*> >	PreallocatedInstances;
 
 	UPROPERTY(transient)
-	TArray<AGameplayCueNotify_Actor*>	ClassesNeedingPreallocation;
+	TArray<TSubclassOf<AGameplayCueNotify_Actor>>	ClassesNeedingPreallocation;
 
 	FObjectKey OwningWorldKey;
 };

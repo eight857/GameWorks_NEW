@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TP_TopDownCharacter.h"
 #include "UObject/ConstructorHelpers.h"
@@ -8,8 +8,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "Kismet/HeadMountedDisplayFunctionLibrary.h"
+#include "HeadMountedDisplayFunctionLibrary.h"
 #include "Materials/Material.h"
+#include "Engine/World.h"
 
 ATP_TopDownCharacter::ATP_TopDownCharacter()
 {
@@ -67,7 +68,7 @@ void ATP_TopDownCharacter::Tick(float DeltaSeconds)
 			if (UWorld* World = GetWorld())
 			{
 				FHitResult HitResult;
-				FCollisionQueryParams Params;
+				FCollisionQueryParams Params(NAME_None, FCollisionQueryParams::GetUnknownStatId());
 				FVector StartLocation = TopDownCameraComponent->GetComponentLocation();
 				FVector EndLocation = TopDownCameraComponent->GetComponentRotation().Vector() * 2000.0f;
 				Params.AddIgnoredActor(this);

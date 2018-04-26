@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 MobileSceneCaptureRendering.cpp - Mobile specific scene capture code.
@@ -41,7 +41,7 @@ class FMobileSceneCaptureCopyPS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FMobileSceneCaptureCopyPS, Global)
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform) { return IsMobilePlatform(Platform); }
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) { return IsMobilePlatform(Parameters.Platform); }
 
 	FMobileSceneCaptureCopyPS(const ShaderMetaType::CompiledShaderInitializerType& Initializer) :
 		FGlobalShader(Initializer)
@@ -52,7 +52,7 @@ public:
 	}
 	FMobileSceneCaptureCopyPS() {}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		OutEnvironment.SetDefine(TEXT("MOBILE_FORCE_DEPTH_TEXTURE_READS"), 1u);
 		OutEnvironment.SetDefine(TEXT("DECODING_MOSAIC"), bDemosaic ? 1u : 0u);
@@ -95,7 +95,7 @@ class FMobileSceneCaptureCopyVS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FMobileSceneCaptureCopyVS, Global)
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform) { return IsMobilePlatform(Platform); }
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) { return IsMobilePlatform(Parameters.Platform); }
 
 	FMobileSceneCaptureCopyVS(const ShaderMetaType::CompiledShaderInitializerType& Initializer) :
 		FGlobalShader(Initializer)
@@ -104,7 +104,7 @@ public:
 	}
 	FMobileSceneCaptureCopyVS() {}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		OutEnvironment.SetDefine(TEXT("DECODING_MOSAIC"), bDemosaic ? 1u : 0u);
 	}
@@ -132,15 +132,16 @@ public:
 #define IMPLEMENT_MOBILE_SCENE_CAPTURECOPY(SCENETYPE) \
 typedef FMobileSceneCaptureCopyPS<false,SCENETYPE> FMobileSceneCaptureCopyPS##SCENETYPE;\
 typedef FMobileSceneCaptureCopyPS<true,SCENETYPE> FMobileSceneCaptureCopyPS_Mosaic##SCENETYPE;\
-IMPLEMENT_SHADER_TYPE(template<>, FMobileSceneCaptureCopyPS##SCENETYPE, TEXT("MobileSceneCapture"), TEXT("MainCopyPS"), SF_Pixel); \
-IMPLEMENT_SHADER_TYPE(template<>, FMobileSceneCaptureCopyPS_Mosaic##SCENETYPE, TEXT("MobileSceneCapture"), TEXT("MainCopyPS"), SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, FMobileSceneCaptureCopyPS##SCENETYPE, TEXT("/Engine/Private/MobileSceneCapture.usf"), TEXT("MainCopyPS"), SF_Pixel); \
+IMPLEMENT_SHADER_TYPE(template<>, FMobileSceneCaptureCopyPS_Mosaic##SCENETYPE, TEXT("/Engine/Private/MobileSceneCapture.usf"), TEXT("MainCopyPS"), SF_Pixel);
 
 IMPLEMENT_MOBILE_SCENE_CAPTURECOPY(SCS_SceneColorHDR);
 IMPLEMENT_MOBILE_SCENE_CAPTURECOPY(SCS_SceneColorHDRNoAlpha);
 IMPLEMENT_MOBILE_SCENE_CAPTURECOPY(SCS_SceneColorSceneDepth);
 IMPLEMENT_MOBILE_SCENE_CAPTURECOPY(SCS_SceneDepth);
-IMPLEMENT_SHADER_TYPE(template<>, FMobileSceneCaptureCopyVS<false>, TEXT("MobileSceneCapture"), TEXT("MainCopyVS"), SF_Vertex);
-IMPLEMENT_SHADER_TYPE(template<>, FMobileSceneCaptureCopyVS<true>, TEXT("MobileSceneCapture"), TEXT("MainCopyVS"), SF_Vertex);
+IMPLEMENT_MOBILE_SCENE_CAPTURECOPY(SCS_DeviceDepth);
+IMPLEMENT_SHADER_TYPE(template<>, FMobileSceneCaptureCopyVS<false>, TEXT("/Engine/Private/MobileSceneCapture.usf"), TEXT("MainCopyVS"), SF_Vertex);
+IMPLEMENT_SHADER_TYPE(template<>, FMobileSceneCaptureCopyVS<true>, TEXT("/Engine/Private/MobileSceneCapture.usf"), TEXT("MainCopyVS"), SF_Vertex);
  
 
 template <bool bDemosaic, ESceneCaptureSource CaptureSource>
@@ -174,6 +175,8 @@ static FShader* SetCaptureToTargetShaders(FRHICommandListImmediate& RHICmdList, 
 			return SetCaptureToTargetShaders<bDemosaic, SCS_SceneColorSceneDepth>(RHICmdList, GraphicsPSOInit, View, SourceTexSize, SourceTextureRHI);
 		case SCS_SceneDepth:
 			return SetCaptureToTargetShaders<bDemosaic, SCS_SceneDepth>(RHICmdList, GraphicsPSOInit, View, SourceTexSize, SourceTextureRHI);
+		case SCS_DeviceDepth:
+			return SetCaptureToTargetShaders<bDemosaic, SCS_DeviceDepth>(RHICmdList, GraphicsPSOInit, View, SourceTexSize, SourceTextureRHI);
 		default:
 			checkNoEntry();
 			return nullptr;
@@ -308,12 +311,21 @@ static void CopyCaptureToTarget(
 		ScreenVertexShader->SetParameters(RHICmdList, View.ViewUniformBuffer);
 		PixelShader->SetParameters(RHICmdList, TStaticSamplerState<SF_Point>::GetRHI(), SourceTextureRHI);
 
+		int32 TargetPosY = ViewRect.Min.Y;
+		int32 TargetHeight = ViewRect.Height();
+	
+		if (bNeedsFlippedRenderTarget)
+		{
+			TargetPosY = ViewRect.Height() - TargetPosY;
+			TargetHeight = -TargetHeight;
+		}
+
 		DrawRectangle(
 			RHICmdList,
 			ViewRect.Min.X, ViewRect.Min.Y,
 			ViewRect.Width(), ViewRect.Height(),
-			ViewRect.Min.X, ViewRect.Min.Y,
-			ViewRect.Width(), ViewRect.Height(),
+			ViewRect.Min.X, TargetPosY,
+			ViewRect.Width(), TargetHeight,
 			TargetSize,
 			SourceTexSize,
 			*ScreenVertexShader,
@@ -363,7 +375,7 @@ void UpdateSceneCaptureContentMobile_RenderThread(
 			auto& RenderTargetRHI = Target->GetRenderTargetTexture();
 			FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(Target->GetSizeXY(),
 				RenderTargetRHI.GetReference()->GetFormat(),
-				FClearValueBinding::None,
+				RenderTargetRHI.GetReference()->GetClearBinding(),
 				TexCreate_None,
 				TexCreate_RenderTargetable,
 				false));
@@ -386,14 +398,15 @@ void UpdateSceneCaptureContentMobile_RenderThread(
 			? FlippedPooledRenderTarget.GetReference()->GetRenderTargetItem().TargetableTexture->GetTexture2D()
 			: nullptr);
 		FViewInfo& View = SceneRenderer->Views[0];
-		FIntRect ViewRect = View.ViewRect;
+		// We don't support screen percentage in scene capture.
+		FIntRect ViewRect = View.UnscaledViewRect;
 		FIntRect UnconstrainedViewRect = View.UnconstrainedViewRect;
 
 		if(bNeedsFlippedFinalColor)
 		{
 			auto& RenderTargetRHI = Target->GetRenderTargetTexture();
 			SetRenderTarget(RHICmdList, RenderTargetRHI, NULL, true);
-			DrawClearQuad(RHICmdList, SceneRenderer->FeatureLevel, true, FLinearColor::Black, false, 0, false, 0, Target->GetSizeXY(), ViewRect);
+			DrawClearQuad(RHICmdList, true, FLinearColor::Black, false, 0, false, 0, Target->GetSizeXY(), ViewRect);
 		}
 
 		// Render the scene normally

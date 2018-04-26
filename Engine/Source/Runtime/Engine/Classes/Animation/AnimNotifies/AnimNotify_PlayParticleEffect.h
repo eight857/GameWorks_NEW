@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -11,6 +11,7 @@
 class UAnimSequenceBase;
 class UParticleSystem;
 class USkeletalMeshComponent;
+class UParticleSystemComponent;
 
 UCLASS(const, hidecategories=Object, collapsecategories, meta=(DisplayName="Play Particle Effect"))
 class ENGINE_API UAnimNotify_PlayParticleEffect : public UAnimNotify
@@ -31,32 +32,43 @@ public:
 	// Begin UAnimNotify interface
 	virtual FString GetNotifyName_Implementation() const override;
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) override;
+#if WITH_EDITOR
+	virtual void ValidateAssociatedAssets() override;
+#endif
 	// End UAnimNotify interface
 
 	// Particle System to Spawn
-	UPROPERTY(EditAnywhere, Category="AnimNotify", meta=(DisplayName="Particle System"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AnimNotify", meta=(DisplayName="Particle System"))
 	UParticleSystem* PSTemplate;
 
 	// Location offset from the socket
-	UPROPERTY(EditAnywhere, Category="AnimNotify")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AnimNotify")
 	FVector LocationOffset;
 
 	// Rotation offset from socket
-	UPROPERTY(EditAnywhere, Category="AnimNotify")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AnimNotify")
 	FRotator RotationOffset;
+
+	// Scale to spawn the particle system at
+	UPROPERTY(EditAnywhere, Category="AnimNotify")
+	FVector Scale;
 
 private:
 	// Cached version of the Rotation Offset already in Quat form
 	FQuat RotationOffsetQuat;
 
+protected:
+	// Spawns the ParticleSystemComponent. Called from Notify.
+	virtual UParticleSystemComponent* SpawnParticleSystem(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation);
+
 public:
 
 	// Should attach to the bone/socket
-	UPROPERTY(EditAnywhere, Category="AnimNotify")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AnimNotify")
 	uint32 Attached:1; 	//~ Does not follow coding standard due to redirection from BP
 
 	// SocketName to attach to
-	UPROPERTY(EditAnywhere, Category = "AnimNotify")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AnimNotify")
 	FName SocketName;
 };
 

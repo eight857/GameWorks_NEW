@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * Abstract base class of animation composite base
@@ -21,7 +21,7 @@ class UEditorCompositeSection: public UEditorAnimBaseObj
 public:
 
 	/** Default blend in time. */
-	UPROPERTY(EditAnywhere, Category=Montage)
+	UPROPERTY(EditAnywhere, Category=Montage, meta=(ShowOnlyInnerProperties))
 	FCompositeSection CompositeSection;
 
 	int32 SectionIndex;

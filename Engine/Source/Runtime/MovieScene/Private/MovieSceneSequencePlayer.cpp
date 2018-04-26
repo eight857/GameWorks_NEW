@@ -1,10 +1,10 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneSequencePlayer.h"
 #include "MovieScene.h"
 #include "MovieSceneSequence.h"
 #include "Engine/Engine.h"
-
+#include "Misc/RuntimeErrors.h"
 
 bool FMovieSceneSequencePlaybackSettings::SerializeFromMismatchedTag( const FPropertyTag& Tag, FArchive& Ar )
 {
@@ -19,7 +19,7 @@ bool FMovieSceneSequencePlaybackSettings::SerializeFromMismatchedTag( const FPro
 
 UMovieSceneSequencePlayer::UMovieSceneSequencePlayer(const FObjectInitializer& Init)
 	: Super(Init)
-	, bIsPlaying(false)
+	, Status(EMovieScenePlayerStatus::Stopped)
 	, bReversePlayback(false)
 	, bIsEvaluating(false)
 	, Sequence(nullptr)
@@ -27,12 +27,21 @@ UMovieSceneSequencePlayer::UMovieSceneSequencePlayer(const FObjectInitializer& I
 	, StartTime(0.f)
 	, EndTime(0.f)
 	, CurrentNumLoops(0)
+	, LatentPlaybackPosition(0.f)
 {
+}
+
+UMovieSceneSequencePlayer::~UMovieSceneSequencePlayer()
+{
+	if (GEngine && OldMaxTickRate.IsSet())
+	{
+		GEngine->SetMaxFPS(OldMaxTickRate.GetValue());
+	}
 }
 
 EMovieScenePlayerStatus::Type UMovieSceneSequencePlayer::GetPlaybackStatus() const
 {
-	return bIsPlaying ? EMovieScenePlayerStatus::Playing : EMovieScenePlayerStatus::Stopped;
+	return Status;
 }
 
 FMovieSceneSpawnRegister& UMovieSceneSequencePlayer::GetSpawnRegister()
@@ -76,7 +85,7 @@ void UMovieSceneSequencePlayer::PlayLooping(int32 NumLoops)
 
 void UMovieSceneSequencePlayer::PlayInternal()
 {
-	if (!bIsPlaying)
+	if (!IsPlaying())
 	{
 		// Start playing
 		StartPlayingNextTick();
@@ -90,30 +99,44 @@ void UMovieSceneSequencePlayer::PlayInternal()
 		}
 
 		UMovieSceneSequence* MovieSceneSequence = RootTemplateInstance.GetSequence(MovieSceneSequenceID::Root);
-		TOptional<float> FixedFrameInterval = MovieSceneSequence->GetMovieScene() ? MovieSceneSequence->GetMovieScene()->GetOptionalFixedFrameInterval() : TOptional<float>();
+		const bool bHasValidMovieScene = (MovieSceneSequence && MovieSceneSequence->GetMovieScene());
+		TOptional<float> FixedFrameInterval = bHasValidMovieScene ? MovieSceneSequence->GetMovieScene()->GetOptionalFixedFrameInterval() : TOptional<float>();
 
-		OldMaxTickRate = GEngine->GetMaxFPS();
-		if (FixedFrameInterval.IsSet() && MovieSceneSequence->GetMovieScene()->GetForceFixedFrameIntervalPlayback())
+		if (FixedFrameInterval.IsSet() && bHasValidMovieScene && MovieSceneSequence->GetMovieScene()->GetForceFixedFrameIntervalPlayback())
 		{
+			OldMaxTickRate = GEngine->GetMaxFPS();
 			GEngine->SetMaxFPS(1.f / FixedFrameInterval.GetValue());
 		}
 
-		// Ensure we're at the current sequence position
-		PlayPosition.JumpTo(GetSequencePosition(), FixedFrameInterval);
-
-		// We pass the range of PlayTo here in order to correctly update the last evaluated time in the playposition
-		UpdateMovieSceneInstance(PlayPosition.PlayTo(GetSequencePosition(), FixedFrameInterval));
-
-		if (OnPlay.IsBound())
+		if (!PlayPosition.GetPreviousPosition().IsSet() || PlayPosition.GetPreviousPosition().GetValue() != GetSequencePosition())
 		{
-			OnPlay.Broadcast();
+			// Ensure we're at the current sequence position
+			PlayPosition.JumpTo(GetSequencePosition(), FixedFrameInterval);
+
+			// We pass the range of PlayTo here in order to correctly update the last evaluated time in the playposition
+			UpdateMovieSceneInstance(PlayPosition.PlayTo(GetSequencePosition(), FixedFrameInterval));
+		}
+
+		if (bReversePlayback)
+		{
+			if (OnPlayReverse.IsBound())
+			{
+				OnPlayReverse.Broadcast();
+			}
+		}
+		else
+		{
+			if (OnPlay.IsBound())
+			{
+				OnPlay.Broadcast();
+			}
 		}
 	}
 }
 
 void UMovieSceneSequencePlayer::StartPlayingNextTick()
 {
-	if (bIsPlaying || !Sequence || !CanPlay())
+	if (IsPlaying() || !Sequence || !CanPlay())
 	{
 		return;
 	}
@@ -129,12 +152,12 @@ void UMovieSceneSequencePlayer::StartPlayingNextTick()
 	OnStartedPlaying();
 
 	bPendingFirstUpdate = true;
-	bIsPlaying = true;
+	Status = EMovieScenePlayerStatus::Playing;
 }
 
 void UMovieSceneSequencePlayer::Pause()
 {
-	if (bIsPlaying)
+	if (IsPlaying())
 	{
 		if (bIsEvaluating)
 		{
@@ -142,9 +165,9 @@ void UMovieSceneSequencePlayer::Pause()
 			return;
 		}
 
-		bIsPlaying = false;
+		Status = EMovieScenePlayerStatus::Paused;
 
-		// Evaluate the sequence at its current time, with a status of 'stopped' to ensure that animated state pauses correctly
+		// Evaluate the sequence at its current time, with a status of 'stopped' to ensure that animated state pauses correctly. (ie. audio sounds should stop/pause)
 		{
 			bIsEvaluating = true;
 
@@ -168,9 +191,25 @@ void UMovieSceneSequencePlayer::Pause()
 	}
 }
 
+void UMovieSceneSequencePlayer::Scrub()
+{
+	// @todo Sequencer playback: Should we recreate the instance every time?
+	// We must not recreate the instance since it holds stateful information (such as which objects it has spawned). Recreating the instance would break any 
+	// @todo: Is this still the case now that eval state is stored (correctly) in the player?
+	if (ensureAsRuntimeWarning(Sequence != nullptr))
+	{
+		if (!RootTemplateInstance.IsValid())
+		{
+			RootTemplateInstance.Initialize(*Sequence, *this);
+		}
+	}
+
+	Status = EMovieScenePlayerStatus::Scrubbing;
+}
+
 void UMovieSceneSequencePlayer::Stop()
 {
-	if (bIsPlaying)
+	if (IsPlaying() || IsPaused())
 	{
 		if (bIsEvaluating)
 		{
@@ -178,7 +217,7 @@ void UMovieSceneSequencePlayer::Stop()
 			return;
 		}
 
-		bIsPlaying = false;
+		Status = EMovieScenePlayerStatus::Stopped;
 		TimeCursorPosition = bReversePlayback ? GetLength() : 0.f;
 		CurrentNumLoops = 0;
 
@@ -189,7 +228,10 @@ void UMovieSceneSequencePlayer::Stop()
 
 		RootTemplateInstance.Finish(*this);
 
-		GEngine->SetMaxFPS(OldMaxTickRate);
+		if (OldMaxTickRate.IsSet())
+		{
+			GEngine->SetMaxFPS(OldMaxTickRate.GetValue());
+		}
 
 		OnStopped();
 
@@ -200,6 +242,13 @@ void UMovieSceneSequencePlayer::Stop()
 	}
 }
 
+void UMovieSceneSequencePlayer::GoToEndAndStop()
+{
+	SetPlaybackPosition(GetLength());
+
+	Stop();
+}
+
 float UMovieSceneSequencePlayer::GetPlaybackPosition() const
 {
 	return TimeCursorPosition;
@@ -207,12 +256,29 @@ float UMovieSceneSequencePlayer::GetPlaybackPosition() const
 
 void UMovieSceneSequencePlayer::SetPlaybackPosition(float NewPlaybackPosition)
 {
+	if (bIsEvaluating)
+	{
+		LatentActions.Add(ELatentAction::SetPlaybackPosition);
+		LatentPlaybackPosition = NewPlaybackPosition;
+		return;
+	}
+
 	UpdateTimeCursorPosition(NewPlaybackPosition);
+}
+
+void UMovieSceneSequencePlayer::JumpToPosition(float NewPlaybackPosition)
+{
+	UpdateTimeCursorPosition(NewPlaybackPosition, EMovieScenePlayerStatus::Scrubbing);
 }
 
 bool UMovieSceneSequencePlayer::IsPlaying() const
 {
-	return bIsPlaying;
+	return Status == EMovieScenePlayerStatus::Playing;
+}
+
+bool UMovieSceneSequencePlayer::IsPaused() const
+{
+	return Status == EMovieScenePlayerStatus::Paused;
 }
 
 float UMovieSceneSequencePlayer::GetLength() const
@@ -241,13 +307,16 @@ void UMovieSceneSequencePlayer::SetPlaybackRange( const float NewStartTime, cons
 bool UMovieSceneSequencePlayer::ShouldStopOrLoop(float NewPosition) const
 {
 	bool bShouldStopOrLoop = false;
-	if (!bReversePlayback)
+	if (IsPlaying())
 	{
-		bShouldStopOrLoop = NewPosition >= GetLength();
-	}
-	else
-	{
-		bShouldStopOrLoop = NewPosition < 0.f;
+		if (!bReversePlayback)
+		{
+			bShouldStopOrLoop = NewPosition >= GetLength();
+		}
+		else
+		{
+			bShouldStopOrLoop = NewPosition < 0.f;
+		}
 	}
 
 	return bShouldStopOrLoop;
@@ -276,19 +345,19 @@ void UMovieSceneSequencePlayer::Initialize(UMovieSceneSequence* InSequence, cons
 
 void UMovieSceneSequencePlayer::Update(const float DeltaSeconds)
 {
-	if (bIsPlaying)
+	if (IsPlaying())
 	{
 		float PlayRate = bReversePlayback ? -PlaybackSettings.PlayRate : PlaybackSettings.PlayRate;
 		UpdateTimeCursorPosition(TimeCursorPosition + DeltaSeconds * PlayRate);
 	}
 }
 
-void UMovieSceneSequencePlayer::UpdateTimeCursorPosition(float NewPosition)
+void UMovieSceneSequencePlayer::UpdateTimeCursorPosition(float NewPosition, TOptional<EMovieScenePlayerStatus::Type> OptionalStatus)
 {
 	float Length = GetLength();
 
 	UMovieSceneSequence* MovieSceneSequence = RootTemplateInstance.GetSequence(MovieSceneSequenceID::Root);
-	TOptional<float> FixedFrameInterval = MovieSceneSequence->GetMovieScene() ? MovieSceneSequence->GetMovieScene()->GetOptionalFixedFrameInterval() : TOptional<float>();
+	TOptional<float> FixedFrameInterval = (MovieSceneSequence && MovieSceneSequence->GetMovieScene()) ? MovieSceneSequence->GetMovieScene()->GetOptionalFixedFrameInterval() : TOptional<float>();
 
 	if (bPendingFirstUpdate)
 	{
@@ -313,7 +382,9 @@ void UMovieSceneSequencePlayer::UpdateTimeCursorPosition(float NewPosition)
 				SpawnRegister->ForgetExternallyOwnedSpawnedObjects(State, *this);
 			}
 
-			UpdateMovieSceneInstance(Range);
+			const bool bHasJumped = true;
+
+			UpdateMovieSceneInstance(Range, OptionalStatus, bHasJumped);
 
 			OnLooped();
 		}
@@ -321,11 +392,19 @@ void UMovieSceneSequencePlayer::UpdateTimeCursorPosition(float NewPosition)
 		// stop playback
 		else
 		{
+			FMovieSceneEvaluationRange Range = PlayPosition.PlayTo(NewPosition + StartTime, FixedFrameInterval);
+			UpdateMovieSceneInstance(Range, OptionalStatus);
+
 			Stop();
 
 			// When playback stops naturally, the time cursor is put at the boundary that was crossed to make ping-pong playback easy
 			TimeCursorPosition = bReversePlayback ? 0.f : GetLength();
 			PlayPosition.Reset(TimeCursorPosition);
+
+			if (OnFinished.IsBound())
+			{
+				OnFinished.Broadcast();
+			}
 		}
 	}
 	else
@@ -334,15 +413,17 @@ void UMovieSceneSequencePlayer::UpdateTimeCursorPosition(float NewPosition)
 		TimeCursorPosition = NewPosition;
 
 		FMovieSceneEvaluationRange Range = PlayPosition.PlayTo(NewPosition + StartTime, FixedFrameInterval);
-		UpdateMovieSceneInstance(Range);
+		UpdateMovieSceneInstance(Range, OptionalStatus);
 	}
 }
 
-void UMovieSceneSequencePlayer::UpdateMovieSceneInstance(FMovieSceneEvaluationRange InRange)
+void UMovieSceneSequencePlayer::UpdateMovieSceneInstance(FMovieSceneEvaluationRange InRange, TOptional<EMovieScenePlayerStatus::Type> OptionalStatus, bool bHasJumped)
 {
 	bIsEvaluating = true;
 
-	const FMovieSceneContext Context(InRange, GetPlaybackStatus());
+	FMovieSceneContext Context(InRange, OptionalStatus.Get(GetPlaybackStatus()));
+	Context.SetHasJumped(bHasJumped);
+
 	RootTemplateInstance.Evaluate(Context, *this);
 
 #if WITH_EDITOR
@@ -365,6 +446,7 @@ void UMovieSceneSequencePlayer::ApplyLatentActions()
 		{
 		case ELatentAction::Stop:	Stop(); break;
 		case ELatentAction::Pause:	Pause(); break;
+		case ELatentAction::SetPlaybackPosition: SetPlaybackPosition(LatentPlaybackPosition); break;
 		}
 	}
 }
@@ -380,4 +462,16 @@ TArray<UObject*> UMovieSceneSequencePlayer::GetBoundObjects(FMovieSceneObjectBin
 		}
 	}
 	return Objects;
+}
+
+void UMovieSceneSequencePlayer::BeginDestroy()
+{
+	Stop();
+
+	if (GEngine && OldMaxTickRate.IsSet())
+	{
+		GEngine->SetMaxFPS(OldMaxTickRate.GetValue());
+	}
+
+	Super::BeginDestroy();
 }

@@ -1,15 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 
-const FName GameSessionName(TEXT("Game"));
-const FName PartySessionName(TEXT("Party"));
-
-const FName GamePort(TEXT("GamePort"));
-const FName BeaconPort(TEXT("BeaconPort"));
+#define GameSessionName NAME_GameSession
+#define PartySessionName NAME_PartySession
+#define GamePort NAME_GamePort
+#define BeaconPort NAME_BeaconPort
 
 #if !CPP
 // Circular dependency on Core vs UHT means we have to noexport these structs so tools can build
@@ -172,6 +171,29 @@ public:
 		return FString();
 	}
 
+	/**
+	* Friend function for using FUniqueNetIdWrapper as a hashable key
+	*/
+	friend inline uint32 GetTypeHash(FUniqueNetId const& Value)
+	{
+		// Reinterpret the first four bytes into a hash.
+		if (Value.GetSize() >= 4)
+		{
+			return (*((uint32*)Value.GetBytes()));
+		}
+		else
+		{
+			uint32 Hash = 0;
+			const uint8* InID = Value.GetBytes();
+			for (int32 ByteIndex = 0; ByteIndex < Value.GetSize(); ByteIndex++)
+			{
+				Hash |= InID[ByteIndex] << (8 * ByteIndex);
+			}
+
+			return Hash;
+		}
+	}
+
 	virtual ~FUniqueNetId() {}
 };
 
@@ -199,6 +221,10 @@ public:
 	{
 	}
 
+	virtual ~FUniqueNetIdWrapper()
+	{
+	}
+
 	/** Assignment operator */
 	FUniqueNetIdWrapper& operator=(const FUniqueNetIdWrapper& Other)
 	{
@@ -223,7 +249,7 @@ public:
 	{
 		return !(*this == Other);
 	}
-
+	
 	/** Convert this value to a string */
 	FString ToString() const
 	{
@@ -272,6 +298,23 @@ public:
 	const FUniqueNetId* operator->() const
 	{
 		return UniqueNetId.Get();
+	}
+
+	/**
+	* Friend function for using FUniqueNetIdWrapper as a hashable key
+	*/
+	friend inline uint32 GetTypeHash(FUniqueNetIdWrapper const& Value)
+	{
+		if (Value.IsValid())
+		{
+			return GetTypeHash(*Value);
+		}
+		else
+		{
+			// If we hit this, something went wrong and we have received an unhashable wrapper.
+			return INDEX_NONE;
+		}
+
 	}
 
 protected:

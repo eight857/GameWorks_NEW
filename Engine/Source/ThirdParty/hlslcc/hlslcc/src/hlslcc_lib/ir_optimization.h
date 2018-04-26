@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // This code is modified from that in the Mesa3D Graphics library available at
 // http://mesa3d.org/
@@ -44,6 +44,7 @@
 #define LOG_TO_LOG2        0x10
 #define MOD_TO_FRACT       0x20
 #define INT_DIV_TO_MUL_RCP 0x40
+#define ADD_MUL_TO_FMA	   0x80
 
 bool do_optimization_pass(exec_list *ir, _mesa_glsl_parse_state* state, bool bPerformGlobalDeadCodeRemoval);
 

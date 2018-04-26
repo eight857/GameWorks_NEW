@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -21,10 +21,13 @@ struct FRecastTileData
 	};
 
 	FRecastTileData();
-	FRecastTileData(NavNodeRef Ref, int32 TileDataSize, uint8* TileRawData, int32 TileCacheDataSize, uint8* TileCacheRawData);
+	FRecastTileData(int32 TileDataSize, uint8* TileRawData, int32 TileCacheDataSize, uint8* TileCacheRawData);
 	
-	NavNodeRef				TileRef;
-
+	// Location of attached tile
+	int32					X;					
+	int32					Y;					
+	int32					Layer;
+		
 	// Tile data
 	int32					TileDataSize;
 	TSharedPtr<FRawData>	TileRawData;
@@ -32,6 +35,9 @@ struct FRecastTileData
 	// Compressed tile cache layer 
 	int32					TileCacheDataSize;
 	TSharedPtr<FRawData>	TileCacheRawData;
+
+	// Whether this tile is attached to NavMesh
+	bool					bAttached;	
 };
 
 class dtNavMesh;
@@ -70,12 +76,6 @@ private:
 #if WITH_RECAST
 	void SerializeRecastData(FArchive& Ar, int32 NavMeshVersion);
 #endif//WITH_RECAST
-
-	
-	DEPRECATED(4.8, "AttachTiles is deprecated. Use the version takin a reference instead.")
-	TArray<uint32> AttachTiles(FPImplRecastNavMesh* NavMeshImpl);
-	DEPRECATED(4.8, "DetachTiles is deprecated. Use the version takin a reference instead.")
-	TArray<uint32> DetachTiles(FPImplRecastNavMesh* NavMeshImpl);
 
 private:
 	TArray<FRecastTileData> Tiles;

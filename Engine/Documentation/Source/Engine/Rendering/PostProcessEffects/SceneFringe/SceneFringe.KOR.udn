@@ -1,9 +1,16 @@
-﻿INTSourceChangelist:3108692
+﻿INTSourceChangelist:3782314
 Availability:Public
+Crumbs: %ROOT%
 Title:씬 프린지 (Scene Fringe)
-Crumbs: %ROOT%, Engine, Engine/Rendering/PostProcessEffects
 Description:실제 카메라 렌즈의 가장자리 부근에서 색이 전환되는 것을 시뮬레이션하는 색수차 효과입니다.
-Version: 4.9
+Type: Overview
+SkillLevel:Beginner
+Version:4.16
+Parent:Engine/Rendering/PostProcessEffects
+Order:9
+Tags:Post Process
+Topic-image:SceneFringe_topic.png
+
 
 
 [EXCERPT:SceneFringe_Desc]
@@ -26,7 +33,8 @@ Version: 4.9
 | **Fringe Intensity** | 프린지 강도 - 색 변환 정도를 조절하는 스케일 인수입니다. [INCLUDE:#Intensity] |
 | **Fringe Saturation** | 프린지 채도 - 변환된 색의 채도를 조절하는 스케일 인수입니다. 값이 낮을 수록 결과물이 무뎌지고, 높을 수록 색 변환이 훨씬 도드라집니다. |
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:Intensity]
 [REGION:imagetable]
 | ![Scene Fringe Intensity - 0](scenefringe_0.png)(w:240) | ![Scene Fringe Intensity - 1](scenefringe_1.png)(w:240) | ![Scene Fringe Intensity - 5](scenefringe_2.png)(w:240)
@@ -34,4 +42,5 @@ Version: 4.9
 | 0.0 | 1.0 | 5.0 |
 [/REGION]
 [/EXCERPT:Intensity]
--->
+
+[/COMMENT]

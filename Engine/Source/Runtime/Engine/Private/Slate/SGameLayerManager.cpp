@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Slate/SGameLayerManager.h"
 #include "Widgets/SOverlay.h"
@@ -14,7 +14,6 @@
 #include "Engine/UserInterfaceSettings.h"
 
 #include "Widgets/LayerManager/STooltipPresenter.h"
-#include "Widgets/Layout/SScissorRectBox.h"
 #include "Widgets/Layout/SDPIScaler.h"
 #include "Widgets/Layout/SPopup.h"
 #include "Widgets/Layout/SWindowTitleBarArea.h"
@@ -84,23 +83,10 @@ void SGameLayerManager::Construct(const SGameLayerManager::FArguments& InArgs)
 			]
 		];
 
-	if ( InArgs._UseScissor )
-	{
-		ChildSlot
-		[
-			SNew(SScissorRectBox)
-			[
-				DPIScaler
-			]
-		];
-	}
-	else
-	{
-		ChildSlot
-		[
-			DPIScaler
-		];
-	}
+	ChildSlot
+	[
+		DPIScaler
+	];
 
 	UGameEngine* GameEngine = Cast<UGameEngine>(GEngine);
 	if (GameEngine != nullptr)
@@ -131,6 +117,18 @@ void SGameLayerManager::Construct(const SGameLayerManager::FArguments& InArgs)
 const FGeometry& SGameLayerManager::GetViewportWidgetHostGeometry() const
 {
 	return WidgetHost->GetCachedGeometry();
+}
+
+const FGeometry& SGameLayerManager::GetPlayerWidgetHostGeometry(ULocalPlayer* Player) const
+{
+	TSharedPtr<FPlayerLayer> PlayerLayer = PlayerLayers.FindRef(Player);
+	if ( PlayerLayer.IsValid() )
+	{
+		return PlayerLayer->Widget->GetCachedGeometry();
+	}
+
+	static FGeometry Identity;
+	return Identity;
 }
 
 void SGameLayerManager::NotifyPlayerAdded(int32 PlayerIndex, ULocalPlayer* AddedPlayer)
@@ -166,20 +164,19 @@ void SGameLayerManager::RemoveWidgetForPlayer(ULocalPlayer* Player, TSharedRef<S
 
 void SGameLayerManager::ClearWidgetsForPlayer(ULocalPlayer* Player)
 {
-	TSharedPtr<FPlayerLayer>* PlayerLayerPtr = PlayerLayers.Find(Player);
-	if ( PlayerLayerPtr )
+	TSharedPtr<FPlayerLayer> PlayerLayer = PlayerLayers.FindRef(Player);
+	if ( PlayerLayer.IsValid() )
 	{
-		TSharedPtr<FPlayerLayer> PlayerLayer = *PlayerLayerPtr;
 		PlayerLayer->Widget->ClearChildren();
 	}
 }
 
 TSharedPtr<IGameLayer> SGameLayerManager::FindLayerForPlayer(ULocalPlayer* Player, const FName& LayerName)
 {
-	TSharedPtr<FPlayerLayer>* PlayerLayerPtr = PlayerLayers.Find(Player);
-	if ( PlayerLayerPtr )
+	TSharedPtr<FPlayerLayer> PlayerLayer = PlayerLayers.FindRef(Player);
+	if ( PlayerLayer.IsValid() )
 	{
-		return (*PlayerLayerPtr)->Layers.FindRef(LayerName);
+		return PlayerLayer->Layers.FindRef(LayerName);
 	}
 
 	return TSharedPtr<IGameLayer>();
@@ -213,15 +210,20 @@ void SGameLayerManager::ClearWidgets()
 {
 	PlayerCanvas->ClearChildren();
 
-	for(const auto& LayerIt : PlayerLayers)
+	// Potential for removed layers to impact the map, so need to
+	// remove & delete as separate steps
+	while (PlayerLayers.Num())
 	{
-		const TSharedPtr<FPlayerLayer>& Layer = LayerIt.Value;
+		const auto LayerIt = PlayerLayers.CreateIterator();
+		const TSharedPtr<FPlayerLayer> Layer = LayerIt.Value();
+
 		if (Layer.IsValid())
 		{
 			Layer->Slot = nullptr;
 		}
+
+		PlayerLayers.Remove(LayerIt.Key());
 	}
-	PlayerLayers.Reset();
 
 	WindowTitleBarContentStack.Empty();
 	bIsWindowTitleBarVisible = false;
@@ -235,11 +237,10 @@ void SGameLayerManager::Tick(const FGeometry& AllottedGeometry, const double InC
 	UpdateLayout();
 }
 
-int32 SGameLayerManager::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SGameLayerManager::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
-	FPlatformMisc::BeginNamedEvent(FColor::Green, "Paint: Game UI");
-	const int32 ResultLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
-	FPlatformMisc::EndNamedEvent();
+	SCOPED_NAMED_EVENT_TEXT("Paint: Game UI", FColor::Green);
+	const int32 ResultLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 	return ResultLayer;
 }
 
@@ -316,7 +317,8 @@ TSharedPtr<SGameLayerManager::FPlayerLayer> SGameLayerManager::FindOrCreatePlaye
 
 		// Create a new overlay widget to house any widgets we want to display for the player.
 		NewLayer->Widget = SNew(SOverlay)
-			.AddMetaData(StopNavigation);
+			.AddMetaData(StopNavigation)
+			.Clipping(EWidgetClipping::ClipToBoundsAlways);
 		
 		// Add the overlay to the player canvas, which we'll update every frame to match
 		// the dimensions of the player's split screen rect.
@@ -325,10 +327,7 @@ TSharedPtr<SGameLayerManager::FPlayerLayer> SGameLayerManager::FindOrCreatePlaye
 			.VAlign(VAlign_Fill)
 			.Expose(NewLayer->Slot)
 			[
-				SNew(SScissorRectBox)
-				[
-					NewLayer->Widget.ToSharedRef()
-				]
+				NewLayer->Widget.ToSharedRef()
 			];
 
 		PlayerLayerPtr = &PlayerLayers.Add(LocalPlayer, NewLayer);
@@ -392,8 +391,11 @@ void SGameLayerManager::AddOrUpdatePlayerLayers(const FGeometry& AllottedGeometr
 
 			FVector2D AspectRatioInset = GetAspectRatioInset(Player);
 
-			Size = ( Size * AllottedGeometry.GetLocalSize() - ( AspectRatioInset * 2.0f ) ) * InverseDPIScale;
-			Position = ( Position * AllottedGeometry.GetLocalSize() + AspectRatioInset ) * InverseDPIScale;
+			Position += AspectRatioInset;
+			Size -= (AspectRatioInset * 2.0f);
+
+			Size = Size * AllottedGeometry.GetLocalSize() * InverseDPIScale;
+			Position = Position * AllottedGeometry.GetLocalSize() * InverseDPIScale;
 
 			if (bIsWindowTitleBarVisible)
 			{
@@ -422,8 +424,9 @@ FVector2D SGameLayerManager::GetAspectRatioInset(ULocalPlayer* LocalPlayer) cons
 			FIntRect ViewRect = ViewInitOptions.GetViewRect();
 			FIntRect ConstrainedViewRect = ViewInitOptions.GetConstrainedViewRect();
 
-			Offset.X = ( ConstrainedViewRect.Min.X - ViewRect.Min.X );
-			Offset.Y = ( ConstrainedViewRect.Min.Y - ViewRect.Min.Y );
+			// Return normalized coordinates.
+			Offset.X = ( ConstrainedViewRect.Min.X - ViewRect.Min.X ) / (float)ViewRect.Width();
+			Offset.Y = ( ConstrainedViewRect.Min.Y - ViewRect.Min.Y ) / (float)ViewRect.Height();
 		}
 	}
 

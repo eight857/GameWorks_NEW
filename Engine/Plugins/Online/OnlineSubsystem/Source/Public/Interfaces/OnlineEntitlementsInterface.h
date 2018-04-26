@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -37,6 +37,9 @@ struct FOnlineEntitlement
 		, ConsumedCount(0)
 	{}
 
+	virtual ~FOnlineEntitlement()
+	{}
+
 	/**
 	 * @return Any additional data associated with the entitlement
  	 */
@@ -72,6 +75,8 @@ typedef FOnQueryEntitlementsComplete::FDelegate FOnQueryEntitlementsCompleteDele
 class IOnlineEntitlements
 {
 public:
+	virtual ~IOnlineEntitlements() { }
+
 	/**
 	 * Checks for and retrieves a single cached entitlement for a user
 	 *

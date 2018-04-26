@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 WeightedRandomSampler.h: 
@@ -28,6 +28,7 @@ struct ENGINE_API FWeightedRandomSampler
 {
 public:
 	FWeightedRandomSampler();
+	virtual ~FWeightedRandomSampler() { }
 
 	/** Gets the weight of all elements and returns their sum. */
 	virtual float GetWeights(TArray<float>& OutWeights) = 0;
@@ -35,7 +36,7 @@ public:
 	/**
 	Takes two random values (0...1) and returns the corresponding element index.
 	*/
-	FORCEINLINE int32 GetEntryIndex(float R0, float R1)
+	FORCEINLINE int32 GetEntryIndex(float R0, float R1)const
 	{
 		int32 Idx = R0 * Prob.Num();
 		return R1 < Prob[Idx] ? Idx : Alias[Idx];

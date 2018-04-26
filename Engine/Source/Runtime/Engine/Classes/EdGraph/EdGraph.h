@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -136,9 +136,18 @@ public:
 	 * a FGraphNodeCreator builder.
 	 */
 	template <typename NodeClass>
+	DEPRECATED(4.17, "Use CreateIntermediateNode instead.")
 	NodeClass* CreateBlankNode()
 	{
-		return (NodeClass*)CreateNode(NodeClass::StaticClass());
+		return CreateIntermediateNode<NodeClass>();
+	}
+
+	template <typename NodeClass>
+	NodeClass* CreateIntermediateNode()
+	{
+		NodeClass* Node = (NodeClass*)CreateNode(NodeClass::StaticClass());
+		FSetAsIntermediateNode SetAsIntermediate(Node);
+		return Node;
 	}
 
 	/** 
@@ -161,7 +170,7 @@ public:
 	bool RemoveNode( UEdGraphNode* NodeToRemove );
 
 	/** Signal to listeners that the graph has changed */
-	void NotifyGraphChanged();
+	virtual void NotifyGraphChanged();
 
 	/** 
 	 * Move all nodes from this graph to another graph
@@ -213,7 +222,7 @@ public:
 #endif
 
 protected:
-	void NotifyGraphChanged( const FEdGraphEditAction& Action );
+	virtual void NotifyGraphChanged( const FEdGraphEditAction& Action );
 
 	/** 
 	 * Creates an empty node in this graph. Use FGraphNodeCreator above

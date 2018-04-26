@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -159,6 +159,9 @@ public:
 		/** Called when the user changes the clamp range */
 		SLATE_EVENT( FOnRangeChanged, OnClampRangeChanged )
 
+		/** Called to get the nearest key */
+		SLATE_EVENT( FOnGetNearestKey, OnGetNearestKey )
+
 		/** Called when the user has begun scrubbing */
 		SLATE_EVENT( FSimpleDelegate, OnBeginScrubbing )
 
@@ -207,6 +210,7 @@ public:
 	/** Updates the breadcrumbs from a change in the shot filter state. */
 	void UpdateBreadcrumbs();
 	void ResetBreadcrumbs();
+	void PopBreadcrumb();
 
 	/** Step to next and previous keyframes */
 	void StepToNextKey();
@@ -304,13 +308,22 @@ private:
 	/** Makes the snapping menu for the toolbar. */
 	TSharedRef<SWidget> MakeSnapMenu();
 
-	/** Makes the auto-key menu for the toolbar. */
-	TSharedRef<SWidget> MakeAutoKeyMenu();
+	/** Makes the auto-change menu for the toolbar. */
+	TSharedRef<SWidget> MakeAutoChangeMenu();
 
-public:
+	/** Makes the allow edits menu for the toolbar. */
+	TSharedRef<SWidget> MakeAllowEditsMenu();
+
+	/** Makes the playback speed menu for the toolbar. */
+	void FillPlaybackSpeedMenu(FMenuBuilder& InMenuBuilder);
+
+public:	
 
 	/** Makes a time range widget with the specified inner content */
 	TSharedRef<SWidget> MakeTimeRange(const TSharedRef<SWidget>& InnerContent, bool bShowWorkingRange, bool bShowViewRange, bool bShowPlaybackRange);
+
+	/** Gets the top time sliders widget. */
+	TSharedPtr<ITimeSlider> GetTopTimeSliderWidget() const;
 
 private:
 
@@ -420,6 +433,9 @@ private:
 
 	EVisibility GetDebugVisualizerVisibility() const;
 	
+	void SetPlaybackSpeed(float InPlaybackSpeed);
+	float GetPlaybackSpeed() const;
+
 public:
 	/** On Paste Command */
 	void OnPaste();
@@ -468,6 +484,9 @@ private:
 
 	/** The main sequencer interface */
 	TWeakPtr<FSequencer> SequencerPtr;
+
+	/** The top time slider widget */
+	TSharedPtr<ITimeSlider> TopTimeSlider;
 
 	/** Cached settings provided to the sequencer itself on creation */
 	USequencerSettings* Settings;

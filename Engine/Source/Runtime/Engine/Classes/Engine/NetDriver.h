@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 //
 // Base class of a network driver attached to an active or pending level.
@@ -12,6 +12,7 @@
 #include "UObject/CoreNet.h"
 #include "GameFramework/WorldSettings.h"
 #include "PacketHandler.h"
+#include "Channel.h"
 
 #include "NetDriver.generated.h"
 
@@ -28,6 +29,26 @@ class StatelessConnectHandlerComponent;
 class UNetConnection;
 struct FNetworkObjectInfo;
 
+extern ENGINE_API TAutoConsoleVariable<int32> CVarNetAllowEncryption;
+
+// Delegates
+
+#if !UE_BUILD_SHIPPING
+/**
+ * Delegate for hooking ProcessRemoteFunction (used by NetcodeUnitTest)
+ *
+ * @param Actor				The actor the RPC will be called in
+ * @param Function			The RPC to call
+ * @param Parameters		The parameters data blob
+ * @param OutParms			Out parameter information (irrelevant for RPC's)
+ * @param Stack				The script stack
+ * @param SubObject			The sub-object the RPC is being called in (if applicable)
+ * @param bBlockSendRPC		Whether or not to block sending of the RPC (defaults to false)
+ */
+DECLARE_DELEGATE_SevenParams(FOnSendRPC, AActor* /*Actor*/, UFunction* /*Function*/, void* /*Parameters*/,
+									FOutParmRec* /*OutParms*/, FFrame* /*Stack*/, UObject* /*SubObject*/, bool& /*bBlockSendRPC*/);
+#endif
+
 //
 // Whether to support net lag and packet loss testing.
 //
@@ -40,18 +61,54 @@ struct ENGINE_API FPacketSimulationSettings
 {
 	GENERATED_USTRUCT_BODY()
 
+	/**
+	 * When set, will cause calls to FlushNet to drop packets.
+	 * Value is treated as % of packets dropped (i.e. 0 = None, 100 = All).
+	 * No general pattern / ordering is guaranteed.
+	 * Clamped between 0 and 100.
+	 *
+	 * Works with all other settings.
+	 */
 	UPROPERTY(EditAnywhere, Category="Simulation Settings")
 	int32	PktLoss;
 
+	/**
+	 * When set, will cause calls to FlushNet to change ordering of packets at random.
+	 * Value is treated as a bool (i.e. 0 = False, anything else = True).
+	 * This works by randomly selecting packets to be delayed until a subsequent call to FlushNet.
+	 *
+	 * Takes precedence over PktDup and PktLag.
+	 */
 	UPROPERTY(EditAnywhere, Category="Simulation Settings")
 	int32	PktOrder;
 
+	/**
+	 * When set, will cause calls to FlushNet to duplicate packets.
+	 * Value is treated as % of packets duplicated (i.e. 0 = None, 100 = All).
+	 * No general pattern / ordering is guaranteed.
+	 * Clamped between 0 and 100.
+	 *
+	 * Cannot be used with PktOrder or PktLag.
+	 */
 	UPROPERTY(EditAnywhere, Category="Simulation Settings")
 	int32	PktDup;
 	
+	/**
+	 * When set, will cause calls to FlushNet to delay packets.
+	 * Value is treated as millisecond lag.
+	 *
+	 * Cannot be used with PktOrder.
+	 */
 	UPROPERTY(EditAnywhere, Category="Simulation Settings")
 	int32	PktLag;
 	
+	/**
+	 * When set, will cause PktLag to use variable lag instead of constant.
+	 * Value is treated as millisecond lag range (e.g. -GivenVariance <= 0 <= GivenVariance).
+	 * Clamped between 0 and 100.
+	 *
+	 * Can only be used when PktLag is enabled.
+	 */
 	UPROPERTY(EditAnywhere, Category="Simulation Settings")
 	int32	PktLagVariance;
 
@@ -124,6 +181,7 @@ struct FCompareFActorPriority
 
 struct FActorDestructionInfo
 {
+	TWeakObjectPtr<ULevel>		Level;
 	TWeakObjectPtr<UObject>		ObjOuter;
 	FVector			DestroyedPosition;
 	FNetworkGUID	NetGUID;
@@ -197,6 +255,14 @@ public:
 	float ConnectionTimeout;
 
 	/**
+	* A multiplier that is applied to the above values when we are running with unoptimized builds (debug)
+	* or data (uncooked). This allows us to retain normal timeout behavior while debugging without resorting
+	* to the nuclear 'notimeouts' option or bumping the values above. If ==0 multiplier = 1
+	*/
+	UPROPERTY(Config)
+	float TimeoutMultiplierForUnoptimizedBuilds;
+
+	/**
 	 * If true, ignore timeouts completely.  Should be used only in development
 	 */
 	UPROPERTY(Config)
@@ -217,10 +283,15 @@ public:
 	/** Reference to the PacketHandler component, for managing stateless connection handshakes */
 	TWeakPtr<StatelessConnectHandlerComponent> StatelessConnectComponent;
 
+	/** The analytics provider used by the packet handler */
+	TSharedPtr<class IAnalyticsProvider> AnalyticsProvider;
 
 	/** World this net driver is associated with */
 	UPROPERTY()
 	class UWorld* World;
+
+	UPROPERTY()
+	class UPackage* WorldPackage;
 
 	/** @todo document */
 	TSharedPtr< class FNetGUIDCache > GuidCache;
@@ -243,6 +314,15 @@ public:
 	UPROPERTY(Config)
 	FName NetDriverName;
 
+	/** The UChannel classes that should be used under this net driver */
+	UClass* ChannelClasses[CHTYPE_MAX];
+	
+	/** @return true if the specified channel type exists. */
+	FORCEINLINE bool IsKnownChannelType(int32 Type)
+	{
+		return Type >= 0 && Type < CHTYPE_MAX && ChannelClasses[Type] != nullptr;
+	}
+
 	/** Change the NetDriver's NetDriverName. This will also reinit packet simulation settings so that settings can be qualified to a specific driver. */
 	void SetNetDriverName(FName NewNetDriverNamed);
 
@@ -262,8 +342,10 @@ public:
 	bool						bIsPeer;
 	/** @todo document */
 	bool						ProfileStats;
-	/** Timings for Socket::SendTo() and Socket::RecvFrom() */
-	int32						SendCycles, RecvCycles;
+	/** If true, it assumes the stats are being set by server data */
+	bool						bSkipLocalStats;
+	/** Timings for Socket::SendTo() */
+	int32						SendCycles;
 	/** Stats for network perf */
 	uint32						InBytesPerSecond;
 	/** todo document */
@@ -334,6 +416,7 @@ public:
 	/** Dumps next net update's relevant actors when true*/
 	bool						DebugRelevantActors;
 
+	/** These are debug list of actors. They are using TWeakObjectPtr so that they do not affect GC performance since they are rarely in use (DebugRelevantActors) */
 	TArray< TWeakObjectPtr<AActor> >	LastPrioritizedActors;
 	TArray< TWeakObjectPtr<AActor> >	LastRelevantActors;
 	TArray< TWeakObjectPtr<AActor> >	LastSentActors;
@@ -348,6 +431,11 @@ public:
 	 *  FActorDestructionInfos also.
 	 */
 	TMap<FNetworkGUID, FActorDestructionInfo>	DestroyedStartupOrDormantActors;
+
+	/** The server adds an entry into this map for every startup actor that has been renamed, and will
+	 *  always map from current name to original name
+	 */
+	TMap<FName, FName>	RenamedStartupActors;
 
 	/** Maps FRepChangedPropertyTracker to active objects that are replicating properties */
 	TMap< TWeakObjectPtr< UObject >, TSharedPtr< FRepChangedPropertyTracker > >	RepChangedPropertyTrackerMap;
@@ -375,11 +463,17 @@ public:
 	TMap< FNetworkGUID, TSet< FObjectReplicator* > >	GuidToReplicatorMap;
 	int32												TotalTrackedGuidMemoryBytes;
 	TSet< FObjectReplicator* >							UnmappedReplicators;
+	TSet< FObjectReplicator* >							AllOwnedReplicators;
 
 	/** Handles to various registered delegates */
 	FDelegateHandle TickDispatchDelegateHandle;
 	FDelegateHandle TickFlushDelegateHandle;
 	FDelegateHandle PostTickFlushDelegateHandle;
+
+#if !UE_BUILD_SHIPPING
+	/** Delegate for hooking ProcessRemoteFunction */
+	FOnSendRPC	SendRPCDel;
+#endif
 
 	/** Tracks the amount of time spent during the current frame processing queued bunches. */
 	float ProcessQueuedBunchesCurrentFrameMilliseconds;
@@ -389,6 +483,9 @@ public:
 	 * causes the dialog to be shown/hidden as needed
 	 */
 	void UpdateStandbyCheatStatus(void);
+
+	/** Sets the analytics provider */
+	void SetAnalyticsProvider(TSharedPtr<class IAnalyticsProvider> InProvider) { AnalyticsProvider = InProvider; }
 
 #if DO_ENABLE_NET_TEST
 	FPacketSimulationSettings	PacketSimulationSettings;
@@ -579,6 +676,7 @@ public:
 	bool HandleNetDebugTextCommand( const TCHAR* Cmd, FOutputDevice& Ar );
 	bool HandleNetDisconnectCommand( const TCHAR* Cmd, FOutputDevice& Ar );
 	bool HandleNetDumpServerRPCCommand( const TCHAR* Cmd, FOutputDevice& Ar );
+	bool HandleNetDumpDormancy( const TCHAR* Cmd, FOutputDevice& Ar );
 #endif
 
 	/** Flushes actor from NetDriver's dormancy list, but does not change any state on the Actor itself */
@@ -587,8 +685,14 @@ public:
 	/** Forces properties on this actor to do a compare for one frame (rather than share shadow state) */
 	ENGINE_API void ForcePropertyCompare( AActor* Actor );
 
+	/** Force this actor to be relevant for at least one update */
+	ENGINE_API void ForceActorRelevantNextUpdate(AActor* Actor);
+
 	/** Called when a spawned actor is destroyed. */
 	ENGINE_API virtual void NotifyActorDestroyed( AActor* Actor, bool IsSeamlessTravel=false );
+
+	/** Called when an actor is renamed. */
+	ENGINE_API virtual void NotifyActorRenamed(AActor* Actor, FName PreviousName);
 
 	ENGINE_API virtual void NotifyStreamingLevelUnload( ULevel* );
 
@@ -628,7 +732,9 @@ public:
 	/**
 	 * Get the world associated with this net driver
 	 */
-	class UWorld* GetWorld() const override { return World; }
+	virtual class UWorld* GetWorld() const override final { return World; }
+
+	class UPackage* GetWorldPackage() const { return WorldPackage; }
 
 	/** Called during seamless travel to clear all state that was tied to the previous game world (actor lists, etc) */
 	ENGINE_API virtual void ResetGameWorldState();
@@ -671,17 +777,32 @@ public:
 	/** Returns the object that manages the list of replicated UObjects. */
 	ENGINE_API const FNetworkObjectList& GetNetworkObjectList() const { return *NetworkObjects; }
 
-	/** Get the network object matching the given Actor, or null if not found. */
-	ENGINE_API const FNetworkObjectInfo* GetNetworkObjectInfo(const AActor* InActor) const;
+	/**
+     *	Get the network object matching the given Actor.
+	 *	If the Actor is not present in the NetworkObjectInfo list, it will be added.
+	 */
+	ENGINE_API FNetworkObjectInfo* FindOrAddNetworkObjectInfo(const AActor* InActor);
 
-	/** Get the network object matching the given Actor, or null if not found. */
-	ENGINE_API FNetworkObjectInfo* GetNetworkObjectInfo(const AActor* InActor);
+	/** Get the network object matching the given Actor. */
+	ENGINE_API FNetworkObjectInfo* FindNetworkObjectInfo(const AActor* InActor);
+	ENGINE_API const FNetworkObjectInfo* FindNetworkObjectInfo(const AActor* InActor) const
+	{
+		return const_cast<UNetDriver*>(this)->FindNetworkObjectInfo(InActor);
+	}
 
-	DEPRECATED(4.16, "GetNetworkActor is deprecated.  Use GetNetworkObjectInfo instead.")
-	ENGINE_API const FNetworkObjectInfo* GetNetworkActor( const AActor* InActor ) const;
+	DEPRECATED(4.19, "GetNetworkObjectInfo is deprecated. Use FindNetworkObjectInfo instead.")
+	ENGINE_API FNetworkObjectInfo* GetNetworkObjectInfo(const AActor* InActor)
+	{
+		// Use FindOrAdd to preserve old behavior.
+		return FindOrAddNetworkObjectInfo(InActor);
+	}
 
-	DEPRECATED(4.16, "GetNetworkActor is deprecated.  Use GetNetworkObjectInfo instead.")
-	ENGINE_API FNetworkObjectInfo* GetNetworkActor( const AActor* InActor );
+	DEPRECATED(4.19, "GetNetworkObjectInfo is deprecated. Use FindNetworkObjectInfo instead.")
+	ENGINE_API const FNetworkObjectInfo* GetNetworkObjectInfo(const AActor* InActor) const
+	{
+		// Use FindOrAdd to preserve old behavior.
+		return const_cast<UNetDriver*>(this)->FindOrAddNetworkObjectInfo(InActor);
+	}
 
 	/**
 	 * Returns whether adaptive net frequency is enabled. If enabled, update frequency is allowed to ramp down to MinNetUpdateFrequency for an actor when no replicated properties have changed.
@@ -726,7 +847,14 @@ protected:
 	int32 ServerReplicateActors_ProcessPrioritizedActors( UNetConnection* Connection, const TArray<FNetViewer>& ConnectionViewers, FActorPriority** PriorityActors, const int32 FinalSortedCount, int32& OutUpdated );
 #endif
 
+	/** Used to handle any NetDriver specific cleanup once a level has been removed from the world. */
+	ENGINE_API virtual void OnLevelRemovedFromWorld(class ULevel* Level, class UWorld* World);
+
+	/** Handle that tracks OnLevelRemovedFromWorld. */
+	FDelegateHandle OnLevelRemovedFromWorldHandle;
+
 private:
+
 	/** Stores the list of objects to replicate into the replay stream. This should be a TUniquePtr, but it appears the generated.cpp file needs the full definition of the pointed-to type. */
 	TSharedPtr<FNetworkObjectList> NetworkObjects;
 

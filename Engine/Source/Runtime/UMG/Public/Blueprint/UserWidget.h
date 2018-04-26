@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -51,9 +51,9 @@ public:
 	/** Don't ever use this constructor.  Needed for code generation. */
 	FPaintContext();
 
-	FPaintContext(const FGeometry& InAllottedGeometry, const FSlateRect& InMyClippingRect, FSlateWindowElementList& InOutDrawElements, const int32 InLayerId, const FWidgetStyle& InWidgetStyle, const bool bInParentEnabled)
+	FPaintContext(const FGeometry& InAllottedGeometry, const FSlateRect& InMyCullingRect, FSlateWindowElementList& InOutDrawElements, const int32 InLayerId, const FWidgetStyle& InWidgetStyle, const bool bInParentEnabled)
 		: AllottedGeometry(InAllottedGeometry)
-		, MyClippingRect(InMyClippingRect)
+		, MyCullingRect(InMyCullingRect)
 		, OutDrawElements(InOutDrawElements)
 		, LayerId(InLayerId)
 		, WidgetStyle(InWidgetStyle)
@@ -67,14 +67,14 @@ public:
 	{
 		FPaintContext* Ptr = this;
 		Ptr->~FPaintContext();
-		new(Ptr) FPaintContext(Other.AllottedGeometry, Other.MyClippingRect, Other.OutDrawElements, Other.LayerId, Other.WidgetStyle, Other.bParentEnabled);
+		new(Ptr) FPaintContext(Other.AllottedGeometry, Other.MyCullingRect, Other.OutDrawElements, Other.LayerId, Other.WidgetStyle, Other.bParentEnabled);
 		Ptr->MaxLayer = Other.MaxLayer;
 	}
 
 public:
 
 	const FGeometry& AllottedGeometry;
-	const FSlateRect& MyClippingRect;
+	const FSlateRect& MyCullingRect;
 	FSlateWindowElementList& OutDrawElements;
 	int32 LayerId;
 	const FWidgetStyle& WidgetStyle;
@@ -109,7 +109,7 @@ public:
 class UUMGSequencePlayer;
 
 /** Describes playback modes for UMG sequences. */
-UENUM()
+UENUM(BlueprintType)
 namespace EUMGSequencePlayMode
 {
 	enum Type
@@ -118,7 +118,7 @@ namespace EUMGSequencePlayMode
 		Forward,
 		/** Animation plays and loops from the end to the beginning. */
 		Reverse,
-		/** Animation plays from the begging to the end and then from the end to beginning. */
+		/** Animation plays from the beginning to the end and then from the end to the beginning. */
 		PingPong,
 	};
 }
@@ -289,8 +289,7 @@ public:
 	 * Gets the player controller associated with this UI.
 	 * @return The player controller that owns the UI.
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintCosmetic, Category="Player")
-	class APlayerController* GetOwningPlayer() const;
+	class APlayerController* GetOwningPlayer() const override;
 
 	/**
 	 * Sets the local player associated with this UI via PlayerController reference.
@@ -305,6 +304,23 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintCosmetic, Category="Player")
 	class APawn* GetOwningPlayerPawn() const;
+
+	/**
+	 * Get the owning player's PlayerState.
+	 *
+	 * @return const APlayerState*
+	 */
+	template <class TPlayerState = APlayerState>
+	TPlayerState* GetOwningPlayerState(bool bChecked = false) const
+	{
+		if (auto Controller = GetOwningPlayer())
+		{
+			return !bChecked ? Cast<TPlayerState>(Controller->PlayerState) :
+			                   CastChecked<TPlayerState>(Controller->PlayerState, ECastCheckedType::NullAllowed);
+		}
+
+		return nullptr;
+	}
 
 	/**
 	 * Called by both the game and the editor.  Allows users to run initial setup for their widgets to better preview
@@ -344,6 +360,9 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category="User Interface")
 	void Tick(FGeometry MyGeometry, float InDeltaTime);
 
+	/**
+	 * 
+	 */
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category="User Interface | Painting")
 	void OnPaint(UPARAM(ref) FPaintContext& Context) const;
 
@@ -370,6 +389,24 @@ public:
 	 */
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category="Input")
 	void OnFocusLost(FFocusEvent InFocusEvent);
+
+	/**
+	 * If focus is gained on on this widget or on a child widget and this widget is added
+	 * to the focus path, and wasn't previously part of it, this event is called.
+	 *
+	 * @param  InFocusEvent  FocusEvent
+	 */
+	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category="Input")
+	void OnAddedToFocusPath(FFocusEvent InFocusEvent);
+
+	/**
+	 * If focus is lost on on this widget or on a child widget and this widget is
+	 * no longer part of the focus path.
+	 *
+	 * @param  InFocusEvent  FocusEvent
+	 */
+	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category="Input")
+	void OnRemovedFromFocusPath(FFocusEvent InFocusEvent);
 
 	/**
 	 * Called after a character is entered while this widget has focus
@@ -575,15 +612,6 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category="Drag and Drop")
 	bool OnDrop(FGeometry MyGeometry, FPointerEvent PointerEvent, UDragDropOperation* Operation);
 
-	UFUNCTION(BlueprintImplementableEvent, meta = ( DeprecatedFunction, DeprecationMessage = "Use OnKeyDown() instead" ), Category = "Gamepad Input")
-	FEventReply OnControllerButtonPressed(FGeometry MyGeometry, FControllerEvent ControllerEvent);
-
-	UFUNCTION(BlueprintImplementableEvent, meta = ( DeprecatedFunction, DeprecationMessage = "Use OnKeyUp() instead" ), Category = "Gamepad Input")
-	FEventReply OnControllerButtonReleased(FGeometry MyGeometry, FControllerEvent ControllerEvent);
-
-	UFUNCTION(BlueprintImplementableEvent, meta = ( DeprecatedFunction, DeprecationMessage = "Use OnAnalogValueChanged() instead" ), Category = "Gamepad Input")
-	FEventReply OnControllerAnalogValueChanged(FGeometry MyGeometry, FControllerEvent ControllerEvent);
-
 	/**
 	 * Called when the user performs a gesture on trackpad. This event is bubbled.
 	 *
@@ -630,6 +658,24 @@ public:
 	 */
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category="Touch Input")
 	FEventReply OnMotionDetected(FGeometry MyGeometry, FMotionEvent InMotionEvent);
+
+	/**
+	 * Called when mouse capture is lost if it was owned by this widget.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category="Touch Input")
+	void OnMouseCaptureLost();
+
+	/**
+	 * Cancels any pending Delays or timer callbacks for this widget.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Delay")
+	void CancelLatentActions();
+
+	/**
+	* Cancels any pending Delays or timer callbacks for this widget, and stops all active animations on the widget.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Delay")
+	void StopAnimationsAndLatentActions();
 
 public:
 
@@ -705,8 +751,16 @@ public:
 	 * 
 	 * @param The name of the animation to stop
 	 */
-	UFUNCTION(BlueprintCallable, BlueprintCosmetic, Category="User Interface|Animation")
+	UFUNCTION(BlueprintCallable, Category="User Interface|Animation")
 	void StopAnimation(const UWidgetAnimation* InAnimation);
+
+	/**
+	 * Stop All actively running animations.
+	 * 
+	 * @param The name of the animation to stop
+	 */
+	UFUNCTION(BlueprintCallable, Category="User Interface|Animation")
+	void StopAllAnimations();
 
 	/**
 	 * Pauses an already running animation in this widget
@@ -766,6 +820,14 @@ public:
 	*/
 	UFUNCTION(BlueprintCallable, BlueprintCosmetic, Category = "User Interface|Animation")
 	void ReverseAnimation(const UWidgetAnimation* InAnimation);
+
+	/**
+	 * returns true if the animation is currently playing forward, false otherwise.
+	 *
+	 * @param InAnimation The playing animation that we want to know about
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintCosmetic, Category = "User Interface|Animation")
+	bool IsAnimationPlayingForward(const UWidgetAnimation* InAnimation);
 
 	/** Called when a sequence player is finished playing an animation */
 	void OnAnimationFinishedPlaying(UUMGSequencePlayer& Player );
@@ -837,13 +899,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Appearance")
 	FMargin Padding;
 
-	UPROPERTY()
-	bool bSupportsKeyboardFocus_DEPRECATED;
-
-	/** Setting this flag to true, allows this widget to accept focus when clicked, or when navigated to. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
-	bool bIsFocusable;
-
 	/** All the sequence players currently playing */
 	UPROPERTY(Transient)
 	TArray<UUMGSequencePlayer*> ActiveSequencePlayers;
@@ -851,12 +906,6 @@ public:
 	/** List of sequence players to cache and clean up when safe */
 	UPROPERTY(Transient)
 	TArray<UUMGSequencePlayer*> StoppedSequencePlayers;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	bool bStopAction;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	int32 Priority;
 
 private:
 	/** Stores the widgets being assigned to named slots */
@@ -892,18 +941,34 @@ public:
 
 #endif
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	int32 Priority;
+
+	UPROPERTY()
+	uint8 bSupportsKeyboardFocus_DEPRECATED:1;
+
+	/** Setting this flag to true, allows this widget to accept focus when clicked, or when navigated to. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Interaction")
+	uint8 bIsFocusable : 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	uint8 bStopAction : 1;
+
 	/** If a widget doesn't ever need to tick the blueprint, setting this to false is an optimization. */
 	UPROPERTY()
-	uint32 bCanEverTick : 1;
+	uint8 bCanEverTick : 1;
 
 	/** If a widget doesn't ever need to do custom painting in the blueprint, setting this to false is an optimization. */
 	UPROPERTY()
-	uint32 bCanEverPaint : 1;
+	uint8 bCanEverPaint : 1;
 
 protected:
 
 	/** Has this widget been initialized by its class yet? */
-	uint32 bInitialized : 1;
+	uint8 bInitialized : 1;
+
+	/** If we're stopping all animations, don't allow new animations to be created as side-effects. */
+	uint8 bStoppingAllAnimations : 1;
 
 public:
 	/**
@@ -911,7 +976,7 @@ public:
 	 * initialization logic for widgets, because these widgets have already been initialized.
 	 */
 	UPROPERTY()
-	uint32 bCookedWidgetTree : 1;
+	uint8 bCookedWidgetTree : 1;
 
 protected:
 
@@ -941,10 +1006,13 @@ protected:
 
 	virtual bool NativeIsInteractable() const;
 	virtual bool NativeSupportsKeyboardFocus() const;
+	virtual bool NativeSupportsCustomNavigation() const { return false; }
 
 	virtual FReply NativeOnFocusReceived( const FGeometry& InGeometry, const FFocusEvent& InFocusEvent );
 	virtual void NativeOnFocusLost( const FFocusEvent& InFocusEvent );
 	virtual void NativeOnFocusChanging(const FWeakWidgetPath& PreviousFocusPath, const FWidgetPath& NewWidgetPath, const FFocusEvent& InFocusEvent);
+	virtual void NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent);
+	virtual void NativeOnRemovedFromFocusPath(const FFocusEvent& InFocusEvent);
 	virtual FNavigationReply NativeOnNavigation(const FGeometry& MyGeometry, const FNavigationEvent& InNavigationEvent, const FNavigationReply& InDefaultReply);
 	virtual FReply NativeOnKeyChar( const FGeometry& InGeometry, const FCharacterEvent& InCharEvent );
 	virtual FReply NativeOnPreviewKeyDown( const FGeometry& InGeometry, const FKeyEvent& InKeyEvent );
@@ -971,6 +1039,8 @@ protected:
 	virtual FReply NativeOnTouchEnded( const FGeometry& InGeometry, const FPointerEvent& InGestureEvent );
 	virtual FReply NativeOnMotionDetected( const FGeometry& InGeometry, const FMotionEvent& InMotionEvent );
 	virtual FCursorReply NativeOnCursorQuery( const FGeometry& InGeometry, const FPointerEvent& InCursorEvent );
+	virtual FNavigationReply NativeOnNavigation(const FGeometry& InGeometry, const FNavigationEvent& InNavigationEvent);
+	virtual void NativeOnMouseCaptureLost();
 
 protected:
 	bool ShouldSerializeWidgetTree(const class ITargetPlatform* TargetPlatform) const;
@@ -1053,6 +1123,11 @@ private:
 
 	static bool bTemplateInitializing;
 	static uint32 bInitializingFromWidgetTree;
+
+protected:
+
+	PROPERTY_BINDING_IMPLEMENTATION(FLinearColor, ColorAndOpacity);
+	PROPERTY_BINDING_IMPLEMENTATION(FSlateColor, ForegroundColor);
 };
 
 #define LOCTEXT_NAMESPACE "UMG"

@@ -1,17 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SynthComponents/SynthComponentGranulator.h"
 #include "UObject/Package.h"
 
 UGranularSynth::UGranularSynth(const FObjectInitializer& ObjInitializer)
 	: Super(ObjInitializer)
-	, SoundWaveCopy(nullptr)
-	, PendingSoundWaveSet(nullptr)
-	, bTransferPendingToSound(false)
 	, bIsLoaded(false)
 	, bRegistered(false)
 {
-
+	PrimaryComponentTick.bCanEverTick = true;
 }
 
 UGranularSynth::~UGranularSynth()
@@ -19,14 +16,16 @@ UGranularSynth::~UGranularSynth()
 
 }
 
-void UGranularSynth::Init(const int32 SampleRate)
+bool UGranularSynth::Init(int32& SampleRate)
 {
 	NumChannels = 2;
+	SoundWaveLoader.Init(GetAudioDevice());
+	return true;
 }
 
-void UGranularSynth::OnGenerateAudio(TArray<float>& OutAudio)
+void UGranularSynth::OnGenerateAudio(float* OutAudio, int32 NumSamples)
 {
-	const int32 NumFrames = OutAudio.Num() / NumChannels;
+	const int32 NumFrames = NumSamples / NumChannels;
 	GranularSynth.Generate(OutAudio, NumFrames);
 }
 
@@ -40,18 +39,9 @@ void UGranularSynth::OnRegister()
 		SetComponentTickEnabled(true);
 		RegisterComponent();
 
-		FAudioDevice* AudioDevice = GetAudioDevice();
-		if (AudioDevice)
+		if (FAudioDevice* AudioDevice = GetAudioDevice())
 		{
-			GranularSynth.Init(AudioDevice, 500);
-
-			if (SoundWave)
-			{
-				SoundWaveCopy = DuplicateObject<USoundWave>(SoundWave, GetTransientPackage());
-				SoundWaveCopy->AddToRoot();
-
-				GranularSynth.LoadSoundWave(SoundWaveCopy);
-			}
+			GranularSynth.Init(AudioDevice->GetSampleRate(), 500);
 		}
 	}
 }
@@ -59,12 +49,6 @@ void UGranularSynth::OnRegister()
 void UGranularSynth::OnUnregister()
 {
 	Super::OnUnregister();
-
-	if (IsValid(SoundWaveCopy))
-	{
-		SoundWaveCopy->RemoveFromRoot();
-		SoundWaveCopy = nullptr;
-	}
 }
 
 void UGranularSynth::SetAttackTime(const float AttackTimeMsec)
@@ -115,32 +99,29 @@ void UGranularSynth::NoteOff(const float Note, const bool bKill)
 	});
 }
 
-
 void UGranularSynth::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
 {
-	if (bTransferPendingToSound)
+	if (SoundWaveLoader.Update())
 	{
-		bTransferPendingToSound = false;
-		check(PendingSoundWaveSet);
-		if (SoundWaveCopy)
+		Audio::FSampleBuffer SampleBuffer;
+		SoundWaveLoader.GetSampleBuffer(SampleBuffer);
+
+		SynthCommand([this, SampleBuffer]()
 		{
-			SoundWaveCopy->RemoveFromRoot();
-		}
-		SoundWaveCopy = PendingSoundWaveSet;
-		PendingSoundWaveSet = nullptr;
+			GranularSynth.LoadSampleBuffer(SampleBuffer);
+
+			// Clear the pending sound waves queue since we've now loaded a new buffer of data
+			SoundWaveLoader.Reset();
+		});
 	}
 }
 
 void UGranularSynth::SetSoundWave(USoundWave* InSoundWave)
 {
-	PendingSoundWaveSet = DuplicateObject<USoundWave>(InSoundWave, GetTransientPackage());
-	PendingSoundWaveSet->AddToRoot();
-
-	SynthCommand([this]()
-	{	
-		GranularSynth.LoadSoundWave(PendingSoundWaveSet);
-		bTransferPendingToSound = true;
-	});
+	if (InSoundWave)
+	{
+		SoundWaveLoader.LoadSoundWave(InSoundWave);
+	}
 }
 
 void UGranularSynth::SetGrainsPerSecond(const float GrainsPerSecond)
@@ -236,5 +217,5 @@ float UGranularSynth::GetCurrentPlayheadTime() const
 
 bool UGranularSynth::IsLoaded() const
 {
-	return GranularSynth.IsSoundWaveLoaded();
+	return SoundWaveLoader.IsSoundWaveLoaded();
 }

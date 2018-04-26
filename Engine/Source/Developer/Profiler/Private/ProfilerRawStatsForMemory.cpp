@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ProfilerRawStatsForMemory.h"
 #include "Stats/StatsMisc.h"
@@ -106,7 +106,7 @@ struct FStatsCallstack
 			const FString ShortName = FStatNameAndInfo::GetShortNameFrom( LongName ).ToString();
 			//const FString Group = FStatNameAndInfo::GetGroupNameFrom( LongName ).ToString();
 			FString Desc = FStatNameAndInfo::GetDescriptionFrom( LongName );
-			Desc.Trim();
+			Desc.TrimStartInline();
 
 			if (Desc.Len() == 0)
 			{

@@ -1,12 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
+#include "IAssetTools.h"
 
-class IAssetTools;
 
 class FAssetToolsModule : public IModuleInterface
 {
@@ -28,7 +28,13 @@ public:
 		return FModuleManager::LoadModuleChecked< FAssetToolsModule >(ModuleName);
 	}
 
+	static inline bool IsModuleLoaded()
+	{
+		static const FName ModuleName = "AssetTools";
+		return FModuleManager::Get().IsModuleLoaded(ModuleName);
+	}
+
 private:
-	IAssetTools* AssetTools;
+	TWeakObjectPtr<class UAssetToolsImpl> AssetToolsPtr;
 	class FAssetToolsConsoleCommands* ConsoleCommands;
 };

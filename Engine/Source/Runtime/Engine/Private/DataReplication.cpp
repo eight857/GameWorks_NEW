@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	DataChannel.cpp: Unreal datachannel implementation.
@@ -15,6 +15,10 @@
 #include "Net/RepLayout.h"
 #include "Engine/ActorChannel.h"
 #include "Engine/DemoNetDriver.h"
+
+
+DECLARE_CYCLE_STAT(TEXT("Custom Delta Property Rep Time"), STAT_NetReplicateCustomDeltaPropTime, STATGROUP_Game);
+DECLARE_CYCLE_STAT(TEXT("ReceiveRPC"), STAT_NetReceiveRPC, STATGROUP_Game);
 
 
 static TAutoConsoleVariable<int32> CVarMaxRPCPerNetUpdate( TEXT( "net.MaxRPCPerNetUpdate" ), 2, TEXT( "Maximum number of RPCs allowed per net update" ) );
@@ -233,6 +237,8 @@ void FObjectReplicator::InitWithObject( UObject* InObject, UNetConnection * InCo
 	InitRecentProperties( Source );
 
 	RepLayout->GetLifetimeCustomDeltaProperties( LifetimeCustomDeltaProperties, LifetimeCustomDeltaPropertyConditions );
+
+	Connection->Driver->AllOwnedReplicators.Add(this);
 }
 
 void FObjectReplicator::CleanUp()
@@ -259,6 +265,8 @@ void FObjectReplicator::CleanUp()
 		Connection->Driver->UnmappedReplicators.Remove( this );
 
 		Connection->Driver->TotalTrackedGuidMemoryBytes -= TrackedGuidMemoryBytes;
+
+		Connection->Driver->AllOwnedReplicators.Remove( this );
 	}
 	else
 	{
@@ -769,6 +777,9 @@ bool FObjectReplicator::ReceivedRPC(FNetBitReader& Reader, const FReplicationFla
 	FName FunctionName = FieldCache->Field->GetFName();
 	UFunction * Function = Object->FindFunction(FunctionName);
 
+	SCOPE_CYCLE_COUNTER(STAT_NetReceiveRPC);
+	SCOPE_CYCLE_UOBJECT(Function, Function);
+
 	if (Function == nullptr)
 	{
 		UE_LOG(LogNet, Error, TEXT("ReceivedRPC: Function not found. Object: %s, Function: %s"), *Object->GetFullName(), *FunctionName.ToString());
@@ -1065,6 +1076,8 @@ static FORCEINLINE FPropertyRetirement ** UpdateAckedRetirements( FPropertyRetir
 
 void FObjectReplicator::ReplicateCustomDeltaProperties( FNetBitWriter & Bunch, FReplicationFlags RepFlags )
 {
+	SCOPE_CYCLE_COUNTER(STAT_NetReplicateCustomDeltaPropTime);
+
 	if ( LifetimeCustomDeltaProperties.Num() == 0 )
 	{
 		// No custom properties
@@ -1552,8 +1565,10 @@ void FObjectReplicator::UpdateUnmappedObjects( bool & bOutHasMoreUnmapped )
 		return;
 	}
 
-	checkf( RepState->RepNotifies.Num() == 0, TEXT("Failed RepState RepNotifies check. Num=%d. Object=%s"), RepState->RepNotifies.Num(), *Object->GetFullName() );
-	checkf( RepNotifies.Num() == 0, TEXT("Failed replicator RepNotifies check. Num=%d. Object=%s."), RepNotifies.Num(), *Object->GetFullName() );
+	// Since RepNotifies aren't processed while a channel has queued bunches, don't assert in that case.
+	const bool bHasQueuedBunches = OwningChannel && OwningChannel->QueuedBunches.Num() > 0;
+	checkf( bHasQueuedBunches || RepState->RepNotifies.Num() == 0, TEXT("Failed RepState RepNotifies check. Num=%d. Object=%s. Channel QueuedBunches=%d"), RepState->RepNotifies.Num(), *Object->GetFullName(), OwningChannel ? OwningChannel->QueuedBunches.Num() : 0 );
+	checkf( bHasQueuedBunches || RepNotifies.Num() == 0, TEXT("Failed replicator RepNotifies check. Num=%d. Object=%s. Channel QueuedBunches=%d"), RepNotifies.Num(), *Object->GetFullName(), OwningChannel ? OwningChannel->QueuedBunches.Num() : 0 );
 
 	bool bSomeObjectsWereMapped = false;
 

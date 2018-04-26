@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,7 +18,6 @@ public:
 	void Construct( const FArguments& InArgs, UK2Node* InNode );
 
 	virtual const FSlateBrush* GetShadowBrush(bool bSelected) const override;
-	virtual const FSlateBrush* GetProfilerHeatmapBrush() const override;
 
 	// SGraphNode interface
 	virtual void UpdateGraphNode() override;

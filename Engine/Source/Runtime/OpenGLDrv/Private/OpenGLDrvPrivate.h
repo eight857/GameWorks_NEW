@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	OpenGLDrvPrivate.h: Private OpenGL RHI definitions.
@@ -490,25 +490,6 @@ inline uint32 CalcDynamicBufferSize(uint32 Size)
  */
 void InitDefaultGLContextState(void);
 
-/** Vertex declaration for just one FVector4 position. */
-class FOpenGLVector4VertexDeclaration : public FRenderResource
-{
-public:
-	FVertexDeclarationRHIRef VertexDeclarationRHI;
-	virtual void InitRHI() override
-	{
-		FVertexDeclarationElementList Elements;
-		Elements.Add(FVertexElement(0,0,VET_Float4,0,sizeof(FVector4)));
-		VertexDeclarationRHI = RHICreateVertexDeclaration(Elements);
-	}
-	virtual void ReleaseRHI() override
-	{
-		VertexDeclarationRHI.SafeRelease();
-	}
-};
-
-extern TGlobalResource<FOpenGLVector4VertexDeclaration> GOpenGLVector4VertexDeclaration;
-
 extern bool GUseEmulatedUniformBuffers;
 
 inline bool OpenGLShaderPlatformNeedsBindLocation(const EShaderPlatform InShaderPlatform)
@@ -522,7 +503,6 @@ inline bool OpenGLShaderPlatformNeedsBindLocation(const EShaderPlatform InShader
 			return false;
 
 		case SP_OPENGL_SM4:
-		case SP_OPENGL_SM4_MAC:
 		case SP_OPENGL_PCES2:
 		case SP_OPENGL_ES2_ANDROID:
 		case SP_OPENGL_ES2_WEBGL:
@@ -541,7 +521,6 @@ inline bool OpenGLShaderPlatformSeparable(const EShaderPlatform InShaderPlatform
 	switch (InShaderPlatform)
 	{
 		case SP_OPENGL_SM5:
-		case SP_OPENGL_SM4_MAC:
 		case SP_OPENGL_SM4:
 		case SP_OPENGL_PCES2:
 		case SP_OPENGL_PCES3_1:

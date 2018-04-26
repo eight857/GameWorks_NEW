@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * Base class for tracking transactions for undo/redo.
@@ -11,7 +11,6 @@
 #include "UObject/Object.h"
 #include "Serialization/ArchiveUObject.h"
 #include "Misc/ITransaction.h"
-#include "UObject/AssetPtr.h"
 #include "Transactor.generated.h"
 
 
@@ -234,13 +233,6 @@ protected:
 				}
 				return *this;
 			}
-			FArchive& operator<<(class FAssetPtr& AssetPtr) override
-			{
-				FStringAssetReference ID;
-				ID.Serialize(*this);
-				AssetPtr = ID;
-				return *this;
-			}
 			void Preload( UObject* InObject ) override
 			{
 				if( Owner )
@@ -330,12 +322,6 @@ protected:
 				}
 				return (FArchive&)*this << ObjectIndex;
 			}
-			FArchive& operator<<(class FAssetPtr& AssetPtr)
-			{
-				FStringAssetReference ID = AssetPtr.GetUniqueID();
-				ID.Serialize(*this);
-				return *this;
-			}
 			TArray<uint8>& Data;
 			ObjectMapType ObjectMap;
 			TArray<FPersistentObjectRef>& ReferencedObjects;
@@ -379,6 +365,10 @@ public:
 		,	Inc(-1)
 	{}
 
+	virtual ~FTransaction()
+	{
+	}
+
 	// FTransactionBase interface.
 	virtual void SaveObject( UObject* Object ) override;
 	virtual void SaveArray( UObject* Object, FScriptArray* Array, int32 Index, int32 Count, int32 Oper, int32 ElementSize, STRUCT_DC DefaultConstructor, STRUCT_AR Serializer, STRUCT_DTOR Destructor ) override;
@@ -414,6 +404,12 @@ public:
 	friend FArchive& operator<<( FArchive& Ar, FTransaction& T )
 	{
 		return Ar << T.Records << T.Title << T.ObjectMap << T.Context << T.PrimaryObject;
+	}
+
+	/** Serializes a reference to a transaction in a given archive. */
+	friend FArchive& operator<<(FArchive& Ar, TSharedRef<FTransaction>& SharedT)
+	{
+		return Ar << SharedT.Get();
 	}
 
 	/** Used by GC to collect referenced objects. */

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayEffectDetails.h"
 #include "UObject/UnrealType.h"
@@ -159,7 +159,7 @@ void FGameplayEffectDetails::OnTemplateChange()
 		{
 			UProperty* Property = *PropIt;
 			// don't overwrite the template property
-			if (Property->GetFName() == "Template")
+			if (Property->GetFName() == GET_MEMBER_NAME_CHECKED(UGameplayEffect, Template))
 			{
 				continue;
 			}

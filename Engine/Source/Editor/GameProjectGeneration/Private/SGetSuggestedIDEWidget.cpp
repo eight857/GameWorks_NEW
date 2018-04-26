@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SGetSuggestedIDEWidget.h"
@@ -9,6 +9,7 @@
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Widgets/Input/SHyperlink.h"
 #include "EngineAnalytics.h"
+#include "SlateApplication.h"
 #include "Interfaces/IAnalyticsProvider.h"
 
 #define LOCTEXT_NAMESPACE "GameProjectGeneration"
@@ -89,6 +90,16 @@ FReply SGetSuggestedIDEWidget::OnInstallIDEClicked()
 		{
 			FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.InstalledIDE"));
 		}
+	}
+
+
+	TSharedPtr<SWindow> ThisWindow = FSlateApplication::Get().FindWidgetWindow(AsShared());
+
+	if (ThisWindow.IsValid() && ThisWindow->IsModalWindow())
+	{
+		// If this window is modal, close it to unblock the IDE request and allow it to finish...as long as another
+		// modal window isn't opened on top of it
+		ThisWindow->RequestDestroyWindow();
 	}
 
 	return FReply::Handled();

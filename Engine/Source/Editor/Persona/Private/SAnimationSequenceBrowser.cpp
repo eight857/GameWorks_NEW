@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SAnimationSequenceBrowser.h"
@@ -21,7 +21,6 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/SViewport.h"
 #include "EditorReimportHandler.h"
-#include "Settings/DestructableMeshEditorSettings.h"
 #include "FileHelpers.h"
 
 #include "IContentBrowserSingleton.h"
@@ -37,6 +36,10 @@
 #include "IAnimationEditorModule.h"
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
+#include "Misc/ConfigCacheIni.h"
+#include "SlateApplication.h"
+#include "Preferences/PersonaOptions.h"
+#include "Settings/SkeletalMeshEditorSettings.h"
 
 #define LOCTEXT_NAMESPACE "SequenceBrowser"
 
@@ -78,6 +81,101 @@ public:
 	{
 		return !InItem.GetClass()->IsChildOf(USoundWave::StaticClass());
 	}
+};
+
+/** A filter that shows specific folders */
+class FFrontendFilter_Folder : public FFrontendFilter
+{
+public:
+	FFrontendFilter_Folder(TSharedPtr<FFrontendFilterCategory> InCategory, int32 InFolderIndex, FSimpleDelegate InOnActiveStateChanged) 
+		: FFrontendFilter(InCategory)
+		, FolderIndex(InFolderIndex)
+		, OnActiveStateChanged(InOnActiveStateChanged)
+	{}
+
+	// FFrontendFilter implementation
+	virtual FString GetName() const override
+	{ 
+		return FString::Printf(TEXT("ShowFolder%d"), FolderIndex); 
+	}
+
+	virtual FText GetDisplayName() const override
+	{
+		return Folder.IsEmpty() ? FText::Format(LOCTEXT("FolderFormatInvalid", "Show Specified Folder {0}"), FText::AsNumber(FolderIndex + 1)) : FText::Format(LOCTEXT("FolderFormatValid", "Folder: {0}"), FText::FromString(Folder));
+	}
+
+	virtual FText GetToolTipText() const override
+	{ 
+		return Folder.IsEmpty() ? LOCTEXT("FFrontendFilter_FolderToolTip", "Show assets in a specified folder") : FText::Format(LOCTEXT("FolderFormatValidToolTip", "Show assets in folder: {0}"), FText::FromString(Folder)); 
+	}
+
+	virtual FLinearColor GetColor() const override
+	{ 
+		return FLinearColor(0.6f, 0.6f, 0.0f, 1);
+	}
+
+	virtual void ModifyContextMenu(FMenuBuilder& MenuBuilder) override
+	{
+		MenuBuilder.BeginSection(TEXT("FolderSection"), LOCTEXT("FolderSectionHeading", "Choose Folder"));
+
+		FContentBrowserModule& ContentBrowserModule = FModuleManager::Get().LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+		FPathPickerConfig PathPickerConfig;
+		PathPickerConfig.DefaultPath = Folder;
+		PathPickerConfig.bAllowContextMenu = false;
+		PathPickerConfig.OnPathSelected = FOnPathSelected::CreateLambda([this](const FString& InPath) 
+		{ 
+			Folder = InPath; 
+			FSlateApplication::Get().DismissAllMenus(); 
+			OnActiveStateChanged.ExecuteIfBound();
+		});
+		
+		TSharedRef<SWidget> FolderWidget = 
+			SNew(SBox)
+			.HeightOverride(300.0f)
+			.WidthOverride(200.0f)
+			[
+				ContentBrowserModule.Get().CreatePathPicker(PathPickerConfig)
+			];
+
+		MenuBuilder.AddWidget(FolderWidget, FText(), true);
+
+		MenuBuilder.EndSection();
+	}
+
+	virtual void SaveSettings(const FString& IniFilename, const FString& IniSection, const FString& SettingsString) const override
+	{
+		GConfig->SetString(*IniSection, *(SettingsString + TEXT(".Folder")), *Folder, IniFilename);
+	}
+
+	virtual void LoadSettings(const FString& IniFilename, const FString& IniSection, const FString& SettingsString) override
+	{
+		GConfig->GetString(*IniSection, *(SettingsString + TEXT(".Folder")), Folder, IniFilename);
+	}
+
+	virtual bool PassesFilter(FAssetFilterType InItem) const override
+	{
+		// Always pass this as a frontend filter, it acts as a backend filter
+		return true;
+	}
+
+	virtual void ActiveStateChanged(bool bEnable)
+	{
+		bEnabled = bEnable;
+		OnActiveStateChanged.ExecuteIfBound();
+	}
+
+public:
+	/** Folder string to use when filtering */
+	FString Folder;
+
+	/** The index of this filter, for uniquely identifying this filter */
+	int32 FolderIndex;
+
+	/** Delegate fired to refresh the filter */
+	FSimpleDelegate OnActiveStateChanged;
+
+	/** Whether this filter is currently enabled */
+	bool bEnabled;
 };
 
 ////////////////////////////////////////////////////
@@ -326,11 +424,11 @@ void SAnimationSequenceBrowser::OnApplyCompression(TArray<FAssetData> SelectedAs
 	if ( SelectedAssets.Num() > 0 )
 	{
 		TArray<TWeakObjectPtr<UAnimSequence>> AnimSequences;
-		for(auto Iter = SelectedAssets.CreateIterator(); Iter; ++Iter)
+		for(const FAssetData& Asset : SelectedAssets)
 		{
-			if(UAnimSequence* AnimSequence = Cast<UAnimSequence>(Iter->GetAsset()) )
+			if(UAnimSequence* AnimSequence = Cast<UAnimSequence>(Asset.GetAsset()) )
 			{
-				AnimSequences.Add( TWeakObjectPtr<UAnimSequence>(AnimSequence) );
+				AnimSequences.Add( MakeWeakObjectPtr(AnimSequence) );
 			}
 		}
 
@@ -344,12 +442,12 @@ void SAnimationSequenceBrowser::OnExportToFBX(TArray<FAssetData> SelectedAssets)
 	if (SelectedAssets.Num() > 0)
 	{
 		TArray<TWeakObjectPtr<UAnimSequence>> AnimSequences;
-		for(auto Iter = SelectedAssets.CreateIterator(); Iter; ++Iter)
+		for(const FAssetData& Asset : SelectedAssets)
 		{
-			if(UAnimSequence* AnimSequence = Cast<UAnimSequence>(Iter->GetAsset()))
+			if(UAnimSequence* AnimSequence = Cast<UAnimSequence>(Asset.GetAsset()))
 			{
 				// we only shows anim sequence that belong to this skeleton
-				AnimSequences.Add(TWeakObjectPtr<UAnimSequence>(AnimSequence));
+				AnimSequences.Add(MakeWeakObjectPtr(AnimSequence));
 			}
 		}
 
@@ -383,12 +481,12 @@ void SAnimationSequenceBrowser::OnAddLoopingInterpolation(TArray<FAssetData> Sel
 	if(SelectedAssets.Num() > 0)
 	{
 		TArray<TWeakObjectPtr<UAnimSequence>> AnimSequences;
-		for(auto Iter = SelectedAssets.CreateIterator(); Iter; ++Iter)
+		for(const FAssetData& Asset : SelectedAssets)
 		{
-			if(UAnimSequence* AnimSequence = Cast<UAnimSequence>(Iter->GetAsset()))
+			if(UAnimSequence* AnimSequence = Cast<UAnimSequence>(Asset.GetAsset()))
 			{
 				// we only shows anim sequence that belong to this skeleton
-				AnimSequences.Add(TWeakObjectPtr<UAnimSequence>(AnimSequence));
+				AnimSequences.Add(MakeWeakObjectPtr(AnimSequence));
 			}
 		}
 
@@ -485,10 +583,12 @@ void SAnimationSequenceBrowser::Construct(const FArguments& InArgs, const TShare
 	CreateAssetTooltipResources();
 
 	// Configure filter for asset picker
+	Filter.bRecursiveClasses = true;
+	Filter.ClassNames.Add(UAnimationAsset::StaticClass()->GetFName());
+	Filter.ClassNames.Add(USoundWave::StaticClass()->GetFName());
+
 	FAssetPickerConfig Config;
-	Config.Filter.bRecursiveClasses = true;
-	Config.Filter.ClassNames.Add(UAnimationAsset::StaticClass()->GetFName());
-	Config.Filter.ClassNames.Add(USoundWave::StaticClass()->GetFName());
+	Config.Filter = Filter;
 	Config.InitialAssetViewType = EAssetViewType::Column;
 	Config.bAddFilterUI = true;
 	Config.bShowPathInColumnView = true;
@@ -501,6 +601,7 @@ void SAnimationSequenceBrowser::Construct(const FArguments& InArgs, const TShare
 	Config.SyncToAssetsDelegates.Add(&SyncToAssetsDelegate);
 	Config.OnShouldFilterAsset = FOnShouldFilterAsset::CreateSP(this, &SAnimationSequenceBrowser::HandleFilterAsset);
 	Config.GetCurrentSelectionDelegates.Add(&GetCurrentSelectionDelegate);
+	Config.SetFilterDelegates.Add(&SetFilterDelegate);
 	Config.bFocusSearchBoxWhenOpened = false;
 	Config.DefaultFilterMenuExpansion = EAssetTypeCategories::Animation;
 
@@ -510,7 +611,30 @@ void SAnimationSequenceBrowser::Construct(const FArguments& InArgs, const TShare
 	Config.ExtraFrontendFilters.Add( MakeShareable(new FFrontendFilter_AdditiveAnimAssets(AnimCategory)) );
 	TSharedPtr<FFrontendFilterCategory> AudioCategory = MakeShareable(new FFrontendFilterCategory(LOCTEXT("AudioFilters", "Audio Filters"), LOCTEXT("AudioFiltersTooltip", "Filter audio assets.")));
 	Config.ExtraFrontendFilters.Add( MakeShareable(new FFrontendFilter_SoundWaves(AudioCategory)) );
-	
+	TSharedPtr<FFrontendFilterCategory> FolderCategory = MakeShareable(new FFrontendFilterCategory(LOCTEXT("FolderFilters", "Folder Filters"), LOCTEXT("FolderFiltersTooltip", "Filter by folders.")));
+	const uint32 NumFilters = GetDefault<UPersonaOptions>()->NumFolderFiltersInAssetBrowser;
+	for(uint32 FilterIndex = 0; FilterIndex < NumFilters; ++FilterIndex)
+	{
+		TSharedRef<FFrontendFilter_Folder> FolderFilter = MakeShared<FFrontendFilter_Folder>(FolderCategory, FilterIndex, 
+			FSimpleDelegate::CreateLambda([this]()
+			{
+				Filter.PackagePaths.Empty();
+
+				for(TSharedPtr<FFrontendFilter_Folder> CurrentFolderFilter : FolderFilters)
+				{
+					if(CurrentFolderFilter->bEnabled)
+					{
+						Filter.PackagePaths.Add(*CurrentFolderFilter->Folder);
+					}
+				}
+
+				SetFilterDelegate.ExecuteIfBound(Filter);
+			}));
+		FolderFilters.Add(FolderFilter);
+		Config.ExtraFrontendFilters.Add(FolderFilter);
+	}
+
+	Config.OnIsAssetValidForCustomToolTip = FOnIsAssetValidForCustomToolTip::CreateLambda([](const FAssetData& AssetData) {return AssetData.IsAssetLoaded(); });
 	Config.OnGetCustomAssetToolTip = FOnGetCustomAssetToolTip::CreateSP(this, &SAnimationSequenceBrowser::CreateCustomAssetToolTip);
 	Config.OnVisualizeAssetToolTip = FOnVisualizeAssetToolTip::CreateSP(this, &SAnimationSequenceBrowser::OnVisualizeAssetToolTip);
 	Config.OnAssetToolTipClosing = FOnAssetToolTipClosing::CreateSP( this, &SAnimationSequenceBrowser::OnAssetToolTipClosing );
@@ -1026,7 +1150,7 @@ void SAnimationSequenceBrowser::CreateAssetTooltipResources()
 	PreviewComponent->MeshComponentUpdateFlag = EMeshComponentUpdateFlag::AlwaysTickPoseAndRefreshBones;
 	PreviewScene.AddComponent(PreviewComponent, FTransform::Identity);
 
-	const UDestructableMeshEditorSettings* Options = GetDefault<UDestructableMeshEditorSettings>();
+	const USkeletalMeshEditorSettings* Options = GetDefault<USkeletalMeshEditorSettings>();
 
 	PreviewScene.SetLightDirection(Options->AnimPreviewLightingDirection);
 	PreviewScene.SetLightColor(Options->AnimPreviewDirectionalColor);
@@ -1038,7 +1162,7 @@ bool SAnimationSequenceBrowser::OnVisualizeAssetToolTip(const TSharedPtr<SWidget
 	// Resolve the asset
 	USkeletalMesh* MeshToUse = nullptr;
 	UClass* AssetClass = FindObject<UClass>(ANY_PACKAGE, *AssetData.AssetClass.ToString());
-	if(AssetClass->IsChildOf(UAnimationAsset::StaticClass()) && AssetData.GetAsset())
+	if(AssetClass->IsChildOf(UAnimationAsset::StaticClass()) && AssetData.IsAssetLoaded() && AssetData.GetAsset())
 	{
 		// Set up the viewport to show the asset. Catching the visualize allows us to use
 		// one viewport between all of the assets in the sequence browser.

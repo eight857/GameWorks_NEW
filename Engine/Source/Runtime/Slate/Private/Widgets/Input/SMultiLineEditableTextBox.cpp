@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -94,11 +94,14 @@ void SMultiLineEditableTextBox::Construct( const FArguments& InArgs )
 					SAssignNew( EditableText, SMultiLineEditableText )
 					.Text( InArgs._Text )
 					.HintText( InArgs._HintText )
+					.SearchText( InArgs._SearchText )
 					.TextStyle( InArgs._TextStyle )
 					.Marshaller( InArgs._Marshaller )
 					.Font( this, &SMultiLineEditableTextBox::DetermineFont )
 					.IsReadOnly( InArgs._IsReadOnly )
+					.AllowMultiLine( InArgs._AllowMultiLine )
 					.OnContextMenuOpening( InArgs._OnContextMenuOpening )
+					.OnIsTypedCharValid( InArgs._OnIsTypedCharValid )
 					.OnTextChanged( InArgs._OnTextChanged )
 					.OnTextCommitted( InArgs._OnTextCommitted )
 					.OnCursorMoved( InArgs._OnCursorMoved )
@@ -118,8 +121,11 @@ void SMultiLineEditableTextBox::Construct( const FArguments& InArgs )
 					.VScrollBar(VScrollBar)
 					.OnHScrollBarUserScrolled(InArgs._OnHScrollBarUserScrolled)
 					.OnVScrollBarUserScrolled(InArgs._OnVScrollBarUserScrolled)
-					.OnKeyDownHandler( InArgs._OnKeyDownHandler)
+					.OnKeyCharHandler(InArgs._OnKeyCharHandler)
+					.OnKeyDownHandler(InArgs._OnKeyDownHandler)
 					.ModiferKeyForNewLine(InArgs._ModiferKeyForNewLine)
+					.VirtualKeyboardTrigger( InArgs._VirtualKeyboardTrigger )
+					.VirtualKeyboardDismissAction( InArgs._VirtualKeyboardDismissAction )
 					.TextShapingMethod(InArgs._TextShapingMethod)
 					.TextFlowDirection(InArgs._TextFlowDirection)
 					.AllowContextMenu(InArgs._AllowContextMenu)
@@ -224,6 +230,16 @@ void SMultiLineEditableTextBox::SetHintText( const TAttribute< FText >& InHintTe
 	EditableText->SetHintText( InHintText );
 }
 
+void SMultiLineEditableTextBox::SetSearchText(const TAttribute<FText>& InSearchText)
+{
+	EditableText->SetSearchText(InSearchText);
+}
+
+FText SMultiLineEditableTextBox::GetSearchText() const
+{
+	return EditableText->GetSearchText();
+}
+
 void SMultiLineEditableTextBox::SetTextBoxForegroundColor(const TAttribute<FSlateColor>& InForegroundColor)
 {
 	ForegroundColorOverride = InForegroundColor;
@@ -282,6 +298,11 @@ void SMultiLineEditableTextBox::SetJustification(const TAttribute<ETextJustify::
 void SMultiLineEditableTextBox::SetAllowContextMenu(const TAttribute< bool >& InAllowContextMenu)
 {
 	EditableText->SetAllowContextMenu(InAllowContextMenu);
+}
+
+void SMultiLineEditableTextBox::SetVirtualKeyboardDismissAction(TAttribute<EVirtualKeyboardDismissAction> InVirtualKeyboardDismissAction)
+{
+	EditableText->SetVirtualKeyboardDismissAction(InVirtualKeyboardDismissAction);
 }
 
 void SMultiLineEditableTextBox::SetIsReadOnly(const TAttribute<bool>& InIsReadOnly)
@@ -412,6 +433,16 @@ void SMultiLineEditableTextBox::ApplyToSelection(const FRunInfo& InRunInfo, cons
 	EditableText->ApplyToSelection(InRunInfo, InStyle);
 }
 
+void SMultiLineEditableTextBox::BeginSearch(const FText& InSearchText, const ESearchCase::Type InSearchCase, const bool InReverse)
+{
+	EditableText->BeginSearch(InSearchText, InSearchCase, InReverse);
+}
+
+void SMultiLineEditableTextBox::AdvanceSearch(const bool InReverse)
+{
+	EditableText->AdvanceSearch(InReverse);
+}
+
 TSharedPtr<const IRun> SMultiLineEditableTextBox::GetRunUnderCursor() const
 {
 	return EditableText->GetRunUnderCursor();
@@ -437,9 +468,19 @@ void SMultiLineEditableTextBox::Refresh()
 	return EditableText->Refresh();
 }
 
+void SMultiLineEditableTextBox::SetOnKeyCharHandler(FOnKeyChar InOnKeyCharHandler)
+{
+	EditableText->SetOnKeyCharHandler(InOnKeyCharHandler);
+}
+
 void SMultiLineEditableTextBox::SetOnKeyDownHandler(FOnKeyDown InOnKeyDownHandler)
 {
 	EditableText->SetOnKeyDownHandler(InOnKeyDownHandler);
+}
+
+void SMultiLineEditableTextBox::ForceScroll(int32 UserIndex, float ScrollAxisMagnitude)
+{
+	EditableText->ForceScroll(UserIndex, ScrollAxisMagnitude);
 }
 
 #endif //WITH_FANCY_TEXT

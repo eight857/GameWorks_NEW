@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================================
 	IOSPlatformOutputDevices.h: iOS platform OutputDevices functions
@@ -9,7 +9,6 @@
 
 struct CORE_API FIOSPlatformOutputDevices : public FGenericPlatformOutputDevices
 {
-	static FOutputDeviceError*	GetError();
     static FOutputDevice*		GetLog();
 };
 

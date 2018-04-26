@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -324,10 +324,8 @@ public:
 
 	// Destroys the body setup, used to clear collision if the mesh goes missing
 	void DestroyBodySetup();
-#if WITH_EDITOR || WITH_RUNTIME_PHYSICS_COOKING
 	// Builds collision for the spline mesh (if collision is enabled)
 	void RecreateCollision();
-#endif
 
 	/**
 	 * Calculates the spline transform, including roll, scale, and offset along the spline at a specified distance

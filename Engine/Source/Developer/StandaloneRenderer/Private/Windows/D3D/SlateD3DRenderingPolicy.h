@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,7 +18,7 @@ public:
 	~FSlateD3D11RenderingPolicy();
 
 	void UpdateVertexAndIndexBuffers( FSlateBatchData& InBatchData );
-	void DrawElements( const FMatrix& ViewProjectionMatrix, const TArray<FSlateRenderBatch>& RenderBatches );
+	void DrawElements( const FMatrix& ViewProjectionMatrix, const TArray<FSlateRenderBatch>& RenderBatches, const TArray<FSlateClippingState> RenderClipStates );
 
 	virtual TSharedRef<FSlateShaderResourceManager> GetResourceManager() const override;
 	virtual bool IsVertexColorInLinearSpace() const override { return false; }

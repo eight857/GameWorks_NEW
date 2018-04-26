@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AndroidTargetPlatform.inl: Implements the FAndroidTargetPlatform class.
@@ -15,6 +15,14 @@
 #include "UObject/NameTypes.h"
 #include "Logging/LogMacros.h"
 #include "Stats/Stats.h"
+#include "Serialization/Archive.h"
+#include "Misc/FileHelper.h"
+#include "Misc/SecureHash.h"
+#include "FileManager.h"
+#include "PlatformFilemanager.h"
+#include "Interfaces/IAndroidDeviceDetectionModule.h"
+#include "Interfaces/IAndroidDeviceDetection.h"
+
 #define LOCTEXT_NAMESPACE "FAndroidTargetPlatform"
 
 class Error;
@@ -43,7 +51,7 @@ static bool SupportsES2()
 
 static bool SupportsES31()
 {
-	// default to support ES3
+	// default no support for ES31
 	bool bBuildForES31 = false;
 	GConfig->GetBool(TEXT("/Script/AndroidRuntimeSettings.AndroidRuntimeSettings"), TEXT("bBuildForES31"), bBuildForES31, GEngineIni);
 	return bBuildForES31;
@@ -51,10 +59,7 @@ static bool SupportsES31()
 
 static bool SupportsAEP()
 {
-	// default to not supporting ES31
-	bool bBuildForESDeferred = false;
-	GConfig->GetBool(TEXT("/Script/AndroidRuntimeSettings.AndroidRuntimeSettings"), TEXT("bBuildForESDeferred"), bBuildForESDeferred, GEngineIni);
-	return bBuildForESDeferred;
+	return false;
 }
 
 static bool SupportsVulkan()
@@ -72,10 +77,144 @@ static bool SupportsVulkan()
 #elif PLATFORM_MAC
 	GlslangAvailable = true;
 #elif PLATFORM_LINUX
-	GlslangAvailable = false;	// @TODO: change when glslang library compiled for Linux
+	GlslangAvailable = true;
 #endif
 
 	return bSupportsVulkan && GlslangAvailable;
+}
+
+static FString GetLicensePath()
+{
+	auto &AndroidDeviceDetection = FModuleManager::LoadModuleChecked<IAndroidDeviceDetectionModule>("AndroidDeviceDetection");
+	IAndroidDeviceDetection* DeviceDetection = AndroidDeviceDetection.GetAndroidDeviceDetection();
+	FString ADBPath = DeviceDetection->GetADBPath();
+
+	if (!FPaths::FileExists(*ADBPath))
+	{
+		return TEXT("");
+	}
+
+	// strip off the adb.exe part
+	FString PlatformToolsPath;
+	FString Filename;
+	FString Extension;
+	FPaths::Split(ADBPath, PlatformToolsPath, Filename, Extension);
+
+	// remove the platform-tools part and point to licenses
+	FPaths::NormalizeDirectoryName(PlatformToolsPath);
+	FString LicensePath = PlatformToolsPath + "/../licenses";
+	FPaths::CollapseRelativeDirectories(LicensePath);
+
+	return LicensePath;
+}
+
+static bool GetLicenseHash(FSHAHash& LicenseHash)
+{
+	bool bLicenseValid = false;
+
+	// from Android SDK Tools 25.2.3
+	FString LicenseFilename = FPaths::EngineDir() + TEXT("Source/ThirdParty/Android/package.xml");
+
+	// Create file reader
+	TUniquePtr<FArchive> FileReader(IFileManager::Get().CreateFileReader(*LicenseFilename));
+	if (FileReader)
+	{
+		// Create buffer for file input
+		uint32 BufferSize = FileReader->TotalSize();
+		uint8* Buffer = (uint8*)FMemory::Malloc(BufferSize);
+		FileReader->Serialize(Buffer, BufferSize);
+
+		uint8 StartPattern[] = "<license id=\"android-sdk-license\" type=\"text\">";
+		int32 StartPatternLength = strlen((char *)StartPattern);
+
+		uint8* LicenseStart = Buffer;
+		uint8* BufferEnd = Buffer + BufferSize - StartPatternLength;
+		while (LicenseStart < BufferEnd)
+		{
+			if (!memcmp(LicenseStart, StartPattern, StartPatternLength))
+			{
+				break;
+			}
+			LicenseStart++;
+		}
+
+		if (LicenseStart < BufferEnd)
+		{
+			LicenseStart += StartPatternLength;
+
+			uint8 EndPattern[] = "</license>";
+			int32 EndPatternLength = strlen((char *)EndPattern);
+
+			uint8* LicenseEnd = LicenseStart;
+			BufferEnd = Buffer + BufferSize - EndPatternLength;
+			while (LicenseEnd < BufferEnd)
+			{
+				if (!memcmp(LicenseEnd, EndPattern, EndPatternLength))
+				{
+					break;
+				}
+				LicenseEnd++;
+			}
+
+			if (LicenseEnd < BufferEnd)
+			{
+				int32 LicenseLength = LicenseEnd - LicenseStart;
+				FSHA1::HashBuffer(LicenseStart, LicenseLength, LicenseHash.Hash);
+				bLicenseValid = true;
+			}
+		}
+		FMemory::Free(Buffer);
+	}
+
+	return bLicenseValid;
+}
+
+static bool HasLicense()
+{
+	FString LicensePath = GetLicensePath();
+
+	if (LicensePath.IsEmpty())
+	{
+		return false;
+	}
+
+	// directory must exist
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	if (!PlatformFile.DirectoryExists(*LicensePath))
+	{
+		return false;
+	}
+
+	// license file must exist
+	FString LicenseFilename = LicensePath + "/android-sdk-license";
+	if (!PlatformFile.FileExists(*LicenseFilename))
+	{
+		return false;
+	}
+
+	FSHAHash LicenseHash;
+	if (!GetLicenseHash(LicenseHash))
+	{
+		return false;
+	}
+
+	// contents must match hash of license text
+	FString FileData = "";
+	FFileHelper::LoadFileToString(FileData, *LicenseFilename);
+	TArray<FString> lines;
+	int32 lineCount = FileData.ParseIntoArray(lines, TEXT("\n"), true);
+
+	FString LicenseString = LicenseHash.ToString().ToLower();
+	for (FString &line : lines)
+	{
+		if (line.TrimStartAndEnd().Equals(LicenseString))
+		{
+			return true;
+		}
+	}
+
+	// doesn't match
+	return false;
 }
 
 template<class TPlatformProperties>
@@ -161,6 +300,33 @@ inline bool FAndroidTargetPlatform<TPlatformProperties>::IsSdkInstalled(bool bPr
 	return true;
 }
 
+template<class TPlatformProperties>
+inline int32 FAndroidTargetPlatform<TPlatformProperties>::CheckRequirements(const FString& ProjectPath, bool bProjectHasCode, FString& OutTutorialPath, FString& OutDocumentationPath, FText& CustomizedLogMessage) const
+{
+	OutDocumentationPath = TEXT("Platforms/Android/GettingStarted");
+
+	int32 bReadyToBuild = ETargetPlatformReadyStatus::Ready;
+	if (!IsSdkInstalled(bProjectHasCode, OutTutorialPath))
+	{
+		bReadyToBuild |= ETargetPlatformReadyStatus::SDKNotFound;
+	}
+
+	bool bEnableGradle;
+	GConfig->GetBool(TEXT("/Script/AndroidRuntimeSettings.AndroidRuntimeSettings"), TEXT("bEnableGradle"), bEnableGradle, GEngineIni);
+
+	if (bEnableGradle)
+	{
+		// need to check license was accepted
+		if (!HasLicense())
+		{
+			OutTutorialPath.Empty();
+			CustomizedLogMessage = LOCTEXT("AndroidLicenseNotAcceptedMessageDetail", "SDK License must be accepted in the Android project settings to deploy your app to the device.");
+			bReadyToBuild |= ETargetPlatformReadyStatus::LicenseNotAccepted;
+		}
+	}
+
+	return bReadyToBuild;
+}
 
 template<class TPlatformProperties>
 inline bool FAndroidTargetPlatform<TPlatformProperties>::SupportsFeature( ETargetPlatformFeatures Feature ) const
@@ -281,6 +447,7 @@ inline void FAndroidTargetPlatform<TPlatformProperties>::GetTextureFormats( cons
 		AddTextureFormatIfSupports(AndroidTexFormat::NameDXT5, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameATC_RGBA_I, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC2, OutFormats, bIsNonPOT);
+		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1a, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1, OutFormats, bIsNonPOT);
 	}
 	else if (InTexture->CompressionSettings == TC_Displacementmap)
@@ -310,6 +477,7 @@ inline void FAndroidTargetPlatform<TPlatformProperties>::GetTextureFormats( cons
 		AddTextureFormatIfSupports(AndroidTexFormat::NameDXT5, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameATC_RGBA_I, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC2, OutFormats, bIsNonPOT);
+		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1a, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1, OutFormats, bIsNonPOT);
 	}
 	else if (InTexture->CompressionNoAlpha)
@@ -318,6 +486,7 @@ inline void FAndroidTargetPlatform<TPlatformProperties>::GetTextureFormats( cons
 		AddTextureFormatIfSupports(AndroidTexFormat::NameDXT1, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameATC_RGB, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameETC2_RGB, OutFormats, bIsNonPOT);
+		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1a, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameETC1, OutFormats, bIsNonPOT);
 	}
 	else if (InTexture->bDitherMipMapAlpha)
@@ -326,6 +495,7 @@ inline void FAndroidTargetPlatform<TPlatformProperties>::GetTextureFormats( cons
 		AddTextureFormatIfSupports(AndroidTexFormat::NameDXT5, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameATC_RGBA_I, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC2, OutFormats, bIsNonPOT);
+		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1a, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1, OutFormats, bIsNonPOT);
 	}
 	else
@@ -334,6 +504,7 @@ inline void FAndroidTargetPlatform<TPlatformProperties>::GetTextureFormats( cons
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoDXT, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoATC, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC2, OutFormats, bIsNonPOT);
+		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1a, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1, OutFormats, bIsNonPOT);
 	}
 }
@@ -369,6 +540,7 @@ inline void FAndroidTargetPlatform<TPlatformProperties>::GetAllTextureFormats(TA
 		AddTextureFormatIfSupports(AndroidTexFormat::NameATC_RGBA_I, OutFormats, bIsNonPOT);
 	
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1, OutFormats, bIsNonPOT); 
+		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC1a, OutFormats, bIsNonPOT);
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoETC2, OutFormats, bIsNonPOT);
 	
 		AddTextureFormatIfSupports(AndroidTexFormat::NameAutoATC, OutFormats, bIsNonPOT);
@@ -514,9 +686,19 @@ inline bool FAndroidTargetPlatform<TPlatformProperties>::HandleTicker( float Del
 			// see if this device is already known
 			if (Devices.Contains(DeviceIt.Key()))
 			{
-				//still update its authorized status, which could change while connected
-				Devices[DeviceIt.Key()]->SetAuthorized(DeviceInfo.bAuthorizedDevice);
-				continue;
+				FAndroidTargetDevicePtr TestDevice = Devices[DeviceIt.Key()];
+
+				// ignore if authorization didn't change
+				if (DeviceInfo.bAuthorizedDevice == TestDevice->IsAuthorized())
+				{
+					continue;
+				}
+
+				// remove it to add again
+				TestDevice->SetConnected(false);
+				Devices.Remove(DeviceIt.Key());
+
+				DeviceLostEvent.Broadcast(TestDevice.ToSharedRef());
 			}
 
 			// check if this platform is supported by the extensions and version

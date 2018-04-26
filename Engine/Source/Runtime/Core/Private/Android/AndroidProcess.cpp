@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AndroidProcess.cpp: Android implementations of Process functions
@@ -12,7 +12,7 @@
 #include <sys/syscall.h>
 #include <pthread.h>
 
-#include "Android/AndroidApplication.h"
+#include "Android/AndroidJavaEnv.h"
 
 int64 FAndroidAffinity::GameThreadMask = FPlatformAffinity::GetNoAffinityMask();
 int64 FAndroidAffinity::RenderingThreadMask = FPlatformAffinity::GetNoAffinityMask();
@@ -70,7 +70,7 @@ CORE_API FAndroidLaunchURLDelegate OnAndroidLaunchURL;
 void FAndroidPlatformProcess::LaunchURL(const TCHAR* URL, const TCHAR* Parms, FString* Error)
 {
 	check(URL);
-	const FString URLWithParams = FString::Printf(TEXT("%s %s"), URL, Parms ? Parms : TEXT("")).TrimTrailing();
+	const FString URLWithParams = FString::Printf(TEXT("%s %s"), URL, Parms ? Parms : TEXT("")).TrimEnd();
 
 	OnAndroidLaunchURL.ExecuteIfBound(URLWithParams);
 
@@ -82,10 +82,10 @@ void FAndroidPlatformProcess::LaunchURL(const TCHAR* URL, const TCHAR* Parms, FS
 
 FString FAndroidPlatformProcess::GetGameBundleId()
 {
-	JNIEnv* JEnv = FAndroidApplication::GetJavaEnv();
+	JNIEnv* JEnv = AndroidJavaEnv::GetJavaEnv();
 	if (nullptr != JEnv)
 	{
-		jclass Class = FAndroidApplication::FindJavaClass("com/epicgames/ue4/GameActivity");
+		jclass Class = AndroidJavaEnv::FindJavaClass("com/epicgames/ue4/GameActivity");
 		if (nullptr != Class)
 		{
 			jmethodID getAppPackageNameMethodId = JEnv->GetStaticMethodID(Class, "getAppPackageName", "()Ljava/lang/String;");
@@ -107,8 +107,7 @@ FString FAndroidPlatformProcess::GetGameBundleId()
 TAutoConsoleVariable<FString> CVarAndroidDefaultThreadAffinity(
 	TEXT("android.DefaultThreadAffinity"), 
 	TEXT(""), 
-	TEXT("Sets the thread affinity for Android platform. Pairs of args [GT|RT] [Hex affinity], ex: android.DefaultThreadAffinity GT 0x01 RT 0x02"),
-	ECVF_ReadOnly);
+	TEXT("Sets the thread affinity for Android platform. Pairs of args [GT|RT] [Hex affinity], ex: android.DefaultThreadAffinity GT 0x01 RT 0x02"));
 
 static void AndroidSetAffinityOnThread()
 {
@@ -122,10 +121,10 @@ static void AndroidSetAffinityOnThread()
 	}
 }
 
-void AndroidSetupDefaultThreadAffinity()
+static void ApplyDefaultThreadAffinity(IConsoleVariable* Var)
 {
 	FString AffinityCmd = CVarAndroidDefaultThreadAffinity.GetValueOnAnyThread();
-	
+
 	TArray<FString> Args;
 	if (AffinityCmd.ParseIntoArrayWS(Args) > 0)
 	{
@@ -137,7 +136,7 @@ void AndroidSetupDefaultThreadAffinity()
 				UE_LOG(LogAndroid, Display, TEXT("Parsed 0 for affinity, using 0xFFFFFFFFFFFFFFFF instead"));
 				Aff = 0xFFFFFFFFFFFFFFFF;
 			}
-			
+
 			if (Args[Index] == TEXT("GT"))
 			{
 				FAndroidAffinity::GameThreadMask = Aff;
@@ -152,8 +151,8 @@ void AndroidSetupDefaultThreadAffinity()
 		{
 			FSimpleDelegateGraphTask::CreateAndDispatchWhenReady(
 				FSimpleDelegateGraphTask::FDelegate::CreateStatic(&AndroidSetAffinityOnThread),
-				TStatId(), NULL, ENamedThreads::RenderThread);
-		
+				TStatId(), NULL, ENamedThreads::GetRenderThread());
+
 			FSimpleDelegateGraphTask::CreateAndDispatchWhenReady(
 				FSimpleDelegateGraphTask::FDelegate::CreateStatic(&AndroidSetAffinityOnThread),
 				TStatId(), NULL, ENamedThreads::GameThread);
@@ -163,4 +162,12 @@ void AndroidSetupDefaultThreadAffinity()
 			AndroidSetAffinityOnThread();
 		}
 	}
+}
+
+void AndroidSetupDefaultThreadAffinity()
+{
+	ApplyDefaultThreadAffinity(nullptr);
+
+	// Watch for CVar update
+	CVarAndroidDefaultThreadAffinity->SetOnChangedCallback(FConsoleVariableDelegate::CreateStatic(&ApplyDefaultThreadAffinity));
 }

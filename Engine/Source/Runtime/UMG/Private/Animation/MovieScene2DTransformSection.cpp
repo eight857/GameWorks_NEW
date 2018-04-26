@@ -1,6 +1,19 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/MovieScene2DTransformSection.h"
+#include "SequencerObjectVersion.h"
+
+UMovieScene2DTransformSection::UMovieScene2DTransformSection(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	EvalOptions.EnableAndSetCompletionMode
+		(GetLinkerCustomVersion(FSequencerObjectVersion::GUID) < FSequencerObjectVersion::WhenFinishedDefaultsToRestoreState ? 
+			EMovieSceneCompletionMode::KeepState : 
+			GetLinkerCustomVersion(FSequencerObjectVersion::GUID) < FSequencerObjectVersion::WhenFinishedDefaultsToProjectDefault ? 
+			EMovieSceneCompletionMode::RestoreState : 
+			EMovieSceneCompletionMode::ProjectDefault);
+	BlendType = EMovieSceneBlendType::Absolute;
+}
 
 
 void UMovieScene2DTransformSection::MoveSection( float DeltaTime, TSet<FKeyHandle>& KeyHandles )
@@ -285,4 +298,6 @@ void UMovieScene2DTransformSection::ClearDefaults()
 	Translation[1].ClearDefaultValue();
 	Scale[0].ClearDefaultValue();
 	Scale[1].ClearDefaultValue();
+	Shear[0].ClearDefaultValue();
+	Shear[1].ClearDefaultValue();
 }

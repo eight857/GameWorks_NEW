@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Input/SRotatorInputBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -147,7 +147,7 @@ void SRotatorInputBox::OnArrangeChildren(const FGeometry& AllottedGeometry, FArr
 
 	if (bFoop)
 	{
-		const float AlottedWidth = AllottedGeometry.Size.X;
+		const float AlottedWidth = AllottedGeometry.GetLocalSize().X;
 
 		const float CrushBelow = CVarStartCrushWhenBelow.GetValueOnAnyThread();
 		const float StopCrushing = CVarStopCrushWhenAbove.GetValueOnAnyThread();

@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "Engine/EngineTypes.h"
@@ -89,7 +89,7 @@ public:
 	 *
 	 * @param CompletionDelegate delegate called after the check for possible rejoin is complete
 	 */
-	void CheckRejoinStatus(const FOnRejoinCheckComplete& CompletionDelegate = FOnRejoinCheckComplete());
+	virtual void CheckRejoinStatus(const FOnRejoinCheckComplete& CompletionDelegate = FOnRejoinCheckComplete());
 
 	/**
 	 * Rejoin the last session if one is found.  One final call to CheckRejoinStatus is made to
@@ -131,13 +131,11 @@ public:
 	ERejoinStatus GetStatus() const;
 #endif
 
-	/** @return true if possibly a match to rejoin */
-	bool IsRejoinAvailable() const
-	{
-		ERejoinStatus CurrentStatus = GetStatus();
-		return (CurrentStatus != ERejoinStatus::NoMatchToRejoin &&
-				CurrentStatus != ERejoinStatus::NoMatchToRejoin_MatchEnded);
-	}
+	/** @return True if the rejoin check has completed and does not need to be rerun. */
+	bool HasCompletedCheck() const;
+
+	/** @return True if it's possible that there's a match to rejoin */
+	bool IsRejoinAvailable() const;
 
 protected: 
 
@@ -174,11 +172,12 @@ protected:
 	/** Clear all timers associated with rejoin */
 	void ClearTimers();
 
-private:
-
 	/** Rejoin status */
 	UPROPERTY()
 	ERejoinStatus LastKnownStatus;
+
+private:
+
 	/** Flag set during a possible brief period where the user hit rejoin but the check was already in flight */
 	UPROPERTY()
 	bool bRejoinAfterCheck;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -58,6 +58,9 @@ inline int TranslateFlags(ESocketReceiveFlags::Type Flags)
 	if (Flags & ESocketReceiveFlags::Peek)
 	{
 		TranslatedFlags |= MSG_PEEK;
+#if PLATFORM_HAS_BSD_SOCKET_FEATURE_MSG_DONTWAIT
+		TranslatedFlags |= MSG_DONTWAIT;
+#endif // PLATFORM_HAS_BSD_SOCKET_FEATURE_MSG_DONTWAIT
 	}
 
 	if (Flags & ESocketReceiveFlags::WaitAll)

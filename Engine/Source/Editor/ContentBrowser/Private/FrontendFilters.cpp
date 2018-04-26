@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "FrontendFilters.h"
 #include "Framework/Commands/UIAction.h"
@@ -12,10 +12,97 @@
 #include "ICollectionManager.h"
 #include "CollectionManagerModule.h"
 #include "ObjectTools.h"
+#include "AssetRegistryModule.h"
+#include "SAssetView.h"
+
+/** Helper functions for frontend filters */
+namespace FrontendFilterHelper
+{
+	/**
+	 * Get a set of dependencies as package name's from a list of assets found with the given Asset Registry Filter.
+	 * @param InAssetRegistryFilter		The filter to find assets for in the asset registry.
+	 * @param AssetRegistry				The Asset Registry to find assets and dependencies.
+	 * @param OutDependencySet			The output of dependencies found from a set of assets.
+	 */
+	void GetDependencies(const FARFilter& InAssetRegistryFilter, const IAssetRegistry& AssetRegistry, TSet<FName>& OutDependencySet)
+	{
+		TArray<FAssetData> FoundAssets;
+		AssetRegistry.GetAssets(InAssetRegistryFilter, FoundAssets);
+
+		for (const FAssetData& AssetData : FoundAssets)
+		{
+			// Store all the dependencies of all the levels
+			TArray<FAssetIdentifier> AssetDependencies;
+			AssetRegistry.GetDependencies(FAssetIdentifier(AssetData.PackageName), AssetDependencies);
+			for (const FAssetIdentifier& Dependency : AssetDependencies)
+			{
+				OutDependencySet.Add(Dependency.PackageName);
+			}
+		}
+	}
+}
 
 /////////////////////////////////////////
 // FFrontendFilter_Text
 /////////////////////////////////////////
+
+/** Mapping of asset property tag aliases that can be used by text searches */
+class FFrontendFilter_AssetPropertyTagAliases
+{
+public:
+	static FFrontendFilter_AssetPropertyTagAliases& Get()
+	{
+		static FFrontendFilter_AssetPropertyTagAliases Singleton;
+		return Singleton;
+	}
+
+	/** Get the source tag for the given asset data and alias, or none if there is no match */
+	FName GetSourceTagFromAlias(const FAssetData& InAssetData, const FName InAlias)
+	{
+		TSharedPtr<TMap<FName, FName>>& AliasToSourceTagMapping = ClassToAliasTagsMapping.FindOrAdd(InAssetData.AssetClass);
+
+		if (!AliasToSourceTagMapping.IsValid())
+		{
+			static const FName NAME_DisplayName(TEXT("DisplayName"));
+
+			AliasToSourceTagMapping = MakeShared<TMap<FName, FName>>();
+
+			UClass* AssetClass = InAssetData.GetClass();
+			if (AssetClass)
+			{
+				TMap<FName, UObject::FAssetRegistryTagMetadata> AssetTagMetaData;
+				AssetClass->GetDefaultObject()->GetAssetRegistryTagMetadata(AssetTagMetaData);
+
+				for (const auto& AssetTagMetaDataPair : AssetTagMetaData)
+				{
+					if (!AssetTagMetaDataPair.Value.DisplayName.IsEmpty())
+					{
+						const FName DisplayName = MakeObjectNameFromDisplayLabel(AssetTagMetaDataPair.Value.DisplayName.ToString(), NAME_None);
+						AliasToSourceTagMapping->Add(DisplayName, AssetTagMetaDataPair.Key);
+					}
+				}
+
+				for (const auto& KeyValuePair : InAssetData.TagsAndValues)
+				{
+					if (UProperty* Field = FindField<UProperty>(AssetClass, KeyValuePair.Key))
+					{
+						if (Field->HasMetaData(NAME_DisplayName))
+						{
+							const FName DisplayName = MakeObjectNameFromDisplayLabel(Field->GetMetaData(NAME_DisplayName), NAME_None);
+							AliasToSourceTagMapping->Add(DisplayName, KeyValuePair.Key);
+						}
+					}
+				}
+			}
+		}
+
+		return AliasToSourceTagMapping.IsValid() ? AliasToSourceTagMapping->FindRef(InAlias) : NAME_None;
+	}
+
+private:
+	/** Mapping from class name -> (alias -> source) */
+	TMap<FName, TSharedPtr<TMap<FName, FName>>> ClassToAliasTagsMapping;
+};
 
 /** Expression context which gathers up the names of any dynamic collections being referenced by the current query */
 class FFrontendFilter_GatherDynamicCollectionsExpressionContext : public ITextFilterExpressionContext
@@ -362,10 +449,30 @@ public:
 		}
 
 		// Generic handling for anything in the asset meta-data
-		FString MetaDataValue;
-		if (AssetPtr->GetTagValue(InKey, MetaDataValue))
 		{
-			return TextFilterUtils::TestComplexExpression(MetaDataValue, InValue, InComparisonOperation, InTextComparisonMode);
+			auto GetMetaDataValue = [this, &InKey](FString& OutMetaDataValue) -> bool
+			{
+				// Check for a literal key
+				if (AssetPtr->GetTagValue(InKey, OutMetaDataValue))
+				{
+					return true;
+				}
+
+				// Check for an alias key
+				const FName LiteralKey = FFrontendFilter_AssetPropertyTagAliases::Get().GetSourceTagFromAlias(*AssetPtr, InKey);
+				if (!LiteralKey.IsNone() && AssetPtr->GetTagValue(LiteralKey, OutMetaDataValue))
+				{
+					return true;
+				}
+
+				return false;
+			};
+
+			FString MetaDataValue;
+			if (GetMetaDataValue(MetaDataValue))
+			{
+				return TextFilterUtils::TestComplexExpression(MetaDataValue, InValue, InComparisonOperation, InTextComparisonMode);
+			}
 		}
 
 		return false;
@@ -888,8 +995,11 @@ FFrontendFilter_InUseByLoadedLevels::~FFrontendFilter_InUseByLoadedLevels()
 {
 	FEditorDelegates::MapChange.RemoveAll(this);
 
-	IAssetTools& AssetTools = FAssetToolsModule::GetModule().Get();
-	AssetTools.OnAssetPostRename().RemoveAll(this);
+	if(FAssetToolsModule::IsModuleLoaded())
+	{
+		IAssetTools& AssetTools = FAssetToolsModule::GetModule().Get();
+		AssetTools.OnAssetPostRename().RemoveAll(this);
+	}
 }
 
 void FFrontendFilter_InUseByLoadedLevels::ActiveStateChanged( bool bActive )
@@ -942,4 +1052,77 @@ void FFrontendFilter_InUseByLoadedLevels::OnEditorMapChange( uint32 MapChangeFla
 		ObjectTools::TagInUseObjects(ObjectTools::SO_LoadedLevels);
 		BroadcastChangedEvent();
 	}
+}
+
+/////////////////////////////////////////
+// FFrontendFilter_InUseByAnyLevel
+/////////////////////////////////////////
+
+FFrontendFilter_UsedInAnyLevel::FFrontendFilter_UsedInAnyLevel(TSharedPtr<FFrontendFilterCategory> InCategory)
+	: FFrontendFilter(InCategory)
+{
+	// Prepare asset registry.
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	AssetRegistry = &AssetRegistryModule.Get();
+	check (AssetRegistry != nullptr);
+}
+
+FFrontendFilter_UsedInAnyLevel::~FFrontendFilter_UsedInAnyLevel()
+{
+	AssetRegistry = nullptr;
+}
+
+void FFrontendFilter_UsedInAnyLevel::ActiveStateChanged(bool bActive)
+{
+	LevelsDependencies.Empty();
+
+	if (bActive)
+	{
+		// Find all the levels
+		FARFilter Filter;
+		Filter.ClassNames.Add(UWorld::StaticClass()->GetFName());
+		FrontendFilterHelper::GetDependencies(Filter, *AssetRegistry, LevelsDependencies);
+	}
+}
+
+bool FFrontendFilter_UsedInAnyLevel::PassesFilter(FAssetFilterType InItem) const	
+{
+	return LevelsDependencies.Contains(InItem.PackageName);
+}
+
+/////////////////////////////////////////
+// FFrontendFilter_NotUsedInAnyLevel
+/////////////////////////////////////////
+
+FFrontendFilter_NotUsedInAnyLevel::FFrontendFilter_NotUsedInAnyLevel(TSharedPtr<FFrontendFilterCategory> InCategory)
+	: FFrontendFilter(InCategory)
+{
+	// Prepare asset registry.
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	AssetRegistry = &AssetRegistryModule.Get();
+	check (AssetRegistry != nullptr);
+}
+
+
+FFrontendFilter_NotUsedInAnyLevel::~FFrontendFilter_NotUsedInAnyLevel()
+{
+	AssetRegistry = nullptr;
+}
+
+void FFrontendFilter_NotUsedInAnyLevel::ActiveStateChanged(bool bActive)
+{
+	LevelsDependencies.Empty();
+	
+	if (bActive)
+	{
+		// Find all the levels
+		FARFilter Filter;
+		Filter.ClassNames.Add(UWorld::StaticClass()->GetFName());
+		FrontendFilterHelper::GetDependencies(Filter, *AssetRegistry, LevelsDependencies);
+	}
+}
+
+bool FFrontendFilter_NotUsedInAnyLevel::PassesFilter(FAssetFilterType InItem) const
+{
+	return !LevelsDependencies.Contains(InItem.PackageName);
 }

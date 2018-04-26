@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
@@ -113,7 +113,7 @@ void UArrayProperty::SerializeItem( FArchive& Ar, void* Value, void const* Defau
 			UStructProperty* StructProperty = CastChecked<UStructProperty>(Inner);
 			// if check redirector to make sure if the name has changed
 			FName NewName = FLinkerLoad::FindNewNameForStruct(InnerTag.StructName);
-			FName StructName = CastChecked<UStructProperty>(StructProperty)->Struct->GetFName();
+			FName StructName = StructProperty->Struct->GetFName();
 			if (NewName != NAME_None && NewName == StructName)
 			{
 				InnerTag.StructName = NewName;
@@ -160,6 +160,7 @@ void UArrayProperty::SerializeItem( FArchive& Ar, void* Value, void const* Defau
 
 		const FCustomPropertyListNode* CustomPropertyList = Ar.ArCustomPropertyList;
 		const FCustomPropertyListNode* PropertyNode = CustomPropertyList;
+		FSerializedPropertyScope SerializedProperty(Ar, Inner, this);
 		while (PropertyNode && i < n && !bSerializeRemainingItems)
 		{
 			if (PropertyNode->Property != Inner)
@@ -197,6 +198,7 @@ void UArrayProperty::SerializeItem( FArchive& Ar, void* Value, void const* Defau
 		Ar.ArUseCustomPropertyList = false;
 
 		// Serialize each item until we get to the end of the array
+		FSerializedPropertyScope SerializedProperty(Ar, Inner, this);
 		while (i < n)
 		{
 #if WITH_EDITOR
@@ -375,7 +377,7 @@ const TCHAR* UArrayProperty::ImportText_Internal( const TCHAR* Buffer, void* Dat
 	if (*Buffer == TCHAR('\0') || *Buffer == TCHAR(')') || *Buffer == TCHAR(','))
 	{
 		ArrayHelper.EmptyValues();
-		return NULL;
+		return Buffer;
 	}
 
 	if ( *Buffer++ != TCHAR('(') )

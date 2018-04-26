@@ -1,9 +1,9 @@
-﻿INTSourceChangelist:3298293
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title:5. 게임 패키징
 Crumbs:%ROOT%, Platforms, Platforms/Android, Platforms/Android/GettingStarted
 Description:설치를 위해 게임을 패키징합니다.
-Version:4.12
+Version:4.17
 Skilllevel:Intermediate
 tags:Android
 tags:Mobile
@@ -64,7 +64,8 @@ Checkpoint:AndroidQS
 	[/PARAM]
 [/OBJECT]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:WindowsSetup]
 
 [region:note]
@@ -155,11 +156,10 @@ Checkpoint:AndroidQS
 [/EXCERPT:MacOSSetup]
 
 [EXCERPT:LinuxSetup]
-이 문서는 현재 작업중입니다. 현재 공개된 문서를 확인하려면 [New and Updated Resources](https://docs.unrealengine.com/latest/INT/Updates/index.html) 
-페이지를 참고하세요.
-<!--[INCLUDE:Platforms/Linux/IntermediateLinuxDeveloper/AndroidOnLinux/5#AndroidLinux_5]-->
+[INCLUDE:Platforms/Linux/IntermediateLinuxDeveloper/AndroidOnLinux/5#AndroidLinux_5]
 [/EXCERPT:LinuxSetup]
--->
+
+[/COMMENT]
 
 ## 최종 결과
 완료되면 .BAT 파일을 통해서 안드로이드 기반 스마트폰에 UE4 프로젝트를 설치하는 .APK 파일이 생겨있을 것입니다.

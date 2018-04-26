@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -56,8 +56,10 @@ public:
 	 * @param BindingId		ID of the object to destroy
 	 * @param TemplateID 	Identifier for the current template we're evaluating
 	 * @param Player 		Movie scene player that is ultimately responsible for destroying the object
+	 *
+	 * @return True if an object was destroyed, false otherwise
 	 */
-	MOVIESCENE_API void DestroySpawnedObject(const FGuid& BindingId, FMovieSceneSequenceIDRef TemplateID, IMovieScenePlayer& Player);
+	MOVIESCENE_API bool DestroySpawnedObject(const FGuid& BindingId, FMovieSceneSequenceIDRef TemplateID, IMovieScenePlayer& Player);
 
 	/**
 	 * Destroy a specific previously spawned object, where its binding ID and sequence ID is not known.
@@ -104,13 +106,21 @@ public:
 public:
 
 	/**
+	 * Whether this class is supported as a spawnable
+	 * @param InClass The class
+	 * @return Whether this class is supported as a spawnable
+	 */
+	virtual bool CanSpawnObject(UClass* InClass) const { return false; }
+
+	/**
 	 * Create a new spawnable type from the given source object
 	 *
 	 * @param SourceObject		The source object to create the spawnable from
 	 * @param OwnerMovieScene	The owner movie scene that this spawnable type should reside in
+	 * @param ActorFactory      Optional actor factory to use to create spawnable type
 	 * @return the new spawnable type, or error
 	 */
-	virtual TValueOrError<FNewSpawnable, FText> CreateNewSpawnableType(UObject& SourceObject, UMovieScene& OwnerMovieScene) { return MakeError(NSLOCTEXT("SpawnRegister", "NotSupported", "Not supported")); }
+	virtual TValueOrError<FNewSpawnable, FText> CreateNewSpawnableType(UObject& SourceObject, UMovieScene& OwnerMovieScene, UActorFactory* ActorFactory = nullptr) { return MakeError(NSLOCTEXT("SpawnRegister", "NotSupported", "Not supported")); }
 
 	/**
 	 * Called to save the default state of the specified spawnable

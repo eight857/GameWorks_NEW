@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 D3D12Device.cpp: D3D device RHI implementation.
@@ -27,12 +27,12 @@ FD3D12Device::FD3D12Device(GPUNodeMask Node, FD3D12Adapter* InAdapter) :
 #endif
 	SamplerAllocator(Node, FD3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 128),
 	SamplerID(0),
-	OcclusionQueryHeap(this, D3D12_QUERY_HEAP_TYPE_OCCLUSION, 32768),
+	OcclusionQueryHeap(this, D3D12_QUERY_HEAP_TYPE_OCCLUSION, 65536),
 	DefaultBufferAllocator(this, Node), //Note: Cross node buffers are possible 
 	PendingCommandListsTotalWorkCommands(0),
-	CommandListManager(this, D3D12_COMMAND_LIST_TYPE_DIRECT),
-	CopyCommandListManager(this, D3D12_COMMAND_LIST_TYPE_COPY),
-	AsyncCommandListManager(this, D3D12_COMMAND_LIST_TYPE_COMPUTE),
+	CommandListManager(nullptr),
+	CopyCommandListManager(nullptr),
+	AsyncCommandListManager(nullptr),
 	TextureStreamingCommandAllocatorManager(this, D3D12_COMMAND_LIST_TYPE_COPY),
 	GlobalSamplerHeap(this, Node),
 	GlobalViewHeap(this, Node),
@@ -41,6 +41,7 @@ FD3D12Device::FD3D12Device(GPUNodeMask Node, FD3D12Adapter* InAdapter) :
 	FD3D12SingleNodeGPUObject(Node),
 	FD3D12AdapterChild(InAdapter)
 {
+	InitPlatformSpecific();
 }
 
 ID3D12Device* FD3D12Device::GetDevice()
@@ -111,13 +112,31 @@ void FD3D12Device::CreateCommandContexts()
 
 bool FD3D12Device::IsGPUIdle()
 {
-	FD3D12Fence& Fence = CommandListManager.GetFence();
+	FD3D12Fence& Fence = CommandListManager->GetFence();
 	return Fence.GetLastCompletedFence() >= (Fence.GetCurrentFence() - 1);
 }
 
 void FD3D12Device::SetupAfterDeviceCreation()
 {
 	ID3D12Device* Direct3DDevice = GetParentAdapter()->GetD3DDevice();
+
+#if PLATFORM_WINDOWS
+	IUnknown* RenderDoc;
+	IID RenderDocID;
+	if (SUCCEEDED(IIDFromString(L"{A7AA6116-9C8D-4BBA-9083-B4D816B71B78}", &RenderDocID)))
+	{
+		if (SUCCEEDED(Direct3DDevice->QueryInterface(RenderDocID, (void**)(&RenderDoc))))
+		{
+			// Running under RenderDoc, so enable capturing mode
+			GDynamicRHI->EnableIdealGPUCaptureOptions(true);
+		}
+	}
+	if (GEmitRgpFrameMarkers && GetOwningRHI()->GetAmdAgsContext())
+	{
+		// Running on AMD with RGP profiling enabled, so enable capturing mode
+		GDynamicRHI->EnableIdealGPUCaptureOptions(true);
+	}
+#endif
 
 	// Init offline descriptor allocators
 	RTVAllocator.Init(Direct3DDevice);
@@ -133,7 +152,7 @@ void FD3D12Device::SetupAfterDeviceCreation()
 
 	// This value can be tuned on a per app basis. I.e. most apps will never run into descriptor heap pressure so
 	// can make this global heap smaller
-	uint32 NumGlobalViewDesc = GLOBAL_VIEW_HEAP_SIZE;
+	uint32 NumGlobalViewDesc = GGlobalViewHeapSize;
 
 	const D3D12_RESOURCE_BINDING_TIER Tier = GetParentAdapter()->GetResourceBindingTier();
 	uint32 MaximumSupportedHeapSize = NUM_VIEW_DESCRIPTORS_TIER_1;
@@ -158,9 +177,9 @@ void FD3D12Device::SetupAfterDeviceCreation()
 	// Init the occlusion query heap
 	OcclusionQueryHeap.Init();
 
-	CommandListManager.Create(L"3D Queue");
-	CopyCommandListManager.Create(L"Copy Queue");
-	AsyncCommandListManager.Create(L"Async Compute Queue", 0, AsyncComputePriority_Default);
+	CommandListManager->Create(L"3D Queue");
+	CopyCommandListManager->Create(L"Copy Queue");
+	AsyncCommandListManager->Create(L"Async Compute Queue", 0, AsyncComputePriority_Default);
 
 	// Needs to be called before creating command contexts
 	UpdateConstantBufferPageProperties();
@@ -207,9 +226,9 @@ void FD3D12Device::UpdateMSAASettings()
 void FD3D12Device::Cleanup()
 {
 	// Wait for the command queues to flush
-	CommandListManager.WaitForCommandQueueFlush();
-	CopyCommandListManager.WaitForCommandQueueFlush();
-	AsyncCommandListManager.WaitForCommandQueueFlush();
+	CommandListManager->WaitForCommandQueueFlush();
+	CopyCommandListManager->WaitForCommandQueueFlush();
+	AsyncCommandListManager->WaitForCommandQueueFlush();
 
 	check(!GIsCriticalError);
 
@@ -244,9 +263,9 @@ void FD3D12Device::Cleanup()
 	}
 	*/
 
-	CommandListManager.Destroy();
-	CopyCommandListManager.Destroy();
-	AsyncCommandListManager.Destroy();
+	CommandListManager->Destroy();
+	CopyCommandListManager->Destroy();
+	AsyncCommandListManager->Destroy();
 
 	OcclusionQueryHeap.Destroy();
 
@@ -276,4 +295,14 @@ void FD3D12Device::GetLocalVideoMemoryInfo(DXGI_QUERY_VIDEO_MEMORY_INFO* LocalVi
 
 	VERIFYD3D12RESULT(Adapter3->QueryVideoMemoryInfo(GetNodeIndex(), DXGI_MEMORY_SEGMENT_GROUP_LOCAL, LocalVideoMemoryInfo));
 #endif
+}
+
+void FD3D12Device::BlockUntilIdle()
+{
+	GetDefaultCommandContext().FlushCommands();
+	GetDefaultAsyncComputeContext().FlushCommands();
+
+	GetCommandListManager().WaitForCommandQueueFlush();
+	GetCopyCommandListManager().WaitForCommandQueueFlush();
+	GetAsyncCommandListManager().WaitForCommandQueueFlush();
 }

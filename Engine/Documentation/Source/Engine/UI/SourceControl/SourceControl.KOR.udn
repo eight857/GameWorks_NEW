@@ -1,29 +1,19 @@
-﻿INTSourceChangelist:3108692
+﻿INTSourceChangelist:3489755
 Availability: Public
 Title:소스 콘트롤
-Crumbs:%ROOT%, Engine, Engine/UI
+Crumbs: %ROOT%
 Description:소스 콘트롤 기능에 대한 개요서입니다.
-Version: 4.9
-
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-	[PARAM:image]
-		![](SourceControlTopic.png)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/UI/SourceControl:title%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/UI/SourceControl]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
+type:overview
+skilllevel:Beginner
+Version: 4.16
+parent:Engine/UI
+order:
+tags:User Interface
+topic-image:SourceControlTopic.png
 
 [TOC(start:2)]
 
-
-
-언리얼 에디터는 소스 콘트롤을 지원, 팀의 조직적인 게임 개발 및 디자인 작업을 지원함은 물론, 버전 관리도 해 줍니다.
+언리얼 에디터에는 소스 콘트롤 패키지 지원이 내장되어 있습니다. 소스 콘트롤은 시간에 따른 코드 및 데이터 변경을 관리하는 툴로, 게임에 대한 팀 개발 노력을 줄일 수 있습니다.
 
 [REGION:note]
 	기본적으로 Perforce 와 SVN 이 지원됩니다.
@@ -67,12 +57,10 @@ Version: 4.9
 콘텐츠 브라우저에는 애셋 **우측 상단에** 특수 아이콘으로 소스 콘트롤 상태를 표시합니다. 아래는 표시되는 아이콘과 그 의미입니다:
 
 
-
 [REGION:imagetable]
-| ![CheckedOutByYou.png](CheckedOutByYou.png)(w:178) | ![CheckedOut.png](CheckedOut.png)(w:178) | ![MarkedForAdd.png](MarkedForAdd.png)(w:178) | ![notInDepot.png](notInDepot.png)(w:178) | ![NotHadRevision.png](NotHadRevision.png)(w:178) 
+| ![CheckedOutByYou.png](CheckedOutByYou.png)(w:178) | ![CheckedOut.png](CheckedOut.png)(w:178) | ![MarkedForAdd.png](MarkedForAdd.png)(w:178) | ![NotInTheDepot.png](NotInTheDepot.png)(w:178) | ![NotHeadRevision.png](NotHeadRevision.png)(w:178) 
 | --- | --- | --- | --- | --- |
 | 자신이 체크아웃 | 다른이가 체크아웃 | 추가 마킹 | 디포에 없음 | 소스 콘트롤에 새 버전 존재
-
 [/REGION]
 
 ## 소스 콘트롤 작업
@@ -90,20 +78,28 @@ Version: 4.9
 
 ## 체크 아웃과 체크 인
 
-애셋 편집을 위해 체크 아웃 시키려면, 단순히 그 위에 우클릭한 수 **Check Out** 을 선택하면 됩니다. 그러나 도로 체크 인 시킬 때는, 반드시 따라야 하는 규약이 있습니다.
+애셋 편집을 위해 체크 아웃 시키려면, 단순히 그 위에 우클릭한 수 **Check Out** 을 선택하면 됩니다. 그러나 도로 체크 인 시킬 때는, 다음 규칙을 지켜주세요:
 
 * 애셋에 우클릭하고 **Check In** 을 선택합니다. 체크 인 하는 데 필요한 Changelist 설명을 입력하라는 창이 뜹니다.
 * 설명을 입력하면, 애셋의 리비전 히스토리에 추가됩니다.
 * 완료되면 **OK** 를 클릭합니다.
 
 
-
 ![ChangelistDescription.png](ChangelistDescription.png)
 
 [REGION:note]
-	Changelist 의 설명은 필수이므로, 입력하지 않으면 *OK* 버튼은 나타나지 않습니다.
+Changelist 의 설명은 필수이므로, 입력하지 않으면 *OK* 버튼은 나타나지 않습니다.
 [/REGION]
 
+## 콘텐츠 핫 리로드
+
+**Content Hot Reloading** (콘텐츠 핫 리로드)는 소스 콘트롤 작업에 의해 콘텐츠가 변경되었을 때 에디터내 소스 콘트롤에서 콘텐츠를 자동으로 리로드해 주는 신기능입니다. 자동 리로드는 현재 에디터내 통합된 소스 콘트롤을 통해서 소스 콘트롤 작업을 할 때만 작동하며, 외부에서는 변경해도 리로드가 발동되지 않습니다. 앞으로의 엔진 버전에서는 이러한 요건을 제거하여 외부에서 변경해도 핫 리로드가 발동되도록 할 계획입니다.
+
+콘텐츠 핫 리로드는 명령이 있을 때 애셋의 지난 번 저장 상태에서 리로드하는 기능도 제공합니다. 콘텐츠 브라우저에서 애셋에 우클릭하고 "애셋 액션" 그룹 아래 "리로드" 옵션을 선택하면 됩니다. 애셋에 저장하지 않은 변경사항을 버리고 디스크에 있는 버전으로 되돌리고자 할 때 매우 유용합니다.
+
+![ContentHotReload.png](ContentHotReload.png)
+
+[REGION:note]이 기능은 현재 프로젝트에 소스 콘트롤이 활성화된 상태여야 합니다.[/REGION:note]
 
 ## 소스 콘트롤 비활성화
 
@@ -117,4 +113,3 @@ Version: 4.9
 
 1. 레벨 에디터 창 우상단 구석에 초록색 두갈래 화살표 아이콘을 (![](icon_SourceControl.png)) 클릭합니다. 그러면 **소스 콘트롤 로그인** 창이 뜹니다.
 1. **Run Without Source Control** (소스 콘트롤 없이 실행) 버튼을 누릅니다. 레벨 에디터 창의 초록 아이콘이 빨강색 금지 아이콘으로 (![](icon_CB_SourceControlOff.png)) 변경되어 소스 콘트롤 사용중이 아님을 나타냅니다.
-

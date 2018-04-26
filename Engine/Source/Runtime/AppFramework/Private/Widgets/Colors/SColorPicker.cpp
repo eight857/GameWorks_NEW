@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Colors/SColorPicker.h"
 #include "Misc/ConfigCacheIni.h"
@@ -79,6 +79,7 @@ void SColorPicker::Construct( const FArguments& InArgs )
 	DisplayGamma = InArgs._DisplayGamma;
 	bClosedViaOkOrCancel = false;
 	bValidCreationOverrideExists = InArgs._OverrideColorPickerCreation;
+	OptionalOwningDetailsView = InArgs._OptionalOwningDetailsView.Get().IsValid() ? InArgs._OptionalOwningDetailsView.Get() : nullptr;
 
 	if ( InArgs._sRGBOverride.IsSet() )
 	{
@@ -204,7 +205,7 @@ void SColorPicker::SetColors(const FLinearColor& InColor)
 {
 	for (int32 i = 0; i < TargetFColors.Num(); ++i)
 	{
-		*TargetFColors[i] = InColor.ToFColor(false);
+		*TargetFColors[i] = InColor.ToFColor(true);
 	}
 
 	for (int32 i = 0; i < TargetLinearColors.Num(); ++i)
@@ -1464,10 +1465,7 @@ FReply SColorPicker::HandleOkButtonClicked()
 {
 	bClosedViaOkOrCancel = true;
 
-	if (bOnlyRefreshOnOk)
-	{
-		UpdateColorPick();
-	}
+	UpdateColorPick();
 
 	if (SColorPicker::OnColorPickerDestroyOverride.IsBound())
 	{
@@ -1629,11 +1627,23 @@ SColorPicker::FOnColorPickerDestructionOverride SColorPicker::OnColorPickerDestr
 /** A static color picker that everything should use. */
 static TWeakPtr<SWindow> ColorPickerWindow;
 
+static TWeakPtr<SColorPicker> GlobalColorPicker;
+
+TSharedPtr<SColorPicker> GetColorPicker()
+{
+	if (GlobalColorPicker.IsValid())
+	{
+		return GlobalColorPicker.Pin();
+	}
+	else
+	{
+		return nullptr;
+	}
+}
 
 bool OpenColorPicker(const FColorPickerArgs& Args)
 {
 	DestroyColorPicker();
-
 	bool Result = false;
 
 	// Consoles do not support opening new windows
@@ -1642,7 +1652,7 @@ bool OpenColorPicker(const FColorPickerArgs& Args)
 
 	if (Args.ColorArray && Args.ColorArray->Num() > 0)
 	{
-		OldColor = (*Args.ColorArray)[0]->ReinterpretAsLinear();
+		OldColor = FLinearColor(*(*Args.ColorArray)[0]);
 	}
 	else if (Args.LinearColorArray && Args.LinearColorArray->Num() > 0)
 	{
@@ -1661,10 +1671,12 @@ bool OpenColorPicker(const FColorPickerArgs& Args)
 	}
 		
 	// Determine the position of the window so that it will spawn near the mouse, but not go off the screen.
-	const FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+	FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+
 	FSlateRect Anchor(CursorPos.X, CursorPos.Y, CursorPos.X, CursorPos.Y);
 
-	FVector2D AdjustedSummonLocation = FSlateApplication::Get().CalculatePopupWindowPosition( Anchor, SColorPicker::DEFAULT_WINDOW_SIZE, Orient_Horizontal );
+	FVector2D AdjustedSummonLocation = FSlateApplication::Get().CalculatePopupWindowPosition( Anchor, SColorPicker::DEFAULT_WINDOW_SIZE, true, FVector2D::ZeroVector, Orient_Horizontal );
+
 
 	// Only override the color picker window creation behavior if we are not creating a modal color picker
 	const bool bOverrideNonModalCreation = (SColorPicker::OnColorPickerNonModalCreateOverride.IsBound() && !Args.bIsModal);
@@ -1707,7 +1719,7 @@ bool OpenColorPicker(const FColorPickerArgs& Args)
 		}
 	}
 
-	TSharedRef<SColorPicker> ColorPicker = SNew(SColorPicker)
+	TSharedRef<SColorPicker> CreatedColorPicker = SNew(SColorPicker)
 		.TargetColorAttribute(OldColor)
 		.TargetFColors(Args.ColorArray ? *Args.ColorArray : TArray<FColor*>())
 		.TargetLinearColors(Args.LinearColorArray ? *Args.LinearColorArray : TArray<FLinearColor*>())
@@ -1725,12 +1737,13 @@ bool OpenColorPicker(const FColorPickerArgs& Args)
 		.ParentWindow(Window)
 		.DisplayGamma(Args.DisplayGamma)
 		.sRGBOverride(Args.sRGBOverride)
-		.OverrideColorPickerCreation(bOverrideNonModalCreation);
+		.OverrideColorPickerCreation(bOverrideNonModalCreation)
+		.OptionalOwningDetailsView(Args.OptionalOwningDetailsView);
 	
 	// If the color picker requested is modal, don't override the behavior even if the delegate is bound
 	if (bOverrideNonModalCreation)
 	{
-		SColorPicker::OnColorPickerNonModalCreateOverride.Execute(ColorPicker);
+		SColorPicker::OnColorPickerNonModalCreateOverride.Execute(CreatedColorPicker);
 
 		Result = true;
 
@@ -1739,7 +1752,7 @@ bool OpenColorPicker(const FColorPickerArgs& Args)
 	}
 	else
 	{
-		WindowContent->SetContent(ColorPicker);
+		WindowContent->SetContent(CreatedColorPicker);
 
 		if (Args.bIsModal)
 		{
@@ -1766,6 +1779,7 @@ bool OpenColorPicker(const FColorPickerArgs& Args)
 		//hold on to the window created for external use...
 		ColorPickerWindow = Window;
 	}
+	GlobalColorPicker = CreatedColorPicker;
 #endif
 
 	return Result;
@@ -1789,6 +1803,7 @@ void DestroyColorPicker()
 			ColorPickerWindow.Pin()->RequestDestroyWindow();
 		}
 		ColorPickerWindow.Reset();
+		GlobalColorPicker.Reset();
 	}
 }
 

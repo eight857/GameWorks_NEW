@@ -18,9 +18,9 @@
 #include "GlobalShader.h"
 #include "DeferredShadingRenderer.h"
 #include "ScenePrivate.h"
-#include "LightPropagationVolumeBlendable.h"
+#include "LightPropagationVolumeSettings.h"
 
-DECLARE_FLOAT_COUNTER_STAT(TEXT("LPV"), Stat_GPU_LPV, STATGROUP_GPU);
+DECLARE_GPU_STAT(LPV);
 
 static TAutoConsoleVariable<int32> CVarLightPropagationVolume(
 	TEXT("r.LightPropagationVolume"),
@@ -163,9 +163,9 @@ public:
 		AOVolumeTextureSRV.Bind(Initializer.ParameterMap, TEXT("gAOVolumeTexture") );
 	}
 
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		FGlobalShader::ModifyCompilationEnvironment( Platform, OutEnvironment );
+		FGlobalShader::ModifyCompilationEnvironment( Parameters, OutEnvironment );
 		OutEnvironment.SetDefine( TEXT("LPV_MULTIPLE_BOUNCES"), (uint32)LPV_MULTIPLE_BOUNCES );
 		OutEnvironment.SetDefine( TEXT("LPV_GV_SH_ORDER"),			(uint32)LPV_GV_SH_ORDER );
 	}
@@ -406,12 +406,7 @@ class FLpvClearCS : public FLpvWriteShaderCSBase
 	DECLARE_SHADER_TYPE(FLpvClearCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
-	{
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
-	}
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	FLpvClearCS()	{	}
 
@@ -419,7 +414,7 @@ public:
 
 	virtual bool Serialize( FArchive& Ar ) override			{ return FLpvWriteShaderCSBase::Serialize( Ar ); }
 };
-IMPLEMENT_SHADER_TYPE(,FLpvClearCS,TEXT("LPVClear"),TEXT("CSClear"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FLpvClearCS,TEXT("/Engine/Private/LPVClear.usf"),TEXT("CSClear"),SF_Compute);
 
 
 // ----------------------------------------------------------------------------
@@ -430,12 +425,7 @@ class FLpvClearGeometryVolumeCS : public FLpvWriteShaderCSBase
 	DECLARE_SHADER_TYPE(FLpvClearGeometryVolumeCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
-	{
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
-	}
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	FLpvClearGeometryVolumeCS()	{	}
 
@@ -443,7 +433,7 @@ public:
 
 	virtual bool Serialize( FArchive& Ar ) override			{ return FLpvWriteShaderCSBase::Serialize( Ar ); }
 };
-IMPLEMENT_SHADER_TYPE(,FLpvClearGeometryVolumeCS,TEXT("LPVClear"),TEXT("CSClearGeometryVolume"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FLpvClearGeometryVolumeCS,TEXT("/Engine/Private/LPVClear.usf"),TEXT("CSClearGeometryVolume"),SF_Compute);
 
 
 // ----------------------------------------------------------------------------
@@ -454,12 +444,7 @@ class FLpvClearListsCS : public FLpvWriteShaderCSBase
 	DECLARE_SHADER_TYPE(FLpvClearListsCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
-	{
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
-	}
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	FLpvClearListsCS()	{	}
 
@@ -467,7 +452,7 @@ public:
 
 	virtual bool Serialize( FArchive& Ar ) override			{ return FLpvWriteShaderCSBase::Serialize( Ar ); }
 };
-IMPLEMENT_SHADER_TYPE(,FLpvClearListsCS,TEXT("LPVClearLists"),TEXT("CSClearLists"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FLpvClearListsCS,TEXT("/Engine/Private/LPVClearLists.usf"),TEXT("CSClearLists"),SF_Compute);
 
 // ----------------------------------------------------------------------------
 // LPV generate VPL lists compute shader (for a directional light)
@@ -477,12 +462,7 @@ class FLpvInject_GenerateVplListsCS : public FLpvWriteShaderCSBase
 	DECLARE_SHADER_TYPE(FLpvInject_GenerateVplListsCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
-	{
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
-	}
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	FLpvInject_GenerateVplListsCS()	{	}
 
@@ -540,7 +520,7 @@ protected:
 	FShaderResourceParameter LinearTextureSampler;
 	FShaderResourceParameter PointTextureSampler;
 };
-IMPLEMENT_SHADER_TYPE(,FLpvInject_GenerateVplListsCS,TEXT("LPVInject_GenerateVplLists"),TEXT("CSGenerateVplLists_LightDirectional"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FLpvInject_GenerateVplListsCS,TEXT("/Engine/Private/LPVInject_GenerateVplLists.usf"),TEXT("CSGenerateVplLists_LightDirectional"),SF_Compute);
 
 // ----------------------------------------------------------------------------
 // LPV accumulate VPL lists compute shader
@@ -550,12 +530,7 @@ class FLpvInject_AccumulateVplListsCS : public FLpvWriteShaderCSBase
 	DECLARE_SHADER_TYPE(FLpvInject_AccumulateVplListsCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
-	{
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
-	}
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	FLpvInject_AccumulateVplListsCS()	{	}
 
@@ -563,7 +538,7 @@ public:
 
 	virtual bool Serialize( FArchive& Ar ) override			{ return FLpvWriteShaderCSBase::Serialize( Ar ); }
 };
-IMPLEMENT_SHADER_TYPE(,FLpvInject_AccumulateVplListsCS,TEXT("LPVInject_AccumulateVplLists"),TEXT("CSAccumulateVplLists"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FLpvInject_AccumulateVplListsCS,TEXT("/Engine/Private/LPVInject_AccumulateVplLists.usf"),TEXT("CSAccumulateVplLists"),SF_Compute);
 
 // ----------------------------------------------------------------------------
 // LPV directional occlusion compute shader
@@ -573,12 +548,7 @@ class FLpvDirectionalOcclusionCS : public FLpvWriteShaderCSBase
 	DECLARE_SHADER_TYPE(FLpvDirectionalOcclusionCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
-	{
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
-	}
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	FLpvDirectionalOcclusionCS()	{	}
 
@@ -602,7 +572,7 @@ public:
 		const FComputeShaderRHIParamRef ShaderRHI = GetComputeShader();
 	}
 };
-IMPLEMENT_SHADER_TYPE(,FLpvDirectionalOcclusionCS,TEXT("LpvDirectionalOcclusion"),TEXT("CSDirectionalOcclusion"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FLpvDirectionalOcclusionCS,TEXT("/Engine/Private/LPVDirectionalOcclusion.usf"),TEXT("CSDirectionalOcclusion"),SF_Compute);
 
 // ----------------------------------------------------------------------------
 // LPV directional occlusion compute shader
@@ -612,12 +582,7 @@ class FLpvCopyAOVolumeCS : public FLpvWriteShaderCSBase
 	DECLARE_SHADER_TYPE(FLpvCopyAOVolumeCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
-	{
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
-	}
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	FLpvCopyAOVolumeCS()	{	}
 
@@ -641,7 +606,7 @@ public:
 		const FComputeShaderRHIParamRef ShaderRHI = GetComputeShader();
 	}
 };
-IMPLEMENT_SHADER_TYPE(,FLpvCopyAOVolumeCS,TEXT("LpvDirectionalOcclusion"),TEXT("CSCopyAOVolume"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FLpvCopyAOVolumeCS,TEXT("/Engine/Private/LPVDirectionalOcclusion.usf"),TEXT("CSCopyAOVolume"),SF_Compute);
 
 
 // ----------------------------------------------------------------------------
@@ -652,12 +617,7 @@ class FLpvBuildGeometryVolumeCS : public FLpvWriteShaderCSBase
 	DECLARE_SHADER_TYPE(FLpvBuildGeometryVolumeCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
-
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
-	{
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
-	}
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
 	FLpvBuildGeometryVolumeCS()	{	}
 
@@ -665,7 +625,7 @@ public:
 
 	virtual bool Serialize( FArchive& Ar ) override			{ return FLpvWriteShaderCSBase::Serialize( Ar ); }
 };
-IMPLEMENT_SHADER_TYPE(,FLpvBuildGeometryVolumeCS,TEXT("LPVBuildGeometryVolume"),TEXT("CSBuildGeometryVolume"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(,FLpvBuildGeometryVolumeCS,TEXT("/Engine/Private/LPVBuildGeometryVolume.usf"),TEXT("CSBuildGeometryVolume"),SF_Compute);
 
 // ----------------------------------------------------------------------------
 // LPV propagate compute shader
@@ -683,9 +643,9 @@ class TLpvPropagateCS : public FLpvWriteShaderCSBase
 	DECLARE_SHADER_TYPE(TLpvPropagateCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		CA_SUPPRESS(6313);
 		OutEnvironment.SetDefine(TEXT("LPV_SECONDARY_OCCLUSION"), (uint32)(ShaderFlags & PROPAGATE_SECONDARY_OCCLUSION ? 1 : 0));
@@ -695,7 +655,7 @@ public:
 		OutEnvironment.SetDefine(TEXT("LPV_PROPAGATE_AO"), (uint32)(ShaderFlags & PROPAGATE_AO ? 1 : 0));
 		OutEnvironment.CompilerFlags.Add(CFLAG_StandardOptimization);
 
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
+		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Parameters, OutEnvironment );
 	}
 
 	TLpvPropagateCS()	{	}
@@ -705,14 +665,14 @@ public:
 	virtual bool Serialize( FArchive& Ar ) override			{ return FLpvWriteShaderCSBase::Serialize( Ar ); }
 };
 
-IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<0>,																		TEXT("LPVPropagate"),TEXT("CSPropagate"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_SECONDARY_OCCLUSION>,											TEXT("LPVPropagate"),TEXT("CSPropagate"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_MULTIPLE_BOUNCES>,												TEXT("LPVPropagate"),TEXT("CSPropagate"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_SECONDARY_OCCLUSION|PROPAGATE_MULTIPLE_BOUNCES>,					TEXT("LPVPropagate"),TEXT("CSPropagate"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_AO>,																TEXT("LPVPropagate"),TEXT("CSPropagate"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_AO|PROPAGATE_SECONDARY_OCCLUSION>,								TEXT("LPVPropagate"),TEXT("CSPropagate"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_AO|PROPAGATE_MULTIPLE_BOUNCES>,									TEXT("LPVPropagate"),TEXT("CSPropagate"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_AO|PROPAGATE_SECONDARY_OCCLUSION|PROPAGATE_MULTIPLE_BOUNCES>,	TEXT("LPVPropagate"),TEXT("CSPropagate"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<0>,																		TEXT("/Engine/Private/LPVPropagate.usf"),TEXT("CSPropagate"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_SECONDARY_OCCLUSION>,											TEXT("/Engine/Private/LPVPropagate.usf"),TEXT("CSPropagate"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_MULTIPLE_BOUNCES>,												TEXT("/Engine/Private/LPVPropagate.usf"),TEXT("CSPropagate"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_SECONDARY_OCCLUSION|PROPAGATE_MULTIPLE_BOUNCES>,					TEXT("/Engine/Private/LPVPropagate.usf"),TEXT("CSPropagate"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_AO>,																TEXT("/Engine/Private/LPVPropagate.usf"),TEXT("CSPropagate"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_AO|PROPAGATE_SECONDARY_OCCLUSION>,								TEXT("/Engine/Private/LPVPropagate.usf"),TEXT("CSPropagate"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_AO|PROPAGATE_MULTIPLE_BOUNCES>,									TEXT("/Engine/Private/LPVPropagate.usf"),TEXT("CSPropagate"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvPropagateCS<PROPAGATE_AO|PROPAGATE_SECONDARY_OCCLUSION|PROPAGATE_MULTIPLE_BOUNCES>,	TEXT("/Engine/Private/LPVPropagate.usf"),TEXT("CSPropagate"),SF_Compute);
 
 FLpvWriteShaderCSBase* GetPropagateShader( FViewInfo& View, uint32 ShaderFlags )
 {
@@ -777,15 +737,15 @@ class TLpvInject_LightCS : public FLpvInjectShader_Base
 	DECLARE_SHADER_TYPE(TLpvInject_LightCS,Global);
 
 public:
-	static bool ShouldCache( EShaderPlatform Platform )		{ return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Platform); }
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)		{ return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && IsLPVSupported(Parameters.Platform); }
 
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		CA_SUPPRESS(6313);
 		OutEnvironment.SetDefine(TEXT("SHADOW_CASTING"),   (uint32)(InjectFlags & INJECT_SHADOW_CASTING ? 1 : 0));
 		CA_SUPPRESS(6313);
 		OutEnvironment.SetDefine(TEXT("SPOT_ATTENUATION"), (uint32)(InjectFlags & INJECT_SPOT_ATTENUATION ? 1 : 0));
-		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Platform, OutEnvironment );
+		FLpvWriteShaderCSBase::ModifyCompilationEnvironment( Parameters, OutEnvironment );
 	}
 
 	TLpvInject_LightCS()	{	}
@@ -795,10 +755,10 @@ public:
 	virtual bool Serialize( FArchive& Ar ) override			{ return FLpvInjectShader_Base::Serialize( Ar ); }
 };
 
-IMPLEMENT_SHADER_TYPE(template<>,TLpvInject_LightCS<0>,TEXT("LPVDirectLightInject"),TEXT("CSLightInject_ListGenCS"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvInject_LightCS<1>,TEXT("LPVDirectLightInject"),TEXT("CSLightInject_ListGenCS"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvInject_LightCS<2>,TEXT("LPVDirectLightInject"),TEXT("CSLightInject_ListGenCS"),SF_Compute);
-IMPLEMENT_SHADER_TYPE(template<>,TLpvInject_LightCS<3>,TEXT("LPVDirectLightInject"),TEXT("CSLightInject_ListGenCS"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvInject_LightCS<0>,TEXT("/Engine/Private/LPVDirectLightInject.usf"),TEXT("CSLightInject_ListGenCS"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvInject_LightCS<1>,TEXT("/Engine/Private/LPVDirectLightInject.usf"),TEXT("CSLightInject_ListGenCS"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvInject_LightCS<2>,TEXT("/Engine/Private/LPVDirectLightInject.usf"),TEXT("CSLightInject_ListGenCS"),SF_Compute);
+IMPLEMENT_SHADER_TYPE(template<>,TLpvInject_LightCS<3>,TEXT("/Engine/Private/LPVDirectLightInject.usf"),TEXT("CSLightInject_ListGenCS"),SF_Compute);
 
 // ----------------------------------------------------------------------------
 // FLightPropagationVolume
@@ -823,13 +783,13 @@ FLightPropagationVolume::FLightPropagationVolume() :
 	int32 RSMResolution = FSceneRenderTargets::Get_FrameConstantsOnly().GetReflectiveShadowMapResolution();
 	int32 GvListBufferSize = RSMResolution * RSMResolution * 16; // Allow 16 layers of depth per every pixel of the RSM (on average) 
 	int32 VplListBufferSize = RSMResolution * RSMResolution * 4; // Allow 4 layers of depth per pixel in the RSM (1 for the RSM injection + 3 for light injection)
-	mVplListBuffer->Initialize( sizeof( VplListEntry ), VplListBufferSize, 0, true, false );
+	mVplListBuffer->Initialize( sizeof( VplListEntry ), VplListBufferSize, 0, TEXT("mVplListBuffer"), true, false );
 	mVplListHeadBuffer = new FRWBufferByteAddress();
 	mVplListHeadBuffer->Initialize( LPV_GRIDRES*LPV_GRIDRES*LPV_GRIDRES*4, BUF_ByteAddressBuffer );
 
 	// Geometry volume buffers
 	GvListBuffer = new FRWBufferStructured();
-	GvListBuffer->Initialize( sizeof( VplListEntry ), GvListBufferSize, 0, true, false );
+	GvListBuffer->Initialize( sizeof( VplListEntry ), GvListBufferSize, 0, TEXT("GvListBuffer"), true, false );
 	GvListHeadBuffer = new FRWBufferByteAddress();
 	GvListHeadBuffer->Initialize( LPV_GRIDRES*LPV_GRIDRES*LPV_GRIDRES*4, BUF_ByteAddressBuffer );
 
@@ -845,6 +805,7 @@ FLightPropagationVolume::FLightPropagationVolume() :
 FLightPropagationVolume::~FLightPropagationVolume()
 {
 	LpvWriteUniformBuffer.ReleaseResource();
+	RsmRenderUniformBuffer.ReleaseResource();
 
 	// Note: this is double-buffered!
 	for ( int i = 0; i < 2; i++ )
@@ -898,8 +859,8 @@ void FLightPropagationVolume::InitSettings(FRHICommandListImmediate& RHICmdList,
 			LPV_GRIDRES,
 			PF_FloatRGBA,
 			FClearValueBinding::None,
-			TexCreate_HideInVisualizeTexture,
-			TexCreate_ShaderResource | TexCreate_UAV | TexCreate_FastVRAM,
+			TexCreate_HideInVisualizeTexture | GFastVRamConfig.LPV,
+			TexCreate_ShaderResource | TexCreate_UAV,
 			false,
 			1));
 
@@ -932,8 +893,8 @@ void FLightPropagationVolume::InitSettings(FRHICommandListImmediate& RHICmdList,
 				LPV_GRIDRES,
 				PF_G8,
 				FClearValueBinding::None,
-				TexCreate_HideInVisualizeTexture,
-				TexCreate_ShaderResource | TexCreate_UAV | TexCreate_FastVRAM,
+				TexCreate_HideInVisualizeTexture | GFastVRamConfig.LPV,
+				TexCreate_ShaderResource | TexCreate_UAV,
 				false,
 				1));
 			GRenderTargetPool.FindFreeElement(RHICmdList, AODesc, AOVolumeTexture, TEXT("LPVAOVolume"));
@@ -1163,7 +1124,7 @@ void FLightPropagationVolume::InjectDirectionalLightRSM(
 	{
 		SCOPED_DRAW_EVENT(RHICmdList, LpvInjectDirectionalLightRSM);
 
-		SetVplInjectionConstants(ProjectedShadowInfo, LightProxy );
+		SetVplInjectionConstants(ProjectedShadowInfo, LightProxy ); //-V595
 
 		TShaderMapRef<FLpvInject_GenerateVplListsCS> Shader(View.ShaderMap);
 		RHICmdList.SetComputeShader(Shader->GetComputeShader());
@@ -1337,6 +1298,15 @@ void FLightPropagationVolume::Update( FRHICommandListImmediate& RHICmdList, FVie
 	}
 }
 
+void FLightPropagationVolume::SetRsmUniformBuffer()
+{
+	if (!RsmRenderUniformBuffer.IsInitialized())
+	{
+		RsmRenderUniformBuffer.InitResource();
+	}
+
+	RsmRenderUniformBuffer.SetContents(*LpvWriteUniformBufferParams);
+}
 
 void FLightPropagationVolume::InsertGPUWaitForAsyncUpdate(FRHICommandListImmediate& RHICmdList)
 {
@@ -1393,23 +1363,18 @@ void FLightPropagationVolume::InjectLightDirect(FRHICommandListImmediate& RHICmd
 		SCOPED_DRAW_EVENT(RHICmdList, LpvDirectLightInjection);
 
 		FLpvDirectLightInjectParameters InjectUniformBufferParams;
-		// Get light params
-		FVector4	LightPositionAndInvRadius;
-		FVector4	LightColorAndFalloffExponent;
-		FVector		LightDirection;	
-		FVector2D	SpotAngles;
-		float		SourceRadius;
-		float		LightSourceLength;
-		float		LightMinRoughness;
-		Light.GetParameters( LightPositionAndInvRadius, LightColorAndFalloffExponent, LightDirection, SpotAngles, SourceRadius, LightSourceLength, LightMinRoughness );
 
+		FLightParameters LightParameters;
+
+		Light.GetParameters(LightParameters);
+		
 		InjectUniformBufferParams.LightColor = Light.GetColor() * Light.GetIndirectLightingScale();
 		InjectUniformBufferParams.LightPosition = Light.GetPosition();
 		InjectUniformBufferParams.LightRadius = Light.GetRadius();
-		InjectUniformBufferParams.LightFalloffExponent = LightColorAndFalloffExponent.W;
-		InjectUniformBufferParams.LightDirection = LightDirection;
-		InjectUniformBufferParams.LightSpotAngles = SpotAngles;
-		InjectUniformBufferParams.LightSourceLength = LightSourceLength;
+		InjectUniformBufferParams.LightFalloffExponent = LightParameters.LightColorAndFalloffExponent.W;
+		InjectUniformBufferParams.LightDirection = LightParameters.NormalizedLightDirection;
+		InjectUniformBufferParams.LightSpotAngles = LightParameters.SpotAngles;
+		InjectUniformBufferParams.LightSourceLength = LightParameters.LightSourceLength;
 		InjectUniformBufferParams.bLightInverseSquaredAttenuation = Light.IsInverseSquared() ? 1.0f : 0.0f;
 
 		FLpvInjectShader_Base* Shader = nullptr;
@@ -1441,21 +1406,29 @@ void FLightPropagationVolume::InjectLightDirect(FRHICommandListImmediate& RHICmd
 				}
 				break;
 		}
-		RHICmdList.SetComputeShader(Shader->GetComputeShader());
 
-  	    FDirectLightInjectBufferRef InjectUniformBuffer = 
-			FDirectLightInjectBufferRef::CreateUniformBufferImmediate(InjectUniformBufferParams, UniformBuffer_SingleFrame );
+		if (Shader)
+		{
+			RHICmdList.SetComputeShader(Shader->GetComputeShader());
 
-		mWriteBufferIndex = 1 - mWriteBufferIndex; // Swap buffers with each iteration
+			FDirectLightInjectBufferRef InjectUniformBuffer =
+				FDirectLightInjectBufferRef::CreateUniformBufferImmediate(InjectUniformBufferParams, UniformBuffer_SingleFrame);
 
-		FLpvBaseWriteShaderParams ShaderParams;
-		GetShaderParams( ShaderParams );
+			mWriteBufferIndex = 1 - mWriteBufferIndex; // Swap buffers with each iteration
 
-		LpvWriteUniformBuffer.SetContents( *LpvWriteUniformBufferParams );
+			FLpvBaseWriteShaderParams ShaderParams;
+			GetShaderParams(ShaderParams);
 
-		Shader->SetParameters(RHICmdList, ShaderParams, InjectUniformBuffer );
-		DispatchComputeShader(RHICmdList, Shader, LPV_GRIDRES / 4, LPV_GRIDRES / 4, LPV_GRIDRES / 4 );
-		Shader->UnbindBuffers(RHICmdList, ShaderParams);
+			LpvWriteUniformBuffer.SetContents(*LpvWriteUniformBufferParams);
+
+			Shader->SetParameters(RHICmdList, ShaderParams, InjectUniformBuffer);
+			DispatchComputeShader(RHICmdList, Shader, LPV_GRIDRES / 4, LPV_GRIDRES / 4, LPV_GRIDRES / 4);
+			Shader->UnbindBuffers(RHICmdList, ShaderParams);
+		}
+		else
+		{
+			checkf(0, TEXT("Failed to find LPV injection shader."));
+		}
 	}
 }
 
@@ -1489,7 +1462,7 @@ void FSceneViewState::SetupLightPropagationVolume(FSceneView& View, FSceneViewFa
 
 	const ERHIFeatureLevel::Type ViewFeatureLevel = View.GetFeatureLevel();
 
-	if (View.StereoPass == eSSP_RIGHT_EYE)
+	if (IStereoRendering::IsASecondaryView(View.StereoPass))
 	{
 		// The right eye will reference the left eye's LPV with the assumption that the left eye uses the primary view (index 0)
 		const FSceneView* PrimaryView = ViewFamily.Views[0];
@@ -1591,7 +1564,7 @@ void FDeferredShadingSceneRenderer::ClearLPVs(FRHICommandListImmediate& RHICmdLi
 
 				if(LightPropagationVolume)
 				{
-					SCOPED_GPU_STAT(RHICmdList, Stat_GPU_LPV);
+					SCOPED_GPU_STAT(RHICmdList, LPV);
 					LightPropagationVolume->InitSettings(RHICmdList, Views[ViewIndex]);
 					LightPropagationVolume->Clear(RHICmdList, View);
 				}
@@ -1620,7 +1593,7 @@ void FDeferredShadingSceneRenderer::UpdateLPVs(FRHICommandListImmediate& RHICmdL
 			{
 //				SCOPED_DRAW_EVENT(RHICmdList, UpdateLPVs);
 //				SCOPE_CYCLE_COUNTER(STAT_UpdateLPVs);
-				SCOPED_GPU_STAT(RHICmdList, Stat_GPU_LPV);
+				SCOPED_GPU_STAT(RHICmdList, LPV);
 
 				LightPropagationVolume->Update(RHICmdList, View);
 			}

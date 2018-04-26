@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/LevelBounds.h"
 #include "Engine/CollisionProfile.h"
@@ -36,14 +36,21 @@ ALevelBounds::ALevelBounds(const FObjectInitializer& ObjectInitializer)
 void ALevelBounds::PostLoad()
 {
 	Super::PostLoad();
-	GetLevel()->LevelBoundsActor = this;
+
+	if (!IsTemplate())
+	{
+		if (ULevel* Level = GetLevel())
+		{
+			Level->LevelBoundsActor = this;
+		}
+	}
 }
 
 FBox ALevelBounds::GetComponentsBoundingBox(bool bNonColliding) const
 {
 	checkf(RootComponent != nullptr, TEXT("LevelBounds actor with null root component: %s"), *GetPathNameSafe(this));
 	FVector BoundsCenter = RootComponent->GetComponentLocation();
-	FVector BoundsExtent = RootComponent->ComponentToWorld.GetScale3D() * 0.5f;
+	FVector BoundsExtent = RootComponent->GetComponentTransform().GetScale3D() * 0.5f;
 	return FBox(BoundsCenter - BoundsExtent, 
 				BoundsCenter + BoundsExtent);
 }
@@ -130,9 +137,14 @@ TStatId ALevelBounds::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(ALevelBounds, STATGROUP_Tickables);
 }
 
+ETickableTickType ALevelBounds::GetTickableTickType() const
+{
+	return ((GIsEditor && !IsTemplate()) ? ETickableTickType::Conditional : ETickableTickType::Never);
+}
+
 bool ALevelBounds::IsTickable() const
 {
-	if (GIsEditor && bAutoUpdateBounds && !IsTemplate())
+	if (bAutoUpdateBounds)
 	{
 		UWorld* World = GetWorld();
 		return (World && World->WorldType == EWorldType::Editor);

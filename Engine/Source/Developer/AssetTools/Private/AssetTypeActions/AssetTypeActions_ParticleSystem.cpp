@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetTypeActions/AssetTypeActions_ParticleSystem.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Misc/FeedbackContext.h"
 #include "Editor/Cascade/Public/CascadeModule.h"
 #include "Particles/ParticleEmitter.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #define LOCTEXT_NAMESPACE "AssetTypeActions"
 
@@ -97,7 +98,7 @@ void FAssetTypeActions_ParticleSystem::ExecuteCopyParameters(TArray<TWeakObjectP
 		}
 	}
 
-	FPlatformMisc::ClipboardCopy(*ClipboardString);
+	FPlatformApplicationMisc::ClipboardCopy(*ClipboardString);
 }
 
 void FAssetTypeActions_ParticleSystem::ConvertToSeeded(TArray<TWeakObjectPtr<UParticleSystem>> Objects)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -33,6 +33,7 @@ struct FLandscapeTextureDataInfo;
 struct FStaticLightingPrimitiveInfo;
 
 struct FLandscapeEditDataInterface;
+struct FLandscapeMobileRenderData;
 
 //
 // FLandscapeEditToolRenderData
@@ -96,12 +97,21 @@ class FLandscapeComponentDerivedData
 	/** The compressed Landscape component data for mobile rendering. Serialized to disk. 
 	    On device, freed once it has been decompressed. */
 	TArray<uint8> CompressedLandscapeData;
+	
+	/** Cached render data. Only valid on device. */
+	TSharedPtr<FLandscapeMobileRenderData, ESPMode::ThreadSafe > CachedRenderData;
 
 public:
 	/** Returns true if there is any valid platform data */
 	bool HasValidPlatformData() const
 	{
 		return CompressedLandscapeData.Num() != 0;
+	}
+
+	/** Returns true if there is any valid platform data */
+	bool HasValidRuntimeData() const
+	{
+		return CompressedLandscapeData.Num() != 0 || CachedRenderData.IsValid();
 	}
 
 	/** Returns the size of the platform data if there is any. */
@@ -113,8 +123,9 @@ public:
 	/** Initializes the compressed data from an uncompressed source. */
 	void InitializeFromUncompressedData(const TArray<uint8>& UncompressedData);
 
-	/** Decompresses and returns the data. Also frees the compressed data from memory when running with cooked data */
-	void GetUncompressedData(TArray<uint8>& OutUncompressedData);
+	/** Decompresses data if necessary and returns the render data object. 
+     *  On device, this frees the compressed data and keeps a reference to the render data. */
+	TSharedPtr<FLandscapeMobileRenderData, ESPMode::ThreadSafe> GetRenderData();
 
 	/** Constructs a key string for the DDC that uniquely identifies a the Landscape component's derived data. */
 	static FString GetDDCKeyString(const FGuid& StateId);
@@ -221,7 +232,7 @@ struct FLandscapeComponentGrassData
 	friend FArchive& operator<<(FArchive& Ar, FLandscapeComponentGrassData& Data);
 };
 
-UCLASS(hidecategories=(Display, Attachment, Physics, Debug, Collision, Movement, Rendering, PrimitiveComponent, Object, Transform), showcategories=("Rendering|Material"), MinimalAPI)
+UCLASS(hidecategories=(Display, Attachment, Physics, Debug, Collision, Movement, Rendering, PrimitiveComponent, Object, Transform), showcategories=("Rendering|Material"), MinimalAPI, Within=LandscapeProxy)
 class ULandscapeComponent : public UPrimitiveComponent
 {
 	GENERATED_UCLASS_BODY()
@@ -259,6 +270,9 @@ class ULandscapeComponent : public UPrimitiveComponent
 
 	UPROPERTY(TextExportTransient)
 	TArray<UMaterialInstanceConstant*> MaterialInstances;
+
+	UPROPERTY(Transient, TextExportTransient)
+	TArray<UMaterialInstanceDynamic*> MaterialInstancesDynamic;
 
 	/** List of layers, and the weightmap and channel they are stored */
 	UPROPERTY()
@@ -421,6 +435,7 @@ public:
 	virtual int32 GetStaticLightMapResolution() const override;
 	virtual void GetLightAndShadowMapMemoryUsage( int32& LightMapMemoryUsage, int32& ShadowMapMemoryUsage ) const override;
 	virtual void GetStaticLightingInfo(FStaticLightingPrimitiveInfo& OutPrimitiveInfo,const TArray<ULightComponent*>& InRelevantLights,const FLightingBuildOptions& Options) override;
+	virtual void AddMapBuildDataGUIDs(TSet<FGuid>& InGUIDs) const override;
 #endif
 	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials = false) const override;
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
@@ -495,6 +510,12 @@ public:
 	/** Generate mobile data if it's missing or outdated */
 	void CheckGenerateLandscapePlatformData(bool bIsCooking);
 #endif
+
+	LANDSCAPE_API class UMaterialInstance* GetMaterialInstance(int32 InIndex, bool InDynamic = true) const;
+
+	/** Gets the landscape material instance dynamic for this component */
+	UFUNCTION(BlueprintCallable, Category = "Landscape Runtime | Material")
+	class UMaterialInstanceDynamic* GetMaterialInstanceDynamic(int32 InIndex) const;
 
 	/** Get the landscape actor associated with this component. */
 	ALandscape* GetLandscapeActor() const;

@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GenericPlatform/GenericPlatformMallocCrash.h"
 #include "HAL/PlatformProcess.h"
 #include "HAL/PlatformTLS.h"
 #include "Templates/AlignmentTemplates.h"
+#include "HAL/LowLevelMemTracker.h"
 
 /** Describes a pool. */
 struct FPoolDesc
@@ -135,7 +136,7 @@ struct FMallocCrashPool
 		}
 		else
 		{
-			FPlatformMisc::DebugBreak();
+			UE_DEBUG_BREAK();
 			FPlatformMisc::LowLevelOutputDebugStringf( TEXT( "AllocateFromPool run out of memory allocating %u bytes for %u allocations\n" ), InAllocationSize, MaxNumAllocations );
 			FPlatformMisc::LowLevelOutputDebugString( TEXT( "Please increase MaxNumAllocations for that pool, exiting...\n" ) );
 			FPlatformMisc::RequestExit( true );
@@ -167,7 +168,7 @@ struct FMallocCrashPool
 
 		if( !bRemoved )
 		{
-			FPlatformMisc::DebugBreak();
+			UE_DEBUG_BREAK();
 		}
 
 		DebugVerify();
@@ -182,7 +183,7 @@ private:
 			FPtrInfo* PtrIt = Allocations[Index];
 			if( PtrIt->Size > 32768 )
 			{
-				FPlatformMisc::DebugBreak();
+				UE_DEBUG_BREAK();
 			}
 		}
 #endif // _DEBUG
@@ -195,9 +196,16 @@ FGenericPlatformMallocCrash::FGenericPlatformMallocCrash( FMalloc* MainMalloc ) 
 	SmallMemoryPoolOffset( 0 ),
 	PreviousMalloc( MainMalloc )
 {
-	const uint32 LargeMemoryPoolSize = Align(LARGE_MEMORYPOOL_SIZE,SafePageSize());
+	LLM_SCOPE(ELLMTag::GenericPlatformMallocCrash);
+	LLM_PLATFORM_SCOPE(ELLMTag::GenericPlatformMallocCrashPlatform);
+
+	const uint32 LargeMemoryPoolSize = Align((int32)LARGE_MEMORYPOOL_SIZE,SafePageSize());
 	LargeMemoryPool = (uint8*)FPlatformMemory::BinnedAllocFromOS( LargeMemoryPoolSize );
 	SmallMemoryPool = (uint8*)FPlatformMemory::BinnedAllocFromOS( (SIZE_T)GetSmallPoolTotalSize() );
+
+	LLM(FLowLevelMemTracker::Get().OnLowLevelAlloc(ELLMTracker::Default, LargeMemoryPool, LargeMemoryPoolSize));
+	LLM(FLowLevelMemTracker::Get().OnLowLevelAlloc(ELLMTracker::Default, SmallMemoryPool, GetSmallPoolTotalSize()));
+
 	if( !SmallMemoryPool || !LargeMemoryPool )
 	{
 		FPlatformMisc::LowLevelOutputDebugString( TEXT( "Memory pools allocations failed, exiting...\n" ) );
@@ -242,7 +250,7 @@ void* FGenericPlatformMallocCrash::Malloc( SIZE_T Size, uint32 Alignment )
 	const uint32 Size32 = (uint32)Size;
 	if( Alignment > 16 )
 	{
-		FPlatformMisc::DebugBreak();
+		UE_DEBUG_BREAK();
 		FPlatformMisc::LowLevelOutputDebugString( TEXT( "Alignment > 16 is not supported\n" ) );
 	}
 
@@ -273,7 +281,7 @@ void* FGenericPlatformMallocCrash::Malloc( SIZE_T Size, uint32 Alignment )
 			}
 			else
 			{
-				FPlatformMisc::DebugBreak();
+				UE_DEBUG_BREAK();
 				FPlatformMisc::LowLevelOutputDebugStringf( TEXT( "MallocCrash run out of memory allocating %u bytes, free %u bytes\n" ), Size32, LARGE_MEMORYPOOL_SIZE-LargeMemoryPoolOffset );
 				FPlatformMisc::LowLevelOutputDebugString( TEXT( "Please increase LARGE_MEMORYPOOL_SIZE, exiting...\n" ) );
 				FPlatformMisc::RequestExit( true );			
@@ -297,6 +305,7 @@ void* FGenericPlatformMallocCrash::Realloc( void* Ptr, SIZE_T NewSize, uint32 Al
 			{
 				// We can safely get allocation size only from a few mallocs, this may change in future.
 				if( FCStringWide::Strcmp( PreviousMalloc->GetDescriptiveName(), TEXT("binned") ) == 0 ||
+					FCStringWide::Strcmp( PreviousMalloc->GetDescriptiveName(), TEXT("binned2")) == 0 ||
 					FCStringWide::Strcmp( PreviousMalloc->GetDescriptiveName(), TEXT("jemalloc") ) == 0 )
 				{
 					// Realloc from the previous allocator.
@@ -355,7 +364,7 @@ void FGenericPlatformMallocCrash::Free( void* Ptr )
 			}
 			else
 			{
-				FPlatformMisc::DebugBreak();
+				UE_DEBUG_BREAK();
 			}
 		}
 		else if( IsPtrInLargePool(Ptr) )

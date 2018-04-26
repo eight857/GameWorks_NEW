@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,7 +9,7 @@
 class FPaintModeCommands : public TCommands<FPaintModeCommands>
 {
 public:
-	FPaintModeCommands() : TCommands<FPaintModeCommands> ( "PaintModeCommands", NSLOCTEXT("PaintMode", "CommandsName", "Paint Mode Commands"), NAME_None, FEditorStyle::GetStyleSetName()) {}
+	FPaintModeCommands() : TCommands<FPaintModeCommands> ( "PaintModeCommands", NSLOCTEXT("PaintMode", "CommandsName", "Vertex Painter"), NAME_None, FEditorStyle::GetStyleSetName()) {}
 
 	/**
 	* Initialize commands
@@ -20,6 +20,20 @@ public:
 	TSharedPtr<FUICommandInfo> NextTexture;
 	TSharedPtr<FUICommandInfo> PreviousTexture;
 	TSharedPtr<FUICommandInfo> CommitTexturePainting;
+	
+	TSharedPtr<FUICommandInfo> Copy;
+	TSharedPtr<FUICommandInfo> Paste;
+	TSharedPtr<FUICommandInfo> Remove;
+	TSharedPtr<FUICommandInfo> Fix;
+	TSharedPtr<FUICommandInfo> Fill;
+	TSharedPtr<FUICommandInfo> Propagate;
+	TSharedPtr<FUICommandInfo> Import;
+	TSharedPtr<FUICommandInfo> Save;
+
+	TSharedPtr<FUICommandInfo> SwitchForeAndBackgroundColor;
+
+	TSharedPtr<FUICommandInfo> PropagateTexturePaint;
+	TSharedPtr<FUICommandInfo> SaveTexturePaint;
 
 	TArray<TSharedPtr<FUICommandInfo>> Commands;
 };

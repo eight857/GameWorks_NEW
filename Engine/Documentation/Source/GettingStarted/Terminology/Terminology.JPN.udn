@@ -1,6 +1,6 @@
 ﻿INTSourceChangelist:3275257
 Availability:Public
-Title:Unreal Engine 4 の用語
+Title:アンリアル エンジン 4 の用語
 Crumbs: %ROOT%, Gameplay, GettingStarted
 Description:このページでは アンリアル エンジン 4 で作業する場合に一般的に使用する用語を説明します。 
 version:4.9
@@ -59,7 +59,8 @@ version:4.9
 |![](playerstate_topic.png)(w:300 h:140)|[INCLUDE:GettingStarted\Terminology#playerstate]|
 
 
-<!---
+[COMMENT:none]
+-
 [EXCERPT:projects]
 **プロジェクト**
 
@@ -184,4 +185,5 @@ version:4.9
 詳細は、以下をご覧ください。[](Gameplay/Framework/QuickReference)
 [/EXCERPT:playerstate]
 
---->	
+-
+[/COMMENT]	

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/Paths.h"
@@ -11,14 +11,16 @@
 #include "Engine/World.h"
 #include "PhysicsPublic.h"
 
+#include "IPhysXCookingModule.h"
+#include "IPhysXCooking.h"
+#include "Modules/ModuleManager.h"
+
 #if WITH_PHYSX
 	#include "PhysicsEngine/PhysXSupport.h"
 #endif
 
-#if WITH_BOX2D
-	#include "../PhysicsEngine2D/Box2DIntegration.h"
-#endif
 #include "PhysicsEngine/PhysicsSettings.h"
+#include "CoreDelegates.h"
 
 #ifndef APEX_STATICALLY_LINKED
 	#define APEX_STATICALLY_LINKED	0
@@ -32,38 +34,20 @@ FPhysicsDelegates::FOnUpdatePhysXMaterial FPhysicsDelegates::OnUpdatePhysXMateri
 FPhysicsDelegates::FOnPhysicsAssetChanged FPhysicsDelegates::OnPhysicsAssetChanged;
 FPhysicsDelegates::FOnPhysSceneInit FPhysicsDelegates::OnPhysSceneInit;
 FPhysicsDelegates::FOnPhysSceneTerm FPhysicsDelegates::OnPhysSceneTerm;
+FPhysicsDelegates::FOnPhysDispatchNotifications FPhysicsDelegates::OnPhysDispatchNotifications;
 
 // CVars
-static TAutoConsoleVariable<float> CVarToleranceScaleLength(
+TAutoConsoleVariable<float> CVarToleranceScaleLength(
 	TEXT("p.ToleranceScale_Length"),
 	100.f,
 	TEXT("The approximate size of objects in the simulation. Default: 100"),
 	ECVF_ReadOnly);
 
-static TAutoConsoleVariable<float> CVarToleranceScaleSpeed(
+TAutoConsoleVariable<float> CVarToleranceScaleSpeed(
 	TEXT("p.ToleranceScale_Speed"),
 	1000.f,
 	TEXT("The typical magnitude of velocities of objects in simulation. Default: 1000"),
 	ECVF_ReadOnly);
-
-static TAutoConsoleVariable<int32> CVarAPEXMaxDestructibleDynamicChunkIslandCount(
-	TEXT("p.APEXMaxDestructibleDynamicChunkIslandCount"),
-	2000,
-	TEXT("APEX Max Destructilbe Dynamic Chunk Island Count."),
-	ECVF_Default);
-
-
-static TAutoConsoleVariable<int32> CVarAPEXMaxDestructibleDynamicChunkCount(
-	TEXT("p.APEXMaxDestructibleDynamicChunkCount"),
-	2000,
-	TEXT("APEX Max Destructible dynamic Chunk Count."),
-	ECVF_Default);
-
-static TAutoConsoleVariable<int32> CVarAPEXSortDynamicChunksByBenefit(
-	TEXT("p.bAPEXSortDynamicChunksByBenefit"),
-	1,
-	TEXT("True if APEX should sort dynamic chunks by benefit."),
-	ECVF_Default);
 
 static TAutoConsoleVariable<int32> CVarUseUnifiedHeightfield(
 	TEXT("p.bUseUnifiedHeightfield"),
@@ -212,6 +196,7 @@ void FEndPhysicsTickFunction::ExecuteTick(float DeltaTime, enum ELevelTick TickT
 			STAT_FSimpleDelegateGraphTask_FinishPhysicsSim,
 			STATGROUP_TaskGraphTasks);
 
+		MyCompletionGraphEvent->SetGatherThreadForDontCompleteUntil(ENamedThreads::GameThread);
 		MyCompletionGraphEvent->DontCompleteUntil(
 			FSimpleDelegateGraphTask::CreateAndDispatchWhenReady(
 				FSimpleDelegateGraphTask::FDelegate::CreateUObject(Target, &UWorld::FinishPhysicsSim),
@@ -225,6 +210,7 @@ void FEndPhysicsTickFunction::ExecuteTick(float DeltaTime, enum ELevelTick TickT
 		Target->FinishPhysicsSim();
 	}
 
+#if WITH_PHYSX
 #if PHYSX_MEMORY_VALIDATION
 	static int32 Frequency = 0;
 	if (Frequency++ > 10)
@@ -233,6 +219,7 @@ void FEndPhysicsTickFunction::ExecuteTick(float DeltaTime, enum ELevelTick TickT
 		GPhysXAllocator->ValidateHeaders();
 	}
 #endif
+#endif // WITH_PHYSX 
 }
 
 FString FEndPhysicsTickFunction::DiagnosticMessage()
@@ -258,10 +245,6 @@ void PvdConnect(FString Host, bool bVisualization);
 //////// GAME-LEVEL RIGID BODY PHYSICS STUFF ///////
 void InitGamePhys()
 {
-#if WITH_BOX2D
-	FPhysicsIntegration2D::InitializePhysics();
-#endif
-
 #if WITH_PHYSX
 	// Do nothing if SDK already exists
 	if(GPhysXFoundation != NULL)
@@ -270,7 +253,7 @@ void InitGamePhys()
 	}
 
 	// Make sure 
-	LoadPhysXModules();
+	PhysDLLHelper::LoadPhysXModules(/*bLoadCookingModule=*/ false);
 
 	// Create Foundation
 	GPhysXAllocator = new FPhysXAllocator();
@@ -300,7 +283,7 @@ void InitGamePhys()
 
 	GPhysCommandHandler = new FPhysCommandHandler();
 
-	GPreGarbageCollectDelegateHandle = FCoreUObjectDelegates::PreGarbageCollect.AddRaw(GPhysCommandHandler, &FPhysCommandHandler::Flush);
+	GPreGarbageCollectDelegateHandle = FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddRaw(GPhysCommandHandler, &FPhysCommandHandler::Flush);
 
 	// Init Extensions
 	PxInitExtensions(*GPhysXSDK, GPhysXVisualDebugger);
@@ -323,33 +306,26 @@ void InitGamePhys()
 		PvdConnect(TEXT("localhost"), true);
 	}
 
-
-#if WITH_PHYSICS_COOKING || WITH_RUNTIME_PHYSICS_COOKING
 	// Create Cooking
-	PxCookingParams PCookingParams(PScale);
-	PCookingParams.meshWeldTolerance = 0.1f; // Weld to 1mm precision
-	PCookingParams.meshPreprocessParams = PxMeshPreprocessingFlags(PxMeshPreprocessingFlag::eWELD_VERTICES);
-	// Force any cooking in PhysX or APEX to use older incremental hull method
-	// This is because the new 'quick hull' method can generate degenerate geometry in some cases (very thin meshes etc.)
-	//PCookingParams.convexMeshCookingType = PxConvexMeshCookingType::eINFLATION_INCREMENTAL_HULL;
-	PCookingParams.targetPlatform = PxPlatform::ePC;
-	//PCookingParams.meshCookingHint = PxMeshCookingHint::eCOOKING_PERFORMANCE;
-	//PCookingParams.meshSizePerformanceTradeOff = 0.0f;
-	GPhysXCooking = PxCreateCooking(PX_PHYSICS_VERSION, *GPhysXFoundation, PCookingParams);
-	check(GPhysXCooking);
-#endif
+	PxCooking* PhysXCooking = nullptr;
+	if (IPhysXCookingModule* Module = GetPhysXCookingModule())
+	{
+		PhysXCooking = Module->GetPhysXCooking()->GetCooking();
+	}
 
 #if WITH_APEX
+	check(PhysXCooking);	//APEX requires cooking
+
 	// Build the descriptor for the APEX SDK
 	apex::ApexSDKDesc ApexDesc;
 	ApexDesc.foundation				= GPhysXFoundation;	// Pointer to the PxFoundation
 	ApexDesc.physXSDK				= GPhysXSDK;	// Pointer to the PhysXSDK
-	ApexDesc.cooking				= GPhysXCooking;	// Pointer to the cooking library
+	ApexDesc.cooking				= PhysXCooking;	// Pointer to the cooking library
 	ApexDesc.renderResourceManager	= &GApexNullRenderResourceManager;	// We will not be using the APEX rendering API, so just use a dummy render resource manager
 	ApexDesc.resourceCallback		= &GApexResourceCallback;	// The resource callback is how APEX asks the application to find assets when it needs them
 
 #if PLATFORM_MAC
-	FString DylibFolder = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX/");
+	FString DylibFolder = FPaths::EngineDir() / TEXT("Binaries/ThirdParty/PhysX3/");
 	ANSICHAR* DLLLoadPath = (ANSICHAR*)FMemory::Malloc(DylibFolder.Len() + 1);
 	FCStringAnsi::Strcpy(DLLLoadPath, DylibFolder.Len() + 1, TCHAR_TO_UTF8(*DylibFolder));
 	ApexDesc.dllLoadPath = DLLLoadPath;
@@ -373,9 +349,6 @@ void InitGamePhys()
 
 
 #if APEX_STATICALLY_LINKED
-	// We need to instantiate the module if we have statically linked them
-	// Otherwise all createModule functions will fail
-	instantiateModuleDestructible();
 
 #if WITH_APEX_CLOTHING
 	instantiateModuleClothing();
@@ -393,34 +366,12 @@ void InitGamePhys()
 	check(GApexModuleLegacy);
 #endif // WITH_APEX_LEGACY
 
-	// Load APEX Destruction module
-	GApexModuleDestructible = static_cast<apex::ModuleDestructible*>(GApexSDK->createModule("Destructible"));
-	check(GApexModuleDestructible);
-
-	// Set Destructible module parameters
-	NvParameterized::Interface* ModuleParams = GApexModuleDestructible->getDefaultModuleDesc();
-	// ModuleParams contains the default module descriptor, which may be modified here before calling the module init function
-	GApexModuleDestructible->init(*ModuleParams);
-	// Set chunk report for fracture effect callbacks
-	GApexModuleDestructible->setChunkReport(&GApexChunkReport);
-
-	
-	GApexModuleDestructible->setMaxDynamicChunkIslandCount((physx::PxU32)FMath::Max(CVarAPEXMaxDestructibleDynamicChunkIslandCount.GetValueOnGameThread(), 0));
-	GApexModuleDestructible->setMaxChunkCount((physx::PxU32)FMath::Max(CVarAPEXMaxDestructibleDynamicChunkCount.GetValueOnGameThread(), 0));
-	GApexModuleDestructible->setSortByBenefit(CVarAPEXSortDynamicChunksByBenefit.GetValueOnGameThread() != 0);
-
-	GApexModuleDestructible->scheduleChunkStateEventCallback(apex::DestructibleCallbackSchedule::FetchResults);
-
-	// APEX 1.3 to preserve 1.2 behavior
-	GApexModuleDestructible->setUseLegacyDamageRadiusSpread(true); 
-	GApexModuleDestructible->setUseLegacyChunkBoundsTesting(true);
-
 #if WITH_APEX_CLOTHING
 	// Load APEX Clothing module
 	GApexModuleClothing = static_cast<apex::ModuleClothing*>(GApexSDK->createModule("Clothing"));
 	check(GApexModuleClothing);
 	// Set Clothing module parameters
-	ModuleParams = GApexModuleClothing->getDefaultModuleDesc();
+	NvParameterized::Interface* ModuleParams = GApexModuleClothing->getDefaultModuleDesc();
 
 	// Can be tuned for switching between more memory and more spikes.
 	NvParameterized::setParamU32(*ModuleParams, "maxUnusedPhysXResources", 5);
@@ -435,15 +386,17 @@ void InitGamePhys()
 
 #endif // #if WITH_APEX
 
+	// One-time register delegate with Trim() to run our deferred cleanup upon request
+	static FDelegateHandle Clear = FCoreDelegates::GetMemoryTrimDelegate().AddLambda([]()
+	{
+		DeferredPhysResourceCleanup();
+	});
+	
 #endif // WITH_PHYSX
 }
 
 void TermGamePhys()
 {
-#if WITH_BOX2D
-	FPhysicsIntegration2D::ShutdownPhysics();
-#endif
-
 #if WITH_PHYSX
 	FPhysxSharedData::Terminate();
 
@@ -456,7 +409,7 @@ void TermGamePhys()
 	if (GPhysCommandHandler != NULL)
 	{
 		GPhysCommandHandler->Flush();	//finish off any remaining commands
-		FCoreUObjectDelegates::PreGarbageCollect.Remove(GPreGarbageCollectDelegateHandle);
+		FCoreUObjectDelegates::GetPreGarbageCollectDelegate().Remove(GPreGarbageCollectDelegateHandle);
 		delete GPhysCommandHandler;
 		GPhysCommandHandler = NULL;
 	}
@@ -495,15 +448,10 @@ void TermGamePhys()
 		}
 	}
 
-
-
-#if WITH_PHYSICS_COOKING || WITH_RUNTIME_PHYSICS_COOKING
-	if(GPhysXCooking != NULL)
+	if(IPhysXCookingModule* PhysXCookingModule = GetPhysXCookingModule( /*bforceLoad=*/false))
 	{
-		GPhysXCooking->release(); 
-		GPhysXCooking = NULL;
+		PhysXCookingModule->Terminate();
 	}
-#endif
 
 	if (GPhysXSDK != NULL)
 	{
@@ -519,8 +467,8 @@ void TermGamePhys()
 	// @todo delete FPhysXAllocator
 	// @todo delete FPhysXOutputStream
 
-	UnloadPhysXModules();
-#endif
+	PhysDLLHelper::UnloadPhysXModules();
+#endif // WITH_PHYSX
 }
 
 /** 

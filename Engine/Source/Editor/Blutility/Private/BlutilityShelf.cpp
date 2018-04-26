@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlutilityShelf.h"
 #include "Modules/ModuleManager.h"
@@ -83,7 +83,7 @@ void SBlutilityShelf::Construct(const FArguments& InArgs)
 	BuildShelf();
 }
 
-void SBlutilityShelf::OnBlutilityDoubleClicked(const class FAssetData& AssetData)
+void SBlutilityShelf::OnBlutilityDoubleClicked(const struct FAssetData& AssetData)
 {
 	UEditorUtilityBlueprint* Blueprint = NULL;
 	if (!AssetData.IsAssetLoaded())

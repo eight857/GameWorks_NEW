@@ -1,8 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LaunchEngineLoop.h"
+
 #include "HAL/PlatformStackWalk.h"
 #include "HAL/PlatformOutputDevices.h"
+#include "HAL/LowLevelMemTracker.h"
 #include "Misc/MessageDialog.h"
 #include "Misc/ScopedSlowTask.h"
 #include "Misc/QueuedThreadPool.h"
@@ -27,6 +29,7 @@
 #include "HAL/ExceptionHandling.h"
 #include "Stats/StatsMallocProfilerProxy.h"
 #include "HAL/PlatformSplash.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include "HAL/ThreadManager.h"
 #include "ProfilingDebugging/ExternalProfiler.h"
 #include "Containers/Ticker.h"
@@ -40,7 +43,8 @@
 #include "Misc/CoreDelegates.h"
 #include "Modules/ModuleManager.h"
 #include "Runtime/Launch/Resources/Version.h"
-#include "VersionManifest.h"
+#include "BuildVersion.h"
+#include "ModuleManifest.h"
 #include "UObject/DevObjectVersion.h"
 #include "HAL/ThreadHeartBeat.h"
 
@@ -50,7 +54,6 @@
 #if WITH_COREUOBJECT
 	#include "Internationalization/PackageLocalizationManager.h"
 	#include "Misc/PackageName.h"
-	#include "Misc/StartupPackages.h"
 	#include "UObject/UObjectHash.h"
 	#include "UObject/Package.h"
 	#include "UObject/Linker.h"
@@ -71,13 +74,14 @@
 	#include "Editor/UnrealEdEngine.h"
 	#include "Settings/EditorExperimentalSettings.h"
 	#include "Interfaces/IEditorStyleModule.h"
+	#include "PIEPreviewDeviceProfileSelectorModule.h"
 
 	#if PLATFORM_WINDOWS
 		#include "AllowWindowsPlatformTypes.h"
 			#include <objbase.h>
 		#include "HideWindowsPlatformTypes.h"
 	#endif
-#endif
+#endif //WITH_EDITOR
 
 #if WITH_ENGINE
 	#include "Engine/GameEngine.h"
@@ -92,7 +96,7 @@
 	#include "EngineGlobals.h"
 	#include "AudioThread.h"
 #if WITH_ENGINE && !UE_BUILD_SHIPPING
-	#include "Interfaces/IAutomationControllerModule.h"
+	#include "IAutomationControllerModule.h"
 #endif // WITH_ENGINE && !UE_BUILD_SHIPPING
 	#include "Database.h"
 	#include "DerivedDataCacheInterface.h"
@@ -122,10 +126,16 @@
 	#include "Framework/Application/SlateApplication.h"
 	#include "IMessagingModule.h"
 	#include "Engine/DemoNetDriver.h"
+	#include "LongGPUTask.h"
+	#include "RenderUtils.h"
+	#include "DynamicResolutionState.h"
 
 #if !UE_SERVER
+	#include "AppMediaTimeSource.h"
 	#include "IHeadMountedDisplayModule.h"
+	#include "IMediaModule.h"
 	#include "HeadMountedDisplay.h"
+	#include "MRMeshModule.h"
 	#include "Interfaces/ISlateRHIRendererModule.h"
 	#include "Interfaces/ISlateNullRendererModule.h"
 	#include "EngineFontServices.h"
@@ -142,9 +152,8 @@
 #endif
 
 #if WITH_AUTOMATION_WORKER
-	#include "Interfaces/IAutomationWorkerModule.h"
+	#include "IAutomationWorkerModule.h"
 #endif
-
 #endif  //WITH_ENGINE
 
 class FSlateRenderer;
@@ -176,10 +185,11 @@ class FFeedbackContext;
 	#if ENABLE_VISUAL_LOG
 		#include "VisualLogger/VisualLogger.h"
 	#endif
+	#include "CsvProfiler.h"
 #endif
 
 #if defined(WITH_LAUNCHERCHECK) && WITH_LAUNCHERCHECK
-	#include "LauncherCheck.h"
+	#include "ILauncherCheckModule.h"
 #endif
 
 #if WITH_COREUOBJECT
@@ -189,6 +199,19 @@ class FFeedbackContext;
 #else
 	#define USE_LOCALIZED_PACKAGE_CACHE 0
 #endif
+
+#ifndef RHI_COMMAND_LIST_DEBUG_TRACES
+    #define RHI_COMMAND_LIST_DEBUG_TRACES 0
+#endif
+
+
+int32 GUseDisregardForGCOnDedicatedServers = 1;
+static FAutoConsoleVariableRef CVarUseDisregardForGCOnDedicatedServers(
+	TEXT("gc.UseDisregardForGCOnDedicatedServers"),
+	GUseDisregardForGCOnDedicatedServers,
+	TEXT("If false, DisregardForGC will be disabled for dedicated servers."),
+	ECVF_Default
+);
 
 static TAutoConsoleVariable<int32> CVarDoAsyncEndOfFrameTasksRandomize(
 	TEXT("tick.DoAsyncEndOfFrameTasks.Randomize"),
@@ -241,8 +264,17 @@ class FOutputDeviceStdOutput : public FOutputDevice
 public:
 
 	FOutputDeviceStdOutput()
+		: AllowedLogVerbosity(ELogVerbosity::Display)
 	{
-		bAllowLogVerbosity = FParse::Param(FCommandLine::Get(), TEXT("AllowStdOutLogVerbosity"));
+		if (FParse::Param(FCommandLine::Get(), TEXT("AllowStdOutLogVerbosity")))
+		{
+			AllowedLogVerbosity = ELogVerbosity::Log;
+		}
+
+		if (FParse::Param(FCommandLine::Get(), TEXT("FullStdOutLogOutput")))
+		{
+			AllowedLogVerbosity = ELogVerbosity::All;
+		}
 	}
 
 	virtual ~FOutputDeviceStdOutput()
@@ -256,10 +288,11 @@ public:
 
 	virtual void Serialize( const TCHAR* V, ELogVerbosity::Type Verbosity, const class FName& Category ) override
 	{
-		if ( (bAllowLogVerbosity && Verbosity <= ELogVerbosity::Log) || (Verbosity <= ELogVerbosity::Display) )
+		if (Verbosity <= AllowedLogVerbosity)
 		{
 #if PLATFORM_USE_LS_SPEC_FOR_WIDECHAR
-			wprintf(TEXT("%ls\n"), *FOutputDeviceHelper::FormatLogLine(Verbosity, Category, V, GPrintLogTimes));
+			// printf prints wchar_t strings just fine with %ls, while mixing printf()/wprintf() is not recommended (see https://stackoverflow.com/questions/8681623/printf-and-wprintf-in-single-c-code)
+			printf("%ls\n", *FOutputDeviceHelper::FormatLogLine(Verbosity, Category, V, GPrintLogTimes));
 #else
 			wprintf(TEXT("%s\n"), *FOutputDeviceHelper::FormatLogLine(Verbosity, Category, V, GPrintLogTimes));
 #endif
@@ -268,7 +301,7 @@ public:
 	}
 
 private:
-	bool bAllowLogVerbosity;
+	ELogVerbosity::Type AllowedLogVerbosity;
 };
 
 
@@ -297,7 +330,7 @@ public:
 					{
 						if (GIsEditor)
 						{
-							GEngine->DeferredCommands.Add(TEXT("CLOSE_SLATE_MAINFRAME"));					
+							GEngine->DeferredCommands.Add(TEXT("CLOSE_SLATE_MAINFRAME"));
 						}
 						else
 						{
@@ -329,7 +362,7 @@ static void RHIExitAndStopRHIThread()
 	RHIExit();
 
 	// Stop the RHI Thread
-	if (GUseRHIThread)
+	if (GRHIThread_InternalUseOnly)
 	{
 		DECLARE_CYCLE_STAT(TEXT("Wait For RHIThread Finish"), STAT_WaitForRHIThreadFinish, STATGROUP_TaskGraphTasks);
 		FGraphEventRef QuitTask = TGraphTask<FReturnGraphTask>::CreateTask(nullptr, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(ENamedThreads::RHIThread);
@@ -337,7 +370,6 @@ static void RHIExitAndStopRHIThread()
 	}
 }
 #endif
-
 
 /**
  * Initializes std out device and adds it to GLog
@@ -359,9 +391,9 @@ bool ParseGameProjectFromCommandLine(const TCHAR* InCmdLine, FString& OutProject
 
 	// trim any whitespace at edges of string - this can happen if the token was quoted with leading or trailing whitespace
 	// VC++ tends to do this in its "external tools" config
-	FirstCommandLineToken = FirstCommandLineToken.Trim();
+	FirstCommandLineToken.TrimStartInline();
 
-	// 
+	//
 	OutProjectFilePath = TEXT("");
 	OutGameName = TEXT("");
 
@@ -401,7 +433,7 @@ bool LaunchSetGameName(const TCHAR *InCmdLine, FString& OutGameProjectFilePathUn
 	if (GIsGameAgnosticExe)
 	{
 		// Initialize GameName to an empty string. Populate it below.
-		FApp::SetGameName(TEXT(""));
+		FApp::SetProjectName(TEXT(""));
 
 		FString ProjFilePath;
 		FString LocalGameName;
@@ -410,7 +442,7 @@ bool LaunchSetGameName(const TCHAR *InCmdLine, FString& OutGameProjectFilePathUn
 			// Only set the game name if this is NOT a program...
 			if (FPlatformProperties::IsProgram() == false)
 			{
-				FApp::SetGameName(*LocalGameName);
+				FApp::SetProjectName(*LocalGameName);
 			}
 			OutGameProjectFilePathUnnormalized = ProjFilePath;
 			FPaths::SetProjectFilePath(ProjFilePath);
@@ -425,7 +457,7 @@ bool LaunchSetGameName(const TCHAR *InCmdLine, FString& OutGameProjectFilePathUn
 			{
 				LocalGameName = LocalGameName.Left(FirstCharToRemove);
 			}
-			FApp::SetGameName(*LocalGameName);
+			FApp::SetProjectName(*LocalGameName);
 
 			// Check it's not UE4Game, otherwise assume a uproject file relative to the game project directory
 			if (LocalGameName != TEXT("UE4Game"))
@@ -441,9 +473,9 @@ bool LaunchSetGameName(const TCHAR *InCmdLine, FString& OutGameProjectFilePathUn
 		if (!bPrinted)
 		{
 			bPrinted = true;
-			if (FApp::HasGameName())
+			if (FApp::HasProjectName())
 			{
-				UE_LOG(LogInit, Display, TEXT("Running engine for game: %s"), FApp::GetGameName());
+				UE_LOG(LogInit, Display, TEXT("Running engine for game: %s"), FApp::GetProjectName());
 			}
 			else
 			{
@@ -467,7 +499,7 @@ bool LaunchSetGameName(const TCHAR *InCmdLine, FString& OutGameProjectFilePathUn
 			if (FPlatformProperties::RequiresCookedData())
 			{
 				// Non-agnostic exes that require cooked data cannot load projects, so make sure that the LocalGameName is the GameName
-				if (LocalGameName != FApp::GetGameName())
+				if (LocalGameName != FApp::GetProjectName())
 				{
 					UE_LOG(LogInit, Fatal, TEXT("Non-agnostic games cannot load projects on cooked platforms - try running UE4Game."));
 				}
@@ -475,14 +507,14 @@ bool LaunchSetGameName(const TCHAR *InCmdLine, FString& OutGameProjectFilePathUn
 			// Only set the game name if this is NOT a program...
 			if (FPlatformProperties::IsProgram() == false)
 			{
-				FApp::SetGameName(*LocalGameName);
+				FApp::SetProjectName(*LocalGameName);
 			}
 			OutGameProjectFilePathUnnormalized = ProjFilePath;
 			FPaths::SetProjectFilePath(ProjFilePath);
 		}
 
 		// In a non-game agnostic exe, the game name should already be assigned by now.
-		if (!FApp::HasGameName())
+		if (!FApp::HasProjectName())
 		{
 			UE_LOG(LogInit, Fatal,TEXT("Could not set game name!"));
 		}
@@ -496,32 +528,32 @@ void LaunchFixGameNameCase()
 {
 #if PLATFORM_DESKTOP && !IS_PROGRAM
 	// This is to make sure this function is not misused and is only called when the game name is set
-	check(FApp::HasGameName());
+	check(FApp::HasProjectName());
 
-	// correct the case of the game name, if possible (unless we're running a program and the game name is already set)	
+	// correct the case of the game name, if possible (unless we're running a program and the game name is already set)
 	if (FPaths::IsProjectFilePathSet())
 	{
 		const FString GameName(FPaths::GetBaseFilename(IFileManager::Get().GetFilenameOnDisk(*FPaths::GetProjectFilePath())));
 
-		const bool bGameNameMatchesProjectCaseSensitive = (FCString::Strcmp(*GameName, FApp::GetGameName()) == 0);
-		if (!bGameNameMatchesProjectCaseSensitive && (FApp::IsGameNameEmpty() || GIsGameAgnosticExe || (GameName.Len() > 0 && GIsGameAgnosticExe)))
+		const bool bGameNameMatchesProjectCaseSensitive = (FCString::Strcmp(*GameName, FApp::GetProjectName()) == 0);
+		if (!bGameNameMatchesProjectCaseSensitive && (FApp::IsProjectNameEmpty() || GIsGameAgnosticExe || (GameName.Len() > 0 && GIsGameAgnosticExe)))
 		{
-			if (GameName == FApp::GetGameName()) // case insensitive compare
+			if (GameName == FApp::GetProjectName()) // case insensitive compare
 			{
-				FApp::SetGameName(*GameName);
+				FApp::SetProjectName(*GameName);
 			}
 			else
 			{
 				const FText Message = FText::Format(
 					NSLOCTEXT("Core", "MismatchedGameNames", "The name of the .uproject file ('{0}') must match the name of the project passed in the command line ('{1}')."),
 					FText::FromString(*GameName),
-					FText::FromString(FApp::GetGameName()));
+					FText::FromString(FApp::GetProjectName()));
 				if (!GIsBuildMachine)
 				{
 					UE_LOG(LogInit, Warning, TEXT("%s"), *Message.ToString());
 					FMessageDialog::Open(EAppMsgType::Ok, Message);
 				}
-				FApp::SetGameName(TEXT("")); // this disables part of the crash reporter to avoid writing log files to a bogus directory
+				FApp::SetProjectName(TEXT("")); // this disables part of the crash reporter to avoid writing log files to a bogus directory
 				if (!GIsBuildMachine)
 				{
 					exit(1);
@@ -605,8 +637,8 @@ bool LaunchCheckForFileOverride(const TCHAR* CmdLine, bool& OutFileOverrideFound
 			FPlatformFileManager::Get().SetPlatformFile(*CurrentPlatformFile);
 		}
 	}
-	
-#if !UE_BUILD_SHIPPING // UFS clients are not available in shipping builds.	
+
+#if !UE_BUILD_SHIPPING // UFS clients are not available in shipping builds.
 	// Streaming network wrapper (it has a priority over normal network wrapper)
 	bool bNetworkFailedToInitialize = false;
 	do
@@ -619,9 +651,20 @@ bool LaunchCheckForFileOverride(const TCHAR* CmdLine, bool& OutFileOverrideFound
 			FPlatformFileManager::Get().SetPlatformFile(*CurrentPlatformFile);
 		}
 
+		bool bShouldUseCookedIterativeFile = false;
+		if ( !bShouldUseStreamingFile && !NetworkPlatformFile )
+		{
+			NetworkPlatformFile = ConditionallyCreateFileWrapper(TEXT("CookedIterativeFile"), CurrentPlatformFile, CmdLine, &bNetworkFailedToInitialize, &bShouldUseCookedIterativeFile);
+			if (NetworkPlatformFile)
+			{
+				CurrentPlatformFile = NetworkPlatformFile;
+				FPlatformFileManager::Get().SetPlatformFile(*CurrentPlatformFile);
+			}
+		}
+
 		// if streaming network platform file was tried this loop don't try this one
 		// Network file wrapper (only create if the streaming wrapper hasn't been created)
-		if ( !bShouldUseStreamingFile && !NetworkPlatformFile)
+		if ( !bShouldUseStreamingFile && !bShouldUseCookedIterativeFile && !NetworkPlatformFile)
 		{
 			NetworkPlatformFile = ConditionallyCreateFileWrapper(TEXT("NetworkFile"), CurrentPlatformFile, CmdLine, &bNetworkFailedToInitialize);
 			if (NetworkPlatformFile)
@@ -630,7 +673,6 @@ bool LaunchCheckForFileOverride(const TCHAR* CmdLine, bool& OutFileOverrideFound
 				FPlatformFileManager::Get().SetPlatformFile(*CurrentPlatformFile);
 			}
 		}
-		
 
 		if (bNetworkFailedToInitialize)
 		{
@@ -642,7 +684,7 @@ bool LaunchCheckForFileOverride(const TCHAR* CmdLine, bool& OutFileOverrideFound
 			uint32 Result = 2;
 #else	//PLATFORM_REQUIRES_FILESERVER
 			// note that this can't be localized because it happens before we connect to a filserver - localizing would cause ICU to try to load.... from over the file server connection!
-			FString Error = FString::Printf(TEXT("Failed to connect to any of the following file servers:\n\n    %s\n\nWould you like to try again? No will fallback to local disk files, Cancel will quit."), *HostIpString.Replace( TEXT("+"), TEXT("\n    "))); 
+			FString Error = FString::Printf(TEXT("Failed to connect to any of the following file servers:\n\n    %s\n\nWould you like to try again? No will fallback to local disk files, Cancel will quit."), *HostIpString.Replace( TEXT("+"), TEXT("\n    ")));
 			uint32 Result = FMessageDialog::Open( EAppMsgType::YesNoCancel, FText::FromString( Error ) );
 #endif	//PLATFORM_REQUIRES_FILESERVER
 
@@ -717,11 +759,11 @@ bool LaunchCheckForFileOverride(const TCHAR* CmdLine, bool& OutFileOverrideFound
 
 bool LaunchHasIncompleteGameName()
 {
-	if ( FApp::HasGameName() && !FPaths::IsProjectFilePathSet() )
+	if ( FApp::HasProjectName() && !FPaths::IsProjectFilePathSet() )
 	{
 		// Verify this is a legitimate game name
 		// Launched with a game name. See if the <GameName> folder exists. If it doesn't, it could instead be <GameName>Game
-		const FString NonSuffixedGameFolder = FPaths::RootDir() / FApp::GetGameName();
+		const FString NonSuffixedGameFolder = FPaths::RootDir() / FApp::GetProjectName();
 		if (FPlatformFileManager::Get().GetPlatformFile().DirectoryExists(*NonSuffixedGameFolder) == false)
 		{
 			const FString SuffixedGameFolder = NonSuffixedGameFolder + TEXT("Game");
@@ -756,7 +798,7 @@ void LaunchUpdateMostRecentProjectFile()
 			else if ( FPlatformFileManager::Get().GetPlatformFile().FileExists(*RecentProjectFileContents) )
 			{
 				// The previously loaded project file was found. Change the game name here and update the project file path
-				FApp::SetGameName(*FPaths::GetBaseFilename(RecentProjectFileContents));
+				FApp::SetProjectName(*FPaths::GetBaseFilename(RecentProjectFileContents));
 				FPaths::SetProjectFilePath(RecentProjectFileContents);
 				UE_LOG(LogInit, Display, TEXT("Loading recent project file: %s"), *RecentProjectFileContents);
 
@@ -834,7 +876,7 @@ bool IsServerDelegateForOSS(FName WorldContextHandle)
 	}
 
 	UWorld* World = nullptr;
-#if WITH_EDITOR	
+#if WITH_EDITOR
 	if (WorldContextHandle != NAME_None)
 	{
 		FWorldContext& WorldContext = GEngine->GetWorldContextFromHandleChecked(WorldContextHandle);
@@ -853,8 +895,18 @@ bool IsServerDelegateForOSS(FName WorldContextHandle)
 		}
 		else
 		{
-			UE_LOG(LogInit, Error, TEXT("Failed to determine if OSS is server in PIE, OSS requests will fail"));
-			return false;
+#if WITH_EDITOR
+			if (GIsPlayInEditorWorld)
+			{
+				World = GWorld;
+			}
+#endif
+
+			if (World == nullptr)
+			{
+				UE_LOG(LogInit, Error, TEXT("Failed to determine if OSS is server in PIE, OSS requests will fail"));
+				return false;
+			}
 		}
 	}
 
@@ -863,10 +915,28 @@ bool IsServerDelegateForOSS(FName WorldContextHandle)
 }
 #endif
 
+
+#if WITH_ENGINE && CSV_PROFILER
+static void UpdateCoreCsvStats()
+{
+	CSV_CUSTOM_STAT_GLOBAL(RenderThreadTime, FPlatformTime::ToMilliseconds(GRenderThreadTime), ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT_GLOBAL(GameThreadTime, FPlatformTime::ToMilliseconds(GGameThreadTime), ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT_GLOBAL(GPUTime, FPlatformTime::ToMilliseconds(GGPUFrameTime), ECsvCustomStatOp::Set);
+	FPlatformMemoryStats MemoryStats = FPlatformMemory::GetStats();
+	float PhysicalMBFree = float(MemoryStats.AvailablePhysical / 1024) / 1024.0f;
+	CSV_CUSTOM_STAT_GLOBAL(MemoryFreeMB, PhysicalMBFree, ECsvCustomStatOp::Set);
+}
+#endif // WITH_ENGINE && CSV_PROFILER
+
+
 DECLARE_CYCLE_STAT( TEXT( "FEngineLoop::PreInit.AfterStats" ), STAT_FEngineLoop_PreInit_AfterStats, STATGROUP_LoadTime );
 
-int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
+int32 FEngineLoop::PreInit(const TCHAR* CmdLine)
 {
+	// disable/enable LLM based on commandline
+	LLM(FLowLevelMemTracker::Get().ProcessCommandLine(CmdLine));
+	LLM_SCOPE(ELLMTag::EnginePreInitMemory);
+
 	FPlatformMisc::InitTaggedStorage(1024);
 
 	if (FParse::Param(CmdLine, TEXT("UTF8Output")))
@@ -885,6 +955,10 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		return -1;
 	}
 
+#if WITH_ENGINE
+	FCoreUObjectDelegates::PostGarbageCollectConditionalBeginDestroy.AddStatic(DeferredPhysResourceCleanup);
+#endif
+
 #if defined(WITH_LAUNCHERCHECK) && WITH_LAUNCHERCHECK
 	if (ILauncherCheckModule::Get().WasRanFromLauncher() == false)
 	{
@@ -898,7 +972,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 #if	STATS
 	// Create the stats malloc profiler proxy.
-	if( FStatsMallocProfilerProxy::HasMemoryProfilerToken() )
+	if (FStatsMallocProfilerProxy::HasMemoryProfilerToken())
 	{
 		if (PLATFORM_USES_FIXED_GMalloc_CLASS)
 		{
@@ -921,17 +995,21 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	}
 
 	// Initialize log console here to avoid statics initialization issues when launched from the command line.
-	GScopedLogConsole = TUniquePtr<FOutputDeviceConsole>(FPlatformOutputDevices::GetLogConsole());
+	GScopedLogConsole = TUniquePtr<FOutputDeviceConsole>(FPlatformApplicationMisc::CreateConsoleOutputDevice());
 
 	// Always enable the backlog so we get all messages, we will disable and clear it in the game
 	// as soon as we determine whether GIsEditor == false
 	GLog->EnableBacklog(true);
 
 	// Initialize std out device as early as possible if requested in the command line
+#if PLATFORM_DESKTOP
+	// consoles don't typically have stdout, and FOutputDeviceDebug is responsible for echoing logs to the
+	// terminal
 	if (FParse::Param(FCommandLine::Get(), TEXT("stdout")))
 	{
 		InitializeStdOutDevice();
 	}
+#endif
 
 #if !UE_BUILD_SHIPPING
 	if (FPlatformProperties::SupportsQuit())
@@ -950,8 +1028,8 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 	if (FParse::Param(FCommandLine::Get(), TEXT("emitdrawevents")))
 	{
-		GEmitDrawEvents = true;
-	}	
+		SetEmitDrawEvents(true);
+	}
 #endif // !UE_BUILD_SHIPPING
 
 	// Switch into executable's directory (may be required by some of the platform file overrides)
@@ -970,7 +1048,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 				UE_LOG(LogInit, Display, TEXT("Project file not found: %s"), *ProjPath);
 				UE_LOG(LogInit, Display, TEXT("\tAttempting to find via project info helper."));
 				// Use the uprojectdirs
-				FString GameProjectFile = FUProjectDictionary::GetDefault().GetRelativeProjectPathForGame(FApp::GetGameName(), FPlatformProcess::BaseDir());
+				FString GameProjectFile = FUProjectDictionary::GetDefault().GetRelativeProjectPathForGame(FApp::GetProjectName(), FPlatformProcess::BaseDir());
 				if (GameProjectFile.IsEmpty() == false)
 				{
 					UE_LOG(LogInit, Display, TEXT("\tFound project file %s."), *GameProjectFile);
@@ -997,15 +1075,15 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	// Initialize file manager
 	IFileManager::Get().ProcessCommandLineOptions();
 
-	if( GIsGameAgnosticExe )
+	if (GIsGameAgnosticExe)
 	{
 		// If we launched without a project file, but with a game name that is incomplete, warn about the improper use of a Game suffix
-		if ( LaunchHasIncompleteGameName() )
+		if (LaunchHasIncompleteGameName())
 		{
 			// We did not find a non-suffixed folder and we DID find the suffixed one.
 			// The engine MUST be launched with <GameName>Game.
-			const FText GameNameText = FText::FromString(FApp::GetGameName());
-			FMessageDialog::Open(EAppMsgType::Ok, FText::Format( LOCTEXT("RequiresGamePrefix", "Error: UE4Editor does not append 'Game' to the passed in game name.\nYou must use the full name.\nYou specified '{0}', use '{0}Game'."), GameNameText ) );
+			const FText GameNameText = FText::FromString(FApp::GetProjectName());
+			FMessageDialog::Open(EAppMsgType::Ok, FText::Format(LOCTEXT("RequiresGamePrefix", "Error: UE4Editor does not append 'Game' to the passed in game name.\nYou must use the full name.\nYou specified '{0}', use '{0}Game'."), GameNameText));
 			return 1;
 		}
 	}
@@ -1021,20 +1099,23 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	const SIZE_T CommandLineSize = FCString::Strlen(CmdLine)+1;
 	TCHAR* CommandLineCopy			= new TCHAR[ CommandLineSize ];
 	FCString::Strcpy( CommandLineCopy, CommandLineSize, CmdLine );
-	const TCHAR* ParsedCmdLine	= CommandLineCopy;
+	const TCHAR* ParsedCmdLine = CommandLineCopy;
 
-	FString Token				= FParse::Token( ParsedCmdLine, 0);
+	FString Token = FParse::Token(ParsedCmdLine, 0);
 
 #if WITH_ENGINE
+	// Add the default engine shader dir
+	FGenericPlatformProcess::AddShaderSourceDirectoryMapping(TEXT("/Engine"), FGenericPlatformProcess::ShaderDir());
+
 	TArray<FString> Tokens;
 	TArray<FString> Switches;
 	UCommandlet::ParseCommandLine(CommandLineCopy, Tokens, Switches);
 
 	bool bHasCommandletToken = false;
 
-	for( int32 TokenIndex = 0; TokenIndex < Tokens.Num(); ++TokenIndex )
+	for (int32 TokenIndex = 0; TokenIndex < Tokens.Num(); ++TokenIndex)
 	{
-		if( Tokens[TokenIndex].EndsWith(TEXT("Commandlet")) )
+		if (Tokens[TokenIndex].EndsWith(TEXT("Commandlet")))
 		{
 			bHasCommandletToken = true;
 			Token = Tokens[TokenIndex];
@@ -1042,9 +1123,9 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		}
 	}
 
-	for( int32 SwitchIndex = 0; SwitchIndex < Switches.Num() && !bHasCommandletToken; ++SwitchIndex )
+	for (int32 SwitchIndex = 0; SwitchIndex < Switches.Num() && !bHasCommandletToken; ++SwitchIndex)
 	{
-		if( Switches[SwitchIndex].StartsWith(TEXT("RUN=")) )
+		if (Switches[SwitchIndex].StartsWith(TEXT("RUN=")))
 		{
 			bHasCommandletToken = true;
 			Token = Switches[SwitchIndex];
@@ -1063,13 +1144,13 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 	// trim any whitespace at edges of string - this can happen if the token was quoted with leading or trailing whitespace
 	// VC++ tends to do this in its "external tools" config
-	Token = Token.Trim();
+	Token.TrimStartAndEndInline();
 
 	// Path returned by FPaths::GetProjectFilePath() is normalized, so may have symlinks and ~ resolved and may differ from the original path to .uproject passed in the command line
 	FString NormalizedToken = Token;
 	FPaths::NormalizeFilename(NormalizedToken);
 
-	const bool bFirstTokenIsGameName = (FApp::HasGameName() && Token == FApp::GetGameName());
+	const bool bFirstTokenIsGameName = (FApp::HasProjectName() && Token == FApp::GetProjectName());
 	const bool bFirstTokenIsGameProjectFilePath = (FPaths::IsProjectFilePathSet() && NormalizedToken == FPaths::GetProjectFilePath());
 	const bool bFirstTokenIsGameProjectFileShortName = (FPaths::IsProjectFilePathSet() && Token == FPaths::GetCleanFilename(FPaths::GetProjectFilePath()));
 
@@ -1078,13 +1159,13 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		// first item on command line was the game name, remove it in all cases
 		FString RemainingCommandline = ParsedCmdLine;
 		FCString::Strcpy( CommandLineCopy, CommandLineSize, *RemainingCommandline );
-		ParsedCmdLine	= CommandLineCopy;
+		ParsedCmdLine = CommandLineCopy;
 
 		// Set a new command-line that doesn't include the game name as the first argument
-		FCommandLine::Set(ParsedCmdLine); 
+		FCommandLine::Set(ParsedCmdLine);
 
-		Token = FParse::Token( ParsedCmdLine, 0);
-		Token = Token.Trim();
+		Token = FParse::Token(ParsedCmdLine, 0);
+		Token.TrimStartInline();
 
 		// if the next token is a project file, then we skip it (which can happen on some platforms that combine
 		// commandlines... this handles extra .uprojects, but if you run with MyGame MyGame, we can't tell if
@@ -1092,7 +1173,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		while (FPaths::GetExtension(Token) == FProjectDescriptor::GetExtension())
 		{
 			Token = FParse::Token(ParsedCmdLine, 0);
-			Token = Token.Trim();
+			Token.TrimStartInline();
 		}
 
 		if (bFirstTokenIsGameProjectFilePath || bFirstTokenIsGameProjectFileShortName)
@@ -1117,7 +1198,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	//   UE4Editor.exe <GAMENAME> -game <map>
 	// or
 	//   UE4Editor.exe <GAMENAME> -game 127.0.0.0
-	// We don't want to remove the -game from the commandline just yet in case 
+	// We don't want to remove the -game from the commandline just yet in case
 	// we need it for something later. So, just move it to the end for now...
 	const bool bFirstTokenIsGame = (Token == TEXT("-GAME"));
 	const bool bFirstTokenIsServer = (Token == TEXT("-SERVER"));
@@ -1130,9 +1211,9 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		{
 			// Move the token to the end of the list...
 			FString RemainingCommandline = ParsedCmdLine;
-			RemainingCommandline = RemainingCommandline.Trim();
+			RemainingCommandline.TrimStartInline();
 			RemainingCommandline += FString::Printf(TEXT(" %s"), *Token);
-			FCommandLine::Set(*RemainingCommandline); 
+			FCommandLine::Set(*RemainingCommandline);
 		}
 		if (bHasCommandletToken)
 		{
@@ -1161,12 +1242,12 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		PRIVATE_GIsRunningCommandlet = true;
 	}
 
-	if( !bIsNotEditor && GIsGameAgnosticExe )
+	if (!bIsNotEditor && GIsGameAgnosticExe)
 	{
 		// If we launched without a game name or project name, try to load the most recently loaded project file.
 		// We can not do this if we are using a FilePlatform override since the game directory may already be established.
 		const bool bIsBuildMachine = FParse::Param(FCommandLine::Get(), TEXT("BUILDMACHINE"));
-		const bool bLoadMostRecentProjectFileIfItExists = !FApp::HasGameName() && !bFileOverrideFound && !bIsBuildMachine && !FParse::Param( CmdLine, TEXT("norecentproject") );
+		const bool bLoadMostRecentProjectFileIfItExists = !FApp::HasProjectName() && !bFileOverrideFound && !bIsBuildMachine && !FParse::Param( CmdLine, TEXT("norecentproject") );
 		if (bLoadMostRecentProjectFileIfItExists )
 		{
 			LaunchUpdateMostRecentProjectFile();
@@ -1186,7 +1267,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 				bFoundValidToken = true;
 			}
 		}
-		
+
 		CheckToken = FParse::Token(ParsedCmdLine, 0);
 	}
 
@@ -1224,7 +1305,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 #if !UE_BUILD_SHIPPING
 	// Benchmarking.
-	FApp::SetBenchmarking(FParse::Param(FCommandLine::Get(),TEXT("BENCHMARK")));
+	FApp::SetBenchmarking(FParse::Param(FCommandLine::Get(), TEXT("BENCHMARK")));
 #else
 	FApp::SetBenchmarking(false);
 #endif // !UE_BUILD_SHIPPING
@@ -1232,7 +1313,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	// "-Deterministic" is a shortcut for "-UseFixedTimeStep -FixedSeed"
 	bool bDeterministic = FParse::Param(FCommandLine::Get(), TEXT("Deterministic"));
 
-#if PLATFORM_HTML5_BROWSER
+#if PLATFORM_HTML5
 	bool bUseFixedTimeStep = false;
 	GConfig->GetBool(TEXT("/Script/HTML5PlatformEditor.HTML5TargetSettings"), TEXT("UseFixedTimeStep"), bUseFixedTimeStep, GEngineIni);
 	FApp::SetUseFixedTimeStep(bUseFixedTimeStep);
@@ -1240,14 +1321,14 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	FApp::SetUseFixedTimeStep(bDeterministic || FParse::Param(FCommandLine::Get(), TEXT("UseFixedTimeStep")));
 #endif
 
-	FApp::bUseFixedSeed = bDeterministic || FApp::IsBenchmarking() || FParse::Param(FCommandLine::Get(),TEXT("FixedSeed"));
+	FApp::bUseFixedSeed = bDeterministic || FApp::IsBenchmarking() || FParse::Param(FCommandLine::Get(), TEXT("FixedSeed"));
 
 	// Initialize random number generator.
 	{
 		uint32 Seed1 = 0;
 		uint32 Seed2 = 0;
 
-		if(!FApp::bUseFixedSeed)
+		if (!FApp::bUseFixedSeed)
 		{
 			Seed1 = FPlatformTime::Cycles();
 			Seed2 = FPlatformTime::Cycles();
@@ -1260,24 +1341,40 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	}
 
 	// Set up the module list and version information, if it's not compiled-in
-#if !IS_MONOLITHIC && BUILT_FROM_CHANGELIST == 0
-	static FVersionedModuleEnumerator ModuleEnumerator;
-	if(ModuleEnumerator.RegisterWithModuleManager())
+#if IS_MONOLITHIC
+	// For monolithic builds, check if the version number has been compiled in to this module
+    #if defined(COMPILED_IN_CL) && defined(COMPILED_IN_COMPATIBLE_CL)
+	    UE_LOG(LogInit, Log, TEXT("Overriding engine version to CL %d, compatible CL %d"), COMPILED_IN_CL, COMPILED_IN_COMPATIBLE_CL);
+	    FEngineVersion::OverrideCurrentVersionChangelist(COMPILED_IN_CL, COMPILED_IN_COMPATIBLE_CL);
+    #endif
+#else
+	// For modular builds, read the version from the .version file in the same directory as the executable, and register the build id with the module manager
+	static FBuildVersion Version;
+	if(FBuildVersion::TryRead(FBuildVersion::GetFileNameForCurrentExecutable(), Version))
 	{
-		const FVersionManifest& Manifest = ModuleEnumerator.GetInitialManifest();
-		if(Manifest.Changelist != 0 && !FEngineVersion::OverrideCurrentVersionChangelist(Manifest.Changelist, Manifest.CompatibleChangelist))
+		UE_LOG(LogInit, Log, TEXT("Read version file with build ID '%s'"), *Version.BuildId);
+		if(Version.Changelist != 0)
 		{
-			UE_LOG(LogInit, Fatal, TEXT("Couldn't update engine changelist to %d."), Manifest.Changelist);
+			int32 EffectiveCompatibleChangelist = (Version.CompatibleChangelist != 0)? Version.CompatibleChangelist : Version.Changelist;
+			UE_LOG(LogInit, Log, TEXT("Overriding engine version to CL %d, compatible CL %d"), Version.Changelist, EffectiveCompatibleChangelist);
+			FEngineVersion::OverrideCurrentVersionChangelist(Version.Changelist, EffectiveCompatibleChangelist);
 		}
-		UE_LOG(LogInit, Log, TEXT("Using version manifest at CL %d with build ID '%s'"), Manifest.Changelist, *Manifest.BuildId);
+		if(Version.BuildId.Len() > 0)
+		{
+			static FModuleEnumerator ModuleEnumerator(Version.BuildId);
+			if(ModuleEnumerator.RegisterWithModuleManager())
+			{
+				UE_LOG(LogInit, Log, TEXT("Registered custom module enumerator with build ID '%s'"), *Version.BuildId);
+			}
+		}
 	}
 #endif
 
 #if !IS_PROGRAM
-	if ( !GIsGameAgnosticExe && FApp::HasGameName() && !FPaths::IsProjectFilePathSet() )
+	if ( !GIsGameAgnosticExe && FApp::HasProjectName() && !FPaths::IsProjectFilePathSet() )
 	{
 		// If we are using a non-agnostic exe where a name was specified but we did not specify a project path. Assemble one based on the game name.
-		const FString ProjectFilePath = FPaths::Combine(*FPaths::GameDir(), *FString::Printf(TEXT("%s.%s"), FApp::GetGameName(), *FProjectDescriptor::GetExtension()));
+		const FString ProjectFilePath = FPaths::Combine(*FPaths::ProjectDir(), *FString::Printf(TEXT("%s.%s"), FApp::GetProjectName(), *FProjectDescriptor::GetExtension()));
 		FPaths::SetProjectFilePath(ProjectFilePath);
 	}
 #endif
@@ -1296,28 +1393,35 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 			UE_LOG(LogInit, Warning, TEXT("Could not find a valid project file, the engine will exit now."));
 			return 1;
 		}
+
+		if (IProjectManager::Get().IsEnterpriseProject() && FPaths::DirectoryExists(FPaths::EnterpriseDir()))
+		{
+			// Add the enterprise binaries directory if we're an enterprise project
+			FModuleManager::Get().AddBinariesDirectory( *FPaths::Combine( FPaths::EnterpriseDir(), TEXT("Binaries"), FPlatformProcess::GetBinariesSubdirectory() ), false );
+		}
 	}
 
 #if !IS_PROGRAM
-	if( FApp::HasGameName() )
+	if( FApp::HasProjectName() )
 	{
 		// Tell the module manager what the game binaries folder is
-		const FString GameBinariesDirectory = FPaths::Combine( FPlatformMisc::GameDir(), TEXT( "Binaries" ), FPlatformProcess::GetBinariesSubdirectory() );
-		FModuleManager::Get().SetGameBinariesDirectory(*GameBinariesDirectory);
+		const FString ProjectBinariesDirectory = FPaths::Combine( FPlatformMisc::ProjectDir(), TEXT( "Binaries" ), FPlatformProcess::GetBinariesSubdirectory() );
+		FPlatformProcess::AddDllDirectory(*ProjectBinariesDirectory);
+		FModuleManager::Get().SetGameBinariesDirectory(*ProjectBinariesDirectory);
 
 		LaunchFixGameNameCase();
 	}
 #endif
 
 	// initialize task graph sub-system with potential multiple threads
-	FTaskGraphInterface::Startup( FPlatformMisc::NumberOfCores() );
-	FTaskGraphInterface::Get().AttachToThread( ENamedThreads::GameThread );
+	FTaskGraphInterface::Startup(FPlatformMisc::NumberOfCores());
+	FTaskGraphInterface::Get().AttachToThread(ENamedThreads::GameThread);
 
 #if STATS
 	FThreadStats::StartThread();
 #endif
 
-	FScopeCycleCounter CycleCount_AfterStats( GET_STATID( STAT_FEngineLoop_PreInit_AfterStats ) );
+	FScopeCycleCounter CycleCount_AfterStats(GET_STATID(STAT_FEngineLoop_PreInit_AfterStats));
 
 	// Load Core modules required for everything else to work (needs to be loaded before InitializeRenderingCVarsCaching)
 	if (!LoadCoreModules())
@@ -1337,7 +1441,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	// If we're running as an game but don't have a project, inform the user and exit.
 	if (bHasEditorToken == false && bHasCommandletToken == false)
 	{
-		if ( !FPaths::IsProjectFilePathSet() )
+		if (!FPaths::IsProjectFilePathSet())
 		{
 			//@todo this is too early to localize
 			FMessageDialog::Open(EAppMsgType::Ok, NSLOCTEXT("Engine", "UE4RequiresProjectFiles", "UE4 games require a project file as the first parameter."));
@@ -1363,7 +1467,17 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 			{
 				NumThreadsInThreadPool = 1;
 			}
-			verify(GThreadPool->Create(NumThreadsInThreadPool, 128 * 1024));
+			verify(GThreadPool->Create(NumThreadsInThreadPool, 128 * 1024, TPri_SlightlyBelowNormal));
+		}
+		{
+			GBackgroundPriorityThreadPool = FQueuedThreadPool::Allocate();
+			int32 NumThreadsInThreadPool = 2;
+			if (FPlatformProperties::IsServerOnly())
+			{
+				NumThreadsInThreadPool = 1;
+			}
+
+			verify(GBackgroundPriorityThreadPool->Create(NumThreadsInThreadPool, 128 * 1024, TPri_Lowest));
 		}
 
 #if WITH_EDITOR
@@ -1371,7 +1485,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		// this thread pool can be used for those purposes
 		GLargeThreadPool = FQueuedThreadPool::Allocate();
 		int32 NumThreadsInLargeThreadPool = FMath::Max(FPlatformMisc::NumberOfCoresIncludingHyperthreads() - 2, 2);
-		
+
 		verify(GLargeThreadPool->Create(NumThreadsInLargeThreadPool, 128 * 1024));
 #endif
 	}
@@ -1381,12 +1495,20 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 	LoadPreInitModules();
 
+#if WITH_ENGINE && CSV_PROFILER
+	if (!IsRunningDedicatedServer())
+	{
+		FCoreDelegates::OnEndFrame.AddStatic(UpdateCoreCsvStats);
+	}
+	FCsvProfiler::Get()->Init();
+#endif
+
 	// Start the application
-	if(!AppInit())
+	if (!AppInit())
 	{
 		return 1;
 	}
-	
+
 #if WITH_COREUOBJECT
 	FPlatformFileManager::Get().InitializeNewAsyncIO();
 #endif
@@ -1406,10 +1528,10 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 #if WITH_ENGINE
 	// Initialize system settings before anyone tries to use it...
-	GSystemSettings.Initialize( bHasEditorToken );
+	GSystemSettings.Initialize(bHasEditorToken);
 
 	// Apply renderer settings from console variables stored in the INI.
-	ApplyCVarSettingsFromIni(TEXT("/Script/Engine.RendererSettings"),*GEngineIni, ECVF_SetByProjectSetting);
+	ApplyCVarSettingsFromIni(TEXT("/Script/Engine.RendererSettings"), *GEngineIni, ECVF_SetByProjectSetting);
 	ApplyCVarSettingsFromIni(TEXT("/Script/Engine.RendererOverrideSettings"), *GEngineIni, ECVF_SetByProjectSetting);
 	ApplyCVarSettingsFromIni(TEXT("/Script/Engine.StreamingSettings"), *GEngineIni, ECVF_SetByProjectSetting);
 	ApplyCVarSettingsFromIni(TEXT("/Script/Engine.GarbageCollectionSettings"), *GEngineIni, ECVF_SetByProjectSetting);
@@ -1426,7 +1548,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	}
 #endif
 
-	// As early as possible to avoid expensive re-init of subsystems, 
+	// As early as possible to avoid expensive re-init of subsystems,
 	// after SystemSettings.ini file loading so we get the right state,
 	// before ConsoleVariables.ini so the local developer can always override.
 	// before InitializeCVarsForActiveDeviceProfile() so the platform can override user settings
@@ -1435,7 +1557,12 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	// Set all CVars which have been setup in the device profiles.
 	UDeviceProfileManager::InitializeCVarsForActiveDeviceProfile();
 
-	if (FApp::ShouldUseThreadingForPerformance() && FPlatformMisc::AllowRenderThread())
+	if (FApp::ShouldUseThreadingForPerformance() && FPlatformMisc::AllowRenderThread()
+#if ENABLE_LOW_LEVEL_MEM_TRACKER
+		// disable rendering thread when LLM is on so that memory is attributer better
+		&& !FLowLevelMemTracker::Get().ShouldReduceThreads()
+#endif
+		)
 	{
 		GUseThreadedRendering = true;
 	}
@@ -1448,20 +1575,21 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 		// platform specific initialization now that the SystemSettings are loaded
 		FPlatformMisc::PlatformInit();
+		FPlatformApplicationMisc::Init();
 		FPlatformMemory::Init();
 	}
 
 	// Let LogConsole know what ini file it should use to save its setting on exit.
 	// We can't use GGameIni inside log console because it's destroyed in the global
 	// scoped pointer and at that moment GGameIni may already be gone.
-	if( GLogConsole != nullptr )
+	if (GLogConsole != nullptr)
 	{
 		GLogConsole->SetIniFilename(*GGameIni);
 	}
 
 
 #if CHECK_PUREVIRTUALS
-	FMessageDialog::Open( EAppMsgType::Ok, *NSLOCTEXT("Engine", "Error_PureVirtualsEnabled", "The game cannot run with CHECK_PUREVIRTUALS enabled.  Please disable CHECK_PUREVIRTUALS and rebuild the executable.").ToString() );
+	FMessageDialog::Open(EAppMsgType::Ok, *NSLOCTEXT("Engine", "Error_PureVirtualsEnabled", "The game cannot run with CHECK_PUREVIRTUALS enabled.  Please disable CHECK_PUREVIRTUALS and rebuild the executable.").ToString());
 	FPlatformMisc::RequestExit(false);
 #endif
 
@@ -1471,8 +1599,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	{
 		FPlatformMisc::RequestExit(false);
 	}
-	
-	bool bIsSeekFreeDedicatedServer = false;	
+
 	bool bIsRegularClient = false;
 
 	if (!bHasEditorToken)
@@ -1506,16 +1633,16 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 				}
 			}
 		}
-		else 
+		else
 		{
 			if (!bDefinitelyCommandlet)
 			{
-				UClass* TempCommandletClass = FindObject<UClass>(ANY_PACKAGE, *(Token+TEXT("Commandlet")), false);
+				UClass* TempCommandletClass = FindObject<UClass>(ANY_PACKAGE, *(Token + TEXT("Commandlet")), false);
 
 				if (TempCommandletClass)
 				{
 					check(TempCommandletClass->IsChildOf(UCommandlet::StaticClass())); // ok so you have a class that ends with commandlet that is not a commandlet
-					
+
 					Token += TEXT("Commandlet");
 					bDefinitelyCommandlet = true;
 				}
@@ -1534,6 +1661,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		}
 	}
 
+	bool bDisableDisregardForGC = bHasEditorToken;
 	if (IsRunningDedicatedServer())
 	{
 		GIsClient = false;
@@ -1542,7 +1670,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 #if WITH_EDITOR
 		GIsEditor = false;
 #endif
-		bIsSeekFreeDedicatedServer = FPlatformProperties::RequiresCookedData();
+		bDisableDisregardForGC |= FPlatformProperties::RequiresCookedData() && (GUseDisregardForGCOnDedicatedServers == 0);
 	}
 
 	// If std out device hasn't been initialized yet (there was no -stdout param in the command line) and
@@ -1562,11 +1690,11 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	FPlatformProcess::CleanFileCache();
 
 #if !UE_BUILD_SHIPPING
-	GIsDemoMode = FParse::Param( FCommandLine::Get(), TEXT( "DEMOMODE" ) );
+	GIsDemoMode = FParse::Param(FCommandLine::Get(), TEXT("DEMOMODE"));
 #endif
 
 	if (bHasEditorToken)
-	{	
+	{
 #if WITH_EDITOR
 
 		// We're the editor.
@@ -1577,8 +1705,8 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 		GWarn = &UnrealEdWarn;
 
-#else	
-		FMessageDialog::Open( EAppMsgType::Ok, NSLOCTEXT("Engine", "EditorNotSupported", "Editor not supported in this mode."));
+#else
+		FMessageDialog::Open(EAppMsgType::Ok, NSLOCTEXT("Engine", "EditorNotSupported", "Editor not supported in this mode."));
 		FPlatformMisc::RequestExit(false);
 		return 1;
 #endif //WITH_EDITOR
@@ -1588,11 +1716,14 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	// If we're not in the editor stop collecting the backlog now that we know
 	if (!GIsEditor)
 	{
-		GLog->EnableBacklog( false );
+		GLog->EnableBacklog(false);
 	}
 #if WITH_ENGINE
 
 	EndInitTextLocalization();
+
+	// This must be called before any window (including the splash screen is created
+	FSlateApplication::InitHighDPI();
 
 	UStringTable::InitializeEngineBridge();
 
@@ -1640,28 +1771,20 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		InPackageLocalizationManager.InitializeFromCache(MakeShareable(new FEnginePackageLocalizationCache()));
 	});
 #endif	// USE_LOCALIZED_PACKAGE_CACHE
-	
-	
-	// Without optimisation the shader loading can be so slow we mustn't attempt to preload all the shaders at load.
-	static const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shaders.Optimize"));
-	if (CVar->GetInt() == 0)
-	{
-		FShaderCache::InitShaderCache(SCO_NoShaderPreload);
-	}
-	else
-	{
-		FShaderCache::InitShaderCache(SCO_Default);
-	}
-	
+
+#if RHI_COMMAND_LIST_DEBUG_TRACES
+	EnableEmitDrawEventsOnlyOnCommandlist();
+#endif
+
 	// Initialize the RHI.
 	RHIInit(bHasEditorToken);
-	
+
 	if (FPlatformProperties::RequiresCookedData())
 	{
 		// Will open material shader code storage if project was packaged with it
 		FShaderCodeLibrary::InitForRuntime(GMaxRHIShaderPlatform);
 	}
-	
+
 	FShaderCache::LoadBinaryCache();
 
 	if (!FPlatformProperties::RequiresCookedData())
@@ -1680,9 +1803,9 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		InitializeShaderTypes();
 
 		SlowTask.EnterProgressFrame(30);
-	
+
 		// Load the global shaders.
-		// if (!IsRunningCommandlet()) 
+		// if (!IsRunningCommandlet())
 		// hack: don't load global shaders if we are cooking we will load the shaders for the correct platform later
 		FString Commandline = FCommandLine::Get();
 		if (!IsRunningDedicatedServer() &&
@@ -1691,7 +1814,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		// if (FParse::Param(FCommandLine::Get(), TEXT("Multiprocess")) == false)
 		{
 			CompileGlobalShaderMap(false);
-			if (GetGlobalShaderMap(GMaxRHIFeatureLevel) == nullptr && GIsRequestingExit)
+			if (GIsRequestingExit)
 			{
 				// This means we can't continue without the global shader map.
 				return 1;
@@ -1701,25 +1824,25 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		{
 			GetDerivedDataCacheRef();
 		}
-		
+
 		CreateMoviePlayer();
 		// If platforms support early movie playback we have to start the rendering thread much earlier
 #if PLATFORM_SUPPORTS_EARLY_MOVIE_PLAYBACK
-		RHIPostInit();
+		PostInitRHI();
 
 		if(GUseThreadedRendering)
 		{
 			if(GRHISupportsRHIThread)
 			{
 				const bool DefaultUseRHIThread = true;
-				GUseRHIThread = DefaultUseRHIThread;
+				GUseRHIThread_InternalUseOnly = DefaultUseRHIThread;
 				if(FParse::Param(FCommandLine::Get(), TEXT("rhithread")))
 				{
-					GUseRHIThread = true;
+					GUseRHIThread_InternalUseOnly = true;
 				}
 				else if(FParse::Param(FCommandLine::Get(), TEXT("norhithread")))
 				{
-					GUseRHIThread = false;
+					GUseRHIThread_InternalUseOnly = false;
 				}
 			}
 
@@ -1734,7 +1857,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 				FModuleManager::Get().LoadModuleChecked<ISlateNullRendererModule>("SlateNullRenderer").CreateSlateNullRenderer() :
 				FModuleManager::Get().GetModuleChecked<ISlateRHIRendererModule>("SlateRHIRenderer").CreateSlateRHIRenderer();
 
-			// If Slate is being used, initialize the renderer after RHIInit 
+			// If Slate is being used, initialize the renderer after RHIInit
 			FSlateApplication& CurrentSlateApp = FSlateApplication::Get();
 			CurrentSlateApp.InitializeRenderer(SlateRenderer);
 
@@ -1745,9 +1868,9 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 			// it wouldn't have anything in it's .ini file)
 			GetMoviePlayer()->SetupLoadingScreenFromIni();
 
-			if(GetMoviePlayer()->HasEarlyStartupMovie())
+			if (GetMoviePlayer()->HasEarlyStartupMovie())
 			{
-				GetMoviePlayer()->Initialize(SlateRenderer);
+				GetMoviePlayer()->Initialize(SlateRenderer.Get());
 
 				// hide splash screen now
 				FPlatformMisc::PlatformHandleSplashScreen(false);
@@ -1755,7 +1878,6 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 				// only allowed to play any movies marked as early startup.  These movies or widgets can have no interaction whatsoever with uobjects or engine features
 				GetMoviePlayer()->PlayEarlyStartupMovies();
 			}
-
 		}
 		else if ( IsRunningCommandlet() )
 		{
@@ -1773,15 +1895,21 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 #if USE_EVENT_DRIVEN_ASYNC_LOAD_AT_BOOT_TIME
 		// If we don't do this now and the async loading thread is active, then we will attempt to load this module from a thread
-		if (GEventDrivenLoaderEnabled)
-		{
-			FModuleManager::Get().LoadModule("AssetRegistry");
-		}
+		FModuleManager::Get().LoadModule("AssetRegistry");
 #endif
 
 		// Make sure all UObject classes are registered and default properties have been initialized
 		ProcessNewlyLoadedUObjects();
-
+#if WITH_EDITOR
+		if(FPIEPreviewDeviceModule::IsRequestingPreviewDevice())
+		{
+			auto PIEPreviewDeviceModule = FModuleManager::LoadModulePtr<IPIEPreviewDeviceModule>("PIEPreviewDeviceProfileSelector");
+			if (PIEPreviewDeviceModule)
+			{
+				PIEPreviewDeviceModule->ApplyPreviewDeviceState();
+			}
+		}
+#endif
 #if USE_LOCALIZED_PACKAGE_CACHE
 		// CoreUObject is definitely available now, so make sure the package localization cache is available
 		// This may have already been initialized from the CDO creation from ProcessNewlyLoadedUObjects
@@ -1794,7 +1922,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		UMaterialInterface::AssertDefaultMaterialsExist();
 		UMaterialInterface::AssertDefaultMaterialsPostLoaded();
 	}
-	
+
 	// Initialize the texture streaming system (needs to happen after RHIInit and ProcessNewlyLoadedUObjects).
 	IStreamingManager::Get();
 
@@ -1804,11 +1932,11 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	FModuleManager::Get().StartProcessingNewlyLoadedObjects();
 
 	// Setup GC optimizations
-	if (bIsSeekFreeDedicatedServer || bHasEditorToken)
+	if (bDisableDisregardForGC)
 	{
 		GUObjectArray.DisableDisregardForGC();
 	}
-	
+
 	SlowTask.EnterProgressFrame(10);
 
 	if ( !LoadStartupCoreModules() )
@@ -1826,40 +1954,42 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		return 1;
 	}
 
-
-#if !UE_SERVER// && !UE_EDITOR
+#if !UE_SERVER
 	if (!IsRunningDedicatedServer() && !IsRunningCommandlet() && !GetMoviePlayer()->IsMovieCurrentlyPlaying())
 	{
-		GetMoviePlayer()->Initialize(FSlateApplication::Get().GetRenderer());
+		if (FSlateRenderer* Renderer = FSlateApplication::Get().GetRenderer())
+	{
+			GetMoviePlayer()->Initialize(*Renderer);
+		}
 	}
 #endif
 
-	// do any post appInit processing, before the render thread is started.
-	FPlatformMisc::PlatformPostInit();
+		// do any post appInit processing, before the render thread is started.
+	FPlatformApplicationMisc::PostInit();
 	SlowTask.EnterProgressFrame(5);
 
 #if !PLATFORM_SUPPORTS_EARLY_MOVIE_PLAYBACK
-	RHIPostInit();
+	PostInitRHI();
 
 	if (GUseThreadedRendering)
 	{
 		if (GRHISupportsRHIThread)
 		{
 			const bool DefaultUseRHIThread = true;
-			GUseRHIThread = DefaultUseRHIThread;
+			GUseRHIThread_InternalUseOnly = DefaultUseRHIThread;
 			if (FParse::Param(FCommandLine::Get(),TEXT("rhithread")))
 			{
-				GUseRHIThread = true;
+				GUseRHIThread_InternalUseOnly = true;
 			}
 			else if (FParse::Param(FCommandLine::Get(),TEXT("norhithread")))
 			{
-				GUseRHIThread = false;
+				GUseRHIThread_InternalUseOnly = false;
 			}
 		}
 		StartRenderingThread();
 	}
 #endif // !PLATFORM_SUPPORTS_EARLY_MOVIE_PLAYBACK
-	
+
 
 	// Playing a movie can only happen after the rendering thread is started.
 #if !UE_SERVER// && !UE_EDITOR
@@ -1883,6 +2013,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		FPlatformMisc::PlatformHandleSplashScreen(true);
 	}
 
+	if(!GIsEditor)
 	{
 		FCoreUObjectDelegates::PreGarbageCollectConditionalBeginDestroy.AddStatic(StartRenderCommandFenceBundler);
 		FCoreUObjectDelegates::PostGarbageCollectConditionalBeginDestroy.AddStatic(StopRenderCommandFenceBundler);
@@ -1896,13 +2027,6 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	if ( !LoadStartupModules() )
 	{
 		// At least one startup module failed to load, return 1 to indicate an error
-		return 1;
-	}
-
-	// load up the seek-free startup packages
-	if ( !FStartupPackages::LoadAll() )
-	{
-		// At least one startup package failed to load, return 1 to indicate an error
 		return 1;
 	}
 #endif // WITH_ENGINE
@@ -1994,7 +2118,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 			{
 				GLog->RemoveOutputDevice( GLogConsole );
 			}
-			
+
 			// allow the commandlet the opportunity to create a custom engine
 			CommandletClass->GetDefaultObject<UCommandlet>()->CreateCustomEngine(CommandletCommandLine);
 			if ( GEngine == nullptr )
@@ -2043,25 +2167,26 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 				}
 			}
 
+			// Call init callbacks
+			FCoreDelegates::OnPostEngineInit.Broadcast();
+
 			// Load all the post-engine init modules
 			ensure(IProjectManager::Get().LoadModulesForProject(ELoadingPhase::PostEngineInit));
 			ensure(IPluginManager::Get().LoadModulesForEnabledPlugins(ELoadingPhase::PostEngineInit));
 
 			//run automation smoke tests now that the commandlet has had a chance to override the above flags and GEngine is available
-#if !PLATFORM_HTML5 && !PLATFORM_HTML5_WIN32 
 			FAutomationTestFramework::Get().RunSmokeTests();
-#endif 
-	
+
 			UCommandlet* Commandlet = NewObject<UCommandlet>(GetTransientPackage(), CommandletClass);
 			check(Commandlet);
-			Commandlet->AddToRoot();			
+			Commandlet->AddToRoot();
 
 			// Execute the commandlet.
 			double CommandletExecutionStartTime = FPlatformTime::Seconds();
 
 			// Commandlets don't always handle -run= properly in the commandline so we'll provide them
 			// with a custom version that doesn't have it.
-			Commandlet->ParseParms( CommandletCommandLine ); 
+			Commandlet->ParseParms( CommandletCommandLine );
 #if	STATS
 			// We have to close the scope, otherwise we will end with broken stats.
 			CycleCount_AfterStats.StopAndResetStatId();
@@ -2087,10 +2212,10 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 					UE_LOG(LogInit, Display, TEXT("Warning/Error Summary (Unique only)"));
 					UE_LOG(LogInit, Display, TEXT("-----------------------------------"));
 
-					const int32 MaxMessagesToShow = (GIsBuildMachine || FParse::Param(FCommandLine::Get(), TEXT("DUMPALLWARNINGS"))) ? 
-						FMath::Max(AllErrors.Num(), AllWarnings.Num()) : 50;
-					
-					TSet<FString> ShownMessages;					
+					const int32 MaxMessagesToShow = (GIsBuildMachine || FParse::Param(FCommandLine::Get(), TEXT("DUMPALLWARNINGS"))) ?
+						(AllErrors.Num() + AllWarnings.Num()) : 50;
+
+					TSet<FString> ShownMessages;
 					ShownMessages.Empty(MaxMessagesToShow);
 
 					SET_WARN_COLOR(COLOR_RED);
@@ -2160,7 +2285,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 			{
 				UE_LOG(LogInit, Display, TEXT("Finished.") );
 			}
-		
+
 			double CommandletExecutionTime = FPlatformTime::Seconds() - CommandletExecutionStartTime;
 			UE_LOG(LogInit, Display, LINE_TERMINATOR TEXT( "Execution of commandlet took:  %.2f seconds"), CommandletExecutionTime );
 
@@ -2213,6 +2338,11 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 		GAreScreenMessagesEnabled = false;
 	}
 
+	if (GEngine && FParse::Param(FCommandLine::Get(), TEXT("statunit")))
+	{
+		GEngine->Exec(nullptr, TEXT("stat unit"));
+	}
+
 	// Don't update INI files if benchmarking or -noini
 	if( FApp::IsBenchmarking() || FParse::Param(FCommandLine::Get(),TEXT("NOINI")))
 	{
@@ -2249,7 +2379,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 #if USE_LOCALIZED_PACKAGE_CACHE
 	FPackageLocalizationManager::Get().InitializeFromDefaultCache();
 #endif	// USE_LOCALIZED_PACKAGE_CACHE
-	FPlatformMisc::PlatformPostInit();
+	FPlatformApplicationMisc::PostInit();
 #endif // WITH_ENGINE
 
 	//run automation smoke tests now that everything is setup to run
@@ -2264,8 +2394,7 @@ bool FEngineLoop::LoadCoreModules()
 {
 	// Always attempt to load CoreUObject. It requires additional pre-init which is called from its module's StartupModule method.
 #if WITH_COREUOBJECT
-	bool bResult = FModuleManager::Get().LoadModule(TEXT("CoreUObject")).IsValid();
-	return bResult;
+	return FModuleManager::Get().LoadModule(TEXT("CoreUObject")) != nullptr;
 #else
 	return true;
 #endif
@@ -2273,7 +2402,7 @@ bool FEngineLoop::LoadCoreModules()
 
 
 void FEngineLoop::LoadPreInitModules()
-{	
+{
 	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("Loading PreInit Modules"), STAT_PreInitModules, STATGROUP_LoadTime);
 
 	// GGetMapNameDelegate is initialized here
@@ -2284,8 +2413,8 @@ void FEngineLoop::LoadPreInitModules()
 
 	FModuleManager::Get().LoadModule(TEXT("AnimGraphRuntime"));
 
-	FPlatformMisc::LoadPreInitModules();
-	
+	FPlatformApplicationMisc::LoadPreInitModules();
+
 #if !UE_SERVER
 	if (!IsRunningDedicatedServer() )
 	{
@@ -2302,12 +2431,13 @@ void FEngineLoop::LoadPreInitModules()
 	// Initialize ShaderCore before loading or compiling any shaders,
 	// But after Renderer and any other modules which implement shader types.
 	FModuleManager::Get().LoadModule(TEXT("ShaderCore"));
-	
+
 #if WITH_EDITORONLY_DATA
 	// Load the texture compressor module before any textures load. They may
 	// compress asynchronously and that can lead to a race condition.
 	FModuleManager::Get().LoadModule(TEXT("TextureCompressor"));
 #endif
+
 #endif // WITH_ENGINE
 
 #if (WITH_EDITOR && !(UE_BUILD_SHIPPING || UE_BUILD_TEST))
@@ -2315,7 +2445,6 @@ void FEngineLoop::LoadPreInitModules()
 	FModuleManager::Get().LoadModule(TEXT("AudioEditor"));
 	FModuleManager::Get().LoadModule(TEXT("AnimationModifiers"));
 #endif
-
 }
 
 
@@ -2337,7 +2466,7 @@ bool FEngineLoop::LoadStartupCoreModules()
 	}
 
 	SlowTask.EnterProgressFrame(10);
-	FPlatformMisc::LoadStartupModules();
+	FPlatformApplicationMisc::LoadStartupModules();
 
 	// initialize messaging
 	SlowTask.EnterProgressFrame(10);
@@ -2345,6 +2474,14 @@ bool FEngineLoop::LoadStartupCoreModules()
 	{
 		FModuleManager::LoadModuleChecked<IMessagingModule>("Messaging");
 	}
+
+	// Init Scene Reconstruction support
+#if !UE_SERVER
+	if (!IsRunningDedicatedServer())
+	{
+		FModuleManager::LoadModuleChecked<IMRMeshModule>("MRMesh");
+	}
+#endif
 
 	SlowTask.EnterProgressFrame(10);
 #if WITH_EDITOR
@@ -2415,7 +2552,7 @@ bool FEngineLoop::LoadStartupCoreModules()
 	// cooking needs this module too
 	bool bEnvironmentQueryEditor = false;
 	GConfig->GetBool(TEXT("EnvironmentQueryEd"), TEXT("EnableEnvironmentQueryEd"), bEnvironmentQueryEditor, GEngineIni);
-	if (bEnvironmentQueryEditor 
+	if (bEnvironmentQueryEditor
 #if WITH_EDITOR
 		|| GetDefault<UEditorExperimentalSettings>()->bEQSEditor
 #endif // WITH_EDITOR
@@ -2439,15 +2576,18 @@ bool FEngineLoop::LoadStartupCoreModules()
 	// Load runtime client modules (which are also needed at cook-time)
 	if( !IsRunningDedicatedServer() )
 	{
-		FModuleManager::Get().LoadModule(TEXT("GameLiveStreaming"));
-		FModuleManager::Get().LoadModule(TEXT("MediaAssets"));
+		FModuleManager::Get().LoadModule(TEXT("Overlay"));
 	}
+
+	FModuleManager::Get().LoadModule(TEXT("MediaAssets"));
 #endif
 
 	FModuleManager::Get().LoadModule(TEXT("ClothingSystemRuntime"));
 #if WITH_EDITOR
 	FModuleManager::Get().LoadModule(TEXT("ClothingSystemEditor"));
 #endif
+
+	FModuleManager::Get().LoadModule(TEXT("PacketHandler"));
 
 
 	return bSuccess;
@@ -2493,7 +2633,7 @@ void FEngineLoop::InitTime()
 	LastFrameCycles				= FPlatformTime::Cycles();
 
 	float FloatMaxTickTime		= 0;
-#if !UE_BUILD_SHIPPING
+#if (!UE_BUILD_SHIPPING || ENABLE_PGO_PROFILE)
 	FParse::Value(FCommandLine::Get(),TEXT("SECONDS="),FloatMaxTickTime);
 	MaxTickTime					= FloatMaxTickTime;
 
@@ -2535,6 +2675,8 @@ void GameLoopIsStarved()
 
 int32 FEngineLoop::Init()
 {
+	LLM_SCOPE(ELLMTag::EngineInitMemory);
+
 	CheckImageIntegrity();
 
 	DECLARE_SCOPE_CYCLE_COUNTER( TEXT( "FEngineLoop::Init" ), STAT_FEngineLoop_Init, STATGROUP_LoadTime );
@@ -2574,7 +2716,7 @@ int32 FEngineLoop::Init()
 	}
 
 	check( GEngine );
-	
+
 	GetMoviePlayer()->PassLoadingScreenWindowBackToGame();
 
 	GEngine->ParseCommandline();
@@ -2585,7 +2727,11 @@ int32 FEngineLoop::Init()
 
 	GEngine->Init(this);
 
+	// Call init callbacks
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	UEngine::OnPostEngineInit.Broadcast();
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
+	FCoreDelegates::OnPostEngineInit.Broadcast();
 
 	SlowTask.EnterProgressFrame(30);
 
@@ -2609,8 +2755,18 @@ int32 FEngineLoop::Init()
 	}
 
 	GEngine->Start();
-	
+
 	GetMoviePlayer()->WaitForMovieToFinish();
+
+#if !UE_SERVER
+	// initialize media framework
+	IMediaModule* MediaModule = FModuleManager::LoadModulePtr<IMediaModule>("Media");
+
+	if (MediaModule != nullptr)
+	{
+		MediaModule->SetTimeSource(MakeShareable(new FAppMediaTimeSource));
+	}
+#endif
 
 	// initialize automation worker
 #if WITH_AUTOMATION_WORKER
@@ -2715,6 +2871,14 @@ void FEngineLoop::Exit()
 	}
 #endif
 
+#if WITH_EDITOR
+	// These module must be shut down first because other modules may try to access them during shutdown.
+	// Accessing these modules at shutdown causes instability since the object system will have been shut down and these modules uses uobjects internally.
+	FModuleManager::Get().UnloadModule("AssetTools", true);
+
+#endif // WITH_EDITOR
+	FModuleManager::Get().UnloadModule("AssetRegistry", true);
+
 #if !PLATFORM_ANDROID 	// AppPreExit doesn't work on Android
 	AppPreExit();
 
@@ -2727,11 +2891,11 @@ void FEngineLoop::Exit()
 
 	// Stop the rendering thread.
 	StopRenderingThread();
-	
+
 
 	// Disable the shader cache
 	FShaderCache::ShutdownShaderCache();
-	
+
 	// Close shader code map, if any
 	FShaderCodeLibrary::Shutdown();
 
@@ -2797,7 +2961,7 @@ void FEngineLoop::ProcessLocalPlayerSlateOperations() const
 							if (LocalPlayer)
 							{
 								FReply& TheReply = LocalPlayer->GetSlateOperations();
-								SlateApp.ProcessReply(PathToWidget, TheReply, nullptr, nullptr, LocalPlayer->GetControllerId());
+								SlateApp.ProcessExternalReply(PathToWidget, TheReply, LocalPlayer->GetControllerId());
 
 								TheReply = FReply::Unhandled();
 							}
@@ -2819,7 +2983,7 @@ bool FEngineLoop::ShouldUseIdleMode() const
 	if (FApp::IsGame()
 		&& FPlatformProperties::SupportsWindowedMode()
 		&& CVarIdleWhenNotForeground->GetValueOnGameThread()
-		&& !FPlatformProcess::IsThisApplicationForeground())
+		&& !FPlatformApplicationMisc::IsThisApplicationForeground())
 	{
 		bIdleMode = true;
 
@@ -2836,7 +3000,7 @@ bool FEngineLoop::ShouldUseIdleMode() const
 	return bIdleMode;
 }
 
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST && MALLOC_GT_HOOKS
 
 #include "Containers/StackTracker.h"
 static TAutoConsoleVariable<int32> CVarLogGameThreadMallocChurn(
@@ -2960,15 +3124,20 @@ uint64 FScopedSampleMallocChurn::DumpFrame = 0;
 
 void FEngineLoop::Tick()
 {
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST && MALLOC_GT_HOOKS
 	FScopedSampleMallocChurn ChurnTracker;
 #endif
+	// let the low level mem tracker pump once a frame to update states
+	LLM(FLowLevelMemTracker::Get().UpdateStatsPerFrame());
+
+	LLM_SCOPE(ELLMTag::EngineMisc);
 
 	// Send a heartbeat for the diagnostics thread
-	FThreadHeartBeat::Get().HeartBeat();
+	FThreadHeartBeat::Get().HeartBeat(true);
+	FGameThreadHitchHeartBeat::Get().FrameStart();
 
 	// Make sure something is ticking the rendering tickables in -onethread mode to avoid leaks/bugs.
-	if (!GUseThreadedRendering && !GIsRenderingThreadSuspended)
+	if (!GUseThreadedRendering && !GIsRenderingThreadSuspended.Load(EMemoryOrder::Relaxed))
 	{
 		TickRenderingTickables();
 	}
@@ -2984,59 +3153,95 @@ void FEngineLoop::Tick()
 
 	SCOPED_NAMED_EVENT(FEngineLoopTick, FColor::Red);
 
-	// early in the Tick() to get the callbacks for cvar changes called
+	// execute callbacks for cvar changes
 	{
 		QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_Tick_CallAllConsoleVariableSinks);
 		IConsoleManager::Get().CallAllConsoleVariableSinks();
 	}
 
-	{ 
-		SCOPE_CYCLE_COUNTER( STAT_FrameTime );	
+	{
+		SCOPE_CYCLE_COUNTER(STAT_FrameTime);
 
-		ENQUEUE_UNIQUE_RENDER_COMMAND(
-			BeginFrame,
-		{
-			GRHICommandList.LatchBypass();
-			GFrameNumberRenderThread++;
-			RHICmdList.PushEvent(*FString::Printf(TEXT("Frame%d"),GFrameNumberRenderThread), FColor(0, 255, 0, 255));
-			GPU_STATS_BEGINFRAME(RHICmdList);
-			RHICmdList.BeginFrame();
-		});
+		#if WITH_PROFILEGPU
+			// Issue the measurement of the execution time of a basic LongGPUTask unit on the very first frame
+			// The results will be retrived on the first call of IssueScalableLongGPUTask
+			if (GFrameCounter == 0 && IsFeatureLevelSupported(GMaxRHIShaderPlatform, ERHIFeatureLevel::SM4) && FApp::CanEverRender())
+			{
+				FlushRenderingCommands();
 
+				ENQUEUE_UNIQUE_RENDER_COMMAND(
+					MeasureLongGPUTaskExecutionTimeCmd,
+					{
+						MeasureLongGPUTaskExecutionTime(RHICmdList);
+					});
+			}
+		#endif
+
+		FCoreDelegates::OnBeginFrame.Broadcast();
+
+		// flush debug output which has been buffered by other threads
 		{
 			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_FlushThreadedLogs);
-			// Flush debug output which has been buffered by other threads.
 			GLog->FlushThreadedLogs();
 		}
 
-		// Exit if frame limit is reached in benchmark mode.
-		if( (FApp::IsBenchmarking() && MaxFrameCounter && (GFrameCounter > MaxFrameCounter))
-			// or time limit is reached if set.
-			|| (MaxTickTime && (TotalTickTime > MaxTickTime)) )
+		// exit if frame limit is reached in benchmark mode, or if time limit is reached
+		if ((FApp::IsBenchmarking() && MaxFrameCounter && (GFrameCounter > MaxFrameCounter)) ||
+			(MaxTickTime && (TotalTickTime > MaxTickTime)))
 		{
 			FPlatformMisc::RequestExit(0);
 		}
 
+		// set FApp::CurrentTime, FApp::DeltaTime and potentially wait to enforce max tick rate
 		{
 			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_UpdateTimeAndHandleMaxTickRate);
-			// Set FApp::CurrentTime, FApp::DeltaTime and potentially wait to enforce max tick rate.
 			GEngine->UpdateTimeAndHandleMaxTickRate();
 		}
 
+		// beginning of RHI frame
+		ENQUEUE_UNIQUE_RENDER_COMMAND(
+			BeginFrame,
+			{
+				GRHICommandList.LatchBypass();
+				GFrameNumberRenderThread++;
+
+				// If we are profiling, kick off a long GPU task to make the GPU always behind the CPU so that we
+				// won't get GPU idle time measured in profiling results
+				if (GTriggerGPUProfile && !GTriggerGPUHitchProfile)
+				{
+					IssueScalableLongGPUTask(RHICmdList);
+				}
+
+				RHICmdList.PushEvent(*FString::Printf(TEXT("Frame%d"),GFrameNumberRenderThread), FColor(0, 255, 0, 255));
+				GPU_STATS_BEGINFRAME(RHICmdList);
+				RHICmdList.BeginFrame();
+			FCoreDelegates::OnBeginFrameRT.Broadcast();
+			});
+
+		#if !UE_SERVER && WITH_ENGINE
+		if (!GIsEditor && GEngine->GameViewport && GEngine->GameViewport->GetWorld() && GEngine->GameViewport->GetWorld()->IsCameraMoveable())
+		{
+			// When not in editor, we emit dynamic resolution's begin frame right after RHI's.
+			GEngine->EmitDynamicResolutionEvent(EDynamicResolutionStateEvent::BeginFrame);
+		}
+		#endif
+
+		// tick performance monitoring
 		{
 			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_TickFPSChart);
 			GEngine->TickPerformanceMonitoring( FApp::GetDeltaTime() );
 		}
 
+		// update memory allocator stats
+		{
 		QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_Malloc_UpdateStats);
-
-		// Update memory allocator stats.
 		GMalloc->UpdateStats();
-	} 
+		}
+	}
 
 	FStats::AdvanceFrame( false, FStats::FOnAdvanceRenderingThreadStats::CreateStatic( &AdvanceRenderingThreadStatsGT ) );
 
-	{ 
+	{
 		SCOPE_CYCLE_COUNTER( STAT_FrameTime );
 
 		// Calculates average FPS/MS (outside STATS on purpose)
@@ -3052,10 +3257,10 @@ void FEngineLoop::Tick()
 				FDeferredUpdateResource::ResetNeedsUpdate();
 				FlushPendingDeleteRHIResources_RenderThread();
 			});
-		
+
 		{
 			SCOPE_CYCLE_COUNTER(STAT_PumpMessages);
-			FPlatformMisc::PumpMessages(true);
+			FPlatformApplicationMisc::PumpMessages(true);
 		}
 
 		bool bIdleMode;
@@ -3085,24 +3290,29 @@ void FEngineLoop::Tick()
 			{
 				WorldToScale = GEditor->PlayWorld;
 			}
-#endif	// WITH_EDITOR
+#endif //WITH_EDITOR
 
 			if( WorldToScale != nullptr )
-			{
+		{
 				if( GNewWorldToMetersScale != WorldToScale->GetWorldSettings()->WorldToMeters )
-				{
+			{
 					WorldToScale->GetWorldSettings()->WorldToMeters = GNewWorldToMetersScale;
-				}
 			}
+		}
 
 			GNewWorldToMetersScale = 0.0f;
 		}
-#endif	// WITH_ENGINE
+#endif //WITH_ENGINE
 
+		// tick active platform files
+		FPlatformFileManager::Get().TickActivePlatformFile();
+
+		// process accumulated Slate input
 		if (FSlateApplication::IsInitialized() && !bIdleMode)
 		{
 			SCOPE_TIME_GUARD(TEXT("SlateInput"));
 			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_Tick_SlateInput);
+			LLM_SCOPE(ELLMTag::UI);
 
 			FSlateApplication& SlateApp = FSlateApplication::Get();
 			SlateApp.PollGameDeviceState();
@@ -3110,17 +3320,37 @@ void FEngineLoop::Tick()
 			SlateApp.FinishedInputThisFrame();
 		}
 
-		GEngine->Tick( FApp::GetDeltaTime(), bIdleMode );
+#if !UE_SERVER
+		// tick media framework
+		IMediaModule* MediaModule = FModuleManager::LoadModulePtr<IMediaModule>("Media");
+
+		if (MediaModule != nullptr)
+		{
+			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_MediaTickPreEngine);
+			MediaModule->TickPreEngine();
+		}
+#endif
+
+		// main game engine tick (world, game objects, etc.)
+		GEngine->Tick(FApp::GetDeltaTime(), bIdleMode);
+
+#if !UE_SERVER
+		// tick media framework
+		if (MediaModule != nullptr)
+		{
+			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_MediaTickPostEngine);
+			MediaModule->TickPostEngine();
+		}
+#endif
 		
 		// If a movie that is blocking the game thread has been playing,
 		// wait for it to finish before we continue to tick or tick again
 		// We do this right after GEngine->Tick() because that is where user code would initiate a load / movie.
 		{
 			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_WaitForMovieToFinish);
-
 			GetMoviePlayer()->WaitForMovieToFinish();
 		}
-		
+
 		if (GShaderCompilingManager)
 		{
 			// Process any asynchronous shader compile results that are ready, limit execution time
@@ -3134,7 +3364,17 @@ void FEngineLoop::Tick()
 			GDistanceFieldAsyncQueue->ProcessAsyncTasks();
 		}
 
+#if !UE_SERVER
+		// tick media framework
+		if (MediaModule != nullptr)
+		{
+			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_MediaTickPreSlate);
+			MediaModule->TickPreSlate();
+		}
+#endif
+
 #if WITH_ENGINE
+		// process concurrent Slate tasks
 		FGraphEventRef ConcurrentTask;
 		const bool bDoConcurrentSlateTick = GEngine->ShouldDoAsyncEndOfFrameTasks();
 
@@ -3147,23 +3387,23 @@ void FEngineLoop::Tick()
 
 			if (CurrentDemoNetDriver && CurrentDemoNetDriver->ShouldTickFlushAsyncEndOfFrame())
 			{
-				ConcurrentTask = TGraphTask<FExecuteConcurrentWithSlateTickTask>::CreateTask(nullptr, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(
-					[CurrentDemoNetDriver, DeltaSeconds]()
+			ConcurrentTask = TGraphTask<FExecuteConcurrentWithSlateTickTask>::CreateTask(nullptr, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(
+					[CurrentDemoNetDriver, DeltaSeconds]() {
+					if (CVarDoAsyncEndOfFrameTasksRandomize.GetValueOnAnyThread(true) > 0)
 					{
-						if (CVarDoAsyncEndOfFrameTasksRandomize.GetValueOnAnyThread(true) > 0)
-						{
-							FPlatformProcess::Sleep(FMath::RandRange(0.0f, .003f)); // this shakes up the threading to find race conditions
-						}
+						FPlatformProcess::Sleep(FMath::RandRange(0.0f, .003f)); // this shakes up the threading to find race conditions
+					}
+
 						if (CurrentDemoNetDriver != nullptr)
 						{
 							CurrentDemoNetDriver->TickFlushAsyncEndOfFrame(DeltaSeconds);
-						}
 					}
-				);
-			}
+					});
+				}
 		}
 #endif
 
+		// tick Slate application
 		if (FSlateApplication::IsInitialized() && !bIdleMode)
 		{
 			{
@@ -3174,7 +3414,6 @@ void FEngineLoop::Tick()
 				ProcessLocalPlayerSlateOperations();
 			}
 
-			// Tick Slate application
 			FSlateApplication::Get().Tick();
 		}
 
@@ -3185,31 +3424,37 @@ void FEngineLoop::Tick()
 			FTaskGraphInterface::Get().WaitUntilTaskCompletes(ConcurrentTask);
 			ConcurrentTask = nullptr;
 		}
+		{
+			ENQUEUE_UNIQUE_RENDER_COMMAND(WaitForOutstandingTasksOnly_for_DelaySceneRenderCompletion,
+			{
+				QUICK_SCOPE_CYCLE_COUNTER(STAT_DelaySceneRenderCompletion_TaskWait);
+				FRHICommandListExecutor::GetImmediateCommandList().ImmediateFlush(EImmediateFlushType::WaitForOutstandingTasksOnly);
+			});
+		}
 #endif
 
 #if STATS
-		// Clear any stat group notifications we have pending just incase they weren't claimed during FSlateApplication::Get().Tick
+		// Clear any stat group notifications we have pending just in case they weren't claimed during FSlateApplication::Get().Tick
 		extern CORE_API void ClearPendingStatGroups();
 		ClearPendingStatGroups();
 #endif
 
 #if WITH_EDITOR && !UE_BUILD_SHIPPING
+		// tick automation controller (Editor only)
 		{
-			QUICK_SCOPE_CYCLE_COUNTER( STAT_FEngineLoop_Tick_AutomationController );
-			static FName AutomationController( "AutomationController" );
-			//Check if module loaded to support the change to allow this to be hot compilable.
-			if (FModuleManager::Get().IsModuleLoaded( AutomationController ))
+			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_Tick_AutomationController);
+			static FName AutomationController("AutomationController");
+			if (FModuleManager::Get().IsModuleLoaded(AutomationController))
 			{
-				FModuleManager::GetModuleChecked<IAutomationControllerModule>( AutomationController ).Tick();
+				FModuleManager::GetModuleChecked<IAutomationControllerModule>(AutomationController).Tick();
 			}
 		}
 #endif
 
-#if WITH_ENGINE
-#if WITH_AUTOMATION_WORKER
+#if WITH_ENGINE && WITH_AUTOMATION_WORKER
+		// tick automation worker
 		{
 			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_Tick_AutomationWorker);
-			//Check if module loaded to support the change to allow this to be hot compilable.
 			static const FName AutomationWorkerModuleName = TEXT("AutomationWorker");
 			if (FModuleManager::Get().IsModuleLoaded(AutomationWorkerModuleName))
 			{
@@ -3217,8 +3462,8 @@ void FEngineLoop::Tick()
 			}
 		}
 #endif
-#endif //WITH_ENGINE
 
+		// tick render hardware interface
 		{			
 			SCOPE_CYCLE_COUNTER(STAT_RHITickTime);
 			RHITick( FApp::GetDeltaTime() ); // Update RHI.
@@ -3228,45 +3473,61 @@ void FEngineLoop::Tick()
 		GFrameCounter++;
 
 		// Disregard first few ticks for total tick time as it includes loading and such.
-		if( GFrameCounter > 6 )
+		if (GFrameCounter > 6)
 		{
-			TotalTickTime+=FApp::GetDeltaTime();
+			TotalTickTime += FApp::GetDeltaTime();
 		}
-
 
 		// Find the objects which need to be cleaned up the next frame.
 		FPendingCleanupObjects* PreviousPendingCleanupObjects = PendingCleanupObjects;
 		PendingCleanupObjects = GetPendingCleanupObjects();
 
 		{
-			SCOPE_CYCLE_COUNTER( STAT_FrameSyncTime );
-			// this could be perhaps moved down to get greater parallelizm
+			SCOPE_CYCLE_COUNTER(STAT_FrameSyncTime);
+			// this could be perhaps moved down to get greater parallelism
 			// Sync game and render thread. Either total sync or allowing one frame lag.
 			static FFrameEndSync FrameEndSync;
 			static auto CVarAllowOneFrameThreadLag = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.OneFrameThreadLag"));
 			FrameEndSync.Sync( CVarAllowOneFrameThreadLag->GetValueOnGameThread() != 0 );
 		}
 
+		// tick core ticker, threads & deferred commands
 		{
-			SCOPE_CYCLE_COUNTER( STAT_DeferredTickTime );
+			SCOPE_CYCLE_COUNTER(STAT_DeferredTickTime);
 			// Delete the objects which were enqueued for deferred cleanup before the previous frame.
 			delete PreviousPendingCleanupObjects;
 
-			// Destroy all linkers pending delete
 #if WITH_COREUOBJECT
-			DeleteLoaders();
+			DeleteLoaders(); // destroy all linkers pending delete
 #endif
 
 			FTicker::GetCoreTicker().Tick(FApp::GetDeltaTime());
-
 			FThreadManager::Get().Tick();
-
 			GEngine->TickDeferredCommands();		
 		}
 
-		ENQUEUE_UNIQUE_RENDER_COMMAND(
-			EndFrame,
+#if !UE_SERVER
+		// tick media framework
+		if (MediaModule != nullptr)
 		{
+			QUICK_SCOPE_CYCLE_COUNTER(STAT_FEngineLoop_MediaTickPostRender);
+			MediaModule->TickPostRender();
+		}
+#endif
+
+		FCoreDelegates::OnEndFrame.Broadcast();
+
+		#if !UE_SERVER && WITH_ENGINE
+		{
+			// We emit dynamic resolution's end frame right before RHI's. GEngine is going to ignore it if no BeginFrame was done.
+			GEngine->EmitDynamicResolutionEvent(EDynamicResolutionStateEvent::EndFrame);
+		}
+		#endif
+
+		// end of RHI frame
+		ENQUEUE_UNIQUE_RENDER_COMMAND(EndFrame,
+		{
+			FCoreDelegates::OnEndFrameRT.Broadcast();
 			RHICmdList.EndFrame();
 			GPU_STATS_ENDFRAME(RHICmdList);
 			RHICmdList.PopEvent();
@@ -3281,7 +3542,7 @@ void FEngineLoop::Tick()
 #if UE_GC_TRACK_OBJ_AVAILABLE
 		SET_DWORD_STAT(STAT_Hash_NumObjects, GUObjectArray.GetObjectArrayNumMinusAvailable());
 #endif
-	}	
+	}
 }
 
 
@@ -3293,14 +3554,17 @@ void FEngineLoop::ClearPendingCleanupObjects()
 
 #endif // WITH_ENGINE
 
+
 static TAutoConsoleVariable<int32> CVarLogTimestamp(
 	TEXT("log.Timestamp"),
 	1,
 	TEXT("Defines if time is included in each line in the log file and in what form. Layout: [time][frame mod 1000]\n")
 	TEXT("  0 = Do not display log timestamps\n")
-	TEXT("  1 = Log time stamps in UTC and Frametime (default) e.g. [2015.11.25-21.28.50:803][376]\n")
-	TEXT("  2 = Log timestamps in seconds elapsed since GStartTime e.g. [0130.29][420]"),
+	TEXT("  1 = Log time stamps in UTC and frame time (default) e.g. [2015.11.25-21.28.50:803][376]\n")
+	TEXT("  2 = Log timestamps in seconds elapsed since GStartTime e.g. [0130.29][420]")
+	TEXT("  3 = Log timestamps in local time and frame time e.g. [2017.08.04-17.59.50:803][420]"),
 	ECVF_Default);
+
 
 static TAutoConsoleVariable<int32> CVarLogCategory(
 	TEXT("log.Category"),
@@ -3311,7 +3575,7 @@ static TAutoConsoleVariable<int32> CVarLogCategory(
 	ECVF_Default);
 
 
-// Gets called any time cvars change (on the main thread) 
+// Gets called any time cvars change (on the main thread)
 static void CVarLogSinkFunction()
 {
 	{
@@ -3327,6 +3591,7 @@ static void CVarLogSinkFunction()
 			case 0: GPrintLogTimes = ELogTimes::None; break;
 			case 1: GPrintLogTimes = ELogTimes::UTC; break;
 			case 2: GPrintLogTimes = ELogTimes::SinceGStartTime; break;
+			case 3: GPrintLogTimes = ELogTimes::Local; break;
 		}
 	}
 
@@ -3347,28 +3612,48 @@ static void CheckForPrintTimesOverride()
 	FString LogTimes;
 	if (GConfig->GetString( TEXT( "LogFiles" ), TEXT( "LogTimes" ), LogTimes, GEngineIni ))
 	{
-		if (LogTimes == TEXT( "SinceStart" ))
+		if (LogTimes == TEXT( "None" ))
 		{
-			CVarLogTimestamp->Set(2, ECVF_SetBySystemSettingsIni);
+			CVarLogTimestamp->Set((int)ELogTimes::None, ECVF_SetBySystemSettingsIni);
+		}
+		else if (LogTimes == TEXT( "UTC" ))
+		{
+			CVarLogTimestamp->Set((int)ELogTimes::UTC, ECVF_SetBySystemSettingsIni);
+		}
+		else if (LogTimes == TEXT( "SinceStart" ))
+		{
+			CVarLogTimestamp->Set((int)ELogTimes::SinceGStartTime, ECVF_SetBySystemSettingsIni);
+		}
+		else if (LogTimes == TEXT( "Local" ))
+		{
+			CVarLogTimestamp->Set((int)ELogTimes::Local, ECVF_SetBySystemSettingsIni);
 		}
 		// Assume this is a bool for backward compatibility
 		else if (FCString::ToBool( *LogTimes ))
 		{
-			CVarLogTimestamp->Set(1, ECVF_SetBySystemSettingsIni);
+			CVarLogTimestamp->Set((int)ELogTimes::UTC, ECVF_SetBySystemSettingsIni);
 		}
 	}
 
 	if (FParse::Param( FCommandLine::Get(), TEXT( "LOGTIMES" ) ))
 	{
-		CVarLogTimestamp->Set(1, ECVF_SetByCommandline);
+		CVarLogTimestamp->Set((int)ELogTimes::UTC, ECVF_SetByCommandline);
+	}
+	else if (FParse::Param( FCommandLine::Get(), TEXT( "UTCLOGTIMES" ) ))
+	{
+		CVarLogTimestamp->Set((int)ELogTimes::UTC, ECVF_SetByCommandline);
 	}
 	else if (FParse::Param( FCommandLine::Get(), TEXT( "NOLOGTIMES" ) ))
 	{
-		CVarLogTimestamp->Set(0, ECVF_SetByCommandline);
+		CVarLogTimestamp->Set((int)ELogTimes::None, ECVF_SetByCommandline);
 	}
 	else if (FParse::Param( FCommandLine::Get(), TEXT( "LOGTIMESINCESTART" ) ))
 	{
-		CVarLogTimestamp->Set(2, ECVF_SetByCommandline);
+		CVarLogTimestamp->Set((int)ELogTimes::SinceGStartTime, ECVF_SetByCommandline);
+	}
+	else if (FParse::Param( FCommandLine::Get(), TEXT( "LOCALLOGTIMES" ) ))
+	{
+		CVarLogTimestamp->Set((int)ELogTimes::Local, ECVF_SetByCommandline);
 	}
 }
 
@@ -3379,8 +3664,8 @@ static void CheckForPrintTimesOverride()
 bool FEngineLoop::AppInit( )
 {
 	// Output devices.
-	GError = FPlatformOutputDevices::GetError();
-	GWarn = FPlatformOutputDevices::GetWarn();
+	GError = FPlatformApplicationMisc::GetErrorOutputDevice();
+	GWarn = FPlatformApplicationMisc::GetFeedbackContext();
 
 	BeginInitTextLocalization();
 
@@ -3396,7 +3681,7 @@ bool FEngineLoop::AppInit( )
 
 			if (FFileHelper::LoadFileToString(FileCmds, *CmdLineFile))
 			{
-				FileCmds = FString(TEXT(" ")) + FileCmds.Trim().TrimTrailing();
+				FileCmds = FString(TEXT(" ")) + FileCmds.TrimStartAndEnd();
 
 				if (FileCmds.Len() > 1)
 				{
@@ -3422,16 +3707,16 @@ bool FEngineLoop::AppInit( )
 
 	// Retrieve additional command line arguments from environment variable.
 	FPlatformMisc::GetEnvironmentVariable(TEXT("UE-CmdLineArgs"), CmdLineEnv,ARRAY_COUNT(CmdLineEnv));
-	
+
 	// Manually nullptr terminate just in case. The nullptr string is returned above in the error case so
 	// we don't have to worry about that.
 	CmdLineEnv[ARRAY_COUNT(CmdLineEnv)-1] = 0;
-	FString Env = FString(CmdLineEnv).Trim();
+	FString Env = FString(CmdLineEnv).TrimStart();
 
 	if (Env.Len())
 	{
-		// Append the command line environment after inserting a space as we can't set it in the 
-		// environment. Note that any code accessing GCmdLine before appInit obviously won't 
+		// Append the command line environment after inserting a space as we can't set it in the
+		// environment. Note that any code accessing GCmdLine before appInit obviously won't
 		// respect the command line environment additions.
 		FCommandLine::Append(TEXT(" -EnvAfterHere "));
 		FCommandLine::Append(CmdLineEnv);
@@ -3443,6 +3728,7 @@ bool FEngineLoop::AppInit( )
 
 	// Platform specific pre-init.
 	FPlatformMisc::PlatformPreInit();
+	FPlatformApplicationMisc::PreInit();
 
 	// Keep track of start time.
 	GSystemStartTime = FDateTime::Now().ToString();
@@ -3484,10 +3770,10 @@ bool FEngineLoop::AppInit( )
 #if PLATFORM_WINDOWS
 
 	// make sure that the log directory exists
-	IFileManager::Get().MakeDirectory( *FPaths::GameLogDir() );
+	IFileManager::Get().MakeDirectory( *FPaths::ProjectLogDir() );
 
 	// update the mini dump filename now that we have enough info to point it to the log folder even in installed builds
-	FCString::Strcpy(MiniDumpFilenameW, *IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*FString::Printf(TEXT("%sunreal-v%i-%s.dmp"), *FPaths::GameLogDir(), FEngineVersion::Current().GetChangelist(), *FDateTime::Now().ToString())));
+	FCString::Strcpy(MiniDumpFilenameW, *IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*FString::Printf(TEXT("%sunreal-v%i-%s.dmp"), *FPaths::ProjectLogDir(), FEngineVersion::Current().GetChangelist(), *FDateTime::Now().ToString())));
 #endif
 
 	// Init logging to disk
@@ -3543,7 +3829,7 @@ bool FEngineLoop::AppInit( )
 					}
 
 					// Ask whether to compile before continuing
-					if (FPlatformMisc::MessageBoxExt(EAppMsgType::YesNo, *ModulesList, *FString::Printf(TEXT("Missing %s Modules"), FApp::GetGameName())) == EAppReturnType::No)
+					if (FPlatformMisc::MessageBoxExt(EAppMsgType::YesNo, *ModulesList, *FString::Printf(TEXT("Missing %s Modules"), FApp::GetProjectName())) == EAppReturnType::No)
 					{
 						return false;
 					}
@@ -3573,7 +3859,7 @@ bool FEngineLoop::AppInit( )
 					}
 					if (!FApp::IsUnattended())
 					{
-						FPlatformMisc::MessageBoxExt(EAppMsgType::Ok, *FString::Printf(TEXT("%s could not be compiled. Try rebuilding from source manually."), FApp::GetGameName()), TEXT("Error"));
+						FPlatformMisc::MessageBoxExt(EAppMsgType::Ok, *FString::Printf(TEXT("%s could not be compiled. Try rebuilding from source manually."), FApp::GetProjectName()), TEXT("Error"));
 					}
 					return false;
 				}
@@ -3582,11 +3868,13 @@ bool FEngineLoop::AppInit( )
 	}
 #endif
 
+	// Put the command line and config info into the suppression system (before plugins start loading)
+	FLogSuppressionInterface::Get().ProcessConfigAndCommandLine();
+
 	// NOTE: This is the earliest place to init the online subsystems (via plugins)
 	// Code needs GConfigFile to be valid
 	// Must be after FThreadStats::StartThread();
-	// Must be before Render/RHI subsystem D3DCreate()
-	// For platform services that need D3D hooks like Steam
+	// Must be before Render/RHI subsystem D3DCreate() for platform services that need D3D hooks like Steam
 
 	// Load "pre-init" plugin modules
 	if (!IProjectManager::Get().LoadModulesForProject(ELoadingPhase::PostConfigInit) || !IPluginManager::Get().LoadModulesForEnabledPlugins(ELoadingPhase::PostConfigInit))
@@ -3601,9 +3889,6 @@ bool FEngineLoop::AppInit( )
 	});
 
 	PreInitHMDDevice();
-
-	// Put the command line and config info into the suppression system
-	FLogSuppressionInterface::Get().ProcessConfigAndCommandLine();
 
 	// after the above has run we now have the REQUIRED set of engine .INIs  (all of the other .INIs)
 	// that are gotten from .h files' config() are not requires and are dynamically loaded when the .u files are loaded
@@ -3640,6 +3925,11 @@ bool FEngineLoop::AppInit( )
 		GIsSilent = true;
 	}
 
+	if (FParse::Param(FCommandLine::Get(), TEXT("RUNNINGUNATTENDEDSCRIPT")))
+	{
+		GIsRunningUnattendedScript = true;
+	}
+
 #endif // !UE_BUILD_SHIPPING
 
 	// Show log if wanted.
@@ -3671,7 +3961,7 @@ bool FEngineLoop::AppInit( )
 	{
 		const FString VisualCPPVersion( FString::Printf( TEXT( "%d" ), _MSC_FULL_VER ) );
 		const FString VisualCPPRevisionNumber( FString::Printf( TEXT( "%02d" ), _MSC_BUILD ) );
-		UE_LOG(LogInit, Log, TEXT("Compiled with Visual C++: %s.%s.%s.%s"), 
+		UE_LOG(LogInit, Log, TEXT("Compiled with Visual C++: %s.%s.%s.%s"),
 			*VisualCPPVersion.Mid( 0, 2 ), // Major version
 			*VisualCPPVersion.Mid( 2, 2 ), // Minor version
 			*VisualCPPVersion.Mid( 4 ),	// Build version
@@ -3685,8 +3975,9 @@ bool FEngineLoop::AppInit( )
 
 	UE_LOG(LogInit, Log, TEXT("Build Configuration: %s"), EBuildConfigurations::ToString(FApp::GetBuildConfiguration()));
 	UE_LOG(LogInit, Log, TEXT("Branch Name: %s"), *FApp::GetBranchName() );
-	UE_LOG(LogInit, Log, TEXT("Command line: %s"), FCommandLine::GetForLogging() );
-	UE_LOG(LogInit, Log, TEXT("Base directory: %s"), FPlatformProcess::BaseDir() );
+	FString FilteredString = FCommandLine::IsCommandLineLoggingFiltered() ? TEXT("Filtered ") : TEXT("");
+	UE_LOG(LogInit, Log, TEXT("%sCommand Line: %s"), *FilteredString, FCommandLine::GetForLogging() );
+	UE_LOG(LogInit, Log, TEXT("Base Directory: %s"), FPlatformProcess::BaseDir() );
 	//UE_LOG(LogInit, Log, TEXT("Character set: %s"), sizeof(TCHAR)==1 ? TEXT("ANSI") : TEXT("Unicode") );
 	UE_LOG(LogInit, Log, TEXT("Installed Engine Build: %d"), FApp::IsEngineInstalled() ? 1 : 0);
 
@@ -3770,6 +4061,11 @@ void FEngineLoop::AppPreExit( )
 		GThreadPool->Destroy();
 	}
 
+	if (GBackgroundPriorityThreadPool != nullptr)
+	{
+		GBackgroundPriorityThreadPool->Destroy();
+	}
+
 	if (GIOThreadPool != nullptr)
 	{
 		GIOThreadPool->Destroy();
@@ -3796,6 +4092,7 @@ void FEngineLoop::AppExit( )
 
 	UE_LOG(LogExit, Log, TEXT("Exiting."));
 
+	FPlatformApplicationMisc::TearDown();
 	FPlatformMisc::PlatformTearDown();
 
 	if (GConfig)
@@ -3813,6 +4110,18 @@ void FEngineLoop::AppExit( )
 	FInternationalization::TearDown();
 }
 
+void FEngineLoop::PostInitRHI()
+{
+#if WITH_ENGINE
+	TArray<uint32> PixelFormatByteWidth;
+	PixelFormatByteWidth.AddUninitialized(PF_MAX);
+	for (int i = 0; i < PF_MAX; i++)
+	{
+		PixelFormatByteWidth[i] = GPixelFormats[i].BlockBytes;
+	}
+	RHIPostInit(PixelFormatByteWidth);
+#endif
+}
 
 void FEngineLoop::PreInitHMDDevice()
 {
@@ -3827,13 +4136,36 @@ void FEngineLoop::PreInitHMDDevice()
 		// Check whether the user passed in an explicit HMD module on the command line
 		FString ExplicitHMDName;
 		bool bUseExplicitHMDName = FParse::Value(FCommandLine::Get(), TEXT("hmd="), ExplicitHMDName);
-		
+
 		// Iterate over modules, checking ExplicitHMDName and calling PreInit
 		for (auto HMDModuleIt = HMDModules.CreateIterator(); HMDModuleIt; ++HMDModuleIt)
 		{
 			IHeadMountedDisplayModule* HMDModule = *HMDModuleIt;
 
-			if ((bUseExplicitHMDName && !ExplicitHMDName.Equals(HMDModule->GetModuleKeyName(), ESearchCase::IgnoreCase)) || !HMDModule->PreInit())
+
+			bool bUnregisterHMDModule = false;
+			if (bUseExplicitHMDName)
+			{
+				TArray<FString> HMDAliases;
+				HMDModule->GetModuleAliases(HMDAliases);
+				HMDAliases.Add(HMDModule->GetModuleKeyName());
+
+				bUnregisterHMDModule = true;
+				for (const FString& HMDModuleName : HMDAliases)
+				{
+					if (ExplicitHMDName.Equals(HMDModuleName, ESearchCase::IgnoreCase))
+					{
+						bUnregisterHMDModule = false;
+						break;
+					}
+				}
+			}
+			else
+			{
+				bUnregisterHMDModule = !HMDModule->PreInit();
+			}
+
+			if (bUnregisterHMDModule)
 			{
 				// Unregister modules which don't match ExplicitHMDName, or which fail PreInit
 				ModularFeatures.UnregisterModularFeature(Type, HMDModule);
@@ -3843,6 +4175,5 @@ void FEngineLoop::PreInitHMDDevice()
 	}
 #endif // #if WITH_ENGINE && !UE_SERVER
 }
-
 
 #undef LOCTEXT_NAMESPACE

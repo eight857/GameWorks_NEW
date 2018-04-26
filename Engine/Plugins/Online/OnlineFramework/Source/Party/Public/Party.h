@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -62,7 +62,7 @@ struct FPartyDetails : public TSharedFromThis<FPartyDetails>
 	virtual FString ToString() const
 	{
 		return FString::Printf(
-			TEXT("PartyId: %s LeaderId: %s ResKey: %s Client: %s"), 
+			TEXT("PartyId: %s LeaderId: %s App: %s"), 
 			*GetPartyId()->ToDebugString(), 
 			*GetLeaderId()->ToDebugString(),
 			*GetAppId());
@@ -256,7 +256,7 @@ public:
 	 *
 	 * @param InCompletionDelegate delegate called upon completion
 	 */
-	void KickFromPersistentParty(const UPartyDelegates::FOnLeaveUPartyComplete& InCompletionDelegate = UPartyDelegates::FOnLeaveUPartyComplete());
+	virtual void KickFromPersistentParty(const UPartyDelegates::FOnLeaveUPartyComplete& InCompletionDelegate = UPartyDelegates::FOnLeaveUPartyComplete());
 
 	/**
 	 * Try to process any pending invites received while in the rest of the game
@@ -332,7 +332,7 @@ public:
 	bool HasPendingPartyJoin() const;
 
 	/**
-	 * Get the session name (if available) for the primary player, typically GameSessionName
+	 * Get the session name (if available) for the primary player, typically NAME_GameSession
 	 *
 	 * @return Session name
 	 */

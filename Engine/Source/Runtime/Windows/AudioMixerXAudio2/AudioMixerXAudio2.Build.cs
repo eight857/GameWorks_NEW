@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -14,13 +14,12 @@ public class AudioMixerXAudio2 : ModuleRules
 			new string[] {
 					"Core",
 					"CoreUObject",
-					"Engine"
-				}
+					"Engine",
+                    "AudioMixer",
+                }
 		);
 
 		PrecompileForTargets = PrecompileTargetsType.None;
-
-		PrivateDependencyModuleNames.Add("AudioMixer");
 
 		AddEngineThirdPartyPrivateStaticDependencies(Target,
 			"DX11Audio",
@@ -28,5 +27,10 @@ public class AudioMixerXAudio2 : ModuleRules
 			"Vorbis",
 			"VorbisFile"
 		);
+
+        if(Target.Platform == UnrealTargetPlatform.XboxOne)
+        {
+            PrivateDependencyModuleNames.Add("XMA2");
+        }
 	}
 }

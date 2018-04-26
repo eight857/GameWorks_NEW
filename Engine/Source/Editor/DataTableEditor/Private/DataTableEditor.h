@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -65,6 +65,7 @@ public:
 	// INotifyOnDataTableChanged
 	virtual void PreChange(const UDataTable* Changed, FDataTableEditorUtils::EDataTableChangeInfo Info) override;
 	virtual void PostChange(const UDataTable* Changed, FDataTableEditorUtils::EDataTableChangeInfo Info) override;
+	virtual void SelectionChange(const UDataTable* Changed, FName RowName) override;
 
 	/** Get the data table being edited */
 	const UDataTable* GetDataTable() const;
@@ -140,6 +141,12 @@ private:
 		/** The width of the column, either sized by the user, or auto-sized */
 		float CurrentWidth;
 	};
+
+	/** UI for the "Data Table" tab */
+	TSharedPtr<SWidget> DataTableTabWidget;
+
+	/** UI for the "Row Editor" tab */
+	TSharedPtr<SWidget> RowEditorTabWidget;
 
 	/** Array of the columns that are available for editing */
 	TArray<FDataTableEditorColumnHeaderDataPtr> AvailableColumns;

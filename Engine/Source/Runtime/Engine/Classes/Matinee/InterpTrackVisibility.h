@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -53,7 +53,7 @@ struct FVisibilityTrackKey
 	UPROPERTY()
 	float Time;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=VisibilityTrackKey)
+	UPROPERTY(EditAnywhere, Category=VisibilityTrackKey)
 	TEnumAsByte<enum EVisibilityTrackAction> Action;
 
 	/** Condition that must be satisfied for this key event to fire */

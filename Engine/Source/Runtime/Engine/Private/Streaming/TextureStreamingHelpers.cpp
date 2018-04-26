@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 TextureStreamingHelpers.cpp: Definitions of classes used for texture streaming.
@@ -10,7 +10,6 @@ TextureStreamingHelpers.cpp: Definitions of classes used for texture streaming.
 
 /** Streaming stats */
 
-// Streaming
 DECLARE_MEMORY_STAT_POOL(TEXT("Safety Pool"), STAT_Streaming01_SafetyPool, STATGROUP_Streaming, FPlatformMemory::MCR_TexturePool);
 DECLARE_MEMORY_STAT_POOL(TEXT("Temporary Pool"), STAT_Streaming02_TemporaryPool, STATGROUP_Streaming, FPlatformMemory::MCR_TexturePool);
 DECLARE_MEMORY_STAT_POOL(TEXT("Streaming Pool"), STAT_Streaming03_StreamingPool, STATGROUP_Streaming, FPlatformMemory::MCR_TexturePool);
@@ -32,14 +31,18 @@ DECLARE_CYCLE_STAT(TEXT("Update Streaming Data"), STAT_Streaming02_UpdateStreami
 DECLARE_CYCLE_STAT(TEXT("Streaming Texture"), STAT_Streaming03_StreamTextures, STATGROUP_Streaming);
 DECLARE_CYCLE_STAT(TEXT("Notifications"), STAT_Streaming04_Notifications, STATGROUP_Streaming);
 
-DEFINE_STAT(STAT_GameThreadUpdateTime);
+/** Streaming Overview stats */
 
-// StreamingDetails
-DEFINE_STAT(STAT_GrowingReallocations);
-DEFINE_STAT(STAT_ShrinkingReallocations);
-DEFINE_STAT(STAT_FullReallocations);
-DEFINE_STAT(STAT_FailedReallocations);
-DEFINE_STAT(STAT_PanicDefragmentations);
+DECLARE_MEMORY_STAT_POOL(TEXT("Streamable Textures"),	STAT_StreamingOverview01_StreamableTextures, STATGROUP_StreamingOverview, FPlatformMemory::MCR_StreamingPool);
+DECLARE_MEMORY_STAT_POOL(TEXT("     Required"),			STAT_StreamingOverview02_Required, STATGROUP_StreamingOverview, FPlatformMemory::MCR_StreamingPool);
+DECLARE_MEMORY_STAT_POOL(TEXT("     Cached"),			STAT_StreamingOverview03_Cached, STATGROUP_StreamingOverview, FPlatformMemory::MCR_StreamingPool);
+DECLARE_MEMORY_STAT_POOL(TEXT("Streaming Overbudget"),	STAT_StreamingOverview04_StreamingOverbudget, STATGROUP_StreamingOverview, FPlatformMemory::MCR_StreamingPool);
+DECLARE_MEMORY_STAT_POOL(TEXT("Unstreambale Textures"), STAT_StreamingOverview05_UnstreamableTextures, STATGROUP_StreamingOverview, FPlatformMemory::MCR_StreamingPool);
+DECLARE_MEMORY_STAT_POOL(TEXT("     NeverStream"),		STAT_StreamingOverview06_NeverStream, STATGROUP_StreamingOverview, FPlatformMemory::MCR_StreamingPool);
+DECLARE_MEMORY_STAT_POOL(TEXT("     UI Group"),			STAT_StreamingOverview07_UIGroup, STATGROUP_StreamingOverview, FPlatformMemory::MCR_StreamingPool);
+DECLARE_MEMORY_STAT_POOL(TEXT("Average Required PoolSize"),	STAT_StreamingOverview08_AverageRequiredPool, STATGROUP_StreamingOverview, FPlatformMemory::MCR_StreamingPool);
+
+DEFINE_STAT(STAT_TextureStreaming_GameThreadUpdateTime);
 
 DEFINE_LOG_CATEGORY(LogContentStreaming);
 
@@ -113,6 +116,13 @@ TAutoConsoleVariable<int32> CVarStreamingHLODStrategy(
 	TEXT("2: disable streaming"),
 	ECVF_Default);
 
+TAutoConsoleVariable<float> CVarStreamingPerTextureBiasViewBoostThreshold(
+	TEXT("r.Streaming.PerTextureBiasViewBoostThreshold"),
+	1.5,
+	TEXT("Maximum view boost at which per texture bias will be increased"),
+	ECVF_Default
+	);
+
 TAutoConsoleVariable<float> CVarStreamingHiddenPrimitiveScale(
 	TEXT("r.Streaming.HiddenPrimitiveScale"),
 	0.5,
@@ -164,13 +174,6 @@ TAutoConsoleVariable<int32> CVarStreamingCheckBuildStatus(
 	TEXT("If non-zero, the engine will check whether texture streaming needs rebuild."),
 	ECVF_Scalability);
 
-
-TAutoConsoleVariable<int32> CVarScaleTexturesByGlobalMipBias(
-	TEXT("r.Streaming.ScaleTexturesByGlobalMipBias"),
-	0,
-	TEXT("If non-zero, streaming textures wanted resolution will be scaled down by the global mip bias"),
-	ECVF_Default);
-
 TAutoConsoleVariable<int32> CVarStreamingUseMaterialData(
 	TEXT("r.Streaming.UseMaterialData"),
 	1,
@@ -196,6 +199,20 @@ TAutoConsoleVariable<int32> CVarStreamingMinMipForSplitRequest(
 	TEXT("If non-zero, the minimum hidden mip for which load requests will first load the visible mip"),
 	ECVF_Default);
 
+TAutoConsoleVariable<float> CVarStreamingMinLevelTextureScreenSize(
+	TEXT("r.Streaming.MinLevelTextureScreenSize"),
+	100,
+	TEXT("If non-zero, levels only get handled if any of their referenced texture could be required of this size. Using conservative metrics on the level data."),
+	ECVF_Default);
+
+TAutoConsoleVariable<float> CVarStreamingMaxTextureUVDensity(
+	TEXT("r.Streaming.MaxTextureUVDensity"),
+	0,
+	TEXT("If non-zero, the max UV density a static entry can have.\n")
+	TEXT("Used to improve level culling from MinLevelTextureScreenSize.\n")
+	TEXT("Component with bigger entries become handled as dynamic component.\n"),
+	ECVF_Default);
+
 
 void FTextureStreamingSettings::Update()
 {
@@ -203,15 +220,17 @@ void FTextureStreamingSettings::Update()
 	MaxTempMemoryAllowed = CVarStreamingMaxTempMemoryAllowed.GetValueOnAnyThread();
 	DropMips = CVarStreamingDropMips.GetValueOnAnyThread();
 	HLODStrategy = CVarStreamingHLODStrategy.GetValueOnAnyThread();
-	MipBias = FMath::Max<float>(0.f, CVarStreamingMipBias.GetValueOnAnyThread());
+	GlobalMipBias = !GIsEditor ? FMath::FloorToInt(FMath::Max<float>(0.f, CVarStreamingMipBias.GetValueOnAnyThread())) : 0;
 	PoolSize = CVarStreamingPoolSize.GetValueOnAnyThread();
-	bUsePerTextureBias = !GIsEditor && CVarStreamingUsePerTextureBias.GetValueOnAnyThread() != 0;
+	bUsePerTextureBias = CVarStreamingUsePerTextureBias.GetValueOnAnyThread() != 0;
 	bUseNewMetrics = CVarStreamingUseNewMetrics.GetValueOnAnyThread() != 0;
 	bLimitPoolSizeToVRAM = !GIsEditor && CVarStreamingLimitPoolSizeToVRAM.GetValueOnAnyThread() != 0;
 	bFullyLoadUsedTextures = CVarStreamingFullyLoadUsedTextures.GetValueOnAnyThread() != 0;
 	bUseAllMips = CVarStreamingUseAllMips.GetValueOnAnyThread() != 0;
-	bScaleTexturesByGlobalMipBias = CVarScaleTexturesByGlobalMipBias.GetValueOnAnyThread() != 0;
 	MinMipForSplitRequest = CVarStreamingMinMipForSplitRequest.GetValueOnAnyThread();
+	PerTextureBiasViewBoostThreshold = CVarStreamingPerTextureBiasViewBoostThreshold.GetValueOnAnyThread();
+	MinLevelTextureScreenSize = CVarStreamingMinLevelTextureScreenSize.GetValueOnAnyThread();
+	MaxTextureUVDensity = CVarStreamingMaxTextureUVDensity.GetValueOnAnyThread();
 
 	bUseMaterialData = bUseNewMetrics && CVarStreamingUseMaterialData.GetValueOnAnyThread() != 0;
 	HiddenPrimitiveScale = bUseNewMetrics ? CVarStreamingHiddenPrimitiveScale.GetValueOnAnyThread() : 1.f;
@@ -224,7 +243,7 @@ void FTextureStreamingSettings::Update()
 	if (bUseAllMips)
 	{
 		bUsePerTextureBias = false;
-		MipBias = 0;
+		GlobalMipBias = 0;
 	}
 }
 
@@ -246,9 +265,19 @@ float GShadowmapStreamingFactor = 0.09f;
 */
 bool GNeverStreamOutTextures = false;
 
+#if STATS
+extern int64 GUITextureMemory;
+extern int64 GNeverStreamTextureMemory;
+
+int64 GRequiredPoolSizeSum = 0;
+int64 GRequiredPoolSizeCount= 0;
+int64 GAverageRequiredPool = 0;
+#endif
 
 void FTextureStreamingStats::Apply()
 {
+	/** Streaming stats */
+
 	SET_MEMORY_STAT(MCR_TexturePool, TexturePool); 
 	SET_MEMORY_STAT(MCR_StreamingPool, StreamingPool);
 	SET_MEMORY_STAT(MCR_UsedStreamingPool, UsedStreamingPool);
@@ -273,4 +302,39 @@ void FTextureStreamingStats::Apply()
 	SET_CYCLE_COUNTER(STAT_Streaming02_UpdateStreamingData, UpdateStreamingDataCycles);
 	SET_CYCLE_COUNTER(STAT_Streaming03_StreamTextures, StreamTexturesCycles);
 	SET_CYCLE_COUNTER(STAT_Streaming04_Notifications, CallbacksCycles);
+
+	/** Streaming Overview stats */
+
+#if STATS
+	GRequiredPoolSizeSum += RequiredPool + (GPoolSizeVRAMPercentage > 0 ? 0 : NonStreamingMips);
+	GRequiredPoolSizeCount += 1;
+	GAverageRequiredPool = (int64)((double)GRequiredPoolSizeSum / (double)FMath::Max<int64>(1, GRequiredPoolSizeCount));
+#endif
+
+	SET_MEMORY_STAT(STAT_StreamingOverview01_StreamableTextures, RequiredPool + CachedMips); 
+	SET_MEMORY_STAT(STAT_StreamingOverview02_Required, RequiredPool);
+	SET_MEMORY_STAT(STAT_StreamingOverview03_Cached, CachedMips); 
+	SET_MEMORY_STAT(STAT_StreamingOverview04_StreamingOverbudget, FMath::Max<int64>(RequiredPool - StreamingPool, 0)); 
+	SET_MEMORY_STAT(STAT_StreamingOverview05_UnstreamableTextures, NonStreamingMips);
+	SET_MEMORY_STAT(STAT_StreamingOverview06_NeverStream, GNeverStreamTextureMemory);
+	SET_MEMORY_STAT(STAT_StreamingOverview07_UIGroup, GUITextureMemory);
+	SET_MEMORY_STAT(STAT_StreamingOverview08_AverageRequiredPool, GAverageRequiredPool); 
+}
+
+void ResetAverageRequiredTexturePoolSize()
+{
+#if STATS
+	GRequiredPoolSizeSum = 0;
+	GRequiredPoolSizeCount= 0;
+	GAverageRequiredPool = 0;
+#endif
+}
+
+int64 GetAverageRequiredTexturePoolSize()
+{
+#if STATS
+	return GAverageRequiredPool;
+#else
+	return 0;
+#endif
 }

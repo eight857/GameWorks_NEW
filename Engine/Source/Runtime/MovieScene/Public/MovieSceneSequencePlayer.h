@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -25,6 +25,12 @@ struct FMovieSceneSequencePlaybackSettings
 		, bRandomStartTime(false)
 		, StartTime(0.f)
 		, bRestoreState(false)
+		, bDisableMovementInput(false)
+		, bDisableLookAtInput(false)
+		, bHidePlayer(false)
+		, bHideHud(false)
+		, bDisableCameraCuts(false)
+		, InstanceData(nullptr)
 	{ }
 
 	GENERATED_BODY()
@@ -48,6 +54,30 @@ struct FMovieSceneSequencePlaybackSettings
 	/** Flag used to specify whether actor states should be restored on stop */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Playback")
 	bool bRestoreState;
+
+	/** Disable Input from player during play */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cinematic")
+	bool bDisableMovementInput;
+
+	/** Disable LookAt Input from player during play */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cinematic")
+	bool bDisableLookAtInput;
+
+	/** Hide Player Pawn during play */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cinematic")
+	bool bHidePlayer;
+
+	/** Hide HUD during play */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cinematic")
+	bool bHideHud;
+
+	/** Disable camera cuts */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cinematic")
+	bool bDisableCameraCuts;
+
+	/** An object that can implement specific instance overrides for the sequence */
+	UPROPERTY(BlueprintReadWrite, Category="Cinematic")
+	UObject* InstanceData;
 
 	/** Interface that defines overridden bindings for this sequence */
 	UPROPERTY()
@@ -73,6 +103,7 @@ public:
 	GENERATED_BODY()
 
 	UMovieSceneSequencePlayer(const FObjectInitializer&);
+	virtual ~UMovieSceneSequencePlayer();
 
 	/** Start playback forwards from the current time cursor position, using the current play rate. */
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
@@ -101,9 +132,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
 	void Pause();
 	
+	/** Scrub playback. */
+	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
+	void Scrub();
+
 	/** Stop playback. */
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
 	void Stop();
+
+	/** Go to end and stop. */
+	UFUNCTION(BlueprintCallable, Category="Game|Cinematic", meta = (ToolTip = "Go to end of the sequence and stop. Adheres to 'When Finished' section rules."))
+	void GoToEndAndStop();
 
 	/** Get the current playback position */
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
@@ -117,9 +156,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
 	void SetPlaybackPosition(float NewPlaybackPosition);
 
+	/**
+	 * Jump to new playback position
+	 * @param NewPlaybackPosition - The new playback position to set.
+	 * This can be used to update sequencer repeatedly, as if in a scrubbing state
+	 */
+	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
+	void JumpToPosition(float NewPlaybackPosition);
+
 	/** Check whether the sequence is actively playing. */
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
 	bool IsPlaying() const;
+
+	/** Check whether the sequence is paused. */
+	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
+	bool IsPaused() const;
 
 	/** Get the playback length of the sequence */
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
@@ -153,6 +204,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
 	float GetPlaybackEnd() const { return EndTime; }
 	
+	/** Set whether to disable camera cuts */
+	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
+	void SetDisableCameraCuts(bool bInDisableCameraCuts) { PlaybackSettings.bDisableCameraCuts = bInDisableCameraCuts; }
+
+	/** Set whether to disable camera cuts */
+	UFUNCTION(BlueprintCallable, Category="Game|Cinematic")
+	bool GetDisableCameraCuts() { return PlaybackSettings.bDisableCameraCuts; }
+
 	/** An event that is broadcast each time this level sequence player is updated */
 	DECLARE_EVENT_ThreeParams( UMovieSceneSequencePlayer, FOnMovieSceneSequencePlayerUpdated, const UMovieSceneSequencePlayer&, float /*current time*/, float /*previous time*/ );
 	FOnMovieSceneSequencePlayerUpdated& OnSequenceUpdated() const { return OnMovieSceneSequencePlayerUpdate; }
@@ -161,6 +220,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Game|Cinematic")
 	FOnMovieSceneSequencePlayerEvent OnPlay;
 
+	/** Event triggered when the level sequence player is played in reverse */
+	UPROPERTY(BlueprintAssignable, Category="Game|Cinematic")
+	FOnMovieSceneSequencePlayerEvent OnPlayReverse;
+
 	/** Event triggered when the level sequence player is stopped */
 	UPROPERTY(BlueprintAssignable, Category="Game|Cinematic")
 	FOnMovieSceneSequencePlayerEvent OnStop;
@@ -168,6 +231,10 @@ public:
 	/** Event triggered when the level sequence player is paused */
 	UPROPERTY(BlueprintAssignable, Category="Game|Cinematic")
 	FOnMovieSceneSequencePlayerEvent OnPause;
+
+	/** Event triggered when the level sequence player finishes naturally (without explicitly calling stop) */
+	UPROPERTY(BlueprintAssignable, Category = "Game|Cinematic")
+	FOnMovieSceneSequencePlayerEvent OnFinished;
 
 
 public:
@@ -184,6 +251,9 @@ public:
 	/** Initialize this player with a sequence and some settings */
 	void Initialize(UMovieSceneSequence* InSequence, const FMovieSceneSequencePlaybackSettings& InSettings);
 
+	/** Begin play called */
+	virtual void BeginPlay() {};
+
 public:
 
 	/**
@@ -196,9 +266,9 @@ protected:
 
 	void PlayInternal();
 
-	void UpdateMovieSceneInstance(FMovieSceneEvaluationRange InRange);
+	void UpdateMovieSceneInstance(FMovieSceneEvaluationRange InRange, TOptional<EMovieScenePlayerStatus::Type> OptionalStatus = TOptional<EMovieScenePlayerStatus::Type>(), bool bHasJumped = false);
 
-	void UpdateTimeCursorPosition(float NewPosition);
+	void UpdateTimeCursorPosition(float NewPosition, TOptional<EMovieScenePlayerStatus::Type> OptionalStatus = TOptional<EMovieScenePlayerStatus::Type>());
 
 	bool ShouldStopOrLoop(float NewPosition) const;
 
@@ -214,9 +284,14 @@ protected:
 	virtual void SetPlaybackStatus(EMovieScenePlayerStatus::Type InPlaybackStatus) override {}
 	virtual void SetViewportSettings(const TMap<FViewportClient*, EMovieSceneViewportParams>& ViewportParamsMap) override {}
 	virtual void GetViewportSettings(TMap<FViewportClient*, EMovieSceneViewportParams>& ViewportParamsMap) const override {}
+	virtual bool CanUpdateCameraCut() const override { return !PlaybackSettings.bDisableCameraCuts; }
 	virtual void UpdateCameraCut(UObject* CameraObject, UObject* UnlockIfCameraObject, bool bJumpCut) override {}
 	virtual void ResolveBoundObjects(const FGuid& InBindingId, FMovieSceneSequenceID SequenceID, UMovieSceneSequence& Sequence, UObject* ResolutionContext, TArray<UObject*, TInlineAllocator<1>>& OutObjects) const override;
 	virtual const IMovieSceneBindingOverridesInterface* GetBindingOverrides() const override { return PlaybackSettings.BindingOverrides ? &*PlaybackSettings.BindingOverrides : nullptr; }
+	virtual const UObject* GetInstanceData() const override { return PlaybackSettings.InstanceData; }
+
+	//~ UObject interface
+	virtual void BeginDestroy() override;
 
 protected:
 
@@ -233,9 +308,9 @@ private:
 
 protected:
 
-	/** Whether we're currently playing. If false, then sequence playback is paused or was never started. */
+	/** Movie player status. */
 	UPROPERTY()
-	uint32 bIsPlaying : 1;
+	TEnumAsByte<EMovieScenePlayerStatus::Type> Status;
 
 	/** Whether we're currently playing in reverse. */
 	UPROPERTY()
@@ -270,7 +345,7 @@ protected:
 
 	enum class ELatentAction
 	{
-		Stop, Pause
+		Stop, Pause, SetPlaybackPosition
 	};
 
 	/** Set of latent actions that are to be performed when the sequence has finished evaluating this frame */
@@ -294,5 +369,8 @@ private:
 	mutable FOnMovieSceneSequencePlayerUpdated OnMovieSceneSequencePlayerUpdate;
 
 	/** The maximum tick rate prior to playing (used for overriding delta time during playback). */
-	double OldMaxTickRate;
+	TOptional<double> OldMaxTickRate;
+
+	/** Playback position to use when invoking latent SetPlaybackPosition */
+	float LatentPlaybackPosition;
 };

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,6 +15,8 @@ THIRD_PARTY_INCLUDES_START
 #include "gpg/game_services.h"
 #include "gpg/android_platform_configuration.h"
 THIRD_PARTY_INCLUDES_END
+
+#include <string>
 
 /** Forward declarations of all interface classes */
 typedef TSharedPtr<class FOnlineIdentityGooglePlay,  ESPMode::ThreadSafe> FOnlineIdentityGooglePlayPtr;
@@ -77,6 +79,8 @@ public:
 	virtual bool Shutdown() override;
 	virtual FString GetAppId() const override;
 	virtual bool Exec(class UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar) override;
+	virtual bool IsEnabled() const override;
+	virtual FText GetOnlineServiceName() const override;
 	//~ End IOnlineSubsystem Interface
 
 	virtual bool Tick(float DeltaTime) override;
@@ -85,12 +89,6 @@ PACKAGE_SCOPE:
 
 	FOnlineSubsystemGooglePlay();
 	FOnlineSubsystemGooglePlay(FName InInstanceName);
-
-	/**
-	 * Is Online Subsystem Android available for use
-	 * @return true if Android Online Subsystem functionality is available, false otherwise
-	 */
-	bool IsEnabled();
 
 	/** Return the async task manager owned by this subsystem */
 	class FOnlineAsyncTaskManagerGooglePlay* GetAsyncTaskManager() { return OnlineAsyncTaskThreadRunnable.Get(); }

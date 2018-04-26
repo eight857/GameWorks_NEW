@@ -1,4 +1,4 @@
-﻿INTSourceChangelist:3303749
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title: 언리얼 엔진 4.15 릴리즈 노트
 Description: Release Notes for Unreal Engine 4.15
@@ -493,7 +493,8 @@ Metal 지원에 이제 개발용으로 기본 켜지며 Xcode 와 별도로 실�
 | | |
 [/REGION]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:BlendspacePreview]
 [OBJECT:EmbeddedVideo]
 	[PARAMLITERAL:videoid]
@@ -510,7 +511,8 @@ Metal 지원에 이제 개발용으로 기본 켜지며 Xcode 와 별도로 실�
 	[/PARAMLITERAL]
 [/OBJECT]
 [/EXCERPT:BlendspacePreview]
--->
+
+[/COMMENT]
 
 * **여러가지 방식의 샘플 프로퍼티 변경** - 샘플 드래그 앤 드롭에 추가로, 맥락 메뉴와 스핀 박스 방식으로 샘플 값 또는 애니메이션 시퀀스를 변경할 수 있습니다.
 
@@ -2785,3 +2787,4 @@ Platform-specific release notes for PS4, XBoxOne, and Switch are available in th
 **Google Daydream**
 
 * Daydream apps require android-24.  This is not installed by default, but can be manually installed with NVPACK\Chooser.exe.
+

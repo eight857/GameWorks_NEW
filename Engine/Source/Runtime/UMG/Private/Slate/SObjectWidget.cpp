@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Slate/SObjectWidget.h"
 
@@ -69,17 +69,17 @@ void SObjectWidget::Tick( const FGeometry& AllottedGeometry, const double InCurr
 	}
 }
 
-int32 SObjectWidget::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SObjectWidget::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 #if WITH_VERY_VERBOSE_SLATE_STATS
 	FScopeCycleCounterUObject NativeFunctionScope(WidgetObject);
 #endif
 
-	int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+	int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 
 	if ( CanRouteEvent() )
 	{
-		FPaintContext Context(AllottedGeometry, MyClippingRect, OutDrawElements, MaxLayer, InWidgetStyle, bParentEnabled);
+		FPaintContext Context(AllottedGeometry, MyCullingRect, OutDrawElements, MaxLayer, InWidgetStyle, bParentEnabled);
 		WidgetObject->NativePaint(Context);
 
 		return FMath::Max(MaxLayer, Context.MaxLayer);
@@ -449,10 +449,10 @@ FReply SObjectWidget::OnMotionDetected(const FGeometry& MyGeometry, const FMotio
 
 FNavigationReply SObjectWidget::OnNavigation(const FGeometry& MyGeometry, const FNavigationEvent& InNavigationEvent)
 {
-	// This reply will represent anything setup by the user with their Navigation Metadata, and we provide it to the user
-	// no matter what so they could make intelligent decisions like, for example, making a UUserWidget Subclass that plays a
-	// sound when the navigation is stopped, it could look at the default reply, and respond with a sound, letting the user
-	// know that way is not supported.
+	if (WidgetObject->NativeSupportsCustomNavigation())
+	{
+		return WidgetObject->NativeOnNavigation(MyGeometry, InNavigationEvent);
+	}
 	FNavigationReply Reply = SCompoundWidget::OnNavigation(MyGeometry, InNavigationEvent);
 
 	if ( CanRouteEvent() )
@@ -461,4 +461,14 @@ FNavigationReply SObjectWidget::OnNavigation(const FGeometry& MyGeometry, const 
 	}
 
 	return Reply;
+}
+
+void SObjectWidget::OnMouseCaptureLost()
+{
+	SCompoundWidget::OnMouseCaptureLost();
+
+	if ( CanRouteEvent() )
+	{
+		return WidgetObject->NativeOnMouseCaptureLost();
+	}
 }

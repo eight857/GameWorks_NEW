@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -19,8 +19,9 @@
 #include "IKeyArea.h"
 #include "MovieSceneCommonHelpers.h"
 #include "ScopedTransaction.h"
+#include "SequencerCommands.h"
 
-#define LOCTEXT_NAMESPACE "Arse"
+#define LOCTEXT_NAMESPACE "SKeyNavigationButtons"
 
 /**
  * A widget for navigating between keys on a sequencer track
@@ -35,6 +36,10 @@ public:
 
 	void Construct(const FArguments& InArgs, const TSharedRef<FSequencerDisplayNode>& InDisplayNode)
 	{
+		FText SetKeyToolTip = FText::Format(LOCTEXT("AddKeyButton", "Add a new key at the current time ({0})"), FSequencerCommands::Get().SetKey->GetInputText());
+		FText PreviousKeyToolTip = FText::Format(LOCTEXT("PreviousKeyButton", "Set the time to the previous key ({0})"), FSequencerCommands::Get().StepToPreviousKey->GetInputText());
+		FText NextKeyToolTip = FText::Format(LOCTEXT("NextKeyButton", "Set the time to the next key ({0})"), FSequencerCommands::Get().StepToNextKey->GetInputText());
+
 		DisplayNode = InDisplayNode;
 
 		const FSlateBrush* NoBorder = FEditorStyle::GetBrush( "NoBorder" );
@@ -58,7 +63,7 @@ public:
 				[
 					SNew(SButton)
 					.ButtonStyle(FEditorStyle::Get(), "FlatButton")
-					.ToolTipText(LOCTEXT("PreviousKeyButton", "Set the time to the previous key"))
+					.ToolTipText(PreviousKeyToolTip)
 					.OnClicked(this, &SKeyNavigationButtons::OnPreviousKeyClicked)
 					.ForegroundColor( FSlateColor::UseForeground() )
 					.ContentPadding(0)
@@ -83,7 +88,7 @@ public:
 				[
 					SNew(SButton)
 					.ButtonStyle(FEditorStyle::Get(), "FlatButton")
-					.ToolTipText(LOCTEXT("AddKeyButton", "Add a new key at the current time"))
+					.ToolTipText(SetKeyToolTip)
 					.OnClicked(this, &SKeyNavigationButtons::OnAddKeyClicked)
 					.ForegroundColor( FSlateColor::UseForeground() )
 					.ContentPadding(0)
@@ -107,7 +112,7 @@ public:
 				[
 					SNew(SButton)
 					.ButtonStyle(FEditorStyle::Get(), "FlatButton")
-					.ToolTipText(LOCTEXT("NextKeyButton", "Set the time to the next key"))
+					.ToolTipText(NextKeyToolTip)
 					.OnClicked(this, &SKeyNavigationButtons::OnNextKeyClicked)
 					.ContentPadding(0)
 					.ForegroundColor( FSlateColor::UseForeground() )
@@ -121,16 +126,6 @@ public:
 			]
 		];
 	}
-
-	/** Handles the previous key button being clicked. */
-	//FReply OnPreviousKeyClicked();
-
-	/** Handles the next key button being clicked. */
-	//FReply OnNextKeyClicked();
-
-	/** Handles the add key button being clicked. */
-	//FReply OnAddKeyClicked();
-
 
 	FLinearColor GetHoverTint() const
 	{
@@ -159,7 +154,7 @@ public:
 		}
 
 		TSet<TWeakObjectPtr<UMovieSceneSection> > Sections;
-		SequencerHelpers::GetAllSections( DisplayNode.ToSharedRef(), Sections );				
+		SequencerHelpers::GetAllSections( DisplayNode.ToSharedRef(), Sections );
 		for ( TWeakObjectPtr<UMovieSceneSection> Section : Sections )
 		{
 			if (Section.IsValid() && !Section->IsInfinite())
@@ -209,7 +204,7 @@ public:
 		}
 
 		TSet<TWeakObjectPtr<UMovieSceneSection> > Sections;
-		SequencerHelpers::GetAllSections( DisplayNode.ToSharedRef(), Sections );				
+		SequencerHelpers::GetAllSections( DisplayNode.ToSharedRef(), Sections );
 		for ( TWeakObjectPtr<UMovieSceneSection> Section : Sections )
 		{
 			if (Section.IsValid() && !Section->IsInfinite())
@@ -246,29 +241,32 @@ public:
 		TSet<TSharedPtr<IKeyArea>> KeyAreas;
 		SequencerHelpers::GetAllKeyAreas(DisplayNode, KeyAreas);
 
-		TArray<UMovieSceneSection*> KeyAreaSections;
+		// Prune out any key areas that do not exist at the current time, or are overlapped
+		TMap<FName, TArray<TSharedPtr<IKeyArea>>> NameToKeyAreas;
 		for (TSharedPtr<IKeyArea> KeyArea : KeyAreas)
 		{
-			UMovieSceneSection* OwningSection = KeyArea->GetOwningSection();
-			KeyAreaSections.Add(OwningSection);
-		}
-
-		UMovieSceneSection* NearestSection = MovieSceneHelpers::FindNearestSectionAtTime(KeyAreaSections, CurrentTime);
-		if (!NearestSection)
-		{
-			return FReply::Unhandled();
+			NameToKeyAreas.FindOrAdd(KeyArea->GetName()).Add(KeyArea);
 		}
 
 		FScopedTransaction Transaction(LOCTEXT("AddKeys", "Add Keys at Current Time"));
-		for (TSharedPtr<IKeyArea> KeyArea : KeyAreas)
+		for (auto& Pair : NameToKeyAreas)
 		{
-			UMovieSceneSection* OwningSection = KeyArea->GetOwningSection();
-			if (OwningSection == NearestSection)
+			TArray<UMovieSceneSection*> AllSections;
+			for (TSharedPtr<IKeyArea>& KeyArea : Pair.Value)
 			{
+				AllSections.Add(KeyArea->GetOwningSection());
+			}
+
+			int32 KeyAreaIndex = SequencerHelpers::GetSectionFromTime(AllSections, CurrentTime);
+
+			if (KeyAreaIndex != INDEX_NONE)
+			{
+				UMovieSceneSection* OwningSection = AllSections[KeyAreaIndex];
+
 				OwningSection->SetFlags(RF_Transactional);
 				if (OwningSection->TryModify())
 				{
-					KeyArea->AddKeyUnique(CurrentTime, Sequencer.GetKeyInterpolation());
+					Pair.Value[KeyAreaIndex]->AddKeyUnique(CurrentTime, Sequencer.GetKeyInterpolation());
 					Sequencer.NotifyMovieSceneDataChanged(EMovieSceneDataChangeType::TrackValueChanged);
 				}
 			}

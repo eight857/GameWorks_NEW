@@ -1,9 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PortalRpcServer.h"
 #include "IPortalRpcServer.h"
 #include "PortalRpcMessages.h"
-#include "Helpers/MessageEndpoint.h"
+#include "MessageEndpoint.h"
 #include "MessageRpcServer.h"
 
 class FPortalRpcServerImpl

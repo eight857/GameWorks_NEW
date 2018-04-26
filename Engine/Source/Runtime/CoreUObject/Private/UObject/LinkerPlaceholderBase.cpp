@@ -1,6 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UObject/LinkerPlaceholderBase.h"
+
+#include "UObject/LinkerPlaceholderExportObject.h"
 #include "UObject/UnrealType.h"
 #include "Blueprint/BlueprintSupport.h"
 
@@ -36,8 +38,8 @@ public:
 	 * at the time of AddReferencingPropertyValue() we cannot know/record the 
 	 * address/index of array properties (as they may change during array 
 	 * re-allocation or compaction). So we must follow the property chain and 
-	 * check every UArrayProperty member for references to this (hence, the need
-	 * for this recursive function).
+	 * check every container (array, set, map) property member for references to 
+	 * this (hence, the need for this recursive function).
 	 * 
 	 * @param  PropertyChain    An ascending outer chain, where the property at index zero is the leaf (referencer) property.
 	 * @param  ChainIndex		An index into the PropertyChain that this call should start at and iterate DOWN to zero.
@@ -102,6 +104,59 @@ int32 FLinkerPlaceholderObjectImpl::ResolvePlaceholderValues(const TArray<const 
 			{
 				uint8* MemberAddress = ArrayHelper.GetRawPtr(ArrayIndex);
 				ReplacementCount += ResolvePlaceholderValues(PropertyChain, PropertyIndex - 1, MemberAddress, OldValue, ReplacementValue);
+			}
+
+			// the above recursive call chewed through the rest of the
+			// PropertyChain, no need to keep on here
+			break;
+		}
+		else if (const USetProperty* SetProperty = Cast<const USetProperty>(Property))
+		{
+#if USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
+			const UProperty* NextProperty = PropertyChain[PropertyIndex - 1];
+			check(NextProperty == SetProperty->ElementProp);
+#endif // USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
+
+			// because we can't know which set entry was set with a reference 
+			// to this object, we have to comb through them all
+			FScriptSetHelper SetHelper(SetProperty, ValueAddress);
+			int32 Num = SetHelper.Num();
+			for (int32 SetIndex = 0; Num; ++SetIndex)
+			{
+				if (SetHelper.IsValidIndex(SetIndex))
+				{
+					--Num;
+					uint8* ElementAddress = SetHelper.GetElementPtr(SetIndex);
+					ReplacementCount += ResolvePlaceholderValues(PropertyChain, PropertyIndex - 1, ElementAddress, OldValue, ReplacementValue);
+				}
+			}
+
+			// the above recursive call chewed through the rest of the
+			// PropertyChain, no need to keep on here
+			break;
+		}
+		else if (const UMapProperty* MapProperty = Cast<const UMapProperty>(Property))
+		{
+#if USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
+			const UProperty* NextProperty = PropertyChain[PropertyIndex - 1];
+			check(NextProperty == MapProperty->KeyProp);
+#endif // USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
+
+			// because we can't know which map entry was set with a reference 
+			// to this object, we have to comb through them all
+			FScriptMapHelper MapHelper(MapProperty, ValueAddress);
+			int32 Num = MapHelper.Num();
+			for (int32 MapIndex = 0; Num; ++MapIndex)
+			{
+				if (MapHelper.IsValidIndex(MapIndex))
+				{
+					--Num;
+					uint8* KeyAddress = MapHelper.GetKeyPtr(MapIndex);
+					ReplacementCount += ResolvePlaceholderValues(PropertyChain, PropertyIndex - 1, KeyAddress, OldValue, ReplacementValue);
+
+					uint8* MapValueAddress = MapHelper.GetValuePtr(MapIndex);
+					ReplacementCount += ResolvePlaceholderValues(PropertyChain, PropertyIndex - 1, MapValueAddress, OldValue, ReplacementValue);
+				}
 			}
 
 			// the above recursive call chewed through the rest of the
@@ -181,8 +236,6 @@ FScopedPlaceholderContainerTracker::~FScopedPlaceholderContainerTracker()
 #endif // USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
 }
 
-#if WITH_EDITOR
-
 FScopedPlaceholderRawContainerTracker::FScopedPlaceholderRawContainerTracker(void* InData)
 	:Data(InData)
 {
@@ -196,8 +249,6 @@ FScopedPlaceholderRawContainerTracker::~FScopedPlaceholderRawContainerTracker()
 	check(StackTop == Data);
 #endif // USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
 }
-
-#endif
 
 //------------------------------------------------------------------------------
 FScopedPlaceholderPropertyTracker::FScopedPlaceholderPropertyTracker(const UStructProperty* InIntermediateProperty)
@@ -356,11 +407,8 @@ bool FLinkerPlaceholderBase::AddReferencingPropertyValue(const UObjectProperty* 
 		check(PropertyChain.IsValid());
 #endif // USE_DEFERRED_DEPENDENCY_CHECK_VERIFICATION_TESTS
 
-		if (ReferencingContainer != nullptr)
-		{
-			ReferencingContainers.FindOrAdd(ReferencingContainer).Add(PropertyChain);
-		}
-		return (ReferencingContainer != nullptr);
+		ReferencingContainers.FindOrAdd(ReferencingContainer).Add(PropertyChain);
+		return true;
 	}
 	else
 	{
@@ -388,6 +436,13 @@ int32 FLinkerPlaceholderBase::ResolveAllPlaceholderReferences(UObject* Replaceme
 
 	MarkAsResolved();
 	return ReplacementCount;
+}
+
+//------------------------------------------------------------------------------
+void FLinkerPlaceholderBase::SetupPlaceholderSubobject(ULinkerPlaceholderExportObject* PlaceholderSubobject)
+{
+	PlaceholderSubobjects.Add(PlaceholderSubobject);
+	PlaceholderSubobject->OwningPlaceholder = CastChecked<ULinkerPlaceholderExportObject>( this->GetPlaceholderAsUObject() );
 }
 
 //------------------------------------------------------------------------------
@@ -437,9 +492,9 @@ int32 FLinkerPlaceholderBase::ResolvePlaceholderPropertyValues(UObject* NewObjec
 			// there were none, then a property could have changed its value 
 			// after it was set to this
 			// 
-			// NOTE: this may seem it can be resolved by properties removing 
-			//       themselves from ReferencingProperties, but certain 
-			//       properties may be the inner of a UArrayProperty (meaning 
+			// NOTE: this may seem it can be resolved by properties removing themselves
+			//       from ReferencingProperties, but certain properties may be
+			//       the inner of a container (array, set, map) property (meaning 
 			//       there could be multiple references per property)... we'd 
 			//       have to inc/decrement a property ref-count to resolve that 
 			//       scenario
@@ -495,11 +550,11 @@ int32 TLinkerImportPlaceholder<UClass>::ResolvePropertyReferences(UClass* Replac
 					++ReplacementCount;
 				}
 			}
-			else if (UAssetClassProperty* AssetClassProperty = Cast<UAssetClassProperty>(BaseObjProperty))
+			else if (USoftClassProperty* SoftClassProperty = Cast<USoftClassProperty>(BaseObjProperty))
 			{
-				if (AssetClassProperty->MetaClass == PlaceholderClass)
+				if (SoftClassProperty->MetaClass == PlaceholderClass)
 				{
-					AssetClassProperty->MetaClass = ReplacementClass;
+					SoftClassProperty->MetaClass = ReplacementClass;
 					++ReplacementCount;
 				}	
 			}
@@ -514,7 +569,7 @@ int32 TLinkerImportPlaceholder<UClass>::ResolvePropertyReferences(UClass* Replac
 		}
 		else
 		{
-			checkf(TEXT("Unhandled property type: %s"), *Property->GetClass()->GetName());
+			checkf(false, TEXT("Unhandled property type: %s"), *Property->GetClass()->GetName());
 		}
 	}
 
@@ -553,7 +608,7 @@ int32 TLinkerImportPlaceholder<UFunction>::ResolvePropertyReferences(UFunction* 
 		}
 		else
 		{
-			checkf(TEXT("Unhandled property type: %s"), *Property->GetClass()->GetName());
+			checkf(false, TEXT("Unhandled property type: %s"), *Property->GetClass()->GetName());
 		}
 	}
 

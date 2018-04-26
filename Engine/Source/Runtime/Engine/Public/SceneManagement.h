@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	SceneManagement.h: Scene manager definitions.
@@ -149,9 +149,6 @@ public:
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) = 0;
 
 	virtual SIZE_T GetSizeBytes() const { return 0; }
-
-	/** called in InitViews() */
-	virtual void OnStartFrame(FSceneView& View, FSceneViewFamily& ViewFamily) = 0;
 
 	/** Resets pool for GetReusableMID() */
 	virtual void OnStartPostProcessing(FSceneView& CurrentView) = 0;
@@ -325,6 +322,14 @@ public:
 		Result.Type = LMIT_None;
 		return Result;
 	}
+
+	static FLightMapInteraction GlobalVolume()
+	{
+		FLightMapInteraction Result;
+		Result.Type = LMIT_GlobalVolume;
+		return Result;
+	}
+
 	static FLightMapInteraction Texture(
 		const class ULightMapTexture2D* const* InTextures,
 		const ULightMapTexture2D* InSkyOcclusionTexture,
@@ -509,6 +514,14 @@ public:
 		Result.Type = SMIT_None;
 		return Result;
 	}
+
+	static FShadowMapInteraction GlobalVolume()
+	{
+		FShadowMapInteraction Result;
+		Result.Type = SMIT_GlobalVolume;
+		return Result;
+	}
+
 	static FShadowMapInteraction Texture(
 		class UShadowMapTexture2D* InTexture,
 		const FVector2D& InCoordinateScale,
@@ -594,8 +607,13 @@ class FLightCacheInterface
 {
 public:
 	FLightCacheInterface(const FLightMap* InLightMap, const FShadowMap* InShadowMap)
-		: LightMap(InLightMap)
+		: bGlobalVolumeLightmap(false)
+		, LightMap(InLightMap)
 		, ShadowMap(InShadowMap)
+	{
+	}
+
+	virtual ~FLightCacheInterface()
 	{
 	}
 
@@ -630,6 +648,11 @@ public:
 		return ShadowMap;
 	}
 
+	void SetGlobalVolumeLightmap(bool bInGlobalVolumeLightmap)
+	{
+		bGlobalVolumeLightmap = bInGlobalVolumeLightmap;
+	}
+
 	// WARNING : This can be called with buffers valid for a single frame only, don't cache anywhere. See FPrimitiveSceneInfo::UpdatePrecomputedLightingBuffer()
 	void SetPrecomputedLightingBuffer(FUniformBufferRHIParamRef InPrecomputedLightingUniformBuffer)
 	{
@@ -646,6 +669,9 @@ public:
 	ENGINE_API FShadowMapInteraction GetShadowMapInteraction() const;
 
 private:
+
+	bool bGlobalVolumeLightmap;
+
 	// The light-map used by the element. may be 0
 	const FLightMap* LightMap;
 
@@ -812,7 +838,7 @@ public:
 inline bool DoesPlatformSupportDistanceFieldShadowing(EShaderPlatform Platform)
 {
 	// Hasn't been tested elsewhere yet
-	return Platform == SP_PCD3D_SM5 || Platform == SP_PS4 || Platform == SP_METAL_SM5 || Platform == SP_XBOXONE_D3D12 || Platform == SP_XBOXONE_D3D11;
+	return Platform == SP_PCD3D_SM5 || Platform == SP_PS4 || (IsMetalPlatform(Platform) && GetMaxSupportedFeatureLevel(Platform) >= ERHIFeatureLevel::SM5 && RHIGetShaderLanguageVersion(Platform) >= 2) || Platform == SP_XBOXONE_D3D12 || Platform == SP_VULKAN_SM5;
 }
 
 /** Represents a USkyLightComponent to the rendering thread. */
@@ -852,6 +878,18 @@ public:
 	EOcclusionCombineMode OcclusionCombineMode;
 };
 
+struct FLightParameters
+{
+	FVector4 LightPositionAndInvRadius;
+	FVector4 LightColorAndFalloffExponent;
+	FVector NormalizedLightDirection;
+	FVector NormalizedLightTangent;
+	FVector2D SpotAngles;
+	float LightSourceRadius;
+	float LightSoftSourceRadius;
+	float LightSourceLength;
+	float LightMinRoughness;
+};
 
 /** 
  * Encapsulates the data which is used to render a light by the rendering thread. 
@@ -892,6 +930,7 @@ public:
 	virtual bool IsInverseSquared() const { return false; }
 	virtual float GetLightSourceAngle() const { return 0.0f; }
 	virtual float GetTraceDistance() const { return 0.0f; }
+	virtual float GetEffectiveScreenRadius(const FViewMatrices& ShadowViewMatrices) const { return 0.0f; }
 
 	virtual FVector2D GetLightShaftConeParams() const
 	{
@@ -899,9 +938,9 @@ public:
 	}
 
 	/** Accesses parameters needed for rendering the light. */
-	virtual void GetParameters(FVector4& LightPositionAndInvRadius, FVector4& LightColorAndFalloffExponent, FVector& NormalizedLightDirection, FVector2D& SpotAngles, float& LightSourceRadius, float& LightSourceLength, float& LightMinRoughness) const {}
+	virtual void GetParameters(FLightParameters& LightParameters) const {}
 
-	virtual FVector2D GetDirectionalLightDistanceFadeParameters(ERHIFeatureLevel::Type InFeatureLevel, bool bPrecomputedLightingIsValid) const
+	virtual FVector2D GetDirectionalLightDistanceFadeParameters(ERHIFeatureLevel::Type InFeatureLevel, bool bPrecomputedLightingIsValid, int32 MaxNearCascades) const
 	{
 		return FVector2D(0, 0);
 	}
@@ -978,17 +1017,17 @@ public:
 	virtual FSphere GetShadowSplitBounds(const class FSceneView& View, int32 InCascadeIndex, bool bPrecomputedLightingIsValid, FShadowCascadeSettings* OutCascadeSettings) const { return FSphere(FVector::ZeroVector, 0); }
 	virtual FSphere GetShadowSplitBoundsDepthRange(const FSceneView& View, FVector ViewOrigin, float SplitNear, float SplitFar, FShadowCascadeSettings* OutCascadeSettings) const { return FSphere(FVector::ZeroVector, 0); }
 
-	virtual bool GetScissorRect(FIntRect& ScissorRect, const FSceneView& View) const
+	virtual bool GetScissorRect(FIntRect& ScissorRect, const FSceneView& View, const FIntRect& ViewRect) const
 	{
-		ScissorRect = View.ViewRect;
+		ScissorRect = ViewRect;
 		return false;
 	}
 
-	virtual void SetScissorRect(FRHICommandList& RHICmdList, const FSceneView& View) const
+	virtual void SetScissorRect(FRHICommandList& RHICmdList, const FSceneView& View, const FIntRect& ViewRect) const
 	{
 	}
 
-	virtual bool ShouldCreateRayTracedCascade(ERHIFeatureLevel::Type Type, bool bPrecomputedLightingIsValid) const { return false; }
+	virtual bool ShouldCreateRayTracedCascade(ERHIFeatureLevel::Type Type, bool bPrecomputedLightingIsValid, int32 MaxNearCascades) const { return false; }
 
 	// Accessors.
 	float GetUserShadowBias() const { return ShadowBias; }
@@ -999,6 +1038,7 @@ public:
 	 * Mirror the data in the scene proxy and access that instead.
 	 */
 	inline const ULightComponent* GetLightComponent() const { return LightComponent; }
+	inline FSceneInterface* GetSceneInterface() const { return SceneInterface; }
 	inline FLightSceneInfo* GetLightSceneInfo() const { return LightSceneInfo; }
 	inline const FMatrix& GetWorldToLight() const { return WorldToLight; }
 	inline const FMatrix& GetLightToWorld() const { return LightToWorld; }
@@ -1048,6 +1088,8 @@ public:
 	inline bool NeedsLPVInjection() const { return bAffectDynamicIndirectLighting; }
 	inline const class FStaticShadowDepthMap* GetStaticShadowDepthMap() const { return StaticShadowDepthMap; }
 
+	inline bool GetForceCachedShadowsForMovablePrimitives() const { return bForceCachedShadowsForMovablePrimitives; }
+
 	/**
 	 * Shifts light position and all relevant data by an arbitrary delta.
 	 * Called on world origin changes
@@ -1064,6 +1106,9 @@ protected:
 
 	/** The light component. */
 	const ULightComponent* LightComponent;
+
+	/** The scene the primitive is in. */
+	FSceneInterface* SceneInterface;
 
 	/** The light's scene info. */
 	class FLightSceneInfo* LightSceneInfo;
@@ -1154,6 +1199,8 @@ protected:
 	const uint32 bCastVolumetricShadow : 1;
 
 	const uint32 bCastShadowsFromCinematicObjectsOnly : 1;
+
+	const uint32 bForceCachedShadowsForMovablePrimitives : 1;
 
 	/** Whether the light affects translucency or not.  Disabling this can save GPU time when there are many small lights. */
 	const uint32 bAffectTranslucentLighting : 1;
@@ -1284,13 +1331,9 @@ public:
 
 	int32 PackedIndex;
 
-	/** Used in Feature level SM4 */
-	FTexture* SM4FullHDRCubemap;
-
-	float AverageBrightness;
-
 	/** Used in Feature level ES2 */
 	FTexture* EncodedHDRCubemap;
+	float EncodedHDRAverageBrightness;
 
 	EReflectionCaptureShape::Type Shape;
 
@@ -1310,9 +1353,9 @@ public:
 	FPlane ReflectionPlane;
 	FVector4 ReflectionXAxisAndYScale;
 
-	FReflectionCaptureProxy(const class UReflectionCaptureComponent* InComponent);
+	bool bUsingPreviewCaptureData;
 
-	void InitializeAverageBrightness(const float& AverageBrightness);
+	FReflectionCaptureProxy(const class UReflectionCaptureComponent* InComponent);
 
 	void SetTransform(const FMatrix& InTransform);
 };
@@ -1412,6 +1455,10 @@ public:
 		View(InView)
 	{}
 
+	virtual ~FPrimitiveDrawInterface()
+	{
+	}
+
 	virtual bool IsHitTesting() = 0;
 	virtual void SetHitProxy(HHitProxy* HitProxy) = 0;
 
@@ -1478,6 +1525,7 @@ public:
 class FStaticPrimitiveDrawInterface
 {
 public:
+	virtual ~FStaticPrimitiveDrawInterface() { }
 	virtual void SetHitProxy(HHitProxy* HitProxy) = 0;
 	virtual void DrawMesh(
 		const FMeshBatch& Mesh,
@@ -1557,7 +1605,7 @@ public:
 		return 0;
 	}
 
-	void DrawBatchedElements(FRHICommandList& RHICmdList, const FDrawingPolicyRenderState& DrawRenderState, const FSceneView& InView, FTexture2DRHIRef DepthTexture, EBlendModeFilter::Type Filter) const;
+	void DrawBatchedElements(FRHICommandList& RHICmdList, const FDrawingPolicyRenderState& DrawRenderState, const FSceneView& InView, EBlendModeFilter::Type Filter) const;
 
 	/** The batched simple elements. */
 	FBatchedElements BatchedElements;
@@ -1651,10 +1699,10 @@ public:
 	}
 
 	/** Allocates a temporary resource that is safe to be referenced by an FMeshBatch added to the collector. */
-	template<typename T>
-	T& AllocateOneFrameResource()
+	template<typename T, typename... ARGS>
+	T& AllocateOneFrameResource(ARGS&&... Args)
 	{
-		T* OneFrameResource = new (FMemStack::Get()) T();
+		T* OneFrameResource = new (FMemStack::Get()) T(Forward<ARGS>(Args)...);
 		OneFrameResources.Add(OneFrameResource);
 		return *OneFrameResource;
 	}
@@ -1676,9 +1724,14 @@ public:
 
 	ENGINE_API void ProcessTasks();
 
+	ENGINE_API ERHIFeatureLevel::Type GetFeatureLevel() const
+	{
+		return FeatureLevel;
+	}
+
 private:
 
-	ENGINE_API FMeshElementCollector();
+	ENGINE_API FMeshElementCollector(ERHIFeatureLevel::Type InFeatureLevel);
 
 	~FMeshElementCollector()
 	{
@@ -1722,7 +1775,6 @@ private:
 		Views.Add(InView);
 		MeshBatches.Add(ViewMeshes);
 		SimpleElementCollectors.Add(ViewSimpleElementCollector);
-		FeatureLevel = InFeatureLevel;
 	}
 
 	/** 
@@ -1912,15 +1964,18 @@ private:
 
 // 10x10 tessellated plane at x=-1..1 y=-1...1 z=0
 extern ENGINE_API void DrawPlane10x10(class FPrimitiveDrawInterface* PDI,const FMatrix& ObjectToWorld,float Radii,FVector2D UVMin, FVector2D UVMax,const FMaterialRenderProxy* MaterialRenderProxy,uint8 DepthPriority);
+
+// draw simple triangle with material
+extern ENGINE_API void DrawTriangle(class FPrimitiveDrawInterface* PDI, const FVector& A, const FVector& B, const FVector& C, const FMaterialRenderProxy* MaterialRenderProxy, uint8 DepthPriorityGroup);
 extern ENGINE_API void DrawBox(class FPrimitiveDrawInterface* PDI,const FMatrix& BoxToWorld,const FVector& Radii,const FMaterialRenderProxy* MaterialRenderProxy,uint8 DepthPriority);
-extern ENGINE_API void DrawSphere(class FPrimitiveDrawInterface* PDI,const FVector& Center,const FVector& Radii,int32 NumSides,int32 NumRings,const FMaterialRenderProxy* MaterialRenderProxy,uint8 DepthPriority,bool bDisableBackfaceCulling=false);
-extern ENGINE_API void DrawCone(class FPrimitiveDrawInterface* PDI,const FMatrix& ConeToWorld, float Angle1, float Angle2, int32 NumSides, bool bDrawSideLines, const FLinearColor& SideLineColor, const FMaterialRenderProxy* MaterialRenderProxy, uint8 DepthPriority);
+extern ENGINE_API void DrawSphere(class FPrimitiveDrawInterface* PDI,const FVector& Center,const FRotator& Orientation,const FVector& Radii,int32 NumSides,int32 NumRings,const FMaterialRenderProxy* MaterialRenderProxy,uint8 DepthPriority,bool bDisableBackfaceCulling=false);
+extern ENGINE_API void DrawCone(class FPrimitiveDrawInterface* PDI,const FMatrix& ConeToWorld, float Angle1, float Angle2, uint32 NumSides, bool bDrawSideLines, const FLinearColor& SideLineColor, const FMaterialRenderProxy* MaterialRenderProxy, uint8 DepthPriority);
 
 extern ENGINE_API void DrawCylinder(class FPrimitiveDrawInterface* PDI,const FVector& Base, const FVector& XAxis, const FVector& YAxis, const FVector& ZAxis,
-	float Radius, float HalfHeight, int32 Sides, const FMaterialRenderProxy* MaterialInstance, uint8 DepthPriority);
+	float Radius, float HalfHeight, uint32 Sides, const FMaterialRenderProxy* MaterialInstance, uint8 DepthPriority);
 
 extern ENGINE_API void DrawCylinder(class FPrimitiveDrawInterface* PDI, const FMatrix& CylToWorld, const FVector& Base, const FVector& XAxis, const FVector& YAxis, const FVector& ZAxis,
-	float Radius, float HalfHeight, int32 Sides, const FMaterialRenderProxy* MaterialInstance, uint8 DepthPriority);
+	float Radius, float HalfHeight, uint32 Sides, const FMaterialRenderProxy* MaterialInstance, uint8 DepthPriority);
 
 //Draws a cylinder along the axis from Start to End
 extern ENGINE_API void DrawCylinder(class FPrimitiveDrawInterface* PDI, const FVector& Start, const FVector& End, float Radius, int32 Sides, const FMaterialRenderProxy* MaterialInstance, uint8 DepthPriority);
@@ -1938,12 +1993,12 @@ extern ENGINE_API void GetSphereMesh(const FVector& Center,const FVector& Radii,
 extern ENGINE_API void GetCylinderMesh(const FVector& Base, const FVector& XAxis, const FVector& YAxis, const FVector& ZAxis,
 									float Radius, float HalfHeight, int32 Sides, const FMaterialRenderProxy* MaterialInstance, uint8 DepthPriority, int32 ViewIndex, FMeshElementCollector& Collector);
 extern ENGINE_API void GetCylinderMesh(const FMatrix& CylToWorld, const FVector& Base, const FVector& XAxis, const FVector& YAxis, const FVector& ZAxis,
-									float Radius, float HalfHeight, int32 Sides, const FMaterialRenderProxy* MaterialInstance, uint8 DepthPriority, int32 ViewIndex, FMeshElementCollector& Collector);
+									float Radius, float HalfHeight, uint32 Sides, const FMaterialRenderProxy* MaterialInstance, uint8 DepthPriority, int32 ViewIndex, FMeshElementCollector& Collector);
 //Draws a cylinder along the axis from Start to End
 extern ENGINE_API void GetCylinderMesh(const FVector& Start, const FVector& End, float Radius, int32 Sides, const FMaterialRenderProxy* MaterialInstance, uint8 DepthPriority, int32 ViewIndex, FMeshElementCollector& Collector);
 
 
-extern ENGINE_API void GetConeMesh(const FMatrix& LocalToWorld, float AngleWidth, float AngleHeight, int32 NumSides,
+extern ENGINE_API void GetConeMesh(const FMatrix& LocalToWorld, float AngleWidth, float AngleHeight, uint32 NumSides,
 									const FMaterialRenderProxy* MaterialRenderProxy, uint8 DepthPriority, int32 ViewIndex, FMeshElementCollector& Collector);
 extern ENGINE_API void GetCapsuleMesh(const FVector& Origin, const FVector& XAxis, const FVector& YAxis, const FVector& ZAxis, const FLinearColor& Color, float Radius, float HalfHeight, int32 NumSides,
 									const FMaterialRenderProxy* MaterialRenderProxy, uint8 DepthPriority, bool bDisableBackfaceCulling, int32 ViewIndex, FMeshElementCollector& Collector);
@@ -2242,9 +2297,9 @@ extern ENGINE_API void DrawFrustumWireframe(
 	uint8 DepthPriority
 	);
 
-void BuildConeVerts(float Angle1, float Angle2, float Scale, float XOffset, int32 NumSides, TArray<FDynamicMeshVertex>& OutVerts, TArray<int32>& OutIndices);
+void BuildConeVerts(float Angle1, float Angle2, float Scale, float XOffset, uint32 NumSides, TArray<FDynamicMeshVertex>& OutVerts, TArray<uint32>& OutIndices);
 
-void BuildCylinderVerts(const FVector& Base, const FVector& XAxis, const FVector& YAxis, const FVector& ZAxis, float Radius, float HalfHeight, int32 Sides, TArray<FDynamicMeshVertex>& OutVerts, TArray<int32>& OutIndices);
+void BuildCylinderVerts(const FVector& Base, const FVector& XAxis, const FVector& YAxis, const FVector& ZAxis, float Radius, float HalfHeight, uint32 Sides, TArray<FDynamicMeshVertex>& OutVerts, TArray<uint32>& OutIndices);
 
 
 /**
@@ -2299,14 +2354,13 @@ extern ENGINE_API bool IsRichView(const FSceneViewFamily& ViewFamily);
 	 * true if we debug material names with SCOPED_DRAW_EVENT.
 	 * Toggle with "r.ShowMaterialDrawEvents" cvar.
 	 */
-	extern ENGINE_API int32 GShowMaterialDrawEvents;
 	extern ENGINE_API void BeginMeshDrawEvent_Inner(FRHICommandList& RHICmdList, const class FPrimitiveSceneProxy* PrimitiveSceneProxy, const struct FMeshBatch& Mesh, struct TDrawEvent<FRHICommandList>& DrawEvent);
 #endif
 
-FORCEINLINE void BeginMeshDrawEvent(FRHICommandList& RHICmdList, const class FPrimitiveSceneProxy* PrimitiveSceneProxy, const struct FMeshBatch& Mesh, struct TDrawEvent<FRHICommandList>& DrawEvent)
+FORCEINLINE void BeginMeshDrawEvent(FRHICommandList& RHICmdList, const class FPrimitiveSceneProxy* PrimitiveSceneProxy, const struct FMeshBatch& Mesh, struct TDrawEvent<FRHICommandList>& DrawEvent, bool ShowMaterialDrawEvent)
 {
 #if WANTS_DRAW_MESH_EVENTS
-	if (GShowMaterialDrawEvents != 0)
+	if (ShowMaterialDrawEvent)
 	{
 		BeginMeshDrawEvent_Inner(RHICmdList, PrimitiveSceneProxy, Mesh, DrawEvent);
 	}
@@ -2324,7 +2378,10 @@ extern ENGINE_API void ApplyViewModeOverrides(
 	);
 
 /** Draws the UV layout of the supplied asset (either StaticMeshRenderData OR SkeletalMeshRenderData, not both!) */
-extern ENGINE_API void DrawUVs(FViewport* InViewport, FCanvas* InCanvas, int32 InTextYPos, const int32 LODLevel, int32 UVChannel, TArray<FVector2D> SelectedEdgeTexCoords, class FStaticMeshRenderData* StaticMeshRenderData, class FStaticLODModel* SkeletalMeshRenderData );
+extern ENGINE_API void DrawUVs(FViewport* InViewport, FCanvas* InCanvas, int32 InTextYPos, const int32 LODLevel, int32 UVChannel, TArray<FVector2D> SelectedEdgeTexCoords, class FStaticMeshRenderData* StaticMeshRenderData, class FSkeletalMeshLODRenderData* SkeletalMeshRenderData);
+
+/** Will return the view to use taking into account VR which has 2 views */
+ENGINE_API const FSceneView& GetLODView(const FSceneView& InView);
 
 /**
  * Computes the screen size of a given sphere bounds in the given view.
@@ -2425,7 +2482,7 @@ struct FLODMask
 		return DitheredLODIndices[0] != DitheredLODIndices[1];
 	}
 };
-FLODMask ENGINE_API ComputeLODForMeshes(const TIndirectArray<class FStaticMesh>& StaticMeshes, const FSceneView& View, const FVector4& Origin, float SphereRadius, int32 ForcedLODLevel, float ScreenSizeScale = 1.0f);
+FLODMask ENGINE_API ComputeLODForMeshes(const TIndirectArray<class FStaticMesh>& StaticMeshes, const FSceneView& View, const FVector4& Origin, float SphereRadius, int32 ForcedLODLevel, float& OutScreenRadiusSquared, float ScreenSizeScale = 1.0f);
 
 class FSharedSamplerState : public FRenderResource
 {
@@ -2477,7 +2534,6 @@ struct FReadOnlyCVARCache
 
 	// Mobile specific
 	bool bMobileAllowMovableDirectionalLights;
-	bool bAllReceiveDynamicCSM;
 	bool bMobileAllowDistanceFieldShadows;
 	bool bMobileEnableStaticAndCSMShadowReceivers;
 	int32 NumMobileMovablePointLights;

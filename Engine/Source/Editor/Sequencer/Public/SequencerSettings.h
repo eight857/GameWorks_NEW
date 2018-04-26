@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,7 +9,8 @@
 #include "SequencerSettings.generated.h"
 
 struct FPropertyChangedEvent;
-enum class EAutoKeyMode : uint8;
+enum class EAutoChangeMode : uint8;
+enum class EAllowEditsMode : uint8;
 enum class EMovieSceneKeyInterpolation : uint8;
 
 UENUM()
@@ -69,7 +70,7 @@ enum ESequencerTimeSnapInterval
 
 /** Empty class used to house multiple named USequencerSettings */
 UCLASS()
-class USequencerSettingsContainer
+class SEQUENCER_API USequencerSettingsContainer
 	: public UObject
 {
 public:
@@ -109,14 +110,23 @@ public:
 	GENERATED_UCLASS_BODY()
 
 	DECLARE_MULTICAST_DELEGATE( FOnEvaluateSubSequencesInIsolationChanged );
+	DECLARE_MULTICAST_DELEGATE( FOnShowSelectedNodesOnlyChanged );
+	DECLARE_MULTICAST_DELEGATE_OneParam( FOnAllowEditsModeChanged, EAllowEditsMode );
 	DECLARE_MULTICAST_DELEGATE_OneParam( FOnLockPlaybackToAudioClockChanged, bool );
 
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 
-	/** Gets the current auto-key mode. */
-	EAutoKeyMode GetAutoKeyMode() const;
+	/** Gets the current auto change mode. */
+	EAutoChangeMode GetAutoChangeMode() const;
+	/** Sets the current auto change mode. */
+	void SetAutoChangeMode(EAutoChangeMode AutoChangeMode);
+
+	/** Gets the current allow edits mode. */
+	EAllowEditsMode GetAllowEditsMode() const;
 	/** Sets the current auto-key mode. */
-	void SetAutoKeyMode(EAutoKeyMode AutoKeyMode);
+	void SetAllowEditsMode(EAllowEditsMode AllowEditsMode);
+	/** Gets the multicast delegate which is run whenever the allow edits mode is changed. */
+	FOnAllowEditsModeChanged& GetOnAllowEditsModeChanged() { return OnAllowEditsModeChangedEvent; }
 
 	/** Gets whether or not key all is enabled. */
 	bool GetKeyAllEnabled() const;
@@ -221,6 +231,12 @@ public:
 	/** Sets whether or not the label browser is visible. */
 	void SetLabelBrowserVisible(bool Visible);
 
+	/** Gets whether or not to show selected nodes only. */
+	bool GetShowSelectedNodesOnly() const;
+	/** Sets whether or not to show selected nodes only. */
+	void SetShowSelectedNodesOnly(bool Visible);
+	FOnShowSelectedNodesOnlyChanged& GetOnShowSelectedNodesOnlyChanged() { return OnShowSelectedNodesOnlyChangedEvent; }
+
 	/** Gets whether to jump to the start of the sequence when we start a recording or not. */
 	bool ShouldRewindOnRecord() const;
 	/** Sets whether to jump to the start of the sequence when we start a recording. */
@@ -250,6 +266,11 @@ public:
 	ESequencerLoopMode GetLoopMode() const;
 	/** Sets the loop mode. */
 	void SetLoopMode(ESequencerLoopMode InLoopMode);
+
+	/** @return true if the cursor should be kept within the playback range while scrubbing in sequencer, false otherwise */
+	bool ShouldKeepCursorInPlayRangeWhileScrubbing() const;
+	/** Set whether or not the cursor should be kept within the playback range while scrubbing in sequencer */
+	void SetKeepCursorInPlayRangeWhileScrubbing(bool bInKeepCursorInPlayRangeWhileScrubbing);
 
 	/** @return true if the cursor should be kept within the playback range during playback in sequencer, false otherwise */
 	bool ShouldKeepCursorInPlayRange() const;
@@ -291,6 +312,11 @@ public:
 	/** Toggle whether to allow possession of PIE viewports */
 	void SetAllowPossessionOfPIEViewports(bool bInAllowPossessionOfPIEViewports);
 
+	/** @return Whether to activate realtime viewports when in sequencer */
+	bool ShouldActivateRealtimeViewports() const;
+	/** Toggle whether to allow possession of PIE viewports */
+	void SetActivateRealtimeViewports(bool bInActivateRealtimeViewports);
+
 	/** Gets whether or not track defaults will be automatically set when modifying tracks. */
 	bool GetAutoSetTrackDefaults() const;
 	/** Sets whether or not track defaults will be automatically set when modifying tracks. */
@@ -305,8 +331,13 @@ public:
 	bool ShouldEvaluateSubSequencesInIsolation() const;
 	/** Set whether to evaluate sub sequences in isolation */
 	void SetEvaluateSubSequencesInIsolation(bool bInEvaluateSubSequencesInIsolation);
-	/** Gets the multicast delegate which is run whenever the time snap interval is changed. */
+	/** Gets the multicast delegate which is run whenever evaluate sub sequences in isolation is changed. */
 	FOnEvaluateSubSequencesInIsolationChanged& GetOnEvaluateSubSequencesInIsolationChanged() { return OnEvaluateSubSequencesInIsolationChangedEvent; }
+
+	/** @return Whether to rerun construction scripts on bound actors every frame */
+	bool ShouldRerunConstructionScripts() const;
+	/** Set whether to rerun construction scripts on bound actors every frame */
+	void SetRerunConstructionScripts(bool bInRerunConstructionScripts);
 
 	/** Snaps a time value in seconds to the currently selected interval. */
 	float SnapTimeToInterval(float InTimeValue) const;
@@ -321,14 +352,20 @@ public:
 	/** Toggle whether to show pre and post roll in sequencer */
 	void SetShouldShowPrePostRoll(bool bInVisualizePreAndPostRoll);
 
+	uint32 GetTrajectoryPathCap() const { return TrajectoryPathCap; }
+
 	/** Gets the multicast delegate which is invoked whenevcer the bLockPlaybackToAudioClock setting is changed. */
 	FOnLockPlaybackToAudioClockChanged& GetOnLockPlaybackToAudioClockChanged() { return OnLockPlaybackToAudioClockChanged; }
 
 protected:
 
-	/** Enable or disable autokeying. */
+	/** The auto change mode (auto-key, auto-track or none). */
 	UPROPERTY( config, EditAnywhere, Category=Keyframing )
-	EAutoKeyMode AutoKeyMode;
+	EAutoChangeMode AutoChangeMode;
+
+	/** Allow edits mode. */
+	UPROPERTY( config, EditAnywhere, Category=Keyframing )
+	EAllowEditsMode AllowEditsMode;
 
 	/** Enable or disable keying all channels when any are keyed. */
 	UPROPERTY( config, EditAnywhere, Category=Keyframing )
@@ -417,6 +454,10 @@ protected:
 	UPROPERTY( config, EditAnywhere, Category=General )
 	bool bLabelBrowserVisible;
 
+	/** Only show selected nodes in the tree view. */
+	UPROPERTY( config, EditAnywhere, Category=General )
+	bool bShowSelectedNodesOnly;
+
 	/** Defines whether to jump back to the start of the sequence when a recording is started */
 	UPROPERTY(config, EditAnywhere, Category=General)
 	bool bRewindOnRecord;
@@ -440,6 +481,10 @@ protected:
 	/** The loop mode of the playback in timeline. */
 	UPROPERTY( config )
 	TEnumAsByte<ESequencerLoopMode> LoopMode;
+
+	/** Enable or disable keeping the cursor in the current playback range while scrubbing. */
+	UPROPERTY( config, EditAnywhere, Category=Timeline )
+	bool bKeepCursorInPlayRangeWhileScrubbing;
 
 	/** Enable or disable keeping the cursor in the current playback range during playback. */
 	UPROPERTY( config, EditAnywhere, Category=Timeline )
@@ -477,11 +522,17 @@ protected:
 	UPROPERTY(config, EditAnywhere, Category=General)
 	bool bAllowPossessionOfPIEViewports;
 
+	/** When enabled, sequencer will activate 'Realtime' in viewports */
+	UPROPERTY(config, EditAnywhere, Category=General)
+	bool bActivateRealtimeViewports;
+
 	/** When enabled, entering a sub sequence will evaluate that sub sequence in isolation, rather than from the master sequence */
 	UPROPERTY(config, EditAnywhere, Category=Playback)
 	bool bEvaluateSubSequencesInIsolation;
 
-	FOnLockPlaybackToAudioClockChanged OnLockPlaybackToAudioClockChanged;
+	/** When enabled, construction scripts will be rerun on bound actors for every frame */
+	UPROPERTY(config, EditAnywhere, Category=Playback)
+	bool bRerunConstructionScripts;
 
 	/** Enable or disable showing of debug visualization. */
 	UPROPERTY( config, EditAnywhere, Category=General )
@@ -491,5 +542,12 @@ protected:
 	UPROPERTY( config, EditAnywhere, Category=General )
 	bool bVisualizePreAndPostRoll;
 
+	/** Specifies the maximum number of keys to draw when rendering trajectories in viewports */
+	UPROPERTY(config, EditAnywhere, Category=General)
+	uint32 TrajectoryPathCap;
+
+	FOnLockPlaybackToAudioClockChanged OnLockPlaybackToAudioClockChanged;
 	FOnEvaluateSubSequencesInIsolationChanged OnEvaluateSubSequencesInIsolationChangedEvent;
+	FOnShowSelectedNodesOnlyChanged OnShowSelectedNodesOnlyChangedEvent;
+	FOnAllowEditsModeChanged OnAllowEditsModeChangedEvent;
 };

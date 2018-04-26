@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -137,6 +137,11 @@ public:
 		: InternalCounter(INDEX_NONE)
 	{}
 
+	bool HasEverBeenUpdated() const
+	{
+		return (InternalCounter != INDEX_NONE);
+	}
+
 	int16 Get() const
 	{
 		return InternalCounter;
@@ -188,7 +193,7 @@ public:
  * Triggers an animation notify.  Each AnimNotifyEvent contains an AnimNotify object
  * which has its Notify method called and passed to the animation.
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FAnimNotifyEvent : public FAnimLinkableElement
 {
 	GENERATED_USTRUCT_BODY()
@@ -247,6 +252,10 @@ struct FAnimNotifyEvent : public FAnimLinkableElement
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = AnimNotifyTriggerSettings)
 	bool bTriggerOnDedicatedServer;
 
+	/** If enabled this notify will trigger when the animation is a follower in a sync group (by default only the sync group leaders notifies trigger */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = AnimNotifyTriggerSettings)
+	bool bTriggerOnFollower;
+
 #if WITH_EDITORONLY_DATA
 	/** Color of Notify in editor */
 	UPROPERTY()
@@ -258,13 +267,12 @@ struct FAnimNotifyEvent : public FAnimLinkableElement
 	int32 TrackIndex;
 
 	FAnimNotifyEvent()
-		: DisplayTime_DEPRECATED(0)
+		: FAnimLinkableElement()
+		, DisplayTime_DEPRECATED(0)
 		, TriggerTimeOffset(0)
 		, EndTriggerTimeOffset(0)
 		, TriggerWeightThreshold(ZERO_ANIMWEIGHT_THRESH)
-#if WITH_EDITORONLY_DATA
 		, Notify(NULL)
-#endif // WITH_EDITORONLY_DATA
 		, NotifyStateClass(NULL)
 		, Duration(0)
 		, bConvertedFromBranchingPoint(false)
@@ -273,9 +281,11 @@ struct FAnimNotifyEvent : public FAnimLinkableElement
 		, NotifyFilterType(ENotifyFilterType::NoFiltering)
 		, NotifyFilterLOD(0)
 		, bTriggerOnDedicatedServer(true)
+		, bTriggerOnFollower(false)
 #if WITH_EDITORONLY_DATA
-		, TrackIndex(0)
+		, NotifyColor(FColor::Black)
 #endif // WITH_EDITORONLY_DATA
+		, TrackIndex(0)
 	{
 	}
 
@@ -343,7 +353,7 @@ FORCEINLINE bool FAnimNotifyEvent::operator<(const FAnimNotifyEvent& Other) cons
 	}
 }
 
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FAnimSyncMarker
 {
 	GENERATED_USTRUCT_BODY()
@@ -474,7 +484,7 @@ struct FMarkerSyncData
 };
 
 // Shortcut for the allocator used by animation nodes.
-class FAnimStackAllocator: public TMemStackAllocator<>{};
+typedef TMemStackAllocator<> FAnimStackAllocator;
 
 /** 
  * Structure for all Animation Weight helper functions.
@@ -491,6 +501,12 @@ struct FAnimWeight
 	static FORCEINLINE bool IsFullWeight(float InWeight)
 	{
 		return (InWeight >= (1.f - ZERO_ANIMWEIGHT_THRESH));
+	}
+
+	/** Get a small relevant weight for ticking */
+	static FORCEINLINE float GetSmallestRelevantWeight()
+	{
+		return 2.f * ZERO_ANIMWEIGHT_THRESH;
 	}
 };
 
@@ -572,43 +588,34 @@ namespace EAxisOption
 	};
 }
 
-/** Axis to represent direction */
-USTRUCT()
-struct FAxis
+struct FAxisOption
 {
-	GENERATED_USTRUCT_BODY()
-
-	UPROPERTY(EditAnywhere, Category = "FAxis")
-	FVector Axis;
-
-	UPROPERTY(EditAnywhere, Category = "FAxis")
-	bool bInLocalSpace;
-
-	FAxis(const FVector& InAxis = FVector::ForwardVector)
-		: Axis(InAxis)
-		, bInLocalSpace(true) {};
-
-	/** return transformed axis based on ComponentSpaceTransform */
-	FVector GetTransformedAxis(const FTransform& ComponentSpaceTransform) const
+	static FVector GetAxisVector(const TEnumAsByte<EAxisOption::Type> InAxis, const FVector& CustomAxis)
 	{
-		if (bInLocalSpace)
+		switch (InAxis)
 		{
-			return ComponentSpaceTransform.TransformVectorNoScale(Axis);
+		case EAxisOption::X:
+			return FVector::ForwardVector;
+		case EAxisOption::X_Neg:
+			return -FVector::ForwardVector;
+		case EAxisOption::Y:
+			return FVector::RightVector;
+		case EAxisOption::Y_Neg:
+			return -FVector::RightVector;
+		case EAxisOption::Z:
+			return FVector::UpVector;
+		case EAxisOption::Z_Neg:
+			return -FVector::UpVector;
+		case EAxisOption::Custom:
+			return CustomAxis;
 		}
 
-		// if world transform, we don't have to transform
-		return Axis;
+		return FVector::ForwardVector;
 	}
 
-	/** Initialize the set up */
-	void Initialize()
+	static FVector GetAxisVector(const TEnumAsByte<EAxisOption::Type> InAxis)
 	{
-		Axis = Axis.GetSafeNormal();
-	}
-
-	/** return true if Valid data */
-	bool IsValid() const
-	{
-		return Axis.IsNormalized();
+		return GetAxisVector(InAxis, FVector::ForwardVector);
 	}
 };
+

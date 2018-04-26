@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	CapsuleShadowRendering.cpp: Functionality for rendering shadows from capsules
@@ -27,13 +27,29 @@
 #include "PipelineStateCache.h"
 #include "ClearQuad.h"
 
-DECLARE_FLOAT_COUNTER_STAT(TEXT("Capsule Shadows"), Stat_GPU_CapsuleShadows, STATGROUP_GPU);
+DECLARE_GPU_STAT_NAMED(CapsuleShadows, TEXT("Capsule Shadows"));
 
 int32 GCapsuleShadows = 1;
 FAutoConsoleVariableRef CVarCapsuleShadows(
 	TEXT("r.CapsuleShadows"),
 	GCapsuleShadows,
 	TEXT("Whether to allow capsule shadowing on skinned components with bCastCapsuleDirectShadow or bCastCapsuleIndirectShadow enabled."),
+	ECVF_Scalability | ECVF_RenderThreadSafe
+	);
+
+int32 GCapsuleDirectShadows = 1;
+FAutoConsoleVariableRef CVarCapsuleDirectShadows(
+	TEXT("r.CapsuleDirectShadows"),
+	GCapsuleDirectShadows,
+	TEXT("Whether to allow capsule direct shadowing on skinned components with bCastCapsuleDirectShadow enabled."),
+	ECVF_Scalability | ECVF_RenderThreadSafe
+	);
+
+int32 GCapsuleIndirectShadows = 1;
+FAutoConsoleVariableRef CVarCapsuleIndirectShadows(
+	TEXT("r.CapsuleIndirectShadows"),
+	GCapsuleIndirectShadows,
+	TEXT("Whether to allow capsule indirect shadowing on skinned components with bCastCapsuleIndirectShadow enabled."),
 	ECVF_Scalability | ECVF_RenderThreadSafe
 	);
 
@@ -93,6 +109,106 @@ FAutoConsoleVariableRef CVarCapsuleMinSkyAngle(
 	ECVF_Scalability | ECVF_RenderThreadSafe
 	);
 
+const int32 GComputeLightDirectionFromVolumetricLightmapGroupSize = 64;
+
+class FComputeLightDirectionFromVolumetricLightmapCS : public FGlobalShader
+{
+	DECLARE_SHADER_TYPE(FComputeLightDirectionFromVolumetricLightmapCS, Global);
+public:
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportCapsuleShadows(Parameters.Platform);
+	}
+
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZEX"), GComputeLightDirectionFromVolumetricLightmapGroupSize);
+		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZEY"), 1);
+		OutEnvironment.SetDefine(TEXT("LIGHT_SOURCE_MODE"), TEXT("LIGHT_SOURCE_FROM_CAPSULE"));
+	}
+
+	/** Default constructor. */
+	FComputeLightDirectionFromVolumetricLightmapCS() {}
+
+	/** Initialization constructor. */
+	FComputeLightDirectionFromVolumetricLightmapCS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+		: FGlobalShader(Initializer)
+	{
+		NumLightDirectionData.Bind(Initializer.ParameterMap, TEXT("NumLightDirectionData"));
+		LightDirectionData.Bind(Initializer.ParameterMap, TEXT("LightDirectionData"));
+		UseStationarySkylightShadowing.Bind(Initializer.ParameterMap, TEXT("UseStationarySkylightShadowing"));
+		CapsuleIndirectConeAngle.Bind(Initializer.ParameterMap, TEXT("CapsuleIndirectConeAngle"));
+		CapsuleSkyAngleScale.Bind(Initializer.ParameterMap, TEXT("CapsuleSkyAngleScale"));
+		CapsuleMinSkyAngle.Bind(Initializer.ParameterMap, TEXT("CapsuleMinSkyAngle"));
+		ComputedLightDirectionData.Bind(Initializer.ParameterMap, TEXT("ComputedLightDirectionData"));
+	}
+
+	void SetParameters(
+		FRHICommandList& RHICmdList, 
+		FScene* Scene,
+		const FSceneView& View, 
+		int32 NumLightDirectionDataValue,
+		FShaderResourceViewRHIParamRef LightDirectionDataSRV,
+		const FRWBuffer& ComputedLightDirectionDataBuffer)
+	{
+		const FComputeShaderRHIParamRef ShaderRHI = GetComputeShader();
+
+		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, View.ViewUniformBuffer);
+
+		FUnorderedAccessViewRHIParamRef OutUAVs[1];
+		OutUAVs[0] = ComputedLightDirectionDataBuffer.UAV;
+		RHICmdList.TransitionResources(EResourceTransitionAccess::EWritable, EResourceTransitionPipeline::EComputeToCompute, OutUAVs, ARRAY_COUNT(OutUAVs));
+
+		SetShaderValue(RHICmdList, ShaderRHI, NumLightDirectionData, NumLightDirectionDataValue);
+		SetSRVParameter(RHICmdList, ShaderRHI, LightDirectionData, LightDirectionDataSRV);
+
+		uint32 UseStationarySkylightShadowingValue = Scene->SkyLight && Scene->SkyLight->bWantsStaticShadowing ? 1 : 0;
+		SetShaderValue(RHICmdList, ShaderRHI, UseStationarySkylightShadowing, UseStationarySkylightShadowingValue);
+		SetShaderValue(RHICmdList, ShaderRHI, CapsuleIndirectConeAngle, GCapsuleIndirectConeAngle);
+		SetShaderValue(RHICmdList, ShaderRHI, CapsuleSkyAngleScale, GCapsuleSkyAngleScale);
+		SetShaderValue(RHICmdList, ShaderRHI, CapsuleMinSkyAngle, GCapsuleMinSkyAngle);
+
+		ComputedLightDirectionData.SetBuffer(RHICmdList, ShaderRHI, ComputedLightDirectionDataBuffer);
+	}
+
+	void UnsetParameters(FRHICommandList& RHICmdList, const FRWBuffer& ComputedLightDirectionDataBuffer)
+	{
+		ComputedLightDirectionData.UnsetUAV(RHICmdList, GetComputeShader());
+
+		FUnorderedAccessViewRHIParamRef OutUAVs[1];
+		OutUAVs[0] = ComputedLightDirectionDataBuffer.UAV;
+		RHICmdList.TransitionResources(EResourceTransitionAccess::EReadable, EResourceTransitionPipeline::EComputeToCompute, OutUAVs, ARRAY_COUNT(OutUAVs) );
+	}
+
+	// FShader interface.
+	virtual bool Serialize(FArchive& Ar) override
+	{
+		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
+		Ar << NumLightDirectionData;
+		Ar << LightDirectionData;
+		Ar << UseStationarySkylightShadowing;
+		Ar << CapsuleIndirectConeAngle;
+		Ar << CapsuleSkyAngleScale;
+		Ar << CapsuleMinSkyAngle;
+		Ar << ComputedLightDirectionData;
+		return bShaderHasOutdatedParameters;
+	}
+
+private:
+
+	FShaderParameter NumLightDirectionData;
+	FShaderResourceParameter LightDirectionData;
+	FShaderParameter UseStationarySkylightShadowing;
+	FShaderParameter CapsuleIndirectConeAngle;
+	FShaderParameter CapsuleSkyAngleScale;
+	FShaderParameter CapsuleMinSkyAngle;
+	FRWShaderParameter ComputedLightDirectionData;
+
+};
+
+IMPLEMENT_SHADER_TYPE(,FComputeLightDirectionFromVolumetricLightmapCS,TEXT("/Engine/Private/CapsuleShadowShaders.usf"),TEXT("ComputeLightDirectionFromVolumetricLightmapCS"),SF_Compute);
+
 int32 GShadowShapeTileSize = 8;
 
 int32 GetCapsuleShadowDownsampleFactor()
@@ -127,12 +243,12 @@ class TCapsuleShadowingBaseCS : public FGlobalShader
 	DECLARE_SHADER_TYPE(TCapsuleShadowingBaseCS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportCapsuleShadows(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportCapsuleShadows(Parameters.Platform);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZEX"), GShadowShapeTileSize);
 		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZEY"), GShadowShapeTileSize);
@@ -188,6 +304,7 @@ public:
 		NumMeshDistanceFieldCasters.Bind(Initializer.ParameterMap, TEXT("NumMeshDistanceFieldCasters"));
 		MeshDistanceFieldCasterIndices.Bind(Initializer.ParameterMap, TEXT("MeshDistanceFieldCasterIndices"));
 		MaxOcclusionDistance.Bind(Initializer.ParameterMap, TEXT("MaxOcclusionDistance"));
+		CosFadeStartAngle.Bind(Initializer.ParameterMap, TEXT("CosFadeStartAngle"));
 		LightDirectionData.Bind(Initializer.ParameterMap, TEXT("LightDirectionData"));
 		IndirectCapsuleSelfShadowingIntensity.Bind(Initializer.ParameterMap, TEXT("IndirectCapsuleSelfShadowingIntensity"));
 		DistanceFieldObjectParameters.Bind(Initializer.ParameterMap);
@@ -265,22 +382,17 @@ public:
 		if (LightSceneInfo)
 		{
 			check(ShadowingType == ShapeShadow_DirectionalLightTiledCulling || ShadowingType == ShapeShadow_PointLightTiledCulling);
-			FVector4 LightPositionAndInvRadiusValue;
-			FVector4 LightColorAndFalloffExponent;
-			FVector NormalizedLightDirection;
-			FVector2D SpotAngles;
-			float LightSourceRadiusValue;
-			float LightSourceLength;
-			float LightMinRoughness;
-
+			
 			const FLightSceneProxy& LightProxy = *LightSceneInfo->Proxy;
 
-			LightProxy.GetParameters(LightPositionAndInvRadiusValue, LightColorAndFalloffExponent, NormalizedLightDirection, SpotAngles, LightSourceRadiusValue, LightSourceLength, LightMinRoughness);
+			FLightParameters LightParameters;
 
-			SetShaderValue(RHICmdList, ShaderRHI, LightDirection, NormalizedLightDirection);
-			SetShaderValue(RHICmdList, ShaderRHI, LightPositionAndInvRadius, LightPositionAndInvRadiusValue);
+			LightProxy.GetParameters(LightParameters);
+
+			SetShaderValue(RHICmdList, ShaderRHI, LightDirection, LightParameters.NormalizedLightDirection);
+			SetShaderValue(RHICmdList, ShaderRHI, LightPositionAndInvRadius, LightParameters.LightPositionAndInvRadius);
 			// Default light source radius of 0 gives poor results
-			SetShaderValue(RHICmdList, ShaderRHI, LightSourceRadius, LightSourceRadiusValue == 0 ? 20 : FMath::Clamp(LightSourceRadiusValue, .001f, 1.0f / (4 * LightPositionAndInvRadiusValue.W)));
+			SetShaderValue(RHICmdList, ShaderRHI, LightSourceRadius, LightParameters.LightSourceRadius == 0 ? 20 : FMath::Clamp(LightParameters.LightSourceRadius, .001f, 1.0f / (4 * LightParameters.LightPositionAndInvRadius.W)));
 
 			SetShaderValue(RHICmdList, ShaderRHI, RayStartOffsetDepthScale, LightProxy.GetRayStartOffsetDepthScale());
 
@@ -304,6 +416,9 @@ public:
 		SetSRVParameter(RHICmdList, ShaderRHI, MeshDistanceFieldCasterIndices, MeshDistanceFieldCasterIndicesSRV);
 
 		SetShaderValue(RHICmdList, ShaderRHI, MaxOcclusionDistance, MaxOcclusionDistanceValue);
+		const float CosFadeStartAngleValue = FMath::Cos(GCapsuleShadowFadeAngleFromVertical);
+		const FVector2D CosFadeStartAngleVector(CosFadeStartAngleValue, 1.0f / (1.0f - CosFadeStartAngleValue));
+		SetShaderValue(RHICmdList, ShaderRHI, CosFadeStartAngle, CosFadeStartAngleVector);
 		SetSRVParameter(RHICmdList, ShaderRHI, LightDirectionData, LightDirectionDataSRV);
 
 		float IndirectCapsuleSelfShadowingIntensityValue = Scene->DynamicIndirectShadowsSelfShadowingIntensity;
@@ -359,6 +474,7 @@ public:
 		Ar << NumMeshDistanceFieldCasters;
 		Ar << MeshDistanceFieldCasterIndices;
 		Ar << MaxOcclusionDistance;
+		Ar << CosFadeStartAngle;
 		Ar << LightDirectionData;
 		Ar << IndirectCapsuleSelfShadowingIntensity;
 		Ar << DistanceFieldObjectParameters;
@@ -386,6 +502,7 @@ private:
 	FShaderParameter NumMeshDistanceFieldCasters;
 	FShaderResourceParameter MeshDistanceFieldCasterIndices;
 	FShaderParameter MaxOcclusionDistance;
+	FShaderParameter CosFadeStartAngle;
 	FShaderResourceParameter LightDirectionData;
 	FShaderParameter IndirectCapsuleSelfShadowingIntensity;
 	FDistanceFieldObjectBufferParameters DistanceFieldObjectParameters;
@@ -403,9 +520,9 @@ class TCapsuleShadowingCS : public TCapsuleShadowingBaseCS<ShadowingType>
 		: TCapsuleShadowingBaseCS<ShadowingType>(Initializer)
 	{}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		TCapsuleShadowingBaseCS<ShadowingType>::ModifyCompilationEnvironment(Platform, OutEnvironment);
+		TCapsuleShadowingBaseCS<ShadowingType>::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 
 		if (PrimitiveTypes & IPT_CapsuleShapes)
 		{
@@ -421,7 +538,7 @@ class TCapsuleShadowingCS : public TCapsuleShadowingBaseCS<ShadowingType>
 
 #define IMPLEMENT_CAPSULE_SHADOW_TYPE(ShadowType,PrimitiveType) \
 	typedef TCapsuleShadowingCS<ShadowType,PrimitiveType> TCapsuleShadowingCS##ShadowType##PrimitiveType; \
-	IMPLEMENT_MATERIAL_SHADER_TYPE(template<>,TCapsuleShadowingCS##ShadowType##PrimitiveType,TEXT("CapsuleShadowShaders"),TEXT("CapsuleShadowingCS"),SF_Compute);
+	IMPLEMENT_SHADER_TYPE(template<>,TCapsuleShadowingCS##ShadowType##PrimitiveType,TEXT("/Engine/Private/CapsuleShadowShaders.usf"),TEXT("CapsuleShadowingCS"),SF_Compute);
 
 IMPLEMENT_CAPSULE_SHADOW_TYPE(ShapeShadow_DirectionalLightTiledCulling, IPT_CapsuleShapes);
 IMPLEMENT_CAPSULE_SHADOW_TYPE(ShapeShadow_PointLightTiledCulling, IPT_CapsuleShapes);
@@ -450,12 +567,12 @@ class FCapsuleShadowingUpsampleVS : public FGlobalShader
 	DECLARE_SHADER_TYPE(FCapsuleShadowingUpsampleVS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportCapsuleShadows(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportCapsuleShadows(Parameters.Platform);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		OutEnvironment.SetDefine(TEXT("TILES_PER_INSTANCE"), NumTileQuadsInBuffer);
 	}
@@ -505,7 +622,7 @@ private:
 	FShaderResourceParameter TileIntersectionCounts;
 };
 
-IMPLEMENT_SHADER_TYPE(,FCapsuleShadowingUpsampleVS,TEXT("CapsuleShadowShaders"),TEXT("CapsuleShadowingUpsampleVS"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(,FCapsuleShadowingUpsampleVS,TEXT("/Engine/Private/CapsuleShadowShaders.usf"),TEXT("CapsuleShadowingUpsampleVS"),SF_Vertex);
 
 
 template<bool bUpsampleRequired, bool bApplyToSSAO>
@@ -514,12 +631,12 @@ class TCapsuleShadowingUpsamplePS : public FGlobalShader
 	DECLARE_SHADER_TYPE(TCapsuleShadowingUpsamplePS, Global);
 public:
 
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportCapsuleShadows(Platform);
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) && DoesPlatformSupportCapsuleShadows(Parameters.Platform);
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		OutEnvironment.SetDefine(TEXT("DOWNSAMPLE_FACTOR"), 2);
 		OutEnvironment.SetDefine(TEXT("UPSAMPLE_REQUIRED"), bUpsampleRequired);
@@ -576,7 +693,7 @@ private:
 
 #define IMPLEMENT_CAPSULE_APPLY_SHADER_TYPE(bUpsampleRequired,bApplyToSSAO) \
 	typedef TCapsuleShadowingUpsamplePS<bUpsampleRequired,bApplyToSSAO> TCapsuleShadowingUpsamplePS##bUpsampleRequired##bApplyToSSAO; \
-	IMPLEMENT_SHADER_TYPE(template<>,TCapsuleShadowingUpsamplePS##bUpsampleRequired##bApplyToSSAO,TEXT("CapsuleShadowShaders"),TEXT("CapsuleShadowingUpsamplePS"),SF_Pixel)
+	IMPLEMENT_SHADER_TYPE(template<>,TCapsuleShadowingUpsamplePS##bUpsampleRequired##bApplyToSSAO,TEXT("/Engine/Private/CapsuleShadowShaders.usf"),TEXT("CapsuleShadowingUpsamplePS"),SF_Pixel)
 
 IMPLEMENT_CAPSULE_APPLY_SHADER_TYPE(true, true);
 IMPLEMENT_CAPSULE_APPLY_SHADER_TYPE(true, false);
@@ -670,8 +787,9 @@ void AllocateCapsuleTileIntersectionCountsBuffer(FIntPoint GroupSize, FSceneView
 }
 
 bool FDeferredShadingSceneRenderer::RenderCapsuleDirectShadows(
-	const FLightSceneInfo& LightSceneInfo,
 	FRHICommandListImmediate& RHICmdList, 
+	const FLightSceneInfo& LightSceneInfo,
+	IPooledRenderTarget* ScreenShadowMaskTexture,
 	const TArray<FProjectedShadowInfo*, SceneRenderingAllocator>& CapsuleShadows, 
 	bool bProjectingForForwardShading) const
 {
@@ -687,8 +805,9 @@ bool FDeferredShadingSceneRenderer::RenderCapsuleDirectShadows(
 		}
 	}
 
-	if (SupportsCapsuleShadows(FeatureLevel, GShaderPlatformForFeatureLevel[FeatureLevel])
+	if (SupportsCapsuleDirectShadows(FeatureLevel, GShaderPlatformForFeatureLevel[FeatureLevel])
 		&& CapsuleShadows.Num() > 0
+		&& ViewFamily.EngineShowFlags.CapsuleShadows
 		&& bAllViewsHaveViewState)
 	{
 		QUICK_SCOPE_CYCLE_COUNTER(STAT_RenderCapsuleShadows);
@@ -705,7 +824,7 @@ bool FDeferredShadingSceneRenderer::RenderCapsuleDirectShadows(
 		{
 			const FViewInfo& View = Views[ViewIndex];
 			SCOPED_DRAW_EVENT(RHICmdList, CapsuleShadows);
-			SCOPED_GPU_STAT(RHICmdList, Stat_GPU_CapsuleShadows);
+			SCOPED_GPU_STAT(RHICmdList, CapsuleShadows);
 
 			static TArray<FCapsuleShape> CapsuleShapeData;
 			CapsuleShapeData.Reset();
@@ -760,7 +879,7 @@ bool FDeferredShadingSceneRenderer::RenderCapsuleDirectShadows(
 				const bool bDirectionalLight = LightSceneInfo.Proxy->GetLightType() == LightType_Directional;
 				FIntRect ScissorRect;
 
-				if (!LightSceneInfo.Proxy->GetScissorRect(ScissorRect, View))
+				if (!LightSceneInfo.Proxy->GetScissorRect(ScissorRect, View, View.ViewRect))
 				{
 					ScissorRect = View.ViewRect;
 				}
@@ -771,7 +890,7 @@ bool FDeferredShadingSceneRenderer::RenderCapsuleDirectShadows(
 				
 				AllocateCapsuleTileIntersectionCountsBuffer(GroupSize, View.ViewState);
 
-				ClearUAV(RHICmdList, GMaxRHIFeatureLevel, View.ViewState->CapsuleTileIntersectionCountsBuffer, 0);
+				ClearUAV(RHICmdList, View.ViewState->CapsuleTileIntersectionCountsBuffer, 0);
 
 				{
 					SCOPED_DRAW_EVENT(RHICmdList, TiledCapsuleShadowing);
@@ -837,7 +956,7 @@ bool FDeferredShadingSceneRenderer::RenderCapsuleDirectShadows(
 					SCOPED_DRAW_EVENTF(RHICmdList, Upsample, TEXT("Upsample %dx%d"),
 						ScissorRect.Width(), ScissorRect.Height());
 						
-					FSceneRenderTargets::Get(RHICmdList).BeginRenderingLightAttenuation(RHICmdList);
+					SetRenderTarget(RHICmdList, ScreenShadowMaskTexture->GetRenderTargetItem().TargetableTexture, FSceneRenderTargets::Get(RHICmdList).GetSceneDepthSurface(), ESimpleRenderTargetMode::EExistingColorAndDepth, FExclusiveDepthStencil::DepthRead_StencilWrite, true);
 
 					FGraphicsPipelineStateInitializer GraphicsPSOInit;
 					RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
@@ -884,7 +1003,7 @@ bool FDeferredShadingSceneRenderer::RenderCapsuleDirectShadows(
 						PixelShader->SetParameters(RHICmdList, View, ScissorRect, RayTracedShadowsRT, true);
 					}
 
-					RHICmdList.SetStreamSource(0, GTileTexCoordVertexBuffer.VertexBufferRHI, sizeof(FVector2D), 0);
+					RHICmdList.SetStreamSource(0, GTileTexCoordVertexBuffer.VertexBufferRHI, 0);
 					RHICmdList.DrawIndexedPrimitive(GTileIndexBuffer.IndexBufferRHI, PT_TriangleList, 0, 0, 4, 0, 2 * NumTileQuadsInBuffer, FMath::DivideAndRoundUp(GroupSize.X * GroupSize.Y, NumTileQuadsInBuffer));
 				}
 			}
@@ -945,7 +1064,13 @@ void FDeferredShadingSceneRenderer::CreateIndirectCapsuleShadows()
 	}
 }
 
-void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(FRHICommandListImmediate& RHICmdList, const FViewInfo& View, bool bPrepareLightData, int32& NumCapsuleShapes, int32& NumMeshDistanceFieldCasters) const
+void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(
+	FRHICommandListImmediate& RHICmdList, 
+	const FViewInfo& View, 
+	int32& NumCapsuleShapes, 
+	int32& NumMeshesWithCapsules, 
+	int32& NumMeshDistanceFieldCasters,
+	FShaderResourceViewRHIParamRef& IndirectShadowLightDirectionSRV) const
 {
 	const float CosFadeStartAngle = FMath::Cos(GCapsuleShadowFadeAngleFromVertical);
 	const FSkyLightSceneProxy* SkyLight = Scene ? Scene->SkyLight : NULL;
@@ -959,6 +1084,9 @@ void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(FRHICommandListI
 	MeshDistanceFieldCasterIndices.Reset();
 	CapsuleLightSourceData.Reset();
 	DistanceFieldCasterLightSourceData.Reset();
+	IndirectShadowLightDirectionSRV = NULL;
+
+	const bool bComputeLightDataFromVolumetricLightmap = Scene && Scene->VolumetricLightmapSceneData.HasData();
 
 	for (int32 PrimitiveIndex = 0; PrimitiveIndex < View.IndirectShadowPrimitives.Num(); PrimitiveIndex++)
 	{
@@ -968,50 +1096,52 @@ void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(FRHICommandListI
 		FVector4 PackedLightDirection(0, 0, 1, PI / 16);
 		float ShapeFadeAlpha = 1;
 
-		if (bPrepareLightData)
+		if (bComputeLightDataFromVolumetricLightmap)
 		{
-			if (SkyLight 
-				&& !SkyLight->bHasStaticLighting
-				&& SkyLight->bWantsStaticShadowing
-				&& View.Family->EngineShowFlags.SkyLighting
-				&& Allocation)
-			{
-				// Stationary sky light case
-				// Get the indirect shadow direction from the unoccluded sky direction
-				const float ConeAngle = FMath::Max(Allocation->CurrentSkyBentNormal.W * GCapsuleSkyAngleScale * .5f * PI, GCapsuleMinSkyAngle * PI / 180.0f);
-				PackedLightDirection = FVector4(Allocation->CurrentSkyBentNormal, ConeAngle);
-			}
-			else if (SkyLight 
-				&& !SkyLight->bHasStaticLighting 
-				&& !SkyLight->bWantsStaticShadowing
-				&& View.Family->EngineShowFlags.SkyLighting)
-			{
-				// Movable sky light case
-				const FSHVector2 SkyLightingIntensity = FSHVectorRGB2(SkyLight->IrradianceEnvironmentMap).GetLuminance();
-				const FVector ExtractedMaxDirection = SkyLightingIntensity.GetMaximumDirection();
+			// Encode object position for ComputeLightDirectionsFromVolumetricLightmapCS
+			PackedLightDirection = FVector4(PrimitiveSceneInfo->Proxy->GetBounds().Origin, 0);
+		}
+		else if (SkyLight 
+			&& !SkyLight->bHasStaticLighting
+			&& SkyLight->bWantsStaticShadowing
+			&& View.Family->EngineShowFlags.SkyLighting
+			&& Allocation)
+		{
+			// Stationary sky light case
+			// Get the indirect shadow direction from the unoccluded sky direction
+			const float ConeAngle = FMath::Max(Allocation->CurrentSkyBentNormal.W * GCapsuleSkyAngleScale * .5f * PI, GCapsuleMinSkyAngle * PI / 180.0f);
+			PackedLightDirection = FVector4(Allocation->CurrentSkyBentNormal, ConeAngle);
+		}
+		else if (SkyLight 
+			&& !SkyLight->bHasStaticLighting 
+			&& !SkyLight->bWantsStaticShadowing
+			&& View.Family->EngineShowFlags.SkyLighting)
+		{
+			// Movable sky light case
+			const FSHVector2 SkyLightingIntensity = FSHVectorRGB2(SkyLight->IrradianceEnvironmentMap).GetLuminance();
+			const FVector ExtractedMaxDirection = SkyLightingIntensity.GetMaximumDirection();
 
-				// Get the indirect shadow direction from the primary sky lighting direction
-				PackedLightDirection = FVector4(ExtractedMaxDirection, GCapsuleIndirectConeAngle);
-			}
-			else if (Allocation)
-			{
-				// Static sky light or no sky light case
-				FSHVectorRGB2 IndirectLighting;
-				IndirectLighting.R = FSHVector2(Allocation->TargetSamplePacked0[0]);
-				IndirectLighting.G = FSHVector2(Allocation->TargetSamplePacked0[1]);
-				IndirectLighting.B = FSHVector2(Allocation->TargetSamplePacked0[2]);
-				const FSHVector2 IndirectLightingIntensity = IndirectLighting.GetLuminance();
-				const FVector ExtractedMaxDirection = IndirectLightingIntensity.GetMaximumDirection();
+			// Get the indirect shadow direction from the primary sky lighting direction
+			PackedLightDirection = FVector4(ExtractedMaxDirection, GCapsuleIndirectConeAngle);
+		}
+		else if (Allocation)
+		{
+			// Static sky light or no sky light case
+			FSHVectorRGB2 IndirectLighting;
+			IndirectLighting.R = FSHVector2(Allocation->SingleSamplePacked0[0]);
+			IndirectLighting.G = FSHVector2(Allocation->SingleSamplePacked0[1]);
+			IndirectLighting.B = FSHVector2(Allocation->SingleSamplePacked0[2]);
+			const FSHVector2 IndirectLightingIntensity = IndirectLighting.GetLuminance();
+			const FVector ExtractedMaxDirection = IndirectLightingIntensity.GetMaximumDirection();
 
-				// Get the indirect shadow direction from the primary indirect lighting direction
-				PackedLightDirection = FVector4(ExtractedMaxDirection, GCapsuleIndirectConeAngle);
-			}
+			// Get the indirect shadow direction from the primary indirect lighting direction
+			PackedLightDirection = FVector4(ExtractedMaxDirection, GCapsuleIndirectConeAngle);
+		}
 
-			if (CosFadeStartAngle < 1)
-			{
-				// Fade out when nearly vertical up due to self shadowing artifacts
-				ShapeFadeAlpha = 1 - FMath::Clamp(2 * (-PackedLightDirection.Z - CosFadeStartAngle) / (1 - CosFadeStartAngle), 0.0f, 1.0f);
-			}
+		if (CosFadeStartAngle < 1 && !bComputeLightDataFromVolumetricLightmap)
+		{
+			// Fade out when nearly vertical up due to self shadowing artifacts
+			ShapeFadeAlpha = 1 - FMath::Clamp(2 * (-PackedLightDirection.Z - CosFadeStartAngle) / (1 - CosFadeStartAngle), 0.0f, 1.0f);
 		}
 			
 		if (ShapeFadeAlpha > 0)
@@ -1046,7 +1176,6 @@ void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(FRHICommandListI
 			//@todo - remove entries with 0 fade alpha
 			for (int32 ShapeIndex = OriginalNumCapsuleShapes; ShapeIndex < CapsuleShapeData.Num(); ShapeIndex++)
 			{
-				CapsuleShapeData[ShapeIndex].Radius *= ShapeFadeAlpha;
 				CapsuleLightSourceData.Add(PackedLightDirection);
 			}
 
@@ -1054,6 +1183,8 @@ void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(FRHICommandListI
 			{
 				DistanceFieldCasterLightSourceData.Add(PackedLightDirection);
 			}
+
+			NumMeshesWithCapsules++;
 		}
 	}
 
@@ -1088,7 +1219,7 @@ void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(FRHICommandListI
 				View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesSRV.SafeRelease();
 				FRHIResourceCreateInfo CreateInfo;
 				View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesVertexBuffer = RHICreateVertexBuffer(DataSize, BUF_Volatile | BUF_ShaderResource, CreateInfo);
-				View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesSRV = RHICreateShaderResourceView(View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesVertexBuffer, sizeof(int32), PF_R32_SINT);
+				View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesSRV = RHICreateShaderResourceView(View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesVertexBuffer, sizeof(uint32), PF_R32_UINT);
 			}
 
 			void* LockedData = RHILockVertexBuffer(View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesVertexBuffer, 0, DataSize, RLM_WriteOnly);
@@ -1096,7 +1227,8 @@ void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(FRHICommandListI
 			RHIUnlockVertexBuffer(View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesVertexBuffer);
 		}
 
-		if (bPrepareLightData)
+		EPixelFormat LightDirectionDataFormat = PF_A32B32G32R32F;
+
 		{
 			size_t CapsuleLightSourceDataSize = CapsuleLightSourceData.Num() * CapsuleLightSourceData.GetTypeSize();
 			const int32 DataSize = CapsuleLightSourceDataSize + DistanceFieldCasterLightSourceData.Num() * DistanceFieldCasterLightSourceData.GetTypeSize();
@@ -1108,7 +1240,7 @@ void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(FRHICommandListI
 				View.ViewState->IndirectShadowLightDirectionSRV.SafeRelease();
 				FRHIResourceCreateInfo CreateInfo;
 				View.ViewState->IndirectShadowLightDirectionVertexBuffer = RHICreateVertexBuffer(DataSize, BUF_Volatile | BUF_ShaderResource, CreateInfo);
-				View.ViewState->IndirectShadowLightDirectionSRV = RHICreateShaderResourceView(View.ViewState->IndirectShadowLightDirectionVertexBuffer, sizeof(FVector4), PF_A32B32G32R32F);
+				View.ViewState->IndirectShadowLightDirectionSRV = RHICreateShaderResourceView(View.ViewState->IndirectShadowLightDirectionVertexBuffer, sizeof(FVector4), LightDirectionDataFormat);
 			}
 
 			FVector4* LightDirectionLockedData = (FVector4*)RHILockVertexBuffer(View.ViewState->IndirectShadowLightDirectionVertexBuffer, 0, DataSize, RLM_WriteOnly);
@@ -1117,6 +1249,31 @@ void FDeferredShadingSceneRenderer::SetupIndirectCapsuleShadows(FRHICommandListI
 			// This packing behavior must match GetLightDirectionData
 			FPlatformMemory::Memcpy((char*)LightDirectionLockedData + CapsuleLightSourceDataSize, DistanceFieldCasterLightSourceData.GetData(), DistanceFieldCasterLightSourceData.Num() * DistanceFieldCasterLightSourceData.GetTypeSize());
 			RHIUnlockVertexBuffer(View.ViewState->IndirectShadowLightDirectionVertexBuffer);
+
+			IndirectShadowLightDirectionSRV = View.ViewState->IndirectShadowLightDirectionSRV;
+		}
+
+		if (bComputeLightDataFromVolumetricLightmap)
+		{
+			int32 NumLightDataElements = CapsuleLightSourceData.Num() + DistanceFieldCasterLightSourceData.Num();
+
+			if (!IsValidRef(View.ViewState->IndirectShadowVolumetricLightmapDerivedLightDirection.Buffer) 
+				|| (int32)View.ViewState->IndirectShadowVolumetricLightmapDerivedLightDirection.NumBytes != View.ViewState->IndirectShadowLightDirectionVertexBuffer->GetSize())
+			{
+				View.ViewState->IndirectShadowVolumetricLightmapDerivedLightDirection.Release();
+				View.ViewState->IndirectShadowVolumetricLightmapDerivedLightDirection.Initialize(GPixelFormats[LightDirectionDataFormat].BlockBytes, NumLightDataElements, LightDirectionDataFormat);
+			}
+
+			IndirectShadowLightDirectionSRV = View.ViewState->IndirectShadowVolumetricLightmapDerivedLightDirection.SRV;
+
+			TShaderMapRef<FComputeLightDirectionFromVolumetricLightmapCS> ComputeShader(View.ShaderMap);
+	
+			RHICmdList.SetComputeShader(ComputeShader->GetComputeShader());
+			ComputeShader->SetParameters(RHICmdList, Scene, View, NumLightDataElements, View.ViewState->IndirectShadowLightDirectionSRV, View.ViewState->IndirectShadowVolumetricLightmapDerivedLightDirection);
+
+			const int32 GroupSize = FMath::DivideAndRoundUp(NumLightDataElements, GComputeLightDirectionFromVolumetricLightmapGroupSize);
+			DispatchComputeShader(RHICmdList, *ComputeShader, GroupSize, 1, 1);
+			ComputeShader->UnsetParameters(RHICmdList, View.ViewState->IndirectShadowVolumetricLightmapDerivedLightDirection);
 		}
 	}
 
@@ -1129,8 +1286,9 @@ void FDeferredShadingSceneRenderer::RenderIndirectCapsuleShadows(
 	FTextureRHIParamRef IndirectLightingTexture, 
 	FTextureRHIParamRef ExistingIndirectOcclusionTexture) const
 {
-	if (SupportsCapsuleShadows(FeatureLevel, GShaderPlatformForFeatureLevel[FeatureLevel])
+	if (SupportsCapsuleIndirectShadows(FeatureLevel, GShaderPlatformForFeatureLevel[FeatureLevel])
 		&& ViewFamily.EngineShowFlags.DynamicShadows
+		&& ViewFamily.EngineShowFlags.CapsuleShadows
 		&& FSceneRenderTargets::Get(RHICmdList).IsStaticLightingAllowed())
 	{
 		QUICK_SCOPE_CYCLE_COUNTER(STAT_RenderIndirectCapsuleShadows);
@@ -1195,14 +1353,18 @@ void FDeferredShadingSceneRenderer::RenderIndirectCapsuleShadows(
 
 				if (View.IndirectShadowPrimitives.Num() > 0 && View.ViewState)
 				{
-					SCOPED_GPU_STAT(RHICmdList, Stat_GPU_CapsuleShadows);
+					SCOPED_GPU_STAT(RHICmdList, CapsuleShadows);
 		
 					int32 NumCapsuleShapes = 0;
+					int32 NumMeshesWithCapsules = 0;
 					int32 NumMeshDistanceFieldCasters = 0;
-					SetupIndirectCapsuleShadows(RHICmdList, View, true, NumCapsuleShapes, NumMeshDistanceFieldCasters);
+					FShaderResourceViewRHIParamRef IndirectShadowLightDirectionSRV = NULL;
+					SetupIndirectCapsuleShadows(RHICmdList, View, NumCapsuleShapes, NumMeshesWithCapsules, NumMeshDistanceFieldCasters, IndirectShadowLightDirectionSRV);
 
 					if (NumCapsuleShapes > 0 || NumMeshDistanceFieldCasters > 0)
 					{
+						check(IndirectShadowLightDirectionSRV);
+
 						SetRenderTarget(RHICmdList, NULL, NULL);
 
 						FIntRect ScissorRect = View.ViewRect;
@@ -1213,10 +1375,10 @@ void FDeferredShadingSceneRenderer::RenderIndirectCapsuleShadows(
 				
 						AllocateCapsuleTileIntersectionCountsBuffer(GroupSize, View.ViewState);
 
-						ClearUAV(RHICmdList, GMaxRHIFeatureLevel, View.ViewState->CapsuleTileIntersectionCountsBuffer, 0);
+						ClearUAV(RHICmdList, View.ViewState->CapsuleTileIntersectionCountsBuffer, 0);
 
 						{
-							SCOPED_DRAW_EVENT(RHICmdList, TiledCapsuleShadowing);
+							SCOPED_DRAW_EVENTF(RHICmdList, TiledCapsuleShadowing, TEXT("TiledCapsuleShadowing %u capsules among %u meshes"), NumCapsuleShapes, NumMeshesWithCapsules);
 
 							FSceneRenderTargetItem& RayTracedShadowsRTI = RayTracedShadowsRT->GetRenderTargetItem();
 							{
@@ -1257,7 +1419,7 @@ void FDeferredShadingSceneRenderer::RenderIndirectCapsuleShadows(
 									View.ViewState->IndirectShadowCapsuleShapesSRV ? View.ViewState->IndirectShadowCapsuleShapesSRV.GetReference() : NULL,
 									NumMeshDistanceFieldCasters,
 									View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesSRV ? View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesSRV.GetReference() : NULL,
-									View.ViewState->IndirectShadowLightDirectionSRV,
+									IndirectShadowLightDirectionSRV,
 									NULL);
 
 								DispatchComputeShader(RHICmdList, ComputeShaderBase, GroupSize.X, GroupSize.Y, 1);
@@ -1334,7 +1496,7 @@ void FDeferredShadingSceneRenderer::RenderIndirectCapsuleShadows(
 								}
 							}
 
-							RHICmdList.SetStreamSource(0, GTileTexCoordVertexBuffer.VertexBufferRHI, sizeof(FVector2D), 0);
+							RHICmdList.SetStreamSource(0, GTileTexCoordVertexBuffer.VertexBufferRHI, 0);
 							RHICmdList.DrawIndexedPrimitive(GTileIndexBuffer.IndexBufferRHI, PT_TriangleList, 0, 0, 4, 0, 2 * NumTileQuadsInBuffer, FMath::DivideAndRoundUp(GroupSize.X * GroupSize.Y, NumTileQuadsInBuffer));
 						}
 					}
@@ -1370,12 +1532,13 @@ bool FDeferredShadingSceneRenderer::ShouldPrepareForDFInsetIndirectShadow() cons
 		}
 	}
 
-	return bSceneHasInsetDFPrimitives && SupportsCapsuleShadows(FeatureLevel, GShaderPlatformForFeatureLevel[FeatureLevel]);
+	return bSceneHasInsetDFPrimitives && SupportsCapsuleIndirectShadows(FeatureLevel, GShaderPlatformForFeatureLevel[FeatureLevel]) && ViewFamily.EngineShowFlags.CapsuleShadows;
 }
 
 void FDeferredShadingSceneRenderer::RenderCapsuleShadowsForMovableSkylight(FRHICommandListImmediate& RHICmdList, TRefCountPtr<IPooledRenderTarget>& BentNormalOutput) const
 {
-	if (SupportsCapsuleShadows(FeatureLevel, GShaderPlatformForFeatureLevel[FeatureLevel]))
+	if (SupportsCapsuleIndirectShadows(FeatureLevel, GShaderPlatformForFeatureLevel[FeatureLevel])
+		&& ViewFamily.EngineShowFlags.CapsuleShadows)
 	{
 		QUICK_SCOPE_CYCLE_COUNTER(STAT_RenderCapsuleShadowsSkylight);
 
@@ -1403,14 +1566,22 @@ void FDeferredShadingSceneRenderer::RenderCapsuleShadowsForMovableSkylight(FRHIC
 				if (View.IndirectShadowPrimitives.Num() > 0 && View.ViewState)
 				{
 					SCOPED_DRAW_EVENT(RHICmdList, IndirectCapsuleShadows);
-					SCOPED_GPU_STAT(RHICmdList, Stat_GPU_CapsuleShadows);
+					SCOPED_GPU_STAT(RHICmdList, CapsuleShadows);
 		
 					int32 NumCapsuleShapes = 0;
+					int32 NumMeshesWithCapsules = 0;
 					int32 NumMeshDistanceFieldCasters = 0;
-					SetupIndirectCapsuleShadows(RHICmdList, View, true, NumCapsuleShapes, NumMeshDistanceFieldCasters);
+					FShaderResourceViewRHIParamRef IndirectShadowLightDirectionSRV = NULL;
+					SetupIndirectCapsuleShadows(RHICmdList, View, NumCapsuleShapes, NumMeshesWithCapsules, NumMeshDistanceFieldCasters, IndirectShadowLightDirectionSRV);
+
+					// Don't render indirect occlusion from mesh distance fields when operating on a movable skylight,
+					// DFAO is responsible for indirect occlusion from meshes with distance fields on a movable skylight.
+					// A single mesh should only provide indirect occlusion for a given lighting component in one way.
+					NumMeshDistanceFieldCasters = 0;
 
 					if (NumCapsuleShapes > 0 || NumMeshDistanceFieldCasters > 0)
 					{
+						check(IndirectShadowLightDirectionSRV);
 						SetRenderTarget(RHICmdList, NULL, NULL);
 
 						FIntRect ScissorRect = View.ViewRect;
@@ -1420,7 +1591,7 @@ void FDeferredShadingSceneRenderer::RenderCapsuleShadowsForMovableSkylight(FRHIC
 							uint32 GroupSizeY = FMath::DivideAndRoundUp(ScissorRect.Size().Y / GAODownsampleFactor, GShadowShapeTileSize);
 
 							{
-								SCOPED_DRAW_EVENT(RHICmdList, TiledCapsuleShadowing);
+								SCOPED_DRAW_EVENTF(RHICmdList, TiledCapsuleShadowing, TEXT("TiledCapsuleShadowing %u capsules among %u meshes"), NumCapsuleShapes, NumMeshesWithCapsules);
 
 								FSceneRenderTargetItem& RayTracedShadowsRTI = NewBentNormal->GetRenderTargetItem();
 								{
@@ -1461,7 +1632,7 @@ void FDeferredShadingSceneRenderer::RenderCapsuleShadowsForMovableSkylight(FRHIC
 										View.ViewState->IndirectShadowCapsuleShapesSRV ? View.ViewState->IndirectShadowCapsuleShapesSRV.GetReference() : NULL,
 										NumMeshDistanceFieldCasters,
 										View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesSRV ? View.ViewState->IndirectShadowMeshDistanceFieldCasterIndicesSRV.GetReference() : NULL,
-										View.ViewState->IndirectShadowLightDirectionSRV,
+										IndirectShadowLightDirectionSRV,
 										BentNormalOutput->GetRenderTargetItem().ShaderResourceTexture);
 
 									DispatchComputeShader(RHICmdList, ComputeShaderBase, GroupSizeX, GroupSizeY, 1);

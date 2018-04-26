@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SlatePostProcessor.h"
 #include "SlatePostProcessResource.h"
@@ -309,13 +309,14 @@ void FSlatePostProcessor::UpsampleRect(FRHICommandListImmediate& RHICmdList, IRe
 
 	RHICmdList.SetViewport(0, 0, 0, DestTextureWidth, DestTextureHeight, 0.0f);
 
-	RHICmdList.TransitionResource(EResourceTransitionAccess::EWritable, Params.SourceTexture);
-	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, DestTexture);
+	// Perform Writable transitions first
+	RHICmdList.TransitionResource(EResourceTransitionAccess::EWritable, DestTexture);
+	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, SrcTexture);
 
 	SetRenderTarget(RHICmdList, DestTexture, FTextureRHIRef());
 	RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
 
-	Params.RestoreStateFunc();
+	Params.RestoreStateFunc(RHICmdList, GraphicsPSOInit);
 
 	TShaderMapRef<FScreenPS> PixelShader(ShaderMap);
 
@@ -323,7 +324,12 @@ void FSlatePostProcessor::UpsampleRect(FRHICommandListImmediate& RHICmdList, IRe
 	GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
 	GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
 	GraphicsPSOInit.PrimitiveType = PT_TriangleList;
-	SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
+	//SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
+
+	FLocalGraphicsPipelineState BaseGraphicsPSO = RHICmdList.BuildLocalGraphicsPipelineState(GraphicsPSOInit);
+	RHICmdList.SetLocalGraphicsPipelineState(BaseGraphicsPSO);
+
+	Params.RestoreStateFuncPostPipelineState();
 
 	PixelShader->SetParameters(RHICmdList, BilinearClamp, SrcTexture);
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MetalCommandBuffere.cpp: Metal command buffer wrapper.
@@ -11,6 +11,7 @@
 #include "MetalParallelRenderCommandEncoder.h"
 #include "MetalBlitCommandEncoder.h"
 #include "MetalComputeCommandEncoder.h"
+#include <objc/runtime.h>
 
 NSString* GMetalDebugCommandTypeNames[EMetalDebugCommandTypeInvalid] = {
 	@"RenderEncoder",
@@ -28,6 +29,19 @@ NSString* GMetalDebugCommandTypeNames[EMetalDebugCommandTypeInvalid] = {
 
 extern int32 GMetalRuntimeDebugLevel;
 
+@implementation NSObject (IMetalDebugGroupAssociation)
+@dynamic debugGroups;
+- (void)setDebugGroups:(NSMutableArray<NSString*>*)Data
+{
+	objc_setAssociatedObject(self, @selector(debugGroups), Data, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+- (NSMutableArray<NSString*>*)debugGroups
+{
+	return (NSMutableArray<NSString*>*)objc_getAssociatedObject(self, @selector(debugGroups));
+}
+@end
+
 @implementation FMetalDebugCommandBuffer
 
 @synthesize InnerBuffer;
@@ -43,6 +57,11 @@ APPLE_PLATFORM_OBJECT_ALLOC_OVERRIDES(FMetalDebugCommandBuffer)
 		InnerBuffer = Buffer;
 		DebugGroup = [NSMutableArray new];
 		ActiveEncoder = nil;
+		DebugInfoBuffer = nil;
+		if (DebugLevel >= EMetalDebugLevelValidation)
+		{
+			DebugInfoBuffer = [Buffer.device newBufferWithLength:BufferOffsetAlignment options:0];
+		}
 	}
 	return Self;
 }
@@ -58,6 +77,8 @@ APPLE_PLATFORM_OBJECT_ALLOC_OVERRIDES(FMetalDebugCommandBuffer)
 	
 	[InnerBuffer release];
 	[DebugGroup release];
+	[DebugInfoBuffer release];
+	DebugInfoBuffer = nil;
 	
 	[super dealloc];
 }
@@ -159,7 +180,7 @@ APPLE_PLATFORM_OBJECT_ALLOC_OVERRIDES(FMetalDebugCommandBuffer)
 - (id <MTLRenderCommandEncoder>)renderCommandEncoderWithDescriptor:(MTLRenderPassDescriptor *)renderPassDescriptor
 {
     [self beginRenderCommandEncoder:DebugGroup.lastObject ? DebugGroup.lastObject : @"Render" withDescriptor:renderPassDescriptor];
-    return [[[FMetalDebugRenderCommandEncoder alloc] initWithEncoder:[InnerBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor] andCommandBuffer:self] autorelease];
+	return [[[FMetalDebugRenderCommandEncoder alloc] initWithEncoder:[InnerBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor] fromDescriptor:renderPassDescriptor andCommandBuffer:self] autorelease];
 }
 
 - (id <MTLComputeCommandEncoder>)computeCommandEncoder
@@ -188,9 +209,23 @@ APPLE_PLATFORM_OBJECT_ALLOC_OVERRIDES(FMetalDebugCommandBuffer)
 	NSString* Label = self.label ? self.label : @"Unknown";
 	[String appendFormat:@"Command Buffer %p %@:", self, Label];
 
+	uint32 Index = 0;
+	if (DebugInfoBuffer)
+	{
+		Index = *((uint32*)DebugInfoBuffer.contents);
+	}
+	
+	uint32 Count = 1;
 	for (FMetalDebugCommand* Command : DebugCommands)
 	{
-		[String appendFormat:@"\n\t%@: %@", GMetalDebugCommandTypeNames[Command->Type], Command->Label];
+		if (Index == Count++)
+		{
+			[String appendFormat:@"\n\t--> %@: %@", GMetalDebugCommandTypeNames[Command->Type], Command->Label];
+		}
+		else
+		{
+			[String appendFormat:@"\n\t%@: %@", GMetalDebugCommandTypeNames[Command->Type], Command->Label];
+		}
 	}
 	
 	[String appendFormat:@"\nResources:"];
@@ -395,6 +430,70 @@ APPLE_PLATFORM_OBJECT_ALLOC_OVERRIDES(FMetalDebugCommandBuffer)
             DebugCommands.Add(Command);
         }
     }
+}
+
+-(CFTimeInterval) kernelStartTime
+{
+#if METAL_NEW_NONNULL_DECL
+	if (GMetalCommandBufferHasStartEndTimeAPI)
+#endif
+	{
+		return ((id<IMetalCommandBufferExtensions>)InnerBuffer).kernelStartTime;
+	}
+#if METAL_NEW_NONNULL_DECL
+	else
+	{
+		return 0;
+	}
+#endif
+}
+
+-(CFTimeInterval) kernelEndTime
+{
+#if METAL_NEW_NONNULL_DECL
+	if (GMetalCommandBufferHasStartEndTimeAPI)
+#endif
+	{
+		return ((id<IMetalCommandBufferExtensions>)InnerBuffer).kernelEndTime;
+	}
+#if METAL_NEW_NONNULL_DECL
+	else
+	{
+		return 0;
+	}
+#endif
+}
+
+-(CFTimeInterval) GPUStartTime
+{
+#if METAL_NEW_NONNULL_DECL
+	if (GMetalCommandBufferHasStartEndTimeAPI)
+#endif
+	{
+		return ((id<IMetalCommandBufferExtensions>)InnerBuffer).GPUStartTime;
+	}
+#if METAL_NEW_NONNULL_DECL
+	else
+	{
+		return 0;
+	}
+#endif
+}
+
+-(CFTimeInterval) GPUEndTime
+{
+#if METAL_NEW_NONNULL_DECL
+	if (GMetalCommandBufferHasStartEndTimeAPI)
+#endif
+	{
+		return ((id<IMetalCommandBufferExtensions>)InnerBuffer).GPUEndTime;
+	}
+#if METAL_NEW_NONNULL_DECL
+	else
+	{
+		return 0;
+	}
+#endif
 }
 
 @end

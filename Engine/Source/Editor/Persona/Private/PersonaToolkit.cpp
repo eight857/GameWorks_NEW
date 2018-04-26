@@ -1,87 +1,89 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PersonaToolkit.h"
 #include "Modules/ModuleManager.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimationAsset.h"
+#include "PhysicsEngine/PhysicsAsset.h"
 #include "AnimationEditorPreviewScene.h"
 #include "ISkeletonEditorModule.h"
 #include "Animation/AnimBlueprint.h"
 #include "GameFramework/WorldSettings.h"
 #include "ScopedTransaction.h"
 #include "PersonaModule.h"
+#include "PersonaAssetFamily.h"
 
 FPersonaToolkit::FPersonaToolkit()
 	: Skeleton(nullptr)
 	, Mesh(nullptr)
 	, AnimBlueprint(nullptr)
 	, AnimationAsset(nullptr)
+	, PhysicsAsset(nullptr)
 {
+}
+
+static void FindCounterpartAssets(const UObject* InAsset, TWeakObjectPtr<USkeleton>& OutSkeleton, USkeletalMesh*& OutMesh)
+{
+	const USkeleton* CounterpartSkeleton = OutSkeleton.Get();
+	const USkeletalMesh* CounterpartMesh = OutMesh;
+	FPersonaAssetFamily::FindCounterpartAssets(InAsset, CounterpartSkeleton, CounterpartMesh);
+	OutSkeleton = MakeWeakObjectPtr(const_cast<USkeleton*>(CounterpartSkeleton));
+	OutMesh = const_cast<USkeletalMesh*>(CounterpartMesh);
 }
 
 void FPersonaToolkit::Initialize(USkeleton* InSkeleton)
 {
 	check(InSkeleton);
 	Skeleton = InSkeleton;
-	Mesh = InSkeleton->GetPreviewMesh();
-	if (Mesh == nullptr)
-	{
-		Mesh = Skeleton->FindCompatibleMesh();
-	}
 	InitialAssetClass = USkeleton::StaticClass();
+
+	FindCounterpartAssets(InSkeleton, Skeleton, Mesh);
 }
 
 void FPersonaToolkit::Initialize(UAnimationAsset* InAnimationAsset)
 {
 	check(InAnimationAsset);
 	AnimationAsset = InAnimationAsset;
-	Skeleton = InAnimationAsset->GetSkeleton();
-	Mesh = InAnimationAsset->GetPreviewMesh();
-	if (Mesh == nullptr)
-	{
-		Mesh = Skeleton->GetPreviewMesh();
-	}
-	if (Mesh == nullptr)
-	{
-		Mesh = Skeleton->FindCompatibleMesh();
-	}
 	InitialAssetClass = UAnimationAsset::StaticClass();
+
+	FindCounterpartAssets(InAnimationAsset, Skeleton, Mesh);
 }
 
 void FPersonaToolkit::Initialize(USkeletalMesh* InSkeletalMesh)
 {
 	check(InSkeletalMesh);
-	Skeleton = InSkeletalMesh->Skeleton;
 	Mesh = InSkeletalMesh;
 	InitialAssetClass = USkeletalMesh::StaticClass();
+
+	FindCounterpartAssets(InSkeletalMesh, Skeleton, Mesh);
 }
 
 void FPersonaToolkit::Initialize(UAnimBlueprint* InAnimBlueprint)
 {
 	check(InAnimBlueprint);
 	AnimBlueprint = InAnimBlueprint;
-	Skeleton = InAnimBlueprint->TargetSkeleton;
-	check(InAnimBlueprint->TargetSkeleton);
-	Mesh = InAnimBlueprint->GetPreviewMesh();
-	if (Mesh == nullptr)
-	{
-		Mesh = Skeleton->GetPreviewMesh();
-	}
-	if (Mesh == nullptr)
-	{
-		Mesh = Skeleton->FindCompatibleMesh();
-	}
 	InitialAssetClass = UAnimBlueprint::StaticClass();
+
+	FindCounterpartAssets(InAnimBlueprint, Skeleton, Mesh);
 }
 
-void FPersonaToolkit::CreatePreviewScene()
+void FPersonaToolkit::Initialize(UPhysicsAsset* InPhysicsAsset)
+{
+	check(InPhysicsAsset);
+	PhysicsAsset = InPhysicsAsset;
+	InitialAssetClass = UPhysicsAsset::StaticClass();
+
+	FindCounterpartAssets(InPhysicsAsset, Skeleton, Mesh);
+}
+
+void FPersonaToolkit::CreatePreviewScene(const FPersonaToolkitArgs& PersonaToolkitArgs)
 {
 	if (!PreviewScene.IsValid())
 	{
 		if (!EditableSkeleton.IsValid())
 		{
 			ISkeletonEditorModule& SkeletonEditorModule = FModuleManager::LoadModuleChecked<ISkeletonEditorModule>("SkeletonEditor");
-			EditableSkeleton = SkeletonEditorModule.CreateEditableSkeleton(Skeleton);
+			EditableSkeleton = SkeletonEditorModule.CreateEditableSkeleton(Skeleton.Get());
 		}
 
 		PreviewScene = MakeShareable(new FAnimationEditorPreviewScene(FPreviewScene::ConstructionValues().AllowAudioPlayback(true).ShouldSimulatePhysics(true), EditableSkeleton.ToSharedRef(), AsShared()));
@@ -89,19 +91,40 @@ void FPersonaToolkit::CreatePreviewScene()
 		//Temporary fix for missing attached assets - MDW
 		PreviewScene->GetWorld()->GetWorldSettings()->SetIsTemporarilyHiddenInEditor(false);
 
+		if (PersonaToolkitArgs.OnPreviewSceneCreated.IsBound())
+		{
+			// Custom per-instance scene setup
+			PersonaToolkitArgs.OnPreviewSceneCreated.Execute(PreviewScene.ToSharedRef());
+		}
+		else
+		{
+			// setup default scene
+			AActor* Actor = PreviewScene->GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity);
+			PreviewScene->SetActor(Actor);
+
+			// Create the preview component
+			UDebugSkelMeshComponent* SkeletalMeshComponent = NewObject<UDebugSkelMeshComponent>(Actor);
+			PreviewScene->AddComponent(SkeletalMeshComponent, FTransform::Identity);
+			PreviewScene->SetPreviewMeshComponent(SkeletalMeshComponent);
+
+			// set root component, so we can attach to it. 
+			Actor->SetRootComponent(SkeletalMeshComponent);
+		}
+
 		// allow external systems to add components or otherwise manipulate the scene
 		FPersonaModule& PersonaModule = FModuleManager::GetModuleChecked<FPersonaModule>(TEXT("Persona"));
 		PersonaModule.OnPreviewSceneCreated().Broadcast(PreviewScene.ToSharedRef());
 
+		// Force validation of preview attached assets (catch case of never doing it if we dont have a valid preview mesh)
+		PreviewScene->ValidatePreviewAttachedAssets(nullptr);
+		PreviewScene->RefreshAdditionalMeshes();
+
 		bool bSetMesh = false;
 
 		// Set the mesh
-		if (Mesh != nullptr)
-		{
-			PreviewScene->SetPreviewMesh(Mesh);
-			bSetMesh = true;
-		}
-		else if (AnimationAsset != nullptr)
+		// first check assets first
+		// mesh exists with anim BP
+		if (AnimationAsset != nullptr)
 		{
 			USkeletalMesh* AssetMesh = AnimationAsset->GetPreviewMesh();
 			if (AssetMesh)
@@ -119,8 +142,13 @@ void FPersonaToolkit::CreatePreviewScene()
 				bSetMesh = true;
 			}
 		}
+		else if (Mesh != nullptr)
+		{
+			PreviewScene->SetPreviewMesh(Mesh);
+			bSetMesh = true;
+		}
 
-		if (!bSetMesh && Skeleton)
+		if (!bSetMesh && Skeleton.IsValid())
 		{
 			//If no preview mesh set, just find the first mesh that uses this skeleton
 			USkeletalMesh* PreviewMesh = Skeleton->FindCompatibleMesh();
@@ -135,7 +163,7 @@ void FPersonaToolkit::CreatePreviewScene()
 
 USkeleton* FPersonaToolkit::GetSkeleton() const
 {
-	return Skeleton;
+	return Skeleton.Get();
 }
 
 TSharedPtr<class IEditableSkeleton> FPersonaToolkit::GetEditableSkeleton() const
@@ -200,6 +228,11 @@ USkeletalMesh* FPersonaToolkit::GetPreviewMesh() const
 		check(AnimBlueprint);
 		return AnimBlueprint->GetPreviewMesh();
 	}
+	else if (InitialAssetClass == UPhysicsAsset::StaticClass())
+	{
+		check(PhysicsAsset);
+		return PhysicsAsset->GetPreviewMesh();
+	}
 	else if(InitialAssetClass == USkeletalMesh::StaticClass())
 	{
 		check(Mesh);
@@ -207,36 +240,76 @@ USkeletalMesh* FPersonaToolkit::GetPreviewMesh() const
 	}
 	else
 	{
-		check(Skeleton);
+		check(Skeleton.IsValid());
 		return Skeleton->GetPreviewMesh();
 	}
 }
 
-void FPersonaToolkit::SetPreviewMesh(class USkeletalMesh* InSkeletalMesh)
+void FPersonaToolkit::SetPreviewMesh(class USkeletalMesh* InSkeletalMesh, bool bSetPreviewMeshInAsset)
 {
 	// Cant set preview mesh on a skeletal mesh (makes for a confusing experience!)
 	if (InitialAssetClass != USkeletalMesh::StaticClass())
 	{
-		if (InitialAssetClass == UAnimationAsset::StaticClass())
+		// If the skeleton itself is changing, then we need to re-open the asset editor
+		bool bReOpenEditor = false;
+		if(InSkeletalMesh != nullptr && InSkeletalMesh->Skeleton != &EditableSkeleton->GetSkeleton())
 		{
-			FScopedTransaction Transaction(NSLOCTEXT("PersonaToolkit", "SetAnimationPreviewMesh", "Set Animation Preview Mesh"));
-
-			check(AnimationAsset);
-			AnimationAsset->SetPreviewMesh(InSkeletalMesh);
-		}
-		else if (InitialAssetClass == UAnimBlueprint::StaticClass())
-		{
-			FScopedTransaction Transaction(NSLOCTEXT("PersonaToolkit", "SetAnimBlueprintPreviewMesh", "Set Animation Blueprint Preview Mesh"));
-
-			check(AnimBlueprint);
-			AnimBlueprint->SetPreviewMesh(InSkeletalMesh);
-		}
-		else
-		{
-			check(EditableSkeleton.IsValid());
-			EditableSkeleton->SetPreviewMesh(InSkeletalMesh);
+			bReOpenEditor = true;
+			bSetPreviewMeshInAsset = true;
 		}
 
+		if(bSetPreviewMeshInAsset)
+		{
+			if (InitialAssetClass == UAnimationAsset::StaticClass())
+			{
+				FScopedTransaction Transaction(NSLOCTEXT("PersonaToolkit", "SetAnimationPreviewMesh", "Set Animation Preview Mesh"));
+
+				check(AnimationAsset);
+				AnimationAsset->SetPreviewMesh(InSkeletalMesh);
+			}
+			else if (InitialAssetClass == UAnimBlueprint::StaticClass())
+			{
+				FScopedTransaction Transaction(NSLOCTEXT("PersonaToolkit", "SetAnimBlueprintPreviewMesh", "Set Animation Blueprint Preview Mesh"));
+
+				check(AnimBlueprint);
+				AnimBlueprint->SetPreviewMesh(InSkeletalMesh);
+			}
+			else if (InitialAssetClass == UPhysicsAsset::StaticClass())
+			{
+				FScopedTransaction Transaction(NSLOCTEXT("PersonaToolkit", "SetPhysicsAssetPreviewMesh", "Set Physics Asset Preview Mesh"));
+
+				check(PhysicsAsset);
+				PhysicsAsset->SetPreviewMesh(InSkeletalMesh);
+			}
+			else
+			{
+				check(EditableSkeleton.IsValid());
+				EditableSkeleton->SetPreviewMesh(InSkeletalMesh);
+			}
+		}
+
+		if(bReOpenEditor)
+		{
+			UObject* Asset = nullptr;
+			if (InitialAssetClass == UAnimationAsset::StaticClass())
+			{
+				Asset = AnimationAsset;
+			}
+			else if (InitialAssetClass == UAnimBlueprint::StaticClass())
+			{
+				Asset = AnimBlueprint;
+			}
+			else if (InitialAssetClass == UPhysicsAsset::StaticClass())
+			{
+				Asset = PhysicsAsset;
+			}
+			check(Asset);
+
+			FAssetEditorManager::Get().CloseAllEditorsForAsset(Asset);
+			FAssetEditorManager::Get().OpenEditorForAsset(Asset);
+			return;
+		}
+		
 		GetPreviewScene()->SetPreviewMesh(InSkeletalMesh);
 	}
 }

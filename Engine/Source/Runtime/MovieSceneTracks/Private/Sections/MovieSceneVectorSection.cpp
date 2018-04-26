@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sections/MovieSceneVectorSection.h"
 #include "UObject/StructOnScope.h"
@@ -21,6 +21,7 @@ void FMovieSceneVectorKeyStructBase::PropagateChanges(const FPropertyChangedEven
 		else
 		{
 			Keys[Index]->Value = GetPropertyChannelByIndex(Index);
+			Keys[Index]->Time = Time;
 		}
 	}
 }
@@ -34,7 +35,13 @@ UMovieSceneVectorSection::UMovieSceneVectorSection(const FObjectInitializer& Obj
 {
 	ChannelsUsed = 0;
 
-	EvalOptions.EnableAndSetCompletionMode(GetLinkerCustomVersion(FSequencerObjectVersion::GUID) < FSequencerObjectVersion::WhenFinishedDefaultsToRestoreState ? EMovieSceneCompletionMode::KeepState : EMovieSceneCompletionMode::RestoreState);
+	EvalOptions.EnableAndSetCompletionMode
+		(GetLinkerCustomVersion(FSequencerObjectVersion::GUID) < FSequencerObjectVersion::WhenFinishedDefaultsToRestoreState ? 
+			EMovieSceneCompletionMode::KeepState : 
+			GetLinkerCustomVersion(FSequencerObjectVersion::GUID) < FSequencerObjectVersion::WhenFinishedDefaultsToProjectDefault ? 
+			EMovieSceneCompletionMode::RestoreState : 
+			EMovieSceneCompletionMode::ProjectDefault);
+	BlendType = EMovieSceneBlendType::Absolute;
 }
 
 /* UMovieSceneSection interface
@@ -113,6 +120,7 @@ TSharedPtr<FStructOnScope> UMovieSceneVectorSection::GetKeyStruct(const TArray<F
 			if (Struct->Keys[Index] != nullptr)
 			{
 				FirstValidKeyTime = Struct->Keys[Index]->Time;
+				Struct->Time = FirstValidKeyTime;
 			}
 		}
 
@@ -213,7 +221,7 @@ void UMovieSceneVectorSection::SetDefault(const FVectorKey& Key)
 
 void UMovieSceneVectorSection::ClearDefaults()
 {
-	for (auto Curve : Curves)
+	for (auto& Curve : Curves)
 	{
 		Curve.ClearDefaultValue();
 	}

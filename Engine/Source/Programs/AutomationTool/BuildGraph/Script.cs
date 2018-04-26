@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -13,6 +13,7 @@ using System.Reflection;
 using System.Diagnostics;
 using System.Xml.Schema;
 using System.Text.RegularExpressions;
+using Tools.DotNETCommon;
 
 namespace AutomationTool
 {
@@ -798,7 +799,6 @@ namespace AutomationTool
 				foreach (Node ReferencedNode in ResolveReferences(Element, RequiredNames))
 				{
 					NewBadge.Nodes.Add(ReferencedNode);
-					NewBadge.Nodes.UnionWith(ReferencedNode.OrderDependencies);
 				}
 				Graph.Badges.Add(NewBadge);
 			}
@@ -1063,17 +1063,17 @@ namespace AutomationTool
 
 						// Parse it and assign it to the parameters object
 						object Value;
-						if (Parameter.FieldInfo.FieldType.IsEnum)
+						if (Parameter.ValueType.IsEnum)
 						{
-							Value = Enum.Parse(Parameter.FieldInfo.FieldType, ExpandedValue);
+							Value = Enum.Parse(Parameter.ValueType, ExpandedValue);
 						}
-						else if (Parameter.FieldInfo.FieldType == typeof(Boolean))
+						else if (Parameter.ValueType == typeof(Boolean))
 						{
 							Value = Condition.Evaluate(ExpandedValue);
 						}
 						else
 						{
-							Value = Convert.ChangeType(ExpandedValue, Parameter.FieldInfo.FieldType);
+							Value = Convert.ChangeType(ExpandedValue, Parameter.ValueType);
 						}
 						Parameter.FieldInfo.SetValue(ParametersObject, Value);
 					}
@@ -1085,6 +1085,9 @@ namespace AutomationTool
 					// Add it to the list
 					CustomTask NewTask = (CustomTask)Activator.CreateInstance(Task.TaskClass, ParametersObject);
 					ParentNode.Tasks.Add(NewTask);
+
+					// Set up the source location for diagnostics
+					NewTask.SourceLocation = Tuple.Create(Element.File, Element.LineNumber);
 
 					// Make sure all the read tags are local or listed as a dependency
 					foreach(string ReadTagName in NewTask.FindConsumedTagNames())
@@ -1133,6 +1136,7 @@ namespace AutomationTool
 				string[] Users = ReadListAttribute(Element, "Users");
 				string[] Submitters = ReadListAttribute(Element, "Submitters");
 				bool? bWarnings = Element.HasAttribute("Warnings") ? (bool?)ReadBooleanAttribute(Element, "Warnings", true) : null;
+				bool bAbsolute = Element.HasAttribute("Absolute") ? ReadBooleanAttribute(Element, "Absolute", true) : false;
 
 				// Find the list of targets which are included, and recurse through all their dependencies
 				HashSet<Node> Nodes = new HashSet<Node>();
@@ -1165,11 +1169,25 @@ namespace AutomationTool
 				{
 					if (Users != null)
 					{
-						Node.NotifyUsers.UnionWith(Users);
+						if (bAbsolute)
+						{
+							Node.NotifyUsers = new HashSet<string>(Users);
+						}
+						else
+						{
+							Node.NotifyUsers.UnionWith(Users);
+						}
 					}
 					if (Submitters != null)
 					{
-						Node.NotifySubmitters.UnionWith(Submitters);
+						if (bAbsolute)
+						{
+							Node.NotifySubmitters = new HashSet<string>(Submitters);
+						}
+						else
+						{
+							Node.NotifySubmitters.UnionWith(Submitters);
+						}
 					}
 					if (bWarnings.HasValue)
 					{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NameTableArchive.h"
 #include "HAL/FileManager.h"
@@ -156,6 +156,31 @@ int64 FNameTableArchiveReader::TotalSize()
 	return 0;
 }
 
+const FCustomVersionContainer& FNameTableArchiveReader::GetCustomVersions() const
+{
+	if (ProxyAr)
+	{
+		return ProxyAr->GetCustomVersions();
+	}
+	return FArchive::GetCustomVersions();
+}
+
+void FNameTableArchiveReader::SetCustomVersions(const FCustomVersionContainer& NewVersions)
+{
+	if (ProxyAr)
+	{
+		ProxyAr->SetCustomVersions(NewVersions);
+	}
+}
+
+void FNameTableArchiveReader::ResetCustomVersions()
+{
+	if (ProxyAr)
+	{
+		ProxyAr->ResetCustomVersions();
+	}
+}
+
 FArchive& FNameTableArchiveReader::operator<<( FName& Name )
 {
 	int32 NameIndex;
@@ -265,7 +290,7 @@ void FNameTableArchiveWriter::SerializeNameMap()
 		for (auto& Pair : NameMap)
 		{
 			check(NameMapIdx == Pair.Value);
-			*this << *const_cast<FNameEntry*>(Pair.Key.GetDisplayNameEntry());
+			Pair.Key.GetDisplayNameEntry()->Write(*this);
 			NameMapIdx++;
 		}
 	}
@@ -321,6 +346,31 @@ int64 FNameTableArchiveWriter::TotalSize()
 	}
 
 	return 0.f;
+}
+
+const FCustomVersionContainer& FNameTableArchiveWriter::GetCustomVersions() const
+{
+	if (ProxyAr)
+	{
+		return ProxyAr->GetCustomVersions();
+	}
+	return FArchive::GetCustomVersions();
+}
+
+void FNameTableArchiveWriter::SetCustomVersions(const FCustomVersionContainer& NewVersions)
+{
+	if (ProxyAr)
+	{
+		ProxyAr->SetCustomVersions(NewVersions);
+	}
+}
+
+void FNameTableArchiveWriter::ResetCustomVersions()
+{
+	if (ProxyAr)
+	{
+		ProxyAr->ResetCustomVersions();
+	}
 }
 
 FArchive& FNameTableArchiveWriter::operator<<( FName& Name )

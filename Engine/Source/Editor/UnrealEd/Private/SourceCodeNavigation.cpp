@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SourceCodeNavigation.h"
@@ -221,7 +221,7 @@ void FSourceFileDatabase::UpdateIfNeeded()
 	FindRootFilesRecursive(ModuleNames, *(FPaths::EngineDir() / TEXT("Source") / TEXT("Developer")), TEXT("*.Build.cs"));
 	FindRootFilesRecursive(ModuleNames, *(FPaths::EngineDir() / TEXT("Source") / TEXT("Editor")), TEXT("*.Build.cs"));
 	FindRootFilesRecursive(ModuleNames, *(FPaths::EngineDir() / TEXT("Source") / TEXT("Runtime")), TEXT("*.Build.cs"));
-	FindRootFilesRecursive(ModuleNames, *(FPaths::GameDir() / TEXT("Source")), TEXT("*.Build.cs"));
+	FindRootFilesRecursive(ModuleNames, *(FPaths::ProjectDir() / TEXT("Source")), TEXT("*.Build.cs"));
 
 	// Find list of disallowed header names in native (non-plugin) directories
 	TArray<FString> HeaderFiles;
@@ -245,7 +245,7 @@ void FSourceFileDatabase::UpdateIfNeeded()
 	TArray<FString> PluginNames;
 
 	FindRootFilesRecursive(PluginNames, *(FPaths::EngineDir() / TEXT("Plugins")), TEXT("*.uplugin"));
-	FindRootFilesRecursive(PluginNames, *(FPaths::GameDir() / TEXT("Plugins")), TEXT("*.uplugin"));
+	FindRootFilesRecursive(PluginNames, *(FPaths::ProjectDir() / TEXT("Plugins")), TEXT("*.uplugin"));
 
 	// Add all the files within plugin directories
 	for (const FString& PluginName : PluginNames)
@@ -364,9 +364,9 @@ public:
 protected:
 	/** FTickableEditorObject interface */
 	virtual void Tick( float DeltaTime ) override;
-	virtual bool IsTickable() const override
+	virtual ETickableTickType GetTickableTickType() const override
 	{
-		return true;
+		return ETickableTickType::Always;
 	}
 	virtual TStatId GetStatId() const override;
 
@@ -668,21 +668,28 @@ void FSourceCodeNavigationImpl::NavigateToFunctionSource( const FString& Functio
 								FPlatformProcess::ExecProcess( *AtoSPath, *AtoSCommand, &ReturnCode, &Results, NULL );
 								if(ReturnCode == 0)
 								{
+									bool bSourceFileOpened = false;
 									int32 FirstIndex = -1;
 									int32 LastIndex = -1;
 									if(Results.FindChar(TCHAR('('), FirstIndex) && Results.FindLastChar(TCHAR('('), LastIndex) && FirstIndex != LastIndex)
 									{
 										int32 CloseIndex = -1;
 										int32 ColonIndex = -1;
-										if(Results.FindLastChar(TCHAR(':'), ColonIndex) && Results.FindLastChar(TCHAR(')'), CloseIndex))
+										if(Results.FindLastChar(TCHAR(':'), ColonIndex) && Results.FindLastChar(TCHAR(')'), CloseIndex) && CloseIndex > ColonIndex && LastIndex < ColonIndex)
 										{
 											int32 FileNamePos = LastIndex+1;
 											int32 FileNameLen = ColonIndex-FileNamePos;
 											FString FileName = Results.Mid(FileNamePos, FileNameLen);
 											FString LineNumber = Results.Mid(ColonIndex + 1, CloseIndex-(ColonIndex + 1));
-											SourceCodeAccessor.OpenFileAtLine( FileName, FCString::Atoi(*LineNumber), 0 );
+											bSourceFileOpened = SourceCodeAccessor.OpenFileAtLine( FileName, FCString::Atoi(*LineNumber), 0 );
 										}
 									}
+#if !NO_LOGGING
+									if (!bSourceFileOpened)
+									{
+										UE_LOG(LogSelectionDetails, Warning, TEXT("NavigateToFunctionSource:  Unable to find source file and line number for '%s'"), *FunctionSymbolName);
+									}
+#endif
 								}
 								break;
 							}
@@ -703,7 +710,7 @@ void FSourceCodeNavigationImpl::NavigateToFunctionSource( const FString& Functio
 
 FCriticalSection FSourceCodeNavigation::CriticalSection;
 FSourceFileDatabase FSourceCodeNavigation::Instance;
-
+bool FSourceCodeNavigation::bCachedIsCompilerAvailable = false;
 
 void FSourceCodeNavigation::Initialize()
 {
@@ -727,6 +734,8 @@ void FSourceCodeNavigation::Initialize()
 			RETURN_QUICK_DECLARE_CYCLE_STAT(FAsyncInitializeSourceFileDatabase, STATGROUP_ThreadPoolAsyncTasks);
 		}
 	};
+
+	RefreshCompilerAvailability();
 
 	// Initialize SourceFileDatabase instance asynchronously
 	(new FAutoDeleteAsyncTask<FAsyncInitializeSourceFileDatabase>)->StartBackgroundTask();
@@ -1422,32 +1431,156 @@ void FSourceCodeNavigation::GatherFunctionsForActors( TArray< AActor* >& Actors,
 	}
 }
 
-bool FSourceCodeNavigation::NavigateToFunctionAsync( UFunction* InFunction )
+bool FSourceCodeNavigation::NavigateToFunctionAsync(UFunction* InFunction)
 {
-	bool bResult = false;
-
-	if( InFunction )
-	{
-		UClass* OwningClass = InFunction->GetOwnerClass();
-
-		if(  OwningClass->HasAllClassFlags( CLASS_Native ))
-		{
-			FString ModuleName;
-			// Find module name for class
-			if( FindClassModuleName( OwningClass, ModuleName ))
-			{
-				const FString SymbolName = FString::Printf( TEXT( "%s%s::%s" ), OwningClass->GetPrefixCPP(), *OwningClass->GetName(), *InFunction->GetName() );
-				NavigateToFunctionSourceAsync( SymbolName, ModuleName, false );
-				bResult = true;
-			}
-		}
-	}
-	return bResult;
+	return NavigateToFunction(InFunction);
 }
 
-bool FSourceCodeNavigation::NavigateToProperty( UProperty* InProperty )
+static TArray<ISourceCodeNavigationHandler*> SourceCodeNavigationHandlers;
+
+void FSourceCodeNavigation::AddNavigationHandler(ISourceCodeNavigationHandler* handler)
 {
-	bool bResult = false;
+	SourceCodeNavigationHandlers.Add(handler);
+}
+
+void FSourceCodeNavigation::RemoveNavigationHandler(ISourceCodeNavigationHandler* handler)
+{
+	SourceCodeNavigationHandlers.Remove(handler);
+}
+
+bool FSourceCodeNavigation::CanNavigateToClass(const UClass* InClass)
+{
+	if (!InClass)
+	{
+		return false;
+	}
+
+	for (int32 i = 0; i < SourceCodeNavigationHandlers.Num(); ++i)
+	{
+		ISourceCodeNavigationHandler* handler = SourceCodeNavigationHandlers[i];
+		if (handler->CanNavigateToClass(InClass))
+		{
+			return true;
+		}
+	}
+
+	return InClass->HasAllClassFlags(CLASS_Native) && FSourceCodeNavigation::IsCompilerAvailable();
+}
+
+bool FSourceCodeNavigation::NavigateToClass(const UClass* InClass)
+{
+	if (!InClass)
+	{
+		return false;
+	}
+
+	for (int32 i = 0; i < SourceCodeNavigationHandlers.Num(); ++i)
+	{
+		ISourceCodeNavigationHandler* handler = SourceCodeNavigationHandlers[i];
+		if (handler->NavigateToClass(InClass))
+		{
+			return true;
+		}
+	}
+
+	FString ClassHeaderPath;
+	if (FSourceCodeNavigation::FindClassHeaderPath(InClass, ClassHeaderPath) && IFileManager::Get().FileSize(*ClassHeaderPath) != INDEX_NONE)
+	{
+		FString AbsoluteHeaderPath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*ClassHeaderPath);
+		FSourceCodeNavigation::OpenSourceFile(AbsoluteHeaderPath);
+		return true;
+	}
+	return false;
+}
+
+bool FSourceCodeNavigation::CanNavigateToFunction(const UFunction* InFunction)
+{
+	if (!InFunction)
+	{
+		return false;
+	}
+
+	for (int32 i = 0; i < SourceCodeNavigationHandlers.Num(); ++i)
+	{
+		ISourceCodeNavigationHandler* handler = SourceCodeNavigationHandlers[i];
+		if (handler->CanNavigateToFunction(InFunction))
+		{
+			return true;
+		}
+	}
+
+	UClass* OwningClass = InFunction->GetOwnerClass();
+
+	return OwningClass->HasAllClassFlags(CLASS_Native) && FSourceCodeNavigation::IsCompilerAvailable();
+}
+
+bool FSourceCodeNavigation::NavigateToFunction(const UFunction* InFunction)
+{
+	if (!InFunction)
+	{
+		return false;
+	}
+
+	for (int32 i = 0; i < SourceCodeNavigationHandlers.Num(); ++i)
+	{
+		ISourceCodeNavigationHandler* handler = SourceCodeNavigationHandlers[i];
+		if (handler->NavigateToFunction(InFunction))
+		{
+			return true;
+		}
+	}
+
+	UClass* OwningClass = InFunction->GetOwnerClass();
+
+	if(  OwningClass->HasAllClassFlags( CLASS_Native ))
+	{
+		FString ModuleName;
+		// Find module name for class
+		if( FindClassModuleName( OwningClass, ModuleName ))
+		{
+			const FString SymbolName = FString::Printf( TEXT( "%s%s::%s" ), OwningClass->GetPrefixCPP(), *OwningClass->GetName(), *InFunction->GetName() );
+			NavigateToFunctionSourceAsync( SymbolName, ModuleName, false );
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool FSourceCodeNavigation::CanNavigateToProperty(const UProperty* InProperty)
+{
+	if (!InProperty)
+	{
+		return false;
+	}
+
+	for (int32 i = 0; i < SourceCodeNavigationHandlers.Num(); ++i)
+	{
+		ISourceCodeNavigationHandler* handler = SourceCodeNavigationHandlers[i];
+		if (handler->CanNavigateToProperty(InProperty))
+		{
+			return true;
+		}
+	}
+
+	return InProperty->IsNative() && IsCompilerAvailable();
+}
+
+bool FSourceCodeNavigation::NavigateToProperty(const UProperty* InProperty)
+{
+	if (!InProperty)
+	{
+		return false;
+	}
+
+	for (int32 i = 0; i < SourceCodeNavigationHandlers.Num(); ++i)
+	{
+		ISourceCodeNavigationHandler* handler = SourceCodeNavigationHandlers[i];
+		if (handler->NavigateToProperty(InProperty))
+		{
+			return true;
+		}
+	}
 
 	if (InProperty && InProperty->IsNative())
 	{
@@ -1458,10 +1591,10 @@ bool FSourceCodeNavigation::NavigateToProperty( UProperty* InProperty )
 		if (bFileLocated)
 		{
 			const FString AbsoluteSourcePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*SourceFilePath);
-			bResult = OpenSourceFile(AbsoluteSourcePath);
+			return OpenSourceFile( AbsoluteSourcePath );
 		}
 	}
-	return bResult;
+	return false;
 }
 
 bool FSourceCodeNavigation::FindClassModuleName( UClass* InClass, FString& ModuleName )
@@ -1507,6 +1640,13 @@ FSourceCodeNavigation::FOnSymbolQueryFinished& FSourceCodeNavigation::AccessOnSy
 	return FSourceCodeNavigationImpl::Get().OnSymbolQueryFinished;
 }
 
+/** Returns the name of the selected IDE */
+FText FSourceCodeNavigation::GetSelectedSourceCodeIDE()
+{
+	ISourceCodeAccessModule& SourceCodeAccessModule = FModuleManager::LoadModuleChecked<ISourceCodeAccessModule>("SourceCodeAccess");
+	return SourceCodeAccessModule.GetAccessor().GetNameText();
+}
+
 FText FSourceCodeNavigation::GetSuggestedSourceCodeIDE(bool bShortIDEName)
 {
 #if PLATFORM_WINDOWS
@@ -1520,6 +1660,8 @@ FText FSourceCodeNavigation::GetSuggestedSourceCodeIDE(bool bShortIDEName)
 	}
 #elif PLATFORM_MAC
 	return LOCTEXT("SuggestedCodeIDE_Mac", "Xcode");
+#elif PLATFORM_LINUX
+	return LOCTEXT("SuggestedCodeIDE_Linux", "NullSourceCodeAccessor");
 #else
 	return LOCTEXT("SuggestedCodeIDE_Generic", "an IDE to edit source code");
 #endif
@@ -1580,13 +1722,9 @@ void FSourceCodeNavigation::DownloadAndInstallSuggestedIDE(FOnIDEInstallerDownlo
 void FSourceCodeNavigation::RefreshCompilerAvailability()
 {
 	ISourceCodeAccessModule& SourceCodeAccessModule = FModuleManager::LoadModuleChecked<ISourceCodeAccessModule>("SourceCodeAccess");
-	return SourceCodeAccessModule.GetAccessor().RefreshAvailability();
-}
+	SourceCodeAccessModule.GetAccessor().RefreshAvailability();
 
-bool FSourceCodeNavigation::IsCompilerAvailable()
-{
-	ISourceCodeAccessModule& SourceCodeAccessModule = FModuleManager::LoadModuleChecked<ISourceCodeAccessModule>("SourceCodeAccess");
-	return SourceCodeAccessModule.GetAccessor().CanAccessSourceCode();
+	bCachedIsCompilerAvailable = SourceCodeAccessModule.GetAccessor().CanAccessSourceCode();
 }
 
 bool FSourceCodeNavigation::OpenSourceFile( const FString& AbsoluteSourcePath, int32 LineNumber, int32 ColumnNumber )
@@ -1634,6 +1772,19 @@ bool FSourceCodeNavigation::OpenModuleSolution()
 	return SourceCodeAccessModule.GetAccessor().OpenSolution();
 }
 
+bool FSourceCodeNavigation::OpenProjectSolution(const FString& InProjectFilename)
+{
+	ISourceCodeAccessModule& SourceCodeAccessModule = FModuleManager::LoadModuleChecked<ISourceCodeAccessModule>("SourceCodeAccess");
+	return SourceCodeAccessModule.GetAccessor().OpenSolutionAtPath(InProjectFilename);
+}
+
+/** Query if the current source code solution exists */
+bool FSourceCodeNavigation::DoesModuleSolutionExist()
+{
+	ISourceCodeAccessModule& SourceCodeAccessModule = FModuleManager::LoadModuleChecked<ISourceCodeAccessModule>("SourceCodeAccess");
+	return SourceCodeAccessModule.GetAccessor().DoesSolutionExist();
+}
+
 /** Call this to access the multi-cast delegate that you can register a callback with */
 FSourceCodeNavigation::FOnCompilerNotFound& FSourceCodeNavigation::AccessOnCompilerNotFound()
 {
@@ -1675,7 +1826,7 @@ bool FSourceCodeNavigation::FindClassHeaderPath( const UField *Field, FString &O
 		if(FSourceCodeNavigation::FindModulePath(*ModulePackageName + ModuleNameIdx + 1, ModuleBasePath))
 		{
 			// Get the metadata for the class path relative to the module base
-			FString ModuleRelativePath = ModulePackage->GetMetaData()->GetValue(Field, TEXT("ModuleRelativePath"));
+			const FString& ModuleRelativePath = ModulePackage->GetMetaData()->GetValue(Field, TEXT("ModuleRelativePath"));
 			if(ModuleRelativePath.Len() > 0)
 			{
 				OutClassHeaderPath = ModuleBasePath / ModuleRelativePath;
@@ -1701,7 +1852,7 @@ bool FSourceCodeNavigation::FindClassSourcePath( const UField *Field, FString &O
 		{
 			// Get the metadata for the class path relative to the module base
 			// Given this we can try and find the corresponding .cpp file
-			FString ModuleRelativePath = ModulePackage->GetMetaData()->GetValue(Field, TEXT("ModuleRelativePath"));
+			const FString& ModuleRelativePath = ModulePackage->GetMetaData()->GetValue(Field, TEXT("ModuleRelativePath"));
 			if(ModuleRelativePath.Len() > 0)
 			{
 				const FString PotentialCppLeafname = FPaths::GetBaseFilename(ModuleRelativePath) + TEXT(".cpp");

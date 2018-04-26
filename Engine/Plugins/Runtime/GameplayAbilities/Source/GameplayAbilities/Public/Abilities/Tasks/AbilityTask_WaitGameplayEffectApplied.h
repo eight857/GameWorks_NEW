@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -10,8 +10,8 @@
 
 class UAbilitySystemComponent;
 
-UCLASS(MinimalAPI)
-class UAbilityTask_WaitGameplayEffectApplied : public UAbilityTask
+UCLASS()
+class GAMEPLAYABILITIES_API UAbilityTask_WaitGameplayEffectApplied : public UAbilityTask
 {
 	GENERATED_UCLASS_BODY()
 
@@ -23,6 +23,10 @@ class UAbilityTask_WaitGameplayEffectApplied : public UAbilityTask
 	FGameplayTargetDataFilterHandle Filter;
 	FGameplayTagRequirements SourceTagRequirements;
 	FGameplayTagRequirements TargetTagRequirements;
+
+	FGameplayTagQuery SourceTagQuery;
+	FGameplayTagQuery TargetTagQuery;
+
 	bool TriggerOnce;
 	bool ListenForPeriodicEffects;
 

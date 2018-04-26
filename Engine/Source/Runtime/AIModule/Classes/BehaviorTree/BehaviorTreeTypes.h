@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -159,6 +159,7 @@ namespace EBTNodeUpdateMode
 	// keep in sync with DescribeNodeUpdateMode()
 	enum Type
 	{
+		Unknown,
 		Add,				// add node
 		Remove,				// remove node
 	};
@@ -380,12 +381,12 @@ struct FBehaviorTreeSearchUpdate
 	/** if set, this entry will be applied AFTER other are processed */
 	uint8 bPostUpdate : 1;
 
-	FBehaviorTreeSearchUpdate() : AuxNode(0), TaskNode(0), InstanceIndex(0) {}
+	FBehaviorTreeSearchUpdate() : AuxNode(0), TaskNode(0), InstanceIndex(0), Mode(EBTNodeUpdateMode::Unknown), bPostUpdate(false) {}
 	FBehaviorTreeSearchUpdate(const UBTAuxiliaryNode* InAuxNode, uint16 InInstanceIndex, EBTNodeUpdateMode::Type InMode) :
-		AuxNode((UBTAuxiliaryNode*)InAuxNode), TaskNode(0), InstanceIndex(InInstanceIndex), Mode(InMode) 
+		AuxNode((UBTAuxiliaryNode*)InAuxNode), TaskNode(0), InstanceIndex(InInstanceIndex), Mode(InMode), bPostUpdate(false)
 	{}
 	FBehaviorTreeSearchUpdate(const UBTTaskNode* InTaskNode, uint16 InInstanceIndex, EBTNodeUpdateMode::Type InMode) :
-		AuxNode(0), TaskNode((UBTTaskNode*)InTaskNode), InstanceIndex(InInstanceIndex), Mode(InMode) 
+		AuxNode(0), TaskNode((UBTTaskNode*)InTaskNode), InstanceIndex(InInstanceIndex), Mode(InMode), bPostUpdate(false)
 	{}
 };
 
@@ -408,11 +409,17 @@ struct FBehaviorTreeSearchData
 	/** search unique number */
 	int32 SearchId;
 
+	/** active instance index to rollback to */
+	int32 RollbackInstanceIdx;
+
 	/** if set, current search will be restarted in next tick */
 	uint32 bPostponeSearch : 1;
 
 	/** set when task search is in progress */
 	uint32 bSearchInProgress : 1;
+
+	/** if set, active node state/memory won't be rolled back */
+	uint32 bPreserveActiveNodeMemoryOnRollback : 1;
 
 	/** adds update info to PendingUpdates array, removing all previous updates for this node */
 	void AddUniqueUpdate(const FBehaviorTreeSearchUpdate& UpdateInfo);
@@ -420,8 +427,11 @@ struct FBehaviorTreeSearchData
 	/** assign unique Id number */
 	void AssignSearchId();
 
+	/** clear state of search */
+	void Reset();
+
 	FBehaviorTreeSearchData(UBehaviorTreeComponent& InOwnerComp) 
-		: OwnerComp(InOwnerComp), bPostponeSearch(false), bSearchInProgress(false)
+		: OwnerComp(InOwnerComp), RollbackInstanceIdx(INDEX_NONE), bPostponeSearch(false), bSearchInProgress(false), bPreserveActiveNodeMemoryOnRollback(false)
 	{}
 
 private:
@@ -510,7 +520,11 @@ public:
 UCLASS(Abstract)
 class AIMODULE_API UBehaviorTreeTypes : public UObject
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
+
+	static FString BTLoggingContext;
+
+public:
 
 	static FString DescribeNodeHelper(const UBTNode* Node);
 
@@ -522,4 +536,10 @@ class AIMODULE_API UBehaviorTreeTypes : public UObject
 
 	/** returns short name of object's class (BTTaskNode_Wait -> Wait) */
 	static FString GetShortTypeName(const UObject* Ob);
+	
+	static FString GetBTLoggingContext() { return BTLoggingContext; }
+	
+	// @param NewBTLoggingContext the object which name's will be added to some of the BT logging
+	// 	pass nullptr to clear
+	static void SetBTLoggingContext(const UBTNode* NewBTLoggingContext);
 };

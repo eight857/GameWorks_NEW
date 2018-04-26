@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneToolsUserSettings.h"
 #include "UObject/UnrealType.h"
@@ -26,4 +26,13 @@ void UMovieSceneUserThumbnailSettings::PostEditChangeProperty(FPropertyChangedEv
 	ThumbnailSize.Y = FMath::Clamp(ThumbnailSize.Y, 1, 1024);
 
 	SaveConfig();
+}
+
+UMovieSceneUserImportFBXSettings::UMovieSceneUserImportFBXSettings(const FObjectInitializer& Initializer)
+	: Super(Initializer)
+{
+	bForceFrontXAxis = false;
+	bCreateCameras = true;
+	bReduceKeys = true;
+	ReduceKeysTolerance = 0.001f;
 }

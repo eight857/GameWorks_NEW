@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CollisionProfileDetails.h"
 #include "Misc/MessageDialog.h"
@@ -1925,7 +1925,7 @@ FReply FCollisionProfileDetails::OnNewChannel(bool bTraceType)
 	// find empty channel and see if we can add it. 
 	ECollisionChannel NewChannel = FindAvailableChannel();
 
-	if (ensure(NewChannel >= ECC_GameTraceChannel1 && NewChannel <= ECC_GameTraceChannel18))
+	if (ensure(NewChannel >= ECC_GameTraceChannel1 && NewChannel <= ECC_GameTraceChannel18)) //-V547
 	{
 		// Create modal window for modification
 		TSharedRef<SWindow> WidgetWindow = SNew(SWindow)

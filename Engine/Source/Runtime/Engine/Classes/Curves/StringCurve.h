@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -79,6 +79,14 @@ struct ENGINE_API FStringCurve
 	virtual ~FStringCurve() { }
 
 public:
+
+	/**
+	 * Check whether this curve has any data or not
+	 */
+	bool HasAnyData() const
+	{
+		return DefaultValue.Len() || Keys.Num();
+	}
 
 	/**
 	  * Add a new key to the curve with the supplied Time and Value. Returns the handle of the new key.

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreTypes.h"
 #include "Containers/UnrealString.h"
@@ -69,7 +69,7 @@ bool FLocContextTest::RunTest( const FString& Parameters )
 
 
 		// Test copy ctor
-		{
+		{ //-V760
 			FManifestContext ContextAClone = ContextA;
 
 			if( ContextAClone.InfoMetadataObj == ContextA.InfoMetadataObj )

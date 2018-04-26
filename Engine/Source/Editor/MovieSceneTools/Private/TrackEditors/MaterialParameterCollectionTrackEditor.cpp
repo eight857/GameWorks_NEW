@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TrackEditors/MaterialParameterCollectionTrackEditor.h"
 #include "Tracks/MovieSceneMaterialParameterCollectionTrack.h"
@@ -84,6 +84,7 @@ void FMaterialParameterCollectionTrackEditor::BuildTrackContextMenu(FMenuBuilder
 	);
 }
 
+
 void FMaterialParameterCollectionTrackEditor::BuildAddTrackMenu(FMenuBuilder& MenuBuilder)
 {
 	auto SubMenuCallback = [this](FMenuBuilder& SubMenuBuilder)
@@ -142,6 +143,15 @@ void FMaterialParameterCollectionTrackEditor::AddTrackToSequence(const FAssetDat
 bool FMaterialParameterCollectionTrackEditor::SupportsType(TSubclassOf<UMovieSceneTrack> Type) const
 {
 	return Type == UMovieSceneMaterialParameterCollectionTrack::StaticClass();
+}
+
+bool FMaterialParameterCollectionTrackEditor::SupportsSequence(UMovieSceneSequence* InSequence) const
+{
+	static UClass* LevelSequenceClass = FindObject<UClass>(ANY_PACKAGE, TEXT("LevelSequence"), true);
+	static UClass* WidgetAnimationClass = FindObject<UClass>(ANY_PACKAGE, TEXT("WidgetAnimation"), true);
+	return InSequence != nullptr &&
+		((LevelSequenceClass != nullptr && InSequence->GetClass()->IsChildOf(LevelSequenceClass)) ||
+		(WidgetAnimationClass != nullptr && InSequence->GetClass()->IsChildOf(WidgetAnimationClass)));
 }
 
 const FSlateBrush* FMaterialParameterCollectionTrackEditor::GetIconBrush() const

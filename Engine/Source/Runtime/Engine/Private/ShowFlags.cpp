@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ShowFlags.cpp: Show Flag Definitions.
@@ -472,6 +472,14 @@ void EngineShowFlagOverride(EShowFlagInitMode ShowFlagInitMode, EViewModeIndex V
 	if(EngineShowFlags.VisualizeBuffer && CurrentBufferVisualizationMode != NAME_None)
 	{
 		EngineShowFlags.SetTonemapper(false);
+	}
+
+	if(EngineShowFlags.Bones)
+	{
+		// Disabling some post processing effects when debug rendering bones as they dont work properly together
+		EngineShowFlags.TemporalAA = 0;
+		EngineShowFlags.MotionBlur = 0;
+		EngineShowFlags.Bloom = 0;
 	}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)

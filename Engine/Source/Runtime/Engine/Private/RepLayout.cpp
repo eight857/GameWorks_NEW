@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RepLayout.cpp: Unreal replication layout implementation.
@@ -14,8 +14,7 @@
 #include "Net/NetworkProfiler.h"
 #include "Engine/ActorChannel.h"
 #include "Engine/NetworkSettings.h"
-
-static TAutoConsoleVariable<int32> CVarAllowPropertySkipping( TEXT( "net.AllowPropertySkipping" ), 1, TEXT( "Allow skipping of properties that haven't changed for other clients" ) );
+#include "HAL/LowLevelMemTracker.h"
 
 static TAutoConsoleVariable<int32> CVarDoPropertyChecksum( TEXT( "net.DoPropertyChecksum" ), 0, TEXT( "" ) );
 
@@ -531,7 +530,7 @@ bool FRepLayout::CompareProperties(
 	const uint8* RESTRICT			Data,
 	const FReplicationFlags&		RepFlags ) const
 {
-	SCOPE_CYCLE_COUNTER( STAT_NetReplicateDynamicPropTime );
+	SCOPE_CYCLE_COUNTER( STAT_NetReplicateDynamicPropCompareTime );
 
 	RepChangelistState->CompareIndex++;
 
@@ -650,18 +649,18 @@ bool FRepLayout::ReplicateProperties(
 		if ( RepState->NumNaks == 0 && !bFlushPreOpenAckHistory )
 		{
 			// Nothing changed and there are no nak's, so just do normal housekeeping and remove acked history items
-			UpdateChangelistHistory( RepState, ObjectClass, Data, OwningChannel->Connection->OutAckPacketId, NULL );
+			UpdateChangelistHistory( RepState, ObjectClass, Data, OwningChannel->Connection, NULL );
 			return false;
 		}
 	}
 
-	// Clamp to the valid history range (and warn if we end up sending entire history, this should only happen if we get really far behind)
+	// Clamp to the valid history range (and log if we end up sending entire history, this should only happen if we get really far behind)
 	//	NOTE - The RepState->LastChangelistIndex != 0 should handle/ignore the JIP case
 	if ( RepState->LastChangelistIndex <= RepChangelistState->HistoryStart )
 	{
 		if ( RepState->LastChangelistIndex != 0 )
 		{
-			UE_LOG( LogRep, Warning, TEXT( "FRepLayout::ReplicatePropertiesUsingChangelistState: Entire history sent for: %s" ), *GetNameSafe( ObjectClass ) );
+			UE_LOG( LogRep, Verbose, TEXT( "FRepLayout::ReplicatePropertiesUsingChangelistState: Entire history sent for: %s" ), *GetNameSafe( ObjectClass ) );
 		}
 
 		RepState->LastChangelistIndex = RepChangelistState->HistoryStart;
@@ -693,7 +692,7 @@ bool FRepLayout::ReplicateProperties(
 	{
 		RepState->HistoryEnd++;
 
-		UpdateChangelistHistory( RepState, ObjectClass, Data, OwningChannel->Connection->OutAckPacketId, &Changed );
+		UpdateChangelistHistory( RepState, ObjectClass, Data, OwningChannel->Connection, &Changed );
 
 		// Merge in the PreOpenAckHistory (unreliable properties sent before the bunch was initially acked)
 		if ( bFlushPreOpenAckHistory )
@@ -710,7 +709,7 @@ bool FRepLayout::ReplicateProperties(
 	else
 	{
 		// Nothing changed and there are no nak's, so just do normal housekeeping and remove acked history items
-		UpdateChangelistHistory( RepState, ObjectClass, Data, OwningChannel->Connection->OutAckPacketId, NULL );
+		UpdateChangelistHistory( RepState, ObjectClass, Data, OwningChannel->Connection, NULL );
 		return false;		// Nothing to send
 	}
 
@@ -746,17 +745,18 @@ bool FRepLayout::ReplicateProperties(
 	return bSomethingSent;
 }
 
-void FRepLayout::UpdateChangelistHistory( FRepState * RepState, UClass * ObjectClass, const uint8* RESTRICT Data, const int32 AckPacketId, TArray< uint16 > * OutMerged ) const
+void FRepLayout::UpdateChangelistHistory( FRepState * RepState, UClass * ObjectClass, const uint8* RESTRICT Data, UNetConnection* Connection, TArray< uint16 > * OutMerged ) const
 {
 	check( RepState->HistoryEnd >= RepState->HistoryStart );
 
 	const int32 HistoryCount	= RepState->HistoryEnd - RepState->HistoryStart;
 	const bool DumpHistory		= HistoryCount == FRepState::MAX_CHANGE_HISTORY;
+	const int32 AckPacketId		= Connection->OutAckPacketId;
 
 	// If our buffer is currently full, forcibly send the entire history
 	if ( DumpHistory )
 	{
-		UE_LOG( LogRep, Log, TEXT( "FRepLayout::UpdateChangelistHistory: History overflow, forcing history dump %s" ), *ObjectClass->GetName() );
+		UE_LOG( LogRep, Verbose, TEXT( "FRepLayout::UpdateChangelistHistory: History overflow, forcing history dump %s, %s" ), *ObjectClass->GetName(), *Connection->Describe());
 	}
 
 	for ( int32 i = RepState->HistoryStart; i < RepState->HistoryEnd; i++ )
@@ -1118,7 +1118,7 @@ void FRepLayout::MergeChangeList_r(
 
 			const uint8* NewData = ( uint8* )Array->GetData();
 
-			TArray< FHandleToCmdIndex >& ArrayHandleToCmdIndex = ActiveIterator1 ? *ActiveIterator1->HandleToCmdIndex[Cmd.RelativeHandle - 1].HandleToCmdIndex : *ActiveIterator2->HandleToCmdIndex[Cmd.RelativeHandle - 1].HandleToCmdIndex;
+			TArray< FHandleToCmdIndex >& ArrayHandleToCmdIndex = ActiveIterator1 ? *ActiveIterator1->HandleToCmdIndex[Cmd.RelativeHandle - 1].HandleToCmdIndex : *ActiveIterator2->HandleToCmdIndex[Cmd.RelativeHandle - 1].HandleToCmdIndex; //-V595
 
 			if ( !ActiveIterator1 )
 			{
@@ -1293,6 +1293,8 @@ void FRepLayout::SendProperties(
 	FNetBitWriter&				Writer,
 	TArray< uint16 > &			Changed ) const
 {
+	SCOPE_CYCLE_COUNTER(STAT_NetReplicateDynamicPropSendTime);
+
 #ifdef ENABLE_PROPERTY_CHECKSUMS
 	const bool bDoChecksum = CVarDoPropertyChecksum.GetValueOnAnyThread() == 1;
 #else
@@ -1566,6 +1568,8 @@ void FRepLayout::SendProperties_BackwardsCompatible(
 	FNetBitWriter&				Writer,
 	TArray< uint16 >&			Changed ) const
 {
+	SCOPE_CYCLE_COUNTER(STAT_NetReplicateDynamicPropSendBackCompatTime);
+
 	FBitWriterMark Mark( Writer );
 
 #ifdef ENABLE_PROPERTY_CHECKSUMS
@@ -1928,13 +1932,6 @@ bool FRepLayout::ReceiveProperties( UActorChannel* OwningChannel, UClass * InObj
 	if ( OwningChannel->Connection->InternalAck )
 	{
 		TSharedPtr< FNetFieldExportGroup > NetFieldExportGroup = ( ( UPackageMapClient* )OwningChannel->Connection->PackageMap )->GetNetFieldExportGroup( Owner->GetPathName() );
-
-		if ( !ensure( NetFieldExportGroup.IsValid() ) )
-		{
-			UE_LOG( LogRep, Warning, TEXT( "ReceiveProperties_BackwardsCompatible: Invalid path name: %s" ), *Owner->GetPathName() );
-			InBunch.SetError();
-			return false;
-		}
 
 		return ReceiveProperties_BackwardsCompatible_r( RepState, NetFieldExportGroup.Get(), InBunch, 0, Cmds.Num() - 1, bEnableRepNotifies ? RepState->StaticBuffer.GetData() : nullptr, ( uint8* )Data, ( uint8* )Data, &RepState->GuidReferencesMap, bOutHasUnmapped, bOutGuidsChanged );
 	}
@@ -2713,6 +2710,13 @@ bool FRepLayout::DiffProperties( TArray<UProperty*>* RepNotifies, void* RESTRICT
 	return DiffPropertiesImpl.bDifferent;
 }
 
+static FName NAME_Vector_NetQuantize100(TEXT("Vector_NetQuantize100"));
+static FName NAME_Vector_NetQuantize10(TEXT("Vector_NetQuantize10"));
+static FName NAME_Vector_NetQuantizeNormal(TEXT("Vector_NetQuantizeNormal"));
+static FName NAME_Vector_NetQuantize(TEXT("Vector_NetQuantize"));
+static FName NAME_UniqueNetIdRepl(TEXT("UniqueNetIdRepl"));
+static FName NAME_RepMovement(TEXT("RepMovement"));
+
 uint32 FRepLayout::AddPropertyCmd( UProperty * Property, int32 Offset, int32 RelativeHandle, int32 ParentIndex, uint32 ParentChecksum, int32 StaticArrayIndex )
 {
 	const int32 Index = Cmds.AddZeroed();
@@ -2753,27 +2757,27 @@ uint32 FRepLayout::AddPropertyCmd( UProperty * Property, int32 Offset, int32 Rel
 		{
 			Cmd.Type = REPCMD_PropertyPlane;
 		}
-		else if ( Struct->GetName() == TEXT( "Vector_NetQuantize100" ) )
+		else if ( Struct->GetFName() == NAME_Vector_NetQuantize100 )
 		{
 			Cmd.Type = REPCMD_PropertyVector100;
 		}
-		else if ( Struct->GetName() == TEXT( "Vector_NetQuantize10" ) )
+		else if ( Struct->GetFName() == NAME_Vector_NetQuantize10 )
 		{
 			Cmd.Type = REPCMD_PropertyVector10;
 		}
-		else if ( Struct->GetName() == TEXT( "Vector_NetQuantizeNormal" ) )
+		else if ( Struct->GetFName() == NAME_Vector_NetQuantizeNormal )
 		{
 			Cmd.Type = REPCMD_PropertyVectorNormal;
 		}
-		else if ( Struct->GetName() == TEXT( "Vector_NetQuantize" ) )
+		else if ( Struct->GetFName() == NAME_Vector_NetQuantize )
 		{
 			Cmd.Type = REPCMD_PropertyVectorQ;
 		}
-		else if ( Struct->GetName() == TEXT( "UniqueNetIdRepl" ) )
+		else if ( Struct->GetFName() == NAME_UniqueNetIdRepl )
 		{
 			Cmd.Type = REPCMD_PropertyNetId;
 		}
-		else if ( Struct->GetName() == TEXT( "RepMovement" ) )
+		else if ( Struct->GetFName() == NAME_RepMovement )
 		{
 			Cmd.Type = REPCMD_RepMovement;
 		}
@@ -2966,6 +2970,8 @@ void FRepLayout::InitFromObjectClass( UClass * InObjectClass )
 	int32 LastOffset		= -1;
 
 	Parents.Empty();
+
+	ensureMsgf(!InObjectClass->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad), TEXT("FRepLayout::InitFromObjectClass: %s has not. NetFields and ClassReps will be incorrect!"), *GetFullNameSafe(InObjectClass));
 
 	for ( int32 i = 0; i < InObjectClass->ClassReps.Num(); i++ )
 	{
@@ -3432,33 +3438,33 @@ void FRepLayout::RebuildConditionalProperties( FRepState * RESTRICT	RepState, co
 	RepState->ConditionMap[COND_None]						= true;
 	RepState->ConditionMap[COND_InitialOnly]				= bIsInitial;
 
-	RepState->ConditionMap[COND_OwnerOnly]					= bIsOwner;
-	RepState->ConditionMap[COND_SkipOwner]					= !bIsOwner;
+	RepState->ConditionMap[COND_OwnerOnly] = bIsOwner;
+	RepState->ConditionMap[COND_SkipOwner] = !bIsOwner;
 
-	RepState->ConditionMap[COND_SimulatedOnly]				= bIsSimulated;
-	RepState->ConditionMap[COND_SimulatedOnlyNoReplay]		= bIsSimulated && !bIsReplay;
-	RepState->ConditionMap[COND_AutonomousOnly]				= !bIsSimulated;
+	RepState->ConditionMap[COND_SimulatedOnly] = bIsSimulated;
+	RepState->ConditionMap[COND_SimulatedOnlyNoReplay] = bIsSimulated && !bIsReplay;
+	RepState->ConditionMap[COND_AutonomousOnly] = !bIsSimulated;
 
-	RepState->ConditionMap[COND_SimulatedOrPhysics]			= bIsSimulated || bIsPhysics;
-	RepState->ConditionMap[COND_SimulatedOrPhysicsNoReplay]	= ( bIsSimulated || bIsPhysics ) && !bIsReplay;
+	RepState->ConditionMap[COND_SimulatedOrPhysics] = bIsSimulated || bIsPhysics;
+	RepState->ConditionMap[COND_SimulatedOrPhysicsNoReplay] = (bIsSimulated || bIsPhysics) && !bIsReplay;
 
-	RepState->ConditionMap[COND_InitialOrOwner]				= bIsInitial || bIsOwner;
-	RepState->ConditionMap[COND_ReplayOrOwner]				= bIsReplay || bIsOwner;
-	RepState->ConditionMap[COND_ReplayOnly]					= bIsReplay;
-	RepState->ConditionMap[COND_SkipReplay]					= !bIsReplay;
+	RepState->ConditionMap[COND_InitialOrOwner] = bIsInitial || bIsOwner;
+	RepState->ConditionMap[COND_ReplayOrOwner] = bIsReplay || bIsOwner;
+	RepState->ConditionMap[COND_ReplayOnly] = bIsReplay;
+	RepState->ConditionMap[COND_SkipReplay] = !bIsReplay;
 
-	RepState->ConditionMap[COND_Custom]						= true;
+	RepState->ConditionMap[COND_Custom] = true;
 
 	RepState->RepFlags = RepFlags;
 }
 
-void FRepLayout::InitChangedTracker( FRepChangedPropertyTracker * ChangedTracker ) const
+void FRepLayout::InitChangedTracker(FRepChangedPropertyTracker * ChangedTracker) const
 {
-	ChangedTracker->Parents.SetNum( Parents.Num() );
+	ChangedTracker->Parents.SetNum(Parents.Num());
 
-	for ( int32 i = 0; i < Parents.Num(); i++ )
+	for (int32 i = 0; i < Parents.Num(); i++)
 	{
-		ChangedTracker->Parents[i].IsConditional = ( Parents[i].Flags & PARENT_IsConditional ) ? 1 : 0;
+		ChangedTracker->Parents[i].IsConditional = (Parents[i].Flags & PARENT_IsConditional) ? 1 : 0;
 	}
 }
 
@@ -3514,6 +3520,8 @@ void FRepLayout::ConstructProperties( TArray< uint8, TAlignedHeapAllocator<16> >
 
 void FRepLayout::InitProperties( TArray< uint8, TAlignedHeapAllocator<16> >& ShadowData, uint8* Src ) const
 {
+	LLM_SCOPE(ELLMTag::Networking);
+
 	uint8* StoredData = ShadowData.GetData();
 
 	// Init all items

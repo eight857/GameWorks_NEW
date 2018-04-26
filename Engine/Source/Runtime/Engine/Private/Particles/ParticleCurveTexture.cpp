@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*==============================================================================
 	ParticleCurveTexture.cpp: Texture used to hold particle curves.
@@ -13,7 +13,7 @@
 #include "RHIStaticStates.h"
 #include "SceneUtils.h"
 #include "ParticleHelper.h"
-#include "Particles/ParticleResources.h"
+#include "ParticleResources.h"
 #include "ShaderParameterUtils.h"
 #include "GlobalShader.h"
 #include "FXSystem.h"
@@ -56,9 +56,9 @@ class FParticleCurveInjectionVS : public FGlobalShader
 
 public:
 
-	static bool ShouldCache( EShaderPlatform Platform )
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return SupportsGPUParticles(Platform);
+		return SupportsGPUParticles(Parameters.Platform);
 	}
 
 	/** Default constructor. */
@@ -96,14 +96,9 @@ class FParticleCurveInjectionPS : public FGlobalShader
 
 public:
 
-	static bool ShouldCache( EShaderPlatform Platform )
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
-		return SupportsGPUParticles(Platform);
-	}
-
-	static void ModifyCompilationEnvironment( EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment )
-	{
-		FGlobalShader::ModifyCompilationEnvironment( Platform, OutEnvironment );
+		return SupportsGPUParticles(Parameters.Platform);
 	}
 
 	/** Default constructor. */
@@ -126,8 +121,8 @@ public:
 };
 
 /** Implementation for all shaders used for particle injection. */
-IMPLEMENT_SHADER_TYPE(,FParticleCurveInjectionVS,TEXT("ParticleCurveInjectionShader"),TEXT("VertexMain"),SF_Vertex);
-IMPLEMENT_SHADER_TYPE(,FParticleCurveInjectionPS,TEXT("ParticleCurveInjectionShader"),TEXT("PixelMain"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(,FParticleCurveInjectionVS,TEXT("/Engine/Private/ParticleCurveInjectionShader.usf"),TEXT("VertexMain"),SF_Vertex);
+IMPLEMENT_SHADER_TYPE(,FParticleCurveInjectionPS,TEXT("/Engine/Private/ParticleCurveInjectionShader.usf"),TEXT("PixelMain"),SF_Pixel);
 
 /**
  * Vertex declaration for injecting curves.
@@ -254,7 +249,6 @@ static void InjectCurves(
 		RHICmdList.SetStreamSource(
 			0,
 			ScratchVertexBufferRHI,
-			/*Stride=*/ sizeof(FColor),
 			/*Offset=*/ 0
 			);
 
@@ -262,7 +256,6 @@ static void InjectCurves(
 		RHICmdList.SetStreamSource(
 			1,
 			GParticleTexCoordVertexBuffer.VertexBufferRHI,
-			/*Stride=*/ sizeof(FVector2D),
 			/*Offset=*/ 0
 			);
 

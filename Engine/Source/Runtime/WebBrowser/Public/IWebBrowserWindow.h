@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -260,6 +260,9 @@ public:
 	 */
 	virtual void UnbindUObject(const FString& Name, UObject* Object, bool bIsPermanent = true) = 0;
 
+	virtual void BindInputMethodSystem(ITextInputMethodSystem* TextInputMethodSystem) {}
+
+	virtual void UnbindInputMethodSystem() {}
 
 	/**
 	 * Get current load error.

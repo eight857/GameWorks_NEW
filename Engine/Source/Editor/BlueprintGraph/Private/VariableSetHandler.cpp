@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VariableSetHandler.h"
 #include "GameFramework/Actor.h"
@@ -27,13 +27,8 @@ void FKCHandler_VariableSet::RegisterNets(FKismetFunctionContext& Context, UEdGr
 	{
 		SetterNode->CheckForErrors(CompilerContext.GetSchema(), Context.MessageLog);
 
-		if(FBlueprintEditorUtils::IsPropertyReadOnlyInCurrentBlueprint(Context.Blueprint, SetterNode->GetPropertyForVariable()))
-		{
-			CompilerContext.MessageLog.Warning(*LOCTEXT("BlueprintReadOnlyOrPrivate_Error", "The property is marked as BlueprintReadOnly or Private. It cannot be modifed in the blueprint. @@").ToString(), Node);
-		}
-
 		// Report an error that the local variable could not be found
-		if(SetterNode->VariableReference.IsLocalScope() && SetterNode->GetPropertyForVariable() == NULL)
+		if(SetterNode->VariableReference.IsLocalScope() && SetterNode->GetPropertyForVariable() == nullptr)
 		{
 			FFormatNamedArguments Args;
 			Args.Add(TEXT("VariableName"), FText::FromName(SetterNode->VariableReference.GetMemberName()));
@@ -50,10 +45,9 @@ void FKCHandler_VariableSet::RegisterNets(FKismetFunctionContext& Context, UEdGr
 		}
 	}
 
-	for (int32 PinIndex = 0; PinIndex < Node->Pins.Num(); ++PinIndex)
+	for (UEdGraphPin* Net : Node->Pins)
 	{
-		UEdGraphPin* Net = Node->Pins[PinIndex];
-		if (!CompilerContext.GetSchema()->IsMetaPin(*Net) && (Net->Direction == EGPD_Input))
+		if (!Net->bOrphanedPin && (Net->Direction == EGPD_Input) && !CompilerContext.GetSchema()->IsMetaPin(*Net))
 		{
 			if (ValidateAndRegisterNetIfLiteral(Context, Net))
 			{
@@ -66,18 +60,18 @@ void FKCHandler_VariableSet::RegisterNets(FKismetFunctionContext& Context, UEdGr
 void FKCHandler_VariableSet::InnerAssignment(FKismetFunctionContext& Context, UEdGraphNode* Node, UEdGraphPin* VariablePin, UEdGraphPin* ValuePin)
 {
 	FBPTerminal** VariableTerm = Context.NetMap.Find(VariablePin);
-	if (VariableTerm == NULL)
+	if (VariableTerm == nullptr)
 	{
 		VariableTerm = Context.NetMap.Find(FEdGraphUtilities::GetNetFromPin(VariablePin));
 	}
 
 	FBPTerminal** ValueTerm = Context.LiteralHackMap.Find(ValuePin);
-	if (ValueTerm == NULL)
+	if (ValueTerm == nullptr)
 	{
 		ValueTerm = Context.NetMap.Find(FEdGraphUtilities::GetNetFromPin(ValuePin));
 	}
 
-	if ((VariableTerm != NULL) && (ValueTerm != NULL))
+	if (VariableTerm && ValueTerm)
 	{
 		FKismetCompilerUtilities::CreateObjectAssignmentStatement(Context, Node, *ValueTerm, *VariableTerm);
 
@@ -134,7 +128,7 @@ void FKCHandler_VariableSet::GenerateAssigments(FKismetFunctionContext& Context,
 		}
 		else
 		{
-			CompilerContext.MessageLog.Error(*FString::Printf(*LOCTEXT("ExpectedOnlyInputPins_Error", "Expected only input pins on @@ but found @@").ToString()), Node, Pin);
+			CompilerContext.MessageLog.Error(*LOCTEXT("ExpectedOnlyInputPins_Error", "Expected only input pins on @@ but found @@").ToString(), Node, Pin);
 		}
 	}
 }
@@ -156,17 +150,17 @@ void FKCHandler_VariableSet::Transform(FKismetFunctionContext& Context, UEdGraph
 		if (SetNotify->ShouldFlushDormancyOnSet())
 		{
 			// Create CallFuncNode
-			UK2Node_CallFunction* CallFuncNode = Node->GetGraph()->CreateBlankNode<UK2Node_CallFunction>();
+			UK2Node_CallFunction* CallFuncNode = Node->GetGraph()->CreateIntermediateNode<UK2Node_CallFunction>();
 			CallFuncNode->FunctionReference.SetExternalMember(NAME_FlushNetDormancy, AActor::StaticClass() );
 			CallFuncNode->AllocateDefaultPins();
 
 			// Copy self pin
-			UEdGraphPin* NewSelfPin = CallFuncNode->FindPinChecked(CompilerContext.GetSchema()->PN_Self);
-			UEdGraphPin* OldSelfPin = Node->FindPinChecked(CompilerContext.GetSchema()->PN_Self);
+			UEdGraphPin* NewSelfPin = CallFuncNode->FindPinChecked(UEdGraphSchema_K2::PN_Self);
+			UEdGraphPin* OldSelfPin = Node->FindPinChecked(UEdGraphSchema_K2::PN_Self);
 			NewSelfPin->CopyPersistentDataFromOldPin(*OldSelfPin);
 
 			// link new CallFuncNode -> Set Node
-			UEdGraphPin* OldExecPin = Node->FindPin(CompilerContext.GetSchema()->PN_Execute);
+			UEdGraphPin* OldExecPin = Node->FindPin(UEdGraphSchema_K2::PN_Execute);
 			check(OldExecPin);
 
 			UEdGraphPin* NewExecPin = CallFuncNode->GetExecPin();
@@ -180,17 +174,17 @@ void FKCHandler_VariableSet::Transform(FKismetFunctionContext& Context, UEdGraph
 
 		if (SetNotify->HasLocalRepNotify())
 		{
-			UK2Node_CallFunction* CallFuncNode = Node->GetGraph()->CreateBlankNode<UK2Node_CallFunction>();
+			UK2Node_CallFunction* CallFuncNode = Node->GetGraph()->CreateIntermediateNode<UK2Node_CallFunction>();
 			CallFuncNode->FunctionReference.SetExternalMember(SetNotify->GetRepNotifyName(), SetNotify->GetVariableSourceClass() );
 			CallFuncNode->AllocateDefaultPins();
 
 			// Copy self pin
-			UEdGraphPin* NewSelfPin = CallFuncNode->FindPinChecked(CompilerContext.GetSchema()->PN_Self);
-			UEdGraphPin* OldSelfPin = Node->FindPinChecked(CompilerContext.GetSchema()->PN_Self);
+			UEdGraphPin* NewSelfPin = CallFuncNode->FindPinChecked(UEdGraphSchema_K2::PN_Self);
+			UEdGraphPin* OldSelfPin = Node->FindPinChecked(UEdGraphSchema_K2::PN_Self);
 			NewSelfPin->CopyPersistentDataFromOldPin(*OldSelfPin);
 
 			// link Set Node -> new CallFuncNode
-			UEdGraphPin* OldThenPin = Node->FindPin(CompilerContext.GetSchema()->PN_Then);
+			UEdGraphPin* OldThenPin = Node->FindPin(UEdGraphSchema_K2::PN_Then);
 			check(OldThenPin);
 
 			UEdGraphPin* NewThenPin = CallFuncNode->GetThenPin();

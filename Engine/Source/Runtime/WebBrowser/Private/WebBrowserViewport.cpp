@@ -1,10 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "WebBrowserViewport.h"
 #include "Textures/SlateShaderResource.h"
 #include "Widgets/SWidget.h"
 #include "IWebBrowserWindow.h"
 #include "Layout/WidgetPath.h"
+
+#if WITH_CEF3
+#include "CEF/CEFWebBrowserWindow.h"
+#endif
 
 FIntPoint FWebBrowserViewport::GetSize() const
 {
@@ -24,6 +28,12 @@ void FWebBrowserViewport::Tick( const FGeometry& AllottedGeometry, double InCurr
 	{
 		FVector2D AbsoluteSize = AllottedGeometry.GetLocalSize() * AllottedGeometry.Scale;
 		WebBrowserWindow->SetViewportSize(AbsoluteSize.IntPoint());
+
+#if WITH_CEF3
+		// Forward the AllottedGeometry to the WebBrowserWindow so the IME implementation can use it
+		TSharedPtr<FCEFWebBrowserWindow> CefWebBrowserWindow = StaticCastSharedPtr<FCEFWebBrowserWindow>(WebBrowserWindow);
+		CefWebBrowserWindow->UpdateCachedGeometry(AllottedGeometry);
+#endif
 	}
 }
 

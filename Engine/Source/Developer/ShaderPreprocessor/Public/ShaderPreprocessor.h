@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,17 +18,4 @@ extern SHADERPREPROCESSOR_API bool PreprocessShader(
 	FShaderCompilerOutput& ShaderOutput,
 	const FShaderCompilerInput& ShaderInput,
 	const FShaderCompilerDefinitions& AdditionalDefines
-	);
-
-/**
- * Preprocess a shader file, for non-usf files.
- * @param OutPreprocessedShader - Upon return contains the preprocessed source code.
- * @param ShaderOutput - ShaderOutput to which errors can be added.
- * @param ShaderInput - The shader compiler input.
- * @returns true if the shader is preprocessed without error.
- */
-extern SHADERPREPROCESSOR_API bool PreprocessShaderFile(
-	FString& OutPreprocessedShader,
-	TArray<FShaderCompilerError>& OutShaderErrors,
-	const FString& InShaderFile
 	);

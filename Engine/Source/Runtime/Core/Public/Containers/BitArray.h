@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,6 @@
 #include "Misc/AssertionMacros.h"
 #include "HAL/UnrealMemory.h"
 #include "Templates/UnrealTypeTraits.h"
-#include "Templates/AlignOf.h"
 #include "Templates/UnrealTemplate.h"
 #include "Containers/ContainerAllocationPolicies.h"
 #include "Serialization/Archive.h"
@@ -237,6 +236,58 @@ public:
 		return *this;
 	}
 
+	FORCEINLINE bool operator==(const TBitArray<Allocator>& Other) const
+	{
+		if (Num() != Other.Num())
+		{
+			return false;
+		}
+
+		int NumBytes = FMath::DivideAndRoundUp(NumBits, NumBitsPerDWORD) * sizeof(uint32);
+		return FMemory::Memcmp(GetData(), Other.GetData(), NumBytes) == 0;
+	}
+
+	FORCEINLINE bool operator<(const TBitArray<Allocator>& Other) const
+	{
+		//sort by length
+		if (Num() != Other.Num())
+		{
+			return Num() < Other.Num();
+		}
+
+		uint32 NumWords = FMath::DivideAndRoundUp(Num(), NumBitsPerDWORD);
+		const uint32* Data0 = GetData();
+		const uint32* Data1 = Other.GetData();
+
+		//sort by num bits active
+		int32 Count0 = 0, Count1 = 0;
+		for (uint32 i = 0; i < NumWords; i++)
+		{
+			Count0 += FPlatformMath::CountBits(Data0[i]);
+			Count1 += FPlatformMath::CountBits(Data1[i]);
+		}
+
+		if (Count0 != Count1)
+		{
+			return Count0 < Count1;
+		}
+
+		//sort by big-num value
+		for (uint32 i = NumWords; i != ~0u; i--)
+		{
+			if (Data0[i] != Data1[i])
+			{
+				return Data0[i] < Data1[i];
+			}
+		}
+		return false;
+	}
+
+	FORCEINLINE bool operator!=(const TBitArray<Allocator>& Other)
+	{
+		return !(*this == Other);
+	}
+
 private:
 	template <typename BitArrayType>
 	static FORCEINLINE typename TEnableIf<TContainerTraits<BitArrayType>::MoveWillEmptyContainer>::Type MoveOrCopy(BitArrayType& ToArray, BitArrayType& FromArray)
@@ -422,20 +473,23 @@ public:
 	 */
 	void RemoveAt(int32 BaseIndex,int32 NumBitsToRemove = 1)
 	{
-		check(BaseIndex >= 0 && BaseIndex + NumBitsToRemove <= NumBits);
+		check(BaseIndex >= 0 && NumBitsToRemove >= 0 && BaseIndex + NumBitsToRemove <= NumBits);
 
-		// Until otherwise necessary, this is an obviously correct implementation rather than an efficient implementation.
-		FIterator WriteIt(*this);
-		for(FConstIterator ReadIt(*this);ReadIt;++ReadIt)
+		if (BaseIndex + NumBitsToRemove != NumBits)
 		{
-			// If this bit isn't being removed, write it back to the array at its potentially new index.
-			if(ReadIt.GetIndex() < BaseIndex || ReadIt.GetIndex() >= BaseIndex + NumBitsToRemove)
+			// Until otherwise necessary, this is an obviously correct implementation rather than an efficient implementation.
+			FIterator WriteIt(*this);
+			for(FConstIterator ReadIt(*this);ReadIt;++ReadIt)
 			{
-				if(WriteIt.GetIndex() != ReadIt.GetIndex())
+				// If this bit isn't being removed, write it back to the array at its potentially new index.
+				if(ReadIt.GetIndex() < BaseIndex || ReadIt.GetIndex() >= BaseIndex + NumBitsToRemove)
 				{
-					WriteIt.GetValue() = (bool)ReadIt.GetValue();
+					if(WriteIt.GetIndex() != ReadIt.GetIndex())
+					{
+						WriteIt.GetValue() = (bool)ReadIt.GetValue();
+					}
+					++WriteIt;
 				}
-				++WriteIt;
 			}
 		}
 		NumBits -= NumBitsToRemove;
@@ -449,7 +503,7 @@ public:
 	 */
 	void RemoveAtSwap( int32 BaseIndex, int32 NumBitsToRemove=1 )
 	{
-		check(BaseIndex >= 0 && BaseIndex + NumBitsToRemove <= NumBits);
+		check(BaseIndex >= 0 && NumBitsToRemove >= 0 && BaseIndex + NumBitsToRemove <= NumBits);
 		if( BaseIndex < NumBits - NumBitsToRemove )
 		{
 			// Copy bits from the end to the region we are removing
@@ -469,8 +523,9 @@ public:
 #endif
 			}
 		}
+
 		// Remove the bits from the end of the array.
-		RemoveAt(NumBits - NumBitsToRemove, NumBitsToRemove);
+		NumBits -= NumBitsToRemove;
 	}
 	
 
@@ -525,6 +580,59 @@ public:
 		return INDEX_NONE;
 	}
 
+	/**
+	* Finds the last true/false bit in the array, and returns the bit index.
+	* If there is none, INDEX_NONE is returned.
+	*/
+	int32 FindLast(bool bValue) const 
+	{
+		// Iterate over the array until we see a word with a matching bit
+		const uint32 Test = bValue ? 0u : (uint32)-1;
+
+		const uint32* RESTRICT DwordArray = GetData();
+		const int32 LocalNumBits = NumBits;
+		const int32 DwordCount = FMath::DivideAndRoundUp(LocalNumBits, NumBitsPerDWORD);
+		int32 DwordIndex = DwordCount-1;
+		int32 SlackCount = (LocalNumBits % NumBitsPerDWORD);
+
+		if(SlackCount != 0)
+		{
+			uint32 Mask = (~0u) << SlackCount;
+			uint32 TailTest = bValue ? DwordArray[DwordCount - 1] & ~Mask : DwordArray[DwordCount - 1] | Mask;
+
+			// If we're looking for a false, then we flip the bits - then we only need to find the first one bit
+			const uint32 Bits = bValue ? TailTest : ~TailTest;
+			const int32 LocalBitIndex = (NumBitsPerDWORD - FMath::CountLeadingZeros(Bits) - 1);
+			if (LocalBitIndex >= 0)
+			{
+				const int32 LowestBitIndex = LocalBitIndex + (DwordIndex << NumBitsPerDWORDLogTwo);
+				checkSlow(LowestBitIndex < LocalNumBits);
+				return LowestBitIndex;
+			}
+			DwordIndex--;
+		}
+
+		while (DwordIndex >= 0 && DwordArray[DwordIndex] == Test)
+		{
+			--DwordIndex;
+		}
+
+		if (DwordIndex >= 0 && DwordIndex < DwordCount)
+		{
+			// If we're looking for a false, then we flip the bits - then we only need to find the first one bit
+			const uint32 Bits = bValue ? (DwordArray[DwordIndex]) : ~(DwordArray[DwordIndex]);
+			ASSUME(Bits != 0);
+			const int32 LocalBitIndex = (NumBitsPerDWORD - FMath::CountLeadingZeros(Bits) - 1);
+			const int32 LowestBitIndex = LocalBitIndex + (DwordIndex << NumBitsPerDWORDLogTwo);
+			if (LowestBitIndex < LocalNumBits)
+			{
+				return LowestBitIndex;
+			}
+		}
+
+		return INDEX_NONE;
+	}
+
 	FORCEINLINE bool Contains(bool bValue) const
 	{
 		return Find(bValue) != INDEX_NONE;
@@ -560,6 +668,49 @@ public:
 			}
 		}
 
+		return INDEX_NONE;
+	}
+
+	/**
+	* Finds the last zero bit in the array, sets it to true, and returns the bit index.
+	* If there is none, INDEX_NONE is returned.
+	*/
+	int32 FindAndSetLastZeroBit()
+	{
+		// Iterate over the array until we see a word with a zero bit.
+		uint32* RESTRICT DwordArray = GetData();
+		const int32 LocalNumBits = NumBits;
+		const int32 DwordCount = FMath::DivideAndRoundUp(LocalNumBits, NumBitsPerDWORD);
+		int32 DwordIndex = DwordCount - 1;
+
+		int32 SlackIndex = (LocalNumBits % NumBitsPerDWORD);
+		uint32 Mask = (~0u) << SlackIndex;
+		uint32 Slack = DwordArray[DwordCount - 1] & Mask;
+		DwordArray[DwordCount - 1] = DwordArray[DwordCount - 1] | Mask;
+
+		while (DwordIndex >= 0 && DwordArray[DwordIndex] == (uint32)-1)
+		{
+			--DwordIndex;
+		}
+
+		if (DwordIndex >= 0 && DwordIndex < DwordCount)
+		{
+			// Flip the bits, then we only need to find the first one bit -- easy.
+			const uint32 Bits = ~(DwordArray[DwordIndex]);
+			ASSUME(Bits != 0);
+			const int32 HighestLocalBitIndex = FMath::CountLeadingZeros(Bits);
+			const int32 BitIndex = (NumBitsPerDWORD - HighestLocalBitIndex - 1);
+			const uint32 HighestBit = 1u << BitIndex;
+			const int32 HighestBitIndex = BitIndex + (DwordIndex << NumBitsPerDWORDLogTwo);
+			if (HighestBitIndex < LocalNumBits)
+			{
+				DwordArray[DwordIndex] |= HighestBit;
+				DwordArray[DwordCount - 1] = (DwordArray[DwordCount - 1] & ~Mask) | Slack;
+				return HighestBitIndex;
+			}
+		}
+
+		DwordArray[DwordCount - 1] = (DwordArray[DwordCount - 1] & ~Mask) | Slack;
 		return INDEX_NONE;
 	}
 
@@ -761,10 +912,23 @@ private:
 	}
 };
 
+template<typename Allocator>
+FORCEINLINE uint32 GetTypeHash(const TBitArray<Allocator>& BitArray)
+{
+	uint32 NumWords = FMath::DivideAndRoundUp(BitArray.Num(), NumBitsPerDWORD);
+	uint32 Hash = NumWords;
+	const uint32* Data = BitArray.GetData();
+	for (uint32 i = 0; i < NumWords; i++)
+	{
+		Hash ^= Data[i];
+	}
+	return Hash;
+}
 
 template<typename Allocator>
 struct TContainerTraits<TBitArray<Allocator> > : public TContainerTraitsBase<TBitArray<Allocator> >
 {
+	static_assert(TAllocatorTraits<Allocator>::SupportsMove, "TBitArray no longer supports move-unaware allocators");
 	enum { MoveWillEmptyContainer = TAllocatorTraits<Allocator>::SupportsMove };
 };
 
@@ -779,7 +943,7 @@ public:
 	TConstSetBitIterator(const TBitArray<Allocator>& InArray,int32 StartIndex = 0)
 		: FRelativeBitReference(StartIndex)
 		, Array                (InArray)
-		, UnvisitedBitMask     ((~0) << (StartIndex & (NumBitsPerDWORD - 1)))
+		, UnvisitedBitMask     ((~0U) << (StartIndex & (NumBitsPerDWORD - 1)))
 		, CurrentBitIndex      (StartIndex)
 		, BaseBitIndex         (StartIndex & ~(NumBitsPerDWORD - 1))
 	{
@@ -897,7 +1061,7 @@ public:
 	:	FRelativeBitReference(StartIndex)
 	,	ArrayA(InArrayA)
 	,	ArrayB(InArrayB)
-	,	UnvisitedBitMask((~0) << (StartIndex & (NumBitsPerDWORD - 1)))
+	,	UnvisitedBitMask((~0U) << (StartIndex & (NumBitsPerDWORD - 1)))
 	,	CurrentBitIndex(StartIndex)
 	,	BaseBitIndex(StartIndex & ~(NumBitsPerDWORD - 1))
 	{
@@ -1063,7 +1227,7 @@ private:
 
 		// Check that the class footprint is the same
 		static_assert(sizeof (ScriptType) == sizeof (RealType), "FScriptBitArray's size doesn't match TBitArray");
-		static_assert(ALIGNOF(ScriptType) == ALIGNOF(RealType), "FScriptBitArray's alignment doesn't match TBitArray");
+		static_assert(alignof(ScriptType) == alignof(RealType), "FScriptBitArray's alignment doesn't match TBitArray");
 
 		// Check member sizes
 		static_assert(sizeof(DeclVal<ScriptType>().AllocatorInstance) == sizeof(DeclVal<RealType>().AllocatorInstance), "FScriptBitArray's AllocatorInstance member size does not match TBitArray's");
@@ -1093,11 +1257,11 @@ private:
 			sizeof(uint32)
 			);
 		MaxBits = MaxDWORDs * NumBitsPerDWORD;
-		const int32 PreviousNumDWORDs = FMath::DivideAndRoundUp(PreviousNumBits, NumBitsPerDWORD);
+		const uint32 PreviousNumDWORDs = FMath::DivideAndRoundUp(PreviousNumBits, NumBitsPerDWORD);
 
 		AllocatorInstance.ResizeAllocation(PreviousNumDWORDs, MaxDWORDs, sizeof(uint32));
 
-		if (MaxDWORDs && MaxDWORDs - PreviousNumDWORDs > 0)
+		if (MaxDWORDs && MaxDWORDs > PreviousNumDWORDs)
 		{
 			// Reset the newly allocated slack DWORDs.
 			FMemory::Memzero((uint32*)AllocatorInstance.GetAllocation() + PreviousNumDWORDs, (MaxDWORDs - PreviousNumDWORDs) * sizeof(uint32));
@@ -1112,9 +1276,9 @@ private:
 			sizeof(uint32)
 			);
 		MaxBits = MaxDWORDs * NumBitsPerDWORD;
-		const int32 PreviousNumDWORDs = FMath::DivideAndRoundUp(PreviousNumBits, NumBitsPerDWORD);
+		const uint32 PreviousNumDWORDs = FMath::DivideAndRoundUp(PreviousNumBits, NumBitsPerDWORD);
 		AllocatorInstance.ResizeAllocation(PreviousNumDWORDs, MaxDWORDs, sizeof(uint32));
-		if (MaxDWORDs && MaxDWORDs - PreviousNumDWORDs > 0)
+		if (MaxDWORDs && MaxDWORDs > PreviousNumDWORDs)
 		{
 			// Reset the newly allocated slack DWORDs.
 			FMemory::Memzero((uint32*)AllocatorInstance.GetAllocation() + PreviousNumDWORDs, (MaxDWORDs - PreviousNumDWORDs) * sizeof(uint32));

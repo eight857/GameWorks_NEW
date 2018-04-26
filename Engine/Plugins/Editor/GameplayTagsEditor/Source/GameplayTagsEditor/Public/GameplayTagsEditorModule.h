@@ -1,10 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
+#include "IPropertyTypeCustomization.h"
 
 
 /**
@@ -37,13 +38,20 @@ public:
 	}
 
 	/** Tries to add a new gameplay tag to the ini lists */
-	GAMEPLAYTAGSEDITOR_API virtual bool AddNewGameplayTagToINI(FString NewTag, FString Comment = TEXT(""), FName TagSourceName = NAME_None) = 0;
+	GAMEPLAYTAGSEDITOR_API virtual bool AddNewGameplayTagToINI(const FString& NewTag, const FString& Comment = TEXT(""), FName TagSourceName = NAME_None) = 0;
 
 	/** Tries to delete a tag from the library. This will pop up special UI or error messages as needed. It will also delete redirectors if that is specified. */
-	GAMEPLAYTAGSEDITOR_API virtual bool DeleteTagFromINI(FString TagToDelete) = 0;
+	GAMEPLAYTAGSEDITOR_API virtual bool DeleteTagFromINI(const FString& TagToDelete) = 0;
 
 	/** Tries to rename a tag, leaving a rediretor in the ini, and adding the new tag if it does not exist yet */
-	GAMEPLAYTAGSEDITOR_API virtual bool RenameTagInINI(FString TagToRename, FString TagToRenameTo) = 0;
+	GAMEPLAYTAGSEDITOR_API virtual bool RenameTagInINI(const FString& TagToRename, const FString& TagToRenameTo) = 0;
 
+	/** Adds a transient gameplay tag (only valid for the current editor session) */
+	GAMEPLAYTAGSEDITOR_API virtual bool AddTransientEditorGameplayTag(const FString& NewTransientTag) = 0;
 };
 
+/** This is public so that child structs of FGameplayTag can use the details customization */
+struct GAMEPLAYTAGSEDITOR_API FGameplayTagCustomizationPublic
+{
+	static TSharedRef<IPropertyTypeCustomization> MakeInstance();
+};

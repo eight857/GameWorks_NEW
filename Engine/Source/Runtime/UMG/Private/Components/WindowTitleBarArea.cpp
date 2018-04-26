@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/WindowTitleBarArea.h"
 #include "EngineGlobals.h"
@@ -21,7 +21,7 @@ UWindowTitleBarArea::UWindowTitleBarArea(const FObjectInitializer& ObjectInitial
 	bIsVariable = false;
 
 	SWindowTitleBarArea::FArguments Defaults;
-	Visiblity_DEPRECATED = Visibility = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
+	Visibility = UWidget::ConvertRuntimeToSerializedVisibility(Defaults._Visibility.Get());
 
 	bDoubleClickTogglesFullscreen = false;
 }
@@ -64,7 +64,7 @@ TSharedRef<SWidget> UWindowTitleBarArea::RebuildWidget()
 		MyWindowTitleBarArea->SetGameWindow(GEngine->GameViewport->GetWindow());
 	}
 
-	return BuildDesignTimeWidget(MyWindowTitleBarArea.ToSharedRef());
+	return MyWindowTitleBarArea.ToSharedRef();
 }
 
 UClass* UWindowTitleBarArea::GetSlotClass() const

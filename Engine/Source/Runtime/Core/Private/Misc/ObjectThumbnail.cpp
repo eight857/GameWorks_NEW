@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/ObjectThumbnail.h"
 
@@ -85,7 +85,7 @@ void FObjectThumbnail::DecompressImageData()
 void FObjectThumbnail::CountBytes( FArchive& Ar ) const
 {
 	SIZE_T StaticSize = sizeof(FObjectThumbnail);
-	Ar.CountBytes(StaticSize, Align(StaticSize, ALIGNOF(FObjectThumbnail)));
+	Ar.CountBytes(StaticSize, Align(StaticSize, alignof(FObjectThumbnail)));
 
 	FObjectThumbnail* UnconstThis = const_cast<FObjectThumbnail*>(this);
 	UnconstThis->CompressedImageData.CountBytes(Ar);
@@ -108,7 +108,7 @@ void FObjectThumbnail::CountImageBytes_Uncompressed( FArchive& Ar ) const
 void FObjectFullNameAndThumbnail::CountBytes( FArchive& Ar ) const
 {
 	SIZE_T StaticSize = sizeof(FObjectFullNameAndThumbnail);
-	Ar.CountBytes(StaticSize, Align(StaticSize, ALIGNOF(FObjectFullNameAndThumbnail)));
+	Ar.CountBytes(StaticSize, Align(StaticSize, alignof(FObjectFullNameAndThumbnail)));
 
 	if ( ObjectThumbnail != NULL )
 	{

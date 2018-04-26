@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sound/SoundNodeWavePlayer.h"
 #include "Audio.h"
@@ -63,6 +63,11 @@ void USoundNodeWavePlayer::LoadAsset(bool bAddToRoot)
 			SoundWave->AddToCluster(this);
 		}
 	}
+}
+
+void USoundNodeWavePlayer::ClearAssetReferences()
+{
+	SoundWave = nullptr;
 }
 
 void USoundNodeWavePlayer::OnSoundWaveLoaded(const FName& PackageName, UPackage* Package, EAsyncLoadingResult::Type Result, bool bAddToRoot)
@@ -145,6 +150,11 @@ float USoundNodeWavePlayer::GetDuration()
 		}
 	}
 	return Duration;
+}
+
+bool USoundNodeWavePlayer::IsAllowedVirtual() const
+{
+	return SoundWave && SoundWave->IsAllowedVirtual();
 }
 
 #if WITH_EDITOR

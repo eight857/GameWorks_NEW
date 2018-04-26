@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_WaitVelocityChange.h"
 #include "GameFramework/MovementComponent.h"
@@ -33,7 +33,7 @@ void UAbilityTask_WaitVelocityChange::TickTask(float DeltaTime)
 
 UAbilityTask_WaitVelocityChange* UAbilityTask_WaitVelocityChange::CreateWaitVelocityChange(UGameplayAbility* OwningAbility, FVector InDirection, float InMinimumMagnitude)
 {
-	auto MyObj = NewAbilityTask<UAbilityTask_WaitVelocityChange>(OwningAbility);
+	UAbilityTask_WaitVelocityChange* MyObj = NewAbilityTask<UAbilityTask_WaitVelocityChange>(OwningAbility);
 
 	MyObj->MinimumMagnitude = InMinimumMagnitude;
 	MyObj->Direction = InDirection.GetSafeNormal();

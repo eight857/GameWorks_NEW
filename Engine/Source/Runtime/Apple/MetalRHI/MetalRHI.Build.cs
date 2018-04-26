@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -9,6 +9,7 @@ public class MetalRHI : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[] {
 				"Core",
+				"ApplicationCore",
 				"Engine",
 				"RHI",
 				"RenderCore",
@@ -29,7 +30,7 @@ public class MetalRHI : ModuleRules
 
 			if ( bMetalStats )
 			{
-				Definitions.Add("METAL_STATISTICS=1");
+				PublicDefinitions.Add("METAL_STATISTICS=1");
 
 				PrivateIncludePathModuleNames.AddRange(
 					new string[] {

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 //-----------------------------------------------------------------------------
 //	Include Files
@@ -64,13 +64,16 @@ FD3D12DescriptorCache::FD3D12DescriptorCache(GPUNodeMask Node)
 	, CurrentViewHeap(nullptr)
 	, CurrentSamplerHeap(nullptr)
 	, NumLocalViewDescriptors(0)
+	, pNullSRV(nullptr)
+	, pNullRTV(nullptr)
+	, pNullUAV(nullptr)
 	, FD3D12DeviceChild(nullptr)
 	, FD3D12SingleNodeGPUObject(Node)
 {
 	CmdContext = nullptr;
 }
 
-void FD3D12DescriptorCache::Init(FD3D12Device* InParent, FD3D12CommandContext* InCmdContext, uint32 InNumViewDescriptors, uint32 InNumSamplerDescriptors, FD3D12SubAllocatedOnlineHeap::SubAllocationDesc& SubHeapDesc)
+void FD3D12DescriptorCache::Init(FD3D12Device* InParent, FD3D12CommandContext* InCmdContext, uint32 InNumLocalViewDescriptors, uint32 InNumSamplerDescriptors, FD3D12SubAllocatedOnlineHeap::SubAllocationDesc& SubHeapDesc)
 {
 	Parent = InParent;
 	CmdContext = InCmdContext;
@@ -87,7 +90,7 @@ void FD3D12DescriptorCache::Init(FD3D12Device* InParent, FD3D12CommandContext* I
 	// lazily as a backup to save memory)
 	LocalSamplerHeap.Init(InNumSamplerDescriptors, FD3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 
-	NumLocalViewDescriptors = InNumViewDescriptors;
+	NumLocalViewDescriptors = InNumLocalViewDescriptors;
 
 	CurrentViewHeap = &SubAllocatedViewHeap; //Begin with the global heap
 	CurrentSamplerHeap = &LocalSamplerHeap;
@@ -101,19 +104,22 @@ void FD3D12DescriptorCache::Init(FD3D12Device* InParent, FD3D12CommandContext* I
 	SRVDesc.Texture2D.MipLevels = 1;
 	SRVDesc.Texture2D.MostDetailedMip = 0;
 	SRVDesc.Texture2D.ResourceMinLODClamp = 0.0f;
-	pNullSRV = new FD3D12ShaderResourceView(GetParentDevice(), &SRVDesc, nullptr);
+	pNullSRV = new FD3D12DescriptorHandleSRV(GetParentDevice());
+	pNullSRV->CreateView(SRVDesc, nullptr);
 
 	D3D12_RENDER_TARGET_VIEW_DESC RTVDesc = {};
 	RTVDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 	RTVDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 	RTVDesc.Texture2D.MipSlice = 0;
-	pNullRTV = new FD3D12RenderTargetView(GetParentDevice(), &RTVDesc, nullptr);
+	pNullRTV = new FD3D12DescriptorHandleRTV(GetParentDevice());
+	pNullRTV->CreateView(RTVDesc, nullptr);
 
 	D3D12_UNORDERED_ACCESS_VIEW_DESC UAVDesc = {};
 	UAVDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 	UAVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	UAVDesc.Texture2D.MipSlice = 0;
-	pNullUAV = new FD3D12UnorderedAccessView(GetParentDevice(), &UAVDesc, nullptr);
+	pNullUAV = new FD3D12DescriptorHandleUAV(GetParentDevice());
+	pNullUAV->CreateViewWithCounter(UAVDesc, nullptr, nullptr);
 
 #if USE_STATIC_ROOT_SIGNATURE
 	pNullCBV = new FD3D12ConstantBufferView(GetParentDevice(), nullptr);
@@ -141,11 +147,11 @@ void FD3D12DescriptorCache::Init(FD3D12Device* InParent, FD3D12CommandContext* I
 
 void FD3D12DescriptorCache::Clear()
 {
-	pNullSRV = nullptr;
-	pNullUAV = nullptr;
-	pNullRTV = nullptr;
+	delete pNullSRV; pNullSRV = nullptr;
+	delete pNullUAV; pNullUAV = nullptr;
+	delete pNullRTV; pNullRTV = nullptr;
 #if USE_STATIC_ROOT_SIGNATURE
-	delete pNullCBV;
+	delete pNullCBV; pNullCBV = nullptr;
 #endif
 }
 
@@ -316,7 +322,7 @@ void FD3D12DescriptorCache::SetUAVs(FD3D12UnorderedAccessViewCache& Cache, const
 	{
 		if ((SlotIndex < UAVStartSlot) || (UAVs[SlotIndex] == nullptr))
 		{
-			SrcDescriptors[SlotIndex] = pNullUAV->GetView();
+			SrcDescriptors[SlotIndex] = pNullUAV->GetHandle();
 		}
 		else
 		{
@@ -382,7 +388,7 @@ void FD3D12DescriptorCache::SetRenderTargets(FD3D12RenderTargetView** RenderTarg
 		}
 		else
 		{
-			RTVDescriptors[i] = pNullRTV->GetView();
+			RTVDescriptors[i] = pNullRTV->GetHandle();
 		}
 	}
 
@@ -599,7 +605,7 @@ void FD3D12DescriptorCache::SetSRVs(FD3D12ShaderResourceViewCache& Cache, const 
 		}
 		else
 		{
-			SrcDescriptor = pNullSRV->GetView();
+			SrcDescriptor = pNullSRV->GetHandle();
 		}
 		check(SrcDescriptor.ptr != 0);
 
@@ -754,7 +760,7 @@ void FD3D12DescriptorCache::SetConstantBuffers(FD3D12ConstantBufferCache& Cache,
 #endif	
 }
 
-bool FD3D12DescriptorCache::SwitchToContextLocalViewHeap()
+bool FD3D12DescriptorCache::SwitchToContextLocalViewHeap(const FD3D12CommandListHandle& CommandListHandle)
 {
 	if (LocalViewHeap == nullptr)
 	{
@@ -774,6 +780,7 @@ bool FD3D12DescriptorCache::SwitchToContextLocalViewHeap()
 		}
 	}
 
+	LocalViewHeap->NotifyCurrentCommandList(CommandListHandle);
 	CurrentViewHeap = LocalViewHeap;
 	const bool bDescriptorHeapsChanged = SetDescriptorHeaps();
 
@@ -818,9 +825,11 @@ bool FD3D12DescriptorCache::SwitchToGlobalSamplerHeap()
 bool FD3D12ThreadLocalOnlineHeap::RollOver()
 {
 	// Enqueue the current entry
+	ensureMsgf(CurrentCommandList != nullptr, TEXT("Would have set up a sync point with a null commandlist."));
+	Entry.SyncPoint = CurrentCommandList;
 	ReclaimPool.Enqueue(Entry);
 
-	if (ReclaimPool.Peek(Entry) && Entry.SyncPoint.IsComplete())
+	if ( ReclaimPool.Peek(Entry) && Entry.SyncPoint.IsComplete() )
 	{
 		ReclaimPool.Dequeue(Entry);
 
@@ -829,14 +838,15 @@ bool FD3D12ThreadLocalOnlineHeap::RollOver()
 	else
 	{
 		UE_LOG(LogD3D12RHI, Warning, TEXT("OnlineHeap RollOver Detected. Increase the heap size to prevent creation of additional heaps"));
+
+		//LLM_SCOPE(ELLMTag::DescriptorCache);
+
 		VERIFYD3D12RESULT(GetParentDevice()->GetDevice()->CreateDescriptorHeap(&Desc, IID_PPV_ARGS(Heap.GetInitReference())));
 		SetName(Heap, Desc.Type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV ? L"Thread Local - Online View Heap" : L"Thread Local - Online Sampler Heap");
 
 		Entry.Heap = Heap;
 	}
-
-	Entry.SyncPoint = CurrentCommandList;
-
+	
 	NextSlotIndex = 0;
 	FirstUsedSlot = 0;
 
@@ -879,6 +889,8 @@ void FD3D12GlobalOnlineHeap::Init(uint32 TotalSize, D3D12_DESCRIPTOR_HEAP_TYPE T
 	Desc.Type = Type;
 	Desc.NumDescriptors = TotalSize;
 	Desc.NodeMask = GetNodeMask();
+
+	//LLM_SCOPE(ELLMTag::DescriptorCache);
 
 	VERIFYD3D12RESULT(GetParentDevice()->GetDevice()->CreateDescriptorHeap(&Desc, IID_PPV_ARGS(Heap.GetInitReference())));
 	SetName(Heap, Desc.Type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV ? L"Device Global - Online View Heap" : L"Device Global - Online Sampler Heap");
@@ -1010,6 +1022,7 @@ void FD3D12ThreadLocalOnlineHeap::Init(uint32 NumDescriptors, D3D12_DESCRIPTOR_H
 	Desc.NumDescriptors = NumDescriptors;
 	Desc.NodeMask = GetNodeMask();
 
+	//LLM_SCOPE(ELLMTag::DescriptorCache);
 	VERIFYD3D12RESULT(GetParentDevice()->GetDevice()->CreateDescriptorHeap(&Desc, IID_PPV_ARGS(Heap.GetInitReference())));
 	SetName(Heap, Desc.Type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV ? L"Thread Local - Online View Heap" : L"Thread Local - Online Sampler Heap");
 
@@ -1070,7 +1083,7 @@ bool FD3D12SubAllocatedOnlineHeap::RollOver()
 		// Notify parent that we have run out of sub allocations
 		// This should *never* happen but we will handle it and revert to local heaps to be safe
 		UE_LOG(LogD3D12RHI, Warning, TEXT("Descriptor cache ran out of sub allocated descriptor blocks! Moving to Context local View heap strategy"));
-		return Parent->SwitchToContextLocalViewHeap();
+		return Parent->SwitchToContextLocalViewHeap(CurrentCommandList);
 	}
 
 	NextSlotIndex = 0;

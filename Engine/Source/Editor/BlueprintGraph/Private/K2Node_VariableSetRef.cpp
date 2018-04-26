@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "K2Node_VariableSetRef.h"
@@ -11,8 +11,8 @@
 #include "EditorCategoryUtils.h"
 #include "BlueprintActionDatabaseRegistrar.h"
 
-static FString TargetVarPinName(TEXT("Target"));
-static FString VarValuePinName(TEXT("Value"));
+static FName TargetVarPinName(TEXT("Target"));
+static FName VarValuePinName(TEXT("Value"));
 
 #define LOCTEXT_NAMESPACE "K2Node_VariableSetRef"
 
@@ -91,13 +91,14 @@ UK2Node_VariableSetRef::UK2Node_VariableSetRef(const FObjectInitializer& ObjectI
 
 void UK2Node_VariableSetRef::AllocateDefaultPins()
 {
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
 
-	CreatePin(EGPD_Input, K2Schema->PC_Exec, TEXT(""), NULL, false, false, K2Schema->PN_Execute);
-	CreatePin(EGPD_Output, K2Schema->PC_Exec, TEXT(""), NULL, false, false, K2Schema->PN_Then);
+	UEdGraphNode::FCreatePinParams PinParams;
+	PinParams.bIsReference = true;
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Wildcard, TargetVarPinName, PinParams);
 
-	CreatePin(EGPD_Input, K2Schema->PC_Wildcard, TEXT(""), NULL, false, true, TargetVarPinName);
-	UEdGraphPin* ValuePin = CreatePin(EGPD_Input, K2Schema->PC_Wildcard, TEXT(""), NULL, false, false, VarValuePinName);
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Wildcard, VarValuePinName);
 }
 
 void UK2Node_VariableSetRef::ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins)
@@ -105,11 +106,10 @@ void UK2Node_VariableSetRef::ReallocatePinsDuringReconstruction(TArray<UEdGraphP
 	AllocateDefaultPins();
 
  	// Coerce the type of the node from the old pin, if available
-  	UEdGraphPin* OldTargetPin = NULL;
-  	for( auto OldPinIt = OldPins.CreateIterator(); OldPinIt; ++OldPinIt )
+  	UEdGraphPin* OldTargetPin = nullptr;
+  	for (UEdGraphPin* CurrPin : OldPins)
   	{
-  		UEdGraphPin* CurrPin = *OldPinIt;
-  		if( CurrPin->PinName == TargetVarPinName )
+  		if (CurrPin->PinName == TargetVarPinName)
   		{
   			OldTargetPin = CurrPin;
   			break;
@@ -136,7 +136,7 @@ FText UK2Node_VariableSetRef::GetNodeTitle(ENodeTitleType::Type TitleType) const
 	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
 
 	UEdGraphPin* TargetPin = GetTargetPin();
-	if ((TargetPin == nullptr) || (TargetPin->PinType.PinCategory == Schema->PC_Wildcard))
+	if ((TargetPin == nullptr) || (TargetPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
 	{
 		return NSLOCTEXT("K2Node", "SetRefVarNodeTitle", "Set By-Ref Var");
 	}
@@ -183,8 +183,6 @@ void UK2Node_VariableSetRef::NotifyPinConnectionListChanged(UEdGraphPin* Pin)
 
 void UK2Node_VariableSetRef::CoerceTypeFromPin(const UEdGraphPin* Pin)
 {
-	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
-
 	UEdGraphPin* TargetPin = GetTargetPin();
 	UEdGraphPin* ValuePin = GetValuePin();
 
@@ -192,7 +190,7 @@ void UK2Node_VariableSetRef::CoerceTypeFromPin(const UEdGraphPin* Pin)
 
 	if( Pin )
 	{
-		check((Pin != TargetPin) || (Pin->PinType.bIsReference && !Pin->PinType.bIsArray));
+		check((Pin != TargetPin) || (Pin->PinType.bIsReference && !Pin->PinType.IsContainer()));
 
 		TargetPin->PinType = Pin->PinType;
 		TargetPin->PinType.bIsReference = true;
@@ -203,14 +201,14 @@ void UK2Node_VariableSetRef::CoerceTypeFromPin(const UEdGraphPin* Pin)
 	else
 	{
 		// Pin disconnected...revert to wildcard
-		TargetPin->PinType.PinCategory = K2Schema->PC_Wildcard;
-		TargetPin->PinType.PinSubCategory = TEXT("");
-		TargetPin->PinType.PinSubCategoryObject = NULL;
+		TargetPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+		TargetPin->PinType.PinSubCategory = NAME_None;
+		TargetPin->PinType.PinSubCategoryObject = nullptr;
 		TargetPin->BreakAllPinLinks();
 
-		ValuePin->PinType.PinCategory = K2Schema->PC_Wildcard;
-		ValuePin->PinType.PinSubCategory = TEXT("");
-		ValuePin->PinType.PinSubCategoryObject = NULL;
+		ValuePin->PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+		ValuePin->PinType.PinSubCategory = NAME_None;
+		ValuePin->PinType.PinSubCategoryObject = nullptr;
 		ValuePin->BreakAllPinLinks();
 
 		CachedNodeTitle.MarkDirty();

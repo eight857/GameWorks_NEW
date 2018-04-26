@@ -1,11 +1,13 @@
-﻿INTSourceChangelist:3108692
+﻿INTSourceChangelist:3606403
 Availability:Public
 Title: 데이터 주도형 게임플레이 요소
-Crumbs:%ROOT%, Gameplay
+Crumbs:%ROOT%
 Description:외부 저장 데이터를 사용하여 게임플레이 요소를 구동시키는 법입니다.
 version: 4.9
+type:reference
+tags:Gameplay
 
-[TOC(start:2)]
+[toc(start:2 end:2)]
 
 데이터 주도형 게임플레이는 전형적인 패키지 게임보다 훨씬 수명이 긴 게임이나, 
 플레이어 피드백에 따라 데이터의 지속적인 트윅 및 밸런싱 작업이 필요한 게임에 관련된 
@@ -67,7 +69,7 @@ version: 4.9
 
 		/** 업적에 사용할 아이콘입니다. */
 		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=LevelUp)
-		TAssetPtr<UTexture> AchievementIcon;
+		TSoftObjectPtr<UTexture> AchievementIcon;
 	};
 
 
@@ -148,5 +150,5 @@ FCurveTableRowHandle 의 경우 FRichCurve 포인터가 반환됩니다. 그러�
 이는 표를 다시 임포트하여 새로고칠 수 있도록, 데이터 변경 내용이 즉시 효과를 발휘하도록, 
 인식 불가능한 포인터 접근이 없도록 하기 위함입니다.
 
-위 데이터 테이블 예제에서, 레퍼런싱된 애셋은 lazy 로드된 애셋입니다 (TAssetPtr 에서 처리합니다).
+위 데이터 테이블 예제에서, 레퍼런싱된 애셋은 lazy 로드된 애셋입니다 (TSoftObjectPtr 에서 처리합니다).
 애셋 필드 유형이 UTexture 로 설정된 경우, 데이터 테이블이 로드될 때마다 모든 애셋이 로드될 것입니다.

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,6 +11,7 @@ class USkeletalMesh;
 struct FSelectedSocketInfo;
 struct HActor;
 struct FViewportClick;
+class FEditorCameraController;
 
 
 // called when animation asset has been changed
@@ -28,6 +29,10 @@ typedef FOnPreviewMeshChangedMulticaster::FDelegate FOnPreviewMeshChanged;
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnMeshClickMulticaster, HActor*, const FViewportClick&);
 
 typedef FOnMeshClickMulticaster::FDelegate FOnMeshClick;
+
+//The selected LOD changed
+DECLARE_MULTICAST_DELEGATE(FOnSelectedLODChangedMulticaster);
+typedef FOnSelectedLODChangedMulticaster::FDelegate FOnSelectedLODChanged;
 
 /** Modes that the preview scene defaults to (usually depending on asset editor context) */
 enum class EPreviewSceneDefaultAnimationMode : int32
@@ -59,8 +64,11 @@ public:
 	/** Get the skeletal mesh component we are using for preview, if any. */
 	virtual UDebugSkelMeshComponent* GetPreviewMeshComponent() const = 0;
 
+	/** Set the skeletal mesh component we are going to preview. */
+	virtual void SetPreviewMeshComponent(UDebugSkelMeshComponent* InSkeletalMeshComponent) = 0;
+
 	/** Set the additional meshes used by this preview scene (sets the additional meshes on the skeleton) */
-	virtual void SetAdditionalMeshes(class UPreviewMeshCollection* InAdditionalMeshes) = 0;
+	virtual void SetAdditionalMeshes(class UDataAsset* InAdditionalMeshes) = 0;
 
 	/** Refreshes the additional meshes displayed in this preview scene */
 	virtual void RefreshAdditionalMeshes() = 0;
@@ -71,11 +79,14 @@ public:
 	/** Get the animation asset we are previewing */
 	virtual UAnimationAsset* GetPreviewAnimationAsset() const = 0;
 
-	/** Set the preview mesh for this scene (does not set the preview mesh on the skeleton) */
+	/** Set the preview mesh for this scene (does not set the preview mesh on the skeleton/asset) */
 	virtual void SetPreviewMesh(USkeletalMesh* NewPreviewMesh) = 0;
 
-	/** Show the reference pose of the displayed skeletal mesh. Otherwise display the default. */
-	virtual void ShowReferencePose(bool bReferencePose) = 0;
+	/** Get the preview mesh for this scene (does go via skeleton/asset) */
+	virtual USkeletalMesh* GetPreviewMesh() const = 0;
+
+	/** Show the reference pose of the displayed skeletal mesh. Otherwise display the default. Optionally reset bone transforms, if any. */
+	virtual void ShowReferencePose(bool bResetBoneTransforms = false) = 0;
 
 	/* Are we currently displaying the ref pose */
 	virtual bool IsShowReferencePoseEnabled() const = 0;
@@ -185,9 +196,46 @@ public:
 	/** Get the main actor */
 	virtual AActor* GetActor() const = 0;
 
+	/** Set the main actor */
+	virtual void SetActor(AActor* InActor) = 0;
+
 	/** Get whether or not to ignore mesh hit proxies */
 	virtual bool AllowMeshHitProxies() const = 0;
 
 	/** Set whether or not to ignore mesh hit proxies */
 	virtual void SetAllowMeshHitProxies(bool bState) = 0;
+
+	/** Register callback to be able to be notify when the select LOD is change */
+	virtual void RegisterOnSelectedLODChanged(const FOnSelectedLODChanged &Delegate) = 0;
+	/** Unregister callback to free up the ressources */
+	virtual void UnRegisterOnSelectedLODChanged(void* Thing) = 0;
+	/** Broadcast select LOD changed */
+	virtual void BroadcastOnSelectedLODChanged() = 0;
+
+	/** Register callback for when the camera override is changed */
+	virtual void RegisterOnCameraOverrideChanged(const FSimpleDelegate& Delegate) = 0;
+
+	/** Unregister callback for when the camera override is changed */
+	virtual void UnregisterOnCameraOverrideChanged(void* Thing) = 0;
+
+	/** Function to override the editor camera for this scene */
+	virtual void SetCameraOverride(TSharedPtr<FEditorCameraController> NewCamera) = 0;
+
+	/** Get the current camera override */
+	virtual TSharedPtr<FEditorCameraController> GetCurrentCameraOverride() const = 0;
+
+	/** Register a callback for just before the preview scene is ticked */
+	virtual void RegisterOnPreTick(const FSimpleDelegate& Delegate) = 0;
+
+	/** Unregister a callback for just before the preview scene is ticked */
+	virtual void UnregisterOnPreTick(void* Thing) = 0;
+
+	/** Register a callback for just after the preview scene is ticked */
+	virtual void RegisterOnPostTick(const FSimpleDelegate& Delegate) = 0;
+
+	/** Unregister a callback for just after the preview scene is ticked */
+	virtual void UnregisterOnPostTick(void* Thing) = 0;
+
+	/** Let the preview scene know that it should tick (because it is visible) */
+	virtual void FlagTickable() = 0;
 };

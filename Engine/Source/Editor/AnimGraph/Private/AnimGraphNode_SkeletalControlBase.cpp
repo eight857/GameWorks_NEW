@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimGraphNode_SkeletalControlBase.h"
 #include "UnrealWidget.h"
@@ -57,7 +57,7 @@ FLinearColor UAnimGraphNode_SkeletalControlBase::GetNodeTitleColor() const
 
 FString UAnimGraphNode_SkeletalControlBase::GetNodeCategory() const
 {
-	return TEXT("Skeletal Controls");
+	return TEXT("Skeletal Control Nodes");
 }
 
 FText UAnimGraphNode_SkeletalControlBase::GetControllerDescription() const
@@ -72,8 +72,7 @@ FText UAnimGraphNode_SkeletalControlBase::GetTooltipText() const
 
 void UAnimGraphNode_SkeletalControlBase::CreateOutputPins()
 {
-	const UAnimationGraphSchema* Schema = GetDefault<UAnimationGraphSchema>();
-	CreatePin(EGPD_Output, Schema->PC_Struct, TEXT(""), FComponentSpacePoseLink::StaticStruct(), /*bIsArray=*/ false, /*bIsReference=*/ false, TEXT("Pose"));
+	CreatePin(EGPD_Output, UAnimationGraphSchema::PC_Struct, FComponentSpacePoseLink::StaticStruct(), TEXT("Pose"));
 }
 
 
@@ -86,7 +85,7 @@ void UAnimGraphNode_SkeletalControlBase::ConvertToComponentSpaceTransform(const 
 	case BCS_WorldSpace:
 	{
 		OutCSTransform = InTransform;
-		OutCSTransform.SetToRelativeTransform(SkelComp->ComponentToWorld);
+		OutCSTransform.SetToRelativeTransform(SkelComp->GetComponentTransform());
 	}
 		break;
 
@@ -254,7 +253,7 @@ FVector UAnimGraphNode_SkeletalControlBase::ConvertWidgetLocation(const USkeleta
 
 		switch (Space)
 		{
-			// ComponentToWorld must be Identity in preview window so same as ComponentSpace
+			// GetComponentTransform() must be Identity in preview window so same as ComponentSpace
 		case BCS_WorldSpace:
 		case BCS_ComponentSpace:
 		{
@@ -289,7 +288,7 @@ FVector UAnimGraphNode_SkeletalControlBase::ConvertWidgetLocation(const USkeleta
 	return WidgetLoc;
 }
 
-void UAnimGraphNode_SkeletalControlBase::GetDefaultValue(const FString& UpdateDefaultValueName, FVector& OutVec)
+void UAnimGraphNode_SkeletalControlBase::GetDefaultValue(const FName UpdateDefaultValueName, FVector& OutVec)
 {
 	for (UEdGraphPin* Pin : Pins)
 	{
@@ -305,8 +304,7 @@ void UAnimGraphNode_SkeletalControlBase::GetDefaultValue(const FString& UpdateDe
 					TArray<FString> ResultString;
 
 					//Parse string to split its contents separated by ','
-					DefaultString.Trim();
-					DefaultString.TrimTrailing();
+					DefaultString.TrimStartAndEndInline();
 					DefaultString.ParseIntoArray(ResultString, TEXT(","), true);
 
 					check(ResultString.Num() == 3);
@@ -324,7 +322,7 @@ void UAnimGraphNode_SkeletalControlBase::GetDefaultValue(const FString& UpdateDe
 	OutVec = FVector::ZeroVector;
 }
 
-void UAnimGraphNode_SkeletalControlBase::SetDefaultValue(const FString& UpdateDefaultValueName, const FVector& Value)
+void UAnimGraphNode_SkeletalControlBase::SetDefaultValue(const FName UpdateDefaultValueName, const FVector& Value)
 {
 	for (UEdGraphPin* Pin : Pins)
 	{
@@ -335,7 +333,7 @@ void UAnimGraphNode_SkeletalControlBase::SetDefaultValue(const FString& UpdateDe
 				FString Str = FString::Printf(TEXT("%.3f,%.3f,%.3f"), Value.X, Value.Y, Value.Z);
 				if (Pin->DefaultValue != Str)
 				{
-					PreEditChange(NULL);
+					PreEditChange(nullptr);
 					GetSchema()->TrySetDefaultValue(*Pin, Str);
 					PostEditChange();
 					break;
@@ -345,11 +343,11 @@ void UAnimGraphNode_SkeletalControlBase::SetDefaultValue(const FString& UpdateDe
 	}
 }
 
-bool UAnimGraphNode_SkeletalControlBase::IsPinShown(const FString& PinName) const
+bool UAnimGraphNode_SkeletalControlBase::IsPinShown(const FName PinName) const
 {
 	for (const FOptionalPinFromProperty& Pin : ShowPinForProperties)
 	{
-		if (Pin.PropertyName.ToString() == PinName)
+		if (Pin.PropertyName == PinName)
 		{
 			return Pin.bShowPin;
 		}

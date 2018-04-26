@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineVoiceOculus.h"
 #include "Voice.h"
@@ -9,10 +9,12 @@
 #include "Runtime/Engine/Classes/Sound/SoundWaveProcedural.h"
 #include "OnlineSubsystemUtils.h"
 
+#include "ConfigCacheIni.h"
 #include "OnlineSubsystemOculusPackage.h"
 
 // Define the voice sample rate the default in OVR_VoipSampleRate
 #define OCULUS_VOICE_SAMPLE_RATE 48000
+#define OCULUS_NUM_VOICE_CHANNELS 1
 
 FRemoteTalkerDataOculus::FRemoteTalkerDataOculus() :
 	LastSeen(0.0),
@@ -71,7 +73,7 @@ void FOnlineVoiceOculus::StartNetworkedVoice(uint8 LocalUserNum)
 	else
 	{
 		UE_LOG(LogVoice, Log, TEXT("Invalid user specified in StartNetworkedVoice(%d)"),
-			(uint32)LocalUserNum);
+			static_cast<uint32>(LocalUserNum));
 	}
 }
 
@@ -86,7 +88,7 @@ void FOnlineVoiceOculus::StopNetworkedVoice(uint8 LocalUserNum)
 	else
 	{
 		UE_LOG(LogVoice, Log, TEXT("Invalid user specified in StartNetworkedVoice(%d)"),
-			(uint32)LocalUserNum);
+			static_cast<uint32>(LocalUserNum));
 	}
 }
 
@@ -205,7 +207,7 @@ void FOnlineVoiceOculus::ProcessRemoteVoicePackets()
 
 			if (QueuedData.AudioComponent == nullptr || QueuedData.AudioComponent->IsPendingKill())
 			{
-				QueuedData.AudioComponent = CreateVoiceAudioComponent(OCULUS_VOICE_SAMPLE_RATE);
+				QueuedData.AudioComponent = CreateVoiceAudioComponent(OCULUS_VOICE_SAMPLE_RATE, OCULUS_NUM_VOICE_CHANNELS);
 				if (QueuedData.AudioComponent)
 				{
 					QueuedData.AudioComponent->AddToRoot(); // make sure this doesn't get deleted by the GC
@@ -286,7 +288,7 @@ FString FOnlineVoiceOculus::GetVoiceDebugState() const
 	return Output;
 }
 
-void FOnlineVoiceOculus::OnVoipConnectionRequest(ovrMessageHandle Message, bool bIsError)
+void FOnlineVoiceOculus::OnVoipConnectionRequest(ovrMessageHandle Message, bool bIsError) const
 {
 	auto NetworkingPeer = ovr_Message_GetNetworkingPeer(Message);
 	auto PeerID = ovr_NetworkingPeer_GetID(NetworkingPeer);

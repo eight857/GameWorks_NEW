@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -94,14 +94,17 @@ public:
 	virtual EThumbnailPrimType GetDefaultThumbnailPrimitiveType(UObject* Asset) const = 0;
 
 	/** Optionally returns a custom widget to overlay on top of this assets' thumbnail */
-	virtual TSharedPtr<class SWidget> GetThumbnailOverlay(const class FAssetData& AssetData) const = 0;
+	virtual TSharedPtr<class SWidget> GetThumbnailOverlay(const struct FAssetData& AssetData) const = 0;
 
 	/** Returns additional tooltip information for the specified asset, if it has any (otherwise return the null widget) */
-	virtual FText GetAssetDescription(const class FAssetData& AssetData) const = 0;
+	virtual FText GetAssetDescription(const struct FAssetData& AssetData) const = 0;
 
 	/** Returns whether the asset was imported from an external source */
 	virtual bool IsImportedAsset() const = 0;
 
 	/** Collects the resolved source paths for the imported assets */
 	virtual void GetResolvedSourceFilePaths(const TArray<UObject*>& TypeAssets, TArray<FString>& OutSourceFilePaths) const = 0;
+
+	/** Builds the filter for this class*/
+	virtual void BuildBackendFilter(struct FARFilter& InFilter) = 0;
 };

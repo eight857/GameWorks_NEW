@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/OutputDeviceFile.h"
 #include "Misc/AssertionMacros.h"
@@ -21,6 +21,8 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
 #include "Misc/OutputDeviceHelper.h"
+#include "Math/Color.h"
+#include "Templates/Atomic.h"
 
 /** Used by tools which include only core to disable log file creation. */
 #ifndef ALLOW_LOG_FILE
@@ -43,7 +45,7 @@ class CORE_API FAsyncWriter : public FRunnable, public FArchive
 	};
 
 	/** Thread to run the worker FRunnable on. Serializes the ring buffer to disk. */
-	FRunnableThread* Thread;
+	volatile FRunnableThread* Thread;
 	/** Stops this thread */
 	FThreadSafeCounter StopTaskCounter;
 
@@ -52,9 +54,9 @@ class CORE_API FAsyncWriter : public FRunnable, public FArchive
 	/** Data ring buffer */
 	TArray<uint8> Buffer;
 	/** [WRITER THREAD] Position where the unserialized data starts in the buffer */
-	int32 BufferStartPos;
+	TAtomic<int32> BufferStartPos;
 	/** [CLIENT THREAD] Position where the unserialized data ends in the buffer (such as if (BufferEndPos > BufferStartPos) Length = BufferEndPos - BufferStartPos; */
-	int32 BufferEndPos;
+	TAtomic<int32> BufferEndPos;
 	/** [CLIENT THREAD] Sync object for the buffer pos */
 	FCriticalSection BufferPosCritical;
 	/** [CLIENT/WRITER THREAD] Outstanding serialize request counter. This is to make sure we flush all requests. */
@@ -80,23 +82,26 @@ class CORE_API FAsyncWriter : public FRunnable, public FArchive
 	/** [WRITER THREAD] Serialize the contents of the ring buffer to disk */
 	void SerializeBufferToArchive()
 	{
+		SCOPED_NAMED_EVENT(FAsyncWriter_SerializeBufferToArchive, FColor::Cyan);
 		while (SerializeRequestCounter.GetValue() > 0)
 		{
 			// Grab a local copy of the end pos. It's ok if it changes on the client thread later on.
 			// We won't be modifying it anyway and will later serialize new data in the next iteration.
 			// Here we only serialize what we know exists at the beginning of this function.
-			int32 ThisThreadEndPos = BufferEndPos;
+			int32 ThisThreadStartPos = BufferStartPos.Load(EMemoryOrder::Relaxed);
+			int32 ThisThreadEndPos   = BufferEndPos  .Load(EMemoryOrder::Relaxed);
 
-			if (ThisThreadEndPos >= BufferStartPos)
+			if (ThisThreadEndPos >= ThisThreadStartPos)
 			{
-				Ar.Serialize(Buffer.GetData() + BufferStartPos, ThisThreadEndPos - BufferStartPos);
+				Ar.Serialize(Buffer.GetData() + ThisThreadStartPos, ThisThreadEndPos - ThisThreadStartPos);
 			}
 			else
 			{
 				// Data is wrapped around the ring buffer
-				Ar.Serialize(Buffer.GetData() + BufferStartPos, Buffer.Num() - BufferStartPos);
-				Ar.Serialize(Buffer.GetData(), BufferEndPos);
+				Ar.Serialize(Buffer.GetData() + ThisThreadStartPos, Buffer.Num() - ThisThreadStartPos);
+				Ar.Serialize(Buffer.GetData(), ThisThreadEndPos);
 			}
+
 			// Modify the start pos. Only the worker thread modifies this value so it's ok to not guard it with a critical section.
 			BufferStartPos = ThisThreadEndPos;
 
@@ -161,7 +166,7 @@ public:
 		if (FPlatformProcess::SupportsMultithreading())
 		{
 			FString WriterName = FString::Printf(TEXT("FAsyncWriter_%s"), *FPaths::GetBaseFilename(Ar.GetArchiveName()));
-			Thread = FRunnableThread::Create(this, *WriterName, 0, TPri_BelowNormal);
+			FPlatformAtomics::InterlockedExchangePtr((void**)&Thread, FRunnableThread::Create(this, *WriterName, 0, TPri_BelowNormal));
 		}
 	}
 
@@ -184,13 +189,15 @@ public:
 
 		FScopeLock WriteLock(&BufferPosCritical);
 
+		const int32 ThisThreadEndPos = BufferEndPos.Load(EMemoryOrder::Relaxed);
+
 		// Store the local copy of the current buffer start pos. It may get moved by the worker thread but we don't
 		// care about it too much because we only modify BufferEndPos. Copy should be atomic enough. We only use it
 		// for checking the remaining space in the buffer so underestimating is ok.
 		{
-			const int32 ThisThreadStartPos = BufferStartPos;
+			const int32 ThisThreadStartPos = BufferStartPos.Load(EMemoryOrder::Relaxed);
 			// Calculate the remaining size in the ring buffer
-			const int32 BufferFreeSize = ThisThreadStartPos <= BufferEndPos ? (Buffer.Num() - BufferEndPos + ThisThreadStartPos) : (ThisThreadStartPos - BufferEndPos);
+			const int32 BufferFreeSize = ThisThreadStartPos <= ThisThreadEndPos ? (Buffer.Num() - ThisThreadEndPos + ThisThreadStartPos) : (ThisThreadStartPos - ThisThreadEndPos);
 			// Make sure the buffer is BIGGER than we require otherwise we may calculate the wrong (0) buffer EndPos for StartPos = 0 and Length = Buffer.Num()
 			if (BufferFreeSize <= Length)
 			{
@@ -207,7 +214,7 @@ public:
 		}
 
 		// We now know there's enough space in the buffer to copy data
-		const int32 WritePos = BufferEndPos;
+		const int32 WritePos = ThisThreadEndPos;
 		if ((WritePos + Length) <= Buffer.Num())
 		{
 			// Copy straight into the ring buffer
@@ -222,7 +229,7 @@ public:
 		}
 
 		// Update the end position and let the async thread know we need to write to disk
-		BufferEndPos = (BufferEndPos + Length) % Buffer.Num();
+		BufferEndPos = (ThisThreadEndPos + Length) % Buffer.Num();
 		SerializeRequestCounter.Increment();
 
 		// No async thread? Serialize now.
@@ -329,6 +336,9 @@ void FOutputDeviceFile::TearDown()
 	}
 	delete WriterArchive;
 	WriterArchive = nullptr;
+
+	Filename[0] = 0;
+	Opened = false;
 }
 
 /**
@@ -350,10 +360,9 @@ void FOutputDeviceFile::CreateBackupCopy(const TCHAR* Filename)
 {
 	if (IFileManager::Get().FileSize(Filename) > 0)
 	{
-		FString SystemTime = FDateTime::Now().ToString();
 		FString Name, Extension;
 		FString(Filename).Split(TEXT("."), &Name, &Extension, ESearchCase::CaseSensitive, ESearchDir::FromEnd);
-		FString BackupFilename = FString::Printf(TEXT("%s%s%s.%s"), *Name, BACKUP_LOG_FILENAME_POSTFIX, *SystemTime, *Extension);
+		FString BackupFilename = FString::Printf(TEXT("%s%s%s.%s"), *Name, BACKUP_LOG_FILENAME_POSTFIX, *GSystemStartTime, *Extension);
 		IFileManager::Get().Copy(*BackupFilename, Filename, false);
 	}
 }

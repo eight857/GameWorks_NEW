@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameFramework/CheatManager.h"
 #include "HAL/FileManager.h"
@@ -76,8 +76,7 @@ void UCheatManager::Teleport()
 	FHitResult Hit;
 
 	APawn* AssociatedPawn = GetOuterAPlayerController()->GetPawn();
-	static FName NAME_TeleportTrace = FName(TEXT("TeleportTrace"));
-	FCollisionQueryParams TraceParams(NAME_TeleportTrace, true, AssociatedPawn);
+	FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(TeleportTrace), true, AssociatedPawn);
 
 	bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, ViewLocation, ViewLocation + 1000000.f * ViewRotation.Vector(), ECC_Pawn, TraceParams);
 	if ( bHit )
@@ -207,38 +206,38 @@ void UCheatManager::Slomo(float NewTimeDilation)
 
 void UCheatManager::DamageTarget(float DamageAmount)
 {
-    APlayerController* const MyPC = GetOuterAPlayerController();
-    FHitResult Hit;
+	APlayerController* const MyPC = GetOuterAPlayerController();
+	FHitResult Hit;
     AActor* TargetActor = GetTarget(MyPC, Hit);
     if (TargetActor)
-    {
-        FVector ActorForward, ActorSide, ActorUp;
+	{
+		FVector ActorForward, ActorSide, ActorUp;
         FQuatRotationMatrix(TargetActor->GetActorQuat()).GetScaledAxes(ActorForward, ActorSide, ActorUp);
         
-        FPointDamageEvent DamageEvent(DamageAmount, Hit, -ActorForward, UDamageType::StaticClass());
+		FPointDamageEvent DamageEvent(DamageAmount, Hit, -ActorForward, UDamageType::StaticClass());
         TargetActor->TakeDamage(DamageAmount, DamageEvent, MyPC, MyPC->GetPawn());
-    }
+	}
 }
 
 void UCheatManager::DestroyTarget()
 {
-    APlayerController* const MyPC = GetOuterAPlayerController();
-    FHitResult Hit;
+	APlayerController* const MyPC = GetOuterAPlayerController();
+	FHitResult Hit;
     AActor* TargetActor = GetTarget(MyPC, Hit);
     if (TargetActor)
-    {
+	{
         APawn* Pawn = Cast<APawn>(TargetActor);
-        if (Pawn != NULL)
-        {
-            if ((Pawn->Controller != NULL) && (Cast<APlayerController>(Pawn->Controller) == NULL))
-            {
-                // Destroy any associated controller as long as it's not a player controller.
-                Pawn->Controller->Destroy();
-            }
-        }
+		if (Pawn != NULL)
+		{
+			if ((Pawn->Controller != NULL) && (Cast<APlayerController>(Pawn->Controller) == NULL))
+			{
+				// Destroy any associated controller as long as it's not a player controller.
+				Pawn->Controller->Destroy();
+			}
+		}
         
         TargetActor->Destroy();
-    }
+	}
 }
 
 void UCheatManager::DestroyAll(TSubclassOf<AActor> aClass)
@@ -264,29 +263,29 @@ void UCheatManager::DestroyAll(TSubclassOf<AActor> aClass)
 
 void UCheatManager::DestroyAllPawnsExceptTarget()
 {
-    APlayerController* const MyPC = GetOuterAPlayerController();
-    FHitResult Hit;
+	APlayerController* const MyPC = GetOuterAPlayerController();
+	FHitResult Hit;
     APawn* HitPawnTarget = Cast<APawn>(GetTarget(MyPC, Hit));
-    // if we have a pawn target, destroy all other non-players
-    if (HitPawnTarget)
-    {
-        for (TActorIterator<APawn> It(GetWorld(), APawn::StaticClass()); It; ++It)
-        {
-            APawn* Pawn = *It;
-            checkSlow(Pawn);
-            if (!Pawn->IsPendingKill())
-            {
-                if ((Pawn != HitPawnTarget) && Cast<APlayerController>(Pawn->Controller) == NULL)
-                {
-                    if (Pawn->Controller != NULL)
-                    {
-                        Pawn->Controller->Destroy();
-                    }
-                    Pawn->Destroy();
-                }
-            }
-        }
-    }
+	// if we have a pawn target, destroy all other non-players
+	if (HitPawnTarget)
+	{
+		for (TActorIterator<APawn> It(GetWorld(), APawn::StaticClass()); It; ++It)
+		{
+			APawn* Pawn = *It;
+			checkSlow(Pawn);
+			if (!Pawn->IsPendingKill())
+			{
+				if ((Pawn != HitPawnTarget) && Cast<APlayerController>(Pawn->Controller) == NULL)
+				{
+					if (Pawn->Controller != NULL)
+					{
+						Pawn->Controller->Destroy();
+					}
+					Pawn->Destroy();
+				}
+			}
+		}
+	}
 }
 
 void UCheatManager::DestroyPawns(TSubclassOf<APawn> aClass)
@@ -436,7 +435,7 @@ void UCheatManager::ViewPlayer( const FString& S )
 	for( FConstControllerIterator Iterator = GetWorld()->GetControllerIterator(); Iterator; ++Iterator )
 	{
 		Controller = Iterator->Get();
-		if ( Controller->PlayerState && (FCString::Stricmp(*Controller->PlayerState->PlayerName, *S) == 0 ) )
+		if ( Controller->PlayerState && (FCString::Stricmp(*Controller->PlayerState->GetPlayerName(), *S) == 0 ) )
 		{
 			break;
 		}
@@ -444,7 +443,7 @@ void UCheatManager::ViewPlayer( const FString& S )
 
 	if ( Controller && Controller->GetPawn() != NULL )
 	{
-		GetOuterAPlayerController()->ClientMessage(FText::Format(LOCTEXT("ViewPlayer", "Viewing from {0}"), FText::FromString(Controller->PlayerState->PlayerName)).ToString(), TEXT("Event"));
+		GetOuterAPlayerController()->ClientMessage(FText::Format(LOCTEXT("ViewPlayer", "Viewing from {0}"), FText::FromString(Controller->PlayerState->GetPlayerName())).ToString(), TEXT("Event"));
 		GetOuterAPlayerController()->SetViewTarget(Controller->GetPawn());
 	}
 }
@@ -510,17 +509,24 @@ void UCheatManager::SetLevelStreamingStatus(FName PackageName, bool bShouldBeLoa
 	{
 		for( FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator )
 		{
-			(*Iterator)->ClientUpdateLevelStreamingStatus(PackageName, bShouldBeLoaded, bShouldBeVisible, false, INDEX_NONE );
+			(*Iterator)->ClientUpdateLevelStreamingStatus((*Iterator)->NetworkRemapPath(PackageName, false), bShouldBeLoaded, bShouldBeVisible, false, INDEX_NONE );
 		}
 	}
 	else
 	{
 		for( FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator )
 		{
+			TArray<FUpdateLevelStreamingLevelStatus> LevelStatuses;
 			for (int32 i = 0; i < GetWorld()->StreamingLevels.Num(); i++)
 			{
-				(*Iterator)->ClientUpdateLevelStreamingStatus(GetWorld()->StreamingLevels[i]->GetWorldAssetPackageFName(), bShouldBeLoaded, bShouldBeVisible, false, INDEX_NONE );
+				FUpdateLevelStreamingLevelStatus& LevelStatus = *new( LevelStatuses ) FUpdateLevelStreamingLevelStatus();
+				LevelStatus.PackageName = (*Iterator)->NetworkRemapPath(GetWorld()->StreamingLevels[ i ]->GetWorldAssetPackageFName(), false);
+				LevelStatus.bNewShouldBeLoaded = bShouldBeLoaded;
+				LevelStatus.bNewShouldBeVisible = bShouldBeVisible;
+				LevelStatus.bNewShouldBlockOnLoad = false;
+				LevelStatus.LODIndex = INDEX_NONE;
 			}
+			( *Iterator )->ClientUpdateMultipleLevelsStreamingStatus( LevelStatuses );
 		}
 	}
 }
@@ -606,6 +612,8 @@ void UCheatManager::BeginDestroy()
 	Super::BeginDestroy();
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 bool UCheatManager::ServerToggleAILogging_Validate()
 {
 	return true;
@@ -648,6 +656,8 @@ void UCheatManager::ServerToggleAILogging_Implementation()
 #endif
 }
 
+/// @endcond
+
 void UCheatManager::ToggleAILogging()
 {
 #if ENABLE_VISUAL_LOG
@@ -688,8 +698,7 @@ void UCheatManager::TickCollisionDebug()
 			FVector End = ViewLoc + (DebugTraceDistance * ViewDir);
 
 			// Fill in params and do trace
-			static const FName TickCollisionDebugName(TEXT("TickCollisionDebug"));
-			FCollisionQueryParams CapsuleParams(TickCollisionDebugName, false, PC->GetPawn());
+			FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(TickCollisionDebug), false, PC->GetPawn());
 			CapsuleParams.bTraceComplex = bDebugCapsuleTraceComplex;
 
 			if (bDebugCapsuleSweep)
@@ -1132,33 +1141,28 @@ void UCheatManager::CheatScript(FString ScriptName)
 	APlayerController* const PlayerController = GetOuterAPlayerController();
 	ULocalPlayer* const LocalPlayer = PlayerController ? Cast<ULocalPlayer>(PlayerController->Player) : nullptr;
 
-	if (LocalPlayer)
+	UConsole* ConsoleToDisplayResults = (LocalPlayer && LocalPlayer->ViewportClient) ? LocalPlayer->ViewportClient->ViewportConsole : nullptr;
+
+	// Run commands from the ini
+	FConfigSection const* const CommandsToRun = GConfig->GetSectionPrivate(*FString::Printf(TEXT("CheatScript.%s"), *ScriptName), 0, 1, GGameIni);
+
+	if (CommandsToRun)
 	{
-		// Run commands from the ini
-		FConfigSection const* const CommandsToRun = GConfig->GetSectionPrivate(*FString::Printf(TEXT("CheatScript.%s"), *ScriptName), 0, 1, GGameIni);
-
-		if (CommandsToRun)
+		for (FConfigSectionMap::TConstIterator It(*CommandsToRun); It; ++It)
 		{
-			for (FConfigSectionMap::TConstIterator It(*CommandsToRun); It; ++It)
+			// show user what commands ran
+			if (ConsoleToDisplayResults)
 			{
-				// show user what commands ran
-				if (LocalPlayer->ViewportClient && LocalPlayer->ViewportClient->ViewportConsole)
-				{
-					FString const S = FString::Printf(TEXT("> %s"), *It.Value().GetValue());
-					LocalPlayer->ViewportClient->ViewportConsole->OutputText(S);
-				}
-
-				LocalPlayer->Exec(GetWorld(), *It.Value().GetValue(), *GLog);
+				FString const S = FString::Printf(TEXT("> %s"), *It.Value().GetValue());
+				ConsoleToDisplayResults->OutputText(S);
 			}
-		}
-		else
-		{
-			UE_LOG(LogCheatManager, Warning, TEXT("Can't find section 'CheatScript.%s' in DefaultGame.ini"), *ScriptName);
+
+			PlayerController->ConsoleCommand(*It.Value().GetValue(), /*bWriteToLog=*/ true);
 		}
 	}
 	else
 	{
-		UE_LOG(LogCheatManager, Warning, TEXT("Can't find local player!"));
+		UE_LOG(LogCheatManager, Warning, TEXT("Can't find section 'CheatScript.%s' in DefaultGame.ini"), *ScriptName);
 	}
 }
 
@@ -1207,7 +1211,7 @@ AActor* UCheatManager::GetTarget(APlayerController* PlayerController, struct FHi
     FVector const CamLoc = PlayerController->PlayerCameraManager->GetCameraLocation();
     FRotator const CamRot = PlayerController->PlayerCameraManager->GetCameraRotation();
     
-    FCollisionQueryParams TraceParams(NAME_None, true, PlayerController->GetPawn());
+    FCollisionQueryParams TraceParams(NAME_None, FCollisionQueryParams::GetUnknownStatId(), true, PlayerController->GetPawn());
     bool bHit = GetWorld()->LineTraceSingleByChannel(OutHit, CamLoc, CamRot.Vector() * 100000.f + CamLoc, ECC_Pawn, TraceParams);
     if (bHit)
     {
@@ -1217,5 +1221,66 @@ AActor* UCheatManager::GetTarget(APlayerController* PlayerController, struct FHi
     return NULL;
 }
 
+
+void UCheatManager::SpawnServerStatReplicator()
+{
+	DestroyServerStatReplicator();
+
+	AGameModeBase* GameModeBase = GetWorld()->GetAuthGameMode();
+	if (GameModeBase != nullptr && GameModeBase->IsNetMode(NM_DedicatedServer))
+	{
+		check(GameModeBase->ServerStatReplicator == nullptr);
+
+		APlayerController* PlayerController = GetOuterAPlayerController();
+		if (PlayerController->NetConnection != nullptr &&
+			PlayerController->NetConnection->Driver != nullptr)
+		{
+			PlayerController->NetConnection->Driver->bCollectNetStats = true;
+		}
+		FActorSpawnParameters SpawnInfo;
+		SpawnInfo.Name = FName(TEXT("ServerStatReplicatorInst"));
+		SpawnInfo.Owner = PlayerController;
+		GameModeBase->ServerStatReplicator = GetWorld()->SpawnActor<AServerStatReplicator>(SpawnInfo);
+		UE_LOG(LogCheatManager, Log, TEXT("Spawned stat replicator (%s) for owner (%s)"),
+			*GameModeBase->ServerStatReplicator->GetName(), *PlayerController->GetName());
+	}
+}
+
+void UCheatManager::DestroyServerStatReplicator()
+{
+	AGameModeBase* GameModeBase = GetWorld()->GetAuthGameMode();
+	if (GameModeBase != nullptr && GameModeBase->ServerStatReplicator != nullptr)
+	{
+		UE_LOG(LogCheatManager, Log, TEXT("Destroying stat replicator (%s)"), *GameModeBase->ServerStatReplicator->GetName());
+		GameModeBase->ServerStatReplicator->Destroy(true);
+		GameModeBase->ServerStatReplicator = nullptr;
+
+		// Toggle off stats collection
+		APlayerController* PlayerController = GetOuterAPlayerController();
+		if (PlayerController->NetConnection != nullptr &&
+			PlayerController->NetConnection->Driver != nullptr)
+		{
+			PlayerController->NetConnection->Driver->bCollectNetStats = false;
+		}
+	}
+}
+
+void UCheatManager::ToggleServerStatReplicatorClientOverwrite()
+{
+	AServerStatReplicator* ServerStatReplicator = FindObject<AServerStatReplicator>(ANY_PACKAGE, TEXT("ServerStatReplicatorInst"));
+	if (ServerStatReplicator != nullptr)
+	{
+		ServerStatReplicator->bOverwriteClientStats = !ServerStatReplicator->bOverwriteClientStats;
+	}
+}
+
+void UCheatManager::ToggleServerStatReplicatorUpdateStatNet()
+{
+	AServerStatReplicator* ServerStatReplicator = FindObject<AServerStatReplicator>(ANY_PACKAGE, TEXT("ServerStatReplicatorInst"));
+	if (ServerStatReplicator != nullptr)
+	{
+		ServerStatReplicator->bUpdateStatNet = !ServerStatReplicator->bUpdateStatNet;
+	}
+}
 
 #undef LOCTEXT_NAMESPACE

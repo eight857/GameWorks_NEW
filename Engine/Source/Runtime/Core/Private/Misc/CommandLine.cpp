@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/CommandLine.h"
 #include "Misc/MessageDialog.h"
@@ -85,6 +85,15 @@ void FCommandLine::Append(const TCHAR* AppendString)
 	WhitelistCommandLines();
 }
 
+bool FCommandLine::IsCommandLineLoggingFiltered()
+{
+#ifdef FILTER_COMMANDLINE_LOGGING
+	return true;
+#else
+	return false;
+#endif
+}
+
 #if WANTS_COMMANDLINE_WHITELIST
 TArray<FString> FCommandLine::ApprovedArgs;
 TArray<FString> FCommandLine::FilterArgsForLogging;
@@ -93,7 +102,7 @@ TArray<FString> FCommandLine::FilterArgsForLogging;
 /**
  * When overriding this setting make sure that your define looks like the following in your .cs file:
  *
- *		OutCPPEnvironmentConfiguration.Definitions.Add("OVERRIDE_COMMANDLINE_WHITELIST=\"-arg1 -arg2 -arg3 -arg4\"");
+ *		GlobalDefinitions.Add("OVERRIDE_COMMANDLINE_WHITELIST=\"-arg1 -arg2 -arg3 -arg4\"");
  *
  * The important part is the \" as they quotes get stripped off by the compiler without them
  */
@@ -107,7 +116,7 @@ const TCHAR* OverrideList = TEXT("-fullscreen /windowed");
 /**
  * When overriding this setting make sure that your define looks like the following in your .cs file:
  *
- *		OutCPPEnvironmentConfiguration.Definitions.Add("FILTER_COMMANDLINE_LOGGING=\"-arg1 -arg2 -arg3 -arg4\"");
+ *		GlobalDefinitions.Add("FILTER_COMMANDLINE_LOGGING=\"-arg1 -arg2 -arg3 -arg4\"");
  *
  * The important part is the \" as they quotes get stripped off by the compiler without them
  */
@@ -261,7 +270,7 @@ const TCHAR* FCommandLine::RemoveExeName(const TCHAR* InCmdLine)
 
 
 /**
- * Parses a string into tokens, separating switches (beginning with - or /) from
+ * Parses a string into tokens, separating switches (beginning with -) from
  * other parameters
  *
  * @param	CmdLine		the string to parse
@@ -273,7 +282,7 @@ void FCommandLine::Parse(const TCHAR* InCmdLine, TArray<FString>& Tokens, TArray
 	FString NextToken;
 	while (FParse::Token(InCmdLine, NextToken, false))
 	{
-		if ((**NextToken == TCHAR('-')) || (**NextToken == TCHAR('/')))
+		if ((**NextToken == TCHAR('-')))
 		{
 			new(Switches) FString(NextToken.Mid(1));
 			new(Tokens) FString(NextToken.Right(NextToken.Len() - 1));

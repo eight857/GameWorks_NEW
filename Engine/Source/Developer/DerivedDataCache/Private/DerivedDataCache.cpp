@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -8,6 +8,7 @@
 #include "Stats/StatsMisc.h"
 #include "Stats/Stats.h"
 #include "Async/AsyncWork.h"
+#include "Async/TaskGraphInterfaces.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
 #include "Modules/ModuleManager.h"
@@ -100,6 +101,9 @@ namespace DerivedDataCacheCookStats
 }
 #endif
 
+/** Whether we want to verify the DDC (pass in -VerifyDDC on the command line)*/
+bool GVerifyDDC = false;
+
 /**
  * Implementation of the derived data cache
  * This API is fully threadsafe
@@ -131,6 +135,7 @@ class FDerivedDataCache : public FDerivedDataCacheInterface
 		/** Async worker that checks the cache backend and if that fails, calls the deriver to build the data and then puts the results to the cache **/
 		void DoWork()
 		{
+			const int32 NumBeforeDDC = Data.Num();
 			bool bGetResult;
 			{
 				INC_DWORD_STAT(STAT_DDC_NumGets);
@@ -143,6 +148,30 @@ class FDerivedDataCache : public FDerivedDataCacheInterface
 			}
 			if (bGetResult)
 			{
+				
+				if(GVerifyDDC && DataDeriver && DataDeriver->IsDeterministic())
+				{
+					TArray<uint8> CmpData;
+					DataDeriver->Build(CmpData);
+					const int32 NumInDDC = Data.Num() - NumBeforeDDC;
+					const int32 NumGenerated = CmpData.Num();
+					
+					bool bMatchesInSize = NumGenerated == NumInDDC;
+					bool bDifferentMemory = true;
+					if (bMatchesInSize)
+					{
+						bDifferentMemory = 0 != FMemory::Memcmp(CmpData.GetData(), &Data[NumBeforeDDC], NumGenerated);
+					}
+
+					if(!bMatchesInSize || bDifferentMemory)
+					{
+						FString ErrMsg = FString::Printf(TEXT("There is a mismatch between the DDC data and the generated data for plugin (%s) for asset (%s). BytesInDDC:%d, BytesGenerated:%d, bDifferentMemory:%d"), DataDeriver->GetPluginName(), *DataDeriver->GetDebugContextString(), NumInDDC, NumGenerated, bDifferentMemory);
+						ensureMsgf(false, *ErrMsg);
+						UE_LOG(LogDerivedDataCache, Error, TEXT("%s"), *ErrMsg );
+					}
+					
+				}
+
 				check(Data.Num());
 				bSuccess = true;
 				delete DataDeriver;
@@ -207,6 +236,8 @@ public:
 		: CurrentHandle(19248) // we will skip some potential handles to catch errors
 	{
 		FDerivedDataBackend::Get(); // we need to make sure this starts before we all us to start
+
+		GVerifyDDC = FParse::Param(FCommandLine::Get(), TEXT("VerifyDDC"));
 	}
 
 	/** Destructor, flushes all sync tasks **/
@@ -418,6 +449,12 @@ public:
 		FDerivedDataBackend::Get().WaitForQuiescence(bShutdown);
 	}
 
+	/** Get whether a Shared Data Cache is in use */
+	virtual bool GetUsingSharedDDC() const override
+	{		
+		return FDerivedDataBackend::Get().GetUsingSharedDDC();
+	}
+
 	void GetDirectories(TArray<FString>& OutResults) override
 	{
 		FDerivedDataBackend::Get().GetDirectories(OutResults);
@@ -432,6 +469,12 @@ public:
 	virtual void GatherUsageStats(TMap<FString, FDerivedDataCacheUsageStats>& UsageStatsMap) override
 	{
 		FDerivedDataBackend::Get().GatherUsageStats(UsageStatsMap);
+	}
+
+	/** Get event delegate for data cache notifications */
+	virtual FOnDDCNotification& GetDDCNotificationEvent()
+	{
+		return DDCNotificationEvent;
 	}
 
 protected:
@@ -461,6 +504,9 @@ private:
 	FCriticalSection			SynchronizationObject;
 	/** Map of handle to pending task **/
 	TMap<uint32,FAsyncTask<FBuildAsyncWorker>*>	PendingTasks;
+
+	/** Cache notification delegate */
+	FOnDDCNotification DDCNotificationEvent;
 };
 
 //Forward reference

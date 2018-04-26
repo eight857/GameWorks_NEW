@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	XAudio2Support.h: XAudio2 specific structures.
@@ -39,7 +39,7 @@
 #include <mmdeviceapi.h>
 #include <functiondiscoverykeys_devpkey.h>
 
-class FMMNotificationClient : public IMMNotificationClient
+class FMMNotificationClient final : public IMMNotificationClient
 {
 public:
 	FMMNotificationClient()
@@ -54,7 +54,7 @@ public:
 		}
 	}
 
-	~FMMNotificationClient()
+	virtual ~FMMNotificationClient()
 	{
 		if (DeviceEnumerator)
 		{
@@ -70,6 +70,10 @@ public:
 
 	HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR pwstrDeviceId) override
 	{
+		for (IDeviceChangedListener* Listener : Listeners)
+		{
+			Listener->OnDefaultDeviceChanged();
+		}
 		return S_OK;
 	}
 
@@ -733,7 +737,7 @@ FORCEINLINE bool operator==(const WAVEFORMATEX& FormatA, const WAVEFORMATEX& For
 
 
 /** This structure holds any singleton XAudio2 resources which need to be used, not just "properties" of the device. */
-struct FXAudioDeviceProperties : public IDeviceChangedListener
+struct FXAudioDeviceProperties final : public IDeviceChangedListener
 {
 	// These variables are non-static to support multiple audio device instances
 	struct IXAudio2*					XAudio2;
@@ -753,7 +757,7 @@ struct FXAudioDeviceProperties : public IDeviceChangedListener
 #endif	//XAUDIO_SUPPORTS_DEVICE_DETAILS
 
 #if PLATFORM_WINDOWS
-	static FMMNotificationClient* NotificationClient;
+	FMMNotificationClient* NotificationClient;
 #endif
 
 	// For calculating speaker maps for 3d audio
@@ -781,24 +785,20 @@ struct FXAudioDeviceProperties : public IDeviceChangedListener
 		, bAllowNewVoices(true)
 	{
 #if PLATFORM_WINDOWS
-		if (NotificationClient == nullptr)
-		{
-			NotificationClient = new FMMNotificationClient();
-	}
-		else
-		{
-			NotificationClient->AddRef();
-		}
-
+		NotificationClient = new FMMNotificationClient();
 		NotificationClient->RegisterDeviceChangedListener(this);
 #endif
 	}
 	
-	~FXAudioDeviceProperties()
+	virtual ~FXAudioDeviceProperties()
 	{
 #if PLATFORM_WINDOWS
-		NotificationClient->UnRegisterDeviceDeviceChangedListener(this);
-		NotificationClient->Release();
+		if (NotificationClient)
+		{
+			NotificationClient->UnRegisterDeviceDeviceChangedListener(this);
+			NotificationClient->Release();
+			NotificationClient = nullptr;
+		}
 #endif
 
 		// Make sure we've free'd all of our active voices at this point!
@@ -809,6 +809,12 @@ struct FXAudioDeviceProperties : public IDeviceChangedListener
 		{
 			MasteringVoice->DestroyVoice();
 			MasteringVoice = nullptr;
+		}
+
+		if (AudioClockVoice)
+		{
+			AudioClockVoice->DestroyVoice();
+			AudioClockVoice = nullptr;
 		}
 
 		if (XAudio2)
@@ -844,6 +850,14 @@ struct FXAudioDeviceProperties : public IDeviceChangedListener
 			UE_LOG(LogAudio, Warning, TEXT("Current Audio Device with ID %s was removed. Shutting down audio device."), *DeviceID);
 		}
 #endif // XAUDIO_SUPPORTS_DEVICE_DETAILS
+	}
+
+	void OnDefaultDeviceChanged() override
+	{
+		bDeviceChanged = true;
+
+		// Immediately disallow new voices to be created
+		bAllowNewVoices = false;
 	}
 
 	bool DidAudioDeviceChange()

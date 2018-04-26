@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "CoreMinimal.h"
 #include "OnlineSubsystemOculusPrivate.h"
 #if PLATFORM_WINDOWS
@@ -252,7 +252,7 @@ static int ValidateCertificateContents(CertificateEntry* chain, CRYPT_PROVIDER_S
 			pCertData->pCert,
 			CERT_NAME_ATTR_TYPE,
 			0,
-			szOID_COMMON_NAME,
+			(void*)szOID_COMMON_NAME,
 			subjectStr,
 			ARRAYSIZE(subjectStr));
 

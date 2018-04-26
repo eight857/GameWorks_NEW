@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 // Enums used in both hlslcc and the common shader compiler modules in the Engine.
 
 #pragma once
@@ -51,6 +51,10 @@ enum EHlslCompileFlag
 	HLSLCC_UseFullPrecisionInPS = 0x2000,
 	// Tried to keep global variables' original order from source (default is to sort them in reverse declaration order) 
 	HLSCC_KeepGlobalVariableOrder = 0x4000,
+	// Do not replace names for samplers and textures (like ps0, ci2)
+	HLSLCC_KeepSamplerAndImageNames = 0x8000,
+	// Shaders uses external texture so may need special runtime handling
+	HLSLCC_UsesExternalTexture = 0x10000,
 };
 
 /**

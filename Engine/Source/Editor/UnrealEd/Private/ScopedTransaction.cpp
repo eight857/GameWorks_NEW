@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "ScopedTransaction.h"
@@ -17,7 +17,7 @@ FScopedTransaction::FScopedTransaction(const TCHAR* TransactionContext, const FT
 
 void FScopedTransaction::Construct (const TCHAR* TransactionContext, const FText& SessionName, UObject* PrimaryObject, const bool bShouldActuallyTransact)
 {
-	if( bShouldActuallyTransact && GEditor && GEditor->Trans && !GEditor->bIsSimulatingInEditor)
+	if( bShouldActuallyTransact && GEditor && GEditor->Trans && !GEditor->bIsSimulatingInEditor && ensure(!GIsTransacting))
 	{
 		FSlateApplication::Get().OnLogSlateEvent(EEventLog::BeginTransaction, SessionName );
 		Index = GEditor->BeginTransaction( TransactionContext, SessionName, PrimaryObject );

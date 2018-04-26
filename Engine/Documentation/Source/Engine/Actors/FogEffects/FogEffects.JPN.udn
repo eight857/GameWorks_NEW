@@ -1,50 +1,12 @@
-﻿Availability:Public
+﻿INTSourceChangelist:3782314
+Availability:Public
 Title:フォグ エフェクト
 Crumbs: %ROOT%, Engine
 Description:フォグを使用してワールドの周囲の環境を加えて背景の雰囲気を作ります。
 parent:Engine/Rendering
 order:6
 type:landing
-
-[VAR:Topic]
-[OBJECT:Topic]
-	[PARAM:image]
-		![%Engine/Actors/FogEffects:title%](Engine/Actors/FogEffects/fog_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/landscape_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Actors/FogEffects:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Actors/FogEffects:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Actors/FogEffects]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
-
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-	[PARAM:image]
-		![%Engine/Actors/FogEffects:title%](Engine/Actors/FogEffects/fog_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/landscape_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Actors/FogEffects:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Actors/FogEffects:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Actors/FogEffects]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
+topic-image:fog_topic.png
 
 [REGION:banner]
 ![Fog Effects](fog_landing_banner.png)

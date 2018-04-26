@@ -1,6 +1,10 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
+
+#include "LoginFlowPrivate.h"
+#include "Widgets/SUserWidget.h"
+#include "Styling/CoreStyle.h"
 
 class FLoginFlowViewModel;
 

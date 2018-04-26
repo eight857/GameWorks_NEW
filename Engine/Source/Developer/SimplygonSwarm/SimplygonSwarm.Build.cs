@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -11,13 +11,13 @@ public class SimplygonSwarm : ModuleRules
         PrivateIncludePaths.Add("Developer/SimplygonSwarm/Private");
 
         PublicDependencyModuleNames.AddRange(
-        new string[] { 
-				"Core",
-				"CoreUObject",
-				"InputCore",
-				"Json",
-				"RHI"
-			}
+        new string[] {
+                "Core",
+                "CoreUObject",
+                "InputCore",
+                "Json",
+                "RHI",
+            }
         );
 
         PrivateDependencyModuleNames.AddRange(
@@ -40,16 +40,24 @@ public class SimplygonSwarm : ModuleRules
         new string[] { 
 				"MeshUtilities",
 				"MaterialUtilities",
-                "SimplygonMeshReduction"
-			}
+                "SimplygonMeshReduction",
+                "MeshReductionInterface"
+            }
         );
 
-		AddEngineThirdPartyPrivateStaticDependencies(Target, "Simplygon");
+       PublicIncludePathModuleNames.AddRange(
+       new string[] {
+                "MeshReductionInterface"
+           }
+       );
+
+
+        AddEngineThirdPartyPrivateStaticDependencies(Target, "Simplygon");
 		AddEngineThirdPartyPrivateStaticDependencies(Target, "SSF");
 		AddEngineThirdPartyPrivateStaticDependencies(Target, "SPL");
 		AddEngineThirdPartyPrivateDynamicDependencies(Target, "PropertyEditor");
 
-		string SimplygonPath = UEBuildConfiguration.UEThirdPartySourceDirectory + "NotForLicensees/Simplygon/Simplygon-latest/Inc/SimplygonSDK.h";
+		string SimplygonPath = Target.UEThirdPartySourceDirectory + "NotForLicensees/Simplygon/Simplygon-latest/Inc/SimplygonSDK.h";
 		if (Target.Platform == UnrealTargetPlatform.Win64 && File.Exists(SimplygonPath))
 		{
 			PrecompileForTargets = PrecompileTargetsType.Editor;

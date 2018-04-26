@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Evaluation/MovieScene3DAttachTemplate.h"
 #include "Sections/MovieScene3DAttachSection.h"
@@ -15,11 +15,31 @@ DECLARE_CYCLE_STAT(TEXT("Attach Track Evaluate"), MovieSceneEval_AttachTrack_Eva
 DECLARE_CYCLE_STAT(TEXT("Attach Track Token Execute"), MovieSceneEval_AttachTrack_TokenExecute, STATGROUP_MovieSceneEval);
 
 
-/** A token that sets a component's attach */
-struct F3DAttachTrackToken
+struct F3DAttachRuleState
 {
-	F3DAttachTrackToken(USceneComponent* InAttachParent, FName InAttachSocketName, bool bInShouldbeAttached)
-		: AttachParent(InAttachParent)
+	F3DAttachRuleState(EAttachmentRule InAttachmentLocationRule, EAttachmentRule InAttachmentRotationRule, EAttachmentRule InAttachmentScaleRule, EDetachmentRule InDetachmentLocationRule, EDetachmentRule InDetachmentRotationRule, EDetachmentRule InDetachmentScaleRule)
+		: AttachmentLocationRule(InAttachmentLocationRule)
+		, AttachmentRotationRule(InAttachmentRotationRule)
+		, AttachmentScaleRule(InAttachmentScaleRule)
+		, DetachmentLocationRule(InDetachmentLocationRule)
+		, DetachmentRotationRule(InDetachmentRotationRule)
+		, DetachmentScaleRule(InDetachmentScaleRule)
+	{}
+
+	EAttachmentRule AttachmentLocationRule;
+	EAttachmentRule AttachmentRotationRule;
+	EAttachmentRule AttachmentScaleRule;
+	EDetachmentRule DetachmentLocationRule;
+	EDetachmentRule DetachmentRotationRule;
+	EDetachmentRule DetachmentScaleRule;
+};
+
+
+/** A token that sets a component's attach */
+struct F3DAttachTrackToken : public F3DAttachRuleState
+{
+	F3DAttachTrackToken(USceneComponent* InAttachParent, FName InAttachSocketName, bool bInShouldbeAttached, EAttachmentRule InAttachmentLocationRule, EAttachmentRule InAttachmentRotationRule, EAttachmentRule InAttachmentScaleRule, EDetachmentRule InDetachmentLocationRule, EDetachmentRule InDetachmentRotationRule, EDetachmentRule InDetachmentScaleRule)
+		: F3DAttachRuleState(InAttachmentLocationRule, InAttachmentRotationRule, InAttachmentScaleRule, InDetachmentLocationRule, InDetachmentRotationRule, InDetachmentScaleRule)
 		, AttachSocketName(InAttachSocketName)
 		, bShouldBeAttached(bInShouldbeAttached)
 	{}
@@ -30,12 +50,23 @@ struct F3DAttachTrackToken
 		{
 			if (SceneComponent.GetAttachParent() != AttachParent.Get() || SceneComponent.GetAttachSocketName() != AttachSocketName)
 			{
-				SceneComponent.AttachToComponent(AttachParent.Get(), FAttachmentTransformRules::KeepRelativeTransform, AttachSocketName);	
+				FAttachmentTransformRules AttachmentRules(AttachmentLocationRule, AttachmentRotationRule, AttachmentScaleRule, false);
+
+				SceneComponent.AttachToComponent(AttachParent.Get(), AttachmentRules, AttachSocketName);	
+			}
+
+			// Match the component velocity of the parent. If the attached child has any transformation, the velocity will be 
+			// computed by the 3d transform template.
+			if (SceneComponent.GetAttachParent())
+			{
+				SceneComponent.ComponentVelocity = SceneComponent.GetAttachParent()->GetComponentVelocity();
 			}
 		}
 		else
 		{
-			SceneComponent.DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+			FDetachmentTransformRules DetachmentRules(DetachmentLocationRule, DetachmentRotationRule, DetachmentScaleRule, false);
+
+			SceneComponent.DetachFromComponent(DetachmentRules);
 		}
 	}
 
@@ -47,8 +78,8 @@ struct F3DAttachTrackToken
 /** A movie scene pre-animated token that stores a pre-animated component attachment */
 struct F3DAttachTrackPreAnimatedToken : F3DAttachTrackToken, IMovieScenePreAnimatedToken
 {
-	F3DAttachTrackPreAnimatedToken(USceneComponent& SceneComponent)
-		: F3DAttachTrackToken(SceneComponent.GetAttachParent(), SceneComponent.GetAttachSocketName(), true)
+	F3DAttachTrackPreAnimatedToken(USceneComponent& SceneComponent, EAttachmentRule InAttachmentLocationRule, EAttachmentRule InAttachmentRotationRule, EAttachmentRule InAttachmentScaleRule, EDetachmentRule InDetachmentLocationRule, EDetachmentRule InDetachmentRotationRule, EDetachmentRule InDetachmentScaleRule)
+		: F3DAttachTrackToken(SceneComponent.GetAttachParent(), SceneComponent.GetAttachSocketName(), true, InAttachmentLocationRule, InAttachmentRotationRule, InAttachmentScaleRule, InDetachmentLocationRule, InDetachmentRotationRule, InDetachmentScaleRule)
 	{}
 
 	virtual void RestoreState(UObject& InObject, IMovieScenePlayer& Player) override
@@ -60,18 +91,24 @@ struct F3DAttachTrackPreAnimatedToken : F3DAttachTrackToken, IMovieScenePreAnima
 		// Detach if there was no pre-existing parent
 		if (!AttachParent.IsValid())
 		{
-			SceneComponent->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+			FDetachmentTransformRules DetachmentRules(DetachmentLocationRule, DetachmentRotationRule, DetachmentScaleRule, false);
+
+			SceneComponent->DetachFromComponent(DetachmentRules);
 		}
 	}
 };
 
-struct F3DAttachTokenProducer : IMovieScenePreAnimatedTokenProducer
+struct F3DAttachTokenProducer : F3DAttachRuleState, IMovieScenePreAnimatedTokenProducer
 {
+	F3DAttachTokenProducer(EAttachmentRule InAttachmentLocationRule, EAttachmentRule InAttachmentRotationRule, EAttachmentRule InAttachmentScaleRule, EDetachmentRule InDetachmentLocationRule, EDetachmentRule InDetachmentRotationRule, EDetachmentRule InDetachmentScaleRule) 
+		: F3DAttachRuleState(InAttachmentLocationRule, InAttachmentRotationRule, InAttachmentScaleRule, InDetachmentLocationRule, InDetachmentRotationRule, InDetachmentScaleRule)
+	{}
+
 	/** Cache the existing state of an object before moving it */
 	virtual IMovieScenePreAnimatedTokenPtr CacheExistingState(UObject& Object) const override
 	{
 		USceneComponent* SceneComponent = CastChecked<USceneComponent>(&Object);
-		return F3DAttachTrackPreAnimatedToken(*SceneComponent);
+		return F3DAttachTrackPreAnimatedToken(*SceneComponent, AttachmentLocationRule, AttachmentRotationRule, AttachmentScaleRule, DetachmentLocationRule, DetachmentRotationRule, DetachmentScaleRule);
 	}
 };
 
@@ -80,9 +117,9 @@ struct F3DAttachExecutionToken
 	: IMovieSceneExecutionToken
 	, F3DAttachTrackToken
 {
-	F3DAttachExecutionToken(FGuid InAttachGuid, FName InAttachSocketName, FName InAttachComponentName, bool bInShouldBeAttached) 
-		: F3DAttachTrackToken(nullptr, InAttachSocketName, bInShouldBeAttached)
-		, AttachGuid(InAttachGuid)
+	F3DAttachExecutionToken(FMovieSceneObjectBindingID InAttachBindingID, FName InAttachSocketName, FName InAttachComponentName, bool bInShouldBeAttached, EAttachmentRule InAttachmentLocationRule, EAttachmentRule InAttachmentRotationRule, EAttachmentRule InAttachmentScaleRule, EDetachmentRule InDetachmentLocationRule, EDetachmentRule InDetachmentRotationRule, EDetachmentRule InDetachmentScaleRule) 
+		: F3DAttachTrackToken(nullptr, InAttachSocketName, bInShouldBeAttached, InAttachmentLocationRule, InAttachmentRotationRule, InAttachmentScaleRule, InDetachmentLocationRule, InDetachmentRotationRule, InDetachmentScaleRule)
+		, AttachBindingID(InAttachBindingID)
 		, AttachComponentName(InAttachComponentName)
 	{}
 
@@ -133,7 +170,19 @@ struct F3DAttachExecutionToken
 	{
 		MOVIESCENE_DETAILED_SCOPE_CYCLE_COUNTER(MovieSceneEval_AttachTrack_TokenExecute)
 
-		FMovieSceneEvaluationOperand AttachOperand(Operand.SequenceID, AttachGuid);
+		FMovieSceneSequenceID SequenceID = Operand.SequenceID;
+		if (AttachBindingID.GetSequenceID().IsValid())
+		{
+			if (const FMovieSceneSubSequenceData* SubData = Player.GetEvaluationTemplate().GetHierarchy().FindSubData(SequenceID))
+			{
+				// Ensure that this ID is resolvable from the root, based on the current local sequence ID
+				FMovieSceneObjectBindingID RootBindingID = AttachBindingID.ResolveLocalToRoot(SequenceID, Player.GetEvaluationTemplate().GetHierarchy());
+				SequenceID = RootBindingID.GetSequenceID();
+			}
+		}
+
+		// If the transform is set, otherwise use the bound actor's transform
+		FMovieSceneEvaluationOperand AttachOperand(SequenceID, AttachBindingID.GetGuid());
 		
 		TArrayView<TWeakObjectPtr<>> Objects = Player.FindBoundObjects(AttachOperand);
 		if (!Objects.Num())
@@ -158,7 +207,11 @@ struct F3DAttachExecutionToken
 			if (SceneComponent)
 			{
 				Player.SavePreAnimatedState(*SceneComponent, FMobilityTokenProducer::GetAnimTypeID(), FMobilityTokenProducer());
-				Player.SavePreAnimatedState(*SceneComponent, TMovieSceneAnimTypeID<F3DAttachExecutionToken>(), F3DAttachTokenProducer());
+
+				// Attachment can affect transform as well, so save transform state.
+				Player.SavePreAnimatedState(*SceneComponent, F3DTransformTokenProducer::GetAnimTypeID(), F3DTransformTokenProducer());
+
+				Player.SavePreAnimatedState(*SceneComponent, TMovieSceneAnimTypeID<F3DAttachExecutionToken>(), F3DAttachTokenProducer(AttachmentLocationRule, AttachmentRotationRule, AttachmentScaleRule, DetachmentLocationRule, DetachmentRotationRule, DetachmentScaleRule));
 
 				AttachParent = GetAttachComponent(ParentActor);
 
@@ -169,14 +222,20 @@ struct F3DAttachExecutionToken
 		}
 	}
 	
-	FGuid AttachGuid;
+	FMovieSceneObjectBindingID AttachBindingID;
 	FName AttachComponentName;
 };
 
 FMovieScene3DAttachSectionTemplate::FMovieScene3DAttachSectionTemplate(const UMovieScene3DAttachSection& Section)
-	: AttachGuid(Section.GetConstraintId())
+	: AttachBindingID(Section.GetConstraintBindingID())
 	, AttachSocketName(Section.AttachSocketName)
 	, AttachComponentName(Section.AttachComponentName)
+	, AttachmentLocationRule(Section.AttachmentLocationRule)
+	, AttachmentRotationRule(Section.AttachmentRotationRule)
+	, AttachmentScaleRule(Section.AttachmentScaleRule)
+	, DetachmentLocationRule(Section.DetachmentLocationRule)
+	, DetachmentRotationRule(Section.DetachmentRotationRule)
+	, DetachmentScaleRule(Section.DetachmentScaleRule)
 {
 }
 
@@ -186,5 +245,5 @@ void FMovieScene3DAttachSectionTemplate::Evaluate(const FMovieSceneEvaluationOpe
 
 	const bool bShouldBeAttached = true;
 
-	ExecutionTokens.Add(F3DAttachExecutionToken(AttachGuid, AttachSocketName, AttachComponentName, bShouldBeAttached));
+	ExecutionTokens.Add(F3DAttachExecutionToken(AttachBindingID, AttachSocketName, AttachComponentName, bShouldBeAttached, AttachmentLocationRule, AttachmentRotationRule, AttachmentScaleRule, DetachmentLocationRule, DetachmentRotationRule, DetachmentScaleRule));
 }

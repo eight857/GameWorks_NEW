@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,8 +7,6 @@
 #include "OnlineSubsystemGooglePackage.h"
 
 class FOnlineSubsystemGoogle;
-class IHttpRequest;
-class FSocket;
 
 /** 
  * Implementation for the Google external UIs

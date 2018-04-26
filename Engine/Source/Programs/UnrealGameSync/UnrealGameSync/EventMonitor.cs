@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Concurrent;
@@ -140,7 +140,10 @@ namespace UnrealGameSync
 			{
 				LogWriter.WriteLine("Using connection string: {0}", SqlConnectionString);
 			}
+		}
 
+		public void Start()
+		{
 			WorkerThread = new Thread(() => PollForUpdates());
 			WorkerThread.Start();
 		}

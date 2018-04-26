@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NetworkFileServerHttp.h"
 #include "NetworkFileServerConnection.h"
@@ -17,9 +17,8 @@ class FNetworkFileServerClientConnectionHTTP : public FNetworkFileServerClientCo
 {
 
 public:
-	FNetworkFileServerClientConnectionHTTP(const FFileRequestDelegate& InFileRequestDelegate,
-		const FRecompileShadersDelegate& InRecompileShadersDelegate, const TArray<ITargetPlatform*>& InActiveTargetPlatforms )
-		:  FNetworkFileServerClientConnection( InFileRequestDelegate,InRecompileShadersDelegate,InActiveTargetPlatforms)
+	FNetworkFileServerClientConnectionHTTP(const FNetworkFileDelegateContainer* NetworkFileDelegates, const TArray<ITargetPlatform*>& InActiveTargetPlatforms )
+		:  FNetworkFileServerClientConnection( NetworkFileDelegates, InActiveTargetPlatforms)
 	{
 	}
 
@@ -81,8 +80,7 @@ static struct lws_protocols Protocols[] = {
 
 FNetworkFileServerHttp::FNetworkFileServerHttp(
 	int32 InPort,
-	const FFileRequestDelegate* InFileRequestDelegate,
-	const FRecompileShadersDelegate* InRecompileShadersDelegate,
+	FNetworkFileDelegateContainer InNetworkFileDelegateContainer,
 	const TArray<ITargetPlatform*>& InActiveTargetPlatforms
 	)
 	:ActiveTargetPlatforms(InActiveTargetPlatforms)
@@ -95,16 +93,7 @@ FNetworkFileServerHttp::FNetworkFileServerHttp(
 
 	UE_LOG(LogFileServer, Warning, TEXT("Unreal Network Http File Server starting up..."));
 
-	if (InFileRequestDelegate && InFileRequestDelegate->IsBound())
-	{
-		FileRequestDelegate = *InFileRequestDelegate;
-	}
-
-	if (InRecompileShadersDelegate && InRecompileShadersDelegate->IsBound())
-	{
-		RecompileShadersDelegate = *InRecompileShadersDelegate;
-	}
-
+	NetworkFileDelegates = InNetworkFileDelegateContainer;
 
 	StopRequested.Reset();
 	Ready.Reset();
@@ -156,7 +145,7 @@ bool FNetworkFileServerHttp::Init()
 	Port = Info.port;
 
 	if (Context == NULL) {
-		UE_LOG(LogFileServer, Fatal, TEXT(" Could not create a libwebsocket content for port : %d"), Port);
+		UE_LOG(LogFileServer, Error, TEXT(" Could not create a libwebsocket content.\n Port : %d is already in use.\n Exiting...\n"), Port);
 		return false;
 	}
 
@@ -250,7 +239,7 @@ FNetworkFileServerHttp::~FNetworkFileServerHttp()
 
 FNetworkFileServerClientConnectionHTTP* FNetworkFileServerHttp::CreateNewConnection()
 {
-	return new FNetworkFileServerClientConnectionHTTP(FileRequestDelegate,RecompileShadersDelegate,ActiveTargetPlatforms);
+	return new FNetworkFileServerClientConnectionHTTP(&NetworkFileDelegates,ActiveTargetPlatforms);
 }
 
 // Have a similar process function for the normal tcp connection.
@@ -264,7 +253,7 @@ void FNetworkFileServerHttp::Process(FArchive& In, TArray<uint8>&Out, FNetworkFi
 		FGuid ClientGuid;
 		In << ClientGuid;
 
-		UE_LOG(LogFileServer, Log, TEXT("Recieved GUID %s"), *ClientGuid.ToString());
+		UE_LOG(LogFileServer, Log, TEXT("Received GUID %s"), *ClientGuid.ToString());
 
 		FNetworkFileServerClientConnectionHTTP* Connection = NULL;
 		if (Server->RequestHandlers.Contains(ClientGuid))
@@ -336,7 +325,7 @@ int FNetworkFileServerHttp::CallBack_HTTP(
 				// client has asked for a file. ( only html/js files are served.)
 
 				// what type is being served.
-				FString FilePath = FPaths::GameDir() / TEXT("Binaries/HTML5") + FString((ANSICHAR*)In);
+				FString FilePath = FPaths::ProjectDir() / TEXT("Binaries/HTML5") + FString((ANSICHAR*)In);
 				TCHAR Mime[512];
 
 

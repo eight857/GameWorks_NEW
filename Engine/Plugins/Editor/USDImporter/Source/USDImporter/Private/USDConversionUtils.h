@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once 
 
@@ -27,6 +27,16 @@ namespace USDToUnreal
 	static FString ConvertString(const std::string& InString)
 	{
 		return FString(ANSI_TO_TCHAR(InString.c_str()));
+	}
+
+	static FString ConvertString(const char* InString)
+	{
+		return FString(ANSI_TO_TCHAR(InString));
+	}
+
+	static FName ConvertName(const char* InString)
+	{
+		return FName(InString);
 	}
 
 	static FName ConvertName(const std::string& InString)

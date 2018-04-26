@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,6 +9,7 @@
 #include "IDetailCustomization.h"
 #include "IDetailCustomNodeBuilder.h"
 #include "IDetailsView.h"
+#include "EditorUndoClient.h"
 
 #include "Editor/UnrealEd/Public/Kismet2/EnumEditorUtils.h"
 
@@ -18,6 +19,8 @@ class FUserDefinedEnumLayout;
 class IDetailChildrenBuilder;
 class IDetailLayoutBuilder;
 class SEditableTextBox;
+class FEditableTextUserDefinedEnum;
+class FEditableTextUserDefinedEnumTooltip;
 
 class KISMET_API FUserDefinedEnumEditor : public IUserDefinedEnumEditor
 {
@@ -59,7 +62,7 @@ protected:
 };
 
 /** Details customization for functions and graphs selected in the MyBlueprint panel */
-class FEnumDetails : public IDetailCustomization, FEnumEditorUtils::INotifyOnEnumChanged
+class FEnumDetails : public IDetailCustomization, FEnumEditorUtils::INotifyOnEnumChanged, FEditorUndoClient
 {
 public:
 	/** Makes a new instance of this detail layout class for a specific detail view requesting it */
@@ -68,11 +71,7 @@ public:
 		return MakeShareable(new FEnumDetails);
 	}
 
-	FEnumDetails()
-		: TargetEnum(NULL)
-	{
-	}
-
+	FEnumDetails();
 	~FEnumDetails();
 
 	/** IDetailCustomization interface */
@@ -84,6 +83,10 @@ public:
 	/** FEnumEditorUtils::INotifyOnEnumChanged */
 	virtual void PreChange(const class UUserDefinedEnum* Enum, FEnumEditorUtils::EEnumEditorChangeInfo Info) override;
 	virtual void PostChange(const class UUserDefinedEnum* Enum, FEnumEditorUtils::EEnumEditorChangeInfo Info) override;
+
+	/** FEditorUndoClient Interface */
+	virtual void PostUndo(bool bSuccess) override;
+	virtual void PostRedo(bool bSuccess) override { PostUndo(bSuccess); }
 
 private:
 	/** Handles new enum element request */
@@ -171,5 +174,8 @@ private:
 	int32 EnumeratorIndex;
 
 	/** The editable text interface for the display name data */
-	TSharedPtr<class FEditableTextUserDefinedEnum> DisplayNameEditor;
+	TSharedPtr<FEditableTextUserDefinedEnum> DisplayNameEditor;
+
+	/** The editable text interface for the tooltip data */
+	TSharedPtr<FEditableTextUserDefinedEnumTooltip> TooltipEditor;
 };

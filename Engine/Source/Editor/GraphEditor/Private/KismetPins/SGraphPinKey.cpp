@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "KismetPins/SGraphPinKey.h"
@@ -12,7 +12,7 @@ void SGraphPinKey::Construct(const FArguments& InArgs, UEdGraphPin* InGraphPinOb
 
 	SelectedKey = FKey(*InGraphPinObj->GetDefaultAsString());
 
-	if (!SelectedKey.IsValid())
+	if (!SelectedKey.IsValid() && InGraphPinObj->Direction == EEdGraphPinDirection::EGPD_Input)
 	{
 		// Ensure first valid key is always set by default
 		SelectedKey = KeyList[0];

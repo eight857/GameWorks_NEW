@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -33,6 +33,22 @@ struct FVirtualBoneCompactPoseData
 	{}
 };
 
+/**
+ * This is curve evaluation options for bone container
+ */
+struct FCurveEvaluationOption
+{
+	bool bAllowCurveEvaluation;
+	const TArray<FName>* DisallowedList;
+	int32 LODIndex;
+	
+	FCurveEvaluationOption(bool bInAllowCurveEvaluation = true, const TArray<FName>* InDisallowedList = nullptr, int32 InLODIndex = 0)
+		: bAllowCurveEvaluation(bInAllowCurveEvaluation)
+		, DisallowedList(InDisallowedList)
+		, LODIndex(InLODIndex)
+	{
+	}
+};
 /**
 * This is a native transient structure.
 * Contains:
@@ -93,10 +109,10 @@ public:
 
 	FBoneContainer();
 
-	FBoneContainer(const TArray<FBoneIndexType>& InRequiredBoneIndexArray, UObject& InAsset);
+	FBoneContainer(const TArray<FBoneIndexType>& InRequiredBoneIndexArray, const FCurveEvaluationOption& CurveEvalOption, UObject& InAsset);
 
 	/** Initialize BoneContainer to a new Asset, RequiredBonesArray and RefPoseArray. */
-	void InitializeTo(const TArray<FBoneIndexType>& InRequiredBoneIndexArray, UObject& InAsset);
+	void InitializeTo(const TArray<FBoneIndexType>& InRequiredBoneIndexArray, const FCurveEvaluationOption& CurveEvalOption, UObject& InAsset);
 
 	/** Returns true if FBoneContainer is Valid. Needs an Asset, a RefPoseArray, and a RequiredBonesArray. */
 	const bool IsValid() const
@@ -264,6 +280,7 @@ public:
 			<< B.bUseRAWData
 			<< B.bUseSourceData
 			;
+
 		return Ar;
 	}
 
@@ -308,11 +325,11 @@ public:
 	}
 
 	/** Cache required Anim Curve Uids */
-	void CacheRequiredAnimCurveUids();
+	void CacheRequiredAnimCurveUids(const FCurveEvaluationOption& CurveEvalOption);
 
 private:
 	/** Initialize FBoneContainer. */
-	void Initialize();
+	void Initialize(const FCurveEvaluationOption& CurveEvalOption);
 
 	/** Cache remapping data if current Asset is a SkeletalMesh, with all compatible Skeletons. */
 	void RemapFromSkelMesh(USkeletalMesh const & SourceSkeletalMesh, USkeleton& TargetSkeleton);
@@ -356,8 +373,7 @@ struct FBoneReference
 
 	bool operator==(const FBoneReference& Other) const
 	{
-		// faster to compare, and BoneName won't matter
-		return BoneIndex == Other.BoneIndex;
+		return BoneName == Other.BoneName;
 	}
 	/** Initialize Bone Reference, return TRUE if success, otherwise, return false **/
 	ENGINE_API bool Initialize(const FBoneContainer& RequiredBones);
@@ -367,8 +383,29 @@ struct FBoneReference
 	// it triggers ensure in those functions
 	ENGINE_API bool Initialize(const USkeleton* Skeleton);
 
-	/** return true if valid. Otherwise return false **/
+	/** Deprecated functions */
+	DEPRECATED(4.17, "Please use IsValidToEvaluate instead")
 	ENGINE_API bool IsValid(const FBoneContainer& RequiredBones) const;
+	
+	/** return true if it has valid set up */
+	bool HasValidSetup() const
+	{
+		return (BoneIndex != INDEX_NONE);
+	}
+
+	/** return true if has valid index, and required bones contain it **/
+	ENGINE_API bool IsValidToEvaluate(const FBoneContainer& RequiredBones) const;
+	/** return true if has valid compact index. This will return invalid if you're using skeleton index */
+	ENGINE_API bool IsValidToEvaluate() const
+	{
+		return (!bUseSkeletonIndex && CachedCompactPoseIndex != INDEX_NONE);
+	}
+
+	void InvalidateCachedBoneIndex()
+	{
+		BoneIndex = INDEX_NONE;
+		CachedCompactPoseIndex = FCompactPoseBoneIndex(INDEX_NONE);
+	}
 
 	FMeshPoseBoneIndex GetMeshPoseIndex(const FBoneContainer& RequiredBones) const
 	{ 

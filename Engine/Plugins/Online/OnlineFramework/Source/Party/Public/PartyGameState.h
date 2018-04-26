@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -61,7 +61,9 @@ enum class EJoinPartyDenialReason : uint8
 	/** Party has been marked as private and the join request is revoked */
 	PartyPrivate,
 	/** Player is still in tutorials and no able to do invites */
-	NeedsTutorial
+	NeedsTutorial,
+	/** Player is in a game mode that restricts joining */
+	GameModeRestricted
 };
 
 enum class EApprovalAction : uint8
@@ -175,6 +177,13 @@ private:
 	 */
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnInvitesDisabledChanged, bool /* bInvitesDisabled */);
 
+	/**
+	 * Delegate fired when a party's configuration is updated
+	 * 
+	 * @param NewConfiguration Updated configuration
+	 */
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnPartyConfigurationChanged, const FPartyConfiguration& /* NewConfiguration */);
+
 
 protected:
 
@@ -276,6 +285,13 @@ public:
 	void SetAcceptingMembers(bool bIsAcceptingMembers, EJoinPartyDenialReason DenialReason);
 
 	/**
+	 * Check if we are currently accepting members.
+	 * 
+	 * @param Optional pointer to a Denial reason that is set when the party is not joinable
+	 */
+	bool IsAcceptingMembers(EJoinPartyDenialReason* const DenialReason = nullptr) const;
+
+	/**
 	 * Check if you have permission to send invites to this party
 	 *
 	 * @return true if you have permission
@@ -348,6 +364,8 @@ public:
 	FOnLeaderInvitesOnlyChanged& OnLeaderInvitesOnlyChanged() { return LeaderInvitesOnlyChanged; }
 	/** @return delegate fired when invite permissions have changed */
 	FOnInvitesDisabledChanged& OnInvitesDisabledChanged() { return InvitesDisabledChanged; }
+	/** @return delegate fired when the party configuration has changed */
+	FOnPartyConfigurationChanged& OnPartyConfigurationChanged() { return PartyConfigurationChanged; }
 	
 protected:
 
@@ -456,6 +474,7 @@ protected:
 	FOnLeaderFriendsOnlyChanged LeaderFriendsOnlyChanged;
 	FOnLeaderInvitesOnlyChanged LeaderInvitesOnlyChanged;
 	FOnInvitesDisabledChanged InvitesDisabledChanged;
+	FOnPartyConfigurationChanged PartyConfigurationChanged;
 
 	/**
 	 * Common initialization for a newly instantiated party
@@ -703,7 +722,7 @@ inline const TCHAR* ToString(EPartyType Type)
 	}
 	default:
 	{
-		return TEXT("");
+		return TEXT("Unknown");
 	}
 	}
 }
@@ -742,7 +761,7 @@ inline const TCHAR* ToString(EJoinPartyDenialReason Type)
 	}
 	default:
 	{
-		return TEXT("");
+		return TEXT("Unknown");
 	}
 	}
 }
@@ -769,7 +788,7 @@ inline const TCHAR* ToString(EApprovalAction Type)
 	}
 	default:
 	{
-		return TEXT("");
+		return TEXT("Unknown");
 	}
 	}
 }

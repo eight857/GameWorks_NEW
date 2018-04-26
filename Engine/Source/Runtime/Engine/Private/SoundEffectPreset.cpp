@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "Sound/SoundEffectPreset.h"
@@ -11,6 +11,14 @@ USoundEffectPreset::USoundEffectPreset(const FObjectInitializer& ObjectInitializ
 	, bInitialized(false)
 {
 	
+}
+
+void USoundEffectPreset::EffectCommand(TFunction<void()> Command)
+{
+	for (int32 i = 0; i < Instances.Num(); ++i)
+	{
+		Instances[i]->EffectCommand(Command);
+	}
 }
 
 void USoundEffectPreset::Update()
@@ -27,6 +35,9 @@ void USoundEffectPreset::AddEffectInstance(FSoundEffectBase* InSource)
 	{
 		bInitialized = true;
 		Init();
+
+		// Call the optional virtual function which subclasses can implement if they need initialization
+		OnInit();
 	}
 
 	Instances.AddUnique(InSource);

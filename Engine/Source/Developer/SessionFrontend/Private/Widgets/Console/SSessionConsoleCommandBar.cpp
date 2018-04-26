@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Console/SSessionConsoleCommandBar.h"
 #include "Widgets/SBoxPanel.h"
@@ -75,7 +75,7 @@ END_SLATE_FUNCTION_BUILD_OPTIMIZATION
 void SSessionConsoleCommandBar::SetNumSelectedInstances(int Count)
 {
 	FString CommandString = InputTextBox->GetText().ToString();
-	CommandString.Trim();
+	CommandString.TrimStartInline();
 
 	bool bEnableButtons = (Count > 0) && !CommandString.IsEmpty();
 
@@ -105,7 +105,7 @@ void SSessionConsoleCommandBar::SubmitCommand(const FString& Command)
 void SSessionConsoleCommandBar::HandleInputTextChanged(const FText& InText)
 {
 	FString CommandString = InputTextBox->GetText().ToString();
-	CommandString.Trim();
+	CommandString.TrimStartInline();
 
 	SendButton->SetEnabled(!CommandString.IsEmpty());
 	PromoteToShortcutButton->SetEnabled(!CommandString.IsEmpty());	
@@ -138,7 +138,7 @@ FReply SSessionConsoleCommandBar::HandlePromoteToShortcutButtonClicked()
 	if (OnPromoteToShortcutClicked.IsBound())
 	{
 		FString CommandString = InputTextBox->GetText().ToString();
-		CommandString.Trim();
+		CommandString.TrimStartInline();
 		OnPromoteToShortcutClicked.Execute(CommandString);
 	}
 

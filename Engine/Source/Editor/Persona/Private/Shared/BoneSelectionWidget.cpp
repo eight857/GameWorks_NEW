@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "BoneSelectionWidget.h"
@@ -8,6 +8,7 @@
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "IEditableSkeleton.h"
+#include "Engine/SkeletalMeshSocket.h"
 
 #define LOCTEXT_NAMESPACE "SBoneSelectionWidget"
 
@@ -16,9 +17,11 @@ void SBoneTreeMenu::Construct(const FArguments& InArgs)
 {
 	OnSelectionChangedDelegate = InArgs._OnBoneSelectionChanged;
 	OnGetReferenceSkeletonDelegate = InArgs._OnGetReferenceSkeleton;
+	OnGetSocketListDelegate = InArgs._OnGetSocketList;
 	bShowVirtualBones = InArgs._bShowVirtualBones;
+	bShowSocket = InArgs._bShowSocket;
 
-	FText TitleToUse = !InArgs._Title.IsEmpty() ? InArgs._Title  : LOCTEXT("BonePickerTitle", "Pick Bone...");
+	FText TitleToUse = !InArgs._Title.IsEmpty() ? InArgs._Title  : LOCTEXT("BonePickerTitle", "Select...");
 
 	SAssignNew(TreeView, STreeView<TSharedPtr<FBoneNameInfo>>)
 		.TreeItemsSource(&SkeletonTreeInfo)
@@ -99,7 +102,7 @@ void SBoneTreeMenu::OnFilterTextChanged(const FText& InFilterText)
 void SBoneTreeMenu::OnSelectionChanged(TSharedPtr<SBoneTreeMenu::FBoneNameInfo> BoneInfo, ESelectInfo::Type SelectInfo)
 {
 	//Because we recreate all our items on tree refresh we will get a spurious null selection event initially.
-	if (BoneInfo.IsValid())
+	if (BoneInfo.IsValid() && SelectInfo != ESelectInfo::Direct)
 	{
 		OnSelectionChangedDelegate.ExecuteIfBound(BoneInfo->BoneName);
 	}
@@ -169,6 +172,50 @@ void SBoneTreeMenu::RebuildBoneList(const FName& SelectedBone)
 		}
 	}
 
+
+	if (bShowSocket && ensure(OnGetSocketListDelegate.IsBound()))
+	{
+		const TArray<class USkeletalMeshSocket*>& Sockets = OnGetSocketListDelegate.Execute();
+		const int32 MaxSockets = Sockets.Num();
+
+		for (int32 SocketIdx = 0; SocketIdx < MaxSockets; ++SocketIdx)
+		{
+			const USkeletalMeshSocket* Socket = Sockets[SocketIdx];
+			const FName SocketName = Socket->SocketName;
+			TSharedRef<FBoneNameInfo> BoneInfo = MakeShareable(new FBoneNameInfo(SocketName));
+
+			// Filter if Necessary
+			if (!FilterText.IsEmpty() && !BoneInfo->BoneName.ToString().Contains(FilterText.ToString()))
+			{
+				continue;
+			}
+
+			const FName ParentBoneName = Socket->BoneName;
+			if (FilterText.IsEmpty())
+			{
+				for (int32 FlatListIdx = 0; FlatListIdx < SkeletonTreeInfoFlat.Num(); ++FlatListIdx)
+				{
+					TSharedPtr<FBoneNameInfo> InfoEntry = SkeletonTreeInfoFlat[FlatListIdx];
+					if (InfoEntry->BoneName == ParentBoneName)
+					{
+						SkeletonTreeInfoFlat[FlatListIdx]->Children.Add(BoneInfo);
+						break;
+					}
+				}
+			}
+			else
+			{
+				SkeletonTreeInfo.Add(BoneInfo);
+			}
+
+			TreeView->SetItemExpansion(BoneInfo, true);
+			if (SocketName == SelectedBone)
+			{
+				TreeView->SetItemSelection(BoneInfo, true);
+				TreeView->RequestScrollIntoView(BoneInfo);
+			}
+		}
+	}
 	TreeView->RequestTreeRefresh();
 }
 
@@ -179,6 +226,8 @@ void SBoneSelectionWidget::Construct(const FArguments& InArgs)
 	OnBoneSelectionChanged = InArgs._OnBoneSelectionChanged;
 	OnGetSelectedBone = InArgs._OnGetSelectedBone;
 	OnGetReferenceSkeleton = InArgs._OnGetReferenceSkeleton;
+	OnGetSocketList = InArgs._OnGetSocketList;
+	bShowSocket = InArgs._bShowSocket;
 
 	SuppliedToolTip = InArgs._ToolTipText.Get();
 
@@ -199,15 +248,18 @@ void SBoneSelectionWidget::Construct(const FArguments& InArgs)
 
 TSharedRef<SWidget> SBoneSelectionWidget::CreateSkeletonWidgetMenu()
 {
+	bool bMultipleValues = false;
 	FName CurrentBoneName;
 	if (OnGetSelectedBone.IsBound())
 	{
-		CurrentBoneName = OnGetSelectedBone.Execute();
+		CurrentBoneName = OnGetSelectedBone.Execute(bMultipleValues);
 	}
 
 	TSharedRef<SBoneTreeMenu> MenuWidget = SNew(SBoneTreeMenu)
 		.OnBoneSelectionChanged(this, &SBoneSelectionWidget::OnSelectionChanged)
 		.OnGetReferenceSkeleton(OnGetReferenceSkeleton)
+		.OnGetSocketList(OnGetSocketList)
+		.bShowSocket(bShowSocket)
 		.SelectedBone(CurrentBoneName);
 
 	BonePickerButton->SetMenuContentWidgetToFocus(MenuWidget->FilterTextWidget);
@@ -230,9 +282,16 @@ FText SBoneSelectionWidget::GetCurrentBoneName() const
 {
 	if(OnGetSelectedBone.IsBound())
 	{
-		FName Name = OnGetSelectedBone.Execute();
-
-		return FText::FromName(Name);
+		bool bMultipleValues = false;
+		FName Name = OnGetSelectedBone.Execute(bMultipleValues);
+		if(bMultipleValues)
+		{
+			return LOCTEXT("MultipleValues", "Multiple Values");
+		}
+		else
+		{
+			return FText::FromName(Name);
+		}
 	}
 
 	// @todo implement default solution?

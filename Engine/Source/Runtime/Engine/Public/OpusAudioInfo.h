@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	OpusAudioInfo.h: Unreal audio opus decompression interface object.
@@ -25,10 +25,10 @@ public:
 
 	//~ Begin IStreamedCompressedInfo Interface
 	virtual bool ParseHeader(const uint8* InSrcBufferData, uint32 InSrcBufferDataSize, FSoundQualityInfo* QualityInfo) override;
-	virtual uint32 GetFrameSize() override;
+	virtual int32 GetFrameSize() override;
 	virtual uint32 GetMaxFrameSizeSamples() const override;
 	virtual bool CreateDecoder() override;
-	virtual int32 Decode(const uint8* FrameData, uint16 FrameSize, int16* OutPCMData, int32 SampleSize) override;
+	virtual FDecodeResult Decode(const uint8* CompressedData, const int32 CompressedDataSize, uint8* OutPCMData, const int32 OutputPCMDataSize) override;
 	//~ End IStreamedCompressedInfo Interface
 
 protected:

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,6 +10,7 @@
 class IRefCountedObject
 {
 public:
+	virtual ~IRefCountedObject() { }
 	virtual uint32 AddRef() const = 0;
 	virtual uint32 Release() const = 0;
 	virtual uint32 GetRefCount() const = 0;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "IMeshPaintMode.h"
 #include "SceneView.h"
@@ -352,6 +352,11 @@ void IMeshPaintEdMode::OnResetViewMode()
 	for (int32 ViewIndex = 0; ViewIndex < GEditor->AllViewportClients.Num(); ++ViewIndex)
 	{
 		FEditorViewportClient* ViewportClient = GEditor->AllViewportClients[ViewIndex];
+		if (!ViewportClient || ViewportClient->GetModeTools() != GetModeManager())
+		{
+			continue;
+		}
+
 		MeshPaintHelpers::SetViewportColorMode(EMeshPaintColorViewMode::Normal, ViewportClient);
 	}
 }

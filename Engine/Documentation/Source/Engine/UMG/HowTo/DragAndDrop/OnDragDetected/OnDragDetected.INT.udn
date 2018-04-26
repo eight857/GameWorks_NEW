@@ -1,11 +1,18 @@
-Availability: Docs
+Availability: Public
 Title:3. On Drag Detected
 Crumbs: %ROOT%, Engine, Engine/UMG, Engine/UMG/HowTo
 Description:In this step we set up what happens when drag is detected.
+SkillLevel: Intermediate
+Version: 4.15
+parent:Engine/UMG/HowTo/DragAndDrop
+order:3
+checkpoint: editorqs
 Related: Engine/UMG
 Related: Engine/UMG/UserGuide
-SkillLevel: Intermediate
 tags:UMG UI Designer
+tags:UI
+type:how-to
+
 
 [VAR:Steps]
 [OBJECT:Navigation]
@@ -23,7 +30,7 @@ tags:UMG UI Designer
 [/OBJECT]
 [/VAR]
 
-%Steps%
+
 
 In this step, we determine what happens when the player is, in fact, dragging the HealthBar around on the screen. 
 
@@ -69,7 +76,7 @@ In this step, we determine what happens when the player is, in fact, dragging th
 The last few things we need to do is to determine what happens when the player releases the Left Mouse Button and performs the OnDrop function. 
 We also need to add the HealthBar Widget to our Main HUD Widget Blueprint and tell that to be displayed before testing everything out.  
 
-%Steps%
+
 
 
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -57,7 +57,7 @@ namespace Audio
 		// Returns the frequency of the wave table oscillator.
 		float GetFrequencyHz() const { return FrequencyHz; }
 
-		// Returns the internal table used int he wave table.
+		// Returns the internal table used in the wave table.
 		TArray<float>& GetTable();
 		const TArray<float>& GetTable() const;
 

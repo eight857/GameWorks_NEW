@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "CoreMinimal.h"
@@ -37,6 +37,7 @@
 #include "CookOnTheSide/CookOnTheFlyServer.h"
 #include "Builders/CubeBuilder.h"
 #include "Settings/LevelEditorViewportSettings.h"
+#include "Settings/LevelEditorMiscSettings.h"
 #include "Engine/Brush.h"
 #include "AssetData.h"
 #include "Editor/EditorEngine.h"
@@ -75,6 +76,8 @@
 #include "ScriptDisassembler.h"
 #include "IAssetTools.h"
 #include "AssetToolsModule.h"
+#include "IContentBrowserSingleton.h"
+#include "ContentBrowserModule.h"
 #include "Editor/GeometryMode/Public/GeometryEdMode.h"
 #include "AssetRegistryModule.h"
 #include "Matinee/MatineeActor.h"
@@ -99,6 +102,7 @@
 #if PLATFORM_WINDOWS
 	#include "WindowsHWrapper.h"
 #endif
+#include "ActorGroupingUtils.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogUnrealEdSrv, Log, All);
 
@@ -463,7 +467,7 @@ UPackage* UUnrealEdEngine::GeneratePackageThumbnailsIfRequired( const TCHAR* Str
 					// thumbnail so the Content Browser can check for non-existent assets in the background
 					if( bNeedEmptyThumbnail )
 					{
-						UPackage* MyOutermostPackage = CastChecked< UPackage >( CurObject->GetOutermost() );
+						UPackage* MyOutermostPackage = CurObject->GetOutermost();
 						ThumbnailTools::CacheEmptyThumbnail( CurObject->GetFullName(), MyOutermostPackage );
 					}
 				}
@@ -505,6 +509,28 @@ bool UUnrealEdEngine::HandleModalTestCommand( const TCHAR* Str, FOutputDevice& A
 	GEditor->EditorAddModalWindow( ModalWindow );
 
 	UE_LOG(LogUnrealEdSrv, Log,  TEXT("User response was: %s"), MessageBox->GetResponse() ? TEXT("OK") : TEXT("Cancel") );
+	return true;
+}
+
+bool UUnrealEdEngine::HandleDisallowExportCommand(const TCHAR* Str, FOutputDevice& Ar)
+{
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+
+	TArray<FAssetData> SelectedAssets;
+	ContentBrowserModule.Get().GetSelectedAssets(SelectedAssets);
+
+	for (const FAssetData& AssetData : SelectedAssets)
+	{
+		UObject* Object = AssetData.GetAsset();
+		if (Object)
+		{
+			UPackage* Package = Object->GetOutermost();
+			Package->SetPackageFlags(EPackageFlags::PKG_DisallowExport);
+			Package->MarkPackageDirty();
+			UE_LOG(LogUnrealEdSrv, Log, TEXT("Marked '%s' as not exportable"), *Object->GetName());
+		}
+	}
+
 	return true;
 }
 
@@ -661,8 +687,8 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 		Pkg = GeneratePackageThumbnailsIfRequired( Str, Ar, ThumbNamesToUnload );
 	}
 
-	// If we don't have a viewport specified to catch the stat commands (and there's no game viewport), use to the active viewport
-	if (GStatProcessingViewportClient == NULL && GameViewport == NULL)
+	// If we don't have a viewport specified to catch the stat commands, use to the active viewport.  If there is a game viewport ignore this as we do not want 
+	if (GStatProcessingViewportClient == NULL && (GameViewport == NULL || GameViewport->IsSimulateInEditorViewport() ) )
 	{
 		GStatProcessingViewportClient = GLastKeyLevelEditingViewportClient ? GLastKeyLevelEditingViewportClient : GCurrentLevelEditingViewportClient;
 	}
@@ -694,6 +720,12 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 	if( FParse::Command(&Str, TEXT("ModalTest") ) )
 	{
 		HandleModalTestCommand( Str, Ar );
+		return true;
+	}
+
+	if (FParse::Command(&Str, TEXT("DisallowExport")))
+	{
+		HandleDisallowExportCommand(Str, Ar);
 		return true;
 	}
 
@@ -1000,7 +1032,7 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 					{
 						Mesh->Modify();
 
-						GWarn->StatusUpdate(MeshIndex + 1, SelectedMeshes.Num(), FText::Format(NSLOCTEXT("UnrealEd", "ScalingStaticMeshes_Value", "Static Mesh: %s"), FText::FromString(Mesh->GetName())));
+						GWarn->StatusUpdate(MeshIndex + 1, SelectedMeshes.Num(), FText::Format(NSLOCTEXT("UnrealEd", "ScalingStaticMeshes_Value", "Static Mesh: {0}"), FText::FromString(Mesh->GetName())));
 
 						FStaticMeshSourceModel& Model = Mesh->SourceModels[0];
 
@@ -1079,7 +1111,7 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 					SlowTask.EnterProgressFrame();
 
 					// Optimization - check the asset has import information before loading it
-					TOptional<FAssetImportInfo> ImportInfo = FAssetSourceFilenameCache::ExtractAssetImportInfo(Asset.TagsAndValues);
+					TOptional<FAssetImportInfo> ImportInfo = FAssetSourceFilenameCache::ExtractAssetImportInfo(Asset);
 					if (ImportInfo.IsSet() && ImportInfo->SourceFiles.Num())
 					{
 						RemoveSourcePath(ImportInfo.GetValue(), Asset, SearchTerms);
@@ -1130,6 +1162,11 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 			FString ReplaceStr;
 			FParse::Value(Str, TEXT("Replace="), ReplaceStr );
 
+			FString AutoCheckOutStr;
+			FParse::Value(Str, TEXT("AutoCheckOut="), AutoCheckOutStr);
+			AutoCheckOutStr = AutoCheckOutStr.ToLower();
+			bool bAutoCheckOut = (AutoCheckOutStr == "yes" || AutoCheckOutStr == "true" || AutoCheckOutStr == "1");
+
 			GWarn->BeginSlowTask(NSLOCTEXT("UnrealEd", "RenamingAssets", "Renaming Assets"), true, true);
 
 			FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
@@ -1176,7 +1213,7 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 
 			if( AssetsToRename.Num() > 0 )
 			{
-				AssetTools.RenameAssets( AssetsToRename );
+				AssetTools.RenameAssetsWithDialog( AssetsToRename, bAutoCheckOut );
 			}
 
 			GWarn->EndSlowTask();
@@ -1202,7 +1239,7 @@ bool UUnrealEdEngine::Exec( UWorld* InWorld, const TCHAR* Stream, FOutputDevice&
 				if (FSlateApplication::Get().TakeScreenshot(InWidget, OutImageData, OutImageSize))
 				{
 					FString FileName;
-					const FString BaseFileName = FPaths::ScreenShotDir() / TEXT("EditorScreenshot");
+					const FString BaseFileName = GetDefault<ULevelEditorMiscSettings>()->EditorScreenshotSaveDirectory.Path / TEXT("EditorScreenshot");
 					FFileHelper::GenerateNextBitmapFilename(BaseFileName, TEXT("bmp"), FileName);
 					FFileHelper::CreateBitmap(*FileName, OutImageSize.X, OutImageSize.Y, OutImageData.GetData());
 				}
@@ -1741,9 +1778,9 @@ static void MirrorActors(const FVector& MirrorScale)
 		Actor->EditorApplyMirror( MirrorScale, PivotLocation );
 
 		ABrush* Brush = Cast< ABrush >(Actor);
-		if (Brush && Brush->BrushComponent)
+		if (Brush && Brush->GetBrushComponent())
 		{
-			Brush->BrushComponent->RequestUpdateBrushCollision();
+			Brush->GetBrushComponent()->RequestUpdateBrushCollision();
 		}
 
 		Actor->InvalidateLightingCache();
@@ -1802,7 +1839,7 @@ TArray<FPoly*> GetSelectedPolygons()
 						int32 NumTriangles = MeshLodZero.GetNumTriangles();
 						int32 NumVertices = MeshLodZero.GetNumVertices();
 			
-						const FPositionVertexBuffer& PositionVertexBuffer = MeshLodZero.PositionVertexBuffer;
+						const FPositionVertexBuffer& PositionVertexBuffer = MeshLodZero.VertexBuffers.PositionVertexBuffer;
 						FIndexArrayView Indices = MeshLodZero.DepthOnlyIndexBuffer.GetArrayView();
 
 						for ( int32 TriangleIndex = 0; TriangleIndex < NumTriangles; TriangleIndex++ )
@@ -2762,7 +2799,7 @@ bool UUnrealEdEngine::Exec_Actor( UWorld* InWorld, const TCHAR* Str, FOutputDevi
 	}
 	else if( FParse::Command(&Str,TEXT("MOVETOCURRENT")) )
 	{
-		MoveSelectedActorsToLevel( InWorld->GetCurrentLevel() );
+		UEditorLevelUtils::MoveSelectedActorsToLevel( InWorld->GetCurrentLevel() );
 		return true;
 	}
 	else if(FParse::Command(&Str, TEXT("DESELECT")))
@@ -2813,29 +2850,35 @@ bool UUnrealEdEngine::Exec_Actor( UWorld* InWorld, const TCHAR* Str, FOutputDevi
 
 				INodeNameAdapter NodeNameAdapter;
 				UnFbx::FFbxExporter* Exporter = UnFbx::FFbxExporter::GetInstance();
-				Exporter->CreateDocument();
-				for ( FSelectionIterator It( GetSelectedActorIterator() ) ; It ; ++It )
+				//Show the fbx export dialog options
+				bool ExportCancel = false;
+				bool ExportAll = false;
+				Exporter->FillExportOptions(false, true, FileName, ExportCancel, ExportAll);
+				if (!ExportCancel)
 				{
-					AActor* Actor = static_cast<AActor*>( *It );
-					if (Actor->IsA(AActor::StaticClass()))
+					Exporter->CreateDocument();
+					for (FSelectionIterator It(GetSelectedActorIterator()); It; ++It)
 					{
-						if (Actor->IsA(AStaticMeshActor::StaticClass()))
+						AActor* Actor = static_cast<AActor*>(*It);
+						if (Actor->IsA(AActor::StaticClass()))
 						{
-							Exporter->ExportStaticMesh(Actor, CastChecked<AStaticMeshActor>(Actor)->GetStaticMeshComponent(), NodeNameAdapter);
-						}
-						else if (Actor->IsA(ASkeletalMeshActor::StaticClass()))
-						{
-							Exporter->ExportSkeletalMesh(Actor, CastChecked<ASkeletalMeshActor>(Actor)->GetSkeletalMeshComponent(), NodeNameAdapter);
-						}
-						else if (Actor->IsA(ABrush::StaticClass()))
-						{
-							Exporter->ExportBrush( CastChecked<ABrush>(Actor), NULL, true, NodeNameAdapter );
+							if (Actor->IsA(AStaticMeshActor::StaticClass()))
+							{
+								Exporter->ExportStaticMesh(Actor, CastChecked<AStaticMeshActor>(Actor)->GetStaticMeshComponent(), NodeNameAdapter);
+							}
+							else if (Actor->IsA(ASkeletalMeshActor::StaticClass()))
+							{
+								Exporter->ExportSkeletalMesh(Actor, CastChecked<ASkeletalMeshActor>(Actor)->GetSkeletalMeshComponent(), NodeNameAdapter);
+							}
+							else if (Actor->IsA(ABrush::StaticClass()))
+							{
+								Exporter->ExportBrush(CastChecked<ABrush>(Actor), NULL, true, NodeNameAdapter);
+							}
 						}
 					}
+					Exporter->WriteToFile(*FileName);
 				}
-				Exporter->WriteToFile(*FileName);
 			}
-
 			return true;
 		}
 
@@ -3009,16 +3052,16 @@ bool UUnrealEdEngine::Exec_Mode( const TCHAR* Str, FOutputDevice& Ar )
 
 bool UUnrealEdEngine::Exec_Group( const TCHAR* Str, FOutputDevice& Ar )
 {
-	if(GEditor->bGroupingActive)
+	if(UActorGroupingUtils::IsGroupingActive())
 	{
 		if( FParse::Command(&Str,TEXT("REGROUP")) )
 		{
-			GUnrealEd->edactRegroupFromSelected();
+			UActorGroupingUtils::Get()->GroupSelected();
 			return true;
 		}
 		else if ( FParse::Command(&Str,TEXT("UNGROUP")) )
 		{
-			GUnrealEd->edactUngroupFromSelected();
+			UActorGroupingUtils::Get()->UngroupSelected();
 			return true;
 		}
 	}

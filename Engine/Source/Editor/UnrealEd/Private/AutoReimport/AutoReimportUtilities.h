@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,7 @@
 
 class IAssetRegistry;
 
-DEFINE_LOG_CATEGORY_STATIC(LogAutoReimportManager, Log, All);
+DECLARE_LOG_CATEGORY_EXTERN(LogAutoReimportManager, Log, All);
 
 namespace Utils
 {

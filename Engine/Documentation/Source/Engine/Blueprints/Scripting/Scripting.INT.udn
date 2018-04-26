@@ -5,45 +5,10 @@ Description: Get a general overview of the variables and execution flow of the B
 version: 4.12
 parent:Engine/Blueprints
 tags:Blueprints
+type:landing
+topic-image:Engine/Blueprints/UserGuide/using_interface_topic.png
 
-[VAR:Topic]
-[OBJECT:Topic]
-	[PARAM:image]
-		![%Engine/Blueprints/Scripting:title%](Engine\Blueprints\UserGuide\using_interface_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/reference_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Blueprints/Scripting:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Blueprints/Scripting:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Blueprints/Scripting]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-	[PARAM:image]
-		![%Engine/Blueprints/Scripting:title%](BasicScripting.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/reference_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/Blueprints/Scripting:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/Blueprints/Scripting:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Blueprints/Scripting]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
+
 
 Blueprints provide a visual approach to a scripting language. As such, the system shares many of the nuances of a standard written scripting language, such as data typed variables, arrays, structs, etc. 
 Execution flow also works as it does in a typical scripting language, although Blueprints require explicit linear execution for each node. Each of the pages below go into more detail about 
@@ -73,7 +38,16 @@ Arrays and structures are collections of multiple data types. They are available
 
 [DIR(output:"listbutton" parent:"Engine/Blueprints/Scripting" tags:"Arrays and Structures")]
 
-<!--
-Structs
--->
+## Advanced Containers
 
+As of Unreal Engine, version 4.15, Blueprint Sets and Maps have both been added to the Blueprint Application Programming Interface (API). Although these containers offer some exciting opportunities for developers to get creative with how they store and access data, these
+containers are meant for those users who have an advanced level of expertise with Blueprints. Oftentimes, the container of choice will be Blueprint Arrays, but there are times when associative containers (such as Maps and Sets) can help you do some fun and exciting things 
+with your in-game data.
+
+### Blueprint Maps
+
+[DIR(output:"listbutton" parent:"Engine/Blueprints/Scripting" tags:"Blueprint Map")]
+
+### Blueprint Sets
+
+[DIR(output:"listbutton" parent:"Engine/Blueprints/Scripting" tags:"Blueprint Set")]

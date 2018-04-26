@@ -1,15 +1,9 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "SBackgroundBlur.h"
 #include "DrawElements.h"
 #include "IConsoleManager.h"
 
-// This feature has not been tested on es2
-#if PLATFORM_USES_ES2
 static int32 bAllowBackgroundBlur = 1;
-#else
-static int32 bAllowBackgroundBlur = 1;
-#endif
-
 static FAutoConsoleVariableRef CVarSlateAllowBackgroundBlurWidgets(TEXT("Slate.AllowBackgroundBlurWidgets"), bAllowBackgroundBlur, TEXT("If 0, no background blur widgets will be rendered"));
 
 static int32 MaxKernelSize = 255;
@@ -18,7 +12,14 @@ static FAutoConsoleVariableRef CVarSlateMaxKernelSize(TEXT("Slate.BackgroundBlur
 static int32 bDownsampleForBlur = 1;
 static FAutoConsoleVariableRef CVarDownsampleForBlur(TEXT("Slate.BackgroundBlurDownsample"), bDownsampleForBlur, TEXT(""), ECVF_Cheat);
 
+#if PLATFORM_ANDROID
+// This feature has not been tested on es2 and will likely not work so we force low quality fallback mode
+static int32 bForceLowQualityBrushFallback = 1;
+#else
 static int32 bForceLowQualityBrushFallback = 0;
+#endif
+
+
 static FAutoConsoleVariableRef CVarForceLowQualityBackgroundBlurOverride(TEXT("Slate.ForceBackgroundBlurLowQualityOverride"), bForceLowQualityBrushFallback, TEXT("Whether or not to force a slate brush to be used instead of actually blurring the background"), ECVF_Scalability);
 
 
@@ -87,7 +88,7 @@ bool SBackgroundBlur::IsUsingLowQualityFallbackBrush() const
 	return bForceLowQualityBrushFallback == 1;
 }
 
-int32 SBackgroundBlur::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SBackgroundBlur::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	int32 PostFXLayerId = LayerId;
 	if (bAllowBackgroundBlur && AllottedGeometry.GetLocalSize() > FVector2D::ZeroVector)
@@ -98,18 +99,11 @@ int32 SBackgroundBlur::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 			const float Strength = BlurStrength.Get() * (bApplyAlphaToBlur ? InWidgetStyle.GetColorAndOpacityTint().A : 1.f);
 			if (Strength > 0.f)
 			{
-				FPaintGeometry PaintGeometry = AllottedGeometry.ToPaintGeometry();
+				FSlateRect RenderBoundingRect = AllottedGeometry.GetRenderBoundingRect();
+				FPaintGeometry PaintGeometry(RenderBoundingRect.GetTopLeft(), RenderBoundingRect.GetSize(), 1.0f);
 
-				// extract the layout transform from the draw element
-				FSlateLayoutTransform InverseLayoutTransform(Inverse(FSlateLayoutTransform(PaintGeometry.DrawScale, PaintGeometry.DrawPosition)));
-				// The clip rect is NOT subject to the rotations specified by MakeRotatedBox.
-				FSlateRotatedRect RenderClipRect = FSlateRotatedRect::MakeSnappedRotatedRect(MyClippingRect, InverseLayoutTransform, AllottedGeometry.GetAccumulatedRenderTransform());
-
-				float OffsetX = PaintGeometry.DrawPosition.X - FMath::TruncToFloat(PaintGeometry.DrawPosition.X);
-				float OffsetY = PaintGeometry.DrawPosition.Y - FMath::TruncToFloat(PaintGeometry.DrawPosition.Y);
-
-				int32 RenderTargetWidth = FMath::RoundToInt(RenderClipRect.ExtentX.X);
-				int32 RenderTargetHeight = FMath::RoundToInt(RenderClipRect.ExtentY.Y);
+				int32 RenderTargetWidth = FMath::RoundToInt(RenderBoundingRect.GetSize().X);
+				int32 RenderTargetHeight = FMath::RoundToInt(RenderBoundingRect.GetSize().Y);
 
 				int32 KernelSize = 0;
 				int32 DownsampleAmount = 0;
@@ -126,9 +120,12 @@ int32 SBackgroundBlur::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 
 				if (RenderTargetWidth > 0 && RenderTargetHeight > 0)
 				{
-					FSlateDrawElement::MakePostProcessPass(OutDrawElements, LayerId, PaintGeometry, MyClippingRect, FVector4(KernelSize, ComputedStrength, RenderTargetWidth, RenderTargetHeight), DownsampleAmount);
-				}
+					OutDrawElements.PushClip(FSlateClippingZone(AllottedGeometry));
 
+					FSlateDrawElement::MakePostProcessPass(OutDrawElements, LayerId, PaintGeometry, FVector4(KernelSize, ComputedStrength, RenderTargetWidth, RenderTargetHeight), DownsampleAmount);
+
+					OutDrawElements.PopClip();
+				}
 
 				++PostFXLayerId;
 			}
@@ -140,12 +137,12 @@ int32 SBackgroundBlur::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 
 			const FLinearColor FinalColorAndOpacity(InWidgetStyle.GetColorAndOpacityTint() * LowQualityFallbackBrush->GetTint(InWidgetStyle));
 
-			FSlateDrawElement::MakeBox(OutDrawElements, PostFXLayerId, AllottedGeometry.ToPaintGeometry(), LowQualityFallbackBrush, MyClippingRect, DrawEffects, FinalColorAndOpacity);
+			FSlateDrawElement::MakeBox(OutDrawElements, PostFXLayerId, AllottedGeometry.ToPaintGeometry(), LowQualityFallbackBrush, DrawEffects, FinalColorAndOpacity);
 			++PostFXLayerId;
 		}
 	}
 
-	return SCompoundWidget::OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, PostFXLayerId, InWidgetStyle, bParentEnabled);
+	return SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, PostFXLayerId, InWidgetStyle, bParentEnabled);
 }
 
 void SBackgroundBlur::ComputeEffectiveKernelSize(float Strength, int32& OutKernelSize, int32& OutDownsampleAmount) const

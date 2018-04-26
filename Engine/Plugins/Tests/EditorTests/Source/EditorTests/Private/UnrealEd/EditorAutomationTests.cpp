@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/FileManager.h"
@@ -766,9 +766,9 @@ void FTraceAllTimelinesAutomationTest::GetTests(TArray<FString>& OutBeautifiedNa
 namespace TraceHelper
 {
 	static const FName CosmeticMacroName(TEXT("Can Execute Cosmetic Events"));
-	static const FString CosmeticCheckedPinName(TEXT("True"));
+	static const FName CosmeticCheckedPinName(TEXT("True"));
 	static const FName SetTimerName(TEXT("K2_SetTimer"));
-	static const FString SetTimerFunctionFieldName(TEXT("FunctionName"));
+	static const FName SetTimerFunctionFieldName(TEXT("FunctionName"));
 
 	typedef TArray<UK2Node_MacroInstance*, TInlineAllocator<2>> TContextStack;
 	typedef TMap<UK2Node_MacroInstance*, struct FVisitedTracker> TGraphNodesVisited;
@@ -901,7 +901,6 @@ bool FTraceAllTimelinesAutomationTest::RunTest(const FString& BlueprintName)
 
 		for (auto TimelineIter = AllTimelines.CreateIterator(); TimelineIter; ++TimelineIter)
 		{
-			const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 			UK2Node_Timeline* TimelinePtr = *TimelineIter;
 			UE_LOG(LogEditorAutomationTests, Log, TEXT("TraceTimeline: %s [%s]"), *TimelinePtr->GetPathName(), *TimelinePtr->TimelineName.ToString());
 
@@ -1056,7 +1055,7 @@ bool FTraceAllTimelinesAutomationTest::RunTest(const FString& BlueprintName)
 					for (auto PinIter = CurrentNode->Pins.CreateConstIterator(); PinIter; ++PinIter)
 					{
 						const UEdGraphPin* CurrentPin = CurrentScope.Pin ? CurrentScope.Pin : *PinIter;
-						if (CurrentPin->Direction == EGPD_Input && CurrentPin->PinType.PinCategory == K2Schema->PC_Exec)
+						if (CurrentPin->Direction == EGPD_Input && CurrentPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
 						{
 							for (auto LinkedToIter = CurrentPin->LinkedTo.CreateConstIterator(); LinkedToIter; ++LinkedToIter)
 							{
@@ -1080,14 +1079,14 @@ bool FTraceAllTimelinesAutomationTest::RunTest(const FString& BlueprintName)
 												bCosmeticChain = (OtherPin->PinName != TraceHelper::CosmeticCheckedPinName);
 											}
 											// Don't bother trying to identify pins on this special node, all it does is change the cosmetic chain state.
-											OtherPin = NULL;
+											OtherPin = nullptr;
 										}
 									}
 								}
 
 								// We only really care to distinguish pins for tunnel nodes,
 								// because those might have different input pins hooked up to the logic ending in this output pin
-								TraceHelper::AddNode(OtherPinNode, NodeScopeStack, GraphNodesVisited, CurrentScope, bCosmeticChain, Tunnel ? OtherPin : NULL);
+								TraceHelper::AddNode(OtherPinNode, NodeScopeStack, GraphNodesVisited, CurrentScope, bCosmeticChain, Tunnel ? OtherPin : nullptr);
 							}
 						}
 
@@ -1230,7 +1229,7 @@ void FLaunchOnTest::GetTests(TArray<FString>& OutBeautifiedNames, TArray <FStrin
 					{
 						//If true it will proceed to add the asset to the test list.
 						//This will be false if the map is on a different drive.
-						if (FPaths::MakePathRelativeTo(Filename, *FPaths::GameContentDir()))
+						if (FPaths::MakePathRelativeTo(Filename, *FPaths::ProjectContentDir()))
 						{
 							FString ShortName = FPaths::GetBaseFilename(Filename);
 							FString PathName = FPaths::GetPath(Filename);
@@ -1257,12 +1256,12 @@ bool FLaunchOnTest::RunTest(const FString& Parameters)
 	//Get the map name and device id from the parameters.
 	FString MapName = Parameters.Left(Parameters.Find(TEXT(" ")));
 	FString DeviceID = Parameters.RightChop(Parameters.Find(TEXT(" ")));
-	DeviceID.Trim();
+	DeviceID.TrimStartInline();
 
 	//Delete the Cooked, StagedBuilds, and Automation_TEMP folder if they exist.
-	FString CookedLocation = FPaths::Combine(*FPaths::GameSavedDir(), TEXT("Cooked"));
-	FString StagedBuildsLocation = FPaths::Combine(*FPaths::GameSavedDir(), TEXT("StagedBuilds"));
-	FString TempMapLocation = FPaths::Combine(*FPaths::GameContentDir(), TEXT("Maps"), TEXT("Automation_TEMP"));
+	FString CookedLocation = FPaths::Combine(*FPaths::ProjectSavedDir(), TEXT("Cooked"));
+	FString StagedBuildsLocation = FPaths::Combine(*FPaths::ProjectSavedDir(), TEXT("StagedBuilds"));
+	FString TempMapLocation = FPaths::Combine(*FPaths::ProjectContentDir(), TEXT("Maps"), TEXT("Automation_TEMP"));
 	ADD_LATENT_AUTOMATION_COMMAND(FDeleteDirCommand(CookedLocation));
 	ADD_LATENT_AUTOMATION_COMMAND(FDeleteDirCommand(StagedBuildsLocation));
 	ADD_LATENT_AUTOMATION_COMMAND(FDeleteDirCommand(TempMapLocation));

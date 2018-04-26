@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,7 +10,7 @@ using Microsoft.Win32;
 using System.Reflection;
 using System.Diagnostics;
 using UnrealBuildTool;
-using Tools.DotNETCommon.CaselessDictionary;
+using Tools.DotNETCommon;
 
 namespace AutomationTool
 {
@@ -33,7 +33,7 @@ namespace AutomationTool
 	{
 		#region Fields
 				
-		private CaselessDictionary<Type> ScriptCommands;
+		private Dictionary<string, Type> ScriptCommands;
 #if DEBUG
 		const string BuildConfig = "Debug";
 #else
@@ -63,16 +63,6 @@ namespace AutomationTool
 				DoCompile = true;
 			}
 
-			// Change to Engine\Source (if exists) to properly discover all UBT classes
-			var OldCWD = Environment.CurrentDirectory;
-			var UnrealBuildToolCWD = CommandUtils.CombinePaths(CommandUtils.CmdEnv.LocalRoot, "Engine", "Source");
-			if (Directory.Exists(UnrealBuildToolCWD))
-			{
-				Environment.CurrentDirectory = UnrealBuildToolCWD;
-			}
-			// Register all the classes inside UBT
-			Environment.CurrentDirectory = OldCWD;
-
 			// Compile only if not disallowed.
 			if (DoCompile && !String.IsNullOrEmpty(CommandUtils.CmdEnv.MsBuildExe))
 			{
@@ -88,7 +78,7 @@ namespace AutomationTool
 
 			// Instantiate all the automation classes for interrogation
 			Log.TraceVerbose("Creating commands.");
-			ScriptCommands = new CaselessDictionary<Type>();
+			ScriptCommands = new Dictionary<string, Type>(StringComparer.InvariantCultureIgnoreCase);
 			foreach (var CompiledScripts in ScriptAssemblies)
 			{
 				try
@@ -130,7 +120,7 @@ namespace AutomationTool
 			List<DirectoryReference> AllGameFolders;
 			if(ScriptsForProjectFileName == null)
 			{
-				AllGameFolders = UProjectInfo.FilterGameProjects(true, null).Select(x => x.Folder).ToList();
+				AllGameFolders = UProjectInfo.AllProjectFiles.Select(x => x.Directory).ToList();
 			}
 			else
 			{
@@ -322,6 +312,17 @@ namespace AutomationTool
 		{
 			CommandUtils.LogVerbose("Cleaning up script DLL folder");
 			CommandUtils.DeleteDirectory(GetScriptAssemblyFolder());
+
+			// Bug in PortalPublishingTool caused these DLLs to be copied into Engine/Binaries/DotNET. Delete any files left over.
+			DirectoryReference BinariesDir = DirectoryReference.Combine(CommandUtils.RootDirectory, "Engine", "Binaries", "DotNET");
+			foreach (FileReference FileToDelete in DirectoryReference.EnumerateFiles(BinariesDir, "*.automation.dll"))
+			{
+				CommandUtils.DeleteFile(FileToDelete.FullName);
+			}
+			foreach (FileReference FileToDelete in DirectoryReference.EnumerateFiles(BinariesDir, "*.automation.pdb"))
+			{
+				CommandUtils.DeleteFile(FileToDelete.FullName);
+			}
 		}
 
 		private static string GetScriptAssemblyFolder()
@@ -333,7 +334,7 @@ namespace AutomationTool
 
 		#region Properties
 
-		public CaselessDictionary<Type> Commands
+		public Dictionary<string, Type> Commands
 		{
 			get { return ScriptCommands; }
 		}

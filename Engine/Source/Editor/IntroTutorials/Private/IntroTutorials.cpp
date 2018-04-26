@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "IntroTutorials.h"
 #include "Templates/SubclassOf.h"
@@ -327,14 +327,18 @@ bool FIntroTutorials::MaybeOpenWelcomeTutorial()
 		}
 
 		// Try project startup tutorial
-		TSubclassOf<UEditorTutorial> ProjectStartupTutorialClass = LoadClass<UEditorTutorial>(NULL, *GetDefault<UTutorialSettings>()->StartupTutorial.ToString(), NULL, LOAD_None, NULL);
-		if(ProjectStartupTutorialClass != nullptr)
+		const FString ProjectStartupTutorialPathStr = GetDefault<UTutorialSettings>()->StartupTutorial.ToString();
+		if (!ProjectStartupTutorialPathStr.IsEmpty())
 		{
-			UEditorTutorial* Tutorial = ProjectStartupTutorialClass->GetDefaultObject<UEditorTutorial>();
-			if (!GetDefault<UTutorialStateSettings>()->HaveSeenTutorial(Tutorial))
+			TSubclassOf<UEditorTutorial> ProjectStartupTutorialClass = LoadClass<UEditorTutorial>(NULL, *ProjectStartupTutorialPathStr, NULL, LOAD_None, NULL);
+			if (ProjectStartupTutorialClass != nullptr)
 			{
-				LaunchTutorial(Tutorial);
-				return true;
+				UEditorTutorial* Tutorial = ProjectStartupTutorialClass->GetDefaultObject<UEditorTutorial>();
+				if (!GetDefault<UTutorialStateSettings>()->HaveSeenTutorial(Tutorial))
+				{
+					LaunchTutorial(Tutorial);
+					return true;
+				}
 			}
 		}
 	}
@@ -432,9 +436,9 @@ void FIntroTutorials::DetachWidget()
 	}
 }
 
-void FIntroTutorials::LaunchTutorial(const FString& TutorialAssetName)
+void FIntroTutorials::LaunchTutorial(const FString& TutorialAssetName, TSharedPtr<SWindow> InNavigationWindow)
 {
-	LaunchTutorialByName(TutorialAssetName);
+	LaunchTutorialByName(TutorialAssetName, true, InNavigationWindow);
 }
 
 void FIntroTutorials::LaunchTutorialByName(const FString& InAssetPath, bool bInRestart, TWeakPtr<SWindow> InNavigationWindow, FSimpleDelegate OnTutorialClosed, FSimpleDelegate OnTutorialExited)
@@ -456,6 +460,8 @@ void FIntroTutorials::LaunchTutorial(UEditorTutorial* InTutorial, ETutorialStart
 			IMainFrameModule& MainFrameModule = FModuleManager::LoadModuleChecked<IMainFrameModule>(TEXT("MainFrame"));
 			InNavigationWindow = MainFrameModule.GetParentWindow();
 		}
+		// TODO We will want to protect against this on rewrite.
+		// check(!InTutorial->HasAnyFlags(EObjectFlags::RF_ClassDefaultObject));
 		TutorialRoot->LaunchTutorial(InTutorial, InStartType, InNavigationWindow, OnTutorialClosed, OnTutorialExited);
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ControlManipulator.h"
 #include "SceneManagement.h"
@@ -33,7 +33,7 @@ struct FPropertyAndIndex
 	int32 ArrayIndex;
 };
 
-FPropertyAndIndex FindPropertyAndArrayIndex(UStruct* InStruct, const FString& PropertyName)
+static FPropertyAndIndex FindPropertyAndArrayIndex2(UStruct* InStruct, const FString& PropertyName)
 {
 	FPropertyAndIndex PropertyAndIndex;
 
@@ -71,7 +71,7 @@ FPropertyAddress FindPropertyRecursive(void* BasePointer, UStruct* InStruct, TAr
 	check(InOutPropertyPath);
 #endif
 
-	FPropertyAndIndex PropertyAndIndex = FindPropertyAndArrayIndex(InStruct, *InPropertyNames[Index]);
+	FPropertyAndIndex PropertyAndIndex = FindPropertyAndArrayIndex2(InStruct, *InPropertyNames[Index]);
 
 	FPropertyAddress NewAddress;
 
@@ -549,7 +549,7 @@ void USphereManipulator::Draw(const FTransform& InTransform, const FSceneView* V
 	if(ColorMaterial.IsValid())
 	{ 
 		ColorMaterial->SetVectorParameterValue("Color", FVector(bIsSelected ? SelectedColor : Color));
-		DrawSphere(PDI, InTransform.GetLocation(), FVector(Radius) * CurrentProximity, 64, 64, ColorMaterial->GetRenderProxy(false), SDPG_World);
+		DrawSphere(PDI, InTransform.GetLocation(), FRotator::ZeroRotator, FVector(Radius) * CurrentProximity, 64, 64, ColorMaterial->GetRenderProxy(false), SDPG_World);
 	}
 }
 

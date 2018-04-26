@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LevelSequenceEditorToolkit.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
@@ -262,6 +262,14 @@ void FLevelSequenceEditorToolkit::Initialize(const EToolkitMode::Type Mode, cons
 
 	LevelEditorModule.AttachSequencer(Sequencer->GetSequencerWidget(), SharedThis(this));
 
+	// @todo reopen the scene outliner so that is refreshed with the sequencer info column
+	TSharedPtr<FTabManager> LevelEditorTabManager = LevelEditorModule.GetLevelEditorTabManager();
+	if (LevelEditorTabManager->FindExistingLiveTab(FName("LevelEditorSceneOutliner")).IsValid())
+	{
+		LevelEditorTabManager->InvokeTab(FName("LevelEditorSceneOutliner"))->RequestCloseTab();
+		LevelEditorTabManager->InvokeTab(FName("LevelEditorSceneOutliner"));
+	}
+
 	// We need to find out when the user loads a new map, because we might need to re-create puppet actors
 	// when previewing a MovieScene
 	LevelEditorModule.OnMapChanged().AddRaw(this, &FLevelSequenceEditorToolkit::HandleMapChanged);
@@ -278,9 +286,9 @@ void FLevelSequenceEditorToolkit::Initialize(const EToolkitMode::Type Mode, cons
 		{
 			VRMode->OnVREditingModeExit_Handler.BindSP(this, &FLevelSequenceEditorToolkit::HandleVREditorModeExit);
 			USequencerSettings& SavedSequencerSettings = *Sequencer->GetSequencerSettings();
-			VRMode->SaveSequencerSettings(Sequencer->GetKeyAllEnabled(), Sequencer->GetAutoKeyMode(), SavedSequencerSettings);
-			// Override currently set autokey behavior to always autokey all
-			Sequencer->SetAutoKeyMode(EAutoKeyMode::KeyAll);
+			VRMode->SaveSequencerSettings(Sequencer->GetKeyAllEnabled(), Sequencer->GetAutoChangeMode(), SavedSequencerSettings);
+			// Override currently set auto-change behavior to always autokey
+			Sequencer->SetAutoChangeMode(EAutoChangeMode::All);
 			Sequencer->SetKeyAllEnabled(true);
 			// Tell the VR Editor mode that Sequencer has refreshed
 			VRMode->RefreshVREditorSequencer(Sequencer.Get());
@@ -377,7 +385,7 @@ void FLevelSequenceEditorToolkit::AddDefaultTracksForActor(AActor& Actor, const 
 		}
 
 		// add tracks by type
-		for (const FStringClassReference& DefaultTrack : TrackSettings.DefaultTracks)
+		for (const FSoftClassPath& DefaultTrack : TrackSettings.DefaultTracks)
 		{
 			UClass* TrackClass = DefaultTrack.ResolveClass();
 
@@ -391,7 +399,7 @@ void FLevelSequenceEditorToolkit::AddDefaultTracksForActor(AActor& Actor, const 
 					continue;
 				}
 				
-				for (const FStringClassReference& ExcludeDefaultTrack : ExcludeTrackSettings.ExcludeDefaultTracks)
+				for (const FSoftClassPath& ExcludeDefaultTrack : ExcludeTrackSettings.ExcludeDefaultTracks)
 				{
 					if (ExcludeDefaultTrack == DefaultTrack)
 					{
@@ -456,8 +464,6 @@ void FLevelSequenceEditorToolkit::AddDefaultTracksForActor(AActor& Actor, const 
 
 					NewSection->SetIsInfinite(GetSequencer()->GetInfiniteKeyAreas());
 				}
-
-				Sequencer->UpdateRuntimeInstances();
 			}
 		}
 
@@ -570,8 +576,6 @@ void FLevelSequenceEditorToolkit::AddDefaultTracksForActor(AActor& Actor, const 
 			FKeyPropertyParams KeyPropertyParams(TArrayBuilder<UObject*>().Add(PropertyOwner), *PropertyPath, ESequencerKeyMode::ManualKey);
 
 			Sequencer->KeyProperty(KeyPropertyParams);
-
-			Sequencer->UpdateRuntimeInstances();
 		}
 	}
 }
@@ -605,7 +609,7 @@ void FLevelSequenceEditorToolkit::HandleAddComponentMaterialActionExecute(UPrimi
 
 		FocusedMovieScene->Modify();
 
-		UMovieSceneComponentMaterialTrack* MaterialTrack = Cast<UMovieSceneComponentMaterialTrack>( FocusedMovieScene->AddTrack<UMovieSceneComponentMaterialTrack>( ObjectHandle ) );
+		UMovieSceneComponentMaterialTrack* MaterialTrack = FocusedMovieScene->AddTrack<UMovieSceneComponentMaterialTrack>( ObjectHandle );
 		MaterialTrack->Modify();
 		MaterialTrack->SetMaterialIndex( MaterialIndex );
 
@@ -626,7 +630,7 @@ void FLevelSequenceEditorToolkit::HandleVREditorModeExit()
 	UVREditorMode* VRMode = CastChecked<UVREditorMode>( GEditor->GetEditorWorldExtensionsManager()->GetEditorWorldExtensions( World )->FindExtension( UVREditorMode::StaticClass() ) );
 
 	// Reset sequencer settings
-	Sequencer->SetAutoKeyMode(VRMode->GetSavedEditorState().AutoKeyMode);
+	Sequencer->SetAutoChangeMode(VRMode->GetSavedEditorState().AutoChangeMode);
 	Sequencer->SetKeyAllEnabled(VRMode->GetSavedEditorState().bKeyAllEnabled);
 	VRMode->OnVREditingModeExit_Handler.Unbind();
 }
@@ -637,7 +641,6 @@ void FLevelSequenceEditorToolkit::HandleMapChanged(class UWorld* NewWorld, EMapC
 	if( ( MapChangeType == EMapChangeType::LoadMap || MapChangeType == EMapChangeType::NewMap || MapChangeType == EMapChangeType::TearDownWorld) )
 	{
 		Sequencer->GetSpawnRegister().CleanUp(*Sequencer);
-		Sequencer->UpdateRuntimeInstances();
 	}
 }
 
@@ -649,7 +652,6 @@ void FLevelSequenceEditorToolkit::AddShot(UMovieSceneCinematicShotTrack* ShotTra
 	UMovieSceneSubSection* ShotSubSection = ShotTrack->AddSequence(ShotSequence, ShotStartTime, ShotEndTime-ShotStartTime);
 
 	// Focus on the new shot
-	GetSequencer()->UpdateRuntimeInstances();
 	GetSequencer()->ForceEvaluate();
 	GetSequencer()->FocusSequenceInstance(*ShotSubSection);
 
@@ -719,7 +721,6 @@ void FLevelSequenceEditorToolkit::AddShot(UMovieSceneCinematicShotTrack* ShotTra
 		if (bCreateSpawnableCamera)
 		{
 			CameraGuid = GetSequencer()->MakeNewSpawnable(*NewCamera);
-			GetSequencer()->UpdateRuntimeInstances();
 			UObject* SpawnedCamera = GetSequencer()->FindSpawnedObjectOrTemplate(CameraGuid);
 			if (SpawnedCamera)
 			{
@@ -905,8 +906,15 @@ bool FLevelSequenceEditorToolkit::OnRequestClose()
 		VRMode->RefreshVREditorSequencer(nullptr);
 	}
 	OpenToolkits.Remove(this);
+
 	OnClosedEvent.Broadcast();
 	return true;
+}
+
+bool FLevelSequenceEditorToolkit::CanFindInContentBrowser() const
+{
+	// False so that sequencer doesn't take over Find In Content Browser functionality and always find the level sequence asset
+	return false;
 }
 
 #undef LOCTEXT_NAMESPACE

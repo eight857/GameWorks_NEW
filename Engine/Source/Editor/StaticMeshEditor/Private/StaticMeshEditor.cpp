@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "StaticMeshEditor.h"
 #include "AssetData.h"
@@ -41,6 +41,8 @@
 #include "PhysicsEngine/BodySetup.h"
 
 #include "AdvancedPreviewSceneModule.h"
+
+#include "ConvexDecompositionNotification.h"
 
 #define LOCTEXT_NAMESPACE "StaticMeshEditor"
 
@@ -110,6 +112,17 @@ void FStaticMeshEditor::UnregisterTabSpawners(const TSharedRef<class FTabManager
 
 FStaticMeshEditor::~FStaticMeshEditor()
 {
+#if USE_ASYNC_DECOMP
+	/** If there is an active instance of the asynchronous convex decomposition interface, release it here. */
+	if (GConvexDecompositionNotificationState)
+	{
+		GConvexDecompositionNotificationState->IsActive = false;
+	}
+	if (DecomposeMeshToHullsAsync)
+	{
+		DecomposeMeshToHullsAsync->Release();
+	}
+#endif
 	FReimportManager::Instance()->OnPostReimport().RemoveAll(this);
 
 	GEditor->UnregisterForUndo( this );
@@ -499,7 +512,7 @@ void FStaticMeshEditor::ExtendToolBar()
 {
 	struct Local
 	{
-		static void FillToolbar(FToolBarBuilder& ToolbarBuilder, TSharedPtr< class STextComboBox > UVChannelCombo, TSharedPtr< class STextComboBox > LODLevelCombo)
+		static void FillToolbar(FToolBarBuilder& ToolbarBuilder, FStaticMeshEditor* ThisEditor) 
 		{
 			ToolbarBuilder.BeginSection("Realtime");
 			{
@@ -530,15 +543,17 @@ void FStaticMeshEditor::ExtendToolBar()
 				ToolbarBuilder.AddToolBarButton(FStaticMeshEditorCommands::Get().SetShowTangents);
 				ToolbarBuilder.AddToolBarButton(FStaticMeshEditorCommands::Get().SetShowBinormals);
 				ToolbarBuilder.AddToolBarButton(FStaticMeshEditorCommands::Get().SetShowVertices);
-				ToolbarBuilder.AddToolBarButton(FStaticMeshEditorCommands::Get().SetDrawUVs);
-				ToolbarBuilder.AddToolBarButton(FStaticMeshEditorCommands::Get().SetDrawAdditionalData);
+
+				FOnGetContent OnGetUVMenuContent = FOnGetContent::CreateRaw(ThisEditor, &FStaticMeshEditor::GenerateUVChannelComboList);
+
+				ToolbarBuilder.AddComboButton(
+					FUIAction(), 
+					OnGetUVMenuContent, 
+					LOCTEXT("UVToolbarText", "UV"), 
+					LOCTEXT("UVToolbarTooltip", "Toggles display of the static mesh's UVs for the specified channel."),
+					FSlateIcon(FEditorStyle::GetStyleSetName(), "StaticMeshEditor.SetDrawUVs"));
 			}
-			ToolbarBuilder.EndSection();
-	
-			ToolbarBuilder.BeginSection("UV");
-			{
-				ToolbarBuilder.AddWidget(UVChannelCombo.ToSharedRef());
-			}
+
 			ToolbarBuilder.EndSection();
 	
 			ToolbarBuilder.BeginSection("Camera");
@@ -546,22 +561,22 @@ void FStaticMeshEditor::ExtendToolBar()
 				ToolbarBuilder.AddToolBarButton(FStaticMeshEditorCommands::Get().ResetCamera);
 			}
 			ToolbarBuilder.EndSection();
-	
-			ToolbarBuilder.BeginSection("LOD");
-			{
-				ToolbarBuilder.AddWidget(LODLevelCombo.ToSharedRef());
-			}
-			ToolbarBuilder.EndSection();
+
+			ToolbarBuilder.AddToolBarButton(FStaticMeshEditorCommands::Get().SetDrawAdditionalData);
 		}
 	};
 
 	TSharedPtr<FExtender> ToolbarExtender = MakeShareable(new FExtender);
 
+	FStaticMeshEditorViewportClient& ViewportClient = Viewport->GetViewportClient();
+
+	FStaticMeshEditor* ThisEditor = this;
+
 	ToolbarExtender->AddToolBarExtension(
 		"Asset",
 		EExtensionHook::After,
 		Viewport->GetCommandList(),
-		FToolBarExtensionDelegate::CreateStatic( &Local::FillToolbar, UVChannelCombo, LODLevelCombo )
+		FToolBarExtensionDelegate::CreateStatic(&Local::FillToolbar, ThisEditor) 
 		);
 	
 	AddToolbarExtender(ToolbarExtender);
@@ -578,28 +593,7 @@ void FStaticMeshEditor::BuildSubTools()
 
 	SAssignNew( ConvexDecomposition, SConvexDecomposition )
 		.StaticMeshEditorPtr(SharedThis(this));
-
-	// Build toolbar widgets
-	UVChannelCombo = SNew(STextComboBox)
-		.OptionsSource(&UVChannels)
-		.OnSelectionChanged(this, &FStaticMeshEditor::ComboBoxSelectionChanged)
-		.IsEnabled( FSlateApplication::Get().GetNormalExecutionAttribute() );
-
-	if(UVChannels.IsValidIndex(0))
-	{
-		UVChannelCombo->SetSelectedItem(UVChannels[0]);
-	}
-
-	LODLevelCombo = SNew(STextComboBox)
-		.OptionsSource(&LODLevels)
-		.OnSelectionChanged(this, &FStaticMeshEditor::LODLevelsSelectionChanged)
-		.IsEnabled( FSlateApplication::Get().GetNormalExecutionAttribute() );
-
-	if(LODLevels.IsValidIndex(0))
-	{
-		LODLevelCombo->SetSelectedItem(LODLevels[0]);
-	}
-
+	
 	FAdvancedPreviewSceneModule& AdvancedPreviewSceneModule = FModuleManager::LoadModuleChecked<FAdvancedPreviewSceneModule>("AdvancedPreviewScene");
 	AdvancedPreviewSettingsWidget = AdvancedPreviewSceneModule.CreateAdvancedPreviewSceneSettingsWidget(Viewport->GetPreviewScene());
 }
@@ -659,13 +653,13 @@ bool FStaticMeshEditor::IsPrimValid(const FPrimData& InPrimData) const
 
 		switch (InPrimData.PrimType)
 		{
-		case KPT_Sphere:
+		case EAggCollisionShape::Sphere:
 			return AggGeom->SphereElems.IsValidIndex(InPrimData.PrimIndex);
-		case KPT_Box:
+		case EAggCollisionShape::Box:
 			return AggGeom->BoxElems.IsValidIndex(InPrimData.PrimIndex);
-		case KPT_Sphyl:
+		case EAggCollisionShape::Sphyl:
 			return AggGeom->SphylElems.IsValidIndex(InPrimData.PrimIndex);
-		case KPT_Convex:
+		case EAggCollisionShape::Convex:
 			return AggGeom->ConvexElems.IsValidIndex(InPrimData.PrimIndex);
 		}
 	}
@@ -682,9 +676,9 @@ void FStaticMeshEditor::AddSelectedPrim(const FPrimData& InPrimData, bool bClear
 	check(IsPrimValid(InPrimData));
 
 	// Enable collision, if not already
-	if( !Viewport->GetViewportClient().IsSetShowSimpleCollisionChecked() )
+	if( !Viewport->GetViewportClient().IsShowSimpleCollisionChecked() )
 	{
-		Viewport->GetViewportClient().SetShowSimpleCollision();
+		Viewport->GetViewportClient().ToggleShowSimpleCollision();
 	}
 
 	if( bClearSelection )
@@ -743,25 +737,25 @@ void FStaticMeshEditor::DuplicateSelectedPrims(const FVector* InOffset)
 			check(IsPrimValid(PrimData));
 			switch (PrimData.PrimType)
 			{
-			case KPT_Sphere:
+			case EAggCollisionShape::Sphere:
 				{					
 					const FKSphereElem SphereElem = AggGeom->SphereElems[PrimData.PrimIndex];
 					PrimData.PrimIndex = AggGeom->SphereElems.Add(SphereElem);
 				}
 				break;
-			case KPT_Box:
+			case EAggCollisionShape::Box:
 				{
 					const FKBoxElem BoxElem = AggGeom->BoxElems[PrimData.PrimIndex];
 					PrimData.PrimIndex = AggGeom->BoxElems.Add(BoxElem);
 				}
 				break;
-			case KPT_Sphyl:
+			case EAggCollisionShape::Sphyl:
 				{
 					const FKSphylElem SphylElem = AggGeom->SphylElems[PrimData.PrimIndex];
 					PrimData.PrimIndex = AggGeom->SphylElems.Add(SphylElem);
 				}
 				break;
-			case KPT_Convex:
+			case EAggCollisionShape::Convex:
 				{
 					const FKConvexElem ConvexElem = AggGeom->ConvexElems[PrimData.PrimIndex];
 					PrimData.PrimIndex = AggGeom->ConvexElems.Add(ConvexElem);
@@ -868,16 +862,16 @@ void FStaticMeshEditor::ScaleSelectedPrims(const FVector& InScale)
 		check(IsPrimValid(PrimData));
 		switch (PrimData.PrimType)
 		{
-		case KPT_Sphere:
+		case EAggCollisionShape::Sphere:
 			AggGeom->SphereElems[PrimData.PrimIndex].ScaleElem(SimplePrimitiveScaleSpeedFactor * ModifiedScale, MinPrimSize);
 			break;
-		case KPT_Box:
+		case EAggCollisionShape::Box:
 			AggGeom->BoxElems[PrimData.PrimIndex].ScaleElem(SimplePrimitiveScaleSpeedFactor * ModifiedScale, MinPrimSize);
 			break;
-		case KPT_Sphyl:
+		case EAggCollisionShape::Sphyl:
 			AggGeom->SphylElems[PrimData.PrimIndex].ScaleElem(SimplePrimitiveScaleSpeedFactor * ModifiedScale, MinPrimSize);
 			break;
-		case KPT_Convex:
+		case EAggCollisionShape::Convex:
 			AggGeom->ConvexElems[PrimData.PrimIndex].ScaleElem(ModifiedScale, MinPrimSize);
 			break;
 		}
@@ -902,16 +896,16 @@ bool FStaticMeshEditor::CalcSelectedPrimsAABB(FBox &OutBox) const
 		check(IsPrimValid(PrimData));
 		switch (PrimData.PrimType)
 		{
-		case KPT_Sphere:
+		case EAggCollisionShape::Sphere:
 			OutBox += AggGeom->SphereElems[PrimData.PrimIndex].CalcAABB(FTransform::Identity, 1.f);
 			break;
-		case KPT_Box:
+		case EAggCollisionShape::Box:
 			OutBox += AggGeom->BoxElems[PrimData.PrimIndex].CalcAABB(FTransform::Identity, 1.f);
 			break;
-		case KPT_Sphyl:
+		case EAggCollisionShape::Sphyl:
 			OutBox += AggGeom->SphylElems[PrimData.PrimIndex].CalcAABB(FTransform::Identity, 1.f);
 			break;
-		case KPT_Convex:
+		case EAggCollisionShape::Convex:
 			OutBox += AggGeom->ConvexElems[PrimData.PrimIndex].CalcAABB(FTransform::Identity, FVector(1.f));
 			break;
 		}
@@ -932,16 +926,16 @@ bool FStaticMeshEditor::GetLastSelectedPrimTransform(FTransform& OutTransform) c
 		check(IsPrimValid(PrimData));
 		switch (PrimData.PrimType)
 		{
-		case KPT_Sphere:
+		case EAggCollisionShape::Sphere:
 			OutTransform = AggGeom->SphereElems[PrimData.PrimIndex].GetTransform();
 			break;
-		case KPT_Box:
+		case EAggCollisionShape::Box:
 			OutTransform = AggGeom->BoxElems[PrimData.PrimIndex].GetTransform();
 			break;
-		case KPT_Sphyl:
+		case EAggCollisionShape::Sphyl:
 			OutTransform = AggGeom->SphylElems[PrimData.PrimIndex].GetTransform();
 			break;
-		case KPT_Convex:
+		case EAggCollisionShape::Convex:
 			OutTransform = AggGeom->ConvexElems[PrimData.PrimIndex].GetTransform();
 			break;
 		}
@@ -958,13 +952,13 @@ FTransform FStaticMeshEditor::GetPrimTransform(const FPrimData& InPrimData) cons
 	check(IsPrimValid(InPrimData));
 	switch (InPrimData.PrimType)
 	{
-	case KPT_Sphere:
+	case EAggCollisionShape::Sphere:
 		return AggGeom->SphereElems[InPrimData.PrimIndex].GetTransform();
-	case KPT_Box:
+	case EAggCollisionShape::Box:
 		return AggGeom->BoxElems[InPrimData.PrimIndex].GetTransform();
-	case KPT_Sphyl:
+	case EAggCollisionShape::Sphyl:
 		return AggGeom->SphylElems[InPrimData.PrimIndex].GetTransform();
-	case KPT_Convex:
+	case EAggCollisionShape::Convex:
 		return AggGeom->ConvexElems[InPrimData.PrimIndex].GetTransform();
 	}
 	return FTransform::Identity;
@@ -979,16 +973,16 @@ void FStaticMeshEditor::SetPrimTransform(const FPrimData& InPrimData, const FTra
 	check(IsPrimValid(InPrimData));
 	switch (InPrimData.PrimType)
 	{
-	case KPT_Sphere:
+	case EAggCollisionShape::Sphere:
 		AggGeom->SphereElems[InPrimData.PrimIndex].SetTransform(InPrimTransform);
 		break;
-	case KPT_Box:
+	case EAggCollisionShape::Box:
 		AggGeom->BoxElems[InPrimData.PrimIndex].SetTransform(InPrimTransform);
 		break;
-	case KPT_Sphyl:
+	case EAggCollisionShape::Sphyl:
 		AggGeom->SphylElems[InPrimData.PrimIndex].SetTransform(InPrimTransform);
 		break;
-	case KPT_Convex:
+	case EAggCollisionShape::Convex:
 		AggGeom->ConvexElems[InPrimData.PrimIndex].SetTransform(InPrimTransform);
 		break;
 	}
@@ -1006,7 +1000,7 @@ bool FStaticMeshEditor::OverlapsExistingPrim(const FPrimData& InPrimData) const
 	check(IsPrimValid(InPrimData));
 	switch (InPrimData.PrimType)
 	{
-	case KPT_Sphere:
+	case EAggCollisionShape::Sphere:
 		{
 			const FKSphereElem InSphereElem = AggGeom->SphereElems[InPrimData.PrimIndex];
 			const FTransform InElemTM = InSphereElem.GetTransform();
@@ -1026,7 +1020,7 @@ bool FStaticMeshEditor::OverlapsExistingPrim(const FPrimData& InPrimData) const
 			}
 		}
 		break;
-	case KPT_Box:
+	case EAggCollisionShape::Box:
 		{
 			const FKBoxElem InBoxElem = AggGeom->BoxElems[InPrimData.PrimIndex];
 			const FTransform InElemTM = InBoxElem.GetTransform();
@@ -1046,7 +1040,7 @@ bool FStaticMeshEditor::OverlapsExistingPrim(const FPrimData& InPrimData) const
 			}
 		}
 		break;
-	case KPT_Sphyl:
+	case EAggCollisionShape::Sphyl:
 		{
 			const FKSphylElem InSphylElem = AggGeom->SphylElems[InPrimData.PrimIndex];
 			const FTransform InElemTM = InSphylElem.GetTransform();
@@ -1066,7 +1060,7 @@ bool FStaticMeshEditor::OverlapsExistingPrim(const FPrimData& InPrimData) const
 			}
 		}
 		break;
-	case KPT_Convex:
+	case EAggCollisionShape::Convex:
 		{
 			const FKConvexElem InConvexElem = AggGeom->ConvexElems[InPrimData.PrimIndex];
 			const FTransform InElemTM = InConvexElem.GetTransform();
@@ -1099,11 +1093,10 @@ void FStaticMeshEditor::RefreshTool()
 		UpdateLODStats(LODIndex);
 	}
 
+	OnSelectedLODChangedResetOnRefresh.Clear();
 	bool bForceRefresh = true;
 	StaticMeshDetailsView->SetObject( StaticMesh, bForceRefresh );
 
-	RegenerateLODComboList();
-	RegenerateUVChannelComboList();
 	RefreshViewport();
 }
 
@@ -1112,70 +1105,52 @@ void FStaticMeshEditor::RefreshViewport()
 	Viewport->RefreshViewport();
 }
 
-void FStaticMeshEditor::RegenerateLODComboList()
+TSharedRef<SWidget> FStaticMeshEditor::GenerateUVChannelComboList()
 {
-	if( StaticMesh->RenderData )
-	{
-		int32 OldLOD = GetCurrentLODLevel();
+	FMenuBuilder MenuBuilder(true, nullptr);
 
-		NumLODLevels = StaticMesh->RenderData->LODResources.Num();
+	FUIAction DrawUVsAction;
 
-		// Fill out the LOD level combo.
-		LODLevels.Empty();
-		LODLevels.Add( MakeShareable( new FString( LOCTEXT("AutoLOD", "Auto LOD").ToString() ) ) );
-		LODLevels.Add( MakeShareable( new FString( LOCTEXT("BaseLOD", "Base LOD").ToString() ) ) );
-		for(int32 LODLevelID = 1; LODLevelID < NumLODLevels; ++LODLevelID)
-		{
-			LODLevels.Add( MakeShareable( new FString( FString::Printf(*LOCTEXT("LODLevel_ID", "LOD Level %d").ToString(), LODLevelID ) ) ) );
-		}
+	FStaticMeshEditorViewportClient& ViewportClient = GetViewportClient();
 
-		if( LODLevelCombo.IsValid() )
-		{
-			LODLevelCombo->RefreshOptions();
+	DrawUVsAction.ExecuteAction = FExecuteAction::CreateRaw(&ViewportClient, &FStaticMeshEditorViewportClient::SetDrawUVOverlay, false);
 
-			if( OldLOD < LODLevels.Num() )
-			{
-				LODLevelCombo->SetSelectedItem(LODLevels[OldLOD]);
-			}
-			else
-			{
-				LODLevelCombo->SetSelectedItem(LODLevels[0]);
-			}
+	// Note, the logic is inversed here.  We show the radio button as checked if no uv channels are being shown
+	DrawUVsAction.GetActionCheckState = FGetActionCheckState::CreateLambda([&ViewportClient]() {return ViewportClient.IsDrawUVOverlayChecked() ? ECheckBoxState::Unchecked : ECheckBoxState::Checked; });
 
-		}
-	}
-	else
-	{
-		NumLODLevels = 0;
-		LODLevels.Empty();
-		LODLevels.Add( MakeShareable( new FString( LOCTEXT("AutoLOD", "Auto LOD").ToString() ) ) );
-	}
-}
+	MenuBuilder.AddMenuEntry(
+		LOCTEXT("ShowUVSToggle", "None"),
+		LOCTEXT("ShowUVSToggle_Tooltip", "Toggles display of the static mesh's UVs."),
+		FSlateIcon(),
+		DrawUVsAction,
+		NAME_None,
+		EUserInterfaceActionType::RadioButton
+	);
 
-void FStaticMeshEditor::RegenerateUVChannelComboList()
-{
-	int32 OldUVChannel = GetCurrentUVChannel();
+
+	MenuBuilder.AddMenuSeparator();
 
 	// Fill out the UV channels combo.
-	UVChannels.Empty();
 	int32 MaxUVChannels = FMath::Max<int32>(GetNumUVChannels(),1);
 	for(int32 UVChannelID = 0; UVChannelID < MaxUVChannels; ++UVChannelID)
 	{
-		UVChannels.Add( MakeShareable( new FString( FText::Format( LOCTEXT("UVChannel_ID", "UV Channel {0}"), FText::AsNumber( UVChannelID ) ).ToString() ) ) );
+		FUIAction MenuAction;
+		MenuAction.ExecuteAction.BindSP(this, &FStaticMeshEditor::SetCurrentViewedUVChannel, UVChannelID);
+		MenuAction.GetActionCheckState.BindSP(this, &FStaticMeshEditor::GetUVChannelCheckState, UVChannelID);
+
+		MenuBuilder.AddMenuEntry(
+			FText::Format(LOCTEXT("UVChannel_ID", "UV Channel {0}"), FText::AsNumber(UVChannelID)),
+			FText::Format(LOCTEXT("UVChannel_ID_ToolTip", "Overlay UV Channel {0} on the viewport"), FText::AsNumber(UVChannelID)),
+			FSlateIcon(),
+			MenuAction,
+			NAME_None,
+			EUserInterfaceActionType::RadioButton
+		);
 	}
 
-	if(UVChannelCombo.IsValid())
-	{
-		UVChannelCombo->RefreshOptions();
-		if( OldUVChannel >= 0 && OldUVChannel < GetNumUVChannels() )
-		{
-			UVChannelCombo->SetSelectedItem(UVChannels[OldUVChannel]);
-		}
-		else
-		{
-			UVChannelCombo->SetSelectedItem(UVChannels[0]);
-		}
-	}
+	MenuBuilder.EndSection();
+
+	return MenuBuilder.MakeWidget();
 }
 
 
@@ -1184,7 +1159,7 @@ void FStaticMeshEditor::UpdateLODStats(int32 CurrentLOD)
 	NumTriangles[CurrentLOD] = 0;
 	NumVertices[CurrentLOD] = 0;
 	NumUVChannels[CurrentLOD] = 0;
-	NumLODLevels = 0;
+	int32 NumLODLevels = 0;
 
 	if( StaticMesh->RenderData )
 	{
@@ -1194,7 +1169,7 @@ void FStaticMeshEditor::UpdateLODStats(int32 CurrentLOD)
 			FStaticMeshLODResources& LODModel = StaticMesh->RenderData->LODResources[CurrentLOD];
 			NumTriangles[CurrentLOD] = LODModel.GetNumTriangles();
 			NumVertices[CurrentLOD] = LODModel.GetNumVertices();
-			NumUVChannels[CurrentLOD] = LODModel.VertexBuffer.GetNumTexCoords();
+			NumUVChannels[CurrentLOD] = LODModel.VertexBuffers.StaticMeshVertexBuffer.GetNumTexCoords();
 		}
 	}
 }
@@ -1204,34 +1179,23 @@ void FStaticMeshEditor::ComboBoxSelectionChanged( TSharedPtr<FString> NewSelecti
 	Viewport->RefreshViewport();
 }
 
-void FStaticMeshEditor::LODLevelsSelectionChanged( TSharedPtr<FString> NewSelection, ESelectInfo::Type /*SelectInfo*/ )
-{
-	int32 CurrentLOD = GetCurrentLODLevel();
-
-	UpdateLODStats( CurrentLOD > 0? CurrentLOD - 1 : 0 );
-
-	Viewport->ForceLODLevel(CurrentLOD);
-}
-
 int32 FStaticMeshEditor::GetCurrentUVChannel()
 {
-	int32 Index = 0;
-	UVChannels.Find(UVChannelCombo->GetSelectedItem(), Index);
-
-	return Index;
+	return FMath::Min(CurrentViewedUVChannel, GetNumUVChannels());
 }
 
 int32 FStaticMeshEditor::GetCurrentLODLevel()
 {
-	int32 Index = 0;
-	LODLevels.Find(LODLevelCombo->GetSelectedItem(), Index);
-
-	return Index;
+	if (GetStaticMeshComponent())
+	{
+		return GetStaticMeshComponent()->ForcedLodModel;
+	}
+	return 0;
 }
 
 int32 FStaticMeshEditor::GetCurrentLODIndex()
 {
-	int32 Index = LODLevels.Find(LODLevelCombo->GetSelectedItem());
+	int32 Index = GetCurrentLODLevel();
 
 	return Index == 0? 0 : Index - 1;
 }
@@ -1253,7 +1217,7 @@ void FStaticMeshEditor::GenerateKDop(const FVector* Directions, uint32 NumDirect
 		{
 			FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.StaticMesh.Collision"), TEXT("Type"), TEXT("KDop Collision"));
 		}
-		const FPrimData PrimData = FPrimData(KPT_Convex, PrimIndex);
+		const FPrimData PrimData = FPrimData(EAggCollisionShape::Convex, PrimIndex);
 		ClearSelectedPrims();
 		AddSelectedPrim(PrimData, true);
 		// Don't 'nudge' KDop prims, as they are fitted specifically around the geometry
@@ -1273,7 +1237,7 @@ void FStaticMeshEditor::OnCollisionBox()
 		{
 			FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.StaticMesh.Collision"), TEXT("Type"), TEXT("Box Collision"));
 		}
-		const FPrimData PrimData = FPrimData(KPT_Box, PrimIndex);
+		const FPrimData PrimData = FPrimData(EAggCollisionShape::Box, PrimIndex);
 		ClearSelectedPrims();
 		AddSelectedPrim(PrimData, true);
 		while( OverlapsExistingPrim(PrimData) )
@@ -1296,7 +1260,7 @@ void FStaticMeshEditor::OnCollisionSphere()
 		{
 			FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.StaticMesh.Collision"), TEXT("Type"), TEXT("Sphere Collision"));
 		}
-		const FPrimData PrimData = FPrimData(KPT_Sphere, PrimIndex);
+		const FPrimData PrimData = FPrimData(EAggCollisionShape::Sphere, PrimIndex);
 		ClearSelectedPrims();
 		AddSelectedPrim(PrimData, true);
 		while( OverlapsExistingPrim(PrimData) )
@@ -1319,7 +1283,7 @@ void FStaticMeshEditor::OnCollisionSphyl()
 		{
 			FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.StaticMesh.Collision"), TEXT("Type"), TEXT("Capsule Collision"));
 		}
-		const FPrimData PrimData = FPrimData(KPT_Sphyl, PrimIndex);
+		const FPrimData PrimData = FPrimData(EAggCollisionShape::Sphyl, PrimIndex);
 		ClearSelectedPrims();
 		AddSelectedPrim(PrimData, true);
 		while( OverlapsExistingPrim(PrimData) )
@@ -1435,7 +1399,7 @@ void FStaticMeshEditor::OnConvertBoxToConvexCollision()
 				FKAggregateGeom* AggGeom = &StaticMesh->BodySetup->AggGeom;
 				for (int32 i = 0; i < NumBoxElems; ++i)
 				{
-					AddSelectedPrim(FPrimData(KPT_Convex, (AggGeom->ConvexElems.Num() - (i+1))), false);
+					AddSelectedPrim(FPrimData(EAggCollisionShape::Convex, (AggGeom->ConvexElems.Num() - (i+1))), false);
 				}
 
 				RefreshCollisionChange(*StaticMesh);
@@ -1470,9 +1434,9 @@ void FStaticMeshEditor::OnCopyCollisionFromSelectedStaticMesh()
 	BodySetup->CopyBodyPropertiesFrom(SelectedMesh->BodySetup);
 
 	// Enable collision, if not already
-	if( !Viewport->GetViewportClient().IsSetShowSimpleCollisionChecked() )
+	if( !Viewport->GetViewportClient().IsShowSimpleCollisionChecked() )
 	{
-		Viewport->GetViewportClient().SetShowSimpleCollision();
+		Viewport->GetViewportClient().ToggleShowSimpleCollision();
 	}
 
 	// Invalidate physics data and create new meshes
@@ -1549,46 +1513,10 @@ void FStaticMeshEditor::SetEditorMesh(UStaticMesh* InStaticMesh, bool bResetCame
 	NumUVChannels.Empty(ArraySize);
 	NumUVChannels.AddZeroed(ArraySize);
 
-	// Always default the LOD to 0 when setting the mesh.
-	UpdateLODStats(0);
-
-	// Fill out the LOD level combo.
-	LODLevels.Empty();
-	LODLevels.Add( MakeShareable( new FString( LOCTEXT("AutoLOD", "Auto LOD").ToString() ) ) );
-	LODLevels.Add( MakeShareable( new FString( LOCTEXT("BaseLOD", "Base LOD").ToString() ) ) );
-	for(int32 LODLevelID = 1; LODLevelID < NumLODLevels; ++LODLevelID)
+	int32 NumLODs = StaticMesh->GetNumLODs();
+	for (int32 LODIndex = 0; LODIndex < NumLODs; ++LODIndex)
 	{
-		LODLevels.Add( MakeShareable( new FString( FString::Printf(*LOCTEXT("LODLevel_ID", "LOD Level %d").ToString(), LODLevelID ) ) ) );
-
-		//Update LOD stats for each level
-		UpdateLODStats(LODLevelID);
-	}
-
-	// Fill out the UV channels combo.
-	UVChannels.Empty();
-	for(int32 UVChannelID = 0; UVChannelID < GetNumUVChannels(0); ++UVChannelID)
-	{
-		UVChannels.Add( MakeShareable( new FString( FText::Format( LOCTEXT("UVChannel_ID", "UV Channel {0}"), FText::AsNumber( UVChannelID ) ).ToString() ) ) );
-	}
-
-	if( UVChannelCombo.IsValid() )
-	{
-		UVChannelCombo->RefreshOptions();
-
-		if(UVChannels.Num())
-		{
-			UVChannelCombo->SetSelectedItem(UVChannels[0]);
-		}
-	}
-
-	if( LODLevelCombo.IsValid() )
-	{
-		LODLevelCombo->RefreshOptions();
-
-		if(LODLevels.Num())
-		{
-			LODLevelCombo->SetSelectedItem(LODLevels[0]);
-		}
+		UpdateLODStats(LODIndex);
 	}
 
 	// Set the details view.
@@ -1655,7 +1583,7 @@ void FStaticMeshEditor::OnSaveGeneratedLODs()
 	}
 }
 
-void FStaticMeshEditor::DoDecomp(float InAccuracy, int32 InMaxHullVerts)
+void FStaticMeshEditor::DoDecomp(uint32 InHullCount, int32 InMaxHullVerts, uint32 InHullPrecision)
 {
 	// Check we have a selected StaticMesh
 	if(StaticMesh && StaticMesh->RenderData)
@@ -1666,11 +1594,11 @@ void FStaticMeshEditor::DoDecomp(float InAccuracy, int32 InMaxHullVerts)
 		const FScopedBusyCursor BusyCursor;
 
 		// Make vertex buffer
-		int32 NumVerts = LODModel.VertexBuffer.GetNumVertices();
+		int32 NumVerts = LODModel.VertexBuffers.StaticMeshVertexBuffer.GetNumVertices();
 		TArray<FVector> Verts;
 		for(int32 i=0; i<NumVerts; i++)
 		{
-			FVector Vert = LODModel.PositionVertexBuffer.VertexPosition(i);
+			FVector Vert = LODModel.VertexBuffers.PositionVertexBuffer.VertexPosition(i);
 			Verts.Add(Vert);
 		}
 
@@ -1712,13 +1640,24 @@ void FStaticMeshEditor::DoDecomp(float InAccuracy, int32 InMaxHullVerts)
 		// Run actual util to do the work (if we have some valid input)
 		if(Verts.Num() >= 3 && CollidingIndices.Num() >= 3)
 		{
-			DecomposeMeshToHulls(bs, Verts, CollidingIndices, InAccuracy, InMaxHullVerts);		
+#if USE_ASYNC_DECOMP
+			// If there is currently a decomposition already in progress we release it.
+			if (DecomposeMeshToHullsAsync)
+			{
+				DecomposeMeshToHullsAsync->Release();
+			}
+			// Begin the convex decomposition process asynchronously
+			DecomposeMeshToHullsAsync = CreateIDecomposeMeshToHullAsync();
+			DecomposeMeshToHullsAsync->DecomposeMeshToHullsAsyncBegin(bs, Verts, CollidingIndices, InHullCount, InMaxHullVerts, InHullPrecision);
+#else
+			DecomposeMeshToHulls(bs, Verts, CollidingIndices, InHullCount, InMaxHullVerts, InHullPrecision);
+#endif
 		}
 
 		// Enable collision, if not already
-		if( !Viewport->GetViewportClient().IsSetShowSimpleCollisionChecked() )
+		if( !Viewport->GetViewportClient().IsShowSimpleCollisionChecked() )
 		{
-			Viewport->GetViewportClient().SetShowSimpleCollision();
+			Viewport->GetViewportClient().ToggleShowSimpleCollision();
 		}
 
 		// refresh collision change back to staticmesh components
@@ -1807,16 +1746,16 @@ void FStaticMeshEditor::DeleteSelectedPrims()
 			check(IsPrimValid(PrimData));
 			switch (PrimData.PrimType)
 			{
-			case KPT_Sphere:
+			case EAggCollisionShape::Sphere:
 				AggGeom->SphereElems.RemoveAt(PrimData.PrimIndex);
 				break;
-			case KPT_Box:
+			case EAggCollisionShape::Box:
 				AggGeom->BoxElems.RemoveAt(PrimData.PrimIndex);
 				break;
-			case KPT_Sphyl:
+			case EAggCollisionShape::Sphyl:
 				AggGeom->SphylElems.RemoveAt(PrimData.PrimIndex);
 				break;
-			case KPT_Convex:
+			case EAggCollisionShape::Convex:
 				AggGeom->ConvexElems.RemoveAt(PrimData.PrimIndex);
 				break;
 			}
@@ -1914,6 +1853,16 @@ EViewModeIndex FStaticMeshEditor::GetViewMode() const
 	{
 		return VMI_Unknown;
 	}
+}
+
+FStaticMeshEditorViewportClient& FStaticMeshEditor::GetViewportClient()
+{
+	return Viewport->GetViewportClient();
+}
+
+const FStaticMeshEditorViewportClient& FStaticMeshEditor::GetViewportClient() const
+{
+	return Viewport->GetViewportClient();
 }
 
 void FStaticMeshEditor::OnConvexDecomposition()
@@ -2019,5 +1968,43 @@ void FStaticMeshEditor::OnPostReimport(UObject* InObject, bool bSuccess)
 		RefreshTool();
 	}
 }
+
+void FStaticMeshEditor::SetCurrentViewedUVChannel(int32 InNewUVChannel)
+{
+	CurrentViewedUVChannel = FMath::Clamp(InNewUVChannel, 0, GetNumUVChannels());
+	GetViewportClient().SetDrawUVOverlay(true);
+}
+
+ECheckBoxState FStaticMeshEditor::GetUVChannelCheckState(int32 TestUVChannel) const
+{
+	return CurrentViewedUVChannel == TestUVChannel && GetViewportClient().IsDrawUVOverlayChecked() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+}
+
+void FStaticMeshEditor::Tick(float DeltaTime)
+{
+#if USE_ASYNC_DECOMP
+	/** If we have an active convex decomposition task running, we check to see if is completed and, if so, release the interface */
+	if (DecomposeMeshToHullsAsync)
+	{
+		if (DecomposeMeshToHullsAsync->IsComplete())
+		{
+			DecomposeMeshToHullsAsync->Release();
+			DecomposeMeshToHullsAsync = nullptr;
+			GConvexDecompositionNotificationState->IsActive = false;
+		}
+		else if (GConvexDecompositionNotificationState)
+		{
+			GConvexDecompositionNotificationState->IsActive = true;
+			GConvexDecompositionNotificationState->Status = DecomposeMeshToHullsAsync->GetCurrentStatus();
+		}
+	}
+#endif
+}
+
+TStatId FStaticMeshEditor::GetStatId() const
+{
+	RETURN_QUICK_DECLARE_CYCLE_STAT(FStaticMeshEditor, STATGROUP_TaskGraphTasks);
+}
+
 
 #undef LOCTEXT_NAMESPACE

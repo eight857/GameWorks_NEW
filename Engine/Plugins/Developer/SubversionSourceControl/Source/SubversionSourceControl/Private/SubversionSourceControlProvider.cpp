@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SubversionSourceControlProvider.h"
 #include "HAL/PlatformProcess.h"
@@ -204,6 +204,11 @@ bool FSubversionSourceControlProvider::UsesChangelists() const
 	return false;
 }
 
+bool FSubversionSourceControlProvider::UsesCheckout() const
+{
+	return true;
+}
+
 TSharedPtr<ISubversionSourceControlWorker, ESPMode::ThreadSafe> FSubversionSourceControlProvider::CreateWorker(const FName& InOperationName) const
 {
 	const FGetSubversionSourceControlWorker* Operation = WorkersMap.Find(InOperationName);
@@ -294,7 +299,7 @@ bool FSubversionSourceControlProvider::TestConnection(const FString& RepositoryN
 	// run a command on the server to see check connection.
 	// If our credentials have not been cached then this will fail.
 	TArray<FString> Files;
-	Files.Add(FPaths::GameDir());
+	Files.Add(FPaths::ProjectDir());
 	TArray<class FXmlFile> ResultsXml;
 	TArray<FString> Errors;
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/StereoLayerComponent.h"
 #include "EngineGlobals.h"
@@ -6,7 +6,7 @@
 #include "TextureResource.h"
 #include "Engine/Texture.h"
 #include "IStereoLayers.h"
-#include "IHeadMountedDisplay.h"
+#include "StereoRendering.h"
 
 UStereoLayerComponent::UStereoLayerComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -39,7 +39,7 @@ void UStereoLayerComponent::BeginDestroy()
 	Super::BeginDestroy();
 
 	IStereoLayers* StereoLayers;
-	if (LayerId && GEngine->HMDDevice.IsValid() && (StereoLayers = GEngine->HMDDevice->GetStereoLayers()) != nullptr)
+	if (LayerId && GEngine->StereoRenderingDevice.IsValid() && (StereoLayers = GEngine->StereoRenderingDevice->GetStereoLayers()) != nullptr)
 	{
 		StereoLayers->DestroyLayer(LayerId);
 		LayerId = 0;
@@ -51,7 +51,7 @@ void UStereoLayerComponent::TickComponent(float DeltaTime, enum ELevelTick TickT
 	Super::TickComponent( DeltaTime, TickType, ThisTickFunction );
 
 	IStereoLayers* StereoLayers;
-	if (!GEngine->HMDDevice.IsValid() || (StereoLayers = GEngine->HMDDevice->GetStereoLayers()) == nullptr || !Texture)
+	if (!GEngine->StereoRenderingDevice.IsValid() || (StereoLayers = GEngine->StereoRenderingDevice->GetStereoLayers()) == nullptr || !Texture)
 	{
 		return;
 	}
@@ -103,7 +103,8 @@ void UStereoLayerComponent::TickComponent(float DeltaTime, enum ELevelTick TickT
 			{
 				LayerDsec.LeftTexture = LeftTexture->Resource->TextureRHI;
 			}
-			LayerDsec.CylinderSize = FVector2D(CylinderRadius, CylinderOverlayArc);
+			LayerDsec.CylinderRadius = CylinderRadius; 
+			LayerDsec.CylinderOverlayArc = CylinderOverlayArc;
 			LayerDsec.CylinderHeight = CylinderHeight;
 			
 			LayerDsec.Flags |= (bLiveTexture) ? IStereoLayers::LAYER_FLAG_TEX_CONTINUOUS_UPDATE : 0;

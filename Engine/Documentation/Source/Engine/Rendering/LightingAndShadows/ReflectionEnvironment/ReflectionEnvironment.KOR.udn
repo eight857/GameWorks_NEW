@@ -1,50 +1,12 @@
-﻿INTSourceChangelist:3207745
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title: 리플렉션 인바이언먼트
 Crumbs: %ROOT%, Engine, Engine/Rendering/LightingAndShadows
 Description:국소적 광택 리플렉션을 캡처하여 표시하는 시스템입니다.
 Version: 4.14
+topic-image:reflection_topic.png
 
 [TOC(start:2)]
-
-[VAR:Topic]
-[OBJECT:Topic]
-	[PARAM:image]
-		![%Engine/Rendering/LightingAndShadows/ReflectionEnvironment:title%](%ROOT%/Engine/Rendering/LightingAndShadows/ReflectionEnvironment/reflection_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-	![](%ROOT%/ue4_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-	%Engine/Rendering/LightingAndShadows/ReflectionEnvironment:title%
-	[/PARAM]
-	[PARAM:description]
-	%Engine/Rendering/LightingAndShadows/ReflectionEnvironment:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Rendering/LightingAndShadows/ReflectionEnvironment]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-	[PARAM:image]
-		![%Engine/Rendering/LightingAndShadows/ReflectionEnvironment:title%](%ROOT%/Engine/Rendering/LightingAndShadows/ReflectionEnvironment/reflection_topic.png)
-	[/PARAM]
-	[PARAM:icon]
-	![](%ROOT%/ue4_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-	%Engine/Rendering/LightingAndShadows/ReflectionEnvironment:title%
-	[/PARAM]
-	[PARAM:description]
-	%Engine/Rendering/LightingAndShadows/ReflectionEnvironment:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/Rendering/LightingAndShadows/ReflectionEnvironment]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
 
 [EXCERPT:ReflectionEnv001]
 **Reflection Environment** (반사 환경, 리플렉션 인바이언먼트)란 레벨의 모든 영역에 효율적인 광택 리플렉션을 내는 
@@ -179,6 +141,13 @@ Reflection Environment 작동방식은 여러 지점에서 정적인 레벨을 �
 기본적으로 라이트맵 혼합 기능은 기본적으로 켜져있습니다. 기존 콘텐츠에 영향을 끼친다는 뜻입니다. 부드러운 표면에 리플렉션 누수 현상이 생기는 경우 더욱 확연히 드러나게 됩니다. 이러한 누수 문제를 줄이려면 레벨에 리플렉션 캡처 액터를 추가 배치하면 됩니다. 아니면 **편집** > **프로젝트 세팅** >  **렌더링** > **리플렉션** 에서 **Reduce lightmap mixing on smooth surfaces** (부드러운 표면에 라이트맵 혼합 감소) 옵션을 꺼 예전의 라이트맵 혼합 방식으로 돌아가면 됩니다.
 
 ![](Engine\Rendering\LightingAndShadows\ReflectionEnvironment\Enable_LM_Mixing.png)
+
+UE4 콘솔에서 다음 명령을 통해 라이트맵 믹싱 정도를 미세 조정할 수 있습니다.
+ 
+* **r.ReflectionEnvironmentBeginMixingRoughness (기본값 = 0.1)**
+* **r.ReflectionEnvironmentEndMixingRoughness (기본값 = 0.3)**
+* ** r.ReflectionEnvironmentLightmapMixBasedOnRoughness (기본값 = 1)**
+* **r.ReflectionEnvironmentLightmapMixLargestWeight (기본값 = 1000)**
 
 ## 하이 퀄리티 리플렉션
 
@@ -502,7 +471,8 @@ Reflection Environment 비용은 화면상의 픽셀에 얼마나 많은 캡처�
 월드에 최대로 가능한 리플렉션 캡처 수는 한 번에 341 개입니다.
 
 
-<!-----
+[COMMENT:none]
+---
 [EXCERPT:ReflectionResolution]
 [OBJECT:SliderSequence]
 	[PARAMLITERAL:max]
@@ -531,4 +501,5 @@ Reflection Environment 비용은 화면상의 픽셀에 얼마나 많은 캡처�
 	[/PARAM]
 [/OBJECT]
 [/EXCERPT:ReflectionResolution]
--->
+
+[/COMMENT]

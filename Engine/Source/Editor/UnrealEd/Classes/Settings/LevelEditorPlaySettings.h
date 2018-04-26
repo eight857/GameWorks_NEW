@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -59,6 +59,9 @@ enum EPlayModeType
 	/** Runs a mobile preview in a new process. */
 	PlayMode_InMobilePreview,
 
+	/** Runs a mobile preview targeted to a particular device in a new process. */
+	PlayMode_InTargetedMobilePreview,
+
 	/** Runs a vulkan preview in a new process. */
 	PlayMode_InVulkanPreview,
 
@@ -85,17 +88,23 @@ enum EPlayNetMode
 };
 
 
+/**
+ * Determines whether to build the executable when launching on device. Note the equivalence between these settings and EProjectPackagingBuild.
+ */
 UENUM()
 enum EPlayOnBuildMode
 {
 	/** Always build. */
-	PlayOnBuild_Always UMETA(DisplayName="Always Build"),
+	PlayOnBuild_Always UMETA(DisplayName="Always"),
 
 	/** Never build. */
-	PlayOnBuild_Never UMETA(DisplayName="Never Build"),
+	PlayOnBuild_Never UMETA(DisplayName="Never"),
 
 	/** Build based on project type. */
-	PlayOnBuild_Default UMETA(DisplayName="Only Build Code Projects"),
+	PlayOnBuild_Default UMETA(DisplayName="If project has code, or running a locally built editor"),
+
+	/** Build if we're using a locally built (ie. non-promoted) editor. */
+	PlayOnBuild_IfEditorBuiltLocally UMETA(DisplayName="If running a locally built editor"),
 };
 
 /* Configuration to use when launching on device. */
@@ -173,6 +182,10 @@ public:
 	/** Should Play-in-Viewport respect HMD orientations (default = false) */
 	UPROPERTY(config, EditAnywhere, Category=PlayInEditor, meta=(ToolTip="Whether or not HMD orientation should be used when playing in viewport"))
 	bool ViewportGetsHMDControl;
+
+	/** Should we minimize the editor when VR PIE is clicked (default = true) */
+	UPROPERTY(config, EditAnywhere, Category = PlayInEditor, meta = (ToolTip = "Whether or not the editor is minimized on VR PIE"))
+	bool ShouldMinimizeEditorOnVRPIE;
 
 	/** Whether to automatically recompile blueprints on PIE */
 	UPROPERTY(config, EditAnywhere, Category=PlayInEditor, meta=(ToolTip="Automatically recompile blueprints used by the current level when initiating a Play In Editor session"))
@@ -290,10 +303,14 @@ private:
 	UPROPERTY(config, EditAnywhere, Category=MultiplayerOptions, meta=(ClampMin = "1", UIMin = "1", UIMax = "64"))
 	int32 PlayNumberOfClients;
 
+	/** What port used by the server for simple networking */
+	UPROPERTY(config, EditAnywhere, Category = MultiplayerOptions, meta=(ClampMin="1", UIMin="1", ClampMax="65535"))
+	uint16 ServerPort;
+
 	/** Width to use when spawning additional windows. */
 	UPROPERTY(config, EditAnywhere, Category=MultiplayerOptions)
 	int32 ClientWindowWidth;
-
+	
 	/**
 	 * When running multiple players or a dedicated server the client need to connect to the server, this option sets how they connect
 	 *
@@ -353,6 +370,10 @@ public:
 	void SetPlayNumberOfClients( const int32 InPlayNumberOfClients ) { PlayNumberOfClients = InPlayNumberOfClients; }
 	bool IsPlayNumberOfClientsActive() const { return (PlayNetMode != PIE_Standalone) || RunUnderOneProcess; }
 	bool GetPlayNumberOfClients( int32 &OutPlayNumberOfClients ) const { OutPlayNumberOfClients = PlayNumberOfClients; return IsPlayNumberOfClientsActive(); }
+
+	void SetServerPort(const uint16 InServerPort) { ServerPort = InServerPort; }
+	bool IsServerPortActive() const { return (PlayNetMode != PIE_Standalone) || RunUnderOneProcess; }
+	bool GetServerPort(uint16 &OutServerPort) const { OutServerPort = ServerPort; return IsServerPortActive(); }
 	
 	bool IsAutoConnectToServerActive() const { return PlayNumberOfClients > 1 || PlayNetDedicated; }
 	bool GetAutoConnectToServer(bool &OutAutoConnectToServer) const { OutAutoConnectToServer = AutoConnectToServer; return IsAutoConnectToServerActive(); }
@@ -411,6 +432,9 @@ public:
 	UPROPERTY(config)
 	TEnumAsByte<EPlayModeType> LastExecutedPlayModeType;
 
+	/** The name of the last device that the user ran a play session on. */
+	UPROPERTY(config)
+	FString LastExecutedPIEPreviewDevice;
 public:
 
 	/** Collection of common screen resolutions on mobile phones. */

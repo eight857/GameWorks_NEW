@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreTypes.h"
@@ -43,8 +43,20 @@ struct CORE_API FEditorObjectVersion
 		UPropertryForMeshSectionSerialize,
 		// Adding a version bump for the new fast widget construction in case of problems.
 		FastWidgetTemplates,
-		// Update material thumbnails to be more intelligent on default primitive shape for certian material types
+		// Update material thumbnails to be more intelligent on default primitive shape for certain material types
 		MaterialThumbnailRenderingChanges,
+		// Introducing a new clipping system for Slate/UMG
+		NewSlateClippingSystem,
+		// MovieScene Meta Data added as native Serialization
+		MovieSceneMetaDataSerialization,
+		// Text gathered from properties now adds two variants: a version without the package localization ID (for use at runtime), and a version with it (which is editor-only)
+		GatheredTextEditorOnlyPackageLocId,
+		// Added AlwaysSign to FNumberFormattingOptions
+		AddedAlwaysSignNumberFormattingOption,
+		// Added additional objects that must be serialized as part of this new material feature
+		AddedMaterialSharedInputs,
+		// Added morph target section indices
+		AddedMorphTargetSectionIndices,
 		// -----<new versions can be added above this line>-------------------------------------------------
 		VersionPlusOne,
 		LatestVersion = VersionPlusOne - 1

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // Module includes
 #include "OnlineSharingFacebookCommon.h"
@@ -219,8 +219,13 @@ void FOnlineSharingFacebookCommon::Permissions_HttpComplete(FHttpRequestPtr Http
 		ResponseStr = HttpResponse->GetContentAsString();
 		if (EHttpResponseCodes::IsOk(HttpResponse->GetResponseCode()))
 		{
+#if UE_BUILD_SHIPPING
+			static const FString URL = TEXT("[REDACTED]");
+#else
+			const FString URL = HttpRequest->GetURL();
+#endif
 			UE_LOG(LogOnline, Verbose, TEXT("Permissions request complete. url=%s code=%d response=%s"),
-				*HttpRequest->GetURL(), HttpResponse->GetResponseCode(), *ResponseStr);
+				*URL, HttpResponse->GetResponseCode(), *ResponseStr);
 
 			if (CurrentPermissions.RefreshPermissions(ResponseStr))
 			{

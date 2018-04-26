@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/WidgetAnimation.h"
 #include "UObject/Package.h"
@@ -134,15 +134,20 @@ bool UWidgetAnimation::CanPossessObject(UObject& Object, UObject* InPlaybackCont
 	return (Object.IsA<UVisual>() && Object.IsIn(PreviewWidget));
 }
 
-void UWidgetAnimation::LocateBoundObjects(const FGuid& ObjectId, UObject* Context, TArray<UObject*, TInlineAllocator<1>>& OutObjects) const
+void UWidgetAnimation::LocateBoundObjects(const FGuid& ObjectId, UObject* InContext, TArray<UObject*, TInlineAllocator<1>>& OutObjects) const
 {
+	if (InContext == nullptr)
+	{
+		return;
+	}
+
 	const FWidgetAnimationBinding* Binding = AnimationBindings.FindByPredicate(
 		[ObjectId](const FWidgetAnimationBinding& In){
 			return In.AnimationGuid == ObjectId;
 		}
 	);
 
-	UUserWidget* PreviewWidget = CastChecked<UUserWidget>(Context);
+	UUserWidget* PreviewWidget = CastChecked<UUserWidget>(InContext);
 	UObject* FoundObject = Binding ? Binding->FindRuntimeObject(*PreviewWidget->WidgetTree, *PreviewWidget) : nullptr;
 
 	if (FoundObject)

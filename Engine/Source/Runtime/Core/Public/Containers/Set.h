@@ -1,11 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreTypes.h"
 #include "Misc/AssertionMacros.h"
 #include "Templates/UnrealTypeTraits.h"
-#include "Templates/AlignOf.h"
 #include "Templates/UnrealTemplate.h"
 #include "Containers/ContainerAllocationPolicies.h"
 #include "Templates/Sorting.h"
@@ -16,6 +15,8 @@
 #include <initializer_list>
 #include "Templates/TypeHash.h"
 #include "Containers/SparseArray.h"
+#include "Templates/AreTypesEqual.h"
+#include "Templates/Decay.h"
 
 /**
  * The base KeyFuncs type with some useful definitions for all KeyFuncs; meant to be derived from instead of used directly.
@@ -159,16 +160,15 @@ public:
 	{}
 
 	/** Initialization constructor. */
-	template <typename InitType> FORCEINLINE TSetElement(const InitType&  InValue) : Value(         InValue ) {}
-	template <typename InitType> FORCEINLINE TSetElement(      InitType&& InValue) : Value(MoveTemp(InValue)) {}
+	template <typename InitType, typename = typename TEnableIf<!TAreTypesEqual<TSetElement, typename TDecay<InitType>::Type>::Value>::Type> explicit FORCEINLINE TSetElement(InitType&& InValue) : Value(Forward<InitType>(InValue)) {}
 
 	/** Copy/move constructors */
-	FORCEINLINE TSetElement(const TSetElement&  Rhs) : Value(         Rhs.Value ), HashNextId(         Rhs.HashNextId ), HashIndex(Rhs.HashIndex) {}
-	FORCEINLINE TSetElement(      TSetElement&& Rhs) : Value(MoveTemp(Rhs.Value)), HashNextId(MoveTemp(Rhs.HashNextId)), HashIndex(Rhs.HashIndex) {}
+	FORCEINLINE TSetElement(const TSetElement&  Rhs) : Value(                   Rhs.Value ), HashNextId(         Rhs.HashNextId ), HashIndex(Rhs.HashIndex) {}
+	FORCEINLINE TSetElement(      TSetElement&& Rhs) : Value(MoveTempIfPossible(Rhs.Value)), HashNextId(MoveTemp(Rhs.HashNextId)), HashIndex(Rhs.HashIndex) {}
 
 	/** Copy/move assignment */
-	FORCEINLINE TSetElement& operator=(const TSetElement&  Rhs) { Value =          Rhs.Value ; HashNextId =          Rhs.HashNextId ; HashIndex = Rhs.HashIndex; return *this; }
-	FORCEINLINE TSetElement& operator=(      TSetElement&& Rhs) { Value = MoveTemp(Rhs.Value); HashNextId = MoveTemp(Rhs.HashNextId); HashIndex = Rhs.HashIndex; return *this; }
+	FORCEINLINE TSetElement& operator=(const TSetElement&  Rhs) { Value =                    Rhs.Value ; HashNextId =          Rhs.HashNextId ; HashIndex = Rhs.HashIndex; return *this; }
+	FORCEINLINE TSetElement& operator=(      TSetElement&& Rhs) { Value = MoveTempIfPossible(Rhs.Value); HashNextId = MoveTemp(Rhs.HashNextId); HashIndex = Rhs.HashIndex; return *this; }
 
 	/** Serializer. */
 	FORCEINLINE friend FArchive& operator<<(FArchive& Ar,TSetElement& Element)
@@ -471,8 +471,8 @@ public:
 	 * @param	bIsAlreadyInSetPtr	[out]	Optional pointer to bool that will be set depending on whether element is already in set
 	 * @return	A pointer to the element stored in the set.
 	 */
-	FORCEINLINE FSetElementId Add(const InElementType&  InElement, bool* bIsAlreadyInSetPtr = NULL) { return Emplace(         InElement , bIsAlreadyInSetPtr); }
-	FORCEINLINE FSetElementId Add(      InElementType&& InElement, bool* bIsAlreadyInSetPtr = NULL) { return Emplace(MoveTemp(InElement), bIsAlreadyInSetPtr); }
+	FORCEINLINE FSetElementId Add(const InElementType&  InElement, bool* bIsAlreadyInSetPtr = NULL) { return Emplace(                   InElement , bIsAlreadyInSetPtr); }
+	FORCEINLINE FSetElementId Add(      InElementType&& InElement, bool* bIsAlreadyInSetPtr = NULL) { return Emplace(MoveTempIfPossible(InElement), bIsAlreadyInSetPtr); }
 
 	/**
 	 * Adds an element to the set.
@@ -547,7 +547,7 @@ public:
 		Reserve(Elements.Num() + InElements.Num());
 		for (ElementType& Element : InElements)
 		{
-			Add(MoveTemp(Element));
+			Add(MoveTempIfPossible(Element));
 		}
 		InElements.Reset();
 	}
@@ -572,7 +572,7 @@ public:
 		Reserve(Elements.Num() + OtherSet.Num());
 		for (ElementType& Element : OtherSet)
 		{
-			Add(MoveTemp(Element));
+			Add(MoveTempIfPossible(Element));
 		}
 		OtherSet.Reset();
 	}
@@ -1051,7 +1051,7 @@ private:
 	}
 
 	/** The base type of whole set iterators. */
-	template<bool bConst>
+	template<bool bConst, bool bRangedFor = false>
 	class TBaseIterator
 	{
 	private:
@@ -1060,7 +1060,11 @@ private:
 		typedef typename TChooseClass<bConst,const ElementType,ElementType>::Result ItElementType;
 
 	public:
-		typedef typename TChooseClass<bConst,typename ElementArrayType::TConstIterator,typename ElementArrayType::TIterator>::Result ElementItType;
+		typedef typename TChooseClass<
+			bConst,
+			typename TChooseClass<bRangedFor, typename ElementArrayType::TRangedForConstIterator, typename ElementArrayType::TConstIterator>::Result,
+			typename TChooseClass<bRangedFor, typename ElementArrayType::TRangedForIterator,      typename ElementArrayType::TIterator     >::Result
+		>::Result ElementItType;
 
 		FORCEINLINE TBaseIterator(const ElementItType& InElementIt)
 			: ElementIt(InElementIt)
@@ -1185,11 +1189,6 @@ public:
 		friend class TSet;
 
 	public:
-		FORCEINLINE TConstIterator(const typename TBaseIterator<true>::ElementItType& InElementId)
-			: TBaseIterator<true>(InElementId)
-		{
-		}
-
 		FORCEINLINE TConstIterator(const TSet& InSet)
 			: TBaseIterator<true>(begin(InSet.Elements))
 		{
@@ -1202,12 +1201,6 @@ public:
 		friend class TSet;
 
 	public:
-		FORCEINLINE TIterator(TSet& InSet, const typename TBaseIterator<false>::ElementItType& InElementId)
-			: TBaseIterator<false>(InElementId)
-			, Set                 (InSet)
-		{
-		}
-
 		FORCEINLINE TIterator(TSet& InSet)
 			: TBaseIterator<false>(begin(InSet.Elements))
 			, Set                 (InSet)
@@ -1223,7 +1216,10 @@ public:
 	private:
 		TSet& Set;
 	};
-	
+
+	using TRangedForConstIterator = TBaseIterator<true, true>;
+	using TRangedForIterator      = TBaseIterator<false, true>;
+
 	/** Used to iterate over the elements of a const TSet. */
 	class TConstKeyIterator : public TBaseKeyIterator<true>
 	{
@@ -1269,15 +1265,16 @@ private:
 	 * DO NOT USE DIRECTLY
 	 * STL-like iterators to enable range-based for loop support.
 	 */
-	FORCEINLINE friend TIterator      begin(      TSet& Set) { return TIterator     (Set, begin(Set.Elements)); }
-	FORCEINLINE friend TConstIterator begin(const TSet& Set) { return TConstIterator(     begin(Set.Elements)); }
-	FORCEINLINE friend TIterator      end  (      TSet& Set) { return TIterator     (Set, end  (Set.Elements)); }
-	FORCEINLINE friend TConstIterator end  (const TSet& Set) { return TConstIterator(     end  (Set.Elements)); }
+	FORCEINLINE friend TRangedForIterator      begin(      TSet& Set) { return TRangedForIterator     (begin(Set.Elements)); }
+	FORCEINLINE friend TRangedForConstIterator begin(const TSet& Set) { return TRangedForConstIterator(begin(Set.Elements)); }
+	FORCEINLINE friend TRangedForIterator      end  (      TSet& Set) { return TRangedForIterator     (end  (Set.Elements)); }
+	FORCEINLINE friend TRangedForConstIterator end  (const TSet& Set) { return TRangedForConstIterator(end  (Set.Elements)); }
 };
 
 template<typename ElementType, typename KeyFuncs, typename Allocator>
 struct TContainerTraits<TSet<ElementType, KeyFuncs, Allocator> > : public TContainerTraitsBase<TSet<ElementType, KeyFuncs, Allocator> >
 {
+	static_assert(TAllocatorTraits<typename Allocator::HashAllocator>::SupportsMove, "TSet no longer supports move-unaware allocators");
 	enum { MoveWillEmptyContainer =
 		TContainerTraits<typename TSet<ElementType, KeyFuncs, Allocator>::ElementArrayType>::MoveWillEmptyContainer &&
 		TAllocatorTraits<typename Allocator::HashAllocator>::SupportsMove };
@@ -1305,8 +1302,8 @@ public:
 		// TSetElement<TPair<Key, Value>>
 		FStructBuilder SetElementStruct;
 		Result.ElementOffset     = SetElementStruct.AddMember(ElementSize,           ElementAlignment);
-		Result.HashNextIdOffset  = SetElementStruct.AddMember(sizeof(FSetElementId), ALIGNOF(FSetElementId));
-		Result.HashIndexOffset   = SetElementStruct.AddMember(sizeof(int32),         ALIGNOF(int32));
+		Result.HashNextIdOffset  = SetElementStruct.AddMember(sizeof(FSetElementId), alignof(FSetElementId));
+		Result.HashIndexOffset   = SetElementStruct.AddMember(sizeof(int32),         alignof(int32));
 		Result.Size              = SetElementStruct.GetSize();
 		Result.SparseArrayLayout = FScriptSparseArray::GetScriptLayout(SetElementStruct.GetSize(), SetElementStruct.GetAlignment());
 
@@ -1370,7 +1367,7 @@ public:
 	{
 		check(IsValidIndex(Index));
 
-		auto* ElementBeingRemoved = Elements.GetData(Index, Layout.SparseArrayLayout);
+		void* ElementBeingRemoved = Elements.GetData(Index, Layout.SparseArrayLayout);
 
 		// Remove the element from the hash.
 		for (FSetElementId* NextElementId = &GetTypedHash(GetHashIndexRef(ElementBeingRemoved, Layout)); NextElementId->IsValidId(); NextElementId = &GetHashNextIdRef(Elements.GetData(NextElementId->AsInteger(), Layout.SparseArrayLayout), Layout))
@@ -1442,7 +1439,7 @@ public:
 		}
 	}
 
-	uint8* Find(const void* Element, const FScriptSetLayout& Layout, TFunctionRef<uint32 (const void*)> GetKeyHash, TFunctionRef<bool (const void*, const void*)> EqualityFn)
+	int32 FindIndex(const void* Element, const FScriptSetLayout& Layout, TFunctionRef<uint32 (const void*)> GetKeyHash, TFunctionRef<bool (const void*, const void*)> EqualityFn)
 	{
 		if (Elements.Num())
 		{
@@ -1457,30 +1454,40 @@ public:
 				CurrentElement = (uint8*)Elements.GetData(ElementId, Layout.SparseArrayLayout);
 				if (EqualityFn(Element, CurrentElement))
 				{
-					return CurrentElement;
+					return ElementId;
 				}
 			}
 		}
 
-		return nullptr;
+		return INDEX_NONE;
 	}
 
-	uint8* Add(const void* Element, const FScriptSetLayout& Layout, TFunctionRef<uint32(const void*)> GetKeyHash, TFunctionRef<bool(const void*, const void*)> EqualityFn, TFunctionRef<void(void*)> ConstructFn)
+	void Add(const void* Element, const FScriptSetLayout& Layout, TFunctionRef<uint32(const void*)> GetKeyHash, TFunctionRef<bool(const void*, const void*)> EqualityFn, TFunctionRef<void(void*)> ConstructFn, TFunctionRef<void(void*)> DestructFn)
 	{
-		// Minor efficiency concern: we hash the element both here in the Find() call and below
-		// when we link the new element into the set
-		uint8* ExistingEntry = Find(Element, Layout, GetKeyHash, EqualityFn);
-		if (ExistingEntry == nullptr)
-		{
-			// add the set element
-			FSetElementId	ElementId(AddUninitialized(Layout));
-			void* CurrentElement = Elements.GetData(ElementId, Layout.SparseArrayLayout);
+		// Minor efficiency concern: we hash the element both here and in the FindIndex() call
+		uint32 ElementHash = GetKeyHash(Element);
 
-			ConstructFn(CurrentElement);
+		int32 NewElementIndex = FindIndex(Element, Layout, GetKeyHash, EqualityFn);
+		if (NewElementIndex != INDEX_NONE)
+		{
+			void* ElementPtr = Elements.GetData(NewElementIndex, Layout.SparseArrayLayout);
+
+			DestructFn(ElementPtr);
+			ConstructFn(ElementPtr);
+
+			// We don't update the hash because we don't need to - the new element
+			// should have the same hash, but let's just check.
+			check(ElementHash == GetKeyHash(ElementPtr));
+		}
+		else
+		{
+			NewElementIndex = Elements.AddUninitialized(Layout.SparseArrayLayout);
+
+			void* ElementPtr = Elements.GetData(NewElementIndex, Layout.SparseArrayLayout);
+			ConstructFn(ElementPtr);
 
 			const int32 DesiredHashSize = FDefaultSetAllocator::GetNumberOfHashBuckets(Num());
-			if (!HashSize ||
-				HashSize < DesiredHashSize)
+			if (!HashSize || HashSize < DesiredHashSize)
 			{
 				// rehash, this will link in our new element if needed:
 				Rehash(Layout, GetKeyHash);
@@ -1488,15 +1495,13 @@ public:
 			else
 			{
 				// link the new element into the set:
-				const uint32	ElementHash = GetKeyHash(Element);
-				const int32		HashIndex = ElementHash & (HashSize - 1);
+				int32 HashIndex = ElementHash & (HashSize - 1);
 				FSetElementId& TypedHash = GetTypedHash(HashIndex);
-				GetHashIndexRef(CurrentElement, Layout) = HashIndex;
-				GetHashNextIdRef(CurrentElement, Layout) = TypedHash;
-				TypedHash = ElementId;
+				GetHashIndexRef(ElementPtr, Layout) = HashIndex;
+				GetHashNextIdRef(ElementPtr, Layout) = TypedHash;
+				TypedHash = FSetElementId(NewElementIndex);
 			}
 		}
-		return ExistingEntry;
 	}
 
 private:
@@ -1530,7 +1535,7 @@ private:
 
 		// Check that the class footprint is the same
 		static_assert(sizeof (ScriptType) == sizeof (RealType), "FScriptSet's size doesn't match TSet");
-		static_assert(ALIGNOF(ScriptType) == ALIGNOF(RealType), "FScriptSet's alignment doesn't match TSet");
+		static_assert(alignof(ScriptType) == alignof(RealType), "FScriptSet's alignment doesn't match TSet");
 
 		// Check member sizes
 		static_assert(sizeof(DeclVal<ScriptType>().Elements) == sizeof(DeclVal<RealType>().Elements), "FScriptSet's Elements member size does not match TSet's");

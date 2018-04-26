@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,6 +12,7 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Fonts/FontMeasure.h"
+#include "Styling/CoreStyle.h"
 #include "Framework/Application/SlateApplication.h"
 #include "ProfilerStream.h"
 
@@ -81,22 +82,22 @@ class SProfilerThreadView
 	/** Holds current state provided by OnPaint function, used to simplify drawing. */
 	struct FSlateOnPaintState : public FNoncopyable
 	{
-		FSlateOnPaintState( const FGeometry& InAllottedGeometry, const FSlateRect& InMyClippingRect, FSlateWindowElementList& InOutDrawElements, int32& InLayerId, const FWidgetStyle& InWidgetStyle, ESlateDrawEffect InDrawEffects )
+		FSlateOnPaintState( const FGeometry& InAllottedGeometry, const FSlateRect& InMyCullingRect, FSlateWindowElementList& InOutDrawElements, int32& InLayerId, const FWidgetStyle& InWidgetStyle, ESlateDrawEffect InDrawEffects )
 			: AllottedGeometry( InAllottedGeometry )
-			, AbsoluteClippingRect( InMyClippingRect )
-			, LocalClippingRect( FVector2D::ZeroVector, InAllottedGeometry.Size )
+			, AbsoluteClippingRect( InMyCullingRect )
+			, LocalClippingRect( FVector2D::ZeroVector, InAllottedGeometry.GetLocalSize() )
 			, WidgetStyle( InWidgetStyle )
 			, OutDrawElements( InOutDrawElements )
 			, LayerId( InLayerId )
 			, DrawEffects( InDrawEffects )
 			, FontMeasureService( FSlateApplication::Get().GetRenderer()->GetFontMeasureService() )
-			, SummaryFont8( FPaths::EngineContentDir() / TEXT( "Slate/Fonts/Roboto-Regular.ttf" ), 8 )
+			, SummaryFont8( FCoreStyle::GetDefaultFontStyle("Regular", 8) )
 			, SummaryFont8Height( FontMeasureService->Measure( TEXT( "!" ), SummaryFont8 ).Y )
 		{}
 
 		const FVector2D& Size2D() const
 		{
-			return AllottedGeometry.Size;
+			return AllottedGeometry.GetLocalSize();
 		}
 
 		/** Accessors. */
@@ -135,7 +136,7 @@ public:
 
 	virtual void Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime ) override;
 
-	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
+	virtual int32 OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const override;
 
 	virtual FReply OnMouseButtonDown( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
 

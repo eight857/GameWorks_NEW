@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "K2Node_GetDataTableRow.h"
 #include "Engine/DataTable.h"
@@ -17,14 +17,14 @@
 
 struct UK2Node_GetDataTableRowHelper
 {
-	static FString DataTablePinName;
-	static FString RowNamePinName;
-	static FString RowNotFoundPinName;
+	static FName DataTablePinName;
+	static FName RowNamePinName;
+	static FName RowNotFoundPinName;
 };
 
-FString UK2Node_GetDataTableRowHelper::DataTablePinName(LOCTEXT("DataTablePinName","DataTable").ToString());
-FString UK2Node_GetDataTableRowHelper::RowNotFoundPinName(LOCTEXT("RowNotFoundPinName","RowNotFound").ToString());
-FString UK2Node_GetDataTableRowHelper::RowNamePinName(LOCTEXT("RowNamePinName","RowName").ToString());
+FName UK2Node_GetDataTableRowHelper::DataTablePinName(*LOCTEXT("DataTablePinName","DataTable").ToString());
+FName UK2Node_GetDataTableRowHelper::RowNotFoundPinName(*LOCTEXT("RowNotFoundPinName","RowNotFound").ToString());
+FName UK2Node_GetDataTableRowHelper::RowNamePinName(*LOCTEXT("RowNamePinName","RowName").ToString());
 
 UK2Node_GetDataTableRow::UK2Node_GetDataTableRow(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -37,21 +37,21 @@ void UK2Node_GetDataTableRow::AllocateDefaultPins()
 	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 
 	// Add execution pins
-	CreatePin(EGPD_Input, K2Schema->PC_Exec, TEXT(""), NULL, false, false, K2Schema->PN_Execute);
-	UEdGraphPin* RowFoundPin = CreatePin(EGPD_Output, K2Schema->PC_Exec, TEXT(""), NULL, false, false, K2Schema->PN_Then);
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
+	UEdGraphPin* RowFoundPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
 	RowFoundPin->PinFriendlyName = LOCTEXT("GetDataTableRow Row Found Exec pin", "Row Found");
-	CreatePin(EGPD_Output, K2Schema->PC_Exec, TEXT(""), NULL, false, false, UK2Node_GetDataTableRowHelper::RowNotFoundPinName);
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UK2Node_GetDataTableRowHelper::RowNotFoundPinName);
 
 	// Add DataTable pin
-	UEdGraphPin* DataTablePin = CreatePin(EGPD_Input, K2Schema->PC_Object, TEXT(""), UDataTable::StaticClass(), false, false, UK2Node_GetDataTableRowHelper::DataTablePinName);
+	UEdGraphPin* DataTablePin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, UDataTable::StaticClass(), UK2Node_GetDataTableRowHelper::DataTablePinName);
 	SetPinToolTip(*DataTablePin, LOCTEXT("DataTablePinDescription", "The DataTable you want to retreive a row from"));
 
 	// Row Name pin
-	UEdGraphPin* RowNamePin = CreatePin(EGPD_Input, K2Schema->PC_Name, TEXT(""), NULL, false, false, UK2Node_GetDataTableRowHelper::RowNamePinName);
+	UEdGraphPin* RowNamePin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Name, UK2Node_GetDataTableRowHelper::RowNamePinName);
 	SetPinToolTip(*RowNamePin, LOCTEXT("RowNamePinDescription", "The name of the row to retrieve from the DataTable"));
 
 	// Result pin
-	UEdGraphPin* ResultPin = CreatePin(EGPD_Output, K2Schema->PC_Wildcard, TEXT(""), nullptr, false, false, K2Schema->PN_ReturnValue);
+	UEdGraphPin* ResultPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Wildcard, UEdGraphSchema_K2::PN_ReturnValue);
 	ResultPin->PinFriendlyName = LOCTEXT("GetDataTableRow Output Row", "Out Row");
 	SetPinToolTip(*ResultPin, LOCTEXT("ResultPinDescription", "The returned TableRow, if found"));
 
@@ -149,12 +149,12 @@ void UK2Node_GetDataTableRow::OnDataTableRowListChanged(const UDataTable* DataTa
 	UEdGraphPin* DataTablePin = GetDataTablePin();
 	if (DataTable && DataTablePin && DataTable == DataTablePin->DefaultObject)
 	{
-		auto RowNamePin = GetRowNamePin();
+		UEdGraphPin* RowNamePin = GetRowNamePin();
 		const bool TryRefresh = RowNamePin && !RowNamePin->LinkedTo.Num();
 		const FName CurrentName = RowNamePin ? FName(*RowNamePin->GetDefaultAsString()) : NAME_None;
 		if (TryRefresh && RowNamePin && !DataTable->GetRowNames().Contains(CurrentName))
 		{
-			if (auto BP = GetBlueprint())
+			if (UBlueprint* BP = GetBlueprint())
 			{
 				FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
 			}
@@ -260,7 +260,7 @@ UEdGraphPin* UK2Node_GetDataTableRow::GetThenPin()const
 {
 	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 
-	UEdGraphPin* Pin = FindPinChecked(K2Schema->PN_Then);
+	UEdGraphPin* Pin = FindPinChecked(UEdGraphSchema_K2::PN_Then);
 	check(Pin->Direction == EGPD_Output);
 	return Pin;
 }
@@ -269,17 +269,16 @@ UEdGraphPin* UK2Node_GetDataTableRow::GetDataTablePin(const TArray<UEdGraphPin*>
 {
 	const TArray<UEdGraphPin*>* PinsToSearch = InPinsToSearch ? InPinsToSearch : &Pins;
     
-	UEdGraphPin* Pin = NULL;
-	for( auto PinIt = PinsToSearch->CreateConstIterator(); PinIt; ++PinIt )
+	UEdGraphPin* Pin = nullptr;
+	for (UEdGraphPin* TestPin : *PinsToSearch)
 	{
-		UEdGraphPin* TestPin = *PinIt;
-		if( TestPin && TestPin->PinName == UK2Node_GetDataTableRowHelper::DataTablePinName)
+		if (TestPin && TestPin->PinName == UK2Node_GetDataTableRowHelper::DataTablePinName)
 		{
 			Pin = TestPin;
 			break;
 		}
 	}
-	check(Pin == NULL || Pin->Direction == EGPD_Input);
+	check(Pin == nullptr || Pin->Direction == EGPD_Input);
 	return Pin;
 }
 
@@ -301,7 +300,7 @@ UEdGraphPin* UK2Node_GetDataTableRow::GetResultPin() const
 {
 	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 
-	UEdGraphPin* Pin = FindPinChecked(K2Schema->PN_ReturnValue);
+	UEdGraphPin* Pin = FindPinChecked(UEdGraphSchema_K2::PN_ReturnValue);
 	check(Pin->Direction == EGPD_Output);
 	return Pin;
 }
@@ -343,8 +342,6 @@ void UK2Node_GetDataTableRow::ExpandNode(class FKismetCompilerContext& CompilerC
 {
     Super::ExpandNode(CompilerContext, SourceGraph);
     
-	const UEdGraphSchema_K2* Schema = CompilerContext.GetSchema();
-        
     UEdGraphPin* OriginalDataTableInPin = GetDataTablePin();
     UDataTable* Table = (OriginalDataTableInPin != NULL) ? Cast<UDataTable>(OriginalDataTableInPin->DefaultObject) : NULL;
     if((nullptr == OriginalDataTableInPin) || (0 == OriginalDataTableInPin->LinkedTo.Num() && nullptr == Table))
@@ -378,9 +375,9 @@ void UK2Node_GetDataTableRow::ExpandNode(class FKismetCompilerContext& CompilerC
 	CompilerContext.MovePinLinksToIntermediate(*GetRowNamePin(), *RowNameInPin);
 
 	// Get some pins to work with
-	UEdGraphPin* OriginalOutRowPin = FindPinChecked(Schema->PN_ReturnValue);
+	UEdGraphPin* OriginalOutRowPin = FindPinChecked(UEdGraphSchema_K2::PN_ReturnValue);
 	UEdGraphPin* FunctionOutRowPin = GetDataTableRowFunction->FindPinChecked(TEXT("OutRow"));
-    UEdGraphPin* FunctionReturnPin = GetDataTableRowFunction->FindPinChecked(Schema->PN_ReturnValue);
+    UEdGraphPin* FunctionReturnPin = GetDataTableRowFunction->FindPinChecked(UEdGraphSchema_K2::PN_ReturnValue);
     UEdGraphPin* FunctionThenPin = GetDataTableRowFunction->GetThenPin();
         
     // Set the type of the OutRow pin on this expanded mode to match original
@@ -418,8 +415,10 @@ void UK2Node_GetDataTableRow::PostReconstructNode()
 
 void UK2Node_GetDataTableRow::EarlyValidation(class FCompilerResultsLog& MessageLog) const
 {
-	const auto DataTablePin = GetDataTablePin();
-	const auto RowNamePin = GetRowNamePin();
+	Super::EarlyValidation(MessageLog);
+
+	const UEdGraphPin* DataTablePin = GetDataTablePin();
+	const UEdGraphPin* RowNamePin = GetRowNamePin();
 	if (!DataTablePin || !RowNamePin)
 	{
 		MessageLog.Error(*LOCTEXT("MissingPins", "Missing pins in @@").ToString(), this);
@@ -428,7 +427,7 @@ void UK2Node_GetDataTableRow::EarlyValidation(class FCompilerResultsLog& Message
 
 	if (DataTablePin->LinkedTo.Num() == 0)
 	{
-		const auto DataTable = Cast<UDataTable>(DataTablePin->DefaultObject);
+		const UDataTable* DataTable = Cast<UDataTable>(DataTablePin->DefaultObject);
 		if (!DataTable)
 		{
 			MessageLog.Error(*LOCTEXT("NoDataTable", "No DataTable in @@").ToString(), this);
@@ -440,15 +439,30 @@ void UK2Node_GetDataTableRow::EarlyValidation(class FCompilerResultsLog& Message
 			const FName CurrentName = FName(*RowNamePin->GetDefaultAsString());
 			if (!DataTable->GetRowNames().Contains(CurrentName))
 			{
-				const FString Msg = FString::Printf(
-					*LOCTEXT("WronRowName", "'%s' row name is not stored in '%s'. @@").ToString()
-					, *CurrentName.ToString()
-					, *GetFullNameSafe(DataTable));
+				const FString Msg = FText::Format(
+					LOCTEXT("WrongRowNameFmt", "'{0}' row name is not stored in '{1}'. @@"),
+					FText::FromString(CurrentName.ToString()),
+					FText::FromString(GetFullNameSafe(DataTable))
+				).ToString();
 				MessageLog.Error(*Msg, this);
 				return;
 			}
 		}
 	}	
+}
+
+void UK2Node_GetDataTableRow::PreloadRequiredAssets()
+{
+	if (UEdGraphPin* DataTablePin = GetDataTablePin())
+	{
+		if (UDataTable* DataTable = Cast<UDataTable>(DataTablePin->DefaultObject))
+		{
+			// make sure to properly load the data-table object so that we can 
+			// farm the "RowStruct" property from it (below, in GetDataTableRowStructType)
+			PreloadObject(DataTable);
+		}
+	}
+	return Super::PreloadRequiredAssets();
 }
 
 void UK2Node_GetDataTableRow::NotifyPinConnectionListChanged(UEdGraphPin* Pin)

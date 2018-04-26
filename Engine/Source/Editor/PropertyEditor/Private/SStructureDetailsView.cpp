@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SStructureDetailsView.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
@@ -226,11 +226,6 @@ void SStructureDetailsView::ForceRefresh()
 	SetStructureData(StructData);
 }
 
-void SStructureDetailsView::AddExternalRootPropertyNode(TSharedRef<FPropertyNode> ExternalRootNode)
-{
-	ExternalRootPropertyNodes.Add( ExternalRootNode );
-}
-
 void SStructureDetailsView::ClearSearch()
 {
 	CurrentFilter.FilterStrings.Empty();
@@ -287,16 +282,6 @@ EVisibility SStructureDetailsView::GetPropertyEditingVisibility() const
 {
 	const FStructurePropertyNode* RootNode = GetRootNode().IsValid() ? GetRootNode()->AsStructureNode() : nullptr;
 	return StructData.IsValid() && StructData->IsValid() && RootNode && RootNode->HasValidStructData() ? EVisibility::Visible : EVisibility::Collapsed;
-}
-
-void SStructureDetailsView::RegisterInstancedCustomPropertyLayout(UStruct* Class, FOnGetDetailCustomizationInstance DetailLayoutDelegate)
-{
-	RegisterInstancedCustomPropertyLayoutInternal(Class, DetailLayoutDelegate);
-}
-
-void SStructureDetailsView::UnregisterInstancedCustomPropertyLayout(UStruct* Class)
-{
-	UnregisterInstancedCustomPropertyLayoutInternal(Class);
 }
 
 #undef LOCTEXT_NAMESPACE

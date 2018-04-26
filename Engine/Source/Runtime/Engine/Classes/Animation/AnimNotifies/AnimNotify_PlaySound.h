@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -24,6 +24,9 @@ public:
 	// Begin UAnimNotify interface
 	virtual FString GetNotifyName_Implementation() const override;
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) override;
+#if WITH_EDITOR
+	virtual void ValidateAssociatedAssets() override;
+#endif
 	// End UAnimNotify interface
 
 	// Sound to Play
@@ -39,7 +42,7 @@ public:
 	float PitchMultiplier;
 
 	// If this sound should follow its owner
-	UPROPERTY(EditAnywhere, Category = "AnimNotify")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AnimNotify")
 	uint32 bFollow:1;
 
 	// Socket or bone name to attach sound to

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,6 +9,7 @@
 #include "CustomBoneIndexArray.h"
 #include "AnimEncoding.h"
 #include "Animation/AnimStats.h"
+#include "Misc/Base64.h"
 
 struct FBoneTransform
 {
@@ -117,6 +118,11 @@ template <typename InAllocator>
 struct FBaseCompactPose : FBasePose<FCompactPoseBoneIndex, InAllocator>
 {
 public:
+
+	FBaseCompactPose()
+		: BoneContainer(nullptr)
+	{}
+
 	typedef FCompactPoseBoneIndex BoneIndexType;
 	typedef InAllocator   Allocator;
 	//--------------------------------------------------------------------------
@@ -154,6 +160,12 @@ public:
 		check(InBoneContainer && InBoneContainer->IsValid());
 		BoneContainer = InBoneContainer;
 		this->InitBones(BoneContainer->GetBoneIndicesArray().Num());
+	}
+
+	void CopyAndAssignBoneContainer(FBoneContainer& NewBoneContainer)
+	{
+		NewBoneContainer = *BoneContainer;
+		BoneContainer = &NewBoneContainer;
 	}
 
 	void InitFrom(const FBaseCompactPose& SrcPose)
@@ -200,6 +212,12 @@ public:
 		DestPoseBones = this->Bones;
 	}
 
+	void Empty()
+	{
+		BoneContainer = nullptr;
+		this->Bones.Empty();
+	}
+
 	// Sets this pose to its ref pose
 	void ResetToRefPose()
 	{
@@ -210,7 +228,7 @@ public:
 	void ResetToRefPose(const FBoneContainer& RequiredBones)
 	{
 		const TArray<FTransform>& RefPoseCompactArray = RequiredBones.GetRefPoseCompactArray();
-		this->Bones.Reset();
+		this->Bones.Reset(RefPoseCompactArray.Num());
 		this->Bones.Append(RefPoseCompactArray);
 
 		// If retargeting is disabled, copy ref pose from Skeleton, rather than mesh.
@@ -445,6 +463,19 @@ struct FCSPose
 		ComponentSpaceFlags = SrcPose.GetComponentSpaceFlags();
 	}
 
+	void CopyAndAssignBoneContainer(FBoneContainer& NewBoneContainer)
+	{
+		Pose.CopyAndAssignBoneContainer(NewBoneContainer);
+	}
+
+	void Empty()
+	{
+		Pose.Empty();
+		ComponentSpaceFlags.Empty();
+		BonesToConvert.Empty();
+		BoneMask.Empty();
+	}
+
 	const PoseType& GetPose() const { return Pose; }
 	const TCustomBoneIndexArray<uint8, BoneIndexType>& GetComponentSpaceFlags() const { return ComponentSpaceFlags; }
 
@@ -573,7 +604,24 @@ void FCSPose<PoseType>::CalculateComponentSpaceTransform(BoneIndexType BoneIndex
 	check(!Pose[ParentIndex].ContainsNaN());
 
 	FTransform ComponentTransform = Pose[BoneIndex] * Pose[ParentIndex];
-	check(!ComponentTransform.ContainsNaN());
+	if (ComponentTransform.ContainsNaN())
+	{
+		// We've failed, output as much info as we can....
+		// Added for Jira UE-55511
+		auto BoolToStr = [](const bool& bValue) { return bValue ? TEXT("true") : TEXT("false"); };
+		
+		const TCHAR* BoneHasNaN = BoolToStr(Pose[BoneIndex].ContainsNaN());
+		const TCHAR* ParentHasNaN = BoolToStr(Pose[ParentIndex].ContainsNaN());
+		FString ErrorMsg = FString(TEXT("NaN created in during FTransform Multiplication\n"));
+		ErrorMsg += FString::Format(TEXT("\tBoneIndex {0} : ParentBoneIndex {1} BoneTransformNaN={2} : ParentTransformNaN={3}\n"), { BoneIndex.GetInt(), ParentIndex.GetInt(), BoneHasNaN, ParentHasNaN });
+		ErrorMsg += FString::Format(TEXT("\tBone {0}\n"), { Pose[BoneIndex].ToString() });
+		ErrorMsg += FString::Format(TEXT("\tParent {0}\n"), { Pose[ParentIndex].ToString() });
+		ErrorMsg += FString::Format(TEXT("\tResult {0}\n"), { ComponentTransform.ToString() });
+		ErrorMsg += FString::Format(TEXT("\tBone B64 {0}\n"), { FBase64::Encode((uint8*)&Pose[BoneIndex], sizeof(FTransform)) });
+		ErrorMsg += FString::Format(TEXT("\tParent B64 {0}\n"), { FBase64::Encode((uint8*)&Pose[ParentIndex], sizeof(FTransform)) });
+		ErrorMsg += FString::Format(TEXT("\tResult B64 {0}\n"), { FBase64::Encode((uint8*)&ComponentTransform, sizeof(FTransform)) });
+		checkf(false, TEXT("Error during CalculateComponentSpaceTransform\n%s"), *ErrorMsg); // Failed during multiplication
+	}
 	Pose[BoneIndex] = ComponentTransform;
 	Pose[BoneIndex].NormalizeRotation();
 	check(!Pose[BoneIndex].ContainsNaN());
@@ -796,18 +844,21 @@ void FCSPose<PoseType>::ConvertToLocalPoses(PoseType& OutPose) const
 	// that doesn't mean this local has to change
 	// go from child to parent since I need parent inverse to go back to local
 	// root is same, so no need to do Index == 0
-	for (const BoneIndexType BoneIndex : Pose.ForEachBoneIndexReverse())
+	const BoneIndexType RootBoneIndex(0);
+	if (ComponentSpaceFlags[RootBoneIndex])
 	{
-		if (!BoneIndex.IsRootBone())
-		{
-			// root is already verified, so root should not come here
-			if (ComponentSpaceFlags[BoneIndex])
-			{
-				const FCompactPoseBoneIndex ParentIndex = Pose.GetParentBoneIndex(BoneIndex);
+		OutPose[RootBoneIndex] = Pose[RootBoneIndex];
+	}
 
-				OutPose[BoneIndex].SetToRelativeTransform(OutPose[ParentIndex]);
-				OutPose[BoneIndex].NormalizeRotation();
-			}
+	const int32 NumBones = Pose.GetNumBones();
+	for (int32 Index = NumBones - 1; Index > 0; Index--)
+	{
+		const BoneIndexType BoneIndex(Index);
+		if (ComponentSpaceFlags[BoneIndex])
+		{
+			const BoneIndexType ParentIndex = Pose.GetParentBoneIndex(BoneIndex);
+			OutPose[BoneIndex].SetToRelativeTransform(OutPose[ParentIndex]);
+			OutPose[BoneIndex].NormalizeRotation();
 		}
 	}
 }

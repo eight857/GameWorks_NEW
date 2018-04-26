@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MetalConstantBuffer.cpp: Metal Constant buffer implementation.
@@ -100,7 +100,7 @@ void InitFrame_UniformBufferPoolCleanup()
 
 	SCOPE_CYCLE_COUNTER(STAT_MetalUniformBufferCleanupTime);
 	
-	if(GUseRHIThread)
+	if(IsRunningRHIInSeparateThread())
 	{
 		GMutex.Lock();
 	}
@@ -125,7 +125,7 @@ void InitFrame_UniformBufferPoolCleanup()
 		SafeUniformBufferPools[SafeFrameIndex][BucketIndex].Reset();
 	}
 	
-	if(GUseRHIThread)
+	if(IsRunningRHIInSeparateThread())
 	{
 		GMutex.Unlock();
 	}
@@ -135,7 +135,7 @@ void AddNewlyFreedBufferToUniformBufferPool(id<MTLBuffer> Buffer, uint32 Offset,
 {
 	check(Buffer);
 
-	if(GUseRHIThread)
+	if(IsRunningRHIInSeparateThread())
 	{
 		GMutex.Lock();
 	}
@@ -154,7 +154,7 @@ void AddNewlyFreedBufferToUniformBufferPool(id<MTLBuffer> Buffer, uint32 Offset,
 	INC_DWORD_STAT(STAT_MetalNumFreeUniformBuffers);
 	INC_MEMORY_STAT_BY(STAT_MetalFreeUniformBufferMemory, Buffer.length);
 	
-	if(GUseRHIThread)
+	if(IsRunningRHIInSeparateThread())
 	{
 		GMutex.Unlock();
 	}
@@ -189,14 +189,14 @@ FMetalUniformBuffer::FMetalUniformBuffer(const void* Contents, const FRHIUniform
 			INC_DWORD_STAT_BY(STAT_MetalUniformMemAlloc, Layout.ConstantBufferSize);
 
 			// Anything less than the buffer page size - currently 4Kb - is better off going through the set*Bytes API if available.
-			if (Layout.ConstantBufferSize < MetalBufferPageSize)
+			if (Layout.ConstantBufferSize < MetalBufferPageSize && (PLATFORM_MAC || Layout.ConstantBufferSize < 512))
 			{
-				Data = [[NSData alloc] initWithBytes:Contents length:Layout.ConstantBufferSize];
+				Data = [[FMetalBufferData alloc] initWithBytes:Contents length:Layout.ConstantBufferSize];
 			}
 			else
 			{
 				// for single use buffers, allocate from the ring buffer to avoid thrashing memory
-				if (Usage == UniformBuffer_SingleDraw && !GUseRHIThread) // @todo Make this properly RHIThread safe.
+				if (Usage == UniformBuffer_SingleDraw && !IsRunningRHIInSeparateThread()) // @todo Make this properly RHIThread safe.
 				{
 					// use a bit of the ring buffer
 					Offset = GetMetalDeviceContext().AllocateFromRingBuffer(Layout.ConstantBufferSize);
@@ -205,7 +205,7 @@ FMetalUniformBuffer::FMetalUniformBuffer(const void* Contents, const FRHIUniform
 				else
 				{
 					// Find the appropriate bucket based on size
-					if(GUseRHIThread)
+					if(IsRunningRHIInSeparateThread())
 					{
 						GMutex.Lock();
 					}
@@ -237,7 +237,7 @@ FMetalUniformBuffer::FMetalUniformBuffer(const void* Contents, const FRHIUniform
 					}
 #endif
 					
-					if(GUseRHIThread)
+					if(IsRunningRHIInSeparateThread())
 					{
 						GMutex.Unlock();
 					}
@@ -279,7 +279,7 @@ FMetalUniformBuffer::~FMetalUniformBuffer()
 	INC_DWORD_STAT_BY(STAT_MetalUniformMemFreed, Size);
 	
 	// don't need to free the ring buffer!
-	if (GIsRHIInitialized && Buffer != nil && !(Usage == UniformBuffer_SingleDraw && !GUseRHIThread))
+	if (GIsRHIInitialized && Buffer != nil && !(Usage == UniformBuffer_SingleDraw && !IsRunningRHIInSeparateThread()))
 	{
 		check(Size <= 65536);
 		AddNewlyFreedBufferToUniformBufferPool(Buffer, Offset, Size);
@@ -294,7 +294,7 @@ void const* FMetalUniformBuffer::GetData()
 {
 	if (Data)
 	{
-		return Data.bytes;
+		return Data->Data;
 	}
 	else if (Buffer)
 	{

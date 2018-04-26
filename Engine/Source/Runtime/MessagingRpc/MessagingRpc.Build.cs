@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -6,33 +6,30 @@ namespace UnrealBuildTool.Rules
 	{
 		public MessagingRpc(ReadOnlyTargetRules Target) : base(Target)
 		{
-            DynamicallyLoadedModuleNames.AddRange(
-                new string[]
-                {
-                    "Messaging",
-                }
-            );
+			DynamicallyLoadedModuleNames.AddRange(
+				new string[]
+				{
+					"Messaging",
+				});
 
 			PublicDependencyModuleNames.AddRange(
 				new string[]
 				{
 					"Core",
 					"CoreUObject",
-				}
-			);
+				});
 
-            PrivateIncludePathModuleNames.AddRange(
-                new string[]
-                {
-                    "Messaging",
-                }
-            );
+			PrivateIncludePathModuleNames.AddRange(
+				new string[]
+				{
+					"Messaging",
+					"MessagingCommon",
+				});
 
 			PrivateIncludePaths.AddRange(
 				new string[] {
 					"Runtime/MessagingRpc/Private",
-				}
-			);
+				});
 		}
 	}
 }

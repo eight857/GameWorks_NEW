@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	RHICommandListCommandExecutes.inl: RHI Command List execute functions.
@@ -253,7 +253,7 @@ void FRHICommandSetBlendFactor::Execute(FRHICommandListBase& CmdList)
 void FRHICommandSetStreamSource::Execute(FRHICommandListBase& CmdList)
 {
 	RHISTAT(SetStreamSource);
-	INTERNAL_DECORATOR(RHISetStreamSource)(StreamIndex, VertexBuffer, Stride, Offset);
+	INTERNAL_DECORATOR(RHISetStreamSource)(StreamIndex, VertexBuffer, Offset);
 }
 
 void FRHICommandSetViewport::Execute(FRHICommandListBase& CmdList)
@@ -265,13 +265,51 @@ void FRHICommandSetViewport::Execute(FRHICommandListBase& CmdList)
 void FRHICommandSetStereoViewport::Execute(FRHICommandListBase& CmdList)
 {
 	RHISTAT(SetStereoViewport);
-	INTERNAL_DECORATOR(RHISetStereoViewport)(LeftMinX, RightMinX, MinY, MinZ, LeftMaxX, RightMaxX, MaxY, MaxZ);
+	INTERNAL_DECORATOR(RHISetStereoViewport)(LeftMinX, RightMinX, LeftMinY, RightMinY, MinZ, LeftMaxX, RightMaxX, LeftMaxY, RightMaxY, MaxZ);
 }
 
 void FRHICommandSetScissorRect::Execute(FRHICommandListBase& CmdList)
 {
 	RHISTAT(SetScissorRect);
 	INTERNAL_DECORATOR(RHISetScissorRect)(bEnable, MinX, MinY, MaxX, MaxY);
+}
+
+void FRHICommandBeginRenderPass::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(BeginRenderPass);
+	check(!LocalRenderPass->RenderPass.GetReference());
+	LocalRenderPass->RenderPass = INTERNAL_DECORATOR(RHIBeginRenderPass)(Info, Name);
+}
+
+void FRHICommandEndRenderPass::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(EndRenderPass);
+	check(LocalRenderPass->RenderPass.GetReference());
+	INTERNAL_DECORATOR(RHIEndRenderPass)(LocalRenderPass->RenderPass);
+}
+
+void FRHICommandBeginParallelRenderPass::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(BeginParallelRenderPass);
+	LocalRenderPass->RenderPass = INTERNAL_DECORATOR(RHIBeginParallelRenderPass)(Info, Name);
+}
+
+void FRHICommandEndParallelRenderPass::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(EndParallelRenderPass);
+	INTERNAL_DECORATOR(RHIEndParallelRenderPass)(LocalRenderPass->RenderPass);
+}
+
+void FRHICommandBeginRenderSubPass::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(BeginRenderSubPass);
+	LocalRenderSubPass->RenderSubPass = INTERNAL_DECORATOR(RHIBeginRenderSubPass)(LocalRenderPass->RenderPass);
+}
+
+void FRHICommandEndRenderSubPass::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(EndRenderSubPass);
+	INTERNAL_DECORATOR(RHIEndRenderSubPass)(LocalRenderPass->RenderPass, LocalRenderSubPass->RenderSubPass);
 }
 
 void FRHICommandSetRenderTargets::Execute(FRHICommandListBase& CmdList)
@@ -424,6 +462,12 @@ void FRHICommandCopyToResolveTarget::Execute(FRHICommandListBase& CmdList)
 	INTERNAL_DECORATOR(RHICopyToResolveTarget)(SourceTexture, DestTexture, bKeepOriginalSurface, ResolveParams);
 }
 
+void FRHICommandCopyTexture::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(CopyToResolveTarget);
+	INTERNAL_DECORATOR(RHICopyTexture)(SourceTexture, DestTexture, ResolveParams);
+}
+
 void FRHICommandTransitionTextures::Execute(FRHICommandListBase& CmdList)
 {
 	RHISTAT(TransitionTextures);
@@ -463,32 +507,9 @@ void FRHICommandWaitComputeFence<CmdListType>::Execute(FRHICommandListBase& CmdL
 template struct FRHICommandWaitComputeFence<ECmdList::EGfx>;
 template struct FRHICommandWaitComputeFence<ECmdList::ECompute>;
 
-void FRHICommandBuildLocalBoundShaderState::Execute(FRHICommandListBase& CmdList)
-{
-	RHISTAT(BuildLocalBoundShaderState);
-	check(!IsValidRef(WorkArea.ComputedBSS->BSS)); // should not already have been created
-	if (WorkArea.ComputedBSS->UseCount)
-	{
-		WorkArea.ComputedBSS->BSS = 	
-			RHICreateBoundShaderState(WorkArea.Args.VertexDeclarationRHI, WorkArea.Args.VertexShaderRHI, WorkArea.Args.HullShaderRHI, WorkArea.Args.DomainShaderRHI, WorkArea.Args.PixelShaderRHI, WorkArea.Args.GeometryShaderRHI);
-	}
-}
-
-void FRHICommandSetLocalBoundShaderState::Execute(FRHICommandListBase& CmdList)
-{
-	RHISTAT(SetLocalBoundShaderState);
-	check(LocalBoundShaderState.WorkArea->ComputedBSS->UseCount > 0 && IsValidRef(LocalBoundShaderState.WorkArea->ComputedBSS->BSS)); // this should have been created and should have uses outstanding
-
-	INTERNAL_DECORATOR(RHISetBoundShaderState)(LocalBoundShaderState.WorkArea->ComputedBSS->BSS);
-
-	if (--LocalBoundShaderState.WorkArea->ComputedBSS->UseCount == 0)
-	{
-		LocalBoundShaderState.WorkArea->ComputedBSS->~FComputedBSS();
-	}
-}
-
 void FRHICommandBuildLocalGraphicsPipelineState::Execute(FRHICommandListBase& CmdList)
 {
+	LLM_SCOPE(ELLMTag::Shaders);
 	RHISTAT(BuildLocalGraphicsPipelineState);
 	check(!IsValidRef(WorkArea.ComputedGraphicsPipelineState->GraphicsPipelineState));
 	if (WorkArea.ComputedGraphicsPipelineState->UseCount)
@@ -513,6 +534,7 @@ void FRHICommandSetLocalGraphicsPipelineState::Execute(FRHICommandListBase& CmdL
 
 void FRHICommandBuildLocalUniformBuffer::Execute(FRHICommandListBase& CmdList)
 {
+	LLM_SCOPE(ELLMTag::Shaders);
 	RHISTAT(BuildLocalUniformBuffer);
 	check(!IsValidRef(WorkArea.ComputedUniformBuffer->UniformBuffer)); // should not already have been created
 	check(WorkArea.Layout);
@@ -621,6 +643,13 @@ void FRHICommandEndDrawingViewport::Execute(FRHICommandListBase& CmdList)
 template<ECmdList CmdListType>
 void FRHICommandPushEvent<CmdListType>::Execute(FRHICommandListBase& CmdList)
 {
+#if	RHI_COMMAND_LIST_DEBUG_TRACES
+	extern CORE_API bool GCommandListOnlyDrawEvents;
+	if (GCommandListOnlyDrawEvents)
+	{
+		return;
+	}
+#endif
 	RHISTAT(PushEvent);
 	INTERNAL_DECORATOR_CONTEXT(RHIPushEvent)(Name, Color);
 }
@@ -630,12 +659,24 @@ template struct FRHICommandPushEvent<ECmdList::ECompute>;
 template<ECmdList CmdListType>
 void FRHICommandPopEvent<CmdListType>::Execute(FRHICommandListBase& CmdList)
 {
+#if	RHI_COMMAND_LIST_DEBUG_TRACES
+	extern CORE_API bool GCommandListOnlyDrawEvents;
+	if (GCommandListOnlyDrawEvents)
+	{
+		return;
+	}
+#endif
 	RHISTAT(PopEvent);
 	INTERNAL_DECORATOR_CONTEXT(RHIPopEvent)();
 }
 template struct FRHICommandPopEvent<ECmdList::EGfx>;
 template struct FRHICommandPopEvent<ECmdList::ECompute>;
 
+void FRHICommandInvalidateCachedState::Execute(FRHICommandListBase& CmdList)
+{
+	RHISTAT(RHIInvalidateCachedState);
+	INTERNAL_DECORATOR(RHIInvalidateCachedState)();
+}
 #if WITH_TXAA
 void FRHICommandResolveTXAA::Execute(FRHICommandListBase& CmdList)
 {

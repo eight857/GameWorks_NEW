@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineAsyncTaskGooglePlayLogin.h"
 #include "OnlineSubsystemGooglePlay.h"
@@ -64,12 +64,14 @@ void FOnlineAsyncTaskGooglePlayLogin::Start_OnTaskThread()
 
 void FOnlineAsyncTaskGooglePlayLogin::Finalize()
 {
+	UE_LOG(LogOnline, Log, TEXT("FOnlineAsyncTaskGooglePlayLogin: Finalize."));
 	// Async task manager owns the task and is responsible for cleaning it up.
 	Subsystem->CurrentLoginTask = nullptr;
 }
 
 void FOnlineAsyncTaskGooglePlayLogin::TriggerDelegates()
 {
+	UE_LOG(LogOnline, Log, TEXT("FOnlineAsyncTaskGooglePlayLogin: TriggerDelegates. %d"), bWasSuccessful);
 	Delegate.ExecuteIfBound();
 }
 

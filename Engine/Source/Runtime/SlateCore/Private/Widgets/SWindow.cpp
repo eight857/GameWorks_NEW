@@ -1,19 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/SWindow.h"
 #include "Application/SlateWindowHelper.h"
 #include "Application/SlateApplicationBase.h"
 #include "Layout/WidgetPath.h"
 #include "Input/HittestGrid.h"
+#include "HAL/PlatformApplicationMisc.h"
 
-namespace SWindowDefs
-{
-	/** Height of a Slate window title bar, in pixels */
-	static const float DefaultTitleBarSize = 24.0f;
-
-	/** Size of the corner rounding radius.  Used for regular, non-maximized windows only (not tool-tips or decorators.) */
-	static const int32 CornerRadius = 6;
-}
 
 FOverlayPopupLayer::FOverlayPopupLayer(const TSharedRef<SWindow>& InitHostWindow, const TSharedRef<SWidget>& InitPopupContent, TSharedPtr<SOverlay> InitOverlay)
 	: FPopupLayer(InitHostWindow, InitPopupContent)
@@ -260,9 +253,6 @@ void SWindow::Construct(const FArguments& InArgs)
 	// If the window has no OS border, simulate it ourselves, enlarging window by the size that OS border would have.
 	FVector2D WindowSize = GetWindowSizeFromClientSize(InArgs._ClientSize);
 
-	// Get change in size resulting from the above call
-	const FVector2D DeltaSize = WindowSize - InArgs._ClientSize;
-
 	// calculate initial window position
 	FVector2D WindowPosition = InArgs._ScreenPosition;
 
@@ -272,7 +262,13 @@ void SWindow::Construct(const FArguments& InArgs)
 	FDisplayMetrics DisplayMetrics;
 	FSlateApplicationBase::Get().GetDisplayMetrics( DisplayMetrics );
 	const FPlatformRect& VirtualDisplayRect = DisplayMetrics.VirtualDisplayRect;
-	const FPlatformRect& PrimaryDisplayRect = DisplayMetrics.PrimaryDisplayWorkAreaRect;
+	FPlatformRect PrimaryDisplayRect = DisplayMetrics.GetMonitorWorkAreaFromPoint(WindowPosition);
+
+	if (PrimaryDisplayRect == FPlatformRect(0, 0, 0, 0))
+	{
+		// If the primary display rect is empty we couldnt enumerate physical monitors (possibly remote desktop).  So assume virtual display rect is primary rect
+		PrimaryDisplayRect = VirtualDisplayRect;
+	}
 
 	// If we're showing a pop-up window, to avoid creation of driver crashing sized 
 	// tooltips we limit the size a pop-up window can be if max size limit is unspecified.
@@ -334,6 +330,12 @@ void SWindow::Construct(const FArguments& InArgs)
 			break;
 		}
 
+		float RectDPIScale = 1.0f;
+		if (InArgs._AdjustInitialSizeAndPositionForDPIScale)
+		{
+			RectDPIScale = FPlatformApplicationMisc::GetDPIScaleFactorAtPoint(PrimaryDisplayRect.Left, PrimaryDisplayRect.Top);
+		}
+
 		if (InArgs._SaneWindowPlacement)
 		{
 			// Clamp window size to be no greater than the work area size
@@ -344,11 +346,32 @@ void SWindow::Construct(const FArguments& InArgs)
 		// Setup a position and size for the main frame window that's centered in the desktop work area
 		const FVector2D DisplayTopLeft( AutoCenterRect.Left, AutoCenterRect.Top );
 		const FVector2D DisplaySize( AutoCenterRect.Right - AutoCenterRect.Left, AutoCenterRect.Bottom - AutoCenterRect.Top );
-		WindowPosition = DisplayTopLeft + ( DisplaySize - WindowSize ) * 0.5f;
+		WindowPosition = DisplayTopLeft + ( DisplaySize - (WindowSize * RectDPIScale)) * 0.5f;
 
 		// Don't allow the window to center to outside of the work area
 		WindowPosition.X = FMath::Max(WindowPosition.X, AutoCenterRect.Left);
 		WindowPosition.Y = FMath::Max(WindowPosition.Y, AutoCenterRect.Top);
+	}
+
+	FVector2D DeltaSize;
+	if(InArgs._AdjustInitialSizeAndPositionForDPIScale)
+	{
+		const float DPIScale = FPlatformApplicationMisc::GetDPIScaleFactorAtPoint(WindowPosition.X, WindowPosition.Y);
+
+		// Auto centering code will have taken care of the adjustment earlier
+		if (AutoCenterRule == EAutoCenter::None)
+		{
+			WindowPosition *= DPIScale;
+		}
+
+		WindowSize *= DPIScale;
+
+		// Get change in size resulting from the above call
+		DeltaSize = WindowSize - InArgs._ClientSize*DPIScale;
+	}
+	else
+	{
+		DeltaSize = WindowSize - InArgs._ClientSize;
 	}
 
 #if PLATFORM_HTML5 
@@ -400,6 +423,7 @@ TSharedRef<SWindow> SWindow::MakeToolTipWindow()
 		.Type( EWindowType::ToolTip )
 		.IsPopupWindow( true )
 		.IsTopmostWindow(true)
+		.AdjustInitialSizeAndPositionForDPIScale(false)
 		.SizingRule(ESizingRule::Autosized)
 		.SupportsTransparency( EWindowTransparency::PerWindow )
 		.FocusWhenFirstShown( false )
@@ -438,6 +462,34 @@ FVector2D SWindow::ComputeWindowSizeForContent( FVector2D ContentSize )
 	return ContentSize + FVector2D(0, SWindowDefs::DefaultTitleBarSize);
 }
 
+TSharedRef<SWidget> SWindow::MakeWindowTitleBar(const TSharedRef<SWindow>& Window, const TSharedPtr<SWidget>& CenterContent, EHorizontalAlignment TitleContentAlignment)
+{
+	return FSlateApplicationBase::Get().MakeWindowTitleBar(Window, nullptr, TitleContentAlignment, TitleBar);
+}
+
+
+EHorizontalAlignment SWindow::GetTitleAlignment()
+{
+	EWindowTitleAlignment::Type TitleAlignment = FSlateApplicationBase::Get().GetPlatformApplication()->GetWindowTitleAlignment();
+	EHorizontalAlignment TitleContentAlignment;
+
+	if (TitleAlignment == EWindowTitleAlignment::Left)
+	{
+		TitleContentAlignment = HAlign_Left;
+	}
+	else if (TitleAlignment == EWindowTitleAlignment::Center)
+	{
+		TitleContentAlignment = HAlign_Center;
+	}
+	else
+	{
+		TitleContentAlignment = HAlign_Right;
+	}
+	return TitleContentAlignment;
+}
+
+
+
 void SWindow::ConstructWindowInternals()
 {
 	ForegroundColor = FCoreStyle::Get().GetSlateColor("DefaultForeground");
@@ -452,26 +504,10 @@ void SWindow::ConstructWindowInternals()
 		// @todo mainframe: Should be measured from actual title bar content widgets.  Don't use a hard-coded size!
 		TitleBarSize = SWindowDefs::DefaultTitleBarSize;
 
-		EWindowTitleAlignment::Type TitleAlignment = FSlateApplicationBase::Get().GetPlatformApplication()->GetWindowTitleAlignment();
-		EHorizontalAlignment TitleContentAlignment;
-
-		if (TitleAlignment == EWindowTitleAlignment::Left)
-		{
-			TitleContentAlignment = HAlign_Left;
-		}
-		else if (TitleAlignment == EWindowTitleAlignment::Center)
-		{
-			TitleContentAlignment = HAlign_Center;
-		}
-		else
-		{
-			TitleContentAlignment = HAlign_Right;
-		}
-
 		MainWindowArea->AddSlot()
 		.AutoHeight()
 		[
-			FSlateApplicationBase::Get().MakeWindowTitleBar(SharedThis(this), nullptr, TitleContentAlignment, TitleBar)
+			MakeWindowTitleBar(SharedThis(this), nullptr, GetTitleAlignment())
 		];
 	}
 	else
@@ -796,6 +832,13 @@ FMargin SWindow::GetWindowBorderSize( bool bIncTitleBar ) const
 
 		return BorderSize;
 	}
+
+	return GetNonMaximizedWindowBorderSize();
+}
+
+
+FMargin SWindow::GetNonMaximizedWindowBorderSize() const
+{
 #if PLATFORM_WINDOWS || PLATFORM_LINUX
 	return LayoutBorder;
 #else
@@ -831,7 +874,7 @@ void SWindow::ReshapeWindow( FVector2D NewPosition, FVector2D NewSize )
 	const FVector2D CurrentSize = GetSizeInScreen();
 
 	const FVector2D NewPositionTruncated = FVector2D(FMath::TruncToInt(NewPosition.X), FMath::TruncToInt(NewPosition.Y));
-	const FVector2D NewSizeRounded = FVector2D(FMath::RoundToInt(NewSize.X), FMath::RoundToInt(NewSize.Y));
+	const FVector2D NewSizeRounded = FVector2D(FMath::CeilToInt(NewSize.X), FMath::CeilToInt(NewSize.Y));
 
 	if ( CurrentPosition != NewPositionTruncated || CurrentSize != NewSizeRounded )
 	{
@@ -876,7 +919,7 @@ void SWindow::Resize( FVector2D NewSize )
 		
 		if (NativeWindow.IsValid())
 		{
-			NativeWindow->ReshapeWindow( FMath::TruncToInt(ScreenPosition.X), FMath::TruncToInt(ScreenPosition.Y), FMath::RoundToInt(NewSize.X), FMath::RoundToInt(NewSize.Y) );
+			NativeWindow->ReshapeWindow( FMath::TruncToInt(ScreenPosition.X), FMath::TruncToInt(ScreenPosition.Y), FMath::CeilToInt(NewSize.X), FMath::CeilToInt(NewSize.Y) );
 		}
 		else
 		{
@@ -1045,6 +1088,16 @@ TSharedPtr<const FGenericWindow> SWindow::GetNativeWindow() const
 	return NativeWindow;
 } 
 
+float SWindow::GetDPIScaleFactor() const
+{
+	if (NativeWindow.IsValid())
+	{
+		return NativeWindow->GetDPIScaleFactor();
+	}
+
+	return 1.0f;
+}
+
 bool SWindow::IsDescendantOf( const TSharedPtr<SWindow>& ParentWindow ) const
 {
 	TSharedPtr<SWindow> CandidateToCheck = this->GetParentWindow();
@@ -1148,18 +1201,6 @@ bool SWindow::AppearsInTaskbar() const
 	return !bIsPopupWindow && Type != EWindowType::ToolTip && Type != EWindowType::CursorDecorator;
 }
 
-void SWindow::SetOnWindowActivated( const FOnWindowActivated& InDelegate )
-{
-	// deprecated
-	OnWindowActivated = InDelegate;
-}
-
-void SWindow::SetOnWindowDeactivated( const FOnWindowDeactivated& InDelegate )
-{
-	// deprecated
-	OnWindowDeactivated = InDelegate;
-}
-
 /** Sets the delegate to execute right before the window is closed */
 void SWindow::SetOnWindowClosed( const FOnWindowClosed& InDelegate )
 {
@@ -1206,10 +1247,18 @@ void SWindow::NotifyWindowBeingDestroyed()
 {
 	OnWindowClosed.ExecuteIfBound( SharedThis( this ) );
 
-	// Logging to track down window shutdown issues with movie loading threads. Too spammy in editor builds with all the windows
-#if !WITH_EDITOR && !IS_PROGRAM
-	UE_LOG(LogSlate, Log, TEXT("Window '%s' being destroyed"), *GetTitle().ToString() );
+#if WITH_EDITOR
+    if(bIsModalWindow)
+    {
+        FCoreDelegates::PostSlateModal.Broadcast();
+    }
 #endif
+    
+	// Logging to track down window shutdown issues
+	if (IsRegularWindow())
+	{
+		UE_LOG(LogSlate, Log, TEXT("Window '%s' being destroyed"), *GetTitle().ToString());
+	}
 }
 
 /** Make the window visible */
@@ -1228,7 +1277,7 @@ void SWindow::ShowWindow()
 		// Repositioning the window on show with the new size solves this.
 		if ( SizingRule == ESizingRule::Autosized && AutoCenterRule != EAutoCenter::None )
 		{
-			SlatePrepass( FSlateApplicationBase::Get().GetApplicationScale()*NativeWindow->GetDPIScaleFactor() );
+			SlatePrepass( FSlateApplicationBase::Get().GetApplicationScale() * NativeWindow->GetDPIScaleFactor() );
 			const FVector2D WindowDesiredSizePixels = GetDesiredSizeDesktopPixels();
 			ReshapeWindow( InitialDesiredScreenPosition - (WindowDesiredSizePixels * 0.5f), WindowDesiredSizePixels);
 		}
@@ -1766,9 +1815,19 @@ EWindowZone::Type SWindow::GetCurrentWindowZone(FVector2D LocalMousePosition)
 					}
 				}
 			}
-		}
 
-		WindowZone = InZone;
+			WindowZone = InZone;
+		}
+		else if (FSlateApplicationBase::Get().AnyMenusVisible())
+		{
+			// Prevent resizing when a menu is open.  This is consistent with OS behavior and prevents a number of crashes when menus 
+			// stay open while resizing windows causing their parents to often be clipped (SClippingHorizontalBox)
+			WindowZone = EWindowZone::ClientArea;
+		}
+		else
+		{
+			WindowZone = InZone;
+		}
 	}
 	else
 	{
@@ -1821,17 +1880,17 @@ SWindow::SWindow()
 }
 
 
-int32 SWindow::PaintWindow( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 SWindow::PaintWindow( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
-	LayerId = Paint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+	LayerId = Paint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 	//LayerId = OutDrawElements.PaintDeferred( LayerId );
 	return LayerId;
 }
 
-int32 SWindow::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SWindow::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	OutDrawElements.BeginDeferredGroup();
-	int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+	int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 	OutDrawElements.EndDeferredGroup();
 
 	return MaxLayer;

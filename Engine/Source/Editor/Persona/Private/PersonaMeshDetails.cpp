@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PersonaMeshDetails.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -11,6 +11,7 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "IDetailChildrenBuilder.h"
 #include "IDetailPropertyRow.h"
+#include "IDetailGroup.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailCategoryBuilder.h"
 #include "Widgets/SToolTip.h"
@@ -26,6 +27,7 @@
 #include "Widgets/Layout/SUniformGridPanel.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SSpinBox.h"
+#include "Widgets/Input/SComboButton.h"
 #include "Editor/UnrealEdEngine.h"
 #include "EditorDirectories.h"
 #include "UnrealEdGlobals.h"
@@ -36,6 +38,8 @@
 #include "ScopedTransaction.h"
 #include "Editor.h"
 #include "Animation/AnimBlueprintGeneratedClass.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "Rendering/SkeletalMeshModel.h"
 
 #if WITH_APEX_CLOTHING
 	#include "ApexClothingUtils.h"
@@ -66,13 +70,20 @@
 #include "SKismetInspector.h"
 #include "PropertyEditorDelegates.h"
 #include "IEditableSkeleton.h"
+#include "IMeshReductionManagerModule.h"
 
 #define LOCTEXT_NAMESPACE "PersonaMeshDetails"
+
+namespace PersonaMeshDetailsConstants
+{
+	/** Number to extend the num lods slider beyond the currently existing number of lods in the mesh */
+	const static int32 LodSliderExtension = 5;
+}
 
 /** Returns true if automatic mesh reduction is available. */
 static bool IsAutoMeshReductionAvailable()
 {
-	static bool bAutoMeshReductionAvailable = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>("MeshUtilities").GetSkeletalMeshReductionInterface() != NULL;
+	static bool bAutoMeshReductionAvailable = FModuleManager::Get().LoadModuleChecked<IMeshReductionManagerModule>("MeshReductionInterface").GetSkeletalMeshReductionInterface() != NULL;
 	return bAutoMeshReductionAvailable;
 }
 
@@ -167,7 +178,11 @@ private:
 
 		USkeletalMesh* SkelMesh = SharedToolkit->GetMesh();
 		check(SkelMesh);
-		check(SkelMesh->LODInfo.IsValidIndex(LODIndex)); // Should be true for the button to exist
+		if (!SkelMesh->LODInfo.IsValidIndex(LODIndex))
+		{
+			// Should be true for the button to exist except if we delete a LOD
+			return LOCTEXT("ReimportButton_NewFile_LODNotValid_ToolTip", "Cannot reimport, LOD was delete");
+		}
 
 		FSkeletalMeshLODInfo& LODInfo = SkelMesh->LODInfo[LODIndex];
 
@@ -225,6 +240,7 @@ void SSkeletalLODActions::Construct(const FArguments& InArgs)
 						.OnClicked(OnRemoveLODClicked)
 						[
 							SNew(STextBlock)
+							.Font(IDetailLayoutBuilder::GetDetailFont())
 							.Text(LOCTEXT("RemoveLOD", "Remove this LOD"))
 						]
 					]
@@ -243,6 +259,7 @@ void SSkeletalLODActions::Construct(const FArguments& InArgs)
 						.OnClicked(OnReimportClicked)
 						[
 							SNew(STextBlock)
+							.Font(IDetailLayoutBuilder::GetDetailFont())
 							.Text(LOCTEXT("ReimportLOD", "Reimport"))
 						]
 					]
@@ -260,6 +277,7 @@ void SSkeletalLODActions::Construct(const FArguments& InArgs)
 						.OnClicked(OnReimportNewFileClicked)
 						[
 							SNew(STextBlock)
+							.Font(IDetailLayoutBuilder::GetDetailFont())
 							.Text(LOCTEXT("ReimportLOD_NewFile", "Reimport (New File)"))
 						]
 					]
@@ -272,10 +290,9 @@ void SSkeletalLODActions::Construct(const FArguments& InArgs)
 	RegisterActiveTimer(1.0f + LODTimeOffset * LODIndex, FWidgetActiveTimerDelegate::CreateSP(this, &SSkeletalLODActions::RefreshExistFlag));
 }
 
-FSkelMeshReductionSettingsLayout::FSkelMeshReductionSettingsLayout(int32 InLODIndex, TSharedRef<FPersonaMeshDetails> InParentLODSettings, TSharedPtr<IPropertyHandle> InBoneToRemoveProperty, const USkeleton* InSkeleton)
+FSkelMeshReductionSettingsLayout::FSkelMeshReductionSettingsLayout(int32 InLODIndex, TSharedRef<FPersonaMeshDetails> InParentLODSettings, const USkeleton* InSkeleton)
 : LODIndex(InLODIndex)
 , ParentLODSettings(InParentLODSettings)
-, BoneToRemoveProperty(InBoneToRemoveProperty)
 , Skeleton(InSkeleton)
 {
 	FillEnumOptions(SimplificationOptions, GetFeatureSimpificationEnum());
@@ -301,7 +318,7 @@ BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuilder& ChildrenBuilder)
 {
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("PercentTriangles", "Percent Triangles"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("PercentTriangles", "Percent Triangles"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -321,7 +338,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("MaxDeviation", "Max Deviation"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("MaxDeviation", "Max Deviation"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -341,7 +358,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("Silhouette_MeshSimplification", "Silhouette"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("Silhouette_MeshSimplification", "Silhouette"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -351,9 +368,9 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 		.ValueContent()
 			[
 				SAssignNew(SilhouetteCombo, STextComboBox)
-				//.Font( IDetailLayoutBuilder::GetDetailFont() )
 				.ContentPadding(0)
 				.OptionsSource(&ImportanceOptions)
+				.Font(IDetailLayoutBuilder::GetDetailFont())
 				.InitiallySelectedItem(ImportanceOptions[ReductionSettings.SilhouetteImportance])
 				.OnSelectionChanged(this, &FSkelMeshReductionSettingsLayout::OnSilhouetteImportanceChanged)
 			];
@@ -361,7 +378,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("Texture_MeshSimplification", "Texture"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("Texture_MeshSimplification", "Texture"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -371,7 +388,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 		.ValueContent()
 			[
 				SAssignNew(TextureCombo, STextComboBox)
-				//.Font( IDetailLayoutBuilder::GetDetailFont() )
+				.Font( IDetailLayoutBuilder::GetDetailFont() )
 				.ContentPadding(0)
 				.OptionsSource(&ImportanceOptions)
 				.InitiallySelectedItem(ImportanceOptions[ReductionSettings.TextureImportance])
@@ -381,7 +398,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("Shading_MeshSimplification", "Shading"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("Shading_MeshSimplification", "Shading"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -391,7 +408,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 		.ValueContent()
 			[
 				SAssignNew(ShadingCombo, STextComboBox)
-				//.Font( IDetailLayoutBuilder::GetDetailFont() )
+				.Font( IDetailLayoutBuilder::GetDetailFont() )
 				.ContentPadding(0)
 				.OptionsSource(&ImportanceOptions)
 				.InitiallySelectedItem(ImportanceOptions[ReductionSettings.ShadingImportance])
@@ -401,7 +418,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("Skinning_MeshSimplification", "Skinning"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("Skinning_MeshSimplification", "Skinning"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -411,7 +428,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 		.ValueContent()
 			[
 				SAssignNew(SkinningCombo, STextComboBox)
-				//.Font( IDetailLayoutBuilder::GetDetailFont() )
+				.Font( IDetailLayoutBuilder::GetDetailFont() )
 				.ContentPadding(0)
 				.OptionsSource(&ImportanceOptions)
 				.InitiallySelectedItem(ImportanceOptions[ReductionSettings.SkinningImportance])
@@ -421,7 +438,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("WeldingThreshold", "Welding Threshold"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("WeldingThreshold", "Welding Threshold"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -441,7 +458,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("RecomputeNormals", "Recompute Normals"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("RecomputeNormals", "Recompute Normals"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -458,7 +475,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("HardEdgeAngle", "Hard Edge Angle"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("HardEdgeAngle", "Hard Edge Angle"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -477,15 +494,9 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 
 	}
 
-	{
-		if (BoneToRemoveProperty.IsValid() && BoneToRemoveProperty->IsValidHandle())
-		{
-			ChildrenBuilder.AddChildProperty(BoneToRemoveProperty.ToSharedRef());
-		}
-	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("MaxBonesPerVertex", "Max Bones Per Vertex"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("MaxBonesPerVertex", "Max Bones Per Vertex"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -505,7 +516,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("BaseLOD", "Base LOD"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("BaseLOD", "Base LOD"))
 			.NameContent()
 			[
 				SNew(STextBlock)
@@ -524,27 +535,7 @@ void FSkelMeshReductionSettingsLayout::GenerateChildContent(IDetailChildrenBuild
 	}
 
 	{
-
-
-		ChildrenBuilder.AddChildContent(LOCTEXT("BakePose", "Bake Pose"))
-			.NameContent()
-			[
-				SNew(STextBlock)
-				.Font(IDetailLayoutBuilder::GetDetailFont())
-				.Text(LOCTEXT("BakePoseTitle", "Bake Pose"))
-			]
-		.ValueContent()
-			[
-				SNew(SObjectPropertyEntryBox)
-				.ObjectPath(this, &FSkelMeshReductionSettingsLayout::GetBakePosePath)
-				.AllowedClass(UAnimSequence::StaticClass())
-				.OnShouldFilterAsset(this, &FSkelMeshReductionSettingsLayout::FilterOutBakePose)
-				.OnObjectChanged(this, &FSkelMeshReductionSettingsLayout::SetBakePose)
-			];
-	}
-
-	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("ApplyChangeToLOD", "Apply Change to LOD"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("ApplyChangeToLOD", "Apply Change to LOD"))
 			.ValueContent()
 			.HAlign(HAlign_Left)
 			[
@@ -656,27 +647,6 @@ void FSkelMeshReductionSettingsLayout::OnBaseLODChanged(int32 NewLOD)
 	ReductionSettings.BaseLOD = NewLOD;
 }
 
-FString FSkelMeshReductionSettingsLayout::GetBakePosePath() const
-{
-	return FAssetData(ReductionSettings.BakePose).ObjectPath.ToString();
-}
-
-bool FSkelMeshReductionSettingsLayout::FilterOutBakePose(const FAssetData& AssetData) const
-{
-	UAnimSequence* AnimationSequence = Cast<UAnimSequence>(AssetData.GetAsset());
-	if (AnimationSequence)
-	{
-		return !(AnimationSequence->GetSkeleton() == Skeleton);
-	}
-
-	return true;
-}
-
-void FSkelMeshReductionSettingsLayout::SetBakePose(const FAssetData& AssetData)
-{
-	ReductionSettings.BakePose = Cast<UAnimSequence>(AssetData.GetAsset());
-}
-
 void FSkelMeshReductionSettingsLayout::OnSilhouetteImportanceChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
 {
 	ReductionSettings.SilhouetteImportance = (SkeletalMeshOptimizationImportance)ImportanceOptions.Find(NewValue);
@@ -709,9 +679,9 @@ FPersonaMeshDetails::~FPersonaMeshDetails()
 	}
 }
 
-TSharedRef<IDetailCustomization> FPersonaMeshDetails::MakeInstance(TSharedRef<class IPersonaToolkit> InPersonaToolkit)
+TSharedRef<IDetailCustomization> FPersonaMeshDetails::MakeInstance(TWeakPtr<class IPersonaToolkit> InPersonaToolkit)
 {
-	return MakeShareable( new FPersonaMeshDetails(InPersonaToolkit) );
+	return MakeShareable( new FPersonaMeshDetails(InPersonaToolkit.Pin().ToSharedRef()) );
 }
 
 void FPersonaMeshDetails::OnCopySectionList(int32 LODIndex)
@@ -720,11 +690,11 @@ void FPersonaMeshDetails::OnCopySectionList(int32 LODIndex)
 
 	if (Mesh != nullptr)
 	{
-		FSkeletalMeshResource* ImportedResource = Mesh->GetImportedResource();
+		FSkeletalMeshModel* ImportedResource = Mesh->GetImportedModel();
 
 		if (ImportedResource != nullptr && ImportedResource->LODModels.IsValidIndex(LODIndex))
 		{
-			const FStaticLODModel& Model = ImportedResource->LODModels[LODIndex];
+			const FSkeletalMeshLODModel& Model = ImportedResource->LODModels[LODIndex];
 
 			TSharedRef<FJsonObject> RootJsonObject = MakeShareable(new FJsonObject());
 
@@ -750,7 +720,7 @@ void FPersonaMeshDetails::OnCopySectionList(int32 LODIndex)
 
 			if (!CopyStr.IsEmpty())
 			{
-				FPlatformMisc::ClipboardCopy(*CopyStr);
+				FPlatformApplicationMisc::ClipboardCopy(*CopyStr);
 			}
 		}
 	}
@@ -762,7 +732,7 @@ bool FPersonaMeshDetails::OnCanCopySectionList(int32 LODIndex) const
 
 	if (Mesh != nullptr)
 	{
-		FSkeletalMeshResource* ImportedResource = Mesh->GetImportedResource();
+		FSkeletalMeshModel* ImportedResource = Mesh->GetImportedModel();
 
 		if (ImportedResource != nullptr && ImportedResource->LODModels.IsValidIndex(LODIndex))
 		{
@@ -780,7 +750,7 @@ void FPersonaMeshDetails::OnPasteSectionList(int32 LODIndex)
 	if (Mesh != nullptr)
 	{
 		FString PastedText;
-		FPlatformMisc::ClipboardPaste(PastedText);
+		FPlatformApplicationMisc::ClipboardPaste(PastedText);
 
 		TSharedPtr<FJsonObject> RootJsonObject;
 		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PastedText);
@@ -788,14 +758,14 @@ void FPersonaMeshDetails::OnPasteSectionList(int32 LODIndex)
 
 		if (RootJsonObject.IsValid())
 		{
-			FSkeletalMeshResource* ImportedResource = Mesh->GetImportedResource();
+			FSkeletalMeshModel* ImportedResource = Mesh->GetImportedModel();
 
 			if (ImportedResource != nullptr && ImportedResource->LODModels.IsValidIndex(LODIndex))
 			{
-				FScopedTransaction Transaction(LOCTEXT("PersonaChangedPasteSectionList", "Pasted section list"));
+				FScopedTransaction Transaction(LOCTEXT("PersonaChangedPasteSectionList", "Persona editor: Pasted section list"));
 				Mesh->Modify();
 
-				FStaticLODModel& Model = ImportedResource->LODModels[LODIndex];
+				FSkeletalMeshLODModel& Model = ImportedResource->LODModels[LODIndex];
 
 				for (int32 SectionIdx = 0; SectionIdx < Model.Sections.Num(); ++SectionIdx)
 				{
@@ -827,11 +797,11 @@ void FPersonaMeshDetails::OnCopySectionItem(int32 LODIndex, int32 SectionIndex)
 
 	if (Mesh != nullptr)
 	{
-		FSkeletalMeshResource* ImportedResource = Mesh->GetImportedResource();
+		FSkeletalMeshModel* ImportedResource = Mesh->GetImportedModel();
 
 		if (ImportedResource != nullptr && ImportedResource->LODModels.IsValidIndex(LODIndex))
 		{
-			const FStaticLODModel& Model = ImportedResource->LODModels[LODIndex];
+			const FSkeletalMeshLODModel& Model = ImportedResource->LODModels[LODIndex];
 
 			TSharedRef<FJsonObject> RootJsonObject = MakeShareable(new FJsonObject());
 
@@ -853,7 +823,7 @@ void FPersonaMeshDetails::OnCopySectionItem(int32 LODIndex, int32 SectionIndex)
 
 			if (!CopyStr.IsEmpty())
 			{
-				FPlatformMisc::ClipboardCopy(*CopyStr);
+				FPlatformApplicationMisc::ClipboardCopy(*CopyStr);
 			}
 		}
 	}
@@ -865,7 +835,7 @@ bool FPersonaMeshDetails::OnCanCopySectionItem(int32 LODIndex, int32 SectionInde
 
 	if (Mesh != nullptr)
 	{
-		FSkeletalMeshResource* ImportedResource = Mesh->GetImportedResource();
+		FSkeletalMeshModel* ImportedResource = Mesh->GetImportedModel();
 
 		if (ImportedResource != nullptr && ImportedResource->LODModels.IsValidIndex(LODIndex))
 		{
@@ -883,7 +853,7 @@ void FPersonaMeshDetails::OnPasteSectionItem(int32 LODIndex, int32 SectionIndex)
 	if (Mesh != nullptr)
 	{
 		FString PastedText;
-		FPlatformMisc::ClipboardPaste(PastedText);
+		FPlatformApplicationMisc::ClipboardPaste(PastedText);
 
 		TSharedPtr<FJsonObject> RootJsonObject;
 		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PastedText);
@@ -891,13 +861,13 @@ void FPersonaMeshDetails::OnPasteSectionItem(int32 LODIndex, int32 SectionIndex)
 
 		if (RootJsonObject.IsValid())
 		{
-			FSkeletalMeshResource* ImportedResource = Mesh->GetImportedResource();
+			FSkeletalMeshModel* ImportedResource = Mesh->GetImportedModel();
 
 			if (ImportedResource != nullptr && ImportedResource->LODModels.IsValidIndex(LODIndex))
 			{
-				FStaticLODModel& Model = ImportedResource->LODModels[LODIndex];
+				FSkeletalMeshLODModel& Model = ImportedResource->LODModels[LODIndex];
 
-				FScopedTransaction Transaction(LOCTEXT("PersonaChangedPasteSectionItem", "Pasted section item"));
+				FScopedTransaction Transaction(LOCTEXT("PersonaChangedPasteSectionItem", "Persona editor: Pasted section item"));
 				Mesh->Modify();
 
 				if (Model.Sections.IsValidIndex(SectionIndex))
@@ -938,7 +908,7 @@ void FPersonaMeshDetails::OnCopyMaterialList()
 
 		if (!CopyStr.IsEmpty())
 		{
-			FPlatformMisc::ClipboardCopy(*CopyStr);
+			FPlatformApplicationMisc::ClipboardCopy(*CopyStr);
 		}
 	}
 }
@@ -962,7 +932,7 @@ void FPersonaMeshDetails::OnPasteMaterialList()
 	if (Mesh != nullptr)
 	{
 		FString PastedText;
-		FPlatformMisc::ClipboardPaste(PastedText);
+		FPlatformApplicationMisc::ClipboardPaste(PastedText);
 
 		TSharedPtr<FJsonValue> RootJsonValue;
 		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PastedText);
@@ -973,10 +943,19 @@ void FPersonaMeshDetails::OnPasteMaterialList()
 			UProperty* Property = USkeletalMesh::StaticClass()->FindPropertyByName(GET_MEMBER_NAME_STRING_CHECKED(USkeletalMesh, Materials));
 
 			Mesh->PreEditChange(Property);
-			FScopedTransaction Transaction(LOCTEXT("PersonaChangedPasteMaterialList", "Pasted material list"));
+			FScopedTransaction Transaction(LOCTEXT("PersonaChangedPasteMaterialList", "Persona editor: Pasted material list"));
 			Mesh->Modify();
-
-			FJsonObjectConverter::JsonValueToUProperty(RootJsonValue, Property, &Mesh->Materials, 0, 0);
+			TArray<FSkeletalMaterial> TempMaterials;
+			FJsonObjectConverter::JsonValueToUProperty(RootJsonValue, Property, &TempMaterials, 0, 0);
+			//Do not change the number of material in the array
+			for (int32 MaterialIndex = 0; MaterialIndex < TempMaterials.Num(); ++MaterialIndex)
+			{
+				if (Mesh->Materials.IsValidIndex(MaterialIndex))
+				{
+					Mesh->Materials[MaterialIndex].MaterialInterface = TempMaterials[MaterialIndex].MaterialInterface;
+				}
+			}
+			
 
 			Mesh->PostEditChange();
 		}
@@ -1007,7 +986,7 @@ void FPersonaMeshDetails::OnCopyMaterialItem(int32 CurrentSlot)
 
 		if (!CopyStr.IsEmpty())
 		{
-			FPlatformMisc::ClipboardCopy(*CopyStr);
+			FPlatformApplicationMisc::ClipboardCopy(*CopyStr);
 		}
 	}
 }
@@ -1031,7 +1010,7 @@ void FPersonaMeshDetails::OnPasteMaterialItem(int32 CurrentSlot)
 	if (Mesh != nullptr)
 	{
 		FString PastedText;
-		FPlatformMisc::ClipboardPaste(PastedText);
+		FPlatformApplicationMisc::ClipboardPaste(PastedText);
 
 		TSharedPtr<FJsonObject> RootJsonObject;
 		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PastedText);
@@ -1040,12 +1019,14 @@ void FPersonaMeshDetails::OnPasteMaterialItem(int32 CurrentSlot)
 		if (RootJsonObject.IsValid())
 		{
 			Mesh->PreEditChange(USkeletalMesh::StaticClass()->FindPropertyByName(GET_MEMBER_NAME_STRING_CHECKED(USkeletalMesh, Materials)));
-			FScopedTransaction Transaction(LOCTEXT("PersonaChangedPasteMaterialList", "Pasted material list"));
+			FScopedTransaction Transaction(LOCTEXT("PersonaChangedPasteMaterialItem", "Persona editor: Pasted material item"));
 			Mesh->Modify();
 
 			if (Mesh->Materials.IsValidIndex(CurrentSlot))
 			{
-				FJsonObjectConverter::JsonObjectToUStruct(RootJsonObject.ToSharedRef(), FSkeletalMaterial::StaticStruct(), &Mesh->Materials[CurrentSlot], 0, 0);
+				FSkeletalMaterial TmpSkeletalMaterial;
+				FJsonObjectConverter::JsonObjectToUStruct(RootJsonObject.ToSharedRef(), FSkeletalMaterial::StaticStruct(), &TmpSkeletalMaterial, 0, 0);
+				Mesh->Materials[CurrentSlot].MaterialInterface = TmpSkeletalMaterial.MaterialInterface;
 			}
 
 			Mesh->PostEditChange();
@@ -1072,7 +1053,7 @@ void FPersonaMeshDetails::AddLODLevelCategories(IDetailLayoutBuilder& DetailLayo
 
 		//Create material list panel to let users control the materials array
 		{
-			FString MaterialCategoryName = FString(TEXT("Materials"));
+			FString MaterialCategoryName = FString(TEXT("Material Slots"));
 			IDetailCategoryBuilder& MaterialCategory = DetailLayout.EditCategory(*MaterialCategoryName, FText::GetEmpty(), ECategoryPriority::Important);
 			MaterialCategory.AddCustomRow(LOCTEXT("AddLODLevelCategories_MaterialArrayOperationAdd", "Materials Operation Add Material Slot"))
 				.CopyAction(FUIAction(FExecuteAction::CreateSP(this, &FPersonaMeshDetails::OnCopyMaterialList), FCanExecuteAction::CreateSP(this, &FPersonaMeshDetails::OnCanCopyMaterialList)))
@@ -1138,13 +1119,78 @@ void FPersonaMeshDetails::AddLODLevelCategories(IDetailLayoutBuilder& DetailLayo
 				MaterialListDelegates.OnCanCopyMaterialItem.BindSP(this, &FPersonaMeshDetails::OnCanCopyMaterialItem);
 				MaterialListDelegates.OnPasteMaterialItem.BindSP(this, &FPersonaMeshDetails::OnPasteMaterialItem);
 
-				MaterialCategory.AddCustomBuilder(MakeShareable(new FMaterialList(MaterialCategory.GetParentLayout(), MaterialListDelegates, false)));
+				MaterialCategory.AddCustomBuilder(MakeShareable(new FMaterialList(MaterialCategory.GetParentLayout(), MaterialListDelegates, false, true, true)));
 			}
 		}
 
+		int32 CurrentLodIndex = 0;
+		if (GetPersonaToolkit()->GetPreviewMeshComponent() != nullptr)
+		{
+			CurrentLodIndex = GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel;
+		}
+
+		FString LODControllerCategoryName = FString(TEXT("LODCustomMode"));
+		FText LODControllerString = LOCTEXT("LODCustomModeCategoryName", "LOD Picker");
+
+		IDetailCategoryBuilder& LODCustomModeCategory = DetailLayout.EditCategory(*LODControllerCategoryName, LODControllerString, ECategoryPriority::Important);
+		LodCustomCategory = &LODCustomModeCategory;
+
+		LODCustomModeCategory.AddCustomRow((LOCTEXT("LODCustomModeSelect", "Select LOD")))
+		.NameContent()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("LODCustomModeSelectTitle", "LOD"))
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.IsEnabled(this, &FPersonaMeshDetails::IsLodComboBoxEnabledForLodPicker)
+		]
+		.ValueContent()
+		[
+			OnGenerateLodComboBoxForLodPicker()
+		];
+
+		LODCustomModeCategory.AddCustomRow((LOCTEXT("LODCustomModeFirstRowName", "LODCustomMode")))
+		.NameContent()
+		[
+			SNew(STextBlock)
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.Text(this, &FPersonaMeshDetails::GetLODCustomModeNameContent, (int32)INDEX_NONE)
+			.ToolTipText(LOCTEXT("LODCustomModeFirstRowTooltip", "Custom Mode allow editing multiple LOD in same time."))
+		]
+		.ValueContent()
+		[
+			SNew(SCheckBox)
+			.IsChecked(this, &FPersonaMeshDetails::IsLODCustomModeCheck, (int32)INDEX_NONE)
+			.OnCheckStateChanged(this, &FPersonaMeshDetails::SetLODCustomModeCheck, (int32)INDEX_NONE)
+			.ToolTipText(LOCTEXT("LODCustomModeFirstRowTooltip", "Custom Mode allow editing multiple LOD in same time."))
+		];
+		//Set the custom mode to false
+		CustomLODEditMode = false;
+
+
+		LodCategories.Empty(SkelMeshLODCount);
+		DetailDisplayLODs.Reset();
 		// Create information panel for each LOD level.
 		for (int32 LODIndex = 0; LODIndex < SkelMeshLODCount; ++LODIndex)
 		{
+			//Show the viewport LOD at start
+			bool IsViewportLOD = (CurrentLodIndex == 0 ? 0 : CurrentLodIndex - 1) == LODIndex;
+			DetailDisplayLODs.Add(true); //Enable all LOD in custum mode
+			LODCustomModeCategory.AddCustomRow(( LOCTEXT("LODCustomModeRowName", "LODCheckBoxRowName")), true)
+			.NameContent()
+			[
+				SNew(STextBlock)
+				.Font(IDetailLayoutBuilder::GetDetailFont())
+				.Text(this, &FPersonaMeshDetails::GetLODCustomModeNameContent, LODIndex)
+				.IsEnabled(this, &FPersonaMeshDetails::IsLODCustomModeEnable, LODIndex)
+			]
+			.ValueContent()
+			[
+				SNew(SCheckBox)
+				.IsChecked(this, &FPersonaMeshDetails::IsLODCustomModeCheck, LODIndex)
+				.OnCheckStateChanged(this, &FPersonaMeshDetails::SetLODCustomModeCheck, LODIndex)
+				.IsEnabled(this, &FPersonaMeshDetails::IsLODCustomModeEnable, LODIndex)
+			];
+
 			TSharedRef<IPropertyHandle> LODInfoProperty = DetailLayout.GetProperty(FName("LODInfo"), USkeletalMesh::StaticClass());
 			uint32 NumChildren = 0;
 			LODInfoProperty->GetNumChildren(NumChildren);
@@ -1154,24 +1200,10 @@ void FPersonaMeshDetails::AddLODLevelCategories(IDetailLayoutBuilder& DetailLayo
 			
 			if (LODIndex > 0 && IsAutoMeshReductionAvailable())
 			{	
-				
-
 				TSharedPtr<IPropertyHandle> ReductionHandle = ChildHandle->GetChildHandle(FName("ReductionSettings"));
 				check(ReductionHandle.IsValid());
-				TSharedPtr<IPropertyHandle> BonesToRemoveHandle = ReductionHandle->GetChildHandle(FName("BonesToRemove"));
-
-
-				ReductionSettingsWidgets[LODIndex] = MakeShareable(new FSkelMeshReductionSettingsLayout(LODIndex, SharedThis(this), BonesToRemoveHandle, SkelMesh->Skeleton));
+				ReductionSettingsWidgets[LODIndex] = MakeShareable(new FSkelMeshReductionSettingsLayout(LODIndex, SharedThis(this), SkelMesh->Skeleton));
 			}
-
-			TSharedPtr<IPropertyHandle> RemovedBonesHandle = ChildHandle->GetChildHandle(FName("RemovedBones"));
-			RemovedBonesHandle->SetOnPropertyValueChanged(FSimpleDelegate::CreateLambda([this, LODIndex, SkelMesh]()
-			{
-				if (SkelMesh->LODInfo[LODIndex].RemovedBones.Num() == 0)
-				{
-					RemoveBones(LODIndex);
-				}
-			}));
 
 			FSkeletalMeshLODInfo& LODInfo = SkelMesh->LODInfo[LODIndex];
 			if (ReductionSettingsWidgets[LODIndex].IsValid())
@@ -1182,9 +1214,10 @@ void FPersonaMeshDetails::AddLODLevelCategories(IDetailLayoutBuilder& DetailLayo
 			FString CategoryName = FString(TEXT("LOD"));
 			CategoryName.AppendInt(LODIndex);
 
-			FText LODLevelString = FText::Format(LOCTEXT("LODLevel", "LOD{0}"), FText::AsNumber(LODIndex));
+			FText LODLevelString = FText::FromString(FString(TEXT("LOD ")) + FString::FromInt(LODIndex) );
 
 			IDetailCategoryBuilder& LODCategory = DetailLayout.EditCategory(*CategoryName, LODLevelString, ECategoryPriority::Important);
+			LodCategories.Add(&LODCategory);
 			TSharedRef<SWidget> LODCategoryWidget =
 
 				SNew(SBox)
@@ -1211,21 +1244,63 @@ void FPersonaMeshDetails::AddLODLevelCategories(IDetailLayoutBuilder& DetailLayo
 				SectionListDelegates.OnCopySectionItem.BindSP(this, &FPersonaMeshDetails::OnCopySectionItem);
 				SectionListDelegates.OnCanCopySectionItem.BindSP(this, &FPersonaMeshDetails::OnCanCopySectionItem);
 				SectionListDelegates.OnPasteSectionItem.BindSP(this, &FPersonaMeshDetails::OnPasteSectionItem);
+				SectionListDelegates.OnEnableSectionItem.BindSP(this, &FPersonaMeshDetails::OnSectionEnabledChanged);
 
-				LODCategory.AddCustomBuilder(MakeShareable(new FSectionList(LODCategory.GetParentLayout(), SectionListDelegates, (LODIndex > 0))));
+				LODCategory.AddCustomBuilder(MakeShareable(new FSectionList(LODCategory.GetParentLayout(), SectionListDelegates, false, 64, LODIndex)));
+
+				GetPersonaToolkit()->GetPreviewScene()->RegisterOnSelectedLODChanged(FOnSelectedLODChanged::CreateSP(this, &FPersonaMeshDetails::UpdateLODCategoryVisibility));
 			}
 
 			if (LODInfoProperty->IsValidHandle())
 			{
 				// changing property name to "LOD Info" because it shows only array index
 				TSharedPtr<IPropertyHandle> LODInfoChild = LODInfoProperty->GetChildHandle(LODIndex);
-				LODInfoChild->CreatePropertyNameWidget(LOCTEXT("LODInfoLabel", "LOD Info"));
-				LODCategory.AddProperty(LODInfoChild);
+				uint32 NumInfoChildren = 0;
+				LODInfoChild->GetNumChildren(NumInfoChildren);
+
+				IDetailGroup& LODInfoGroup = LODCategory.AddGroup(TEXT("LOD Info"), LOCTEXT("LODInfoGroupLabel", "LOD Info"));
+
+				const TArray<FName> HiddenProperties = { GET_MEMBER_NAME_CHECKED(FSkeletalMeshLODInfo, ReductionSettings), GET_MEMBER_NAME_CHECKED(FSkeletalMeshLODInfo, BakePose), GET_MEMBER_NAME_CHECKED(FSkeletalMeshLODInfo, BonesToRemove) };
+				for (uint32 ChildIndex = 0; ChildIndex < NumInfoChildren; ++ChildIndex)
+				{
+					TSharedRef<IPropertyHandle> LODInfoChildHandle = LODInfoChild->GetChildHandle(ChildIndex).ToSharedRef();
+					if (!HiddenProperties.Contains(LODInfoChildHandle->GetProperty()->GetFName()))
+					{
+						LODInfoGroup.AddPropertyRow(LODInfoChildHandle);
+					}
+				}
+
+				TSharedPtr<IPropertyHandle> BakePoseHandle = ChildHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FSkeletalMeshLODInfo, BakePose));
+				DetailLayout.HideProperty(BakePoseHandle);
+				LODInfoGroup.AddWidgetRow()
+				.NameContent()
+				[
+					SNew(STextBlock)
+					.Font(IDetailLayoutBuilder::GetDetailFont())
+					.Text(LOCTEXT("BakePoseTitle", "Bake Pose"))
+				]
+				.ValueContent()
+				[
+					SNew(SObjectPropertyEntryBox)
+					.PropertyHandle(BakePoseHandle)
+					.AllowedClass(UAnimSequence::StaticClass())
+					.OnShouldFilterAsset(this, &FPersonaMeshDetails::FilterOutBakePose, SkelMesh->Skeleton)
+				];
+
+				TSharedPtr<IPropertyHandle> RemovedBonesHandle = LODInfoChild->GetChildHandle(GET_MEMBER_NAME_CHECKED(FSkeletalMeshLODInfo, BonesToRemove));
+				LODInfoGroup.AddPropertyRow(RemovedBonesHandle->AsShared());
+				RemovedBonesHandle->SetOnPropertyValueChanged(FSimpleDelegate::CreateLambda([this, LODIndex, SkelMesh]()
+				{
+					if (SkelMesh->LODInfo[LODIndex].BonesToRemove.Num() == 0)
+					{
+						RemoveBones(LODIndex);
+					}
+				}));
 
 				//@Todo : ideally this should be inside of LODinfo customization, but for now this will allow users to re-apply removed joints after re-import if they want to.
 				// this also can be buggy if you have this opened and you removed joints using skeleton tree, in that case, it might not show			
 				// add custom button to re-apply bone reduction if they want to
-				FDetailWidgetRow& ButtonRow = LODCategory.AddCustomRow(LOCTEXT("ReapplyRemovedBones", "Reapply Removed Bones"))
+				FDetailWidgetRow& ButtonRow = LODInfoGroup.AddWidgetRow()
 				.ValueContent()
 				.HAlign(HAlign_Left)			
 				[
@@ -1238,7 +1313,7 @@ void FPersonaMeshDetails::AddLODLevelCategories(IDetailLayoutBuilder& DetailLayo
 					]
 				];
 
-				ButtonRow.Visibility(TAttribute<EVisibility>::Create([SkelMesh, LODIndex]() -> EVisibility { return (SkelMesh->LODInfo[LODIndex].RemovedBones.Num() > 0) ? EVisibility::Visible : EVisibility::Collapsed;  }));
+				ButtonRow.Visibility(TAttribute<EVisibility>::Create([SkelMesh, LODIndex]() -> EVisibility { return (SkelMesh->LODInfo[LODIndex].BonesToRemove.Num() > 0) ? EVisibility::Visible : EVisibility::Collapsed;  }));
 			}
 
 			if (ReductionSettingsWidgets[LODIndex].IsValid())
@@ -1260,8 +1335,118 @@ void FPersonaMeshDetails::AddLODLevelCategories(IDetailLayoutBuilder& DetailLayo
 					.OnReimportNewFileClicked(this, &FPersonaMeshDetails::OnReimportLodClicked, &DetailLayout, EReimportButtonType::ReimportWithNewFile, LODIndex)
 				];
 			}
+			LODCategory.SetCategoryVisibility(IsViewportLOD);
+		}
+
+		//Show the LOD custom category 
+		if (SkelMeshLODCount > 1)
+		{
+			LODCustomModeCategory.SetCategoryVisibility(true);
+			LODCustomModeCategory.SetShowAdvanced(false);
 		}
 	}
+}
+
+FText FPersonaMeshDetails::GetLODCustomModeNameContent(int32 LODIndex) const
+{
+	int32 CurrentLodIndex = 0;
+	if (GetPersonaToolkit()->GetPreviewMeshComponent() != nullptr)
+	{
+		CurrentLodIndex = GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel;
+	}
+	int32 RealCurrentLODIndex = (CurrentLodIndex == 0 ? 0 : CurrentLodIndex - 1);
+	if (LODIndex == INDEX_NONE)
+	{
+		return LOCTEXT("GetLODCustomModeNameContent_None", "Custom");
+	}
+	return FText::Format(LOCTEXT("GetLODCustomModeNameContent", "LOD{0}"), LODIndex);
+}
+
+ECheckBoxState FPersonaMeshDetails::IsLODCustomModeCheck(int32 LODIndex) const
+{
+	int32 CurrentLodIndex = 0;
+	if (GetPersonaToolkit()->GetPreviewMeshComponent() != nullptr)
+	{
+		CurrentLodIndex = GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel;
+	}
+	if (LODIndex == INDEX_NONE)
+	{
+		return CustomLODEditMode ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+	}
+	return DetailDisplayLODs[LODIndex] ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+}
+
+void FPersonaMeshDetails::SetLODCustomModeCheck(ECheckBoxState NewState, int32 LODIndex)
+{
+	int32 CurrentLodIndex = 0;
+	if (GetPersonaToolkit()->GetPreviewMeshComponent() != nullptr)
+	{
+		CurrentLodIndex = GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel;
+	}
+	if (LODIndex == INDEX_NONE)
+	{
+		if (NewState == ECheckBoxState::Unchecked)
+		{
+			CustomLODEditMode = false;
+			SetCurrentLOD(CurrentLodIndex);
+			for (int32 DetailLODIndex = 0; DetailLODIndex < LODCount; ++DetailLODIndex)
+			{
+				if (!LodCategories.IsValidIndex(DetailLODIndex))
+				{
+					break;
+				}
+				LodCategories[DetailLODIndex]->SetCategoryVisibility(DetailLODIndex == (CurrentLodIndex == 0 ? 0 : CurrentLodIndex - 1));
+			}
+		}
+		else
+		{
+			CustomLODEditMode = true;
+			SetCurrentLOD(0);
+		}
+	}
+	else if (CustomLODEditMode)
+	{
+		DetailDisplayLODs[LODIndex] = NewState == ECheckBoxState::Checked;
+	}
+
+	if (CustomLODEditMode)
+	{
+		for (int32 DetailLODIndex = 0; DetailLODIndex < LODCount; ++DetailLODIndex)
+		{
+			if (!LodCategories.IsValidIndex(DetailLODIndex))
+			{
+				break;
+			}
+			LodCategories[DetailLODIndex]->SetCategoryVisibility(DetailDisplayLODs[DetailLODIndex]);
+		}
+	}
+
+	if (LodCustomCategory != nullptr)
+	{
+		LodCustomCategory->SetShowAdvanced(CustomLODEditMode);
+	}
+}
+
+bool FPersonaMeshDetails::IsLODCustomModeEnable(int32 LODIndex) const
+{
+	if (LODIndex == INDEX_NONE)
+	{
+		// Custom checkbox is always enable
+		return true;
+	}
+	return CustomLODEditMode;
+}
+
+TOptional<int32> FPersonaMeshDetails::GetLodSliderMaxValue() const
+{
+	USkeletalMesh* SkelMesh = GetPersonaToolkit()->GetMesh();
+
+	if(SkelMesh)
+	{
+		return SkelMesh->LODInfo.Num() + PersonaMeshDetailsConstants::LodSliderExtension;
+	}
+
+	return 0;
 }
 
 void FPersonaMeshDetails::CustomizeLODSettingsCategories(IDetailLayoutBuilder& DetailLayout)
@@ -1288,6 +1473,7 @@ void FPersonaMeshDetails::CustomizeLODSettingsCategories(IDetailLayoutBuilder& D
 			.ContentPadding(0)
 			.OptionsSource(&LODNames)
 			.InitiallySelectedItem(LODNames[0])
+			.Font(IDetailLayoutBuilder::GetDetailFont())
 			.OnSelectionChanged(this, &FPersonaMeshDetails::OnImportLOD, &DetailLayout)
 		];
 
@@ -1308,7 +1494,7 @@ void FPersonaMeshDetails::CustomizeLODSettingsCategories(IDetailLayoutBuilder& D
 			.OnValueChanged(this, &FPersonaMeshDetails::OnLODCountChanged)
 			.OnValueCommitted(this, &FPersonaMeshDetails::OnLODCountCommitted)
 			.MinValue(MinAllowedLOD)
-			.MaxValue(MAX_SKELETAL_MESH_LODS)
+			.MaxValue(this, &FPersonaMeshDetails::GetLodSliderMaxValue)
 			.ToolTipText(this, &FPersonaMeshDetails::GetLODCountTooltip)
 			.IsEnabled(IsAutoMeshReductionAvailable())
 		];
@@ -1349,7 +1535,7 @@ int32 FPersonaMeshDetails::GetLODCount() const
 
 void FPersonaMeshDetails::OnLODCountChanged(int32 NewValue)
 {
-	LODCount = FMath::Clamp<int32>(NewValue, 1, MAX_SKELETAL_MESH_LODS);
+	LODCount = FMath::Max<int32>(NewValue, 1);
 
 	UpdateLODNames();
 }
@@ -1377,9 +1563,8 @@ FReply FPersonaMeshDetails::RemoveOneLOD(int32 LODIndex)
 
 		if ( FMessageDialog::Open(EAppMsgType::YesNo, ConfirmRemoveLODText) == EAppReturnType::Yes )
 		{
-			FText RemoveLODText = FText::Format( LOCTEXT("OnPersonaRemoveLOD", "Remove LOD {0}"), LODIndex );
+			FText RemoveLODText = FText::Format( LOCTEXT("OnPersonaRemoveLOD", "Persona editor: Remove LOD {0}"), LODIndex );
 			FScopedTransaction Transaction( TEXT(""), RemoveLODText, SkelMesh );
-
 			SkelMesh->Modify();
 			FSkeletalMeshUpdateContext UpdateContext;
 			UpdateContext.SkeletalMesh = SkelMesh;
@@ -1582,13 +1767,7 @@ void FPersonaMeshDetails::UpdateLODNames()
 
 bool FPersonaMeshDetails::IsGenerateAvailable() const
 {
-	if (IsApplyNeeded())
-	{
-		return true;
-	}
-
-	// if you have LOD
-	return (LODCount > 1);
+	return IsAutoMeshReductionAvailable() && (IsApplyNeeded() || (LODCount > 1));
 }
 bool FPersonaMeshDetails::IsApplyNeeded() const
 {
@@ -1652,7 +1831,7 @@ FText FPersonaMeshDetails::GetMaterialSlotNameText(int32 MaterialIndex) const
 
 void FPersonaMeshDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLayout )
 {
-	const TArray<TWeakObjectPtr<UObject>>& SelectedObjects = DetailLayout.GetDetailsView().GetSelectedObjects();
+	const TArray<TWeakObjectPtr<UObject>>& SelectedObjects = DetailLayout.GetSelectedObjects();
 	check(SelectedObjects.Num()<=1); // The OnGenerateCustomWidgets delegate will not be useful if we try to process more than one object.
 
 	TSharedRef<IPersonaPreviewScene> PreviewScene = GetPersonaToolkit()->GetPreviewScene();
@@ -1695,6 +1874,16 @@ void FPersonaMeshDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLayout )
 			.OnObjectChanged(FOnSetObject::CreateSP(this, &FPersonaMeshDetails::OnSetPostProcessBlueprint, PostProcessHandle))
 	];
 
+	// Hide the ability to change the import settings object
+	IDetailCategoryBuilder& ImportSettingsCategory = DetailLayout.EditCategory("ImportSettings");
+	TSharedRef<IPropertyHandle> AssetImportProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(USkeletalMesh, AssetImportData), USkeletalMesh::StaticClass());
+	IDetailPropertyRow& Row = ImportSettingsCategory.AddProperty(AssetImportProperty);
+	Row.CustomWidget(true)
+		.NameContent()
+		[
+			AssetImportProperty->CreatePropertyNameWidget()
+		];
+
 	HideUnnecessaryProperties(DetailLayout);
 }
 
@@ -1711,12 +1900,6 @@ void FPersonaMeshDetails::HideUnnecessaryProperties(IDetailLayoutBuilder& Detail
 		TSharedPtr<IPropertyHandle> ChildHandle = LODInfoProperty->GetChildHandle(ChildIdx);
 		if (ChildHandle.IsValid())
 		{
-			TSharedPtr<IPropertyHandle> MaterialMapHandle = ChildHandle->GetChildHandle(FName("LODMaterialMap"));
-			DetailLayout.HideProperty(MaterialMapHandle);
-
-			TSharedPtr<IPropertyHandle> TriangleSortHandle = ChildHandle->GetChildHandle(FName("TriangleSortSettings"));
-			DetailLayout.HideProperty(TriangleSortHandle);
-
 			TSharedPtr<IPropertyHandle> ReductionHandle = ChildHandle->GetChildHandle(FName("ReductionSettings"));
 			DetailLayout.HideProperty(ReductionHandle);
 		}
@@ -1842,7 +2025,7 @@ void FPersonaMeshDetails::OnMaterialArrayChanged(UMaterialInterface* NewMaterial
 
 		if (NewMaterial != PrevMaterial)
 		{
-			GEditor->BeginTransaction(LOCTEXT("PersonaReplaceMaterial", "Replace material on mesh"));
+			GEditor->BeginTransaction(LOCTEXT("PersonaEditorMaterialChanged", "Persona editor: material changed"));
 			bMadeTransaction = true;
 			Mesh->Modify();
 			Mesh->Materials[SlotIndex].MaterialInterface = NewMaterial;
@@ -1882,8 +2065,7 @@ FReply FPersonaMeshDetails::AddMaterialSlot()
 		return FReply::Handled();
 	}
 
-	FScopedTransaction Transaction(LOCTEXT("PersonaChangedMaterialIndex", "Change material index on mesh"));
-
+	FScopedTransaction Transaction(LOCTEXT("PersonaAddMaterialSlotTransaction", "Persona editor: Add material slot"));
 	SkeletalMeshPtr->Modify();
 	SkeletalMeshPtr->Materials.Add(FSkeletalMaterial());
 
@@ -1908,17 +2090,17 @@ void FPersonaMeshDetails::OnGetSectionsForView(ISectionListBuilder& OutSections,
 {
 	USkeletalMesh* SkelMesh = GetPersonaToolkit()->GetMesh();
 
-	FSkeletalMeshResource* ImportedResource = SkelMesh->GetImportedResource();
+	FSkeletalMeshModel* ImportedResource = SkelMesh->GetImportedModel();
 
 	if (ImportedResource && ImportedResource->LODModels.IsValidIndex(LODIndex))
 	{
-		FStaticLODModel& Model = ImportedResource->LODModels[LODIndex];
+		FSkeletalMeshLODModel& Model = ImportedResource->LODModels[LODIndex];
 
 		bool bHasMaterialMap = SkelMesh->LODInfo.IsValidIndex(LODIndex) && SkelMesh->LODInfo[LODIndex].LODMaterialMap.Num() > 0;
 
 		if (LODIndex == 0 || !bHasMaterialMap)
 		{
-			int32 NumSections = Model.NumNonClothingSections();
+			int32 NumSections = Model.Sections.Num();
 			for (int32 SectionIdx = 0; SectionIdx < NumSections; SectionIdx++)
 			{
 				int32 MaterialIndex = Model.Sections[SectionIdx].MaterialIndex;
@@ -1935,7 +2117,7 @@ void FPersonaMeshDetails::OnGetSectionsForView(ISectionListBuilder& OutSections,
 							AvailableSectionName.Add(CurrentIterMaterialIndex, SkeletalMaterial.MaterialSlotName);
 						CurrentIterMaterialIndex++;
 					}
-					bool bClothSection = Model.Sections[SectionIdx].CorrespondClothSectionIndex >= 0;
+					bool bClothSection = Model.Sections[SectionIdx].HasClothingData();
 					OutSections.AddSection(LODIndex, SectionIdx, CurrentSectionMaterialSlotName, MaterialIndex, CurrentSectionOriginalImportedMaterialName, AvailableSectionName, SkelMesh->Materials[MaterialIndex].MaterialInterface, bClothSection);
 				}
 			}
@@ -1992,14 +2174,19 @@ FText FPersonaMeshDetails::GetOriginalImportMaterialNameText(int32 MaterialIndex
 
 void FPersonaMeshDetails::OnMaterialNameCommitted(const FText& InValue, ETextCommit::Type CommitType, int32 MaterialIndex)
 {
-	OnMaterialNameChanged(InValue, MaterialIndex);
-}
-
-void FPersonaMeshDetails::OnMaterialNameChanged(const FText& InValue, int32 MaterialIndex)
-{
-	if (SkeletalMeshPtr.IsValid() && SkeletalMeshPtr->Materials.IsValidIndex(MaterialIndex))
+	FName InValueName = FName(*(InValue.ToString()));
+	if (SkeletalMeshPtr.IsValid() && SkeletalMeshPtr->Materials.IsValidIndex(MaterialIndex) && InValueName != SkeletalMeshPtr->Materials[MaterialIndex].MaterialSlotName)
 	{
-		SkeletalMeshPtr->Materials[MaterialIndex].MaterialSlotName = FName(*(InValue.ToString()));
+		FScopedTransaction ScopeTransaction(LOCTEXT("PersonaMaterialSlotNameChanged", "Persona editor: Material slot name change"));
+
+		UProperty* ChangedProperty = FindField<UProperty>(USkeletalMesh::StaticClass(), "Materials");
+		check(ChangedProperty);
+		SkeletalMeshPtr->PreEditChange(ChangedProperty);
+
+		SkeletalMeshPtr->Materials[MaterialIndex].MaterialSlotName = InValueName;
+		
+		FPropertyChangedEvent PropertyUpdateStruct(ChangedProperty);
+		SkeletalMeshPtr->PostEditChangeProperty(PropertyUpdateStruct);
 	}
 }
 
@@ -2048,7 +2235,6 @@ TSharedRef<SWidget> FPersonaMeshDetails::OnGenerateCustomMaterialWidgetsForMater
 	return
 		SNew(SMaterialSlotWidget, MaterialIndex, bMaterialIsUsed)
 		.MaterialName(this, &FPersonaMeshDetails::GetMaterialNameText, MaterialIndex)
-		.OnMaterialNameChanged(this, &FPersonaMeshDetails::OnMaterialNameChanged, MaterialIndex)
 		.OnMaterialNameCommitted(this, &FPersonaMeshDetails::OnMaterialNameCommitted, MaterialIndex)
 		.CanDeleteMaterialSlot(this, &FPersonaMeshDetails::CanDeleteMaterialSlot, MaterialIndex)
 		.OnDeleteMaterialSlot(this, &FPersonaMeshDetails::OnDeleteMaterialSlot, MaterialIndex)
@@ -2108,7 +2294,7 @@ void FPersonaMeshDetails::OnDeleteMaterialSlot(int32 MaterialIndex)
 		return;
 	}
 
-	FScopedTransaction Transaction(LOCTEXT("PersonaDeletedMaterialSlot", "Delete material slot on Skeletal Mesh"));
+	FScopedTransaction Transaction(LOCTEXT("PersonaOnDeleteMaterialSlotTransaction", "Persona editor: Delete material slot"));
 	SkeletalMeshPtr->Modify();
 	SkeletalMeshPtr->Materials.RemoveAt(MaterialIndex);
 
@@ -2124,7 +2310,7 @@ bool FPersonaMeshDetails::OnMaterialListDirty()
 		for (int32 MaterialIndex = 0; MaterialIndex < SkeletalMeshPtr->Materials.Num(); ++MaterialIndex)
 		{
 			TArray<FSectionLocalizer> SectionLocalizers;
-			FSkeletalMeshResource* ImportedResource = SkeletalMeshPtr->GetImportedResource();
+			FSkeletalMeshModel* ImportedResource = SkeletalMeshPtr->GetImportedModel();
 			check(ImportedResource);
 			for (int32 LODIndex = 0; LODIndex < ImportedResource->LODModels.Num(); ++LODIndex)
 			{
@@ -2198,31 +2384,47 @@ TSharedRef<SWidget> FPersonaMeshDetails::OnGenerateCustomNameWidgetsForSection(i
 		+SVerticalBox::Slot()
 		.AutoHeight()
 		[
-			SNew(SCheckBox)
-			.IsChecked(this, &FPersonaMeshDetails::IsSectionSelected, SectionIndex)
-			.OnCheckStateChanged(this, &FPersonaMeshDetails::OnSectionSelectedChanged, SectionIndex)
-			.ToolTipText(LOCTEXT("Highlight_ToolTip", "Highlights this section in the viewport"))
+			SNew(SVerticalBox)
+			.Visibility(this, &FPersonaMeshDetails::ShowEnabledSectionDetail, LodIndex, SectionIndex)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
 			[
-				SNew(STextBlock)
-				.Font(IDetailLayoutBuilder::GetDetailFont())
-				.ColorAndOpacity(FLinearColor(0.4f, 0.4f, 0.4f, 1.0f))
-				.Text(LOCTEXT("Highlight", "Highlight"))
+				SNew(SCheckBox)
+				.IsChecked(this, &FPersonaMeshDetails::IsSectionSelected, SectionIndex)
+				.OnCheckStateChanged(this, &FPersonaMeshDetails::OnSectionSelectedChanged, SectionIndex)
+				.ToolTipText(LOCTEXT("Highlight_ToolTip", "Highlights this section in the viewport"))
+				[
+					SNew(STextBlock)
+					.Font(IDetailLayoutBuilder::GetDetailFont())
+					.ColorAndOpacity(FLinearColor(0.4f, 0.4f, 0.4f, 1.0f))
+					.Text(LOCTEXT("Highlight", "Highlight"))
+				]
+			]
+			+SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0, 2, 0, 0)
+			[
+				SNew(SCheckBox)
+				.IsChecked(this, &FPersonaMeshDetails::IsIsolateSectionEnabled, SectionIndex)
+				.OnCheckStateChanged(this, &FPersonaMeshDetails::OnSectionIsolatedChanged, SectionIndex)
+				.ToolTipText(LOCTEXT("Isolate_ToolTip", "Isolates this section in the viewport"))
+				[
+					SNew(STextBlock)
+					.Font(IDetailLayoutBuilder::GetDetailFont())
+					.ColorAndOpacity(FLinearColor(0.4f, 0.4f, 0.4f, 1.0f))
+					.Text(LOCTEXT("Isolate", "Isolate"))
+				]
 			]
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(0, 2, 0, 0)
-			[
-			SNew(SCheckBox)
-			.IsChecked(this, &FPersonaMeshDetails::IsIsolateSectionEnabled, SectionIndex)
-			.OnCheckStateChanged(this, &FPersonaMeshDetails::OnSectionIsolatedChanged, SectionIndex)
-			.ToolTipText(LOCTEXT("Isolate_ToolTip", "Isolates this section in the viewport"))
-				[
-				SNew(STextBlock)
-				.Font(IDetailLayoutBuilder::GetDetailFont())
-				.ColorAndOpacity(FLinearColor(0.4f, 0.4f, 0.4f, 1.0f))
-				.Text(LOCTEXT("Isolate", "Isolate"))
-				]
+		[
+			SNew(STextBlock)
+			.Visibility(this, &FPersonaMeshDetails::ShowDisabledSectionDetail, LodIndex, SectionIndex)
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.ColorAndOpacity(FLinearColor(0.4f, 0.4f, 0.4f, 1.0f))
+			.Text(LOCTEXT("SectionDisabled", "Disabled"))
+			.ToolTipText(LOCTEXT("SectionDisable_ToolTip", "The section will not be rendered."))
 		];
 }
 
@@ -2230,36 +2432,7 @@ TSharedRef<SWidget> FPersonaMeshDetails::OnGenerateCustomSectionWidgetsForSectio
 {
 	extern ENGINE_API bool IsGPUSkinCacheAvailable();
 
-	TSharedRef<SVerticalBox> SectionWidget
-		= SNew(SVerticalBox)
-
-		+ SVerticalBox::Slot()
-		.Padding(0, 2, 0, 0)
-		[
-			SNew(SCheckBox)
-			.IsChecked(this, &FPersonaMeshDetails::IsSectionShadowCastingEnabled, LODIndex, SectionIndex)
-			.OnCheckStateChanged(this, &FPersonaMeshDetails::OnSectionShadowCastingChanged, LODIndex, SectionIndex)
-			[
-				SNew(STextBlock)
-				.Font(FEditorStyle::GetFontStyle("StaticMeshEditor.NormalFont"))
-				.Text(LOCTEXT("Cast Shadows", "Cast Shadows"))
-			]
-		]
-
-		+ SVerticalBox::Slot()
-		.Padding(0, 2, 0, 0)
-		[
-			SNew(SCheckBox)
-			.IsEnabled(IsGPUSkinCacheAvailable())
-			.IsChecked(this, &FPersonaMeshDetails::IsSectionRecomputeTangentEnabled, LODIndex, SectionIndex)
-			.OnCheckStateChanged(this, &FPersonaMeshDetails::OnSectionRecomputeTangentChanged, LODIndex, SectionIndex)
-			[
-				SNew(STextBlock)
-				.Font(FEditorStyle::GetFontStyle("StaticMeshEditor.NormalFont"))
-				.Text(LOCTEXT("RecomputeTangent_Title", "Recompute Tangent"))
-				.ToolTipText(LOCTEXT("RecomputeTangent_Tooltip", "This feature only works if you enable (Support Skincache Shaders) in the Project Settings. Please note that skin cache is an experimental feature and only works if you have compute shaders."))
-			]
-		];
+	TSharedRef<SVerticalBox> SectionWidget = SNew(SVerticalBox);
 
 #if WITH_APEX_CLOTHING
 
@@ -2270,73 +2443,318 @@ TSharedRef<SWidget> FPersonaMeshDetails::OnGenerateCustomSectionWidgetsForSectio
 	SectionWidget->AddSlot()
 	.AutoHeight()
 	.Padding(0, 2, 0, 0)
+	.HAlign(HAlign_Fill)
 	[
 	SNew(SHorizontalBox)
 	+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
 		[
+			SNew(SBox)
+			.HAlign(HAlign_Right)
+			.MinDesiredWidth(65.0f)
+		[
 			SNew(STextBlock)
+				.Font(IDetailLayoutBuilder::GetDetailFont())
 			.Text(LOCTEXT("Clothing", "Clothing"))
 		]
-
+		]
 		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(2, 2, 0, 0)
+		.FillWidth(1.0f)
+		.Padding(5, 2, 0, 0)
 		[
 			SAssignNew(ClothComboBoxes.Last(), SClothComboBox)
 			.OnGenerateWidget(this, &FPersonaMeshDetails::OnGenerateWidgetForClothingEntry)
 			.OnSelectionChanged(this, &FPersonaMeshDetails::OnClothingSelectionChanged, ClothComboBoxes.Num() - 1, LODIndex, SectionIndex)
+			.OnComboBoxOpening(this, &FPersonaMeshDetails::OnClothingComboBoxOpening)
 			.OptionsSource(&NewClothingAssetEntries)
 			[
 				SNew(STextBlock)
+				.Font(IDetailLayoutBuilder::GetDetailFont())
 				.Text(this, &FPersonaMeshDetails::OnGetClothingComboText, LODIndex, SectionIndex)
 			]
 		]
 	];
 
 #endif// #if WITH_APEX_CLOTHING
+	SectionWidget->AddSlot()
+	.AutoHeight()
+	.Padding(0, 2, 0, 0)
+	[
+		SNew(SHorizontalBox)
+		+SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2, 0, 2, 0)
+		[
+			SNew(SCheckBox)
+			.IsChecked(this, &FPersonaMeshDetails::IsSectionShadowCastingEnabled, LODIndex, SectionIndex)
+			.OnCheckStateChanged(this, &FPersonaMeshDetails::OnSectionShadowCastingChanged, LODIndex, SectionIndex)
+			[
+				SNew(STextBlock)
+				.Font(IDetailLayoutBuilder::GetDetailFont())
+				.Text(LOCTEXT("Cast Shadows", "Cast Shadows"))
+			]
+		]
+		+SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2, 0, 2, 0)
+		[
+			SNew(SCheckBox)
+			.IsEnabled(IsGPUSkinCacheAvailable())
+			.IsChecked(this, &FPersonaMeshDetails::IsSectionRecomputeTangentEnabled, LODIndex, SectionIndex)
+			.OnCheckStateChanged(this, &FPersonaMeshDetails::OnSectionRecomputeTangentChanged, LODIndex, SectionIndex)
+			[
+				SNew(STextBlock)
+				.Font(IDetailLayoutBuilder::GetDetailFont())
+				.Text(LOCTEXT("RecomputeTangent_Title", "Recompute Tangent"))
+				.ToolTipText(LOCTEXT("RecomputeTangent_Tooltip", "This feature only works if you enable (Support Skincache Shaders) in the Project Settings. Please note that skin cache is an experimental feature and only works if you have compute shaders."))
+			]
+		]
+	];
 	return SectionWidget;
 }
+
+bool FPersonaMeshDetails::IsSectionEnabled(int32 LodIndex, int32 SectionIndex) const
+{
+	if(SkeletalMeshPtr.IsValid())
+	{
+		FSkeletalMeshModel* SourceModel = SkeletalMeshPtr->GetImportedModel();
+
+		if(SourceModel->LODModels.IsValidIndex(LodIndex))
+		{
+			FSkeletalMeshLODModel& LodModel = SourceModel->LODModels[LodIndex];
+
+			if(LodModel.Sections.IsValidIndex(SectionIndex))
+			{
+				return !LodModel.Sections[SectionIndex].bDisabled;
+			}
+		}
+	}
+
+	return false;
+}
+
+EVisibility FPersonaMeshDetails::ShowEnabledSectionDetail(int32 LodIndex, int32 SectionIndex) const
+{
+	return IsSectionEnabled(LodIndex, SectionIndex) ? EVisibility::All : EVisibility::Collapsed;
+}
+
+EVisibility FPersonaMeshDetails::ShowDisabledSectionDetail(int32 LodIndex, int32 SectionIndex) const
+{
+	return IsSectionEnabled(LodIndex, SectionIndex) ? EVisibility::Collapsed : EVisibility::All;
+}
+
+void FPersonaMeshDetails::OnSectionEnabledChanged(int32 LodIndex, int32 SectionIndex, bool bEnable)
+{
+	if(SkeletalMeshPtr.IsValid())
+	{
+		FSkeletalMeshModel* SourceModel = SkeletalMeshPtr->GetImportedModel();
+
+		if(SourceModel->LODModels.IsValidIndex(LodIndex))
+		{
+			FSkeletalMeshLODModel& LodModel = SourceModel->LODModels[LodIndex];
+
+			if(LodModel.Sections.IsValidIndex(SectionIndex))
+			{
+				FSkelMeshSection& Section = LodModel.Sections[SectionIndex];
+
+				if(Section.bDisabled != !bEnable)
+				{
+					FScopedTransaction Transaction(LOCTEXT("ChangeSectionEnabled", "Set section disabled flag."));
+
+					SkeletalMeshPtr->Modify();
+					SkeletalMeshPtr->PreEditChange(nullptr);
+
+					Section.bDisabled = !bEnable;
+
+					// Disable highlight and isolate flags
+					UDebugSkelMeshComponent * MeshComponent = GetPersonaToolkit()->GetPreviewScene()->GetPreviewMeshComponent();
+					if(MeshComponent)
+					{
+						MeshComponent->SetSelectedEditorSection(INDEX_NONE);
+						MeshComponent->SetSelectedEditorMaterial(INDEX_NONE);
+						MeshComponent->SetMaterialPreview(INDEX_NONE);
+						MeshComponent->SetSectionPreview(INDEX_NONE);
+					}
+
+					// Invalidate render data
+					SkeletalMeshPtr->PostEditChange();
+				}
+			}
+		}
+	}
+}
+
+void FPersonaMeshDetails::SetCurrentLOD(int32 NewLodIndex)
+{
+	if (GetPersonaToolkit()->GetPreviewMeshComponent() == nullptr)
+	{
+		return;
+	}
+	int32 CurrentDisplayLOD = GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel;
+	int32 RealCurrentDisplayLOD = CurrentDisplayLOD == 0 ? 0 : CurrentDisplayLOD - 1;
+	int32 RealNewLOD = NewLodIndex == 0 ? 0 : NewLodIndex - 1;
+	if (CurrentDisplayLOD == NewLodIndex || !LodCategories.IsValidIndex(RealCurrentDisplayLOD) || !LodCategories.IsValidIndex(RealNewLOD))
+	{
+		return;
+	}
+	GetPersonaToolkit()->GetPreviewMeshComponent()->SetForcedLOD(NewLodIndex);
+	
+	//Reset the preview section since we do not edit the same LOD
+	GetPersonaToolkit()->GetPreviewMeshComponent()->SetSectionPreview(INDEX_NONE);
+	GetPersonaToolkit()->GetPreviewMeshComponent()->SetSelectedEditorSection(INDEX_NONE);
+
+	GetPersonaToolkit()->GetPreviewScene()->BroadcastOnSelectedLODChanged();
+}
+
+void FPersonaMeshDetails::UpdateLODCategoryVisibility() const
+{
+	if (CustomLODEditMode == true)
+	{
+		//Do not change the Category visibility if we are in custom mode
+		return;
+	}
+	bool bAutoLod = false;
+	if (GetPersonaToolkit()->GetPreviewMeshComponent() != nullptr)
+	{
+		bAutoLod = GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel == 0;
+	}
+	int32 CurrentDisplayLOD = bAutoLod ? 0 : GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel - 1;
+	if (LodCategories.IsValidIndex(CurrentDisplayLOD) && GetPersonaToolkit()->GetMesh())
+	{
+		int32 SkeletalMeshLodNumber = GetPersonaToolkit()->GetMesh()->LODInfo.Num();
+		for (int32 LodCategoryIndex = 0; LodCategoryIndex < SkeletalMeshLodNumber; ++LodCategoryIndex)
+		{
+			LodCategories[LodCategoryIndex]->SetCategoryVisibility(CurrentDisplayLOD == LodCategoryIndex);
+		}
+	}
+
+	//Reset the preview section since we do not edit the same LOD
+	GetPersonaToolkit()->GetPreviewMeshComponent()->SetSectionPreview(INDEX_NONE);
+	GetPersonaToolkit()->GetPreviewMeshComponent()->SetSelectedEditorSection(INDEX_NONE);
+}
+
+FText FPersonaMeshDetails::GetCurrentLodName() const
+{
+	bool bAutoLod = false;
+	if (GetPersonaToolkit()->GetPreviewMeshComponent() != nullptr)
+	{
+		bAutoLod = GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel == 0;
+	}
+	int32 CurrentDisplayLOD = bAutoLod ? 0 : GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel - 1;
+	return FText::FromString(bAutoLod ? FString(TEXT("Auto (LOD0)")) : (FString(TEXT("LOD")) + FString::FromInt(CurrentDisplayLOD)));
+}
+
+FText FPersonaMeshDetails::GetCurrentLodTooltip() const
+{
+	if (GetPersonaToolkit()->GetPreviewMeshComponent() != nullptr && GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel == 0)
+	{
+		return FText::FromString(TEXT("LOD0 is edit when selecting Auto LOD"));
+	}
+	return FText::GetEmpty();
+}
+
+TSharedRef<SWidget> FPersonaMeshDetails::OnGenerateLodComboBoxForLodPicker()
+{
+	return SNew(SComboButton)
+		.IsEnabled(this, &FPersonaMeshDetails::IsLodComboBoxEnabledForLodPicker)
+		.OnGetMenuContent(this, &FPersonaMeshDetails::OnGenerateLodMenuForLodPicker)
+		.VAlign(VAlign_Center)
+		.ContentPadding(2)
+		.ButtonContent()
+		[
+			SNew(STextBlock)
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.Text(this, &FPersonaMeshDetails::GetCurrentLodName)
+			.ToolTipText(this, &FPersonaMeshDetails::GetCurrentLodTooltip)
+		];
+}
+
+EVisibility FPersonaMeshDetails::LodComboBoxVisibilityForLodPicker() const
+{
+	//No combo box when in Custom mode
+	if (CustomLODEditMode == true)
+	{
+		return EVisibility::Hidden;
+	}
+	return EVisibility::All;
+}
+
+bool FPersonaMeshDetails::IsLodComboBoxEnabledForLodPicker() const
+{
+	//No combo box when in Custom mode
+	return !CustomLODEditMode;
+}
+
+TSharedRef<SWidget> FPersonaMeshDetails::OnGenerateLodMenuForLodPicker()
+{
+	USkeletalMesh* SkelMesh = GetPersonaToolkit()->GetMesh();
+
+	if (SkelMesh == nullptr)
+	{
+		return SNullWidget::NullWidget;
+	}
+
+	bool bAutoLod = false;
+	if (GetPersonaToolkit()->GetPreviewMeshComponent() != nullptr)
+	{
+		bAutoLod = GetPersonaToolkit()->GetPreviewMeshComponent()->ForcedLodModel == 0;
+	}
+	const int32 SkelMeshLODCount = SkelMesh->LODInfo.Num();
+	if(SkelMeshLODCount < 2)
+	{
+		return SNullWidget::NullWidget;
+	}
+	FMenuBuilder MenuBuilder(true, NULL);
+
+	FText AutoLodText = FText::FromString((TEXT("Auto LOD")));
+	FUIAction AutoLodAction(FExecuteAction::CreateSP(this, &FPersonaMeshDetails::SetCurrentLOD, 0));
+	MenuBuilder.AddMenuEntry(AutoLodText, LOCTEXT("OnGenerateLodMenuForSectionList_Auto_ToolTip", "LOD0 is edit when selecting Auto LOD"), FSlateIcon(), AutoLodAction);
+	// Add a menu item for each texture.  Clicking on the texture will display it in the content browser
+	for (int32 AllLodIndex = 0; AllLodIndex < SkelMeshLODCount; ++AllLodIndex)
+	{
+		FText LODLevelString = FText::FromString((TEXT("LOD ") + FString::FromInt(AllLodIndex)));
+		FUIAction Action(FExecuteAction::CreateSP(this, &FPersonaMeshDetails::SetCurrentLOD, AllLodIndex+1));
+		MenuBuilder.AddMenuEntry(LODLevelString, FText::GetEmpty(), FSlateIcon(), Action);
+	}
+
+	return MenuBuilder.MakeWidget();
+}
+
 ECheckBoxState FPersonaMeshDetails::IsMaterialSelected(int32 MaterialIndex) const
 {
 	ECheckBoxState State = ECheckBoxState::Unchecked;
-	const USkeletalMesh* Mesh = GetPersonaToolkit()->GetMesh();
-	if (Mesh)
+	UDebugSkelMeshComponent* MeshComponent = GetPersonaToolkit()->GetPreviewMeshComponent();
+	if (MeshComponent)
 	{
-		check(Mesh->GetResourceForRendering());
-		State = Mesh->SelectedEditorMaterial == MaterialIndex ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+		State = MeshComponent->GetSelectedEditorMaterial() == MaterialIndex ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	}
 	return State;
-
 }
 
 void FPersonaMeshDetails::OnMaterialSelectedChanged(ECheckBoxState NewState, int32 MaterialIndex)
 {
-	USkeletalMesh* Mesh = GetPersonaToolkit()->GetMesh();
-
 	// Currently assumes that we only ever have one preview mesh in Persona.
-	UDebugSkelMeshComponent* MeshComponent = GetPersonaToolkit()->GetPreviewScene()->GetPreviewMeshComponent();
-
-	if (Mesh && MeshComponent)
+	UDebugSkelMeshComponent* MeshComponent = GetPersonaToolkit()->GetPreviewMeshComponent();
+	if (MeshComponent)
 	{
-		check(Mesh->GetResourceForRendering());
 		if (NewState == ECheckBoxState::Checked)
 		{
-			Mesh->SelectedEditorMaterial = MaterialIndex;
-			if (MeshComponent->MaterialIndexPreview != MaterialIndex)
+			MeshComponent->SetSelectedEditorMaterial(MaterialIndex);
+			if (MeshComponent->GetMaterialPreview() != MaterialIndex)
 			{
 				// Unhide all mesh sections
 				MeshComponent->SetMaterialPreview(INDEX_NONE);
 			}
 			//Remove any section isolate or highlight
-			Mesh->SelectedEditorSection = INDEX_NONE;
+			MeshComponent->SetSelectedEditorSection(INDEX_NONE);
 			MeshComponent->SetSectionPreview(INDEX_NONE);
 		}
 		else if (NewState == ECheckBoxState::Unchecked)
 		{
-			Mesh->SelectedEditorMaterial = INDEX_NONE;
+			MeshComponent->SetSelectedEditorMaterial(INDEX_NONE);
 		}
+		MeshComponent->PushSelectionToProxy();
 		GetPersonaToolkit()->GetPreviewScene()->InvalidateViews();
 	}
 }
@@ -2344,32 +2762,28 @@ void FPersonaMeshDetails::OnMaterialSelectedChanged(ECheckBoxState NewState, int
 ECheckBoxState FPersonaMeshDetails::IsIsolateMaterialEnabled(int32 MaterialIndex) const
 {
 	ECheckBoxState State = ECheckBoxState::Unchecked;
-	const UDebugSkelMeshComponent* MeshComponent = GetPersonaToolkit()->GetPreviewScene()->GetPreviewMeshComponent();
-	const USkeletalMesh* Mesh = GetPersonaToolkit()->GetMesh();
-	if (MeshComponent && Mesh)
+	const UDebugSkelMeshComponent* MeshComponent = GetPersonaToolkit()->GetPreviewMeshComponent();
+	if (MeshComponent)
 	{
-		check(Mesh->GetResourceForRendering());
-		State = MeshComponent->MaterialIndexPreview == MaterialIndex ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+		State = MeshComponent->GetMaterialPreview() == MaterialIndex ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	}
 	return State;
 }
 
 void FPersonaMeshDetails::OnMaterialIsolatedChanged(ECheckBoxState NewState, int32 MaterialIndex)
 {
-	USkeletalMesh* Mesh = GetPersonaToolkit()->GetMesh();
-	UDebugSkelMeshComponent * MeshComponent = GetPersonaToolkit()->GetPreviewScene()->GetPreviewMeshComponent();
-	if (Mesh && MeshComponent)
+	UDebugSkelMeshComponent * MeshComponent = GetPersonaToolkit()->GetPreviewMeshComponent();
+	if (MeshComponent)
 	{
-		check(Mesh->GetResourceForRendering());
 		if (NewState == ECheckBoxState::Checked)
 		{
 			MeshComponent->SetMaterialPreview(MaterialIndex);
-			if (Mesh->SelectedEditorMaterial != MaterialIndex)
+			if (MeshComponent->GetSelectedEditorMaterial() != MaterialIndex)
 			{
-				Mesh->SelectedEditorMaterial = INDEX_NONE;
+				MeshComponent->SetSelectedEditorMaterial(INDEX_NONE);
 			}
 			//Remove any section isolate or highlight
-			Mesh->SelectedEditorSection = INDEX_NONE;
+			MeshComponent->SetSelectedEditorSection(INDEX_NONE);
 			MeshComponent->SetSectionPreview(INDEX_NONE);
 		}
 		else if (NewState == ECheckBoxState::Unchecked)
@@ -2383,10 +2797,10 @@ void FPersonaMeshDetails::OnMaterialIsolatedChanged(ECheckBoxState NewState, int
 ECheckBoxState FPersonaMeshDetails::IsSectionSelected(int32 SectionIndex) const
 {
 	ECheckBoxState State = ECheckBoxState::Unchecked;
-	const USkeletalMesh* Mesh = GetPersonaToolkit()->GetMesh();
-	if (Mesh)
+	UDebugSkelMeshComponent * MeshComponent = GetPersonaToolkit()->GetPreviewMeshComponent();
+	if (MeshComponent)
 	{
-		State = Mesh->SelectedEditorSection == SectionIndex ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+		State = MeshComponent->GetSelectedEditorSection() == SectionIndex ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	}
 
 	return State;
@@ -2394,28 +2808,27 @@ ECheckBoxState FPersonaMeshDetails::IsSectionSelected(int32 SectionIndex) const
 
 void FPersonaMeshDetails::OnSectionSelectedChanged(ECheckBoxState NewState, int32 SectionIndex)
 {
-	USkeletalMesh* Mesh = GetPersonaToolkit()->GetMesh();
-
 	// Currently assumes that we only ever have one preview mesh in Persona.
-	UDebugSkelMeshComponent* MeshComponent = GetPersonaToolkit()->GetPreviewScene()->GetPreviewMeshComponent();
+	UDebugSkelMeshComponent* MeshComponent = GetPersonaToolkit()->GetPreviewMeshComponent();
 
-	if (Mesh && MeshComponent)
+	if (MeshComponent)
 	{
 		if (NewState == ECheckBoxState::Checked)
 		{
-			Mesh->SelectedEditorSection = SectionIndex;
-			if (MeshComponent->SectionIndexPreview != SectionIndex)
+			MeshComponent->SetSelectedEditorSection(SectionIndex);
+			if (MeshComponent->GetSectionPreview() != SectionIndex)
 			{
 				// Unhide all mesh sections
 				MeshComponent->SetSectionPreview(INDEX_NONE);
 			}
-			Mesh->SelectedEditorMaterial = INDEX_NONE;
+			MeshComponent->SetSelectedEditorMaterial(INDEX_NONE);
 			MeshComponent->SetMaterialPreview(INDEX_NONE);
 		}
 		else if (NewState == ECheckBoxState::Unchecked)
 		{
-			Mesh->SelectedEditorSection = INDEX_NONE;
+			MeshComponent->SetSelectedEditorSection(INDEX_NONE);
 		}
+		MeshComponent->PushSelectionToProxy();
 		GetPersonaToolkit()->GetPreviewScene()->InvalidateViews();
 	}
 }
@@ -2423,10 +2836,10 @@ void FPersonaMeshDetails::OnSectionSelectedChanged(ECheckBoxState NewState, int3
 ECheckBoxState FPersonaMeshDetails::IsIsolateSectionEnabled(int32 SectionIndex) const
 {
 	ECheckBoxState State = ECheckBoxState::Unchecked;
-	const UDebugSkelMeshComponent* MeshComponent = GetPersonaToolkit()->GetPreviewScene()->GetPreviewMeshComponent();
+	const UDebugSkelMeshComponent* MeshComponent = GetPersonaToolkit()->GetPreviewMeshComponent();
 	if (MeshComponent)
 	{
-		State = MeshComponent->SectionIndexPreview == SectionIndex ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+		State = MeshComponent->GetSectionPreview() == SectionIndex ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	}
 	return State;
 }
@@ -2434,18 +2847,18 @@ ECheckBoxState FPersonaMeshDetails::IsIsolateSectionEnabled(int32 SectionIndex) 
 void FPersonaMeshDetails::OnSectionIsolatedChanged(ECheckBoxState NewState, int32 SectionIndex)
 {
 	USkeletalMesh* Mesh = GetPersonaToolkit()->GetMesh();
-	UDebugSkelMeshComponent * MeshComponent = GetPersonaToolkit()->GetPreviewScene()->GetPreviewMeshComponent();
+	UDebugSkelMeshComponent * MeshComponent = GetPersonaToolkit()->GetPreviewMeshComponent();
 	if (Mesh && MeshComponent)
 	{
 		if (NewState == ECheckBoxState::Checked)
 		{
 			MeshComponent->SetSectionPreview(SectionIndex);
-			if (Mesh->SelectedEditorSection != SectionIndex)
+			if (MeshComponent->GetSelectedEditorSection() != SectionIndex)
 			{
-				Mesh->SelectedEditorSection = INDEX_NONE;
+				MeshComponent->SetSelectedEditorSection(INDEX_NONE);
 			}
 			MeshComponent->SetMaterialPreview(INDEX_NONE);
-			Mesh->SelectedEditorMaterial = INDEX_NONE;
+			MeshComponent->SetSelectedEditorMaterial(INDEX_NONE);
 		}
 		else if (NewState == ECheckBoxState::Unchecked)
 		{
@@ -2464,10 +2877,10 @@ ECheckBoxState FPersonaMeshDetails::IsShadowCastingEnabled(int32 MaterialIndex) 
 	bool AllValueSame = true;
 	if (Mesh == nullptr)
 		return State;
-	check(Mesh->GetResourceForRendering());
-	for (int32 LODIdx = 0; LODIdx < Mesh->GetResourceForRendering()->LODModels.Num(); LODIdx++)
+	check(Mesh->GetImportedModel());
+	for (int32 LODIdx = 0; LODIdx < Mesh->GetImportedModel()->LODModels.Num(); LODIdx++)
 	{
-		const FStaticLODModel& LODModel = Mesh->GetResourceForRendering()->LODModels[LODIdx];
+		const FSkeletalMeshLODModel& LODModel = Mesh->GetImportedModel()->LODModels[LODIdx];
 		for (int32 SectionIndex = 0; SectionIndex < LODModel.Sections.Num(); ++SectionIndex)
 		{
 			const FSkelMeshSection& Section = LODModel.Sections[SectionIndex];
@@ -2505,21 +2918,21 @@ void FPersonaMeshDetails::OnShadowCastingChanged(ECheckBoxState NewState, int32 
 		bool NewValue = false;
 		if (NewState == ECheckBoxState::Checked)
 		{
-			const FScopedTransaction Transaction(LOCTEXT("SetShadowCastingFlag", "Set Shadow Casting For Material"));
+			const FScopedTransaction Transaction(LOCTEXT("PersonaSetShadowCastingFlag", "Persona editor: Set Shadow Casting For Material"));
 			Mesh->Modify();
 			NewValue = true;
 		}
 		else if (NewState == ECheckBoxState::Unchecked)
 		{
-			const FScopedTransaction Transaction(LOCTEXT("ClearShadowCastingFlag", "Clear Shadow Casting For Material"));
+			const FScopedTransaction Transaction(LOCTEXT("PersonaClearShadowCastingFlag", "Persona editor: Clear Shadow Casting For Material"));
 			Mesh->Modify();
 			NewValue = false;
 		}
 
-		check(Mesh->GetResourceForRendering());
-		for (int32 LODIdx = 0; LODIdx < Mesh->GetResourceForRendering()->LODModels.Num(); LODIdx++)
+		check(Mesh->GetImportedModel());
+		for (int32 LODIdx = 0; LODIdx < Mesh->GetImportedModel()->LODModels.Num(); LODIdx++)
 		{
-			FStaticLODModel& LODModel = Mesh->GetResourceForRendering()->LODModels[LODIdx];
+			FSkeletalMeshLODModel& LODModel = Mesh->GetImportedModel()->LODModels[LODIdx];
 			for (int32 SectionIndex = 0; SectionIndex < LODModel.Sections.Num(); ++SectionIndex)
 			{
 				FSkelMeshSection& Section = LODModel.Sections[SectionIndex];
@@ -2531,16 +2944,8 @@ void FPersonaMeshDetails::OnShadowCastingChanged(ECheckBoxState NewState, int32 
 			}
 		}
 
-		for (TObjectIterator<USkinnedMeshComponent> It; It; ++It)
-		{
-			USkinnedMeshComponent* MeshComponent = *It;
-			if (MeshComponent &&
-				!MeshComponent->IsTemplate() &&
-				MeshComponent->SkeletalMesh == Mesh)
-			{
-				MeshComponent->MarkRenderStateDirty();
-			}
-		}
+		Mesh->PostEditChange(); // update derived mesh data, and recreate render state for components
+
 		GetPersonaToolkit()->GetPreviewScene()->InvalidateViews();
 	}
 }
@@ -2556,10 +2961,10 @@ ECheckBoxState FPersonaMeshDetails::IsRecomputeTangentEnabled(int32 MaterialInde
 	bool FirstValueSet = false;
 	bool AllValueState = false;
 	bool AllValueSame = true;
-	check(Mesh->GetResourceForRendering());
-	for (int32 LODIdx = 0; LODIdx < Mesh->GetResourceForRendering()->LODModels.Num(); LODIdx++)
+	check(Mesh->GetImportedModel());
+	for (int32 LODIdx = 0; LODIdx < Mesh->GetImportedModel()->LODModels.Num(); LODIdx++)
 	{
-		const FStaticLODModel& LODModel = Mesh->GetResourceForRendering()->LODModels[LODIdx];
+		const FSkeletalMeshLODModel& LODModel = Mesh->GetImportedModel()->LODModels[LODIdx];
 		for (int32 SectionIndex = 0; SectionIndex < LODModel.Sections.Num(); ++SectionIndex)
 		{
 			const FSkelMeshSection& Section = LODModel.Sections[SectionIndex];
@@ -2598,28 +3003,33 @@ void FPersonaMeshDetails::OnRecomputeTangentChanged(ECheckBoxState NewState, int
 		bool NewValue = false;
 		if (NewState == ECheckBoxState::Checked)
 		{
-			const FScopedTransaction Transaction(LOCTEXT("SetRecomputeTangentFlag", "Set Recompute Tangent For Material"));
+			const FScopedTransaction Transaction(LOCTEXT("PersonaSetRecomputeTangentFlag", "Persona editor: Set Recompute Tangent For Material"));
 			Mesh->Modify();
 			NewValue = true;
 		}
 		else if (NewState == ECheckBoxState::Unchecked)
 		{
-			const FScopedTransaction Transaction(LOCTEXT("ClearRecomputeTangentFlag", "Clear Recompute Tangent For Material"));
+			const FScopedTransaction Transaction(LOCTEXT("PersonaClearRecomputeTangentFlag", "Persona editor: Clear Recompute Tangent For Material"));
 			Mesh->Modify();
 			NewValue = false;
 		}
 
-		for (TObjectIterator<USkinnedMeshComponent> It; It; ++It)
+		for (int32 LODIdx = 0; LODIdx < Mesh->GetImportedModel()->LODModels.Num(); LODIdx++)
 		{
-			USkinnedMeshComponent* MeshComponent = *It;
-			if (MeshComponent &&
-				!MeshComponent->IsTemplate() &&
-				MeshComponent->SkeletalMesh == Mesh)
+			FSkeletalMeshLODModel& LODModel = Mesh->GetImportedModel()->LODModels[LODIdx];
+			for (int32 SectionIndex = 0; SectionIndex < LODModel.Sections.Num(); ++SectionIndex)
 			{
-				MeshComponent->UpdateRecomputeTangent(MaterialIndex, INDEX_NONE, NewValue);
-				MeshComponent->MarkRenderStateDirty();
+				FSkelMeshSection& Section = LODModel.Sections[SectionIndex];
+
+				if (Section.MaterialIndex != MaterialIndex)
+					continue;
+
+				Section.bRecomputeTangent = NewValue;
 			}
 		}
+
+		Mesh->PostEditChange(); // update derived mesh data, and recreate render state for components
+
 		GetPersonaToolkit()->GetPreviewScene()->InvalidateViews();
 	}
 }
@@ -2631,12 +3041,12 @@ ECheckBoxState FPersonaMeshDetails::IsSectionShadowCastingEnabled(int32 LODIndex
 	if (Mesh == nullptr)
 		return State;
 	
-	check(Mesh->GetResourceForRendering());
+	check(Mesh->GetImportedModel());
 
-	if (!Mesh->GetResourceForRendering()->LODModels.IsValidIndex(LODIndex))
+	if (!Mesh->GetImportedModel()->LODModels.IsValidIndex(LODIndex))
 		return State;
 
-	const FStaticLODModel& LODModel = Mesh->GetResourceForRendering()->LODModels[LODIndex];
+	const FSkeletalMeshLODModel& LODModel = Mesh->GetImportedModel()->LODModels[LODIndex];
 
 	if (!LODModel.Sections.IsValidIndex(SectionIndex))
 		return State;
@@ -2654,12 +3064,12 @@ void FPersonaMeshDetails::OnSectionShadowCastingChanged(ECheckBoxState NewState,
 	if (Mesh == nullptr)
 		return;
 
-	check(Mesh->GetResourceForRendering());
+	check(Mesh->GetImportedModel());
 
-	if (!Mesh->GetResourceForRendering()->LODModels.IsValidIndex(LODIndex))
+	if (!Mesh->GetImportedModel()->LODModels.IsValidIndex(LODIndex))
 		return;
 
-	FStaticLODModel& LODModel = Mesh->GetResourceForRendering()->LODModels[LODIndex];
+	FSkeletalMeshLODModel& LODModel = Mesh->GetImportedModel()->LODModels[LODIndex];
 
 	if (!LODModel.Sections.IsValidIndex(SectionIndex))
 		return;
@@ -2668,29 +3078,21 @@ void FPersonaMeshDetails::OnSectionShadowCastingChanged(ECheckBoxState NewState,
 
 	if (NewState == ECheckBoxState::Checked)
 	{
-		const FScopedTransaction Transaction(LOCTEXT("SetSectionShadowCastingFlag", "Set Shadow Casting For Section"));
+		const FScopedTransaction Transaction(LOCTEXT("PersonaSetSectionShadowCastingFlag", "Persona editor: Set Shadow Casting For Section"));
 		Mesh->Modify();
 		Section.bCastShadow = true;
 		}
 	else if (NewState == ECheckBoxState::Unchecked)
 	{
-		const FScopedTransaction Transaction(LOCTEXT("ClearSectionShadowCastingFlag", "Clear Shadow Casting For Section"));
+		const FScopedTransaction Transaction(LOCTEXT("PersonaClearSectionShadowCastingFlag", "Persona editor: Clear Shadow Casting For Section"));
 		Mesh->Modify();
 		Section.bCastShadow = false;
 	}
 	
-		for (TObjectIterator<USkinnedMeshComponent> It; It; ++It)
-		{
-			USkinnedMeshComponent* MeshComponent = *It;
-			if (MeshComponent &&
-				!MeshComponent->IsTemplate() &&
-				MeshComponent->SkeletalMesh == Mesh)
-			{
-				MeshComponent->MarkRenderStateDirty();
-			}
-		}
-		GetPersonaToolkit()->GetPreviewScene()->InvalidateViews();
-	}
+	Mesh->PostEditChange(); // update derived mesh data, and recreate render state for components
+
+	GetPersonaToolkit()->GetPreviewScene()->InvalidateViews();
+}
 
 ECheckBoxState FPersonaMeshDetails::IsSectionRecomputeTangentEnabled(int32 LODIndex, int32 SectionIndex) const
 {
@@ -2699,12 +3101,12 @@ ECheckBoxState FPersonaMeshDetails::IsSectionRecomputeTangentEnabled(int32 LODIn
 	if (Mesh == nullptr)
 		return State;
 
-	check(Mesh->GetResourceForRendering());
+	check(Mesh->GetImportedModel());
 
-	if (!Mesh->GetResourceForRendering()->LODModels.IsValidIndex(LODIndex))
+	if (!Mesh->GetImportedModel()->LODModels.IsValidIndex(LODIndex))
 		return State;
 
-	const FStaticLODModel& LODModel = Mesh->GetResourceForRendering()->LODModels[LODIndex];
+	const FSkeletalMeshLODModel& LODModel = Mesh->GetImportedModel()->LODModels[LODIndex];
 
 	if (!LODModel.Sections.IsValidIndex(SectionIndex))
 		return State;
@@ -2722,43 +3124,33 @@ void FPersonaMeshDetails::OnSectionRecomputeTangentChanged(ECheckBoxState NewSta
 	if (Mesh == nullptr)
 		return;
 
-	check(Mesh->GetResourceForRendering());
+	check(Mesh->GetImportedModel());
 
-	if (!Mesh->GetResourceForRendering()->LODModels.IsValidIndex(LODIndex))
+	if (!Mesh->GetImportedModel()->LODModels.IsValidIndex(LODIndex))
 		return;
 
-	FStaticLODModel& LODModel = Mesh->GetResourceForRendering()->LODModels[LODIndex];
+	FSkeletalMeshLODModel& LODModel = Mesh->GetImportedModel()->LODModels[LODIndex];
 
 	if (!LODModel.Sections.IsValidIndex(SectionIndex))
 		return;
 
 	FSkelMeshSection& Section = LODModel.Sections[SectionIndex];
 
-	bool NewRecomputeTangentValue = false;
 	if (NewState == ECheckBoxState::Checked)
 	{
-		const FScopedTransaction Transaction(LOCTEXT("SetSectionShadowCastingFlag", "Set Shadow Casting For Section"));
+		const FScopedTransaction Transaction(LOCTEXT("PersonaSetSectionRecomputeTangentFlag", "Persona editor: Set Recompute Tangent For Section"));
 		Mesh->Modify();
-		NewRecomputeTangentValue = true;
+		Section.bRecomputeTangent = true;
 	}
 	else if (NewState == ECheckBoxState::Unchecked)
 	{
-		const FScopedTransaction Transaction(LOCTEXT("ClearSectionShadowCastingFlag", "Clear Shadow Casting For Section"));
+		const FScopedTransaction Transaction(LOCTEXT("PersonaClearSectionRecomputeTangentFlag", "Persona editor: Clear Recompute Tangent For Section"));
 		Mesh->Modify();
-		NewRecomputeTangentValue = false;
+		Section.bRecomputeTangent = false;
 	}
 
-	for (TObjectIterator<USkinnedMeshComponent> It; It; ++It)
-	{
-		USkinnedMeshComponent* MeshComponent = *It;
-		if (MeshComponent &&
-			!MeshComponent->IsTemplate() &&
-			MeshComponent->SkeletalMesh == Mesh)
-		{
-			MeshComponent->UpdateRecomputeTangent(SectionIndex, LODIndex, NewRecomputeTangentValue);
-			MeshComponent->MarkRenderStateDirty();
-		}
-	}
+	Mesh->PostEditChange(); // update derived mesh data, and recreate render state for components
+
 	GetPersonaToolkit()->GetPreviewScene()->InvalidateViews();
 }
 
@@ -2845,7 +3237,7 @@ int32 FPersonaMeshDetails::GetMaterialIndex(int32 LODIndex, int32 SectionIndex) 
 	FSkeletalMeshLODInfo& Info = SkelMesh->LODInfo[LODIndex];
 	if (LODIndex == 0 || Info.LODMaterialMap.Num() == 0 || SectionIndex >= Info.LODMaterialMap.Num())
 	{
-		FSkeletalMeshResource* ImportedResource = SkelMesh->GetImportedResource();
+		FSkeletalMeshModel* ImportedResource = SkelMesh->GetImportedModel();
 		check(ImportedResource && ImportedResource->LODModels.IsValidIndex(LODIndex));
 		return ImportedResource->LODModels[LODIndex].Sections[SectionIndex].MaterialIndex;
 	}
@@ -2865,11 +3257,11 @@ bool FPersonaMeshDetails::IsDuplicatedMaterialIndex(int32 LODIndex, int32 Materi
 		FSkeletalMeshLODInfo& Info = SkelMesh->LODInfo[LODInfoIdx];
 		if (LODIndex == 0 || Info.LODMaterialMap.Num() == 0)
 		{
-			FSkeletalMeshResource* ImportedResource = SkelMesh->GetImportedResource();
+			FSkeletalMeshModel* ImportedResource = SkelMesh->GetImportedModel();
 
 			if (ImportedResource && ImportedResource->LODModels.IsValidIndex(LODInfoIdx))
 			{
-				FStaticLODModel& Model = ImportedResource->LODModels[LODInfoIdx];
+				FSkeletalMeshLODModel& Model = ImportedResource->LODModels[LODInfoIdx];
 
 				for (int32 SectionIdx = 0; SectionIdx < Model.Sections.Num(); SectionIdx++)
 				{
@@ -2900,7 +3292,7 @@ void FPersonaMeshDetails::OnSectionChanged(int32 LODIndex, int32 SectionIndex, i
 	USkeletalMesh* Mesh = GetPersonaToolkit()->GetMesh();
 	if(Mesh)
 	{
-		FSkeletalMeshResource* ImportedResource = Mesh->GetImportedResource();
+		FSkeletalMeshModel* ImportedResource = Mesh->GetImportedModel();
 		check(ImportedResource && ImportedResource->LODModels.IsValidIndex(LODIndex));
 		const int32 TotalSectionCount = ImportedResource->LODModels[LODIndex].Sections.Num();
 
@@ -2920,7 +3312,7 @@ void FPersonaMeshDetails::OnSectionChanged(int32 LODIndex, int32 SectionIndex, i
 
 		// Begin a transaction for undo/redo the first time we encounter a material to replace.  
 		// There is only one transaction for all replacement
-		FScopedTransaction Transaction(LOCTEXT("PersonaChangedMaterialIndex", "Change material index on mesh"));
+		FScopedTransaction Transaction(LOCTEXT("PersonaOnSectionChangedTransaction", "Persona editor: Section material slot changed"));
 		Mesh->Modify();
 
 		FSkeletalMeshLODInfo& Info = Mesh->LODInfo[LODIndex];
@@ -2967,12 +3359,16 @@ void FPersonaMeshDetails::CustomizeClothingProperties(IDetailLayoutBuilder& Deta
 		[
 			SNew(SButton)
 			.OnClicked(this, &FPersonaMeshDetails::OnOpenClothingFileClicked, &DetailLayout)
-			.Text(LOCTEXT("AddAPEXClothingFile", "Add APEX clothing file..."))
 			.ToolTip(IDocumentation::Get()->CreateToolTip(
 				LOCTEXT("AddClothingButtonTooltip", "Select a new APEX clothing file and add it to the skeletal mesh."),
 				NULL,
 				TEXT("Shared/Editors/Persona"),
 				TEXT("AddClothing")))
+			[
+				SNew(STextBlock)
+				.Font(IDetailLayoutBuilder::GetDetailFont())
+				.Text(LOCTEXT("AddAPEXClothingFile", "Add APEX clothing file..."))
+			]
 		]
 	];
 #endif
@@ -2986,7 +3382,7 @@ void FPersonaMeshDetails::OnGenerateElementForClothingAsset( TSharedRef<IPropert
 	const FSlateFontInfo DetailFontInfo = IDetailLayoutBuilder::GetDetailFont();
 
 	// Remove and reimport asset buttons
-	ChildrenBuilder.AddChildContent( FText::GetEmpty() ) 
+	ChildrenBuilder.AddCustomRow( FText::GetEmpty() ) 
 	[
 		SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
@@ -3038,7 +3434,7 @@ void FPersonaMeshDetails::OnGenerateElementForClothingAsset( TSharedRef<IPropert
 	USkeletalMesh* CurrentMesh = GetPersonaToolkit()->GetMesh();
 	UClothingAssetBase* CurrentAsset = CurrentMesh->MeshClothingAssets[ElementIndex];
 
-	ChildrenBuilder.AddChildContent(LOCTEXT("ClothingAsset_Search_Name", "Name"))
+	ChildrenBuilder.AddCustomRow(LOCTEXT("ClothingAsset_Search_Name", "Name"))
 	.NameContent()
 	[
 		SNew(STextBlock)
@@ -3052,7 +3448,7 @@ void FPersonaMeshDetails::OnGenerateElementForClothingAsset( TSharedRef<IPropert
 		.Text(FText::FromString(CurrentAsset->GetName()))
 	];
 
-	ChildrenBuilder.AddChildContent(LOCTEXT("ClothingAsset_Search_Details", "Details"))
+	ChildrenBuilder.AddCustomRow(LOCTEXT("ClothingAsset_Search_Details", "Details"))
 	.NameContent()
 	[
 		SNew(STextBlock)
@@ -3066,7 +3462,7 @@ void FPersonaMeshDetails::OnGenerateElementForClothingAsset( TSharedRef<IPropert
 	];	
 	
 	// Properties are now inside UClothingAsset, so we just add a new inspector and handle everything through that
-	FDetailWidgetRow& ClothPropRow = ChildrenBuilder.AddChildContent(LOCTEXT("ClothingAsset_Search_Properties", "Properties"));
+	FDetailWidgetRow& ClothPropRow = ChildrenBuilder.AddCustomRow(LOCTEXT("ClothingAsset_Search_Properties", "Properties"));
 
 	TSharedPtr<SKismetInspector> Inspector = nullptr;
 
@@ -3302,9 +3698,9 @@ FReply FPersonaMeshDetails::OnRemoveApexFileClicked(int32 AssetIndex, IDetailLay
 			SkelMesh->MeshClothingAssets.RemoveAt(AssetIndex);
 
 			// Need to fix up asset indices on sections.
-			if(FSkeletalMeshResource* MeshResource = SkelMesh->GetImportedResource())
+			if(FSkeletalMeshModel* MeshResource = SkelMesh->GetImportedModel())
 			{
-				for(FStaticLODModel& LodModel : MeshResource->LODModels)
+				for(FSkeletalMeshLODModel& LodModel : MeshResource->LODModels)
 				{
 					for(FSkelMeshSection& Section : LodModel.Sections)
 					{
@@ -3315,6 +3711,9 @@ FReply FPersonaMeshDetails::OnRemoveApexFileClicked(int32 AssetIndex, IDetailLay
 					}
 				}
 			}
+
+			// Need to regenerate derived data after changing LOD model
+			SkelMesh->PostEditChange();
 		}
 	}
 
@@ -3323,7 +3722,7 @@ FReply FPersonaMeshDetails::OnRemoveApexFileClicked(int32 AssetIndex, IDetailLay
 
 	// Force layout to refresh
 	DetailLayout->ForceRefreshDetails();
-
+	
 	return FReply::Handled();
 }
 
@@ -3384,6 +3783,12 @@ void FPersonaMeshDetails::RefreshClothingComboBoxes()
 			BoxPtr->RefreshOptions();
 		}
 	}
+}
+
+void FPersonaMeshDetails::OnClothingComboBoxOpening()
+{
+	UpdateClothingEntries();
+	RefreshClothingComboBoxes();
 }
 
 TSharedRef<SWidget> FPersonaMeshDetails::OnGenerateWidgetForClothingEntry(TSharedPtr<FClothingEntry> InEntry)
@@ -3504,7 +3909,7 @@ FReply FPersonaMeshDetails::OnDeleteButtonClicked(int32 LODIndex, int32 SectionI
 	if(SkelMesh)
 	{
 
-		const FScopedTransaction Transaction(LOCTEXT("DeleteMaterial", "Delete Material"));
+		const FScopedTransaction Transaction(LOCTEXT("PersonaOnDeleteButtonClickedTransaction", "Persona editor: Delete material slot"));
 		UProperty* MaterialProperty = FindField<UProperty>( USkeletalMesh::StaticClass(), "Materials" );
 		SkelMesh->PreEditChange( MaterialProperty );
 
@@ -3530,9 +3935,9 @@ FReply FPersonaMeshDetails::OnDeleteButtonClicked(int32 LODIndex, int32 SectionI
 		}
 		
 		// Patch up section indices
-		for(auto ModelIter = SkelMesh->GetImportedResource()->LODModels.CreateIterator() ; ModelIter ; ++ModelIter)
+		for(auto ModelIter = SkelMesh->GetImportedModel()->LODModels.CreateIterator() ; ModelIter ; ++ModelIter)
 		{
-			FStaticLODModel& Model = *ModelIter;
+			FSkeletalMeshLODModel& Model = *ModelIter;
 			for(auto SectionIter = Model.Sections.CreateIterator() ; SectionIter ; ++SectionIter)
 			{
 				FSkelMeshSection& Section = *SectionIter;
@@ -3564,6 +3969,14 @@ void FPersonaMeshDetails::OnPreviewMeshChanged(USkeletalMesh* OldSkeletalMesh, U
 	{
 		MeshDetailLayout->ForceRefreshDetails();
 	}
+}
+
+bool FPersonaMeshDetails::FilterOutBakePose(const FAssetData& AssetData, USkeleton* Skeleton) const
+{
+	FString SkeletonName;
+	AssetData.GetTagValue("Skeleton", SkeletonName);
+	FAssetData SkeletonData(Skeleton);
+	return (SkeletonName != SkeletonData.GetExportTextName());
 }
 
 #undef LOCTEXT_NAMESPACE

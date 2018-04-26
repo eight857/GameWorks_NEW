@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/ComboBoxString.h"
 #include "UObject/EditorObjectVersion.h"
@@ -41,7 +41,8 @@ UComboBoxString::UComboBoxString(const FObjectInitializer& ObjectInitializer)
 	// We don't want to try and load fonts on the server.
 	if ( !IsRunningDedicatedServer() )
 	{
-		static ConstructorHelpers::FObjectFinder<UFont> RobotoFontObj(TEXT("/Engine/EngineFonts/Roboto"));
+		static ConstructorHelpers::FObjectFinder<UFont> RobotoFontObj(*UWidget::GetDefaultFontName());
+#include "Widgets/SNullWidget.h"
 		Font = FSlateFontInfo(RobotoFontObj.Object, 16, FName("Bold"));
 	}
 }
@@ -260,7 +261,10 @@ void UComboBoxString::HandleSelectionChanged(TSharedPtr<FString> Item, ESelectIn
 	SelectedOption = CurrentOptionPtr.IsValid() ? CurrentOptionPtr.ToSharedRef().Get() : FString();
 
 	// When the selection changes we always generate another widget to represent the content area of the combobox.
-	ComboBoxContent->SetContent(HandleGenerateWidget(CurrentOptionPtr));
+	if ( ComboBoxContent.IsValid() )
+	{
+		ComboBoxContent->SetContent(HandleGenerateWidget(CurrentOptionPtr));
+	}
 
 	if ( !IsDesignTime() )
 	{

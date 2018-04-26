@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -89,6 +89,9 @@ public:
 	virtual void PinDefaultValueChanged(UEdGraphPin* Pin) override;
 	virtual void AddSearchMetaDataInfo(TArray<struct FSearchTagDataPair>& OutTaggedMetaData) const override;
 	virtual TSharedPtr<SWidget> CreateNodeImage() const override;
+	virtual UObject* GetJumpTargetForDoubleClick() const override;
+	virtual bool CanJumpToDefinition() const override;
+	virtual void JumpToDefinition() const override;
 	// End of UEdGraphNode interface
 
 	// UK2Node interface
@@ -185,7 +188,7 @@ public:
 	UEdGraph* GetFunctionGraph(const UEdGraphNode*& OutGraphNode) const;
 
 	/** Checks if the property is marked as "CustomStructureParam" */
-	static bool IsStructureWildcardProperty(const UFunction* InFunction, const FString& PropertyName);
+	static bool IsStructureWildcardProperty(const UFunction* InFunction, const FName PropertyName);
 
 	/** returns true if InProperty should be treated as a wildcard (e.g. due to SetParam markup) */
 	static bool IsWildcardProperty(const UFunction* InFunction, const UProperty* InProperty);

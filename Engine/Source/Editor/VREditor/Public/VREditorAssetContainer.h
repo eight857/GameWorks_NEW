@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -56,6 +56,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = Sound)
 	USoundCue* ButtonPressSound;
 
+	UPROPERTY(EditAnywhere, Category = Sound)
+	USoundBase* AutoScaleSound;
+
 	//
 	// Meshes
 	//
@@ -108,6 +111,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = Mesh)
 	UStaticMesh* RadialMenuPointerMesh;
 	
+	UPROPERTY(EditAnywhere, Category = Mesh)
+	UStaticMesh* PointerCursorMesh;
+
 	//
 	// Materials
 	//

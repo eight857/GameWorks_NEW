@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -84,7 +84,7 @@ namespace IncludeTool.Support
 						if (Length == 0)
 						{
 							// Multiple directory separators in a row; illegal.
-							throw new ArgumentException("Path fragment '{0}' contains invalid directory separators.");
+							throw new ArgumentException(String.Format("Path fragment '{0}' contains invalid directory separators.", Fragment));
 						}
 						else if (Length == 2 && Fragment[StartIdx] == '.' && Fragment[StartIdx + 1] == '.')
 						{

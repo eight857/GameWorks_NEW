@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/CanvasRenderTarget2D.h"
 #include "Misc/App.h"
@@ -63,7 +63,12 @@ void UCanvasRenderTarget2D::RepaintCanvas()
 		Canvas->AddToRoot();
 	}
 
-	Canvas->Init(GetSurfaceWidth(), GetSurfaceHeight(), nullptr);
+	// Create the FCanvas which does the actual rendering.
+	const UWorld* WorldPtr = World.Get();
+	const ERHIFeatureLevel::Type FeatureLevel = WorldPtr != nullptr ? World->FeatureLevel : GMaxRHIFeatureLevel;
+	FCanvas RenderCanvas(GameThread_GetRenderTargetResource(), nullptr, FApp::GetCurrentTime() - GStartTime, FApp::GetDeltaTime(), FApp::GetCurrentTime() - GStartTime, FeatureLevel);
+
+	Canvas->Init(GetSurfaceWidth(), GetSurfaceHeight(), nullptr, &RenderCanvas);
 	Canvas->Update();
 
 	// Update the resource immediately to remove it from the deferred resource update list. This prevents the texture
@@ -79,15 +84,10 @@ void UCanvasRenderTarget2D::RepaintCanvas()
 			(FTextureRenderTarget2DResource*)GameThread_GetRenderTargetResource(),
 			{
 				SetRenderTarget(RHICmdList, TextureRenderTarget->GetRenderTargetTexture(), FTexture2DRHIRef(), true);
-	RHICmdList.SetViewport(0, 0, 0.0f, TextureRenderTarget->GetSizeXY().X, TextureRenderTarget->GetSizeXY().Y, 1.0f);
+				RHICmdList.SetViewport(0, 0, 0.0f, TextureRenderTarget->GetSizeXY().X, TextureRenderTarget->GetSizeXY().Y, 1.0f);
 			}
 	);
 
-	// Create the FCanvas which does the actual rendering.
-	const UWorld* WorldPtr = World.Get();
-	const ERHIFeatureLevel::Type FeatureLevel = WorldPtr != nullptr ? World->FeatureLevel : GMaxRHIFeatureLevel;
-	FCanvas RenderCanvas(GameThread_GetRenderTargetResource(), nullptr, FApp::GetCurrentTime() - GStartTime, FApp::GetDeltaTime(), FApp::GetCurrentTime() - GStartTime, FeatureLevel);
-	Canvas->Canvas = &RenderCanvas;
 
 	if (!IsPendingKill() && OnCanvasRenderTargetUpdate.IsBound())
 	{
@@ -121,7 +121,7 @@ UCanvasRenderTarget2D* UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(UObject
 		UCanvasRenderTarget2D* NewCanvasRenderTarget = NewObject<UCanvasRenderTarget2D>(GetTransientPackage(), CanvasRenderTarget2DClass);
 		if (NewCanvasRenderTarget)
 		{
-			NewCanvasRenderTarget->World = GEngine->GetWorldFromContextObject(WorldContextObject);
+			NewCanvasRenderTarget->World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
 			NewCanvasRenderTarget->InitAutoFormat(Width, Height);
 			return NewCanvasRenderTarget;
 		}

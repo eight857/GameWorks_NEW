@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 /*=============================================================================================
@@ -11,18 +11,11 @@
 #include "Containers/UnrealString.h"
 #include "GenericPlatform/GenericPlatformOutputDevices.h"
 
-class FOutputDeviceConsole;
-class FOutputDeviceError;
-
 struct CORE_API FLinuxOutputDevices : public FGenericPlatformOutputDevices
 {
-	static void							SetupOutputDevices();
-	static FString						GetAbsoluteLogFilename();
-
-	static FOutputDevice*			GetEventLog();
-	static FOutputDeviceConsole*	GetLogConsole();
-	static FOutputDeviceError*		GetError();
-	static FFeedbackContext*		GetWarn();
+	static void SetupOutputDevices();
+	static FString GetAbsoluteLogFilename();
+	static FOutputDevice* GetEventLog();
 };
 
 typedef FLinuxOutputDevices FPlatformOutputDevices;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/NavLinkProxy.h"
 #include "UObject/ConstructorHelpers.h"
@@ -219,7 +219,7 @@ FBox ANavLinkProxy::GetComponentsBoundingBox(bool bNonColliding) const
 		LinksBB += SegmentLink.RightEnd;
 	}
 
-	LinksBB = LinksBB.TransformBy(RootComponent->ComponentToWorld);
+	LinksBB = LinksBB.TransformBy(RootComponent->GetComponentTransform());
 
 	if (SmartLinkComp && SmartLinkComp->IsNavigationRelevant())
 	{
@@ -278,12 +278,3 @@ bool ANavLinkProxy::HasMovingAgents() const
 {
 	return SmartLinkComp->HasMovingAgents();
 }
-
-/** Returns SmartLinkComp subobject **/
-UNavLinkCustomComponent* ANavLinkProxy::GetSmartLinkComp() const { return SmartLinkComp; }
-#if WITH_EDITORONLY_DATA
-/** Returns EdRenderComp subobject **/
-UNavLinkRenderingComponent* ANavLinkProxy::GetEdRenderComp() const { return EdRenderComp; }
-/** Returns SpriteComponent subobject **/
-UBillboardComponent* ANavLinkProxy::GetSpriteComponent() const { return SpriteComponent; }
-#endif

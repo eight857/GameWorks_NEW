@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,10 +8,10 @@ class FGitSourceControlSettings
 {
 public:
 	/** Get the Git Binary Path */
-	const FString& GetBinaryPath() const;
+	const FString GetBinaryPath() const;
 
 	/** Set the Git Binary Path */
-	void SetBinaryPath(const FString& InString);
+	bool SetBinaryPath(const FString& InString);
 
 	/** Load settings from ini file */
 	void LoadSettings();

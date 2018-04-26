@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AudioDecompress.h: Unreal audio vorbis decompression interface object.
@@ -11,6 +11,7 @@
 #include "Async/AsyncWork.h"
 #include "Sound/SoundWave.h"
 #include "Misc/ScopeLock.h"
+#include "HAL/LowLevelMemTracker.h"
 
 // 186ms of 44.1KHz data
 // 372ms of 22KHz data
@@ -122,6 +123,23 @@ public:
 	virtual int32 GetCurrentChunkOffset() const {return -1;}
 };
 
+/** Struct used to store the results of a decode operation. **/
+struct FDecodeResult
+{
+	// Number of bytes of compressed data consumed
+	int32 NumCompressedBytesConsumed;
+	// Number of bytes produced
+	int32 NumPcmBytesProduced;
+	// Number of frames produced.
+	int32 NumAudioFramesProduced;
+
+	FDecodeResult()
+		: NumCompressedBytesConsumed(INDEX_NONE)
+		, NumPcmBytesProduced(INDEX_NONE)
+		, NumAudioFramesProduced(INDEX_NONE)
+	{}
+};
+
 /** 
  * Default implementation of a streamed compressed audio format.
  * Can be subclassed to support streaming of a specific asset format. Handles all 
@@ -156,13 +174,13 @@ public:
 	virtual bool CreateDecoder() = 0;
 
 	/** Decode the input compressed frame data into output PCMData buffer. */
-	virtual int32 Decode(const uint8* FrameData, uint16 FrameSize, int16* OutPCMData, int32 SampleSize) = 0;
+	virtual FDecodeResult Decode(const uint8* CompressedData, const int32 CompressedDataSize, uint8* OutPCMData, const int32 OutputPCMDataSize) = 0;
 
 	/** Optional method to allow decoder to prepare to loop. */
 	virtual void PrepareToLoop() {}
 
 	/** Return the size of the current compression frame */
-	virtual uint32 GetFrameSize() = 0;
+	virtual int32 GetFrameSize() = 0;
 
 	/** The size of the decode PCM buffer size. */
 	virtual uint32 GetMaxFrameSizeSamples() const = 0;
@@ -173,7 +191,7 @@ protected:
 	uint32	Read(void *Outbuffer, uint32 DataSize);
 
 	/**
-	* Decompresses a frame of Opus data to PCM buffer
+	* Decompresses a frame of data to PCM buffer
 	*
 	* @param FrameSize Size of the frame in bytes
 	* @return The amount of samples that were decompressed (< 0 indicates error)
@@ -341,6 +359,8 @@ public:
 
 	void DoWork()
 	{
+		LLM_SCOPE(ELLMTag::Audio);
+
 		switch(TaskType)
 		{
 		case ERealtimeAudioTaskType::CompressedInfo:
@@ -401,6 +421,8 @@ public:
 	}
 };
 
+ENGINE_API bool ShouldUseBackgroundPoolFor_FAsyncRealtimeAudioTask();
+
 template<class T>
 class FAsyncRealtimeAudioTaskProxy
 {
@@ -440,7 +462,7 @@ public:
 	void StartBackgroundTask()
 	{
 		FScopeLock Lock(&CritSect);
-		Task->StartBackgroundTask();
+		Task->StartBackgroundTask(ShouldUseBackgroundPoolFor_FAsyncRealtimeAudioTask() ? GBackgroundPriorityThreadPool : GThreadPool);
 	}
 
 	FAsyncRealtimeAudioTaskWorker<T>& GetTask()

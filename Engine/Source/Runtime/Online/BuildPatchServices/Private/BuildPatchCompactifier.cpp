@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 BuildPatchCompactifier.cpp: Implements the classes that clean up chunk and file
@@ -114,7 +114,7 @@ bool FBuildDataCompactifier::Compactify(float DataAgeThreshold, const FString& D
 	uint64 BytesSkipped = 0;
 	uint64 NonPatchBytesProcessed = 0;
 	uint64 BytesDeleted = 0;
-	uint64 CurrentFileSize;
+	int64 CurrentFileSize;
 	FGuid FileGuid;
 	TArray<FString> DeletedChunks;
 

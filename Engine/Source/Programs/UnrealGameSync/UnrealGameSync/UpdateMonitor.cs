@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System;
 using System.Collections.Generic;
@@ -61,7 +61,7 @@ namespace UnrealGameSync
 
 		void PollForUpdates()
 		{
-			while(!QuitEvent.WaitOne(20 * 1000))
+			while(!QuitEvent.WaitOne(5 * 60 * 1000))
 			{
 				StringWriter Log = new StringWriter();
 

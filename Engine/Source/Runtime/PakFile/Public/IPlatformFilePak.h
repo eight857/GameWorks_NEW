@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,6 +9,8 @@
 #include "Misc/ScopeLock.h"
 #include "Templates/ScopedPointer.h"
 #include "UniquePtr.h"
+#include "BigInt.h"
+#include "AES.h"
 
 class FChunkCacheWorker;
 class IAsyncReadFileHandle;
@@ -22,6 +24,8 @@ DECLARE_DWORD_ACCUMULATOR_STAT_EXTERN(TEXT("Num open pak file handles"), STAT_Pa
 DECLARE_DELEGATE_RetVal_OneParam(bool, FFilenameSecurityDelegate, const TCHAR* /*InFilename*/);
 
 #define PAKHASH_USE_CRC	1
+#define PAK_TRACKER 0
+#define PAK_SIGNATURE_CHECK_FAILS_ARE_FATAL 0
 
 #if PAKHASH_USE_CRC
 typedef uint32 TPakChunkHash;
@@ -410,7 +414,7 @@ public:
 			const FPakDirectory* PakDirectory = FindDirectory(*Path);
 			if (PakDirectory != NULL)
 			{
-				FString RelativeFilename(Filename.Mid(MountPoint.Len()));
+				FString RelativeFilename(Filename.Mid(Path.Len() + 1));
 				FoundFile = PakDirectory->Find(RelativeFilename);
 			}
 		}
@@ -473,7 +477,7 @@ public:
 						{
 							for (FPakDirectory::TConstIterator DirectoryIt(It.Value()); DirectoryIt; ++DirectoryIt)
 							{
-								OutFiles.Add(MountPoint + DirectoryIt.Key());
+								OutFiles.Add(MountPoint + It.Key() + DirectoryIt.Key());
 							}
 						}
 						if (bIncludeDirectories)
@@ -492,7 +496,7 @@ public:
 						{
 							for (FPakDirectory::TConstIterator DirectoryIt(It.Value()); DirectoryIt; ++DirectoryIt)
 							{
-								OutFiles.Add(MountPoint + DirectoryIt.Key());
+								OutFiles.Add(MountPoint + It.Key() + DirectoryIt.Key());
 							}
 						}
 						// Add sub-folders in the specified folder only
@@ -554,6 +558,8 @@ public:
 		TMap<FString, FPakDirectory>::TConstIterator IndexIt;
 		/** Directory iterator. */
 		FPakDirectory::TConstIterator DirectoryIt;
+		/** The cached filename for return in Filename() */
+		FString CachedFilename;
 
 	public:
 		/**
@@ -566,6 +572,7 @@ public:
 		, IndexIt(PakFile.GetIndex())
 		, DirectoryIt((IndexIt ? FPakDirectory::TConstIterator(IndexIt.Value()): FPakDirectory()))
 		{
+			UpdateCachedFilename();
 		}
 
 		FFileIterator& operator++()		
@@ -584,6 +591,7 @@ public:
 					new(&DirectoryIt) FPakDirectory::TConstIterator(IndexIt.Value());
 				}
 			}
+			UpdateCachedFilename();
 			return *this; 
 		}
 
@@ -598,8 +606,21 @@ public:
 			return !(bool)*this;
 		}
 
-		const FString& Filename() const		{ return DirectoryIt.Key(); }
+		const FString& Filename() const		{ return CachedFilename; }
 		const FPakEntry& Info() const	{ return *DirectoryIt.Value(); }
+
+	private:
+		FORCEINLINE void UpdateCachedFilename()
+		{
+			if (!!IndexIt && !!DirectoryIt)
+			{
+				CachedFilename = IndexIt.Key() + DirectoryIt.Key();
+			}
+			else
+			{
+				CachedFilename.Empty();
+			}
+		}
 	};
 
 	/**
@@ -982,12 +1003,12 @@ public:
 	/**
 	* Helper function for accessing pak encryption key
 	*/
-	static const ANSICHAR* GetPakEncryptionKey();
+	static void GetPakEncryptionKey(FAES::FAESKey& OutKey);
 
 	/**
 	* Helper function for accessing pak signing keys
 	*/
-	static void GetPakSigningKeys(FString& OutExponent, FString& OutModulus);
+	static void GetPakSigningKeys(FEncryptionKey& OutKey);
 
 	/**
 	 * Constructor.
@@ -1262,7 +1283,7 @@ public:
 				const FString* RealFilename = PakDirectory->FindKey(const_cast<FPakEntry*>(FileEntry));
 				if (RealFilename != nullptr)
 				{
-					return *RealFilename;
+					return Path / *RealFilename;
 				}
 			}
 		}
@@ -1590,6 +1611,73 @@ public:
 		return IPlatformFile::IterateDirectoryStatRecursively(Directory, PakVisitor);
 	}
 
+	virtual void FindFiles(TArray<FString>& FoundFiles, const TCHAR* Directory, const TCHAR* FileExtension) override
+	{		
+		if (LowerLevel->DirectoryExists(Directory))
+		{
+			LowerLevel->FindFiles(FoundFiles, Directory, FileExtension);
+		}
+
+		bool bRecursive = false;
+		FindFilesInternal(FoundFiles, Directory, FileExtension, bRecursive);
+	}
+	
+	virtual void FindFilesRecursively(TArray<FString>& FoundFiles, const TCHAR* Directory, const TCHAR* FileExtension) override
+	{
+		if (LowerLevel->DirectoryExists(Directory))
+		{
+			LowerLevel->FindFilesRecursively(FoundFiles, Directory, FileExtension);
+		}
+		
+		bool bRecursive = true;
+		FindFilesInternal(FoundFiles, Directory, FileExtension, bRecursive);
+	}
+
+	void FindFilesInternal(TArray<FString>& FoundFiles, const TCHAR* Directory, const TCHAR* FileExtension, bool bRecursive)
+	{
+		TArray<FPakListEntry> Paks;
+		GetMountedPaks(Paks);
+		if (Paks.Num())
+		{
+			TSet<FString> FilesVisited;
+			FilesVisited.Append(FoundFiles);
+			
+			FString StandardDirectory = Directory;
+			FString FileExtensionStr = FileExtension;
+			FPaths::MakeStandardFilename(StandardDirectory);
+			bool bIncludeFiles = true;
+			bool bIncludeFolders = false;
+
+			TArray<FString> FilesInPak;
+			FilesInPak.Reserve(64);
+			for (int32 PakIndex = 0; PakIndex < Paks.Num(); PakIndex++)
+			{
+				FPakFile& PakFile = *Paks[PakIndex].PakFile;
+				PakFile.FindFilesAtPath(FilesInPak, *StandardDirectory, bIncludeFiles, bIncludeFolders, bRecursive);
+			}
+			
+			for (const FString& Filename : FilesInPak)
+			{
+				// filter out files by FileExtension
+				if (FileExtensionStr.Len())
+				{
+					if (!Filename.EndsWith(FileExtensionStr))
+					{
+						continue;
+					}
+				}
+								
+				// make sure we don't add duplicates to FoundFiles
+				bool bVisited = false;
+				FilesVisited.Add(Filename, &bVisited);
+				if (!bVisited)
+				{
+					FoundFiles.Add(Filename);
+				}
+			}
+		}
+	}
+	
 	virtual bool DeleteDirectoryRecursively(const TCHAR* Directory) override
 	{
 		// Can't delete directories existing in pak files. See DeleteDirectory(..) for more info.
@@ -1661,8 +1749,15 @@ public:
 	void HandlePakListCommand(const TCHAR* Cmd, FOutputDevice& Ar);
 	void HandleMountCommand(const TCHAR* Cmd, FOutputDevice& Ar);
 	void HandleUnmountCommand(const TCHAR* Cmd, FOutputDevice& Ar);
+	void HandlePakCorruptCommand(const TCHAR* Cmd, FOutputDevice& Ar);
 #endif
 	// END Console commands
+	
+#if PAK_TRACKER
+	static TMap<FString, int32> GPakSizeMap;
+	static void TrackPak(const TCHAR* Filename, const FPakEntry* PakEntry);
+	static TMap<FString, int32>& GetPakMap() { return GPakSizeMap; }
+#endif
 };
 
 

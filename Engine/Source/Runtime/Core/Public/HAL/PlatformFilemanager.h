@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -47,6 +47,11 @@ public:
 	 * @return Platform file instance of the platform file type was found, nullptr otherwise.
 	 */
 	IPlatformFile* GetPlatformFile( const TCHAR* Name );
+
+	/**
+	 * calls Tick on the platform files in the TopmostPlatformFile chain
+	 */
+	void TickActivePlatformFile();
 
 	/**
 	* Permorms additional initialization when the new async IO is enabled.

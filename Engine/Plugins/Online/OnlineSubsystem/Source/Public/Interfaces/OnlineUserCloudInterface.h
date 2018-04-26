@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -78,7 +78,7 @@ typedef FOnDeleteUserFileComplete::FDelegate FOnDeleteUserFileCompleteDelegate;
  * @param BytesUsed       Will be set to the total number of bytes used by the user
  * @param TotalQuota      The total number of bytes the user is entitled to write
  */
-DECLARE_MULTICAST_DELEGATE_FourParams(FOnRequestUsageInfoComplete, bool, const FUniqueNetId&, int64, TOptional<int64>);
+DECLARE_MULTICAST_DELEGATE_FourParams(FOnRequestUsageInfoComplete, bool, const FUniqueNetId&, int64, const TOptional<int64>&);
 typedef FOnRequestUsageInfoComplete::FDelegate FOnRequestUsageInfoCompleteDelegate;
 
 
@@ -257,7 +257,7 @@ public:
 	 * @param BytesUsed       Will be set to the total number of bytes used by the user
 	 * @param TotalQuota      The total number of bytes the user is entitled to write
 	 */
-	DEFINE_ONLINE_DELEGATE_FOUR_PARAM(OnRequestUsageInfoComplete, bool, const FUniqueNetId&, int64, TOptional<int64>);
+	DEFINE_ONLINE_DELEGATE_FOUR_PARAM(OnRequestUsageInfoComplete, bool, const FUniqueNetId&, int64, const TOptional<int64>&);
 
 	/**
 	 *	Print out the state of the cloud for this service

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -651,7 +651,7 @@ template <typename T>
 FORCEINLINE typename TEnableIf<TIsUnboundedArray<T>::Value, TUniquePtr<T>>::Type MakeUnique(SIZE_T Size)
 {
 	typedef typename TRemoveExtent<T>::Type ElementType;
-	return TUniquePtr<T>(new ElementType[Size]);
+	return TUniquePtr<T>(new ElementType[Size]());
 }
 
 /**

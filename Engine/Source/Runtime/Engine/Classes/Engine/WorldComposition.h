@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -231,6 +231,12 @@ public:
 	// Whether to rebase origin in 3D space, otherwise only on XY plane
 	UPROPERTY(config)
 	bool						bRebaseOriginIn3DSpace;
+
+#if WITH_EDITORONLY_DATA
+	// Whether all tiles locations are locked
+	UPROPERTY()
+	bool						bLockTilesLocation;
+#endif
 
 	// Maximum distance to current view point where we should initiate origin rebasing
 	UPROPERTY(config)

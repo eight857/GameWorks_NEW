@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	StaticMeshActorBase.cpp: Static mesh actor base class implementation.
@@ -34,8 +34,8 @@ AStaticMeshActor::AStaticMeshActor(const FObjectInitializer& ObjectInitializer)
 
 	RootComponent = StaticMeshComponent;
 
-	// By default all static mesh actors can be put inside of a GC cluster (see ULevelActorContainer and ULevel::CreateCluster())
-	bCanBeInCluster = true;
+	// Only actors that are literally static mesh actors can be placed in clusters, native subclasses or BP subclasses are not safe by default
+	bCanBeInCluster = (GetClass() == AStaticMeshActor::StaticClass());
 }
 
 void AStaticMeshActor::BeginPlay()
@@ -167,21 +167,25 @@ void AStaticMeshActor::CheckForErrors()
 
 	if( !StaticMeshComponent )
 	{
+		FFormatNamedArguments Arguments;
+		Arguments.Add(TEXT("ActorName"), FText::FromString(GetName()));
 		MapCheck.Warning()
 			->AddToken(FUObjectToken::Create(this))
-			->AddToken(FTextToken::Create(LOCTEXT( "MapCheck_Message_StaticMeshComponent", "Static mesh actor has NULL StaticMeshComponent property - please delete" ) ))
+			->AddToken(FTextToken::Create(FText::Format(LOCTEXT( "MapCheck_Message_StaticMeshComponent", "Static mesh actor {ActorName} has NULL StaticMeshComponent property - please delete" ), Arguments)))
 			->AddToken(FMapErrorToken::Create(FMapErrors::StaticMeshComponent));
 	}
 	else if( StaticMeshComponent->GetStaticMesh() == nullptr )
 	{
+		FFormatNamedArguments Arguments;
+		Arguments.Add(TEXT("ActorName"), FText::FromString(GetName()));
 		MapCheck.Warning()
 			->AddToken(FUObjectToken::Create(this))
-			->AddToken(FTextToken::Create(LOCTEXT( "MapCheck_Message_StaticMeshNull", "Static mesh actor has NULL StaticMesh property" ) ))
+			->AddToken(FTextToken::Create(FText::Format(LOCTEXT( "MapCheck_Message_StaticMeshNull", "Static mesh actor {ActorName} has NULL StaticMesh property" ), Arguments)))
 			->AddToken(FMapErrorToken::Create(FMapErrors::StaticMeshNull));
 	}
 	else
 	{
-		FCollisionQueryParams SphereParams(FName(TEXT("CheckForErrors")), false, this);
+		FCollisionQueryParams SphereParams(SCENE_QUERY_STAT(CheckForErrors), false, this);
 
 		TArray<FOverlapResult> Overlaps;
 		GetWorld()->OverlapMultiByChannel(Overlaps, GetActorLocation(), FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(1.f), SphereParams);
@@ -246,5 +250,3 @@ void AStaticMeshActor::CheckForErrors()
 
 #undef LOCTEXT_NAMESPACE
 
-/** Returns StaticMeshComponent subobject **/
-UStaticMeshComponent* AStaticMeshActor::GetStaticMeshComponent() const { return StaticMeshComponent; }

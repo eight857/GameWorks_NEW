@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlueprintNodeSignature.h"
 #include "Misc/SecureHash.h"
@@ -58,7 +58,7 @@ FBlueprintNodeSignature::FBlueprintNodeSignature(FString const& UserString)
 
 	for (FString& SignatureElement : SignatureElements)
 	{
-		SignatureElement.Trim();
+		SignatureElement.TrimStartInline();
 
 		FString SignatureKey, SignatureValue;
 		SignatureElement.Split(SignatureKeyDelim, &SignatureKey, &SignatureValue);

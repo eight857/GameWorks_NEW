@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -70,6 +70,7 @@ class IProjectManager
 {
 
 public:
+	virtual ~IProjectManager() { }
 
 	/**
 	 * Static: Access singleton instance
@@ -180,13 +181,6 @@ public:
 	virtual FOnTargetPlatformsForCurrentProjectChangedEvent& OnTargetPlatformsForCurrentProjectChanged() = 0;
 
 	/**
-	 * Gets a list of plugins enabled for the current project.
-	 * 
-	 * @param	OutPluginNames		Array to receive the list of plugin names
-	 */
-	virtual void GetEnabledPlugins(TArray<FString>& OutPluginNames) const = 0;
-
-	/**
 	 * Hack to checks whether the current project has a non-default plugin enabled (ie. one which is not included by default in UE4Game).
 	 * 
 	 * @return	True if the project has a non-default plugin enabled.
@@ -199,10 +193,14 @@ public:
 	 * @param	PluginName		Name of the plugin
 	 * @param	bEnabled		Whether to enable or disable the plugin
 	 * @param	OutFailReason	On failure, gives an error message
-	 * @param	MarketplaceURL	Marketplace URL to open if the user does not have this plugin installed
 	 * @return	True if the plugin has been marked as enabled, and the project descriptor has been updated.
 	 */
-	virtual bool SetPluginEnabled(const FString& PluginName, bool bEnabled, FText& OutFailReason, const FString& MarketplaceURL = TEXT("")) = 0;
+	virtual bool SetPluginEnabled(const FString& PluginName, bool bEnabled, FText& OutFailReason) = 0;
+
+	/**
+	 * 
+	 */
+	virtual bool RemovePluginReference(const FString& PluginName, FText& OutFailReason) = 0;
 
 	/**
 	 * Updates a directory to be scanned for plugins (added or removed)
@@ -224,4 +222,18 @@ public:
 	 * @return	True if the project was saved successfully
 	 */
 	virtual bool SaveCurrentProjectToDisk(FText& OutFailReason) = 0;
+
+	/**
+	 * Gets the enterprise flag value on the current project
+	 *
+	 * @return	True if the project is an Enterprise project
+	 */
+	virtual bool IsEnterpriseProject() = 0;
+
+	/**
+	 * Sets the enterprise flag value on the current project
+	 *
+	 * @param	bValue	The value to set the enterprise flag to
+	 */
+	virtual void SetIsEnterpriseProject(bool bValue) = 0;
 };

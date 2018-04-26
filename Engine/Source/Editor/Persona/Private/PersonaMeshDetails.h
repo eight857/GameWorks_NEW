@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,7 +14,7 @@
 #include "IDetailCustomization.h"
 #include "SComboBox.h"
 
-class FAssetData;
+struct FAssetData;
 class FDetailWidgetRow;
 class FPersonaMeshDetails;
 class IDetailChildrenBuilder;
@@ -81,7 +81,7 @@ struct FSectionLocalizer
 class FSkelMeshReductionSettingsLayout : public IDetailCustomNodeBuilder, public TSharedFromThis<FSkelMeshReductionSettingsLayout>
 {
 public:
-	FSkelMeshReductionSettingsLayout(int32 InLODIndex, TSharedRef<class FPersonaMeshDetails> InParentLODSettings, TSharedPtr<IPropertyHandle> InBoneToRemoveProperty, const USkeleton* InSkeleton);
+	FSkelMeshReductionSettingsLayout(int32 InLODIndex, TSharedRef<class FPersonaMeshDetails> InParentLODSettings, const USkeleton* InSkeleton);
 	virtual ~FSkelMeshReductionSettingsLayout();
 
 	const FSkeletalMeshOptimizationSettings& GetSettings() const;
@@ -114,10 +114,6 @@ private:
 	void OnMaxBonesPerVertexChanged(int32 NewValue);
 	void OnBaseLODChanged(int32 NewBasedLOD);
 
-	FString GetBakePosePath() const;
-	bool FilterOutBakePose(const FAssetData& AssetData) const;
-	void SetBakePose(const FAssetData& AssetData);
-
 	void OnSilhouetteImportanceChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
 	void OnTextureImportanceChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
 	void OnShadingImportanceChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
@@ -129,7 +125,6 @@ private:
 private:
 	int32 LODIndex;
 	TWeakPtr<class FPersonaMeshDetails> ParentLODSettings;
-	TSharedPtr<IPropertyHandle>	BoneToRemoveProperty;
 	FSkeletalMeshOptimizationSettings ReductionSettings;
 
 	const USkeleton* Skeleton;
@@ -145,11 +140,11 @@ private:
 class FPersonaMeshDetails : public IDetailCustomization
 {
 public:
-	FPersonaMeshDetails(TSharedRef<class IPersonaToolkit> InPersonaToolkit) : PersonaToolkitPtr(InPersonaToolkit) {}
+	FPersonaMeshDetails(TSharedRef<class IPersonaToolkit> InPersonaToolkit) : PersonaToolkitPtr(InPersonaToolkit) { CustomLODEditMode = false; }
 	~FPersonaMeshDetails();
 
 	/** Makes a new instance of this detail layout class for a specific detail view requesting it */
-	static TSharedRef<IDetailCustomization> MakeInstance(TSharedRef<class IPersonaToolkit> InPersonaToolkit);
+	static TSharedRef<IDetailCustomization> MakeInstance(TWeakPtr<class IPersonaToolkit> InPersonaToolkit);
 
 	/** IDetailCustomization interface */
 	virtual void CustomizeDetails( IDetailLayoutBuilder& DetailLayout ) override;
@@ -211,9 +206,28 @@ private:
 	 */
 	TSharedRef<SWidget> OnGenerateCustomSectionWidgetsForSection(int32 LODIndex, int32 SectionIndex);
 
+	bool IsSectionEnabled(int32 LodIndex, int32 SectionIndex) const;
+	EVisibility ShowEnabledSectionDetail(int32 LodIndex, int32 SectionIndex) const;
+	EVisibility ShowDisabledSectionDetail(int32 LodIndex, int32 SectionIndex) const;
+	void OnSectionEnabledChanged(int32 LodIndex, int32 SectionIndex, bool bEnable);
+
+	TSharedRef<SWidget> OnGenerateLodComboBoxForLodPicker();
+	EVisibility LodComboBoxVisibilityForLodPicker() const;
+	bool IsLodComboBoxEnabledForLodPicker() const;
+
+	/*
+	 * Generate the context menu to choose the LOD we will display the picker list
+	*/
+	TSharedRef<SWidget> OnGenerateLodMenuForLodPicker();
+	FText GetCurrentLodName() const;
+	FText GetCurrentLodTooltip() const;
+
+	void SetCurrentLOD(int32 NewLodIndex);
+
+	void UpdateLODCategoryVisibility() const;
+
 	FText GetMaterialNameText(int32 MaterialIndex)const ;
 	void OnMaterialNameCommitted(const FText& InValue, ETextCommit::Type CommitType, int32 MaterialIndex);
-	void OnMaterialNameChanged(const FText& InValue, int32 MaterialIndex);
 
 	FText GetOriginalImportMaterialNameText(int32 MaterialIndex)const;
 
@@ -452,6 +466,16 @@ private:
 	void OnPasteMaterialItem(int32 CurrentSlot);
 
 	void OnPreviewMeshChanged(USkeletalMesh* OldSkeletalMesh, USkeletalMesh* NewMesh);
+	
+	bool FilterOutBakePose(const struct FAssetData& AssetData, USkeleton* Skeleton) const;
+
+	FText GetLODCustomModeNameContent(int32 LODIndex) const;
+	ECheckBoxState IsLODCustomModeCheck(int32 LODIndex) const;
+	void SetLODCustomModeCheck(ECheckBoxState NewState, int32 LODIndex);
+	bool IsLODCustomModeEnable(int32 LODIndex) const;
+
+	/** Gets the max LOD that can be set from the lod count slider (current num plus an interval) */
+	TOptional<int32> GetLodSliderMaxValue() const;
 
 public:
 
@@ -481,7 +505,12 @@ private:
 	/* This is to know if material are used by any LODs sections. */
 	TMap<int32, TArray<FSectionLocalizer>> MaterialUsedMap;
 
-#if WITH_APEX_CLOTHING
+	TArray<class IDetailCategoryBuilder*> LodCategories;
+	IDetailCategoryBuilder* LodCustomCategory;
+
+	bool CustomLODEditMode;
+	TArray<bool> DetailDisplayLODs;
+
 private:
 
 	// info about clothing combo boxes for multiple LOD
@@ -518,6 +547,9 @@ private:
 	// Refreshes clothing combo boxes that are currently active
 	void RefreshClothingComboBoxes();
 
+	// Called as clothing combo boxes open to validate option entries
+	void OnClothingComboBoxOpening();
+
 	// Generate a widget for the clothing details panel
 	TSharedRef<SWidget> OnGenerateWidgetForClothingEntry(TSharedPtr<FClothingEntry> InEntry);
 
@@ -550,7 +582,5 @@ private:
 
 	/* Removes a clothing asset */ 
 	FReply OnRemoveApexFileClicked(int32 AssetIndex, IDetailLayoutBuilder* DetailLayout);
-
-#endif // #if WITH_APEX_CLOTHING
 
 };

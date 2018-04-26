@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "StaticMeshEditorViewportClient.h"
 #include "EngineGlobals.h"
@@ -126,7 +126,7 @@ struct HSMECollisionProxy : public HHitProxy
 		HHitProxy(HPP_UI),
 		PrimData(InPrimData) {}
 
-	HSMECollisionProxy(EKCollisionPrimitiveType InPrimType, int32 InPrimIndex) :
+	HSMECollisionProxy(EAggCollisionShape::Type InPrimType, int32 InPrimIndex) :
 		HHitProxy(HPP_UI),
 		PrimData(InPrimType, InPrimIndex) {}
 };
@@ -465,7 +465,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 
 		for (int32 i = 0; i < AggGeom->SphereElems.Num(); ++i)
 		{
-			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(KPT_Sphere, i);
+			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(EAggCollisionShape::Sphere, i);
 			PDI->SetHitProxy(HitProxy);
 
 			const FColor CollisionColor = StaticMeshEditor->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
@@ -478,7 +478,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 
 		for (int32 i = 0; i < AggGeom->BoxElems.Num(); ++i)
 		{
-			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(KPT_Box, i);
+			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(EAggCollisionShape::Box, i);
 			PDI->SetHitProxy(HitProxy);
 
 			const FColor CollisionColor = StaticMeshEditor->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
@@ -491,7 +491,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 
 		for (int32 i = 0; i < AggGeom->SphylElems.Num(); ++i)
 		{
-			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(KPT_Sphyl, i);
+			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(EAggCollisionShape::Sphyl, i);
 			PDI->SetHitProxy(HitProxy);
 
 			const FColor CollisionColor = StaticMeshEditor->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
@@ -504,7 +504,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 
 		for (int32 i = 0; i < AggGeom->ConvexElems.Num(); ++i)
 		{
-			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(KPT_Convex, i);
+			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(EAggCollisionShape::Convex, i);
 			PDI->SetHitProxy(HitProxy);
 
 			const FColor CollisionColor = StaticMeshEditor->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
@@ -544,8 +544,8 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 			EdgeVertices[ 1 ] = SelectedEdgeVertices[VertexIndex + 1];
 
 			PDI->DrawLine(
-				StaticMeshComponent->ComponentToWorld.TransformPosition( EdgeVertices[ 0 ] ),
-				StaticMeshComponent->ComponentToWorld.TransformPosition( EdgeVertices[ 1 ] ),
+				StaticMeshComponent->GetComponentTransform().TransformPosition( EdgeVertices[ 0 ] ),
+				StaticMeshComponent->GetComponentTransform().TransformPosition( EdgeVertices[ 1 ] ),
 				FColor( 255, 255, 0 ),
 				SDPG_World );
 		}
@@ -558,15 +558,15 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 		FIndexArrayView Indices = LODModel.IndexBuffer.GetArrayView();
 		uint32 NumIndices = Indices.Num();
 
-		FMatrix LocalToWorldInverseTranspose = StaticMeshComponent->ComponentToWorld.ToMatrixWithScale().InverseFast().GetTransposed();
+		FMatrix LocalToWorldInverseTranspose = StaticMeshComponent->GetComponentTransform().ToMatrixWithScale().InverseFast().GetTransposed();
 		for (uint32 i = 0; i < NumIndices; i++)
 		{
-			const FVector& VertexPos = LODModel.PositionVertexBuffer.VertexPosition( Indices[i] );
+			const FVector& VertexPos = LODModel.VertexBuffers.PositionVertexBuffer.VertexPosition( Indices[i] );
 
-			const FVector WorldPos = StaticMeshComponent->ComponentToWorld.TransformPosition( VertexPos );
-			const FVector& Normal = LODModel.VertexBuffer.VertexTangentZ( Indices[i] ); 
-			const FVector& Binormal = LODModel.VertexBuffer.VertexTangentY( Indices[i] ); 
-			const FVector& Tangent = LODModel.VertexBuffer.VertexTangentX( Indices[i] ); 
+			const FVector WorldPos = StaticMeshComponent->GetComponentTransform().TransformPosition( VertexPos );
+			const FVector& Normal = LODModel.VertexBuffers.StaticMeshVertexBuffer.VertexTangentZ( Indices[i] ); 
+			const FVector& Binormal = LODModel.VertexBuffers.StaticMeshVertexBuffer.VertexTangentY( Indices[i] ); 
+			const FVector& Tangent = LODModel.VertexBuffers.StaticMeshVertexBuffer.VertexTangentX( Indices[i] ); 
 
 			const float Len = 5.0f;
 			const float BoxLen = 2.0f;
@@ -599,7 +599,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 
 	if( bShowPivot )
 	{
-		FUnrealEdUtils::DrawWidget(View, PDI, StaticMeshComponent->ComponentToWorld.ToMatrixWithScale(), 0, 0, EAxisList::All, EWidgetMovementMode::WMM_Translate, false);
+		FUnrealEdUtils::DrawWidget(View, PDI, StaticMeshComponent->GetComponentTransform().ToMatrixWithScale(), 0, 0, EAxisList::All, EWidgetMovementMode::WMM_Translate, false);
 	}
 
 	if( bDrawAdditionalData )
@@ -620,7 +620,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 		if (StaticMesh->NavCollision && StaticMesh->NavCollision->bIsDynamicObstacle)
 		{
 			// Draw the static mesh's body setup (simple collision)
-			FTransform GeomTransform(StaticMeshComponent->ComponentToWorld);
+			FTransform GeomTransform(StaticMeshComponent->GetComponentTransform());
 			FColor NavCollisionColor = FColor(118, 84, 255, 255);
 			StaticMesh->NavCollision->DrawSimpleGeom(PDI, GeomTransform, FColorList::LimeGreen);
 		}
@@ -940,7 +940,7 @@ void FStaticMeshEditorViewportClient::ProcessClick(class FSceneView& InView, cla
 
 			ClearSelectedPrims = false;
 		}
-		else if (IsSetShowSocketsChecked() && HitProxy->IsA(HSMEVertexProxy::StaticGetType()))
+		else if (IsShowSocketsChecked() && HitProxy->IsA(HSMEVertexProxy::StaticGetType()))
 		{
 			UStaticMeshSocket* Socket = StaticMeshEditorPtr.Pin()->GetSelectedSocket();
 
@@ -954,8 +954,8 @@ void FStaticMeshEditorViewportClient::ProcessClick(class FSceneView& InView, cla
 					FIndexArrayView Indices = LODModel.IndexBuffer.GetArrayView();
 					const uint32 Index = Indices[VertexProxy->Index];
 
-					Socket->RelativeLocation = LODModel.PositionVertexBuffer.VertexPosition(Index);
-					Socket->RelativeRotation = FRotationMatrix::MakeFromYZ(LODModel.VertexBuffer.VertexTangentZ(Index), LODModel.VertexBuffer.VertexTangentX(Index)).Rotator();
+					Socket->RelativeLocation = LODModel.VertexBuffers.PositionVertexBuffer.VertexPosition(Index);
+					Socket->RelativeRotation = FRotationMatrix::MakeFromYZ(LODModel.VertexBuffers.StaticMeshVertexBuffer.VertexTangentZ(Index), LODModel.VertexBuffers.StaticMeshVertexBuffer.VertexTangentX(Index)).Rotator();
 
 					ClearSelectedSockets = false;
 				}
@@ -1028,7 +1028,7 @@ void FStaticMeshEditorViewportClient::ProcessClick(class FSceneView& InView, cla
 						const FVector TriangleNormal = (CA ^ BA).GetSafeNormal();
 
 						// Transform the view position from world to component space
-						const FVector ComponentSpaceViewOrigin = StaticMeshComponent->ComponentToWorld.InverseTransformPosition( View->ViewMatrices.GetViewOrigin());
+						const FVector ComponentSpaceViewOrigin = StaticMeshComponent->GetComponentTransform().InverseTransformPosition( View->ViewMatrices.GetViewOrigin());
 								
 						// Determine which side of the triangle's plane that the view position lies on.
 						bIsBackFacing = (FVector::PointPlaneDist( ComponentSpaceViewOrigin,  A, TriangleNormal)  < 0.0f);
@@ -1062,8 +1062,8 @@ void FStaticMeshEditorViewportClient::ProcessClick(class FSceneView& InView, cla
 						}
 						else
 						{
-							FVector WorldSpaceEdgeStart( StaticMeshComponent->ComponentToWorld.TransformPosition( EdgeVertices[ 0 ] ) );
-							FVector WorldSpaceEdgeEnd( StaticMeshComponent->ComponentToWorld.TransformPosition( EdgeVertices[ 1 ] ) );
+							FVector WorldSpaceEdgeStart( StaticMeshComponent->GetComponentTransform().TransformPosition( EdgeVertices[ 0 ] ) );
+							FVector WorldSpaceEdgeEnd( StaticMeshComponent->GetComponentTransform().TransformPosition( EdgeVertices[ 1 ] ) );
 
 							// Determine the mesh edge that's closest to the ray cast through the eye towards the click location
 							FVector ClosestPointToEdgeOnClickLine;
@@ -1180,6 +1180,11 @@ void FStaticMeshEditorViewportClient::ProcessClick(class FSceneView& InView, cla
 	if (ClearSelectedEdges)
 	{
 		SelectedEdgeIndices.Empty();
+		SelectedEdgeVertices.Empty();
+		for (int32 TexCoordIndex = 0; TexCoordIndex < MAX_STATIC_TEXCOORDS; ++TexCoordIndex)
+		{
+			SelectedEdgeTexCoords[TexCoordIndex].Empty();
+		}
 	}
 
 	Invalidate();
@@ -1301,9 +1306,14 @@ void FStaticMeshEditorViewportClient::SetPreviewMesh(UStaticMesh* InStaticMesh, 
 	}
 }
 
-void FStaticMeshEditorViewportClient::SetDrawUVOverlay()
+void FStaticMeshEditorViewportClient::ToggleDrawUVOverlay()
 {
-	bDrawUVs = !bDrawUVs;
+	SetDrawUVOverlay(!bDrawUVs);
+}
+
+void FStaticMeshEditorViewportClient::SetDrawUVOverlay(bool bShouldDraw)
+{
+	bDrawUVs = bShouldDraw;
 	if (FEngineAnalytics::IsAvailable())
 	{
 		FEngineAnalytics::GetProvider().RecordEvent(TEXT("Editor.Usage.StaticMesh.Toolbar"), TEXT("bDrawUVs"), bDrawUVs ? TEXT("True") : TEXT("False"));
@@ -1311,12 +1321,12 @@ void FStaticMeshEditorViewportClient::SetDrawUVOverlay()
 	Invalidate();
 }
 
-bool FStaticMeshEditorViewportClient::IsSetDrawUVOverlayChecked() const
+bool FStaticMeshEditorViewportClient::IsDrawUVOverlayChecked() const
 {
 	return bDrawUVs;
 }
 
-void FStaticMeshEditorViewportClient::SetShowNormals()
+void FStaticMeshEditorViewportClient::ToggleShowNormals()
 {
 	bDrawNormals = !bDrawNormals;
 	if (FEngineAnalytics::IsAvailable())
@@ -1326,12 +1336,12 @@ void FStaticMeshEditorViewportClient::SetShowNormals()
 	Invalidate();
 }
 
-bool FStaticMeshEditorViewportClient::IsSetShowNormalsChecked() const
+bool FStaticMeshEditorViewportClient::IsShowNormalsChecked() const
 {
 	return bDrawNormals;
 }
 
-void FStaticMeshEditorViewportClient::SetShowTangents()
+void FStaticMeshEditorViewportClient::ToggleShowTangents()
 {
 	bDrawTangents = !bDrawTangents;
 	if (FEngineAnalytics::IsAvailable())
@@ -1341,12 +1351,12 @@ void FStaticMeshEditorViewportClient::SetShowTangents()
 	Invalidate();
 }
 
-bool FStaticMeshEditorViewportClient::IsSetShowTangentsChecked() const
+bool FStaticMeshEditorViewportClient::IsShowTangentsChecked() const
 {
 	return bDrawTangents;
 }
 
-void FStaticMeshEditorViewportClient::SetShowBinormals()
+void FStaticMeshEditorViewportClient::ToggleShowBinormals()
 {
 	bDrawBinormals = !bDrawBinormals;
 	if (FEngineAnalytics::IsAvailable())
@@ -1356,12 +1366,12 @@ void FStaticMeshEditorViewportClient::SetShowBinormals()
 	Invalidate();
 }
 
-bool FStaticMeshEditorViewportClient::IsSetShowBinormalsChecked() const
+bool FStaticMeshEditorViewportClient::IsShowBinormalsChecked() const
 {
 	return bDrawBinormals;
 }
 
-void FStaticMeshEditorViewportClient::SetDrawVertices()
+void FStaticMeshEditorViewportClient::ToggleDrawVertices()
 {
 	bDrawVertices = !bDrawVertices;
 	if (FEngineAnalytics::IsAvailable())
@@ -1371,12 +1381,12 @@ void FStaticMeshEditorViewportClient::SetDrawVertices()
 	Invalidate();
 }
 
-bool FStaticMeshEditorViewportClient::IsSetDrawVerticesChecked() const
+bool FStaticMeshEditorViewportClient::IsDrawVerticesChecked() const
 {
 	return bDrawVertices;
 }
 
-void FStaticMeshEditorViewportClient::SetShowSimpleCollision()
+void FStaticMeshEditorViewportClient::ToggleShowSimpleCollision()
 {
 	bShowSimpleCollision = !bShowSimpleCollision;
 
@@ -1395,12 +1405,12 @@ void FStaticMeshEditorViewportClient::SetShowSimpleCollision()
 	Invalidate();
 }
 
-bool FStaticMeshEditorViewportClient::IsSetShowSimpleCollisionChecked() const
+bool FStaticMeshEditorViewportClient::IsShowSimpleCollisionChecked() const
 {
 	return bShowSimpleCollision;
 }
 
-void FStaticMeshEditorViewportClient::SetShowComplexCollision()
+void FStaticMeshEditorViewportClient::ToggleShowComplexCollision()
 {
 	bShowComplexCollision = !bShowComplexCollision;
 
@@ -1417,12 +1427,12 @@ void FStaticMeshEditorViewportClient::SetShowComplexCollision()
 	Invalidate();
 }
 
-bool FStaticMeshEditorViewportClient::IsSetShowComplexCollisionChecked() const
+bool FStaticMeshEditorViewportClient::IsShowComplexCollisionChecked() const
 {
 	return bShowComplexCollision;
 }
 
-void FStaticMeshEditorViewportClient::SetShowSockets()
+void FStaticMeshEditorViewportClient::ToggleShowSockets()
 {
 	bShowSockets = !bShowSockets;
 	if (FEngineAnalytics::IsAvailable())
@@ -1431,12 +1441,12 @@ void FStaticMeshEditorViewportClient::SetShowSockets()
 	}
 	Invalidate();
 }
-bool FStaticMeshEditorViewportClient::IsSetShowSocketsChecked() const
+bool FStaticMeshEditorViewportClient::IsShowSocketsChecked() const
 {
 	return bShowSockets;
 }
 
-void FStaticMeshEditorViewportClient::SetShowPivot()
+void FStaticMeshEditorViewportClient::ToggleShowPivot()
 {
 	bShowPivot = !bShowPivot;
 	if (FEngineAnalytics::IsAvailable())
@@ -1446,12 +1456,12 @@ void FStaticMeshEditorViewportClient::SetShowPivot()
 	Invalidate();
 }
 
-bool FStaticMeshEditorViewportClient::IsSetShowPivotChecked() const
+bool FStaticMeshEditorViewportClient::IsShowPivotChecked() const
 {
 	return bShowPivot;
 }
 
-void FStaticMeshEditorViewportClient::SetDrawAdditionalData()
+void FStaticMeshEditorViewportClient::ToggleDrawAdditionalData()
 {
 	bDrawAdditionalData = !bDrawAdditionalData;
 	if (FEngineAnalytics::IsAvailable())
@@ -1461,7 +1471,7 @@ void FStaticMeshEditorViewportClient::SetDrawAdditionalData()
 	Invalidate();
 }
 
-bool FStaticMeshEditorViewportClient::IsSetDrawAdditionalData() const
+bool FStaticMeshEditorViewportClient::IsDrawAdditionalDataChecked() const
 {
 	return bDrawAdditionalData;
 }

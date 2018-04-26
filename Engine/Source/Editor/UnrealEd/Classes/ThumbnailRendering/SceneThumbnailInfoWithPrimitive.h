@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  * Thumbnail information for assets that need a scene and a primitive
@@ -8,7 +8,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPtr.h"
 #include "ThumbnailRendering/SceneThumbnailInfo.h"
 #include "ThumbnailRendering/ThumbnailManager.h"
 
@@ -26,7 +26,7 @@ class USceneThumbnailInfoWithPrimitive : public USceneThumbnailInfo
 
 	/** The custom mesh used when the primitive type is TPT_None */
 	UPROPERTY(EditAnywhere, Category=Thumbnail)
-	FStringAssetReference PreviewMesh;
+	FSoftObjectPath PreviewMesh;
 
 	UPROPERTY()
 	bool bUserModifiedShape;

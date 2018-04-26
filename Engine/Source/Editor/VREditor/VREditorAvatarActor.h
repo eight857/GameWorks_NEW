@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,11 +15,12 @@ class UMaterialInstanceDynamic;
 UCLASS()
 class AVREditorAvatarActor : public AActor
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
 
 public:
 
-	~AVREditorAvatarActor();
+	/** Default constructor */
+	AVREditorAvatarActor();
 
 	/** Called by VREditorMode::Enter to initialize all post constructor components and to set the VRMode */
 	void Init( class UVREditorMode* InVRMode );

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SynthKnob.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -35,7 +35,7 @@ void USynthKnob::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
 
-	TAttribute<float> ValueBinding = OPTIONAL_BINDING(float, Value);
+	TAttribute<float> ValueBinding = PROPERTY_BINDING(float, Value);
 
 	MySynthKnob->SetValue(ValueBinding);
 	MySynthKnob->SetLocked(Locked);

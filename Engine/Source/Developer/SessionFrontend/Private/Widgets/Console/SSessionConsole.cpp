@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Widgets/Console/SSessionConsole.h"
 #include "DesktopPlatformModule.h"
 #include "Misc/MessageDialog.h"
 #include "HAL/FileManager.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include "Widgets/SOverlay.h"
 #include "SlateOptMacros.h"
 #include "Framework/Application/SlateApplication.h"
@@ -225,7 +226,7 @@ void SSessionConsole::CopyLog()
 		SelectedText += LINE_TERMINATOR;
 	}
 
-	FPlatformMisc::ClipboardCopy(*SelectedText);
+	FPlatformApplicationMisc::ClipboardCopy(*SelectedText);
 }
 
 

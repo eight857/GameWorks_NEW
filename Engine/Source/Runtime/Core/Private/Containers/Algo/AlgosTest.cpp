@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreTypes.h"
 #include "Misc/AssertionMacros.h"
@@ -7,7 +7,14 @@
 #include "Containers/UnrealString.h"
 #include "Misc/AutomationTest.h"
 #include "Containers/Algo/Copy.h"
+#include "Containers/Algo/Heapify.h"
+#include "Containers/Algo/HeapSort.h"
+#include "Containers/Algo/IntroSort.h"
+#include "Containers/Algo/IsHeap.h"
+#include "Containers/Algo/IsSorted.h"
+#include "Containers/Algo/Sort.h"
 #include "Containers/Algo/Transform.h"
+#include "Templates/Greater.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAlgosTest, "System.Core.Misc.Algos", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::SmokeFilter)
 
@@ -247,6 +254,104 @@ bool FAlgosTest::RunTest(const FString& Parameters)
 			TArray<FString> ExpectedNamesOfTeenagers = { TEXT("Jeff"), TEXT("Michelle") };
 			check(NamesOfTeenagers == ExpectedNamesOfTeenagers);
 		}
+	}
+
+	// binary search
+	{
+		// Verify static array case
+		int StaticArray[] = { 2,4,6,6,6,8 };
+
+		check(Algo::BinarySearch(StaticArray, 6) == 2);
+		check(Algo::BinarySearch(StaticArray, 5) == INDEX_NONE);
+		check(Algo::BinarySearchBy(StaticArray, 4, FIdentityFunctor()) == 1);
+
+		check(Algo::LowerBound(StaticArray, 6) == 2);
+		check(Algo::LowerBound(StaticArray, 5) == 2);
+		check(Algo::UpperBound(StaticArray, 6) == 5);
+		check(Algo::LowerBound(StaticArray, 7) == 5);
+		check(Algo::LowerBound(StaticArray, 9) == 6);
+		check(Algo::LowerBoundBy(StaticArray, 6, FIdentityFunctor()) == 2);
+		check(Algo::UpperBoundBy(StaticArray, 6, FIdentityFunctor()) == 5);
+
+		// Dynamic array case
+		TArray<int32> IntArray = { 2,2,4,4,6,6,6,8,8 };
+
+		check(Algo::BinarySearch(IntArray, 6) == 4);
+		check(Algo::BinarySearch(IntArray, 5) == INDEX_NONE);
+		check(Algo::BinarySearchBy(IntArray, 4, FIdentityFunctor()) == 2);
+
+		check(Algo::LowerBound(IntArray, 2) == 0);
+		check(Algo::UpperBound(IntArray, 2) == 2);
+		check(Algo::LowerBound(IntArray, 6) == 4);
+		check(Algo::UpperBound(IntArray, 6) == 7);
+		check(Algo::LowerBound(IntArray, 5) == 4);
+		check(Algo::UpperBound(IntArray, 5) == 4);
+		check(Algo::LowerBound(IntArray, 7) == 7);
+		check(Algo::LowerBound(IntArray, 9) == 9);
+		check(Algo::LowerBoundBy(IntArray, 6, FIdentityFunctor()) == 4);
+		check(Algo::UpperBoundBy(IntArray, 6, FIdentityFunctor()) == 7);
+	}
+
+	// heapify
+	{
+		TArray<int> TestArray = TestData2;
+		Algo::Heapify(TestArray);
+
+		check(Algo::IsHeap(TestArray));
+	}
+
+	// heap sort
+	{
+		TArray<int> TestArray = TestData2;
+		Algo::HeapSort(TestArray);
+
+		check(Algo::IsHeap(TestArray));
+
+		check(Algo::IsSorted(TestArray));
+	}
+
+	// intro sort
+	{
+		TArray<int> TestArray = TestData2;
+		Algo::IntroSort(TestArray);
+
+		check(Algo::IsSorted(TestArray));
+	}
+
+	// sort
+	{
+		// regular Sort
+		TArray<int> TestArray = TestData2;
+		Algo::Sort(TestArray);
+
+		check(Algo::IsSorted(TestArray));
+
+		// Sort with predicate
+		TestArray = TestData2;
+
+		TGreater<> Predicate;
+		Algo::Sort(TestArray, Predicate);
+
+		check(Algo::IsSorted(TestArray, Predicate));
+
+		// SortBy
+		TestArray = TestData2;
+
+		auto Projection = [](int Val) -> int
+		{
+			return Val % 1000; // will sort using the last 3 digits only
+		};
+
+		Algo::SortBy(TestArray, Projection);
+
+		check(Algo::IsSortedBy(TestArray, Projection));
+
+		// SortBy with predicate
+		TestArray = TestData2;
+
+		Algo::SortBy(TestArray, Projection, Predicate);
+
+		check(Algo::IsSortedBy(TestArray, Projection, Predicate));
 	}
 
 	return true;

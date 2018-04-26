@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,6 +14,7 @@
 #include "Sound/SoundBase.h"
 #include "Serialization/BulkData.h"
 #include "Sound/SoundGroups.h"
+#include "AudioMixerTypes.h"
 
 #include "SoundWave.generated.h"
 
@@ -40,8 +41,11 @@ enum EDecompressionType
  */
 struct FStreamedAudioChunk
 {
-	/** Size of the chunk of data in bytes */
+	/** Size of the chunk of data in bytes including zero padding */
 	int32 DataSize;
+
+	/** Size of the audio data. */
+	int32 AudioDataSize;
 
 	/** Bulk data if stored in the package. */
 	FByteBulkData BulkData;
@@ -140,6 +144,9 @@ class ENGINE_API USoundWave : public USoundBase
 	/** Set to true for programmatically-generated, streamed audio. */
 	uint32 bProcedural:1;
 
+	/** Set to true of this is a bus sound source. This will result in the sound wave not generating audio for itself, but generate audio through instances. Used only in audio mixer. */
+	uint32 bIsBus:1;
+
 	/** Set to true for procedural waves that can be processed asynchronously. */
 	uint32 bCanProcessAsync:1;
 
@@ -161,6 +168,10 @@ class ENGINE_API USoundWave : public USoundBase
 	/** Allows sound to play at 0 volume, otherwise will stop the sound when the sound is silent. */
 	UPROPERTY(EditAnywhere, Category=Sound)
 	uint32 bVirtualizeWhenSilent:1;
+
+	/** Whether or not this source is ambisonics file format. */
+	UPROPERTY(EditAnywhere, Category = Sound)
+	uint32 bIsAmbisonics : 1;
 
 	/** Whether this SoundWave was decompressed from OGG. */
 	uint32 bDecompressedFromOgg:1;
@@ -238,6 +249,8 @@ class ENGINE_API USoundWave : public USoundBase
 	
 #endif // WITH_EDITORONLY_DATA
 
+protected:
+
 	/** Curves associated with this sound wave */
 	UPROPERTY(EditAnywhere, Category = SoundWave, AdvancedDisplay)
 	class UCurveTable* Curves;
@@ -250,6 +263,9 @@ public:
 	/** Async worker that decompresses the audio data on a different thread */
 	typedef FAsyncTask< class FAsyncAudioDecompressWorker > FAsyncAudioDecompress;	// Forward declare typedef
 	FAsyncAudioDecompress*		AudioDecompressor;
+
+	/** Whether or not the the precache task has finished. */
+	FThreadSafeBool				bIsPrecacheDone;
 
 	/** Pointer to 16 bit PCM data - used to avoid synchronous operation to obtain first block of the realtime decompressed buffer */
 	uint8*						CachedRealtimeFirstBuffer;
@@ -307,6 +323,7 @@ public:
 	virtual float GetMaxAudibleDistance() override;
 	virtual float GetDuration() override;
 	virtual float GetSubtitlePriority() const override;
+	virtual bool IsAllowedVirtual() const override;
 	//~ End USoundBase Interface.
 
 	/**
@@ -350,15 +367,20 @@ public:
 	FWaveInstance* HandleStart( FActiveSound& ActiveSound, const UPTRINT WaveInstanceHash ) const;
 
 	/** 
-	 * This is only for DTYPE_Procedural audio. Override this function.
-	 *  Put SamplesNeeded PCM samples into Buffer. If put less,
-	 *  silence will be filled in at the end of the buffer. If you
-	 *  put more, data will be truncated.
-	 *  Please note that "samples" means individual channels, not
-	 *  sample frames! If you have stereo data and SamplesNeeded
-	 *  is 1, you're writing two SWORDs, not four!
+	 * This is only used for DTYPE_Procedural audio. It's recommended to use USynthComponent base class
+	 * for procedurally generated sound vs overriding this function. If a new component is not feasible,
+	 * consider using USoundWaveProcedural base class vs USoundWave base class since as it implements
+	 * GeneratePCMData for you and you only need to return PCM data.
 	 */
 	virtual int32 GeneratePCMData(uint8* PCMData, const int32 SamplesNeeded) { ensure(false); return 0; }
+
+	/** 
+	* Return the format of the generated PCM data type. Used in audio mixer to allow generating float buffers and avoid unnecessary format conversions. 
+	* This feature is only supported in audio mixer. If your procedural sound wave needs to be used in both audio mixer and old audio engine,
+	* it's best to generate int16 data as old audio engine only supports int16 formats. Or check at runtime if the audio mixer is enabled.
+	* Audio mixer will convert from int16 to float internally.
+	*/
+	virtual Audio::EAudioMixerStreamDataFormat::Type GetGeneratedPCMDataFormat() const { return Audio::EAudioMixerStreamDataFormat::Int16; }
 
 	/** 
 	 * Gets the compressed data size from derived data cache for the specified format
@@ -387,6 +409,28 @@ public:
 	 * Change the guid and flush all compressed data
 	 */ 
 	void InvalidateCompressedData();
+
+	/** Returns curves associated with this sound wave */
+	virtual class UCurveTable* GetCurveData() const override { return Curves; }
+
+#if WITH_EDITOR
+	/** These functions are required for support for some custom details/editor functionality.*/
+
+	/** Returns internal curves associated with this sound wave */
+	class UCurveTable* GetInternalCurveData() const { return InternalCurves; }
+
+	/** Returns whether this sound wave has internal curves. */
+	bool HasInternalCurves() const { return InternalCurves != nullptr; }
+
+	/** Sets the curve data for this sound wave. */
+	void SetCurveData(UCurveTable* InCurves) { Curves = InCurves; }
+
+	/** Sets the internal curve data for this sound wave. */
+	void SetInternalCurveData(UCurveTable* InCurves) { InternalCurves = InCurves; }
+
+	/** Gets the member name for the Curves property of the USoundWave object. */
+	static FName GetCurvePropertyName() { return GET_MEMBER_NAME_CHECKED(USoundWave, Curves); }
+#endif
 
 	/**
 	 * Checks whether sound has been categorised as streaming
@@ -424,6 +468,8 @@ public:
 	virtual void ClearCachedCookedPlatformData( const ITargetPlatform* TargetPlatform ) override;
 
 	virtual void WillNeverCacheCookedPlatformDataAgain() override;
+
+	uint32 bNeedsThumbnailGeneration:1;
 #endif
 	
 	/**
@@ -452,7 +498,7 @@ public:
 	 * @param ChunkIndex	The Chunk index to cache.
 	 * @param OutChunkData	Address of pointer that will store data.
 	 */
-	void GetChunkData(int32 ChunkIndex, uint8** OutChunkData);
+	bool GetChunkData(int32 ChunkIndex, uint8** OutChunkData);
 
 private:
 

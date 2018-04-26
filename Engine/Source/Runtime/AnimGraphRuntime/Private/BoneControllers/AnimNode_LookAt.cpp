@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BoneControllers/AnimNode_LookAt.h"
 #include "SceneManagement.h"
@@ -27,8 +27,6 @@ FAnimNode_LookAt::FAnimNode_LookAt()
 	, InterpolationTriggerThreashold(0.f)
 	, CurrentLookAtLocation(FVector::ZeroVector)
 	, AccumulatedInterpoolationTime(0.f)
-	, CachedLookAtSocketMeshBoneIndex(INDEX_NONE)
-	, CachedLookAtSocketBoneIndex(INDEX_NONE)
 {
 }
 
@@ -38,13 +36,9 @@ void FAnimNode_LookAt::GatherDebugData(FNodeDebugData& DebugData)
 
 	DebugLine += "(";
 	AddDebugNodeData(DebugLine);
-	if (LookAtBone.BoneIndex != INDEX_NONE)
+	if (LookAtTarget.HasValidSetup())
 	{
-		DebugLine += FString::Printf(TEXT(" Bone: %s, Look At Bone: %s, Look At Location: %s, Target Location : %s)"), *BoneToModify.BoneName.ToString(), *LookAtBone.BoneName.ToString(), *LookAtLocation.ToString(), *CachedCurrentTargetLocation.ToString());
-	}
-	else if (LookAtSocket != NAME_None)
-	{
-		DebugLine += FString::Printf(TEXT(" Bone: %s, Look At Socket: %s, Look At Location: %s, , Target Location : %s)"), *BoneToModify.BoneName.ToString(), *LookAtSocket.ToString(), *LookAtLocation.ToString(), *CachedCurrentTargetLocation.ToString());
+		DebugLine += FString::Printf(TEXT(" Bone: %s, Look At Target: %s, Look At Location: %s, Target Location : %s)"), *BoneToModify.BoneName.ToString(), *LookAtTarget.GetTargetSetup().ToString(), *LookAtLocation.ToString(), *CachedCurrentTargetLocation.ToString());
 	}
 	else
 	{
@@ -56,6 +50,21 @@ void FAnimNode_LookAt::GatherDebugData(FNodeDebugData& DebugData)
 	ComponentPose.GatherDebugData(DebugData);
 }
 
+float FAnimNode_LookAt::AlphaToBlendType(float InAlpha, EInterpolationBlend::Type BlendType)
+{
+	switch (BlendType)
+	{
+	case EInterpolationBlend::Sinusoidal: return FMath::Clamp<float>((FMath::Sin(InAlpha * PI - HALF_PI) + 1.f) / 2.f, 0.f, 1.f);
+	case EInterpolationBlend::Cubic: return FMath::Clamp<float>(FMath::CubicInterp<float>(0.f, 0.f, 1.f, 0.f, InAlpha), 0.f, 1.f);
+	case EInterpolationBlend::EaseInOutExponent2: return FMath::Clamp<float>(FMath::InterpEaseInOut<float>(0.f, 1.f, InAlpha, 2), 0.f, 1.f);
+	case EInterpolationBlend::EaseInOutExponent3: return FMath::Clamp<float>(FMath::InterpEaseInOut<float>(0.f, 1.f, InAlpha, 3), 0.f, 1.f);
+	case EInterpolationBlend::EaseInOutExponent4: return FMath::Clamp<float>(FMath::InterpEaseInOut<float>(0.f, 1.f, InAlpha, 4), 0.f, 1.f);
+	case EInterpolationBlend::EaseInOutExponent5: return FMath::Clamp<float>(FMath::InterpEaseInOut<float>(0.f, 1.f, InAlpha, 5), 0.f, 1.f);
+	}
+
+	return InAlpha;
+}
+
 void FAnimNode_LookAt::EvaluateSkeletalControl_AnyThread(FComponentSpacePoseContext& Output, TArray<FBoneTransform>& OutBoneTransforms)
 {
 	check(OutBoneTransforms.Num() == 0);
@@ -65,31 +74,8 @@ void FAnimNode_LookAt::EvaluateSkeletalControl_AnyThread(FComponentSpacePoseCont
 	FTransform ComponentBoneTransform = Output.Pose.GetComponentSpaceTransform(ModifyBoneIndex);
 
 	// get target location
-	FVector TargetLocationInComponentSpace;
-	FTransform TargetTransform = FTransform::Identity;
-	if (LookAtBone.IsValid(BoneContainer))
-	{
-		TargetTransform  = Output.Pose.GetComponentSpaceTransform(LookAtBone.GetCompactPoseIndex(BoneContainer));
-		TargetLocationInComponentSpace = TargetTransform.TransformPosition(LookAtLocation);
-	}
-	// if valid data is available
-	else if (CachedLookAtSocketMeshBoneIndex != INDEX_NONE)
-	{
-		// current LOD has valid index (FCompactPoseBoneIndex is valid if current LOD supports)
-		if (CachedLookAtSocketBoneIndex != INDEX_NONE)
-		{
-			FTransform BoneTransform = Output.Pose.GetComponentSpaceTransform(CachedLookAtSocketBoneIndex);
-			FTransform SocketTransformInCS = CachedSocketLocalTransform * BoneTransform;
-
-			TargetLocationInComponentSpace = SocketTransformInCS.TransformPosition(LookAtLocation);
-			TargetTransform = SocketTransformInCS;
-		}
-	}
-	else
-	{
-		TargetLocationInComponentSpace = Output.AnimInstanceProxy->GetComponentTransform().InverseTransformPosition(LookAtLocation);
-		TargetTransform.SetLocation(LookAtLocation);
-	}
+	FTransform TargetTransform = LookAtTarget.GetTargetTransform(LookAtLocation, Output.Pose, Output.AnimInstanceProxy->GetComponentTransform());
+	FVector TargetLocationInComponentSpace = TargetTransform.GetLocation();
 	
 	FVector OldCurrentTargetLocation = CurrentTargetLocation;
 	FVector NewCurrentTargetLocation = TargetLocationInComponentSpace;
@@ -116,7 +102,7 @@ void FAnimNode_LookAt::EvaluateSkeletalControl_AnyThread(FComponentSpacePoseCont
 
 		if (CurrentAlpha < 1.f)
 		{
-			float BlendAlpha = AlphaToBlendType(CurrentAlpha, GetInterpolationType());
+			float BlendAlpha = AlphaToBlendType(CurrentAlpha, InterpolationType);
 
 			CurrentLookAtLocation = FMath::Lerp(PreviousTargetLocation, CurrentTargetLocation, BlendAlpha);
 		}
@@ -128,7 +114,7 @@ void FAnimNode_LookAt::EvaluateSkeletalControl_AnyThread(FComponentSpacePoseCont
 
 #if !UE_BUILD_SHIPPING
 	CachedOriginalTransform = ComponentBoneTransform;
-	CachedTargetTransform = TargetTransform;
+	CachedTargetCoordinate = LookAtTarget.GetTargetTransform(FVector::ZeroVector, Output.Pose, Output.AnimInstanceProxy->GetComponentTransform());
 	CachedPreviousTargetLocation = PreviousTargetLocation;
 	CachedCurrentLookAtLocation = CurrentLookAtLocation;
 #endif
@@ -169,11 +155,11 @@ void FAnimNode_LookAt::EvaluateComponentSpaceInternal(FComponentSpacePoseContext
 bool FAnimNode_LookAt::IsValidToEvaluate(const USkeleton* Skeleton, const FBoneContainer& RequiredBones) 
 {
 	// if both bones are valid
-	return (BoneToModify.IsValid(RequiredBones) && 
+	return (BoneToModify.IsValidToEvaluate(RequiredBones) &&
 		// or if name isn't set (use Look At Location) or Look at bone is valid 
 		// do not call isValid since that means if look at bone isn't in LOD, we won't evaluate
 		// we still should evaluate as long as the BoneToModify is valid even LookAtBone isn't included in required bones
-		(LookAtBone.BoneName == NAME_None || LookAtBone.BoneIndex != INDEX_NONE) );
+		(!LookAtTarget.HasTargetSetup() || LookAtTarget.IsValidToEvaluate(RequiredBones)) );
 }
 
 #if WITH_EDITOR
@@ -206,7 +192,7 @@ void FAnimNode_LookAt::ConditionalDebugDraw(FPrimitiveDrawInterface* PDI, USkele
 		FTransform LocalToWorld = MeshComp->GetComponentTransform();
 		FTransform ComponentTransform = CachedOriginalTransform * LocalToWorld;
 		FTransform LookAtTransform = CachedLookAtTransform * LocalToWorld;
-		FTransform TargetTrasnform = CachedTargetTransform * LocalToWorld;
+		FTransform TargetTrasnform = CachedTargetCoordinate * LocalToWorld;
 		FVector BoneLocation = LookAtTransform.GetLocation();
 
 		// we're using interpolation, so print previous location
@@ -230,7 +216,7 @@ void FAnimNode_LookAt::ConditionalDebugDraw(FPrimitiveDrawInterface* PDI, USkele
 		{
 			float Angle = FMath::DegreesToRadians(LookAtClamp);
 			float ConeSize = 30.f;
-			DrawCone(PDI, FScaleMatrix(ConeSize) * CalculateLookAtMatrixFromTransform(ComponentTransform), Angle, Angle, 20, false, FLinearColor::Green, GEngine->ConstraintLimitMaterialY->GetRenderProxy(false), SDPG_World);
+			DrawCone(PDI, FScaleMatrix(ConeSize) * CalculateLookAtMatrixFromTransform(ComponentTransform), Angle, Angle, 20, false, FLinearColor::Green, GEngine->DebugEditorMaterial->GetRenderProxy(false), SDPG_World);
 		}
 
 		// draw directional  - lookat and look up
@@ -244,14 +230,7 @@ void FAnimNode_LookAt::ConditionalDebugDraw(FPrimitiveDrawInterface* PDI, USkele
 void FAnimNode_LookAt::InitializeBoneReferences(const FBoneContainer& RequiredBones)
 {
 	BoneToModify.Initialize(RequiredBones);
-	LookAtBone.Initialize(RequiredBones);
-
-	// this should be called whenver LOD changes and so on
-	if (CachedLookAtSocketMeshBoneIndex != INDEX_NONE)
-	{
-		const int32 SocketBoneSkeletonIndex = RequiredBones.GetPoseToSkeletonBoneIndexArray()[CachedLookAtSocketMeshBoneIndex];
-		CachedLookAtSocketBoneIndex = RequiredBones.GetCompactPoseIndexFromSkeletonIndex(SocketBoneSkeletonIndex);
-	}
+	LookAtTarget.InitializeBoneReferences(RequiredBones);
 }
 
 void FAnimNode_LookAt::UpdateInternal(const FAnimationUpdateContext& Context)
@@ -261,33 +240,11 @@ void FAnimNode_LookAt::UpdateInternal(const FAnimationUpdateContext& Context)
 	AccumulatedInterpoolationTime = FMath::Clamp(AccumulatedInterpoolationTime+Context.GetDeltaTime(), 0.f, InterpolationTime);;
 }
 
-void FAnimNode_LookAt::Initialize(const FAnimationInitializeContext& Context)
+void FAnimNode_LookAt::Initialize_AnyThread(const FAnimationInitializeContext& Context)
 {
-	FAnimNode_SkeletalControlBase::Initialize(Context);
+	FAnimNode_SkeletalControlBase::Initialize_AnyThread(Context);
 
-	CachedLookAtSocketMeshBoneIndex = INDEX_NONE;
-
-	if (LookAtSocket != NAME_None)
-	{
-		const USkeletalMeshComponent* OwnerMeshComponent = Context.AnimInstanceProxy->GetSkelMeshComponent();
-		if (OwnerMeshComponent && OwnerMeshComponent->DoesSocketExist(LookAtSocket))
-		{
-			USkeletalMeshSocket const* const Socket = OwnerMeshComponent->GetSocketByName(LookAtSocket);
-			if (Socket)
-			{
-				CachedSocketLocalTransform = Socket->GetSocketLocalTransform();
-				// cache mesh bone index, so that we know this is valid information to follow
-				CachedLookAtSocketMeshBoneIndex = OwnerMeshComponent->GetBoneIndex(Socket->BoneName);
-
-				ensureMsgf(CachedLookAtSocketMeshBoneIndex != INDEX_NONE, TEXT("%s : socket has invalid bone."), *LookAtSocket.ToString());
-			}
-		}
-		else
-		{
-			// @todo : move to graph node warning
-			UE_LOG(LogAnimation, Warning, TEXT("%s: socket doesn't exist"), *LookAtSocket.ToString());
-		}
-	}
+	LookAtTarget.Initialize(Context.AnimInstanceProxy);
 
 	// initialize
 	LookUp_Axis.Initialize();

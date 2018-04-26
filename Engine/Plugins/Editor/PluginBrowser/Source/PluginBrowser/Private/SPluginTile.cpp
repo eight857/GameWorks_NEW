@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SPluginTile.h"
 #include "HAL/PlatformFilemanager.h"
@@ -54,6 +54,12 @@ void SPluginTile::RecreateWidgets()
 	// @todo plugedit: Maybe we should do the FileExists check ONCE at plugin load time and not at query time
 
 	const FPluginDescriptor& PluginDescriptor = Plugin->GetDescriptor();
+
+	// Disable Enterprise plugins if project is not an Enterprise project
+	if (Plugin->GetType() == EPluginType::Enterprise && !IProjectManager::Get().IsEnterpriseProject())
+	{
+		SetEnabled(false);
+	}
 
 	// Plugin thumbnail image
 	FString Icon128FilePath = Plugin->GetBaseDir() / TEXT("Resources/Icon128.png");
@@ -211,6 +217,7 @@ void SPluginTile::RecreateWidgets()
 							.AutoWidth()
 							[
 								SNew(SBox)
+									.VAlign(VAlign_Top)
 									.WidthOverride(ThumbnailImageSize)
 									.HeightOverride(ThumbnailImageSize)
 									[
@@ -415,7 +422,7 @@ ECheckBoxState SPluginTile::IsPluginEnabled() const
 	FPluginBrowserModule& PluginBrowserModule = FPluginBrowserModule::Get();
 	if(PluginBrowserModule.HasPluginPendingEnable(Plugin->GetName()))
 	{
-		return PluginBrowserModule.GetPluginPendingEnableState(Plugin->GetName()) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;;
+		return PluginBrowserModule.GetPluginPendingEnableState(Plugin->GetName()) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	}
 	else
 	{
@@ -423,27 +430,93 @@ ECheckBoxState SPluginTile::IsPluginEnabled() const
 	}
 }
 
+void FindPluginDependencies(const FString& Name, TSet<FString>& Dependencies, TMap<FString, IPlugin*>& NameToPlugin)
+{
+	IPlugin* Plugin = NameToPlugin.FindRef(Name);
+	if (Plugin != nullptr)
+	{
+		for (const FPluginReferenceDescriptor& Reference : Plugin->GetDescriptor().Plugins)
+		{
+			if (Reference.bEnabled && !Dependencies.Contains(Reference.Name))
+			{
+				Dependencies.Add(Reference.Name);
+				FindPluginDependencies(Reference.Name, Dependencies, NameToPlugin);
+			}
+		}
+	}
+}
+
 void SPluginTile::OnEnablePluginCheckboxChanged(ECheckBoxState NewCheckedState)
 {
-	const bool bNewEnabledState = (NewCheckedState == ECheckBoxState::Checked);
+	const bool bNewEnabledState = NewCheckedState == ECheckBoxState::Checked;
 
 	const FPluginDescriptor& PluginDescriptor = Plugin->GetDescriptor();
-	if (bNewEnabledState && PluginDescriptor.bIsBetaVersion)
-	{
-		FText WarningMessage = FText::Format(
-			LOCTEXT("Warning_EnablingBetaPlugin", "Plugin '{0}' is a beta version and might be unstable or removed without notice. Please use with caution. Are you sure you want to enable the plugin?"),
-			FText::FromString(PluginDescriptor.FriendlyName));
 
-		if (EAppReturnType::No == FMessageDialog::Open(EAppMsgType::YesNo, WarningMessage))
+	if (bNewEnabledState)
+	{
+		// If this is plugin is marked as beta, make sure the user is aware before enabling it.
+		if (PluginDescriptor.bIsBetaVersion)
 		{
-			// user chose to keep beta plug-in disabled
-			return;
+			FText WarningMessage = FText::Format(LOCTEXT("Warning_EnablingBetaPlugin", "Plugin '{0}' is a beta version and might be unstable or removed without notice. Please use with caution. Are you sure you want to enable the plugin?"), FText::FromString(PluginDescriptor.FriendlyName));
+			if (EAppReturnType::No == FMessageDialog::Open(EAppMsgType::YesNo, WarningMessage))
+			{
+				return;
+			}
+		}
+	}
+	else
+	{
+		// Get all the plugins we know about
+		TArray<TSharedRef<IPlugin>> EnabledPlugins = IPluginManager::Get().GetEnabledPlugins();
+
+		// Build a map of plugin by name
+		TMap<FString, IPlugin*> NameToPlugin;
+		for (TSharedRef<IPlugin>& EnabledPlugin : EnabledPlugins)
+		{
+			NameToPlugin.FindOrAdd(EnabledPlugin->GetName()) = &(EnabledPlugin.Get());
+		}
+
+		// Find all the plugins which are dependent on this plugin
+		TArray<FString> DependentPluginNames;
+		for (TSharedRef<IPlugin>& EnabledPlugin : EnabledPlugins)
+		{
+			FString EnabledPluginName = EnabledPlugin->GetName();
+
+			TSet<FString> Dependencies;
+			FindPluginDependencies(EnabledPluginName, Dependencies, NameToPlugin);
+
+			if (Dependencies.Num() > 0 && Dependencies.Contains(Plugin->GetName()))
+			{
+				FText Caption = LOCTEXT("DisableDependenciesCaption", "Disable Dependencies");
+				FText Message = FText::Format(LOCTEXT("DisableDependenciesMessage", "This plugin is required by {0}. Would you like to disable it as well?"), FText::FromString(EnabledPluginName));
+				if (FMessageDialog::Open(EAppMsgType::YesNo, Message, &Caption) == EAppReturnType::No)
+				{
+					return;
+				}
+				DependentPluginNames.Add(EnabledPluginName);
+			}
+		}
+
+		// Disable all the dependent plugins too
+		for (const FString& DependentPluginName : DependentPluginNames)
+		{
+			FText FailureMessage;
+			if (!IProjectManager::Get().SetPluginEnabled(DependentPluginName, false, FailureMessage))
+			{
+				FMessageDialog::Open(EAppMsgType::Ok, FailureMessage);
+			}
+
+			TSharedPtr<IPlugin> DependentPlugin = IPluginManager::Get().FindPlugin(DependentPluginName);
+			if (DependentPlugin.IsValid())
+			{
+				FPluginBrowserModule::Get().SetPluginPendingEnableState(DependentPluginName, DependentPlugin->IsEnabled(), false);
+			}
 		}
 	}
 
+	// Finally, enable the plugin we selected
 	FText FailMessage;
-
-	if (!IProjectManager::Get().SetPluginEnabled(Plugin->GetName(), bNewEnabledState, FailMessage, PluginDescriptor.MarketplaceURL))
+	if (!IProjectManager::Get().SetPluginEnabled(Plugin->GetName(), bNewEnabledState, FailMessage))
 	{
 		FMessageDialog::Open(EAppMsgType::Ok, FailMessage);
 	}
@@ -460,8 +533,6 @@ void SPluginTile::OnEnablePluginCheckboxChanged(ECheckBoxState NewCheckedState)
 			FPluginBrowserModule::Get().SetPluginPendingEnableState(Plugin->GetName(), Plugin->IsEnabled(), bNewEnabledState);
 		}
 	}
-
-
 }
 
 EVisibility SPluginTile::GetAuthoringButtonsVisibility() const
@@ -470,7 +541,7 @@ EVisibility SPluginTile::GetAuthoringButtonsVisibility() const
 	{
 		return EVisibility::Hidden;
 	}
-	if (FApp::IsInstalled() && Plugin->GetLoadedFrom() == EPluginLoadedFrom::GameProject && !Plugin->GetDescriptor().bIsMod)
+	if (FApp::IsInstalled() && Plugin->GetType() != EPluginType::Mod)
 	{
 		return EVisibility::Hidden;
 	}
@@ -549,9 +620,9 @@ FReply SPluginTile::OnEditPluginFinished(UPluginMetadataObject* MetadataObject)
 
 	// Write both to strings
 	FString OldText;
-	OldDescriptor.Write(OldText, Plugin->GetLoadedFrom() == EPluginLoadedFrom::GameProject);
+	OldDescriptor.Write(OldText);
 	FString NewText;
-	NewDescriptor.Write(NewText, Plugin->GetLoadedFrom() == EPluginLoadedFrom::GameProject);
+	NewDescriptor.Write(NewText);
 	if(OldText.Compare(NewText, ESearchCase::CaseSensitive) != 0)
 	{
 		FString DescriptorFileName = Plugin->GetDescriptorFileName();
@@ -601,7 +672,7 @@ void SPluginTile::OnPackagePlugin()
 	FString DescriptorFilename = Plugin->GetDescriptorFileName();
 	FString DescriptorFullPath = FPaths::ConvertRelativePathToFull(DescriptorFilename);
 	OutputDirectory = FPaths::Combine(OutputDirectory, Plugin->GetName());
-	FString CommandLine = FString::Printf(TEXT("BuildPlugin -Rocket -Plugin=\"%s\" -Package=\"%s\" -CreateSubFolder"), *DescriptorFullPath, *OutputDirectory);
+	FString CommandLine = FString::Printf(TEXT("BuildPlugin -Plugin=\"%s\" -Package=\"%s\" -CreateSubFolder"), *DescriptorFullPath, *OutputDirectory);
 
 #if PLATFORM_WINDOWS
 	FText PlatformName = LOCTEXT("PlatformName_Windows", "Windows");

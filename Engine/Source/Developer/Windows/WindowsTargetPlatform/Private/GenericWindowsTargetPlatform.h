@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -37,7 +37,7 @@ public:
 #endif
 		
 		#if WITH_ENGINE
-			FConfigCacheIni::LoadLocalIniFile(EngineSettings, TEXT("Engine"), true, *PlatformName());
+			FConfigCacheIni::LoadLocalIniFile(EngineSettings, TEXT("Engine"), true, *this->PlatformName());
 			TextureLODSettings = nullptr; // These are registered by the device profile system.
 			StaticMeshLODSettings.Initialize(EngineSettings);
 
@@ -50,6 +50,14 @@ public:
 			static FName NAME_PCD3D_SM5(TEXT("PCD3D_SM5"));
 			bSupportDX11TextureFormats = TargetedShaderFormats.Num() == 1
 				&& TargetedShaderFormats[0] == NAME_PCD3D_SM5;
+
+			// If we are targeting ES 2.0/3.1, we also must cook encoded HDR reflection captures
+			static FName NAME_SF_VULKAN_ES31(TEXT("SF_VULKAN_ES31"));
+			static FName NAME_OPENGL_150_ES2(TEXT("GLSL_150_ES2"));
+			static FName NAME_OPENGL_150_ES3_1(TEXT("GLSL_150_ES31"));
+			bRequiresEncodedHDRReflectionCaptures =	TargetedShaderFormats.Contains(NAME_SF_VULKAN_ES31) 
+												 || TargetedShaderFormats.Contains(NAME_OPENGL_150_ES2) 
+												 || TargetedShaderFormats.Contains(NAME_OPENGL_150_ES3_1);
 		#endif
 	}
 
@@ -127,6 +135,16 @@ public:
 	}
 
 #if WITH_ENGINE
+	virtual void GetReflectionCaptureFormats(TArray<FName>& OutFormats) const override
+	{
+		if (bRequiresEncodedHDRReflectionCaptures)
+		{
+			OutFormats.Add(FName(TEXT("EncodedHDR")));
+		}
+
+		OutFormats.Add(FName(TEXT("FullHDR")));
+	}
+
 	virtual void GetAllPossibleShaderFormats( TArray<FName>& OutFormats ) const override
 	{
 		// no shaders needed for dedicated server target
@@ -139,9 +157,7 @@ public:
 			static FName NAME_VULKAN_ES31(TEXT("SF_VULKAN_ES31"));
 			static FName NAME_OPENGL_150_ES2(TEXT("GLSL_150_ES2"));
 			static FName NAME_OPENGL_150_ES3_1(TEXT("GLSL_150_ES31"));
-			static FName NAME_OPENGL_SWITCH(TEXT("GLSL_SWITCH"));
-			static FName NAME_OPENGL_SWITCH_FORWARD(TEXT("GLSL_SWITCH_FORWARD"));
-			static FName NAME_VULKAN_SM4(TEXT("SF_VULKAN_SM4"));
+			static FName NAME_VULKAN_SM5(TEXT("SF_VULKAN_SM5"));
 
 			OutFormats.AddUnique(NAME_PCD3D_SM5);
 			OutFormats.AddUnique(NAME_PCD3D_SM4);
@@ -150,9 +166,7 @@ public:
 			OutFormats.AddUnique(NAME_VULKAN_ES31);
 			OutFormats.AddUnique(NAME_OPENGL_150_ES2);
 			OutFormats.AddUnique(NAME_OPENGL_150_ES3_1);
-			OutFormats.AddUnique(NAME_OPENGL_SWITCH_FORWARD);
-			OutFormats.AddUnique(NAME_OPENGL_SWITCH);
-			OutFormats.AddUnique(NAME_VULKAN_SM4);
+			OutFormats.AddUnique(NAME_VULKAN_SM5);
 		}
 	}
 
@@ -301,6 +315,9 @@ private:
 
 	// True if the project supports non-DX11 texture formats.
 	bool bSupportDX11TextureFormats;
+
+	// True if the project requires encoded HDR reflection captures
+	bool bRequiresEncodedHDRReflectionCaptures;
 #endif // WITH_ENGINE
 
 private:

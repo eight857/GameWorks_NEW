@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "PackageTools.h"
@@ -36,23 +36,22 @@
 #include "UObject/UObjectIterator.h"
 #include "ComponentReregisterContext.h"
 #include "Engine/Selection.h"
+#include "Engine/LevelStreaming.h"
 
 #include "ShaderCompiler.h"
 #include "DistanceFieldAtlas.h"
+#include "AssetToolsModule.h"
 
 #define LOCTEXT_NAMESPACE "PackageTools"
 
 DEFINE_LOG_CATEGORY_STATIC(LogPackageTools, Log, All);
-
-/** Pointer to a function Called during GC, after reachability analysis is performed but before garbage is purged. */
-typedef void (*EditorPostReachabilityAnalysisCallbackType)();
-extern CORE_API EditorPostReachabilityAnalysisCallbackType EditorPostReachabilityAnalysisCallback;
 
 namespace PackageTools
 {
 	/** State passed to RestoreStandaloneOnReachableObjects. */
 	static UPackage* PackageBeingUnloaded = nullptr;
 	static TMap<UObject*,UObject*> ObjectsThatHadFlagsCleared;
+	static FDelegateHandle ReachabilityCallbackHandle;
 
 	/**
 	 * Called during GC, after reachability analysis is performed but before garbage is purged.
@@ -60,6 +59,8 @@ namespace PackageTools
 	 */
 	void RestoreStandaloneOnReachableObjects()
 	{
+		check(GIsEditor);
+
 		ForEachObjectWithOuter(PackageBeingUnloaded, [](UObject* Object)
 			{
 				if ( ObjectsThatHadFlagsCleared.Find(Object) )
@@ -93,7 +94,7 @@ namespace PackageTools
 			bool bIsSupported = ObjectTools::IsObjectBrowsable( Obj );
 			if( bIsSupported )
 			{
-				UPackage* ObjectPackage = Cast< UPackage >( Obj->GetOutermost() );
+				UPackage* ObjectPackage = Obj->GetOutermost();
 				if( ObjectPackage != NULL )
 				{
 					OutFilteredPackageMap.Add( ObjectPackage );
@@ -157,7 +158,7 @@ namespace PackageTools
 			if( !TopLevelPackage->IsFullyLoaded() )
 			{	
 				// Ask user to fully load or suppress the message and just fully load
-				if(bSuppress || EAppReturnType::Yes == FMessageDialog::Open( EAppMsgType::YesNo, FText::Format(
+				if(bSuppress || EAppReturnType::Yes == FMessageDialog::Open( EAppMsgType::YesNo, EAppReturnType::Yes, FText::Format(
 					NSLOCTEXT("UnrealEd", "NeedsToFullyLoadPackageF", "Package {0} is not fully loaded. Do you want to fully load it? Not doing so will abort the '{1}' operation."),
 					FText::FromString(TopLevelPackage->GetName()), OperationText ) ) )
 				{
@@ -203,7 +204,7 @@ namespace PackageTools
 		Arguments.Add(TEXT("PackageName"), FText::FromString(InFilename));
 		FMessageLog("LoadErrors").NewPage(FText::Format(LOCTEXT("LoadPackageLogPage", "Loading package: {PackageName}"), Arguments));
 
-		UPackage* Package = Cast<UPackage>(::LoadPackage( NULL, *InFilename, 0 ));
+		UPackage* Package = ::LoadPackage( NULL, *InFilename, 0 );
 
 		// display any load errors that happened while loading the package
 		FEditorDelegates::DisplayLoadErrors.Broadcast();
@@ -293,7 +294,7 @@ namespace PackageTools
 			// Set the callback for restoring RF_Standalone post reachability analysis.
 			// GC will call this function before purging objects, allowing us to restore RF_Standalone
 			// to any objects that have not been marked RF_Unreachable.
-			EditorPostReachabilityAnalysisCallback = RestoreStandaloneOnReachableObjects;
+			ReachabilityCallbackHandle = FCoreUObjectDelegates::PostReachabilityAnalysis.AddStatic(RestoreStandaloneOnReachableObjects);
 
 			bool bScriptPackageWasUnloaded = false;
 
@@ -379,8 +380,8 @@ namespace PackageTools
 
 			GWarn->EndSlowTask();
 
-			// Set the post reachability callback.
-			EditorPostReachabilityAnalysisCallback = NULL;
+			// Remove the post reachability callback.
+			FCoreUObjectDelegates::PostReachabilityAnalysis.Remove(ReachabilityCallbackHandle);
 
 			// Clear the standalone flag on metadata objects that are going to be GC'd below.
 			// This resolves the circular dependency between metadata and packages.
@@ -549,9 +550,32 @@ namespace PackageTools
 		});
 
 		// Unload the current world (if needed).
+		TMap<FName, const UMapBuildDataRegistry*> LevelsToMapBuildData;
 		if (!WorldNameToReload.IsNone())
 		{
+			// Creating a new map will unload all streaming levels for the current editor world too, so we need to make sure we're not about to try and reload those later
+			if (UWorld* EditorWorld = GEditor->GetEditorWorldContext().World())
+			{
+				for (ULevelStreaming* EditorStreamingLevel : EditorWorld->StreamingLevels)
+				{
+					if (EditorStreamingLevel->IsLevelLoaded())
+					{
+						UPackage* EditorStreamingLevelPackage = EditorStreamingLevel->GetLoadedLevel()->GetOutermost();
+						PackagesToReload.Remove(EditorStreamingLevelPackage);
+					}
+				}
+			}
+
 			GEditor->CreateNewMapForEditing();
+		}
+		// Cache the current map build data for the levels of the current world so we can see if they change due to a reload (we skip this if reloading the current world).
+		else if (UWorld* EditorWorld = GEditor->GetEditorWorldContext().World())
+		{
+			for (int32 LevelIndex = 0; LevelIndex < EditorWorld->GetNumLevels(); ++LevelIndex)
+			{
+				ULevel* Level = EditorWorld->GetLevel(LevelIndex);
+				LevelsToMapBuildData.Add(Level->GetFName(), Level->MapBuildData);
+			}
 		}
 
 		if (PackagesToReload.Num() > 0)
@@ -630,6 +654,24 @@ namespace PackageTools
 			WorldNamesToReload.Add(WorldNameToReload);
 			FAssetEditorManager::Get().OpenEditorsForAssets(WorldNamesToReload);
 		}
+		// Update the rendering resources for the levels of the current world if their map build data has changed (we skip this if reloading the current world).
+		else if (LevelsToMapBuildData.Num() > 0)
+		{
+			UWorld* EditorWorld = GEditor->GetEditorWorldContext().World();
+			check(EditorWorld);
+
+			for (int32 LevelIndex = 0; LevelIndex < EditorWorld->GetNumLevels(); ++LevelIndex)
+			{
+				ULevel* Level = EditorWorld->GetLevel(LevelIndex);
+				const UMapBuildDataRegistry* OldMapBuildData = LevelsToMapBuildData.FindRef(Level->GetFName());
+
+				if (OldMapBuildData && OldMapBuildData != Level->MapBuildData)
+				{
+					Level->ReleaseRenderingResources();
+					Level->InitializeRenderingResources();
+				}
+			}
+		}
 
 		OutErrorMessage = ErrorMessageBuilder.ToText();
 
@@ -683,11 +725,13 @@ namespace PackageTools
 			TArray<UObject*>& ObjectsToExport = FilteredClasses ? FilteredObjects : ObjectsInPackages;
 
 			// Prompt the user about how many objects will be exported before proceeding.
-			const bool bProceed = EAppReturnType::Yes == FMessageDialog::Open( EAppMsgType::YesNo, FText::Format(
+			const bool bProceed = EAppReturnType::Yes == FMessageDialog::Open( EAppMsgType::YesNo, EAppReturnType::Yes, FText::Format(
 				NSLOCTEXT("UnrealEd", "Prompt_AboutToBulkExportNItems_F", "About to bulk export {0} items.  Proceed?"), FText::AsNumber(ObjectsToExport.Num()) ) );
 			if ( bProceed )
 			{
-				ObjectTools::ExportObjects( ObjectsToExport, false, &LastExportPath, bUseProvidedExportPath );
+				FAssetToolsModule& AssetToolsModule = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools");
+
+				AssetToolsModule.Get().ExportAssets(ObjectsToExport, LastExportPath);
 			}
 		}
 
@@ -904,7 +948,7 @@ namespace PackageTools
 		FString PackageFileName;
 		if ( FPackageName::DoesPackageExist(PackageName, NULL, &PackageFileName) )
 		{
-			return FPaths::GetExtension(PackageFileName, /*bIncludeDot=*/true).ToLower() == FPackageName::GetAssetPackageExtension();
+			return FPaths::GetExtension(PackageFileName, /*bIncludeDot=*/true) == FPackageName::GetAssetPackageExtension();
 		}
 
 		// If it wasn't found in the package file cache, this package does not yet
@@ -933,6 +977,9 @@ namespace PackageTools
 			}
 		}
 
+		// Remove double-slashes
+		SanitizedName.ReplaceInline(TEXT("//"), TEXT("/"));
+
 		return SanitizedName;
 	}
 }
@@ -940,5 +987,3 @@ namespace PackageTools
 #undef LOCTEXT_NAMESPACE
 
 // EOF
-
-

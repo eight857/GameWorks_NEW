@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LocalizationTargetDetailCustomization.h"
 #include "LocalizationTargetTypes.h"
@@ -372,10 +372,10 @@ void FLocalizationTargetDetailCustomization::CustomizeDetails(IDetailLayoutBuild
 		const TSharedPtr<IPropertyHandle> MemberPropertyHandle = TargetSettingsPropertyHandle->GetChildHandle(PropertyName);
 		if (MemberPropertyHandle.IsValid() && MemberPropertyHandle->IsValidHandle())
 		{
+			static const FName ShowOnlyInners("ShowOnlyInnerProperties");
+
 			const FName CategoryName = FObjectEditorUtils::GetCategoryFName(MemberProperty);
 			IDetailCategoryBuilder& DetailCategoryBuilder = DetailBuilder.EditCategory(CategoryName);
-
-			static FName ShowOnlyInners("ShowOnlyInnerProperties");
 
 			const auto* const Function = PropertyCustomizationMap.Find(PropertyName);
 			if (Function)
@@ -885,7 +885,7 @@ void FLocalizationTargetDetailCustomization::GatherText()
 		}
 
 		// Execute gather.
-		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView().AsShared());
+		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView()->AsShared());
 		LocalizationCommandletTasks::GatherTextForTarget(ParentWindow.ToSharedRef(), LocalizationTarget.Get());
 
 		UpdateTargetFromReports();
@@ -903,7 +903,7 @@ void FLocalizationTargetDetailCustomization::ImportTextAllCultures()
 	if (LocalizationTarget.IsValid() && DesktopPlatform)
 	{
 		void* ParentWindowWindowHandle = NULL;
-		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView().AsShared());
+		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView()->AsShared());
 		if (ParentWindow.IsValid() && ParentWindow->GetNativeWindow().IsValid())
 		{
 			ParentWindowWindowHandle = ParentWindow->GetNativeWindow()->GetOSWindowHandle();
@@ -940,7 +940,7 @@ void FLocalizationTargetDetailCustomization::ExportTextAllCultures()
 	if (LocalizationTarget.IsValid() && DesktopPlatform)
 	{
 		void* ParentWindowWindowHandle = NULL;
-		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView().AsShared());
+		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView()->AsShared());
 		if (ParentWindow.IsValid() && ParentWindow->GetNativeWindow().IsValid())
 		{
 			ParentWindowWindowHandle = ParentWindow->GetNativeWindow()->GetOSWindowHandle();
@@ -975,7 +975,7 @@ void FLocalizationTargetDetailCustomization::ImportDialogueScriptAllCultures()
 	if (LocalizationTarget.IsValid() && DesktopPlatform)
 	{
 		void* ParentWindowWindowHandle = NULL;
-		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView().AsShared());
+		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView()->AsShared());
 		if (ParentWindow.IsValid() && ParentWindow->GetNativeWindow().IsValid())
 		{
 			ParentWindowWindowHandle = ParentWindow->GetNativeWindow()->GetOSWindowHandle();
@@ -1012,7 +1012,7 @@ void FLocalizationTargetDetailCustomization::ExportDialogueScriptAllCultures()
 	if (LocalizationTarget.IsValid() && DesktopPlatform)
 	{
 		void* ParentWindowWindowHandle = NULL;
-		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView().AsShared());
+		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView()->AsShared());
 		if (ParentWindow.IsValid() && ParentWindow->GetNativeWindow().IsValid())
 		{
 			ParentWindowWindowHandle = ParentWindow->GetNativeWindow()->GetOSWindowHandle();
@@ -1057,7 +1057,7 @@ void FLocalizationTargetDetailCustomization::ImportDialogueAllCultures()
 		}
 
 		// Execute import dialogue.
-		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView().AsShared());
+		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView()->AsShared());
 		LocalizationCommandletTasks::ImportDialogueForTarget(ParentWindow.ToSharedRef(), LocalizationTarget.Get());
 	}
 }
@@ -1071,7 +1071,7 @@ void FLocalizationTargetDetailCustomization::CountWords()
 {
 	if (LocalizationTarget.IsValid())
 	{
-		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView().AsShared());
+		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView()->AsShared());
 		LocalizationCommandletTasks::GenerateWordCountReportForTarget(ParentWindow.ToSharedRef(), LocalizationTarget.Get());
 
 		UpdateTargetFromReports();
@@ -1088,7 +1088,7 @@ void FLocalizationTargetDetailCustomization::CompileTextAllCultures()
 	if (LocalizationTarget.IsValid())
 	{
 		// Execute compile.
-		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView().AsShared());
+		const TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(DetailLayoutBuilder->GetDetailsView()->AsShared());
 		LocalizationCommandletTasks::CompileTextForTarget(ParentWindow.ToSharedRef(), LocalizationTarget.Get());
 	}
 }
@@ -1242,9 +1242,9 @@ void FLocalizationTargetDetailCustomization::OnNewSupportedCultureSelected(FCult
 		SupportedCulturesStatisticsPropertyHandle->AsArray()->GetNumElements(NewElementIndex);
 
 		// Add element, set info for later initialization.
-		SupportedCulturesStatisticsPropertyHandle->AsArray()->AddItem();
 		SelectedNewCulture = SelectedCulture;
 		NewEntryIndexToBeInitialized = NewElementIndex;
+		SupportedCulturesStatisticsPropertyHandle->AsArray()->AddItem();
 
 		if (NativeCultureIndexPropertyHandle.IsValid() && NativeCultureIndexPropertyHandle->IsValidHandle())
 		{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,7 +11,7 @@
 class UCineCameraComponent;
 
 /** Settings to control the camera's lookat feature */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FCameraLookatTrackingSettings
 {
 	GENERATED_USTRUCT_BODY()
@@ -38,6 +38,10 @@ struct FCameraLookatTrackingSettings
 	/** Offset from actor position to look at. Relative to actor if tracking an actor, relative to world otherwise. */
 	UPROPERTY(Interp, EditAnywhere, BlueprintReadWrite, Category = "LookAt")
 	FVector RelativeOffset;
+
+	/** True to allow user-defined roll, false otherwise. */
+	UPROPERTY(Interp, EditAnywhere, BlueprintReadWrite, Category = "LookAt")
+	uint8 bAllowRoll : 1;
 };
 
 /** 

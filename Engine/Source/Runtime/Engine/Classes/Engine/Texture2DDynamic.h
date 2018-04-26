@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -25,17 +25,18 @@ class UTexture2DDynamic : public UTexture
 	UPROPERTY(transient)
 	TEnumAsByte<enum EPixelFormat> Format;
 
+	/** Whether the texture can be used as a resolve target. */
+	uint8 bIsResolveTarget : 1;
+
 	/** The number of mip-maps in the texture. */
 	int32 NumMips;
 
-	/** Whether the texture can be used as a resolve target. */
-	uint32 bIsResolveTarget:1;
 
 
 public:
 	//~ Begin UTexture Interface.
 	ENGINE_API virtual FTextureResource* CreateResource() override;
-	virtual EMaterialValueType GetMaterialType() override { return MCT_Texture2D; }
+	virtual EMaterialValueType GetMaterialType() const override { return MCT_Texture2D; }
 	ENGINE_API virtual float GetSurfaceWidth() const override;
 	ENGINE_API virtual float GetSurfaceHeight() const override;
 	//~ End UTexture Interface.

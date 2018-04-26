@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -583,4 +583,18 @@ protected:
 
 	/** custom user data: flags */
 	int32 UserFlags;
+};
+
+UENUM()
+enum class EGenericAICheck : uint8
+{
+	Less,
+	LessOrEqual,
+	Equal,
+	NotEqual,
+	GreaterOrEqual,
+	Greater,
+	IsTrue,
+
+	MAX UMETA(Hidden)
 };

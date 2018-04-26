@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LobbyBeaconClient.h"
 #include "GameFramework/PlayerController.h"
@@ -16,7 +16,7 @@ ALobbyBeaconClient::ALobbyBeaconClient(const FObjectInitializer& ObjectInitializ
 	LobbyState(nullptr),
 	PlayerState(nullptr),
 	bLoggedIn(false),
-	bLobbyJoinAcked(false)
+	LobbyJoinServerState(ELobbyBeaconJoinState::None)
 {
 	bOnlyRelevantToOwner = true;
 }
@@ -48,7 +48,7 @@ void ALobbyBeaconClient::ConnectToLobby(const FOnlineSessionSearchResult& Desire
 		if (SessionInt.IsValid())
 		{
 			FString ConnectInfo;
-			if (SessionInt->GetResolvedConnectString(DesiredHost, BeaconPort, ConnectInfo))
+			if (SessionInt->GetResolvedConnectString(DesiredHost, NAME_BeaconPort, ConnectInfo))
 			{
 				FURL ConnectURL(NULL, *ConnectInfo, TRAVEL_Absolute);
 				if (InitClient(ConnectURL) && DesiredHost.Session.SessionInfo.IsValid())
@@ -125,9 +125,16 @@ void ALobbyBeaconClient::JoiningServer()
 {
 	if (bLoggedIn)
 	{
-		UE_LOG(LogBeacon, Log, TEXT("JoiningServer %s Id: %s"), *GetName(), PlayerState ? *PlayerState->UniqueId->ToString() : TEXT("Unknown"));
-		bLobbyJoinAcked = false;
-		ServerNotifyJoiningServer();
+		if (LobbyJoinServerState == ELobbyBeaconJoinState::None)
+		{
+			UE_LOG(LogBeacon, Log, TEXT("JoiningServer %s Id: %s"), *GetName(), PlayerState ? *PlayerState->UniqueId->ToString() : TEXT("Unknown"));
+			LobbyJoinServerState = ELobbyBeaconJoinState::SentJoinRequest;
+			ServerNotifyJoiningServer();
+		}
+		else
+		{
+			UE_LOG(LogBeacon, Warning, TEXT("Already joining server, skipping %d"), static_cast<int32>(LobbyJoinServerState));
+		}
 	}
 	else
 	{
@@ -260,6 +267,7 @@ void ALobbyBeaconClient::AckJoiningServer()
 	if (GetNetMode() < NM_Client)
 	{
 		UE_LOG(LogBeacon, Log, TEXT("AckJoiningServer %s Id: %s"), *GetName(), PlayerState ? *PlayerState->UniqueId->ToString() : TEXT("Unknown"));
+		LobbyJoinServerState = ELobbyBeaconJoinState::JoinRequestAcknowledged;
 		ClientAckJoiningServer();
 	}
 }
@@ -267,7 +275,7 @@ void ALobbyBeaconClient::AckJoiningServer()
 void ALobbyBeaconClient::ClientAckJoiningServer_Implementation()
 {
 	UE_LOG(LogBeacon, Log, TEXT("ClientAckJoiningServer %s Id: %s LoggedIn: %d"), *GetName(), PlayerState ? *PlayerState->UniqueId->ToString() : TEXT("Unknown"), bLoggedIn);
-	bLobbyJoinAcked = true;
+	LobbyJoinServerState = ELobbyBeaconJoinState::JoinRequestAcknowledged;
 	OnJoiningGameAck().ExecuteIfBound();
 }
 
@@ -278,7 +286,8 @@ bool ALobbyBeaconClient::ServerKickPlayer_Validate(const FUniqueNetIdRepl& Playe
 
 void ALobbyBeaconClient::ServerKickPlayer_Implementation(const FUniqueNetIdRepl& PlayerToKick, const FText& Reason)
 {
-	UE_LOG(LogBeacon, Log, TEXT("ServerKickPlayer %s -> %s"), *PlayerState->UniqueId.ToString(), *PlayerToKick.ToString());
+	UE_LOG(LogBeacon, Log, TEXT("ServerKickPlayer %s -> %s"), (PlayerState != nullptr ? *PlayerState->UniqueId.ToString() : TEXT("")),
+			*PlayerToKick.ToString());
 
 	ALobbyBeaconHost* BeaconHost = Cast<ALobbyBeaconHost>(GetBeaconOwner());
 	if (BeaconHost)
@@ -306,7 +315,7 @@ void ALobbyBeaconClient::ClientPlayerJoined_Implementation(const FText& NewPlaye
 		if (SessionInt.IsValid() && InUniqueId.IsValid())
 		{
 			// Register the player as part of the session
-			SessionInt->RegisterPlayer(GameSessionName, *InUniqueId, false);
+			SessionInt->RegisterPlayer(NAME_GameSession, *InUniqueId, false);
 		}
 	}
 
@@ -323,7 +332,7 @@ void ALobbyBeaconClient::ClientPlayerLeft_Implementation(const FUniqueNetIdRepl&
 		if (SessionInt.IsValid() && InUniqueId.IsValid())
 		{
 			// Register the player as part of the session
-			SessionInt->UnregisterPlayer(GameSessionName, *InUniqueId);
+			SessionInt->UnregisterPlayer(NAME_GameSession, *InUniqueId);
 		}
 	}
 

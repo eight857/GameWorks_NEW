@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "VisualStudioSourceCodeAccessor.h"
 #include "VisualStudioSourceCodeAccessModule.h"
@@ -9,7 +9,12 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeLock.h"
+#include "Misc/UProjectInfo.h"
+#include "Misc/App.h"
 #include "HAL/PlatformTime.h"
+#include "ProjectDescriptor.h"
+#include "Interfaces/IProjectManager.h"
+//#include "GameProjectGenerationModule.h"
 
 #if WITH_EDITOR
 #include "Developer/HotReload/Public/IHotReload.h"
@@ -23,6 +28,7 @@
 #if VSACCESSOR_HAS_DTE
 	#pragma warning(push)
 	#pragma warning(disable: 4278)
+	#pragma warning(disable: 4471)
 	#pragma warning(disable: 4146)
 	#pragma warning(disable: 4191)
 	#pragma warning(disable: 6244)
@@ -82,10 +88,10 @@ enum class EAccessVisualStudioResult : uint8
 };
 
 /** save all open documents in visual studio, when recompiling */
-void OnModuleCompileStarted(bool bIsAsyncCompile)
+static void OnModuleCompileStarted(bool bIsAsyncCompile)
 {
-	FVisualStudioSourceCodeAccessModule& VisualStudioSourceCodeAccessModule = FModuleManager::LoadModuleChecked<FVisualStudioSourceCodeAccessModule>(TEXT("VisualStudioSourceCodeAccess"));
-	VisualStudioSourceCodeAccessModule.GetAccessor().SaveAllOpenDocuments();
+	ISourceCodeAccessModule& SourceCodeAccessModule = FModuleManager::LoadModuleChecked<ISourceCodeAccessModule>("SourceCodeAccess");
+	SourceCodeAccessModule.GetAccessor().SaveAllOpenDocuments();
 }
 
 int32 GetVisualStudioVersionForCompiler()
@@ -211,7 +217,7 @@ EAccessVisualStudioResult AccessVisualStudioViaDTE(TComPtr<EnvDTE::_DTE>& OutDTE
 								// Get the solution path for this instance
 								// If it equals the solution we would have opened above in RunVisualStudio(), we'll take that
 								TComPtr<EnvDTE::_Solution> Solution;
-								LPOLESTR OutPath;
+								BSTR OutPath = nullptr;
 								if (SUCCEEDED(TempDTE->get_Solution(&Solution)) &&
 									SUCCEEDED(Solution->get_FullName(&OutPath)))
 								{
@@ -223,6 +229,8 @@ EAccessVisualStudioResult AccessVisualStudioViaDTE(TComPtr<EnvDTE::_DTE>& OutDTE
 										OutDTE = TempDTE;
 										AccessResult = EAccessVisualStudioResult::VSInstanceIsOpen;
 									}
+
+									SysFreeString(OutPath);
 								}
 								else
 								{
@@ -563,15 +571,21 @@ bool GetProcessCommandLine(const ::DWORD InProcessID, FString& OutCommandLine)
 	::IWbemLocator *pLoc = nullptr;
 	if (SUCCEEDED(::CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER, IID_IWbemLocator, (LPVOID*)&pLoc)))
 	{
+		FComBSTR ResourceName(TEXT("ROOT\\CIMV2"));
+
 		::IWbemServices *pSvc = nullptr;
-		if (SUCCEEDED(pLoc->ConnectServer(BSTR(TEXT("ROOT\\CIMV2")), nullptr, nullptr, nullptr, 0, 0, 0, &pSvc)))
+		if (SUCCEEDED(pLoc->ConnectServer(ResourceName, nullptr, nullptr, nullptr, 0, 0, 0, &pSvc)))
 		{
 			// Set the proxy so that impersonation of the client occurs
 			if (SUCCEEDED(::CoSetProxyBlanket(pSvc, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE)))
 			{
 				::IEnumWbemClassObject* pEnumerator = nullptr;
 				const FString WQLQuery = FString::Printf(TEXT("SELECT ProcessId, CommandLine FROM Win32_Process WHERE ProcessId=%lu"), InProcessID);
-				if (SUCCEEDED(pSvc->ExecQuery(BSTR(TEXT("WQL")), BSTR(*WQLQuery), WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &pEnumerator)))
+
+				FComBSTR WQLBstr(TEXT("WQL"));
+				FComBSTR WQLQueryBstr(*WQLQuery);
+
+				if (SUCCEEDED(pSvc->ExecQuery(WQLBstr, WQLQueryBstr, WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &pEnumerator)))
 				{
 					while (pEnumerator && !bSuccess)
 					{
@@ -704,9 +718,9 @@ EAccessVisualStudioResult AccessVisualStudioViaProcess(::DWORD& OutProcessID, FS
 							{
 								UE_LOG(LogVSAccessor, Warning, TEXT("Couldn't access module information"));
 								AccessResult = EAccessVisualStudioResult::VSInstanceUnknown;
+							}
 						}
 					}
-						}
 					else
 					{
 						UE_LOG(LogVSAccessor, Warning, TEXT("Couldn't access module table"));
@@ -743,6 +757,38 @@ bool FVisualStudioSourceCodeAccessor::OpenSolution()
 	}
 #endif
 	return OpenVisualStudioSolutionViaProcess();
+}
+
+bool FVisualStudioSourceCodeAccessor::OpenSolutionAtPath(const FString& InSolutionPath)
+{
+	bool bSuccess = false;
+
+	{
+		FScopeLock Lock(&CachedSolutionPathCriticalSection);
+		CachedSolutionPathOverride = InSolutionPath;
+	}
+#if VSACCESSOR_HAS_DTE
+	if (OpenVisualStudioSolutionViaDTE())
+	{
+		bSuccess = true;
+	}
+	else
+#endif
+	{
+		bSuccess = OpenVisualStudioSolutionViaProcess();
+	}
+
+	{
+		FScopeLock Lock(&CachedSolutionPathCriticalSection);
+		CachedSolutionPathOverride = TEXT("");
+	}
+	return bSuccess;
+}
+
+bool FVisualStudioSourceCodeAccessor::DoesSolutionExist() const
+{
+	const FString SolutionPath = GetSolutionPath();
+	return FPaths::FileExists(SolutionPath);
 }
 
 bool FVisualStudioSourceCodeAccessor::OpenVisualStudioFilesInternal(const TArray<FileOpenRequest>& Requests)
@@ -850,7 +896,7 @@ bool FVisualStudioSourceCodeAccessor::OpenSourceFiles(const TArray<FString>& Abs
 		TArray<FileOpenRequest> Requests;
 		for ( const FString& FullPath : AbsoluteSourcePaths )
 		{
-			Requests.Add(FileOpenRequest(FullPath, 0, 0));
+			Requests.Add(FileOpenRequest(FullPath, 1, 1));
 		}
 
 		return OpenVisualStudioFilesInternal(Requests);
@@ -1225,14 +1271,39 @@ FText FVisualStudioSourceCodeAccessor::GetDescriptionText() const
 FString FVisualStudioSourceCodeAccessor::GetSolutionPath() const
 {
 	FScopeLock Lock(&CachedSolutionPathCriticalSection);
+
 	if(IsInGameThread())
 	{
-		FString SolutionPath;
-		if(FDesktopPlatformModule::Get()->GetSolutionPath(SolutionPath))
+		if (CachedSolutionPathOverride.Len() > 0)
 		{
-			CachedSolutionPath = FPaths::ConvertRelativePathToFull(SolutionPath);
+			CachedSolutionPath = CachedSolutionPathOverride + TEXT(".sln");
+		}
+		else
+		{
+			CachedSolutionPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+
+			if (!FUProjectDictionary(FPaths::RootDir()).IsForeignProject(CachedSolutionPath))
+			{
+				CachedSolutionPath = FPaths::Combine(FPaths::RootDir(), TEXT("UE4.sln"));
+			}
+			else
+			{
+				const FProjectDescriptor* CurrentProject = IProjectManager::Get().GetCurrentProject();
+
+				if (CurrentProject == nullptr || CurrentProject->Modules.Num() == 0)
+				{
+					CachedSolutionPath = TEXT("");
+				}
+				else
+				{
+					FString BaseName = FApp::HasProjectName() ? FApp::GetProjectName() : FPaths::GetBaseFilename(CachedSolutionPath);
+					CachedSolutionPath = FPaths::Combine(CachedSolutionPath, BaseName + TEXT(".sln"));
+				}
+			}
 		}
 	}
+
+	// This must be an absolute path as VS always uses absolute paths
 	return CachedSolutionPath;
 }
 

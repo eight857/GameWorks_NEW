@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	OpenGLViewport.cpp: OpenGL viewport RHI implementation.
@@ -18,11 +18,7 @@ namespace RHIOpenGLConsoleVariables
 {
 	int32 SyncInterval = 1;
 	static FAutoConsoleVariableRef CVarSyncInterval(
-#if PLATFORM_MAC
-		TEXT("RHI.SyncInterval"),
-#else
 		TEXT("RHI.SyncIntervalOgl"),
-#endif
 		SyncInterval,
 		TEXT("When synchronizing with OpenGL, specifies the interval at which to refresh.")
 		);
@@ -64,9 +60,7 @@ FViewportRHIRef FOpenGLDynamicRHI::RHICreateViewport(void* WindowHandle,uint32 S
 {
 	check(IsInGameThread());
 
-//#if !PLATFORM_MAC
 //	SCOPED_SUSPEND_RENDERING_THREAD(true);
-//#endif
 
 	// Use a default pixel format if none was specified	
 	if (PreferredPixelFormat == EPixelFormat::PF_Unknown)
@@ -82,9 +76,7 @@ void FOpenGLDynamicRHI::RHIResizeViewport(FViewportRHIParamRef ViewportRHI,uint3
 	FOpenGLViewport* Viewport = ResourceCast(ViewportRHI);
 	check( IsInGameThread() );
 
-//#if !PLATFORM_MAC
 //	SCOPED_SUSPEND_RENDERING_THREAD(true);
-//#endif
 
 	Viewport->Resize(SizeX,SizeY,bIsFullscreen);
 }
@@ -154,7 +146,7 @@ void FOpenGLDynamicRHI::RHIEndDrawingViewport(FViewportRHIParamRef ViewportRHI,b
 		BackBuffer->GetSizeY(),
 		bPresent,
 		bLockToVsync,
-		RHIOpenGLConsoleVariables::SyncInterval
+		RHIGetSyncInterval()
 	);
 
 	// Always consider the Framebuffer in the rendering context dirty after the blit
@@ -207,7 +199,7 @@ FTexture2DRHIRef FOpenGLDynamicRHI::RHIGetViewportBackBuffer(FViewportRHIParamRe
 	return Viewport->GetBackBuffer();
 }
 
-void FOpenGLDynamicRHI::RHIAdvanceFrameForGetViewportBackBuffer()
+void FOpenGLDynamicRHI::RHIAdvanceFrameForGetViewportBackBuffer(FViewportRHIParamRef Viewport)
 {
 }
 
@@ -277,7 +269,7 @@ void FOpenGLViewport::Resize(uint32 InSizeX,uint32 InSizeY,bool bInIsFullscreen)
 	BackBuffer = (FOpenGLTexture2D*)PlatformCreateBuiltinBackBuffer(OpenGLRHI, InSizeX, InSizeY);
 	if (!BackBuffer)
 	{
-		BackBuffer = (FOpenGLTexture2D*)OpenGLRHI->CreateOpenGLTexture(InSizeX, InSizeY, false, false, PixelFormat, 1, 1, 1, TexCreate_RenderTargetable, FClearValueBinding::Transparent);
+		BackBuffer = (FOpenGLTexture2D*)OpenGLRHI->CreateOpenGLTexture(InSizeX, InSizeY, false, false, false, PixelFormat, 1, 1, 1, TexCreate_RenderTargetable, FClearValueBinding::Transparent);
 	}
 
 	PlatformResizeGLContext(OpenGLRHI->PlatformDevice, OpenGLContext, InSizeX, InSizeY, bInIsFullscreen, bIsFullscreen, BackBuffer->Target, BackBuffer->Resource);

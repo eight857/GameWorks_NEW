@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -90,6 +90,7 @@ class GAMEPLAYABILITIES_API UAbilityTask : public UGameplayTask
 	GENERATED_UCLASS_BODY()
 
 	virtual void OnDestroy(bool bInOwnerFinished) override;
+	virtual void BeginDestroy() override;
 	
 	/** Returns spec handle for owning ability */
 	FGameplayAbilitySpecHandle GetAbilitySpecHandle() const;
@@ -157,6 +158,7 @@ class GAMEPLAYABILITIES_API UAbilityTask : public UGameplayTask
 
 	/** What we are waiting on */
 	uint8 WaitStateBitMask;
+	uint8 bWasSuccessfullyDestroyed : 1;
 
 protected:
 	/** Helper method for registering client replicated callbacks */

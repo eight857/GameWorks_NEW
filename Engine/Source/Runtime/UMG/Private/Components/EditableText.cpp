@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/EditableText.h"
 #include "UObject/ConstructorHelpers.h"
@@ -22,7 +22,7 @@ UEditableText::UEditableText(const FObjectInitializer& ObjectInitializer)
 
 	if (!IsRunningDedicatedServer())
 	{
-		static ConstructorHelpers::FObjectFinder<UFont> RobotoFontObj(TEXT("/Engine/EngineFonts/Roboto"));
+		static ConstructorHelpers::FObjectFinder<UFont> RobotoFontObj(*UWidget::GetDefaultFontName());
 		Font_DEPRECATED = FSlateFontInfo(RobotoFontObj.Object, 12, FName("Bold"));
 	}
 
@@ -36,6 +36,8 @@ UEditableText::UEditableText(const FObjectInitializer& ObjectInitializer)
 	ClearKeyboardFocusOnCommit = Defaults._ClearKeyboardFocusOnCommit.Get();
 	SelectAllTextOnCommit = Defaults._SelectAllTextOnCommit.Get();
 	AllowContextMenu = Defaults._AllowContextMenu.Get();
+	VirtualKeyboardDismissAction = Defaults._VirtualKeyboardDismissAction.Get();
+	Clipping = Defaults._Clipping;
 }
 
 void UEditableText::ReleaseSlateResources(bool bReleaseChildren)
@@ -57,23 +59,27 @@ TSharedRef<SWidget> UEditableText::RebuildWidget()
 		.SelectAllTextOnCommit( SelectAllTextOnCommit )
 		.OnTextChanged( BIND_UOBJECT_DELEGATE( FOnTextChanged, HandleOnTextChanged ) )
 		.OnTextCommitted( BIND_UOBJECT_DELEGATE( FOnTextCommitted, HandleOnTextCommitted ) )
-		.VirtualKeyboardType( EVirtualKeyboardType::AsKeyboardType( KeyboardType.GetValue() ) );
+		.VirtualKeyboardType( EVirtualKeyboardType::AsKeyboardType( KeyboardType.GetValue() ) )
+		.VirtualKeyboardDismissAction(VirtualKeyboardDismissAction)
+		.Justification( Justification );
 	
-	return BuildDesignTimeWidget( MyEditableText.ToSharedRef() );
+	return MyEditableText.ToSharedRef();
 }
 
 void UEditableText::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
 
-	TAttribute<FText> TextBinding = OPTIONAL_BINDING(FText, Text);
-	TAttribute<FText> HintTextBinding = OPTIONAL_BINDING(FText, HintText);
+	TAttribute<FText> TextBinding = PROPERTY_BINDING(FText, Text);
+	TAttribute<FText> HintTextBinding = PROPERTY_BINDING(FText, HintText);
 
 	MyEditableText->SetText(TextBinding);
 	MyEditableText->SetHintText(HintTextBinding);
 	MyEditableText->SetIsReadOnly(IsReadOnly);
 	MyEditableText->SetIsPassword(IsPassword);
 	MyEditableText->SetAllowContextMenu(AllowContextMenu);
+	MyEditableText->SetVirtualKeyboardDismissAction(VirtualKeyboardDismissAction);
+	MyEditableText->SetJustification(Justification);
 	// TODO UMG Complete making all properties settable on SEditableText
 
 	ShapedTextOptions.SynchronizeShapedTextProperties(*MyEditableText);
@@ -191,7 +197,7 @@ void UEditableText::PostLoad()
 
 const FText UEditableText::GetPaletteCategory()
 {
-	return LOCTEXT("Primitive", "Primitive");
+	return LOCTEXT("Input", "Input");
 }
 
 #endif

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,9 +8,10 @@ class UClothingAssetBase;
 class USkeletalMeshComponent;
 
 // Empty interface, derived simulation modules define the contents of the context
-class IClothingSimulationContext
+class CLOTHINGSYSTEMRUNTIMEINTERFACE_API IClothingSimulationContext
 {
-
+public:
+	virtual ~IClothingSimulationContext() {};
 };
 
 class CLOTHINGSYSTEMRUNTIMEINTERFACE_API IClothingSimulation
@@ -50,7 +51,7 @@ protected:
 	 * @param InComponent - The component to fill the context for
 	 * @param InOutContext - The context to fill
 	 */
-	virtual void FillContext(USkeletalMeshComponent* InComponent, IClothingSimulationContext* InOutContext) = 0;
+	virtual void FillContext(USkeletalMeshComponent* InComponent, float InDeltaTime, IClothingSimulationContext* InOutContext) = 0;
 
 	/** Initialize the simulation, will be called before any Simulate calls */
 	virtual void Initialize() = 0;
@@ -91,7 +92,7 @@ protected:
 	 * @param InOwnerComponent - the component that owns the simulation
 	 * @param InOverrideComponent - An override component if bound to a master pose component
 	 */
-	virtual void GetSimulationData(TMap<int32, FClothSimulData>& OutData, USkeletalMeshComponent* InOwnerComponent, USkeletalMeshComponent* InOverrideComponent) const = 0;
+	virtual void GetSimulationData(TMap<int32, FClothSimulData>& OutData, USkeletalMeshComponent* InOwnerComponent, USkinnedMeshComponent* InOverrideComponent) const = 0;
 
 	/** Get the bounds of the simulation mesh in local simulation space */
 	virtual FBoxSphereBounds GetBounds(const USkeletalMeshComponent* InOwnerComponent) const = 0;

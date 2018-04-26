@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,7 +15,7 @@ struct FPointerEvent;
 class FViewportInteractionInputProcessor : public IInputProcessor
 {
 public:
-	FViewportInteractionInputProcessor ( FViewportWorldInteractionManager* InWorldInteractionManager );
+	FViewportInteractionInputProcessor(class UViewportWorldInteraction* InWorldInteraction);
 	virtual ~FViewportInteractionInputProcessor ();
 
 	// IInputProcess overrides
@@ -28,6 +28,5 @@ public:
 private:
 
 	/** The WorldInteraction that will receive the input */
-	FViewportWorldInteractionManager* WorldInteractionManager;
-
+	class UViewportWorldInteraction* WorldInteraction;
 };

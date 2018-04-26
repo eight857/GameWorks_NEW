@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -19,6 +19,7 @@ class FGeomBase
 {
 public:
 	FGeomBase();
+	virtual ~FGeomBase() {}
 
 	/** Does nothing if not in geometry mode.*/
 	virtual void Select( bool InSelect = 1 );

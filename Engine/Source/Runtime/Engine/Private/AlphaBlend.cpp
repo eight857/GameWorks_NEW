@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AlphaBlend.h"
 #include "Curves/CurveFloat.h"
@@ -84,7 +84,7 @@ void FAlphaBlend::Reset()
 	bNeedsToResetBlendTime = false;
 }
 
-void FAlphaBlend::Update(float InDeltaTime)
+float FAlphaBlend::Update(float InDeltaTime)
 {
 	// Make sure passed in delta time is positive
 	check(InDeltaTime >= 0.f);
@@ -113,10 +113,17 @@ void FAlphaBlend::Update(float InDeltaTime)
 		}
 		else
 		{
+			// Cache our overshoot to report to caller
+			float Overshoot = InDeltaTime - BlendTimeRemaining;
+
 			BlendTimeRemaining = 0.f; 
 			SetAlpha(1.f);
+
+			return Overshoot;
 		}
 	}
+
+	return 0.f;
 }
 
 float FAlphaBlend::AlphaToBlendOption()

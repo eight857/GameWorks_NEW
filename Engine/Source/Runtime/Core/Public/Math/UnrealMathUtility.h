@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -67,6 +67,7 @@ struct FLinearColor;
 #define THRESH_POINTS_ARE_SAME			(0.00002f)	/* Two points are same if within this distance */
 #define THRESH_POINTS_ARE_NEAR			(0.015f)	/* Two points are near if within this distance and can be combined if imprecise math is ok */
 #define THRESH_NORMALS_ARE_SAME			(0.00002f)	/* Two normal points are same if within this distance */
+#define THRESH_UVS_ARE_SAME			    (0.0009765625f)/* Two UV are same if within this threshold (1.0f/1024f) */
 													/* Making this too large results in incorrect CSG classification and disaster */
 #define THRESH_VECTORS_ARE_NEAR			(0.0004f)	/* Two vectors are near if within this distance and can be combined if imprecise math is ok */
 													/* Making this too large results in lighting problems due to inaccurate texture coordinates */
@@ -138,6 +139,9 @@ struct FMath : public FPlatformMath
 	 * Assumes world Y and Z, although this could be extended to handle arbitrary rotations.
 	 */
 	static CORE_API FVector VRandCone(FVector const& Dir, float HorizontalConeHalfAngleRad, float VerticalConeHalfAngleRad);
+
+	/** Returns a random point, uniformly distributed, within the specified radius */
+	static CORE_API FVector2D RandPointInCircle(float CircleRadius);
 
 	/** Returns a random point within the passed in bounding box */
 	static CORE_API FVector RandPointInBox(const FBox& Box);
@@ -589,12 +593,6 @@ struct FMath : public FPlatformMath
 	
 	/** Basically a Vector2d version of Lerp. */
 	static float GetRangeValue(FVector2D const& Range, float Pct);
-
-	DEPRECATED(4.9, "GetMappedRangeValue is deprecated. Use GetMappedRangeValueClamped instead.")
-	static FORCEINLINE float GetMappedRangeValue(const FVector2D& InputRange, const FVector2D& OutputRange, const float Value)
-	{
-		return GetMappedRangeValueClamped(InputRange, OutputRange, Value);
-	}
 
 	/** For the given Value clamped to the [Input:Range] inclusive, returns the corresponding percentage in [Output:Range] Inclusive. */
 	static FORCEINLINE float GetMappedRangeValueClamped(const FVector2D& InputRange, const FVector2D& OutputRange, const float Value)
@@ -1470,5 +1468,25 @@ struct FMath : public FPlatformMath
 		float y = x * 0.5f + 0.5f;
 
 		return Quantize8UnsignedByte(y);
+	}
+
+	// Use the Euclidean method to find the GCD
+	static int32 GreatestCommonDivisor(int32 a, int32 b)
+	{
+		while (b != 0)
+		{
+			int32 t = b;
+			b = a % b;
+			a = t;
+		}
+		return a;
+	}
+
+	// LCM = a/gcd * b
+	// a and b are the number we want to find the lcm
+	static int32 LeastCommonMultiplier(int32 a, int32 b)
+	{
+		int32 CurrentGcd = GreatestCommonDivisor(a, b);
+		return CurrentGcd == 0 ? 0 : (a / CurrentGcd) * b;
 	}
 };

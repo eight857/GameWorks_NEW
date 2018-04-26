@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlueprintCompilerCppBackendBase.h"
 #include "UObject/UnrealType.h"
@@ -174,10 +174,12 @@ struct FIncludeHeaderHelper
 		Dst.AddLine(FString::Printf(TEXT("#include \"%s%s\""), Message, bAddDotH ? TEXT(".h") : TEXT("")));
 	}
 
-	static void EmitInner(FCodeText& Dst, const TSet<UField*>& Src, const TSet<UField*>& Declarations, TSet<FString>& AlreadyIncluded)
+	static void EmitInner(FCodeText& Dst, const TSet<UField*>& Src, const TSet<UField*>& Declarations, const FCompilerNativizationOptions& NativizationOptions, TSet<FString>& AlreadyIncluded)
 	{
-		auto EngineSourceDir = FPaths::EngineSourceDir();
-		auto GameSourceDir = FPaths::GameSourceDir();
+		static const FString EngineSourceDir = FPaths::EngineSourceDir();
+		static const FString EnginePluginsDir = FPaths::EnginePluginsDir();
+		static const FString ProjectSourceDir = FPaths::GameSourceDir();
+		static const FString ProjectPluginsDir = FPaths::ProjectPluginsDir();
 
 		for (UField* Field : Src)
 		{
@@ -197,8 +199,13 @@ struct FIncludeHeaderHelper
 				AlreadyIncluded.Add(Name, &bAlreadyIncluded);
 				if (!bAlreadyIncluded)
 				{
-					const FString GeneratedFilename = FEmitHelper::GetBaseFilename(Field);
-					FIncludeHeaderHelper::EmitIncludeHeader(Dst, *GeneratedFilename, true);
+					const FString GeneratedFilename = FEmitHelper::GetBaseFilename(Field, NativizationOptions);
+
+					// In some cases the caller may have already primed this array with the generated filename.
+					if (!AlreadyIncluded.Contains(GeneratedFilename))
+					{
+						FIncludeHeaderHelper::EmitIncludeHeader(Dst, *GeneratedFilename, true);
+					}
 				}
 			}
 			// headers for native items
@@ -207,12 +214,24 @@ struct FIncludeHeaderHelper
 				FString PackPath;
 				if (FSourceCodeNavigation::FindClassHeaderPath(Field, PackPath))
 				{
-					if (!PackPath.RemoveFromStart(EngineSourceDir))
+					// Known header paths are converted to be relative to engine/project source folders. This is currently
+					// necessary because dependencies can be defined in private include paths which are not exposed to UBT,
+					// and it's also an optimization for public headers as it helps the target compiler locate them faster.
+					if (PackPath.StartsWith(EnginePluginsDir))
 					{
-						if (!PackPath.RemoveFromStart(GameSourceDir))
-						{
-							PackPath = FPaths::GetCleanFilename(PackPath);
-						}
+						// Engine plugin header paths are converted to be relative to the engine source directory. This path is added first by UBT.
+						FPaths::MakePathRelativeTo(PackPath, *EngineSourceDir);
+					}
+					else if (PackPath.StartsWith(ProjectPluginsDir))
+					{
+						// Project plugin header paths are converted to be relative to the project source directory. This is the CWD when building with UBT.
+						FPaths::MakePathRelativeTo(PackPath, *ProjectSourceDir);
+					}
+					else if (!PackPath.RemoveFromStart(EngineSourceDir) && !PackPath.RemoveFromStart(ProjectSourceDir))
+					{
+						// Engine and project header files are cropped and left relative to their respective source directories. Any other
+						// header path will get trimmed down to just the filename, and must be located in an include path that's exposed to UBT.
+						PackPath = FPaths::GetCleanFilename(PackPath);
 					}
 					bool bAlreadyIncluded = false;
 					AlreadyIncluded.Add(PackPath, &bAlreadyIncluded);
@@ -256,7 +275,7 @@ struct FIncludedUnconvertedWrappers
 	{
 		FCodeText AdditionalIncludes;
 		TSet<FString> DummyStrSet;
-		FIncludeHeaderHelper::EmitInner(AdditionalIncludes, InContext.UsedUnconvertedWrapper, TSet<UField*>{}, DummyStrSet);
+		FIncludeHeaderHelper::EmitInner(AdditionalIncludes, InContext.UsedUnconvertedWrapper, TSet<UField*>{}, InContext.NativizationOptions, DummyStrSet);
 		(bInInludeInBody ? InContext.Body : InContext.Header).Result.ReplaceInline(Placeholder(), *AdditionalIncludes.Result);
 	}
 
@@ -301,7 +320,7 @@ FString FBlueprintCompilerCppBackendBase::GenerateCodeFromClass(UClass* SourceCl
 	}
 
 	// use GetBaseFilename() so that we can coordinate #includes and filenames
-	auto CleanCppClassName = FEmitHelper::GetBaseFilename(SourceClass);
+	auto CleanCppClassName = FEmitHelper::GetBaseFilename(SourceClass, NativizationOptions);
 	auto CppClassName = FEmitHelper::GetCppName(SourceClass);
 	
 	FGatherConvertedClassDependencies Dependencies(SourceClass, NativizationOptions);
@@ -466,7 +485,7 @@ FString FBlueprintCompilerCppBackendBase::GenerateCodeFromClass(UClass* SourceCl
 	{
 		FCodeText AdditionalIncludes;
 		TSet<FString> DummyStrSet;
-		FIncludeHeaderHelper::EmitInner(AdditionalIncludes, EmitterContext.StructsUsedAsInlineValues, TSet<UField*>{}, DummyStrSet);
+		FIncludeHeaderHelper::EmitInner(AdditionalIncludes, EmitterContext.StructsUsedAsInlineValues, TSet<UField*>{}, EmitterContext.NativizationOptions, DummyStrSet);
 		EmitterContext.Body.Result.ReplaceInline(PlaceholderForInlinedStructInlude, *AdditionalIncludes.Result);
 	}
 
@@ -816,7 +835,8 @@ FString FBlueprintCompilerCppBackendBase::GenerateArgList(const FEmitterLocalCon
 		}
 		else
 		{
-			if (ArgProperty->HasAnyPropertyFlags(CPF_OutParm))
+			if (ArgProperty->HasAnyPropertyFlags(CPF_OutParm)
+				&& !ArgProperty->HasAnyPropertyFlags(CPF_ConstParm))
 			{
 				ArgListStr += TEXT("/*out*/ ");
 			}
@@ -884,14 +904,14 @@ void FBlueprintCompilerCppBackendBase::ConstructFunctionBody(FEmitterLocalContex
 	}
 }
 
-void FBlueprintCompilerCppBackendBase::GenerateCodeFromEnum(UUserDefinedEnum* SourceEnum, FString& OutHeaderCode, FString& OutCPPCode)
+void FBlueprintCompilerCppBackendBase::GenerateCodeFromEnum(UUserDefinedEnum* SourceEnum, const FCompilerNativizationOptions& NativizationOptions, FString& OutHeaderCode, FString& OutCPPCode)
 {
 	check(SourceEnum);
 	FCodeText Header;
 	Header.AddLine(TEXT("#pragma once"));
 	const FString EnumCppName = *FEmitHelper::GetCppName(SourceEnum);
 	// use GetBaseFilename() so that we can coordinate #includes and filenames
-	Header.AddLine(FString::Printf(TEXT("#include \"%s.generated.h\""), *FEmitHelper::GetBaseFilename(SourceEnum)));
+	Header.AddLine(FString::Printf(TEXT("#include \"%s.generated.h\""), *FEmitHelper::GetBaseFilename(SourceEnum, NativizationOptions)));
 	Header.AddLine(FString::Printf(TEXT("UENUM(BlueprintType, %s )"), *FEmitHelper::ReplaceConvertedMetaData(SourceEnum)));
 	Header.AddLine(FString::Printf(TEXT("enum class %s  : uint8"), *EnumCppName));
 	Header.AddLine(TEXT("{"));
@@ -942,7 +962,7 @@ void FBlueprintCompilerCppBackendBase::GenerateCodeFromEnum(UUserDefinedEnum* So
 		}
 	}
 
-	Body.AddLine(FString::Printf(TEXT("#include \"%s.h\""), *FEmitHelper::GetBaseFilename(SourceEnum)));
+	Body.AddLine(FString::Printf(TEXT("#include \"%s.h\""), *FEmitHelper::GetBaseFilename(SourceEnum, NativizationOptions)));
 
 	// generate implementation of GetUserFriendlyName:
 	Body.AddLine(FString::Printf(TEXT("FText %s__GetUserFriendlyName(int32 InValue)"), *EnumCppName, *EnumCppName));
@@ -976,14 +996,14 @@ void FBlueprintCompilerCppBackendBase::GenerateCodeFromEnum(UUserDefinedEnum* So
 	OutCPPCode = MoveTemp(Body.Result);
 }
 
-FString FBlueprintCompilerCppBackendBase::GenerateCodeFromStruct(UUserDefinedStruct* SourceStruct, const FCompilerNativizationOptions& NativizationOptions)
+void FBlueprintCompilerCppBackendBase::GenerateCodeFromStruct(UUserDefinedStruct* SourceStruct, const FCompilerNativizationOptions& NativizationOptions, FString& OutHeaderCode, FString& OutCPPCode)
 {
 	check(SourceStruct);
 	FGatherConvertedClassDependencies Dependencies(SourceStruct, NativizationOptions);
 	FNativizationSummaryHelper::RegisterRequiredModules(NativizationOptions.PlatformName, Dependencies.RequiredModuleNames);
 	FEmitterLocalContext EmitterContext(Dependencies, NativizationOptions);
 	// use GetBaseFilename() so that we can coordinate #includes and filenames
-	EmitFileBeginning(FEmitHelper::GetBaseFilename(SourceStruct), EmitterContext, true, true);
+	EmitFileBeginning(FEmitHelper::GetBaseFilename(SourceStruct, NativizationOptions), EmitterContext, true, true);
 	{
 		FIncludedUnconvertedWrappers IncludedUnconvertedWrappers(EmitterContext, false);
 		const FString CppStructName = FEmitHelper::GetCppName(SourceStruct);
@@ -995,7 +1015,10 @@ FString FBlueprintCompilerCppBackendBase::GenerateCodeFromStruct(UUserDefinedStr
 		EmitterContext.Header.AddLine(TEXT("GENERATED_BODY()"));
 		EmitStructProperties(EmitterContext, SourceStruct);
 
-		FEmitDefaultValueHelper::GenerateGetDefaultValue(SourceStruct, EmitterContext);
+		FEmitDefaultValueHelper::GenerateUserStructConstructor(SourceStruct, EmitterContext);
+
+		EmitterContext.Header.AddLine(TEXT("static void __StaticDependenciesAssets(TArray<FBlueprintDependencyData>& AssetsToLoad);"));
+		EmitterContext.Header.AddLine(TEXT("static void __StaticDependencies_DirectlyUsedAssets(TArray<FBlueprintDependencyData>& AssetsToLoad);"));
 
 		EmitterContext.Header.AddLine(FString::Printf(TEXT("bool operator== (const %s& __Other) const"), *CppStructName));
 		EmitterContext.Header.AddLine(TEXT("{"));
@@ -1014,7 +1037,11 @@ FString FBlueprintCompilerCppBackendBase::GenerateCodeFromStruct(UUserDefinedStr
 		EmitterContext.Header.AddLine(TEXT("};"));
 	}
 
-	return EmitterContext.Header.Result;
+	FEmitDefaultValueHelper::AddStaticFunctionsForDependencies(EmitterContext, nullptr, NativizationOptions);
+	FEmitDefaultValueHelper::AddRegisterHelper(EmitterContext);
+
+	OutCPPCode = MoveTemp(EmitterContext.Body.Result);
+	OutHeaderCode = MoveTemp(EmitterContext.Header.Result);
 }
 
 FString FBlueprintCompilerCppBackendBase::GenerateWrapperForClass(UClass* SourceClass, const FCompilerNativizationOptions& NativizationOptions)
@@ -1099,7 +1126,7 @@ FString FBlueprintCompilerCppBackendBase::GenerateWrapperForClass(UClass* Source
 	}
 
 	// Include standard stuff
-	EmitFileBeginning(FEmitHelper::GetBaseFilename(SourceClass), EmitterContext, bGenerateAnyMCDelegateProperty, true, true, SuperClassToUse);
+	EmitFileBeginning(FEmitHelper::GetBaseFilename(SourceClass, NativizationOptions), EmitterContext, bGenerateAnyMCDelegateProperty, true, true, SuperClassToUse);
 
 	{
 		FIncludedUnconvertedWrappers IncludedUnconvertedWrappers(EmitterContext, false);
@@ -1172,7 +1199,7 @@ FString FBlueprintCompilerCppBackendBase::GenerateWrapperForClass(UClass* Source
 			EmitterContext.Header.IncreaseIndent();
 			if (bUseStaticVariables)
 			{
-				EmitterContext.Header.AddLine(TEXT("static TWeakObjectPtr<UProperty> __PropertyPtr{};"));
+				EmitterContext.Header.AddLine(TEXT("static TWeakObjectPtr<const UProperty> __PropertyPtr{};"));
 				EmitterContext.Header.AddLine(TEXT("const UProperty* __Property = __PropertyPtr.Get();"));
 				EmitterContext.Header.AddLine(TEXT("if (nullptr == __Property)"));
 				EmitterContext.Header.AddLine(TEXT("{"));
@@ -1325,16 +1352,16 @@ void FBlueprintCompilerCppBackendBase::EmitFileBeginning(const FString& CleanNam
 	{
 		IncludeInHeader.Add(AdditionalFieldToIncludeInHeader);
 	}
-	FIncludeHeaderHelper::EmitInner(EmitterContext.Header, IncludeInHeader, bFullyIncludedDeclaration ? TSet<UField*>() : EmitterContext.Dependencies.DeclareInHeader, AlreadyIncluded);
+	FIncludeHeaderHelper::EmitInner(EmitterContext.Header, IncludeInHeader, bFullyIncludedDeclaration ? TSet<UField*>() : EmitterContext.Dependencies.DeclareInHeader, EmitterContext.NativizationOptions, AlreadyIncluded);
 	if (bFullyIncludedDeclaration)
 	{
-		FIncludeHeaderHelper::EmitInner(EmitterContext.Header, EmitterContext.Dependencies.DeclareInHeader, TSet<UField*>(), AlreadyIncluded);
+		FIncludeHeaderHelper::EmitInner(EmitterContext.Header, EmitterContext.Dependencies.DeclareInHeader, TSet<UField*>(), EmitterContext.NativizationOptions, AlreadyIncluded);
 	}
 	else
 	{
 		IncludeInBody.Append(EmitterContext.Dependencies.DeclareInHeader);
 	}
-	FIncludeHeaderHelper::EmitInner(EmitterContext.Body, IncludeInBody, TSet<UField*>(), AlreadyIncluded);
+	FIncludeHeaderHelper::EmitInner(EmitterContext.Body, IncludeInBody, TSet<UField*>(), EmitterContext.NativizationOptions, AlreadyIncluded);
 
 	if (bIncludeGeneratedH)
 	{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sections/MovieScene3DTransformSection.h"
 #include "UObject/StructOnScope.h"
@@ -16,6 +16,7 @@ void FMovieScene3DLocationKeyStruct::PropagateChanges(const FPropertyChangedEven
 		if(LocationKeys[Index] != nullptr)
 		{
 			LocationKeys[Index]->Value = Location[Index];
+			LocationKeys[Index]->Time = Time;
 		}
 	}
 }
@@ -29,14 +30,17 @@ void FMovieScene3DRotationKeyStruct::PropagateChanges(const FPropertyChangedEven
 	if(RotationKeys[0] != nullptr)
 	{
 		RotationKeys[0]->Value = Rotation.Roll;
+		RotationKeys[0]->Time = Time;
 	}
 	if(RotationKeys[1] != nullptr)
 	{	
 		RotationKeys[1]->Value = Rotation.Pitch;
+		RotationKeys[1]->Time = Time;
 	}
 	if(RotationKeys[2] != nullptr)
 	{
 		RotationKeys[2]->Value = Rotation.Yaw;
+		RotationKeys[2]->Time = Time;
 	}
 }
 
@@ -51,6 +55,7 @@ void FMovieScene3DScaleKeyStruct::PropagateChanges(const FPropertyChangedEvent& 
 		if(ScaleKeys[Index] != nullptr)
 		{
 			ScaleKeys[Index]->Value = Scale[Index];
+			ScaleKeys[Index]->Time = Time;
 		}
 	}
 }
@@ -66,24 +71,29 @@ void FMovieScene3DTransformKeyStruct::PropagateChanges(const FPropertyChangedEve
 		if(LocationKeys[Index] != nullptr)
 		{
 			LocationKeys[Index]->Value = Location[Index];
+			LocationKeys[Index]->Time = Time;
 		}
 		if(ScaleKeys[Index] != nullptr)
 		{
 			ScaleKeys[Index]->Value = Scale[Index];
+			ScaleKeys[Index]->Time = Time;
 		}
 	}
 
 	if(RotationKeys[0] != nullptr)
 	{
 		RotationKeys[0]->Value = Rotation.Roll;
+		RotationKeys[0]->Time = Time;
 	}
 	if(RotationKeys[1] != nullptr)
 	{	
 		RotationKeys[1]->Value = Rotation.Pitch;
+		RotationKeys[1]->Time = Time;
 	}
 	if(RotationKeys[2] != nullptr)
 	{
 		RotationKeys[2]->Value = Rotation.Yaw;
+		RotationKeys[2]->Time = Time;
 	}
 }
 
@@ -97,7 +107,15 @@ UMovieScene3DTransformSection::UMovieScene3DTransformSection(const FObjectInitia
 	, Show3DTrajectory(EShow3DTrajectory::EST_OnlyWhenSelected)
 #endif
 {
-	EvalOptions.EnableAndSetCompletionMode(GetLinkerCustomVersion(FSequencerObjectVersion::GUID) < FSequencerObjectVersion::WhenFinishedDefaultsToRestoreState ? EMovieSceneCompletionMode::KeepState : EMovieSceneCompletionMode::RestoreState);
+	EvalOptions.EnableAndSetCompletionMode
+		(GetLinkerCustomVersion(FSequencerObjectVersion::GUID) < FSequencerObjectVersion::WhenFinishedDefaultsToRestoreState ? 
+			EMovieSceneCompletionMode::KeepState : 
+			GetLinkerCustomVersion(FSequencerObjectVersion::GUID) < FSequencerObjectVersion::WhenFinishedDefaultsToProjectDefault ? 
+			EMovieSceneCompletionMode::RestoreState : 
+			EMovieSceneCompletionMode::ProjectDefault);
+
+	TransformMask = EMovieSceneTransformChannel::AllTransform;
+	BlendType = EMovieSceneBlendType::Absolute;
 }
 
 
@@ -186,6 +204,16 @@ const FRichCurve& UMovieScene3DTransformSection::GetScaleCurve(EAxis::Type Axis)
 	return *ChooseCurve(Axis, Scale);
 }
 
+FRichCurve& UMovieScene3DTransformSection::GetManualWeightCurve()
+{
+	return ManualWeight;
+}
+
+const FRichCurve& UMovieScene3DTransformSection::GetManualWeightCurve() const
+{
+	return ManualWeight;
+}
+
 
 /* UMovieSceneSection interface
  *****************************************************************************/
@@ -201,6 +229,7 @@ void UMovieScene3DTransformSection::MoveSection(float DeltaTime, TSet<FKeyHandle
 		Rotation[Axis].ShiftCurve(DeltaTime, KeyHandles);
 		Scale[Axis].ShiftCurve(DeltaTime, KeyHandles);
 	}
+	ManualWeight.ShiftCurve(DeltaTime, KeyHandles);
 }
 
 
@@ -214,6 +243,7 @@ void UMovieScene3DTransformSection::DilateSection(float DilationFactor, float Or
 		Rotation[Axis].ScaleCurve(Origin, DilationFactor, KeyHandles);
 		Scale[Axis].ScaleCurve(Origin, DilationFactor, KeyHandles);
 	}
+	ManualWeight.ScaleCurve(Origin, DilationFactor, KeyHandles);
 }
 
 
@@ -251,6 +281,14 @@ void UMovieScene3DTransformSection::GetKeyHandles(TSet<FKeyHandle>& OutKeyHandle
 			{
 				OutKeyHandles.Add(It.Key());
 			}
+		}
+	}
+	for (auto It(ManualWeight.GetKeyHandleIterator()); It; ++It)
+	{
+		float Time = ManualWeight.GetKeyTime(It.Key());
+		if (TimeRange.Contains(Time))
+		{
+			OutKeyHandles.Add(It.Key());
 		}
 	}
 }
@@ -311,17 +349,20 @@ TSharedPtr<FStructOnScope> UMovieScene3DTransformSection::GetKeyStruct(const TAr
 				{
 					Struct->LocationKeys[Index] = TranslationKeys[Index];
 					Struct->Location[Index] = TranslationKeys[Index]->Value;
+					Struct->Time = TranslationKeys[Index]->Time;
 				}
 
 				if(RotationKeys[Index] != nullptr)
 				{
 					Struct->RotationKeys[Index] = RotationKeys[Index];
+					Struct->Time = RotationKeys[Index]->Time;
 				}
 				
 				if(ScaleKeys[Index] != nullptr)
 				{
 					Struct->ScaleKeys[Index] = ScaleKeys[Index];
 					Struct->Scale[Index] = ScaleKeys[Index]->Value;
+					Struct->Time = ScaleKeys[Index]->Time;
 				}
 			}
 
@@ -353,6 +394,7 @@ TSharedPtr<FStructOnScope> UMovieScene3DTransformSection::GetKeyStruct(const TAr
 				{
 					Struct->LocationKeys[Index] = TranslationKeys[Index];
 					Struct->Location[Index] = TranslationKeys[Index]->Value;
+					Struct->Time = TranslationKeys[Index]->Time;
 				}
 			}
 		}
@@ -370,6 +412,7 @@ TSharedPtr<FStructOnScope> UMovieScene3DTransformSection::GetKeyStruct(const TAr
 				if(RotationKeys[Index] != nullptr)
 				{
 					Struct->RotationKeys[Index] = RotationKeys[Index];
+					Struct->Time = RotationKeys[Index]->Time;
 				}
 			}
 
@@ -403,6 +446,7 @@ TSharedPtr<FStructOnScope> UMovieScene3DTransformSection::GetKeyStruct(const TAr
 				{
 					Struct->ScaleKeys[Index] = ScaleKeys[Index];
 					Struct->Scale[Index] = ScaleKeys[Index]->Value;
+					Struct->Time = ScaleKeys[Index]->Time;
 				}
 			}
 		}
@@ -455,6 +499,10 @@ TOptional<float> UMovieScene3DTransformSection::GetKeyTime( FKeyHandle KeyHandle
 	{
 		return TOptional<float>( Scale[2].GetKeyTime( KeyHandle ) );
 	}
+	if ( ManualWeight.IsKeyHandleValid( KeyHandle ) )
+	{
+		return TOptional<float>( ManualWeight.GetKeyTime( KeyHandle ) );
+	}
 	return TOptional<float>();
 }
 
@@ -499,6 +547,10 @@ void UMovieScene3DTransformSection::SetKeyTime( FKeyHandle KeyHandle, float Time
 	else if ( Scale[2].IsKeyHandleValid( KeyHandle ) )
 	{
 		Scale[2].SetKeyTime( KeyHandle, Time );
+	}
+	else if ( ManualWeight.IsKeyHandleValid( KeyHandle ) )
+	{
+		ManualWeight.SetKeyTime( KeyHandle, Time );
 	}
 }
 
@@ -584,9 +636,10 @@ void UMovieScene3DTransformSection::ClearDefaults()
 	Scale[0].ClearDefaultValue();
 	Scale[1].ClearDefaultValue();
 	Scale[2].ClearDefaultValue();
+	ManualWeight.ClearDefaultValue();
 }
 
 FMovieSceneEvalTemplatePtr UMovieScene3DTransformSection::GenerateTemplate() const
 {
-	return FMovieScene3DTransformSectionTemplate(*this);
+	return FMovieSceneComponentTransformSectionTemplate(*this);
 }

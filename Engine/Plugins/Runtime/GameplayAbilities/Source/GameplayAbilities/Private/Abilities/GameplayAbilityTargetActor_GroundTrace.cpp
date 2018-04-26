@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/GameplayAbilityTargetActor_GroundTrace.h"
 #include "GameFramework/Pawn.h"
@@ -140,10 +140,9 @@ bool AGameplayAbilityTargetActor_GroundTrace::AdjustCollisionResultForShape(cons
 
 FHitResult AGameplayAbilityTargetActor_GroundTrace::PerformTrace(AActor* InSourceActor)
 {
-	static const FName LineTraceSingleName(TEXT("AGameplayAbilityTargetActor_GroundTrace"));
 	bool bTraceComplex = false;
 
-	FCollisionQueryParams Params(LineTraceSingleName, bTraceComplex);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AGameplayAbilityTargetActor_GroundTrace), bTraceComplex);
 	Params.bReturnPhysicalMaterial = true;
 	Params.bTraceAsyncScene = true;
 	Params.AddIgnoredActor(InSourceActor);

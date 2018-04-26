@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SSceneOutliner.h"
@@ -233,6 +233,17 @@ namespace SceneOutliner
 		// We use the filter collection provided, otherwise we create our own
 		Filters = InInitOptions.Filters.IsValid() ? InInitOptions.Filters : MakeShareable(new FOutlinerFilters);
 	
+		// Add additional filters
+		if (SharedData->Mode == ESceneOutlinerMode::ActorBrowsing)
+		{
+			FSceneOutlinerModule& SceneOutlinerModule = FModuleManager::LoadModuleChecked< FSceneOutlinerModule >("SceneOutliner");
+
+			for (auto& OutlinerFilterInfo : SceneOutlinerModule.OutlinerFilterInfoMap)
+			{
+				OutlinerFilterInfo.Value.InitFilter(Filters);
+			}
+		}
+
 		SearchBoxFilter->OnChanged().AddSP( this, &SSceneOutliner::FullRefresh );
 		Filters->OnChanged().AddSP( this, &SSceneOutliner::FullRefresh );
 
@@ -568,8 +579,12 @@ namespace SceneOutliner
 		}
 		FEditorDelegates::MapChange.RemoveAll( this );
 		FEditorDelegates::NewCurrentLevel.RemoveAll( this );
-		GEngine->OnLevelActorListChanged().RemoveAll( this );
-		GEditor->UnregisterForUndo( this );
+
+		if(GEngine)
+		{
+			GEngine->OnLevelActorListChanged().RemoveAll(this);
+			GEditor->UnregisterForUndo(this);
+		}
 
 		SearchBoxFilter->OnChanged().RemoveAll( this );
 		Filters->OnChanged().RemoveAll( this );
@@ -651,6 +666,14 @@ namespace SceneOutliner
 					NAME_None,
 					EUserInterfaceActionType::ToggleButton
 				);
+
+				// Add additional filters
+				FSceneOutlinerModule& SceneOutlinerModule = FModuleManager::LoadModuleChecked< FSceneOutlinerModule >("SceneOutliner");
+			
+				for (auto& OutlinerFilterInfo : SceneOutlinerModule.OutlinerFilterInfoMap)
+				{
+					OutlinerFilterInfo.Value.AddMenu(MenuBuilder);
+				}
 			}
 			MenuBuilder.EndSection();
 
@@ -695,9 +718,9 @@ namespace SceneOutliner
 						LOCTEXT("ChooseWorldToolTip", "Display actors for this world."),
 						FSlateIcon(),
 						FUIAction(
-						FExecuteAction::CreateSP( this, &SSceneOutliner::OnSelectWorld, TWeakObjectPtr<UWorld>(World) ),
+						FExecuteAction::CreateSP( this, &SSceneOutliner::OnSelectWorld, MakeWeakObjectPtr(World) ),
 						FCanExecuteAction(),
-						FIsActionChecked::CreateSP( this, &SSceneOutliner::IsWorldChecked, TWeakObjectPtr<UWorld>(World) )
+						FIsActionChecked::CreateSP( this, &SSceneOutliner::IsWorldChecked, MakeWeakObjectPtr(World) )
 						),
 						NAME_None,
 						EUserInterfaceActionType::RadioButton
@@ -1760,13 +1783,16 @@ namespace SceneOutliner
 		}
 	}
 
+	static const FName SequencerActorTag(TEXT("SequencerActor"));
+
 	bool SSceneOutliner::IsActorDisplayable( const AActor* Actor ) const
 	{
 		return	!SharedData->bOnlyShowFolders && 												// Don't show actors if we're only showing folders
 				Actor->IsEditable() &&															// Only show actors that are allowed to be selected and drawn in editor
 				Actor->IsListedInSceneOutliner() &&
 				( (SharedData->bRepresentingPlayWorld || !Actor->HasAnyFlags(RF_Transient)) ||
-				  (SharedData->bShowTransient && Actor->HasAnyFlags(RF_Transient) ) ) &&		// Don't show transient actors in non-play worlds
+				  (SharedData->bShowTransient && Actor->HasAnyFlags(RF_Transient)) ||			// Don't show transient actors in non-play worlds
+				  (Actor->ActorHasTag(SequencerActorTag)) ) &&		
 				!Actor->IsTemplate() &&															// Should never happen, but we never want CDOs displayed
 				!FActorEditorUtils::IsABuilderBrush(Actor) &&									// Don't show the builder brush
 				!Actor->IsA( AWorldSettings::StaticClass() ) &&									// Don't show the WorldSettings actor, even though it is technically editable

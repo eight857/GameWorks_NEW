@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/FileManager.h"
@@ -23,11 +23,13 @@
 #include "Factories/FbxStaticMeshImportData.h"
 #include "Factories/FbxTextureImportData.h"
 #include "Factories/FbxImportUI.h"
+#include "Rendering/SkeletalMeshRenderData.h"
+
+#include "Animation/AnimSequence.h"
 
 #include "AssetRegistryModule.h"
 #include "ObjectTools.h"
 #include "StaticMeshResources.h"
-#include "SkeletalMeshTypes.h"
 
 #include "FbxMeshUtils.h"
 #include "Tests/FbxAutomationCommon.h"
@@ -161,6 +163,9 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 				//Create a factory and set the options
 				UFbxFactory* FbxFactory = NewObject<UFbxFactory>(UFbxFactory::StaticClass());
 				FbxFactory->AddToRoot();
+				
+				TestPlan->ImportUI->bResetMaterialSlots = false;
+
 				FbxFactory->ImportUI = TestPlan->ImportUI;
 				//Skip the auto detect type on import, the test set a specific value
 				FbxFactory->SetDetectImportTypeOnImport(false);
@@ -259,6 +264,9 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 				{
 					UReimportFbxStaticMeshFactory* FbxStaticMeshReimportFactory = NewObject<UReimportFbxStaticMeshFactory>(UReimportFbxStaticMeshFactory::StaticClass());
 					FbxStaticMeshReimportFactory->AddToRoot();
+					
+					TestPlan->ImportUI->bResetMaterialSlots = false;
+
 					FbxStaticMeshReimportFactory->ImportUI = TestPlan->ImportUI;
 
 					UStaticMesh *ReimportStaticMesh = Cast<UStaticMesh>(GlobalImportedObjects[0]);
@@ -297,6 +305,9 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 				{
 					UReimportFbxSkeletalMeshFactory* FbxSkeletalMeshReimportFactory = NewObject<UReimportFbxSkeletalMeshFactory>(UReimportFbxSkeletalMeshFactory::StaticClass());
 					FbxSkeletalMeshReimportFactory->AddToRoot();
+					
+					TestPlan->ImportUI->bResetMaterialSlots = false;
+					
 					FbxSkeletalMeshReimportFactory->ImportUI = TestPlan->ImportUI;
 
 					USkeletalMesh *ReimportSkeletalMesh = Cast<USkeletalMesh>(GlobalImportedObjects[0]);
@@ -305,7 +316,9 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					//Copy UFbxSkeletalMeshImportData
 					ImportData->bImportMeshesInBoneHierarchy = TestPlan->ImportUI->SkeletalMeshImportData->bImportMeshesInBoneHierarchy;
 					ImportData->bImportMorphTargets = TestPlan->ImportUI->SkeletalMeshImportData->bImportMorphTargets;
-					ImportData->bKeepOverlappingVertices = TestPlan->ImportUI->SkeletalMeshImportData->bKeepOverlappingVertices;
+					ImportData->ThresholdPosition = TestPlan->ImportUI->SkeletalMeshImportData->ThresholdPosition;
+					ImportData->ThresholdTangentNormal = TestPlan->ImportUI->SkeletalMeshImportData->ThresholdTangentNormal;
+					ImportData->ThresholdUV = TestPlan->ImportUI->SkeletalMeshImportData->ThresholdUV;
 					ImportData->bPreserveSmoothingGroups = TestPlan->ImportUI->SkeletalMeshImportData->bPreserveSmoothingGroups;
 					ImportData->bUpdateSkeletonReferencePose = TestPlan->ImportUI->SkeletalMeshImportData->bUpdateSkeletonReferencePose;
 					ImportData->bUseT0AsRefPose = TestPlan->ImportUI->SkeletalMeshImportData->bUseT0AsRefPose;
@@ -387,7 +400,6 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					ImportData->ImportUniformScale = TestPlan->ImportUI->StaticMeshImportData->ImportUniformScale;
 					ImportData->bImportAsScene = TestPlan->ImportUI->StaticMeshImportData->bImportAsScene;
 
-					
 					FbxMeshUtils::ImportStaticMeshLOD(ExistingStaticMesh, LodFile, TestPlan->LodIndex);
 				}
 				else if (GlobalImportedObjects[0]->IsA(USkeletalMesh::StaticClass()))
@@ -398,7 +410,9 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					//Copy UFbxSkeletalMeshImportData
 					ImportData->bImportMeshesInBoneHierarchy = TestPlan->ImportUI->SkeletalMeshImportData->bImportMeshesInBoneHierarchy;
 					ImportData->bImportMorphTargets = TestPlan->ImportUI->SkeletalMeshImportData->bImportMorphTargets;
-					ImportData->bKeepOverlappingVertices = TestPlan->ImportUI->SkeletalMeshImportData->bKeepOverlappingVertices;
+					ImportData->ThresholdPosition = TestPlan->ImportUI->SkeletalMeshImportData->ThresholdPosition;
+					ImportData->ThresholdTangentNormal = TestPlan->ImportUI->SkeletalMeshImportData->ThresholdTangentNormal;
+					ImportData->ThresholdUV = TestPlan->ImportUI->SkeletalMeshImportData->ThresholdUV;
 					ImportData->bPreserveSmoothingGroups = TestPlan->ImportUI->SkeletalMeshImportData->bPreserveSmoothingGroups;
 					ImportData->bUpdateSkeletonReferencePose = TestPlan->ImportUI->SkeletalMeshImportData->bUpdateSkeletonReferencePose;
 					ImportData->bUseT0AsRefPose = TestPlan->ImportUI->SkeletalMeshImportData->bUseT0AsRefPose;
@@ -427,6 +441,8 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 		TestPlan->ImportUI->TextureImportData->RemoveFromRoot();
 		TestPlan->ImportUI->RemoveFromRoot();
 		TestPlan->ImportUI = nullptr;
+		TArray<FAssetData> ImportedAssets;
+		AssetRegistryModule.Get().GetAssetsByPath(FName(*ImportAssetPath), ImportedAssets, true);
 
 		WarningNum = ExecutionInfo.GetWarningTotal() - WarningNum;
 		ErrorNum = ExecutionInfo.GetErrorTotal() - ErrorNum;
@@ -458,6 +474,7 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 						*GetFormatedMessageErrorInTestData(CleanFilename, TestPlan->TestPlanName, TEXT("Warning_Number"), ExpectedResultIndex))));
 					break;
 				}
+
 				if (WarningNum != ExpectedResult.ExpectedPresetsDataInteger[0])
 				{
 					ExecutionInfo.AddEvent(FAutomationEvent(EAutomationEventType::Error, FString::Printf(TEXT("%s [%d warnings but expected %d]"),
@@ -620,9 +637,9 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *SkeletalMesh = Cast<USkeletalMesh>(Object);
-						for (int32 LodIndex = 0; LodIndex < SkeletalMesh->GetResourceForRendering()->LODModels.Num(); ++LodIndex)
+						for (int32 LodIndex = 0; LodIndex < SkeletalMesh->GetResourceForRendering()->LODRenderData.Num(); ++LodIndex)
 						{
-							GlobalVertexNumber += SkeletalMesh->GetResourceForRendering()->LODModels[LodIndex].NumVertices;
+							GlobalVertexNumber += SkeletalMesh->GetResourceForRendering()->LODRenderData[LodIndex].GetNumVertices();
 						}
 					}
 				}
@@ -653,7 +670,7 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *SkeletalMesh = Cast<USkeletalMesh>(Object);
-						LodNumber = SkeletalMesh->GetResourceForRendering()->LODModels.Num();
+						LodNumber = SkeletalMesh->GetResourceForRendering()->LODRenderData.Num();
 					}
 					if (LodNumber != ExpectedResult.ExpectedPresetsDataInteger[0])
 					{
@@ -688,9 +705,9 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *SkeletalMesh = Cast<USkeletalMesh>(Object);
-						if (LodIndex < SkeletalMesh->GetResourceForRendering()->LODModels.Num())
+						if (LodIndex < SkeletalMesh->GetResourceForRendering()->LODRenderData.Num())
 						{
-							GlobalVertexNumber = SkeletalMesh->GetResourceForRendering()->LODModels[LodIndex].NumVertices;
+							GlobalVertexNumber = SkeletalMesh->GetResourceForRendering()->LODRenderData[LodIndex].GetNumVertices();
 						}
 					}
 				}
@@ -762,14 +779,14 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *Mesh = Cast<USkeletalMesh>(Object);
-						LODNumber = Mesh->GetResourceForRendering()->LODModels.Num();
+						LODNumber = Mesh->GetResourceForRendering()->LODRenderData.Num();
 						if (LODIndex < 0 || LODIndex >= LODNumber)
 						{
 							BadLodIndex = true;
 						}
 						else
 						{
-							SectionNumber = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections.Num();
+							SectionNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections.Num();
 						}
 					}
 				}
@@ -828,21 +845,21 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *Mesh = Cast<USkeletalMesh>(Object);
-						LODNumber = Mesh->GetResourceForRendering()->LODModels.Num();
+						LODNumber = Mesh->GetResourceForRendering()->LODRenderData.Num();
 						if (LODIndex < 0 || LODIndex >= LODNumber)
 						{
 							BadLodIndex = true;
 						}
 						else
 						{
-							SectionNumber = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections.Num();
+							SectionNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections.Num();
 							if (SectionIndex < 0 || SectionIndex >= SectionNumber)
 							{
 								BadSectionIndex = true;
 							}
 							else
 							{
-								SectionVertexNumber = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections[SectionIndex].GetNumVertices();
+								SectionVertexNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections[SectionIndex].GetNumVertices();
 							}
 						}
 					}
@@ -907,21 +924,21 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *Mesh = Cast<USkeletalMesh>(Object);
-						LODNumber = Mesh->GetResourceForRendering()->LODModels.Num();
+						LODNumber = Mesh->GetResourceForRendering()->LODRenderData.Num();
 						if (LODIndex < 0 || LODIndex >= LODNumber)
 						{
 							BadLodIndex = true;
 						}
 						else
 						{
-							SectionNumber = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections.Num();
+							SectionNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections.Num();
 							if (SectionIndex < 0 || SectionIndex >= SectionNumber)
 							{
 								BadSectionIndex = true;
 							}
 							else
 							{
-								SectionTriangleNumber = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections[SectionIndex].NumTriangles;
+								SectionTriangleNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections[SectionIndex].NumTriangles;
 							}
 						}
 					}
@@ -990,21 +1007,21 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *Mesh = Cast<USkeletalMesh>(Object);
-						LODNumber = Mesh->GetResourceForRendering()->LODModels.Num();
+						LODNumber = Mesh->GetResourceForRendering()->LODRenderData.Num();
 						if (LODIndex < 0 || LODIndex >= LODNumber)
 						{
 							BadLodIndex = true;
 						}
 						else
 						{
-							SectionNumber = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections.Num();
+							SectionNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections.Num();
 							if (SectionIndex < 0 || SectionIndex >= SectionNumber)
 							{
 								BadSectionIndex = true;
 							}
 							else
 							{
-								int32 MaterialIndex = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections[SectionIndex].MaterialIndex;
+								int32 MaterialIndex = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections[SectionIndex].MaterialIndex;
 								if (MaterialIndex >= 0 && MaterialIndex < Mesh->Materials.Num())
 								{
 									MaterialName = Mesh->Materials[MaterialIndex].MaterialInterface->GetName();
@@ -1073,21 +1090,21 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *Mesh = Cast<USkeletalMesh>(Object);
-						LODNumber = Mesh->GetResourceForRendering()->LODModels.Num();
+						LODNumber = Mesh->GetResourceForRendering()->LODRenderData.Num();
 						if (LODIndex < 0 || LODIndex >= LODNumber)
 						{
 							BadLodIndex = true;
 						}
 						else
 						{
-							SectionNumber = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections.Num();
+							SectionNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections.Num();
 							if (SectionIndex < 0 || SectionIndex >= SectionNumber)
 							{
 								BadSectionIndex = true;
 							}
 							else
 							{
-								MaterialIndex = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections[SectionIndex].MaterialIndex;
+								MaterialIndex = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections[SectionIndex].MaterialIndex;
 							}
 						}
 					}
@@ -1156,21 +1173,21 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *Mesh = Cast<USkeletalMesh>(Object);
-						LODNumber = Mesh->GetResourceForRendering()->LODModels.Num();
+						LODNumber = Mesh->GetResourceForRendering()->LODRenderData.Num();
 						if (LODIndex < 0 || LODIndex >= LODNumber)
 						{
 							BadLodIndex = true;
 						}
 						else
 						{
-							SectionNumber = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections.Num();
+							SectionNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections.Num();
 							if (SectionIndex < 0 || SectionIndex >= SectionNumber)
 							{
 								BadSectionIndex = true;
 							}
 							else
 							{
-								int32 MaterialIndex = Mesh->GetResourceForRendering()->LODModels[LODIndex].Sections[SectionIndex].MaterialIndex;
+								int32 MaterialIndex = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].RenderSections[SectionIndex].MaterialIndex;
 								if (MaterialIndex >= 0 && MaterialIndex < Mesh->Materials.Num())
 								{
 									MaterialName = Mesh->Materials[MaterialIndex].ImportedMaterialSlotName.ToString();
@@ -1196,6 +1213,179 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 				}
 			}
 			break;
+
+			case Mesh_LOD_Vertex_Position:
+			{
+				if (ExpectedResult.ExpectedPresetsDataInteger.Num() < 2)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s expected result need 2 integer data (LOD index, vertex index)"),
+						*GetFormatedMessageErrorInTestData(CleanFilename, TestPlan->TestPlanName, TEXT("Mesh_LOD_Vertex_Position"), ExpectedResultIndex)));
+					break;
+				}
+				if (ExpectedResult.ExpectedPresetsDataFloat.Num() < 3)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s expected result need 3 float data (expected position X, Y and Z)"),
+						*GetFormatedMessageErrorInTestData(CleanFilename, TestPlan->TestPlanName, TEXT("Mesh_LOD_Vertex_Position"), ExpectedResultIndex)));
+					break;
+				}
+				const int32 LODIndex = ExpectedResult.ExpectedPresetsDataInteger[0];
+				const int32 VertexIndex = ExpectedResult.ExpectedPresetsDataInteger[1];
+				const FVector ExpectedPosition(ExpectedResult.ExpectedPresetsDataFloat[0], ExpectedResult.ExpectedPresetsDataFloat[1], ExpectedResult.ExpectedPresetsDataFloat[2]);
+				int32 LODNumber = 0;
+				int32 VertexNumber = 0;
+				bool BadLodIndex = false;
+				bool BadVertexIndex = false;
+				FVector VertexPosition(0.0f);
+				if (ImportedObjects.Num() > 0)
+				{
+					UObject *Object = ImportedObjects[0];
+					if (Object->IsA(UStaticMesh::StaticClass()))
+					{
+						UStaticMesh *Mesh = Cast<UStaticMesh>(Object);
+						LODNumber = Mesh->GetNumLODs();
+						if (LODIndex < 0 || LODIndex >= LODNumber)
+						{
+							BadLodIndex = true;
+						}
+						else
+						{
+							VertexNumber = Mesh->RenderData->LODResources[LODIndex].VertexBuffers.PositionVertexBuffer.GetNumVertices();
+							if (VertexIndex < 0 || VertexIndex >= VertexNumber)
+							{
+								BadVertexIndex = true;
+							}
+							else
+							{
+								VertexPosition = Mesh->RenderData->LODResources[LODIndex].VertexBuffers.PositionVertexBuffer.VertexPosition(VertexIndex);
+							}
+						}
+					}
+					else if (Object->IsA(USkeletalMesh::StaticClass()))
+					{
+						USkeletalMesh *Mesh = Cast<USkeletalMesh>(Object);
+						LODNumber = Mesh->GetResourceForRendering()->LODRenderData.Num();
+						if (LODIndex < 0 || LODIndex >= LODNumber)
+						{
+							BadLodIndex = true;
+						}
+						else
+						{
+							VertexNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].StaticVertexBuffers.PositionVertexBuffer.GetNumVertices();
+							if (VertexIndex < 0 || VertexIndex >= VertexNumber)
+							{
+								BadVertexIndex = true;
+							}
+							else
+							{
+								VertexPosition = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].StaticVertexBuffers.PositionVertexBuffer.VertexPosition(VertexIndex);
+							}
+						}
+					}
+				}
+				if (BadLodIndex)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s->%s: Error in the test data, Mesh_LOD_Vertex_Position LOD index [%d] is invalid. Expect LODIndex between 0 and %d which is the mesh LOD number"),
+						*CleanFilename, *(TestPlan->TestPlanName), LODIndex, LODNumber));
+				}
+				else if (BadVertexIndex)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s->%s: Error in the test data, Mesh_LOD_Vertex_Position Vertex index [%d] is invalid. Expect Vertex Index between 0 and %d which is the mesh LOD vertex number"),
+						*CleanFilename, *(TestPlan->TestPlanName), VertexIndex, VertexNumber));
+				}
+				else if (!VertexPosition.Equals(ExpectedPosition))
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s [LOD index %d Vertex index %d has the following position (%s) but expected position (%s)]"),
+						*GetFormatedMessageErrorInExpectedResult(*CleanFilename, *(TestPlan->TestPlanName), TEXT("Mesh_LOD_Vertex_Position"), ExpectedResultIndex), LODIndex, VertexIndex, *VertexPosition.ToString(), *ExpectedPosition.ToString()));
+				}
+			}
+			break;
+
+			case Mesh_LOD_Vertex_Normal:
+			{
+				if (ExpectedResult.ExpectedPresetsDataInteger.Num() < 2)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s expected result need 2 integer data (LOD index, vertex index)"),
+						*GetFormatedMessageErrorInTestData(CleanFilename, TestPlan->TestPlanName, TEXT("Mesh_LOD_Vertex_Normal"), ExpectedResultIndex)));
+					break;
+				}
+				if (ExpectedResult.ExpectedPresetsDataFloat.Num() < 3)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s expected result need 3 float data (expected normal X, Y and Z)"),
+						*GetFormatedMessageErrorInTestData(CleanFilename, TestPlan->TestPlanName, TEXT("Mesh_LOD_Vertex_Normal"), ExpectedResultIndex)));
+					break;
+				}
+				const int32 LODIndex = ExpectedResult.ExpectedPresetsDataInteger[0];
+				const int32 VertexIndex = ExpectedResult.ExpectedPresetsDataInteger[1];
+				const FVector ExpectedNormal(ExpectedResult.ExpectedPresetsDataFloat[0], ExpectedResult.ExpectedPresetsDataFloat[1], ExpectedResult.ExpectedPresetsDataFloat[2]);
+				int32 LODNumber = 0;
+				int32 VertexNumber = 0;
+				bool BadLodIndex = false;
+				bool BadVertexIndex = false;
+				FVector VertexNormal(0.0f);
+				if (ImportedObjects.Num() > 0)
+				{
+					UObject *Object = ImportedObjects[0];
+					if (Object->IsA(UStaticMesh::StaticClass()))
+					{
+						UStaticMesh *Mesh = Cast<UStaticMesh>(Object);
+						LODNumber = Mesh->GetNumLODs();
+						if (LODIndex < 0 || LODIndex >= LODNumber)
+						{
+							BadLodIndex = true;
+						}
+						else
+						{
+							VertexNumber = Mesh->RenderData->LODResources[LODIndex].VertexBuffers.StaticMeshVertexBuffer.GetNumVertices();
+							if (VertexIndex < 0 || VertexIndex >= VertexNumber)
+							{
+								BadVertexIndex = true;
+							}
+							else
+							{
+								VertexNormal = Mesh->RenderData->LODResources[LODIndex].VertexBuffers.StaticMeshVertexBuffer.VertexTangentZ(VertexIndex);
+							}
+						}
+					}
+					else if (Object->IsA(USkeletalMesh::StaticClass()))
+					{
+						USkeletalMesh *Mesh = Cast<USkeletalMesh>(Object);
+						LODNumber = Mesh->GetResourceForRendering()->LODRenderData.Num();
+						if (LODIndex < 0 || LODIndex >= LODNumber)
+						{
+							BadLodIndex = true;
+						}
+						else
+						{
+							VertexNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].StaticVertexBuffers.StaticMeshVertexBuffer.GetNumVertices();
+							if (VertexIndex < 0 || VertexIndex >= VertexNumber)
+							{
+								BadVertexIndex = true;
+							}
+							else
+							{
+								VertexNormal = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].StaticVertexBuffers.StaticMeshVertexBuffer.VertexTangentZ(VertexIndex);
+							}
+						}
+					}
+				}
+				if (BadLodIndex)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s->%s: Error in the test data, Mesh_LOD_Vertex_Normal LOD index [%d] is invalid. Expect LODIndex between 0 and %d which is the mesh LOD number"),
+						*CleanFilename, *(TestPlan->TestPlanName), LODIndex, LODNumber));
+				}
+				else if (BadVertexIndex)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s->%s: Error in the test data, Mesh_LOD_Vertex_Normal Vertex index [%d] is invalid. Expect Vertex Index between 0 and %d which is the mesh LOD vertex number"),
+						*CleanFilename, *(TestPlan->TestPlanName), VertexIndex, VertexNumber));
+				}
+				else if (!VertexNormal.Equals(ExpectedNormal))
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s [LOD index %d Vertex index %d has the following normal (%s) but expected normal (%s)]"),
+						*GetFormatedMessageErrorInExpectedResult(*CleanFilename, *(TestPlan->TestPlanName), TEXT("Mesh_LOD_Vertex_Normal"), ExpectedResultIndex), LODIndex, VertexIndex, *VertexNormal.ToString(), *ExpectedNormal.ToString()));
+				}
+			}
+			break;
+
 			case LOD_UV_Channel_Number:
 			{
 				if (ExpectedResult.ExpectedPresetsDataInteger.Num() < 2)
@@ -1228,14 +1418,14 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 					else if (Object->IsA(USkeletalMesh::StaticClass()))
 					{
 						USkeletalMesh *Mesh = Cast<USkeletalMesh>(Object);
-						LODNumber = Mesh->GetResourceForRendering()->LODModels.Num();
+						LODNumber = Mesh->GetResourceForRendering()->LODRenderData.Num();
 						if (LODIndex < 0 || LODIndex >= LODNumber)
 						{
 							BadLodIndex = true;
 						}
 						else
 						{
-							UVChannelNumber = Mesh->GetResourceForRendering()->LODModels[LODIndex].NumTexCoords;
+							UVChannelNumber = Mesh->GetResourceForRendering()->LODRenderData[LODIndex].GetNumTexCoords();
 						}
 					}
 				}
@@ -1333,6 +1523,73 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 				}
 			}
 			break;
+			
+			case Animation_Frame_Number:
+			{
+				UAnimSequence* AnimSequence = nullptr;
+				for (const FAssetData& AssetData : ImportedAssets)
+				{
+					UObject *ImportedAsset = AssetData.GetAsset();
+					if (ImportedAsset->IsA(UAnimSequence::StaticClass()))
+					{
+						AnimSequence = Cast<UAnimSequence>(ImportedAsset);
+					}
+				}
+
+				if (AnimSequence == nullptr)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s no animation was imported"),
+						*GetFormatedMessageErrorInTestData(CleanFilename, TestPlan->TestPlanName, TEXT("Animation_Frame_Number"), ExpectedResultIndex)));
+					break;
+				}
+				if (ExpectedResult.ExpectedPresetsDataInteger.Num() < 1)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s expected result need 1 integer data (Expected Animation Frame Number)"),
+						*GetFormatedMessageErrorInTestData(CleanFilename, TestPlan->TestPlanName, TEXT("Animation_Frame_Number"), ExpectedResultIndex)));
+					break;
+				}
+				int32 FrameNumber = AnimSequence->GetNumberOfFrames();
+				if (FrameNumber != ExpectedResult.ExpectedPresetsDataInteger[0])
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s [%d frames but expected %d]"),
+						*GetFormatedMessageErrorInExpectedResult(*CleanFilename, *(TestPlan->TestPlanName), TEXT("Animation_Frame_Number"), ExpectedResultIndex), FrameNumber, ExpectedResult.ExpectedPresetsDataInteger[0]));
+				}
+			}
+			break;
+			
+			case Animation_Length:
+			{
+				UAnimSequence* AnimSequence = nullptr;
+				for (const FAssetData& AssetData : ImportedAssets)
+				{
+					UObject *ImportedAsset = AssetData.GetAsset();
+					if (ImportedAsset->IsA(UAnimSequence::StaticClass()))
+					{
+						AnimSequence = Cast<UAnimSequence>(ImportedAsset);
+					}
+				}
+
+				if (AnimSequence == nullptr)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s no animation was imported"),
+						*GetFormatedMessageErrorInTestData(CleanFilename, TestPlan->TestPlanName, TEXT("Animation_Length"), ExpectedResultIndex)));
+					break;
+				}
+				if (ExpectedResult.ExpectedPresetsDataFloat.Num() < 1)
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s expected result need 1 float data (Expected Animation Length in seconds)"),
+						*GetFormatedMessageErrorInTestData(CleanFilename, TestPlan->TestPlanName, TEXT("Animation_Length"), ExpectedResultIndex)));
+					break;
+				}
+				float AnimationLength = AnimSequence->GetPlayLength();
+				if (!FMath::IsNearlyEqual(AnimationLength, ExpectedResult.ExpectedPresetsDataFloat[0], 0.001f))
+				{
+					ExecutionInfo.AddError(FString::Printf(TEXT("%s [%f seconds but expected %f]"),
+						*GetFormatedMessageErrorInExpectedResult(*CleanFilename, *(TestPlan->TestPlanName), TEXT("Animation_Length"), ExpectedResultIndex), AnimationLength, ExpectedResult.ExpectedPresetsDataFloat[0]));
+				}
+			}
+			break;
+
 			default:
 			{
 				ExecutionInfo.AddError(FString::Printf(TEXT("%s->%s: Wrong Test plan, Unknown expected result preset."),
@@ -1349,8 +1606,6 @@ bool FFbxImportAssetsAutomationTest::RunTest(const FString& Parameters)
 			//delete assets.
 			if (TestPlan->Action != EFBXTestPlanActionType::ImportReload)
 			{
-				TArray<FAssetData> ImportedAssets;
-				AssetRegistryModule.Get().GetAssetsByPath(FName(*ImportAssetPath), ImportedAssets, true);
 				for (const FAssetData& AssetData : ImportedAssets)
 				{
 					UPackage *Package = AssetData.GetPackage();

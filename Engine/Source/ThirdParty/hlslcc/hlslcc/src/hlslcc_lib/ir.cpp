@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // This code is modified from that in the Mesa3D Graphics library available at
 // http://mesa3d.org/
@@ -328,6 +328,7 @@ ir_expression::ir_expression(int op, ir_rvalue* op0)
 	case ir_unop_dFdx:
 	case ir_unop_dFdy:
 	case ir_unop_bitreverse:
+	case ir_unop_saturate:
 		this->type = op0->type;
 		break;
 
@@ -593,6 +594,10 @@ static const char *const operator_strs[ir_opcode_count] =
 
 	"dFdx",
 	"dFdy",
+	"dFdxFine",
+	"dFdyFine",
+	"dFdxCoarse",
+	"dFdyCoarse",
 
 	"isnan",
 	"isinf",
@@ -606,6 +611,8 @@ static const char *const operator_strs[ir_opcode_count] =
 	"bitCount",
 	"findMSB",
 	"findLSB",
+	
+	"saturate",
 
 	"noise",
 
@@ -650,16 +657,17 @@ static const char *const operator_strs[ir_opcode_count] =
 	"lerp",
 	"smoothstep",
 	"clamp",
+	"fma",
 
 	"vector",
 };
 
-static_assert(Elements(operator_strs) == (ir_quadop_vector + 1), "operator_strs_wrong_size");
+static_assert(GetNumArrayElements(operator_strs) == (ir_quadop_vector + 1), "operator_strs_wrong_size");
 
 const char *ir_expression::operator_string(ir_expression_operation op)
 {
-	check((unsigned int)op < Elements(operator_strs));
-	check(Elements(operator_strs) == (ir_quadop_vector + 1));
+	check((unsigned int)op < GetNumArrayElements(operator_strs));
+	check(GetNumArrayElements(operator_strs) == (ir_quadop_vector + 1));
 	return operator_strs[op];
 }
 
@@ -2040,7 +2048,7 @@ ir_atomic::operator_string()
 		"atomic_load",
 		"atomic_store"
 	};
-	static_assert(Elements(str) == ir_atomic_count, "Mismatched atomic count");
+	static_assert(GetNumArrayElements(str) == ir_atomic_count, "Mismatched atomic count");
 	return str[this->operation];
 }
 
@@ -2173,7 +2181,7 @@ bool AreEquivalent(ir_instruction* A, ir_instruction* B)
 		return false;
 	}
 
-#ifndef __clang__
+#if ! (defined(__clang__) || defined(__GNUC__))
 #define IF_TEST(name)		if (A->##name()) { if (A->##name() && B->##name()) { return (A->##name())->IsEquivalent(B->##name()); } }
 #else
 #define IF_TEST(name)		if (A->name()) { if (A->name() && B->name()) { return (A->name())->IsEquivalent(B->name()); } }

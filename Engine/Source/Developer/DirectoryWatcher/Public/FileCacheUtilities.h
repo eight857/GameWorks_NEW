@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,8 +6,6 @@
 #include "HAL/PlatformTime.h"
 
 class FWildcardString;
-
-DEFINE_LOG_CATEGORY_STATIC(LogFileCache, Log, All);
 
 namespace DirectoryWatcher
 {

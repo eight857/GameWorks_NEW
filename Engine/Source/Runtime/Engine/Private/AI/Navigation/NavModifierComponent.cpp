@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/NavModifierComponent.h"
 #include "GameFramework/Actor.h"
@@ -32,7 +32,7 @@ void UNavModifierComponent::CalcAndCacheBounds() const
 				UBodySetup* BodySetup = PrimComp->GetBodySetup();
 				if (BodySetup)
 				{
-					FTransform ParentTM = PrimComp->ComponentToWorld;
+					FTransform ParentTM = PrimComp->GetComponentTransform();
 					const FVector Scale3D = ParentTM.GetScale3D();
 					ParentTM.RemoveScaling();
 					Bounds += PrimComp->Bounds.GetBox();

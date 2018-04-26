@@ -1,60 +1,15 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Stats/Stats.h"
-#include "Misc/Guid.h"
-#include "MovieSceneSequenceID.h"
 #include "MovieSceneFwd.h"
 #include "Evaluation/MovieSceneEvaluationKey.h"
+#include "Evaluation/MovieSceneEvaluationOperand.h"
+#include "Evaluation/MovieSceneSequenceInstanceData.h"
 
-/**
- * Structure that describes an object that is to be animated. Used as an abstraction of the actual objects bound to object bindings.
- */
-struct FMovieSceneEvaluationOperand
-{
-	/**
-	 * Default Construction
-	 */
-	FMovieSceneEvaluationOperand()
-		: SequenceID(0)
-	{
-	}
-
-	/**
-	 * Construction from a sequence ID and an object binding ID
-	 */
-	FMovieSceneEvaluationOperand(FMovieSceneSequenceIDRef InSequenceID, const FGuid& InObjectBindingID)
-		: ObjectBindingID(InObjectBindingID)
-		, SequenceID(InSequenceID)
-	{
-	}
-
-	/**
-	 * Check if this operand actually references anything in the sequence
-	 */
-	bool IsValid() const
-	{
-		return SequenceID != MovieSceneSequenceID::Invalid;
-	}
-
-	friend bool operator==(const FMovieSceneEvaluationOperand& A, const FMovieSceneEvaluationOperand& B)
-	{
-		return A.SequenceID == B.SequenceID && A.ObjectBindingID == B.ObjectBindingID;
-	}
-
-	friend uint32 GetTypeHash(const FMovieSceneEvaluationOperand& In)
-	{
-		return HashCombine(GetTypeHash(In.SequenceID), GetTypeHash(In.ObjectBindingID));
-	}
-
-	/** A GUID relating to either a posessable, or a spawnable binding */
-	FGuid ObjectBindingID;
-
-	/** The ID of the sequence within which the object binding resides */
-	FMovieSceneSequenceID SequenceID;
-};
+class IMovieScenePlayer;
 
 /**
  * Unique identifier for shared persistent data entries (see FSharedPersistentDataKey)
@@ -132,10 +87,7 @@ struct FPersistentEvaluationData
 	/**
 	 * Proxy constructor from 2 externally owned maps for entity, and shared data
 	 */
-	FPersistentEvaluationData(TMap<FMovieSceneEvaluationKey, TUniquePtr<IPersistentEvaluationData>>& InEntityData, TMap<FSharedPersistentDataKey, TUniquePtr<IPersistentEvaluationData>>& InSharedData)
-		: EntityData(InEntityData)
-		, SharedData(InSharedData)
-	{}
+	MOVIESCENE_API FPersistentEvaluationData(IMovieScenePlayer& InPlayer);
 
 	FPersistentEvaluationData(const FPersistentEvaluationData&) = delete;
 	FPersistentEvaluationData& operator=(const FPersistentEvaluationData&) = delete;
@@ -162,6 +114,24 @@ public:
 	template<typename T>	   T& 	GetSectionData() const	{ return Get<T>(SectionKey); }
 	template<typename T>	   T*	FindSectionData() const	{ return Find<T>(SectionKey); }
 	void 							ResetSectionData()		{ Reset(SectionKey); }
+
+	/**
+	 * Get the raw instance data for the current sequence
+	 */
+	MOVIESCENE_API const FMovieSceneSequenceInstanceData* GetInstanceData() const;
+
+	/**
+	 * Find the current sequence's instance data as the templated type, provided its type matches
+	 */
+	template<typename T> const T*   FindInstanceData() const
+	{
+		const FMovieSceneSequenceInstanceData* InstanceData = GetInstanceData();
+		if (InstanceData && (&InstanceData->GetScriptStruct() == T::StaticStruct()))
+		{
+			return static_cast<const T*>(InstanceData);
+		}
+		return nullptr;
+	}
 
 public:
 	
@@ -333,6 +303,9 @@ private:
 
 private:
 	
+	/** The movie scene player */
+	IMovieScenePlayer& Player;
+
 	/** Persistent data that's associated with a template entity (such as a track or a section) */
 	TMap<FMovieSceneEvaluationKey, TUniquePtr<IPersistentEvaluationData>>& EntityData;
 

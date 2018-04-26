@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -273,7 +273,7 @@ private:
 		{
 			IDetailCategoryBuilder& GeneralCategory = DetailBuilder.EditCategory("General");
 
-			IDetailsView* DetailsView = const_cast<IDetailsView*>(&DetailBuilder.GetDetailsView());
+			const IDetailsView* DetailsView = DetailBuilder.GetDetailsView();
 			auto OnValueChanged = [=](TimeType InTime)
 			{
 				this->SetKeyTime(KeyHandle, InTime);
@@ -296,11 +296,15 @@ private:
 					.Value_Lambda([=]{ return this->CurveInterface.GetKeyTime(KeyHandle).Get(TimeType()); })
 					.OnValueChanged_Lambda(OnValueChanged)
 					.OnValueCommitted_Lambda([=](TimeType InTime, ETextCommit::Type){ OnValueChanged(InTime); })
+					.MinValue(TOptional<float>())
+					.MaxValue(TOptional<float>())
+					.MaxSliderValue(TOptional<float>())
+					.MinSliderValue(TOptional<float>())
 					.ToolTipText(TimeTooltipText)
 				];
 
 			TSharedRef<FStructOnScope> KeyValue = MakeShared<FStructOnScope>(KeyValueType::StaticStruct(), (uint8*)&Key->Value);
-			GeneralCategory.AddExternalProperties(KeyValue);
+			GeneralCategory.AddAllExternalStructureProperties(KeyValue);
 		}
 	}
 

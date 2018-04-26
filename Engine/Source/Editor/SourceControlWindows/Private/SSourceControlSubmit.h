@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -103,6 +103,9 @@ public:
 	/** Constructs the widget */
 	void Construct(const FArguments& InArgs);
 
+	/** Used to intercept Escape key press, and interpret it as cancel */
+	virtual FReply OnKeyDown( const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent ) override;
+
 	/** Get dialog result */
 	ESubmitResults::Type GetResult() { return DialogResult; }
 
@@ -145,6 +148,9 @@ private:
 
 	/** Get the current state of the Keep Checked Out checkbox  */
 	ECheckBoxState GetKeepCheckedOut() const;
+
+	/** Check if Provider can checkout files */
+	bool CanCheckOut() const;
 
 	/** Called by SListView to get a widget corresponding to the supplied item */
 	TSharedRef<ITableRow> OnGenerateRowForList(TSharedPtr<FSubmitItem> SubmitItemData, const TSharedRef<STableViewBase>& OwnerTable);

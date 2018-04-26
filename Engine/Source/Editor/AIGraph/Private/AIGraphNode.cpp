@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AIGraphNode.h"
 #include "UObject/Class.h"
@@ -28,8 +28,10 @@ void UAIGraphNode::InitializeInstance()
 
 void UAIGraphNode::PostPlacedNewNode()
 {
+	// NodeInstance can be already spawned by paste operation, don't override it
+
 	UClass* NodeClass = ClassData.GetClass(true);
-	if (NodeClass)
+	if (NodeClass && (NodeInstance == nullptr))
 	{
 		UEdGraph* MyGraph = GetGraph();
 		UObject* GraphOwner = MyGraph ? MyGraph->GetOuter() : nullptr;
@@ -102,11 +104,7 @@ void UAIGraphNode::ResetNodeOwner()
 
 		for (auto& SubNode : SubNodes)
 		{
-			if (SubNode->NodeInstance != nullptr)
-			{
-				SubNode->NodeInstance->Rename(NULL, GraphOwner, REN_DontCreateRedirectors | REN_DoNotDirty);
-				SubNode->NodeInstance->ClearFlags(RF_Transient);
-			}
+			SubNode->ResetNodeOwner();
 		}
 	}
 }

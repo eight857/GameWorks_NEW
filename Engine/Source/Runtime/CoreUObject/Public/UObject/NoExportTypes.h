@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 
@@ -15,11 +15,12 @@
 
 // Include the real definitions of the noexport classes below to allow the generated cpp file to compile.
 
+#include "PixelFormat.h"
+
 #include "Misc/Guid.h"
 #include "Misc/DateTime.h"
 #include "Misc/Timespan.h"
-#include "Misc/StringAssetReference.h"
-#include "Misc/StringClassReference.h"
+#include "UObject/SoftObjectPath.h"
 
 #include "Math/InterpCurvePoint.h"
 #include "Math/UnitConversion.h"
@@ -42,6 +43,8 @@
 #include "Math/RandomStream.h"
 #include "Math/RangeBound.h"
 #include "Math/Interval.h"
+
+#include "GenericPlatform/ICursor.h"
 
 #endif
 
@@ -85,6 +88,9 @@ namespace ELogTimes
 
 		/** Display log timestamps in seconds elapsed since GStartTime. */
 		SinceGStartTime UMETA(DisplayName = "Time since application start"),
+
+		/** Display log timestamps in local time. */
+		Local UMETA(DisplayName = "Local time"),
 	};
 }
 
@@ -111,7 +117,6 @@ enum EInterpCurveMode
 	CIM_CurveUser UMETA(DisplayName="Curve User"),
 	CIM_CurveBreak UMETA(DisplayName="Curve Break"),
 	CIM_CurveAutoClamped UMETA(DisplayName="Curve Auto Clamped"),
-	CIM_MAX,
 };
 
 // @warning:	When you update this, you must add an entry to GPixelFormats(see RenderUtils.cpp)
@@ -123,6 +128,7 @@ enum EPixelFormat
 {
 	PF_Unknown,
 	PF_A32B32G32R32F,
+	/** UNORM (0..1), corresponds to FColor.  Unpacks as rgba in the shader. */
 	PF_B8G8R8A8,
 	/** UNORM red (0..1) */
 	PF_G8,
@@ -131,9 +137,9 @@ enum EPixelFormat
 	PF_DXT3,
 	PF_DXT5,
 	PF_UYVY,
-	/** A RGB FP format with platform-specific implementation, for use with render targets. */
+	/** Same as PF_FloatR11G11B10 */
 	PF_FloatRGB,
-	/** A RGBA FP format with platform-specific implementation, for use with render targets. */
+	/** RGBA 16 bit signed FP format.  Use FFloat16Color on the CPU. */
 	PF_FloatRGBA,
 	/** A depth+stencil format with platform-specific implementation, for use with render targets. */
 	PF_DepthStencil,
@@ -153,7 +159,7 @@ enum EPixelFormat
 	/** SNORM red, green (-1..1). Not supported on all RHI e.g. Metal */
 	PF_V8U8,
 	PF_A1,
-	/** A low precision floating point format. */
+	/** A low precision floating point format, unsigned.  Use FFloat3Packed on the CPU. */
 	PF_FloatR11G11B10,
 	PF_A8,
 	PF_R32_UINT,
@@ -199,6 +205,12 @@ enum EPixelFormat
 	PF_BC7,
 	PF_R8_UINT,
 	PF_L8,
+	PF_XGXR8,
+	PF_R8G8B8A8_UINT,
+	/** SNORM (-1..1), corresponds to FFixedRGBASigned8. */
+	PF_R8G8B8A8_SNORM,
+	PF_R16G16B16A16_UNORM,
+	PF_R16G16B16A16_SNORM,
 	PF_MAX,
 };
 
@@ -288,7 +300,13 @@ enum class EUnit : uint8
 	/** Arbitrary multiplier */	
 	Multiplier,
 
-	/** Symbolic entry, not specifiable on meta data. */	
+
+	/** Percentage */
+	
+	Percentage,
+
+	/** Symbolic entry, not specifiable on meta data. */
+	
 	Unspecified
 };
 
@@ -330,7 +348,7 @@ struct FVector
 * A 4-D homogeneous vector.
 * The full C++ class is located here: Engine\Source\Runtime\Core\Public\Math\Vector4.h
 */
-USTRUCT(immutable, noexport)
+USTRUCT(immutable, noexport, BlueprintType)
 struct FVector4
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Vector4, SaveGame)
@@ -364,7 +382,7 @@ struct FVector2D
 
 
 
-USTRUCT(immutable, noexport)
+USTRUCT(immutable, BlueprintType, noexport)
 struct FTwoVectors
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=TwoVectors, SaveGame)
@@ -380,7 +398,7 @@ struct FTwoVectors
  * A plane definition in 3D space.
  * The full C++ class is located here: Engine\Source\Runtime\Core\Public\Math\Plane.h
  */
-USTRUCT(immutable, noexport)
+USTRUCT(immutable, noexport, BlueprintType)
 struct FPlane : public FVector
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Plane, SaveGame)
@@ -415,7 +433,7 @@ struct FRotator
  * Quaternion.
  * The full C++ class is located here: Engine\Source\Runtime\Core\Public\Math\Quat.h
  */
-USTRUCT(immutable, noexport)
+USTRUCT(immutable, noexport, BlueprintType)
 struct FQuat
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Quat, SaveGame)
@@ -440,16 +458,16 @@ struct FQuat
 USTRUCT(immutable, noexport)
 struct FPackedNormal
 {
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=PackedNormal, SaveGame)
+	UPROPERTY(EditAnywhere, Category=PackedNormal, SaveGame)
 	uint8 X;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=PackedNormal, SaveGame)
+	UPROPERTY(EditAnywhere, Category=PackedNormal, SaveGame)
 	uint8 Y;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=PackedNormal, SaveGame)
+	UPROPERTY(EditAnywhere, Category=PackedNormal, SaveGame)
 	uint8 Z;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=PackedNormal, SaveGame)
+	UPROPERTY(EditAnywhere, Category=PackedNormal, SaveGame)
 	uint8 W;
 
 };
@@ -461,7 +479,7 @@ struct FPackedNormal
 USTRUCT(immutable, noexport)
 struct FPackedRGB10A2N
 {
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PackedBasis, SaveGame)
+	UPROPERTY(EditAnywhere, Category = PackedBasis, SaveGame)
 	int32 Packed;
 };
 
@@ -472,10 +490,10 @@ struct FPackedRGB10A2N
 USTRUCT(immutable, noexport)
 struct FPackedRGBA16N
 {
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PackedNormal, SaveGame)
+	UPROPERTY(EditAnywhere, Category = PackedNormal, SaveGame)
 	int32 XY;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PackedNormal, SaveGame)
+	UPROPERTY(EditAnywhere, Category = PackedNormal, SaveGame)
 	int32 ZW;
 };
 
@@ -483,7 +501,7 @@ struct FPackedRGBA16N
  * Screen coordinates.
  * The full C++ class is located here: Engine\Source\Runtime\Core\Public\Math\IntPoint.h
  */
-USTRUCT(immutable, noexport)
+USTRUCT(immutable, noexport, BlueprintType)
 struct FIntPoint
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=IntPoint, SaveGame)
@@ -516,7 +534,7 @@ struct FIntVector
  * A Color (BGRA).
  * The full C++ class is located here: Engine\Source\Runtime\Core\Public\Math\Color.h
  */
-USTRUCT(immutable, noexport)
+USTRUCT(immutable, noexport, BlueprintType)
 struct FColor
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Color, SaveGame, meta=(ClampMin="0", ClampMax="255"))
@@ -597,7 +615,7 @@ struct FBox2D
  * A bounding box and bounding sphere with the same origin.
  * The full C++ class is located here : Engine\Source\Runtime\Core\Public\Math\BoxSphereBounds.h
  */
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FBoxSphereBounds
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=BoxSphereBounds, SaveGame)
@@ -618,25 +636,25 @@ struct FBoxSphereBounds
 USTRUCT(immutable, noexport)
 struct FOrientedBox
 {
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=OrientedBox, SaveGame)
+	UPROPERTY(EditAnywhere, Category=OrientedBox, SaveGame)
 	FVector Center;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=OrientedBox, SaveGame)
+	UPROPERTY(EditAnywhere, Category=OrientedBox, SaveGame)
 	FVector AxisX;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=OrientedBox, SaveGame)
+	UPROPERTY(EditAnywhere, Category=OrientedBox, SaveGame)
 	FVector AxisY;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=OrientedBox, SaveGame)
+	UPROPERTY(EditAnywhere, Category=OrientedBox, SaveGame)
 	FVector AxisZ;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=OrientedBox, SaveGame)
+	UPROPERTY(EditAnywhere, Category=OrientedBox, SaveGame)
 	float ExtentX;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=OrientedBox, SaveGame)
+	UPROPERTY(EditAnywhere, Category=OrientedBox, SaveGame)
 	float ExtentY;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=OrientedBox, SaveGame)
+	UPROPERTY(EditAnywhere, Category=OrientedBox, SaveGame)
 	float ExtentZ;
 };
 
@@ -644,7 +662,7 @@ struct FOrientedBox
  * A 4x4 matrix.
  * The full C++ class is located here: Engine\Source\Runtime\Core\Public\Math\Matrix.h
  */
-USTRUCT(immutable, noexport)
+USTRUCT(immutable, noexport, BlueprintType)
 struct FMatrix
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Matrix, SaveGame)
@@ -663,7 +681,7 @@ struct FMatrix
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurvePointFloat
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurvePointFloat)
@@ -685,7 +703,7 @@ struct FInterpCurvePointFloat
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurveFloat
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurveFloat)
@@ -700,7 +718,7 @@ struct FInterpCurveFloat
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurvePointVector2D
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurvePointVector2D)
@@ -722,7 +740,7 @@ struct FInterpCurvePointVector2D
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurveVector2D
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurveVector2D)
@@ -737,7 +755,7 @@ struct FInterpCurveVector2D
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurvePointVector
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurvePointVector)
@@ -759,7 +777,7 @@ struct FInterpCurvePointVector
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurveVector
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurveVector)
@@ -774,7 +792,7 @@ struct FInterpCurveVector
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurvePointQuat
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurvePointQuat)
@@ -796,7 +814,7 @@ struct FInterpCurvePointQuat
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurveQuat
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurveQuat)
@@ -811,7 +829,7 @@ struct FInterpCurveQuat
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurvePointTwoVectors
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurvePointTwoVectors)
@@ -833,7 +851,7 @@ struct FInterpCurvePointTwoVectors
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurveTwoVectors
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurveTwoVectors)
@@ -848,7 +866,7 @@ struct FInterpCurveTwoVectors
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurvePointLinearColor
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurvePointLinearColor)
@@ -870,7 +888,7 @@ struct FInterpCurvePointLinearColor
 
 
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInterpCurveLinearColor
 {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InterpCurveLinearColor)
@@ -937,19 +955,22 @@ struct FTimespan
 };
 
 
-// A string asset reference
-
-USTRUCT(noexport, meta=(HasNativeMake="Engine.BlueprintFunctionLibrary.MakeStringAssetReference"))
-struct FStringAssetReference
+/** An object path, this is saved as a name/string pair */
+USTRUCT(noexport, BlueprintType, meta=(HasNativeMake="Engine.KismetSystemLibrary.MakeSoftObjectPath", HasNativeBreak="Engine.KismetSystemLibrary.BreakSoftObjectPath"))
+struct FSoftObjectPath
 {
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=StringAssetReference)
-	FString AssetLongPathname;
+	/** Asset path, patch to a top level object in a package */
+	UPROPERTY()
+	FName AssetPathName;
+
+	/** Optional FString for subobject within an asset */
+	UPROPERTY()
+	FString SubPathString;
 };
 
-// A string class reference
-
+/** Subclass of FSoftObjectPath that is only valid to use with UClass* */
 USTRUCT(noexport)
-struct FStringClassReference : public FStringAssetReference
+struct FSoftClassPath : public FSoftObjectPath
 {
 };
 
@@ -957,9 +978,8 @@ struct FStringClassReference : public FStringAssetReference
 USTRUCT(noexport, BlueprintType)
 struct FPrimaryAssetType
 {
-private:
 	/** The Type of this object, by default it's base class's name */
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PrimaryAssetType)
 	FName Name;
 };
 
@@ -983,7 +1003,7 @@ struct FFallbackStruct
 {
 };
 
-UENUM()
+UENUM(BlueprintType)
 namespace ERangeBoundTypes
 {
 	/**
@@ -1010,49 +1030,49 @@ namespace ERangeBoundTypes
 
 // A float range bound
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FFloatRangeBound
 {
-	UPROPERTY(EditAnywhere, Category=Range)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Range)
 	TEnumAsByte<ERangeBoundTypes::Type> Type;
 
-	UPROPERTY(EditAnywhere, Category=Range)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Range)
 	float Value;
 };
 
 // A float range
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FFloatRange
 {
-	UPROPERTY(EditAnywhere, Category=Range)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Range)
 	FFloatRangeBound LowerBound;
 
-	UPROPERTY(EditAnywhere, Category=Range)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Range)
 	FFloatRangeBound UpperBound;
 };
 
 // An int32 range bound
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInt32RangeBound
 {
-	UPROPERTY(EditAnywhere, Category = Range)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Range)
 	TEnumAsByte<ERangeBoundTypes::Type> Type;
 
-	UPROPERTY(EditAnywhere, Category = Range)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Range)
 	int32 Value;
 };
 
 // An int32 range
 
-USTRUCT(noexport)
+USTRUCT(noexport, BlueprintType)
 struct FInt32Range
 {
-	UPROPERTY(EditAnywhere, Category = Range)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Range)
 	FInt32RangeBound LowerBound;
 
-	UPROPERTY(EditAnywhere, Category = Range)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Range)
 	FInt32RangeBound UpperBound;
 };
 

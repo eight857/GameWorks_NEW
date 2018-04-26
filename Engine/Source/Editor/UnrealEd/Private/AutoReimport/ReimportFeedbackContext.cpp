@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AutoReimport/ReimportFeedbackContext.h"
 #include "Animation/CurveSequence.h"
@@ -564,13 +564,13 @@ void FReimportFeedbackContext::ProgressReported(const float TotalProgressInterp,
 
 void FReimportFeedbackContext::FinalizeSlowTask()
 {
-	FFeedbackContext::FinalizeSlowTask();
-
 	if (SlowTaskText.IsValid())
 	{
 		SlowTaskText->SetVisibility(EVisibility::Collapsed);
 		SlowTaskText = nullptr;
 	}
+
+	FFeedbackContext::FinalizeSlowTask();
 }
 
 #undef LOCTEXT_NAMESPACE

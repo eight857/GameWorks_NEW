@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NavLinkStructCustomization.h"
 #include "Widgets/Text/STextBlock.h"
@@ -42,6 +42,6 @@ void FNavLinkStructCustomization::CustomizeChildren(TSharedRef<class IPropertyHa
 	for (uint32 Idx = 0; Idx < NumChildProps; Idx++)
 	{
 		TSharedPtr<IPropertyHandle> PropHandle = StructPropertyHandle->GetChildHandle(Idx);
-		StructBuilder.AddChildProperty(PropHandle.ToSharedRef());
+		StructBuilder.AddProperty(PropHandle.ToSharedRef());
 	}
 }

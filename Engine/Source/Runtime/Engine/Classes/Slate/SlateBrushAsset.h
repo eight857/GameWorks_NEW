@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -22,7 +22,9 @@ public:
 	UPROPERTY(Category=Brush, EditAnywhere, meta=(ShowOnlyInnerProperties))
 	FSlateBrush Brush;
 
+#if WITH_EDITORONLY_DATA
 	//~ Begin UObject Interface
 	virtual void PostLoad() override;
 	//~ End UObject Interface
+#endif
 };

@@ -4,48 +4,7 @@ Crumbs: %ROOT%, Engine, Engine/UI, Engine/UI/LevelEditor/Viewports
 Description:Basic concepts and features of the Viewports in Unreal Editor.
 Version: 4.9
 SkillLevel: Beginner
-track:LevelDesign_Beginner|6
-
-
-[VAR:Topic]
-[OBJECT:Topic]
-	[PARAM:image]
-		![](viewport_Topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/editor_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/UI/LevelEditor/Viewports/Basics:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/UI/LevelEditor/Viewports/Basics:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/UI/LevelEditor/Viewports/Basics]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
-
-[VAR:TopicCompact]
-[OBJECT:TopicCompact]
-	[PARAM:image]
-		![](viewport_Topic.png)
-	[/PARAM]
-	[PARAM:icon]
-		![](%ROOT%/editor_icon.png)(convert:false)
-	[/PARAM]
-	[PARAM:title]
-		%Engine/UI/LevelEditor/Viewports/Basics:title%
-	[/PARAM]
-	[PARAM:description]
-		%Engine/UI/LevelEditor/Viewports/Basics:description%
-	[/PARAM]
-	[PARAM:path]
-		[RELATIVE:Engine/UI/LevelEditor/Viewports/Basics]
-	[/PARAM]
-[/OBJECT]
-[/VAR]
+topic-image:viewport_topic.png
 
 [TOC(start:2 end:3)]
 
@@ -82,7 +41,8 @@ maximized. The default layout is a 4x4 that consists of one of each type of View
 The Viewports can be minimized and maximized using the ![Minimize Viewport](button_minimize.png) and ![Maximize Viewport](button_maximize.png) 
 buttons located in the top right corner of each Viewport.
 
-<!--
+[COMMENT:none]
+
 [REGION:fullwidth]
 [OBJECT:SliderSequence]
 	[PARAMLITERAL:max]
@@ -105,7 +65,8 @@ buttons located in the top right corner of each Viewport.
 	[/PARAM]
 [/OBJECT]
 [/REGION]
--->
+
+[/COMMENT]
 
 ## View Modes
 
@@ -167,24 +128,71 @@ from the [Viewport Options menu](Engine/UI/LevelEditor/Viewports/ViewportOptions
 You can restore the Viewport to normal using the same procedure above or by pressing the ![Restore Viewport](button_restore.png) 
 button located at the top right of the Viewport when in Immersive Mode.
 
-[OBJECT:SliderSequence]
-	[PARAMLITERAL:max]
-	5
-	[/PARAMLITERAL]
-	[PARAMLITERAL:ext]
-	jpg
+[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
 	[/PARAMLITERAL]
 	[PARAMLITERAL:id]
-	immersive
+	windows
 	[/PARAMLITERAL]
-	[PARAM:caption]
-	**Drag the slider to see Immersive Mode in action!**
+	[PARAM:content]
+	[OBJECT:SliderSequence]
+		[PARAMLITERAL:max]
+		5
+		[/PARAMLITERAL]
+		[PARAMLITERAL:ext]
+		jpg
+		[/PARAMLITERAL]
+		[PARAMLITERAL:id]
+		immersive
+		[/PARAMLITERAL]
+		[PARAM:caption]
+		**Drag the slider to see Immersive Mode in action!**
+		[/PARAM]
+		[PARAM:image_list]
+		![](immersive_1.png)
+		![](immersive_2.png)
+		![](immersive_3.png)
+		![](immersive_4.png)
+		![](immersive_5.png)
+		[/PARAM]
+	[/OBJECT]
 	[/PARAM]
-	[PARAM:image_list]
-	![](immersive_1.png)
-	![](immersive_2.png)
-	![](immersive_3.png)
-	![](immersive_4.png)
-	![](immersive_5.png)
+	[PARAMLITERAL:active]
+	active_button_content
+	[/PARAMLITERAL]
+[/OBJECT]
+[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
+	[/PARAMLITERAL]
+	[PARAMLITERAL:id]
+	mac
+	[/PARAMLITERAL]
+	[PARAM:content]
+	[OBJECT:SliderSequence]
+		[PARAMLITERAL:max]
+		5
+		[/PARAMLITERAL]
+		[PARAMLITERAL:ext]
+		jpg
+		[/PARAMLITERAL]
+		[PARAMLITERAL:id]
+		mac_immersive
+		[/PARAMLITERAL]
+		[PARAM:caption]
+		**Drag the slider to see Immersive Mode in action!**
+		[/PARAM]
+		[PARAM:image_list]
+		![](mac_immersive_1.png)
+		![](mac_immersive_2.png)
+		![](mac_immersive_3.png)
+		![](mac_immersive_4.png)
+		![](mac_immersive_5.png)
+		[/PARAM]
+	[/OBJECT]
 	[/PARAM]
+	[PARAMLITERAL:active]
+	active_button_content
+	[/PARAMLITERAL]
 [/OBJECT]

@@ -1,20 +1,24 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnitTest.h"
+
+#include "HAL/FileManager.h"
 #include "Containers/ArrayBuilder.h"
 #include "Misc/OutputDeviceHelper.h"
 #include "Misc/FeedbackContext.h"
 #include "EngineGlobals.h"
 #include "Engine/Engine.h"
 
+#include "UnitTestEnvironment.h"
 #include "UnitTestManager.h"
+#include "NUTUtil.h"
 
 #include "UI/SLogWidget.h"
 #include "UI/SLogWindow.h"
 
 
-FUnitTestEnvironment* UUnitTest::UnitEnv = NULL;
-FUnitTestEnvironment* UUnitTest::NullUnitEnv = NULL;
+FUnitTestEnvironment* UUnitTest::UnitEnv = nullptr;
+FUnitTestEnvironment* UUnitTest::NullUnitEnv = nullptr;
 
 
 /**
@@ -23,6 +27,7 @@ FUnitTestEnvironment* UUnitTest::NullUnitEnv = NULL;
 
 UUnitTestBase::UUnitTestBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, FUnitLogInterface()
 {
 }
 
@@ -66,13 +71,16 @@ UUnitTest::UUnitTest(const FObjectInitializer& ObjectInitializer)
 	, LastTimeoutResetEvent()
 	, bDeveloperMode(false)
 	, bFirstTimeStats(false)
+	, UnitTasks()
+	, UnitTaskState(EUnitTaskFlags::None)
 	, bCompleted(false)
 	, VerificationState(EUnitTestVerification::Unverified)
 	, bVerificationLogged(false)
 	, bAborted(false)
 	, LogWindow()
-	, LogColor(FSlateColor::UseForeground())
 	, StatusLogSummary()
+	, UnitLog()
+	, UnitLogDir()
 {
 }
 
@@ -103,9 +111,34 @@ bool UUnitTest::ValidateUnitTestSettings(bool bCDOCheck/*=false*/)
 	return bSuccess;
 }
 
+void UUnitTest::AddTask(UUnitTask* InTask)
+{
+	check(!HasStarted());
+
+	int32 InsertIdx = 0;
+	int32 CurPriority = GetUnitTaskPriority(InTask->GetUnitTaskFlags());
+
+	// Determine the index at which the unit test should be added, based on execution priority (defaults to last)
+	for (int32 CurIdx = UnitTasks.Num()-1; CurIdx >= 0; CurIdx--)
+	{
+		if (CurPriority >= GetUnitTaskPriority(UnitTasks[CurIdx]->GetUnitTaskFlags()))
+		{
+			InsertIdx = CurIdx + 1;
+			break;
+		}
+	}
+
+	UnitTasks.InsertUninitialized(InsertIdx);
+	UnitTasks[InsertIdx] = InTask;
+
+	InTask->Attach(this);
+}
+
 bool UUnitTest::UTStartUnitTest()
 {
 	bool bSuccess = false;
+
+	InitializeLogs();
 
 	StartTime = FPlatformTime::Seconds();
 
@@ -114,15 +147,31 @@ bool UUnitTest::UTStartUnitTest()
 		UNIT_LOG(ELogType::StatusWarning, TEXT("WARNING: Unit test marked as 'work in progress', not included in automated tests."));
 	}
 
-	bSuccess = ExecuteUnitTest();
-
-	if (bSuccess)
+	if (UnitEnv != nullptr)
 	{
-		ResetTimeout(TEXT("StartUnitTest"));
+		UnitTestTimeout = FMath::Max(UnitTestTimeout, UnitEnv->GetDefaultUnitTestTimeout());
+	}
+
+	bool bBlocked = IsTaskBlocking(EUnitTaskFlags::BlockUnitTest);
+
+	if (bBlocked)
+	{
+		bSuccess = true;
+
+		UnitTaskState |= EUnitTaskFlags::BlockUnitTest;
 	}
 	else
 	{
-		CleanupUnitTest();
+		bSuccess = ExecuteUnitTest();
+
+		if (bSuccess)
+		{
+			ResetTimeout(TEXT("StartUnitTest"));
+		}
+		else
+		{
+			CleanupUnitTest();
+		}
 	}
 
 	return bSuccess;
@@ -160,7 +209,7 @@ void UUnitTest::EndUnitTest()
 	CleanupUnitTest();
 	bCompleted = true;
 
-	if (GUnitTestManager != NULL)
+	if (GUnitTestManager != nullptr)
 	{
 		GUnitTestManager->NotifyUnitTestComplete(this, bAborted);
 	}
@@ -168,7 +217,15 @@ void UUnitTest::EndUnitTest()
 
 void UUnitTest::CleanupUnitTest()
 {
-	if (GUnitTestManager != NULL)
+	for (UUnitTask* CurTask : UnitTasks)
+	{
+		CurTask->Cleanup();
+	}
+
+	UnitTasks.Empty();
+
+
+	if (GUnitTestManager != nullptr)
 	{
 		GUnitTestManager->NotifyUnitTestCleanup(this);
 	}
@@ -176,6 +233,32 @@ void UUnitTest::CleanupUnitTest()
 	{
 		// Mark for garbage collection
 		MarkPendingKill();
+	}
+}
+
+void UUnitTest::InitializeLogs()
+{
+	if (UnitLogDir.IsEmpty())
+	{
+		UnitLogDir = UUnitTestManager::Get()->GetBaseUnitLogDir() + GetUnitTestName();
+
+		if (FPaths::DirectoryExists(UnitLogDir))
+		{
+			uint32 UnitTestNameCount = 1;
+
+			for (; FPaths::DirectoryExists(UnitLogDir + FString::Printf(TEXT("_%i"), UnitTestNameCount)); UnitTestNameCount++)
+			{
+				UNIT_ASSERT(UnitTestNameCount < 16384);
+			}
+
+			UnitLogDir += FString::Printf(TEXT("_%i"), UnitTestNameCount);
+		}
+
+		UnitLogDir += TEXT("/");
+
+		IFileManager::Get().MakeDirectory(*UnitLogDir);
+
+		UnitLog = MakeUnique<FOutputDeviceFile>(*(UnitLogDir + GetUnitTestName() + TEXT(".log")));
 	}
 }
 
@@ -187,51 +270,104 @@ void UUnitTest::NotifyLocalLog(ELogType InLogType, const TCHAR* Data, ELogVerbos
 
 		ELogType LogOrigin = (InLogType & ELogType::OriginMask);
 
-		if (LogWidget.IsValid() && LogOrigin != ELogType::None && !(LogOrigin & ELogType::OriginVoid))
+		if (LogOrigin != ELogType::None && !(LogOrigin & ELogType::OriginVoid))
 		{
-			if (Verbosity == ELogVerbosity::SetColor)
+			if (UnitLog.IsValid() && Verbosity != ELogVerbosity::SetColor)
 			{
-				// Unimplemented
+				if (!!(LogOrigin & ELogType::OriginNet))
+				{
+					NUTUtil::SpecialLog(UnitLog.Get(), TEXT("[NET]"), Data, Verbosity, Category);
+				}
+				else
+				{
+					UnitLog->Serialize(Data, Verbosity, Category);
+				}
 			}
-			else
+
+			if (LogWidget.IsValid())
 			{
-				FString LogLine = FOutputDeviceHelper::FormatLogLine(Verbosity, Category, Data, GPrintLogTimes);
-				FSlateColor CurLogColor = FSlateColor::UseForeground();
-
-				// Make unit test logs grey
-				if (LogOrigin == ELogType::OriginUnitTest)
+				if (Verbosity == ELogVerbosity::SetColor)
 				{
-					if (LogColor.IsColorSpecified())
+					// Unimplemented
+				}
+				else
+				{
+					FString LogLine = FOutputDeviceHelper::FormatLogLine(Verbosity, Category, Data, GPrintLogTimes);
+					FSlateColor CurLogColor = FSlateColor::UseForeground();
+
+					// Make unit test logs grey
+					if (!!(LogOrigin & ELogType::OriginUnitTest))
 					{
-						CurLogColor = LogColor;
+						if (LogColor.IsColorSpecified())
+						{
+							CurLogColor = LogColor;
+						}
+						else
+						{
+							CurLogColor = FLinearColor(0.25f, 0.25f, 0.25f);
+						}
 					}
-					else
+
+					// Prefix net logs with [NET]
+					if (!!(LogOrigin & ELogType::OriginNet))
 					{
-						CurLogColor = FLinearColor(0.25f, 0.25f, 0.25f);
+						LogLine = FString(TEXT("[NET]")) + LogLine;
 					}
-				}
-				// Prefix net logs with [NET]
-				else if (LogOrigin == ELogType::OriginNet)
-				{
-					LogLine = FString(TEXT("[NET]")) + LogLine;
-				}
 
-				// Override log color, if a warning or error is being printed
-				if (Verbosity == ELogVerbosity::Error)
-				{
-					CurLogColor = FLinearColor(1.f, 0.f, 0.f);
-				}
-				else if (Verbosity == ELogVerbosity::Warning)
-				{
-					CurLogColor = FLinearColor(1.f, 1.f, 0.f);
-				}
+					// Override log color, if a warning or error is being printed
+					if (Verbosity == ELogVerbosity::Error)
+					{
+						CurLogColor = FLinearColor(1.f, 0.f, 0.f);
+					}
+					else if (Verbosity == ELogVerbosity::Warning)
+					{
+						CurLogColor = FLinearColor(1.f, 1.f, 0.f);
+					}
 
-				bool bRequestFocus = !!(LogOrigin & ELogType::FocusMask);
+					bool bRequestFocus = !!(LogOrigin & ELogType::FocusMask);
 
-				LogWidget->AddLine(InLogType, MakeShareable(new FString(LogLine)), CurLogColor, bRequestFocus);
+					LogWidget->AddLine(InLogType, MakeShareable(new FString(LogLine)), CurLogColor, bRequestFocus);
+				}
 			}
 		}
 	}
+}
+
+void UUnitTest::NotifyStatusLog(ELogType InLogType, const TCHAR* Data)
+{
+	StatusLogSummary.Add(MakeShareable(new FUnitStatusLog(InLogType, FString(Data))));
+}
+
+bool UUnitTest::IsConnectionLogSource(UNetConnection* InConnection)
+{
+	bool bReturnVal = false;
+
+	for (UUnitTask* CurTask : UnitTasks)
+	{
+		if (CurTask->IsConnectionLogSource(InConnection))
+		{
+			bReturnVal = true;
+			break;
+		}
+	}
+
+	return bReturnVal;
+}
+
+bool UUnitTest::IsTimerLogSource(UObject* InTimerDelegateObject)
+{
+	bool bReturnVal = false;
+
+	for (UUnitTask* CurTask : UnitTasks)
+	{
+		if (CurTask->IsTimerLogSource(InTimerDelegateObject))
+		{
+			bReturnVal = true;
+			break;
+		}
+	}
+
+	return bReturnVal;
 }
 
 void UUnitTest::NotifyDeveloperModeRequest(bool bInDeveloperMode)
@@ -259,7 +395,7 @@ bool UUnitTest::NotifyConsoleCommandRequest(FString CommandContext, FString Comm
 		if (CommandContext == TEXT("Global"))
 		{
 			UNIT_LOG_BEGIN(this, ELogType::OriginConsole);
-			bHandled = GEngine->Exec(NULL, *Command, *GLog);
+			bHandled = GEngine->Exec(nullptr, *Command, *GLog);
 			UNIT_LOG_END();
 		}
 	}
@@ -274,9 +410,94 @@ void UUnitTest::GetCommandContextList(TArray<TSharedPtr<FString>>& OutList, FStr
 	OutDefaultContext = TEXT("Global");
 }
 
+void UUnitTest::UnitTick(float DeltaTime)
+{
+	if (UnitTasks.Num() > 0)
+	{
+		UUnitTask* CurTask = UnitTasks[0];
+
+		// Detect tasks completed during the previous tick
+		if (CurTask->HasStarted() && CurTask->IsTaskComplete())
+		{
+			FString Msg = FString::Printf(TEXT("UnitTask '%s' has completed."), *CurTask->GetName());
+
+			UNIT_LOG(ELogType::StatusImportant, TEXT("%s"), *Msg);
+
+			ResetTimeout(Msg);
+
+			CurTask->Cleanup();
+			UnitTasks.RemoveAt(0);
+
+			CurTask = (UnitTasks.Num() > 0 ? UnitTasks[0] : nullptr);
+		}
+
+
+		// See if any blocked events are pending and ready to execute
+		EUnitTaskFlags PendingEvents = UnitTaskState & EUnitTaskFlags::BlockMask;
+
+		if (PendingEvents != EUnitTaskFlags::None)
+		{
+			// Limited only to PendingEvents that are blocked
+			EUnitTaskFlags BlockedEvents = EUnitTaskFlags::None;
+
+			for (UUnitTask* BlockTask : UnitTasks)
+			{
+				BlockedEvents |= (BlockTask->GetUnitTaskFlags() & PendingEvents);
+			}
+
+			EUnitTaskFlags ReadyEvents = PendingEvents ^ BlockedEvents;
+
+			UnitTaskState &= ~ReadyEvents;
+
+			UnblockEvents(ReadyEvents);
+		}
+
+
+		// If all of the current tasks requirements are met, begin execution
+		if (CurTask != nullptr)
+		{
+			EUnitTaskFlags CurTaskRequirements = CurTask->GetUnitTaskFlags() & EUnitTaskFlags::RequirementsMask;
+			EUnitTaskFlags MetRequirements = UnitTaskState & EUnitTaskFlags::RequirementsMask;
+
+			if ((MetRequirements & CurTaskRequirements) == CurTaskRequirements)
+			{
+				if (!CurTask->HasStarted())
+				{
+					FString Msg = FString::Printf(TEXT("Starting UnitTask: '%s'."), *CurTask->GetName());
+
+					UNIT_LOG(ELogType::StatusImportant, TEXT("%s"), *Msg);
+
+					ResetTimeout(Msg);
+
+					CurTask->bStarted = true;
+					CurTask->StartTask();
+				}
+
+				if (CurTask->IsTickable())
+				{
+					CurTask->UnitTick(DeltaTime);
+				}
+			}
+		}
+	}
+}
+
+void UUnitTest::NetTick()
+{
+	if (UnitTasks.Num() > 0)
+	{
+		UUnitTask* CurTask = UnitTasks[0];
+
+		if (CurTask->HasStarted() && CurTask->IsTickable())
+		{
+			CurTask->NetTick();
+		}
+	}
+}
+
 void UUnitTest::PostUnitTick(float DeltaTime)
 {
-	if (!bDeveloperMode && UnitTestTimeout > 0 && LastTimeoutReset != 0.0 && TimeoutExpire != 0.0)
+	if (!bDeveloperMode && LastTimeoutReset != 0.0 && TimeoutExpire != 0.0)
 	{
 		double TimeSinceLastReset = FPlatformTime::Seconds() - LastTimeoutReset;
 
@@ -302,11 +523,7 @@ void UUnitTest::PostUnitTick(float DeltaTime)
 
 bool UUnitTest::IsTickable() const
 {
-	bool bReturnVal = Super::IsTickable();
-
-	bReturnVal = bReturnVal || UnitTestTimeout > 0;
-
-	return bReturnVal;
+	return UnitTasks.Num() > 0 || (LastTimeoutReset != 0.0 && TimeoutExpire != 0.0);
 }
 
 void UUnitTest::TickIsComplete(float DeltaTime)
@@ -316,27 +533,7 @@ void UUnitTest::TickIsComplete(float DeltaTime)
 	{
 		if (!bVerificationLogged)
 		{
-			if (VerificationState == EUnitTestVerification::VerifiedNotFixed)
-			{
-				UNIT_LOG(ELogType::StatusFailure, TEXT("Unit test verified as NOT FIXED"));
-			}
-			else if (VerificationState == EUnitTestVerification::VerifiedFixed)
-			{
-				UNIT_LOG(ELogType::StatusSuccess, TEXT("Unit test verified as FIXED"));
-			}
-			else if (VerificationState == EUnitTestVerification::VerifiedUnreliable)
-			{
-				UNIT_LOG(ELogType::StatusWarning, TEXT("Unit test verified as UNRELIABLE"));
-			}
-			else if (VerificationState == EUnitTestVerification::VerifiedNeedsUpdate)
-			{
-				UNIT_LOG(ELogType::StatusWarning | ELogType::StyleBold, TEXT("Unit test NEEDS UPDATE"));
-			}
-			else
-			{
-				// Don't forget to add new verification states
-				UNIT_ASSERT(false);
-			}
+			LogComplete();
 
 			bVerificationLogged = true;
 		}
@@ -345,6 +542,55 @@ void UUnitTest::TickIsComplete(float DeltaTime)
 		{
 			EndUnitTest();
 		}
+	}
+}
+
+void UUnitTest::UnblockEvents(EUnitTaskFlags ReadyEvents)
+{
+	if (!!(ReadyEvents & EUnitTaskFlags::BlockUnitTest))
+	{
+		bool bSuccess = ExecuteUnitTest();
+
+		if (bSuccess)
+		{
+			ResetTimeout(TEXT("StartUnitTest (Post-UnitTask-Block)"));
+		}
+		else
+		{
+			CleanupUnitTest();
+		}
+	}
+}
+
+void UUnitTest::NotifyUnitTaskFailure(UUnitTask* InTask, FString Reason)
+{
+	UNIT_LOG(ELogType::StatusFailure, TEXT("UnitTask '%s' failed execution - reason: %s"), *InTask->GetName(), *Reason);
+
+	VerificationState = EUnitTestVerification::VerifiedNeedsUpdate;
+}
+
+void UUnitTest::LogComplete()
+{
+	if (VerificationState == EUnitTestVerification::VerifiedNotFixed)
+	{
+		UNIT_LOG(ELogType::StatusFailure, TEXT("Unit test verified as NOT FIXED"));
+	}
+	else if (VerificationState == EUnitTestVerification::VerifiedFixed)
+	{
+		UNIT_LOG(ELogType::StatusSuccess, TEXT("Unit test verified as FIXED"));
+	}
+	else if (VerificationState == EUnitTestVerification::VerifiedUnreliable)
+	{
+		UNIT_LOG(ELogType::StatusWarning, TEXT("Unit test verified as UNRELIABLE"));
+	}
+	else if (VerificationState == EUnitTestVerification::VerifiedNeedsUpdate)
+	{
+		UNIT_LOG(ELogType::StatusWarning | ELogType::StyleBold, TEXT("Unit test NEEDS UPDATE"));
+	}
+	else
+	{
+		// Don't forget to add new verification states
+		UNIT_ASSERT(false);
 	}
 }
 

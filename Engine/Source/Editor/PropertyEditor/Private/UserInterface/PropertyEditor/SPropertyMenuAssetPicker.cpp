@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UserInterface/PropertyEditor/SPropertyMenuAssetPicker.h"
 #include "Factories/Factory.h"
@@ -13,6 +13,7 @@
 #include "ContentBrowserModule.h"
 #include "UserInterface/PropertyEditor/PropertyEditorAssetConstants.h"
 #include "Styling/SlateIconFinder.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #define LOCTEXT_NAMESPACE "PropertyEditor"
 
@@ -112,6 +113,8 @@ void SPropertyMenuAssetPicker::Construct( const FArguments& InArgs )
 		AssetPickerConfig.Filter.bRecursiveClasses = true;
 		// Set a delegate for setting the asset from the picker
 		AssetPickerConfig.OnAssetSelected = FOnAssetSelected::CreateSP(this, &SPropertyMenuAssetPicker::OnAssetSelected);
+		// Set a delegate for setting the asset from the picker via the keyboard
+		AssetPickerConfig.OnAssetEnterPressed = FOnAssetEnterPressed::CreateSP(this, &SPropertyMenuAssetPicker::OnAssetEnterPressed);
 		// Use the list view by default
 		AssetPickerConfig.InitialAssetViewType = EAssetViewType::List;
 		// The initial selection should be the current value
@@ -162,7 +165,7 @@ void SPropertyMenuAssetPicker::OnCopy()
 {
 	if( CurrentObject.IsValid() )
 	{
-		FPlatformMisc::ClipboardCopy(*CurrentObject.GetExportTextName());
+		FPlatformApplicationMisc::ClipboardCopy(*CurrentObject.GetExportTextName());
 	}
 	OnClose.ExecuteIfBound();
 }
@@ -170,7 +173,7 @@ void SPropertyMenuAssetPicker::OnCopy()
 void SPropertyMenuAssetPicker::OnPaste()
 {
 	FString DestPath;
-	FPlatformMisc::ClipboardPaste(DestPath);
+	FPlatformApplicationMisc::ClipboardPaste(DestPath);
 
 	if(DestPath == TEXT("None"))
 	{
@@ -212,7 +215,7 @@ void SPropertyMenuAssetPicker::OnPaste()
 bool SPropertyMenuAssetPicker::CanPaste()
 {
 	FString ClipboardText;
-	FPlatformMisc::ClipboardPaste(ClipboardText);
+	FPlatformApplicationMisc::ClipboardPaste(ClipboardText);
 
 	FString Class;
 	FString PossibleObjectPath = ClipboardText;
@@ -249,6 +252,15 @@ void SPropertyMenuAssetPicker::OnAssetSelected( const FAssetData& AssetData )
 	OnClose.ExecuteIfBound();
 }
 
+void SPropertyMenuAssetPicker::OnAssetEnterPressed( const TArray<FAssetData>& AssetData )
+{
+	if(AssetData.Num() > 0)
+	{
+		SetValue(AssetData[0]);
+	}
+	OnClose.ExecuteIfBound();
+}
+
 void SPropertyMenuAssetPicker::SetValue( const FAssetData& AssetData )
 {
 	OnSet.ExecuteIfBound(AssetData);
@@ -260,7 +272,7 @@ void SPropertyMenuAssetPicker::OnCreateNewAssetSelected(TWeakObjectPtr<UFactory>
 	{
 		UFactory* FactoryInstance = DuplicateObject<UFactory>(FactoryPtr.Get(), GetTransientPackage());
 		FAssetToolsModule& AssetToolsModule = FAssetToolsModule::GetModule();
-		UObject* NewAsset = AssetToolsModule.Get().CreateAsset(FactoryInstance->GetSupportedClass(), FactoryInstance);
+		UObject* NewAsset = AssetToolsModule.Get().CreateAssetWithDialog(FactoryInstance->GetSupportedClass(), FactoryInstance);
 		if (NewAsset != nullptr)
 		{
 			SetValue(NewAsset);

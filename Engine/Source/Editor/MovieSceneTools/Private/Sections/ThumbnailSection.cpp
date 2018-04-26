@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sections/ThumbnailSection.h"
 #include "Rendering/DrawElements.h"
@@ -40,7 +40,7 @@ FThumbnailSection::FThumbnailSection(TSharedPtr<ISequencer> InSequencer, TShared
 	, TimeSpace(ETimeSpace::Global)
 {
 	WhiteBrush = FEditorStyle::GetBrush("WhiteBrush");
-	GetMutableDefault<UMovieSceneUserThumbnailSettings>()->OnForceRedraw().AddRaw(this, &FThumbnailSection::RedrawThumbnails);
+	RedrawThumbnailDelegateHandle = GetMutableDefault<UMovieSceneUserThumbnailSettings>()->OnForceRedraw().AddRaw(this, &FThumbnailSection::RedrawThumbnails);
 }
 
 
@@ -52,13 +52,13 @@ FThumbnailSection::FThumbnailSection(TSharedPtr<ISequencer> InSequencer, TShared
 	, TimeSpace(ETimeSpace::Global)
 {
 	WhiteBrush = FEditorStyle::GetBrush("WhiteBrush");
-	GetMutableDefault<UMovieSceneUserThumbnailSettings>()->OnForceRedraw().AddRaw(this, &FThumbnailSection::RedrawThumbnails);
+	RedrawThumbnailDelegateHandle = GetMutableDefault<UMovieSceneUserThumbnailSettings>()->OnForceRedraw().AddRaw(this, &FThumbnailSection::RedrawThumbnails);
 }
 
 
 FThumbnailSection::~FThumbnailSection()
 {
-	GetMutableDefault<UMovieSceneUserThumbnailSettings>()->OnForceRedraw().RemoveAll(this);
+	GetMutableDefault<UMovieSceneUserThumbnailSettings>()->OnForceRedraw().Remove(RedrawThumbnailDelegateHandle);
 }
 
 
@@ -70,12 +70,6 @@ void FThumbnailSection::RedrawThumbnails()
 
 /* ISequencerSection interface
  *****************************************************************************/
-
-bool FThumbnailSection::AreSectionsConnected() const
-{
-	return true;
-}
-
 
 TSharedRef<SWidget> FThumbnailSection::GenerateSectionWidget()
 {
@@ -219,7 +213,7 @@ int32 FThumbnailSection::OnPaintSection( FSequencerSectionPainter& InPainter ) c
 
 	const float TimePerPx = GenerationRange.Size<float>() / InPainter.SectionGeometry.GetLocalSize().X;
 	
-	FSlateRect ThumbnailClipRect = SectionGeometry.GetClippingRect().InsetBy(FMargin(SectionThumbnailPadding, 0.f)).IntersectionWith(InPainter.SectionClippingRect);
+	FSlateRect ThumbnailClipRect = SectionGeometry.GetLayoutBoundingRect().InsetBy(FMargin(SectionThumbnailPadding, 0.f)).IntersectionWith(InPainter.SectionClippingRect);
 
 	for (const TSharedPtr<FTrackEditorThumbnail>& Thumbnail : ThumbnailCache.GetThumbnails())
 	{
@@ -245,24 +239,30 @@ int32 FThumbnailSection::OnPaintSection( FSequencerSectionPainter& InPainter ) c
 
 		if (Fade <= 1.f)
 		{
-			DrawEffects |= ESlateDrawEffect::NoGamma;
-
 			if (IVREditorModule::Get().IsVREditorModeActive())
 			{
 				// In VR editor every widget is in the world and gamma corrected by the scene renderer.  Thumbnails will have already been gamma
 				// corrected and so they need to be reversed
 				DrawEffects |= ESlateDrawEffect::ReverseGamma;
 			}
+			else
+			{
+				DrawEffects |= ESlateDrawEffect::NoGamma;
+			}
+
+			FSlateClippingZone ClippingZone(ThumbnailClipRect);
+			InPainter.DrawElements.PushClip(ClippingZone);
 
 			FSlateDrawElement::MakeViewport(
 				InPainter.DrawElements,
 				LayerId,
 				PaintGeometry,
 				Thumbnail,
-				ThumbnailClipRect,
 				DrawEffects | AdditionalDrawEffect,
 				FLinearColor(1.f, 1.f, 1.f, 1.f - Fade)
-				);
+			);
+
+			InPainter.DrawElements.PopClip();
 		}
 	}
 

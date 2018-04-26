@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,7 +12,7 @@
 #include "EditorViewportClient.h"
 #include "Editor/KismetWidgets/Public/SScrubControlPanel.h"
 
-class FAssetData;
+struct FAssetData;
 class FSceneViewport;
 class IDetailLayoutBuilder;
 class IPropertyHandle;
@@ -49,7 +49,8 @@ public:
 		SLATE_ARGUMENT( UAnimSequenceBase*, AnimRef)
 		SLATE_ARGUMENT( TSharedPtr<IPropertyHandle>, AnimRefPropertyHandle )
 		SLATE_ARGUMENT( TSharedPtr<IPropertyHandle>, StartTimePropertyHandle )
-		SLATE_ARGUMENT( TSharedPtr<IPropertyHandle>, EndTimePropertyHandle );
+		SLATE_ARGUMENT( TSharedPtr<IPropertyHandle>, EndTimePropertyHandle )
+		SLATE_ARGUMENT(TSharedPtr<IPropertyHandle>, PlayRatePropertyHandle);
 
 		SLATE_ATTRIBUTE( bool, IsEditable )	
 	SLATE_END_ARGS()
@@ -65,9 +66,6 @@ public:
 
 private:
 
-	/** Called to tick the preview during playback */
-	void OnTickPreview( double InCurrentTime, float InDeltaTime );
-
 	void InitSkeleton();
 
 	TSharedPtr<FEditorViewportClient> LevelViewportClient;
@@ -75,6 +73,7 @@ private:
 	TSharedPtr<IPropertyHandle> AnimRefPropertyHandle;
 	TSharedPtr<IPropertyHandle> StartTimePropertyHandle;
 	TSharedPtr<IPropertyHandle> EndTimePropertyHandle;
+	TSharedPtr<IPropertyHandle> PlayRatePropertyHandle;
 
 	/** Slate viewport for rendering and I/O */
 	//TSharedPtr<class FSceneViewport> Viewport;

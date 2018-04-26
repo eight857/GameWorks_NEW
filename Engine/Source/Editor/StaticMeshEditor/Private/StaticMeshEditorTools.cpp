@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "StaticMeshEditorTools.h"
 #include "Framework/Commands/UIAction.h"
@@ -33,11 +33,19 @@
 #include "ScopedTransaction.h"
 #include "JsonObjectConverter.h"
 #include "Engine/SkeletalMesh.h"
+#include "IMeshReductionManagerModule.h"
+#include "HAL/PlatformApplicationMisc.h"
 
-const float MaxHullAccuracy = 1.f;
-const float MinHullAccuracy = 0.f;
-const float DefaultHullAccuracy = 0.5f;
-const float HullAccuracyDelta = 0.01f;
+const uint32 MaxHullCount = 64;
+const uint32 MinHullCount = 2;
+const uint32 DefaultHullCount = 4;
+const uint32 HullCountDelta = 1;
+
+const uint32 MaxHullPrecision = 1000000;
+const uint32 MinHullPrecision = 10000;
+const uint32 DefaultHullPrecision = 100000;
+const uint32 HullPrecisionDelta = 10000;
+
 
 const int32 MaxVertsPerHullCount = 32;
 const int32 MinVertsPerHullCount = 6;
@@ -57,9 +65,19 @@ FStaticMeshDetails::~FStaticMeshDetails()
 void FStaticMeshDetails::CustomizeDetails( class IDetailLayoutBuilder& DetailBuilder )
 {
 	IDetailCategoryBuilder& LODSettingsCategory = DetailBuilder.EditCategory( "LodSettings", LOCTEXT("LodSettingsCategory", "LOD Settings") );
-	IDetailCategoryBuilder& StaticMeshCategory = DetailBuilder.EditCategory( "StaticMesh", LOCTEXT("StaticMeshGeneralSettings", "Static Mesh Settings") );
-	IDetailCategoryBuilder& CollisionCategory = DetailBuilder.EditCategory("Collision", LOCTEXT("CollisionCategory", "Collision"));
+	IDetailCategoryBuilder& StaticMeshCategory = DetailBuilder.EditCategory( "StaticMesh", LOCTEXT("StaticMeshGeneralSettings", "General Settings") );
+	IDetailCategoryBuilder& CollisionCategory = DetailBuilder.EditCategory( "Collision", LOCTEXT("CollisionCategory", "Collision") );
+	IDetailCategoryBuilder& ImportSettingsCategory = DetailBuilder.EditCategory("ImportSettings");
 
+	// Hide the ability to change the import settings object
+	TSharedRef<IPropertyHandle> ImportSettings = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UStaticMesh, AssetImportData));
+	IDetailPropertyRow& Row = ImportSettingsCategory.AddProperty(ImportSettings);
+	Row.CustomWidget(true)
+		.NameContent()
+		[
+			ImportSettings->CreatePropertyNameWidget()
+		];
+	
 	DetailBuilder.EditCategory( "Navigation", FText::GetEmpty(), ECategoryPriority::Uncommon );
 
 	LevelOfDetailSettings = MakeShareable( new FLevelOfDetailSettingsLayout( StaticMeshEditor ) );
@@ -67,7 +85,7 @@ void FStaticMeshDetails::CustomizeDetails( class IDetailLayoutBuilder& DetailBui
 	LevelOfDetailSettings->AddToDetailsPanel( DetailBuilder );
 
 	
-	TSharedRef<IPropertyHandle> BodyProp = DetailBuilder.GetProperty("BodySetup");
+	TSharedRef<IPropertyHandle> BodyProp = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UStaticMesh,BodySetup));
 	BodyProp->MarkHiddenByCustomization();
 
 	static TArray<FName> HiddenBodyInstanceProps;
@@ -108,42 +126,45 @@ void FStaticMeshDetails::CustomizeDetails( class IDetailLayoutBuilder& DetailBui
 void SConvexDecomposition::Construct(const FArguments& InArgs)
 {
 	StaticMeshEditorPtr = InArgs._StaticMeshEditorPtr;
-
-	CurrentHullAccuracy = DefaultHullAccuracy;
+	CurrentHullPrecision = DefaultHullPrecision;
+	CurrentHullCount = DefaultHullCount;
 	CurrentMaxVertsPerHullCount = DefaultVertsPerHull;
 
 	this->ChildSlot
 	[
 		SNew(SVerticalBox)
-		+SVerticalBox::Slot()
+
+		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(4.0f, 16.0f, 0.0f, 8.0f)
+		.Padding(4.0f, 8.0f, 0.0f, 8.0f)
 		[
 			SNew(SHorizontalBox)
-			+SHorizontalBox::Slot()
+			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
 			.VAlign(VAlign_Center)
 			[
 				SNew(STextBlock)
-				.Text( LOCTEXT("HullAccuracy_ConvexDecomp", "Accuracy") )
+				.Text(LOCTEXT("HullCount_ConvexDecomp", "Hull Count"))
 			]
 
-			+SHorizontalBox::Slot()
+			+ SHorizontalBox::Slot()
 			.FillWidth(3.0f)
-			[
-				SAssignNew(HullAccuracy, SSpinBox<float>)
-				.MinValue(MinHullAccuracy)
-				.MaxValue(MaxHullAccuracy)
-				.Delta(HullAccuracyDelta)
-				.Value( this, &SConvexDecomposition::GetHullAccuracy )
-				.OnValueCommitted( this, &SConvexDecomposition::OnHullAccuracyCommitted )
-				.OnValueChanged( this, &SConvexDecomposition::OnHullAccuracyChanged )
+			[	
+				SAssignNew(HullCount, SSpinBox<uint32>)
+				.ToolTipText(LOCTEXT("HullCount_ConvexDecomp_Tip", "Maximum number of convex pieces that will be created."))
+				.MinValue(MinHullCount)
+				.MaxValue(MaxHullCount)
+				.Delta(HullCountDelta)
+				.Value(this, &SConvexDecomposition::GetHullCount)
+				.OnValueCommitted(this, &SConvexDecomposition::OnHullCountCommitted)
+				.OnValueChanged(this, &SConvexDecomposition::OnHullCountChanged)
 			]
 		]
 
+
 		+SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(4.0f, 8.0f, 0.0f, 16.0f)
+		.Padding(4.0f, 8.0f, 0.0f, 8.0f)
 		[
 			SNew(SHorizontalBox)
 			+SHorizontalBox::Slot()
@@ -155,15 +176,43 @@ void SConvexDecomposition::Construct(const FArguments& InArgs)
 			]
 
 			+SHorizontalBox::Slot()
-				.FillWidth(3.0f)
-				[
-					SAssignNew(MaxVertsPerHull, SSpinBox<int32>)
-					.MinValue(MinVertsPerHullCount)
-					.MaxValue(MaxVertsPerHullCount)
-					.Value( this, &SConvexDecomposition::GetVertsPerHullCount )
-					.OnValueCommitted( this, &SConvexDecomposition::OnVertsPerHullCountCommitted )
-					.OnValueChanged( this, &SConvexDecomposition::OnVertsPerHullCountChanged )
-				]
+			.FillWidth(3.0f)
+			[
+				SAssignNew(MaxVertsPerHull, SSpinBox<int32>)
+				.ToolTipText(LOCTEXT("MaxHullVerts_ConvexDecomp_Tip", "Maximum number of vertices allowed for any generated convex hull."))
+				.MinValue(MinVertsPerHullCount)
+				.MaxValue(MaxVertsPerHullCount)
+				.Value( this, &SConvexDecomposition::GetVertsPerHullCount )
+				.OnValueCommitted( this, &SConvexDecomposition::OnVertsPerHullCountCommitted )
+				.OnValueChanged( this, &SConvexDecomposition::OnVertsPerHullCountChanged )
+			]
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(4.0f, 8.0f, 0.0f, 8.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("HullPrecision_ConvexDecomp", "Hull Precision"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.FillWidth(3.0f)
+			[
+				SAssignNew(HullPrecision, SSpinBox<uint32>)
+				.ToolTipText(LOCTEXT("HullPrecision_ConvexDecomp_Tip", "Number of voxels to use when generating collision."))
+				.MinValue(MinHullPrecision)
+				.MaxValue(MaxHullPrecision)
+				.Delta(HullPrecisionDelta)
+				.Value(this, &SConvexDecomposition::GetHullPrecision)
+				.OnValueCommitted(this, &SConvexDecomposition::OnHullPrecisionCommitted)
+				.OnValueChanged(this, &SConvexDecomposition::OnHullPrecisionChanged)
+			]
 		]
 
 		+SVerticalBox::Slot()
@@ -212,33 +261,51 @@ SConvexDecomposition::~SConvexDecomposition()
 
 FReply SConvexDecomposition::OnApplyDecomp()
 {
-	StaticMeshEditorPtr.Pin()->DoDecomp(CurrentHullAccuracy, CurrentMaxVertsPerHullCount);
+	StaticMeshEditorPtr.Pin()->DoDecomp(CurrentHullCount, CurrentMaxVertsPerHullCount, CurrentHullPrecision);
 
 	return FReply::Handled();
 }
 
 FReply SConvexDecomposition::OnDefaults()
 {
-	CurrentHullAccuracy = DefaultHullAccuracy;
+	CurrentHullCount = DefaultHullCount;
+	CurrentHullPrecision = DefaultHullPrecision;
 	CurrentMaxVertsPerHullCount = DefaultVertsPerHull;
+
 
 	return FReply::Handled();
 }
 
-void SConvexDecomposition::OnHullAccuracyCommitted(float InNewValue, ETextCommit::Type CommitInfo)
+void SConvexDecomposition::OnHullCountCommitted(uint32 InNewValue, ETextCommit::Type CommitInfo)
 {
-	OnHullAccuracyChanged(InNewValue);
+	OnHullCountChanged(InNewValue);
 }
 
-void SConvexDecomposition::OnHullAccuracyChanged(float InNewValue)
+void SConvexDecomposition::OnHullCountChanged(uint32 InNewValue)
 {
-	CurrentHullAccuracy = InNewValue;
+	CurrentHullCount = InNewValue;
 }
 
-float SConvexDecomposition::GetHullAccuracy() const
+uint32 SConvexDecomposition::GetHullCount() const
 {
-	return CurrentHullAccuracy;
+	return CurrentHullCount;
 }
+
+void SConvexDecomposition::OnHullPrecisionCommitted(uint32 InNewValue, ETextCommit::Type CommitInfo)
+{
+	OnHullPrecisionChanged(InNewValue);
+}
+
+void SConvexDecomposition::OnHullPrecisionChanged(uint32 InNewValue)
+{
+	CurrentHullPrecision = InNewValue;
+}
+
+uint32 SConvexDecomposition::GetHullPrecision() const
+{
+	return CurrentHullPrecision;
+}
+
 void SConvexDecomposition::OnVertsPerHullCountCommitted(int32 InNewValue,  ETextCommit::Type CommitInfo)
 {
 	OnVertsPerHullCountChanged(InNewValue);
@@ -307,7 +374,7 @@ void FMeshBuildSettingsLayout::OnDistanceFieldReplacementMeshSelected(const FAss
 void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& ChildrenBuilder )
 {
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("RecomputeNormals", "Recompute Normals") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("RecomputeNormals", "Recompute Normals") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -324,7 +391,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("RecomputeTangents", "Recompute Tangents") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("RecomputeTangents", "Recompute Tangents") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -340,7 +407,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("UseMikkTSpace", "Use MikkTSpace Tangent Space") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("UseMikkTSpace", "Use MikkTSpace Tangent Space") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -356,7 +423,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("RemoveDegenerates", "Remove Degenerates") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("RemoveDegenerates", "Remove Degenerates") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -372,7 +439,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("BuildAdjacencyBuffer", "Build Adjacency Buffer") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("BuildAdjacencyBuffer", "Build Adjacency Buffer") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -388,7 +455,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("BuildReversedIndexBuffer", "Build Reversed Index Buffer") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("BuildReversedIndexBuffer", "Build Reversed Index Buffer") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -404,7 +471,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("UseHighPrecisionTangentBasis", "Use High Precision Tangent Basis"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("UseHighPrecisionTangentBasis", "Use High Precision Tangent Basis"))
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -420,7 +487,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("UseFullPrecisionUVs", "Use Full Precision UVs") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("UseFullPrecisionUVs", "Use Full Precision UVs") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -436,7 +503,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("GenerateLightmapUVs", "Generate Lightmap UVs") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("GenerateLightmapUVs", "Generate Lightmap UVs") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -452,7 +519,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("MinLightmapResolution", "Min Lightmap Resolution") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("MinLightmapResolution", "Min Lightmap Resolution") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -471,7 +538,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("SourceLightmapIndex", "Source Lightmap Index") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("SourceLightmapIndex", "Source Lightmap Index") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -490,7 +557,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("DestinationLightmapIndex", "Destination Lightmap Index") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("DestinationLightmapIndex", "Destination Lightmap Index") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -509,7 +576,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("BuildScale", "Build Scale"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("BuildScale", "Build Scale"))
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -535,7 +602,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("DistanceFieldResolutionScale", "Distance Field Resolution Scale") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("DistanceFieldResolutionScale", "Distance Field Resolution Scale") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -555,7 +622,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 		
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("GenerateDistanceFieldAsIfTwoSided", "Two-Sided Distance Field Generation") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("GenerateDistanceFieldAsIfTwoSided", "Two-Sided Distance Field Generation") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -577,7 +644,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 			.ObjectPath(this, &FMeshBuildSettingsLayout::GetCurrentDistanceFieldReplacementMeshPath)
 			.OnObjectChanged(this, &FMeshBuildSettingsLayout::OnDistanceFieldReplacementMeshSelected);
 
-		ChildrenBuilder.AddChildContent( LOCTEXT("DistanceFieldReplacementMesh", "Distance Field Replacement Mesh") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("DistanceFieldReplacementMesh", "Distance Field Replacement Mesh") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -591,7 +658,7 @@ void FMeshBuildSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& Chi
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("ApplyChanges", "Apply Changes") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("ApplyChanges", "Apply Changes") )
 		.ValueContent()
 		.HAlign(HAlign_Left)
 		[
@@ -943,7 +1010,7 @@ BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder& ChildrenBuilder )
 {
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("PercentTriangles", "Percent Triangles") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("PercentTriangles", "Percent Triangles") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -964,7 +1031,7 @@ void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder&
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("MaxDeviation", "Max Deviation") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("MaxDeviation", "Max Deviation") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -985,7 +1052,7 @@ void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder&
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("PixelError", "Pixel Error") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("PixelError", "Pixel Error") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -1006,7 +1073,7 @@ void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder&
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("Silhouette_MeshSimplification", "Silhouette") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("Silhouette_MeshSimplification", "Silhouette") )
 		.NameContent()
 		[
 			SNew( STextBlock )
@@ -1026,7 +1093,7 @@ void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder&
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("Texture_MeshSimplification", "Texture") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("Texture_MeshSimplification", "Texture") )
 		.NameContent()
 		[
 			SNew( STextBlock )
@@ -1046,7 +1113,7 @@ void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder&
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("Shading_MeshSimplification", "Shading") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("Shading_MeshSimplification", "Shading") )
 		.NameContent()
 		[
 			SNew( STextBlock )
@@ -1066,7 +1133,7 @@ void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder&
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("WeldingThreshold", "Welding Threshold") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("WeldingThreshold", "Welding Threshold") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -1087,7 +1154,7 @@ void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder&
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("RecomputeNormals", "Recompute Normals") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("RecomputeNormals", "Recompute Normals") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -1104,7 +1171,7 @@ void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder&
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("HardEdgeAngle", "Hard Edge Angle") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("HardEdgeAngle", "Hard Edge Angle") )
 		.NameContent()
 		[
 			SNew(STextBlock)
@@ -1125,7 +1192,7 @@ void FMeshReductionSettingsLayout::GenerateChildContent( IDetailChildrenBuilder&
 	}
 
 	{
-		ChildrenBuilder.AddChildContent( LOCTEXT("ApplyChanges", "Apply Changes") )
+		ChildrenBuilder.AddCustomRow( LOCTEXT("ApplyChanges", "Apply Changes") )
 			.ValueContent()
 			.HAlign(HAlign_Left)
 			[
@@ -1345,7 +1412,9 @@ void FMeshSectionSettingsLayout::AddToCategory( IDetailCategoryBuilder& Category
 	SectionListDelegates.OnCanCopySectionItem.BindSP(this, &FMeshSectionSettingsLayout::OnCanCopySectionItem);
 	SectionListDelegates.OnPasteSectionItem.BindSP(this, &FMeshSectionSettingsLayout::OnPasteSectionItem);
 
-	CategoryBuilder.AddCustomBuilder(MakeShareable(new FSectionList(CategoryBuilder.GetParentLayout(), SectionListDelegates, (LODIndex > 0))));
+	CategoryBuilder.AddCustomBuilder(MakeShareable(new FSectionList(CategoryBuilder.GetParentLayout(), SectionListDelegates, false, 64, LODIndex)));
+
+	StaticMeshEditor.RegisterOnSelectedLODChanged(FOnSelectedLODChanged::CreateSP(this, &FMeshSectionSettingsLayout::UpdateLODCategoryVisibility), false);
 }
 
 void FMeshSectionSettingsLayout::OnCopySectionList(int32 CurrentLODIndex)
@@ -1382,7 +1451,7 @@ void FMeshSectionSettingsLayout::OnCopySectionList(int32 CurrentLODIndex)
 
 	if (!CopyStr.IsEmpty())
 	{
-		FPlatformMisc::ClipboardCopy(*CopyStr);
+		FPlatformApplicationMisc::ClipboardCopy(*CopyStr);
 	}
 }
 
@@ -1404,7 +1473,7 @@ bool FMeshSectionSettingsLayout::OnCanCopySectionList(int32 CurrentLODIndex) con
 void FMeshSectionSettingsLayout::OnPasteSectionList(int32 CurrentLODIndex)
 {
 	FString PastedText;
-	FPlatformMisc::ClipboardPaste(PastedText);
+	FPlatformApplicationMisc::ClipboardPaste(PastedText);
 
 	TSharedPtr<FJsonObject> RootJsonObject;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PastedText);
@@ -1421,7 +1490,7 @@ void FMeshSectionSettingsLayout::OnPasteSectionList(int32 CurrentLODIndex)
 
 			GetStaticMesh().PreEditChange(Property);
 
-			FScopedTransaction Transaction(LOCTEXT("StaticMeshToolChangedPasteSectionList", "Pasted section list"));
+			FScopedTransaction Transaction(LOCTEXT("StaticMeshToolChangedPasteSectionList", "Staticmesh editor: Pasted section list"));
 			GetStaticMesh().Modify();
 
 			FStaticMeshLODResources& LOD = RenderData->LODResources[CurrentLODIndex];
@@ -1483,7 +1552,7 @@ void FMeshSectionSettingsLayout::OnCopySectionItem(int32 CurrentLODIndex, int32 
 
 	if (!CopyStr.IsEmpty())
 	{
-		FPlatformMisc::ClipboardCopy(*CopyStr);
+		FPlatformApplicationMisc::ClipboardCopy(*CopyStr);
 	}
 }
 
@@ -1505,7 +1574,7 @@ bool FMeshSectionSettingsLayout::OnCanCopySectionItem(int32 CurrentLODIndex, int
 void FMeshSectionSettingsLayout::OnPasteSectionItem(int32 CurrentLODIndex, int32 SectionIndex)
 {
 	FString PastedText;
-	FPlatformMisc::ClipboardPaste(PastedText);
+	FPlatformApplicationMisc::ClipboardPaste(PastedText);
 
 	TSharedPtr<FJsonObject> RootJsonObject;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PastedText);
@@ -1522,7 +1591,7 @@ void FMeshSectionSettingsLayout::OnPasteSectionItem(int32 CurrentLODIndex, int32
 
 			GetStaticMesh().PreEditChange(Property);
 
-			FScopedTransaction Transaction(LOCTEXT("StaticMeshToolChangedPasteSectionItem", "Pasted section item"));
+			FScopedTransaction Transaction(LOCTEXT("StaticMeshToolChangedPasteSectionItem", "Staticmesh editor: Pasted section item"));
 			GetStaticMesh().Modify();
 
 			FStaticMeshLODResources& LOD = RenderData->LODResources[CurrentLODIndex];
@@ -1610,12 +1679,18 @@ void FMeshSectionSettingsLayout::OnSectionChanged(int32 ForLODIndex, int32 Secti
 		FStaticMeshLODResources& LOD = RenderData->LODResources[LODIndex];
 		if (LOD.Sections.IsValidIndex(SectionIndex))
 		{
+			UProperty* Property = UStaticMesh::StaticClass()->FindPropertyByName(GET_MEMBER_NAME_STRING_CHECKED(UStaticMesh, SectionInfoMap));
+
+			GetStaticMesh().PreEditChange(Property);
+
+			FScopedTransaction Transaction(LOCTEXT("StaticMeshOnSectionChangedTransaction", "Staticmesh editor: Section material slot changed"));
+			GetStaticMesh().Modify();
 			FMeshSectionInfo Info = StaticMesh.SectionInfoMap.Get(LODIndex, SectionIndex);
 			Info.MaterialIndex = NewStaticMaterialIndex;
 			StaticMesh.SectionInfoMap.Set(LODIndex, SectionIndex, Info);
+			CallPostEditChange();
 		}
 	}
-	CallPostEditChange();
 }
 
 TSharedRef<SWidget> FMeshSectionSettingsLayout::OnGenerateCustomNameWidgetsForSection(int32 ForLODIndex, int32 SectionIndex)
@@ -1656,9 +1731,10 @@ TSharedRef<SWidget> FMeshSectionSettingsLayout::OnGenerateCustomNameWidgetsForSe
 
 TSharedRef<SWidget> FMeshSectionSettingsLayout::OnGenerateCustomSectionWidgetsForSection(int32 ForLODIndex, int32 SectionIndex)
 {
-	return SNew(SVerticalBox)
-		+SVerticalBox::Slot()
-		.AutoHeight()
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2, 0, 2, 0)
 		[
 			SNew(SCheckBox)
 				.IsChecked(this, &FMeshSectionSettingsLayout::DoesSectionCastShadow, SectionIndex)
@@ -1669,9 +1745,9 @@ TSharedRef<SWidget> FMeshSectionSettingsLayout::OnGenerateCustomSectionWidgetsFo
 					.Text(LOCTEXT("CastShadow", "Cast Shadow"))
 			]
 		]
-		+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0,2,0,0)
+		+SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2,0,2,0)
 		[
 			SNew(SCheckBox)
 				.IsEnabled(this, &FMeshSectionSettingsLayout::SectionCollisionEnabled)
@@ -1696,6 +1772,18 @@ ECheckBoxState FMeshSectionSettingsLayout::DoesSectionCastShadow(int32 SectionIn
 void FMeshSectionSettingsLayout::OnSectionCastShadowChanged(ECheckBoxState NewState, int32 SectionIndex)
 {
 	UStaticMesh& StaticMesh = GetStaticMesh();
+
+	FText TransactionTest = LOCTEXT("StaticMeshEditorSetShadowCastingSectionFlag", "Staticmesh editor: Set Shadow Casting For section");
+	if (NewState == ECheckBoxState::Unchecked)
+	{
+		TransactionTest = LOCTEXT("StaticMeshEditorClearShadowCastingSectionFlag", "Staticmesh editor: Clear Shadow Casting For section");
+	}
+	FScopedTransaction Transaction(TransactionTest);
+
+	UProperty* Property = UStaticMesh::StaticClass()->FindPropertyByName(GET_MEMBER_NAME_STRING_CHECKED(UStaticMesh, SectionInfoMap));
+	StaticMesh.PreEditChange(Property);
+	StaticMesh.Modify();
+	
 	FMeshSectionInfo Info = StaticMesh.SectionInfoMap.Get(LODIndex, SectionIndex);
 	Info.bCastShadow = (NewState == ECheckBoxState::Checked) ? true : false;
 	StaticMesh.SectionInfoMap.Set(LODIndex, SectionIndex, Info);
@@ -1735,6 +1823,18 @@ ECheckBoxState FMeshSectionSettingsLayout::DoesSectionCollide(int32 SectionIndex
 void FMeshSectionSettingsLayout::OnSectionCollisionChanged(ECheckBoxState NewState, int32 SectionIndex)
 {
 	UStaticMesh& StaticMesh = GetStaticMesh();
+
+	FText TransactionTest = LOCTEXT("StaticMeshEditorSetCollisionSectionFlag", "Staticmesh editor: Set Collision For section");
+	if (NewState == ECheckBoxState::Unchecked)
+	{
+		TransactionTest = LOCTEXT("StaticMeshEditorClearCollisionSectionFlag", "Staticmesh editor: Clear Collision For section");
+	}
+	FScopedTransaction Transaction(TransactionTest);
+
+	UProperty* Property = UStaticMesh::StaticClass()->FindPropertyByName(GET_MEMBER_NAME_STRING_CHECKED(UStaticMesh, SectionInfoMap));
+	StaticMesh.PreEditChange(Property);
+	StaticMesh.Modify();
+
 	FMeshSectionInfo Info = StaticMesh.SectionInfoMap.Get(LODIndex, SectionIndex);
 	Info.bEnableCollision = (NewState == ECheckBoxState::Checked) ? true : false;
 	StaticMesh.SectionInfoMap.Set(LODIndex, SectionIndex, Info);
@@ -1832,6 +1932,58 @@ void FMeshSectionSettingsLayout::CallPostEditChange(UProperty* PropertyChanged/*
 	StaticMeshEditor.RefreshViewport();
 }
 
+void FMeshSectionSettingsLayout::SetCurrentLOD(int32 NewLodIndex)
+{
+	if (StaticMeshEditor.GetStaticMeshComponent() == nullptr || LodCategoriesPtr == nullptr)
+	{
+		return;
+	}
+	int32 CurrentDisplayLOD = StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel;
+	int32 RealCurrentDisplayLOD = CurrentDisplayLOD == 0 ? 0 : CurrentDisplayLOD - 1;
+	int32 RealNewLOD = NewLodIndex == 0 ? 0 : NewLodIndex - 1;
+	
+	if (CurrentDisplayLOD == NewLodIndex || !LodCategoriesPtr->IsValidIndex(RealCurrentDisplayLOD) || !LodCategoriesPtr->IsValidIndex(RealNewLOD))
+	{
+		return;
+	}
+
+	StaticMeshEditor.GetStaticMeshComponent()->SetForcedLodModel(NewLodIndex);
+
+	//Reset the preview section since we do not edit the same LOD
+	StaticMeshEditor.GetStaticMeshComponent()->SetSectionPreview(INDEX_NONE);
+	StaticMeshEditor.GetStaticMeshComponent()->SelectedEditorSection = INDEX_NONE;
+}
+
+void FMeshSectionSettingsLayout::UpdateLODCategoryVisibility()
+{
+	if (CustomLODEditModePtr != nullptr && *CustomLODEditModePtr == true)
+	{
+		//Do not change the Category visibility if we are in custom mode
+		return;
+	}
+	bool bAutoLod = false;
+	if (StaticMeshEditor.GetStaticMeshComponent() != nullptr)
+	{
+		bAutoLod = StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel == 0;
+	}
+	int32 CurrentDisplayLOD = bAutoLod ? 0 : StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel - 1;
+
+	if (LodCategoriesPtr != nullptr && LodCategoriesPtr->IsValidIndex(CurrentDisplayLOD) && StaticMeshEditor.GetStaticMesh())
+	{
+		int32 StaticMeshLodNumber = StaticMeshEditor.GetStaticMesh()->GetNumLODs();
+		for (int32 LodCategoryIndex = 0; LodCategoryIndex < StaticMeshLodNumber; ++LodCategoryIndex)
+		{
+			if (!LodCategoriesPtr->IsValidIndex(LodCategoryIndex))
+			{
+				break;
+			}
+			(*LodCategoriesPtr)[LodCategoryIndex]->SetCategoryVisibility(CurrentDisplayLOD == LodCategoryIndex);
+		}
+		//Reset the preview section since we do not edit the same LOD
+		StaticMeshEditor.GetStaticMeshComponent()->SetSectionPreview(INDEX_NONE);
+		StaticMeshEditor.GetStaticMeshComponent()->SelectedEditorSection = INDEX_NONE;
+	}
+}
 
 //////////////////////////////////////////////////////////////////////////
 // FMeshMaterialLayout
@@ -1914,7 +2066,7 @@ void FMeshMaterialsLayout::AddToCategory(IDetailCategoryBuilder& CategoryBuilder
 	MaterialListDelegates.OnCanCopyMaterialItem.BindSP(this, &FMeshMaterialsLayout::OnCanCopyMaterialItem);
 	MaterialListDelegates.OnPasteMaterialItem.BindSP(this, &FMeshMaterialsLayout::OnPasteMaterialItem);
 
-	CategoryBuilder.AddCustomBuilder(MakeShareable(new FMaterialList(CategoryBuilder.GetParentLayout(), MaterialListDelegates)));
+	CategoryBuilder.AddCustomBuilder(MakeShareable(new FMaterialList(CategoryBuilder.GetParentLayout(), MaterialListDelegates, false, true, true)));
 }
 
 void FMeshMaterialsLayout::OnCopyMaterialList()
@@ -1933,7 +2085,7 @@ void FMeshMaterialsLayout::OnCopyMaterialList()
 
 	if (!CopyStr.IsEmpty())
 	{
-		FPlatformMisc::ClipboardCopy(*CopyStr);
+		FPlatformApplicationMisc::ClipboardCopy(*CopyStr);
 	}
 }
 
@@ -1945,7 +2097,7 @@ bool FMeshMaterialsLayout::OnCanCopyMaterialList() const
 void FMeshMaterialsLayout::OnPasteMaterialList()
 {
 	FString PastedText;
-	FPlatformMisc::ClipboardPaste(PastedText);
+	FPlatformApplicationMisc::ClipboardPaste(PastedText);
 
 	TSharedPtr<FJsonValue> RootJsonValue;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PastedText);
@@ -1957,10 +2109,19 @@ void FMeshMaterialsLayout::OnPasteMaterialList()
 		check(Property != nullptr);
 
 		GetStaticMesh().PreEditChange(Property);
-		FScopedTransaction Transaction(LOCTEXT("StaticMeshToolChangedPasteMaterialList", "Pasted material list"));
+		FScopedTransaction Transaction(LOCTEXT("StaticMeshToolChangedPasteMaterialList", "Staticmesh editor: Pasted material list"));
 		GetStaticMesh().Modify();
 
-		FJsonObjectConverter::JsonValueToUProperty(RootJsonValue, Property, &GetStaticMesh().StaticMaterials, 0, 0);
+		TArray<FStaticMaterial> TempMaterials;
+		FJsonObjectConverter::JsonValueToUProperty(RootJsonValue, Property, &TempMaterials, 0, 0);
+		//Do not change the number of material in the array
+		for (int32 MaterialIndex = 0; MaterialIndex < TempMaterials.Num(); ++MaterialIndex)
+		{
+			if (GetStaticMesh().StaticMaterials.IsValidIndex(MaterialIndex))
+			{
+				GetStaticMesh().StaticMaterials[MaterialIndex].MaterialInterface = TempMaterials[MaterialIndex].MaterialInterface;
+			}
+		}
 
 		CallPostEditChange(Property);
 	}
@@ -1986,7 +2147,7 @@ void FMeshMaterialsLayout::OnCopyMaterialItem(int32 CurrentSlot)
 
 	if (!CopyStr.IsEmpty())
 	{
-		FPlatformMisc::ClipboardCopy(*CopyStr);
+		FPlatformApplicationMisc::ClipboardCopy(*CopyStr);
 	}
 }
 
@@ -1998,7 +2159,7 @@ bool FMeshMaterialsLayout::OnCanCopyMaterialItem(int32 CurrentSlot) const
 void FMeshMaterialsLayout::OnPasteMaterialItem(int32 CurrentSlot)
 {
 	FString PastedText;
-	FPlatformMisc::ClipboardPaste(PastedText);
+	FPlatformApplicationMisc::ClipboardPaste(PastedText);
 
 	TSharedPtr<FJsonObject> RootJsonObject;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PastedText);
@@ -2011,12 +2172,14 @@ void FMeshMaterialsLayout::OnPasteMaterialItem(int32 CurrentSlot)
 
 		GetStaticMesh().PreEditChange(Property);
 
-		FScopedTransaction Transaction(LOCTEXT("StaticMeshToolChangedPasteMaterialItem", "Pasted material item"));
+		FScopedTransaction Transaction(LOCTEXT("StaticMeshToolChangedPasteMaterialItem", "Staticmesh editor: Pasted material item"));
 		GetStaticMesh().Modify();
 
 		if (GetStaticMesh().StaticMaterials.IsValidIndex(CurrentSlot))
 		{
-			FJsonObjectConverter::JsonObjectToUStruct(RootJsonObject.ToSharedRef(), FSkeletalMaterial::StaticStruct(), &GetStaticMesh().StaticMaterials[CurrentSlot], 0, 0);
+			FStaticMaterial TmpStaticMaterial;
+			FJsonObjectConverter::JsonObjectToUStruct(RootJsonObject.ToSharedRef(), FStaticMaterial::StaticStruct(), &TmpStaticMaterial, 0, 0);
+			GetStaticMesh().StaticMaterials[CurrentSlot].MaterialInterface = TmpStaticMaterial.MaterialInterface;
 		}
 
 		CallPostEditChange(Property);
@@ -2027,7 +2190,7 @@ FReply FMeshMaterialsLayout::AddMaterialSlot()
 {
 	UStaticMesh& StaticMesh = GetStaticMesh();
 
-	FScopedTransaction Transaction(LOCTEXT("FMeshMaterialsLayout_AddMaterialSlot", "Add material slot"));
+	FScopedTransaction Transaction(LOCTEXT("FMeshMaterialsLayout_AddMaterialSlot", "Staticmesh editor: Add material slot"));
 	StaticMesh.Modify();
 	StaticMesh.StaticMaterials.Add(FStaticMaterial());
 
@@ -2064,6 +2227,7 @@ void FMeshMaterialsLayout::GetMaterials(IMaterialListBuilder& ListBuilder)
 void FMeshMaterialsLayout::OnMaterialChanged(UMaterialInterface* NewMaterial, UMaterialInterface* PrevMaterial, int32 MaterialIndex, bool bReplaceAll)
 {
 	UStaticMesh& StaticMesh = GetStaticMesh();
+	FScopedTransaction ScopeTransaction(LOCTEXT("StaticMeshEditorMaterialChanged", "Staticmesh editor: Material changed"));
 
 	// flag the property (Materials) we're modifying so that not all of the object is rebuilt.
 	UProperty* ChangedProperty = NULL;
@@ -2104,7 +2268,6 @@ TSharedRef<SWidget> FMeshMaterialsLayout::OnGenerateWidgetsForMaterial(UMaterial
 	return 
 		SNew(SMaterialSlotWidget, SlotIndex, bMaterialIsUsed)
 		.MaterialName(this, &FMeshMaterialsLayout::GetMaterialNameText, SlotIndex)
-		.OnMaterialNameChanged(this, &FMeshMaterialsLayout::OnMaterialNameChanged, SlotIndex)
 		.OnMaterialNameCommitted(this, &FMeshMaterialsLayout::OnMaterialNameCommitted, SlotIndex)
 		.CanDeleteMaterialSlot(this, &FMeshMaterialsLayout::CanDeleteMaterialSlot, SlotIndex)
 		.OnDeleteMaterialSlot(this, &FMeshMaterialsLayout::OnDeleteMaterialSlot, SlotIndex)
@@ -2269,15 +2432,21 @@ FText FMeshMaterialsLayout::GetMaterialNameText(int32 MaterialIndex) const
 
 void FMeshMaterialsLayout::OnMaterialNameCommitted(const FText& InValue, ETextCommit::Type CommitType, int32 MaterialIndex)
 {
-	OnMaterialNameChanged(InValue, MaterialIndex);
-}
-
-void FMeshMaterialsLayout::OnMaterialNameChanged(const FText& InValue, int32 MaterialIndex)
-{
 	UStaticMesh& StaticMesh = GetStaticMesh();
-	if (StaticMesh.StaticMaterials.IsValidIndex(MaterialIndex))
+	FName InValueName = FName(*(InValue.ToString()));
+	if (StaticMesh.StaticMaterials.IsValidIndex(MaterialIndex) && StaticMesh.StaticMaterials[MaterialIndex].MaterialSlotName != InValueName)
 	{
-		StaticMesh.StaticMaterials[MaterialIndex].MaterialSlotName = FName(*(InValue.ToString()));
+		FScopedTransaction ScopeTransaction(LOCTEXT("StaticMeshEditorMaterialSlotNameChanged", "Staticmesh editor: Material slot name change"));
+
+		UProperty* ChangedProperty = NULL;
+		ChangedProperty = FindField<UProperty>(UStaticMesh::StaticClass(), "StaticMaterials");
+		check(ChangedProperty);
+		StaticMesh.PreEditChange(ChangedProperty);
+
+		StaticMesh.StaticMaterials[MaterialIndex].MaterialSlotName = InValueName;
+		
+		FPropertyChangedEvent PropertyUpdateStruct(ChangedProperty);
+		StaticMesh.PostEditChangeProperty(PropertyUpdateStruct);
 	}
 }
 
@@ -2292,7 +2461,7 @@ void FMeshMaterialsLayout::OnDeleteMaterialSlot(int32 MaterialIndex)
 	UStaticMesh& StaticMesh = GetStaticMesh();
 	if (CanDeleteMaterialSlot(MaterialIndex))
 	{
-		FScopedTransaction Transaction(LOCTEXT("PersonaDeletedMaterialSlot", "Deleted material slot on skeletal mesh"));
+		FScopedTransaction Transaction(LOCTEXT("StaticMeshEditorDeletedMaterialSlot", "Staticmesh editor: Deleted material slot"));
 
 		StaticMesh.Modify();
 		StaticMesh.StaticMaterials.RemoveAt(MaterialIndex);
@@ -2584,7 +2753,7 @@ FLevelOfDetailSettingsLayout::FLevelOfDetailSettingsLayout( FStaticMeshEditor& I
 /** Returns true if automatic mesh reduction is available. */
 static bool IsAutoMeshReductionAvailable()
 {
-	bool bAutoMeshReductionAvailable = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>("MeshUtilities").GetStaticMeshReductionInterface() != NULL;
+	bool bAutoMeshReductionAvailable = FModuleManager::Get().LoadModuleChecked<IMeshReductionManagerModule>("MeshReductionInterface").GetStaticMeshReductionInterface() != NULL;
 	return bAutoMeshReductionAvailable;
 }
 
@@ -2598,7 +2767,10 @@ void FLevelOfDetailSettingsLayout::AddToDetailsPanel( IDetailLayoutBuilder& Deta
 	int32 LODGroupIndex = LODGroupNames.Find(StaticMesh->LODGroup);
 	check(LODGroupIndex == INDEX_NONE || LODGroupIndex < LODGroupOptions.Num());
 
-	LODSettingsCategory.AddCustomRow( LOCTEXT("LODGroup", "LOD Group") )
+
+	IDetailPropertyRow& LODGroupRow = LODSettingsCategory.AddProperty(GET_MEMBER_NAME_CHECKED(UStaticMesh, LODGroup));
+
+	LODGroupRow.CustomWidget()
 	.NameContent()
 	[
 		SNew(STextBlock)
@@ -2733,7 +2905,7 @@ FReply FLevelOfDetailSettingsLayout::OnRemoveLOD(int32 LODIndex)
 
 			if (FMessageDialog::Open(EAppMsgType::YesNo, RemoveLODText) == EAppReturnType::Yes)
 			{
-				FText TransactionDescription = FText::Format( LOCTEXT("OnRemoveLOD", "Remove LOD {0}"), LODIndex);
+				FText TransactionDescription = FText::Format( LOCTEXT("OnRemoveLOD", "Staticmesh editor: Remove LOD {0}"), LODIndex);
 				FScopedTransaction Transaction( TEXT(""), TransactionDescription, StaticMesh );
 
 				StaticMesh->Modify();
@@ -2762,14 +2934,78 @@ void FLevelOfDetailSettingsLayout::AddLODLevelCategories( IDetailLayoutBuilder& 
 		{
 			FString CategoryName = FString(TEXT("StaticMeshMaterials"));
 
-			IDetailCategoryBuilder& MaterialsCategory = DetailBuilder.EditCategory(*CategoryName, LOCTEXT("StaticMeshMaterialsLabel", "Materials"), ECategoryPriority::Important);
+			IDetailCategoryBuilder& MaterialsCategory = DetailBuilder.EditCategory(*CategoryName, LOCTEXT("StaticMeshMaterialsLabel", "Material Slots"), ECategoryPriority::Important);
 
 			MaterialsLayoutWidget = MakeShareable(new FMeshMaterialsLayout(StaticMeshEditor));
 			MaterialsLayoutWidget->AddToCategory(MaterialsCategory);
 		}
+
+		int32 CurrentLodIndex = 0;
+		
+		if (StaticMeshEditor.GetStaticMeshComponent() != nullptr)
+		{
+			CurrentLodIndex = StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel;
+		}
+		LodCategories.Empty(StaticMeshLODCount);
+
+		FString LODControllerCategoryName = FString(TEXT("LODCustomMode"));
+		FText LODControllerString = LOCTEXT("LODCustomModeCategoryName", "LOD Picker");
+
+		IDetailCategoryBuilder& LODCustomModeCategory = DetailBuilder.EditCategory( *LODControllerCategoryName, LODControllerString, ECategoryPriority::Important );
+		LodCustomCategory = &LODCustomModeCategory;
+
+		LODCustomModeCategory.AddCustomRow((LOCTEXT("LODCustomModeSelect", "Select LOD")))
+		.NameContent()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("LODCustomModeSelectTitle", "LOD"))
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.IsEnabled(this, &FLevelOfDetailSettingsLayout::IsLodComboBoxEnabledForLodPicker)
+		]
+		.ValueContent()
+		[
+			OnGenerateLodComboBoxForLodPicker()
+		];
+
+		LODCustomModeCategory.AddCustomRow((LOCTEXT("LODCustomModeFirstRowName", "LODCustomMode")))
+		.NameContent()
+		[
+			SNew(STextBlock)
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.Text(this, &FLevelOfDetailSettingsLayout::GetLODCustomModeNameContent, (int32)INDEX_NONE)
+			.ToolTipText(LOCTEXT("LODCustomModeFirstRowTooltip", "Custom Mode allow editing multiple LOD in same time."))
+		]
+		.ValueContent()
+		[
+			SNew(SCheckBox)
+			.IsChecked(this, &FLevelOfDetailSettingsLayout::IsLODCustomModeCheck, (int32)INDEX_NONE)
+			.OnCheckStateChanged(this, &FLevelOfDetailSettingsLayout::SetLODCustomModeCheck, (int32)INDEX_NONE)
+			.ToolTipText(LOCTEXT("LODCustomModeFirstRowTooltip", "Custom Mode allow editing multiple LOD in same time."))
+		];
+		//Set the custom mode to false
+		CustomLODEditMode = false;
 		// Create information panel for each LOD level.
 		for(int32 LODIndex = 0; LODIndex < StaticMeshLODCount; ++LODIndex)
 		{
+			//Show the viewport LOD at start
+			bool IsViewportLOD = (CurrentLodIndex == 0 ? 0 : CurrentLodIndex - 1) == LODIndex;
+			DetailDisplayLODs[LODIndex] = true; //enable all LOD in custom mode
+			LODCustomModeCategory.AddCustomRow((LOCTEXT("LODCustomModeRowName", "LODCheckBoxRowName")), true)
+			.NameContent()
+			[
+				SNew(STextBlock)
+				.Font(IDetailLayoutBuilder::GetDetailFont())
+				.Text(this, &FLevelOfDetailSettingsLayout::GetLODCustomModeNameContent, LODIndex)
+				.IsEnabled(this, &FLevelOfDetailSettingsLayout::IsLODCustomModeEnable, LODIndex)
+			]
+			.ValueContent()
+			[
+				SNew(SCheckBox)
+				.IsChecked(this, &FLevelOfDetailSettingsLayout::IsLODCustomModeCheck, LODIndex)
+				.OnCheckStateChanged(this, &FLevelOfDetailSettingsLayout::SetLODCustomModeCheck, LODIndex)
+				.IsEnabled(this, &FLevelOfDetailSettingsLayout::IsLODCustomModeEnable, LODIndex)
+			];
+
 			if (IsAutoMeshReductionAvailable())
 			{
 				ReductionSettingsWidgets[LODIndex] = MakeShareable( new FMeshReductionSettingsLayout( AsShared() ) );
@@ -2811,27 +3047,10 @@ void FLevelOfDetailSettingsLayout::AddLODLevelCategories( IDetailLayoutBuilder& 
 			FString CategoryName = FString(TEXT("LOD"));
 			CategoryName.AppendInt( LODIndex );
 
-			FText LODLevelString = FText::Format( LOCTEXT("LODLevel", "LOD{0}"), FText::AsNumber( LODIndex ) );
+			FText LODLevelString = FText::FromString(FString(TEXT("LOD ")) + FString::FromInt(LODIndex) );
 
 			IDetailCategoryBuilder& LODCategory = DetailBuilder.EditCategory( *CategoryName, LODLevelString, ECategoryPriority::Important );
-
-			if (LODIndex != 0)
-			{
-				LODCategory.AddCustomRow( LOCTEXT("RemoveLOD", "Remove LOD") )
-				.ValueContent()
-				.HAlign(HAlign_Left)
-				[
-					SNew(SButton)
-					.OnClicked(this, &FLevelOfDetailSettingsLayout::OnRemoveLOD, LODIndex)
-					.IsEnabled(this, &FLevelOfDetailSettingsLayout::CanRemoveLOD, LODIndex)
-					.ToolTipText( LOCTEXT("RemoveLOD_ToolTip", "Removes this LOD from the Static Mesh") )
-					[
-						SNew(STextBlock)
-						.Text( LOCTEXT("RemoveLOD", "Remove LOD") )
-						.Font( DetailBuilder.GetDetailFont() )
-					]
-				];
-			}
+			LodCategories.Add(&LODCategory);
 
 			LODCategory.HeaderContent
 			(
@@ -2868,7 +3087,7 @@ void FLevelOfDetailSettingsLayout::AddLODLevelCategories( IDetailLayoutBuilder& 
 			);
 			
 			
-			SectionSettingsWidgets[ LODIndex ] = MakeShareable( new FMeshSectionSettingsLayout( StaticMeshEditor, LODIndex ) );
+			SectionSettingsWidgets[ LODIndex ] = MakeShareable( new FMeshSectionSettingsLayout( StaticMeshEditor, LODIndex, LodCategories, &CustomLODEditMode) );
 			SectionSettingsWidgets[ LODIndex ]->AddToCategory( LODCategory );
 
 			LODCategory.AddCustomRow(( LOCTEXT("ScreenSizeRow", "ScreenSize")))
@@ -2901,9 +3120,33 @@ void FLevelOfDetailSettingsLayout::AddLODLevelCategories( IDetailLayoutBuilder& 
 				LODCategory.AddCustomBuilder( ReductionSettingsWidgets[LODIndex].ToSharedRef() );
 			}
 
+			if (LODIndex != 0)
+			{
+				LODCategory.AddCustomRow( LOCTEXT("RemoveLOD", "Remove LOD") )
+				.ValueContent()
+				.HAlign(HAlign_Left)
+				[
+					SNew(SButton)
+					.OnClicked(this, &FLevelOfDetailSettingsLayout::OnRemoveLOD, LODIndex)
+					.IsEnabled(this, &FLevelOfDetailSettingsLayout::CanRemoveLOD, LODIndex)
+					.ToolTipText( LOCTEXT("RemoveLOD_ToolTip", "Removes this LOD from the Static Mesh") )
+					[
+						SNew(STextBlock)
+						.Text( LOCTEXT("RemoveLOD", "Remove LOD") )
+						.Font( DetailBuilder.GetDetailFont() )
+					]
+				];
+			}
+			LODCategory.SetCategoryVisibility(IsViewportLOD);
+		}
+
+		//Show the LOD custom category 
+		if (StaticMeshLODCount > 1)
+		{
+			LODCustomModeCategory.SetCategoryVisibility(true);
+			LODCustomModeCategory.SetShowAdvanced(false);
 		}
 	}
-
 }
 
 
@@ -2996,7 +3239,7 @@ void FLevelOfDetailSettingsLayout::OnLODScreenSizeCommitted( float NewValue, ETe
 void FLevelOfDetailSettingsLayout::UpdateLODNames()
 {
 	LODNames.Empty();
-	LODNames.Add( MakeShareable( new FString( LOCTEXT("BaseLOD", "Base LOD").ToString() ) ) );
+	LODNames.Add( MakeShareable( new FString( LOCTEXT("BaseLOD", "LOD 0").ToString() ) ) );
 	for(int32 LODLevelID = 1; LODLevelID < LODCount; ++LODLevelID)
 	{
 		LODNames.Add( MakeShareable( new FString( FText::Format( NSLOCTEXT("LODSettingsLayout", "LODLevel_Reimport", "Reimport LOD Level {0}"), FText::AsNumber( LODLevelID ) ).ToString() ) ) );
@@ -3246,5 +3489,209 @@ FText FLevelOfDetailSettingsLayout::GetMinLODTooltip() const
 {
 	return LOCTEXT("MinLODTooltip", "The minimum LOD to use for rendering.  This can be overridden in components.");
 }
+
+FText FLevelOfDetailSettingsLayout::GetLODCustomModeNameContent(int32 LODIndex) const
+{
+	int32 CurrentLodIndex = 0;
+	if (StaticMeshEditor.GetStaticMeshComponent() != nullptr)
+	{
+		CurrentLodIndex = StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel;
+	}
+	int32 RealCurrentLODIndex = (CurrentLodIndex == 0 ? 0 : CurrentLodIndex - 1);
+	if (LODIndex == INDEX_NONE)
+	{
+		return LOCTEXT("GetLODCustomModeNameContent", "Custom");
+	}
+	return FText::Format(LOCTEXT("GetLODModeNameContent", "LOD{0}"), LODIndex);
+}
+
+ECheckBoxState FLevelOfDetailSettingsLayout::IsLODCustomModeCheck(int32 LODIndex) const
+{
+	int32 CurrentLodIndex = 0;
+	if (StaticMeshEditor.GetStaticMeshComponent() != nullptr)
+	{
+		CurrentLodIndex = StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel;
+	}
+	if (LODIndex == INDEX_NONE)
+	{
+		return CustomLODEditMode ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+	}
+	return DetailDisplayLODs[LODIndex] ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+}
+
+void FLevelOfDetailSettingsLayout::SetLODCustomModeCheck(ECheckBoxState NewState, int32 LODIndex)
+{
+	int32 CurrentLodIndex = 0;
+	if (StaticMeshEditor.GetStaticMeshComponent() != nullptr)
+	{
+		CurrentLodIndex = StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel;
+	}
+	if (LODIndex == INDEX_NONE)
+	{
+		if (NewState == ECheckBoxState::Unchecked)
+		{
+			CustomLODEditMode = false;
+			SectionSettingsWidgets[0]->SetCurrentLOD(CurrentLodIndex);
+			for (int32 DetailLODIndex = 0; DetailLODIndex < MAX_STATIC_MESH_LODS; ++DetailLODIndex)
+			{
+				if (!LodCategories.IsValidIndex(DetailLODIndex))
+				{
+					break;
+				}
+				LodCategories[DetailLODIndex]->SetCategoryVisibility(DetailLODIndex == (CurrentLodIndex == 0 ? 0 : CurrentLodIndex-1));
+			}
+		}
+		else
+		{
+			CustomLODEditMode = true;
+			SectionSettingsWidgets[0]->SetCurrentLOD(0);
+		}
+	}
+	else if(CustomLODEditMode)
+	{
+		DetailDisplayLODs[LODIndex] = NewState == ECheckBoxState::Checked;
+	}
+
+	if (CustomLODEditMode)
+	{
+		for (int32 DetailLODIndex = 0; DetailLODIndex < MAX_STATIC_MESH_LODS; ++DetailLODIndex)
+		{
+			if (!LodCategories.IsValidIndex(DetailLODIndex))
+			{
+				break;
+			}
+			LodCategories[DetailLODIndex]->SetCategoryVisibility(DetailDisplayLODs[DetailLODIndex]);
+		}
+	}
+
+	if (LodCustomCategory != nullptr)
+	{
+		LodCustomCategory->SetShowAdvanced(CustomLODEditMode);
+	}
+}
+
+bool FLevelOfDetailSettingsLayout::IsLODCustomModeEnable(int32 LODIndex) const
+{
+	if (LODIndex == INDEX_NONE)
+	{
+		// Custom checkbox is always enable
+		return true;
+	}
+	return CustomLODEditMode;
+}
+
+TSharedRef<SWidget> FLevelOfDetailSettingsLayout::OnGenerateLodComboBoxForLodPicker()
+{
+	return SNew(SComboButton)
+		//.Visibility(this, &FLevelOfDetailSettingsLayout::LodComboBoxVisibilityForLodPicker)
+		.IsEnabled(this, &FLevelOfDetailSettingsLayout::IsLodComboBoxEnabledForLodPicker)
+		.OnGetMenuContent(this, &FLevelOfDetailSettingsLayout::OnGenerateLodMenuForLodPicker)
+		.VAlign(VAlign_Center)
+		.ContentPadding(2)
+		.ButtonContent()
+		[
+			SNew(STextBlock)
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.Text(this, &FLevelOfDetailSettingsLayout::GetCurrentLodName)
+			.ToolTipText(this, &FLevelOfDetailSettingsLayout::GetCurrentLodTooltip)
+		];
+}
+
+EVisibility FLevelOfDetailSettingsLayout::LodComboBoxVisibilityForLodPicker() const
+{
+	//No combo box when in Custom mode
+	if (CustomLODEditMode == true)
+	{
+		return EVisibility::Hidden;
+	}
+	return EVisibility::All;
+}
+
+bool FLevelOfDetailSettingsLayout::IsLodComboBoxEnabledForLodPicker() const
+{
+	//No combo box when in Custom mode
+	return !CustomLODEditMode;
+}
+
+TSharedRef<SWidget> FLevelOfDetailSettingsLayout::OnGenerateLodMenuForLodPicker()
+{
+	UStaticMesh* StaticMesh = StaticMeshEditor.GetStaticMesh();
+
+	if (StaticMesh == nullptr)
+	{
+		return SNullWidget::NullWidget;
+	}
+
+	bool bAutoLod = false;
+	if (StaticMeshEditor.GetStaticMeshComponent() != nullptr)
+	{
+		bAutoLod = StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel == 0;
+	}
+	const int32 StaticMeshLODCount = StaticMesh->GetNumLODs();
+	if (StaticMeshLODCount < 2)
+	{
+		return SNullWidget::NullWidget;
+	}
+	FMenuBuilder MenuBuilder(true, NULL);
+
+	FText AutoLodText = FText::FromString((TEXT("LOD Auto")));
+	FUIAction AutoLodAction(FExecuteAction::CreateSP(this, &FLevelOfDetailSettingsLayout::OnSelectedLODChanged, 0));
+	MenuBuilder.AddMenuEntry(AutoLodText, LOCTEXT("OnGenerateLodMenuForLodPicker_Auto_ToolTip", "LOD0 is edit when selecting Auto LOD"), FSlateIcon(), AutoLodAction);
+	// Add a menu item for each texture.  Clicking on the texture will display it in the content browser
+	for (int32 AllLodIndex = 0; AllLodIndex < StaticMeshLODCount; ++AllLodIndex)
+	{
+		FText LODLevelString = FText::FromString((TEXT("LOD ") + FString::FromInt(AllLodIndex)));
+		FUIAction Action(FExecuteAction::CreateSP(this, &FLevelOfDetailSettingsLayout::OnSelectedLODChanged, AllLodIndex + 1));
+		MenuBuilder.AddMenuEntry(LODLevelString, FText::GetEmpty(), FSlateIcon(), Action);
+	}
+
+	return MenuBuilder.MakeWidget();
+}
+
+void FLevelOfDetailSettingsLayout::OnSelectedLODChanged(int32 NewLodIndex)
+{
+	if (StaticMeshEditor.GetStaticMeshComponent() == nullptr)
+	{
+		return;
+	}
+	int32 CurrentDisplayLOD = StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel;
+	int32 RealCurrentDisplayLOD = CurrentDisplayLOD == 0 ? 0 : CurrentDisplayLOD - 1;
+	int32 RealNewLOD = NewLodIndex == 0 ? 0 : NewLodIndex - 1;
+
+	if (CurrentDisplayLOD == NewLodIndex || !LodCategories.IsValidIndex(RealCurrentDisplayLOD) || !LodCategories.IsValidIndex(RealNewLOD))
+	{
+		return;
+	}
+
+	StaticMeshEditor.GetStaticMeshComponent()->SetForcedLodModel(NewLodIndex);
+
+	//Reset the preview section since we do not edit the same LOD
+	StaticMeshEditor.GetStaticMeshComponent()->SetSectionPreview(INDEX_NONE);
+	StaticMeshEditor.GetStaticMeshComponent()->SelectedEditorSection = INDEX_NONE;
+
+	//Broadcast that the LOD model has changed
+	StaticMeshEditor.BroadcastOnSelectedLODChanged();
+}
+
+FText FLevelOfDetailSettingsLayout::GetCurrentLodName() const
+{
+	bool bAutoLod = false;
+	if (StaticMeshEditor.GetStaticMeshComponent() != nullptr)
+	{
+		bAutoLod = StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel == 0;
+	}
+	int32 CurrentDisplayLOD = bAutoLod ? 0 : StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel - 1;
+	return FText::FromString(bAutoLod ? FString(TEXT("LOD Auto")) : (FString(TEXT("LOD ")) + FString::FromInt(CurrentDisplayLOD)));
+}
+
+FText FLevelOfDetailSettingsLayout::GetCurrentLodTooltip() const
+{
+	if (StaticMeshEditor.GetStaticMeshComponent() != nullptr && StaticMeshEditor.GetStaticMeshComponent()->ForcedLodModel == 0)
+	{
+		return FText::FromString(TEXT("LOD0 is edit when selecting Auto LOD"));
+	}
+	return FText::GetEmpty();
+}
+
 
 #undef LOCTEXT_NAMESPACE

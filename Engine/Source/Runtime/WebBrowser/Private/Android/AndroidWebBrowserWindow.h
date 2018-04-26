@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -85,6 +85,7 @@ public:
 	virtual void SetIsDisabled(bool bValue) override;
 	virtual TSharedPtr<SWindow> GetParentWindow() const override;
 	virtual void SetParentWindow(TSharedPtr<SWindow> Window) override;
+	virtual FIntPoint GetViewportSize() const;
 
 	DECLARE_DERIVED_EVENT(FAndroidWebBrowserWindow, IWebBrowserWindow::FOnDocumentStateChanged, FOnDocumentStateChanged);
 	virtual FOnDocumentStateChanged& OnDocumentStateChanged() override
@@ -204,6 +205,9 @@ private:
 	/** Optional text to load as a web page. */
 	TOptional<FString> ContentsToLoad;
 
+	/** Whether to enable background transparency */
+	bool bUseTransparency;
+
 	/** Delegate for broadcasting load state changes. */
 	FOnDocumentStateChanged DocumentStateChangedEvent;
 
@@ -258,6 +262,8 @@ private:
 	mutable TOptional<TFunction<void (const FString&)>> GetPageSourceCallback;
 
 	TSharedPtr<SWindow> ParentWindow;
+
+	FIntPoint AndroidWindowSize;
 };
 
 typedef FAndroidWebBrowserWindow FWebBrowserWindow;

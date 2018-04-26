@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "USDAssetImportFactory.h"
 #include "USDImporter.h"
@@ -8,10 +8,12 @@
 #include "USDImportOptions.h"
 #include "Engine/StaticMesh.h"
 #include "Paths.h"
+#include "JsonObjectConverter.h"
+#include "USDAssetImportData.h"
 
-void FUSDAssetImportContext::Init(UObject* InParent, const FString& InName, EObjectFlags InFlags, class IUsdStage* InStage)
+void FUSDAssetImportContext::Init(UObject* InParent, const FString& InName, class IUsdStage* InStage)
 {
-	FUsdImportContext::Init(InParent, InName, InFlags, InStage);
+	FUsdImportContext::Init(InParent, InName, InStage);
 }
 
 
@@ -21,6 +23,8 @@ UUSDAssetImportFactory::UUSDAssetImportFactory(const FObjectInitializer& ObjectI
 	bCreateNew = false;
 	bEditAfterNew = true;
 	SupportedClass = UStaticMesh::StaticClass();
+
+	ImportOptions = ObjectInitializer.CreateDefaultSubobject<UUSDImportOptions>(this, TEXT("USDImportOptions"));
 
 	bEditorImport = true;
 	bText = false;
@@ -34,30 +38,33 @@ UObject* UUSDAssetImportFactory::FactoryCreateFile(UClass* InClass, UObject* InP
 {
 	UObject* ImportedObject = nullptr;
 
-	UUSDImportOptions* ImportOptions = NewObject<UUSDImportOptions>(this);
-
 	UUSDImporter* USDImporter = IUSDImporterModule::Get().GetImporter();
 
-	if (USDImporter->ShowImportOptions(*ImportOptions))
+	if (IsAutomatedImport() || USDImporter->ShowImportOptions(*ImportOptions))
 	{
-		IUsdStage* Stage = USDImporter->ReadUSDFile(Filename);
+		IUsdStage* Stage = USDImporter->ReadUSDFile(ImportContext, Filename);
 		if (Stage)
 		{
-			ImportContext.Init(InParent, InName.ToString(), Flags, Stage);
+			ImportContext.Init(InParent, InName.ToString(), Stage);
 			ImportContext.ImportOptions = ImportOptions;
 			ImportContext.bApplyWorldTransformToGeometry = ImportOptions->bApplyWorldTransformToGeometry;
 
-			TArray<FUsdPrimToImport> PrimsToImport;
-			USDImporter->FindPrimsToImport(ImportContext, PrimsToImport);
+			TArray<FUsdAssetPrimToImport> PrimsToImport;
 
-			ImportedObject = USDImporter->ImportMeshes(ImportContext, PrimsToImport);
+			ImportContext.PrimResolver->FindMeshAssetsToImport(ImportContext, ImportContext.RootPrim, PrimsToImport);
+
+			TArray<UObject*> ImportedObjects = USDImporter->ImportMeshes(ImportContext, PrimsToImport);
 
 			// Just return the first one imported
-			ImportedObject = ImportContext.PrimToAssetMap.Num() > 0 ? ImportContext.PrimToAssetMap.CreateConstIterator().Value() : nullptr;
+			ImportedObject = ImportedObjects.Num() > 0 ? ImportedObjects[0] : nullptr;
 		}
-	}
 
-	ImportContext.DisplayErrorMessages();
+		ImportContext.DisplayErrorMessages(IsAutomatedImport());
+	}
+	else
+	{
+		bOutOperationCanceled = true;
+	}
 
 	return ImportedObject;
 }
@@ -78,4 +85,61 @@ void UUSDAssetImportFactory::CleanUp()
 {
 	ImportContext = FUSDAssetImportContext();
 	UnrealUSDWrapper::CleanUp();
+}
+
+bool UUSDAssetImportFactory::CanReimport(UObject* Obj, TArray<FString>& OutFilenames)
+{
+	UStaticMesh* Mesh = Cast<UStaticMesh>(Obj);
+	if (Mesh != nullptr)
+	{
+		UUSDAssetImportData* ImportData = Cast<UUSDAssetImportData>(Mesh->AssetImportData);
+		if (ImportData)
+		{
+			OutFilenames.Add(ImportData->GetFirstFilename());
+			return true;
+		}
+	}
+	return false;
+}
+
+void UUSDAssetImportFactory::SetReimportPaths(UObject* Obj, const TArray<FString>& NewReimportPaths)
+{
+	UStaticMesh* Mesh = Cast<UStaticMesh>(Obj);
+	if (Mesh != nullptr && ensure(NewReimportPaths.Num() == 1))
+	{
+		UUSDAssetImportData* ImportData = Cast<UUSDAssetImportData>(Mesh->AssetImportData);
+		if (ImportData)
+		{
+			ImportData->UpdateFilenameOnly(NewReimportPaths[0]);
+		}
+	}
+}
+
+EReimportResult::Type UUSDAssetImportFactory::Reimport(UObject* Obj)
+{
+	UStaticMesh* Mesh = Cast<UStaticMesh>(Obj);
+	if (Mesh != nullptr)
+	{
+		UUSDAssetImportData* ImportData = Cast<UUSDAssetImportData>(Mesh->AssetImportData);
+		if (ImportData)
+		{
+			bool bOperationCancelled = false;
+			UObject* Result = FactoryCreateFile(UStaticMesh::StaticClass(), (UObject*)Mesh->GetOutermost(), Mesh->GetFName(), RF_Transactional | RF_Standalone | RF_Public, ImportData->GetFirstFilename(), nullptr, GWarn, bOperationCancelled);
+			if (bOperationCancelled)
+			{
+				return EReimportResult::Cancelled;
+			}
+			else
+			{
+				return Result ? EReimportResult::Succeeded : EReimportResult::Failed;
+			}
+		}
+	}
+
+	return EReimportResult::Failed;
+}
+
+void UUSDAssetImportFactory::ParseFromJson(TSharedRef<class FJsonObject> ImportSettingsJson)
+{
+	FJsonObjectConverter::JsonObjectToUStruct(ImportSettingsJson, ImportOptions->GetClass(), ImportOptions, 0, CPF_InstancedReference);
 }

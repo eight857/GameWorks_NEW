@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TileMapEditing/EdModeTileMap.h"
 #include "AI/Navigation/NavigationSystem.h"
@@ -637,7 +637,7 @@ UPaperTileLayer* FEdModeTileMap::GetSelectedLayerUnderCursor(const FViewportCurs
 			{
 				UPaperTileLayer* Layer = TileMap->TileLayers[LayerIndex];
 
-				ComponentToWorld = (TileMapComponent != nullptr) ? TileMapComponent->ComponentToWorld : FTransform::Identity;
+				ComponentToWorld = TileMapComponent->GetComponentTransform();
 				const FVector LocalStart = ComponentToWorld.InverseTransformPosition(TraceStart);
 				const FVector LocalDirection = ComponentToWorld.InverseTransformVector(TraceDir);
 				const FVector LocalEnd = LocalStart + (LocalDirection * HALF_WORLD_MAX);

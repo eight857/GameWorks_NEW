@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #include "HighResScreenshot.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
@@ -7,8 +7,8 @@
 #include "UnrealClient.h"
 #include "Materials/Material.h"
 #include "Slate/SceneViewport.h"
-#include "Interfaces/IImageWrapper.h"
-#include "Interfaces/IImageWrapperModule.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
 
 static TAutoConsoleVariable<int32> CVarSaveEXRCompressionQuality(
 	TEXT("r.SaveEXR.CompressionQuality"),
@@ -17,6 +17,8 @@ static TAutoConsoleVariable<int32> CVarSaveEXRCompressionQuality(
 	TEXT(" 0: no compression\n")
 	TEXT(" 1: default compression which can be slow (default)"),
 	ECVF_RenderThreadSafe);
+
+DEFINE_LOG_CATEGORY(LogHighResScreenshot);
 
 FHighResScreenshotConfig& GetHighResScreenshotConfig()
 {
@@ -95,7 +97,7 @@ bool FHighResScreenshotConfig::ParseConsoleCommand(const FString& InCmd, FOutput
 	GScreenshotResolutionY = 0;
 	ResolutionMultiplier = 1.0f;
 
-	if( GetHighResScreenShotInput(*InCmd, Ar, GScreenshotResolutionX, GScreenshotResolutionY, ResolutionMultiplier, CaptureRegion, bMaskEnabled, bDumpBufferVisualizationTargets, bCaptureHDR) )
+	if( GetHighResScreenShotInput(*InCmd, Ar, GScreenshotResolutionX, GScreenshotResolutionY, ResolutionMultiplier, CaptureRegion, bMaskEnabled, bDumpBufferVisualizationTargets, bCaptureHDR, FilenameOverride) )
 	{
 		GScreenshotResolutionX *= ResolutionMultiplier;
 		GScreenshotResolutionY *= ResolutionMultiplier;
@@ -180,7 +182,7 @@ template<typename> struct FPixelTypeTraits {};
 
 template<> struct FPixelTypeTraits<FColor>
 {
-	static const ERGBFormat::Type SourceChannelLayout = ERGBFormat::BGRA;
+	static const ERGBFormat SourceChannelLayout = ERGBFormat::BGRA;
 
 	static FORCEINLINE bool IsWritingHDRImage(const bool)
 	{
@@ -190,7 +192,7 @@ template<> struct FPixelTypeTraits<FColor>
 
 template<> struct FPixelTypeTraits<FFloat16Color>
 {
-	static const ERGBFormat::Type SourceChannelLayout = ERGBFormat::RGBA;
+	static const ERGBFormat SourceChannelLayout = ERGBFormat::RGBA;
 
 	static FORCEINLINE bool IsWritingHDRImage(const bool bCaptureHDR)
 	{
@@ -201,7 +203,7 @@ template<> struct FPixelTypeTraits<FFloat16Color>
 
 template<> struct FPixelTypeTraits<FLinearColor>
 {
-	static const ERGBFormat::Type SourceChannelLayout = ERGBFormat::RGBA;
+	static const ERGBFormat SourceChannelLayout = ERGBFormat::RGBA;
 
 	static FORCEINLINE bool IsWritingHDRImage(const bool bCaptureHDR)
 	{
@@ -218,8 +220,11 @@ bool FHighResScreenshotConfig::SaveImage(const FString& File, const TArray<TPixe
 	static_assert(ARE_TYPES_EQUAL(TPixelType, FFloat16Color) || ARE_TYPES_EQUAL(TPixelType, FColor) || ARE_TYPES_EQUAL(TPixelType, FLinearColor), "Source format must be either FColor, FLinearColor or FFloat16Color");
 	const int32 x = BitmapSize.X;
 	const int32 y = BitmapSize.Y;
-	check(Bitmap.Num() == x * y);
 
+	bool bSuccess = false;
+
+	if(Bitmap.Num() == x * y)
+	{
 	const bool bIsWritingHDRImage = Traits::IsWritingHDRImage(bCaptureHDR);
 
 	IFileManager* FileManager = &IFileManager::Get();
@@ -259,24 +264,23 @@ bool FHighResScreenshotConfig::SaveImage(const FString& File, const TArray<TPixe
 		*OutFilename = Filename;
 	}
 	
-	bool bSuccess = false;
 
 	if (ImageWriter != nullptr &&
 		ImageWriter->ImageWrapper.IsValid() &&
 		ImageWriter->ImageWrapper->SetRaw((void*)&Bitmap[0], sizeof(TPixelType)* x * y, x, y, Traits::SourceChannelLayout, BitsPerPixel))
 	{
-		ImageCompression::CompressionQuality LocalCompressionQuality = ImageCompression::Default;
+		EImageCompressionQuality LocalCompressionQuality = EImageCompressionQuality::Default;
 		
 		if(bIsWritingHDRImage && CVarSaveEXRCompressionQuality.GetValueOnAnyThread() == 0)
 		{
-			LocalCompressionQuality = ImageCompression::Uncompressed;
+			LocalCompressionQuality = EImageCompressionQuality::Uncompressed;
 		}
 
 		// Compress and write image
 		FArchive* Ar = FileManager->CreateFileWriter(Filename.GetCharArray().GetData());
 		if (Ar != nullptr)
 		{
-			const TArray<uint8>& CompressedData = ImageWriter->ImageWrapper->GetCompressed(LocalCompressionQuality);
+			const TArray<uint8>& CompressedData = ImageWriter->ImageWrapper->GetCompressed((int32)LocalCompressionQuality);
 				int32 CompressedSize = CompressedData.Num();
 				Ar->Serialize((void*)CompressedData.GetData(), CompressedSize);
 			delete Ar;
@@ -286,13 +290,22 @@ bool FHighResScreenshotConfig::SaveImage(const FString& File, const TArray<TPixe
 	}
 
 	ImageWriter->bInUse = false;
+	}
+	else
+	{
+		UE_LOG(LogHighResScreenshot, Error, TEXT("Error: Cannot save high res screenshot.  Image size (%d) does not match image data size (%d)"), x*y, Bitmap.Num())
+	}
 
 	return bSuccess;
 }
 
+/// @cond DOXYGEN_WARNINGS
+
 template ENGINE_API bool FHighResScreenshotConfig::SaveImage<FColor>(const FString& File, const TArray<FColor>& Bitmap, const FIntPoint& BitmapSize, FString* OutFilename) const;
 template ENGINE_API bool FHighResScreenshotConfig::SaveImage<FFloat16Color>(const FString& File, const TArray<FFloat16Color>& Bitmap, const FIntPoint& BitmapSize, FString* OutFilename) const;
 template ENGINE_API bool FHighResScreenshotConfig::SaveImage<FLinearColor>(const FString& File, const TArray<FLinearColor>& Bitmap, const FIntPoint& BitmapSize, FString* OutFilename) const;
+
+/// @endcond
 
 FHighResScreenshotConfig::FImageWriter::FImageWriter(const TSharedPtr<class IImageWrapper>& InWrapper)
 	: ImageWrapper(InWrapper)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ActorDetails.h"
 #include "Engine/EngineBaseTypes.h"
@@ -69,10 +69,13 @@ void FActorDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLayout )
 {
 	// Get the list of hidden categories
 	TArray<FString> HideCategories;
-	FEditorCategoryUtils::GetClassHideCategories(DetailLayout.GetBaseClass(), HideCategories); 
+	if (DetailLayout.GetBaseClass())
+	{
+		FEditorCategoryUtils::GetClassHideCategories(DetailLayout.GetBaseClass(), HideCategories);
+	}
 
 	// These details only apply when adding an instance of the actor in a level
-	if( !DetailLayout.GetDetailsView().HasClassDefaultObject() && DetailLayout.GetDetailsView().GetSelectedActorInfo().NumSelected > 0 )
+	if (!DetailLayout.HasClassDefaultObject() && DetailLayout.GetDetailsView()->GetSelectedActorInfo().NumSelected > 0)
 	{
 		// Build up a list of unique blueprints in the selection set (recording the first actor in the set for each one)
 		TMap<UBlueprint*, UObject*> UniqueBlueprints;
@@ -81,7 +84,7 @@ void FActorDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLayout )
 		TMap<ULevel*, int32> ActorsPerLevelCount;
 
 		bool bHasBillboardComponent = false;
-		const TArray< TWeakObjectPtr<UObject> >& SelectedObjects = DetailLayout.GetDetailsView().GetSelectedObjects();
+		const TArray< TWeakObjectPtr<UObject> >& SelectedObjects = DetailLayout.GetSelectedObjects();
 		for (int32 ObjectIndex = 0; ObjectIndex < SelectedObjects.Num(); ++ObjectIndex)
 		{
 			AActor* Actor = Cast<AActor>( SelectedObjects[ObjectIndex].Get() );
@@ -93,7 +96,7 @@ void FActorDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLayout )
 				SelectedActors.Add( Actor );
 
 				// Record the level that contains this actor and increment it's actor count
-				ULevel* Level = Actor->GetTypedOuter<ULevel>();
+				ULevel* Level = Actor->GetLevel();
 				if (Level != NULL)
 				{
 					int32& ActorCountForThisLevel = ActorsPerLevelCount.FindOrAdd(Level);
@@ -138,7 +141,7 @@ void FActorDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLayout )
 	TSharedPtr<IPropertyHandle> PrimaryTickProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(AActor, PrimaryActorTick));
 
 	// Defaults only show tick properties
-	if (DetailLayout.GetDetailsView().HasClassDefaultObject() && !HideCategories.Contains(TEXT("Tick")))
+	if (DetailLayout.HasClassDefaultObject() && !HideCategories.Contains(TEXT("Tick")))
 	{
 		// Note: the category is renamed to differentiate between 
 		IDetailCategoryBuilder& TickCategory = DetailLayout.EditCategory("Tick", LOCTEXT("TickCategoryName", "Actor Tick") );
@@ -429,7 +432,7 @@ void FActorDetails::AddLayersCategory( IDetailLayoutBuilder& DetailBuilder )
 
 void FActorDetails::AddTransformCategory( IDetailLayoutBuilder& DetailBuilder )
 {
-	const FSelectedActorInfo& SelectedActorInfo = DetailBuilder.GetDetailsView().GetSelectedActorInfo();
+	const FSelectedActorInfo& SelectedActorInfo = DetailBuilder.GetDetailsView()->GetSelectedActorInfo();
 
 	bool bAreBrushesSelected = SelectedActorInfo.bHaveBrush;
 	bool bIsOnlyWorldPropsSelected =  SelectedActors.Num() == 1 && SelectedActors[0].IsValid() && SelectedActors[0]->IsA<AWorldSettings>();
@@ -441,7 +444,7 @@ void FActorDetails::AddTransformCategory( IDetailLayoutBuilder& DetailBuilder )
 		return;
 	}
 	
-	TSharedRef<FComponentTransformDetails> TransformDetails = MakeShareable( new FComponentTransformDetails( DetailBuilder.GetDetailsView().GetSelectedObjects(), SelectedActorInfo, DetailBuilder ) );
+	TSharedRef<FComponentTransformDetails> TransformDetails = MakeShareable( new FComponentTransformDetails( DetailBuilder.GetSelectedObjects(), SelectedActorInfo, DetailBuilder ) );
 
 	IDetailCategoryBuilder& TransformCategory = DetailBuilder.EditCategory( "TransformCommon", LOCTEXT("TransformCommonCategory", "Transform"), ECategoryPriority::Transform );
 
@@ -455,7 +458,7 @@ void FActorDetails::AddActorCategory( IDetailLayoutBuilder& DetailBuilder, const
 	const FLevelEditorCommands& Commands = LevelEditor.GetLevelEditorCommands();
 	TSharedRef<const FUICommandList> CommandBindings = LevelEditor.GetGlobalLevelEditorActions();
 
-	const FSelectedActorInfo& SelectedActorInfo = DetailBuilder.GetDetailsView().GetSelectedActorInfo();
+	const FSelectedActorInfo& SelectedActorInfo = DetailBuilder.GetDetailsView()->GetSelectedActorInfo();
 	TSharedPtr<SVerticalBox> LevelBox;
 
 	IDetailCategoryBuilder& ActorCategory = DetailBuilder.EditCategory("Actor", FText::GetEmpty(), ECategoryPriority::Uncommon );

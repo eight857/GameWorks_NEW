@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "WindowsTargetSettingsDetails.h"
 #include "Misc/Paths.h"
@@ -83,7 +83,7 @@ static FText GetFriendlyNameFromRHIName(const FString& InRHIName)
 	}
 	else if (InRHIName == TEXT("SF_VULKAN_SM5"))
 	{
-		FriendlyRHIName = LOCTEXT("VulkanSM5", "Vulkan Desktop (SM5, Highly Experimental!)");
+		FriendlyRHIName = LOCTEXT("VulkanSM5", "Vulkan Desktop (SM5, Experimental)");
 	}
 	else if (InRHIName == TEXT("GLSL_SWITCH"))
 	{
@@ -123,7 +123,7 @@ static FString GetSplashFilename(EImageScope::Type Scope, bool bIsEditorSplash)
 	}
 	else
 	{
-		Filename = FPaths::GameContentDir();
+		Filename = FPaths::ProjectContentDir();
 	}
 
 	if(bIsEditorSplash)
@@ -152,10 +152,10 @@ static FString GetIconFilename(EImageScope::Type Scope)
 	}
 	else
 	{
-		FString Filename = FPaths::GameDir() / TEXT("Build/Windows/Application.ico");
+		FString Filename = FPaths::ProjectDir() / TEXT("Build/Windows/Application.ico");
 		if(!FPaths::FileExists(Filename))
 		{
-			FString LegacyFilename = FPaths::GameSourceDir() / FString(FApp::GetGameName()) / FString(TEXT("Resources")) / PlatformName / FString(FApp::GetGameName()) + TEXT(".ico");
+			FString LegacyFilename = FPaths::GameSourceDir() / FString(FApp::GetProjectName()) / FString(TEXT("Resources")) / PlatformName / FString(FApp::GetProjectName()) + TEXT(".ico");
 			if(FPaths::FileExists(LegacyFilename))
 			{
 				Filename = LegacyFilename;
@@ -330,15 +330,15 @@ void FWindowsTargetSettingsDetails::CustomizeDetails( IDetailLayoutBuilder& Deta
 					SNullWidget::NullWidget
 				]
 				.ContentPadding(FMargin(6.0f, 1.0f))
-					.MenuContent()
-					[
-						MakeAudioDeviceMenu(AudioDevicePropertyHandle)
-					]
+				.MenuContent()
+				[
+					MakeAudioDeviceMenu(AudioDevicePropertyHandle)
+				]
 				.ToolTipText(LOCTEXT("AudioDevicesButtonToolTip", "Pick from the list of available audio devices"))
 			]
 	];
+	AudioPluginWidgetManager.BuildAudioCategory(DetailBuilder, EAudioPlatform::Windows);
 }
-
 
 bool FWindowsTargetSettingsDetails::HandlePreExternalIconCopy(const FString& InChosenImage)
 {

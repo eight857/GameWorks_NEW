@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -116,10 +116,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = AI)
 	uint32 bSetControlRotationFromPawnOrientation:1;
 
-private_subobject:
+private:
 
 	/** Component used for moving along a path. */
-	DEPRECATED_FORGAME(4.6, "PathFollowingComponent should not be accessed directly, please use GetPathFollowingComponent() function instead. PathFollowingComponent will soon be private and your code will not compile.")
 	UPROPERTY(VisibleDefaultsOnly, Category = AI)
 	UPathFollowingComponent* PathFollowingComponent;
 
@@ -129,12 +128,10 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = AI)
 	UBrainComponent* BrainComponent;
 
-	DEPRECATED_FORGAME(4.8, "PerceptionComponent should not be accessed directly, please use GetAIPerceptionComponent() function instead. PerceptionComponent will soon be private and your code will not compile.")
 	UPROPERTY(VisibleDefaultsOnly, Category = AI)
 	UAIPerceptionComponent* PerceptionComponent;
 
-private_subobject:
-	DEPRECATED_FORGAME(4.6, "ActionsComp should not be accessed directly, please use GetActionsComp() function instead. ActionsComp will soon be private and your code will not compile.")
+private:
 	UPROPERTY(BlueprintReadOnly, Category = AI, meta = (AllowPrivateAccess = "true"))
 	UPawnActionsComponent* ActionsComp;
 
@@ -301,11 +298,11 @@ public:
 	virtual FVector GetFocalPointOnActor(const AActor *Actor) const;
 
 	/** Set the position that controller should be looking at. */
-	UFUNCTION(BlueprintCallable, Category = "AI", meta = (DisplayName = "SetFocalPoint", Keywords = "focus"))
+	UFUNCTION(BlueprintCallable, Category = "AI", meta = (DisplayName = "SetFocalPoint", ScriptName = "SetFocalPoint", Keywords = "focus"))
 	void K2_SetFocalPoint(FVector FP);
 
 	/** Set Focus for actor, will set FocalPoint as a result. */
-	UFUNCTION(BlueprintCallable, Category = "AI", meta = (DisplayName = "SetFocus"))
+	UFUNCTION(BlueprintCallable, Category = "AI", meta = (DisplayName = "SetFocus", ScriptName = "SetFocus"))
 	void K2_SetFocus(AActor* NewFocus);
 
 	/** Get the focused actor. */
@@ -315,7 +312,7 @@ public:
 	FORCEINLINE AActor* GetFocusActorForPriority(EAIFocusPriority::Type InPriority) const { return FocusInformation.Priorities.IsValidIndex(InPriority) ? FocusInformation.Priorities[InPriority].Actor.Get() : nullptr; }
 
 	/** Clears Focus, will also clear FocalPoint as a result */
-	UFUNCTION(BlueprintCallable, Category = "AI", meta = (DisplayName = "ClearFocus"))
+	UFUNCTION(BlueprintCallable, Category = "AI", meta = (DisplayName = "ClearFocus", ScriptName = "ClearFocus"))
 	void K2_ClearFocus();
 
 
@@ -435,13 +432,13 @@ public:
 public:
 	/** Returns PathFollowingComponent subobject **/
 	UFUNCTION(BlueprintCallable, Category="AI|Navigation")
-	UPathFollowingComponent* GetPathFollowingComponent() const;
+	UPathFollowingComponent* GetPathFollowingComponent() const { return PathFollowingComponent; }
 	/** Returns ActionsComp subobject **/
-	UPawnActionsComponent* GetActionsComp() const;
+	UPawnActionsComponent* GetActionsComp() const { return ActionsComp; }
 	UFUNCTION(BlueprintPure, Category = "AI|Perception")
-	UAIPerceptionComponent* GetAIPerceptionComponent();
+	UAIPerceptionComponent* GetAIPerceptionComponent() { return PerceptionComponent; }
 
-	const UAIPerceptionComponent* GetAIPerceptionComponent() const;
+	const UAIPerceptionComponent* GetAIPerceptionComponent() const { return PerceptionComponent; }
 
 	UBrainComponent* GetBrainComponent() const { return BrainComponent; }
 	const UBlackboardComponent* GetBlackboardComponent() const { return Blackboard; }

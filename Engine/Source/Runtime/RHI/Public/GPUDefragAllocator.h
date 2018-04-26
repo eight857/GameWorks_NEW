@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,6 +8,7 @@
 #include "Misc/OutputDeviceRedirector.h"
 #include "HAL/IConsoleManager.h"
 #include "Containers/List.h"
+#include "HAL/LowLevelMemTracker.h"
 
 #define LOG_EVERY_ALLOCATION			0
 #define DUMP_ALLOC_FREQUENCY			0 // 100
@@ -399,6 +400,10 @@ public:
 		, bBenchmarkMode(false)
 	{}
 
+	virtual ~FGPUDefragAllocator()
+	{
+	}
+
 	/**
 	* Initialize this allocator with a preallocated block of memory.
 	*
@@ -787,6 +792,8 @@ protected:
 	*/
 	void Relocate(FRelocationStats& Stats, FMemoryChunk* Dest, int64 DestOffset, const void* Source, int64 Size, void* UserPayload)
 	{
+		LLM(FLowLevelMemTracker::Get().OnLowLevelAllocMoved(ELLMTracker::Default, Dest->Base, Source));
+
 		uint8* DestAddr = Dest->Base + DestOffset;
 		int64 MemDistance = (int64)(Dest)-(int64)(Source);
 		int64 AbsDistance = FMath::Abs(MemDistance);
@@ -938,7 +945,7 @@ protected:
 
 		// Resize base chunk.
 		BaseChunk->Size = FirstSize;
-	}
+	} //-V773
 
 	/**
 	* Marks the specified chunk as 'allocated' and updates tracking variables.

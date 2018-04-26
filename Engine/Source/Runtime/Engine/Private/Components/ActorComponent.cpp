@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 // ActorComponent.cpp: Actor component implementation.
 
 #include "Components/ActorComponent.h"
@@ -65,6 +65,10 @@ FAutoConsoleVariableRef GTickComponentLatentActionsWithTheComponentCVar(
 
 /** Enable to log out all render state create, destroy and updatetransform events */
 #define LOG_RENDER_STATE 0
+
+#if WITH_EDITOR
+FUObjectAnnotationSparseBool GSelectedComponentAnnotation;
+#endif
 
 /** Static var indicating activity of reregister context */
 int32 FGlobalComponentReregisterContext::ActiveGlobalReregisterContextCount = 0;
@@ -199,6 +203,7 @@ void UActorComponent::PostLoad()
 {
 	Super::PostLoad();
 
+#if WITH_EDITORONLY_DATA
 	if (GetLinkerUE4Version() < VER_UE4_ACTOR_COMPONENT_CREATION_METHOD)
 	{
 		if (IsTemplate())
@@ -235,6 +240,7 @@ void UActorComponent::PostLoad()
 			}
 		}
 	}
+#endif
 
 	if (CreationMethod == EComponentCreationMethod::SimpleConstructionScript)
 	{
@@ -401,7 +407,7 @@ ULevel* UActorComponent::GetComponentLevel() const
 {
 	// For model components Level is outer object
 	AActor* MyOwner = GetOwner();
-	return (MyOwner ? Cast<ULevel>(MyOwner->GetOuter()) : Cast<ULevel>( GetOuter() ) );
+	return (MyOwner ? MyOwner->GetLevel() : GetTypedOuter<ULevel>());
 }
 
 bool UActorComponent::ComponentIsInLevel(const ULevel *TestLevel) const
@@ -471,13 +477,17 @@ void UActorComponent::BeginDestroy()
 bool UActorComponent::NeedsLoadForClient() const
 {
 	check(GetOuter());
-	return (!IsEditorOnly() && GetOuter()->NeedsLoadForClient() && Super::NeedsLoadForClient());
+	// For Component Blueprints, avoid calling into the class to avoid recursion
+	bool bNeedsLoadOuter = HasAnyFlags(RF_ClassDefaultObject) || GetOuter()->NeedsLoadForClient();
+	return (!IsEditorOnly() && bNeedsLoadOuter && Super::NeedsLoadForClient());
 }
 
 bool UActorComponent::NeedsLoadForServer() const
 {
 	check(GetOuter());
-	return (!IsEditorOnly() && GetOuter()->NeedsLoadForServer() && Super::NeedsLoadForServer());
+	// For Component Blueprints, avoid calling into the class to avoid recursion
+	bool bNeedsLoadOuter = HasAnyFlags(RF_ClassDefaultObject) || GetOuter()->NeedsLoadForServer();
+	return (!IsEditorOnly() && bNeedsLoadOuter && Super::NeedsLoadForServer());
 }
 
 int32 UActorComponent::GetFunctionCallspace( UFunction* Function, void* Parameters, FFrame* Stack )
@@ -628,6 +638,11 @@ void UActorComponent::PostEditUndo()
 	Super::PostEditUndo();
 }
 
+bool UActorComponent::IsSelectedInEditor() const
+{
+	return !IsPendingKill() && GSelectedComponentAnnotation.Get(this);
+}
+
 void UActorComponent::ConsolidatedPostEditChange(const FPropertyChangedEvent& PropertyChangedEvent)
 {
 	static const FName NAME_CanEverAffectNavigation = GET_MEMBER_NAME_CHECKED(UActorComponent, bCanEverAffectNavigation);
@@ -714,6 +729,8 @@ void UActorComponent::OnUnregister()
 {
 	check(bRegistered);
 	bRegistered = false;
+
+	ClearNeedEndOfFrameUpdate();
 }
 
 void UActorComponent::InitializeComponent()
@@ -984,6 +1001,7 @@ void UActorComponent::RegisterComponentWithWorld(UWorld* InWorld)
 			if (!bHasBegunPlay)
 			{
 				BeginPlay();
+				ensureMsgf(bHasBegunPlay, TEXT("Failed to route BeginPlay (%s)"), *GetFullName());
 			}
 		}
 	}
@@ -1190,7 +1208,6 @@ void UActorComponent::CreatePhysicsState()
 
 		// Broadcast delegate
 		GlobalCreatePhysicsDelegate.Broadcast(this);
-		InstanceCreatePhysicsDelegate.Broadcast();
 	}
 }
 
@@ -1202,7 +1219,6 @@ void UActorComponent::DestroyPhysicsState()
 	{
 		// Broadcast delegate
 		GlobalDestroyPhysicsDelegate.Broadcast(this);
-		InstanceDestroyPhysicsDelegate.Broadcast();
 
 		ensureMsgf(bRegistered, TEXT("Component has physics state when not registered (%s)"), *GetFullName()); // should not have physics state unless we are registered
 
@@ -1418,6 +1434,18 @@ void UActorComponent::MarkForNeededEndOfFrameUpdate()
 	}
 }
 
+void UActorComponent::ClearNeedEndOfFrameUpdate_Internal()
+{
+	// If this is being garbage collected we don't really need to worry about clearing this
+	if (!HasAnyFlags(RF_BeginDestroyed) && !IsUnreachable())
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->ClearActorComponentEndOfFrameUpdate(this);
+		}
+	}
+}
+
 void UActorComponent::MarkForNeededEndOfFrameRecreate()
 {
 	if (bNeverNeedsRenderUpdate)
@@ -1516,7 +1544,7 @@ void UActorComponent::SetTickableWhenPaused(bool bTickableWhenPaused)
 bool UActorComponent::IsOwnerRunningUserConstructionScript() const
 {
 	AActor* MyOwner = GetOwner();
-	return (MyOwner && MyOwner->bRunningUserConstructionScript);
+	return (MyOwner && MyOwner->IsRunningUserConstructionScript());
 }
 
 void UActorComponent::AddAssetUserData(UAssetUserData* InUserData)
@@ -1684,7 +1712,7 @@ void UActorComponent::DetermineUCSModifiedProperties()
 
 			virtual bool ShouldSkipProperty(const UProperty* InProperty) const override
 			{
-				return (    InProperty->HasAnyPropertyFlags(CPF_Transient | CPF_ContainsInstancedReference | CPF_InstancedReference)
+				return (    InProperty->HasAnyPropertyFlags(CPF_Transient)
 						|| !InProperty->HasAnyPropertyFlags(CPF_Edit | CPF_Interp));
 			}
 		} PropertySkipper;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -8,8 +8,8 @@
 #include "Distributions/DistributionFloat.h"
 #include "DistributionFloatUniform.generated.h"
 
-UCLASS(collapsecategories, hidecategories=Object, editinlinenew, MinimalAPI)
-class UDistributionFloatUniform : public UDistributionFloat
+UCLASS(collapsecategories, hidecategories=Object, editinlinenew)
+class ENGINE_API UDistributionFloatUniform : public UDistributionFloat
 {
 	GENERATED_UCLASS_BODY()
 

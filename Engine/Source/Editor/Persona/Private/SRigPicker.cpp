@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SRigPicker.h"
 #include "Modules/ModuleManager.h"
@@ -103,7 +103,7 @@ void SRigPicker::OnAssetSelected(const FAssetData& AssetData)
 	OnClose.ExecuteIfBound();
 }
 
-bool SRigPicker::OnShouldFilterAsset(const class FAssetData& AssetData)
+bool SRigPicker::OnShouldFilterAsset(const struct FAssetData& AssetData)
 {
 	if (EngineHumanoidRig && AssetData.ObjectPath == FName(*EngineHumanoidRig->GetPathName()))
 	{

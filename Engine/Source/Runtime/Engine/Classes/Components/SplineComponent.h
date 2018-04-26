@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,7 +13,7 @@ class FPrimitiveDrawInterface;
 class FSceneView;
 
 /** Permitted spline point types for SplineComponent. */
-UENUM()
+UENUM(BlueprintType)
 namespace ESplinePointType
 {
 	enum Type
@@ -114,25 +114,25 @@ struct FSplinePoint
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	float InputKey;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FVector Position;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FVector ArriveTangent;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FVector LeaveTangent;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FRotator Rotation;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	FVector Scale;
 
-	UPROPERTY(EditAnywhere, Category = SplinePoint)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SplinePoint)
 	TEnumAsByte<ESplinePointType::Type> Type;
 
 	/** Default constructor */
@@ -330,9 +330,6 @@ public:
 
 	/** Get scale at the provided input key value */
 	FVector GetScaleAtSplineInputKey(float InKey) const;
-
-	DEPRECATED(4.9, "This has been replaced by GetNumberOfSplinePoints(), as it is a clearer name for Blueprint users.")
-	int32 GetNumSplinePoints() const { return GetNumberOfSplinePoints(); }
 
 	/** Specify unselected spline component segment color in the editor */
 	UFUNCTION(BlueprintCallable, Category = Editor)
@@ -664,11 +661,65 @@ public:
 
 
 private:
+	/** The dummy value used for queries when there are no point in a spline */
+	static const FInterpCurvePointVector DummyPointPosition;
+	static const FInterpCurvePointQuat DummyPointRotation;
+	static const FInterpCurvePointVector DummyPointScale;
+
+private:
 	/** Returns the length of the specified spline segment up to the parametric value given */
 	float GetSegmentLength(const int32 Index, const float Param = 1.0f) const;
 
 	/** Returns the parametric value t which would result in a spline segment of the given length between S(0)...S(t) */
 	float GetSegmentParamFromLength(const int32 Index, const float Length, const float SegmentLength) const;
+
+	/** Returns a const reference to the specified position point, but gives back a dummy point if there are no points */
+	inline const FInterpCurvePointVector& GetPositionPointSafe(int32 PointIndex) const
+	{
+		const TArray<FInterpCurvePointVector>& Points = SplineCurves.Position.Points;
+		const int32 NumPoints = Points.Num();
+		if (NumPoints > 0)
+		{
+			const int32 ClampedIndex = (bClosedLoop && PointIndex >= NumPoints) ? 0 : FMath::Clamp(PointIndex, 0, NumPoints - 1);
+			return Points[ClampedIndex];
+		}
+		else
+		{
+			return DummyPointPosition;
+		}
+	}
+
+	/** Returns a const reference to the specified rotation point, but gives back a dummy point if there are no points */
+	inline const FInterpCurvePointQuat& GetRotationPointSafe(int32 PointIndex) const
+	{
+		const TArray<FInterpCurvePointQuat>& Points = SplineCurves.Rotation.Points;
+		const int32 NumPoints = Points.Num();
+		if (NumPoints > 0)
+		{
+			const int32 ClampedIndex = (bClosedLoop && PointIndex >= NumPoints) ? 0 : FMath::Clamp(PointIndex, 0, NumPoints - 1);
+			return Points[ClampedIndex];
+		}
+		else
+		{
+			return DummyPointRotation;
+		}
+	}
+
+	/** Returns a const reference to the specified scale point, but gives back a dummy point if there are no points */
+	inline const FInterpCurvePointVector& GetScalePointSafe(int32 PointIndex) const
+	{
+		const TArray<FInterpCurvePointVector>& Points = SplineCurves.Scale.Points;
+		const int32 NumPoints = Points.Num();
+		if (NumPoints > 0)
+		{
+			const int32 ClampedIndex = (bClosedLoop && PointIndex >= NumPoints) ? 0 : FMath::Clamp(PointIndex, 0, NumPoints - 1);
+			return Points[ClampedIndex];
+		}
+		else
+		{
+			return DummyPointScale;
+		}
+	}
 };
 
 ENGINE_API EInterpCurveMode ConvertSplinePointTypeToInterpCurveMode(ESplinePointType::Type SplinePointType);

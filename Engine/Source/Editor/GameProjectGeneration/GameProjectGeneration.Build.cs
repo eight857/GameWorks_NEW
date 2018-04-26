@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -18,8 +18,9 @@ public class GameProjectGeneration : ModuleRules
             new string[] {
 				"AssetRegistry",
 				"ContentBrowser",
-                "DesktopPlatform",
-                "MainFrame",
+				"DesktopPlatform",
+				"LauncherPlatform",
+				"MainFrame",
 				"AddContentDialog",
 				"HardwareTargeting",
             }
@@ -28,23 +29,25 @@ public class GameProjectGeneration : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[] {
 				"Analytics",
-                "AppFramework",
+				"ApplicationCore",
+				"AppFramework",
 				"ClassViewer",
 				"Core",
 				"CoreUObject",
 				"Engine",
 				"EngineSettings",
-                "InputCore",
+				"InputCore",
 				"Projects",
-                "RenderCore",
+				"RenderCore",
 				"Slate",
 				"SlateCore",
-                "EditorStyle",
-                "SourceControl",
+				"EditorStyle",
+				"SourceControl",
  				"TargetPlatform",
 				"UnrealEd",
 				"DesktopPlatform",
-                "HardwareTargeting",
+				"LauncherPlatform",
+				"HardwareTargeting",
 				"AddContentDialog",
                 "AudioMixer"
 			}

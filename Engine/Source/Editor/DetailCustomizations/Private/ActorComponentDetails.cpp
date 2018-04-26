@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ActorComponentDetails.h"
 #include "Layout/Visibility.h"
@@ -30,7 +30,7 @@ void FActorComponentDetails::CustomizeDetails( IDetailLayoutBuilder& DetailBuild
 	TSharedPtr<IPropertyHandle> PrimaryTickProperty = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UActorComponent, PrimaryComponentTick));
 
 	// Defaults only show tick properties
-	if (PrimaryTickProperty->IsValidHandle() && DetailBuilder.GetDetailsView().HasClassDefaultObject())
+	if (PrimaryTickProperty->IsValidHandle() && DetailBuilder.HasClassDefaultObject())
 	{
 		IDetailCategoryBuilder& TickCategory = DetailBuilder.EditCategory("ComponentTick");
 

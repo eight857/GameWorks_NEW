@@ -1,6 +1,14 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Evaluation/MovieSceneAnimTypeID.h"
+
+namespace Lex
+{
+	FString ToString(const FMovieSceneAnimTypeID& AnimTypeID)
+	{
+		return FString::Printf(TEXT("%#010x"), AnimTypeID.ID);
+	}
+}
 
 uint64 FMovieSceneAnimTypeID::Initialize(uint64* StaticPtr, uint32 Seed)
 {
@@ -14,7 +22,7 @@ uint64 FMovieSceneAnimTypeID::GenerateHash(void* StaticPtr, uint32 Seed)
 {
 	// The bitvalue of the address with the upper 32 bits hashed with the seed
 	uint64 Address = (uint64)StaticPtr;
-	return (uint64(HashCombine(Address >> 32, Seed)) << 32) | (Address & 0xFFFFFFFF);
+	return (uint64(HashCombine(Address >> 32, Seed)) << 32) | (uint64)HashCombine(Address & 0xFFFFFFFF, Seed);
 }
 
 namespace
@@ -32,4 +40,12 @@ namespace
 FMovieSceneAnimTypeID FMovieSceneAnimTypeID::Unique()
 {
 	return FUniqueTypeID();
+}
+
+FMovieSceneAnimTypeID FMovieSceneAnimTypeID::Combine(FMovieSceneAnimTypeID A, FMovieSceneAnimTypeID B)
+{
+	FMovieSceneAnimTypeID Combined;
+	// Combine the two IDs by hashing both the lower and upper 32 bits together separately
+	Combined.ID = (uint64(HashCombine(A.ID >> 32, B.ID >> 32)) << 32) | HashCombine((uint32)A.ID, (uint32)B.ID);
+	return Combined;
 }

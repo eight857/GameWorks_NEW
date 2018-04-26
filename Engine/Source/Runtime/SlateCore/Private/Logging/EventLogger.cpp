@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Logging/EventLogger.h"
 #include "Misc/Paths.h"
@@ -58,7 +58,7 @@ void FFileEventLogger::SaveToFile()
 	FString LogFilePath;
 	{
 		const TCHAR LogFileName[] = TEXT("EventLog");
-		LogFilePath = FPaths::CreateTempFilename(*FPaths::GameLogDir(), LogFileName, TEXT(".log"));
+		LogFilePath = FPaths::CreateTempFilename(*FPaths::ProjectLogDir(), LogFileName, TEXT(".log"));
 	}
 
 	FOutputDeviceFile EventLogFile(*LogFilePath);

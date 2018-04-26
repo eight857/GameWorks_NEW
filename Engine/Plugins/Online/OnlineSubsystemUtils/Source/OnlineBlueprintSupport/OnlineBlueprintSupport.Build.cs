@@ -1,11 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
 public class OnlineBlueprintSupport : ModuleRules
 {
 	public OnlineBlueprintSupport(ReadOnlyTargetRules Target) : base(Target)
-	{
+    {
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 		
         PrivateDependencyModuleNames.AddRange(

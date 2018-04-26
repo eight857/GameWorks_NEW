@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AndroidFile.cpp: Android platform implementations of File functions
@@ -44,13 +44,13 @@ namespace
 		}
 
 		return FFileStatData(
-			AndroidEpoch + FTimespan(0, 0, FileInfo.st_ctime), 
-			AndroidEpoch + FTimespan(0, 0, FileInfo.st_atime), 
-			AndroidEpoch + FTimespan(0, 0, FileInfo.st_mtime), 
+			AndroidEpoch + FTimespan::FromSeconds(FileInfo.st_ctime), 
+			AndroidEpoch + FTimespan::FromSeconds(FileInfo.st_atime), 
+			AndroidEpoch + FTimespan::FromSeconds(FileInfo.st_mtime), 
 			FileSize,
 			bIsDirectory,
 			!!(FileInfo.st_mode & S_IWUSR)
-			);
+		);
 	}
 }
 
@@ -60,8 +60,8 @@ namespace
 // AndroidProcess uses this for executable name
 FString GAndroidProjectName;
 FString GPackageName;
-static int32 GPackageVersion = 0;
-static int32 GPackagePatchVersion = 0;
+int32 GAndroidPackageVersion = 0;
+int32 GAndroidPackagePatchVersion = 0;
 
 // External File Path base - setup during load
 FString GFilePathBase;
@@ -88,8 +88,8 @@ JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeSetObbInfo(JNIEnv* jen
 	GAndroidProjectName = UTF8_TO_TCHAR(JavaProjectChars);
 	const char* JavaPackageChars = jenv->GetStringUTFChars(PackageName, 0);
 	GPackageName = UTF8_TO_TCHAR(JavaPackageChars);
-	GPackageVersion = Version;
-	GPackagePatchVersion = PatchVersion;
+	GAndroidPackageVersion = Version;
+	GAndroidPackagePatchVersion = PatchVersion;
 
 	//Release the strings
 	jenv->ReleaseStringUTFChars(ProjectName, JavaProjectChars);
@@ -99,7 +99,7 @@ JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeSetObbInfo(JNIEnv* jen
 // Constructs the base path for any files which are not in OBB/pak data
 const FString &GetFileBasePath()
 {
-	static FString BasePath = GFilePathBase + FString(FILEBASE_DIRECTORY) + FApp::GetGameName() + FString("/");
+	static FString BasePath = GFilePathBase + FString(FILEBASE_DIRECTORY) + FApp::GetProjectName() + FString("/");
 	return BasePath;
 }
 
@@ -334,6 +334,18 @@ public:
 		Length = FMath::Max(Length, CurrentOffset);
 
 		return bSuccess;
+	}
+
+	virtual void Flush() override
+	{
+		CheckValid();
+		if (nullptr != File->Asset)
+		{
+			// Can't write to assets.
+			return;
+		}
+
+		fsync(File->Handle);
 	}
 
 	virtual int64 Size() override
@@ -934,8 +946,8 @@ public:
 			// See <http://developer.android.com/google/play/expansion-files.html>
 			FString OBBDir1 = GOBBFilePathBase + FString(TEXT("/Android/obb/") + GPackageName);
 			FString OBBDir2 = GOBBFilePathBase + FString(TEXT("/obb/") + GPackageName);
-			FString MainOBBName = FString::Printf(TEXT("main.%d.%s.obb"), GPackageVersion, *GPackageName);
-			FString PatchOBBName = FString::Printf(TEXT("patch.%d.%s.obb"), GPackageVersion, *GPackageName);
+			FString MainOBBName = FString::Printf(TEXT("main.%d.%s.obb"), GAndroidPackageVersion, *GPackageName);
+			FString PatchOBBName = FString::Printf(TEXT("patch.%d.%s.obb"), GAndroidPackageVersion, *GPackageName);
 			if (FileExists(*(OBBDir1 / MainOBBName), true))
 			{
 				MountOBB(*(OBBDir1 / MainOBBName));

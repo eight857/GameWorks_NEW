@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -101,6 +101,11 @@ public abstract class LocalizationProvider
 
 	public static LocalizationProvider GetLocalizationProvider(string InLocalizationProviderId, LocalizationProvider.LocalizationProviderArgs InLocalizationProviderArgs)
 	{
+		if (String.IsNullOrEmpty(InLocalizationProviderId))
+		{
+			return null;
+		}
+
 		if (CachedLocalizationProviderTypes == null)
 		{
 			// Find all types that derive from LocalizationProvider in any of our DLLs

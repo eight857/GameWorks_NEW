@@ -1,9 +1,10 @@
-INTSourceChangelist:3108692
+INTSourceChangelist:3782314
 Title: January 2014 Release Notes
 Crumbs:%ROOT%, Support/Builds
 Description:
 Availability:Licensee
-Template:ReleaseNotes.html
+Parent:Support/Builds
+Order:-2
 
 [TOC(start:2 end:2)]
 
@@ -20,13 +21,15 @@ Template:ReleaseNotes.html
 | **DirectX** | June 2010 |
 [/REGION]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:Labels]
 QA_APPROVED_UE4_BUILD_2014_01  
 QA_APPROVED_UE4_BUILD_CURRENT  
 QA_APPROVED_UE4_BUILD_MINIMUM
 [/EXCERPT:Labels]
--->
+
+[/COMMENT]
 
 ## Important information
 

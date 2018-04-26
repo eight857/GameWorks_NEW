@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	HitProxies.cpp: Hit proxy implementation.
@@ -7,8 +7,12 @@
 #include "HitProxies.h"
 #include "Misc/ScopeLock.h"
 
+/// @cond DOXYGEN_WARNINGS
+
 IMPLEMENT_HIT_PROXY_BASE( HHitProxy, NULL );
 IMPLEMENT_HIT_PROXY(HObject,HHitProxy);
+
+/// @endcond
 
 const FHitProxyId FHitProxyId::InvisibleHitProxyId( INDEX_NONE - 1 );
 

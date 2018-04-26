@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "K2Node_VariableGet.h"
@@ -111,19 +111,16 @@ void UK2Node_VariableGet::CreateNonPurePins(TArray<UEdGraphPin*>* InOldPinsPtr)
 		}
 		// If there is no property and we are given some old pins to look at, find the old value pin and use the type there
 		// This allows nodes to be pasted into other BPs without access to the property
-		else if(InOldPinsPtr)
+		else if (InOldPinsPtr)
 		{
 			// find old variable pin and use the type.
-			const FString PinName = GetVarNameString();
-			for(auto Iter = InOldPinsPtr->CreateConstIterator(); Iter; ++Iter)
+			const FName PinName = GetVarName();
+			for (const UEdGraphPin* Pin : *InOldPinsPtr)
 			{
-				if(const UEdGraphPin* Pin = *Iter)
+				if (Pin && PinName == Pin->PinName)
 				{
-					if(PinName == Pin->PinName)
-					{
-						PinType = Pin->PinType;
-						break;
-					}
+					PinType = Pin->PinType;
+					break;
 				}
 			}
 
@@ -132,13 +129,13 @@ void UK2Node_VariableGet::CreateNonPurePins(TArray<UEdGraphPin*>* InOldPinsPtr)
 		if (IsValidTypeForNonPure(PinType))
 		{
 			// Input - Execution Pin
-			CreatePin(EGPD_Input, K2Schema->PC_Exec, TEXT(""), NULL, false, false, K2Schema->PN_Execute);
+			CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
 
 			// Output - Execution Pins
-			UEdGraphPin* ValidPin = CreatePin(EGPD_Output, K2Schema->PC_Exec, TEXT(""), NULL, false, false, K2Schema->PN_Then);
+			UEdGraphPin* ValidPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
 			ValidPin->PinFriendlyName = LOCTEXT("Valid", "Is Valid");
 
-			UEdGraphPin* InvalidPin = CreatePin(EGPD_Output, K2Schema->PC_Exec, TEXT(""), NULL, false, false, K2Schema->PN_Else);
+			UEdGraphPin* InvalidPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Else);
 			InvalidPin->PinFriendlyName = LOCTEXT("Invalid", "Is Not Valid");
 		}
 		else
@@ -272,7 +269,7 @@ FText UK2Node_VariableGet::GetTooltipText() const
 FText UK2Node_VariableGet::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
 	// If there is only one variable being read, the title can be made the variable name
-	FString OutputPinName;
+	FName OutputPinName;
 	int32 NumOutputsFound = 0;
 
 	for (int32 PinIndex = 0; PinIndex < Pins.Num(); ++PinIndex)
@@ -306,7 +303,7 @@ FText UK2Node_VariableGet::GetNodeTitle(ENodeTitleType::Type TitleType) const
 	else if (CachedNodeTitle.IsOutOfDate(this))
 	{
 		FFormatNamedArguments Args;
-		Args.Add(TEXT("PinName"), FText::FromString(OutputPinName));
+		Args.Add(TEXT("PinName"), FText::FromName(OutputPinName));
 		// FText::Format() is slow, so we cache this to save on performance
 		CachedNodeTitle.SetCachedText(FText::Format(LOCTEXT("GetPinName", "Get {PinName}"), Args), this);
 	}
@@ -320,7 +317,7 @@ FNodeHandlingFunctor* UK2Node_VariableGet::CreateNodeHandler(FKismetCompilerCont
 
 bool UK2Node_VariableGet::IsValidTypeForNonPure(const FEdGraphPinType& InPinType)
 {
-	return InPinType.bIsArray == false && (InPinType.PinCategory == UObject::StaticClass()->GetName() ||InPinType.PinCategory == UClass::StaticClass()->GetName());
+	return !InPinType.IsContainer() && (InPinType.PinCategory == UEdGraphSchema_K2::PC_Object || InPinType.PinCategory == UEdGraphSchema_K2::PC_Class || InPinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject || InPinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass);
 }
 
 void UK2Node_VariableGet::GetContextMenuActions(const FGraphNodeContextMenuBuilder& Context) const
@@ -328,7 +325,7 @@ void UK2Node_VariableGet::GetContextMenuActions(const FGraphNodeContextMenuBuild
 	Super::GetContextMenuActions(Context);
 
 	const UEdGraphPin* ValuePin = GetValuePin();
-	if (IsValidTypeForNonPure(ValuePin->PinType))
+	if (ValuePin && IsValidTypeForNonPure(ValuePin->PinType))
 	{
 		Context.MenuBuilder->BeginSection("K2NodeVariableGet", LOCTEXT("VariableGetHeader", "Variable Get"));
 		{
@@ -367,7 +364,7 @@ void UK2Node_VariableGet::GetContextMenuActions(const FGraphNodeContextMenuBuild
 				FSlateIcon(),
 				FUIAction(
 				FExecuteAction::CreateUObject(this, &UK2Node_VariableGet::TogglePurity),
-				FCanExecuteAction::CreateStatic(CanExecutePurityToggle, bCanTogglePurity),
+				FCanExecuteAction::CreateStatic(CanExecutePurityToggle, bCanTogglePurity && !Context.bIsDebugging),
 				FIsActionChecked()
 				)
 				);
@@ -407,23 +404,68 @@ void UK2Node_VariableGet::SetPurity(bool bNewPurity)
 	}
 }
 
+void UK2Node_VariableGet::ValidateNodeDuringCompilation(FCompilerResultsLog& MessageLog) const
+{
+	Super::ValidateNodeDuringCompilation(MessageLog);
+
+	// Some expansions, such as timelines, will create gets for non-blueprint visible properties, and we don't want to validate against that
+	if (!IsIntermediateNode())
+	{
+		if (UProperty* Property = GetPropertyForVariable())
+		{
+			const FBlueprintEditorUtils::EPropertyReadableState PropertyReadableState = FBlueprintEditorUtils::IsPropertyReadableInBlueprint(GetBlueprint(), Property);
+
+			if (PropertyReadableState != FBlueprintEditorUtils::EPropertyReadableState::Readable)
+			{
+				FFormatNamedArguments Args;
+				if (UObject* Class = Property->GetOuter())
+				{
+					Args.Add(TEXT("VariableName"), FText::AsCultureInvariant(FString::Printf(TEXT("%s.%s"), *Class->GetName(), *Property->GetName())));
+				}
+				else
+				{
+					Args.Add(TEXT("VariableName"), FText::AsCultureInvariant(Property->GetName()));
+				}
+
+				if (PropertyReadableState == FBlueprintEditorUtils::EPropertyReadableState::NotBlueprintVisible)
+				{
+					// DEPRECATED(4.17) ... make this an error
+					MessageLog.Warning(*FText::Format(LOCTEXT("UnableToGet_NotVisible", "{VariableName} is not blueprint visible (BlueprintReadOnly or BlueprintReadWrite). Please fix mark up or cease accessing as this will be made an error in a future release. @@"), Args).ToString(), this);
+				}
+				else if (PropertyReadableState == FBlueprintEditorUtils::EPropertyReadableState::Private)
+				{
+					// DEPRECATED(4.17) ... make this an error
+					MessageLog.Warning(*FText::Format(LOCTEXT("UnableToGet_ReadOnly", "{VariableName} is private and not accessible in this context. Please fix mark up or cease accessing as this will be an error in a future release. @@"), Args).ToString(), this);
+				}
+				else
+				{
+					check(false);
+				}
+			}
+		}
+	}
+}
+
 void UK2Node_VariableGet::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
 
+	UProperty* VariableProperty = GetPropertyForVariable();
+
+	UK2Node_VariableGet* VariableGetNode = this;
+
 	// Do not attempt to expand the node when not a pure get nor when there is no property. Normal compilation error detection will detect the missing property.
-	if (!bIsPureGet && GetPropertyForVariable() != nullptr)
+	if (!bIsPureGet && VariableProperty)
 	{
-		const UEdGraphSchema_K2* Schema = CompilerContext.GetSchema();
 		UEdGraphPin* ValuePin = GetValuePin();
 
 		// Impure Get nodes convert into three nodes:
 		// 1. A pure Get node
 		// 2. An IsValid node
-		// 3. A Branch node (only impure part
+		// 3. A Branch node (only impure part)
 		
-		// Create the impure Get node
-		UK2Node_VariableGet* VariableGetNode = CompilerContext.SpawnIntermediateNode<UK2Node_VariableGet>(this, SourceGraph);
+		// Create the pure Get node
+		VariableGetNode = CompilerContext.SpawnIntermediateNode<UK2Node_VariableGet>(this, SourceGraph);
 		VariableGetNode->VariableReference = VariableReference;
 		VariableGetNode->AllocateDefaultPins();
 		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(VariableGetNode, this);
@@ -432,20 +474,28 @@ void UK2Node_VariableGet::ExpandNode(class FKismetCompilerContext& CompilerConte
 		CompilerContext.MovePinLinksToIntermediate(*ValuePin, *VariableGetNode->GetValuePin());
 		if (!VariableReference.IsLocalScope())
 		{
-			CompilerContext.MovePinLinksToIntermediate(*FindPin(Schema->PN_Self), *VariableGetNode->FindPin(Schema->PN_Self));
+			CompilerContext.MovePinLinksToIntermediate(*FindPin(UEdGraphSchema_K2::PN_Self), *VariableGetNode->FindPin(UEdGraphSchema_K2::PN_Self));
 		}
 
 		// Create the IsValid node
 		UK2Node_CallFunction* IsValidFunction = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 
 		// Based on if the type is an "Object" or a "Class" changes which function to use
-		if (ValuePin->PinType.PinCategory == UObject::StaticClass()->GetName())
+		if (ValuePin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object)
 		{
 			IsValidFunction->SetFromFunction(UKismetSystemLibrary::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UKismetSystemLibrary, IsValid)));
 		}
-		else if (ValuePin->PinType.PinCategory == UClass::StaticClass()->GetName())
+		else if (ValuePin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
 		{
 			IsValidFunction->SetFromFunction(UKismetSystemLibrary::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UKismetSystemLibrary, IsValidClass)));
+		}
+		else if (ValuePin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject)
+		{
+			IsValidFunction->SetFromFunction(UKismetSystemLibrary::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UKismetSystemLibrary, IsValidSoftObjectReference)));
+		}
+		else if (ValuePin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass)
+		{
+			IsValidFunction->SetFromFunction(UKismetSystemLibrary::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UKismetSystemLibrary, IsValidSoftClassReference)));
 		}
 		IsValidFunction->AllocateDefaultPins();
 		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(IsValidFunction, this);
@@ -469,10 +519,34 @@ void UK2Node_VariableGet::ExpandNode(class FKismetCompilerContext& CompilerConte
 		CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *BranchNode->GetExecPin());
 
 		// Move the two Branch pins to the Branch node
-		CompilerContext.MovePinLinksToIntermediate(*FindPin(Schema->PN_Then), *BranchNode->FindPin(Schema->PN_Then));
-		CompilerContext.MovePinLinksToIntermediate(*FindPin(Schema->PN_Else), *BranchNode->FindPin(Schema->PN_Else));
+		CompilerContext.MovePinLinksToIntermediate(*FindPin(UEdGraphSchema_K2::PN_Then), *BranchNode->FindPin(UEdGraphSchema_K2::PN_Then));
+		CompilerContext.MovePinLinksToIntermediate(*FindPin(UEdGraphSchema_K2::PN_Else), *BranchNode->FindPin(UEdGraphSchema_K2::PN_Else));
 
 		BreakAllNodeLinks();
+	}
+
+	// If property has a BlueprintGetter accessor, then replace the variable get node with a call function
+	if (VariableProperty)
+	{
+		const FString& GetFunctionName = VariableProperty->GetMetaData(FBlueprintMetadata::MD_PropertyGetFunction);
+		if (!GetFunctionName.IsEmpty())
+		{
+			UClass* OwnerClass = VariableProperty->GetOwnerClass();
+			UFunction* GetFunction = OwnerClass->FindFunctionByName(*GetFunctionName);
+			check(GetFunction);
+
+			UK2Node_CallFunction* CallFuncNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+			CallFuncNode->SetFromFunction(GetFunction);
+			CallFuncNode->AllocateDefaultPins();
+
+			const UEdGraphSchema_K2* K2Schema = CompilerContext.GetSchema();
+
+			// Move Self pin connections
+			CompilerContext.MovePinLinksToIntermediate(*K2Schema->FindSelfPin(*this, EGPD_Input), *K2Schema->FindSelfPin(*CallFuncNode, EGPD_Input));
+
+			// Move Value pin connections
+			CompilerContext.MovePinLinksToIntermediate(*GetValuePin(), *CallFuncNode->GetReturnValuePin());
+		}
 	}
 }
 

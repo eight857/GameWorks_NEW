@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Tracks/MovieSceneFadeTrack.h"
 #include "Sections/MovieSceneFadeSection.h"
@@ -14,8 +14,7 @@
 UMovieSceneFadeTrack::UMovieSceneFadeTrack(const FObjectInitializer& Init)
 	: Super(Init)
 {
-	EvalOptions.bCanEvaluateNearestSection = true;
-	EvalOptions.bEvaluateNearestSection = false;
+	EvalOptions.bEvaluateNearestSection_DEPRECATED = EvalOptions.bCanEvaluateNearestSection = true;
 }
 
 UMovieSceneSection* UMovieSceneFadeTrack::CreateNewSection()

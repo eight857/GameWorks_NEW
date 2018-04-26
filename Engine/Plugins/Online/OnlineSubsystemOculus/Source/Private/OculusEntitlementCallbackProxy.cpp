@@ -1,9 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OculusEntitlementCallbackProxy.h"
 #include "OnlineSubsystemOculusPrivate.h"
 #include "Online.h"
-#include "OnlineIdentityOculus.h"
 
 UOculusEntitlementCallbackProxy::UOculusEntitlementCallbackProxy(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -39,7 +38,7 @@ void UOculusEntitlementCallbackProxy::Activate()
 
 void UOculusEntitlementCallbackProxy::OnUserPrivilegeCompleteDelegate(const FUniqueNetId& UserId, EUserPrivileges::Type Privilege, uint32 Result)
 {
-    if (Result == (uint32)IOnlineIdentity::EPrivilegeResults::NoFailures)
+    if (Result == static_cast<uint32>(IOnlineIdentity::EPrivilegeResults::NoFailures))
     {
 		OnSuccess.Broadcast();
     }

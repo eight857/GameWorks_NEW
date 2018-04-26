@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Layout/Geometry.h"
 
@@ -6,6 +6,7 @@ FGeometry::FGeometry()
 	: Size(0.0f, 0.0f)
 	, Scale(1.0f)
 	, AbsolutePosition(0.0f, 0.0f)
+	, bHasRenderTransform(false)
 {
 }
 

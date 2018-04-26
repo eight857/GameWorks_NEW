@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SPropertyTreeViewImpl.h"
@@ -81,6 +81,17 @@ public:
 	virtual void NotifyFinishedChangingProperties(const FPropertyChangedEvent& PropertyChangedEvent) override {}
 
 	virtual bool DontUpdateValueWhileEditing() const override
+	{
+		return false;
+	}
+
+	const TArray<TWeakObjectPtr<UObject>>& GetSelectedObjects() const override
+	{
+		static TArray<TWeakObjectPtr<UObject>> NotSupported;
+		return NotSupported;
+	}
+
+	virtual bool HasClassDefaultObject() const override
 	{
 		return false;
 	}
@@ -667,7 +678,16 @@ void SPropertyTreeViewImpl::OnGetChildrenForPropertyNode( TSharedPtr<FPropertyNo
 		UProperty* Property = ChildNode->GetProperty();
 		if(Property != NULL && IsPropertyVisible.IsBound())
 		{
-			FPropertyAndParent PropertyAndParent(*Property, InPropertyNode->GetProperty());
+			TArray< TWeakObjectPtr<UObject> > Objects;
+			if ( ObjNode )
+			{
+				for (int32 ObjectIndex = 0; ObjectIndex < ObjNode->GetNumObjects(); ++ObjectIndex)
+				{
+					Objects.Add(ObjNode->GetUObject(ObjectIndex));
+				}
+			}
+
+			FPropertyAndParent PropertyAndParent(*Property, InPropertyNode->GetProperty(), Objects);
 
 			bPropertyVisible = IsPropertyVisible.Execute( PropertyAndParent );
 		}
@@ -777,7 +797,7 @@ void SPropertyTreeViewImpl::SetObjectArray( const TArray< TWeakObjectPtr< UObjec
 	}
 	else
 	{
-		Title = FString::Printf( *NSLOCTEXT("PropertyView", "MultipleSelected", "%s (%i selected)").ToString(), *RootPropertyNode->GetObjectBaseClass()->GetName(), RootPropertyNode->GetNumObjects() );
+		Title = FText::Format( NSLOCTEXT("PropertyView", "MultipleSelectedFmt", "{0} ({1} selected)"), FText::FromString(RootPropertyNode->GetObjectBaseClass()->GetName()), RootPropertyNode->GetNumObjects() ).ToString();
 	}
 
 	OnObjectArrayChanged.ExecuteIfBound(Title, InObjects);
@@ -971,8 +991,7 @@ void SPropertyTreeViewImpl::FilterView( const FString& InFilterText )
 
 	FString ParseString = InFilterText;
 	// Remove whitespace from the front and back of the string
-	ParseString.Trim();
-	ParseString.TrimTrailing();
+	ParseString.TrimStartAndEndInline();
 	ParseString.ParseIntoArray(FilterStrings, TEXT(" "), true);
 
 	RootPropertyNode->FilterNodes( FilterStrings );

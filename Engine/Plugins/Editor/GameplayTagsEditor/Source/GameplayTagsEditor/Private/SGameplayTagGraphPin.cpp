@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SGameplayTagGraphPin.h"
 #include "Widgets/Input/SComboButton.h"
@@ -53,10 +53,7 @@ void SGameplayTagGraphPin::ParseDefaultValueData()
 		UFunction* ThisFunction = CallFuncNode->GetTargetFunction();
 		if (ThisFunction)
 		{
-			if (ThisFunction->HasMetaData(TEXT("GameplayTagFilter")))
-			{
-				FilterString = ThisFunction->GetMetaData(TEXT("GameplayTagFilter"));
-			}
+			FilterString = UGameplayTagsManager::Get().GetCategoriesMetaFromFunction(ThisFunction);
 		}
 	}
 

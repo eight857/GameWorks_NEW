@@ -1,6 +1,5 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
-#include "LoginFlowPrivatePCH.h"
 #include "SLoginFlow.h"
 #include "LoginFlowViewModel.h"
 #include "SWebBrowser.h"
@@ -8,6 +7,8 @@
 #include "IWebBrowserPopupFeatures.h"
 #include "IWebBrowserDialog.h"
 #include "SWindowTitleBar.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Misc/ScopeLock.h"
 
 class SLoginFlowImpl 
 	: public SLoginFlow
@@ -16,6 +17,7 @@ public:
 	virtual void Construct(const FArguments& InArgs, const TSharedRef<FLoginFlowViewModel>& InViewModel) override
 	{
 		bEncounteredError = false;
+		bOpenDevTools = false;
 		ViewModel = InViewModel;
 		StyleSet = InArgs._StyleSet;
 
@@ -201,6 +203,7 @@ private:
 		// Chrome debug tools are allowed to open a popup window.
 		if(Url.Contains(TEXT("chrome-devtools")))
 		{
+			bOpenDevTools = true;
 			return false;
 		}
 
@@ -254,10 +257,13 @@ private:
 
 	void HandleBrowserUrlChanged(const FText& Url)
 	{
-		FString CurrentURL = MainBrowser->GetUrl();
-		UE_LOG(LogLoginFlow, Log, TEXT("HandleBrowserUrlChanged Current: %s New: %s"), *CurrentURL, *Url.ToString());
+		if (0) // HandleBrowserBeforeBrowse seems to do all that is required atm
+		{
+			FString CurrentURL = MainBrowser->GetUrl();
+			UE_LOG(LogLoginFlow, Log, TEXT("HandleBrowserUrlChanged Current: %s New: %s"), *CurrentURL, *Url.ToString());
 
-		ViewModel->HandleBrowserUrlChanged(Url);
+			ViewModel->HandleBrowserUrlChanged(Url);
+		}
 	}
 
 	bool HandleBrowserCloseWindow(const TWeakPtr<IWebBrowserWindow>& BrowserWindowPtr)
@@ -313,29 +319,9 @@ private:
 		check(PopupFeatures.IsValid())
 
 		// All allowed popups, with the exception of the dev tools, are spawned as an overlay on top of the login flow browser.
-		if (PopupFeaturesSP->GetAdditionalFeatures().Find(TEXT("Epic_DevTools")) == INDEX_NONE)
+		if (bOpenDevTools)
 		{
-			TSharedPtr<IWebBrowserWindow> NewBrowserWindowSP = NewBrowserWindow.Pin();
-			check(NewBrowserWindowSP.IsValid());
-			
-			TSharedRef<SWebBrowserView> NewBrowserToOverlay =
-				SNew(SWebBrowserView, NewBrowserWindowSP)
-				.ShowErrorMessage(false)
-				.SupportsTransparency(true)
-				.OnLoadError(this, &SLoginFlowImpl::HandleOverlayBrowserLoadError, NewBrowserWindow)
-				.OnBeforePopup(this, &SLoginFlowImpl::HandleBeforePopup)
-				.OnCreateWindow(this, &SLoginFlowImpl::HandleBrowserCreateWindow)
-				.OnCloseWindow(this, &SLoginFlowImpl::HandleBrowserCloseWindow)
-				.OnBeforeNavigation(this, &SLoginFlowImpl::HandleBrowserBeforeBrowse)
-				.OnShowDialog(this, &SLoginFlowImpl::HandleShowDialog);
-
-			AddWebOverlay(NewBrowserToOverlay);
-			BrowserOverlayWidgets.Add(NewBrowserWindow, NewBrowserToOverlay);
-
-			return true;
-		}
-		else
-		{
+			bOpenDevTools = false;
 			// Dev tools spawn in a new window.
 			TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(SharedThis(this));
 			if (ParentWindow.IsValid())
@@ -348,8 +334,6 @@ private:
 				const int Height = PopupFeaturesSP->IsHeightSet() ? PopupFeaturesSP->GetHeight() : 600;
 				const FVector2D BrowserWindowSize(Width, Height);
 
-				bool bHideTitleBar = PopupFeaturesSP->GetAdditionalFeatures().Find(TEXT("Epic_HideTitleBar")) != INDEX_NONE;
-
 				const ESizingRule SizeingRule = PopupFeaturesSP->IsResizable() ? ESizingRule::UserSized : ESizingRule::FixedSize;
 
 				TSharedPtr<IWebBrowserWindow> NewBrowserWindowSP = NewBrowserWindow.Pin();
@@ -357,7 +341,7 @@ private:
 
 				TSharedRef<SWindow> BrowserWindowWidget =
 					SNew(SWindow)
-					.Title(FText::FromString("Debug Tools"))
+					.Title(FText::GetEmpty())
 					.ClientSize(BrowserWindowSize)
 					.ScreenPosition(BrowserWindowPosition)
 					.AutoCenter(EAutoCenter::None)
@@ -365,45 +349,25 @@ private:
 					.SupportsMaximize(SizeingRule != ESizingRule::FixedSize)
 					.SupportsMinimize(SizeingRule != ESizingRule::FixedSize)
 					.HasCloseButton(true)
-					.CreateTitleBar(false)
+					.CreateTitleBar(true)
 					.IsInitiallyMaximized(PopupFeaturesSP->IsFullscreen())
 					.LayoutBorder(FMargin(0));
 
 				// Setup browser widget.
 				TSharedPtr<SWebBrowser> BrowserWidget;
-				{
-					TSharedPtr<SVerticalBox> Contents;
 					BrowserWindowWidget->SetContent(
 						SNew(SBorder)
 						.VAlign(VAlign_Fill)
 						.HAlign(HAlign_Fill)
 						.Padding(0)
 						[
-							SAssignNew(Contents, SVerticalBox)
-						]);
-
-					if (!bHideTitleBar)
-					{
-						Contents->AddSlot()
-						.VAlign(VAlign_Top)
-						.AutoHeight()
-						[
-							SNew(SWindowTitleBar, BrowserWindowWidget, nullptr, HAlign_Center)
-							.ShowAppIcon(false)
-							.Title(FText::GetEmpty())
-						];
-					}
-
-					Contents->AddSlot()
-					[
 						SAssignNew(BrowserWidget, SWebBrowser, NewBrowserWindowSP)
 						.ShowControls(PopupFeaturesSP->IsToolBarVisible())
 						.ShowAddressBar(PopupFeaturesSP->IsLocationBarVisible())
 						.OnCreateWindow(this, &SLoginFlowImpl::HandleBrowserCreateWindow)
 						.OnCloseWindow(this, &SLoginFlowImpl::HandleBrowserCloseWindow)
 						.OnShowDialog(this, &SLoginFlowImpl::HandleShowDialog)
-					];
-				}
+					]);
 
 				// Setup some OnClose stuff.
 			{
@@ -434,11 +398,32 @@ private:
 
 			FSlateApplication::Get().AddWindow(BrowserWindowWidget);
 			BrowserWindowWidget->BringToFront();
-			FSlateApplication::Get().SetKeyboardFocus(BrowserWidget, EKeyboardFocusCause::SetDirectly);
+			FSlateApplication::Get().SetKeyboardFocus(BrowserWidget, EFocusCause::SetDirectly);
 
 			BrowserWindowWidgets.Add(NewBrowserWindow, BrowserWindowWidget);
 			return true;
 			}
+		}
+		else
+		{
+			TSharedPtr<IWebBrowserWindow> NewBrowserWindowSP = NewBrowserWindow.Pin();
+			check(NewBrowserWindowSP.IsValid());
+
+			TSharedRef<SWebBrowserView> NewBrowserToOverlay =
+				SNew(SWebBrowserView, NewBrowserWindowSP)
+				.ShowErrorMessage(false)
+				.SupportsTransparency(true)
+				.OnLoadError(this, &SLoginFlowImpl::HandleOverlayBrowserLoadError, NewBrowserWindow)
+				.OnBeforePopup(this, &SLoginFlowImpl::HandleBeforePopup)
+				.OnCreateWindow(this, &SLoginFlowImpl::HandleBrowserCreateWindow)
+				.OnCloseWindow(this, &SLoginFlowImpl::HandleBrowserCloseWindow)
+				.OnBeforeNavigation(this, &SLoginFlowImpl::HandleBrowserBeforeBrowse)
+				.OnShowDialog(this, &SLoginFlowImpl::HandleShowDialog);
+
+			AddWebOverlay(NewBrowserToOverlay);
+			BrowserOverlayWidgets.Add(NewBrowserWindow, NewBrowserToOverlay);
+
+			return true;
 		}
 
 		return false;
@@ -446,11 +431,14 @@ private:
 
 	bool HandleBrowserBeforeBrowse(const FString& Url, const FWebNavigationRequest& Request)
 	{
-		UE_LOG(LogLoginFlow, Log, TEXT("HandleBrowserBeforeBrowse URL: %s %d Redirect: %d"), *Url, Request.bIsMainFrame, Request.bIsRedirect);
-
-		if (Request.bIsRedirect)
+		if (Request.bIsMainFrame && Request.bIsRedirect)
 		{
+			UE_LOG(LogLoginFlow, Log, TEXT("HandleBrowserBeforeBrowse URL: %s"), *Url);
 			return ViewModel->HandleBeforeBrowse(Url);
+		}
+		else
+		{
+			UE_LOG(LogLoginFlow, VeryVerbose, TEXT("HandleBrowserBeforeBrowse skipped URL: %s MainFrame: %d Redirect: %d"), *Url, Request.bIsMainFrame, Request.bIsRedirect);
 		}
 		return false;
 	}
@@ -480,6 +468,7 @@ private:
 	FCriticalSection NavigationQueueCS;
 
 	bool bEncounteredError;
+	bool bOpenDevTools;
 	const ISlateStyle* StyleSet;
 };
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayCueNotify_Actor.h"
 #include "TimerManager.h"
@@ -55,7 +55,7 @@ void AGameplayCueNotify_Actor::PostEditChangeProperty(FPropertyChangedEvent& Pro
 	const UProperty* PropertyThatChanged = PropertyChangedEvent.Property;
 	UBlueprint* Blueprint = UBlueprint::GetBlueprintFromClass(GetClass());
 
-	if (PropertyThatChanged && PropertyThatChanged->GetFName() == FName(TEXT("GameplayCueTag")))
+	if (PropertyThatChanged && PropertyThatChanged->GetFName() == GET_MEMBER_NAME_CHECKED(AGameplayCueNotify_Actor, GameplayCueTag))
 	{
 		DeriveGameplayCueTagFromAssetName();
 		UAbilitySystemGlobals::Get().GetGameplayCueManager()->HandleAssetDeleted(Blueprint);
@@ -160,7 +160,7 @@ void AGameplayCueNotify_Actor::HandleGameplayCue(AActor* MyTarget, EGameplayCueE
 
 		if (EventType == EGameplayCueEvent::WhileActive && !bAllowMultipleWhileActiveEvents && bHasHandledWhileActiveEvent)
 		{
-			ABILITY_LOG(Display, TEXT("GameplayCue Notify %s WhileActive already handled, skipping this one."), *GetName());
+			ABILITY_LOG(Log, TEXT("GameplayCue Notify %s WhileActive already handled, skipping this one."), *GetName());
 			return;
 		}
 
@@ -344,7 +344,7 @@ bool AGameplayCueNotify_Actor::Recycle()
 	// Clear owner, hide, detach from parent
 	SetOwner(nullptr);
 	SetActorHiddenInGame(true);
-	DetachRootComponentFromParent();
+	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
 	return true;
 }

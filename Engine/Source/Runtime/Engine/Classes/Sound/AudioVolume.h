@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /**
  *
@@ -68,6 +68,10 @@ struct FReverbSettings
 	/** The reverb asset to employ. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=ReverbSettings)
 	class UReverbEffect* ReverbEffect;
+
+	/** This is used to apply plugin-specific settings when a Reverb Plugin is being used. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = ReverbSettings)
+	class USoundEffectSubmixPreset* ReverbPluginEffect;
 
 	/** Volume level of the reverb affect. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=ReverbSettings)
@@ -244,6 +248,7 @@ public:
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif // WITH_EDITOR
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	//~ End UObject Interface
 
 	//~ Begin AActor Interface

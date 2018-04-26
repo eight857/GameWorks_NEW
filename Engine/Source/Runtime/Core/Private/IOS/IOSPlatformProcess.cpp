@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 IOSPlatformProcess.cpp: iOS implementations of Process functions
@@ -41,21 +41,17 @@ void FIOSPlatformProcess::LaunchURL( const TCHAR* URL, const TCHAR* Parms, FStri
 {
 	UE_LOG(LogIOS, Log,  TEXT("LaunchURL %s %s"), URL, Parms?Parms:TEXT("") );
 	NSString* CFUrl = (NSString*)FPlatformString::TCHARToCFString( URL );
-    CFUrl = [CFUrl stringByAddingPercentEncodingWithAllowedCharacters: [NSCharacterSet URLQueryAllowedCharacterSet]];
-	[[UIApplication sharedApplication] openURL: [NSURL URLWithString:( NSString *)CFUrl]];
-
+	bool Result = [[UIApplication sharedApplication] openURL: [NSURL URLWithString: CFUrl]];
 	if (Error != nullptr)
 	{
-		*Error = TEXT("");
+		*Error = Result ? TEXT("") : TEXT("unable to open url");
 	}
 }
 
 bool FIOSPlatformProcess::CanLaunchURL(const TCHAR* URL)
 {
 	NSString* CFUrl = (NSString*)FPlatformString::TCHARToCFString(URL);
-    CFUrl = [CFUrl stringByAddingPercentEncodingWithAllowedCharacters: [NSCharacterSet URLQueryAllowedCharacterSet]];
-	bool Result = [[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString : (NSString *)CFUrl]];
-
+    bool Result = [[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString: CFUrl]];
 	return Result;
 }
 
@@ -133,6 +129,32 @@ const TCHAR* FIOSPlatformProcess::ExecutableName(bool bRemoveExtension)
 		FPlatformString::CFStringToTCHAR((CFStringRef)NSExeName, Result);
 	}
 	return Result;
+}
+
+FString FIOSPlatformProcess::GenerateApplicationPath( const FString& AppName, EBuildConfigurations::Type BuildConfiguration)
+{
+    SCOPED_AUTORELEASE_POOL;
+    
+    FString PlatformName = TEXT("IOS");
+    FString ExecutableName = AppName;
+    if (BuildConfiguration != EBuildConfigurations::Development && BuildConfiguration != EBuildConfigurations::DebugGame)
+    {
+        ExecutableName += FString::Printf(TEXT("-%s-%s"), *PlatformName, EBuildConfigurations::ToString(BuildConfiguration));
+    }
+    
+    NSURL* CurrentBundleURL = [[NSBundle mainBundle] bundleURL];
+    NSString* CurrentBundleName = [[CurrentBundleURL lastPathComponent] stringByDeletingPathExtension];
+    if(FString(CurrentBundleName) == ExecutableName)
+    {
+        CFStringRef FilePath = CFURLCopyFileSystemPath((CFURLRef)CurrentBundleURL, kCFURLPOSIXPathStyle);
+        FString ExecutablePath = FString::Printf(TEXT("%s/%s"), *FString((NSString*)FilePath), *ExecutableName);
+        CFRelease(FilePath);
+        return ExecutablePath;
+    }
+    else
+    {
+        return FString();
+    }
 }
 
 const uint64 FIOSPlatformAffinity::GetMainGameMask()

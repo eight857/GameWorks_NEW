@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -64,9 +64,28 @@ public:
 	UPROPERTY()
 	UWidgetTree* WidgetTree;
 
-	UPROPERTY()
-	bool bAllowTemplate;
+#if WITH_EDITORONLY_DATA
 
+	UPROPERTY()
+	uint8 bCookSlowConstructionWidgetTree:1;
+
+#endif
+
+	UPROPERTY()
+	uint8 bAllowTemplate:1;
+
+private:
+
+	UPROPERTY()
+	uint8 bValidTemplate:1;
+
+	UPROPERTY(Transient)
+	uint8 bTemplateInitialized:1;
+
+	UPROPERTY(Transient)
+	uint8 bCookedTemplate:1;
+
+public:
 	UPROPERTY()
 	TArray< FDelegateRuntimeBinding > Bindings;
 
@@ -78,7 +97,7 @@ public:
 
 public:
 
-	bool CanTemplate() const;
+	bool HasTemplate() const;
 
 	void SetTemplate(UUserWidget* InTemplate);
 	UUserWidget* GetTemplate();
@@ -113,19 +132,8 @@ public:
 private:
 	void InitializeTemplate(const ITargetPlatform* TargetPlatform);
 
-private:
-
 	UPROPERTY()
-	bool bValidTemplate;
-
-	UPROPERTY(Transient)
-	bool bTemplateInitialized;
-
-	UPROPERTY(Transient)
-	bool bCookedTemplate;
-
-	UPROPERTY()
-	TAssetPtr<UUserWidget> TemplateAsset;
+	TSoftObjectPtr<UUserWidget> TemplateAsset;
 
 	UPROPERTY(Transient)
 	mutable UUserWidget* Template;

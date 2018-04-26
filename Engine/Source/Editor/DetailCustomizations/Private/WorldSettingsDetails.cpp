@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "WorldSettingsDetails.h"
 #include "Framework/Commands/UIAction.h"
@@ -111,7 +111,7 @@ void FLightmapCustomNodeBuilder::GenerateChildContent(IDetailChildrenBuilder& Ch
 
 	for(TSharedPtr<FLightmapItem>& Item : LightmapItems)
 	{
-		ChildrenBuilder.AddChildContent(LOCTEXT("LightMapsFilter", "Lightmaps"))
+		ChildrenBuilder.AddCustomRow(LOCTEXT("LightMapsFilter", "Lightmaps"))
 		.ValueContent()
 		.HAlign(HAlign_Fill)
 		[

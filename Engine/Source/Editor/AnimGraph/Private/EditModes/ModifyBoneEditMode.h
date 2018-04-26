@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -24,6 +24,7 @@ public:
 	virtual void DoTranslation(FVector& InTranslation) override;
 	virtual void DoRotation(FRotator& InRotation) override;
 	virtual void DoScale(FVector& InScale) override;
+	virtual bool ShouldDrawWidget() const override;
 
 private:
 	// methods to find a valid widget mode for gizmo because doesn't need to show gizmo when the mode is "Ignore"

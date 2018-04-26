@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using AutomationTool;
 using UnrealBuildTool;
@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
+using Tools.DotNETCommon;
 
 public class BuildDerivedDataCache : BuildCommand
 {
@@ -50,7 +51,7 @@ public class BuildDerivedDataCache : BuildCommand
 			string ProjectSpecificPlatforms = TargetPlatforms;
 			FileReference FileRef = new FileReference(FeaturePackPath);
 			string GameName = FileRef.GetFileNameWithoutAnyExtensions();
-			ProjectDescriptor Project = ProjectDescriptor.FromFile(FeaturePackPath);
+			ProjectDescriptor Project = ProjectDescriptor.FromFile(FileRef);
 
 			if (Project.TargetPlatforms != null && Project.TargetPlatforms.Length > 0)
 			{

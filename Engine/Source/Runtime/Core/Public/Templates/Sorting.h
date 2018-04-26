@@ -1,8 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreTypes.h"
+#include "Containers/Algo/BinarySearch.h"
+#include "Containers/Algo/Sort.h"
 #include "HAL/PlatformMath.h"
 #include "Templates/Less.h"
 
@@ -38,100 +40,31 @@ struct TDereferenceWrapper<T*, PREDICATE_CLASS>
 };
 
 /**
- * Sort elements using user defined predicate class. The sort is unstable, meaning that the ordering of equal items is not necessarily preserved.
- * This is the internal sorting function used by Sort overrides.
- *
- * @param	First	pointer to the first element to sort
- * @param	Num		the number of items to sort
- * @param Predicate predicate class
+ * Wraps a range into a container like interface to satisfy the GetData and GetNum global functions.
+ * We're not using TArrayView since it calls ::Sort creating a circular dependency.
  */
-template<class T, class PREDICATE_CLASS> 
-void SortInternal( T* First, const int32 Num, const PREDICATE_CLASS& Predicate )
+template <typename T>
+struct TArrayRange
 {
-	struct FStack
+	TArrayRange(T* InPtr, int32 InSize)
+		: Begin(InPtr)
+		, Size(InSize)
 	{
-		T* Min;
-		T* Max;
-	};
-
-	if( Num < 2 )
-	{
-		return;
 	}
-	FStack RecursionStack[32]={{First,First+Num-1}}, Current, Inner;
-	for( FStack* StackTop=RecursionStack; StackTop>=RecursionStack; --StackTop ) //-V625
-	{
-		Current = *StackTop;
-	Loop:
-		PTRINT Count = Current.Max - Current.Min + 1;
-		if( Count <= 8 )
-		{
-			// Use simple bubble-sort.
-			while( Current.Max > Current.Min )
-			{
-				T *Max, *Item;
-				for( Max=Current.Min, Item=Current.Min+1; Item<=Current.Max; Item++ )
-				{
-					if( Predicate( *Max, *Item ) )
-					{
-						Max = Item;
-					}
-				}
-				Exchange( *Max, *Current.Max-- );
-			}
-		}
-		else
-		{
-			// Grab middle element so sort doesn't exhibit worst-cast behavior with presorted lists.
-			Exchange( Current.Min[Count/2], Current.Min[0] );
 
-			// Divide list into two halves, one with items <=Current.Min, the other with items >Current.Max.
-			Inner.Min = Current.Min;
-			Inner.Max = Current.Max+1;
-			for( ; ; )
-			{
-				while( ++Inner.Min<=Current.Max && !Predicate( *Current.Min, *Inner.Min ) );
-				while( --Inner.Max> Current.Min && !Predicate( *Inner.Max, *Current.Min ) );
-				if( Inner.Min>Inner.Max )
-				{
-					break;
-				}
-				Exchange( *Inner.Min, *Inner.Max );
-			}
-			Exchange( *Current.Min, *Inner.Max );
+	T* GetData() const { return Begin; }
+	int32 Num() const { return Size; }
 
-			// Save big half and recurse with small half.
-			if( Inner.Max-1-Current.Min >= Current.Max-Inner.Min )
-			{
-				if( Current.Min+1 < Inner.Max )
-				{
-					StackTop->Min = Current.Min;
-					StackTop->Max = Inner.Max - 1;
-					StackTop++;
-				}
-				if( Current.Max>Inner.Min )
-				{
-					Current.Min = Inner.Min;
-					goto Loop;
-				}
-			}
-			else
-			{
-				if( Current.Max>Inner.Min )
-				{
-					StackTop->Min = Inner  .Min;
-					StackTop->Max = Current.Max;
-					StackTop++;
-				}
-				if( Current.Min+1<Inner.Max )
-				{
-					Current.Max = Inner.Max - 1;
-					goto Loop;
-				}
-			}
-		}
-	}
-}
+private:
+	T* Begin;
+	int32 Size;
+};
+
+template <typename T>
+struct TIsContiguousContainer< TArrayRange<T> >
+{
+	enum { Value = true };
+};
 
 /**
  * Sort elements using user defined predicate class. The sort is unstable, meaning that the ordering of equal items is not necessarily preserved.
@@ -143,7 +76,8 @@ void SortInternal( T* First, const int32 Num, const PREDICATE_CLASS& Predicate )
 template<class T, class PREDICATE_CLASS> 
 void Sort( T* First, const int32 Num, const PREDICATE_CLASS& Predicate )
 {
-	SortInternal( First, Num, TDereferenceWrapper<T, PREDICATE_CLASS>( Predicate ) );
+	TArrayRange<T> ArrayRange( First, Num );
+	Algo::Sort( ArrayRange, TDereferenceWrapper<T, PREDICATE_CLASS>( Predicate ) );
 }
 
 /**
@@ -156,7 +90,8 @@ void Sort( T* First, const int32 Num, const PREDICATE_CLASS& Predicate )
 template<class T, class PREDICATE_CLASS> 
 void Sort( T** First, const int32 Num, const PREDICATE_CLASS& Predicate )
 {
-	SortInternal( First, Num, TDereferenceWrapper<T*, PREDICATE_CLASS>( Predicate ) );
+	TArrayRange<T*> ArrayRange( First, Num );
+	Algo::Sort( ArrayRange, TDereferenceWrapper<T*, PREDICATE_CLASS>( Predicate ) );
 }
 
 /**
@@ -169,7 +104,8 @@ void Sort( T** First, const int32 Num, const PREDICATE_CLASS& Predicate )
 template<class T> 
 void Sort( T* First, const int32 Num )
 {
-	SortInternal( First, Num, TDereferenceWrapper<T, TLess<T> >( TLess<T>() ) );
+	TArrayRange<T> ArrayRange( First, Num );
+	Algo::Sort( ArrayRange, TDereferenceWrapper<T, TLess<T> >( TLess<T>() ) );
 }
 
 /**
@@ -181,7 +117,8 @@ void Sort( T* First, const int32 Num )
 template<class T> 
 void Sort( T** First, const int32 Num )
 {
-	SortInternal( First, Num, TDereferenceWrapper<T*, TLess<T> >( TLess<T>() ) );
+	TArrayRange<T*> ArrayRange( First, Num );
+	Algo::Sort( ArrayRange, TDereferenceWrapper<T*, TLess<T> >( TLess<T>() ) );
 }
 
 /**
@@ -313,74 +250,19 @@ public:
 
 		while (AStart < BStart && BStart < Num)
 		{
-			int32 NewAOffset = BinarySearchLast(First + AStart, BStart - AStart, First[BStart], Predicate) + 1;
+			// Index after the last value == First[BStart]
+			int32 NewAOffset = AlgoImpl::UpperBoundInternal(First + AStart, BStart - AStart, First[BStart], FIdentityFunctor(), Predicate);
 			AStart += NewAOffset;
 
 			if (AStart >= BStart) // done
 				break;
 
-			int32 NewBOffset = BinarySearchFirst(First + BStart, Num - BStart, First[AStart], Predicate);
+			// Index of the first value == First[AStart]
+			int32 NewBOffset = AlgoImpl::LowerBoundInternal(First + BStart, Num - BStart, First[AStart], FIdentityFunctor(), Predicate);
 			TRotationPolicy::Rotate(First, AStart, BStart + NewBOffset, NewBOffset);
 			BStart += NewBOffset;
 			AStart += NewBOffset + 1;
 		}
-	}
-
-private:
-	/**
-	 * Performs binary search, resulting in position of the first element with given value in an array.
-	 *
-	 * @param First Pointer to array.
-	 * @param Num Number of elements in array.
-	 * @param Value Value to look for.
-	 * @param Predicate Predicate for comparison.
-	 *
-	 * @returns Position of the first element with value Value.
-	 */
-	template <class T, class PREDICATE_CLASS>
-	static int32 BinarySearchFirst(T* First, const int32 Num, const T& Value, const PREDICATE_CLASS& Predicate)
-	{
-		int32 Start = 0;
-		int32 End = Num;
-		
-		while (End - Start > 1)
-		{
-			int32 Mid = (Start + End) / 2;
-			bool bComparison = Predicate(First[Mid], Value);
-
-			Start = bComparison ? Mid : Start;
-			End = bComparison ? End : Mid;
-		}
-
-		return Predicate(First[Start], Value) ? Start + 1 : Start;
-	}
-
-	/**
-	 * Performs binary search, resulting in position of the last element with given value in an array.
-	 *
-	 * @param First Pointer to array.
-	 * @param Num Number of elements in array.
-	 * @param Value Value to look for.
-	 * @param Predicate Predicate for comparison.
-	 *
-	 * @returns Position of the last element with value Value.
-	 */
-	template <class T, class PREDICATE_CLASS>
-	static int32 BinarySearchLast(T* First, const int32 Num, const T& Value, const PREDICATE_CLASS& Predicate)
-	{
-		int32 Start = 0;
-		int32 End = Num;
-
-		while (End - Start > 1)
-		{
-			int32 Mid = (Start + End) / 2;
-			bool bComparison = !Predicate(Value, First[Mid]);
-			
-			Start = bComparison ? Mid : Start;
-			End = bComparison ? End : Mid;
-		}
-
-		return Predicate(Value, First[Start]) ? Start - 1 : Start;
 	}
 };
 

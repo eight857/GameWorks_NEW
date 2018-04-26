@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NameCurveKeyArea.h"
 #include "UObject/StructOnScope.h"
@@ -115,6 +115,7 @@ FRichCurve* FNameCurveKeyArea::GetRichCurve()
 TArray<FKeyHandle> FNameCurveKeyArea::GetUnsortedKeyHandles() const
 {
 	TArray<FKeyHandle> OutKeyHandles;
+	OutKeyHandles.Reserve(Curve.GetNumKeys());
 
 	for (auto It(Curve.GetKeyHandleIterator()); It; ++It)
 	{

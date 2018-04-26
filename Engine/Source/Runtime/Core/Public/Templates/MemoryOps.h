@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -63,6 +63,8 @@ FORCEINLINE typename TEnableIf<TIsZeroConstructType<ElementType>::Value>::Type D
  * Destructs a single item in memory.
  *
  * @param	Elements	A pointer to the item to destruct.
+ *
+ * @note: This function is optimized for values of T, and so will not dynamically dispatch destructor calls if T's destructor is virtual.
  */
 template <typename ElementType>
 FORCEINLINE typename TEnableIf<!TIsTriviallyDestructible<ElementType>::Value>::Type DestructItem(ElementType* Element)
@@ -85,6 +87,8 @@ FORCEINLINE typename TEnableIf<TIsTriviallyDestructible<ElementType>::Value>::Ty
  *
  * @param	Elements	A pointer to the first item to destruct.
  * @param	Count		The number of elements to destruct.
+ *
+ * @note: This function is optimized for values of T, and so will not dynamically dispatch destructor calls if T's destructor is virtual.
  */
 template <typename ElementType>
 FORCEINLINE typename TEnableIf<!TIsTriviallyDestructible<ElementType>::Value>::Type DestructItems(ElementType* Element, int32 Count)
@@ -131,14 +135,6 @@ template <typename DestinationElementType, typename SourceElementType>
 FORCEINLINE typename TEnableIf<TIsBitwiseConstructible<DestinationElementType, SourceElementType>::Value>::Type ConstructItems(void* Dest, const SourceElementType* Source, int32 Count)
 {
 	FMemory::Memcpy(Dest, Source, sizeof(SourceElementType) * Count);
-}
-
-
-template <typename ElementType>
-DEPRECATED(4.6, "CopyConstructItems is deprecated, use ConstructItems<ElementType> instead.")
-FORCEINLINE void CopyConstructItems(void* Dest, const ElementType* Source, int32 Count)
-{
-	ConstructItems<ElementType>(Dest, Source, Count);
 }
 
 
@@ -205,14 +201,6 @@ FORCEINLINE typename TEnableIf<UE4MemoryOps_Private::TCanBitwiseRelocate<Destina
 
 	FMemory::Memmove(Dest, Source, sizeof(SourceElementType) * Count);
 }
-
-template <typename ElementType>
-DEPRECATED(4.6, "RelocateItems is deprecated, use RelocateConstructItems<ElementType> instead.")
-FORCEINLINE void RelocateItems(void* Dest, const ElementType* Source, int32 Count)
-{
-	RelocateConstructItems<ElementType>(Dest, Source, Count);
-}
-
 
 /**
  * Move constructs a range of items into memory.

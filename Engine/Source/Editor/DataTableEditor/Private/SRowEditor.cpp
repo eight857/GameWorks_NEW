@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SRowEditor.h"
 #include "Modules/ModuleManager.h"
@@ -7,6 +7,7 @@
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SButton.h"
 #include "EditorStyleSet.h"
+#include "UObject/StructOnScope.h"
 
 #include "PropertyEditorModule.h"
 #include "IStructureDetailsView.h"
@@ -108,6 +109,7 @@ void SRowEditor::PostChange(const class UUserDefinedStruct* Struct, FStructureEd
 {
 	if (Struct && (GetScriptStruct() == Struct))
 	{
+		RefreshNameList();
 		Restore();
 	}
 }
@@ -122,7 +124,6 @@ void SRowEditor::PreChange(const UDataTable* Changed, FDataTableEditorUtils::EDa
 
 void SRowEditor::PostChange(const UDataTable* Changed, FDataTableEditorUtils::EDataTableChangeInfo Info)
 {
-	FStringAssetReference::InvalidateTag(); // Should be removed after UE-5615 is fixed
 	if ((Changed == DataTable.Get()) && (FDataTableEditorUtils::EDataTableChangeInfo::RowList == Info))
 	{
 		RefreshNameList();

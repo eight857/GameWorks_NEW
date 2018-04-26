@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SAssetPicker.h"
 #include "Styling/SlateTypes.h"
@@ -109,7 +109,7 @@ void SAssetPicker::Construct( const FArguments& InArgs )
 			.AutoWidth()
 			[
 				SNew( SComboButton )
-				.ComboButtonStyle( FEditorStyle::Get(), "ContentBrowser.Filters.Style" )
+				.ComboButtonStyle( FEditorStyle::Get(), "GenericFilters.ComboButtonStyle" )
 				.ForegroundColor(FLinearColor::White)
 				.ToolTipText( LOCTEXT( "AddFilterToolTip", "Add an asset filter." ) )
 				.OnGetMenuContent( this, &SAssetPicker::MakeAddFilterMenu )
@@ -119,7 +119,7 @@ void SAssetPicker::Construct( const FArguments& InArgs )
 				.ButtonContent()
 				[
 					SNew( STextBlock )
-					.TextStyle( FEditorStyle::Get(), "ContentBrowser.Filters.Text" )
+					.TextStyle( FEditorStyle::Get(), "GenericFilters.TextStyle" )
 					.Text( LOCTEXT( "Filters", "Filters" ) )
 				]
 			];
@@ -228,10 +228,11 @@ void SAssetPicker::Construct( const FArguments& InArgs )
 		SAssignNew(AssetViewPtr, SAssetView)
 		.SelectionMode( InArgs._AssetPickerConfig.SelectionMode )
 		.OnShouldFilterAsset(InArgs._AssetPickerConfig.OnShouldFilterAsset)
-		.OnAssetSelected(InArgs._AssetPickerConfig.OnAssetSelected)
+		.OnAssetSelectionChanged(this, &SAssetPicker::HandleAssetSelectionChanged)
 		.OnAssetsActivated(this, &SAssetPicker::HandleAssetsActivated)
 		.OnGetAssetContextMenu(InArgs._AssetPickerConfig.OnGetAssetContextMenu)
 		.OnGetFolderContextMenu(InArgs._AssetPickerConfig.OnGetFolderContextMenu)
+		.OnIsAssetValidForCustomToolTip(InArgs._AssetPickerConfig.OnIsAssetValidForCustomToolTip)
 		.OnGetCustomAssetToolTip(InArgs._AssetPickerConfig.OnGetCustomAssetToolTip)
 		.OnVisualizeAssetToolTip(InArgs._AssetPickerConfig.OnVisualizeAssetToolTip)
 		.OnAssetToolTipClosing(InArgs._AssetPickerConfig.OnAssetToolTipClosing)
@@ -244,6 +245,7 @@ void SAssetPicker::Construct( const FArguments& InArgs )
 		.ThumbnailScale(InArgs._AssetPickerConfig.ThumbnailScale)
 		.ShowBottomToolbar(InArgs._AssetPickerConfig.bShowBottomToolbar)
 		.OnAssetTagWantsToBeDisplayed(InArgs._AssetPickerConfig.OnAssetTagWantsToBeDisplayed)
+		.OnGetCustomSourceAssets(InArgs._AssetPickerConfig.OnGetCustomSourceAssets)
 		.AllowDragging( InArgs._AssetPickerConfig.bAllowDragging )
 		.CanShowClasses( InArgs._AssetPickerConfig.bCanShowClasses )
 		.CanShowFolders( InArgs._AssetPickerConfig.bCanShowFolders )
@@ -384,7 +386,10 @@ void SAssetPicker::OnSearchBoxCommitted(const FText& InSearchText, ETextCommit::
 void SAssetPicker::SetNewBackendFilter(const FARFilter& NewFilter)
 {
 	CurrentSourcesData.PackagePaths = NewFilter.PackagePaths;
-	AssetViewPtr->SetSourcesData(CurrentSourcesData);
+	if(AssetViewPtr.IsValid())
+	{
+		AssetViewPtr->SetSourcesData(CurrentSourcesData);
+	}
 
 	CurrentBackendFilter = NewFilter;
 	CurrentBackendFilter.PackagePaths.Reset();
@@ -410,7 +415,10 @@ void SAssetPicker::OnFilterChanged()
 	}
 
 	Filter.Append(CurrentBackendFilter);
-	AssetViewPtr->SetBackendFilter( Filter );
+	if (AssetViewPtr.IsValid())
+	{
+		AssetViewPtr->SetBackendFilter( Filter );
+	}
 }
 
 FReply SAssetPicker::OnNoneButtonClicked()
@@ -421,6 +429,14 @@ FReply SAssetPicker::OnNoneButtonClicked()
 		AssetViewPtr->ClearSelection(true);
 	}
 	return FReply::Handled();
+}
+
+void SAssetPicker::HandleAssetSelectionChanged(const FAssetData& InAssetData, ESelectInfo::Type InSelectInfo)
+{
+	if(InSelectInfo != ESelectInfo::Direct)
+	{
+		OnAssetSelected.ExecuteIfBound(InAssetData);
+	}
 }
 
 void SAssetPicker::HandleAssetsActivated(const TArray<FAssetData>& ActivatedAssets, EAssetTypeActivationMethod::Type ActivationMethod)

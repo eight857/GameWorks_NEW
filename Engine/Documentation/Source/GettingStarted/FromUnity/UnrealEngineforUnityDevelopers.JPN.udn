@@ -1,4 +1,5 @@
-﻿Availability:Public
+﻿INTSourceChangelist:3782314
+Availability:Public
 Title:Unity 引っ越しガイド
 Crumbs: %ROOT%, GettingStarted
 Description:Unity の操作内容を UE4 の該当する部分と比較して説明し、UE4 の迅速な習得を支援します。
@@ -15,13 +16,66 @@ version:4.9
 
 以下は Unity のエディタとアンリアル エディタの画面です。一般的な機能を表すために色分けされています。各ブロックには、該当する UE4 用語を示すラベルが付いています。アンリアル エディタのレイアウトは、タブをドラッグ ＆ ドロップすることで完全にカスタマイズ可能です。
 
-![](image_1.png)
+[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
+	[/PARAMLITERAL]
+	[PARAMLITERAL:id]
+	windows
+	[/PARAMLITERAL]
+	[PARAMLITERAL:active]
+	[/PARAMLITERAL]
+	[PARAM:content]
+	![](EditorCompare_Windows.png)
+	[/PARAM]
+[/OBJECT]
+
+[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
+	[/PARAMLITERAL]
+	[PARAMLITERAL:id]
+	mac
+	[/PARAMLITERAL]
+	[PARAMLITERAL:active]
+	[/PARAMLITERAL]
+	[PARAM:content]
+	![](EditorCompare_Mac.png)
+	[/PARAM]
+[/OBJECT]
+
 
 ### アセットの編集
 
 Unity では、インスペクター (Inspector) タブを使用してプロジェクト内で選択したアセットを編集します。UE4 では、**[詳細]** パネルに選択したオブジェクトのプロパティが表示されますが、編集タスクが大きい場合は、専用のウィンドウやタブ になります。編集した各アセットに対して新しくタブ化されたウィンドウが開きます。ウェブ ブラウザと同様です。当然、スタンドアロンのウィンドウとしてタブを自由にドラッグしたり、フロートさせたりできます。
 
-![](image_2.png)
+[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
+	[/PARAMLITERAL]
+	[PARAMLITERAL:id]
+	windows
+	[/PARAMLITERAL]
+	[PARAMLITERAL:active]
+	[/PARAMLITERAL]
+	[PARAM:content]
+	![](TabbedWindows_Windows.png)
+	[/PARAM]
+[/OBJECT]
+
+[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
+	[/PARAMLITERAL]
+	[PARAMLITERAL:id]
+	mac
+	[/PARAMLITERAL]
+	[PARAMLITERAL:active]
+	[/PARAMLITERAL]
+	[PARAM:content]
+	![](TabbedWindows_Mac.png)
+	[/PARAM]
+[/OBJECT]
 
 ## クイック用語集
 
@@ -63,7 +117,33 @@ Unity プロジェクトと同様に Unreal プロジェクトは常に独自の
 
 UE4 では、各プロジェクトに **Content ** フォルダがあります。Unity プロジェクトのアセット フォルダと同様に、ここにゲーム アセットを格納します。ゲームにアセットをインポートするには、プロジェクトの Content ディレクトリにファイルをドロップすると、自動的にインポートされて **コンテンツ ブラウザ** に表示されます。外部プログラムを使用してファイルに変更を加えるとエディタ内のアセットは自動的に更新されます。
 
-![image alt text](image_3.png)
+[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
+	[/PARAMLITERAL]
+	[PARAMLITERAL:id]
+	windows
+	[/PARAMLITERAL]
+	[PARAMLITERAL:active]
+	[/PARAMLITERAL]
+	[PARAM:content]
+	![](ProjectOnDisk_Windows.png)
+	[/PARAM]
+[/OBJECT]
+
+[OBJECT:ToggleButtonContent]
+	[PARAMLITERAL:category]
+	OS
+	[/PARAMLITERAL]
+	[PARAMLITERAL:id]
+	mac
+	[/PARAMLITERAL]
+	[PARAMLITERAL:active]
+	[/PARAMLITERAL]
+	[PARAM:content]
+	![](ProjectOnDisk_Mac.png)
+	[/PARAM]
+[/OBJECT]
 
 ### サポートされる共通ファイル形式は？
 
@@ -182,12 +262,12 @@ UE4 の優れた機能をご紹介します。新規 Actor ブループリント
 ビジュアル スクリプトをサポートするブループリント クラスに加えて、UE4 ではコードで実装された C++ クラスもサポートしています。以下は、Unity C#、UE4 C++、UE4 ブループリントです。
 
 
-| Unity C# | UE4 C++ |
-| --- | --- | 
-|[INCLUDE:GettingStarted/FromUnity#csharp_unity]| [INCLUDE:GettingStarted/FromUnity#cpp_ue4] | 
+| Unity C# | UE4 C++ | UE4 Blueprint |
+| --- | --- | --- |
+|[INCLUDE:GettingStarted/FromUnity#csharp_unity]| [INCLUDE:GettingStarted/FromUnity#cpp_ue4] |[REGION:lightbox][![](image_28.png)(w:220)](image_28.png)[/REGION]|
+																							   
+[COMMENT:none]
 
-
-<!--
 [EXCERPT:csharp_Unity]
 	using UnityEngine;
 	using System.Collections;
@@ -246,12 +326,8 @@ UE4 の優れた機能をご紹介します。新規 Actor ブループリント
 		}
 	};
 [/EXCERPT:cpp_UE4]
--->
 
-
-| UE4 ブループリント | 
-| --- |
-|![](image_28.png)| 
+[/COMMENT] 
 
 ### UE4 のブループリント クラスは拡張可能
 
@@ -369,8 +445,8 @@ Unity の Start、OnDestroy、および Update の関数と同様に、以下の
 
 		// ゲーム開始時に呼び出されます。
 		void BeginPlay();
+	// 破壊時に呼び出されます。
 
-		// 破壊時に呼び出されます。
 		void EndPlay(const EEndPlayReason::Type EndPlayReason);
 
 		// アクタを更新するためにフレーム毎に呼び出されます。
@@ -493,8 +569,8 @@ NewObject 関数と SpawnActor 関数も一緒に動作する「テンプレー�
 	class AMyActor : public AActor
 	{
 		GENERATED_BODY()
-
 		UPROPERTY()
+
 		int32 MyIntProp;
 
 		UPROPERTY()
@@ -542,7 +618,8 @@ UE4 C++:
 |[INCLUDE:GettingStarted/FromUnity#gameobject_unity]| [INCLUDE:GettingStarted/FromUnity#gameobject_cpp] | [INCLUDE:GettingStarted/FromUnity#gameobject_bp] |
 [/REGION]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:gameObject_Unity]
 	Destroy(MyGameObject);
 [/EXCERPT:gameObject_Unity]
@@ -554,7 +631,8 @@ UE4 C++:
 [EXCERPT:gameObject_bp]
 ![](image_23.png)
 [/EXCERPT:gameObject_bp]
--->
+
+[/COMMENT]
 
 
 
@@ -568,7 +646,8 @@ UE4 C++:
 |[INCLUDE:GettingStarted/FromUnity#destroy_unity]| [INCLUDE:GettingStarted/FromUnity#destroy_cpp] | [INCLUDE:GettingStarted/FromUnity#destroy_bp] |
 [/REGION]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:destroy_Unity]
 	Destroy(MyGameObject, 1);
 [/EXCERPT:destroy_Unity]
@@ -584,7 +663,8 @@ UE4 C++:
 
 _フルサイズ表示するにはここをクリック_
 [/EXCERPT:destroy_bp]
--->
+
+[/COMMENT]
 
 
 #### ゲームオブジェクト / アクタを無効にする
@@ -596,7 +676,8 @@ _フルサイズ表示するにはここをクリック_
 |[INCLUDE:GettingStarted/FromUnity#disable_unity]| [INCLUDE:GettingStarted/FromUnity#disable_cpp] | [INCLUDE:GettingStarted/FromUnity#disable_bp] |
 [/REGION]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:disable_Unity]
 	MyGameObject.SetActive(false);
 [/EXCERPT:disable_Unity]
@@ -619,7 +700,8 @@ _フルサイズ表示するにはここをクリック_
 
 _フルサイズ表示するにはここをクリック_
 [/EXCERPT:disable_bp]
--->
+
+[/COMMENT]
 
 #### コンポーネントからゲームオブジェクト / アクタにアクセスする
 
@@ -630,7 +712,8 @@ _フルサイズ表示するにはここをクリック_
 | [INCLUDE:GettingStarted/FromUnity#go1_unity] | [INCLUDE:GettingStarted/FromUnity#go1_cpp] | [INCLUDE:GettingStarted/FromUnity#go1_bp] |
 [/REGION]
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:go1_Unity]
 	GameObject ParentGO = 
 	MyComponent.gameObject; 
@@ -647,18 +730,21 @@ _フルサイズ表示するにはここをクリック_
 [/REGION]
 _フルサイズ表示するにはここをクリック_
 [/EXCERPT:go1_bp]
--->
+
+[/COMMENT]
 
 
 #### ゲームオブジェクト / アクタからコンポーネントにアクセスする
 
-<!--
+[COMMENT:none]
+
 | メソッド | 説明 |
 | --- | --- |
 | Unity | [INCLUDE:GettingStarted/FromUnity#go2_unity]| 
 | C++ | [INCLUDE:GettingStarted/FromUnity#go2_cpp] | 
 | ブループリント | [INCLUDE:GettingStarted/FromUnity#go2_bp] | 
--->
+
+[/COMMENT]
 
 **Unity** 
 	MyComponent MyComp = gameObject.GetComponent<MyComponent>();
@@ -675,7 +761,8 @@ _フルサイズ表示するにはここをクリック_
 
 
 
-<!--
+[COMMENT:none]
+
 [EXCERPT:go2_Unity]
 	MyComponent MyComp = gameObject.GetComponent<MyComponent>();
 [/EXCERPT:go2_Unity]
@@ -690,7 +777,8 @@ _フルサイズ表示するにはここをクリック_
 [/REGION]
 _フルサイズ表示するにはここをクリック_
 [/EXCERPT:go2_bp]
--->
+
+[/COMMENT]
 
 
 #### ゲームオブジェクト / アクタの検索
@@ -772,8 +860,8 @@ _フルサイズ表示するにはここをクリック_
 	{
 		// ...
 	}
-
 	//アクタがこのタグを持っているかをチェックします。
+
 	if (MyActor->ActorHasTag(FName(TEXT("MyTag"))))
 	{
 		// ...

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSubsystemGoogleCommon.h"
 #include "OnlineSubsystemGooglePrivate.h"
@@ -15,6 +15,11 @@ FOnlineSubsystemGoogleCommon::FOnlineSubsystemGoogleCommon()
 	{
 		UE_LOG(LogOnline, Warning, TEXT("Missing ClientId= in [OnlineSubsystemGoogle] of DefaultEngine.ini"));
 	}
+
+	if (!GConfig->GetString(TEXT("OnlineSubsystemGoogle"), TEXT("ServerClientId"), ServerClientId, GEngineIni))
+	{
+		UE_LOG(LogOnline, Warning, TEXT("Missing ServerClientId= in [OnlineSubsystemGoogle] of DefaultEngine.ini"));
+	}
 }
 
 FOnlineSubsystemGoogleCommon::FOnlineSubsystemGoogleCommon(FName InInstanceName)
@@ -23,6 +28,11 @@ FOnlineSubsystemGoogleCommon::FOnlineSubsystemGoogleCommon(FName InInstanceName)
 	if (!GConfig->GetString(TEXT("OnlineSubsystemGoogle"), TEXT("ClientId"), ClientId, GEngineIni))
 	{
 		UE_LOG(LogOnline, Warning, TEXT("Missing ClientId= in [OnlineSubsystemGoogle] of DefaultEngine.ini"));
+	}
+
+	if (!GConfig->GetString(TEXT("OnlineSubsystemGoogle"), TEXT("ServerClientId"), ServerClientId, GEngineIni))
+	{
+		UE_LOG(LogOnline, Warning, TEXT("Missing ServerClientId= in [OnlineSubsystemGoogle] of DefaultEngine.ini"));
 	}
 }
 
@@ -78,18 +88,6 @@ bool FOnlineSubsystemGoogleCommon::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutp
 		return true;
 	}
 	return false;
-}
-
-bool FOnlineSubsystemGoogleCommon::IsEnabled() const
-{
-	// Check the ini for disabling Google
-	bool bEnableGoogle = false;
-	if (!GConfig->GetBool(TEXT("OnlineSubsystemGoogle"), TEXT("bEnabled"), bEnableGoogle, GEngineIni))
-	{
-		UE_LOG(LogOnline, Warning, TEXT("The [OnlineSubsystemGoogle]:bEnabled flag has not been set."));
-	}
-
-	return bEnableGoogle;
 }
 
 IOnlineSessionPtr FOnlineSubsystemGoogleCommon::GetSessionInterface() const
@@ -200,5 +198,10 @@ IOnlineChatPtr FOnlineSubsystemGoogleCommon::GetChatInterface() const
 IOnlineTurnBasedPtr FOnlineSubsystemGoogleCommon::GetTurnBasedInterface() const
 {
 	return nullptr;
+}
+
+FText FOnlineSubsystemGoogleCommon::GetOnlineServiceName() const
+{
+	return NSLOCTEXT("OnlineSubsystemGoogleCommon", "OnlineServiceName", "Google");
 }
 

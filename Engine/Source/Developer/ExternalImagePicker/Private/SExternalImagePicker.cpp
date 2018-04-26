@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SExternalImagePicker.h"
 #include "HAL/PlatformFilemanager.h"
@@ -9,7 +9,8 @@
 #include "Widgets/Input/SButton.h"
 #include "SResetToDefaultMenu.h"
 #include "DesktopPlatformModule.h"
-#include "Interfaces/IImageWrapperModule.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
 #include "Widgets/Layout/SEnableBox.h"
 
 #define LOCTEXT_NAMESPACE "ExternalImagePicker"
@@ -255,7 +256,7 @@ TSharedPtr< FSlateDynamicImageBrush > SExternalImagePicker::LoadImageAsBrush( co
 	if( FFileHelper::LoadFileToArray( RawFileData, *ImagePath ) )
 	{
 		IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>( FName("ImageWrapper") );
-		IImageWrapperPtr ImageWrappers[4] =
+		TSharedPtr<IImageWrapper> ImageWrappers[4] =
 		{ 
 			ImageWrapperModule.CreateImageWrapper( EImageFormat::PNG ),
 			ImageWrapperModule.CreateImageWrapper( EImageFormat::BMP ),

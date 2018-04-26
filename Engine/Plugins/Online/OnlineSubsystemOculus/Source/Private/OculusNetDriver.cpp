@@ -1,17 +1,15 @@
 // Copyright 2016 Oculus VR, LLC All Rights reserved.
 
-#pragma once
-
 #include "OculusNetDriver.h"
 #include "OnlineSubsystemOculusPrivate.h"
-
 
 #include "IPAddressOculus.h"
 #include "OculusNetConnection.h"
 #include "OnlineSubsystemOculus.h"
+#include "PacketHandlers/StatelessConnectHandlerComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/ChildConnection.h"
 
-#include "Net/DataChannel.h"
 
 bool UOculusNetDriver::IsAvailable() const
 {
@@ -26,21 +24,60 @@ bool UOculusNetDriver::IsAvailable() const
 
 ISocketSubsystem* UOculusNetDriver::GetSocketSubsystem()
 {
-	/** Not used */
-	return nullptr;
-}
-
-FSocket * UOculusNetDriver::CreateSocket()
-{
+	if (bIsPassthrough)
+	{
+		return UIpNetDriver::GetSocketSubsystem();
+	}
 	/** Not used */
 	return nullptr;
 }
 
 bool UOculusNetDriver::InitBase(bool bInitAsClient, FNetworkNotify* InNotify, const FURL& URL, bool bReuseAddressAndPort, FString& Error)
 {
-	if (!Super::InitBase(bInitAsClient, InNotify, URL, bReuseAddressAndPort, Error))
+	if (bIsPassthrough)
+	{
+		return UIpNetDriver::InitBase(bInitAsClient, InNotify, URL, bReuseAddressAndPort, Error);
+	}
+
+	if (!UNetDriver::InitBase(bInitAsClient, InNotify, URL, bReuseAddressAndPort, Error))
 	{
 		return false;
+	}
+
+	if (InitialConnectTimeout == 0.0)
+	{
+		UE_LOG(LogNet, Warning, TEXT("InitalConnectTimeout was set to %f"), InitialConnectTimeout);
+		InitialConnectTimeout = 120.0;
+	}
+
+	if (ConnectionTimeout == 0.0)
+	{
+		UE_LOG(LogNet, Warning, TEXT("ConnectionTimeout was set to %f"), ConnectionTimeout);
+		ConnectionTimeout = 120.0;
+	}
+
+	if (KeepAliveTime == 0.0)
+	{
+		UE_LOG(LogNet, Warning, TEXT("KeepAliveTime was set to %f"), KeepAliveTime);
+		KeepAliveTime = 0.2;
+	}
+
+	if (SpawnPrioritySeconds == 0.0)
+	{
+		UE_LOG(LogNet, Warning, TEXT("SpawnPrioritySeconds was set to %f"), SpawnPrioritySeconds);
+		SpawnPrioritySeconds = 1.0;
+	}
+
+	if (RelevantTimeout == 0.0)
+	{
+		UE_LOG(LogNet, Warning, TEXT("RelevantTimeout was set to %f"), RelevantTimeout);
+		RelevantTimeout = 5.0;
+	}
+
+	if (ServerTravelPause == 0.0)
+	{
+		UE_LOG(LogNet, Warning, TEXT("ServerTravelPause was set to %f"), ServerTravelPause);
+		ServerTravelPause = 4.0;
 	}
 
 	// Listen for network state
@@ -59,13 +96,15 @@ bool UOculusNetDriver::InitConnect(FNetworkNotify* InNotify, const FURL& Connect
 {
 	UE_LOG(LogNet, Verbose, TEXT("Connecting to host: %s"), *ConnectURL.ToString(true));
 
-	if (!InitBase(true, InNotify, ConnectURL, false, Error))
-	{
-		return false;
-	}
-
 	auto OculusAddr = new FInternetAddrOculus(ConnectURL);
 	if (!OculusAddr->IsValid())
+	{
+		UE_LOG(LogNet, Verbose, TEXT("Init as IPNetDriver connect"));
+		bIsPassthrough = true;
+		return UIpNetDriver::InitConnect(InNotify, ConnectURL, Error);
+	}
+
+	if (!InitBase(true, InNotify, ConnectURL, false, Error))
 	{
 		return false;
 	}
@@ -73,10 +112,11 @@ bool UOculusNetDriver::InitConnect(FNetworkNotify* InNotify, const FURL& Connect
 	// Create an unreal connection to the server
 	UOculusNetConnection* Connection = NewObject<UOculusNetConnection>(NetConnectionClass);
 	check(Connection);
-	TSharedRef<FInternetAddr> InternetAddr = MakeShareable(OculusAddr);
-	Connection->InitRemoteConnection(this, nullptr, ConnectURL, *InternetAddr, ovr_Net_IsConnected(OculusAddr->GetID()) ? USOCK_Open : USOCK_Pending);
 
+	// Set it as the server connection before anything else so everything knows this is a client
 	ServerConnection = Connection;
+	Connection->InitLocalConnection(this, nullptr, ConnectURL, ovr_Net_IsConnected(OculusAddr->GetID()) ? USOCK_Open : USOCK_Pending);
+
 	Connections.Add(OculusAddr->GetID(), Connection);
 
 	// Connect via OVR_Networking
@@ -90,6 +130,13 @@ bool UOculusNetDriver::InitConnect(FNetworkNotify* InNotify, const FURL& Connect
 
 bool UOculusNetDriver::InitListen(FNetworkNotify* InNotify, FURL& LocalURL, bool bReuseAddressAndPort, FString& Error)
 {
+	if (LocalURL.HasOption(TEXT("bIsLanMatch")))
+	{
+		UE_LOG(LogNet, Verbose, TEXT("Init as IPNetDriver listen server"));
+		bIsPassthrough = true;
+		return Super::InitListen(InNotify, LocalURL, bReuseAddressAndPort, Error);
+	}
+
 	if (!InitBase(false, InNotify, LocalURL, bReuseAddressAndPort, Error))
 	{
 		return false;
@@ -104,6 +151,8 @@ bool UOculusNetDriver::InitListen(FNetworkNotify* InNotify, FURL& LocalURL, bool
 			.AddUObject(this, &UOculusNetDriver::OnNewNetworkingPeerRequest);
 	}
 
+	InitConnectionlessHandler();
+
 	UE_LOG(LogNet, Verbose, TEXT("Init as a listen server"));
 
 	return true;
@@ -111,22 +160,123 @@ bool UOculusNetDriver::InitListen(FNetworkNotify* InNotify, FURL& LocalURL, bool
 
 void UOculusNetDriver::TickDispatch(float DeltaTime)
 {
-	Super::TickDispatch(DeltaTime);
+	if (bIsPassthrough)
+	{
+		UIpNetDriver::TickDispatch(DeltaTime);
+		return;
+	}
+
+	UNetDriver::TickDispatch(DeltaTime);
 
 	// Process all incoming packets.
-	for (;;) {
+	for (;;) 
+	{
 		auto Packet = ovr_Net_ReadPacket();
-		if (!Packet) {
+		if (!Packet) 
+		{
 			break;
 		}
+
+		bool bIgnorePacket = false;
+
 		auto PeerID = ovr_Packet_GetSenderID(Packet);
 		auto PacketSize = static_cast<int32>(ovr_Packet_GetSize(Packet));
-		if (Connections.Contains(PeerID) && Connections[PeerID]->State == EConnectionState::USOCK_Open)
-		{
-			UE_LOG(LogNet, VeryVerbose, TEXT("Got a raw packet of size %d"), PacketSize);
+		auto Data = (uint8 *)ovr_Packet_GetBytes(Packet);
 
-			auto Data = (uint8 *)ovr_Packet_GetBytes(Packet);
-			Connections[PeerID]->ReceivedRawPacket(Data, PacketSize);
+		// The server must check the pending client connections first to see if any clients are challenging the server
+		// This logic is basically the same as the one in IpNetDriver
+		if (IsServer() && PendingClientConnections.Contains(PeerID))
+		{
+			bool bPassedChallenge = false;
+			TSharedPtr<StatelessConnectHandlerComponent> StatelessConnect;
+
+			if (!ConnectionlessHandler.IsValid() || !StatelessConnectComponent.IsValid())
+			{
+				UE_LOG(LogNet, Log,
+					TEXT("Invalid ConnectionlessHandler (%i) or StatelessConnectComponent (%i); can't accept connections."),
+					(int32)(ConnectionlessHandler.IsValid()), (int32)(StatelessConnectComponent.IsValid()));
+				continue;
+			}
+
+			UE_LOG(LogNet, Verbose, TEXT("Checking challenge from: %llu"), PeerID);
+			StatelessConnect = StatelessConnectComponent.Pin();
+			FString IncomingAddress = FString::Printf(TEXT("%llu.oculus"), PeerID);
+
+			const ProcessedPacket UnProcessedPacket =
+				ConnectionlessHandler->IncomingConnectionless(IncomingAddress, Data, PacketSize);
+
+			bPassedChallenge = !UnProcessedPacket.bError && StatelessConnect->HasPassedChallenge(IncomingAddress);
+
+			if (bPassedChallenge)
+			{
+				PendingClientConnections.Remove(PeerID);
+				PacketSize = FMath::DivideAndRoundUp(UnProcessedPacket.CountBits, 8);
+
+				if (PacketSize > 0)
+				{
+					Data = UnProcessedPacket.Data;
+				}
+
+				UE_LOG(LogNet, Log, TEXT("Server accepting post-challenge connection from: %llu"), PeerID);
+
+				// Create an unreal connection to the client
+				UOculusNetConnection* Connection = NewObject<UOculusNetConnection>(NetConnectionClass);
+				check(Connection);
+
+				auto OculusAddr = new FInternetAddrOculus(PeerID);
+				TSharedRef<FInternetAddr> InternetAddr = MakeShareable(OculusAddr);
+				Connection->InitRemoteConnection(this, nullptr, FURL(), *InternetAddr, ovr_Net_IsConnected(PeerID) ? USOCK_Open : USOCK_Pending);
+
+				AddClientConnection(Connection);
+
+				Connections.Add(PeerID, Connection);
+
+				// Set the initial packet sequence from the handshake data
+				if (StatelessConnect.IsValid())
+				{
+					int32 ServerSequence = 0;
+					int32 ClientSequence = 0;
+
+					StatelessConnect->GetChallengeSequence(ServerSequence, ClientSequence);
+
+					Connection->InitSequence(ClientSequence, ServerSequence);
+				}
+
+				if (Connection->Handler.IsValid())
+				{
+					Connection->Handler->BeginHandshaking();
+				}
+
+				Notify->NotifyAcceptedConnection(Connection);
+
+				// If there is nothing left to process for this packet, then skip it
+				if (PacketSize == 0)
+				{
+					bIgnorePacket = true;
+				}
+			}
+			else
+			{
+				UE_LOG(LogNet, Warning, TEXT("Server failed post-challenge connection from: %llu"), PeerID);
+				bIgnorePacket = true;
+			}
+		}
+
+		// Process the packet if we aren't suppose to ignore it
+		if (!bIgnorePacket && Connections.Contains(PeerID))
+		{
+			auto Connection = Connections[PeerID];
+
+			if (Connection->State == EConnectionState::USOCK_Open)
+			{
+				UE_LOG(LogNetTraffic, VeryVerbose, TEXT("Got a raw packet of size %d"), PacketSize);
+				Connection->ReceivedRawPacket(Data, PacketSize);
+			}
+			else 
+			{
+				// This can happen on non-seamless map travels
+				UE_LOG(LogNet, Verbose, TEXT("Got a packet but the connection is closed to: %llu"), PeerID);
+			}
 		}
 		else
 		{
@@ -136,103 +286,77 @@ void UOculusNetDriver::TickDispatch(float DeltaTime)
 	}
 }
 
-void UOculusNetDriver::ProcessRemoteFunction(class AActor* Actor, UFunction* Function, void* Parameters, FOutParmRec* OutParms, FFrame* Stack, class UObject* SubObject)
+void UOculusNetDriver::LowLevelSend(FString Address, void* Data, int32 CountBits)
 {
-	bool bIsServer = IsServer();
-
-	UNetConnection* Connection = NULL;
-	if (bIsServer)
+	if (bIsPassthrough)
 	{
-		if ((Function->FunctionFlags & FUNC_NetMulticast))
-		{
-			// Multicast functions go to every client
-			TArray<UNetConnection*> UniqueRealConnections;
-			for (int32 i = 0; i<ClientConnections.Num(); ++i)
-			{
-				Connection = ClientConnections[i];
-				if (Connection && Connection->ViewTarget)
-				{
-					// Do relevancy check if unreliable.
-					// Reliables will always go out. This is odd behavior. On one hand we wish to guarantee "reliables always get there". On the other
-					// hand, replicating a reliable to something on the other side of the map that is non relevant seems weird.
-					//
-					// Multicast reliables should probably never be used in gameplay code for actors that have relevancy checks. If they are, the
-					// rpc will go through and the channel will be closed soon after due to relevancy failing.
-
-					bool IsRelevant = true;
-					if ((Function->FunctionFlags & FUNC_NetReliable) == 0)
-					{
-						FNetViewer Viewer(Connection, 0.f);
-						IsRelevant = Actor->IsNetRelevantFor(Viewer.InViewer, Viewer.ViewTarget, Viewer.ViewLocation);
-					}
-
-					if (IsRelevant)
-					{
-						if (Connection->GetUChildConnection() != NULL)
-						{
-							Connection = ((UChildConnection*)Connection)->Parent;
-						}
-
-						InternalProcessRemoteFunction(Actor, SubObject, Connection, Function, Parameters, OutParms, Stack, bIsServer);
-					}
-				}
-			}
-
-			// Replicate any RPCs to the replay net driver so that they can get saved in network replays
-			UNetDriver* NetDriver = GEngine->FindNamedNetDriver(GetWorld(), NAME_DemoNetDriver);
-			if (NetDriver)
-			{
-				NetDriver->ProcessRemoteFunction(Actor, Function, Parameters, OutParms, Stack, SubObject);
-			}
-			// Return here so we don't call InternalProcessRemoteFunction again at the bottom of this function
-			return;
-		}
+		return UIpNetDriver::LowLevelSend(Address, Data, CountBits);
 	}
-
-	// Send function data to remote.
-	Connection = Actor->GetNetConnection();
-	if (Connection)
+	auto OculusAddr = new FInternetAddrOculus(FURL(nullptr, *Address, ETravelType::TRAVEL_Absolute));
+	ovrID PeerID = OculusAddr->GetID();
+	if (ovr_Net_IsConnected(PeerID))
 	{
-		InternalProcessRemoteFunction(Actor, SubObject, Connection, Function, Parameters, OutParms, Stack, bIsServer);
+		const uint8* DataToSend = reinterpret_cast<uint8*>(Data);
+
+		if (ConnectionlessHandler.IsValid())
+		{
+			const ProcessedPacket ProcessedData =
+				ConnectionlessHandler->OutgoingConnectionless(Address, (uint8*)DataToSend, CountBits);
+
+			if (!ProcessedData.bError)
+			{
+				DataToSend = ProcessedData.Data;
+				CountBits = ProcessedData.CountBits;
+			}
+			else
+			{
+				CountBits = 0;
+			}
+		}
+
+
+		int32 BytesSent = 0;
+		uint32 CountBytes = FMath::DivideAndRoundUp(CountBits, 8);
+
+		if (CountBits > 0)
+		{
+			ovr_Net_SendPacket(PeerID, static_cast<size_t>(CountBytes), DataToSend, ovrSend_Unreliable);
+		}
 	}
 	else
 	{
-		UE_LOG(LogNet, Warning, TEXT("UOculusNetDriver::ProcesRemoteFunction: No owning connection for actor %s. Function %s will not be processed."), *Actor->GetName(), *Function->GetName());
+		UE_LOG(LogNet, Warning, TEXT("There is no connection to: %llu"), PeerID);
 	}
 }
 
 void UOculusNetDriver::OnNewNetworkingPeerRequest(ovrMessageHandle Message, bool bIsError)
 {
+	auto NetworkingPeer = ovr_Message_GetNetworkingPeer(Message);
+	auto PeerID = ovr_NetworkingPeer_GetID(NetworkingPeer);
+
+	if (AddNewClientConnection(PeerID)) 
+	{
+		// Accept the connection
+		UE_LOG(LogNet, Verbose, TEXT("Accepting peer request and waiting for challenge: %llu"), PeerID);
+		ovr_Net_Accept(PeerID);
+	}
+}
+
+bool UOculusNetDriver::AddNewClientConnection(ovrID PeerID)
+{
 	// Ignore the peer if not accepting new connections
 	if (Notify->NotifyAcceptingConnection() != EAcceptConnection::Accept)
 	{
 		UE_LOG(LogNet, Warning, TEXT("Not accepting more new connections"));
-		return;
+		return false;
 	}
-
-	auto NetworkingPeer = ovr_Message_GetNetworkingPeer(Message);
-	auto PeerID = ovr_NetworkingPeer_GetID(NetworkingPeer);
 
 	UE_LOG(LogNet, Verbose, TEXT("New incoming peer request: %llu"), PeerID);
 
-	// Create an unreal connection to the client
-	UOculusNetConnection* Connection = NewObject<UOculusNetConnection>(NetConnectionClass);
-	check(Connection);
-	auto OculusAddr = new FInternetAddrOculus(PeerID);
-	TSharedRef<FInternetAddr> InternetAddr = MakeShareable(OculusAddr);
-	Connection->InitRemoteConnection(this, nullptr, FURL(), *InternetAddr, ovr_Net_IsConnected(PeerID) ? USOCK_Open : USOCK_Pending);
+	// Add to the list of clients we are expecting a challenge from
+	PendingClientConnections.Add(PeerID, ovr_Net_IsConnected(PeerID) ? USOCK_Open : USOCK_Pending);
 
-	AddClientConnection(Connection);
-
-	Connections.Add(PeerID, Connection);
-
-	// Accept the connection
-	ovr_Net_Accept(PeerID);
-	Notify->NotifyAcceptedConnection(Connection);
-
-	// Listen for the 'Hello' message
-	Connection->SetClientLoginState(EClientLoginState::LoggingIn);
-	Connection->SetExpectedClientLoginMsgType(NMT_Hello);
+	return true;
 }
 
 void UOculusNetDriver::OnNetworkingConnectionStateChange(ovrMessageHandle Message, bool bIsError)
@@ -242,31 +366,89 @@ void UOculusNetDriver::OnNetworkingConnectionStateChange(ovrMessageHandle Messag
 
 	auto PeerID = ovr_NetworkingPeer_GetID(NetworkingPeer);
 
+	auto State = ovr_NetworkingPeer_GetState(NetworkingPeer);
+
 	UE_LOG(LogNet, Verbose, TEXT("%llu changed network connection state"), PeerID);
 
 	if (!Connections.Contains(PeerID))
 	{
-		UE_LOG(LogNet, Warning, TEXT("Peer ID not found in connections: %llu"), PeerID);
+		if (!PendingClientConnections.Contains(PeerID))
+		{
+			UE_LOG(LogNet, Warning, TEXT("Peer ID not found in connections: %llu"), PeerID);
+			return;
+		}
+
+		if (State == ovrPeerState_Connected)
+		{
+			PendingClientConnections[PeerID] = EConnectionState::USOCK_Open;
+		}
+		else
+		{
+			PendingClientConnections[PeerID] = EConnectionState::USOCK_Closed;
+		}
 		return;
 	}
 
 	auto Connection = Connections[PeerID];
-
-	auto State = ovr_NetworkingPeer_GetState(NetworkingPeer);
 	if (State == ovrPeerState_Connected)
 	{
-		UE_LOG(LogNet, Verbose, TEXT("%llu is connected"), PeerID);
-		Connection->State = EConnectionState::USOCK_Open;
+		// Use ovr_Net_IsConnected as the source of truth of the actual connection
+		if (ovr_Net_IsConnected(PeerID))
+		{
+			// Connections in a state of Closed will not have a NetDriver
+			// They will hit a nullptr exception if processing packets
+			if (Connection->State == EConnectionState::USOCK_Closed)
+			{
+				UE_LOG(LogNet, Warning, TEXT("Cannot reopen a closed connection to %llu"), PeerID);
+
+				// Better to close the underlying connection if we hit this state
+				ovr_Net_Close(PeerID);
+			}
+			else
+			{
+				UE_LOG(LogNet, Verbose, TEXT("%llu is connected"), PeerID);
+				Connection->State = EConnectionState::USOCK_Open;
+			}
+		}
+		else
+		{
+			UE_LOG(LogNet, Verbose, TEXT("Notification said %llu is open, but connection is closed.  Ignoring potentially old notification"), PeerID);
+		}
 	}
 	else if (State == ovrPeerState_Closed)
 	{
-		UE_LOG(LogNet, Verbose, TEXT("%llu is closed"), PeerID);
-		Connection->State = EConnectionState::USOCK_Closed;
+		// Use ovr_Net_IsConnected as the source of truth of the actual connection
+		if (!ovr_Net_IsConnected(PeerID))
+		{
+			if (Connection->State == EConnectionState::USOCK_Pending && !IsServer())
+			{
+				// Treat the pending case as if the connection timed out and try again
+				UE_LOG(LogNet, Verbose, TEXT("Notification said %llu is closed, but connection is still pending.  Ignoring potentially old notification and retry the connection"), PeerID);
+				ovr_Net_Connect(PeerID);
+			}
+			else
+			{
+				UE_LOG(LogNet, Verbose, TEXT("%llu is closed"), PeerID);
+				Connection->State = EConnectionState::USOCK_Closed;
+			}
+		}
+		else
+		{
+			UE_LOG(LogNet, Verbose, TEXT("Notification said %llu is closed, but connection is still open.  Ignoring potentially old notification"), PeerID);
+		}
 	}
 	else if (State == ovrPeerState_Timeout)
 	{
-		UE_LOG(LogNet, Warning, TEXT("%llu timed out"), PeerID);
-		Connection->State = EConnectionState::USOCK_Closed;
+		if (Connection->State == EConnectionState::USOCK_Pending && !IsServer())
+		{
+			UE_LOG(LogNet, Verbose, TEXT("Retrying connection to %llu"), PeerID);
+			ovr_Net_Connect(PeerID);
+		}
+		else
+		{
+			UE_LOG(LogNet, Warning, TEXT("%llu timed out"), PeerID);
+			Connection->State = EConnectionState::USOCK_Closed;
+		}
 	}
 	else
 	{
@@ -276,7 +458,14 @@ void UOculusNetDriver::OnNetworkingConnectionStateChange(ovrMessageHandle Messag
 
 void UOculusNetDriver::Shutdown()
 {
-	Super::Shutdown();
+	if (bIsPassthrough)
+	{
+		UIpNetDriver::Shutdown();
+		return;
+	}
+	UNetDriver::Shutdown();
+
+	UE_LOG(LogNet, Verbose, TEXT("Oculus Net Driver shutdown"));
 
 	auto OnlineSubsystem = static_cast<FOnlineSubsystemOculus*>(IOnlineSubsystem::Get(OCULUS_SUBSYSTEM));
 	if (PeerConnectRequestDelegateHandle.IsValid())
@@ -289,10 +478,26 @@ void UOculusNetDriver::Shutdown()
 		OnlineSubsystem->RemoveNotifDelegate(ovrMessage_Notification_Networking_ConnectionStateChange, NetworkingConnectionStateChangeDelegateHandle);
 		NetworkingConnectionStateChangeDelegateHandle.Reset();
 	}
+
+	// Ensure all current connections are closed now
+	for (auto& Connection : Connections)
+	{
+		ovrID PeerID = Connection.Key;
+		if (ovr_Net_IsConnected(PeerID))
+		{
+			UE_LOG(LogNet, Verbose, TEXT("Closing open connection to: %llu"), PeerID);
+			ovr_Net_Close(PeerID);
+		}
+	}
 }
 
 bool UOculusNetDriver::IsNetResourceValid()
 {
+	if (bIsPassthrough)
+	{
+		return UIpNetDriver::IsNetResourceValid();
+	}
+
 	if (!IsAvailable())
 	{
 		return false;

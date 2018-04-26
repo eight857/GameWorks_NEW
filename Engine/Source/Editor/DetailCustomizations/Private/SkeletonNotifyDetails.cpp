@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SkeletonNotifyDetails.h"
 #include "Fonts/SlateFontInfo.h"
@@ -30,12 +30,12 @@ void FSkeletonNotifyDetails::CustomizeDetails( IDetailLayoutBuilder& DetailBuild
 
 	TSharedPtr<IPropertyHandle> InPropertyHandle = DetailBuilder.GetProperty("AnimationNames");
 
-	TArray< TWeakObjectPtr<UObject> > SelectedObjects =  DetailBuilder.GetDetailsView().GetSelectedObjects();
+	TArray< TWeakObjectPtr<UObject> > SelectedObjects =  DetailBuilder.GetSelectedObjects();
 
 	UEditorSkeletonNotifyObj* EdObj = NULL;
 	for(int i = 0; i < SelectedObjects.Num(); ++i)
 	{
-		UObject* Obj = SelectedObjects[0].Get();
+		UObject* Obj = SelectedObjects[i].Get();
 		EdObj = Cast<UEditorSkeletonNotifyObj>(Obj);
 		if(EdObj)
 		{

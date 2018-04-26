@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Engine/Blueprint.h"
 #include "Misc/CoreMisc.h"
@@ -208,9 +208,65 @@ namespace
 #if WITH_EDITOR
 		if (const UBlueprint* const Blueprint = Cast<UBlueprint>(Object))
 		{
-			if (!FBlueprintEditorUtils::IsDataOnlyBlueprint(Blueprint))
+			// Force non-data-only blueprints to set the HasScript flag, as they may not currently have bytecode due to a compilation error
+			bool bForceHasScript = !FBlueprintEditorUtils::IsDataOnlyBlueprint(Blueprint);
+			if (!bForceHasScript)
 			{
-				// Force non-data-only blueprints to set the HasScript flag, as they may not currently have bytecode due to a compilation error
+				// Also do this for blueprints that derive from something containing text properties, as these may propagate default values from their parent class on load
+				if (UClass* BlueprintParentClass = Blueprint->ParentClass.Get())
+				{
+					TArray<UStruct*> TypesToCheck;
+					TypesToCheck.Add(BlueprintParentClass);
+
+					TSet<UStruct*> TypesChecked;
+					while (!bForceHasScript && TypesToCheck.Num() > 0)
+					{
+						UStruct* TypeToCheck = TypesToCheck.Pop(/*bAllowShrinking*/false);
+						TypesChecked.Add(TypeToCheck);
+
+						for (TFieldIterator<const UProperty> PropIt(TypeToCheck, EFieldIteratorFlags::IncludeSuper, EFieldIteratorFlags::ExcludeDeprecated, EFieldIteratorFlags::IncludeInterfaces); !bForceHasScript && PropIt; ++PropIt)
+						{
+							auto ProcessInnerProperty = [&bForceHasScript, &TypesToCheck, &TypesChecked](const UProperty* InProp) -> bool
+							{
+								if (const UTextProperty* TextProp = Cast<const UTextProperty>(InProp))
+								{
+									bForceHasScript = true;
+									return true;
+								}
+								if (const UStructProperty* StructProp = Cast<const UStructProperty>(InProp))
+								{
+									if (!TypesChecked.Contains(StructProp->Struct))
+									{
+										TypesToCheck.Add(StructProp->Struct);
+									}
+									return true;
+								}
+								return false;
+							};
+
+							if (!ProcessInnerProperty(*PropIt))
+							{
+								if (const UArrayProperty* ArrayProp = Cast<const UArrayProperty>(*PropIt))
+								{
+									ProcessInnerProperty(ArrayProp->Inner);
+								}
+								if (const UMapProperty* MapProp = Cast<const UMapProperty>(*PropIt))
+								{
+									ProcessInnerProperty(MapProp->KeyProp);
+									ProcessInnerProperty(MapProp->ValueProp);
+								}
+								if (const USetProperty* SetProp = Cast<const USetProperty>(*PropIt))
+								{
+									ProcessInnerProperty(SetProp->ElementProp);
+								}
+							}
+						}
+					}
+				}
+			}
+
+			if (bForceHasScript)
+			{
 				BlueprintGatherFlags |= EPropertyLocalizationGathererTextFlags::ForceHasScript;
 			}
 		}
@@ -320,6 +376,7 @@ UBlueprint::UBlueprint(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 #if WITH_EDITOR
 	, bRunConstructionScriptOnDrag(true)
+	, bRunConstructionScriptInSequencer(false)
 	, bGenerateConstClass(false)
 #endif
 #if WITH_EDITORONLY_DATA
@@ -559,6 +616,8 @@ extern COREUOBJECT_API bool GBlueprintUseCompilationManager;
 
 UClass* UBlueprint::RegenerateClass(UClass* ClassToRegenerate, UObject* PreviousCDO, TArray<UObject*>& ObjLoaded)
 {
+	LoadModulesRequiredForCompilation();
+
 	if(GBlueprintUseCompilationManager)
 	{
 		// ensure that we have UProperties for any properties declared in the blueprint:
@@ -570,7 +629,7 @@ UClass* UBlueprint::RegenerateClass(UClass* ClassToRegenerate, UObject* Previous
 		// tag ourself as bIsRegeneratingOnLoad so that any reentrance via ForceLoad calls doesn't recurse:
 		bIsRegeneratingOnLoad = true;
 		
-		UPackage* Package = Cast<UPackage>(GetOutermost());
+		UPackage* Package = GetOutermost();
 		bool bIsPackageDirty = Package ? Package->IsDirty() : false;
 
 		UClass* GeneratedClassResolved = GeneratedClass;
@@ -582,9 +641,12 @@ UClass* UBlueprint::RegenerateClass(UClass* ClassToRegenerate, UObject* Previous
 			UBlueprint::ForceLoadMembers(GeneratedClassResolved->ClassDefaultObject);
 		}
 		UBlueprint::ForceLoadMembers(this);
+		
+		FBlueprintEditorUtils::PreloadConstructionScript( this );
+
+		FBlueprintEditorUtils::LinkExternalDependencies( this );
 
 		FBlueprintEditorUtils::RefreshVariables(this);
-		FBlueprintEditorUtils::PreloadConstructionScript( this );
 		
 		// Preload Overridden Components
 		if (InheritableComponentHandler)
@@ -592,10 +654,12 @@ UClass* UBlueprint::RegenerateClass(UClass* ClassToRegenerate, UObject* Previous
 			InheritableComponentHandler->PreloadAll();
 		}
 
-		FBlueprintEditorUtils::LinkExternalDependencies( this );
-
 		FBlueprintCompilationManager::NotifyBlueprintLoaded( this ); 
 		
+		FBlueprintEditorUtils::PreloadBlueprintSpecificData( this );
+
+		FBlueprintEditorUtils::UpdateOutOfDateAnimBlueprints(this);
+
 		// clear this now that we're not in a re-entrrant context - bHasBeenRegenerated will guard against 'real' 
 		// double regeneration calls:
 		bIsRegeneratingOnLoad = false;
@@ -717,9 +781,6 @@ void UBlueprint::PostLoad()
 		FBlueprintEditorUtils::ConformAllowDeletionFlag(this);
 	}
 
-	// Update old Anim Blueprints
-	FBlueprintEditorUtils::UpdateOutOfDateAnimBlueprints(this);
-
 #if WITH_EDITORONLY_DATA
 	// Ensure all the pin watches we have point to something useful
 	FBlueprintEditorUtils::UpdateStalePinWatches(this);
@@ -758,6 +819,7 @@ void UBlueprint::DebuggingWorldRegistrationHelper(UObject* ObjectProvidingWorld,
 		if (ObjWorld != NULL)
 		{
 			ObjWorld->NotifyOfBlueprintDebuggingAssociation(this, ValueToRegister);
+			OnSetObjectBeingDebuggedDelegate.Broadcast(ValueToRegister);
 		}
 	}
 }
@@ -848,9 +910,9 @@ UWorld* UBlueprint::GetWorldBeingDebugged()
 void UBlueprint::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) const
 {
 	// We use Generated instead of Skeleton because the CDO data is more accurate on Generated
-	if (UClass* GenClass = Cast<UClass>(GeneratedClass))
+	if (GeneratedClass)
 	{
-		if (UObject* CDO = GenClass->GetDefaultObject())
+		if (UObject* CDO = GeneratedClass->GetDefaultObject())
 		{
 			CDO->GetAssetRegistryTags(OutTags);
 		}
@@ -951,9 +1013,9 @@ FPrimaryAssetId UBlueprint::GetPrimaryAssetId() const
 {
 	// Forward to our Class, which will forward to CDO if needed
 	// We use Generated instead of Skeleton because the CDO data is more accurate on Generated
-	if (UClass* GenClass = Cast<UClass>(GeneratedClass))
+	if (GeneratedClass)
 	{
-		return GenClass->GetPrimaryAssetId();
+		return GeneratedClass->GetPrimaryAssetId();
 	}
 
 	return FPrimaryAssetId();
@@ -1397,8 +1459,8 @@ ETimelineSigType UBlueprint::GetTimelineSignatureForFunctionByName(const FName& 
 	return UTimelineComponent::GetTimelineSignatureForFunction(Function);
 
 
-	UE_LOG(LogBlueprint, Log, TEXT("GetTimelineSignatureForFunction: No SkeletonGeneratedClass in Blueprint '%s'."), *GetName());
-	return ETS_InvalidSignature;
+	//UE_LOG(LogBlueprint, Log, TEXT("GetTimelineSignatureForFunction: No SkeletonGeneratedClass in Blueprint '%s'."), *GetName());
+	//return ETS_InvalidSignature;
 }
 
 FString UBlueprint::GetDesc(void)
@@ -1705,6 +1767,11 @@ void UBlueprint::ReplaceDeprecatedNodes()
 	}
 }
 
+void UBlueprint::ClearEditorReferences()
+{
+	FKismetEditorUtilities::OnBlueprintUnloaded.Broadcast(this);
+}
+
 UInheritableComponentHandler* UBlueprint::GetInheritableComponentHandler(bool bCreateIfNecessary)
 {
 	static const FBoolConfigValueHelper EnableInheritableComponents(TEXT("Kismet"), TEXT("bEnableInheritableComponents"), GEngineIni);
@@ -1722,9 +1789,12 @@ UInheritableComponentHandler* UBlueprint::GetInheritableComponentHandler(bool bC
 	return InheritableComponentHandler;
 }
 
-#endif
 
-#if WITH_EDITOR
+EDataValidationResult UBlueprint::IsDataValid(TArray<FText>& ValidationErrors)
+{
+	return GeneratedClass ? GeneratedClass->GetDefaultObject()->IsDataValid(ValidationErrors) : EDataValidationResult::Invalid;
+}
+
 FName UBlueprint::GetFunctionNameFromClassByGuid(const UClass* InClass, const FGuid FunctionGuid)
 {
 	return FBlueprintEditorUtils::GetFunctionNameFromClassByGuid(InClass, FunctionGuid);
@@ -1763,3 +1833,12 @@ UEdGraph* UBlueprint::GetLastEditedUberGraph() const
 }
 
 #endif //WITH_EDITOR
+
+#if WITH_EDITORONLY_DATA
+void UBlueprint::LoadModulesRequiredForCompilation()
+{
+	static const FName ModuleName(TEXT("KismetCompiler"));
+	FModuleManager::Get().LoadModule(ModuleName);
+}
+#endif //WITH_EDITORONLY_DATA
+

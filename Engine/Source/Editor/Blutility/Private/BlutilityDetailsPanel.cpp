@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlutilityDetailsPanel.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -37,7 +37,7 @@ TSharedRef<IDetailCustomization> FEditorUtilityInstanceDetails::MakeInstance()
 
 void FEditorUtilityInstanceDetails::CustomizeDetails(IDetailLayoutBuilder& DetailLayoutBuilder)
 {
-	SelectedObjectsList = DetailLayoutBuilder.GetDetailsView().GetSelectedObjects();
+	SelectedObjectsList = DetailLayoutBuilder.GetSelectedObjects();
 
 	// Hide some useless categories
 	//@TODO: How to hide Actors, Layers, etc...?
@@ -150,6 +150,8 @@ FReply FEditorUtilityInstanceDetails::OnExecuteAction(TWeakObjectPtr<UFunction> 
 {
 	if (UFunction* Function = WeakFunctionPtr.Get())
 	{
+		// @todo Editor Scripting - This should not be called here.  Internal operations may have transactions created and this prevents them from being created.  
+		// Also if the blutility opens a level or similar, the transaction buffer gets reset because there is an active transaction on level load.
 		FScopedTransaction Transaction( NSLOCTEXT("UnrealEd", "BlutilityAction", "Blutility Action") );
 		FEditorScriptExecutionGuard ScriptGuard;
 

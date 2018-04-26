@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using System.IO;
 using UnrealBuildTool;
@@ -9,7 +9,7 @@ public class FBX : ModuleRules
 	{
 		Type = ModuleType.External;
 
-		string FBXSDKDir = UEBuildConfiguration.UEThirdPartySourceDirectory + "FBX/2016.1.1/";
+		string FBXSDKDir = Target.UEThirdPartySourceDirectory + "FBX/2018.1.1/";
 		PublicSystemIncludePaths.AddRange(
 			new string[] {
 					FBXSDKDir + "include",
@@ -20,17 +20,31 @@ public class FBX : ModuleRules
 
 		if ( Target.Platform == UnrealTargetPlatform.Win64 )
 		{
-			string FBxLibPath = FBXSDKDir + "lib/vs" + WindowsPlatform.GetVisualStudioCompilerVersionName() + "/";
+			string FBxLibPath = FBXSDKDir + "lib/vs" + Target.WindowsPlatform.GetVisualStudioCompilerVersionName() + "/";
 
 			FBxLibPath += "x64/release/";
 			PublicLibraryPaths.Add(FBxLibPath);
 
-			PublicAdditionalLibraries.Add("libfbxsdk.lib");
+			if (Target.LinkType != TargetLinkType.Monolithic)
+			{
+				PublicAdditionalLibraries.Add("libfbxsdk.lib");
 
-			// We are using DLL versions of the FBX libraries
-			Definitions.Add("FBXSDK_SHARED"); 
+				// We are using DLL versions of the FBX libraries
+				PublicDefinitions.Add("FBXSDK_SHARED");
 
-			RuntimeDependencies.Add(new RuntimeDependency("$(EngineDir)/Binaries/Win64/libfbxsdk.dll"));
+				RuntimeDependencies.Add("$(EngineDir)/Binaries/Win64/libfbxsdk.dll");
+			}
+			else
+			{
+				if (Target.bUseStaticCRT)
+				{
+					PublicAdditionalLibraries.Add("libfbxsdk-mt.lib");
+				}
+				else
+				{
+					PublicAdditionalLibraries.Add("libfbxsdk-md.lib");
+				}
+			}
 		}
 		else if (Target.Platform == UnrealTargetPlatform.Mac)
 		{
@@ -50,7 +64,7 @@ public class FBX : ModuleRules
 			PublicAdditionalLibraries.Add(LibDir + "/libfbxsdk.a");
 			/* There is a bug in fbxarch.h where is doesn't do the check
 			 * for clang under linux */
-			Definitions.Add("FBXSDK_COMPILER_CLANG");
+			PublicDefinitions.Add("FBXSDK_COMPILER_CLANG");
 
 			// libfbxsdk has been built against libstdc++ and as such needs this library
 			PublicAdditionalLibraries.Add("stdc++");

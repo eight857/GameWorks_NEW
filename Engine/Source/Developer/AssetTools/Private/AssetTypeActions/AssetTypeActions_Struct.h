@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,7 @@
 #include "AssetTypeActions_Base.h"
 #include "Engine/UserDefinedStruct.h"
 
-class FAssetData;
+struct FAssetData;
 
 class FAssetTypeActions_Struct : public FAssetTypeActions_Base
 {

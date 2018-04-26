@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MobileDecalRendering.cpp: Decals for mobile renderer
@@ -44,11 +44,11 @@ void FMobileSceneRenderer::RenderDecals(FRHICommandListImmediate& RHICmdList)
 			INC_DWORD_STAT_BY(STAT_Decals, SortedDecals.Num());
 		
 			RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1);
-			RHICmdList.SetStreamSource(0, GetUnitCubeVertexBuffer(), sizeof(FVector4), 0);
+			RHICmdList.SetStreamSource(0, GetUnitCubeVertexBuffer(), 0);
 
 			TOptional<EDecalBlendMode> LastDecalBlendMode;
 			TOptional<bool> LastDecalDepthState;
-			bool bEncodedHDR = IsMobileHDR32bpp() && !IsMobileHDRMosaic();
+			bool bEncodedHDR = GetMobileHDRMode() == EMobileHDRMode::EnabledRGBE;
 			if (bEncodedHDR)
 			{
 				GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();

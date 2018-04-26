@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PluginManager.h"
 #include "GenericPlatform/GenericPlatformFile.h"
@@ -17,6 +17,8 @@
 #include "Interfaces/IProjectManager.h"
 #include "Modules/ModuleManager.h"
 #include "ProjectManager.h"
+#include "PluginManifest.h"
+#include "PlatformTime.h"
 
 DEFINE_LOG_CATEGORY_STATIC( LogPluginManager, Log, All );
 
@@ -76,11 +78,11 @@ namespace PluginSystemDefs
 	}
 }
 
-FPlugin::FPlugin(const FString& InFileName, const FPluginDescriptor& InDescriptor, EPluginLoadedFrom InLoadedFrom)
+FPlugin::FPlugin(const FString& InFileName, const FPluginDescriptor& InDescriptor, EPluginType InType)
 	: Name(FPaths::GetBaseFilename(InFileName))
 	, FileName(InFileName)
 	, Descriptor(InDescriptor)
-	, LoadedFrom(InLoadedFrom)
+	, Type(InType)
 	, bEnabled(false)
 {
 
@@ -88,16 +90,6 @@ FPlugin::FPlugin(const FString& InFileName, const FPluginDescriptor& InDescripto
 
 FPlugin::~FPlugin()
 {
-}
-
-FString FPlugin::GetName() const
-{
-	return Name;
-}
-
-FString FPlugin::GetDescriptorFileName() const
-{
-	return FileName;
 }
 
 FString FPlugin::GetBaseDir() const
@@ -112,22 +104,40 @@ FString FPlugin::GetContentDir() const
 
 FString FPlugin::GetMountedAssetPath() const
 {
-	return FString::Printf(TEXT("/%s/"), *Name);
+	FString Path;
+	Path.Reserve(Name.Len() + 2);
+	Path.AppendChar('/');
+	Path.Append(Name);
+	Path.AppendChar('/');
+	return Path;
 }
 
-bool FPlugin::IsEnabled() const
+bool FPlugin::IsEnabledByDefault() const
 {
-	return bEnabled;
-}
-
-bool FPlugin::CanContainContent() const
-{
-	return Descriptor.bCanContainContent;
+	if (Descriptor.EnabledByDefault == EPluginEnabledByDefault::Enabled)
+	{
+		return true;
+	}
+	else if (Descriptor.EnabledByDefault == EPluginEnabledByDefault::Disabled)
+	{
+		return false;
+	}
+	else
+	{
+		return GetLoadedFrom() == EPluginLoadedFrom::Project;
+	}
 }
 
 EPluginLoadedFrom FPlugin::GetLoadedFrom() const
 {
-	return LoadedFrom;
+	if(Type == EPluginType::Engine || Type == EPluginType::Enterprise)
+	{
+		return EPluginLoadedFrom::Engine;
+	}
+	else
+	{
+		return EPluginLoadedFrom::Project;
+	}
 }
 
 const FPluginDescriptor& FPlugin::GetDescriptor() const
@@ -137,7 +147,7 @@ const FPluginDescriptor& FPlugin::GetDescriptor() const
 
 bool FPlugin::UpdateDescriptor(const FPluginDescriptor& NewDescriptor, FText& OutFailReason)
 {
-	if(!NewDescriptor.Save(FileName, LoadedFrom == EPluginLoadedFrom::GameProject, OutFailReason))
+	if(!NewDescriptor.Save(FileName, OutFailReason))
 	{
 		return false;
 	}
@@ -207,34 +217,99 @@ void FPluginManager::DiscoverAllPlugins()
 void FPluginManager::ReadAllPlugins(TMap<FString, TSharedRef<FPlugin>>& Plugins, const TSet<FString>& ExtraSearchPaths)
 {
 #if (WITH_ENGINE && !IS_PROGRAM) || WITH_PLUGIN_SUPPORT
-	// Find "built-in" plugins.  That is, plugins situated right within the Engine directory.
-	ReadPluginsInDirectory(FPaths::EnginePluginsDir(), EPluginLoadedFrom::Engine, Plugins);
-
-	// Find plugins in the game project directory (<MyGameProject>/Plugins). If there are any engine plugins matching the name of a game plugin,
-	// assume that the game plugin version is preferred.
-	if( FApp::HasGameName() )
-	{
-		ReadPluginsInDirectory(FPaths::GamePluginsDir(), EPluginLoadedFrom::GameProject, Plugins);
-	}
-
 	const FProjectDescriptor* Project = IProjectManager::Get().GetCurrentProject();
+
+	// Find any plugin manifest files. These give us the plugin list (and their descriptors) without needing to scour the directory tree.
+	TArray<FString> ManifestFileNames;
 	if (Project != nullptr)
 	{
+		FindPluginManifestsInDirectory(*FPaths::ProjectPluginsDir(), ManifestFileNames);
+	}
+
+	// If we didn't find any manifests, do a recursive search for plugins
+	if (ManifestFileNames.Num() == 0)
+	{
+		// Find "built-in" plugins.  That is, plugins situated right within the Engine directory.
+		ReadPluginsInDirectory(FPaths::EnginePluginsDir(), EPluginType::Engine, Plugins);
+
+		// Find plugins in the game project directory (<MyGameProject>/Plugins). If there are any engine plugins matching the name of a game plugin,
+		// assume that the game plugin version is preferred.
+		if (Project != nullptr)
+		{
+			ReadPluginsInDirectory(FPaths::ProjectPluginsDir(), EPluginType::Project, Plugins);
+		}
+	}
+	else
+	{
+		// Add plugins from each of the manifests
+		for (const FString& ManifestFileName : ManifestFileNames)
+		{
+			UE_LOG(LogPluginManager, Verbose, TEXT("Reading plugin manifest: %s"), *ManifestFileName);
+			FPluginManifest Manifest;
+
+			// Try to load the manifest. We only expect manifests in a cooked game, so failing to load them is a hard error.
+			FText FailReason;
+			if (!Manifest.Load(ManifestFileName, FailReason))
+			{
+				UE_LOG(LogPluginManager, Fatal, TEXT("%s"), *FailReason.ToString());
+			}
+
+			// Get all the standard plugin directories
+			const FString EngineDir = FPaths::EngineDir();
+			const FString EnterpriseDir = FPaths::EnterpriseDir();
+			const FString ProjectModsDir = FPaths::ProjectModsDir();
+
+			// Create all the plugins inside it
+			for (const FPluginManifestEntry& Entry : Manifest.Contents)
+			{
+				EPluginType Type;
+				if (Entry.File.StartsWith(EngineDir))
+				{
+					Type = EPluginType::Engine;
+				}
+				else if (Entry.File.StartsWith(EnterpriseDir))
+				{
+					Type = EPluginType::Enterprise;
+				}
+				else if (Entry.File.StartsWith(ProjectModsDir))
+				{
+					Type = EPluginType::Mod;
+				}
+				else
+				{
+					Type = EPluginType::Project;
+				}
+				CreatePluginObject(Entry.File, Entry.Descriptor, Type, Plugins);
+			}
+		}
+	}
+
+	if (Project != nullptr)
+	{
+		// Always add the mods from the loose directory without using manifests, because they're not packaged together.
+		ReadPluginsInDirectory(FPaths::ProjectModsDir(), EPluginType::Mod, Plugins);
+
 		// If they have a list of additional directories to check, add those plugins too
 		for (const FString& Dir : Project->GetAdditionalPluginDirectories())
 		{
-			ReadPluginsInDirectory(Dir, EPluginLoadedFrom::Engine, Plugins);
+			ReadPluginsInDirectory(Dir, EPluginType::External, Plugins);
+		}
+
+		// Add plugins from FPaths::EnterprisePluginsDir if it exists
+		if (FPaths::DirectoryExists(FPaths::EnterprisePluginsDir()))
+		{
+			ReadPluginsInDirectory(FPaths::EnterprisePluginsDir(), EPluginType::Enterprise, Plugins);
 		}
 	}
 
 	for (const FString& ExtraSearchPath : ExtraSearchPaths)
 	{
-		ReadPluginsInDirectory(ExtraSearchPath, EPluginLoadedFrom::GameProject, Plugins);
+		ReadPluginsInDirectory(ExtraSearchPath, EPluginType::External, Plugins);
 	}
 #endif
 }
 
-void FPluginManager::ReadPluginsInDirectory(const FString& PluginsDirectory, const EPluginLoadedFrom LoadedFrom, TMap<FString, TSharedRef<FPlugin>>& Plugins)
+void FPluginManager::ReadPluginsInDirectory(const FString& PluginsDirectory, const EPluginType Type, TMap<FString, TSharedRef<FPlugin>>& Plugins)
 {
 	// Make sure the directory even exists
 	if(FPlatformFileManager::Get().GetPlatformFile().DirectoryExists(*PluginsDirectory))
@@ -246,27 +321,9 @@ void FPluginManager::ReadPluginsInDirectory(const FString& PluginsDirectory, con
 		{
 			FPluginDescriptor Descriptor;
 			FText FailureReason;
-			if ( Descriptor.Load(FileName, LoadedFrom == EPluginLoadedFrom::GameProject, FailureReason) )
+			if ( Descriptor.Load(FileName, FailureReason) )
 			{
-				TSharedRef<FPlugin> Plugin = MakeShareable(new FPlugin(FileName, Descriptor, LoadedFrom));
-				
-				FString FullPath = FPaths::ConvertRelativePathToFull(FileName);
-				UE_LOG(LogPluginManager, Verbose, TEXT("Read plugin descriptor for %s, from %s"), *Plugin->GetName(), *FullPath);
-
-				const TSharedRef<FPlugin>* ExistingPlugin = Plugins.Find(Plugin->GetName());
-				if (ExistingPlugin == nullptr)
-				{
-					Plugins.Add(Plugin->GetName(), Plugin);
-				}
-				else if ((*ExistingPlugin)->LoadedFrom == EPluginLoadedFrom::Engine && LoadedFrom == EPluginLoadedFrom::GameProject)
-				{
-					Plugins[Plugin->GetName()] = Plugin;
-					UE_LOG(LogPluginManager, Verbose, TEXT("Replacing engine version of '%s' plugin with game version"), *Plugin->GetName());
-				}
-				else if( (*ExistingPlugin)->LoadedFrom != EPluginLoadedFrom::GameProject || LoadedFrom != EPluginLoadedFrom::Engine)
-				{
-					UE_LOG(LogPluginManager, Warning, TEXT("Plugin '%s' exists at '%s' and '%s' - second location will be ignored"), *Plugin->GetName(), *(*ExistingPlugin)->FileName, *Plugin->FileName);
-				}
+				CreatePluginObject(FileName, Descriptor, Type, Plugins);
 			}
 			else
 			{
@@ -283,48 +340,58 @@ void FPluginManager::ReadPluginsInDirectory(const FString& PluginsDirectory, con
 
 void FPluginManager::FindPluginsInDirectory(const FString& PluginsDirectory, TArray<FString>& FileNames)
 {
-	// Class to enumerate the contents of a directory, and find all sub-directories and plugin descriptors within it
-	struct FPluginDirectoryVisitor : public IPlatformFile::FDirectoryVisitor
-	{
-		TArray<FString> SubDirectories;
-		TArray<FString> PluginDescriptors;
+	FPlatformFileManager::Get().GetPlatformFile().FindFilesRecursively(FileNames, *PluginsDirectory, TEXT(".uplugin"));
+}
 
-		virtual bool Visit(const TCHAR* FilenameOrDirectory, bool bIsDirectory) override
+void FPluginManager::FindPluginManifestsInDirectory(const FString& PluginManifestDirectory, TArray<FString>& FileNames)
+{
+	class FManifestVisitor : public IPlatformFile::FDirectoryVisitor
+	{
+	public:
+		TArray<FString>& ManifestFileNames;
+
+		FManifestVisitor(TArray<FString>& InManifestFileNames) : ManifestFileNames(InManifestFileNames)
 		{
-			FString FilenameOrDirectoryStr = FilenameOrDirectory;
-			if(bIsDirectory)
+		}
+
+		virtual bool Visit(const TCHAR* FileNameOrDirectory, bool bIsDirectory)
+		{
+			if (!bIsDirectory)
 			{
-				SubDirectories.Add(FilenameOrDirectoryStr);
-			}
-			else if(FilenameOrDirectoryStr.EndsWith(TEXT(".uplugin")))
-			{
-				PluginDescriptors.Add(FilenameOrDirectoryStr);
+				FString FileName(FileNameOrDirectory);
+				if (FileName.EndsWith(".upluginmanifest"))
+				{
+					ManifestFileNames.Add(FileName);
+				}
 			}
 			return true;
 		}
 	};
 
-	// Enumerate the contents of the current directory
-	FPluginDirectoryVisitor Visitor;
-	FPlatformFileManager::Get().GetPlatformFile().IterateDirectory(*PluginsDirectory, Visitor);
+	FManifestVisitor Visitor(FileNames);
+	IFileManager::Get().IterateDirectory(*PluginManifestDirectory, Visitor);
+}
 
-	// If there's no plugins in this directory, recurse through all the child directories
-	if(Visitor.PluginDescriptors.Num() == 0)
+void FPluginManager::CreatePluginObject(const FString& FileName, const FPluginDescriptor& Descriptor, const EPluginType Type, TMap<FString, TSharedRef<FPlugin>>& Plugins)
+{
+	TSharedRef<FPlugin> Plugin = MakeShareable(new FPlugin(FileName, Descriptor, Type));
+
+	FString FullPath = FPaths::ConvertRelativePathToFull(FileName);
+	UE_LOG(LogPluginManager, Verbose, TEXT("Read plugin descriptor for %s, from %s"), *Plugin->GetName(), *FullPath);
+
+	const TSharedRef<FPlugin>* ExistingPlugin = Plugins.Find(Plugin->GetName());
+	if (ExistingPlugin == nullptr)
 	{
-		for(const FString& SubDirectory: Visitor.SubDirectories)
-		{
-			FindPluginsInDirectory(SubDirectory, FileNames);
-		}
+		Plugins.Add(Plugin->GetName(), Plugin);
 	}
-	else
+	else if ((*ExistingPlugin)->Type == EPluginType::Engine && Type == EPluginType::Project)
 	{
-		for(const FString& PluginDescriptor: Visitor.PluginDescriptors)
-		{
-			if (!FileNames.Contains(PluginDescriptor))
-			{
-				FileNames.Add(PluginDescriptor);
-			}
-		}
+		Plugins[Plugin->GetName()] = Plugin;
+		UE_LOG(LogPluginManager, Verbose, TEXT("Replacing engine version of '%s' plugin with game version"), *Plugin->GetName());
+	}
+	else if( (*ExistingPlugin)->Type != EPluginType::Project || Type != EPluginType::Engine)
+	{
+		UE_LOG(LogPluginManager, Warning, TEXT("Plugin '%s' exists at '%s' and '%s' - second location will be ignored"), *Plugin->GetName(), *(*ExistingPlugin)->FileName, *Plugin->FileName);
 	}
 }
 
@@ -350,233 +417,138 @@ public:
 	}
 };
 
-bool FPluginManager::IsPluginSupportedByCurrentTarget(TSharedRef<FPlugin> Plugin) const
-{
-	bool bSupported = false;
-	if (Plugin->GetDescriptor().Modules.Num())
-	{
-		for (const FModuleDescriptor& Module : Plugin->GetDescriptor().Modules)
-		{
-			// Programs support only program type plugins
-			// Non-program targets don't support from plugins
-#if IS_PROGRAM
-			if (Module.Type == EHostType::Program)
-			{
-				bSupported = true;
-			}
-#else
-			if (Module.Type != EHostType::Program)
-			{
-				bSupported = true;
-			}
-#endif
-		}
-	}
-	else
-	{
-		bSupported = true;
-	}
-	return bSupported;
-}
-
 bool FPluginManager::ConfigureEnabledPlugins()
 {
 	if(!bHaveConfiguredEnabledPlugins)
 	{
+		double StartTime = FPlatformTime::Seconds();
+
 		// Don't need to run this again
 		bHaveConfiguredEnabledPlugins = true;
 
-		// If a current project is set, check that we know about any plugin that's explicitly enabled
-		const FProjectDescriptor *Project = IProjectManager::Get().GetCurrentProject();
-		const bool bHasProjectFile = Project != nullptr;
+		// Set of all the plugins which have been enabled
+		TSet<FString> EnabledPluginNames;
 
-		// Get all the enabled plugin names
-		TArray< FString > EnabledPluginNames;
-#if IS_PROGRAM
-		// Programs can also define the list of enabled plugins in ini
-		GConfig->GetArray(TEXT("Plugins"), TEXT("ProgramEnabledPlugins"), EnabledPluginNames, GEngineIni);
-#endif
+		// Keep a set of all the plugin names that have been configured. We read configuration data from different places, but only configure a plugin from the first place that it's referenced.
+		TSet<FString> ConfiguredPluginNames;
+
 #if !IS_PROGRAM || HACK_HEADER_GENERATOR
 		if (!FParse::Param(FCommandLine::Get(), TEXT("NoEnginePlugins")))
 		{
-			FProjectManager::Get().GetEnabledPlugins(EnabledPluginNames);
-		}
-#endif
-
-		// Build a set from the array
-		TSet< FString > AllEnabledPlugins;
-		AllEnabledPlugins.Append(MoveTemp(EnabledPluginNames));
-
-		// Enable all the plugins by name
-		for (const TPair<FString, TSharedRef< FPlugin >> PluginPair : AllPlugins)
-		{
-			const TSharedRef<FPlugin>& Plugin = PluginPair.Value;
-			if (AllEnabledPlugins.Contains(Plugin->Name))
+			// Find all the plugin references in the project file
+			const FProjectDescriptor* ProjectDescriptor = IProjectManager::Get().GetCurrentProject();
+			if (ProjectDescriptor != nullptr)
 			{
-#if IS_PROGRAM
-				Plugin->bEnabled = !bHasProjectFile || IsPluginSupportedByCurrentTarget(Plugin);
-				if (!Plugin->bEnabled)
+				// Copy the plugin references, since we may modify the project if any plugins are missing
+				TArray<FPluginReferenceDescriptor> PluginReferences(ProjectDescriptor->Plugins);
+				for (const FPluginReferenceDescriptor& PluginReference : PluginReferences)
 				{
-					AllEnabledPlugins.Remove(Plugin->Name);
-				}
-#else
-				Plugin->bEnabled = true;
-#endif
-
-				if (Plugin->bEnabled && FPlatformMisc::ShouldDisablePluginAtRuntime(Plugin->Name))
-				{
-					Plugin->bEnabled = false;
-					AllEnabledPlugins.Remove(Plugin->Name);
-				}
-
-				if (Plugin->bEnabled && Plugin->Descriptor.EngineVersion.Len() > 0)
-				{
-					FEngineVersion Version;
-					if (!FEngineVersion::Parse(Plugin->Descriptor.EngineVersion, Version))
+					if(!ConfiguredPluginNames.Contains(PluginReference.Name))
 					{
-						UE_LOG(LogPluginManager, Warning, TEXT("Engine version string in %s could not be parsed (\"%s\")"), *Plugin->FileName, *Plugin->Descriptor.EngineVersion);
-					}
-					else
-					{
-						EVersionComparison Comparison = FEngineVersion::GetNewest(FEngineVersion::CompatibleWith(), Version, nullptr);
-						if (Comparison != EVersionComparison::Neither)
+						if (!ConfigureEnabledPlugin(PluginReference, EnabledPluginNames))
 						{
-							FText Title = LOCTEXT("IncompatiblePluginTitle", "Incompatible Plugin");
-							if (FMessageDialog::Open(EAppMsgType::YesNo, FText::Format(LOCTEXT("IncompatiblePluginMessage", "'{0}' plugin was designed for a different version of the engine. Attempt to load it anyway?"), FText::FromString(Plugin->Descriptor.FriendlyName)), &Title) != EAppReturnType::Yes)
-							{
-								Plugin->bEnabled = false;
-								AllEnabledPlugins.Remove(Plugin->Name);
-								UE_LOG(LogPluginManager, Log, TEXT("Disabled plugin '%s' due to incompatibility"), *Plugin->FileName);
-							}
-							else
-							{
-								UE_LOG(LogPluginManager, Log, TEXT("Enabled plugin '%s' despite being built for CL %d"), *Plugin->FileName, Plugin->Descriptor.CompatibleChangelist);
-							}
+							return false;
 						}
-					}
-				}
-				else if (Plugin->bEnabled && Plugin->Descriptor.CompatibleChangelist != 0 && FEngineVersion::CompatibleWith().HasChangelist() && Plugin->Descriptor.CompatibleChangelist != FEngineVersion::CompatibleWith().GetChangelist())
-				{
-					FText Title = LOCTEXT("IncompatiblePluginTitle", "Incompatible Plugin");
-					if (FMessageDialog::Open(EAppMsgType::YesNo, FText::Format(LOCTEXT("IncompatiblePluginMessage", "'{0}' plugin was designed for a different version of the engine. Attempt to load it anyway?"), FText::FromString(Plugin->Descriptor.FriendlyName)), &Title) != EAppReturnType::Yes)
-					{
-						Plugin->bEnabled = false;
-						AllEnabledPlugins.Remove(Plugin->Name);
-						UE_LOG(LogPluginManager, Log, TEXT("Disabled plugin '%s' due to incompatibility"), *Plugin->FileName);
-					}
-					else
-					{
-						UE_LOG(LogPluginManager, Log, TEXT("Enabled plugin '%s' despite being built for CL %d"), *Plugin->FileName, Plugin->Descriptor.CompatibleChangelist);
+						ConfiguredPluginNames.Add(PluginReference.Name);
 					}
 				}
 			}
-		}
 
-		if (bHasProjectFile)
-		{
-			// Take a copy of the Project's plugins as we may remove some
-			TArray<FPluginReferenceDescriptor> PluginsCopy = Project->Plugins;
-			for(const FPluginReferenceDescriptor& Plugin: PluginsCopy)
+			// Add the plugins which are enabled by default
+			for (const TPair<FString, TSharedRef<FPlugin>>& PluginPair : AllPlugins)
 			{
-				bool bShouldBeEnabled = Plugin.bEnabled && Plugin.IsEnabledForPlatform(FPlatformMisc::GetUBTPlatform()) && Plugin.IsEnabledForTarget(FPlatformMisc::GetUBTTarget());
-				if (bShouldBeEnabled && !FindPluginInstance(Plugin.Name).IsValid() && !Plugin.bOptional
-#if IS_PROGRAM
-					 && AllEnabledPlugins.Contains(Plugin.Name) // skip if this is a program and the plugin is not enabled
-#endif
-					)
+				if(PluginPair.Value->IsEnabledByDefault() && !ConfiguredPluginNames.Contains(PluginPair.Key))
 				{
-					if (FApp::IsUnattended())
+					if (!ConfigureEnabledPlugin(FPluginReferenceDescriptor(PluginPair.Key, true), EnabledPluginNames))
 					{
-						UE_LOG(LogPluginManager, Error, TEXT("This project requires the '%s' plugin. Install it and try again, or remove it from the project's required plugin list."), *Plugin.Name);
 						return false;
 					}
-
-					FText Caption(LOCTEXT("PluginMissingCaption", "Plugin missing"));
-					if(Plugin.MarketplaceURL.Len() > 0)
-					{
-						if(FMessageDialog::Open(EAppMsgType::YesNo, FText::Format(LOCTEXT("PluginMissingError", "This project requires the {0} plugin.\n\nWould you like to download it from the the Marketplace?"), FText::FromString(Plugin.Name)), &Caption) == EAppReturnType::Yes)
-						{
-							FString Error;
-							FPlatformProcess::LaunchURL(*Plugin.MarketplaceURL, nullptr, &Error);
-							if(Error.Len() > 0) FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Error));
-							return false;
-						}
-					}
-					else
-					{
-						FString Description = (Plugin.Description.Len() > 0) ? FString::Printf(TEXT("\n\n%s"), *Plugin.Description) : FString();
-						FMessageDialog::Open(EAppMsgType::Ok, FText::Format(LOCTEXT("PluginRequiredError", "This project requires the {0} plugin. {1}"), FText::FromString(Plugin.Name), FText::FromString(Description)), &Caption);
-						
-						if (FMessageDialog::Open(EAppMsgType::YesNo, FText::Format(LOCTEXT("PluginMissingDisable", "Would you like to disable {0}? You will no longer be able to open any assets created using it."), FText::FromString(Plugin.Name)), &Caption) == EAppReturnType::No)
-						{
-							return false;
-						}
-
-						FText FailReason;
-						if (!IProjectManager::Get().SetPluginEnabled(*Plugin.Name, false, FailReason))
-						{
-							FMessageDialog::Open(EAppMsgType::Ok, FailReason);
-						}
-					}
+					ConfiguredPluginNames.Add(PluginPair.Key);
 				}
 			}
 		}
+#endif
+#if IS_PROGRAM
+		// Programs can also define the list of enabled plugins in ini
+		TArray<FString> ProgramPluginNames;
+		GConfig->GetArray(TEXT("Plugins"), TEXT("ProgramEnabledPlugins"), ProgramPluginNames, GEngineIni);
+
+		for (const FString& PluginName : ProgramPluginNames)
+		{
+			if(!ConfiguredPluginNames.Contains(PluginName))
+			{
+				if (!ConfigureEnabledPlugin(FPluginReferenceDescriptor(PluginName, true), EnabledPluginNames))
+				{
+					return false;
+				}
+				ConfiguredPluginNames.Add(PluginName);
+			}
+		}
+#endif
 
 		// If we made it here, we have all the required plugins
 		bHaveAllRequiredPlugins = true;
 
+		// Mount all the enabled plugins
 		for(const TPair<FString, TSharedRef<FPlugin>>& PluginPair: AllPlugins)
 		{
-			const TSharedRef<FPlugin>& Plugin = PluginPair.Value;
-			if (Plugin->bEnabled)
+			const FPlugin& Plugin = *PluginPair.Value;
+			if (Plugin.bEnabled)
 			{
-				// Add the plugin binaries directory
-				const FString PluginBinariesPath = FPaths::Combine(*FPaths::GetPath(Plugin->FileName), TEXT("Binaries"), FPlatformProcess::GetBinariesSubdirectory());
-				FModuleManager::Get().AddBinariesDirectory(*PluginBinariesPath, Plugin->LoadedFrom == EPluginLoadedFrom::GameProject);
+				UE_LOG(LogPluginManager, Log, TEXT("Mounting plugin %s"), *Plugin.GetName());
 
-#if !IS_MONOLITHIC
-				// Only check this when in a non-monolithic build where modules could be in separate binaries
-				if (Project != NULL && Project->Modules.Num() == 0)
+				// Plugins can have their own shaders
+				// Add potential plugin shader directory only if at least one plugin's module is loaded in PostConfigInit. Not supported otherwise
 				{
-					// Content only project - check whether any plugins are incompatible and offer to disable instead of trying to build them later
-					TArray<FString> IncompatibleFiles;
-					if (!FModuleDescriptor::CheckModuleCompatibility(Plugin->Descriptor.Modules, Plugin->LoadedFrom == EPluginLoadedFrom::GameProject, IncompatibleFiles))
+					FString RealShaderSourceDir = FPaths::Combine(*Plugin.GetBaseDir(), TEXT("Shaders"));
+
+					if (FPaths::DirectoryExists(RealShaderSourceDir))
 					{
-						// Ask whether to disable plugin if incompatible
-						FText Caption(LOCTEXT("IncompatiblePluginCaption", "Plugin missing or incompatible"));
-						if (FMessageDialog::Open(EAppMsgType::YesNo, FText::Format(LOCTEXT("IncompatiblePluginText", "Missing or incompatible modules in {0} plugin - would you like to disable it? You will no longer be able to open any assets created using it."), FText::FromString(Plugin->Name)), &Caption) == EAppReturnType::No)
+						UE_LOG(LogPluginManager, Log, TEXT("Plugin shader directory %s found"), *RealShaderSourceDir);
+						bool PluginHasAPostConfigInitModule = false;
+						for (const FModuleDescriptor& Module : Plugin.GetDescriptor().Modules)
 						{
-							return false;
+							if (Module.LoadingPhase == ELoadingPhase::PostConfigInit)
+							{
+								PluginHasAPostConfigInitModule = true;
+								break;
+							}
 						}
 
-						FText FailReason;
-						if (!IProjectManager::Get().SetPluginEnabled(*Plugin->Name, false, FailReason))
+						if (PluginHasAPostConfigInitModule)
 						{
-							FMessageDialog::Open(EAppMsgType::Ok, FailReason);
+							FString VirtualShaderSourceDir = FString(TEXT("/Plugin")) / Plugin.GetName();
+							UE_LOG(LogPluginManager, Log,
+								TEXT("Mapping shader source directory %s to virtual directory %s"),
+								*RealShaderSourceDir, *VirtualShaderSourceDir);
+							FGenericPlatformProcess::AddShaderSourceDirectoryMapping(VirtualShaderSourceDir, RealShaderSourceDir);
+						}
+						else
+						{
+							UE_LOG(LogPluginManager, Log, TEXT("No ELoadingPhase::PostConfigInit module found."), *RealShaderSourceDir);
 						}
 					}
 				}
-#endif //!IS_MONOLITHIC
 
-			// Build the list of content folders
-				if (Plugin->Descriptor.bCanContainContent)
+				// Build the list of content folders
+				if (Plugin.Descriptor.bCanContainContent)
 				{
 					if (FConfigFile* EngineConfigFile = GConfig->Find(GEngineIni, false))
 					{
 						if (FConfigSection* CoreSystemSection = EngineConfigFile->Find(TEXT("Core.System")))
 						{
-							CoreSystemSection->AddUnique("Paths", Plugin->GetContentDir());
+							CoreSystemSection->AddUnique("Paths", Plugin.GetContentDir());
 						}
 					}
 				}
 
 				// Load <PluginName>.ini config file if it exists
-				FString PluginConfigDir = FPaths::GetPath(Plugin->FileName) / TEXT("Config/");
+				FString PluginConfigDir = FPaths::GetPath(Plugin.FileName) / TEXT("Config/");
 				FString EngineConfigDir = FPaths::EngineConfigDir();
 				FString SourceConfigDir = FPaths::SourceConfigDir();
 
 				// Load Engine plugins out of BasePluginName.ini and the engine directory, game plugins out of DefaultPluginName.ini
-				if (Plugin->LoadedFrom == EPluginLoadedFrom::Engine)
+				if (Plugin.GetLoadedFrom() == EPluginLoadedFrom::Engine)
 				{
 					EngineConfigDir = PluginConfigDir;
 				}
@@ -585,11 +557,11 @@ bool FPluginManager::ConfigureEnabledPlugins()
 					SourceConfigDir = PluginConfigDir;
 				}
 
-				FString PluginConfigFilename = FString::Printf(TEXT("%s%s/%s.ini"), *FPaths::GeneratedConfigDir(), ANSI_TO_TCHAR(FPlatformProperties::PlatformName()), *Plugin->Name);
+				FString PluginConfigFilename = FString::Printf(TEXT("%s%s/%s.ini"), *FPaths::GeneratedConfigDir(), ANSI_TO_TCHAR(FPlatformProperties::PlatformName()), *Plugin.Name);
 				FConfigFile& PluginConfig = GConfig->Add(PluginConfigFilename, FConfigFile());
 
 				// This will write out an ini to PluginConfigFilename
-				if (!FConfigCacheIni::LoadExternalIniFile(PluginConfig, *Plugin->Name, *EngineConfigDir, *SourceConfigDir, true, nullptr, false, true))
+				if (!FConfigCacheIni::LoadExternalIniFile(PluginConfig, *Plugin.Name, *EngineConfigDir, *SourceConfigDir, true, nullptr, false, true))
 				{
 					// Nothing to add, remove from map
 					GConfig->Remove(PluginConfigFilename);
@@ -617,7 +589,6 @@ bool FPluginManager::ConfigureEnabledPlugins()
 						}
 					}
 				}
-
 			}
 		}
 
@@ -625,9 +596,9 @@ bool FPluginManager::ConfigureEnabledPlugins()
 		TArray<FString>	FoundPaks;
 		FPakFileSearchVisitor PakVisitor(FoundPaks);
 		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-		for(TSharedRef<IPlugin> Plugin: GetEnabledPlugins())
+		for (TSharedRef<IPlugin> Plugin: GetEnabledPluginsWithContent())
 		{
-			if (Plugin->CanContainContent() && ensure(RegisterMountPointDelegate.IsBound()))
+			if (ensure(RegisterMountPointDelegate.IsBound()))
 			{
 				FString ContentDir = Plugin->GetContentDir();
 				RegisterMountPointDelegate.Execute(Plugin->GetMountedAssetPath(), ContentDir);
@@ -652,8 +623,269 @@ bool FPluginManager::ConfigureEnabledPlugins()
 				}
 			}
 		}
+		UE_CLOG(!IS_PROGRAM, LogStreaming, Display, TEXT("Took %6.3fs to configure plugins."), FPlatformTime::Seconds() - StartTime);
 	}
 	return bHaveAllRequiredPlugins;
+}
+
+bool FPluginManager::ConfigureEnabledPlugin(const FPluginReferenceDescriptor& FirstReference, TSet<FString>& EnabledPluginNames)
+{
+	if (!EnabledPluginNames.Contains(FirstReference.Name))
+	{
+		// Set of plugin names we've added to the queue for processing
+		TSet<FString> NewPluginNames;
+		NewPluginNames.Add(FirstReference.Name);
+
+		// Queue of plugin references to consider
+		TArray<const FPluginReferenceDescriptor*> NewPluginReferences;
+		NewPluginReferences.Add(&FirstReference);
+
+		// Loop through the queue of plugin references that need to be enabled, queuing more items as we go
+		TArray<TSharedRef<FPlugin>> NewPlugins;
+		for (int32 Idx = 0; Idx < NewPluginReferences.Num(); Idx++)
+		{
+			const FPluginReferenceDescriptor& Reference = *NewPluginReferences[Idx];
+
+			// Check if the plugin is required for this platform
+			if(!Reference.IsEnabledForPlatform(FPlatformMisc::GetUBTPlatform()) || !Reference.IsEnabledForTarget(FPlatformMisc::GetUBTTarget()))
+			{
+				UE_LOG(LogPluginManager, Verbose, TEXT("Ignoring plugin '%s' for platform/configuration"), *Reference.Name);
+				continue;
+			}
+
+			// Check if the plugin is required for this platform
+#if !LOAD_PLUGINS_FOR_TARGET_PLATFORMS
+			if(!Reference.IsSupportedTargetPlatform(FPlatformMisc::GetUBTPlatform()))
+			{
+				UE_LOG(LogPluginManager, Verbose, TEXT("Ignoring plugin '%s' due to unsupported platform"), *Reference.Name);
+				continue;
+			}
+#endif
+
+			// Find the plugin being enabled
+			TSharedRef<FPlugin>* PluginPtr = AllPlugins.Find(Reference.Name);
+			if (PluginPtr == nullptr)
+			{
+				// Ignore any optional plugins
+				if (Reference.bOptional)
+				{
+					UE_LOG(LogPluginManager, Verbose, TEXT("Ignored optional reference to '%s' plugin; plugin was not found."), *Reference.Name);
+					continue;
+				}
+
+				// If we're in unattended mode, don't open any windows
+				if (FApp::IsUnattended())
+				{
+					UE_LOG(LogPluginManager, Error, TEXT("This project requires the '%s' plugin. Install it and try again, or remove it from the project's required plugin list."), *Reference.Name);
+					return false;
+				}
+
+#if !IS_MONOLITHIC
+				// Try to download it from the marketplace
+				if (Reference.MarketplaceURL.Len() > 0 && PromptToDownloadPlugin(Reference.Name, Reference.MarketplaceURL))
+				{
+					UE_LOG(LogPluginManager, Display, TEXT("Downloading '%s' plugin from marketplace (%s)."), *Reference.Name, *Reference.MarketplaceURL);
+					return false;
+				}
+
+				// Prompt to disable it in the project file, if possible
+				if (PromptToDisableMissingPlugin(FirstReference.Name, Reference.Name))
+				{
+					UE_LOG(LogPluginManager, Display, TEXT("Disabled plugin '%s', continuing."), *FirstReference.Name);
+					return true;
+				}
+#endif
+
+				// Unable to continue
+				UE_LOG(LogPluginManager, Error, TEXT("Unable to load plugin '%s'. Aborting."), *Reference.Name);
+				return false;
+			}
+
+			// Check the plugin is not disabled by the platform
+			FPlugin& Plugin = PluginPtr->Get();
+
+			// Allow the platform to disable it
+			if (FPlatformMisc::ShouldDisablePluginAtRuntime(Plugin.Name))
+			{
+				UE_LOG(LogPluginManager, Verbose, TEXT("Plugin '%s' was disabled by platform."), *Reference.Name);
+				continue;
+			}
+
+			// Check the plugin supports this platform
+#if !LOAD_PLUGINS_FOR_TARGET_PLATFORMS
+			if(!Plugin.Descriptor.SupportsTargetPlatform(FPlatformMisc::GetUBTPlatform()))
+			{
+				UE_LOG(LogPluginManager, Verbose, TEXT("Ignoring plugin '%s' due to unsupported platform in plugin descriptor"), *Reference.Name);
+				continue;
+			}
+#endif
+
+			// Skip loading Enterprise plugins when project is not an Enterprise project
+			if (Plugin.Type == EPluginType::Enterprise && !IProjectManager::Get().IsEnterpriseProject())
+			{
+				continue;
+			}
+
+#if !IS_MONOLITHIC
+			// Mount the binaries directory, and check the modules are valid
+			if (Plugin.Descriptor.Modules.Num() > 0)
+			{
+				// Mount the binaries directory
+				const FString PluginBinariesPath = FPaths::Combine(*FPaths::GetPath(Plugin.FileName), TEXT("Binaries"), FPlatformProcess::GetBinariesSubdirectory());
+				FModuleManager::Get().AddBinariesDirectory(*PluginBinariesPath, Plugin.GetLoadedFrom() == EPluginLoadedFrom::Project);
+
+				// If this is a content-only project, make sure the modules are compatible with the engine (or allow the user to disable it). If it's a code project,
+				// we'll run a separate check in LaunchEngineLoop.cpp to do the compile-on-startup stuff.
+				const FProjectDescriptor* Project = IProjectManager::Get().GetCurrentProject();
+				if (Project != nullptr && Project->Modules.Num() == 0)
+				{
+					TArray<FString> IncompatibleFiles;
+					if (!FModuleDescriptor::CheckModuleCompatibility(Plugin.Descriptor.Modules, Plugin.GetLoadedFrom() == EPluginLoadedFrom::Project, IncompatibleFiles))
+					{
+						if (PromptToDisableIncompatiblePlugin(FirstReference.Name, Reference.Name))
+						{
+							UE_LOG(LogPluginManager, Display, TEXT("Disabled plugin '%s', continuing."), *FirstReference.Name);
+							return true;
+						}
+					}
+				}
+			}
+
+			// Check the declared engine version. This is a soft requirement, so allow the user to skip over it.
+			if (!IsPluginCompatible(Plugin) && !PromptToLoadIncompatiblePlugin(Plugin, FirstReference.Name))
+			{
+				UE_LOG(LogPluginManager, Display, TEXT("Skipping load of '%s'."), *Plugin.Name);
+				return true;
+			}
+#endif
+
+			// Add references to all its dependencies
+			for (const FPluginReferenceDescriptor& NextReference : Plugin.Descriptor.Plugins)
+			{
+				if (!EnabledPluginNames.Contains(NextReference.Name) && !NewPluginNames.Contains(NextReference.Name))
+				{
+					NewPluginNames.Add(NextReference.Name);
+					NewPluginReferences.Add(&NextReference);
+				}
+			}
+
+			// Add the plugin
+			NewPlugins.Add(*PluginPtr);
+		}
+
+		// Mark all the plugins as enabled
+		for (TSharedRef<FPlugin>& NewPlugin : NewPlugins)
+		{
+			NewPlugin->bEnabled = true;
+			EnabledPluginNames.Add(NewPlugin->Name);
+		}
+	}
+	return true;
+}
+
+bool FPluginManager::PromptToDownloadPlugin(const FString& PluginName, const FString& MarketplaceURL)
+{
+	FText Caption = FText::Format(LOCTEXT("DownloadPluginCaption", "Missing {0} Plugin"), FText::FromString(PluginName));
+	FText Message = FText::Format(LOCTEXT("DownloadPluginMessage", "This project requires the {0} plugin.\n\nWould you like to download it from the Unreal Engine Marketplace?"), FText::FromString(PluginName));
+	if(FMessageDialog::Open(EAppMsgType::YesNo, Message, &Caption) == EAppReturnType::Yes)
+	{
+		FString Error;
+		FPlatformProcess::LaunchURL(*MarketplaceURL, nullptr, &Error);
+		if (Error.Len() == 0)
+		{
+			return true;
+		}
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Error));
+	}
+	return false;
+}
+
+bool FPluginManager::PromptToDisableMissingPlugin(const FString& PluginName, const FString& MissingPluginName)
+{
+	FText Message;
+	if (PluginName == MissingPluginName)
+	{
+		Message = FText::Format(LOCTEXT("DisablePluginMessage_NotFound", "This project requires the '{0}' plugin, which could not be found.\n\nWould you like to disable it? You will no longer be able to open any assets created using it."), FText::FromString(PluginName));
+	}
+	else
+	{
+		Message = FText::Format(LOCTEXT("DisablePluginMessage_MissingDependency", "This project requires the '{0}' plugin, which has a missing dependency on the '{1}' plugin.\n\nWould you like to disable it? You will no longer be able to open any assets created using it."), FText::FromString(PluginName), FText::FromString(MissingPluginName));
+	}
+
+	FText Caption(LOCTEXT("DisablePluginCaption", "Missing Plugin"));
+	return PromptToDisablePlugin(Caption, Message, PluginName);
+}
+
+bool FPluginManager::PromptToDisableIncompatiblePlugin(const FString& PluginName, const FString& IncompatiblePluginName)
+{
+	FText Message;
+	if (PluginName == IncompatiblePluginName)
+	{
+		Message = FText::Format(LOCTEXT("DisablePluginMessage_MissingOrIncompatibleEngineVersion", "Binaries for the '{0}' plugin are missing or incompatible with the current engine version.\n\nWould you like to disable it? You will no longer be able to open assets that were created with it."), FText::FromString(PluginName));
+	}
+	else
+	{
+		Message = FText::Format(LOCTEXT("DisablePluginMessage_MissingOrIncompatibleDependency", "Binaries for the '{0}' plugin (a dependency of '{1}') are missing or incompatible with the current engine version.\n\nWould you like to disable it? You will no longer be able to open assets that were created with it."), FText::FromString(IncompatiblePluginName), FText::FromString(PluginName));
+	}
+
+	FText Caption(LOCTEXT("DisablePluginCaption", "Missing Plugin"));
+	return PromptToDisablePlugin(Caption, Message, PluginName);
+}
+
+bool FPluginManager::PromptToDisablePlugin(const FText& Caption, const FText& Message, const FString& PluginName)
+{
+	// Check we have a project file. If this is a missing engine/program plugin referenced by something, we can't disable it through this method.
+	if (IProjectManager::Get().GetCurrentProject() != nullptr)
+	{
+		if (FMessageDialog::Open(EAppMsgType::YesNo, Message, &Caption) == EAppReturnType::Yes)
+		{
+			FText FailReason;
+			if (IProjectManager::Get().SetPluginEnabled(*PluginName, false, FailReason))
+			{
+				return true;
+			}
+			FMessageDialog::Open(EAppMsgType::Ok, FailReason);
+		}
+	}
+	return false;
+}
+
+bool FPluginManager::IsPluginCompatible(const FPlugin& Plugin)
+{
+	if (Plugin.Descriptor.EngineVersion.Len() > 0)
+	{
+		FEngineVersion Version;
+		if (!FEngineVersion::Parse(Plugin.Descriptor.EngineVersion, Version))
+		{
+			UE_LOG(LogPluginManager, Warning, TEXT("Engine version string in %s could not be parsed (\"%s\")"), *Plugin.FileName, *Plugin.Descriptor.EngineVersion);
+			return true;
+		}
+
+		EVersionComparison Comparison = FEngineVersion::GetNewest(FEngineVersion::CompatibleWith(), Version, nullptr);
+		if (Comparison != EVersionComparison::Neither)
+		{
+			UE_LOG(LogPluginManager, Warning, TEXT("Plugin '%s' is not compatible with the current engine version (%s)"), *Plugin.Name, *Plugin.Descriptor.EngineVersion);
+			return false;
+		}
+	}
+	return true;
+}
+
+bool FPluginManager::PromptToLoadIncompatiblePlugin(const FPlugin& Plugin, const FString& ReferencingPluginName)
+{
+	// Format the message dependning on whether the plugin is referenced directly, or as a dependency
+	FText Message;
+	if (Plugin.Name == ReferencingPluginName)
+	{
+		Message = FText::Format(LOCTEXT("LoadIncompatiblePlugin", "The '{0}' plugin was designed for build {1}. Attempt to load it anyway?"), FText::FromString(Plugin.Name), FText::FromString(Plugin.Descriptor.EngineVersion));
+	}
+	else
+	{
+		Message = FText::Format(LOCTEXT("LoadIncompatibleDependencyPlugin", "The '{0}' plugin is required by the '{1}' plugin, but was designed for build {2}. Attempt to load it anyway?"), FText::FromString(Plugin.Name), FText::FromString(ReferencingPluginName), FText::FromString(Plugin.Descriptor.EngineVersion));
+	}
+
+	FText Caption = FText::Format(LOCTEXT("IncompatiblePluginCaption", "'{0}' is Incompatible"), FText::FromString(Plugin.Name));
+	return FMessageDialog::Open(EAppMsgType::YesNo, Message, &Caption) == EAppReturnType::Yes;
 }
 
 TSharedPtr<FPlugin> FPluginManager::FindPluginInstance(const FString& Name)
@@ -671,56 +903,56 @@ TSharedPtr<FPlugin> FPluginManager::FindPluginInstance(const FString& Name)
 
 
 static bool TryLoadModulesForPlugin( const FPlugin& Plugin, const ELoadingPhase::Type LoadingPhase )
-		{
-			TMap<FName, EModuleLoadResult> ModuleLoadFailures;
+{
+	TMap<FName, EModuleLoadResult> ModuleLoadFailures;
 	FModuleDescriptor::LoadModulesForPhase(LoadingPhase, Plugin.Descriptor.Modules, ModuleLoadFailures);
 
-			FText FailureMessage;
-			for( auto FailureIt( ModuleLoadFailures.CreateConstIterator() ); FailureIt; ++FailureIt )
-			{
-				const FName ModuleNameThatFailedToLoad = FailureIt.Key();
-				const EModuleLoadResult FailureReason = FailureIt.Value();
+	FText FailureMessage;
+	for( auto FailureIt( ModuleLoadFailures.CreateConstIterator() ); FailureIt; ++FailureIt )
+	{
+		const FName ModuleNameThatFailedToLoad = FailureIt.Key();
+		const EModuleLoadResult FailureReason = FailureIt.Value();
 
-				if( FailureReason != EModuleLoadResult::Success )
-				{
+		if( FailureReason != EModuleLoadResult::Success )
+		{
 			const FText PluginNameText = FText::FromString(Plugin.Name);
-					const FText TextModuleName = FText::FromName(FailureIt.Key());
+			const FText TextModuleName = FText::FromName(FailureIt.Key());
 
-					if ( FailureReason == EModuleLoadResult::FileNotFound )
-					{
-						FailureMessage = FText::Format( LOCTEXT("PluginModuleNotFound", "Plugin '{0}' failed to load because module '{1}' could not be found.  Please ensure the plugin is properly installed, otherwise consider disabling the plugin for this project."), PluginNameText, TextModuleName );
-					}
-					else if ( FailureReason == EModuleLoadResult::FileIncompatible )
-					{
-						FailureMessage = FText::Format( LOCTEXT("PluginModuleIncompatible", "Plugin '{0}' failed to load because module '{1}' does not appear to be compatible with the current version of the engine.  The plugin may need to be recompiled."), PluginNameText, TextModuleName );
-					}
-					else if ( FailureReason == EModuleLoadResult::CouldNotBeLoadedByOS )
-					{
-						FailureMessage = FText::Format( LOCTEXT("PluginModuleCouldntBeLoaded", "Plugin '{0}' failed to load because module '{1}' could not be loaded.  There may be an operating system error or the module may not be properly set up."), PluginNameText, TextModuleName );
-					}
-					else if ( FailureReason == EModuleLoadResult::FailedToInitialize )
-					{
-						FailureMessage = FText::Format( LOCTEXT("PluginModuleFailedToInitialize", "Plugin '{0}' failed to load because module '{1}' could not be initialized successfully after it was loaded."), PluginNameText, TextModuleName );
-					}
-					else 
-					{
-						ensure(0);	// If this goes off, the error handling code should be updated for the new enum values!
-						FailureMessage = FText::Format( LOCTEXT("PluginGenericLoadFailure", "Plugin '{0}' failed to load because module '{1}' could not be loaded for an unspecified reason.  This plugin's functionality will not be available.  Please report this error."), PluginNameText, TextModuleName );
-					}
-
-					// Don't need to display more than one module load error per plugin that failed to load
-					break;
-				}
-			}
-
-			if( !FailureMessage.IsEmpty() )
+			if ( FailureReason == EModuleLoadResult::FileNotFound )
 			{
-				FMessageDialog::Open(EAppMsgType::Ok, FailureMessage);
-				return false;
+				FailureMessage = FText::Format( LOCTEXT("PluginModuleNotFound", "Plugin '{0}' failed to load because module '{1}' could not be found.  Please ensure the plugin is properly installed, otherwise consider disabling the plugin for this project."), PluginNameText, TextModuleName );
 			}
+			else if ( FailureReason == EModuleLoadResult::FileIncompatible )
+			{
+				FailureMessage = FText::Format( LOCTEXT("PluginModuleIncompatible", "Plugin '{0}' failed to load because module '{1}' does not appear to be compatible with the current version of the engine.  The plugin may need to be recompiled."), PluginNameText, TextModuleName );
+			}
+			else if ( FailureReason == EModuleLoadResult::CouldNotBeLoadedByOS )
+			{
+				FailureMessage = FText::Format( LOCTEXT("PluginModuleCouldntBeLoaded", "Plugin '{0}' failed to load because module '{1}' could not be loaded.  There may be an operating system error or the module may not be properly set up."), PluginNameText, TextModuleName );
+			}
+			else if ( FailureReason == EModuleLoadResult::FailedToInitialize )
+			{
+				FailureMessage = FText::Format( LOCTEXT("PluginModuleFailedToInitialize", "Plugin '{0}' failed to load because module '{1}' could not be initialized successfully after it was loaded."), PluginNameText, TextModuleName );
+			}
+			else 
+			{
+				ensure(0);	// If this goes off, the error handling code should be updated for the new enum values!
+				FailureMessage = FText::Format( LOCTEXT("PluginGenericLoadFailure", "Plugin '{0}' failed to load because module '{1}' could not be loaded for an unspecified reason.  This plugin's functionality will not be available.  Please report this error."), PluginNameText, TextModuleName );
+			}
+
+			// Don't need to display more than one module load error per plugin that failed to load
+			break;
+		}
+	}
+
+	if( !FailureMessage.IsEmpty() )
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FailureMessage);
+		return false;
+	}
 
 	return true;
-		}
+}
 
 bool FPluginManager::LoadModulesForEnabledPlugins( const ELoadingPhase::Type LoadingPhase )
 {
@@ -798,7 +1030,7 @@ bool FPluginManager::CheckModuleCompatibility(TArray<FString>& OutIncompatibleMo
 	for(const TPair<FString, TSharedRef<FPlugin>>& PluginPair : AllPlugins)
 	{
 		const TSharedRef< FPlugin > &Plugin = PluginPair.Value;
-		if (Plugin->bEnabled && !FModuleDescriptor::CheckModuleCompatibility(Plugin->Descriptor.Modules, Plugin->LoadedFrom == EPluginLoadedFrom::GameProject, OutIncompatibleModules))
+		if (Plugin->bEnabled && !FModuleDescriptor::CheckModuleCompatibility(Plugin->Descriptor.Modules, Plugin->GetLoadedFrom() == EPluginLoadedFrom::Project, OutIncompatibleModules))
 		{
 			bResult = false;
 		}
@@ -809,12 +1041,8 @@ bool FPluginManager::CheckModuleCompatibility(TArray<FString>& OutIncompatibleMo
 IPluginManager& IPluginManager::Get()
 {
 	// Single instance of manager, allocated on demand and destroyed on program exit.
-	static FPluginManager* PluginManager = NULL;
-	if( PluginManager == NULL )
-	{
-		PluginManager = new FPluginManager();
-	}
-	return *PluginManager;
+	static FPluginManager PluginManager;
+	return PluginManager;
 }
 
 TSharedPtr<IPlugin> FPluginManager::FindPlugin(const FString& Name)
@@ -844,9 +1072,25 @@ TArray<TSharedRef<IPlugin>> FPluginManager::GetEnabledPlugins()
 	return Plugins;
 }
 
+TArray<TSharedRef<IPlugin>> FPluginManager::GetEnabledPluginsWithContent() const
+{
+	TArray<TSharedRef<IPlugin>> Plugins;
+	for (const TPair<FString, TSharedRef<FPlugin>>& PluginPair : AllPlugins)
+	{
+		const TSharedRef<FPlugin>& PluginRef = PluginPair.Value;
+		const FPlugin& Plugin = *PluginRef;
+		if (Plugin.IsEnabled() && Plugin.CanContainContent())
+		{
+			Plugins.Add(PluginRef);
+		}
+	}
+	return Plugins;
+}
+
 TArray<TSharedRef<IPlugin>> FPluginManager::GetDiscoveredPlugins()
 {
 	TArray<TSharedRef<IPlugin>> Plugins;
+	Plugins.Reserve(AllPlugins.Num());
 	for (TPair<FString, TSharedRef<FPlugin>>& PluginPair : AllPlugins)
 	{
 		Plugins.Add(PluginPair.Value);
@@ -867,7 +1111,7 @@ TArray< FPluginStatus > FPluginManager::QueryStatusForAllPlugins() const
 		PluginStatus.PluginDirectory = FPaths::GetPath(Plugin->FileName);
 		PluginStatus.bIsEnabled = Plugin->bEnabled;
 		PluginStatus.Descriptor = Plugin->Descriptor;
-		PluginStatus.LoadedFrom = Plugin->LoadedFrom;
+		PluginStatus.LoadedFrom = Plugin->GetLoadedFrom();
 
 		PluginStatuses.Add( PluginStatus );
 	}
@@ -925,7 +1169,7 @@ void FPluginManager::MountNewlyCreatedPlugin(const FString& PluginName)
 			{
 				// Add the plugin binaries directory
 				const FString PluginBinariesPath = FPaths::Combine(*FPaths::GetPath(Plugin->FileName), TEXT("Binaries"), FPlatformProcess::GetBinariesSubdirectory());
-				FModuleManager::Get().AddBinariesDirectory(*PluginBinariesPath, Plugin->LoadedFrom == EPluginLoadedFrom::GameProject);
+				FModuleManager::Get().AddBinariesDirectory(*PluginBinariesPath, Plugin->GetLoadedFrom() == EPluginLoadedFrom::Project);
 
 				// Load all the plugin modules
 				for (ELoadingPhase::Type LoadingPhase = (ELoadingPhase::Type)0; LoadingPhase < ELoadingPhase::Max; LoadingPhase = (ELoadingPhase::Type)(LoadingPhase + 1))

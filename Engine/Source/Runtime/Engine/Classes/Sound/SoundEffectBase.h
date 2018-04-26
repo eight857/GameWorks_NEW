@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -8,6 +8,20 @@
 #include "Sound/SoundEffectPreset.h"
 #include "Containers/Queue.h"
 #include "Misc/ScopeLock.h"
+
+#if PLATFORM_SWITCH
+// Switch uses page alignment for submitted buffers
+#define AUDIO_BUFFER_ALIGNMENT 4096
+#else
+#define AUDIO_BUFFER_ALIGNMENT 16
+#endif
+
+namespace Audio
+{
+	typedef TArray<float, TAlignedHeapAllocator<AUDIO_BUFFER_ALIGNMENT>> AlignedFloatBuffer;
+	typedef TArray<uint8, TAlignedHeapAllocator<AUDIO_BUFFER_ALIGNMENT>> AlignedByteBuffer;
+}
+
 
 // The following macro code creates boiler-plate code for a sound effect preset and hides unnecessary details from user-created effects.
 
@@ -90,7 +104,12 @@ public:
 	/** Queries if the given preset object is the parent preset, i.e. the preset which spawned this effect instance. */
 	bool IsParentPreset(USoundEffectPreset* InPreset) const;
 
+	/** Enqueues a lambda command on a thread safe queue which is pumped from the audio render thread. */
+	void EffectCommand(TFunction<void()> Command);
+
 protected:
+
+	void PumpPendingMessages();
 
 	FCriticalSection SettingsCritSect;
 	TArray<uint8> CurrentAudioThreadSettingsData;
@@ -101,6 +120,9 @@ protected:
 
 	FThreadSafeBool bIsRunning;
 	FThreadSafeBool bIsActive;
+
+	// Effect commmand queue
+	TQueue<TFunction<void()>> CommandQueue;
 
 	// Allow FAudioMixerSubmix to call ProcessAudio
 	friend class FMixerSubmix;

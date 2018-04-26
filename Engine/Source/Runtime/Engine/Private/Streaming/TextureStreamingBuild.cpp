@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 TextureStreamingBuild.cpp : Contains definitions to build texture streaming data.
@@ -252,7 +252,7 @@ void FStreamingTextureBuildInfo::PackFrom(ULevel* Level, const FBoxSphereBounds&
 
 	PackedRelativeBox = PackRelativeBox(RefBounds.Origin, RefBounds.BoxExtent, Info.Bounds.Origin, Info.Bounds.BoxExtent);
 
-	UTexture2D* Texture2D = CastChecked<UTexture2D>(Info.Texture);
+	UTexture2D* Texture2D = Info.Texture;
 	if (Texture2D->LevelIndex == INDEX_NONE)
 	{
 		// If this is the first time this texture gets processed in the packing process, encode it.

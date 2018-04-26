@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 AudioStreaming.h: Definitions of classes used for audio streaming.
@@ -100,6 +100,7 @@ struct FLoadedAudioChunk
 	class IAsyncReadRequest* IORequest;
 	int32	MemorySize; 
 	int32	DataSize;
+	int32	AudioDataSize;
 	uint32	Index;
 
 	FLoadedAudioChunk()
@@ -107,6 +108,7 @@ struct FLoadedAudioChunk
 		, IORequest(nullptr)
 		, MemorySize(0)
 		, DataSize(0)
+		, AudioDataSize(0)
 		, Index(0)
 	{
 	}
@@ -130,7 +132,7 @@ struct FStreamingWaveData final
 	 *
 	 * @param SoundWave	The SoundWave we are managing
 	 */
-	void Initialize(USoundWave* SoundWave, FAudioStreamingManager* InStreamingManager);
+	bool Initialize(USoundWave* SoundWave, FAudioStreamingManager* InStreamingManager);
 
 	/**
 	 * Updates the streaming status of the sound wave and performs finalization when appropriate. The function returns
@@ -185,7 +187,7 @@ private:
 	FStreamingWaveData& operator=(FStreamingWaveData const&);
 
 	// Creates a new chunk, returns the chunk index
-	int32 AddNewLoadedChunk(int32 ChunkSize);
+	int32 AddNewLoadedChunk(int32 ChunkSize, int32 AudioSize);
 	void FreeLoadedChunk(FLoadedAudioChunk& LoadedChunk);
 
 public:
@@ -253,6 +255,7 @@ struct FAudioStreamingManager : public IAudioStreamingManager
 	virtual void SetDisregardWorldResourcesForFrames( int32 NumFrames ) override;
 	virtual void AddLevel( class ULevel* Level ) override;
 	virtual void RemoveLevel( class ULevel* Level ) override;
+	virtual void NotifyLevelOffset( class ULevel* Level, const FVector& Offset ) override;
 	// End IStreamingManager interface
 
 	// IAudioStreamingManager interface
@@ -293,7 +296,8 @@ protected:
 	TMap<USoundWave*, FWaveRequest> WaveRequests;
 
 	/** Results of async loading audio chunks. */
-	TQueue<FASyncAudioChunkLoadResult*> AsyncAudioStreamChunkResults;
+	TArray<FASyncAudioChunkLoadResult*> AsyncAudioStreamChunkResults;
+	mutable FCriticalSection ChunkResultCriticalSection;
 
 	/** Critical section to protect usage of shared gamethread/audiothread members */
 	mutable FCriticalSection CriticalSection;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -13,12 +13,20 @@ public class MaterialUtilities : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"RenderCore",
+                "Renderer",
                 "RHI",
                 "Landscape",
                 "UnrealEd",
                 "ShaderCore"
-			}
+            }
 		);
+
+        DynamicallyLoadedModuleNames.AddRange(
+            new string[] {
+                "MeshMergeUtilities",
+                "MaterialBaking",
+            }
+        );
 
         PublicDependencyModuleNames.AddRange(
 			new string [] {
@@ -28,8 +36,10 @@ public class MaterialUtilities : ModuleRules
 
         PrivateIncludePathModuleNames.AddRange(
             new string[] {
-                "Landscape"
-			}
+                "Landscape",
+                "MeshMergeUtilities",
+                "MaterialBaking",
+            }
         );
 
         CircularlyReferencedDependentModules.AddRange(

@@ -1,9 +1,13 @@
-﻿INTSourceChangelist:2675756
+﻿INTSourceChangelist:3782314
 Availability:Public
 Title:サウンド キュー リファレンス
 Crumbs: %ROOT%, Engine, Engine/Audio
 Description:サウンド キューとそのプロパティに使用できるノードを説明したリファレンス
 version:4.9
+Parent:Engine/Audio
+type:reference
+order:6
+
 [TOC (start:2)]
 
 
@@ -86,7 +90,7 @@ Attenuation ノードを使ってサウンド キューの減衰設定をオー�
 | [REGION:tablesection]Sound Node Modulator Continuous[/REGION] ||
 | [REGION:tablesection]Pitch Modulation Params[/REGION] ||
 | **Parameter Name** | ピッチ制御に使用するパラメータです。 |
-| **Default** | ピッチのモジュレーション (変調) のデフォルト レベルです。。 |
+| **Default** | ピッチのモジュレーション (変調) のデフォルト レベルです。 |
 | **Min Input** | 入力サウンドの最小ピッチです。 |
 | **Max Input** | 入力サウンドの最大ピッチです。 |
 | **Min Output** | 出力サウンドの最小ピッチです。 |
@@ -98,7 +102,7 @@ Attenuation ノードを使ってサウンド キューの減衰設定をオー�
 | **Min Input** | 入力サウンドの最小ボリュームを設定します。 |
 | **Max Input** | 入力サウンドの最大ボリュームを設定します。 |
 | **Min Output** | 出力サウンドの最小ボリュームを設定します。 |
-| **Max Output** | 出力サウンドの最大ボリュームを設定します。 |
+| **Min Output** | 出力サウンドの最大ボリュームを設定します。 |
 | **Param Mode** | [INCLUDE:Engine/Audio/SoundCues/NodeReference/#ParamMode] |
 
 [REGION:note]
@@ -106,14 +110,16 @@ Attenuation ノードを使ってサウンド キューの減衰設定をオー�
 [/REGION]
 
 
-<!--
+[COMMENT:none]
+-
 [EXCERPT:ParamMode]
 パラメータを適用するモードは以下の通りです。 
 * **MPM_Normal** - 入力値を範囲 (MinInput, MaxInput) にクランプしてから範囲 (MinOutput、MaxOutput) に対してマッピングします。 
 * **MPM_Abs** - 入力値を絶対値として扱う点を除けば、 MPM_Normal と同じです。
 * **MPM_Direct** - Min あるいは Max の入力および出力値をスケールまたは参照せず、入力値をそのまま使用します。
 [/EXCERPT:ParamMode]
---->
+-
+[/COMMENT]
 
 
 
@@ -155,7 +161,7 @@ Attenuation ノードを使ってサウンド キューの減衰設定をオー�
 
 ## Delay ノード
 
-Delay (遅延) ノードは入力サウンドが出力として渡される前に一連のオーディオノードを一時停止して遅延を加えます。遅延時間は **[Details]** パネルで指定する **Delay Min** から **Delay Max** の間のランダム値です。
+**Delay (遅延)** ノードは入力サウンドが出力として渡される前に一連のオーディオノードを一時停止して遅延を加えます。遅延時間は **[Details]** パネルで指定する **Delay Min** から **Delay Max** の間のランダム値です。
 
 ![Delay Node](SoundCueEditor_Delay.png)
 
@@ -210,7 +216,7 @@ Delay (遅延) ノードは入力サウンドが出力として渡される前�
 | **Loop Indefinitely** | これが有効化されている場合、Loop Count 値に関係なくエンベロープはループし続けます。 |
 | **Loop** | これが有効化されている場合、エンベロープはループ設定を使用してループします。 |
 | [REGION:tablesection]Envelope[/REGION] ||
-| **Volume Curve** | ボリューム エンベロープを定義する分布です。  |
+| **Volume Curve** | ボリューム エンベロープを定義する分布です。 |
 | **Pitch Curve** | ピッチ エンベロープを定義する分布です。 |
 | [REGION:tablesection]Modulation [/REGION] ||
 | **Pitch Min** | 入力サウンドの最小ピッチを設定します。 |
@@ -241,10 +247,12 @@ Enveloper ノードの **[Details (詳細)]** パネルにはエンベロープ 
 
 | プロパティ | 説明 |
 | -------- | ----------- |
-| [REGION:tablesection]Sound Node Branch[/REGION] ||
+| [REGION:tablesection]Sound Node Group Control[/REGION] ||
 | **Group Sizes** | グループ内の Sound Wave ノード数から 1 をひいた数 (最初の Sound Wave ノードは 0 )。|
 
-<!-- get more info here -->
+[COMMENT:none]
+ get more info here 
+[/COMMENT]
 
 
 ## Looping ノード
@@ -329,7 +337,9 @@ Looping ノードは、遅延の導入など、ロジカルなループまたは
 | **Preselect at Level Load** | レベルのロード時に選択され、プレイ セッション中に常に使用される、ランダムな Sound Wave ノードです。この設定の適用は、アンリアル エディタ外でのゲームのビルドに限られます。エディタで再生中、またはシミュレーション中は適用されませんのでご注意ください。
 | **Randomize Without Replacement** | true の場合は、入力サウンドが全部再生されるまで入力 Sound Wave ノードが再度再生されることはありません。これにより、繰り返しが行われる前に、全てのサウンドが確実に再生されるようにします。
 
-<!-- get more info -->
+[COMMENT:none]
+ get more info 
+[/COMMENT]
 
 ## SoundClass ノード
 
@@ -343,7 +353,9 @@ Looping ノードは、遅延の導入など、ロジカルなループまたは
 | **Sound Class Override** | Sound Wave の入力ノードに対する現在の Sound クラスをオーバーライドする Sound Class アセットです。 |
 
 
-<!-- get more info -->
+[COMMENT:none]
+ get more info 
+[/COMMENT]
 
 
 ## Switch ノード
@@ -357,7 +369,9 @@ Looping ノードは、遅延の導入など、ロジカルなループまたは
 | [REGION:tablesection]Sound Node Switch[/REGION] ||
 | **Int Parameter Name** | 使用する入力を決定するために使う整数パラメータ名です。 |
 
-<!-- get more info -->
+[COMMENT:none]
+ get more info 
+[/COMMENT]
 
 
 
@@ -378,7 +392,9 @@ Looping ノードは、遅延の導入など、ロジカルなループまたは
 | [REGION:tablesection]Sound Node Wave Param[/REGION] ||
 | **Wave Parameter Name** | 再生する Sound Wave を決定するために使う整数パラメータ名です。パラメータが存在しない、または無効の Sound Wave を指している場合、入力ノードに接続されたツリーによって指定されたその Sound Wave を評価して、どの Sound Wave を代わりに再生するかを決めます。 |
 
-<!-- get more info -->
+[COMMENT:none]
+ get more info 
+[/COMMENT]
 
 
 

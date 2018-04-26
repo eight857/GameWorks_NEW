@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 //
 #include "HeadMountedDisplay.h"
 #include "Engine/Engine.h"
@@ -6,6 +6,9 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/WorldSettings.h"
 #include "UObject/Package.h"
+#include "HeadMountedDisplayTypes.h"
+#include "ISpectatorScreenController.h"
+#include "IXRTrackingSystem.h"
 
 //#include "UObject/UObjectGlobals.h"
 
@@ -26,65 +29,86 @@ static TAutoConsoleVariable<int32> CVarHiddenAreaMask(
 	*LOCTEXT("CVarText_HiddenAreaMask", "Enable or disable hidden area mask\n0: disabled\n1: enabled").ToString(),
 	ECVF_Scalability | ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<int32> CVarMirrorMode(
-	TEXT("vr.MirrorMode"),
-	1,
-	*LOCTEXT("CVarText_MirrorMode", 
-		"Changes the look of the mirror window if supported by the HMD plugin.\n 0: disable mirroring\n 1: single eye\n 2: stereo pair\nNumbers larger than 2 may be possible and specify HMD plugin-specific variations.\nNegative values are treated the same as 0.").ToString(),
-	ECVF_Scalability | ECVF_RenderThreadSafe);
-
 static TAutoConsoleVariable<int32> CVarEnableDevOverrides(
 	TEXT("vr.Debug.bEnableDevOverrides"),
 	0,
 	*LOCTEXT("CVarText_EnableDevOverrides", "Enables or disables console commands that modify various developer-only settings.").ToString());
 
+static TAutoConsoleVariable<int32> CVarMixLayerPriorities(
+	TEXT("vr.StereoLayers.bMixLayerPriorities"),
+	0,
+	*LOCTEXT("CVarText_MixLayerPriorities", "By default, Face-Locked Stereo Layers are always rendered on top of any other layer position types.\nSet this to a non-zero value to disable this behavior (not supported on all platforms.)").ToString(),
+	ECVF_RenderThreadSafe);
+
+static TAutoConsoleVariable<float> CVarPixelDensity(
+	TEXT("vr.PixelDensity"),
+	1.0f,
+	TEXT("Pixel density sets the VR render target texture size as a factor of recommended texture size.\n")
+	TEXT("The recommended texture size is the size that will result in no under sampling in most distorted area of the view when computing the final image to be displayed on the device by the runtime compositor.\n")
+	TEXT("Note that the recommended texture size will likely be larger than the display panel resolution of the device as the texture is used as input data for the final composition/lens distortion pass provided by the device's runtime.\n")
+	TEXT("A pixel density of 1.0 (default) will use the device's recommended texture size.\n"),
+	ECVF_Scalability | ECVF_Default);
 
 #if !UE_BUILD_SHIPPING
-static void DrawDebugTrackingSensorLocations(UCanvas* Canvas, APlayerController* PlayerController, UWorld* World)
+static void DrawDebugTrackingSensorLocations(UCanvas* Canvas, APlayerController* PlayerController)
 {
-	if (!GEngine || !GEngine->HMDDevice.IsValid() || !GEngine->HMDDevice->IsStereoEnabled())
+	if (!GEngine || !GEngine->XRSystem.IsValid())
 	{
 		return;
 	}
+
 	if (!PlayerController)
 	{
-		PlayerController = World->GetFirstPlayerController();
+		PlayerController = GWorld->GetFirstPlayerController();
 		if (!PlayerController)
 		{
 			return;
 		}
 	}
-	APawn* Pawn = PlayerController->GetPawn();
-	if (!Pawn)
+
+	TArray<int32> SensorDeviceIDs;
+	GEngine->XRSystem->EnumerateTrackedDevices(SensorDeviceIDs, EXRTrackedDeviceType::TrackingReference);
+	if (SensorDeviceIDs.Num() == 0)
 	{
 		return;
 	}
-	FVector ViewLocation = Pawn->GetPawnViewLocation();
-	FRotator ViewRotation = Pawn->GetViewRotation();
 
-	const FColor FrustrumColor = (GEngine->HMDDevice->HasValidTrackingPosition() ? FColor::Green : FColor::Red);
-	FVector SensorOrigin;
-	FQuat SensorOrient;
-	float LFovDeg, RFovDeg, TFovDeg, BFovDeg, NearPlane, FarPlane, CameraDist;
-	uint32 NumSensors = GEngine->HMDDevice->GetNumOfTrackingSensors();
-	FVector HeadPosition;
-	FQuat HeadOrient;
-	GEngine->HMDDevice->GetCurrentOrientationAndPosition(HeadOrient, HeadPosition);
-	const FQuat DeltaControlOrientation = ViewRotation.Quaternion() * HeadOrient.Inverse();
-	for (uint8 SensorIndex = 0; SensorIndex < NumSensors; ++SensorIndex)
+	const FColor FrustrumColor = (GEngine->XRSystem->HasValidTrackingPosition() ? FColor::Green : FColor::Red);
+	const FColor CenterLineColor = FColor::Yellow;
+
+	APawn* Pawn = PlayerController->GetPawn();
+	AActor* ViewTarget = PlayerController->GetViewTarget();
+	if (!Pawn || ! ViewTarget)
 	{
+		return;
+	}
+	FQuat DeltaControlOrientation = Pawn->GetViewRotation().Quaternion();
+	FVector LocationOffset = ViewTarget->GetTransform().GetLocation();
 
-		GEngine->HMDDevice->GetTrackingSensorProperties(SensorIndex, SensorOrigin, SensorOrient, LFovDeg, RFovDeg, TFovDeg, BFovDeg, CameraDist, NearPlane, FarPlane);
+	if (!ViewTarget->HasActiveCameraComponent())
+	{
+		FVector HeadPosition; /* unsused */
+		FQuat HeadOrient;
+		GEngine->XRSystem->GetCurrentPose(IXRTrackingSystem::HMDDeviceId, HeadOrient, HeadPosition);
+		DeltaControlOrientation = DeltaControlOrientation * HeadOrient.Inverse();
+	}
+
+	for (int32 SensorID : SensorDeviceIDs)
+	{
+		FVector SensorOrigin;
+		FQuat SensorOrient;
+		FXRSensorProperties SensorProperties;
+		GEngine->XRSystem->GetTrackingSensorProperties(SensorID, SensorOrient, SensorOrigin, SensorProperties);
 
 
 		SensorOrient = DeltaControlOrientation * SensorOrient;
 		SensorOrigin = DeltaControlOrientation.RotateVector(SensorOrigin);
 
 		// Calculate the edge vectors of the pyramid from the FoV angles
-		const float LeftTan = -FMath::Tan(FMath::DegreesToRadians(LFovDeg));
-		const float RightTan = FMath::Tan(FMath::DegreesToRadians(RFovDeg));
-		const float TopTan = FMath::Tan(FMath::DegreesToRadians(TFovDeg));
-		const float BottomTan = -FMath::Tan(FMath::DegreesToRadians(BFovDeg));
+		const float LeftTan = -FMath::Tan(FMath::DegreesToRadians(SensorProperties.LeftFOV));
+		const float RightTan = FMath::Tan(FMath::DegreesToRadians(SensorProperties.RightFOV));
+		const float TopTan = FMath::Tan(FMath::DegreesToRadians(SensorProperties.TopFOV));
+		const float BottomTan = -FMath::Tan(FMath::DegreesToRadians(SensorProperties.BottomFOV));
 		FVector EdgeTR(1, RightTan, TopTan);
 		FVector EdgeTL(1, LeftTan, TopTan);
 		FVector EdgeBL(1, LeftTan, BottomTan);
@@ -93,46 +117,46 @@ static void DrawDebugTrackingSensorLocations(UCanvas* Canvas, APlayerController*
 		// Create a matrix to translate from sensor-relative coordinates to the view location
 		FMatrix Matrix = SensorOrient * FMatrix::Identity;
 		Matrix *= FTranslationMatrix(SensorOrigin);
-		Matrix *= FTranslationMatrix(ViewLocation);
+		Matrix *= FTranslationMatrix(LocationOffset);
 
 		// Calculate coordinates of the tip (location of the sensor) and the base of the pyramid (far plane)
 		FVector Tip = Matrix.TransformPosition(FVector::ZeroVector);
-		FVector BaseTR = Matrix.TransformPosition(EdgeTR * FarPlane);
-		FVector BaseTL = Matrix.TransformPosition(EdgeTL * FarPlane);
-		FVector BaseBL = Matrix.TransformPosition(EdgeBL * FarPlane);
-		FVector BaseBR = Matrix.TransformPosition(EdgeBR * FarPlane);
+		FVector BaseTR = Matrix.TransformPosition(EdgeTR * SensorProperties.FarPlane);
+		FVector BaseTL = Matrix.TransformPosition(EdgeTL * SensorProperties.FarPlane);
+		FVector BaseBL = Matrix.TransformPosition(EdgeBL * SensorProperties.FarPlane);
+		FVector BaseBR = Matrix.TransformPosition(EdgeBR * SensorProperties.FarPlane);
 
 		// Calculate coordinates of where the near plane intersects the pyramid
-		FVector NearTR = Matrix.TransformPosition(EdgeTR * NearPlane);
-		FVector NearTL = Matrix.TransformPosition(EdgeTL * NearPlane);
-		FVector NearBL = Matrix.TransformPosition(EdgeBL * NearPlane);
-		FVector NearBR = Matrix.TransformPosition(EdgeBR * NearPlane);
+		FVector NearTR = Matrix.TransformPosition(EdgeTR * SensorProperties.NearPlane);
+		FVector NearTL = Matrix.TransformPosition(EdgeTL * SensorProperties.NearPlane);
+		FVector NearBL = Matrix.TransformPosition(EdgeBL * SensorProperties.NearPlane);
+		FVector NearBR = Matrix.TransformPosition(EdgeBR * SensorProperties.NearPlane);
 
 		// Draw a point at the sensor position
-		DrawDebugPoint(World, Tip, 5, FrustrumColor);
+		DrawDebugPoint(GWorld, Tip, 5, FrustrumColor);
 
 		// Draw the four edges of the pyramid
-		DrawDebugLine(World, Tip, BaseTR, FrustrumColor);
-		DrawDebugLine(World, Tip, BaseTL, FrustrumColor);
-		DrawDebugLine(World, Tip, BaseBL, FrustrumColor);
-		DrawDebugLine(World, Tip, BaseBR, FrustrumColor);
+		DrawDebugLine(GWorld, Tip, BaseTR, FrustrumColor);
+		DrawDebugLine(GWorld, Tip, BaseTL, FrustrumColor);
+		DrawDebugLine(GWorld, Tip, BaseBL, FrustrumColor);
+		DrawDebugLine(GWorld, Tip, BaseBR, FrustrumColor);
 
 		// Draw the base (far plane)
-		DrawDebugLine(World, BaseTR, BaseTL, FrustrumColor);
-		DrawDebugLine(World, BaseTL, BaseBL, FrustrumColor);
-		DrawDebugLine(World, BaseBL, BaseBR, FrustrumColor);
-		DrawDebugLine(World, BaseBR, BaseTR, FrustrumColor);
+		DrawDebugLine(GWorld, BaseTR, BaseTL, FrustrumColor);
+		DrawDebugLine(GWorld, BaseTL, BaseBL, FrustrumColor);
+		DrawDebugLine(GWorld, BaseBL, BaseBR, FrustrumColor);
+		DrawDebugLine(GWorld, BaseBR, BaseTR, FrustrumColor);
 
 		// Draw the near plane
-		DrawDebugLine(World, NearTR, NearTL, FrustrumColor);
-		DrawDebugLine(World, NearTL, NearBL, FrustrumColor);
-		DrawDebugLine(World, NearBL, NearBR, FrustrumColor);
-		DrawDebugLine(World, NearBR, NearTR, FrustrumColor);
+		DrawDebugLine(GWorld, NearTR, NearTL, FrustrumColor);
+		DrawDebugLine(GWorld, NearTL, NearBL, FrustrumColor);
+		DrawDebugLine(GWorld, NearBL, NearBR, FrustrumColor);
+		DrawDebugLine(GWorld, NearBR, NearTR, FrustrumColor);
 
 		// Draw a center line from the sensor to the focal point
-		FVector CenterLine = Matrix.TransformPosition(FVector(CameraDist, 0, 0));
-		DrawDebugLine(World, Tip, CenterLine, FColor::Yellow);
-		DrawDebugPoint(World, CenterLine, 5, FColor::Yellow);
+		FVector CenterLine = Matrix.TransformPosition(FVector(SensorProperties.CameraDistance, 0, 0));
+		DrawDebugLine(GWorld, Tip, CenterLine, CenterLineColor);
+		DrawDebugPoint(GWorld, CenterLine, 5, CenterLineColor);
 	}
 }
 
@@ -146,7 +170,7 @@ static void ShowTrackingSensors(const TArray<FString>& Args, UWorld* World, FOut
 		{
 			if (bShouldEnable)
 			{
-				Handle = UDebugDrawService::Register(TEXT("Game"), FDebugDrawDelegate::CreateStatic(DrawDebugTrackingSensorLocations, World));
+				Handle = UDebugDrawService::Register(TEXT("Game"), FDebugDrawDelegate::CreateStatic(DrawDebugTrackingSensorLocations));
 			}
 			else
 			{
@@ -183,16 +207,16 @@ static void TrackingOrigin(const TArray<FString>& Args, UWorld* , FOutputDevice&
 			Ar.Logf(ELogVerbosity::Error, TEXT("Invalid tracking orgin, %s"), *Args[0]);
 		}
 
-		if (GEngine && GEngine->HMDDevice.IsValid())
+		if (GEngine && GEngine->XRSystem.IsValid())
 		{
-			GEngine->HMDDevice->SetTrackingOrigin(EHMDTrackingOrigin::Type(Origin));
+			GEngine->XRSystem->SetTrackingOrigin(EHMDTrackingOrigin::Type(Origin));
 		}
 	}
 	else
 	{
-		if (GEngine && GEngine->HMDDevice.IsValid())
+		if (GEngine && GEngine->XRSystem.IsValid())
 		{
-			Origin = GEngine->HMDDevice->GetTrackingOrigin();
+			Origin = GEngine->XRSystem->GetTrackingOrigin();
 		}
 		Ar.Logf(TEXT("Tracking orgin is set to %s"), *TrackingOriginEnum->GetNameStringByIndex(Origin));
 	}
@@ -203,11 +227,67 @@ static FAutoConsoleCommand CTrackingOriginCmd(
 	*LOCTEXT("CCommandText_TrackingOrigin", "Floor or 0 - tracking origin is at the floor, Eye or 1 - tracking origin is at the eye level.").ToString(),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(TrackingOrigin));
 
+namespace HMDConsoleCommandsHelpers
+{
+	ISpectatorScreenController* GetSpectatorScreenController()
+	{
+		if (GEngine->XRSystem.IsValid() && GEngine->XRSystem->GetHMDDevice())
+		{
+			return GEngine->XRSystem->GetHMDDevice()->GetSpectatorScreenController();
+		}
+		return nullptr;
+	}
+}
+
+static void SpectatorScreenMode(const TArray<FString>& Args, UWorld* , FOutputDevice& Ar)
+{
+	ISpectatorScreenController* const Controller = HMDConsoleCommandsHelpers::GetSpectatorScreenController();
+	if (Controller == nullptr)
+	{
+		Ar.Logf(ELogVerbosity::Error, TEXT("SpectatorScreenMode is not controllable now, cannot change or get mode."), *Args[0]);
+		return;
+	}
+
+	const static UEnum* ScreenModeEnum = FindObject<UEnum>(ANY_PACKAGE, TEXT("ESpectatorScreenMode"));
+	int ModeVal = INDEX_NONE;
+	if (Args.Num())
+	{
+		if (FCString::IsNumeric(*Args[0]))
+		{
+			ModeVal = FCString::Atoi(*Args[0]);
+		}
+		else
+		{
+			ModeVal = ScreenModeEnum->GetIndexByName(*Args[0]);
+		}
+		if (ModeVal < ESpectatorScreenModeFirst || ModeVal > ESpectatorScreenModeLast)
+		{
+			Ar.Logf(ELogVerbosity::Error, TEXT("Invalid spectator screen mode: %s"), *Args[0]);
+		}
+
+		Controller->SetSpectatorScreenMode(ESpectatorScreenMode(ModeVal));
+	}
+	else
+	{
+		if (GEngine && GEngine->XRSystem.IsValid())
+		{
+			ModeVal = (int)Controller->GetSpectatorScreenMode();
+		}
+		Ar.Logf(TEXT("Spectator screen mode is set to: %s"), *ScreenModeEnum->GetNameStringByIndex(ModeVal));
+	}
+}
+
+static FAutoConsoleCommand CSpectatorModeCmd(
+	TEXT("vr.SpectatorScreenMode"),
+	*LOCTEXT("CVarText_SpectatorScreenMode",
+		"Changes the look of the spectator if supported by the HMD plugin.\n 0: disable mirroring\n 1: single eye\n 2: stereo pair\nNumbers larger than 2 may be possible and specify HMD plugin-specific variations.\nNegative values are treated the same as 0.").ToString(),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(SpectatorScreenMode));
+
 static void HMDResetPosition(const TArray<FString>& Args, UWorld*, FOutputDevice& Ar)
 {
-	if (GEngine && GEngine->HMDDevice.IsValid())
+	if (GEngine && GEngine->XRSystem.IsValid())
 	{
-		GEngine->HMDDevice->ResetPosition();
+		GEngine->XRSystem->ResetPosition();
 	}
 }
 
@@ -219,14 +299,14 @@ static FAutoConsoleCommand CHMDResetPositionCmd(
 
 static void HMDResetOrientation(const TArray<FString>& Args, UWorld*, FOutputDevice& Ar)
 {
-	if (GEngine && GEngine->HMDDevice.IsValid())
+	if (GEngine && GEngine->XRSystem.IsValid())
 	{
 		float Yaw = 0.f;
 		if (Args.Num() > 0)
 		{
 			Yaw = FCString::Atof(*Args[0]);
 		}
-		GEngine->HMDDevice->ResetOrientation(Yaw);
+		GEngine->XRSystem->ResetOrientation(Yaw);
 	}
 }
 
@@ -237,14 +317,14 @@ static FAutoConsoleCommand CHMDResetOrientationCmd(
 
 static void HMDReset(const TArray<FString>& Args, UWorld*, FOutputDevice& Ar)
 {
-	if (GEngine && GEngine->HMDDevice.IsValid())
+	if (GEngine && GEngine->XRSystem.IsValid())
 	{
 		float Yaw = 0.f;
 		if (Args.Num() > 0)
 		{
 			Yaw = FCString::Atof(*Args[0]);
 		}
-		GEngine->HMDDevice->ResetOrientationAndPosition(Yaw);
+		GEngine->XRSystem->ResetOrientationAndPosition(Yaw);
 	}
 }
 
@@ -256,13 +336,13 @@ static FAutoConsoleCommand CHMDResetCmd(
 
 static void HMDStatus(const TArray<FString>& Args, UWorld*, FOutputDevice& Ar)
 {
-	if (GEngine && GEngine->HMDDevice.IsValid())
+	if (GEngine && GEngine->XRSystem.IsValid())
 	{
-		auto HMD = GEngine->HMDDevice;
+		auto HMD = GEngine->XRSystem;
 		Ar.Logf(TEXT("Position tracking status: %s\nHead tracking allowed: %s\nNumber of tracking sensors: %d"), 
 			HMD->DoesSupportPositionalTracking() ? (HMD->HasValidTrackingPosition() ? TEXT("active") : TEXT("lost")) : TEXT("not supported"),
 			HMD->IsHeadTrackingAllowed() ? TEXT("yes") : TEXT("no"),
-			HMD->GetNumOfTrackingSensors());
+			HMD->CountTrackedDevices(EXRTrackedDeviceType::TrackingReference));
 	}
 }
 
@@ -274,21 +354,27 @@ static FAutoConsoleCommand CHMDStatusCmd(
 static void EnableHMD(const TArray<FString>& Args, UWorld*, FOutputDevice& Ar)
 {
 	bool bEnable = 0;
+	IHeadMountedDisplay* HMD = GEngine && GEngine->XRSystem.IsValid() ? GEngine->XRSystem->GetHMDDevice() : nullptr;
+	if (!HMD)
+	{
+		return;
+	}
+	
 	if (Args.Num())
 	{
 		bEnable = FCString::ToBool(*Args[0]);
+		HMD->EnableHMD(bEnable);
 
-		if (GEngine && GEngine->HMDDevice.IsValid())
+		/* TODO: calling EnableStereo after calling EnableHMD replicates the function library behavior:
+		if (GEngine->StereoRenderingDevice.IsValid())
 		{
-			GEngine->HMDDevice->EnableHMD(bEnable);
+			GEngine->StereoRenderingDevice->EnableStereo(bEnable);
 		}
+		*/
 	}
 	else
 	{
-		if (GEngine && GEngine->HMDDevice.IsValid())
-		{
-			bEnable = GEngine->HMDDevice->IsHMDEnabled();
-		}
+		bEnable = HMD->IsHMDEnabled();
 		Ar.Logf(TEXT("HMD device is %s"), bEnable?TEXT("enabled"):TEXT("disabled"));
 	}
 }
@@ -301,24 +387,26 @@ static FAutoConsoleCommand CEnableHMDCmd(
 static void EnableStereo(const TArray<FString>& Args, UWorld*, FOutputDevice& Ar)
 {
 	bool bEnable = 0;
+	IHeadMountedDisplay* HMD = GEngine && GEngine->XRSystem.IsValid() ? GEngine->XRSystem->GetHMDDevice() : nullptr;
+
 	if (Args.Num())
 	{
 		bEnable = FCString::ToBool(*Args[0]);
 
-		if (GEngine && GEngine->HMDDevice.IsValid())
+		if (GEngine && GEngine->StereoRenderingDevice.IsValid())
 		{
-			if (!GEngine->HMDDevice->IsHMDEnabled())
+			if (HMD && !HMD->IsHMDEnabled())
 			{
 				Ar.Logf(TEXT("HMD is disabled. Use 'vr.bEnableHMD True' to re-enable it."));
 			}
-			GEngine->HMDDevice->EnableStereo(bEnable);
+			GEngine->StereoRenderingDevice->EnableStereo(bEnable);
 		}
 	}
 	else
 	{
-		if (GEngine && GEngine->HMDDevice.IsValid())
+		if (GEngine && GEngine->StereoRenderingDevice.IsValid())
 		{
-			bEnable = GEngine->HMDDevice->IsStereoEnabled();
+			bEnable = GEngine->StereoRenderingDevice->IsStereoEnabled();
 		}
 		Ar.Logf(TEXT("Stereo is %s"), bEnable ? TEXT("enabled") : TEXT("disabled"));
 	}
@@ -331,9 +419,9 @@ static FAutoConsoleCommand CEnableStereoCmd(
 
 static void HMDVersion(const TArray<FString>& Args, UWorld*, FOutputDevice& Ar)
 {
-	if (GEngine && GEngine->HMDDevice.IsValid())
+	if (GEngine && GEngine->XRSystem.IsValid())
 	{
-		Ar.Logf(*GEngine->HMDDevice->GetVersionString());
+		Ar.Logf(*GEngine->XRSystem->GetVersionString());
 	}
 }
 
@@ -390,6 +478,10 @@ static bool CompatExec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar)
 	{
 		AliasedCommand = FString::Printf(TEXT("vr.TrackingOrigin %s"), Cmd);
 	}
+	if (FParse::Command(&Cmd, TEXT("vr.MirrorMode")))
+	{
+		AliasedCommand = FString::Printf(TEXT("vr.SpectatorScreenMode %s"), Cmd);
+	}
 	else if (FParse::Command(&Cmd, TEXT("HMDPOS")))
 	{
 		FString CmdName = FParse::Token(Cmd, 0);
@@ -407,10 +499,6 @@ static bool CompatExec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar)
 		if (FParse::Command(&Cmd, TEXT("OFF")) || FParse::Command(&Cmd, TEXT("DISABLE")))
 		{
 			AliasedCommand = TEXT("vr.bEnableHMD False");
-		}
-		if (FParse::Command(&Cmd, TEXT("SP")) || FParse::Command(&Cmd, TEXT("SCREENPERCENTAGE")))
-		{
-			AliasedCommand = FString::Printf(TEXT("r.ScreenPercentage %s"), Cmd);
 		}
 	}
 	else if (FParse::Command(&Cmd, TEXT("STEREO")))

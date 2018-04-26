@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*===========================================================================
 	ErrorChecking.cpp
@@ -127,9 +127,8 @@ void ABrush::CheckForErrors()
 	}
 	else
 	{		
-		ABrush* MyBrush = Cast<ABrush>( Brush );
 		// NOTE : don't report NULL texture references on the builder brush - it doesn't matter there
-		if( MyBrush && !FActorEditorUtils::IsABuilderBrush(MyBrush) && !IsBrushShape() )
+		if( Brush && !FActorEditorUtils::IsABuilderBrush(this) && !IsBrushShape() )
 		{
 			// A brush without any polygons in it isn't useful.  Should be deleted.
 			if( Brush->Polys->Element.Num() == 0 )

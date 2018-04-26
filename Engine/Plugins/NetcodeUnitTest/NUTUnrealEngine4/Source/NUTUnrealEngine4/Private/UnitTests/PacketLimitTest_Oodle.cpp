@@ -1,9 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UnitTests/PacketLimitTest_Oodle.h"
 
 
-
+// @todo #JohnB: Restore in a game-level package, eventually
+#if 0
 /**
  * UPacketLimitTest_Oodle
  */
@@ -23,3 +24,4 @@ UPacketLimitTest_Oodle::UPacketLimitTest_Oodle(const FObjectInitializer& ObjectI
 
 	bUseOodle = true;
 }
+#endif

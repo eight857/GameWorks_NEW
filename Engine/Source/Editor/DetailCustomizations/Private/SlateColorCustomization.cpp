@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SlateColorCustomization.h"
 #include "Widgets/Text/STextBlock.h"
@@ -54,7 +54,7 @@ void FSlateColorCustomization::MakeHeaderRow(TSharedRef<class IPropertyHandle>& 
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
 			[
-				CreateColorWidget()
+				CreateColorWidget(StructPropertyHandle)
 			]
 
 			+ SHorizontalBox::Slot()

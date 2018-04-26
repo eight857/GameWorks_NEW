@@ -1,8 +1,9 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "IntegerKeyArea.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "CurveKeyEditors/SIntegralCurveKeyEditor.h"
+#include "MovieSceneSection.h"
 
 
 /* IKeyArea interface
@@ -20,5 +21,16 @@ TSharedRef<SWidget> FIntegerKeyArea::CreateKeyEditor(ISequencer* Sequencer)
 		.Sequencer(Sequencer)
 		.OwningSection(OwningSection)
 		.Curve(&Curve)
-		.ExternalValue(ExternalValue);
-};
+		.ExternalValue(this, &FIntegerKeyArea::GetExternalValue);
+}
+
+TOptional<int32> FIntegerKeyArea::GetExternalValue() const
+{
+	FOptionalMovieSceneBlendType BlendType = OwningSection->GetBlendType();
+	if (ExternalValue.IsSet() && (!BlendType.IsValid() || BlendType.Get() == EMovieSceneBlendType::Absolute))
+	{
+		return ExternalValue.Get();
+	}
+
+	return TOptional<int32>();
+}

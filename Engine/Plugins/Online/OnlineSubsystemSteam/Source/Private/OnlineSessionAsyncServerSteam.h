@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -162,7 +162,7 @@ public:
  * currently waiting for the Steam rules to be returned before creating a final search 
  * result to associate with the currently running query
  */
-class FPendingSearchResultSteam : public ISteamMatchmakingRulesResponse
+class FPendingSearchResultSteam final : public ISteamMatchmakingRulesResponse
 {
 	/** Hidden on purpose */
 	FPendingSearchResultSteam() :
@@ -208,7 +208,7 @@ public:
 
 	}
 
-	~FPendingSearchResultSteam()
+	virtual ~FPendingSearchResultSteam()
 	{
 
 	}

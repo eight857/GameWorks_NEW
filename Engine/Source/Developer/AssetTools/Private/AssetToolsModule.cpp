@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetToolsModule.h"
 #include "AssetToolsLog.h"
@@ -12,8 +12,9 @@ DEFINE_LOG_CATEGORY(LogAssetTools);
 
 void FAssetToolsModule::StartupModule()
 {
-	AssetTools = new FAssetTools();
 	ConsoleCommands = new FAssetToolsConsoleCommands(*this);
+
+	AssetToolsPtr = MakeWeakObjectPtr(const_cast<UAssetToolsImpl*>(GetDefault<UAssetToolsImpl>()));
 
 	// create a message log for the asset tools to use
 	FMessageLogModule& MessageLogModule = FModuleManager::LoadModuleChecked<FMessageLogModule>("MessageLog");
@@ -24,11 +25,7 @@ void FAssetToolsModule::StartupModule()
 
 void FAssetToolsModule::ShutdownModule()
 {
-	if (AssetTools != NULL)
-	{
-		delete AssetTools;
-		AssetTools = NULL;
-	}
+	AssetToolsPtr = nullptr;
 
 	if (ConsoleCommands != NULL)
 	{
@@ -46,6 +43,5 @@ void FAssetToolsModule::ShutdownModule()
 
 IAssetTools& FAssetToolsModule::Get() const
 {
-	check(AssetTools);
-	return *AssetTools;
+	return *AssetToolsPtr;
 }

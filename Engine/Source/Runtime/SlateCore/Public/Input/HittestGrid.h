@@ -1,11 +1,12 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Layout/SlateRect.h"
-#include "Input/Events.h"
 #include "Layout/ArrangedWidget.h"
+#include "Layout/Clipping.h"
+#include "Input/Events.h"
 #include "Widgets/SWidget.h"
 
 class FArrangedChildren;
@@ -44,8 +45,12 @@ public:
 	 */
 	void ClearGridForNewFrame(const FSlateRect& HittestArea);
 
+	void PushClip(const FSlateClippingZone& ClippingZone); 
+
+	void PopClip();
+
 	/** Add Widget into the hittest data structure so that we can later make queries about it. */
-	int32 InsertWidget(const int32 ParentHittestIndex, const EVisibility& Visibility, const FArrangedWidget& Widget, const FVector2D InWindowOffset, const FSlateRect& InClippingRect, int32 LayerId);
+	int32 InsertWidget(const int32 ParentHittestIndex, const EVisibility& Visibility, const FArrangedWidget& Widget, const FVector2D InWindowOffset, int32 LayerId);
 
 	void InsertCustomHitTestPath( TSharedRef<ICustomHitTestPath> CustomHitTestPath, int32 WidgetIndex );
 
@@ -78,7 +83,32 @@ private:
 	 * that is encountered on the way to outputting a hit-testable element
 	 * being recorded such that the event bubbling path can be reconstructed.
 	 */
-	struct FCachedWidget;
+	struct FCachedWidget
+	{
+		FCachedWidget(int32 InParentIndex, const FArrangedWidget& InWidget, int32 InClippingStateIndex, int32 InLayerId)
+			: WidgetPtr(InWidget.Widget)
+			, CachedGeometry(InWidget.Geometry)
+			, ClippingStateIndex(InClippingStateIndex)
+			, Children()
+			, ParentIndex(InParentIndex)
+			, LayerId(InLayerId)
+		{}
+
+		void AddChild(const int32 ChildIndex)
+		{
+			Children.Add(ChildIndex);
+		}
+
+		TWeakPtr<SWidget> WidgetPtr;
+		/** Allow widgets that implement this interface to insert widgets into the bubble path */
+		TWeakPtr<ICustomHitTestPath> CustomPath;
+		FGeometry CachedGeometry;
+		int32 ClippingStateIndex;
+		TArray<int32, TInlineAllocator<16> > Children;
+		int32 ParentIndex;
+		/** This is needed to be able to pick the best of the widgets within the virtual cursor's radius. */
+		int32 LayerId;
+	};
 
 	/** Shared arguments to helper functions. */
 	struct FGridTestingParams;
@@ -160,7 +190,7 @@ private:
 	}
 
 	/** All the widgets and their arranged geometries encountered this frame. */
-	TSharedRef< TArray<FCachedWidget> > WidgetsCachedThisFrame;
+	TArray<FCachedWidget> WidgetsCachedThisFrame;
 
 	/** The cells that make up the space partition. */
 	TArray<FCell> Cells;
@@ -170,6 +200,9 @@ private:
 
 	/** The size of the grid in cells. */
 	FIntPoint NumCells;
+
+	/** The clipping manager that manages any clipping for hit testable widgets. */
+	FSlateClippingManager ClippingManager;
 
 	void LogGrid() const;
 

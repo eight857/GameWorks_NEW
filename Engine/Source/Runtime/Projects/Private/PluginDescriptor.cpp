@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PluginDescriptor.h"
 #include "Misc/FileHelper.h"
@@ -8,38 +8,49 @@
 
 #define LOCTEXT_NAMESPACE "PluginDescriptor"
 
+/**
+ * Version numbers for plugin descriptors. These version numbers are not generally needed; serialization from JSON attempts to be tolerant of missing/added fields.
+ */ 
+enum class EPluginDescriptorVersion : uint8
+{
+	Invalid = 0,
+	Initial = 1,
+	NameHash = 2,
+	ProjectPluginUnification = 3,
+	// !!!!!!!!!! IMPORTANT: Remember to also update LatestPluginDescriptorFileVersion in Plugins.cs (and Plugin system documentation) when this changes!!!!!!!!!!!
+	// -----<new versions can be added before this line>-------------------------------------------------
+	// - this needs to be the last line (see note below)
+	LatestPlusOne,
+	Latest = LatestPlusOne - 1
+};
+
 
 FPluginDescriptor::FPluginDescriptor()
-	: FileVersion(EPluginDescriptorVersion::Latest)
-	, Version(0)
-	, CompatibleChangelist(0)
-	, bEnabledByDefault(false)
+	: Version(0)
+	, EnabledByDefault(EPluginEnabledByDefault::Unspecified)
 	, bCanContainContent(false)
 	, bIsBetaVersion(false)
-	, bIsMod(false)
 	, bInstalled(false)
-	, bRequiresBuildPlatform(true)
+	, bRequiresBuildPlatform(false)
+	, bIsHidden(false)
 { 
 }
 
 
-bool FPluginDescriptor::Load(const FString& FileName, bool bPluginTypeEnabledByDefault, FText& OutFailReason)
+bool FPluginDescriptor::Load(const FString& FileName, FText& OutFailReason)
 {
 	// Read the file to a string
 	FString FileContents;
-
 	if (!FFileHelper::LoadFileToString(FileContents, *FileName))
 	{
 		OutFailReason = FText::Format(LOCTEXT("FailedToLoadDescriptorFile", "Failed to open descriptor file '{0}'"), FText::FromString(FileName));
 		return false;
 	}
-
-	// Parse it as a plug-in descriptor
-	return Read(FileContents, bPluginTypeEnabledByDefault, OutFailReason);
+	return Read(FileContents, OutFailReason);
 }
 
 
-bool FPluginDescriptor::Read(const FString& Text, bool bPluginTypeEnabledByDefault, FText& OutFailReason)
+bool FPluginDescriptor::Read(const FString& Text, FText& OutFailReason)
 {
 	// Deserialize a JSON object from the string
 	TSharedPtr< FJsonObject > ObjectPtr;
@@ -49,11 +60,16 @@ bool FPluginDescriptor::Read(const FString& Text, bool bPluginTypeEnabledByDefau
 		OutFailReason = FText::Format(LOCTEXT("FailedToReadDescriptorFile", "Failed to read file. {0}"), FText::FromString(Reader->GetErrorMessage()));
 		return false;
 	}
-	FJsonObject& Object = *ObjectPtr.Get();
 
+	// Parse it as a plug-in descriptor
+	return Read(*ObjectPtr.Get(), OutFailReason);
+}
+
+
+bool FPluginDescriptor::Read(const FJsonObject& Object, FText& OutFailReason)
+{
 	// Read the file version
 	int32 FileVersionInt32;
-
 	if(!Object.TryGetNumberField(TEXT("FileVersion"), FileVersionInt32))
 	{
 		if(!Object.TryGetNumberField(TEXT("PluginFileVersion"), FileVersionInt32))
@@ -64,7 +80,7 @@ bool FPluginDescriptor::Read(const FString& Text, bool bPluginTypeEnabledByDefau
 	}
 
 	// Check that it's within range
-	EPluginDescriptorVersion::Type PluginFileVersion = (EPluginDescriptorVersion::Type)FileVersionInt32;
+	EPluginDescriptorVersion PluginFileVersion = (EPluginDescriptorVersion)FileVersionInt32;
 	if ((PluginFileVersion <= EPluginDescriptorVersion::Invalid) || (PluginFileVersion > EPluginDescriptorVersion::Latest))
 	{
 		FText ReadVersionText = FText::FromString(FString::Printf(TEXT("%d"), (int32)PluginFileVersion));
@@ -98,7 +114,7 @@ bool FPluginDescriptor::Read(const FString& Text, bool bPluginTypeEnabledByDefau
 	Object.TryGetStringField(TEXT("MarketplaceURL"), MarketplaceURL);
 	Object.TryGetStringField(TEXT("SupportURL"), SupportURL);
 	Object.TryGetStringField(TEXT("EngineVersion"), EngineVersion);
-	Object.TryGetNumberField(TEXT("CompatibleChangelist"), CompatibleChangelist);
+	Object.TryGetStringArrayField(TEXT("SupportedTargetPlatforms"), SupportedTargetPlatforms);
 
 	if (!FModuleDescriptor::ReadArray(Object, TEXT("Modules"), Modules, OutFailReason))
 	{
@@ -110,32 +126,34 @@ bool FPluginDescriptor::Read(const FString& Text, bool bPluginTypeEnabledByDefau
 		return false;
 	}
 
-	if(!Object.TryGetBoolField(TEXT("EnabledByDefault"), bEnabledByDefault))
+	bool bEnabledByDefault;
+	if(Object.TryGetBoolField(TEXT("EnabledByDefault"), bEnabledByDefault))
 	{
-		bEnabledByDefault = bPluginTypeEnabledByDefault;
+		EnabledByDefault = bEnabledByDefault? EPluginEnabledByDefault::Enabled : EPluginEnabledByDefault::Disabled;
 	}
 
 	Object.TryGetBoolField(TEXT("CanContainContent"), bCanContainContent);
 	Object.TryGetBoolField(TEXT("IsBetaVersion"), bIsBetaVersion);
-	Object.TryGetBoolField(TEXT("IsMod"), bIsMod);
 	Object.TryGetBoolField(TEXT("Installed"), bInstalled);
-
-	if(!Object.TryGetBoolField(TEXT("RequiresBuildPlatform"), bRequiresBuildPlatform))
-	{
-		bRequiresBuildPlatform = true;
-	}
+	Object.TryGetBoolField(TEXT("RequiresBuildPlatform"), bRequiresBuildPlatform);
+	Object.TryGetBoolField(TEXT("Hidden"), bIsHidden);
 
 	PreBuildSteps.Read(Object, TEXT("PreBuildSteps"));
 	PostBuildSteps.Read(Object, TEXT("PostBuildSteps"));
 
+	if (!FPluginReferenceDescriptor::ReadArray(Object, TEXT("Plugins"), Plugins, OutFailReason))
+	{
+		return false;
+	}
+
 	return true;
 }
 
-bool FPluginDescriptor::Save(const FString& FileName, bool bPluginTypeEnabledByDefault, FText& OutFailReason) const
+bool FPluginDescriptor::Save(const FString& FileName, FText& OutFailReason) const
 {
-	// Write the contents of the descriptor to a string. Make sure the writer is destroyed so that the contents are flushed to the string.
+	// Write the descriptor to text
 	FString Text;
-	Write(Text, bPluginTypeEnabledByDefault);
+	Write(Text);
 
 	// Save it to a file
 	if ( !FFileHelper::SaveStringToFile(Text, *FileName) )
@@ -146,15 +164,19 @@ bool FPluginDescriptor::Save(const FString& FileName, bool bPluginTypeEnabledByD
 	return true;
 }
 
-void FPluginDescriptor::Write(FString& Text, bool bPluginTypeEnabledByDefault) const
+void FPluginDescriptor::Write(FString& Text) const
 {
-	Text.Empty();
-
+	// Write the contents of the descriptor to a string. Make sure the writer is destroyed so that the contents are flushed to the string.
 	TSharedRef< TJsonWriter<> > WriterRef = TJsonWriterFactory<>::Create(&Text);
 	TJsonWriter<>& Writer = WriterRef.Get();
-
 	Writer.WriteObjectStart();
+	Write(Writer);
+	Writer.WriteObjectEnd();
+	Writer.Close();
+}
 
+void FPluginDescriptor::Write(TJsonWriter<>& Writer) const
+{
 	Writer.WriteValue(TEXT("FileVersion"), EProjectDescriptorVersion::Latest);
 	Writer.WriteValue(TEXT("Version"), Version);
 	Writer.WriteValue(TEXT("VersionName"), VersionName);
@@ -170,29 +192,31 @@ void FPluginDescriptor::Write(FString& Text, bool bPluginTypeEnabledByDefault) c
 	{
 		Writer.WriteValue(TEXT("EngineVersion"), EngineVersion);
 	}
-	if (CompatibleChangelist != 0)
+	if(EnabledByDefault != EPluginEnabledByDefault::Unspecified)
 	{
-		Writer.WriteValue(TEXT("CompatibleChangelist"), CompatibleChangelist);
-	}
-	if(bEnabledByDefault != bPluginTypeEnabledByDefault)
-	{
-		Writer.WriteValue(TEXT("EnabledByDefault"), bEnabledByDefault);
+		Writer.WriteValue(TEXT("EnabledByDefault"), (EnabledByDefault == EPluginEnabledByDefault::Enabled));
 	}
 	Writer.WriteValue(TEXT("CanContainContent"), bCanContainContent);
 	Writer.WriteValue(TEXT("IsBetaVersion"), bIsBetaVersion);
-	if (bIsMod)
-	{
-		Writer.WriteValue(TEXT("IsMod"), bIsMod);
-	}
 	Writer.WriteValue(TEXT("Installed"), bInstalled);
+
+	if(SupportedTargetPlatforms.Num() > 0)
+	{
+		Writer.WriteValue(TEXT("SupportedTargetPlatforms"), SupportedTargetPlatforms);
+	}
 
 	FModuleDescriptor::WriteArray(Writer, TEXT("Modules"), Modules);
 
 	FLocalizationTargetDescriptor::WriteArray(Writer, TEXT("LocalizationTargets"), LocalizationTargets);
 
-	if(!bRequiresBuildPlatform)
+	if(bRequiresBuildPlatform)
 	{
 		Writer.WriteValue(TEXT("RequiresBuildPlatform"), bRequiresBuildPlatform);
+	}
+
+	if (bIsHidden)
+	{
+		Writer.WriteValue(TEXT("Hidden"), bIsHidden);
 	}
 
 	if(!PreBuildSteps.IsEmpty())
@@ -205,216 +229,12 @@ void FPluginDescriptor::Write(FString& Text, bool bPluginTypeEnabledByDefault) c
 		PostBuildSteps.Write(Writer, TEXT("PostBuildSteps"));
 	}
 
-	Writer.WriteObjectEnd();
-	Writer.Close();
+	FPluginReferenceDescriptor::WriteArray(Writer, TEXT("Plugins"), Plugins);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-FPluginReferenceDescriptor::FPluginReferenceDescriptor( const FString& InName, bool bInEnabled, const FString& InMarketplaceURL )
-	: Name(InName)
-	, bEnabled(bInEnabled)
-	, bOptional(false)
-	, MarketplaceURL(InMarketplaceURL)
-{ }
-
-
-bool FPluginReferenceDescriptor::IsEnabledForPlatform( const FString& Platform ) const
+bool FPluginDescriptor::SupportsTargetPlatform(const FString& Platform) const
 {
-	// If it's not enabled at all, return false
-	if(!bEnabled)
-	{
-		return false;
-	}
-
-	// If there is a list of whitelisted platforms, and this isn't one of them, return false
-	if(WhitelistPlatforms.Num() > 0 && !WhitelistPlatforms.Contains(Platform))
-	{
-		return false;
-	}
-
-	// If this platform is blacklisted, also return false
-	if(BlacklistPlatforms.Contains(Platform))
-	{
-		return false;
-	}
-
-	return true;
+	return SupportedTargetPlatforms.Num() == 0 || SupportedTargetPlatforms.Contains(Platform);
 }
-
-bool FPluginReferenceDescriptor::IsEnabledForTarget(const FString& Target) const
-{
-    // If it's not enabled at all, return false
-    if (!bEnabled)
-    {
-        return false;
-    }
-
-    // If there is a list of whitelisted platforms, and this isn't one of them, return false
-    if (WhitelistTargets.Num() > 0 && !WhitelistTargets.Contains(Target))
-    {
-        return false;
-    }
-
-    // If this platform is blacklisted, also return false
-    if (BlacklistTargets.Contains(Target))
-    {
-        return false;
-    }
-
-    return true;
-}
-
-bool FPluginReferenceDescriptor::Read( const FJsonObject& Object, FText& OutFailReason )
-{
-	// Get the name
-	if(!Object.TryGetStringField(TEXT("Name"), Name))
-	{
-		OutFailReason = LOCTEXT("PluginReferenceWithoutName", "Plugin references must have a 'Name' field");
-		return false;
-	}
-
-	// Get the enabled field
-	if(!Object.TryGetBoolField(TEXT("Enabled"), bEnabled))
-	{
-		OutFailReason = LOCTEXT("PluginReferenceWithoutEnabled", "Plugin references must have an 'Enabled' field");
-		return false;
-	}
-
-	// Read the optional field
-	Object.TryGetBoolField(TEXT("Optional"), bOptional);
-
-	// Read the metadata for users that don't have the plugin installed
-	Object.TryGetStringField(TEXT("Description"), Description);
-	Object.TryGetStringField(TEXT("MarketplaceURL"), MarketplaceURL);
-
-	// Get the platform lists
-	Object.TryGetStringArrayField(TEXT("WhitelistPlatforms"), WhitelistPlatforms);
-	Object.TryGetStringArrayField(TEXT("BlacklistPlatforms"), BlacklistPlatforms);
-
-	// Get the target lists
-	Object.TryGetStringArrayField(TEXT("WhitelistTargets"), WhitelistTargets);
-	Object.TryGetStringArrayField(TEXT("BlacklistTargets"), BlacklistTargets);
-
-	return true;
-}
-
-
-bool FPluginReferenceDescriptor::ReadArray( const FJsonObject& Object, const TCHAR* Name, TArray<FPluginReferenceDescriptor>& OutPlugins, FText& OutFailReason )
-{
-	const TArray< TSharedPtr<FJsonValue> > *Array;
-
-	if (Object.TryGetArrayField(Name, Array))
-	{
-		for (const TSharedPtr<FJsonValue> &Item : *Array)
-		{
-			const TSharedPtr<FJsonObject> *ObjectPtr;
-
-			if (Item.IsValid() && Item->TryGetObject(ObjectPtr))
-			{
-				FPluginReferenceDescriptor Plugin;
-
-				if (!Plugin.Read(*ObjectPtr->Get(), OutFailReason))
-				{
-					return false;
-				}
-
-				OutPlugins.Add(Plugin);
-			}
-		}
-	}
-
-	return true;
-}
-
-
-void FPluginReferenceDescriptor::Write( TJsonWriter<>& Writer ) const
-{
-	Writer.WriteObjectStart();
-	Writer.WriteValue(TEXT("Name"), Name);
-	Writer.WriteValue(TEXT("Enabled"), bEnabled);
-
-	if (bEnabled && bOptional)
-	{
-		Writer.WriteValue(TEXT("Optional"), bOptional);
-	}
-
-	if (Description.Len() > 0)
-	{
-		Writer.WriteValue(TEXT("Description"), Description);
-	}
-
-	if (MarketplaceURL.Len() > 0)
-	{
-		Writer.WriteValue(TEXT("MarketplaceURL"), MarketplaceURL);
-	}
-
-	if (WhitelistPlatforms.Num() > 0)
-	{
-		Writer.WriteArrayStart(TEXT("WhitelistPlatforms"));
-
-		for (int Idx = 0; Idx < WhitelistPlatforms.Num(); Idx++)
-		{
-			Writer.WriteValue(WhitelistPlatforms[Idx]);
-		}
-
-		Writer.WriteArrayEnd();
-	}
-
-	if (BlacklistPlatforms.Num() > 0)
-	{
-		Writer.WriteArrayStart(TEXT("BlacklistPlatforms"));
-
-		for (int Idx = 0; Idx < BlacklistPlatforms.Num(); Idx++)
-		{
-			Writer.WriteValue(BlacklistPlatforms[Idx]);
-		}
-
-		Writer.WriteArrayEnd();
-	}
-
-	if (WhitelistTargets.Num() > 0)
-	{
-		Writer.WriteArrayStart(TEXT("WhitelistTargets"));
-
-		for (int Idx = 0; Idx < WhitelistTargets.Num(); Idx++)
-		{
-			Writer.WriteValue(WhitelistTargets[Idx]);
-		}
-
-		Writer.WriteArrayEnd();
-	}
-
-	if (BlacklistTargets.Num() > 0)
-	{
-		Writer.WriteArrayStart(TEXT("BlacklistTargets"));
-
-		for (int Idx = 0; Idx < BlacklistTargets.Num(); Idx++)
-		{
-			Writer.WriteValue(BlacklistTargets[Idx]);
-		}
-
-		Writer.WriteArrayEnd();
-	}
-
-	Writer.WriteObjectEnd();
-}
-
-
-void FPluginReferenceDescriptor::WriteArray( TJsonWriter<>& Writer, const TCHAR* Name, const TArray<FPluginReferenceDescriptor>& Plugins )
-{
-	if( Plugins.Num() > 0)
-	{
-		Writer.WriteArrayStart(Name);
-
-		for (int Idx = 0; Idx < Plugins.Num(); Idx++)
-		{
-			Plugins[Idx].Write(Writer);
-		}
-
-		Writer.WriteArrayEnd();
-	}
-}
-
 
 #undef LOCTEXT_NAMESPACE

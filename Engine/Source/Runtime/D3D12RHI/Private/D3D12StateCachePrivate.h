@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 // Implementation of Device Context State Caching to improve draw
 //	thread performance by removing redundant device context calls.
@@ -36,11 +36,6 @@
 // out at 1M for now.
 #define NUM_VIEW_DESCRIPTORS_TIER_3 D3D12_MAX_SHADER_VISIBLE_DESCRIPTOR_HEAP_SIZE_TIER_2
 
-// This value defines how many descriptors will be in the device global view heap which
-// is shared across contexts to allow the driver to eliminate redundant descriptor heap sets.
-// This should be tweaked for each title as heaps require VRAM. The default value of 512k takes up ~16MB
-#define GLOBAL_VIEW_HEAP_SIZE (1024 * 512)
-
 // Heap for updating UAV counter values.
 #define COUNTER_HEAP_SIZE 1024 * 64
 
@@ -52,6 +47,8 @@ extern bool GD3D12SkipStateCaching;
 #else
 static const bool GD3D12SkipStateCaching = false;
 #endif
+
+extern int32 GGlobalViewHeapSize;
 
 struct FD3D12VertexBufferCache
 {
@@ -319,6 +316,8 @@ protected:
 			D3D12_RECT CurrentViewportScissorRects[D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
 			uint32 CurrentNumberOfScissorRects;
 
+			uint16 StreamStrides[MaxVertexElementCount];
+
 			FD3D12RenderTargetView* RenderTargetArray[D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT];
 
 			FD3D12DepthStencilView* CurrentDepthStencilTarget;
@@ -338,6 +337,9 @@ protected:
 
 			// Compute
 			FD3D12ComputeShader* CurrentComputeShader;
+
+			// Need to cache compute budget, as we need to reset if after PSO changes
+			EAsyncComputeBudget ComputeBudget;
 		} Compute;
 
 		struct
@@ -440,7 +442,7 @@ public:
 	template <EShaderFrequency ShaderFrequency>
 	void ClearShaderResourceViews(FD3D12ResourceLocation*& ResourceLocation)
 	{
-		SCOPE_CYCLE_COUNTER(STAT_D3D12ClearShaderResourceViewsTime);
+		//SCOPE_CYCLE_COUNTER(STAT_D3D12ClearShaderResourceViewsTime);
 
 		if (PipelineState.Common.SRVCache.MaxBoundIndex[ShaderFrequency] < 0)
 		{
@@ -677,6 +679,7 @@ public:
 	{
 		if (BoundShaderState)
 		{
+			SetStreamStrides(BoundShaderState->StreamStrides);
 			SetShader(BoundShaderState->GetVertexShader());
 			SetShader(BoundShaderState->GetPixelShader());
 			SetShader(BoundShaderState->GetDomainShader());
@@ -685,6 +688,8 @@ public:
 		}
 		else
 		{
+			uint16 NullStrides[MaxVertexElementCount] = {0};
+			SetStreamStrides(NullStrides);
 			SetShader<FD3D12VertexShader>(nullptr);
 			SetShader<FD3D12PixelShader>(nullptr);
 			SetShader<FD3D12HullShader>(nullptr);
@@ -713,7 +718,7 @@ public:
 	}
 
 	template <bool IsCompute = false>
-	D3D12_STATE_CACHE_INLINE void FD3D12StateCacheBase::SetPipelineState(FD3D12PipelineState* PSO)
+	D3D12_STATE_CACHE_INLINE void SetPipelineState(FD3D12PipelineState* PSO)
 	{
 		// Save the PSO
 		if (PSO)
@@ -762,9 +767,20 @@ public:
 		*InputLayout = PipelineState.Graphics.HighLevelDesc.BoundShaderState->InputLayout;
 	}
 
+	D3D12_STATE_CACHE_INLINE void SetStreamStrides(const uint16* InStreamStrides)
+	{
+		FMemory::Memcpy(PipelineState.Graphics.StreamStrides, InStreamStrides, sizeof(PipelineState.Graphics.StreamStrides));
+	}
+
 	D3D12_STATE_CACHE_INLINE void SetStreamSource(FD3D12ResourceLocation* VertexBufferLocation, uint32 StreamIndex, uint32 Stride, uint32 Offset)
 	{
+		ensure(Stride == PipelineState.Graphics.StreamStrides[StreamIndex]);
 		InternalSetStreamSource(VertexBufferLocation, StreamIndex, Stride, Offset);
+	}
+
+	D3D12_STATE_CACHE_INLINE void SetStreamSource(FD3D12ResourceLocation* VertexBufferLocation, uint32 StreamIndex, uint32 Offset)
+	{
+		InternalSetStreamSource(VertexBufferLocation, StreamIndex, PipelineState.Graphics.StreamStrides[StreamIndex], Offset);
 	}
 
 	D3D12_STATE_CACHE_INLINE bool IsShaderResource(const FD3D12ResourceLocation* VertexBufferLocation) const
@@ -828,7 +844,7 @@ public:
 
 	void Init(FD3D12Device* InParent, FD3D12CommandContext* InCmdContext, const FD3D12StateCacheBase* AncestralState, FD3D12SubAllocatedOnlineHeap::SubAllocationDesc& SubHeapDesc);
 
-	~FD3D12StateCacheBase()
+	virtual ~FD3D12StateCacheBase()
 	{
 	}
 
@@ -879,6 +895,11 @@ public:
 
 			bNeedSetDepthBounds = true;
 		}
+	}
+
+	void SetComputeBudget(EAsyncComputeBudget ComputeBudget)
+	{
+		PipelineState.Compute.ComputeBudget = ComputeBudget;
 	}
 
 	D3D12_STATE_CACHE_INLINE void AutoFlushComputeShaderCache(bool bEnable)

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SequencerObjectChangeListener.h"
 #include "Components/ActorComponent.h"
@@ -7,6 +7,7 @@
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
 #include "IPropertyChangeListener.h"
+#include "MovieSceneSequence.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSequencerTools, Log, All);
 
@@ -28,6 +29,11 @@ FSequencerObjectChangeListener::~FSequencerObjectChangeListener()
 
 void FSequencerObjectChangeListener::OnPropertyChanged(const TArray<UObject*>& ChangedObjects, const IPropertyHandle& PropertyHandle) const
 {
+	if (Sequencer.IsValid() && !Sequencer.Pin()->IsAllowedToChange())
+	{
+		return;
+	}
+
 	BroadcastPropertyChanged(FKeyPropertyParams(ChangedObjects, PropertyHandle, ESequencerKeyMode::AutoKey));
 
 	for (UObject* Object : ChangedObjects)
@@ -45,6 +51,11 @@ void FSequencerObjectChangeListener::OnPropertyChanged(const TArray<UObject*>& C
 
 void FSequencerObjectChangeListener::BroadcastPropertyChanged( FKeyPropertyParams KeyPropertyParams ) const
 {
+	if (Sequencer.IsValid() && !Sequencer.Pin()->IsAllowedToChange())
+	{
+		return;
+	}
+
 	// Filter out objects that actually have the property path that will be keyable. 
 	// Otherwise, this might try to key objects that don't have the requested property.
 	// For example, a property changed for the FieldOfView property will be sent for 
@@ -249,13 +260,32 @@ bool FSequencerObjectChangeListener::CanKeyProperty_Internal(FCanKeyPropertyPara
 			const UStruct* PropertyContainer = CanKeyPropertyParams.FindPropertyContainer(Property);
 			if (PropertyContainer)
 			{
-				FAnimatedPropertyKey PropertyKey = FAnimatedPropertyKey::FromProperty(Property);
-				const FOnAnimatablePropertyChanged* DelegatePtr = FindPropertySetter(*PropertyContainer, PropertyKey, *Property);
-				if (DelegatePtr != nullptr)
 				{
-					InOutProperty = Property;
-					InOutDelegate = *DelegatePtr;
-					return true;
+					FAnimatedPropertyKey PropertyKey = FAnimatedPropertyKey::FromProperty(Property);
+					const FOnAnimatablePropertyChanged* DelegatePtr = FindPropertySetter(*PropertyContainer, PropertyKey, *Property);
+					if (DelegatePtr != nullptr)
+					{
+						InOutProperty = Property;
+						InOutDelegate = *DelegatePtr;
+						return true;
+					}
+				}
+
+				if (UObjectProperty* ObjectProperty = Cast<UObjectProperty>(Property))
+				{
+					UClass* ClassType = ObjectProperty->PropertyClass ? ObjectProperty->PropertyClass->GetSuperClass() : nullptr;
+					while (ClassType)
+					{
+						FAnimatedPropertyKey PropertyKey = FAnimatedPropertyKey::FromObjectType(ClassType);
+						const FOnAnimatablePropertyChanged* DelegatePtr = FindPropertySetter(*PropertyContainer, PropertyKey, *Property);
+						if (DelegatePtr != nullptr)
+						{
+							InOutProperty = Property;
+							InOutDelegate = *DelegatePtr;
+							return true;
+						}
+						ClassType = ClassType->GetSuperClass();
+					}
 				}
 			}
 		}
@@ -271,6 +301,11 @@ void FSequencerObjectChangeListener::KeyProperty(FKeyPropertyParams KeyPropertyP
 
 void FSequencerObjectChangeListener::OnObjectPreEditChange( UObject* Object, const FEditPropertyChain& PropertyChain )
 {
+	if (Sequencer.IsValid() && !Sequencer.Pin()->IsAllowedToChange())
+	{
+		return;
+	}
+
 	// We only care if we are not attempting to change properties of a CDO (which cannot be animated)
 	if( Sequencer.IsValid() && !Object->HasAnyFlags(RF_ClassDefaultObject) && PropertyChain.GetActiveMemberNode() )
 	{
@@ -303,6 +338,27 @@ void FSequencerObjectChangeListener::OnObjectPreEditChange( UObject* Object, con
 			}
 		}
 	}
+
+	// Call add key/track before the property changes so that pre-animated state can be saved off.
+
+	TArray<FPropertyInfo, TInlineAllocator<16>> ReversePropertyPath;
+	FEditPropertyChain::TDoubleLinkedListNode* ActiveNode = PropertyChain.GetActiveNode();
+	while (ActiveNode && ActiveNode->GetValue())
+	{
+		ReversePropertyPath.Add(FPropertyInfo(ActiveNode->GetValue()));
+		ActiveNode = ActiveNode->GetPrevNode();
+	}
+
+	FPropertyPath PropertyPath;
+	for (int32 Index = ReversePropertyPath.Num() - 1; Index >= 0; --Index)
+	{
+		PropertyPath.AddProperty(ReversePropertyPath[Index]);
+	}
+
+	TArray<UObject*> Objects;
+	Objects.Add(Object);
+
+	BroadcastPropertyChanged(FKeyPropertyParams(Objects, PropertyPath, ESequencerKeyMode::AutoKey));
 }
 
 void FSequencerObjectChangeListener::OnObjectPostEditChange( UObject* Object, FPropertyChangedEvent& PropertyChangedEvent )

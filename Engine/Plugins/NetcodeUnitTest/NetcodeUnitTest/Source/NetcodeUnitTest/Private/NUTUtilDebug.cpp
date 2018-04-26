@@ -1,8 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "NUTUtilDebug.h"
 
+#include "Misc/OutputDeviceNull.h"
+
 #include "ClientUnitTest.h"
+#include "MinimalClient.h"
 #include "NUTActor.h"
 
 #include "Net/NUTUtilNet.h"
@@ -13,8 +16,14 @@
  * Globals
  */
 
-FStackTraceManager GTraceManager;
-FLogStackTraceManager GLogTraceManager;
+FStackTraceManager* GTraceManager = new FStackTraceManager();
+FLogStackTraceManager* GLogTraceManager = new FLogStackTraceManager();
+
+
+bool GGlobalExec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar)
+{
+	return GEngine != nullptr ? GEngine->Exec(InWorld, Cmd, Ar) : false;
+}
 
 
 /**
@@ -28,44 +37,46 @@ void FScopedLog::InternalConstruct(const TArray<FString>& InLogCategories, UClie
 	bRemoteLogging = bInRemoteLogging;
 
 
+	UMinimalClient* MinClient = (UnitTest != nullptr ? UnitTest->MinClient : nullptr);
+	UNetConnection* UnitConn = (MinClient != nullptr ? MinClient->GetConn() : nullptr);
+
 	// If you want to do remote logging, you MUST specify the client unit test doing the logging
 	if (bRemoteLogging)
 	{
-		UNIT_ASSERT(UnitTest != NULL);
-		UNIT_ASSERT(UnitTest->UnitConn != NULL);
+		UNIT_ASSERT(UnitTest != nullptr);
+		UNIT_ASSERT(UnitConn != nullptr);
 	}
 
-
-	UNetConnection* UnitConn = (UnitTest != NULL ? UnitTest->UnitConn : NULL);
-
 	// Flush all current packets, so the log messages only relate to scoped code
-	if (UnitConn != NULL)
+	if (UnitConn != nullptr)
 	{
 		UnitConn->FlushNet();
 	}
 
 
+	const TCHAR* TargetVerbosity = bSuppressLogging ? TEXT("None") : TEXT("All");
+
 	// If specified, enable logs remotely
-	if (bRemoteLogging)
+	if (bRemoteLogging && MinClient != nullptr)
 	{
-		FOutBunch* ControlChanBunch = NUTNet::CreateChannelBunch(UnitTest->ControlBunchSequence, UnitConn, CHTYPE_Control, 0);
+		FOutBunch* ControlChanBunch = MinClient->CreateChannelBunch(CHTYPE_Control, 0);
 
 		if (ControlChanBunch != nullptr)
 		{
 			uint8 ControlMsg = NMT_NUTControl;
-			uint8 ControlCmd = ENUTControlCommand::Command_NoResult;
+			ENUTControlCommand ControlCmd = ENUTControlCommand::Command_NoResult;
 			FString Cmd = TEXT("");
 
 			for (auto CurCategory : LogCategories)
 			{
-				Cmd = TEXT("Log ") + CurCategory + TEXT(" All");
+				Cmd = TEXT("Log ") + CurCategory + TEXT(" ") + TargetVerbosity;
 
 				*ControlChanBunch << ControlMsg;
 				*ControlChanBunch << ControlCmd;
 				*ControlChanBunch << Cmd;
 			}
 
-			NUTNet::SendControlBunch(UnitConn, *ControlChanBunch);
+			MinClient->SendControlBunch(ControlChanBunch);
 
 
 			// Need to flush again now to get the above parsed on server first
@@ -76,21 +87,24 @@ void FScopedLog::InternalConstruct(const TArray<FString>& InLogCategories, UClie
 
 	// Now enable local logging
 	FString Cmd = TEXT("");
+	UWorld* UnitWorld = (MinClient != nullptr ? MinClient->GetUnitWorld() : nullptr);
+	FOutputDeviceNull NullAr;
 
-	for (auto CurCategory : LogCategories)
+	for (FString CurCategory : LogCategories)
 	{
-		Cmd = TEXT("Log ") + CurCategory + TEXT(" All");
+		Cmd = TEXT("Log ") + CurCategory + TEXT(" ") + TargetVerbosity;
 
-		GEngine->Exec((UnitTest != NULL ? UnitTest->UnitWorld : NULL), *Cmd);
+		GEngine->Exec(UnitWorld, *Cmd, NullAr);
 	}
 }
 
 FScopedLog::~FScopedLog()
 {
-	UNetConnection* UnitConn = (UnitTest != NULL ? UnitTest->UnitConn : NULL);
+	UMinimalClient* MinClient = (UnitTest != nullptr ? UnitTest->MinClient : nullptr);
+	UNetConnection* UnitConn = (MinClient != nullptr ? MinClient->GetConn() : nullptr);
 
 	// Flush all built-up packets
-	if (UnitConn != NULL)
+	if (UnitConn != nullptr)
 	{
 		UnitConn->FlushNet();
 	}
@@ -98,24 +112,26 @@ FScopedLog::~FScopedLog()
 
 	// Reset local logging
 	FString Cmd = TEXT("");
+	UWorld* UnitWorld = (MinClient != nullptr ? MinClient->GetUnitWorld() : nullptr);
+	FOutputDeviceNull NullAr;
 
 	for (int32 i=LogCategories.Num()-1; i>=0; i--)
 	{
 		Cmd = TEXT("Log ") + LogCategories[i] + TEXT(" Default");
 
-		GEngine->Exec((UnitTest != nullptr ? UnitTest->UnitWorld : nullptr), *Cmd);
+		GEngine->Exec(UnitWorld, *Cmd, NullAr);
 	}
 
 
 	// Reset remote logging (and flush immediately)
-	if (bRemoteLogging && UnitTest != nullptr)
+	if (bRemoteLogging && MinClient != nullptr)
 	{
-		FOutBunch* ControlChanBunch = NUTNet::CreateChannelBunch(UnitTest->ControlBunchSequence, UnitConn, CHTYPE_Control, 0);
+		FOutBunch* ControlChanBunch = MinClient->CreateChannelBunch(CHTYPE_Control, 0);
 
 		if (ControlChanBunch != nullptr)
 		{
 			uint8 ControlMsg = NMT_NUTControl;
-			uint8 ControlCmd = ENUTControlCommand::Command_NoResult;
+			ENUTControlCommand ControlCmd = ENUTControlCommand::Command_NoResult;
 
 			for (int32 i=LogCategories.Num()-1; i>=0; i--)
 			{
@@ -126,14 +142,15 @@ FScopedLog::~FScopedLog()
 				*ControlChanBunch << Cmd;
 			}
 
-			NUTNet::SendControlBunch(UnitConn, *ControlChanBunch);
+			MinClient->SendControlBunch(ControlChanBunch);
 
 			UnitConn->FlushNet();
 		}
 	}
 }
 
-
+// @todo #JohnB: Reimplement eventually - see header file, needs to be merged with a similar class
+#if 0
 #if !UE_BUILD_SHIPPING
 /**
  * FProcessEventHookBase
@@ -170,7 +187,11 @@ bool FProcessEventHookBase::InternalProcessEventHook(AActor* Actor, UFunction* F
 
 	return bReturnVal;
 }
+#endif
+#endif
 
+// @todo #JohnB: Reimplement when needed. See header file.
+#if 0
 void FScopedProcessEventLog::ProcessEventHook(AActor* Actor, UFunction* Function, void* Parameters)
 {
 	UE_LOG(LogUnitTest, Log, TEXT("FScopedProcessEventLog: Actor: %s, Function: %s"),
@@ -394,7 +415,7 @@ FString NUTDebug::HexDump(const TArray<uint8>& InBytes, bool bDumpASCII/*=true*/
 	if (bDumpOffset)
 	{
 		// Spacer for row offsets
-		ReturnValue += TEXT("        ");
+		ReturnValue += TEXT("Offset  ");
 
 		// Spacer between offsets and hex
 		ReturnValue += TEXT("  ");
@@ -485,6 +506,85 @@ FString NUTDebug::HexDump(const TArray<uint8>& InBytes, bool bDumpASCII/*=true*/
 		}
 
 		ReturnValue += LINE_TERMINATOR;
+	}
+
+	return ReturnValue;
+}
+
+FString NUTDebug::BitDump(const TArray<uint8>& InBytes, bool bDumpOffset/*=true*/, bool bLSBFirst/*=false*/)
+{
+	FString ReturnValue;
+
+	if (bDumpOffset)
+	{
+		// Spacer for row offsets
+		ReturnValue += TEXT("Offset  ");
+
+		// Spacer between offsets and bits
+		ReturnValue += TEXT("  ");
+
+		// Top line offsets
+		ReturnValue += TEXT("      00       01       02       03        04       05       06       07");
+
+		ReturnValue += LINE_TERMINATOR LINE_TERMINATOR;
+	}
+
+	for (int32 ByteRow=0; ByteRow<((InBytes.Num()-1) / 8)+1; ByteRow++)
+	{
+		FString BitRowStr;
+
+		for (int32 ByteColumn=0; ByteColumn<8; ByteColumn++)
+		{
+			int32 ByteElement = (ByteRow*8) + ByteColumn;
+			uint8 CurByte = (ByteElement < InBytes.Num() ? InBytes[ByteElement] : 0);
+
+			if (ByteElement < InBytes.Num())
+			{
+				if (bLSBFirst)
+				{
+					BitRowStr += FString::Printf(TEXT("%u%u%u%u%u%u%u%u"), !!(CurByte & 0x01), !!(CurByte & 0x02), !!(CurByte & 0x04),
+													!!(CurByte & 0x08), !!(CurByte & 0x10), !!(CurByte & 0x20), !!(CurByte & 0x40),
+													!!(CurByte & 0x80));
+				}
+				else
+				{
+					BitRowStr += FString::Printf(TEXT("%u%u%u%u%u%u%u%u"), !!(CurByte & 0x80), !!(CurByte & 0x40), !!(CurByte & 0x20),
+													!!(CurByte & 0x10), !!(CurByte & 0x08), !!(CurByte & 0x04), !!(CurByte & 0x02),
+													!!(CurByte & 0x01));
+				}
+			}
+			else
+			{
+				BitRowStr += TEXT("  ");
+			}
+
+
+			// Add padding
+			if (ByteColumn < 7)
+			{
+				if (ByteColumn > 0 && ((ByteColumn + 1) % 4) == 0)
+				{
+					BitRowStr += TEXT("  ");
+				}
+				else
+				{
+					BitRowStr += TEXT(" ");
+				}
+			}
+		}
+
+
+		// Add left-hand offset
+		if (bDumpOffset)
+		{
+			ReturnValue += FString::Printf(TEXT("%08X"), ByteRow*8);
+
+			// Spacer between offsets and bits
+			ReturnValue += TEXT("  ");
+		}
+
+		// Add bits row
+		ReturnValue += BitRowStr + LINE_TERMINATOR;
 	}
 
 	return ReturnValue;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -9,7 +9,7 @@
 #include "DistributionFloatParameterBase.generated.h"
 
 UCLASS(abstract, collapsecategories, hidecategories=Object, editinlinenew)
-class UDistributionFloatParameterBase : public UDistributionFloatConstant
+class ENGINE_API UDistributionFloatParameterBase : public UDistributionFloatConstant
 {
 	GENERATED_UCLASS_BODY()
 

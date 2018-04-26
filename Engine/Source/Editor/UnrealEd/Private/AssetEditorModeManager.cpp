@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AssetEditorModeManager.h"
 #include "Engine/Selection.h"
@@ -13,14 +13,17 @@ FAssetEditorModeManager::FAssetEditorModeManager()
 	ActorSet = NewObject<USelection>();
 	ActorSet->SetFlags(RF_Transactional);
 	ActorSet->AddToRoot();
+	ActorSet->Initialize(nullptr);
 
 	ObjectSet = NewObject<USelection>();
 	ObjectSet->SetFlags(RF_Transactional);
 	ObjectSet->AddToRoot();
+	ObjectSet->Initialize(nullptr);
 
 	ComponentSet = NewObject<USelection>();
 	ComponentSet->SetFlags(RF_Transactional);
 	ComponentSet->AddToRoot();
+	ComponentSet->Initialize(nullptr);
 }
 
 FAssetEditorModeManager::~FAssetEditorModeManager()

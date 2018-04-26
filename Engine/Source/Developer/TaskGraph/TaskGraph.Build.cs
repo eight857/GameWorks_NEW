@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -12,10 +12,20 @@ public class TaskGraph : ModuleRules
 				"CoreUObject",
 				"Slate",
 				"SlateCore",
-                "EditorStyle",
+				"EditorStyle",
 				"Engine",
-                "InputCore"
+				"InputCore"
 			}
 		);
+
+		if (Target.Type == TargetType.Editor)
+		{
+			PrivateDependencyModuleNames.AddRange(
+				new string[] {
+					"WorkspaceMenuStructure",
+					"DesktopPlatform"
+				}
+			);
+		}
 	}
 }

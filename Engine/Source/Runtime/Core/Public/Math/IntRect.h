@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,7 +8,6 @@
 #include "Math/IntPoint.h"
 #include "Math/Vector2D.h"
 
-struct Rect;
 
 /**
  * Structure for integer rectangles in 2-d space.

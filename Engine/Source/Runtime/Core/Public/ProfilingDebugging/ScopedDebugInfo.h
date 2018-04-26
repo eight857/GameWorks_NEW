@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ScopedDebugInfo.h: Scoped debug info definitions.
@@ -26,7 +26,7 @@ public:
 	FScopedDebugInfo(int32 InNumReplacedOuterCalls);
 
 	/** Destructor. */
-	~FScopedDebugInfo();
+	virtual ~FScopedDebugInfo();
 
 	/** @return The "function name" to display on the call stack for this debug info. */
 	virtual FString GetFunctionName() const = 0;

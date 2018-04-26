@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	MetalCommandQueue.cpp: Metal command queue wrapper.
@@ -14,9 +14,17 @@
 #include "MetalStatistics.h"
 #include "ModuleManager.h"
 #endif
+#include "Misc/ConfigCacheIni.h"
+
+#pragma mark - Private C++ Constants
+enum EMetalFeatureSet
+{
+    // Workaround compile errors when using an older OS
+    EMetalFeatureSetMacOSv3 = 10003,
+};
 
 #pragma mark - Private C++ Statics -
-uint32 FMetalCommandQueue::Features = 0;
+uint64 FMetalCommandQueue::Features = 0;
 
 #pragma mark - Public C++ Boilerplate -
 
@@ -36,29 +44,7 @@ FMetalCommandQueue::FMetalCommandQueue(id<MTLDevice> Device, uint32 const MaxNum
 		CommandQueue = [Device newCommandQueueWithMaxCommandBufferCount: MaxNumCommandBuffers];
 	}
 	check(CommandQueue);
-
-#if METAL_STATISTICS
-	IMetalStatisticsModule* StatsModule = FModuleManager::Get().LoadModulePtr<IMetalStatisticsModule>(TEXT("MetalStatistics"));
-	
-	if(StatsModule && FParse::Param(FCommandLine::Get(),TEXT("metalstats")))
-	{
-		Statistics = StatsModule->CreateMetalStatistics(CommandQueue);
-		if(Statistics->SupportsStatistics())
-		{
-			Features |= EMetalFeaturesStatistics;
-			if(StatsModule->IsValidationEnabled())
-			{
-				Features |= EMetalFeaturesValidation;
-			}
-		}
-		else
-		{
-			delete Statistics;
-			Statistics = nullptr;
-		}
-	}
-#endif
-
+	bool bNoMetalv2 = FParse::Param(FCommandLine::Get(), TEXT("nometalv2"));
 #if PLATFORM_IOS
 	NSOperatingSystemVersion Vers = [[NSProcessInfo processInfo] operatingSystemVersion];
 	if(Vers.majorVersion >= 9)
@@ -66,25 +52,42 @@ FMetalCommandQueue::FMetalCommandQueue(id<MTLDevice> Device, uint32 const MaxNum
 		Features = EMetalFeaturesSeparateStencil | EMetalFeaturesSetBufferOffset | EMetalFeaturesResourceOptions | EMetalFeaturesDepthStencilBlitOptions | EMetalFeaturesShaderVersions | EMetalFeaturesSetBytes;
 
 #if PLATFORM_TVOS
-		if(!FParse::Param(FCommandLine::Get(),TEXT("nometalv2")) && [Device supportsFeatureSet:MTLFeatureSet_tvOS_GPUFamily1_v2])
+		if(!bNoMetalv2 && [Device supportsFeatureSet:MTLFeatureSet_tvOS_GPUFamily1_v2])
 		{
 			Features |= EMetalFeaturesStencilView | EMetalFeaturesGraphicsUAVs;
 		}
 #else
 		if ([Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v1])
 		{
-			Features |= EMetalFeaturesCountingQueries | EMetalFeaturesBaseVertexInstance | EMetalFeaturesIndirectBuffer;
+			Features |= EMetalFeaturesCountingQueries | EMetalFeaturesBaseVertexInstance | EMetalFeaturesIndirectBuffer | EMetalFeaturesMSAADepthResolve;
 		}
 		
-		if(!FParse::Param(FCommandLine::Get(),TEXT("nometalv2")) && ([Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2] || [Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily2_v3] || [Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily1_v3]))
+		if(!bNoMetalv2 && ([Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2] || [Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily2_v3] || [Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily1_v3]))
 		{
-			Features |= EMetalFeaturesStencilView | EMetalFeaturesGraphicsUAVs | EMetalFeaturesMemoryLessResources /* | EMetalFeaturesHeaps | EMetalFeaturesFences*/ | EMetalFeaturesDeferredStoreActions;
+			Features |= EMetalFeaturesStencilView | EMetalFeaturesFunctionConstants | EMetalFeaturesGraphicsUAVs | EMetalFeaturesMemoryLessResources /*| EMetalFeaturesHeaps | EMetalFeaturesFences*/;
 		}
 		
-		if(!FParse::Param(FCommandLine::Get(),TEXT("nometalv2")) && [Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2])
+		if(!bNoMetalv2 && [Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2])
 		{
-			Features |= EMetalFeaturesTessellation;
+			Features |= EMetalFeaturesTessellation | EMetalFeaturesMSAAStoreAndResolve;
 		}
+		
+		if(Vers.majorVersion > 10 || (Vers.majorVersion == 10 && Vers.minorVersion >= 3))
+        {
+            Features |= EMetalFeaturesGPUCommandBufferTimes;
+			Features |= EMetalFeaturesLinearTextures;
+			Features |= EMetalFeaturesEfficientBufferBlits;
+			
+			if(!bNoMetalv2 && ([Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2] || [Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily2_v3] || [Device supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily1_v3]))
+			{
+				Features |= EMetalFeaturesDeferredStoreActions | EMetalFeaturesCombinedDepthStencil;
+			}
+        }
+		
+		if(Vers.majorVersion >= 11)
+		{
+			Features |= EMetalFeaturesPresentMinDuration | EMetalFeaturesGPUCaptureManager;
+        }
 #endif
 	}
 	else if(Vers.majorVersion == 8 && Vers.minorVersion >= 3)
@@ -92,25 +95,88 @@ FMetalCommandQueue::FMetalCommandQueue(id<MTLDevice> Device, uint32 const MaxNum
 		Features = EMetalFeaturesSeparateStencil | EMetalFeaturesSetBufferOffset;
 	}
 #else // Assume that Mac & other platforms all support these from the start. They can diverge later.
-	Features = EMetalFeaturesSeparateStencil | EMetalFeaturesSetBufferOffset | EMetalFeaturesDepthClipMode | EMetalFeaturesResourceOptions | EMetalFeaturesDepthStencilBlitOptions | EMetalFeaturesCountingQueries | EMetalFeaturesBaseVertexInstance | EMetalFeaturesIndirectBuffer | EMetalFeaturesLayeredRendering | EMetalFeaturesShaderVersions;
+	Features = EMetalFeaturesSeparateStencil | EMetalFeaturesSetBufferOffset | EMetalFeaturesDepthClipMode | EMetalFeaturesResourceOptions | EMetalFeaturesDepthStencilBlitOptions | EMetalFeaturesCountingQueries | EMetalFeaturesBaseVertexInstance | EMetalFeaturesIndirectBuffer | EMetalFeaturesLayeredRendering | EMetalFeaturesShaderVersions | EMetalFeaturesCombinedDepthStencil | EMetalFeaturesCubemapArrays;
     if (!FParse::Param(FCommandLine::Get(),TEXT("nometalv2")) && [Device supportsFeatureSet:MTLFeatureSet_OSX_GPUFamily1_v2])
     {
-        Features |= EMetalFeaturesStencilView | EMetalFeaturesDepth16 | EMetalFeaturesTessellation | EMetalFeaturesGraphicsUAVs | EMetalFeaturesDeferredStoreActions;
+        Features |= EMetalFeaturesStencilView | EMetalFeaturesDepth16 | EMetalFeaturesTessellation | EMetalFeaturesFunctionConstants | EMetalFeaturesGraphicsUAVs | EMetalFeaturesDeferredStoreActions | EMetalFeaturesMSAADepthResolve | EMetalFeaturesMSAAStoreAndResolve;
         
         // Assume that set*Bytes only works on macOS Sierra and above as no-one has tested it anywhere else.
-        Features |= EMetalFeaturesSetBytes;
+		Features |= EMetalFeaturesSetBytes;
+		
+		Features |= EMetalFeaturesLinearTextures;
+		
+		// Using Private Memory & BlitEncoders for Vertex & Index data is slower on the Mac Pro's DXXX GPUs
+		// Everywhere else it should be *much* faster.
+		if ([Device.name rangeOfString:@"FirePro" options:NSCaseInsensitiveSearch].location == NSNotFound)
+		{
+			Features |= EMetalFeaturesEfficientBufferBlits;
+		}
     }
     else if ([Device.name rangeOfString:@"Nvidia" options:NSCaseInsensitiveSearch].location != NSNotFound)
     {
+		// Using set*Bytes fixes bugs on Nvidia for 10.11 so we should use it...
     	Features |= EMetalFeaturesSetBytes;
     }
-	// Time query emulation breaks on AMD - disable by default until they can explain why, should work everywhere else.
+    
+#if PLATFORM_MAC
+    if([Device supportsFeatureSet:(MTLFeatureSet)EMetalFeatureSetMacOSv3] && FPlatformMisc::MacOSXVersionCompare(10,13,0) >= 0)
+    {
+        Features |= EMetalFeaturesMultipleViewports | EMetalFeaturesGPUCommandBufferTimes | EMetalFeaturesGPUCaptureManager | EMetalFeaturesAbsoluteTimeQueries | EMetalFeaturesSupportsVSyncToggle;
+    }
+	else
+#endif
+	// Time query emulation breaks on AMD < 10.13 - disable by default until they can explain why, should work everywhere else.
 	if ([Device.name rangeOfString:@"AMD" options:NSCaseInsensitiveSearch].location == NSNotFound || FParse::Param(FCommandLine::Get(),TEXT("metaltimequery")))
 	{
 		Features |= EMetalFeaturesAbsoluteTimeQueries;
 	}
 #endif
 	
+#if !UE_BUILD_SHIPPING
+	Class MTLDebugDevice = NSClassFromString(@"MTLDebugDevice");
+	if ([Device isKindOfClass:MTLDebugDevice])
+	{
+		Features |= EMetalFeaturesValidation;
+	}
+#endif
+	
+	static const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Shaders.Optimize"));
+	if (CVar->GetInt() == 0 || FParse::Param(FCommandLine::Get(),TEXT("metalshaderdebug")))
+	{
+		Features |= EMetalFeaturesGPUTrace;
+	}
+    
+    int32 MaxShaderVersion = 0;
+#if PLATFORM_MAC
+	int32 DefaultMaxShaderVersion = 2;
+    const TCHAR* const Settings = TEXT("/Script/MacTargetPlatform.MacTargetSettings");
+#else
+	int32 DefaultMaxShaderVersion = 0;
+    const TCHAR* const Settings = TEXT("/Script/IOSRuntimeSettings.IOSRuntimeSettings");
+#endif
+    if(!GConfig->GetInt(Settings, TEXT("MaxShaderLanguageVersion"), MaxShaderVersion, GEngineIni))
+    {
+        MaxShaderVersion = DefaultMaxShaderVersion;
+    }
+	
+#if METAL_STATISTICS
+    IMetalStatisticsModule* StatsModule = FModuleManager::Get().LoadModulePtr<IMetalStatisticsModule>(TEXT("MetalStatistics"));
+    
+    if(StatsModule && FParse::Param(FCommandLine::Get(),TEXT("metalstats")))
+    {
+        Statistics = StatsModule->CreateMetalStatistics(CommandQueue);
+        if(Statistics->SupportsStatistics())
+        {
+            Features |= EMetalFeaturesStatistics;
+        }
+        else
+        {
+            delete Statistics;
+            Statistics = nullptr;
+        }
+    }
+#endif
+    
 	PermittedOptions = 0;
 	PermittedOptions |= MTLResourceCPUCacheModeDefaultCache;
 	PermittedOptions |= MTLResourceCPUCacheModeWriteCombined;
@@ -147,14 +213,18 @@ FMetalCommandQueue::~FMetalCommandQueue(void)
 
 id<MTLCommandBuffer> FMetalCommandQueue::CreateCommandBuffer(void)
 {
-	static bool bUnretainedRefs = !FParse::Param(FCommandLine::Get(),TEXT("metalretainrefs"));
+	static bool bUnretainedRefs = !FParse::Param(FCommandLine::Get(),TEXT("metalretainrefs")) && [CommandQueue.device.name rangeOfString:@"Nvidia" options:NSCaseInsensitiveSearch].location == NSNotFound;
 	id<MTLCommandBuffer> CmdBuffer = nil;
 	@autoreleasepool
 	{
 		CmdBuffer = bUnretainedRefs ? [[CommandQueue commandBufferWithUnretainedReferences] retain] : [[CommandQueue commandBuffer] retain];
-		if (RuntimeDebuggingLevel >= EMetalDebugLevelLogDebugGroups)
+		if (RuntimeDebuggingLevel > EMetalDebugLevelLogDebugGroups)
 		{
 			CmdBuffer = [[FMetalDebugCommandBuffer alloc] initWithCommandBuffer:CmdBuffer];
+		}
+		else if (RuntimeDebuggingLevel == EMetalDebugLevelLogDebugGroups)
+		{
+			((NSObject<MTLCommandBuffer>*)CmdBuffer).debugGroups = [[NSMutableArray new] autorelease];
 		}
 	}
 	INC_DWORD_STAT(STAT_MetalCommandBufferCreatedPerFrame);

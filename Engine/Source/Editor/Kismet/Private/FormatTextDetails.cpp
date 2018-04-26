@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "FormatTextDetails.h"
 #include "Widgets/SWidget.h"
@@ -23,7 +23,7 @@
 
 void FFormatTextDetails::CustomizeDetails( IDetailLayoutBuilder& DetailLayout )
 {
-	const TArray<TWeakObjectPtr<UObject>> Objects = DetailLayout.GetDetailsView().GetSelectedObjects();
+	const TArray<TWeakObjectPtr<UObject>>& Objects = DetailLayout.GetSelectedObjects();
 	check(Objects.Num() > 0);
 
 	if (Objects.Num() == 1)
@@ -93,7 +93,7 @@ void FFormatTextLayout::GenerateChildContent( IDetailChildrenBuilder& ChildrenBu
 	for (int32 ArgIdx = 0; ArgIdx < TargetNode->GetArgumentCount(); ++ArgIdx)
 	{
 		TSharedRef<class FFormatTextArgumentLayout> ArgumentIndexLayout = MakeShareable(new FFormatTextArgumentLayout(TargetNode, ArgIdx) );
-		ChildrenBuilder.AddChildCustomBuilder(ArgumentIndexLayout);
+		ChildrenBuilder.AddCustomBuilder(ArgumentIndexLayout);
 		Children.Add(ArgumentIndexLayout);
 	}
 }
@@ -219,7 +219,7 @@ void FFormatTextArgumentLayout::OnArgumentNameCommitted(const FText& NewText, ET
 	if(IsValidArgumentName(NewText))
 	{
 		FScopeTrue ScopeTrue(bCausedChange);
-		TargetNode->SetArgumentName(ArgumentIndex, NewText.ToString());
+		TargetNode->SetArgumentName(ArgumentIndex, *NewText.ToString());
 	}
 	ArgumentNameWidget.Pin()->SetError(FString());
 }
@@ -231,7 +231,7 @@ void FFormatTextArgumentLayout::OnArgumentNameChanged(const FText& NewText)
 
 bool FFormatTextArgumentLayout::IsValidArgumentName(const FText& InNewText) const
 {
-	if(TargetNode->FindArgumentPin(InNewText.ToString()))
+	if(TargetNode->FindArgumentPin(*InNewText.ToString()))
 	{
 		ArgumentNameWidget.Pin()->SetError(LOCTEXT("UniqueName_Error", "Name must be unique."));
 		return false;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved..
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved..
 
 /*=============================================================================
 	VulkanDevice.h: Private Vulkan RHI definitions.
@@ -8,8 +8,13 @@
 
 #include "VulkanMemory.h"
 
-class FVulkanDescriptorPool;
+class FOLDVulkanDescriptorPool;
+#if VULKAN_USE_DESCRIPTOR_POOL_MANAGER
+class FVulkanDescriptorPoolsManager;
+#endif
 class FVulkanCommandListContext;
+class FVulkanOcclusionQueryPool;
+class FOLDVulkanQueryPool;
 
 class FVulkanDevice
 {
@@ -35,9 +40,19 @@ public:
 		return GfxQueue;
 	}
 
+	inline FVulkanQueue* GetComputeQueue()
+	{
+		return ComputeQueue;
+	}
+
 	inline FVulkanQueue* GetTransferQueue()
 	{
 		return TransferQueue;
+	}
+
+	inline FVulkanQueue* GetPresentQueue()
+	{
+		return PresentQueue;
 	}
 
 	inline VkPhysicalDevice GetPhysicalHandle() const
@@ -54,6 +69,14 @@ public:
 	{
 		return GpuProps.limits;
 	}
+
+#if VULKAN_ENABLE_DESKTOP_HMD_SUPPORT
+	inline const VkPhysicalDeviceIDPropertiesKHR& GetDeviceIdProperties() const
+	{
+		check(GetOptionalExtensions().HasKHRGetPhysicalDeviceProperties2);
+		return GpuIdProps;
+	}
+#endif
 
 	inline const VkPhysicalDeviceFeatures& GetFeatures() const
 	{
@@ -78,6 +101,11 @@ public:
 	inline VkSampler GetDefaultSampler() const
 	{
 		return DefaultSampler->Sampler;
+	}
+
+	inline VkImageView GetDefaultImageView() const
+	{
+		return DefaultImageView;
 	}
 
 	inline const VkFormatProperties* GetFormatProperties() const
@@ -110,12 +138,25 @@ public:
 		return FenceManager;
 	}
 
+#if VULKAN_USE_DESCRIPTOR_POOL_MANAGER
+	inline FVulkanDescriptorPoolsManager& GetDescriptorPoolsManager()
+	{
+		return *DescriptorPoolsManager;
+	}
+#endif
+
 	inline FVulkanCommandListContext& GetImmediateContext()
 	{
 		return *ImmediateContext;
 	}
 
+	inline FVulkanCommandListContext& GetImmediateComputeContext()
+	{
+		return *ComputeContext;
+	}
+
 	void NotifyDeletedRenderTarget(VkImage Image);
+	void NotifyDeletedImage(VkImage Image);
 
 #if VULKAN_ENABLE_DRAW_MARKERS
 	PFN_vkCmdDebugMarkerBeginEXT GetCmdDbgMarkerBegin() const
@@ -138,12 +179,12 @@ public:
 
 	void SubmitCommandsAndFlushGPU();
 
-	inline FVulkanOcclusionQueryPool& FindAvailableOcclusionQueryPool(FVulkanCmdBuffer* CmdBuffer)
+	inline FOLDVulkanBufferedQueryPool& FindAvailableQueryPool(TArray<FOLDVulkanBufferedQueryPool*>& Pools, VkQueryType QueryType)
 	{
 		// First try to find An available one
-		for (int32 Index = 0; Index < OcclusionQueryPools.Num(); ++Index)
+		for (int32 Index = 0; Index < Pools.Num(); ++Index)
 		{
-			FVulkanOcclusionQueryPool* Pool = OcclusionQueryPools[Index];
+			FOLDVulkanBufferedQueryPool* Pool = Pools[Index];
 			if (Pool->HasRoom())
 			{
 				return *Pool;
@@ -151,23 +192,54 @@ public:
 		}
 
 		// None found, so allocate new Pool
-		FVulkanOcclusionQueryPool* Pool = new FVulkanOcclusionQueryPool(this, NUM_OCCLUSION_QUERIES_PER_POOL);
-		OcclusionQueryPools.Add(Pool);
+		FOLDVulkanBufferedQueryPool* Pool = new FOLDVulkanBufferedQueryPool(this, QueryType == VK_QUERY_TYPE_OCCLUSION ? NUM_OCCLUSION_QUERIES_PER_POOL : NUM_TIMESTAMP_QUERIES_PER_POOL, QueryType);
+		Pools.Add(Pool);
 		return *Pool;
 	}
-
-	inline FVulkanTimestampPool* GetTimestampQueryPool()
+	inline FOLDVulkanBufferedQueryPool& FindAvailableOcclusionQueryPool()
 	{
-		return TimestampQueryPool;
+		return FindAvailableQueryPool(OcclusionQueryPools, VK_QUERY_TYPE_OCCLUSION);
 	}
+
+	inline FOLDVulkanBufferedQueryPool& FindAvailableTimestampQueryPool()
+	{
+		return FindAvailableQueryPool(TimestampQueryPools, VK_QUERY_TYPE_TIMESTAMP);
+	}
+
+	inline class FVulkanPipelineStateCache* GetPipelineStateCache()
+	{
+		return PipelineStateCache;
+	}
+
+	void NotifyDeletedGfxPipeline(class FVulkanGraphicsPipelineState* Pipeline);
+	void NotifyDeletedComputePipeline(class FVulkanComputePipeline* Pipeline);
+
+	FVulkanCommandListContext* AcquireDeferredContext();
+	void ReleaseDeferredContext(FVulkanCommandListContext* InContext);
+
+	struct FOptionalVulkanDeviceExtensions
+	{
+		uint32 HasKHRMaintenance1 : 1;
+		uint32 HasMirrorClampToEdge : 1;
+		uint32 HasKHRExternalMemoryCapabilities : 1;
+		uint32 HasKHRGetPhysicalDeviceProperties2 : 1;
+	};
+	inline const FOptionalVulkanDeviceExtensions& GetOptionalExtensions() const { return OptionalDeviceExtensions;  }
+
+	void SetupPresentQueue(const VkSurfaceKHR& Surface);
 
 private:
 	void MapFormatSupport(EPixelFormat UEFormat, VkFormat VulkanFormat);
 	void MapFormatSupport(EPixelFormat UEFormat, VkFormat VulkanFormat, int32 BlockBytes);
 	void SetComponentMapping(EPixelFormat UEFormat, VkComponentSwizzle r, VkComponentSwizzle g, VkComponentSwizzle b, VkComponentSwizzle a);
 
+	void SubmitCommands(FVulkanCommandListContext* Context);
+
 	VkPhysicalDevice Gpu;
 	VkPhysicalDeviceProperties GpuProps;
+#if VULKAN_ENABLE_DESKTOP_HMD_SUPPORT
+	VkPhysicalDeviceIDPropertiesKHR GpuIdProps;
+#endif
 	VkPhysicalDeviceFeatures Features;
 	
 	VkDevice Device;
@@ -182,24 +254,38 @@ private:
 
 	VulkanRHI::FFenceManager FenceManager;
 
+#if VULKAN_USE_DESCRIPTOR_POOL_MANAGER
+	FVulkanDescriptorPoolsManager* DescriptorPoolsManager = nullptr;
+#endif
+
 	FVulkanSamplerState* DefaultSampler;
+	FVulkanSurface* DefaultImage;
+	VkImageView DefaultImageView;
 
 	TArray<VkQueueFamilyProperties> QueueFamilyProps;
 	VkFormatProperties FormatProperties[VK_FORMAT_RANGE_SIZE];
 	// Info for formats that are not in the core Vulkan spec (i.e. extensions)
 	mutable TMap<VkFormat, VkFormatProperties> ExtensionFormatProperties;
 
-	TArray<FVulkanOcclusionQueryPool*> OcclusionQueryPools;
-	FVulkanTimestampPool* TimestampQueryPool;
+	TArray<FOLDVulkanBufferedQueryPool*> OcclusionQueryPools;
+	TArray<FOLDVulkanBufferedQueryPool*> TimestampQueryPools;
 
 	FVulkanQueue* GfxQueue;
+	FVulkanQueue* ComputeQueue;
 	FVulkanQueue* TransferQueue;
+	FVulkanQueue* PresentQueue;
 
 	VkComponentMapping PixelFormatComponentMapping[PF_MAX];
 
 	FVulkanCommandListContext* ImmediateContext;
+	FVulkanCommandListContext* ComputeContext;
+	TArray<FVulkanCommandListContext*> CommandContexts;
 
 	void GetDeviceExtensions(TArray<const ANSICHAR*>& OutDeviceExtensions, TArray<const ANSICHAR*>& OutDeviceLayers, bool& bOutDebugMarkers);
+
+	void ParseOptionalDeviceExtensions(const TArray<const ANSICHAR*>& DeviceExtensions);
+	FOptionalVulkanDeviceExtensions OptionalDeviceExtensions;
+
 	void SetupFormats();
 
 #if VULKAN_ENABLE_DRAW_MARKERS
@@ -211,5 +297,4 @@ private:
 
 	class FVulkanPipelineStateCache* PipelineStateCache;
 	friend class FVulkanDynamicRHI;
-	friend class FVulkanBoundShaderState;
 };

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "PortableObjectFormatDOM.h"
 #include "Internationalization/Culture.h"
@@ -6,171 +6,192 @@
 
 static const TCHAR* NewLineDelimiter = TEXT("\n");
 
-/* Default culture plural rules.  Culture names are in the following format: Language_Country@Variant
-  See references:	http://www.unicode.org/cldr/charts/latest/supplemental/language_plural_rules.html  
+/**
+ * Default culture plural rules.  Culture names are in the following format: Language_Country@Variant
+ * See references:	http://www.unicode.org/cldr/charts/latest/supplemental/language_plural_rules.html  
 					http://docs.translatehouse.org/projects/localization-guide/en/latest/l10n/pluralforms.html
 */
-static const TMap< FString, FString > POCulturePluralForms = TMapBuilder< FString, FString >()
-	.Add( TEXT( "ach" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "af" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ak" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "aln" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "am" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "am_ET"), TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "an" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ar" )	, TEXT( "nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5);" )  )
-	.Add( TEXT( "ar_SA"), TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "arn" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "as" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ast" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ay" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "az" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "bal" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "be" )	, TEXT( "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);" )  )
-	.Add( TEXT( "bg" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "bn" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "bo" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "br" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "brx" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "bs" )	, TEXT( "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);" )  )
-	.Add( TEXT( "ca" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "cgg" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "crh" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "cs" )	, TEXT( "nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;" )  )
-	.Add( TEXT( "csb" )	, TEXT( "nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2;" )  )
-	.Add( TEXT( "cy" )	, TEXT( "nplurals=4; plural=(n==1) ? 0 : (n==2) ? 1 : (n != 8 && n != 11) ? 2 : 3;" )  )
-	.Add( TEXT( "da" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "de" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "doi" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "dz" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "el" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "en" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "eo" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "es" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "es_ar"), TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "et" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "eu" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "fa" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "fi" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "fil" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "fo" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "fr" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "frp" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "fur" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "fy" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ga" )	, TEXT( "nplurals=5; plural=(n==1 ? 0 : n==2 ? 1 : n<7 ? 2 : n<11 ? 3 : 4);" )  )
-	.Add( TEXT( "gd" )	, TEXT( "nplurals=3; plural=(n < 2 ? 0 : n == 2 ? 1 : 2);" )  )
-	.Add( TEXT( "gl" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "gu" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "gun" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "ha" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "he" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "hi" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "hne" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "hr" )	, TEXT( "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);" )  )
-	.Add( TEXT( "hsb" )	, TEXT( "nplurals=4; plural=(n%100==1 ? 0 : n%100==2 ? 1 : n%100==3 || n%100==4 ? 2 : 3);" )  )
-	.Add( TEXT( "ht" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "hu" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "hy" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ia" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "id" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "ig" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ilo" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "is" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "it" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ja" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "jv" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ka" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "kk" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "km" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "kn" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "ko" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "ks" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ku" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "kw" )	, TEXT( "nplurals=4; plural=(n==1) ? 0 : (n==2) ? 1 : (n == 3) ? 2 : 3;" )  )
-	.Add( TEXT( "ky" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "la" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "lb" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "li" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ln" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "lo" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "lt" )	, TEXT( "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && (n%100<10 || n%100>=20) ? 1 : 2);" )  )
-	.Add( TEXT( "lv" )	, TEXT( "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n != 0 ? 1 : 2);" )  )
-	.Add( TEXT( "mai" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "mg" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "mi" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "mk" )	, TEXT( "nplurals=2; plural=(n % 10 == 1 && n % 100 != 11) ? 0 : 1;" )  )
-	.Add( TEXT( "ml" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "mn" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "mr" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ms" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "mt" )	, TEXT( "nplurals=4; plural=(n==1 ? 0 : n==0 || ( n%100>1 && n%100<11) ? 1 : (n%100>10 && n%100<20 ) ? 2 : 3);" )  )
-	.Add( TEXT( "my" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "nah" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "nap" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "nb" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "nds" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ne" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "nl" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "nn" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "no" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "nr" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "nso" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "oc" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "or" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "pa" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "pap" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "pl" )	, TEXT( "nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);" )  )
-	.Add( TEXT( "pms" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ps" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "pt" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "pt_BR"), TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "rm" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ro" )	, TEXT( "nplurals=3; plural=(n==1?0:(((n%100>19)||((n%100==0)&&(n!=0)))?2:1));" )  )
-	.Add( TEXT( "ru" )	, TEXT( "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);" )  )
-	.Add( TEXT( "rw" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "sc" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "sco" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "se" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "si" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "sk" )	, TEXT( "nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;" )  )
-	.Add( TEXT( "sl" )	, TEXT( "nplurals=4; plural=(n%100==1 ? 0 : n%100==2 ? 1 : n%100==3 || n%100==4 ? 2 : 3);" )  )
-	.Add( TEXT( "sm" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "sn" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "so" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "son" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "sq" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "sr" )	, TEXT( "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);" )  )
-	.Add( TEXT( "st" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "su" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "sv" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "sw" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "ta" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "te" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "tg" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "th" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "ti" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "tk" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "tl" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "tlh" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "to" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "tr" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "tt" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "udm" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "ug" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "uk" )	, TEXT( "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);" )  )
-	.Add( TEXT( "ur" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "uz" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "ve" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "vi" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "vls" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "wa" )	, TEXT( "nplurals=2; plural=(n > 1);" )  )
-	.Add( TEXT( "wo" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "xh" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "yi" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "yo" )	, TEXT( "nplurals=2; plural=(n != 1);" )  )
-	.Add( TEXT( "zh" )	, TEXT( "nplurals=1; plural=0;" )  )
-	.Add( TEXT( "zu" )	, TEXT( "nplurals=2; plural=(n != 1);" )  );
+const TCHAR* GetPluralForm(const TCHAR* InCulture)
+{
+	struct FPOCulturePluralForm
+	{
+		const TCHAR* CultureName;
+		const TCHAR* PluralForm;
+	};
+
+	static const FPOCulturePluralForm POCulturePluralForms[] = {
+		{ TEXT("ach"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("af"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ak"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("aln"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("am"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("am_ET"),	TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("an"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ar"),		TEXT("nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5);") },
+		{ TEXT("ar_SA"),	TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("arn"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("as"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ast"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ay"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("az"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("bal"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("be"),		TEXT("nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);") },
+		{ TEXT("bg"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("bn"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("bo"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("br"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("brx"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("bs"),		TEXT("nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);") },
+		{ TEXT("ca"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("cgg"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("crh"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("cs"),		TEXT("nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;") },
+		{ TEXT("csb"),		TEXT("nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2;") },
+		{ TEXT("cy"),		TEXT("nplurals=4; plural=(n==1) ? 0 : (n==2) ? 1 : (n != 8 && n != 11) ? 2 : 3;") },
+		{ TEXT("da"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("de"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("doi"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("dz"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("el"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("en"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("eo"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("es"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("es_ar"),	TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("et"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("eu"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("fa"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("fi"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("fil"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("fo"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("fr"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("frp"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("fur"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("fy"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ga"),		TEXT("nplurals=5; plural=(n==1 ? 0 : n==2 ? 1 : n<7 ? 2 : n<11 ? 3 : 4);") },
+		{ TEXT("gd"),		TEXT("nplurals=3; plural=(n < 2 ? 0 : n == 2 ? 1 : 2);") },
+		{ TEXT("gl"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("gu"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("gun"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("ha"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("he"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("hi"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("hne"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("hr"),		TEXT("nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);") },
+		{ TEXT("hsb"),		TEXT("nplurals=4; plural=(n%100==1 ? 0 : n%100==2 ? 1 : n%100==3 || n%100==4 ? 2 : 3);") },
+		{ TEXT("ht"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("hu"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("hy"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ia"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("id"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("ig"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ilo"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("is"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("it"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ja"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("jv"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ka"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("kk"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("km"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("kn"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("ko"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("ks"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ku"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("kw"),		TEXT("nplurals=4; plural=(n==1) ? 0 : (n==2) ? 1 : (n == 3) ? 2 : 3;") },
+		{ TEXT("ky"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("la"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("lb"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("li"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ln"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("lo"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("lt"),		TEXT("nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && (n%100<10 || n%100>=20) ? 1 : 2);") },
+		{ TEXT("lv"),		TEXT("nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n != 0 ? 1 : 2);") },
+		{ TEXT("mai"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("mg"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("mi"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("mk"),		TEXT("nplurals=2; plural=(n % 10 == 1 && n % 100 != 11) ? 0 : 1;") },
+		{ TEXT("ml"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("mn"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("mr"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ms"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("mt"),		TEXT("nplurals=4; plural=(n==1 ? 0 : n==0 || ( n%100>1 && n%100<11) ? 1 : (n%100>10 && n%100<20 ) ? 2 : 3);") },
+		{ TEXT("my"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("nah"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("nap"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("nb"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("nds"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ne"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("nl"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("nn"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("no"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("nr"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("nso"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("oc"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("or"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("pa"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("pap"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("pl"),		TEXT("nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);") },
+		{ TEXT("pms"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ps"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("pt"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("pt_BR"),	TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("rm"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ro"),		TEXT("nplurals=3; plural=(n==1?0:(((n%100>19)||((n%100==0)&&(n!=0)))?2:1));") },
+		{ TEXT("ru"),		TEXT("nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);") },
+		{ TEXT("rw"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("sc"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("sco"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("se"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("si"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("sk"),		TEXT("nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;") },
+		{ TEXT("sl"),		TEXT("nplurals=4; plural=(n%100==1 ? 0 : n%100==2 ? 1 : n%100==3 || n%100==4 ? 2 : 3);") },
+		{ TEXT("sm"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("sn"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("so"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("son"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("sq"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("sr"),		TEXT("nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);") },
+		{ TEXT("st"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("su"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("sv"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("sw"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("ta"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("te"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("tg"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("th"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("ti"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("tk"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("tl"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("tlh"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("to"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("tr"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("tt"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("udm"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("ug"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("uk"),		TEXT("nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);") },
+		{ TEXT("ur"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("uz"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("ve"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("vi"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("vls"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("wa"),		TEXT("nplurals=2; plural=(n > 1);") },
+		{ TEXT("wo"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("xh"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("yi"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("yo"),		TEXT("nplurals=2; plural=(n != 1);") },
+		{ TEXT("zh"),		TEXT("nplurals=1; plural=0;") },
+		{ TEXT("zu"),		TEXT("nplurals=2; plural=(n != 1);") },
+	};
+
+	for (const FPOCulturePluralForm& POCulturePluralForm : POCulturePluralForms)
+	{
+		if (FCString::Stricmp(POCulturePluralForm.CultureName, InCulture) == 0)
+		{
+			return POCulturePluralForm.PluralForm;
+		}
+	}
+
+	return nullptr;
+}
 
 bool FindDelimitedString(const FString& InStr, const FString& LeftDelim, const FString& RightDelim, FString& Result)
 {
@@ -201,20 +222,11 @@ FPortableObjectCulture::FPortableObjectCulture( const FString& LangCode, const F
 	
 }
 
-FPortableObjectCulture::FPortableObjectCulture( const FPortableObjectCulture& Other )
-	: LanguageCode( Other.LanguageCode )
-	, LanguagePluralForms( Other.LanguagePluralForms )
-	, Culture( FInternationalization::Get().GetCulture( Other.LanguageCode ) )
-{
-
-}
-
 void FPortableObjectCulture::SetLanguageCode( const FString& LangCode )
 {
 	LanguageCode = LangCode;
 	Culture = FInternationalization::Get().GetCulture( LangCode );
 }
-
 
 FString FPortableObjectCulture::Language() const
 {
@@ -285,28 +297,28 @@ FString FPortableObjectCulture::GetDefaultPluralForms() const
 		return Result;
 	}
 
-	if( auto* LanguageCodePair = POCulturePluralForms.Find( GetLanguageCode() ) )
+	if( const TCHAR* LanguageCodePair = GetPluralForm( *GetLanguageCode() ) )
 	{
-		Result = *LanguageCodePair;
+		Result = LanguageCodePair;
 	}
-	else if( auto* LangCountryVariantPair = POCulturePluralForms.Find( Language() + TEXT("_") + Country() + TEXT("@") + Variant() ))
+	else if( const TCHAR* LangCountryVariantPair = GetPluralForm( *( Language() + TEXT("_") + Country() + TEXT("@") + Variant() ) ) )
 	{
-		Result = *LangCountryVariantPair;
+		Result = LangCountryVariantPair;
 	}
-	else if( auto* LangCountryPair = POCulturePluralForms.Find( Language() + TEXT("_") + Country() ) )
+	else if( const TCHAR* LangCountryPair = GetPluralForm( *( Language() + TEXT("_") + Country() ) ) )
 	{
-		Result  = *LangCountryPair;
+		Result = LangCountryPair;
 	} 
-	else if( auto* LangPair = POCulturePluralForms.Find( Language() ) )
+	else if( const TCHAR* LangPair = GetPluralForm( *Language() ) )
 	{
-		Result = *LangPair;
+		Result = LangPair;
 	}
 	else
 	{
-		auto* Fallback = POCulturePluralForms.Find( TEXT("en") );
+		const TCHAR* Fallback = GetPluralForm( TEXT("en") );
 		if( Fallback )
 		{
-			Result = *Fallback;
+			Result = Fallback;
 		}
 		else
 		{
@@ -359,8 +371,8 @@ bool FPortableObjectHeader::FromLocPOEntry( const TSharedRef<const FPortableObje
 		if( PotentialHeaderEntry.FindChar( TCHAR(':'), SplitIndex ) )
 		{
 			// Looks like a header entry so we add it
-			const FString& Key = PotentialHeaderEntry.LeftChop( PotentialHeaderEntry.Len() - SplitIndex ).Trim().TrimTrailing();
-			FString Value = PotentialHeaderEntry.RightChop( SplitIndex+1 ).Trim().TrimTrailing();
+			const FString& Key = PotentialHeaderEntry.LeftChop( PotentialHeaderEntry.Len() - SplitIndex ).TrimStartAndEnd();
+			FString Value = PotentialHeaderEntry.RightChop( SplitIndex+1 ).TrimStartAndEnd();
 
 			HeaderEntries.Emplace( Key, MoveTemp(Value) );
 		}
@@ -439,9 +451,9 @@ FString FPortableObjectFormatDOM::ToString()
 	Result += Header.ToString();
 	Result += NewLineDelimiter;
 
-	for( auto Entry : Entries )
+	for( const auto& EntryPair : Entries )
 	{
-		Result += Entry->ToString();
+		Result += EntryPair.Value->ToString();
 		Result += NewLineDelimiter;
 	}
 
@@ -549,7 +561,7 @@ bool FPortableObjectFormatDOM::FromString( const FString& InStr )
 				bSuccess = false;
 				break;
 			}
-			for( uint32 NextLineIdx = LineIdx + 1; NextLineIdx < NumFileLines && LinesToProcess[NextLineIdx].Trim().TrimTrailing().StartsWith(TEXT("\"")); ++NextLineIdx)
+			for( uint32 NextLineIdx = LineIdx + 1; NextLineIdx < NumFileLines && LinesToProcess[NextLineIdx].TrimStartAndEnd().StartsWith(TEXT("\"")); ++NextLineIdx)
 			{
 				FString Tmp;
 				if (FindDelimitedString(Line, TEXT("\""), TEXT("\""), Tmp))
@@ -562,7 +574,8 @@ bool FPortableObjectFormatDOM::FromString( const FString& InStr )
 			uint32 NextLineIdx = LineIdx + 1;
 			while( NextLineIdx < NumFileLines )
 			{
-				const FString& NextLine = LinesToProcess[NextLineIdx].TrimTrailing().Trim();
+				LinesToProcess[NextLineIdx].TrimStartAndEndInline();
+				const FString& NextLine = LinesToProcess[NextLineIdx];
 				if( NextLine.StartsWith("\"") && NextLine.EndsWith("\"") )
 				{
 					RawMsgCtxt += NextLine.Mid( 1, NextLine.Len()-2 );
@@ -589,7 +602,8 @@ bool FPortableObjectFormatDOM::FromString( const FString& InStr )
 			uint32 NextLineIdx = LineIdx + 1;
 			while( NextLineIdx < NumFileLines )
 			{
-				const FString& NextLine = LinesToProcess[NextLineIdx].TrimTrailing().Trim();
+				LinesToProcess[NextLineIdx].TrimStartAndEndInline();
+				const FString& NextLine = LinesToProcess[NextLineIdx];
 				if( NextLine.StartsWith("\"") && NextLine.EndsWith("\"") )
 				{
 					RawMsgId += NextLine.Mid( 1, NextLine.Len()-2 );
@@ -616,7 +630,8 @@ bool FPortableObjectFormatDOM::FromString( const FString& InStr )
 			uint32 NextLineIdx = LineIdx + 1;
 			while( NextLineIdx < NumFileLines )
 			{
-				const FString& NextLine = LinesToProcess[NextLineIdx].TrimTrailing().Trim();
+				LinesToProcess[NextLineIdx].TrimStartAndEndInline();
+				const FString& NextLine = LinesToProcess[NextLineIdx];
 				if( NextLine.StartsWith("\"") && NextLine.EndsWith("\"") )
 				{
 					RawMsgIdPlural += NextLine.Mid( 1, NextLine.Len()-2 );
@@ -653,7 +668,8 @@ bool FPortableObjectFormatDOM::FromString( const FString& InStr )
 			uint32 NextLineIdx = LineIdx + 1;
 			while( NextLineIdx < NumFileLines )
 			{
-				const FString& NextLine = LinesToProcess[NextLineIdx].TrimTrailing().Trim();
+				LinesToProcess[NextLineIdx].TrimStartAndEndInline();
+				const FString& NextLine = LinesToProcess[NextLineIdx];
 				if( NextLine.StartsWith("\"") && NextLine.EndsWith("\"") )
 				{
 					RawMsgStr += NextLine.Mid( 1, NextLine.Len()-2 );
@@ -687,7 +703,8 @@ bool FPortableObjectFormatDOM::FromString( const FString& InStr )
 			uint32 NextLineIdx = LineIdx + 1;
 			while( NextLineIdx < NumFileLines )
 			{
-				const FString& NextLine = LinesToProcess[NextLineIdx].TrimTrailing().Trim();
+				LinesToProcess[NextLineIdx].TrimStartAndEndInline();
+				const FString& NextLine = LinesToProcess[NextLineIdx];
 				if( NextLine.StartsWith("\"") && NextLine.EndsWith("\"") )
 				{
 					RawMsgStr += NextLine.Mid( 1, NextLine.Len()-2 );
@@ -729,7 +746,7 @@ void FPortableObjectFormatDOM::CreateNewHeader()
 	//Hard code some header entries for now in the following format
 	/*
 	# Engine English translation
-	# Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+	# Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 	#
 	msgid ""
 	msgstr ""
@@ -758,7 +775,7 @@ void FPortableObjectFormatDOM::CreateNewHeader()
 	Header.SetEntryValue( TEXT("Plural-Forms"), Language.GetPluralForms() );
 
 	Header.Comments.Add( FString::Printf(TEXT("%s %s translation."), *GetProjectName(), *Language.EnglishName() ) );
-	Header.Comments.Add( TEXT("Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.") );
+	Header.Comments.Add( TEXT("Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.") );
 	Header.Comments.Add( FString(TEXT("")) );
 }
 
@@ -786,7 +803,7 @@ bool FPortableObjectFormatDOM::AddEntry( const TSharedRef< FPortableObjectEntry>
 	}
 	else
 	{
-		Entries.Add( LocEntry );
+		Entries.Add( *LocEntry, LocEntry );
 	}
 
 	return true;
@@ -795,35 +812,24 @@ bool FPortableObjectFormatDOM::AddEntry( const TSharedRef< FPortableObjectEntry>
 
 TSharedPtr<FPortableObjectEntry> FPortableObjectFormatDOM::FindEntry( const TSharedRef<const FPortableObjectEntry> LocEntry ) const
 {
-	for( auto Entry : Entries )
-	{
-		if( *Entry == *LocEntry )
-		{
-			return Entry;
-		}
-	}
-	return NULL;
+	return Entries.FindRef(*LocEntry);
 }
 
 TSharedPtr<FPortableObjectEntry> FPortableObjectFormatDOM::FindEntry( const FString& MsgId, const FString& MsgIdPlural, const FString& MsgCtxt ) const
 {
-	TSharedRef<FPortableObjectEntry> TempEntry = MakeShareable( new FPortableObjectEntry );
-	TempEntry->MsgId = MsgId;
-	TempEntry->MsgIdPlural = MsgIdPlural;
-	TempEntry->MsgCtxt = MsgCtxt;
-	return FindEntry( TempEntry );
+	return Entries.FindRef(FPortableObjectEntryKey(MsgId, MsgIdPlural, MsgCtxt));
 }
 
 void FPortableObjectFormatDOM::SortEntries()
 {
 	// Sort keys.
-	for (const TSharedPtr<FPortableObjectEntry>& Entry : Entries)
+	for( const auto& EntryPair : Entries )
 	{
-		Entry->ReferenceComments.Sort();
+		EntryPair.Value->ReferenceComments.Sort();
 	}
 
 	// Sort by namespace, then keys, then source text.
-	const auto& SortingPredicate = [](const TSharedPtr<FPortableObjectEntry>& A, const TSharedPtr<FPortableObjectEntry>& B) -> bool
+	auto SortingPredicate = [](const TSharedPtr<FPortableObjectEntry>& A, const TSharedPtr<FPortableObjectEntry>& B) -> bool
 	{
 		// Compare namespace
 		if (A->MsgCtxt < B->MsgCtxt)
@@ -876,7 +882,7 @@ void FPortableObjectFormatDOM::SortEntries()
 
 		return A.Get() < B.Get();
 	};
-	Entries.Sort(SortingPredicate);
+	Entries.ValueSort(SortingPredicate);
 }
 
 void FPortableObjectEntry::AddExtractedComment( const FString& InComment )

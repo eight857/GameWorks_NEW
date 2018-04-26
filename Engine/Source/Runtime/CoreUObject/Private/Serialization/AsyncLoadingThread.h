@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	AsyncLoadingThread.h: Unreal async loading code.
@@ -15,6 +15,7 @@
 #include "HAL/Runnable.h"
 #include "HAL/ThreadSafeBool.h"
 #include "Misc/ConfigCacheIni.h"
+#include "HAL/LowLevelMemTracker.h"
 
 /** [EDL] Event Driven loader event */
 struct FAsyncLoadEvent
@@ -130,6 +131,12 @@ struct FFlushTree
 	}
 };
 
+struct FMaxPackageSummarySize
+{
+	int32 Value;
+	FMaxPackageSummarySize();
+};
+
 /**
  * Async loading thread. Preloads/serializes packages on async loading thread. Postloads objects on the game thread.
  */
@@ -172,6 +179,9 @@ class FAsyncLoadingThread : public FRunnable
 	TArray<FAsyncPackage*> LoadedPackagesToProcess;
 	TArray<FAsyncPackage*> PackagesToDelete;
 	TMap<FName, FAsyncPackage*> LoadedPackagesToProcessNameLookup;
+#if WITH_EDITOR
+	TArray<FWeakObjectPtr> LoadedAssets;
+#endif
 #if THREADSAFE_UOBJECTS
 	/** [ASYNC/GAME THREAD] Critical section for LoadedPackagesToProcess list. 
 	 * Note this is only required for looking up existing packages on the async loading thread 
@@ -185,6 +195,8 @@ class FAsyncLoadingThread : public FRunnable
 public:
 	/** [EDL] Async Packages that are ready for tick */
 	TArray<FAsyncPackage*> AsyncPackagesReadyForTick;
+	/* This is used for the initial precache and should be large enough to find the actual Sum.TotalHeaderSize */
+	const FMaxPackageSummarySize MaxPackageSummarySize;
 private:
 
 #if THREADSAFE_UOBJECTS
@@ -383,7 +395,7 @@ public:
 	*
 	* @param Package package descriptor.
 	*/
-	void QueuePackage(const FAsyncPackageDesc& Package);
+	void QueuePackage(FAsyncPackageDesc& Package);
 
 	/**
 	* [GAME THREAD] Cancels streaming

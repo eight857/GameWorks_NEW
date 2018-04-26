@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/TileView.h"
 
@@ -36,7 +36,7 @@ TSharedRef<SWidget> UTileView::RebuildWidget()
 		//	);
 		;
 
-	return BuildDesignTimeWidget( MyTileView.ToSharedRef() );
+	return MyTileView.ToSharedRef();
 }
 
 TSharedRef<ITableRow> UTileView::HandleOnGenerateTile(UObject* Item, const TSharedRef< STableViewBase >& OwnerTable) const

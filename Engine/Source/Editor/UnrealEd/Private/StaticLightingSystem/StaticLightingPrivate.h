@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	StaticLightingPrivate.h: Private static lighting system definitions.
@@ -83,6 +83,7 @@ struct FLightmassStatistics
 		FinishingTime					= 0.0;
 		TotalTime						= 0.0;
 		ExportVisibilityDataTime = 0.0;
+		ExportVolumetricLightmapDataTime = 0.0f;
 		ExportLightsTime = 0.0;
 		ExportModelsTime = 0.0;
 		ExportStaticMeshesTime = 0.0;
@@ -121,6 +122,7 @@ struct FLightmassStatistics
 		FinishingTime					+= Other.FinishingTime;
 		TotalTime						+= Other.TotalTime;
 		ExportVisibilityDataTime += Other.ExportVisibilityDataTime;
+		ExportVolumetricLightmapDataTime += Other.ExportVolumetricLightmapDataTime;
 		ExportLightsTime += Other.ExportLightsTime;
 		ExportModelsTime += Other.ExportModelsTime;
 		ExportStaticMeshesTime += Other.ExportStaticMeshesTime;
@@ -172,6 +174,7 @@ struct FLightmassStatistics
 	double	TotalTime;
 	/** Time spent in various export stages */
 	double ExportVisibilityDataTime;
+	double ExportVolumetricLightmapDataTime;
 	double ExportLightsTime;
 	double ExportModelsTime;
 	double ExportStaticMeshesTime;
@@ -293,7 +296,7 @@ public:
 
 	bool ShouldOperateOnLevel(ULevel* InLevel) const
 	{
-		return !InLevel->bIsLightingScenario || InLevel == LightingScenario;
+		return InLevel && (!InLevel->bIsLightingScenario || InLevel == LightingScenario) && InLevel->bIsVisible;
 	}
 
 private:
@@ -361,6 +364,9 @@ private:
 	 */
 	void UpdateAutomaticImportanceVolumeBounds( const FBox& MeshBounds );
 
+	/** Populate BuildDataResourcesToKeep from the GUIDs referenced in the given level. */
+	void GatherBuildDataResourcesToKeep(const ULevel* Level);
+
 private:
 
 	/** The lights in the world which the system is building. */
@@ -411,14 +417,6 @@ private:
 	};
 	FStaticLightingSystem::LightingStage CurrentBuildStage;
 
-	// Variable for storing the state of the crash tracker
-	// We disable it only for export, for everything else it shouldn't matter.
-	// This is a very special case, and doing this sort of thing
-	// is almost never recommended, especially without profiling heavily.
-	// The reason it works here is because amortized export flushes the render
-	// commands every tick, which is highly detrimental to the crash tracker's operation.
-	bool bCrashTrackerOriginallyEnabled;
-
 	/** Stats we must cache off because the process is async */
 	// A separate statistics structure for tracking the LightmassProcess routines times
 	FLightmassStatistics LightmassProcessStatistics;
@@ -431,6 +429,9 @@ private:
 
 	/** The lighting scenario that's currently being built, if any.  When valid, any outputs of the lighting build should go into this level's MapBuildData. */
 	ULevel* LightingScenario;
+
+	/** The resource guid for all hidden/excluded levels. Used to keep those level data valid. */
+	TSet<FGuid> BuildDataResourcesToKeep;
 
 	/** A handle on the processor that actually interfacets with Lightmass */
 	class FLightmassProcessor* LightmassProcessor;

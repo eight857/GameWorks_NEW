@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Sections/EventTrackSection.h"
 #include "ISectionLayoutBuilder.h"
@@ -29,18 +29,6 @@ UMovieSceneSection* FEventTrackSection::GetSectionObject()
 int32 FEventTrackSection::OnPaintSection( FSequencerSectionPainter& InPainter ) const
 {
 	return InPainter.PaintSectionBackground();
-}
-
-
-FText FEventTrackSection::GetDisplayName() const
-{
-	return LOCTEXT("DisplayName", "Events");
-}
-
-
-FText FEventTrackSection::GetSectionTitle() const
-{
-	return FText::GetEmpty();
 }
 
 

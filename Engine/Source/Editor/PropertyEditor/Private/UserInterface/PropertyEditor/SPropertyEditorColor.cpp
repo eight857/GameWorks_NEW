@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UserInterface/PropertyEditor/SPropertyEditorColor.h"
 #include "EngineGlobals.h"
@@ -89,8 +89,10 @@ EVisibility SPropertyEditorColor::GetVisibilityForOpaqueDisplay() const
 		{
 			OpaqueDisplayVisibility = EVisibility::Collapsed;
 		}
-
-		OpaqueDisplayVisibility = EVisibility::Visible;
+		else
+		{
+			OpaqueDisplayVisibility = EVisibility::Visible;
+		}
 	}
 
 	return OpaqueDisplayVisibility;

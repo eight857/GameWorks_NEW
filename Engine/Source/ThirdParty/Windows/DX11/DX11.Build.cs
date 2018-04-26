@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using UnrealBuildTool;
 
 public class DX11 : ModuleRules
@@ -7,12 +7,12 @@ public class DX11 : ModuleRules
 	{
 		Type = ModuleType.External;
 
-		string DirectXSDKDir = UEBuildConfiguration.UEThirdPartySourceDirectory + "Windows/DirectX";
+		string DirectXSDKDir = Target.UEThirdPartySourceDirectory + "Windows/DirectX";
 		PublicSystemIncludePaths.Add(DirectXSDKDir + "/include");
 
 		if (Target.Platform == UnrealTargetPlatform.Win64 || Target.Platform == UnrealTargetPlatform.Win32)
 		{
-			Definitions.Add("WITH_D3DX_LIBS=1");
+			PublicDefinitions.Add("WITH_D3DX_LIBS=1");
 
 			if (Target.Platform == UnrealTargetPlatform.Win64)
 			{
@@ -30,7 +30,7 @@ public class DX11 : ModuleRules
 				"d3d11.lib",
 				"dxguid.lib",
 				"d3dcompiler.lib",
-				(Target.Configuration == UnrealTargetConfiguration.Debug && BuildConfiguration.bDebugBuildsActuallyUseDebugCRT) ? "d3dx11d.lib" : "d3dx11.lib",
+				(Target.Configuration == UnrealTargetConfiguration.Debug && Target.bDebugBuildsActuallyUseDebugCRT) ? "d3dx11d.lib" : "d3dx11.lib",
 				"dinput8.lib",
 				"X3DAudio.lib",
 				"xapobase.lib",
@@ -40,7 +40,7 @@ public class DX11 : ModuleRules
 		}
 		else if (Target.Platform == UnrealTargetPlatform.XboxOne)
 		{
-			Definitions.Add("WITH_D3DX_LIBS=0");
+			PublicDefinitions.Add("WITH_D3DX_LIBS=0");
 		}
 	}
 }

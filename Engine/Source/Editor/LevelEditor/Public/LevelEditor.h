@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -166,6 +166,10 @@ public:
 	/** Called when the tab manager is changed */
 	DECLARE_EVENT(FLevelEditorModule, FTabManagerChangedEvent);
 	virtual FTabManagerChangedEvent& OnTabManagerChanged() { return TabManagerChangedEvent; }
+
+	/** Called when the tab content is changed */
+	DECLARE_EVENT(FLevelEditorModule, FTabContentChangedEvent);
+	virtual FTabContentChangedEvent& OnTabContentChanged() { return TabContentChangedEvent; }
 
 
 	/**
@@ -343,6 +347,9 @@ private:
 
 	/** Multicast delegate executed when the tab manager is changed */
 	FTabManagerChangedEvent TabManagerChangedEvent;
+
+	/** Multicast delegate executed when the tab content is changed */
+	FTabContentChangedEvent TabContentChangedEvent;
 
 	/** Multicast delegate executed when actor selection changes */
 	FActorSelectionChangedEvent ActorSelectionChangedEvent;

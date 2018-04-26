@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PreviewScene.cpp: Preview scene implementation.
@@ -10,19 +10,23 @@
 #include "SceneInterface.h"
 #include "Components/MeshComponent.h"
 #include "AudioDevice.h"
+#include "Engine/TextureCube.h"
 #include "Components/DirectionalLightComponent.h"
+#include "Components/SkyLightComponent.h"
 #include "Components/LineBatchComponent.h"
 
 FPreviewScene::FPreviewScene(FPreviewScene::ConstructionValues CVS)
 	: PreviewWorld(NULL)
 	, bForceAllUsedMipsResident(CVS.bForceMipsResident)
 {
-	PreviewWorld = NewObject<UWorld>();
-	PreviewWorld->WorldType = CVS.bEditor ? EWorldType::EditorPreview : EWorldType::GamePreview;
+	EObjectFlags NewObjectFlags = RF_NoFlags;
 	if (CVS.bTransactional)
 	{
-		PreviewWorld->SetFlags(RF_Transactional);
+		NewObjectFlags = RF_Transactional;
 	}
+
+	PreviewWorld = NewObject<UWorld>(GetTransientPackage(), NAME_None, NewObjectFlags);
+	PreviewWorld->WorldType = CVS.bEditor ? EWorldType::EditorPreview : EWorldType::GamePreview;
 
 	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(PreviewWorld->WorldType);
 	WorldContext.SetCurrentWorld(PreviewWorld);
@@ -41,6 +45,13 @@ FPreviewScene::FPreviewScene(FPreviewScene::ConstructionValues CVS)
 	DirectionalLight->Intensity = CVS.LightBrightness;
 	DirectionalLight->LightColor = FColor::White;
 	AddComponent(DirectionalLight, FTransform(CVS.LightRotation));
+
+	SkyLight = NewObject<USkyLightComponent>(GetTransientPackage(), NAME_None, RF_Transient);
+	SkyLight->bLowerHemisphereIsBlack = false;
+	SkyLight->SourceType = ESkyLightSourceType::SLS_SpecifiedCubemap;
+	SkyLight->Intensity = CVS.SkyBrightness;
+	SkyLight->Mobility = EComponentMobility::Movable;
+	AddComponent(SkyLight, FTransform::Identity);
 
 	LineBatcher = NewObject<ULineBatchComponent>(GetTransientPackage());
 	LineBatcher->bCalculateAccurateBounds = false;
@@ -84,7 +95,7 @@ FPreviewScene::~FPreviewScene()
 	GEngine->DestroyWorldContext(GetWorld());
 }
 
-void FPreviewScene::AddComponent(UActorComponent* Component,const FTransform& LocalToWorld)
+void FPreviewScene::AddComponent(UActorComponent* Component,const FTransform& LocalToWorld, bool bAttachToRoot /*= false*/)
 {
 	Components.AddUnique(Component);
 
@@ -128,7 +139,6 @@ void FPreviewScene::RemoveComponent(UActorComponent* Component)
 void FPreviewScene::AddReferencedObjects( FReferenceCollector& Collector )
 {
 	Collector.AddReferencedObjects( Components );
-	Collector.AddReferencedObject( DirectionalLight );
 	Collector.AddReferencedObject( PreviewWorld );
 }
 
@@ -143,7 +153,7 @@ void FPreviewScene::ClearLineBatcher()
 /** Accessor for finding the current direction of the preview scene's DirectionalLight. */
 FRotator FPreviewScene::GetLightDirection()
 {
-	return DirectionalLight->ComponentToWorld.GetUnitAxis( EAxis::X ).Rotation();
+	return DirectionalLight->GetComponentTransform().GetUnitAxis( EAxis::X ).Rotation();
 }
 
 /** Function for modifying the current direction of the preview scene's DirectionalLight. */
@@ -183,6 +193,12 @@ void FPreviewScene::SetLightColor(const FColor& LightColor)
 
 void FPreviewScene::SetSkyBrightness(float SkyBrightness)
 {
+	SkyLight->SetIntensity(SkyBrightness);
+}
+
+void FPreviewScene::SetSkyCubemap(UTextureCube* Cubemap)
+{
+	SkyLight->SetCubemap(Cubemap);
 }
 
 void FPreviewScene::LoadSettings(const TCHAR* Section)
@@ -197,4 +213,10 @@ void FPreviewScene::LoadSettings(const TCHAR* Section)
 void FPreviewScene::SaveSettings(const TCHAR* Section)
 {
 	GConfig->SetRotator( Section, TEXT("LightDir"), GetLightDirection(), GEditorPerProjectIni );
+}
+
+FLinearColor FPreviewScene::GetBackgroundColor() const
+{
+	FLinearColor BackgroundColor = FColor(55, 55, 55);
+	return BackgroundColor;
 }

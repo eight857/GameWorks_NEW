@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -46,7 +46,7 @@ enum class EAlphaBlendOption : uint8
 /**
  * Alpha Blend class that supports different blend options as well as custom curves
  */
-USTRUCT()
+USTRUCT(BlueprintType)
 struct ENGINE_API FAlphaBlend
 {
 	GENERATED_BODY()
@@ -92,8 +92,12 @@ public:
 	/** Sets the Lerp alpha value directly. PLEASE NOTE that this modifies the Blended Value right away.  */
 	void SetAlpha(float InAlpha);
 
-	/** Update interpolation, has to be called once every frame */
-	void Update(float InDeltaTime);
+	/** Update interpolation, has to be called once every frame.
+	 *
+	 * @return How much time remains after the blend completed if applicable
+	 * e.g. if we have 0.01s left on the blend and update at 30Hz (~0.033s) we would return ~0.023s
+	 */
+	float Update(float InDeltaTime);
 
 	/** Gets whether or not the blend is complete */
 	bool IsComplete() const;
@@ -106,9 +110,13 @@ public:
 
 	/** Getters */
 	float GetBlendTime() const { return BlendTime; }
+	float GetBlendTimeRemaining() const { return BlendTimeRemaining; }
 	EAlphaBlendOption GetBlendOption() const { return BlendOption; }
 	UCurveFloat* GetCustomCurve() const { return CustomCurve; }
 
+	/** Get the current begin value */
+	float GetBeginValue() const { return BeginValue; }
+	
 	/** Get the current desired value */
 	float GetDesiredValue() const { return DesiredValue; }
 

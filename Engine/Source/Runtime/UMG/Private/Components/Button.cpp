@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Components/Button.h"
 #include "Widgets/SNullWidget.h"
@@ -122,6 +122,33 @@ bool UButton::IsPressed() const
 
 	return false;
 }
+
+void UButton::SetClickMethod(EButtonClickMethod::Type InClickMethod)
+{
+	ClickMethod = InClickMethod;
+	if ( MyButton.IsValid() )
+	{
+		MyButton->SetClickMethod(ClickMethod);
+	}
+}
+
+void UButton::SetTouchMethod(EButtonTouchMethod::Type InTouchMethod)
+{
+	TouchMethod = InTouchMethod;
+	if ( MyButton.IsValid() )
+	{
+		MyButton->SetTouchMethod(TouchMethod);
+	}
+}
+
+//void UButton::SetPressMethod(EButtonPressMethod::Type InPressMethod)
+//{
+//	PressMethod = InPressMethod;
+//	if ( MyButton.IsValid() )
+//	{
+//		MyButton->SetPressMethod(PressMethod);
+//	}
+//}
 
 void UButton::PostLoad()
 {

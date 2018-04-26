@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PersistentObjectPtr.h: Template that is a base class for Lazy and Asset pointers
@@ -10,10 +10,10 @@
 #include "UObject/WeakObjectPtr.h"
 
 /**
- * TPersistentObjectPtr is a template base class for FLazyObjectPtr and FAssetPtr
+ * TPersistentObjectPtr is a template base class for FLazyObjectPtr and FSoftObjectPtr
  */
 template<class TObjectID>
-class TPersistentObjectPtr
+struct TPersistentObjectPtr
 {
 public:	
 
@@ -28,6 +28,13 @@ public:
 	{
 		WeakPtr.Reset();
 		ObjectID.Reset();
+		TagAtLastTest = 0;
+	}
+
+	/** Resets the weak ptr only, call this when ObjectId may change */
+	FORCEINLINE void ResetWeakPtr()
+	{
+		WeakPtr.Reset();
 		TagAtLastTest = 0;
 	}
 
@@ -113,7 +120,12 @@ public:
 		{
 			Object = ObjectID.ResolveObject();
 			WeakPtr = Object;
-			TagAtLastTest = TObjectID::GetCurrentTag();
+
+			// Not safe to update tag during save as ResolveObject may have failed accidentally
+			if (Object || !GIsSavingPackage)
+			{
+				TagAtLastTest = TObjectID::GetCurrentTag();
+			}
 
 			// If this object is pending kill or otherwise invalid, this will return nullptr as expected
 			Object = WeakPtr.Get();
@@ -134,7 +146,12 @@ public:
 		{
 			Object = ObjectID.ResolveObject();
 			WeakPtr = Object;
-			TagAtLastTest = TObjectID::GetCurrentTag();
+
+			// Not safe to update tag during save as ResolveObject may have failed accidentally
+			if (Object || !GIsSavingPackage)
+			{
+				TagAtLastTest = TObjectID::GetCurrentTag();
+			}
 
 			// If this object is pending kill or otherwise invalid, this will return nullptr as expected
 			Object = WeakPtr.Get(bEvenIfPendingKill);
@@ -222,7 +239,7 @@ public:
 	 */
 	FORCEINLINE bool IsNull() const
 	{
-		return Get() == nullptr && !ObjectID.IsValid();
+		return !ObjectID.IsValid();
 	}
 
 	/** Hash function */

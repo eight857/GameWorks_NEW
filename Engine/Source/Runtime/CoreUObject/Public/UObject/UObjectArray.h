@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	UObjectArray.h: Unreal object array
@@ -16,7 +16,9 @@
 * Controls whether the number of available elements is being tracked in the ObjObjects array.
 * By default it is only tracked in WITH_EDITOR builds as it adds a small amount of tracking overhead
 */
+#if !defined(UE_GC_TRACK_OBJ_AVAILABLE)
 #define UE_GC_TRACK_OBJ_AVAILABLE (WITH_EDITOR)
+#endif
 
 /**
 * Single item in the UObject array.
@@ -182,18 +184,6 @@ struct FUObjectItem
 		return !!(Flags & int32(EInternalObjectFlags::RootSet));
 	}
 
-	FORCEINLINE void SetNoStrongReference()
-	{
-		Flags |= int32(EInternalObjectFlags::NoStrongReference);
-	}
-	FORCEINLINE void ClearNoStrongReference()
-	{
-		Flags &= ~int32(EInternalObjectFlags::NoStrongReference);
-	}
-	FORCEINLINE bool IsNoStrongReference() const
-	{
-		return !!(Flags & int32(EInternalObjectFlags::NoStrongReference));
-	}
 	FORCEINLINE void ResetSerialNumberAndFlags()
 	{
 		Flags = 0;
@@ -216,7 +206,7 @@ class FFixedUObjectArray
 
 public:
 
-	FFixedUObjectArray()
+	FFixedUObjectArray() TSAN_SAFE
 		: Objects(nullptr)
 		, MaxElements(0)
 		, NumElements(0)
@@ -232,14 +222,14 @@ public:
 	* Expands the array so that Element[Index] is allocated. New pointers are all zero.
 	* @param Index The Index of an element we want to be sure is allocated
 	**/
-	void PreAllocate(int32 InMaxElements)
+	void PreAllocate(int32 InMaxElements) TSAN_SAFE
 	{
 		check(!Objects);
 		Objects = new FUObjectItem[InMaxElements];
 		MaxElements = InMaxElements;
 	}
 
-	int32 AddSingle()
+	int32 AddSingle() TSAN_SAFE
 	{
 		int32 Result = NumElements;
 		checkf(NumElements + 1 <= MaxElements, TEXT("Maximum number of UObjects (%d) exceeded, make sure you update MaxObjectsInGame/MaxObjectsInEditor in project settings."), MaxElements);
@@ -250,7 +240,7 @@ public:
 		return Result;
 	}
 
-	int32 AddRange(int32 Count)
+	int32 AddRange(int32 Count) TSAN_SAFE
 	{
 		int32 Result = NumElements + Count - 1;
 		checkf(NumElements + Count <= MaxElements, TEXT("Maximum number of UObjects (%d) exceeded, make sure you update MaxObjectsInGame/MaxObjectsInEditor in project settings."), MaxElements);
@@ -261,13 +251,13 @@ public:
 		return Result;
 	}
 
-	FORCEINLINE FUObjectItem const* GetObjectPtr(int32 Index) const
+	FORCEINLINE FUObjectItem const* GetObjectPtr(int32 Index) const TSAN_SAFE
 	{
 		check(Index >= 0 && Index < NumElements);
 		return &Objects[Index];
 	}
 
-	FORCEINLINE FUObjectItem* GetObjectPtr(int32 Index)
+	FORCEINLINE FUObjectItem* GetObjectPtr(int32 Index) TSAN_SAFE
 	{
 		check(Index >= 0 && Index < NumElements);
 		return &Objects[Index];
@@ -278,7 +268,7 @@ public:
 	* Thread safe, but you know, someone might have added more elements before this even returns
 	* @return	the number of elements in the array
 	**/
-	FORCEINLINE int32 Num() const
+	FORCEINLINE int32 Num() const TSAN_SAFE
 	{
 		return NumElements;
 	}
@@ -843,6 +833,19 @@ public:
 
 	/** Frees the cluster at the specified index */
 	void FreeCluster(int32 InClusterIndex);
+
+	/**
+	* Gets the cluster the specified object is a root of or belongs to.
+	* @Param ClusterRootOrObjectFromCluster Root cluster object or object that belongs to a cluster
+	*/
+	FUObjectCluster* GetObjectCluster(UObjectBaseUtility* ClusterRootOrObjectFromCluster);
+
+
+	/** 
+	 * Dissolves a cluster and all clusters that reference it 
+	 * @Param ClusterRootOrObjectFromCluster Root cluster object or object that belongs to a cluster
+	 */
+	void DissolveCluster(UObjectBaseUtility* ClusterRootOrObjectFromCluster);
 
 	/** Dissolve all clusters marked for dissolving */
 	void DissolveClusters();

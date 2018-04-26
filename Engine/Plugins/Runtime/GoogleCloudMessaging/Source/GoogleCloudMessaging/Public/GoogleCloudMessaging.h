@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,8 +15,6 @@ class IGoogleCloudMessagingModuleInterface : public IModuleInterface
 {
 
 public:
-
-	virtual void RegisterForRemoteNotifications() = 0;
 
 	/**
 	 * Singleton-like access to this module's interface.  This is just for convenience!

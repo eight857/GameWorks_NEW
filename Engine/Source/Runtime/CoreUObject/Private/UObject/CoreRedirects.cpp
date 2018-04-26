@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UObject/CoreRedirects.h"
 #include "UObject/Package.h"
@@ -157,9 +157,7 @@ bool FCoreRedirectObjectName::HasValidCharacters() const
 
 bool FCoreRedirectObjectName::ExpandNames(const FString& InString, FName& OutName, FName& OutOuter, FName &OutPackage)
 {
-	FString FullString = InString;
-	FullString.Trim();
-	FullString.TrimTrailing();
+	FString FullString = InString.TrimStartAndEnd();
 
 	// Parse (/path.)?(outerchain.)?(name) where path and outerchain are optional
 	// We also need to support (/path.)?(singleouter:)?(name) because the second delimiter in a chain is : for historical reasons
@@ -719,7 +717,6 @@ bool FCoreRedirects::ReadRedirectsFromIni(const FString& IniName)
 		ConfigKeyMap.Add(TEXT("FunctionRedirects"), ECoreRedirectFlags::Type_Function);
 		ConfigKeyMap.Add(TEXT("PropertyRedirects"), ECoreRedirectFlags::Type_Property);
 		ConfigKeyMap.Add(TEXT("PackageRedirects"), ECoreRedirectFlags::Type_Package);
-		ConfigKeyMap.Add(TEXT("DelegateRedirects"), ECoreRedirectFlags::Type_Delegate);
 
 		RegisterNativeRedirects();
 

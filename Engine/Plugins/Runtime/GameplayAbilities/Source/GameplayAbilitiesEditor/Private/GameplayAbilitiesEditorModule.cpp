@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "GameplayAbilitiesEditorModule.h"
 #include "Stats/StatsMisc.h"
@@ -45,6 +45,8 @@
 #include "LevelEditor.h"
 #include "Misc/HotReloadInterface.h"
 #include "EditorReimportHandler.h"
+#include "GameplayEffectCreationMenu.h"
+#include "ISettingsModule.h"
 
 
 class FGameplayAbilitiesEditorModule : public IGameplayAbilitiesEditorModule
@@ -140,6 +142,17 @@ void FGameplayAbilitiesEditorModule::StartupModule()
 	TSharedRef<IAssetTypeActions> GABAction = MakeShareable(new FAssetTypeActions_GameplayAbilitiesBlueprint());
 	RegisterAssetTypeAction(AssetTools, GABAction);
 
+	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+	{
+		SettingsModule->RegisterSettings("Project", "Project", "Gameplay Effect Parents",
+						NSLOCTEXT("GameplayAbilitiesEditorModule", "GameplayEffectParentName", "Gameplay Effect Parents"),
+						NSLOCTEXT("GameplayAbilitiesEditorModule", "GameplayEffectParentNameDesc", "Data Driven way of specifying common parent Gameplay Effect classes that are accessible through File menu"),
+						GetMutableDefault<UGameplayEffectCreationMenu>()
+						);
+
+		GetDefault<UGameplayEffectCreationMenu>()->AddMenuExtensions();
+	}
+
 	// Register factories for pins and nodes
 	GameplayAbilitiesGraphPanelPinFactory = MakeShareable(new FGameplayAbilitiesGraphPanelPinFactory());
 	FEdGraphUtilities::RegisterVisualPinFactory(GameplayAbilitiesGraphPanelPinFactory);
@@ -173,7 +186,7 @@ void FGameplayAbilitiesEditorModule::StartupModule()
 	}));
 	
 	// Invalidate all internal cacheing of FRichCurve* in FScalableFlaots when a UCurveTable is reimported
-	FReimportManager::Instance()->OnPostReimport().AddLambda([](UObject* InObject, bool b){ FScalableFloat::InvalidateAllCachedCurves(); });
+	FReimportManager::Instance()->OnPostReimport().AddLambda([](UObject* InObject, bool b){ UCurveTable::InvalidateAllCachedCurves(); });
 }
 
 void FGameplayAbilitiesEditorModule::HandleNotify_OpenAssetInEditor(FString AssetName, int AssetType)
@@ -332,7 +345,7 @@ void RecompileGameplayAbilitiesEditor(const TArray<FString>& Args)
 			PackagesToRebind.Add( Package );
 		}
 
-		HotReload->RebindPackages(PackagesToRebind, TArray<FName>(), true, *GLog);
+		HotReload->RebindPackages(PackagesToRebind, EHotReloadFlags::WaitForCompletion, *GLog);
 	}
 
 	GWarn->EndSlowTask();

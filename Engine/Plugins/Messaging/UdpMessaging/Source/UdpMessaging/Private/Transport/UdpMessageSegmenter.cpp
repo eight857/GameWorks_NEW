@@ -1,6 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Transport/UdpMessageSegmenter.h"
+
+#include "Serialization/Archive.h"
+
+#include "Transport/UdpSerializedMessage.h"
 
 
 /* FUdpMessageSegmenter structors
@@ -76,6 +80,12 @@ void FUdpMessageSegmenter::Initialize()
 		PendingSegmentsCount = (MessageReader->TotalSize() + SegmentSize - 1) / SegmentSize;
 		PendingSegments.Init(true, PendingSegmentsCount);
 	}
+}
+
+
+bool FUdpMessageSegmenter::IsInvalid() const
+{
+	return (SerializedMessage->GetState() == EUdpSerializedMessageState::Invalid);
 }
 
 

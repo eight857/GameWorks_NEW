@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "TileMapEditing/PaperTileMapDetailsCustomization.h"
 #include "Layout/Margin.h"
@@ -42,7 +42,7 @@ TSharedRef<IDetailCustomization> FPaperTileMapDetailsCustomization::MakeInstance
 
 void FPaperTileMapDetailsCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
 {
-	const TArray< TWeakObjectPtr<UObject> >& SelectedObjects = DetailLayout.GetDetailsView().GetSelectedObjects();
+	const TArray< TWeakObjectPtr<UObject> >& SelectedObjects = DetailLayout.GetSelectedObjects();
 	MyDetailLayout = nullptr;
 	
 	FNotifyHook* NotifyHook = DetailLayout.GetPropertyUtilities()->GetNotifyHook();
@@ -121,6 +121,7 @@ void FPaperTileMapDetailsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 			.HAlign(HAlign_Center)
 			.OnClicked(this, &FPaperTileMapDetailsCustomization::EnterTileMapEditingMode)
 			.Visibility(this, &FPaperTileMapDetailsCustomization::GetNonEditModeVisibility)
+			.IsEnabled(this, &FPaperTileMapDetailsCustomization::GetIsEditModeEnabled)
 			.Text(LOCTEXT("EditAsset", "Edit Map"))
 			.ToolTipText(LOCTEXT("EditAssetToolTip", "Edit this tile map"))
 		]
@@ -194,7 +195,7 @@ void FPaperTileMapDetailsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 	}
 
 	// Try to get the hosting command list from the details view
-	TSharedPtr<FUICommandList> CommandList = DetailLayout.GetDetailsView().GetHostCommandList();
+	TSharedPtr<FUICommandList> CommandList = DetailLayout.GetDetailsView()->GetHostCommandList();
 	if (!CommandList.IsValid())
 	{
 		CommandList = MakeShareable(new FUICommandList);
@@ -272,7 +273,7 @@ void FPaperTileMapDetailsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 					const bool bAdvancedDisplay = TestProperty->HasAnyPropertyFlags(CPF_AdvancedDisplay);
 					const EPropertyLocation::Type PropertyLocation = bAdvancedDisplay ? EPropertyLocation::Advanced : EPropertyLocation::Common;
 
-					LayerCategory.AddExternalProperty(ListOfSelectedLayers, TestProperty->GetFName(), PropertyLocation);
+					LayerCategory.AddExternalObjectProperty(ListOfSelectedLayers, TestProperty->GetFName(), PropertyLocation);
 				}
 			}
 		}
@@ -297,7 +298,7 @@ void FPaperTileMapDetailsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 				const FName CategoryName(*TestProperty->GetMetaData(TEXT("Category")));
 				IDetailCategoryBuilder& Category = DetailLayout.EditCategory(CategoryName);
 
-				if (IDetailPropertyRow* ExternalRow = Category.AddExternalProperty(ListOfTileMaps, TestProperty->GetFName(), PropertyLocation))
+				if (IDetailPropertyRow* ExternalRow = Category.AddExternalObjectProperty(ListOfTileMaps, TestProperty->GetFName(), PropertyLocation))
 				{
 					ExternalRow->Visibility(InternalInstanceVis);
 				}
@@ -358,7 +359,7 @@ FReply FPaperTileMapDetailsCustomization::OnPromoteToAssetButtonClicked()
 				PromotionFactory->AssetToRename = TileMapComponent->TileMap;
 
 				FAssetToolsModule& AssetToolsModule = FAssetToolsModule::GetModule();
-				UObject* NewAsset = AssetToolsModule.Get().CreateAsset(PromotionFactory->GetSupportedClass(), PromotionFactory);
+				UObject* NewAsset = AssetToolsModule.Get().CreateAssetWithDialog(PromotionFactory->GetSupportedClass(), PromotionFactory);
 			
 				// Show it in the content browser
 				TArray<UObject*> ObjectsToSync;
@@ -389,6 +390,16 @@ FReply FPaperTileMapDetailsCustomization::OnMakeInstanceFromAssetButtonClicked()
 	MyDetailLayout->ForceRefreshDetails();
 
 	return FReply::Handled();
+}
+
+bool FPaperTileMapDetailsCustomization::GetIsEditModeEnabled() const
+{
+	if (UPaperTileMapComponent* TileMapComponent = TileMapComponentPtr.Get())
+	{
+		return (TileMapComponent->TileMap != nullptr);
+	}
+	
+	return false;
 }
 
 EVisibility FPaperTileMapDetailsCustomization::GetNonEditModeVisibility() const

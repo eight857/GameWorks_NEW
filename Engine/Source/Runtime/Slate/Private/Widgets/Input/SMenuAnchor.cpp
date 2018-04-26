@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
  
 #include "Widgets/Input/SMenuAnchor.h"
 #include "Layout/ArrangedChildren.h"
@@ -50,47 +50,23 @@ static FVector2D GetMenuOffsetForPlacement(const FGeometry& AllottedGeometry, EM
 		case MenuPlacement_RightLeftCenter:
 			return FVector2D( AllottedGeometry.GetLocalSize().X, - ( ( PopupSizeLocalSpace.Y / 2 ) - ( AllottedGeometry.GetLocalSize().Y / 2 ) ) );
 			break;
+		case MenuPlacement_MatchBottomLeft:
+			return FVector2D(0.0f, (AllottedGeometry.GetLocalSize().Y - PopupSizeLocalSpace.Y));
+			break;
 		default:
 			ensureMsgf( false, TEXT("Unhandled placement mode: %d"), PlacementMode );
 			return FVector2D::ZeroVector;
 	}
 }
 
-/** Compute the popup size, offset, and anchor rect in local space. */
-struct FPopupPlacement
-{
-	FPopupPlacement(const FGeometry& AllottedGeometry, const FVector2D& PopupDesiredSize, EMenuPlacement PlacementMode)
-	{
-		// Compute the popup size, offset, and anchor rect  in local space
-		LocalPopupSize = (PlacementMode == MenuPlacement_ComboBox || PlacementMode == MenuPlacement_ComboBoxRight)
-			? FVector2D(FMath::Max(AllottedGeometry.Size.X, PopupDesiredSize.X), PopupDesiredSize.Y)
-			: PopupDesiredSize;
-		LocalPopupOffset = GetMenuOffsetForPlacement(AllottedGeometry, PlacementMode, LocalPopupSize);
-		AnchorLocalSpace = FSlateRect::FromPointAndExtent(FVector2D::ZeroVector, AllottedGeometry.Size);
-		Orientation = (PlacementMode == MenuPlacement_MenuRight || PlacementMode == MenuPlacement_MenuLeft) ? Orient_Horizontal : Orient_Vertical;
-	}
-
-	FVector2D LocalPopupSize;
-	FVector2D LocalPopupOffset;
-	FSlateRect AnchorLocalSpace;
-	EOrientation Orientation;
-};
-
-FGeometry ComputeMenuPlacement(const FGeometry& AllottedGeometry, const FVector2D& PopupDesiredSize, EMenuPlacement PlacementMode)
+SMenuAnchor::FPopupPlacement::FPopupPlacement(const FGeometry& PlacementGeometry, const FVector2D& PopupDesiredSize, EMenuPlacement PlacementMode)
 {
 	// Compute the popup size, offset, and anchor rect  in local space
-	const FPopupPlacement Placement(AllottedGeometry, PopupDesiredSize, PlacementMode);
-
-	// ask the application to compute the proper desktop offset for the anchor. This requires the offsets to be in desktop space.
-	const FVector2D NewPositionDesktopSpace = FSlateApplication::Get().CalculatePopupWindowPosition(
-		TransformRect(AllottedGeometry.GetAccumulatedLayoutTransform(), Placement.AnchorLocalSpace),
-		TransformVector(AllottedGeometry.GetAccumulatedLayoutTransform(), Placement.LocalPopupSize),
-		Placement.Orientation);
-
-	// transform the desktop offset into local space and use that as the layout transform for the child content.
-	return AllottedGeometry.MakeChild(
-		Placement.LocalPopupSize,
-		FSlateLayoutTransform(TransformPoint(Inverse(AllottedGeometry.GetAccumulatedLayoutTransform()), NewPositionDesktopSpace)));
+	const bool bIsComboBoxPopup = (PlacementMode == MenuPlacement_ComboBox || PlacementMode == MenuPlacement_ComboBoxRight);
+	LocalPopupSize = bIsComboBoxPopup ? FVector2D(FMath::Max(PlacementGeometry.Size.X, PopupDesiredSize.X), PopupDesiredSize.Y) : PopupDesiredSize;
+	LocalPopupOffset = GetMenuOffsetForPlacement(PlacementGeometry, PlacementMode, LocalPopupSize);
+	AnchorLocalSpace = FSlateRect::FromPointAndExtent(FVector2D::ZeroVector, PlacementGeometry.GetLocalSize());
+	Orientation = (PlacementMode == MenuPlacement_MenuRight || PlacementMode == MenuPlacement_MenuLeft) ? Orient_Horizontal : Orient_Vertical;
 }
 
 /*static*/ TArray<TWeakPtr<IMenu>> SMenuAnchor::OpenApplicationMenus;
@@ -121,8 +97,30 @@ void SMenuAnchor::Construct( const FArguments& InArgs )
 	bShouldDeferPaintingAfterWindowContent = InArgs._ShouldDeferPaintingAfterWindowContent;
 	bUseApplicationMenuStack               = InArgs._UseApplicationMenuStack;
 	bIsCollapsedByParent                   = InArgs._IsCollapsedByParent;
+	bApplyWidgetStyleToMenu                = InArgs._ApplyWidgetStyleToMenu;
 }
 
+FGeometry SMenuAnchor::ComputeNewWindowMenuPlacement(const FGeometry& AllottedGeometry, const FVector2D& PopupDesiredSize, EMenuPlacement PlacementMode) const
+{
+	// Compute the popup size, offset, and anchor rect  in local space
+	const FPopupPlacement PopupPlacement(AllottedGeometry, PopupDesiredSize, PlacementMode);
+
+	// already handled
+	const bool bAutoAdjustForDPIScale = false;
+
+	// ask the application to compute the proper desktop offset for the anchor. This requires the offsets to be in desktop space.
+	const FVector2D NewPositionDesktopSpace = FSlateApplication::Get().CalculatePopupWindowPosition(
+		TransformRect(AllottedGeometry.GetAccumulatedLayoutTransform(), PopupPlacement.AnchorLocalSpace),
+		TransformVector(AllottedGeometry.GetAccumulatedLayoutTransform(), PopupPlacement.LocalPopupSize),
+		bAutoAdjustForDPIScale,
+		TransformPoint(AllottedGeometry.GetAccumulatedLayoutTransform(), PopupPlacement.LocalPopupOffset),
+		PopupPlacement.Orientation);
+
+	// transform the desktop offset into local space and use that as the layout transform for the child content.
+	return AllottedGeometry.MakeChild(
+		PopupPlacement.LocalPopupSize,
+		FSlateLayoutTransform(TransformPoint(Inverse(AllottedGeometry.GetAccumulatedLayoutTransform()), NewPositionDesktopSpace)));
+}
 
 void SMenuAnchor::Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime )
 {
@@ -131,11 +129,11 @@ void SMenuAnchor::Tick( const FGeometry& AllottedGeometry, const double InCurren
 	{
 		// Figure out where our attached pop-up window should be placed.
 		const FVector2D PopupContentDesiredSize = PopupWindow->GetContent()->GetDesiredSize();
-		FGeometry PopupGeometry = ComputeMenuPlacement( AllottedGeometry, PopupContentDesiredSize, Placement.Get() );
+		FGeometry PopupGeometry = ComputeNewWindowMenuPlacement( AllottedGeometry, PopupContentDesiredSize, Placement.Get() );
 		const FVector2D NewPosition = PopupGeometry.LocalToAbsolute(FVector2D::ZeroVector);
 		// NOTE: In order to get the right size of the window, we need to take whatever the incoming scale of the menu anchor,
 		// then divide out the popup window's DPI scale.  Finally, we need to divide that remainder to the draw size.
-		// The idea here is to divide out any "extra" scale that's not associated with the DPI scale, since ComputeMenuPlacement
+		// The idea here is to divide out any "extra" scale that's not associated with the DPI scale, since ComputeNewWindowMenuPlacement
 		// makes a child transform for the new window, based on the geometry of it, which if the menu anchor is inside a zoom panel
 		// that would translate to a menu that had a smaller size window, if the scale was tiny, which we don't want - we only want
 		// the DPI scale if any, to be factored into the size.
@@ -200,7 +198,7 @@ FChildren* SMenuAnchor::GetChildren()
 	return &Children;
 }
 
-int32 SMenuAnchor::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
+int32 SMenuAnchor::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled ) const
 {
 	FArrangedChildren ArrangedChildren( EVisibility::Visible );
 	ArrangeChildren( AllottedGeometry, ArrangedChildren );
@@ -216,7 +214,7 @@ int32 SMenuAnchor::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeo
 		const bool bHasArrangedAnchorContent = FirstChild.Widget == Children[0].GetWidget();
 		if ( bHasArrangedAnchorContent )
 		{
-			const FSlateRect ChildClippingRect = AllottedGeometry.GetClippingRect().IntersectionWith(MyClippingRect);
+			const FSlateRect ChildClippingRect = AllottedGeometry.GetLayoutBoundingRect().IntersectionWith(MyCullingRect);
 			LayerId = FirstChild.Widget->Paint(Args.WithNewParent(this), FirstChild.Geometry, ChildClippingRect, OutDrawElements, LayerId + 1, InWidgetStyle, ShouldBeEnabled(bParentEnabled));
 		}
 
@@ -241,14 +239,14 @@ int32 SMenuAnchor::OnPaint( const FPaintArgs& Args, const FGeometry& AllottedGeo
 				if (bShouldDeferPaintingAfterWindowContent)
 				{
 					OutDrawElements.QueueDeferredPainting(
-						FSlateWindowElementList::FDeferredPaint(PopupChild->Widget, Args, PopupChild->Geometry, MyClippingRect, InWidgetStyle, bParentEnabled));
+						FSlateWindowElementList::FDeferredPaint(PopupChild->Widget, Args, PopupChild->Geometry, bApplyWidgetStyleToMenu ? InWidgetStyle : FWidgetStyle(), bParentEnabled));
 				}
 				else
 				{
 					const TSharedPtr<SWindow> PresentingWindow = PopupWindowPtr.Pin();
 					if (PresentingWindow.IsValid())
 					{
-						PopupChild->Widget->Paint(Args.WithNewParent(this), PopupChild->Geometry, PresentingWindow->GetClippingRectangleInWindow(), OutDrawElements, LayerId + 1, InWidgetStyle, ShouldBeEnabled(bParentEnabled));
+						PopupChild->Widget->Paint(Args.WithNewParent(this), PopupChild->Geometry, PresentingWindow->GetClippingRectangleInWindow(), OutDrawElements, LayerId + 1, bApplyWidgetStyleToMenu ? InWidgetStyle : FWidgetStyle(), ShouldBeEnabled(bParentEnabled));
 					}
 				}
 			}
@@ -297,12 +295,6 @@ FPopupMethodReply QueryPopupMethod(const FWidgetPath& PathToQuery)
 	return FPopupMethodReply::UseMethod(EPopupMethod::CreateNewWindow);
 }
 
-
-/**
- * Open or close the popup
- *
- * @param InIsOpen  If true, open the popup. Otherwise close it.
- */
 void SMenuAnchor::SetIsOpen( bool InIsOpen, const bool bFocusMenu, const int32 FocusUserIndex )
 {
 	// Prevent redundant opens/closes
@@ -373,7 +365,7 @@ void SMenuAnchor::SetIsOpen( bool InIsOpen, const bool bFocusMenu, const int32 F
 						if (MethodInUse.GetPopupMethod() == EPopupMethod::CreateNewWindow)
 						{
 							// Open the pop-up
-							TSharedPtr<IMenu> NewMenu = FSlateApplication::Get().PushMenu(AsShared(), MyWidgetPath, MenuContentRef, NewPosition, TransitionEffect, bFocusMenu, MyGeometry.GetDrawSize(), MethodInUse.GetPopupMethod(), bIsCollapsedByParent);
+							TSharedPtr<IMenu> NewMenu = FSlateApplication::Get().PushMenu(AsShared(), MyWidgetPath, MenuContentRef, NewPosition, TransitionEffect, bFocusMenu, MyGeometry.GetLocalSize(), MethodInUse.GetPopupMethod(), bIsCollapsedByParent);
 
 							PopupMenuPtr = NewMenu;
 							check(NewMenu.IsValid() && NewMenu->GetOwnedWindow().IsValid());
@@ -430,7 +422,11 @@ void SMenuAnchor::SetIsOpen( bool InIsOpen, const bool bFocusMenu, const int32 F
 							MenuContentRef->SlatePrepass(FSlateApplication::Get().GetApplicationScale());
 							// @todo slate: Doesn't take into account potential window border size
 							FVector2D ExpectedSize = MenuContentRef->GetDesiredSize();
-							const FVector2D ScreenPosition = FSlateApplication::Get().CalculatePopupWindowPosition(Anchor, ExpectedSize, Orientation);
+
+							// already handled
+							const bool bAutoAdjustForDPIScale = false;
+
+							const FVector2D ScreenPosition = FSlateApplication::Get().CalculatePopupWindowPosition(Anchor, ExpectedSize, bAutoAdjustForDPIScale, FVector2D::ZeroVector, Orientation);
 
 							// Release the mouse so that context can be properly restored upon closing menus.  See CL 1411833 before changing this.
 							if (bFocusMenu)

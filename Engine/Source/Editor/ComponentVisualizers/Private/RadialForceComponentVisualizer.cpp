@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "RadialForceComponentVisualizer.h"
 #include "SceneManagement.h"
@@ -11,7 +11,7 @@ void FRadialForceComponentVisualizer::DrawVisualization( const UActorComponent* 
 	const URadialForceComponent* ForceComp = Cast<const URadialForceComponent>(Component);
 	if(ForceComp != NULL)
 	{
-		FTransform TM = ForceComp->ComponentToWorld;
+		FTransform TM = ForceComp->GetComponentTransform();
 		TM.RemoveScaling();
 
 		// Draw light radius

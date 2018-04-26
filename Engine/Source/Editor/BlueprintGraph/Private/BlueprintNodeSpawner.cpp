@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BlueprintNodeSpawner.h"
 #include "EdGraph/EdGraph.h"
@@ -173,11 +173,6 @@ FBlueprintActionUiSpec const& UBlueprintNodeSpawner::PrimeDefaultUiSpec(UEdGraph
 		NodeTemplate = bTemplateNodeFetched ? NodeTemplate : GetTemplateNode(TargetGraph);
 		if (NodeTemplate != nullptr)
 		{
-			if (NodeClass == UK2Node_IfThenElse::StaticClass())
-			{
-				bool bIsAvail = true;
-				bIsAvail = false;
-			}
 			MenuSignature.Keywords = NodeTemplate->GetKeywords();
 		}
 		// if a target graph was provided, then we've done all we can to spawn a

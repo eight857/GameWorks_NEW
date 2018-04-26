@@ -1,6 +1,7 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
+#include "ILoginFlowModule.h"
 #include "ILoginFlowManager.h"
 #include "OnlineExternalUIInterface.h"
 
@@ -22,8 +23,9 @@ public:
 	~FLoginFlowManager();
 
 	//~ Begin ILoginFlowManager interface
-	virtual bool AddLoginFlow(FName OnlineIdentifier, const FOnDisplayPopup& InPopupDelegate) override;
+	virtual bool AddLoginFlow(FName OnlineIdentifier, const FOnDisplayPopup& InPopupDelegate, bool bPersistCookies) override;
 	virtual void CancelLoginFlow() override;
+	virtual void Reset() override;
 	//~ End ILoginFlowManager interface
 
 private:
@@ -39,6 +41,9 @@ private:
 	/** Finish login flow, notifying listeners */
 	void FinishLogin();
 
+	/** Delegate fired by online identity when a logout/cleanup is requested */
+	void OnLoginFlowLogout(const TArray<FString>& LoginDomains, FName OnlineIdentifier);
+
 private:
 
 	struct FOnlineParams
@@ -47,7 +52,12 @@ private:
 		FName OnlineIdentifier;
 		/** Single-cast delegate instance (bind to this to handle display) */
 		FOnDisplayPopup OnDisplayPopup;
+		/** Handle to bound login flow ui required delegate */
 		FDelegateHandle LoginFlowUIRequiredDelegateHandle;
+		/** Handle to bound login flow logout delegate */
+		FDelegateHandle LoginFlowLogoutDelegateHandle;
+		/** Optional browser context settings if bPersistCookies is false */
+		TSharedPtr<FBrowserContextSettings> BrowserContextSettings;
 	};
 
 	/** Mapping of online subsystem identifiers to the parameters they have setup for login flow */

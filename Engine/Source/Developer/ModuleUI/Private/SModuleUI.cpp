@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SModuleUI.h"
 #include "HAL/PlatformFilemanager.h"
@@ -186,8 +186,7 @@ void SModuleUI::UpdateModuleListItems()
 
 		FString ModuleNameStr = ModuleName.ToString();
 		FString FilterStr = ModuleNameSearchBox->GetText().ToString();
-		FilterStr.Trim();
-		FilterStr.TrimTrailing();
+		FilterStr.TrimStartAndEndInline();
 		if ( (!FilterStr.IsEmpty() && ModuleNameStr.Contains(FilterStr)) || 
 			  FilterStr.IsEmpty() )
 		{
@@ -285,8 +284,7 @@ FReply SModuleUI::FModuleListItem::OnRecompileClicked()
 		if( PackagesToRebind.Num() > 0 )
 		{
 			// Perform a hot reload
-			const bool bWaitForCompletion = true;			
-			ECompilationResult::Type Result = HotReloadSupport.RebindPackages(PackagesToRebind, TArray<FName>(), bWaitForCompletion, *GLog);
+			ECompilationResult::Type Result = HotReloadSupport.RebindPackages(PackagesToRebind, EHotReloadFlags::WaitForCompletion, *GLog);
 		}
 		else
 		{

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Abilities/Tasks/AbilityTask_WaitAbilityCommit.h"
 
@@ -13,7 +13,7 @@ UAbilityTask_WaitAbilityCommit::UAbilityTask_WaitAbilityCommit(const FObjectInit
 
 UAbilityTask_WaitAbilityCommit* UAbilityTask_WaitAbilityCommit::WaitForAbilityCommit(UGameplayAbility* OwningAbility, FGameplayTag InWithTag, FGameplayTag InWithoutTag, bool InTriggerOnce)
 {
-	auto MyObj = NewAbilityTask<UAbilityTask_WaitAbilityCommit>(OwningAbility);
+	UAbilityTask_WaitAbilityCommit* MyObj = NewAbilityTask<UAbilityTask_WaitAbilityCommit>(OwningAbility);
 	MyObj->WithTag = InWithTag;
 	MyObj->WithoutTag = InWithoutTag;
 	MyObj->TriggerOnce = InTriggerOnce;
@@ -21,11 +21,19 @@ UAbilityTask_WaitAbilityCommit* UAbilityTask_WaitAbilityCommit::WaitForAbilityCo
 	return MyObj;
 }
 
+UAbilityTask_WaitAbilityCommit* UAbilityTask_WaitAbilityCommit::WaitForAbilityCommit_Query(UGameplayAbility* OwningAbility, FGameplayTagQuery Query, bool InTriggerOnce)
+{
+	UAbilityTask_WaitAbilityCommit* MyObj = NewAbilityTask<UAbilityTask_WaitAbilityCommit>(OwningAbility);
+	MyObj->Query = Query;
+	MyObj->TriggerOnce = InTriggerOnce;
+	return MyObj;
+}
+
 void UAbilityTask_WaitAbilityCommit::Activate()
 {
 	if (AbilitySystemComponent)	
 	{		
-		OnAbilityCommitDelegateHandle = AbilitySystemComponent->AbilityCommitedCallbacks.AddUObject(this, &UAbilityTask_WaitAbilityCommit::OnAbilityCommit);
+		OnAbilityCommitDelegateHandle = AbilitySystemComponent->AbilityCommittedCallbacks.AddUObject(this, &UAbilityTask_WaitAbilityCommit::OnAbilityCommit);
 	}
 }
 
@@ -33,7 +41,7 @@ void UAbilityTask_WaitAbilityCommit::OnDestroy(bool AbilityEnded)
 {
 	if (AbilitySystemComponent)
 	{
-		AbilitySystemComponent->AbilityCommitedCallbacks.Remove(OnAbilityCommitDelegateHandle);
+		AbilitySystemComponent->AbilityCommittedCallbacks.Remove(OnAbilityCommitDelegateHandle);
 	}
 
 	Super::OnDestroy(AbilityEnded);
@@ -46,6 +54,15 @@ void UAbilityTask_WaitAbilityCommit::OnAbilityCommit(UGameplayAbility *Activated
 	{
 		// Failed tag check
 		return;
+	}
+
+	if (Query.IsEmpty() == false)
+	{
+		if (Query.Matches(ActivatedAbility->AbilityTags) == false)
+		{
+			// Failed query
+			return;
+		}
 	}
 
 	if (ShouldBroadcastAbilityTaskDelegates())

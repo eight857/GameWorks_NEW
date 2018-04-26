@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SCurveEditorViewport.h"
 #include "Widgets/SBoxPanel.h"
@@ -105,7 +105,7 @@ TSharedPtr<SScrollBar> SCurveEditorViewport::GetVerticalScrollBar() const
 void SCurveEditorViewport::Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime )
 {
 	// Check to see if we need to update the scrollbars due to a size change
-	const int32 CurrentHeight = AllottedGeometry.Size.Y;
+	const int32 CurrentHeight = AllottedGeometry.GetLocalSize().Y;
 	if (CurrentHeight != PrevViewportHeight)
 	{
 		PrevViewportHeight = CurrentHeight;

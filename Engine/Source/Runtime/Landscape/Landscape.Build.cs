@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;
@@ -26,6 +26,7 @@ public class Landscape : ModuleRules
 			new string[] {
 				"Core",
 				"CoreUObject",
+				"ApplicationCore",
 				"Engine",
 				"RenderCore", 
 				"RHI",
@@ -36,13 +37,12 @@ public class Landscape : ModuleRules
 		);
 
 		SetupModulePhysXAPEXSupport(Target);
-		if (UEBuildConfiguration.bCompilePhysX && (UEBuildConfiguration.bBuildEditor || UEBuildConfiguration.bRuntimePhysicsCooking))
+		if (Target.bCompilePhysX && Target.bBuildEditor)
 		{
-			DynamicallyLoadedModuleNames.Add("PhysXFormats");
-			PrivateIncludePathModuleNames.Add("PhysXFormats");
+			DynamicallyLoadedModuleNames.Add("PhysXCooking");
 		}
 
-		if (UEBuildConfiguration.bBuildDeveloperTools && Target.Type != TargetType.Server)
+		if (Target.bBuildDeveloperTools && Target.Type != TargetType.Server)
 		{
 			PrivateDependencyModuleNames.AddRange(
 				new string[] {
@@ -51,7 +51,7 @@ public class Landscape : ModuleRules
 			);
 		}
 
-		if (UEBuildConfiguration.bBuildEditor == true)
+		if (Target.bBuildEditor == true)
 		{
 			// TODO: Remove all landscape editing code from the Landscape module!!!
 			PrivateIncludePathModuleNames.Add("LandscapeEditor");

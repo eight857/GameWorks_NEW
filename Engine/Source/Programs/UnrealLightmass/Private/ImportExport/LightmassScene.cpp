@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "LightmassScene.h"
 #include "Importer.h"
@@ -19,6 +19,7 @@ FSceneFileHeader::FSceneFileHeader(const FSceneFileHeader& Other)
 	GeneralSettings = Other.GeneralSettings;
 	SceneConstants = Other.SceneConstants;
 	DynamicObjectSettings = Other.DynamicObjectSettings;
+	VolumetricLightmapSettings = Other.VolumetricLightmapSettings;
 	PrecomputedVisibilitySettings = Other.PrecomputedVisibilitySettings;
 	VolumeDistanceFieldSettings = Other.VolumeDistanceFieldSettings;
 	MeshAreaLightSettings = Other.MeshAreaLightSettings;
@@ -44,6 +45,7 @@ FSceneFileHeader::FSceneFileHeader(const FSceneFileHeader& Other)
 
 	NumImportanceVolumes = Other.NumImportanceVolumes;
 	NumCharacterIndirectDetailVolumes = Other.NumCharacterIndirectDetailVolumes;
+	NumVolumetricLightmapDensityVolumes = Other.NumVolumetricLightmapDensityVolumes;
 	NumDirectionalLights = Other.NumDirectionalLights;
 	NumPointLights = Other.NumPointLights;
 	NumSpotLights = Other.NumSpotLights;
@@ -57,6 +59,7 @@ FSceneFileHeader::FSceneFileHeader(const FSceneFileHeader& Other)
 	NumFluidSurfaceTextureMappings = Other.NumFluidSurfaceTextureMappings;
 	NumLandscapeTextureMappings = Other.NumLandscapeTextureMappings;
 	NumSpeedTreeMappings = Other.NumSpeedTreeMappings;
+	NumVolumeMappings = Other.NumVolumeMappings;
 	NumPortals = Other.NumPortals;
 }
 
@@ -178,6 +181,22 @@ void FScene::Import( FLightmassImporter& Importer )
 	Importer.ImportData(&NumCameraTrackPositions);
 	Importer.ImportArray(CameraTrackPositions, NumCameraTrackPositions);
 
+	for (int32 VolumeIndex = 0; VolumeIndex < NumVolumetricLightmapDensityVolumes; VolumeIndex++)
+	{
+		FVolumetricLightmapDensityVolumeData LMVolumeData;
+		Importer.ImportData(&LMVolumeData);
+		static_assert(sizeof(LMVolumeData) == 40, "Update member copy");
+
+		FVolumetricLightmapDensityVolume LMVolume;
+		LMVolume.Bounds = LMVolumeData.Bounds;
+		LMVolume.AllowedMipLevelRange = LMVolumeData.AllowedMipLevelRange;
+		LMVolume.NumPlanes = LMVolumeData.NumPlanes;
+		Importer.ImportArray(LMVolume.Planes, LMVolume.NumPlanes);
+		VolumetricLightmapDensityVolumes.Add(LMVolume);
+	}
+
+	Importer.ImportArray(VolumetricLightmapTaskGuids, NumVolumetricLightmapTasks);
+
 	Importer.ImportObjectArray( DirectionalLights, NumDirectionalLights, Importer.GetLights() );
 	Importer.ImportObjectArray( PointLights, NumPointLights, Importer.GetLights() );
 	Importer.ImportObjectArray( SpotLights, NumSpotLights, Importer.GetLights() );
@@ -190,11 +209,14 @@ void FScene::Import( FLightmassImporter& Importer )
 	Importer.ImportObjectArray( TextureLightingMappings, NumStaticMeshTextureMappings, Importer.GetTextureMappings() );
 	Importer.ImportObjectArray( FluidMappings, NumFluidSurfaceTextureMappings, Importer.GetFluidMappings() );
 	Importer.ImportObjectArray( LandscapeMappings, NumLandscapeTextureMappings, Importer.GetLandscapeMappings() );
-
+	Importer.ImportObjectArray( VolumeMappings, NumVolumeMappings, Importer.GetVolumeMappings() );
 
 	DebugMapping = FindMappingByGuid(DebugInput.MappingGuid);
 	if (DebugMapping)
 	{
+#if !ALLOW_LIGHTMAP_SAMPLE_DEBUGGING
+		checkf(false, TEXT("Texel Debugging active, but Lightmass was compiled with ALLOW_LIGHTMAP_SAMPLE_DEBUGGING == 0"));
+#endif
 		const FStaticLightingTextureMapping* TextureMapping = DebugMapping->GetTextureMapping();
 
 		// Verify debug input is valid, otherwise there will be an access violation later
@@ -350,6 +372,14 @@ const FStaticLightingMapping* FScene::FindMappingByGuid(FGuid FindGuid) const
 		}
 	}
 
+	for (int32 i = 0; i < VolumeMappings.Num(); i++)
+	{
+		if (VolumeMappings[i].Guid == FindGuid)
+		{
+			return &VolumeMappings[i];
+		}
+	}
+
 	return NULL;
 }
 
@@ -367,6 +397,21 @@ bool FScene::IsPointInImportanceVolume(const FVector4& Position, float Tolerance
 			return true;
 		}
 	}
+	return false;
+}
+
+bool FScene::IsBoxInImportanceVolume(const FBox& QueryBox) const
+{
+	for (int32 VolumeIndex = 0; VolumeIndex < ImportanceVolumes.Num(); VolumeIndex++)
+	{
+		FBox Volume = ImportanceVolumes[VolumeIndex];
+
+		if (Volume.Intersect(QueryBox))
+		{
+			return true;
+		}
+	}
+
 	return false;
 }
 
@@ -427,6 +472,33 @@ FBox FScene::GetVisibilityVolumeBounds() const
 	}
 }
 
+bool FScene::GetVolumetricLightmapAllowedMipRange(const FVector4& Position, FIntPoint& OutRange) const
+{
+	FIntPoint Range(INT_MAX, INT_MAX);
+
+	bool bVolumeFound = false;
+
+	for (int32 VolumeIndex = 0; VolumeIndex < VolumetricLightmapDensityVolumes.Num(); VolumeIndex++)
+	{
+		const FVolumetricLightmapDensityVolume& Volume = VolumetricLightmapDensityVolumes[VolumeIndex];
+		bool bInsideAllPlanes = true;
+		for (int32 PlaneIndex = 0; PlaneIndex < Volume.Planes.Num() && bInsideAllPlanes; PlaneIndex++)
+		{
+			const FPlane& Plane = Volume.Planes[PlaneIndex];
+			bInsideAllPlanes = bInsideAllPlanes && Plane.PlaneDot(Position) < 0.0f;
+		}
+		if (bInsideAllPlanes)
+		{
+			bVolumeFound = true;
+			Range.X = FMath::Min(Range.X, Volume.AllowedMipLevelRange.X);
+			Range.Y = FMath::Min(Range.Y, Volume.AllowedMipLevelRange.Y);
+		}
+	}
+
+	OutRange = Range;
+	return bVolumeFound;
+}
+
 /** Applies GeneralSettings.StaticLightingLevelScale to all scale dependent settings. */
 void FScene::ApplyStaticLightingScale()
 {
@@ -472,6 +544,7 @@ void FScene::ApplyStaticLightingScale()
 void FLight::Import( FLightmassImporter& Importer )
 {
 	Importer.ImportData( (FLightData*)this );
+	Importer.ImportArray( LightTextureProfileData, FLightData::LightProfileTextureDataSize );
 
 	// The read above stomps on CachedLightSurfaceSamples since that memory is padding in FLightData
 	FMemory::Memzero(&CachedLightSurfaceSamples, sizeof(CachedLightSurfaceSamples));
@@ -490,6 +563,12 @@ bool FLight::AffectsBounds(const FBoxSphereBounds& Bounds) const
 	return true;
 }
 
+FSphere FLight::GetBoundingSphere() const
+{
+	// Directional lights will have a radius of WORLD_MAX
+	return FSphere(FVector(0, 0, 0), (float)WORLD_MAX);
+}
+
 /**
  * Computes the intensity of the direct lighting from this light on a specific point.
  */
@@ -498,9 +577,7 @@ FLinearColor FLight::GetDirectIntensity(const FVector4& Point, bool bCalculateFo
 	// light profile (IES)
 	float LightProfileAttenuation;
 	{
-		FVector4 NegLightVector = (Position - Point).GetSafeNormal();
-
-		LightProfileAttenuation = ComputeLightProfileMultiplier(Dot3(NegLightVector, Direction));
+		LightProfileAttenuation = ComputeLightProfileMultiplier(LightTextureProfileData, Point, Position, Direction, GetLightTangent());
 	}
 
 	if (bCalculateForIndirectLighting)
@@ -966,9 +1043,6 @@ FLinearColor FPointLight::GetDirectIntensity(const FVector4& Point, bool bCalcul
 			DistanceAttenuation = 1.0f / ( DistanceSqr + 1.0f );
 		}
 
-		// lumens
-		DistanceAttenuation *= 16.0f;
-
 		float LightRadiusMask = FMath::Square(FMath::Max(0.0f, 1.0f - FMath::Square(DistanceSqr / (Radius * Radius))));
 		DistanceAttenuation *= LightRadiusMask;
 
@@ -983,7 +1057,7 @@ FLinearColor FPointLight::GetDirectIntensity(const FVector4& Point, bool bCalcul
 }
 
 /** Returns an intensity scale based on the receiving point. */
-float FPointLight::CustomAttenuation(const FVector4& Point, FLMRandomStream& RandomStream) const
+float FPointLight::CustomAttenuation(const FVector4& Point, FLMRandomStream& RandomStream, bool bMaintainEvenDensity) const
 {
 	// Remove the physical attenuation, then attenuation using Unreal point light radial falloff
 	const float PointDistanceSquared = (Position - Point).SizeSquared3();
@@ -993,7 +1067,7 @@ float FPointLight::CustomAttenuation(const FVector4& Point, FLMRandomStream& Ran
 	if( LightFlags & GI_LIGHT_INVERSE_SQUARED )
 	{
 		const float LightRadiusMask = FMath::Square( FMath::Max( 0.0f, 1.0f - FMath::Square( PointDistanceSquared / (Radius * Radius) ) ) );
-		UnrealAttenuation = 16.0f * PhysicalAttenuation * LightRadiusMask;
+		UnrealAttenuation = PhysicalAttenuation * LightRadiusMask;
 	}
 	else
 	{
@@ -1002,9 +1076,7 @@ float FPointLight::CustomAttenuation(const FVector4& Point, FLMRandomStream& Ran
 
 	// light profile (IES)
 	{
-		FVector4 NegLightVector = (Position - Point).GetSafeNormal();
-
-		UnrealAttenuation *= ComputeLightProfileMultiplier(Dot3(NegLightVector, Direction));
+		UnrealAttenuation *= ComputeLightProfileMultiplier(LightTextureProfileData, Point, Position, Direction, GetLightTangent());
 	}
 
 	// Thin out photons near the light source.
@@ -1013,7 +1085,9 @@ float FPointLight::CustomAttenuation(const FVector4& Point, FLMRandomStream& Ran
 	// If the photon map has a high density of low power photons near light sources,
 	// Combined with sparse, high power photons from other light sources (directional lights for example), the result will be very splotchy.
 	const float FullProbabilityDistance = .5f * Radius;
-	const float DepositProbability =  FMath::Clamp(PointDistanceSquared / (FullProbabilityDistance * FullProbabilityDistance), 0.0f, 1.0f);
+	const float DepositProbability = bMaintainEvenDensity ?
+		FMath::Clamp(PointDistanceSquared / (FullProbabilityDistance * FullProbabilityDistance), 0.0f, 1.0f) : 
+		1.0f;
 
 	if (RandomStream.GetFraction() < DepositProbability)
 	{
@@ -1027,7 +1101,7 @@ float FPointLight::CustomAttenuation(const FVector4& Point, FLMRandomStream& Ran
 }
 
 // Fudge factor to get point light photon intensities to match direct lighting more closely.
-static const float PointLightIntensityScale = 1.5f; 
+static const float PointLightIntensityScale = 1.0f; 
 
 /** Generates a direction sample from the light's domain */
 void FPointLight::SampleDirection(FLMRandomStream& RandomStream, FLightRay& SampleRay, FVector4& LightSourceNormal, FVector2D& LightSurfacePosition, float& RayPDF, FLinearColor& Power) const
@@ -1155,7 +1229,7 @@ float FPointLight::Power() const
 
 	if (LightFlags & GI_LIGHT_INVERSE_SQUARED)
 	{
-		IncidentPower = IncidentPower * 16 / (DistanceToEvaluate * DistanceToEvaluate);
+		IncidentPower = IncidentPower / (DistanceToEvaluate * DistanceToEvaluate);
 	}
 	else
 	{
@@ -1174,10 +1248,10 @@ FVector4 FPointLight::LightCenterPosition(const FVector4& ReceivingPosition, con
 	{
 		FVector4 ToLight = Position - ReceivingPosition;
 
-		FVector4 Dir = Direction;
-		if( Dot3( ReceivingNormal, Direction ) < 0.0f )
+		FVector4 Dir = GetLightTangent();
+		if( Dot3( ReceivingNormal, Dir ) < 0.0f )
 		{
-			Dir = -Direction;
+			Dir = -Dir;
 		}
 
 		// Clip to hemisphere
@@ -1234,6 +1308,11 @@ FVector4 FPointLight::GetDirectLightingDirection(const FVector4& Point, const FV
 	}
 }
 
+FVector FPointLight::GetLightTangent() const
+{
+	return LightTangent;
+}
+
 /** Generates a sample on the light's surface. */
 void FPointLight::SampleLightSurface(FLMRandomStream& RandomStream, FLightSurfaceSample& Sample) const
 {
@@ -1251,9 +1330,12 @@ void FPointLight::SampleLightSurface(FLMRandomStream& RandomStream, FLightSurfac
 	}
 	else
 	{
-		float CylinderSurfaceArea = 2.0f * (float)PI * LightSourceRadius * LightSourceLength;
-		float SphereSurfaceArea = 4.0f * (float)PI * LightSourceRadius * LightSourceRadius;
+		const float ClampedLightSourceRadius = FMath::Max(DELTA, LightSourceRadius);
+		float CylinderSurfaceArea = 2.0f * (float)PI * ClampedLightSourceRadius * LightSourceLength;
+		float SphereSurfaceArea = 4.0f * (float)PI * ClampedLightSourceRadius * ClampedLightSourceRadius;
 		float TotalSurfaceArea = CylinderSurfaceArea + SphereSurfaceArea;
+
+		const FVector TubeLightDirection = GetLightTangent();
 
 		// Cylinder End caps
 		// The chance of calculating a point on the end sphere is equal to it's percentage of total surface area
@@ -1262,15 +1344,15 @@ void FPointLight::SampleLightSurface(FLMRandomStream& RandomStream, FLightSurfac
 			// Generate a sample on the surface of the sphere with uniform density over the surface area of the sphere
 			//@todo - stratify
 			const FVector4 UnitSpherePosition = GetUnitVector(RandomStream);
-			Sample.Position = UnitSpherePosition * LightSourceRadius + Position;
+			Sample.Position = UnitSpherePosition * ClampedLightSourceRadius + Position;
 
-			if (Dot3(UnitSpherePosition, Direction) > 0)
+			if (Dot3(UnitSpherePosition, TubeLightDirection) > 0)
 			{
-				Sample.Position += Direction * (LightSourceLength * 0.5f);
+				Sample.Position += TubeLightDirection * (LightSourceLength * 0.5f);
 			}
 			else
 			{
-				Sample.Position += -Direction * (LightSourceLength * 0.5f);
+				Sample.Position += -TubeLightDirection * (LightSourceLength * 0.5f);
 			}
 
 			Sample.Normal = UnitSpherePosition;
@@ -1279,13 +1361,13 @@ void FPointLight::SampleLightSurface(FLMRandomStream& RandomStream, FLightSurfac
 		else
 		{
 			// Get point along center line
-			FVector4 CentreLinePosition = Position + Direction * LightSourceLength * (RandomStream.GetFraction() - 0.5f);
+			FVector4 CentreLinePosition = Position + TubeLightDirection * LightSourceLength * (RandomStream.GetFraction() - 0.5f);
 			// Get point radius away from center line at random angle
 			float Theta = 2.0f * (float)PI * RandomStream.GetFraction();
 			FVector4 CylEdgePos = FVector4(0, FMath::Cos(Theta), FMath::Sin(Theta), 1);
-			CylEdgePos = FRotationMatrix::MakeFromZ( Direction ).TransformVector( CylEdgePos );
+			CylEdgePos = FRotationMatrix::MakeFromZ( TubeLightDirection ).TransformVector( CylEdgePos );
 
-			Sample.Position = CylEdgePos * LightSourceRadius + CentreLinePosition;
+			Sample.Position = CylEdgePos * ClampedLightSourceRadius + CentreLinePosition;
 			Sample.Normal = CylEdgePos;
 		}
 
@@ -1302,6 +1384,18 @@ void FSpotLight::Import( FLightmassImporter& Importer )
 	FPointLight::Import( Importer );
 
 	Importer.ImportData( (FSpotLightData*)this );
+}
+
+void FSpotLight::Initialize(float InIndirectPhotonEmitConeAngle)
+{
+	FPointLight::Initialize(InIndirectPhotonEmitConeAngle);
+
+	float ClampedInnerConeAngle = FMath::Clamp(InnerConeAngle, 0.0f, 89.0f) * (float)PI / 180.0f;
+	float ClampedOuterConeAngle = FMath::Clamp(OuterConeAngle * (float)PI / 180.0f,ClampedInnerConeAngle + 0.001f,89.0f * (float)PI / 180.0f + 0.001f);
+
+	SinOuterConeAngle = FMath::Sin(ClampedOuterConeAngle),
+	CosOuterConeAngle = FMath::Cos(ClampedOuterConeAngle);
+	CosInnerConeAngle = FMath::Cos(ClampedInnerConeAngle);
 }
 
 /**
@@ -1323,22 +1417,18 @@ bool FSpotLight::AffectsBounds(const FBoxSphereBounds& Bounds) const
 	}
 
 	// Cone check
-	float	ClampedInnerConeAngle = FMath::Clamp(InnerConeAngle,0.0f,89.0f) * (float)PI / 180.0f,
-			ClampedOuterConeAngle = FMath::Clamp(OuterConeAngle * (float)PI / 180.0f,ClampedInnerConeAngle + 0.001f,89.0f * (float)PI / 180.0f + 0.001f);
 
-	float	Sin = FMath::Sin(ClampedOuterConeAngle),
-			Cos = FMath::Cos(ClampedOuterConeAngle);
 
-	FVector4	U = Position - (Bounds.SphereRadius / Sin) * Direction,
+	FVector4	U = Position - (Bounds.SphereRadius / SinOuterConeAngle) * Direction,
 				D = Bounds.Origin - U;
 	float	dsqr = Dot3(D, D),
 			E = Dot3(Direction, D);
-	if(E > 0.0f && E * E >= dsqr * FMath::Square(Cos))
+	if(E > 0.0f && E * E >= dsqr * FMath::Square(CosOuterConeAngle))
 	{
 		D = Bounds.Origin - Position;
 		dsqr = Dot3(D, D);
 		E = -Dot3(Direction, D);
-		if(E > 0.0f && E * E >= dsqr * FMath::Square(Sin))
+		if(E > 0.0f && E * E >= dsqr * FMath::Square(SinOuterConeAngle))
 			return dsqr <= FMath::Square(Bounds.SphereRadius);
 		else
 			return true;
@@ -1347,18 +1437,20 @@ bool FSpotLight::AffectsBounds(const FBoxSphereBounds& Bounds) const
 	return false;
 }
 
+FSphere FSpotLight::GetBoundingSphere() const
+{
+	// Use the law of cosines to find the distance to the furthest edge of the spotlight cone from a position that is halfway down the spotlight direction
+	const float BoundsRadius = FMath::Sqrt(1.25f * Radius * Radius - Radius * Radius * CosOuterConeAngle);
+	return FSphere(Position + .5f * Direction * Radius, BoundsRadius);
+}
+
 /**
  * Computes the intensity of the direct lighting from this light on a specific point.
  */
 FLinearColor FSpotLight::GetDirectIntensity(const FVector4& Point, bool bCalculateForIndirectLighting) const
 {
-	float	ClampedInnerConeAngle = FMath::Clamp(InnerConeAngle,0.0f,89.0f) * (float)PI / 180.0f,
-			ClampedOuterConeAngle = FMath::Clamp(OuterConeAngle * (float)PI / 180.0f,ClampedInnerConeAngle + 0.001f,89.0f * (float)PI / 180.0f + 0.001f),
-			OuterCone = FMath::Cos(ClampedOuterConeAngle),
-			InnerCone = FMath::Cos(ClampedInnerConeAngle);
-
 	FVector4 LightVector = (Point - Position).GetSafeNormal();
-	float SpotAttenuation = FMath::Square(FMath::Clamp<float>((Dot3(LightVector, Direction) - OuterCone) / (InnerCone - OuterCone),0.0f,1.0f));
+	float SpotAttenuation = FMath::Square(FMath::Clamp<float>((Dot3(LightVector, Direction) - CosOuterConeAngle) / (CosInnerConeAngle - CosOuterConeAngle),0.0f,1.0f));
 
 	if( LightFlags & GI_LIGHT_INVERSE_SQUARED )
 	{
@@ -1383,9 +1475,6 @@ FLinearColor FSpotLight::GetDirectIntensity(const FVector4& Point, bool bCalcula
 			DistanceAttenuation = 1.0f / ( DistanceSqr + 1.0f );
 		}
 
-		// lumens
-		DistanceAttenuation *= 16.0f;
-
 		float LightRadiusMask = FMath::Square( FMath::Max( 0.0f, 1.0f - FMath::Square( DistanceSqr / (Radius * Radius) ) ) );
 		DistanceAttenuation *= LightRadiusMask;
 
@@ -1403,7 +1492,7 @@ FLinearColor FSpotLight::GetDirectIntensity(const FVector4& Point, bool bCalcula
 int32 FSpotLight::GetNumDirectPhotons(float DirectPhotonDensity) const
 {
 	const float InfluenceSphereSurfaceAreaMillions = 4.0f * (float)PI * FMath::Square(Radius) / 1000000.0f;
-	const float ConeSolidAngle = 2.0f * float(PI) * (1.0f - FMath::Cos(OuterConeAngle * (float)PI / 180.0f));
+	const float ConeSolidAngle = 2.0f * float(PI) * (1.0f - CosOuterConeAngle);
 	// Find the fraction of the sphere's surface area that is inside the cone
 	const float ConeSurfaceAreaSphereFraction = ConeSolidAngle / (4.0f * (float)PI);
 	// Gather enough photons to meet DirectPhotonDensity on the spherical cap at the influence radius of the spot light.
@@ -1418,7 +1507,6 @@ void FSpotLight::SampleDirection(FLMRandomStream& RandomStream, FLightRay& Sampl
 	FVector4 YAxis(0,0,0);
 	GenerateCoordinateSystem(Direction, XAxis, YAxis);
 
-	const float CosOuterConeAngle = FMath::Cos(OuterConeAngle * (float)PI / 180.0f);
 	//@todo - the PDF should be affected by inner cone angle too
 	const FVector4 ConeSampleDirection = UniformSampleCone(RandomStream, CosOuterConeAngle, XAxis, YAxis, Direction);
 
@@ -1437,6 +1525,19 @@ void FSpotLight::SampleDirection(FLMRandomStream& RandomStream, FLightRay& Sampl
 	Power = IndirectColor * Brightness * PointLightIntensityScale;
 }
 
+/** Generates a direction sample from the light based on the given rays */
+void FSpotLight::SampleDirection(
+	const TArray<FIndirectPathRay>& IndirectPathRays, 
+	FLMRandomStream& RandomStream, 
+	FLightRay& SampleRay, 
+	float& RayPDF, 
+	FLinearColor& Power) const
+{
+	FVector4 Unused;
+	FVector2D Unused2;
+	FSpotLight::SampleDirection(RandomStream, SampleRay, Unused, Unused2, RayPDF, Power);
+}
+
 //----------------------------------------------------------------------------
 //	Sky light class
 //----------------------------------------------------------------------------
@@ -1445,6 +1546,304 @@ void FSkyLight::Import( FLightmassImporter& Importer )
 	FLight::Import( Importer );
 
 	Importer.ImportData( (FSkyLightData*)this );
+
+	TArray<FFloat16Color> RadianceEnvironmentMap;
+	Importer.ImportArray(RadianceEnvironmentMap, RadianceEnvironmentMapDataSize);
+
+	CubemapSize = FMath::Sqrt(RadianceEnvironmentMapDataSize / 6);
+	NumMips = FMath::CeilLogTwo(CubemapSize) + 1;
+
+	check(FMath::IsPowerOfTwo(CubemapSize));
+	check(NumMips > 0);
+	check(RadianceEnvironmentMapDataSize == CubemapSize * CubemapSize * 6);
+
+	if (bUseFilteredCubemap && CubemapSize > 0)
+	{
+		const double StartTime = FPlatformTime::Seconds();
+
+		PrefilteredRadiance.Empty(NumMips);
+		PrefilteredRadiance.AddZeroed(NumMips);
+
+		PrefilteredRadiance[0].Empty(CubemapSize * CubemapSize * 6);
+		PrefilteredRadiance[0].AddZeroed(CubemapSize * CubemapSize * 6);
+
+		for (int32 TexelIndex = 0; TexelIndex < CubemapSize * CubemapSize * 6; TexelIndex++)
+		{
+			FLinearColor Lighting = FLinearColor(RadianceEnvironmentMap[TexelIndex]);
+			PrefilteredRadiance[0][TexelIndex] = Lighting;
+		}
+
+		FIntPoint SubCellOffsets[4] =
+		{
+			FIntPoint(0, 0),
+			FIntPoint(1, 0),
+			FIntPoint(0, 1),
+			FIntPoint(1, 1)
+		};
+
+		const float SubCellWeight = 1.0f / (float)ARRAY_COUNT(SubCellOffsets);
+
+		for (int32 MipIndex = 1; MipIndex < NumMips; MipIndex++)
+		{
+			const int32 MipSize = 1 << (NumMips - MipIndex - 1);
+			const int32 ParentMipSize = MipSize * 2;
+			const int32 CubeFaceSize = MipSize * MipSize;
+
+			PrefilteredRadiance[MipIndex].Empty(CubeFaceSize * 6);
+			PrefilteredRadiance[MipIndex].AddZeroed(CubeFaceSize * 6);
+
+			for (int32 FaceIndex = 0; FaceIndex < 6; FaceIndex++)
+			{
+				for (int32 Y = 0; Y < MipSize; Y++)
+				{
+					for (int32 X = 0; X < MipSize; X++)
+					{
+						FLinearColor FilteredValue(0, 0, 0, 0);
+
+						for (int32 OffsetIndex = 0; OffsetIndex < ARRAY_COUNT(SubCellOffsets); OffsetIndex++)
+						{
+							FIntPoint ParentOffset = FIntPoint(X, Y) * 2 + SubCellOffsets[OffsetIndex];
+							int32 ParentTexelIndex = FaceIndex * ParentMipSize * ParentMipSize + ParentOffset.Y * ParentMipSize + ParentOffset.X;
+							FLinearColor ParentLighting = PrefilteredRadiance[MipIndex - 1][ParentTexelIndex];
+							FilteredValue += ParentLighting;
+						}
+					
+						FilteredValue *= SubCellWeight;
+
+						PrefilteredRadiance[MipIndex][FaceIndex * CubeFaceSize + Y * MipSize + X] = FilteredValue;
+					}
+				}
+			}
+		}
+
+		ComputePrefilteredVariance();
+
+		const double EndTime = FPlatformTime::Seconds();
+		UE_LOG(LogLightmass, Log, TEXT("Skylight import processing %.3fs with CubemapSize %u"), (float)(EndTime - StartTime), CubemapSize);
+	}
+}
+
+void FSkyLight::ComputePrefilteredVariance()
+{
+	PrefilteredVariance.Empty(NumMips);
+	PrefilteredVariance.AddZeroed(NumMips);
+	
+	TArray<float> TempMaxVariance;
+	TempMaxVariance.Empty(NumMips);
+	TempMaxVariance.AddZeroed(NumMips);
+
+	for (int32 MipIndex = 0; MipIndex < NumMips; MipIndex++)
+	{
+		const int32 MipSize = 1 << (NumMips - MipIndex - 1);
+		const int32 CubeFaceSize = MipSize * MipSize;
+		const int32 BaseMipTexelSize = CubemapSize / MipSize;
+		const float NormalizeFactor = 1.0f / FMath::Max(BaseMipTexelSize * BaseMipTexelSize - 1, 1);
+
+		PrefilteredVariance[MipIndex].Empty(CubeFaceSize * 6);
+		PrefilteredVariance[MipIndex].AddZeroed(CubeFaceSize * 6);
+
+		for (int32 FaceIndex = 0; FaceIndex < 6; FaceIndex++)
+		{
+			for (int32 Y = 0; Y < MipSize; Y++)
+			{
+				for (int32 X = 0; X < MipSize; X++)
+				{
+					int32 TexelIndex = FaceIndex * CubeFaceSize + Y * MipSize + X;
+
+					float Mean = PrefilteredRadiance[MipIndex][TexelIndex].GetLuminance();
+
+					int32 BaseTexelOffset = FaceIndex * CubemapSize * CubemapSize + X * BaseMipTexelSize + Y * BaseMipTexelSize * CubemapSize;
+					float SumOfSquares = 0;
+
+					//@todo - implement in terms of the previous mip level, not the bottom mip level
+					for (int32 BaseY = 0; BaseY < BaseMipTexelSize; BaseY++)
+					{
+						for (int32 BaseX = 0; BaseX < BaseMipTexelSize; BaseX++)
+						{
+							int32 BaseTexelIndex = BaseTexelOffset + BaseY * CubemapSize + BaseX;
+							float BaseValue = PrefilteredRadiance[0][BaseTexelIndex].GetLuminance();
+
+							SumOfSquares += (BaseValue - Mean) * (BaseValue - Mean);
+						}
+					}
+
+					PrefilteredVariance[MipIndex][TexelIndex] = SumOfSquares * NormalizeFactor;
+					TempMaxVariance[MipIndex] = FMath::Max(TempMaxVariance[MipIndex], SumOfSquares * NormalizeFactor);
+				}
+			}
+		}
+	}
+}
+
+FLinearColor FSkyLight::SampleRadianceCubemap(float Mip, int32 CubeFaceIndex, FVector2D FaceUV) const
+{
+	checkSlow(bUseFilteredCubemap);
+	FLinearColor HighMipRadiance;
+	{
+		const int32 MipIndex = FMath::CeilToInt(Mip);
+		const int32 MipSize = 1 << (NumMips - MipIndex - 1);
+		const int32 CubeFaceSize = MipSize * MipSize;
+		FIntPoint FaceCoordinate(FaceUV.X * MipSize, FaceUV.Y * MipSize);
+		check(FaceCoordinate.X >= 0 && FaceCoordinate.X < MipSize);
+		check(FaceCoordinate.Y >= 0 && FaceCoordinate.Y < MipSize);
+		HighMipRadiance = PrefilteredRadiance[MipIndex][CubeFaceIndex * CubeFaceSize + FaceCoordinate.Y * MipSize + FaceCoordinate.X];
+	}
+
+	FLinearColor LowMipRadiance;
+	{
+		const int32 MipIndex = FMath::FloorToInt(Mip);
+		const int32 MipSize = 1 << (NumMips - MipIndex - 1);
+		const int32 CubeFaceSize = MipSize * MipSize;
+		FIntPoint FaceCoordinate(FaceUV.X * MipSize, FaceUV.Y * MipSize);
+		check(FaceCoordinate.X >= 0 && FaceCoordinate.X < MipSize);
+		check(FaceCoordinate.Y >= 0 && FaceCoordinate.Y < MipSize);
+		LowMipRadiance = PrefilteredRadiance[MipIndex][CubeFaceIndex * CubeFaceSize + FaceCoordinate.Y * MipSize + FaceCoordinate.X];
+	}
+
+	return FMath::Lerp(LowMipRadiance, HighMipRadiance, FMath::Fractional(Mip));
+}
+
+float FSkyLight::SampleVarianceCubemap(float Mip, int32 CubeFaceIndex, FVector2D FaceUV) const
+{
+	checkSlow(bUseFilteredCubemap);
+	float HighMipVariance;
+	{
+		const int32 MipIndex = FMath::CeilToInt(Mip);
+		const int32 MipSize = 1 << (NumMips - MipIndex - 1);
+		const int32 CubeFaceSize = MipSize * MipSize;
+		FIntPoint FaceCoordinate(FaceUV.X * MipSize, FaceUV.Y * MipSize);
+		check(FaceCoordinate.X >= 0 && FaceCoordinate.X < MipSize);
+		check(FaceCoordinate.Y >= 0 && FaceCoordinate.Y < MipSize);
+		HighMipVariance = PrefilteredVariance[MipIndex][CubeFaceIndex * CubeFaceSize + FaceCoordinate.Y * MipSize + FaceCoordinate.X];
+	}
+
+	float LowMipVariance;
+
+	{
+		const int32 MipIndex = FMath::FloorToInt(Mip);
+		const int32 MipSize = 1 << (NumMips - MipIndex - 1);
+		const int32 CubeFaceSize = MipSize * MipSize;
+		FIntPoint FaceCoordinate(FaceUV.X * MipSize, FaceUV.Y * MipSize);
+		check(FaceCoordinate.X >= 0 && FaceCoordinate.X < MipSize);
+		check(FaceCoordinate.Y >= 0 && FaceCoordinate.Y < MipSize);
+		LowMipVariance = PrefilteredVariance[MipIndex][CubeFaceIndex * CubeFaceSize + FaceCoordinate.Y * MipSize + FaceCoordinate.X];
+	}
+
+	return FMath::Lerp(LowMipVariance, HighMipVariance, FMath::Fractional(Mip));
+}
+
+void GetCubeFaceAndUVFromDirection(const FVector4& IncomingDirection, int32& CubeFaceIndex, FVector2D& FaceUVs)
+{
+	FVector AbsIncomingDirection(FMath::Abs(IncomingDirection.X), FMath::Abs(IncomingDirection.Y), FMath::Abs(IncomingDirection.Z));
+
+	int32 LargestChannelIndex = 0;
+
+	if (AbsIncomingDirection.Y > AbsIncomingDirection.X)
+	{
+		LargestChannelIndex = 1;
+	}
+
+	if (AbsIncomingDirection.Z > AbsIncomingDirection.Y && AbsIncomingDirection.Z > AbsIncomingDirection.X)
+	{
+		LargestChannelIndex = 2;
+	}
+
+	CubeFaceIndex = LargestChannelIndex * 2 + (IncomingDirection[LargestChannelIndex] < 0 ? 1 : 0);
+
+	if (CubeFaceIndex == 0)
+	{
+		FaceUVs = FVector2D(-IncomingDirection.Z, -IncomingDirection.Y);
+		//CubeCoordinates = float3(1, -ScaledUVs.y, -ScaledUVs.x);
+	}
+	else if (CubeFaceIndex == 1)
+	{
+		FaceUVs = FVector2D(IncomingDirection.Z, -IncomingDirection.Y);
+		//CubeCoordinates = float3(-1, -ScaledUVs.y, ScaledUVs.x);
+	}
+	else if (CubeFaceIndex == 2)
+	{
+		FaceUVs = FVector2D(IncomingDirection.X, IncomingDirection.Z);
+		//CubeCoordinates = float3(ScaledUVs.x, 1, ScaledUVs.y);
+	}
+	else if (CubeFaceIndex == 3)
+	{
+		FaceUVs = FVector2D(IncomingDirection.X, -IncomingDirection.Z);
+		//CubeCoordinates = float3(ScaledUVs.x, -1, -ScaledUVs.y);
+	}
+	else if (CubeFaceIndex == 4)
+	{
+		FaceUVs = FVector2D(IncomingDirection.X, -IncomingDirection.Y);
+		//CubeCoordinates = float3(ScaledUVs.x, -ScaledUVs.y, 1);
+	}
+	else
+	{
+		FaceUVs = FVector2D(-IncomingDirection.X, -IncomingDirection.Y);
+		//CubeCoordinates = float3(-ScaledUVs.x, -ScaledUVs.y, -1);
+	}
+
+	FaceUVs = FaceUVs / AbsIncomingDirection[LargestChannelIndex] * .5f + .5f;
+
+	// When exactly on the edge of two faces, snap to the nearest addressable texel
+	FaceUVs.X = FMath::Min(FaceUVs.X, .999f);
+	FaceUVs.Y = FMath::Min(FaceUVs.Y, .999f);
+}
+
+float FSkyLight::GetMipIndexForSolidAngle(float SolidAngle) const
+{
+	//@todo - corners of the cube should use a different mip
+	const float AverageTexelSolidAngle = 4 * PI / (6 * CubemapSize * CubemapSize) * 2;
+	float Mip = 0.5 * FMath::Log2(SolidAngle / AverageTexelSolidAngle);
+	return FMath::Clamp<float>(Mip, 0.0f, NumMips - 1);
+}
+
+FLinearColor FSkyLight::GetPathLighting(const FVector4& IncomingDirection, float PathSolidAngle, bool bCalculateForIndirectLighting) const
+{
+	if (CubemapSize == 0)
+	{
+		return FLinearColor::Black;
+	}
+
+	FLinearColor Lighting = FLinearColor::Black;
+
+	if (bUseFilteredCubemap)
+	{
+		int32 CubeFaceIndex;
+		FVector2D FaceUVs;
+		GetCubeFaceAndUVFromDirection(IncomingDirection, CubeFaceIndex, FaceUVs);
+
+		const float MipIndex = GetMipIndexForSolidAngle(PathSolidAngle);
+
+		Lighting = SampleRadianceCubemap(MipIndex, CubeFaceIndex, FaceUVs);
+	}
+	else
+	{
+		FSHVector3 SH = FSHVector3::SHBasisFunction(IncomingDirection);
+		Lighting = Dot(IrradianceEnvironmentMap, SH);
+	}
+
+	const float LightingScale = bCalculateForIndirectLighting ? IndirectLightingScale : 1.0f;
+	Lighting = (Lighting * Brightness * LightingScale) * FLinearColor(Color);
+
+	Lighting.R = FMath::Max(Lighting.R, 0.0f);
+	Lighting.G = FMath::Max(Lighting.G, 0.0f);
+	Lighting.B = FMath::Max(Lighting.B, 0.0f);
+
+	return Lighting;
+}
+
+float FSkyLight::GetPathVariance(const FVector4& IncomingDirection, float PathSolidAngle) const
+{
+	if (CubemapSize == 0 || !bUseFilteredCubemap)
+	{
+		return 0;
+	}
+
+	int32 CubeFaceIndex;
+	FVector2D FaceUVs;
+	GetCubeFaceAndUVFromDirection(IncomingDirection, CubeFaceIndex, FaceUVs);
+
+	const float MipIndex = GetMipIndexForSolidAngle(PathSolidAngle);
+	return SampleVarianceCubemap(MipIndex, CubeFaceIndex, FaceUVs);
 }
 
 void FMeshLightPrimitive::AddSubPrimitive(const FTexelToCorners& TexelToCorners, const FIntPoint& Coordinates, const FLinearColor& InTexelPower, float NormalOffset)
@@ -1649,7 +2048,7 @@ FLinearColor FMeshAreaLight::GetDirectIntensity(const FVector4& Point, bool bCal
 }
 
 /** Returns an intensity scale based on the receiving point. */
-float FMeshAreaLight::CustomAttenuation(const FVector4& Point, FLMRandomStream& RandomStream) const
+float FMeshAreaLight::CustomAttenuation(const FVector4& Point, FLMRandomStream& RandomStream, bool bMaintainEvenDensity) const
 {
 	const float FullProbabilityDistance = .5f * InfluenceRadius;
 	float PowerWeightedAttenuation = 0.0f;
@@ -1678,6 +2077,12 @@ float FMeshAreaLight::CustomAttenuation(const FVector4& Point, FLMRandomStream& 
 	}
 
 	DepositProbability = FMath::Clamp(DepositProbability, 0.0f, 1.0f);
+
+	if (!bMaintainEvenDensity)
+	{
+		DepositProbability = 1.0f;
+	}
+
 	// Thin out photons near the light source.
 	// This is partly an optimization since the photon density near light sources doesn't need to be high, and the natural 1 / R^2 density is overkill, 
 	// But this also improves quality since we are doing a nearest N photon neighbor search when calculating irradiance.  

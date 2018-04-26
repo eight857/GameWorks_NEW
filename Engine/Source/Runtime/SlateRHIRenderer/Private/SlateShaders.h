@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -42,20 +42,32 @@ public:
 	virtual void InitRHI() override;
 };
 
+class FSlateMaskingVertexDeclaration : public FRenderResource
+{
+public:
+	FVertexDeclarationRHIRef VertexDeclarationRHI;
+
+	virtual ~FSlateMaskingVertexDeclaration() {}
+
+	/** Initializes the vertex declaration RHI resource */
+	virtual void InitRHI() override;
+
+	/** Releases the vertex declaration RHI resource */
+	virtual void ReleaseRHI() override;
+};
+
 /** The slate Vertex shader representation */
 class FSlateElementVS : public FGlobalShader
 {
 	DECLARE_SHADER_TYPE(FSlateElementVS, Global);
 public:
 	/** Indicates that this shader should be cached */
-	static bool ShouldCache( EShaderPlatform Platform ) { return true; }
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) { return true; }
 
 	/** Constructor.  Binds all parameters used by the shader */
 	FSlateElementVS( const ShaderMetaType::CompiledShaderInitializerType& Initializer );
 
 	FSlateElementVS() {}
-
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment);
 
 	/** 
 	 * Sets the view projection parameter
@@ -95,7 +107,7 @@ class FSlateElementPS : public FGlobalShader
 {	
 public:
 	/** Indicates that this shader should be cached */
-	static bool ShouldCache( EShaderPlatform Platform ) 
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) 
 	{ 
 		return true; 
 	}
@@ -115,7 +127,7 @@ public:
 		InvertAlpha.Bind(Initializer.ParameterMap, TEXT("InvertAlpha"));
 	}
 
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment);
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment);
 
 	/**
 	 * Sets the texture used by this shader 
@@ -202,7 +214,7 @@ public:
 	/**
 	 * Modifies the compilation of this shader
 	 */
-	static void ModifyCompilationEnvironment(EShaderPlatform Platform, FShaderCompilerEnvironment& OutEnvironment)
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		// Set defines based on what this shader will be used for
 		OutEnvironment.SetDefine(TEXT("SHADER_TYPE"), (uint32)ShaderType);
@@ -211,7 +223,7 @@ public:
 		OutEnvironment.SetDefine(TEXT("COLOR_VISION_DEFICIENCY_TYPE"), GSlateShaderColorVisionDeficiencyType);
 		OutEnvironment.SetDefine(TEXT("USE_MATERIALS"), (uint32)0);
 
-		FSlateElementPS::ModifyCompilationEnvironment( Platform, OutEnvironment );
+		FSlateElementPS::ModifyCompilationEnvironment( Parameters, OutEnvironment );
 	}
 
 	/** Serializes the shader data */
@@ -231,7 +243,7 @@ class FSlateDebugOverdrawPS : public FSlateElementPS
 	DECLARE_SHADER_TYPE( FSlateDebugOverdrawPS, Global );
 public:
 	/** Indicates that this shader should be cached */
-	static bool ShouldCache( EShaderPlatform Platform ) 
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) 
 	{ 
 		return true; 
 	}
@@ -254,6 +266,53 @@ public:
 private:
 };
 
+/** 
+ * Pixel shader for debugging Slate overdraw
+ */
+class FSlateDebugBatchingPS : public FSlateElementPS
+{	
+	DECLARE_SHADER_TYPE(FSlateDebugBatchingPS, Global );
+public:
+	/** Indicates that this shader should be cached */
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) 
+	{ 
+		return true; 
+	}
+
+	FSlateDebugBatchingPS()
+	{
+	}
+
+	/** Constructor.  Binds all parameters used by the shader */
+	FSlateDebugBatchingPS( const ShaderMetaType::CompiledShaderInitializerType& Initializer )
+		: FSlateElementPS( Initializer )
+	{
+		BatchColor.Bind(Initializer.ParameterMap, TEXT("BatchColor"));
+	}
+
+	/**
+	* Sets shader params used by the shader
+	*
+	* @param InShaderParams Shader params to use
+	*/
+	void SetBatchColor(FRHICommandList& RHICmdList, const FLinearColor& InBatchColor)
+	{
+		SetShaderValue(RHICmdList, GetPixelShader(), BatchColor, InBatchColor);
+	}
+
+	virtual bool Serialize( FArchive& Ar ) override
+	{
+		bool bShaderHasOutdatedParameters = FSlateElementPS::Serialize( Ar );
+
+		Ar << BatchColor;
+
+		return bShaderHasOutdatedParameters;
+	}
+
+private:
+	FShaderParameter BatchColor;
+};
+
 const int32 MAX_BLUR_SAMPLES = 127;
 
 class FSlatePostProcessBlurPS : public FSlateElementPS
@@ -261,7 +320,7 @@ class FSlatePostProcessBlurPS : public FSlateElementPS
 	DECLARE_SHADER_TYPE(FSlatePostProcessBlurPS, Global);
 public:
 	/** Indicates that this shader should be cached */
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		return true;
 	}
@@ -319,7 +378,7 @@ class FSlatePostProcessDownsamplePS : public FSlateElementPS
 	DECLARE_SHADER_TYPE(FSlatePostProcessDownsamplePS, Global);
 public:
 	/** Indicates that this shader should be cached */
-	static bool ShouldCache(EShaderPlatform Platform)
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		return true;
 	}
@@ -350,8 +409,78 @@ private:
 };
 
 
+
+class FSlateMaskingVS : public FGlobalShader
+{
+	DECLARE_SHADER_TYPE(FSlateMaskingVS, Global);
+public:
+	/** Indicates that this shader should be cached */
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return true;
+	}
+
+	FSlateMaskingVS()
+	{
+	}
+
+	/** Constructor.  Binds all parameters used by the shader */
+	FSlateMaskingVS(const ShaderMetaType::CompiledShaderInitializerType& Initializer);
+
+	/**
+	* Sets the view projection parameter
+	*
+	* @param InViewProjection	The ViewProjection matrix to use when this shader is bound
+	*/
+	void SetViewProjection(FRHICommandList& RHICmdList, const FMatrix& InViewProjection);
+
+	/**
+	 * Sets the vertical axis multiplier to use depending on graphics api
+	 */
+	void SetVerticalAxisMultiplier(FRHICommandList& RHICmdList, float InMultiplier);
+
+	virtual bool Serialize(FArchive& Ar) override;
+
+private:
+
+	/** ViewProjection parameter used by the shader */
+	FShaderParameter ViewProjection;
+	/** Parameter used to determine if we need to swtich the vertical axis for opengl */
+	FShaderParameter SwitchVerticalAxisMultiplier;
+};
+
+class FSlateMaskingPS : public FGlobalShader
+{
+	DECLARE_SHADER_TYPE(FSlateMaskingPS, Global);
+public:
+	/** Indicates that this shader should be cached */
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return true;
+	}
+
+	FSlateMaskingPS()
+	{
+	}
+
+	/** Constructor.  Binds all parameters used by the shader */
+	FSlateMaskingPS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+		: FGlobalShader(Initializer)
+	{
+	}
+
+	virtual bool Serialize(FArchive& Ar) override
+	{
+		return FGlobalShader::Serialize(Ar);
+	}
+};
+
+
 /** The simple element vertex declaration. */
 extern TGlobalResource<FSlateVertexDeclaration> GSlateVertexDeclaration;
 
 /** The instanced simple element vertex declaration. */
 extern TGlobalResource<FSlateInstancedVertexDeclaration> GSlateInstancedVertexDeclaration;
+
+/** The vertex declaration for rendering stencil masks. */
+extern TGlobalResource<FSlateMaskingVertexDeclaration> GSlateMaskingVertexDeclaration;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -17,7 +17,8 @@ namespace UnrealBuildTool.Rules
 			PrivateDependencyModuleNames.AddRange(
 				new string[]
 				{
-					"AutomationMessages",
+                    "AssetRegistry",
+                    "AutomationMessages",
 					"UnrealEdMessages",
                     "MessageLog",
                     "Json",
@@ -28,7 +29,7 @@ namespace UnrealBuildTool.Rules
                 }
 			);
 
-            if (UEBuildConfiguration.bBuildEditor)
+            if (Target.bBuildEditor)
             {
                 PrivateDependencyModuleNames.AddRange(
                     new string[] {
@@ -41,7 +42,7 @@ namespace UnrealBuildTool.Rules
             PrivateIncludePathModuleNames.AddRange(
 				new string[]
 				{
-					"Messaging",
+					"MessagingCommon",
 				}
 			);
 

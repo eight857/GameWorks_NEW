@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "HAL/FileManager.h"
@@ -238,7 +238,7 @@ void FMapPerformanceInEditor::GetTests(TArray<FString>& OutBeautifiedNames, TArr
 
 	for ( const FEditorMapPerformanceTestDefinition& PerfDefinition : AutomationTestSettings->EditorPerformanceTestMaps )
 	{
-		const FStringAssetReference& PerfMap = PerfDefinition.PerformanceTestmap;
+		const FSoftObjectPath& PerfMap = PerfDefinition.PerformanceTestmap;
 
 		if ( PerfMap.IsValid() )
 		{

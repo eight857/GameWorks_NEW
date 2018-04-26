@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MovieSceneEventParametersCustomization.h"
 
@@ -12,7 +12,6 @@
 #include "IPropertyUtilities.h"
 #include "IDetailChildrenBuilder.h"
 #include "Widgets/Text/STextBlock.h"
-#include "Serialization/MemoryWriter.h"
 
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
@@ -47,7 +46,7 @@ void FMovieSceneEventParametersCustomization::CustomizeChildren(TSharedRef<IProp
 	EditStructData = MakeShared<FStructOnScope>(nullptr);
 	static_cast<FMovieSceneEventParameters*>(RawData[0])->GetInstance(*EditStructData);
 
-	ChildBuilder.AddChildContent(LOCTEXT("ParametersText", "Parameters"))
+	ChildBuilder.AddCustomRow(LOCTEXT("ParametersText", "Parameters"))
 	.NameContent()
 	[
 		SNew(STextBlock)
@@ -68,7 +67,7 @@ void FMovieSceneEventParametersCustomization::CustomizeChildren(TSharedRef<IProp
 	{
 		FSimpleDelegate OnEditStructChildContentsChangedDelegate = FSimpleDelegate::CreateSP(this, &FMovieSceneEventParametersCustomization::OnEditStructChildContentsChanged);
 
-		TArray<TSharedPtr<IPropertyHandle>> ExternalHandles = ChildBuilder.AddChildStructure(EditStructData.ToSharedRef());
+		TArray<TSharedPtr<IPropertyHandle>> ExternalHandles = ChildBuilder.AddAllExternalStructureProperties(EditStructData.ToSharedRef());
 		for (TSharedPtr<IPropertyHandle> Handle : ExternalHandles)
 		{
 			Handle->SetOnPropertyValueChanged(OnEditStructChildContentsChangedDelegate);
@@ -76,7 +75,7 @@ void FMovieSceneEventParametersCustomization::CustomizeChildren(TSharedRef<IProp
 		}
 	}
 
-	TSharedRef<const SWidget> DetailsView = ChildBuilder.GetParentCategory().GetParentLayout().GetDetailsView().AsShared();
+	TSharedRef<const SWidget> DetailsView = ChildBuilder.GetParentCategory().GetParentLayout().GetDetailsView()->AsShared();
 
 	PropertyUtilities->EnqueueDeferredAction(FSimpleDelegate::CreateLambda(
 		[DetailsView]
@@ -156,18 +155,12 @@ void FMovieSceneEventParametersCustomization::OnEditStructChildContentsChanged()
 		return;
 	}
 
-	TArray<uint8> Bytes;
-	{
-		FMemoryWriter Writer(Bytes);
-		Struct->SerializeTaggedProperties(Writer, EditStructData->GetStructMemory(), Struct, nullptr);
-	}
-
 	TArray<void*> RawData;
 	PropertyHandle->AccessRawData(RawData);
 
 	for (void* Value : RawData)
 	{
-		static_cast<FMovieSceneEventParameters*>(Value)->OverwriteWith(Bytes);
+		static_cast<FMovieSceneEventParameters*>(Value)->OverwriteWith(EditStructData->GetStructMemory());
 	}
 
 	FPropertyChangedEvent BubbleChangeEvent(PropertyHandle->GetProperty(), EPropertyChangeType::ValueSet, nullptr);

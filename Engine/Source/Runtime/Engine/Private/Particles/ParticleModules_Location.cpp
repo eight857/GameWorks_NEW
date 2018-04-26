@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ParticleModules_Location.cpp: 
@@ -38,7 +38,8 @@
 #include "Particles/ParticleModuleRequired.h"
 #include "Animation/SkeletalMeshActor.h"
 #include "Engine/SkeletalMeshSocket.h"
-#include "SkeletalMeshTypes.h"
+#include "Rendering/SkeletalMeshRenderData.h"
+
 
 UParticleModuleLocationBase::UParticleModuleLocationBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -232,7 +233,7 @@ void UParticleModuleLocationWorldOffset::SpawnEx(FParticleEmitterInstance* Owner
 	else
 	{
 		// We need to inverse transform the location so that the bUseLocalSpace transform uses the proper value
-		FMatrix InvMat = Owner->Component->ComponentToWorld.ToMatrixWithScale().InverseFast();
+		FMatrix InvMat = Owner->Component->GetComponentTransform().ToMatrixWithScale().InverseFast();
 		FVector StartLoc = StartLocation.GetValue(Owner->EmitterTime, Owner->Component, 0, InRandomStream);
 		Particle.Location += InvMat.TransformVector(StartLoc);
 	}
@@ -339,7 +340,7 @@ void UParticleModuleLocationDirect::Spawn(FParticleEmitterInstance* Owner, int32
 	else
 	{
 		FVector StartLoc	= Location.GetValue(Particle.RelativeTime, Owner->Component);
-		StartLoc = Owner->Component->ComponentToWorld.TransformPosition(StartLoc);
+		StartLoc = Owner->Component->GetComponentTransform().TransformPosition(StartLoc);
 		Particle.Location	= StartLoc;
 	}
 
@@ -509,12 +510,12 @@ void UParticleModuleLocationEmitter::Spawn(FParticleEmitterInstance* Owner, int3
 					else if ((bSourceIsInLocalSpace == true) && (bInLocalSpace == false))
 					{
 						// We need to transform it into world space
-						Particle.Location = LocationEmitterInst->Component->ComponentToWorld.TransformPosition(pkParticle->Location);
+						Particle.Location = LocationEmitterInst->Component->GetComponentTransform().TransformPosition(pkParticle->Location);
 					}
 					else //if ((bSourceIsInLocalSpace == false) && (bInLocalSpace == true))
 					{
 						// We need to transform it into local space
-						Particle.Location = LocationEmitterInst->Component->ComponentToWorld.InverseTransformPosition(pkParticle->Location);
+						Particle.Location = LocationEmitterInst->Component->GetComponentTransform().InverseTransformPosition(pkParticle->Location);
 					}
 				}
 				if (InheritSourceVelocity)
@@ -549,7 +550,7 @@ void UParticleModuleLocationEmitter::Spawn(FParticleEmitterInstance* Owner, int3
 		}
 		ensureMsgf(!Particle.Location.ContainsNaN(), TEXT("NaN in Particle Location. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
 		ensureMsgf(!Particle.Velocity.ContainsNaN(), TEXT("NaN in Particle Velocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
-		ensureMsgf(!Particle.BaseVelocity.ContainsNaN(), TEXT("NaN in Particle BaseVelocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
+		ensureMsgf(!Particle.BaseVelocity.ContainsNaN(), TEXT("NaN in Particle Base Velocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
 }
 
 uint32 UParticleModuleLocationEmitter::RequiredBytesPerInstance()
@@ -892,7 +893,7 @@ void UParticleModuleLocationPrimitiveTriangle::SpawnEx(FParticleEmitterInstance*
 	LocationOffset = Owner->EmitterToSimulation.TransformVector(LocationOffset);
 
 	Particle.Location += LocationOffset;
-	ensureMsgf(!Particle.Location.ContainsNaN(), TEXT("NaN in Particle Velocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
+	ensureMsgf(!Particle.Location.ContainsNaN(), TEXT("NaN in Particle Location. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
 }
 
 void UParticleModuleLocationPrimitiveTriangle::Render3DPreview(FParticleEmitterInstance* Owner, const FSceneView* View,FPrimitiveDrawInterface* PDI)
@@ -1131,7 +1132,7 @@ void UParticleModuleLocationPrimitiveCylinder::SpawnEx(FParticleEmitterInstance*
 		Particle.Velocity		+= vVelocity;
 		Particle.BaseVelocity	+= vVelocity;
 	}
-	ensureMsgf(!Particle.Location.ContainsNaN(), TEXT("NaN in Particle Velocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
+	ensureMsgf(!Particle.Location.ContainsNaN(), TEXT("NaN in Particle Location. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
 	ensureMsgf(!Particle.Velocity.ContainsNaN(), TEXT("NaN in Particle Velocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
 }
 
@@ -1373,7 +1374,7 @@ void UParticleModuleLocationPrimitiveSphere::SpawnEx(FParticleEmitterInstance* O
 		Particle.Velocity		+= vVelocity;
 		Particle.BaseVelocity	+= vVelocity;
 	}
-	ensureMsgf(!Particle.Location.ContainsNaN(), TEXT("NaN in Particle Velocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
+	ensureMsgf(!Particle.Location.ContainsNaN(), TEXT("NaN in Particle Location. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
 	ensureMsgf(!Particle.Velocity.ContainsNaN(), TEXT("NaN in Particle Velocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
 }
 
@@ -1644,7 +1645,7 @@ void UParticleModuleLocationBoneSocket::Spawn(FParticleEmitterInstance* Owner, i
 			{
 				// Set the base velocity for this particle.
 				Particle.BaseVelocity = FMath::Lerp(Particle.BaseVelocity, InstancePayload->BoneSocketVelocities[SourceIndex], InheritVelocityScale);
-				ensureMsgf(!Particle.BaseVelocity.ContainsNaN(), TEXT("NaN in Particle Velocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
+				ensureMsgf(!Particle.BaseVelocity.ContainsNaN(), TEXT("NaN in Particle Base Velocity. Template: %s, Component: %s"), Owner->Component ? *GetNameSafe(Owner->Component->Template) : TEXT("UNKNOWN"), *GetPathNameSafe(Owner->Component));
 			}
 			if (bMeshRotationActive)
 			{
@@ -1652,7 +1653,7 @@ void UParticleModuleLocationBoneSocket::Spawn(FParticleEmitterInstance* Owner, i
 				PayloadData->Rotation = RotationQuat.Euler();
 				if (Owner->CurrentLODLevel->RequiredModule->bUseLocalSpace == true)
 				{
-					PayloadData->Rotation = Owner->Component->ComponentToWorld.InverseTransformVectorNoScale(PayloadData->Rotation);
+					PayloadData->Rotation = Owner->Component->GetComponentTransform().InverseTransformVectorNoScale(PayloadData->Rotation);
 				}
 			}
 		}
@@ -1970,7 +1971,18 @@ int32 UParticleModuleLocationBoneSocket::GetMaxSourceIndex(FModuleLocationBoneSo
 		break;
 		case EBoneSocketSourceIndexMode::Direct:
 		{
-			return SourceType == BONESOCKETSOURCE_Sockets ? SourceComponent->SkeletalMesh->NumSockets() : SourceComponent->GetNumBones();
+			if (SourceType == BONESOCKETSOURCE_Sockets)
+			{
+				if (ensure(SourceComponent->SkeletalMesh))
+				{
+					return SourceComponent->SkeletalMesh->NumSockets();
+				}
+				return 0;
+			}
+			else
+			{
+				return SourceComponent->GetNumBones();
+			}
 		}
 		break;
 	}
@@ -2026,8 +2038,15 @@ bool UParticleModuleLocationBoneSocket::GetSocketInfoForSourceIndex(FModuleLocat
 	{
 		case EBoneSocketSourceIndexMode::SourceLocations:
 		{
-			OutSocket = SourceComponent->SkeletalMesh->FindSocket(SourceLocations[SourceIndex].BoneSocketName);
-			OutOffset = SourceLocations[SourceIndex].Offset + UniversalOffset;
+			if (ensureMsgf(SourceIndex < SourceLocations.Num(), TEXT("Invalid index of %s for %s"), SourceIndex, *GetPathName()))
+			{
+				OutSocket = SourceComponent->SkeletalMesh->FindSocket(SourceLocations[SourceIndex].BoneSocketName);
+				OutOffset = SourceLocations[SourceIndex].Offset + UniversalOffset;
+			}
+			else
+			{
+				return false;
+			}
 		}
 		break;
 		case EBoneSocketSourceIndexMode::PreSelectedIndices:
@@ -2154,7 +2173,7 @@ bool UParticleModuleLocationBoneSocket::GetParticleLocation(FModuleLocationBoneS
 
 	if (Owner->CurrentLODLevel->RequiredModule->bUseLocalSpace == true)
 	{
-		OutPosition = Owner->Component->ComponentToWorld.InverseTransformPosition(OutPosition);
+		OutPosition = Owner->Component->GetComponentTransform().InverseTransformPosition(OutPosition);
 	}
 
 	return true;
@@ -2268,20 +2287,20 @@ void UParticleModuleLocationSkelVertSurface::Spawn(FParticleEmitterInstance* Own
 		return;
 	}
 	USkeletalMeshComponent* SourceComponent = InstancePayload->SourceComponent.Get();
-	FSkeletalMeshResource* SkelMeshResource = SourceComponent ? SourceComponent->GetSkeletalMeshResource() : NULL;
-	if (SkelMeshResource == NULL)
+	FSkeletalMeshRenderData* SkelMeshRenderData = SourceComponent ? SourceComponent->GetSkeletalMeshRenderData() : NULL;
+	if (SkelMeshRenderData == NULL)
 	{
 		return;
 	}
 
-	FStaticLODModel& LODModel = SkelMeshResource->LODModels[0];
+	FSkeletalMeshLODRenderData& LODData = SkelMeshRenderData->LODRenderData[0];
 
 	// Determine the bone/socket to spawn at
 	int32 SourceIndex = -1;
 	int32 ActiveBoneIndex = -1;
 	if (SourceType == VERTSURFACESOURCE_Vert)
 	{
-		int32 SourceLocationsCount(SkelMeshResource->LODModels[0].VertexBufferGPUSkin.GetNumVertices());
+		int32 SourceLocationsCount(SkelMeshRenderData->LODRenderData[0].GetNumVertices());
 
 		SourceIndex = FMath::TruncToInt(FMath::SRand() * ((float)SourceLocationsCount) - 1);
 		InstancePayload->VertIndex = SourceIndex;
@@ -2301,11 +2320,11 @@ void UParticleModuleLocationSkelVertSurface::Spawn(FParticleEmitterInstance* Own
 	}
 	else if(SourceType == VERTSURFACESOURCE_Surface)
 	{
-		int32 SectionCount = LODModel.Sections.Num();
+		int32 SectionCount = LODData.RenderSections.Num();
 		int32 RandomSection = FMath::RoundToInt(FMath::SRand() * ((float)SectionCount-1));
 
-		SourceIndex = LODModel.Sections[RandomSection].BaseIndex +
-			(FMath::TruncToInt(FMath::SRand() * ((float)LODModel.Sections[RandomSection].NumTriangles))*3);
+		SourceIndex = LODData.RenderSections[RandomSection].BaseIndex +
+			(FMath::TruncToInt(FMath::SRand() * ((float)LODData.RenderSections[RandomSection].NumTriangles))*3);
 
 		InstancePayload->VertIndex = SourceIndex;
 
@@ -2313,9 +2332,9 @@ void UParticleModuleLocationSkelVertSurface::Spawn(FParticleEmitterInstance* Own
 		{
 			int32 VertIndex[3];
 
-			VertIndex[0] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get( SourceIndex );
-			VertIndex[1] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get( SourceIndex+1 );
-			VertIndex[2] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get( SourceIndex+2 );
+			VertIndex[0] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get( SourceIndex );
+			VertIndex[1] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get( SourceIndex+1 );
+			VertIndex[2] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get( SourceIndex+2 );
 
 			int32 BoneIndex1, BoneIndex2, BoneIndex3;
 			BoneIndex1 = BoneIndex2 = BoneIndex3 = INDEX_NONE;
@@ -2378,9 +2397,9 @@ void UParticleModuleLocationSkelVertSurface::Spawn(FParticleEmitterInstance* Own
 					int32 VertIndex[3];
 					FColor VertColors[3];
 
-					VertIndex[0] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex);
-					VertIndex[1] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex + 1);
-					VertIndex[2] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex + 2);
+					VertIndex[0] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex);
+					VertIndex[1] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex + 1);
+					VertIndex[2] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex + 2);
 					VertColors[0] = SourceComponent->GetVertexColor(VertIndex[0]);
 					VertColors[1] = SourceComponent->GetVertexColor(VertIndex[1]);
 					VertColors[2] = SourceComponent->GetVertexColor(VertIndex[2]);
@@ -2405,9 +2424,9 @@ void UParticleModuleLocationSkelVertSurface::Spawn(FParticleEmitterInstance* Own
 					int32 VertIndex[3];
 					FVector2D VertUVs[3];
 
-					VertIndex[0] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex);
-					VertIndex[1] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex + 1);
-					VertIndex[2] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex + 2);
+					VertIndex[0] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex);
+					VertIndex[1] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex + 1);
+					VertIndex[2] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get(SourceIndex + 2);
 					VertUVs[0] = SourceComponent->GetVertexUV(VertIndex[0], InheritUVChannel);
 					VertUVs[1] = SourceComponent->GetVertexUV(VertIndex[1], InheritUVChannel);
 					VertUVs[2] = SourceComponent->GetVertexUV(VertIndex[2], InheritUVChannel);
@@ -2445,7 +2464,7 @@ void UParticleModuleLocationSkelVertSurface::Spawn(FParticleEmitterInstance* Own
 				FVector Rot = SourceRotation.Euler();
 				if (Owner->CurrentLODLevel->RequiredModule->bUseLocalSpace == true)
 				{
-					Rot = Owner->Component->ComponentToWorld.InverseTransformVectorNoScale(Rot);
+					Rot = Owner->Component->GetComponentTransform().InverseTransformVectorNoScale(Rot);
 				}
 				PayloadData->Rotation = Rot;
 				PayloadData->InitRotation = Rot;
@@ -2802,28 +2821,29 @@ bool UParticleModuleLocationSkelVertSurface::GetParticleLocation(FParticleEmitte
 	FVector& OutPosition, FQuat& OutRotation, bool bSpawning /* = false*/)
 {
 	check(InSkelMeshComponent);
-	FSkeletalMeshResource* SkelMeshResource = InSkelMeshComponent->GetSkeletalMeshResource();
+	FSkeletalMeshRenderData* SkelMeshResource = InSkelMeshComponent->GetSkeletalMeshRenderData();
 
 	if (SkelMeshResource)
 	{
+		FSkeletalMeshLODRenderData& LODData = SkelMeshResource->LODRenderData[0];
+		FSkinWeightVertexBuffer& SkinWeightBuffer = *InSkelMeshComponent->GetSkinWeightBuffer(0);
 		if (SourceType == VERTSURFACESOURCE_Vert)
 		{
-			FVector VertPos = InSkelMeshComponent->GetSkinnedVertexPosition(InPrimaryVertexIndex);
-			OutPosition = InSkelMeshComponent->ComponentToWorld.TransformPosition(VertPos);
+			FVector VertPos = USkeletalMeshComponent::GetSkinnedVertexPosition(InSkelMeshComponent, InPrimaryVertexIndex, LODData, SkinWeightBuffer);
+			OutPosition = InSkelMeshComponent->GetComponentTransform().TransformPosition(VertPos);
 			OutRotation = FQuat::Identity;
 		}
 		else if (SourceType == VERTSURFACESOURCE_Surface)
 		{
 			FVector Verts[3];
 			int32 VertIndex[3];
-			FStaticLODModel& LODModel = SkelMeshResource->LODModels[0];
 
-			VertIndex[0] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get( InPrimaryVertexIndex );
-			VertIndex[1] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get( InPrimaryVertexIndex+1 );
-			VertIndex[2] = LODModel.MultiSizeIndexContainer.GetIndexBuffer()->Get( InPrimaryVertexIndex+2 );
-			Verts[0] = InSkelMeshComponent->ComponentToWorld.TransformPosition(InSkelMeshComponent->GetSkinnedVertexPosition(VertIndex[0]));
-			Verts[1] = InSkelMeshComponent->ComponentToWorld.TransformPosition(InSkelMeshComponent->GetSkinnedVertexPosition(VertIndex[1]));
-			Verts[2] = InSkelMeshComponent->ComponentToWorld.TransformPosition(InSkelMeshComponent->GetSkinnedVertexPosition(VertIndex[2]));
+			VertIndex[0] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get( InPrimaryVertexIndex );
+			VertIndex[1] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get( InPrimaryVertexIndex+1 );
+			VertIndex[2] = LODData.MultiSizeIndexContainer.GetIndexBuffer()->Get( InPrimaryVertexIndex+2 );
+			Verts[0] = InSkelMeshComponent->GetComponentTransform().TransformPosition(USkeletalMeshComponent::GetSkinnedVertexPosition(InSkelMeshComponent, VertIndex[0], LODData, SkinWeightBuffer));
+			Verts[1] = InSkelMeshComponent->GetComponentTransform().TransformPosition(USkeletalMeshComponent::GetSkinnedVertexPosition(InSkelMeshComponent, VertIndex[1], LODData, SkinWeightBuffer));
+			Verts[2] = InSkelMeshComponent->GetComponentTransform().TransformPosition(USkeletalMeshComponent::GetSkinnedVertexPosition(InSkelMeshComponent, VertIndex[2], LODData, SkinWeightBuffer));
 
 			FVector V0ToV2 = (Verts[2] - Verts[0]);
 			V0ToV2.Normalize();
@@ -2869,7 +2889,7 @@ bool UParticleModuleLocationSkelVertSurface::GetParticleLocation(FParticleEmitte
 
 	if (Owner->CurrentLODLevel->RequiredModule->bUseLocalSpace == true)
 	{
-		OutPosition = Owner->Component->ComponentToWorld.InverseTransformPosition(OutPosition);
+		OutPosition = Owner->Component->GetComponentTransform().InverseTransformPosition(OutPosition);
 	}
 
 	OutPosition += UniversalOffset;
@@ -2880,10 +2900,10 @@ bool UParticleModuleLocationSkelVertSurface::GetParticleLocation(FParticleEmitte
 
 bool UParticleModuleLocationSkelVertSurface::VertInfluencedByActiveBone(FParticleEmitterInstance* Owner, USkeletalMeshComponent* InSkelMeshComponent, int32 InVertexIndex, int32* OutBoneIndex)
 {
-	FSkeletalMeshResource* SkelMeshResource = InSkelMeshComponent->GetSkeletalMeshResource();
+	FSkeletalMeshRenderData* SkelMeshResource = InSkelMeshComponent->GetSkeletalMeshRenderData();
 	if (SkelMeshResource)
 	{
-		FStaticLODModel& Model = SkelMeshResource->LODModels[0];
+		FSkeletalMeshLODRenderData& LODData = SkelMeshResource->LODRenderData[0];
 
 		FModuleLocationVertSurfaceInstancePayload* InstancePayload = 
 			(FModuleLocationVertSurfaceInstancePayload*)(Owner->GetModuleInstanceData(this));
@@ -2891,12 +2911,11 @@ bool UParticleModuleLocationSkelVertSurface::VertInfluencedByActiveBone(FParticl
 		// Find the chunk and vertex within that chunk, and skinning type, for this vertex.
 		int32 SectionIndex;
 		int32 VertIndex;
-		bool bHasExtraBoneInfluences;
-		Model.GetSectionFromVertexIndex(InVertexIndex, SectionIndex, VertIndex, bHasExtraBoneInfluences);
+		LODData.GetSectionFromVertexIndex(InVertexIndex, SectionIndex, VertIndex);
 
-		check(SectionIndex < Model.Sections.Num());
+		check(SectionIndex < LODData.RenderSections.Num());
 
-		FSkelMeshSection& Section = Model.Sections[SectionIndex];
+		FSkelMeshRenderSection& Section = LODData.RenderSections[SectionIndex];
 
 		if (ValidMaterialIndices.Num() > 0)
 		{
@@ -2918,18 +2937,18 @@ bool UParticleModuleLocationSkelVertSurface::VertInfluencedByActiveBone(FParticl
 			}
 		}
 
-		return Model.SkinWeightVertexBuffer.HasExtraBoneInfluences()
-			? VertInfluencedByActiveBoneTyped<true>(Model, 0, Section, VertIndex, InSkelMeshComponent, InstancePayload, OutBoneIndex)
-			: VertInfluencedByActiveBoneTyped<false>(Model, 0, Section, VertIndex, InSkelMeshComponent, InstancePayload, OutBoneIndex);
+		return LODData.SkinWeightVertexBuffer.HasExtraBoneInfluences()
+			? VertInfluencedByActiveBoneTyped<true>(LODData, 0, Section, VertIndex, InSkelMeshComponent, InstancePayload, OutBoneIndex)
+			: VertInfluencedByActiveBoneTyped<false>(LODData, 0, Section, VertIndex, InSkelMeshComponent, InstancePayload, OutBoneIndex);
 	}
 	return false;
 }
 
 template<bool bExtraBoneInfluencesT>
 bool UParticleModuleLocationSkelVertSurface::VertInfluencedByActiveBoneTyped(
-	FStaticLODModel& Model, 
+	FSkeletalMeshLODRenderData& LODData,
 	int32 LODIndex,
-	const FSkelMeshSection& Section, 
+	const FSkelMeshRenderSection& Section, 
 	int32 VertIndex, 
 	USkeletalMeshComponent* InSkelMeshComponent, 
 	FModuleLocationVertSurfaceInstancePayload* InstancePayload, 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -46,6 +46,11 @@ public:
 	static jmethodID AndroidThunkJava_LocalNotificationGetLaunchNotification;
 	//static jmethodID AndroidThunkJava_LocalNotificationDestroyIfExists; - This is not needed yet but will be soon so just leaving commented out for now
 	static jmethodID AndroidThunkJava_HasActiveWiFiConnection;
+	static jmethodID AndroidThunkJava_GetAndroidId;
+	static jmethodID AndroidThunkJava_SetSustainedPerformanceMode;
+
+	static jmethodID AndroidThunkCpp_VirtualInputIgnoreClick;
+	static jmethodID AndroidThunkCpp_IsVirtuaKeyboardShown;
 
 	// InputDeviceInfo member field ids
 	static jclass InputDeviceInfoClass;
@@ -66,8 +71,13 @@ public:
 	static jmethodID AndroidThunkJava_IsInterstitialAdAvailable;
 	static jmethodID AndroidThunkJava_IsInterstitialAdRequested;
 	static jmethodID AndroidThunkJava_ShowInterstitialAd;
+	static jmethodID AndroidThunkJava_GetAdvertisingId;
 	static jmethodID AndroidThunkJava_GoogleClientConnect;
 	static jmethodID AndroidThunkJava_GoogleClientDisconnect;
+
+	// Optionally added if GCM plugin (or other remote notification system) enabled
+	static jmethodID AndroidThunkJava_RegisterForRemoteNotifications;
+	static jmethodID AndroidThunkJava_UnregisterForRemoteNotifications;
 
 	// In app purchase functionality
 	static jclass JavaStringClass;
@@ -82,12 +92,18 @@ public:
 	// SurfaceView functionality for view scaling on some devices
 	static jmethodID AndroidThunkJava_UseSurfaceViewWorkaround;
 	static jmethodID AndroidThunkJava_SetDesiredViewSize;
+	static jmethodID AndroidThunkJava_VirtualInputIgnoreClick;
 
 	// member fields for getting the launch notification
 	static jclass LaunchNotificationClass;
 	static jfieldID LaunchNotificationUsed;
 	static jfieldID LaunchNotificationEvent;
 	static jfieldID LaunchNotificationFireDate;
+
+	// method and classes for thread name change
+	static jclass ThreadClass;
+	static jmethodID CurrentThreadMethod;
+	static jmethodID SetNameMethod;
 
 	/**
 	 * Find all known classes and methods

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/RecastNavMesh.h"
 #include "Misc/Paths.h"
@@ -16,6 +16,7 @@
 #include "AI/Navigation/NavAreas/NavArea_LowHeight.h"
 #include "AI/Navigation/NavLinkCustomInterface.h"
 #include "AI/Navigation/RecastNavMeshDataChunk.h"
+#include "AI/Navigation/RecastQueryFilter.h"
 #include "VisualLogger/VisualLogger.h"
 
 #if WITH_EDITOR
@@ -226,6 +227,8 @@ ARecastNavMesh::ARecastNavMesh(const FObjectInitializer& ObjectInitializer)
 	, DefaultMaxHierarchicalSearchNodes(RECAST_MAX_SEARCH_NODES)
 	, bPerformVoxelFiltering(true)	
 	, bMarkLowHeightAreas(false)
+	, bFilterLowSpanSequences(false)
+	, bFilterLowSpanFromTileCache(false)
 	, bStoreEmptyTileLayers(false)
 	, bUseVirtualFilters(true)
 	, bAllowNavLinkAsPathEnd(false)
@@ -625,14 +628,15 @@ void ARecastNavMesh::SortAreasForGenerator(TArray<FRecastAreaNavModifierElement>
 
 	for (auto& Element : Modifiers)
 	{
-		check(Element.Areas.Num() > 0);
-		
-		FAreaNavModifier& AreaMod = Element.Areas[0];
-		const int32 AreaId = GetAreaID(AreaMod.GetAreaClass());
-		if (AreaId >= 0 && AreaId < RECAST_MAX_AREAS)
+		if (Element.Areas.Num())
 		{
-			AreaMod.Cost = AreaCosts[AreaId];
-			AreaMod.FixedCost = AreaFixedCosts[AreaId];
+			FAreaNavModifier& AreaMod = Element.Areas[0];
+			const int32 AreaId = GetAreaID(AreaMod.GetAreaClass());
+			if (AreaId >= 0 && AreaId < RECAST_MAX_AREAS)
+			{
+				AreaMod.Cost = AreaCosts[AreaId];
+				AreaMod.FixedCost = AreaFixedCosts[AreaId];
+			}
 		}
 	}
 
@@ -640,8 +644,11 @@ void ARecastNavMesh::SortAreasForGenerator(TArray<FRecastAreaNavModifierElement>
 	{
 		FORCEINLINE bool operator()(const FRecastAreaNavModifierElement& ElA, const FRecastAreaNavModifierElement& ElB) const
 		{
-			check(ElA.Areas.Num() > 0);
-			check(ElB.Areas.Num() > 0);
+			if (ElA.Areas.Num() == 0 || ElB.Areas.Num() == 0)
+			{
+				return ElA.Areas.Num() <= ElB.Areas.Num();
+			}
+
 			// assuming composite modifiers has same area type
 			const FAreaNavModifier& A = ElA.Areas[0];
 			const FAreaNavModifier& B = ElB.Areas[0];
@@ -1408,9 +1415,10 @@ void ARecastNavMesh::UpdateCustomLink(const INavLinkCustomInterface* CustomLink)
 	if (AreaId >= 0 && RecastNavMeshImpl)
 	{
 		UNavArea* DefArea = (UNavArea*)(AreaClass->GetDefaultObject());
+		const uint16 PolyFlags = DefArea->GetAreaFlags() | ARecastNavMesh::GetNavLinkFlag();
 
-		RecastNavMeshImpl->UpdateNavigationLinkArea(UserId, AreaId, DefArea->GetAreaFlags());
-		RecastNavMeshImpl->UpdateSegmentLinkArea(UserId, AreaId, DefArea->GetAreaFlags());
+		RecastNavMeshImpl->UpdateNavigationLinkArea(UserId, AreaId, PolyFlags);
+		RecastNavMeshImpl->UpdateSegmentLinkArea(UserId, AreaId, PolyFlags);
 	}
 }
 
@@ -1420,8 +1428,9 @@ void ARecastNavMesh::UpdateNavigationLinkArea(int32 UserId, TSubclassOf<UNavArea
 	if (AreaId >= 0 && RecastNavMeshImpl)
 	{
 		UNavArea* DefArea = (UNavArea*)(AreaClass->GetDefaultObject());
+		const uint16 PolyFlags = DefArea->GetAreaFlags() | ARecastNavMesh::GetNavLinkFlag();
 
-		RecastNavMeshImpl->UpdateNavigationLinkArea(UserId, AreaId, DefArea->GetAreaFlags());
+		RecastNavMeshImpl->UpdateNavigationLinkArea(UserId, AreaId, PolyFlags);
 	}
 }
 
@@ -1431,8 +1440,9 @@ void ARecastNavMesh::UpdateSegmentLinkArea(int32 UserId, TSubclassOf<UNavArea> A
 	if (AreaId >= 0 && RecastNavMeshImpl)
 	{
 		UNavArea* DefArea = (UNavArea*)(AreaClass->GetDefaultObject());
+		const uint16 PolyFlags = DefArea->GetAreaFlags() | ARecastNavMesh::GetNavLinkFlag();
 
-		RecastNavMeshImpl->UpdateSegmentLinkArea(UserId, AreaId, DefArea->GetAreaFlags());
+		RecastNavMeshImpl->UpdateSegmentLinkArea(UserId, AreaId, PolyFlags);
 	}
 }
 
@@ -1470,7 +1480,7 @@ bool ARecastNavMesh::SetPolyArea(NavNodeRef PolyID, TSubclassOf<UNavArea> AreaCl
 		{
 			// @todo implement a single detour function that would do both
 			bSuccess = dtStatusSucceed(NavMesh->setPolyArea(PolyID, AreaId));
-			bSuccess = (bSuccess && dtStatusSucceed(NavMesh->setPolyFlags(PolyID, AreaId)));
+			bSuccess = (bSuccess && dtStatusSucceed(NavMesh->setPolyFlags(PolyID, AreaFlags)));
 		}
 	}
 	return bSuccess;
@@ -1896,13 +1906,18 @@ void ARecastNavMesh::OnStreamingLevelAdded(ULevel* InLevel, UWorld* InWorld)
 		URecastNavMeshDataChunk* NavDataChunk = GetNavigationDataChunk(InLevel);
 		if (NavDataChunk)
 		{
-			TArray<uint32> AttachedIndices = NavDataChunk->AttachTiles(*RecastNavMeshImpl);
-			if (AttachedIndices.Num() > 0)
-			{
-				InvalidateAffectedPaths(AttachedIndices);
-				RequestDrawingUpdate();
-			}
+			AttachNavMeshDataChunk(*NavDataChunk);
 		}
+	}
+}
+
+void ARecastNavMesh::AttachNavMeshDataChunk(URecastNavMeshDataChunk& NavDataChunk)
+{
+	TArray<uint32> AttachedIndices = NavDataChunk.AttachTiles(*RecastNavMeshImpl);
+	if (AttachedIndices.Num() > 0)
+	{
+		InvalidateAffectedPaths(AttachedIndices);
+		RequestDrawingUpdate();
 	}
 }
 
@@ -1915,13 +1930,18 @@ void ARecastNavMesh::OnStreamingLevelRemoved(ULevel* InLevel, UWorld* InWorld)
 		URecastNavMeshDataChunk* NavDataChunk = GetNavigationDataChunk(InLevel);
 		if (NavDataChunk)
 		{
-			TArray<uint32> DetachedIndices = NavDataChunk->DetachTiles(*RecastNavMeshImpl);
-			if (DetachedIndices.Num() > 0)
-			{
-				InvalidateAffectedPaths(DetachedIndices);
-				RequestDrawingUpdate();
-			}
+			DetachNavMeshDataChunk(*NavDataChunk);
 		}
+	}
+}
+
+void ARecastNavMesh::DetachNavMeshDataChunk(URecastNavMeshDataChunk& NavDataChunk)
+{
+	TArray<uint32> DetachedIndices = NavDataChunk.DetachTiles(*RecastNavMeshImpl);
+	if (DetachedIndices.Num() > 0)
+	{
+		InvalidateAffectedPaths(DetachedIndices);
+		RequestDrawingUpdate();
 	}
 }
 
@@ -2597,6 +2617,21 @@ void FRecastNavMeshCachedData::OnAreaAdded(const UClass* AreaClass, int32 AreaID
 			FlagsPerOffMeshLinkArea[AreaID] = FlagsPerArea[AreaID] | NavLinkFlag;
 		}
 	}		
+}
+
+uint32 ARecastNavMesh::GetLinkUserId(NavNodeRef LinkPolyID) const
+{
+	return RecastNavMeshImpl ? RecastNavMeshImpl->GetLinkUserId(LinkPolyID) : 0;
+}
+
+dtNavMesh* ARecastNavMesh::GetRecastMesh()
+{
+	return RecastNavMeshImpl ? RecastNavMeshImpl->GetRecastMesh() : nullptr;
+}
+
+const dtNavMesh* ARecastNavMesh::GetRecastMesh() const
+{
+	return RecastNavMeshImpl ? RecastNavMeshImpl->GetRecastMesh() : nullptr;
 }
 
 #endif// WITH_RECAST

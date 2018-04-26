@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -35,7 +35,7 @@ namespace ECastCheckedType
 class COREUOBJECT_API UObject : public UObjectBaseUtility
 {
 	// Declarations.
-	DECLARE_CLASS(UObject,UObject,CLASS_Abstract|CLASS_NoExport,CASTCLASS_None,TEXT("/Script/CoreUObject"),NO_API)
+	DECLARE_CLASS(UObject,UObject,CLASS_Abstract|CLASS_NoExport|CLASS_Intrinsic,CASTCLASS_None,TEXT("/Script/CoreUObject"),NO_API)
 	DEFINE_DEFAULT_OBJECT_INITIALIZER_CONSTRUCTOR_CALL(UObject)
 	static UObject* __VTableCtorCaller(FVTableHelper& Helper)
 	{
@@ -166,11 +166,10 @@ public:
 	 * PostSaveRoot. This is used to allow objects used as base to perform required actions before saving and cleanup
 	 * afterwards.
 	 * @param Filename: Name of the file being saved to (includes path)
-	 * @param AdditionalPackagesToCook [out] Array of other packages the Root wants to make sure are cooked when this is cooked
 	 *
 	 * @return	Whether PostSaveRoot needs to perform internal cleanup
 	 */
-	virtual bool PreSaveRoot(const TCHAR* Filename, TArray<FString>& AdditionalPackagesToCook)
+	virtual bool PreSaveRoot(const TCHAR* Filename)
 	{
 		return false;
 	}
@@ -325,7 +324,15 @@ public:
 	/** Called after applying a transaction to the object in cases where transaction annotation was provided. Default implementation simply calls PostEditChange. */
 	virtual void PostEditUndo(TSharedPtr<ITransactionObjectAnnotation> TransactionAnnotation);
 
-
+	/**
+	 * Test the selection state of a UObject
+	 *
+	 * @return		true if the object is selected, false otherwise.
+	 * @todo UE4 this doesn't belong here, but it doesn't belong anywhere else any better
+	 */
+private:
+	virtual bool IsSelectedInEditor() const;
+public:
 #endif // WITH_EDITOR
 
 	// @todo document
@@ -390,11 +397,20 @@ public:
 	}
 
 	/**
-	* Called during cooking. Must return all objects that will be Preload()ed when this is serialized at load time
+	* Called during cooking. Must return all objects that will be Preload()ed when this is serialized at load time. Only used by the EDL.
 	*
 	* @param	OutDeps				all objects that will be preloaded when this is serialized at load time
 	*/
 	virtual void GetPreloadDependencies(TArray<UObject*>& OutDeps);
+
+	/**
+	* Called during cooking. Returns a list of objects. The packages containing those objects will be prestreamed, when the package containing this is loaded. Only used by the EDL.
+	*
+	* @param	OutPrestream				all objects that will be prestreamed when this packages is streamed
+	*/
+	virtual void GetPrestreamPackages(TArray<UObject*>& OutPrestream)
+	{
+	}
 
 	/**
 	*	Update the list of classes that we should exclude from dedicated server builds
@@ -477,35 +493,19 @@ public:
 	}
 
 	/**
-	 * Returns the size of the object/ resource for display to artists/ LDs in the Editor. The
-	 * default behavior is to return 0 which indicates that the resource shouldn't
-	 * display its size.
-	 *
-	 * @param	Mode	Indicates which resource size should be returned
-	 * @return	Size of resource as to be displayed to artists/ LDs in the Editor.
-	 */
-	DEPRECATED(4.14, "GetResourceSize is deprecated. Please use GetResourceSizeEx or GetResourceSizeBytes instead.")
-	virtual SIZE_T GetResourceSize(EResourceSizeMode::Type Mode)
-	{
-		return GetResourceSizeBytes(Mode);
-	}
-
-	/**
-	 * Get the size of the object/resource for display to artists/LDs in the Editor.
+	 * Get the size of the object/resource for use in memory tools or to display to artists/LDs in the Editor
 	 * This is the extended version which separates up the used memory into different memory regions (the actual definition of which may be platform specific).
 	 *
 	 * @param	CumulativeResourceSize	Struct used to count up the cumulative size of the resource as to be displayed to artists/LDs in the Editor.
 	 */
-	virtual void GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize)
-	{
-	}
+	virtual void GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize);
 
 	/**
-	 * Get the size of the object/resource for display to artists/LDs in the Editor.
+	 * Get the size of the object/resource for use in memory tools or to display to artists/LDs in the Editor
 	 * This is the simple version which just returns the total number of bytes used by this object.
 	 *
 	 * @param	Mode					Indicates which resource size should be returned.
-	 * @return The cumulative size of the resource as to be displayed to artists/LDs in the Editor.
+	 * @return The cumulative size of this object in memory
 	 */
 	SIZE_T GetResourceSizeBytes(EResourceSizeMode::Type Mode)
 	{
@@ -570,20 +570,43 @@ public:
 	 */
 	struct FAssetRegistryTag
 	{
+		/** Enum specifying the type of this tag */
 		enum ETagType
 		{
+			/** This tag should not be shown in the UI */
 			TT_Hidden,
+			/** This tag should be shown, and sorted alphabetically in the UI */
 			TT_Alphabetical,
+			/** This tag should be shown, and is a number */
 			TT_Numerical,
-			TT_Dimensional
+			/** This tag should be shown, and is an "x" delimited list of dimensions */ 
+			TT_Dimensional,
+			/** This tag should be shown, and is a timestamp formatted via FDateTime::ToString */
+			TT_Chronological,
 		};
 
+		/** Flags controlling how this tag should be shown in the UI */
+		enum ETagDisplay
+		{
+			/** No special display */
+			TD_None = 0,
+			/** For TT_Chronological, include the date */
+			TD_Date = 1<<0,
+			/** For TT_Chronological, include the time */
+			TD_Time = 1<<1,
+			/** For TT_Chronological, specifies that the timestamp should be displayed using the invariant timezone (typically for timestamps that are already in local time) */
+			TD_InvariantTz = 1<<2,
+			/** For TT_Numerical, specifies that the number is a value in bytes that should be displayed using FText::AsMemory */
+			TD_Memory = 1<<3,
+		};
+		
 		FName Name;
-		ETagType Type;
 		FString Value;
+		ETagType Type;
+		uint32 DisplayFlags;
 
-		FAssetRegistryTag(FName InName, const FString& InValue, ETagType InType)
-			: Name(InName), Type(InType), Value(InValue) {}
+		FAssetRegistryTag(FName InName, const FString& InValue, ETagType InType, uint32 InDisplayFlags = TD_None)
+			: Name(InName), Value(InValue), Type(InType), DisplayFlags(InDisplayFlags) {}
 
 		/** Gathers a list of asset registry searchable tags from given objects properties */
 		COREUOBJECT_API static void GetAssetRegistryTagsFromSearchableProperties(const UObject* Object, TArray<FAssetRegistryTag>& OutTags);
@@ -643,6 +666,8 @@ public:
 	/** Returns true if this object is considered an asset. */
 	virtual bool IsAsset() const;
 
+	virtual void NotifyObjectReferenceEliminated() const {}
+
 	/**
 	 * Returns an Type:Name pair representing the PrimaryAssetId for this object.
 	 * Assets that need to be globally referenced at runtime should return a valid Identifier.
@@ -689,6 +714,13 @@ public:
 
 	/** Called right before being marked for destruction due to network replication */
 	virtual void PreDestroyFromReplication();
+
+#if WITH_EDITOR
+	/** 
+	 * @return		Returns Valid if this object has data validation rules set up for it and the data for this object is valid. Returns Invalid if it does not pass the rules. Returns NotValidated if no rules are set for this object.
+	 */
+	virtual EDataValidationResult IsDataValid(TArray<FText>& ValidationErrors);
+#endif // WITH_EDITOR
 
 	/**
  	 *******************************************************
@@ -838,7 +870,7 @@ public:
 	 * @param	bIncludeNestedSubobjects	controls whether subobjects which are contained by this object, but do not have this object
 	 *										as its direct Outer should be included
 	 */
-	void CollectDefaultSubobjects( TArray<UObject*>& OutDefaultSubobjects, bool bIncludeNestedSubobjects=false );
+	void CollectDefaultSubobjects( TArray<UObject*>& OutDefaultSubobjects, bool bIncludeNestedSubobjects=false ) const;
 
 	/**
 	 * Checks default sub-object assumptions.
@@ -846,7 +878,7 @@ public:
 	 * @param bForceCheck Force checks even if not enabled globally.
 	 * @return true if the assumptions are met, false otherwise.
 	 */
-	bool CheckDefaultSubobjects(bool bForceCheck = false);
+	bool CheckDefaultSubobjects(bool bForceCheck = false) const;
 
 	/**
 	 * Save configuration.
@@ -1023,7 +1055,7 @@ public:
 	// Internal function call processing.
 	// @warning: might not write anything to Result if proper type isn't returned.
 	//
-	void ProcessInternal( FFrame& Stack, RESULT_DECL );
+	DECLARE_FUNCTION(ProcessInternal);
 
 	/**
 	 * This function handles a console exec sent to the object; it is virtual so 'nexus' objects like
@@ -1169,7 +1201,7 @@ public:
 	DECLARE_FUNCTION(execUnicodeStringConst);
 	DECLARE_FUNCTION(execTextConst);
 	DECLARE_FUNCTION(execObjectConst);
-	DECLARE_FUNCTION(execAssetConst);
+	DECLARE_FUNCTION(execSoftObjectConst);
 
 	// @todo delegate: Multi-cast versions needed for script execution!		(Need Add, Remove, Clear/Empty)
 	DECLARE_FUNCTION(execInstanceDelegate);
@@ -1253,14 +1285,14 @@ public:
 protected: 
 
 	/** Checks it's ok to perform subobjects check at this time. */
-	bool CanCheckDefaultSubObjects(bool bForceCheck, bool& bResult);
+	bool CanCheckDefaultSubObjects(bool bForceCheck, bool& bResult) const;
 
 	/**
 	* Checks default sub-object assumptions.
 	*
 	* @return true if the assumptions are met, false otherwise.
 	*/
-	virtual bool CheckDefaultSubobjectsInternal();
+	virtual bool CheckDefaultSubobjectsInternal() const;
 
 private:
 	void ProcessContextOpcode(FFrame& Stack, RESULT_DECL, bool bCanFailSilent);

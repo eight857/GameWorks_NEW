@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AttributeBasedFloatDetails.h"
 #include "Misc/Attribute.h"
@@ -39,7 +39,7 @@ void FAttributeBasedFloatDetails::CustomizeChildren(TSharedRef<IPropertyHandle> 
 			TSharedPtr<IPropertyHandle> ChildHandle = StructPropertyHandle->GetChildHandle(ChildIdx);
 			if (ChildHandle.IsValid() && ChildHandle->IsValidHandle())
 			{
-				IDetailPropertyRow& NewPropRow = StructBuilder.AddChildProperty(ChildHandle.ToSharedRef());
+				IDetailPropertyRow& NewPropRow = StructBuilder.AddProperty(ChildHandle.ToSharedRef());
 				if (ChildHandle->GetProperty() == FinalChannelHandle->GetProperty())
 				{
 					NewPropRow.Visibility(TAttribute<EVisibility>::Create(TAttribute<EVisibility>::FGetter::CreateSP(this, &FAttributeBasedFloatDetails::GetFinalChannelVisibility)));

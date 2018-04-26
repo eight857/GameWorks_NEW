@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SimplygonSwarmCommon.h"
 #include "SimplygonSwarmHelpers.h"
@@ -7,7 +7,8 @@
 #include "UObject/Object.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopedSlowTask.h"
-#include "Interfaces/IImageWrapperModule.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
 #include "Editor/EditorPerProjectUserSettings.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/MonitoredProcess.h"
@@ -18,7 +19,10 @@ THIRD_PARTY_INCLUDES_END
 
 #define LOCTEXT_NAMESPACE "SimplygonSwarm"
 
+#include "IMeshReductionInterfaces.h"
+
 #include "MeshMergeData.h"
+#include "Features/IModularFeatures.h"
 
 // Standard Simplygon channels have some issues with extracting color data back from simplification, 
 // so we use this workaround with user channels
@@ -61,7 +65,7 @@ static const TCHAR* SG_UE_INTEGRATION_REV = TEXT("#SG_UE_INTEGRATION_REV");
 #define MAX_UPLOAD_PART_SIZE_MB  1024
 #define MAX_UPLOAD_PART_SIZE_BYTES ( MAX_UPLOAD_PART_SIZE_MB * 1024 * 1024 ) 
 
-static const TCHAR* SHADING_NETWORK_TEMPLATE = TEXT("<SimplygonShadingNetwork version=\"1.0\">\n\t<ShadingTextureNode ref=\"node_0\" name=\"ShadingTextureNode\">\n\t\t<DefaultColor0>\n\t\t\t<DefaultValue>1 1 1 1</DefaultValue>\n\t\t</DefaultColor0>\n\t\t<TextureName>%s</TextureName>\n\t\t<TextureLevelName>%s</TextureLevelName>\n\t\t<UseSRGB>%d</UseSRGB>\n\t\t<TileU>1.000000</TileU>\n\t\t<TileV>1.000000</TileV>\n\t</ShadingTextureNode>\n</SimplygonShadingNetwork>");
+static const TCHAR SHADING_NETWORK_TEMPLATE[] = TEXT("<SimplygonShadingNetwork version=\"1.0\">\n\t<ShadingTextureNode ref=\"node_0\" name=\"ShadingTextureNode\">\n\t\t<DefaultColor0>\n\t\t\t<DefaultValue>1 1 1 1</DefaultValue>\n\t\t</DefaultColor0>\n\t\t<TextureName>%s</TextureName>\n\t\t<TextureLevelName>%s</TextureLevelName>\n\t\t<UseSRGB>%d</UseSRGB>\n\t\t<TileU>1.000000</TileU>\n\t\t<TileV>1.000000</TileV>\n\t</ShadingTextureNode>\n</SimplygonShadingNetwork>");
 
 ssf::pssfMeshData CreateSSFMeshDataFromRawMesh(const FRawMesh& InRawMesh, TArray<FBox2D> InTextureBounds, TArray<FVector2D> InTexCoords);
 
@@ -76,6 +80,9 @@ public:
 	virtual class IMeshReduction* GetStaticMeshReductionInterface() override;
 	virtual class IMeshReduction* GetSkeletalMeshReductionInterface() override;
 	virtual class IMeshMerging* GetMeshMergingInterface() override;
+	virtual class IMeshMerging* GetDistributedMeshMergingInterface() override;
+	virtual FString GetName() override;
+
 private:
 };
 
@@ -93,6 +100,11 @@ public:
 	static FSimplygonSwarm* Create()
 	{
 		return new FSimplygonSwarm();
+	}
+
+	virtual FString GetName() override
+	{
+		return FString("SimplygonSwarm");
 	}
 
 	struct FMaterialCastingProperties
@@ -225,7 +237,7 @@ public:
 			{
 				UE_LOG(LogSimplygonSwarm, Error , TEXT("Could not find zip file for uploading %s"), *ZipFileName);
 				FailedDelegate.ExecuteIfBound(InJobGUID, TEXT("Could not find zip file for uploading"));
-				return;
+				return; //-V773
 			}
 
 			FSwarmTaskkData TaskData;
@@ -237,6 +249,7 @@ public:
 			TaskData.ProcessorJobID = InJobGUID;
 			TaskData.bDitheredTransition = (InputMaterials.Num() > 0) ? InputMaterials[0].bDitheredLODTransition : false;
 			TaskData.bEmissive = !bDiscardEmissive;
+			TaskData.JobName = InData[0].DebugJobName;
 						 
 			int32 MaxUploadSizeInBytes = GetMutableDefault<UEditorPerProjectUserSettings>()->SwarmMaxUploadChunkSizeInMB * 1024 * 1024;
 			FSimplygonRESTClient::Get()->SetMaxUploadSizeInBytes(MaxUploadSizeInBytes);
@@ -246,6 +259,8 @@ public:
 			SwarmTask->OnSwarmTaskFailed().BindRaw(this, &FSimplygonSwarm::OnSimplygonSwarmTaskFailed);
 			FSimplygonRESTClient::Get()->AddSwarmTask(SwarmTask);			
 		}
+		
+		delete spl;
 	}
 
 	/**
@@ -303,7 +318,9 @@ public:
 		FString ParentDirForOutputSsf = FString::Printf(TEXT("%s/outputlod_0"), *OutputFolderPath);
 
 		//for import the file back in uncomment
-		if (UnzipDownloadedContent(FPaths::ConvertRelativePathToFull(InSwarmTask.TaskData.OutputZipFilePath), FPaths::ConvertRelativePathToFull(OutputFolderPath)))
+		FString ZipFileFullPath = FPaths::ConvertRelativePathToFull(InSwarmTask.TaskData.OutputZipFilePath);
+		FString UnzipOutputFullPath = FPaths::ConvertRelativePathToFull(OutputFolderPath);
+		if (UnzipDownloadedContent(ZipFileFullPath, UnzipOutputFullPath))
 		{
 			FString InOuputSsfPath = FString::Printf(TEXT("%s/output.ssf"), *ParentDirForOutputSsf);
 			ssf::pssfScene OutSsfScene = new ssf::ssfScene();
@@ -354,8 +371,15 @@ public:
 				CompleteDelegate.Execute(OutProxyMesh, OutMaterial, InSwarmTask.TaskData.ProcessorJobID);
 			}
 			else
+			{
 				UE_LOG(LogSimplygonSwarm, Error, TEXT("No valid complete delegate is currently bounded. "));
+			}	
 			 
+		}
+		else
+		{
+			UE_LOG(LogSimplygonSwarm, Log, TEXT("Failed to unzip downloaded content %s"), *ZipFileFullPath);
+			FailedDelegate.ExecuteIfBound(InSwarmTask.TaskData.ProcessorJobID, TEXT("Invalid FRawMesh data"));
 		}
 	}
 
@@ -484,7 +508,7 @@ private:
 	void SaveSPL(FString InSplText, FString InOutputFilePath)
 	{
 		FArchive* SPLFile = IFileManager::Get().CreateFileWriter(*InOutputFilePath);
-		SPLFile->Logf(*InSplText);
+		SPLFile->Logf(TEXT("%s"), *InSplText);
 		SPLFile->Close();
 	}
 
@@ -789,7 +813,7 @@ private:
 		FString ChannelName,
 		TArray<FColor>& OutSamples,
 		FIntPoint& OutTextureSize)
-				{
+	{
 		for (ssf::pssfMaterialChannelTextureDescriptor TextureDescriptor : SsfMaterialChannel->MaterialChannelTextureDescriptorList)
 		{
 			ssf::pssfTexture Texture = FSimplygonSSFHelper::FindTextureById(SceneGraph, TextureDescriptor->TextureID.Get().Value);
@@ -798,8 +822,8 @@ private:
 			{
 				FString TextureFilePath = FString::Printf(TEXT("%s/%s"), *BaseTexturesPath, ANSI_TO_TCHAR(Texture->Path.Get().Value.c_str()));
 				CopyTextureData(OutSamples, OutTextureSize, ChannelName, TextureFilePath);
-				}
 			}
+		}
 	}
 
 	/**
@@ -862,11 +886,12 @@ private:
 				bHasOpacityMask = true;
 				OutMaterial.SetPropertySize(EFlattenMaterialProperties::OpacityMask, Size);
 			}/**/
-			//NOTE: We have AO_CHANNEL support  in the advance integration. We will move it it a later CL after the basic minimum is ready for 4.14.
-			/*else if (ChannelName.Compare(AO_CHANNEL) == 0)
+			else if (ChannelName.Compare(AO_CHANNEL) == 0)
 			{
-				ExtractTextureDescriptors(InSsfScene, Channel, InBaseTexturesPath, ChannelName, OutMaterial.AOSamples, OutMaterial.AOSize);
-			}*/
+				FIntPoint Size = OutMaterial.GetPropertySize(EFlattenMaterialProperties::AmbientOcclusion);
+				ExtractTextureDescriptors(SceneGraph, Channel, InBaseTexturesPath, ChannelName, OutMaterial.GetPropertySamples(EFlattenMaterialProperties::AmbientOcclusion), Size);
+				OutMaterial.SetPropertySize(EFlattenMaterialProperties::AmbientOcclusion, Size);
+			}
             else if (ChannelName.Compare(EMISSIVE_CHANNEL) == 0)
 			{
 				FIntPoint Size = OutMaterial.GetPropertySize(EFlattenMaterialProperties::Emissive);
@@ -904,8 +929,6 @@ private:
 			return false;
 		}
 
-
-
 		FString CmdExe = TEXT("cmd.exe");
 
 		bool bEnableDebugging = GetDefault<UEditorPerProjectUserSettings>()->bEnableSwarmDebugging;
@@ -923,16 +946,12 @@ private:
 	*/
 bool ZipContentsForUpload(FString InputDirectoryPath, FString OutputFileName)
 {
-		bool bEnableDebugging = GetDefault<UEditorPerProjectUserSettings>()->bEnableSwarmDebugging;
-
+	bool bEnableDebugging = GetDefault<UEditorPerProjectUserSettings>()->bEnableSwarmDebugging;
 	FString CmdExe = TEXT("cmd.exe");
-		FString CommandLine = FString::Printf(TEXT("ZipUtils -archive=\"%s\" -add=\"%s\" -compression=0 -nocompile"), *FPaths::ConvertRelativePathToFull(OutputFileName), *FPaths::ConvertRelativePathToFull(InputDirectoryPath));
-		
-		UE_CLOG(bEnableDebugging, LogSimplygonSwarm, Log, TEXT("Uat command line %s"), *CommandLine);
-		 
-		UatTask(CommandLine);
-
-	return true;
+	FString CommandLine = FString::Printf(TEXT("ZipUtils -archive=\"%s\" -add=\"%s\" -compression=0 -nocompile"), *FPaths::ConvertRelativePathToFull(OutputFileName), *FPaths::ConvertRelativePathToFull(InputDirectoryPath));
+	UE_CLOG(bEnableDebugging, LogSimplygonSwarm, Log, TEXT("Uat command line %s"), *CommandLine);
+	
+	return UatTask(CommandLine);
 }
 
 	/**
@@ -951,9 +970,9 @@ bool ZipContentsForUpload(FString InputDirectoryPath, FString OutputFileName)
 		FString RunUATScriptName = TEXT("RunUAT.command");
 		FString CmdExe = TEXT("/bin/sh");
 #endif
-		bool bEnableDebugging = GetDefault<UEditorPerProjectUserSettings>()->bEnableSwarmDebugging;
+		const bool bEnableDebugging = GetDefault<UEditorPerProjectUserSettings>()->bEnableSwarmDebugging;
 
-		FString UatPath = FPaths::ConvertRelativePathToFull(FPaths::EngineDir() / TEXT("Build/BatchFiles") / RunUATScriptName);
+		const FString UatPath = FPaths::ConvertRelativePathToFull(FPaths::EngineDir() / TEXT("Build/BatchFiles") / RunUATScriptName);
 
 		if (!FPaths::FileExists(UatPath))
 		{
@@ -969,21 +988,25 @@ bool ZipContentsForUpload(FString InputDirectoryPath, FString OutputFileName)
 #else
 		FString FullCommandLine = FString::Printf(TEXT("\"%s\" %s"), *UatPath, *CommandLine);
 #endif
+		while (FPlatformProcess::IsApplicationRunning(TEXT("AutomationTool.exe")))
+		{
+			static const float SleepTime = 0.5f;
+			FPlatformProcess::Sleep(SleepTime);
+			UE_CLOG(bEnableDebugging, LogSimplygonSwarm, Log, TEXT("UAT already running sleeping for %f seconds"), SleepTime);
+		}
 
 		TSharedPtr<FMonitoredProcess> UatProcess = MakeShareable(new FMonitoredProcess(CmdExe, FullCommandLine, true));
+		UatProcess->SetSleepInterval(0.1f);
 
 		// create notification item
 
-		bool sucess = UatProcess->Launch();
+		const bool bLaunched = UatProcess->Launch();
 
 		UatProcess->OnOutput().BindLambda([&](FString Message) {UE_CLOG(bEnableDebugging, LogSimplygonSwarm, Log, TEXT("UatTask Output %s"), *Message); });
 
-		while (UatProcess->Update())
-		{
-			FPlatformProcess::Sleep(0.1f);
-		}
+		while (UatProcess->Update()) {}
 
-		return sucess;
+		return bLaunched;
 
 	}
 
@@ -1117,10 +1140,10 @@ bool ZipContentsForUpload(FString InputDirectoryPath, FString OutputFileName)
 		}
 
       //NOTE: Enable this block once AO feature is moved into vanilla integration.
-		  /*if (InMaterialProxySettings.bAmbientOcclusionMap)
-	  {
-			  SetupColorCaster(InSplProcessNode, NORMAL_CHANNEL);
-		  }*/
+		if (InMaterialProxySettings.bAmbientOcclusionMap)
+		{
+			SetupColorCaster(InSplProcessNode, AO_CHANNEL);
+		}
 
 		if (InMaterialProxySettings.bEmissiveMap)
 		{
@@ -1396,8 +1419,8 @@ bool ZipContentsForUpload(FString InputDirectoryPath, FString OutputFileName)
 		bool IsNormalMap = false
 		)
 	{
-		IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-		IImageWrapperPtr ImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
+		IImageWrapperModule& ImageWrapperModule = FModuleManager::GetModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
+		TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
 		 
 		TArray<uint8> TextureData;
 		if (!FFileHelper::LoadFileToArray(TextureData, *FPaths::ConvertRelativePathToFull(TexturePath)) && TextureData.Num() > 0)
@@ -1427,7 +1450,7 @@ bool ZipContentsForUpload(FString InputDirectoryPath, FString OutputFileName)
 						OutSamples[PixelIndex].R = (*RawData)[PixelIndex*sizeof(FColor) + 2];
 						OutSamples[PixelIndex].A = (*RawData)[PixelIndex*sizeof(FColor) + 3];
 					}
-			}				 
+				}				 
 			}
 
 		}
@@ -1457,8 +1480,8 @@ bool ZipContentsForUpload(FString InputDirectoryPath, FString OutputFileName)
 		if (InSamples.Num() >= 1)
 		{
 
-			IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-			IImageWrapperPtr ImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
+			IImageWrapperModule& ImageWrapperModule = FModuleManager::GetModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
+			TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
 			
 			FString TextureOutputRelative = FString::Printf(TEXT("%s/%s.png"), ANSI_TO_TCHAR(SsfTextureTable->TexturesDirectory->Value.c_str()), *TextureName);
 			FString TextureOutputPath = FString::Printf(TEXT("%s%s"), *BaseTexturePath, *TextureOutputRelative);
@@ -1519,128 +1542,128 @@ bool ZipContentsForUpload(FString InputDirectoryPath, FString OutputFileName)
 		ssf::pssfTextureTable SsfTextureTable,
 		FString BaseTexturePath,
 		bool bReleaseInputMaterials, TMap<int, FString>& OutMaterialMapping)
-	{
+{
 		if (InputMaterials.Num() == 0)
 		{
-			//If there are no materials, feed Simplygon with a default material instead.
-			UE_LOG(LogSimplygonSwarm, Log, TEXT("Input meshes do not contain any materials. A proxy without material will be generated."));
-			return false;
+		//If there are no materials, feed Simplygon with a default material instead.
+		UE_LOG(LogSimplygonSwarm, Log, TEXT("Input meshes do not contain any materials. A proxy without material will be generated."));
+		return false;
 		}
 		 
-    	 bool bFillEmptyEmissive = false;
-		 bool bDiscardEmissive = true;
-		 for (int32 MaterialIndex = 0; MaterialIndex < InputMaterials.Num(); MaterialIndex++)
-		 {
-			 const FFlattenMaterial& FlattenMaterial = InputMaterials[MaterialIndex];
-			 if (FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive).Num() > 1 || (FlattenMaterial.IsPropertyConstant(EFlattenMaterialProperties::Emissive) && FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive)[0] != FColor::Black))
-			 {
-				 bFillEmptyEmissive = true;
-			 }
+		bool bFillEmptyEmissive = false;
+		bool bDiscardEmissive = true;
+		for (int32 MaterialIndex = 0; MaterialIndex < InputMaterials.Num(); MaterialIndex++)
+		{
+			const FFlattenMaterial& FlattenMaterial = InputMaterials[MaterialIndex];
+			if (FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive).Num() > 1 || (FlattenMaterial.IsPropertyConstant(EFlattenMaterialProperties::Emissive) && FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive)[0] != FColor::Black))
+			{
+				bFillEmptyEmissive = true;
+			}
 
-			 bDiscardEmissive &= ((FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Emissive)) || (FlattenMaterial.IsPropertyConstant(EFlattenMaterialProperties::Emissive) && FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive)[0] == FColor::Black));
-		 } 
+			bDiscardEmissive &= ((FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Emissive)) || (FlattenMaterial.IsPropertyConstant(EFlattenMaterialProperties::Emissive) && FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive)[0] == FColor::Black));
+		} 
 		 
-		 for (int32 MaterialIndex = 0; MaterialIndex < InputMaterials.Num(); MaterialIndex++)
-		 {
-			 FString MaterialGuidString = FGuid::NewGuid().ToString();
-			 const FFlattenMaterial& FlattenMaterial = InputMaterials[MaterialIndex];
-			 FString MaterialName = FString::Printf(TEXT("Material%d"), MaterialIndex);
+		for (int32 MaterialIndex = 0; MaterialIndex < InputMaterials.Num(); MaterialIndex++)
+		{
+			FString MaterialGuidString = FGuid::NewGuid().ToString();
+			const FFlattenMaterial& FlattenMaterial = InputMaterials[MaterialIndex];
+			FString MaterialName = FString::Printf(TEXT("Material%d"), MaterialIndex);
 
-			 ssf::pssfMaterial SsfMaterial = new ssf::ssfMaterial();
-			 SsfMaterial->Id.Set(FSimplygonSSFHelper::TCHARToSSFString(*MaterialGuidString));
-			 SsfMaterial->Name.Set(FSimplygonSSFHelper::TCHARToSSFString(*MaterialName));
+			ssf::pssfMaterial SsfMaterial = new ssf::ssfMaterial();
+			SsfMaterial->Id.Set(FSimplygonSSFHelper::TCHARToSSFString(*MaterialGuidString));
+			SsfMaterial->Name.Set(FSimplygonSSFHelper::TCHARToSSFString(*MaterialName));
 
-			 OutMaterialMapping.Add(MaterialIndex, MaterialGuidString);
+			OutMaterialMapping.Add(MaterialIndex, MaterialGuidString);
 
-			 // Does current material have BaseColor?
-			 if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Diffuse))
-			 {
-				 FString ChannelName(BASECOLOR_CHANNEL);
-				 ssf::pssfMaterialChannel BaseColorChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Diffuse), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Diffuse), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
+			// Does current material have BaseColor?
+			if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Diffuse))
+			{
+				FString ChannelName(BASECOLOR_CHANNEL);
+				ssf::pssfMaterialChannel BaseColorChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Diffuse), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Diffuse), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
 
-				 SsfMaterial->MaterialChannelList.push_back(BaseColorChannel);
+				SsfMaterial->MaterialChannelList.push_back(BaseColorChannel);
 
-				 //NOTE: use the commented setting once switching between tangentspace/worldspace is added into the vanilla version of the engine.
-				 SsfMaterial->TangentSpaceNormals->Create(true /*InMaterialLODSettings.bUseTangentSpace*/);
-			 }
+				//NOTE: use the commented setting once switching between tangentspace/worldspace is added into the vanilla version of the engine.
+				SsfMaterial->TangentSpaceNormals->Create(true /*InMaterialLODSettings.bUseTangentSpace*/);
+			}
 
-			 // Does current material have Metallic?
-			 if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Metallic))
-			 {
-				 FString ChannelName(METALLIC_CHANNEL);
-				 ssf::pssfMaterialChannel MetallicChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Metallic), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Metallic), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
-				 SsfMaterial->MaterialChannelList.push_back(MetallicChannel);
-			 }
+			// Does current material have Metallic?
+			if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Metallic))
+			{
+				FString ChannelName(METALLIC_CHANNEL);
+				ssf::pssfMaterialChannel MetallicChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Metallic), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Metallic), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
+				SsfMaterial->MaterialChannelList.push_back(MetallicChannel);
+			}
 
-			 // Does current material have Specular?
-			 if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Specular))
-			 {
-				 FString ChannelName(SPECULAR_CHANNEL);
-				 ssf::pssfMaterialChannel SpecularChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Specular), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Specular), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
-				 SsfMaterial->MaterialChannelList.push_back(SpecularChannel);
-			 }
+			// Does current material have Specular?
+			if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Specular))
+			{
+				FString ChannelName(SPECULAR_CHANNEL);
+				ssf::pssfMaterialChannel SpecularChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Specular), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Specular), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
+				SsfMaterial->MaterialChannelList.push_back(SpecularChannel);
+			}
 
-			 // Does current material have Roughness?
-			 if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Roughness))
-			 {
-				 FString ChannelName(ROUGHNESS_CHANNEL);
-				 ssf::pssfMaterialChannel RoughnessChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Roughness), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Roughness), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
-				 SsfMaterial->MaterialChannelList.push_back(RoughnessChannel);
-			 }
+			// Does current material have Roughness?
+			if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Roughness))
+			{
+				FString ChannelName(ROUGHNESS_CHANNEL);
+				ssf::pssfMaterialChannel RoughnessChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Roughness), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Roughness), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
+				SsfMaterial->MaterialChannelList.push_back(RoughnessChannel);
+			}
 
-			 //Does current material have a normalmap?
-			 if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Normal))
-			 {
-				 FString ChannelName(NORMAL_CHANNEL);
-				 SsfMaterial->TangentSpaceNormals.Create();
-				 SsfMaterial->TangentSpaceNormals.Set(true);
-				 ssf::pssfMaterialChannel NormalChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Normal), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Normal), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath, false);
-				 SsfMaterial->MaterialChannelList.push_back(NormalChannel);
-			 }
+			//Does current material have a normalmap?
+			if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Normal))
+			{
+				FString ChannelName(NORMAL_CHANNEL);
+				SsfMaterial->TangentSpaceNormals.Create();
+				SsfMaterial->TangentSpaceNormals.Set(true);
+				ssf::pssfMaterialChannel NormalChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Normal), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Normal), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath, false);
+				SsfMaterial->MaterialChannelList.push_back(NormalChannel);
+			}
 
-			 // Does current material have Opacity?
-			 if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Opacity))
-			 {
-				 FString ChannelName(OPACITY_CHANNEL);
-				 ssf::pssfMaterialChannel OpacityChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Opacity), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Opacity), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
-				 SsfMaterial->MaterialChannelList.push_back(OpacityChannel);
-			 }
+			// Does current material have Opacity?
+			if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Opacity))
+			{
+				FString ChannelName(OPACITY_CHANNEL);
+				ssf::pssfMaterialChannel OpacityChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Opacity), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Opacity), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
+				SsfMaterial->MaterialChannelList.push_back(OpacityChannel);
+			}
 
-			 if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::OpacityMask))
-			 {
-				 FString ChannelName(OPACITY_MASK_CHANNEL);
-				 ssf::pssfMaterialChannel OpacityChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::OpacityMask), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::OpacityMask), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
-				 SsfMaterial->MaterialChannelList.push_back(OpacityChannel);
-			 }
+			if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::OpacityMask))
+			{
+				FString ChannelName(OPACITY_MASK_CHANNEL);
+				ssf::pssfMaterialChannel OpacityChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::OpacityMask), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::OpacityMask), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
+				SsfMaterial->MaterialChannelList.push_back(OpacityChannel);
+			}
 
-			 // Emissive could have been outputted by the shader/swarm due to various reasons, however we don't always need the data that was created so we discard it
-			 if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Emissive) || (FlattenMaterial.IsPropertyConstant(EFlattenMaterialProperties::Emissive) && FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive)[0] == FColor::Black))
-			 {
-				 FString ChannelName(EMISSIVE_CHANNEL);
-				 ssf::pssfMaterialChannel EmissiveChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Emissive), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
-				 SsfMaterial->MaterialChannelList.push_back(EmissiveChannel);
-			 }
-			 else if (bFillEmptyEmissive && !FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Emissive))
-			 {
-				 TArray<FColor> Sample;
-				 Sample.Add(FColor::Black);
-				 FIntPoint Size(1, 1);
-				 FString ChannelName(EMISSIVE_CHANNEL);
-				 TArray<FColor> BlackEmissive;
-				 BlackEmissive.AddZeroed(1);
-				 ssf::pssfMaterialChannel EmissiveChannel = CreateSsfMaterialChannel(Sample, Size, SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
-				 SsfMaterial->MaterialChannelList.push_back(EmissiveChannel);
-			 }
+			// Emissive could have been outputted by the shader/swarm due to various reasons, however we don't always need the data that was created so we discard it
+			if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Emissive) || (FlattenMaterial.IsPropertyConstant(EFlattenMaterialProperties::Emissive) && FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive)[0] == FColor::Black))
+			{
+				FString ChannelName(EMISSIVE_CHANNEL);
+				ssf::pssfMaterialChannel EmissiveChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::Emissive), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::Emissive), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
+				SsfMaterial->MaterialChannelList.push_back(EmissiveChannel);
+			}
+			else if (bFillEmptyEmissive && !FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::Emissive))
+			{
+				TArray<FColor> Sample;
+				Sample.Add(FColor::Black);
+				FIntPoint Size(1, 1);
+				FString ChannelName(EMISSIVE_CHANNEL);
+				TArray<FColor> BlackEmissive;
+				BlackEmissive.AddZeroed(1);
+				ssf::pssfMaterialChannel EmissiveChannel = CreateSsfMaterialChannel(Sample, Size, SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
+				SsfMaterial->MaterialChannelList.push_back(EmissiveChannel);
+			}
 
-			 //NOTE: Enable this once AO baking functionality is moved into the engine. 
-			 /*if (FlattenMaterial.AOSamples.Num())
-			 {
-			 FString ChannelName(AO_CHANNEL);
-			 ssf::pssfMaterialChannel AOChannel = CreateSsfMaterialChannel(FlattenMaterial.AOSamples, FlattenMaterial.AOSize, SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
-			 SsfMaterial->MaterialChannelList.push_back(AOChannel);
-			 }*/
+			//NOTE: Enable this once AO baking functionality is moved into the engine. 
+			if (FlattenMaterial.DoesPropertyContainData(EFlattenMaterialProperties::AmbientOcclusion))
+			{
+				FString ChannelName(AO_CHANNEL);
+				ssf::pssfMaterialChannel AOChannel = CreateSsfMaterialChannel(FlattenMaterial.GetPropertySamples(EFlattenMaterialProperties::AmbientOcclusion), FlattenMaterial.GetPropertySize(EFlattenMaterialProperties::AmbientOcclusion), SsfTextureTable, ChannelName, FString::Printf(TEXT("%s%s"), *MaterialName, *ChannelName), BaseTexturePath);
+				SsfMaterial->MaterialChannelList.push_back(AOChannel);
+			}
 
-			 SsfMaterialTable->MaterialList.push_back(SsfMaterial);
+			SsfMaterialTable->MaterialList.push_back(SsfMaterial);
 
 			if (bReleaseInputMaterials)
 			{
@@ -1660,11 +1683,14 @@ TUniquePtr<FSimplygonSwarm> GSimplygonMeshReduction;
 void FSimplygonSwarmModule::StartupModule()
 {
 	GSimplygonMeshReduction.Reset(FSimplygonSwarm::Create());
+	FModuleManager::Get().LoadModule(FName("ImageWrapper"));
+	IModularFeatures::Get().RegisterModularFeature(IMeshReductionModule::GetModularFeatureName(), this);
 }
 
 void FSimplygonSwarmModule::ShutdownModule()
 {
 	FSimplygonRESTClient::Shutdown();
+	IModularFeatures::Get().UnregisterModularFeature(IMeshReductionModule::GetModularFeatureName(), this);
 }
 
 IMeshReduction* FSimplygonSwarmModule::GetStaticMeshReductionInterface()
@@ -1679,8 +1705,17 @@ IMeshReduction* FSimplygonSwarmModule::GetSkeletalMeshReductionInterface()
 
 IMeshMerging* FSimplygonSwarmModule::GetMeshMergingInterface()
 {
+	return nullptr;
+}
+
+class IMeshMerging* FSimplygonSwarmModule::GetDistributedMeshMergingInterface()
+{
 	return GSimplygonMeshReduction.Get();
 }
 
+FString FSimplygonSwarmModule::GetName()
+{
+	return FString("SimplygonSwarm");
+}
 
 #undef LOCTEXT_NAMESPACE

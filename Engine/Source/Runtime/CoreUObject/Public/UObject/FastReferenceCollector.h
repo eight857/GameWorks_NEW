@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,6 +16,220 @@ struct FStackEntry;
 /*=============================================================================
 	FastReferenceCollector.h: Unreal realtime garbage collection helpers
 =============================================================================*/
+
+/**
+ * Pool for reducing GC allocations
+ */
+class FGCArrayPool
+{
+public:
+
+	/**
+	 * Gets the singleton instance of the FObjectArrayPool
+	 * @return Pool singleton.
+	 */
+	FORCEINLINE static FGCArrayPool& Get()
+	{
+		static FAutoConsoleCommandWithOutputDevice GCDumpPoolCommand(
+			TEXT("gc.DumpPoolStats"),
+			TEXT("Dumps count and size of GC Pools"),
+			FConsoleCommandWithOutputDeviceDelegate::CreateStatic(&FGCArrayPool::DumpStats)
+		);
+
+		static FGCArrayPool* Singleton = nullptr;
+
+		if (!Singleton)
+		{
+			Singleton = new FGCArrayPool();
+		}
+		return *Singleton;
+	}
+
+	/**
+	 * Gets an event from the pool or creates one if necessary.
+	 *
+	 * @return The array.
+	 * @see ReturnToPool
+	 */
+	FORCEINLINE FGCArrayStruct* GetArrayStructFromPool()
+	{
+		FGCArrayStruct* Result = Pool.Pop();
+		if (!Result)
+		{
+			Result = new FGCArrayStruct();
+		}
+		check(Result);
+#if UE_BUILD_DEBUG
+		NumberOfUsedArrays.Increment();
+#endif // UE_BUILD_DEBUG
+		return Result;
+	}
+
+	/**
+	 * Returns an array to the pool.
+	 *
+	 * @param Array The array to return.
+	 * @see GetArrayFromPool
+	 */
+	FORCEINLINE void ReturnToPool(FGCArrayStruct* ArrayStruct)
+	{
+#if UE_BUILD_DEBUG
+		const int32 CheckUsedArrays = NumberOfUsedArrays.Decrement();
+		checkSlow(CheckUsedArrays >= 0);
+#endif // UE_BUILD_DEBUG
+		check(ArrayStruct);
+		ArrayStruct->ObjectsToSerialize.Reset();
+		Pool.Push(ArrayStruct);
+	}
+
+	/** 
+	 * Performs manual memory cleanup. 
+	 * Generally the pools will be cleaned up when ClearWeakReferences is called on a full GC purge
+	 */
+	void Cleanup()
+	{
+#if UE_BUILD_DEBUG
+		const int32 CheckUsedArrays = NumberOfUsedArrays.GetValue();
+		checkSlow(CheckUsedArrays == 0);
+#endif // UE_BUILD_DEBUG
+
+		uint32 FreedMemory = 0;
+		TArray<FGCArrayStruct*> AllArrays;
+		Pool.PopAll(AllArrays);
+		for (FGCArrayStruct* ArrayStruct : AllArrays)
+		{
+			// If we are cleaning up with active weak references the weak references will get corrupted
+			checkSlow(ArrayStruct->WeakReferences.Num() == 0);
+			FreedMemory += ArrayStruct->ObjectsToSerialize.GetAllocatedSize();
+			FreedMemory += ArrayStruct->WeakReferences.GetAllocatedSize();
+			delete ArrayStruct;
+		}
+		UE_LOG(LogGarbage, Log, TEXT("Freed %ub from %d GC array pools."), FreedMemory, AllArrays.Num());
+	}
+
+	/**
+	 * Writes out info about the makeup of the pool. called by 'gc.DumpPoolStats'
+	 *
+	 * @param Array The array to return.
+	 * @see GetArrayFromPool
+	 */
+	static void DumpStats(FOutputDevice& OutputDevice)
+	{
+		FGCArrayPool& Instance = Get();
+
+		TArray<FGCArrayStruct*> PoppedItems;
+
+		TMap<int32, int32> Buckets;
+
+		int32 TotalSize = 0;
+		int32 MaxSize = 0;
+		int32 TotalItems = 0;
+
+		do
+		{
+			FGCArrayStruct* Item = Instance.Pool.Pop();
+
+			if (Item)
+			{
+				PoppedItems.Push(Item);
+
+				// Inc our bucket
+				Buckets.FindOrAdd(Item->ObjectsToSerialize.Max()) += 1;
+
+				TotalSize += Item->ObjectsToSerialize.Max();
+				TotalSize += Item->WeakReferences.Max();
+				TotalItems++;
+			}
+			else
+			{
+				break;
+			}
+
+		} while (true);
+
+		// return everything to the pool
+		while (PoppedItems.Num())
+		{
+			Instance.Pool.Push(PoppedItems.Pop());
+		}
+
+		// One of these lists is used by the main GC and is huge, so remove it so that it doesn't
+		// pollute the stats and we can accurately see what the task pools are using.
+		int32 TotalSizeKB = (TotalSize * sizeof(UObject*)) / 1024;
+
+		OutputDevice.Logf(TEXT("GCPoolStats: %d Pools totaling %d KB. Avg: Objs=%d, Size=%d KB."),
+			TotalItems,
+			TotalSizeKB,
+			TotalSize / FMath::Max(TotalItems, 1),
+			TotalSizeKB / FMath::Max(TotalItems, 1));
+
+		// long form output...
+		TArray<int32> Keys;
+
+		Buckets.GetKeys(Keys);
+
+		Keys.Sort([&](int32 lhs, int32 rhs) {
+			return lhs > rhs;
+		});
+
+		for (int Key : Keys)
+		{
+			const int32 Value = Buckets[Key];
+			int32 ItemSize = (Key * sizeof(UObject*)) / 1024;
+			OutputDevice.Logf(TEXT("\t%d\t\t(%d Items @ %d KB = %d KB)"), Key, Value, ItemSize, Value * ItemSize);
+		}
+	}
+
+	/** 
+	 * Clears weak references for everything in the pool. 
+	 * If bClearPools is true it will clear all of the pools as well, which is used during a full purge 
+	 */
+	void ClearWeakReferences(bool bClearPools)
+	{
+		TArray<FGCArrayStruct*> AllArrays;
+		Pool.PopAll(AllArrays);
+		for (FGCArrayStruct* ArrayStruct : AllArrays)
+		{
+			for (UObject** WeakReference : ArrayStruct->WeakReferences)
+			{
+				UObject*& ReferencedObject = *WeakReference;
+				if (ReferencedObject && ReferencedObject->IsUnreachable())
+				{
+					ReferencedObject = nullptr;
+				}
+			}
+			ArrayStruct->WeakReferences.Reset();
+			if (bClearPools)
+			{
+				delete ArrayStruct;
+			}
+			else
+			{
+				Pool.Push(ArrayStruct);
+			}
+		}
+	}
+
+#if UE_BUILD_DEBUG
+	void CheckLeaks()
+	{
+		// This function is called after GC has finished so at this point there should be no
+		// arrays used by GC and all should be returned to the pool
+		const int32 LeakedGCPoolArrays = NumberOfUsedArrays.GetValue();
+		checkSlow(LeakedGCPoolArrays == 0);
+	}
+#endif
+
+private:
+
+	/** Holds the collection of recycled arrays. */
+	TLockFreePointerListLIFO< FGCArrayStruct > Pool;
+
+#if UE_BUILD_DEBUG
+	/** Number of arrays currently acquired from the pool by GC */
+	FThreadSafeCounter NumberOfUsedArrays;
+#endif // UE_BUILD_DEBUG
+};
 
 /**
  * Helper class that looks for UObject references by traversing UClass token stream and calls AddReferencedObjects.
@@ -44,8 +258,8 @@ struct FStackEntry;
 	 class FSampleArrayPool
 	 {
 	   static FSampleArrayPool& Get();
-		 TArray<UObject*>* GetArrayFromPool();
-		 void ReturnToPool(TArray<UObject*>* Array);
+		 FGCArrayStruct* GetArrayStryctFromPool();
+		 void ReturnToPool(FGCArrayStruct* ArrayStruct);
 	 };
  */
 template <bool bParallel, typename ReferenceProcessorType, typename CollectorType, typename ArrayPoolType, bool bAutoGenerateTokenStream = false>
@@ -57,7 +271,7 @@ private:
 	{
 		TFastReferenceCollector*	Owner;
 		ArrayPoolType& ArrayPool;
-		TLockFreePointerListUnordered<TArray<UObject*>, PLATFORM_CACHE_LINE_SIZE> Tasks;
+		TLockFreePointerListUnordered<FGCArrayStruct, PLATFORM_CACHE_LINE_SIZE> Tasks;
 
 		FCriticalSection WaitingThreadsLock;
 		TArray<FEvent*> WaitingThreads;
@@ -84,10 +298,10 @@ private:
 
 		FORCENOINLINE void AddTask(const TArray<UObject*>* InObjectsToSerialize, int32 StartIndex, int32 NumObjects)
 		{
-			TArray<UObject*>* ObjectsToSerialize(ArrayPool.GetArrayFromPool());
-			ObjectsToSerialize->AddUninitialized(NumObjects);
-			FMemory::Memcpy(ObjectsToSerialize->GetData(), InObjectsToSerialize->GetData() + StartIndex, NumObjects * sizeof(UObject*));
-			Tasks.Push(ObjectsToSerialize);
+			FGCArrayStruct* ArrayStruct = ArrayPool.GetArrayStructFromPool();
+			ArrayStruct->ObjectsToSerialize.AddUninitialized(NumObjects);
+			FMemory::Memcpy(ArrayStruct->ObjectsToSerialize.GetData(), InObjectsToSerialize->GetData() + StartIndex, NumObjects * sizeof(UObject*));
+			Tasks.Push(ArrayStruct);
 
 			FEvent* WaitingThread = nullptr;
 			{
@@ -116,8 +330,8 @@ private:
 			}
 			while (true)
 			{
-				TArray<UObject*>* ObjectsToSerialize = Tasks.Pop();
-				while (!ObjectsToSerialize)
+				FGCArrayStruct* ArrayStruct = Tasks.Pop();
+				while (!ArrayStruct)
 				{
 					if (bDone)
 					{
@@ -130,8 +344,8 @@ private:
 						{
 							return;
 						}
-						ObjectsToSerialize = Tasks.Pop();
-						if (!ObjectsToSerialize)
+						ArrayStruct = Tasks.Pop();
+						if (!ArrayStruct)
 						{
 							if (WaitingThreads.Num() + 1 == NumThreadsStarted)
 							{
@@ -151,7 +365,7 @@ private:
 							}
 						}
 					}
-					if (ObjectsToSerialize)
+					if (ArrayStruct)
 					{
 						check(!WaitEvent);
 					}
@@ -160,12 +374,12 @@ private:
 						check(WaitEvent);
 						WaitEvent->Wait();
 						FPlatformProcess::ReturnSynchEventToPool(WaitEvent);
-						ObjectsToSerialize = Tasks.Pop();
-						check(!ObjectsToSerialize || !bDone);
+						ArrayStruct = Tasks.Pop();
+						check(!ArrayStruct || !bDone);
 					}
 				}
-				Owner->ProcessObjectArray(*ObjectsToSerialize, FGraphEventRef());
-				ArrayPool.ReturnToPool(ObjectsToSerialize);
+				Owner->ProcessObjectArray(*ArrayStruct, FGraphEventRef());
+				ArrayPool.ReturnToPool(ArrayStruct);
 			}
 		}
 	};
@@ -203,21 +417,21 @@ private:
 	class FCollectorTask
 	{
 		TFastReferenceCollector*	Owner;
-		TArray<UObject*>*	ObjectsToSerialize;
+		FGCArrayStruct*	ArrayStruct;
 		ArrayPoolType& ArrayPool;
 
 	public:
 		FCollectorTask(TFastReferenceCollector* InOwner, const TArray<UObject*>* InObjectsToSerialize, int32 StartIndex, int32 NumObjects, ArrayPoolType& InArrayPool)
 			: Owner(InOwner)
-			, ObjectsToSerialize(InArrayPool.GetArrayFromPool())
+			, ArrayStruct(InArrayPool.GetArrayStructFromPool())
 			, ArrayPool(InArrayPool)
 		{
-			ObjectsToSerialize->AddUninitialized(NumObjects);
-			FMemory::Memcpy(ObjectsToSerialize->GetData(), InObjectsToSerialize->GetData() + StartIndex, NumObjects * sizeof(UObject*));
+			ArrayStruct->ObjectsToSerialize.AddUninitialized(NumObjects);
+			FMemory::Memcpy(ArrayStruct->ObjectsToSerialize.GetData(), InObjectsToSerialize->GetData() + StartIndex, NumObjects * sizeof(UObject*));
 		}
 		~FCollectorTask()
 		{
-			ArrayPool.ReturnToPool(ObjectsToSerialize);
+			ArrayPool.ReturnToPool(ArrayStruct);
 		}
 		FORCEINLINE TStatId GetStatId() const
 		{
@@ -255,7 +469,7 @@ private:
 		}
 		void DoTask(ENamedThreads::Type CurrentThread, FGraphEventRef& MyCompletionGraphEvent)
 		{
-			Owner->ProcessObjectArray(*ObjectsToSerialize, MyCompletionGraphEvent);
+			Owner->ProcessObjectArray(*ArrayStruct, MyCompletionGraphEvent);
 		}
 	};
 
@@ -295,14 +509,15 @@ public:
 	* @param ObjectsToCollectReferencesFor List of objects which references should be collected
 	* @param bForceSingleThreaded Collect references on a single thread
 	*/
-	void CollectReferences(TArray<UObject*>& ObjectsToCollectReferencesFor)
+	void CollectReferences(FGCArrayStruct& ArrayStruct)
 	{
+		TArray<UObject*>& ObjectsToCollectReferencesFor = ArrayStruct.ObjectsToSerialize;
 		if (ObjectsToCollectReferencesFor.Num())
 		{
 			if (!bParallel)
 			{
 				FGraphEventRef InvalidRef;
-				ProcessObjectArray(ObjectsToCollectReferencesFor, InvalidRef);
+				ProcessObjectArray(ArrayStruct, InvalidRef);
 			}
 			else
 			{
@@ -356,20 +571,20 @@ private:
 	 * @param InObjectsToSerializeArray Objects to process
 	 * @param MyCompletionGraphEvent Task graph event
 	 */
-	void ProcessObjectArray(TArray<UObject*>& InObjectsToSerializeArray, const FGraphEventRef& MyCompletionGraphEvent)
+	void ProcessObjectArray(FGCArrayStruct& InObjectsToSerializeStruct, const FGraphEventRef& MyCompletionGraphEvent)
 	{
 		DECLARE_SCOPE_CYCLE_COUNTER(TEXT("TFastReferenceCollector::ProcessObjectArray"), STAT_FFastReferenceCollector_ProcessObjectArray, STATGROUP_GC);
 
-		UObject* CurrentObject = NULL;
+		UObject* CurrentObject = nullptr;
 
 		const int32 MinDesiredObjectsPerSubTask = ReferenceProcessor.GetMinDesiredObjectsPerSubTask(); // sometimes there will be less, a lot less
 
 		/** Growing array of objects that require serialization */
-		TArray<UObject*>&	NewObjectsToSerializeArray = *ArrayPool.GetArrayFromPool();
+		FGCArrayStruct&	NewObjectsToSerializeStruct = *ArrayPool.GetArrayStructFromPool();
 
 		// Ping-pong between these two arrays if there's not enough objects to spawn a new task
-		TArray<UObject*>& ObjectsToSerialize = InObjectsToSerializeArray;
-		TArray<UObject*>& NewObjectsToSerialize = NewObjectsToSerializeArray;
+		TArray<UObject*>& ObjectsToSerialize = InObjectsToSerializeStruct.ObjectsToSerialize;
+		TArray<UObject*>& NewObjectsToSerialize = NewObjectsToSerializeStruct.ObjectsToSerialize;
 
 		// Presized "recursion" stack for handling arrays and structs.
 		TArray<FStackEntry> Stack;
@@ -383,7 +598,7 @@ private:
 		int32 CurrentIndex = 0;
 		do
 		{
-			CollectorType ReferenceCollector(ReferenceProcessor, NewObjectsToSerialize);
+			CollectorType ReferenceCollector(ReferenceProcessor, NewObjectsToSerializeStruct);
 			while (CurrentIndex < ObjectsToSerialize.Num())
 			{
 #if PERF_DETAILED_PER_CLASS_GC_STATS
@@ -563,8 +778,7 @@ private:
 						void*         Map = StackEntryData + ReferenceInfo.Offset;
 						UMapProperty* MapProperty = (UMapProperty*)TokenStream->ReadPointer(TokenStreamIndex);
 						TokenReturnCount = ReferenceInfo.ReturnCount;
-						FSimpleObjectReferenceCollectorArchive CollectorArchive(CurrentObject, ReferenceCollector);
-						MapProperty->SerializeItem(CollectorArchive, Map, nullptr);
+						MapProperty->SerializeItem(ReferenceCollector.GetVerySlowReferenceCollectorArchive(), Map, nullptr);
 					}
 					break;
 					case GCRT_AddTSetReferencedObjects:
@@ -572,8 +786,7 @@ private:
 						void*         Set = StackEntryData + ReferenceInfo.Offset;
 						USetProperty* SetProperty = (USetProperty*)TokenStream->ReadPointer(TokenStreamIndex);
 						TokenReturnCount = ReferenceInfo.ReturnCount;
-						FSimpleObjectReferenceCollectorArchive CollectorArchive(CurrentObject, ReferenceCollector);
-						SetProperty->SerializeItem(CollectorArchive, Set, nullptr);
+						SetProperty->SerializeItem(ReferenceCollector.GetVerySlowReferenceCollectorArchive(), Set, nullptr);
 					}
 					break;
 					case GCRT_EndOfPointer:
@@ -589,7 +802,7 @@ private:
 					break;
 					default:
 					{
-						UE_LOG(LogGarbage, Fatal, TEXT("Unknown token"));
+						UE_LOG(LogGarbage, Fatal, TEXT("Unknown token. Type:%d ReferenceTokenStreamIndex:%d Class:%s Obj:%s"), ReferenceInfo.Type, ReferenceTokenStreamIndex, CurrentObject ? *GetNameSafe(CurrentObject->GetClass()) : TEXT("Unknown"), *GetPathNameSafe(CurrentObject));
 						break;
 					}
 				}
@@ -662,6 +875,6 @@ EndLoop:
 		ReferenceProcessor.LogDetailedStatsSummary();
 #endif
 
-		ArrayPool.ReturnToPool(&NewObjectsToSerializeArray);
+		ArrayPool.ReturnToPool(&NewObjectsToSerializeStruct);
 	}
 };

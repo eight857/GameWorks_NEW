@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================================
 	FApplePlatformDebugEvents.h: Apple platform debug events
@@ -15,15 +15,9 @@
 #include "IOS/IOSSystemIncludes.h"
 #endif
 
-#if !defined(IOS_PROFILING_ENABLED)
-#define IOS_PROFILING_ENABLED 0
+#if !defined(APPLE_PROFILING_ENABLED)
+#define APPLE_PROFILING_ENABLED 0
 #endif
-
-#if !defined(MAC_PROFILING_ENABLED)
-#define MAC_PROFILING_ENABLED 0
-#endif
-
-#define APPLE_PROFILING_ENABLED (IOS_PROFILING_ENABLED | MAC_PROFILING_ENABLED)
 
 #if APPLE_PROFILING_ENABLED
 

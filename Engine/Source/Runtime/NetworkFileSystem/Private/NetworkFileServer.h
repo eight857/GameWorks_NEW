@@ -1,16 +1,17 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "HAL/ThreadSafeCounter.h"
 #include "HAL/Runnable.h"
-#include "Interfaces/INetworkFileServer.h"
-#include "Interfaces/INetworkFileSystemModule.h"
+#include "INetworkFileServer.h"
+#include "INetworkFileSystemModule.h"
 
 class FInternetAddr;
 class FSocket;
 class ITargetPlatform;
+
 
 /**
  * This class wraps the server thread and network connection
@@ -27,8 +28,7 @@ public:
 	 * @param InPort The port number to bind to (0 = any available port).
 	 * @param InFileRequestDelegate 
 	 */
-	FNetworkFileServer( int32 InPort, const FFileRequestDelegate* InFileRequestDelegate, 
-		const FRecompileShadersDelegate* InRecompileShadersDelegate, const TArray<ITargetPlatform*>& InActiveTargetPlatforms );
+	FNetworkFileServer( int32 InPort, FNetworkFileDelegateContainer InNetworkFileDelegateContainer, const TArray<ITargetPlatform*>& InActiveTargetPlatforms );
 
 	/**
 	 * Destructor.
@@ -62,7 +62,6 @@ public:
 	virtual FString GetSupportedProtocol() const override;
 	virtual int32 NumConnections() const override;
 	virtual void Shutdown() override;
-
 private:
 
 	// Holds the server (listening) socket.
@@ -82,11 +81,7 @@ private:
 
 public:
 
-	// Holds a delegate to be invoked on every sync request.
-	FFileRequestDelegate FileRequestDelegate;
-
-	// Holds a delegate to be invoked when a client requests a shader recompile.
-	FRecompileShadersDelegate RecompileShadersDelegate;
+	FNetworkFileDelegateContainer NetworkFileDelegates;
 
 	// cached copy of the active target platforms (if any)
 	const TArray<ITargetPlatform*> ActiveTargetPlatforms;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SAnimNotifyPanel.h"
@@ -16,6 +16,7 @@
 #include "Layout/WidgetPath.h"
 #include "Framework/Application/MenuStack.h"
 #include "Fonts/FontMeasure.h"
+#include "Styling/CoreStyle.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBar.h"
@@ -33,6 +34,12 @@
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Animation/BlendSpaceBase.h"
 #include "TabSpawners.h"
+#include "SInlineEditableTextBlock.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "Modules/ModuleManager.h"
+#include "IEditableSkeleton.h"
+#include "ISkeletonEditorModule.h"
+#include "SNumericEntryBox.h"
 
 // Track Panel drawing
 const float NotificationTrackHeight = 20.0f;
@@ -79,7 +86,7 @@ bool ReadNotifyPasteHeader(FString& OutPropertyString, const TCHAR*& OutBuffer, 
 	OutBuffer = NULL;
 	OutOriginalTime = -1.f;
 
-	FPlatformMisc::ClipboardPaste(OutPropertyString);
+	FPlatformApplicationMisc::ClipboardPaste(OutPropertyString);
 
 	if (!OutPropertyString.IsEmpty())
 	{
@@ -174,6 +181,18 @@ struct FNotifyNodeInterface : public INodeObjectInterface
 		{
 			ToolTipText = FText::Format(LOCTEXT("AnimNotify_ToolTipBranchingPoint", "{0} (BranchingPoint)"), ToolTipText);
 		}
+
+		UObject* NotifyToDisplayClassOf = NotifyEvent->Notify;
+		if (NotifyToDisplayClassOf == nullptr)
+		{
+			NotifyToDisplayClassOf = NotifyEvent->NotifyStateClass;
+		}
+
+		if (NotifyToDisplayClassOf != nullptr)
+		{
+			ToolTipText = FText::Format(LOCTEXT("AnimNotify_ToolTipNotifyClass", "{0}\nClass: {1}"), ToolTipText, NotifyToDisplayClassOf->GetClass()->GetDisplayNameText());
+		}
+
 		return ToolTipText;
 	}
 
@@ -412,11 +431,11 @@ public:
 	// End of SNodePanel::SNode
 
 	virtual FVector2D ComputeDesiredSize(float) const override;
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const /*override*/;
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const /*override*/;
 
 	/** Helpers to draw scrub handles and snap offsets */
-	void DrawHandleOffset( const float& Offset, const float& HandleCentre, FSlateWindowElementList& OutDrawElements, int32 MarkerLayer, const FGeometry &AllottedGeometry, const FSlateRect& MyClippingRect ) const;
-	void DrawScrubHandle( float ScrubHandleCentre, FSlateWindowElementList& OutDrawElements, int32 ScrubHandleID, const FGeometry &AllottedGeometry, const FSlateRect& MyClippingRect, FLinearColor NodeColour ) const;
+	void DrawHandleOffset( const float& Offset, const float& HandleCentre, FSlateWindowElementList& OutDrawElements, int32 MarkerLayer, const FGeometry &AllottedGeometry, const FSlateRect& MyCullingRect ) const;
+	void DrawScrubHandle( float ScrubHandleCentre, FSlateWindowElementList& OutDrawElements, int32 ScrubHandleID, const FGeometry &AllottedGeometry, const FSlateRect& MyCullingRect, FLinearColor NodeColour ) const;
 
 	FLinearColor GetNotifyColor() const;
 	FText GetNotifyText() const;
@@ -563,6 +582,7 @@ void SAnimNotifyPair::Construct(const FArguments& InArgs)
 
 	float ScaleMult = 1.0f;
 	FVector2D NodeSize = NodePtr->ComputeDesiredSize(ScaleMult);
+	Visibility = EVisibility::SelfHitTestInvisible;
 
 	this->ChildSlot
 		[
@@ -661,7 +681,7 @@ public:
 
 	// SWidget interface
 	virtual void Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime ) override { UpdateCachedGeometry( AllottedGeometry ); }
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 	virtual FReply OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override;
 	// End of SWidget interface
@@ -674,7 +694,7 @@ public:
 	/** Returns the cached rendering geometry of this track */
 	const FGeometry& GetCachedGeometry() const { return CachedGeometry; }
 
-	FTrackScaleInfo GetCachedScaleInfo() const { return FTrackScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0.f, 0.f, CachedGeometry.Size); }
+	FTrackScaleInfo GetCachedScaleInfo() const { return FTrackScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0.f, 0.f, CachedGeometry.GetLocalSize()); }
 
 	/** Updates sequences when a notify node has been successfully dragged to a new position
 	 *	@param Offset - Offset from the widget to the time handle 
@@ -731,6 +751,10 @@ public:
 	// Get the default Notify Name for a given blueprint notify asset
 	FString MakeBlueprintNotifyName(FAssetData& NotifyAssetData);
 
+	// Need to make sure tool tips are cleared during node clear up so slate system won't
+	// call into invalid notify.
+	void ClearNodeTooltips();
+
 protected:
 
 	void CreateCommands();
@@ -756,18 +780,11 @@ protected:
 	void ReplaceSelectedWithBlueprintNotify(FString NewNotifyName, FString BlueprintPath);
 	void ReplaceSelectedWithNotify(FString NewNotifyName, UClass* NotifyClass);
 	bool IsValidToPlace(UClass* NotifyClass) const;
-	void OnSetNodeTimeClicked(int32 NodeIndex);
-	void SetNodeTime(const FText& NodeTimeText, ETextCommit::Type CommitInfo, int32 NodeIndex);
-	void OnSetNodeFrameClicked(int32 NodeIndex);
-	void SetNodeFrame(const FText& NodeFrameText, ETextCommit::Type CommitInfo, int32 NodeIndex);
 
 	// Whether we have one node selected
 	bool IsSingleNodeSelected();
 	// Checks the clipboard for an anim notify buffer, and returns whether there's only one notify
 	bool IsSingleNodeInClipboard();
-
-	void OnSetDurationNotifyClicked(int32 NotifyIndex);
-	void SetDuration(const FText& DurationText, ETextCommit::Type CommitInfo, int32 NotifyIndex);
 
 	/** Function to copy anim notify event */
 	void OnCopyNotifyClicked(int32 NotifyIndex);
@@ -849,7 +866,7 @@ private:
 	FMargin GetNotifyTrackPadding(int32 NotifyIndex) const
 	{
 		float LeftMargin = NotifyPairs[NotifyIndex]->GetWidgetPaddingLeft();
-		float RightMargin = CachedGeometry.Size.X - NotifyNodes[NotifyIndex]->GetWidgetPosition().X - NotifyNodes[NotifyIndex]->GetSize().X;
+		float RightMargin = CachedGeometry.GetLocalSize().X - NotifyNodes[NotifyIndex]->GetWidgetPosition().X - NotifyNodes[NotifyIndex]->GetSize().X;
 		return FMargin(LeftMargin, 0, RightMargin, 0);
 	}
 
@@ -857,7 +874,7 @@ private:
 	FMargin GetSyncMarkerTrackPadding(int32 SyncMarkerIndex) const
 	{
 		float LeftMargin = NotifyNodes[SyncMarkerIndex]->GetWidgetPosition().X;
-		float RightMargin = CachedGeometry.Size.X - NotifyNodes[SyncMarkerIndex]->GetWidgetPosition().X - NotifyNodes[SyncMarkerIndex]->GetSize().X;
+		float RightMargin = CachedGeometry.GetLocalSize().X - NotifyNodes[SyncMarkerIndex]->GetWidgetPosition().X - NotifyNodes[SyncMarkerIndex]->GetSize().X;
 		return FMargin(LeftMargin, 0, RightMargin, 0);
 	}
 
@@ -942,6 +959,10 @@ private:
 
 	/** Pointer to notify panel for drawing*/
 	TWeakPtr<SAnimNotifyPanel>			AnimPanelPtr;
+
+	/** Pointer to the track name UI */
+	TSharedPtr<SInlineEditableTextBlock> TrackText;
+
 public:
 	SLATE_BEGIN_ARGS( SNotifyEdTrack )
 		: _TrackIndex(INDEX_NONE)
@@ -990,6 +1011,24 @@ public:
 
 	/** Pointer to actual anim notify track */
 	TSharedPtr<class SAnimNotifyTrack>	NotifyTrack;
+
+	/** Return the tracks name as an FText */
+	FText GetTrackName() const
+	{
+		if(Sequence->AnimNotifyTracks.IsValidIndex(TrackIndex))
+		{
+			return FText::FromName(Sequence->AnimNotifyTracks[TrackIndex].TrackName);
+		}
+
+		/** Should never be possible but better than crashing the editor */
+		return LOCTEXT("TrackName_Invalid", "Invalid Track");
+	}
+
+	/** Activate the editable text box for the track name */
+	void TriggerRename()
+	{
+		TrackText->EnterEditingMode();
+	}
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1328,7 +1367,7 @@ public:
 			Info.NotifyTrack = NotifyTracks[i];
 			const FGeometry& CachedGeometry = Info.NotifyTrack->GetCachedGeometry();
 			Info.TrackPos = CachedGeometry.AbsolutePosition.Y;
-			Info.TrackWidth = CachedGeometry.Size.X;
+			Info.TrackWidth = CachedGeometry.GetLocalSize().X;
 			Info.TrackMin = CachedGeometry.AbsolutePosition.X;
 			Info.TrackMax = Info.TrackMin + Info.TrackWidth;
 			Info.TrackSnapTestPos = Info.TrackPos + (CachedGeometry.Size.Y / 2);
@@ -1389,7 +1428,7 @@ const float SAnimNotifyNode::MinimumStateDuration = (1.0f / 30.0f);
 void SAnimNotifyNode::Construct(const FArguments& InArgs)
 {
 	Sequence = InArgs._Sequence;
-	Font = FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 10 );
+	Font = FCoreStyle::GetDefaultFontStyle("Regular", 10);
 	bBeingDragged = false;
 	CurrentDragHandle = ENotifyStateHandleHit::None;
 	bDrawTooltipToRight = true;
@@ -1584,7 +1623,7 @@ void SAnimNotifyNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometry)
 	
 	if(EndMarkerNodeOverlay.IsValid())
 	{
-		FVector2D OverlaySize = EndMarkerNodeOverlay->ComputeDesiredSize(1.0f);
+		FVector2D OverlaySize = EndMarkerNodeOverlay->GetDesiredSize();
 		WidgetSize.X += OverlaySize.X;
 	}
 
@@ -1613,7 +1652,7 @@ FVector2D SAnimNotifyNode::GetSize() const
 	return WidgetSize;
 }
 
-int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	int32 MarkerLayer = LayerId + 1;
 	int32 ScrubHandleID = MarkerLayer + 1;
@@ -1625,9 +1664,9 @@ int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 	// Paint marker node if we have one
 	if(EndMarkerNodeOverlay.IsValid())
 	{
-		FVector2D MarkerSize = EndMarkerNodeOverlay->ComputeDesiredSize(1.0f);
+		FVector2D MarkerSize = EndMarkerNodeOverlay->GetDesiredSize();
 		FVector2D MarkerOffset(NotifyDurationSizeX + MarkerSize.X * 0.5f + 5.0f, (NotifyHeight - MarkerSize.Y) * 0.5f);
-		EndMarkerNodeOverlay->Paint(Args.WithNewParent(this), AllottedGeometry.MakeChild(MarkerOffset, MarkerSize, 1.0f), MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+		EndMarkerNodeOverlay->Paint(Args.WithNewParent(this), AllottedGeometry.MakeChild(MarkerOffset, MarkerSize, 1.0f), MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 	}
 
 	const FSlateBrush* StyleInfo = FEditorStyle::GetBrush( TEXT("SpecialEditableTextImageNormal") );
@@ -1635,8 +1674,7 @@ int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 		OutDrawElements,
 		LayerId, 
 		AllottedGeometry.ToPaintGeometry(FVector2D(0,0), AllottedGeometry.Size), 
-		StyleInfo, 
-		MyClippingRect, 
+		StyleInfo,
 		ESlateDrawEffect::None,
 		FLinearColor(1.0f, 1.0f, 1.0f,0.1f));
 
@@ -1655,12 +1693,11 @@ int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 			OutDrawElements,
 			LayerId, 
 			AllottedGeometry.ToPaintGeometry(DurationBoxPosition, DurationBoxSize), 
-			StyleInfo, 
-			MyClippingRect, 
+			StyleInfo,
 			ESlateDrawEffect::None,
 			BoxColor);
 
-		DrawScrubHandle(DurationBoxPosition.X + DurationBoxSize.X, OutDrawElements, ScrubHandleID, AllottedGeometry, MyClippingRect, NodeColour);
+		DrawScrubHandle(DurationBoxPosition.X + DurationBoxSize.X, OutDrawElements, ScrubHandleID, AllottedGeometry, MyCullingRect, NodeColour);
 		
 		// Render offsets if necessary
 		if(AnimNotifyEvent && AnimNotifyEvent->EndTriggerTimeOffset != 0.f) //Do we have an offset to render?
@@ -1670,7 +1707,7 @@ int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 			{
 				// ScrubHandle
 				float HandleCentre = NotifyDurationSizeX + ScrubHandleSize.X;
-				DrawHandleOffset(AnimNotifyEvent->EndTriggerTimeOffset, HandleCentre, OutDrawElements, MarkerLayer, AllottedGeometry, MyClippingRect);
+				DrawHandleOffset(AnimNotifyEvent->EndTriggerTimeOffset, HandleCentre, OutDrawElements, MarkerLayer, AllottedGeometry, MyCullingRect);
 			}
 		}
 	}
@@ -1693,8 +1730,7 @@ int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 		OutDrawElements,
 		LayerId, 
 		AllottedGeometry.ToPaintGeometry(LabelPosition, LabelSize), 
-		StyleInfo, 
-		MyClippingRect, 
+		StyleInfo,
 		ESlateDrawEffect::None,
 		NodeColor);
 
@@ -1716,7 +1752,6 @@ int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 			LayerId,
 			AllottedGeometry.ToPaintGeometry(),
 			LinePoints,
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FLinearColor::Black, 
 			false
@@ -1737,12 +1772,11 @@ int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 		AllottedGeometry.ToPaintGeometry(TextPosition, TextSize),
 		Text,
 		Font,
-		MyClippingRect,
 		ESlateDrawEffect::None,
 		FLinearColor::Black
 		);
 
-	DrawScrubHandle(NotifyScrubHandleCentre , OutDrawElements, ScrubHandleID, AllottedGeometry, MyClippingRect, NodeColour);
+	DrawScrubHandle(NotifyScrubHandleCentre , OutDrawElements, ScrubHandleID, AllottedGeometry, MyCullingRect, NodeColour);
 
 	if(AnimNotifyEvent && AnimNotifyEvent->TriggerTimeOffset != 0.f) //Do we have an offset to render?
 	{
@@ -1752,7 +1786,7 @@ int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 			float HandleCentre = NotifyScrubHandleCentre;
 			float &Offset = AnimNotifyEvent->TriggerTimeOffset;
 			
-			DrawHandleOffset(AnimNotifyEvent->TriggerTimeOffset, NotifyScrubHandleCentre, OutDrawElements, MarkerLayer, AllottedGeometry, MyClippingRect);
+			DrawHandleOffset(AnimNotifyEvent->TriggerTimeOffset, NotifyScrubHandleCentre, OutDrawElements, MarkerLayer, AllottedGeometry, MyCullingRect);
 		}
 	}
 
@@ -1765,7 +1799,6 @@ int32 SAnimNotifyNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allotted
 			BranchPointLayerID,
 			AllottedGeometry.ToPaintGeometry(BranchPointIconPos, BranchingPointIconSize),
 			FEditorStyle::GetBrush(TEXT("AnimNotifyEditor.BranchingPoint")),
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FLinearColor::White
 			);
@@ -1785,7 +1818,6 @@ FReply SAnimNotifyNode::OnMouseMove( const FGeometry& MyGeometry, const FPointer
 		FSlateApplication::Get().ReleaseMouseCapture();
 		return FReply::Unhandled();
 	}
-
 	
 	FTrackScaleInfo ScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0, 0, CachedAllotedGeometrySize);
 	
@@ -1976,21 +2008,20 @@ float SAnimNotifyNode::HandleOverflowPan( const FVector2D &ScreenCursorPos, floa
 	return Overflow;
 }
 
-void SAnimNotifyNode::DrawScrubHandle( float ScrubHandleCentre, FSlateWindowElementList& OutDrawElements, int32 ScrubHandleID, const FGeometry &AllottedGeometry, const FSlateRect& MyClippingRect, FLinearColor NodeColour ) const
+void SAnimNotifyNode::DrawScrubHandle( float ScrubHandleCentre, FSlateWindowElementList& OutDrawElements, int32 ScrubHandleID, const FGeometry &AllottedGeometry, const FSlateRect& MyCullingRect, FLinearColor NodeColour ) const
 {
 	FVector2D ScrubHandlePosition(ScrubHandleCentre - ScrubHandleSize.X / 2.0f, (NotifyHeight - ScrubHandleSize.Y) / 2.f);
 	FSlateDrawElement::MakeBox( 
 		OutDrawElements,
 		ScrubHandleID, 
 		AllottedGeometry.ToPaintGeometry(ScrubHandlePosition, ScrubHandleSize), 
-		FEditorStyle::GetBrush( TEXT( "Sequencer.Timeline.ScrubHandleWhole" ) ), 
-		MyClippingRect, 
+		FEditorStyle::GetBrush( TEXT( "Sequencer.Timeline.ScrubHandleWhole" ) ),
 		ESlateDrawEffect::None,
 		NodeColour
 		);
 }
 
-void SAnimNotifyNode::DrawHandleOffset( const float& Offset, const float& HandleCentre, FSlateWindowElementList& OutDrawElements, int32 MarkerLayer, const FGeometry &AllottedGeometry, const FSlateRect& MyClippingRect ) const
+void SAnimNotifyNode::DrawHandleOffset( const float& Offset, const float& HandleCentre, FSlateWindowElementList& OutDrawElements, int32 MarkerLayer, const FGeometry &AllottedGeometry, const FSlateRect& MyCullingRect ) const
 {
 	FVector2D MarkerPosition;
 	FVector2D MarkerSize = AlignmentMarkerSize;
@@ -2009,8 +2040,7 @@ void SAnimNotifyNode::DrawHandleOffset( const float& Offset, const float& Handle
 		OutDrawElements,
 		MarkerLayer, 
 		AllottedGeometry.ToPaintGeometry(MarkerPosition, MarkerSize), 
-		FEditorStyle::GetBrush( TEXT( "Sequencer.Timeline.NotifyAlignmentMarker" ) ), 
-		MyClippingRect, 
+		FEditorStyle::GetBrush( TEXT( "Sequencer.Timeline.NotifyAlignmentMarker" ) ),
 		ESlateDrawEffect::None,
 		FLinearColor(0.f, 0.f, 1.f)
 		);
@@ -2068,6 +2098,7 @@ void SAnimNotifyTrack::Construct(const FArguments& InArgs)
 {
 	FAnimSequenceEditorCommands::Register();
 	CreateCommands();
+	SetClipping(EWidgetClipping::ClipToBounds);
 
 	Sequence = InArgs._Sequence;
 	ViewInputMin = InArgs._ViewInputMin;
@@ -2117,7 +2148,7 @@ FVector2D SAnimNotifyTrack::ComputeDesiredSize( float ) const
 	return Size;
 }
 
-int32 SAnimNotifyTrack::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SAnimNotifyTrack::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	const FSlateBrush* StyleInfo = FEditorStyle::GetBrush( TEXT( "Persona.NotifyEditor.NotifyTrackBackground" ) );
 	FLinearColor Color = TrackColor.Get();
@@ -2127,8 +2158,7 @@ int32 SAnimNotifyTrack::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 		OutDrawElements,
 		LayerId, 
 		MyGeometry, 
-		StyleInfo, 
-		MyClippingRect, 
+		StyleInfo,
 		ESlateDrawEffect::None, 
 		Color
 		);
@@ -2159,7 +2189,6 @@ int32 SAnimNotifyTrack::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 					CustomLayerId,
 					MyGeometry,
 					LinePoints,
-					MyClippingRect,
 					ESlateDrawEffect::None,
 					FLinearColor::Black
 					);
@@ -2198,7 +2227,6 @@ int32 SAnimNotifyTrack::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 			CustomLayerId,
 			MyGeometry,
 			LinePoints,
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			FLinearColor::Red
 			);
@@ -2223,7 +2251,6 @@ int32 SAnimNotifyTrack::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 				CustomLayerId,
 				MyGeometry,
 				LinePoints,
-				MyClippingRect,
 				ESlateDrawEffect::None,
 				FLinearColor(1.0f, 0.5f, 0.0f)
 				);
@@ -2249,13 +2276,12 @@ int32 SAnimNotifyTrack::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 			CustomLayerId,
 			MyGeometry,
 			LinePoints,
-			MyClippingRect,
 			ESlateDrawEffect::None,
 			Bar.DrawColour
 			);
 	}
 
-	return SCompoundWidget::OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, CustomLayerId, InWidgetStyle, bParentEnabled);
+	return SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, CustomLayerId, InWidgetStyle, bParentEnabled);
 }
 
 FReply SAnimNotifyTrack::OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
@@ -2512,18 +2538,6 @@ void SAnimNotifyTrack::FillNewNotifyMenu(FMenuBuilder& MenuBuilder, bool bIsRepl
 			MenuBuilder.AddMenuEntry(LOCTEXT("NewNotify", "New Notify"), LOCTEXT("NewNotifyToolTip", "Create a new animation notify"), FSlateIcon(), UIAction);
 		}
 		MenuBuilder.EndSection();
-
-		if (Sequence->IsA(UAnimSequence::StaticClass()))
-		{
-			MenuBuilder.BeginSection("SyncMarkerCreateNew");
-			{
-				FUIAction UIAction;
-				UIAction.ExecuteAction.BindRaw(
-					this, &SAnimNotifyTrack::OnNewSyncMarkerClicked);
-				MenuBuilder.AddMenuEntry(LOCTEXT("NewSyncMarker", "New Sync Marker"), LOCTEXT("NewSyncMarkerToolTip", "Create a new animation sync marker"), FSlateIcon(), UIAction);
-			}
-			MenuBuilder.EndSection();
-		}
 	}
 }
 
@@ -2669,7 +2683,7 @@ TSubclassOf<UObject> SAnimNotifyTrack::GetBlueprintClassFromPath(FString Bluepri
 	if (!BlueprintPath.IsEmpty())
 	{
 		UBlueprint* BlueprintLibPtr = LoadObject<UBlueprint>(NULL, *BlueprintPath, NULL, 0, NULL);
-		BlueprintClass = Cast<UClass>(BlueprintLibPtr->GeneratedClass);
+		BlueprintClass = BlueprintLibPtr->GeneratedClass;
 	}
 	return BlueprintClass;
 }
@@ -2823,52 +2837,170 @@ TSharedPtr<SWidget> SAnimNotifyTrack::SummonContextMenu(const FGeometry& MyGeome
 				SelectTrackObjectNode(NodeIndex, MouseEvent.IsControlDown());
 			}
 
-			FNumberFormattingOptions Options;
-			Options.MinimumFractionalDigits = 5;
-
-			// Add item to directly set notify time
-			const FText CurrentTime = FText::AsNumber(NodeObject->GetTime(), &Options);
-			const FText TimeMenuText = FText::Format(LOCTEXT("TimeMenuText", "Set Notify Begin Time: {0}..."), CurrentTime);
-
-			NewAction.ExecuteAction.BindRaw(this, &SAnimNotifyTrack::OnSetNodeTimeClicked, NodeIndex);
-			NewAction.CanExecuteAction.BindRaw(this, &SAnimNotifyTrack::IsSingleNodeSelected);
-
-			MenuBuilder.AddMenuEntry(TimeMenuText, LOCTEXT("SetTimeToolTip", "Set the time of this notify directly"), FSlateIcon(), NewAction);
-
-			// Add item to directly set notify frame
-			const FText Frame = FText::AsNumber(Sequence->GetFrameAtTime(NodeObject->GetTime()));
-			const FText FrameMenuText = FText::Format(LOCTEXT("FrameMenuText", "Set Notify Frame: {0}..."), Frame);
-
-			NewAction.ExecuteAction.BindRaw(this, &SAnimNotifyTrack::OnSetNodeFrameClicked, NodeIndex);
-			NewAction.CanExecuteAction.BindRaw(this, &SAnimNotifyTrack::IsSingleNodeSelected);
-
-			MenuBuilder.AddMenuEntry(FrameMenuText, LOCTEXT("SetFrameToolTip", "Set the frame of this notify directly"), FSlateIcon(), NewAction);
-
-			if (NotifyEvent)
+			if(IsSingleNodeSelected())
 			{
-				// add menu to get threshold weight for triggering this notify
-				NewAction.ExecuteAction.BindRaw(
-					this, &SAnimNotifyTrack::OnSetTriggerWeightNotifyClicked, NotifyIndex);
-				NewAction.CanExecuteAction.BindRaw(
-					this, &SAnimNotifyTrack::IsSingleNodeSelected);
+				// Add item to directly set notify time
+				TSharedRef<SWidget> TimeWidget = 
+					SNew( SBox )
+					.HAlign( HAlign_Right )
+					.ToolTipText(LOCTEXT("SetTimeToolTip", "Set the time of this notify directly"))
+					[
+						SNew(SBox)
+						.Padding(FMargin(4.0f, 0.0f, 0.0f, 0.0f))
+						.WidthOverride(100.0f)
+						[
+							SNew(SNumericEntryBox<float>)
+							.Font(FEditorStyle::GetFontStyle(TEXT("MenuItem.Font")))
+							.MinValue(0.0f)
+							.MaxValue(Sequence->SequenceLength)
+							.Value(NodeObject->GetTime())
+							.AllowSpin(false)
+							.OnValueCommitted_Lambda([this, NodeIndex](float InValue, ETextCommit::Type InCommitType)
+							{
+								if (InCommitType == ETextCommit::OnEnter && NotifyNodes.IsValidIndex(NodeIndex))
+								{
+									INodeObjectInterface* LocalNodeObject = NotifyNodes[NodeIndex]->NodeObjectInterface;
 
-				const FText Threshold = FText::AsNumber(NotifyEvent->TriggerWeightThreshold, &Options);
-				const FText MinTriggerWeightText = FText::Format(LOCTEXT("MinTriggerWeight", "Min Trigger Weight: {0}..."), Threshold);
-				MenuBuilder.AddMenuEntry(MinTriggerWeightText, LOCTEXT("MinTriggerWeightToolTip", "The minimum weight to trigger this notify"), FSlateIcon(), NewAction);
+									float NewTime = FMath::Clamp(InValue, 0.0f, Sequence->SequenceLength - LocalNodeObject->GetDuration());
+									LocalNodeObject->SetTime(NewTime);
 
-				// Add menu for changing duration if this is an AnimNotifyState
-				if (NotifyEvent->NotifyStateClass)
+									if (FAnimNotifyEvent* Event = LocalNodeObject->GetNotifyEvent())
+									{
+										Event->RefreshTriggerOffset(Sequence->CalculateOffsetForNotify(Event->GetTime()));
+										if (Event->GetDuration() > 0.0f)
+										{
+											Event->RefreshEndTriggerOffset(Sequence->CalculateOffsetForNotify(Event->GetTime() + Event->GetDuration()));
+										}
+									}
+									OnUpdatePanel.ExecuteIfBound();
+								}
+
+								FSlateApplication::Get().DismissAllMenus();
+							})
+						]
+					];
+
+				MenuBuilder.AddWidget(TimeWidget, LOCTEXT("TimeMenuText", "Notify Begin Time"));
+
+				// Add item to directly set notify frame
+				TSharedRef<SWidget> FrameWidget = 
+					SNew( SBox )
+					.HAlign( HAlign_Right )
+					.ToolTipText(LOCTEXT("SetFrameToolTip", "Set the frame of this notify directly"))
+					[
+						SNew(SBox)
+						.Padding(FMargin(4.0f, 0.0f, 0.0f, 0.0f))
+						.WidthOverride(100.0f)
+						[
+							SNew(SNumericEntryBox<int32>)
+							.Font(FEditorStyle::GetFontStyle(TEXT("MenuItem.Font")))
+							.MinValue(0)
+							.MaxValue(Sequence->GetNumberOfFrames())
+							.Value(Sequence->GetFrameAtTime(NodeObject->GetTime()))
+							.AllowSpin(false)						
+							.OnValueCommitted_Lambda([this, NodeIndex](int32 InValue, ETextCommit::Type InCommitType)
+							{
+								if (InCommitType == ETextCommit::OnEnter && NotifyNodes.IsValidIndex(NodeIndex))
+								{
+									INodeObjectInterface* LocalNodeObject = NotifyNodes[NodeIndex]->NodeObjectInterface;
+
+									float NewTime = FMath::Clamp(Sequence->GetTimeAtFrame(InValue), 0.0f, Sequence->SequenceLength - LocalNodeObject->GetDuration());
+									LocalNodeObject->SetTime(NewTime);
+
+									if (FAnimNotifyEvent* Event = LocalNodeObject->GetNotifyEvent())
+									{
+										Event->RefreshTriggerOffset(Sequence->CalculateOffsetForNotify(Event->GetTime()));
+										if (Event->GetDuration() > 0.0f)
+										{
+											Event->RefreshEndTriggerOffset(Sequence->CalculateOffsetForNotify(Event->GetTime() + Event->GetDuration()));
+										}
+									}
+									OnUpdatePanel.ExecuteIfBound();
+								}
+
+								FSlateApplication::Get().DismissAllMenus();
+							})
+						]
+					];
+
+				MenuBuilder.AddWidget(FrameWidget, LOCTEXT("FrameMenuText", "Notify Frame"));
+
+				if (NotifyEvent)
 				{
-					NewAction.ExecuteAction.BindRaw(
-						this, &SAnimNotifyTrack::OnSetDurationNotifyClicked, NotifyIndex);
-					NewAction.CanExecuteAction.BindRaw(
-						this, &SAnimNotifyTrack::IsSingleNodeSelected);
+					// add menu to get threshold weight for triggering this notify
+					TSharedRef<SWidget> ThresholdWeightWidget = 
+						SNew( SBox )
+						.HAlign( HAlign_Right )
+						.ToolTipText(LOCTEXT("MinTriggerWeightToolTip", "The minimum weight to trigger this notify"))
+						[
+							SNew(SBox)
+							.Padding(FMargin(4.0f, 0.0f, 0.0f, 0.0f))
+							.WidthOverride(100.0f)
+							[
+								SNew(SNumericEntryBox<float>)
+								.Font(FEditorStyle::GetFontStyle(TEXT("MenuItem.Font")))
+								.MinValue(0.0f)
+								.MaxValue(1.0f)
+								.Value(NotifyEvent->TriggerWeightThreshold)
+								.AllowSpin(false)						
+								.OnValueCommitted_Lambda([this, NotifyIndex](float InValue, ETextCommit::Type InCommitType)
+								{
+									if ( InCommitType == ETextCommit::OnEnter && AnimNotifies.IsValidIndex(NotifyIndex) )
+									{
+										float NewWeight = FMath::Max(InValue, ZERO_ANIMWEIGHT_THRESH);
+										AnimNotifies[NotifyIndex]->TriggerWeightThreshold = NewWeight;
+									}
 
-					FText SetAnimStateDurationText = FText::Format(LOCTEXT("SetAnimStateDuration", "Set AnimNotifyState duration ({0})"), FText::AsNumber(NotifyEvent->GetDuration()));
-					MenuBuilder.AddMenuEntry(SetAnimStateDurationText, LOCTEXT("SetAnimStateDuration_ToolTip", "The duration of this AnimNotifyState"), FSlateIcon(), NewAction);
+									FSlateApplication::Get().DismissAllMenus();
+								})
+							]
+						];
+
+					MenuBuilder.AddWidget(ThresholdWeightWidget, LOCTEXT("MinTriggerWeight", "Min Trigger Weight"));
+
+					// Add menu for changing duration if this is an AnimNotifyState
+					if (NotifyEvent->NotifyStateClass)
+					{
+						// add menu to get threshold weight for triggering this notify
+						TSharedRef<SWidget> NotifyStateDurationWidget = 
+							SNew( SBox )
+							.HAlign( HAlign_Right )
+							.ToolTipText(LOCTEXT("SetAnimStateDuration_ToolTip", "The duration of this Anim Notify State"))
+							[
+								SNew(SBox)
+								.Padding(FMargin(4.0f, 0.0f, 0.0f, 0.0f))
+								.WidthOverride(100.0f)
+								[
+									SNew(SNumericEntryBox<float>)
+									.Font(FEditorStyle::GetFontStyle(TEXT("MenuItem.Font")))
+									.MinValue(SAnimNotifyNode::MinimumStateDuration)
+									.MinSliderValue(SAnimNotifyNode::MinimumStateDuration)
+									.MaxSliderValue(100.0f)
+									.Value(NotifyEvent->GetDuration())
+									.AllowSpin(false)						
+									.OnValueCommitted_Lambda([this, NotifyIndex](float InValue, ETextCommit::Type InCommitType)
+									{
+										if ( InCommitType == ETextCommit::OnEnter && AnimNotifies.IsValidIndex(NotifyIndex) )
+										{
+											float NewDuration = FMath::Max(InValue, SAnimNotifyNode::MinimumStateDuration);
+											float MaxDuration = Sequence->SequenceLength - AnimNotifies[NotifyIndex]->GetTime();
+											NewDuration = FMath::Min(NewDuration, MaxDuration);
+											AnimNotifies[NotifyIndex]->SetDuration(NewDuration);
+
+											// If we have a delegate bound to refresh the offsets, call it.
+											// This is used by the montage editor to keep the offsets up to date.
+											OnRequestRefreshOffsets.ExecuteIfBound();
+										}
+
+										FSlateApplication::Get().DismissAllMenus();
+									})
+								]
+							];
+
+						MenuBuilder.AddWidget(NotifyStateDurationWidget, LOCTEXT("SetAnimStateDuration", "Anim Notify State Duration"));
+					}
 				}
 			}
-
 		}
 		else
 		{
@@ -2881,6 +3013,15 @@ TSharedPtr<SWidget> SAnimNotifyTrack::SummonContextMenu(const FGeometry& MyGeome
 				NSLOCTEXT("NewNotifySubMenu", "NewNotifySubMenuAddNotifyState", "Add Notify State..."),
 				NSLOCTEXT("NewNotifySubMenu", "NewNotifySubMenuAddNotifyStateToolTip","Add AnimNotifyState"),
 				FNewMenuDelegate::CreateRaw( this, &SAnimNotifyTrack::FillNewNotifyStateMenu, false ) );
+
+			if (Sequence->IsA(UAnimSequence::StaticClass()))
+			{
+				MenuBuilder.AddMenuEntry(
+					LOCTEXT("NewSyncMarker", "Add Sync Marker"),
+					LOCTEXT("NewSyncMarkerToolTip", "Create a new animation sync marker"),
+					FSlateIcon(),
+					FUIAction(FExecuteAction::CreateSP(this, &SAnimNotifyTrack::OnNewSyncMarkerClicked)));
+			}
 
 			MenuBuilder.AddMenuEntry(
 				NSLOCTEXT("NewNotifySubMenu", "ManageNotifies", "Manage Notifies..."),
@@ -3052,20 +3193,6 @@ void SAnimNotifyTrack::OnOpenNotifySource(UBlueprint* InSourceBlueprint) const
 	FAssetEditorManager::Get().OpenEditorForAsset(InSourceBlueprint);
 }
 
-void SAnimNotifyTrack::SetTriggerWeight(const FText& TriggerWeight, ETextCommit::Type CommitInfo, int32 NotifyIndex)
-{
-	if ( CommitInfo == ETextCommit::OnEnter || CommitInfo == ETextCommit::OnUserMovedFocus )
-	{
-		if ( AnimNotifies.IsValidIndex(NotifyIndex) )
-		{
-			float NewWeight = FMath::Max(FCString::Atof( *TriggerWeight.ToString() ), ZERO_ANIMWEIGHT_THRESH);
-			AnimNotifies[NotifyIndex]->TriggerWeightThreshold = NewWeight;
-		}
-	}
-
-	FSlateApplication::Get().DismissAllMenus();
-}
-
 bool SAnimNotifyTrack::IsSingleNodeSelected()
 {
 	return SelectedNodeIndices.Num() == 1;
@@ -3087,72 +3214,6 @@ bool SAnimNotifyTrack::IsSingleNodeInClipboard()
 		return *Buffer == 0;
 	}
 	return false;
-}
-
-void SAnimNotifyTrack::OnSetTriggerWeightNotifyClicked(int32 NotifyIndex)
-{
-	if (AnimNotifies.IsValidIndex(NotifyIndex))
-	{
-		FString DefaultText = FString::Printf(TEXT("%0.6f"), AnimNotifies[NotifyIndex]->TriggerWeightThreshold);
-
-		// Show dialog to enter weight
-		TSharedRef<STextEntryPopup> TextEntry =
-			SNew(STextEntryPopup)
-			.Label( LOCTEXT("TriggerWeightNotifyClickedLabel", "Trigger Weight") )
-			.DefaultText( FText::FromString(DefaultText) )
-			.OnTextCommitted( this, &SAnimNotifyTrack::SetTriggerWeight, NotifyIndex );
-
-		FSlateApplication::Get().PushMenu(
-			AsShared(), // Menu being summoned from a menu that is closing: Parent widget should be k2 not the menu thats open or it will be closed when the menu is dismissed
-			FWidgetPath(),
-			TextEntry,
-			FSlateApplication::Get().GetCursorPos(),
-			FPopupTransitionEffect( FPopupTransitionEffect::TypeInPopup )
-			);
-	}
-}
-
-void SAnimNotifyTrack::OnSetDurationNotifyClicked(int32 NotifyIndex)
-{
-	if (AnimNotifies.IsValidIndex(NotifyIndex))
-	{
-		FString DefaultText = FString::Printf(TEXT("%f"), AnimNotifies[NotifyIndex]->GetDuration());
-
-		// Show dialog to enter weight
-		TSharedRef<STextEntryPopup> TextEntry =
-			SNew(STextEntryPopup)
-			.Label(LOCTEXT("DurationNotifyClickedLabel", "Duration"))
-			.DefaultText( FText::FromString(DefaultText) )
-			.OnTextCommitted( this, &SAnimNotifyTrack::SetDuration, NotifyIndex );
-
-		FSlateApplication::Get().PushMenu(
-			AsShared(), // Menu being summoned from a menu that is closing: Parent widget should be k2 not the menu thats open or it will be closed when the menu is dismissed
-			FWidgetPath(),
-			TextEntry,
-			FSlateApplication::Get().GetCursorPos(),
-			FPopupTransitionEffect( FPopupTransitionEffect::TypeInPopup )
-			);
-	}
-}
-
-void SAnimNotifyTrack::SetDuration(const FText& DurationText, ETextCommit::Type CommitInfo, int32 NotifyIndex)
-{
-	if ( CommitInfo == ETextCommit::OnEnter || CommitInfo == ETextCommit::OnUserMovedFocus )
-	{
-		if ( AnimNotifies.IsValidIndex(NotifyIndex) )
-		{
-			float NewDuration = FMath::Max(FCString::Atof( *DurationText.ToString() ), SAnimNotifyNode::MinimumStateDuration);
-			float MaxDuration = Sequence->SequenceLength - AnimNotifies[NotifyIndex]->GetTime();
-			NewDuration = FMath::Min(NewDuration, MaxDuration);
-			AnimNotifies[NotifyIndex]->SetDuration(NewDuration);
-
-			// If we have a delegate bound to refresh the offsets, call it.
-			// This is used by the montage editor to keep the offsets up to date.
-			OnRequestRefreshOffsets.ExecuteIfBound();
-		}
-	}
-
-	FSlateApplication::Get().DismissAllMenus();
 }
 
 void SAnimNotifyTrack::OnNewNotifyClicked()
@@ -3198,7 +3259,11 @@ void SAnimNotifyTrack::AddNewNotify(const FText& NewNotifyName, ETextCommit::Typ
 	{
 		const FScopedTransaction Transaction( LOCTEXT("AddNewNotifyEvent", "Add New Anim Notify") );
 		FName NewName = FName( *NewNotifyName.ToString() );
-		SeqSkeleton->AddNewAnimationNotify(NewName);
+
+		ISkeletonEditorModule& SkeletonEditorModule = FModuleManager::LoadModuleChecked<ISkeletonEditorModule>("SkeletonEditor");
+		TSharedRef<IEditableSkeleton> EditableSkeleton = SkeletonEditorModule.CreateEditableSkeleton(SeqSkeleton);
+
+		EditableSkeleton->AddNotify(NewName);
 
 		FBlueprintActionDatabase::Get().RefreshAssetActions(SeqSkeleton);
 
@@ -3694,6 +3759,16 @@ FString SAnimNotifyTrack::MakeBlueprintNotifyName(FAssetData& NotifyAssetData)
 	return DefaultNotifyName;
 }
 
+void SAnimNotifyTrack::ClearNodeTooltips()
+{
+	FText EmptyTooltip;
+
+	for (TSharedPtr<SAnimNotifyNode> Node : NotifyNodes)
+	{
+		Node->SetToolTipText(EmptyTooltip);
+	}
+}
+
 void SAnimNotifyTrack::GetNotifyMenuData(TArray<FAssetData>& NotifyAssetData, TArray<BlueprintNotifyMenuInfo>& OutNotifyMenuData)
 {
 	for(FAssetData& NotifyData : NotifyAssetData)
@@ -3718,112 +3793,6 @@ void SAnimNotifyTrack::GetNotifyMenuData(TArray<FAssetData>& NotifyAssetData, TA
 	{
 		return A.NotifyName < B.NotifyName;
 	});
-}
-
-void SAnimNotifyTrack::OnSetNodeTimeClicked(int32 NodeIndex)
-{
-	if (NotifyNodes.IsValidIndex(NodeIndex))
-	{
-		INodeObjectInterface* NodeObject = NotifyNodes[NodeIndex]->NodeObjectInterface;
-		FString DefaultText = FString::Printf(TEXT("%0.6f"), NodeObject->GetTime());
-
-		// Show dialog to enter time
-		TSharedRef<STextEntryPopup> TextEntry =
-			SNew(STextEntryPopup)
-			.Label(LOCTEXT("NotifyTimeClickedLabel", "Notify Time"))
-			.DefaultText(FText::FromString(DefaultText))
-			.OnTextCommitted(this, &SAnimNotifyTrack::SetNodeTime, NodeIndex);
-
-		FSlateApplication::Get().PushMenu(
-			AsShared(), // Menu being summoned from a menu that is closing: Parent widget should be k2 not the menu thats open or it will be closed when the menu is dismissed
-			FWidgetPath(),
-			TextEntry,
-			FSlateApplication::Get().GetCursorPos(),
-			FPopupTransitionEffect(FPopupTransitionEffect::TypeInPopup)
-			);
-	}
-}
-
-void SAnimNotifyTrack::SetNodeTime(const FText& NodeTimeText, ETextCommit::Type CommitInfo, int32 NodeIndex)
-{
-	if(CommitInfo == ETextCommit::OnEnter || CommitInfo == ETextCommit::OnUserMovedFocus)
-	{
-		if (NotifyNodes.IsValidIndex(NodeIndex))
-		{
-			INodeObjectInterface* NodeObject = NotifyNodes[NodeIndex]->NodeObjectInterface;
-
-			float NewTime = FMath::Clamp(FCString::Atof(*NodeTimeText.ToString()), 0.0f, Sequence->SequenceLength - NodeObject->GetDuration());
-
-			NodeObject->SetTime(NewTime);
-
-			if (FAnimNotifyEvent* Event = NodeObject->GetNotifyEvent())
-			{
-				Event->RefreshTriggerOffset(Sequence->CalculateOffsetForNotify(Event->GetTime()));
-				if (Event->GetDuration() > 0.0f)
-				{
-					Event->RefreshEndTriggerOffset(Sequence->CalculateOffsetForNotify(Event->GetTime() + Event->GetDuration()));
-				}
-			}
-			OnUpdatePanel.ExecuteIfBound();
-		}
-	}
-
-	FSlateApplication::Get().DismissAllMenus();
-}
-
-void SAnimNotifyTrack::OnSetNodeFrameClicked(int32 NodeIndex)
-{
-	if (NotifyNodes.IsValidIndex(NodeIndex))
-	{
-		INodeObjectInterface* NodeObject = NotifyNodes[NodeIndex]->NodeObjectInterface;
-
-		const FText Frame = FText::AsNumber(Sequence->GetFrameAtTime(NodeObject->GetTime()));
-
-		FString DefaultText = FString::Printf(TEXT("%s"), *Frame.ToString());
-
-		// Show dialog to enter frame
-		TSharedRef<STextEntryPopup> TextEntry =
-			SNew(STextEntryPopup)
-			.Label(LOCTEXT("NotifyFrameClickedLabel", "Notify Frame"))
-			.DefaultText(FText::FromString(DefaultText))
-			.OnTextCommitted(this, &SAnimNotifyTrack::SetNodeFrame, NodeIndex);
-
-		FSlateApplication::Get().PushMenu(
-			AsShared(), // Menu being summoned from a menu that is closing: Parent widget should be k2 not the menu thats open or it will be closed when the menu is dismissed
-			FWidgetPath(),
-			TextEntry,
-			FSlateApplication::Get().GetCursorPos(),
-			FPopupTransitionEffect(FPopupTransitionEffect::TypeInPopup)
-			);
-	}
-}
-
-void SAnimNotifyTrack::SetNodeFrame(const FText& NodeFrameText, ETextCommit::Type CommitInfo, int32 NodeIndex)
-{
-	if(CommitInfo == ETextCommit::OnEnter || CommitInfo == ETextCommit::OnUserMovedFocus)
-	{
-		if (NotifyNodes.IsValidIndex(NodeIndex))
-		{
-			INodeObjectInterface* NodeObject = NotifyNodes[NodeIndex]->NodeObjectInterface;
-
-			int32 Frame = FCString::Atof(*NodeFrameText.ToString());
-			float NewTime = FMath::Clamp(Sequence->GetTimeAtFrame(Frame), 0.0f, Sequence->SequenceLength - NodeObject->GetDuration());
-
-			NodeObject->SetTime(NewTime);
-
-			if (FAnimNotifyEvent* Event = NodeObject->GetNotifyEvent())
-			{
-				Event->RefreshTriggerOffset(Sequence->CalculateOffsetForNotify(Event->GetTime()));
-				if (Event->GetDuration() > 0.0f)
-				{
-					Event->RefreshEndTriggerOffset(Sequence->CalculateOffsetForNotify(Event->GetTime() + Event->GetDuration()));
-				}
-			}
-			OnUpdatePanel.ExecuteIfBound();
-		}
-	}
-
-	FSlateApplication::Get().DismissAllMenus();
 }
 
 const EVisibility SAnimNotifyTrack::GetTimingNodeVisibility(TSharedPtr<SAnimNotifyNode> NotifyNode)
@@ -3920,9 +3889,10 @@ void SNotifyEdTrack::Construct(const FArguments& InArgs)
 					.FillWidth(1)
 					[
 						// Name of track
-						SNew(STextBlock)
-						.Text( FText::FromName( Track.TrackName ) )
+						SAssignNew(TrackText, SInlineEditableTextBlock)
+						.Text(this, &SNotifyEdTrack::GetTrackName)
 						.ColorAndOpacity(Track.TrackColor)
+						.OnTextCommitted(PanelRef, &SAnimNotifyPanel::OnCommitTrackName, TrackIndex)
 					]
 
 					+SHorizontalBox::Slot()
@@ -4065,6 +4035,27 @@ SAnimNotifyPanel::~SAnimNotifyPanel()
 	FCoreUObjectDelegates::OnObjectPropertyChanged.Remove(OnPropertyChangedHandleDelegateHandle);
 }
 
+FName SAnimNotifyPanel::GetNewTrackName() const
+{
+	TArray<FName> TrackNames;
+	TrackNames.Reserve(50);
+
+	for (const FAnimNotifyTrack& Track : Sequence->AnimNotifyTracks)
+	{
+		TrackNames.Add(Track.TrackName);
+	}
+
+	FName NameToTest;
+	int32 TrackIndex = 1;
+	
+	do 
+	{
+		NameToTest = *FString::FromInt(TrackIndex++);
+	} while (TrackNames.Contains(NameToTest));
+
+	return NameToTest;
+}
+
 FReply SAnimNotifyPanel::InsertTrack(int32 TrackIndexToInsert)
 {
 	// before insert, make sure everything behind is fixed
@@ -4085,20 +4076,27 @@ FReply SAnimNotifyPanel::InsertTrack(int32 TrackIndexToInsert)
 			// fix notifies indices
 			SyncMarker->TrackIndex = NewTrackIndex;
 		}
-
-		// fix track names, for now it's only index
-		Track.TrackName = *FString::FromInt(I+2);
 	}
 
 	FAnimNotifyTrack NewItem;
-	NewItem.TrackName = *FString::FromInt(TrackIndexToInsert+1);
+	NewItem.TrackName = GetNewTrackName();
 	NewItem.TrackColor = FLinearColor::White;
 
 	Sequence->AnimNotifyTracks.Insert(NewItem, TrackIndexToInsert);
 	Sequence->MarkPackageDirty();
 
 	Update();
+
+	//Now we have updated we can request rename on the track UI
+	int32 UITrackIndex = NotifyEditorTracks.Num() - 1 - TrackIndexToInsert;
+	RegisterActiveTimer(0.f, FWidgetActiveTimerDelegate::CreateSP(this, &SAnimNotifyPanel::TriggerRename, UITrackIndex));
 	return FReply::Handled();
+}
+
+EActiveTimerReturnType SAnimNotifyPanel::TriggerRename(double InCurrentTime, float InDeltaTime, int32 TrackIndex)
+{
+	NotifyEditorTracks[TrackIndex]->TriggerRename();
+	return EActiveTimerReturnType::Stop;
 }
 
 FReply SAnimNotifyPanel::DeleteTrack(int32 TrackIndexToDelete)
@@ -4124,9 +4122,6 @@ FReply SAnimNotifyPanel::DeleteTrack(int32 TrackIndexToDelete)
 					// fix notifies indices
 					SyncMarker->TrackIndex = NewTrackIndex;
 				}
-
-				// fix track names, for now it's only index
-				Track.TrackName = *FString::FromInt(I);
 			}
 
 			Sequence->AnimNotifyTracks.RemoveAt(TrackIndexToDelete);
@@ -4145,6 +4140,18 @@ bool SAnimNotifyPanel::CanDeleteTrack(int32 TrackIndexToDelete)
 	}
 
 	return false;
+}
+
+void SAnimNotifyPanel::OnCommitTrackName(const FText& InText, ETextCommit::Type CommitInfo, int32 TrackIndexToName)
+{
+	if (Sequence->AnimNotifyTracks.IsValidIndex(TrackIndexToName))
+	{
+		FScopedTransaction Transaction(FText::Format(LOCTEXT("RenameNotifyTrack", "Rename Notify Track to '{0}'"), InText));
+		Sequence->Modify();
+
+		FText TrimText = FText::TrimPrecedingAndTrailing(InText);
+		Sequence->AnimNotifyTracks[TrackIndexToName].TrackName = FName(*TrimText.ToString());
+	}
 }
 
 void SAnimNotifyPanel::Update()
@@ -4166,7 +4173,15 @@ void SAnimNotifyPanel::RefreshNotifyTracks()
 		SAssignNew( NotifySlots, SVerticalBox )
 		);
 
+	// Clear node tool tips to stop slate referencing them and possibly
+	// causing a crash if the notify has gone away
+	for (TSharedPtr<SAnimNotifyTrack> Track : NotifyAnimTracks)
+	{
+		Track->ClearNodeTooltips();
+	}
+
 	NotifyAnimTracks.Empty();
+	NotifyEditorTracks.Empty();
 
 	for(int32 I=Sequence->AnimNotifyTracks.Num()-1; I>=0; --I)
 	{
@@ -4205,6 +4220,7 @@ void SAnimNotifyPanel::RefreshNotifyTracks()
 		];
 
 		NotifyAnimTracks.Add(EdTrack->NotifyTrack);
+		NotifyEditorTracks.Add(EdTrack);
 	}
 }
 
@@ -4422,7 +4438,7 @@ void SAnimNotifyPanel::CopySelectedNodesToClipboard() const
 
 			NodeObject->ExportForCopy(Sequence, StrValue);
 		}
-		FPlatformMisc::ClipboardCopy(*StrValue);
+		FPlatformApplicationMisc::ClipboardCopy(*StrValue);
 	}
 }
 
@@ -4727,9 +4743,9 @@ FReply SAnimNotifyPanel::OnMouseMove(const FGeometry& MyGeometry, const FPointer
 	return BaseReply;
 }
 
-int32 SAnimNotifyPanel::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SAnimNotifyPanel::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
-	LayerId = SAnimTrackPanel::OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+	LayerId = SAnimTrackPanel::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 
 	FVector2D Origin = AllottedGeometry.AbsoluteToLocal(Marquee.Rect.GetUpperLeft());
 	FVector2D Extents = AllottedGeometry.AbsoluteToLocal(Marquee.Rect.GetSize());
@@ -4740,8 +4756,7 @@ int32 SAnimNotifyPanel::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 			OutDrawElements,
 			LayerId++,
 			AllottedGeometry.ToPaintGeometry(Marquee.Rect.GetUpperLeft(), Marquee.Rect.GetSize()),
-			FEditorStyle::GetBrush(TEXT("MarqueeSelection")),
-			MyClippingRect
+			FEditorStyle::GetBrush(TEXT("MarqueeSelection"))
 			);
 	}
 
@@ -4762,8 +4777,8 @@ void SAnimNotifyPanel::RefreshMarqueeSelectedNodes(const FGeometry& PanelGeo)
 
 			const FGeometry& TrackGeo = Track->GetCachedGeometry();
 
-			FSlateRect TrackClip = TrackGeo.GetClippingRect();
-			FSlateRect PanelClip = PanelGeo.GetClippingRect();
+			FSlateRect TrackClip = TrackGeo.GetLayoutBoundingRect();
+			FSlateRect PanelClip = PanelGeo.GetLayoutBoundingRect();
 			FVector2D PanelSpaceOrigin = TrackClip.GetTopLeft() - PanelClip.GetTopLeft();
 			FVector2D TrackSpaceOrigin = MarqueeRect.GetTopLeft() - PanelSpaceOrigin;
 			FSlateRect MarqueeTrackSpace(TrackSpaceOrigin, TrackSpaceOrigin + MarqueeRect.GetSize());
@@ -4829,6 +4844,11 @@ void SAnimNotifyPanel::OnGetNotifyBlueprintData(TArray<FAssetData>& OutNotifyDat
 			if(InOutAllowedClassNames->Contains(TagValue))
 			{
 				FString GenClass = AssetData.GetTagValueRef<FString>(BPGenClassName);
+				const uint32 ClassFlags = AssetData.GetTagValueRef<uint32>("ClassFlags");
+				if (ClassFlags & CLASS_Abstract)
+				{
+					continue;
+				}
 
 				if(!OutNotifyData.Contains(AssetData))
 				{

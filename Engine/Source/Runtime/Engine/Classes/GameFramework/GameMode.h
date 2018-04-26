@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -79,7 +79,7 @@ protected:
 	virtual void OnMatchStateSet();
 
 	/** Implementable event to respond to match state changes */
-	UFUNCTION(BlueprintImplementableEvent, Category="Game", meta=(DisplayName="OnSetMatchState"))
+	UFUNCTION(BlueprintImplementableEvent, Category="Game", meta=(DisplayName="OnSetMatchState", ScriptName="OnSetMatchState"))
 	void K2_OnSetMatchState(FName NewState);
 
 	// Games should override these functions to deal with their game specific logic
@@ -147,6 +147,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category=GameMode)
 	float InactivePlayerStateLifeSpan;
 
+	/** The maximum number of inactive players before we kick the oldest ones out */
+	UPROPERTY(EditAnywhere, Category = GameMode)
+	int32 MaxInactivePlayers;
+
 	/** If true, dedicated servers will record replays when HandleMatchHasStarted/HandleMatchHasStopped is called */
 	UPROPERTY(config)
 	bool bHandleDedicatedServerReplays;
@@ -185,8 +189,9 @@ public:
 	virtual void Say(const FString& Msg);
 
 	/** Alters the synthetic bandwidth limit for a running game. */
-	UFUNCTION(exec)
-	virtual void SetBandwidthLimit(float AsyncIOBandwidthLimit);
+	DEPRECATED(4.17, "AsyncIOBandwidthLimit is no longer configurable")
+	UFUNCTION(exec)	
+	virtual void SetBandwidthLimit(float AsyncIOBandwidthLimit) {}
 
 	/** Broadcast a string to all players. */
 	virtual void Broadcast( AActor* Sender, const FString& Msg, FName Type = NAME_None );
@@ -224,8 +229,12 @@ public:
 	/** Called from CommitMapChange after unloading previous level and loading new level+sublevels. Used for asynchronous level streaming */
 	virtual void PostCommitMapChange();
 
-	/** Called when a connection closes before getting to PostLogin() */
-	virtual void NotifyPendingConnectionLost();
+	/** 
+	 * Called when a connection closes before getting to PostLogin() 
+	 *
+	 * @param ConnectionUniqueId the unique id on the connection, if known (may be very early and impossible to know)
+	 */
+	virtual void NotifyPendingConnectionLost(const FUniqueNetIdRepl& ConnectionUniqueId);
 
 	/** Handles when a player is disconnected, before the session does */
 	virtual void HandleDisconnect(UWorld* InWorld, UNetDriver* NetDriver);

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -548,7 +548,7 @@ struct GAMEPLAYABILITIES_API FGameplayAbilityTargetData_SingleTargetHit : public
 	FGameplayAbilityTargetData_SingleTargetHit()
 	{ }
 
-	FGameplayAbilityTargetData_SingleTargetHit(const FHitResult InHitResult)
+	FGameplayAbilityTargetData_SingleTargetHit(FHitResult InHitResult)
 		: HitResult(MoveTemp(InHitResult))
 	{ }
 

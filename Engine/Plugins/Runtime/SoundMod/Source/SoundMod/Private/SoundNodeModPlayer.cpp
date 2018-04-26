@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "SoundNodeModPlayer.h"
 #include "Audio.h"
@@ -55,6 +55,11 @@ void USoundNodeModPlayer::LoadAsset(bool bAddToRoot)
 			SoundMod->AddToRoot();
 		}
 	}
+}
+
+void USoundNodeModPlayer::ClearAssetReferences()
+{
+	SoundMod = nullptr;
 }
 
 void USoundNodeModPlayer::OnSoundModLoaded(const FName& PackageName, UPackage* Package, EAsyncLoadingResult::Type Result, bool bAddToRoot)

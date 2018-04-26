@@ -1,4 +1,5 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
+// .
 
 #pragma once
 
@@ -23,7 +24,6 @@ enum GLSLVersion
 	GLSL_150_ES2_NOUB,	// ES2 Emulation with NoUBs
 	GLSL_150_ES3_1,	// ES3.1 Emulation
 	GLSL_ES2_IOS,
-	GLSL_150_MAC, // Apple only
 	GLSL_310_ES_EXT,
 	GLSL_ES3_1_ANDROID,
 	GLSL_SWITCH,
@@ -60,7 +60,7 @@ protected:
 	// what is the max number of samplers the shader platform can use?
 	virtual uint32 GetMaxSamplers(GLSLVersion Version);
 
-	virtual uint32 CalculateCrossCompilerFlags(GLSLVersion Version, bool bCompileES2With310, bool bUseFullPrecisionInPS);
+	virtual uint32 CalculateCrossCompilerFlags(GLSLVersion Version, bool bCompileES2With310, bool bUseFullPrecisionInPS, bool bUsesExternalTexture);
 
 	// set up compilation information like defines and HlslCompileTarget
 	virtual void SetupPerVersionCompilationEnvironment(GLSLVersion Version, class FShaderCompilerDefinitions& AdditionalDefines, EHlslCompileTarget& HlslCompilerTarget);
@@ -76,7 +76,8 @@ protected:
 
 	// Allow a subclass to perform additional work on the cross compiled source code
 	virtual bool PostProcessShaderSource(GLSLVersion Version, EShaderFrequency Frequency, const ANSICHAR* ShaderSource,
-		uint32 SourceLen, class FShaderParameterMap& ParameterMap, TMap<FString, FString>& BindingNameMap, TArray<struct FShaderCompilerError>& Errors)
+		uint32 SourceLen, class FShaderParameterMap& ParameterMap, TMap<FString, FString>& BindingNameMap, TArray<struct FShaderCompilerError>& Errors,
+		const FShaderCompilerInput& ShaderInput)
 	{
 		return true;
 	}

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ViewportWorldInteraction.h"
 #include "Materials/MaterialInterface.h"
@@ -19,13 +19,13 @@
 #include "ViewportDragOperation.h"
 #include "VIGizmoHandle.h"
 #include "Gizmo/VIPivotTransformGizmo.h"
-#include "ViewportWorldInteractionManager.h"
 #include "IViewportInteractionModule.h"
 #include "ViewportTransformer.h"
 #include "ActorTransformer.h"
 #include "SnappingUtils.h"
 #include "ScopedTransaction.h"
 #include "DrawDebugHelpers.h"
+#include "LevelEditorActions.h"
 #include "Framework/Application/SlateApplication.h"
 
 //Sound
@@ -35,21 +35,26 @@
 
 // For actor placement
 #include "IHeadMountedDisplay.h"
+#include "IXRTrackingSystem.h"
 #include "EngineUtils.h"
 #include "ActorViewportTransformable.h"
 
+// Preprocessor input
+#include "ViewportInteractionInputProcessor.h"
+#include "Framework/Application/SlateApplication.h"
 
 #define LOCTEXT_NAMESPACE "ViewportWorldInteraction"
 
 namespace VI
 {
 	static FAutoConsoleVariable GizmoScaleInDesktop( TEXT( "VI.GizmoScaleInDesktop" ), 0.35f, TEXT( "How big the transform gizmo should be when used in desktop mode" ) );
-	static FAutoConsoleVariable ScaleSensitivity( TEXT( "VI.ScaleSensitivity" ), 0.005f, TEXT( "Sensitivity for scaling" ) );
-	static FAutoConsoleVariable GizmoRotationSensitivity( TEXT( "VI.GizmoRotationSensitivity" ), 0.25f, TEXT( "How much to rotate as the user drags on a rotation gizmo handle" ) );
 	static FAutoConsoleVariable ScaleWorldFromFloor( TEXT( "VI.ScaleWorldFromFloor" ), 0, TEXT( "Whether the world should scale relative to your tracking space floor instead of the center of your hand locations" ) );
 	static FAutoConsoleVariable ScaleWorldWithDynamicPivot( TEXT( "VI.ScaleWorldWithDynamicPivot" ), 1, TEXT( "Whether to compute a new center point for scaling relative from by looking at how far either controller moved relative to the last frame" ) );
 	static FAutoConsoleVariable AllowVerticalWorldMovement( TEXT( "VI.AllowVerticalWorldMovement" ), 1, TEXT( "Whether you can move your tracking space away from the origin or not" ) );
 	static FAutoConsoleVariable AllowWorldRotationPitchAndRoll( TEXT( "VI.AllowWorldRotationPitchAndRoll" ), 0, TEXT( "When enabled, you'll not only be able to yaw, but also pitch and roll the world when rotating by gripping with two hands" ) );
+	static FAutoConsoleVariable AllowSimultaneousWorldScalingAndRotation( TEXT( "VI.AllowSimultaneousWorldScalingAndRotation" ), 1, TEXT( "When enabled, you can freely rotate and scale the world with two hands at the same time.  Otherwise, we'll detect whether to rotate or scale depending on how much of either gesture you initially perform." ) );
+	static FAutoConsoleVariable WorldScalingDragThreshold( TEXT( "VI.WorldScalingDragThreshold" ), 7.0f, TEXT( "How much you need to perform a scale gesture before world scaling starts to happen." ) );
+	static FAutoConsoleVariable WorldRotationDragThreshold( TEXT( "VI.WorldRotationDragThreshold" ), 8.0f, TEXT( "How much (degrees) you need to perform a rotation gesture before world rotation starts to happen." ) );
 	static FAutoConsoleVariable InertiaVelocityBoost( TEXT( "VI.InertiaVelocityBoost" ), 0.5f, TEXT( "How much to scale object velocity when releasing dragged simulating objects in Simulate mode" ) );
 	static FAutoConsoleVariable SweepPhysicsWhileSimulating( TEXT( "VI.SweepPhysicsWhileSimulating" ), 0, TEXT( "If enabled, simulated objects won't be able to penetrate other objects while being dragged in Simulate mode" ) );
 	static FAutoConsoleVariable PlacementInterpolationDuration( TEXT( "VI.PlacementInterpolationDuration" ), 0.6f, TEXT( "How long we should interpolate newly-placed objects to their target location." ) );
@@ -73,10 +78,7 @@ namespace VI
 	static FAutoConsoleVariable SnapGridLineWidth( TEXT( "VI.SnapGridLineWidth" ), 3.0f, TEXT( "Width of the grid lines on the snap grid" ) );
 	static FAutoConsoleVariable MinVelocityForInertia( TEXT( "VI.MinVelocityForInertia" ), 1.0f, TEXT( "Minimum velocity (in cm/frame in unscaled room space) before inertia will kick in when releasing objects (or the world)" ) );
 	static FAutoConsoleVariable GridHapticFeedbackStrength( TEXT( "VI.GridHapticFeedbackStrength" ), 0.4f, TEXT( "Default strength for haptic feedback when moving across grid points" ) );
-
-	static FAutoConsoleVariable UseTransientActors( TEXT( "VI.UseTransientActors" ), 1, TEXT( "For debugging only, allows you to turn off transient on newly-spawned VR editor actors." ) );
-
-	static FAutoConsoleVariable EnableGuides(TEXT("VI.EnableGuides"), 0, TEXT("Whether or not guidelines should be enabled. Off by default, set to 1 to enable."));
+	static FAutoConsoleVariable ActorSnap(TEXT("VI.ActorSnap"), 0, TEXT("Whether or not to snap to Actors in the scene. Off by default, set to 1 to enable."));
 	static FAutoConsoleVariable AlignCandidateDistance(TEXT("VI.AlignCandidateDistance"), 2.0f, TEXT("The distance candidate actors can be from our transformable (in multiples of our transformable's size"));
 	static FAutoConsoleVariable ForceSnapDistance(TEXT("VI.ForceSnapDistance"), 25.0f, TEXT("The distance (in % of transformable size) where guide lines indicate that actors are aligned"));
 
@@ -84,7 +86,7 @@ namespace VI
 	static FAutoConsoleVariable SFXMultiplier(TEXT("VI.SFXMultiplier"), 1.5f, TEXT("Default Sound Effect Volume Multiplier"));
 }
 
-const FString UViewportWorldInteraction::AssetContainerPath = FString("/Engine/VREditor/ViewportInteractionAssetContainerData");
+const TCHAR* UViewportWorldInteraction::AssetContainerPath = TEXT("/Engine/VREditor/ViewportInteractionAssetContainerData");
 
 struct FGuideData
 {
@@ -276,8 +278,6 @@ UViewportWorldInteraction::UViewportWorldInteraction():
 	TransformGizmoActor( nullptr ),
 	TransformGizmoClass( APivotTransformGizmo::StaticClass() ),
 	GizmoLocalBounds( FBox(ForceInit) ),
-	StartDragAngleOnRotation(),
-	DraggingRotationHandleDirection(),
 	bShouldTransformGizmoBeVisible( true ),
 	TransformGizmoScale( VI::GizmoScaleInDesktop->GetFloat() ),
 	GizmoType(),
@@ -294,7 +294,8 @@ UViewportWorldInteraction::UViewportWorldInteraction():
 	bShouldSuppressCursor(false),
 	CurrentTickNumber(0),
 	AssetContainer(nullptr),
-	bPlayNextRefreshTransformGizmoSound(true)
+	bPlayNextRefreshTransformGizmoSound(true),
+	InputProcessor()
 {
 }
 
@@ -314,11 +315,7 @@ void UViewportWorldInteraction::Init()
 	AppTimeEntered = FTimespan::FromSeconds( FApp::GetCurrentTime() );
 
 	// Setup the asset container.
-	AssetContainer = LoadObject<UViewportInteractionAssetContainer>(nullptr, *UViewportWorldInteraction::AssetContainerPath);
-	check(AssetContainer != nullptr);
-
-	IViewportWorldInteractionManager& WorldInteractionManager = IViewportInteractionModule::Get().GetWorldInteractionManager();
-	WorldInteractionManager.SetCurrentViewportWorldInteraction( this );
+	AssetContainer = &LoadAssetContainer();
 
 	// Start with the default transformer
 	SetTransformer( nullptr );
@@ -330,7 +327,6 @@ void UViewportWorldInteraction::Init()
 	const bool bPropagateToChildren = true;
 	TransformGizmoActor->GetRootComponent()->SetVisibility( bShouldBeVisible, bPropagateToChildren );
 
-
 	/** This will make sure this is not ticking after the editor has been closed. */
 	GEditor->OnEditorClose().AddUObject( this, &UViewportWorldInteraction::Shutdown );
 
@@ -341,8 +337,13 @@ void UViewportWorldInteraction::Init()
 
 	CandidateActors.Reset();
 
+	// Create and add the input pre-processor to the slate application.
+	InputProcessor = MakeShareable(new FViewportInteractionInputProcessor(this));
+	FSlateApplication::Get().RegisterInputPreProcessor(InputProcessor);
+
 	// Pretend that actor selection changed, so that our gizmo refreshes right away based on which objects are selected
 	GEditor->NoteSelectionChange();
+	GEditor->SelectNone(true, true, false);
 
 	CurrentTickNumber = 0;
 }
@@ -357,10 +358,11 @@ void UViewportWorldInteraction::Shutdown()
 	}
 
 	DestroyActors();
-	DefaultOptionalViewportClient = nullptr;
-
-	IViewportWorldInteractionManager& WorldInteractionManager = IViewportInteractionModule::Get().GetWorldInteractionManager();
-	WorldInteractionManager.SetCurrentViewportWorldInteraction( nullptr );
+	if (DefaultOptionalViewportClient != nullptr)
+	{
+		DefaultOptionalViewportClient->ShowWidget(true);
+		DefaultOptionalViewportClient = nullptr;
+	}
 
 	AppTimeEntered = FTimespan::Zero();
 
@@ -395,6 +397,10 @@ void UViewportWorldInteraction::Shutdown()
 	AssetContainer = nullptr;
 
 	GizmoType.Reset();
+
+	// Remove the input pre-processor
+	FSlateApplication::Get().UnregisterInputPreProcessor(InputProcessor);
+	InputProcessor.Reset();
 
 	USelection::SelectionChangedEvent.RemoveAll( this );
 	GEditor->OnEditorClose().RemoveAll( this );
@@ -479,6 +485,7 @@ void UViewportWorldInteraction::AddInteractor( UViewportInteractor* Interactor )
 
 void UViewportWorldInteraction::RemoveInteractor( UViewportInteractor* Interactor )
 {
+	Interactor->Shutdown();
 	Interactor->RemoveOtherInteractor();
 	Interactors.Remove( Interactor );
 }
@@ -533,7 +540,11 @@ void UViewportWorldInteraction::SetTransformables( TArray< TUniquePtr< class FVi
 
 void UViewportWorldInteraction::SetDefaultOptionalViewportClient(const TSharedPtr<class FEditorViewportClient>& InEditorViewportClient)
 {
-	DefaultOptionalViewportClient = InEditorViewportClient.Get();
+	if (InEditorViewportClient.IsValid())
+	{
+		DefaultOptionalViewportClient = InEditorViewportClient.Get();
+		DefaultOptionalViewportClient->ShowWidget(false);
+	}
 }
 
 void UViewportWorldInteraction::PairInteractors( UViewportInteractor* FirstInteractor, UViewportInteractor* SecondInteractor )
@@ -546,7 +557,7 @@ bool UViewportWorldInteraction::InputKey( FEditorViewportClient* InViewportClien
 {
 	bool bWasHandled = false;
 
-	if( IsActive() )
+	if( IsActive() && !bWasHandled )
 	{
 		check(InViewportClient != nullptr);
 		OnKeyInputEvent.Broadcast(InViewportClient, Key, Event, bWasHandled);
@@ -647,7 +658,7 @@ FTransform UViewportWorldInteraction::GetRoomSpaceHeadTransform() const
 	{
 		FQuat RoomSpaceHeadOrientation;
 		FVector RoomSpaceHeadLocation;
-		GEngine->HMDDevice->GetCurrentOrientationAndPosition( /* Out */ RoomSpaceHeadOrientation, /* Out */ RoomSpaceHeadLocation );
+		GEngine->XRSystem->GetCurrentPose( IXRTrackingSystem::HMDDeviceId, /* Out */ RoomSpaceHeadOrientation, /* Out */ RoomSpaceHeadLocation );
 
 		HeadTransform = FTransform(
 			RoomSpaceHeadOrientation,
@@ -667,7 +678,7 @@ FTransform UViewportWorldInteraction::GetHeadTransform() const
 
 bool UViewportWorldInteraction::HaveHeadTransform() const
 {
-	return DefaultOptionalViewportClient != nullptr && GEngine->HMDDevice.IsValid() && GEngine->HMDDevice->IsStereoEnabled();
+	return DefaultOptionalViewportClient != nullptr && GEngine->XRSystem.IsValid() && GEngine->StereoRenderingDevice.IsValid() && GEngine->StereoRenderingDevice->IsStereoEnabled();
 }
 
 
@@ -710,25 +721,35 @@ void UViewportWorldInteraction::Redo()
 
 void UViewportWorldInteraction::DeleteSelectedObjects()
 {
-	ExecCommand(FString("DELETE"));
+	if (FLevelEditorActionCallbacks::Delete_CanExecute())
+	{
+		ExecCommand(FString("DELETE"));
+	}
 }
 
 void UViewportWorldInteraction::Copy()
 {
-	// @todo vreditor: Needs CanExecute()  (see LevelEditorActions.cpp)
-	ExecCommand(FString("EDIT COPY"));
+	if (FLevelEditorActionCallbacks::Copy_CanExecute())
+	{
+		ExecCommand(FString("EDIT COPY"));
+	}
 }
 
 void UViewportWorldInteraction::Paste()
 {
-	// @todo vreditor: Needs CanExecute()  (see LevelEditorActions.cpp)
-	// @todo vreditor: Needs "paste here" style pasting (TO=HERE), but with ray
-	ExecCommand(FString("EDIT PASTE"));
+	if (FLevelEditorActionCallbacks::Paste_CanExecute())
+	{
+		// @todo vreditor: Needs "paste here" style pasting (TO=HERE), but with ray
+		ExecCommand(FString("EDIT PASTE"));
+	}
 }
 
 void UViewportWorldInteraction::Duplicate()
 {
-	ExecCommand(FString("DUPLICATE"));
+	if (FLevelEditorActionCallbacks::Duplicate_CanExecute())
+	{
+		ExecCommand(FString("DUPLICATE"));
+	}
 }
 
 void UViewportWorldInteraction::Deselect()
@@ -869,12 +890,9 @@ void UViewportWorldInteraction::InteractionTick( const float DeltaTime )
 			check( DraggingWithInteractor == nullptr );	// Only support dragging one thing at a time right now!
 			DraggingWithInteractor = Interactor;
 
-			if ( InteractorData.DraggingMode != EViewportInteractionDraggingMode::TransformablesAtLaserImpact )
+			if (!InteractorData.bDraggingWithGrabberSphere)
 			{
-				if( !InteractorData.bDraggingWithGrabberSphere )
-				{
-					bCanSlideRayLength = true;
-				}
+				bCanSlideRayLength = true;
 			}
 		}
 
@@ -1126,6 +1144,17 @@ void UViewportWorldInteraction::InteractionTick( const float DeltaTime )
 				}
 			}
 
+			UViewportDragOperation* DragOperation = nullptr;
+			if (InteractorData.DragOperationComponent.IsValid())
+			{
+				UViewportDragOperationComponent* DragOperationComponent = InteractorData.DragOperationComponent.Get();
+				if (DragOperationComponent->GetDragOperation() == nullptr)
+				{
+					DragOperationComponent->StartDragOperation();
+				}
+				DragOperation = DragOperationComponent->GetDragOperation();
+			}
+
 			const FVector OldViewLocation = DefaultOptionalViewportClient != nullptr ? DefaultOptionalViewportClient->GetViewLocation() : FVector::ZeroVector;
 
 			// Dragging transform gizmo handle
@@ -1135,8 +1164,9 @@ void UViewportWorldInteraction::InteractionTick( const float DeltaTime )
 			UpdateDragging(
 				DeltaTime,
 				InteractorData.bIsFirstDragUpdate, 
+				Interactor,
 				InteractorData.DraggingMode, 
-				InteractorData.TransformGizmoInteractionType, 
+				DragOperation,
 				bWithTwoHands,
 				InteractorData.OptionalHandlePlacement, 
 				DragDelta, 
@@ -1158,6 +1188,9 @@ void UViewportWorldInteraction::InteractionTick( const float DeltaTime )
 				InteractorData.DraggingTransformGizmoComponent.Get(),
 				/* In/Out */ InteractorData.GizmoSpaceFirstDragUpdateOffsetAlongAxis,
 				/* In/Out */ InteractorData.GizmoSpaceDragDeltaFromStartOffset,
+				/* In/Out */ InteractorData.LockedWorldDragMode,
+				/* In/Out */ InteractorData.GizmoScaleSinceDragStarted,
+				/* In/Out */ InteractorData.GizmoRotationRadiansSinceDragStarted,
 				InteractorData.bIsDrivingVelocityOfSimulatedTransformables,
 				/* Out */ UnsnappedDraggedTo );
 
@@ -1233,7 +1266,7 @@ void UViewportWorldInteraction::InteractionTick( const float DeltaTime )
 		// If we're not actively dragging, apply inertia to any selected elements that we've dragged around recently
 		else 
 		{
-			if( !InteractorData.DragTranslationVelocity.IsNearlyZero( VI::DragTranslationVelocityStopEpsilon->GetFloat() ) &&
+			if( (!InteractorData.DragTranslationVelocity.IsNearlyZero( VI::DragTranslationVelocityStopEpsilon->GetFloat() ) ||	bIsInterpolatingTransformablesFromSnapshotTransform) &&
 				!InteractorData.bWasAssistingDrag && 	// If we were only assisting, let the other hand take care of doing the update
 				!InteractorData.bIsDrivingVelocityOfSimulatedTransformables )	// If simulation mode is on, let the physics engine take care of inertia
 			{
@@ -1268,8 +1301,9 @@ void UViewportWorldInteraction::InteractionTick( const float DeltaTime )
 				UpdateDragging(
 					DeltaTime,
 					InteractorData.bIsFirstDragUpdate, 
+					Interactor,
 					InteractorData.LastDraggingMode, 
-					InteractorData.TransformGizmoInteractionType, 
+					InteractorData.LastDragOperation,
 					bWithTwoHands, 
 					InteractorData.OptionalHandlePlacement, 
 					DragDelta, 
@@ -1291,6 +1325,9 @@ void UViewportWorldInteraction::InteractionTick( const float DeltaTime )
 					InteractorData.DraggingTransformGizmoComponent.Get(),
 					/* In/Out */ InteractorData.GizmoSpaceFirstDragUpdateOffsetAlongAxis,
 					/* In/Out */ InteractorData.GizmoSpaceDragDeltaFromStartOffset,
+					/* In/Out */ InteractorData.LockedWorldDragMode,
+					/* In/Out */ InteractorData.GizmoScaleSinceDragStarted,
+					/* In/Out */ InteractorData.GizmoRotationRadiansSinceDragStarted,
 					InteractorData.bIsDrivingVelocityOfSimulatedTransformables,
 					/* Out */ UnsnappedDraggedTo );
 
@@ -1321,7 +1358,7 @@ void UViewportWorldInteraction::InteractionTick( const float DeltaTime )
 		const bool bUseElasticSnapping = bSmoothSnappingEnabled && 
 										VI::ElasticSnap->GetInt() > 0 && 
 										DraggingWithInteractor != nullptr &&	// Only while we're still dragging stuff!
-										VI::EnableGuides->GetInt() == 0;	// Not while using actor align/snap
+										VI::ActorSnap->GetInt() == 0;	// Not while using actor align/snap
 		const float ElasticSnapStrength = VI::ElasticSnapStrength->GetFloat();
 
 		float InterpProgress = 1.0f;
@@ -1380,7 +1417,7 @@ void UViewportWorldInteraction::InteractionTick( const float DeltaTime )
 			{
 				InterpolatedGizmoTransform.BlendWith( InteractorData.GizmoInterpolationSnapshotTransform, 1.0f - InterpProgress );
 			}
-
+			
 			for ( TUniquePtr<FViewportTransformable>& TransformablePtr : Transformables )
 			{
 				FViewportTransformable& Transformable = *TransformablePtr;
@@ -1461,7 +1498,7 @@ void UViewportWorldInteraction::SetLastDragGizmoStartTransform( const FTransform
 	LastDragGizmoStartTransform = NewLastDragGizmoStartTransform;
 }
 
-TArray<UViewportInteractor*>& UViewportWorldInteraction::GetInteractors()
+const TArray<UViewportInteractor*>& UViewportWorldInteraction::GetInteractors() const
 {
 	return Interactors;
 }
@@ -1470,8 +1507,9 @@ BEGIN_FUNCTION_BUILD_OPTIMIZATION
 void UViewportWorldInteraction::UpdateDragging(
 	const float DeltaTime,
 	bool& bIsFirstDragUpdate,
+	UViewportInteractor* Interactor,
 	const EViewportInteractionDraggingMode DraggingMode,
-	const ETransformGizmoInteractionType InteractionType,
+	UViewportDragOperation* DragOperation,
 	const bool bWithTwoHands,
 	const TOptional<FTransformGizmoHandlePlacement> OptionalHandlePlacement,
 	const FVector& DragDelta,
@@ -1493,6 +1531,9 @@ void UViewportWorldInteraction::UpdateDragging(
 	const USceneComponent* const DraggingTransformGizmoComponent,
 	FVector& GizmoSpaceFirstDragUpdateOffsetAlongAxis,
 	FVector& DragDeltaFromStartOffset,
+	ELockedWorldDragMode& LockedWorldDragMode,
+	float& GizmoScaleSinceDragStarted,
+	float& GizmoRotationRadiansSinceDragStarted,
 	bool& bIsDrivingVelocityOfSimulatedTransformables,
 	FVector& OutUnsnappedDraggedTo )
 {
@@ -1508,24 +1549,107 @@ void UViewportWorldInteraction::UpdateDragging(
 	// while we're dragging objects around (otherwise, the objects will spaz out as soon as dragging stops.)
 	bool bShouldApplyVelocitiesFromDrag = false;
 
+	const ECoordSystem CoordSystem = GetTransformGizmoCoordinateSpace();
+
 	// Always snap objects relative to where they were when we first grabbed them.  We never want objects to immediately
 	// teleport to the closest snap, but instead snaps should always be relative to the gizmo center
 	// NOTE: While placing objects, we always snap in world space, since the initial position isn't really at all useful
 	const bool bLocalSpaceSnapping =
-		GetTransformGizmoCoordinateSpace() == COORD_Local &&
+		CoordSystem == COORD_Local &&
 		DraggingMode != EViewportInteractionDraggingMode::TransformablesAtLaserImpact;
 	const FVector SnapGridBase = ( DraggingMode == EViewportInteractionDraggingMode::TransformablesAtLaserImpact ||  bLocalSpaceSnapping ) ? FVector::ZeroVector : GizmoStartTransform.GetLocation();
 
-
 	// Okay, time to move stuff!  We'll do this part differently depending on whether we're dragging actual actors around
 	// or we're moving the camera (aka. dragging the world)
-	if( DraggingMode == EViewportInteractionDraggingMode::TransformablesWithGizmo ||
-		DraggingMode == EViewportInteractionDraggingMode::TransformablesAtLaserImpact )
+	if (DragOperation != nullptr && DraggingMode == EViewportInteractionDraggingMode::TransformablesWithGizmo)
+	{
+
+		FVector OutClosestPointOnLaser;
+		FVector ConstrainedDragDeltaFromStart = ComputeConstrainedDragDeltaFromStart(
+			bIsFirstDragUpdate,
+			DragOperation->bPlaneConstraint,
+			OptionalHandlePlacement,
+			DragDeltaFromStart,
+			LaserPointerStart,
+			LaserPointerDirection, 
+			bIsLaserPointerValid,
+			GizmoStartTransform,
+			LaserPointerMaxLength,
+			/* In/Out */ GizmoSpaceFirstDragUpdateOffsetAlongAxis,
+			/* In/Out */ DragDeltaFromStartOffset,
+			/* Out */ OutClosestPointOnLaser);
+
+		// Set out put for hover point
+		OutUnsnappedDraggedTo = GizmoStartTransform.GetLocation() + OutClosestPointOnLaser;
+
+		// Grid snap!
+		const FVector DesiredGizmoLocation = GizmoStartTransform.GetLocation() + ConstrainedDragDeltaFromStart;
+
+		FDraggingTransformableData DragData;
+		DragData.Interactor = Interactor;
+		DragData.WorldInteraction = this;
+		DragData.OptionalHandlePlacement = OptionalHandlePlacement;
+		DragData.DragDelta = DragDelta;
+		DragData.ConstrainedDragDelta = ConstrainedDragDeltaFromStart;
+		DragData.OtherHandDragDelta = OtherHandDragDelta;
+		DragData.DraggedTo = DraggedTo;
+		DragData.OtherHandDraggedTo = OtherHandDraggedTo;
+		DragData.DragDeltaFromStart = DragDeltaFromStart;
+		DragData.OtherHandDragDeltaFromStart = OtherHandDragDeltaFromStart;
+		DragData.LaserPointerStart = LaserPointerStart;
+		DragData.LaserPointerDirection = LaserPointerDirection;
+		DragData.GizmoStartTransform = GizmoStartTransform;
+		DragData.GizmoLastTransform = GizmoLastTransform;
+		DragData.OutGizmoUnsnappedTargetTransform = GizmoUnsnappedTargetTransform;
+		DragData.OutUnsnappedDraggedTo = OutUnsnappedDraggedTo;
+		DragData.GizmoStartLocalBounds = GizmoStartLocalBounds;
+		DragData.GizmoCoordinateSpace = GetTransformGizmoCoordinateSpace();
+		DragData.PassDraggedTo = DesiredGizmoLocation;
+
+		DragOperation->ExecuteDrag(DragData);
+
+		GizmoTargetTransform = GizmoUnsnappedTargetTransform;
+		if (DragData.bAllowSnap)
+		{
+			// Translation snap
+			if (DragData.bOutTranslated && (AreAligningToActors() || FSnappingUtils::IsSnapToGridEnabled()))
+			{
+				const FVector ResultLocation = SnapLocation(bLocalSpaceSnapping,
+					DragData.OutGizmoUnsnappedTargetTransform.GetLocation(),
+					GizmoStartTransform, 
+					SnapGridBase, 
+					true /*bShouldConstrainMovement*/, 
+					ConstrainedDragDeltaFromStart);
+				GizmoTargetTransform.SetLocation(ResultLocation);
+			}
+
+			// Rotation snap
+			if (DragData.bOutRotated && FSnappingUtils::IsRotationSnapEnabled())
+			{
+				FRotator RotationToSnap = DragData.OutGizmoUnsnappedTargetTransform.GetRotation().Rotator();
+				FSnappingUtils::SnapRotatorToGrid(RotationToSnap);
+				GizmoTargetTransform.SetRotation(RotationToSnap.Quaternion());
+			}
+
+			// Scale snap
+			if (DragData.bOutScaled && FSnappingUtils::IsScaleSnapEnabled())
+			{
+				FVector ScaleToSnap = DragData.OutGizmoUnsnappedTargetTransform.GetScale3D();
+				FSnappingUtils::SnapScale(ScaleToSnap, SnapGridBase);
+				GizmoTargetTransform.SetScale3D(ScaleToSnap);
+			}
+		}
+
+		GizmoUnsnappedTargetTransform = DragData.OutGizmoUnsnappedTargetTransform;
+		bMovedTransformGizmo = DragData.bOutMovedTransformGizmo;
+		bShouldApplyVelocitiesFromDrag = DragData.bOutShouldApplyVelocitiesFromDrag;
+	}
+	else if (DraggingMode == EViewportInteractionDraggingMode::TransformablesAtLaserImpact)
 	{
 		FVector OutClosestPointOnLaser;
 		FVector ConstrainedDragDeltaFromStart = ComputeConstrainedDragDeltaFromStart(
 			bIsFirstDragUpdate,
-			InteractionType,
+			false,
 			OptionalHandlePlacement,
 			DragDeltaFromStart,
 			LaserPointerStart,
@@ -1537,305 +1661,27 @@ void UViewportWorldInteraction::UpdateDragging(
 			/* In/Out */ DragDeltaFromStartOffset,
 			/* Out */ OutClosestPointOnLaser);
 
-		FVector OriginalConstrainedDragDelta = ConstrainedDragDeltaFromStart;
-		ConstrainedDragDeltaFromStart = GizmoStartTransform.GetLocation() + ConstrainedDragDeltaFromStart;
+		const FVector DesiredGizmoLocation = GizmoStartTransform.GetLocation() + ConstrainedDragDeltaFromStart;
 
 		// Set out put for hover point
 		OutUnsnappedDraggedTo = GizmoStartTransform.GetLocation() + OutClosestPointOnLaser;
 
-
 		// Grid snap!
-		FVector DesiredGizmoLocation = ConstrainedDragDeltaFromStart;
-		FVector SnappedDraggedTo = DesiredGizmoLocation;
-		if ((InteractionType == ETransformGizmoInteractionType::Translate ||
-			InteractionType == ETransformGizmoInteractionType::TranslateOnPlane) || 
-			DraggingMode == EViewportInteractionDraggingMode::TransformablesAtLaserImpact)
-		{
-			const bool bShouldConstrainMovement = true;
-			SnappedDraggedTo = SnapLocation(bLocalSpaceSnapping, DesiredGizmoLocation, GizmoStartTransform, SnapGridBase, bShouldConstrainMovement, OriginalConstrainedDragDelta);
-		}
+		const bool bShouldConstrainMovement = true;
+		FVector SnappedDraggedTo = SnapLocation(bLocalSpaceSnapping, DesiredGizmoLocation, GizmoStartTransform, SnapGridBase, bShouldConstrainMovement, ConstrainedDragDeltaFromStart);
 
 		// Two passes.  First update the real transform.  Then update the unsnapped transform.
-		for ( int32 PassIndex = 0; PassIndex < 2; ++PassIndex )
+		for (int32 PassIndex = 0; PassIndex < 2; ++PassIndex)
 		{
-			const bool bIsUpdatingUnsnappedTarget = ( PassIndex == 1 );
-			const FVector& PassDraggedTo = bIsUpdatingUnsnappedTarget ? ConstrainedDragDeltaFromStart : SnappedDraggedTo;
+			const bool bIsUpdatingUnsnappedTarget = (PassIndex == 1);
+			const FVector& PassDraggedTo = bIsUpdatingUnsnappedTarget ? DesiredGizmoLocation : SnappedDraggedTo;
 
-			if( InteractionType == ETransformGizmoInteractionType::Translate ||
-				InteractionType == ETransformGizmoInteractionType::TranslateOnPlane )
-			{
-				// Translate the gizmo!
-				FTransform& PassGizmoTargetTransform = bIsUpdatingUnsnappedTarget ? GizmoUnsnappedTargetTransform : GizmoTargetTransform;
+			// Translate the gizmo!
+			FTransform& PassGizmoTargetTransform = bIsUpdatingUnsnappedTarget ? GizmoUnsnappedTargetTransform : GizmoTargetTransform;
+			PassGizmoTargetTransform.SetLocation(PassDraggedTo);
 
-				PassGizmoTargetTransform.SetLocation( PassDraggedTo );
-
-				bMovedTransformGizmo = true;
-				bShouldApplyVelocitiesFromDrag = true;
-			}
-			else if ( InteractionType == ETransformGizmoInteractionType::StretchAndReposition )
-			{
-				// We only support stretching by a handle currently
-				const FTransformGizmoHandlePlacement& HandlePlacement = OptionalHandlePlacement.GetValue();
-
-				const FVector PassGizmoSpaceDraggedTo = GizmoStartTransform.InverseTransformPositionNoScale( PassDraggedTo );
-
-				FBox NewGizmoLocalBounds = GizmoStartLocalBounds;
-				FVector GizmoSpacePivotLocation = FVector::ZeroVector;
-				for ( int32 AxisIndex = 0; AxisIndex < 3; ++AxisIndex )
-				{
-					// Figure out how much the gizmo bounds changes
-					if ( HandlePlacement.Axes[ AxisIndex ] == ETransformGizmoHandleDirection::Negative )	// Negative direction
-					{
-						GizmoSpacePivotLocation[ AxisIndex ] = GizmoStartLocalBounds.Max[ AxisIndex ];
-						NewGizmoLocalBounds.Min[ AxisIndex ] = GizmoStartLocalBounds.Min[ AxisIndex ] + PassGizmoSpaceDraggedTo[ AxisIndex ];
-
-					}
-					else if ( HandlePlacement.Axes[ AxisIndex ] == ETransformGizmoHandleDirection::Positive )	// Positive direction
-					{
-						GizmoSpacePivotLocation[ AxisIndex ] = GizmoStartLocalBounds.Min[ AxisIndex ];
-						NewGizmoLocalBounds.Max[ AxisIndex ] = GizmoStartLocalBounds.Max[ AxisIndex ] + PassGizmoSpaceDraggedTo[ AxisIndex ];
-					}
-					else
-					{
-						// Must be ETransformGizmoHandleDirection::Center.  
-						GizmoSpacePivotLocation[ AxisIndex ] = GizmoStartLocalBounds.GetCenter()[ AxisIndex ];
-					}
-				}
-				
-				const FVector GizmoStartLocalSize = GizmoStartLocalBounds.GetSize();
-				const FVector NewGizmoLocalSize = NewGizmoLocalBounds.GetSize();
-
-				FVector NewGizmoLocalScaleFromStart = FVector( 1.0f );
-				for( int32 AxisIndex = 0; AxisIndex < 3; ++AxisIndex )
-				{
-					if( !FMath::IsNearlyZero( GizmoStartLocalSize[AxisIndex] ) )
-					{
-						NewGizmoLocalScaleFromStart[AxisIndex] = NewGizmoLocalSize[AxisIndex] / GizmoStartLocalSize[AxisIndex];
-					}
-					else
-					{
-						// Zero scale.  This is allowed in Unreal, for better or worse.
-						NewGizmoLocalScaleFromStart[AxisIndex] = 0.0f;
-					}
-				}
-
-				// Stretch and reposition the gizmo!
-				{
-					FTransform& PassGizmoTargetTransform = bIsUpdatingUnsnappedTarget ? GizmoUnsnappedTargetTransform : GizmoTargetTransform;
-
-					{
-						const FVector GizmoSpaceTransformableStartLocation = GizmoStartTransform.InverseTransformPositionNoScale( GizmoStartTransform.GetLocation() );
-						const FVector NewGizmoSpaceLocation = ( GizmoSpaceTransformableStartLocation - GizmoSpacePivotLocation ) * NewGizmoLocalScaleFromStart + GizmoSpacePivotLocation;
-						PassGizmoTargetTransform.SetLocation( GizmoStartTransform.TransformPosition( NewGizmoSpaceLocation ) );
-					}
-
-					// @todo vreditor: This scale is still in gizmo space, but we're setting it in world space
-					PassGizmoTargetTransform.SetScale3D( GizmoStartTransform.GetScale3D() * NewGizmoLocalScaleFromStart );
-
-					bMovedTransformGizmo = true;
-					bShouldApplyVelocitiesFromDrag = false;
-				}
-			}
-			else if ( InteractionType == ETransformGizmoInteractionType::Scale || InteractionType == ETransformGizmoInteractionType::UniformScale )
-			{
-				const FTransformGizmoHandlePlacement& HandlePlacement = OptionalHandlePlacement.GetValue();
-
-				int32 CenterHandleCount, FacingAxisIndex, CenterAxisIndex;
-				HandlePlacement.GetCenterHandleCountAndFacingAxisIndex( /* Out */ CenterHandleCount, /* Out */ FacingAxisIndex, /* Out */ CenterAxisIndex );
-
-				const FVector PassGizmoSpaceDraggedTo = GizmoStartTransform.InverseTransformPositionNoScale( PassDraggedTo );
-
-				const float ScaleSensitivity = VI::ScaleSensitivity->GetFloat();
-				float AddedScaleOnAxis = 0.0f;
-				if ( InteractionType == ETransformGizmoInteractionType::Scale )
-				{
-					AddedScaleOnAxis = PassGizmoSpaceDraggedTo[ FacingAxisIndex ] * ScaleSensitivity;
-
-					// Invert if we we are scaling on the negative side of the gizmo
-					if ( DraggingTransformGizmoComponent && DraggingTransformGizmoComponent->GetRelativeTransform().GetLocation()[ FacingAxisIndex ] < 0 )
-					{
-						AddedScaleOnAxis *= -1;
-					}
-				}
-				else if ( InteractionType == ETransformGizmoInteractionType::UniformScale )
-				{
-					// Always use Z for uniform scale
-					const FVector RelativeDraggedTo = PassDraggedTo - GizmoStartTransform.GetLocation();
-					AddedScaleOnAxis = RelativeDraggedTo.Z * ScaleSensitivity;
-				}
-
-				// Scale the gizmo!
-				{
-					FTransform& PassGizmoTargetTransform = bIsUpdatingUnsnappedTarget ? GizmoUnsnappedTargetTransform : GizmoTargetTransform;
-					FVector NewTotalScale = GizmoStartTransform.GetScale3D();
-
-					if ( InteractionType == ETransformGizmoInteractionType::Scale )
-					{
-						NewTotalScale[ FacingAxisIndex ] += AddedScaleOnAxis;
-					}
-					else if ( InteractionType == ETransformGizmoInteractionType::UniformScale )
-					{
-						NewTotalScale += FVector( AddedScaleOnAxis );
-					}
-
-					// Scale snap!
-					if ( !bIsUpdatingUnsnappedTarget && FSnappingUtils::IsScaleSnapEnabled() )
-					{
-						FSnappingUtils::SnapScale( NewTotalScale, FVector::ZeroVector );
-					}
-
-					PassGizmoTargetTransform.SetScale3D( NewTotalScale );
-					bMovedTransformGizmo = true;
-					bShouldApplyVelocitiesFromDrag = true;
-				}
-			}
-			else if ( InteractionType == ETransformGizmoInteractionType::Rotate )
-			{
-				// We only support rotating by a handle currently
-				const FTransformGizmoHandlePlacement& HandlePlacement = OptionalHandlePlacement.GetValue();
-
-				int32 CenterHandleCount, FacingAxisIndex, CenterAxisIndex;
-				HandlePlacement.GetCenterHandleCountAndFacingAxisIndex( /* Out */ CenterHandleCount, /* Out */ FacingAxisIndex, /* Out */ CenterAxisIndex );
-				check( CenterAxisIndex != INDEX_NONE );
-
-				// Get the local location of the rotation handle
-				FVector HandleRelativeLocation = FVector::ZeroVector;
-				for ( int32 AxisIndex = 0; AxisIndex < 3; ++AxisIndex )
-				{
-					if ( HandlePlacement.Axes[ AxisIndex ] == ETransformGizmoHandleDirection::Negative )	// Negative direction
-					{
-						HandleRelativeLocation[ AxisIndex ] = GizmoStartLocalBounds.Min[ AxisIndex ];
-					}
-					else if ( HandlePlacement.Axes[ AxisIndex ] == ETransformGizmoHandleDirection::Positive )	// Positive direction
-					{
-						HandleRelativeLocation[ AxisIndex ] = GizmoStartLocalBounds.Max[ AxisIndex ];
-					}
-					else // ETransformGizmoHandleDirection::Center
-					{
-						HandleRelativeLocation[ AxisIndex ] = GizmoStartLocalBounds.GetCenter()[ AxisIndex ];
-					}
-				}
-
-				const FVector GizmoSpaceRotationAxis = ( CenterAxisIndex == 0 ) ? FVector::ForwardVector : ( CenterAxisIndex == 1 ? FVector::RightVector : FVector::UpVector );
-
-				// Make a vector that points along the tangent vector of the bounding box edge
-				const FVector GizmoSpaceTowardHandleVector = ( HandleRelativeLocation - GizmoStartLocalBounds.GetCenter() ).GetSafeNormal();
-				const FVector GizmoSpaceDiagonalAxis = FQuat( GizmoSpaceRotationAxis, FMath::DegreesToRadians( 90.0f ) ).RotateVector( GizmoSpaceTowardHandleVector );
-
-				// Figure out how far we've dragged in the direction of the diagonal axis.
-				const float RotationProgress = FVector::DotProduct( DragDeltaFromStart, GizmoStartTransform.TransformVectorNoScale( GizmoSpaceDiagonalAxis ) );
-
-				const float RotationDegreesAroundAxis = RotationProgress * VI::GizmoRotationSensitivity->GetFloat();
-				const FQuat RotationDeltaFromStart = FQuat( GizmoSpaceRotationAxis, FMath::DegreesToRadians( RotationDegreesAroundAxis ) );
-
-				const FTransform WorldToGizmo = GizmoStartTransform.Inverse();
-
-				// Rotate (and reposition) the gizmo!
-				{
-					// @todo mesheditor: This stuff doesn't make as much sense now that we're transforming the gizmo itself instead of individual objects.
-					// We can simplify this code along with similar code blocks in this function!
-					const FTransform GizmoSpaceStartTransform = GizmoStartTransform * WorldToGizmo;
-					FTransform GizmoSpaceRotatedTransform = GizmoSpaceStartTransform * RotationDeltaFromStart;
-
-					// Snap rotation in gizmo space
-					if ( !bIsUpdatingUnsnappedTarget )
-					{
-						FRotator SnappedRotation = GizmoSpaceRotatedTransform.GetRotation().Rotator();
-						FSnappingUtils::SnapRotatorToGrid( SnappedRotation );
-						GizmoSpaceRotatedTransform.SetRotation( SnappedRotation.Quaternion() );
-					}
-
-					const FTransform WorldSpaceRotatedTransform = GizmoSpaceRotatedTransform * GizmoStartTransform;
-
-					FTransform& PassGizmoTargetTransform = bIsUpdatingUnsnappedTarget ? GizmoUnsnappedTargetTransform : GizmoTargetTransform;
-					PassGizmoTargetTransform = WorldSpaceRotatedTransform;
-					bMovedTransformGizmo = true;
-					bShouldApplyVelocitiesFromDrag = false;
-				}
-			}
-			else if ( InteractionType == ETransformGizmoInteractionType::RotateOnAngle )
-			{
-				const FTransformGizmoHandlePlacement& HandlePlacement = OptionalHandlePlacement.GetValue();
-
-				int32 CenterHandleCount, FacingAxisIndex, CenterAxisIndex;
-				HandlePlacement.GetCenterHandleCountAndFacingAxisIndex( /* Out */ CenterHandleCount, /* Out */ FacingAxisIndex, /* Out */ CenterAxisIndex );
-
-				FVector GizmoSpaceFacingAxisVector = UGizmoHandleGroup::GetAxisVector( FacingAxisIndex, HandlePlacement.Axes[ FacingAxisIndex ] );
-
-				if ( DraggingTransformGizmoComponent )
-				{
-					const FTransform WorldToGizmo = GizmoStartTransform.Inverse();
-
-					FTransform NewGizmoToWorld;
-					{
-						if ( !DraggingRotationHandleDirection.IsSet() )
-						{
-							DraggingRotationHandleDirection = DraggingTransformGizmoComponent->GetComponentTransform().GetRotation().Vector();
-							DraggingRotationHandleDirection->Normalize();
-						}
-
-						// Get the laser pointer intersection on the plane of the handle
-						const FPlane RotationPlane = FPlane( GizmoStartTransform.GetLocation(), DraggingRotationHandleDirection.GetValue() );
-						
-						const FVector LaserImpactOnRotationPlane = FMath::LinePlaneIntersection( LaserPointerStart, LaserPointerStart + LaserPointerDirection, RotationPlane);
-
-						{
-							FTransform GizmoTransformNoRotation = FTransform(FRotator::ZeroRotator, GizmoStartTransform.GetLocation());
-							const ECoordSystem CoordSystem = GLevelEditorModeTools().GetCoordSystem(true);
-							if (CoordSystem == COORD_Local)
-							{
-								GizmoTransformNoRotation.SetRotation(GizmoStartTransform.GetRotation());
-							}
-
-							LocalIntersectPointOnRotationGizmo = GizmoTransformNoRotation.InverseTransformPositionNoScale(LaserImpactOnRotationPlane);
-						}
-
-						// Set output for hover point
-						OutUnsnappedDraggedTo = LaserImpactOnRotationPlane;
-
-						// Relative offset of the intersection on the plane
-						const FVector GizmoSpaceLaserImpactOnRotationPlane = WorldToGizmo.TransformPosition( LaserImpactOnRotationPlane );
-						FVector RotatedIntersectLocationOnPlane;
-						if ( GLevelEditorModeTools().GetCoordSystem( true ) == COORD_Local )
-						{
-							RotatedIntersectLocationOnPlane = GizmoSpaceFacingAxisVector.Rotation().UnrotateVector( GizmoSpaceLaserImpactOnRotationPlane );
-						}
-						else
-						{
-							RotatedIntersectLocationOnPlane = GizmoStartTransform.TransformVector( GizmoSpaceFacingAxisVector ).Rotation().UnrotateVector( GizmoSpaceLaserImpactOnRotationPlane );
-						}
-
-						// Get the angle between the center and the intersected point
-						float AngleToIntersectedLocation = FMath::Atan2( RotatedIntersectLocationOnPlane.Y, RotatedIntersectLocationOnPlane.Z );
-						if ( !StartDragAngleOnRotation.IsSet() )
-						{
-							StartDragAngleOnRotation = AngleToIntersectedLocation;
-						}
-						
-						// Delta rotation in gizmo space between the starting and the intersection rotation
-						const float AngleDeltaRotationFromStart = FMath::FindDeltaAngleRadians( AngleToIntersectedLocation, StartDragAngleOnRotation.GetValue() );
-						const FQuat GizmoSpaceDeltaRotation = FQuat( GizmoSpaceFacingAxisVector, AngleDeltaRotationFromStart );
-
-						// Snap rotation in gizmo space
-						FTransform GizmoSpaceRotatedTransform( GizmoSpaceDeltaRotation );
-						if ( !bIsUpdatingUnsnappedTarget )
-						{
-							FRotator SnappedRotation = GizmoSpaceRotatedTransform.GetRotation().Rotator();
-							FSnappingUtils::SnapRotatorToGrid( SnappedRotation );
-							GizmoSpaceRotatedTransform.SetRotation( SnappedRotation.Quaternion() );
-						}
-						NewGizmoToWorld = GizmoSpaceRotatedTransform * GizmoStartTransform;
-					}
-
-					// Rotate the gizmo!
-					{
-						FTransform& PassTargetTransform = bIsUpdatingUnsnappedTarget ? GizmoUnsnappedTargetTransform : GizmoTargetTransform;
-						PassTargetTransform = NewGizmoToWorld;
-						bMovedTransformGizmo = true;
-						bShouldApplyVelocitiesFromDrag = true;
-					}
-				}
-			}
+			bMovedTransformGizmo = true;
+			bShouldApplyVelocitiesFromDrag = true;
 		}
 	}
 	else if ( DraggingMode == EViewportInteractionDraggingMode::TransformablesFreely ||
@@ -1898,9 +1744,11 @@ void UViewportWorldInteraction::UpdateDragging(
 			const float LineLength = ( LineEnd - LineStart ).Size();
 			ScaleOffset = FVector( LineLength / LastLineLength );
 			//			ScaleOffset = FVector( 0.98f + 0.04f * FMath::MakePulsatingValue( FPlatformTime::Seconds(), 0.1f ) ); // FVector( LineLength / LastLineLength );
+			GizmoScaleSinceDragStarted += ( LineLength - LastLineLength ) / GetWorldScaleFactor();
 
 			// How much did the line rotate since last time?
 			RotationOffset = FQuat::FindBetweenVectors( LastLineEnd - LastLineStart, LineEnd - LineStart );
+			GizmoRotationRadiansSinceDragStarted += RotationOffset.AngularDistance( FQuat::Identity );
 
 			// For translation, only move proportionally to the common vector between the two deltas.  Basically,
 			// you need to move both hands in the same direction to translate while gripping with two hands.
@@ -1912,13 +1760,14 @@ void UViewportWorldInteraction::UpdateDragging(
 		{
 			// Translate only (one hand)
 			TranslationOffset = DragDelta;
+			GizmoScaleSinceDragStarted = 0.0f;
+			GizmoRotationRadiansSinceDragStarted = 0.0f;
 		}
 
 		if ( VI::AllowVerticalWorldMovement->GetInt() == 0 )
 		{
 			TranslationOffset.Z = 0.0f;
 		}
-
 
 		if ( DraggingMode == EViewportInteractionDraggingMode::TransformablesFreely )
 		{
@@ -1942,9 +1791,28 @@ void UViewportWorldInteraction::UpdateDragging(
 			// Grid snap!
 			FTransform SnappedNewGizmoToWorld = NewGizmoToWorld;
 			{
-				const FVector GizmoDragDelta = NewGizmoToWorld.GetLocation() - GizmoUnsnappedTargetTransform.GetLocation();
-				const bool bShouldConstrainMovement = false;
-				SnappedNewGizmoToWorld.SetLocation( SnapLocation( bLocalSpaceSnapping, NewGizmoToWorld.GetLocation(), GizmoUnsnappedTargetTransform, SnapGridBase, bShouldConstrainMovement, GizmoDragDelta) );
+				if (FSnappingUtils::IsSnapToGridEnabled() || AreAligningToActors())
+				{
+					const FVector GizmoDragDelta = NewGizmoToWorld.GetLocation() - GizmoUnsnappedTargetTransform.GetLocation();
+					const bool bShouldConstrainMovement = false;
+					SnappedNewGizmoToWorld.SetLocation(SnapLocation(bLocalSpaceSnapping, NewGizmoToWorld.GetLocation(), GizmoUnsnappedTargetTransform, SnapGridBase, bShouldConstrainMovement, GizmoDragDelta));
+				}
+
+				// Rotation snap
+				if (FSnappingUtils::IsRotationSnapEnabled())
+				{
+					FRotator RotationToSnap = SnappedNewGizmoToWorld.GetRotation().Rotator();
+					FSnappingUtils::SnapRotatorToGrid(RotationToSnap);
+					SnappedNewGizmoToWorld.SetRotation(RotationToSnap.Quaternion());
+				}
+
+				// Scale snap
+				if (FSnappingUtils::IsScaleSnapEnabled())
+				{
+					FVector ScaleToSnap = SnappedNewGizmoToWorld.GetScale3D();
+					FSnappingUtils::SnapScale(ScaleToSnap, SnapGridBase);
+					SnappedNewGizmoToWorld.SetScale3D(ScaleToSnap);
+				}
 			}
 
 			// Two passes.  First update the real transform.  Then update the unsnapped transform.
@@ -1964,37 +1832,101 @@ void UViewportWorldInteraction::UpdateDragging(
 		{
 			FTransform RoomTransform = GetRoomTransform();
 
-			// Adjust world scale
-			const float WorldScaleOffset = ScaleOffset.GetAbsMax();
-			if ( WorldScaleOffset != 0.0f )
+			if( bWithTwoHands )
 			{
-				const float OldWorldToMetersScale = GetWorld()->GetWorldSettings()->WorldToMeters;
-				const float NewWorldToMetersScale = OldWorldToMetersScale / WorldScaleOffset;
-
-				// NOTE: Instead of clamping, we simply skip changing the W2M this frame if it's out of bounds.  Clamping makes our math more complicated.
-				if ( !FMath::IsNearlyEqual(NewWorldToMetersScale, OldWorldToMetersScale) &&
-					NewWorldToMetersScale >= GetMinScale() && NewWorldToMetersScale <= GetMaxScale() )
+				if( VI::AllowSimultaneousWorldScalingAndRotation->GetInt() == 0 &&
+					LockedWorldDragMode == ELockedWorldDragMode::Unlocked )
 				{
-					SetWorldToMetersScale(NewWorldToMetersScale);
-					CompensateRoomTransformForWorldScale(RoomTransform, NewWorldToMetersScale, PivotLocation);
+					const bool bHasDraggedEnoughToScale = FMath::Abs( GizmoScaleSinceDragStarted ) >= VI::WorldScalingDragThreshold->GetFloat();
+					if( bHasDraggedEnoughToScale )
+					{
+						LockedWorldDragMode = ELockedWorldDragMode::OnlyScaling;
+					}
+
+					const bool bHasDraggedEnoughToRotate = FMath::Abs( GizmoRotationRadiansSinceDragStarted ) >= FMath::DegreesToRadians( VI::WorldRotationDragThreshold->GetFloat() );
+					if( bHasDraggedEnoughToRotate )
+					{
+						LockedWorldDragMode = ELockedWorldDragMode::OnlyRotating;
+					}
+				}
+			}
+			else
+			{
+				// Only one hand is dragging world, so make sure everything is unlocked
+				LockedWorldDragMode = ELockedWorldDragMode::Unlocked;
+				GizmoScaleSinceDragStarted = 0.0f;
+				GizmoRotationRadiansSinceDragStarted = 0.0f;
+			}
+
+			const bool bAllowWorldTranslation = 
+				( LockedWorldDragMode == ELockedWorldDragMode::Unlocked );
+
+			const bool bAllowWorldScaling =
+				bWithTwoHands
+				&&
+				(
+					( 
+						( VI::AllowSimultaneousWorldScalingAndRotation->GetInt() != 0 ) 
+						&&
+						( LockedWorldDragMode == ELockedWorldDragMode::Unlocked ) 
+					) 
+					||
+					( LockedWorldDragMode == ELockedWorldDragMode::OnlyScaling ) 
+				);
+
+			const bool bAllowWorldRotation = 
+				bWithTwoHands
+				&&
+				(
+					( 
+						( VI::AllowSimultaneousWorldScalingAndRotation->GetInt() != 0 ) 
+						&& 
+						( LockedWorldDragMode == ELockedWorldDragMode::Unlocked ) 
+					) 
+					||
+					( LockedWorldDragMode == ELockedWorldDragMode::OnlyRotating )
+				);
+
+			if( bAllowWorldScaling )
+			{
+				// Adjust world scale
+				const float WorldScaleOffset = ScaleOffset.GetAbsMax();
+				if ( WorldScaleOffset != 0.0f )
+				{
+					const float OldWorldToMetersScale = GetWorld()->GetWorldSettings()->WorldToMeters;
+					const float NewWorldToMetersScale = OldWorldToMetersScale / WorldScaleOffset;
+
+					// NOTE: Instead of clamping, we simply skip changing the W2M this frame if it's out of bounds.  Clamping makes our math more complicated.
+					if ( !FMath::IsNearlyEqual(NewWorldToMetersScale, OldWorldToMetersScale) &&
+						NewWorldToMetersScale >= GetMinScale() && NewWorldToMetersScale <= GetMaxScale() )
+					{
+						SetWorldToMetersScale(NewWorldToMetersScale);
+						CompensateRoomTransformForWorldScale(RoomTransform, NewWorldToMetersScale, PivotLocation);
+					}
 				}
 			}
 
 			// Apply rotation and translation
 			{
 				FTransform RotationOffsetTransform = FTransform::Identity;
-				RotationOffsetTransform.SetRotation( RotationOffset );
-
-				if ( VI::AllowWorldRotationPitchAndRoll->GetInt() == 0 )
+				if( bAllowWorldRotation )
 				{
-					// Eliminate pitch and roll in rotation offset.  We don't want the user to get sick!
-					FRotator YawRotationOffset = RotationOffset.Rotator();
-					YawRotationOffset.Pitch = YawRotationOffset.Roll = 0.0f;
-					RotationOffsetTransform.SetRotation( YawRotationOffset.Quaternion() );
+					RotationOffsetTransform.SetRotation( RotationOffset );
+					if ( VI::AllowWorldRotationPitchAndRoll->GetInt() == 0 )
+					{
+						// Eliminate pitch and roll in rotation offset.  We don't want the user to get sick!
+						FRotator YawRotationOffset = RotationOffset.Rotator();
+						YawRotationOffset.Pitch = YawRotationOffset.Roll = 0.0f;
+						RotationOffsetTransform.SetRotation( YawRotationOffset.Quaternion() );
+					}
 				}
 
 				// Move the camera in the opposite direction, so it feels to the user as if they're dragging the entire world around
-				const FTransform TranslationOffsetTransform( FQuat::Identity, TranslationOffset );
+				FTransform TranslationOffsetTransform( FTransform::Identity );
+				if( bAllowWorldTranslation )
+				{
+					TranslationOffsetTransform.SetLocation( TranslationOffset );
+				}
 				const FTransform PivotToWorld = FTransform( FQuat::Identity, PivotLocation ) * RoomTransform;
 				const FTransform WorldToPivot = PivotToWorld.Inverse();
 				RoomTransform = TranslationOffsetTransform.Inverse() * RoomTransform * WorldToPivot * RotationOffsetTransform.Inverse() * PivotToWorld;
@@ -2052,12 +1984,11 @@ void UViewportWorldInteraction::UpdateDragging(
 	bIsFirstDragUpdate = false;
 	bSkipInteractiveWorldMovementThisFrame = false;
 }
-
 END_FUNCTION_BUILD_OPTIMIZATION
 
 FVector UViewportWorldInteraction::ComputeConstrainedDragDeltaFromStart( 
 	const bool bIsFirstDragUpdate, 
-	const ETransformGizmoInteractionType InteractionType, 
+	const bool bOnPlane,
 	const TOptional<FTransformGizmoHandlePlacement> OptionalHandlePlacement, 
 	const FVector& DragDeltaFromStart, 
 	const FVector& LaserPointerStart, 
@@ -2094,7 +2025,6 @@ FVector UViewportWorldInteraction::ComputeConstrainedDragDeltaFromStart(
 				GizmoSpaceConstraintAxis *= -1.0f;
 			}
 
-			const bool bOnPlane = ( InteractionType == ETransformGizmoInteractionType::TranslateOnPlane );
 			if ( bOnPlane )
 			{
 				const FPlane GizmoSpaceConstrainToPlane( FVector::ZeroVector, GizmoSpaceConstraintAxis );
@@ -2174,8 +2104,6 @@ FVector UViewportWorldInteraction::ComputeConstrainedDragDeltaFromStart(
 			// more information.  Inertial movement of constrained objects is actually very complicated!
 			ConstrainedGizmoSpaceDeltaFromStart += GizmoSpaceDragDeltaFromStartOffset;
 
-			const bool bOnPlane = ( InteractionType == ETransformGizmoInteractionType::TranslateOnPlane );
-
 			const FTransformGizmoHandlePlacement& HandlePlacement = OptionalHandlePlacement.GetValue();
 			for ( int32 AxisIndex = 0; AxisIndex < 3; ++AxisIndex )
 			{
@@ -2203,7 +2131,7 @@ FVector UViewportWorldInteraction::ComputeConstrainedDragDeltaFromStart(
 	return ConstrainedWorldSpaceDeltaFromStart;
 }
 
-void UViewportWorldInteraction::StartDragging( UViewportInteractor* Interactor, UActorComponent* ClickedTransformGizmoComponent, const FVector& HitLocation, const bool bIsPlacingNewObjects, const bool bAllowInterpolationWhenPlacing, const bool bStartTransaction, const bool bWithGrabberSphere )
+void UViewportWorldInteraction::StartDragging( UViewportInteractor* Interactor, UActorComponent* ClickedTransformGizmoComponent, const FVector& HitLocation, const bool bIsPlacingNewObjects, const bool bAllowInterpolationWhenPlacing, const bool bShouldUseLaserImpactDrag, const bool bStartTransaction, const bool bWithGrabberSphere )
 {
 	bool bHaveGrabberSphere = false;
 	bool bHaveLaserPointer = false;
@@ -2246,7 +2174,6 @@ void UViewportWorldInteraction::StartDragging( UViewportInteractor* Interactor, 
 	const bool bUsingGizmo = ClickedTransformGizmoComponent != nullptr;
 	check( !bUsingGizmo || ( ClickedTransformGizmoComponent->GetOwner() == TransformGizmoActor ) );
 
-	const bool bShouldUseLaserImpactDrag = bIsPlacingNewObjects;
 	// Start dragging the objects right away!
 	InteractorData.DraggingMode = InteractorData.LastDraggingMode = bShouldUseLaserImpactDrag ? EViewportInteractionDraggingMode::TransformablesAtLaserImpact :
 		( bUsingGizmo ? EViewportInteractionDraggingMode::TransformablesWithGizmo : EViewportInteractionDraggingMode::TransformablesFreely );
@@ -2293,19 +2220,21 @@ void UViewportWorldInteraction::StartDragging( UViewportInteractor* Interactor, 
 
 	if ( TransformGizmoActor != nullptr )
 	{
-		InteractorData.TransformGizmoInteractionType = TransformGizmoActor->GetInteractionType( InteractorData.DraggingTransformGizmoComponent.Get(), InteractorData.OptionalHandlePlacement );
+		InteractorData.DragOperationComponent = TransformGizmoActor->GetInteractionType(InteractorData.DraggingTransformGizmoComponent.Get(), InteractorData.OptionalHandlePlacement);
 		InteractorData.GizmoStartTransform = TransformGizmoActor->GetTransform();
 		InteractorData.GizmoStartLocalBounds = GizmoLocalBounds;
 	}
 	else
 	{
-		InteractorData.TransformGizmoInteractionType = ETransformGizmoInteractionType::None;
+		InteractorData.DragOperationComponent.Reset();
 		InteractorData.GizmoStartTransform = FTransform::Identity;
 		InteractorData.GizmoStartLocalBounds = FBox(ForceInit);
 	}
 	InteractorData.GizmoLastTransform = InteractorData.GizmoTargetTransform = InteractorData.GizmoUnsnappedTargetTransform = InteractorData.GizmoInterpolationSnapshotTransform = InteractorData.GizmoStartTransform;
 	InteractorData.GizmoSpaceFirstDragUpdateOffsetAlongAxis = FVector::ZeroVector;	// Will be determined on first update
 	InteractorData.GizmoSpaceDragDeltaFromStartOffset = FVector::ZeroVector;	// Set every frame while dragging
+	InteractorData.GizmoScaleSinceDragStarted = 0.0f;
+	InteractorData.GizmoRotationRadiansSinceDragStarted = 0.0f;
 
 	bDraggedSinceLastSelection = true;
 	LastDragGizmoStartTransform = InteractorData.GizmoStartTransform;
@@ -2371,6 +2300,10 @@ void UViewportWorldInteraction::StopDragging( UViewportInteractor* Interactor )
 			OtherInteractorData->GizmoInterpolationSnapshotTransform = InteractorData.GizmoInterpolationSnapshotTransform;
 			OtherInteractorData->GizmoStartLocalBounds = InteractorData.GizmoStartLocalBounds;
 
+			OtherInteractorData->LockedWorldDragMode = ELockedWorldDragMode::Unlocked;
+			OtherInteractorData->GizmoScaleSinceDragStarted = 0.0f;
+			OtherInteractorData->GizmoRotationRadiansSinceDragStarted = 0.0f;
+
 			// The other hand is no longer assisting, as it's now the primary interacting hand.
 			OtherInteractorData->bWasAssistingDrag = false;
 
@@ -2395,14 +2328,14 @@ void UViewportWorldInteraction::StopDragging( UViewportInteractor* Interactor )
 			else if ( InteractorData.DraggingMode == EViewportInteractionDraggingMode::TransformablesWithGizmo ||
 					  InteractorData.DraggingMode == EViewportInteractionDraggingMode::TransformablesFreely ||
 					  InteractorData.DraggingMode == EViewportInteractionDraggingMode::TransformablesAtLaserImpact )
-			{
-				// No hand is dragging the objects anymore.
-				if ( InteractorData.DraggingMode == EViewportInteractionDraggingMode::TransformablesWithGizmo &&
-					 InteractorData.TransformGizmoInteractionType == ETransformGizmoInteractionType::RotateOnAngle )
+			{				
+				// Destroy drag operation.
+				if (InteractorData.DragOperationComponent != nullptr)
 				{
-					StartDragAngleOnRotation.Reset();
-					DraggingRotationHandleDirection.Reset();
+					InteractorData.LastDragOperation = InteractorData.DragOperationComponent->GetDragOperation();
+					InteractorData.DragOperationComponent->ClearDragOperation();
 				}
+				InteractorData.DragOperationComponent.Reset();
 
 				// If we're not dragging anything around, check to see if transformables have come to a rest.
 				const bool bTransformablesStillMoving =
@@ -2434,8 +2367,7 @@ void UViewportWorldInteraction::StopDragging( UViewportInteractor* Interactor )
 		InteractorData.DraggingMode = EViewportInteractionDraggingMode::Nothing;
 	}
 }
-
-
+	
 void UViewportWorldInteraction::FinishedMovingTransformables()
 {
 	bAreTransformablesMoving = false;
@@ -2559,7 +2491,7 @@ bool UViewportWorldInteraction::IsSmoothSnappingEnabled() const
 	const float SmoothSnapSpeed = VI::SmoothSnapSpeed->GetFloat();
 	const bool bSmoothSnappingEnabled =
 		( !GEditor->bIsSimulatingInEditor || !bAnyPhysicallySimulatedTransformables ) &&
-		( FSnappingUtils::IsSnapToGridEnabled() || FSnappingUtils::IsRotationSnapEnabled() || FSnappingUtils::IsScaleSnapEnabled() || VI::EnableGuides->GetInt() == 1) &&
+		( FSnappingUtils::IsSnapToGridEnabled() || FSnappingUtils::IsRotationSnapEnabled() || FSnappingUtils::IsScaleSnapEnabled() || VI::ActorSnap->GetInt() == 1) &&
 		VI::SmoothSnap->GetInt() != 0 &&
 		!FMath::IsNearlyZero( SmoothSnapSpeed );
 
@@ -2675,6 +2607,10 @@ void UViewportWorldInteraction::RefreshTransformGizmo( const bool bNewObjectsSel
 		if( HaveHeadTransform() )
 		{
 			ViewerLocation = GetHeadTransform().GetLocation();
+		}
+		else if (DefaultOptionalViewportClient != nullptr)
+		{
+			ViewerLocation = DefaultOptionalViewportClient->GetViewLocation();
 		}
 		else if( GCurrentLevelEditingViewportClient != nullptr )
 		{
@@ -2850,7 +2786,7 @@ void UViewportWorldInteraction::SpawnTransformGizmoIfNeeded()
 		// Destroy the previous gizmo
 		if ( TransformGizmoActor != nullptr )
 		{
-			TransformGizmoActor->Destroy();
+			DestroyTransientActor(TransformGizmoActor);
 		}
 
 		// Create the correct gizmo
@@ -2927,19 +2863,19 @@ void UViewportWorldInteraction::ApplyVelocityDamping( FVector& Velocity, const b
 void UViewportWorldInteraction::CycleTransformGizmoCoordinateSpace()
 {
 	const bool bGetRawValue = true;
-	const ECoordSystem CurrentCoordSystem = GLevelEditorModeTools().GetCoordSystem( bGetRawValue );
+	const ECoordSystem CurrentCoordSystem = GetModeTools().GetCoordSystem( bGetRawValue );
 	SetTransformGizmoCoordinateSpace( CurrentCoordSystem == COORD_World ? COORD_Local : COORD_World );
 }
 
 void UViewportWorldInteraction::SetTransformGizmoCoordinateSpace( const ECoordSystem NewCoordSystem )
 {
-	GLevelEditorModeTools().SetCoordSystem( NewCoordSystem );
+	GetModeTools().SetCoordSystem( NewCoordSystem );
 }
 
 ECoordSystem UViewportWorldInteraction::GetTransformGizmoCoordinateSpace() const
 {
 	const bool bGetRawValue = false;
-	const ECoordSystem CurrentCoordSystem = GLevelEditorModeTools().GetCoordSystem( bGetRawValue );
+	const ECoordSystem CurrentCoordSystem = GetModeTools().GetCoordSystem( bGetRawValue );
 	return CurrentCoordSystem;
 }
 
@@ -2955,9 +2891,10 @@ float UViewportWorldInteraction::GetMinScale()
 
 void UViewportWorldInteraction::SetWorldToMetersScale( const float NewWorldToMetersScale, const bool bCompensateRoomWorldScale  /*= false*/ )
 {
+	check (NewWorldToMetersScale > 0);
+
 	// @todo vreditor: This is bad because we're clobbering the world settings which will be saved with the map.  Instead we need to 
 	// be able to apply an override before the scene view gets it
-
 	ENGINE_API extern float GNewWorldToMetersScale;
 	GNewWorldToMetersScale = NewWorldToMetersScale;
 	OnWorldScaleChangedEvent.Broadcast(NewWorldToMetersScale);
@@ -3020,7 +2957,7 @@ void UViewportWorldInteraction::DestroyActors()
 
 bool UViewportWorldInteraction::AreAligningToActors()
 {
-	return (VI::EnableGuides->GetInt() == 1) ? true : false;
+	return (VI::ActorSnap->GetInt() == 1) ? true : false;
 }
 
 bool UViewportWorldInteraction::HasCandidatesSelected()
@@ -3034,7 +2971,7 @@ void UViewportWorldInteraction::SetSelectionAsCandidates()
 	{
 		CandidateActors.Reset();
 	}
-	else if (VI::EnableGuides->GetInt() == 1)
+	else if (VI::ActorSnap->GetInt() == 1)
 	{
 		TArray<TUniquePtr<FViewportTransformable>> NewTransformables;
 
@@ -3052,11 +2989,6 @@ void UViewportWorldInteraction::SetSelectionAsCandidates()
 
 		Deselect();
 	}
-}
-
-FVector UViewportWorldInteraction::GetLocalIntersectPointOnRotationGizmo() const
-{
-	return LocalIntersectPointOnRotationGizmo;
 }
 
 float UViewportWorldInteraction::GetCurrentDeltaTime() const
@@ -3077,6 +3009,16 @@ bool UViewportWorldInteraction::ShouldSuppressExistingCursor() const
 
 }
 
+void UViewportWorldInteraction::SetForceCursor(const bool bInShouldForceCursor)
+{
+	bShouldForceCursor = bInShouldForceCursor;
+}
+
+bool UViewportWorldInteraction::ShouldForceCursor() const
+{
+	return true;
+}
+
 const UViewportInteractionAssetContainer& UViewportWorldInteraction::GetAssetContainer() const
 {
 	return *AssetContainer;
@@ -3084,7 +3026,9 @@ const UViewportInteractionAssetContainer& UViewportWorldInteraction::GetAssetCon
 
 const class UViewportInteractionAssetContainer& UViewportWorldInteraction::LoadAssetContainer()
 {
-	return *LoadObject<UViewportInteractionAssetContainer>(nullptr, *UViewportWorldInteraction::AssetContainerPath);
+	UViewportInteractionAssetContainer* AssetContainer = LoadObject<UViewportInteractionAssetContainer>(nullptr, UViewportWorldInteraction::AssetContainerPath);
+	checkf(AssetContainer, TEXT("Failed to load ViewportInteractionAssetContainer (%s). See log for reason."), UViewportWorldInteraction::AssetContainerPath);
+	return *AssetContainer;
 }
 
 void UViewportWorldInteraction::PlaySound(USoundBase* SoundBase, const FVector& InWorldLocation, const float InVolume /*= 1.0f*/)
@@ -3114,7 +3058,7 @@ EGizmoHandleTypes UViewportWorldInteraction::GetCurrentGizmoType() const
 	}
 	else
 	{
-		switch( GLevelEditorModeTools().GetWidgetMode() )
+		switch( GetModeTools().GetWidgetMode() )
 		{
 			case FWidget::WM_TranslateRotateZ:
 				return EGizmoHandleTypes::All;
@@ -3141,19 +3085,19 @@ void UViewportWorldInteraction::SetGizmoHandleType( const EGizmoHandleTypes InGi
 	{
 		case EGizmoHandleTypes::All:
 			GizmoType = InGizmoHandleType;
-			GLevelEditorModeTools().SetWidgetMode( FWidget::WM_Translate );
+			GetModeTools().SetWidgetMode( FWidget::WM_Translate );
 			break;
 
 		case EGizmoHandleTypes::Translate:
-			GLevelEditorModeTools().SetWidgetMode( FWidget::WM_Translate );
+			GetModeTools().SetWidgetMode( FWidget::WM_Translate );
 			break;
 
 		case EGizmoHandleTypes::Rotate:
-			GLevelEditorModeTools().SetWidgetMode( FWidget::WM_Rotate );
+			GetModeTools().SetWidgetMode( FWidget::WM_Rotate );
 			break;
 
 		case EGizmoHandleTypes::Scale:
-			GLevelEditorModeTools().SetWidgetMode( FWidget::WM_Scale );
+			GetModeTools().SetWidgetMode( FWidget::WM_Scale );
 			break;
 
 		check(0);
@@ -3264,7 +3208,6 @@ void UViewportWorldInteraction::ReleaseMouseCursorInteractor()
 		DefaultMouseCursorInteractorRefCount = 0;
 
 		// Remove mouse cursor
-		DefaultMouseCursorInteractor->Shutdown();
 		this->RemoveInteractor( DefaultMouseCursorInteractor );
 		DefaultMouseCursorInteractor = nullptr;
 	}
@@ -3610,6 +3553,11 @@ bool UViewportWorldInteraction::HasTransformableWithVelocityInSimulate() const
 	return bResult;
 }
 
+FEditorModeTools& UViewportWorldInteraction::GetModeTools() const
+{
+	return DefaultOptionalViewportClient == nullptr ? GLevelEditorModeTools() : *DefaultOptionalViewportClient->GetModeTools();
+}
+
 FVector UViewportWorldInteraction::SnapLocation(const bool bLocalSpaceSnapping, const FVector& DesiredGizmoLocation, const FTransform &GizmoStartTransform, const FVector SnapGridBase, const bool bShouldConstrainMovement, const FVector AlignAxes)
 {
 	bool bTransformableAlignmentUsed = false;
@@ -3617,13 +3565,12 @@ FVector UViewportWorldInteraction::SnapLocation(const bool bLocalSpaceSnapping, 
 
 	const FVector GizmoSpaceDesiredGizmoLocation = GizmoStartTransform.InverseTransformPosition( DesiredGizmoLocation );
 	
-	if ((VI::EnableGuides->GetInt() == 1) && bLocalSpaceSnapping && ViewportTransformer->CanAlignToActors() == true)
+	if ((VI::ActorSnap->GetInt() == 1) && bLocalSpaceSnapping && ViewportTransformer->CanAlignToActors() == true)
 	{
 		FTransform DesiredGizmoTransform = GizmoStartTransform;
 		DesiredGizmoTransform.SetLocation( DesiredGizmoLocation );
 
-		FVector LocationOffset = FVector::ZeroVector;
-		LocationOffset = FindTransformGizmoAlignPoint(GizmoStartTransform, DesiredGizmoTransform, bShouldConstrainMovement, AlignAxes);
+		FVector LocationOffset = FindTransformGizmoAlignPoint(GizmoStartTransform, DesiredGizmoTransform, bShouldConstrainMovement, AlignAxes);
 		
 		if (!LocationOffset.IsZero())
 		{

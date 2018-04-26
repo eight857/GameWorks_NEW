@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #include "SGraphActionMenu.h"
@@ -6,6 +6,7 @@
 #include "Widgets/Text/SRichTextBlock.h"
 #include "Widgets/Layout/SScrollBorder.h"
 #include "EditorStyleSet.h"
+#include "Styling/CoreStyle.h"
 #include "GraphEditorDragDropAction.h"
 #include "EdGraphSchema_K2.h"
 #include "K2Node.h"
@@ -141,7 +142,7 @@ void SDefaultGraphActionWidget::Construct(const FArguments& InArgs, const FCreat
 		.VAlign(VAlign_Center)
 		[
 			SNew(STextBlock)
-			.Font(FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 9 ))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 			.Text(InCreateData->Action->GetMenuDescription())
 			.HighlightText(InArgs._HighlightText)
 		]
@@ -193,7 +194,7 @@ public:
 			.VAlign(VAlign_Center)
 			[
 				SAssignNew(InlineWidget, SInlineEditableTextBlock)
-				.Font( FSlateFontInfo( FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Bold.ttf"), 9 )  )
+				.Font( FCoreStyle::GetDefaultFontStyle("Bold", 9) )
 				.Text( FEditorCategoryUtils::GetCategoryDisplayString(InActionNode->GetDisplayName()) )
 				.ToolTip( ToolTipWidget )
 				.HighlightText( InArgs._HighlightText )
@@ -219,11 +220,6 @@ public:
 
 	virtual void OnDragEnter( const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent ) override
 	{
-		if (IsReadOnly.Get())
-		{
-			return;
-		}
-
 		TSharedPtr<FGraphEditorDragDropAction> GraphDropOp = DragDropEvent.GetOperationAs<FGraphEditorDragDropAction>();
 		if (GraphDropOp.IsValid())
 		{
@@ -1061,7 +1057,7 @@ TSharedRef<ITableRow> SGraphActionMenu::MakeWidget( TSharedPtr<FGraphActionNode>
 			ReadOnlyArgument.IsReadOnly(this, &SGraphActionMenu::CanRenameNode, WeakItem);
 		}
 
-		TSharedRef<SGraphActionCategoryWidget> CategoryWidget = 
+		TSharedRef<SGraphActionCategoryWidget> CategoryWidget =
 			SNew(SGraphActionCategoryWidget, InItem)
 			.HighlightText(this, &SGraphActionMenu::GetFilterText)
 			.OnTextCommitted(this, &SGraphActionMenu::OnNameTextCommitted, TWeakPtr< FGraphActionNode >(InItem))

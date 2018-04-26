@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "UserInterface/PropertyTable/TextPropertyTableCellPresenter.h"
 #include "Widgets/SNullWidget.h"
@@ -51,7 +51,7 @@ TSharedRef< class SWidget > FTextPropertyTableCellPresenter::ConstructDisplayWid
 		.VAlign(VAlign_Center)
 		.Padding(FMargin(0, 0, 2, 0))
 		[
-			SNew(SResetToDefaultPropertyEditor, PropertyEditor)
+			SNew(SResetToDefaultPropertyEditor, PropertyEditor->GetPropertyHandle())
 		];
 	}
 	

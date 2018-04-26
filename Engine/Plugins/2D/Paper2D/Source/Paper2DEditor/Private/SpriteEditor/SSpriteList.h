@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -30,8 +30,8 @@ public:
 protected:
 	void RebuildWidget(UTexture2D* NewTextureFilter);
 
-	void OnSpriteSelected(const class FAssetData& AssetData);
-	void OnSpriteDoubleClicked(const class FAssetData& AssetData);
+	void OnSpriteSelected(const struct FAssetData& AssetData);
+	void OnSpriteDoubleClicked(const struct FAssetData& AssetData);
 	bool CanShowColumnForAssetRegistryTag(FName AssetType, FName TagName) const;
 
 protected:

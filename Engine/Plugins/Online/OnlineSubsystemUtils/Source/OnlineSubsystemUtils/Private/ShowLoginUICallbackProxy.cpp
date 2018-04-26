@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "ShowLoginUICallbackProxy.h"
 #include "EngineGlobals.h"
@@ -34,7 +34,7 @@ void UShowLoginUICallbackProxy::Activate()
 		return;
 	}
 
-	const FOnlineSubsystemBPCallHelper Helper(TEXT("ShowLoginUI"), GEngine->GetWorldFromContextObject(WorldContextObject));
+	const FOnlineSubsystemBPCallHelper Helper(TEXT("ShowLoginUI"), WorldContextObject);
 	if (Helper.OnlineSub == nullptr)
 	{
 		OnFailure.Broadcast(MyPlayerController);

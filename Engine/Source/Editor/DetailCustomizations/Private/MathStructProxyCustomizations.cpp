@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "MathStructProxyCustomizations.h"
 #include "Framework/Commands/UIAction.h"
@@ -10,6 +10,7 @@
 #include "IPropertyUtilities.h"
 #include "ScopedTransaction.h"
 #include "Widgets/Input/SNumericEntryBox.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 void FMathStructProxyCustomization::CustomizeChildren( TSharedRef<class IPropertyHandle> StructPropertyHandle, class IDetailChildrenBuilder& StructBuilder, IPropertyTypeCustomizationUtils& StructCustomizationUtils )
 {
@@ -227,9 +228,9 @@ void FMatrixStructCustomization::CustomizeChildren(TSharedRef<class IPropertyHan
 
 	TWeakPtr<IPropertyHandle> WeakHandlePtr = StructPropertyHandle;
 
-	CustomizeLocation(StructPropertyHandle, StructBuilder.AddChildContent(LOCTEXT("RotationLabel", "Rotation")));
-	CustomizeRotation(StructPropertyHandle, StructBuilder.AddChildContent(LOCTEXT("LocationLabel", "Location")));
-	CustomizeScale(StructPropertyHandle, StructBuilder.AddChildContent(LOCTEXT("ScaleLabel", "Scale")));
+	CustomizeLocation(StructPropertyHandle, StructBuilder.AddCustomRow(LOCTEXT("RotationLabel", "Rotation")));
+	CustomizeRotation(StructPropertyHandle, StructBuilder.AddCustomRow(LOCTEXT("LocationLabel", "Location")));
+	CustomizeScale(StructPropertyHandle, StructBuilder.AddCustomRow(LOCTEXT("ScaleLabel", "Scale")));
 }
 
 void FMatrixStructCustomization::OnCopy(FTransformField::Type Type, TWeakPtr<IPropertyHandle> PropertyHandlePtr)
@@ -270,7 +271,7 @@ void FMatrixStructCustomization::OnCopy(FTransformField::Type Type, TWeakPtr<IPr
 
 	if (!CopyStr.IsEmpty())
 	{
-		FPlatformMisc::ClipboardCopy(*CopyStr);
+		FPlatformApplicationMisc::ClipboardCopy(*CopyStr);
 	}
 }
 
@@ -284,7 +285,7 @@ void FMatrixStructCustomization::OnPaste(FTransformField::Type Type, TWeakPtr<IP
 	}
 
 	FString PastedText;
-	FPlatformMisc::ClipboardPaste(PastedText);
+	FPlatformApplicationMisc::ClipboardPaste(PastedText);
 
 	switch (Type)
 	{

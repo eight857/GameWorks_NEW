@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 // ..
 
 #include "ShaderFormatVectorVM.h"
@@ -9,36 +9,33 @@
 #include "CrossCompilerCommon.h"
 #include "ShaderCompilerCommon.h"
 #include "ShaderPreprocessor.h"
-#include "INiagaraCompiler.h"
 
 #include "VectorVM.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVectorVMShaderCompiler, Log, All); 
 
+DECLARE_STATS_GROUP(TEXT("VectorVM"), STATGROUP_VectorVM, STATCAT_Advanced);
 
-/*------------------------------------------------------------------------------
-	External interface.
-------------------------------------------------------------------------------*/
+DECLARE_CYCLE_STAT(TEXT("VectorVM - Compiler - CompileShader_VectorVM"), STAT_VectorVM_Compiler_CompileShader_VectorVM, STATGROUP_VectorVM);
+DECLARE_CYCLE_STAT(TEXT("VectorVM - Compiler - PreprocessShader"), STAT_VectorVM_Compiler_CompileShader_VectorVMPreprocessShader, STATGROUP_VectorVM);
+DECLARE_CYCLE_STAT(TEXT("VectorVM - Compiler - CrossCompilerContextRun"), STAT_VectorVM_Compiler_CompileShader_CrossCompilerContextRun, STATGROUP_VectorVM);
 
-static FString CreateCrossCompilerBatchFile( const FString& ShaderFile, const FString& OutputFile, const FString& EntryPoint, EHlslShaderFrequency Frequency, uint8 Version, uint32 CCFlags ) 
-{
-	const TCHAR* VersionSwitch = TEXT("");
-	return CrossCompiler::CreateBatchFileContents(ShaderFile, OutputFile, Frequency, EntryPoint, VersionSwitch, CCFlags, TEXT(""));
-}
 
 /**
  * Compile a shader for the VectorVM on Windows.
  * @param Input - The input shader code and environment.
  * @param Output - Contains shader compilation results upon return.
  */
-void CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOutput& Output, const FString& WorkingDirectory, uint8 Version)
+bool CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOutput& Output, const FString& WorkingDirectory, uint8 Version)
 {
-
+	return false;
 }
 
 //TODO: Move to this output living in the shader eco-system with the compute shaders too but for now just do things more directly.
-void CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOutput& Output,const FString& WorkingDirectory, uint8 Version, FNiagaraCompilationOutput& NiagaraOutput)
+bool CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOutput& Output,const FString& WorkingDirectory, uint8 Version, FVectorVMCompilationOutput& VMCompilationOutput)
 {
+	SCOPE_CYCLE_COUNTER(STAT_VectorVM_Compiler_CompileShader_VectorVM);
+
 	FString PreprocessedShader;
 	FShaderCompilerDefinitions AdditionalDefines;
 	EHlslCompileTarget HlslCompilerTarget = HCT_FeatureLevelSM5;
@@ -51,36 +48,47 @@ void CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOu
 
 	AdditionalDefines.SetDefine(TEXT("FORCE_FLOATS"), (uint32)1);
 
-	auto DoPreprocess = [&]() -> bool
+	if (Input.bSkipPreprocessedCache)
 	{
-		if (Input.bSkipPreprocessedCache)
+		if (!FFileHelper::LoadFileToString(PreprocessedShader, *Input.VirtualSourceFilePath))
 		{
-			return FFileHelper::LoadFileToString(PreprocessedShader, *Input.SourceFilename);
+			return false;
 		}
-		else
-		{
-			return PreprocessShader(PreprocessedShader, Output, Input, AdditionalDefines);
-		}
-	};
 
-	if (DoPreprocess())
+		// Remove const as we are on debug-only mode
+		CrossCompiler::CreateEnvironmentFromResourceTable(PreprocessedShader, (FShaderCompilerEnvironment&)Input.Environment);
+	}
+	else
 	{
-		//TODO: Need to remove any unsupported features here?
+		SCOPE_CYCLE_COUNTER(STAT_VectorVM_Compiler_CompileShader_VectorVMPreprocessShader);
 
-		char* ShaderSource = NULL;
-		char* ErrorLog = NULL;
+		if (!PreprocessShader(PreprocessedShader, Output, Input, AdditionalDefines))
+		{
+			// The preprocessing stage will add any relevant errors.
+			return false;
+		}
+	}
 
-		const EHlslShaderFrequency Frequency = HSF_VertexShader;
+	//TODO: Need to remove any unsupported features here?
 
-		//TODO: Do this later when we implement the rest of the shader plumbing stuff.
+	char* ShaderSource = NULL;
+	char* ErrorLog = NULL;
+
+	const EHlslShaderFrequency Frequency = HSF_VertexShader;
+
+	//TODO: Do this later when we implement the rest of the shader plumbing stuff.
 // 		// Write out the preprocessed file and a batch file to compile it if requested (DumpDebugInfoPath is valid)
 // 		if (bDumpDebugInfo)
 // 		{
-// 			FArchive* FileWriter = IFileManager::Get().CreateFileWriter(*(Input.DumpDebugInfoPath / Input.SourceFilename + TEXT(".usf")));
+// 			FArchive* FileWriter = IFileManager::Get().CreateFileWriter(*(Input.DumpDebugInfoPath / Input.GetSourceFilename()));
 // 			if (FileWriter)
 // 			{
 // 				auto AnsiSourceFile = StringCast<ANSICHAR>(*PreprocessedShader);
 // 				FileWriter->Serialize((ANSICHAR*)AnsiSourceFile.Get(), AnsiSourceFile.Length());
+//				{
+//					FString Line = CrossCompiler::CreateResourceTableFromEnvironment(Input.Environment);
+//					FileWriter->Serialize(TCHAR_TO_ANSI(*Line), Line.Len());
+//				}
 // 				FileWriter->Close();
 // 				delete FileWriter;
 // 			}
@@ -91,16 +99,16 @@ void CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOu
 // 			}
 // 		}
 
-		//Is stuff like this needed? What others?
-		uint32 CCFlags = HLSLCC_NoPreprocess;
-		CCFlags |= HLSLCC_PrintAST;
-		//CCFlags |= HLSLCC_UseFullPrecisionInPS;
+	//Is stuff like this needed? What others?
+	uint32 CCFlags = HLSLCC_NoPreprocess;
+		//CCFlags |= HLSLCC_PrintAST;
+	//CCFlags |= HLSLCC_UseFullPrecisionInPS;
 
-		//TODO: Do this later when we implement the rest of the shader plumbing stuff.
+	//TODO: Do this later when we implement the rest of the shader plumbing stuff.
 // 		if (bDumpDebugInfo)
 // 		{
 // 			const FString VVMFile = (Input.DumpDebugInfoPath / TEXT("Output.vvm"));
-// 			const FString USFFile = (Input.DumpDebugInfoPath / Input.SourceFilename) + TEXT(".usf");
+// 			const FString USFFile = (Input.DumpDebugInfoPath / Input.GetSourceFilename());
 // 			const FString CCBatchFileContents = CreateCrossCompilerBatchFile(USFFile, VVMFile, *Input.EntryPointName, Frequency, Version, CCFlags);
 // 			if (!CCBatchFileContents.IsEmpty())
 // 			{
@@ -109,29 +117,55 @@ void CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOu
 // 			}
 // 		}
 
-		//NEEDED?
-		// Required as we added the RemoveUniformBuffersFromSource() function (the cross-compiler won't be able to interpret comments w/o a preprocessor)
-		//CCFlags &= ~HLSLCC_NoPreprocess;
+	//NEEDED?
+	// Required as we added the RemoveUniformBuffersFromSource() function (the cross-compiler won't be able to interpret comments w/o a preprocessor)
+	//CCFlags &= ~HLSLCC_NoPreprocess;
 
-		FVectorVMCodeBackend VVMBackEnd(CCFlags, HlslCompilerTarget, NiagaraOutput);
+	FVectorVMCodeBackend VVMBackEnd(CCFlags, HlslCompilerTarget, VMCompilationOutput);
 		FVectorVMLanguageSpec VVMLanguageSpec; 
 
-		int32 Result = 0;
-		FHlslCrossCompilerContext CrossCompilerContext(CCFlags, Frequency, HlslCompilerTarget);
-		if (CrossCompilerContext.Init(TCHAR_TO_ANSI(*Input.SourceFilename), &VVMLanguageSpec))
+	bool Result = false;
+	FHlslCrossCompilerContext CrossCompilerContext(CCFlags, Frequency, HlslCompilerTarget);
+	if (CrossCompilerContext.Init(TCHAR_TO_ANSI(*Input.VirtualSourceFilePath), &VVMLanguageSpec))
+	{
+		SCOPE_CYCLE_COUNTER(STAT_VectorVM_Compiler_CompileShader_CrossCompilerContextRun);
+
+		Result = CrossCompilerContext.Run(
+			TCHAR_TO_ANSI(*PreprocessedShader),
+			TCHAR_TO_ANSI(*Input.EntryPointName),
+			&VVMBackEnd,
+			&ShaderSource,
+			&ErrorLog
+			) ? 1 : 0;
+	}
+
+		if (ErrorLog)
 		{
-			Result = CrossCompilerContext.Run(
-				TCHAR_TO_ANSI(*PreprocessedShader),
-				TCHAR_TO_ANSI(*Input.EntryPointName),
-				&VVMBackEnd,
-				&ShaderSource,
-				&ErrorLog
-				) ? 1 : 0;
+			int32 SrcLen = FPlatformString::Strlen(ErrorLog);
+			int32 DestLen = FPlatformString::ConvertedLength<TCHAR, ANSICHAR>(ErrorLog, SrcLen);
+			TArray<TCHAR> Converted;
+			Converted.AddUninitialized(DestLen);
+
+			FPlatformString::Convert<ANSICHAR, TCHAR>(Converted.GetData(), DestLen, ErrorLog, SrcLen);
+			Converted.Add(0);
+
+			VMCompilationOutput.Errors = Converted.GetData();
+
+			TArray<FString> OutputByLines;
+			PreprocessedShader.ParseIntoArrayLines(OutputByLines, false);
+
+			FString OutputHlsl;
+			for (int32 i = 0; i < OutputByLines.Num(); i++)
+			{
+				UE_LOG(LogVectorVMShaderCompiler, Warning, TEXT("/*%d*/%s"), i, *OutputByLines[i]);
+			}
+		}
+		else
+		{
+			VMCompilationOutput.Errors.Empty();
 		}
 
-		NiagaraOutput.Errors = ErrorLog;
-
-		//TODO: Try to get rid of the CompilationOutput and have the vm bytecode life in the shader eco-system as the compute shader version will.
+	//TODO: Try to get rid of the CompilationOutput and have the vm bytecode life in the shader eco-system as the compute shader version will.
 //		int32 SourceLen = VVMBackEnd.ByteCode.Num();//ShaderSource ? FCStringAnsi::Strlen(ShaderSource) : 0;
 // 		if (SourceLen > 0)
 // 		{
@@ -141,14 +175,14 @@ void CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOu
 // 
 // 				if (SourceLen > 0)
 // 				{
-// 					uint32 Len = FCStringAnsi::Strlen(TCHAR_TO_ANSI(*Input.SourceFilename)) + FCStringAnsi::Strlen(TCHAR_TO_ANSI(*Input.EntryPointName)) + FCStringAnsi::Strlen(ShaderSource) + 20;
+// 					uint32 Len = FCStringAnsi::Strlen(TCHAR_TO_ANSI(*Input.VirtualSourceFilePath)) + FCStringAnsi::Strlen(TCHAR_TO_ANSI(*Input.EntryPointName)) + FCStringAnsi::Strlen(ShaderSource) + 20;
 // 					char* Dest = (char*)malloc(Len);
-// 					FCStringAnsi::Snprintf(Dest, Len, "// ! %s.usf:%s\n%s", (const char*)TCHAR_TO_ANSI(*Input.SourceFilename), (const char*)TCHAR_TO_ANSI(*Input.EntryPointName), (const char*)ShaderSource);
+// 					FCStringAnsi::Snprintf(Dest, Len, "// ! %s:%s\n%s", (const char*)TCHAR_TO_ANSI(*Input.VirtualSourceFilePath), (const char*)TCHAR_TO_ANSI(*Input.EntryPointName), (const char*)ShaderSource);
 // 					free(ShaderSource);
 // 					ShaderSource = Dest;
 // 					SourceLen = FCStringAnsi::Strlen(ShaderSource);
 // 					
-// 					FArchive* FileWriter = IFileManager::Get().CreateFileWriter(*(Input.DumpDebugInfoPath / Input.SourceFilename + TEXT(".vvm")));
+// 					FArchive* FileWriter = IFileManager::Get().CreateFileWriter(*(Input.DumpDebugInfoPath / Input.VirtualSourceFilePath + TEXT(".vvm")));
 // 					if (FileWriter)
 // 					{
 // 						FileWriter->Serialize(ShaderSource,SourceLen+1);
@@ -158,23 +192,23 @@ void CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOu
 // 				}
 // 			}
 
-			//HMMMM....?
+		//HMMMM....?
 // #if VALIDATE_GLSL_WITH_DRIVER
 // 			PrecompileShader(Output, Input, ShaderSource, Version, Frequency);
 // #else // VALIDATE_GLSL_WITH_DRIVER
-			//SourceLen = FCStringAnsi::Strlen(ShaderSource);
+		//SourceLen = FCStringAnsi::Strlen(ShaderSource);
 //			Output.Target = Input.Target;
-			//BuildShaderOutput(Output, Input, ShaderSource, SourceLen, Version);
+		//BuildShaderOutput(Output, Input, ShaderSource, SourceLen, Version);
 
 //			Output.bSucceeded = true;
-			//Should we add optional data to define the register allocations etc so that someone can just write hlsl directly and have it become a niagara sim?
+		//Should we add optional data to define the register allocations etc so that someone can just write hlsl directly and have it become a niagara sim?
 //			Output.ShaderCode.GetWriteAccess().Append((uint8*)VVMBackEnd.ByteCode.GetData(), VVMBackEnd.ByteCode.Num());
 //			Output.ShaderCode.FinalizeShaderCode();
 //#endif // VALIDATE_GLSL_WITH_DRIVER
 // 		}
 // 		else
 // 		{
-			//ES2 Command line is throwing me off. Is this needed?
+		//ES2 Command line is throwing me off. Is this needed?
 
 // 			if (bDumpDebugInfo)
 // 			{
@@ -199,15 +233,17 @@ void CompileShader_VectorVM(const FShaderCompilerInput& Input, FShaderCompilerOu
 // 			}
 // 		}
 
-		if (ShaderSource)
-		{
-			UE_LOG(LogVectorVMShaderCompiler, Warning, TEXT("%s"), (const char*)ShaderSource);
-			free(ShaderSource);
-		}
-		if (ErrorLog)
-		{
-			UE_LOG(LogVectorVMShaderCompiler, Warning, TEXT("%s"), (const char*)ErrorLog);
-			free(ErrorLog);
-		}
+	if (ShaderSource)
+	{
+		UE_LOG(LogVectorVMShaderCompiler, Warning, TEXT("%s"), (const char*)ShaderSource);
+		free(ShaderSource);
 	}
+		if (VMCompilationOutput.Errors.Len() != 0)
+	{
+			UE_LOG(LogVectorVMShaderCompiler, Warning, TEXT("%s"), *VMCompilationOutput.Errors);
+		free(ErrorLog);
+	}
+
+	return Result;
 }
+

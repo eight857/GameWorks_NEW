@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "EditorTutorial.h"
 #include "Modules/ModuleManager.h"
@@ -13,6 +13,7 @@
 #include "IntroTutorials.h"
 #include "LevelEditor.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Misc/RuntimeErrors.h"
 
 #if WITH_EDITORONLY_DATA
 namespace
@@ -99,7 +100,10 @@ void UEditorTutorial::HandleTutorialClosed()
 
 void UEditorTutorial::OpenAsset(UObject* Asset)
 {
-	FAssetEditorManager::Get().OpenEditorForAsset(Asset);
+	if (ensureAsRuntimeWarning(Asset != nullptr))
+	{
+		FAssetEditorManager::Get().OpenEditorForAsset(Asset);
+	}
 }
 
 AActor* UEditorTutorial::GetActorReference(FString PathToActor)

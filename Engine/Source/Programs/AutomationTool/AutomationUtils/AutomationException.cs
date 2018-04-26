@@ -1,4 +1,4 @@
-﻿// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+﻿// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,8 +6,8 @@ using System.Text;
 
 namespace AutomationTool
 {
-    // NOTE: this needs to be kept in sync with EditorAnalytics.h and iPhonePackager.cs
-    public enum ExitCode
+	// NOTE: this needs to be kept in sync with EditorAnalytics.h and iPhonePackager.cs
+	public enum ExitCode
     {
         Error_UATNotFound = -1,
         Success = 0,
@@ -59,6 +59,8 @@ namespace AutomationTool
         Error_DeviceOSNewerThanSDK = 151,
 		Error_TestFailure = 152,
 		Error_SymbolizedSONotFound = 153,
+		Error_LicenseNotAccepted = 154,
+		Error_AndroidOBBError = 155,
 	};
 
     /// <summary>
@@ -101,5 +103,10 @@ namespace AutomationTool
         {
             this.ErrorCode = ErrorCode;
         }
-    }
+
+		public override string ToString()
+		{
+			return Message;
+		}
+	}
 }

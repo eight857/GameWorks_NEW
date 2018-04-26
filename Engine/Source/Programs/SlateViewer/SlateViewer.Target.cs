@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 using System.Collections.Generic;
@@ -14,31 +14,20 @@ public class SlateViewerTarget : TargetRules
 
 		LaunchModuleName = "SlateViewer";
 		ExtraModuleNames.Add("EditorStyle");
-	}
 
-	//
-	// TargetRules interface.
-	//
-
-	public override void SetupGlobalEnvironment(
-		TargetInfo Target,
-		ref LinkEnvironmentConfiguration OutLinkEnvironmentConfiguration,
-		ref CPPEnvironmentConfiguration OutCPPEnvironmentConfiguration
-		)
-	{
-		UEBuildConfiguration.bCompileLeanAndMeanUE = true;
+		bCompileLeanAndMeanUE = true;
 
 		// Don't need editor
-		UEBuildConfiguration.bBuildEditor = false;
+		bBuildEditor = false;
 
 		// SlateViewer doesn't ever compile with the engine linked in
-		UEBuildConfiguration.bCompileAgainstEngine = false;
+		bCompileAgainstEngine = false;
 
 		// We need CoreUObject compiled in as the source code access module requires it
-		UEBuildConfiguration.bCompileAgainstCoreUObject = true;
+		bCompileAgainstCoreUObject = true;
 
 		// SlateViewer.exe has no exports, so no need to verify that a .lib and .exp file was emitted by
 		// the linker.
-		OutLinkEnvironmentConfiguration.bHasExports = false;
+		bHasExports = false;
 	}
 }

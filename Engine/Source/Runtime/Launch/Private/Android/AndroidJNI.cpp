@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AndroidJNI.h"
 #include "ExceptionHandling.h"
@@ -11,6 +11,7 @@
 #include "UnrealEngine.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/FeedbackContext.h"
+#include "Math/Vector.h"
 
 THIRD_PARTY_INCLUDES_START
 #include <android/asset_manager.h>
@@ -23,6 +24,9 @@ JavaVM* GJavaVM;
 
 // Pointer to target widget for virtual keyboard contents
 static IVirtualKeyboardEntry *VirtualKeyboardWidget = NULL;
+
+//virtualKeyboard shown
+static volatile bool GVirtualKeyboardShown = false;
 
 extern FString GFilePathBase;
 extern FString GExternalFilePath;
@@ -76,15 +80,21 @@ void FJavaWrapper::FindClassesAndMethods(JNIEnv* Env)
 	AndroidThunkJava_GetMetaDataBoolean = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_GetMetaDataBoolean", "(Ljava/lang/String;)Z", bIsOptional);
 	AndroidThunkJava_GetMetaDataInt = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_GetMetaDataInt", "(Ljava/lang/String;)I", bIsOptional);
 	AndroidThunkJava_GetMetaDataString = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_GetMetaDataString", "(Ljava/lang/String;)Ljava/lang/String;", bIsOptional);
+	AndroidThunkJava_SetSustainedPerformanceMode = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_SetSustainedPerformanceMode", "(Z)V", bIsOptional);
 	AndroidThunkJava_ShowHiddenAlertDialog = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_ShowHiddenAlertDialog", "()V", bIsOptional);
 	AndroidThunkJava_LocalNotificationScheduleAtTime = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_LocalNotificationScheduleAtTime", "(Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", bIsOptional);
 	AndroidThunkJava_LocalNotificationClearAll = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_LocalNotificationClearAll", "()V", bIsOptional);
 	AndroidThunkJava_LocalNotificationGetLaunchNotification = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_LocalNotificationGetLaunchNotification", "()Lcom/epicgames/ue4/GameActivity$LaunchNotification;", bIsOptional);
 	//AndroidThunkJava_LocalNotificationDestroyIfExists = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_LocalNotificationDestroyIfExists", "(I)Z", bIsOptional);
 	AndroidThunkJava_HasActiveWiFiConnection = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_HasActiveWiFiConnection", "()Z", bIsOptional);
+	AndroidThunkJava_GetAndroidId = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_GetAndroidId", "()Ljava/lang/String;", bIsOptional);
 
-	// this is optional - only inserted if GearVR plugin enabled
+	// this is optional - only inserted if Gear VR plugin enabled
 	AndroidThunkJava_IsGearVRApplication = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_IsGearVRApplication", "()Z", true);
+
+	// this is optional - only inserted if GCM plugin enabled
+	AndroidThunkJava_RegisterForRemoteNotifications = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_RegisterForRemoteNotifications", "()V", true);
+	AndroidThunkJava_UnregisterForRemoteNotifications = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_UnregisterForRemoteNotifications", "()V", true);
 
 	// get field IDs for InputDeviceInfo class members
 	jclass localInputDeviceInfoClass = FindClass(Env, "com/epicgames/ue4/GameActivity$InputDeviceInfo", bIsOptional);
@@ -109,12 +119,20 @@ void FJavaWrapper::FindClassesAndMethods(JNIEnv* Env)
 	LaunchNotificationEvent = FJavaWrapper::FindField(Env, LaunchNotificationClass, "event", "Ljava/lang/String;", bIsOptional);
 	LaunchNotificationFireDate = FJavaWrapper::FindField(Env, LaunchNotificationClass, "fireDate", "I", bIsOptional);
 
+	jclass localThreadClass = FindClass(Env, "java/lang/Thread", bIsOptional);
+	ThreadClass = (jclass)Env->NewGlobalRef(localThreadClass);
+	Env->DeleteLocalRef(localThreadClass);
+	CurrentThreadMethod = FindStaticMethod(Env, ThreadClass, "currentThread", "()Ljava/lang/Thread;", bIsOptional);
+	SetNameMethod = FindMethod(Env, ThreadClass, "setName", "(Ljava/lang/String;)V", bIsOptional);
+
 	// the rest are optional
 	bIsOptional = true;
 
 	// SurfaceView functionality for view scaling on some devices
 	AndroidThunkJava_UseSurfaceViewWorkaround = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_UseSurfaceViewWorkaround", "()V", bIsOptional);
 	AndroidThunkJava_SetDesiredViewSize = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_SetDesiredViewSize", "(II)V", bIsOptional);
+
+	AndroidThunkJava_VirtualInputIgnoreClick = FindMethod(Env, GameActivityClassID, "AndroidThunkJava_VirtualInputIgnoreClick", "(II)Z", bIsOptional);
 }
 
 void FJavaWrapper::FindGooglePlayMethods(JNIEnv* Env)
@@ -132,6 +150,7 @@ void FJavaWrapper::FindGooglePlayMethods(JNIEnv* Env)
 	AndroidThunkJava_IsInterstitialAdAvailable = FindMethod(Env, GoogleServicesClassID, "AndroidThunkJava_IsInterstitialAdAvailable", "()Z", bIsOptional);
 	AndroidThunkJava_IsInterstitialAdRequested = FindMethod(Env, GoogleServicesClassID, "AndroidThunkJava_IsInterstitialAdRequested", "()Z", bIsOptional);
 	AndroidThunkJava_ShowInterstitialAd = FindMethod(Env, GoogleServicesClassID, "AndroidThunkJava_ShowInterstitialAd", "()V", bIsOptional);
+	AndroidThunkJava_GetAdvertisingId = FindMethod(Env, GoogleServicesClassID, "AndroidThunkJava_GetAdvertisingId", "()Ljava/lang/String;", bIsOptional);
 	AndroidThunkJava_GoogleClientConnect = FindMethod(Env, GoogleServicesClassID, "AndroidThunkJava_GoogleClientConnect", "()V", bIsOptional);
 	AndroidThunkJava_GoogleClientDisconnect = FindMethod(Env, GoogleServicesClassID, "AndroidThunkJava_GoogleClientDisconnect", "()V", bIsOptional);
 }
@@ -269,12 +288,16 @@ jmethodID FJavaWrapper::AndroidThunkJava_GetMetaDataBoolean;
 jmethodID FJavaWrapper::AndroidThunkJava_GetMetaDataInt;
 jmethodID FJavaWrapper::AndroidThunkJava_GetMetaDataString;
 jmethodID FJavaWrapper::AndroidThunkJava_IsGearVRApplication;
+jmethodID FJavaWrapper::AndroidThunkJava_RegisterForRemoteNotifications;
+jmethodID FJavaWrapper::AndroidThunkJava_UnregisterForRemoteNotifications;
 jmethodID FJavaWrapper::AndroidThunkJava_ShowHiddenAlertDialog;
 jmethodID FJavaWrapper::AndroidThunkJava_LocalNotificationScheduleAtTime;
 jmethodID FJavaWrapper::AndroidThunkJava_LocalNotificationClearAll;
 jmethodID FJavaWrapper::AndroidThunkJava_LocalNotificationGetLaunchNotification;
 //jmethodID FJavaWrapper::AndroidThunkJava_LocalNotificationDestroyIfExists;
 jmethodID FJavaWrapper::AndroidThunkJava_HasActiveWiFiConnection;
+jmethodID FJavaWrapper::AndroidThunkJava_GetAndroidId;
+jmethodID FJavaWrapper::AndroidThunkJava_SetSustainedPerformanceMode;
 
 jclass FJavaWrapper::InputDeviceInfoClass;
 jfieldID FJavaWrapper::InputDeviceInfo_VendorId;
@@ -293,6 +316,7 @@ jmethodID FJavaWrapper::AndroidThunkJava_LoadInterstitialAd;
 jmethodID FJavaWrapper::AndroidThunkJava_IsInterstitialAdAvailable;
 jmethodID FJavaWrapper::AndroidThunkJava_IsInterstitialAdRequested;
 jmethodID FJavaWrapper::AndroidThunkJava_ShowInterstitialAd;
+jmethodID FJavaWrapper::AndroidThunkJava_GetAdvertisingId;
 jmethodID FJavaWrapper::AndroidThunkJava_GoogleClientConnect;
 jmethodID FJavaWrapper::AndroidThunkJava_GoogleClientDisconnect;
 
@@ -308,11 +332,16 @@ jmethodID FJavaWrapper::AndroidThunkJava_IapConsumePurchase;
 jmethodID FJavaWrapper::AndroidThunkJava_UseSurfaceViewWorkaround;
 jmethodID FJavaWrapper::AndroidThunkJava_SetDesiredViewSize;
 
+jmethodID FJavaWrapper::AndroidThunkJava_VirtualInputIgnoreClick;
+
 jclass FJavaWrapper::LaunchNotificationClass;
 jfieldID FJavaWrapper::LaunchNotificationUsed;
 jfieldID FJavaWrapper::LaunchNotificationEvent;
 jfieldID FJavaWrapper::LaunchNotificationFireDate;
 
+jclass FJavaWrapper::ThreadClass;
+jmethodID FJavaWrapper::CurrentThreadMethod;
+jmethodID FJavaWrapper::SetNameMethod;
 
 //Game-specific crash reporter
 void EngineCrashHandler(const FGenericCrashContext& GenericContext)
@@ -419,6 +448,33 @@ bool AndroidThunkCpp_GetInputDeviceInfo(int32 deviceId, FAndroidInputDeviceInfo 
 	return false;
 }
 
+bool AndroidThunkCpp_VirtualInputIgnoreClick(int32 x, int32 y)
+{
+	bool Result = false;
+	if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
+	{
+		Result = FJavaWrapper::CallBooleanMethod(Env, FJavaWrapper::GameActivityThis, FJavaWrapper::AndroidThunkJava_VirtualInputIgnoreClick, x, y);
+	}
+	return Result;
+}
+
+//Set GVirtualKeyboardShown.This function is declared in the Java-defined class, GameActivity.java: "public native void nativeVirtualKeyboardVisible(boolean bShown)"
+JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeVirtualKeyboardVisible(JNIEnv* jenv, jobject thiz, jboolean bShown)
+{
+	GVirtualKeyboardShown = bShown;
+
+	//remove reference so the object can be clicked again to show the virtual keyboard
+	if (!bShown)
+	{
+		VirtualKeyboardWidget = NULL;
+	}
+}
+
+bool AndroidThunkCpp_IsVirtuaKeyboardShown()
+{
+	return GVirtualKeyboardShown;
+}
+
 bool AndroidThunkCpp_IsGamepadAttached()
 {
 	bool Result = false;
@@ -484,6 +540,14 @@ FString AndroidThunkCpp_GetMetaDataString(const FString& Key)
 	return Result;
 }
 
+void AndroidThunkCpp_SetSustainedPerformanceMode(bool bEnable)
+{
+	if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
+	{
+		FJavaWrapper::CallVoidMethod(Env, FJavaWrapper::GameActivityThis, FJavaWrapper::AndroidThunkJava_SetSustainedPerformanceMode, bEnable);
+	}
+}
+
 void AndroidThunkCpp_ShowHiddenAlertDialog()
 {
 	if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
@@ -492,7 +556,7 @@ void AndroidThunkCpp_ShowHiddenAlertDialog()
 	}
 }
 
-// call out to JNI to see if the application was packaged for GearVR
+// call out to JNI to see if the application was packaged for Gear VR
 bool AndroidThunkCpp_IsGearVRApplication()
 {
 	static int32 IsGearVRApplication = -1;
@@ -509,6 +573,30 @@ bool AndroidThunkCpp_IsGearVRApplication()
 		}
 	}
 	return IsGearVRApplication == 1;
+}
+
+// call optional remote notification registration
+void AndroidThunkCpp_RegisterForRemoteNotifications()
+{
+	if (FJavaWrapper::AndroidThunkJava_RegisterForRemoteNotifications)
+	{
+		if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
+		{
+			FJavaWrapper::CallVoidMethod(Env, FJavaWrapper::GameActivityThis, FJavaWrapper::AndroidThunkJava_RegisterForRemoteNotifications);
+		}
+	}
+}
+
+// call optional remote notification unregistration
+void AndroidThunkCpp_UnregisterForRemoteNotifications()
+{
+	if (FJavaWrapper::AndroidThunkJava_UnregisterForRemoteNotifications)
+	{
+		if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
+		{
+			FJavaWrapper::CallVoidMethod(Env, FJavaWrapper::GameActivityThis, FJavaWrapper::AndroidThunkJava_UnregisterForRemoteNotifications);
+		}
+	}
 }
 
 void AndroidThunkCpp_ShowConsoleWindow()
@@ -574,22 +662,28 @@ void AndroidThunkCpp_HideVirtualKeyboardInputDialog()
         
         // call the java side
         FJavaWrapper::CallVoidMethod(Env, FJavaWrapper::GameActivityThis, FJavaWrapper::AndroidThunkJava_HideVirtualKeyboardInputDialog);
-    }
+
+		if (FTaskGraphInterface::IsRunning())
+		{
+			FGraphEventRef VirtualKeyboardShown = FFunctionGraphTask::CreateAndDispatchWhenReady([&]()
+			{
+				FAndroidApplication::Get()->OnVirtualKeyboardHidden().Broadcast();
+			}, TStatId(), NULL, ENamedThreads::GameThread);
+		}
+	}
 }
 
-void AndroidThunkCpp_ShowVirtualKeyboardInput(TSharedPtr<IVirtualKeyboardEntry> TextWidget, int32 InputType, const FString& Label, const FString& Contents)
+// This is called from the ViewTreeObserver.OnGlobalLayoutListener in GameActivity
+JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeVirtualKeyboardShown(JNIEnv* jenv, jobject thiz, jint left, jint top, jint right, jint bottom)
 {
-	if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
-	{
-		// remember target widget for contents
-		VirtualKeyboardWidget = &(*TextWidget);
+	FPlatformRect ScreenRect(left, top, right, bottom);
 
-		// call the java side
-		jstring LabelJava = Env->NewStringUTF(TCHAR_TO_UTF8(*Label));
-		jstring ContentsJava = Env->NewStringUTF(TCHAR_TO_UTF8(*Contents));
-		FJavaWrapper::CallVoidMethod(Env, FJavaWrapper::GameActivityThis, FJavaWrapper::AndroidThunkJava_ShowVirtualKeyboardInput, InputType, LabelJava, ContentsJava);
-		Env->DeleteLocalRef(ContentsJava);
-		Env->DeleteLocalRef(LabelJava);
+	if (FTaskGraphInterface::IsRunning())
+	{
+		FGraphEventRef VirtualKeyboardShown = FFunctionGraphTask::CreateAndDispatchWhenReady([ScreenRect]()
+		{
+			FAndroidApplication::Get()->OnVirtualKeyboardShown().Broadcast(ScreenRect);
+		}, TStatId(), NULL, ENamedThreads::GameThread);
 	}
 }
 
@@ -619,17 +713,27 @@ void AndroidThunkCpp_HideVirtualKeyboardInput()
 	}
 }
 
-// This is called from the ViewTreeObserver.OnGlobalLayoutListener in GameActivity
-JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeVirtualKeyboardShown(JNIEnv* jenv, jobject thiz, jint left, jint top, jint right, jint bottom)
+void AndroidThunkCpp_ShowVirtualKeyboardInput(TSharedPtr<IVirtualKeyboardEntry> TextWidget, int32 InputType, const FString& Label, const FString& Contents)
 {
-	FPlatformRect ScreenRect( left, top, right, bottom );
-
-	if( FTaskGraphInterface::IsRunning() )
+	// remember target widget for contents
+	IVirtualKeyboardEntry * newWidget = &(*TextWidget);
+	//#jira UE-49139 Tapping in the same text box doesn't make the virtual keyboard disappear
+	if (VirtualKeyboardWidget == newWidget)
 	{
-		FGraphEventRef VirtualKeyboardShown = FFunctionGraphTask::CreateAndDispatchWhenReady( [ScreenRect]()
-		{
-			FAndroidApplication::Get()->OnVirtualKeyboardShown().Broadcast( ScreenRect );
-		}, TStatId(), NULL, ENamedThreads::GameThread );
+		FPlatformMisc::LowLevelOutputDebugString(TEXT("[JNI] - AndroidThunkCpp_ShowVirtualKeyboardInput same control"));
+		AndroidThunkCpp_HideVirtualKeyboardInput();
+	}
+	else if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
+	{
+
+		VirtualKeyboardWidget = newWidget;
+
+		// call the java side
+		jstring LabelJava = Env->NewStringUTF(TCHAR_TO_UTF8(*Label));
+		jstring ContentsJava = Env->NewStringUTF(TCHAR_TO_UTF8(*Contents));
+		FJavaWrapper::CallVoidMethod(Env, FJavaWrapper::GameActivityThis, FJavaWrapper::AndroidThunkJava_ShowVirtualKeyboardInput, InputType, LabelJava, ContentsJava);
+		Env->DeleteLocalRef(ContentsJava);
+		Env->DeleteLocalRef(LabelJava);
 	}
 }
 
@@ -648,7 +752,7 @@ JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeVirtualKeyboardResult(
 			{
 				FGraphEventRef SetWidgetText = FFunctionGraphTask::CreateAndDispatchWhenReady([&]()
 				{
-					VirtualKeyboardWidget->SetTextFromVirtualKeyboard(FText::FromString(FString(UTF8_TO_TCHAR(javaChars))), ESetTextType::Commited, ETextCommit::OnUserMovedFocus);
+					VirtualKeyboardWidget->SetTextFromVirtualKeyboard(FText::FromString(FString(UTF8_TO_TCHAR(javaChars))), ETextEntryType::TextEntryAccepted);
 				}, TStatId(), NULL, ENamedThreads::GameThread);
 				FTaskGraphInterface::Get().WaitUntilTaskCompletes(SetWidgetText);
 			}
@@ -673,13 +777,22 @@ JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeVirtualKeyboardChanged
 		{
 			FGraphEventRef SetWidgetText = FFunctionGraphTask::CreateAndDispatchWhenReady([&]()
 			{
-				VirtualKeyboardWidget->SetTextFromVirtualKeyboard(FText::FromString(FString(UTF8_TO_TCHAR(javaChars))), ESetTextType::Changed, ETextCommit::OnUserMovedFocus);
+				VirtualKeyboardWidget->SetTextFromVirtualKeyboard(FText::FromString(FString(UTF8_TO_TCHAR(javaChars))), ETextEntryType::TextEntryUpdated);
 			}, TStatId(), NULL, ENamedThreads::GameThread);
 			FTaskGraphInterface::Get().WaitUntilTaskCompletes(SetWidgetText);
 		}
 		// release string
 		jenv->ReleaseStringUTFChars(contents, javaChars);
 	}
+}
+
+JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeVirtualKeyboardSendKey(JNIEnv* jenv, jobject thiz, jint keyCode)
+{
+	FDeferredAndroidMessage Message;
+
+	Message.messageType = MessageType_KeyDown;
+	Message.KeyEventData.keyId = keyCode;
+	FAndroidInputInterface::DeferMessage(Message);
 }
 
 void AndroidThunkCpp_LaunchURL(const FString& URL)
@@ -764,6 +877,42 @@ void AndroidThunkCpp_ShowInterstitialAd()
 	{
 		FJavaWrapper::CallVoidMethod(Env, FJavaWrapper::GoogleServicesThis, FJavaWrapper::AndroidThunkJava_ShowInterstitialAd);
 	}
+}
+
+FString AndroidThunkCpp_GetAdvertisingId()
+{
+	FString adIdResult = FString("");
+
+	if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
+	{
+		jstring adId =(jstring)FJavaWrapper::CallObjectMethod(Env, FJavaWrapper::GoogleServicesThis, FJavaWrapper::AndroidThunkJava_GetAdvertisingId);
+		if (!Env->IsSameObject(adId, NULL))
+		{
+			const char *nativeAdIdString = Env->GetStringUTFChars(adId, 0);
+			adIdResult = FString(nativeAdIdString);
+			Env->ReleaseStringUTFChars(adId, nativeAdIdString);
+			Env->DeleteLocalRef(adId);
+		}
+	}
+	return adIdResult;
+}
+
+FString AndroidThunkCpp_GetAndroidId()
+{
+	FString androidIdResult = FString("");
+
+	if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
+	{
+		jstring androidId = (jstring)FJavaWrapper::CallObjectMethod(Env, FJavaWrapper::GameActivityThis, FJavaWrapper::AndroidThunkJava_GetAndroidId);
+		if (!Env->IsSameObject(androidId, NULL))
+		{
+			const char *nativeandroidIdString = Env->GetStringUTFChars(androidId, 0);
+			androidIdResult = FString(nativeandroidIdString);
+			Env->ReleaseStringUTFChars(androidId, nativeandroidIdString);
+			Env->DeleteLocalRef(androidId);
+		}
+	}
+	return androidIdResult;
 }
 
 void AndroidThunkCpp_GoogleClientConnect()
@@ -1093,6 +1242,18 @@ bool AndroidThunkCpp_HasActiveWiFiConnection()
 	return bIsActive;
 }
 
+void AndroidThunkCpp_SetThreadName(const char * name)
+{
+	if (JNIEnv* Env = FAndroidApplication::GetJavaEnv())
+	{
+		jstring jname = Env->NewStringUTF(name);
+		jobject currentThread = Env->CallStaticObjectMethod(FJavaWrapper::ThreadClass, FJavaWrapper::CurrentThreadMethod, nullptr);
+		Env->CallVoidMethod(currentThread, FJavaWrapper::SetNameMethod, jname);
+		Env->DeleteLocalRef(jname);
+		Env->DeleteLocalRef(currentThread);
+	}
+}
+
 //The JNI_OnLoad function is triggered by loading the game library from 
 //the Java source file.
 //	static
@@ -1157,6 +1318,9 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* InJavaVM, void* InReserved)
 	OnAndroidLaunchURL = FAndroidLaunchURLDelegate::CreateStatic(&AndroidThunkCpp_LaunchURL);
 
 	FPlatformMisc::LowLevelOutputDebugString(TEXT("In the JNI_OnLoad function 5"));
+	
+	char mainThreadName[] = "MainThread-UE4";
+	AndroidThunkCpp_SetThreadName(mainThreadName);
 
 	return JNI_CURRENT_VERSION;
 }
@@ -1229,4 +1393,27 @@ JNI_METHOD bool Java_com_epicgames_ue4_GameActivity_nativeIsShippingBuild(JNIEnv
 JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeOnActivityResult(JNIEnv* jenv, jobject thiz, jobject activity, jint requestCode, jint resultCode, jobject data)
 {
 	FJavaWrapper::OnActivityResultDelegate.Broadcast(jenv, thiz, activity, requestCode, resultCode, data);
+}
+
+
+JNI_METHOD void Java_com_epicgames_ue4_GameActivity_nativeHandleSensorEvents(JNIEnv* jenv, jobject thiz, jfloatArray tilt, jfloatArray rotation_rate, jfloatArray gravity, jfloatArray acceleration)
+{
+	jfloat* tiltFloatValues = jenv->GetFloatArrayElements(tilt, 0);
+	FVector current_tilt(tiltFloatValues[0], tiltFloatValues[1], tiltFloatValues[2]);
+	jenv->ReleaseFloatArrayElements(tilt, tiltFloatValues, 0);
+
+	jfloat* rotation_rate_FloatValues = jenv->GetFloatArrayElements(rotation_rate, 0);
+	FVector current_rotation_rate(rotation_rate_FloatValues[0], rotation_rate_FloatValues[1], rotation_rate_FloatValues[2]);
+	jenv->ReleaseFloatArrayElements(rotation_rate, rotation_rate_FloatValues, 0);
+
+	jfloat* gravity_FloatValues = jenv->GetFloatArrayElements(gravity, 0);
+	FVector current_gravity(gravity_FloatValues[0], gravity_FloatValues[1], gravity_FloatValues[2]);
+	jenv->ReleaseFloatArrayElements(gravity, gravity_FloatValues, 0);
+	
+	jfloat* acceleration_FloatValues = jenv->GetFloatArrayElements(acceleration, 0);
+	FVector current_acceleration(acceleration_FloatValues[0], acceleration_FloatValues[1], acceleration_FloatValues[2]);
+	jenv->ReleaseFloatArrayElements(acceleration, acceleration_FloatValues, 0);
+
+	FAndroidInputInterface::QueueMotionData(current_tilt, current_rotation_rate, current_gravity, current_acceleration);
+
 }

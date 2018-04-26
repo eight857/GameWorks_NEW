@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Kismet2/ComponentEditorUtils.h"
 #include "HAL/FileManager.h"
@@ -26,6 +26,7 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Editor.h"
 #include "Toolkits/AssetEditorManager.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 #define LOCTEXT_NAMESPACE "ComponentEditorUtils"
 
@@ -281,29 +282,18 @@ FString FComponentEditorUtils::GenerateValidVariableNameFromAsset(UObject* Asset
 
 USceneComponent* FComponentEditorUtils::FindClosestParentInList(UActorComponent* ChildComponent, const TArray<UActorComponent*>& ComponentList)
 {
-	USceneComponent* ClosestParentComponent = nullptr;
-	for (UActorComponent* Component : ComponentList)
+	// Find the most recent parent that is part of the ComponentList
+	if (USceneComponent* ChildAsScene = Cast<USceneComponent>(ChildComponent))
 	{
-		USceneComponent* ChildAsScene = Cast<USceneComponent>(ChildComponent);
-		USceneComponent* SceneComponent = Cast<USceneComponent>(Component);
-		if (ChildAsScene && SceneComponent)
+		for (USceneComponent* Parent = ChildAsScene->GetAttachParent(); Parent != nullptr; Parent = Parent->GetAttachParent())
 		{
-			// Check to see if any parent is also in the list
-			USceneComponent* Parent = ChildAsScene->GetAttachParent();
-			while (Parent != nullptr)
+			if (ComponentList.Contains(Parent))
 			{
-				if (ComponentList.Contains(Parent))
-				{
-					ClosestParentComponent = SceneComponent;
-					break;
-				}
-
-				Parent = Parent->GetAttachParent();
+				return Parent;
 			}
 		}
 	}
-
-	return ClosestParentComponent;
+	return nullptr;
 }
 
 bool FComponentEditorUtils::CanCopyComponents(const TArray<UActorComponent*>& ComponentsToCopy)
@@ -334,7 +324,6 @@ bool FComponentEditorUtils::CanCopyComponents(const TArray<UActorComponent*>& Co
 void FComponentEditorUtils::CopyComponents(const TArray<UActorComponent*>& ComponentsToCopy)
 {
 	FStringOutputDevice Archive;
-	const FExportObjectInnerContext Context;
 
 	// Clear the mark state for saving.
 	UnMarkAllObjects(EObjectMark(OBJECTMARK_TagExp | OBJECTMARK_TagImp));
@@ -345,7 +334,7 @@ void FComponentEditorUtils::CopyComponents(const TArray<UActorComponent*>& Compo
 	for (UActorComponent* Component : ComponentsToCopy)
 	{
 		// Duplicate the component into a temporary object
-		UObject* DuplicatedComponent = StaticDuplicateObject(Component, GetTransientPackage(), Component->GetFName(), RF_AllFlags & ~RF_ArchetypeObject);
+		UObject* DuplicatedComponent = StaticDuplicateObject(Component, GetTransientPackage(), Component->GetFName());
 		if (DuplicatedComponent)
 		{
 			// If the duplicated component is a scene component, wipe its attach parent (to prevent log warnings for referencing a private object in an external package)
@@ -366,6 +355,8 @@ void FComponentEditorUtils::CopyComponents(const TArray<UActorComponent*>& Compo
 			ObjectMap.Add(Component->GetFName(), CastChecked<UActorComponent>(DuplicatedComponent));
 		}
 	}
+
+	const FExportObjectInnerContext Context;
 
 	// Export the component object(s) to text for copying
 	for (auto ObjectIt = ObjectMap.CreateIterator(); ObjectIt; ++ObjectIt)
@@ -397,13 +388,13 @@ void FComponentEditorUtils::CopyComponents(const TArray<UActorComponent*>& Compo
 
 	// Copy text to clipboard
 	FString ExportedText = Archive;
-	FPlatformMisc::ClipboardCopy(*ExportedText);
+	FPlatformApplicationMisc::ClipboardCopy(*ExportedText);
 }
 
 bool FComponentEditorUtils::CanPasteComponents(USceneComponent* RootComponent, bool bOverrideCanAttach, bool bPasteAsArchetypes)
 {
 	FString ClipboardContent;
-	FPlatformMisc::ClipboardPaste(ClipboardContent);
+	FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
 
 	// Obtain the component object text factory for the clipboard content and return whether or not we can use it
 	TSharedRef<FComponentObjectTextFactory> Factory = FComponentObjectTextFactory::Get(ClipboardContent, bPasteAsArchetypes);
@@ -416,7 +407,7 @@ void FComponentEditorUtils::PasteComponents(TArray<UActorComponent*>& OutPastedC
 
 	// Get the text from the clipboard
 	FString TextToImport;
-	FPlatformMisc::ClipboardPaste(TextToImport);
+	FPlatformApplicationMisc::ClipboardPaste(TextToImport);
 
 	// Get a new component object factory for the clipboard content
 	TSharedRef<FComponentObjectTextFactory> Factory = FComponentObjectTextFactory::Get(TextToImport);
@@ -479,7 +470,7 @@ void FComponentEditorUtils::GetComponentsFromClipboard(TMap<FName, FName>& OutPa
 {
 	// Get the text from the clipboard
 	FString TextToImport;
-	FPlatformMisc::ClipboardPaste(TextToImport);
+	FPlatformApplicationMisc::ClipboardPaste(TextToImport);
 
 	// Get a new component object factory for the clipboard content
 	TSharedRef<FComponentObjectTextFactory> Factory = FComponentObjectTextFactory::Get(TextToImport, bGetComponentsAsArchetypes);
@@ -545,7 +536,7 @@ int32 FComponentEditorUtils::DeleteComponents(const TArray<UActorComponent*>& Co
 						ParentComponent->GetChildrenComponents(false, Siblings);
 						for (int32 i = 0; i < Siblings.Num() && ComponentToDelete != Siblings[i]; ++i)
 						{
-							if (!Siblings[i]->IsPendingKill())
+							if (Siblings[i] && !Siblings[i]->IsPendingKill())
 							{
 								OutComponentToSelect = Siblings[i];
 							}
@@ -626,7 +617,7 @@ UActorComponent* FComponentEditorUtils::DuplicateComponent(UActorComponent* Temp
 				USceneComponent* RootComponent = Actor->GetRootComponent();
 				check(RootComponent);
 
-				// ComponentToWorld is not a UPROPERTY, so make sure the clone has calculated it properly before attachment
+				// GetComponentTransform() is not a UPROPERTY, so make sure the clone has calculated it properly before attachment
 				NewSceneComponent->UpdateComponentToWorld();
 
 				NewSceneComponent->SetupAttachment(RootComponent);

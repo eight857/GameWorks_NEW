@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,9 +18,11 @@
 #include "SResetToDefaultMenu.h"
 #include "ActorPickerMode.h"
 #include "SceneDepthPickerMode.h"
+#include "IDetailPropertyRow.h"
+
 
 class AActor;
-class FAssetData;
+struct FAssetData;
 class FAssetThumbnailPool;
 class FMaterialItemView;
 class FMaterialListBuilder;
@@ -49,12 +51,14 @@ DECLARE_DELEGATE_OneParam(FOnPropertyComboBoxValueSelected, const FString&);
 
 namespace PropertyCustomizationHelpers
 {
+	PROPERTYEDITOR_API TSharedRef<SWidget> MakeResetButton(FSimpleDelegate OnResetClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> IsEnabled = true);
 	PROPERTYEDITOR_API TSharedRef<SWidget> MakeAddButton( FSimpleDelegate OnAddClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> IsEnabled = true );
 	PROPERTYEDITOR_API TSharedRef<SWidget> MakeRemoveButton( FSimpleDelegate OnRemoveClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> IsEnabled = true );
 	PROPERTYEDITOR_API TSharedRef<SWidget> MakeEmptyButton( FSimpleDelegate OnEmptyClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> IsEnabled = true );
 	PROPERTYEDITOR_API TSharedRef<SWidget> MakeInsertDeleteDuplicateButton( FExecuteAction OnInsertClicked, FExecuteAction OnDeleteClicked, FExecuteAction OnDuplicateClicked );
 	PROPERTYEDITOR_API TSharedRef<SWidget> MakeDeleteButton( FSimpleDelegate OnDeleteClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> IsEnabled = true );
 	PROPERTYEDITOR_API TSharedRef<SWidget> MakeClearButton( FSimpleDelegate OnClearClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> IsEnabled = true );
+	PROPERTYEDITOR_API TSharedRef<SWidget> MakeVisibilityButton(FOnClicked OnVisibilityClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> VisibilityDelegate = true);
 	PROPERTYEDITOR_API TSharedRef<SWidget> MakeNewBlueprintButton( FSimpleDelegate OnFindClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> IsEnabled = true );
 	PROPERTYEDITOR_API TSharedRef<SWidget> MakeUseSelectedButton( FSimpleDelegate OnUseSelectedClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> IsEnabled = true );
 	PROPERTYEDITOR_API TSharedRef<SWidget> MakeBrowseButton( FSimpleDelegate OnClearClicked, TAttribute<FText> OptionalToolTipText = FText(), TAttribute<bool> IsEnabled = true );
@@ -72,9 +76,6 @@ namespace PropertyCustomizationHelpers
 
 	/** Returns a list of factories which can be used to create new assets, based on the supplied class */
 	PROPERTYEDITOR_API TArray<UFactory*> GetNewAssetFactoriesForClasses(const TArray<const UClass*>& Classes);
-
-	/** Build a combo button allowing access to text property localization utilities */
-	PROPERTYEDITOR_API TSharedRef<SWidget> MakeTextLocalizationButton(const TSharedRef<IPropertyHandle>& InPropertyHandle);
 
 	/** 
 	 * Build a combo button that you bind to a Name or String property or use general delegates
@@ -108,6 +109,8 @@ public:
 		, _DisplayUseSelected( true )
 		, _DisplayBrowse( true )
 		, _EnableContentPicker(true)
+		, _DisplayCompactSize(false)
+		, _DisplayThumbnail(true)
 	{}
 		/** The path to the object */
 		SLATE_ATTRIBUTE( FString, ObjectPath )
@@ -133,6 +136,15 @@ public:
 		SLATE_ARGUMENT(bool, DisplayBrowse)
 		/** Whether to enable the content Picker */
 		SLATE_ARGUMENT(bool, EnableContentPicker)
+		/** A custom reset to default override */
+		SLATE_ARGUMENT(TOptional<FResetToDefaultOverride>, CustomResetToDefault)
+		/** Whether or not to display a smaller, compact size for the asset thumbnail */ 
+		SLATE_ARGUMENT(bool, DisplayCompactSize)
+		/** Whether or not to display the asset thumbnail */ 
+		SLATE_ARGUMENT(bool, DisplayThumbnail)
+		/** A custom content slot for widgets */ 
+		SLATE_NAMED_SLOT(FArguments, CustomContentSlot)
+		SLATE_ATTRIBUTE(FIntPoint, ThumbnailSizeOverride)
 	SLATE_END_ARGS()
 
 	PROPERTYEDITOR_API void Construct( const FArguments& InArgs );
@@ -519,7 +531,7 @@ class FMaterialList
 	, public TSharedFromThis<FMaterialList>
 {
 public:
-	PROPERTYEDITOR_API FMaterialList( IDetailLayoutBuilder& InDetailLayoutBuilder, FMaterialListDelegates& MaterialListDelegates, bool bInAllowCollapse = false, bool bInShowUsedTextures = true);
+	PROPERTYEDITOR_API FMaterialList( IDetailLayoutBuilder& InDetailLayoutBuilder, FMaterialListDelegates& MaterialListDelegates, bool bInAllowCollapse = false, bool bInShowUsedTextures = true, bool bInDisplayCompactSize = false);
 
 	/**
 	 * @return true if materials are being displayed.                                                          
@@ -595,6 +607,8 @@ private:
 	bool bAllowCollpase;
 	/** Whether or not to use the used textures menu for each material entry */
 	bool bShowUsedTextures;
+	/** Whether or not to display a compact form of material entry*/
+	bool bDisplayCompactSize;
 };
 
 
@@ -633,6 +647,8 @@ DECLARE_DELEGATE_RetVal_TwoParams(TSharedRef<SWidget>, FOnGenerateWidgetsForSect
 
 DECLARE_DELEGATE_TwoParams(FOnResetSectionToDefaultClicked, int32, int32);
 
+DECLARE_DELEGATE_RetVal_OneParam(TSharedRef<SWidget>, FOnGenerateLODComboBox, int32);
+
 DECLARE_DELEGATE_RetVal(bool, FOnCanCopySectionList);
 DECLARE_DELEGATE(FOnCopySectionList);
 DECLARE_DELEGATE(FOnPasteSectionList);
@@ -640,6 +656,7 @@ DECLARE_DELEGATE(FOnPasteSectionList);
 DECLARE_DELEGATE_RetVal_TwoParams(bool, FOnCanCopySectionItem, int32, int32);
 DECLARE_DELEGATE_TwoParams(FOnCopySectionItem, int32, int32);
 DECLARE_DELEGATE_TwoParams(FOnPasteSectionItem, int32, int32);
+DECLARE_DELEGATE_ThreeParams(FOnEnableSectionItem, int32, int32, bool);
 
 struct FSectionListDelegates
 {
@@ -675,6 +692,8 @@ struct FSectionListDelegates
 	FOnCanCopySectionItem OnCanCopySectionItem;
 	/** Delegate called Pasting a section item */
 	FOnPasteSectionItem OnPasteSectionItem;
+	/** Delegate called when enabling/disabling a section item */
+	FOnEnableSectionItem OnEnableSectionItem;
 };
 
 /**
@@ -708,6 +727,9 @@ struct FSectionListItem
 	/* Is this section is using cloth */
 	bool IsSectionUsingCloth;
 
+	/* Size of the preview material thumbnail */
+	int32 ThumbnailSize;
+
 	/** Material being readonly view in the list */
 	TWeakObjectPtr<UMaterialInterface> Material;
 
@@ -720,11 +742,12 @@ struct FSectionListItem
 	TMap<int32, FName> AvailableMaterialSlotName;
 
 
-	FSectionListItem(int32 InLodIndex, int32 InSectionIndex, FName InMaterialSlotName, int32 InMaterialSlotIndex, FName InOriginalMaterialSlotName, const TMap<int32, FName> &InAvailableMaterialSlotName, const UMaterialInterface* InMaterial, bool InIsSectionUsingCloth)
+	FSectionListItem(int32 InLodIndex, int32 InSectionIndex, FName InMaterialSlotName, int32 InMaterialSlotIndex, FName InOriginalMaterialSlotName, const TMap<int32, FName> &InAvailableMaterialSlotName, const UMaterialInterface* InMaterial, bool InIsSectionUsingCloth, int32 InThumbnailSize)
 		: LodIndex(InLodIndex)
 		, SectionIndex(InSectionIndex)
 		, IsSectionUsingCloth(InIsSectionUsingCloth)
-		, Material(InMaterial)
+		, ThumbnailSize(InThumbnailSize)
+		, Material(const_cast<UMaterialInterface*>(InMaterial))
 		, MaterialSlotName(InMaterialSlotName)
 		, MaterialSlotIndex(InMaterialSlotIndex)
 		, OriginalMaterialSlotName(InOriginalMaterialSlotName)
@@ -764,7 +787,7 @@ struct FSectionListItem
 class FSectionList : public IDetailCustomNodeBuilder, public TSharedFromThis<FSectionList>
 {
 public:
-	PROPERTYEDITOR_API FSectionList(IDetailLayoutBuilder& InDetailLayoutBuilder, FSectionListDelegates& SectionListDelegates, bool bInAllowCollapse = false);
+	PROPERTYEDITOR_API FSectionList(IDetailLayoutBuilder& InDetailLayoutBuilder, FSectionListDelegates& SectionListDelegates, bool bInAllowCollapse, int32 InThumbnailSize, int32 InSectionsLodIndex);
 
 	/**
 	* @return true if Sections are being displayed
@@ -808,6 +831,7 @@ private:
 	bool OnCanCopySectionItem(int32 LODIndex, int32 SectionIndex) const;
 	void OnCopySectionItem(int32 LODIndex, int32 SectionIndex);
 	void OnPasteSectionItem(int32 LODIndex, int32 SectionIndex);
+	void OnEnableSectionItem(int32 LodIndex, int32 SectionIndex, bool bEnable);
 
 	/** Delegates for the Section list */
 	FSectionListDelegates SectionListDelegates;
@@ -825,4 +849,7 @@ private:
 	TSharedRef<class FSectionListBuilder> SectionListBuilder;
 	/** Allow Collapse of Section header row. Right now if you allow collapse, it will initially collapse. */
 	bool bAllowCollpase;
+
+	int32 ThumbnailSize;
+	int32 SectionsLodIndex;
 };

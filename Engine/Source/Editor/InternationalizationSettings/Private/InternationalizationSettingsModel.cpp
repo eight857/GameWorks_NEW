@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "InternationalizationSettingsModel.h"
 #include "Misc/ConfigCacheIni.h"
@@ -27,14 +27,13 @@ void UInternationalizationSettingsModel::ResetToDefault()
 	GConfig->GetString(TEXT("Internationalization"), TEXT("Culture"), SavedCultureName, GEngineIni);
 	GConfig->SetString( TEXT("Internationalization"), TEXT("Culture"), *SavedCultureName, GEditorSettingsIni );
 
-	GConfig->SetString( TEXT("Internationalization"), TEXT("NativeGameLanguage"), TEXT(""), GEditorSettingsIni );
-	GConfig->SetString( TEXT("Internationalization"), TEXT("NativeGameCulture"), TEXT(""), GEditorSettingsIni );
-
-	GConfig->SetBool( TEXT("Internationalization"), TEXT("ShouldLoadLocalizedPropertyNames"), true, GEditorSettingsIni );
-
-	GConfig->SetBool( TEXT("Internationalization"), TEXT("ShowNodesAndPinsUnlocalized"), false, GEditorSettingsIni );
+	GConfig->SetBool( TEXT("Internationalization"), TEXT("ShouldUseLocalizedNumericInput"), true, GEditorSettingsIni );
+	GConfig->SetBool( TEXT("Internationalization"), TEXT("ShouldUseLocalizedPropertyNames"), true, GEditorSettingsIni );
+	GConfig->SetBool( TEXT("Internationalization"), TEXT("ShouldUseLocalizedNodeAndPinNames"), true, GEditorSettingsIni );
 
 	GConfig->Flush(false, GEditorSettingsIni);
+
+	FTextLocalizationManager::Get().ConfigureGameLocalizationPreviewLanguage(FString());
 }
 
 bool UInternationalizationSettingsModel::GetEditorLanguage(FString& OutEditorLanguage) const
@@ -67,42 +66,53 @@ void UInternationalizationSettingsModel::SetEditorLocale(const FString& InEditor
 	GConfig->Flush(false, GEditorSettingsIni);
 }
 
-bool UInternationalizationSettingsModel::GetNativeGameLanguage(FString& OutNativeGameLanguage) const
+bool UInternationalizationSettingsModel::GetPreviewGameLanguage(FString& OutPreviewGameLanguage) const
 {
-	return GConfig->GetString(TEXT("Internationalization"), TEXT("NativeGameLanguage"), OutNativeGameLanguage, GEditorSettingsIni)
-		|| GConfig->GetString(TEXT("Internationalization"), TEXT("NativeGameCulture"), OutNativeGameLanguage, GEditorSettingsIni);
+	OutPreviewGameLanguage = FTextLocalizationManager::Get().GetConfiguredGameLocalizationPreviewLanguage();
+	return true;
 }
 
-void UInternationalizationSettingsModel::SetNativeGameLanguage(const FString& InNativeGameLanguage)
+void UInternationalizationSettingsModel::SetPreviewGameLanguage(const FString& InPreviewGameLanguage)
 {
-	GConfig->SetString( TEXT("Internationalization"), TEXT("NativeGameLanguage"), *InNativeGameLanguage, GEditorSettingsIni );
-	GConfig->SetString( TEXT("Internationalization"), TEXT("NativeGameCulture"), TEXT(""), GEditorSettingsIni ); // Clear legacy setting
+	FTextLocalizationManager::Get().ConfigureGameLocalizationPreviewLanguage(InPreviewGameLanguage);
+}
+
+bool UInternationalizationSettingsModel::ShouldUseLocalizedNumericInput() const
+{
+	bool bShouldUseLocalizedNumericInput = false;
+	GConfig->GetBool(TEXT("Internationalization"), TEXT("ShouldUseLocalizedNumericInput"), bShouldUseLocalizedNumericInput, GEditorSettingsIni);
+	return bShouldUseLocalizedNumericInput;
+}
+
+void UInternationalizationSettingsModel::SetShouldUseLocalizedNumericInput(const bool Value)
+{
+	GConfig->SetBool(TEXT("Internationalization"), TEXT("ShouldUseLocalizedNumericInput"), Value, GEditorSettingsIni);
 	GConfig->Flush(false, GEditorSettingsIni);
 }
 
-bool UInternationalizationSettingsModel::ShouldLoadLocalizedPropertyNames() const
+bool UInternationalizationSettingsModel::ShouldUseLocalizedPropertyNames() const
 {
-	bool bShouldLoadLocalizedPropertyNames = true;
-	GConfig->GetBool(TEXT("Internationalization"), TEXT("ShouldLoadLocalizedPropertyNames"), bShouldLoadLocalizedPropertyNames, GEditorSettingsIni);
-	return bShouldLoadLocalizedPropertyNames;
+	bool bShouldUseLocalizedPropertyNames = false;
+	GConfig->GetBool(TEXT("Internationalization"), TEXT("ShouldUseLocalizedPropertyNames"), bShouldUseLocalizedPropertyNames, GEditorSettingsIni);
+	return bShouldUseLocalizedPropertyNames;
 }
 
-void UInternationalizationSettingsModel::ShouldLoadLocalizedPropertyNames(const bool Value)
+void UInternationalizationSettingsModel::SetShouldUseLocalizedPropertyNames(const bool Value)
 {
-	GConfig->SetBool( TEXT("Internationalization"), TEXT("ShouldLoadLocalizedPropertyNames"), Value, GEditorSettingsIni );
+	GConfig->SetBool(TEXT("Internationalization"), TEXT("ShouldUseLocalizedPropertyNames"), Value, GEditorSettingsIni);
 	GConfig->Flush(false, GEditorSettingsIni);
 }
 
-bool UInternationalizationSettingsModel::ShouldShowNodesAndPinsUnlocalized() const
+bool UInternationalizationSettingsModel::ShouldUseLocalizedNodeAndPinNames() const
 {
-	bool bShowNodesAndPinsUnlocalized = false;
-	GConfig->GetBool(TEXT("Internationalization"), TEXT("ShowNodesAndPinsUnlocalized"), bShowNodesAndPinsUnlocalized, GEditorSettingsIni);
-	return bShowNodesAndPinsUnlocalized;
+	bool bShouldUseLocalizedNodeAndPinNames = false;
+	GConfig->GetBool(TEXT("Internationalization"), TEXT("ShouldUseLocalizedNodeAndPinNames"), bShouldUseLocalizedNodeAndPinNames, GEditorSettingsIni);
+	return bShouldUseLocalizedNodeAndPinNames;
 }
 
-void UInternationalizationSettingsModel::ShouldShowNodesAndPinsUnlocalized(const bool Value)
+void UInternationalizationSettingsModel::SetShouldUseLocalizedNodeAndPinNames(const bool Value)
 {
-	GConfig->SetBool( TEXT("Internationalization"), TEXT("ShowNodesAndPinsUnlocalized"), Value, GEditorSettingsIni );
+	GConfig->SetBool(TEXT("Internationalization"), TEXT("ShouldUseLocalizedNodeAndPinNames"), Value, GEditorSettingsIni);
 	GConfig->Flush(false, GEditorSettingsIni);
 }
 

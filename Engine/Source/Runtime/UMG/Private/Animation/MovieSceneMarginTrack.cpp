@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Animation/MovieSceneMarginTrack.h"
 #include "Animation/MovieSceneMarginSection.h"
@@ -8,7 +8,8 @@
 UMovieSceneMarginTrack::UMovieSceneMarginTrack(const FObjectInitializer& Init)
 	: Super(Init)
 {
-	EvalOptions.bEvaluateNearestSection = EvalOptions.bCanEvaluateNearestSection = true;
+	EvalOptions.bEvaluateNearestSection_DEPRECATED = EvalOptions.bCanEvaluateNearestSection = true;
+	SupportedBlendTypes = FMovieSceneBlendTypeField::All();
 }
 
 UMovieSceneSection* UMovieSceneMarginTrack::CreateNewSection()

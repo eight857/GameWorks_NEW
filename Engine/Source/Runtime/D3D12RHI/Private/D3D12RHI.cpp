@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	D3D12RHI.cpp: Unreal D3D RHI library implementation.
@@ -7,6 +7,12 @@
 #include "D3D12RHIPrivate.h"
 #include "RHIStaticStates.h"
 #include "OneColorShader.h"
+
+#if PLATFORM_WINDOWS
+#include "AllowWindowsPlatformTypes.h"
+	#include "amd_ags.h"
+#include "HideWindowsPlatformTypes.h"
+#endif
 
 #if !UE_BUILD_SHIPPING
 #include "STaskGraph.h"
@@ -21,7 +27,11 @@ TAutoConsoleVariable<int32> CVarD3D12ZeroBufferSizeInMB(
 	ECVF_ReadOnly
 	);
 
+/// @cond DOXYGEN_WARNINGS
+
 FD3D12FastAllocator* FD3D12DynamicRHI::HelperThreadDynamicHeapAllocator = nullptr;
+
+/// @endcond
 
 FD3D12DynamicRHI* FD3D12DynamicRHI::SingleD3DRHI = nullptr;
 
@@ -29,13 +39,14 @@ using namespace D3D12RHI;
 
 FD3D12DynamicRHI::FD3D12DynamicRHI(TArray<FD3D12Adapter*>& ChosenAdaptersIn) :
 	NumThreadDynamicHeapAllocators(0),
-	ViewportFrameCounter(0),
-	ChosenAdapters(ChosenAdaptersIn)
+	ChosenAdapters(ChosenAdaptersIn),
+	AmdAgsContext(nullptr),
+	FlipEvent(INVALID_HANDLE_VALUE)
 {
-	FMemory::Memzero(ThreadDynamicHeapAllocatorArray, sizeof(ThreadDynamicHeapAllocatorArray));
-
 	// The FD3D12DynamicRHI must be a singleton
 	check(SingleD3DRHI == nullptr);
+
+	ThreadDynamicHeapAllocatorArray.AddZeroed(FPlatformMisc::NumberOfCoresIncludingHyperthreads());
 
 	// This should be called once at the start 
 	check(IsInGameThread());
@@ -70,16 +81,21 @@ FD3D12DynamicRHI::FD3D12DynamicRHI(TArray<FD3D12Adapter*>& ChosenAdaptersIn) :
 		GSupportsDepthFetchDuringDepthTest = false;
 	}
 
-	// ES2 feature level emulation in D3D11
-	if (FParse::Param(FCommandLine::Get(), TEXT("FeatureLevelES2")) && !GIsEditor)
+	ERHIFeatureLevel::Type PreviewFeatureLevel;
+	if (!GIsEditor && RHIGetPreviewFeatureLevel(PreviewFeatureLevel))
 	{
-		GMaxRHIFeatureLevel = ERHIFeatureLevel::ES2;
+		check(PreviewFeatureLevel == ERHIFeatureLevel::ES2 || PreviewFeatureLevel == ERHIFeatureLevel::ES3_1);
+
+		// ES2/3.1 feature level emulation in D3D
+		GMaxRHIFeatureLevel = PreviewFeatureLevel;
+		if (GMaxRHIFeatureLevel == ERHIFeatureLevel::ES2)
+	{
 		GMaxRHIShaderPlatform = SP_PCD3D_ES2;
 	}
-	else if ((FParse::Param(FCommandLine::Get(), TEXT("FeatureLevelES31")) || FParse::Param(FCommandLine::Get(), TEXT("FeatureLevelES3_1"))) && !GIsEditor)
+		else if (GMaxRHIFeatureLevel == ERHIFeatureLevel::ES3_1)
 	{
-		GMaxRHIFeatureLevel = ERHIFeatureLevel::ES3_1;
 		GMaxRHIShaderPlatform = SP_PCD3D_ES3_1;
+	}
 	}
 	else if (FeatureLevel == D3D_FEATURE_LEVEL_11_0)
 	{
@@ -152,6 +168,9 @@ FD3D12DynamicRHI::FD3D12DynamicRHI(TArray<FD3D12Adapter*>& ChosenAdaptersIn) :
 
 	GPixelFormats[PF_R5G6B5_UNORM	].PlatformFormat = DXGI_FORMAT_B5G6R5_UNORM;
 	GPixelFormats[PF_R8G8B8A8		].PlatformFormat = DXGI_FORMAT_R8G8B8A8_TYPELESS;
+	GPixelFormats[PF_R8G8B8A8_UINT	].PlatformFormat = DXGI_FORMAT_R8G8B8A8_UINT;
+	GPixelFormats[PF_R8G8B8A8_SNORM	].PlatformFormat = DXGI_FORMAT_R8G8B8A8_SNORM;
+
 	GPixelFormats[PF_R8G8			].PlatformFormat = DXGI_FORMAT_R8G8_UNORM;
 	GPixelFormats[PF_R32G32B32A32_UINT].PlatformFormat = DXGI_FORMAT_R32G32B32A32_UINT;
 	GPixelFormats[PF_R16G16_UINT	].PlatformFormat = DXGI_FORMAT_R16G16_UINT;
@@ -159,6 +178,9 @@ FD3D12DynamicRHI::FD3D12DynamicRHI(TArray<FD3D12Adapter*>& ChosenAdaptersIn) :
 	GPixelFormats[PF_BC6H			].PlatformFormat = DXGI_FORMAT_BC6H_UF16;
 	GPixelFormats[PF_BC7			].PlatformFormat = DXGI_FORMAT_BC7_TYPELESS;
 	GPixelFormats[PF_R8_UINT		].PlatformFormat = DXGI_FORMAT_R8_UINT;
+
+	GPixelFormats[PF_R16G16B16A16_UNORM].PlatformFormat = DXGI_FORMAT_R16G16B16A16_UNORM;
+	GPixelFormats[PF_R16G16B16A16_SNORM].PlatformFormat = DXGI_FORMAT_R16G16B16A16_SNORM;
 
 	// MS - Not doing any feature level checks. D3D12 currently supports these limits.
 	// However this may need to be revisited if new feature levels are introduced with different HW requirement
@@ -177,6 +199,9 @@ FD3D12DynamicRHI::FD3D12DynamicRHI(TArray<FD3D12Adapter*>& ChosenAdaptersIn) :
 	if (!GIsEditor)
 	{
 		GRHISupportsRHIThread = true;
+#if PLATFORM_XBOXONE
+		GRHISupportsRHIOnTaskThread = true;
+#endif
 	}
 	GRHISupportsParallelRHIExecute = D3D12_SUPPORTS_PARALLEL_RHI_EXECUTE;
 
@@ -207,6 +232,18 @@ FD3D12DynamicRHI::~FD3D12DynamicRHI()
 void FD3D12DynamicRHI::Shutdown()
 {
 	check(IsInGameThread() && IsInRenderingThread());  // require that the render thread has been shut down
+
+#if PLATFORM_WINDOWS
+	if (AmdAgsContext)
+	{
+		// Clean up the AMD extensions and shut down the AMD AGS utility library
+		agsDriverExtensionsDX12_DeInit(AmdAgsContext);
+		agsDeInit(AmdAgsContext);
+		AmdAgsContext = nullptr;
+	}
+#endif
+
+	RHIShutdownFlipTracking();
 
 	// Cleanup All of the Adapters
 	for (FD3D12Adapter*& Adapter : ChosenAdapters)
@@ -297,65 +334,6 @@ IRHIComputeContext* FD3D12DynamicRHI::RHIGetDefaultAsyncComputeContext()
 
 	check(DefaultAsyncComputeContext);
 	return DefaultAsyncComputeContext;
-}
-
-void FD3D12DynamicRHI::IssueLongGPUTask()
-{
-	FD3D12Adapter& Adapter = GetAdapter();
-	if (GMaxRHIFeatureLevel >= ERHIFeatureLevel::SM4)
-	{
-		int32 LargestViewportIndex = INDEX_NONE;
-		int32 LargestViewportPixels = 0;
-
-		for (int32 ViewportIndex = 0; ViewportIndex < Adapter.GetViewports().Num(); ViewportIndex++)
-		{
-			FD3D12Viewport* Viewport = Adapter.GetViewports()[ViewportIndex];
-
-			if (Viewport->GetSizeXY().X * Viewport->GetSizeXY().Y > LargestViewportPixels)
-			{
-				LargestViewportPixels = Viewport->GetSizeXY().X * Viewport->GetSizeXY().Y;
-				LargestViewportIndex = ViewportIndex;
-			}
-		}
-
-		if (LargestViewportIndex >= 0)
-		{
-			FD3D12Viewport* Viewport = Adapter.GetViewports()[LargestViewportIndex];
-
-			FRHICommandList_RecursiveHazardous RHICmdList(RHIGetDefaultContext());
-
-			SetRenderTarget(RHICmdList, Viewport->GetBackBuffer(), FTextureRHIRef());
-
-			FGraphicsPipelineStateInitializer GraphicsPSOInit;
-			RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
-
-			GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGBA, BO_Add, BF_One, BF_One>::GetRHI();
-			GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
-			GraphicsPSOInit.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
-
-			auto ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
-			TShaderMapRef<TOneColorVS<true> > VertexShader(ShaderMap);
-			TShaderMapRef<FLongGPUTaskPS> PixelShader(ShaderMap);
-
-			GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GD3D12Vector4VertexDeclaration.VertexDeclarationRHI;
-			GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
-			GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
-			GraphicsPSOInit.PrimitiveType = PT_TriangleStrip;
-
-			RHICmdList.SetLocalGraphicsPipelineState(RHICmdList.BuildLocalGraphicsPipelineState(GraphicsPSOInit));
-			RHICmdList.SetBlendFactor(FLinearColor::Black);
-
-			// Draw a fullscreen quad
-			FVector4 Vertices[4];
-			Vertices[0].Set(-1.0f, 1.0f, 0, 1.0f);
-			Vertices[1].Set(1.0f, 1.0f, 0, 1.0f);
-			Vertices[2].Set(-1.0f, -1.0f, 0, 1.0f);
-			Vertices[3].Set(1.0f, -1.0f, 0, 1.0f);
-			DrawPrimitiveUP(RHICmdList, PT_TriangleStrip, 2, Vertices, sizeof(Vertices[0]));
-
-			// Implicit flush. Always call flush when using a command list in RHI implementations before doing anything else. This is super hazardous.
-		}
-	}
 }
 
 void FD3D12DynamicRHI::UpdateBuffer(FD3D12Resource* Dest, uint32 DestOffset, FD3D12Resource* Source, uint32 SourceOffset, uint32 NumBytes)
@@ -527,7 +505,7 @@ void FD3D12DynamicRHI::RHISwitchToAFRIfApplicable()
 		for (auto& ViewPort : Adapter.GetViewports())
 		{
 			FIntPoint Size = ViewPort->GetSizeXY();
-			ViewPort->Resize(Size.X, Size.Y, ViewPort->IsFullscreen());
+			ViewPort->Resize(Size.X, Size.Y, ViewPort->IsFullscreen(), PF_Unknown);
 		}
 	}
 }

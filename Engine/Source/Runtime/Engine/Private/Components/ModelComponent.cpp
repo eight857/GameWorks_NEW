@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	ModelComponent.cpp: Model component implementation
@@ -320,18 +320,6 @@ void UModelComponent::PostEditUndo()
 }
 #endif // WITH_EDITOR
 
-void UModelComponent::GetResourceSizeEx(FResourceSizeEx& CumulativeResourceSize)
-{
-	Super::GetResourceSizeEx(CumulativeResourceSize);
-
-	// Count the bodysetup we own as well for 'inclusive' stats
-	if((CumulativeResourceSize.GetResourceSizeMode() == EResourceSizeMode::Inclusive) && (ModelBodySetup != NULL))
-	{
-		ModelBodySetup->GetResourceSizeEx(CumulativeResourceSize);
-	}
-}
-
-
 bool UModelComponent::IsNameStableForNetworking() const
 {
 	// UModelComponent is always persistent for the duration of a game session, and so can be considered to have a stable name
@@ -368,22 +356,27 @@ UMaterialInterface* UModelComponent::GetMaterial(int32 MaterialIndex) const
 	return Material;
 }
 
-UMaterialInterface* UModelComponent::GetMaterialFromCollisionFaceIndex(int32 FaceIndex) const
+UMaterialInterface* UModelComponent::GetMaterialFromCollisionFaceIndex(int32 FaceIndex, int32& SectionIndex) const
 {
 	UMaterialInterface* Result = nullptr;
+	SectionIndex = 0;
 
-	// Look for element that corresponds to the supplied face
-	int32 TotalFaceCount = 0;
-	for (int32 ElementIdx = 0; ElementIdx < Elements.Num(); ElementIdx++)
+	if (FaceIndex >= 0)
 	{
-		const FModelElement& Element = Elements[ElementIdx];
-		TotalFaceCount += Element.NumTriangles;
-
-		if (FaceIndex < TotalFaceCount)
+		// Look for element that corresponds to the supplied face
+		int32 TotalFaceCount = 0;
+		for (int32 ElementIdx = 0; ElementIdx < Elements.Num(); ElementIdx++)
 		{
-			// Grab the material
-			Result = Element.Material;
-			break;
+			const FModelElement& Element = Elements[ElementIdx];
+			TotalFaceCount += Element.NumTriangles;
+
+			if (FaceIndex < TotalFaceCount)
+			{
+				// Grab the material
+				Result = Element.Material;
+				SectionIndex = ElementIdx;
+				break;
+			}
 		}
 	}
 
@@ -449,7 +442,7 @@ void UModelComponent::GetStreamingTextureInfo(FStreamingTextureLevelContext& Lev
 					const FBspNode& Node = Model->Nodes[SurfaceNodes[NodeIndex]];
 					for(int32 VertexIndex = 0;VertexIndex < Node.NumVertices;VertexIndex++)
 					{
-						const FVector WorldVertex = ComponentToWorld.TransformPosition(Model->Points[Model->Verts[Node.iVertPool + VertexIndex].pVertex]);
+						const FVector WorldVertex = GetComponentTransform().TransformPosition(Model->Points[Model->Verts[Node.iVertPool + VertexIndex].pVertex]);
 						SurfaceVertices.Add(WorldVertex);
 					}
 				}
@@ -663,15 +656,34 @@ bool UModelComponent::GetPhysicsTriMeshData(struct FTriMeshCollisionData* Collis
 	for(int32 ElementIndex = 0;ElementIndex < Elements.Num();ElementIndex++)
 	{
 		FModelElement& Element = Elements[ElementIndex];
-		FRawIndexBuffer16or32* IndexBuffer = (FRawIndexBuffer16or32*)Element.IndexBuffer; // @Bad to assume its always one of these?
+		FRawIndexBuffer16or32* IndexBuffer = Element.IndexBuffer;
+		int32 IndexBufferSize = 0;
 
-		for(uint32 TriIdx=0; TriIdx<Element.NumTriangles; TriIdx++)
+		if (IndexBuffer == nullptr || IndexBuffer->Indices.Num() == 0)
+		{
+			UE_LOG(LogPhysics, Warning, TEXT("Found bad index buffer when cooking UModelComponent physics data! Component: %s, Buffer: %x, Buffer Size: %d, Element: %d"), *GetPathName(), IndexBuffer, IndexBufferSize, ElementIndex);
+			verify(IndexBufferSize >= 0);
+			continue;
+		}
+
+		int32 NumVertices = Model->VertexBuffer.Vertices.Num();
+
+		if (NumVertices < (int32)Element.MaxVertexIndex)
+		{
+			UE_LOG(LogPhysics, Warning, TEXT("Found bad vertex buffer when cooking UModelComponent physics data! Component: %s, Element: %d. Verts Exected: %d, Actual: %d"), 
+				*GetPathName(), ElementIndex, Element.MaxVertexIndex, NumVertices);
+			continue;
+		}
+
+		IndexBufferSize = IndexBuffer->Indices.Num();
+
+		for (uint32 TriIdx = 0; TriIdx < Element.NumTriangles; TriIdx++)
 		{
 			FTriIndices Triangle;
 
-			Triangle.v0 = IndexBuffer->Indices[Element.FirstIndex + (TriIdx*3) + 0];
-			Triangle.v1 = IndexBuffer->Indices[Element.FirstIndex + (TriIdx*3) + 1];
-			Triangle.v2 = IndexBuffer->Indices[Element.FirstIndex + (TriIdx*3) + 2];
+			Triangle.v0 = IndexBuffer->Indices[Element.FirstIndex + (TriIdx * 3) + 0];
+			Triangle.v1 = IndexBuffer->Indices[Element.FirstIndex + (TriIdx * 3) + 1];
+			Triangle.v2 = IndexBuffer->Indices[Element.FirstIndex + (TriIdx * 3) + 2];
 
 			if (AreaThreshold >= 0.f)
 			{

@@ -1,12 +1,51 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "Misc/StringAssetReference.h"
+#include "UObject/SoftObjectPath.h"
 #include "Engine/DeveloperSettings.h"
 #include "AudioSettings.generated.h"
+
+struct ENGINE_API FAudioPlatformSettings
+{
+	/** Sample rate to use on the platform for the mixing engine. Higher sample rates will incur more CPU cost. */
+	int32 SampleRate;
+
+	/** The amount of audio to compute each callback block. Lower values decrease latency but may increase CPU cost. */
+	int32 CallbackBufferFrameSize;
+
+	/** The number of buffers to keep enqueued. More buffers increases latency, but can compensate for variable compute availability in audio callbacks on some platforms. */
+	int32 NumBuffers;
+
+	/** The max number of channels to limit for this platform. The max channels used will be the minimum of this value and the global audio quality settings. A value of 0 will not apply a platform channel count max. */
+	int32 MaxChannels;
+
+	/** The number of workers to use to compute source audio. Will only use up to the max number of sources. Will evenly divide sources to each source worker. */
+	int32 NumSourceWorkers;
+
+	static FAudioPlatformSettings GetPlatformSettings(const TCHAR* PlatformSettingsConfigFile);
+
+	FAudioPlatformSettings()
+		: SampleRate(48000)
+		, CallbackBufferFrameSize(1024)
+		, NumBuffers(2)
+		, MaxChannels(0)
+		, NumSourceWorkers(0)
+	{
+	}
+};
+
+// Enumeration for what our options are for sample rates used for VOIP.
+UENUM()
+enum class EVoiceSampleRate : int32
+{
+	Low16000Hz = 16000,
+	Normal24000Hz = 24000,
+	/* High48000Hz = 48000 //TODO: 48k VOIP requires serious performance optimizations on encoding and decoding. */
+};
+
 
 USTRUCT()
 struct ENGINE_API FAudioQualitySettings
@@ -42,19 +81,31 @@ class ENGINE_API UAudioSettings : public UDeveloperSettings
 
 	/** The SoundClass assigned to newly created sounds */
 	UPROPERTY(config, EditAnywhere, Category="Audio", meta=(AllowedClasses="SoundClass", DisplayName="Default Sound Class"))
-	FStringAssetReference DefaultSoundClassName;
+	FSoftObjectPath DefaultSoundClassName;
 
 	/** The SoundConcurrency assigned to newly created sounds */
 	UPROPERTY(config, EditAnywhere, Category = "Audio", meta = (AllowedClasses = "SoundConcurrency", DisplayName = "Default Sound Concurrency"))
-	FStringAssetReference DefaultSoundConcurrencyName;
+	FSoftObjectPath DefaultSoundConcurrencyName;
 
 	/** The SoundMix to use as base when no other system has specified a Base SoundMix */
 	UPROPERTY(config, EditAnywhere, Category="Audio", meta=(AllowedClasses="SoundMix"))
-	FStringAssetReference DefaultBaseSoundMix;
+	FSoftObjectPath DefaultBaseSoundMix;
 	
 	/** Sound class to be used for the VOIP audio component */
 	UPROPERTY(config, EditAnywhere, Category="Audio", meta=(AllowedClasses="SoundClass"))
-	FStringAssetReference VoiPSoundClass;
+	FSoftObjectPath VoiPSoundClass;
+
+	/** Sample rate used for voice over IP. VOIP audio is resampled to the application's sample rate on the receiver side. */
+	UPROPERTY(config, EditAnywhere, Category = "Audio")
+	EVoiceSampleRate VoiPSampleRate;
+
+	/** The amount of time to buffer incoming voice audio for ahead of time. Increasing this value can help avoid jitter on slower network connections. */
+	UPROPERTY(config, EditAnywhere, Category = "Audio", AdvancedDisplay, meta = (ClampMin = 0.05, ClampMax = 3.0))
+	float VoipBufferingDelay;
+
+	/** The amount of audio to send to reverb submixes if no reverb send is setup for the source through attenuation settings. Only used in audio mixer. */
+	UPROPERTY(config, EditAnywhere, Category = "Audio", AdvancedDisplay, meta = (ClampMin = 0.0, ClampMax = 1.0))
+	float DefaultReverbSendLevel;
 
 	UPROPERTY(config, EditAnywhere, Category="Audio", AdvancedDisplay, meta=(ClampMin=0.1,ClampMax=1.5))
 	float LowPassFilterResonance;
@@ -96,11 +147,14 @@ class ENGINE_API UAudioSettings : public UDeveloperSettings
 
 	const FAudioQualitySettings& GetQualityLevelSettings(int32 QualityLevel) const;
 
-	// Sets whether audio mixer is enabled. Set once an audio mixer platform module is loaded.
+	// Sets whether audio mixer is enabled. Set once an audio mixer platform modu le is loaded.
 	void SetAudioMixerEnabled(const bool bInAudioMixerEnabled);
 
 	// Returns if the audio mixer is currently enabled
 	const bool IsAudioMixerEnabled() const;
+
+	/** Returns the highest value for MaxChannels among all quality levels */
+	int32 GetHighestMaxChannels() const;
 
 private:
 

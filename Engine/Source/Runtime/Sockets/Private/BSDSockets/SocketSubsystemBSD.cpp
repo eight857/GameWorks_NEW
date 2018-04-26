@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "BSDSockets/SocketSubsystemBSD.h"
 #include "Misc/ScopeLock.h"
@@ -84,10 +84,12 @@ ESocketErrors FSocketSubsystemBSD::GetHostByName(const ANSICHAR* HostName, FInte
 				{
 					uint32 HostIP = ntohl(IPv4SockAddr->sin_addr.s_addr);
 					static_cast<FInternetAddrBSD&>(OutAddr).SetIp(HostIP);
+					freeaddrinfo(AddrInfo);
 					return SE_NO_ERROR;
 				}
 			}
 		}
+		freeaddrinfo(AddrInfo);
 		return SE_HOST_NOT_FOUND;
 	}
 	return SocketError;

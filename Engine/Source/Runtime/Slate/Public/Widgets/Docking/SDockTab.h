@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -75,7 +75,7 @@ public:
 		, _ShouldAutosize(false)
 		, _OnCanCloseTab()
 		, _OnPersistVisualState()
-		, _TabColorScale(0,0,0,0)
+		, _TabColorScale(FLinearColor::Transparent)
 		{}
 
 		SLATE_DEFAULT_SLOT( FArguments, Content )
@@ -91,7 +91,7 @@ public:
 		SLATE_ARGUMENT( bool, ShouldAutosize )
 		SLATE_EVENT( FCanCloseTab, OnCanCloseTab )
 		SLATE_EVENT( FOnPersistVisualState, OnPersistVisualState )
-		SLATE_ARGUMENT( FLinearColor, TabColorScale )
+		SLATE_ATTRIBUTE( FLinearColor, TabColorScale )
 	SLATE_END_ARGS()
 
 	/** Construct the widget from the declaration. */
@@ -131,10 +131,6 @@ public:
 
 	/** Similar to GetTabRole() but returns the correct role for UI style and user input purposes */
 	ETabRole GetVisualTabRole() const;
-
-	/** Returns true if the tab role is NomadTab, but is being visualized as a major tab */
-	DEPRECATED(4.8, "Use GetVisualTabRole(), which will return ETabRole::MajorTab for nomads with major tab style.")
-	bool IsNomadTabWithMajorTabStyle() const { return GetTabRole() == ETabRole::NomadTab && GetVisualTabRole() == ETabRole::MajorTab; }
 
 	/**
 	 * What should the content area look like for this type of tab?
@@ -371,7 +367,7 @@ protected:
 	bool bShouldAutosize;
 
 	/** Color of this tab */
-	FLinearColor TabColorScale;
+	TAttribute<FLinearColor> TabColorScale;
 
 	/** @return the scaling of the tab based on the opening/closing animation */
 	FVector2D GetAnimatedScale() const;

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
  
 #pragma once
 
@@ -31,7 +31,13 @@ public:
 		: _Style( &FCoreStyle::Get().GetWidgetStyle<FScrollBarStyle>("Scrollbar") )
 		, _OnUserScrolled()
 		, _AlwaysShowScrollbar(false)
+#if PLATFORM_UI_HAS_MOBILE_SCROLLBARS
+		, _HideWhenNotInUse(true)
+#else
+		, _HideWhenNotInUse(false)
+#endif
 		, _Orientation( Orient_Vertical )
+		, _DragFocusCause( EFocusCause::Mouse )
 		, _Thickness( FVector2D(12.0f, 12.0f) )
 		{}
 
@@ -39,7 +45,9 @@ public:
 		SLATE_STYLE_ARGUMENT( FScrollBarStyle, Style )
 		SLATE_EVENT( FOnUserScrolled, OnUserScrolled )
 		SLATE_ARGUMENT( bool, AlwaysShowScrollbar )
+		SLATE_ARGUMENT( bool, HideWhenNotInUse )
 		SLATE_ARGUMENT( EOrientation, Orientation )
+		SLATE_ARGUMENT( EFocusCause, DragFocusCause )
 		/** The thickness of the scrollbar thumb */
 		SLATE_ATTRIBUTE( FVector2D, Thickness )
 	SLATE_END_ARGS()
@@ -68,35 +76,13 @@ public:
 	 */
 	void SetState( float InOffsetFraction, float InThumbSizeFraction );
 
-	/**
-	 * The system calls this method to notify the widget that a mouse button was pressed within it. This event is bubbled.
-	 *
-	 * @param MyGeometry The Geometry of the widget receiving the event
-	 * @param MouseEvent Information about the input event
-	 *
-	 * @return Whether the event was handled along with possible requests for the system to take action.
-	 */
-	virtual FReply OnMouseButtonDown( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent );
-	
-	/**
-	 * The system calls this method to notify the widget that a mouse button was release within it. This event is bubbled.
-	 *
-	 * @param MyGeometry The Geometry of the widget receiving the event
-	 * @param MouseEvent Information about the input event
-	 *
-	 * @return Whether the event was handled along with possible requests for the system to take action.
-	 */
-	virtual FReply OnMouseButtonUp( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent );
-	
-	/**
-	 * The system calls this method to notify the widget that a mouse moved within it. This event is bubbled.
-	 *
-	 * @param MyGeometry The Geometry of the widget receiving the event
-	 * @param MouseEvent Information about the input event
-	 *
-	 * @return Whether the event was handled along with possible requests for the system to take action.
-	 */
-	virtual FReply OnMouseMove( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent );
+	// SWidget
+	virtual FReply OnMouseButtonDown( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
+	virtual FReply OnMouseButtonUp( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
+	virtual FReply OnMouseMove( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) override;
+	virtual void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override;
+	// SWidget
 
 	/** @return true if scrolling is possible; false if the view is big enough to fit all the content */
 	bool IsNeeded() const;
@@ -122,11 +108,20 @@ public:
 	/** See UserVisibility attribute */
 	void SetUserVisibility(TAttribute<EVisibility> InUserVisibility) { UserVisibility = InUserVisibility; }
 
+	/** See DragFocusCause attribute */
+	void SetDragFocusCause(EFocusCause InDragFocusCause);
+
 	/** See Thickness attribute */
 	void SetThickness(TAttribute<FVector2D> InThickness);
 
 	/** See ScrollBarAlwaysVisible attribute */
 	void SetScrollBarAlwaysVisible(bool InAlwaysVisible);
+
+	/** Allows external scrolling panels to notify the scrollbar when scrolling begins. */
+	virtual void BeginScrolling();
+
+	/** Allows external scrolling panels to notify the scrollbar when scrolling ends. */
+	virtual void EndScrolling();
 
 	SScrollBar();
 
@@ -154,6 +149,10 @@ protected:
 	FOnUserScrolled OnUserScrolled;
 	float DragGrabOffset;
 	EOrientation Orientation;
+	EFocusCause DragFocusCause;
+	bool bHideWhenNotInUse;
+	bool bIsScrolling;
+	double LastInteractionTime;
 
 	/** Image to use when the scrollbar thumb is in its normal state */
 	const FSlateBrush* NormalThumbImage;

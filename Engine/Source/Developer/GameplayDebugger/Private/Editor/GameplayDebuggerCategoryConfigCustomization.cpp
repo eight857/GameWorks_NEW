@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "Editor/GameplayDebuggerCategoryConfigCustomization.h"
 
@@ -50,7 +50,7 @@ void FGameplayDebuggerCategoryConfigCustomization::CustomizeChildren(TSharedRef<
 			continue;
 		}
 
-		StructBuilder.AddChildProperty(PropHandle.ToSharedRef());
+		StructBuilder.AddProperty(PropHandle.ToSharedRef());
 	}
 };
 

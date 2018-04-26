@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineBeacon.h"
 #include "Engine/NetConnection.h"
@@ -13,6 +13,7 @@ AOnlineBeacon::AOnlineBeacon(const FObjectInitializer& ObjectInitializer) :
 	BeaconState(EBeaconState::DenyRequests)
 {
 	NetDriverName = FName(TEXT("BeaconDriver"));
+	bRelevantForNetworkReplays = false;
 }
 
 bool AOnlineBeacon::InitBase()

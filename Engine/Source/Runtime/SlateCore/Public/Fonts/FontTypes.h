@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -15,7 +15,8 @@ public:
 		, KeyHash( 0 )
 	{
 		KeyHash = HashCombine(KeyHash, GetTypeHash(FontInfo));
-		KeyHash = HashCombine(KeyHash, GetTypeHash(OutlineSettings));
+		KeyHash = HashCombine(KeyHash, GetTypeHash(OutlineSettings.OutlineSize));
+		KeyHash = HashCombine(KeyHash, GetTypeHash(OutlineSettings.bSeparateFillAlpha));
 		KeyHash = HashCombine(KeyHash, GetTypeHash(Scale));
 	}
 
@@ -36,7 +37,10 @@ public:
 
 	FORCEINLINE bool operator==(const FSlateFontKey& Other ) const
 	{
-		return FontInfo == Other.FontInfo && OutlineSettings == Other.OutlineSettings && Scale == Other.Scale;
+		return FontInfo == Other.FontInfo 
+			&& OutlineSettings.OutlineSize == Other.OutlineSettings.OutlineSize 
+			&& OutlineSettings.bSeparateFillAlpha == Other.OutlineSettings.bSeparateFillAlpha 
+			&& Scale == Other.Scale;
 	}
 
 	FORCEINLINE bool operator!=(const FSlateFontKey& Other ) const

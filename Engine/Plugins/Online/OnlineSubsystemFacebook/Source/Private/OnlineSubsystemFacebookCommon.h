@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -51,6 +51,7 @@ public:
 	virtual bool Shutdown() override;
 	virtual FString GetAppId() const override;
 	virtual bool Exec(class UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar) override;
+	virtual FText GetOnlineServiceName() const override;
 
 	// FTickerBaseObject
 
@@ -62,12 +63,6 @@ public:
 	 * Destructor
 	 */
 	virtual ~FOnlineSubsystemFacebookCommon();
-
-	/**
-	 * Is Facebook available for use
-	 * @return true if Facebook functionality is available, false otherwise
-	 */
-	virtual bool IsEnabled() const;
 
 PACKAGE_SCOPE:
 

@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 
 #pragma once
@@ -156,12 +156,17 @@ public:
 
 	void					AddNewSection(float StartTime, FString SectionName);
 	void					RemoveSection(int32 SectionIndex);
-
 	FString					GetSectionName(int32 SectionIndex) const;
+
+	// Set the time of the supplied section
+	void					SetSectionTime(int32 SectionIndex, float NewTime);
+
 	void					RenameSlotNode(int32 SlotIndex, FString NewSlotName);
 
-	void					AddNewMontageSlot(FString NewSlotName);
+	// UI Slot Action handlers
+	void					AddNewMontageSlot(FName NewSlotName);
 	void					RemoveMontageSlot(int32 AnimSlotIndex);
+	bool					CanRemoveMontageSlot(int32 AnimSlotIndex);
 	void					DuplicateMontageSlot(int32 AnimSlotIndex);
 	FText					GetMontageSlotName(int32 SlotIndex) const;
 

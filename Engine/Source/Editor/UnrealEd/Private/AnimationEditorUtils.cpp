@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimationEditorUtils.h"
 #include "Framework/Commands/UIAction.h"
@@ -12,6 +12,7 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SButton.h"
+#include "Styling/CoreStyle.h"
 #include "EditorStyleSet.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimBlueprint.h"
@@ -39,6 +40,7 @@
 #include "AnimationStateMachineGraph.h"
 #include "K2Node_Composite.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "Animation/AnimCompress_Automatic.h"
 
 #define LOCTEXT_NAMESPACE "AnimationEditorUtils"
 
@@ -96,7 +98,7 @@ void SCreateAnimationAssetDlg::Construct(const FArguments& InArgs)
 					[
 						SNew(STextBlock)
 						.Text(LOCTEXT("SelectPath", "Select Path to create animation"))
-						.Font(FSlateFontInfo(FPaths::EngineContentDir() / TEXT("Slate/Fonts/Roboto-Regular.ttf"), 14))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
 					]
 
 					+ SVerticalBox::Slot()
@@ -310,7 +312,17 @@ namespace AnimationEditorUtils
 
 		if (AssetCreated.IsBound())
 		{
-			AssetCreated.Execute(ObjectsToSync);
+			if (!AssetCreated.Execute(ObjectsToSync))
+			{
+				//Destroy the assets we just create
+				for (UObject* ObjectToDelete : ObjectsToSync)
+				{
+					ObjectToDelete->ClearFlags(RF_Standalone | RF_Public);
+					ObjectToDelete->RemoveFromRoot();
+					ObjectToDelete->MarkPendingKill();
+				}
+				CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+			}
 		}
 	}
 
@@ -353,7 +365,17 @@ namespace AnimationEditorUtils
 					{
 						TArray<UObject*> NewObjects;
 						NewObjects.Add(NewAsset);
-						AssetCreated.Execute(NewObjects);
+						if (!AssetCreated.Execute(NewObjects))
+						{
+							//Destroy the assets we just create
+							for (UObject* ObjectToDelete : NewObjects)
+							{
+								ObjectToDelete->ClearFlags(RF_Standalone | RF_Public);
+								ObjectToDelete->RemoveFromRoot();
+								ObjectToDelete->MarkPendingKill();
+							}
+							CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+						}
 					}
 				}
 			}
@@ -395,7 +417,17 @@ namespace AnimationEditorUtils
 
 			if (AssetCreated.IsBound())
 			{
-				AssetCreated.Execute(AssetsToSync);
+				if (!AssetCreated.Execute(AssetsToSync))
+				{
+					//Destroy the assets we just create
+					for (UObject* ObjectToDelete : AssetsToSync)
+					{
+						ObjectToDelete->ClearFlags(RF_Standalone | RF_Public);
+						ObjectToDelete->RemoveFromRoot();
+						ObjectToDelete->MarkPendingKill();
+					}
+					CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+				}
 			}
 		}
 	}
@@ -501,6 +533,13 @@ namespace AnimationEditorUtils
 
 					for (UAnimSequence* AnimSeq : AnimSequencePtrs)
 					{
+						// If we are not compressing with 'Auto', then clear CompressCommandletVersion
+						// So we can recompress these animations later.
+						const bool bIsAutoCompressor = Algorithm->IsA(UAnimCompress_Automatic::StaticClass());
+						if (!bIsAutoCompressor)
+						{
+							AnimSeq->CompressCommandletVersion = 0;
+						}
 						AnimSeq->CompressionScheme = static_cast<UAnimCompress*>(StaticDuplicateObject(Algorithm, AnimSeq));
 						AnimSeq->RequestAnimCompression(false, CompressContext);
 						++CompressContext->AnimIndex;
@@ -514,6 +553,11 @@ namespace AnimationEditorUtils
 		}
 
 		return false;
+	}
+
+	bool IsAnimGraph(UEdGraph* Graph)
+	{
+		return Cast<UAnimationGraph>(Graph) != nullptr;
 	}
 
 	void RegenerateSubGraphArrays(UAnimBlueprint* Blueprint)

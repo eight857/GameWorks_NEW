@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 /*================================================================================
 	IOSPlatform.h: Setup for the iOS platform
@@ -23,8 +23,11 @@ typedef FIOSPlatformTypes FPlatformTypes;
 
 #ifdef __LP64__
 #define PLATFORM_64BITS					1
+// Technically the underlying platform has 128bit atomics, but clang might not issue optimal code
+#define PLATFORM_HAS_128BIT_ATOMICS		0
 #else
 #define PLATFORM_64BITS					0
+#define PLATFORM_HAS_128BIT_ATOMICS		0
 #endif
 
 // Base defines, defaults are commented out
@@ -35,6 +38,7 @@ typedef FIOSPlatformTypes FPlatformTypes;
 #define PLATFORM_USE_SYSTEM_VSWPRINTF					0
 #define PLATFORM_HAS_BSD_TIME							1
 #define PLATFORM_HAS_BSD_IPV6_SOCKETS					1
+#define PLATFORM_HAS_BSD_SOCKET_FEATURE_MSG_DONTWAIT	1
 #define PLATFORM_MAX_FILEPATH_LENGTH					MAX_PATH
 #define PLATFORM_SUPPORTS_TEXTURE_STREAMING				1
 #define PLATFORM_BUILTIN_VERTEX_HALF_FLOAT				0
@@ -42,6 +46,9 @@ typedef FIOSPlatformTypes FPlatformTypes;
 #define PLATFORM_ALLOW_NULL_RHI							1
 #define PLATFORM_ENABLE_VECTORINTRINSICS_NEON			PLATFORM_64BITS // disable vector intrinsics to make it compatible with 32-bit in Xcode 8.3
 #define PLATFORM_SUPPORTS_STACK_SYMBOLS					1
+
+// on iOS we now perform offline symbolication as it's significantly faster. Requires bGenerateCrashReportSymbols=true in the ini file.
+#define	PLATFORM_RUNTIME_MALLOCPROFILER_SYMBOLICATION	0	
 #define PLATFORM_NUM_AUDIODECOMPRESSION_PRECACHE_BUFFERS		0
 #if PLATFORM_TVOS
 #define PLATFORM_USES_ES2								0
@@ -50,15 +57,20 @@ typedef FIOSPlatformTypes FPlatformTypes;
 #define PLATFORM_USES_ES2								1
 #define PLATFORM_HAS_TOUCH_MAIN_SCREEN					1
 #endif
+#define PLATFORM_UI_HAS_MOBILE_SCROLLBARS				1
+#define PLATFORM_UI_NEEDS_TOOLTIPS						0
+#define PLATFORM_UI_NEEDS_FOCUS_OUTLINES				0
 
-// @todo iOS: temporarily use Ansi allocator as wxWidgets cause problems with MallocTBB
-#define FORCE_ANSI_ALLOCATOR 1
+//mallocpoison not safe with aligned ansi allocator.  returns the larger unaligned size during Free() which causes writes off the end of the allocation.
+#define UE_USE_MALLOC_FILL_BYTES 0 
+
+#define PLATFORM_RHITHREAD_DEFAULT_BYPASS				1
 
 // Function type macros.
 #define VARARGS															/* Functions with variable arguments */
 #define CDECL															/* Standard C function */
 #define STDCALL															/* Standard calling convention */
-#if UE_BUILD_DEBUG
+#if UE_BUILD_DEBUG || UE_DISABLE_FORCE_INLINE
 #define FORCEINLINE inline 												/* Don't force code to be inline */
 #else
 #define FORCEINLINE inline __attribute__ ((always_inline))				/* Force code to be inline */

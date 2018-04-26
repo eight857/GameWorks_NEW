@@ -1,4 +1,4 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #include "JsonObjectConverter.h"
 #include "Internationalization/Culture.h"
@@ -125,7 +125,18 @@ TSharedPtr<FJsonValue> ConvertScalarUPropertyToJsonValue(UProperty* Property, co
 				TSharedPtr<FJsonValue> ValueElement = FJsonObjectConverter::UPropertyToJsonValue(MapProperty->ValueProp, Helper.GetValuePtr(i), CheckFlags & ( ~CPF_ParmFlags ), SkipFlags, ExportCb);
 				if ( KeyElement.IsValid() && ValueElement.IsValid() )
 				{
-					Out->SetField(KeyElement->AsString(), ValueElement);
+					FString KeyString = KeyElement->AsString();
+					if (KeyString.IsEmpty())
+					{
+						MapProperty->KeyProp->ExportTextItem(KeyString, Helper.GetKeyPtr(i), nullptr, nullptr, 0);
+						if (KeyString.IsEmpty())
+						{
+							UE_LOG(LogJson, Error, TEXT("Unable to convert key to string for property %s."), *MapProperty->GetName())
+							KeyString = FString::Printf(TEXT("Unparsed Key %d"), i);
+						}
+					}
+
+					Out->SetField(KeyString, ValueElement);
 				}
 			}
 		}
@@ -272,13 +283,8 @@ bool FJsonObjectConverter::UStructToJsonObjectString(const UStruct* StructDefini
 	return false;
 }
 
-//template bool FJsonObjectConverter::UStructToJsonObjectString<TCHAR, TCondensedJsonPrintPolicy>(const UStruct* StructDefinition, const void* Struct, FString& OutJsonString, int64 CheckFlags, int64 SkipFlags, int32 Indent, const CustomExportCallback* ExportCb);
-
-namespace
-{
-
-/** Convert a JSON object into a culture invariant string based on current locale */
-bool GetTextFromObject(const TSharedRef<FJsonObject>& Obj, FText& TextOut)
+//static
+bool FJsonObjectConverter::GetTextFromObject(const TSharedRef<FJsonObject>& Obj, FText& TextOut)
 {
 	// get the prioritized culture name list
 	FCultureRef CurrentCulture = FInternationalization::Get().GetCurrentCulture();
@@ -298,6 +304,11 @@ bool GetTextFromObject(const TSharedRef<FJsonObject>& Obj, FText& TextOut)
 	// no luck, is this possibly an unrelated json object?
 	return false;
 }
+
+//template bool FJsonObjectConverter::UStructToJsonObjectString<TCHAR, TCondensedJsonPrintPolicy>(const UStruct* StructDefinition, const void* Struct, FString& OutJsonString, int64 CheckFlags, int64 SkipFlags, int32 Indent, const CustomExportCallback* ExportCb);
+
+namespace
+{
 
 /** Convert JSON to property, assuming either the property is not an array or the value is an individual array element */
 bool ConvertScalarJsonValueToUProperty(TSharedPtr<FJsonValue> JsonValue, UProperty* Property, void* OutValue, int64 CheckFlags, int64 SkipFlags)
@@ -473,7 +484,7 @@ bool ConvertScalarJsonValueToUProperty(TSharedPtr<FJsonValue> JsonValue, UProper
 			return false;
 		}
 	}
-	else if (UTextProperty *TextProperty = Cast<UTextProperty>(Property))
+	else if (UTextProperty* TextProperty = Cast<UTextProperty>(Property))
 	{
 		if (JsonValue->Type == EJson::String)
 		{
@@ -487,7 +498,7 @@ bool ConvertScalarJsonValueToUProperty(TSharedPtr<FJsonValue> JsonValue, UProper
 
 			// import the subvalue as a culture invariant string
 			FText Text;
-			if (!GetTextFromObject(Obj.ToSharedRef(), Text))
+			if (!FJsonObjectConverter::GetTextFromObject(Obj.ToSharedRef(), Text))
 			{
 				UE_LOG(LogJson, Error, TEXT("JsonValueToUProperty - Attempted to import FText from JSON object with invalid keys for property %s"), *Property->GetNameCPP());
 				return false;
@@ -571,7 +582,17 @@ bool ConvertScalarJsonValueToUProperty(TSharedPtr<FJsonValue> JsonValue, UProper
 			
 			FString ImportTextString = JsonValue->AsString();
 			const TCHAR* ImportTextPtr = *ImportTextString;
-			TheCppStructOps->ImportTextItem(ImportTextPtr, OutValue, PPF_None, nullptr, (FOutputDevice*)GWarn);
+			if (!TheCppStructOps->ImportTextItem(ImportTextPtr, OutValue, PPF_None, nullptr, (FOutputDevice*)GWarn))
+			{
+				// Fall back to trying the tagged property approach if custom ImportTextItem couldn't get it done
+				Property->ImportText(ImportTextPtr, OutValue, PPF_None, nullptr);
+			}
+		}
+		else if (JsonValue->Type == EJson::String)
+		{
+			FString ImportTextString = JsonValue->AsString();
+			const TCHAR* ImportTextPtr = *ImportTextString;
+			Property->ImportText(ImportTextPtr, OutValue, PPF_None, nullptr);
 		}
 		else
 		{
@@ -601,12 +622,12 @@ bool FJsonObjectConverter::JsonValueToUProperty(TSharedPtr<FJsonValue> JsonValue
 		return false;
 	}
 
-	bool bArrayProperty = Property->IsA<UArrayProperty>();
+	bool bArrayOrSetProperty = Property->IsA<UArrayProperty>() || Property->IsA<USetProperty>();
 	bool bJsonArray = JsonValue->Type == EJson::Array;
 
 	if (!bJsonArray)
 	{
-		if (bArrayProperty)
+		if (bArrayOrSetProperty)
 		{
 			UE_LOG(LogJson, Error, TEXT("JsonValueToUProperty - Attempted to import TArray from non-array JSON key"));
 			return false;			
@@ -621,7 +642,7 @@ bool FJsonObjectConverter::JsonValueToUProperty(TSharedPtr<FJsonValue> JsonValue
 	}
 
 	// In practice, the ArrayDim == 1 check ought to be redundant, since nested arrays of UPropertys are not supported
-	if (bArrayProperty && Property->ArrayDim == 1)
+	if (bArrayOrSetProperty && Property->ArrayDim == 1)
 	{
 		// Read into TArray
 		return ConvertScalarJsonValueToUProperty(JsonValue, Property, OutValue, CheckFlags, SkipFlags);
@@ -706,3 +727,45 @@ bool FJsonObjectConverter::JsonAttributesToUStruct(const TMap< FString, TSharedP
 	return true;
 }
 
+FFormatNamedArguments FJsonObjectConverter::ParseTextArgumentsFromJson(const TSharedPtr<const FJsonObject>& JsonObject)
+{
+	FFormatNamedArguments NamedArgs;
+	if (JsonObject.IsValid())
+	{
+		for (const auto& It : JsonObject->Values)
+		{
+			if (!It.Value.IsValid())
+				continue;
+
+			switch (It.Value->Type)
+			{
+			case EJson::Number:
+				// number
+				NamedArgs.Emplace(It.Key, It.Value->AsNumber());
+				break;
+			case EJson::String:
+				// culture invariant string
+				NamedArgs.Emplace(It.Key, FText::FromString(It.Value->AsString()));
+				break;
+			case EJson::Object:
+			{
+				// localized string
+				FText TextOut;
+				if (FJsonObjectConverter::GetTextFromObject(It.Value->AsObject().ToSharedRef(), TextOut))
+				{
+					NamedArgs.Emplace(It.Key, TextOut);
+				}
+				else
+				{
+					UE_LOG(LogJson, Error, TEXT("Unable to apply Json parameter %s (could not parse object)"), *It.Key);
+				}
+			}
+			break;
+			default:
+				UE_LOG(LogJson, Error, TEXT("Unable to apply Json parameter %s (bad type)"), *It.Key);
+				break;
+			}
+		}
+	}
+	return NamedArgs;
+}

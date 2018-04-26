@@ -1,10 +1,15 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "OnlineSubsystemTypes.h"
 #include "OnlineJsonSerializer.h"
 #include "OnlineSubsystemGooglePackage.h"
+
+class FAuthTokenGoogle;
+#if PLATFORM_IOS
+@class GIDGoogleUser;
+#endif
 
 
 /**
@@ -132,41 +137,16 @@ public:
 
 	explicit FAuthTokenGoogle(const FString& InRefreshToken, EGoogleRefreshToken)
 		: AuthType(EGoogleAuthTokenType::RefreshToken)
-		, RefreshToken(InRefreshToken)
 		, ExpiresIn(0)
+		, RefreshToken(InRefreshToken)
 		, ExpiresInUTC(0)
 	{
 	}
 
-	FAuthTokenGoogle(const FAuthTokenGoogle& Src) = default;
-	FAuthTokenGoogle& operator=(const FAuthTokenGoogle& Src) = default;
-#if PLATFORM_COMPILER_HAS_DEFAULTED_FUNCTIONS
-	FAuthTokenGoogle(FAuthTokenGoogle&& Src) = default;
-	FAuthTokenGoogle& operator=(FAuthTokenGoogle&& Src) = default;
-#else
-	FAuthTokenGoogle(FAuthTokenGoogle&& Src) 
-		: AuthType(Src.AuthType)
-		, AccessToken(MoveTemp(Src.AccessToken))
-		, TokenType(MoveTemp(Src.TokenType))
-		, ExpiresIn(Src.ExpiresIn)
-		, RefreshToken(MoveTemp(Src.RefreshToken))
-		, IdToken(MoveTemp(Src.IdToken))
-		, IdTokenJWT(MoveTemp(Src.IdTokenJWT))
-		, ExpiresInUTC(MoveTemp(Src.ExpiresInUTC))
-	{ }
-
-	FAuthTokenGoogle& operator=(FAuthTokenGoogle&& Src)
-	{ 
-		AuthType = Src.AuthType;
-		AccessToken = MoveTemp(Src.AccessToken);
-		TokenType = MoveTemp(Src.TokenType);
-		ExpiresIn = Src.ExpiresIn;
-		RefreshToken = MoveTemp(Src.RefreshToken);
-		IdToken = MoveTemp(Src.IdToken);
-		IdTokenJWT = MoveTemp(Src.IdTokenJWT);
-		ExpiresInUTC = MoveTemp(Src.ExpiresInUTC);
-	}
-#endif
+	FAuthTokenGoogle(FAuthTokenGoogle&&) = default;
+	FAuthTokenGoogle(const FAuthTokenGoogle&) = default;
+	FAuthTokenGoogle& operator=(FAuthTokenGoogle&&) = default;
+	FAuthTokenGoogle& operator=(const FAuthTokenGoogle&) = default;
 
 	/**
 	 * Parse a Google json auth response into an access/refresh token
@@ -176,6 +156,15 @@ public:
 	 * @return true if parsing was successful, false otherwise
 	 */
 	bool Parse(const FString& InJsonStr);
+
+	/**
+	 * Parse a Google json auth response into an access/refresh token
+	 *
+	 * @param InJsonObject json object containing the token information
+	 *
+	 * @return true if parsing was successful, false otherwise
+	 */
+	bool Parse(TSharedPtr<FJsonObject> InJsonObject);
 
 	/**
 	 * Parse a Google json auth refresh response into an access/refresh token
@@ -258,6 +247,10 @@ private:
 		ONLINE_JSON_SERIALIZE("refresh_token", RefreshToken);
 		ONLINE_JSON_SERIALIZE("id_token", IdToken);
 	END_ONLINE_JSON_SERIALIZER
+
+#if PLATFORM_IOS
+	friend bool GetAuthTokenFromGoogleUser(GIDGoogleUser* user, FAuthTokenGoogle& OutAuthToken);
+#endif
 };
 
 /**
@@ -339,7 +332,16 @@ public:
 	FErrorGoogle()
 	{
 	}
+	
+	/** Error type */
+	FString Error;
+	/** Description of error */
+	FString Error_Description;
+
+	FString ToDebugString() const { return FString::Printf(TEXT("%s [Desc:%s]"), *Error, *Error_Description); }
 
 	BEGIN_ONLINE_JSON_SERIALIZER
+		ONLINE_JSON_SERIALIZE("error", Error);
+		ONLINE_JSON_SERIALIZE("error_description", Error_Description);
 	END_ONLINE_JSON_SERIALIZER
 };
