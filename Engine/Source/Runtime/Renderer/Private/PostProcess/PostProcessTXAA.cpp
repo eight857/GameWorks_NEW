@@ -77,8 +77,7 @@ void FRCPassPostProcessTXAA::Process(FRenderingCompositePassContext& Context)
 	};
     auto SampleX = Context.View.TemporalJitterPixels.X;
     auto SampleY = Context.View.TemporalJitterPixels.Y;
-    static const auto TXAADbgJitter = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAADbgJitter"));
-
+    
 	FTextureRHIParamRef SourceTex = GetInputTexture(0);
 	FTextureRHIParamRef FeedbackTex = GetInputTexture(1);
 	FTextureRHIParamRef VelocityTex = GetInputTexture(2);
@@ -92,10 +91,7 @@ void FRCPassPostProcessTXAA::Process(FRenderingCompositePassContext& Context)
 
 	if (FeedbackTex)
 	{
-		Context.RHICmdList.ResolveTXAA(DestRenderTarget.TargetableTexture, SourceTex, FeedbackTex, VelocityTex, DepthTex,
-			TXAADbgJitter->GetValueOnRenderThread() ?
-			FVector2D(SampleX * 2.0f / Context.View.ViewRect.Width(), SampleY * -2.0f / Context.View.ViewRect.Height()) :
-			FVector2D(SampleX, SampleY));
+		Context.RHICmdList.ResolveTXAA(DestRenderTarget.TargetableTexture, SourceTex, FeedbackTex, VelocityTex, DepthTex, FVector2D(SampleX, SampleY));
 
 		Context.RHICmdList.CopyToResolveTarget(DestRenderTarget.TargetableTexture, DestRenderTarget.ShaderResourceTexture, false, FResolveParams());
 	}

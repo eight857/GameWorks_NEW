@@ -1968,91 +1968,62 @@ static TAutoConsoleVariable<int32> CVarPostProcessAAQuality(
 // TXAA related CVars
 //////////////////////////////////////////////////////////////////////////
 // #if WITH_TXAA
-static TAutoConsoleVariable<int32> CVarTXAADebugMV(
-    TEXT("r.TXAADebugMV"),
+static TAutoConsoleVariable<int32> CVarTxaaDebugMV(
+    TEXT("r.TXAA.DebugMV"),
     0,
     TEXT("Shows motion vectors.\n")
     TEXT(" 0:Don't show, 1:Show."),
     ECVF_Scalability | ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<int32> CVarTXAAMVSelect(
-    TEXT("r.TXAAMVSelect"),
+static TAutoConsoleVariable<int32> CVarTxaaMVSelect(
+    TEXT("r.TXAA.MVSelect"),
     2,
     TEXT("Defines the criterion used to select reprojected pixel in case of motion.\n")
     TEXT(" 0:longest motion vec within the pixel, 1:longest MV in X shaped neighborhood, 2:best fit between longest and shortest MV, 3:MV of the sample that is nearest"),
     ECVF_Scalability | ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<int32> CVarTXAADbgJitter(
-    TEXT("r.TXAADbgJitter"),
-    0,
-    TEXT("Debug Jitter.\n")
-    TEXT(" 0:Default, 1:Do something"),
-    ECVF_Scalability | ECVF_RenderThreadSafe);
-
-static TAutoConsoleVariable<float> CVarTXAAMVScale(
-    TEXT("r.TXAAMVScale"),
+static TAutoConsoleVariable<float> CVarTxaaDebugMVScale(
+    TEXT("r.TXAA.DebugMVScale"),
     1024.0,
     TEXT("Defines the scale applied to MV for visualization.\n")
     TEXT(" Default:1024.f"),
     ECVF_Scalability | ECVF_RenderThreadSafe);
 
-
-static TAutoConsoleVariable<int32> CVarTXAAFlipZ(
-    TEXT("r.TXAAFlipZ"),
-    1,
-    TEXT("Defines if Z is flipped. \n")
-    TEXT(" 0:Not flipped, 1:Flipped"),
-    ECVF_Scalability | ECVF_RenderThreadSafe);
-
-static TAutoConsoleVariable<int32> CVarTXAAUseRGB(
-    TEXT("r.TXAAUseRGB"),
+static TAutoConsoleVariable<int32> CVarTxaaUseRGB(
+    TEXT("r.TXAA.UseRGB"),
     0,
     TEXT("Uses RGB space instead of YCoCg for TXAA. \n")
     TEXT(" 0:Use YCoCg, 1:Use RGB"),
     ECVF_Scalability | ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<int32> CVarUseBH(
-    TEXT("r.TXAAUseBH"),
+static TAutoConsoleVariable<int32> CVarTxaaUseBlackmanHarrisFilter(
+    TEXT("r.TXAA.UseBlackmanHarrisFilter"),
     1,
     TEXT("Uses Blackman Harris 3.3 Filter instead of box filter. \n")
     TEXT(" 0:Use Box , 1:Use Blackman-Harris 3.3"),
     ECVF_Scalability | ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<int32> CVarUseAF(
-    TEXT("r.TXAAUseAF"),
+static TAutoConsoleVariable<int32> CVarTxaaEnableAntiFlicker(
+    TEXT("r.TXAA.EnableAntiFlicker"),
     0,
     TEXT("Uses Anti flicker filter. \n")
     TEXT(" 0:No AF filter, 1:Use AF Filter"),
     ECVF_Scalability | ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<float> CVarBlendFactor(
-    TEXT("r.TXAABlendFactor"),
+static TAutoConsoleVariable<float> CVarTxaaBlendFactor(
+    TEXT("r.TXAA.BlendFactor"),
     0.04f,
     TEXT("Blend Factor\n")
     TEXT(" Range: 0.0-1.0"),
     ECVF_Scalability | ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<int32> CVarEnableClipping(
-    TEXT("r.TXAAEnableClipping"),
+static TAutoConsoleVariable<int32> CVarTxaaEnableColorClipping(
+    TEXT("r.TXAA.EnableColorClipping"),
     1,
     TEXT("Blend Factor\n")
     TEXT(" Range: 0-1"),
     ECVF_Scalability | ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<int32> CVarTXAADbg1(
-    TEXT("r.TXAADbg1"),
-    0,
-    TEXT("General Debug Variable.\n")
-    TEXT(" 0:Default, 1:Do something"),
-    ECVF_Scalability | ECVF_RenderThreadSafe);
-
-
-static TAutoConsoleVariable<int32> CVarDbg2(
-    TEXT("r.TXAADbg2"),
-    0,
-    TEXT("Blend Factor\n")
-    TEXT(" Range: 0-1"),
-    ECVF_Scalability | ECVF_RenderThreadSafe);
 // #endif // WITH_TXAA
 
 

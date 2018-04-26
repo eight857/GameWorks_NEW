@@ -2153,31 +2153,25 @@ void FD3D11DynamicRHI::RHIResolveTXAA(FTextureRHIParamRef Target, FTextureRHIPar
     ResolveParameters.alphaResolveMode = NV_TXAA_ALPHARESOLVEMODE_RESOLVESRCALPHA;
     ResolveParameters.feedback = const_cast<NvTxaaFeedbackParameters*>(&NvTxaaDefaultFeedback);
     ResolveParameters.perFrameConstants = new NvTxaaPerFrameConstants();
-    static const auto TXAAMVSelectCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAAMVSelect"));
-    static const auto TXAAMVScaleCVar = IConsoleManager::Get().FindTConsoleVariableDataFloat(TEXT("r.TXAAMVScale"));
-    static const auto flipZ = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAAFlipZ"));
-    static const auto TXAAUseBH = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAAUseBH"));
-    static const auto TXAAUseAF = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAAUseAF"));
-    static const auto TXAAUseRGB = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAAUseRGB"));
+    static const auto CVarTxaaMVSelect = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAA.MVSelect"));
+    static const auto CVarTxaaDebugMVScale = IConsoleManager::Get().FindTConsoleVariableDataFloat(TEXT("r.TXAA.DebugMVScale"));
+    static const auto CVarTxaaUseBlackmanHarrisFilter = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAA.UseBlackmanHarrisFilter"));
+    static const auto CVarTxaaEnableAntiFlicker = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAA.EnableAntiFlicker"));
+    static const auto CVarTxaaUseRGB = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAA.UseRGB"));
+    static const auto CVarTxaaEnableColorClipping = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAA.EnableColorClipping"));
+    static const auto CVarTxaaBlendFactor = IConsoleManager::Get().FindTConsoleVariableDataFloat(TEXT("r.TXAA.BlendFactor"));
+	static const auto CVarTxaaDebugMV = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAA.DebugMV"));
 
-
-    static const auto TXAAEnableClipping = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAAEnableClipping"));
-    static const auto TXAABlendFactor = IConsoleManager::Get().FindTConsoleVariableDataFloat(TEXT("r.TXAABlendFactor"));
-    static const auto TXAADgb1 = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAADbg1"));
-    static const auto TXAADgb2 = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAADbg2"));
-
-
-    ResolveParameters.perFrameConstants->motionVecSelection = TXAAMVSelectCVar->GetValueOnRenderThread();
-    ResolveParameters.perFrameConstants->isZFlipped = flipZ->GetValueOnRenderThread();
-    ResolveParameters.perFrameConstants->useBHFilters = TXAAUseBH->GetValueOnRenderThread();
-    ResolveParameters.perFrameConstants->useAntiFlickerFilter = TXAAUseAF->GetValueOnRenderThread();
-    ResolveParameters.perFrameConstants->useRGB = TXAAUseRGB->GetValueOnRenderThread();
-    ResolveParameters.perFrameConstants->mvScale = TXAAMVScaleCVar->GetValueOnRenderThread();
+    ResolveParameters.perFrameConstants->motionVecSelection = CVarTxaaMVSelect->GetValueOnRenderThread();
+    ResolveParameters.perFrameConstants->isZFlipped = true;
+    ResolveParameters.perFrameConstants->useBHFilters = CVarTxaaUseBlackmanHarrisFilter->GetValueOnRenderThread();
+    ResolveParameters.perFrameConstants->useAntiFlickerFilter = CVarTxaaEnableAntiFlicker->GetValueOnRenderThread();
+    ResolveParameters.perFrameConstants->useRGB = CVarTxaaUseRGB->GetValueOnRenderThread();
+    ResolveParameters.perFrameConstants->mvScale = CVarTxaaDebugMVScale->GetValueOnRenderThread();
     ResolveParameters.perFrameConstants->xJitter = Jitter.X;
     ResolveParameters.perFrameConstants->yJitter = Jitter.Y;
-    ResolveParameters.perFrameConstants->enableClipping = TXAAEnableClipping->GetValueOnRenderThread();
-    ResolveParameters.perFrameConstants->frameBlendFactor = TXAABlendFactor->GetValueOnRenderThread();
-    ResolveParameters.perFrameConstants->dbg1 = TXAADgb1->GetValueOnRenderThread();
+    ResolveParameters.perFrameConstants->enableClipping = CVarTxaaEnableColorClipping->GetValueOnRenderThread();
+    ResolveParameters.perFrameConstants->frameBlendFactor = CVarTxaaBlendFactor->GetValueOnRenderThread();
 
     FD3D11TextureBase* DepthTex = GetD3D11TextureFromRHITexture(Depth);
     ID3D11ShaderResourceView* DepthSRV = DepthTex ? DepthTex->GetShaderResourceView() : NULL;
@@ -2194,12 +2188,10 @@ void FD3D11DynamicRHI::RHIResolveTXAA(FTextureRHIParamRef Target, FTextureRHIPar
     NvTxaaCompressionRange CompressRange = { 1.0f, 20.0f };
     ResolveParameters.compressionRange = &CompressRange;
 
-    auto DebugMV = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.TXAADebugMV"));
-
-    if (DebugMV->GetValueOnRenderThread()) {
+    if (CVarTxaaDebugMV->GetValueOnRenderThread()) {
         NvTxaaDebugParametersDX11 Debug;
         Debug.target = TargetRTV;
-        switch (DebugMV->GetValueOnRenderThread()) {
+        switch (CVarTxaaDebugMV->GetValueOnRenderThread()) {
         case 1: Debug.channel = NV_TXAA_DEBUGCHANNEL_MOTIONVECTORS; break;
         case 2: Debug.channel = NV_TXAA_DEBUGCHANNEL_TEMPORALREPROJ; break;
         case 3: Debug.channel = NV_TXAA_DEBUGCHANNEL_CONTROL; break;
