@@ -34,7 +34,7 @@ public abstract class BaseWinPlatform : Platform
         }
 
         // NVCHANGE_BEGIN: Add TXAA
-        SC.StageFiles(StagedFileType.NonUFS, CommandUtils.CombinePaths(SC.LocalRoot, "Engine/Binaries/ThirdParty/NVIDIA/TXAA"), "*.dll");
+        SC.StageFiles(StagedFileType.NonUFS, DirectoryReference.Combine(SC.LocalRoot, "Engine/Binaries/ThirdParty/NVIDIA/TXAA"), "*.dll", StageFilesSearch.TopDirectoryOnly);
         // NVCHANGE_END: Add TXAA
 
         // Stage all the build products
