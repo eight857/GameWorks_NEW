@@ -331,6 +331,7 @@ SHOWFLAG_FIXED_IN_SHIPPING(0, Bones, SFG_Developer, LOCTEXT("BoneSF", "Bones"))
 /** If media planes should be shown */
 SHOWFLAG_ALWAYS_ACCESSIBLE(MediaPlanes, SFG_Normal, LOCTEXT("MediaPlanesSF", "Media Planes"))
 
+
 // NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI
 
@@ -350,6 +351,12 @@ SHOWFLAG_ALWAYS_ACCESSIBLE(VxgiIrradianceVoxels, SFG_Visualize, LOCTEXT("VxgiIrr
 SHOWFLAG_ALWAYS_ACCESSIBLE(HBAO, SFG_LightingComponents, LOCTEXT("HBAO", "HBAO+"))
 
 // NVCHANGE_END: Add HBAO+
+
+
+// @third party code - BEGIN HairWorks
+/** Render hair */
+SHOWFLAG_ALWAYS_ACCESSIBLE(HairWorks, SFG_Advanced, LOCTEXT("HairWorks", "HairWorks"))
+// @third party code - END HairWorks
 
 #undef SHOWFLAG_ALWAYS_ACCESSIBLE
 #undef SHOWFLAG_FIXED_IN_SHIPPING

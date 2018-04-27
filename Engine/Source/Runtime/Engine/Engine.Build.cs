@@ -442,11 +442,17 @@ public class Engine : ModuleRules
 			RuntimeDependencies.Add("$(EngineDir)/Content/Stats/...", StagedFileType.UFS);
 		}
 
+
         // NVCHANGE_BEGIN: Add VXGI
         if ((Target.Platform == UnrealTargetPlatform.Win64) || (Target.Platform == UnrealTargetPlatform.Win32))
         {
             PublicDependencyModuleNames.Add("VXGI");
         }
         // NVCHANGE_END: Add VXGI
+
+		// @third party code - BEGIN HairWorks
+		AddEngineThirdPartyPrivateStaticDependencies(Target, "HairWorks");
+		// @third party code - END HairWorks
+
     }
 }

@@ -1,4 +1,31 @@
 
+
+HairWorks
+=============
+
+Welcome to the HairWorks UE4 integration!
+
+Please see **HairWorks_Ue4_ReleaseNotes.md** in the root directory for more information.
+
+Unreal Engine
+=============
+
+Welcome to the Unreal Engine source code! 
+
+From this repository you can build the Unreal Editor for Windows and Mac, compile Unreal Engine games for Android, iOS, Playstation 4, Xbox One, HTML5 and Linux,
+and build tools like Unreal Lightmass and Unreal Frontend. Modify them in any way you can imagine, and share your changes with others! 
+
+We have a heap of documentation available for the engine on the web. If you're looking for the answer to something, you may want to start here: 
+
+* [Unreal Engine Programming Guide](https://docs.unrealengine.com/latest/INT/Programming/index.html)
+* [Unreal Engine API Reference](https://docs.unrealengine.com/latest/INT/API/index.html)
+* [Engine source and GitHub on the Unreal Engine forums](https://forums.unrealengine.com/forumdisplay.php?1-Development-Discussion)
+
+If you need more, just ask! A lot of Epic developers hang out on the [forums](https://forums.unrealengine.com/) or [AnswerHub](https://answers.unrealengine.com/), 
+and we're proud to be part of a well-meaning, friendly and welcoming community of thousands. 
+
+
+
 Unreal Engine with VXGI and HBAO+
 =================================
 
