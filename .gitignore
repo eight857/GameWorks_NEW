@@ -192,13 +192,21 @@ BuildScripts/
 
 !/Engine/Plugins/Marketplace/Substance/Libs/Release/Win64/*.lib
 !/Engine/Plugins/Marketplace/Substance/Libs/Release/Win32/*.lib
-!/Engine/Plugins/Marketplace/Substance/Libs/Release/Mac/*.lib
-!/Engine/Plugins/Marketplace/Substance/Libs/Release/Linux/*.lib
+!/Engine/Plugins/Marketplace/Substance/Libs/Release/Mac/*.a
+!/Engine/Plugins/Marketplace/Substance/Libs/Release/Linux/*.a
 
 !/Engine/Plugins/Marketplace/Substance/Libs/Debug/Win64/*.lib
 !/Engine/Plugins/Marketplace/Substance/Libs/Debug/Win32/*.lib
-!/Engine/Plugins/Marketplace/Substance/Libs/Debug/Mac/*.lib
-!/Engine/Plugins/Marketplace/Substance/Libs/Debug/Linux/*.lib
+!/Engine/Plugins/Marketplace/Substance/Libs/Debug/Mac/*.a
+!/Engine/Plugins/Marketplace/Substance/Libs/Debug/Linux/*.a
+
+!/Engine/Plugins/Marketplace/Substance/DLLs/Release/Win64/*.dll
+!/Engine/Plugins/Marketplace/Substance/DLLs/Release/Mac/*.dylib
+!/Engine/Plugins/Marketplace/Substance/DLLs/Release/Linux/*.so
+
+!/Engine/Plugins/Marketplace/Substance/DLLs/Debug/Win64/*.dll
+!/Engine/Plugins/Marketplace/Substance/DLLs/Debug/Mac/*.dylib
+!/Engine/Plugins/Marketplace/Substance/DLLs/Debug/Linux/*.so
 
 # Add back some files for HairWorks
 !/Engine/Binaries/ThirdParty/HairWorks/*.dll
