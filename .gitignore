@@ -186,6 +186,8 @@ BuildScripts/
 !/*.pdf
 !/Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/*.dll
 !/Engine/Binaries/ThirdParty/GameWorks/VXGI/*.dll
+!/Engine/Source/ThirdParty/GameWorks/GFSDK_SSAO/lib/*.lib
+!/Engine/Source/ThirdParty/GameWorks/VXGI/lib/*.lib
 # NVCHANGE_END: Add VXGI
 
 
