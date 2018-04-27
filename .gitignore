@@ -184,6 +184,8 @@ Engine/Binaries/DotNET/SwarmAgent.Options.xml
 # NVCHANGE_BEGIN: Add VXGI
 BuildScripts/
 !/*.pdf
+!/Engine/Binaries/ThirdParty/GameWorks/GFSDK_SSAO/*.dll
+!/Engine/Binaries/ThirdParty/GameWorks/VXGI/*.dll
 # NVCHANGE_END: Add VXGI
 
 

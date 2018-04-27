@@ -3,6 +3,13 @@
 	"EngineAssociation": "",
 	"Category": "",
 	"Description": "",
+	"Plugins": [
+		{
+			"Name": "VictoryBPLibrary",
+			"Enabled": true,
+			"MarketplaceURL": "http://www.ue4code.com"
+		}
+	],
 	"TargetPlatforms": [
 		"WindowsNoEditor"
 	]
