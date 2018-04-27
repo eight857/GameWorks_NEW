@@ -213,6 +213,8 @@ BuildScripts/
 !/Engine/Plugins/Marketplace/Substance/Content/SourceFont/*.otf
 !/Engine/Plugins/Marketplace/Substance/Content/SourceUI/*.png
 
+!/Engine/Plugins/Marketplace/Substance/Resources/*.png
+
 # Add back some files for HairWorks
 !/Engine/Binaries/ThirdParty/HairWorks/*.dll
 
