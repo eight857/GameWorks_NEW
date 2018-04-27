@@ -208,7 +208,10 @@ BuildScripts/
 !/Engine/Plugins/Marketplace/Substance/DLLs/Debug/Mac/*.dylib
 !/Engine/Plugins/Marketplace/Substance/DLLs/Debug/Linux/*.so
 
-!/Engine/Plugins/Marketplace/Substance/Content/*
+!/Engine/Plugins/Marketplace/Substance/Content/Icons/*.png
+!/Engine/Plugins/Marketplace/Substance/Content/LiveLinkUI/*.png
+!/Engine/Plugins/Marketplace/Substance/Content/SourceFont/*.otf
+!/Engine/Plugins/Marketplace/Substance/Content/SourceUI/*.png
 
 # Add back some files for HairWorks
 !/Engine/Binaries/ThirdParty/HairWorks/*.dll
