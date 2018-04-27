@@ -29,17 +29,17 @@
 #include "HairWorksRenderer.h"
 // @third party code - END HairWorks
 
-<<<<<<< HEAD
+
 // NVCHANGE_BEGIN: Add HBAO+
 #if WITH_GFSDK_SSAO
 #include "GFSDK_SSAO.h"
 #endif
 // NVCHANGE_END: Add HBAO+
-=======
+
 // NvFlow begin
 #include "GameWorks/RendererHooksNvFlow.h"
 // NvFlow end
->>>>>>> a343c315cfb5d3823efab9b775eceaf273534574
+
 
 TAutoConsoleVariable<int32> CVarEarlyZPass(
 	TEXT("r.EarlyZPass"),
