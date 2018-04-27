@@ -600,7 +600,7 @@ public:
 		RHICopyToResolveTarget(SourceTexture, DestTexture, true, ResolveParams);
 	}
 
-<<<<<<< HEAD
+
 	// NVCHANGE_BEGIN: Add HBAO+
 #if WITH_GFSDK_SSAO
 	virtual void RHIRenderHBAO(
@@ -628,7 +628,7 @@ public:
 	virtual void RHISetEnableUAVBarriers(bool bEnable, const FTextureRHIParamRef* Textures, uint32 NumTextures, const FStructuredBufferRHIParamRef* Buffers, uint32 NumBuffers) { checkNoEntry(); }
 #endif
 	// NVCHANGE_END: Add VXGI
-=======
+
 	// NvFlow begin
 	virtual void NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc) {}
 	virtual void NvFlowGetDepthStencilViewDesc(FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, FRHINvFlowDepthStencilViewDesc* desc) {}
@@ -648,5 +648,5 @@ public:
 		}
 	}
 	// NvFlow end
->>>>>>> a343c315cfb5d3823efab9b775eceaf273534574
+
 };
