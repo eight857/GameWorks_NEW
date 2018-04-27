@@ -190,6 +190,8 @@ BuildScripts/
 !/Engine/Source/ThirdParty/GameWorks/VXGI/lib/*.lib
 # NVCHANGE_END: Add VXGI
 
+!/Engine/Plugins/Marketplace/Substance/Libs/*.lib
+
 
 # Add back some files for HairWorks
 !/Engine/Binaries/ThirdParty/HairWorks/*.dll
