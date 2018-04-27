@@ -1385,7 +1385,7 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		ServiceLocalQueue();
 	}
 
-<<<<<<< HEAD
+
 	// NVCHANGE_BEGIN: Add HBAO+
 #if WITH_GFSDK_SSAO
 	if (GMaxRHIShaderPlatform == SP_PCD3D_SM5 &&
@@ -1438,13 +1438,13 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		RenderStationaryLightOverlap(RHICmdList);
 		ServiceLocalQueue();
 	}
-=======
+
 	// @third party code - BEGIN HairWorks
 	// Blend hair lighting
 	if(HairWorksRenderer::ViewsHasHair(Views))
 		HairWorksRenderer::BlendLightingColor(RHICmdList);
 	// @third party code - END HairWorks
->>>>>>> 35d1522a74c255364a9295a59771c02331f91303
+
 
 	FLightShaftsOutput LightShaftOutput;
 
