@@ -26,11 +26,17 @@
 #include "ClearQuad.h"
 #include "RendererModule.h"
 
+<<<<<<< HEAD
 // NVCHANGE_BEGIN: Add HBAO+
 #if WITH_GFSDK_SSAO
 #include "GFSDK_SSAO.h"
 #endif
 // NVCHANGE_END: Add HBAO+
+=======
+// NvFlow begin
+#include "GameWorks/RendererHooksNvFlow.h"
+// NvFlow end
+>>>>>>> a343c315cfb5d3823efab9b775eceaf273534574
 
 TAutoConsoleVariable<int32> CVarEarlyZPass(
 	TEXT("r.EarlyZPass"),
@@ -667,7 +673,11 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		RHICmdList.ImmediateFlush(EImmediateFlushType::FlushRHIThreadFlushResources);
 	}
 
-	if (ShouldPrepareDistanceFieldScene())
+	if (ShouldPrepareDistanceFieldScene(
+		// NvFlow begin
+		GRendererNvFlowHooks && GRendererNvFlowHooks->NvFlowUsesGlobalDistanceField()
+		// NvFlow end
+	))
 	{
 		SCOPE_CYCLE_COUNTER(STAT_FDeferredShadingSceneRenderer_DistanceFieldAO_Init);
 		GDistanceFieldVolumeTextureAtlas.UpdateAllocations();
@@ -682,7 +692,11 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		{
 			Views[ViewIndex].HeightfieldLightingViewInfo.SetupVisibleHeightfields(Views[ViewIndex], RHICmdList);
 
-			if (ShouldPrepareGlobalDistanceField())
+			if (ShouldPrepareGlobalDistanceField(
+				// NvFlow begin
+				GRendererNvFlowHooks && GRendererNvFlowHooks->NvFlowUsesGlobalDistanceField()
+				// NvFlow end
+			))
 			{
 				float OcclusionMaxDistance = Scene->DefaultMaxDistanceFieldOcclusionDistance;
 
@@ -796,6 +810,13 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 			FGlobalDynamicIndexBuffer::Get().Commit();
 		}
 	}
+
+	// NvFlow begin
+	if (GRendererNvFlowHooks)
+	{
+		GRendererNvFlowHooks->NvFlowUpdateScene(RHICmdList, Scene->Primitives, &Views[0].GlobalDistanceFieldInfo.ParameterData);
+	}
+	// NvFlow end
 
 	// Notify the FX system that the scene is about to be rendered.
 	bool bLateFXPrerender = CVarFXSystemPreRenderAfterPrepass.GetValueOnRenderThread() > 0;
@@ -1095,6 +1116,26 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 	VisualizeVolumetricLightmap(RHICmdList);
 
 	SceneContext.ResolveSceneDepthToAuxiliaryTexture(RHICmdList);
+
+	// NvFlow begin
+	if (GRendererNvFlowHooks)
+	{
+		bool ShouldDoPreComposite = GRendererNvFlowHooks->NvFlowShouldDoPreComposite(RHICmdList);
+		if (ShouldDoPreComposite)
+		{
+			SceneContext.BeginRenderingSceneColor(RHICmdList, ESimpleRenderTargetMode::EExistingColorAndDepth, FExclusiveDepthStencil::DepthWrite_StencilWrite);
+
+			for (int32 ViewIdx = 0; ViewIdx < Views.Num(); ViewIdx++)
+			{
+				const auto& View = Views[ViewIdx];
+
+				RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
+
+				GRendererNvFlowHooks->NvFlowDoPreComposite(RHICmdList, View);
+			}
+		}
+	}
+	// NvFlow end
 
 	if (!bOcclusionBeforeBasePass)
 	{

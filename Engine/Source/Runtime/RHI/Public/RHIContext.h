@@ -26,6 +26,9 @@ enum class EAsyncComputeBudget;
 enum class EResourceTransitionAccess;
 enum class EResourceTransitionPipeline;
 
+// NvFlow begin
+#include "GameWorks/RHINvFlow.h"
+// NvFlow end
 
 FORCEINLINE FBoundShaderStateRHIRef RHICreateBoundShaderState(
 	FVertexDeclarationRHIParamRef VertexDeclaration,
@@ -597,6 +600,7 @@ public:
 		RHICopyToResolveTarget(SourceTexture, DestTexture, true, ResolveParams);
 	}
 
+<<<<<<< HEAD
 	// NVCHANGE_BEGIN: Add HBAO+
 #if WITH_GFSDK_SSAO
 	virtual void RHIRenderHBAO(
@@ -624,4 +628,25 @@ public:
 	virtual void RHISetEnableUAVBarriers(bool bEnable, const FTextureRHIParamRef* Textures, uint32 NumTextures, const FStructuredBufferRHIParamRef* Buffers, uint32 NumBuffers) { checkNoEntry(); }
 #endif
 	// NVCHANGE_END: Add VXGI
+=======
+	// NvFlow begin
+	virtual void NvFlowGetDeviceDesc(FRHINvFlowDeviceDesc* desc) {}
+	virtual void NvFlowGetDepthStencilViewDesc(FTexture2DRHIParamRef depthSurface, FTexture2DRHIParamRef depthTexture, FRHINvFlowDepthStencilViewDesc* desc) {}
+	virtual void NvFlowGetRenderTargetViewDesc(FRHINvFlowRenderTargetViewDesc* desc) {}
+	virtual FShaderResourceViewRHIRef NvFlowCreateSRV(const FRHINvFlowResourceViewDesc* desc) { return FShaderResourceViewRHIRef(); }
+	virtual FRHINvFlowResourceRW* NvFlowCreateResourceRW(const FRHINvFlowResourceRWViewDesc* desc, FShaderResourceViewRHIRef* pRHIRefSRV, FUnorderedAccessViewRHIRef* pRHIRefUAV) { return nullptr; }
+	virtual void NvFlowReleaseResourceRW(FRHINvFlowResourceRW*) {}
+	virtual void NvFlowReserveDescriptors(FRHINvFlowDescriptorReserveHandle* dstHandle, uint32 numDescriptors, uint64 lastFenceCompleted, uint64 nextFenceValue) {}
+
+	virtual void NvFlowRestoreState() {}
+	FRHINvFlowCleanup NvFlowCleanup;
+	virtual void NvFlowWork(void(*workFunc)(void*, SIZE_T, IRHICommandContext*), void* paramData, SIZE_T numBytes)
+	{
+		if (workFunc)
+		{
+			workFunc(paramData, numBytes, this);
+		}
+	}
+	// NvFlow end
+>>>>>>> a343c315cfb5d3823efab9b775eceaf273534574
 };

@@ -202,6 +202,7 @@ class ENGINE_API ULightComponent : public ULightComponentBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=DistanceFieldShadows, meta=(UIMin = "0", UIMax = ".1"), AdvancedDisplay)
 	float RayStartOffsetDepthScale;
 
+
 	// NVCHANGE_BEGIN: Add VXGI
 
 	/**
@@ -211,6 +212,17 @@ class ENGINE_API ULightComponent : public ULightComponentBase
 	bool bCastVxgiIndirectLighting;
 
 	// NVCHANGE_END: Add VXGI
+
+	// NvFlow begin
+	/** If true, then Flow grid shadow is generated depended of FlowGridShadowChannel match. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NvFlow")
+	bool bFlowGridShadowEnabled;
+
+	/** If value is the same as ShadowChannel in FlowGridComponent, then this Light is used to generate Flow grid shadow. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NvFlow")
+	int32 FlowGridShadowChannel;
+	// NvFlow end
+
 
 public:
 	/** Set intensity of the light */
