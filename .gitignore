@@ -195,6 +195,11 @@ BuildScripts/
 !/Engine/Plugins/Marketplace/Substance/Libs/Release/Mac/*.lib
 !/Engine/Plugins/Marketplace/Substance/Libs/Release/Linux/*.lib
 
+!/Engine/Plugins/Marketplace/Substance/Libs/Debug/Win64/*.lib
+!/Engine/Plugins/Marketplace/Substance/Libs/Debug/Win32/*.lib
+!/Engine/Plugins/Marketplace/Substance/Libs/Debug/Mac/*.lib
+!/Engine/Plugins/Marketplace/Substance/Libs/Debug/Linux/*.lib
+
 # Add back some files for HairWorks
 !/Engine/Binaries/ThirdParty/HairWorks/*.dll
 
