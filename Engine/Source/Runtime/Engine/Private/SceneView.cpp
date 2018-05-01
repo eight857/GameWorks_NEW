@@ -2312,6 +2312,8 @@ FSceneViewFamily::FSceneViewFamily( const ConstructionValues& CVS )
 	// NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI
 	, bVxgiAvailable(false)
+	, bVxgiEnabled(false)
+	, bVxgiAmbientOcclusionMode(false)
 #endif
 	// NVCHANGE_END: Add VXGI
 {

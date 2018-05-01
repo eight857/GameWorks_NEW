@@ -503,7 +503,7 @@ void FSceneRenderer::InitVxgiRenderingState(const FSceneViewFamily* InViewFamily
 
 	bVxgiUseEmissiveMaterials = !!CVarVxgiEmissiveMaterialsEnable.GetValueOnGameThread();
 	bVxgiTemporalReprojectionEnable = !!CVarVxgiTemporalReprojectionEnable.GetValueOnGameThread();
-	bVxgiAmbientOcclusionMode = !!CVarVxgiAmbientOcclusionMode.GetValueOnGameThread();
+	bVxgiAmbientOcclusionMode = !!CVarVxgiAmbientOcclusionMode.GetValueOnGameThread() || (GDynamicRHI->RHIGetVXGITier() == EVxgiTier::OcclusionOnly);
 	bVxgiMultiBounceEnable = !bVxgiAmbientOcclusionMode && !!CVarVxgiMultiBounceEnable.GetValueOnGameThread() && PrimaryView.FinalPostProcessSettings.VxgiMultiBounceEnabled;
 
 	bVxgiSkyLightEnable = !bVxgiAmbientOcclusionMode
@@ -516,6 +516,16 @@ void FSceneRenderer::InitVxgiRenderingState(const FSceneViewFamily* InViewFamily
 
 bool FSceneRenderer::IsVxgiEnabled(const FViewInfo& View)
 {
+	if (GDynamicRHI->RHIGetVXGITier() == EVxgiTier::None)
+	{
+		return false;
+	}
+
+	if (IsForwardShadingEnabled(FeatureLevel))
+	{
+		return false; // VXGI is incompatible with forward shading
+	}
+
 	if (!View.State && !View.bEnableVxgiForSceneCapture)
 	{
 		return false; //some editor panel or something
@@ -634,29 +644,6 @@ bool FSceneRenderer::InitializeVxgiVoxelizationParameters()
 		return false;
 	}
 
-	// Clamp the parameters first because they might affect the output of IsVxgiEnabled
-	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
-	{
-		EndVxgiFinalPostProcessSettings(Views[ViewIndex].FinalPostProcessSettings, VxgiVoxelizationParameters);
-		if (Views[ViewIndex].State == nullptr)
-		{
-			//We need the viewstate to implement this
-			Views[ViewIndex].FinalPostProcessSettings.bVxgiDiffuseTracingTemporalReprojectionEnabled = false;
-		}
-
-		const auto& PostSettings = Views[ViewIndex].FinalPostProcessSettings;
-		if (PostSettings.bVxgiAmbientOcclusionEnabled)
-		{
-			Views[ViewIndex].VxgiAmbientOcclusionMode = bVxgiAmbientOcclusionMode
-				? EVxgiAmbientOcclusionMode::RedChannel
-				: EVxgiAmbientOcclusionMode::AlphaChannel;
-		}
-		else
-		{
-			Views[ViewIndex].VxgiAmbientOcclusionMode = EVxgiAmbientOcclusionMode::None;
-		}
-	}
-
 	// Reset the VxgiLastVoxelizationPass values for all primitives
 	for (int32 Index = 0; Index < Scene->Primitives.Num(); ++Index)
 	{
@@ -694,7 +681,7 @@ void FSceneRenderer::RenderVxgiVoxelization(FRHICommandList& RHICmdList)
 			const FLightSceneInfo* const LightSceneInfo = LightSceneInfoCompact.LightSceneInfo;
 
 			if (LightSceneInfo->ShouldRenderLightViewIndependent() &&
-				LightSceneInfo->Proxy->CastVxgiIndirectLighting() &&
+				LightSceneInfo->Proxy->CastVxgiIndirectLighting(nullptr) &&
 				LightSceneInfo->Proxy->AffectsBounds(VxgiClipmapBounds))
 			{
 				FVisibleLightInfo& VisibleLightInfo = VisibleLightInfos[LightSceneInfo->Id];
@@ -1154,7 +1141,33 @@ void FSceneRenderer::RenderVxgiTracing(FRHICommandListImmediate& RHICmdList)
 	}
 }
 
-void FSceneRenderer::EndVxgiFinalPostProcessSettings(FFinalPostProcessSettings& FinalPostProcessSettings, const VXGI::VoxelizationParameters& VParams)
+void FSceneRenderer::EndVxgiFinalPostProcessSettingsForAllViews()
+{
+	// Clamp the parameters first because they might affect the output of IsVxgiEnabled
+	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+	{
+		EndVxgiFinalPostProcessSettings(Views[ViewIndex].FinalPostProcessSettings);
+		if (Views[ViewIndex].State == nullptr)
+		{
+			//We need the viewstate to implement this
+			Views[ViewIndex].FinalPostProcessSettings.bVxgiDiffuseTracingTemporalReprojectionEnabled = false;
+		}
+
+		const auto& PostSettings = Views[ViewIndex].FinalPostProcessSettings;
+		if (PostSettings.bVxgiAmbientOcclusionEnabled)
+		{
+			Views[ViewIndex].VxgiAmbientOcclusionMode = bVxgiAmbientOcclusionMode
+				? EVxgiAmbientOcclusionMode::RedChannel
+				: EVxgiAmbientOcclusionMode::AlphaChannel;
+		}
+		else
+		{
+			Views[ViewIndex].VxgiAmbientOcclusionMode = EVxgiAmbientOcclusionMode::None;
+		}
+	}
+}
+
+void FSceneRenderer::EndVxgiFinalPostProcessSettings(FFinalPostProcessSettings& FinalPostProcessSettings)
 {
 	if (!CVarVxgiDiffuseTracingEnable.GetValueOnRenderThread() || !ViewFamily.EngineShowFlags.VxgiDiffuse)
 	{
@@ -1184,12 +1197,11 @@ void FSceneRenderer::EndVxgiFinalPostProcessSettings(FFinalPostProcessSettings& 
 		break;
 	}
 
-	if (VParams.ambientOcclusionMode)
+	if (bVxgiAmbientOcclusionMode)
 	{
-		// Ambient occlusion mode
+		// Occlusion-only mode
 
-		FinalPostProcessSettings.VxgiDiffuseTracingIntensity = 0.f;
-		FinalPostProcessSettings.VxgiSpecularTracingIntensity = 0.f;
+		FinalPostProcessSettings.VxgiDiffuseTracingEnabled = false;
 		FinalPostProcessSettings.VxgiSpecularTracingEnabled = false;
 	}
 }
@@ -1199,7 +1211,7 @@ void FSceneRenderer::RenderVxgiVoxelizationPass(
 	int32 VoxelizationPass,
 	const FVxgiVoxelizationArgs& Args)
 {
-	if (Args.LightSceneInfo && !Args.LightSceneInfo->Proxy->CastVxgiIndirectLighting())
+	if (Args.LightSceneInfo && !Args.LightSceneInfo->Proxy->CastVxgiIndirectLighting(nullptr))
 	{
 		return;
 	}
