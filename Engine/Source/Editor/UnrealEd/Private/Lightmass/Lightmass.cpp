@@ -2797,7 +2797,8 @@ bool FLightmassProcessor::BeginRun()
 		TEXT("../Win64/UnrealLightmass-Json.dll"),
 		TEXT("../Win64/embree.dll"),
 		TEXT("../Win64/tbb.dll"),
-		TEXT("../Win64/tbbmalloc.dll")
+		TEXT("../Win64/tbbmalloc.dll"),
+		TEXT("../Win64/GPULightmassKernel.dll")
 	};
 #elif PLATFORM_MAC
 	const TCHAR* LightmassExecutable64 = TEXT("../Mac/UnrealLightmass");
@@ -2850,6 +2851,7 @@ bool FLightmassProcessor::BeginRun()
 		TEXT("../DotNET/AutoReporter.exe"),
 		TEXT("../DotNET/AutoReporter.exe.config"),
 		TEXT("../DotNET/AutoReporter.XmlSerializers.dll"),
+		TEXT("../DotNET/ProgressReporter.exe"),
 	};
 	const int32 OptionalDependencyPaths64Count = ARRAY_COUNT(OptionalDependencyPaths64);
 

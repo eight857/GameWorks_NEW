@@ -1,17 +1,20 @@
 {
 	"FileVersion": 3,
-	"Version": 0,
-	"VersionName": "0.0",
-	"EngineVersion": "4.2.0-2073830+++depot+UE4-Releases+4.2",
-	"PackageFileUE4Version": 363,
-	"PackageFileLicenseeUE4Version": 0,
-	"EngineAssociation": "",
-	"FriendlyName": "",
-	"Description": "",
+	"EngineAssociation": "{6D179E35-4D62-4B9E-3BF0-BD832DD0C66A}",
 	"Category": "",
-	"CreatedBy": "",
-	"CreatedByURL": "",
-	"EpicSampleNameHash": "0",
+	"Description": "",
+	"Plugins": [
+		{
+			"Name": "Substance",
+			"Enabled": true,
+			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/content/2f6439c2f9584f49809d9b13b16c2ba4"
+		},
+		{
+			"Name": "VictoryBPLibrary",
+			"Enabled": true,
+			"MarketplaceURL": "http://www.ue4code.com"
+		}
+	],
 	"TargetPlatforms": [
 		"MacNoEditor",
 		"WindowsNoEditor"
