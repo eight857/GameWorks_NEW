@@ -1946,7 +1946,7 @@ void FSceneRenderer::PrepareViewRectsForRendering()
 		{
 			// Tenmporal upsample is supported on SM5 only if TAA is turned on.
 			if (View.PrimaryScreenPercentageMethod == EPrimaryScreenPercentageMethod::TemporalUpscale &&
-				(View.AntiAliasingMethod != AAM_TemporalAA ||
+				((View.AntiAliasingMethod != AAM_TemporalAA) ||
 				 FeatureLevel < ERHIFeatureLevel::SM5 ||
 				 ViewFamily.EngineShowFlags.VisualizeBuffer))
 			{
@@ -2494,8 +2494,12 @@ void FSceneRenderer::RenderCustomDepthPass(FRHICommandListImmediate& RHICmdList)
 					DrawRenderState.SetDepthStencilState(TStaticDepthStencilState<true, CF_DepthNearOrEqual>::GetRHI());
 				}
     
-				if ((CVarCustomDepthTemporalAAJitter.GetValueOnRenderThread() == 0) && (View.AntiAliasingMethod == AAM_TemporalAA))
-				{
+#if WITH_TXAA
+				if ((CVarCustomDepthTemporalAAJitter.GetValueOnRenderThread() == 0) && (View.AntiAliasingMethod == AAM_TemporalAA || View.AntiAliasingMethod == AAM_TXAA))
+#else
+                if ((CVarCustomDepthTemporalAAJitter.GetValueOnRenderThread() == 0) && View.AntiAliasingMethod == AAM_TemporalAA)
+#endif // WITH_TXAA
+                    {
 					FBox VolumeBounds[TVC_MAX];
     
 					FViewMatrices ModifiedViewMatricies = View.ViewMatrices;

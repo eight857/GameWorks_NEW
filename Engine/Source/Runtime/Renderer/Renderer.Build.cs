@@ -38,10 +38,10 @@ public class Renderer : ModuleRules
         PrivateIncludePathModuleNames.AddRange(new string[] { "HeadMountedDisplay" });
         DynamicallyLoadedModuleNames.AddRange(new string[] { "HeadMountedDisplay" });
 
-
-        // NVCHANGE_BEGIN: Add VXGI
+        // NVCHANGE_BEGIN: Add VXGI, Add TXAA
         if ((Target.Platform == UnrealTargetPlatform.Win64) || (Target.Platform == UnrealTargetPlatform.Win32))
         {
+			PublicDependencyModuleNames.Add("TXAA");
             PublicDependencyModuleNames.Add("VXGI");
         }
         // NVCHANGE_END: Add VXGI

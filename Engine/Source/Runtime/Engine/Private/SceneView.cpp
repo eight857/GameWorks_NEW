@@ -790,11 +790,16 @@ void FSceneView::SetupAntiAliasingMethod()
 			AntiAliasingMethod = AAM_None;
 		}
 
+	#if WITH_TXAA
+		if (AntiAliasingMethod == AAM_TemporalAA || AntiAliasingMethod == AAM_TXAA)
+	#else
 		if (AntiAliasingMethod == AAM_TemporalAA)
+	#endif // WITH_TXAA
 		{
 			if (!Family->EngineShowFlags.TemporalAA || !Family->bRealtimeUpdate || Quality < 3)
 			{
-				AntiAliasingMethod = AAM_FXAA;
+				if (Quality < 3)
+				    AntiAliasingMethod = AAM_FXAA;
 			}
 		}
 	}

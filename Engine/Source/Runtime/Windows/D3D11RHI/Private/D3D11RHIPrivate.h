@@ -42,6 +42,12 @@ DECLARE_LOG_CATEGORY_EXTERN(LogD3D11RHI, Log, All);
 #include "D3D11ConstantBuffer.h"
 #include "D3D11StateCache.h"
 
+#if WITH_TXAA
+#define __GFSDK_DX11__
+//#include "GFSDK_TXAA.h"
+#include "ThirdParty/NVIDIA//TXAA/GFSDK_TXAA.h"
+#endif
+
 #ifndef WITH_DX_PERF
 #define WITH_DX_PERF	1
 #endif
@@ -557,6 +563,9 @@ public:
 	virtual FTextureCubeRHIRef RHICreateTextureCubeFromResource(EPixelFormat Format, uint32 TexCreateFlags, const FClearValueBinding& ClearValueBinding, ID3D11Texture2D* Resource);
 	virtual void RHIAliasTextureResources(FTextureRHIParamRef DestTexture, FTextureRHIParamRef SrcTexture);
 
+#if WITH_TXAA
+    virtual void RHIResolveTXAA(FTextureRHIParamRef Target, FTextureRHIParamRef Source, FTextureRHIParamRef Feedback, FTextureRHIParamRef Velocity, FTextureRHIParamRef Depth, const FVector2D& Jitter);
+#endif
 
 	// NVCHANGE_BEGIN: Add VXGI
 #if WITH_GFSDK_VXGI
@@ -732,6 +741,12 @@ protected:
 	// NVCHANGE_END: Add HBAO+
 
 	FD3D11StateCache StateCache;
+
+#if WITH_TXAA
+    NvTxaaContextDX11 TxaaContext;
+    bool TxaaInitialized;
+    HMODULE	TxaaLibModuleHandle;
+#endif
 
 	/** A list of all viewport RHIs that have been created. */
 	TArray<FD3D11Viewport*> Viewports;

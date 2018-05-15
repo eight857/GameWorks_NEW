@@ -31,7 +31,11 @@ public abstract class BaseWinPlatform : Platform
 				TargetReceipt Receipt = TargetReceipt.Read(ReceiptFileName, EngineDir, ProjectDir);
 				SC.StageBuildProductsFromReceipt(Receipt, true, false);
 			}
-		}
+        }
+
+        // NVCHANGE_BEGIN: Add TXAA
+        SC.StageFiles(StagedFileType.NonUFS, DirectoryReference.Combine(SC.LocalRoot, "Engine/Binaries/ThirdParty/NVIDIA/TXAA"), "*.dll", StageFilesSearch.TopDirectoryOnly);
+        // NVCHANGE_END: Add TXAA
 
         // NVCHANGE_BEGIN: Add VXGI
         SC.StageFiles(StagedFileType.NonUFS, DirectoryReference.Combine(SC.LocalRoot, "Engine/Binaries/ThirdParty/GameWorks/VXGI"), "*.dll", StageFilesSearch.TopDirectoryOnly);
